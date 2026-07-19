@@ -16,6 +16,7 @@ add_library(AetherCore SHARED
 
     # Scripting
     scripting/ScriptEngine.cpp
+    scripting/LuaSandbox.cpp
     scripting/LuaBindings.cpp
     scripting/LuaData.cpp
     scripting/DirWatch.cpp

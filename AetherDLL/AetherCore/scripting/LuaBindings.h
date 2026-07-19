@@ -27,8 +27,8 @@ namespace ac::script::bindings {
         std::size_t eticketUrls = 0;
     };
 
-    // Strips dangerous stdlib globals (dofile, loadfile, os, io, etc.).
-    void OpenSandboxedLibs(lua_State* L);
+    // The stdlib sandbox surface lives in scripting/LuaSandbox.{h,cpp}
+    // (whitelist install, called internally by RegisterAll).
 
     // Makes global reads/writes case-insensitive so "AddAppId" == "addappid".
     void InstallCaseInsensitiveGlobals(lua_State* L);

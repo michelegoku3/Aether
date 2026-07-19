@@ -14,7 +14,6 @@
 extern "C" {
 #include <lauxlib.h>
 #include <lua.h>
-#include <lualib.h>
 }
 
 #include <cctype>
@@ -26,6 +25,7 @@ extern "C" {
 #include "credentials/CredentialStore.h"
 #include "credentials/HexCodec.h"
 #include "scripting/LuaData.h"
+#include "scripting/LuaSandbox.h"
 #include "core/Logger.h"
 #include "network/RuntimeHttp.h"
 
@@ -209,21 +209,11 @@ namespace ac::script::bindings {
             return 0;
         }
 
-        // ---- Sandbox (public, used by RegisterAll below) --------------------------
+        // ---- Sandbox (implemented in LuaSandbox.cpp) ----------------------------
 
     }  // namespace (anonymous)
 
     // ---- Public interface ------------------------------------------------------
-
-    void OpenSandboxedLibs(lua_State* L) {
-        luaL_openlibs(L);
-        static const char* kRemovedGlobals[] = {
-            "dofile", "loadfile", "load", "loadstring", "require", "collectgarbage", "os", "io" };
-        for (const char* name : kRemovedGlobals) {
-            lua_pushnil(L);
-            lua_setglobal(L, name);
-        }
-    }
 
     void InstallCaseInsensitiveGlobals(lua_State* L) {
         lua_rawgeti(L, LUA_REGISTRYINDEX, LUA_RIDX_GLOBALS);
@@ -237,7 +227,7 @@ namespace ac::script::bindings {
     }
 
     void RegisterAll(lua_State* L) {
-        OpenSandboxedLibs(L);
+        sandbox::Install(L);
         lua_register(L, "addappid", L_AddAppId);
         lua_register(L, "addtoken", L_AddToken);
         lua_register(L, "setmanifestid", L_SetManifestId);
