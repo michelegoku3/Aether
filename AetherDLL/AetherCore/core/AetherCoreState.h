@@ -1,6 +1,7 @@
 #pragma once
 
 #include <atomic>
+#include <chrono>
 #include <future>
 #include <mutex>
 #include <optional>
@@ -282,11 +283,21 @@ struct AetherCoreState {
     // ---- IPC --------------------------------------------------------------
     // RequestEncryptedAppTicket records the async-call handle here so the later
     // GetAPICallResult(EncryptedAppTicketResponse) can answer with k_EResultOK.
-    // Mutex guards access in case Steam ever processes IPC calls concurrently.
-    // The comment previously claimed single-threaded access, but Steam's
-    // threading model is opaque — a mutex is cheap insurance against data races.
-    mutable std::mutex pendingETicketsMutex;
-    std::unordered_map<std::uint64_t, steam::AppId> pendingETickets;
+    // The record is bounded and timestamped; the IPC handler owns all mutation.
+    struct PendingETicket {
+        steam::AppId appId = 0;
+        std::chrono::steady_clock::time_point createdAt{};
+    };
+    struct PendingETicketState {
+        mutable std::mutex mutex;
+        std::unordered_map<std::uint64_t, PendingETicket> entries;
+        std::uint64_t recordedCount = 0;
+        std::uint64_t claimedCount = 0;
+        std::uint64_t expiredCount = 0;
+        std::uint64_t rejectedCount = 0;
+        std::uint64_t evictedCount = 0;
+    };
+    PendingETicketState pendingETickets;
 
     // ---- Config-store ticket cache ----------------------------------------
     mutable std::mutex configStoreTicketMutex;

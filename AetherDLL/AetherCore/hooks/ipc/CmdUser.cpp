@@ -1,6 +1,7 @@
 #include "pch.h"
 #include "hooks/ipc/CmdUser.h"
 
+#include <chrono>
 #include <cstring>
 #include <iterator>
 #include <mutex>
@@ -118,7 +119,7 @@ void GetAppOwnershipTicketExtendedData(steam::CSteamPipeClient*, steam::CUtlBuff
 void RequestEncryptedAppTicket(steam::CSteamPipeClient* pipe, steam::CUtlBuffer* pRead,
                                steam::CUtlBuffer* pWrite) {
     const steam::AppId appId = pipewatch::AppIdForPipe(pipe);
-    if (!pWrite || pWrite->TellPut() < 9) return;
+    if (!pWrite || !pWrite->Base() || pWrite->TellPut() < 9) return;
 
     // Request layout after the IPC header: [u32 nonceLen][nonce bytes...].
     // If a Lua-configured backend exists, try to mint a fresh ETicket/AppTicket
@@ -141,9 +142,10 @@ void RequestEncryptedAppTicket(steam::CSteamPipeClient* pipe, steam::CUtlBuffer*
 
     std::uint64_t asyncCall = 0;
     std::memcpy(&asyncCall, pWrite->Base() + 1, sizeof(asyncCall));
-    {
-        std::lock_guard<std::mutex> lock(g_state.pendingETicketsMutex);
-        g_state.pendingETickets[asyncCall] = appId;
+    if (!RememberETicketAsyncCall(asyncCall, appId)) {
+        AC_LOG_WARN_ONCE(kModule, "RequestEncryptedAppTicket: rejected async=0x%llx app=%u.",
+                         static_cast<unsigned long long>(asyncCall), appId);
+        return;
     }
     AC_LOG_DEBUG_ONCE(kModule, "RequestEncryptedAppTicket: app %u async=0x%llx recorded.", appId,
                 static_cast<unsigned long long>(asyncCall));
@@ -189,15 +191,92 @@ void Register() {
     RegisterIpcHandlers(kEntries, std::size(kEntries));
 }
 
-steam::AppId LookupETicketAsyncCall(std::uint64_t asyncCall) {
-    std::lock_guard<std::mutex> lock(g_state.pendingETicketsMutex);
-    auto it = g_state.pendingETickets.find(asyncCall);
-    return it != g_state.pendingETickets.end() ? it->second : 0;
+namespace {
+
+constexpr std::size_t kMaxPendingETickets = 32;
+constexpr auto kPendingETicketTtl = std::chrono::seconds(60);
+
+void PruneExpiredLocked(const std::chrono::steady_clock::time_point now) {
+    auto& state = g_state.pendingETickets;
+    for (auto it = state.entries.begin(); it != state.entries.end();) {
+        if (now - it->second.createdAt >= kPendingETicketTtl) {
+            it = state.entries.erase(it);
+            ++state.expiredCount;
+        } else {
+            ++it;
+        }
+    }
 }
 
-void EraseETicketAsyncCall(std::uint64_t asyncCall) {
-    std::lock_guard<std::mutex> lock(g_state.pendingETicketsMutex);
-    g_state.pendingETickets.erase(asyncCall);
+}  // namespace
+
+bool RememberETicketAsyncCall(std::uint64_t asyncCall, steam::AppId appId) {
+    if (asyncCall == 0 || appId == 0) {
+        std::lock_guard<std::mutex> lock(g_state.pendingETickets.mutex);
+        ++g_state.pendingETickets.rejectedCount;
+        return false;
+    }
+
+    const auto now = std::chrono::steady_clock::now();
+    std::lock_guard<std::mutex> lock(g_state.pendingETickets.mutex);
+    auto& state = g_state.pendingETickets;
+    PruneExpiredLocked(now);
+
+    if (auto existing = state.entries.find(asyncCall); existing != state.entries.end()) {
+        // A handle must identify one logical request. Replacing it is safer than
+        // retaining stale app data, but is still observable in diagnostics.
+        existing->second = {appId, now};
+        ++state.recordedCount;
+        return true;
+    }
+
+    if (state.entries.size() >= kMaxPendingETickets) {
+        auto oldest = state.entries.begin();
+        for (auto it = std::next(state.entries.begin()); it != state.entries.end(); ++it) {
+            if (it->second.createdAt < oldest->second.createdAt) oldest = it;
+        }
+        state.entries.erase(oldest);
+        ++state.evictedCount;
+    }
+
+    state.entries.emplace(asyncCall, AetherCoreState::PendingETicket{appId, now});
+    ++state.recordedCount;
+    return true;
+}
+
+std::optional<steam::AppId> ClaimETicketAsyncCall(std::uint64_t asyncCall) {
+    if (asyncCall == 0) return std::nullopt;
+
+    const auto now = std::chrono::steady_clock::now();
+    std::lock_guard<std::mutex> lock(g_state.pendingETickets.mutex);
+    auto& state = g_state.pendingETickets;
+    PruneExpiredLocked(now);
+
+    const auto it = state.entries.find(asyncCall);
+    if (it == state.entries.end()) return std::nullopt;
+
+    const steam::AppId appId = it->second.appId;
+    state.entries.erase(it);
+    ++state.claimedCount;
+    return appId;
+}
+
+void ForgetETicketAsyncCall(std::uint64_t asyncCall) {
+    if (asyncCall == 0) return;
+    std::lock_guard<std::mutex> lock(g_state.pendingETickets.mutex);
+    g_state.pendingETickets.entries.erase(asyncCall);
+}
+
+void ResetETicketAsyncCalls() {
+    std::lock_guard<std::mutex> lock(g_state.pendingETickets.mutex);
+    g_state.pendingETickets.entries.clear();
+}
+
+std::size_t PendingETicketAsyncCallCount() {
+    const auto now = std::chrono::steady_clock::now();
+    std::lock_guard<std::mutex> lock(g_state.pendingETickets.mutex);
+    PruneExpiredLocked(now);
+    return g_state.pendingETickets.entries.size();
 }
 
 }  // namespace ac::hooks::CmdUser

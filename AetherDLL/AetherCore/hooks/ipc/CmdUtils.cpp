@@ -42,12 +42,15 @@ void GetAppID(steam::CSteamPipeClient* pipe, steam::CUtlBuffer*, steam::CUtlBuff
 // Injects k_EResultOK for a recorded encrypted-app-ticket async call.
 // Reply layout: [tag][success=1][EResult m_eResult][trailing 0].
 bool InjectEncryptedAppTicketResult(steam::CUtlBuffer* pWrite, std::uint64_t asyncCall) {
-    steam::AppId appId = CmdUser::LookupETicketAsyncCall(asyncCall);
-    if (!appId) return false;
-
     constexpr std::int32_t kEResultBytes = 4;
     constexpr std::int32_t total = 1 + 1 + kEResultBytes + 1;
-    if (!pWrite || pWrite->TellPut() < total) return false;
+    if (!pWrite || !pWrite->Base() || pWrite->TellPut() < total) return false;
+
+    // Validate capacity before claiming. Once the fixed-size response passes
+    // this check, writing it cannot fail; a short-buffer retry therefore keeps
+    // the pending correlation intact.
+    const auto appId = CmdUser::ClaimETicketAsyncCall(asyncCall);
+    if (!appId) return false;
 
     std::uint8_t* base = pWrite->Base();
     base[0] = kIpcReplyTag;
@@ -56,8 +59,7 @@ bool InjectEncryptedAppTicketResult(steam::CUtlBuffer* pWrite, std::uint64_t asy
     std::memcpy(base + 2, &result, sizeof(result));
     base[2 + kEResultBytes] = 0;
 
-    CmdUser::EraseETicketAsyncCall(asyncCall);
-    AC_LOG_DEBUG_ONCE(kModule, "GetAPICallResult: EncryptedAppTicketResponse OK (app %u).", appId);
+    AC_LOG_DEBUG_ONCE(kModule, "GetAPICallResult: EncryptedAppTicketResponse OK (app %u).", *appId);
     return true;
 }
 
@@ -66,15 +68,15 @@ bool InjectEncryptedAppTicketResult(steam::CUtlBuffer* pWrite, std::uint64_t asy
 //   callbacks are intentionally NOT processed (achievement code is excluded).
 void GetAPICallResult(steam::CSteamPipeClient*, steam::CUtlBuffer* pRead,
                       steam::CUtlBuffer* pWrite) {
-    if (!pRead ||
+    if (!pRead || !pRead->Base() ||
         pRead->TellPut() < static_cast<std::int32_t>(kIpcArgsOffset + sizeof(GetAPICallResultRequest))) {
         return;
     }
-    const auto* req =
-        reinterpret_cast<const GetAPICallResultRequest*>(pRead->Base() + kIpcArgsOffset);
+    GetAPICallResultRequest req{};
+    std::memcpy(&req, pRead->Base() + kIpcArgsOffset, sizeof(req));
 
-    if (req->iCallbackExpected == kCallbackEncryptedAppTicketResponse) {
-        InjectEncryptedAppTicketResult(pWrite, req->hSteamAPICall);
+    if (req.iCallbackExpected == kCallbackEncryptedAppTicketResponse) {
+        InjectEncryptedAppTicketResult(pWrite, req.hSteamAPICall);
     }
 }
 

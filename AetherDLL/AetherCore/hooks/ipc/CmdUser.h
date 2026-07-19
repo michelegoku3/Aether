@@ -1,6 +1,8 @@
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
+#include <optional>
 
 #include "core/SteamTypes.h"
 
@@ -12,8 +14,12 @@ namespace ac::hooks::CmdUser {
 // Registers this module's handlers with the IPC bus.
 void Register();
 
-// eticket async-call bookkeeping, consumed by CmdUtils GetAPICallResult.
-steam::AppId LookupETicketAsyncCall(std::uint64_t asyncCall);
-void EraseETicketAsyncCall(std::uint64_t asyncCall);
+// ETicket async-call bookkeeping, consumed by CmdUtils GetAPICallResult.
+// The implementation keeps this state bounded and expires abandoned calls.
+bool RememberETicketAsyncCall(std::uint64_t asyncCall, steam::AppId appId);
+std::optional<steam::AppId> ClaimETicketAsyncCall(std::uint64_t asyncCall);
+void ForgetETicketAsyncCall(std::uint64_t asyncCall);
+void ResetETicketAsyncCalls();
+std::size_t PendingETicketAsyncCallCount();
 
 }  // namespace ac::hooks::CmdUser
