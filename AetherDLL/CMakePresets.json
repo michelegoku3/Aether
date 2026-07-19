@@ -1,0 +1,19 @@
+{
+  "version": 3,
+  "cmakeMinimumRequired": { "major": 3, "minor": 21, "patch": 0 },
+  "configurePresets": [
+    {
+      "name": "x64-Release",
+      "displayName": "x64 Release (Only)",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/out/build/${presetName}",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release"
+      },
+      "architecture": { "value": "x64", "strategy": "external" }
+    }
+  ],
+  "buildPresets": [
+    { "name": "x64-Release", "configurePreset": "x64-Release" }
+  ]
+}

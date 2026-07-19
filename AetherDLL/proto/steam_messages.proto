@@ -1,0 +1,116 @@
+// AetherCore — minimal Steam protobuf definitions.
+//
+// Only the messages the wire-level subsystems actually touch are declared here.
+// Achievement/user-stats messages are intentionally absent (that subsystem is
+// excluded from this project), keeping the generated code small.
+
+syntax = "proto2";
+
+// ---------------------------------------------------------------------------
+// Common protobuf header that prefixes every framed message body.
+// ---------------------------------------------------------------------------
+message CMsgProtoBufHeader {
+    optional fixed64 steamid = 1;
+    optional int32 client_sessionid = 2;
+    optional uint32 routing_appid = 3;
+    optional fixed64 jobid_source = 10 [default = 18446744073709551615];
+    optional fixed64 jobid_target = 11 [default = 18446744073709551615];
+    optional string target_job_name = 12;
+    optional int32 eresult = 13 [default = 2];
+}
+
+// ---------------------------------------------------------------------------
+// CMsgClientRequestEncryptedAppTicketResponse (eMsg 5527) — wire-level ETicket
+// fallback. Only the fields we inspect/patch are declared.
+// ---------------------------------------------------------------------------
+message EncryptedAppTicket {
+    optional uint32 ticket_version_no = 1;
+    optional uint32 crc_encryptedticket = 2;
+    optional uint32 cb_encrypteduserdata = 3;
+    optional uint32 cb_encrypted_appownershipticket = 4;
+    optional bytes encrypted_ticket = 5;
+}
+
+message CMsgClientRequestEncryptedAppTicketResponse {
+    optional uint32 app_id = 1;
+    optional int32 eresult = 2 [default = 2];
+    optional EncryptedAppTicket encrypted_app_ticket = 3;
+}
+
+// ---------------------------------------------------------------------------
+// CMsgClientPICSProductInfoRequest (eMsg 8903) — access-token injection.
+// ---------------------------------------------------------------------------
+message CMsgClientPICSProductInfoRequest {
+    message AppInfo {
+        optional uint32 appid = 1;
+        optional uint64 access_token = 2;
+        optional bool only_public_obsolete = 3;
+    }
+    message PackageInfo {
+        optional uint32 packageid = 1;
+        optional uint64 access_token = 2;
+    }
+    repeated PackageInfo packages = 1;
+    repeated AppInfo apps = 2;
+    optional bool meta_data_only = 3;
+    optional uint32 num_prev_failed = 4;
+    optional uint32 OBSOLETE_supports_package_tokens = 5;
+    optional uint32 sequence_number = 6;
+    optional bool single_response = 7;
+}
+
+// ---------------------------------------------------------------------------
+// CMsgClientPersonaState (eMsg 766) — local inject + OnlineFix patch.
+// Only the fields we read/patch are declared.
+// ---------------------------------------------------------------------------
+message CMsgClientPersonaState {
+    message Friend {
+        message KV {
+            optional string key = 1;
+            optional string value = 2;
+        }
+        optional fixed64 friendid = 1;
+        optional uint32 game_played_app_id = 3;
+        optional string game_name = 55;
+        optional fixed64 gameid = 56;
+        repeated KV rich_presence = 71;
+    }
+    optional uint32 status_flags = 1;
+    repeated Friend friends = 2;
+}
+
+// ---------------------------------------------------------------------------
+// CMsgClientGamesPlayed (eMsg 742 / 5410) — presence tracking + extra_info.
+// Field numbers match OpenSteamTool / Steam wire layout.
+// ---------------------------------------------------------------------------
+message CMsgClientGamesPlayed {
+    message GamePlayed {
+        optional uint64 steam_id_gs = 1;
+        optional fixed64 game_id = 2;
+        optional string game_extra_info = 7;
+    }
+    repeated GamePlayed games_played = 1;
+}
+
+// ---------------------------------------------------------------------------
+// CMsgClientRichPresenceUpload (eMsg 7501) — capture game RP key/values.
+// ---------------------------------------------------------------------------
+message CMsgClientRichPresenceUpload {
+    optional bytes rich_presence_kv = 1;
+}
+
+// ---------------------------------------------------------------------------
+// ContentServerDirectory.GetManifestRequestCode (151/147 service job) —
+// manifest-request-code fallback bridge.
+// ---------------------------------------------------------------------------
+message CContentServerDirectory_GetManifestRequestCode_Request {
+    optional uint32 app_id = 1;
+    optional uint32 depot_id = 2;
+    optional uint64 manifest_id = 3;
+    optional string app_branch = 4;
+    optional string branch_password_hash = 5;
+}
+
+message CContentServerDirectory_GetManifestRequestCode_Response {
+    optional uint64 manifest_request_code = 1;
+}
