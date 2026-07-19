@@ -183,10 +183,8 @@ namespace ac::hooks {
         HookPattern("GetRemoteStorageSyncState", "steamclient", diversion, o_GetRemoteStorageSyncState, h_GetRemoteStorageSyncState);
         HookPattern("CloseAppCloud", "steamclient", diversion, o_CloseAppCloud, h_CloseAppCloud);
 
-        int cnt = (o_IsCloudEnabledForApp ? 1 : 0) + (o_GetRemoteStorageSyncState ? 1 : 0) + (o_CloseAppCloud ? 1 : 0);
-        AC_LOG_INFO(kModule, "LicenseHooks: IsCloud=%s GetState=%s Close=%s -> total cloud gates %d",
-            o_IsCloudEnabledForApp ? "ok" : "miss", o_GetRemoteStorageSyncState ? "ok" : "miss",
-            o_CloseAppCloud ? "ok" : "miss", cnt);
-        diag::Record("cloud_v3_summary", "IsCloud=" + (std::string)(o_IsCloudEnabledForApp ? "ok" : "miss") + " GetState=" + (o_GetRemoteStorageSyncState ? "ok" : "miss") + " Close=" + (o_CloseAppCloud ? "ok" : "miss"));
+        // Final per-hook status is reported by HookManager::InstallAll() and
+        // StatusWriter reads g_state.hookManager directly — no local summary
+        // here, mirroring the other Register*Hooks modules.
     }
 } // namespace ac::hooks
