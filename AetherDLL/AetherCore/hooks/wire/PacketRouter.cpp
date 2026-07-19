@@ -146,7 +146,9 @@ std::int32_t DispatchRecv(const WireFrame& f) {
             if (!ServiceJobName(f, job)) return kNoChange;
             std::uint32_t h = FnvHash(job.c_str());
             if (h == job_hash::kNotifyRunningApps) {
-                return FamilySharing::ClearBody();
+                return FamilySharing::ShouldSuppress()
+                    ? FamilySharing::ClearBody()
+                    : kNoChange;
             }
             if (h == job_hash::kGetManifestRequestCode) {
                 return ManifestBridge::HandleRecv(f, t_scratchBody.data(), kWireMaxBodyBytes,
@@ -161,7 +163,9 @@ std::int32_t DispatchRecv(const WireFrame& f) {
             return EticketModule::HandleRecv(f, t_scratchBody.data(), kWireMaxBodyBytes);
         case emsg::kClientSharedLibraryLockStatus:
         case emsg::kClientSharedLibraryStopPlaying:
-            return FamilySharing::ClearBody();
+            return FamilySharing::ShouldSuppress()
+                ? FamilySharing::ClearBody()
+                : kNoChange;
         default:
             AC_LOG_TRACE_ONCE(kModule, "Pass-through recv frame eMsg=%u bodyLen=%u.", f.eMsg, f.bodyLen);
             return kNoChange;
