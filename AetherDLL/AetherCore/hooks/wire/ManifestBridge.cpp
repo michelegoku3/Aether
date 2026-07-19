@@ -48,6 +48,7 @@ std::int32_t HandleSend(const WireFrame& frame) {
 std::int32_t HandleRecv(const WireFrame& frame, std::uint8_t* out, std::uint32_t outCap,
                         std::uint8_t* outHeader, std::uint32_t outHeaderCap,
                         std::int32_t* outHeaderLen) {
+    if (!outHeaderLen) return kNoChange;
     CMsgProtoBufHeader hdr;
     if (!hdr.ParseFromArray(frame.header, static_cast<int>(frame.headerLen)) ||
         !hdr.has_jobid_target()) {

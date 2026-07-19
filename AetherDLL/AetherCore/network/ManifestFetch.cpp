@@ -5,7 +5,9 @@
 #include <chrono>
 #include <cctype>
 #include <charconv>
+#include <exception>
 #include <future>
+#include <memory>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -19,6 +21,9 @@ namespace ac::manifestfetch {
 namespace {
 
 constexpr const char* kModule = "ManifestFetch";
+constexpr std::size_t kMaxPendingJobs = 256;
+constexpr std::size_t kMaxInflightLookups = 128;
+constexpr std::size_t kMaxCacheEntries = 1024;
 
 std::string ExpandTemplate(std::string_view tmpl, std::uint64_t gid,
                            std::uint32_t appId, std::uint32_t depotId) {
@@ -77,6 +82,19 @@ bool IsTrustedHost(std::string_view host) {
     return false;
 }
 
+bool IsSupportedProviderUrl(std::string_view url, std::string_view host) {
+    const bool https = url.size() >= 8 && EqualsIgnoreCase(url.substr(0, 8), "https://");
+    const bool http = url.size() >= 7 && EqualsIgnoreCase(url.substr(0, 7), "http://");
+    if ((!https && !http) || host.empty()) return false;
+    // Credentials are not needed for configured manifest providers and make
+    // host parsing/redirect auditing unnecessarily ambiguous.
+    const std::size_t schemeEnd = url.find("://");
+    const std::size_t authorityEnd = url.find_first_of("/?#", schemeEnd == std::string_view::npos ? 0 : schemeEnd + 3);
+    const std::size_t at = url.find('@', schemeEnd == std::string_view::npos ? 0 : schemeEnd + 3);
+    return at == std::string_view::npos ||
+           (authorityEnd != std::string_view::npos && at > authorityEnd);
+}
+
 bool UsesProviderCompatAgent(std::string_view url) {
     return EqualsIgnoreCase(ExtractHost(url), "manifest.opensteamtool.com");
 }
@@ -90,7 +108,7 @@ bool ParseDigitsOnly(std::string_view body, std::uint64_t* out) {
     if (b == e) return false;
     std::uint64_t value = 0;
     auto [_, ec] = std::from_chars(body.data() + b, body.data() + e, value);
-    if (ec != std::errc{}) return false;
+    if (ec != std::errc{} || value == 0) return false;
     *out = value;
     return true;
 }
@@ -103,11 +121,25 @@ bool ParseJsonDigitField(std::string_view body, std::uint64_t* out) {
     for (auto key : kKeys) {
         const std::size_t k = body.find(key);
         if (k == std::string_view::npos) continue;
-        const std::size_t q1 = body.find('"', k + key.size());
-        if (q1 == std::string_view::npos) continue;
-        const std::size_t q2 = body.find('"', q1 + 1);
-        if (q2 == std::string_view::npos) continue;
-        if (ParseDigitsOnly(body.substr(q1 + 1, q2 - q1 - 1), out)) return true;
+        std::size_t pos = body.find(':', k + key.size());
+        if (pos == std::string_view::npos) continue;
+        while (pos + 1 < body.size() && std::isspace(static_cast<unsigned char>(body[pos + 1]))) ++pos;
+        ++pos;
+        if (pos >= body.size()) continue;
+
+        if (body[pos] == '"') {
+            const std::size_t end = body.find('"', pos + 1);
+            if (end != std::string_view::npos &&
+                ParseDigitsOnly(body.substr(pos + 1, end - pos - 1), out)) {
+                return true;
+            }
+            continue;
+        }
+
+        const std::size_t end = body.find_first_not_of("0123456789", pos);
+        const std::string_view digits = body.substr(
+            pos, end == std::string_view::npos ? body.size() - pos : end - pos);
+        if (ParseDigitsOnly(digits, out)) return true;
     }
     return false;
 }
@@ -126,10 +158,9 @@ std::optional<std::uint64_t> RunLookup(std::uint64_t gid, std::uint32_t appId,
 
         const std::string url = ExpandTemplate(tmpl, gid, appId, depotId);
         const std::string_view host = ExtractHost(url);
-        if (!IsTrustedHost(host)) {
-            AC_LOG_WARN(kModule, "gid=%llu provider %zu skipped, host '%.*s' not trusted.",
-                        static_cast<unsigned long long>(gid), i + 1,
-                        static_cast<int>(host.size()), host.data());
+        if (!IsSupportedProviderUrl(url, host) || !IsTrustedHost(host)) {
+            AC_LOG_WARN(kModule, "gid=%llu provider %zu skipped, URL/host not trusted.",
+                        static_cast<unsigned long long>(gid), i + 1);
             continue;
         }
 
@@ -183,12 +214,21 @@ std::optional<std::uint64_t> RunLookup(std::uint64_t gid, std::uint32_t appId,
 
 void Submit(std::uint64_t jobId, std::uint64_t manifestGid,
             std::uint32_t appId, std::uint32_t depotId) {
-    const LookupKey key{manifestGid, appId, depotId};
+    if (jobId == 0 || manifestGid == 0 || appId == 0 || depotId == 0) {
+        AC_LOG_WARN(kModule, "Rejected invalid manifest lookup identifiers.");
+        return;
+    }
 
+    const LookupKey key{manifestGid, appId, depotId};
     std::lock_guard<std::mutex> lock(g_state.manifestFetch.mutex);
     if (g_state.manifestFetch.pending.count(jobId)) {
         AC_LOG_DEBUG(kModule, "Duplicate submit for job=%llu ignored.",
                      static_cast<unsigned long long>(jobId));
+        return;
+    }
+    if (g_state.manifestFetch.pending.size() >= kMaxPendingJobs) {
+        AC_LOG_WARN(kModule, "Manifest pending limit reached; job=%llu rejected.",
+                    static_cast<unsigned long long>(jobId));
         return;
     }
 
@@ -212,16 +252,48 @@ void Submit(std::uint64_t jobId, std::uint64_t manifestGid,
         return;
     }
 
-    auto fut = std::async(std::launch::async, [key]() -> std::optional<std::uint64_t> {
-        std::optional<std::uint64_t> result = RunLookup(key.gid, key.appId, key.depotId);
+    if (g_state.manifestFetch.inflight.size() >= kMaxInflightLookups) {
+        AC_LOG_WARN(kModule, "Manifest in-flight limit reached; job=%llu rejected.",
+                    static_cast<unsigned long long>(jobId));
+        return;
+    }
+
+    std::shared_future<std::optional<std::uint64_t>> fut;
+    auto startPromise = std::make_shared<std::promise<void>>();
+    const std::shared_future<void> startGate = startPromise->get_future().share();
+    try {
+        fut = std::async(std::launch::async, [key, startGate]() -> std::optional<std::uint64_t> {
+        startGate.wait();
+        std::optional<std::uint64_t> result;
+        try {
+            result = RunLookup(key.gid, key.appId, key.depotId);
+        } catch (const std::exception& e) {
+            AC_LOG_ERROR(kModule, "Manifest lookup worker failed: %s", e.what());
+        } catch (...) {
+            AC_LOG_ERROR(kModule, "Manifest lookup worker failed with unknown exception.");
+        }
+
         std::lock_guard<std::mutex> lock(g_state.manifestFetch.mutex);
-        if (result) g_state.manifestFetch.cache[key] = *result;
+        if (result) {
+            if (g_state.manifestFetch.cache.size() >= kMaxCacheEntries) {
+                g_state.manifestFetch.cache.erase(g_state.manifestFetch.cache.begin());
+            }
+            g_state.manifestFetch.cache[key] = *result;
+        }
         g_state.manifestFetch.inflight.erase(key);
         return result;
-    }).share();
+        }).share();
+    } catch (const std::exception& e) {
+        AC_LOG_ERROR(kModule, "Manifest lookup scheduling failed: %s", e.what());
+        return;
+    } catch (...) {
+        AC_LOG_ERROR(kModule, "Manifest lookup scheduling failed with unknown exception.");
+        return;
+    }
 
     g_state.manifestFetch.inflight.emplace(key, fut);
     g_state.manifestFetch.pending.emplace(jobId, fut);
+    startPromise->set_value();
     AC_LOG_INFO(kModule, "job=%llu gid=%llu lookup started.",
                 static_cast<unsigned long long>(jobId),
                 static_cast<unsigned long long>(manifestGid));
@@ -245,7 +317,17 @@ std::optional<std::uint64_t> Resolve(std::uint64_t jobId) {
         diag::Record("manifest_timeout", std::to_string(jobId));
         return std::nullopt;
     }
-    return fut.get();
+    try {
+        return fut.get();
+    } catch (const std::exception& e) {
+        AC_LOG_ERROR(kModule, "job=%llu result retrieval failed: %s.",
+                     static_cast<unsigned long long>(jobId), e.what());
+        return std::nullopt;
+    } catch (...) {
+        AC_LOG_ERROR(kModule, "job=%llu result retrieval failed with unknown exception.",
+                     static_cast<unsigned long long>(jobId));
+        return std::nullopt;
+    }
 }
 
 std::size_t PendingCount() {
