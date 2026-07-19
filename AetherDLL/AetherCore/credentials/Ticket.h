@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
 #include <vector>
 
@@ -21,10 +22,12 @@ namespace ac::ticket {
 inline constexpr std::uint32_t kAppTicketSteamIdOffset = 8;
 inline constexpr std::uint32_t kAppTicketAppIdOffset = 16;
 inline constexpr std::uint32_t kAppTicketSignatureSize = 128;
+inline constexpr std::size_t kMaxAppTicketBytes = 1u * 1024u * 1024u;
 
 enum class AppTicketStatus {
     Empty,
     TooSmall,
+    InvalidLayout,
     SteamIdMismatch,
     AppIdMismatch,
     OkStandard,

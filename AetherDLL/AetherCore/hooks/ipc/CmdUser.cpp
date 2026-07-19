@@ -41,7 +41,7 @@ void GetSteamID(steam::CSteamPipeClient* pipe, steam::CUtlBuffer*, steam::CUtlBu
         AC_LOG_WARN_ONCE(kModule, "GetSteamID: no SteamID for app %u; leaving reply untouched.", appId);
         return;
     }
-    if (!pWrite || pWrite->TellPut() < 9) return;
+    if (!pWrite || !pWrite->Base() || pWrite->TellPut() < 9) return;
 
     std::uint8_t* base = pWrite->Base();
     base[0] = kIpcReplyTag;
@@ -54,14 +54,17 @@ void GetSteamID(steam::CSteamPipeClient* pipe, steam::CUtlBuffer*, steam::CUtlBu
 //   Response: [tag][uint32 ticketSize][ticket bytes ...][offsets block (16 b)]
 void GetAppOwnershipTicketExtendedData(steam::CSteamPipeClient*, steam::CUtlBuffer* pRead,
                                        steam::CUtlBuffer* pWrite) {
-    if (!pRead || pRead->TellPut() < kIpcArgsOffset + 8) return;
+    if (!pRead || !pRead->Base() || pRead->TellPut() < kIpcArgsOffset + 8) return;
     const std::uint8_t* args = pRead->Base() + kIpcArgsOffset;
 
     std::uint32_t reqAppId = 0;
     std::int32_t reqBufSize = 0;
     std::memcpy(&reqAppId, args, 4);
     std::memcpy(&reqBufSize, args + 4, 4);
-    if (reqBufSize < 0) return;
+    if (reqBufSize < 0 || static_cast<std::uint64_t>(reqBufSize) > ticket::kMaxAppTicketBytes) {
+        AC_LOG_WARN_ONCE(kModule, "TicketExtendedData: invalid caller buffer size for app %u.", reqAppId);
+        return;
+    }
     if (!luadata::HasDepot(reqAppId)) {
         AC_LOG_WARN_ONCE(kModule, "TicketExtendedData: requested app %u is not configured; leaving reply untouched.",
                     reqAppId);
@@ -79,7 +82,8 @@ void GetAppOwnershipTicketExtendedData(steam::CSteamPipeClient*, steam::CUtlBuff
 
     // Reply must fit: tag + size + caller buffer + 16-byte offset block.
     const std::uint32_t total = 1 + 4 + static_cast<std::uint32_t>(reqBufSize) + 16;
-    if (!pWrite || static_cast<std::uint32_t>(pWrite->TellPut()) < total) {
+    if (!pWrite || !pWrite->Base() || pWrite->TellPut() < 0 ||
+        static_cast<std::uint32_t>(pWrite->TellPut()) < total) {
         AC_LOG_WARN_ONCE(kModule, "TicketExtendedData: reply buffer too small for app %u.", reqAppId);
         return;
     }
@@ -124,7 +128,7 @@ void RequestEncryptedAppTicket(steam::CSteamPipeClient* pipe, steam::CUtlBuffer*
     // Request layout after the IPC header: [u32 nonceLen][nonce bytes...].
     // If a Lua-configured backend exists, try to mint a fresh ETicket/AppTicket
     // before falling back to whatever is already cached in the registry.
-    if (pRead && pRead->TellPut() >= kIpcArgsOffset + 4) {
+    if (pRead && pRead->Base() && pRead->TellPut() >= kIpcArgsOffset + 4) {
         const std::uint8_t* args = pRead->Base() + kIpcArgsOffset;
         std::uint32_t nonceLen = 0;
         std::memcpy(&nonceLen, args, sizeof(nonceLen));
@@ -165,6 +169,10 @@ void GetEncryptedAppTicket(steam::CSteamPipeClient* pipe, steam::CUtlBuffer*,
     const std::uint32_t ticketSize = static_cast<std::uint32_t>(ticket.size());
     const std::int32_t total = 1 + 1 + 4 + static_cast<std::int32_t>(ticketSize);
     capture::EnsureBufferSize(pWrite, total);
+    if (!pWrite || !pWrite->Base() || pWrite->TellPut() < total) {
+        AC_LOG_WARN_ONCE(kModule, "GetEncryptedAppTicket: response buffer unavailable for app %u.", appId);
+        return;
+    }
 
     std::uint8_t* base = pWrite->Base();
     base[0] = kIpcReplyTag;

@@ -113,30 +113,40 @@ AppTicketInspection InspectAppOwnershipTicket(const std::vector<std::uint8_t>& d
         out.status = AppTicketStatus::Empty;
         return out;
     }
-    if (data.size() <= kForgedTailGap ||
+    if (appId == 0 || data.size() > kMaxAppTicketBytes ||
         data.size() < kAppTicketAppIdOffset + sizeof(steam::AppId) ||
         data.size() < kAppTicketSteamIdOffset + sizeof(std::uint64_t) ||
         data.size() < sizeof(std::uint32_t)) {
         out.status = AppTicketStatus::TooSmall;
-        AC_LOG_DEBUG(kModule, "InspectTicket app %u: data size %zu too small.", appId, data.size());
+        AC_LOG_DEBUG(kModule, "InspectTicket app %u: invalid size %zu.", appId, data.size());
         return out;
     }
+
     if (!ReadValue(data, 0, out.signatureOffset) ||
-        out.signatureOffset > data.size() ||
-        kAppTicketSignatureSize > data.size() - out.signatureOffset) {
+        !ReadValue(data, kAppTicketSteamIdOffset, out.steamId) ||
+        !ReadValue(data, kAppTicketAppIdOffset, out.standardAppId)) {
         out.status = AppTicketStatus::TooSmall;
-        AC_LOG_DEBUG(kModule, "InspectTicket app %u: signature offset invalid.", appId);
         return out;
     }
 
-    ReadValue(data, kAppTicketSteamIdOffset, out.steamId);
-    ReadValue(data, kAppTicketAppIdOffset, out.standardAppId);
+    // A standard ticket ends exactly at the signature. The supported forged
+    // layout has one AppID immediately before that same signature. Requiring
+    // exact equality avoids accepting arbitrary trailing bytes or guessing
+    // that a random tail field is a forged AppID.
+    const std::size_t signatureOffset = out.signatureOffset;
+    const bool standardLayout =
+        signatureOffset <= data.size() &&
+        kAppTicketSignatureSize == data.size() - signatureOffset;
+    const bool forgedLayout =
+        signatureOffset <= data.size() &&
+        sizeof(steam::AppId) + kAppTicketSignatureSize == data.size() - signatureOffset;
 
-    out.forgedAppIdOffset = static_cast<std::uint32_t>(data.size() - kForgedTailGap);
-    if (out.forgedAppIdOffset != kAppTicketAppIdOffset)
-        ReadValue(data, out.forgedAppIdOffset, out.forgedAppId);
-    else
-        out.forgedAppId = out.standardAppId;
+    if (!standardLayout && !forgedLayout) {
+        out.status = AppTicketStatus::InvalidLayout;
+        AC_LOG_DEBUG(kModule, "InspectTicket app %u: unsupported layout size=%zu signatureOffset=%u.",
+                     appId, data.size(), out.signatureOffset);
+        return out;
+    }
 
     if (expectedSteamId != 0 && out.steamId != expectedSteamId) {
         out.status = AppTicketStatus::SteamIdMismatch;
@@ -145,17 +155,33 @@ AppTicketInspection InspectAppOwnershipTicket(const std::vector<std::uint8_t>& d
                      static_cast<unsigned long long>(expectedSteamId));
         return out;
     }
-    if (out.standardAppId == appId) {
-        out.status = AppTicketStatus::OkStandard;
+
+    if (standardLayout) {
+        out.forgedAppIdOffset = out.signatureOffset;
+        out.forgedAppId = 0;
+        if (out.standardAppId == appId) {
+            out.status = AppTicketStatus::OkStandard;
+            return out;
+        }
+        out.status = AppTicketStatus::AppIdMismatch;
+        AC_LOG_DEBUG(kModule, "InspectTicket app %u: standard AppId mismatch (ticket=%u).",
+                     appId, out.standardAppId);
+        return out;
+    }
+
+    out.forgedAppIdOffset = out.signatureOffset;
+    if (!ReadValue(data, out.forgedAppIdOffset, out.forgedAppId)) {
+        out.status = AppTicketStatus::InvalidLayout;
         return out;
     }
     if (out.forgedAppId == appId) {
         out.status = AppTicketStatus::OkForged;
         return out;
     }
+
     out.status = AppTicketStatus::AppIdMismatch;
-    AC_LOG_DEBUG(kModule, "InspectTicket app %u: AppId mismatch (standard=%u forged=%u target=%u).",
-                 appId, out.standardAppId, out.forgedAppId, appId);
+    AC_LOG_DEBUG(kModule, "InspectTicket app %u: forged AppId mismatch (forged=%u standard=%u).",
+                 appId, out.forgedAppId, out.standardAppId);
     return out;
 }
 
@@ -197,6 +223,11 @@ std::vector<std::uint8_t> ForgeAppOwnershipTicket(steam::AppId sourceAppId,
 bool GetAppOwnershipTicket(steam::AppId appId, OwnershipTicket& ticketOut) {
     ticketOut = {};
     const std::uint64_t activeSteamId = steamid::GetActiveSteamId64();
+    if (appId == 0 || activeSteamId == 0) {
+        ++g_state.ticketForgeFailureCount;
+        AC_LOG_WARN(kModule, "GetAppOwnershipTicket: missing app ID or active SteamID (app=%u).", appId);
+        return false;
+    }
 
     ticketOut.data = credential::ReadAppOwnershipTicket(appId);
     AppTicketInspection inspection =
