@@ -28,6 +28,10 @@ std::uint64_t GetActiveSteamId64();
 //   1. HKCU\...\Apps\<appId>\SteamID  (REG_SZ written by Steam)
 //   2. the SteamID embedded in the cached AppOwnershipTicket
 //   3. a userdata\<accountId>\<appId>\ folder (the user has played it)
+//   4. active-user fallback: the currently logged-in SteamID, persisted to
+//      Apps\<appId>\SteamID so step 1 short-circuits on subsequent calls.
+//      Catches the common case where a Lua-managed fake-owned game has
+//      never been played genuinely and no ticket is cached yet.
 // Only configured apps (present in depotKeys) are spoofed; others return 0.
 std::uint64_t GetSpoofSteamId(steam::AppId appId);
 

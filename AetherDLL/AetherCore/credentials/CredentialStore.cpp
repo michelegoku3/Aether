@@ -1,6 +1,7 @@
 #include "pch.h"
 #include "credentials/CredentialStore.h"
 
+#include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <string>
@@ -28,6 +29,30 @@ std::string ReadRegString(HKEY root, const char* subKey, const char* value) {
         return {};
     }
     return std::string(buffer);
+}
+
+bool WriteRegString(const char* subKey, const char* valueName, const std::string& data) {
+    if (!subKey || !valueName) return false;
+    HKEY key = nullptr;
+    if (RegCreateKeyExA(HKEY_CURRENT_USER, subKey, 0, nullptr, 0,
+                        KEY_WRITE, nullptr, &key, nullptr) != ERROR_SUCCESS) {
+        AC_LOG_DEBUG(kModule, "WriteRegString: key create failed for %s\\%s.",
+                     subKey, valueName);
+        return false;
+    }
+    // For REG_SZ, the cbData argument must include the trailing NUL
+    // (per Microsoft docs). data.size() counts only the visible chars,
+    // so add 1 for the implicit NUL appended at the end of the string.
+    LSTATUS status = RegSetValueExA(key, valueName, 0, REG_SZ,
+                                    reinterpret_cast<const BYTE*>(data.data()),
+                                    static_cast<DWORD>(data.size() + 1));
+    RegCloseKey(key);
+    if (status != ERROR_SUCCESS) {
+        AC_LOG_DEBUG(kModule, "WriteRegString: set failed for %s\\%s (status=%ld).",
+                     subKey, valueName, status);
+        return false;
+    }
+    return true;
 }
 
 bool WriteBinary(steam::AppId appId, const char* valueName,
@@ -131,6 +156,29 @@ std::uint32_t ReadActiveUserId() {
 std::uint64_t ReadAppSteamIdValue(steam::AppId appId) {
     const std::string subKey = AppKeyPath(appId);
     return ParseDecimal(ReadRegString(HKEY_CURRENT_USER, subKey.c_str(), "SteamID"));
+}
+
+bool WriteAppSteamIdValue(steam::AppId appId, std::uint64_t steamId) {
+    if (appId == 0 || steamId == 0) {
+        AC_LOG_DEBUG(kModule, "WriteAppSteamIdValue: refused app=%u steamId=%llu.",
+                     appId, static_cast<unsigned long long>(steamId));
+        return false;
+    }
+    const std::string subKey = AppKeyPath(appId);
+    // SteamID64 fits in 17 decimal digits; the buffer is comfortably large.
+    char buf[32];
+    const int len = std::snprintf(buf, sizeof(buf), "%llu",
+                                  static_cast<unsigned long long>(steamId));
+    if (len <= 0 || static_cast<std::size_t>(len) >= sizeof(buf)) {
+        AC_LOG_DEBUG(kModule, "WriteAppSteamIdValue: format overflow for app=%u.", appId);
+        return false;
+    }
+    if (!WriteRegString(subKey.c_str(), "SteamID", std::string(buf))) {
+        return false;
+    }
+    AC_LOG_DEBUG(kModule, "WriteAppSteamIdValue: app=%u -> %llu.", appId,
+                 static_cast<unsigned long long>(steamId));
+    return true;
 }
 
 std::string ReadSteamPath() {

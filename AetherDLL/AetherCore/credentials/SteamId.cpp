@@ -108,16 +108,28 @@ std::uint64_t GetActiveSteamId64() {
 std::uint64_t GetSpoofSteamId(steam::AppId appId) {
     if (!luadata::HasDepot(appId)) return 0;
 
+    // 1. Steam-written registry value (genuine-owned apps).
     if (std::uint64_t id = FromAppSteamIdValue(appId)) {
         LogResolutionOnce(appId, "registry", id);
         return id;
     }
+    // 2. SteamID baked into the cached AppTicket.
     if (std::uint64_t id = FromOwnershipTicket(appId)) {
         LogResolutionOnce(appId, "ticket", id);
         return id;
     }
+    // 3. An account that has previously played this app (filesystem hint).
     if (std::uint64_t id = FromUserdataFolder(appId)) {
         LogResolutionOnce(appId, "userdata", id);
+        return id;
+    }
+    // 4. Active-user fallback. Catches the case where the user added the
+    //    game via Lua, has not played it genuinely, and Steam has not yet
+    //    populated Apps\<id>\SteamID. Persisting the resolved id to the
+    //    registry lets the next IPC call short-circuit on step 1.
+    if (std::uint64_t id = GetActiveSteamId64()) {
+        const bool wrote = credential::WriteAppSteamIdValue(appId, id);
+        LogResolutionOnce(appId, wrote ? "active-written" : "active-ephemeral", id);
         return id;
     }
     LogResolutionOnce(appId, "none", 0);
