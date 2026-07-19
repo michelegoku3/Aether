@@ -170,7 +170,8 @@ struct AetherCoreState {
     // Populated on the init thread before hooks are installed; read-only after.
     struct IpcSpecState {
         bool loaded = false;
-        std::unordered_map<std::string, std::uint32_t> hashes;  // "IFace::Method" -> hash
+        std::unordered_map<std::string, std::uint8_t> interfaceIds; // "IFace" -> interface id
+        std::unordered_map<std::string, std::uint32_t> hashes;      // "IFace::Method" -> hash
     };
     IpcSpecState ipcSpec;
 

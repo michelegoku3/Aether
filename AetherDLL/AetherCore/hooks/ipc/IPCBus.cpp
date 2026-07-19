@@ -2,6 +2,7 @@
 #include "hooks/ipc/IPCBus.h"
 
 #include <cstring>
+#include <string>
 #include <unordered_map>
 
 #include "utils/IpcSpec.h"
@@ -58,7 +59,7 @@ bool h_IPCProcessMessage(void* server, steam::HSteamPipe hSteamPipe,
     const IpcHandlerEntry* entry = nullptr;
     steam::CSteamPipeClient* pipe = GetPipe(server, hSteamPipe);
 
-    if (pRead && pRead->TellPut() > 0) {
+    if (pRead && pRead->Base() && pRead->TellPut() > 0) {
         const std::uint8_t* data = pRead->Base();
         const std::uint8_t cmd = data[kIpcOffsetCmd];
 
@@ -99,20 +100,55 @@ bool h_IPCProcessMessage(void* server, steam::HSteamPipe hSteamPipe,
 }  // namespace
 
 void RegisterIpcHandlers(const IpcHandlerEntry* entries, std::size_t count) {
+    if (!entries || count == 0) return;
     s_handlers.reserve(s_handlers.size() + count);
+
     for (std::size_t i = 0; i < count; ++i) {
-        // Use per-build spec hash when available, otherwise fall back to the
-        // compile-time constant. This keeps IPC dispatch working across Steam
-        // client updates that shift internal method hashes.
-        std::uint32_t hash = entries[i].funcHash;
-        if (auto specHash = ipcspec::ResolveHash(entries[i].name)) {
-            if (*specHash != hash) {
-                AC_LOG_INFO(kModule, "Spec override: %s 0x%08X -> 0x%08X",
-                            entries[i].name, hash, *specHash);
-            }
-            hash = *specHash;
+        const IpcHandlerEntry& source = entries[i];
+        if (!source.name || !source.handler) {
+            AC_LOG_WARN(kModule, "Ignoring IPC handler with incomplete metadata.");
+            continue;
         }
-        s_handlers.emplace(HandlerKey(entries[i].interfaceId, hash), entries[i]);
+
+        IpcHandlerEntry resolved = source;
+        std::uint8_t interfaceId = source.interfaceId;
+        std::uint32_t hash = source.funcHash;
+
+        const bool dynamicSpec = ipcspec::IsLoaded();
+        if (dynamicSpec) {
+            const std::string name(source.name);
+            const std::size_t separator = name.find("::");
+            if (separator == std::string::npos || separator == 0) {
+                AC_LOG_WARN(kModule, "IPC handler '%s' has invalid qualified name; disabled.",
+                            source.name);
+                continue;
+            }
+            const std::string interfaceName = name.substr(0, separator);
+            const auto specInterface = ipcspec::ResolveInterfaceId(interfaceName.c_str());
+            const auto specHash = ipcspec::ResolveHash(source.name);
+            if (!specInterface || !specHash) {
+                AC_LOG_WARN(kModule, "IPC handler '%s' disabled: spec metadata missing.",
+                            source.name);
+                g_state.hookManager.RecordMissed(std::string("IPC:") + source.name);
+                continue;
+            }
+            interfaceId = *specInterface;
+            hash = *specHash;
+            if (interfaceId != source.interfaceId || hash != source.funcHash) {
+                AC_LOG_INFO(kModule, "Spec override: %s iface %u->%u hash 0x%08X->0x%08X",
+                            source.name, source.interfaceId, interfaceId,
+                            source.funcHash, hash);
+            }
+        }
+
+        resolved.interfaceId = interfaceId;
+        resolved.funcHash = hash;
+        const auto [it, inserted] = s_handlers.emplace(HandlerKey(interfaceId, hash), resolved);
+        if (!inserted) {
+            AC_LOG_WARN(kModule, "IPC handler collision: '%s' conflicts with '%s'; second disabled.",
+                        source.name, it->second.name ? it->second.name : "<unnamed>");
+            g_state.hookManager.RecordMissed(std::string("IPC collision:") + source.name);
+        }
     }
 }
 

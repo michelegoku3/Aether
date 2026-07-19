@@ -3,11 +3,15 @@
 
 #include <toml++/toml.hpp>
 
+#include <cctype>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
+#include <limits>
 #include <sstream>
 #include <string>
+#include <unordered_map>
+#include <utility>
 
 #include "core/AetherCoreState.h"
 #include "core/Logger.h"
@@ -33,43 +37,75 @@ std::string QualifiedName(std::string_view iface, std::string_view method) {
     return out;
 }
 
-// Parses the IPC spec TOML body into g_state.ipcSpec.hashes.
-// Format (compatible with the KoriaPolis repo):
-//   [IClientUser]
-//   interface_id = 1
-//   [IClientUser.GetSteamID]
-//   funcHash = "0xD6FC3200"
-//   fencepost = "0x..."
-//   argc = 0
+bool ParseHex32(std::string_view text, std::uint32_t& out) {
+    if (text.empty()) return false;
+    std::string value(text);
+    if (value.size() >= 2 && value[0] == '0' &&
+        (value[1] == 'x' || value[1] == 'X')) {
+        value.erase(0, 2);
+    }
+    if (value.empty() || value.size() > 8) return false;
+    for (unsigned char c : value) {
+        if (!std::isxdigit(c)) return false;
+    }
+
+    char* end = nullptr;
+    const unsigned long parsed = std::strtoul(value.c_str(), &end, 16);
+    if (!end || *end != '\0' || parsed == 0 ||
+        parsed > std::numeric_limits<std::uint32_t>::max()) {
+        return false;
+    }
+    out = static_cast<std::uint32_t>(parsed);
+    return true;
+}
+
+// Parses the IPC spec into temporary maps. State is published only after the
+// full document has produced at least one valid method entry.
 bool ParseToml(const std::string& body) {
+    std::unordered_map<std::string, std::uint8_t> interfaceIds;
+    std::unordered_map<std::string, std::uint32_t> hashes;
+
     try {
         auto tbl = toml::parse(body);
         for (const auto& [ifaceKey, ifaceNode] : tbl) {
+            const std::string ifaceName(ifaceKey.str());
             auto* ifaceTbl = ifaceNode.as_table();
-            if (!ifaceTbl) continue;
+            if (!ifaceTbl || ifaceName.empty()) continue;
+
+            if (auto id = (*ifaceTbl)["interface_id"].value<std::int64_t>()) {
+                if (*id <= 0 || *id > 255) {
+                    AC_LOG_WARN(kModule, "Invalid interface_id for %s.", ifaceName.c_str());
+                    continue;
+                }
+                interfaceIds.emplace(ifaceName, static_cast<std::uint8_t>(*id));
+            }
 
             for (const auto& [methodKey, methodNode] : *ifaceTbl) {
+                const std::string methodName(methodKey.str());
                 auto* methodTbl = methodNode.as_table();
-                if (!methodTbl) continue;
+                if (!methodTbl || methodName.empty()) continue;
 
-                // Only method sub-tables with a funcHash field are relevant.
-                auto hashStr = methodTbl->get_as<toml::value<std::string>>("funcHash");
+                auto hashStr = (*methodTbl)["funcHash"].value<std::string>();
                 if (!hashStr) continue;
 
-                const char* start = hashStr->get().c_str();
-                char* end = nullptr;
-                const std::uint32_t hash = std::strtoul(start, &end, 16);
-                if (end == start) continue;  // parse failure
-
-                g_state.ipcSpec.hashes.emplace(
-                    QualifiedName(ifaceKey.str(), methodKey.str()), hash);
+                std::uint32_t hash = 0;
+                if (!ParseHex32(*hashStr, hash)) {
+                    AC_LOG_WARN(kModule, "Invalid funcHash for %s::%s.",
+                                ifaceName.c_str(), methodName.c_str());
+                    continue;
+                }
+                hashes.emplace(QualifiedName(ifaceName, methodName), hash);
             }
         }
     } catch (const toml::parse_error& e) {
         AC_LOG_WARN(kModule, "TOML parse error: %s", e.what());
         return false;
     }
-    return !g_state.ipcSpec.hashes.empty();
+
+    if (hashes.empty()) return false;
+    g_state.ipcSpec.interfaceIds = std::move(interfaceIds);
+    g_state.ipcSpec.hashes = std::move(hashes);
+    return true;
 }
 
 // Reads the spec from the local cache directory.
@@ -130,6 +166,13 @@ bool Init() {
     AC_LOG_INFO(kModule, "Loaded IPC spec from %s (%zu entries).",
                 source.c_str(), g_state.ipcSpec.hashes.size());
     return true;
+}
+
+std::optional<std::uint8_t> ResolveInterfaceId(const char* interfaceName) {
+    if (!g_state.ipcSpec.loaded || !interfaceName) return std::nullopt;
+    auto it = g_state.ipcSpec.interfaceIds.find(interfaceName);
+    if (it != g_state.ipcSpec.interfaceIds.end()) return it->second;
+    return std::nullopt;
 }
 
 std::optional<std::uint32_t> ResolveHash(const char* qualifiedName) {

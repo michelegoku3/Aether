@@ -13,8 +13,9 @@
 // repo) that maps qualified method names to their current funcHash values.
 //
 // Fallback: when no TOML exists (first run, offline, repo doesn't ship IPC
-// specs yet), ResolveHash returns nullopt and IPCBus keeps using the hardcoded
-// constants. No functionality is lost.
+// specs yet), the IPCBus keeps using the hardcoded constants. When a TOML is
+// active but omits a method/interface, that handler is disabled rather than
+// using a hash from a different Steam build.
 //
 // This replaces LumaCore's IpcSpecLoader + IpcMethodLoader + IpcDispatch
 // (~900 lines, own HTTP client, own SHA computation, own cache logic) with a
@@ -28,9 +29,13 @@ namespace ac::ipcspec {
 // calls are no-ops when already loaded.
 bool Init();
 
+// Resolves the interface id for a name like "IClientUser". Returns nullopt
+// when no spec is loaded or the interface is absent.
+std::optional<std::uint8_t> ResolveInterfaceId(const char* interfaceName);
+
 // Resolves the funcHash for a qualified method name like
 // "IClientUser::GetSteamID". Returns nullopt when no spec is loaded or the
-// method name is absent (caller falls back to the compile-time constant).
+// method name is absent.
 std::optional<std::uint32_t> ResolveHash(const char* qualifiedName);
 
 // Whether a spec TOML was loaded and parsed successfully.
