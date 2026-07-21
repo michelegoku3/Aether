@@ -1,0 +1,72 @@
+# ==========================================
+# Aether Repository - Root .gitignore
+# Governs both AetherDesk (Tauri/React) and AetherDLL (C++)
+# ==========================================
+
+# --- Node.js & Frontend (AetherDesk) ---
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+.pnpm-debug.log*
+
+# Build Outputs (Frontend)
+AetherDesk/dist/
+AetherDesk/build/
+AetherDesk/out/
+.svelte-kit/
+.next/
+
+# --- Rust & Tauri Backend (AetherDesk/src-tauri) ---
+# Ignore the entire target compilation directory (where cargo compiles objects)
+AetherDesk/src-tauri/target/
+
+# Ignore local Tauri state / environment files
+AetherDesk/src-tauri/.tauri/
+
+# --- C++ & CMake (AetherDLL) ---
+AetherDLL/out/
+AetherDLL/build/
+AetherDLL/cmake-build-*/
+AetherDLL/.vs/
+AetherDLL/*.user
+AetherDLL/*.suo
+AetherDLL/*.sln.docstates
+AetherDLL/CMakeCache.txt
+AetherDLL/CMakeFiles/
+AetherDLL/cmake_install.cmake
+AetherDLL/install_manifest.txt
+AetherDLL/compile_commands.json
+
+# --- General Compiled Files ---
+*.o
+*.obj
+*.pdb
+*.ilk
+*.exp
+*.gch
+*.pch
+
+# Keep source DLLs out of git control, they are build results
+*.dll
+*.so
+*.dylib
+*.exe
+*.lib
+*.a
+
+# --- Editors & IDEs (VS Code, Visual Studio, CLion) ---
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.swp
+*~
+
+# --- OS System Files ---
+.DS_Store
+Thumbs.db
+Desktop.ini

@@ -1,0 +1,100 @@
+export type TabType = 'aether' | 'home' | 'store' | 'library' | 'download' | 'settings' | 'log' | 'restart';
+
+interface SidebarProps {
+  activeTab: TabType;
+  onTabChange: (tab: TabType) => void;
+}
+
+export const Sidebar = ({ activeTab, onTabChange }: SidebarProps) => {
+  return (
+    <aside className="sidebar">
+      {/* TOP NAVIGATION SECTION */}
+      <div className="sidebar-top">
+        {/* Brand Header */}
+        <div className="sidebar-brand">
+          <div className="brand-icon">Æ</div>
+          <span className="brand-name">AetherDesk</span>
+        </div>
+
+        {/* Separator Line */}
+        <div className="separator brand-separator"></div>
+
+        {/* Aether (Button like the others) */}
+        <button
+          onClick={() => onTabChange('aether')}
+          className={`nav-item ${activeTab === 'aether' ? 'active' : ''}`}
+        >
+          Aether
+        </button>
+
+        {/* Home */}
+        <button
+          onClick={() => onTabChange('home')}
+          className={`nav-item ${activeTab === 'home' ? 'active' : ''}`}
+        >
+          Home
+        </button>
+
+        {/* Store */}
+        <button
+          onClick={() => onTabChange('store')}
+          className={`nav-item ${activeTab === 'store' ? 'active' : ''}`}
+        >
+          Store
+        </button>
+
+        {/* Library (New item, after Store) */}
+        <button
+          onClick={() => onTabChange('library')}
+          className={`nav-item ${activeTab === 'library' ? 'active' : ''}`}
+        >
+          Library
+        </button>
+
+        {/* Download */}
+        <button
+          onClick={() => onTabChange('download')}
+          className={`nav-item ${activeTab === 'download' ? 'active' : ''}`}
+        >
+          Download
+        </button>
+
+        {/* Separator Line */}
+        <div className="separator"></div>
+
+        {/* Settings */}
+        <button
+          onClick={() => onTabChange('settings')}
+          className={`nav-item ${activeTab === 'settings' ? 'active' : ''}`}
+        >
+          Settings
+        </button>
+
+        {/* Log */}
+        <button
+          onClick={() => onTabChange('log')}
+          className={`nav-item ${activeTab === 'log' ? 'active' : ''}`}
+        >
+          Log
+        </button>
+      </div>
+
+      {/* Spacing is handled automatically by CSS flexbox spacing on .sidebar */}
+
+      {/* BOTTOM SECTION */}
+      <div className="sidebar-footer">
+        {/* Separator Line */}
+        <div className="separator"></div>
+
+        {/* Restart Steam */}
+        <button
+          onClick={() => onTabChange('restart')}
+          className={`nav-item ${activeTab === 'restart' ? 'active' : ''}`}
+          style={{ fontWeight: 'bold' }}
+        >
+          Restart Steam
+        </button>
+      </div>
+    </aside>
+  );
+};

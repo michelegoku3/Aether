@@ -1,0 +1,156 @@
+/* Modern Reset and CSS Variables */
+:root {
+  --bg-app: #0c0c0e;
+  --bg-sidebar: #131316;
+  --bg-item-hover: #1e1e24;
+  --bg-item-active: #23232a;
+  --color-text: #e1e1e6;
+  --color-muted: #8f8f9e;
+  --color-cyan: #00b4d8;
+  --border-color: #22222a;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  background-color: var(--bg-app);
+  color: var(--color-text);
+  overflow: hidden;
+}
+
+/* Layout Containers */
+.app-container {
+  display: flex;
+  width: 100vw;
+  height: 100vh;
+}
+
+/* Sidebar Styling */
+.sidebar {
+  width: 250px;
+  height: 100vh;
+  background-color: var(--bg-sidebar);
+  border-right: 1px solid var(--border-color);
+  display: flex;
+  flex-direction: flex-col;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: 20px 0;
+}
+
+.sidebar-top {
+  display: flex;
+  flex-direction: column;
+}
+
+/* Brand Logo area */
+.sidebar-brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 20px 15px 20px;
+}
+
+.brand-icon {
+  width: 32px;
+  height: 32px;
+  background-color: var(--color-cyan);
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: bold;
+  color: #ffffff;
+  font-size: 16px;
+  box-shadow: 0 4px 12px rgba(0, 180, 216, 0.2);
+}
+
+.brand-name {
+  font-weight: 700;
+  font-size: 18px;
+  color: #ffffff;
+  letter-spacing: 0.5px;
+}
+
+/* Separator Line */
+.separator {
+  height: 1px;
+  background-color: var(--border-color);
+  margin: 10px 0;
+}
+
+.brand-separator {
+  margin: 0 0 15px 0;
+}
+
+/* Group Label */
+.group-label {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--color-muted);
+  text-transform: uppercase;
+  letter-spacing: 1.5px;
+  padding: 10px 20px 5px 20px;
+}
+
+/* Nav Item Button */
+.nav-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 20px;
+  color: var(--color-muted);
+  background: none;
+  border: none;
+  font-size: 14px;
+  font-weight: 500;
+  text-align: left;
+  cursor: pointer;
+  width: 100%;
+  transition: all 0.2s ease;
+}
+
+.nav-item:hover {
+  color: #ffffff;
+  background-color: var(--bg-item-hover);
+}
+
+.nav-item.active {
+  color: var(--color-cyan);
+  background-color: var(--bg-item-active);
+  border-left: 3px solid var(--color-cyan);
+  padding-left: 17px;
+}
+
+/* Footer Section of Sidebar */
+.sidebar-footer {
+  display: flex;
+  flex-direction: column;
+}
+
+.sidebar-footer .separator {
+  margin: 15px 0;
+}
+
+/* Main Content Area */
+.main-content {
+  flex-1: 1;
+  flex-grow: 1;
+  background-color: var(--bg-app);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.blank-canvas {
+  width: 100%;
+  height: 100%;
+  background-color: #ffffff; /* user wants a blank white screen area for now */
+}
