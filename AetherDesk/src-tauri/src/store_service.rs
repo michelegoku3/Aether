@@ -8,7 +8,7 @@ pub struct UnifiedStoreGame {
     pub id: u32,
     pub name: String,
     #[serde(rename = "appId")]
-    pub app_id: String, // Resolved Rust style warning, kept JS JSON compatibility!
+    pub app_id: String,
     pub has_manifest: bool,
 }
 
@@ -23,27 +23,66 @@ impl StoreService {
         }
     }
 
+    /// Normalizes strings for high-fidelity comparison (removes punctuation, Roman-numeral conversion, synonyms)
+    pub fn normalize_string(&self, s: &str) -> String {
+        let cleaned = s.to_lowercase()
+            // Strip common symbols
+            .replace('.', "")
+            .replace('\'', "")
+            .replace(':', "")
+            .replace('®', "")
+            .replace('™', "")
+            // Standardize separators
+            .replace('-', " ")
+            .replace('_', " ");
+
+        // Word-by-word substitution to prevent partial string matching issues (like "it" -> "1t")
+        let words: Vec<String> = cleaned
+            .split_whitespace()
+            .map(|w| {
+                match w {
+                    "ix" => "9".to_string(),
+                    "viii" => "8".to_string(),
+                    "vii" => "7".to_string(),
+                    "vi" => "6".to_string(),
+                    "v" => "5".to_string(),
+                    "iv" => "4".to_string(),
+                    "iii" => "3".to_string(),
+                    "ii" => "2".to_string(),
+                    "i" => "1".to_string(),
+                    "civ" => "civilization".to_string(),
+                    _ => w.to_string(),
+                }
+            })
+            .collect();
+
+        words.join(" ")
+    }
+
     /// Reusable professional scoring algorithm supporting exactness-boost and Levenshtein fuzzy search
     pub fn calculate_relevance_score(&self, query: &str, name: &str) -> usize {
-        let q_lc = query.to_lowercase();
-        let n_lc = name.to_lowercase();
+        let q_norm = self.normalize_string(query);
+        let n_norm = self.normalize_string(name);
 
-        if q_lc == n_lc {
-            // Tier 1: Exact Match (Highest Priority!)
+        if q_norm == n_norm {
+            // Tier 1: Normalized Exact Match (Highest Priority!)
             0
-        } else if n_lc.starts_with(&q_lc) {
-            // Tier 2: Prefix Match (Longer names are penalized so shorter/exact prefixes come first!)
-            // Example: Query "The Witch" -> "The Witch" (score 1) will be sorted BEFORE "The Witcher" (score 4)
-            1 + (n_lc.len() - q_lc.len())
-        } else if n_lc.contains(&q_lc) {
-            // Tier 3: Substring Match (Early position boosts priority)
-            let pos = n_lc.find(&q_lc).unwrap_or(0);
-            100 + pos + (n_lc.len() - q_lc.len())
+        } else if n_norm.starts_with(&q_norm) {
+            // Tier 2: Normalized Prefix Match (Shorter names come first)
+            // Example: "The Witch" -> "The Witch" (score 1) sorts BEFORE "The Witcher" (score 4)
+            1 + (n_norm.len() - q_norm.len())
+        } else if n_norm.contains(&q_norm) {
+            // Tier 3: Normalized Substring Match (Early position boosts priority)
+            let pos = n_norm.find(&q_norm).unwrap_or(0);
+            100 + pos + (n_norm.len() - q_norm.len())
         } else {
-            // Tier 4: Fuzzy Levenshtein Distance
-            let dist = self.levenshtein_distance(&q_lc, &n_lc);
-            // Only allow fuzzy match if name is long enough and edit distance is close (<= 3 operations)
-            if dist <= 3 && q_lc.len() > 3 {
+            // Tier 4: Fuzzy Levenshtein Distance on normalized strings
+            let dist = self.levenshtein_distance(&q_norm, &n_norm);
+            
+            // Allow larger Levenshtein matching on longer queries
+            let max_dist = if q_norm.len() > 8 { 3 } else { 2 };
+
+            if dist <= max_dist && q_norm.len() > 3 {
                 1000 + dist
             } else {
                 10000 // Not a reasonable match, deprioritize
@@ -135,8 +174,6 @@ impl StoreService {
         }
 
         // 5. Apply the professional relevance-boosting and fuzzy-sorting!
-        // We exclude items that scored 10000 (not a match) to keep the list clean,
-        // unless it's an App ID match (numeric queries can't be scored as strings).
         let is_numeric = query.trim().parse::<u32>().is_ok();
         
         if !is_numeric {
