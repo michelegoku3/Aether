@@ -20,7 +20,7 @@ export const SettingsView = () => {
           setActiveLibrary(settings.active_library || '');
         }
       } catch (err: any) {
-        showStatus(`Errore nel caricamento delle impostazioni: ${err}`, 'error');
+        showStatus(`Error loading settings: ${err}`, 'error');
       }
     };
     loadSettings();
@@ -34,7 +34,7 @@ export const SettingsView = () => {
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      showStatus('Salvataggio in corso...', 'info');
+      showStatus('Saving settings...', 'info');
       await invoke('save_settings', {
         settings: {
           hubcap_api_key: apiKey,
@@ -42,15 +42,15 @@ export const SettingsView = () => {
           active_library: activeLibrary
         }
       });
-      showStatus('Impostazioni salvate con successo!', 'success');
+      showStatus('Settings saved successfully!', 'success');
     } catch (err: any) {
-      showStatus(`Errore durante il salvataggio: ${err}`, 'error');
+      showStatus(`Error during save: ${err}`, 'error');
     }
   };
 
   const handleValidateKey = async () => {
     if (!apiKey.trim()) {
-      showStatus('Inserisci prima una chiave API da convalidare.', 'error');
+      showStatus('Please enter an API key to validate first.', 'error');
       return;
     }
     
@@ -59,22 +59,22 @@ export const SettingsView = () => {
       const isValid: any = await invoke('validate_hubcap_key', { apiKey });
       if (isValid) {
         setValidationStatus('valid');
-        showStatus('Chiave API di Hubcap valida e connessa con successo!', 'success');
+        showStatus('Hubcap API key is valid and connected successfully!', 'success');
       } else {
         setValidationStatus('invalid');
-        showStatus('Chiave API di Hubcap non valida o scaduta.', 'error');
+        showStatus('Hubcap API key is invalid or expired.', 'error');
       }
     } catch (err: any) {
       setValidationStatus('invalid');
-      showStatus(`Errore durante la convalida della chiave: ${err}`, 'error');
+      showStatus(`Error validating API key: ${err}`, 'error');
     }
   };
 
   return (
     <div className="settings-view">
       <div className="settings-header">
-        <h1 className="settings-title">Impostazioni</h1>
-        <p className="settings-subtitle">Gestisci le configurazioni di sistema, la chiave API di Hubcap e i percorsi di iniezione di Steam.</p>
+        <h1 className="settings-title">Settings</h1>
+        <p className="settings-subtitle">Manage system configurations, Hubcap API keys, and Steam injection paths.</p>
       </div>
 
       <div className="settings-separator"></div>
@@ -88,12 +88,12 @@ export const SettingsView = () => {
       <form onSubmit={handleSave} className="settings-form">
         {/* Hubcap API Key Section */}
         <div className="settings-group">
-          <label className="settings-label">Chiave API Hubcap</label>
-          <p className="settings-desc">Inserisci la tua chiave API di hubcapmanifest.com per sbloccare la consultazione del database e i download.</p>
+          <label className="settings-label">Hubcap API Key</label>
+          <p className="settings-desc">Enter your hubcapmanifest.com API key to unlock database lookups and downloads.</p>
           <div className="api-input-row">
             <input 
               type="password" 
-              placeholder="Inserisci la chiave API (es. smm_...)"
+              placeholder="Enter API key (e.g. smm_...)"
               value={apiKey}
               onChange={(e) => {
                 setApiKey(e.target.value);
@@ -107,17 +107,17 @@ export const SettingsView = () => {
               className={`validate-btn ${validationStatus}`}
               disabled={validationStatus === 'validating'}
             >
-              {validationStatus === 'validating' ? 'Verifica...' :
-               validationStatus === 'valid' ? 'Connesso ✓' :
-               validationStatus === 'invalid' ? 'Non Valida ✗' : 'Verifica Chiave'}
+              {validationStatus === 'validating' ? 'Verifying...' :
+               validationStatus === 'valid' ? 'Connected ✓' :
+               validationStatus === 'invalid' ? 'Invalid ✗' : 'Verify Key'}
             </button>
           </div>
         </div>
 
         {/* Steam Path Section */}
         <div className="settings-group">
-          <label className="settings-label">Percorso di Installazione Steam</label>
-          <p className="settings-desc">Il percorso della directory principale in cui è installato Steam sul tuo PC (necessario per l'installazione delle DLL e configurazioni).</p>
+          <label className="settings-label">Steam Installation Path</label>
+          <p className="settings-desc">The main directory path where Steam is installed on your PC (required for DLLs and configuration installation).</p>
           <input 
             type="text" 
             placeholder="C:\Program Files (x86)\Steam"
@@ -129,11 +129,11 @@ export const SettingsView = () => {
 
         {/* Steam Library Path Section */}
         <div className="settings-group">
-          <label className="settings-label">Libreria Steam Attiva (Opzionale)</label>
-          <p className="settings-desc">Se i tuoi giochi sono installati in una libreria secondaria (es. su un hard disk secondario D:\), specifica qui il percorso della cartella principale (es. D:\SteamLibrary).</p>
+          <label className="settings-label">Active Steam Library (Optional)</label>
+          <p className="settings-desc">If your games are installed in a secondary library (e.g. D:\), specify the library path here (e.g. D:\SteamLibrary).</p>
           <input 
             type="text" 
-            placeholder="Lascia vuoto per utilizzare la libreria di default di Steam"
+            placeholder="Leave blank to use Steam's default library directory"
             value={activeLibrary}
             onChange={(e) => setActiveLibrary(e.target.value)}
             className="settings-input"
@@ -144,7 +144,7 @@ export const SettingsView = () => {
 
         <div className="form-actions">
           <button type="submit" className="save-settings-btn">
-            Salva Impostazioni
+            Save Settings
           </button>
         </div>
       </form>

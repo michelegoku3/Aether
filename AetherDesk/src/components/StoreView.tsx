@@ -55,7 +55,7 @@ export const StoreView = () => {
       setActiveQuery(searchQuery);
       setIsLoading(false);
     } catch (err: any) {
-      alert(`Errore di ricerca: ${err}`);
+      alert(`Search error: ${err}`);
       setIsLoading(false);
     }
   };
@@ -64,29 +64,29 @@ export const StoreView = () => {
     if (!selectedGame) return;
     
     setIsDownloading(true);
-    setDownloadStatus({ text: 'Inizializzazione della pipeline...', type: 'info' });
+    setDownloadStatus({ text: 'Initializing pipeline...', type: 'info' });
     
     try {
       // 1. Load active settings from Rust (to get current API key and Steam Path)
-      setDownloadStatus({ text: 'Caricamento delle impostazioni locali...', type: 'info' });
+      setDownloadStatus({ text: 'Loading local configurations...', type: 'info' });
       const settings: any = await invoke('get_settings');
       
       const apiKeyToUse = selectedSource === 'hubcap' ? settings.hubcap_api_key : 'oureveryday_public';
       const steamPathToUse = settings.steam_path;
       
       if (selectedSource === 'hubcap' && (!apiKeyToUse || apiKeyToUse.trim() === '')) {
-        setDownloadStatus({ text: 'Errore: Inserisci prima la tua chiave API di Hubcap nelle Impostazioni!', type: 'error' });
+        setDownloadStatus({ text: 'Error: Please enter your Hubcap API Key in Settings first!', type: 'error' });
         setIsDownloading(false);
         return;
       }
       if (!steamPathToUse || steamPathToUse.trim() === '') {
-        setDownloadStatus({ text: 'Errore: Specifica prima il percorso di Steam nelle Impostazioni!', type: 'error' });
+        setDownloadStatus({ text: 'Error: Please specify the Steam path in Settings first!', type: 'error' });
         setIsDownloading(false);
         return;
       }
 
       // 2. Invoke the decoupled, professional Rust download orchestrator!
-      setDownloadStatus({ text: `Connessione alla fonte ${selectedSource.toUpperCase()}...`, type: 'info' });
+      setDownloadStatus({ text: `Connecting to source ${selectedSource.toUpperCase()}...`, type: 'info' });
       const result: string = await invoke('trigger_hubcap_download', {
         appId: Number(selectedGame.appId),
         apiKey: apiKeyToUse,
@@ -103,14 +103,14 @@ export const StoreView = () => {
       }, 3000);
 
     } catch (err: any) {
-      setDownloadStatus({ text: `Download fallito: ${err}`, type: 'error' });
+      setDownloadStatus({ text: `Download failed: ${err}`, type: 'error' });
       setIsDownloading(false);
     }
   };
 
   const handleDownloadOlder = () => {
     if (!selectedGame) return;
-    alert(`Apertura selettore versione precedente per: ${selectedGame.name} (${selectedGame.appId}) con sorgente ${selectedSource.toUpperCase()}.`);
+    alert(`Opening version picker dialog for: ${selectedGame.name} (${selectedGame.appId}) utilizing source ${selectedSource.toUpperCase()}.`);
     setSelectedGame(null); // close modal after trigger
   };
 
@@ -119,7 +119,7 @@ export const StoreView = () => {
       {/* Upper header section */}
       <div className="store-header">
         <h1 className="store-title">Store</h1>
-        <p className="store-subtitle">Sfoglia, ricerca e sblocca i manifesti dei tuoi giochi tramite il database integrato di AetherDesk.</p>
+        <p className="store-subtitle">Browse, search and unlock game manifests using AetherDesk's built-in database.</p>
       </div>
 
       {/* Linea di separazione */}
@@ -129,13 +129,20 @@ export const StoreView = () => {
       <form onSubmit={handleSearch} className="store-search-form">
         <input 
           type="text" 
-          placeholder="Cerca gioco per nome o App ID su Steam..."
+          placeholder="Search games by name or App ID on Steam..."
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
           className="store-search-input"
         />
-        <button type="submit" className="store-search-btn" disabled={isLoading}>
-          {isLoading ? 'Searching...' : 'Search'}
+        <button type="submit" className="store-search-btn" disabled={isLoading} title="Search Catalog">
+          {isLoading ? (
+            <span style={{ fontSize: '12px' }}>...</span>
+          ) : (
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ display: 'block' }}>
+              <circle cx="11" cy="11" r="8"></circle>
+              <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+            </svg>
+          )}
         </button>
       </form>
 
@@ -146,14 +153,14 @@ export const StoreView = () => {
       <div className="store-grid">
         {isLoading ? (
           <div className="store-no-results">
-            Caricamento risultati in corso da Steam & Hubcap...
+            Loading results from Steam & Hubcap...
           </div>
         ) : pageGames.length > 0 ? (
           pageGames.map((game) => (
             <div key={game.id} className="store-game-card">
               {/* Dynamic absolute badge overlay in top-right corner, popping out */}
               {game.has_manifest && (
-                <span className="badge-available">Disponibile</span>
+                <span className="badge-available">Available</span>
               )}
 
               {/* Cover Art Wrapper */}
@@ -194,7 +201,7 @@ export const StoreView = () => {
           ))
         ) : (
           <div className="store-no-results">
-            {hasSearched ? `Nessun gioco trovato per "${activeQuery}"` : 'Inserisci una query sopra per cercare nel catalogo Steam & Hubcap.'}
+            {hasSearched ? `No games found for "${activeQuery}"` : 'Enter a query above to search the Steam & Hubcap catalog.'}
           </div>
         )}
       </div>
@@ -210,7 +217,7 @@ export const StoreView = () => {
             &larr; Prev
           </button>
           <span className="pagination-info">
-            Pagina {page} di {totalPages}
+            Page {page} of {totalPages}
           </span>
           <button 
             disabled={page === totalPages}
@@ -259,7 +266,7 @@ export const StoreView = () => {
 
               {/* Dark Source Box Panel */}
               <div className="source-box">
-                <span className="source-label">Fonte:</span>
+                <span className="source-label">Source:</span>
                 <div className="source-buttons-row">
                   <button 
                     disabled={isDownloading}
@@ -285,7 +292,7 @@ export const StoreView = () => {
                 </div>
               </div>
 
-              {/* Action 1: Download through Steam Button */}
+              {/* Action 1: Download Latest Version Button */}
               <button 
                 onClick={handleDownloadSteam}
                 className="big-action-btn"
@@ -294,14 +301,14 @@ export const StoreView = () => {
               >
                 <div className="action-icon">⚡</div>
                 <div className="action-info">
-                  <span className="action-title">Download through Steam</span>
+                  <span className="action-title">Download Latest Version</span>
                   <span className="action-desc">
-                    Aggiunge il gioco alla libreria di Steam. Apri Steam per scaricare. Scarica i manifesti e le chiavi in modo che Steam installi il gioco nativamente.
+                    Downloads the most recent manifest files and decryption keys directly into Steam. This allows Steam to download and install the latest official release natively at maximum connection speed.
                   </span>
                 </div>
               </button>
 
-              {/* Action 2: Download Older Version Button */}
+              {/* Action 2: Download Specific Version Button */}
               <button 
                 onClick={handleDownloadOlder}
                 className="big-action-btn"
@@ -310,9 +317,9 @@ export const StoreView = () => {
               >
                 <div className="action-icon">📦</div>
                 <div className="action-info">
-                  <span className="action-title">Download Older Version</span>
+                  <span className="action-title">Download Specific Version</span>
                   <span className="action-desc">
-                    Seleziona e scarica una versione precedente specifica tramite DDMod o Steam (Nativo).
+                    Allows you to pick and download a specific historical version or downgrade release of the game by pinning custom Steam manifest IDs.
                   </span>
                 </div>
               </button>

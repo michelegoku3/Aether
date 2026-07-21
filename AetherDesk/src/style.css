@@ -23,6 +23,29 @@ body {
   overflow: hidden;
 }
 
+/* Custom Dark & Cyan Scrollbar Styling for Edge/WebView2 */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: #0c0c0e;
+}
+::-webkit-scrollbar-thumb {
+  background: #1c1c24;
+  border-radius: 5px;
+  border: 2px solid #0c0c0e;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-cyan);
+}
+
+/* Firefox scrollbar compatibility support */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #1c1c24 #0c0c0e;
+}
+
 /* Layout Containers */
 .app-container {
   display: flex;
@@ -338,19 +361,19 @@ body {
 }
 
 .game-name {
-  font-size: 15px;
-  font-weight: 600;
-  color: #ffffff;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
+    font-size: 17px; /* Increased font size slightly */
+    font-weight: 600;
+    color: #ffffff;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
 
-.game-appid {
-  font-size: 11px;
-  font-family: monospace;
-  color: var(--color-muted);
-}
+  .game-appid {
+    font-size: 12.5px; /* Increased font size slightly */
+    font-family: monospace;
+    color: var(--color-muted);
+  }
 
 /* Mini Compact Download Button */
 .game-download-btn {
@@ -358,7 +381,7 @@ body {
   border: 1px solid var(--color-cyan);
   border-radius: 6px;
   color: var(--color-cyan);
-  font-size: 12px;
+  font-size: 13px; /* Increased slightly */
   font-weight: 600;
   padding: 5px 14px;
   cursor: pointer;

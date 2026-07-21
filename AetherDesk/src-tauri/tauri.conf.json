@@ -15,6 +15,8 @@
         "title": "AetherDesk",
         "width": 1050,
         "height": 720,
+        "minWidth": 1050,
+        "minHeight": 720,
         "resizable": true,
         "fullscreen": false,
         "decorations": true,
