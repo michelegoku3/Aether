@@ -236,7 +236,7 @@ body {
 .store-grid {
   display: grid;
   grid-template-columns: repeat(2, 1fr); /* Exactly 2 columns */
-  grid-auto-rows: minmax(110px, auto); /* Compact height */
+  grid-auto-rows: 130px; /* Increased card height */
   gap: 16px;
   margin-top: 10px;
 }
@@ -258,8 +258,8 @@ body {
 
 /* Vertical 2:3 Cover Artwork */
 .game-cover-wrapper {
-  width: 75px;
-  height: 110px;
+  width: 90px; /* Increased image width for more breathing room */
+  height: 130px; /* Increased height to match new card row height */
   position: relative;
   background-color: #1b1b1f;
   flex-shrink: 0;
@@ -292,10 +292,11 @@ body {
 /* Game Info Column */
 .game-info-wrapper {
   flex-grow: 1;
-  padding: 12px 18px;
+  padding: 15px 20px; /* Slight increase in padding */
   display: flex;
   flex-direction: column;
-  justify-content: space-between;
+  justify-content: center; /* Centering content vertically */
+  gap: 12px; /* Breathing room between details and button */
   min-width: 0; /* Prevents text overflow breaks */
 }
 
