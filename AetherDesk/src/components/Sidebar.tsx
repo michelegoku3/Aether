@@ -19,14 +19,6 @@ export const Sidebar = ({ activeTab, onTabChange }: SidebarProps) => {
         {/* Separator Line */}
         <div className="separator brand-separator"></div>
 
-        {/* Aether (Button like the others) */}
-        <button
-          onClick={() => onTabChange('aether')}
-          className={`nav-item ${activeTab === 'aether' ? 'active' : ''}`}
-        >
-          Aether
-        </button>
-
         {/* Home */}
         <button
           onClick={() => onTabChange('home')}
@@ -43,7 +35,7 @@ export const Sidebar = ({ activeTab, onTabChange }: SidebarProps) => {
           Store
         </button>
 
-        {/* Library (New item, after Store) */}
+        {/* Library */}
         <button
           onClick={() => onTabChange('library')}
           className={`nav-item ${activeTab === 'library' ? 'active' : ''}`}
@@ -61,6 +53,14 @@ export const Sidebar = ({ activeTab, onTabChange }: SidebarProps) => {
 
         {/* Separator Line */}
         <div className="separator"></div>
+
+        {/* Aether (Moved here: above settings, below the separator line) */}
+        <button
+          onClick={() => onTabChange('aether')}
+          className={`nav-item ${activeTab === 'aether' ? 'active' : ''}`}
+        >
+          Aether
+        </button>
 
         {/* Settings */}
         <button

@@ -13,9 +13,9 @@
     "windows": [
       {
         "title": "AetherDesk",
-        "width": 1050,
+        "width": 1075,
         "height": 720,
-        "minWidth": 1050,
+        "minWidth": 1075,
         "minHeight": 720,
         "resizable": true,
         "fullscreen": false,

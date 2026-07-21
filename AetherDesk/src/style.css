@@ -55,7 +55,7 @@ body {
 
 /* Sidebar Styling */
 .sidebar {
-  width: 250px;
+  width: 215px; /* Slightly smaller sidebar width */
   height: 100vh;
   background-color: var(--bg-sidebar);
   border-right: 1px solid var(--border-color);
@@ -75,13 +75,14 @@ body {
 .sidebar-brand {
   display: flex;
   align-items: center;
+  justify-content: center; /* Centered horizontally in the sidebar */
   gap: 12px;
   padding: 0 20px 15px 20px;
 }
 
 .brand-icon {
-  width: 32px;
-  height: 32px;
+  width: 36px; /* Slightly larger icon wrapper */
+  height: 36px;
   background-color: var(--color-cyan);
   border-radius: 8px;
   display: flex;
@@ -89,13 +90,13 @@ body {
   justify-content: center;
   font-weight: bold;
   color: #ffffff;
-  font-size: 16px;
+  font-size: 18px; /* Increased font size */
   box-shadow: 0 4px 12px rgba(0, 180, 216, 0.2);
 }
 
 .brand-name {
   font-weight: 700;
-  font-size: 18px;
+  font-size: 21px; /* Increased font size */
   color: #ffffff;
   letter-spacing: 0.5px;
 }
@@ -130,7 +131,7 @@ body {
   color: var(--color-muted);
   background: none;
   border: none;
-  font-size: 14px;
+  font-size: 16px; /* Increased sidebar nav item font size slightly */
   font-weight: 500;
   text-align: left;
   cursor: pointer;
@@ -186,6 +187,7 @@ body {
   width: 100%;
   height: 100%;
   overflow-y: auto;
+  overflow-x: hidden; /* Bulletproof: prevent any horizontal scrollbar on small windows */
   padding: 24px 32px; /* Margini più stretti */
   display: flex;
   flex-direction: column;
@@ -258,10 +260,12 @@ body {
 /* 10 rows x 2 columns Grid Layout */
 .store-grid {
   display: grid;
-  grid-template-columns: repeat(2, 1fr); /* Exactly 2 columns */
+  grid-template-columns: repeat(2, minmax(0, 1fr)); /* Crucial: minmax(0, 1fr) lets columns shrink below text width, preventing overflow! */
   grid-auto-rows: 130px; /* Increased card height */
   gap: 16px;
   margin-top: 4px; /* Ridotto il margine superiore della griglia */
+  width: 100%;
+  max-width: 100%; /* Forces the grid container to strictly stay within the store width */
 }
 
 /* Game Card Component (Horizontal Layout) */
@@ -272,6 +276,8 @@ body {
   display: flex;
   overflow: visible; /* Changed to visible to let the superimposed badge pop out! */
   position: relative; /* Added relative positioning context for the absolute badge */
+  min-width: 0; /* Crucial: allows the card to shrink below text width, preventing overflow! */
+  width: 100%;
   transition: transform 0.2s ease, border-color 0.2s ease;
 }
 
@@ -358,6 +364,8 @@ body {
   display: flex;
   flex-direction: column;
   gap: 2px;
+  min-width: 0; /* Crucial: allows details text to shrink, letting text-overflow trigger! */
+  width: 100%;
 }
 
 .game-name {
