@@ -369,19 +369,19 @@ body {
 }
 
 .game-name {
-    font-size: 17px; /* Increased font size slightly */
-    font-weight: 600;
-    color: #ffffff;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
+  font-size: 17px; /* Increased font size slightly */
+  font-weight: 600;
+  color: #ffffff;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 
-  .game-appid {
-    font-size: 12.5px; /* Increased font size slightly */
-    font-family: monospace;
-    color: var(--color-muted);
-  }
+.game-appid {
+  font-size: 12.5px; /* Increased font size slightly */
+  font-family: monospace;
+  color: var(--color-muted);
+}
 
 /* Mini Compact Download Button */
 .game-download-btn {
@@ -804,4 +804,99 @@ body {
 
 .save-settings-btn:hover {
   opacity: 0.9;
+}
+
+
+/* ==========================================
+   AETHER VIEW STYLING (Centered Box Panels)
+   ========================================== */
+
+.aether-view {
+  width: 100%;
+  height: 100%;
+  overflow-y: auto;
+  padding: 40px 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center; /* Beautifully centered both vertically and horizontally */
+  gap: 24px; /* Spaced out sections */
+}
+
+.aether-title {
+  font-size: 32px;
+  font-weight: 800;
+  color: #ffffff;
+  letter-spacing: 2px;
+  margin-bottom: 8px; /* Elegant gap below the big title */
+}
+
+/* Designed to look like download sources / card panels */
+.aether-panel {
+  width: 460px; /* Generously sized boxes */
+  background-color: #131316;
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  padding: 20px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+  transition: border-color 0.2s ease;
+}
+
+.aether-panel:hover {
+  border-color: #2e2e38;
+}
+
+.panel-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.panel-title {
+  font-size: 15px;
+  font-weight: 700;
+  color: #ffffff;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.panel-meta {
+  font-size: 12px;
+  color: var(--color-muted);
+  font-family: monospace;
+}
+
+.panel-actions {
+  display: flex;
+  gap: 12px;
+  width: 100%;
+}
+
+.panel-btn {
+  flex: 1 1 0%; /* Crucial: forces both buttons to occupy EXACTLY the same width, regardless of text length! */
+  background-color: #1c1c21;
+  border: 1px solid var(--border-color);
+  color: #ffffff;
+  font-size: 14px;
+  font-weight: 600;
+  padding: 12px 20px;
+  border-radius: 8px;
+  cursor: pointer;
+  text-align: center;
+  transition: all 0.2s ease;
+}
+
+.panel-btn:hover:not(:disabled) {
+  border-color: var(--color-cyan);
+  background-color: #192128;
+  color: var(--color-cyan);
+}
+
+.panel-btn:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+  color: var(--color-muted);
 }

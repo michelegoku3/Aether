@@ -1,6 +1,7 @@
 import { TabType } from './Sidebar';
 import { StoreView } from './StoreView';
 import { SettingsView } from './SettingsView';
+import { AetherView } from './AetherView';
 
 interface MainContentProps {
   activeTab: TabType;
@@ -24,10 +25,17 @@ export const MainContent = ({ activeTab }: MainContentProps) => {
     );
   }
 
+  if (activeTab === 'aether') {
+    return (
+      <main className="main-content">
+        <AetherView />
+      </main>
+    );
+  }
+
   // Fallback title for other blank pages
   const getTabTitle = () => {
     switch (activeTab) {
-      case 'aether': return 'Aether View';
       case 'home': return 'Home View';
       case 'library': return 'Library View';
       case 'download': return 'Download View';
