@@ -32,7 +32,6 @@ export const MainContent = ({ activeTab }: MainContentProps) => {
       case 'library': return 'Library View';
       case 'download': return 'Download View';
       case 'log': return 'Log View';
-      case 'restart': return 'Restart Steam View';
       default: return 'Blank View';
     }
   };

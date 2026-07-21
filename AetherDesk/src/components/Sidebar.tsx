@@ -1,11 +1,12 @@
-export type TabType = 'aether' | 'home' | 'store' | 'library' | 'download' | 'settings' | 'log' | 'restart';
+export type TabType = 'aether' | 'home' | 'store' | 'library' | 'download' | 'settings' | 'log';
 
 interface SidebarProps {
   activeTab: TabType;
   onTabChange: (tab: TabType) => void;
+  onRestartSteam: () => void; // Clean action handler
 }
 
-export const Sidebar = ({ activeTab, onTabChange }: SidebarProps) => {
+export const Sidebar = ({ activeTab, onTabChange, onRestartSteam }: SidebarProps) => {
   return (
     <aside className="sidebar">
       {/* TOP NAVIGATION SECTION */}
@@ -86,11 +87,11 @@ export const Sidebar = ({ activeTab, onTabChange }: SidebarProps) => {
         {/* Separator Line */}
         <div className="separator"></div>
 
-        {/* Restart Steam */}
+        {/* Restart Steam Button (Action, not a tab) */}
         <button
-          onClick={() => onTabChange('restart')}
-          className={`nav-item ${activeTab === 'restart' ? 'active' : ''}`}
-          style={{ fontWeight: 'bold' }}
+          onClick={onRestartSteam}
+          className="nav-item"
+          style={{ fontWeight: 'bold', color: 'var(--color-cyan)' }}
         >
           Restart Steam
         </button>

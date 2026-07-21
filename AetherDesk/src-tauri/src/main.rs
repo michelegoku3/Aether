@@ -80,6 +80,56 @@ async fn trigger_hubcap_download(
     orchestrator.execute_hubcap_download(app_id).await
 }
 
+// Command 6: Kill and Restart Steam process using custom configured path
+#[tauri::command]
+fn restart_steam(app: tauri::AppHandle) -> Result<(), String> {
+    // 1. Terminate any running Steam processes
+    let mut sys = sysinfo::System::new_all();
+    sys.refresh_processes();
+    
+    let mut terminated = false;
+    for process in sys.processes().values() {
+        let name = process.name().to_lowercase();
+        if name == "steam.exe" || name == "steam" {
+            let _ = process.kill();
+            terminated = true;
+        }
+    }
+
+    // Brief delay to release locked file handles on exit
+    if terminated {
+        std::thread::sleep(std::time::Duration::from_millis(600));
+    }
+
+    // 2. Load custom Steam directory path from settings
+    let manager = SettingsManager::new(&app);
+    let settings = manager.load();
+    let steam_dir = std::path::PathBuf::from(&settings.steam_path);
+
+    if !steam_dir.exists() {
+        return Err("Steam installation path does not exist. Please check your settings.".to_string());
+    }
+
+    let steam_exe = steam_dir.join("steam.exe");
+    if !steam_exe.exists() {
+        return Err(format!("steam.exe was not found in Steam directory: {:?}", steam_exe));
+    }
+
+    // 3. Launch steam.exe asynchronously
+    let mut cmd = std::process::Command::new(&steam_exe);
+    cmd.current_dir(&steam_dir);
+
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::process::CommandExt;
+        cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
+    }
+
+    cmd.spawn().map_err(|e| format!("Failed to launch Steam process: {}", e))?;
+
+    Ok(())
+}
+
 fn main() {
     tauri::Builder::default()
         .invoke_handler(tauri::generate_handler![
@@ -88,6 +138,7 @@ fn main() {
             validate_hubcap_key,
             search_store,
             trigger_hubcap_download,
+            restart_steam,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
