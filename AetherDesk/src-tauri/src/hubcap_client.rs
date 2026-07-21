@@ -4,11 +4,34 @@ use serde::{Deserialize, Serialize};
 const BASE_URL: &str = "https://hubcapmanifest.com/api/v1";
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
-#[allow(dead_code)]
-pub struct HubcapGame {
+pub struct HubcapGameItem {
+    // Deserialize App ID safely even if returned as a string or number in JSON, supporting game_id or appid aliases
+    #[serde(alias = "game_id", alias = "appid", deserialize_with = "deserialize_app_id")]
     pub app_id: u32,
+    #[serde(alias = "game_name", alias = "name")]
     pub name: String,
-    pub last_updated: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct HubcapLibraryResponse {
+    pub status: String,
+    pub games: Option<Vec<HubcapGameItem>>,
+}
+
+fn deserialize_app_id<'de, D>(deserializer: D) -> Result<u32, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let value = serde_json::Value::deserialize(deserializer)?;
+    match value {
+        serde_json::Value::Number(num) => {
+            Ok(num.as_u64().unwrap_or(0) as u32)
+        }
+        serde_json::Value::String(s) => {
+            s.parse::<u32>().map_err(serde::de::Error::custom)
+        }
+        _ => Err(serde::de::Error::custom("Invalid App ID type")),
+    }
 }
 
 pub struct HubcapClient {
@@ -68,5 +91,27 @@ impl HubcapClient {
         } else {
             Err(format!("Failed to retrieve Lua. HTTP Status: {}", response.status()))
         }
+    }
+
+    /// Queries the Hubcap Manifest database for matches against a search term
+    pub async fn search_library(&self, query: &str) -> Result<Vec<HubcapGameItem>, String> {
+        let url = format!("{}/library", BASE_URL);
+
+        let response = self.client.get(&url)
+            .headers(self.headers())
+            .query(&[("search", query), ("limit", "50")])
+            .send()
+            .await
+            .map_err(|e| format!("Hubcap API network error: {}", e))?;
+
+        if !response.status().is_success() {
+            // If Hubcap key is invalid or fails, return empty list instead of crashing
+            return Ok(Vec::new());
+        }
+
+        let data = response.json::<HubcapLibraryResponse>().await
+            .map_err(|e| format!("Failed to parse Hubcap response: {}", e))?;
+
+        Ok(data.games.unwrap_or_default())
     }
 }

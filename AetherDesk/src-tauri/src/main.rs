@@ -6,12 +6,15 @@
 mod settings;
 mod hubcap_client;
 mod steam_compat;
+mod steam_store;
+mod store_service;
 mod download_orchestrator;
 
 use hubcap_client::HubcapClient;
 use steam_compat::SteamCompat;
 use download_orchestrator::DownloadOrchestrator;
 use settings::{AppSettings, SettingsManager};
+use store_service::{StoreService, UnifiedStoreGame};
 
 // Command 1: Get App Settings (Load from settings.json)
 #[tauri::command]
@@ -38,7 +41,23 @@ async fn validate_hubcap_key(api_key: String) -> Result<bool, String> {
     client.validate_api_key().await
 }
 
-// Command 4: Trigger first download option (Hubcap LUA pipeline)
+// Command 4: Unified Store Search (Steam Catalog + Hubcap Manifest Merge)
+#[tauri::command]
+async fn search_store(app: tauri::AppHandle, query: String) -> Result<Vec<UnifiedStoreGame>, String> {
+    let manager = SettingsManager::new(&app);
+    let settings = manager.load();
+
+    let hubcap_client = if !settings.hubcap_api_key.trim().is_empty() {
+        Some(HubcapClient::new(settings.hubcap_api_key))
+    } else {
+        None
+    };
+
+    let service = StoreService::new();
+    service.search_store(&query, hubcap_client).await
+}
+
+// Command 5: Trigger first download option (Hubcap LUA pipeline)
 #[tauri::command]
 async fn trigger_hubcap_download(
     app_id: u32,
@@ -67,6 +86,7 @@ fn main() {
             get_settings,
             save_settings,
             validate_hubcap_key,
+            search_store,
             trigger_hubcap_download,
         ])
         .run(tauri::generate_context!())

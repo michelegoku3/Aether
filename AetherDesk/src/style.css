@@ -247,13 +247,44 @@ body {
   border: 1px solid var(--border-color);
   border-radius: 10px;
   display: flex;
-  overflow: hidden;
+  overflow: visible; /* Changed to visible to let the superimposed badge pop out! */
+  position: relative; /* Added relative positioning context for the absolute badge */
   transition: transform 0.2s ease, border-color 0.2s ease;
 }
 
 .store-game-card:hover {
   transform: translateY(-2px);
   border-color: #2e2e38;
+}
+
+/* Superimposed availability badge in the top-right corner, protruding slightly */
+.badge-available {
+  position: absolute;
+  top: -8px;
+  right: -8px;
+  background-color: var(--color-cyan);
+  color: #ffffff;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  padding: 4px 10px;
+  border-radius: 6px;
+  box-shadow: 0 4px 10px rgba(0, 180, 216, 0.4);
+  z-index: 10;
+  letter-spacing: 0.5px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  animation: badgePopIn 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+@keyframes badgePopIn {
+  from {
+    transform: scale(0.8);
+    opacity: 0;
+  }
+  to {
+    transform: scale(1);
+    opacity: 1;
+  }
 }
 
 /* Vertical 2:3 Cover Artwork */
