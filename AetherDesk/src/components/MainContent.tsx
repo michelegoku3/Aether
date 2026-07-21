@@ -1,16 +1,25 @@
 import { TabType } from './Sidebar';
 import { StoreView } from './StoreView';
+import { SettingsView } from './SettingsView';
 
 interface MainContentProps {
   activeTab: TabType;
 }
 
 export const MainContent = ({ activeTab }: MainContentProps) => {
-  // If the active tab is the store, render our modular StoreView component
+  // Route to the appropriate view based on the active tab
   if (activeTab === 'store') {
     return (
       <main className="main-content">
         <StoreView />
+      </main>
+    );
+  }
+
+  if (activeTab === 'settings') {
+    return (
+      <main className="main-content">
+        <SettingsView />
       </main>
     );
   }
@@ -22,7 +31,6 @@ export const MainContent = ({ activeTab }: MainContentProps) => {
       case 'home': return 'Home View';
       case 'library': return 'Library View';
       case 'download': return 'Download View';
-      case 'settings': return 'Settings View';
       case 'log': return 'Log View';
       case 'restart': return 'Restart Steam View';
       default: return 'Blank View';

@@ -569,3 +569,177 @@ body {
   color: var(--color-muted);
   line-height: 1.45;
 }
+
+
+/* ==========================================
+   SETTINGS VIEW STYLING
+   ========================================== */
+
+.settings-view {
+  width: 100%;
+  height: 100%;
+  overflow-y: auto;
+  padding: 24px 32px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.settings-header {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.settings-title {
+  font-size: 24px;
+  font-weight: 700;
+  color: #ffffff;
+}
+
+.settings-subtitle {
+  font-size: 13px;
+  color: var(--color-muted);
+}
+
+.settings-separator {
+  height: 1px;
+  background-color: var(--border-color);
+  width: 100%;
+  margin: 2px 0;
+}
+
+.settings-alert {
+  padding: 12px 20px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  border: 1px solid transparent;
+  animation: fadeIn 0.2s ease;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.settings-alert.info {
+  background-color: rgba(0, 180, 216, 0.08);
+  border-color: rgba(0, 180, 216, 0.25);
+  color: var(--color-cyan);
+}
+
+.settings-alert.success {
+  background-color: rgba(16, 185, 129, 0.08);
+  border-color: rgba(16, 185, 129, 0.25);
+  color: #10b981;
+}
+
+.settings-alert.error {
+  background-color: rgba(239, 68, 68, 0.08);
+  border-color: rgba(239, 68, 68, 0.25);
+  color: #ef4444;
+}
+
+.settings-form {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  margin-top: 10px;
+}
+
+.settings-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.settings-label {
+  font-size: 14px;
+  font-weight: 600;
+  color: #ffffff;
+}
+
+.settings-desc {
+  font-size: 11.5px;
+  color: var(--color-muted);
+  line-height: 1.4;
+}
+
+.settings-input {
+  background-color: #141417;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 10px 16px;
+  color: #ffffff;
+  font-size: 14px;
+  outline: none;
+  width: 100%;
+  transition: border-color 0.2s ease;
+}
+
+.settings-input:focus {
+  border-color: var(--color-cyan);
+}
+
+.api-input-row {
+  display: flex;
+  gap: 12px;
+  width: 100%;
+}
+
+.validate-btn {
+  background-color: #1c1c21;
+  border: 1px solid var(--border-color);
+  color: #ffffff;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 0 20px;
+  border-radius: 8px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.2s ease;
+}
+
+.validate-btn:hover:not(:disabled) {
+  border-color: var(--color-cyan);
+  color: var(--color-cyan);
+}
+
+.validate-btn.validating {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.validate-btn.valid {
+  background-color: rgba(16, 185, 129, 0.15);
+  border-color: #10b981;
+  color: #10b981;
+}
+
+.validate-btn.invalid {
+  background-color: rgba(239, 68, 68, 0.15);
+  border-color: #ef4444;
+  color: #ef4444;
+}
+
+.form-actions {
+  display: flex;
+  justify-content: flex-start;
+}
+
+.save-settings-btn {
+  background-color: var(--color-cyan);
+  border: none;
+  border-radius: 8px;
+  color: #ffffff;
+  font-size: 13px;
+  font-weight: 700;
+  padding: 12px 28px;
+  cursor: pointer;
+  transition: opacity 0.2s ease;
+}
+
+.save-settings-btn:hover {
+  opacity: 0.9;
+}

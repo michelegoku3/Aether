@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { invoke } from '@tauri-apps/api/core';
 
 export interface Game {
   id: number;
@@ -52,6 +53,10 @@ export const StoreView = () => {
   // Selected key/manifest source state ('hubcap', 'oureveryday', 'local')
   const [selectedSource, setSelectedSource] = useState<'hubcap' | 'oureveryday' | 'local'>('oureveryday');
 
+  // Status message for download operations inside the modal
+  const [downloadStatus, setDownloadStatus] = useState({ text: '', type: 'info' });
+  const [isDownloading, setIsDownloading] = useState(false);
+
   // Filter games based on search query
   const filteredGames = MOCK_GAMES.filter(game => 
     game.name.toLowerCase().includes(activeQuery.toLowerCase()) || 
@@ -69,10 +74,52 @@ export const StoreView = () => {
     setPage(1); // reset to first page on new search
   };
 
-  const handleDownloadSteam = () => {
+  const handleDownloadSteam = async () => {
     if (!selectedGame) return;
-    alert(`Esecuzione download tramite Steam per: ${selectedGame.name} (${selectedGame.appId}) con sorgente ${selectedSource.toUpperCase()}.`);
-    setSelectedGame(null); // close modal after trigger
+    
+    setIsDownloading(true);
+    setDownloadStatus({ text: 'Inizializzazione della pipeline...', type: 'info' });
+    
+    try {
+      // 1. Load active settings from Rust (to get current API key and Steam Path)
+      setDownloadStatus({ text: 'Caricamento delle impostazioni locali...', type: 'info' });
+      const settings: any = await invoke('get_settings');
+      
+      const apiKeyToUse = selectedSource === 'hubcap' ? settings.hubcap_api_key : 'oureveryday_public';
+      const steamPathToUse = settings.steam_path;
+      
+      if (selectedSource === 'hubcap' && (!apiKeyToUse || apiKeyToUse.trim() === '')) {
+        setDownloadStatus({ text: 'Errore: Inserisci prima la tua chiave API di Hubcap nelle Impostazioni!', type: 'error' });
+        setIsDownloading(false);
+        return;
+      }
+      if (!steamPathToUse || steamPathToUse.trim() === '') {
+        setDownloadStatus({ text: 'Errore: Specifica prima il percorso di Steam nelle Impostazioni!', type: 'error' });
+        setIsDownloading(false);
+        return;
+      }
+
+      // 2. Invoke the decoupled, professional Rust download orchestrator!
+      setDownloadStatus({ text: `Connessione alla fonte ${selectedSource.toUpperCase()}...`, type: 'info' });
+      const result: string = await invoke('trigger_hubcap_download', {
+        appId: Number(selectedGame.appId),
+        apiKey: apiKeyToUse,
+        steamPath: steamPathToUse
+      });
+      
+      setDownloadStatus({ text: result, type: 'success' });
+      setIsDownloading(false);
+      
+      // Auto close modal after a short delay on success
+      setTimeout(() => {
+        setSelectedGame(null);
+        setDownloadStatus({ text: '', type: 'info' });
+      }, 3000);
+
+    } catch (err: any) {
+      setDownloadStatus({ text: `Download fallito: ${err}`, type: 'error' });
+      setIsDownloading(false);
+    }
   };
 
   const handleDownloadOlder = () => {
@@ -137,7 +184,13 @@ export const StoreView = () => {
                   <span className="game-appid">App ID: {game.appId}</span>
                 </div>
                 <button 
-                  onClick={() => setSelectedGame(game)} // open modal on click
+                  onClick={() => {
+                    setSelectedGame(game);
+                    setDownloadStatus({ text: '', type: 'info' });
+                    setIsDownloading(false);
+                    // Automatically pre-select Hubcap if a key exists
+                    setSelectedSource('hubcap');
+                  }} 
                   className="game-download-btn"
                 >
                   Download
@@ -185,8 +238,14 @@ export const StoreView = () => {
                 Download: <strong style={{ color: '#ffffff' }}>{selectedGame.name}</strong> ({selectedGame.appId})
               </span>
               <button 
-                onClick={() => setSelectedGame(null)} 
+                onClick={() => {
+                  if (!isDownloading) {
+                    setSelectedGame(null);
+                  }
+                }} 
                 className="modal-close-btn"
+                disabled={isDownloading}
+                style={{ opacity: isDownloading ? 0.3 : 1 }}
               >
                 &times;
               </button>
@@ -197,23 +256,33 @@ export const StoreView = () => {
 
             {/* Modal Body Content */}
             <div className="modal-body">
-              {/* Dark Source Box Panel (Parte di colore piu scuro) */}
+              {/* Operation Feedback inside the Modal */}
+              {downloadStatus.text && (
+                <div className={`settings-alert ${downloadStatus.type}`} style={{ padding: '10px 15px', fontSize: '12px' }}>
+                  {downloadStatus.text}
+                </div>
+              )}
+
+              {/* Dark Source Box Panel */}
               <div className="source-box">
                 <span className="source-label">Fonte:</span>
                 <div className="source-buttons-row">
                   <button 
+                    disabled={isDownloading}
                     onClick={() => setSelectedSource('hubcap')}
                     className={`source-btn ${selectedSource === 'hubcap' ? 'active' : ''}`}
                   >
                     Hubcap
                   </button>
                   <button 
+                    disabled={isDownloading}
                     onClick={() => setSelectedSource('oureveryday')}
                     className={`source-btn ${selectedSource === 'oureveryday' ? 'active' : ''}`}
                   >
                     OurEveryday
                   </button>
                   <button 
+                    disabled={isDownloading}
                     onClick={() => setSelectedSource('local')}
                     className={`source-btn ${selectedSource === 'local' ? 'active' : ''}`}
                   >
@@ -226,6 +295,8 @@ export const StoreView = () => {
               <button 
                 onClick={handleDownloadSteam}
                 className="big-action-btn"
+                disabled={isDownloading}
+                style={{ opacity: isDownloading ? 0.5 : 1 }}
               >
                 <div className="action-icon">⚡</div>
                 <div className="action-info">
@@ -240,6 +311,8 @@ export const StoreView = () => {
               <button 
                 onClick={handleDownloadOlder}
                 className="big-action-btn"
+                disabled={isDownloading}
+                style={{ opacity: isDownloading ? 0.5 : 1 }}
               >
                 <div className="action-icon">📦</div>
                 <div className="action-info">

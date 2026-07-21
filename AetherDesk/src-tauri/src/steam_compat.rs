@@ -1,0 +1,68 @@
+#![allow(dead_code)]
+
+use std::fs;
+use std::path::{Path, PathBuf};
+
+pub struct SteamCompat {
+    steam_path: PathBuf,
+}
+
+impl SteamCompat {
+    pub fn new(steam_path: String) -> Self {
+        Self {
+            steam_path: PathBuf::from(steam_path),
+        }
+    }
+
+    /// Returns the path to Steam's main plugin directory
+    pub fn get_plugin_dir(&self) -> PathBuf {
+        self.steam_path.join("config").join("stplug-in")
+    }
+
+    /// Returns the path to Steam's main depotcache directory (where manifests live)
+    pub fn get_depotcache_dir(&self) -> PathBuf {
+        self.steam_path.join("depotcache")
+    }
+
+    /// Safely writes the Lua config to the stplug-in directory
+    pub fn install_lua_config(&self, app_id: u32, content: &str) -> Result<(), String> {
+        let plugin_dir = self.get_plugin_dir();
+        if !plugin_dir.exists() {
+            fs::create_dir_all(&plugin_dir)
+                .map_err(|e| format!("Failed to create plugin directory: {}", e))?;
+        }
+
+        let target_path = plugin_dir.join(format!("{}.lua", app_id));
+        let temp_path = target_path.with_extension("tmp");
+
+        fs::write(&temp_path, content)
+            .map_err(|e| format!("Failed to write plugin Lua: {}", e))?;
+
+        fs::rename(&temp_path, &target_path)
+            .map_err(|e| format!("Failed to install plugin Lua: {}", e))?;
+
+        Ok(())
+    }
+
+    /// Safely writes a decryption manifest .acf file into a steamapps library folder
+    pub fn write_acf_manifest(&self, library_folder: String, app_id: u32, acf_content: &str) -> Result<(), String> {
+        let library_dir = Path::new(&library_folder);
+        if !library_dir.exists() {
+            return Err("Library folder does not exist".to_string());
+        }
+
+        let target_path = library_dir.join("steamapps").join(format!("appmanifest_{}.acf", app_id));
+        let temp_path = target_path.with_extension("tmp");
+
+        fs::create_dir_all(target_path.parent().unwrap())
+            .map_err(|e| format!("Failed to create steamapps folder: {}", e))?;
+
+        fs::write(&temp_path, acf_content)
+            .map_err(|e| format!("Failed to write temp ACF: {}", e))?;
+
+        fs::rename(&temp_path, &target_path)
+            .map_err(|e| format!("Failed to apply ACF file: {}", e))?;
+
+        Ok(())
+    }
+}
