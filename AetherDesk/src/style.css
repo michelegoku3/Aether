@@ -385,3 +385,187 @@ body {
   color: var(--color-muted);
   font-weight: 500;
 }
+
+/* ==========================================
+   DYNAMIC POPUP MODAL STYLING
+   ========================================== */
+
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  background-color: rgba(0, 0, 0, 0.75); /* Semi-transparent background overlay */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 999; /* Always on top of everything */
+}
+
+.modal-container {
+  background-color: #131316; /* Clean container background */
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  width: 540px; /* Spaciously sized modal */
+  max-width: 90%;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+  animation: modalScaleIn 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes modalScaleIn {
+  from {
+    transform: scale(0.95);
+    opacity: 0;
+  }
+  to {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+.modal-header {
+  padding: 16px 24px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.modal-title {
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--color-muted);
+}
+
+.modal-close-btn {
+  background: none;
+  border: none;
+  font-size: 24px;
+  color: var(--color-muted);
+  cursor: pointer;
+  line-height: 1;
+  transition: color 0.2s ease;
+}
+
+.modal-close-btn:hover {
+  color: #ffffff;
+}
+
+.modal-separator {
+  height: 1px;
+  background-color: var(--border-color);
+  width: 100%;
+}
+
+.modal-body {
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* Source Selector Panel (Darker Box background than app background) */
+.source-box {
+  background-color: #08080a; /* Darker than #131316 app/sidebar backgrounds */
+  border: 1px solid #1a1a22;
+  border-radius: 8px;
+  padding: 16px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.source-label {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--color-muted);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+.source-buttons-row {
+  display: flex;
+  gap: 10px;
+}
+
+.source-btn {
+  flex-grow: 1;
+  background-color: #1c1c21;
+  border: 1px solid var(--border-color);
+  color: var(--color-muted);
+  font-size: 13px;
+  font-weight: 600;
+  padding: 8px 16px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.source-btn:hover {
+  border-color: #3e3e4a;
+  color: #ffffff;
+}
+
+.source-btn.active {
+  background-color: var(--color-cyan);
+  border-color: var(--color-cyan);
+  color: #ffffff;
+}
+
+/* Large Action Buttons Option layout */
+.big-action-btn {
+  background: none;
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  padding: 16px 20px;
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+  text-align: left;
+  cursor: pointer;
+  width: 100%;
+  transition: all 0.2s ease;
+}
+
+.big-action-btn:hover {
+  border-color: var(--color-cyan);
+  background-color: #192128; /* Subtle blue highlight background tint */
+}
+
+.action-icon {
+  font-size: 20px;
+  width: 36px;
+  height: 36px;
+  background-color: #1e1e24;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  color: var(--color-cyan);
+}
+
+.big-action-btn:hover .action-icon {
+  background-color: var(--color-cyan);
+  color: #ffffff;
+}
+
+.action-info {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.action-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: #ffffff;
+}
+
+.action-desc {
+  font-size: 11.5px;
+  color: var(--color-muted);
+  line-height: 1.45;
+}

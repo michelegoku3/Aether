@@ -46,6 +46,12 @@ export const StoreView = () => {
   const [page, setPage] = useState(1);
   const itemsPerPage = 20; // 10 rows * 2 columns = 20 items per page
 
+  // Active game selected for download modal, null means modal is closed
+  const [selectedGame, setSelectedGame] = useState<Game | null>(null);
+  
+  // Selected key/manifest source state ('hubcap', 'oureveryday', 'local')
+  const [selectedSource, setSelectedSource] = useState<'hubcap' | 'oureveryday' | 'local'>('oureveryday');
+
   // Filter games based on search query
   const filteredGames = MOCK_GAMES.filter(game => 
     game.name.toLowerCase().includes(activeQuery.toLowerCase()) || 
@@ -63,8 +69,16 @@ export const StoreView = () => {
     setPage(1); // reset to first page on new search
   };
 
-  const handleDownload = (appId: string, name: string) => {
-    alert(`Inizializzazione del download per: ${name} (App ID: ${appId}) tramite la pipeline nativa.`);
+  const handleDownloadSteam = () => {
+    if (!selectedGame) return;
+    alert(`Esecuzione download tramite Steam per: ${selectedGame.name} (${selectedGame.appId}) con sorgente ${selectedSource.toUpperCase()}.`);
+    setSelectedGame(null); // close modal after trigger
+  };
+
+  const handleDownloadOlder = () => {
+    if (!selectedGame) return;
+    alert(`Apertura selettore versione precedente per: ${selectedGame.name} (${selectedGame.appId}) con sorgente ${selectedSource.toUpperCase()}.`);
+    setSelectedGame(null); // close modal after trigger
   };
 
   return (
@@ -123,7 +137,7 @@ export const StoreView = () => {
                   <span className="game-appid">App ID: {game.appId}</span>
                 </div>
                 <button 
-                  onClick={() => handleDownload(game.appId, game.name)}
+                  onClick={() => setSelectedGame(game)} // open modal on click
                   className="game-download-btn"
                 >
                   Download
@@ -158,6 +172,85 @@ export const StoreView = () => {
           >
             Next &rarr;
           </button>
+        </div>
+      )}
+
+      {/* DYNAMIC DOWNLOAD MODAL / POPUP */}
+      {selectedGame && (
+        <div className="modal-overlay">
+          <div className="modal-container">
+            {/* Header: Title + Close Button */}
+            <div className="modal-header">
+              <span className="modal-title">
+                Download: <strong style={{ color: '#ffffff' }}>{selectedGame.name}</strong> ({selectedGame.appId})
+              </span>
+              <button 
+                onClick={() => setSelectedGame(null)} 
+                className="modal-close-btn"
+              >
+                &times;
+              </button>
+            </div>
+
+            {/* Linea separatrice */}
+            <div className="modal-separator"></div>
+
+            {/* Modal Body Content */}
+            <div className="modal-body">
+              {/* Dark Source Box Panel (Parte di colore piu scuro) */}
+              <div className="source-box">
+                <span className="source-label">Fonte:</span>
+                <div className="source-buttons-row">
+                  <button 
+                    onClick={() => setSelectedSource('hubcap')}
+                    className={`source-btn ${selectedSource === 'hubcap' ? 'active' : ''}`}
+                  >
+                    Hubcap
+                  </button>
+                  <button 
+                    onClick={() => setSelectedSource('oureveryday')}
+                    className={`source-btn ${selectedSource === 'oureveryday' ? 'active' : ''}`}
+                  >
+                    OurEveryday
+                  </button>
+                  <button 
+                    onClick={() => setSelectedSource('local')}
+                    className={`source-btn ${selectedSource === 'local' ? 'active' : ''}`}
+                  >
+                    Local
+                  </button>
+                </div>
+              </div>
+
+              {/* Action 1: Download through Steam Button */}
+              <button 
+                onClick={handleDownloadSteam}
+                className="big-action-btn"
+              >
+                <div className="action-icon">⚡</div>
+                <div className="action-info">
+                  <span className="action-title">Download through Steam</span>
+                  <span className="action-desc">
+                    Aggiunge il gioco alla libreria di Steam. Apri Steam per scaricare. Scarica i manifesti e le chiavi in modo che Steam installi il gioco nativamente.
+                  </span>
+                </div>
+              </button>
+
+              {/* Action 2: Download Older Version Button */}
+              <button 
+                onClick={handleDownloadOlder}
+                className="big-action-btn"
+              >
+                <div className="action-icon">📦</div>
+                <div className="action-info">
+                  <span className="action-title">Download Older Version</span>
+                  <span className="action-desc">
+                    Seleziona e scarica una versione precedente specifica tramite DDMod o Steam (Nativo).
+                  </span>
+                </div>
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>
