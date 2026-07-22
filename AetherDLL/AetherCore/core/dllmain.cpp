@@ -55,7 +55,7 @@ void PinSelf() {
     GetModuleHandleExA(
         GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_PIN,
         reinterpret_cast<LPCSTR>(&PinSelf), &pinned);
-    AC_LOG_DEBUG(kModule, "Module pinned in memory.");
+    AC_LOG_DEBUG(kModule, "Module pinned in memory you mf.");
 }
 
 // Resolves all runtime paths from the DLL's own location and creates the

@@ -8,6 +8,8 @@ mod hubcap_client;
 mod steam_compat;
 mod steam_store;
 mod store_service;
+mod github_updater;
+mod dll_installer;
 mod download_orchestrator;
 
 use hubcap_client::HubcapClient;
@@ -15,6 +17,8 @@ use steam_compat::SteamCompat;
 use download_orchestrator::DownloadOrchestrator;
 use settings::{AppSettings, SettingsManager};
 use store_service::{StoreService, UnifiedStoreGame};
+use github_updater::GithubReleaseManager;
+use dll_installer::DllInstaller;
 
 // Command 1: Get App Settings (Load from settings.json)
 #[tauri::command]
@@ -130,6 +134,85 @@ fn restart_steam(app: tauri::AppHandle) -> Result<(), String> {
     Ok(())
 }
 
+// Command 7: Verify if AetherDLL is currently installed in Steam
+#[tauri::command]
+fn is_dll_installed(steam_path: String) -> Result<bool, String> {
+    if steam_path.trim().is_empty() {
+        return Ok(false);
+    }
+    let installer = DllInstaller::new(steam_path);
+    Ok(installer.verify_installation())
+}
+
+// Command 8: Check if Steam updates are currently blocked
+#[tauri::command]
+fn is_steam_blocked(steam_path: String) -> Result<bool, String> {
+    if steam_path.trim().is_empty() {
+        return Ok(false);
+    }
+    let cfg_path = std::path::PathBuf::from(steam_path).join("steam.cfg");
+    if !cfg_path.exists() {
+        return Ok(false);
+    }
+    let content = std::fs::read_to_string(cfg_path)
+        .map_err(|e| format!("Failed to read steam.cfg: {}", e))?;
+    
+    Ok(content.contains("BootStrapperInhibitAll=Enable"))
+}
+
+// Command 9: Install / Update AetherDLL from latest GitHub Release
+#[tauri::command]
+async fn install_aether_dll(steam_path: String) -> Result<String, String> {
+    if steam_path.trim().is_empty() {
+        return Err("Steam installation path is required".to_string());
+    }
+
+    // 1. Fetch latest release info from michelegoku3/Aether
+    let manager = GithubReleaseManager::new();
+    let (tag_name, download_url) = manager.fetch_latest_release().await?;
+
+    // 2. Download the release ZIP asynchronously
+    let client = reqwest::Client::new();
+    let response = client.get(&download_url)
+        .header("User-Agent", "AetherDesk-Downloader")
+        .send()
+        .await
+        .map_err(|e| format!("Failed to reach download server: {}", e))?;
+
+    if !response.status().is_success() {
+        return Err(format!("Download server returned HTTP error: {}", response.status()));
+    }
+
+    let bytes = response.bytes().await
+        .map_err(|e| format!("Failed to read downloaded bytes: {}", e))?;
+
+    // 3. Save to temporary file
+    let temp_zip_path = std::env::temp_dir().join("aether_dll_latest.zip");
+    std::fs::write(&temp_zip_path, &bytes)
+        .map_err(|e| format!("Failed to write temporary ZIP: {}", e))?;
+
+    // 4. Extract and deploy DLLs using DllInstaller
+    let installer = DllInstaller::new(steam_path);
+    let install_result = installer.install_from_zip(&temp_zip_path);
+
+    // Clean up temporary ZIP
+    let _ = std::fs::remove_file(temp_zip_path);
+
+    // Propagate result
+    install_result.map(|_| format!("AetherDLL {} successfully installed into Steam!", tag_name))
+}
+
+// Command 10: Uninstall AetherDLL files from Steam folder
+#[tauri::command]
+fn uninstall_aether_dll(steam_path: String) -> Result<String, String> {
+    if steam_path.trim().is_empty() {
+        return Err("Steam installation path is required".to_string());
+    }
+
+    let installer = DllInstaller::new(steam_path);
+    installer.uninstall().map(|_| "AetherDLL files removed successfully from Steam.".to_string())
+}
+
 fn main() {
     tauri::Builder::default()
         .invoke_handler(tauri::generate_handler![
@@ -139,6 +222,10 @@ fn main() {
             search_store,
             trigger_hubcap_download,
             restart_steam,
+            is_dll_installed,
+            is_steam_blocked,
+            install_aether_dll,
+            uninstall_aether_dll,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
