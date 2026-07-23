@@ -1,11 +1,16 @@
 import { useState, useEffect } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 
-export const AetherView = () => {
+interface AetherViewProps {
+  isUpdateAvailable: boolean;
+  onUpdateComplete: () => void; // Refresh update check in the parent
+}
+
+export const AetherView = ({ isUpdateAvailable, onUpdateComplete }: AetherViewProps) => {
   // Real active states bound to local filesystem and config status
   const [isDllInstalled, setIsDllInstalled] = useState(false);
+  const [installedVersion, setInstalledVersion] = useState('N/A');
   const [isSteamBlocked, setIsSteamBlocked] = useState(false);
-  const [isUpdateAvailable, setIsUpdateAvailable] = useState(false);
   
   const [statusMsg, setStatusMsg] = useState({ text: '', type: 'info' });
   const [isProcessing, setIsProcessing] = useState(false);
@@ -30,6 +35,10 @@ export const AetherView = () => {
         // 3. Query backend to verify if steam.cfg update block is enabled
         const isBlocked: any = await invoke('is_steam_blocked', { steamPath });
         setIsSteamBlocked(isBlocked);
+
+        // 4. Query backend to verify local installed version dynamically
+        const updateInfo: any = await invoke('check_aether_dll_update', { steamPath });
+        setInstalledVersion(updateInfo.installed_version);
       }
     } catch (err: any) {
       console.error("Failed to query local system state:", err);
@@ -38,7 +47,7 @@ export const AetherView = () => {
 
   useEffect(() => {
     checkLocalSystemState();
-  }, []);
+  }, [isUpdateAvailable]); // re-run if update availability changes
 
   const handleInstallDll = async () => {
     setIsProcessing(true);
@@ -57,8 +66,11 @@ export const AetherView = () => {
       // Execute actual asynchronous download and extraction pipeline in Rust!
       const result: string = await invoke('install_aether_dll', { steamPath });
       
-      setIsDllInstalled(true);
       showStatus(result, 'success');
+      
+      // Refresh local files and version states on completion
+      await checkLocalSystemState();
+      onUpdateComplete(); // notify parent to refresh update status
       setIsProcessing(false);
     } catch (err: any) {
       showStatus(`Installation failed: ${err}`, 'error');
@@ -83,8 +95,11 @@ export const AetherView = () => {
       // Execute actual file deletion in Rust
       const result: string = await invoke('uninstall_aether_dll', { steamPath });
       
-      setIsDllInstalled(false);
       showStatus(result, 'success');
+      
+      // Refresh local states
+      await checkLocalSystemState();
+      onUpdateComplete(); // notify parent to refresh update status
       setIsProcessing(false);
     } catch (err: any) {
       showStatus(`Uninstall failed: ${err}`, 'error');
@@ -127,13 +142,15 @@ export const AetherView = () => {
         return;
       }
 
-      // 1. Remove AetherDLL binaries
-      const installerResult = await invoke('uninstall_aether_dll', { steamPath }).catch(() => "Ok");
+      // 1. Remove AetherDLL binaries and version files
+      await invoke('uninstall_aether_dll', { steamPath }).catch(() => "Ok");
       
       // 2. Remove steam.cfg update block if active
       await invoke('unblock_steam_updates', { steamPath }).catch(() => {});
-      setIsSteamBlocked(false);
-      setIsDllInstalled(false);
+      
+      // Refresh local state representation
+      await checkLocalSystemState();
+      onUpdateComplete(); // notify parent to refresh update status
 
       showStatus('Steam directory successfully reset to its original clean state.', 'success');
     } catch (err: any) {
@@ -163,7 +180,7 @@ export const AetherView = () => {
         <div className="panel-actions">
           <button 
             className="panel-btn" 
-            disabled={!isUpdateAvailable}
+            disabled={true} // no desk updates for now
           >
             Update
           </button>
@@ -174,17 +191,25 @@ export const AetherView = () => {
       <div className="aether-panel">
         <div className="panel-header">
           <span className="panel-title">AetherDLL</span>
-          <span className="panel-meta">{isDllInstalled ? 'v2.4.1' : 'N/A'}</span>
+          {/* Dynamically displays the actual local installed version from steam directory */}
+          <span className="panel-meta">{isDllInstalled ? installedVersion : 'N/A'}</span>
         </div>
         <div className="panel-actions">
           {/* Install/Update Button: Active if DLL is NOT installed, or if updates are available */}
-          <button 
-            onClick={handleInstallDll}
-            className="panel-btn"
-            disabled={isProcessing || (isDllInstalled && !isUpdateAvailable)}
-          >
-            {isDllInstalled ? 'Update' : 'Install'}
-          </button>
+          <div style={{ position: 'relative', display: 'flex', flex: '1 1 0%' }}>
+            <button 
+              onClick={handleInstallDll}
+              className="panel-btn"
+              disabled={isProcessing || (isDllInstalled && !isUpdateAvailable)}
+              style={{ width: '100%' }}
+            >
+              {isDllInstalled && isUpdateAvailable ? 'Update' : isDllInstalled ? 'Installed' : 'Install'}
+            </button>
+            {/* Superimposed glowing update dot overlay in top-right corner */}
+            {isDllInstalled && isUpdateAvailable && (
+              <span className="btn-update-dot" title="AetherDLL update is ready!"></span>
+            )}
+          </div>
 
           {/* Uninstall Button: Active ONLY if DLL is detected/installed */}
           <button 

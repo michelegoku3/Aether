@@ -900,3 +900,46 @@ body {
   cursor: not-allowed;
   color: var(--color-muted);
 }
+
+/* ==========================================
+   GLOBAL UPDATE NOTIFICATION BADGES
+   ========================================== */
+
+/* Glowing Cyan Notification Dot inside Sidebar element row */
+.sidebar-update-dot {
+  width: 8px;
+  height: 8px;
+  background-color: var(--color-cyan);
+  border-radius: 50%;
+  margin-right: 4px;
+  box-shadow: 0 0 8px var(--color-cyan);
+  animation: sidebarPulseGlow 1.5s infinite ease-in-out;
+  flex-shrink: 0;
+}
+
+@keyframes sidebarPulseGlow {
+  0% { transform: scale(0.85); opacity: 0.8; }
+  50% { transform: scale(1.25); opacity: 1; }
+  100% { transform: scale(0.85); opacity: 0.8; }
+}
+
+/* Glowing, superimposed Cyan Notification Dot in top-right corner of Update button */
+.btn-update-dot {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  width: 11px;
+  height: 11px;
+  background-color: var(--color-cyan);
+  border-radius: 50%;
+  box-shadow: 0 0 10px var(--color-cyan);
+  z-index: 10;
+  border: 1.5px solid #131316; /* Clean border blend with panel button bg */
+  animation: btnPulseGlow 1.5s infinite ease-in-out;
+}
+
+@keyframes btnPulseGlow {
+  0% { transform: scale(0.9); box-shadow: 0 0 4px var(--color-cyan); }
+  50% { transform: scale(1.3); box-shadow: 0 0 12px var(--color-cyan); }
+  100% { transform: scale(0.9); box-shadow: 0 0 4px var(--color-cyan); }
+}

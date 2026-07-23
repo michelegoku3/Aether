@@ -160,7 +160,55 @@ fn is_steam_blocked(steam_path: String) -> Result<bool, String> {
     Ok(content.contains("BootStrapperInhibitAll=Enable"))
 }
 
-// Command 9: Install / Update AetherDLL from latest GitHub Release
+// Command 9: Query GitHub and local file system to check for available AetherDLL updates
+#[tauri::command]
+async fn check_aether_dll_update(steam_path: String) -> Result<serde_json::Value, String> {
+    if steam_path.trim().is_empty() {
+        return Ok(serde_json::json!({
+            "installed_version": "N/A",
+            "latest_version": "N/A",
+            "update_available": false
+        }));
+    }
+
+    // 1. Read local installed version from steam directory
+    let version_path = std::path::PathBuf::from(&steam_path).join("AetherDLL_version.txt");
+    let installed_version = if version_path.exists() {
+        std::fs::read_to_string(&version_path)
+            .unwrap_or_else(|_| "N/A".to_string())
+            .trim()
+            .to_string()
+    } else {
+        // Fallback: If DLLs exist on disk but there is no version tracking file, treat as v2.4.1
+        let installer = DllInstaller::new(steam_path.clone());
+        if installer.verify_installation() {
+            "v2.4.1".to_string()
+        } else {
+            "N/A".to_string()
+        }
+    };
+
+    // 2. Fetch latest release tag from GitHub michelegoku3/Aether
+    let manager = GithubReleaseManager::new();
+    let (latest_version, _) = match manager.fetch_latest_release().await {
+        Ok(res) => res,
+        Err(_) => ("N/A".to_string(), "".to_string()),
+    };
+
+    // 3. Compare them
+    let mut update_available = false;
+    if installed_version != "N/A" && latest_version != "N/A" {
+        update_available = installed_version != latest_version;
+    }
+
+    Ok(serde_json::json!({
+        "installed_version": installed_version,
+        "latest_version": latest_version,
+        "update_available": update_available
+    }))
+}
+
+// Command 10: Install / Update AetherDLL from latest GitHub Release
 #[tauri::command]
 async fn install_aether_dll(steam_path: String) -> Result<String, String> {
     if steam_path.trim().is_empty() {
@@ -192,22 +240,32 @@ async fn install_aether_dll(steam_path: String) -> Result<String, String> {
         .map_err(|e| format!("Failed to write temporary ZIP: {}", e))?;
 
     // 4. Extract and deploy DLLs using DllInstaller
-    let installer = DllInstaller::new(steam_path);
+    let installer = DllInstaller::new(steam_path.clone());
     let install_result = installer.install_from_zip(&temp_zip_path);
 
     // Clean up temporary ZIP
     let _ = std::fs::remove_file(temp_zip_path);
 
+    // If install succeeded, write version tag to a local file to track installed state!
+    if install_result.is_ok() {
+        let version_path = std::path::PathBuf::from(&steam_path).join("AetherDLL_version.txt");
+        let _ = std::fs::write(&version_path, &tag_name);
+    }
+
     // Propagate result
     install_result.map(|_| format!("AetherDLL {} successfully installed into Steam!", tag_name))
 }
 
-// Command 10: Uninstall AetherDLL files from Steam folder
+// Command 11: Uninstall AetherDLL files from Steam folder
 #[tauri::command]
 fn uninstall_aether_dll(steam_path: String) -> Result<String, String> {
     if steam_path.trim().is_empty() {
         return Err("Steam installation path is required".to_string());
     }
+
+    // Delete version file
+    let version_path = std::path::PathBuf::from(&steam_path).join("AetherDLL_version.txt");
+    let _ = std::fs::remove_file(version_path);
 
     let installer = DllInstaller::new(steam_path);
     installer.uninstall().map(|_| "AetherDLL files removed successfully from Steam.".to_string())
@@ -224,6 +282,7 @@ fn main() {
             restart_steam,
             is_dll_installed,
             is_steam_blocked,
+            check_aether_dll_update,
             install_aether_dll,
             uninstall_aether_dll,
         ])

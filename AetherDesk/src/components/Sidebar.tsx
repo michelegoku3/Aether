@@ -3,10 +3,11 @@ export type TabType = 'aether' | 'home' | 'store' | 'library' | 'download' | 'se
 interface SidebarProps {
   activeTab: TabType;
   onTabChange: (tab: TabType) => void;
-  onRestartSteam: () => void; // Clean action handler
+  onRestartSteam: () => void;
+  dllUpdateAvailable: boolean; // Received from parent (App.tsx)
 }
 
-export const Sidebar = ({ activeTab, onTabChange, onRestartSteam }: SidebarProps) => {
+export const Sidebar = ({ activeTab, onTabChange, onRestartSteam, dllUpdateAvailable }: SidebarProps) => {
   return (
     <aside className="sidebar">
       {/* TOP NAVIGATION SECTION */}
@@ -59,8 +60,12 @@ export const Sidebar = ({ activeTab, onTabChange, onRestartSteam }: SidebarProps
         <button
           onClick={() => onTabChange('aether')}
           className={`nav-item ${activeTab === 'aether' ? 'active' : ''}`}
+          style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
         >
-          Aether
+          <span>Aether</span>
+          {dllUpdateAvailable && (
+            <span className="sidebar-update-dot" title="AetherDLL update available!"></span>
+          )}
         </button>
 
         {/* Settings */}
@@ -99,3 +104,4 @@ export const Sidebar = ({ activeTab, onTabChange, onRestartSteam }: SidebarProps
     </aside>
   );
 };
+export type { SidebarProps };
