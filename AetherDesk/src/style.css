@@ -886,6 +886,7 @@ body {
   border-radius: 8px;
   cursor: pointer;
   text-align: center;
+  position: relative; /* Added relative positioning anchor for absolute child indicators (like btn-update-dot) */
   transition: all 0.2s ease;
 }
 

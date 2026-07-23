@@ -196,20 +196,17 @@ export const AetherView = ({ isUpdateAvailable, onUpdateComplete }: AetherViewPr
         </div>
         <div className="panel-actions">
           {/* Install/Update Button: Active if DLL is NOT installed, or if updates are available */}
-          <div style={{ position: 'relative', display: 'flex', flex: '1 1 0%' }}>
-            <button 
-              onClick={handleInstallDll}
-              className="panel-btn"
-              disabled={isProcessing || (isDllInstalled && !isUpdateAvailable)}
-              style={{ width: '100%' }}
-            >
-              {isDllInstalled && isUpdateAvailable ? 'Update' : isDllInstalled ? 'Installed' : 'Install'}
-            </button>
-            {/* Superimposed glowing update dot overlay in top-right corner */}
+          <button 
+            onClick={handleInstallDll}
+            className="panel-btn"
+            disabled={isProcessing || (isDllInstalled && !isUpdateAvailable)}
+          >
+            {isDllInstalled && isUpdateAvailable ? 'Update' : isDllInstalled ? 'Installed' : 'Install'}
+            {/* Superimposed glowing update dot overlay directly inside the relative button container! */}
             {isDllInstalled && isUpdateAvailable && (
               <span className="btn-update-dot" title="AetherDLL update is ready!"></span>
             )}
-          </div>
+          </button>
 
           {/* Uninstall Button: Active ONLY if DLL is detected/installed */}
           <button 
