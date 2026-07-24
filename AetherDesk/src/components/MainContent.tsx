@@ -6,11 +6,10 @@ import { AetherView } from './AetherView';
 interface MainContentProps {
   activeTab: TabType;
   dllUpdateAvailable: boolean; // Passed down from App.tsx orchestrator
-  deskUpdateAvailable: boolean; // Passed down from App.tsx orchestrator
   onUpdateComplete: () => void; // Passed down from App.tsx orchestrator
 }
 
-export const MainContent = ({ activeTab, dllUpdateAvailable, deskUpdateAvailable, onUpdateComplete }: MainContentProps) => {
+export const MainContent = ({ activeTab, dllUpdateAvailable, onUpdateComplete }: MainContentProps) => {
   // Route to the appropriate view based on the active tab
   if (activeTab === 'store') {
     return (
@@ -32,9 +31,8 @@ export const MainContent = ({ activeTab, dllUpdateAvailable, deskUpdateAvailable
     return (
       <main className="main-content">
         <AetherView 
-          isUpdateAvailable={dllUpdateAvailable}
-          isDeskUpdateAvailable={deskUpdateAvailable}
-          onUpdateComplete={onUpdateComplete}
+          isUpdateAvailable={dllUpdateAvailable} 
+          onUpdateComplete={onUpdateComplete} 
         />
       </main>
     );
