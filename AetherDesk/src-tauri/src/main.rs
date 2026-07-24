@@ -19,7 +19,6 @@ use settings::{AppSettings, SettingsManager};
 use store_service::{StoreService, UnifiedStoreGame};
 use github_updater::GithubReleaseManager;
 use dll_installer::DllInstaller;
-use tauri_plugin_updater::UpdaterExt;
 
 // Command 1: Get App Settings (Load from settings.json)
 #[tauri::command]
@@ -189,27 +188,22 @@ async fn check_aether_dll_update(steam_path: String) -> Result<serde_json::Value
         }
     };
 
-    // 2. Fetch latest DLL release tag from GitHub. This ignores desk-* tags.
+    // 2. Fetch latest release tag from GitHub michelegoku3/Aether
     let manager = GithubReleaseManager::new();
-    let latest_tag = match manager.fetch_latest_dll_release().await {
-        Ok((tag, _)) => tag,
-        Err(_) => "N/A".to_string(),
-    };
-    let latest_version = if latest_tag != "N/A" {
-        GithubReleaseManager::component_version_from_tag(&latest_tag)
-    } else {
-        "N/A".to_string()
+    let (latest_version, _) = match manager.fetch_latest_release().await {
+        Ok(res) => res,
+        Err(_) => ("N/A".to_string(), "".to_string()),
     };
 
-    // 3. Compare normalized component versions (dll-1.2.3, dll-v1.2.3 and v1.2.3 all match 1.2.3)
-    let update_available = installed_version != "N/A"
-        && latest_tag != "N/A"
-        && GithubReleaseManager::tags_are_different_versions(&installed_version, &latest_tag);
+    // 3. Compare them
+    let mut update_available = false;
+    if installed_version != "N/A" && latest_version != "N/A" {
+        update_available = installed_version != latest_version;
+    }
 
     Ok(serde_json::json!({
         "installed_version": installed_version,
         "latest_version": latest_version,
-        "latest_tag": latest_tag,
         "update_available": update_available
     }))
 }
@@ -221,10 +215,9 @@ async fn install_aether_dll(steam_path: String) -> Result<String, String> {
         return Err("Steam installation path is required".to_string());
     }
 
-    // 1. Fetch latest AetherDLL release info from michelegoku3/Aether.
-    // This uses only dll-* / dll-v* tags and will never install an AetherDesk release.
+    // 1. Fetch latest release info from michelegoku3/Aether
     let manager = GithubReleaseManager::new();
-    let (tag_name, download_url) = manager.fetch_latest_dll_release().await?;
+    let (tag_name, download_url) = manager.fetch_latest_release().await?;
 
     // 2. Download the release ZIP asynchronously
     let client = reqwest::Client::new();
@@ -263,90 +256,7 @@ async fn install_aether_dll(steam_path: String) -> Result<String, String> {
     install_result.map(|_| format!("AetherDLL {} successfully installed into Steam!", tag_name))
 }
 
-// Command 11: Check if a native AetherDesk application update is available.
-// Detection is tag-based: it reads the latest published desk-* / desk-v* GitHub Release,
-// not the version field inside latest.json. latest.json is used only later by Tauri to
-// verify, download and install the signed updater artifact.
-#[tauri::command]
-async fn check_aether_desk_update(app: tauri::AppHandle) -> Result<serde_json::Value, String> {
-    let current_version = app.package_info().version.to_string();
-    let manager = GithubReleaseManager::new();
-    let release = match manager.fetch_latest_desk_release().await {
-        Ok(release) => release,
-        Err(_) => {
-            return Ok(serde_json::json!({
-                "installed_version": current_version,
-                "latest_version": "N/A",
-                "latest_tag": "N/A",
-                "update_available": false,
-                "release_url": "",
-                "notes": ""
-            }));
-        }
-    };
-
-    let info = GithubReleaseManager::build_desk_update_info(current_version, &release);
-    serde_json::to_value(info).map_err(|e| format!("Failed to serialize desk update info: {}", e))
-}
-
-// Command 12: Install AetherDesk update using Tauri's native updater.
-// The release is still selected by desk-* / desk-v* tag first. Once selected, we point
-// the Tauri updater to that release's latest.json asset, so signature verification and
-// installer execution stay native and safe.
-#[tauri::command]
-async fn install_aether_desk_update(app: tauri::AppHandle) -> Result<String, String> {
-    let current_version = app.package_info().version.to_string();
-    let manager = GithubReleaseManager::new();
-    let release = manager.fetch_latest_desk_release().await?;
-
-    if !GithubReleaseManager::tags_are_different_versions(&current_version, &release.tag_name) {
-        return Ok(format!("AetherDesk is already up to date ({})", current_version));
-    }
-
-    let manifest_url = GithubReleaseManager::find_desk_updater_manifest_url(&release)?;
-    let manifest_url = url::Url::parse(&manifest_url)
-        .map_err(|e| format!("Invalid updater endpoint URL: {}", e))?;
-
-    let update = app
-        .updater_builder()
-        .endpoints(vec![manifest_url])
-        .map_err(|e| format!("Invalid updater endpoint: {}", e))?
-        .build()
-        .map_err(|e| format!("Failed to initialize Tauri updater: {}", e))?
-        .check()
-        .await
-        .map_err(|e| format!("Tauri updater check failed: {}", e))?;
-
-    let Some(update) = update else {
-        return Err(format!(
-            "GitHub tag {} says an update exists, but latest.json did not expose a newer signed Tauri artifact. Check that latest.json version matches the tag semver and that updater artifacts were uploaded.",
-            release.tag_name
-        ));
-    };
-
-    let version = update.version.clone();
-    let mut downloaded = 0;
-    update
-        .download_and_install(
-            |chunk_length, content_length| {
-                downloaded += chunk_length;
-                println!("AetherDesk updater downloaded {downloaded} / {content_length:?} bytes");
-            },
-            || {
-                println!("AetherDesk updater download finished");
-            },
-        )
-        .await
-        .map_err(|e| format!("Failed to download/install AetherDesk update: {}", e))?;
-
-    println!("AetherDesk {} installed. Restarting...", version);
-
-    // Native restart: Tauri relaunches into the newly installed version.
-    // app.restart() does not return, so it must be the final expression of this command.
-    app.restart()
-}
-
-// Command 13: Uninstall AetherDLL files from Steam folder
+// Command 11: Uninstall AetherDLL files from Steam folder
 #[tauri::command]
 fn uninstall_aether_dll(steam_path: String) -> Result<String, String> {
     if steam_path.trim().is_empty() {
@@ -363,7 +273,6 @@ fn uninstall_aether_dll(steam_path: String) -> Result<String, String> {
 
 fn main() {
     tauri::Builder::default()
-        .plugin(tauri_plugin_updater::Builder::new().build())
         .invoke_handler(tauri::generate_handler![
             get_settings,
             save_settings,
@@ -375,8 +284,6 @@ fn main() {
             is_steam_blocked,
             check_aether_dll_update,
             install_aether_dll,
-            check_aether_desk_update,
-            install_aether_desk_update,
             uninstall_aether_dll,
         ])
         .run(tauri::generate_context!())

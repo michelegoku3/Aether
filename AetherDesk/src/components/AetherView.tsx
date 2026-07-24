@@ -3,16 +3,13 @@ import { invoke } from '@tauri-apps/api/core';
 
 interface AetherViewProps {
   isUpdateAvailable: boolean;
-  isDeskUpdateAvailable: boolean;
   onUpdateComplete: () => void; // Refresh update check in the parent
 }
 
-export const AetherView = ({ isUpdateAvailable, isDeskUpdateAvailable, onUpdateComplete }: AetherViewProps) => {
+export const AetherView = ({ isUpdateAvailable, onUpdateComplete }: AetherViewProps) => {
   // Real active states bound to local filesystem and config status
   const [isDllInstalled, setIsDllInstalled] = useState(false);
   const [installedVersion, setInstalledVersion] = useState('N/A');
-  const [deskVersion, setDeskVersion] = useState('1.0.0');
-  const [latestDeskVersion, setLatestDeskVersion] = useState('N/A');
   const [isSteamBlocked, setIsSteamBlocked] = useState(false);
   
   const [statusMsg, setStatusMsg] = useState({ text: '', type: 'info' });
@@ -25,14 +22,6 @@ export const AetherView = ({ isUpdateAvailable, isDeskUpdateAvailable, onUpdateC
 
   // Perform active check on local system state on component load
   const checkLocalSystemState = async () => {
-    try {
-      const deskInfo: any = await invoke('check_aether_desk_update');
-      setDeskVersion(deskInfo.installed_version || 'N/A');
-      setLatestDeskVersion(deskInfo.latest_version || 'N/A');
-    } catch (err: any) {
-      console.error("Failed to query AetherDesk update state:", err);
-    }
-
     try {
       // 1. Get custom Steam folder path from settings.json
       const settings: any = await invoke('get_settings');
@@ -58,24 +47,7 @@ export const AetherView = ({ isUpdateAvailable, isDeskUpdateAvailable, onUpdateC
 
   useEffect(() => {
     checkLocalSystemState();
-  }, [isUpdateAvailable, isDeskUpdateAvailable]); // re-run if update availability changes
-
-  const handleInstallDeskUpdate = async () => {
-    setIsProcessing(true);
-    showStatus('Preparing native AetherDesk update...', 'info');
-
-    try {
-      const result: string = await invoke('install_aether_desk_update');
-      showStatus(result, 'success');
-      // The Rust updater restarts the app after a successful native install.
-      setIsProcessing(false);
-    } catch (err: any) {
-      showStatus(`AetherDesk update failed: ${err}`, 'error');
-      await checkLocalSystemState();
-      onUpdateComplete();
-      setIsProcessing(false);
-    }
-  };
+  }, [isUpdateAvailable]); // re-run if update availability changes
 
   const handleInstallDll = async () => {
     setIsProcessing(true);
@@ -203,20 +175,14 @@ export const AetherView = ({ isUpdateAvailable, isDeskUpdateAvailable, onUpdateC
       <div className="aether-panel">
         <div className="panel-header">
           <span className="panel-title">AetherDesk</span>
-          <span className="panel-meta">
-            v{deskVersion}{isDeskUpdateAvailable && latestDeskVersion !== 'N/A' ? ` → v${latestDeskVersion}` : ''}
-          </span>
+          <span className="panel-meta">v1.0.0</span>
         </div>
         <div className="panel-actions">
           <button 
-            onClick={handleInstallDeskUpdate}
             className="panel-btn" 
-            disabled={isProcessing || !isDeskUpdateAvailable}
+            disabled={true} // no desk updates for now
           >
-            {isDeskUpdateAvailable ? 'Update' : 'Updated'}
-            {isDeskUpdateAvailable && (
-              <span className="btn-update-dot" title="AetherDesk update is ready!"></span>
-            )}
+            Update
           </button>
         </div>
       </div>
