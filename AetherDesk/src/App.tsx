@@ -9,9 +9,19 @@ export default function App() {
 
   // Global state to track AetherDLL update availability from live GitHub Release API
   const [dllUpdateAvailable, setDllUpdateAvailable] = useState(false);
+  // Global state to track native AetherDesk update availability from desk-* GitHub tags
+  const [deskUpdateAvailable, setDeskUpdateAvailable] = useState(false);
 
-  // Method to check for DLL updates globally (runs on mount and after operations)
-  const checkDllUpdates = async () => {
+  // Method to check for component updates globally (runs on mount and after operations)
+  const checkUpdates = async () => {
+    try {
+      const deskInfo: any = await invoke('check_aether_desk_update');
+      setDeskUpdateAvailable(Boolean(deskInfo.update_available));
+    } catch (err) {
+      console.error("AetherDesk update check failed:", err);
+      setDeskUpdateAvailable(false);
+    }
+
     try {
       const settings: any = await invoke('get_settings');
       const steamPath = settings.steam_path;
@@ -20,14 +30,14 @@ export default function App() {
         setDllUpdateAvailable(updateInfo.update_available);
       }
     } catch (err) {
-      console.error("Global update check failed:", err);
+      console.error("AetherDLL update check failed:", err);
     }
   };
 
   // Run update checks on startup and poll every 45 seconds for a reactive experience!
   useEffect(() => {
-    checkDllUpdates();
-    const interval = setInterval(checkDllUpdates, 45000);
+    checkUpdates();
+    const interval = setInterval(checkUpdates, 45000);
     return () => clearInterval(interval);
   }, []);
 
@@ -48,14 +58,15 @@ export default function App() {
         activeTab={activeTab} 
         onTabChange={setActiveTab} 
         onRestartSteam={handleRestartSteam} 
-        dllUpdateAvailable={dllUpdateAvailable}
+        dllUpdateAvailable={dllUpdateAvailable || deskUpdateAvailable}
       />
 
       {/* Modular Main Content display area */}
       <MainContent 
         activeTab={activeTab} 
-        dllUpdateAvailable={dllUpdateAvailable} 
-        onUpdateComplete={checkDllUpdates}
+        dllUpdateAvailable={dllUpdateAvailable}
+        deskUpdateAvailable={deskUpdateAvailable}
+        onUpdateComplete={checkUpdates}
       />
     </div>
   );
