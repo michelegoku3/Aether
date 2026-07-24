@@ -34,10 +34,13 @@ export default function App() {
     }
   };
 
-  // Run update checks on startup and poll every 45 seconds for a reactive experience!
+  // Run update checks on startup and then only occasionally.
+  // GitHub public API is limited to 60 unauthenticated requests/hour per IP: polling every
+  // 45 seconds can quickly cause 403 Forbidden/rate-limit errors, especially because Desk
+  // and DLL are checked separately.
   useEffect(() => {
     checkUpdates();
-    const interval = setInterval(checkUpdates, 45000);
+    const interval = setInterval(checkUpdates, 30 * 60 * 1000);
     return () => clearInterval(interval);
   }, []);
 
