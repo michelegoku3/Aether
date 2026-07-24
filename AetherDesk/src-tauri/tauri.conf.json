@@ -29,7 +29,9 @@
   },
   "bundle": {
     "active": true,
-    "targets": ["nsis"],
+    "targets": [
+      "nsis"
+    ],
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
@@ -41,9 +43,22 @@
     "windows": {
       "nsis": {
         "installMode": "both",
-        "languages": ["English", "Italian"],
+        "languages": [
+          "English",
+          "Italian"
+        ],
         "displayLanguageSelector": true,
         "startMenuFolder": "AetherDesk"
+      }
+    },
+    "createUpdaterArtifacts": true
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEQ1NTgxQ0U0RjNDMzUyNDcKUldSSFVzUHo1QnhZMVQ0QlFwNXEvUzgvOHhaMTlZaHVyVGVlZ3FQME5BQ3dtN1hsRzIybmluemsK",
+      "endpoints": [],
+      "windows": {
+        "installMode": "passive"
       }
     }
   }
