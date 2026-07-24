@@ -57,7 +57,24 @@ impl GithubReleaseManager {
             .map_err(|e| format!("GitHub API network error: {}", e))?;
 
         if !response.status().is_success() {
-            return Err(format!("GitHub API returned HTTP error: {}", response.status()));
+            let status = response.status();
+            let remaining = response
+                .headers()
+                .get("x-ratelimit-remaining")
+                .and_then(|v| v.to_str().ok())
+                .unwrap_or("unknown")
+                .to_string();
+            let reset = response
+                .headers()
+                .get("x-ratelimit-reset")
+                .and_then(|v| v.to_str().ok())
+                .unwrap_or("unknown")
+                .to_string();
+            let body = response.text().await.unwrap_or_default();
+            return Err(format!(
+                "GitHub API returned HTTP error: {}. rate_remaining={}, rate_reset={}, body={}",
+                status, remaining, reset, body
+            ));
         }
 
         response
@@ -98,13 +115,44 @@ impl GithubReleaseManager {
             .to_string()
     }
 
+    fn version_sort_key_from_tag(tag: &str) -> Vec<u64> {
+        Self::component_version_from_tag(tag)
+            .split('.')
+            .map(|part| {
+                part.chars()
+                    .take_while(|ch| ch.is_ascii_digit())
+                    .collect::<String>()
+                    .parse::<u64>()
+                    .unwrap_or(0)
+            })
+            .collect()
+    }
+
+    fn compare_version_tags(a: &str, b: &str) -> std::cmp::Ordering {
+        let a_key = Self::version_sort_key_from_tag(a);
+        let b_key = Self::version_sort_key_from_tag(b);
+        let max_len = a_key.len().max(b_key.len());
+
+        for index in 0..max_len {
+            let a_part = *a_key.get(index).unwrap_or(&0);
+            let b_part = *b_key.get(index).unwrap_or(&0);
+            match a_part.cmp(&b_part) {
+                std::cmp::Ordering::Equal => continue,
+                ordering => return ordering,
+            }
+        }
+
+        std::cmp::Ordering::Equal
+    }
+
     pub async fn fetch_latest_by_prefix(&self, prefixes: &[&str]) -> Result<GithubRelease, String> {
         let releases = self.fetch_releases().await?;
         releases
             .into_iter()
-            .find(|release| {
+            .filter(|release| {
                 !release.draft && !release.prerelease && Self::tag_has_prefix(&release.tag_name, prefixes)
             })
+            .max_by(|a, b| Self::compare_version_tags(&a.tag_name, &b.tag_name))
             .ok_or_else(|| format!("No published GitHub release found for prefixes {:?}", prefixes))
     }
 
