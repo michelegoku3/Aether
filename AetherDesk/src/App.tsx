@@ -16,6 +16,7 @@ export default function App() {
   const checkUpdates = async () => {
     try {
       const deskInfo: any = await invoke('check_aether_desk_update');
+      console.log('[AetherDesk update check]', deskInfo);
       setDeskUpdateAvailable(Boolean(deskInfo.update_available));
     } catch (err) {
       console.error("AetherDesk update check failed:", err);
@@ -27,6 +28,7 @@ export default function App() {
       const steamPath = settings.steam_path;
       if (steamPath && steamPath.trim() !== '') {
         const updateInfo: any = await invoke('check_aether_dll_update', { steamPath });
+        console.log('[AetherDLL update check]', updateInfo);
         setDllUpdateAvailable(updateInfo.update_available);
       }
     } catch (err) {

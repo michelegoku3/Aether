@@ -273,14 +273,15 @@ async fn check_aether_desk_update(app: tauri::AppHandle) -> Result<serde_json::V
     let manager = GithubReleaseManager::new();
     let release = match manager.fetch_latest_desk_release().await {
         Ok(release) => release,
-        Err(_) => {
+        Err(error) => {
             return Ok(serde_json::json!({
                 "installed_version": current_version,
                 "latest_version": "N/A",
                 "latest_tag": "N/A",
                 "update_available": false,
                 "release_url": "",
-                "notes": ""
+                "notes": "",
+                "error": error
             }));
         }
     };
