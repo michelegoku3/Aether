@@ -1,0 +1,52 @@
+name: Build and Release AetherDesk
+
+on:
+  push:
+    tags:
+      - 'desk-v*' # Si attiva quando invii tag come desk-v1.0.3
+
+jobs:
+  build:
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        platform: [windows-latest]
+
+    runs-on: ${{ matrix.platform }}
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install Rust Toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust Cache Setup
+        uses: swatinem/rust-cache@v2
+        with:
+          work-dir: ./AetherDesk/src-tauri
+
+      - name: Install Frontend Dependencies
+        run: |
+          cd AetherDesk
+          npm install
+
+      - name: Build and Package Tauri App
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: 'AetherDesk ${{ github.ref_name }}'
+          releaseBody: 'Automated release compiled and signed on GitHub Actions.'
+          releaseDraft: true
+          prerelease: false
+          projectPath: ./AetherDesk
