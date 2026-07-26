@@ -12,6 +12,8 @@ pub struct UnifiedStoreGame {
     pub app_id: String,
     pub has_manifest: bool,
     pub has_denuvo: bool,
+    #[serde(rename = "imageUrl")]
+    pub image_url: String,
 }
 
 pub struct StoreService {
@@ -163,6 +165,7 @@ impl StoreService {
                 app_id: item.id.to_string(),
                 has_manifest,
                 has_denuvo,
+                image_url: item.image_url,
             });
             added_ids.insert(item.id);
         }
@@ -177,6 +180,7 @@ impl StoreService {
                     app_id: hg.app_id.to_string(),
                     has_manifest: true,
                     has_denuvo,
+                    image_url: String::new(),
                 });
                 added_ids.insert(hg.app_id);
             }

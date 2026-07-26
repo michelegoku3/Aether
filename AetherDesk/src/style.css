@@ -338,6 +338,7 @@ body {
   object-fit: cover;
   position: relative;
   z-index: 2;
+  background-color: #1a1a20;
 }
 
 .game-cover-fallback {
