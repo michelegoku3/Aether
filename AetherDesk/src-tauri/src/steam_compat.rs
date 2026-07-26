@@ -35,11 +35,26 @@ impl SteamCompat {
         let target_path = plugin_dir.join(format!("{}.lua", app_id));
         let temp_path = target_path.with_extension("tmp");
 
+        // Keep a non-.lua backup before overwriting. This is intentionally not named
+        // *.lua so LumaCore/AetherDLL will not try to load it as another plugin file.
+        if target_path.exists() {
+            let backup_path = target_path.with_extension("lua.bak");
+            let _ = fs::copy(&target_path, backup_path);
+        }
+
         fs::write(&temp_path, content)
             .map_err(|e| format!("Failed to write plugin Lua: {}", e))?;
 
         fs::rename(&temp_path, &target_path)
             .map_err(|e| format!("Failed to install plugin Lua: {}", e))?;
+
+        // Defensive verification: this layer must be a pure writer and must never
+        // transform Lua content. If the installed file differs, stop immediately.
+        let installed = fs::read_to_string(&target_path)
+            .map_err(|e| format!("Failed to verify installed plugin Lua: {}", e))?;
+        if installed != content {
+            return Err("Installed Lua differs from downloaded Lua; refusing to continue.".to_string());
+        }
 
         Ok(())
     }

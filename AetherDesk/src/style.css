@@ -484,6 +484,11 @@ body {
   animation: modalScaleIn 0.2s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
+.version-modal-container {
+  width: 840px;
+  max-height: 86vh;
+}
+
 @keyframes modalScaleIn {
   from {
     transform: scale(0.95);
@@ -533,6 +538,157 @@ body {
   display: flex;
   flex-direction: column;
   gap: 16px;
+}
+
+/* Specific version manifest editor */
+.version-table-wrapper {
+  max-height: 420px;
+  overflow-y: auto;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background-color: #08080a;
+}
+
+.version-table {
+  width: 100%;
+  table-layout: fixed;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.version-table th:nth-child(1),
+.version-table td:nth-child(1) {
+  width: 120px;
+}
+
+.version-table th:nth-child(2),
+.version-table td:nth-child(2) {
+  width: auto;
+}
+
+.version-table th:nth-child(3),
+.version-table td:nth-child(3) {
+  width: 120px;
+  text-align: right;
+}
+
+.version-table th,
+.version-table td {
+  padding: 10px 18px;
+  border-bottom: 1px solid #1a1a22;
+  text-align: left;
+}
+
+.version-table th {
+  position: sticky;
+  top: 0;
+  background-color: #111116;
+  color: var(--color-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  font-size: 10px;
+  z-index: 2;
+}
+
+.version-table tr:last-child td {
+  border-bottom: none;
+}
+
+.version-table tr.disabled {
+  opacity: 0.45;
+}
+
+.version-appid {
+  color: #ffffff;
+  font-family: monospace;
+  font-weight: 700;
+  text-align: left;
+}
+
+.version-manifest-input {
+  width: 100%;
+  background-color: #141417;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  padding: 8px 10px;
+  color: #ffffff;
+  font-size: 12px;
+  font-family: monospace;
+  outline: none;
+  transition: border-color 0.2s ease;
+}
+
+.version-manifest-input:focus {
+  border-color: var(--color-cyan);
+}
+
+.version-manifest-input::placeholder {
+  color: #5f5f6b;
+}
+
+.version-actions {
+  display: flex;
+  justify-content: center;
+}
+
+.version-actions .panel-btn {
+  flex: 0 0 auto;
+  min-width: 230px;
+}
+
+.version-switch-cell {
+  text-align: right;
+}
+
+.version-switch {
+  position: relative;
+  display: inline-flex;
+  width: 42px;
+  height: 24px;
+  align-items: center;
+}
+
+.version-switch input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.version-switch span {
+  position: absolute;
+  cursor: pointer;
+  inset: 0;
+  background-color: #2a2a32;
+  border: 1px solid var(--border-color);
+  border-radius: 999px;
+  transition: all 0.2s ease;
+}
+
+.version-switch span::before {
+  content: '';
+  position: absolute;
+  width: 18px;
+  height: 18px;
+  left: 2px;
+  top: 2px;
+  background-color: #ffffff;
+  border-radius: 50%;
+  transition: all 0.2s ease;
+}
+
+.version-switch input:checked + span {
+  background-color: var(--color-cyan);
+  border-color: var(--color-cyan);
+  box-shadow: 0 0 10px rgba(0, 180, 216, 0.35);
+}
+
+.version-switch input:checked + span::before {
+  transform: translateX(18px);
+}
+
+.version-switch input:disabled + span {
+  cursor: not-allowed;
+  opacity: 0.6;
 }
 
 /* Source Selector Panel (Darker Box background than app background) */
