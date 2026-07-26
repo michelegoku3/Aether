@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { SpecificVersionModal, LuaManifestRow } from './SpecificVersionModal';
+import { GameCover } from './GameCover';
 
 export interface StoreGame {
   id: number;
@@ -8,6 +9,7 @@ export interface StoreGame {
   appId: string;
   has_manifest: boolean;
   has_denuvo: boolean;
+  imageUrl?: string;
 }
 
 
@@ -211,21 +213,8 @@ export const StoreView = () => {
                 </span>
               )}
 
-              {/* Cover Art Wrapper */}
-              <div className="game-cover-wrapper">
-                <img 
-                  src={`https://cdn.cloudflare.steamstatic.com/steam/apps/${game.appId}/library_600x900.jpg`} 
-                  alt={game.name}
-                  className="game-cover-image"
-                  onError={(e) => {
-                    // Fallback placeholder if offline or cover image fails to load
-                    (e.target as HTMLElement).style.display = 'none';
-                  }}
-                />
-                <div className="game-cover-fallback">
-                  <span>Æ</span>
-                </div>
-              </div>
+              {/* Cover Art Wrapper with multi-CDN fallback chain */}
+              <GameCover appId={game.appId} name={game.name} canonicalUrl={game.imageUrl} />
 
               {/* Game Metadata and actions */}
               <div className="game-info-wrapper">
