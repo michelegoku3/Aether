@@ -1,9 +1,11 @@
 use reqwest::header::{HeaderMap, HeaderValue, AUTHORIZATION, USER_AGENT};
 use serde::{Deserialize, Serialize};
 use std::io::{Cursor, Read};
+use std::time::Duration;
 use zip::ZipArchive;
 
 const BASE_URL: &str = "https://hubcapmanifest.com/api/v1";
+const HUBCAP_TIMEOUT_SECONDS: u64 = 8;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct HubcapGameItem {
@@ -45,7 +47,10 @@ impl HubcapClient {
     pub fn new(api_key: String) -> Self {
         Self {
             api_key,
-            client: reqwest::Client::new(),
+            client: reqwest::Client::builder()
+                .timeout(Duration::from_secs(HUBCAP_TIMEOUT_SECONDS))
+                .build()
+                .unwrap_or_else(|_| reqwest::Client::new()),
         }
     }
 

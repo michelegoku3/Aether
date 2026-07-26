@@ -1,4 +1,7 @@
 use serde::{Deserialize, Serialize};
+use std::time::Duration;
+
+const STEAM_SEARCH_TIMEOUT_SECONDS: u64 = 5;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct SteamStoreItem {
@@ -21,7 +24,10 @@ pub struct SteamStore {
 impl SteamStore {
     pub fn new() -> Self {
         Self {
-            client: reqwest::Client::new(),
+            client: reqwest::Client::builder()
+                .timeout(Duration::from_secs(STEAM_SEARCH_TIMEOUT_SECONDS))
+                .build()
+                .unwrap_or_else(|_| reqwest::Client::new()),
         }
     }
 

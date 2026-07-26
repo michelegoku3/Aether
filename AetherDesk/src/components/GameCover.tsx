@@ -12,8 +12,8 @@ const STEAM_COVER_TEMPLATES = [
   'https://shared.steamstatic.com/store_item_assets/steam/apps/{id}/library_600x900.jpg',
   'https://cdn.cloudflare.steamstatic.com/steam/apps/{id}/library_600x900.jpg',
 
-  // Then try Steam's newer wide library/header/capsule assets. These are not stretched:
-  // GameCover classifies them at load time and renders them with contain + blurred backdrop.
+  // Wide fallbacks. They are preloaded and classified before being shown, so
+  // users never see broken-image flashes while the chain is being tested.
   'https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/{id}/library_header.jpg',
   'https://shared.fastly.steamstatic.com/store_item_assets/steam/apps/{id}/library_header.jpg',
   'https://shared.steamstatic.com/store_item_assets/steam/apps/{id}/library_header.jpg',
@@ -27,7 +27,12 @@ const STEAM_COVER_TEMPLATES = [
   'https://shared.steamstatic.com/store_item_assets/steam/apps/{id}/capsule_616x353.jpg',
 ];
 
-type CoverFit = 'unknown' | 'portrait' | 'landscape';
+type CoverFit = 'portrait' | 'landscape';
+
+interface ResolvedCover {
+  url: string;
+  fit: CoverFit;
+}
 
 interface GameCoverProps {
   appId: string | number;
@@ -74,11 +79,10 @@ const buildCoverUrls = (appId: string, canonicalUrl?: string) => {
   return urls;
 };
 
-const classifyCover = (image: HTMLImageElement): CoverFit | null => {
+const classifyLoadedImage = (image: HTMLImageElement): CoverFit | null => {
   const { naturalWidth, naturalHeight } = image;
 
-  // Some Steam endpoints can return tiny placeholder-like images. Skip those instead
-  // of caching/rendering them, because they look pixelated in the card.
+  // Skip tiny placeholder-like images instead of rendering pixelated covers.
   if (naturalWidth < MIN_USABLE_WIDTH || naturalHeight < MIN_USABLE_HEIGHT) {
     return null;
   }
@@ -87,54 +91,92 @@ const classifyCover = (image: HTMLImageElement): CoverFit | null => {
   return ratio <= PORTRAIT_RATIO_THRESHOLD ? 'portrait' : 'landscape';
 };
 
+const preloadCoverChain = (
+  urls: string[],
+  onResolved: (cover: ResolvedCover | null) => void,
+) => {
+  let cancelled = false;
+  let index = 0;
+
+  const tryNext = () => {
+    if (cancelled) return;
+
+    const url = urls[index];
+    if (!url) {
+      onResolved(null);
+      return;
+    }
+
+    const image = new Image();
+    image.decoding = 'async';
+    image.onload = () => {
+      if (cancelled) return;
+
+      const fit = classifyLoadedImage(image);
+      if (!fit) {
+        index += 1;
+        tryNext();
+        return;
+      }
+
+      onResolved({ url, fit });
+    };
+    image.onerror = () => {
+      index += 1;
+      tryNext();
+    };
+    image.src = url;
+  };
+
+  tryNext();
+
+  return () => {
+    cancelled = true;
+  };
+};
+
 export const GameCover = ({ appId, name, canonicalUrl }: GameCoverProps) => {
   const appIdString = String(appId);
   const urls = useMemo(
     () => buildCoverUrls(appIdString, canonicalUrl),
     [appIdString, canonicalUrl]
   );
-  const [urlIndex, setUrlIndex] = useState(0);
-  const [coverFit, setCoverFit] = useState<CoverFit>('unknown');
-  const currentUrl = urls[urlIndex];
+  const [resolvedCover, setResolvedCover] = useState<ResolvedCover | null>(null);
+  const [hasFinishedLookup, setHasFinishedLookup] = useState(false);
 
   useEffect(() => {
-    setUrlIndex(0);
-    setCoverFit('unknown');
-  }, [urls]);
+    setResolvedCover(null);
+    setHasFinishedLookup(false);
 
-  const tryNextUrl = () => {
-    setCoverFit('unknown');
-    setUrlIndex(index => index + 1);
-  };
+    return preloadCoverChain(urls, (cover) => {
+      setResolvedCover(cover);
+      setHasFinishedLookup(true);
+      if (cover) {
+        saveCachedCover(appIdString, cover.url);
+      }
+    });
+  }, [appIdString, urls]);
 
   return (
-    <div className={`game-cover-wrapper ${coverFit === 'landscape' ? 'landscape' : ''}`}>
-      {currentUrl && coverFit === 'landscape' ? (
-        <img src={currentUrl} alt="" className="game-cover-backdrop" aria-hidden="true" />
+    <div className={`game-cover-wrapper ${resolvedCover?.fit === 'landscape' ? 'landscape' : ''}`}>
+      {resolvedCover?.fit === 'landscape' ? (
+        <img src={resolvedCover.url} alt="" className="game-cover-backdrop" aria-hidden="true" />
       ) : null}
 
-      {currentUrl ? (
+      {resolvedCover ? (
         <img
-          src={currentUrl}
+          src={resolvedCover.url}
           alt={name}
-          className={`game-cover-image ${coverFit}`}
+          className={`game-cover-image ${resolvedCover.fit}`}
           loading="lazy"
-          onLoad={(event) => {
-            const nextFit = classifyCover(event.currentTarget);
-            if (!nextFit) {
-              tryNextUrl();
-              return;
-            }
-
-            setCoverFit(nextFit);
-            saveCachedCover(appIdString, event.currentTarget.src);
-          }}
-          onError={tryNextUrl}
         />
       ) : null}
-      <div className="game-cover-fallback">
-        <span>Æ</span>
-      </div>
+
+      {!resolvedCover ? (
+        <div className={`game-cover-fallback ${hasFinishedLookup ? 'not-found' : 'loading'}`}>
+          <span>Æ</span>
+        </div>
+      ) : null}
     </div>
   );
 };
