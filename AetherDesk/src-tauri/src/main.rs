@@ -11,6 +11,7 @@ mod store_service;
 mod github_updater;
 mod dll_installer;
 mod download_orchestrator;
+mod steam_update_guard;
 
 use hubcap_client::HubcapClient;
 use steam_compat::SteamCompat;
@@ -19,6 +20,7 @@ use settings::{AppSettings, SettingsManager};
 use store_service::{StoreService, UnifiedStoreGame};
 use github_updater::GithubReleaseManager;
 use dll_installer::DllInstaller;
+use steam_update_guard::SteamUpdateGuard;
 use tauri_plugin_updater::UpdaterExt;
 
 // Command 1: Get App Settings (Load from settings.json)
@@ -145,23 +147,40 @@ fn is_dll_installed(steam_path: String) -> Result<bool, String> {
     Ok(installer.verify_installation())
 }
 
-// Command 8: Check if Steam updates are currently blocked
+// Command 8: Check if Steam updates are currently blocked.
+// If steam.cfg does not exist, it is created with updates still unblocked.
 #[tauri::command]
 fn is_steam_blocked(steam_path: String) -> Result<bool, String> {
     if steam_path.trim().is_empty() {
         return Ok(false);
     }
-    let cfg_path = std::path::PathBuf::from(steam_path).join("steam.cfg");
-    if !cfg_path.exists() {
-        return Ok(false);
-    }
-    let content = std::fs::read_to_string(cfg_path)
-        .map_err(|e| format!("Failed to read steam.cfg: {}", e))?;
-    
-    Ok(content.contains("BootStrapperInhibitAll=Enable"))
+
+    SteamUpdateGuard::new(steam_path).is_blocked()
 }
 
-// Command 9: Query GitHub and local file system to check for available AetherDLL updates
+// Command 9: Block Steam client updates by persisting BootStrapperInhibitAll=Enable in steam.cfg
+#[tauri::command]
+fn block_steam_updates(steam_path: String) -> Result<String, String> {
+    if steam_path.trim().is_empty() {
+        return Err("Steam installation path is required".to_string());
+    }
+
+    SteamUpdateGuard::new(steam_path).block_updates()?;
+    Ok("Steam updates are now blocked.".to_string())
+}
+
+// Command 10: Unblock Steam client updates by persisting BootStrapperInhibitAll=Disable in steam.cfg
+#[tauri::command]
+fn unblock_steam_updates(steam_path: String) -> Result<String, String> {
+    if steam_path.trim().is_empty() {
+        return Err("Steam installation path is required".to_string());
+    }
+
+    SteamUpdateGuard::new(steam_path).unblock_updates()?;
+    Ok("Steam updates are now unblocked.".to_string())
+}
+
+// Command 11: Query GitHub and local file system to check for available AetherDLL updates
 #[tauri::command]
 async fn check_aether_dll_update(steam_path: String) -> Result<serde_json::Value, String> {
     if steam_path.trim().is_empty() {
@@ -374,6 +393,8 @@ fn main() {
             restart_steam,
             is_dll_installed,
             is_steam_blocked,
+            block_steam_updates,
+            unblock_steam_updates,
             check_aether_dll_update,
             install_aether_dll,
             check_aether_desk_update,
