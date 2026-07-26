@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { SpecificVersionModal, LuaManifestRow } from './SpecificVersionModal';
 import { GameCover } from './GameCover';
@@ -23,6 +23,7 @@ export const StoreView = () => {
   const [storeGames, setStoreGames] = useState<StoreGame[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [hasSearched, setHasSearched] = useState(false);
+  const searchRequestId = useRef(0);
 
   // Active game selected for download modal, null means modal is closed
   const [selectedGame, setSelectedGame] = useState<StoreGame | null>(null);
@@ -43,27 +44,56 @@ export const StoreView = () => {
   const startIndex = (page - 1) * itemsPerPage;
   const pageGames = storeGames.slice(startIndex, startIndex + itemsPerPage);
 
+  const enrichDenuvoBadges = async (games: StoreGame[], requestId: number) => {
+    const appIds = [...new Set(games.map(game => Number(game.appId)).filter(Number.isFinite))];
+    if (appIds.length === 0) return;
+
+    try {
+      const denuvoMap: Record<string, boolean> = await invoke('check_denuvo_bulk', { appIds });
+      if (searchRequestId.current !== requestId) return;
+
+      setStoreGames(current => current.map(game => ({
+        ...game,
+        has_denuvo: Boolean(denuvoMap[String(game.appId)]),
+      })));
+    } catch (err) {
+      // DRM metadata is non-critical. Search results must stay visible even if enrichment fails.
+      console.warn('Denuvo enrichment failed:', err);
+    }
+  };
+
   const handleSearch = async (e: React.FormEvent) => {
     e.preventDefault();
     
     // If query is empty, clear results and restore default state
     if (!searchQuery.trim()) {
+      searchRequestId.current += 1;
       setStoreGames([]);
       setHasSearched(false);
       return;
     }
+
+    const requestId = searchRequestId.current + 1;
+    searchRequestId.current = requestId;
 
     setIsLoading(true);
     setHasSearched(true);
     setPage(1);
 
     try {
-      // Invoke the high-performance unified parallel search in Rust!
-      const results: any = await invoke('search_store', { query: searchQuery });
-      setStoreGames(results || []);
+      // Critical path: fetch/search/merge only. Denuvo metadata is enriched after render.
+      const results: StoreGame[] = await invoke('search_store', { query: searchQuery });
+      if (searchRequestId.current !== requestId) return;
+
+      const initialResults = results || [];
+      setStoreGames(initialResults);
       setActiveQuery(searchQuery);
       setIsLoading(false);
+
+      // Non-blocking enrichment: badges update in-place after the first results are visible.
+      void enrichDenuvoBadges(initialResults, requestId);
     } catch (err: any) {
+      if (searchRequestId.current !== requestId) return;
       alert(`Search error: ${err}`);
       setIsLoading(false);
     }

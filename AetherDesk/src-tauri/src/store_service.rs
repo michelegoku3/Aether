@@ -1,8 +1,10 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
+use std::time::Duration;
+
+const HUBCAP_SEARCH_BUDGET_MS: u64 = 1500;
 use crate::steam_store::SteamStore;
 use crate::hubcap_client::HubcapClient;
-use crate::drm_detector::DrmDetector;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct UnifiedStoreGame {
@@ -18,14 +20,12 @@ pub struct UnifiedStoreGame {
 
 pub struct StoreService {
     steam_store: SteamStore,
-    drm_detector: DrmDetector,
 }
 
 impl StoreService {
     pub fn new() -> Self {
         Self {
             steam_store: SteamStore::new(),
-            drm_detector: DrmDetector::new(),
         }
     }
 
@@ -140,7 +140,16 @@ impl StoreService {
         
         let hubcap_future = async {
             match &hubcap_client {
-                Some(client) => client.search_library(query).await.unwrap_or_default(),
+                Some(client) => {
+                    tokio::time::timeout(
+                        Duration::from_millis(HUBCAP_SEARCH_BUDGET_MS),
+                        client.search_library(query),
+                    )
+                    .await
+                    .ok()
+                    .and_then(Result::ok)
+                    .unwrap_or_default()
+                }
                 None => Vec::new(),
             }
         };
@@ -154,17 +163,17 @@ impl StoreService {
         let mut unified_list = Vec::new();
         let mut added_ids = HashSet::new();
 
-        // 3. Populate unified list with Steam search results and overlay manifest + DRM metadata.
-        // DRM detection is intentionally isolated in DrmDetector so this service only composes data.
+        // 3. Populate unified list with Steam search results and overlay manifest availability.
+        // DRM/Denuvo enrichment is intentionally NOT done here: it is slower Steam appdetails
+        // metadata and is fetched by the frontend after first results are already rendered.
         for item in steam_items {
             let has_manifest = available_ids.contains(&item.id);
-            let has_denuvo = self.drm_detector.detect(item.id).await.has_denuvo();
             unified_list.push(UnifiedStoreGame {
                 id: item.id,
                 name: item.name,
                 app_id: item.id.to_string(),
                 has_manifest,
-                has_denuvo,
+                has_denuvo: false,
                 image_url: item.image_url,
             });
             added_ids.insert(item.id);
@@ -173,13 +182,12 @@ impl StoreService {
         // 4. Fallback: If Hubcap returned matches that are NOT in Steam results, append them
         for hg in hubcap_res {
             if !added_ids.contains(&hg.app_id) {
-                let has_denuvo = self.drm_detector.detect(hg.app_id).await.has_denuvo();
                 unified_list.push(UnifiedStoreGame {
                     id: hg.app_id,
                     name: hg.name,
                     app_id: hg.app_id.to_string(),
                     has_manifest: true,
-                    has_denuvo,
+                    has_denuvo: false,
                     image_url: String::new(),
                 });
                 added_ids.insert(hg.app_id);

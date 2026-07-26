@@ -24,6 +24,7 @@ use github_updater::GithubReleaseManager;
 use dll_installer::DllInstaller;
 use steam_update_guard::SteamUpdateGuard;
 use lua_manifest_pins::{LuaManifestEdit, LuaManifestPins};
+use drm_detector::DrmDetector;
 use tauri_plugin_updater::UpdaterExt;
 
 // Command 1: Get App Settings (Load from settings.json)
@@ -67,7 +68,14 @@ async fn search_store(app: tauri::AppHandle, query: String) -> Result<Vec<Unifie
     service.search_store(&query, hubcap_client).await
 }
 
-// Command 5: Trigger first download option (Hubcap LUA pipeline)
+// Command 5: Enrich already-rendered store results with Denuvo information.
+// This is deliberately separate from search_store so the first results appear quickly.
+#[tauri::command]
+async fn check_denuvo_bulk(app_ids: Vec<u32>) -> Result<std::collections::HashMap<u32, bool>, String> {
+    DrmDetector::new().detect_many(app_ids).await
+}
+
+// Command 6: Trigger first download option (Hubcap LUA pipeline)
 #[tauri::command]
 async fn trigger_hubcap_download(
     app_id: u32,
@@ -465,6 +473,7 @@ fn main() {
             save_settings,
             validate_hubcap_key,
             search_store,
+            check_denuvo_bulk,
             trigger_hubcap_download,
             prepare_specific_version_download,
             get_installed_lua_manifest_rows,
