@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
+import { SpecificVersionModal, LuaManifestRow } from './SpecificVersionModal';
 
 export interface StoreGame {
   id: number;
@@ -8,6 +9,7 @@ export interface StoreGame {
   has_manifest: boolean;
   has_denuvo: boolean;
 }
+
 
 export const StoreView = () => {
   const [searchQuery, setSearchQuery] = useState('');
@@ -29,6 +31,10 @@ export const StoreView = () => {
   // Status message for download operations inside the modal
   const [downloadStatus, setDownloadStatus] = useState({ text: '', type: 'info' });
   const [isDownloading, setIsDownloading] = useState(false);
+
+  // Specific-version editor state. The normal download modal closes before this modal opens.
+  const [versionGame, setVersionGame] = useState<StoreGame | null>(null);
+  const [manifestRows, setManifestRows] = useState<LuaManifestRow[]>([]);
 
   // Pagination calculation
   const totalPages = Math.ceil(storeGames.length / itemsPerPage) || 1;
@@ -109,11 +115,47 @@ export const StoreView = () => {
     }
   };
 
-  const handleDownloadOlder = () => {
+  const handleDownloadOlder = async () => {
     if (!selectedGame) return;
-    alert(`Opening version picker dialog for: ${selectedGame.name} (${selectedGame.appId}) utilizing source ${selectedSource.toUpperCase()}.`);
-    setSelectedGame(null); // close modal after trigger
+
+    setIsDownloading(true);
+    setDownloadStatus({ text: 'Downloading Lua and preparing version table...', type: 'info' });
+
+    try {
+      const settings: any = await invoke('get_settings');
+      const apiKeyToUse = selectedSource === 'hubcap' ? settings.hubcap_api_key : 'oureveryday_public';
+      const steamPathToUse = settings.steam_path;
+
+      if (selectedSource === 'hubcap' && (!apiKeyToUse || apiKeyToUse.trim() === '')) {
+        setDownloadStatus({ text: 'Error: Please enter your Hubcap API Key in Settings first!', type: 'error' });
+        setIsDownloading(false);
+        return;
+      }
+      if (!steamPathToUse || steamPathToUse.trim() === '') {
+        setDownloadStatus({ text: 'Error: Please specify the Steam path in Settings first!', type: 'error' });
+        setIsDownloading(false);
+        return;
+      }
+
+      const rows: LuaManifestRow[] = await invoke('prepare_specific_version_download', {
+        appId: Number(selectedGame.appId),
+        apiKey: apiKeyToUse,
+        steamPath: steamPathToUse
+      });
+
+      setManifestRows((rows || []).map(row => ({ ...row, manifestInput: '' })));
+      setVersionGame(selectedGame);
+
+      // Close the download modal and open the reusable version picker modal.
+      setSelectedGame(null);
+      setDownloadStatus({ text: '', type: 'info' });
+      setIsDownloading(false);
+    } catch (err: any) {
+      setDownloadStatus({ text: `Specific version setup failed: ${err}`, type: 'error' });
+      setIsDownloading(false);
+    }
   };
+
 
   return (
     <div className="store-view">
@@ -332,6 +374,18 @@ export const StoreView = () => {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Reusable specific-version modal. The same component can be opened later from Library/Installed games. */}
+      {versionGame && (
+        <SpecificVersionModal
+          game={versionGame}
+          initialRows={manifestRows}
+          onClose={() => {
+            setVersionGame(null);
+            setManifestRows([]);
+          }}
+        />
       )}
     </div>
   );

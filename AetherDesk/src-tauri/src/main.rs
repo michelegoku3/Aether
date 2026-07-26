@@ -13,6 +13,7 @@ mod dll_installer;
 mod download_orchestrator;
 mod steam_update_guard;
 mod drm_detector;
+mod lua_manifest_pins;
 
 use hubcap_client::HubcapClient;
 use steam_compat::SteamCompat;
@@ -22,6 +23,7 @@ use store_service::{StoreService, UnifiedStoreGame};
 use github_updater::GithubReleaseManager;
 use dll_installer::DllInstaller;
 use steam_update_guard::SteamUpdateGuard;
+use lua_manifest_pins::{LuaManifestEdit, LuaManifestPins};
 use tauri_plugin_updater::UpdaterExt;
 
 // Command 1: Get App Settings (Load from settings.json)
@@ -88,7 +90,80 @@ async fn trigger_hubcap_download(
     orchestrator.execute_hubcap_download(app_id).await
 }
 
-// Command 6: Kill and Restart Steam process using custom configured path
+// Command 6: Download and install the Lua file, then return editable setManifestid rows.
+// This is used by "Download Specific Version": the Lua is installed normally first,
+// then the frontend opens the version-selection table for the installed file.
+#[tauri::command]
+async fn prepare_specific_version_download(
+    app_id: u32,
+    api_key: String,
+    steam_path: String,
+) -> Result<Vec<lua_manifest_pins::LuaManifestRow>, String> {
+    if api_key.trim().is_empty() {
+        return Err("API Key is required to download the Lua file".to_string());
+    }
+    if steam_path.trim().is_empty() {
+        return Err("Steam installation path is required".to_string());
+    }
+
+    let client = HubcapClient::new(api_key);
+    let lua_content = client.download_lua_config(app_id).await?;
+    let manifest_rows = LuaManifestPins::rows_from_content(&lua_content);
+
+    // Safety guard: never overwrite the user's installed Lua with a source file that
+    // does not contain setManifestid pins when the user explicitly requested the
+    // specific-version editor. Without this guard, a provider response that only
+    // contains addappid lines would erase all pinned versions from stplug-in.
+    if manifest_rows.is_empty() {
+        return Err(
+            "The downloaded Lua does not contain any setManifestid entries, so it was not installed. Try another source or verify the provider returned the full Lua with manifests.".to_string()
+        );
+    }
+
+    let steam = SteamCompat::new(steam_path.clone());
+    steam.install_lua_config(app_id, &lua_content)?;
+
+    let installed_rows = LuaManifestPins::new(steam_path, app_id).rows_from_file()?;
+    if installed_rows.len() != manifest_rows.len() {
+        return Err(format!(
+            "Lua install verification failed: downloaded file had {} setManifestid entries, installed file has {}.",
+            manifest_rows.len(),
+            installed_rows.len()
+        ));
+    }
+
+    Ok(installed_rows)
+}
+
+// Command 7: Parse an already-installed Lua file and return editable setManifestid rows.
+// This makes the same specific-version modal reusable from the future Library/Installed games view.
+#[tauri::command]
+fn get_installed_lua_manifest_rows(
+    app_id: u32,
+    steam_path: String,
+) -> Result<Vec<lua_manifest_pins::LuaManifestRow>, String> {
+    if steam_path.trim().is_empty() {
+        return Err("Steam installation path is required".to_string());
+    }
+
+    LuaManifestPins::new(steam_path, app_id).rows_from_file()
+}
+
+// Command 8: Apply edited setManifestid values and depot enable/disable switches.
+#[tauri::command]
+fn apply_specific_version_edits(
+    app_id: u32,
+    steam_path: String,
+    edits: Vec<LuaManifestEdit>,
+) -> Result<Vec<lua_manifest_pins::LuaManifestRow>, String> {
+    if steam_path.trim().is_empty() {
+        return Err("Steam installation path is required".to_string());
+    }
+
+    LuaManifestPins::new(steam_path, app_id).apply_edits(edits)
+}
+
+// Command 8: Kill and Restart Steam process using custom configured path
 #[tauri::command]
 fn restart_steam(app: tauri::AppHandle) -> Result<(), String> {
     // 1. Terminate any running Steam processes
@@ -391,6 +466,9 @@ fn main() {
             validate_hubcap_key,
             search_store,
             trigger_hubcap_download,
+            prepare_specific_version_download,
+            get_installed_lua_manifest_rows,
+            apply_specific_version_edits,
             restart_steam,
             is_dll_installed,
             is_steam_blocked,
