@@ -330,15 +330,44 @@ body {
   position: relative;
   background-color: #1b1b1f;
   flex-shrink: 0;
+  overflow: hidden;
 }
 
 .game-cover-image {
   width: 100%;
   height: 100%;
   object-fit: cover;
+  object-position: center;
   position: relative;
   z-index: 2;
   background-color: #1a1a20;
+}
+
+.game-cover-image.landscape {
+  object-fit: contain;
+  padding: 6px;
+  background-color: transparent;
+}
+
+.game-cover-backdrop {
+  position: absolute;
+  inset: -12px;
+  width: calc(100% + 24px);
+  height: calc(100% + 24px);
+  object-fit: cover;
+  filter: blur(12px);
+  opacity: 0.35;
+  transform: scale(1.08);
+  z-index: 1;
+}
+
+.game-cover-wrapper.landscape::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, rgba(0, 0, 0, 0.1), rgba(0, 0, 0, 0.35));
+  z-index: 1;
+  pointer-events: none;
 }
 
 .game-cover-fallback {
