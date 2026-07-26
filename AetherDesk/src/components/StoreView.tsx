@@ -6,6 +6,7 @@ export interface StoreGame {
   name: string;
   appId: string;
   has_manifest: boolean;
+  has_denuvo: boolean;
 }
 
 export const StoreView = () => {
@@ -160,7 +161,12 @@ export const StoreView = () => {
             <div key={game.id} className="store-game-card">
               {/* Dynamic absolute badge overlay in top-right corner, popping out */}
               {game.has_manifest && (
-                <span className="badge-available">Available</span>
+                <span
+                  className={`badge-available ${game.has_denuvo ? 'denuvo' : ''}`}
+                  title={game.has_denuvo ? 'Denuvo DRM detected' : 'Manifest available'}
+                >
+                  Available
+                </span>
               )}
 
               {/* Cover Art Wrapper */}

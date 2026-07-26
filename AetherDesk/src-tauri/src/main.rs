@@ -12,6 +12,7 @@ mod github_updater;
 mod dll_installer;
 mod download_orchestrator;
 mod steam_update_guard;
+mod drm_detector;
 
 use hubcap_client::HubcapClient;
 use steam_compat::SteamCompat;

@@ -7,6 +7,7 @@
   --color-text: #e1e1e6;
   --color-muted: #8f8f9e;
   --color-cyan: #00b4d8;
+  --color-denuvo: #ff3b5f;
   --border-color: #22222a;
 }
 
@@ -303,6 +304,12 @@ body {
   letter-spacing: 0.5px;
   border: 1px solid rgba(255, 255, 255, 0.15);
   animation: badgePopIn 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+/* Same visual language as the cyan Available badge, but red for Denuvo-protected games. */
+.badge-available.denuvo {
+  background-color: var(--color-denuvo);
+  box-shadow: 0 4px 10px rgba(255, 59, 95, 0.4);
 }
 
 @keyframes badgePopIn {
