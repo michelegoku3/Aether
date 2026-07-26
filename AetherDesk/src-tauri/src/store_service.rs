@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use crate::steam_store::SteamStore;
 use crate::hubcap_client::HubcapClient;
+use crate::drm_detector::DrmDetector;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct UnifiedStoreGame {
@@ -10,16 +11,19 @@ pub struct UnifiedStoreGame {
     #[serde(rename = "appId")]
     pub app_id: String,
     pub has_manifest: bool,
+    pub has_denuvo: bool,
 }
 
 pub struct StoreService {
     steam_store: SteamStore,
+    drm_detector: DrmDetector,
 }
 
 impl StoreService {
     pub fn new() -> Self {
         Self {
             steam_store: SteamStore::new(),
+            drm_detector: DrmDetector::new(),
         }
     }
 
@@ -148,14 +152,17 @@ impl StoreService {
         let mut unified_list = Vec::new();
         let mut added_ids = HashSet::new();
 
-        // 3. Populate unified list with Steam search results and overlay manifest availability
+        // 3. Populate unified list with Steam search results and overlay manifest + DRM metadata.
+        // DRM detection is intentionally isolated in DrmDetector so this service only composes data.
         for item in steam_items {
             let has_manifest = available_ids.contains(&item.id);
+            let has_denuvo = self.drm_detector.detect(item.id).await.has_denuvo();
             unified_list.push(UnifiedStoreGame {
                 id: item.id,
                 name: item.name,
                 app_id: item.id.to_string(),
                 has_manifest,
+                has_denuvo,
             });
             added_ids.insert(item.id);
         }
@@ -163,11 +170,13 @@ impl StoreService {
         // 4. Fallback: If Hubcap returned matches that are NOT in Steam results, append them
         for hg in hubcap_res {
             if !added_ids.contains(&hg.app_id) {
+                let has_denuvo = self.drm_detector.detect(hg.app_id).await.has_denuvo();
                 unified_list.push(UnifiedStoreGame {
                     id: hg.app_id,
                     name: hg.name,
                     app_id: hg.app_id.to_string(),
                     has_manifest: true,
+                    has_denuvo,
                 });
                 added_ids.insert(hg.app_id);
             }
