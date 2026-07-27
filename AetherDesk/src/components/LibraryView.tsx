@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { GameCover } from './GameCover';
 import { SpecificVersionModal, LuaManifestRow } from './SpecificVersionModal';
+import { LibraryGameActionsModal } from './LibraryGameActionsModal';
 
 interface InstalledGame {
   id: number;
@@ -18,6 +19,7 @@ export const LibraryView = () => {
   const [games, setGames] = useState<InstalledGame[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [status, setStatus] = useState({ text: '', type: 'info' });
+  const [actionGame, setActionGame] = useState<InstalledGame | null>(null);
   const [versionGame, setVersionGame] = useState<InstalledGame | null>(null);
   const [manifestRows, setManifestRows] = useState<LuaManifestRow[]>([]);
 
@@ -39,7 +41,11 @@ export const LibraryView = () => {
     loadInstalledGames();
   }, []);
 
-  const handleModify = async (game: InstalledGame) => {
+  const showStatus = (text: string, type: 'info' | 'success' | 'error') => {
+    setStatus({ text, type });
+  };
+
+  const handleOpenVersionEditor = async (game: InstalledGame) => {
     setStatus({ text: '', type: 'info' });
 
     try {
@@ -57,6 +63,7 @@ export const LibraryView = () => {
       });
 
       setManifestRows((rows || []).map(row => ({ ...row, manifestInput: '' })));
+      setActionGame(null);
       setVersionGame(game);
     } catch (err: any) {
       setStatus({
@@ -110,7 +117,7 @@ export const LibraryView = () => {
                   <span className="game-appid">App ID: {game.appId}</span>
                 </div>
                 <button
-                  onClick={() => handleModify(game)}
+                  onClick={() => setActionGame(game)}
                   className="game-download-btn"
                 >
                   Modify
@@ -124,6 +131,17 @@ export const LibraryView = () => {
           </div>
         )}
       </div>
+
+      {actionGame && (
+        <LibraryGameActionsModal
+          game={actionGame}
+          isProcessing={false}
+          onClose={() => setActionGame(null)}
+          onStatus={showStatus}
+          onRefresh={loadInstalledGames}
+          onOpenVersionEditor={handleOpenVersionEditor}
+        />
+      )}
 
       {versionGame && (
         <SpecificVersionModal
