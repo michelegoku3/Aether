@@ -100,6 +100,11 @@ impl SteamLibraryScanner {
         games
     }
 
+    pub fn is_app_installed(&self, app_id: u32) -> bool {
+        let libraries = self.discover_libraries();
+        self.scan_appmanifests(&libraries).contains_key(&app_id)
+    }
+
     fn scan_appmanifests(&self, libraries: &[PathBuf]) -> HashMap<u32, AppManifest> {
         let mut manifests = HashMap::new();
 

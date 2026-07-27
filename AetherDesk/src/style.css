@@ -664,7 +664,7 @@ body {
 .game-action-grid {
   display: grid;
   grid-template-columns: repeat(2, 172px);
-  gap: 28px 54px;
+  gap: 28px 34px;
 }
 
 .game-action-btn {

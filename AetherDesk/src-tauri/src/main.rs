@@ -222,9 +222,15 @@ fn set_lua_game_updates_enabled(app_id: u32, steam_path: String, enabled: bool) 
 
 // Command 10: Remove a game from Aether's Lua library without touching installed game files.
 #[tauri::command]
-fn remove_lua_game_from_library(app_id: u32, steam_path: String) -> Result<String, String> {
+fn remove_lua_game_from_library(app: tauri::AppHandle, app_id: u32, steam_path: String) -> Result<String, String> {
     if steam_path.trim().is_empty() {
         return Err("Steam installation path is required".to_string());
+    }
+
+    let settings = SettingsManager::new(&app).load();
+    let scanner = SteamLibraryScanner::new(steam_path.clone(), Some(settings.active_library));
+    if scanner.is_app_installed(app_id) {
+        return Err("This game is installed in Steam. Remove is allowed only for Lua-only games that are not installed.".to_string());
     }
 
     let plugin_dir = std::path::PathBuf::from(steam_path).join("config").join("stplug-in");
