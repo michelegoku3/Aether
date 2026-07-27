@@ -312,6 +312,37 @@ body {
   box-shadow: 0 4px 10px rgba(255, 59, 95, 0.4);
 }
 
+.badge-installed {
+  position: absolute;
+  top: -8px;
+  right: -8px;
+  background-color: #10b981;
+  color: #ffffff;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  padding: 4px 10px;
+  border-radius: 6px;
+  box-shadow: 0 4px 10px rgba(16, 185, 129, 0.4);
+  z-index: 10;
+  letter-spacing: 0.5px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  animation: badgePopIn 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+.library-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.library-count {
+  color: var(--color-muted);
+  font-size: 13px;
+  font-weight: 500;
+}
+
 @keyframes badgePopIn {
   from {
     transform: scale(0.8);
