@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { GameHeroImage } from './GameHeroImage';
+import { requireSteamPath } from '../hooks/useSettings';
 
 export interface LibraryActionGame {
   id: number;
@@ -34,18 +35,9 @@ export const LibraryGameActionsModal = ({
   const [isBusy, setIsBusy] = useState(false);
   const disabled = isProcessing || isBusy;
 
-  const getSteamPath = async () => {
-    const settings: any = await invoke('get_settings');
-    const steamPath = settings.steam_path;
-    if (!steamPath || steamPath.trim() === '') {
-      throw new Error('Please configure your Steam path in Settings first.');
-    }
-    return steamPath;
-  };
-
   const refreshUpdateState = async () => {
     try {
-      const steamPath = await getSteamPath();
+      const steamPath = await requireSteamPath();
       const state: boolean = await invoke('get_lua_game_update_state', {
         appId: Number(game.appId),
         steamPath,
@@ -65,7 +57,7 @@ export const LibraryGameActionsModal = ({
     try {
       const nextEnabled = !updatesEnabled;
       onStatus(nextEnabled ? 'Enabling updates for this game...' : 'Disabling updates for this game...', 'info');
-      const steamPath = await getSteamPath();
+      const steamPath = await requireSteamPath();
       const result: string = await invoke('set_lua_game_updates_enabled', {
         appId: Number(game.appId),
         steamPath,
@@ -93,7 +85,7 @@ export const LibraryGameActionsModal = ({
     setIsBusy(true);
     try {
       onStatus('Removing Lua from Aether library...', 'info');
-      const steamPath = await getSteamPath();
+      const steamPath = await requireSteamPath();
       const result: string = await invoke('remove_lua_game_from_library', {
         appId: Number(game.appId),
         steamPath,

@@ -1,29 +1,24 @@
-import React, { useRef, useState } from 'react';
+import React, { useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { SpecificVersionModal, LuaManifestRow } from './SpecificVersionModal';
-import { GameCover } from './GameCover';
-
-export interface StoreGame {
-  id: number;
-  name: string;
-  appId: string;
-  has_manifest: boolean;
-  has_denuvo: boolean;
-  imageUrl?: string;
-}
+import { GameCard } from './ui/GameCard';
+import { StatusAlert } from './ui/StatusAlert';
+import { useStoreSearch, StoreGameResult as StoreGame } from '../hooks/useStoreSearch';
+import { emptyStatus, StatusMessage } from '../types/ui';
+import { getSettings } from '../hooks/useSettings';
 
 
 export const StoreView = () => {
   const [searchQuery, setSearchQuery] = useState('');
-  const [activeQuery, setActiveQuery] = useState('');
   const [page, setPage] = useState(1);
   const itemsPerPage = 20; // 10 rows * 2 columns = 20 items per page
-
-  // Dynamic store games list loaded from the Rust backend
-  const [storeGames, setStoreGames] = useState<StoreGame[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
-  const [hasSearched, setHasSearched] = useState(false);
-  const searchRequestId = useRef(0);
+  const {
+    results: storeGames,
+    isLoading,
+    hasSearched,
+    activeQuery,
+    search,
+  } = useStoreSearch();
 
   // Active game selected for download modal, null means modal is closed
   const [selectedGame, setSelectedGame] = useState<StoreGame | null>(null);
@@ -32,7 +27,7 @@ export const StoreView = () => {
   const [selectedSource, setSelectedSource] = useState<'hubcap' | 'oureveryday' | 'local'>('oureveryday');
 
   // Status message for download operations inside the modal
-  const [downloadStatus, setDownloadStatus] = useState({ text: '', type: 'info' });
+  const [downloadStatus, setDownloadStatus] = useState<StatusMessage>(emptyStatus());
   const [isDownloading, setIsDownloading] = useState(false);
 
   // Specific-version editor state. The normal download modal closes before this modal opens.
@@ -44,58 +39,13 @@ export const StoreView = () => {
   const startIndex = (page - 1) * itemsPerPage;
   const pageGames = storeGames.slice(startIndex, startIndex + itemsPerPage);
 
-  const enrichDenuvoBadges = async (games: StoreGame[], requestId: number) => {
-    const appIds = [...new Set(games.map(game => Number(game.appId)).filter(Number.isFinite))];
-    if (appIds.length === 0) return;
-
-    try {
-      const denuvoMap: Record<string, boolean> = await invoke('check_denuvo_bulk', { appIds });
-      if (searchRequestId.current !== requestId) return;
-
-      setStoreGames(current => current.map(game => ({
-        ...game,
-        has_denuvo: Boolean(denuvoMap[String(game.appId)]),
-      })));
-    } catch (err) {
-      // DRM metadata is non-critical. Search results must stay visible even if enrichment fails.
-      console.warn('Denuvo enrichment failed:', err);
-    }
-  };
-
   const handleSearch = async (e: React.FormEvent) => {
     e.preventDefault();
-    
-    // If query is empty, clear results and restore default state
-    if (!searchQuery.trim()) {
-      searchRequestId.current += 1;
-      setStoreGames([]);
-      setHasSearched(false);
-      return;
-    }
-
-    const requestId = searchRequestId.current + 1;
-    searchRequestId.current = requestId;
-
-    setIsLoading(true);
-    setHasSearched(true);
     setPage(1);
-
     try {
-      // Critical path: fetch/search/merge only. Denuvo metadata is enriched after render.
-      const results: StoreGame[] = await invoke('search_store', { query: searchQuery });
-      if (searchRequestId.current !== requestId) return;
-
-      const initialResults = results || [];
-      setStoreGames(initialResults);
-      setActiveQuery(searchQuery);
-      setIsLoading(false);
-
-      // Non-blocking enrichment: badges update in-place after the first results are visible.
-      void enrichDenuvoBadges(initialResults, requestId);
+      await search(searchQuery);
     } catch (err: any) {
-      if (searchRequestId.current !== requestId) return;
       alert(`Search error: ${err}`);
-      setIsLoading(false);
     }
   };
 
@@ -108,7 +58,7 @@ export const StoreView = () => {
     try {
       // 1. Load active settings from Rust (to get current API key and Steam Path)
       setDownloadStatus({ text: 'Loading local configurations...', type: 'info' });
-      const settings: any = await invoke('get_settings');
+      const settings = await getSettings();
       
       const apiKeyToUse = selectedSource === 'hubcap' ? settings.hubcap_api_key : 'oureveryday_public';
       const steamPathToUse = settings.steam_path;
@@ -154,7 +104,7 @@ export const StoreView = () => {
     setDownloadStatus({ text: 'Downloading Lua and preparing version table...', type: 'info' });
 
     try {
-      const settings: any = await invoke('get_settings');
+      const settings = await getSettings();
       const apiKeyToUse = selectedSource === 'hubcap' ? settings.hubcap_api_key : 'oureveryday_public';
       const steamPathToUse = settings.steam_path;
 
@@ -232,39 +182,17 @@ export const StoreView = () => {
           </div>
         ) : pageGames.length > 0 ? (
           pageGames.map((game) => (
-            <div key={game.id} className="store-game-card">
-              {/* Dynamic absolute badge overlay in top-right corner, popping out */}
-              {game.has_manifest && (
-                <span
-                  className={`badge-available ${game.has_denuvo ? 'denuvo' : ''}`}
-                  title={game.has_denuvo ? 'Denuvo DRM detected' : 'Manifest available'}
-                >
-                  Available
-                </span>
-              )}
-
-              {/* Cover Art Wrapper with multi-CDN fallback chain */}
-              <GameCover appId={game.appId} name={game.name} canonicalUrl={game.imageUrl} />
-
-              {/* Game Metadata and actions */}
-              <div className="game-info-wrapper">
-                <div className="game-details">
-                  <h3 className="game-name" title={game.name}>{game.name}</h3>
-                  <span className="game-appid">App ID: {game.appId}</span>
-                </div>
-                <button 
-                  onClick={() => {
-                    setSelectedGame(game);
-                    setDownloadStatus({ text: '', type: 'info' });
-                    setIsDownloading(false);
-                    setSelectedSource(game.has_manifest ? 'hubcap' : 'oureveryday');
-                  }} 
-                  className="game-download-btn"
-                >
-                  Download
-                </button>
-              </div>
-            </div>
+            <GameCard
+              key={game.id}
+              game={game}
+              actionLabel="Download"
+              onAction={(selected) => {
+                setSelectedGame(selected);
+                setDownloadStatus({ text: '', type: 'info' });
+                setIsDownloading(false);
+                setSelectedSource(selected.has_manifest ? 'hubcap' : 'oureveryday');
+              }}
+            />
           ))
         ) : (
           <div className="store-no-results">
@@ -325,11 +253,7 @@ export const StoreView = () => {
             {/* Modal Body Content */}
             <div className="modal-body">
               {/* Operation Feedback inside the Modal */}
-              {downloadStatus.text && (
-                <div className={`settings-alert ${downloadStatus.type}`} style={{ padding: '10px 15px', fontSize: '12px' }}>
-                  {downloadStatus.text}
-                </div>
-              )}
+              <StatusAlert status={downloadStatus} style={{ padding: '10px 15px', fontSize: '12px' }} />
 
               {/* Dark Source Box Panel */}
               <div className="source-box">
