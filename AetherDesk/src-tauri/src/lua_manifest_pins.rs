@@ -62,6 +62,28 @@ impl LuaManifestPins {
         Ok(Self::rows_from_content(&content))
     }
 
+    pub fn enable_updates(&self) -> Result<usize, String> {
+        let content = self.read_lua()?;
+        let pins = Self::pins_from_content(&content);
+        let mut lines: Vec<String> = content.lines().map(str::to_string).collect();
+
+        for pin in &pins {
+            Self::set_commented(&mut lines[pin.setmanifest_line], true);
+        }
+
+        let next_content = Self::join_lua_lines(&lines);
+        let after_count = Self::pins_from_content(&next_content).len();
+        if after_count != pins.len() {
+            return Err(format!(
+                "Safety check failed: setManifestid count changed from {} to {}. File was not saved.",
+                pins.len(), after_count
+            ));
+        }
+
+        self.write_lua(&next_content)?;
+        Ok(pins.len())
+    }
+
     pub fn apply_edits(&self, edits: Vec<LuaManifestEdit>) -> Result<Vec<LuaManifestRow>, String> {
         let content = self.read_lua()?;
         let pins = Self::pins_from_content(&content);
