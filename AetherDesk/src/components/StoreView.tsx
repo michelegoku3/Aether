@@ -197,7 +197,7 @@ export const StoreView = () => {
         <p className="store-subtitle">Browse, search and unlock game manifests using AetherDesk's built-in database.</p>
       </div>
 
-      {/* Linea di separazione */}
+      {/* Separator line */}
       <div className="store-separator"></div>
 
       {/* Search Input Area */}
@@ -221,7 +221,7 @@ export const StoreView = () => {
         </button>
       </form>
 
-      {/* Linea di separazione */}
+      {/* Separator line */}
       <div className="store-separator"></div>
 
       {/* 10 rows x 2 columns Grid */}
@@ -319,7 +319,7 @@ export const StoreView = () => {
               </button>
             </div>
 
-            {/* Linea separatrice */}
+            {/* Separator line */}
             <div className="modal-separator"></div>
 
             {/* Modal Body Content */}

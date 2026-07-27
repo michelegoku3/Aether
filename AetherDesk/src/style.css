@@ -201,10 +201,10 @@ body {
   height: 100%;
   overflow-y: auto;
   overflow-x: hidden; /* Bulletproof: prevent any horizontal scrollbar on small windows */
-  padding: 24px 32px; /* Margini più stretti */
+  padding: 24px 32px; /* Narrower margins */
   display: flex;
   flex-direction: column;
-  gap: 12px; /* Ridotto lo spazio a 12px */
+  gap: 12px; /* Reduced spacing */
 }
 
 .store-header {
@@ -278,7 +278,7 @@ body {
   grid-template-columns: repeat(2, minmax(0, 1fr)); /* Crucial: minmax(0, 1fr) lets columns shrink below text width, preventing overflow! */
   grid-auto-rows: 130px; /* Increased card height */
   gap: 16px;
-  margin-top: 4px; /* Ridotto il margine superiore della griglia */
+  margin-top: 4px; /* Reduced grid top margin */
   width: 100%;
   max-width: 100%; /* Forces the grid container to strictly stay within the store width */
 }
