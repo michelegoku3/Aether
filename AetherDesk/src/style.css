@@ -214,9 +214,11 @@ body {
 
 .store-separator {
   height: 1px;
-  background-color: var(--border-color);
+  min-height: 1px;
+  flex-shrink: 0;
+  background-color: rgba(255, 255, 255, 0.08);
   width: 100%;
-  margin: 2px 0; /* Ridotto il margine dei separatori */
+  margin: 2px 0; /* Same separator used by Store and Library */
 }
 
 /* Search bar styling */
