@@ -63,7 +63,6 @@ export const LibraryView = () => {
       });
 
       setManifestRows((rows || []).map(row => ({ ...row, manifestInput: '' })));
-      setActionGame(null);
       setVersionGame(game);
     } catch (err: any) {
       setStatus({
@@ -132,7 +131,7 @@ export const LibraryView = () => {
         )}
       </div>
 
-      {actionGame && (
+      {actionGame && !versionGame && (
         <LibraryGameActionsModal
           game={actionGame}
           isProcessing={false}

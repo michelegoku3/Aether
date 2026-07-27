@@ -62,13 +62,30 @@ impl LuaManifestPins {
         Ok(Self::rows_from_content(&content))
     }
 
-    pub fn enable_updates(&self) -> Result<usize, String> {
+    pub fn updates_are_enabled(&self) -> Result<bool, String> {
+        let content = self.read_lua()?;
+        let lines: Vec<&str> = content.lines().collect();
+
+        // Updates are considered enabled when at least one setManifestid pin is
+        // commented. This state intentionally depends only on setManifestid lines,
+        // not on addappid lines used by the depot enable/disable editor.
+        Ok(Self::pins_from_content(&content)
+            .into_iter()
+            .any(|pin| lines
+                .get(pin.setmanifest_line)
+                .map(|line| line.trim_start().starts_with("--"))
+                .unwrap_or(false)))
+    }
+
+    pub fn set_updates_enabled(&self, enabled: bool) -> Result<usize, String> {
         let content = self.read_lua()?;
         let pins = Self::pins_from_content(&content);
         let mut lines: Vec<String> = content.lines().map(str::to_string).collect();
 
         for pin in &pins {
-            Self::set_commented(&mut lines[pin.setmanifest_line], true);
+            // Updates enabled means pinned manifests are disabled/commented.
+            // Updates disabled means every setManifestid pin is active/uncommented.
+            Self::set_commented(&mut lines[pin.setmanifest_line], enabled);
         }
 
         let next_content = Self::join_lua_lines(&lines);
