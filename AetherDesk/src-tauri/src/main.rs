@@ -15,6 +15,7 @@ mod steam_update_guard;
 mod drm_detector;
 mod lua_manifest_pins;
 mod steam_library;
+mod steam_app_names;
 
 use hubcap_client::HubcapClient;
 use steam_compat::SteamCompat;
@@ -27,6 +28,8 @@ use steam_update_guard::SteamUpdateGuard;
 use lua_manifest_pins::{LuaManifestEdit, LuaManifestPins};
 use drm_detector::DrmDetector;
 use steam_library::{InstalledSteamGame, SteamLibraryScanner};
+use steam_app_names::SteamAppNameResolver;
+use tauri::Manager;
 use tauri_plugin_updater::UpdaterExt;
 
 // Command 1: Get App Settings (Load from settings.json)
@@ -70,9 +73,9 @@ async fn search_store(app: tauri::AppHandle, query: String) -> Result<Vec<Unifie
     service.search_store(&query, hubcap_client).await
 }
 
-// Command 5: Scan installed Steam games from appmanifest_*.acf files across Steam libraries.
+// Command 5: Scan games represented by Lua files and enrich their names from Steam.
 #[tauri::command]
-fn get_installed_library_games(app: tauri::AppHandle) -> Result<Vec<InstalledSteamGame>, String> {
+async fn get_installed_library_games(app: tauri::AppHandle) -> Result<Vec<InstalledSteamGame>, String> {
     let manager = SettingsManager::new(&app);
     let settings = manager.load();
 
@@ -81,7 +84,26 @@ fn get_installed_library_games(app: tauri::AppHandle) -> Result<Vec<InstalledSte
     }
 
     let scanner = SteamLibraryScanner::new(settings.steam_path, Some(settings.active_library));
-    Ok(scanner.scan_installed_games())
+    let mut games = scanner.scan_installed_games();
+
+    let cache_dir = app
+        .path()
+        .app_cache_dir()
+        .or_else(|_| app.path().app_config_dir())
+        .map_err(|e| format!("Failed to resolve app cache directory: {}", e))?;
+    let resolver = SteamAppNameResolver::new(cache_dir);
+    let names = resolver
+        .resolve_names(games.iter().map(|game| game.id).collect())
+        .await;
+
+    for game in &mut games {
+        if let Some(name) = names.get(&game.id) {
+            game.name = name.clone();
+        }
+    }
+
+    games.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+    Ok(games)
 }
 
 // Command 6: Enrich already-rendered store results with Denuvo information.

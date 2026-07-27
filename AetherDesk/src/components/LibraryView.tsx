@@ -70,7 +70,7 @@ export const LibraryView = () => {
     <div className="store-view">
       <div className="store-header">
         <h1 className="store-title">Library</h1>
-        <p className="store-subtitle">Manage installed Steam games detected from appmanifest ACF files across your Steam libraries.</p>
+        <p className="store-subtitle">Manage every game Lua installed in Steam's stplug-in folder, with install status detected from Steam appmanifest ACF files.</p>
       </div>
 
       <div className="store-separator"></div>
@@ -83,12 +83,14 @@ export const LibraryView = () => {
 
       <div className="library-toolbar">
         <span className="library-count">
-          {isLoading ? 'Scanning installed games...' : `${games.length} installed game${games.length === 1 ? '' : 's'} found`}
+          {isLoading ? 'Scanning Lua library...' : `${games.length} Lua game${games.length === 1 ? '' : 's'} found`}
         </span>
         <button className="pagination-btn" onClick={loadInstalledGames} disabled={isLoading}>
           Refresh
         </button>
       </div>
+
+      <div className="store-separator"></div>
 
       <div className="store-grid">
         {isLoading ? (
