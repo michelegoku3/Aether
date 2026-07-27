@@ -45,12 +45,12 @@ export const Sidebar = ({ activeTab, onTabChange, onRestartSteam, dllUpdateAvail
           Library
         </button>
 
-        {/* Download */}
+        {/* Backup */}
         <button
           onClick={() => onTabChange('download')}
           className={`nav-item ${activeTab === 'download' ? 'active' : ''}`}
         >
-          Download
+          Backup
         </button>
 
         {/* Separator Line */}

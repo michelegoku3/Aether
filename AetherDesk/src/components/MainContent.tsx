@@ -53,7 +53,7 @@ export const MainContent = ({ activeTab, dllUpdateAvailable, deskUpdateAvailable
   const getTabTitle = () => {
     switch (activeTab) {
       case 'home': return 'Home View';
-      case 'download': return 'Download View';
+      case 'download': return 'Backup View';
       case 'log': return 'Log View';
       default: return 'Blank View';
     }
