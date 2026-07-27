@@ -56,14 +56,16 @@ export const SpecificVersionModal = ({ game, initialRows, onClose }: SpecificVer
         enabled: row.enabled,
       }));
 
-      const updatedRows: LuaManifestRow[] = await invoke('apply_specific_version_edits', {
+      await invoke('apply_specific_version_edits', {
         appId: Number(game.appId),
         steamPath,
         edits,
       });
 
-      setRows((updatedRows || []).map(row => ({ ...row, manifestInput: '' })));
-      setStatus({ text: 'Specific version Lua saved successfully.', type: 'success' });
+      // Successful apply is the user's confirmation. Close immediately to avoid
+      // forcing a second click on X. If opened from Library, the parent Modify
+      // popup remains mounted and becomes visible again.
+      onClose();
     } catch (err: any) {
       setStatus({ text: `Failed to apply specific version edits: ${err}`, type: 'error' });
     } finally {

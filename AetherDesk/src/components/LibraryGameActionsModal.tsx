@@ -85,6 +85,11 @@ export const LibraryGameActionsModal = ({
   };
 
   const handleRemove = async () => {
+    if (game.installed) {
+      onStatus('Remove is available only for games that are not installed in Steam.', 'error');
+      return;
+    }
+
     setIsBusy(true);
     try {
       onStatus('Removing Lua from Aether library...', 'info');
@@ -119,7 +124,12 @@ export const LibraryGameActionsModal = ({
             <button className="game-action-btn" onClick={handleCleanCrack} disabled={disabled}>
               Clean Crack
             </button>
-            <button className="game-action-btn danger" onClick={handleRemove} disabled={disabled}>
+            <button
+              className="game-action-btn danger"
+              onClick={handleRemove}
+              disabled={disabled || game.installed}
+              title={game.installed ? 'Installed games cannot be removed from Aether Library.' : 'Remove Lua from Aether Library'}
+            >
               Remove
             </button>
           </div>
