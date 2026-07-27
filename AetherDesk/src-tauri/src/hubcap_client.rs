@@ -9,7 +9,6 @@ const HUBCAP_TIMEOUT_SECONDS: u64 = 8;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct HubcapGameItem {
-    // Deserialize App ID safely even if returned as a string or number in JSON, supporting game_id or appid aliases
     #[serde(alias = "game_id", alias = "appid", deserialize_with = "deserialize_app_id")]
     pub app_id: u32,
     #[serde(alias = "game_name", alias = "name")]
@@ -22,18 +21,26 @@ pub struct HubcapLibraryResponse {
     pub games: Option<Vec<HubcapGameItem>>,
 }
 
+#[derive(Debug, Clone)]
+pub struct HubcapManifestFile {
+    pub file_name: String,
+    pub bytes: Vec<u8>,
+}
+
+#[derive(Debug, Clone)]
+pub struct HubcapLuaPackage {
+    pub lua_content: String,
+    pub manifest_files: Vec<HubcapManifestFile>,
+}
+
 fn deserialize_app_id<'de, D>(deserializer: D) -> Result<u32, D::Error>
 where
     D: serde::Deserializer<'de>,
 {
     let value = serde_json::Value::deserialize(deserializer)?;
     match value {
-        serde_json::Value::Number(num) => {
-            Ok(num.as_u64().unwrap_or(0) as u32)
-        }
-        serde_json::Value::String(s) => {
-            s.parse::<u32>().map_err(serde::de::Error::custom)
-        }
+        serde_json::Value::Number(num) => Ok(num.as_u64().unwrap_or(0) as u32),
+        serde_json::Value::String(s) => s.parse::<u32>().map_err(serde::de::Error::custom),
         _ => Err(serde::de::Error::custom("Invalid App ID type")),
     }
 }
@@ -63,10 +70,8 @@ impl HubcapClient {
         headers
     }
 
-    /// Verifies if the configured Hubcap API key is valid by hitting the stats endpoint
     pub async fn validate_api_key(&self) -> Result<bool, String> {
         let url = format!("{}/user/stats", BASE_URL);
-        
         let response = self.client.get(&url)
             .headers(self.headers())
             .send()
@@ -82,20 +87,16 @@ impl HubcapClient {
         }
     }
 
-    /// Downloads the full Lua configuration for a given App ID from Hubcap.
-    ///
-    /// We intentionally use only `/manifest/{appid}`. The `/lua/{appid}` endpoint can
-    /// return a Lua without `setManifestid(...)` pins for some games, while the manifest
-    /// ZIP is the same source used by the website download and contains the full pinned Lua.
-    ///
-    /// This is a single API call per game download: no `/lua` first attempt, no fallback.
-    pub async fn download_lua_config(&self, app_id: u32) -> Result<String, String> {
-        self.download_lua_from_manifest_zip(app_id).await
+    /// Downloads the Hubcap manifest ZIP with a single API call and extracts:
+    /// - the pinned Lua used by Aether/LumaCore
+    /// - any `.manifest` files, ready to be copied to Steam/depotcache
+    pub async fn download_lua_package(&self, app_id: u32) -> Result<HubcapLuaPackage, String> {
+        let bytes = self.download_manifest_zip(app_id).await?;
+        Self::extract_package_from_zip(app_id, bytes.as_ref())
     }
 
-    async fn download_lua_from_manifest_zip(&self, app_id: u32) -> Result<String, String> {
+    async fn download_manifest_zip(&self, app_id: u32) -> Result<Vec<u8>, String> {
         let url = format!("{}/manifest/{}", BASE_URL, app_id);
-
         let response = self.client.get(&url)
             .headers(self.headers())
             .send()
@@ -106,66 +107,60 @@ impl HubcapClient {
             return Err(format!("Failed to retrieve manifest ZIP. HTTP Status: {}", response.status()));
         }
 
-        let bytes = response.bytes().await
-            .map_err(|e| format!("Failed to read manifest ZIP bytes: {}", e))?;
-
-        Self::extract_best_lua_from_zip(app_id, bytes.as_ref())
+        response.bytes().await
+            .map(|bytes| bytes.to_vec())
+            .map_err(|e| format!("Failed to read manifest ZIP bytes: {}", e))
     }
 
-    fn extract_best_lua_from_zip(app_id: u32, bytes: &[u8]) -> Result<String, String> {
+    fn extract_package_from_zip(app_id: u32, bytes: &[u8]) -> Result<HubcapLuaPackage, String> {
         let cursor = Cursor::new(bytes);
         let mut archive = ZipArchive::new(cursor)
             .map_err(|e| format!("Failed to open manifest ZIP: {}", e))?;
 
         let preferred_name = format!("{}.lua", app_id);
+        let mut preferred_lua: Option<String> = None;
         let mut first_lua: Option<String> = None;
+        let mut manifest_files = Vec::new();
 
         for index in 0..archive.len() {
             let mut file = archive.by_index(index)
                 .map_err(|e| format!("Failed to read ZIP entry {}: {}", index, e))?;
             let name = file.name().replace('\\', "/");
-            if !name.to_ascii_lowercase().ends_with(".lua") {
-                continue;
+            let lower_name = name.to_ascii_lowercase();
+            let file_name = name.rsplit('/').next().unwrap_or(&name).to_string();
+
+            if lower_name.ends_with(".lua") {
+                let mut content = String::new();
+                file.read_to_string(&mut content)
+                    .map_err(|e| format!("Failed to read Lua file from ZIP ({}): {}", name, e))?;
+
+                let is_preferred = file_name.eq_ignore_ascii_case(&preferred_name);
+                if is_preferred && Self::contains_setmanifestid(&content) {
+                    preferred_lua = Some(content);
+                } else if first_lua.is_none() && Self::contains_setmanifestid(&content) {
+                    first_lua = Some(content);
+                }
+            } else if lower_name.ends_with(".manifest") {
+                let mut manifest_bytes = Vec::new();
+                file.read_to_end(&mut manifest_bytes)
+                    .map_err(|e| format!("Failed to read manifest file from ZIP ({}): {}", name, e))?;
+                manifest_files.push(HubcapManifestFile { file_name, bytes: manifest_bytes });
             }
-
-            let mut content = String::new();
-            file.read_to_string(&mut content)
-                .map_err(|e| format!("Failed to read Lua file from ZIP ({}): {}", name, e))?;
-
-            let is_preferred = name
-                .rsplit('/')
-                .next()
-                .map(|file_name| file_name.eq_ignore_ascii_case(&preferred_name))
-                .unwrap_or(false);
-
-            if is_preferred && Self::contains_setmanifestid(&content) {
-                return Ok(content);
-            }
-
-            if Self::contains_setmanifestid(&content) {
-                return Ok(content);
-            }
-
-            first_lua.get_or_insert(content);
         }
 
-        first_lua.ok_or_else(|| "Manifest ZIP did not contain any .lua file".to_string()).and_then(|content| {
-            if Self::contains_setmanifestid(&content) {
-                Ok(content)
-            } else {
-                Err("Manifest ZIP Lua also does not contain setManifestid pins".to_string())
-            }
-        })
+        let lua_content = preferred_lua
+            .or(first_lua)
+            .ok_or_else(|| "Manifest ZIP did not contain a Lua file with setManifestid pins".to_string())?;
+
+        Ok(HubcapLuaPackage { lua_content, manifest_files })
     }
 
     fn contains_setmanifestid(content: &str) -> bool {
         content.to_ascii_lowercase().contains("setmanifestid")
     }
 
-    /// Queries the Hubcap Manifest database for matches against a search term
     pub async fn search_library(&self, query: &str) -> Result<Vec<HubcapGameItem>, String> {
         let url = format!("{}/library", BASE_URL);
-
         let response = self.client.get(&url)
             .headers(self.headers())
             .query(&[("search", query), ("limit", "50")])
@@ -174,7 +169,6 @@ impl HubcapClient {
             .map_err(|e| format!("Hubcap API network error: {}", e))?;
 
         if !response.status().is_success() {
-            // If Hubcap key is invalid or fails, return empty list instead of crashing
             return Ok(Vec::new());
         }
 

@@ -16,6 +16,8 @@ mod drm_detector;
 mod lua_manifest_pins;
 mod steam_library;
 mod steam_app_names;
+mod app_storage;
+mod local_app_paths;
 
 use hubcap_client::HubcapClient;
 use steam_compat::SteamCompat;
@@ -29,6 +31,7 @@ use lua_manifest_pins::{LuaManifestEdit, LuaManifestPins};
 use drm_detector::DrmDetector;
 use steam_library::{InstalledSteamGame, SteamLibraryScanner};
 use steam_app_names::SteamAppNameResolver;
+use app_storage::AppStorage;
 use tauri::Manager;
 use tauri_plugin_updater::UpdaterExt;
 
@@ -116,6 +119,7 @@ async fn check_denuvo_bulk(app_ids: Vec<u32>) -> Result<std::collections::HashMa
 // Command 6: Trigger first download option (Hubcap LUA pipeline)
 #[tauri::command]
 async fn trigger_hubcap_download(
+    app: tauri::AppHandle,
     app_id: u32,
     api_key: String,
     steam_path: String,
@@ -129,11 +133,23 @@ async fn trigger_hubcap_download(
 
     // Instantiate isolated services
     let client = HubcapClient::new(api_key);
-    let steam = SteamCompat::new(steam_path);
+    let steam = SteamCompat::new(steam_path.clone());
     let orchestrator = DownloadOrchestrator::new(client, steam);
 
     // Run clean download pipeline
-    orchestrator.execute_hubcap_download(app_id).await
+    let result = orchestrator.execute_hubcap_download(app_id).await?;
+
+    // Keep an app-local backup of the installed Lua so Library/version tools are
+    // independent from Steam's folder state.
+    if let Ok(lua_content) = SteamCompat::new(steam_path.clone()).read_lua_config(app_id) {
+        let _ = AppStorage::new(&app).backup_lua(app_id, &lua_content);
+    }
+
+    Ok(format!(
+        "Successfully completed download for App ID {}. Lua installed, {} manifest file(s) preloaded into Steam depotcache.",
+        app_id,
+        result.manifest_count
+    ))
 }
 
 // Command 6: Download and install the Lua file, then return editable setManifestid rows.
@@ -141,6 +157,7 @@ async fn trigger_hubcap_download(
 // then the frontend opens the version-selection table for the installed file.
 #[tauri::command]
 async fn prepare_specific_version_download(
+    app: tauri::AppHandle,
     app_id: u32,
     api_key: String,
     steam_path: String,
@@ -153,7 +170,8 @@ async fn prepare_specific_version_download(
     }
 
     let client = HubcapClient::new(api_key);
-    let lua_content = client.download_lua_config(app_id).await?;
+    let package = client.download_lua_package(app_id).await?;
+    let lua_content = package.lua_content;
     let manifest_rows = LuaManifestPins::rows_from_content(&lua_content);
 
     // Safety guard: never overwrite the user's installed Lua with a source file that
@@ -168,6 +186,8 @@ async fn prepare_specific_version_download(
 
     let steam = SteamCompat::new(steam_path.clone());
     steam.install_lua_config(app_id, &lua_content)?;
+    steam.install_manifest_files(&package.manifest_files)?;
+    let _ = AppStorage::new(&app).backup_lua(app_id, &lua_content);
 
     let installed_rows = LuaManifestPins::new(steam_path, app_id).rows_from_file()?;
     if installed_rows.len() != manifest_rows.len() {
@@ -363,7 +383,7 @@ fn unblock_steam_updates(steam_path: String) -> Result<String, String> {
 
 // Command 11: Query GitHub and local file system to check for available AetherDLL updates
 #[tauri::command]
-async fn check_aether_dll_update(steam_path: String) -> Result<serde_json::Value, String> {
+async fn check_aether_dll_update(app: tauri::AppHandle, steam_path: String) -> Result<serde_json::Value, String> {
     if steam_path.trim().is_empty() {
         return Ok(serde_json::json!({
             "installed_version": "N/A",
@@ -372,15 +392,24 @@ async fn check_aether_dll_update(steam_path: String) -> Result<serde_json::Value
         }));
     }
 
-    // 1. Read local installed version from steam directory
-    let version_path = std::path::PathBuf::from(&steam_path).join("AetherDLL_version.txt");
-    let installed_version = if version_path.exists() {
-        std::fs::read_to_string(&version_path)
+    // 1. Read local installed version from AetherDesk app data, not from Steam.
+    // Migrate/remove the legacy Steam-side marker if an older build created it.
+    let storage = AppStorage::new(&app);
+    let legacy_version_path = std::path::PathBuf::from(&steam_path).join("AetherDLL_version.txt");
+    let installed_version = if let Some(version) = storage.read_aether_dll_version() {
+        let _ = std::fs::remove_file(&legacy_version_path);
+        version
+    } else if legacy_version_path.exists() {
+        let version = std::fs::read_to_string(&legacy_version_path)
             .unwrap_or_else(|_| "N/A".to_string())
             .trim()
-            .to_string()
+            .to_string();
+        if version != "N/A" {
+            let _ = storage.write_aether_dll_version(&version);
+        }
+        let _ = std::fs::remove_file(&legacy_version_path);
+        version
     } else {
-        // Fallback: If DLLs exist on disk but there is no version tracking file, treat as v2.4.1
         let installer = DllInstaller::new(steam_path.clone());
         if installer.verify_installation() {
             "v2.4.1".to_string()
@@ -416,7 +445,7 @@ async fn check_aether_dll_update(steam_path: String) -> Result<serde_json::Value
 
 // Command 10: Install / Update AetherDLL from latest GitHub Release
 #[tauri::command]
-async fn install_aether_dll(steam_path: String) -> Result<String, String> {
+async fn install_aether_dll(app: tauri::AppHandle, steam_path: String) -> Result<String, String> {
     if steam_path.trim().is_empty() {
         return Err("Steam installation path is required".to_string());
     }
@@ -453,10 +482,11 @@ async fn install_aether_dll(steam_path: String) -> Result<String, String> {
     // Clean up temporary ZIP
     let _ = std::fs::remove_file(temp_zip_path);
 
-    // If install succeeded, write version tag to a local file to track installed state!
+    // If install succeeded, write version tag to AetherDesk app data, not Steam.
     if install_result.is_ok() {
-        let version_path = std::path::PathBuf::from(&steam_path).join("AetherDLL_version.txt");
-        let _ = std::fs::write(&version_path, &tag_name);
+        AppStorage::new(&app).write_aether_dll_version(&tag_name)?;
+        let legacy_version_path = std::path::PathBuf::from(&steam_path).join("AetherDLL_version.txt");
+        let _ = std::fs::remove_file(legacy_version_path);
     }
 
     // Propagate result
@@ -549,14 +579,15 @@ async fn install_aether_desk_update(app: tauri::AppHandle) -> Result<String, Str
 
 // Command 13: Uninstall AetherDLL files from Steam folder
 #[tauri::command]
-fn uninstall_aether_dll(steam_path: String) -> Result<String, String> {
+fn uninstall_aether_dll(app: tauri::AppHandle, steam_path: String) -> Result<String, String> {
     if steam_path.trim().is_empty() {
         return Err("Steam installation path is required".to_string());
     }
 
-    // Delete version file
-    let version_path = std::path::PathBuf::from(&steam_path).join("AetherDLL_version.txt");
-    let _ = std::fs::remove_file(version_path);
+    // Delete app-local version file and clean any legacy Steam-side marker.
+    AppStorage::new(&app).remove_aether_dll_version();
+    let legacy_version_path = std::path::PathBuf::from(&steam_path).join("AetherDLL_version.txt");
+    let _ = std::fs::remove_file(legacy_version_path);
 
     let installer = DllInstaller::new(steam_path);
     installer.uninstall().map(|_| "AetherDLL files removed successfully from Steam.".to_string())
