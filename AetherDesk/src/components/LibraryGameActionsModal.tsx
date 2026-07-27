@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { GameHeroImage } from './GameHeroImage';
 
@@ -29,52 +30,76 @@ export const LibraryGameActionsModal = ({
   onRefresh,
   onOpenVersionEditor,
 }: LibraryGameActionsModalProps) => {
-  const runWithSteamPath = async (
-    action: (steamPath: string) => Promise<string>,
-    pendingMessage: string,
-  ) => {
-    onStatus(pendingMessage, 'info');
+  const [updatesEnabled, setUpdatesEnabled] = useState(false);
+  const [isBusy, setIsBusy] = useState(false);
+  const disabled = isProcessing || isBusy;
+
+  const getSteamPath = async () => {
     const settings: any = await invoke('get_settings');
     const steamPath = settings.steam_path;
     if (!steamPath || steamPath.trim() === '') {
       throw new Error('Please configure your Steam path in Settings first.');
     }
-    return action(steamPath);
+    return steamPath;
   };
 
-  const handleEnableUpdates = async () => {
+  const refreshUpdateState = async () => {
     try {
-      const result = await runWithSteamPath(
-        (steamPath) => invoke('enable_lua_game_updates', { appId: Number(game.appId), steamPath }),
-        'Enabling Steam updates for this game...',
-      );
-      onStatus(result, 'success');
-    } catch (err: any) {
-      onStatus(`Failed to enable updates: ${err}`, 'error');
+      const steamPath = await getSteamPath();
+      const state: boolean = await invoke('get_lua_game_update_state', {
+        appId: Number(game.appId),
+        steamPath,
+      });
+      setUpdatesEnabled(Boolean(state));
+    } catch {
+      setUpdatesEnabled(false);
     }
   };
 
-  const handleCleanCrack = async () => {
+  useEffect(() => {
+    refreshUpdateState();
+  }, [game.appId]);
+
+  const handleToggleUpdates = async () => {
+    setIsBusy(true);
     try {
-      onStatus('Cleaning generated crack/helper files...', 'info');
-      const result: string = await invoke('clean_game_crack_files', { gamePath: game.gamePath });
+      const nextEnabled = !updatesEnabled;
+      onStatus(nextEnabled ? 'Enabling updates for this game...' : 'Disabling updates for this game...', 'info');
+      const steamPath = await getSteamPath();
+      const result: string = await invoke('set_lua_game_updates_enabled', {
+        appId: Number(game.appId),
+        steamPath,
+        enabled: nextEnabled,
+      });
+      setUpdatesEnabled(nextEnabled);
       onStatus(result, 'success');
     } catch (err: any) {
-      onStatus(`Failed to clean crack files: ${err}`, 'error');
+      onStatus(`Failed to update version pin state: ${err}`, 'error');
+    } finally {
+      setIsBusy(false);
     }
+  };
+
+  const handleCleanCrack = () => {
+    onStatus('Clean Crack is not available yet. This workflow will be implemented separately.', 'info');
   };
 
   const handleRemove = async () => {
+    setIsBusy(true);
     try {
-      const result = await runWithSteamPath(
-        (steamPath) => invoke('remove_lua_game_from_library', { appId: Number(game.appId), steamPath }),
-        'Removing Lua from Aether library...',
-      );
+      onStatus('Removing Lua from Aether library...', 'info');
+      const steamPath = await getSteamPath();
+      const result: string = await invoke('remove_lua_game_from_library', {
+        appId: Number(game.appId),
+        steamPath,
+      });
       onStatus(result, 'success');
       onClose();
       onRefresh();
     } catch (err: any) {
       onStatus(`Failed to remove game from library: ${err}`, 'error');
+    } finally {
+      setIsBusy(false);
     }
   };
 
@@ -85,25 +110,22 @@ export const LibraryGameActionsModal = ({
 
         <div className="game-action-body">
           <div className="game-action-grid">
-            <button className="game-action-btn" onClick={handleEnableUpdates} disabled={isProcessing}>
-              <span>Attiva</span>
-              <span>aggiornamenti</span>
+            <button className="game-action-btn" onClick={handleToggleUpdates} disabled={disabled}>
+              {updatesEnabled ? 'Disable Update' : 'Enable Update'}
             </button>
-            <button className="game-action-btn" onClick={() => onOpenVersionEditor(game)} disabled={isProcessing}>
-              <span>Modifica</span>
-              <span>versione</span>
+            <button className="game-action-btn" onClick={() => onOpenVersionEditor(game)} disabled={disabled}>
+              Change Version
             </button>
-            <button className="game-action-btn" onClick={handleCleanCrack} disabled={isProcessing}>
-              <span>Pulisci</span>
-              <span>crack</span>
+            <button className="game-action-btn" onClick={handleCleanCrack} disabled={disabled}>
+              Clean Crack
             </button>
-            <button className="game-action-btn danger" onClick={handleRemove} disabled={isProcessing}>
-              <span>Rimuovi</span>
+            <button className="game-action-btn danger" onClick={handleRemove} disabled={disabled}>
+              Remove
             </button>
           </div>
 
-          <button className="game-action-close-btn" onClick={onClose} disabled={isProcessing}>
-            Chiudi
+          <button className="game-action-close-btn" onClick={onClose} disabled={disabled}>
+            Close
           </button>
         </div>
       </div>
