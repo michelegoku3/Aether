@@ -1,6 +1,10 @@
 use crate::hubcap_client::HubcapClient;
 use crate::steam_compat::SteamCompat;
 
+pub struct DownloadResult {
+    pub manifest_count: usize,
+}
+
 pub struct DownloadOrchestrator {
     hubcap_client: HubcapClient,
     steam_compat: SteamCompat,
@@ -14,19 +18,14 @@ impl DownloadOrchestrator {
         }
     }
 
-    /// Executes the first professional pipeline option: Download LUA directly from Hubcap
-    /// and deploy it cleanly to Steam, preparing the environment.
-    pub async fn execute_hubcap_download(&self, app_id: u32) -> Result<String, String> {
-        // Step 1: Download LUA decryption keys from Hubcap
-        let lua_content = self.hubcap_client.download_lua_config(app_id).await?;
+    /// Downloads the Hubcap manifest ZIP once, installs the Lua into stplug-in,
+    /// and preloads any bundled `.manifest` files into Steam/depotcache.
+    pub async fn execute_hubcap_download(&self, app_id: u32) -> Result<DownloadResult, String> {
+        let package = self.hubcap_client.download_lua_package(app_id).await?;
 
-        // Step 2: Install LUA to the Steam plugin directory cleanly
-        self.steam_compat.install_lua_config(app_id, &lua_content)?;
+        self.steam_compat.install_lua_config(app_id, &package.lua_content)?;
+        let manifest_count = self.steam_compat.install_manifest_files(&package.manifest_files)?;
 
-        // Return confirmation
-        Ok(format!(
-            "Successfully completed Hubcap download pipeline for App ID {}. Decryption LUA keys installed safely.",
-            app_id
-        ))
+        Ok(DownloadResult { manifest_count })
     }
 }

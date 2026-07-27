@@ -95,8 +95,7 @@ export const Sidebar = ({ activeTab, onTabChange, onRestartSteam, dllUpdateAvail
         {/* Restart Steam Button (Action, not a tab) */}
         <button
           onClick={onRestartSteam}
-          className="nav-item"
-          style={{ fontWeight: 'bold', color: 'var(--color-cyan)' }}
+          className="nav-item restart-steam-btn"
         >
           Restart Steam
         </button>

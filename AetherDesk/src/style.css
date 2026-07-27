@@ -162,6 +162,18 @@ body {
   margin: 15px 0;
 }
 
+.restart-steam-btn {
+  justify-content: center;
+  color: var(--color-cyan);
+  font-weight: 700;
+  text-align: center;
+}
+
+.restart-steam-btn:hover {
+  color: #ffffff;
+  background-color: #192128;
+}
+
 /* Main Content Area */
 .main-content {
   flex-grow: 1;

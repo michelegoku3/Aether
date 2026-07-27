@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
-use tauri::Manager;
+use crate::local_app_paths::LocalAppPaths;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct AppSettings {
@@ -22,22 +22,25 @@ impl Default for AppSettings {
 
 pub struct SettingsManager {
     config_dir: PathBuf,
+    legacy_config_dir: Option<PathBuf>,
 }
 
 impl SettingsManager {
     pub fn new(app_handle: &tauri::AppHandle) -> Self {
-        // Tauri automatically resolves the correct AppData folder on Windows:
-        // %APPDATA%\com.aether.desk\
-        let config_dir = app_handle
-            .path()
-            .app_config_dir()
-            .unwrap_or_else(|_| PathBuf::from("C:\\Aether\\"));
-            
-        Self { config_dir }
+        let manager = Self {
+            config_dir: LocalAppPaths::config_dir(),
+            legacy_config_dir: LocalAppPaths::legacy_app_config_dir(app_handle),
+        };
+        manager.migrate_legacy_settings_if_needed();
+        manager
     }
 
     fn get_file_path(&self) -> PathBuf {
         self.config_dir.join("settings.json")
+    }
+
+    fn get_legacy_file_path(&self) -> Option<PathBuf> {
+        self.legacy_config_dir.as_ref().map(|dir| dir.join("settings.json"))
     }
 
     pub fn load(&self) -> AppSettings {
@@ -57,7 +60,7 @@ impl SettingsManager {
     pub fn save(&self, settings: &AppSettings) -> Result<(), String> {
         if !self.config_dir.exists() {
             fs::create_dir_all(&self.config_dir)
-                .map_err(|e| format!("Failed to create config folder: {}", e))?;
+                .map_err(|e| format!("Failed to create local settings folder next to AetherDesk: {}", e))?;
         }
 
         let path = self.get_file_path();
@@ -66,13 +69,38 @@ impl SettingsManager {
         let json_data = serde_json::to_string_pretty(settings)
             .map_err(|e| format!("Serialization error: {}", e))?;
 
-        // Atomic write to prevent file corruption
         fs::write(&temp_path, json_data)
             .map_err(|e| format!("Failed to write temp settings: {}", e))?;
             
         fs::rename(&temp_path, &path)
             .map_err(|e| format!("Failed to apply settings: {}", e))?;
 
+        if let Some(legacy_path) = self.get_legacy_file_path() {
+            let _ = fs::remove_file(legacy_path);
+        }
+
         Ok(())
+    }
+
+    fn migrate_legacy_settings_if_needed(&self) {
+        let local_path = self.get_file_path();
+        if local_path.exists() {
+            return;
+        }
+
+        let Some(legacy_path) = self.get_legacy_file_path() else {
+            return;
+        };
+        if !legacy_path.exists() {
+            return;
+        }
+
+        if let Ok(content) = fs::read_to_string(&legacy_path) {
+            if let Some(parent) = local_path.parent() {
+                if fs::create_dir_all(parent).is_ok() && fs::write(&local_path, content).is_ok() {
+                    let _ = fs::remove_file(legacy_path);
+                }
+            }
+        }
     }
 }

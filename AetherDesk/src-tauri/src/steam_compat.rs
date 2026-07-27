@@ -2,6 +2,7 @@
 
 use std::fs;
 use std::path::{Path, PathBuf};
+use crate::hubcap_client::HubcapManifestFile;
 
 pub struct SteamCompat {
     steam_path: PathBuf,
@@ -57,6 +58,43 @@ impl SteamCompat {
         }
 
         Ok(())
+    }
+
+    pub fn read_lua_config(&self, app_id: u32) -> Result<String, String> {
+        let path = self.get_plugin_dir().join(format!("{}.lua", app_id));
+        fs::read_to_string(&path)
+            .map_err(|e| format!("Failed to read plugin Lua {}: {}", path.display(), e))
+    }
+
+    /// Safely writes Steam depot .manifest files to Steam/depotcache.
+    pub fn install_manifest_files(&self, manifests: &[HubcapManifestFile]) -> Result<usize, String> {
+        if manifests.is_empty() {
+            return Ok(0);
+        }
+
+        let depotcache_dir = self.get_depotcache_dir();
+        fs::create_dir_all(&depotcache_dir)
+            .map_err(|e| format!("Failed to create depotcache directory: {}", e))?;
+
+        let mut installed = 0usize;
+        for manifest in manifests {
+            let Some(file_name) = Path::new(&manifest.file_name).file_name().and_then(|name| name.to_str()) else {
+                continue;
+            };
+            if !file_name.to_ascii_lowercase().ends_with(".manifest") {
+                continue;
+            }
+
+            let target_path = depotcache_dir.join(file_name);
+            let temp_path = target_path.with_extension("tmp");
+            fs::write(&temp_path, &manifest.bytes)
+                .map_err(|e| format!("Failed to write temporary manifest {}: {}", file_name, e))?;
+            fs::rename(&temp_path, &target_path)
+                .map_err(|e| format!("Failed to install manifest {}: {}", file_name, e))?;
+            installed += 1;
+        }
+
+        Ok(installed)
     }
 
     /// Safely writes a decryption manifest .acf file into a steamapps library folder
