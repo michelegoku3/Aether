@@ -27,6 +27,7 @@ pub struct LuaManifestEdit {
 struct ManifestPin {
     row: LuaManifestRow,
     addappid_line: Option<usize>,
+    addappid_enabled: bool,
     setmanifest_line: usize,
 }
 
@@ -66,11 +67,13 @@ impl LuaManifestPins {
         let content = self.read_lua()?;
         let lines: Vec<&str> = content.lines().collect();
 
-        // Updates are considered enabled when at least one setManifestid pin is
-        // commented. This state intentionally depends only on setManifestid lines,
-        // not on addappid lines used by the depot enable/disable editor.
+        // Updates are considered enabled only when at least one setManifestid pin
+        // is commented while its related addappid is still enabled. If both addappid
+        // and setManifestid are commented, that depot is disabled by the version
+        // editor and must not affect the global Enable/Disable Update button.
         Ok(Self::pins_from_content(&content)
             .into_iter()
+            .filter(|pin| pin.addappid_enabled)
             .any(|pin| lines
                 .get(pin.setmanifest_line)
                 .map(|line| line.trim_start().starts_with("--"))
@@ -81,11 +84,18 @@ impl LuaManifestPins {
         let content = self.read_lua()?;
         let pins = Self::pins_from_content(&content);
         let mut lines: Vec<String> = content.lines().map(str::to_string).collect();
+        let mut changed = 0usize;
 
         for pin in &pins {
-            // Updates enabled means pinned manifests are disabled/commented.
-            // Updates disabled means every setManifestid pin is active/uncommented.
+            // Enable/Disable Update acts only on depots whose addappid is active.
+            // Depots disabled through Change Version have their addappid commented;
+            // their setManifestid must stay commented and untouched.
+            if !pin.addappid_enabled {
+                continue;
+            }
+
             Self::set_commented(&mut lines[pin.setmanifest_line], enabled);
+            changed += 1;
         }
 
         let next_content = Self::join_lua_lines(&lines);
@@ -98,7 +108,7 @@ impl LuaManifestPins {
         }
 
         self.write_lua(&next_content)?;
-        Ok(pins.len())
+        Ok(changed)
     }
 
     pub fn apply_edits(&self, edits: Vec<LuaManifestEdit>) -> Result<Vec<LuaManifestRow>, String> {
@@ -162,6 +172,7 @@ impl LuaManifestPins {
                     enabled: !setmanifest_commented && addappid_enabled,
                 },
                 addappid_line,
+                addappid_enabled,
                 setmanifest_line: line_index,
             });
         }
