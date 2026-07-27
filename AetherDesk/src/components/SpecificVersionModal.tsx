@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
+import { requireSteamPath } from '../hooks/useSettings';
 
 export interface LuaManifestRow {
   rowId: number;
@@ -41,16 +42,9 @@ export const SpecificVersionModal = ({ game, initialRows, onClose }: SpecificVer
     setStatus({ text: 'Applying Lua manifest edits...', type: 'info' });
 
     try {
-      const settings: any = await invoke('get_settings');
-      const steamPath = settings.steam_path;
+      const steamPath = await requireSteamPath();
 
-      if (!steamPath || steamPath.trim() === '') {
-        setStatus({ text: 'Error: Please specify the Steam path in Settings first!', type: 'error' });
-        setIsApplying(false);
-        return;
-      }
-
-      const edits = rows.map(row => ({
+      const edits = rows.map(row => ({ 
         rowId: row.rowId,
         manifestId: row.manifestInput?.trim() ? row.manifestInput.trim() : null,
         enabled: row.enabled,
