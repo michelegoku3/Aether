@@ -2,7 +2,7 @@
 
 use std::fs;
 use std::path::{Path, PathBuf};
-use crate::hubcap_client::HubcapManifestFile;
+use crate::manifest_package::ManifestPackageFile;
 
 pub struct SteamCompat {
     steam_path: PathBuf,
@@ -67,7 +67,7 @@ impl SteamCompat {
     }
 
     /// Safely writes Steam depot .manifest files to Steam/depotcache.
-    pub fn install_manifest_files(&self, manifests: &[HubcapManifestFile]) -> Result<usize, String> {
+    pub fn install_manifest_files(&self, manifests: &[ManifestPackageFile]) -> Result<usize, String> {
         if manifests.is_empty() {
             return Ok(0);
         }
