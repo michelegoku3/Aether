@@ -3,8 +3,11 @@ import { useEffect, useMemo, useState } from 'react';
 const HERO_CACHE_PREFIX = 'aether_hero_';
 const MIN_HERO_WIDTH = 300;
 const MIN_HERO_HEIGHT = 120;
+const MIN_LANDSCAPE_RATIO = 1.35;
 
 const HERO_TEMPLATES = [
+  // Landscape-only assets. Do not use library_600x900 here: that is the
+  // vertical card poster and does not fit the action modal hero.
   'https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/{id}/library_header.jpg',
   'https://shared.fastly.steamstatic.com/store_item_assets/steam/apps/{id}/library_header.jpg',
   'https://shared.steamstatic.com/store_item_assets/steam/apps/{id}/library_header.jpg',
@@ -32,6 +35,14 @@ const saveCachedHero = (appId: string, url: string) => {
   try { localStorage.setItem(`${HERO_CACHE_PREFIX}${appId}`, url); } catch {}
 };
 
+const isLandscapeCandidateUrl = (url?: string | null) => {
+  if (!url) return false;
+  const lower = url.toLowerCase();
+  return lower.includes('library_header')
+    || lower.includes('/header.jpg')
+    || lower.includes('capsule_616x353');
+};
+
 const buildHeroUrls = (appId: string, canonicalUrl?: string) => {
   const seen = new Set<string>();
   const urls: string[] = [];
@@ -42,8 +53,9 @@ const buildHeroUrls = (appId: string, canonicalUrl?: string) => {
     urls.push(normalized);
   };
 
-  push(getCachedHero(appId));
-  push(canonicalUrl);
+  const cached = getCachedHero(appId);
+  if (isLandscapeCandidateUrl(cached)) push(cached);
+  if (isLandscapeCandidateUrl(canonicalUrl)) push(canonicalUrl);
   HERO_TEMPLATES.forEach(template => push(template.replace('{id}', appId)));
   return urls;
 };
@@ -64,7 +76,12 @@ const preloadHeroChain = (urls: string[], onResolved: (url: string | null) => vo
     image.decoding = 'async';
     image.onload = () => {
       if (cancelled) return;
-      if (image.naturalWidth < MIN_HERO_WIDTH || image.naturalHeight < MIN_HERO_HEIGHT) {
+      const ratio = image.naturalWidth / Math.max(1, image.naturalHeight);
+      if (
+        image.naturalWidth < MIN_HERO_WIDTH ||
+        image.naturalHeight < MIN_HERO_HEIGHT ||
+        ratio < MIN_LANDSCAPE_RATIO
+      ) {
         index += 1;
         tryNext();
         return;
