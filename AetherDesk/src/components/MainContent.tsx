@@ -2,6 +2,7 @@ import { TabType } from './Sidebar';
 import { StoreView } from './StoreView';
 import { SettingsView } from './SettingsView';
 import { AetherView } from './AetherView';
+import { LibraryView } from './LibraryView';
 
 interface MainContentProps {
   activeTab: TabType;
@@ -16,6 +17,14 @@ export const MainContent = ({ activeTab, dllUpdateAvailable, deskUpdateAvailable
     return (
       <main className="main-content">
         <StoreView />
+      </main>
+    );
+  }
+
+  if (activeTab === 'library') {
+    return (
+      <main className="main-content">
+        <LibraryView />
       </main>
     );
   }
@@ -44,7 +53,6 @@ export const MainContent = ({ activeTab, dllUpdateAvailable, deskUpdateAvailable
   const getTabTitle = () => {
     switch (activeTab) {
       case 'home': return 'Home View';
-      case 'library': return 'Library View';
       case 'download': return 'Download View';
       case 'log': return 'Log View';
       default: return 'Blank View';

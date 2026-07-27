@@ -14,6 +14,7 @@ mod download_orchestrator;
 mod steam_update_guard;
 mod drm_detector;
 mod lua_manifest_pins;
+mod steam_library;
 
 use hubcap_client::HubcapClient;
 use steam_compat::SteamCompat;
@@ -25,6 +26,7 @@ use dll_installer::DllInstaller;
 use steam_update_guard::SteamUpdateGuard;
 use lua_manifest_pins::{LuaManifestEdit, LuaManifestPins};
 use drm_detector::DrmDetector;
+use steam_library::{InstalledSteamGame, SteamLibraryScanner};
 use tauri_plugin_updater::UpdaterExt;
 
 // Command 1: Get App Settings (Load from settings.json)
@@ -68,7 +70,21 @@ async fn search_store(app: tauri::AppHandle, query: String) -> Result<Vec<Unifie
     service.search_store(&query, hubcap_client).await
 }
 
-// Command 5: Enrich already-rendered store results with Denuvo information.
+// Command 5: Scan installed Steam games from appmanifest_*.acf files across Steam libraries.
+#[tauri::command]
+fn get_installed_library_games(app: tauri::AppHandle) -> Result<Vec<InstalledSteamGame>, String> {
+    let manager = SettingsManager::new(&app);
+    let settings = manager.load();
+
+    if settings.steam_path.trim().is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let scanner = SteamLibraryScanner::new(settings.steam_path, Some(settings.active_library));
+    Ok(scanner.scan_installed_games())
+}
+
+// Command 6: Enrich already-rendered store results with Denuvo information.
 // This is deliberately separate from search_store so the first results appear quickly.
 #[tauri::command]
 async fn check_denuvo_bulk(app_ids: Vec<u32>) -> Result<std::collections::HashMap<u32, bool>, String> {
@@ -473,6 +489,7 @@ fn main() {
             save_settings,
             validate_hubcap_key,
             search_store,
+            get_installed_library_games,
             check_denuvo_bulk,
             trigger_hubcap_download,
             prepare_specific_version_download,
