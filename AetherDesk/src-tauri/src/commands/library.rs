@@ -50,6 +50,44 @@ pub async fn warm_library_game_cache(app: tauri::AppHandle) -> Result<usize, Str
     Ok(names.len())
 }
 
+
+#[tauri::command]
+pub fn open_steamdb_depots(app_id: u32) -> Result<(), String> {
+    if app_id == 0 {
+        return Err("A valid Steam App ID is required".to_string());
+    }
+
+    let url = format!("https://steamdb.info/app/{}/depots/", app_id);
+    open_external_url(&url)
+}
+
+#[cfg(target_os = "windows")]
+fn open_external_url(url: &str) -> Result<(), String> {
+    std::process::Command::new("cmd")
+        .args(["/C", "start", "", url])
+        .spawn()
+        .map(|_| ())
+        .map_err(|e| format!("Failed to open SteamDB in the default browser: {}", e))
+}
+
+#[cfg(target_os = "macos")]
+fn open_external_url(url: &str) -> Result<(), String> {
+    std::process::Command::new("open")
+        .arg(url)
+        .spawn()
+        .map(|_| ())
+        .map_err(|e| format!("Failed to open SteamDB in the default browser: {}", e))
+}
+
+#[cfg(all(unix, not(target_os = "macos")))]
+fn open_external_url(url: &str) -> Result<(), String> {
+    std::process::Command::new("xdg-open")
+        .arg(url)
+        .spawn()
+        .map(|_| ())
+        .map_err(|e| format!("Failed to open SteamDB in the default browser: {}", e))
+}
+
 #[tauri::command]
 pub fn get_installed_lua_manifest_rows(app_id: u32, steam_path: String) -> Result<Vec<LuaManifestRow>, String> {
     validate_steam_path(&steam_path)?;

@@ -35,6 +35,7 @@ fn main() {
             commands::store::prepare_specific_version_download,
             commands::library::get_installed_library_games,
             commands::library::warm_library_game_cache,
+            commands::library::open_steamdb_depots,
             commands::library::get_installed_lua_manifest_rows,
             commands::library::get_lua_game_update_state,
             commands::library::set_lua_game_updates_enabled,

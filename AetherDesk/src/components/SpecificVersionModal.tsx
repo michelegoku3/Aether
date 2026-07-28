@@ -37,6 +37,14 @@ export const SpecificVersionModal = ({ game, initialRows, onClose }: SpecificVer
     setRows(prev => prev.map(row => row.rowId === rowId ? { ...row, ...patch } : row));
   };
 
+  const handleOpenSteamDb = async () => {
+    try {
+      await invoke('open_steamdb_depots', { appId: Number(game.appId) });
+    } catch (err: any) {
+      setStatus({ text: `Failed to open SteamDB: ${err}`, type: 'error' });
+    }
+  };
+
   const handleApply = async () => {
     setIsApplying(true);
     setStatus({ text: 'Applying Lua manifest edits...', type: 'info' });
@@ -139,10 +147,17 @@ export const SpecificVersionModal = ({ game, initialRows, onClose }: SpecificVer
           <div className="version-actions">
             <button
               className="panel-btn"
+              onClick={handleOpenSteamDb}
+              disabled={isApplying}
+            >
+              Open SteamDB
+            </button>
+            <button
+              className="panel-btn"
               onClick={handleApply}
               disabled={isApplying || rows.length === 0}
             >
-              {isApplying ? 'Applying...' : 'Apply Version Edits'}
+              {isApplying ? 'Applying...' : 'Apply Edits'}
             </button>
           </div>
         </div>
