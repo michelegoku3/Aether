@@ -12,7 +12,10 @@ use crate::store_service::{StoreService, UnifiedStoreGame};
 use std::collections::HashMap;
 
 #[tauri::command]
-pub async fn search_store(app: tauri::AppHandle, query: String) -> Result<Vec<UnifiedStoreGame>, String> {
+pub async fn search_store(
+    app: tauri::AppHandle,
+    query: String,
+) -> Result<Vec<UnifiedStoreGame>, String> {
     let settings = SettingsManager::new(&app).load();
     let hubcap_client = (!settings.hubcap_api_key.trim().is_empty())
         .then(|| HubcapClient::new(settings.hubcap_api_key));
@@ -28,14 +31,14 @@ pub async fn search_store(app: tauri::AppHandle, query: String) -> Result<Vec<Un
         return Ok(results);
     }
 
-    match StoreService::new().search_store(&query, hubcap_client).await {
+    match StoreService::new()
+        .search_store(&query, hubcap_client)
+        .await
+    {
         Ok(results) => {
             let cache_dir = LocalAppPaths::data_root().join("cache");
-            SteamAppNameResolver::new(cache_dir).merge_names(
-                results
-                    .iter()
-                    .map(|game| (game.id, game.name.clone())),
-            );
+            SteamAppNameResolver::new(cache_dir)
+                .merge_names(results.iter().map(|game| (game.id, game.name.clone())));
             let _ = cache.put(&cache_key, results.clone());
             Ok(results)
         }
@@ -88,7 +91,9 @@ pub async fn prepare_specific_version_download(
 ) -> Result<Vec<LuaManifestRow>, String> {
     validate_download_inputs(&api_key, &steam_path, "download the Lua file")?;
 
-    let package = HubcapClient::new(api_key).download_lua_package(app_id).await?;
+    let package = HubcapClient::new(api_key)
+        .download_lua_package(app_id)
+        .await?;
     let lua_content = package.lua_content;
     let manifest_rows = LuaManifestPins::rows_from_content(&lua_content);
 
@@ -112,7 +117,11 @@ pub async fn prepare_specific_version_download(
     Ok(installed_rows)
 }
 
-fn validate_download_inputs(api_key: &str, steam_path: &str, api_action: &str) -> Result<(), String> {
+fn validate_download_inputs(
+    api_key: &str,
+    steam_path: &str,
+    api_action: &str,
+) -> Result<(), String> {
     if api_key.trim().is_empty() {
         return Err(format!("API Key is required to {}", api_action));
     }

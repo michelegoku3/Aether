@@ -18,13 +18,15 @@ mod steam_app_names;
 mod steam_compat;
 mod steam_library;
 mod steam_store;
-mod store_search_cache;
 mod steam_update_guard;
+mod steamless;
+mod store_search_cache;
 mod store_service;
 
 fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
             commands::settings::get_settings,
             commands::settings::save_settings,
@@ -37,6 +39,7 @@ fn main() {
             commands::library::warm_library_game_cache,
             commands::library::open_steamdb_depots,
             commands::home_links::open_home_resource,
+            commands::steamless::pick_and_run_steamless,
             commands::library::get_installed_lua_manifest_rows,
             commands::library::get_lua_game_update_state,
             commands::library::set_lua_game_updates_enabled,

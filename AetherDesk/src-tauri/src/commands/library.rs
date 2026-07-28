@@ -5,7 +5,9 @@ use crate::steam_app_names::SteamAppNameResolver;
 use crate::steam_library::{InstalledSteamGame, SteamLibraryScanner};
 
 #[tauri::command]
-pub async fn get_installed_library_games(app: tauri::AppHandle) -> Result<Vec<InstalledSteamGame>, String> {
+pub async fn get_installed_library_games(
+    app: tauri::AppHandle,
+) -> Result<Vec<InstalledSteamGame>, String> {
     let settings = SettingsManager::new(&app).load();
     if settings.steam_path.trim().is_empty() {
         return Ok(Vec::new());
@@ -45,11 +47,12 @@ pub async fn warm_library_game_cache(app: tauri::AppHandle) -> Result<usize, Str
     }
 
     let cache_dir = LocalAppPaths::data_root().join("cache");
-    let names = SteamAppNameResolver::new(cache_dir).resolve_names(app_ids).await;
+    let names = SteamAppNameResolver::new(cache_dir)
+        .resolve_names(app_ids)
+        .await;
 
     Ok(names.len())
 }
-
 
 #[tauri::command]
 pub fn open_steamdb_depots(app_id: u32) -> Result<(), String> {
@@ -89,7 +92,10 @@ fn open_external_url(url: &str) -> Result<(), String> {
 }
 
 #[tauri::command]
-pub fn get_installed_lua_manifest_rows(app_id: u32, steam_path: String) -> Result<Vec<LuaManifestRow>, String> {
+pub fn get_installed_lua_manifest_rows(
+    app_id: u32,
+    steam_path: String,
+) -> Result<Vec<LuaManifestRow>, String> {
     validate_steam_path(&steam_path)?;
     LuaManifestPins::new(steam_path, app_id).rows_from_file()
 }
@@ -101,19 +107,33 @@ pub fn get_lua_game_update_state(app_id: u32, steam_path: String) -> Result<bool
 }
 
 #[tauri::command]
-pub fn set_lua_game_updates_enabled(app_id: u32, steam_path: String, enabled: bool) -> Result<String, String> {
+pub fn set_lua_game_updates_enabled(
+    app_id: u32,
+    steam_path: String,
+    enabled: bool,
+) -> Result<String, String> {
     validate_steam_path(&steam_path)?;
     let changed = LuaManifestPins::new(steam_path, app_id).set_updates_enabled(enabled)?;
 
     if enabled {
-        Ok(format!("Updates enabled for App ID {}. {} manifest pin(s) disabled.", app_id, changed))
+        Ok(format!(
+            "Updates enabled for App ID {}. {} manifest pin(s) disabled.",
+            app_id, changed
+        ))
     } else {
-        Ok(format!("Updates disabled for App ID {}. {} manifest pin(s) restored.", app_id, changed))
+        Ok(format!(
+            "Updates disabled for App ID {}. {} manifest pin(s) restored.",
+            app_id, changed
+        ))
     }
 }
 
 #[tauri::command]
-pub fn remove_lua_game_from_library(app: tauri::AppHandle, app_id: u32, steam_path: String) -> Result<String, String> {
+pub fn remove_lua_game_from_library(
+    app: tauri::AppHandle,
+    app_id: u32,
+    steam_path: String,
+) -> Result<String, String> {
     validate_steam_path(&steam_path)?;
 
     let settings = SettingsManager::new(&app).load();
@@ -122,7 +142,9 @@ pub fn remove_lua_game_from_library(app: tauri::AppHandle, app_id: u32, steam_pa
         return Err("This game is installed in Steam. Remove is allowed only for Lua-only games that are not installed.".to_string());
     }
 
-    let plugin_dir = std::path::PathBuf::from(steam_path).join("config").join("stplug-in");
+    let plugin_dir = std::path::PathBuf::from(steam_path)
+        .join("config")
+        .join("stplug-in");
     let lua_path = plugin_dir.join(format!("{}.lua", app_id));
     let backup_path = plugin_dir.join(format!("{}.lua.bak", app_id));
 

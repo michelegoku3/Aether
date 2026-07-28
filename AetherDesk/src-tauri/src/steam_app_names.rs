@@ -107,7 +107,6 @@ impl SteamAppNameResolver {
             .collect()
     }
 
-
     /// Merges trusted names obtained from another local/live source (for example Store search)
     /// into the shared app-name cache used by the Library.
     pub fn merge_names<I>(&self, names: I)
@@ -208,8 +207,7 @@ impl SteamAppNameResolver {
             .await
             .map_err(|e| format!("Failed to parse Steam appdetails for {}: {}", app_id, e))?;
 
-        data
-            .get(&app_id.to_string())
+        data.get(&app_id.to_string())
             .filter(|envelope| envelope.success)
             .and_then(|envelope| envelope.data.as_ref())
             .and_then(|details| details.get("name"))
