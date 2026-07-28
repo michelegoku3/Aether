@@ -17,5 +17,6 @@ tokio = { version = "1", features = ["full"] }
 sysinfo = "0.30"
 zip = "1.0"
 tauri-plugin-updater = "2"
+tauri-plugin-dialog = "2"
 url = "2"
 regex = "1"

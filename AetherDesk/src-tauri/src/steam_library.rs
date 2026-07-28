@@ -139,7 +139,12 @@ impl SteamLibraryScanner {
     }
 
     fn parse_lua_entry(path: &Path) -> Option<LuaEntry> {
-        if path.extension().and_then(|ext| ext.to_str()).map(|ext| !ext.eq_ignore_ascii_case("lua")).unwrap_or(true) {
+        if path
+            .extension()
+            .and_then(|ext| ext.to_str())
+            .map(|ext| !ext.eq_ignore_ascii_case("lua"))
+            .unwrap_or(true)
+        {
             return None;
         }
 
@@ -167,13 +172,18 @@ impl SteamLibraryScanner {
     }
 
     fn safe_display_name(candidate: &str) -> Option<String> {
-        let name = candidate.trim().trim_matches(['-', '=', '*', '#', '/', '\\', ' ']);
+        let name = candidate
+            .trim()
+            .trim_matches(['-', '=', '*', '#', '/', '\\', ' ']);
 
         if name.is_empty() || name.len() > 120 || name.chars().count() < 2 {
             return None;
         }
 
-        if name.chars().all(|ch| ch.is_ascii_digit() || ch.is_whitespace()) {
+        if name
+            .chars()
+            .all(|ch| ch.is_ascii_digit() || ch.is_whitespace())
+        {
             return None;
         }
 
@@ -198,7 +208,11 @@ impl SteamLibraryScanner {
     }
 
     fn looks_like_url(lower: &str) -> bool {
-        lower.contains("://") || lower.contains("www.") || lower.contains(".com") || lower.contains(".net") || lower.contains(".org")
+        lower.contains("://")
+            || lower.contains("www.")
+            || lower.contains(".com")
+            || lower.contains(".net")
+            || lower.contains(".org")
     }
 
     fn is_lua_metadata_comment(lower_comment: &str) -> bool {
@@ -244,8 +258,12 @@ impl SteamLibraryScanner {
         ];
 
         lower_comment.starts_with("--")
-            || METADATA_PREFIXES.iter().any(|prefix| lower_comment.starts_with(prefix))
-            || METADATA_FRAGMENTS.iter().any(|fragment| lower_comment.contains(fragment))
+            || METADATA_PREFIXES
+                .iter()
+                .any(|prefix| lower_comment.starts_with(prefix))
+            || METADATA_FRAGMENTS
+                .iter()
+                .any(|fragment| lower_comment.contains(fragment))
     }
 
     fn discover_libraries(&self) -> Vec<PathBuf> {
@@ -284,7 +302,10 @@ impl SteamLibraryScanner {
     }
 
     fn normalize_path(path: &Path) -> String {
-        path.to_string_lossy().replace('\\', "/").trim_end_matches('/').to_lowercase()
+        path.to_string_lossy()
+            .replace('\\', "/")
+            .trim_end_matches('/')
+            .to_lowercase()
     }
 
     fn parse_libraryfolders(steam_root: &Path) -> Vec<PathBuf> {
@@ -313,7 +334,9 @@ impl SteamLibraryScanner {
 
     fn parse_appmanifest(path: &Path, library_path: &Path) -> Option<AppManifest> {
         let content = fs::read_to_string(path).ok()?;
-        let app_id = Self::capture_vdf_value(&content, "appid")?.parse::<u32>().ok()?;
+        let app_id = Self::capture_vdf_value(&content, "appid")?
+            .parse::<u32>()
+            .ok()?;
         let name = Self::capture_vdf_value(&content, "name").unwrap_or_default();
         let install_dir = Self::capture_vdf_value(&content, "installdir")?;
 

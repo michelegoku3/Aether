@@ -66,13 +66,16 @@ fn normalize_query_title(game_name: &str, flavor: QueryFlavor) -> String {
         QueryFlavor::CsRinRu => PossessivePolicy::DropPossessiveS,
     };
 
-    let tokens = title_tokens(&without_editions, TokenOptions {
-        preserve_hyphen: false,
-        preserve_dot: matches!(flavor, QueryFlavor::CsRinRu),
-        possessive_policy,
-        roman_numerals: RomanNumeralPolicy::Keep,
-        drop_numeric_tokens: matches!(flavor, QueryFlavor::CsRinRu),
-    });
+    let tokens = title_tokens(
+        &without_editions,
+        TokenOptions {
+            preserve_hyphen: false,
+            preserve_dot: matches!(flavor, QueryFlavor::CsRinRu),
+            possessive_policy,
+            roman_numerals: RomanNumeralPolicy::Keep,
+            drop_numeric_tokens: matches!(flavor, QueryFlavor::CsRinRu),
+        },
+    );
 
     tokens.join(" ")
 }
@@ -88,13 +91,16 @@ fn encode_query_value(value: &str) -> String {
 fn build_gcw_slug(game_name: &str) -> String {
     let without_brackets = remove_bracketed_segments(game_name);
     let without_editions = strip_known_edition_suffixes(&without_brackets);
-    let tokens = title_tokens(&without_editions, TokenOptions {
-        preserve_hyphen: true,
-        preserve_dot: false,
-        possessive_policy: PossessivePolicy::KeepAsPlainS,
-        roman_numerals: RomanNumeralPolicy::ConvertToArabic,
-        drop_numeric_tokens: false,
-    });
+    let tokens = title_tokens(
+        &without_editions,
+        TokenOptions {
+            preserve_hyphen: true,
+            preserve_dot: false,
+            possessive_policy: PossessivePolicy::KeepAsPlainS,
+            roman_numerals: RomanNumeralPolicy::ConvertToArabic,
+            drop_numeric_tokens: false,
+        },
+    );
 
     tokens.join("_")
 }
@@ -154,7 +160,9 @@ fn title_tokens(title: &str, options: TokenOptions) -> Vec<String> {
     cleaned
         .split_whitespace()
         .filter(|token| !token.is_empty())
-        .filter(|token| !options.drop_numeric_tokens || !token.chars().all(|ch| ch.is_ascii_digit()))
+        .filter(|token| {
+            !options.drop_numeric_tokens || !token.chars().all(|ch| ch.is_ascii_digit())
+        })
         .map(|token| match options.roman_numerals {
             RomanNumeralPolicy::Keep => token.to_string(),
             RomanNumeralPolicy::ConvertToArabic => normalize_roman_token(token),
@@ -269,7 +277,12 @@ fn open_external_url(url: &str) -> Result<(), String> {
         .args(["url.dll,FileProtocolHandler", url])
         .spawn()
         .map(|_| ())
-        .map_err(|e| format!("Failed to open the external resource in the default browser: {}", e))
+        .map_err(|e| {
+            format!(
+                "Failed to open the external resource in the default browser: {}",
+                e
+            )
+        })
 }
 
 #[cfg(target_os = "macos")]
@@ -278,7 +291,12 @@ fn open_external_url(url: &str) -> Result<(), String> {
         .arg(url)
         .spawn()
         .map(|_| ())
-        .map_err(|e| format!("Failed to open the external resource in the default browser: {}", e))
+        .map_err(|e| {
+            format!(
+                "Failed to open the external resource in the default browser: {}",
+                e
+            )
+        })
 }
 
 #[cfg(all(unix, not(target_os = "macos")))]
@@ -287,5 +305,10 @@ fn open_external_url(url: &str) -> Result<(), String> {
         .arg(url)
         .spawn()
         .map(|_| ())
-        .map_err(|e| format!("Failed to open the external resource in the default browser: {}", e))
+        .map_err(|e| {
+            format!(
+                "Failed to open the external resource in the default browser: {}",
+                e
+            )
+        })
 }

@@ -39,7 +39,9 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
-    "resources": [],
+    "resources": [
+      "ExternalTools/Steamless"
+    ],
     "windows": {
       "nsis": {
         "installMode": "both",

@@ -1453,9 +1453,25 @@ body {
   width: 460px;
   padding: 10px 15px;
   border-radius: 8px;
-  background-color: rgba(239, 68, 68, 0.08);
-  border: 1px solid rgba(239, 68, 68, 0.25);
-  color: #ef4444;
   font-size: 12px;
   text-align: center;
+  border: 1px solid transparent;
+}
+
+.home-status.info {
+  background-color: rgba(0, 180, 216, 0.08);
+  border-color: rgba(0, 180, 216, 0.25);
+  color: var(--color-cyan);
+}
+
+.home-status.success {
+  background-color: rgba(16, 185, 129, 0.08);
+  border-color: rgba(16, 185, 129, 0.25);
+  color: #10b981;
+}
+
+.home-status.error {
+  background-color: rgba(239, 68, 68, 0.08);
+  border-color: rgba(239, 68, 68, 0.25);
+  color: #ef4444;
 }

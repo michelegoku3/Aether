@@ -6,6 +6,18 @@ const MAX_VISIBLE_RESULTS = 5;
 
 type HomeResource = 'onlinefix' | 'gcw' | 'csrinru';
 
+interface SteamlessRunResult {
+  success: boolean;
+  cancelled: boolean;
+  message: string;
+  exePath?: string;
+  backupPath?: string;
+  stdoutTail: string;
+  stderrTail: string;
+}
+
+type HomeStatus = { text: string; type: 'info' | 'success' | 'error' };
+
 const normalizeSearchText = (value: string) =>
   value
     .toLowerCase()
@@ -40,7 +52,8 @@ export const HomeView = () => {
   const [query, setQuery] = useState('');
   const [selectedGame, setSelectedGame] = useState<InstalledGame | null>(null);
   const [isSearchOpen, setIsSearchOpen] = useState(false);
-  const [status, setStatus] = useState('');
+  const [status, setStatus] = useState<HomeStatus>({ text: '', type: 'info' });
+  const [isSteamlessRunning, setIsSteamlessRunning] = useState(false);
   const searchPanelRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -72,12 +85,12 @@ export const HomeView = () => {
     setSelectedGame(game);
     setQuery(game.name);
     setIsSearchOpen(false);
-    setStatus('');
+    setStatus({ text: '', type: 'info' });
   };
 
   const openResource = async (site: HomeResource) => {
     if (!selectedGame) {
-      setStatus('Select a Lua game first.');
+      setStatus({ text: 'Select a Lua game first.', type: 'error' });
       return;
     }
 
@@ -86,9 +99,45 @@ export const HomeView = () => {
         site,
         gameName: selectedGame.name,
       });
-      setStatus('');
+      setStatus({ text: '', type: 'info' });
     } catch (err: any) {
-      setStatus(`Failed to open external resource: ${err}`);
+      setStatus({ text: `Failed to open external resource: ${err}`, type: 'error' });
+    }
+  };
+
+
+  const runSteamless = async () => {
+    if (!selectedGame) {
+      setStatus({ text: 'Select a Lua game first.', type: 'error' });
+      return;
+    }
+
+    if (!selectedGame.installed || !selectedGame.gamePath) {
+      setStatus({ text: 'Steamless requires the selected game to be installed locally.', type: 'error' });
+      return;
+    }
+
+    setIsSteamlessRunning(true);
+    setStatus({ text: 'Select the game executable to run Steamless...', type: 'info' });
+
+    try {
+      const result: SteamlessRunResult = await invoke('pick_and_run_steamless', {
+        appId: selectedGame.id,
+      });
+
+      if (result.cancelled) {
+        setStatus({ text: '', type: 'info' });
+        return;
+      }
+
+      setStatus({
+        text: result.message,
+        type: result.success ? 'success' : 'error',
+      });
+    } catch (err: any) {
+      setStatus({ text: `Steamless failed: ${err}`, type: 'error' });
+    } finally {
+      setIsSteamlessRunning(false);
     }
   };
 
@@ -108,7 +157,7 @@ export const HomeView = () => {
               setQuery(event.target.value);
               setSelectedGame(null);
               setIsSearchOpen(true);
-              setStatus('');
+              setStatus({ text: '', type: 'info' });
             }}
             onKeyDown={(event) => {
               if (event.key === 'Escape') {
@@ -166,12 +215,16 @@ export const HomeView = () => {
         >
           CSRINRU
         </button>
-        <button className="game-action-btn" disabled>
-          Steamless
+        <button
+          className="game-action-btn"
+          disabled={!hasSelectedGame || isSteamlessRunning}
+          onClick={runSteamless}
+        >
+          {isSteamlessRunning ? 'Running...' : 'Steamless'}
         </button>
       </div>
 
-      {status && <div className="home-status">{status}</div>}
+      {status.text && <div className={`home-status ${status.type}`}>{status.text}</div>}
     </div>
   );
 };
