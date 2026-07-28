@@ -68,6 +68,7 @@ fn normalize_query_title(game_name: &str, flavor: QueryFlavor) -> String {
 
     let tokens = title_tokens(&without_editions, TokenOptions {
         preserve_hyphen: false,
+        preserve_dot: matches!(flavor, QueryFlavor::CsRinRu),
         possessive_policy,
         roman_numerals: RomanNumeralPolicy::Keep,
         drop_numeric_tokens: matches!(flavor, QueryFlavor::CsRinRu),
@@ -89,6 +90,7 @@ fn build_gcw_slug(game_name: &str) -> String {
     let without_editions = strip_known_edition_suffixes(&without_brackets);
     let tokens = title_tokens(&without_editions, TokenOptions {
         preserve_hyphen: true,
+        preserve_dot: false,
         possessive_policy: PossessivePolicy::KeepAsPlainS,
         roman_numerals: RomanNumeralPolicy::ConvertToArabic,
         drop_numeric_tokens: false,
@@ -100,6 +102,7 @@ fn build_gcw_slug(game_name: &str) -> String {
 #[derive(Debug, Clone, Copy)]
 struct TokenOptions {
     preserve_hyphen: bool,
+    preserve_dot: bool,
     possessive_policy: PossessivePolicy,
     roman_numerals: RomanNumeralPolicy,
     drop_numeric_tokens: bool,
@@ -122,9 +125,14 @@ fn title_tokens(title: &str, options: TokenOptions) -> Vec<String> {
         .replace('™', "")
         .replace('®', "")
         .replace('©', "")
-        // Dotted acronyms such as R.E.P.O. are indexed by most sites as "repo".
-        .replace('.', "")
         .replace('&', " and ");
+
+    let normalized = if options.preserve_dot {
+        normalized
+    } else {
+        // Dotted acronyms such as R.E.P.O. are indexed by OnlineFix/GCW as "repo".
+        normalized.replace('.', "")
+    };
 
     let normalized = match options.possessive_policy {
         PossessivePolicy::KeepAsPlainS => normalized.replace("'", ""),
@@ -133,7 +141,10 @@ fn title_tokens(title: &str, options: TokenOptions) -> Vec<String> {
 
     let mut cleaned = String::with_capacity(normalized.len());
     for ch in normalized.chars() {
-        if ch.is_ascii_alphanumeric() || (options.preserve_hyphen && ch == '-') {
+        if ch.is_ascii_alphanumeric()
+            || (options.preserve_hyphen && ch == '-')
+            || (options.preserve_dot && ch == '.')
+        {
             cleaned.push(ch.to_ascii_lowercase());
         } else {
             cleaned.push(' ');

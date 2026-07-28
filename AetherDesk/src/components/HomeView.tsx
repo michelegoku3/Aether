@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { InstalledGame, useLibraryGames } from '../hooks/useLibraryGames';
 
@@ -41,6 +41,19 @@ export const HomeView = () => {
   const [selectedGame, setSelectedGame] = useState<InstalledGame | null>(null);
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [status, setStatus] = useState('');
+  const searchPanelRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    const handlePointerDown = (event: MouseEvent) => {
+      const target = event.target as Node | null;
+      if (target && !searchPanelRef.current?.contains(target)) {
+        setIsSearchOpen(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handlePointerDown);
+    return () => document.removeEventListener('mousedown', handlePointerDown);
+  }, []);
 
   const filteredGames = useMemo(() => {
     const sortedGames = [...games].sort((a, b) => a.name.localeCompare(b.name));
@@ -83,7 +96,7 @@ export const HomeView = () => {
     <div className="home-view">
       <h1 className="home-title">HOME</h1>
 
-      <div className="home-search-panel">
+      <div className="home-search-panel" ref={searchPanelRef}>
         <div className="home-search-wrapper">
           <input
             className="home-search-input"
@@ -129,11 +142,6 @@ export const HomeView = () => {
           )}
         </div>
 
-        {selectedGame && (
-          <div className="home-selected-game">
-            Selected: <strong>{selectedGame.name}</strong>
-          </div>
-        )}
       </div>
 
       <div className="home-action-grid">
