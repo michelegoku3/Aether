@@ -3,6 +3,7 @@ import { StoreView } from './StoreView';
 import { SettingsView } from './SettingsView';
 import { AetherView } from './AetherView';
 import { LibraryView } from './LibraryView';
+import { HomeView } from './HomeView';
 
 interface MainContentProps {
   activeTab: TabType;
@@ -13,6 +14,14 @@ interface MainContentProps {
 
 export const MainContent = ({ activeTab, dllUpdateAvailable, deskUpdateAvailable, onUpdateComplete }: MainContentProps) => {
   // Route to the appropriate view based on the active tab
+  if (activeTab === 'home') {
+    return (
+      <main className="main-content">
+        <HomeView />
+      </main>
+    );
+  }
+
   if (activeTab === 'store') {
     return (
       <main className="main-content">
@@ -52,7 +61,6 @@ export const MainContent = ({ activeTab, dllUpdateAvailable, deskUpdateAvailable
   // Fallback title for other blank pages
   const getTabTitle = () => {
     switch (activeTab) {
-      case 'home': return 'Home View';
       case 'download': return 'Backup View';
       case 'log': return 'Log View';
       default: return 'Blank View';
