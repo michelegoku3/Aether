@@ -72,10 +72,6 @@ export const LibraryGameActionsModal = ({
     }
   };
 
-  const handleCleanCrack = () => {
-    onStatus('Clean Crack is not available yet. This workflow will be implemented separately.', 'info');
-  };
-
   const handleRemove = async () => {
     if (game.installed) {
       onStatus('Remove is available only for games that are not installed in Steam.', 'error');
@@ -113,8 +109,8 @@ export const LibraryGameActionsModal = ({
             <button className="game-action-btn" onClick={() => onOpenVersionEditor(game)} disabled={disabled}>
               Change Version
             </button>
-            <button className="game-action-btn" onClick={handleCleanCrack} disabled={disabled}>
-              Clean Crack
+            <button className="game-action-btn" disabled title="Apply Crack is not available yet.">
+              Apply Crack
             </button>
             <button
               className="game-action-btn danger"

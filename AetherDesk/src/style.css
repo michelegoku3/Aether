@@ -1407,7 +1407,8 @@ body {
   border-bottom: none;
 }
 
-.home-search-result:hover {
+.home-search-result:hover,
+.home-search-result.active {
   background-color: #192128;
   color: var(--color-cyan);
 }
