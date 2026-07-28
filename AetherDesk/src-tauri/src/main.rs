@@ -18,6 +18,7 @@ mod steam_app_names;
 mod steam_compat;
 mod steam_library;
 mod steam_store;
+mod store_search_cache;
 mod steam_update_guard;
 mod store_service;
 
@@ -33,6 +34,7 @@ fn main() {
             commands::store::trigger_hubcap_download,
             commands::store::prepare_specific_version_download,
             commands::library::get_installed_library_games,
+            commands::library::warm_library_game_cache,
             commands::library::get_installed_lua_manifest_rows,
             commands::library::get_lua_game_update_state,
             commands::library::set_lua_game_updates_enabled,

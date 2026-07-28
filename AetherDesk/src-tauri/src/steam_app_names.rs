@@ -45,11 +45,21 @@ impl SteamAppNameResolver {
         }
     }
 
+    /// Returns names already present in the persistent cache without doing any network I/O.
+    ///
+    /// This method is intentionally synchronous and fast: it is used by the Library UI path so
+    /// games can be rendered immediately even when Steam is offline or slow.
+    pub fn cached_names(&self, app_ids: Vec<u32>) -> HashMap<u32, String> {
+        let cache = self.load_cache();
+        Self::filter_cached_names(cache, app_ids)
+    }
+
+    /// Resolves missing names through Steam and persists them for future cache-only reads.
+    ///
+    /// Use this from warm-up/background paths, not from UI-critical commands.
     pub async fn resolve_names(&self, app_ids: Vec<u32>) -> HashMap<u32, String> {
         let mut cache = self.load_cache();
-        let mut unique_ids = app_ids;
-        unique_ids.sort_unstable();
-        unique_ids.dedup();
+        let unique_ids = Self::unique_app_ids(app_ids);
 
         let missing_ids: Vec<u32> = unique_ids
             .iter()
@@ -59,18 +69,69 @@ impl SteamAppNameResolver {
 
         if !missing_ids.is_empty() {
             let fetched = self.fetch_missing_names(missing_ids).await;
+            let mut changed = false;
+
             for (app_id, name) in fetched {
-                if !name.trim().is_empty() {
-                    cache.names.insert(app_id, name);
+                let trimmed = name.trim();
+                if !trimmed.is_empty() {
+                    cache.names.insert(app_id, trimmed.to_string());
+                    changed = true;
                 }
             }
-            let _ = self.save_cache(&cache);
+
+            if changed {
+                let _ = self.save_cache(&cache);
+            }
         }
 
-        unique_ids
+        Self::filter_cached_names(cache, unique_ids)
+    }
+
+    fn unique_app_ids(mut app_ids: Vec<u32>) -> Vec<u32> {
+        app_ids.sort_unstable();
+        app_ids.dedup();
+        app_ids
+    }
+
+    fn filter_cached_names(cache: NameCacheFile, app_ids: Vec<u32>) -> HashMap<u32, String> {
+        Self::unique_app_ids(app_ids)
             .into_iter()
-            .filter_map(|app_id| cache.names.get(&app_id).cloned().map(|name| (app_id, name)))
+            .filter_map(|app_id| {
+                cache
+                    .names
+                    .get(&app_id)
+                    .cloned()
+                    .filter(|name| !name.trim().is_empty())
+                    .map(|name| (app_id, name))
+            })
             .collect()
+    }
+
+
+    /// Merges trusted names obtained from another local/live source (for example Store search)
+    /// into the shared app-name cache used by the Library.
+    pub fn merge_names<I>(&self, names: I)
+    where
+        I: IntoIterator<Item = (u32, String)>,
+    {
+        let mut cache = self.load_cache();
+        let mut changed = false;
+
+        for (app_id, name) in names {
+            let trimmed = name.trim();
+            if trimmed.is_empty() {
+                continue;
+            }
+
+            if cache.names.get(&app_id).map(String::as_str) != Some(trimmed) {
+                cache.names.insert(app_id, trimmed.to_string());
+                changed = true;
+            }
+        }
+
+        if changed {
+            let _ = self.save_cache(&cache);
+        }
     }
 
     fn load_cache(&self) -> NameCacheFile {
