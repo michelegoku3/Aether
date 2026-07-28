@@ -54,13 +54,15 @@ export default function App() {
     return () => clearInterval(interval);
   }, []);
 
-  // Professional decoupled action handler to kill and restart Steam via Rust
+  // Professional decoupled action handler to kill and restart Steam via Rust.
+  // Keep this silent: the sidebar button is an immediate utility action and should not
+  // interrupt the user with browser-level alerts.
   const handleRestartSteam = async () => {
     try {
       await invoke('restart_steam');
-      alert('Steam has been terminated and is restarting asynchronously in the background.');
+      console.log('Steam restart requested successfully.');
     } catch (err: any) {
-      alert(`Failed to restart Steam: ${err}`);
+      console.error('Failed to restart Steam:', err);
     }
   };
 

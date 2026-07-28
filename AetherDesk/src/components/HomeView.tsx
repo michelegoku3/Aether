@@ -52,9 +52,11 @@ export const HomeView = () => {
   const [query, setQuery] = useState('');
   const [selectedGame, setSelectedGame] = useState<InstalledGame | null>(null);
   const [isSearchOpen, setIsSearchOpen] = useState(false);
+  const [activeResultIndex, setActiveResultIndex] = useState<number | null>(null);
   const [status, setStatus] = useState<HomeStatus>({ text: '', type: 'info' });
   const [isSteamlessRunning, setIsSteamlessRunning] = useState(false);
   const searchPanelRef = useRef<HTMLDivElement | null>(null);
+  const resultRefs = useRef<Array<HTMLButtonElement | null>>([]);
 
   useEffect(() => {
     const handlePointerDown = (event: MouseEvent) => {
@@ -78,6 +80,24 @@ export const HomeView = () => {
     return sortedGames.filter(game => Number.isFinite(fuzzyScore(query, game.name)));
   }, [games, query]);
 
+  useEffect(() => {
+    setActiveResultIndex(null);
+  }, [query]);
+
+  useEffect(() => {
+    if (activeResultIndex !== null && activeResultIndex >= filteredGames.length) {
+      setActiveResultIndex(filteredGames.length > 0 ? filteredGames.length - 1 : null);
+    }
+  }, [activeResultIndex, filteredGames.length]);
+
+  useEffect(() => {
+    if (!isSearchOpen || activeResultIndex === null) return;
+    resultRefs.current[activeResultIndex]?.scrollIntoView({
+      block: 'nearest',
+    });
+  }, [activeResultIndex, isSearchOpen]);
+
+
   const visibleRowCount = Math.min(MAX_VISIBLE_RESULTS, Math.max(filteredGames.length, 1));
   const hasSelectedGame = Boolean(selectedGame);
 
@@ -85,7 +105,19 @@ export const HomeView = () => {
     setSelectedGame(game);
     setQuery(game.name);
     setIsSearchOpen(false);
+    setActiveResultIndex(null);
     setStatus({ text: '', type: 'info' });
+  };
+
+  const selectActiveResult = () => {
+    const game = activeResultIndex !== null
+      ? filteredGames[activeResultIndex]
+      : filteredGames.length === 1
+        ? filteredGames[0]
+        : null;
+    if (game) {
+      selectGame(game);
+    }
   };
 
   const openResource = async (site: HomeResource) => {
@@ -157,10 +189,30 @@ export const HomeView = () => {
               setQuery(event.target.value);
               setSelectedGame(null);
               setIsSearchOpen(true);
+              setActiveResultIndex(null);
               setStatus({ text: '', type: 'info' });
             }}
             onKeyDown={(event) => {
-              if (event.key === 'Escape') {
+              if (event.key === 'ArrowDown') {
+                event.preventDefault();
+                setIsSearchOpen(true);
+                setActiveResultIndex(prev => {
+                  if (filteredGames.length === 0) return null;
+                  return prev === null ? 0 : Math.min(prev + 1, filteredGames.length - 1);
+                });
+              } else if (event.key === 'ArrowUp') {
+                event.preventDefault();
+                setIsSearchOpen(true);
+                setActiveResultIndex(prev => {
+                  if (filteredGames.length === 0) return null;
+                  return prev === null ? filteredGames.length - 1 : Math.max(prev - 1, 0);
+                });
+              } else if (event.key === 'Enter') {
+                if (isSearchOpen && filteredGames.length > 0) {
+                  event.preventDefault();
+                  selectActiveResult();
+                }
+              } else if (event.key === 'Escape') {
                 setIsSearchOpen(false);
               }
             }}
@@ -172,11 +224,13 @@ export const HomeView = () => {
               style={{ maxHeight: `${visibleRowCount * 42}px` }}
             >
               {filteredGames.length > 0 ? (
-                filteredGames.map(game => (
+                filteredGames.map((game, index) => (
                   <button
                     key={game.id}
                     type="button"
-                    className="home-search-result"
+                    ref={(element) => { resultRefs.current[index] = element; }}
+                    className={`home-search-result ${index === activeResultIndex ? 'active' : ''}`}
+                    onMouseEnter={() => setActiveResultIndex(index)}
                     onMouseDown={(event) => event.preventDefault()}
                     onClick={() => selectGame(game)}
                   >
