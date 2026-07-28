@@ -1436,16 +1436,6 @@ body {
   font-size: 13px;
 }
 
-.home-selected-game {
-  color: var(--color-muted);
-  font-size: 12px;
-  text-align: center;
-}
-
-.home-selected-game strong {
-  color: #ffffff;
-}
-
 .home-action-grid {
   display: grid;
   grid-template-columns: repeat(2, 172px);
