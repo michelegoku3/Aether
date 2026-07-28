@@ -35,7 +35,7 @@ struct AppManifest {
 #[derive(Debug, Clone)]
 struct LuaEntry {
     app_id: u32,
-    name: String,
+    name: Option<String>,
 }
 
 impl SteamLibraryScanner {
@@ -69,13 +69,10 @@ impl SteamLibraryScanner {
 
             let manifest = installed_manifests.get(&lua.app_id);
             let installed = manifest.is_some();
-            let name = if !lua.name.trim().is_empty() {
-                lua.name
-            } else if let Some(manifest) = manifest {
-                manifest.name.clone()
-            } else {
-                format!("App {}", lua.app_id)
-            };
+            let name = manifest
+                .and_then(|manifest| Self::safe_display_name(&manifest.name))
+                .or(lua.name)
+                .unwrap_or_else(|| Self::fallback_app_name(lua.app_id));
 
             games.push(InstalledSteamGame {
                 id: lua.app_id,
@@ -148,7 +145,7 @@ impl SteamLibraryScanner {
 
         let app_id = path.file_stem()?.to_str()?.parse::<u32>().ok()?;
         let content = fs::read_to_string(path).ok()?;
-        let name = Self::extract_game_name_from_lua(&content).unwrap_or_else(|| format!("App {}", app_id));
+        let name = Self::extract_game_name_from_lua(&content);
 
         Some(LuaEntry { app_id, name })
     }
@@ -161,30 +158,94 @@ impl SteamLibraryScanner {
             };
 
             let candidate = comment.trim();
-            if candidate.is_empty() || Self::is_lua_metadata_comment(candidate) {
-                continue;
+            if let Some(name) = Self::safe_display_name(candidate) {
+                return Some(name);
             }
-
-            return Some(candidate.to_string());
         }
 
         None
     }
 
-    fn is_lua_metadata_comment(comment: &str) -> bool {
-        let lower = comment.to_lowercase();
-        lower.contains("'s lua and manifest created")
-            || lower.starts_with("created:")
-            || lower.starts_with("website:")
-            || lower.starts_with("total depots:")
-            || lower.starts_with("total dlcs:")
-            || lower.starts_with("shared depots:")
-            || lower.starts_with("blacklisted depots:")
-            || lower.starts_with("depot ")
-            || lower.starts_with("main application")
-            || lower.starts_with("main app depots")
-            || lower.starts_with("shared depots")
-            || lower.starts_with("dlcs with dedicated depots")
+    fn safe_display_name(candidate: &str) -> Option<String> {
+        let name = candidate.trim().trim_matches(['-', '=', '*', '#', '/', '\\', ' ']);
+
+        if name.is_empty() || name.len() > 120 || name.chars().count() < 2 {
+            return None;
+        }
+
+        if name.chars().all(|ch| ch.is_ascii_digit() || ch.is_whitespace()) {
+            return None;
+        }
+
+        let lower = name.to_lowercase();
+        if Self::is_lua_metadata_comment(&lower) || Self::looks_like_url(&lower) {
+            return None;
+        }
+
+        let symbol_count = name
+            .chars()
+            .filter(|ch| !ch.is_alphanumeric() && !ch.is_whitespace())
+            .count();
+        if symbol_count > name.chars().count().saturating_div(3).max(6) {
+            return None;
+        }
+
+        Some(name.to_string())
+    }
+
+    fn fallback_app_name(app_id: u32) -> String {
+        format!("App ID {}", app_id)
+    }
+
+    fn looks_like_url(lower: &str) -> bool {
+        lower.contains("://") || lower.contains("www.") || lower.contains(".com") || lower.contains(".net") || lower.contains(".org")
+    }
+
+    fn is_lua_metadata_comment(lower_comment: &str) -> bool {
+        const METADATA_PREFIXES: &[&str] = &[
+            "created:",
+            "website:",
+            "url:",
+            "source:",
+            "total depots:",
+            "total dlcs:",
+            "shared depots:",
+            "blacklisted depots:",
+            "depot ",
+            "main application",
+            "main app depots",
+            "dlcs with dedicated depots",
+            "generated",
+            "manifest",
+            "setmanifestid",
+            "addappid",
+            "addappid",
+        ];
+
+        const METADATA_FRAGMENTS: &[&str] = &[
+            " lua ",
+            " lua and manifest",
+            "'s lua",
+            "manifest created",
+            "depotcache",
+            "steam config",
+            "stplug-in",
+            "luma",
+            "sff",
+            "creamapi",
+            "decryption key",
+            "unlock",
+            "depot id",
+            "manifest id",
+            "branch:",
+            "buildid",
+            "password",
+            "token",
+        ];
+
+        lower_comment.starts_with("--")
+            || METADATA_PREFIXES.iter().any(|prefix| lower_comment.starts_with(prefix))
+            || METADATA_FRAGMENTS.iter().any(|fragment| lower_comment.contains(fragment))
     }
 
     fn discover_libraries(&self) -> Vec<PathBuf> {

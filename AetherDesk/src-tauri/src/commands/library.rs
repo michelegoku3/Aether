@@ -14,10 +14,10 @@ pub async fn get_installed_library_games(app: tauri::AppHandle) -> Result<Vec<In
     let scanner = SteamLibraryScanner::new(settings.steam_path, Some(settings.active_library));
     let mut games = scanner.scan_installed_games();
 
+    // UI-critical path: use persistent cache only, never wait for Steam/network here.
     let cache_dir = LocalAppPaths::data_root().join("cache");
     let names = SteamAppNameResolver::new(cache_dir)
-        .resolve_names(games.iter().map(|game| game.id).collect())
-        .await;
+        .cached_names(games.iter().map(|game| game.id).collect());
 
     for game in &mut games {
         if let Some(name) = names.get(&game.id) {
@@ -27,6 +27,27 @@ pub async fn get_installed_library_games(app: tauri::AppHandle) -> Result<Vec<In
 
     games.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
     Ok(games)
+}
+
+#[tauri::command]
+pub async fn warm_library_game_cache(app: tauri::AppHandle) -> Result<usize, String> {
+    let settings = SettingsManager::new(&app).load();
+    if settings.steam_path.trim().is_empty() {
+        return Ok(0);
+    }
+
+    let scanner = SteamLibraryScanner::new(settings.steam_path, Some(settings.active_library));
+    let games = scanner.scan_installed_games();
+    let app_ids: Vec<u32> = games.iter().map(|game| game.id).collect();
+
+    if app_ids.is_empty() {
+        return Ok(0);
+    }
+
+    let cache_dir = LocalAppPaths::data_root().join("cache");
+    let names = SteamAppNameResolver::new(cache_dir).resolve_names(app_ids).await;
+
+    Ok(names.len())
 }
 
 #[tauri::command]

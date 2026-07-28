@@ -2,9 +2,12 @@ use crate::app_storage::AppStorage;
 use crate::download_orchestrator::DownloadOrchestrator;
 use crate::drm_detector::DrmDetector;
 use crate::hubcap_client::HubcapClient;
+use crate::local_app_paths::LocalAppPaths;
 use crate::lua_manifest_pins::{LuaManifestPins, LuaManifestRow};
 use crate::settings::SettingsManager;
+use crate::steam_app_names::SteamAppNameResolver;
 use crate::steam_compat::SteamCompat;
+use crate::store_search_cache::StoreSearchCache;
 use crate::store_service::{StoreService, UnifiedStoreGame};
 use std::collections::HashMap;
 
@@ -14,7 +17,36 @@ pub async fn search_store(app: tauri::AppHandle, query: String) -> Result<Vec<Un
     let hubcap_client = (!settings.hubcap_api_key.trim().is_empty())
         .then(|| HubcapClient::new(settings.hubcap_api_key));
 
-    StoreService::new().search_store(&query, hubcap_client).await
+    let cache = StoreSearchCache::new(LocalAppPaths::data_root().join("cache"));
+    let cache_key = if hubcap_client.is_some() {
+        format!("hubcap {}", query)
+    } else {
+        format!("steam {}", query)
+    };
+
+    if let Some(results) = cache.get_fresh(&cache_key) {
+        return Ok(results);
+    }
+
+    match StoreService::new().search_store(&query, hubcap_client).await {
+        Ok(results) => {
+            let cache_dir = LocalAppPaths::data_root().join("cache");
+            SteamAppNameResolver::new(cache_dir).merge_names(
+                results
+                    .iter()
+                    .map(|game| (game.id, game.name.clone())),
+            );
+            let _ = cache.put(&cache_key, results.clone());
+            Ok(results)
+        }
+        Err(error) => {
+            if let Some(results) = cache.get_any(&cache_key) {
+                Ok(results)
+            } else {
+                Err(error)
+            }
+        }
+    }
 }
 
 #[tauri::command]

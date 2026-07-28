@@ -36,6 +36,14 @@ export default function App() {
     }
   };
 
+  // Warm the Library metadata cache as soon as the app starts.
+  // This is fire-and-forget: Library rendering must never wait for Steam network calls.
+  useEffect(() => {
+    invoke('warm_library_game_cache')
+      .then(count => console.log(`[AetherDesk library cache warm-up] ${count} cached names available`))
+      .catch(err => console.warn('Library cache warm-up failed:', err));
+  }, []);
+
   // Run update checks on startup and then only occasionally.
   // GitHub public API is limited to 60 unauthenticated requests/hour per IP: polling every
   // 45 seconds can quickly cause 403 Forbidden/rate-limit errors, especially because Desk
