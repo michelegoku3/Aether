@@ -3,7 +3,11 @@ use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
 
-const HIDDEN_SYSTEM_DEPOTS: &[u32] = &[228986, 228989, 228990];
+const HIDDEN_SYSTEM_DEPOTS: &[u32] = &[
+    228981, 228982, 228983, 228984, 228985, 228986, 228987, 228988, 228989, 228990, 229000,
+    229001, 229002, 229003, 229004, 229005, 229006, 229007, 229010, 229011, 229012, 229020,
+    229030, 229031, 229032, 229033,
+];
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

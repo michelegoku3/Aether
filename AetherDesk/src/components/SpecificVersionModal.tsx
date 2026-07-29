@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { requireSteamPath } from '../hooks/useSettings';
 
@@ -36,6 +36,17 @@ export const SpecificVersionModal = ({ game, initialRows, onClose }: SpecificVer
   const updateRow = (rowId: number, patch: Partial<LuaManifestRow>) => {
     setRows(prev => prev.map(row => row.rowId === rowId ? { ...row, ...patch } : row));
   };
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && !isApplying) {
+        onClose();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isApplying, onClose]);
 
   const handleOpenSteamDb = async () => {
     try {
