@@ -52,6 +52,17 @@ export const LibraryGameActionsModal = ({
     refreshUpdateState();
   }, [game.appId]);
 
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && !disabled) {
+        onClose();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [disabled, onClose]);
+
   const handleToggleUpdates = async () => {
     setIsBusy(true);
     try {

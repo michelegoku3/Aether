@@ -130,29 +130,15 @@ impl DllInstaller {
     }
 
     fn aether_files(&self) -> Vec<PathBuf> {
-        let mut files = vec![
+        let files = vec![
             self.steam_path.join("AetherCore.dll"),
             self.steam_path.join("AetherPayload.dll"),
             self.steam_path.join("dwmapi.dll"),
             self.steam_path.join("AetherDLL_version.txt"),
+            self.steam_path.join("steam.cfg"),
             self.steam_path.join("bin").join("acoverlay.dll"),
         ];
 
-        if let Ok(entries) = fs::read_dir(&self.steam_path) {
-            for entry in entries.flatten() {
-                let path = entry.path();
-                let Some(name) = path.file_name().and_then(|name| name.to_str()) else {
-                    continue;
-                };
-                let lower = name.to_lowercase();
-                if lower.starts_with("aether") && lower.ends_with(".dll") {
-                    files.push(path);
-                }
-            }
-        }
-
-        files.sort();
-        files.dedup();
         files
     }
 
@@ -160,7 +146,6 @@ impl DllInstaller {
         vec![
             self.steam_path.join("aethercore"),
             self.steam_path.join("config").join("stplug-in"),
-            self.steam_path.join("config").join("stplugin"),
         ]
     }
 }
