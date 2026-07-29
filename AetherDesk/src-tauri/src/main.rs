@@ -53,6 +53,7 @@ fn main() {
             commands::aether_dll::check_aether_dll_update,
             commands::aether_dll::install_aether_dll,
             commands::aether_dll::uninstall_aether_dll,
+            commands::aether_dll::reset_aether_steam_path,
             commands::aether_desk::check_aether_desk_update,
             commands::aether_desk::install_aether_desk_update,
         ])

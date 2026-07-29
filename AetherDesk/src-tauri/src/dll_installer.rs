@@ -35,7 +35,7 @@ impl DllInstaller {
 
         let file = fs::File::open(zip_file_path)
             .map_err(|e| format!("Failed to open downloaded ZIP: {}", e))?;
-            
+
         let mut archive = zip::ZipArchive::new(file)
             .map_err(|e| format!("Invalid ZIP archive format: {}", e))?;
 
@@ -54,14 +54,14 @@ impl DllInstaller {
                 let temp_path = target_path.with_extension("tmp");
 
                 let mut outfile = fs::File::create(&temp_path)
-                    .map_err(|e| format!("Failed to create target file {:?}: {}", target_path, e))?;
+                    .map_err(|e| format_file_operation_error("create", &target_path, e))?;
 
                 io::copy(&mut file, &mut outfile)
                     .map_err(|e| format!("Failed to extract file contents: {}", e))?;
 
                 // Atomic replacement
                 fs::rename(&temp_path, &target_path)
-                    .map_err(|e| format!("Failed to apply file replacement: {}", e))?;
+                    .map_err(|e| format_file_operation_error("replace", &target_path, e))?;
 
                 extracted_count += 1;
             }
@@ -90,7 +90,7 @@ impl DllInstaller {
             let file_path = self.steam_path.join(file_name);
             if file_path.exists() {
                 fs::remove_file(&file_path)
-                    .map_err(|e| format!("Failed to delete file {:?}: {}", file_path, e))?;
+                    .map_err(|e| format_file_operation_error("delete", &file_path, e))?;
                 deleted_count += 1;
             }
         }
@@ -101,4 +101,75 @@ impl DllInstaller {
 
         Ok(())
     }
+
+    /// Removes every known file/folder created by Aether inside the Steam directory.
+    pub fn reset_aether_files(&self) -> Result<usize, String> {
+        if !self.steam_path.exists() {
+            return Err("Steam installation path does not exist".to_string());
+        }
+
+        let mut removed = 0;
+
+        for file_path in self.aether_files() {
+            if file_path.exists() {
+                fs::remove_file(&file_path)
+                    .map_err(|e| format_file_operation_error("delete", &file_path, e))?;
+                removed += 1;
+            }
+        }
+
+        for dir_path in self.aether_directories() {
+            if dir_path.exists() {
+                fs::remove_dir_all(&dir_path)
+                    .map_err(|e| format_file_operation_error("delete folder", &dir_path, e))?;
+                removed += 1;
+            }
+        }
+
+        Ok(removed)
+    }
+
+    fn aether_files(&self) -> Vec<PathBuf> {
+        let mut files = vec![
+            self.steam_path.join("AetherCore.dll"),
+            self.steam_path.join("AetherPayload.dll"),
+            self.steam_path.join("dwmapi.dll"),
+            self.steam_path.join("AetherDLL_version.txt"),
+            self.steam_path.join("bin").join("acoverlay.dll"),
+        ];
+
+        if let Ok(entries) = fs::read_dir(&self.steam_path) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                let Some(name) = path.file_name().and_then(|name| name.to_str()) else {
+                    continue;
+                };
+                let lower = name.to_lowercase();
+                if lower.starts_with("aether") && lower.ends_with(".dll") {
+                    files.push(path);
+                }
+            }
+        }
+
+        files.sort();
+        files.dedup();
+        files
+    }
+
+    fn aether_directories(&self) -> Vec<PathBuf> {
+        vec![
+            self.steam_path.join("aethercore"),
+            self.steam_path.join("config").join("stplug-in"),
+            self.steam_path.join("config").join("stplugin"),
+        ]
+    }
+}
+
+fn format_file_operation_error(action: &str, path: &Path, error: std::io::Error) -> String {
+    format!(
+        "Failed to {} {}. If Steam is running, close Steam completely and try again. Details: {}",
+        action,
+        path.display(),
+        error
+    )
 }

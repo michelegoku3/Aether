@@ -97,7 +97,19 @@ impl GithubReleaseManager {
         } else {
             lower.as_str()
         };
-        without_component.strip_prefix('v').unwrap_or(without_component).to_string()
+        without_component
+            .strip_prefix('v')
+            .unwrap_or(without_component)
+            .to_string()
+    }
+
+    pub fn display_version_from_tag(tag_or_version: &str) -> String {
+        let version = Self::component_version_from_tag(tag_or_version);
+        if version.trim().is_empty() || version == "n/a" {
+            "N/A".to_string()
+        } else {
+            format!("v{}", version)
+        }
     }
 
     pub fn tags_are_different_versions(installed: &str, latest_tag: &str) -> bool {
