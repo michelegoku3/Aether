@@ -12,7 +12,6 @@ export const AetherView = ({ isUpdateAvailable, isDeskUpdateAvailable, onUpdateC
   const [isDllInstalled, setIsDllInstalled] = useState(false);
   const [installedVersion, setInstalledVersion] = useState('N/A');
   const [deskVersion, setDeskVersion] = useState('1.0.0');
-  const [latestDeskVersion, setLatestDeskVersion] = useState('N/A');
   const [isSteamBlocked, setIsSteamBlocked] = useState(false);
   
   const [statusMsg, setStatusMsg] = useState({ text: '', type: 'info' });
@@ -23,12 +22,17 @@ export const AetherView = ({ isUpdateAvailable, isDeskUpdateAvailable, onUpdateC
     setTimeout(() => setStatusMsg({ text: '', type: 'info' }), 6000);
   };
 
+  const formatVersion = (value: string) => {
+    if (!value || value === 'N/A') return 'N/A';
+    const normalized = value.toLowerCase().replace(/^desk-/, '').replace(/^dll-/, '').replace(/^v/, '');
+    return `v${normalized}`;
+  };
+
   // Perform active check on local system state on component load
   const checkLocalSystemState = async () => {
     try {
       const deskInfo: any = await invoke('check_aether_desk_update');
       setDeskVersion(deskInfo.installed_version || 'N/A');
-      setLatestDeskVersion(deskInfo.latest_version || 'N/A');
     } catch (err: any) {
       console.error("Failed to query AetherDesk update state:", err);
     }
@@ -170,17 +174,14 @@ export const AetherView = ({ isUpdateAvailable, isDeskUpdateAvailable, onUpdateC
         return;
       }
 
-      // 1. Remove AetherDLL binaries and version files
-      await invoke('uninstall_aether_dll', { steamPath }).catch(() => "Ok");
-      
-      // 2. Remove steam.cfg update block if active
+      const result: string = await invoke('reset_aether_steam_path', { steamPath });
       await invoke('unblock_steam_updates', { steamPath }).catch(() => {});
-      
+
       // Refresh local state representation
       await checkLocalSystemState();
       onUpdateComplete(); // notify parent to refresh update status
 
-      showStatus('Steam directory successfully reset to its original clean state.', 'success');
+      showStatus(result, 'success');
     } catch (err: any) {
       showStatus(`Reset operation failed: ${err}`, 'error');
     }
@@ -204,7 +205,7 @@ export const AetherView = ({ isUpdateAvailable, isDeskUpdateAvailable, onUpdateC
         <div className="panel-header">
           <span className="panel-title">AetherDesk</span>
           <span className="panel-meta">
-            v{deskVersion}{isDeskUpdateAvailable && latestDeskVersion !== 'N/A' ? ` → v${latestDeskVersion}` : ''}
+            {formatVersion(deskVersion)}
           </span>
         </div>
         <div className="panel-actions">
@@ -226,7 +227,7 @@ export const AetherView = ({ isUpdateAvailable, isDeskUpdateAvailable, onUpdateC
         <div className="panel-header">
           <span className="panel-title">AetherDLL</span>
           {/* Dynamically displays the actual local installed version from steam directory */}
-          <span className="panel-meta">{isDllInstalled ? installedVersion : 'N/A'}</span>
+          <span className="panel-meta">{isDllInstalled ? formatVersion(installedVersion) : 'N/A'}</span>
         </div>
         <div className="panel-actions">
           {/* Install/Update Button: Active if DLL is NOT installed, or if updates are available */}

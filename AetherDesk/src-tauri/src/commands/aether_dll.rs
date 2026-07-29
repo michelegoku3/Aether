@@ -49,8 +49,8 @@ pub async fn check_aether_dll_update(app: tauri::AppHandle, steam_path: String) 
         && GithubReleaseManager::tags_are_different_versions(&installed_version, &latest_tag);
 
     Ok(serde_json::json!({
-        "installed_version": installed_version,
-        "latest_version": latest_version,
+        "installed_version": GithubReleaseManager::display_version_from_tag(&installed_version),
+        "latest_version": GithubReleaseManager::display_version_from_tag(&latest_version),
         "latest_tag": latest_tag,
         "update_available": update_available
     }))
@@ -61,6 +61,8 @@ pub async fn install_aether_dll(app: tauri::AppHandle, steam_path: String) -> Re
     if steam_path.trim().is_empty() {
         return Err("Steam installation path is required".to_string());
     }
+
+    ensure_steam_is_closed()?;
 
     let manager = GithubReleaseManager::new();
     let (tag_name, download_url) = manager.fetch_latest_dll_release().await?;
@@ -102,6 +104,8 @@ pub fn uninstall_aether_dll(app: tauri::AppHandle, steam_path: String) -> Result
         return Err("Steam installation path is required".to_string());
     }
 
+    ensure_steam_is_closed()?;
+
     AppStorage::new(&app).remove_aether_dll_version();
     let legacy_version_path = std::path::PathBuf::from(&steam_path).join("AetherDLL_version.txt");
     let _ = std::fs::remove_file(legacy_version_path);
@@ -109,4 +113,37 @@ pub fn uninstall_aether_dll(app: tauri::AppHandle, steam_path: String) -> Result
     DllInstaller::new(steam_path)
         .uninstall()
         .map(|_| "AetherDLL files removed successfully from Steam.".to_string())
+}
+
+#[tauri::command]
+pub fn reset_aether_steam_path(app: tauri::AppHandle, steam_path: String) -> Result<String, String> {
+    if steam_path.trim().is_empty() {
+        return Err("Steam installation path is required".to_string());
+    }
+    ensure_steam_is_closed()?;
+
+    AppStorage::new(&app).remove_aether_dll_version();
+    let legacy_version_path = std::path::PathBuf::from(&steam_path).join("AetherDLL_version.txt");
+    let _ = std::fs::remove_file(legacy_version_path);
+
+    let removed = DllInstaller::new(steam_path).reset_aether_files()?;
+    Ok(format!(
+        "Steam path reset completed. Removed {} Aether-created item(s).",
+        removed
+    ))
+}
+
+fn ensure_steam_is_closed() -> Result<(), String> {
+    let mut sys = sysinfo::System::new_all();
+    sys.refresh_processes();
+    let steam_running = sys.processes().values().any(|process| {
+        let name = process.name().to_lowercase();
+        name == "steam.exe" || name == "steam"
+    });
+
+    if steam_running {
+        Err("Steam is currently running. Close Steam completely before installing, uninstalling, or resetting AetherDLL files.".to_string())
+    } else {
+        Ok(())
+    }
 }
