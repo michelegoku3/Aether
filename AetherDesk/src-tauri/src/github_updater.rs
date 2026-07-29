@@ -1,27 +1,19 @@
-use serde::Deserialize;
+use regex::Regex;
 
-const RELEASES_API_URL: &str = "https://api.github.com/repos/michelegoku3/Aether/releases?per_page=100";
 const DLL_TAG_PREFIXES: &[&str] = &["dll-", "dll-v"];
 const DESK_TAG_PREFIXES: &[&str] = &["desk-", "desk-v"];
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone)]
 pub struct GithubAsset {
     pub name: String,
     pub browser_download_url: String,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone)]
 pub struct GithubRelease {
     pub tag_name: String,
-    #[serde(default)]
     pub body: Option<String>,
-    #[serde(default)]
     pub html_url: Option<String>,
-    #[serde(default)]
-    pub draft: bool,
-    #[serde(default)]
-    pub prerelease: bool,
-    #[serde(default)]
     pub assets: Vec<GithubAsset>,
 }
 
@@ -44,43 +36,6 @@ impl GithubReleaseManager {
         Self {
             client: reqwest::Client::new(),
         }
-    }
-
-    async fn fetch_releases(&self) -> Result<Vec<GithubRelease>, String> {
-        let response = self
-            .client
-            .get(RELEASES_API_URL)
-            .header("User-Agent", "AetherDesk-Updater")
-            .header("Accept", "application/vnd.github+json")
-            .send()
-            .await
-            .map_err(|e| format!("GitHub API network error: {}", e))?;
-
-        if !response.status().is_success() {
-            let status = response.status();
-            let remaining = response
-                .headers()
-                .get("x-ratelimit-remaining")
-                .and_then(|v| v.to_str().ok())
-                .unwrap_or("unknown")
-                .to_string();
-            let reset = response
-                .headers()
-                .get("x-ratelimit-reset")
-                .and_then(|v| v.to_str().ok())
-                .unwrap_or("unknown")
-                .to_string();
-            let body = response.text().await.unwrap_or_default();
-            return Err(format!(
-                "GitHub API returned HTTP error: {}. rate_remaining={}, rate_reset={}, body={}",
-                status, remaining, reset, body
-            ));
-        }
-
-        response
-            .json::<Vec<GithubRelease>>()
-            .await
-            .map_err(|e| format!("Failed to parse GitHub releases JSON: {}", e))
     }
 
     fn tag_has_prefix(tag: &str, prefixes: &[&str]) -> bool {
@@ -158,14 +113,119 @@ impl GithubReleaseManager {
     }
 
     pub async fn fetch_latest_by_prefix(&self, prefixes: &[&str]) -> Result<GithubRelease, String> {
-        let releases = self.fetch_releases().await?;
-        releases
+        self.fetch_latest_by_prefix_public_fallback(prefixes).await
+    }
+
+    async fn fetch_latest_by_prefix_public_fallback(
+        &self,
+        prefixes: &[&str],
+    ) -> Result<GithubRelease, String> {
+        let atom = self
+            .client
+            .get("https://github.com/michelegoku3/Aether/releases.atom")
+            .header("User-Agent", "AetherDesk-Updater")
+            .send()
+            .await
+            .map_err(|e| format!("GitHub releases.atom network error: {}", e))?;
+
+        if !atom.status().is_success() {
+            return Err(format!("GitHub releases.atom returned HTTP error: {}", atom.status()));
+        }
+
+        let atom_text = atom
+            .text()
+            .await
+            .map_err(|e| format!("Failed to read GitHub releases.atom: {}", e))?;
+        let tags = Self::release_tags_from_atom(&atom_text);
+        let tag_name = tags
             .into_iter()
-            .filter(|release| {
-                !release.draft && !release.prerelease && Self::tag_has_prefix(&release.tag_name, prefixes)
-            })
-            .max_by(|a, b| Self::compare_version_tags(&a.tag_name, &b.tag_name))
-            .ok_or_else(|| format!("No published GitHub release found for prefixes {:?}", prefixes))
+            .filter(|tag| Self::tag_has_prefix(tag, prefixes))
+            .max_by(|a, b| Self::compare_version_tags(a, b))
+            .ok_or_else(|| format!("No release atom entry found for prefixes {:?}", prefixes))?;
+
+        let html_url = format!("https://github.com/michelegoku3/Aether/releases/tag/{}", tag_name);
+        let assets = self.fetch_release_assets_from_html(&tag_name, &html_url).await?;
+
+        Ok(GithubRelease {
+            tag_name,
+            body: None,
+            html_url: Some(html_url),
+            assets,
+        })
+    }
+
+    fn release_tags_from_atom(atom: &str) -> Vec<String> {
+        let Ok(re) = Regex::new(r#"https://github\.com/michelegoku3/Aether/releases/tag/([^"<]+)"#) else {
+            return Vec::new();
+        };
+
+        let mut tags: Vec<String> = re
+            .captures_iter(atom)
+            .filter_map(|captures| captures.get(1).map(|tag| html_unescape(tag.as_str())))
+            .collect();
+        tags.sort();
+        tags.dedup();
+        tags
+    }
+
+    async fn fetch_release_assets_from_html(
+        &self,
+        tag_name: &str,
+        html_url: &str,
+    ) -> Result<Vec<GithubAsset>, String> {
+        let expanded_assets_url = format!(
+            "https://github.com/michelegoku3/Aether/releases/expanded_assets/{}",
+            tag_name
+        );
+        let response = self
+            .client
+            .get(&expanded_assets_url)
+            .header("User-Agent", "AetherDesk-Updater")
+            .header("Accept", "text/html")
+            .send()
+            .await
+            .map_err(|e| format!("GitHub expanded assets network error: {}", e))?;
+
+        if !response.status().is_success() {
+            return Err(format!(
+                "GitHub expanded assets returned HTTP error: {}",
+                response.status()
+            ));
+        }
+
+        let html = response
+            .text()
+            .await
+            .map_err(|e| format!("Failed to read GitHub expanded assets: {}", e))?;
+        let escaped_tag = regex::escape(tag_name);
+        let pattern = format!(
+            r#"href=["'](?P<href>/michelegoku3/Aether/releases/download/{}/(?P<name>[^"'?#]+))"#,
+            escaped_tag
+        );
+        let re = Regex::new(&pattern).map_err(|e| format!("Internal release asset regex error: {}", e))?;
+
+        let mut assets = Vec::new();
+        for captures in re.captures_iter(&html) {
+            let Some(href) = captures.name("href") else { continue; };
+            let Some(name) = captures.name("name") else { continue; };
+            let asset_name = html_unescape(name.as_str());
+            let browser_download_url = format!("https://github.com{}", html_unescape(href.as_str()));
+            if !assets.iter().any(|asset: &GithubAsset| asset.name == asset_name) {
+                assets.push(GithubAsset {
+                    name: asset_name,
+                    browser_download_url,
+                });
+            }
+        }
+
+        if assets.is_empty() {
+            return Err(format!(
+                "No downloadable assets found on GitHub expanded assets page {} (release {})",
+                expanded_assets_url, html_url
+            ));
+        }
+
+        Ok(assets)
     }
 
     /// Latest AetherDLL release. It intentionally ignores AetherDesk releases.
@@ -222,4 +282,12 @@ impl GithubReleaseManager {
             notes: release.body.clone().unwrap_or_default(),
         }
     }
+}
+
+fn html_unescape(value: &str) -> String {
+    value
+        .replace("&amp;", "&")
+        .replace("&#x2F;", "/")
+        .replace("&#39;", "'")
+        .replace("&quot;", "\"")
 }
