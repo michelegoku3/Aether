@@ -26,24 +26,14 @@ impl SteamUpdateGuard {
         self.steam_dir.join(STEAM_CFG_FILE_NAME)
     }
 
-    /// Ensures steam.cfg exists. If missing, it is created in the safe/default
-    /// state: Steam updates are not blocked.
-    pub fn ensure_config_exists(&self) -> Result<(), String> {
+    /// Returns the persisted state from steam.cfg. If the file does not exist,
+    /// updates are considered unblocked and the file is not created.
+    pub fn is_blocked(&self) -> Result<bool, String> {
         self.validate_steam_dir()?;
-
-        let cfg_path = self.config_path();
-        if cfg_path.exists() {
-            return Ok(());
+        if !self.config_path().exists() {
+            return Ok(false);
         }
 
-        fs::write(&cfg_path, self.render_directive(false))
-            .map_err(|e| format!("Failed to create steam.cfg: {}", e))
-    }
-
-    /// Returns the persisted state from steam.cfg. If the file does not exist,
-    /// it is created with updates unblocked and `false` is returned.
-    pub fn is_blocked(&self) -> Result<bool, String> {
-        self.ensure_config_exists()?;
         let content = self.read_config()?;
 
         Ok(content.lines().any(|line| {
@@ -65,12 +55,21 @@ impl SteamUpdateGuard {
     }
 
     fn set_blocked(&self, blocked: bool) -> Result<(), String> {
-        self.ensure_config_exists()?;
+        self.validate_steam_dir()?;
 
-        let content = self.read_config()?;
+        let cfg_path = self.config_path();
+        if !cfg_path.exists() && !blocked {
+            return Ok(());
+        }
+
+        let content = if cfg_path.exists() {
+            self.read_config()?
+        } else {
+            String::new()
+        };
         let next_content = self.upsert_update_directive(&content, blocked);
 
-        fs::write(self.config_path(), next_content)
+        fs::write(cfg_path, next_content)
             .map_err(|e| format!("Failed to update steam.cfg: {}", e))
     }
 
