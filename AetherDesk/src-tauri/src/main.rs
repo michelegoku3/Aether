@@ -56,6 +56,7 @@ fn main() {
             commands::aether_dll::reset_aether_steam_path,
             commands::aether_desk::check_aether_desk_update,
             commands::aether_desk::install_aether_desk_update,
+            commands::aether_desk::uninstall_aether_desk,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -81,6 +81,18 @@ export const AetherView = ({ isUpdateAvailable, isDeskUpdateAvailable, onUpdateC
     }
   };
 
+  const handleUninstallDesk = async () => {
+    setIsProcessing(true);
+    showStatus('Launching AetherDesk uninstaller...', 'info');
+
+    try {
+      await invoke('uninstall_aether_desk');
+    } catch (err: any) {
+      showStatus(`AetherDesk uninstall failed: ${err}`, 'error');
+      setIsProcessing(false);
+    }
+  };
+
   const handleInstallDll = async () => {
     setIsProcessing(true);
     showStatus('Fetching latest release from GitHub...', 'info');
@@ -219,6 +231,14 @@ export const AetherView = ({ isUpdateAvailable, isDeskUpdateAvailable, onUpdateC
               <span className="btn-update-dot" title="AetherDesk update is ready!"></span>
             )}
           </button>
+
+          <button
+            onClick={handleUninstallDesk}
+            className="panel-btn"
+            disabled={isProcessing}
+          >
+            Uninstall
+          </button>
         </div>
       </div>
 
@@ -236,7 +256,7 @@ export const AetherView = ({ isUpdateAvailable, isDeskUpdateAvailable, onUpdateC
             className="panel-btn"
             disabled={isProcessing || (isDllInstalled && !isUpdateAvailable)}
           >
-            {isDllInstalled && isUpdateAvailable ? 'Update' : isDllInstalled ? 'Installed' : 'Install'}
+            {isDllInstalled && isUpdateAvailable ? 'Update' : isDllInstalled ? 'Updated' : 'Install'}
             {/* Superimposed glowing update dot overlay directly inside the relative button container! */}
             {isDllInstalled && isUpdateAvailable && (
               <span className="btn-update-dot" title="AetherDLL update is ready!"></span>

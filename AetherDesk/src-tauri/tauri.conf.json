@@ -50,7 +50,8 @@
           "Italian"
         ],
         "displayLanguageSelector": true,
-        "startMenuFolder": "AetherDesk"
+        "startMenuFolder": "AetherDesk",
+        "installerHooks": "./windows/hooks.nsh"
       }
     },
     "createUpdaterArtifacts": true

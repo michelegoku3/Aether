@@ -73,3 +73,27 @@ pub async fn install_aether_desk_update(app: tauri::AppHandle) -> Result<String,
     println!("AetherDesk {} installed. Restarting...", version);
     app.restart()
 }
+
+#[tauri::command]
+pub fn uninstall_aether_desk(app: tauri::AppHandle) -> Result<(), String> {
+    let exe_dir = std::env::current_exe()
+        .ok()
+        .and_then(|exe| exe.parent().map(|parent| parent.to_path_buf()))
+        .ok_or_else(|| "Failed to resolve AetherDesk install directory.".to_string())?;
+
+    let uninstaller = exe_dir.join("uninstall.exe");
+    if !uninstaller.is_file() {
+        return Err(format!(
+            "AetherDesk uninstaller was not found at {}",
+            uninstaller.display()
+        ));
+    }
+
+    std::process::Command::new(&uninstaller)
+        .current_dir(&exe_dir)
+        .spawn()
+        .map_err(|e| format!("Failed to launch AetherDesk uninstaller: {}", e))?;
+
+    app.exit(0);
+    Ok(())
+}

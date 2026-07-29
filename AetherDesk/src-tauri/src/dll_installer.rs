@@ -126,6 +126,8 @@ impl DllInstaller {
             }
         }
 
+        removed += self.clear_depotcache_contents()?;
+
         Ok(removed)
     }
 
@@ -147,6 +149,31 @@ impl DllInstaller {
             self.steam_path.join("aethercore"),
             self.steam_path.join("config").join("stplug-in"),
         ]
+    }
+
+    fn clear_depotcache_contents(&self) -> Result<usize, String> {
+        let depotcache = self.steam_path.join("depotcache");
+        if !depotcache.is_dir() {
+            return Ok(0);
+        }
+
+        let mut removed = 0;
+        for entry in fs::read_dir(&depotcache)
+            .map_err(|e| format_file_operation_error("read folder", &depotcache, e))?
+        {
+            let entry = entry.map_err(|e| format!("Failed to read depotcache entry: {}", e))?;
+            let path = entry.path();
+            if path.is_dir() {
+                fs::remove_dir_all(&path)
+                    .map_err(|e| format_file_operation_error("delete folder", &path, e))?;
+            } else {
+                fs::remove_file(&path)
+                    .map_err(|e| format_file_operation_error("delete", &path, e))?;
+            }
+            removed += 1;
+        }
+
+        Ok(removed)
     }
 }
 
