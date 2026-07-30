@@ -82,6 +82,13 @@ Settings Settings::Load(const std::string& configPath) {
         }
     }
 
+    // [stats]
+    if (auto* stats = tbl["stats"].as_table()) {
+        if (auto v = (*stats)["enable_api"].value<bool>()) {
+            s.statsEnableApi = *v;
+        }
+    }
+
     AC_LOG_INFO("Settings",
                 "Loaded %s (keep_last_session=%d, lua extra paths: %zu, "
                 "mirror: %s, manifest urls: %zu).",

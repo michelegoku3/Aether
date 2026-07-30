@@ -100,9 +100,12 @@ namespace emsg {
 inline constexpr std::uint32_t kMulti = 1;
 inline constexpr std::uint32_t kServiceMethodResponse = 147;       // recv service jobs
 inline constexpr std::uint32_t kServiceMethodCallFromClient = 151; // send service jobs
+inline constexpr std::uint32_t kClientGetUserStats = 818;
+inline constexpr std::uint32_t kClientGetUserStatsResponse = 819;
 inline constexpr std::uint32_t kClientGamesPlayed = 742;           // presence stack
 inline constexpr std::uint32_t kClientPersonaState = 766;          // rich presence
 inline constexpr std::uint32_t kClientGamesPlayedWithDataBlob = 5410;
+inline constexpr std::uint32_t kClientStoreUserStats2 = 5466;
 inline constexpr std::uint32_t kClientRequestEncryptedAppTicketResponse = 5527; // eticket fallback
 inline constexpr std::uint32_t kClientRichPresenceUpload = 7501;
 inline constexpr std::uint32_t kClientPICSProductInfoRequest = 8903;  // access token
@@ -131,6 +134,8 @@ inline constexpr std::uint32_t kNotifyRunningApps =
     FnvHash("FamilyGroupsClient.NotifyRunningApps#1");
 inline constexpr std::uint32_t kGetManifestRequestCode =
     FnvHash("ContentServerDirectory.GetManifestRequestCode#1");
+inline constexpr std::uint32_t kGetUserStats =
+    FnvHash("Player.GetUserStats#1");
 }  // namespace job_hash
 
 // PacketRouter ring-buffer pool sizing. 256 KiB body covers large messages

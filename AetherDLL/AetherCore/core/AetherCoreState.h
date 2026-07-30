@@ -53,6 +53,13 @@ struct ManifestOverride {
     std::uint64_t size = 0;
 };
 
+// Subsystem Achievement/UserStats state (stats/achievement spoofing & API cache)
+struct AchievementStore {
+    mutable std::shared_mutex mutex;
+    std::unordered_map<steam::AppId, std::uint64_t> apiCache;       // AppID -> API resolved Donor SteamID
+    std::unordered_map<steam::AppId, std::size_t> nextPoolIndex;    // AppID -> index in the Luma pool fallback
+};
+
 struct AetherCoreState {
 
     // ================================================================
@@ -303,6 +310,9 @@ struct AetherCoreState {
     // ---- Config-store ticket cache ----------------------------------------
     mutable std::mutex configStoreTicketMutex;
     std::unordered_map<steam::AppId, std::vector<std::uint8_t>> configStoreAppTickets;
+
+    // ---- Achievement / Stats Store ----------------------------------------
+    AchievementStore achievements;
 
     // ---- Ticket forge diagnostics -----------------------------------------
     std::atomic<std::uint64_t> ticketForgeSuccessCount{0};

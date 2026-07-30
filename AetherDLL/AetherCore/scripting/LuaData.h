@@ -61,6 +61,9 @@ std::size_t AccessTokenCount();
 std::size_t ManifestOverrideCount();
 std::string EticketUrl();
 
+// Verifica se un AppID è abilitato per gli achievement / stats
+bool IsStatsManagedApp(steam::AppId appId);
+
 // ---- Mutations (unique lock) ----------------------------------------------
 
 // Flags appId as genuinely owned so HasDepot stops spoofing it.
