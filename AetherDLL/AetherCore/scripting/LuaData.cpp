@@ -144,10 +144,6 @@ std::string EticketUrl() {
     return g_state.lua.eticketUrl;
 }
 
-bool IsStatsManagedApp(steam::AppId appId) {
-    return IsConfigured(appId);
-}
-
 // ============================ Mutations =====================================
 
 void MarkOwned(steam::AppId appId) {
