@@ -57,8 +57,8 @@ std::uint64_t ResolveDonorId(steam::AppId appId) {
     // per non bloccare altri thread di rete
     readLock.unlock();
     
-    // Se l'API di OpenSteamTool è abilitata in aethercore.toml
-    if (g_state.settings.statsEnableApi) {
+    // Interrogazione API OpenSteamTool per ottenere il Donor ID corretto
+    {
         std::string url = "https://stats.opensteamtool.com/" + std::to_string(appId);
         AC_LOG_INFO(kModule, "Interrogazione API OpenSteamTool per AppID %u...", appId);
         
@@ -81,7 +81,7 @@ std::uint64_t ResolveDonorId(steam::AppId appId) {
         }
     }
     
-    // Priorità 3: Fallback Round-Robin sul pool di 15 SteamID di LumaCore
+    // Fallback Round-Robin sul pool di 15 SteamID di LumaCore
     std::unique_lock<std::shared_mutex> writeLock(store.mutex);
     std::size_t idx = store.nextPoolIndex[appId];
     std::uint64_t fallbackId = kLumaCoreStatSteamIdPool[idx];
@@ -106,7 +106,7 @@ std::int32_t HandleSendGetUserStats(const WireFrame& frame, std::uint8_t* out, s
     }
     
     steam::AppId appId = req.appid();
-    if (!ac::luadata::IsStatsManagedApp(appId)) {
+    if (!ac::luadata::HasDepot(appId)) {
         return kNoChange;
     }
     
@@ -134,7 +134,7 @@ std::int32_t HandleSendClientGetUserStats(const WireFrame& frame, std::uint8_t* 
     }
     
     steam::AppId appId = static_cast<steam::AppId>(req.game_id());
-    if (!ac::luadata::IsStatsManagedApp(appId)) {
+    if (!ac::luadata::HasDepot(appId)) {
         return kNoChange;
     }
     
@@ -197,7 +197,7 @@ std::int32_t HandleRecvClientGetUserStatsResponse(const WireFrame& frame, std::u
     }
     
     steam::AppId appId = static_cast<steam::AppId>(resp.game_id());
-    if (!ac::luadata::IsStatsManagedApp(appId)) {
+    if (!ac::luadata::HasDepot(appId)) {
         return kNoChange;
     }
     
@@ -226,7 +226,7 @@ std::int32_t HandleSendStoreUserStats2(const WireFrame& frame, std::uint8_t* out
     }
     
     steam::AppId appId = static_cast<steam::AppId>(req.game_id());
-    if (!ac::luadata::IsStatsManagedApp(appId)) {
+    if (!ac::luadata::HasDepot(appId)) {
         return kNoChange;
     }
     

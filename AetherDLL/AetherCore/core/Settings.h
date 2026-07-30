@@ -52,9 +52,6 @@ struct Settings {
     bool presenceAlwaysExtraInfo = true;
     bool presenceOnlineFixPersonaPatch = true;
 
-    // [stats]
-    bool statsEnableApi = true;
-
     // Parses the TOML at configPath.
     static Settings Load(const std::string& configPath);
 };
