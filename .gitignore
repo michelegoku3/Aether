@@ -56,6 +56,10 @@ AetherDLL/compile_commands.json
 *.lib
 *.a
 
+# Track bundled external tools even though generic binary outputs are ignored above.
+!AetherDesk/src-tauri/ExternalTools/
+!AetherDesk/src-tauri/ExternalTools/**
+
 # --- Editors & IDEs (VS Code, Visual Studio, CLion) ---
 .vscode/
 .idea/
