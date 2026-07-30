@@ -17,6 +17,7 @@
 #include "hooks/wire/GamesPlayedModule.h"
 #include "hooks/wire/ManifestBridge.h"
 #include "hooks/wire/PersonaInject.h"
+#include "hooks/wire/AchievementModule.h"
 
 #include "steam_messages.pb.h"
 
@@ -96,11 +97,20 @@ namespace ac::hooks {
                 return GamesPlayed::HandleSend(f, t_scratchBody.data(), kWireMaxBodyBytes);
             case emsg::kClientRichPresenceUpload:
                 return GamesPlayed::HandleRichPresenceUpload(f);
+            case emsg::kClientGetUserStats:
+                return AchievementModule::HandleSendClientGetUserStats(f, t_scratchBody.data(), kWireMaxBodyBytes);
+            case emsg::kClientStoreUserStats2:
+                return AchievementModule::HandleSendStoreUserStats2(f, t_scratchBody.data(), kWireMaxBodyBytes);
             case emsg::kServiceMethodCallFromClient: {
                 std::string job;
-                if (ServiceJobName(f, job) &&
-                    FnvHash(job.c_str()) == job_hash::kGetManifestRequestCode) {
-                    return ManifestBridge::HandleSend(f);
+                if (ServiceJobName(f, job)) {
+                    std::uint32_t h = FnvHash(job.c_str());
+                    if (h == job_hash::kGetManifestRequestCode) {
+                        return ManifestBridge::HandleSend(f);
+                    }
+                    if (h == job_hash::kGetUserStats) {
+                        return AchievementModule::HandleSendGetUserStats(f, t_scratchBody.data(), kWireMaxBodyBytes);
+                    }
                 }
                 return kNoChange;
             }
@@ -160,8 +170,15 @@ namespace ac::hooks {
                         t_scratchHeader.data(), kWireMaxHeaderBytes,
                         &t_recvHeaderLen);
                 }
+                if (h == job_hash::kGetUserStats) {
+                    return AchievementModule::HandleRecvGetUserStatsResponse(f, t_scratchBody.data(), kWireMaxBodyBytes,
+                        t_scratchHeader.data(), kWireMaxHeaderBytes,
+                        &t_recvHeaderLen);
+                }
                 return kNoChange;
             }
+            case emsg::kClientGetUserStatsResponse:
+                return AchievementModule::HandleRecvClientGetUserStatsResponse(f, t_scratchBody.data(), kWireMaxBodyBytes);
             case emsg::kClientPersonaState:
                 return PersonaInject::OnPersonaStateRecv(f, t_scratchBody.data(), kWireMaxBodyBytes);
             case emsg::kClientRequestEncryptedAppTicketResponse:
