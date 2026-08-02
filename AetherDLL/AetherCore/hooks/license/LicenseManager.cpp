@@ -289,6 +289,7 @@ namespace ac::hooks::LicenseManager {
         if (ids.empty()) {
             // Lua parsing may not have run yet; DoStartupInjection will catch up.
             g_state.package0Seeded.store(false);
+            AC_LOG_DEBUG(kModule, "SeedPackage0: no configured depots yet; deferring to startup retry.");
             return;
         }
         const PackageContainmentResult result = EnsurePackageContains(package0, ids, "loadpackage");
@@ -304,11 +305,16 @@ namespace ac::hooks::LicenseManager {
         // when LoadPackage saw package 0 with status != 0 the hook stored the
         // pointer without seeding, and this top-up can now really run.
         auto* pkg = static_cast<PackageInfo*>(g_state.pPackage0.load());
-        if (!pkg || !o_CUtlMemoryGrow) return;
+        if (!pkg || !o_CUtlMemoryGrow) {
+            AC_LOG_DEBUG_ONCE(kModule, "DoStartupInjection skipped: package0=%d grow=%d.",
+                              pkg != nullptr, o_CUtlMemoryGrow != nullptr);
+            return;
+        }
 
         std::vector<AppId> ids = luadata::AllDepotIds();
         if (ids.empty()) {
             g_state.package0Seeded.store(false);
+            AC_LOG_DEBUG_ONCE(kModule, "DoStartupInjection: no configured depots yet.");
             return;
         }
         const PackageContainmentResult result = EnsurePackageContains(pkg, ids, "startup");
@@ -336,7 +342,10 @@ namespace ac::hooks::LicenseManager {
 
             removals = luadata::TakePendingRemovals();
             additions = luadata::TakePendingAdditions();
-            if (removals.empty() && additions.empty()) return;
+            if (removals.empty() && additions.empty()) {
+                AC_LOG_DEBUG(kModule, "NotifyLicenseChanged: no pending changes; skipping.");
+                return;
+            }
 
             auto* pkg = static_cast<PackageInfo*>(g_state.pPackage0.load());
             if (!pkg) {
