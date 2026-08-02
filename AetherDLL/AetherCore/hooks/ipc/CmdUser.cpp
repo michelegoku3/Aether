@@ -136,7 +136,9 @@ void RequestEncryptedAppTicket(steam::CSteamPipeClient* pipe, steam::CUtlBuffer*
         if (nonceLen > 0 && nonceLen <= 1024 &&
             pRead->TellPut() >= static_cast<std::int32_t>(kIpcArgsOffset + 4 + nonceLen)) {
             std::span<const std::uint8_t> nonce(args + 4, nonceLen);
-            eticketfetch::Mint(appId, nonce);
+            // Non-blocking (A1): the HTTP POST runs on the eticket worker; the
+            // IPC reply is never stalled on the backend.
+            eticketfetch::MintAsync(appId, nonce);
         }
     }
 

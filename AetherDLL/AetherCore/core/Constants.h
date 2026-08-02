@@ -25,6 +25,11 @@ inline constexpr int kSteamUiPollIntervalMs = 100;
 // hook batch. The poll uses kSteamUiPollIntervalMs ticks.
 inline constexpr int kSteamUiDeferredTimeoutMs = 30000;
 
+// Donor-ID HTTP worker timeout (A1): the stats donor resolution runs on a
+// background thread, so a slow/unreachable API never blocks Steam's network
+// thread. Kept short so the background cache fills quickly.
+inline constexpr int kDonorResolveTimeoutSec = 3;
+
 // Package-0 startup retry (A2): re-attempt cadence and budget for the top-up
 // when the first LoadPackage/MarkLicenseAsChanged window was missed (offline
 // startup, late login, package 0 not ready yet). The retry thread wakes every

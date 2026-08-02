@@ -30,7 +30,25 @@ struct TicketPair {
     std::vector<std::uint8_t> ownership;
 };
 
-std::optional<TicketPair> Mint(steam::AppId appId, std::span<const std::uint8_t> nonce);
+// Asynchronous, non-blocking encrypted-ticket minting (A1).
+//
+// The HTTP POST to the configured eticket backend runs on a dedicated worker
+// thread, never on the caller's thread (which may be Steam's IPC thread).
+//   * cache hit        -> returns immediately (no network);
+//   * already in flight-> returns immediately (single-flight, one POST per key);
+//   * otherwise        -> queues the key and returns immediately.
+// The worker persists minted tickets to the registry + cache, so a later
+// RequestEncryptedAppTicket finds them. This API is best-effort: it never
+// blocks and never throws.
+void MintAsync(steam::AppId appId, std::span<const std::uint8_t> nonce);
+
+// Number of keys currently queued/in-flight (diagnostics).
+std::size_t InflightCount();
+
+// Number of cached ticket pairs (diagnostics).
 std::size_t CacheCount();
+
+// Stops and joins the worker thread. Safe to call when never started.
+void Shutdown();
 
 }  // namespace ac::eticketfetch
