@@ -7,6 +7,7 @@
 #include "hooks/ipc/CmdUser.h"
 #include "core/Constants.h"
 #include "hooks/ipc/IPCBus.h"
+#include "hooks/ipc/IpcReply.h"
 #include "core/Logger.h"
 #include "hooks/ipc/PipeWatch.h"
 #include "hooks/ipc/SteamCapture.h"
@@ -29,13 +30,13 @@ struct GetAPICallResultRequest {
 //   returns 480 here. Restore the real app id in the reply.
 void GetAppID(steam::CSteamPipeClient* pipe, steam::CUtlBuffer*, steam::CUtlBuffer* pWrite) {
     const steam::AppId realAppId = pipewatch::AppIdForPipe(pipe);
-    if (!realAppId || !pWrite || pWrite->TellPut() < 5) return;
+    if (!realAppId || !ipcreply::CanWrite(pWrite, 5)) return;
 
     steam::AppId current = 0;
     std::memcpy(&current, pWrite->Base() + 1, sizeof(current));
     if (current == realAppId) return;
 
-    std::memcpy(pWrite->Base() + 1, &realAppId, sizeof(realAppId));
+    ipcreply::WriteU32(pWrite, 1, realAppId);
     AC_LOG_DEBUG_ONCE(kModule, "GetAppID: %u -> %u", current, realAppId);
 }
 
@@ -52,12 +53,10 @@ bool InjectEncryptedAppTicketResult(steam::CUtlBuffer* pWrite, std::uint64_t asy
     const auto appId = CmdUser::ClaimETicketAsyncCall(asyncCall);
     if (!appId) return false;
 
-    std::uint8_t* base = pWrite->Base();
-    base[0] = kIpcReplyTag;
-    base[1] = 1;
-    std::uint32_t result = kEResultOk;
-    std::memcpy(base + 2, &result, sizeof(result));
-    base[2 + kEResultBytes] = 0;
+    ipcreply::Begin(pWrite);
+    pWrite->Base()[1] = 1;
+    ipcreply::WriteU32(pWrite, 2, kEResultOk);
+    pWrite->Base()[2 + kEResultBytes] = 0;
 
     AC_LOG_DEBUG_ONCE(kModule, "GetAPICallResult: EncryptedAppTicketResponse OK (app %u).", *appId);
     return true;

@@ -56,6 +56,7 @@ add_library(AetherCore SHARED
     hooks/steamclient/LicenseHooks.cpp
     hooks/license/LicenseManager.cpp
     hooks/ipc/IPCBus.cpp
+    hooks/ipc/IpcReply.cpp
     hooks/ipc/CmdUser.cpp
     hooks/ipc/CmdUtils.cpp
     hooks/ipc/SteamCapture.cpp
