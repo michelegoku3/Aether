@@ -22,6 +22,8 @@
 #include "hooks/steamclient/LicenseHooks.h"
 #include "hooks/steamclient/OwnershipHooks.h"
 #include "hooks/steamui/SteamUIHook.h"
+#include "hooks/wire/AchievementModule.h"
+#include "network/EticketFetcher.h"
 
 using namespace ac;
 
@@ -183,6 +185,8 @@ void Shutdown() {
     ac::hooks::ShutdownOwnershipHooks();
     ac::hooks::ShutdownLicenseHooks();
     ac::hooks::ShutdownSteamUiRetry();
+    ac::hooks::AchievementModule::Shutdown();
+    ac::eticketfetch::Shutdown();
     ac::hooks::CmdUser::ResetETicketAsyncCalls();
     g_state.hookManager.UninstallAll();
     script::Shutdown();

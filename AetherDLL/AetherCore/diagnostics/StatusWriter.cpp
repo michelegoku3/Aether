@@ -16,6 +16,7 @@
 #include "network/ManifestFetch.h"
 #include "hooks/onlinefix/OnlinePayload.h"
 #include "hooks/ipc/PipeWatch.h"
+#include "hooks/wire/AchievementModule.h"
 
 namespace ac::status {
 namespace {
@@ -96,6 +97,8 @@ void Write() {
     json << "  \"eticket_mint_successes\": " << g_state.eticketFetch.mintSuccessCount.load() << ",\n";
     json << "  \"eticket_mint_failures\": " << g_state.eticketFetch.mintFailureCount.load() << ",\n";
     json << "  \"eticket_runtime_cache_entries\": " << eticketfetch::CacheCount() << ",\n";
+    json << "  \"eticket_inflight\": " << eticketfetch::InflightCount() << ",\n";
+    json << "  \"achievement_donor_pending\": " << hooks::AchievementModule::PendingDonorResolves() << ",\n";
     json << "  \"ticket_forge_successes\": " << g_state.ticketForgeSuccessCount.load() << ",\n";
     json << "  \"ticket_forge_failures\": " << g_state.ticketForgeFailureCount.load() << ",\n";
     json << "  \"manifest_fetch_pending\": " << manifestfetch::PendingCount() << ",\n";

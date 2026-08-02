@@ -1,12 +1,18 @@
 #include "pch.h"
 #include "hooks/wire/AchievementModule.h"
 
-#include <shared_mutex>
-#include <mutex>
+#include <atomic>
 #include <chrono>
+#include <condition_variable>
+#include <deque>
+#include <mutex>
+#include <shared_mutex>
 #include <string>
+#include <thread>
+#include <unordered_set>
 
 #include "core/AetherCoreState.h"
+#include "core/Constants.h"
 #include "core/Logger.h"
 #include "scripting/LuaData.h"
 #include "credentials/SteamId.h"
@@ -39,57 +45,114 @@ constexpr std::uint64_t kLumaCoreStatSteamIdPool[15] = {
 };
 
 // ---------------------------------------------------------------------------
-// Risoluzione Sicura e Dinamica dello SteamID Donatore (OST API + Luma Pool)
+// Background donor-ID worker (A1).
+//
+// Resolving the donor SteamID (OpenSteamTool API) is HTTP I/O and must NEVER
+// run on Steam's network thread (PacketRouter). This worker owns the HTTP call;
+// the wire path only reads the cache or (on miss) schedules a background
+// resolve and immediately falls back to the Luma pool. Single-flight: one HTTP
+// GET per app id at a time; concurrent requests for the same app are coalesced.
+// ---------------------------------------------------------------------------
+std::mutex s_donorMutex;
+std::condition_variable s_donorCv;
+std::deque<steam::AppId> s_donorQueue;
+std::unordered_set<steam::AppId> s_donorInflight;
+std::thread s_donorWorker;
+std::atomic<bool> s_donorStop{false};
+std::atomic<bool> s_donorStarted{false};
+std::atomic<std::uint64_t> s_donorResolvesDone{0};
+std::atomic<std::uint64_t> s_donorResolvesFailed{0};
+
+void DonorWorkerMain() {
+    for (;;) {
+        steam::AppId appId = 0;
+        {
+            std::unique_lock<std::mutex> lock(s_donorMutex);
+            s_donorCv.wait(lock, [] {
+                return s_donorStop.load(std::memory_order_relaxed) || !s_donorQueue.empty();
+            });
+            if (s_donorStop.load(std::memory_order_relaxed)) return;
+            appId = s_donorQueue.front();
+            s_donorQueue.pop_front();
+        }
+
+        const std::string url = "https://stats.opensteamtool.com/" + std::to_string(appId);
+        AC_LOG_INFO(kModule, "Donor resolve (background) AppID %u...", appId);
+        const auto resp = ac::http::GetUnchecked(url, constants::kDonorResolveTimeoutSec);
+
+        bool ok = false;
+        if (resp.status == 200 && !resp.body.empty()) {
+            try {
+                const std::uint64_t id = std::stoull(resp.body);
+                if (id != 0) {
+                    std::unique_lock<std::shared_mutex> lock(g_state.achievements.mutex);
+                    g_state.achievements.apiCache[appId] = id;
+                    AC_LOG_INFO(kModule, "Donor resolved (background) AppID %u -> %llu", appId, id);
+                    ok = true;
+                }
+            } catch (...) {
+                AC_LOG_WARN(kModule, "Donor API invalid body AppID %u.", appId);
+            }
+        } else {
+            AC_LOG_WARN(kModule, "Donor API failed AppID %u status=%d.", appId, resp.status);
+        }
+        ok ? ++s_donorResolvesDone : ++s_donorResolvesFailed;
+
+        {
+            std::lock_guard<std::mutex> lock(s_donorMutex);
+            s_donorInflight.erase(appId);
+        }
+    }
+}
+
+void ScheduleDonorResolve(steam::AppId appId) {
+    if (appId == 0) return;
+    {
+        std::lock_guard<std::mutex> lock(s_donorMutex);
+        if (s_donorInflight.count(appId)) return;  // single-flight
+        s_donorInflight.insert(appId);
+        s_donorQueue.push_back(appId);
+    }
+    s_donorCv.notify_one();
+
+    bool expected = false;
+    if (s_donorStarted.compare_exchange_strong(expected, true)) {
+        s_donorStop.store(false, std::memory_order_relaxed);
+        s_donorWorker = std::thread(DonorWorkerMain);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Resoluzione Donor ID — NON bloccante (A1).
+//
+//   cache hit  -> ritorna subito il donor API risolto;
+//   cache miss -> accoda una risoluzione in background (single-flight) e
+//                 ritorna SUBITO il fallback pool round-robin. Nessuna I/O
+//                 sul thread chiamante (wire path di Steam).
 // ---------------------------------------------------------------------------
 std::uint64_t ResolveDonorId(steam::AppId appId) {
     auto& store = g_state.achievements;
-    
-    // Scrittura/Lettura condivisa protetta
-    std::shared_lock<std::shared_mutex> readLock(store.mutex);
-    
-    // Priorità 1: Controllo della Cache dei risultati API di OpenSteamTool
-    auto cacheIt = store.apiCache.find(appId);
-    if (cacheIt != store.apiCache.end() && cacheIt->second != 0) {
-        return cacheIt->second;
-    }
-    
-    // Rilascio del lock di lettura prima di effettuare la chiamata HTTP (I/O)
-    // per non bloccare altri thread di rete
-    readLock.unlock();
-    
-    // Interrogazione API OpenSteamTool per ottenere il Donor ID corretto
+
+    // Priorità 1: cache (lettura condivisa, lock breve, nessuna I/O).
     {
-        std::string url = "https://stats.opensteamtool.com/" + std::to_string(appId);
-        AC_LOG_INFO(kModule, "Interrogazione API OpenSteamTool per AppID %u...", appId);
-        
-        // Chiamata HTTP interna non bloccata da liste di controllo
-        auto resp = ac::http::GetUnchecked(url, 5); // Timeout 5 secondi
-        if (resp.status == 200 && !resp.body.empty()) {
-            try {
-                std::uint64_t resolvedId = std::stoull(resp.body);
-                if (resolvedId != 0) {
-                    std::unique_lock<std::shared_mutex> writeLock(store.mutex);
-                    store.apiCache[appId] = resolvedId;
-                    AC_LOG_INFO(kModule, "API risolto con successo per AppID %u -> %llu", appId, resolvedId);
-                    return resolvedId;
-                }
-            } catch (...) {
-                AC_LOG_WARN(kModule, "Risposta API non valida per AppID %u: %s", appId, resp.body.c_str());
-            }
-        } else {
-            AC_LOG_WARN(kModule, "Fallimento chiamata API OpenSteamTool (status=%d)", resp.status);
+        std::shared_lock<std::shared_mutex> lock(store.mutex);
+        auto it = store.apiCache.find(appId);
+        if (it != store.apiCache.end() && it->second != 0) {
+            return it->second;
         }
     }
-    
-    // Fallback Round-Robin sul pool di 15 SteamID di LumaCore
-    std::unique_lock<std::shared_mutex> writeLock(store.mutex);
+
+    // Priorità 2: risoluzione asincrona in background (mai bloccante).
+    ScheduleDonorResolve(appId);
+
+    // Priorità 3: fallback round-robin sul pool LumaCore (immediato).
+    std::unique_lock<std::shared_mutex> lock(store.mutex);
     std::size_t idx = store.nextPoolIndex[appId];
-    std::uint64_t fallbackId = kLumaCoreStatSteamIdPool[idx];
-    
-    // Avanzamento indice circolare per l'AppID corrente
+    const std::uint64_t fallbackId = kLumaCoreStatSteamIdPool[idx];
     store.nextPoolIndex[appId] = (idx + 1) % 15;
-    
-    AC_LOG_DEBUG(kModule, "Uso fallback LumaCore Pool per AppID %u (index %zu) -> %llu", appId, idx, fallbackId);
+
+    AC_LOG_DEBUG(kModule, "Uso fallback LumaCore Pool per AppID %u (index %zu) -> %llu",
+                 appId, idx, fallbackId);
     return fallbackId;
 }
 
@@ -253,6 +316,22 @@ std::int32_t HandleSendStoreUserStats2(const WireFrame& frame, std::uint8_t* out
     }
     
     return kNoChange;
+}
+
+std::size_t PendingDonorResolves() {
+    std::lock_guard<std::mutex> lock(s_donorMutex);
+    return s_donorInflight.size();
+}
+
+void Shutdown() {
+    {
+        std::lock_guard<std::mutex> lock(s_donorMutex);
+        s_donorStop.store(true, std::memory_order_relaxed);
+        s_donorQueue.clear();
+        s_donorInflight.clear();
+    }
+    s_donorCv.notify_all();
+    if (s_donorWorker.joinable()) s_donorWorker.join();
 }
 
 } // namespace ac::hooks::AchievementModule
