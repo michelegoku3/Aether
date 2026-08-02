@@ -20,6 +20,13 @@ inline constexpr int kDiversionRetryDelayMs = 100;
 // SteamUI poll loop: interval used while waiting for steamui.dll to appear.
 inline constexpr int kSteamUiPollIntervalMs = 100;
 
+// Package-0 startup retry (A2): re-attempt cadence and budget for the top-up
+// when the first LoadPackage/MarkLicenseAsChanged window was missed (offline
+// startup, late login, package 0 not ready yet). The retry thread wakes every
+// 10 ms (granular stop) but only re-attempts at most once per interval.
+inline constexpr int kPackageRetryIntervalMs = 1000;
+inline constexpr int kPackageRetryMaxAttempts = 60;  // ~60 s budget
+
 // Hasher: streaming chunk size for SHA-256 (4 MiB balances syscalls vs RAM).
 inline constexpr std::size_t kHashChunkBytes = 4u * 1024u * 1024u;
 

@@ -20,8 +20,13 @@
 // ---------------------------------------------------------------------------
 namespace ac::hooks::LicenseManager {
 
-// Resolves CUtlMemoryGrow and ProcessPendingLicenseUpdates from the diversion.
+// Resolves CUtlMemoryGrow, ProcessPendingLicenseUpdates and MarkLicenseAsChanged
+// from the diversion, then starts the package-0 startup retry thread.
 void Init(HMODULE diversion);
+
+// Stops and joins the startup retry thread. Safe to call when Init never ran or
+// the thread never started. Called from dllmain::Shutdown.
+void Shutdown();
 
 // Called from the LoadPackage hook when package 0 becomes available. Publishes
 // the package-0 pointer to g_state and injects every configured depot exactly
