@@ -119,6 +119,25 @@ std::vector<steam::AppId> LibraryAppIds() {
     return ids;
 }
 
+std::unordered_map<std::string, std::vector<steam::AppId>> ConfiguredIdsByFile() {
+    std::shared_lock lock(g_state.lua.mutex);
+    std::unordered_map<std::string, std::vector<steam::AppId>> out;
+    out.reserve(g_state.lua.fileContributions.size());
+    for (const auto& [path, c] : g_state.lua.fileContributions) {
+        std::vector<steam::AppId> ids;
+        ids.reserve(c.depots.size() + c.libraryApps.size());
+        std::unordered_set<steam::AppId> seen;
+        for (steam::AppId id : c.depots) {
+            if (seen.insert(id).second) ids.push_back(id);
+        }
+        for (steam::AppId id : c.libraryApps) {
+            if (seen.insert(id).second) ids.push_back(id);
+        }
+        out.emplace(path, std::move(ids));
+    }
+    return out;
+}
+
 std::size_t LoadedFileCount() {
     std::shared_lock lock(g_state.lua.mutex);
     return g_state.lua.fileContributions.size();

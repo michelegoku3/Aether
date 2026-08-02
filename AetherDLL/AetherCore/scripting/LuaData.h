@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <optional>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 #include "core/AetherCoreState.h"
@@ -54,6 +55,11 @@ std::vector<steam::AppId> AllDepotIds();
 
 // Snapshot of numeric .lua filename roots that should be advertised to Steam's Library.
 std::vector<steam::AppId> LibraryAppIds();
+
+// Map of lua file path -> the app ids that file contributes (depots from
+// addappid lines plus the numeric filename root, deduped). Used by the
+// ownership unlock summary to report per-file "Unlocked all / Not unlocked".
+std::unordered_map<std::string, std::vector<steam::AppId>> ConfiguredIdsByFile();
 
 std::size_t LoadedFileCount();
 std::size_t ConfiguredDepotCount();

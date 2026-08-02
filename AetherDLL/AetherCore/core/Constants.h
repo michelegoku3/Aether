@@ -27,6 +27,13 @@ inline constexpr int kSteamUiPollIntervalMs = 100;
 inline constexpr int kPackageRetryIntervalMs = 1000;
 inline constexpr int kPackageRetryMaxAttempts = 60;  // ~60 s budget
 
+// Ownership unlock summary: debounce before emitting the per-file
+// "Unlocked all / Not unlocked" summary after a burst of CheckAppOwnership
+// calls (login, hot-reload, game launch). Keeps the log quiet while still
+// settling late unlocks.
+inline constexpr int kUnlockSummaryDebounceMs = 1500;
+inline constexpr int kUnlockSummaryTickMs = 50;
+
 // Hasher: streaming chunk size for SHA-256 (4 MiB balances syscalls vs RAM).
 inline constexpr std::size_t kHashChunkBytes = 4u * 1024u * 1024u;
 

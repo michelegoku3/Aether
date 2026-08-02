@@ -117,6 +117,11 @@ void RegisterIpcHandlers(const IpcHandlerEntry* entries, std::size_t count) {
     if (!entries || count == 0) return;
     s_handlers.reserve(s_handlers.size() + count);
 
+    const bool dynamicSpec = ipcspec::IsLoaded();
+    if (!dynamicSpec) {
+        AC_LOG_INFO_ONCE(kModule, "IPC spec not loaded; using compile-time hashes.");
+    }
+
     for (std::size_t i = 0; i < count; ++i) {
         const IpcHandlerEntry& source = entries[i];
         if (!source.name || !source.handler) {
@@ -128,7 +133,6 @@ void RegisterIpcHandlers(const IpcHandlerEntry* entries, std::size_t count) {
         std::uint8_t interfaceId = source.interfaceId;
         std::uint32_t hash = source.funcHash;
 
-        const bool dynamicSpec = ipcspec::IsLoaded();
         if (dynamicSpec) {
             const std::string name(source.name);
             const std::size_t separator = name.find("::");

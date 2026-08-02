@@ -7,12 +7,15 @@
 #include "core/Logger.h"
 #include "scripting/LuaData.h"
 #include "core/SteamTypes.h"
-#include "utils/SmartIdLog.h"
 #include "utils/PatternEngine.h"
 
+#include <atomic>
+#include <chrono>
 #include <cstdint>
 #include <mutex>
 #include <string>
+#include <thread>
+#include <unordered_set>
 
 namespace ac::hooks {
     namespace {
@@ -34,7 +37,75 @@ namespace ac::hooks {
         // Only keep these, we deliberately NOT hook Evaluate/RunLaunch/RunExit in v3
         // to avoid re-introducing shutdown window. See analysis.
 
-        logutil::SmartIdLog s_cdKeyLog(kModule, "RequiresLegacyCDKey suppressed");
+        // -------------------------------------------------------------------
+        // Legacy-CD-key suppression summary (aggregated, debounced).
+        //
+        // RequiresLegacyCDKey fires once per tracked app during login bursts.
+        // Logging each app is noise in a single-log setup, so we collect the
+        // suppressed ids in a session set and emit ONE line once the burst
+        // settles (same debounce pattern as the Ownership unlock summary, and
+        // the same shared debounce/tick constants). Re-logs only when the set
+        // of unique ids grows, so idle sessions stay silent.
+        // -------------------------------------------------------------------
+        std::mutex s_cdKeyMutex;
+        std::unordered_set<AppId> s_cdKeySuppressed;
+        std::size_t s_cdKeyLastLoggedSize = 0;
+        std::thread s_cdKeyThread;
+        std::atomic<bool> s_cdKeyStop{false};
+        std::atomic<bool> s_cdKeyStarted{false};
+        std::atomic<std::int64_t> s_cdKeyDeadline{0};
+
+        std::int64_t CdKeySteadyNowMs() {
+            return std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::steady_clock::now().time_since_epoch()).count();
+        }
+
+        void LogCdKeySummary() {
+            std::size_t unique = 0;
+            {
+                std::lock_guard<std::mutex> lock(s_cdKeyMutex);
+                unique = s_cdKeySuppressed.size();
+                if (unique == s_cdKeyLastLoggedSize) return;
+                s_cdKeyLastLoggedSize = unique;
+            }
+            AC_LOG_INFO(kModule, "RequiresLegacyCDKey suppressed for %zu unique app(s).",
+                        unique);
+        }
+
+        void CdKeySummaryThread() {
+            for (;;) {
+                if (s_cdKeyStop.load(std::memory_order_relaxed)) return;
+                const std::int64_t deadline = s_cdKeyDeadline.load(std::memory_order_relaxed);
+                if (deadline != 0 && CdKeySteadyNowMs() >= deadline) {
+                    s_cdKeyDeadline.store(0, std::memory_order_relaxed);
+                    LogCdKeySummary();
+                }
+                Sleep(constants::kUnlockSummaryTickMs);
+            }
+        }
+
+        void ArmCdKeySummary() {
+            s_cdKeyDeadline.store(CdKeySteadyNowMs() + constants::kUnlockSummaryDebounceMs,
+                                  std::memory_order_relaxed);
+            bool expected = false;
+            if (s_cdKeyStarted.compare_exchange_strong(expected, true)) {
+                s_cdKeyStop.store(false, std::memory_order_relaxed);
+                s_cdKeyThread = std::thread(CdKeySummaryThread);
+            }
+        }
+
+        void StopCdKeySummary() {
+            s_cdKeyStop.store(true, std::memory_order_relaxed);
+            if (s_cdKeyThread.joinable()) s_cdKeyThread.join();
+        }
+
+        void RecordCdKeySuppressed(AppId app) {
+            {
+                std::lock_guard<std::mutex> lock(s_cdKeyMutex);
+                s_cdKeySuppressed.insert(app);
+            }
+            ArmCdKeySummary();
+        }
 
         // Cloud-gate log dedup + counters live in g_state.cloudGate
         // (centralized state; see AetherCoreState.h).
@@ -115,7 +186,11 @@ namespace ac::hooks {
             return o_OptedInMask(self, appId);
         }
         bool h_RequiresLegacyCDKey(void* self, AppId appId, std::uint32_t* out) {
-            if (luadata::HasDepot(appId)) { if (out) *out = 0; s_cdKeyLog.Record(appId); return false; }
+            if (luadata::HasDepot(appId)) {
+                if (out) *out = 0;
+                RecordCdKeySuppressed(appId);
+                return false;
+            }
             return o_RequiresLegacyCDKey(self, appId, out);
         }
         bool h_IsCloudEnabledForApp(void* rs, AppId appId) {
@@ -152,7 +227,7 @@ namespace ac::hooks {
                 auto res = (int32_t)ERemoteSyncState::Synchronized;
                 // If you still see window, try Disabled=0
                 // auto res=(int32_t)ERemoteSyncState::Disabled;
-                AC_LOG_INFO(kModule, "GetSyncState appid=%u -> %d Synchronized BLOCKED (fixes error+window)", appId, res);
+                AC_LOG_INFO(kModule, "GetSyncState appid=%u -> %d Synchronized BLOCKED", appId, res);
                 diag::Record("cloud_state_blocked", "appid=" + std::to_string(appId) + " result=" + std::to_string(res));
                 return res;
             }
@@ -186,5 +261,9 @@ namespace ac::hooks {
         // Final per-hook status is reported by HookManager::InstallAll() and
         // StatusWriter reads g_state.hookManager directly — no local summary
         // here, mirroring the other Register*Hooks modules.
+    }
+
+    void ShutdownLicenseHooks() {
+        StopCdKeySummary();
     }
 } // namespace ac::hooks

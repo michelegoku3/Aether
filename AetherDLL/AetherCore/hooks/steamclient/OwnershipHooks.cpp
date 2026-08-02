@@ -1,7 +1,14 @@
 #include "pch.h"
 #include "hooks/steamclient/OwnershipHooks.h"
 
+#include <atomic>
+#include <chrono>
 #include <limits>
+#include <mutex>
+#include <sstream>
+#include <string>
+#include <thread>
+#include <unordered_set>
 #include <vector>
 
 #include "core/AetherCoreState.h"
@@ -34,10 +41,168 @@ GetSubscribedApps_t o_GetSubscribedApps = nullptr;
 SendCallbackToPipe_t o_SendCallbackToPipe = nullptr;
 LoadPackage_t o_LoadPackage = nullptr;
 
-// Smart debounced once-per-app ownership outcome logs
+// Smart debounced once-per-app ownership outcome logs (legit/family are rare;
+// the "unlocked" outcome is aggregated per-file instead of per-appid).
 logutil::SmartIdLog s_logLegit(kModule, "Legit-owned AppIds");
 logutil::SmartIdLog s_logFamily(kModule, "Family-shared AppIds");
-logutil::SmartIdLog s_logUnlocked(kModule, "Unlocked AppIds");
+
+// ---------------------------------------------------------------------------
+// Unlock summary (replaces the old per-appid "Unlocked AppIds" spam).
+//
+// Every spoofed ownership outcome is recorded into a session set. A debounce
+// thread then emits ONE line per .lua file once the burst settles:
+//   INFO  "Unlocked all AppID for 1144200.lua."          (all expected ok)
+//   WARN  "Not unlocked for 1144200.lua: 1144201, ..."   (single message, ids)
+//
+// Expected ids per file = the ids the file contributes that still need spoofing
+// (luadata::HasDepot — configured, not genuinely owned, not family-shared).
+// The debounce re-arms on every unlock, so late checks (game launch, hot-reload)
+// produce a fresh summary instead of being missed. The thread only reads
+// LuaData (shared locks) and writes logs — it never touches Steam internals.
+// ---------------------------------------------------------------------------
+std::mutex s_unlockMutex;
+std::unordered_set<AppId> s_unlockedAppIds;
+std::thread s_summaryThread;
+std::atomic<bool> s_summaryStop{false};
+std::atomic<bool> s_summaryStarted{false};
+std::atomic<std::int64_t> s_summaryDeadline{0};
+// Last emitted outcome fingerprint: "per-file missing list" as a stable string.
+// The summary is re-logged only when this fingerprint changes (or on the very
+// first emission), so repeated bursts (login, hot-reload, launch) stay quiet.
+std::string s_lastSummaryFingerprint;
+bool s_hasEmitted = false;
+
+std::int64_t SteadyNowMs() {
+    return std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::steady_clock::now().time_since_epoch()).count();
+}
+
+std::string FileBaseName(const std::string& path) {
+    const std::size_t slash = path.find_last_of("\\/");
+    return slash == std::string::npos ? path : path.substr(slash + 1);
+}
+
+void LogUnlockedSummary() {
+    std::unordered_set<AppId> unlocked;
+    {
+        std::lock_guard<std::mutex> lock(s_unlockMutex);
+        unlocked = s_unlockedAppIds;
+    }
+
+    const auto byFile = luadata::ConfiguredIdsByFile();
+    std::size_t expectedTotal = 0;
+    std::size_t unlockedTotal = 0;
+    std::size_t files = 0;
+    // Stable fingerprint of the outcome; identical outcomes are logged once.
+    std::ostringstream fingerprint;
+
+    for (const auto& [path, ids] : byFile) {
+        std::vector<AppId> expected;
+        expected.reserve(ids.size());
+        for (AppId id : ids) {
+            // Only ids that still require spoofing; owned/family-shared ids are
+            // legitimately covered by Steam and must not be reported as missing.
+            if (luadata::HasDepot(id)) expected.push_back(id);
+        }
+        if (expected.empty()) continue;
+        ++files;
+        expectedTotal += expected.size();
+
+        std::vector<AppId> missing;
+        for (AppId id : expected) {
+            if (unlocked.count(id)) {
+                ++unlockedTotal;
+            } else {
+                missing.push_back(id);
+            }
+        }
+
+        const std::string base = FileBaseName(path);
+        fingerprint << base << ':';
+        if (missing.empty()) {
+            fingerprint << "OK;";
+        } else {
+            // Full missing-id list in the fingerprint so a change in which ids
+            // are missing (even with the same count) re-logs the summary.
+            for (std::size_t i = 0; i < missing.size(); ++i) {
+                if (i) fingerprint << ',';
+                fingerprint << missing[i];
+            }
+            fingerprint << ';';
+        }
+    }
+
+    // Emit only when the outcome changed since the last emission. This stops
+    // the endless re-logging while Steam re-checks ownership on every burst.
+    {
+        std::lock_guard<std::mutex> lock(s_unlockMutex);
+        const std::string fp = fingerprint.str();
+        if (s_hasEmitted && fp == s_lastSummaryFingerprint) {
+            return;
+        }
+        s_lastSummaryFingerprint = fp;
+        s_hasEmitted = true;
+    }
+
+    // Fingerprint changed (or first time): emit the per-file lines + totals.
+    for (const auto& [path, ids] : byFile) {
+        std::vector<AppId> missing;
+        for (AppId id : ids) {
+            if (luadata::HasDepot(id) && !unlocked.count(id)) missing.push_back(id);
+        }
+        if (missing.empty()) {
+            AC_LOG_INFO(kModule, "Unlocked all AppID for %s.", FileBaseName(path).c_str());
+        } else {
+            std::ostringstream list;
+            for (std::size_t i = 0; i < missing.size(); ++i) {
+                if (i) list << ", ";
+                list << missing[i];
+            }
+            AC_LOG_WARN(kModule, "Not unlocked for %s: %s.", FileBaseName(path).c_str(),
+                        list.str().c_str());
+        }
+    }
+
+    AC_LOG_DEBUG(kModule, "Unlock summary: %zu/%zu appids across %zu file(s).",
+                 unlockedTotal, expectedTotal, files);
+}
+
+void UnlockSummaryThread() {
+    for (;;) {
+        if (s_summaryStop.load(std::memory_order_relaxed)) return;
+        const std::int64_t deadline = s_summaryDeadline.load(std::memory_order_relaxed);
+        if (deadline != 0 && SteadyNowMs() >= deadline) {
+            s_summaryDeadline.store(0, std::memory_order_relaxed);
+            LogUnlockedSummary();
+        }
+        Sleep(constants::kUnlockSummaryTickMs);
+    }
+}
+
+void ArmUnlockSummary() {
+    s_summaryDeadline.store(SteadyNowMs() + constants::kUnlockSummaryDebounceMs,
+                            std::memory_order_relaxed);
+    bool expected = false;
+    if (s_summaryStarted.compare_exchange_strong(expected, true)) {
+        s_summaryStop.store(false, std::memory_order_relaxed);
+        s_summaryThread = std::thread(UnlockSummaryThread);
+    }
+}
+
+void StopUnlockSummary() {
+    s_summaryStop.store(true, std::memory_order_relaxed);
+    if (s_summaryThread.joinable()) s_summaryThread.join();
+}
+
+void RecordUnlocked(AppId app) {
+    // Session set only: per-appid lines are pure noise in a single-log setup.
+    // The per-file summary (LogUnlockedSummary) is the only output.
+    {
+        std::lock_guard<std::mutex> lock(s_unlockMutex);
+        s_unlockedAppIds.insert(app);
+    }
+    ArmUnlockSummary();
+}
 
 enum class OwnershipOutcome {
     LegitOwned,
@@ -54,7 +219,7 @@ void RecordOwnershipOutcome(AppId app, OwnershipOutcome outcome) {
             s_logFamily.Record(app);
             break;
         case OwnershipOutcome::Unlocked:
-            s_logUnlocked.Record(app);
+            RecordUnlocked(app);
             break;
     }
 }
@@ -160,6 +325,12 @@ std::uint32_t h_GetSubscribedApps(void* self, AppId* appList, std::uint32_t size
     if (advertisedTotal < count) advertisedTotal = (std::numeric_limits<std::uint32_t>::max)();
     AC_LOG_INFO_ONCE(kModule, "GetSubscribedApps: original=%u roots=%zu written=%u advertised=%u buffer=%u.",
                 count, roots.size(), written, advertisedTotal, size);
+    if (written < advertisedAdds && size != 0) {
+        // size==0 is Steam's probe call (it only wants the advertised count),
+        // so a zero-sized write there is expected, not an error.
+        AC_LOG_WARN(kModule, "GetSubscribedApps: caller buffer too small (%u); advertised %u root(s) but wrote %u.",
+                    size, advertisedAdds, written);
+    }
     return advertisedTotal;
 }
 
@@ -168,6 +339,10 @@ bool h_SendCallbackToPipe(void* engine, HSteamPipe pipe, HSteamUser user, int cb
     // Force the "licenses changed" flag so Steam re-reads ownership.
     if (cb == constants::kCallbackAppLicensesChanged && data) {
         *static_cast<bool*>(data) = true;
+        AC_LOG_DEBUG(kModule, "SendCallbackToPipe: forced m_bReloadAll on AppLicensesChanged.");
+    } else if (cb == constants::kCallbackAppLicensesChanged) {
+        AC_LOG_WARN(kModule, "SendCallbackToPipe: AppLicensesChanged without reload payload; "
+                             "ownership may not refresh.");
     }
     return o_SendCallbackToPipe(engine, pipe, user, cb, data, size);
 }
@@ -217,6 +392,10 @@ void RegisterOwnershipHooks(HMODULE diversion) {
 
     // The grow helper and license-update resolver live in LicenseManager.
     LicenseManager::Init(diversion);
+}
+
+void ShutdownOwnershipHooks() {
+    StopUnlockSummary();
 }
 
 }  // namespace ac::hooks

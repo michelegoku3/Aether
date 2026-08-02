@@ -17,4 +17,8 @@ namespace ac::hooks {
 	// All are optional: a missing pattern is recorded as a miss, not fatal.
 	void RegisterLicenseHooks(HMODULE diversion);
 
+	// Stops and joins the legacy-CD-key summary debounce thread. Safe to call
+	// when the hooks were never installed. Called from dllmain::Shutdown.
+	void ShutdownLicenseHooks();
+
 }  // namespace ac::hooks
