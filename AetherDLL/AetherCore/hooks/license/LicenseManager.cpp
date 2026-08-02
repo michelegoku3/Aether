@@ -1,18 +1,25 @@
 #include "pch.h"
 #include "hooks/license/LicenseManager.h"
 
+#include <atomic>
 #include <limits>
 #include <mutex>
 #include <string>
+#include <thread>
 #include <unordered_set>
 #include <vector>
 
 #include "core/AetherCoreState.h"
+#include "core/Constants.h"
 #include "core/Logger.h"
 #include "scripting/LuaData.h"
 #include "utils/PatternEngine.h"
 
 namespace ac::hooks::LicenseManager {
+    // Forward declarations for public functions defined below, so helpers in
+    // the anonymous namespace (e.g. the startup retry thread) can call them.
+    void DoStartupInjection();
+
     namespace {
 
         constexpr const char* kModule = "License";
@@ -178,6 +185,76 @@ namespace ac::hooks::LicenseManager {
                 o_ProcessPendingLicenseUpdates && o_MarkLicenseAsChanged;
         }
 
+        // -------------------------------------------------------------------
+        // Package-0 startup retry (A2)
+        //
+        // DoStartupInjection is normally triggered by LoadPackage (package 0
+        // ready) or the first MarkLicenseAsChanged fire (post-login). Both
+        // windows can be missed — offline startup, late login, package 0 not
+        // usable yet — so a dedicated thread re-attempts the top-up on a
+        // throttled cadence until the seed completes or the budget is spent.
+        //
+        // The thread is module plumbing (ARCHITECTURE.md §allowed-exceptions
+        // #2: private lifecycle of a service module), so its control block is
+        // module-local, not AetherCoreState. It calls the existing
+        // DoStartupInjection() (idempotent, owns s_packageMutationMutex) and
+        // observes the shared g_state.package0Seeded atomic.
+        // -------------------------------------------------------------------
+        std::thread s_retryThread;
+        std::atomic<bool> s_retryStop{false};
+        std::atomic<bool> s_retryStarted{false};
+
+        void StartupRetryThread() {
+            // The budget is time-based, not attempt-based: it must expire even
+            // when package 0 never becomes ready (e.g. Steam never loads it),
+            // otherwise the thread would spin forever waiting.
+            for (int attempts = 0; attempts < constants::kPackageRetryMaxAttempts; ++attempts) {
+                if (s_retryStop.load(std::memory_order_relaxed)) return;
+                if (g_state.package0Seeded.load(std::memory_order_relaxed)) return;
+
+                // DoStartupInjection only needs package 0 + the grow helper;
+                // CUser/license-update resolution is NOT required for the
+                // vector top-up itself (the license refresh happens at login
+                // via the MarkLicenseAsChanged hook).
+                if (g_state.pPackage0.load() && o_CUtlMemoryGrow) {
+                    if (attempts == 0 || attempts % 30 == 0) {
+                        AC_LOG_INFO(kModule, "Startup retry #%d (package0 ready).", attempts + 1);
+                    }
+                    DoStartupInjection();
+                    if (g_state.package0Seeded.load(std::memory_order_relaxed)) {
+                        AC_LOG_INFO(kModule, "Package 0 seeded after %d retry attempt(s).",
+                                    attempts + 1);
+                        return;
+                    }
+                } else if (attempts == 0 || attempts % 30 == 0) {
+                    AC_LOG_INFO(kModule, "Startup retry #%d: waiting for package 0.", attempts + 1);
+                }
+
+                // Sleep the interval in 10 ms steps so shutdown stays snappy.
+                constexpr int kTickMs = 10;
+                for (int elapsed = 0; elapsed < constants::kPackageRetryIntervalMs &&
+                                    !s_retryStop.load(std::memory_order_relaxed);
+                     elapsed += kTickMs) {
+                    Sleep(kTickMs);
+                }
+            }
+            AC_LOG_WARN(kModule, "Package 0 startup retry gave up after %d attempt(s); "
+                                 "a later MarkLicenseAsChanged/login will still top up.",
+                        constants::kPackageRetryMaxAttempts);
+        }
+
+        void StartStartupRetry() {
+            bool expected = false;
+            if (!s_retryStarted.compare_exchange_strong(expected, true)) return;
+            s_retryStop.store(false, std::memory_order_relaxed);
+            s_retryThread = std::thread(StartupRetryThread);
+        }
+
+        void StopStartupRetry() {
+            s_retryStop.store(true, std::memory_order_relaxed);
+            if (s_retryThread.joinable()) s_retryThread.join();
+        }
+
     }  // namespace
 
     void Init(HMODULE diversion) {
@@ -192,6 +269,14 @@ namespace ac::hooks::LicenseManager {
         }
         AC_LOG_INFO(kModule, "Init (grow=%d ppl=%d mlc=%d).", o_CUtlMemoryGrow != nullptr,
             o_ProcessPendingLicenseUpdates != nullptr, o_MarkLicenseAsChanged != nullptr);
+
+        // Cover the missed-window cases: offline startup, late login, package 0
+        // not usable at LoadPackage time. No-op after the seed completes.
+        StartStartupRetry();
+    }
+
+    void Shutdown() {
+        StopStartupRetry();
     }
 
     void SeedPackage0(PackageInfo* package0) {

@@ -18,6 +18,7 @@
 #include "core/SteamVersion.h"
 #include "hooks/ipc/PipeWatch.h"
 #include "hooks/ipc/CmdUser.h"
+#include "hooks/license/LicenseManager.h"
 #include "hooks/steamui/SteamUIHook.h"
 
 using namespace ac;
@@ -176,6 +177,7 @@ void Shutdown() {
 
     ac::dirwatch::Stop();
     ac::pipewatch::Reset();
+    ac::hooks::LicenseManager::Shutdown();
     ac::hooks::CmdUser::ResetETicketAsyncCalls();
     g_state.hookManager.UninstallAll();
     script::Shutdown();
