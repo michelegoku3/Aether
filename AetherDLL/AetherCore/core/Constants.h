@@ -20,6 +20,11 @@ inline constexpr int kDiversionRetryDelayMs = 100;
 // SteamUI poll loop: interval used while waiting for steamui.dll to appear.
 inline constexpr int kSteamUiPollIntervalMs = 100;
 
+// SteamUI deferred redirect retry (A7): max wall-clock budget for waiting on
+// steamui.dll before installing the LoadModuleWithPath redirect in a second
+// hook batch. The poll uses kSteamUiPollIntervalMs ticks.
+inline constexpr int kSteamUiDeferredTimeoutMs = 30000;
+
 // Package-0 startup retry (A2): re-attempt cadence and budget for the top-up
 // when the first LoadPackage/MarkLicenseAsChanged window was missed (offline
 // startup, late login, package 0 not ready yet). The retry thread wakes every

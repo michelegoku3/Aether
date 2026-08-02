@@ -182,6 +182,7 @@ void Shutdown() {
     ac::hooks::LicenseManager::Shutdown();
     ac::hooks::ShutdownOwnershipHooks();
     ac::hooks::ShutdownLicenseHooks();
+    ac::hooks::ShutdownSteamUiRetry();
     ac::hooks::CmdUser::ResetETicketAsyncCalls();
     g_state.hookManager.UninstallAll();
     script::Shutdown();
