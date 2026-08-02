@@ -13,6 +13,7 @@
 #include "credentials/CredentialStore.h"
 #include "network/EticketFetcher.h"
 #include "hooks/ipc/IPCBus.h"
+#include "hooks/ipc/IpcReply.h"
 #include "core/Logger.h"
 #include "scripting/LuaData.h"
 #include "hooks/ipc/PipeWatch.h"
@@ -41,11 +42,8 @@ void GetSteamID(steam::CSteamPipeClient* pipe, steam::CUtlBuffer*, steam::CUtlBu
         AC_LOG_WARN_ONCE(kModule, "GetSteamID: no SteamID for app %u; leaving reply untouched.", appId);
         return;
     }
-    if (!pWrite || !pWrite->Base() || pWrite->TellPut() < 9) return;
-
-    std::uint8_t* base = pWrite->Base();
-    base[0] = kIpcReplyTag;
-    std::memcpy(base + 1, &spoofed, sizeof(spoofed));
+    if (!ipcreply::Begin(pWrite)) return;
+    ipcreply::WriteU64(pWrite, 1, spoofed);
     LogGetSteamIdOnce(appId, spoofed);
 }
 
@@ -90,16 +88,19 @@ void GetAppOwnershipTicketExtendedData(steam::CSteamPipeClient*, steam::CUtlBuff
 
     const std::uint32_t returnSize = ownership.totalSize ? ownership.totalSize : ticketSize;
 
-    std::uint8_t* base = pWrite->Base();
-    base[0] = kIpcReplyTag;
-    std::memcpy(base + 1, &returnSize, 4);
+    if (!ipcreply::Begin(pWrite)) return;
+    ipcreply::WriteU32(pWrite, 1, returnSize);
 
     const std::uint32_t copySize =
         ticketSize < static_cast<std::uint32_t>(reqBufSize) ? ticketSize
                                                             : static_cast<std::uint32_t>(reqBufSize);
-    std::memcpy(base + 5, ticket.data(), copySize);
+    ipcreply::WriteAt(pWrite, 5, ticket.data(), copySize);
     if (copySize < static_cast<std::uint32_t>(reqBufSize)) {
-        std::memset(base + 5 + copySize, 0, static_cast<std::uint32_t>(reqBufSize) - copySize);
+        const std::uint8_t zero = 0;
+        for (std::size_t off = 5 + copySize;
+             off < 5 + static_cast<std::size_t>(reqBufSize); ++off) {
+            ipcreply::WriteAt(pWrite, off, &zero, 1);
+        }
     }
 
     // Offsets block Steam expects right after the ticket buffer.
@@ -107,11 +108,11 @@ void GetAppOwnershipTicketExtendedData(steam::CSteamPipeClient*, steam::CUtlBuff
     const std::uint32_t piSteamId = ownership.steamIdOffset;
     const std::uint32_t piSignature = ownership.signatureOffset;
     const std::uint32_t pcbSignature = ownership.signatureSize;
-    std::uint8_t* tail = base + 5 + reqBufSize;
-    std::memcpy(tail + 0, &piAppId, 4);
-    std::memcpy(tail + 4, &piSteamId, 4);
-    std::memcpy(tail + 8, &piSignature, 4);
-    std::memcpy(tail + 12, &pcbSignature, 4);
+    const std::size_t tail = 5 + static_cast<std::size_t>(reqBufSize);
+    ipcreply::WriteU32(pWrite, tail + 0, piAppId);
+    ipcreply::WriteU32(pWrite, tail + 4, piSteamId);
+    ipcreply::WriteU32(pWrite, tail + 8, piSignature);
+    ipcreply::WriteU32(pWrite, tail + 12, pcbSignature);
 
     AC_LOG_DEBUG_ONCE(kModule, "TicketExtendedData: app %u -> %u bytes (return=%u, appOff=%u).",
                 reqAppId, ticketSize, returnSize, piAppId);
@@ -145,6 +146,7 @@ void RequestEncryptedAppTicket(steam::CSteamPipeClient* pipe, steam::CUtlBuffer*
     }
 
     std::uint64_t asyncCall = 0;
+    if (!ipcreply::CanWrite(pWrite, 9)) return;
     std::memcpy(&asyncCall, pWrite->Base() + 1, sizeof(asyncCall));
     if (!RememberETicketAsyncCall(asyncCall, appId)) {
         AC_LOG_WARN_ONCE(kModule, "RequestEncryptedAppTicket: rejected async=0x%llx app=%u.",
@@ -169,16 +171,15 @@ void GetEncryptedAppTicket(steam::CSteamPipeClient* pipe, steam::CUtlBuffer*,
     const std::uint32_t ticketSize = static_cast<std::uint32_t>(ticket.size());
     const std::int32_t total = 1 + 1 + 4 + static_cast<std::int32_t>(ticketSize);
     capture::EnsureBufferSize(pWrite, total);
-    if (!pWrite || !pWrite->Base() || pWrite->TellPut() < total) {
+    if (!ipcreply::CanWrite(pWrite, static_cast<std::size_t>(total))) {
         AC_LOG_WARN_ONCE(kModule, "GetEncryptedAppTicket: response buffer unavailable for app %u.", appId);
         return;
     }
 
-    std::uint8_t* base = pWrite->Base();
-    base[0] = kIpcReplyTag;
-    base[1] = 1;
-    std::memcpy(base + 2, &ticketSize, sizeof(ticketSize));
-    std::memcpy(base + 6, ticket.data(), ticketSize);
+    ipcreply::Begin(pWrite);
+    pWrite->Base()[1] = 1;
+    ipcreply::WriteU32(pWrite, 2, ticketSize);
+    ipcreply::WriteAt(pWrite, 6, ticket.data(), ticketSize);
     AC_LOG_DEBUG_ONCE(kModule, "GetEncryptedAppTicket: app %u -> %u bytes.", appId, ticketSize);
 }
 

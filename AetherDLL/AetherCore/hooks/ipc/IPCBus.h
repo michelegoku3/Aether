@@ -38,4 +38,15 @@ void RegisterIpcHandlers(const IpcHandlerEntry* entries, std::size_t count);
 // IPCProcessMessage hook (queued in the shared HookManager batch).
 void RegisterIpcBus(HMODULE diversion);
 
+// ---------------------------------------------------------------------------
+// Contract for adding a new IPC interface (e.g. IClientFriends):
+//   1. Create hooks/ipc/CmdXxx.{h,cpp} with `void Register();`.
+//   2. In CmdXxx.cpp, define a `kEntries[]` of IpcHandlerEntry with
+//      (ipc_iface::kXxx, ipc_hash::kXxx_Method, "IXxx::Method", handler).
+//   3. Call `CmdXxx::Register()` from RegisterIpcBus() (in IPCBus.cpp) BEFORE
+//      the IPCProcessMessage hook is queued.
+//   4. Write replies through hooks/ipc/IpcReply.h (validated shape helpers)
+//      so every response keeps the same tag/layout contract with Steam.
+// Handlers run only for pipes whose app is Lua-configured (see h_IPCProcessMessage).
+// ---------------------------------------------------------------------------
 }  // namespace ac::hooks
