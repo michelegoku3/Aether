@@ -59,11 +59,19 @@ bool ParseHex32(std::string_view text, std::uint32_t& out) {
     return true;
 }
 
+// Parses an optional hex fencepost field (e.g. "0x1C"). Returns false when the
+// field is present but malformed; leaves *out unchanged on absence.
+bool ParseOptionalHex32(std::string_view text, std::uint32_t& out) {
+    if (text.empty()) return false;
+    return ParseHex32(text, out);
+}
+
 // Parses the IPC spec into temporary maps. State is published only after the
-// full document has produced at least one valid method entry.
+// full document has produced at least one valid method entry. funcHash is
+// required per method; fencepost/argc are optional metadata.
 bool ParseToml(const std::string& body) {
     std::unordered_map<std::string, std::uint8_t> interfaceIds;
-    std::unordered_map<std::string, std::uint32_t> hashes;
+    std::unordered_map<std::string, MethodSpec> methods;
 
     try {
         auto tbl = toml::parse(body);
@@ -88,13 +96,30 @@ bool ParseToml(const std::string& body) {
                 auto hashStr = (*methodTbl)["funcHash"].value<std::string>();
                 if (!hashStr) continue;
 
-                std::uint32_t hash = 0;
-                if (!ParseHex32(*hashStr, hash)) {
+                MethodSpec spec{};
+                if (!ParseHex32(*hashStr, spec.hash)) {
                     AC_LOG_WARN(kModule, "Invalid funcHash for %s::%s.",
                                 ifaceName.c_str(), methodName.c_str());
                     continue;
                 }
-                hashes.emplace(QualifiedName(ifaceName, methodName), hash);
+
+                // Optional metadata: parse leniently, never fail the method.
+                if (auto fencepostStr = (*methodTbl)["fencepost"].value<std::string>()) {
+                    if (!ParseOptionalHex32(*fencepostStr, spec.fencepost)) {
+                        AC_LOG_WARN(kModule, "Invalid fencepost for %s::%s; ignoring.",
+                                    ifaceName.c_str(), methodName.c_str());
+                    }
+                }
+                if (auto argc = (*methodTbl)["argc"].value<std::int64_t>()) {
+                    if (*argc >= 0 && *argc <= std::numeric_limits<std::uint32_t>::max()) {
+                        spec.argc = static_cast<std::uint32_t>(*argc);
+                    } else {
+                        AC_LOG_WARN(kModule, "Invalid argc for %s::%s; ignoring.",
+                                    ifaceName.c_str(), methodName.c_str());
+                    }
+                }
+
+                methods.emplace(QualifiedName(ifaceName, methodName), spec);
             }
         }
     } catch (const toml::parse_error& e) {
@@ -102,9 +127,9 @@ bool ParseToml(const std::string& body) {
         return false;
     }
 
-    if (hashes.empty()) return false;
+    if (methods.empty()) return false;
     g_state.ipcSpec.interfaceIds = std::move(interfaceIds);
-    g_state.ipcSpec.hashes = std::move(hashes);
+    g_state.ipcSpec.methods = std::move(methods);
     return true;
 }
 
@@ -136,7 +161,7 @@ bool Init() {
     if (LoadFromCache()) {
         g_state.ipcSpec.loaded = true;
         AC_LOG_INFO(kModule, "Loaded IPC spec from cache (%zu entries).",
-                    g_state.ipcSpec.hashes.size());
+                    g_state.ipcSpec.methods.size());
         return true;
     }
 
@@ -164,7 +189,7 @@ bool Init() {
 
     g_state.ipcSpec.loaded = true;
     AC_LOG_INFO(kModule, "Loaded IPC spec from %s (%zu entries).",
-                source.c_str(), g_state.ipcSpec.hashes.size());
+                source.c_str(), g_state.ipcSpec.methods.size());
     return true;
 }
 
@@ -177,8 +202,15 @@ std::optional<std::uint8_t> ResolveInterfaceId(const char* interfaceName) {
 
 std::optional<std::uint32_t> ResolveHash(const char* qualifiedName) {
     if (!g_state.ipcSpec.loaded || !qualifiedName) return std::nullopt;
-    auto it = g_state.ipcSpec.hashes.find(qualifiedName);
-    if (it != g_state.ipcSpec.hashes.end()) return it->second;
+    auto it = g_state.ipcSpec.methods.find(qualifiedName);
+    if (it != g_state.ipcSpec.methods.end()) return it->second.hash;
+    return std::nullopt;
+}
+
+std::optional<MethodSpec> ResolveMethodSpec(const char* qualifiedName) {
+    if (!g_state.ipcSpec.loaded || !qualifiedName) return std::nullopt;
+    auto it = g_state.ipcSpec.methods.find(qualifiedName);
+    if (it != g_state.ipcSpec.methods.end()) return it->second;
     return std::nullopt;
 }
 

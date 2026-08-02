@@ -107,7 +107,17 @@ void Write() {
     json << "  \"online_payload_inject_failures\": " << g_state.onlinePayload.injectFailureCount.load() << ",\n";
     json << "  \"pipewatch_snapshots\": " << pipewatch::SnapshotCount() << ",\n";
     json << "  \"ipc_spec_loaded\": " << (g_state.ipcSpec.loaded ? "true" : "false") << ",\n";
-    json << "  \"ipc_spec_entries\": " << g_state.ipcSpec.hashes.size() << ",\n";
+    json << "  \"ipc_spec_entries\": " << g_state.ipcSpec.methods.size() << ",\n";
+    {
+        std::size_t withFencepost = 0;
+        std::size_t withArgc = 0;
+        for (const auto& [_, spec] : g_state.ipcSpec.methods) {
+            if (spec.fencepost != 0) ++withFencepost;
+            if (spec.argc != 0) ++withArgc;
+        }
+        json << "  \"ipc_spec_methods_with_fencepost\": " << withFencepost << ",\n";
+        json << "  \"ipc_spec_methods_with_argc\": " << withArgc << ",\n";
+    }
     {
         std::lock_guard<std::mutex> lock(g_state.presence.mutex);
         json << "  \"presence_playing_appid\": " << g_state.presence.playingAppId << ",\n";

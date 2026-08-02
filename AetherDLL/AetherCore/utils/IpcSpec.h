@@ -23,6 +23,16 @@
 // ---------------------------------------------------------------------------
 namespace ac::ipcspec {
 
+// Per-method metadata carried by the spec TOML. funcHash is required;
+// fencepost and argc are optional (0 = absent in the file). They are parsed
+// for schema compatibility with the shared pattern repo and used only for
+// diagnostics — never to gate dispatch.
+struct MethodSpec {
+    std::uint32_t hash = 0;
+    std::uint32_t fencepost = 0;
+    std::uint32_t argc = 0;
+};
+
 // Loads IPC spec for the current steamclient build. Uses the SHA-256 already
 // computed in AetherCoreState. Must be called after pattern::Init() so the
 // pattern cache directory exists. Safe to call multiple times — subsequent
@@ -35,8 +45,12 @@ std::optional<std::uint8_t> ResolveInterfaceId(const char* interfaceName);
 
 // Resolves the funcHash for a qualified method name like
 // "IClientUser::GetSteamID". Returns nullopt when no spec is loaded or the
-// method name is absent.
+// method name is absent. Kept for callers that only need the hash.
 std::optional<std::uint32_t> ResolveHash(const char* qualifiedName);
+
+// Resolves the full per-method metadata (hash + optional fencepost/argc).
+// Returns nullopt when no spec is loaded or the method name is absent.
+std::optional<MethodSpec> ResolveMethodSpec(const char* qualifiedName);
 
 // Whether a spec TOML was loaded and parsed successfully.
 bool IsLoaded();
