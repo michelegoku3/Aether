@@ -17,6 +17,7 @@
 #include "core/Settings.h"
 #include "core/SteamTypes.h"
 #include "hooks/ipc/PipeWatch.h"
+#include "utils/IpcSpec.h"
 
 // ---------------------------------------------------------------------------
 // Central application state.
@@ -170,15 +171,18 @@ struct AetherCoreState {
     };
     PatternState patterns;
 
-    // ---- IPC spec (per-build funcHash overrides) ---------------------------
+    // ---- IPC spec (per-build funcHash + optional fencepost/argc overrides) --
     // Loaded from a TOML fetched alongside the pattern tables. When loaded,
     // IPCBus uses these hashes instead of the compile-time ipc_hash::* constants
     // so that IPC dispatch survives Steam client updates that shift method hashes.
     // Populated on the init thread before hooks are installed; read-only after.
+    // fencepost/argc are optional metadata (0 = absent): parsed for schema
+    // compatibility and used only for diagnostics (see IpcSpec.h), never to
+    // block dispatch. MethodSpec is the single definition from utils/IpcSpec.h.
     struct IpcSpecState {
         bool loaded = false;
         std::unordered_map<std::string, std::uint8_t> interfaceIds; // "IFace" -> interface id
-        std::unordered_map<std::string, std::uint32_t> hashes;      // "IFace::Method" -> hash
+        std::unordered_map<std::string, ipcspec::MethodSpec> methods; // "IFace::Method" -> spec
     };
     IpcSpecState ipcSpec;
 

@@ -92,6 +92,20 @@ bool h_IPCProcessMessage(void* server, steam::HSteamPipe hSteamPipe,
         return ok;
     }
 
+    // Diagnostic (non-blocking): when the IPC spec declares an arg count for
+    // this method but the incoming message is too short to carry it, the Steam
+    // build's layout may have shifted. Log once per session; dispatch proceeds
+    // unchanged so the handler's own bounds checks stay the single gate.
+    if (entry->name) {
+        if (auto spec = ipcspec::ResolveMethodSpec(entry->name)) {
+            if (spec->argc > 0 &&
+                pRead->TellPut() < kIpcArgsOffset + static_cast<std::int32_t>(spec->argc) * 4) {
+                AC_LOG_WARN_ONCE(kModule, "%s: spec argc=%u but message is short (%d bytes).",
+                                 entry->name, spec->argc, pRead->TellPut());
+            }
+        }
+    }
+
     LogDispatchOnce(entry->name, appId);
     entry->handler(pipe, pRead, pWrite);
     return ok;
