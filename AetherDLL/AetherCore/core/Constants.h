@@ -44,6 +44,12 @@ inline constexpr int kPackageRetryMaxAttempts = 60;  // ~60 s budget
 inline constexpr int kUnlockSummaryDebounceMs = 1500;
 inline constexpr int kUnlockSummaryTickMs = 50;
 
+// PipeWatch (A5): max snapshots before eviction kicks in. Steam itself holds
+// ~5 pipes (steam.exe, steamwebhelper, gameoverlayui, …); each launched game
+// adds 1–3 more (launcher, game exe, child overlay). 64 comfortably covers
+// 20+ game launches in a single Steam session without unbounded growth.
+inline constexpr std::size_t kPipeWatchMaxSnapshots = 64;
+
 // Hasher: streaming chunk size for SHA-256 (4 MiB balances syscalls vs RAM).
 inline constexpr std::size_t kHashChunkBytes = 4u * 1024u * 1024u;
 
