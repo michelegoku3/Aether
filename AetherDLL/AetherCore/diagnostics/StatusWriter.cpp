@@ -148,6 +148,8 @@ void Write() {
     json << "  \"presence_always_extra_info\": "
          << (g_state.settings.presenceAlwaysExtraInfo ? "true" : "false") << ",\n";
     json << "  \"onlinefix_real_appid\": " << g_state.onlineFixRealAppId.load() << ",\n";
+    json << "  \"license_reload_forced_count\": " << g_state.licenseReloadForcedCount.load() << ",\n";
+    json << "  \"license_reload_direct_count\": " << g_state.licenseReloadDirectCount.load() << ",\n";
     json << "  \"gamename_cache_size\": " << g_state.gameName.nameCache.Size() << ",\n";
     json << "  \"gamename_cache_hits\": " << g_state.gameName.nameCache.HitCount() << ",\n";
     json << "  \"gamename_cache_misses\": " << g_state.gameName.nameCache.MissCount() << ",\n";
