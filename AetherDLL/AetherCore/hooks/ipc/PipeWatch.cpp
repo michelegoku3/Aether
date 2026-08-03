@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <array>
 #include <cctype>
+#include <chrono>
 #include <cstddef>
 #include <cstring>
 #include <mutex>
@@ -125,12 +126,125 @@ std::uint32_t ReadHandshakePid(steam::CUtlBuffer* pRead) {
     return pid;
 }
 
-void StoreSnapshot(const steam::CSteamPipeClient* pipe, const ProcessSnapshot& snap) {
+// ---------------------------------------------------------------------------
+// Eviction helpers (A5). Caller must hold g_state.pipeWatch.mutex.
+//
+// Two-level strategy:
+//   1. EvictDeadLocked — probe each non-Steam entry with OpenProcess; if the
+//      process is gone, drop the snapshot. This is the most precise method
+//      (removes only truly dead entries) but costs one syscall per candidate.
+//   2. EvictOldestLocked — fallback FIFO by capturedAt when dead-process
+//      reaping alone was not enough to get below the cap.
+//
+// Eviction is opportunistic: it runs only when the map has reached the cap,
+// so normal sessions (< 64 pipes) never pay the cost.
+// ---------------------------------------------------------------------------
+
+bool IsProcessAlive(std::uint32_t pid) {
+    if (pid == 0) return false;
+    HANDLE h = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, pid);
+    if (!h) return false;
+    DWORD exitCode = 0;
+    const bool alive = GetExitCodeProcess(h, &exitCode) && exitCode == STILL_ACTIVE;
+    CloseHandle(h);
+    return alive;
+}
+
+// Removes snapshots whose process is no longer running. Steam processes are
+// never evicted (they persist for the entire session and probing them is
+// wasteful). Returns the number of entries removed.
+std::size_t EvictDeadLocked() {
+    std::size_t removed = 0;
+    for (auto it = g_state.pipeWatch.snapshots.begin();
+         it != g_state.pipeWatch.snapshots.end();) {
+        const auto& snap = it->second;
+        // Never evict Steam's own processes: they are always alive and
+        // re-probing them on every eviction cycle is pure overhead.
+        if (snap.steamProcess) {
+            ++it;
+            continue;
+        }
+        if (!IsProcessAlive(snap.pid)) {
+            AC_LOG_DEBUG(kModule, "Evicting dead snapshot pid=%u image=%s appId=%u.",
+                         snap.pid, snap.imageName.empty() ? "-" : snap.imageName.c_str(),
+                         snap.appId);
+            it = g_state.pipeWatch.snapshots.erase(it);
+            ++removed;
+        } else {
+            ++it;
+        }
+    }
+    return removed;
+}
+
+// Removes the single oldest snapshot (by capturedAt) to make room. Skips
+// Steam processes. Returns true if an entry was removed.
+bool EvictOldestLocked() {
+    using Iter = decltype(g_state.pipeWatch.snapshots)::iterator;
+    Iter oldest = g_state.pipeWatch.snapshots.end();
+
+    for (auto it = g_state.pipeWatch.snapshots.begin();
+         it != g_state.pipeWatch.snapshots.end(); ++it) {
+        if (it->second.steamProcess) continue;
+        if (oldest == g_state.pipeWatch.snapshots.end() ||
+            it->second.capturedAt < oldest->second.capturedAt) {
+            oldest = it;
+        }
+    }
+
+    if (oldest == g_state.pipeWatch.snapshots.end()) return false;
+
+    AC_LOG_DEBUG(kModule, "Evicting oldest snapshot pid=%u image=%s appId=%u (cap=%zu).",
+                 oldest->second.pid,
+                 oldest->second.imageName.empty() ? "-" : oldest->second.imageName.c_str(),
+                 oldest->second.appId,
+                 constants::kPipeWatchMaxSnapshots);
+    g_state.pipeWatch.snapshots.erase(oldest);
+    return true;
+}
+
+// Orchestrator: called before inserting a new snapshot when the map is at
+// capacity. First reaps dead processes; if that is not enough, drops the
+// oldest entry one at a time until there is room.
+void EvictIfNeededLocked() {
+    if (g_state.pipeWatch.snapshots.size() < constants::kPipeWatchMaxSnapshots) return;
+
+    // Phase 1: reap dead processes (most precise).
+    const std::size_t deadRemoved = EvictDeadLocked();
+    if (deadRemoved > 0) {
+        g_state.pipeWatch.evictionCount.fetch_add(deadRemoved, std::memory_order_relaxed);
+    }
+    if (g_state.pipeWatch.snapshots.size() < constants::kPipeWatchMaxSnapshots) return;
+
+    // Phase 2: FIFO fallback — drop oldest until under cap.
+    std::size_t fifoRemoved = 0;
+    while (g_state.pipeWatch.snapshots.size() >= constants::kPipeWatchMaxSnapshots) {
+        if (!EvictOldestLocked()) break;  // nothing left to evict (all Steam)
+        ++fifoRemoved;
+    }
+    if (fifoRemoved > 0) {
+        g_state.pipeWatch.evictionCount.fetch_add(fifoRemoved, std::memory_order_relaxed);
+    }
+}
+
+void StoreSnapshot(const steam::CSteamPipeClient* pipe, ProcessSnapshot snap) {
     if (!pipe) return;
     const std::uint64_t key = EncodePipeKey(pipe);
     if (!key) return;
+
+    // Stamp the capture time for FIFO eviction ordering (A5).
+    snap.capturedAt = std::chrono::steady_clock::now();
+
     std::lock_guard<std::mutex> lock(g_state.pipeWatch.mutex);
-    g_state.pipeWatch.snapshots[key] = snap;
+
+    // If this key already exists, it is an update (TouchPipe re-snapshot) —
+    // no eviction needed since the count does not grow.
+    const bool isUpdate = g_state.pipeWatch.snapshots.count(key) > 0;
+    if (!isUpdate) {
+        EvictIfNeededLocked();
+    }
+
+    g_state.pipeWatch.snapshots[key] = std::move(snap);
 }
 
 // Tracks the last game appId that triggered a log session reset.
@@ -211,6 +325,10 @@ steam::AppId AppIdForPipe(const steam::CSteamPipeClient* pipe) {
 std::size_t SnapshotCount() {
     std::lock_guard<std::mutex> lock(g_state.pipeWatch.mutex);
     return g_state.pipeWatch.snapshots.size();
+}
+
+std::size_t EvictionCount() {
+    return g_state.pipeWatch.evictionCount.load(std::memory_order_relaxed);
 }
 
 void ResetSessionTracking() {

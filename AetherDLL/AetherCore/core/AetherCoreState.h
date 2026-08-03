@@ -143,6 +143,9 @@ struct AetherCoreState {
     // ---- PipeWatch ---------------------------------------------------------
     // Snapshot of process identity per IPC pipe, built from handshake traffic.
     // Key: (pid << 32) | hSteamPipe. Guarded by mutex.
+    // Eviction (A5): when the map reaches kPipeWatchMaxSnapshots, dead processes
+    // are reaped first (OpenProcess probe), then the oldest entry is removed
+    // (FIFO by capturedAt). evictionCount tracks total evictions for diagnostics.
     struct PipeWatchState {
         mutable std::mutex mutex;
         std::unordered_map<std::uint64_t, pipewatch::ProcessSnapshot> snapshots;
@@ -150,6 +153,8 @@ struct AetherCoreState {
         // the same session share the appId and must not reset again (atomic:
         // compared from the IPC hook thread without taking snapshots' mutex).
         std::atomic<steam::AppId> lastSessionAppId{0};
+        // Total number of snapshot evictions (dead process reaping or FIFO).
+        std::atomic<std::uint64_t> evictionCount{0};
     };
     PipeWatchState pipeWatch;
 

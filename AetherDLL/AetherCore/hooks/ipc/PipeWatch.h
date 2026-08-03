@@ -1,5 +1,6 @@
 #pragma once
 
+#include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <optional>
@@ -37,6 +38,9 @@ struct ProcessSnapshot {
     bool steamProcess = false;
     bool likelyGame = false;
     bool luaManaged = false;  // script-tracked app, even if genuinely owned
+    // Timestamp when this snapshot was captured (A5: used for FIFO eviction
+    // when the map exceeds the cap and no dead processes can be reaped).
+    std::chrono::steady_clock::time_point capturedAt{};
 };
 
 void Reset();
@@ -46,5 +50,6 @@ void TouchPipe(steam::CSteamPipeClient* pipe);
 std::optional<ProcessSnapshot> SnapshotForPipe(const steam::CSteamPipeClient* pipe);
 steam::AppId AppIdForPipe(const steam::CSteamPipeClient* pipe);
 std::size_t SnapshotCount();
+std::size_t EvictionCount();
 
 }  // namespace ac::pipewatch

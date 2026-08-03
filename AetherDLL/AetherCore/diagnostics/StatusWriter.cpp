@@ -114,6 +114,7 @@ void Write() {
     json << "  \"online_payload_inject_successes\": " << g_state.onlinePayload.injectSuccessCount.load() << ",\n";
     json << "  \"online_payload_inject_failures\": " << g_state.onlinePayload.injectFailureCount.load() << ",\n";
     json << "  \"pipewatch_snapshots\": " << pipewatch::SnapshotCount() << ",\n";
+    json << "  \"pipewatch_evictions\": " << pipewatch::EvictionCount() << ",\n";
     json << "  \"ipc_spec_loaded\": " << (g_state.ipcSpec.loaded ? "true" : "false") << ",\n";
     json << "  \"ipc_spec_entries\": " << g_state.ipcSpec.methods.size() << ",\n";
     {
