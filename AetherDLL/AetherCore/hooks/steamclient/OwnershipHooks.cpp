@@ -339,7 +339,11 @@ bool h_SendCallbackToPipe(void* engine, HSteamPipe pipe, HSteamUser user, int cb
     // Force the "licenses changed" flag so Steam re-reads ownership.
     if (cb == constants::kCallbackAppLicensesChanged && data) {
         *static_cast<bool*>(data) = true;
-        AC_LOG_DEBUG(kModule, "SendCallbackToPipe: forced m_bReloadAll on AppLicensesChanged.");
+        ++g_state.licenseReloadForcedCount;
+        // Debounce: SmartIdLog-style — the first call logs immediately, then
+        // subsequent identical calls within the burst are suppressed. The full
+        // count is visible in status.json as license_reload_forced_count.
+        AC_LOG_DEBUG_ONCE(kModule, "SendCallbackToPipe: forced m_bReloadAll on AppLicensesChanged.");
     } else if (cb == constants::kCallbackAppLicensesChanged) {
         AC_LOG_WARN(kModule, "SendCallbackToPipe: AppLicensesChanged without reload payload; "
                              "ownership may not refresh.");

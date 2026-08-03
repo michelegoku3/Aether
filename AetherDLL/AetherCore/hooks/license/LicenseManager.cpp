@@ -370,6 +370,7 @@ namespace ac::hooks::LicenseManager {
         // synchronously trigger callbacks/hooks; keeping our mutation lock held here
         // would make re-entrancy and deadlocks much more likely.
         markLicenseAsChanged(cUser, 0, true);
+        ++g_state.licenseReloadDirectCount;
         processPendingLicenseUpdates(cUser);
 
         AC_LOG_INFO(kModule, "License refresh: +%zu -%zu (total %u).", additions.size(), removed, total);

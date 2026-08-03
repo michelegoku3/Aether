@@ -332,6 +332,13 @@ struct AetherCoreState {
     std::atomic<std::uint64_t> ticketForgeSuccessCount{0};
     std::atomic<std::uint64_t> ticketForgeFailureCount{0};
 
+    // ---- License reload diagnostics (A4) -----------------------------------
+    // Counters for m_bReloadAll forced via SendCallbackToPipe hook and direct
+    // MarkLicenseAsChanged calls from LicenseManager::NotifyLicenseChanged.
+    // Atomic: incremented by hook threads, read by StatusWriter.
+    std::atomic<std::uint64_t> licenseReloadForcedCount{0};
+    std::atomic<std::uint64_t> licenseReloadDirectCount{0};
+
     // ---- Configuration ----------------------------------------------------
     Settings settings;
 
