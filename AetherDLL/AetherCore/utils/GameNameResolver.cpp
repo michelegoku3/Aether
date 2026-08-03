@@ -89,12 +89,12 @@ bool Ready() {
 std::string ForApp(steam::AppId appId) {
     if (appId == 0) return {};
 
-    {
-        std::lock_guard<std::mutex> lock(g_state.gameName.cacheMutex);
-        auto it = g_state.gameName.nameCache.find(appId);
-        if (it != g_state.gameName.nameCache.end()) return it->second;
+    // 1. Cache hit (positive o negative)
+    if (auto cached = g_state.gameName.nameCache.Get(appId)) {
+        return *cached;  // Può essere "" (negative) o nome reale
     }
 
+    // 2. Cache miss → query Steam
     std::string name;
     if (Ready()) {
         char buf[256] = {};
@@ -108,11 +108,11 @@ std::string ForApp(steam::AppId appId) {
         }
     }
 
-    {
-        std::lock_guard<std::mutex> lock(g_state.gameName.cacheMutex);
-        g_state.gameName.nameCache[appId] = name;
-    }
-    if (!name.empty()) {
+    // 3. Memorizza (positive o negative)
+    if (name.empty()) {
+        g_state.gameName.nameCache.PutNegative(appId);
+    } else {
+        g_state.gameName.nameCache.Put(appId, name);
         AC_LOG_DEBUG_ONCE(kModule, "App %u name='%s'.", appId, name.c_str());
     }
     return name;
