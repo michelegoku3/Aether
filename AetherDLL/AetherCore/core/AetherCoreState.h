@@ -18,6 +18,7 @@
 #include "core/SteamTypes.h"
 #include "hooks/ipc/PipeWatch.h"
 #include "utils/IpcSpec.h"
+#include "utils/TtlCache.h"
 
 // ---------------------------------------------------------------------------
 // Central application state.
@@ -56,9 +57,15 @@ struct ManifestOverride {
 
 // Subsystem Achievement/UserStats state (stats/achievement spoofing & API cache)
 struct AchievementStore {
-    mutable std::shared_mutex mutex;
-    std::unordered_map<steam::AppId, std::uint64_t> apiCache;       // AppID -> API resolved Donor SteamID
-    std::unordered_map<steam::AppId, std::size_t> nextPoolIndex;    // AppID -> index in the Luma pool fallback
+    // Donor ID cache with TTL (24h) and LRU eviction (512 entries max).
+    // Positive entries: appId -> donor SteamID
+    // Negative entries: appId -> 0 (no donor found, use fallback pool)
+    // Thread-safe via internal shared_mutex.
+    utils::TtlCache<steam::AppId, std::uint64_t> apiCache{512, std::chrono::hours(24)};
+    
+    // Round-robin index for fallback pool (per-app, no TTL needed).
+    mutable std::shared_mutex poolMutex;
+    std::unordered_map<steam::AppId, std::size_t> nextPoolIndex;
 };
 
 struct AetherCoreState {
@@ -204,11 +211,14 @@ struct AetherCoreState {
     // Captured CAppInfoCache object + per-app display-name cache, used by the
     // presence pipeline. appInfoCacheObj is written by the steamclient hook
     // thread and read by wire threads — atomic because plain void* across
-    // threads is UB. nameCache guarded by cacheMutex.
+    // threads is UB. nameCache uses TTL cache with LRU eviction.
     struct GameNameState {
         std::atomic<void*> appInfoCacheObj{nullptr};
-        mutable std::mutex cacheMutex;
-        std::unordered_map<steam::AppId, std::string> nameCache;
+        // Game name cache with TTL (6h) and LRU eviction (512 entries max).
+        // Positive entries: appId -> game name
+        // Negative entries: appId -> "" (name not available)
+        // Thread-safe via internal shared_mutex.
+        utils::TtlCache<steam::AppId, std::string> nameCache{512, std::chrono::hours(6)};
     };
     GameNameState gameName;
 

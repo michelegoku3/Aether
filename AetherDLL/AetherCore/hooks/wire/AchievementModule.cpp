@@ -85,16 +85,24 @@ void DonorWorkerMain() {
             try {
                 const std::uint64_t id = std::stoull(resp.body);
                 if (id != 0) {
-                    std::unique_lock<std::shared_mutex> lock(g_state.achievements.mutex);
-                    g_state.achievements.apiCache[appId] = id;
+                    // Positive result: store in cache with TTL
+                    g_state.achievements.apiCache.Put(appId, id);
                     AC_LOG_INFO(kModule, "Donor resolved (background) AppID %u -> %llu", appId, id);
                     ok = true;
+                } else {
+                    // Negative result (id=0): cache as negative
+                    g_state.achievements.apiCache.PutNegative(appId);
+                    AC_LOG_DEBUG(kModule, "Donor resolved AppID %u -> 0 (cached negative)", appId);
                 }
             } catch (...) {
-                AC_LOG_WARN(kModule, "Donor API invalid body AppID %u.", appId);
+                // Parse error: cache as negative
+                g_state.achievements.apiCache.PutNegative(appId);
+                AC_LOG_WARN(kModule, "Donor API invalid body AppID %u (cached negative).", appId);
             }
         } else {
-            AC_LOG_WARN(kModule, "Donor API failed AppID %u status=%d.", appId, resp.status);
+            // HTTP error (403/404/timeout): cache as negative
+            g_state.achievements.apiCache.PutNegative(appId);
+            AC_LOG_DEBUG(kModule, "Donor API failed AppID %u status=%d (cached negative).", appId, resp.status);
         }
         ok ? ++s_donorResolvesDone : ++s_donorResolvesFailed;
 
@@ -123,30 +131,38 @@ void ScheduleDonorResolve(steam::AppId appId) {
 }
 
 // ---------------------------------------------------------------------------
-// Resoluzione Donor ID — NON bloccante (A1).
+// Resoluzione Donor ID — NON bloccante (A1) con negative caching (A2).
 //
-//   cache hit  -> ritorna subito il donor API risolto;
-//   cache miss -> accoda una risoluzione in background (single-flight) e
-//                 ritorna SUBITO il fallback pool round-robin. Nessuna I/O
-//                 sul thread chiamante (wire path di Steam).
+//   cache hit (positive)  -> ritorna il donor API risolto;
+//   cache hit (negative)  -> donor_id=0 cached, ritorna SUBITO fallback pool;
+//   cache miss            -> accoda una risoluzione in background (single-flight) e
+//                            ritorna SUBITO il fallback pool round-robin. Nessuna I/O
+//                            sul thread chiamante (wire path di Steam).
 // ---------------------------------------------------------------------------
 std::uint64_t ResolveDonorId(steam::AppId appId) {
     auto& store = g_state.achievements;
 
-    // Priorità 1: cache (lettura condivisa, lock breve, nessuna I/O).
-    {
-        std::shared_lock<std::shared_mutex> lock(store.mutex);
-        auto it = store.apiCache.find(appId);
-        if (it != store.apiCache.end() && it->second != 0) {
-            return it->second;
+    // Priorità 1: cache hit (positive o negative)
+    if (auto cached = store.apiCache.Get(appId)) {
+        if (*cached == 0) {
+            // Negative cache hit: questo app non ha donor, usa fallback pool
+            std::unique_lock<std::shared_mutex> lock(store.poolMutex);
+            std::size_t idx = store.nextPoolIndex[appId];
+            const std::uint64_t fallbackId = kLumaCoreStatSteamIdPool[idx];
+            store.nextPoolIndex[appId] = (idx + 1) % 15;
+            AC_LOG_DEBUG(kModule, "Uso fallback LumaCore Pool (negative cache) per AppID %u (index %zu) -> %llu",
+                         appId, idx, fallbackId);
+            return fallbackId;
         }
+        // Positive cache hit: ritorna il donor risolto
+        return *cached;
     }
 
-    // Priorità 2: risoluzione asincrona in background (mai bloccante).
+    // Priorità 2: cache miss -> risoluzione asincrona in background (mai bloccante)
     ScheduleDonorResolve(appId);
 
-    // Priorità 3: fallback round-robin sul pool LumaCore (immediato).
-    std::unique_lock<std::shared_mutex> lock(store.mutex);
+    // Priorità 3: fallback round-robin sul pool LumaCore (immediato)
+    std::unique_lock<std::shared_mutex> lock(store.poolMutex);
     std::size_t idx = store.nextPoolIndex[appId];
     const std::uint64_t fallbackId = kLumaCoreStatSteamIdPool[idx];
     store.nextPoolIndex[appId] = (idx + 1) % 15;
