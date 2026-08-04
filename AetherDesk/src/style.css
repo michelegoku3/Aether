@@ -1612,19 +1612,15 @@ body {
 
 .av-modal-actions {
   display: flex;
-  flex-direction: column;
-  gap: 10px;
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+  gap: 28px;
+  margin-top: 6px;
 }
 
 .av-modal-actions .panel-btn {
-  flex: 1 1 auto;
-}
-
-.av-modal-links {
-  display: flex;
-  justify-content: space-between;
-  gap: 12px;
-  margin-top: 4px;
+  flex: 0 0 auto;
 }
 
 .av-link-btn {

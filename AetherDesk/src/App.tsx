@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Sidebar, TabType } from './components/Sidebar';
 import { MainContent } from './components/MainContent';
-import { AntivirusExclusionModal } from './components/AntivirusExclusionModal';
 import { invoke } from '@tauri-apps/api/core';
 
 export default function App() {
@@ -12,18 +11,6 @@ export default function App() {
   const [dllUpdateAvailable, setDllUpdateAvailable] = useState(false);
   // Global state to track native AetherDesk update availability from desk-* GitHub tags
   const [deskUpdateAvailable, setDeskUpdateAvailable] = useState(false);
-
-  // Windows Defender exclusion prompt: shown on first launch after install and
-  // after updates, only until the user has handled it (persisted flag).
-  const [showAntivirusPrompt, setShowAntivirusPrompt] = useState(false);
-
-  useEffect(() => {
-    invoke('get_antivirus_exclusion_done')
-      .then((done) => {
-        if (!Boolean(done)) setShowAntivirusPrompt(true);
-      })
-      .catch(() => {});
-  }, []);
 
   // Hubcap API usage limits
   const [hubcapUsage, setHubcapUsage] = useState({ usage: 0, limit: 25, hasKey: false });
@@ -121,10 +108,6 @@ export default function App() {
         hubcapUsage={hubcapUsage}
         onRefreshUsage={refreshHubcapUsage}
       />
-
-      {showAntivirusPrompt && (
-        <AntivirusExclusionModal onDone={() => setShowAntivirusPrompt(false)} />
-      )}
     </div>
   );
 }

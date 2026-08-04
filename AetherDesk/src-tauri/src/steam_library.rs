@@ -102,6 +102,13 @@ impl SteamLibraryScanner {
         self.scan_appmanifests(&libraries).contains_key(&app_id)
     }
 
+    /// Returns every Steam library folder discovered from the configured Steam
+    /// path and `libraryfolders.vdf`. Used by the antivirus exclusion command to
+    /// ensure crack files written into any library are not quarantined.
+    pub fn discover_library_paths(&self) -> Vec<PathBuf> {
+        self.discover_libraries()
+    }
+
     fn scan_appmanifests(&self, libraries: &[PathBuf]) -> HashMap<u32, AppManifest> {
         let mut manifests = HashMap::new();
 

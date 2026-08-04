@@ -3,18 +3,37 @@ import { invoke } from '@tauri-apps/api/core';
 import { emptyStatus, StatusMessage } from '../types/ui';
 
 interface AntivirusExclusionModalProps {
-  onDone: () => void; // called once the user has handled the exclusion
+  /**
+   * Called when the modal is dismissed. `confirmed` is true when the user
+   * explicitly added the exclusion (automatically or manually) and false when
+   * they closed via the X button — letting the caller decide whether to
+   * proceed with the risky operation anyway.
+   */
+  onDone: (confirmed: boolean) => void;
 }
 
+/**
+ * Modal that prompts the user to add AetherDesk and all Steam library folders
+ * to Windows Defender exclusions. Crack files are written into Steam library
+ * folders, so those folders must be excluded or Defender will quarantine them.
+ *
+ * Shown in two contexts:
+ *   - On first launch after install/update (when `antivirus_exclusion_done` is false).
+ *   - When the user clicks "Apply Crack" in Home (if never confirmed).
+ *
+ * Once the user confirms (Add exclusion or I added it manually), the flag is
+ * persisted and the modal never appears again. Closing via X dismisses without
+ * persisting, so the prompt will reappear next time.
+ */
 export const AntivirusExclusionModal = ({ onDone }: AntivirusExclusionModalProps) => {
   const [isApplying, setIsApplying] = useState(false);
   const [status, setStatus] = useState<StatusMessage>(emptyStatus());
 
-  // ESC closes the modal without marking done (it will ask again next run).
+  // ESC dismisses without confirming (same as clicking the X).
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape' && !isApplying) {
-        onDone();
+        onDone(false);
       }
     };
     window.addEventListener('keydown', handleKeyDown);
@@ -23,11 +42,11 @@ export const AntivirusExclusionModal = ({ onDone }: AntivirusExclusionModalProps
 
   const handleApply = async () => {
     setIsApplying(true);
-    setStatus({ text: 'Adding Windows Defender exclusion...', type: 'info' });
+    setStatus({ text: 'Adding exclusions for AetherDesk and Steam libraries...', type: 'info' });
     try {
       const message: string = await invoke('apply_antivirus_exclusion');
       setStatus({ text: message, type: 'success' });
-      onDone();
+      onDone(true);
     } catch (err: any) {
       setStatus({ text: `Could not add the exclusion automatically: ${err}`, type: 'error' });
     } finally {
@@ -35,17 +54,13 @@ export const AntivirusExclusionModal = ({ onDone }: AntivirusExclusionModalProps
     }
   };
 
-  const handleOpenSecurity = () => {
-    invoke('open_windows_security').catch(() => {});
-  };
-
   const handleDoneManually = async () => {
     try {
       await invoke('acknowledge_antivirus_exclusion');
     } catch {
-      // best-effort
+      // best-effort persistence; the caller still treats this as confirmed
     }
-    onDone();
+    onDone(true);
   };
 
   return (
@@ -59,7 +74,7 @@ export const AntivirusExclusionModal = ({ onDone }: AntivirusExclusionModalProps
             className="modal-close-btn"
             disabled={isApplying}
             onClick={() => {
-              if (!isApplying) onDone();
+              if (!isApplying) onDone(false);
             }}
           >
             &times;
@@ -70,10 +85,11 @@ export const AntivirusExclusionModal = ({ onDone }: AntivirusExclusionModalProps
 
         <div className="modal-body">
           <p className="av-modal-text">
-            AetherDesk and the crack files it applies can be flagged by Windows
-            Defender as false positives, which may block or remove them.
-            Add the AetherDesk folder to Windows Defender exclusions to prevent
-            this.
+            Crack files applied by AetherDesk are placed inside your Steam library
+            folders and can be flagged by Windows Defender as false positives —
+            which may silently delete them or break your games. To prevent this,
+            AetherDesk and all your Steam library folders should be added to
+            Defender's exclusion list.
           </p>
 
           {status.text && (
@@ -83,20 +99,20 @@ export const AntivirusExclusionModal = ({ onDone }: AntivirusExclusionModalProps
           )}
 
           <div className="av-modal-actions">
-            <button className="panel-btn" onClick={handleApply} disabled={isApplying}>
-              {isApplying ? 'Adding...' : 'Add exclusion automatically'}
+            <button
+              className="panel-btn"
+              onClick={handleApply}
+              disabled={isApplying}
+            >
+              {isApplying ? 'Adding...' : 'Add exclusion'}
             </button>
-            <button className="panel-btn" onClick={handleOpenSecurity} disabled={isApplying}>
-              Open Windows Security
-            </button>
-          </div>
 
-          <div className="av-modal-links">
-            <button className="av-link-btn" onClick={handleDoneManually} disabled={isApplying}>
+            <button
+              className="av-link-btn"
+              onClick={handleDoneManually}
+              disabled={isApplying}
+            >
               I added it manually
-            </button>
-            <button className="av-link-btn" onClick={() => onDone()} disabled={isApplying}>
-              Not now
             </button>
           </div>
         </div>

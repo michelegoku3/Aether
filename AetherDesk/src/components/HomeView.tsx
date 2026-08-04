@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { InstalledGame, useLibraryGames } from '../hooks/useLibraryGames';
 import { CrackModal } from './CrackModal';
+import { AntivirusExclusionModal } from './AntivirusExclusionModal';
 
 const MAX_VISIBLE_RESULTS = 5;
 
@@ -58,6 +59,9 @@ export const HomeView = () => {
   const [isSteamlessRunning, setIsSteamlessRunning] = useState(false);
   // Game targeted by the "Apply Crack" popup; null means the popup is closed.
   const [crackTarget, setCrackTarget] = useState<{ name: string; appId: string } | null>(null);
+  // Pending crack target waiting for the antivirus exclusion prompt to be dismissed.
+  // When non-null, the antivirus modal is shown; once dismissed the CrackModal opens.
+  const [pendingCrack, setPendingCrack] = useState<{ name: string; appId: string } | null>(null);
   const searchPanelRef = useRef<HTMLDivElement | null>(null);
   const resultRefs = useRef<Array<HTMLButtonElement | null>>([]);
 
@@ -297,9 +301,24 @@ export const HomeView = () => {
         <button
           className="game-action-btn"
           disabled={!hasSelectedGame}
-          onClick={() => {
-            if (selectedGame) {
-              setCrackTarget({ name: selectedGame.name, appId: selectedGame.appId });
+          onClick={async () => {
+            if (!selectedGame) return;
+            const target = { name: selectedGame.name, appId: selectedGame.appId };
+
+            // Check whether the antivirus exclusion has been confirmed.
+            // If not, show the exclusion prompt first — but regardless of
+            // the user's choice (confirm or X), always proceed to the
+            // CrackModal so the user is never blocked.
+            try {
+              const done: boolean = await invoke('get_antivirus_exclusion_done');
+              if (done) {
+                setCrackTarget(target);
+              } else {
+                setPendingCrack(target);
+              }
+            } catch {
+              // If the check fails, err on the side of showing the prompt.
+              setPendingCrack(target);
             }
           }}
         >
@@ -322,6 +341,17 @@ export const HomeView = () => {
       </div>
 
       {status.text && <div className={`home-status ${status.type}`}>{status.text}</div>}
+
+      {/* Antivirus exclusion prompt: shown before Apply Crack if never confirmed.
+          Regardless of the user's choice, the CrackModal opens afterwards so the
+          user is never blocked from applying the crack. */}
+      {pendingCrack && (
+        <AntivirusExclusionModal onDone={() => {
+          const target = pendingCrack;
+          setPendingCrack(null);
+          setCrackTarget(target);
+        }} />
+      )}
 
       {crackTarget && (
         <CrackModal game={crackTarget} onClose={() => setCrackTarget(null)} />
