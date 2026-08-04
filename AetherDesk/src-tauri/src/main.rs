@@ -13,6 +13,7 @@ mod hubcap_client;
 mod local_app_paths;
 mod lua_manifest_pins;
 mod manifest_package;
+mod oureveryday_client;
 mod settings;
 mod steam_app_names;
 mod steam_compat;

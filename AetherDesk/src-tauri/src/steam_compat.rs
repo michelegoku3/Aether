@@ -4,6 +4,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use crate::manifest_package::ManifestPackageFile;
 
+#[derive(Clone)]
 pub struct SteamCompat {
     steam_path: PathBuf,
 }

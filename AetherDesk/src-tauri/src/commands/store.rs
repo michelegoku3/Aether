@@ -66,19 +66,27 @@ pub async fn trigger_hubcap_download(
 ) -> Result<String, String> {
     validate_download_inputs(&api_key, &steam_path, "call Hubcap Manifest")?;
 
-    let client = HubcapClient::new(api_key);
     let steam = SteamCompat::new(steam_path.clone());
-    let result = DownloadOrchestrator::new(client, steam)
-        .execute_hubcap_download(app_id)
-        .await?;
+    let (lua_content, manifest_count) = if api_key == "oureveryday_public" {
+        let oe_client = crate::oureveryday_client::OureverydayClient::new();
+        let package = oe_client.download_lua_package(app_id).await?;
+        steam.install_lua_config(app_id, &package.lua_content)?;
+        let count = steam.install_manifest_files(&package.manifest_files)?;
+        (package.lua_content, count)
+    } else {
+        let client = HubcapClient::new(api_key);
+        let result = DownloadOrchestrator::new(client, steam.clone())
+            .execute_hubcap_download(app_id)
+            .await?;
+        let content = steam.read_lua_config(app_id)?;
+        (content, result.manifest_count)
+    };
 
-    if let Ok(lua_content) = SteamCompat::new(steam_path).read_lua_config(app_id) {
-        let _ = AppStorage::new(&app).backup_lua(app_id, &lua_content);
-    }
+    let _ = AppStorage::new(&app).backup_lua(app_id, &lua_content);
 
     Ok(format!(
         "Successfully completed download for App ID {}. Lua installed, {} manifest file(s) preloaded into Steam depotcache.",
-        app_id, result.manifest_count
+        app_id, manifest_count
     ))
 }
 
@@ -91,9 +99,14 @@ pub async fn prepare_specific_version_download(
 ) -> Result<Vec<LuaManifestRow>, String> {
     validate_download_inputs(&api_key, &steam_path, "download the Lua file")?;
 
-    let package = HubcapClient::new(api_key)
-        .download_lua_package(app_id)
-        .await?;
+    let package = if api_key == "oureveryday_public" {
+        let oe_client = crate::oureveryday_client::OureverydayClient::new();
+        oe_client.download_lua_package(app_id).await?
+    } else {
+        HubcapClient::new(api_key)
+            .download_lua_package(app_id)
+            .await?
+    };
     let lua_content = package.lua_content;
     let manifest_rows = LuaManifestPins::rows_from_content(&lua_content);
 
