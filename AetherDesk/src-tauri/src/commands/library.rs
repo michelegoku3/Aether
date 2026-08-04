@@ -1,8 +1,10 @@
-use crate::local_app_paths::LocalAppPaths;
-use crate::lua_manifest_pins::{LuaManifestEdit, LuaManifestPins, LuaManifestRow};
-use crate::settings::SettingsManager;
-use crate::steam_app_names::SteamAppNameResolver;
-use crate::steam_library::{InstalledSteamGame, SteamLibraryScanner};
+use crate::core::paths::LocalAppPaths;
+use crate::manifest::pins::{LuaManifestEdit, LuaManifestPins, LuaManifestRow};
+use crate::core::settings::SettingsManager;
+use crate::steam::app_names::SteamAppNameResolver;
+use crate::steam::library::{InstalledSteamGame, SteamLibraryScanner};
+use crate::util::validation::validate_steam_path;
+use crate::util::browser::open_external_url;
 
 #[tauri::command]
 pub async fn get_installed_library_games(
@@ -64,32 +66,7 @@ pub fn open_steamdb_depots(app_id: u32) -> Result<(), String> {
     open_external_url(&url)
 }
 
-#[cfg(target_os = "windows")]
-fn open_external_url(url: &str) -> Result<(), String> {
-    std::process::Command::new("cmd")
-        .args(["/C", "start", "", url])
-        .spawn()
-        .map(|_| ())
-        .map_err(|e| format!("Failed to open SteamDB in the default browser: {}", e))
-}
 
-#[cfg(target_os = "macos")]
-fn open_external_url(url: &str) -> Result<(), String> {
-    std::process::Command::new("open")
-        .arg(url)
-        .spawn()
-        .map(|_| ())
-        .map_err(|e| format!("Failed to open SteamDB in the default browser: {}", e))
-}
-
-#[cfg(all(unix, not(target_os = "macos")))]
-fn open_external_url(url: &str) -> Result<(), String> {
-    std::process::Command::new("xdg-open")
-        .arg(url)
-        .spawn()
-        .map(|_| ())
-        .map_err(|e| format!("Failed to open SteamDB in the default browser: {}", e))
-}
 
 #[tauri::command]
 pub fn get_installed_lua_manifest_rows(
@@ -175,9 +152,4 @@ pub fn apply_specific_version_edits(
     LuaManifestPins::new(steam_path, app_id).apply_edits(edits)
 }
 
-fn validate_steam_path(steam_path: &str) -> Result<(), String> {
-    if steam_path.trim().is_empty() {
-        return Err("Steam installation path is required".to_string());
-    }
-    Ok(())
-}
+

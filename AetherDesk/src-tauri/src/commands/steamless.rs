@@ -1,4 +1,4 @@
-use crate::commands::game::resolve_installed_game;
+use crate::util::game_resolver::resolve_installed_game;
 use crate::steamless::{
     SteamlessRunRequest, SteamlessRunResult, SteamlessRunner, SteamlessToolLocator,
 };

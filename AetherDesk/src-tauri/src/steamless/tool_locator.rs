@@ -1,4 +1,4 @@
-use crate::local_app_paths::LocalAppPaths;
+use crate::core::paths::LocalAppPaths;
 use std::fs;
 use std::path::{Path, PathBuf};
 use tauri::Manager;

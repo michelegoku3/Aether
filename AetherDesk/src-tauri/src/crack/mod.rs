@@ -12,7 +12,7 @@ pub mod apply;
 pub mod archive;
 pub mod locate;
 
-use crate::backup::GameBackup;
+use crate::core::backup::GameBackup;
 use std::path::{Path, PathBuf};
 
 /// Default password tried for password-protected archives.

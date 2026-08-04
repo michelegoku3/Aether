@@ -4,8 +4,8 @@
 // inventory, applying) lives in the Tauri-agnostic engine `crate::crack`.
 // This file only resolves the installed game, builds the per-game backup, and
 // calls the engine.
-use crate::backup::GameBackup;
-use crate::commands::game::resolve_installed_game;
+use crate::core::backup::GameBackup;
+use crate::util::game_resolver::resolve_installed_game;
 use crate::crack;
 use std::path::{Path, PathBuf};
 use tauri_plugin_dialog::{DialogExt, FilePath};
