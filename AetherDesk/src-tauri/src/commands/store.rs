@@ -1,9 +1,10 @@
-use crate::app_storage::AppStorage;
+use crate::backup::GameBackup;
 use crate::download_orchestrator::DownloadOrchestrator;
 use crate::drm_detector::DrmDetector;
 use crate::hubcap_client::HubcapClient;
 use crate::local_app_paths::LocalAppPaths;
 use crate::lua_manifest_pins::{LuaManifestPins, LuaManifestRow};
+use crate::manifest_package::ManifestPackage;
 use crate::settings::SettingsManager;
 use crate::steam_app_names::SteamAppNameResolver;
 use crate::steam_compat::SteamCompat;
@@ -59,7 +60,7 @@ pub async fn check_denuvo_bulk(app_ids: Vec<u32>) -> Result<HashMap<u32, bool>, 
 
 #[tauri::command]
 pub async fn trigger_hubcap_download(
-    app: tauri::AppHandle,
+    _app: tauri::AppHandle,
     app_id: u32,
     api_key: String,
     steam_path: String,
@@ -67,22 +68,28 @@ pub async fn trigger_hubcap_download(
     validate_download_inputs(&api_key, &steam_path, "call Hubcap Manifest")?;
 
     let steam = SteamCompat::new(steam_path.clone());
-    let (lua_content, manifest_count) = if api_key == "oureveryday_public" {
+    let package = if api_key == "oureveryday_public" {
         let oe_client = crate::oureveryday_client::OureverydayClient::new();
         let package = oe_client.download_lua_package(app_id).await?;
         steam.install_lua_config(app_id, &package.lua_content)?;
-        let count = steam.install_manifest_files(&package.manifest_files)?;
-        (package.lua_content, count)
+        steam.install_manifest_files(&package.manifest_files)?;
+        package
     } else {
         let client = HubcapClient::new(api_key);
         let result = DownloadOrchestrator::new(client, steam.clone())
             .execute_hubcap_download(app_id)
             .await?;
-        let content = steam.read_lua_config(app_id)?;
-        (content, result.manifest_count)
+        // Reconstruct the installed package for the central backup.
+        ManifestPackage {
+            lua_content: steam.read_lua_config(app_id)?,
+            manifest_files: result.manifest_files,
+        }
     };
 
-    let _ = AppStorage::new(&app).backup_lua(app_id, &lua_content);
+    // Centralized Lua/manifest backup (AetherData/backup/<app_id>/lua).
+    GameBackup::for_app(app_id)?
+        .backup_lua_artifacts(app_id, &package.lua_content, &package.manifest_files)?;
+    let manifest_count = package.manifest_files.len();
 
     Ok(format!(
         "Successfully completed download for App ID {}. Lua installed, {} manifest file(s) preloaded into Steam depotcache.",
@@ -92,7 +99,7 @@ pub async fn trigger_hubcap_download(
 
 #[tauri::command]
 pub async fn prepare_specific_version_download(
-    app: tauri::AppHandle,
+    _app: tauri::AppHandle,
     app_id: u32,
     api_key: String,
     steam_path: String,
@@ -117,7 +124,9 @@ pub async fn prepare_specific_version_download(
     let steam = SteamCompat::new(steam_path.clone());
     steam.install_lua_config(app_id, &lua_content)?;
     steam.install_manifest_files(&package.manifest_files)?;
-    let _ = AppStorage::new(&app).backup_lua(app_id, &lua_content);
+    // Centralized Lua/manifest backup (AetherData/backup/<app_id>/lua).
+    GameBackup::for_app(app_id)?
+        .backup_lua_artifacts(app_id, &lua_content, &package.manifest_files)?;
 
     let installed_rows = LuaManifestPins::new(steam_path, app_id).rows_from_file()?;
     if installed_rows.len() != manifest_rows.len() {

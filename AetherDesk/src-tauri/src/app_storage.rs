@@ -2,7 +2,6 @@ use std::fs;
 use std::path::PathBuf;
 use crate::local_app_paths::LocalAppPaths;
 
-const LUA_BACKUP_DIR: &str = "lua_backups";
 const COMPONENT_VERSION_DIR: &str = "component_versions";
 const AETHER_DLL_VERSION_FILE: &str = "aetherdll_version.txt";
 
@@ -17,22 +16,6 @@ impl AppStorage {
             app_dir: LocalAppPaths::data_root(),
             legacy_app_dir: LocalAppPaths::legacy_app_data_dir(app),
         }
-    }
-
-    pub fn backup_lua(&self, app_id: u32, content: &str) -> Result<PathBuf, String> {
-        let backup_dir = self.app_dir.join(LUA_BACKUP_DIR);
-        fs::create_dir_all(&backup_dir)
-            .map_err(|e| format!("Failed to create Lua backup directory next to AetherDesk: {}", e))?;
-
-        let backup_path = backup_dir.join(format!("{}.lua", app_id));
-        let temp_path = backup_path.with_extension("tmp");
-
-        fs::write(&temp_path, content)
-            .map_err(|e| format!("Failed to write temporary Lua backup: {}", e))?;
-        fs::rename(&temp_path, &backup_path)
-            .map_err(|e| format!("Failed to apply Lua backup: {}", e))?;
-
-        Ok(backup_path)
     }
 
     pub fn read_aether_dll_version(&self) -> Option<String> {

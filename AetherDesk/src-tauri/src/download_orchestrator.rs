@@ -1,8 +1,11 @@
 use crate::hubcap_client::HubcapClient;
+use crate::manifest_package::ManifestPackageFile;
 use crate::steam_compat::SteamCompat;
 
 pub struct DownloadResult {
-    pub manifest_count: usize,
+    /// The manifest files bundled with the downloaded Lua, exposed so callers
+    /// can centralize their backup without re-downloading the archive.
+    pub manifest_files: Vec<ManifestPackageFile>,
 }
 
 pub struct DownloadOrchestrator {
@@ -24,8 +27,10 @@ impl DownloadOrchestrator {
         let package = self.hubcap_client.download_lua_package(app_id).await?;
 
         self.steam_compat.install_lua_config(app_id, &package.lua_content)?;
-        let manifest_count = self.steam_compat.install_manifest_files(&package.manifest_files)?;
+        self.steam_compat.install_manifest_files(&package.manifest_files)?;
 
-        Ok(DownloadResult { manifest_count })
+        Ok(DownloadResult {
+            manifest_files: package.manifest_files,
+        })
     }
 }

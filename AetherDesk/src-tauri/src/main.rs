@@ -4,6 +4,7 @@
 )]
 
 mod app_storage;
+mod backup;
 mod commands;
 mod dll_installer;
 mod download_orchestrator;
@@ -13,6 +14,7 @@ mod hubcap_client;
 mod local_app_paths;
 mod lua_manifest_pins;
 mod manifest_package;
+mod migration;
 mod oureveryday_client;
 mod settings;
 mod steam_app_names;
@@ -28,6 +30,26 @@ fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_dialog::init())
+        .setup(|app| {
+            // One-time data layout migration: if a legacy `AetherData/lua_backups`
+            // folder exists, move its Lua + depotcache manifests into the new
+            // centralized `backup` tree and remove the old folder.
+            let steam_path = crate::settings::SettingsManager::new(&app.handle())
+                .load()
+                .steam_path;
+            match crate::migration::migrate_legacy_lua_backups(std::path::Path::new(&steam_path)) {
+                Ok(report) => {
+                    if report.games > 0 {
+                        eprintln!(
+                            "[AetherDesk] migrated {} game(s) from lua_backups: {} lua, {} manifest",
+                            report.games, report.lua_files, report.manifest_files
+                        );
+                    }
+                }
+                Err(error) => eprintln!("[AetherDesk] migration failed: {error}"),
+            }
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             commands::settings::get_settings,
             commands::settings::save_settings,
