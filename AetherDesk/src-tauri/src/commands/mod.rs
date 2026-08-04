@@ -1,5 +1,7 @@
 pub mod aether_desk;
 pub mod aether_dll;
+pub mod crack;
+pub mod game;
 pub mod home_links;
 pub mod library;
 pub mod settings;

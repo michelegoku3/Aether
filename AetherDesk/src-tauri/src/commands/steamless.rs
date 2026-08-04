@@ -1,5 +1,4 @@
-use crate::settings::SettingsManager;
-use crate::steam_library::{InstalledSteamGame, SteamLibraryScanner};
+use crate::commands::game::resolve_installed_game;
 use crate::steamless::{
     SteamlessRunRequest, SteamlessRunResult, SteamlessRunner, SteamlessToolLocator,
 };
@@ -48,42 +47,6 @@ pub async fn pick_and_run_steamless(
     })
     .await
     .map_err(|e| format!("Steamless worker failed: {}", e))?
-}
-
-fn resolve_installed_game(
-    app: &tauri::AppHandle,
-    app_id: u32,
-) -> Result<InstalledSteamGame, String> {
-    let settings = SettingsManager::new(app).load();
-    if settings.steam_path.trim().is_empty() {
-        return Err("Steam installation path is required before using Steamless.".to_string());
-    }
-
-    let scanner = SteamLibraryScanner::new(settings.steam_path, Some(settings.active_library));
-    let Some(game) = scanner
-        .scan_installed_games()
-        .into_iter()
-        .find(|game| game.id == app_id)
-    else {
-        return Err(format!(
-            "App ID {} was not found in the Lua library.",
-            app_id
-        ));
-    };
-
-    if !game.installed || game.game_path.trim().is_empty() {
-        return Err("Steamless requires the selected game to be installed locally.".to_string());
-    }
-
-    let game_path = PathBuf::from(&game.game_path);
-    if !game_path.is_dir() {
-        return Err(format!(
-            "The selected game's install folder was not found: {}",
-            game_path.display()
-        ));
-    }
-
-    Ok(game)
 }
 
 fn file_path_to_path_buf(file_path: FilePath) -> Result<PathBuf, String> {

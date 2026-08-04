@@ -33,6 +33,8 @@ fn main() {
             commands::settings::save_settings,
             commands::settings::validate_hubcap_key,
             commands::settings::get_hubcap_usage,
+            commands::crack::pick_crack_files,
+            commands::crack::apply_crack,
             commands::store::search_store,
             commands::store::check_denuvo_bulk,
             commands::store::trigger_hubcap_download,
