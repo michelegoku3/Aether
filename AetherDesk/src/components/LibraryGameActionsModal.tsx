@@ -120,8 +120,8 @@ export const LibraryGameActionsModal = ({
             <button className="game-action-btn" onClick={() => onOpenVersionEditor(game)} disabled={disabled}>
               Change Version
             </button>
-            <button className="game-action-btn" disabled title="Apply Crack is not available yet.">
-              Apply Crack
+            <button className="game-action-btn" disabled title="Enable Online is not available yet.">
+              Enable Online
             </button>
             <button
               className="game-action-btn danger"

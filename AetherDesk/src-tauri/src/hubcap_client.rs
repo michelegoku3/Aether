@@ -15,6 +15,13 @@ pub struct HubcapGameItem {
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct HubcapUserStats {
+    pub daily_usage: Option<u32>,
+    pub role_daily_limit: Option<u32>,
+    pub daily_limit: Option<u32>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct HubcapLibraryResponse {
     pub status: String,
     pub games: Option<Vec<HubcapGameItem>>,
@@ -96,6 +103,23 @@ impl HubcapClient {
         response.bytes().await
             .map(|bytes| bytes.to_vec())
             .map_err(|e| format!("Failed to read manifest ZIP bytes: {}", e))
+    }
+
+    pub async fn get_usage_stats(&self) -> Result<HubcapUserStats, String> {
+        let url = format!("{}/user/stats", BASE_URL);
+        let response = self.client.get(&url)
+            .headers(self.headers())
+            .send()
+            .await
+            .map_err(|e| format!("Network error: {}", e))?;
+
+        if response.status().is_success() {
+            let stats = response.json::<HubcapUserStats>().await
+                .map_err(|e| format!("Failed to parse user stats: {}", e))?;
+            Ok(stats)
+        } else {
+            Err(format!("Server returned HTTP error ({}): {}", response.status(), response.status().canonical_reason().unwrap_or("Unknown")))
+        }
     }
 
     pub async fn search_library(&self, query: &str) -> Result<Vec<HubcapGameItem>, String> {
