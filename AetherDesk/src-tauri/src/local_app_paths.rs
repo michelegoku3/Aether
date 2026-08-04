@@ -37,6 +37,14 @@ impl LocalAppPaths {
         Self::data_root().join("config")
     }
 
+    /// Temporary staging directory under AetherData, used for extracting crack
+    /// archives before they are applied. Keeping it inside AetherData (which
+    /// the user adds to Windows Defender exclusions) avoids the OS temp folder
+    /// being flagged by the antivirus.
+    pub fn temp_dir() -> PathBuf {
+        Self::data_root().join("tmp")
+    }
+
     pub fn legacy_app_data_dir(app: &tauri::AppHandle) -> Option<PathBuf> {
         app.path().app_data_dir().ok()
     }

@@ -8,6 +8,11 @@ pub struct AppSettings {
     pub hubcap_api_key: String,
     pub steam_path: String,
     pub active_library: String,
+    /// Set to true once the user has been asked (and handled) the Windows
+    /// Defender exclusion prompt, so it never shows again (install or update).
+    /// `#[serde(default)]` keeps old settings.json files parseable.
+    #[serde(default)]
+    pub antivirus_exclusion_done: bool,
 }
 
 impl Default for AppSettings {
@@ -16,6 +21,7 @@ impl Default for AppSettings {
             hubcap_api_key: String::new(),
             steam_path: "C:\\Program Files (x86)\\Steam".to_string(),
             active_library: String::new(),
+            antivirus_exclusion_done: false,
         }
     }
 }
