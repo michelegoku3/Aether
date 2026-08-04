@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
-import { Sidebar, TabType } from './components/Sidebar';
-import { MainContent } from './components/MainContent';
+import { Sidebar, TabType } from './layout/Sidebar';
+import { MainContent } from './layout/MainContent';
 import { invoke } from '@tauri-apps/api/core';
 
 export default function App() {

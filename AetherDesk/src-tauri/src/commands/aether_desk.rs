@@ -1,4 +1,4 @@
-use crate::github_updater::GithubReleaseManager;
+use crate::updater::github::GithubReleaseManager;
 use tauri_plugin_updater::UpdaterExt;
 
 #[tauri::command]

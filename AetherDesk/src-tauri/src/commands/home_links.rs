@@ -1,3 +1,4 @@
+use crate::util::browser::open_external_url;
 use url::form_urlencoded;
 
 #[tauri::command]
@@ -271,44 +272,3 @@ const KNOWN_EDITION_SUFFIXES: &[&str] = &[
     " standard edition",
 ];
 
-#[cfg(target_os = "windows")]
-fn open_external_url(url: &str) -> Result<(), String> {
-    std::process::Command::new("rundll32")
-        .args(["url.dll,FileProtocolHandler", url])
-        .spawn()
-        .map(|_| ())
-        .map_err(|e| {
-            format!(
-                "Failed to open the external resource in the default browser: {}",
-                e
-            )
-        })
-}
-
-#[cfg(target_os = "macos")]
-fn open_external_url(url: &str) -> Result<(), String> {
-    std::process::Command::new("open")
-        .arg(url)
-        .spawn()
-        .map(|_| ())
-        .map_err(|e| {
-            format!(
-                "Failed to open the external resource in the default browser: {}",
-                e
-            )
-        })
-}
-
-#[cfg(all(unix, not(target_os = "macos")))]
-fn open_external_url(url: &str) -> Result<(), String> {
-    std::process::Command::new("xdg-open")
-        .arg(url)
-        .spawn()
-        .map(|_| ())
-        .map_err(|e| {
-            format!(
-                "Failed to open the external resource in the default browser: {}",
-                e
-            )
-        })
-}

@@ -1,5 +1,5 @@
-use crate::hubcap_client::HubcapClient;
-use crate::settings::{AppSettings, SettingsManager};
+use crate::providers::hubcap::HubcapClient;
+use crate::core::settings::{AppSettings, SettingsManager};
 
 #[tauri::command]
 pub fn get_settings(app: tauri::AppHandle) -> Result<AppSettings, String> {

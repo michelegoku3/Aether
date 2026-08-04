@@ -1,6 +1,7 @@
-use crate::dll_installer::DllInstaller;
-use crate::settings::SettingsManager;
-use crate::steam_update_guard::SteamUpdateGuard;
+use crate::util::validation::validate_steam_path;
+use crate::updater::dll::DllInstaller;
+use crate::core::settings::SettingsManager;
+use crate::steam::update_guard::SteamUpdateGuard;
 
 #[tauri::command]
 pub fn restart_steam(app: tauri::AppHandle) -> Result<(), String> {
@@ -75,9 +76,3 @@ pub fn unblock_steam_updates(steam_path: String) -> Result<String, String> {
     Ok("Steam updates are now unblocked.".to_string())
 }
 
-fn validate_steam_path(steam_path: &str) -> Result<(), String> {
-    if steam_path.trim().is_empty() {
-        return Err("Steam installation path is required".to_string());
-    }
-    Ok(())
-}

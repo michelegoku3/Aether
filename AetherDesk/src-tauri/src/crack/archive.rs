@@ -11,7 +11,7 @@
 // All content is staged under a temporary directory that callers are expected
 // to clean up. Extraction paths are sanitized to prevent path traversal
 // ("zip-slip").
-use crate::local_app_paths::LocalAppPaths;
+use crate::core::paths::LocalAppPaths;
 use std::fs;
 use std::io::Read;
 use std::path::{Component, Path, PathBuf};

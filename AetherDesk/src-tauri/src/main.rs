@@ -3,29 +3,16 @@
     windows_subsystem = "windows"
 )]
 
-mod app_storage;
-mod backup;
 mod commands;
+mod core;
 mod crack;
-mod dll_installer;
-mod download_orchestrator;
-mod drm_detector;
-mod github_updater;
-mod hubcap_client;
-mod local_app_paths;
-mod lua_manifest_pins;
-mod manifest_package;
-mod migration;
-mod oureveryday_client;
-mod settings;
-mod steam_app_names;
-mod steam_compat;
-mod steam_library;
-mod steam_store;
-mod steam_update_guard;
+mod manifest;
+mod providers;
+mod steam;
 mod steamless;
-mod store_search_cache;
-mod store_service;
+mod store;
+mod updater;
+mod util;
 
 fn main() {
     tauri::Builder::default()
@@ -35,10 +22,10 @@ fn main() {
             // One-time data layout migration: if a legacy `AetherData/lua_backups`
             // folder exists, move its Lua + depotcache manifests into the new
             // centralized `backup` tree and remove the old folder.
-            let steam_path = crate::settings::SettingsManager::new(&app.handle())
+            let steam_path = crate::core::settings::SettingsManager::new(&app.handle())
                 .load()
                 .steam_path;
-            match crate::migration::migrate_legacy_lua_backups(std::path::Path::new(&steam_path)) {
+            match crate::core::migration::migrate_legacy_lua_backups(std::path::Path::new(&steam_path)) {
                 Ok(report) => {
                     if report.games > 0 {
                         eprintln!(

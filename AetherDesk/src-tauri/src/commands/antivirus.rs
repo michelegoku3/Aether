@@ -10,9 +10,9 @@
 //
 // Because the app runs with admin rights, exclusions are applied via
 // PowerShell (`Add-MpPreference`) with a hidden console window.
-use crate::local_app_paths::LocalAppPaths;
-use crate::settings::SettingsManager;
-use crate::steam_library::SteamLibraryScanner;
+use crate::core::paths::LocalAppPaths;
+use crate::core::settings::SettingsManager;
+use crate::steam::library::SteamLibraryScanner;
 use std::collections::HashSet;
 use std::path::PathBuf;
 use std::process::Command;

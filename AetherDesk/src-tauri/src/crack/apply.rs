@@ -10,7 +10,7 @@
 //
 // The inventory is a plain, line-per-file list of every game-relative path the
 // crack touched, so the operation is reversible and auditable.
-use crate::backup::GameBackup;
+use crate::core::backup::GameBackup;
 use crate::crack::locate;
 use std::fs;
 use std::path::{Path, PathBuf};

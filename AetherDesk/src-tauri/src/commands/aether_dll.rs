@@ -1,6 +1,6 @@
-use crate::app_storage::AppStorage;
-use crate::dll_installer::DllInstaller;
-use crate::github_updater::GithubReleaseManager;
+use crate::core::storage::AppStorage;
+use crate::updater::dll::DllInstaller;
+use crate::updater::github::GithubReleaseManager;
 
 #[tauri::command]
 pub async fn check_aether_dll_update(app: tauri::AppHandle, steam_path: String) -> Result<serde_json::Value, String> {

@@ -1,15 +1,15 @@
-use crate::backup::GameBackup;
-use crate::download_orchestrator::DownloadOrchestrator;
-use crate::drm_detector::DrmDetector;
-use crate::hubcap_client::HubcapClient;
-use crate::local_app_paths::LocalAppPaths;
-use crate::lua_manifest_pins::{LuaManifestPins, LuaManifestRow};
-use crate::manifest_package::ManifestPackage;
-use crate::settings::SettingsManager;
-use crate::steam_app_names::SteamAppNameResolver;
-use crate::steam_compat::SteamCompat;
-use crate::store_search_cache::StoreSearchCache;
-use crate::store_service::{StoreService, UnifiedStoreGame};
+use crate::core::backup::GameBackup;
+use crate::store::download::DownloadOrchestrator;
+use crate::store::drm::DrmDetector;
+use crate::providers::hubcap::HubcapClient;
+use crate::core::paths::LocalAppPaths;
+use crate::manifest::pins::{LuaManifestPins, LuaManifestRow};
+use crate::manifest::package::ManifestPackage;
+use crate::core::settings::SettingsManager;
+use crate::steam::app_names::SteamAppNameResolver;
+use crate::steam::compat::SteamCompat;
+use crate::store::cache::StoreSearchCache;
+use crate::store::service::{StoreService, UnifiedStoreGame};
 use std::collections::HashMap;
 
 #[tauri::command]
@@ -69,7 +69,7 @@ pub async fn trigger_hubcap_download(
 
     let steam = SteamCompat::new(steam_path.clone());
     let package = if api_key == "oureveryday_public" {
-        let oe_client = crate::oureveryday_client::OureverydayClient::new();
+        let oe_client = crate::providers::oureveryday::OureverydayClient::new();
         let package = oe_client.download_lua_package(app_id).await?;
         steam.install_lua_config(app_id, &package.lua_content)?;
         steam.install_manifest_files(&package.manifest_files)?;
@@ -107,7 +107,7 @@ pub async fn prepare_specific_version_download(
     validate_download_inputs(&api_key, &steam_path, "download the Lua file")?;
 
     let package = if api_key == "oureveryday_public" {
-        let oe_client = crate::oureveryday_client::OureverydayClient::new();
+        let oe_client = crate::providers::oureveryday::OureverydayClient::new();
         oe_client.download_lua_package(app_id).await?
     } else {
         HubcapClient::new(api_key)
