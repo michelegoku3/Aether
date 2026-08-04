@@ -8,7 +8,11 @@ import { emptyStatus, StatusMessage } from '../types/ui';
 import { getSettings } from '../hooks/useSettings';
 
 
-export const StoreView = () => {
+interface StoreViewProps {
+  onRefreshUsage?: (forcedKey?: string) => Promise<void>;
+}
+
+export const StoreView = ({ onRefreshUsage }: StoreViewProps) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [page, setPage] = useState(1);
   const itemsPerPage = 20; // 10 rows * 2 columns = 20 items per page
@@ -84,6 +88,7 @@ export const StoreView = () => {
       
       setDownloadStatus({ text: result, type: 'success' });
       setIsDownloading(false);
+      onRefreshUsage?.();
       
       // Auto close modal after a short delay on success
       setTimeout(() => {
@@ -132,6 +137,7 @@ export const StoreView = () => {
       setSelectedGame(null);
       setDownloadStatus({ text: '', type: 'info' });
       setIsDownloading(false);
+      onRefreshUsage?.();
     } catch (err: any) {
       setDownloadStatus({ text: `Specific version setup failed: ${err}`, type: 'error' });
       setIsDownloading(false);

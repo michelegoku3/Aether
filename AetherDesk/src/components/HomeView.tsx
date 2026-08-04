@@ -271,6 +271,20 @@ export const HomeView = () => {
         </button>
         <button
           className="game-action-btn"
+          disabled={!hasSelectedGame}
+          onClick={() => setStatus({ text: 'Apply Crack is not available yet.', type: 'info' })}
+        >
+          Apply Crack
+        </button>
+        <button
+          className="game-action-btn"
+          disabled={!hasSelectedGame}
+          onClick={() => setStatus({ text: 'Enable DLC is not available yet.', type: 'info' })}
+        >
+          Enable DLC
+        </button>
+        <button
+          className="game-action-btn"
           disabled={!hasSelectedGame || isSteamlessRunning}
           onClick={runSteamless}
         >

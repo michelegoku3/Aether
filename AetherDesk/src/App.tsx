@@ -12,6 +12,28 @@ export default function App() {
   // Global state to track native AetherDesk update availability from desk-* GitHub tags
   const [deskUpdateAvailable, setDeskUpdateAvailable] = useState(false);
 
+  // Hubcap API usage limits
+  const [hubcapUsage, setHubcapUsage] = useState({ usage: 0, limit: 25, hasKey: false });
+
+  const refreshHubcapUsage = async (forcedKey?: string) => {
+    try {
+      let key = forcedKey;
+      if (key === undefined) {
+        const settings: any = await invoke('get_settings');
+        key = settings.hubcap_api_key;
+      }
+      if (key && key.trim() !== '') {
+        const stats: any = await invoke('get_hubcap_usage', { apiKey: key });
+        setHubcapUsage({ usage: stats.usage, limit: stats.limit, hasKey: true });
+      } else {
+        setHubcapUsage({ usage: 0, limit: 25, hasKey: false });
+      }
+    } catch (err) {
+      console.error("Failed to fetch Hubcap usage:", err);
+      setHubcapUsage({ usage: 0, limit: 25, hasKey: false });
+    }
+  };
+
   // Method to check for component updates globally (runs on mount and after operations)
   const checkUpdates = async () => {
     try {
@@ -50,6 +72,7 @@ export default function App() {
   // and DLL are checked separately.
   useEffect(() => {
     checkUpdates();
+    refreshHubcapUsage();
     const interval = setInterval(checkUpdates, 30 * 60 * 1000);
     return () => clearInterval(interval);
   }, []);
@@ -82,6 +105,8 @@ export default function App() {
         dllUpdateAvailable={dllUpdateAvailable}
         deskUpdateAvailable={deskUpdateAvailable}
         onUpdateComplete={checkUpdates}
+        hubcapUsage={hubcapUsage}
+        onRefreshUsage={refreshHubcapUsage}
       />
     </div>
   );

@@ -32,6 +32,7 @@ fn main() {
             commands::settings::get_settings,
             commands::settings::save_settings,
             commands::settings::validate_hubcap_key,
+            commands::settings::get_hubcap_usage,
             commands::store::search_store,
             commands::store::check_denuvo_bulk,
             commands::store::trigger_hubcap_download,

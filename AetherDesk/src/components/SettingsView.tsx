@@ -1,7 +1,12 @@
 import { useState, useEffect } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 
-export const SettingsView = () => {
+interface SettingsViewProps {
+  hubcapUsage: { usage: number; limit: number; hasKey: boolean };
+  onRefreshUsage: (forcedKey?: string) => Promise<void>;
+}
+
+export const SettingsView = ({ hubcapUsage, onRefreshUsage }: SettingsViewProps) => {
   const [apiKey, setApiKey] = useState('');
   const [steamPath, setSteamPath] = useState('C:\\Program Files (x86)\\Steam');
   const [activeLibrary, setActiveLibrary] = useState('');
@@ -24,6 +29,7 @@ export const SettingsView = () => {
       }
     };
     loadSettings();
+    onRefreshUsage();
   }, []);
 
   const showStatus = (text: string, type: 'info' | 'success' | 'error') => {
@@ -43,6 +49,7 @@ export const SettingsView = () => {
         }
       });
       showStatus('Settings saved successfully!', 'success');
+      onRefreshUsage(apiKey);
     } catch (err: any) {
       showStatus(`Error during save: ${err}`, 'error');
     }
@@ -60,6 +67,7 @@ export const SettingsView = () => {
       if (isValid) {
         setValidationStatus('valid');
         showStatus('Hubcap API key is valid and connected successfully!', 'success');
+        onRefreshUsage(apiKey);
       } else {
         setValidationStatus('invalid');
         showStatus('Hubcap API key is invalid or expired.', 'error');
@@ -89,7 +97,12 @@ export const SettingsView = () => {
         {/* Hubcap API Key Section */}
         <div className="settings-group">
           <label className="settings-label">Hubcap API Key</label>
-          <p className="settings-desc">Enter your hubcapmanifest.com API key to unlock database lookups and downloads.</p>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
+            <p className="settings-desc">Enter your hubcapmanifest.com API key to unlock database lookups and downloads.</p>
+            <span style={{ fontSize: '12px', color: '#8f8f9e', fontWeight: 'bold', marginLeft: '12px', whiteSpace: 'nowrap' }}>
+              {hubcapUsage.hasKey ? `${hubcapUsage.usage}/${hubcapUsage.limit}` : 'N/A'}
+            </span>
+          </div>
           <div className="api-input-row">
             <input 
               type="password" 

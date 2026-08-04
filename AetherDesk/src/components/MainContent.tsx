@@ -10,9 +10,11 @@ interface MainContentProps {
   dllUpdateAvailable: boolean; // Passed down from App.tsx orchestrator
   deskUpdateAvailable: boolean; // Passed down from App.tsx orchestrator
   onUpdateComplete: () => void; // Passed down from App.tsx orchestrator
+  hubcapUsage: { usage: number; limit: number; hasKey: boolean };
+  onRefreshUsage: (forcedKey?: string) => Promise<void>;
 }
 
-export const MainContent = ({ activeTab, dllUpdateAvailable, deskUpdateAvailable, onUpdateComplete }: MainContentProps) => {
+export const MainContent = ({ activeTab, dllUpdateAvailable, deskUpdateAvailable, onUpdateComplete, hubcapUsage, onRefreshUsage }: MainContentProps) => {
   // Route to the appropriate view based on the active tab
   if (activeTab === 'home') {
     return (
@@ -25,7 +27,7 @@ export const MainContent = ({ activeTab, dllUpdateAvailable, deskUpdateAvailable
   if (activeTab === 'store') {
     return (
       <main className="main-content">
-        <StoreView />
+        <StoreView onRefreshUsage={onRefreshUsage} />
       </main>
     );
   }
@@ -41,7 +43,10 @@ export const MainContent = ({ activeTab, dllUpdateAvailable, deskUpdateAvailable
   if (activeTab === 'settings') {
     return (
       <main className="main-content">
-        <SettingsView />
+        <SettingsView 
+          hubcapUsage={hubcapUsage}
+          onRefreshUsage={onRefreshUsage}
+        />
       </main>
     );
   }
