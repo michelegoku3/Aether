@@ -1476,3 +1476,98 @@ body {
   border-color: rgba(239, 68, 68, 0.25);
   color: #ef4444;
 }
+
+/* ==========================================
+   Apply Crack modal
+   ========================================== */
+.crack-modal-container {
+  width: 620px;
+}
+
+/* Dashed drop zone: click to browse, or drag & drop a file onto it. */
+.crack-drop-zone {
+  width: 100%;
+  min-height: 160px;
+  border: 2px dashed var(--border-color);
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  cursor: pointer;
+  text-align: center;
+  transition: border-color 0.2s ease, background-color 0.2s ease;
+}
+
+.crack-drop-zone:hover,
+.crack-drop-zone:focus-visible {
+  border-color: var(--color-cyan);
+  background-color: rgba(70, 190, 255, 0.05);
+  outline: none;
+}
+
+.crack-drop-zone.drag-over {
+  border-color: var(--color-cyan);
+  background-color: rgba(70, 190, 255, 0.1);
+}
+
+.crack-drop-zone.has-file {
+  border-style: solid;
+  border-color: var(--color-cyan);
+}
+
+.crack-drop-hint {
+  color: var(--color-muted);
+  font-size: 14px;
+}
+
+.crack-drop-filename {
+  color: #ffffff;
+  font-size: 14px;
+  font-weight: 600;
+  word-break: break-all;
+}
+
+/* Fixed-width action buttons: identical regardless of the label length. */
+.crack-actions {
+  display: flex;
+  justify-content: center;
+  gap: 12px;
+}
+
+.crack-actions .panel-btn {
+  flex: 0 0 220px;
+}
+
+/* Stacked filenames inside the drop zone (multi-file support). */
+.crack-drop-files {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 100%;
+}
+
+.crack-drop-filename {
+  color: #ffffff;
+  font-size: 14px;
+  font-weight: 600;
+  word-break: break-all;
+}
+
+/* Achievement compatibility opt-in row: text on the left, toggle on the right.
+   The toggle itself reuses the app's `.version-switch` (dark track in the
+   palette, cyan when active). */
+.crack-achievement-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 4px 0;
+  cursor: pointer;
+  user-select: none;
+}
+
+.crack-achievement-text {
+  color: var(--color-muted);
+  font-size: 13px;
+}

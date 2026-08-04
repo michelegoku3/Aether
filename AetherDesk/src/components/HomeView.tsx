@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { InstalledGame, useLibraryGames } from '../hooks/useLibraryGames';
+import { CrackModal } from './CrackModal';
 
 const MAX_VISIBLE_RESULTS = 5;
 
@@ -55,6 +56,8 @@ export const HomeView = () => {
   const [activeResultIndex, setActiveResultIndex] = useState<number | null>(null);
   const [status, setStatus] = useState<HomeStatus>({ text: '', type: 'info' });
   const [isSteamlessRunning, setIsSteamlessRunning] = useState(false);
+  // Game targeted by the "Apply Crack" popup; null means the popup is closed.
+  const [crackTarget, setCrackTarget] = useState<{ name: string; appId: string } | null>(null);
   const searchPanelRef = useRef<HTMLDivElement | null>(null);
   const resultRefs = useRef<Array<HTMLButtonElement | null>>([]);
 
@@ -272,7 +275,11 @@ export const HomeView = () => {
         <button
           className="game-action-btn"
           disabled={!hasSelectedGame}
-          onClick={() => setStatus({ text: 'Apply Crack is not available yet.', type: 'info' })}
+          onClick={() => {
+            if (selectedGame) {
+              setCrackTarget({ name: selectedGame.name, appId: selectedGame.appId });
+            }
+          }}
         >
           Apply Crack
         </button>
@@ -293,6 +300,10 @@ export const HomeView = () => {
       </div>
 
       {status.text && <div className={`home-status ${status.type}`}>{status.text}</div>}
+
+      {crackTarget && (
+        <CrackModal game={crackTarget} onClose={() => setCrackTarget(null)} />
+      )}
     </div>
   );
 };
