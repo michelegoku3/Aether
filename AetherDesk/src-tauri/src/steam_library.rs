@@ -266,6 +266,18 @@ impl SteamLibraryScanner {
                 .any(|fragment| lower_comment.contains(fragment))
     }
 
+    fn save_discovered_libraries(&self, libraries: &[PathBuf]) {
+        let config_dir = crate::local_app_paths::LocalAppPaths::config_dir();
+        if !config_dir.exists() {
+            let _ = fs::create_dir_all(&config_dir);
+        }
+        let file_path = config_dir.join("discovered_libraries.json");
+        let paths_str: Vec<String> = libraries.iter().map(|p| p.to_string_lossy().to_string()).collect();
+        if let Ok(json_data) = serde_json::to_string_pretty(&paths_str) {
+            let _ = fs::write(file_path, json_data);
+        }
+    }
+
     fn discover_libraries(&self) -> Vec<PathBuf> {
         let mut libraries = Vec::new();
         Self::push_unique_existing_dir(&mut libraries, self.steam_path.clone());
@@ -282,6 +294,8 @@ impl SteamLibraryScanner {
             }
             index += 1;
         }
+
+        self.save_discovered_libraries(&libraries);
 
         libraries
     }

@@ -99,9 +99,11 @@ export const SettingsView = ({ hubcapUsage, onRefreshUsage }: SettingsViewProps)
           <label className="settings-label">Hubcap API Key</label>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
             <p className="settings-desc">Enter your hubcapmanifest.com API key to unlock database lookups and downloads.</p>
-            <span style={{ fontSize: '12px', color: '#8f8f9e', fontWeight: 'bold', marginLeft: '12px', whiteSpace: 'nowrap' }}>
-              {hubcapUsage.hasKey ? `${hubcapUsage.usage}/${hubcapUsage.limit}` : 'N/A'}
-            </span>
+            {hubcapUsage.hasKey && (
+              <span style={{ fontSize: '12px', color: '#8f8f9e', fontWeight: 'bold', marginLeft: '12px', whiteSpace: 'nowrap' }}>
+                {hubcapUsage.usage}/{hubcapUsage.limit}
+              </span>
+            )}
           </div>
           <div className="api-input-row">
             <input 
@@ -136,19 +138,6 @@ export const SettingsView = ({ hubcapUsage, onRefreshUsage }: SettingsViewProps)
             placeholder="C:\Program Files (x86)\Steam"
             value={steamPath}
             onChange={(e) => setSteamPath(e.target.value)}
-            className="settings-input"
-          />
-        </div>
-
-        {/* Steam Library Path Section */}
-        <div className="settings-group">
-          <label className="settings-label">Active Steam Library (Optional)</label>
-          <p className="settings-desc">If your games are installed in a secondary library (e.g. D:\), specify the library path here (e.g. D:\SteamLibrary).</p>
-          <input 
-            type="text" 
-            placeholder="Leave blank to use Steam's default library directory"
-            value={activeLibrary}
-            onChange={(e) => setActiveLibrary(e.target.value)}
             className="settings-input"
           />
         </div>
