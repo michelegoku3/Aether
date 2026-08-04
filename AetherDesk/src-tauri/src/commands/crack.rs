@@ -1,34 +1,31 @@
-// Apply Crack commands.
+// Apply Crack commands (thin Tauri wrapper).
 //
-// This module owns the "Apply Crack" popup backend: picking one or more crack
-// files via the native OS dialog, and copying them into the installed game's
-// folder (with a backup of any file that gets overwritten). The frontend stays
-// thin and only passes the App ID and the chosen file paths through `invoke()`.
+// All heavy lifting (archive extraction, locating the real crack files, backup,
+// inventory, applying) lives in the Tauri-agnostic engine `crate::crack`.
+// This file only resolves the installed game, builds the per-game backup, and
+// calls the engine.
+use crate::backup::GameBackup;
 use crate::commands::game::resolve_installed_game;
-use std::fs;
-use std::path::PathBuf;
+use crate::crack;
+use std::path::{Path, PathBuf};
 use tauri_plugin_dialog::{DialogExt, FilePath};
 
 /// Open the native file picker and return the chosen paths (possibly empty if
 /// the user cancelled). Multiple files can be selected at once. The dialog
-/// starts in the game's install folder when the game is installed, otherwise
-/// in the OS default location.
+/// opens in the OS Downloads folder (where crack archives are usually saved).
 #[tauri::command]
 pub async fn pick_crack_files(
     app: tauri::AppHandle,
-    app_id: u32,
+    _app_id: u32,
 ) -> Result<Vec<String>, String> {
-    let start_dir = resolve_installed_game(&app, app_id)
-        .ok()
-        .map(|game| PathBuf::from(&game.game_path));
+    let start_dir = dirs::download_dir()
+        .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
 
-    let mut picker = app
+    let picker = app
         .dialog()
         .file()
-        .set_title("Select crack file(s)");
-    if let Some(dir) = start_dir {
-        picker = picker.set_directory(&dir);
-    }
+        .set_title("Select crack file(s)")
+        .set_directory(&start_dir);
 
     let selected = picker.blocking_pick_files();
     // `blocking_pick_files()` returns `Option<Vec<FilePath>>`. `.into_iter()`
@@ -41,64 +38,41 @@ pub async fn pick_crack_files(
         .collect())
 }
 
-/// Copy the selected crack files into the installed game's folder.
+/// Apply the selected crack sources to the installed game.
 ///
-/// If a file with the same name already exists there, it is backed up as
-/// `<name>.bak` before being overwritten, so the operation is reversible.
+/// Each source may be a `.zip`, `.rar`, `.7z` or a loose crack file. The engine
+/// extracts (trying the default password `online-fix.me` for protected
+/// archives), resolves each file to its real destination in the game, backs up
+/// originals & crack files, writes an inventory and applies the crack.
 #[tauri::command]
 pub async fn apply_crack(
     app: tauri::AppHandle,
     app_id: u32,
     crack_files: Vec<String>,
 ) -> Result<String, String> {
-    if crack_files.is_empty() {
-        return Err("No crack files selected.".to_string());
-    }
-
     let game = resolve_installed_game(&app, app_id)?;
-    let game_dir = PathBuf::from(&game.game_path);
+    let game_root = PathBuf::from(&game.game_path);
+    let backup = GameBackup::for_app(app_id)?;
 
-    let mut applied = Vec::new();
-    let mut backups = 0usize;
+    let report = crack::apply_crack_pipeline(app_id, &game_root, &backup, &crack_files)?;
 
-    for crack_file in &crack_files {
-        let src = PathBuf::from(crack_file);
-        if !src.is_file() {
-            return Err(format!("Crack file not found: {}", src.display()));
-        }
-        let Some(file_name) = src.file_name().map(|name| name.to_string_lossy().to_string())
-        else {
-            return Err(format!("Crack file has no valid name: {}", src.display()));
-        };
-
-        let dest = game_dir.join(&file_name);
-        if dest.exists() {
-            let backup = PathBuf::from(format!("{}.bak", dest.to_string_lossy()));
-            fs::copy(&dest, &backup).map_err(|error| {
-                format!(
-                    "Failed to back up existing file {}: {}",
-                    dest.display(),
-                    error
-                )
-            })?;
-            backups += 1;
-        }
-
-        fs::copy(&src, &dest).map_err(|error| {
-            format!("Failed to copy crack to {}: {}", dest.display(), error)
-        })?;
-        applied.push(file_name);
-    }
+    // Show only file names in the UI message; the inventory keeps full paths.
+    let names: Vec<String> = report
+        .files
+        .iter()
+        .map(|path| {
+            Path::new(path)
+                .file_name()
+                .map(|name| name.to_string_lossy().to_string())
+                .unwrap_or_else(|| path.clone())
+        })
+        .collect();
 
     Ok(format!(
-        "Crack applied to {} file(s): {}{}.",
-        applied.len(),
-        applied.join(", "),
-        if backups > 0 {
-            format!(" (backed up {} existing file(s))", backups)
-        } else {
-            String::new()
-        }
+        "Crack applied: {} file(s) ({} replaced). Originals & crack files backed up. Files: {}",
+        report.applied,
+        report.replaced,
+        names.join(", ")
     ))
 }
 

@@ -6,6 +6,7 @@
 mod app_storage;
 mod backup;
 mod commands;
+mod crack;
 mod dll_installer;
 mod download_orchestrator;
 mod drm_detector;
@@ -57,6 +58,11 @@ fn main() {
             commands::settings::get_hubcap_usage,
             commands::crack::pick_crack_files,
             commands::crack::apply_crack,
+            commands::antivirus::get_antivirus_exclusion_done,
+            commands::antivirus::acknowledge_antivirus_exclusion,
+            commands::antivirus::apply_antivirus_exclusion,
+            commands::antivirus::open_windows_security,
+            commands::antivirus::open_app_folder,
             commands::store::search_store,
             commands::store::check_denuvo_bulk,
             commands::store::trigger_hubcap_download,

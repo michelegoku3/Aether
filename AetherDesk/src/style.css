@@ -1355,7 +1355,7 @@ body {
   background-color: #141417;
   border: 1px solid var(--border-color);
   border-radius: 8px;
-  padding: 12px 16px;
+  padding: 12px 40px 12px 16px; /* right padding leaves room for the clear "x" */
   color: #ffffff;
   font-size: 14px;
   outline: none;
@@ -1570,4 +1570,78 @@ body {
 .crack-achievement-text {
   color: var(--color-muted);
   font-size: 13px;
+}
+
+/* Clear ("x") button inside the home search input. */
+.home-search-wrapper .home-search-clear {
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 22px;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  border-radius: 50%;
+  color: var(--color-muted);
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+  transition: color 0.2s ease, background-color 0.2s ease;
+}
+
+.home-search-wrapper .home-search-clear:hover {
+  color: #ffffff;
+  background-color: rgba(255, 255, 255, 0.08);
+}
+
+/* Windows Defender exclusion modal. */
+.av-modal-container {
+  width: 560px;
+}
+
+.av-modal-text {
+  color: var(--color-muted);
+  font-size: 14px;
+  line-height: 1.5;
+  margin: 0;
+}
+
+.av-modal-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.av-modal-actions .panel-btn {
+  flex: 1 1 auto;
+}
+
+.av-modal-links {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 4px;
+}
+
+.av-link-btn {
+  background: none;
+  border: none;
+  color: var(--color-cyan);
+  font-size: 13px;
+  cursor: pointer;
+  text-decoration: underline;
+  transition: color 0.2s ease;
+}
+
+.av-link-btn:hover:not(:disabled) {
+  color: #ffffff;
+}
+
+.av-link-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
 }

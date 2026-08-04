@@ -210,8 +210,13 @@ export const HomeView = () => {
                   if (filteredGames.length === 0) return null;
                   return prev === null ? filteredGames.length - 1 : Math.max(prev - 1, 0);
                 });
-              } else if (event.key === 'Enter') {
-                if (isSearchOpen && filteredGames.length > 0) {
+              } else if (event.key === 'Enter' || event.key === 'Delete') {
+                // Empty search (no text typed, no game selected): dismiss the
+                // whole suggestion list instead of selecting a game.
+                if (!query.trim() && !selectedGame) {
+                  event.preventDefault();
+                  setIsSearchOpen(false);
+                } else if (event.key === 'Enter' && isSearchOpen && filteredGames.length > 0) {
                   event.preventDefault();
                   selectActiveResult();
                 }
@@ -220,6 +225,23 @@ export const HomeView = () => {
               }
             }}
           />
+
+          {query && (
+            <button
+              type="button"
+              className="home-search-clear"
+              aria-label="Clear search"
+              onClick={() => {
+                setQuery('');
+                setSelectedGame(null);
+                setIsSearchOpen(false);
+                setActiveResultIndex(null);
+                setStatus({ text: '', type: 'info' });
+              }}
+            >
+              &times;
+            </button>
+          )}
 
           {isSearchOpen && !isLoading && (
             <div
