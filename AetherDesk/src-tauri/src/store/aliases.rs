@@ -71,7 +71,7 @@ pub fn expanded_queries(query: &str) -> Vec<String> {
     let mut out: Vec<String> = vec![raw.to_string()];
     let mut seen: Vec<String> = vec![raw.to_lowercase()];
 
-    let mut push_unique = |candidate: String, out: &mut Vec<String>, seen: &mut Vec<String>| {
+    let push_unique = |candidate: String, out: &mut Vec<String>, seen: &mut Vec<String>| {
         let key = candidate.to_lowercase();
         if !seen.contains(&key) && out.len() < MAX_VARIANTS {
             seen.push(key);

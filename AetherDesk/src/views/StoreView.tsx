@@ -1,9 +1,10 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { SpecificVersionModal, LuaManifestRow } from '../modals/SpecificVersionModal';
 import { GameCard } from '../ui/GameCard';
 import { StatusAlert } from '../ui/StatusAlert';
 import { useStoreSearch, StoreGameResult as StoreGame } from '../hooks/useStoreSearch';
+import { enrichDenuvoFlags } from '../hooks/useDenuvoEnrichment';
 import { emptyStatus, StatusMessage } from '../types/ui';
 import { getSettings } from '../hooks/useSettings';
 
@@ -18,6 +19,7 @@ export const StoreView = ({ onRefreshUsage }: StoreViewProps) => {
   const itemsPerPage = 20; // 10 rows * 2 columns = 20 items per page
   const {
     results: storeGames,
+    setResults,
     isLoading,
     hasSearched,
     activeQuery,
@@ -42,6 +44,31 @@ export const StoreView = ({ onRefreshUsage }: StoreViewProps) => {
   const totalPages = Math.ceil(storeGames.length / itemsPerPage) || 1;
   const startIndex = (page - 1) * itemsPerPage;
   const pageGames = storeGames.slice(startIndex, startIndex + itemsPerPage);
+
+  // Per-page Denuvo enrichment: only the ~20 currently visible games are
+  // checked, never the whole result set. The backend layers a 30-day disk
+  // cache + 429 circuit breaker on top, so Steam's rate limit cannot be hit
+  // through normal browsing (used to be one appdetails call per result).
+  const pageKey = pageGames.map((game) => game.appId).join(',');
+  useEffect(() => {
+    if (pageGames.length === 0) return;
+    let cancelled = false;
+    enrichDenuvoFlags(pageGames)
+      .then((enriched) => {
+        if (cancelled) return;
+        const flags = new Map(enriched.map((g) => [String(g.appId), g.has_denuvo]));
+        setResults((prev) =>
+          prev.map((game) => {
+            const flag = flags.get(String(game.appId));
+            return flag === undefined ? game : { ...game, has_denuvo: flag };
+          })
+        );
+      })
+      .catch((err) => console.warn('Denuvo enrichment failed:', err));
+    return () => {
+      cancelled = true;
+    };
+  }, [pageKey]);
 
   const handleSearch = async (e: React.FormEvent) => {
     e.preventDefault();

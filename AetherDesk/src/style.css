@@ -1085,6 +1085,23 @@ body {
   gap: 6px;
 }
 
+/* Settings toggle row: label on the left, switch on the right.
+   Mirrors the CrackModal achievement row; the switch itself reuses the
+   shared `.version-switch` (dark track, cyan when active). */
+.settings-toggle-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 4px 0;
+  user-select: none;
+}
+
+.settings-toggle-text {
+  color: var(--color-muted);
+  font-size: 13px;
+}
+
 .settings-label {
   font-size: 14px;
   font-weight: 600;

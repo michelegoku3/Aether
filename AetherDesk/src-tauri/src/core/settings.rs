@@ -13,6 +13,12 @@ pub struct AppSettings {
     /// `#[serde(default)]` keeps old settings.json files parseable.
     #[serde(default)]
     pub antivirus_exclusion_done: bool,
+    /// When false (default), DLC-like rows are filtered out of store search
+    /// results (SFF structural rule set via batched Steam GetItems). When true,
+    /// the Hubcap-only tail is shown unfiltered. `#[serde(default)]` keeps old
+    /// settings.json files parseable and preserves the "hidden" default.
+    #[serde(default)]
+    pub show_store_dlcs: bool,
 }
 
 impl Default for AppSettings {
@@ -22,6 +28,7 @@ impl Default for AppSettings {
             steam_path: "C:\\Program Files (x86)\\Steam".to_string(),
             active_library: String::new(),
             antivirus_exclusion_done: false,
+            show_store_dlcs: false,
         }
     }
 }

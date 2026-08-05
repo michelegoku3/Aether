@@ -1,6 +1,5 @@
 import { useRef, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
-import { enrichDenuvoFlags } from './useDenuvoEnrichment';
 
 export interface StoreGameResult {
   id: number;
@@ -40,18 +39,12 @@ export const useStoreSearch = () => {
       const initialResults: StoreGameResult[] = await invoke('search_store', { query });
       if (requestId.current !== currentRequest) return;
 
-      const safeResults = initialResults || [];
-      setResults(safeResults);
+      // Denuvo enrichment is intentionally NOT done here: it runs per visible
+      // page in StoreView, so a search costs at most ~20 rate-limited Steam
+      // calls instead of one call per result (which used to trip the limit).
+      setResults(initialResults || []);
       setActiveQuery(query);
       setIsLoading(false);
-
-      enrichDenuvoFlags(safeResults)
-        .then(enriched => {
-          if (requestId.current === currentRequest) {
-            setResults(enriched);
-          }
-        })
-        .catch(err => console.warn('Denuvo enrichment failed:', err));
     } catch (err) {
       if (requestId.current !== currentRequest) return;
       setIsLoading(false);

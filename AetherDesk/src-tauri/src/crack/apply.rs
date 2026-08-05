@@ -81,7 +81,7 @@ pub fn apply_staged_files(
 
     // Verify all files were actually copied to their destinations
     let mut missing_files = Vec::new();
-    for (source, target) in &applied_targets {
+    for (_source, target) in &applied_targets {
         if !target.exists() {
             missing_files.push(format!(
                 "{}",
