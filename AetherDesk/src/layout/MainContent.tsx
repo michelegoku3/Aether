@@ -12,9 +12,11 @@ interface MainContentProps {
   onUpdateComplete: () => void; // Passed down from App.tsx orchestrator
   hubcapUsage: { usage: number; limit: number; hasKey: boolean };
   onRefreshUsage: (forcedKey?: string) => Promise<void>;
+  dllStatus: { isInstalled: boolean; installedVersion: string; isSteamBlocked: boolean };
+  onDllStatusChange: () => Promise<void>;
 }
 
-export const MainContent = ({ activeTab, dllUpdateAvailable, deskUpdateAvailable, onUpdateComplete, hubcapUsage, onRefreshUsage }: MainContentProps) => {
+export const MainContent = ({ activeTab, dllUpdateAvailable, deskUpdateAvailable, onUpdateComplete, hubcapUsage, onRefreshUsage, dllStatus, onDllStatusChange }: MainContentProps) => {
   // Route to the appropriate view based on the active tab
   if (activeTab === 'home') {
     return (
@@ -58,6 +60,8 @@ export const MainContent = ({ activeTab, dllUpdateAvailable, deskUpdateAvailable
           isUpdateAvailable={dllUpdateAvailable}
           isDeskUpdateAvailable={deskUpdateAvailable}
           onUpdateComplete={onUpdateComplete}
+          dllStatus={dllStatus}
+          onDllStatusChange={onDllStatusChange}
         />
       </main>
     );

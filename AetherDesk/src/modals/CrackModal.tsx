@@ -26,10 +26,6 @@ export const CrackModal = ({ game, onClose }: CrackModalProps) => {
   const [selectedFiles, setSelectedFiles] = useState<string[]>([]);
   const [isDragOver, setIsDragOver] = useState(false);
   const [isApplying, setIsApplying] = useState(false);
-  // Achievement compatibility is an opt-in, off by default ("disattivata di
-  // default") because it may break the crack. Currently UI-only; it will be
-  // wired into the backend when the apply logic is finalized.
-  const [achievementCompatible, setAchievementCompatible] = useState(false);
   const [status, setStatus] = useState<StatusMessage>(emptyStatus());
 
   const showStatus = (text: string, type: StatusMessage['type']) =>
@@ -208,18 +204,15 @@ export const CrackModal = ({ game, onClose }: CrackModalProps) => {
             )}
           </div>
 
-          <label className="crack-achievement-row">
+          <label className="crack-achievement-row" title="Achievement compatibility is not available yet">
             <span className="crack-achievement-text">
               Make the crack achievement compatible (it could break the crack)
             </span>
-            {/* Reuse the app's existing toggle (`.version-switch`): dark track in
-                the palette, cyan when active. Off by default. */}
             <span className="version-switch">
               <input
                 type="checkbox"
-                checked={achievementCompatible}
-                disabled={isApplying}
-                onChange={(event) => setAchievementCompatible(event.target.checked)}
+                checked={false}
+                disabled={true}
               />
               <span></span>
             </span>
