@@ -326,8 +326,8 @@ export const HomeView = () => {
         </button>
         <button
           className="game-action-btn"
-          disabled={!hasSelectedGame}
-          onClick={() => setStatus({ text: 'Enable DLC is not available yet.', type: 'info' })}
+          disabled={true}
+          title="Enable DLC is not available yet"
         >
           Enable DLC
         </button>

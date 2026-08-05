@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::time::Duration;
 
-const HUBCAP_SEARCH_BUDGET_MS: u64 = 1500;
+const HUBCAP_SEARCH_BUDGET_MS: u64 = 3000;
 use crate::steam::store::SteamStore;
 use crate::providers::hubcap::HubcapClient;
 
@@ -141,14 +141,26 @@ impl StoreService {
         let hubcap_future = async {
             match &hubcap_client {
                 Some(client) => {
-                    tokio::time::timeout(
+                    let result = tokio::time::timeout(
                         Duration::from_millis(HUBCAP_SEARCH_BUDGET_MS),
                         client.search_library(query),
                     )
-                    .await
-                    .ok()
-                    .and_then(Result::ok)
-                    .unwrap_or_default()
+                    .await;
+                    
+                    match result {
+                        Ok(Ok(games)) => {
+                            eprintln!("[Hubcap] Search for '{}' returned {} games", query, games.len());
+                            games
+                        }
+                        Ok(Err(e)) => {
+                            eprintln!("[Hubcap] Search error for '{}': {}", query, e);
+                            Vec::new()
+                        }
+                        Err(_) => {
+                            eprintln!("[Hubcap] Search timeout for '{}' ({}ms)", query, HUBCAP_SEARCH_BUDGET_MS);
+                            Vec::new()
+                        }
+                    }
                 }
                 None => Vec::new(),
             }

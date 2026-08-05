@@ -12,6 +12,17 @@ export default function App() {
   // Global state to track native AetherDesk update availability from desk-* GitHub tags
   const [deskUpdateAvailable, setDeskUpdateAvailable] = useState(false);
 
+  // DLL installation status (checked only at startup and after install/uninstall)
+  const [dllStatus, setDllStatus] = useState<{
+    isInstalled: boolean;
+    installedVersion: string;
+    isSteamBlocked: boolean;
+  }>({
+    isInstalled: false,
+    installedVersion: 'N/A',
+    isSteamBlocked: false
+  });
+
   // Hubcap API usage limits
   const [hubcapUsage, setHubcapUsage] = useState({ usage: 0, limit: 25, hasKey: false });
 
@@ -58,6 +69,28 @@ export default function App() {
     }
   };
 
+  // Check DLL installation status (called at startup and after install/uninstall)
+  const checkDllStatus = async () => {
+    try {
+      const settings: any = await invoke('get_settings');
+      const steamPath = settings.steam_path;
+
+      if (steamPath && steamPath.trim() !== '') {
+        const isInstalled: any = await invoke('is_dll_installed', { steamPath });
+        const isBlocked: any = await invoke('is_steam_blocked', { steamPath });
+        const updateInfo: any = await invoke('check_aether_dll_update', { steamPath });
+
+        setDllStatus({
+          isInstalled,
+          installedVersion: updateInfo.installed_version || 'N/A',
+          isSteamBlocked: isBlocked
+        });
+      }
+    } catch (err) {
+      console.error("Failed to check DLL status:", err);
+    }
+  };
+
   // Warm the Library metadata cache as soon as the app starts.
   // This is fire-and-forget: Library rendering must never wait for Steam network calls.
   useEffect(() => {
@@ -72,6 +105,7 @@ export default function App() {
   // and DLL are checked separately.
   useEffect(() => {
     checkUpdates();
+    checkDllStatus();
     refreshHubcapUsage();
     const interval = setInterval(checkUpdates, 30 * 60 * 1000);
     return () => clearInterval(interval);
@@ -107,6 +141,8 @@ export default function App() {
         onUpdateComplete={checkUpdates}
         hubcapUsage={hubcapUsage}
         onRefreshUsage={refreshHubcapUsage}
+        dllStatus={dllStatus}
+        onDllStatusChange={checkDllStatus}
       />
     </div>
   );

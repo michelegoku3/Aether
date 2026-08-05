@@ -12,7 +12,6 @@ export const SettingsView = ({ hubcapUsage, onRefreshUsage }: SettingsViewProps)
   const [activeLibrary, setActiveLibrary] = useState('');
   
   const [statusMsg, setStatusMsg] = useState({ text: '', type: 'info' });
-  const [validationStatus, setValidationStatus] = useState<'idle' | 'validating' | 'valid' | 'invalid'>('idle');
 
   // Load settings from the backend when the component mounts
   useEffect(() => {
@@ -39,6 +38,23 @@ export const SettingsView = ({ hubcapUsage, onRefreshUsage }: SettingsViewProps)
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
+    
+    // Validazione API key se presente
+    if (apiKey.trim()) {
+      showStatus('Validating API key...', 'info');
+      try {
+        const isValid: any = await invoke('validate_hubcap_key', { apiKey });
+        if (!isValid) {
+          showStatus('Invalid API key. Settings not saved.', 'error');
+          return;
+        }
+      } catch (err: any) {
+        showStatus(`API key validation failed: ${err}`, 'error');
+        return;
+      }
+    }
+    
+    // Salvataggio
     try {
       showStatus('Saving settings...', 'info');
       await invoke('save_settings', {
@@ -52,29 +68,6 @@ export const SettingsView = ({ hubcapUsage, onRefreshUsage }: SettingsViewProps)
       onRefreshUsage(apiKey);
     } catch (err: any) {
       showStatus(`Error during save: ${err}`, 'error');
-    }
-  };
-
-  const handleValidateKey = async () => {
-    if (!apiKey.trim()) {
-      showStatus('Please enter an API key to validate first.', 'error');
-      return;
-    }
-    
-    setValidationStatus('validating');
-    try {
-      const isValid: any = await invoke('validate_hubcap_key', { apiKey });
-      if (isValid) {
-        setValidationStatus('valid');
-        showStatus('Hubcap API key is valid and connected successfully!', 'success');
-        onRefreshUsage(apiKey);
-      } else {
-        setValidationStatus('invalid');
-        showStatus('Hubcap API key is invalid or expired.', 'error');
-      }
-    } catch (err: any) {
-      setValidationStatus('invalid');
-      showStatus(`Error validating API key: ${err}`, 'error');
     }
   };
 
@@ -105,28 +98,13 @@ export const SettingsView = ({ hubcapUsage, onRefreshUsage }: SettingsViewProps)
               </span>
             )}
           </div>
-          <div className="api-input-row">
-            <input 
-              type="password" 
-              placeholder="Enter API key (e.g. smm_...)"
-              value={apiKey}
-              onChange={(e) => {
-                setApiKey(e.target.value);
-                setValidationStatus('idle'); // Reset validation status on change
-              }}
-              className="settings-input"
-            />
-            <button 
-              type="button" 
-              onClick={handleValidateKey}
-              className={`validate-btn ${validationStatus}`}
-              disabled={validationStatus === 'validating'}
-            >
-              {validationStatus === 'validating' ? 'Verifying...' :
-               validationStatus === 'valid' ? 'Connected ✓' :
-               validationStatus === 'invalid' ? 'Invalid ✗' : 'Verify Key'}
-            </button>
-          </div>
+          <input 
+            type="password" 
+            placeholder="Enter API key (e.g. smm_...)"
+            value={apiKey}
+            onChange={(e) => setApiKey(e.target.value)}
+            className="settings-input"
+          />
         </div>
 
         {/* Steam Path Section */}

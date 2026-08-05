@@ -47,8 +47,9 @@ export const Sidebar = ({ activeTab, onTabChange, onRestartSteam, dllUpdateAvail
 
         {/* Backup */}
         <button
-          onClick={() => onTabChange('download')}
-          className={`nav-item ${activeTab === 'download' ? 'active' : ''}`}
+          disabled={true}
+          title="Backup is not available yet"
+          className="nav-item"
         >
           Backup
         </button>
@@ -78,8 +79,9 @@ export const Sidebar = ({ activeTab, onTabChange, onRestartSteam, dllUpdateAvail
 
         {/* Log */}
         <button
-          onClick={() => onTabChange('log')}
-          className={`nav-item ${activeTab === 'log' ? 'active' : ''}`}
+          disabled={true}
+          title="Log is not available yet"
+          className="nav-item"
         >
           Log
         </button>

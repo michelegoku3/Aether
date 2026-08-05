@@ -5,14 +5,12 @@ interface AetherViewProps {
   isUpdateAvailable: boolean;
   isDeskUpdateAvailable: boolean;
   onUpdateComplete: () => void; // Refresh update check in the parent
+  dllStatus: { isInstalled: boolean; installedVersion: string; isSteamBlocked: boolean };
+  onDllStatusChange: () => Promise<void>;
 }
 
-export const AetherView = ({ isUpdateAvailable, isDeskUpdateAvailable, onUpdateComplete }: AetherViewProps) => {
-  // Real active states bound to local filesystem and config status
-  const [isDllInstalled, setIsDllInstalled] = useState(false);
-  const [installedVersion, setInstalledVersion] = useState('N/A');
+export const AetherView = ({ isUpdateAvailable, isDeskUpdateAvailable, onUpdateComplete, dllStatus, onDllStatusChange }: AetherViewProps) => {
   const [deskVersion, setDeskVersion] = useState('1.0.0');
-  const [isSteamBlocked, setIsSteamBlocked] = useState(false);
   
   const [statusMsg, setStatusMsg] = useState({ text: '', type: 'info' });
   const [isProcessing, setIsProcessing] = useState(false);
@@ -28,40 +26,18 @@ export const AetherView = ({ isUpdateAvailable, isDeskUpdateAvailable, onUpdateC
     return `v${normalized}`;
   };
 
-  // Perform active check on local system state on component load
-  const checkLocalSystemState = async () => {
+  // Check only AetherDesk version on component load
+  const checkDeskVersion = async () => {
     try {
       const deskInfo: any = await invoke('check_aether_desk_update');
       setDeskVersion(deskInfo.installed_version || 'N/A');
     } catch (err: any) {
       console.error("Failed to query AetherDesk update state:", err);
     }
-
-    try {
-      // 1. Get custom Steam folder path from settings.json
-      const settings: any = await invoke('get_settings');
-      const steamPath = settings.steam_path;
-
-      if (steamPath && steamPath.trim() !== '') {
-        // 2. Query backend to verify if the 3 DLL files exist on disk
-        const isInstalled: any = await invoke('is_dll_installed', { steamPath });
-        setIsDllInstalled(isInstalled);
-
-        // 3. Query backend to verify if steam.cfg update block is enabled
-        const isBlocked: any = await invoke('is_steam_blocked', { steamPath });
-        setIsSteamBlocked(isBlocked);
-
-        // 4. Query backend to verify local installed version dynamically
-        const updateInfo: any = await invoke('check_aether_dll_update', { steamPath });
-        setInstalledVersion(updateInfo.installed_version);
-      }
-    } catch (err: any) {
-      console.error("Failed to query local system state:", err);
-    }
   };
 
   useEffect(() => {
-    checkLocalSystemState();
+    checkDeskVersion();
   }, [isUpdateAvailable, isDeskUpdateAvailable]); // re-run if update availability changes
 
   const handleInstallDeskUpdate = async () => {
@@ -75,7 +51,7 @@ export const AetherView = ({ isUpdateAvailable, isDeskUpdateAvailable, onUpdateC
       setIsProcessing(false);
     } catch (err: any) {
       showStatus(`AetherDesk update failed: ${err}`, 'error');
-      await checkLocalSystemState();
+      await onDllStatusChange();
       onUpdateComplete();
       setIsProcessing(false);
     }
@@ -112,8 +88,8 @@ export const AetherView = ({ isUpdateAvailable, isDeskUpdateAvailable, onUpdateC
       
       showStatus(result, 'success');
       
-      // Refresh local files and version states on completion
-      await checkLocalSystemState();
+      // Refresh DLL status and update availability
+      await onDllStatusChange();
       onUpdateComplete(); // notify parent to refresh update status
       setIsProcessing(false);
     } catch (err: any) {
@@ -141,8 +117,8 @@ export const AetherView = ({ isUpdateAvailable, isDeskUpdateAvailable, onUpdateC
       
       showStatus(result, 'success');
       
-      // Refresh local states
-      await checkLocalSystemState();
+      // Refresh DLL status and update availability
+      await onDllStatusChange();
       onUpdateComplete(); // notify parent to refresh update status
       setIsProcessing(false);
     } catch (err: any) {
@@ -161,13 +137,13 @@ export const AetherView = ({ isUpdateAvailable, isDeskUpdateAvailable, onUpdateC
         return;
       }
 
-      if (!isSteamBlocked) {
+      if (!dllStatus.isSteamBlocked) {
         const msg: string = await invoke('block_steam_updates', { steamPath });
-        setIsSteamBlocked(true);
+        await onDllStatusChange();
         showStatus(msg, 'success');
       } else {
         const msg: string = await invoke('unblock_steam_updates', { steamPath });
-        setIsSteamBlocked(false);
+        await onDllStatusChange();
         showStatus(msg, 'success');
       }
     } catch (err: any) {
@@ -189,8 +165,8 @@ export const AetherView = ({ isUpdateAvailable, isDeskUpdateAvailable, onUpdateC
       const result: string = await invoke('reset_aether_steam_path', { steamPath });
       await invoke('unblock_steam_updates', { steamPath }).catch(() => {});
 
-      // Refresh local state representation
-      await checkLocalSystemState();
+      // Refresh DLL status and update availability
+      await onDllStatusChange();
       onUpdateComplete(); // notify parent to refresh update status
 
       showStatus(result, 'success');
@@ -247,18 +223,18 @@ export const AetherView = ({ isUpdateAvailable, isDeskUpdateAvailable, onUpdateC
         <div className="panel-header">
           <span className="panel-title">AetherDLL</span>
           {/* Dynamically displays the actual local installed version from steam directory */}
-          <span className="panel-meta">{isDllInstalled ? formatVersion(installedVersion) : 'N/A'}</span>
+          <span className="panel-meta">{dllStatus.isInstalled ? formatVersion(dllStatus.installedVersion) : 'N/A'}</span>
         </div>
         <div className="panel-actions">
           {/* Install/Update Button: Active if DLL is NOT installed, or if updates are available */}
           <button 
             onClick={handleInstallDll}
             className="panel-btn"
-            disabled={isProcessing || (isDllInstalled && !isUpdateAvailable)}
+            disabled={isProcessing || (dllStatus.isInstalled && !isUpdateAvailable)}
           >
-            {isDllInstalled && isUpdateAvailable ? 'Update' : isDllInstalled ? 'Updated' : 'Install'}
+            {dllStatus.isInstalled && isUpdateAvailable ? 'Update' : dllStatus.isInstalled ? 'Updated' : 'Install'}
             {/* Superimposed glowing update dot overlay directly inside the relative button container! */}
-            {isDllInstalled && isUpdateAvailable && (
+            {dllStatus.isInstalled && isUpdateAvailable && (
               <span className="btn-update-dot" title="AetherDLL update is ready!"></span>
             )}
           </button>
@@ -267,7 +243,7 @@ export const AetherView = ({ isUpdateAvailable, isDeskUpdateAvailable, onUpdateC
           <button 
             onClick={handleUninstallDll}
             className="panel-btn"
-            disabled={isProcessing || !isDllInstalled}
+            disabled={isProcessing || !dllStatus.isInstalled}
           >
             Uninstall
           </button>
@@ -286,7 +262,7 @@ export const AetherView = ({ isUpdateAvailable, isDeskUpdateAvailable, onUpdateC
             className="panel-btn"
             disabled={isProcessing}
           >
-            {isSteamBlocked ? 'Unlock Update' : 'Block Update'}
+            {dllStatus.isSteamBlocked ? 'Unlock Update' : 'Block Update'}
           </button>
 
           {/* Reset Path Button */}

@@ -192,11 +192,25 @@ export const StoreView = ({ onRefreshUsage }: StoreViewProps) => {
               key={game.id}
               game={game}
               actionLabel="Download"
-              onAction={(selected) => {
+              onAction={async (selected) => {
                 setSelectedGame(selected);
                 setDownloadStatus({ text: '', type: 'info' });
                 setIsDownloading(false);
-                setSelectedSource(selected.has_manifest ? 'hubcap' : 'oureveryday');
+                
+                // Carica impostazioni per verificare se c'è una chiave Hubcap valida
+                try {
+                  const settings = await getSettings();
+                  const hasValidHubcapKey = settings.hubcap_api_key?.trim() !== '';
+                  
+                  if (hasValidHubcapKey && selected.has_manifest) {
+                    setSelectedSource('hubcap');
+                  } else {
+                    setSelectedSource('oureveryday');
+                  }
+                } catch (err) {
+                  // Fallback a oureveryday se c'è un errore
+                  setSelectedSource('oureveryday');
+                }
               }}
             />
           ))
@@ -280,9 +294,9 @@ export const StoreView = ({ onRefreshUsage }: StoreViewProps) => {
                     OurEveryday
                   </button>
                   <button 
-                    disabled={isDownloading}
-                    onClick={() => setSelectedSource('local')}
-                    className={`source-btn ${selectedSource === 'local' ? 'active' : ''}`}
+                    disabled={true}
+                    title="Local download is not available yet"
+                    className="source-btn"
                   >
                     Local
                   </button>
