@@ -10,7 +10,13 @@ export const SettingsView = ({ hubcapUsage, onRefreshUsage }: SettingsViewProps)
   const [apiKey, setApiKey] = useState('');
   const [steamPath, setSteamPath] = useState('C:\\Program Files (x86)\\Steam');
   const [activeLibrary, setActiveLibrary] = useState('');
-  
+  const [showStoreDlcs, setShowStoreDlcs] = useState(false);
+
+  // Raw settings as loaded from the backend. Saving always spreads this object
+  // back, so fields owned by other flows (e.g. `antivirus_exclusion_done`) are
+  // never silently reset by a settings save.
+  const [rawSettings, setRawSettings] = useState<Record<string, any>>({});
+
   const [statusMsg, setStatusMsg] = useState({ text: '', type: 'info' });
 
   // Load settings from the backend when the component mounts
@@ -19,9 +25,11 @@ export const SettingsView = ({ hubcapUsage, onRefreshUsage }: SettingsViewProps)
       try {
         const settings: any = await invoke('get_settings');
         if (settings) {
+          setRawSettings(settings);
           setApiKey(settings.hubcap_api_key || '');
           setSteamPath(settings.steam_path || 'C:\\Program Files (x86)\\Steam');
           setActiveLibrary(settings.active_library || '');
+          setShowStoreDlcs(Boolean(settings.show_store_dlcs));
         }
       } catch (err: any) {
         showStatus(`Error loading settings: ${err}`, 'error');
@@ -59,9 +67,11 @@ export const SettingsView = ({ hubcapUsage, onRefreshUsage }: SettingsViewProps)
       showStatus('Saving settings...', 'info');
       await invoke('save_settings', {
         settings: {
+          ...rawSettings,
           hubcap_api_key: apiKey,
           steam_path: steamPath,
-          active_library: activeLibrary
+          active_library: activeLibrary,
+          show_store_dlcs: showStoreDlcs
         }
       });
       showStatus('Settings saved successfully!', 'success');
@@ -118,6 +128,23 @@ export const SettingsView = ({ hubcapUsage, onRefreshUsage }: SettingsViewProps)
             onChange={(e) => setSteamPath(e.target.value)}
             className="settings-input"
           />
+        </div>
+
+        {/* Store Section */}
+        <div className="settings-group">
+          <label className="settings-label">Store</label>
+          <p className="settings-desc">Store search hides DLC and other non-downloadable add-ons by default, keeping results cleaner and faster. Enable this to show them anyway.</p>
+          <div className="settings-toggle-row" title="Show downloadable and non-downloadable add-ons (DLC) in store search results">
+            <span className="settings-toggle-text">Show DLCs in the store</span>
+            <label className="version-switch">
+              <input
+                type="checkbox"
+                checked={showStoreDlcs}
+                onChange={(e) => setShowStoreDlcs(e.target.checked)}
+              />
+              <span></span>
+            </label>
+          </div>
         </div>
 
         <div className="settings-separator"></div>

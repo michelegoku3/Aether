@@ -4,6 +4,10 @@ export interface AppSettings {
   hubcap_api_key: string;
   steam_path: string;
   active_library: string;
+  /** Defaults to false on the backend: DLC-like rows are hidden from store search. */
+  show_store_dlcs?: boolean;
+  /** Owned by the antivirus-exclusion flow; must be preserved verbatim on save. */
+  antivirus_exclusion_done?: boolean;
 }
 
 export const getSettings = async (): Promise<AppSettings> => {

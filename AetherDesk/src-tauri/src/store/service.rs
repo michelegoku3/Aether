@@ -189,7 +189,7 @@ impl StoreService {
     ///     are queried in parallel and merged by app id.
     /// Neither source may take the other down: a Steam outage still yields the
     /// Hubcap-only list, a Hubcap outage still yields the plain Steam catalog.
-    pub async fn search_store(&self, query: &str, hubcap_client: Option<HubcapClient>) -> Result<Vec<UnifiedStoreGame>, String> {
+    pub async fn search_store(&self, query: &str, hubcap_client: Option<HubcapClient>, show_store_dlcs: bool) -> Result<Vec<UnifiedStoreGame>, String> {
         if query.trim().is_empty() {
             return Ok(Vec::new());
         }
@@ -232,10 +232,13 @@ impl StoreService {
             added_ids.insert(item.id);
         }
 
-        // 4. Fallback: If Hubcap returned matches that are NOT in Steam results, append them
+        // 4. Fallback: If Hubcap returned matches that are NOT in Steam results, append them.
+        // They are collected separately first so the DLC filter can target exactly the
+        // unconfirmed rows (SFF rule: Steam's own catalog rows are always trusted).
+        let mut hubcap_extras = Vec::new();
         for hg in hubcap_res {
             if !added_ids.contains(&hg.app_id) {
-                unified_list.push(UnifiedStoreGame {
+                hubcap_extras.push(UnifiedStoreGame {
                     id: hg.app_id,
                     name: hg.name,
                     app_id: hg.app_id.to_string(),
@@ -246,6 +249,28 @@ impl StoreService {
                 added_ids.insert(hg.app_id);
             }
         }
+
+        // 4b. Structural DLC filter (SFF rule set) on the Hubcap-only tail.
+        // DLC rows waste result slots, Hubcap download attempts, and Denuvo checks
+        // while never being downloadable targets themselves. One batched GetItems
+        // call covers the whole tail; "unknown" metadata always keeps the row.
+        if !show_store_dlcs && !hubcap_extras.is_empty() {
+            let extra_ids: Vec<u32> = hubcap_extras.iter().map(|game| game.id).collect();
+            let meta_map = crate::steam::store_items::fetch_store_items(extra_ids).await;
+            let before = hubcap_extras.len();
+            hubcap_extras.retain(|game| {
+                match meta_map.get(&game.id) {
+                    Some(meta) => !crate::steam::store_items::is_dlc_like(meta),
+                    None => true,
+                }
+            });
+            let filtered = before - hubcap_extras.len();
+            if filtered > 0 {
+                eprintln!("[Store] DLC filter dropped {} Hubcap-only row(s) for '{}'", filtered, query);
+            }
+        }
+
+        unified_list.extend(hubcap_extras);
 
         // 5. Apply the professional relevance-boosting and fuzzy-sorting!
         let is_numeric = query.trim().parse::<u32>().is_ok();

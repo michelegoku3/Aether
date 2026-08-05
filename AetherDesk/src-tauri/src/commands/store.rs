@@ -18,22 +18,26 @@ pub async fn search_store(
     query: String,
 ) -> Result<Vec<UnifiedStoreGame>, String> {
     let settings = SettingsManager::new(&app).load();
+    let show_store_dlcs = settings.show_store_dlcs;
     let hubcap_client = (!settings.hubcap_api_key.trim().is_empty())
         .then(|| HubcapClient::new(settings.hubcap_api_key));
 
     let cache = StoreSearchCache::new(LocalAppPaths::data_root().join("cache"));
-    let cache_key = if hubcap_client.is_some() {
-        format!("hubcap {}", query)
-    } else {
-        format!("steam {}", query)
-    };
+    // The DLC-filter flag is part of the cache key: toggling the setting must
+    // not replay 24h-stale results built under the other flag value.
+    let cache_key = format!(
+        "{}|dlcs={} {}",
+        if hubcap_client.is_some() { "hubcap" } else { "steam" },
+        show_store_dlcs,
+        query
+    );
 
     if let Some(results) = cache.get_fresh(&cache_key) {
         return Ok(results);
     }
 
     match StoreService::new()
-        .search_store(&query, hubcap_client)
+        .search_store(&query, hubcap_client, show_store_dlcs)
         .await
     {
         Ok(results) => {
@@ -55,7 +59,8 @@ pub async fn search_store(
 
 #[tauri::command]
 pub async fn check_denuvo_bulk(app_ids: Vec<u32>) -> Result<HashMap<u32, bool>, String> {
-    DrmDetector::new().detect_many(app_ids).await
+    let cache_dir = LocalAppPaths::data_root().join("cache");
+    DrmDetector::new(cache_dir).detect_many(app_ids).await
 }
 
 #[tauri::command]

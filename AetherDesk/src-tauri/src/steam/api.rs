@@ -6,6 +6,12 @@ use tokio::task::JoinSet;
 
 const STEAM_APPDETAILS_URL: &str = "https://store.steampowered.com/api/appdetails";
 
+/// Prefix used for appdetails errors caused by Steam's per-IP rate limit
+/// (HTTP 429, ~200 requests/5 min on this endpoint). Callers doing bulk
+/// enrichment match on this prefix to trip a circuit breaker instead of
+/// continuing to hammer the endpoint.
+pub const RATE_LIMIT_ERROR_PREFIX: &str = "RATE_LIMITED";
+
 /// Shared response envelope for Steam's `appdetails` endpoint.
 ///
 /// Used by both the DRM detector and the app-name resolver — they query the
@@ -30,6 +36,9 @@ pub async fn fetch_app_details(
         .map_err(|e| format!("Steam appdetails request failed for {}: {}", app_id, e))?;
 
     if !response.status().is_success() {
+        if response.status().as_u16() == 429 {
+            return Err(format!("{}: HTTP 429 for {}", RATE_LIMIT_ERROR_PREFIX, app_id));
+        }
         return Err(format!(
             "Steam appdetails returned HTTP {} for {}",
             response.status(),
