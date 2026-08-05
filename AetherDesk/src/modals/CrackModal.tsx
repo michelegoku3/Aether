@@ -126,7 +126,7 @@ export const CrackModal = ({ game, onClose }: CrackModalProps) => {
       });
       showStatus(message, 'success');
     } catch (err: any) {
-      showStatus(`Failed to apply crack: ${err}`, 'error');
+      showStatus(`${err}`, 'error');
     } finally {
       setIsApplying(false);
     }

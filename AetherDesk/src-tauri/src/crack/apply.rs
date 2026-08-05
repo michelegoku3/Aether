@@ -37,6 +37,7 @@ pub fn apply_staged_files(
 
     let mut report = ApplyReport::default();
     let mut inventory: Vec<String> = Vec::new();
+    let mut applied_targets: Vec<(PathBuf, PathBuf)> = Vec::new(); // (source, target)
 
     for abs in &staged {
         let archive_rel = abs.strip_prefix(staging).map_err(|_| {
@@ -75,6 +76,34 @@ pub fn apply_staged_files(
         report.applied += 1;
         report.files.push(game_rel_string.clone());
         inventory.push(game_rel_string);
+        applied_targets.push((abs.clone(), target));
+    }
+
+    // Verify all files were actually copied to their destinations
+    let mut missing_files = Vec::new();
+    for (source, target) in &applied_targets {
+        if !target.exists() {
+            missing_files.push(format!(
+                "{}",
+                target.strip_prefix(game_root).unwrap_or(target).display()
+            ));
+        }
+    }
+
+    if !missing_files.is_empty() {
+        let file_list = missing_files
+            .iter()
+            .map(|f| format!("  • {}", f))
+            .collect::<Vec<_>>()
+            .join("\n");
+        
+        return Err(format!(
+            "Crack application failed! {} file(s) were not applied:\n\n{}\n\n\
+             This may be caused by Steam still processing the game files. \
+             Restart Steam through Aether, and re-apply the crack.",
+            missing_files.len(),
+            file_list
+        ));
     }
 
     write_inventory(backup, app_id, &inventory)?;
