@@ -1,10 +1,16 @@
 use reqwest::header::{HeaderMap, HeaderValue, AUTHORIZATION};
 use serde::{Deserialize, Serialize};
+use std::collections::HashSet;
 use crate::manifest::package::{ManifestPackage, ManifestPackageExtractor};
 use crate::providers::http;
 
 const BASE_URL: &str = "https://hubcapmanifest.com/api/v1";
 const HUBCAP_TIMEOUT_SECONDS: u64 = 8;
+
+/// `/library` tolerates large pages: it is the broad recall net (mirrors SFF's
+/// `get_library(limit=200)`), while `/search` is the precise matcher.
+const LIBRARY_SEARCH_LIMIT: u32 = 200;
+const CATALOG_SEARCH_LIMIT: u32 = 50;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct HubcapGameItem {
@@ -21,10 +27,35 @@ pub struct HubcapUserStats {
     pub daily_limit: Option<u32>,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct HubcapLibraryResponse {
-    pub status: String,
-    pub games: Option<Vec<HubcapGameItem>>,
+/// Envelope of `GET /library`. Every field is optional: Hubcap's payload shape
+/// has shifted over time (SFF parses it defensively with `data.get(...)`), and a
+/// single missing key must never turn the whole search into "no results".
+#[derive(Debug, Deserialize)]
+struct HubcapLibraryResponse {
+    #[serde(default)]
+    games: Vec<HubcapGameItem>,
+}
+
+/// Envelope of `GET /search`. The endpoint has shipped several payload shapes
+/// depending on version (`{"results": [...]}`, a bare `[...]`, and the
+/// `/library`-style `{"games": [...]}` — all handled defensively by SFF), so
+/// accept any of them; extra keys are ignored.
+#[derive(Debug, Deserialize)]
+#[serde(untagged)]
+enum HubcapSearchResponse {
+    WrappedResults { results: Vec<HubcapGameItem> },
+    WrappedGames { games: Vec<HubcapGameItem> },
+    Bare(Vec<HubcapGameItem>),
+}
+
+impl HubcapSearchResponse {
+    fn into_items(self) -> Vec<HubcapGameItem> {
+        match self {
+            Self::WrappedResults { results } => results,
+            Self::WrappedGames { games } => games,
+            Self::Bare(items) => items,
+        }
+    }
 }
 
 fn deserialize_app_id<'de, D>(deserializer: D) -> Result<u32, D::Error>
@@ -62,6 +93,14 @@ impl HubcapClient {
             headers.insert(AUTHORIZATION, value);
         }
         headers
+    }
+
+    /// Server-side statuses that mean "this query is not answerable" rather than
+    /// "the app is broken". Hubcap 400s many cyrillic queries and has known
+    /// 500/503 clusters; all of them must surface as an empty result set so the
+    /// rest of the pipeline (Steam catalog, the other endpoint) keeps working.
+    fn is_soft_failure(status: reqwest::StatusCode) -> bool {
+        matches!(status.as_u16(), 400 | 500 | 503)
     }
 
     pub async fn validate_api_key(&self) -> Result<bool, String> {
@@ -122,22 +161,104 @@ impl HubcapClient {
         }
     }
 
+    /// Broad recall search: `GET /library?search=…` with a large page size.
     pub async fn search_library(&self, query: &str) -> Result<Vec<HubcapGameItem>, String> {
         let url = format!("{}/library", BASE_URL);
+        let params: Vec<(&str, String)> = vec![
+            ("search", query.to_string()),
+            ("limit", LIBRARY_SEARCH_LIMIT.to_string()),
+        ];
         let response = self.client.get(&url)
             .headers(self.headers())
-            .query(&[("search", query), ("limit", "50")])
+            .query(&params)
             .send()
             .await
             .map_err(|e| format!("Hubcap API network error: {}", e))?;
+
+        if Self::is_soft_failure(response.status()) {
+            eprintln!("[Hubcap] /library soft-failed with {} for '{}'", response.status(), query);
+            return Ok(Vec::new());
+        }
 
         if !response.status().is_success() {
             return Ok(Vec::new());
         }
 
         let data = response.json::<HubcapLibraryResponse>().await
-            .map_err(|e| format!("Failed to parse Hubcap response: {}", e))?;
+            .map_err(|e| format!("Failed to parse Hubcap /library response: {}", e))?;
 
-        Ok(data.games.unwrap_or_default())
+        Ok(data.games)
+    }
+
+    /// Precise search: `GET /search?q=…`. Second, independent chance to find a
+    /// game when `/library`'s matcher misses it (and vice versa).
+    ///
+    /// Numeric queries are flagged with `appid=true` so Hubcap matches them
+    /// against app ids directly (mirrors SFF's `search_by_appid` switch): this
+    /// is what makes "search by App ID" light up the AVAILABLE badge too.
+    pub async fn search_games(&self, query: &str) -> Result<Vec<HubcapGameItem>, String> {
+        let url = format!("{}/search", BASE_URL);
+        let mut params: Vec<(&str, String)> = vec![
+            ("q", query.to_string()),
+            ("limit", CATALOG_SEARCH_LIMIT.to_string()),
+        ];
+        if query.trim().parse::<u32>().is_ok() {
+            params.push(("appid", "true".to_string()));
+        }
+
+        let response = self.client.get(&url)
+            .headers(self.headers())
+            .query(&params)
+            .send()
+            .await
+            .map_err(|e| format!("Hubcap API network error: {}", e))?;
+
+        if Self::is_soft_failure(response.status()) {
+            eprintln!("[Hubcap] /search soft-failed with {} for '{}'", response.status(), query);
+            return Ok(Vec::new());
+        }
+
+        if !response.status().is_success() {
+            return Ok(Vec::new());
+        }
+
+        let data = response.json::<HubcapSearchResponse>().await
+            .map_err(|e| format!("Failed to parse Hubcap /search response: {}", e))?;
+
+        Ok(data.into_items())
+    }
+
+    /// One logical search against Hubcap, backed by two requests with different
+    /// endpoints issued in parallel (`/library` + `/search`). Results are merged
+    /// and de-duplicated by app id, `/library` hits first.
+    ///
+    /// Partial failure is tolerated: if one endpoint errors out, the other's
+    /// results are still returned. Only a double failure yields an empty vec,
+    /// so the caller always gets the best-effort availability set.
+    pub async fn search_all(&self, query: &str) -> Vec<HubcapGameItem> {
+        let (library_result, games_result) = tokio::join!(
+            self.search_library(query),
+            self.search_games(query),
+        );
+
+        let mut merged: Vec<HubcapGameItem> = Vec::new();
+        let mut seen_ids: HashSet<u32> = HashSet::new();
+
+        for result in [library_result, games_result] {
+            match result {
+                Ok(items) => {
+                    for item in items {
+                        if item.app_id != 0 && seen_ids.insert(item.app_id) {
+                            merged.push(item);
+                        }
+                    }
+                }
+                Err(e) => {
+                    eprintln!("[Hubcap] endpoint error for '{}': {}", query, e);
+                }
+            }
+        }
+
+        merged
     }
 }

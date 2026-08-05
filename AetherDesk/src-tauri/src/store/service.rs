@@ -2,8 +2,13 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::time::Duration;
 
-const HUBCAP_SEARCH_BUDGET_MS: u64 = 3000;
+/// Overall wall-clock budget for the whole Hubcap availability lookup
+/// (2 endpoints × up to 2 query variants). The two endpoint calls inside
+/// each variant run in parallel, so this is not a per-request timeout:
+/// it only guards against the minority of runs where Hubcap hangs.
+const HUBCAP_SEARCH_BUDGET_MS: u64 = 6000;
 use crate::steam::store::SteamStore;
+use crate::store::aliases;
 use crate::providers::hubcap::HubcapClient;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -129,7 +134,61 @@ impl StoreService {
         dp[len1][len2]
     }
 
-    /// Queries Steam and Hubcap in parallel, merges, and applies high-fidelity fuzzy/relevance sorting
+    /// Collect the merged Hubcap availability set for a query.
+    ///
+    /// For each query variant (the original plus its first alias expansion,
+    /// e.g. "gta" → "grand theft auto") both Hubcap endpoints are queried in
+    /// parallel via `HubcapClient::search_all`, and all hits are merged by
+    /// app id. The whole lookup is bounded by `HUBCAP_SEARCH_BUDGET_MS`;
+    /// any failure mode (no key, timeout, endpoint errors) degrades to an
+    /// empty set so the Steam catalog still renders on its own.
+    async fn collect_hubcap_hits(
+        &self,
+        query: &str,
+        hubcap_client: Option<&HubcapClient>,
+    ) -> Vec<crate::providers::hubcap::HubcapGameItem> {
+        let Some(client) = hubcap_client else {
+            return Vec::new();
+        };
+
+        let variants = aliases::primary_variants(query);
+        let lookup = async {
+            let mut merged: Vec<crate::providers::hubcap::HubcapGameItem> = Vec::new();
+            let mut seen_ids = HashSet::new();
+            for variant in &variants {
+                for item in client.search_all(variant).await {
+                    if seen_ids.insert(item.app_id) {
+                        merged.push(item);
+                    }
+                }
+            }
+            merged
+        };
+
+        match tokio::time::timeout(Duration::from_millis(HUBCAP_SEARCH_BUDGET_MS), lookup).await {
+            Ok(games) => {
+                eprintln!(
+                    "[Hubcap] Search for '{}' ({} variant(s)) returned {} games",
+                    query, variants.len(), games.len()
+                );
+                games
+            }
+            Err(_) => {
+                eprintln!("[Hubcap] Search timeout for '{}' ({}ms)", query, HUBCAP_SEARCH_BUDGET_MS);
+                Vec::new()
+            }
+        }
+    }
+
+    /// Queries Steam and Hubcap in parallel, merges, and applies high-fidelity fuzzy/relevance sorting.
+    ///
+    /// Source roles (mirroring the simple part of SFF's store search):
+    ///   * Steam `storesearch` is the *catalog*: names and cover images.
+    ///   * Hubcap is the *availability authority*: for every query variant
+    ///     (original + first alias expansion) both `/library` and `/search`
+    ///     are queried in parallel and merged by app id.
+    /// Neither source may take the other down: a Steam outage still yields the
+    /// Hubcap-only list, a Hubcap outage still yields the plain Steam catalog.
     pub async fn search_store(&self, query: &str, hubcap_client: Option<HubcapClient>) -> Result<Vec<UnifiedStoreGame>, String> {
         if query.trim().is_empty() {
             return Ok(Vec::new());
@@ -137,37 +196,19 @@ impl StoreService {
 
         // 1. Fetch from Steam and Hubcap in parallel
         let steam_future = self.steam_store.search_catalog(query);
-        
-        let hubcap_future = async {
-            match &hubcap_client {
-                Some(client) => {
-                    let result = tokio::time::timeout(
-                        Duration::from_millis(HUBCAP_SEARCH_BUDGET_MS),
-                        client.search_library(query),
-                    )
-                    .await;
-                    
-                    match result {
-                        Ok(Ok(games)) => {
-                            eprintln!("[Hubcap] Search for '{}' returned {} games", query, games.len());
-                            games
-                        }
-                        Ok(Err(e)) => {
-                            eprintln!("[Hubcap] Search error for '{}': {}", query, e);
-                            Vec::new()
-                        }
-                        Err(_) => {
-                            eprintln!("[Hubcap] Search timeout for '{}' ({}ms)", query, HUBCAP_SEARCH_BUDGET_MS);
-                            Vec::new()
-                        }
-                    }
-                }
-                None => Vec::new(),
-            }
-        };
+
+        let hubcap_future = self.collect_hubcap_hits(query, hubcap_client.as_ref());
 
         let (steam_res, hubcap_res) = tokio::join!(steam_future, hubcap_future);
-        let steam_items = steam_res?;
+        // Graceful degradation: if the Steam catalog request fails, do not
+        // discard the Hubcap results — return the Hubcap-only list instead.
+        let steam_items = match steam_res {
+            Ok(items) => items,
+            Err(e) => {
+                eprintln!("[Store] Steam catalog failed for '{}': {}", query, e);
+                Vec::new()
+            }
+        };
 
         // 2. Create a fast O(1) lookup set of available app IDs on Hubcap
         let available_ids: HashSet<u32> = hubcap_res.iter().map(|g| g.app_id).collect();
@@ -208,13 +249,22 @@ impl StoreService {
 
         // 5. Apply the professional relevance-boosting and fuzzy-sorting!
         let is_numeric = query.trim().parse::<u32>().is_ok();
-        
+
         if !is_numeric {
-            // Sort by relevance score
+            // Score every item against ALL query variants and keep the best one.
+            // Without this, hits fetched through an alias expansion
+            // ("grand theft auto" found while the user typed "gta") would fail
+            // the substring/Levenshtein tiers against the raw query and get
+            // filtered out, silently nullifying the alias expansion.
+            let score_variants = aliases::expanded_queries(query);
             let mut scored_items: Vec<(usize, UnifiedStoreGame)> = unified_list
                 .into_iter()
                 .map(|item| {
-                    let score = self.calculate_relevance_score(query, &item.name);
+                    let score = score_variants
+                        .iter()
+                        .map(|variant| self.calculate_relevance_score(variant, &item.name))
+                        .min()
+                        .unwrap_or(10000);
                     (score, item)
                 })
                 .filter(|(score, _)| *score < 10000) // Filter out garbage matches
