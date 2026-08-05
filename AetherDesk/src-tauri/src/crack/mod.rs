@@ -73,6 +73,6 @@ pub fn apply_crack_pipeline(
     // Best-effort cleanup regardless of success/error.
     let _ = archive::remove_staging(&staging);
 
-    result.map_err(|error| format!("Crack apply failed: {}", error))?;
+    result.map_err(|error| error)?;
     Ok(report)
 }

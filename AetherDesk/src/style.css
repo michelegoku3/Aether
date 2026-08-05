@@ -1045,6 +1045,7 @@ body {
   font-size: 13px;
   font-weight: 500;
   border: 1px solid transparent;
+  white-space: pre-wrap;
   animation: fadeIn 0.2s ease;
 }
 
