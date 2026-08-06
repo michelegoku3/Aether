@@ -11,6 +11,7 @@ export const SettingsView = ({ hubcapUsage, onRefreshUsage }: SettingsViewProps)
   const [steamPath, setSteamPath] = useState('C:\\Program Files (x86)\\Steam');
   const [activeLibrary, setActiveLibrary] = useState('');
   const [showStoreDlcs, setShowStoreDlcs] = useState(false);
+  const [showStoreNsfw, setShowStoreNsfw] = useState(false);
 
   // Raw settings as loaded from the backend. Saving always spreads this object
   // back, so fields owned by other flows (e.g. `antivirus_exclusion_done`) are
@@ -30,6 +31,7 @@ export const SettingsView = ({ hubcapUsage, onRefreshUsage }: SettingsViewProps)
           setSteamPath(settings.steam_path || 'C:\\Program Files (x86)\\Steam');
           setActiveLibrary(settings.active_library || '');
           setShowStoreDlcs(Boolean(settings.show_store_dlcs));
+          setShowStoreNsfw(Boolean(settings.show_store_nsfw));
         }
       } catch (err: any) {
         showStatus(`Error loading settings: ${err}`, 'error');
@@ -71,7 +73,8 @@ export const SettingsView = ({ hubcapUsage, onRefreshUsage }: SettingsViewProps)
           hubcap_api_key: apiKey,
           steam_path: steamPath,
           active_library: activeLibrary,
-          show_store_dlcs: showStoreDlcs
+          show_store_dlcs: showStoreDlcs,
+          show_store_nsfw: showStoreNsfw
         }
       });
       showStatus('Settings saved successfully!', 'success');
@@ -142,6 +145,18 @@ export const SettingsView = ({ hubcapUsage, onRefreshUsage }: SettingsViewProps)
                 type="checkbox"
                 checked={showStoreDlcs}
                 onChange={(e) => setShowStoreDlcs(e.target.checked)}
+              />
+              <span></span>
+            </label>
+          </div>
+
+          <div className="settings-toggle-row" title="Show adult-only (NSFW) games in store search results; they are highlighted with a pink border">
+            <span className="settings-toggle-text">Show NSFW games in the store</span>
+            <label className="version-switch">
+              <input
+                type="checkbox"
+                checked={showStoreNsfw}
+                onChange={(e) => setShowStoreNsfw(e.target.checked)}
               />
               <span></span>
             </label>

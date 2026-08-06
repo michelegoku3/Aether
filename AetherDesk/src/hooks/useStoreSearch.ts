@@ -7,6 +7,7 @@ export interface StoreGameResult {
   appId: string;
   has_manifest: boolean;
   has_denuvo: boolean;
+  has_nsfw?: boolean;
   imageUrl?: string;
 }
 

@@ -19,16 +19,18 @@ pub async fn search_store(
 ) -> Result<Vec<UnifiedStoreGame>, String> {
     let settings = SettingsManager::new(&app).load();
     let show_store_dlcs = settings.show_store_dlcs;
+    let show_store_nsfw = settings.show_store_nsfw;
     let hubcap_client = (!settings.hubcap_api_key.trim().is_empty())
         .then(|| HubcapClient::new(settings.hubcap_api_key));
 
     let cache = StoreSearchCache::new(LocalAppPaths::data_root().join("cache"));
-    // The DLC-filter flag is part of the cache key: toggling the setting must
-    // not replay 24h-stale results built under the other flag value.
+    // The filter flags are part of the cache key: toggling either setting must
+    // not replay 24h-stale results built under the other flag values.
     let cache_key = format!(
-        "{}|dlcs={} {}",
+        "{}|dlcs={}|nsfw={} {}",
         if hubcap_client.is_some() { "hubcap" } else { "steam" },
         show_store_dlcs,
+        show_store_nsfw,
         query
     );
 
@@ -37,7 +39,7 @@ pub async fn search_store(
     }
 
     match StoreService::new()
-        .search_store(&query, hubcap_client, show_store_dlcs)
+        .search_store(&query, hubcap_client, show_store_dlcs, show_store_nsfw)
         .await
     {
         Ok(results) => {

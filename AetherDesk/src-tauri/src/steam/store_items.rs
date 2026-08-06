@@ -24,6 +24,14 @@ const CHUNK_SIZE: usize = 48;
 /// "unknown" so a transient Steam outage cannot stall the search worker.
 const MAX_CONSECUTIVE_FAILURES: usize = 2;
 
+/// Steam content-descriptor ids that mark sexually explicit material:
+/// 3 = "Nudity or Sexual Content", 4 = "Adult Only Sexual Content".
+/// Verified empirically: Witcher 3 → [1,5], Cyberpunk → [1,2,5],
+/// HuniePop/Mirror → [1,3,4,5]. Ids 1/2/5 are violence/mature-language
+/// markers and must NOT flag a game as NSFW (SFF uses {1,2,3,4}, which also
+/// blocks violent-but-not-sexual titles — deliberately not replicated here).
+const NSFW_CONTENT_DESCRIPTOR_IDS: [u32; 2] = [3, 4];
+
 /// Structural metadata for one store item. All fields default to the
 /// "unknown" state, and callers must treat unknown as *keep the row* —
 /// the filter only drops rows Steam explicitly tagged as DLC-ish.
@@ -39,6 +47,10 @@ pub struct StoreItemMeta {
     /// delisted *games* keep name + type=game (SFF-verified on GTA SA classic,
     /// Dark Souls PTDE, Resident Evil HD).
     pub delisted_blank: bool,
+    /// True when Steam attached a sexual content descriptor (3 or 4).
+    /// Combined with `looks_nsfw_by_name` by `is_nsfw` because some adult
+    /// titles ship without descriptors (and delisted rows carry no metadata).
+    pub is_nsfw: bool,
 }
 
 /// The SFF structural DLC rule set, three signals with no name matching:
@@ -62,6 +74,22 @@ pub fn is_dlc_like(meta: &StoreItemMeta) -> bool {
         return true;
     }
     false
+}
+
+/// Name-based NSFW heuristic (ported from SFF's `_NSFW_NAME_RE`, but applied
+/// to whole tokens instead of raw substring so "Essex"-style names can't
+/// false-positive). It is a safety net for adult titles without descriptors.
+pub fn looks_nsfw_by_name(name: &str) -> bool {
+    name.to_lowercase()
+        .split(|c: char| !c.is_alphanumeric())
+        .any(|token| matches!(token, "hentai" | "futanari" | "furry" | "sex" | "sexy" | "porn"))
+}
+
+/// The single NSFW classification entry point: descriptor first, name as
+/// safety net. Keeping both signals behind one function means callers never
+/// mix the rules by hand (DRY).
+pub fn is_nsfw(meta: &StoreItemMeta, name: &str) -> bool {
+    meta.is_nsfw || looks_nsfw_by_name(name)
 }
 
 /// Integer type codes used by GetItems, mapped to lowercase strings so the
@@ -99,6 +127,7 @@ struct GetStoreItem {
     #[serde(rename = "type")]
     type_code: Option<i64>,
     related_items: Option<RelatedItems>,
+    content_descriptorids: Option<Vec<u32>>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -236,6 +265,15 @@ async fn fetch_chunk(
             .and_then(|related| related.parent_appid)
             .filter(|parent| *parent > 0);
 
+        let is_nsfw = item
+            .content_descriptorids
+            .as_ref()
+            .map(|ids| {
+                ids.iter()
+                    .any(|id| NSFW_CONTENT_DESCRIPTOR_IDS.contains(id))
+            })
+            .unwrap_or(false);
+
         out.insert(
             app_id,
             StoreItemMeta {
@@ -243,6 +281,7 @@ async fn fetch_chunk(
                 parent_appid,
                 // Steam strips name + type from fully delisted DLC entries.
                 delisted_blank: name_empty && item.type_code.is_none(),
+                is_nsfw,
             },
         );
     }
@@ -253,4 +292,48 @@ async fn fetch_chunk(
     }
 
     Ok(out)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn meta(kind: &str, parent: Option<u32>, delisted_blank: bool, is_nsfw: bool) -> StoreItemMeta {
+        StoreItemMeta {
+            kind: kind.to_string(),
+            parent_appid: parent,
+            delisted_blank,
+            is_nsfw,
+        }
+    }
+
+    #[test]
+    fn dlc_rules_match_sff() {
+        assert!(is_dlc_like(&meta("dlc", Some(107410), false, false)));
+        assert!(is_dlc_like(&meta("music", None, false, false))); // soundtrack
+        assert!(is_dlc_like(&meta("tool", None, false, false))); // e.g. Arma 3 Tools
+        assert!(is_dlc_like(&meta("", None, true, false))); // delisted blank
+        assert!(!is_dlc_like(&meta("rerelease", Some(10), false, false))); // GOTY/Definitive kept
+        assert!(!is_dlc_like(&meta("game", None, false, false)));
+        assert!(!is_dlc_like(&meta("", None, false, false))); // unknown = keep
+    }
+
+    #[test]
+    fn nsfw_name_heuristic_uses_whole_tokens() {
+        assert!(looks_nsfw_by_name("Sex World 3"));
+        assert!(looks_nsfw_by_name("Furry Love"));
+        assert!(looks_nsfw_by_name("SEXY Party"));
+        assert!(!looks_nsfw_by_name("Essex Express")); // no substring false positives
+        assert!(!looks_nsfw_by_name("Cyberpunk 2077"));
+        assert!(!looks_nsfw_by_name("HuniePop")); // caught by descriptors instead
+    }
+
+    #[test]
+    fn nsfw_combines_descriptor_and_name() {
+        let flagged = meta("game", None, false, true);
+        assert!(is_nsfw(&flagged, "Innocent Title"));
+        let clean = meta("game", None, false, false);
+        assert!(is_nsfw(&clean, "Furry Love"));
+        assert!(!is_nsfw(&clean, "Stardew Valley"));
+    }
 }
