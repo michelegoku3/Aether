@@ -130,10 +130,11 @@ export const SettingsView = ({ hubcapUsage, onRefreshUsage }: SettingsViewProps)
           />
         </div>
 
+        <div className="settings-separator"></div>
+
         {/* Store Section */}
         <div className="settings-group">
           <label className="settings-label">Store</label>
-          <p className="settings-desc">Store search hides DLC and other non-downloadable add-ons by default, keeping results cleaner and faster. Enable this to show them anyway.</p>
           <div className="settings-toggle-row" title="Show downloadable and non-downloadable add-ons (DLC) in store search results">
             <span className="settings-toggle-text">Show DLCs in the store</span>
             <label className="version-switch">

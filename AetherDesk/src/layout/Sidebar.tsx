@@ -1,4 +1,4 @@
-export type TabType = 'aether' | 'home' | 'store' | 'library' | 'download' | 'settings' | 'log';
+export type TabType = 'aether' | 'home' | 'store' | 'library' | 'backup' | 'settings' | 'log';
 
 interface SidebarProps {
   activeTab: TabType;
@@ -77,13 +77,13 @@ export const Sidebar = ({ activeTab, onTabChange, onRestartSteam, dllUpdateAvail
           Settings
         </button>
 
-        {/* Log */}
+        {/* Logs */}
         <button
           disabled={true}
-          title="Log is not available yet"
+          title="Logs is not available yet"
           className="nav-item"
         >
-          Log
+          Logs
         </button>
       </div>
 

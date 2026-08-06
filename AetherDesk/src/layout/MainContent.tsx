@@ -70,8 +70,8 @@ export const MainContent = ({ activeTab, dllUpdateAvailable, deskUpdateAvailable
   // Fallback title for other blank pages
   const getTabTitle = () => {
     switch (activeTab) {
-      case 'download': return 'Backup View';
-      case 'log': return 'Log View';
+      case 'backup': return 'Backup View';
+      case 'log': return 'Logs View';
       default: return 'Blank View';
     }
   };
