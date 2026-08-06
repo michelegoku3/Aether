@@ -8,6 +8,7 @@ export interface GameCardModel {
   has_manifest?: boolean;
   has_denuvo?: boolean;
   has_nsfw?: boolean;
+  has_delisted?: boolean;
   installed?: boolean;
 }
 
@@ -17,12 +18,29 @@ interface GameCardProps<T extends GameCardModel> {
   onAction: (game: T) => void;
 }
 
+/** Marker priority: the NSFW pink border wins over the delisted white one —
+    a content-safety signal must never be masked by a catalog one. */
+const markerClass = (game: GameCardModel) => {
+  if (game.has_nsfw) return 'nsfw';
+  if (game.has_delisted) return 'delisted';
+  return '';
+};
+
+const markerTooltip = (game: GameCardModel) => {
+  const labels = [
+    game.has_nsfw ? 'Adult-only (NSFW) content' : null,
+    game.has_delisted ? 'Delisted from Steam' : null,
+  ].filter(Boolean);
+  return labels.length > 0 ? labels.join(' • ') : undefined;
+};
+
 export const GameCard = <T extends GameCardModel>({ game, actionLabel, onAction }: GameCardProps<T>) => {
+  const marker = markerClass(game);
   return (
     <div
       key={game.id}
-      className={game.has_nsfw ? 'store-game-card nsfw' : 'store-game-card'}
-      title={game.has_nsfw ? 'Adult-only (NSFW) content' : undefined}
+      className={marker ? `store-game-card ${marker}` : 'store-game-card'}
+      title={markerTooltip(game)}
     >
       {game.has_manifest && (
         <span

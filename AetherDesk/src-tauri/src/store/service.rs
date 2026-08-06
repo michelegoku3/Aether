@@ -26,6 +26,11 @@ pub struct UnifiedStoreGame {
     /// `#[serde(default)]` keeps pre-NSFW search-cache entries deserializable.
     #[serde(default)]
     pub has_nsfw: bool,
+    /// True when Steam flags the item as `unlisted` (delisted). The UI uses
+    /// it for the white card border. `#[serde(default)]` keeps older
+    /// search-cache entries deserializable.
+    #[serde(default)]
+    pub has_delisted: bool,
     #[serde(rename = "imageUrl")]
     pub image_url: String,
 }
@@ -196,7 +201,7 @@ impl StoreService {
     ///     are queried in parallel and merged by app id.
     /// Neither source may take the other down: a Steam outage still yields the
     /// Hubcap-only list, a Hubcap outage still yields the plain Steam catalog.
-    pub async fn search_store(&self, query: &str, hubcap_client: Option<HubcapClient>, show_store_dlcs: bool, show_store_nsfw: bool) -> Result<Vec<UnifiedStoreGame>, String> {
+    pub async fn search_store(&self, query: &str, hubcap_client: Option<HubcapClient>, show_store_dlcs: bool, show_store_nsfw: bool, show_store_delisted: bool) -> Result<Vec<UnifiedStoreGame>, String> {
         if query.trim().is_empty() {
             return Ok(Vec::new());
         }
@@ -235,6 +240,7 @@ impl StoreService {
                 has_manifest,
                 has_denuvo: false,
                 has_nsfw: false,
+                has_delisted: false,
                 image_url: item.image_url,
             });
             added_ids.insert(item.id);
@@ -254,6 +260,7 @@ impl StoreService {
                     has_manifest: true,
                     has_denuvo: false,
                     has_nsfw: false,
+                    has_delisted: false,
                     image_url: String::new(),
                 });
                 added_ids.insert(hg.app_id);
@@ -270,35 +277,39 @@ impl StoreService {
             let all_ids: Vec<u32> = unified_list.iter().map(|game| game.id).collect();
             let meta_map = store_items::fetch_store_items(all_ids).await;
 
-            // Tag every row first: the NSFW flag feeds the UI's pink border,
-            // so rows that survive the filter must carry it; hidden rows are
-            // tagged too (harmless) because tagging and filtering share the
-            // same metadata pass.
+            // Tag every row first: the NSFW/delisted flags feed the UI's
+            // marker borders, so rows that survive the filters must carry
+            // them; hidden rows are tagged too (harmless) because tagging and
+            // filtering share the same metadata pass.
             for game in unified_list.iter_mut() {
                 let meta = meta_map.get(&game.id).cloned().unwrap_or_default();
                 game.has_nsfw = store_items::is_nsfw(&meta, &game.name);
+                game.has_delisted = meta.is_delisted;
             }
 
             let mut dlc_filtered = 0usize;
             let mut nsfw_filtered = 0usize;
+            let mut delisted_filtered = 0usize;
             unified_list.retain(|game| {
                 let meta = meta_map.get(&game.id).cloned().unwrap_or_default();
                 if !show_store_dlcs && store_items::is_dlc_like(&meta) {
                     dlc_filtered += 1;
                     return false;
                 }
-                if !show_store_nsfw
-                    && (store_items::is_nsfw(&meta, &game.name))
-                {
+                if !show_store_nsfw && store_items::is_nsfw(&meta, &game.name) {
                     nsfw_filtered += 1;
+                    return false;
+                }
+                if !show_store_delisted && meta.is_delisted {
+                    delisted_filtered += 1;
                     return false;
                 }
                 true
             });
-            if dlc_filtered + nsfw_filtered > 0 {
+            if dlc_filtered + nsfw_filtered + delisted_filtered > 0 {
                 eprintln!(
-                    "[Store] Filters for '{}': dropped {} DLC + {} NSFW row(s)",
-                    query, dlc_filtered, nsfw_filtered
+                    "[Store] Filters for '{}': dropped {} DLC + {} NSFW + {} delisted row(s)",
+                    query, dlc_filtered, nsfw_filtered, delisted_filtered
                 );
             }
         }

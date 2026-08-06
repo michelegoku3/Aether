@@ -8,6 +8,7 @@ export interface StoreGameResult {
   has_manifest: boolean;
   has_denuvo: boolean;
   has_nsfw?: boolean;
+  has_delisted?: boolean;
   imageUrl?: string;
 }
 

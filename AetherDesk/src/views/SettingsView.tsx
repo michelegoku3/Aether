@@ -11,7 +11,8 @@ export const SettingsView = ({ hubcapUsage, onRefreshUsage }: SettingsViewProps)
   const [steamPath, setSteamPath] = useState('C:\\Program Files (x86)\\Steam');
   const [activeLibrary, setActiveLibrary] = useState('');
   const [showStoreDlcs, setShowStoreDlcs] = useState(false);
-  const [showStoreNsfw, setShowStoreNsfw] = useState(false);
+  const [showStoreNsfw, setShowStoreNsfw] = useState(true);
+  const [showStoreDelisted, setShowStoreDelisted] = useState(true);
 
   // Raw settings as loaded from the backend. Saving always spreads this object
   // back, so fields owned by other flows (e.g. `antivirus_exclusion_done`) are
@@ -31,7 +32,9 @@ export const SettingsView = ({ hubcapUsage, onRefreshUsage }: SettingsViewProps)
           setSteamPath(settings.steam_path || 'C:\\Program Files (x86)\\Steam');
           setActiveLibrary(settings.active_library || '');
           setShowStoreDlcs(Boolean(settings.show_store_dlcs));
-          setShowStoreNsfw(Boolean(settings.show_store_nsfw));
+          // These two default to enabled: only an explicit `false` turns them off.
+          setShowStoreNsfw(settings.show_store_nsfw !== false);
+          setShowStoreDelisted(settings.show_store_delisted !== false);
         }
       } catch (err: any) {
         showStatus(`Error loading settings: ${err}`, 'error');
@@ -74,7 +77,8 @@ export const SettingsView = ({ hubcapUsage, onRefreshUsage }: SettingsViewProps)
           steam_path: steamPath,
           active_library: activeLibrary,
           show_store_dlcs: showStoreDlcs,
-          show_store_nsfw: showStoreNsfw
+          show_store_nsfw: showStoreNsfw,
+          show_store_delisted: showStoreDelisted
         }
       });
       showStatus('Settings saved successfully!', 'success');
@@ -145,6 +149,18 @@ export const SettingsView = ({ hubcapUsage, onRefreshUsage }: SettingsViewProps)
                 type="checkbox"
                 checked={showStoreDlcs}
                 onChange={(e) => setShowStoreDlcs(e.target.checked)}
+              />
+              <span></span>
+            </label>
+          </div>
+
+          <div className="settings-toggle-row" title="Show delisted games (removed from the Steam catalog) in store search results; they are highlighted with a white border">
+            <span className="settings-toggle-text">Show delisted games in the store</span>
+            <label className="version-switch">
+              <input
+                type="checkbox"
+                checked={showStoreDelisted}
+                onChange={(e) => setShowStoreDelisted(e.target.checked)}
               />
               <span></span>
             </label>
