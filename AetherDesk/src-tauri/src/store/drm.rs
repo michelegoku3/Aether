@@ -21,6 +21,10 @@ const CACHE_TTL_SECONDS: u64 = 30 * 24 * 60 * 60;
 
 #[derive(Debug, Default, Serialize, Deserialize)]
 struct DenuvoCacheFile {
+    /// Same self-describing invalidation scheme as the store search cache:
+    /// entries written by a different AetherDesk build are ignored, no stamp file.
+    #[serde(default)]
+    app_version: String,
     entries: HashMap<u32, DenuvoCacheEntry>,
 }
 
@@ -46,13 +50,17 @@ struct DenuvoCacheEntry {
 pub struct DrmDetector {
     client: reqwest::Client,
     cache_path: PathBuf,
+    /// Version of the running build (from `tauri.conf.json`), for
+    /// self-describing cache invalidation.
+    app_version: String,
 }
 
 impl DrmDetector {
-    pub fn new(cache_dir: PathBuf) -> Self {
+    pub fn new(cache_dir: PathBuf, app_version: String) -> Self {
         Self {
             client: http::build_client(DRM_TIMEOUT_SECONDS),
             cache_path: cache_dir.join(CACHE_FILE_NAME),
+            app_version,
         }
     }
 
@@ -159,7 +167,11 @@ impl DrmDetector {
         let Ok(content) = fs::read_to_string(&self.cache_path) else {
             return DenuvoCacheFile::default();
         };
-        serde_json::from_str::<DenuvoCacheFile>(&content).unwrap_or_default()
+        let mut cache = serde_json::from_str::<DenuvoCacheFile>(&content).unwrap_or_default();
+        if cache.app_version != self.app_version {
+            cache.entries.clear();
+        }
+        cache
     }
 
     fn save_cache(&self, cache: &DenuvoCacheFile) -> Result<(), String> {
@@ -168,7 +180,11 @@ impl DrmDetector {
                 .map_err(|e| format!("Failed to create Denuvo cache directory: {}", e))?;
         }
         let temp_path = self.cache_path.with_extension("tmp");
-        let content = serde_json::to_string(cache)
+        let stamped = DenuvoCacheFile {
+            app_version: self.app_version.clone(),
+            entries: cache.entries.clone(),
+        };
+        let content = serde_json::to_string(&stamped)
             .map_err(|e| format!("Failed to serialize Denuvo cache: {}", e))?;
         fs::write(&temp_path, &content)
             .map_err(|e| format!("Failed to write Denuvo cache: {}", e))?;

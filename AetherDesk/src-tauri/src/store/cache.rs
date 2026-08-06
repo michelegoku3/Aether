@@ -6,12 +6,17 @@ use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 const CACHE_FILE_NAME: &str = "store_search_cache.json";
-const CACHE_SCHEMA_VERSION: u32 = 1;
 const FRESH_TTL_SECONDS: u64 = 24 * 60 * 60;
 
 #[derive(Debug, Default, Serialize, Deserialize)]
 struct StoreSearchCacheFile {
-    version: u32,
+    /// Written from `tauri.conf.json`'s version at save time
+    /// (`AppHandle::package_info().version`). A cache written by a different
+    /// AetherDesk build is ignored on load — self-describing invalidation,
+    /// no sidecar stamp file needed. `#[serde(default)]` keeps pre-versioned
+    /// files parseable as "unknown app" (which then mismatch and reset).
+    #[serde(default)]
+    app_version: String,
     entries: HashMap<String, StoreSearchCacheEntry>,
 }
 
@@ -27,12 +32,15 @@ struct StoreSearchCacheEntry {
 /// while this repository owns only normalized query keys and JSON persistence.
 pub struct StoreSearchCache {
     cache_path: PathBuf,
+    /// Version of the running build (`tauri.conf.json`), read once per command.
+    app_version: String,
 }
 
 impl StoreSearchCache {
-    pub fn new(cache_dir: PathBuf) -> Self {
+    pub fn new(cache_dir: PathBuf, app_version: String) -> Self {
         Self {
             cache_path: cache_dir.join(CACHE_FILE_NAME),
+            app_version,
         }
     }
 
@@ -62,7 +70,7 @@ impl StoreSearchCache {
         };
 
         let mut cache = self.load_cache();
-        cache.version = CACHE_SCHEMA_VERSION;
+        cache.app_version = self.app_version.clone();
         cache.entries.insert(
             key,
             StoreSearchCacheEntry {
@@ -88,15 +96,18 @@ impl StoreSearchCache {
     fn load_cache(&self) -> StoreSearchCacheFile {
         let Ok(content) = fs::read_to_string(&self.cache_path) else {
             return StoreSearchCacheFile {
-                version: CACHE_SCHEMA_VERSION,
+                app_version: self.app_version.clone(),
                 entries: HashMap::new(),
             };
         };
 
         let mut cache = serde_json::from_str::<StoreSearchCacheFile>(&content).unwrap_or_default();
-        if cache.version != CACHE_SCHEMA_VERSION {
+        // Self-describing invalidation: entries are only usable when written by
+        // the same AetherDesk build. Any other build resets the file on load
+        // (entries re-fill lazily as searches run).
+        if cache.app_version != self.app_version {
             cache.entries.clear();
-            cache.version = CACHE_SCHEMA_VERSION;
+            cache.app_version = self.app_version.clone();
         }
         cache
     }
@@ -108,7 +119,12 @@ impl StoreSearchCache {
         }
 
         let temp_path = self.cache_path.with_extension("tmp");
-        let content = serde_json::to_string_pretty(cache)
+        let mut stamped = StoreSearchCacheFile {
+            app_version: self.app_version.clone(),
+            entries: cache.entries.clone(),
+        };
+        stamped.entries.shrink_to_fit();
+        let content = serde_json::to_string_pretty(&stamped)
             .map_err(|e| format!("Failed to serialize Store search cache: {}", e))?;
 
         fs::write(&temp_path, content)

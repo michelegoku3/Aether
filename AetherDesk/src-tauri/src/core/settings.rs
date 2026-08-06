@@ -64,7 +64,13 @@ impl SettingsManager {
             config_dir: LocalAppPaths::config_dir(),
             legacy_config_dir: LocalAppPaths::legacy_app_config_dir(app_handle),
         };
-        manager.migrate_legacy_settings_if_needed();
+        // The migration logic itself lives in `core::migration` (single home
+        // for all migration helpers); calling it here keeps SettingsManager
+        // self-sufficient even when used before the startup hub runs.
+        crate::core::migration::migrate_legacy_settings_if_needed(
+            &manager.config_dir,
+            manager.legacy_config_dir.as_deref(),
+        );
         manager
     }
 
@@ -115,25 +121,4 @@ impl SettingsManager {
         Ok(())
     }
 
-    fn migrate_legacy_settings_if_needed(&self) {
-        let local_path = self.get_file_path();
-        if local_path.exists() {
-            return;
-        }
-
-        let Some(legacy_path) = self.get_legacy_file_path() else {
-            return;
-        };
-        if !legacy_path.exists() {
-            return;
-        }
-
-        if let Ok(content) = fs::read_to_string(&legacy_path) {
-            if let Some(parent) = local_path.parent() {
-                if fs::create_dir_all(parent).is_ok() && fs::write(&local_path, content).is_ok() {
-                    let _ = fs::remove_file(legacy_path);
-                }
-            }
-        }
-    }
 }

@@ -1,9 +1,9 @@
-use crate::core::storage::AppStorage;
 use crate::updater::dll::DllInstaller;
+use crate::updater::dll_version::read_installed_dll_version;
 use crate::updater::github::GithubReleaseManager;
 
 #[tauri::command]
-pub async fn check_aether_dll_update(app: tauri::AppHandle, steam_path: String) -> Result<serde_json::Value, String> {
+pub async fn check_aether_dll_update(_app: tauri::AppHandle, steam_path: String) -> Result<serde_json::Value, String> {
     if steam_path.trim().is_empty() {
         return Ok(serde_json::json!({
             "installed_version": "N/A",
@@ -12,26 +12,13 @@ pub async fn check_aether_dll_update(app: tauri::AppHandle, steam_path: String) 
         }));
     }
 
-    let storage = AppStorage::new(&app);
     let legacy_version_path = std::path::PathBuf::from(&steam_path).join("AetherDLL_version.txt");
-    let installed_version = if let Some(version) = storage.read_aether_dll_version() {
-        let _ = std::fs::remove_file(&legacy_version_path);
-        version
-    } else if legacy_version_path.exists() {
-        let version = std::fs::read_to_string(&legacy_version_path)
-            .unwrap_or_else(|_| "N/A".to_string())
-            .trim()
-            .to_string();
-        if version != "N/A" {
-            let _ = storage.write_aether_dll_version(&version);
-        }
-        let _ = std::fs::remove_file(&legacy_version_path);
-        version
-    } else if DllInstaller::new(steam_path.clone()).verify_installation() {
-        "v2.4.1".to_string()
-    } else {
-        "N/A".to_string()
-    };
+
+    // Fonte di verità primaria: la version resource DENTRO i .dll (scritta a compile
+    // time dal build CMake, root CMakeLists.txt) — nessun file esterno coinvolto.
+    // Se manca (installazioni precedenti alla feature), catena legacy di sola lettura.
+    let installed_version = read_installed_dll_version(std::path::Path::new(&steam_path))
+        .unwrap_or_else(|| read_legacy_installed_version(&legacy_version_path, &steam_path));
 
     let manager = GithubReleaseManager::new();
     let latest_tag = match manager.fetch_latest_dll_release().await {
@@ -56,8 +43,30 @@ pub async fn check_aether_dll_update(app: tauri::AppHandle, steam_path: String) 
     }))
 }
 
+/// Catena legacy **di sola lettura** per installazioni pre-resource (le DLL non hanno
+/// la versione dentro): bookmark residuo nella cartella Steam → sola presenza file
+/// ("?"). Non viene più scritto/letto NULLA in AetherData: la cartella
+/// `component_versions` è ritirata e la migrazione di avvio la elimina.
+fn read_legacy_installed_version(legacy_version_path: &std::path::Path, steam_path: &str) -> String {
+    if legacy_version_path.exists() {
+        std::fs::read_to_string(legacy_version_path)
+            .unwrap_or_else(|_| "N/A".to_string())
+            .trim()
+            .to_string()
+    } else if DllInstaller::new(steam_path.to_string()).verify_installation() {
+        // DLL presenti ma NESSUNA fonte di versione attendibile (né resource PE nei
+        // file, né bookmark legacy): MAI inventare un numero — il vecchio "v2.4.1"
+        // cablato qui mentiva (ed era pure obsoleto). "?" rende onesto l'ignoto:
+        // la UI mostra "v?" e, dato che != ultimo tag, propone l'update — che a sua
+        // volta installa una build con la versione leggibile dentro i .dll.
+        "?".to_string()
+    } else {
+        "N/A".to_string()
+    }
+}
+
 #[tauri::command]
-pub async fn install_aether_dll(app: tauri::AppHandle, steam_path: String) -> Result<String, String> {
+pub async fn install_aether_dll(_app: tauri::AppHandle, steam_path: String) -> Result<String, String> {
     if steam_path.trim().is_empty() {
         return Err("Steam installation path is required".to_string());
     }
@@ -90,23 +99,27 @@ pub async fn install_aether_dll(app: tauri::AppHandle, steam_path: String) -> Re
     let _ = std::fs::remove_file(temp_zip_path);
 
     if install_result.is_ok() {
-        AppStorage::new(&app).write_aether_dll_version(&tag_name)?;
+        // Nessun file di versione esterno: la versione vive dentro i .dll (version
+        // resource PE). Rimuoviamo solo l'eventuale bookmark residuo nella dir Steam.
         let legacy_version_path = std::path::PathBuf::from(&steam_path).join("AetherDLL_version.txt");
         let _ = std::fs::remove_file(legacy_version_path);
+
+        return Ok(format!("AetherDLL {} successfully installed into Steam!", tag_name));
     }
 
     install_result.map(|_| format!("AetherDLL {} successfully installed into Steam!", tag_name))
 }
 
 #[tauri::command]
-pub fn uninstall_aether_dll(app: tauri::AppHandle, steam_path: String) -> Result<String, String> {
+pub fn uninstall_aether_dll(_app: tauri::AppHandle, steam_path: String) -> Result<String, String> {
     if steam_path.trim().is_empty() {
         return Err("Steam installation path is required".to_string());
     }
 
     ensure_steam_is_closed()?;
 
-    AppStorage::new(&app).remove_aether_dll_version();
+    // Rimuove l'eventuale bookmark residuo nella dir Steam (i .dll li elimina
+    // l'installer qui sotto; in AetherData non viene più scritto nulla).
     let legacy_version_path = std::path::PathBuf::from(&steam_path).join("AetherDLL_version.txt");
     let _ = std::fs::remove_file(legacy_version_path);
 
@@ -116,13 +129,12 @@ pub fn uninstall_aether_dll(app: tauri::AppHandle, steam_path: String) -> Result
 }
 
 #[tauri::command]
-pub fn reset_aether_steam_path(app: tauri::AppHandle, steam_path: String) -> Result<String, String> {
+pub fn reset_aether_steam_path(_app: tauri::AppHandle, steam_path: String) -> Result<String, String> {
     if steam_path.trim().is_empty() {
         return Err("Steam installation path is required".to_string());
     }
     ensure_steam_is_closed()?;
 
-    AppStorage::new(&app).remove_aether_dll_version();
     let legacy_version_path = std::path::PathBuf::from(&steam_path).join("AetherDLL_version.txt");
     let _ = std::fs::remove_file(legacy_version_path);
 

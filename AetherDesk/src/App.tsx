@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Sidebar, TabType } from './layout/Sidebar';
 import { MainContent } from './layout/MainContent';
+import { DllStatusInfo } from './types/ui';
 import { invoke } from '@tauri-apps/api/core';
 
 export default function App() {
@@ -13,11 +14,7 @@ export default function App() {
   const [deskUpdateAvailable, setDeskUpdateAvailable] = useState(false);
 
   // DLL installation status (checked only at startup and after install/uninstall)
-  const [dllStatus, setDllStatus] = useState<{
-    isInstalled: boolean;
-    installedVersion: string;
-    isSteamBlocked: boolean;
-  }>({
+  const [dllStatus, setDllStatus] = useState<DllStatusInfo>({
     isInstalled: false,
     installedVersion: 'N/A',
     isSteamBlocked: false

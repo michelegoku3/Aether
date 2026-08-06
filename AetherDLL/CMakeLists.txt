@@ -25,7 +25,14 @@ if(POLICY CMP0135)
     cmake_policy(SET CMP0135 NEW)
 endif()
 
-project(AetherDLL LANGUAGES C CXX VERSION 1.0.0)
+# ============================================================================
+# VERSION — SINGLE SOURCE OF TRUTH
+# This version is embedded INSIDE every built DLL as a Windows version resource
+# (VS_VERSION_INFO). AetherDesk reads the installed version directly from the
+# .dll files in the Steam folder: NO sidecar .txt/.json version files involved.
+# Bump this at each release (keep it aligned with the "dll-x.y.z" git tag).
+# ============================================================================
+project(AetherDLL LANGUAGES C CXX RC VERSION 0.9.7)
 
 if(NOT WIN32)
     message(FATAL_ERROR "AetherDLL targets Windows only.")
@@ -37,6 +44,35 @@ endif()
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
+
+# ============================================================================
+# Shared version resource generator
+# Produces a per-target .rc from common/version.rc.in using PROJECT_VERSION above.
+# ============================================================================
+set(AETHER_PRODUCT_VERSION "${PROJECT_VERSION}")
+# FILEVERSION needs the 4-part comma form: "x.y.z" -> "x,y,z,0"
+string(REPLACE "." "," AETHER_FILEVERSION_COMMA "${PROJECT_VERSION}.0")
+
+# attach_version_resource(<target> <internal-name> <original-filename> <description>)
+function(attach_version_resource TARGET_NAME INTERNAL_NAME ORIGINAL_FILENAME DESCRIPTION)
+    set(AETHER_RC_INTERNAL_NAME "${INTERNAL_NAME}")
+    set(AETHER_RC_ORIGINAL_FILENAME "${ORIGINAL_FILENAME}")
+    set(AETHER_RC_FILEDESCRIPTION "${DESCRIPTION}")
+    set(_aether_version_rc "${CMAKE_CURRENT_BINARY_DIR}/${TARGET_NAME}_version.rc")
+    configure_file("${CMAKE_SOURCE_DIR}/common/version.rc.in" "${_aether_version_rc}" @ONLY)
+    target_sources(${TARGET_NAME} PRIVATE "${_aether_version_rc}")
+    message(STATUS "[AetherDLL] ${TARGET_NAME}: version resource ${_aether_version_rc} (version ${AETHER_PRODUCT_VERSION})")
+
+    # Hard gate (same script the CI release job runs): if the linked DLL lacks the
+    # version resource, FAIL THE BUILD here instead of shipping a "mute" binary that
+    # AetherDesk could never version-check. Never silently skip.
+    add_custom_command(TARGET ${TARGET_NAME} POST_BUILD
+        COMMAND powershell -NoProfile -ExecutionPolicy Bypass -File
+                "${CMAKE_SOURCE_DIR}/common/verify-version.ps1"
+                -TargetFile "$<TARGET_FILE:${TARGET_NAME}>"
+                -ExpectedVersion "${AETHER_PRODUCT_VERSION}"
+        VERBATIM)
+endfunction()
 
 # Default build type
 # Force Release only (no Debug builds allowed)

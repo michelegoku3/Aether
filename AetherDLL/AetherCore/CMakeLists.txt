@@ -121,5 +121,8 @@ set_target_properties(AetherCore PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY_RELEASE "${CMAKE_BINARY_DIR}/out/Release"
 )
 
+# Embed the Windows version resource (version comes from the root project VERSION)
+attach_version_resource(AetherCore "AetherCore" "AetherCore.dll" "AetherDLL Core")
+
 # Ensure proto generation is complete before building
 add_dependencies(AetherCore generate_protos)
