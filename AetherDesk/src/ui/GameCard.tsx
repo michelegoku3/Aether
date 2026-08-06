@@ -7,6 +7,7 @@ export interface GameCardModel {
   imageUrl?: string;
   has_manifest?: boolean;
   has_denuvo?: boolean;
+  has_nsfw?: boolean;
   installed?: boolean;
 }
 
@@ -18,7 +19,11 @@ interface GameCardProps<T extends GameCardModel> {
 
 export const GameCard = <T extends GameCardModel>({ game, actionLabel, onAction }: GameCardProps<T>) => {
   return (
-    <div key={game.id} className="store-game-card">
+    <div
+      key={game.id}
+      className={game.has_nsfw ? 'store-game-card nsfw' : 'store-game-card'}
+      title={game.has_nsfw ? 'Adult-only (NSFW) content' : undefined}
+    >
       {game.has_manifest && (
         <span
           className={`badge-available ${game.has_denuvo ? 'denuvo' : ''}`}

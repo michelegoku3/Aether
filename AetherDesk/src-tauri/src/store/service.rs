@@ -8,6 +8,7 @@ use std::time::Duration;
 /// it only guards against the minority of runs where Hubcap hangs.
 const HUBCAP_SEARCH_BUDGET_MS: u64 = 6000;
 use crate::steam::store::SteamStore;
+use crate::steam::store_items;
 use crate::store::aliases;
 use crate::providers::hubcap::HubcapClient;
 
@@ -19,6 +20,12 @@ pub struct UnifiedStoreGame {
     pub app_id: String,
     pub has_manifest: bool,
     pub has_denuvo: bool,
+    /// True when Steam content descriptors (or the name heuristic) mark the
+    /// title as sexually explicit. The UI uses it for the pink card border;
+    /// it stays `false` on rows Steam cannot classify (unknown metadata).
+    /// `#[serde(default)]` keeps pre-NSFW search-cache entries deserializable.
+    #[serde(default)]
+    pub has_nsfw: bool,
     #[serde(rename = "imageUrl")]
     pub image_url: String,
 }
@@ -189,7 +196,7 @@ impl StoreService {
     ///     are queried in parallel and merged by app id.
     /// Neither source may take the other down: a Steam outage still yields the
     /// Hubcap-only list, a Hubcap outage still yields the plain Steam catalog.
-    pub async fn search_store(&self, query: &str, hubcap_client: Option<HubcapClient>, show_store_dlcs: bool) -> Result<Vec<UnifiedStoreGame>, String> {
+    pub async fn search_store(&self, query: &str, hubcap_client: Option<HubcapClient>, show_store_dlcs: bool, show_store_nsfw: bool) -> Result<Vec<UnifiedStoreGame>, String> {
         if query.trim().is_empty() {
             return Ok(Vec::new());
         }
@@ -227,6 +234,7 @@ impl StoreService {
                 app_id: item.id.to_string(),
                 has_manifest,
                 has_denuvo: false,
+                has_nsfw: false,
                 image_url: item.image_url,
             });
             added_ids.insert(item.id);
@@ -245,6 +253,7 @@ impl StoreService {
                     app_id: hg.app_id.to_string(),
                     has_manifest: true,
                     has_denuvo: false,
+                    has_nsfw: false,
                     image_url: String::new(),
                 });
                 added_ids.insert(hg.app_id);
@@ -252,27 +261,45 @@ impl StoreService {
         }
         unified_list.extend(hubcap_extras);
 
-        // 4b. Structural DLC filter (SFF rule set) over the WHOLE merged list.
-        // Steam's storesearch itself returns DLC/ soundtracks / tools for
-        // franchise queries (Arma 3 Apex/Jets/Soundtrack, WWE 2K packs...), so
-        // trusting Steam rows was not enough: every row is checked against
-        // batched GetItems metadata. DLC rows waste result slots, Hubcap
-        // download attempts, and Denuvo checks while never being downloadable
-        // targets themselves. One batch (~50 ids per call, process-cached)
-        // covers the whole list; "unknown" metadata always keeps the row.
-        if !show_store_dlcs && !unified_list.is_empty() {
+        // 4b. Structural classification + filtering over the WHOLE merged list.
+        // One batched GetItems call (~50 ids per call, process-cached) provides
+        // both classifiers (DLC + NSFW) for every row — Steam's storesearch itself
+        // returns DLC/soundtracks/tools for franchise queries, so trusting Steam
+        // rows is not enough. "Unknown" metadata always keeps the row.
+        if !unified_list.is_empty() {
             let all_ids: Vec<u32> = unified_list.iter().map(|game| game.id).collect();
-            let meta_map = crate::steam::store_items::fetch_store_items(all_ids).await;
-            let before = unified_list.len();
+            let meta_map = store_items::fetch_store_items(all_ids).await;
+
+            // Tag every row first: the NSFW flag feeds the UI's pink border,
+            // so rows that survive the filter must carry it; hidden rows are
+            // tagged too (harmless) because tagging and filtering share the
+            // same metadata pass.
+            for game in unified_list.iter_mut() {
+                let meta = meta_map.get(&game.id).cloned().unwrap_or_default();
+                game.has_nsfw = store_items::is_nsfw(&meta, &game.name);
+            }
+
+            let mut dlc_filtered = 0usize;
+            let mut nsfw_filtered = 0usize;
             unified_list.retain(|game| {
-                match meta_map.get(&game.id) {
-                    Some(meta) => !crate::steam::store_items::is_dlc_like(meta),
-                    None => true,
+                let meta = meta_map.get(&game.id).cloned().unwrap_or_default();
+                if !show_store_dlcs && store_items::is_dlc_like(&meta) {
+                    dlc_filtered += 1;
+                    return false;
                 }
+                if !show_store_nsfw
+                    && (store_items::is_nsfw(&meta, &game.name))
+                {
+                    nsfw_filtered += 1;
+                    return false;
+                }
+                true
             });
-            let filtered = before - unified_list.len();
-            if filtered > 0 {
-                eprintln!("[Store] DLC filter dropped {} row(s) for '{}'", filtered, query);
+            if dlc_filtered + nsfw_filtered > 0 {
+                eprintln!(
+                    "[Store] Filters for '{}': dropped {} DLC + {} NSFW row(s)",
+                    query, dlc_filtered, nsfw_filtered
+                );
             }
         }
 

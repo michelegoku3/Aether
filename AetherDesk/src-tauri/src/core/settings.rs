@@ -19,6 +19,11 @@ pub struct AppSettings {
     /// settings.json files parseable and preserves the "hidden" default.
     #[serde(default)]
     pub show_store_dlcs: bool,
+    /// When false (default), rows tagged NSFW (Steam sexual content descriptors
+    /// or name heuristic) are filtered out of store search results. When true
+    /// they stay visible, marked with a pink border in the UI.
+    #[serde(default)]
+    pub show_store_nsfw: bool,
 }
 
 impl Default for AppSettings {
@@ -29,6 +34,7 @@ impl Default for AppSettings {
             active_library: String::new(),
             antivirus_exclusion_done: false,
             show_store_dlcs: false,
+            show_store_nsfw: false,
         }
     }
 }

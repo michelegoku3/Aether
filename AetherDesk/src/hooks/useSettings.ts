@@ -6,6 +6,8 @@ export interface AppSettings {
   active_library: string;
   /** Defaults to false on the backend: DLC-like rows are hidden from store search. */
   show_store_dlcs?: boolean;
+  /** Defaults to false on the backend: NSFW rows are hidden; when shown they get a pink border. */
+  show_store_nsfw?: boolean;
   /** Owned by the antivirus-exclusion flow; must be preserved verbatim on save. */
   antivirus_exclusion_done?: boolean;
 }

@@ -8,6 +8,8 @@
   --color-muted: #8f8f9e;
   --color-cyan: #00b4d8;
   --color-denuvo: #ff3b5f;
+  --color-nsfw-pink: #ff5e8a;
+  --color-nsfw-pink-hover: #ff8fb0;
   --border-color: #22222a;
 }
 
@@ -294,6 +296,17 @@ body {
   min-width: 0; /* Crucial: allows the card to shrink below text width, preventing overflow! */
   width: 100%;
   transition: transform 0.2s ease, border-color 0.2s ease;
+}
+
+/* NSFW marker: pink border + subtle glow, on top of the base card style.
+   Only reachable when "Show NSFW games" is enabled (otherwise filtered out). */
+.store-game-card.nsfw {
+  border-color: var(--color-nsfw-pink);
+  box-shadow: 0 0 10px rgba(255, 94, 138, 0.25);
+}
+
+.store-game-card.nsfw:hover {
+  border-color: var(--color-nsfw-pink-hover);
 }
 
 .store-game-card:hover {
