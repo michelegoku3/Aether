@@ -13,6 +13,12 @@
   --color-delisted-white: #f2f2f5;
   --color-delisted-white-hover: #ffffff;
   --border-color: #22222a;
+  /* GameCard geometry: the cover radius must nest inside the card radius
+     minus its 1px border; the inset variant is used when a marker border
+     (NSFW/delisted) adds extra padding. */
+  --radius-card: 10px;
+  --radius-card-cover: 9px;
+  --radius-card-cover-inset: 5px;
 }
 
 * {
@@ -291,7 +297,7 @@ body {
 .store-game-card {
   background-color: #131316;
   border: 1px solid var(--border-color);
-  border-radius: 10px;
+  border-radius: var(--radius-card);
   display: flex;
   overflow: visible; /* Changed to visible to let the superimposed badge pop out! */
   position: relative; /* Added relative positioning context for the absolute badge */
@@ -398,17 +404,28 @@ body {
 /* Vertical 2:3 Cover Artwork */
 .game-cover-wrapper {
   width: 90px; /* Increased image width for more breathing room */
-  height: 130px; /* Increased height to match new card row height */
+  /* No fixed height: in the card's row flexbox the wrapper stretches to the
+     full card height, and the rounded corners keep it visually inside the
+     card (the image must never stick out of it or square off its corners). */
   position: relative;
   background-color: #1b1b1f;
   flex-shrink: 0;
   overflow: hidden;
+  border-radius: var(--radius-card-cover);
+}
+
+/* Marked cards (NSFW pink / delisted white) inset their content by 4px, so
+   the cover radius tightens to nest cleanly inside the marker border. */
+.store-game-card.nsfw .game-cover-wrapper,
+.store-game-card.delisted .game-cover-wrapper {
+  border-radius: var(--radius-card-cover-inset);
 }
 
 .game-cover-image {
+  display: block; /* no inline-image baseline gap below the cover */
   width: 100%;
   height: 100%;
-  object-fit: cover;
+  object-fit: cover; /* aspect ratio always preserved: crop, never deform */
   object-position: center;
   position: relative;
   z-index: 2;

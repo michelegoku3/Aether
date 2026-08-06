@@ -7,9 +7,9 @@ use crate::providers::http;
 const BASE_URL: &str = "https://hubcapmanifest.com/api/v1";
 const HUBCAP_TIMEOUT_SECONDS: u64 = 8;
 
-/// `/library` tolerates large pages: it is the broad recall net (mirrors SFF's
-/// `get_library(limit=200)`), while `/search` is the precise matcher.
-const LIBRARY_SEARCH_LIMIT: u32 = 200;
+/// `/library` gets a moderate page: bigger pages mean bigger payloads and a
+/// longer Hubcap-only tail that the pre-filter then has to cut down anyway.
+const LIBRARY_SEARCH_LIMIT: u32 = 100;
 const CATALOG_SEARCH_LIMIT: u32 = 50;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]

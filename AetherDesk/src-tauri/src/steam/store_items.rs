@@ -56,6 +56,9 @@ pub struct StoreItemMeta {
     /// GTA SA classic, Dark Souls PTDE, Spec Ops: The Line — verified
     /// empirically against GetItems; F2P titles never carry the flag).
     pub is_delisted: bool,
+    /// Unix seconds of the Steam release date (`release.steam_release_date`),
+    /// None when Steam does not report one. Used for newest-first ordering.
+    pub release_date_unix: Option<i64>,
 }
 
 /// The SFF structural DLC rule set, three signals with no name matching:
@@ -134,11 +137,28 @@ struct GetStoreItem {
     related_items: Option<RelatedItems>,
     content_descriptorids: Option<Vec<u32>>,
     unlisted: Option<bool>,
+    release: Option<ReleaseInfo>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ReleaseInfo {
+    steam_release_date: Option<i64>,
 }
 
 #[derive(Debug, Deserialize)]
 struct RelatedItems {
     parent_appid: Option<u32>,
+}
+
+/// Process-lifetime HTTP client: building a reqwest client per call means a
+/// fresh TCP+TLS handshake to api.steampowered.com on every search, which was
+/// the main latency source of the metadata batch. `Client` is an Arc inside,
+/// so cloning the shared one is free and keeps connection pooling alive.
+fn get_items_client() -> reqwest::Client {
+    static CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
+    CLIENT
+        .get_or_init(|| http::build_client(GET_ITEMS_TIMEOUT_SECONDS))
+        .clone()
 }
 
 /// Process-lifetime cache: repeat searches for the same ids cost zero network
@@ -179,7 +199,7 @@ pub async fn fetch_store_items(app_ids: Vec<u32>) -> HashMap<u32, StoreItemMeta>
         return out;
     }
 
-    let client = http::build_client(GET_ITEMS_TIMEOUT_SECONDS);
+    let client = get_items_client();
     let mut consecutive_failures = 0usize;
 
     for chunk in pending.chunks(CHUNK_SIZE) {
@@ -229,7 +249,7 @@ async fn fetch_chunk(
             "include_assets": false,
             "include_platforms": true,
             "include_basic_info": false,
-            "include_release": false,
+            "include_release": true,
         }
     });
 
@@ -289,6 +309,10 @@ async fn fetch_chunk(
                 delisted_blank: name_empty && item.type_code.is_none(),
                 is_nsfw,
                 is_delisted: item.unlisted.unwrap_or(false),
+                release_date_unix: item
+                    .release
+                    .and_then(|release| release.steam_release_date)
+                    .filter(|date| *date > 0),
             },
         );
     }
@@ -312,6 +336,7 @@ mod tests {
             delisted_blank,
             is_nsfw,
             is_delisted: false,
+            release_date_unix: None,
         }
     }
 

@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::time::Duration;
 
 /// Overall wall-clock budget for the whole Hubcap availability lookup
@@ -7,6 +7,12 @@ use std::time::Duration;
 /// each variant run in parallel, so this is not a per-request timeout:
 /// it only guards against the minority of runs where Hubcap hangs.
 const HUBCAP_SEARCH_BUDGET_MS: u64 = 6000;
+
+/// Hard cap on rows sent to the GetItems metadata batch. The UI paginates 20
+/// cards at a time, so 80 classified rows (4 pages) is generous, and it keeps
+/// the batch at one chunk (~48 ids) in the common case instead of several
+/// sequential ones for franchise-wide queries.
+const MAX_CLASSIFIED_RESULTS: usize = 80;
 use crate::steam::store::SteamStore;
 use crate::steam::store_items;
 use crate::store::aliases;
@@ -165,10 +171,25 @@ impl StoreService {
 
         let variants = aliases::primary_variants(query);
         let lookup = async {
+            // At most 2 variants by design (original + first alias expansion);
+            // both run concurrently — the match fixes the arity for tokio::join!
+            // without pulling in a futures-crate dependency.
+            let batches: Vec<Vec<crate::providers::hubcap::HubcapGameItem>> = match variants.len() {
+                2 => {
+                    let (first, second) = tokio::join!(
+                        client.search_all(&variants[0]),
+                        client.search_all(&variants[1]),
+                    );
+                    vec![first, second]
+                }
+                n if n == 1 => vec![client.search_all(&variants[0]).await],
+                _ => Vec::new(),
+            };
+
             let mut merged: Vec<crate::providers::hubcap::HubcapGameItem> = Vec::new();
             let mut seen_ids = HashSet::new();
-            for variant in &variants {
-                for item in client.search_all(variant).await {
+            for batch in batches {
+                for item in batch {
                     if seen_ids.insert(item.app_id) {
                         merged.push(item);
                     }
@@ -268,14 +289,46 @@ impl StoreService {
         }
         unified_list.extend(hubcap_extras);
 
+        // 4a. Cheap pre-filter + cap BEFORE the metadata batch.
+        // A generic query ("call of duty") can drag in hundreds of Hubcap tail
+        // rows; paying a GetItems chunk for each was the search slowdown. The
+        // relevance scorer already decides what step 5 will keep, so rows it
+        // would discard as garbage are dropped now, and the rest is capped to
+        // what the UI can reasonably paginate through (keeps GetItems at one
+        // batch chunk in the common case). Numeric (AppID) queries skip this.
+        let is_numeric = query.trim().parse::<u32>().is_ok();
+        let score_variants = aliases::expanded_queries(query);
+        let best_score = |name: &str| -> usize {
+            score_variants
+                .iter()
+                .map(|variant| self.calculate_relevance_score(variant, name))
+                .min()
+                .unwrap_or(10000)
+        };
+        if !is_numeric {
+            unified_list.retain(|game| best_score(&game.name) < 10000);
+            if unified_list.len() > MAX_CLASSIFIED_RESULTS {
+                let mut keyed: Vec<(usize, UnifiedStoreGame)> = unified_list
+                    .into_iter()
+                    .map(|game| (best_score(&game.name), game))
+                    .collect();
+                keyed.sort_by_key(|(score, _)| *score);
+                keyed.truncate(MAX_CLASSIFIED_RESULTS);
+                unified_list = keyed.into_iter().map(|(_, game)| game).collect();
+            }
+        }
+
         // 4b. Structural classification + filtering over the WHOLE merged list.
         // One batched GetItems call (~50 ids per call, process-cached) provides
-        // both classifiers (DLC + NSFW) for every row — Steam's storesearch itself
-        // returns DLC/soundtracks/tools for franchise queries, so trusting Steam
-        // rows is not enough. "Unknown" metadata always keeps the row.
-        if !unified_list.is_empty() {
+        // the classifiers (DLC/NSFW/delisted) AND the release dates for ordering
+        // in one shot. "Unknown" metadata always keeps the row.
+        let meta_map = if !unified_list.is_empty() {
             let all_ids: Vec<u32> = unified_list.iter().map(|game| game.id).collect();
-            let meta_map = store_items::fetch_store_items(all_ids).await;
+            store_items::fetch_store_items(all_ids).await
+        } else {
+            HashMap::new()
+        };
+        if !unified_list.is_empty() {
 
             // Tag every row first: the NSFW/delisted flags feed the UI's
             // marker borders, so rows that survive the filters must carry
@@ -314,31 +367,40 @@ impl StoreService {
             }
         }
 
-        // 5. Apply the professional relevance-boosting and fuzzy-sorting!
-        let is_numeric = query.trim().parse::<u32>().is_ok();
-
+        // 5. Clustered ordering: relevance TIER first, release date within
+        // the tier. The scorer's numeric ranges define natural clusters —
+        // exact (0), prefix (<100), substring (<1000), fuzzy (<10000) — and
+        // sorting newest-first *inside* each tier keeps franchise members in
+        // a contiguous, date-ordered block: "nba 2k" yields
+        // [NBA 2K27, NBA 2K26, NBA 2K25, …] instead of being interleaved with
+        // unrelated recent games. Step 4a already dropped score-10000 rows.
         if !is_numeric {
-            // Score every item against ALL query variants and keep the best one.
-            // Without this, hits fetched through an alias expansion
-            // ("grand theft auto" found while the user typed "gta") would fail
-            // the substring/Levenshtein tiers against the raw query and get
-            // filtered out, silently nullifying the alias expansion.
-            let score_variants = aliases::expanded_queries(query);
             let mut scored_items: Vec<(usize, UnifiedStoreGame)> = unified_list
                 .into_iter()
-                .map(|item| {
-                    let score = score_variants
-                        .iter()
-                        .map(|variant| self.calculate_relevance_score(variant, &item.name))
-                        .min()
-                        .unwrap_or(10000);
-                    (score, item)
-                })
-                .filter(|(score, _)| *score < 10000) // Filter out garbage matches
+                .map(|item| (best_score(&item.name), item))
                 .collect();
 
-            scored_items.sort_by_key(|(score, _)| *score);
-            
+            let tier_of = |score: usize| -> usize {
+                match score {
+                    0 => 0,
+                    1..=99 => 1,
+                    100..=999 => 2,
+                    _ => 3,
+                }
+            };
+            let release_of = |id: u32| -> i64 {
+                meta_map
+                    .get(&id)
+                    .and_then(|meta| meta.release_date_unix)
+                    .unwrap_or(0)
+            };
+            scored_items.sort_by(|a, b| {
+                tier_of(a.0)
+                    .cmp(&tier_of(b.0))
+                    .then_with(|| release_of(b.1.id).cmp(&release_of(a.1.id)))
+                    .then_with(|| a.0.cmp(&b.0))
+            });
+
             Ok(scored_items.into_iter().map(|(_, item)| item).collect())
         } else {
             // If it is an App ID, exact or substring matches on digits are kept, no string sorting needed
