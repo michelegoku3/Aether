@@ -2,6 +2,11 @@ use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 
+/// The 3 binary files that make up an AetherDLL installation in the Steam directory.
+/// Single source of truth for the names: used by the installer, uninstaller, reset
+/// and by the PE version-resource reader (`updater::dll_version`).
+pub const AETHER_DLL_FILES: [&str; 3] = ["AetherCore.dll", "AetherPayload.dll", "dwmapi.dll"];
+
 pub struct DllInstaller {
     steam_path: PathBuf,
 }
@@ -19,11 +24,9 @@ impl DllInstaller {
             return false;
         }
 
-        let core_exists = self.steam_path.join("AetherCore.dll").exists();
-        let payload_exists = self.steam_path.join("AetherPayload.dll").exists();
-        let proxy_exists = self.steam_path.join("dwmapi.dll").exists();
-
-        core_exists && payload_exists && proxy_exists
+        AETHER_DLL_FILES
+            .iter()
+            .all(|file_name| self.steam_path.join(file_name).exists())
     }
 
     /// Takes a downloaded release ZIP file and extracts AetherCore.dll, AetherPayload.dll, and dwmapi.dll
@@ -48,8 +51,8 @@ impl DllInstaller {
                 None => continue,
             };
 
-            // We only extract the 3 DLL files we care about (ignoring directory structures)
-            if file_name == "AetherCore.dll" || file_name == "AetherPayload.dll" || file_name == "dwmapi.dll" {
+            // We only extract the target DLL files we care about (ignoring directory structures)
+            if AETHER_DLL_FILES.contains(&file_name.as_str()) {
                 let target_path = self.steam_path.join(&file_name);
                 let temp_path = target_path.with_extension("tmp");
 
@@ -67,9 +70,10 @@ impl DllInstaller {
             }
         }
 
-        if extracted_count < 3 {
+        if extracted_count < AETHER_DLL_FILES.len() {
             return Err(format!(
-                "Failed to locate all 3 required DLL files in the ZIP. Found only {} of 3.",
+                "Failed to locate all {} required DLL files in the ZIP. Found only {}.",
+                AETHER_DLL_FILES.len(),
                 extracted_count
             ));
         }
@@ -83,7 +87,7 @@ impl DllInstaller {
             return Err("Steam installation path does not exist".to_string());
         }
 
-        let files_to_delete = vec!["AetherCore.dll", "AetherPayload.dll", "dwmapi.dll"];
+        let files_to_delete = AETHER_DLL_FILES;
         let mut deleted_count = 0;
 
         for file_name in files_to_delete {
@@ -132,14 +136,13 @@ impl DllInstaller {
     }
 
     fn aether_files(&self) -> Vec<PathBuf> {
-        let files = vec![
-            self.steam_path.join("AetherCore.dll"),
-            self.steam_path.join("AetherPayload.dll"),
-            self.steam_path.join("dwmapi.dll"),
-            self.steam_path.join("AetherDLL_version.txt"),
-            self.steam_path.join("steam.cfg"),
-            self.steam_path.join("bin").join("acoverlay.dll"),
-        ];
+        let mut files: Vec<PathBuf> = AETHER_DLL_FILES
+            .iter()
+            .map(|file_name| self.steam_path.join(file_name))
+            .collect();
+        files.push(self.steam_path.join("AetherDLL_version.txt"));
+        files.push(self.steam_path.join("steam.cfg"));
+        files.push(self.steam_path.join("bin").join("acoverlay.dll"));
 
         files
     }

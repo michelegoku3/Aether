@@ -101,3 +101,113 @@ pub fn migrate_legacy_lua_backups(steam_path: &Path) -> Result<MigrationReport, 
 
     Ok(report)
 }
+
+// ---------------------------------------------------------------------------
+// Cache freshness policy (documentation-only section)
+// ---------------------------------------------------------------------------
+//
+// Cache invalidation is self-describing and lives WITH the cache files
+// themselves: `store_search_cache.json` and `denuvo_cache.json` each carry
+// the writing app's version (read from `tauri.conf.json` at runtime via
+// `AppHandle::package_info().version`). A build change resets the files on
+// load — no sidecar stamp file, nothing to migrate here.
+// See `store::cache` and `store::drm` for the enforcement points.
+
+// ---------------------------------------------------------------------------
+// Legacy settings migration
+// ---------------------------------------------------------------------------
+
+/// Move a legacy `settings.json` (Tauri default app_config dir) into the
+/// centralized `AetherData/config/` folder. Idempotent no-op when the local
+/// file already exists or there is no legacy file. This logic used to live
+/// inside `SettingsManager`; it is centralized here so every migration helper
+/// lives in one module.
+pub fn migrate_legacy_settings_if_needed(local_config_dir: &Path, legacy_config_dir: Option<&Path>) {
+    let local_path = local_config_dir.join("settings.json");
+    if local_path.exists() {
+        return;
+    }
+
+    let Some(legacy_dir) = legacy_config_dir else {
+        return;
+    };
+    let legacy_path = legacy_dir.join("settings.json");
+    if !legacy_path.exists() {
+        return;
+    }
+
+    if let Ok(content) = fs::read_to_string(&legacy_path) {
+        if let Some(parent) = local_path.parent() {
+            if fs::create_dir_all(parent).is_ok() && fs::write(&local_path, content).is_ok() {
+                let _ = fs::remove_file(legacy_path);
+            }
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Obsolete component version directory
+// ---------------------------------------------------------------------------
+
+const OBSOLETE_COMPONENT_VERSION_DIR: &str = "component_versions";
+
+/// Delete the obsolete `component_versions/` folder (both the centralized
+/// AetherData location and the legacy app-data location). It used to hold the
+/// AetherDLL version bookmark (`aetherdll_version.txt`) — retired because the
+/// version now lives INSIDE the .dll files themselves (PE version resource), so
+/// nothing writes there anymore. Idempotent no-op when there is nothing to
+/// remove; a deletion failure degrades to a log line, never blocking startup.
+pub fn remove_obsolete_component_version_dirs(app: &tauri::AppHandle) {
+    let mut candidates = vec![LocalAppPaths::data_root().join(OBSOLETE_COMPONENT_VERSION_DIR)];
+    if let Some(legacy_dir) = LocalAppPaths::legacy_app_data_dir(app) {
+        candidates.push(legacy_dir.join(OBSOLETE_COMPONENT_VERSION_DIR));
+    }
+    for dir in candidates {
+        if dir.is_dir() {
+            match fs::remove_dir_all(&dir) {
+                Ok(()) => eprintln!("[AetherDesk] removed obsolete component version folder {}", dir.display()),
+                Err(error) => eprintln!(
+                    "[AetherDesk] failed to remove obsolete folder {}: {}",
+                    dir.display(),
+                    error
+                ),
+            }
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Startup hub
+// ---------------------------------------------------------------------------
+
+/// Run every startup migration in one place (settings → data layout → obsolete
+/// leftovers). Each step is idempotent and degrades to a log line on failure, so
+/// a broken migration never prevents the app from starting.
+///
+/// Note: cache freshness is NOT here — it is self-describing inside each
+/// cache file (the writing app's version), enforced at read time by the owning
+/// caches; see the "Cache freshness policy" comment above.
+pub fn run_startup_migrations(app: &tauri::AppHandle) {
+    let config_dir = LocalAppPaths::config_dir();
+    let legacy_config_dir = LocalAppPaths::legacy_app_config_dir(app);
+    migrate_legacy_settings_if_needed(&config_dir, legacy_config_dir.as_deref());
+
+    remove_obsolete_component_version_dirs(app);
+
+    // Load AFTER the settings migration so the steam path is the migrated one.
+    let steam_path = crate::core::settings::SettingsManager::new(app)
+        .load()
+        .steam_path;
+
+    match migrate_legacy_lua_backups(std::path::Path::new(&steam_path)) {
+        Ok(report) => {
+            if report.games > 0 {
+                eprintln!(
+                    "[AetherDesk] migrated {} game(s) from lua_backups: {} lua, {} manifest",
+                    report.games, report.lua_files, report.manifest_files
+                );
+            }
+        }
+        Err(error) => eprintln!("[AetherDesk] migration failed: {error}"),
+    }
+}

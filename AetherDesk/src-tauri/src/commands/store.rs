@@ -24,7 +24,10 @@ pub async fn search_store(
     let hubcap_client = (!settings.hubcap_api_key.trim().is_empty())
         .then(|| HubcapClient::new(settings.hubcap_api_key));
 
-    let cache = StoreSearchCache::new(LocalAppPaths::data_root().join("cache"));
+    let cache = StoreSearchCache::new(
+        LocalAppPaths::data_root().join("cache"),
+        app.package_info().version.to_string(),
+    );
     // The filter flags are part of the cache key: toggling any setting must
     // not replay 24h-stale results built under other flag values.
     let cache_key = format!(
@@ -62,9 +65,14 @@ pub async fn search_store(
 }
 
 #[tauri::command]
-pub async fn check_denuvo_bulk(app_ids: Vec<u32>) -> Result<HashMap<u32, bool>, String> {
+pub async fn check_denuvo_bulk(
+    app: tauri::AppHandle,
+    app_ids: Vec<u32>,
+) -> Result<HashMap<u32, bool>, String> {
     let cache_dir = LocalAppPaths::data_root().join("cache");
-    DrmDetector::new(cache_dir).detect_many(app_ids).await
+    DrmDetector::new(cache_dir, app.package_info().version.to_string())
+        .detect_many(app_ids)
+        .await
 }
 
 #[tauri::command]

@@ -4,6 +4,7 @@ import { SettingsView } from '../views/SettingsView';
 import { AetherView } from '../views/AetherView';
 import { LibraryView } from '../views/LibraryView';
 import { HomeView } from '../views/HomeView';
+import { DllStatusInfo } from '../types/ui';
 
 interface MainContentProps {
   activeTab: TabType;
@@ -12,7 +13,7 @@ interface MainContentProps {
   onUpdateComplete: () => void; // Passed down from App.tsx orchestrator
   hubcapUsage: { usage: number; limit: number; hasKey: boolean };
   onRefreshUsage: (forcedKey?: string) => Promise<void>;
-  dllStatus: { isInstalled: boolean; installedVersion: string; isSteamBlocked: boolean };
+  dllStatus: DllStatusInfo;
   onDllStatusChange: () => Promise<void>;
 }
 

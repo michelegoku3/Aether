@@ -39,3 +39,6 @@ set_target_properties(AetherInjector PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/out"
     RUNTIME_OUTPUT_DIRECTORY_RELEASE "${CMAKE_BINARY_DIR}/out/Release"
 )
+
+# Embed the Windows version resource (version comes from the root project VERSION)
+attach_version_resource(AetherInjector "AetherInjector" "dwmapi.dll" "AetherDLL DWMAPI Proxy")

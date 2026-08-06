@@ -19,23 +19,10 @@ fn main() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
-            // One-time data layout migration: if a legacy `AetherData/lua_backups`
-            // folder exists, move its Lua + depotcache manifests into the new
-            // centralized `backup` tree and remove the old folder.
-            let steam_path = crate::core::settings::SettingsManager::new(&app.handle())
-                .load()
-                .steam_path;
-            match crate::core::migration::migrate_legacy_lua_backups(std::path::Path::new(&steam_path)) {
-                Ok(report) => {
-                    if report.games > 0 {
-                        eprintln!(
-                            "[AetherDesk] migrated {} game(s) from lua_backups: {} lua, {} manifest",
-                            report.games, report.lua_files, report.manifest_files
-                        );
-                    }
-                }
-                Err(error) => eprintln!("[AetherDesk] migration failed: {error}"),
-            }
+            // All startup migrations live in one place: legacy settings move,
+            // obsolete data-folder cleanup, and the lua_backups → backup data
+            // layout migration. Each step is idempotent and failure-tolerant.
+            crate::core::migration::run_startup_migrations(&app.handle());
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![

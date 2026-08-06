@@ -23,3 +23,8 @@ tauri-plugin-updater = "2"
 tauri-plugin-dialog = "2"
 url = "2"
 regex = "1"
+
+# DLL version is read directly from the PE version resource inside the .dll files
+# (Windows-only API; the DLL domain is Windows-only by design).
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.59", features = ["Win32_Storage_FileSystem"] }

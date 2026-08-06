@@ -1,0 +1,40 @@
+// ============================================================================
+// AetherDLL — Windows version resource (per-target, configured by root CMake).
+// The version values come from the ROOT project(... VERSION x.y.z) statement:
+// that is the single source of truth, exactly like tauri.conf.json is for
+// AetherDesk. AetherDesk reads these values back from the built .dll files.
+// Placeholders (@VAR@) are substituted by configure_file() in the root CMake.
+// ============================================================================
+#include <winresrc.h>
+
+VS_VERSION_INFO VERSIONINFO
+ FILEVERSION @AETHER_FILEVERSION_COMMA@
+ PRODUCTVERSION @AETHER_FILEVERSION_COMMA@
+ FILEFLAGSMASK 0x3fL
+#ifdef _DEBUG
+ FILEFLAGS 0x1L        // VS_FF_DEBUG
+#else
+ FILEFLAGS 0x0L
+#endif
+ FILEOS 0x40004L       // VOS_NT_WINDOWS32
+ FILETYPE 0x2L         // VFT_DLL
+ FILESUBTYPE 0x0L
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        BLOCK "040904b0"  // en-US, Unicode
+        BEGIN
+            VALUE "CompanyName", "Aether"
+            VALUE "FileDescription", "@AETHER_RC_FILEDESCRIPTION@"
+            VALUE "FileVersion", "@AETHER_PRODUCT_VERSION@"
+            VALUE "InternalName", "@AETHER_RC_INTERNAL_NAME@"
+            VALUE "OriginalFilename", "@AETHER_RC_ORIGINAL_FILENAME@"
+            VALUE "ProductName", "AetherDLL"
+            VALUE "ProductVersion", "@AETHER_PRODUCT_VERSION@"
+        END
+    END
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0x409, 1200
+    END
+END

@@ -1,11 +1,12 @@
 import { useState, useEffect } from 'react';
 import { invoke } from '@tauri-apps/api/core';
+import { DllStatusInfo } from '../types/ui';
 
 interface AetherViewProps {
   isUpdateAvailable: boolean;
   isDeskUpdateAvailable: boolean;
   onUpdateComplete: () => void; // Refresh update check in the parent
-  dllStatus: { isInstalled: boolean; installedVersion: string; isSteamBlocked: boolean };
+  dllStatus: DllStatusInfo;
   onDllStatusChange: () => Promise<void>;
 }
 
@@ -222,7 +223,8 @@ export const AetherView = ({ isUpdateAvailable, isDeskUpdateAvailable, onUpdateC
       <div className="aether-panel">
         <div className="panel-header">
           <span className="panel-title">AetherDLL</span>
-          {/* Dynamically displays the actual local installed version from steam directory */}
+          {/* Dynamically displays the actual local installed version read from
+              the PE version resource inside the .dll files themselves */}
           <span className="panel-meta">{dllStatus.isInstalled ? formatVersion(dllStatus.installedVersion) : 'N/A'}</span>
         </div>
         <div className="panel-actions">
