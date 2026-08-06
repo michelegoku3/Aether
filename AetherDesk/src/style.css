@@ -10,6 +10,8 @@
   --color-denuvo: #ff3b5f;
   --color-nsfw-pink: #ff5e8a;
   --color-nsfw-pink-hover: #ff8fb0;
+  --color-delisted-white: #f2f2f5;
+  --color-delisted-white-hover: #ffffff;
   --border-color: #22222a;
 }
 
@@ -298,15 +300,27 @@ body {
   transition: transform 0.2s ease, border-color 0.2s ease;
 }
 
-/* NSFW marker: pink border + subtle glow, on top of the base card style.
-   Only reachable when "Show NSFW games" is enabled (otherwise filtered out). */
+/* Marker borders (NSFW pink, delisted white): the cover sits flush against
+   the card edge and would overlap the 1px border, so marked cards inset
+   their content slightly and the border stays fully visible. */
 .store-game-card.nsfw {
   border-color: var(--color-nsfw-pink);
   box-shadow: 0 0 10px rgba(255, 94, 138, 0.25);
+  padding: 4px;
 }
 
 .store-game-card.nsfw:hover {
   border-color: var(--color-nsfw-pink-hover);
+}
+
+.store-game-card.delisted {
+  border-color: var(--color-delisted-white);
+  box-shadow: 0 0 10px rgba(242, 242, 245, 0.18);
+  padding: 4px;
+}
+
+.store-game-card.delisted:hover {
+  border-color: var(--color-delisted-white-hover);
 }
 
 .store-game-card:hover {

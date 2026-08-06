@@ -51,6 +51,11 @@ pub struct StoreItemMeta {
     /// Combined with `looks_nsfw_by_name` by `is_nsfw` because some adult
     /// titles ship without descriptors (and delisted rows carry no metadata).
     pub is_nsfw: bool,
+    /// True when Steam flags the item as `unlisted`: removed from the store
+    /// catalog but its app page/hub still exists (classic delisted games:
+    /// GTA SA classic, Dark Souls PTDE, Spec Ops: The Line — verified
+    /// empirically against GetItems; F2P titles never carry the flag).
+    pub is_delisted: bool,
 }
 
 /// The SFF structural DLC rule set, three signals with no name matching:
@@ -128,6 +133,7 @@ struct GetStoreItem {
     type_code: Option<i64>,
     related_items: Option<RelatedItems>,
     content_descriptorids: Option<Vec<u32>>,
+    unlisted: Option<bool>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -282,6 +288,7 @@ async fn fetch_chunk(
                 // Steam strips name + type from fully delisted DLC entries.
                 delisted_blank: name_empty && item.type_code.is_none(),
                 is_nsfw,
+                is_delisted: item.unlisted.unwrap_or(false),
             },
         );
     }
@@ -304,7 +311,19 @@ mod tests {
             parent_appid: parent,
             delisted_blank,
             is_nsfw,
+            is_delisted: false,
         }
+    }
+
+    #[test]
+    fn delisted_flag_is_independent_from_blank_signal() {
+        let mut m = meta("game", None, false, false);
+        assert!(!m.is_delisted);
+        m.is_delisted = true;
+        // A delisted GAME (e.g. GTA SA classic) is NOT DLC-like: it must
+        // survive the DLC filter and only be governed by the delisted one.
+        assert!(!is_dlc_like(&m));
+        assert!(!is_nsfw(&m, "Grand Theft Auto: San Andreas"));
     }
 
     #[test]

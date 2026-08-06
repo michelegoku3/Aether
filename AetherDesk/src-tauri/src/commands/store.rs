@@ -20,17 +20,19 @@ pub async fn search_store(
     let settings = SettingsManager::new(&app).load();
     let show_store_dlcs = settings.show_store_dlcs;
     let show_store_nsfw = settings.show_store_nsfw;
+    let show_store_delisted = settings.show_store_delisted;
     let hubcap_client = (!settings.hubcap_api_key.trim().is_empty())
         .then(|| HubcapClient::new(settings.hubcap_api_key));
 
     let cache = StoreSearchCache::new(LocalAppPaths::data_root().join("cache"));
-    // The filter flags are part of the cache key: toggling either setting must
-    // not replay 24h-stale results built under the other flag values.
+    // The filter flags are part of the cache key: toggling any setting must
+    // not replay 24h-stale results built under other flag values.
     let cache_key = format!(
-        "{}|dlcs={}|nsfw={} {}",
+        "{}|dlcs={}|nsfw={}|delisted={} {}",
         if hubcap_client.is_some() { "hubcap" } else { "steam" },
         show_store_dlcs,
         show_store_nsfw,
+        show_store_delisted,
         query
     );
 
@@ -39,7 +41,7 @@ pub async fn search_store(
     }
 
     match StoreService::new()
-        .search_store(&query, hubcap_client, show_store_dlcs, show_store_nsfw)
+        .search_store(&query, hubcap_client, show_store_dlcs, show_store_nsfw, show_store_delisted)
         .await
     {
         Ok(results) => {

@@ -19,11 +19,24 @@ pub struct AppSettings {
     /// settings.json files parseable and preserves the "hidden" default.
     #[serde(default)]
     pub show_store_dlcs: bool,
-    /// When false (default), rows tagged NSFW (Steam sexual content descriptors
-    /// or name heuristic) are filtered out of store search results. When true
-    /// they stay visible, marked with a pink border in the UI.
-    #[serde(default)]
+    /// When false, rows tagged NSFW (Steam sexual content descriptors or name
+    /// heuristic) are filtered out of store search results. Default TRUE
+    /// (visible, pink border): the custom serde default is required because
+    /// `#[serde(default)]` alone would read missing fields as `false` when
+    /// parsing older settings.json files.
+    #[serde(default = "default_true")]
     pub show_store_nsfw: bool,
+    /// When false, rows Steam flags as `unlisted` (delisted games) are
+    /// filtered out of store search results. Default TRUE (visible, white
+    /// border): unlisted classics like GTA SA or Dark Souls PTDE are exactly
+    /// what people search a manifest tool for.
+    #[serde(default = "default_true")]
+    pub show_store_delisted: bool,
+}
+
+/// Serde default provider for boolean settings that ship enabled.
+fn default_true() -> bool {
+    true
 }
 
 impl Default for AppSettings {
@@ -34,7 +47,8 @@ impl Default for AppSettings {
             active_library: String::new(),
             antivirus_exclusion_done: false,
             show_store_dlcs: false,
-            show_store_nsfw: false,
+            show_store_nsfw: true,
+            show_store_delisted: true,
         }
     }
 }
