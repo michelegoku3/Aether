@@ -17,6 +17,7 @@ pub struct SteamSearchResponse {
     pub items: Vec<SteamStoreItem>,
 }
 
+#[derive(Clone)]
 pub struct SteamStore {
     client: reqwest::Client,
 }

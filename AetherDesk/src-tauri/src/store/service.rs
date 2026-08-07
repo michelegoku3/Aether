@@ -15,7 +15,7 @@ const HUBCAP_SEARCH_BUDGET_MS: u64 = 6000;
 const MAX_CLASSIFIED_RESULTS: usize = 80;
 use crate::steam::store::SteamStore;
 use crate::steam::store_items;
-use crate::store::aliases;
+use crate::store::{aliases, normalize};
 use crate::providers::hubcap::HubcapClient;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -52,40 +52,11 @@ impl StoreService {
         }
     }
 
-    /// Normalizes strings for high-fidelity comparison (removes punctuation, Roman-numeral conversion, synonyms)
+    /// Normalizes strings for high-fidelity comparison.
+    /// Delegates to the shared `store::normalize` module so scoring, filtering
+    /// and Hubcap sanitization share a single implementation (DRY).
     pub fn normalize_string(&self, s: &str) -> String {
-        let cleaned = s.to_lowercase()
-            // Strip common symbols
-            .replace('.', "")
-            .replace('\'', "")
-            .replace(':', "")
-            .replace('®', "")
-            .replace('™', "")
-            // Standardize separators
-            .replace('-', " ")
-            .replace('_', " ");
-
-        // Word-by-word substitution to prevent partial string matching issues (like "it" -> "1t")
-        let words: Vec<String> = cleaned
-            .split_whitespace()
-            .map(|w| {
-                match w {
-                    "ix" => "9".to_string(),
-                    "viii" => "8".to_string(),
-                    "vii" => "7".to_string(),
-                    "vi" => "6".to_string(),
-                    "v" => "5".to_string(),
-                    "iv" => "4".to_string(),
-                    "iii" => "3".to_string(),
-                    "ii" => "2".to_string(),
-                    "i" => "1".to_string(),
-                    "civ" => "civilization".to_string(),
-                    _ => w.to_string(),
-                }
-            })
-            .collect();
-
-        words.join(" ")
+        normalize::normalize_string(s)
     }
 
     /// Reusable professional scoring algorithm supporting exactness-boost and Levenshtein fuzzy search
@@ -154,12 +125,17 @@ impl StoreService {
 
     /// Collect the merged Hubcap availability set for a query.
     ///
-    /// For each query variant (the original plus its first alias expansion,
-    /// e.g. "gta" → "grand theft auto") both Hubcap endpoints are queried in
-    /// parallel via `HubcapClient::search_all`, and all hits are merged by
-    /// app id. The whole lookup is bounded by `HUBCAP_SEARCH_BUDGET_MS`;
-    /// any failure mode (no key, timeout, endpoint errors) degrades to an
-    /// empty set so the Steam catalog still renders on its own.
+    /// Query variants:
+    ///   1. `aliases::primary_variants` (original + first alias expansion).
+    ///   2. For each variant, a *sanitized* form where punctuation/symbols are
+    ///      replaced by spaces (e.g. "Take Me To The Dungeon!!" → "Take Me To The Dungeon").
+    ///      Hubcap's substring matcher treats `!` literally and can 400-soft-fail;
+    ///      the sanitized variant guarantees a punctuation-insensitive second shot
+    ///      without requiring server-side changes.
+    ///
+    /// Deduplicated case-insensitively, capped to 4 parallel `search_all` calls
+    /// (each itself fans out to `/library` + `/search`). Bounded by
+    /// `HUBCAP_SEARCH_BUDGET_MS`; any failure degrades to empty so Steam still renders.
     async fn collect_hubcap_hits(
         &self,
         query: &str,
@@ -169,20 +145,88 @@ impl StoreService {
             return Vec::new();
         };
 
-        let variants = aliases::primary_variants(query);
-        let lookup = async {
-            // At most 2 variants by design (original + first alias expansion);
-            // both run concurrently — the match fixes the arity for tokio::join!
-            // without pulling in a futures-crate dependency.
-            let batches: Vec<Vec<crate::providers::hubcap::HubcapGameItem>> = match variants.len() {
-                2 => {
-                    let (first, second) = tokio::join!(
-                        client.search_all(&variants[0]),
-                        client.search_all(&variants[1]),
-                    );
-                    vec![first, second]
+        // Build deduplicated Hubcap query set: raw variants + sanitized variants.
+        let base_variants = aliases::primary_variants(query);
+        let mut all_queries: Vec<String> = Vec::new();
+        let mut seen_lower: HashSet<String> = HashSet::new();
+        for base in &base_variants {
+            for candidate in [
+                base.clone(),
+                normalize::sanitize_query_for_hubcap(base).unwrap_or_default(),
+            ] {
+                if candidate.is_empty() {
+                    continue;
                 }
-                n if n == 1 => vec![client.search_all(&variants[0]).await],
+                let lower = candidate.to_lowercase();
+                if seen_lower.insert(lower) {
+                    all_queries.push(candidate);
+                }
+            }
+        }
+        // Hard cap to 4 to bound network fan-out (2 alias * 2 sanitized).
+        if all_queries.len() > 4 {
+            all_queries.truncate(4);
+        }
+
+        if all_queries.is_empty() {
+            return Vec::new();
+        }
+
+        // Clone client + owned query strings so each async branch owns its data
+        // and no temporary is freed while borrowed.
+        let client_for_lookup = client.clone();
+        let queries_for_lookup = all_queries.clone();
+        let lookup = async move {
+            // Parallelize up to 4 `search_all` calls. Match on arity to avoid
+            // pulling in `futures` crate; HubcapClient is Clone so we can move
+            // a clone into each branch.
+            let batches: Vec<Vec<crate::providers::hubcap::HubcapGameItem>> = match queries_for_lookup.len() {
+                4 => {
+                    let q0 = queries_for_lookup[0].clone();
+                    let q1 = queries_for_lookup[1].clone();
+                    let q2 = queries_for_lookup[2].clone();
+                    let q3 = queries_for_lookup[3].clone();
+                    let c0 = client_for_lookup.clone();
+                    let c1 = client_for_lookup.clone();
+                    let c2 = client_for_lookup.clone();
+                    let c3 = client_for_lookup.clone();
+                    let (a, b, c, d) = tokio::join!(
+                        c0.search_all(&q0),
+                        c1.search_all(&q1),
+                        c2.search_all(&q2),
+                        c3.search_all(&q3),
+                    );
+                    vec![a, b, c, d]
+                }
+                3 => {
+                    let q0 = queries_for_lookup[0].clone();
+                    let q1 = queries_for_lookup[1].clone();
+                    let q2 = queries_for_lookup[2].clone();
+                    let c0 = client_for_lookup.clone();
+                    let c1 = client_for_lookup.clone();
+                    let c2 = client_for_lookup.clone();
+                    let (a, b, c) = tokio::join!(
+                        c0.search_all(&q0),
+                        c1.search_all(&q1),
+                        c2.search_all(&q2),
+                    );
+                    vec![a, b, c]
+                }
+                2 => {
+                    let q0 = queries_for_lookup[0].clone();
+                    let q1 = queries_for_lookup[1].clone();
+                    let c0 = client_for_lookup.clone();
+                    let c1 = client_for_lookup.clone();
+                    let (a, b) = tokio::join!(
+                        c0.search_all(&q0),
+                        c1.search_all(&q1),
+                    );
+                    vec![a, b]
+                }
+                1 => {
+                    let q0 = queries_for_lookup[0].clone();
+                    vec![client_for_lookup.clone().search_all(&q0).await]
+                },
                 _ => Vec::new(),
             };
 
@@ -201,8 +245,11 @@ impl StoreService {
         match tokio::time::timeout(Duration::from_millis(HUBCAP_SEARCH_BUDGET_MS), lookup).await {
             Ok(games) => {
                 eprintln!(
-                    "[Hubcap] Search for '{}' ({} variant(s)) returned {} games",
-                    query, variants.len(), games.len()
+                    "[Hubcap] Search for '{}' ({} variant(s), {} queries) returned {} games",
+                    query,
+                    base_variants.len(),
+                    all_queries.len(),
+                    games.len()
                 );
                 games
             }
@@ -227,8 +274,63 @@ impl StoreService {
             return Ok(Vec::new());
         }
 
-        // 1. Fetch from Steam and Hubcap in parallel
-        let steam_future = self.steam_store.search_catalog(query);
+        // 1. Fetch from Steam and Hubcap in parallel.
+        // Steam: try both raw and sanitized query (punctuation-insensitive) in parallel,
+        // mirroring Hubcap's sanitized fallback. Storesearch handles `!!` today, but
+        // sanitization guarantees coverage if Steam's matcher ever treats symbols literally
+        // or if Hubcap's name copy differs in punctuation.
+        let steam_queries: Vec<String> = {
+            let mut v = vec![query.to_string()];
+            if let Some(san) = normalize::sanitize_query_for_hubcap(query) {
+                if san.to_lowercase() != query.trim().to_lowercase() {
+                    v.push(san);
+                }
+            }
+            v
+        };
+        let steam_store_clone = self.steam_store.clone();
+        let steam_queries_for_fut = steam_queries.clone();
+        let steam_future = async move {
+            let mut merged: Vec<crate::steam::store::SteamStoreItem> = Vec::new();
+            let mut seen: std::collections::HashSet<u32> = std::collections::HashSet::new();
+            // Fire up to 2 Steam searches in parallel via JoinSet-style match.
+            let batches: Vec<Result<Vec<crate::steam::store::SteamStoreItem>, String>> = match steam_queries_for_fut.len() {
+                2 => {
+                    let q0 = steam_queries_for_fut[0].clone();
+                    let q1 = steam_queries_for_fut[1].clone();
+                    let s0 = steam_store_clone.clone();
+                    let s1 = steam_store_clone.clone();
+                    let (a, b) = tokio::join!(
+                        s0.search_catalog(&q0),
+                        s1.search_catalog(&q1)
+                    );
+                    vec![a, b]
+                }
+                1 => {
+                    let q0 = steam_queries_for_fut[0].clone();
+                    vec![steam_store_clone.search_catalog(&q0).await]
+                },
+                _ => Vec::new(),
+            };
+            for res in batches {
+                match res {
+                    Ok(items) => {
+                        for it in items {
+                            if seen.insert(it.id) {
+                                merged.push(it);
+                            }
+                        }
+                    }
+                    Err(e) => eprintln!("[Store] Steam catalog chunk failed for '{}': {}", query, e),
+                }
+            }
+            if merged.is_empty() {
+                // Preserve the "empty means no results, not error" contract.
+                Ok::<Vec<crate::steam::store::SteamStoreItem>, String>(Vec::new())
+            } else {
+                Ok(merged)
+            }
+        };
 
         let hubcap_future = self.collect_hubcap_hits(query, hubcap_client.as_ref());
 
@@ -243,8 +345,55 @@ impl StoreService {
             }
         };
 
-        // 2. Create a fast O(1) lookup set of available app IDs on Hubcap
-        let available_ids: HashSet<u32> = hubcap_res.iter().map(|g| g.app_id).collect();
+        // 2. Create a fast O(1) lookup set of available app IDs on Hubcap.
+        // Exact-match fallback: if the textual Hubcap search missed a game that
+        // Steam returned with an exact normalized name hit, verify it directly
+        // via `has_manifest(app_id)`. This covers any future Hubcap substring
+        // edge-cases (punctuation, 400 soft-fail, etc) with at most one extra
+        // cheap HEAD-like request for the exact candidate — still fail-open.
+        let mut available_ids: HashSet<u32> = hubcap_res.iter().map(|g| g.app_id).collect();
+        // Only probe when a Hubcap client exists and we have at least one exact
+        // Steam hit that isn't already marked available.
+        if let Some(client) = hubcap_client.as_ref() {
+            // Collect exact-score candidates (score 0) that lack a manifest flag.
+            let mut exact_missing: Vec<u32> = Vec::new();
+            for item in &steam_items {
+                if available_ids.contains(&item.id) {
+                    continue;
+                }
+                if self.calculate_relevance_score(query, &item.name) == 0 {
+                    exact_missing.push(item.id);
+                    if exact_missing.len() >= 3 {
+                        break; // cap probe fan-out
+                    }
+                }
+            }
+            if !exact_missing.is_empty() {
+                // Probe sequentially with a short per-probe timeout so we don't
+                // blow the overall 6s budget. Hubcap `has_manifest` reuses the
+                // same auth headers and 8s client timeout.
+                for app_id in exact_missing {
+                    // Wrap in a 4s timeout so a hanging Hubcap doesn't stall the search.
+                    let probe = tokio::time::timeout(
+                        Duration::from_millis(4000),
+                        client.has_manifest(app_id),
+                    )
+                    .await;
+                    match probe {
+                        Ok(true) => {
+                            eprintln!("[Hubcap] Exact fallback verified manifest for {}", app_id);
+                            available_ids.insert(app_id);
+                        }
+                        Ok(false) => {
+                            eprintln!("[Hubcap] Exact fallback: no manifest for {}", app_id);
+                        }
+                        Err(_) => {
+                            eprintln!("[Hubcap] Exact fallback timeout for {}", app_id);
+                        }
+                    }
+                }
+            }
+        }
 
         let mut unified_list = Vec::new();
         let mut added_ids = HashSet::new();
