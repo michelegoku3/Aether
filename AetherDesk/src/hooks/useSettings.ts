@@ -12,6 +12,8 @@ export interface AppSettings {
   show_store_delisted?: boolean;
   /** Owned by the antivirus-exclusion flow; must be preserved verbatim on save. */
   antivirus_exclusion_done?: boolean;
+  /** When true, AetherData/config/custom.css is injected as <style id="aether-custom-css">. Default false. */
+  custom_css_enabled?: boolean;
 }
 
 export const getSettings = async (): Promise<AppSettings> => {

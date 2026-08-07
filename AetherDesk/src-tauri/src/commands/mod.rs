@@ -2,6 +2,7 @@ pub mod aether_desk;
 pub mod aether_dll;
 pub mod antivirus;
 pub mod crack;
+pub mod custom_css;
 pub mod home_links;
 pub mod library;
 pub mod settings;

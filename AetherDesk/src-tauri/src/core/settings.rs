@@ -32,6 +32,11 @@ pub struct AppSettings {
     /// what people search a manifest tool for.
     #[serde(default = "default_true")]
     pub show_store_delisted: bool,
+    /// When true, the frontend injects `AetherData/config/custom.css` as a
+    /// `<style id="aether-custom-css">` after the default theme.
+    /// Default `false` — no file I/O unless the user opts in.
+    #[serde(default)]
+    pub custom_css_enabled: bool,
 }
 
 /// Serde default provider for boolean settings that ship enabled.
@@ -49,6 +54,7 @@ impl Default for AppSettings {
             show_store_dlcs: false,
             show_store_nsfw: true,
             show_store_delisted: true,
+            custom_css_enabled: false,
         }
     }
 }
