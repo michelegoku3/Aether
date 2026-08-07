@@ -15,7 +15,6 @@ export const SettingsView = ({ hubcapUsage, onRefreshUsage, onRefreshCustomCss }
   const [showStoreNsfw, setShowStoreNsfw] = useState(true);
   const [showStoreDelisted, setShowStoreDelisted] = useState(true);
   const [customCssEnabled, setCustomCssEnabled] = useState(false);
-  const [customCssPath, setCustomCssPath] = useState('');
   const [ryuuKey, setRyuuKey] = useState('');
 
   // Raw settings as loaded from the backend. Saving always spreads this object
@@ -45,11 +44,6 @@ export const SettingsView = ({ hubcapUsage, onRefreshUsage, onRefreshCustomCss }
       } catch (err: any) {
         showStatus(`Error loading settings: ${err}`, 'error');
       }
-      // Load custom.css path for the hint (fail-open, no status popup).
-      try {
-        const path: string = await invoke('get_custom_css_path');
-        setCustomCssPath(path);
-      } catch {}
     };
     loadSettings();
     onRefreshUsage();
@@ -111,7 +105,7 @@ export const SettingsView = ({ hubcapUsage, onRefreshUsage, onRefreshCustomCss }
     <div className="settings-view">
       <div className="settings-header">
         <h1 className="settings-title">Settings</h1>
-        <p className="settings-subtitle">Manage system configurations, Hubcap API keys, and Steam injection paths.</p>
+        <p className="settings-subtitle">Manage system configurations, API keys, Steam injection paths, and other settings.</p>
       </div>
 
       <div className="settings-separator"></div>
@@ -147,7 +141,7 @@ export const SettingsView = ({ hubcapUsage, onRefreshUsage, onRefreshCustomCss }
         <div className="settings-group">
           <label className="settings-label">Ryuu API Key</label>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
-            <p className="settings-desc">Enter your generator.ryuu.lol API key to unlock downloads via Ryuu (50 uses per day).</p>
+            <p className="settings-desc">Enter your generator.ryuu.lol API key to unlock downloads via Ryuu.</p>
             {ryuuKey.trim() !== '' && (
               <span style={{ fontSize: '12px', color: '#8f8f9e', fontWeight: 'bold', marginLeft: '12px', whiteSpace: 'nowrap' }}>
                 50/day
@@ -166,7 +160,7 @@ export const SettingsView = ({ hubcapUsage, onRefreshUsage, onRefreshCustomCss }
         {/* Steam Path Section */}
         <div className="settings-group">
           <label className="settings-label">Steam Installation Path</label>
-          <p className="settings-desc">The main directory path where Steam is installed on your PC (required for DLLs and configuration installation).</p>
+          <p className="settings-desc">The main directory path where Steam is installed on your PC, required configuration.</p>
           <input 
             type="text" 
             placeholder="C:\Program Files (x86)\Steam"
@@ -223,7 +217,7 @@ export const SettingsView = ({ hubcapUsage, onRefreshUsage, onRefreshCustomCss }
         {/* Appearance — Custom CSS */}
         <div className="settings-group">
           <label className="settings-label">Appearance</label>
-          <div className="settings-toggle-row" title="Load AetherData/config/custom.css after the default theme. Toggle OFF to ignore the file even if it exists.">
+          <div className="settings-toggle-row" title="Load AetherData/config/custom.css after the default theme.">
             <span className="settings-toggle-text">Enable Custom CSS</span>
             <label className="version-switch">
               <input
@@ -233,39 +227,60 @@ export const SettingsView = ({ hubcapUsage, onRefreshUsage, onRefreshCustomCss }
                   const next = e.target.checked;
                   setCustomCssEnabled(next);
                   if (next) {
-                    try { await invoke('ensure_custom_css'); const p: string = await invoke('get_custom_css_path'); setCustomCssPath(p); } catch {}
+                    try { await invoke('ensure_custom_css'); } catch {}
                   }
                 }}
               />
               <span></span>
             </label>
           </div>
-          {customCssEnabled && (
-            <div style={{ display: 'flex', gap: '10px', alignItems: 'center', marginTop: '6px', flexWrap: 'wrap' }}>
-              <code style={{ fontSize: '11px', color: '#8f8f9e', wordBreak: 'break-all', flexGrow: 1 }}>{customCssPath || 'AetherData/config/custom.css'}</code>
-              <button
-                type="button"
-                className="panel-btn"
-                style={{ padding: '6px 14px', fontSize: '12px', flex: '0 0 auto' }}
-                onClick={async () => {
-                  try {
-                    await invoke('open_custom_css_folder');
-                  } catch (err: any) {
-                    showStatus(`Failed to open folder: ${err}`, 'error');
-                  }
-                }}
-              >
-                Open folder
-              </button>
-            </div>
-          )}
+
         </div>
 
         <div className="settings-separator"></div>
 
-        <div className="form-actions">
-          <button type="submit" className="save-settings-btn">
+        <div className="form-actions" style={{ justifyContent: 'center', gap: '12px' }}>
+          <button type="submit" className="save-settings-btn" style={{ flex: '1 1 0', maxWidth: '200px' }}>
             Save Settings
+          </button>
+          <button
+            type="button"
+            className="save-settings-btn"
+            style={{ flex: '1 1 0', maxWidth: '200px', backgroundColor: '#1c1c21', border: '1px solid var(--border-color)' }}
+            onClick={async () => {
+              // Reset to defaults (matching Rust AppSettings::default)
+              setApiKey('');
+              setRyuuKey('');
+              setSteamPath('C:\\Program Files (x86)\\Steam');
+              setActiveLibrary('');
+              setShowStoreDlcs(false);
+              setShowStoreNsfw(true);
+              setShowStoreDelisted(true);
+              setCustomCssEnabled(false);
+              try {
+                await invoke('save_settings', {
+                  settings: {
+                    ...rawSettings,
+                    hubcap_api_key: '',
+                    ryuu_api_key: '',
+                    steam_path: 'C:\\Program Files (x86)\\Steam',
+                    active_library: '',
+                    show_store_dlcs: false,
+                    show_store_nsfw: true,
+                    show_store_delisted: true,
+                    custom_css_enabled: false,
+                    antivirus_exclusion_done: rawSettings.antivirus_exclusion_done ?? false
+                  }
+                });
+                showStatus('Settings reset to defaults!', 'success');
+                onRefreshUsage('');
+                onRefreshCustomCss();
+              } catch (err: any) {
+                showStatus(`Failed to reset settings: ${err}`, 'error');
+              }
+            }}
+          >
+            Reset Settings
           </button>
         </div>
       </form>

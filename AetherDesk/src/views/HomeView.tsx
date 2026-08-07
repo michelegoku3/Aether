@@ -3,6 +3,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { InstalledGame, useLibraryGames } from '../hooks/useLibraryGames';
 import { CrackModal } from '../modals/CrackModal';
 import { AntivirusExclusionModal } from '../modals/AntivirusExclusionModal';
+import { FindCrackModal } from '../modals/FindCrackModal';
 
 const MAX_VISIBLE_RESULTS = 5;
 
@@ -59,6 +60,7 @@ export const HomeView = () => {
   const [isSteamlessRunning, setIsSteamlessRunning] = useState(false);
   // Game targeted by the "Apply Crack" popup; null means the popup is closed.
   const [crackTarget, setCrackTarget] = useState<{ name: string; appId: string } | null>(null);
+  const [showFindCrack, setShowFindCrack] = useState(false);
   // Pending crack target waiting for the antivirus exclusion prompt to be dismissed.
   // When non-null, the antivirus modal is shown; once dismissed the CrackModal opens.
   const [pendingCrack, setPendingCrack] = useState<{ name: string; appId: string } | null>(null);
@@ -280,23 +282,15 @@ export const HomeView = () => {
         <button
           className="game-action-btn"
           disabled={!hasSelectedGame}
-          onClick={() => openResource('onlinefix')}
+          onClick={() => {
+            if (!hasSelectedGame) {
+              setStatus({ text: 'Select a Lua game first.', type: 'error' });
+              return;
+            }
+            setShowFindCrack(true);
+          }}
         >
-          OnlineFix
-        </button>
-        <button
-          className="game-action-btn"
-          disabled={!hasSelectedGame}
-          onClick={() => openResource('gcw')}
-        >
-          GCW
-        </button>
-        <button
-          className="game-action-btn"
-          disabled={!hasSelectedGame}
-          onClick={() => openResource('csrinru')}
-        >
-          CSRINRU
+          Find Crack
         </button>
         <button
           className="game-action-btn"
@@ -341,6 +335,16 @@ export const HomeView = () => {
       </div>
 
       {status.text && <div className={`home-status ${status.type}`}>{status.text}</div>}
+
+      {showFindCrack && (
+        <FindCrackModal
+          onClose={() => setShowFindCrack(false)}
+          onSelect={(site) => {
+            setShowFindCrack(false);
+            openResource(site);
+          }}
+        />
+      )}
 
       {/* Antivirus exclusion prompt: shown before Apply Crack if never confirmed.
           Regardless of the user's choice, the CrackModal opens afterwards so the

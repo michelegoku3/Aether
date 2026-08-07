@@ -994,14 +994,15 @@ body {
   background: none;
   border: 1px solid var(--border-color);
   border-radius: 10px;
-  padding: 16px 20px;
+  padding: 14px 20px;
   display: flex;
-  align-items: flex-start;
+  align-items: center;
+  justify-content: center;
   gap: 16px;
   text-align: left;
   cursor: pointer;
   width: 100%;
-  min-height: 112px; /* equal height for Latest/Specific */
+  min-height: 100px; /* slightly diminished from 112px, still equal */
   transition: all 0.2s ease;
 }
 
@@ -1032,16 +1033,17 @@ body {
   display: flex;
   flex-direction: column;
   gap: 4px;
+  justify-content: center;
 }
 
 .action-title {
-  font-size: 14px;
+  font-size: 15px;
   font-weight: 700;
   color: #ffffff;
 }
 
 .action-desc {
-  font-size: 11.5px;
+  font-size: 12.5px;
   color: var(--color-muted);
   line-height: 1.45;
 }
