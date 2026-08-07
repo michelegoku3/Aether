@@ -255,7 +255,7 @@ export const StoreView = ({ onRefreshUsage }: StoreViewProps) => {
           ))
         ) : (
           <div className="store-no-results">
-            {hasSearched ? `No games found for "${activeQuery}"` : 'Enter a query above to search the Steam & Hubcap catalog.'}
+            {hasSearched ? `No games found for "${activeQuery}"` : 'Enter a query above to search the Steam catalog.'}
           </div>
         )}
       </div>
