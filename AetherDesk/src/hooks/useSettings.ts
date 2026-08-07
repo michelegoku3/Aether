@@ -14,6 +14,8 @@ export interface AppSettings {
   antivirus_exclusion_done?: boolean;
   /** When true, AetherData/config/custom.css is injected as <style id="aether-custom-css">. Default false. */
   custom_css_enabled?: boolean;
+  /** Ryuu API key (generator.ryuu.lol, 50/day, no verification endpoint) */
+  ryuu_api_key?: string;
 }
 
 export const getSettings = async (): Promise<AppSettings> => {

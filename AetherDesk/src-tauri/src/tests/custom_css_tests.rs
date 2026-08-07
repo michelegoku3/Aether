@@ -1,5 +1,11 @@
 use crate::core::custom_css::{custom_css_path, ensure_custom_css, read_custom_css};
 use std::fs;
+use std::sync::{Mutex, OnceLock};
+
+static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+fn lock() -> std::sync::MutexGuard<'static, ()> {
+    LOCK.get_or_init(|| Mutex::new(())).lock().unwrap()
+}
 
 #[test]
 fn custom_css_path_is_inside_config() {
@@ -10,6 +16,7 @@ fn custom_css_path_is_inside_config() {
 
 #[test]
 fn read_missing_file_returns_empty() {
+    let _guard = lock();
     let path = custom_css_path();
     // Ensure we start from a clean state for this test (fail-open: remove if exists from previous run)
     let _ = fs::remove_file(&path);
@@ -20,6 +27,7 @@ fn read_missing_file_returns_empty() {
 
 #[test]
 fn ensure_creates_template_and_read_returns_it() {
+    let _guard = lock();
     let path = ensure_custom_css().expect("ensure should succeed");
     assert!(path.exists());
     let content = read_custom_css().expect("read after ensure");

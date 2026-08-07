@@ -29,8 +29,8 @@ export const StoreView = ({ onRefreshUsage }: StoreViewProps) => {
   // Active game selected for download modal, null means modal is closed
   const [selectedGame, setSelectedGame] = useState<StoreGame | null>(null);
   
-  // Selected key/manifest source state ('hubcap', 'oureveryday', 'local')
-  const [selectedSource, setSelectedSource] = useState<'hubcap' | 'oureveryday' | 'local'>('oureveryday');
+  // Selected key/manifest source state ('hubcap', 'ryuu', 'oureveryday', 'local')
+  const [selectedSource, setSelectedSource] = useState<'hubcap' | 'ryuu' | 'oureveryday' | 'local'>('oureveryday');
 
   // Status message for download operations inside the modal
   const [downloadStatus, setDownloadStatus] = useState<StatusMessage>(emptyStatus());
@@ -91,11 +91,16 @@ export const StoreView = ({ onRefreshUsage }: StoreViewProps) => {
       setDownloadStatus({ text: 'Loading local configurations...', type: 'info' });
       const settings = await getSettings();
       
-      const apiKeyToUse = selectedSource === 'hubcap' ? settings.hubcap_api_key : 'oureveryday_public';
+      const apiKeyToUse = selectedSource === 'hubcap' ? settings.hubcap_api_key : selectedSource === 'ryuu' ? settings.ryuu_api_key : 'oureveryday_public';
       const steamPathToUse = settings.steam_path;
       
       if (selectedSource === 'hubcap' && (!apiKeyToUse || apiKeyToUse.trim() === '')) {
         setDownloadStatus({ text: 'Error: Please enter your Hubcap API Key in Settings first!', type: 'error' });
+        setIsDownloading(false);
+        return;
+      }
+      if (selectedSource === 'ryuu' && (!apiKeyToUse || apiKeyToUse.trim() === '')) {
+        setDownloadStatus({ text: 'Error: Please enter your Ryuu API Key in Settings first!', type: 'error' });
         setIsDownloading(false);
         return;
       }
@@ -107,7 +112,8 @@ export const StoreView = ({ onRefreshUsage }: StoreViewProps) => {
 
       // 2. Invoke the decoupled, professional Rust download orchestrator!
       setDownloadStatus({ text: `Connecting to source ${selectedSource.toUpperCase()}...`, type: 'info' });
-      const result: string = await invoke('trigger_hubcap_download', {
+      const command = selectedSource === 'ryuu' ? 'trigger_ryuu_download' : 'trigger_hubcap_download';
+      const result: string = await invoke(command, {
         appId: Number(selectedGame.appId),
         apiKey: apiKeyToUse,
         steamPath: steamPathToUse
@@ -137,11 +143,16 @@ export const StoreView = ({ onRefreshUsage }: StoreViewProps) => {
 
     try {
       const settings = await getSettings();
-      const apiKeyToUse = selectedSource === 'hubcap' ? settings.hubcap_api_key : 'oureveryday_public';
+      const apiKeyToUse = selectedSource === 'hubcap' ? settings.hubcap_api_key : selectedSource === 'ryuu' ? settings.ryuu_api_key : 'oureveryday_public';
       const steamPathToUse = settings.steam_path;
 
       if (selectedSource === 'hubcap' && (!apiKeyToUse || apiKeyToUse.trim() === '')) {
         setDownloadStatus({ text: 'Error: Please enter your Hubcap API Key in Settings first!', type: 'error' });
+        setIsDownloading(false);
+        return;
+      }
+      if (selectedSource === 'ryuu' && (!apiKeyToUse || apiKeyToUse.trim() === '')) {
+        setDownloadStatus({ text: 'Error: Please enter your Ryuu API Key in Settings first!', type: 'error' });
         setIsDownloading(false);
         return;
       }
@@ -151,7 +162,8 @@ export const StoreView = ({ onRefreshUsage }: StoreViewProps) => {
         return;
       }
 
-      const rows: LuaManifestRow[] = await invoke('prepare_specific_version_download', {
+      const command = selectedSource === 'ryuu' ? 'prepare_ryuu_specific_version_download' : 'prepare_specific_version_download';
+      const rows: LuaManifestRow[] = await invoke(command, {
         appId: Number(selectedGame.appId),
         apiKey: apiKeyToUse,
         steamPath: steamPathToUse
@@ -315,6 +327,13 @@ export const StoreView = ({ onRefreshUsage }: StoreViewProps) => {
                   </button>
                   <button 
                     disabled={isDownloading}
+                    onClick={() => setSelectedSource('ryuu')}
+                    className={`source-btn ${selectedSource === 'ryuu' ? 'active' : ''}`}
+                  >
+                    Ryuu
+                  </button>
+                  <button 
+                    disabled={isDownloading}
                     onClick={() => setSelectedSource('oureveryday')}
                     className={`source-btn ${selectedSource === 'oureveryday' ? 'active' : ''}`}
                   >
@@ -341,7 +360,7 @@ export const StoreView = ({ onRefreshUsage }: StoreViewProps) => {
                 <div className="action-info">
                   <span className="action-title">Download Latest Version</span>
                   <span className="action-desc">
-                    Downloads the most recent manifest files and decryption keys directly into Steam. This allows Steam to download and install the latest official release natively at maximum connection speed.
+                    Downloads the most recent manifest files and decryption keys directly into Steam. This allows Steam to download and install the latest official release.
                   </span>
                 </div>
               </button>

@@ -2,6 +2,7 @@ use crate::core::backup::GameBackup;
 use crate::store::download::DownloadOrchestrator;
 use crate::store::drm::DrmDetector;
 use crate::providers::hubcap::HubcapClient;
+use crate::providers::ryuu::RyuuClient;
 use crate::core::paths::LocalAppPaths;
 use crate::manifest::pins::{LuaManifestPins, LuaManifestRow};
 use crate::manifest::package::ManifestPackage;
@@ -150,6 +151,67 @@ pub async fn prepare_specific_version_download(
         return Err(format!(
             "Lua install verification failed: downloaded file had {} setManifestid entries, installed file has {}.",
             manifest_rows.len(), installed_rows.len()
+        ));
+    }
+
+    Ok(installed_rows)
+}
+
+#[tauri::command]
+pub async fn trigger_ryuu_download(
+    _app: tauri::AppHandle,
+    app_id: u32,
+    api_key: String,
+    steam_path: String,
+) -> Result<String, String> {
+    validate_download_inputs(&api_key, &steam_path, "call Ryuu")?;
+
+    let steam = SteamCompat::new(steam_path.clone());
+    let client = RyuuClient::new(api_key);
+    let package = client.download_lua_package(app_id).await?;
+    steam.install_lua_config(app_id, &package.lua_content)?;
+    steam.install_manifest_files(&package.manifest_files)?;
+
+    GameBackup::for_app(app_id)?
+        .backup_lua_artifacts(app_id, &package.lua_content, &package.manifest_files)?;
+    let manifest_count = package.manifest_files.len();
+
+    Ok(format!(
+        "Successfully completed Ryuu download for App ID {}. Lua installed, {} manifest file(s) preloaded into Steam depotcache.",
+        app_id, manifest_count
+    ))
+}
+
+#[tauri::command]
+pub async fn prepare_ryuu_specific_version_download(
+    _app: tauri::AppHandle,
+    app_id: u32,
+    api_key: String,
+    steam_path: String,
+) -> Result<Vec<LuaManifestRow>, String> {
+    validate_download_inputs(&api_key, &steam_path, "download the Lua file from Ryuu")?;
+
+    let client = RyuuClient::new(api_key);
+    let package = client.download_lua_package(app_id).await?;
+    let lua_content = package.lua_content;
+    let manifest_rows = LuaManifestPins::rows_from_content(&lua_content);
+
+    if manifest_rows.is_empty() {
+        return Err("The downloaded Lua from Ryuu does not contain any setManifestid entries, so it was not installed. Try another source or verify the provider returned the full Lua with manifests.".to_string());
+    }
+
+    let steam = SteamCompat::new(steam_path.clone());
+    steam.install_lua_config(app_id, &lua_content)?;
+    steam.install_manifest_files(&package.manifest_files)?;
+    GameBackup::for_app(app_id)?
+        .backup_lua_artifacts(app_id, &lua_content, &package.manifest_files)?;
+
+    let installed_rows = LuaManifestPins::new(steam_path, app_id).rows_from_file()?;
+    if installed_rows.len() != manifest_rows.len() {
+        return Err(format!(
+            "Lua install verification failed: downloaded file had {} setManifestid entries, installed file has {}.",
+            manifest_rows.len(),
+            installed_rows.len()
         ));
     }
 

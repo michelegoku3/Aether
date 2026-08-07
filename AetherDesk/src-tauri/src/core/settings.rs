@@ -37,6 +37,11 @@ pub struct AppSettings {
     /// Default `false` — no file I/O unless the user opts in.
     #[serde(default)]
     pub custom_css_enabled: bool,
+    /// Ryuu API key for `generator.ryuu.lol`. No validation endpoint,
+    /// so an empty string means "not configured" and any non-empty is saved verbatim.
+    /// Limit is 50 uses per day (enforced server-side).
+    #[serde(default)]
+    pub ryuu_api_key: String,
 }
 
 /// Serde default provider for boolean settings that ship enabled.
@@ -55,6 +60,7 @@ impl Default for AppSettings {
             show_store_nsfw: true,
             show_store_delisted: true,
             custom_css_enabled: false,
+            ryuu_api_key: String::new(),
         }
     }
 }
