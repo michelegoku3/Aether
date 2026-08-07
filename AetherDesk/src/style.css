@@ -595,8 +595,8 @@ body {
   background-color: #131316; /* Clean container background */
   border: 1px solid var(--border-color);
   border-radius: 12px;
-  width: 540px; /* Spaciously sized modal */
-  max-width: 90%;
+  width: 640px; /* Enlarged for 4 sources (Hubcap/Ryuu/OurEveryday/Local) */
+  max-width: 95%;
   display: flex;
   flex-direction: column;
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
@@ -965,7 +965,8 @@ body {
 }
 
 .source-btn {
-  flex-grow: 1;
+  flex: 1 1 0;
+  min-width: 0;
   background-color: #1c1c21;
   border: 1px solid var(--border-color);
   color: var(--color-muted);
@@ -1000,6 +1001,7 @@ body {
   text-align: left;
   cursor: pointer;
   width: 100%;
+  min-height: 112px; /* equal height for Latest/Specific */
   transition: all 0.2s ease;
 }
 

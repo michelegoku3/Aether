@@ -16,6 +16,7 @@ export const SettingsView = ({ hubcapUsage, onRefreshUsage, onRefreshCustomCss }
   const [showStoreDelisted, setShowStoreDelisted] = useState(true);
   const [customCssEnabled, setCustomCssEnabled] = useState(false);
   const [customCssPath, setCustomCssPath] = useState('');
+  const [ryuuKey, setRyuuKey] = useState('');
 
   // Raw settings as loaded from the backend. Saving always spreads this object
   // back, so fields owned by other flows (e.g. `antivirus_exclusion_done`) are
@@ -39,6 +40,7 @@ export const SettingsView = ({ hubcapUsage, onRefreshUsage, onRefreshCustomCss }
           setShowStoreNsfw(settings.show_store_nsfw !== false);
           setShowStoreDelisted(settings.show_store_delisted !== false);
           setCustomCssEnabled(Boolean(settings.custom_css_enabled));
+          setRyuuKey(settings.ryuu_api_key || '');
         }
       } catch (err: any) {
         showStatus(`Error loading settings: ${err}`, 'error');
@@ -93,7 +95,8 @@ export const SettingsView = ({ hubcapUsage, onRefreshUsage, onRefreshCustomCss }
           show_store_dlcs: showStoreDlcs,
           show_store_nsfw: showStoreNsfw,
           show_store_delisted: showStoreDelisted,
-          custom_css_enabled: customCssEnabled
+          custom_css_enabled: customCssEnabled,
+          ryuu_api_key: ryuuKey
         }
       });
       showStatus('Settings saved successfully!', 'success');
@@ -136,6 +139,26 @@ export const SettingsView = ({ hubcapUsage, onRefreshUsage, onRefreshCustomCss }
             placeholder="Enter API key (e.g. smm_...)"
             value={apiKey}
             onChange={(e) => setApiKey(e.target.value)}
+            className="settings-input"
+          />
+        </div>
+
+        {/* Ryuu API Key Section */}
+        <div className="settings-group">
+          <label className="settings-label">Ryuu API Key</label>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
+            <p className="settings-desc">Enter your generator.ryuu.lol API key to unlock downloads via Ryuu (50 uses per day).</p>
+            {ryuuKey.trim() !== '' && (
+              <span style={{ fontSize: '12px', color: '#8f8f9e', fontWeight: 'bold', marginLeft: '12px', whiteSpace: 'nowrap' }}>
+                50/day
+              </span>
+            )}
+          </div>
+          <input 
+            type="password" 
+            placeholder="Enter Ryuu key (e.g. V1nr...)"
+            value={ryuuKey}
+            onChange={(e) => setRyuuKey(e.target.value)}
             className="settings-input"
           />
         </div>
@@ -217,10 +240,6 @@ export const SettingsView = ({ hubcapUsage, onRefreshUsage, onRefreshCustomCss }
               <span></span>
             </label>
           </div>
-          <p className="settings-desc">
-            When ON, loads <code style={{ background: '#1a1a22', padding: '1px 4px', borderRadius: '4px' }}>AetherData/config/custom.css</code> after the default theme.
-            Edit the file to override any CSS variable or selector (e.g. <code>:root &#123; --bg-app: #0a0a0f; &#125;</code>). The file is created automatically with a commented template.
-          </p>
           {customCssEnabled && (
             <div style={{ display: 'flex', gap: '10px', alignItems: 'center', marginTop: '6px', flexWrap: 'wrap' }}>
               <code style={{ fontSize: '11px', color: '#8f8f9e', wordBreak: 'break-all', flexGrow: 1 }}>{customCssPath || 'AetherData/config/custom.css'}</code>
