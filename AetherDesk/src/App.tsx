@@ -3,6 +3,7 @@ import { Sidebar, TabType } from './layout/Sidebar';
 import { MainContent } from './layout/MainContent';
 import { DllStatusInfo } from './types/ui';
 import { invoke } from '@tauri-apps/api/core';
+import { useCustomCss } from './hooks/useCustomCss';
 
 export default function App() {
   // Setup state to manage the active view, defaulting to 'home'
@@ -22,6 +23,18 @@ export default function App() {
 
   // Hubcap API usage limits
   const [hubcapUsage, setHubcapUsage] = useState({ usage: 0, limit: 25, hasKey: false });
+
+  // Custom CSS toggle — single source of truth for the whole app.
+  const [customCssEnabled, setCustomCssEnabled] = useState(false);
+  const refreshCustomCss = async () => {
+    try {
+      const settings: any = await invoke('get_settings');
+      setCustomCssEnabled(Boolean(settings.custom_css_enabled));
+    } catch {
+      setCustomCssEnabled(false);
+    }
+  };
+  useCustomCss(customCssEnabled);
 
   const refreshHubcapUsage = async (forcedKey?: string) => {
     try {
@@ -104,6 +117,7 @@ export default function App() {
     checkUpdates();
     checkDllStatus();
     refreshHubcapUsage();
+    refreshCustomCss();
     const interval = setInterval(checkUpdates, 30 * 60 * 1000);
     return () => clearInterval(interval);
   }, []);
@@ -140,6 +154,7 @@ export default function App() {
         onRefreshUsage={refreshHubcapUsage}
         dllStatus={dllStatus}
         onDllStatusChange={checkDllStatus}
+        onRefreshCustomCss={refreshCustomCss}
       />
     </div>
   );

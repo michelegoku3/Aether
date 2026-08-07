@@ -15,9 +15,10 @@ interface MainContentProps {
   onRefreshUsage: (forcedKey?: string) => Promise<void>;
   dllStatus: DllStatusInfo;
   onDllStatusChange: () => Promise<void>;
+  onRefreshCustomCss: () => Promise<void>;
 }
 
-export const MainContent = ({ activeTab, dllUpdateAvailable, deskUpdateAvailable, onUpdateComplete, hubcapUsage, onRefreshUsage, dllStatus, onDllStatusChange }: MainContentProps) => {
+export const MainContent = ({ activeTab, dllUpdateAvailable, deskUpdateAvailable, onUpdateComplete, hubcapUsage, onRefreshUsage, dllStatus, onDllStatusChange, onRefreshCustomCss }: MainContentProps) => {
   // Route to the appropriate view based on the active tab
   if (activeTab === 'home') {
     return (
@@ -49,6 +50,7 @@ export const MainContent = ({ activeTab, dllUpdateAvailable, deskUpdateAvailable
         <SettingsView 
           hubcapUsage={hubcapUsage}
           onRefreshUsage={onRefreshUsage}
+          onRefreshCustomCss={onRefreshCustomCss}
         />
       </main>
     );

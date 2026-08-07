@@ -4,15 +4,18 @@ import { invoke } from '@tauri-apps/api/core';
 interface SettingsViewProps {
   hubcapUsage: { usage: number; limit: number; hasKey: boolean };
   onRefreshUsage: (forcedKey?: string) => Promise<void>;
+  onRefreshCustomCss: () => Promise<void>;
 }
 
-export const SettingsView = ({ hubcapUsage, onRefreshUsage }: SettingsViewProps) => {
+export const SettingsView = ({ hubcapUsage, onRefreshUsage, onRefreshCustomCss }: SettingsViewProps) => {
   const [apiKey, setApiKey] = useState('');
   const [steamPath, setSteamPath] = useState('C:\\Program Files (x86)\\Steam');
   const [activeLibrary, setActiveLibrary] = useState('');
   const [showStoreDlcs, setShowStoreDlcs] = useState(false);
   const [showStoreNsfw, setShowStoreNsfw] = useState(true);
   const [showStoreDelisted, setShowStoreDelisted] = useState(true);
+  const [customCssEnabled, setCustomCssEnabled] = useState(false);
+  const [customCssPath, setCustomCssPath] = useState('');
 
   // Raw settings as loaded from the backend. Saving always spreads this object
   // back, so fields owned by other flows (e.g. `antivirus_exclusion_done`) are
@@ -35,10 +38,16 @@ export const SettingsView = ({ hubcapUsage, onRefreshUsage }: SettingsViewProps)
           // These two default to enabled: only an explicit `false` turns them off.
           setShowStoreNsfw(settings.show_store_nsfw !== false);
           setShowStoreDelisted(settings.show_store_delisted !== false);
+          setCustomCssEnabled(Boolean(settings.custom_css_enabled));
         }
       } catch (err: any) {
         showStatus(`Error loading settings: ${err}`, 'error');
       }
+      // Load custom.css path for the hint (fail-open, no status popup).
+      try {
+        const path: string = await invoke('get_custom_css_path');
+        setCustomCssPath(path);
+      } catch {}
     };
     loadSettings();
     onRefreshUsage();
@@ -70,6 +79,11 @@ export const SettingsView = ({ hubcapUsage, onRefreshUsage }: SettingsViewProps)
     // Salvataggio
     try {
       showStatus('Saving settings...', 'info');
+      // Se l'utente ha appena attivato Custom CSS, assicurati che il file esista
+      // prima di salvare, così la prossima apertura dell'editor non trova una cartella vuota.
+      if (customCssEnabled) {
+        try { await invoke('ensure_custom_css'); } catch {}
+      }
       await invoke('save_settings', {
         settings: {
           ...rawSettings,
@@ -78,11 +92,13 @@ export const SettingsView = ({ hubcapUsage, onRefreshUsage }: SettingsViewProps)
           active_library: activeLibrary,
           show_store_dlcs: showStoreDlcs,
           show_store_nsfw: showStoreNsfw,
-          show_store_delisted: showStoreDelisted
+          show_store_delisted: showStoreDelisted,
+          custom_css_enabled: customCssEnabled
         }
       });
       showStatus('Settings saved successfully!', 'success');
       onRefreshUsage(apiKey);
+      onRefreshCustomCss();
     } catch (err: any) {
       showStatus(`Error during save: ${err}`, 'error');
     }
@@ -177,6 +193,53 @@ export const SettingsView = ({ hubcapUsage, onRefreshUsage }: SettingsViewProps)
               <span></span>
             </label>
           </div>
+        </div>
+
+        <div className="settings-separator"></div>
+
+        {/* Appearance — Custom CSS */}
+        <div className="settings-group">
+          <label className="settings-label">Appearance</label>
+          <div className="settings-toggle-row" title="Load AetherData/config/custom.css after the default theme. Toggle OFF to ignore the file even if it exists.">
+            <span className="settings-toggle-text">Enable Custom CSS</span>
+            <label className="version-switch">
+              <input
+                type="checkbox"
+                checked={customCssEnabled}
+                onChange={async (e) => {
+                  const next = e.target.checked;
+                  setCustomCssEnabled(next);
+                  if (next) {
+                    try { await invoke('ensure_custom_css'); const p: string = await invoke('get_custom_css_path'); setCustomCssPath(p); } catch {}
+                  }
+                }}
+              />
+              <span></span>
+            </label>
+          </div>
+          <p className="settings-desc">
+            When ON, loads <code style={{ background: '#1a1a22', padding: '1px 4px', borderRadius: '4px' }}>AetherData/config/custom.css</code> after the default theme.
+            Edit the file to override any CSS variable or selector (e.g. <code>:root &#123; --bg-app: #0a0a0f; &#125;</code>). The file is created automatically with a commented template.
+          </p>
+          {customCssEnabled && (
+            <div style={{ display: 'flex', gap: '10px', alignItems: 'center', marginTop: '6px', flexWrap: 'wrap' }}>
+              <code style={{ fontSize: '11px', color: '#8f8f9e', wordBreak: 'break-all', flexGrow: 1 }}>{customCssPath || 'AetherData/config/custom.css'}</code>
+              <button
+                type="button"
+                className="panel-btn"
+                style={{ padding: '6px 14px', fontSize: '12px', flex: '0 0 auto' }}
+                onClick={async () => {
+                  try {
+                    await invoke('open_custom_css_folder');
+                  } catch (err: any) {
+                    showStatus(`Failed to open folder: ${err}`, 'error');
+                  }
+                }}
+              >
+                Open folder
+              </button>
+            </div>
+          )}
         </div>
 
         <div className="settings-separator"></div>
