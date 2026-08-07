@@ -13,48 +13,155 @@
 /// Caps the fan-out so a query with two aliased tokens does not explode
 /// into N*M remote requests (mirrors SFF's cap of 6, kept tighter here
 /// because every variant costs real network calls).
-const MAX_VARIANTS: usize = 4;
+pub const MAX_VARIANTS: usize = 4;
 
 /// Common franchise abbreviations users type instead of full names.
 /// Expansions are alternatives — any of them OR the original token may hit.
 /// Keys must be lowercase single tokens.
 static ALIAS_EXPANSIONS: &[(&str, &[&str])] = &[
-    ("gta", &["grand theft auto"]),
-    ("rdr", &["red dead redemption"]),
+    ("ac", &["assassins creed", "assassin s creed"]),
+    ("acnh", &["animal crossing new horizons"]),
+    ("aoe", &["age of empires"]),
+    ("aoe2", &["age of empires 2", "age of empires ii"]),
+    ("aoe4", &["age of empires 4", "age of empires iv"]),
+    ("apex", &["apex legends"]),
+    ("ats", &["american truck simulator"]),
+    ("bf", &["battlefield"]),
+    ("bf1", &["battlefield 1"]),
+    ("bf2042", &["battlefield 2042"]),
+    ("bf4", &["battlefield 4"]),
+    ("bfv", &["battlefield v"]),
+    ("bl2", &["borderlands 2"]),
+    ("bl3", &["borderlands 3"]),
+    ("botw", &["the legend of zelda breath of the wild", "breath of the wild"]),
+    ("btd", &["bloons td"]),
+    ("civ", &["civilization"]),
+    ("ck3", &["crusader kings 3"]),
     ("cod", &["call of duty"]),
-    ("re", &["resident evil"]),
-    ("tf2", &["team fortress 2"]),
-    ("csgo", &["counter strike global offensive", "counter-strike global offensive"]),
-    ("cs2", &["counter strike 2", "counter-strike 2"]),
-    ("css", &["counter strike source", "counter-strike source"]),
+    ("cp", &["cyberpunk", "cyberpunk 2077"]),
+    ("cp2077", &["cyberpunk 2077"]),
     ("cs", &["counter strike", "counter-strike"]),
-    ("kh", &["kingdom hearts"]),
-    ("mh", &["monster hunter"]),
-    ("ff", &["final fantasy"]),
+    ("cs2", &["counter strike 2", "counter-strike 2"]),
+    ("csgo", &["counter strike global offensive", "counter-strike global offensive"]),
+    ("css", &["counter strike source", "counter-strike source"]),
+    ("d2", &["diablo 2", "diablo ii", "destiny 2"]),
+    ("d3", &["diablo 3", "diablo iii"]),
+    ("d4", &["diablo 4", "diablo iv"]),
+    ("dbd", &["dead by daylight"]),
+    ("dota", &["dota 2"]),
+    ("dota2", &["dota 2"]),
     ("ds", &["dark souls"]),
+    ("ds1", &["dark souls"]),
     ("ds2", &["dark souls 2", "dark souls ii"]),
     ("ds3", &["dark souls 3", "dark souls iii"]),
+    ("eft", &["escape from tarkov"]),
     ("er", &["elden ring"]),
+    ("eso", &["the elder scrolls online"]),
+    ("ets2", &["euro truck simulator 2"]),
+    ("eu4", &["europa universalis 4"]),
+    ("fc", &["far cry"]),
+    ("fc5", &["far cry 5"]),
+    ("fc6", &["far cry 6"]),
+    ("ff", &["final fantasy"]),
+    ("fh", &["forza horizon"]),
+    ("fh4", &["forza horizon 4"]),
+    ("fh5", &["forza horizon 5"]),
+    ("fm", &["forza motorsport"]),
+    ("fn", &["fortnite"]),
+    ("fnaf", &["five nights at freddy", "five nights at freddy's"]),
+    ("fo4", &["fallout 4"]),
+    ("fo76", &["fallout 76"]),
+    ("fonv", &["fallout new vegas"]),
+    ("got", &["ghost of tsushima"]),
+    ("gow", &["god of war"]),
+    ("gt", &["gran turismo"]),
+    ("gt7", &["gran turismo 7"]),
+    ("gta", &["grand theft auto"]),
+    ("gta5", &["grand theft auto 5", "grand theft auto v"]),
+    ("gta6", &["grand theft auto 6", "grand theft auto vi"]),
+    ("hfw", &["horizon forbidden west"]),
+    ("hk", &["hollow knight"]),
+    ("hl", &["half life"]),
+    ("hl2", &["half life 2"]),
+    ("hoi4", &["hearts of iron 4"]),
+    ("hots", &["heroes of the storm"]),
+    ("hzd", &["horizon zero dawn"]),
+    ("isaac", &["the binding of isaac"]),
+    ("kh", &["kingdom hearts"]),
+    ("l4d", &["left 4 dead"]),
+    ("l4d2", &["left 4 dead 2"]),
+    ("lol", &["league of legends"]),
+    ("mc", &["minecraft"]),
+    ("mh", &["monster hunter"]),
     ("mk", &["mortal kombat"]),
-    ("ac", &["assassins creed", "assassin s creed"]),
-    ("btd", &["bloons td"]),
-    ("tw", &["total war"]),
-    ("wh", &["warhammer"]),
-    ("sf", &["street fighter"]),
-    ("tk", &["tekken"]),
-    ("p5", &["persona 5"]),
-    ("p4", &["persona 4"]),
-    ("p3", &["persona 3"]),
-    ("pubg", &["playerunknown s battlegrounds", "playerunknowns battlegrounds"]),
-    ("wukong", &["black myth wukong"]),
     ("nba", &["nba 2k", "nba2k"]),
+    ("nfs", &["need for speed"]),
+    ("ow", &["overwatch"]),
+    ("ow2", &["overwatch 2"]),
+    ("p3", &["persona 3"]),
+    ("p4", &["persona 4"]),
+    ("p5", &["persona 5"]),
+    ("poe", &["path of exile"]),
+    ("poe2", &["path of exile 2"]),
+    ("pubg", &["playerunknown s battlegrounds", "playerunknowns battlegrounds"]),
+    ("r6", &["rainbow six siege", "rainbow 6 siege"]),
+    ("r6s", &["rainbow six siege", "rainbow 6 siege"]),
+    ("rdr", &["red dead redemption"]),
+    ("rdr2", &["red dead redemption 2"]),
+    ("re", &["resident evil"]),
+    ("tf2", &["team fortress 2"]),
+    ("rl", &["rocket league"]),
+    ("sc2", &["starcraft 2", "starcraft ii"]),
+    ("sdv", &["stardew valley"]),
+    ("sf", &["street fighter"]),
+    ("skyrim", &["the elder scrolls v skyrim", "skyrim"]),
+    ("tboi", &["the binding of isaac"]),
+    ("tes5", &["the elder scrolls v skyrim", "skyrim"]),
+    ("tk", &["tekken"]),
+    ("tlou", &["the last of us"]),
+    ("tlou2", &["the last of us part 2", "the last of us part ii"]),
+    ("totk", &["the legend of zelda tears of the kingdom", "tears of the kingdom"]),
+    ("tw", &["total war"]),
+    ("tw3", &["the witcher 3", "witcher 3"]),
+    ("val", &["valorant"]),
+    ("wh", &["warhammer"]),
+    ("witcher", &["the witcher"]),
+    ("wow", &["world of warcraft"]),
+    ("wukong", &["black myth wukong"]),
+    ("zelda", &["the legend of zelda"]),
 ];
+
+
 
 fn lookup(token: &str) -> Option<&'static [&'static str]> {
     ALIAS_EXPANSIONS
         .iter()
         .find(|(key, _)| *key == token)
         .map(|(_, expansions)| *expansions)
+}
+
+/// Strip punctuation/symbols from a token so `GTA:` → `gta` still hits the alias map.
+/// Keeps only alphanumeric lowercased.
+fn clean_token(token: &str) -> String {
+    token
+        .chars()
+        .filter(|c| c.is_alphanumeric())
+        .collect::<String>()
+        .to_lowercase()
+}
+
+fn lookup_with_fallback(token: &str) -> Option<&'static [&'static str]> {
+    let lower = token.to_lowercase();
+    if let Some(v) = lookup(&lower) {
+        return Some(v);
+    }
+    let cleaned = clean_token(token);
+    if cleaned != lower {
+        if let Some(v) = lookup(&cleaned) {
+            return Some(v);
+        }
+    }
+    None
 }
 
 /// Yield candidate query strings for remote search backends.
@@ -80,7 +187,16 @@ pub fn expanded_queries(query: &str) -> Vec<String> {
     };
 
     // Whole-query alias hit ("gta" alone, "wukong" alone, ...).
-    if let Some(expansions) = lookup(&raw.to_lowercase()) {
+    // Try both raw lower and cleaned form so "GTA:" still expands.
+    let raw_lower = raw.to_lowercase();
+    let mut whole_hit_expansions: Option<&[&str]> = lookup(&raw_lower);
+    if whole_hit_expansions.is_none() {
+        let cleaned_whole = clean_token(&raw);
+        if cleaned_whole != raw_lower {
+            whole_hit_expansions = lookup(&cleaned_whole);
+        }
+    }
+    if let Some(expansions) = whole_hit_expansions {
         for expansion in expansions {
             push_unique(expansion.to_string(), &mut out, &mut seen);
         }
@@ -88,9 +204,10 @@ pub fn expanded_queries(query: &str) -> Vec<String> {
 
     // Per-token swap: for each token that has an alias, build a new query with
     // that token replaced, leaving the other tokens untouched.
+    // Token lookup is punctuation-insensitive via clean_token (e.g. "GTA:" → "gta").
     let tokens: Vec<&str> = raw.split_whitespace().collect();
     for (index, token) in tokens.iter().enumerate() {
-        let Some(expansions) = lookup(&token.to_lowercase()) else {
+        let Some(expansions) = lookup_with_fallback(token) else {
             continue;
         };
         for expansion in expansions {
@@ -109,58 +226,4 @@ pub fn expanded_queries(query: &str) -> Vec<String> {
 /// appends only the first alias variant).
 pub fn primary_variants(query: &str) -> Vec<String> {
     expanded_queries(query).into_iter().take(2).collect()
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn empty_or_blank_query_yields_nothing() {
-        assert!(expanded_queries("").is_empty());
-        assert!(expanded_queries("   ").is_empty());
-    }
-
-    #[test]
-    fn plain_query_has_only_the_original_variant() {
-        assert_eq!(expanded_queries("cyberpunk 2077"), vec!["cyberpunk 2077"]);
-    }
-
-    #[test]
-    fn whole_query_alias_expands() {
-        let variants = expanded_queries("gta");
-        assert_eq!(variants[0], "gta");
-        assert!(variants.contains(&"grand theft auto".to_string()));
-    }
-
-    #[test]
-    fn token_alias_expands_in_place() {
-        let variants = expanded_queries("gta san andreas");
-        assert!(variants.contains(&"grand theft auto san andreas".to_string()));
-    }
-
-    #[test]
-    fn expansion_is_case_insensitive_and_deduped() {
-        let variants = expanded_queries("GTA");
-        assert_eq!(variants[0], "GTA");
-        let lowercase: Vec<String> = variants.iter().map(|v| v.to_lowercase()).collect();
-        let mut deduped = lowercase.clone();
-        deduped.dedup();
-        deduped.sort();
-        let mut sorted = lowercase.clone();
-        sorted.sort();
-        assert_eq!(sorted, deduped);
-    }
-
-    #[test]
-    fn fan_out_is_capped() {
-        let variants = expanded_queries("cs go gta re cod");
-        assert!(variants.len() <= MAX_VARIANTS);
-    }
-
-    #[test]
-    fn primary_variants_returns_at_most_two() {
-        assert!(primary_variants("csgo").len() <= 2);
-        assert_eq!(primary_variants("stray"), vec!["stray"]);
-    }
 }

@@ -14,6 +14,9 @@ mod store;
 mod updater;
 mod util;
 
+#[cfg(test)]
+mod tests;
+
 fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_updater::Builder::new().build())

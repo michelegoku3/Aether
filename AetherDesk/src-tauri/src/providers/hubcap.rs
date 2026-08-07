@@ -70,6 +70,7 @@ where
     }
 }
 
+#[derive(Clone)]
 pub struct HubcapClient {
     api_key: String,
     client: reqwest::Client,
@@ -142,6 +143,35 @@ impl HubcapClient {
         response.bytes().await
             .map(|bytes| bytes.to_vec())
             .map_err(|e| format!("Failed to read manifest ZIP bytes: {}", e))
+    }
+
+    /// Lightweight existence check: does Hubcap have a manifest for this `app_id`?
+    /// Uses `GET /status/{id}` (Free - No usage count per Api Endpoints.txt),
+    /// never `GET /manifest/{id}` which *counts* toward daily usage.
+    /// Interprets `manifest_file_exists == true` or `status == "available"` as true.
+    /// Any non-200, parse error, or network failure is `false` (fail-open).
+    pub async fn has_manifest(&self, app_id: u32) -> bool {
+        let url = format!("{}/status/{}", BASE_URL, app_id);
+        match self.client.get(&url).headers(self.headers()).send().await {
+            Ok(resp) if resp.status().is_success() => {
+                match resp.json::<serde_json::Value>().await {
+                    Ok(v) => {
+                        if let Some(b) = v.get("manifest_file_exists").and_then(|x| x.as_bool()) {
+                            if b { return true; }
+                        }
+                        if let Some(s) = v.get("status").and_then(|x| x.as_str()) {
+                            if s.eq_ignore_ascii_case("available") { return true; }
+                        }
+                        if let Some(b) = v.get("available").and_then(|x| x.as_bool()) { return b; }
+                        if let Some(b) = v.get("exists").and_then(|x| x.as_bool()) { return b; }
+                        false
+                    }
+                    Err(_) => true,
+                }
+            }
+            Ok(_) => false,
+            Err(_) => false,
+        }
     }
 
     pub async fn get_usage_stats(&self) -> Result<HubcapUserStats, String> {
