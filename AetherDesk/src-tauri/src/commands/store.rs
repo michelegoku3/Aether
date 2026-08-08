@@ -1,4 +1,5 @@
 use crate::core::backup::GameBackup;
+use crate::game_info::cache::GameInfoCache;
 use crate::store::download::DownloadOrchestrator;
 use crate::store::drm::DrmDetector;
 use crate::providers::hubcap::HubcapClient;
@@ -41,6 +42,11 @@ pub async fn search_store(
     );
 
     if let Some(results) = cache.get_fresh(&cache_key) {
+        GameInfoCache::new(
+            LocalAppPaths::data_root().join("cache"),
+            app.package_info().version.to_string(),
+        )
+        .merge_store_results(&results);
         return Ok(results);
     }
 
@@ -50,13 +56,20 @@ pub async fn search_store(
     {
         Ok(results) => {
             let cache_dir = LocalAppPaths::data_root().join("cache");
-            SteamAppNameResolver::new(cache_dir)
+            SteamAppNameResolver::new(cache_dir.clone())
                 .merge_names(results.iter().map(|game| (game.id, game.name.clone())));
+            GameInfoCache::new(cache_dir, app.package_info().version.to_string())
+                .merge_store_results(&results);
             let _ = cache.put(&cache_key, results.clone());
             Ok(results)
         }
         Err(error) => {
             if let Some(results) = cache.get_any(&cache_key) {
+                GameInfoCache::new(
+                    LocalAppPaths::data_root().join("cache"),
+                    app.package_info().version.to_string(),
+                )
+                .merge_store_results(&results);
                 Ok(results)
             } else {
                 Err(error)
@@ -71,9 +84,12 @@ pub async fn check_denuvo_bulk(
     app_ids: Vec<u32>,
 ) -> Result<HashMap<u32, bool>, String> {
     let cache_dir = LocalAppPaths::data_root().join("cache");
-    DrmDetector::new(cache_dir, app.package_info().version.to_string())
+    let app_version = app.package_info().version.to_string();
+    let results = DrmDetector::new(cache_dir.clone(), app_version.clone())
         .detect_many(app_ids)
-        .await
+        .await?;
+    GameInfoCache::new(cache_dir, app_version).merge_denuvo_flags(&results);
+    Ok(results)
 }
 
 #[tauri::command]

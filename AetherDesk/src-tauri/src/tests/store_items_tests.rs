@@ -8,6 +8,7 @@ fn meta(kind: &str, parent: Option<u32>, delisted_blank: bool, is_nsfw: bool) ->
         is_nsfw,
         is_delisted: false,
         release_date_unix: None,
+        ..Default::default()
     }
 }
 
@@ -60,6 +61,7 @@ fn take_me_is_not_dlc_and_is_nsfw() {
         is_nsfw: true,
         is_delisted: false,
         release_date_unix: Some(1688004125),
+        ..Default::default()
     };
     assert!(!is_dlc_like(&m));
     assert!(is_nsfw(&m, "Take Me To The Dungeon!!"));

@@ -9,6 +9,38 @@ pub struct SteamStoreItem {
     pub name: String,
     #[serde(rename = "tiny_image")]
     pub image_url: String,
+    #[serde(default, rename = "type")]
+    pub item_type: Option<String>,
+    #[serde(default)]
+    pub price: Option<SteamStorePrice>,
+    #[serde(default)]
+    pub metascore: Option<serde_json::Value>,
+    #[serde(default)]
+    pub platforms: Option<SteamStorePlatforms>,
+    #[serde(default)]
+    pub streamingvideo: Option<bool>,
+    #[serde(default)]
+    pub controller_support: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, Default)]
+pub struct SteamStorePrice {
+    pub currency: Option<String>,
+    pub initial: Option<i64>,
+    #[serde(default, rename = "final")]
+    pub final_price: Option<i64>,
+    #[serde(default)]
+    pub discount_percent: Option<i64>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, Default)]
+pub struct SteamStorePlatforms {
+    #[serde(default)]
+    pub windows: Option<bool>,
+    #[serde(default)]
+    pub mac: Option<bool>,
+    #[serde(default)]
+    pub linux: Option<bool>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]

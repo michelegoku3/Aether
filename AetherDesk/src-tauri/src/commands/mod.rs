@@ -4,6 +4,7 @@ pub mod antivirus;
 pub mod crack;
 pub mod custom_css;
 pub mod home_links;
+pub mod game_info;
 pub mod library;
 pub mod settings;
 pub mod steam;

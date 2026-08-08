@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { SpecificVersionModal, LuaManifestRow } from '../modals/SpecificVersionModal';
 import { LibraryGameActionsModal } from '../modals/LibraryGameActionsModal';
+import { GameInfoModal } from '../modals/GameInfoModal';
 import { GameCard } from '../ui/GameCard';
 import { StatusAlert } from '../ui/StatusAlert';
 import { useLibraryGames, InstalledGame } from '../hooks/useLibraryGames';
@@ -11,6 +12,7 @@ import { requireSteamPath } from '../hooks/useSettings';
 export const LibraryView = () => {
   const { games, isLoading, status, setStatus, loadInstalledGames } = useLibraryGames();
   const [actionGame, setActionGame] = useState<InstalledGame | null>(null);
+  const [infoGame, setInfoGame] = useState<InstalledGame | null>(null);
   const [versionGame, setVersionGame] = useState<InstalledGame | null>(null);
   const [manifestRows, setManifestRows] = useState<LuaManifestRow[]>([]);
 
@@ -68,8 +70,18 @@ export const LibraryView = () => {
             <GameCard
               key={game.id}
               game={game}
-              actionLabel="Modify"
-              onAction={setActionGame}
+              actions={[
+                {
+                  label: 'Info',
+                  variant: 'secondary',
+                  onClick: setInfoGame,
+                },
+                {
+                  label: 'Modify',
+                  variant: 'primary',
+                  onClick: setActionGame,
+                },
+              ]}
             />
           ))
         ) : (
@@ -78,6 +90,15 @@ export const LibraryView = () => {
           </div>
         )}
       </div>
+
+      {infoGame && (
+        <GameInfoModal
+          appId={Number(infoGame.appId)}
+          fallbackName={infoGame.name}
+          fallbackImageUrl={infoGame.imageUrl}
+          onClose={() => setInfoGame(null)}
+        />
+      )}
 
       {actionGame && !versionGame && (
         <LibraryGameActionsModal
