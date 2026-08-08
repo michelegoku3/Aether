@@ -314,7 +314,7 @@ export const StoreView = ({ onRefreshUsage, isActive, settingsRevision, useAlter
       <div className="store-separator"></div>
 
       {/* 10 rows x 2 columns Grid */}
-      <div className="store-grid">
+      <div className={useAlternativeGameCards ? 'store-grid alt-card-grid' : 'store-grid'}>
         {isLoading || (isTrendingLoading && pageGames.length === 0) ? (
           <div className="store-no-results">
             {isLoading ? 'Loading results from Steam & Hubcap...' : 'Loading trending Steam games...'}

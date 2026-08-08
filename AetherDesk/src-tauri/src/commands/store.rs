@@ -131,7 +131,7 @@ pub async fn get_trending_store_games(
         count,
     );
 
-    if let Some(results) = cache.get_fresh(&cache_key) {
+    if let Some(results) = cache.get_fresh_for(&cache_key, 24 * 60 * 60) {
         GameInfoCache::new(
             LocalAppPaths::data_root().join("cache"),
             info_cache_version.clone(),

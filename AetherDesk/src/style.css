@@ -2214,3 +2214,22 @@ body {
 .store-game-card.backdrop-card .badge-installed {
   z-index: 3;
 }
+
+/* Alternate cards are taller than classic cards; give the grid matching rows
+   so cards never overlap vertically. */
+.store-grid.alt-card-grid {
+  grid-auto-rows: 150px;
+  gap: 18px 16px;
+}
+
+.store-game-card.backdrop-card {
+  height: 150px;
+  min-height: 150px;
+  overflow: visible;
+}
+
+.game-card-backdrop-bg,
+.store-game-card.backdrop-card::after {
+  border-radius: inherit;
+  overflow: hidden;
+}

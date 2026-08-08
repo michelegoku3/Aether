@@ -73,7 +73,7 @@ export const LibraryView = ({ useAlternativeGameCards }: LibraryViewProps) => {
 
       <div className="store-separator"></div>
 
-      <div className="store-grid">
+      <div className={useAlternativeGameCards ? 'store-grid alt-card-grid' : 'store-grid'}>
         {isLoading ? (
           <div className="store-no-results">Scanning Steam appmanifest files...</div>
         ) : games.length > 0 ? (

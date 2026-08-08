@@ -22,6 +22,8 @@ export interface AppSettings {
   show_store_front_games?: boolean;
   /** Alternate backdrop-focused card layout. */
   use_alternative_game_cards?: boolean;
+  /** Enables WebView developer tools when supported by the build/runtime. */
+  enable_webview_devtools?: boolean;
   /** Store front filter criterion. */
   store_front_filter?: string;
   /** Preferred Steam store currency for prices. */

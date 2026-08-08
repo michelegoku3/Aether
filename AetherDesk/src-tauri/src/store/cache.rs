@@ -6,6 +6,7 @@ use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 const CACHE_FILE_NAME: &str = "store_search_cache.json";
+const CACHE_SCHEMA_VERSION: &str = "store-cache-v3";
 const FRESH_TTL_SECONDS: u64 = 4 * 60 * 60;
 const STALE_RETENTION_SECONDS: u64 = 14 * 24 * 60 * 60;
 
@@ -41,16 +42,20 @@ impl StoreSearchCache {
     pub fn new(cache_dir: PathBuf, app_version: String) -> Self {
         Self {
             cache_path: cache_dir.join(CACHE_FILE_NAME),
-            app_version,
+            app_version: format!("{}|{}", app_version, CACHE_SCHEMA_VERSION),
         }
     }
 
     pub fn get_fresh(&self, query: &str) -> Option<Vec<UnifiedStoreGame>> {
+        self.get_fresh_for(query, FRESH_TTL_SECONDS)
+    }
+
+    pub fn get_fresh_for(&self, query: &str, ttl_seconds: u64) -> Option<Vec<UnifiedStoreGame>> {
         let key = Self::normalize_query(query)?;
         let cache = self.load_cache();
         let entry = cache.entries.get(&key)?;
 
-        if Self::now_unix().saturating_sub(entry.updated_at_unix) <= FRESH_TTL_SECONDS {
+        if Self::now_unix().saturating_sub(entry.updated_at_unix) <= ttl_seconds {
             Some(entry.results.clone())
         } else {
             None
