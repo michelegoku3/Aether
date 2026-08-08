@@ -102,7 +102,7 @@ pub async fn check_denuvo_bulk(
 
 #[tauri::command]
 pub async fn trigger_hubcap_download(
-    _app: tauri::AppHandle,
+    app: tauri::AppHandle,
     app_id: u32,
     api_key: String,
     steam_path: String,
@@ -128,9 +128,12 @@ pub async fn trigger_hubcap_download(
         }
     };
 
+    apply_default_update_policy(&app, app_id, &steam_path)?;
+    let installed_lua = steam.read_lua_config(app_id).unwrap_or(package.lua_content.clone());
+
     // Centralized Lua/manifest backup (AetherData/backup/<app_id>/lua).
     GameBackup::for_app(app_id)?
-        .backup_lua_artifacts(app_id, &package.lua_content, &package.manifest_files)?;
+        .backup_lua_artifacts(app_id, &installed_lua, &package.manifest_files)?;
     let manifest_count = package.manifest_files.len();
 
     Ok(format!(
@@ -183,7 +186,7 @@ pub async fn prepare_specific_version_download(
 
 #[tauri::command]
 pub async fn trigger_ryuu_download(
-    _app: tauri::AppHandle,
+    app: tauri::AppHandle,
     app_id: u32,
     api_key: String,
     steam_path: String,
@@ -195,9 +198,11 @@ pub async fn trigger_ryuu_download(
     let package = client.download_lua_package(app_id).await?;
     steam.install_lua_config(app_id, &package.lua_content)?;
     steam.install_manifest_files(&package.manifest_files)?;
+    apply_default_update_policy(&app, app_id, &steam_path)?;
+    let installed_lua = steam.read_lua_config(app_id).unwrap_or(package.lua_content.clone());
 
     GameBackup::for_app(app_id)?
-        .backup_lua_artifacts(app_id, &package.lua_content, &package.manifest_files)?;
+        .backup_lua_artifacts(app_id, &installed_lua, &package.manifest_files)?;
     let manifest_count = package.manifest_files.len();
 
     Ok(format!(
@@ -252,6 +257,20 @@ fn validate_download_inputs(
     }
     if steam_path.trim().is_empty() {
         return Err("Steam installation path is required".to_string());
+    }
+    Ok(())
+}
+
+fn apply_default_update_policy(
+    app: &tauri::AppHandle,
+    app_id: u32,
+    steam_path: &str,
+) -> Result<(), String> {
+    let settings = SettingsManager::new(app).load();
+    if settings.download_games_with_updates_on {
+        LuaManifestPins::new(steam_path.to_string(), app_id)
+            .set_updates_enabled(true)
+            .map(|_| ())?;
     }
     Ok(())
 }

@@ -16,9 +16,10 @@ interface MainContentProps {
   dllStatus: DllStatusInfo;
   onDllStatusChange: () => Promise<void>;
   onRefreshCustomCss: () => Promise<void>;
+  onPreviewPersonalWallpaper: (enabled: boolean, opacity: number) => void;
 }
 
-export const MainContent = ({ activeTab, dllUpdateAvailable, deskUpdateAvailable, onUpdateComplete, hubcapUsage, onRefreshUsage, dllStatus, onDllStatusChange, onRefreshCustomCss }: MainContentProps) => {
+export const MainContent = ({ activeTab, dllUpdateAvailable, deskUpdateAvailable, onUpdateComplete, hubcapUsage, onRefreshUsage, dllStatus, onDllStatusChange, onRefreshCustomCss, onPreviewPersonalWallpaper }: MainContentProps) => {
   // Route to the appropriate view based on the active tab
   if (activeTab === 'home') {
     return (
@@ -51,6 +52,7 @@ export const MainContent = ({ activeTab, dllUpdateAvailable, deskUpdateAvailable
           hubcapUsage={hubcapUsage}
           onRefreshUsage={onRefreshUsage}
           onRefreshCustomCss={onRefreshCustomCss}
+          onPreviewPersonalWallpaper={onPreviewPersonalWallpaper}
         />
       </main>
     );

@@ -64,3 +64,19 @@ pub fn open_custom_css_folder() -> Result<(), String> {
 
     Ok(())
 }
+
+/// Returns the first `wallpaper.<ext>` file found next to `custom.css` as an
+/// absolute path string. Empty string means no wallpaper file is configured.
+#[tauri::command]
+pub fn get_personal_wallpaper_path() -> Result<String, String> {
+    Ok(custom_css::personal_wallpaper_path()?
+        .map(|path| path.display().to_string())
+        .unwrap_or_default())
+}
+
+/// Returns the configured personal wallpaper as a browser-ready data URI.
+/// Empty string means no `wallpaper.<ext>` file was found in AetherData/config.
+#[tauri::command]
+pub fn get_personal_wallpaper_data_uri() -> Result<String, String> {
+    Ok(custom_css::read_personal_wallpaper_data_uri()?.unwrap_or_default())
+}

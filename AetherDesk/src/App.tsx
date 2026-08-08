@@ -4,6 +4,7 @@ import { MainContent } from './layout/MainContent';
 import { DllStatusInfo } from './types/ui';
 import { invoke } from '@tauri-apps/api/core';
 import { useCustomCss } from './hooks/useCustomCss';
+import { usePersonalWallpaper } from './hooks/usePersonalWallpaper';
 
 export default function App() {
   // Setup state to manage the active view, defaulting to 'home'
@@ -24,17 +25,28 @@ export default function App() {
   // Hubcap API usage limits
   const [hubcapUsage, setHubcapUsage] = useState({ usage: 0, limit: 25, hasKey: false });
 
-  // Custom CSS toggle — single source of truth for the whole app.
+  // Appearance toggles — single source of truth for the whole app.
   const [customCssEnabled, setCustomCssEnabled] = useState(false);
+  const [personalWallpaperEnabled, setPersonalWallpaperEnabled] = useState(false);
+  const [personalWallpaperOpacity, setPersonalWallpaperOpacity] = useState(35);
   const refreshCustomCss = async () => {
     try {
       const settings: any = await invoke('get_settings');
       setCustomCssEnabled(Boolean(settings.custom_css_enabled));
+      setPersonalWallpaperEnabled(Boolean(settings.personal_wallpaper_enabled));
+      setPersonalWallpaperOpacity(Math.max(0, Math.min(100, Number(settings.personal_wallpaper_opacity ?? 35))));
     } catch {
       setCustomCssEnabled(false);
+      setPersonalWallpaperEnabled(false);
+      setPersonalWallpaperOpacity(35);
     }
   };
+  const previewPersonalWallpaper = (enabled: boolean, opacity: number) => {
+    setPersonalWallpaperEnabled(enabled);
+    setPersonalWallpaperOpacity(Math.max(0, Math.min(100, opacity)));
+  };
   useCustomCss(customCssEnabled);
+  usePersonalWallpaper(personalWallpaperEnabled, personalWallpaperOpacity);
 
   const refreshHubcapUsage = async (forcedKey?: string) => {
     try {
@@ -155,6 +167,7 @@ export default function App() {
         dllStatus={dllStatus}
         onDllStatusChange={checkDllStatus}
         onRefreshCustomCss={refreshCustomCss}
+        onPreviewPersonalWallpaper={previewPersonalWallpaper}
       />
     </div>
   );
