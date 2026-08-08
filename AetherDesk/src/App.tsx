@@ -38,6 +38,9 @@ export default function App() {
     try {
       const settings: any = await invoke('get_settings');
       setUseAlternativeGameCards(Boolean(settings.use_alternative_game_cards));
+      if (settings.enable_webview_devtools) {
+        try { await invoke('open_webview_devtools'); } catch (err) { console.warn('Unable to open WebView devtools:', err); }
+      }
       setCustomCssEnabled(Boolean(settings.custom_css_enabled));
       setPersonalWallpaperEnabled(Boolean(settings.personal_wallpaper_enabled));
       setPersonalWallpaperOpacity(Math.max(0, Math.min(100, Number(settings.personal_wallpaper_opacity ?? 35))));

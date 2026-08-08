@@ -35,6 +35,7 @@ fn main() {
             commands::settings::validate_hubcap_key,
             commands::settings::get_hubcap_usage,
             commands::settings::clear_app_caches,
+            commands::settings::open_webview_devtools,
             commands::custom_css::get_custom_css,
             commands::custom_css::get_custom_css_path,
             commands::custom_css::get_personal_wallpaper_path,

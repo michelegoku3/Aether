@@ -53,6 +53,9 @@ pub struct AppSettings {
     /// Enables the alternate backdrop-focused game card layout.
     #[serde(default)]
     pub use_alternative_game_cards: bool,
+    /// Enables WebView developer tools when supported by the build/runtime.
+    #[serde(default)]
+    pub enable_webview_devtools: bool,
     /// Criterion used by the Store front page (`trending`, `latest`, ...).
     #[serde(default = "default_store_front_filter")]
     pub store_front_filter: String,
@@ -132,6 +135,7 @@ impl Default for AppSettings {
             download_games_with_updates_on: true,
             show_store_front_games: true,
             use_alternative_game_cards: false,
+            enable_webview_devtools: false,
             store_front_filter: default_store_front_filter(),
             store_currency: default_store_currency(),
             personal_wallpaper_enabled: false,

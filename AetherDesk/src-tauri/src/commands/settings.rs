@@ -56,3 +56,13 @@ pub fn clear_app_caches() -> Result<String, String> {
 
     Ok("AetherDesk caches cleared successfully.".to_string())
 }
+
+#[tauri::command]
+pub fn open_webview_devtools(app: tauri::AppHandle) -> Result<(), String> {
+    use tauri::Manager;
+    let Some(window) = app.get_webview_window("main") else {
+        return Err("Main WebView window was not found.".to_string());
+    };
+    window.open_devtools();
+    Ok(())
+}

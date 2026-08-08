@@ -18,6 +18,7 @@ export const SettingsView = ({ hubcapUsage, onRefreshUsage, onRefreshCustomCss, 
   const [downloadGamesWithUpdatesOn, setDownloadGamesWithUpdatesOn] = useState(true);
   const [showStoreFrontGames, setShowStoreFrontGames] = useState(true);
   const [useAlternativeGameCards, setUseAlternativeGameCards] = useState(false);
+  const [enableWebviewDevtools, setEnableWebviewDevtools] = useState(false);
   const [storeFrontFilter, setStoreFrontFilter] = useState('upcoming');
   const [customCssEnabled, setCustomCssEnabled] = useState(false);
   const [personalWallpaperEnabled, setPersonalWallpaperEnabled] = useState(false);
@@ -49,6 +50,7 @@ export const SettingsView = ({ hubcapUsage, onRefreshUsage, onRefreshCustomCss, 
           setDownloadGamesWithUpdatesOn(settings.download_games_with_updates_on !== false);
           setShowStoreFrontGames(settings.show_store_front_games !== false);
           setUseAlternativeGameCards(Boolean(settings.use_alternative_game_cards));
+          setEnableWebviewDevtools(Boolean(settings.enable_webview_devtools));
           setStoreFrontFilter(settings.store_front_filter || 'upcoming');
           setCustomCssEnabled(Boolean(settings.custom_css_enabled));
           setPersonalWallpaperEnabled(Boolean(settings.personal_wallpaper_enabled));
@@ -111,6 +113,7 @@ export const SettingsView = ({ hubcapUsage, onRefreshUsage, onRefreshCustomCss, 
           download_games_with_updates_on: downloadGamesWithUpdatesOn,
           show_store_front_games: showStoreFrontGames,
           use_alternative_game_cards: useAlternativeGameCards,
+          enable_webview_devtools: enableWebviewDevtools,
           store_front_filter: storeFrontFilter,
           store_currency: storeCurrency
         }
@@ -146,6 +149,18 @@ export const SettingsView = ({ hubcapUsage, onRefreshUsage, onRefreshCustomCss, 
               type="checkbox"
               checked={useAlternativeGameCards}
               onChange={(e) => setUseAlternativeGameCards(e.target.checked)}
+            />
+            <span></span>
+          </label>
+        </div>
+
+        <div className="settings-top-action-row" title="Open WebView developer tools on startup/after saving settings when supported by the build.">
+          <span className="settings-toggle-text">Enable WebView devtools</span>
+          <label className="version-switch">
+            <input
+              type="checkbox"
+              checked={enableWebviewDevtools}
+              onChange={(e) => setEnableWebviewDevtools(e.target.checked)}
             />
             <span></span>
           </label>
@@ -412,6 +427,7 @@ export const SettingsView = ({ hubcapUsage, onRefreshUsage, onRefreshCustomCss, 
               setDownloadGamesWithUpdatesOn(true);
               setShowStoreFrontGames(true);
               setUseAlternativeGameCards(false);
+              setEnableWebviewDevtools(false);
               setStoreFrontFilter('upcoming');
               setCustomCssEnabled(false);
               setPersonalWallpaperEnabled(false);
@@ -432,6 +448,7 @@ export const SettingsView = ({ hubcapUsage, onRefreshUsage, onRefreshCustomCss, 
                     download_games_with_updates_on: true,
                     show_store_front_games: true,
                     use_alternative_game_cards: false,
+                    enable_webview_devtools: false,
                     store_front_filter: 'upcoming',
                     custom_css_enabled: false,
                     personal_wallpaper_enabled: false,
