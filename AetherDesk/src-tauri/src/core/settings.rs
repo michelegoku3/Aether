@@ -47,6 +47,12 @@ pub struct AppSettings {
     /// downloads intentionally ignore this setting.
     #[serde(default = "default_true")]
     pub download_games_with_updates_on: bool,
+    /// Show a Steam Store front page in Store when no search query is active.
+    #[serde(default = "default_true")]
+    pub show_store_front_games: bool,
+    /// Criterion used by the Store front page (`trending`, `latest`, ...).
+    #[serde(default = "default_store_front_filter")]
+    pub store_front_filter: String,
     /// Preferred Steam store currency for prices shown in Store/Info.
     /// Values are intentionally small and map to Steam country codes:
     /// `eur` -> IT, `usd` -> US, `jpy` -> JP.
@@ -67,6 +73,10 @@ fn default_true() -> bool {
 
 fn default_store_currency() -> String {
     "eur".to_string()
+}
+
+fn default_store_front_filter() -> String {
+    "trending".to_string()
 }
 
 fn default_wallpaper_opacity() -> u8 {
@@ -93,6 +103,17 @@ pub fn cache_version_with_currency(app_version: &str, currency: &str) -> String 
     format!("{}|currency={}", app_version, normalize_store_currency(currency))
 }
 
+pub fn normalize_store_front_filter(value: &str) -> String {
+    match value.trim().to_lowercase().as_str() {
+        "latest" => "latest".to_string(),
+        "top_sellers" | "topsellers" => "top_sellers".to_string(),
+        "upcoming" => "upcoming".to_string(),
+        "popular_upcoming" | "popularcomingsoon" => "popular_upcoming".to_string(),
+        "discounts" | "specials" => "discounts".to_string(),
+        _ => "trending".to_string(),
+    }
+}
+
 impl Default for AppSettings {
     fn default() -> Self {
         Self {
@@ -106,6 +127,8 @@ impl Default for AppSettings {
             custom_css_enabled: false,
             ryuu_api_key: String::new(),
             download_games_with_updates_on: true,
+            show_store_front_games: true,
+            store_front_filter: default_store_front_filter(),
             store_currency: default_store_currency(),
             personal_wallpaper_enabled: false,
             personal_wallpaper_opacity: default_wallpaper_opacity(),
@@ -167,6 +190,7 @@ impl SettingsManager {
 
         let mut normalized = settings.clone();
         normalized.store_currency = normalize_store_currency(&normalized.store_currency);
+        normalized.store_front_filter = normalize_store_front_filter(&normalized.store_front_filter);
         normalized.personal_wallpaper_opacity = normalized.personal_wallpaper_opacity.min(100);
 
         let json_data = serde_json::to_string_pretty(&normalized)

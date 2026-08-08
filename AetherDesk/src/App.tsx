@@ -25,6 +25,10 @@ export default function App() {
   // Hubcap API usage limits
   const [hubcapUsage, setHubcapUsage] = useState({ usage: 0, limit: 25, hasKey: false });
 
+  // Settings revision: incremented after Settings saves/resets so always-mounted
+  // views (Store) can reload data that depends on settings without restarting.
+  const [settingsRevision, setSettingsRevision] = useState(0);
+
   // Appearance toggles — single source of truth for the whole app.
   const [customCssEnabled, setCustomCssEnabled] = useState(false);
   const [personalWallpaperEnabled, setPersonalWallpaperEnabled] = useState(false);
@@ -35,6 +39,7 @@ export default function App() {
       setCustomCssEnabled(Boolean(settings.custom_css_enabled));
       setPersonalWallpaperEnabled(Boolean(settings.personal_wallpaper_enabled));
       setPersonalWallpaperOpacity(Math.max(0, Math.min(100, Number(settings.personal_wallpaper_opacity ?? 35))));
+      setSettingsRevision((value) => value + 1);
     } catch {
       setCustomCssEnabled(false);
       setPersonalWallpaperEnabled(false);
@@ -168,6 +173,7 @@ export default function App() {
         onDllStatusChange={checkDllStatus}
         onRefreshCustomCss={refreshCustomCss}
         onPreviewPersonalWallpaper={previewPersonalWallpaper}
+        settingsRevision={settingsRevision}
       />
     </div>
   );

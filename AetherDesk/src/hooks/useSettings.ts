@@ -18,6 +18,10 @@ export interface AppSettings {
   ryuu_api_key?: string;
   /** Latest-version downloads comment setManifestid pins so Steam can update the game. */
   download_games_with_updates_on?: boolean;
+  /** Show Store front games when no search is active. */
+  show_store_front_games?: boolean;
+  /** Store front filter criterion. */
+  store_front_filter?: string;
   /** Preferred Steam store currency for prices. */
   store_currency?: 'eur' | 'usd' | 'jpy' | string;
   /** Personal wallpaper toggle. */

@@ -1,6 +1,9 @@
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
+use std::sync::Arc;
 use std::time::Duration;
+use tokio::sync::Semaphore;
+use tokio::task::JoinSet;
 
 /// Overall wall-clock budget for the whole Hubcap availability lookup
 /// (2 endpoints × up to 2 query variants). The two endpoint calls inside
@@ -281,6 +284,139 @@ impl StoreService {
         }
     }
 
+
+    async fn collect_hubcap_status_ids(
+        &self,
+        app_ids: &[u32],
+        hubcap_client: Option<&HubcapClient>,
+    ) -> HashSet<u32> {
+        let Some(client) = hubcap_client.cloned() else {
+            return HashSet::new();
+        };
+
+        let mut unique_ids: Vec<u32> = app_ids.iter().copied().filter(|id| *id != 0).collect();
+        unique_ids.sort_unstable();
+        unique_ids.dedup();
+
+        let semaphore = Arc::new(Semaphore::new(8));
+        let mut tasks = JoinSet::new();
+
+        for app_id in unique_ids {
+            let client = client.clone();
+            let semaphore = Arc::clone(&semaphore);
+            tasks.spawn(async move {
+                let _permit = semaphore.acquire_owned().await.ok();
+                client.has_manifest(app_id).await.then_some(app_id)
+            });
+        }
+
+        let mut available = HashSet::new();
+        while let Some(result) = tasks.join_next().await {
+            if let Ok(Some(app_id)) = result {
+                available.insert(app_id);
+            }
+        }
+        available
+    }
+
+    pub async fn trending_store(
+        &self,
+        store_front_filter: &str,
+        start: usize,
+        count: usize,
+        hubcap_client: Option<HubcapClient>,
+        show_store_dlcs: bool,
+        show_store_nsfw: bool,
+        show_store_delisted: bool,
+        steam_country_code: &str,
+    ) -> Result<Vec<UnifiedStoreGame>, String> {
+        let steam_items = self
+            .steam_store
+            .store_front_for_country(store_front_filter, start, count, steam_country_code)
+            .await?;
+
+        if steam_items.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let app_ids: Vec<u32> = steam_items.iter().map(|item| item.id).collect();
+        let available_ids = self
+            .collect_hubcap_status_ids(&app_ids, hubcap_client.as_ref())
+            .await;
+
+        let mut seen_ids = HashSet::new();
+        let mut unified_list: Vec<UnifiedStoreGame> = Vec::new();
+        for item in steam_items {
+            if !seen_ids.insert(item.id) {
+                continue;
+            }
+            unified_list.push(UnifiedStoreGame {
+                id: item.id,
+                name: item.name.clone(),
+                app_id: item.id.to_string(),
+                has_manifest: available_ids.contains(&item.id),
+                has_denuvo: false,
+                has_nsfw: false,
+                has_delisted: false,
+                image_url: item.image_url.clone(),
+                store_kind: item.item_type.clone().unwrap_or_default(),
+                release_date_unix: None,
+                original_release_date_unix: None,
+                store_url_path: None,
+                price: price_from_store_item(&item),
+                metascore: metascore_from_store_item(&item),
+                controller_support: item.controller_support.clone(),
+                platforms: platforms_from_store_item(&item),
+                store_categories: None,
+                content_descriptor_ids: Vec::new(),
+            });
+        }
+
+        let meta_map = if !unified_list.is_empty() {
+            let ids: Vec<u32> = unified_list.iter().map(|game| game.id).collect();
+            store_items::fetch_store_items_for_country(ids, steam_country_code).await
+        } else {
+            HashMap::new()
+        };
+
+        for game in unified_list.iter_mut() {
+            let meta = meta_map.get(&game.id).cloned().unwrap_or_default();
+            game.has_nsfw = store_items::is_nsfw(&meta, &game.name);
+            game.has_delisted = meta.is_delisted;
+            if !meta.kind.is_empty() {
+                game.store_kind = meta.kind.clone();
+            }
+            game.release_date_unix = meta.release_date_unix.or(game.release_date_unix);
+            game.original_release_date_unix = meta.original_release_date_unix.or(game.original_release_date_unix);
+            game.store_url_path = meta.store_url_path.clone().or_else(|| game.store_url_path.clone());
+            if let Some(url) = meta.library_capsule_url.as_ref().filter(|url| !url.trim().is_empty()) {
+                game.image_url = url.clone();
+            }
+            game.platforms = Some(platforms_from_store_meta(&meta));
+            game.store_categories = Some(categories_from_store_meta(&meta));
+            game.content_descriptor_ids = meta.content_descriptor_ids.clone();
+            if game.price.is_none() {
+                game.price = price_from_store_meta(&meta);
+            }
+        }
+
+        unified_list.retain(|game| {
+            let meta = meta_map.get(&game.id).cloned().unwrap_or_default();
+            if !show_store_dlcs && store_items::is_dlc_like(&meta) {
+                return false;
+            }
+            if !show_store_nsfw && store_items::is_nsfw(&meta, &game.name) {
+                return false;
+            }
+            if !show_store_delisted && meta.is_delisted {
+                return false;
+            }
+            true
+        });
+
+        Ok(unified_list)
+    }
+
     /// Queries Steam and Hubcap in parallel, merges, and applies high-fidelity fuzzy/relevance sorting.
     ///
     /// Source roles (mirroring the simple part of SFF's store search):
@@ -533,8 +669,11 @@ impl StoreService {
                 }
                 game.release_date_unix = meta.release_date_unix.or(game.release_date_unix);
                 game.original_release_date_unix = meta.original_release_date_unix.or(game.original_release_date_unix);
-                game.store_url_path = meta.store_url_path.clone().or_else(|| game.store_url_path.clone());
-                game.platforms = Some(platforms_from_store_meta(&meta));
+            game.store_url_path = meta.store_url_path.clone().or_else(|| game.store_url_path.clone());
+            if let Some(url) = meta.library_capsule_url.as_ref().filter(|url| !url.trim().is_empty()) {
+                game.image_url = url.clone();
+            }
+            game.platforms = Some(platforms_from_store_meta(&meta));
                 game.store_categories = Some(categories_from_store_meta(&meta));
                 game.content_descriptor_ids = meta.content_descriptor_ids.clone();
                 if game.price.is_none() {

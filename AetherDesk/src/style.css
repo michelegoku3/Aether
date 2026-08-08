@@ -2140,3 +2140,25 @@ body {
 .settings-number-input:focus {
   border-color: var(--color-cyan);
 }
+
+
+
+/* Store front filter dropdown: same compact footprint as currency selector. */
+
+.settings-front-filter-select {
+  width: 84px;
+  min-width: 84px;
+  height: 30px;
+  background-color: #141417;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 4px 8px;
+  color: #ffffff;
+  font-size: 13px;
+  outline: none;
+  cursor: pointer;
+}
+
+.settings-front-filter-select:focus {
+  border-color: var(--color-cyan);
+}

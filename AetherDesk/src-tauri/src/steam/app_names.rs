@@ -134,6 +134,31 @@ impl SteamAppNameResolver {
             .collect()
     }
 
+    /// Merges trusted image URLs obtained from another local/live source into
+    /// the shared app-name cache used by the Library.
+    pub fn merge_image_urls<I>(&self, image_urls: I)
+    where
+        I: IntoIterator<Item = (u32, String)>,
+    {
+        let mut cache = self.load_cache();
+        let mut changed = false;
+
+        for (app_id, image_url) in image_urls {
+            let trimmed = image_url.trim();
+            if trimmed.is_empty() {
+                continue;
+            }
+            if cache.image_urls.get(&app_id).map(String::as_str) != Some(trimmed) {
+                cache.image_urls.insert(app_id, trimmed.to_string());
+                changed = true;
+            }
+        }
+
+        if changed {
+            let _ = self.save_cache(&cache);
+        }
+    }
+
     /// Merges trusted names obtained from another local/live source (for example Store search)
     /// into the shared app-name cache used by the Library.
     pub fn merge_names<I>(&self, names: I)

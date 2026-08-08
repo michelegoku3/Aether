@@ -7,7 +7,7 @@ use crate::providers::ryuu::RyuuClient;
 use crate::core::paths::LocalAppPaths;
 use crate::manifest::pins::{LuaManifestPins, LuaManifestRow};
 use crate::manifest::package::ManifestPackage;
-use crate::core::settings::{cache_version_with_currency, normalize_store_currency, steam_country_code_for_currency, SettingsManager};
+use crate::core::settings::{cache_version_with_currency, normalize_store_currency, normalize_store_front_filter, steam_country_code_for_currency, SettingsManager};
 use crate::steam::app_names::SteamAppNameResolver;
 use crate::steam::compat::SteamCompat;
 use crate::store::cache::StoreSearchCache;
@@ -85,6 +85,85 @@ pub async fn search_store(
                     info_cache_version.clone(),
                 )
                 .merge_store_results_with_manifest_context(&results, hubcap_checked);
+                Ok(results)
+            } else {
+                Err(error)
+            }
+        }
+    }
+}
+
+#[tauri::command]
+pub async fn get_trending_store_games(
+    app: tauri::AppHandle,
+    start: usize,
+    count: usize,
+) -> Result<Vec<UnifiedStoreGame>, String> {
+    let settings = SettingsManager::new(&app).load();
+    if !settings.show_store_front_games {
+        return Ok(Vec::new());
+    }
+
+    let show_store_dlcs = settings.show_store_dlcs;
+    let show_store_nsfw = settings.show_store_nsfw;
+    let show_store_delisted = settings.show_store_delisted;
+    let store_front_filter = normalize_store_front_filter(&settings.store_front_filter);
+    let store_currency = normalize_store_currency(&settings.store_currency);
+    let steam_country_code = steam_country_code_for_currency(&store_currency);
+    let app_version = app.package_info().version.to_string();
+    let info_cache_version = cache_version_with_currency(&app_version, &store_currency);
+    let hubcap_client = (!settings.hubcap_api_key.trim().is_empty())
+        .then(|| HubcapClient::new(settings.hubcap_api_key));
+    let hubcap_checked = hubcap_client.is_some();
+
+    let cache = StoreSearchCache::new(
+        LocalAppPaths::data_root().join("cache"),
+        app_version,
+    );
+    let cache_key = build_trending_cache_key(
+        hubcap_checked,
+        &store_currency,
+        &store_front_filter,
+        show_store_dlcs,
+        show_store_nsfw,
+        show_store_delisted,
+        start,
+        count,
+    );
+
+    if let Some(results) = cache.get_fresh(&cache_key) {
+        GameInfoCache::new(
+            LocalAppPaths::data_root().join("cache"),
+            info_cache_version.clone(),
+        )
+        .merge_store_results_with_manifest_context(&results, hubcap_checked);
+        return Ok(results);
+    }
+
+    match StoreService::new()
+        .trending_store(
+            &store_front_filter,
+            start,
+            count,
+            hubcap_client,
+            show_store_dlcs,
+            show_store_nsfw,
+            show_store_delisted,
+            steam_country_code,
+        )
+        .await
+    {
+        Ok(results) => {
+            let cache_dir = LocalAppPaths::data_root().join("cache");
+            SteamAppNameResolver::new(cache_dir.clone())
+                .merge_names(results.iter().map(|game| (game.id, game.name.clone())));
+            GameInfoCache::new(cache_dir, info_cache_version)
+                .merge_store_results_with_manifest_context(&results, hubcap_checked);
+            let _ = cache.put(&cache_key, results.clone());
+            Ok(results)
+        }
+        Err(error) => {
+            if let Some(results) = cache.get_any(&cache_key) {
                 Ok(results)
             } else {
                 Err(error)
@@ -348,5 +427,28 @@ fn build_store_cache_key(
         show_store_nsfw,
         show_store_delisted,
         query
+    )
+}
+
+fn build_trending_cache_key(
+    hubcap_enabled: bool,
+    store_currency: &str,
+    store_front_filter: &str,
+    show_store_dlcs: bool,
+    show_store_nsfw: bool,
+    show_store_delisted: bool,
+    start: usize,
+    count: usize,
+) -> String {
+    format!(
+        "storefront={}|{}|currency={}|dlcs={}|nsfw={}|delisted={}|start={}|count={}",
+        store_front_filter,
+        if hubcap_enabled { "hubcap" } else { "steam" },
+        store_currency,
+        show_store_dlcs,
+        show_store_nsfw,
+        show_store_delisted,
+        start,
+        count,
     )
 }

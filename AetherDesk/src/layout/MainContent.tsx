@@ -17,87 +17,101 @@ interface MainContentProps {
   onDllStatusChange: () => Promise<void>;
   onRefreshCustomCss: () => Promise<void>;
   onPreviewPersonalWallpaper: (enabled: boolean, opacity: number) => void;
+  settingsRevision: number;
 }
 
-export const MainContent = ({ activeTab, dllUpdateAvailable, deskUpdateAvailable, onUpdateComplete, hubcapUsage, onRefreshUsage, dllStatus, onDllStatusChange, onRefreshCustomCss, onPreviewPersonalWallpaper }: MainContentProps) => {
-  // Route to the appropriate view based on the active tab
-  if (activeTab === 'home') {
-    return (
-      <main className="main-content">
-        <HomeView />
-      </main>
-    );
-  }
-
-  if (activeTab === 'store') {
-    return (
-      <main className="main-content">
-        <StoreView onRefreshUsage={onRefreshUsage} />
-      </main>
-    );
-  }
-
-  if (activeTab === 'library') {
-    return (
-      <main className="main-content">
-        <LibraryView />
-      </main>
-    );
-  }
-
-  if (activeTab === 'settings') {
-    return (
-      <main className="main-content">
-        <SettingsView 
-          hubcapUsage={hubcapUsage}
-          onRefreshUsage={onRefreshUsage}
-          onRefreshCustomCss={onRefreshCustomCss}
-          onPreviewPersonalWallpaper={onPreviewPersonalWallpaper}
-        />
-      </main>
-    );
-  }
-
-  if (activeTab === 'aether') {
-    return (
-      <main className="main-content">
-        <AetherView 
-          isUpdateAvailable={dllUpdateAvailable}
-          isDeskUpdateAvailable={deskUpdateAvailable}
-          onUpdateComplete={onUpdateComplete}
-          dllStatus={dllStatus}
-          onDllStatusChange={onDllStatusChange}
-        />
-      </main>
-    );
-  }
-
-  // Fallback title for other blank pages
-  const getTabTitle = () => {
-    switch (activeTab) {
-      case 'backup': return 'Backup View';
-      case 'log': return 'Logs View';
-      default: return 'Blank View';
+export const MainContent = ({ activeTab, dllUpdateAvailable, deskUpdateAvailable, onUpdateComplete, hubcapUsage, onRefreshUsage, dllStatus, onDllStatusChange, onRefreshCustomCss, onPreviewPersonalWallpaper, settingsRevision }: MainContentProps) => {
+  const renderActiveNonStoreView = () => {
+    if (activeTab === 'store') {
+      return null;
     }
+
+    if (activeTab === 'home') {
+      return (
+        <main className="main-content">
+          <HomeView />
+        </main>
+      );
+    }
+
+    if (activeTab === 'library') {
+      return (
+        <main className="main-content">
+          <LibraryView />
+        </main>
+      );
+    }
+
+    if (activeTab === 'settings') {
+      return (
+        <main className="main-content">
+          <SettingsView
+            hubcapUsage={hubcapUsage}
+            onRefreshUsage={onRefreshUsage}
+            onRefreshCustomCss={onRefreshCustomCss}
+            onPreviewPersonalWallpaper={onPreviewPersonalWallpaper}
+          />
+        </main>
+      );
+    }
+
+    if (activeTab === 'aether') {
+      return (
+        <main className="main-content">
+          <AetherView
+            isUpdateAvailable={dllUpdateAvailable}
+            isDeskUpdateAvailable={deskUpdateAvailable}
+            onUpdateComplete={onUpdateComplete}
+            dllStatus={dllStatus}
+            onDllStatusChange={onDllStatusChange}
+          />
+        </main>
+      );
+    }
+
+    const title = activeTab === 'backup'
+      ? 'Backup View'
+      : activeTab === 'log'
+        ? 'Logs View'
+        : 'Blank View';
+
+    return (
+      <main className="main-content">
+        <div className="blank-canvas">
+          <div style={{
+            display: 'flex',
+            width: '100%',
+            height: '100%',
+            alignItems: 'center',
+            justifyContent: 'center',
+            color: '#8f8f9e',
+            fontSize: '24px',
+            fontWeight: 'bold',
+            letterSpacing: '1px'
+          }}>
+            {title}
+          </div>
+        </div>
+      </main>
+    );
   };
 
   return (
-    <main className="main-content">
-      <div className="blank-canvas">
-        <div style={{
-          display: 'flex',
-          width: '100%',
-          height: '100%',
-          alignItems: 'center',
-          justifyContent: 'center',
-          color: '#8f8f9e',
-          fontSize: '24px',
-          fontWeight: 'bold',
-          letterSpacing: '1px'
-        }}>
-          {getTabTitle()}
-        </div>
-      </div>
-    </main>
+    <>
+      {/* Store stays mounted so trending results, pagination state and resolved
+          cover cache survive sidebar tab switches. It is hidden, not unmounted. */}
+      <main
+        className="main-content"
+        style={{ display: activeTab === 'store' ? 'flex' : 'none' }}
+        aria-hidden={activeTab !== 'store'}
+      >
+        <StoreView
+          onRefreshUsage={onRefreshUsage}
+          isActive={activeTab === 'store'}
+          settingsRevision={settingsRevision}
+        />
+      </main>
+      {renderActiveNonStoreView()}
+    </>
   );
 };

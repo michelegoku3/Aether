@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 
-// v2 intentionally ignores old URL-only cache entries created while landscape
-// capsules had too much priority over proper portrait artwork.
-const COVER_CACHE_PREFIX = 'aether_cover_v2_';
+// v3 intentionally prioritizes Steam API/store capsule URLs. Older cache
+// generations may contain portrait/library artwork from previous experiments.
+const COVER_CACHE_PREFIX = 'aether_cover_v3_';
 const MIN_USABLE_WIDTH = 120;
 // Steam storesearch often returns 231x87 capsule images. They are wide, but
 // perfectly usable in our landscape-cover fallback; rejecting them caused many
@@ -10,30 +10,28 @@ const MIN_USABLE_WIDTH = 120;
 const MIN_USABLE_HEIGHT = 60;
 const PORTRAIT_RATIO_THRESHOLD = 0.85;
 
-const STEAM_PORTRAIT_COVER_TEMPLATES = [
-  // True vertical library artwork. These must always win over canonical
-  // storesearch/appdetails capsules when they exist, because capsules are
-  // landscape and look tiny inside our portrait card slot.
-  'https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/{id}/library_600x900.jpg',
-  'https://shared.fastly.steamstatic.com/store_item_assets/steam/apps/{id}/library_600x900.jpg',
-  'https://shared.steamstatic.com/store_item_assets/steam/apps/{id}/library_600x900.jpg',
-  'https://cdn.cloudflare.steamstatic.com/steam/apps/{id}/library_600x900.jpg',
+const STEAM_CAPSULE_FALLBACK_TEMPLATES = [
+  // Fallbacks for older apps whose capsules are still reachable through the
+  // predictable CDN path. Modern apps often require hashed capsule URLs from
+  // storesearch/appdetails, passed as `canonicalUrl`.
+  'https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/{id}/capsule_231x87.jpg',
+  'https://shared.fastly.steamstatic.com/store_item_assets/steam/apps/{id}/capsule_231x87.jpg',
+  'https://shared.steamstatic.com/store_item_assets/steam/apps/{id}/capsule_231x87.jpg',
+  'https://cdn.akamai.steamstatic.com/steam/apps/{id}/capsule_231x87.jpg',
+  'https://cdn.cloudflare.steamstatic.com/steam/apps/{id}/capsule_231x87.jpg',
+  'https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/{id}/capsule_616x353.jpg',
+  'https://shared.fastly.steamstatic.com/store_item_assets/steam/apps/{id}/capsule_616x353.jpg',
+  'https://shared.steamstatic.com/store_item_assets/steam/apps/{id}/capsule_616x353.jpg',
 ];
 
-const STEAM_LANDSCAPE_COVER_TEMPLATES = [
-  // Wide fallbacks. They are preloaded and classified before being shown, so
-  // users never see broken-image flashes while the chain is being tested.
-  'https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/{id}/library_header.jpg',
-  'https://shared.fastly.steamstatic.com/store_item_assets/steam/apps/{id}/library_header.jpg',
-  'https://shared.steamstatic.com/store_item_assets/steam/apps/{id}/library_header.jpg',
+const STEAM_LAST_RESORT_TEMPLATES = [
+  // Non-capsule last resorts. Kept only to avoid falling back to Æ when Steam
+  // exposes no capsule URL to us yet.
   'https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/{id}/header.jpg',
   'https://shared.fastly.steamstatic.com/store_item_assets/steam/apps/{id}/header.jpg',
   'https://shared.steamstatic.com/store_item_assets/steam/apps/{id}/header.jpg',
   'https://cdn.akamai.steamstatic.com/steam/apps/{id}/header.jpg',
   'https://cdn.cloudflare.steamstatic.com/steam/apps/{id}/header.jpg',
-  'https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/{id}/capsule_616x353.jpg',
-  'https://shared.fastly.steamstatic.com/store_item_assets/steam/apps/{id}/capsule_616x353.jpg',
-  'https://shared.steamstatic.com/store_item_assets/steam/apps/{id}/capsule_616x353.jpg',
 ];
 
 type CoverFit = 'portrait' | 'landscape';
@@ -124,14 +122,14 @@ const buildCoverUrls = (appId: string, canonicalUrl?: string) => {
   };
 
   // Priority is deliberate:
-  // 1. Try predictable portrait Steam artwork first — it fits our card slot.
-  // 2. Then try canonical API/cache URLs — many new games only expose hashed
-  //    landscape capsule/header URLs through appdetails/storesearch.
-  // 3. Finally try predictable landscape fallbacks.
-  STEAM_PORTRAIT_COVER_TEMPLATES.forEach(template => push(template.replace('{id}', appId)));
+  // 1. Canonical Steam API/store URL (storesearch tiny_image / appdetails capsule_image).
+  // 2. Previously resolved v3 cover cache.
+  // 3. Predictable capsule CDN paths for older apps.
+  // 4. Header last-resort fallback.
   push(normalizeCanonicalUrl(canonicalUrl));
   push(getCachedCover(appId)?.url || null);
-  STEAM_LANDSCAPE_COVER_TEMPLATES.forEach(template => push(template.replace('{id}', appId)));
+  STEAM_CAPSULE_FALLBACK_TEMPLATES.forEach(template => push(template.replace('{id}', appId)));
+  STEAM_LAST_RESORT_TEMPLATES.forEach(template => push(template.replace('{id}', appId)));
 
   return urls;
 };
