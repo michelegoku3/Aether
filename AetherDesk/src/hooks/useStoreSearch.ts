@@ -10,6 +10,7 @@ export interface StoreGameResult {
   has_nsfw?: boolean;
   has_delisted?: boolean;
   imageUrl?: string;
+  heroImageUrl?: string;
 }
 
 interface CachedStoreSearchResponse {

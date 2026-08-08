@@ -43,6 +43,8 @@ pub struct UnifiedStoreGame {
     pub has_delisted: bool,
     #[serde(rename = "imageUrl")]
     pub image_url: String,
+    #[serde(default, rename = "heroImageUrl")]
+    pub hero_image_url: String,
     #[serde(default)]
     pub store_kind: String,
     #[serde(default)]
@@ -359,6 +361,7 @@ impl StoreService {
                 has_nsfw: false,
                 has_delisted: false,
                 image_url: item.image_url.clone(),
+                hero_image_url: String::new(),
                 store_kind: item.item_type.clone().unwrap_or_default(),
                 release_date_unix: None,
                 original_release_date_unix: None,
@@ -391,6 +394,9 @@ impl StoreService {
             game.store_url_path = meta.store_url_path.clone().or_else(|| game.store_url_path.clone());
             if let Some(url) = meta.library_capsule_url.as_ref().filter(|url| !url.trim().is_empty()) {
                 game.image_url = url.clone();
+            }
+            if let Some(url) = meta.hero_image_url.as_ref().filter(|url| !url.trim().is_empty()) {
+                game.hero_image_url = url.clone();
             }
             game.platforms = Some(platforms_from_store_meta(&meta));
             game.store_categories = Some(categories_from_store_meta(&meta));
@@ -569,6 +575,7 @@ impl StoreService {
                 has_nsfw: false,
                 has_delisted: false,
                 image_url: item.image_url.clone(),
+                hero_image_url: String::new(),
                 store_kind: item.item_type.clone().unwrap_or_default(),
                 release_date_unix: None,
                 original_release_date_unix: None,
@@ -599,6 +606,7 @@ impl StoreService {
                     has_nsfw: false,
                     has_delisted: false,
                     image_url: String::new(),
+                    hero_image_url: String::new(),
                     store_kind: String::new(),
                     release_date_unix: None,
                     original_release_date_unix: None,
@@ -672,6 +680,9 @@ impl StoreService {
             game.store_url_path = meta.store_url_path.clone().or_else(|| game.store_url_path.clone());
             if let Some(url) = meta.library_capsule_url.as_ref().filter(|url| !url.trim().is_empty()) {
                 game.image_url = url.clone();
+            }
+            if let Some(url) = meta.hero_image_url.as_ref().filter(|url| !url.trim().is_empty()) {
+                game.hero_image_url = url.clone();
             }
             game.platforms = Some(platforms_from_store_meta(&meta));
                 game.store_categories = Some(categories_from_store_meta(&meta));

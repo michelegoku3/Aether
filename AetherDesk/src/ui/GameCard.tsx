@@ -5,6 +5,7 @@ export interface GameCardModel {
   name: string;
   appId: string;
   imageUrl?: string;
+  heroImageUrl?: string;
   has_manifest?: boolean;
   has_denuvo?: boolean;
   has_nsfw?: boolean;
@@ -24,6 +25,7 @@ interface GameCardProps<T extends GameCardModel> {
   actionLabel?: string;
   onAction?: (game: T) => void;
   actions?: Array<GameCardAction<T>>;
+  cardVariant?: 'classic' | 'backdrop';
 }
 
 /** Marker priority: the NSFW pink border wins over the delisted white one —
@@ -42,18 +44,29 @@ const markerTooltip = (game: GameCardModel) => {
   return labels.length > 0 ? labels.join(' • ') : undefined;
 };
 
-export const GameCard = <T extends GameCardModel>({ game, actionLabel, onAction, actions }: GameCardProps<T>) => {
+export const GameCard = <T extends GameCardModel>({ game, actionLabel, onAction, actions, cardVariant = 'classic' }: GameCardProps<T>) => {
   const marker = markerClass(game);
+  const isBackdrop = cardVariant === 'backdrop';
   const resolvedActions = actions ?? (actionLabel && onAction
     ? [{ label: actionLabel, onClick: onAction, variant: 'primary' as const }]
     : []);
+  const className = [
+    'store-game-card',
+    marker,
+    isBackdrop ? 'backdrop-card' : '',
+  ].filter(Boolean).join(' ');
+  const backdropUrl = game.heroImageUrl || game.imageUrl;
 
   return (
     <div
       key={game.id}
-      className={marker ? `store-game-card ${marker}` : 'store-game-card'}
+      className={className}
       title={markerTooltip(game)}
     >
+      {isBackdrop && backdropUrl && (
+        <div className="game-card-backdrop-bg" style={{ backgroundImage: `url("${backdropUrl}")` }} />
+      )}
+
       {game.has_manifest && (
         <span
           className={`badge-available ${game.has_denuvo ? 'denuvo' : ''}`}
@@ -67,7 +80,9 @@ export const GameCard = <T extends GameCardModel>({ game, actionLabel, onAction,
         <span className="badge-installed">Installed</span>
       )}
 
-      <GameCover appId={game.appId} name={game.name} canonicalUrl={game.imageUrl} />
+      {!isBackdrop && (
+        <GameCover appId={game.appId} name={game.name} canonicalUrl={game.imageUrl} />
+      )}
 
       <div className="game-info-wrapper">
         <div className="game-details">

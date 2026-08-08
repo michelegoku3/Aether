@@ -15,12 +15,15 @@ struct NameCacheFile {
     names: HashMap<u32, String>,
     #[serde(default)]
     image_urls: HashMap<u32, String>,
+    #[serde(default)]
+    hero_image_urls: HashMap<u32, String>,
 }
 
 #[derive(Debug, Clone)]
 struct AppNameDetails {
     name: String,
     image_url: Option<String>,
+    hero_image_url: Option<String>,
 }
 
 /// Resolves Steam app names and lightweight image URLs by App ID and stores
@@ -59,6 +62,12 @@ impl SteamAppNameResolver {
         Self::filter_cached_images(cache, app_ids)
     }
 
+    /// Returns cached landscape/header URLs without doing network I/O.
+    pub fn cached_hero_image_urls(&self, app_ids: Vec<u32>) -> HashMap<u32, String> {
+        let cache = self.load_cache();
+        Self::filter_cached_heroes(cache, app_ids)
+    }
+
     /// Resolves missing names/images through Steam and persists them for future
     /// cache-only reads. Use this from warm-up/background paths, not from
     /// UI-critical commands.
@@ -70,7 +79,9 @@ impl SteamAppNameResolver {
             .iter()
             .copied()
             .filter(|app_id| {
-                !cache.names.contains_key(app_id) || !cache.image_urls.contains_key(app_id)
+                !cache.names.contains_key(app_id)
+                    || !cache.image_urls.contains_key(app_id)
+                    || !cache.hero_image_urls.contains_key(app_id)
             })
             .collect();
 
@@ -87,6 +98,12 @@ impl SteamAppNameResolver {
                 if let Some(image_url) = details.image_url.as_deref().map(str::trim).filter(|url| !url.is_empty()) {
                     if cache.image_urls.get(&app_id).map(String::as_str) != Some(image_url) {
                         cache.image_urls.insert(app_id, image_url.to_string());
+                        changed = true;
+                    }
+                }
+                if let Some(hero_image_url) = details.hero_image_url.as_deref().map(str::trim).filter(|url| !url.is_empty()) {
+                    if cache.hero_image_urls.get(&app_id).map(String::as_str) != Some(hero_image_url) {
+                        cache.hero_image_urls.insert(app_id, hero_image_url.to_string());
                         changed = true;
                     }
                 }
@@ -134,6 +151,20 @@ impl SteamAppNameResolver {
             .collect()
     }
 
+    fn filter_cached_heroes(cache: NameCacheFile, app_ids: Vec<u32>) -> HashMap<u32, String> {
+        Self::unique_app_ids(app_ids)
+            .into_iter()
+            .filter_map(|app_id| {
+                cache
+                    .hero_image_urls
+                    .get(&app_id)
+                    .cloned()
+                    .filter(|url| !url.trim().is_empty())
+                    .map(|url| (app_id, url))
+            })
+            .collect()
+    }
+
     /// Merges trusted image URLs obtained from another local/live source into
     /// the shared app-name cache used by the Library.
     pub fn merge_image_urls<I>(&self, image_urls: I)
@@ -150,6 +181,31 @@ impl SteamAppNameResolver {
             }
             if cache.image_urls.get(&app_id).map(String::as_str) != Some(trimmed) {
                 cache.image_urls.insert(app_id, trimmed.to_string());
+                changed = true;
+            }
+        }
+
+        if changed {
+            let _ = self.save_cache(&cache);
+        }
+    }
+
+    /// Merges trusted landscape/header URLs obtained from another local/live
+    /// source into the shared app-name cache used by the Library.
+    pub fn merge_hero_image_urls<I>(&self, hero_image_urls: I)
+    where
+        I: IntoIterator<Item = (u32, String)>,
+    {
+        let mut cache = self.load_cache();
+        let mut changed = false;
+
+        for (app_id, hero_image_url) in hero_image_urls {
+            let trimmed = hero_image_url.trim();
+            if trimmed.is_empty() {
+                continue;
+            }
+            if cache.hero_image_urls.get(&app_id).map(String::as_str) != Some(trimmed) {
+                cache.hero_image_urls.insert(app_id, trimmed.to_string());
                 changed = true;
             }
         }
@@ -238,7 +294,16 @@ impl SteamAppNameResolver {
             .map(|name| name.to_string())
             .ok_or_else(|| format!("Steam appdetails did not include a name for {}", app_id))?;
 
-        let image_url = ["capsule_image", "header_image", "capsule_imagev5"]
+        let image_url = ["capsule_image", "capsule_imagev5", "header_image"]
+            .iter()
+            .find_map(|key| {
+                data.get(*key)
+                    .and_then(|value| value.as_str())
+                    .map(str::trim)
+                    .filter(|value| !value.is_empty())
+                    .map(str::to_string)
+            });
+        let hero_image_url = ["header_image", "background_raw", "background"]
             .iter()
             .find_map(|key| {
                 data.get(*key)
@@ -248,6 +313,6 @@ impl SteamAppNameResolver {
                     .map(str::to_string)
             });
 
-        Ok(AppNameDetails { name, image_url })
+        Ok(AppNameDetails { name, image_url, hero_image_url })
     }
 }

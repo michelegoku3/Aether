@@ -18,9 +18,10 @@ interface MainContentProps {
   onRefreshCustomCss: () => Promise<void>;
   onPreviewPersonalWallpaper: (enabled: boolean, opacity: number) => void;
   settingsRevision: number;
+  useAlternativeGameCards: boolean;
 }
 
-export const MainContent = ({ activeTab, dllUpdateAvailable, deskUpdateAvailable, onUpdateComplete, hubcapUsage, onRefreshUsage, dllStatus, onDllStatusChange, onRefreshCustomCss, onPreviewPersonalWallpaper, settingsRevision }: MainContentProps) => {
+export const MainContent = ({ activeTab, dllUpdateAvailable, deskUpdateAvailable, onUpdateComplete, hubcapUsage, onRefreshUsage, dllStatus, onDllStatusChange, onRefreshCustomCss, onPreviewPersonalWallpaper, settingsRevision, useAlternativeGameCards }: MainContentProps) => {
   const renderActiveNonStoreView = () => {
     if (activeTab === 'store') {
       return null;
@@ -37,7 +38,7 @@ export const MainContent = ({ activeTab, dllUpdateAvailable, deskUpdateAvailable
     if (activeTab === 'library') {
       return (
         <main className="main-content">
-          <LibraryView />
+          <LibraryView useAlternativeGameCards={useAlternativeGameCards} />
         </main>
       );
     }
@@ -109,6 +110,7 @@ export const MainContent = ({ activeTab, dllUpdateAvailable, deskUpdateAvailable
           onRefreshUsage={onRefreshUsage}
           isActive={activeTab === 'store'}
           settingsRevision={settingsRevision}
+          useAlternativeGameCards={useAlternativeGameCards}
         />
       </main>
       {renderActiveNonStoreView()}

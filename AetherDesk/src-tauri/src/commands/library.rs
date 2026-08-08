@@ -26,7 +26,8 @@ pub async fn get_installed_library_games(
     let resolver = SteamAppNameResolver::new(cache_dir.clone());
     let app_ids: Vec<u32> = games.iter().map(|game| game.id).collect();
     let names = resolver.cached_names(app_ids.clone());
-    let image_urls = resolver.cached_image_urls(app_ids);
+    let image_urls = resolver.cached_image_urls(app_ids.clone());
+    let hero_image_urls = resolver.cached_hero_image_urls(app_ids);
 
     for game in &mut games {
         if let Some(name) = names.get(&game.id) {
@@ -34,6 +35,9 @@ pub async fn get_installed_library_games(
         }
         if let Some(image_url) = image_urls.get(&game.id) {
             game.image_url = image_url.clone();
+        }
+        if let Some(hero_image_url) = hero_image_urls.get(&game.id) {
+            game.hero_image_url = hero_image_url.clone();
         }
     }
 
@@ -66,10 +70,16 @@ pub async fn warm_library_game_cache(app: tauri::AppHandle) -> Result<usize, Str
     let resolver = SteamAppNameResolver::new(cache_dir);
     let names = resolver.resolve_names(app_ids.clone()).await;
     let metas = store_items::fetch_store_items_for_country(app_ids, "US").await;
+    let meta_values: Vec<(u32, store_items::StoreItemMeta)> = metas.into_iter().collect();
     resolver.merge_image_urls(
-        metas
+        meta_values
+            .iter()
+            .filter_map(|(app_id, meta)| meta.library_capsule_url.clone().map(|url| (*app_id, url))),
+    );
+    resolver.merge_hero_image_urls(
+        meta_values
             .into_iter()
-            .filter_map(|(app_id, meta)| meta.library_capsule_url.map(|url| (app_id, url))),
+            .filter_map(|(app_id, meta)| meta.hero_image_url.map(|url| (app_id, url))),
     );
 
     Ok(names.len())

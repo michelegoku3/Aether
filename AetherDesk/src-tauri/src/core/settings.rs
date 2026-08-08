@@ -50,6 +50,9 @@ pub struct AppSettings {
     /// Show a Steam Store front page in Store when no search query is active.
     #[serde(default = "default_true")]
     pub show_store_front_games: bool,
+    /// Enables the alternate backdrop-focused game card layout.
+    #[serde(default)]
+    pub use_alternative_game_cards: bool,
     /// Criterion used by the Store front page (`trending`, `latest`, ...).
     #[serde(default = "default_store_front_filter")]
     pub store_front_filter: String,
@@ -76,7 +79,7 @@ fn default_store_currency() -> String {
 }
 
 fn default_store_front_filter() -> String {
-    "trending".to_string()
+    "upcoming".to_string()
 }
 
 fn default_wallpaper_opacity() -> u8 {
@@ -128,6 +131,7 @@ impl Default for AppSettings {
             ryuu_api_key: String::new(),
             download_games_with_updates_on: true,
             show_store_front_games: true,
+            use_alternative_game_cards: false,
             store_front_filter: default_store_front_filter(),
             store_currency: default_store_currency(),
             personal_wallpaper_enabled: false,

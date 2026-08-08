@@ -10,7 +10,11 @@ import { useLibraryGames, InstalledGame } from '../hooks/useLibraryGames';
 import { StatusType } from '../types/ui';
 import { requireSteamPath } from '../hooks/useSettings';
 
-export const LibraryView = () => {
+interface LibraryViewProps {
+  useAlternativeGameCards: boolean;
+}
+
+export const LibraryView = ({ useAlternativeGameCards }: LibraryViewProps) => {
   const { games, isLoading, status, setStatus, loadInstalledGames } = useLibraryGames();
   const [actionGame, setActionGame] = useState<InstalledGame | null>(null);
   const [infoGame, setInfoGame] = useState<InstalledGame | null>(null);
@@ -77,6 +81,7 @@ export const LibraryView = () => {
             <GameCard
               key={game.id}
               game={game}
+              cardVariant={useAlternativeGameCards ? 'backdrop' : 'classic'}
               actions={[
                 {
                   label: 'Modify',

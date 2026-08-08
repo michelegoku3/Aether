@@ -20,6 +20,8 @@ export interface AppSettings {
   download_games_with_updates_on?: boolean;
   /** Show Store front games when no search is active. */
   show_store_front_games?: boolean;
+  /** Alternate backdrop-focused card layout. */
+  use_alternative_game_cards?: boolean;
   /** Store front filter criterion. */
   store_front_filter?: string;
   /** Preferred Steam store currency for prices. */

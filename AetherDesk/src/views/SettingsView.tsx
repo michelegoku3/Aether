@@ -17,7 +17,8 @@ export const SettingsView = ({ hubcapUsage, onRefreshUsage, onRefreshCustomCss, 
   const [showStoreDelisted, setShowStoreDelisted] = useState(true);
   const [downloadGamesWithUpdatesOn, setDownloadGamesWithUpdatesOn] = useState(true);
   const [showStoreFrontGames, setShowStoreFrontGames] = useState(true);
-  const [storeFrontFilter, setStoreFrontFilter] = useState('trending');
+  const [useAlternativeGameCards, setUseAlternativeGameCards] = useState(false);
+  const [storeFrontFilter, setStoreFrontFilter] = useState('upcoming');
   const [customCssEnabled, setCustomCssEnabled] = useState(false);
   const [personalWallpaperEnabled, setPersonalWallpaperEnabled] = useState(false);
   const [personalWallpaperOpacity, setPersonalWallpaperOpacity] = useState(35);
@@ -47,7 +48,8 @@ export const SettingsView = ({ hubcapUsage, onRefreshUsage, onRefreshCustomCss, 
           setShowStoreDelisted(settings.show_store_delisted !== false);
           setDownloadGamesWithUpdatesOn(settings.download_games_with_updates_on !== false);
           setShowStoreFrontGames(settings.show_store_front_games !== false);
-          setStoreFrontFilter(settings.store_front_filter || 'trending');
+          setUseAlternativeGameCards(Boolean(settings.use_alternative_game_cards));
+          setStoreFrontFilter(settings.store_front_filter || 'upcoming');
           setCustomCssEnabled(Boolean(settings.custom_css_enabled));
           setPersonalWallpaperEnabled(Boolean(settings.personal_wallpaper_enabled));
           setPersonalWallpaperOpacity(Math.max(0, Math.min(100, Number(settings.personal_wallpaper_opacity ?? 35))));
@@ -108,6 +110,7 @@ export const SettingsView = ({ hubcapUsage, onRefreshUsage, onRefreshCustomCss, 
           ryuu_api_key: ryuuKey,
           download_games_with_updates_on: downloadGamesWithUpdatesOn,
           show_store_front_games: showStoreFrontGames,
+          use_alternative_game_cards: useAlternativeGameCards,
           store_front_filter: storeFrontFilter,
           store_currency: storeCurrency
         }
@@ -136,6 +139,18 @@ export const SettingsView = ({ hubcapUsage, onRefreshUsage, onRefreshCustomCss, 
       )}
 
       <form onSubmit={handleSave} className="settings-form">
+        <div className="settings-top-action-row" title="Use the alternate backdrop-focused game card layout in Store and Library.">
+          <span className="settings-toggle-text">Use alternative game cards</span>
+          <label className="version-switch">
+            <input
+              type="checkbox"
+              checked={useAlternativeGameCards}
+              onChange={(e) => setUseAlternativeGameCards(e.target.checked)}
+            />
+            <span></span>
+          </label>
+        </div>
+
         <div className="settings-top-action-row" title="Clear AetherDesk cache files such as store search, game info, Steam names and Denuvo cache. Settings and backups are preserved.">
           <span className="settings-toggle-text">Clear AetherDesk caches</span>
           <button
@@ -396,7 +411,8 @@ export const SettingsView = ({ hubcapUsage, onRefreshUsage, onRefreshCustomCss, 
               setShowStoreDelisted(true);
               setDownloadGamesWithUpdatesOn(true);
               setShowStoreFrontGames(true);
-              setStoreFrontFilter('trending');
+              setUseAlternativeGameCards(false);
+              setStoreFrontFilter('upcoming');
               setCustomCssEnabled(false);
               setPersonalWallpaperEnabled(false);
               setPersonalWallpaperOpacity(35);
@@ -415,7 +431,8 @@ export const SettingsView = ({ hubcapUsage, onRefreshUsage, onRefreshCustomCss, 
                     show_store_delisted: true,
                     download_games_with_updates_on: true,
                     show_store_front_games: true,
-                    store_front_filter: 'trending',
+                    use_alternative_game_cards: false,
+                    store_front_filter: 'upcoming',
                     custom_css_enabled: false,
                     personal_wallpaper_enabled: false,
                     personal_wallpaper_opacity: 35,

@@ -15,6 +15,7 @@ pub struct InstalledSteamGame {
     pub game_path: String,
     pub installed: bool,
     pub image_url: String,
+    pub hero_image_url: String,
 }
 
 #[derive(Debug, Clone)]
@@ -90,6 +91,7 @@ impl SteamLibraryScanner {
                     "https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/{}/library_600x900.jpg",
                     lua.app_id
                 ),
+                hero_image_url: String::new(),
             });
         }
 
