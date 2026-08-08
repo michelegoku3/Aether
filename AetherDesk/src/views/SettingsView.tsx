@@ -157,10 +157,12 @@ export const SettingsView = ({ hubcapUsage, onRefreshUsage, onRefreshCustomCss }
           />
         </div>
 
+        <div className="settings-separator"></div>
+
         {/* Steam Path Section */}
         <div className="settings-group">
           <label className="settings-label">Steam Installation Path</label>
-          <p className="settings-desc">The main directory path where Steam is installed on your PC, required configuration.</p>
+          <p className="settings-desc">The main directory path where Steam is installed on your PC, required for configuration.</p>
           <input 
             type="text" 
             placeholder="C:\Program Files (x86)\Steam"
