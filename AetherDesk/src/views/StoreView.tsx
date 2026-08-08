@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { SpecificVersionModal, LuaManifestRow } from '../modals/SpecificVersionModal';
 import { GameInfoModal } from '../modals/GameInfoModal';
@@ -13,9 +13,11 @@ import { getSettings } from '../hooks/useSettings';
 
 interface StoreViewProps {
   onRefreshUsage?: (forcedKey?: string) => Promise<void>;
+  isActive: boolean;
+  settingsRevision: number;
 }
 
-export const StoreView = ({ onRefreshUsage }: StoreViewProps) => {
+export const StoreView = ({ onRefreshUsage, isActive, settingsRevision }: StoreViewProps) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [page, setPage] = useState(1);
   const itemsPerPage = 20; // 10 rows * 2 columns = 20 items per page
@@ -26,7 +28,13 @@ export const StoreView = ({ onRefreshUsage }: StoreViewProps) => {
     hasSearched,
     activeQuery,
     search,
+    clear,
   } = useStoreSearch();
+  const [isTrendingLoading, setIsTrendingLoading] = useState(false);
+  const trendingRequests = useRef<Set<number>>(new Set());
+  const nextTrendingStart = useRef(0);
+  const hasActivatedStoreFront = useRef(false);
+  const observedSettingsRevision = useRef(settingsRevision);
 
   // Active game selected for download modal, null means modal is closed
   const [selectedGame, setSelectedGame] = useState<StoreGame | null>(null);
@@ -42,6 +50,66 @@ export const StoreView = ({ onRefreshUsage }: StoreViewProps) => {
   // Specific-version editor state. The normal download modal closes before this modal opens.
   const [versionGame, setVersionGame] = useState<StoreGame | null>(null);
   const [manifestRows, setManifestRows] = useState<LuaManifestRow[]>([]);
+
+  const mergeTrendingGames = (incoming: StoreGame[]) => {
+    setResults((prev) => {
+      const seen = new Set(prev.map((game) => Number(game.id)));
+      const merged = [...prev];
+      for (const game of incoming) {
+        if (!seen.has(Number(game.id))) {
+          seen.add(Number(game.id));
+          merged.push(game);
+        }
+      }
+      return merged;
+    });
+  };
+
+  const loadTrendingGames = async (start: number, count: number) => {
+    if (trendingRequests.current.has(start)) return;
+    trendingRequests.current.add(start);
+    nextTrendingStart.current = Math.max(nextTrendingStart.current, start + count);
+    setIsTrendingLoading(true);
+    try {
+      const games: StoreGame[] = await invoke('get_trending_store_games', { start, count });
+      mergeTrendingGames(games || []);
+    } catch (err) {
+      console.warn('Trending store preload failed:', err);
+    } finally {
+      setIsTrendingLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadTrendingGames(0, itemsPerPage);
+  }, []);
+
+  useEffect(() => {
+    if (!isActive || hasActivatedStoreFront.current || activeQuery.trim()) return;
+    hasActivatedStoreFront.current = true;
+    loadTrendingGames(itemsPerPage, itemsPerPage);
+  }, [isActive, activeQuery]);
+
+  useEffect(() => {
+    if (observedSettingsRevision.current === settingsRevision) return;
+    observedSettingsRevision.current = settingsRevision;
+    setPage(1);
+
+    if (activeQuery.trim()) {
+      search(activeQuery).catch((err) => console.warn('Store search refresh after settings save failed:', err));
+      return;
+    }
+
+    clear();
+    trendingRequests.current.clear();
+    nextTrendingStart.current = 0;
+    hasActivatedStoreFront.current = false;
+    loadTrendingGames(0, itemsPerPage);
+    if (isActive) {
+      hasActivatedStoreFront.current = true;
+      loadTrendingGames(itemsPerPage, itemsPerPage);
+    }
+  }, [settingsRevision]);
 
   // Pagination calculation
   const totalPages = Math.ceil(storeGames.length / itemsPerPage) || 1;
@@ -60,7 +128,15 @@ export const StoreView = ({ onRefreshUsage }: StoreViewProps) => {
   }, [pageKey]);
 
   useEffect(() => {
-    if (pageGames.length === 0) return;
+    if (!isActive || activeQuery.trim() || storeGames.length === 0) return;
+    const loadedPages = Math.ceil(storeGames.length / itemsPerPage);
+    if (page >= loadedPages) {
+      loadTrendingGames(nextTrendingStart.current, itemsPerPage);
+    }
+  }, [page, storeGames.length, activeQuery]);
+
+  useEffect(() => {
+    if (pageGames.length === 0 || !activeQuery.trim()) return;
     let cancelled = false;
     enrichDenuvoFlags(pageGames)
       .then((enriched) => {
@@ -83,6 +159,14 @@ export const StoreView = ({ onRefreshUsage }: StoreViewProps) => {
     e.preventDefault();
     setPage(1);
     try {
+      if (!searchQuery.trim()) {
+        clear();
+        trendingRequests.current.clear();
+        nextTrendingStart.current = 0;
+        hasActivatedStoreFront.current = false;
+        await loadTrendingGames(0, itemsPerPage);
+        return;
+      }
       await search(searchQuery);
     } catch (err: any) {
       alert(`Search error: ${err}`);
@@ -230,9 +314,9 @@ export const StoreView = ({ onRefreshUsage }: StoreViewProps) => {
 
       {/* 10 rows x 2 columns Grid */}
       <div className="store-grid">
-        {isLoading ? (
+        {isLoading || (isTrendingLoading && pageGames.length === 0) ? (
           <div className="store-no-results">
-            Loading results from Steam & Hubcap...
+            {isLoading ? 'Loading results from Steam & Hubcap...' : 'Loading trending Steam games...'}
           </div>
         ) : pageGames.length > 0 ? (
           pageGames.map((game) => (

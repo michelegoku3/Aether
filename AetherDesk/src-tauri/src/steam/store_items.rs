@@ -63,6 +63,10 @@ pub struct StoreItemMeta {
     /// release. Useful for the Info modal; not used for filtering.
     pub original_release_date_unix: Option<i64>,
     pub store_url_path: Option<String>,
+    /// Preferred vertical Steam capsule URL when GetItems returns store assets.
+    /// This is the best card artwork: hashed when needed, and not derivable
+    /// from AppID alone for many modern games.
+    pub library_capsule_url: Option<String>,
     pub platforms: StoreItemPlatforms,
     pub categories: StoreItemCategories,
     pub best_purchase_option: Option<StoreItemPurchaseOption>,
@@ -171,6 +175,7 @@ struct GetStoreItem {
     unlisted: Option<bool>,
     release: Option<ReleaseInfo>,
     store_url_path: Option<String>,
+    assets: Option<GetItemAssets>,
     platforms: Option<GetItemPlatforms>,
     categories: Option<GetItemCategories>,
     best_purchase_option: Option<GetItemPurchaseOption>,
@@ -185,6 +190,16 @@ struct ReleaseInfo {
 #[derive(Debug, Deserialize)]
 struct RelatedItems {
     parent_appid: Option<u32>,
+}
+
+#[derive(Debug, Deserialize)]
+struct GetItemAssets {
+    asset_url_format: Option<String>,
+    library_capsule: Option<String>,
+    library_capsule_2x: Option<String>,
+    main_capsule: Option<String>,
+    small_capsule: Option<String>,
+    header: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -209,6 +224,22 @@ struct GetItemCategories {
 struct GetItemPurchaseOption {
     formatted_final_price: Option<String>,
     final_price_in_cents: Option<String>,
+}
+
+
+fn resolve_library_capsule_url(assets: &GetItemAssets) -> Option<String> {
+    let filename = assets
+        .library_capsule
+        .as_deref()
+        .or(assets.library_capsule_2x.as_deref())
+        .or(assets.main_capsule.as_deref())
+        .or(assets.small_capsule.as_deref())
+        .or(assets.header.as_deref())?;
+    let format = assets.asset_url_format.as_deref()?;
+    Some(format!(
+        "https://shared.akamai.steamstatic.com/store_item_assets/{}",
+        format.replace("${FILENAME}", filename)
+    ))
 }
 
 /// Process-lifetime HTTP client: building a reqwest client per call means a
@@ -313,7 +344,7 @@ async fn fetch_chunk(
         "ids": chunk.iter().map(|id| serde_json::json!({ "appid": id })).collect::<Vec<_>>(),
         "context": { "language": "english", "country_code": country_code.trim().to_uppercase() },
         "data_request": {
-            "include_assets": false,
+            "include_assets": true,
             "include_platforms": true,
             "include_basic_info": false,
             "include_release": true,
@@ -400,6 +431,7 @@ async fn fetch_chunk(
             formatted_final_price: option.formatted_final_price,
             final_price_in_cents: option.final_price_in_cents,
         });
+        let library_capsule_url = item.assets.as_ref().and_then(resolve_library_capsule_url);
 
         out.insert(
             app_id,
@@ -413,6 +445,7 @@ async fn fetch_chunk(
                 release_date_unix,
                 original_release_date_unix,
                 store_url_path: item.store_url_path,
+                library_capsule_url,
                 platforms,
                 categories,
                 best_purchase_option,

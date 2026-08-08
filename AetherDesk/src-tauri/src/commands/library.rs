@@ -4,6 +4,7 @@ use crate::manifest::pins::{LuaManifestEdit, LuaManifestPins, LuaManifestRow};
 use crate::core::settings::{cache_version_with_currency, SettingsManager};
 use crate::steam::app_names::SteamAppNameResolver;
 use crate::steam::library::{InstalledSteamGame, SteamLibraryScanner};
+use crate::steam::store_items;
 use crate::util::validation::validate_steam_path;
 use crate::util::browser::open_external_url;
 
@@ -62,9 +63,14 @@ pub async fn warm_library_game_cache(app: tauri::AppHandle) -> Result<usize, Str
     }
 
     let cache_dir = LocalAppPaths::data_root().join("cache");
-    let names = SteamAppNameResolver::new(cache_dir)
-        .resolve_names(app_ids)
-        .await;
+    let resolver = SteamAppNameResolver::new(cache_dir);
+    let names = resolver.resolve_names(app_ids.clone()).await;
+    let metas = store_items::fetch_store_items_for_country(app_ids, "US").await;
+    resolver.merge_image_urls(
+        metas
+            .into_iter()
+            .filter_map(|(app_id, meta)| meta.library_capsule_url.map(|url| (app_id, url))),
+    );
 
     Ok(names.len())
 }

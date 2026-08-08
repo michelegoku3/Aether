@@ -16,6 +16,8 @@ export const SettingsView = ({ hubcapUsage, onRefreshUsage, onRefreshCustomCss, 
   const [showStoreNsfw, setShowStoreNsfw] = useState(true);
   const [showStoreDelisted, setShowStoreDelisted] = useState(true);
   const [downloadGamesWithUpdatesOn, setDownloadGamesWithUpdatesOn] = useState(true);
+  const [showStoreFrontGames, setShowStoreFrontGames] = useState(true);
+  const [storeFrontFilter, setStoreFrontFilter] = useState('trending');
   const [customCssEnabled, setCustomCssEnabled] = useState(false);
   const [personalWallpaperEnabled, setPersonalWallpaperEnabled] = useState(false);
   const [personalWallpaperOpacity, setPersonalWallpaperOpacity] = useState(35);
@@ -44,6 +46,8 @@ export const SettingsView = ({ hubcapUsage, onRefreshUsage, onRefreshCustomCss, 
           setShowStoreNsfw(settings.show_store_nsfw !== false);
           setShowStoreDelisted(settings.show_store_delisted !== false);
           setDownloadGamesWithUpdatesOn(settings.download_games_with_updates_on !== false);
+          setShowStoreFrontGames(settings.show_store_front_games !== false);
+          setStoreFrontFilter(settings.store_front_filter || 'trending');
           setCustomCssEnabled(Boolean(settings.custom_css_enabled));
           setPersonalWallpaperEnabled(Boolean(settings.personal_wallpaper_enabled));
           setPersonalWallpaperOpacity(Math.max(0, Math.min(100, Number(settings.personal_wallpaper_opacity ?? 35))));
@@ -103,6 +107,8 @@ export const SettingsView = ({ hubcapUsage, onRefreshUsage, onRefreshCustomCss, 
           personal_wallpaper_opacity: personalWallpaperOpacity,
           ryuu_api_key: ryuuKey,
           download_games_with_updates_on: downloadGamesWithUpdatesOn,
+          show_store_front_games: showStoreFrontGames,
+          store_front_filter: storeFrontFilter,
           store_currency: storeCurrency
         }
       });
@@ -251,6 +257,35 @@ export const SettingsView = ({ hubcapUsage, onRefreshUsage, onRefreshCustomCss, 
             </label>
           </div>
 
+          <div className="settings-toggle-row" title="Show a Steam Store front page when no search query is active">
+            <span className="settings-toggle-text">Show store front games</span>
+            <label className="version-switch">
+              <input
+                type="checkbox"
+                checked={showStoreFrontGames}
+                onChange={(e) => setShowStoreFrontGames(e.target.checked)}
+              />
+              <span></span>
+            </label>
+          </div>
+
+          {showStoreFrontGames && (
+            <div className="settings-toggle-row" title="Choose which Steam Store front criterion is shown by default">
+              <span className="settings-toggle-text">Store front criterion</span>
+              <select
+                className="settings-front-filter-select"
+                value={storeFrontFilter}
+                onChange={(e) => setStoreFrontFilter(e.target.value)}
+              >
+                <option value="trending">Trending</option>
+                <option value="latest">Latest</option>
+                <option value="top_sellers">Top sellers</option>
+                <option value="upcoming">Upcoming</option>
+                <option value="discounts">Discounts</option>
+              </select>
+            </div>
+          )}
+
           <div className="settings-toggle-row" title="After latest-version downloads, comment setManifestid pins so Steam can update the game normally">
             <span className="settings-toggle-text">Download games with updates on</span>
             <label className="version-switch">
@@ -283,7 +318,7 @@ export const SettingsView = ({ hubcapUsage, onRefreshUsage, onRefreshCustomCss, 
         <div className="settings-group">
           <label className="settings-label">Appearance</label>
           <div className="settings-toggle-row" title="Load AetherData/config/custom.css after the default theme.">
-            <span className="settings-toggle-text">Enable Custom CSS</span>
+            <span className="settings-toggle-text">Enable custom CSS</span>
             <label className="version-switch">
               <input
                 type="checkbox"
@@ -360,6 +395,8 @@ export const SettingsView = ({ hubcapUsage, onRefreshUsage, onRefreshCustomCss, 
               setShowStoreNsfw(true);
               setShowStoreDelisted(true);
               setDownloadGamesWithUpdatesOn(true);
+              setShowStoreFrontGames(true);
+              setStoreFrontFilter('trending');
               setCustomCssEnabled(false);
               setPersonalWallpaperEnabled(false);
               setPersonalWallpaperOpacity(35);
@@ -377,6 +414,8 @@ export const SettingsView = ({ hubcapUsage, onRefreshUsage, onRefreshCustomCss, 
                     show_store_nsfw: true,
                     show_store_delisted: true,
                     download_games_with_updates_on: true,
+                    show_store_front_games: true,
+                    store_front_filter: 'trending',
                     custom_css_enabled: false,
                     personal_wallpaper_enabled: false,
                     personal_wallpaper_opacity: 35,
