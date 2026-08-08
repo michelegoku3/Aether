@@ -62,7 +62,6 @@ pub struct StoreItemMeta {
     /// Original release date when Steam reports it separately from the Steam
     /// release. Useful for the Info modal; not used for filtering.
     pub original_release_date_unix: Option<i64>,
-    pub visible: Option<bool>,
     pub store_url_path: Option<String>,
     pub platforms: StoreItemPlatforms,
     pub categories: StoreItemCategories,
@@ -92,7 +91,6 @@ pub struct StoreItemCategories {
 pub struct StoreItemPurchaseOption {
     pub formatted_final_price: Option<String>,
     pub final_price_in_cents: Option<String>,
-    pub purchase_option_name: Option<String>,
 }
 
 /// The SFF structural DLC rule set, three signals with no name matching:
@@ -172,7 +170,6 @@ struct GetStoreItem {
     content_descriptorids: Option<Vec<u32>>,
     unlisted: Option<bool>,
     release: Option<ReleaseInfo>,
-    visible: Option<bool>,
     store_url_path: Option<String>,
     platforms: Option<GetItemPlatforms>,
     categories: Option<GetItemCategories>,
@@ -212,7 +209,6 @@ struct GetItemCategories {
 struct GetItemPurchaseOption {
     formatted_final_price: Option<String>,
     final_price_in_cents: Option<String>,
-    purchase_option_name: Option<String>,
 }
 
 /// Process-lifetime HTTP client: building a reqwest client per call means a
@@ -241,10 +237,6 @@ fn meta_cache_key(country_code: &str, app_id: u32) -> String {
 ///
 /// Ids with no metadata available map to `StoreItemMeta::default()` ("unknown"
 /// = keep), so the caller never loses rows because Steam refused to answer.
-pub async fn fetch_store_items(app_ids: Vec<u32>) -> HashMap<u32, StoreItemMeta> {
-    fetch_store_items_for_country(app_ids, "US").await
-}
-
 pub async fn fetch_store_items_for_country(app_ids: Vec<u32>, country_code: &str) -> HashMap<u32, StoreItemMeta> {
     let mut out: HashMap<u32, StoreItemMeta> = HashMap::new();
     let mut pending: Vec<u32> = Vec::new();
@@ -407,7 +399,6 @@ async fn fetch_chunk(
         let best_purchase_option = item.best_purchase_option.map(|option| StoreItemPurchaseOption {
             formatted_final_price: option.formatted_final_price,
             final_price_in_cents: option.final_price_in_cents,
-            purchase_option_name: option.purchase_option_name,
         });
 
         out.insert(
@@ -421,7 +412,6 @@ async fn fetch_chunk(
                 is_delisted: item.unlisted.unwrap_or(false),
                 release_date_unix,
                 original_release_date_unix,
-                visible: item.visible,
                 store_url_path: item.store_url_path,
                 platforms,
                 categories,
