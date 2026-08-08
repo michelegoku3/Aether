@@ -15,9 +15,10 @@ interface StoreViewProps {
   onRefreshUsage?: (forcedKey?: string) => Promise<void>;
   isActive: boolean;
   settingsRevision: number;
+  useAlternativeGameCards: boolean;
 }
 
-export const StoreView = ({ onRefreshUsage, isActive, settingsRevision }: StoreViewProps) => {
+export const StoreView = ({ onRefreshUsage, isActive, settingsRevision, useAlternativeGameCards }: StoreViewProps) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [page, setPage] = useState(1);
   const itemsPerPage = 20; // 10 rows * 2 columns = 20 items per page
@@ -323,6 +324,7 @@ export const StoreView = ({ onRefreshUsage, isActive, settingsRevision }: StoreV
             <GameCard
               key={game.id}
               game={game}
+              cardVariant={useAlternativeGameCards ? 'backdrop' : 'classic'}
               actions={[
                 {
                   label: 'Download',

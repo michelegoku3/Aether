@@ -14,6 +14,7 @@ export default function App() {
   const [dllUpdateAvailable, setDllUpdateAvailable] = useState(false);
   // Global state to track native AetherDesk update availability from desk-* GitHub tags
   const [deskUpdateAvailable, setDeskUpdateAvailable] = useState(false);
+  const [useAlternativeGameCards, setUseAlternativeGameCards] = useState(false);
 
   // DLL installation status (checked only at startup and after install/uninstall)
   const [dllStatus, setDllStatus] = useState<DllStatusInfo>({
@@ -36,11 +37,13 @@ export default function App() {
   const refreshCustomCss = async () => {
     try {
       const settings: any = await invoke('get_settings');
+      setUseAlternativeGameCards(Boolean(settings.use_alternative_game_cards));
       setCustomCssEnabled(Boolean(settings.custom_css_enabled));
       setPersonalWallpaperEnabled(Boolean(settings.personal_wallpaper_enabled));
       setPersonalWallpaperOpacity(Math.max(0, Math.min(100, Number(settings.personal_wallpaper_opacity ?? 35))));
       setSettingsRevision((value) => value + 1);
     } catch {
+      setUseAlternativeGameCards(false);
       setCustomCssEnabled(false);
       setPersonalWallpaperEnabled(false);
       setPersonalWallpaperOpacity(35);
@@ -174,6 +177,7 @@ export default function App() {
         onRefreshCustomCss={refreshCustomCss}
         onPreviewPersonalWallpaper={previewPersonalWallpaper}
         settingsRevision={settingsRevision}
+        useAlternativeGameCards={useAlternativeGameCards}
       />
     </div>
   );

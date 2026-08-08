@@ -6,7 +6,7 @@ use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 const CACHE_FILE_NAME: &str = "store_search_cache.json";
-const FRESH_TTL_SECONDS: u64 = 24 * 60 * 60;
+const FRESH_TTL_SECONDS: u64 = 4 * 60 * 60;
 const STALE_RETENTION_SECONDS: u64 = 14 * 24 * 60 * 60;
 
 #[derive(Debug, Default, Serialize, Deserialize)]

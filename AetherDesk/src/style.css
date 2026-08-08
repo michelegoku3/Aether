@@ -2162,3 +2162,55 @@ body {
 .settings-front-filter-select:focus {
   border-color: var(--color-cyan);
 }
+
+/* Alternate backdrop-focused card layout. */
+.store-game-card.backdrop-card {
+  min-height: 150px;
+  overflow: hidden;
+  background-color: #08080a;
+  isolation: isolate;
+}
+
+.game-card-backdrop-bg {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  background-size: cover;
+  background-position: center;
+  opacity: 0.7;
+}
+
+.store-game-card.backdrop-card::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  background: linear-gradient(180deg, rgba(0, 0, 0, 0.18) 0%, rgba(0, 0, 0, 0.72) 58%, rgba(0, 0, 0, 0.92) 100%);
+  pointer-events: none;
+}
+
+.store-game-card.backdrop-card .game-info-wrapper {
+  position: relative;
+  z-index: 2;
+  align-self: stretch;
+  justify-content: flex-end;
+  padding: 18px 20px;
+  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.85);
+}
+
+.store-game-card.backdrop-card .game-name {
+  font-size: 18px;
+}
+
+.store-game-card.backdrop-card .game-appid {
+  color: rgba(255, 255, 255, 0.72);
+}
+
+.store-game-card.backdrop-card .game-card-actions {
+  margin-top: 2px;
+}
+
+.store-game-card.backdrop-card .badge-available,
+.store-game-card.backdrop-card .badge-installed {
+  z-index: 3;
+}

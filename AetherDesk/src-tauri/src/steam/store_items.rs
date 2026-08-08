@@ -67,6 +67,7 @@ pub struct StoreItemMeta {
     /// This is the best card artwork: hashed when needed, and not derivable
     /// from AppID alone for many modern games.
     pub library_capsule_url: Option<String>,
+    pub hero_image_url: Option<String>,
     pub platforms: StoreItemPlatforms,
     pub categories: StoreItemCategories,
     pub best_purchase_option: Option<StoreItemPurchaseOption>,
@@ -197,6 +198,10 @@ struct GetItemAssets {
     asset_url_format: Option<String>,
     library_capsule: Option<String>,
     library_capsule_2x: Option<String>,
+    library_hero: Option<String>,
+    library_hero_2x: Option<String>,
+    hero_capsule: Option<String>,
+    hero_capsule_2x: Option<String>,
     main_capsule: Option<String>,
     small_capsule: Option<String>,
     header: Option<String>,
@@ -227,6 +232,14 @@ struct GetItemPurchaseOption {
 }
 
 
+fn resolve_asset_url(assets: &GetItemAssets, filename: &str) -> Option<String> {
+    let format = assets.asset_url_format.as_deref()?;
+    Some(format!(
+        "https://shared.akamai.steamstatic.com/store_item_assets/{}",
+        format.replace("${FILENAME}", filename)
+    ))
+}
+
 fn resolve_library_capsule_url(assets: &GetItemAssets) -> Option<String> {
     let filename = assets
         .library_capsule
@@ -235,11 +248,19 @@ fn resolve_library_capsule_url(assets: &GetItemAssets) -> Option<String> {
         .or(assets.main_capsule.as_deref())
         .or(assets.small_capsule.as_deref())
         .or(assets.header.as_deref())?;
-    let format = assets.asset_url_format.as_deref()?;
-    Some(format!(
-        "https://shared.akamai.steamstatic.com/store_item_assets/{}",
-        format.replace("${FILENAME}", filename)
-    ))
+    resolve_asset_url(assets, filename)
+}
+
+fn resolve_hero_image_url(assets: &GetItemAssets) -> Option<String> {
+    let filename = assets
+        .library_hero
+        .as_deref()
+        .or(assets.library_hero_2x.as_deref())
+        .or(assets.header.as_deref())
+        .or(assets.hero_capsule.as_deref())
+        .or(assets.hero_capsule_2x.as_deref())
+        .or(assets.main_capsule.as_deref())?;
+    resolve_asset_url(assets, filename)
 }
 
 /// Process-lifetime HTTP client: building a reqwest client per call means a
@@ -432,6 +453,7 @@ async fn fetch_chunk(
             final_price_in_cents: option.final_price_in_cents,
         });
         let library_capsule_url = item.assets.as_ref().and_then(resolve_library_capsule_url);
+        let hero_image_url = item.assets.as_ref().and_then(resolve_hero_image_url);
 
         out.insert(
             app_id,
@@ -446,6 +468,7 @@ async fn fetch_chunk(
                 original_release_date_unix,
                 store_url_path: item.store_url_path,
                 library_capsule_url,
+                hero_image_url,
                 platforms,
                 categories,
                 best_purchase_option,

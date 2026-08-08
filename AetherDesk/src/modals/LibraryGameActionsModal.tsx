@@ -12,6 +12,7 @@ export interface LibraryActionGame {
   gamePath: string;
   installed: boolean;
   imageUrl?: string;
+  heroImageUrl?: string;
 }
 
 interface LibraryGameActionsModalProps {
@@ -110,7 +111,7 @@ export const LibraryGameActionsModal = ({
   return (
     <div className="modal-overlay">
       <div className="modal-container game-action-modal">
-        <GameHeroImage appId={game.appId} name={game.name} canonicalUrl={game.imageUrl} />
+        <GameHeroImage appId={game.appId} name={game.name} canonicalUrl={game.heroImageUrl || game.imageUrl} />
 
         <div className="game-action-body">
           <div className="game-action-grid">

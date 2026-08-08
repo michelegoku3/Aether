@@ -11,6 +11,7 @@ export interface InstalledGame {
   gamePath: string;
   installed: boolean;
   imageUrl?: string;
+  heroImageUrl?: string;
 }
 
 export const useLibraryGames = () => {
