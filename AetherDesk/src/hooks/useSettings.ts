@@ -16,6 +16,8 @@ export interface AppSettings {
   custom_css_enabled?: boolean;
   /** Ryuu API key (generator.ryuu.lol, 50/day, no verification endpoint) */
   ryuu_api_key?: string;
+  /** Preferred Steam store currency for prices. */
+  store_currency?: 'eur' | 'usd' | 'jpy' | string;
 }
 
 export const getSettings = async (): Promise<AppSettings> => {

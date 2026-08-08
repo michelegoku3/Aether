@@ -234,11 +234,6 @@ export const StoreView = ({ onRefreshUsage }: StoreViewProps) => {
               game={game}
               actions={[
                 {
-                  label: 'Info',
-                  variant: 'secondary',
-                  onClick: setInfoGame,
-                },
-                {
                   label: 'Download',
                   variant: 'primary',
                   onClick: async (selected) => {
@@ -261,6 +256,11 @@ export const StoreView = ({ onRefreshUsage }: StoreViewProps) => {
                       setSelectedSource('oureveryday');
                     }
                   },
+                },
+                {
+                  label: 'Info',
+                  variant: 'secondary',
+                  onClick: setInfoGame,
                 },
               ]}
             />

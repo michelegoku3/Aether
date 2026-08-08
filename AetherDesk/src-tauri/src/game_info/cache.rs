@@ -8,6 +8,7 @@ use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 const CACHE_FILE_NAME: &str = "game_info_cache.json";
+const CACHE_SCHEMA_VERSION: u32 = 3;
 pub const GAME_INFO_TTL_SECONDS: u64 = 14 * 24 * 60 * 60;
 
 #[derive(Debug, Default, Serialize, Deserialize)]
@@ -47,6 +48,14 @@ impl GameInfoCache {
     }
 
     pub fn merge_store_results(&self, games: &[UnifiedStoreGame]) {
+        self.merge_store_results_with_manifest_context(games, false);
+    }
+
+    pub fn merge_store_results_with_manifest_context(
+        &self,
+        games: &[UnifiedStoreGame],
+        manifest_availability_checked: bool,
+    ) {
         if games.is_empty() {
             return;
         }
@@ -68,7 +77,6 @@ impl GameInfoCache {
             merge_non_empty(&mut entry.image_url, &game.image_url);
             entry.store_url = Some(format!("https://store.steampowered.com/app/{}/", game.id));
             entry.has_manifest = Some(game.has_manifest);
-            entry.has_denuvo = Some(game.has_denuvo);
             entry.has_nsfw = Some(game.has_nsfw);
             entry.has_delisted = Some(game.has_delisted);
 
@@ -90,7 +98,7 @@ impl GameInfoCache {
             if game.release_date_unix.is_some() || !game.store_kind.trim().is_empty() {
                 entry.store_items_updated_at_unix = Some(now);
             }
-            if game.has_manifest {
+            if manifest_availability_checked || game.has_manifest {
                 entry.hubcap_updated_at_unix = Some(now);
             }
             changed = true;
@@ -191,16 +199,16 @@ impl GameInfoCache {
     fn load_cache(&self) -> GameInfoCacheFile {
         let Ok(content) = fs::read_to_string(&self.cache_path) else {
             return GameInfoCacheFile {
-                schema_version: 1,
+                schema_version: CACHE_SCHEMA_VERSION,
                 app_version: self.app_version.clone(),
                 entries: HashMap::new(),
             };
         };
 
         let mut cache = serde_json::from_str::<GameInfoCacheFile>(&content).unwrap_or_default();
-        if cache.schema_version != 1 || cache.app_version != self.app_version {
+        if cache.schema_version != CACHE_SCHEMA_VERSION || cache.app_version != self.app_version {
             cache.entries.clear();
-            cache.schema_version = 1;
+            cache.schema_version = CACHE_SCHEMA_VERSION;
             cache.app_version = self.app_version.clone();
         }
         cache
@@ -214,7 +222,7 @@ impl GameInfoCache {
 
         let temp_path = self.cache_path.with_extension("tmp");
         let stamped = GameInfoCacheFile {
-            schema_version: 1,
+            schema_version: CACHE_SCHEMA_VERSION,
             app_version: self.app_version.clone(),
             entries: cache.entries.clone(),
         };

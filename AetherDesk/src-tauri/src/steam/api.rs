@@ -28,9 +28,22 @@ pub async fn fetch_app_details(
     client: &reqwest::Client,
     app_id: u32,
 ) -> Result<AppDetailsEnvelope, String> {
+    fetch_app_details_for_country(client, app_id, None).await
+}
+
+pub async fn fetch_app_details_for_country(
+    client: &reqwest::Client,
+    app_id: u32,
+    country_code: Option<&str>,
+) -> Result<AppDetailsEnvelope, String> {
+    let mut params = vec![("appids", app_id.to_string()), ("l", "english".to_string())];
+    if let Some(country_code) = country_code {
+        params.push(("cc", country_code.trim().to_uppercase()));
+    }
+
     let response = client
         .get(STEAM_APPDETAILS_URL)
-        .query(&[("appids", app_id.to_string()), ("l", "english".to_string())])
+        .query(&params)
         .send()
         .await
         .map_err(|e| format!("Steam appdetails request failed for {}: {}", app_id, e))?;

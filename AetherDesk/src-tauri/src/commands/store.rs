@@ -7,7 +7,7 @@ use crate::providers::ryuu::RyuuClient;
 use crate::core::paths::LocalAppPaths;
 use crate::manifest::pins::{LuaManifestPins, LuaManifestRow};
 use crate::manifest::package::ManifestPackage;
-use crate::core::settings::SettingsManager;
+use crate::core::settings::{cache_version_with_currency, normalize_store_currency, steam_country_code_for_currency, SettingsManager};
 use crate::steam::app_names::SteamAppNameResolver;
 use crate::steam::compat::SteamCompat;
 use crate::store::cache::StoreSearchCache;
@@ -23,18 +23,24 @@ pub async fn search_store(
     let show_store_dlcs = settings.show_store_dlcs;
     let show_store_nsfw = settings.show_store_nsfw;
     let show_store_delisted = settings.show_store_delisted;
+    let store_currency = normalize_store_currency(&settings.store_currency);
+    let steam_country_code = steam_country_code_for_currency(&store_currency);
+    let app_version = app.package_info().version.to_string();
+    let info_cache_version = cache_version_with_currency(&app_version, &store_currency);
     let hubcap_client = (!settings.hubcap_api_key.trim().is_empty())
         .then(|| HubcapClient::new(settings.hubcap_api_key));
+    let hubcap_checked = hubcap_client.is_some();
 
     let cache = StoreSearchCache::new(
         LocalAppPaths::data_root().join("cache"),
-        app.package_info().version.to_string(),
+        app_version.clone(),
     );
     // The filter flags are part of the cache key: toggling any setting must
     // not replay 24h-stale results built under other flag values.
     let cache_key = format!(
-        "{}|dlcs={}|nsfw={}|delisted={} {}",
+        "{}|currency={}|dlcs={}|nsfw={}|delisted={} {}",
         if hubcap_client.is_some() { "hubcap" } else { "steam" },
+        store_currency,
         show_store_dlcs,
         show_store_nsfw,
         show_store_delisted,
@@ -44,22 +50,22 @@ pub async fn search_store(
     if let Some(results) = cache.get_fresh(&cache_key) {
         GameInfoCache::new(
             LocalAppPaths::data_root().join("cache"),
-            app.package_info().version.to_string(),
+            info_cache_version.clone(),
         )
-        .merge_store_results(&results);
+        .merge_store_results_with_manifest_context(&results, hubcap_checked);
         return Ok(results);
     }
 
     match StoreService::new()
-        .search_store(&query, hubcap_client, show_store_dlcs, show_store_nsfw, show_store_delisted)
+        .search_store(&query, hubcap_client, show_store_dlcs, show_store_nsfw, show_store_delisted, steam_country_code)
         .await
     {
         Ok(results) => {
             let cache_dir = LocalAppPaths::data_root().join("cache");
             SteamAppNameResolver::new(cache_dir.clone())
                 .merge_names(results.iter().map(|game| (game.id, game.name.clone())));
-            GameInfoCache::new(cache_dir, app.package_info().version.to_string())
-                .merge_store_results(&results);
+            GameInfoCache::new(cache_dir, info_cache_version.clone())
+                .merge_store_results_with_manifest_context(&results, hubcap_checked);
             let _ = cache.put(&cache_key, results.clone());
             Ok(results)
         }
@@ -67,9 +73,9 @@ pub async fn search_store(
             if let Some(results) = cache.get_any(&cache_key) {
                 GameInfoCache::new(
                     LocalAppPaths::data_root().join("cache"),
-                    app.package_info().version.to_string(),
+                    info_cache_version.clone(),
                 )
-                .merge_store_results(&results);
+                .merge_store_results_with_manifest_context(&results, hubcap_checked);
                 Ok(results)
             } else {
                 Err(error)
@@ -85,10 +91,12 @@ pub async fn check_denuvo_bulk(
 ) -> Result<HashMap<u32, bool>, String> {
     let cache_dir = LocalAppPaths::data_root().join("cache");
     let app_version = app.package_info().version.to_string();
-    let results = DrmDetector::new(cache_dir.clone(), app_version.clone())
+    let settings = SettingsManager::new(&app).load();
+    let info_cache_version = cache_version_with_currency(&app_version, &settings.store_currency);
+    let results = DrmDetector::new(cache_dir.clone(), app_version)
         .detect_many(app_ids)
         .await?;
-    GameInfoCache::new(cache_dir, app_version).merge_denuvo_flags(&results);
+    GameInfoCache::new(cache_dir, info_cache_version).merge_denuvo_flags(&results);
     Ok(results)
 }
 

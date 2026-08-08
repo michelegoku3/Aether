@@ -290,7 +290,7 @@ impl StoreService {
     ///     are queried in parallel and merged by app id.
     /// Neither source may take the other down: a Steam outage still yields the
     /// Hubcap-only list, a Hubcap outage still yields the plain Steam catalog.
-    pub async fn search_store(&self, query: &str, hubcap_client: Option<HubcapClient>, show_store_dlcs: bool, show_store_nsfw: bool, show_store_delisted: bool) -> Result<Vec<UnifiedStoreGame>, String> {
+    pub async fn search_store(&self, query: &str, hubcap_client: Option<HubcapClient>, show_store_dlcs: bool, show_store_nsfw: bool, show_store_delisted: bool, steam_country_code: &str) -> Result<Vec<UnifiedStoreGame>, String> {
         if query.trim().is_empty() {
             return Ok(Vec::new());
         }
@@ -322,14 +322,14 @@ impl StoreService {
                     let s0 = steam_store_clone.clone();
                     let s1 = steam_store_clone.clone();
                     let (a, b) = tokio::join!(
-                        s0.search_catalog(&q0),
-                        s1.search_catalog(&q1)
+                        s0.search_catalog_for_country(&q0, steam_country_code),
+                        s1.search_catalog_for_country(&q1, steam_country_code)
                     );
                     vec![a, b]
                 }
                 1 => {
                     let q0 = steam_queries_for_fut[0].clone();
-                    vec![steam_store_clone.search_catalog(&q0).await]
+                    vec![steam_store_clone.search_catalog_for_country(&q0, steam_country_code).await]
                 },
                 _ => Vec::new(),
             };
@@ -514,7 +514,7 @@ impl StoreService {
         // in one shot. "Unknown" metadata always keeps the row.
         let meta_map = if !unified_list.is_empty() {
             let all_ids: Vec<u32> = unified_list.iter().map(|game| game.id).collect();
-            store_items::fetch_store_items(all_ids).await
+            store_items::fetch_store_items_for_country(all_ids, steam_country_code).await
         } else {
             HashMap::new()
         };
@@ -616,7 +616,7 @@ fn price_from_store_item(item: &SteamStoreItem) -> Option<GameInfoPrice> {
         currency: price.currency.clone(),
         initial_cents: price.initial,
         final_cents: price.final_price,
-        formatted_final: price.final_price.map(format_cents_eur_fallback),
+        formatted_final: price.final_price.map(|final_price| format_price_fallback(final_price, price.currency.as_deref())),
         discount_percent: price.discount_percent,
     })
 }
@@ -634,8 +634,13 @@ fn price_from_store_meta(meta: &store_items::StoreItemMeta) -> Option<GameInfoPr
     })
 }
 
-fn format_cents_eur_fallback(cents: i64) -> String {
-    format!("€{:.2}", cents as f64 / 100.0)
+fn format_price_fallback(amount_minor: i64, currency: Option<&str>) -> String {
+    match currency.unwrap_or("EUR").to_uppercase().as_str() {
+        "USD" => format!("${:.2}", amount_minor as f64 / 100.0),
+        "JPY" => format!("¥{}", amount_minor),
+        "EUR" => format!("€{:.2}", amount_minor as f64 / 100.0),
+        other => format!("{} {:.2}", other, amount_minor as f64 / 100.0),
+    }
 }
 
 fn metascore_from_store_item(item: &SteamStoreItem) -> Option<String> {

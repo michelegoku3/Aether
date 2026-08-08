@@ -1,4 +1,5 @@
 use crate::providers::hubcap::HubcapClient;
+use crate::core::paths::LocalAppPaths;
 use crate::core::settings::{AppSettings, SettingsManager};
 
 #[tauri::command]
@@ -41,4 +42,17 @@ pub async fn get_hubcap_usage(api_key: String) -> Result<serde_json::Value, Stri
             Ok(serde_json::json!({ "usage": 0, "limit": 25 }))
         }
     }
+}
+
+#[tauri::command]
+pub fn clear_app_caches() -> Result<String, String> {
+    let cache_dir = LocalAppPaths::data_root().join("cache");
+    if cache_dir.is_dir() {
+        std::fs::remove_dir_all(&cache_dir)
+            .map_err(|error| format!("Failed to clear cache folder {}: {}", cache_dir.display(), error))?;
+    }
+    std::fs::create_dir_all(&cache_dir)
+        .map_err(|error| format!("Failed to recreate cache folder {}: {}", cache_dir.display(), error))?;
+
+    Ok("AetherDesk caches cleared successfully.".to_string())
 }

@@ -228,9 +228,13 @@ fn get_items_client() -> reqwest::Client {
 
 /// Process-lifetime cache: repeat searches for the same ids cost zero network
 /// calls (mirrors SFF's `_STEAM_PLATFORM_CACHE`).
-fn meta_cache() -> &'static Mutex<HashMap<u32, StoreItemMeta>> {
-    static CACHE: OnceLock<Mutex<HashMap<u32, StoreItemMeta>>> = OnceLock::new();
+fn meta_cache() -> &'static Mutex<HashMap<String, StoreItemMeta>> {
+    static CACHE: OnceLock<Mutex<HashMap<String, StoreItemMeta>>> = OnceLock::new();
     CACHE.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+fn meta_cache_key(country_code: &str, app_id: u32) -> String {
+    format!("{}:{}", country_code.trim().to_uppercase(), app_id)
 }
 
 /// Fetch structural metadata for `app_ids`, batched in chunks.
@@ -238,6 +242,10 @@ fn meta_cache() -> &'static Mutex<HashMap<u32, StoreItemMeta>> {
 /// Ids with no metadata available map to `StoreItemMeta::default()` ("unknown"
 /// = keep), so the caller never loses rows because Steam refused to answer.
 pub async fn fetch_store_items(app_ids: Vec<u32>) -> HashMap<u32, StoreItemMeta> {
+    fetch_store_items_for_country(app_ids, "US").await
+}
+
+pub async fn fetch_store_items_for_country(app_ids: Vec<u32>, country_code: &str) -> HashMap<u32, StoreItemMeta> {
     let mut out: HashMap<u32, StoreItemMeta> = HashMap::new();
     let mut pending: Vec<u32> = Vec::new();
 
@@ -245,10 +253,11 @@ pub async fn fetch_store_items(app_ids: Vec<u32>) -> HashMap<u32, StoreItemMeta>
         if app_id == 0 {
             continue;
         }
+        let cache_key = meta_cache_key(country_code, app_id);
         let cached = meta_cache()
             .lock()
             .ok()
-            .and_then(|cache| cache.get(&app_id).cloned());
+            .and_then(|cache| cache.get(&cache_key).cloned());
         match cached {
             Some(meta) => {
                 out.insert(app_id, meta);
@@ -273,12 +282,12 @@ pub async fn fetch_store_items(app_ids: Vec<u32>) -> HashMap<u32, StoreItemMeta>
             continue;
         }
 
-        match fetch_chunk(&client, chunk).await {
+        match fetch_chunk(&client, chunk, country_code).await {
             Ok(metas) => {
                 consecutive_failures = 0;
                 if let Ok(mut cache) = meta_cache().lock() {
                     for (app_id, meta) in &metas {
-                        cache.insert(*app_id, meta.clone());
+                        cache.insert(meta_cache_key(country_code, *app_id), meta.clone());
                     }
                 }
                 out.extend(metas);
@@ -306,10 +315,11 @@ fn mark_unknown(chunk: &[u32], out: &mut HashMap<u32, StoreItemMeta>) {
 async fn fetch_chunk(
     client: &reqwest::Client,
     chunk: &[u32],
+    country_code: &str,
 ) -> Result<HashMap<u32, StoreItemMeta>, String> {
     let payload = serde_json::json!({
         "ids": chunk.iter().map(|id| serde_json::json!({ "appid": id })).collect::<Vec<_>>(),
-        "context": { "language": "english", "country_code": "US" },
+        "context": { "language": "english", "country_code": country_code.trim().to_uppercase() },
         "data_request": {
             "include_assets": false,
             "include_platforms": true,
