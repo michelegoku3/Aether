@@ -12,7 +12,17 @@ use crate::steam::app_names::SteamAppNameResolver;
 use crate::steam::compat::SteamCompat;
 use crate::store::cache::StoreSearchCache;
 use crate::store::service::{StoreService, UnifiedStoreGame};
+use serde::Serialize;
 use std::collections::HashMap;
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CachedStoreSearchResponse {
+    pub results: Vec<UnifiedStoreGame>,
+    /// `fresh` = 24h cache hit; `stale` = immediate 14-day fallback that the
+    /// frontend should refresh in the background; `miss` = no usable cache.
+    pub cache_state: String,
+}
 
 #[tauri::command]
 pub async fn search_store(
@@ -37,14 +47,13 @@ pub async fn search_store(
     );
     // The filter flags are part of the cache key: toggling any setting must
     // not replay 24h-stale results built under other flag values.
-    let cache_key = format!(
-        "{}|currency={}|dlcs={}|nsfw={}|delisted={} {}",
-        if hubcap_client.is_some() { "hubcap" } else { "steam" },
-        store_currency,
+    let cache_key = build_store_cache_key(
+        hubcap_client.is_some(),
+        &store_currency,
         show_store_dlcs,
         show_store_nsfw,
         show_store_delisted,
-        query
+        &query,
     );
 
     if let Some(results) = cache.get_fresh(&cache_key) {
@@ -82,6 +91,54 @@ pub async fn search_store(
             }
         }
     }
+}
+
+#[tauri::command]
+pub fn get_cached_store_search(
+    app: tauri::AppHandle,
+    query: String,
+) -> Result<CachedStoreSearchResponse, String> {
+    if query.trim().is_empty() {
+        return Ok(CachedStoreSearchResponse {
+            results: Vec::new(),
+            cache_state: "miss".to_string(),
+        });
+    }
+
+    let settings = SettingsManager::new(&app).load();
+    let store_currency = normalize_store_currency(&settings.store_currency);
+    let hubcap_enabled = !settings.hubcap_api_key.trim().is_empty();
+    let cache = StoreSearchCache::new(
+        LocalAppPaths::data_root().join("cache"),
+        app.package_info().version.to_string(),
+    );
+    let cache_key = build_store_cache_key(
+        hubcap_enabled,
+        &store_currency,
+        settings.show_store_dlcs,
+        settings.show_store_nsfw,
+        settings.show_store_delisted,
+        &query,
+    );
+
+    if let Some(results) = cache.get_fresh(&cache_key) {
+        return Ok(CachedStoreSearchResponse {
+            results,
+            cache_state: "fresh".to_string(),
+        });
+    }
+
+    if let Some(results) = cache.get_stale(&cache_key) {
+        return Ok(CachedStoreSearchResponse {
+            results,
+            cache_state: "stale".to_string(),
+        });
+    }
+
+    Ok(CachedStoreSearchResponse {
+        results: Vec::new(),
+        cache_state: "miss".to_string(),
+    })
 }
 
 #[tauri::command]
@@ -273,4 +330,23 @@ fn apply_default_update_policy(
             .map(|_| ())?;
     }
     Ok(())
+}
+
+fn build_store_cache_key(
+    hubcap_enabled: bool,
+    store_currency: &str,
+    show_store_dlcs: bool,
+    show_store_nsfw: bool,
+    show_store_delisted: bool,
+    query: &str,
+) -> String {
+    format!(
+        "{}|currency={}|dlcs={}|nsfw={}|delisted={} {}",
+        if hubcap_enabled { "hubcap" } else { "steam" },
+        store_currency,
+        show_store_dlcs,
+        show_store_nsfw,
+        show_store_delisted,
+        query
+    )
 }

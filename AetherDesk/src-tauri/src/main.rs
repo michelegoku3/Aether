@@ -49,6 +49,7 @@ fn main() {
             commands::antivirus::open_windows_security,
             commands::antivirus::open_app_folder,
             commands::store::search_store,
+            commands::store::get_cached_store_search,
             commands::store::check_denuvo_bulk,
             commands::store::trigger_hubcap_download,
             commands::store::trigger_ryuu_download,

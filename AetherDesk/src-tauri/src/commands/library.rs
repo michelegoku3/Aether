@@ -22,12 +22,17 @@ pub async fn get_installed_library_games(
 
     // UI-critical path: use persistent cache only, never wait for Steam/network here.
     let cache_dir = LocalAppPaths::data_root().join("cache");
-    let names = SteamAppNameResolver::new(cache_dir.clone())
-        .cached_names(games.iter().map(|game| game.id).collect());
+    let resolver = SteamAppNameResolver::new(cache_dir.clone());
+    let app_ids: Vec<u32> = games.iter().map(|game| game.id).collect();
+    let names = resolver.cached_names(app_ids.clone());
+    let image_urls = resolver.cached_image_urls(app_ids);
 
     for game in &mut games {
         if let Some(name) = names.get(&game.id) {
             game.name = name.clone();
+        }
+        if let Some(image_url) = image_urls.get(&game.id) {
+            game.image_url = image_url.clone();
         }
     }
 

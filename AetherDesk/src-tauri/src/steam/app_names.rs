@@ -11,14 +11,26 @@ const CACHE_FILE_NAME: &str = "steam_app_names.json";
 
 #[derive(Debug, Default, Serialize, Deserialize)]
 struct NameCacheFile {
+    #[serde(default)]
     names: HashMap<u32, String>,
+    #[serde(default)]
+    image_urls: HashMap<u32, String>,
 }
 
-/// Resolves Steam app names by App ID and stores them in a persistent cache.
+#[derive(Debug, Clone)]
+struct AppNameDetails {
+    name: String,
+    image_url: Option<String>,
+}
+
+/// Resolves Steam app names and lightweight image URLs by App ID and stores
+/// them in a persistent cache.
 ///
-/// The Library view is based on local Lua files, whose comments can sometimes contain
-/// noisy/wrong titles. This resolver mirrors the Store source of truth by asking Steam
-/// appdetails for the canonical app name, then caching it so later Library opens are fast.
+/// The Library view is based on local Lua files, whose comments can sometimes
+/// contain noisy/wrong titles and whose App IDs often need hashed Steam image
+/// URLs that cannot be derived from `appid` alone. This resolver mirrors the
+/// Store source of truth by asking Steam appdetails, then caching the canonical
+/// name + best available capsule/header URL so later Library opens are fast.
 pub struct SteamAppNameResolver {
     cache_path: PathBuf,
     client: reqwest::Client,
@@ -41,9 +53,15 @@ impl SteamAppNameResolver {
         Self::filter_cached_names(cache, app_ids)
     }
 
-    /// Resolves missing names through Steam and persists them for future cache-only reads.
-    ///
-    /// Use this from warm-up/background paths, not from UI-critical commands.
+    /// Returns cached cover/capsule URLs without doing network I/O.
+    pub fn cached_image_urls(&self, app_ids: Vec<u32>) -> HashMap<u32, String> {
+        let cache = self.load_cache();
+        Self::filter_cached_images(cache, app_ids)
+    }
+
+    /// Resolves missing names/images through Steam and persists them for future
+    /// cache-only reads. Use this from warm-up/background paths, not from
+    /// UI-critical commands.
     pub async fn resolve_names(&self, app_ids: Vec<u32>) -> HashMap<u32, String> {
         let mut cache = self.load_cache();
         let unique_ids = Self::unique_app_ids(app_ids);
@@ -51,18 +69,26 @@ impl SteamAppNameResolver {
         let missing_ids: Vec<u32> = unique_ids
             .iter()
             .copied()
-            .filter(|app_id| !cache.names.contains_key(app_id))
+            .filter(|app_id| {
+                !cache.names.contains_key(app_id) || !cache.image_urls.contains_key(app_id)
+            })
             .collect();
 
         if !missing_ids.is_empty() {
-            let fetched = self.fetch_missing_names(missing_ids).await;
+            let fetched = self.fetch_missing_details(missing_ids).await;
             let mut changed = false;
 
-            for (app_id, name) in fetched {
-                let trimmed = name.trim();
-                if !trimmed.is_empty() {
+            for (app_id, details) in fetched {
+                let trimmed = details.name.trim();
+                if !trimmed.is_empty() && cache.names.get(&app_id).map(String::as_str) != Some(trimmed) {
                     cache.names.insert(app_id, trimmed.to_string());
                     changed = true;
+                }
+                if let Some(image_url) = details.image_url.as_deref().map(str::trim).filter(|url| !url.is_empty()) {
+                    if cache.image_urls.get(&app_id).map(String::as_str) != Some(image_url) {
+                        cache.image_urls.insert(app_id, image_url.to_string());
+                        changed = true;
+                    }
                 }
             }
 
@@ -90,6 +116,20 @@ impl SteamAppNameResolver {
                     .cloned()
                     .filter(|name| !name.trim().is_empty())
                     .map(|name| (app_id, name))
+            })
+            .collect()
+    }
+
+    fn filter_cached_images(cache: NameCacheFile, app_ids: Vec<u32>) -> HashMap<u32, String> {
+        Self::unique_app_ids(app_ids)
+            .into_iter()
+            .filter_map(|app_id| {
+                cache
+                    .image_urls
+                    .get(&app_id)
+                    .cloned()
+                    .filter(|url| !url.trim().is_empty())
+                    .map(|url| (app_id, url))
             })
             .collect()
     }
@@ -144,7 +184,7 @@ impl SteamAppNameResolver {
             .map_err(|e| format!("Failed to apply Steam app name cache: {}", e))
     }
 
-    async fn fetch_missing_names(&self, app_ids: Vec<u32>) -> HashMap<u32, String> {
+    async fn fetch_missing_details(&self, app_ids: Vec<u32>) -> HashMap<u32, AppNameDetails> {
         let client = self.client.clone();
         api::concurrent_app_tasks(
             app_ids,
@@ -152,23 +192,37 @@ impl SteamAppNameResolver {
             move |app_id| {
                 let client = client.clone();
                 async move {
-                    let name = Self::fetch_name(&client, app_id).await.ok();
-                    name.map(|n| (app_id, n))
+                    let details = Self::fetch_details(&client, app_id).await.ok();
+                    details.map(|details| (app_id, details))
                 }
             },
         )
         .await
     }
 
-    async fn fetch_name(client: &reqwest::Client, app_id: u32) -> Result<String, String> {
+    async fn fetch_details(client: &reqwest::Client, app_id: u32) -> Result<AppNameDetails, String> {
         let envelope: AppDetailsEnvelope = api::fetch_app_details(client, app_id).await?;
-
-        envelope
+        let data = envelope
             .data
             .as_ref()
-            .and_then(|details| details.get("name"))
+            .ok_or_else(|| format!("Steam appdetails did not include data for {}", app_id))?;
+
+        let name = data
+            .get("name")
             .and_then(|name| name.as_str())
             .map(|name| name.to_string())
-            .ok_or_else(|| format!("Steam appdetails did not include a name for {}", app_id))
+            .ok_or_else(|| format!("Steam appdetails did not include a name for {}", app_id))?;
+
+        let image_url = ["capsule_image", "header_image", "capsule_imagev5"]
+            .iter()
+            .find_map(|key| {
+                data.get(*key)
+                    .and_then(|value| value.as_str())
+                    .map(str::trim)
+                    .filter(|value| !value.is_empty())
+                    .map(str::to_string)
+            });
+
+        Ok(AppNameDetails { name, image_url })
     }
 }

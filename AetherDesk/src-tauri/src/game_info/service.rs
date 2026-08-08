@@ -35,18 +35,71 @@ impl GameInfoService {
 
         let mut info = self.cache.get(app_id).unwrap_or_else(|| GameInfo::new(app_id));
 
+        // Local filesystem data is cheap and deterministic; merge it first so
+        // network-derived metadata can use the best available name for heuristics.
         self.merge_local_info(&mut info);
 
-        if !GameInfoCache::is_fresh(info.store_items_updated_at_unix, GAME_INFO_TTL_SECONDS) {
-            self.merge_store_items_info(&mut info).await;
+        let needs_store_items = !GameInfoCache::is_fresh(
+            info.store_items_updated_at_unix,
+            GAME_INFO_TTL_SECONDS,
+        );
+        let needs_appdetails = !GameInfoCache::is_fresh(
+            info.appdetails_updated_at_unix,
+            GAME_INFO_TTL_SECONDS,
+        );
+        let needs_hubcap = !GameInfoCache::is_fresh(
+            info.hubcap_updated_at_unix,
+            HUBCAP_INFO_TTL_SECONDS,
+        );
+
+        let store_items_lookup = async {
+            if needs_store_items {
+                self.fetch_store_items_meta(app_id).await
+            } else {
+                None
+            }
+        };
+        let appdetails_lookup = async {
+            if needs_appdetails {
+                self.fetch_appdetails_data(app_id).await
+            } else {
+                None
+            }
+        };
+        let hubcap_lookup = async {
+            if needs_hubcap {
+                self.fetch_hubcap_manifest(app_id).await
+            } else {
+                None
+            }
+        };
+
+        // StoreItems, appdetails and Hubcap status are independent remote
+        // sources. Fetch them concurrently and merge deterministically after
+        // all completed; this keeps the Info modal responsive without mixing
+        // side effects across async branches.
+        let (store_meta, appdetails_data, hubcap_manifest) = tokio::join!(
+            store_items_lookup,
+            appdetails_lookup,
+            hubcap_lookup,
+        );
+
+        if let Some(meta) = store_meta {
+            apply_store_items_meta(&mut info, &meta);
         }
 
-        if !GameInfoCache::is_fresh(info.appdetails_updated_at_unix, GAME_INFO_TTL_SECONDS) {
-            self.merge_appdetails_info(&mut info).await;
+        if let Some(data) = appdetails_data {
+            merge_appdetails_value(&mut info, &data);
+            let now = GameInfoCache::now_unix();
+            info.updated_at_unix = now;
+            info.appdetails_updated_at_unix = Some(now);
         }
 
-        if !GameInfoCache::is_fresh(info.hubcap_updated_at_unix, HUBCAP_INFO_TTL_SECONDS) {
-            self.merge_hubcap_info(&mut info).await;
+        if let Some(has_manifest) = hubcap_manifest {
+            info.has_manifest = Some(has_manifest);
+            let now = GameInfoCache::now_unix();
+            info.updated_at_unix = now;
+            info.hubcap_updated_at_unix = Some(now);
         }
 
         let _ = self.cache.put(info.clone());
@@ -97,78 +150,67 @@ impl GameInfoService {
         info.local_updated_at_unix = Some(now);
     }
 
-    async fn merge_store_items_info(&self, info: &mut GameInfo) {
+    async fn fetch_store_items_meta(&self, app_id: u32) -> Option<store_items::StoreItemMeta> {
         let settings = SettingsManager::new(&self.app).load();
         let country_code = steam_country_code_for_currency(&settings.store_currency);
-        let meta_map = store_items::fetch_store_items_for_country(vec![info.app_id], country_code).await;
-        let Some(meta) = meta_map.get(&info.app_id) else {
-            return;
-        };
-
-        if !meta.kind.is_empty() {
-            info.kind = Some(meta.kind.clone());
-        }
-        info.has_nsfw = Some(store_items::is_nsfw(meta, info.name.as_deref().unwrap_or_default()));
-        info.has_delisted = Some(meta.is_delisted);
-        info.release_date_unix = meta.release_date_unix.or(info.release_date_unix);
-        info.original_release_date_unix = meta.original_release_date_unix.or(info.original_release_date_unix);
-        info.store_url_path = meta.store_url_path.clone().or_else(|| info.store_url_path.clone());
-        info.platforms = Some(platforms_from_store_meta(meta, info.platforms.clone()));
-        info.store_categories = Some(GameInfoStoreCategories {
-            supported_player_category_ids: meta.categories.supported_player_category_ids.clone(),
-            feature_category_ids: meta.categories.feature_category_ids.clone(),
-            controller_category_ids: meta.categories.controller_category_ids.clone(),
-        });
-        info.content_descriptor_ids = meta.content_descriptor_ids.clone();
-        if info.price.is_none() {
-            info.price = meta.best_purchase_option.as_ref().map(|price| GameInfoPrice {
-                currency: None,
-                initial_cents: None,
-                final_cents: price
-                    .final_price_in_cents
-                    .as_ref()
-                    .and_then(|value| value.parse::<i64>().ok()),
-                formatted_final: price.formatted_final_price.clone(),
-                discount_percent: None,
-            });
-        }
-
-        let now = GameInfoCache::now_unix();
-        info.updated_at_unix = now;
-        info.store_items_updated_at_unix = Some(now);
+        store_items::fetch_store_items_for_country(vec![app_id], country_code)
+            .await
+            .get(&app_id)
+            .cloned()
     }
 
-    async fn merge_hubcap_info(&self, info: &mut GameInfo) {
+    async fn fetch_hubcap_manifest(&self, app_id: u32) -> Option<bool> {
         let settings = SettingsManager::new(&self.app).load();
         if settings.hubcap_api_key.trim().is_empty() {
-            return;
+            return None;
         }
 
-        let client = HubcapClient::new(settings.hubcap_api_key);
-        let has_manifest = client.has_manifest(info.app_id).await;
-        info.has_manifest = Some(has_manifest);
-
-        let now = GameInfoCache::now_unix();
-        info.updated_at_unix = now;
-        info.hubcap_updated_at_unix = Some(now);
+        Some(HubcapClient::new(settings.hubcap_api_key).has_manifest(app_id).await)
     }
 
-    async fn merge_appdetails_info(&self, info: &mut GameInfo) {
+    async fn fetch_appdetails_data(&self, app_id: u32) -> Option<serde_json::Value> {
         let settings = SettingsManager::new(&self.app).load();
         let country_code = steam_country_code_for_currency(&settings.store_currency);
         let client = http::build_client(APPDETAILS_TIMEOUT_SECONDS);
-        let Ok(envelope) = api::fetch_app_details_for_country(&client, info.app_id, Some(country_code)).await else {
-            return;
-        };
-        let Some(data) = envelope.data else {
-            return;
-        };
-
-        merge_appdetails_value(info, &data);
-        let now = GameInfoCache::now_unix();
-        info.updated_at_unix = now;
-        info.appdetails_updated_at_unix = Some(now);
+        api::fetch_app_details_for_country(&client, app_id, Some(country_code))
+            .await
+            .ok()
+            .and_then(|envelope| envelope.data)
     }
+}
+
+fn apply_store_items_meta(info: &mut GameInfo, meta: &store_items::StoreItemMeta) {
+    if !meta.kind.is_empty() {
+        info.kind = Some(meta.kind.clone());
+    }
+    info.has_nsfw = Some(store_items::is_nsfw(meta, info.name.as_deref().unwrap_or_default()));
+    info.has_delisted = Some(meta.is_delisted);
+    info.release_date_unix = meta.release_date_unix.or(info.release_date_unix);
+    info.original_release_date_unix = meta.original_release_date_unix.or(info.original_release_date_unix);
+    info.store_url_path = meta.store_url_path.clone().or_else(|| info.store_url_path.clone());
+    info.platforms = Some(platforms_from_store_meta(meta, info.platforms.clone()));
+    info.store_categories = Some(GameInfoStoreCategories {
+        supported_player_category_ids: meta.categories.supported_player_category_ids.clone(),
+        feature_category_ids: meta.categories.feature_category_ids.clone(),
+        controller_category_ids: meta.categories.controller_category_ids.clone(),
+    });
+    info.content_descriptor_ids = meta.content_descriptor_ids.clone();
+    if info.price.is_none() {
+        info.price = meta.best_purchase_option.as_ref().map(|price| GameInfoPrice {
+            currency: None,
+            initial_cents: None,
+            final_cents: price
+                .final_price_in_cents
+                .as_ref()
+                .and_then(|value| value.parse::<i64>().ok()),
+            formatted_final: price.formatted_final_price.clone(),
+            discount_percent: None,
+        });
+    }
+
+    let now = GameInfoCache::now_unix();
+    info.updated_at_unix = now;
+    info.store_items_updated_at_unix = Some(now);
 }
 
 fn merge_appdetails_value(info: &mut GameInfo, data: &serde_json::Value) {
