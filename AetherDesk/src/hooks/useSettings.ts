@@ -16,8 +16,14 @@ export interface AppSettings {
   custom_css_enabled?: boolean;
   /** Ryuu API key (generator.ryuu.lol, 50/day, no verification endpoint) */
   ryuu_api_key?: string;
+  /** Latest-version downloads comment setManifestid pins so Steam can update the game. */
+  download_games_with_updates_on?: boolean;
   /** Preferred Steam store currency for prices. */
   store_currency?: 'eur' | 'usd' | 'jpy' | string;
+  /** Personal wallpaper toggle. */
+  personal_wallpaper_enabled?: boolean;
+  /** Wallpaper opacity percentage (0..100). */
+  personal_wallpaper_opacity?: number;
 }
 
 export const getSettings = async (): Promise<AppSettings> => {

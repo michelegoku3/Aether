@@ -37,6 +37,8 @@ fn main() {
             commands::settings::clear_app_caches,
             commands::custom_css::get_custom_css,
             commands::custom_css::get_custom_css_path,
+            commands::custom_css::get_personal_wallpaper_path,
+            commands::custom_css::get_personal_wallpaper_data_uri,
             commands::custom_css::ensure_custom_css,
             commands::custom_css::open_custom_css_folder,
             commands::crack::pick_crack_files,

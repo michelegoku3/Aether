@@ -2073,3 +2073,76 @@ body {
 .info-value {
   max-height: 49px;
 }
+
+/* Separators in Settings and modals use the same visible rule as Store/Library. */
+.settings-separator,
+.modal-separator {
+  height: 1px;
+  min-height: 1px;
+  flex-shrink: 0;
+  background-color: rgba(255, 255, 255, 0.08);
+  width: 100%;
+  margin: 2px 0;
+}
+
+.settings-top-action-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 2px 0;
+}
+
+.settings-number-input {
+  width: 72px;
+  min-width: 72px;
+  background-color: #141417;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 8px 10px;
+  color: #ffffff;
+  font-size: 13px;
+  outline: none;
+  text-align: right;
+}
+
+.settings-number-input:focus {
+  border-color: var(--color-cyan);
+}
+
+/* Specific version modal needs a bit more vertical room after adding visible separators. */
+.version-modal-container {
+  height: min(700px, calc(100vh - 48px));
+  max-height: calc(100vh - 48px);
+}
+
+.version-modal-container .modal-body {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.version-modal-container .version-table-wrapper {
+  flex: 1 1 auto;
+  max-height: none;
+  min-height: 300px;
+}
+
+/* Match the number field footprint to the switch-style controls and remove spinner arrows. */
+.settings-number-input {
+  width: 58px;
+  min-width: 58px;
+  height: 30px;
+  padding: 4px 8px;
+  text-align: center;
+}
+
+.settings-number-input::-webkit-outer-spin-button,
+.settings-number-input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.settings-number-input[type='number'] {
+  appearance: textfield;
+  -moz-appearance: textfield;
+}

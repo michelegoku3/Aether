@@ -5,16 +5,20 @@ interface SettingsViewProps {
   hubcapUsage: { usage: number; limit: number; hasKey: boolean };
   onRefreshUsage: (forcedKey?: string) => Promise<void>;
   onRefreshCustomCss: () => Promise<void>;
+  onPreviewPersonalWallpaper: (enabled: boolean, opacity: number) => void;
 }
 
-export const SettingsView = ({ hubcapUsage, onRefreshUsage, onRefreshCustomCss }: SettingsViewProps) => {
+export const SettingsView = ({ hubcapUsage, onRefreshUsage, onRefreshCustomCss, onPreviewPersonalWallpaper }: SettingsViewProps) => {
   const [apiKey, setApiKey] = useState('');
   const [steamPath, setSteamPath] = useState('C:\\Program Files (x86)\\Steam');
   const [activeLibrary, setActiveLibrary] = useState('');
   const [showStoreDlcs, setShowStoreDlcs] = useState(false);
   const [showStoreNsfw, setShowStoreNsfw] = useState(true);
   const [showStoreDelisted, setShowStoreDelisted] = useState(true);
+  const [downloadGamesWithUpdatesOn, setDownloadGamesWithUpdatesOn] = useState(true);
   const [customCssEnabled, setCustomCssEnabled] = useState(false);
+  const [personalWallpaperEnabled, setPersonalWallpaperEnabled] = useState(false);
+  const [personalWallpaperOpacity, setPersonalWallpaperOpacity] = useState(35);
   const [ryuuKey, setRyuuKey] = useState('');
   const [storeCurrency, setStoreCurrency] = useState<'eur' | 'usd' | 'jpy'>('eur');
 
@@ -39,7 +43,10 @@ export const SettingsView = ({ hubcapUsage, onRefreshUsage, onRefreshCustomCss }
           // These two default to enabled: only an explicit `false` turns them off.
           setShowStoreNsfw(settings.show_store_nsfw !== false);
           setShowStoreDelisted(settings.show_store_delisted !== false);
+          setDownloadGamesWithUpdatesOn(settings.download_games_with_updates_on !== false);
           setCustomCssEnabled(Boolean(settings.custom_css_enabled));
+          setPersonalWallpaperEnabled(Boolean(settings.personal_wallpaper_enabled));
+          setPersonalWallpaperOpacity(Math.max(0, Math.min(100, Number(settings.personal_wallpaper_opacity ?? 35))));
           setRyuuKey(settings.ryuu_api_key || '');
           setStoreCurrency(['usd', 'jpy'].includes(settings.store_currency) ? settings.store_currency : 'eur');
         }
@@ -79,7 +86,7 @@ export const SettingsView = ({ hubcapUsage, onRefreshUsage, onRefreshCustomCss }
       showStatus('Saving settings...', 'info');
       // Se l'utente ha appena attivato Custom CSS, assicurati che il file esista
       // prima di salvare, così la prossima apertura dell'editor non trova una cartella vuota.
-      if (customCssEnabled) {
+      if (customCssEnabled || personalWallpaperEnabled) {
         try { await invoke('ensure_custom_css'); } catch {}
       }
       await invoke('save_settings', {
@@ -92,7 +99,10 @@ export const SettingsView = ({ hubcapUsage, onRefreshUsage, onRefreshCustomCss }
           show_store_nsfw: showStoreNsfw,
           show_store_delisted: showStoreDelisted,
           custom_css_enabled: customCssEnabled,
+          personal_wallpaper_enabled: personalWallpaperEnabled,
+          personal_wallpaper_opacity: personalWallpaperOpacity,
           ryuu_api_key: ryuuKey,
+          download_games_with_updates_on: downloadGamesWithUpdatesOn,
           store_currency: storeCurrency
         }
       });
@@ -120,6 +130,31 @@ export const SettingsView = ({ hubcapUsage, onRefreshUsage, onRefreshCustomCss }
       )}
 
       <form onSubmit={handleSave} className="settings-form">
+        <div className="settings-top-action-row" title="Clear AetherDesk cache files such as store search, game info, Steam names and Denuvo cache. Settings and backups are preserved.">
+          <span className="settings-toggle-text">Clear AetherDesk caches</span>
+          <button
+            type="button"
+            className="settings-small-btn"
+            onClick={async () => {
+              try {
+                const result: string = await invoke('clear_app_caches');
+                try {
+                  Object.keys(localStorage)
+                    .filter((key) => key.startsWith('aether_cover_'))
+                    .forEach((key) => localStorage.removeItem(key));
+                } catch {}
+                showStatus(result, 'success');
+              } catch (err: any) {
+                showStatus(`Failed to clear caches: ${err}`, 'error');
+              }
+            }}
+          >
+            Clear Cache
+          </button>
+        </div>
+
+        <div className="settings-separator"></div>
+
         {/* Hubcap API Key Section */}
         <div className="settings-group">
           <label className="settings-label">Hubcap API Key</label>
@@ -173,28 +208,6 @@ export const SettingsView = ({ hubcapUsage, onRefreshUsage, onRefreshCustomCss }
             onChange={(e) => setSteamPath(e.target.value)}
             className="settings-input"
           />
-          <div className="settings-toggle-row" title="Clear AetherDesk cache files such as store search, game info, Steam names and Denuvo cache. Settings and backups are preserved.">
-            <span className="settings-toggle-text">Clear AetherDesk caches</span>
-            <button
-              type="button"
-              className="settings-small-btn"
-              onClick={async () => {
-                try {
-                  const result: string = await invoke('clear_app_caches');
-                  try {
-                    Object.keys(localStorage)
-                      .filter((key) => key.startsWith('aether_cover_'))
-                      .forEach((key) => localStorage.removeItem(key));
-                  } catch {}
-                  showStatus(result, 'success');
-                } catch (err: any) {
-                  showStatus(`Failed to clear caches: ${err}`, 'error');
-                }
-              }}
-            >
-              Clear Cache
-            </button>
-          </div>
         </div>
 
         <div className="settings-separator"></div>
@@ -238,6 +251,18 @@ export const SettingsView = ({ hubcapUsage, onRefreshUsage, onRefreshCustomCss }
             </label>
           </div>
 
+          <div className="settings-toggle-row" title="After latest-version downloads, comment setManifestid pins so Steam can update the game normally">
+            <span className="settings-toggle-text">Download games with updates on</span>
+            <label className="version-switch">
+              <input
+                type="checkbox"
+                checked={downloadGamesWithUpdatesOn}
+                onChange={(e) => setDownloadGamesWithUpdatesOn(e.target.checked)}
+              />
+              <span></span>
+            </label>
+          </div>
+
           <div className="settings-toggle-row" title="Preferred currency for Steam prices shown in Store and Info">
             <span className="settings-toggle-text">Store price currency</span>
             <select
@@ -275,6 +300,44 @@ export const SettingsView = ({ hubcapUsage, onRefreshUsage, onRefreshCustomCss }
             </label>
           </div>
 
+          <div className="settings-toggle-row" title="Use AetherData/config/wallpaper.<ext> as the app background.">
+            <span className="settings-toggle-text">Enable personal wallpaper</span>
+            <label className="version-switch">
+              <input
+                type="checkbox"
+                checked={personalWallpaperEnabled}
+                onChange={async (e) => {
+                  const next = e.target.checked;
+                  setPersonalWallpaperEnabled(next);
+                  onPreviewPersonalWallpaper(next, personalWallpaperOpacity);
+                  if (next) {
+                    try { await invoke('ensure_custom_css'); } catch {}
+                  }
+                }}
+              />
+              <span></span>
+            </label>
+          </div>
+
+          {personalWallpaperEnabled && (
+            <div className="settings-toggle-row" title="Adjust the personal wallpaper opacity from 0 to 100.">
+              <span className="settings-toggle-text">Wallpaper opacity</span>
+              <input
+                type="text"
+                inputMode="numeric"
+                pattern="[0-9]*"
+                className="settings-number-input"
+                value={personalWallpaperOpacity}
+                onChange={(e) => {
+                  const numeric = e.target.value.replace(/\D/g, '');
+                  const next = Math.max(0, Math.min(100, Number(numeric || 0)));
+                  setPersonalWallpaperOpacity(next);
+                  onPreviewPersonalWallpaper(personalWallpaperEnabled, next);
+                }}
+              />
+            </div>
+          )}
+
         </div>
 
         <div className="settings-separator"></div>
@@ -296,7 +359,11 @@ export const SettingsView = ({ hubcapUsage, onRefreshUsage, onRefreshCustomCss }
               setShowStoreDlcs(false);
               setShowStoreNsfw(true);
               setShowStoreDelisted(true);
+              setDownloadGamesWithUpdatesOn(true);
               setCustomCssEnabled(false);
+              setPersonalWallpaperEnabled(false);
+              setPersonalWallpaperOpacity(35);
+              onPreviewPersonalWallpaper(false, 35);
               setStoreCurrency('eur');
               try {
                 await invoke('save_settings', {
@@ -309,7 +376,10 @@ export const SettingsView = ({ hubcapUsage, onRefreshUsage, onRefreshCustomCss }
                     show_store_dlcs: false,
                     show_store_nsfw: true,
                     show_store_delisted: true,
+                    download_games_with_updates_on: true,
                     custom_css_enabled: false,
+                    personal_wallpaper_enabled: false,
+                    personal_wallpaper_opacity: 35,
                     store_currency: 'eur',
                     antivirus_exclusion_done: rawSettings.antivirus_exclusion_done ?? false
                   }

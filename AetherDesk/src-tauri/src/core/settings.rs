@@ -42,11 +42,22 @@ pub struct AppSettings {
     /// Limit is 50 uses per day (enforced server-side).
     #[serde(default)]
     pub ryuu_api_key: String,
+    /// When true, latest-version downloads comment setManifestid pins after
+    /// installing the Lua so Steam can keep the game updated. Specific-version
+    /// downloads intentionally ignore this setting.
+    #[serde(default = "default_true")]
+    pub download_games_with_updates_on: bool,
     /// Preferred Steam store currency for prices shown in Store/Info.
     /// Values are intentionally small and map to Steam country codes:
     /// `eur` -> IT, `usd` -> US, `jpy` -> JP.
     #[serde(default = "default_store_currency")]
     pub store_currency: String,
+    /// Personal wallpaper displayed behind AetherDesk content.
+    #[serde(default)]
+    pub personal_wallpaper_enabled: bool,
+    /// Wallpaper image opacity percentage (0..=100).
+    #[serde(default = "default_wallpaper_opacity")]
+    pub personal_wallpaper_opacity: u8,
 }
 
 /// Serde default provider for boolean settings that ship enabled.
@@ -56,6 +67,10 @@ fn default_true() -> bool {
 
 fn default_store_currency() -> String {
     "eur".to_string()
+}
+
+fn default_wallpaper_opacity() -> u8 {
+    35
 }
 
 pub fn normalize_store_currency(value: &str) -> String {
@@ -90,7 +105,10 @@ impl Default for AppSettings {
             show_store_delisted: true,
             custom_css_enabled: false,
             ryuu_api_key: String::new(),
+            download_games_with_updates_on: true,
             store_currency: default_store_currency(),
+            personal_wallpaper_enabled: false,
+            personal_wallpaper_opacity: default_wallpaper_opacity(),
         }
     }
 }
@@ -149,6 +167,7 @@ impl SettingsManager {
 
         let mut normalized = settings.clone();
         normalized.store_currency = normalize_store_currency(&normalized.store_currency);
+        normalized.personal_wallpaper_opacity = normalized.personal_wallpaper_opacity.min(100);
 
         let json_data = serde_json::to_string_pretty(&normalized)
             .map_err(|e| format!("Serialization error: {}", e))?;
