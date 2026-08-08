@@ -7,6 +7,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 const CACHE_FILE_NAME: &str = "store_search_cache.json";
 const FRESH_TTL_SECONDS: u64 = 24 * 60 * 60;
+const STALE_RETENTION_SECONDS: u64 = 14 * 24 * 60 * 60;
 
 #[derive(Debug, Default, Serialize, Deserialize)]
 struct StoreSearchCacheFile {
@@ -56,12 +57,20 @@ impl StoreSearchCache {
         }
     }
 
-    pub fn get_any(&self, query: &str) -> Option<Vec<UnifiedStoreGame>> {
+    pub fn get_stale(&self, query: &str) -> Option<Vec<UnifiedStoreGame>> {
         let key = Self::normalize_query(query)?;
-        self.load_cache()
-            .entries
-            .get(&key)
-            .map(|entry| entry.results.clone())
+        let cache = self.load_cache();
+        let entry = cache.entries.get(&key)?;
+
+        if Self::now_unix().saturating_sub(entry.updated_at_unix) <= STALE_RETENTION_SECONDS {
+            Some(entry.results.clone())
+        } else {
+            None
+        }
+    }
+
+    pub fn get_any(&self, query: &str) -> Option<Vec<UnifiedStoreGame>> {
+        self.get_stale(query)
     }
 
     pub fn put(&self, query: &str, results: Vec<UnifiedStoreGame>) -> Result<(), String> {

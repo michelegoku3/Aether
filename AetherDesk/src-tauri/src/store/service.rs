@@ -13,7 +13,8 @@ const HUBCAP_SEARCH_BUDGET_MS: u64 = 6000;
 /// the batch at one chunk (~48 ids) in the common case instead of several
 /// sequential ones for franchise-wide queries.
 const MAX_CLASSIFIED_RESULTS: usize = 80;
-use crate::steam::store::SteamStore;
+use crate::game_info::model::{GameInfoPlatforms, GameInfoPrice, GameInfoStoreCategories};
+use crate::steam::store::{SteamStore, SteamStoreItem};
 use crate::steam::store_items;
 use crate::store::{aliases, normalize};
 use crate::providers::hubcap::HubcapClient;
@@ -39,6 +40,26 @@ pub struct UnifiedStoreGame {
     pub has_delisted: bool,
     #[serde(rename = "imageUrl")]
     pub image_url: String,
+    #[serde(default)]
+    pub store_kind: String,
+    #[serde(default)]
+    pub release_date_unix: Option<i64>,
+    #[serde(default)]
+    pub original_release_date_unix: Option<i64>,
+    #[serde(default)]
+    pub store_url_path: Option<String>,
+    #[serde(default)]
+    pub price: Option<GameInfoPrice>,
+    #[serde(default)]
+    pub metascore: Option<String>,
+    #[serde(default)]
+    pub controller_support: Option<String>,
+    #[serde(default)]
+    pub platforms: Option<GameInfoPlatforms>,
+    #[serde(default)]
+    pub store_categories: Option<GameInfoStoreCategories>,
+    #[serde(default)]
+    pub content_descriptor_ids: Vec<u32>,
 }
 
 pub struct StoreService {
@@ -405,13 +426,23 @@ impl StoreService {
             let has_manifest = available_ids.contains(&item.id);
             unified_list.push(UnifiedStoreGame {
                 id: item.id,
-                name: item.name,
+                name: item.name.clone(),
                 app_id: item.id.to_string(),
                 has_manifest,
                 has_denuvo: false,
                 has_nsfw: false,
                 has_delisted: false,
-                image_url: item.image_url,
+                image_url: item.image_url.clone(),
+                store_kind: item.item_type.clone().unwrap_or_default(),
+                release_date_unix: None,
+                original_release_date_unix: None,
+                store_url_path: None,
+                price: price_from_store_item(&item),
+                metascore: metascore_from_store_item(&item),
+                controller_support: item.controller_support.clone(),
+                platforms: platforms_from_store_item(&item),
+                store_categories: None,
+                content_descriptor_ids: Vec::new(),
             });
             added_ids.insert(item.id);
         }
@@ -432,6 +463,16 @@ impl StoreService {
                     has_nsfw: false,
                     has_delisted: false,
                     image_url: String::new(),
+                    store_kind: String::new(),
+                    release_date_unix: None,
+                    original_release_date_unix: None,
+                    store_url_path: None,
+                    price: None,
+                    metascore: None,
+                    controller_support: None,
+                    platforms: None,
+                    store_categories: None,
+                    content_descriptor_ids: Vec::new(),
                 });
                 added_ids.insert(hg.app_id);
             }
@@ -487,6 +528,18 @@ impl StoreService {
                 let meta = meta_map.get(&game.id).cloned().unwrap_or_default();
                 game.has_nsfw = store_items::is_nsfw(&meta, &game.name);
                 game.has_delisted = meta.is_delisted;
+                if !meta.kind.is_empty() {
+                    game.store_kind = meta.kind.clone();
+                }
+                game.release_date_unix = meta.release_date_unix.or(game.release_date_unix);
+                game.original_release_date_unix = meta.original_release_date_unix.or(game.original_release_date_unix);
+                game.store_url_path = meta.store_url_path.clone().or_else(|| game.store_url_path.clone());
+                game.platforms = Some(platforms_from_store_meta(&meta));
+                game.store_categories = Some(categories_from_store_meta(&meta));
+                game.content_descriptor_ids = meta.content_descriptor_ids.clone();
+                if game.price.is_none() {
+                    game.price = price_from_store_meta(&meta);
+                }
             }
 
             let mut dlc_filtered = 0usize;
@@ -555,5 +608,72 @@ impl StoreService {
             // If it is an App ID, exact or substring matches on digits are kept, no string sorting needed
             Ok(unified_list)
         }
+    }
+}
+
+fn price_from_store_item(item: &SteamStoreItem) -> Option<GameInfoPrice> {
+    item.price.as_ref().map(|price| GameInfoPrice {
+        currency: price.currency.clone(),
+        initial_cents: price.initial,
+        final_cents: price.final_price,
+        formatted_final: price.final_price.map(format_cents_eur_fallback),
+        discount_percent: price.discount_percent,
+    })
+}
+
+fn price_from_store_meta(meta: &store_items::StoreItemMeta) -> Option<GameInfoPrice> {
+    meta.best_purchase_option.as_ref().map(|price| GameInfoPrice {
+        currency: None,
+        initial_cents: None,
+        final_cents: price
+            .final_price_in_cents
+            .as_ref()
+            .and_then(|value| value.parse::<i64>().ok()),
+        formatted_final: price.formatted_final_price.clone(),
+        discount_percent: None,
+    })
+}
+
+fn format_cents_eur_fallback(cents: i64) -> String {
+    format!("€{:.2}", cents as f64 / 100.0)
+}
+
+fn metascore_from_store_item(item: &SteamStoreItem) -> Option<String> {
+    item.metascore.as_ref().and_then(|value| match value {
+        serde_json::Value::String(s) if !s.trim().is_empty() => Some(s.trim().to_string()),
+        serde_json::Value::Number(n) => Some(n.to_string()),
+        _ => None,
+    })
+}
+
+fn platforms_from_store_item(item: &SteamStoreItem) -> Option<GameInfoPlatforms> {
+    item.platforms.as_ref().map(|platforms| GameInfoPlatforms {
+        windows: platforms.windows,
+        mac: platforms.mac,
+        linux: platforms.linux,
+        steam_deck_compat_category: None,
+        steam_os_compat_category: None,
+        steam_machine_compat_category: None,
+        has_vr_support: None,
+    })
+}
+
+fn platforms_from_store_meta(meta: &store_items::StoreItemMeta) -> GameInfoPlatforms {
+    GameInfoPlatforms {
+        windows: meta.platforms.windows,
+        mac: meta.platforms.mac,
+        linux: meta.platforms.linux,
+        steam_deck_compat_category: meta.platforms.steam_deck_compat_category,
+        steam_os_compat_category: meta.platforms.steam_os_compat_category,
+        steam_machine_compat_category: meta.platforms.steam_machine_compat_category,
+        has_vr_support: meta.platforms.has_vr_support,
+    }
+}
+
+fn categories_from_store_meta(meta: &store_items::StoreItemMeta) -> GameInfoStoreCategories {
+    GameInfoStoreCategories {
+        supported_player_category_ids: meta.categories.supported_player_category_ids.clone(),
+        feature_category_ids: meta.categories.feature_category_ids.clone(),
+        controller_category_ids: meta.categories.controller_category_ids.clone(),
     }
 }

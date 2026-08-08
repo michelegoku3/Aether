@@ -12,10 +12,18 @@ export interface GameCardModel {
   installed?: boolean;
 }
 
+export interface GameCardAction<T extends GameCardModel> {
+  label: string;
+  onClick: (game: T) => void;
+  variant?: 'primary' | 'secondary';
+  title?: string;
+}
+
 interface GameCardProps<T extends GameCardModel> {
   game: T;
-  actionLabel: string;
-  onAction: (game: T) => void;
+  actionLabel?: string;
+  onAction?: (game: T) => void;
+  actions?: Array<GameCardAction<T>>;
 }
 
 /** Marker priority: the NSFW pink border wins over the delisted white one —
@@ -34,8 +42,12 @@ const markerTooltip = (game: GameCardModel) => {
   return labels.length > 0 ? labels.join(' • ') : undefined;
 };
 
-export const GameCard = <T extends GameCardModel>({ game, actionLabel, onAction }: GameCardProps<T>) => {
+export const GameCard = <T extends GameCardModel>({ game, actionLabel, onAction, actions }: GameCardProps<T>) => {
   const marker = markerClass(game);
+  const resolvedActions = actions ?? (actionLabel && onAction
+    ? [{ label: actionLabel, onClick: onAction, variant: 'primary' as const }]
+    : []);
+
   return (
     <div
       key={game.id}
@@ -62,12 +74,18 @@ export const GameCard = <T extends GameCardModel>({ game, actionLabel, onAction 
           <h3 className="game-name" title={game.name}>{game.name}</h3>
           <span className="game-appid">App ID: {game.appId}</span>
         </div>
-        <button
-          onClick={() => onAction(game)}
-          className="game-download-btn"
-        >
-          {actionLabel}
-        </button>
+        <div className="game-card-actions">
+          {resolvedActions.map((action) => (
+            <button
+              key={action.label}
+              onClick={() => action.onClick(game)}
+              className={`game-download-btn ${action.variant === 'secondary' ? 'secondary' : ''}`}
+              title={action.title}
+            >
+              {action.label}
+            </button>
+          ))}
+        </div>
       </div>
     </div>
   );

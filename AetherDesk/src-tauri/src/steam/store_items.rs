@@ -59,6 +59,40 @@ pub struct StoreItemMeta {
     /// Unix seconds of the Steam release date (`release.steam_release_date`),
     /// None when Steam does not report one. Used for newest-first ordering.
     pub release_date_unix: Option<i64>,
+    /// Original release date when Steam reports it separately from the Steam
+    /// release. Useful for the Info modal; not used for filtering.
+    pub original_release_date_unix: Option<i64>,
+    pub visible: Option<bool>,
+    pub store_url_path: Option<String>,
+    pub platforms: StoreItemPlatforms,
+    pub categories: StoreItemCategories,
+    pub best_purchase_option: Option<StoreItemPurchaseOption>,
+    pub content_descriptor_ids: Vec<u32>,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct StoreItemPlatforms {
+    pub windows: Option<bool>,
+    pub mac: Option<bool>,
+    pub linux: Option<bool>,
+    pub steam_deck_compat_category: Option<u32>,
+    pub steam_os_compat_category: Option<u32>,
+    pub steam_machine_compat_category: Option<u32>,
+    pub has_vr_support: Option<bool>,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct StoreItemCategories {
+    pub supported_player_category_ids: Vec<u32>,
+    pub feature_category_ids: Vec<u32>,
+    pub controller_category_ids: Vec<u32>,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct StoreItemPurchaseOption {
+    pub formatted_final_price: Option<String>,
+    pub final_price_in_cents: Option<String>,
+    pub purchase_option_name: Option<String>,
 }
 
 /// The SFF structural DLC rule set, three signals with no name matching:
@@ -138,16 +172,47 @@ struct GetStoreItem {
     content_descriptorids: Option<Vec<u32>>,
     unlisted: Option<bool>,
     release: Option<ReleaseInfo>,
+    visible: Option<bool>,
+    store_url_path: Option<String>,
+    platforms: Option<GetItemPlatforms>,
+    categories: Option<GetItemCategories>,
+    best_purchase_option: Option<GetItemPurchaseOption>,
 }
 
 #[derive(Debug, Deserialize)]
 struct ReleaseInfo {
     steam_release_date: Option<i64>,
+    original_release_date: Option<i64>,
 }
 
 #[derive(Debug, Deserialize)]
 struct RelatedItems {
     parent_appid: Option<u32>,
+}
+
+#[derive(Debug, Deserialize)]
+struct GetItemPlatforms {
+    windows: Option<bool>,
+    mac: Option<bool>,
+    linux: Option<bool>,
+    steam_deck_compat_category: Option<u32>,
+    steam_os_compat_category: Option<u32>,
+    steam_machine_compat_category: Option<u32>,
+    vr_support: Option<serde_json::Value>,
+}
+
+#[derive(Debug, Deserialize)]
+struct GetItemCategories {
+    supported_player_categoryids: Option<Vec<u32>>,
+    feature_categoryids: Option<Vec<u32>>,
+    controller_categoryids: Option<Vec<u32>>,
+}
+
+#[derive(Debug, Deserialize)]
+struct GetItemPurchaseOption {
+    formatted_final_price: Option<String>,
+    final_price_in_cents: Option<String>,
+    purchase_option_name: Option<String>,
 }
 
 /// Process-lifetime HTTP client: building a reqwest client per call means a
@@ -291,14 +356,49 @@ async fn fetch_chunk(
             .and_then(|related| related.parent_appid)
             .filter(|parent| *parent > 0);
 
-        let is_nsfw = item
-            .content_descriptorids
+        let content_descriptor_ids = item.content_descriptorids.clone().unwrap_or_default();
+        let is_nsfw = content_descriptor_ids
+            .iter()
+            .any(|id| NSFW_CONTENT_DESCRIPTOR_IDS.contains(id));
+
+        let release_date_unix = item
+            .release
             .as_ref()
-            .map(|ids| {
-                ids.iter()
-                    .any(|id| NSFW_CONTENT_DESCRIPTOR_IDS.contains(id))
-            })
-            .unwrap_or(false);
+            .and_then(|release| release.steam_release_date)
+            .filter(|date| *date > 0);
+        let original_release_date_unix = item
+            .release
+            .as_ref()
+            .and_then(|release| release.original_release_date)
+            .filter(|date| *date > 0);
+
+        let platforms = item.platforms.map(|platforms| StoreItemPlatforms {
+            windows: platforms.windows,
+            mac: platforms.mac,
+            linux: platforms.linux,
+            steam_deck_compat_category: platforms.steam_deck_compat_category,
+            steam_os_compat_category: platforms.steam_os_compat_category,
+            steam_machine_compat_category: platforms.steam_machine_compat_category,
+            has_vr_support: platforms.vr_support.map(|value| {
+                if let Some(object) = value.as_object() {
+                    !object.is_empty()
+                } else {
+                    !value.is_null()
+                }
+            }),
+        }).unwrap_or_default();
+
+        let categories = item.categories.map(|categories| StoreItemCategories {
+            supported_player_category_ids: categories.supported_player_categoryids.unwrap_or_default(),
+            feature_category_ids: categories.feature_categoryids.unwrap_or_default(),
+            controller_category_ids: categories.controller_categoryids.unwrap_or_default(),
+        }).unwrap_or_default();
+
+        let best_purchase_option = item.best_purchase_option.map(|option| StoreItemPurchaseOption {
+            formatted_final_price: option.formatted_final_price,
+            final_price_in_cents: option.final_price_in_cents,
+            purchase_option_name: option.purchase_option_name,
+        });
 
         out.insert(
             app_id,
@@ -309,10 +409,14 @@ async fn fetch_chunk(
                 delisted_blank: name_empty && item.type_code.is_none(),
                 is_nsfw,
                 is_delisted: item.unlisted.unwrap_or(false),
-                release_date_unix: item
-                    .release
-                    .and_then(|release| release.steam_release_date)
-                    .filter(|date| *date > 0),
+                release_date_unix,
+                original_release_date_unix,
+                visible: item.visible,
+                store_url_path: item.store_url_path,
+                platforms,
+                categories,
+                best_purchase_option,
+                content_descriptor_ids,
             },
         );
     }

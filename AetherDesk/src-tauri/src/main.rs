@@ -6,6 +6,7 @@
 mod commands;
 mod core;
 mod crack;
+mod game_info;
 mod manifest;
 mod providers;
 mod steam;
@@ -54,6 +55,7 @@ fn main() {
             commands::library::warm_library_game_cache,
             commands::library::open_steamdb_depots,
             commands::home_links::open_home_resource,
+            commands::game_info::get_game_info,
             commands::steamless::pick_and_run_steamless,
             commands::library::get_installed_lua_manifest_rows,
             commands::library::get_lua_game_update_state,

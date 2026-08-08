@@ -1707,3 +1707,129 @@ body {
   opacity: 0.4;
   cursor: not-allowed;
 }
+
+/* Card action row: supports secondary Info + primary action without duplicating card markup. */
+.game-card-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.game-download-btn.secondary {
+  border-color: #3e3e4a;
+  color: var(--color-muted);
+}
+
+.game-download-btn.secondary:hover {
+  border-color: var(--color-cyan);
+  background-color: #192128;
+  color: var(--color-cyan);
+}
+
+/* Game Info modal */
+.info-modal-container {
+  width: 860px;
+  max-height: 88vh;
+}
+
+.info-modal-body {
+  overflow-y: auto;
+  max-height: calc(88vh - 58px);
+}
+
+.info-loading {
+  color: var(--color-muted);
+  font-size: 13px;
+  text-align: center;
+  padding: 18px 0;
+}
+
+.info-hero {
+  display: flex;
+  gap: 16px;
+  align-items: stretch;
+  min-height: 130px;
+  background-color: #08080a;
+  border: 1px solid #1a1a22;
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.info-hero .game-cover-wrapper {
+  width: 92px;
+  min-height: 130px;
+  border-radius: 9px 0 0 9px;
+}
+
+.info-hero-text {
+  padding: 14px 16px 14px 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.info-hero-text h2 {
+  color: #ffffff;
+  font-size: 18px;
+  line-height: 1.25;
+}
+
+.info-hero-text p {
+  color: var(--color-muted);
+  font-size: 12.5px;
+  line-height: 1.45;
+}
+
+.info-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.info-section {
+  background-color: #08080a;
+  border: 1px solid #1a1a22;
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.info-section-title {
+  padding: 10px 14px;
+  color: var(--color-cyan);
+  font-size: 11px;
+  letter-spacing: 0.9px;
+  text-transform: uppercase;
+  border-bottom: 1px solid #1a1a22;
+}
+
+.info-section-body {
+  display: flex;
+  flex-direction: column;
+}
+
+.info-row {
+  display: grid;
+  grid-template-columns: 155px minmax(0, 1fr);
+  gap: 12px;
+  padding: 9px 14px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.045);
+}
+
+.info-row:last-child {
+  border-bottom: none;
+}
+
+.info-label {
+  color: var(--color-muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.info-value {
+  color: #ffffff;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}

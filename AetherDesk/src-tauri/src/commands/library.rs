@@ -1,4 +1,5 @@
 use crate::core::paths::LocalAppPaths;
+use crate::game_info::cache::GameInfoCache;
 use crate::manifest::pins::{LuaManifestEdit, LuaManifestPins, LuaManifestRow};
 use crate::core::settings::SettingsManager;
 use crate::steam::app_names::SteamAppNameResolver;
@@ -20,7 +21,7 @@ pub async fn get_installed_library_games(
 
     // UI-critical path: use persistent cache only, never wait for Steam/network here.
     let cache_dir = LocalAppPaths::data_root().join("cache");
-    let names = SteamAppNameResolver::new(cache_dir)
+    let names = SteamAppNameResolver::new(cache_dir.clone())
         .cached_names(games.iter().map(|game| game.id).collect());
 
     for game in &mut games {
@@ -30,6 +31,8 @@ pub async fn get_installed_library_games(
     }
 
     games.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+    GameInfoCache::new(cache_dir, app.package_info().version.to_string())
+        .merge_library_games(&games);
     Ok(games)
 }
 

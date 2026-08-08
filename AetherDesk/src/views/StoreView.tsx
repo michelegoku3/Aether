@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { SpecificVersionModal, LuaManifestRow } from '../modals/SpecificVersionModal';
+import { GameInfoModal } from '../modals/GameInfoModal';
 import { GameCard } from '../ui/GameCard';
 import { StatusAlert } from '../ui/StatusAlert';
 import { useStoreSearch, StoreGameResult as StoreGame } from '../hooks/useStoreSearch';
@@ -28,7 +29,8 @@ export const StoreView = ({ onRefreshUsage }: StoreViewProps) => {
 
   // Active game selected for download modal, null means modal is closed
   const [selectedGame, setSelectedGame] = useState<StoreGame | null>(null);
-  
+  const [infoGame, setInfoGame] = useState<StoreGame | null>(null);
+
   // Selected key/manifest source state ('hubcap', 'ryuu', 'oureveryday', 'local')
   const [selectedSource, setSelectedSource] = useState<'hubcap' | 'ryuu' | 'oureveryday' | 'local'>('oureveryday');
 
@@ -82,18 +84,18 @@ export const StoreView = ({ onRefreshUsage }: StoreViewProps) => {
 
   const handleDownloadSteam = async () => {
     if (!selectedGame) return;
-    
+
     setIsDownloading(true);
     setDownloadStatus({ text: 'Initializing pipeline...', type: 'info' });
-    
+
     try {
       // 1. Load active settings from Rust (to get current API key and Steam Path)
       setDownloadStatus({ text: 'Loading local configurations...', type: 'info' });
       const settings = await getSettings();
-      
+
       const apiKeyToUse = selectedSource === 'hubcap' ? settings.hubcap_api_key : selectedSource === 'ryuu' ? settings.ryuu_api_key : 'oureveryday_public';
       const steamPathToUse = settings.steam_path;
-      
+
       if (selectedSource === 'hubcap' && (!apiKeyToUse || apiKeyToUse.trim() === '')) {
         setDownloadStatus({ text: 'Error: Please enter your Hubcap API Key in Settings first!', type: 'error' });
         setIsDownloading(false);
@@ -118,11 +120,11 @@ export const StoreView = ({ onRefreshUsage }: StoreViewProps) => {
         apiKey: apiKeyToUse,
         steamPath: steamPathToUse
       });
-      
+
       setDownloadStatus({ text: result, type: 'success' });
       setIsDownloading(false);
       onRefreshUsage?.();
-      
+
       // Auto close modal after a short delay on success
       setTimeout(() => {
         setSelectedGame(null);
@@ -197,8 +199,8 @@ export const StoreView = ({ onRefreshUsage }: StoreViewProps) => {
 
       {/* Search Input Area */}
       <form onSubmit={handleSearch} className="store-search-form">
-        <input 
-          type="text" 
+        <input
+          type="text"
           placeholder="Search games by name or App ID on Steam..."
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
@@ -230,27 +232,37 @@ export const StoreView = ({ onRefreshUsage }: StoreViewProps) => {
             <GameCard
               key={game.id}
               game={game}
-              actionLabel="Download"
-              onAction={async (selected) => {
-                setSelectedGame(selected);
-                setDownloadStatus({ text: '', type: 'info' });
-                setIsDownloading(false);
-                
-                // Carica impostazioni per verificare se c'è una chiave Hubcap valida
-                try {
-                  const settings = await getSettings();
-                  const hasValidHubcapKey = settings.hubcap_api_key?.trim() !== '';
-                  
-                  if (hasValidHubcapKey && selected.has_manifest) {
-                    setSelectedSource('hubcap');
-                  } else {
-                    setSelectedSource('oureveryday');
-                  }
-                } catch (err) {
-                  // Fallback a oureveryday se c'è un errore
-                  setSelectedSource('oureveryday');
-                }
-              }}
+              actions={[
+                {
+                  label: 'Info',
+                  variant: 'secondary',
+                  onClick: setInfoGame,
+                },
+                {
+                  label: 'Download',
+                  variant: 'primary',
+                  onClick: async (selected) => {
+                    setSelectedGame(selected);
+                    setDownloadStatus({ text: '', type: 'info' });
+                    setIsDownloading(false);
+
+                    // Carica impostazioni per verificare se c'è una chiave Hubcap valida
+                    try {
+                      const settings = await getSettings();
+                      const hasValidHubcapKey = settings.hubcap_api_key?.trim() !== '';
+
+                      if (hasValidHubcapKey && selected.has_manifest) {
+                        setSelectedSource('hubcap');
+                      } else {
+                        setSelectedSource('oureveryday');
+                      }
+                    } catch (err) {
+                      // Fallback a oureveryday se c'è un errore
+                      setSelectedSource('oureveryday');
+                    }
+                  },
+                },
+              ]}
             />
           ))
         ) : (
@@ -263,7 +275,7 @@ export const StoreView = ({ onRefreshUsage }: StoreViewProps) => {
       {/* Pagination controls below the grid */}
       {!isLoading && totalPages > 1 && (
         <div className="store-pagination">
-          <button 
+          <button
             disabled={page === 1}
             onClick={() => setPage(prev => Math.max(prev - 1, 1))}
             className="pagination-btn"
@@ -273,7 +285,7 @@ export const StoreView = ({ onRefreshUsage }: StoreViewProps) => {
           <span className="pagination-info">
             Page {page} of {totalPages}
           </span>
-          <button 
+          <button
             disabled={page === totalPages}
             onClick={() => setPage(prev => Math.min(prev + 1, totalPages))}
             className="pagination-btn"
@@ -281,6 +293,15 @@ export const StoreView = ({ onRefreshUsage }: StoreViewProps) => {
             Next &rarr;
           </button>
         </div>
+      )}
+
+      {infoGame && (
+        <GameInfoModal
+          appId={Number(infoGame.appId)}
+          fallbackName={infoGame.name}
+          fallbackImageUrl={infoGame.imageUrl}
+          onClose={() => setInfoGame(null)}
+        />
       )}
 
       {/* DYNAMIC DOWNLOAD MODAL / POPUP */}
@@ -292,12 +313,12 @@ export const StoreView = ({ onRefreshUsage }: StoreViewProps) => {
               <span className="modal-title">
                 Download: <strong style={{ color: '#ffffff' }}>{selectedGame.name}</strong> ({selectedGame.appId})
               </span>
-              <button 
+              <button
                 onClick={() => {
                   if (!isDownloading) {
                     setSelectedGame(null);
                   }
-                }} 
+                }}
                 className="modal-close-btn"
                 disabled={isDownloading}
                 style={{ opacity: isDownloading ? 0.3 : 1 }}
@@ -318,28 +339,28 @@ export const StoreView = ({ onRefreshUsage }: StoreViewProps) => {
               <div className="source-box">
                 <span className="source-label">Source:</span>
                 <div className="source-buttons-row">
-                  <button 
+                  <button
                     disabled={isDownloading}
                     onClick={() => setSelectedSource('hubcap')}
                     className={`source-btn ${selectedSource === 'hubcap' ? 'active' : ''}`}
                   >
                     Hubcap
                   </button>
-                  <button 
+                  <button
                     disabled={isDownloading}
                     onClick={() => setSelectedSource('ryuu')}
                     className={`source-btn ${selectedSource === 'ryuu' ? 'active' : ''}`}
                   >
                     Ryuu
                   </button>
-                  <button 
+                  <button
                     disabled={isDownloading}
                     onClick={() => setSelectedSource('oureveryday')}
                     className={`source-btn ${selectedSource === 'oureveryday' ? 'active' : ''}`}
                   >
                     OurEveryday
                   </button>
-                  <button 
+                  <button
                     disabled={true}
                     title="Local download is not available yet"
                     className="source-btn"
@@ -350,7 +371,7 @@ export const StoreView = ({ onRefreshUsage }: StoreViewProps) => {
               </div>
 
               {/* Action 1: Download Latest Version Button */}
-              <button 
+              <button
                 onClick={handleDownloadSteam}
                 className="big-action-btn"
                 disabled={isDownloading}
@@ -366,7 +387,7 @@ export const StoreView = ({ onRefreshUsage }: StoreViewProps) => {
               </button>
 
               {/* Action 2: Download Specific Version Button */}
-              <button 
+              <button
                 onClick={handleDownloadOlder}
                 className="big-action-btn"
                 disabled={isDownloading}
