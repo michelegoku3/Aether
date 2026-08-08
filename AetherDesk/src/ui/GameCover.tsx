@@ -1,17 +1,26 @@
 import { useEffect, useMemo, useState } from 'react';
 
-const COVER_CACHE_PREFIX = 'aether_cover_';
+// v2 intentionally ignores old URL-only cache entries created while landscape
+// capsules had too much priority over proper portrait artwork.
+const COVER_CACHE_PREFIX = 'aether_cover_v2_';
 const MIN_USABLE_WIDTH = 120;
-const MIN_USABLE_HEIGHT = 90;
+// Steam storesearch often returns 231x87 capsule images. They are wide, but
+// perfectly usable in our landscape-cover fallback; rejecting them caused many
+// valid games to show the Æ placeholder.
+const MIN_USABLE_HEIGHT = 60;
 const PORTRAIT_RATIO_THRESHOLD = 0.85;
 
-const STEAM_COVER_TEMPLATES = [
-  // Prefer true vertical library artwork first. These match the card ratio best.
+const STEAM_PORTRAIT_COVER_TEMPLATES = [
+  // True vertical library artwork. These must always win over canonical
+  // storesearch/appdetails capsules when they exist, because capsules are
+  // landscape and look tiny inside our portrait card slot.
   'https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/{id}/library_600x900.jpg',
   'https://shared.fastly.steamstatic.com/store_item_assets/steam/apps/{id}/library_600x900.jpg',
   'https://shared.steamstatic.com/store_item_assets/steam/apps/{id}/library_600x900.jpg',
   'https://cdn.cloudflare.steamstatic.com/steam/apps/{id}/library_600x900.jpg',
+];
 
+const STEAM_LANDSCAPE_COVER_TEMPLATES = [
   // Wide fallbacks. They are preloaded and classified before being shown, so
   // users never see broken-image flashes while the chain is being tested.
   'https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/{id}/library_header.jpg',
@@ -40,17 +49,59 @@ interface GameCoverProps {
   canonicalUrl?: string;
 }
 
-const getCachedCover = (appId: string) => {
+const memoryCoverCache = new Map<string, ResolvedCover>();
+const inFlightCoverLookups = new Set<string>();
+
+const inferFitFromUrl = (url: string): CoverFit => {
+  const normalized = url.toLowerCase();
+  return normalized.includes('library_600x900') ? 'portrait' : 'landscape';
+};
+
+const parseCachedCover = (raw: string): ResolvedCover | null => {
+  const trimmed = raw.trim();
+  if (!trimmed) return null;
+
   try {
-    return localStorage.getItem(`${COVER_CACHE_PREFIX}${appId}`) || null;
+    const parsed = JSON.parse(trimmed) as Partial<ResolvedCover>;
+    if (typeof parsed.url === 'string' && parsed.url.trim()) {
+      return {
+        url: parsed.url.trim(),
+        fit: parsed.fit === 'portrait' || parsed.fit === 'landscape'
+          ? parsed.fit
+          : inferFitFromUrl(parsed.url),
+      };
+    }
+  } catch {
+    // Backward compatibility with the old cache format where the value was
+    // just the URL string.
+  }
+
+  return {
+    url: trimmed,
+    fit: inferFitFromUrl(trimmed),
+  };
+};
+
+const getCachedCover = (appId: string): ResolvedCover | null => {
+  const memoryHit = memoryCoverCache.get(appId);
+  if (memoryHit) return memoryHit;
+
+  try {
+    const raw = localStorage.getItem(`${COVER_CACHE_PREFIX}${appId}`);
+    const parsed = raw ? parseCachedCover(raw) : null;
+    if (parsed) {
+      memoryCoverCache.set(appId, parsed);
+    }
+    return parsed;
   } catch {
     return null;
   }
 };
 
-const saveCachedCover = (appId: string, url: string) => {
+const saveCachedCover = (appId: string, cover: ResolvedCover) => {
+  memoryCoverCache.set(appId, cover);
   try {
-    localStorage.setItem(`${COVER_CACHE_PREFIX}${appId}`, url);
+    localStorage.setItem(`${COVER_CACHE_PREFIX}${appId}`, JSON.stringify(cover));
   } catch {
     // Cache is an optimization only. Ignore storage quota/privacy errors.
   }
@@ -72,9 +123,15 @@ const buildCoverUrls = (appId: string, canonicalUrl?: string) => {
     urls.push(url);
   };
 
-  push(getCachedCover(appId));
+  // Priority is deliberate:
+  // 1. Try predictable portrait Steam artwork first — it fits our card slot.
+  // 2. Then try canonical API/cache URLs — many new games only expose hashed
+  //    landscape capsule/header URLs through appdetails/storesearch.
+  // 3. Finally try predictable landscape fallbacks.
+  STEAM_PORTRAIT_COVER_TEMPLATES.forEach(template => push(template.replace('{id}', appId)));
   push(normalizeCanonicalUrl(canonicalUrl));
-  STEAM_COVER_TEMPLATES.forEach(template => push(template.replace('{id}', appId)));
+  push(getCachedCover(appId)?.url || null);
+  STEAM_LANDSCAPE_COVER_TEMPLATES.forEach(template => push(template.replace('{id}', appId)));
 
   return urls;
 };
@@ -90,6 +147,8 @@ const classifyLoadedImage = (image: HTMLImageElement): CoverFit | null => {
   const ratio = naturalWidth / naturalHeight;
   return ratio <= PORTRAIT_RATIO_THRESHOLD ? 'portrait' : 'landscape';
 };
+
+const initialCachedCover = (appId: string) => getCachedCover(appId);
 
 const preloadCoverChain = (
   urls: string[],
@@ -135,24 +194,47 @@ const preloadCoverChain = (
   };
 };
 
+export interface GameCoverPreloadInput {
+  appId: string | number;
+  imageUrl?: string;
+}
+
+export const preloadGameCovers = (games: GameCoverPreloadInput[], maxCount = 40) => {
+  games.slice(0, maxCount).forEach((game) => {
+    const appIdString = String(game.appId);
+    if (getCachedCover(appIdString) || inFlightCoverLookups.has(appIdString)) {
+      return;
+    }
+
+    inFlightCoverLookups.add(appIdString);
+    preloadCoverChain(buildCoverUrls(appIdString, game.imageUrl), (cover) => {
+      inFlightCoverLookups.delete(appIdString);
+      if (cover) {
+        saveCachedCover(appIdString, cover);
+      }
+    });
+  });
+};
+
 export const GameCover = ({ appId, name, canonicalUrl }: GameCoverProps) => {
   const appIdString = String(appId);
   const urls = useMemo(
     () => buildCoverUrls(appIdString, canonicalUrl),
     [appIdString, canonicalUrl]
   );
-  const [resolvedCover, setResolvedCover] = useState<ResolvedCover | null>(null);
-  const [hasFinishedLookup, setHasFinishedLookup] = useState(false);
+  const [resolvedCover, setResolvedCover] = useState<ResolvedCover | null>(() => initialCachedCover(appIdString));
+  const [hasFinishedLookup, setHasFinishedLookup] = useState(() => Boolean(initialCachedCover(appIdString)));
 
   useEffect(() => {
-    setResolvedCover(null);
-    setHasFinishedLookup(false);
+    const cachedCover = getCachedCover(appIdString);
+    setResolvedCover(cachedCover);
+    setHasFinishedLookup(Boolean(cachedCover));
 
     return preloadCoverChain(urls, (cover) => {
       setResolvedCover(cover);
       setHasFinishedLookup(true);
       if (cover) {
-        saveCachedCover(appIdString, cover.url);
+        saveCachedCover(appIdString, cover);
       }
     });
   }, [appIdString, urls]);
@@ -168,7 +250,7 @@ export const GameCover = ({ appId, name, canonicalUrl }: GameCoverProps) => {
           src={resolvedCover.url}
           alt={name}
           className={`game-cover-image ${resolvedCover.fit}`}
-          loading="lazy"
+          loading="eager"
         />
       ) : null}
 

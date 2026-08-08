@@ -12,6 +12,11 @@ export interface StoreGameResult {
   imageUrl?: string;
 }
 
+interface CachedStoreSearchResponse {
+  results: StoreGameResult[];
+  cacheState: 'fresh' | 'stale' | 'miss';
+}
+
 export const useStoreSearch = () => {
   const [results, setResults] = useState<StoreGameResult[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -26,6 +31,26 @@ export const useStoreSearch = () => {
     setActiveQuery('');
   };
 
+  const applyResults = (query: string, games: StoreGameResult[]) => {
+    // Denuvo enrichment is intentionally NOT done here: it runs per visible
+    // page in StoreView, so a search costs at most ~20 rate-limited Steam
+    // calls instead of one call per result (which used to trip the limit).
+    setResults(games || []);
+    setActiveQuery(query);
+  };
+
+  const refreshInBackground = async (query: string, requestToken: number) => {
+    try {
+      const refreshedResults: StoreGameResult[] = await invoke('search_store', { query });
+      if (requestId.current !== requestToken) return;
+      applyResults(query, refreshedResults || []);
+    } catch (err) {
+      // Stale cache is already on screen; a refresh failure should not interrupt
+      // the user. The next explicit search can try again.
+      console.warn('[store] stale refresh failed:', err);
+    }
+  };
+
   const search = async (query: string) => {
     if (!query.trim()) {
       clear();
@@ -38,14 +63,25 @@ export const useStoreSearch = () => {
     setHasSearched(true);
 
     try {
-      const initialResults: StoreGameResult[] = await invoke('search_store', { query });
+      const cached: CachedStoreSearchResponse = await invoke('get_cached_store_search', { query });
       if (requestId.current !== currentRequest) return;
 
-      // Denuvo enrichment is intentionally NOT done here: it runs per visible
-      // page in StoreView, so a search costs at most ~20 rate-limited Steam
-      // calls instead of one call per result (which used to trip the limit).
-      setResults(initialResults || []);
-      setActiveQuery(query);
+      if (cached.cacheState === 'fresh') {
+        applyResults(query, cached.results || []);
+        setIsLoading(false);
+        return;
+      }
+
+      if (cached.cacheState === 'stale') {
+        applyResults(query, cached.results || []);
+        setIsLoading(false);
+        refreshInBackground(query, currentRequest);
+        return;
+      }
+
+      const initialResults: StoreGameResult[] = await invoke('search_store', { query });
+      if (requestId.current !== currentRequest) return;
+      applyResults(query, initialResults || []);
       setIsLoading(false);
     } catch (err) {
       if (requestId.current !== currentRequest) return;

@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { SpecificVersionModal, LuaManifestRow } from '../modals/SpecificVersionModal';
 import { GameInfoModal } from '../modals/GameInfoModal';
+import { preloadGameCovers } from '../ui/GameCover';
 import { GameCard } from '../ui/GameCard';
 import { StatusAlert } from '../ui/StatusAlert';
 import { useStoreSearch, StoreGameResult as StoreGame } from '../hooks/useStoreSearch';
@@ -52,6 +53,12 @@ export const StoreView = ({ onRefreshUsage }: StoreViewProps) => {
   // cache + 429 circuit breaker on top, so Steam's rate limit cannot be hit
   // through normal browsing (used to be one appdetails call per result).
   const pageKey = pageGames.map((game) => game.appId).join(',');
+  useEffect(() => {
+    if (pageGames.length > 0) {
+      preloadGameCovers(pageGames.map((game) => ({ appId: game.appId, imageUrl: game.imageUrl })), pageGames.length);
+    }
+  }, [pageKey]);
+
   useEffect(() => {
     if (pageGames.length === 0) return;
     let cancelled = false;

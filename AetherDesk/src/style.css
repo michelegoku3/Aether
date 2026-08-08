@@ -1933,21 +1933,7 @@ body {
 }
 
 /* Settings dropdown used for Store currency. */
-.settings-select {
-  min-width: 150px;
-  background-color: #141417;
-  border: 1px solid var(--border-color);
-  border-radius: 8px;
-  padding: 9px 12px;
-  color: #ffffff;
-  font-size: 13px;
-  outline: none;
-  cursor: pointer;
-}
 
-.settings-select:focus {
-  border-color: var(--color-cyan);
-}
 
 /* Final Info modal layout: fixed-to-viewport container, body scrolls. */
 .info-modal-container {
@@ -2044,11 +2030,6 @@ body {
 }
 
 /* Settings compact controls. */
-.settings-select {
-  width: 112px;
-  min-width: 112px;
-  padding: 8px 10px;
-}
 
 .settings-small-btn {
   background-color: #1c1c21;
@@ -2093,22 +2074,7 @@ body {
   padding: 2px 0;
 }
 
-.settings-number-input {
-  width: 72px;
-  min-width: 72px;
-  background-color: #141417;
-  border: 1px solid var(--border-color);
-  border-radius: 8px;
-  padding: 8px 10px;
-  color: #ffffff;
-  font-size: 13px;
-  outline: none;
-  text-align: right;
-}
 
-.settings-number-input:focus {
-  border-color: var(--color-cyan);
-}
 
 /* Specific version modal needs a bit more vertical room after adding visible separators. */
 .version-modal-container {
@@ -2127,38 +2093,50 @@ body {
   min-height: 300px;
 }
 
-/* Match the number field footprint to the switch-style controls and remove spinner arrows. */
-.settings-number-input {
-  width: 58px;
-  min-width: 58px;
-  height: 30px;
-  padding: 4px 8px;
+/* Equal card action buttons: Download is the reference width; Modify and Info
+   use the same footprint so cards do not jitter based on label length. */
+.game-download-btn {
+  width: 76px;
+  min-width: 76px;
+  padding-left: 0;
+  padding-right: 0;
   text-align: center;
 }
 
-.settings-number-input::-webkit-outer-spin-button,
-.settings-number-input::-webkit-inner-spin-button {
-  -webkit-appearance: none;
-  margin: 0;
-}
-
-.settings-number-input[type='number'] {
-  appearance: textfield;
-  -moz-appearance: textfield;
-}
-
-/* Final compact Settings control sizing: switch is 42x24; currency dropdown is roughly 2x switch width. */
+/* Compact Settings controls. Keep the definitions consolidated to avoid cascade
+   surprises after iterative UI changes. */
 .settings-select {
   width: 84px;
   min-width: 84px;
   height: 30px;
+  background-color: #141417;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
   padding: 4px 8px;
+  color: #ffffff;
+  font-size: 13px;
+  outline: none;
+  cursor: pointer;
+}
+
+.settings-select:focus {
+  border-color: var(--color-cyan);
 }
 
 .settings-number-input {
   width: 42px;
   min-width: 42px;
   height: 24px;
+  background-color: #141417;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
   padding: 2px 6px;
+  color: #ffffff;
+  font-size: 13px;
+  outline: none;
   text-align: center;
+}
+
+.settings-number-input:focus {
+  border-color: var(--color-cyan);
 }

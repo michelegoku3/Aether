@@ -1,8 +1,9 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { SpecificVersionModal, LuaManifestRow } from '../modals/SpecificVersionModal';
 import { LibraryGameActionsModal } from '../modals/LibraryGameActionsModal';
 import { GameInfoModal } from '../modals/GameInfoModal';
+import { preloadGameCovers } from '../ui/GameCover';
 import { GameCard } from '../ui/GameCard';
 import { StatusAlert } from '../ui/StatusAlert';
 import { useLibraryGames, InstalledGame } from '../hooks/useLibraryGames';
@@ -19,6 +20,12 @@ export const LibraryView = () => {
   const showStatus = (text: string, type: StatusType) => {
     setStatus({ text, type });
   };
+
+  useEffect(() => {
+    if (games.length > 0) {
+      preloadGameCovers(games.map((game) => ({ appId: game.appId, imageUrl: game.imageUrl })), 60);
+    }
+  }, [games]);
 
   const handleOpenVersionEditor = async (game: InstalledGame) => {
     setStatus({ text: '', type: 'info' });
