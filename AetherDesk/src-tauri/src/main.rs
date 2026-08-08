@@ -34,6 +34,7 @@ fn main() {
             commands::settings::save_settings,
             commands::settings::validate_hubcap_key,
             commands::settings::get_hubcap_usage,
+            commands::settings::clear_app_caches,
             commands::custom_css::get_custom_css,
             commands::custom_css::get_custom_css_path,
             commands::custom_css::ensure_custom_css,

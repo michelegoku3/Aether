@@ -1,7 +1,7 @@
 use crate::core::paths::LocalAppPaths;
 use crate::game_info::cache::GameInfoCache;
 use crate::manifest::pins::{LuaManifestEdit, LuaManifestPins, LuaManifestRow};
-use crate::core::settings::SettingsManager;
+use crate::core::settings::{cache_version_with_currency, SettingsManager};
 use crate::steam::app_names::SteamAppNameResolver;
 use crate::steam::library::{InstalledSteamGame, SteamLibraryScanner};
 use crate::util::validation::validate_steam_path;
@@ -16,6 +16,7 @@ pub async fn get_installed_library_games(
         return Ok(Vec::new());
     }
 
+    let store_currency = settings.store_currency.clone();
     let scanner = SteamLibraryScanner::new(settings.steam_path, Some(settings.active_library));
     let mut games = scanner.scan_installed_games();
 
@@ -31,7 +32,11 @@ pub async fn get_installed_library_games(
     }
 
     games.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
-    GameInfoCache::new(cache_dir, app.package_info().version.to_string())
+    let info_cache_version = cache_version_with_currency(
+        &app.package_info().version.to_string(),
+        &store_currency,
+    );
+    GameInfoCache::new(cache_dir, info_cache_version)
         .merge_library_games(&games);
     Ok(games)
 }

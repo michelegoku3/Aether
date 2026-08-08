@@ -16,6 +16,7 @@ export const SettingsView = ({ hubcapUsage, onRefreshUsage, onRefreshCustomCss }
   const [showStoreDelisted, setShowStoreDelisted] = useState(true);
   const [customCssEnabled, setCustomCssEnabled] = useState(false);
   const [ryuuKey, setRyuuKey] = useState('');
+  const [storeCurrency, setStoreCurrency] = useState<'eur' | 'usd' | 'jpy'>('eur');
 
   // Raw settings as loaded from the backend. Saving always spreads this object
   // back, so fields owned by other flows (e.g. `antivirus_exclusion_done`) are
@@ -40,6 +41,7 @@ export const SettingsView = ({ hubcapUsage, onRefreshUsage, onRefreshCustomCss }
           setShowStoreDelisted(settings.show_store_delisted !== false);
           setCustomCssEnabled(Boolean(settings.custom_css_enabled));
           setRyuuKey(settings.ryuu_api_key || '');
+          setStoreCurrency(['usd', 'jpy'].includes(settings.store_currency) ? settings.store_currency : 'eur');
         }
       } catch (err: any) {
         showStatus(`Error loading settings: ${err}`, 'error');
@@ -90,7 +92,8 @@ export const SettingsView = ({ hubcapUsage, onRefreshUsage, onRefreshCustomCss }
           show_store_nsfw: showStoreNsfw,
           show_store_delisted: showStoreDelisted,
           custom_css_enabled: customCssEnabled,
-          ryuu_api_key: ryuuKey
+          ryuu_api_key: ryuuKey,
+          store_currency: storeCurrency
         }
       });
       showStatus('Settings saved successfully!', 'success');
@@ -170,6 +173,28 @@ export const SettingsView = ({ hubcapUsage, onRefreshUsage, onRefreshCustomCss }
             onChange={(e) => setSteamPath(e.target.value)}
             className="settings-input"
           />
+          <div className="settings-toggle-row" title="Clear AetherDesk cache files such as store search, game info, Steam names and Denuvo cache. Settings and backups are preserved.">
+            <span className="settings-toggle-text">Clear AetherDesk caches</span>
+            <button
+              type="button"
+              className="settings-small-btn"
+              onClick={async () => {
+                try {
+                  const result: string = await invoke('clear_app_caches');
+                  try {
+                    Object.keys(localStorage)
+                      .filter((key) => key.startsWith('aether_cover_'))
+                      .forEach((key) => localStorage.removeItem(key));
+                  } catch {}
+                  showStatus(result, 'success');
+                } catch (err: any) {
+                  showStatus(`Failed to clear caches: ${err}`, 'error');
+                }
+              }}
+            >
+              Clear Cache
+            </button>
+          </div>
         </div>
 
         <div className="settings-separator"></div>
@@ -211,6 +236,19 @@ export const SettingsView = ({ hubcapUsage, onRefreshUsage, onRefreshCustomCss }
               />
               <span></span>
             </label>
+          </div>
+
+          <div className="settings-toggle-row" title="Preferred currency for Steam prices shown in Store and Info">
+            <span className="settings-toggle-text">Store price currency</span>
+            <select
+              className="settings-select"
+              value={storeCurrency}
+              onChange={(e) => setStoreCurrency(e.target.value as 'eur' | 'usd' | 'jpy')}
+            >
+              <option value="eur">Euro (€)</option>
+              <option value="usd">Dollar ($)</option>
+              <option value="jpy">Yen (¥)</option>
+            </select>
           </div>
         </div>
 
@@ -259,6 +297,7 @@ export const SettingsView = ({ hubcapUsage, onRefreshUsage, onRefreshCustomCss }
               setShowStoreNsfw(true);
               setShowStoreDelisted(true);
               setCustomCssEnabled(false);
+              setStoreCurrency('eur');
               try {
                 await invoke('save_settings', {
                   settings: {
@@ -271,6 +310,7 @@ export const SettingsView = ({ hubcapUsage, onRefreshUsage, onRefreshCustomCss }
                     show_store_nsfw: true,
                     show_store_delisted: true,
                     custom_css_enabled: false,
+                    store_currency: 'eur',
                     antivirus_exclusion_done: rawSettings.antivirus_exclusion_done ?? false
                   }
                 });

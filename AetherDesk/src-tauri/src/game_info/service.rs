@@ -1,9 +1,9 @@
 use crate::core::paths::LocalAppPaths;
-use crate::core::settings::SettingsManager;
+use crate::core::settings::{cache_version_with_currency, steam_country_code_for_currency, SettingsManager};
 use crate::game_info::cache::{GameInfoCache, GAME_INFO_TTL_SECONDS};
 use crate::game_info::model::{
     GameInfo, GameInfoAppDetails, GameInfoLocal, GameInfoPlatforms, GameInfoPrice,
-    GameInfoStoreCategories,
+    GameInfoScreenshot, GameInfoStoreCategories,
 };
 use crate::manifest::pins::LuaManifestPins;
 use crate::providers::{http, hubcap::HubcapClient};
@@ -19,9 +19,11 @@ pub struct GameInfoService {
 
 impl GameInfoService {
     pub fn new(app: tauri::AppHandle) -> Self {
+        let settings = SettingsManager::new(&app).load();
+        let app_version = app.package_info().version.to_string();
         let cache = GameInfoCache::new(
             LocalAppPaths::data_root().join("cache"),
-            app.package_info().version.to_string(),
+            cache_version_with_currency(&app_version, &settings.store_currency),
         );
         Self { app, cache }
     }
@@ -96,7 +98,9 @@ impl GameInfoService {
     }
 
     async fn merge_store_items_info(&self, info: &mut GameInfo) {
-        let meta_map = store_items::fetch_store_items(vec![info.app_id]).await;
+        let settings = SettingsManager::new(&self.app).load();
+        let country_code = steam_country_code_for_currency(&settings.store_currency);
+        let meta_map = store_items::fetch_store_items_for_country(vec![info.app_id], country_code).await;
         let Some(meta) = meta_map.get(&info.app_id) else {
             return;
         };
@@ -150,8 +154,10 @@ impl GameInfoService {
     }
 
     async fn merge_appdetails_info(&self, info: &mut GameInfo) {
+        let settings = SettingsManager::new(&self.app).load();
+        let country_code = steam_country_code_for_currency(&settings.store_currency);
         let client = http::build_client(APPDETAILS_TIMEOUT_SECONDS);
-        let Ok(envelope) = api::fetch_app_details(&client, info.app_id).await else {
+        let Ok(envelope) = api::fetch_app_details_for_country(&client, info.app_id, Some(country_code)).await else {
             return;
         };
         let Some(data) = envelope.data else {
@@ -200,9 +206,15 @@ fn merge_appdetails_value(info: &mut GameInfo, data: &serde_json::Value) {
     }
 
     let drm_notice = string_field(data, "drm_notice");
-    if let Some(notice) = drm_notice.as_ref() {
-        info.has_denuvo = Some(notice.to_lowercase().contains("denuvo"));
-    }
+    info.has_denuvo = Some(
+        drm_notice
+            .as_ref()
+            .map(|notice| notice.to_lowercase().contains("denuvo"))
+            .unwrap_or(false),
+    );
+
+    let screenshots = screenshots_field(data);
+    info.screenshots = screenshots.clone();
 
     let app_details = GameInfoAppDetails {
         required_age: value_to_string(data.get("required_age")),
@@ -223,6 +235,7 @@ fn merge_appdetails_value(info: &mut GameInfo, data: &serde_json::Value) {
         release_date_text: data.get("release_date").and_then(|v| string_field(v, "date")),
         coming_soon: data.get("release_date").and_then(|v| bool_field(v, "coming_soon")),
         drm_notice,
+        screenshots,
     };
     info.app_details = Some(app_details);
 }
@@ -284,6 +297,33 @@ fn description_array_field(value: &serde_json::Value, key: &str) -> Vec<String> 
             items
                 .iter()
                 .filter_map(|item| string_field(item, "description"))
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn screenshots_field(value: &serde_json::Value) -> Vec<GameInfoScreenshot> {
+    value
+        .get("screenshots")
+        .and_then(|v| v.as_array())
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(|item| {
+                    let thumbnail = string_field(item, "path_thumbnail");
+                    let full = string_field(item, "path_full");
+                    if thumbnail.is_none() && full.is_none() {
+                        return None;
+                    }
+                    Some(GameInfoScreenshot {
+                        id: item
+                            .get("id")
+                            .and_then(|value| value.as_u64())
+                            .and_then(|id| u32::try_from(id).ok()),
+                        thumbnail,
+                        full,
+                    })
+                })
                 .collect()
         })
         .unwrap_or_default()

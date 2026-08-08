@@ -24,6 +24,8 @@ pub struct GameInfo {
     pub store_categories: Option<GameInfoStoreCategories>,
     #[serde(default)]
     pub content_descriptor_ids: Vec<u32>,
+    #[serde(default)]
+    pub screenshots: Vec<GameInfoScreenshot>,
 
     pub app_details: Option<GameInfoAppDetails>,
     pub local: Option<GameInfoLocal>,
@@ -103,6 +105,16 @@ pub struct GameInfoAppDetails {
     pub release_date_text: Option<String>,
     pub coming_soon: Option<bool>,
     pub drm_notice: Option<String>,
+    #[serde(default)]
+    pub screenshots: Vec<GameInfoScreenshot>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GameInfoScreenshot {
+    pub id: Option<u32>,
+    pub thumbnail: Option<String>,
+    pub full: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]

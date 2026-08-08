@@ -1833,3 +1833,243 @@ body {
   font-size: 12px;
   overflow-wrap: anywhere;
 }
+
+.info-screenshot-strip {
+  display: flex;
+  gap: 10px;
+  overflow-x: auto;
+  padding: 12px 14px 14px;
+}
+
+.info-screenshot-link {
+  flex: 0 0 220px;
+  height: 124px;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid var(--border-color);
+  background-color: #111116;
+  transition: border-color 0.2s ease, transform 0.2s ease;
+}
+
+.info-screenshot-link:hover {
+  border-color: var(--color-cyan);
+  transform: translateY(-1px);
+}
+
+.info-screenshot-link img {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: cover;
+}
+
+/* Info modal layout hardening: the modal itself stays inside the window and only
+   the body scrolls, so Screenshots and Cache Freshness are reachable even at the
+   minimum supported app size. */
+.info-modal-container {
+  width: min(860px, calc(100vw - 48px));
+  max-width: calc(100vw - 48px);
+  max-height: calc(100vh - 56px);
+  overflow: hidden;
+}
+
+.info-modal-container .modal-header {
+  flex: 0 0 auto;
+}
+
+.info-modal-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  max-height: none;
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-gutter: stable;
+}
+
+/* The hero cover uses the same contained, rounded visual language as Store and
+   Library cards instead of being flush/squared against the hero panel edge. */
+.info-hero {
+  align-items: center;
+  min-height: 154px;
+  padding: 12px;
+  overflow: hidden;
+}
+
+.info-hero .game-cover-wrapper {
+  flex: 0 0 92px;
+  width: 92px;
+  height: 130px;
+  min-height: 130px;
+  border-radius: var(--radius-card-cover);
+}
+
+.info-hero-text {
+  padding: 0;
+}
+
+.info-screenshot-strip {
+  max-width: 100%;
+  padding: 12px 14px 16px;
+  scroll-snap-type: x proximity;
+}
+
+.info-screenshot-link {
+  scroll-snap-align: start;
+}
+
+@media (max-width: 760px) {
+  .info-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .info-row {
+    grid-template-columns: 130px minmax(0, 1fr);
+  }
+
+  .info-screenshot-link {
+    flex-basis: 180px;
+    height: 102px;
+  }
+}
+
+/* Settings dropdown used for Store currency. */
+.settings-select {
+  min-width: 150px;
+  background-color: #141417;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 9px 12px;
+  color: #ffffff;
+  font-size: 13px;
+  outline: none;
+  cursor: pointer;
+}
+
+.settings-select:focus {
+  border-color: var(--color-cyan);
+}
+
+/* Final Info modal layout: fixed-to-viewport container, body scrolls. */
+.info-modal-container {
+  height: min(780px, calc(100vh - 56px));
+  max-height: calc(100vh - 56px);
+}
+
+.info-section-full {
+  grid-column: 1 / -1;
+}
+
+/* Long values should never stretch the card excessively; they get their own
+   internal scroll area instead. */
+.info-row {
+  align-items: start;
+}
+
+.info-value {
+  max-height: 98px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+/* Screenshot strip is a full-width normal InfoSection between hero and details. */
+.info-screenshot-strip {
+  min-height: 172px;
+  align-items: center;
+}
+
+.info-screenshot-link {
+  flex: 0 0 270px;
+  height: 152px;
+  padding: 0;
+  cursor: zoom-in;
+  appearance: none;
+}
+
+/* Fullscreen screenshot preview. */
+.info-lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  background: rgba(0, 0, 0, 0.86);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 34px;
+}
+
+.info-lightbox-content {
+  position: relative;
+  max-width: min(1200px, 94vw);
+  max-height: 90vh;
+  border-radius: 10px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  box-shadow: 0 18px 60px rgba(0, 0, 0, 0.75);
+  background: #050507;
+}
+
+.info-lightbox-content img {
+  display: block;
+  max-width: min(1200px, 94vw);
+  max-height: 90vh;
+  object-fit: contain;
+}
+
+.info-lightbox-close {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  width: 34px;
+  height: 34px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: rgba(0, 0, 0, 0.68);
+  color: #ffffff;
+  font-size: 24px;
+  line-height: 1;
+  cursor: pointer;
+  z-index: 2;
+}
+
+.info-lightbox-close:hover {
+  border-color: var(--color-cyan);
+  color: var(--color-cyan);
+}
+
+@media (max-width: 760px) {
+  .info-screenshot-link {
+    flex-basis: 220px;
+    height: 124px;
+  }
+}
+
+/* Settings compact controls. */
+.settings-select {
+  width: 112px;
+  min-width: 112px;
+  padding: 8px 10px;
+}
+
+.settings-small-btn {
+  background-color: #1c1c21;
+  border: 1px solid var(--border-color);
+  color: #ffffff;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 8px 12px;
+  border-radius: 7px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+}
+
+.settings-small-btn:hover {
+  border-color: var(--color-cyan);
+  color: var(--color-cyan);
+  background-color: #192128;
+}
+
+/* Keep long Info values compact; inner scroll handles overflow. */
+.info-value {
+  max-height: 49px;
+}

@@ -26,6 +26,16 @@ interface GameInfoStoreCategories {
   controllerCategoryIds?: number[];
 }
 
+interface GameInfoScreenshot {
+  id?: number | null;
+  thumbnail?: string | null;
+  full?: string | null;
+  pathThumbnail?: string | null;
+  pathFull?: string | null;
+  path_thumbnail?: string | null;
+  path_full?: string | null;
+}
+
 interface GameInfoAppDetails {
   requiredAge?: string | null;
   isFree?: boolean | null;
@@ -45,6 +55,7 @@ interface GameInfoAppDetails {
   releaseDateText?: string | null;
   comingSoon?: boolean | null;
   drmNotice?: string | null;
+  screenshots?: GameInfoScreenshot[];
 }
 
 interface GameInfoLocal {
@@ -76,6 +87,7 @@ interface GameInfo {
   platforms?: GameInfoPlatforms | null;
   storeCategories?: GameInfoStoreCategories | null;
   contentDescriptorIds?: number[];
+  screenshots?: GameInfoScreenshot[];
   appDetails?: GameInfoAppDetails | null;
   local?: GameInfoLocal | null;
   updatedAtUnix?: number;
@@ -93,46 +105,59 @@ interface GameInfoModalProps {
   onClose: () => void;
 }
 
+const NA = 'N/A';
+
+const CONTENT_DESCRIPTOR_LABELS: Record<number, string> = {
+  1: 'Some Nudity or Sexual Content',
+  2: 'Frequent Violence or Gore',
+  3: 'Frequent Nudity or Sexual Content',
+  4: 'Adult Only Sexual Content',
+  5: 'General Mature Content',
+};
+
 const yesNo = (value?: boolean | null) => {
   if (value === true) return 'Yes';
   if (value === false) return 'No';
-  return 'Unknown';
+  return NA;
 };
 
 const formatUnixDate = (value?: number | null) => {
-  if (!value) return 'Unknown';
+  if (!value) return NA;
   return new Date(value * 1000).toLocaleDateString();
 };
 
 const formatList = (items?: string[]) => {
   const clean = (items || []).map((item) => item.trim()).filter(Boolean);
-  return clean.length > 0 ? clean.join(', ') : 'Unknown';
+  return clean.length > 0 ? clean.join(', ') : NA;
 };
 
 const platformSummary = (platforms?: GameInfoPlatforms | null) => {
-  if (!platforms) return 'Unknown';
+  if (!platforms) return NA;
   const items = [
     platforms.windows ? 'Windows' : null,
     platforms.mac ? 'macOS' : null,
     platforms.linux ? 'Linux' : null,
     platforms.hasVrSupport ? 'VR' : null,
   ].filter(Boolean);
-  return items.length > 0 ? items.join(', ') : 'Unknown';
+  return items.length > 0 ? items.join(', ') : NA;
 };
 
 const priceSummary = (price?: GameInfoPrice | null, isFree?: boolean | null) => {
   if (isFree) return 'Free to Play';
-  if (!price) return 'Unknown';
+  if (!price) return NA;
   if (price.formattedFinal) return price.formattedFinal;
   if (typeof price.finalCents === 'number') {
-    const currency = price.currency || 'EUR';
+    const currency = (price.currency || 'EUR').toUpperCase();
+    if (currency === 'USD') return `$${(price.finalCents / 100).toFixed(2)}`;
+    if (currency === 'EUR') return `€${(price.finalCents / 100).toFixed(2)}`;
+    if (currency === 'JPY') return `¥${price.finalCents}`;
     return `${currency} ${(price.finalCents / 100).toFixed(2)}`;
   }
-  return 'Unknown';
+  return NA;
 };
 
 const cacheAge = (timestamp?: number | null) => {
-  if (!timestamp) return 'Never';
+  if (!timestamp) return NA;
   const seconds = Math.max(0, Math.floor(Date.now() / 1000) - timestamp);
   if (seconds < 60) return 'Just now';
   if (seconds < 3600) return `${Math.floor(seconds / 60)} min ago`;
@@ -140,15 +165,62 @@ const cacheAge = (timestamp?: number | null) => {
   return `${Math.floor(seconds / 86400)} d ago`;
 };
 
+const displayKind = (kind?: string | null) => {
+  const value = kind?.trim();
+  if (!value) return NA;
+  return value
+    .replace(/[_-]+/g, ' ')
+    .split(/\s+/)
+    .map((word) => (word.toLowerCase() === 'dlc' ? 'DLC' : word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()))
+    .join(' ');
+};
+
+const contentDescriptorSummary = (ids?: number[]) => {
+  const labels = (ids || []).map((id) => CONTENT_DESCRIPTOR_LABELS[id] || `Descriptor ${id}`);
+  return labels.length > 0 ? labels.join(', ') : NA;
+};
+
+const screenshotThumbnail = (shot: GameInfoScreenshot) =>
+  shot.thumbnail || shot.pathThumbnail || shot.path_thumbnail || shot.full || shot.pathFull || shot.path_full || '';
+
+const screenshotFull = (shot: GameInfoScreenshot) =>
+  shot.full || shot.pathFull || shot.path_full || shot.thumbnail || shot.pathThumbnail || shot.path_thumbnail || '';
+
+const decodeHtmlEntities = (value?: string | null) => {
+  if (!value) return '';
+  let decoded = value;
+  for (let i = 0; i < 3; i += 1) {
+    const textarea = document.createElement('textarea');
+    textarea.innerHTML = decoded;
+    const next = textarea.value;
+    if (next === decoded) break;
+    decoded = next;
+  }
+  return decoded;
+};
+
+const normalizeScreenshots = (...groups: Array<GameInfoScreenshot[] | undefined>) => {
+  const seen = new Set<string>();
+  return groups
+    .flatMap((group) => group || [])
+    .map((shot) => ({ ...shot, thumbnail: screenshotThumbnail(shot), full: screenshotFull(shot) }))
+    .filter((shot) => {
+      const key = shot.full || shot.thumbnail;
+      if (!key || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+};
+
 const InfoRow = ({ label, value }: { label: string; value?: string | number | null }) => (
   <div className="info-row">
     <span className="info-label">{label}</span>
-    <span className="info-value">{value === undefined || value === null || value === '' ? 'Unknown' : value}</span>
+    <span className="info-value">{value === undefined || value === null || value === '' ? NA : value}</span>
   </div>
 );
 
-const InfoSection = ({ title, children }: { title: string; children: ReactNode }) => (
-  <section className="info-section">
+const InfoSection = ({ title, children, className = '' }: { title: string; children: ReactNode; className?: string }) => (
+  <section className={`info-section ${className}`.trim()}>
     <h3 className="info-section-title">{title}</h3>
     <div className="info-section-body">{children}</div>
   </section>
@@ -158,6 +230,7 @@ export const GameInfoModal = ({ appId, fallbackName, fallbackImageUrl, onClose }
   const [info, setInfo] = useState<GameInfo | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
+  const [selectedScreenshot, setSelectedScreenshot] = useState<{ src: string; alt: string } | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -183,10 +256,23 @@ export const GameInfoModal = ({ appId, fallbackName, fallbackImageUrl, onClose }
     };
   }, [appId]);
 
+  useEffect(() => {
+    if (!selectedScreenshot) return;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setSelectedScreenshot(null);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [selectedScreenshot]);
+
   const title = info?.name || fallbackName;
   const imageUrl = info?.imageUrl || info?.appDetails?.capsuleImage || fallbackImageUrl;
   const details = info?.appDetails;
   const local = info?.local;
+  const screenshots = normalizeScreenshots(info?.screenshots, details?.screenshots);
+  const shortDescription = decodeHtmlEntities(details?.shortDescription);
 
   const cacheSummary = useMemo(() => {
     if (!info) return [];
@@ -224,18 +310,41 @@ export const GameInfoModal = ({ appId, fallbackName, fallbackImageUrl, onClose }
                 <GameCover appId={String(appId)} name={title} canonicalUrl={imageUrl || undefined} />
                 <div className="info-hero-text">
                   <h2>{title}</h2>
-                  {details?.shortDescription && <p>{details.shortDescription}</p>}
+                  {shortDescription && <p>{shortDescription}</p>}
                 </div>
               </div>
 
               <div className="info-grid">
+                <InfoSection title="Screenshots" className="info-section-full">
+                  {screenshots.length > 0 ? (
+                    <div className="info-screenshot-strip">
+                      {screenshots.map((shot, index) => {
+                        const src = shot.thumbnail || shot.full || '';
+                        const href = shot.full || shot.thumbnail || src;
+                        const alt = `${title} screenshot ${index + 1}`;
+                        return (
+                          <button
+                            key={`${shot.id ?? index}-${src}`}
+                            type="button"
+                            className="info-screenshot-link"
+                            onClick={() => setSelectedScreenshot({ src: href, alt })}
+                          >
+                            <img src={src} alt={alt} />
+                          </button>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <InfoRow label="Screenshots" value={NA} />
+                  )}
+                </InfoSection>
+
                 <InfoSection title="Store">
-                  <InfoRow label="Type" value={info.kind} />
+                  <InfoRow label="Type" value={displayKind(info.kind)} />
                   <InfoRow label="Price" value={priceSummary(info.price, details?.isFree)} />
                   <InfoRow label="Metascore" value={info.metascore || details?.metacriticScore} />
                   <InfoRow label="Release" value={details?.releaseDateText || formatUnixDate(info.releaseDateUnix)} />
-                  <InfoRow label="Original release" value={formatUnixDate(info.originalReleaseDateUnix)} />
-                  <InfoRow label="Controller" value={info.controllerSupport} />
+                  <InfoRow label="Controller" value={displayKind(info.controllerSupport)} />
                   <InfoRow label="Platforms" value={platformSummary(info.platforms)} />
                 </InfoSection>
 
@@ -244,16 +353,16 @@ export const GameInfoModal = ({ appId, fallbackName, fallbackImageUrl, onClose }
                   <InfoRow label="Denuvo" value={yesNo(info.hasDenuvo)} />
                   <InfoRow label="NSFW" value={yesNo(info.hasNsfw)} />
                   <InfoRow label="Delisted" value={yesNo(info.hasDelisted)} />
-                  <InfoRow label="Content descriptors" value={(info.contentDescriptorIds || []).join(', ') || 'None'} />
+                  <InfoRow label="Content descriptors" value={contentDescriptorSummary(info.contentDescriptorIds)} />
                 </InfoSection>
 
                 <InfoSection title="Publisher data">
-                  <InfoRow label="Developers" value={formatList(details?.developers)} />
                   <InfoRow label="Publishers" value={formatList(details?.publishers)} />
+                  <InfoRow label="Developers" value={formatList(details?.developers)} />
                   <InfoRow label="Genres" value={formatList(details?.genres)} />
                   <InfoRow label="Categories" value={formatList(details?.categories)} />
-                  <InfoRow label="Recommendations" value={details?.recommendationsTotal} />
                   <InfoRow label="Achievements" value={details?.achievementsTotal} />
+                  <InfoRow label="Recommendations" value={details?.recommendationsTotal} />
                 </InfoSection>
 
                 <InfoSection title="Local library">
@@ -264,17 +373,39 @@ export const GameInfoModal = ({ appId, fallbackName, fallbackImageUrl, onClose }
                   <InfoRow label="Install dir" value={local?.installDir} />
                   <InfoRow label="Library path" value={local?.libraryPath} />
                 </InfoSection>
-              </div>
 
-              <InfoSection title="Cache freshness">
-                {cacheSummary.map(([label, value]) => (
-                  <InfoRow key={label} label={label} value={value} />
-                ))}
-              </InfoSection>
+                <InfoSection title="Cache freshness" className="info-section-full">
+                  {cacheSummary.map(([label, value]) => (
+                    <InfoRow key={label} label={label} value={value} />
+                  ))}
+                </InfoSection>
+              </div>
             </>
           ) : null}
         </div>
       </div>
+
+      {selectedScreenshot && (
+        <div
+          className="info-lightbox"
+          onClick={(event) => {
+            event.stopPropagation();
+            setSelectedScreenshot(null);
+          }}
+        >
+          <div className="info-lightbox-content" onClick={(event) => event.stopPropagation()}>
+            <button
+              type="button"
+              className="info-lightbox-close"
+              onClick={() => setSelectedScreenshot(null)}
+              aria-label="Close screenshot preview"
+            >
+              &times;
+            </button>
+            <img src={selectedScreenshot.src} alt={selectedScreenshot.alt} />
+          </div>
+        </div>
+      )}
     </div>
   );
 };

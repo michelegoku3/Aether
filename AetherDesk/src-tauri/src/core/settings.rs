@@ -42,11 +42,40 @@ pub struct AppSettings {
     /// Limit is 50 uses per day (enforced server-side).
     #[serde(default)]
     pub ryuu_api_key: String,
+    /// Preferred Steam store currency for prices shown in Store/Info.
+    /// Values are intentionally small and map to Steam country codes:
+    /// `eur` -> IT, `usd` -> US, `jpy` -> JP.
+    #[serde(default = "default_store_currency")]
+    pub store_currency: String,
 }
 
 /// Serde default provider for boolean settings that ship enabled.
 fn default_true() -> bool {
     true
+}
+
+fn default_store_currency() -> String {
+    "eur".to_string()
+}
+
+pub fn normalize_store_currency(value: &str) -> String {
+    match value.trim().to_lowercase().as_str() {
+        "usd" => "usd".to_string(),
+        "jpy" => "jpy".to_string(),
+        _ => "eur".to_string(),
+    }
+}
+
+pub fn steam_country_code_for_currency(value: &str) -> &'static str {
+    match normalize_store_currency(value).as_str() {
+        "usd" => "US",
+        "jpy" => "JP",
+        _ => "IT",
+    }
+}
+
+pub fn cache_version_with_currency(app_version: &str, currency: &str) -> String {
+    format!("{}|currency={}", app_version, normalize_store_currency(currency))
 }
 
 impl Default for AppSettings {
@@ -61,6 +90,7 @@ impl Default for AppSettings {
             show_store_delisted: true,
             custom_css_enabled: false,
             ryuu_api_key: String::new(),
+            store_currency: default_store_currency(),
         }
     }
 }
@@ -117,7 +147,10 @@ impl SettingsManager {
         let path = self.get_file_path();
         let temp_path = path.with_extension("tmp");
 
-        let json_data = serde_json::to_string_pretty(settings)
+        let mut normalized = settings.clone();
+        normalized.store_currency = normalize_store_currency(&normalized.store_currency);
+
+        let json_data = serde_json::to_string_pretty(&normalized)
             .map_err(|e| format!("Serialization error: {}", e))?;
 
         fs::write(&temp_path, json_data)

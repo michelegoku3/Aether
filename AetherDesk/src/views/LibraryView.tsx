@@ -72,14 +72,14 @@ export const LibraryView = () => {
               game={game}
               actions={[
                 {
-                  label: 'Info',
-                  variant: 'secondary',
-                  onClick: setInfoGame,
-                },
-                {
                   label: 'Modify',
                   variant: 'primary',
                   onClick: setActionGame,
+                },
+                {
+                  label: 'Info',
+                  variant: 'secondary',
+                  onClick: setInfoGame,
                 },
               ]}
             />
