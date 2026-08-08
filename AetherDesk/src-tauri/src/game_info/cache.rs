@@ -47,10 +47,6 @@ impl GameInfoCache {
         self.save_cache(&cache)
     }
 
-    pub fn merge_store_results(&self, games: &[UnifiedStoreGame]) {
-        self.merge_store_results_with_manifest_context(games, false);
-    }
-
     pub fn merge_store_results_with_manifest_context(
         &self,
         games: &[UnifiedStoreGame],

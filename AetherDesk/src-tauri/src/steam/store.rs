@@ -61,14 +61,9 @@ impl SteamStore {
         }
     }
 
-    /// Queries Steam's official public Store Search API with automated percent-encoding.
-    pub async fn search_catalog(&self, query: &str) -> Result<Vec<SteamStoreItem>, String> {
-        self.search_catalog_for_country(query, "IT").await
-    }
-
-    /// Same as [`search_catalog`], but with an explicit country code so price
-    /// currency can follow the user's settings without changing the caller's
-    /// filtering/ranking semantics.
+    /// Queries Steam's official public Store Search API with an explicit country
+    /// code so price currency can follow the user's settings without changing
+    /// the caller's filtering/ranking semantics.
     pub async fn search_catalog_for_country(&self, query: &str, country_code: &str) -> Result<Vec<SteamStoreItem>, String> {
         if query.trim().is_empty() {
             return Ok(Vec::new());
