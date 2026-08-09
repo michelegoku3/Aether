@@ -15,7 +15,7 @@ export const Sidebar = ({ activeTab, onTabChange, onRestartSteam, dllUpdateAvail
         {/* Brand Header */}
         <div className="sidebar-brand">
           <div className="brand-icon">Æ</div>
-          <span className="brand-name">AetherDesk</span>
+          <span className="brand-name">AETHER</span>
         </div>
 
         {/* Separator Line */}

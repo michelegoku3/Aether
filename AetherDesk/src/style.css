@@ -19,6 +19,14 @@
   --radius-card: 10px;
   --radius-card-cover: 9px;
   --radius-card-cover-inset: 5px;
+  /* Single source of truth for the sidebar width: the personal wallpaper
+     starts right after it (`left: var(--sidebar-width)`), so the background
+     is centered on the content area and never overflows under the sidebar. */
+  --sidebar-width: 215px;
+  /* Alternative game card defaults (0..100), overridden per-grid by the
+     Settings live preview via inline CSS variables. */
+  --alt-card-opacity: 70;
+  --alt-card-fade: 90;
 }
 
 * {
@@ -66,7 +74,7 @@ body {
 
 /* Sidebar Styling */
 .sidebar {
-  width: 215px; /* Slightly smaller sidebar width */
+  width: var(--sidebar-width, 215px); /* Slightly smaller sidebar width */
   height: 100vh;
   background-color: var(--bg-sidebar);
   border-right: 1px solid var(--border-color);
@@ -92,8 +100,8 @@ body {
 }
 
 .brand-icon {
-  width: 36px; /* Slightly larger icon wrapper */
-  height: 36px;
+  width: 41px; /* Brand badge behind the Æ */
+  height: 41px;
   background-color: var(--color-cyan);
   border-radius: 8px;
   display: flex;
@@ -605,7 +613,11 @@ body {
 
 .version-modal-container {
   width: 840px;
-  max-height: 86vh;
+  /* Dynamic height: the modal grows with the number of editable depots.
+     `height: auto` + viewport cap; the table wrapper height is computed by
+     the component from the row count (see SpecificVersionModal.tsx). */
+  max-height: calc(100vh - 48px);
+  height: auto;
 }
 
 @keyframes modalScaleIn {
@@ -2076,21 +2088,21 @@ body {
 
 
 
-/* Specific version modal needs a bit more vertical room after adding visible separators. */
-.version-modal-container {
-  height: min(700px, calc(100vh - 48px));
-  max-height: calc(100vh - 48px);
-}
-
+/* Specific version modal: height is derived from the depot row count.
+   The component sets `--version-table-max-height` inline from `rows.length`,
+   so the modal is compact for 1–2 depots and scrolls only when many depots
+   would exceed the viewport. */
 .version-modal-container .modal-body {
   flex: 1 1 auto;
   min-height: 0;
+  display: flex;
+  flex-direction: column;
 }
 
 .version-modal-container .version-table-wrapper {
-  flex: 1 1 auto;
-  max-height: none;
-  min-height: 300px;
+  flex: 0 1 auto;
+  max-height: var(--version-table-max-height, 300px);
+  min-height: 0;
 }
 
 /* Equal card action buttons: Download is the reference width; Modify and Info
@@ -2106,13 +2118,16 @@ body {
 /* Compact Settings controls. Keep the definitions consolidated to avoid cascade
    surprises after iterative UI changes. */
 .settings-select {
-  width: 84px;
-  min-width: 84px;
+  /* Widened so "Top sellers" / "Euro (€)" / "Dollar ($)" fit; the store front
+     filter dropdown below shares the exact same footprint so both controls
+     render with identical widths. */
+  width: 115px;
+  min-width: 115px;
   height: 30px;
   background-color: #141417;
   border: 1px solid var(--border-color);
   border-radius: 8px;
-  padding: 4px 8px;
+  padding: 4px 10px;
   color: #ffffff;
   font-size: 13px;
   outline: none;
@@ -2141,18 +2156,90 @@ body {
   border-color: var(--color-cyan);
 }
 
+/* Appearance sub-options (theme/wallpaper picker rows under the switches). */
+.settings-appearance-sub {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 4px 0 8px 24px;
+}
+
+.settings-appearance-sub .settings-desc {
+  margin: 0;
+}
+
+.settings-appearance-sub .settings-toggle-row {
+  width: 100%;
+}
+
+/* Riga testo + bottone sullo stesso livello: il testo occupa lo spazio
+   rimanente e il bottone (largo quanto i dropdown, 115px) sta a destra. */
+.settings-appearance-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+}
+
+.settings-appearance-row .settings-desc {
+  flex: 1 1 auto;
+  margin: 0;
+}
+
+.settings-path {
+  font-family: monospace;
+  font-size: 11px;
+  color: var(--color-cyan);
+  background: rgba(255, 255, 255, 0.05);
+  padding: 1px 5px;
+  border-radius: 4px;
+}
+
+.settings-assets-missing {
+  color: #c9a227;
+}
+
+/* Both appearance picker buttons (theme + wallpaper) share this class so
+   they always have identical dimensions. */
+.appearance-pick-btn {
+  width: 115px;
+  min-width: 115px;
+  max-width: 115px;
+  height: 30px;
+  flex: 0 0 115px;
+  background-color: #141417;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  color: #ffffff;
+  font-size: 12px;
+  cursor: pointer;
+  transition: border-color 0.2s ease, background-color 0.2s ease;
+}
+
+.appearance-pick-btn:hover:not(:disabled) {
+  border-color: var(--color-cyan);
+  background-color: #192128;
+}
+
+.appearance-pick-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
 
 
-/* Store front filter dropdown: same compact footprint as currency selector. */
+
+/* Store front filter dropdown: identical footprint to the currency selector
+   (both are 150px wide so "Top sellers" and "Dollar ($)" are fully readable). */
 
 .settings-front-filter-select {
-  width: 84px;
-  min-width: 84px;
+  width: 115px;
+  min-width: 115px;
   height: 30px;
   background-color: #141417;
   border: 1px solid var(--border-color);
   border-radius: 8px;
-  padding: 4px 8px;
+  padding: 4px 10px;
   color: #ffffff;
   font-size: 13px;
   outline: none;
@@ -2171,13 +2258,18 @@ body {
   isolation: isolate;
 }
 
+/* Backdrop opacity (0..100) and bottom fade (0..100) are driven by CSS
+   variables set on the grid container from Settings (live preview). The
+   multipliers map 0..100 to the original fixed alpha values:
+   fade 100 → 0.18 / 0.72 / 0.92 (fully dark bottom), fade 0 → fully
+   transparent overlay. */
 .game-card-backdrop-bg {
   position: absolute;
   inset: 0;
   z-index: 0;
   background-size: cover;
   background-position: center;
-  opacity: 0.7;
+  opacity: calc(var(--alt-card-opacity, 70) / 100);
 }
 
 .store-game-card.backdrop-card::after {
@@ -2185,7 +2277,12 @@ body {
   position: absolute;
   inset: 0;
   z-index: 1;
-  background: linear-gradient(180deg, rgba(0, 0, 0, 0.18) 0%, rgba(0, 0, 0, 0.72) 58%, rgba(0, 0, 0, 0.92) 100%);
+  background: linear-gradient(
+    180deg,
+    rgba(0, 0, 0, calc(var(--alt-card-fade, 90) * 0.0018)) 0%,
+    rgba(0, 0, 0, calc(var(--alt-card-fade, 90) * 0.0072)) 58%,
+    rgba(0, 0, 0, calc(var(--alt-card-fade, 90) * 0.0092)) 100%
+  );
   pointer-events: none;
 }
 

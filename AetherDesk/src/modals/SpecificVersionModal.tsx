@@ -1,6 +1,15 @@
-import { useEffect, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { requireSteamPath } from '../hooks/useSettings';
+
+// Geometry used to size the depot table to its content: each row is ~41px
+// (10px padding ×2 + 17px text + 1px border) and the sticky header ~37px.
+const VERSION_ROW_HEIGHT_PX = 41;
+const VERSION_HEADER_HEIGHT_PX = 37;
+// Vertical space consumed by the modal chrome around the table: header,
+// separator, status alert, actions row and paddings.
+const VERSION_MODAL_CHROME_PX = 300;
+const VERSION_TABLE_MIN_PX = 140;
 
 export interface LuaManifestRow {
   rowId: number;
@@ -32,6 +41,16 @@ export const SpecificVersionModal = ({ game, initialRows, onClose }: SpecificVer
     type: initialRows.length > 0 ? 'info' : 'error'
   });
   const [isApplying, setIsApplying] = useState(false);
+
+  // Dynamic modal height: grows with the number of editable depots, capped at
+  // what fits the current window (the table scrolls when many depots exist).
+  const tableMaxHeight = Math.max(
+    VERSION_TABLE_MIN_PX,
+    Math.min(
+      rows.length * VERSION_ROW_HEIGHT_PX + VERSION_HEADER_HEIGHT_PX,
+      Math.max(VERSION_TABLE_MIN_PX, window.innerHeight - VERSION_MODAL_CHROME_PX)
+    )
+  );
 
   const updateRow = (rowId: number, patch: Partial<LuaManifestRow>) => {
     setRows(prev => prev.map(row => row.rowId === rowId ? { ...row, ...patch } : row));
@@ -88,7 +107,10 @@ export const SpecificVersionModal = ({ game, initialRows, onClose }: SpecificVer
 
   return (
     <div className="modal-overlay">
-      <div className="modal-container version-modal-container">
+      <div
+        className="modal-container version-modal-container"
+        style={{ '--version-table-max-height': `${tableMaxHeight}px` } as React.CSSProperties}
+      >
         <div className="modal-header">
           <span className="modal-title">
             Specific Version: <strong style={{ color: '#ffffff' }}>{game.name}</strong> ({game.appId})

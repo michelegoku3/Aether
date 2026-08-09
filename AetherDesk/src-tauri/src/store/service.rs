@@ -1,9 +1,6 @@
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
-use std::sync::Arc;
 use std::time::Duration;
-use tokio::sync::Semaphore;
-use tokio::task::JoinSet;
 
 /// Overall wall-clock budget for the whole Hubcap availability lookup
 /// (2 endpoints × up to 2 query variants). The two endpoint calls inside
@@ -287,46 +284,19 @@ impl StoreService {
     }
 
 
-    async fn collect_hubcap_status_ids(
-        &self,
-        app_ids: &[u32],
-        hubcap_client: Option<&HubcapClient>,
-    ) -> HashSet<u32> {
-        let Some(client) = hubcap_client.cloned() else {
-            return HashSet::new();
-        };
-
-        let mut unique_ids: Vec<u32> = app_ids.iter().copied().filter(|id| *id != 0).collect();
-        unique_ids.sort_unstable();
-        unique_ids.dedup();
-
-        let semaphore = Arc::new(Semaphore::new(8));
-        let mut tasks = JoinSet::new();
-
-        for app_id in unique_ids {
-            let client = client.clone();
-            let semaphore = Arc::clone(&semaphore);
-            tasks.spawn(async move {
-                let _permit = semaphore.acquire_owned().await.ok();
-                client.has_manifest(app_id).await.then_some(app_id)
-            });
-        }
-
-        let mut available = HashSet::new();
-        while let Some(result) = tasks.join_next().await {
-            if let Ok(Some(app_id)) = result {
-                available.insert(app_id);
-            }
-        }
-        available
-    }
-
+    /// Store front page: **Steam-only by design**.
+    ///
+    /// The store front must never touch Hubcap: per-item `/status` checks
+    /// fanned out to 20–40 requests in a few seconds during normal browsing
+    /// (2 pages preloaded on startup), which tripped Hubcap's per-IP rate
+    /// limit almost immediately. Rows therefore carry no availability badge;
+    /// the search flow remains the single place where Hubcap contributes the
+    /// `has_manifest` flag.
     pub async fn trending_store(
         &self,
         store_front_filter: &str,
         start: usize,
         count: usize,
-        hubcap_client: Option<HubcapClient>,
         show_store_dlcs: bool,
         show_store_nsfw: bool,
         show_store_delisted: bool,
@@ -341,11 +311,6 @@ impl StoreService {
             return Ok(Vec::new());
         }
 
-        let app_ids: Vec<u32> = steam_items.iter().map(|item| item.id).collect();
-        let available_ids = self
-            .collect_hubcap_status_ids(&app_ids, hubcap_client.as_ref())
-            .await;
-
         let mut seen_ids = HashSet::new();
         let mut unified_list: Vec<UnifiedStoreGame> = Vec::new();
         for item in steam_items {
@@ -356,7 +321,9 @@ impl StoreService {
                 id: item.id,
                 name: item.name.clone(),
                 app_id: item.id.to_string(),
-                has_manifest: available_ids.contains(&item.id),
+                // Steam-only store front: availability is unknown here by design
+                // (see the method doc — Hubcap status fan-out caused rate limits).
+                has_manifest: false,
                 has_denuvo: false,
                 has_nsfw: false,
                 has_delisted: false,

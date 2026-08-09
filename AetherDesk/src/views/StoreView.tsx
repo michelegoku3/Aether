@@ -16,9 +16,11 @@ interface StoreViewProps {
   isActive: boolean;
   settingsRevision: number;
   useAlternativeGameCards: boolean;
+  alternativeCardsOpacity: number;
+  alternativeCardsFade: number;
 }
 
-export const StoreView = ({ onRefreshUsage, isActive, settingsRevision, useAlternativeGameCards }: StoreViewProps) => {
+export const StoreView = ({ onRefreshUsage, isActive, settingsRevision, useAlternativeGameCards, alternativeCardsOpacity, alternativeCardsFade }: StoreViewProps) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [page, setPage] = useState(1);
   const itemsPerPage = 20; // 10 rows * 2 columns = 20 items per page
@@ -313,8 +315,15 @@ export const StoreView = ({ onRefreshUsage, isActive, settingsRevision, useAlter
       {/* Separator line */}
       <div className="store-separator"></div>
 
-      {/* 10 rows x 2 columns Grid */}
-      <div className={useAlternativeGameCards ? 'store-grid alt-card-grid' : 'store-grid'}>
+      {/* 10 rows x 2 columns Grid. The alternative card layout reads the
+          opacity/fade values from CSS variables set here (live preview). */}
+      <div
+        className={useAlternativeGameCards ? 'store-grid alt-card-grid' : 'store-grid'}
+        style={useAlternativeGameCards ? {
+          '--alt-card-opacity': Math.max(0, Math.min(100, alternativeCardsOpacity)),
+          '--alt-card-fade': Math.max(0, Math.min(100, alternativeCardsFade)),
+        } as React.CSSProperties : undefined}
+      >
         {isLoading || (isTrendingLoading && pageGames.length === 0) ? (
           <div className="store-no-results">
             {isLoading ? 'Loading results from Steam & Hubcap...' : 'Loading trending Steam games...'}

@@ -1,0 +1,566 @@
+/* ==========================================================================
+   AetherDesk — Custom CSS | Tema GOLDMINE
+   Metti questo file in: <cartella di AetherDesk.exe>/AetherData/config/themes/
+   (il primo file .css presente nella cartella viene applicato automaticamente).
+   Abilita in: Settings → Appearance → Enable theme.
+
+   Palette: oro #D9B36C dominante, argento-lavanda #E6E6F0, azzurro #8FB8D8,
+   verde #7C9A6D, crema #F3EDDF su blu-notte profondo. Atmosfera elegante,
+   morbida: niente glitch, niente skew, tutto pulito.
+   ========================================================================== */
+
+/* ---------- 1. Variabili base ---------- */
+:root {
+  --bg-app: #10131a;
+  --bg-sidebar: #141824;
+  --bg-item-hover: #1e2433;
+  --bg-item-active: #2a3348;
+  --color-text: #efece4;
+  --color-muted: #9aa3b2;
+  --color-cyan: #d9b36c; /* l'accento principale diventa l'oro GOLDMINE */
+  --color-cyan-rgb: 217, 179, 108;
+  --color-denuvo: #c96f6f;
+  --color-nsfw-pink: #c97b8a;
+  --color-nsfw-pink-hover: #d99aa6;
+  --color-delisted-white: #e8e6e0;
+  --color-delisted-white-hover: #ffffff;
+  --border-color: #2a3142;
+  --radius-card: 10px;
+  --radius-card-cover: 8px;
+  --radius-card-cover-inset: 5px;
+
+  --goldmine-gold: #d9b36c;
+  --goldmine-gold-dim: #a98b4f;
+  --goldmine-silver: #e6e6f0;
+  --goldmine-sky: #8fb8d8;
+  --goldmine-green: #7c9a6d;
+  --goldmine-cream: #f3eddf;
+  --goldmine-night: #10131a;
+}
+
+/* ---------- 2. Sfondo app — notte stellata ---------- */
+body {
+  background-color: var(--bg-app) !important;
+  /* Cielo notturno con stelle sottilissime: gradient blu notte + puntini. */
+  background-image:
+    radial-gradient(1px 1px at 12% 22%, rgba(230, 230, 240, 0.35) 50%, transparent 51%),
+    radial-gradient(1px 1px at 34% 64%, rgba(230, 230, 240, 0.25) 50%, transparent 51%),
+    radial-gradient(1.5px 1.5px at 58% 12%, rgba(230, 230, 240, 0.3) 50%, transparent 51%),
+    radial-gradient(1px 1px at 76% 38%, rgba(230, 230, 240, 0.22) 50%, transparent 51%),
+    radial-gradient(1.5px 1.5px at 88% 78%, rgba(230, 230, 240, 0.28) 50%, transparent 51%),
+    radial-gradient(1px 1px at 22% 84%, rgba(230, 230, 240, 0.2) 50%, transparent 51%),
+    linear-gradient(165deg, #141a26 0%, #10131a 55%, #0d1016 100%);
+  background-size: 640px 640px, 720px 720px, 900px 900px, 560px 560px, 780px 780px, 660px 660px, cover;
+}
+
+.app-container {
+  position: relative;
+}
+
+/* ---------- 3. Sidebar ---------- */
+.sidebar {
+  background-color: #0f1219 !important;
+  border-right: 1px solid #232b3d !important;
+  box-shadow: 4px 0 24px rgba(0, 0, 0, 0.35);
+}
+
+.brand-icon {
+  width: 41px !important;
+  min-width: 41px !important;
+  height: 41px !important;
+  background: linear-gradient(135deg, var(--goldmine-gold), #c9a05c) !important;
+  color: #141824 !important;
+  border-radius: 10px !important;
+  box-shadow: 0 0 16px rgba(217, 179, 108, 0.35);
+  font-family: 'Georgia', 'Palatino', serif;
+  letter-spacing: 1px;
+}
+.brand-name {
+  color: var(--goldmine-gold) !important;
+  font-family: 'Georgia', 'Palatino', serif;
+  letter-spacing: 3px !important;
+  text-shadow: 0 0 10px rgba(217, 179, 108, 0.35);
+}
+
+.group-label {
+  color: var(--goldmine-gold-dim) !important;
+  font-size: 10px !important;
+  letter-spacing: 2px !important;
+  text-transform: uppercase;
+  opacity: 0.9;
+}
+
+.nav-item {
+  font-family: 'Georgia', 'Palatino', serif;
+  letter-spacing: 0.5px;
+  border-left: 2px solid transparent;
+  transition: all 0.25s ease;
+}
+.nav-item:hover {
+  color: var(--goldmine-gold) !important;
+  background-color: rgba(217, 179, 108, 0.06) !important;
+  border-left-color: var(--goldmine-gold-dim);
+}
+.nav-item.active {
+  color: #10131a !important;
+  background: linear-gradient(90deg, rgba(217, 179, 108, 0.9), rgba(217, 179, 108, 0.55)) !important;
+  border-left: 3px solid var(--goldmine-sky) !important;
+  font-weight: 700;
+  box-shadow: 0 0 14px rgba(217, 179, 108, 0.25);
+}
+
+.restart-steam-btn {
+  color: var(--goldmine-sky) !important;
+  font-family: 'Georgia', 'Palatino', serif;
+  letter-spacing: 0.5px;
+  border: 1px solid rgba(143, 184, 216, 0.4);
+  margin: 0 12px;
+  width: calc(100% - 24px) !important;
+  border-radius: 8px !important;
+}
+.restart-steam-btn:hover {
+  background-color: rgba(143, 184, 216, 0.12) !important;
+  color: var(--goldmine-cream) !important;
+  border-color: var(--goldmine-sky) !important;
+}
+
+/* ---------- 4. Main content & Store ---------- */
+.main-content {
+  background: radial-gradient(ellipse at 50% -20%, rgba(143, 184, 216, 0.08), transparent 60%),
+              var(--bg-app) !important;
+}
+
+.store-title, .settings-title, .aether-title, .home-title {
+  font-family: 'Georgia', 'Palatino', serif !important;
+  letter-spacing: 2px !important;
+  color: var(--goldmine-gold) !important;
+  text-shadow: 0 0 14px rgba(217, 179, 108, 0.25);
+}
+.store-title::after {
+  content: " // GOLD STANDARD";
+  color: var(--goldmine-sky);
+  font-size: 11px;
+  letter-spacing: 1px;
+  opacity: 0.55;
+}
+
+.store-subtitle, .settings-subtitle {
+  color: #7c8598 !important;
+  font-size: 11px !important;
+  letter-spacing: 0.5px;
+}
+
+.store-separator, .settings-separator, .separator {
+  background-color: rgba(217, 179, 108, 0.12) !important;
+  height: 1px !important;
+}
+.store-separator {
+  box-shadow: 0 0 8px rgba(217, 179, 108, 0.12);
+}
+
+/* ---------- 5. Input & search ---------- */
+.store-search-input, .settings-input, .home-search-input, .settings-number-input {
+  background-color: #161a26 !important;
+  border: 1px solid #2c3447 !important;
+  border-radius: 8px !important;
+  color: var(--goldmine-cream) !important;
+}
+.store-search-input:focus, .settings-input:focus, .home-search-input:focus, .settings-number-input:focus {
+  border-color: var(--goldmine-gold) !important;
+  box-shadow: 0 0 0 1px rgba(217, 179, 108, 0.35), 0 0 14px rgba(217, 179, 108, 0.12) !important;
+  background-color: #181d2b !important;
+}
+.store-search-input::placeholder, .settings-input::placeholder {
+  color: #5f6880 !important;
+}
+
+.store-search-btn {
+  background: linear-gradient(135deg, var(--goldmine-gold), #c9a05c) !important;
+  color: #10131a !important;
+  border-radius: 8px !important;
+  border: 1px solid var(--goldmine-gold);
+  box-shadow: 0 0 12px rgba(217, 179, 108, 0.25);
+  font-family: 'Georgia', 'Palatino', serif;
+  font-weight: 700;
+}
+.store-search-btn:hover {
+  background: linear-gradient(135deg, var(--goldmine-sky), #6f9ec4) !important;
+  border-color: var(--goldmine-sky) !important;
+  color: #10131a !important;
+  box-shadow: 0 0 16px rgba(143, 184, 216, 0.4);
+}
+
+/* ---------- 6. Game Card ---------- */
+.store-game-card {
+  background-color: #141824 !important;
+  border: 1px solid #2c3447 !important;
+  border-radius: 10px !important;
+  overflow: visible !important;
+  position: relative;
+  clip-path: none !important;
+  transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+}
+.store-game-card::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 12px;
+  right: 12px;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, var(--goldmine-gold), transparent);
+  opacity: 0;
+  transition: opacity 0.3s;
+  z-index: 2;
+}
+.store-game-card:hover::before {
+  opacity: 1;
+}
+.store-game-card:hover {
+  transform: translateY(-2px) !important;
+  border-color: rgba(217, 179, 108, 0.65) !important;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.45), 0 0 0 1px rgba(217, 179, 108, 0.12) !important;
+}
+.store-game-card.nsfw {
+  border-color: rgba(201, 123, 138, 0.8) !important;
+  box-shadow: 0 0 16px rgba(201, 123, 138, 0.15) !important;
+}
+.store-game-card.delisted {
+  border-color: #6a7288 !important;
+  opacity: 0.85;
+}
+
+.game-cover-wrapper {
+  border-radius: 8px !important;
+  background-color: #0f1219 !important;
+}
+
+.game-name {
+  font-family: 'Georgia', 'Palatino', serif !important;
+  color: var(--goldmine-cream) !important;
+}
+.game-appid {
+  color: var(--goldmine-sky) !important;
+  font-size: 10px !important;
+}
+
+.game-download-btn {
+  border: 1px solid rgba(217, 179, 108, 0.6) !important;
+  color: var(--goldmine-gold) !important;
+  border-radius: 8px !important;
+  font-family: 'Georgia', 'Palatino', serif !important;
+  font-size: 11px !important;
+  background: transparent !important;
+  position: relative;
+  overflow: hidden;
+  transition: color 0.2s ease, background-color 0.2s ease, box-shadow 0.2s ease;
+}
+.game-download-btn:hover {
+  background-color: rgba(217, 179, 108, 0.14) !important;
+  color: var(--goldmine-cream) !important;
+  border-color: var(--goldmine-gold) !important;
+  box-shadow: 0 0 12px rgba(217, 179, 108, 0.25);
+}
+
+/* Backdrop cards — morbide, niente angoli tagliati (Goldmine è soft) */
+.store-game-card.backdrop-card {
+  overflow: hidden !important;
+  border: 1px solid #2c3447 !important;
+  background-color: #141824 !important;
+  border-radius: 12px !important;
+  clip-path: none !important;
+}
+.store-game-card.backdrop-card:hover {
+  border-color: rgba(217, 179, 108, 0.65) !important;
+}
+.game-card-backdrop-bg {
+  filter: saturate(0.85) brightness(0.95);
+}
+/* Fade verso il basso: usa la variabile live di Settings (--alt-card-fade 0..100). */
+.store-game-card.backdrop-card::after {
+  background: linear-gradient(
+    180deg,
+    rgba(10, 12, 18, calc(var(--alt-card-fade, 90) * 0.0022)) 0%,
+    rgba(10, 12, 18, calc(var(--alt-card-fade, 90) * 0.0062)) 45%,
+    rgba(10, 12, 18, calc(var(--alt-card-fade, 90) * 0.0094)) 100%
+  ) !important;
+  border-radius: inherit;
+}
+.game-card-backdrop-bg,
+.store-game-card.backdrop-card::after {
+  border-radius: inherit;
+}
+/* Badge DENTRO la card (con overflow hidden non si croppano). */
+.store-game-card.backdrop-card .badge-available,
+.store-game-card.backdrop-card .badge-installed {
+  top: 10px !important;
+  right: 10px !important;
+}
+.store-grid.alt-card-grid {
+  gap: 18px 16px !important;
+}
+.store-game-card.backdrop-card .game-info-wrapper {
+  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.75);
+}
+
+/* ---------- 7. Badge ---------- */
+.badge-available {
+  background: linear-gradient(135deg, var(--goldmine-gold), #c9a05c) !important;
+  color: #10131a !important;
+  border-radius: 6px !important;
+  font-family: 'Georgia', 'Palatino', serif;
+  letter-spacing: 0.5px;
+  border: 1px solid rgba(0, 0, 0, 0.3) !important;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.35) !important;
+}
+.badge-available.denuvo {
+  background: linear-gradient(135deg, #c96f6f, #a85757) !important;
+  color: #fff !important;
+}
+.badge-installed {
+  background: linear-gradient(135deg, var(--goldmine-green), #64805a) !important;
+  color: #10131a !important;
+  border-radius: 6px !important;
+  font-family: 'Georgia', 'Palatino', serif;
+  letter-spacing: 0.5px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3) !important;
+}
+
+/* ---------- 8. Settings toggles & dropdowns ---------- */
+.version-switch span {
+  background-color: #1a2030 !important;
+  border: 1px solid #333c52 !important;
+}
+.version-switch input:checked + span {
+  background-color: var(--goldmine-gold) !important;
+  border-color: var(--goldmine-gold) !important;
+  box-shadow: 0 0 8px rgba(217, 179, 108, 0.35) !important;
+}
+.settings-label {
+  font-family: 'Georgia', 'Palatino', serif;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  color: var(--goldmine-gold) !important;
+}
+
+/* Dropdown: stessa larghezza dei bottoni picker (115px). */
+.settings-select,
+.settings-front-filter-select {
+  width: 115px !important;
+  min-width: 115px !important;
+  height: 30px !important;
+  background-color: #161a26 !important;
+  border: 1px solid #2c3447 !important;
+  color: var(--goldmine-cream) !important;
+  font-size: 12px !important;
+  border-radius: 8px !important;
+}
+.settings-select:focus,
+.settings-front-filter-select:focus {
+  border-color: var(--goldmine-gold) !important;
+  box-shadow: 0 0 8px rgba(217, 179, 108, 0.25) !important;
+}
+
+/* Sezione Appearance: indentazione, path, asset mancanti, riga testo+bottone. */
+.settings-appearance-sub .settings-toggle-row {
+  border-left: 1px solid rgba(217, 179, 108, 0.18) !important;
+  padding-left: 14px !important;
+}
+.settings-appearance-row {
+  display: flex !important;
+  align-items: center !important;
+  gap: 12px !important;
+  width: 100% !important;
+}
+.settings-appearance-row .settings-desc {
+  flex: 1 1 auto !important;
+  margin: 0 !important;
+}
+.settings-path {
+  font-family: 'Consolas', monospace;
+  color: var(--goldmine-sky) !important;
+  background: rgba(143, 184, 216, 0.08) !important;
+  padding: 1px 5px;
+  border-radius: 4px;
+}
+.settings-assets-missing {
+  color: var(--goldmine-gold-dim) !important;
+}
+
+/* Bottone picker: stesso ingombro esatto dei dropdown (115x30). */
+.appearance-pick-btn {
+  width: 115px !important;
+  min-width: 115px !important;
+  max-width: 115px !important;
+  height: 30px !important;
+  flex: 0 0 115px !important;
+  background-color: #161a26 !important;
+  border: 1px solid rgba(217, 179, 108, 0.55) !important;
+  color: var(--goldmine-gold) !important;
+  font-family: 'Georgia', 'Palatino', serif !important;
+  text-transform: uppercase !important;
+  font-size: 11px !important;
+  font-weight: 700 !important;
+  letter-spacing: 1px !important;
+  border-radius: 8px !important;
+}
+.appearance-pick-btn:hover:not(:disabled) {
+  background-color: rgba(217, 179, 108, 0.14) !important;
+  color: var(--goldmine-cream) !important;
+  border-color: var(--goldmine-gold) !important;
+  box-shadow: 0 0 10px rgba(217, 179, 108, 0.2) !important;
+}
+
+/* ---------- 9. Modal ---------- */
+.modal-container {
+  background-color: #131722 !important;
+  border: 1px solid #2c3447 !important;
+  border-radius: 12px !important;
+  box-shadow: 0 0 30px rgba(0, 0, 0, 0.5), 0 12px 40px rgba(0, 0, 0, 0.6) !important;
+}
+.modal-title {
+  font-family: 'Georgia', 'Palatino', serif;
+  letter-spacing: 1px;
+  color: var(--goldmine-gold) !important;
+}
+.modal-separator {
+  background-color: rgba(217, 179, 108, 0.12) !important;
+}
+
+.source-box {
+  background-color: #0f1219 !important;
+  border: 1px solid #2c3447 !important;
+  border-radius: 10px !important;
+}
+.source-btn.active {
+  background-color: var(--goldmine-gold) !important;
+  color: #10131a !important;
+  border-color: var(--goldmine-gold) !important;
+}
+.big-action-btn {
+  border: 1px solid #2c3447 !important;
+  border-radius: 10px !important;
+  background: #10141d !important;
+}
+.big-action-btn:hover {
+  border-color: var(--goldmine-gold) !important;
+  background-color: #1a2030 !important;
+}
+.action-icon {
+  background: linear-gradient(135deg, var(--goldmine-gold), #c9a05c) !important;
+  color: #10131a !important;
+  border-radius: 8px !important;
+}
+
+/* Version modal — altezza dinamica */
+.version-modal-container {
+  height: auto !important;
+  max-height: min(85vh, 900px) !important;
+  min-height: unset !important;
+  width: min(840px, calc(100vw - 48px)) !important;
+}
+.version-modal-container .modal-body {
+  flex: 0 1 auto !important;
+  height: auto !important;
+  min-height: 0 !important;
+  overflow: visible !important;
+}
+.version-modal-container .version-table-wrapper {
+  flex: 0 1 auto !important;
+  min-height: 0 !important;
+  max-height: min(50vh, 520px) !important;
+  height: auto !important;
+  border: 1px solid rgba(217, 179, 108, 0.15) !important;
+  background-color: #0f1219 !important;
+}
+
+/* ---------- 10. Scrollbar ---------- */
+::-webkit-scrollbar-thumb {
+  background: #2c3447 !important;
+  border: 1px solid var(--goldmine-gold) !important;
+  border-radius: 4px !important;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--goldmine-gold) !important;
+}
+* {
+  scrollbar-color: var(--goldmine-gold) #10131a !important;
+}
+
+/* ---------- 11. Home / Aether panels ---------- */
+.aether-panel, .home-search-panel .home-search-input, .panel-btn {
+  border-radius: 10px !important;
+}
+.panel-btn {
+  font-family: 'Georgia', 'Palatino', serif;
+  letter-spacing: 0.5px;
+}
+.panel-btn:hover:not(:disabled) {
+  border-color: var(--goldmine-gold) !important;
+  color: var(--goldmine-gold) !important;
+  background-color: rgba(217, 179, 108, 0.07) !important;
+}
+
+/* ---------- 12. Alert ---------- */
+.settings-alert.info {
+  background-color: rgba(217, 179, 108, 0.08) !important;
+  border-color: rgba(217, 179, 108, 0.25) !important;
+  color: var(--goldmine-gold) !important;
+}
+.settings-alert.success {
+  background-color: rgba(124, 154, 109, 0.1) !important;
+  border-color: rgba(124, 154, 109, 0.3) !important;
+  color: var(--goldmine-green) !important;
+}
+
+/* ---------- 13. Save button ---------- */
+.save-settings-btn {
+  background: linear-gradient(135deg, var(--goldmine-gold), #c9a05c) !important;
+  color: #10131a !important;
+  border: 1px solid var(--goldmine-gold) !important;
+  border-radius: 8px !important;
+  font-family: 'Georgia', 'Palatino', serif;
+  font-weight: 700;
+  letter-spacing: 1px;
+}
+.save-settings-btn:hover {
+  background-color: #10131a !important;
+  color: var(--goldmine-gold) !important;
+  box-shadow: 0 0 12px rgba(217, 179, 108, 0.3);
+}
+
+/* ---------- 14. Wallpaper: visibile anche col tema attivo ---------- */
+#aether-personal-wallpaper {
+  position: fixed !important;
+  top: 0 !important;
+  left: var(--sidebar-width, 215px) !important;
+  right: 0 !important;
+  bottom: 0 !important;
+  width: auto !important;
+  height: auto !important;
+  background-position: center center !important;
+  background-size: cover !important;
+  z-index: 0 !important;
+  pointer-events: none !important;
+}
+
+/* Sfondo personale visibile anche con il tema attivo: quando la wallpaper
+   è abilitata il body e i contenitori smettono di dipingere sopra di lei. */
+body.aether-wallpaper-enabled {
+  background-image: none !important;
+  background-color: var(--bg-app) !important;
+}
+body.aether-wallpaper-enabled .main-content,
+body.aether-wallpaper-enabled .store-view,
+body.aether-wallpaper-enabled .settings-view,
+body.aether-wallpaper-enabled .home-view,
+body.aether-wallpaper-enabled .aether-view {
+  background: transparent !important;
+}
+
+/* Badge sempre sopra il contenuto delle card */
+.store-game-card.backdrop-card .badge-available,
+.store-game-card.backdrop-card .badge-installed,
+.store-game-card .badge-available,
+.store-game-card .badge-installed {
+  z-index: 20 !important;
+}

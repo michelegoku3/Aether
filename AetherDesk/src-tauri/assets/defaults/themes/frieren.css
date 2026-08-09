@@ -1,0 +1,590 @@
+/* ==========================================================================
+   AetherDesk — Custom CSS | Tema FRIEREN (Frieren • Fern • Stark)
+   Metti questo file in: <cartella di AetherDesk.exe>/AetherData/config/themes/
+   (il primo file .css presente nella cartella viene applicato automaticamente).
+   Abilita in: Settings → Appearance → Enable theme.
+
+   Palette costruita sui tre protagonisti (come da specifica):
+     ❄️ Frieren — blu/turchese/argento  → sfondo e struttura generale
+        blu notte #101923 · blu Frieren #527FA0 · azzurro #8EBBD1
+        turchese pallido #A8D1D0 · bianco capelli #E6EEF0 · argento #AEBBC4
+     💜 Fern    — viola/lavanda/rosa    → selezioni, hover, elementi interattivi
+        viola scuro #332C4A · viola Fern #675A8C · lavanda #9C8FC1
+        lilla #C2B5D5 · bianco caldo #E8E3EC
+     🔥 Stark   — rosso/bordeaux/arancio → accento RARO: badge, notifiche,
+        pulsanti speciali/pericolosi
+        rosso scuro #3A2026 · bordeaux #713B42 · rosso Stark #A4514D
+        rosso caldo #C87862 · arancio tenue #D69A68
+
+   Niente oro dominante: azzurro Frieren = colore dominante,
+   lavanda Fern = interazioni, rosso Stark = accento raro.
+   Piccolo gradiente desaturato #527FA0 → #675A8C → #A4514D per bordi,
+   glow e separatori decorativi. Font pulito (sans), niente serif.
+   ========================================================================== */
+
+/* ---------- 1. Variabili base ---------- */
+:root {
+  --bg-app: #0b1017;
+  --bg-sidebar: #0e151e;
+  --bg-item-hover: #1b2733;
+  --bg-item-active: #243142;
+  --color-text: #e6eef0;
+  --color-muted: #91a2ae;
+  --color-cyan: #8ebbd1; /* accento primario = azzurro Frieren */
+  --color-cyan-rgb: 142, 187, 209;
+  --color-denuvo: #a4514d; /* rosso Stark */
+  --color-nsfw-pink: #c87862;
+  --color-nsfw-pink-hover: #d69a68;
+  --color-delisted-white: #aebbc4;
+  --color-delisted-white-hover: #e6eef0;
+  --border-color: #344452;
+  --radius-card: 10px;
+  --radius-card-cover: 8px;
+  --radius-card-cover-inset: 5px;
+
+  --frieren-night: #101923;
+  --frieren-blue: #527fa0;
+  --frieren-azure: #8ebbd1;
+  --frieren-turquoise: #a8d1d0;
+  --frieren-white: #e6eef0;
+  --frieren-silver: #aebbc4;
+
+  --fern-dark: #332c4a;
+  --fern-violet: #675a8c;
+  --fern-lavender: #9c8fc1;
+  --fern-lilac: #c2b5d5;
+  --fern-white: #e8e3ec;
+
+  --stark-dark: #3a2026;
+  --stark-bordeaux: #713b42;
+  --stark-red: #a4514d;
+  --stark-warm: #c87862;
+  --stark-orange: #d69a68;
+
+  /* Gradiente desaturato dei tre protagonisti (decorazioni). */
+  --tri-gradient: linear-gradient(90deg, #527fa0, #675a8c, #a4514d);
+}
+
+/* ---------- 2. Sfondo app — blu notte con bagliore tri-color appena
+   percettibile in alto ---------- */
+body {
+  background-color: var(--bg-app) !important;
+  background-image:
+    radial-gradient(ellipse at 50% -10%, rgba(82, 127, 160, 0.10), transparent 55%),
+    radial-gradient(ellipse at 15% 110%, rgba(103, 90, 140, 0.06), transparent 50%),
+    radial-gradient(ellipse at 90% 115%, rgba(164, 81, 77, 0.05), transparent 50%);
+  background-size: 100% 100%, 100% 100%, 100% 100%;
+}
+
+.app-container {
+  position: relative;
+}
+
+/* ---------- 3. Sidebar ---------- */
+.sidebar {
+  background-color: #0e151e !important;
+  border-right: 1px solid #344452 !important;
+  box-shadow: 4px 0 24px rgba(0, 0, 0, 0.35);
+}
+
+.brand-icon {
+  width: 41px !important;
+  min-width: 41px !important;
+  height: 41px !important;
+  background: linear-gradient(135deg, var(--frieren-blue), var(--frieren-azure)) !important;
+  color: #0b1017 !important;
+  border-radius: 10px !important;
+  box-shadow: 0 0 16px rgba(142, 187, 209, 0.3);
+  font-weight: 700;
+}
+.brand-name {
+  color: var(--frieren-azure) !important;
+  letter-spacing: 3px !important;
+  text-shadow: 0 0 10px rgba(142, 187, 209, 0.3);
+}
+
+.group-label {
+  color: var(--color-muted) !important;
+  font-size: 10px !important;
+  letter-spacing: 2px !important;
+  text-transform: uppercase;
+  opacity: 0.9;
+}
+
+.nav-item {
+  letter-spacing: 0.5px;
+  border-left: 2px solid transparent;
+  transition: all 0.25s ease;
+}
+.nav-item:hover {
+  color: var(--fern-lavender) !important;
+  background-color: rgba(156, 143, 193, 0.08) !important;
+  border-left-color: var(--fern-lavender);
+}
+.nav-item.active {
+  color: #0b1017 !important;
+  background: linear-gradient(90deg, var(--fern-violet), var(--fern-lavender)) !important;
+  border-left: 3px solid var(--frieren-azure) !important;
+  font-weight: 700;
+  box-shadow: 0 0 14px rgba(156, 143, 193, 0.25);
+}
+
+/* Pulsante speciale/pericoloso → rosso Stark. */
+.restart-steam-btn {
+  color: var(--stark-warm) !important;
+  letter-spacing: 0.5px;
+  border: 1px solid rgba(164, 81, 77, 0.5);
+  margin: 0 12px;
+  width: calc(100% - 24px) !important;
+  border-radius: 8px !important;
+}
+.restart-steam-btn:hover {
+  background-color: rgba(164, 81, 77, 0.15) !important;
+  color: var(--stark-orange) !important;
+  border-color: var(--stark-red) !important;
+}
+
+/* ---------- 4. Main content & Store ---------- */
+.main-content {
+  background: radial-gradient(ellipse at 50% -20%, rgba(142, 187, 209, 0.07), transparent 60%),
+              var(--bg-app) !important;
+}
+
+.store-title, .settings-title, .aether-title, .home-title {
+  letter-spacing: 2px !important;
+  color: var(--frieren-azure) !important;
+  text-shadow: 0 0 14px rgba(142, 187, 209, 0.25);
+}
+.store-title::after {
+  content: " // FRIEREN • FERN • STARK";
+  color: var(--fern-lavender);
+  font-size: 11px;
+  letter-spacing: 1px;
+  opacity: 0.6;
+}
+
+.store-subtitle, .settings-subtitle {
+  color: #7d8b97 !important;
+  font-size: 11px !important;
+  letter-spacing: 0.5px;
+}
+
+.store-separator, .settings-separator, .separator {
+  background: var(--tri-gradient) !important;
+  opacity: 0.22;
+  height: 1px !important;
+}
+
+/* ---------- 5. Input & search ---------- */
+.store-search-input, .settings-input, .home-search-input, .settings-number-input {
+  background-color: var(--frieren-night) !important;
+  border: 1px solid #344452 !important;
+  border-radius: 8px !important;
+  color: var(--frieren-white) !important;
+}
+.store-search-input:focus, .settings-input:focus, .home-search-input:focus, .settings-number-input:focus {
+  border-color: var(--frieren-azure) !important;
+  box-shadow: 0 0 0 1px rgba(142, 187, 209, 0.3), 0 0 14px rgba(142, 187, 209, 0.12) !important;
+  background-color: #121a25 !important;
+}
+.store-search-input::placeholder, .settings-input::placeholder {
+  color: #5c6b78 !important;
+}
+
+.store-search-btn {
+  background: linear-gradient(135deg, var(--frieren-blue), var(--frieren-azure)) !important;
+  color: #0b1017 !important;
+  border-radius: 8px !important;
+  border: 1px solid var(--frieren-azure);
+  box-shadow: 0 0 12px rgba(142, 187, 209, 0.25);
+  font-weight: 700;
+}
+.store-search-btn:hover {
+  background: linear-gradient(135deg, var(--fern-violet), var(--fern-lavender)) !important;
+  border-color: var(--fern-lavender) !important;
+  color: #0b1017 !important;
+  box-shadow: 0 0 16px rgba(156, 143, 193, 0.4);
+}
+
+/* ---------- 6. Game Card ---------- */
+.store-game-card {
+  background-color: #141d27 !important;
+  border: 1px solid #344452 !important;
+  border-radius: 10px !important;
+  overflow: visible !important;
+  position: relative;
+  clip-path: none !important;
+  transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease, background-color 0.2s ease;
+}
+.store-game-card::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 12px;
+  right: 12px;
+  height: 2px;
+  background: var(--tri-gradient);
+  opacity: 0;
+  transition: opacity 0.3s;
+  z-index: 2;
+}
+.store-game-card:hover::before {
+  opacity: 0.8;
+}
+.store-game-card:hover {
+  transform: translateY(-2px) !important;
+  background-color: #1b2733 !important;
+  border-color: rgba(142, 187, 209, 0.55) !important;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.45), 0 0 0 1px rgba(142, 187, 209, 0.1) !important;
+}
+.store-game-card.nsfw {
+  border-color: rgba(200, 120, 98, 0.8) !important;
+  box-shadow: 0 0 16px rgba(164, 81, 77, 0.15) !important;
+}
+.store-game-card.delisted {
+  border-color: #56626e !important;
+  opacity: 0.85;
+}
+
+.game-cover-wrapper {
+  border-radius: 8px !important;
+  background-color: #0e151e !important;
+}
+
+.game-name {
+  color: var(--frieren-white) !important;
+}
+.game-appid {
+  color: var(--frieren-silver) !important;
+  font-size: 10px !important;
+}
+
+/* Download (primario) → Frieren blue; Info (secondario) → Fern lavender. */
+.game-download-btn {
+  border: 1px solid rgba(142, 187, 209, 0.55) !important;
+  color: var(--frieren-azure) !important;
+  border-radius: 8px !important;
+  font-size: 11px !important;
+  background: transparent !important;
+  transition: color 0.2s ease, background-color 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+}
+.game-download-btn:hover {
+  background-color: rgba(142, 187, 209, 0.12) !important;
+  color: var(--frieren-white) !important;
+  border-color: var(--frieren-azure) !important;
+  box-shadow: 0 0 12px rgba(142, 187, 209, 0.25);
+}
+.game-download-btn.secondary {
+  border-color: rgba(156, 143, 193, 0.55) !important;
+  color: var(--fern-lavender) !important;
+}
+.game-download-btn.secondary:hover {
+  background-color: rgba(156, 143, 193, 0.12) !important;
+  color: var(--fern-white) !important;
+  border-color: var(--fern-lavender) !important;
+  box-shadow: 0 0 12px rgba(156, 143, 193, 0.25);
+}
+
+/* Backdrop cards — morbide, badge dentro, fade live. */
+.store-game-card.backdrop-card {
+  overflow: hidden !important;
+  border: 1px solid #344452 !important;
+  background-color: #141d27 !important;
+  border-radius: 12px !important;
+  clip-path: none !important;
+}
+.store-game-card.backdrop-card:hover {
+  border-color: rgba(142, 187, 209, 0.55) !important;
+  background-color: #1b2733 !important;
+}
+.game-card-backdrop-bg {
+  filter: saturate(0.9) brightness(0.95);
+}
+.store-game-card.backdrop-card::after {
+  background: linear-gradient(
+    180deg,
+    rgba(8, 12, 18, calc(var(--alt-card-fade, 90) * 0.0022)) 0%,
+    rgba(8, 12, 18, calc(var(--alt-card-fade, 90) * 0.0062)) 45%,
+    rgba(8, 12, 18, calc(var(--alt-card-fade, 90) * 0.0094)) 100%
+  ) !important;
+  border-radius: inherit;
+}
+.game-card-backdrop-bg,
+.store-game-card.backdrop-card::after {
+  border-radius: inherit;
+}
+.store-game-card.backdrop-card .badge-available,
+.store-game-card.backdrop-card .badge-installed {
+  top: 10px !important;
+  right: 10px !important;
+}
+.store-grid.alt-card-grid {
+  gap: 18px 16px !important;
+}
+.store-game-card.backdrop-card .game-info-wrapper {
+  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.75);
+}
+
+/* ---------- 7. Badge ---------- */
+/* Available = accento speciale → rosso Stark; Installed → turchese Frieren. */
+.badge-available {
+  background: linear-gradient(135deg, var(--stark-warm), var(--stark-red)) !important;
+  color: #0b1017 !important;
+  border-radius: 6px !important;
+  letter-spacing: 0.5px;
+  border: 1px solid rgba(0, 0, 0, 0.3) !important;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.35) !important;
+}
+.badge-available.denuvo {
+  background: linear-gradient(135deg, var(--stark-red), var(--stark-bordeaux)) !important;
+  color: var(--frieren-white) !important;
+}
+.badge-installed {
+  background: linear-gradient(135deg, var(--frieren-turquoise), var(--frieren-blue)) !important;
+  color: #0b1017 !important;
+  border-radius: 6px !important;
+  letter-spacing: 0.5px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3) !important;
+}
+
+/* ---------- 8. Settings toggles & dropdowns ---------- */
+.version-switch span {
+  background-color: #1b2733 !important;
+  border: 1px solid #3a4a5c !important;
+}
+.version-switch input:checked + span {
+  background-color: var(--frieren-azure) !important;
+  border-color: var(--frieren-azure) !important;
+  box-shadow: 0 0 8px rgba(142, 187, 209, 0.35) !important;
+}
+.settings-label {
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  color: var(--frieren-azure) !important;
+}
+
+/* Dropdown: stessa larghezza dei bottoni picker (115px). */
+.settings-select,
+.settings-front-filter-select {
+  width: 115px !important;
+  min-width: 115px !important;
+  height: 30px !important;
+  background-color: var(--frieren-night) !important;
+  border: 1px solid #344452 !important;
+  color: var(--frieren-white) !important;
+  font-size: 12px !important;
+  border-radius: 8px !important;
+}
+.settings-select:focus,
+.settings-front-filter-select:focus {
+  border-color: var(--frieren-azure) !important;
+  box-shadow: 0 0 8px rgba(142, 187, 209, 0.25) !important;
+}
+
+/* Sezione Appearance: indentazione, path, riga testo+bottone. */
+.settings-appearance-sub .settings-toggle-row {
+  border-left: 1px solid rgba(142, 187, 209, 0.18) !important;
+  padding-left: 14px !important;
+}
+.settings-appearance-row {
+  display: flex !important;
+  align-items: center !important;
+  gap: 12px !important;
+  width: 100% !important;
+}
+.settings-appearance-row .settings-desc {
+  flex: 1 1 auto !important;
+  margin: 0 !important;
+}
+.settings-path {
+  font-family: 'Consolas', monospace;
+  color: var(--fern-lavender) !important;
+  background: rgba(156, 143, 193, 0.08) !important;
+  padding: 1px 5px;
+  border-radius: 4px;
+}
+.settings-assets-missing {
+  color: var(--color-muted) !important;
+}
+
+/* Bottone picker: stesso ingombro esatto dei dropdown (115x30), centrato
+   verticalmente rispetto alla descrizione alla sua sinistra. */
+.appearance-pick-btn {
+  width: 115px !important;
+  min-width: 115px !important;
+  max-width: 115px !important;
+  height: 30px !important;
+  flex: 0 0 115px !important;
+  background-color: var(--frieren-night) !important;
+  border: 1px solid rgba(142, 187, 209, 0.55) !important;
+  color: var(--frieren-azure) !important;
+  text-transform: uppercase !important;
+  font-size: 11px !important;
+  font-weight: 700 !important;
+  letter-spacing: 1px !important;
+  border-radius: 8px !important;
+}
+.appearance-pick-btn:hover:not(:disabled) {
+  background-color: rgba(142, 187, 209, 0.12) !important;
+  color: var(--frieren-white) !important;
+  border-color: var(--frieren-azure) !important;
+  box-shadow: 0 0 10px rgba(142, 187, 209, 0.2) !important;
+}
+
+/* ---------- 9. Modal ---------- */
+.modal-container {
+  background-color: var(--frieren-night) !important;
+  border: 1px solid #344452 !important;
+  border-radius: 12px !important;
+  box-shadow: 0 0 30px rgba(0, 0, 0, 0.5), 0 12px 40px rgba(0, 0, 0, 0.6) !important;
+}
+.modal-title {
+  letter-spacing: 1px;
+  color: var(--frieren-azure) !important;
+}
+.modal-separator {
+  background: var(--tri-gradient) !important;
+  opacity: 0.2;
+}
+
+.source-box {
+  background-color: #0e151e !important;
+  border: 1px solid #344452 !important;
+  border-radius: 10px !important;
+}
+.source-btn.active {
+  background: linear-gradient(135deg, var(--fern-violet), var(--fern-lavender)) !important;
+  color: #0b1017 !important;
+  border-color: var(--fern-lavender) !important;
+}
+.big-action-btn {
+  border: 1px solid #344452 !important;
+  border-radius: 10px !important;
+  background: #101923 !important;
+}
+.big-action-btn:hover {
+  border-color: var(--frieren-azure) !important;
+  background-color: #1b2733 !important;
+}
+.action-icon {
+  background: linear-gradient(135deg, var(--frieren-blue), var(--frieren-azure)) !important;
+  color: #0b1017 !important;
+  border-radius: 8px !important;
+}
+
+/* Version modal — altezza dinamica */
+.version-modal-container {
+  height: auto !important;
+  max-height: min(85vh, 900px) !important;
+  min-height: unset !important;
+  width: min(840px, calc(100vw - 48px)) !important;
+}
+.version-modal-container .modal-body {
+  flex: 0 1 auto !important;
+  height: auto !important;
+  min-height: 0 !important;
+  overflow: visible !important;
+}
+.version-modal-container .version-table-wrapper {
+  flex: 0 1 auto !important;
+  min-height: 0 !important;
+  max-height: min(50vh, 520px) !important;
+  height: auto !important;
+  border: 1px solid rgba(142, 187, 209, 0.15) !important;
+  background-color: #0e151e !important;
+}
+
+/* ---------- 10. Scrollbar ---------- */
+::-webkit-scrollbar-thumb {
+  background: #344452 !important;
+  border: 1px solid var(--frieren-azure) !important;
+  border-radius: 4px !important;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--frieren-azure) !important;
+}
+* {
+  scrollbar-color: var(--frieren-azure) #0b1017 !important;
+}
+
+/* ---------- 11. Home / Aether panels ---------- */
+.aether-panel, .home-search-panel .home-search-input, .panel-btn {
+  border-radius: 10px !important;
+}
+.panel-btn {
+  letter-spacing: 0.5px;
+}
+.panel-btn:hover:not(:disabled) {
+  border-color: var(--fern-lavender) !important;
+  color: var(--fern-lavender) !important;
+  background-color: rgba(156, 143, 193, 0.08) !important;
+}
+
+/* ---------- 12. Alert ---------- */
+.settings-alert.info {
+  background-color: rgba(142, 187, 209, 0.08) !important;
+  border-color: rgba(142, 187, 209, 0.25) !important;
+  color: var(--frieren-azure) !important;
+}
+.settings-alert.success {
+  background-color: rgba(168, 209, 208, 0.1) !important;
+  border-color: rgba(168, 209, 208, 0.3) !important;
+  color: var(--frieren-turquoise) !important;
+}
+.settings-alert.error {
+  background-color: rgba(164, 81, 77, 0.1) !important;
+  border-color: rgba(164, 81, 77, 0.3) !important;
+  color: var(--stark-warm) !important;
+}
+
+/* ---------- 13. Save button ---------- */
+.save-settings-btn {
+  background: linear-gradient(135deg, var(--frieren-blue), var(--frieren-azure)) !important;
+  color: #0b1017 !important;
+  border: 1px solid var(--frieren-azure) !important;
+  border-radius: 8px !important;
+  font-weight: 700;
+  letter-spacing: 1px;
+}
+.save-settings-btn:hover {
+  background: linear-gradient(135deg, var(--fern-violet), var(--fern-lavender)) !important;
+  color: #0b1017 !important;
+  box-shadow: 0 0 12px rgba(156, 143, 193, 0.3);
+}
+
+/* ---------- 14. Wallpaper: visibile anche col tema attivo ---------- */
+#aether-personal-wallpaper {
+  position: fixed !important;
+  top: 0 !important;
+  left: var(--sidebar-width, 215px) !important;
+  right: 0 !important;
+  bottom: 0 !important;
+  width: auto !important;
+  height: auto !important;
+  background-position: center center !important;
+  background-size: cover !important;
+  z-index: 0 !important;
+  pointer-events: none !important;
+}
+
+/* Sfondo personale visibile anche con il tema attivo: quando la wallpaper
+   è abilitata il body e i contenitori smettono di dipingere sopra di lei. */
+body.aether-wallpaper-enabled {
+  background-image: none !important;
+  background-color: var(--bg-app) !important;
+}
+body.aether-wallpaper-enabled .main-content,
+body.aether-wallpaper-enabled .store-view,
+body.aether-wallpaper-enabled .settings-view,
+body.aether-wallpaper-enabled .home-view,
+body.aether-wallpaper-enabled .aether-view {
+  background: transparent !important;
+}
+
+/* Badge sempre sopra il contenuto delle card */
+.store-game-card.backdrop-card .badge-available,
+.store-game-card.backdrop-card .badge-installed,
+.store-game-card .badge-available,
+.store-game-card .badge-installed {
+  z-index: 20 !important;
+}

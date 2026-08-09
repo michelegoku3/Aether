@@ -180,6 +180,15 @@ pub fn remove_obsolete_component_version_dirs(app: &tauri::AppHandle) {
 // Startup hub
 // ---------------------------------------------------------------------------
 
+/// Ensure the appearance asset folders (`config/themes/`, `config/wallpapers/`)
+/// exist and are seeded with the embedded Cyberpunk defaults on first run.
+/// Idempotent and failure-tolerant (logs, never blocks startup).
+pub fn ensure_appearance_dirs() {
+    if let Err(error) = crate::core::custom_css::ensure_default_assets() {
+        eprintln!("[AetherDesk] failed to provision appearance folders: {error}");
+    }
+}
+
 /// Run every startup migration in one place (settings → data layout → obsolete
 /// leftovers). Each step is idempotent and degrades to a log line on failure, so
 /// a broken migration never prevents the app from starting.
@@ -193,6 +202,9 @@ pub fn run_startup_migrations(app: &tauri::AppHandle) {
     migrate_legacy_settings_if_needed(&config_dir, legacy_config_dir.as_deref());
 
     remove_obsolete_component_version_dirs(app);
+
+    // Create + seed config/themes and config/wallpapers on every start.
+    ensure_appearance_dirs();
 
     // Load AFTER the settings migration so the steam path is the migrated one.
     let steam_path = crate::core::settings::SettingsManager::new(app)

@@ -70,6 +70,30 @@ pub struct AppSettings {
     /// Wallpaper image opacity percentage (0..=100).
     #[serde(default = "default_wallpaper_opacity")]
     pub personal_wallpaper_opacity: u8,
+    /// Explicitly chosen wallpaper file name inside `config/wallpapers/`.
+    /// Empty means "use the first detected wallpaper" (sorted by name).
+    #[serde(default)]
+    pub wallpaper_selected_file: String,
+    /// Explicitly chosen theme file name inside `config/themes/`.
+    /// Empty means "use the first detected theme" (sorted by name).
+    #[serde(default)]
+    pub theme_selected_file: String,
+    /// Backdrop image opacity (0..=100) of the alternative game cards.
+    #[serde(default = "default_alt_cards_opacity")]
+    pub alternative_cards_opacity: u8,
+    /// Backdrop fade-out toward the bottom (0..=100) of the alternative game cards.
+    #[serde(default = "default_alt_cards_fade")]
+    pub alternative_cards_fade: u8,
+}
+
+/// Serde default provider for the alt-cards backdrop opacity.
+fn default_alt_cards_opacity() -> u8 {
+    70
+}
+
+/// Serde default provider for the alt-cards bottom fade.
+fn default_alt_cards_fade() -> u8 {
+    90
 }
 
 /// Serde default provider for boolean settings that ship enabled.
@@ -140,6 +164,10 @@ impl Default for AppSettings {
             store_currency: default_store_currency(),
             personal_wallpaper_enabled: false,
             personal_wallpaper_opacity: default_wallpaper_opacity(),
+            wallpaper_selected_file: String::new(),
+            theme_selected_file: String::new(),
+            alternative_cards_opacity: default_alt_cards_opacity(),
+            alternative_cards_fade: default_alt_cards_fade(),
         }
     }
 }
@@ -200,6 +228,8 @@ impl SettingsManager {
         normalized.store_currency = normalize_store_currency(&normalized.store_currency);
         normalized.store_front_filter = normalize_store_front_filter(&normalized.store_front_filter);
         normalized.personal_wallpaper_opacity = normalized.personal_wallpaper_opacity.min(100);
+        normalized.alternative_cards_opacity = normalized.alternative_cards_opacity.min(100);
+        normalized.alternative_cards_fade = normalized.alternative_cards_fade.min(100);
 
         let json_data = serde_json::to_string_pretty(&normalized)
             .map_err(|e| format!("Serialization error: {}", e))?;

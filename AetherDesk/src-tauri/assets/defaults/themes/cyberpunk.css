@@ -1,0 +1,619 @@
+/* ==========================================================================
+   AetherDesk — Custom CSS | Tema Cyberpunk 2077 (default di AetherDesk)
+   Metti questo file in: <cartella di AetherDesk.exe>/AetherData/config/themes/
+   (il primo file .css presente nella cartella viene applicato automaticamente).
+   Palette: nero corvino, giallo hazard #fcee0a, ciano neon #00f0ff, magenta #ff003c.
+   Fix: dropdown 105px, angoli tagliati cyberpunk sulle backdrop card, badge non
+   croppati, wallpaper centrato su var(--sidebar-width), modal a altezza dinamica.
+   ========================================================================== */
+
+/* ---------- 1. Variabili base ---------- */
+:root {
+  --bg-app: #050508;
+  --bg-sidebar: #0a0a10;
+  --bg-item-hover: #1a1a14;
+  --bg-item-active: #1e1e0a;
+  --color-text: #e8e8e0;
+  --color-muted: #9a9a8a;
+  --color-cyan: #fcee0a;
+  --color-cyan-rgb: 252, 238, 10;
+  --color-denuvo: #ff003c;
+  --color-nsfw-pink: #ff003c;
+  --border-color: #2a2a1a;
+  --radius-card: 4px;
+  --radius-card-cover: 3px;
+  --cyber-yellow: #fcee0a;
+  --cyber-yellow-dim: #b8a800;
+  --cyber-cyan: #00f0ff;
+  --cyber-magenta: #ff003c;
+  --cyber-black: #050508;
+}
+
+/* ---------- 2. Sfondo app ---------- */
+body {
+  background-color: var(--bg-app) !important;
+  background-image:
+    linear-gradient(rgba(252,238,10,0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(252,238,10,0.03) 1px, transparent 1px);
+  background-size: 40px 40px;
+}
+
+.app-container {
+  position: relative;
+}
+.app-container::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background: repeating-linear-gradient(
+    to bottom,
+    transparent 0px,
+    transparent 2px,
+    rgba(252,238,10,0.02) 3px
+  );
+  z-index: 9999;
+}
+
+/* ---------- 3. Sidebar ---------- */
+.sidebar {
+  background-color: #08080a !important;
+  border-right: 2px solid var(--cyber-yellow) !important;
+  box-shadow: 0 0 20px rgba(252,238,10,0.15);
+}
+
+.brand-icon {
+  width: 41px !important;
+  min-width: 41px !important;
+  height: 41px !important;
+  background-color: var(--cyber-yellow) !important;
+  color: #000 !important;
+  border-radius: 2px !important;
+  transform: skew(-6deg);
+  box-shadow: 0 0 12px rgba(252,238,10,0.6);
+  font-family: 'Consolas', monospace;
+  letter-spacing: 1px;
+}
+.brand-name {
+  color: var(--cyber-yellow) !important;
+  font-family: 'Consolas', 'Courier New', monospace;
+  text-transform: uppercase;
+  letter-spacing: 3px !important;
+  text-shadow: 0 0 8px rgba(252,238,10,0.4);
+}
+
+.group-label {
+  color: var(--cyber-yellow) !important;
+  font-family: 'Consolas', monospace;
+  font-size: 10px !important;
+  opacity: 0.8;
+}
+
+.nav-item {
+  font-family: 'Consolas', monospace;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  border-left: 2px solid transparent;
+  position: relative;
+}
+.nav-item:hover {
+  color: var(--cyber-yellow) !important;
+  background-color: rgba(252,238,10,0.08) !important;
+  border-left-color: var(--cyber-yellow);
+}
+.nav-item.active {
+  color: #000 !important;
+  background-color: var(--cyber-yellow) !important;
+  border-left: 3px solid var(--cyber-cyan) !important;
+  font-weight: 800;
+  box-shadow: 0 0 12px rgba(252,238,10,0.4);
+}
+.nav-item.active::after {
+  content: "▶";
+  position: absolute;
+  right: 12px;
+  font-size: 10px;
+  color: #000;
+}
+
+.restart-steam-btn {
+  color: var(--cyber-magenta) !important;
+  font-family: 'Consolas', monospace;
+  text-transform: uppercase;
+  border: 1px solid var(--cyber-magenta);
+  /* .nav-item è width:100% + padding: i margini laterali lo facevano
+     sbordare oltre il bordo della sidebar. */
+  margin: 0 12px;
+  width: calc(100% - 24px) !important;
+  border-radius: 2px;
+}
+.restart-steam-btn:hover {
+  background-color: var(--cyber-magenta) !important;
+  color: #fff !important;
+  box-shadow: 0 0 12px rgba(255,0,60,0.5);
+}
+
+/* ---------- 4. Main content & Store ---------- */
+.main-content {
+  background: radial-gradient(ellipse at top, rgba(252,238,10,0.04), transparent 60%),
+              var(--bg-app) !important;
+}
+
+.store-title, .settings-title, .aether-title, .home-title {
+  font-family: 'Consolas', 'Courier New', monospace !important;
+  text-transform: uppercase;
+  letter-spacing: 4px !important;
+  color: var(--cyber-yellow) !important;
+  text-shadow: 0 0 10px rgba(252,238,10,0.3);
+  position: relative;
+}
+.store-title::after {
+  content: " // NIGHT CITY";
+  color: var(--cyber-cyan);
+  font-size: 12px;
+  letter-spacing: 2px;
+  opacity: 0.6;
+}
+
+.store-subtitle, .settings-subtitle {
+  color: #7a7a6a !important;
+  font-family: 'Consolas', monospace;
+  font-size: 11px !important;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+.store-separator, .settings-separator, .separator {
+  background-color: rgba(252,238,10,0.15) !important;
+  height: 1px !important;
+}
+.store-separator {
+  box-shadow: 0 0 6px rgba(252,238,10,0.2);
+}
+
+/* ---------- 5. Search bar ---------- */
+.store-search-input, .settings-input, .home-search-input, .settings-number-input {
+  background-color: #0f0f0a !important;
+  border: 1px solid #3a3a1a !important;
+  border-radius: 2px !important;
+  color: var(--cyber-yellow) !important;
+  font-family: 'Consolas', monospace;
+  letter-spacing: 0.5px;
+}
+.store-search-input:focus, .settings-input:focus, .home-search-input:focus, .settings-number-input:focus {
+  border-color: var(--cyber-yellow) !important;
+  box-shadow: 0 0 0 1px var(--cyber-yellow), 0 0 12px rgba(252,238,10,0.2) !important;
+  background-color: #151508 !important;
+}
+.store-search-input::placeholder, .settings-input::placeholder {
+  color: #5a5a4a !important;
+  text-transform: uppercase;
+  font-size: 11px;
+  letter-spacing: 1px;
+}
+
+.store-search-btn {
+  background-color: var(--cyber-yellow) !important;
+  color: #000 !important;
+  border-radius: 2px !important;
+  font-family: 'Consolas', monospace;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  font-weight: 800 !important;
+  transform: skew(-4deg);
+  border: 1px solid var(--cyber-yellow);
+  box-shadow: 0 0 10px rgba(252,238,10,0.3);
+}
+.store-search-btn:hover {
+  background-color: var(--cyber-cyan) !important;
+  border-color: var(--cyber-cyan) !important;
+  color: #000 !important;
+  box-shadow: 0 0 16px rgba(0,240,255,0.5);
+}
+
+/* ---------- 6. Game Card ---------- */
+.store-game-card {
+  background-color: #0f0f0a !important;
+  border: 1px solid #2a2a1a !important;
+  border-radius: 2px !important;
+  overflow: visible !important;
+  position: relative;
+  clip-path: none !important;
+}
+.store-game-card::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, var(--cyber-yellow), transparent);
+  opacity: 0;
+  transition: opacity 0.3s;
+  z-index: 2;
+}
+.store-game-card:hover::before {
+  opacity: 1;
+}
+.store-game-card:hover {
+  transform: translateY(-2px) !important;
+  border-color: var(--cyber-yellow) !important;
+  box-shadow: 0 4px 20px rgba(252,238,10,0.15), 0 0 0 1px rgba(252,238,10,0.1) !important;
+}
+.store-game-card.nsfw {
+  border-color: var(--cyber-magenta) !important;
+  box-shadow: 0 0 15px rgba(255,0,60,0.2) !important;
+}
+.store-game-card.nsfw .game-cover-wrapper {
+  border-left: 3px solid var(--cyber-magenta);
+}
+.store-game-card.delisted {
+  border-color: #888 !important;
+  opacity: 0.85;
+}
+
+.game-cover-wrapper {
+  border-radius: 1px !important;
+  background-color: #0a0a06 !important;
+}
+
+.game-name {
+  font-family: 'Consolas', monospace !important;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: #fff !important;
+}
+.game-appid {
+  color: var(--cyber-cyan) !important;
+  font-size: 10px !important;
+}
+
+.game-download-btn {
+  border: 1px solid var(--cyber-yellow) !important;
+  color: var(--cyber-yellow) !important;
+  border-radius: 2px !important;
+  font-family: 'Consolas', monospace;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  font-size: 11px !important;
+  background: transparent !important;
+  position: relative;
+  overflow: hidden;
+}
+.game-download-btn::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: var(--cyber-yellow);
+  transform: translateX(-100%);
+  transition: transform 0.2s;
+  z-index: -1;
+}
+.game-download-btn:hover::before {
+  transform: translateX(0);
+}
+.game-download-btn:hover {
+  color: #000 !important;
+  box-shadow: 0 0 10px rgba(252,238,10,0.4);
+}
+
+/* Backdrop cards — angoli tagliati cyberpunk (chamfered) */
+/* Il clip-path è applicato alla CARD INTERA così anche il bordo segue gli
+   angoli tagliati (alto destro + basso sinistro), invece di restare un
+   rettangolo mentre l'immagine ha gli angoli smussati. */
+.store-game-card.backdrop-card {
+  overflow: hidden !important;
+  border: 1px solid #2a2a1a !important;
+  background-color: #0f0f0a !important;
+  border-radius: 0 !important;
+  clip-path: polygon(0 0, calc(100% - 12px) 0, 100% 12px, 100% 100%, 12px 100%, 0 calc(100% - 12px));
+}
+.store-game-card.backdrop-card:hover {
+  border-color: var(--cyber-yellow) !important;
+}
+.game-card-backdrop-bg {
+  filter: saturate(0.9) contrast(1.1);
+}
+/* Fade verso il basso: usa la variabile live di Settings (--alt-card-fade 0..100). */
+.store-game-card.backdrop-card::after {
+  background: linear-gradient(
+    180deg,
+    rgba(0,0,0, calc(var(--alt-card-fade, 90) * 0.0018)) 0%,
+    rgba(0,0,0, calc(var(--alt-card-fade, 90) * 0.0055)) 45%,
+    rgba(0,0,0, calc(var(--alt-card-fade, 90) * 0.0092)) 100%
+  ) !important;
+}
+/* Badge DENTRO la card: con il bordo superiore destro tagliato e overflow
+   hidden, il posizionamento a -8px li croppava. */
+.store-game-card.backdrop-card .badge-available,
+.store-game-card.backdrop-card .badge-installed {
+  top: 10px !important;
+  right: 10px !important;
+}
+.store-grid.alt-card-grid {
+  gap: 18px 16px !important;
+}
+.store-game-card.backdrop-card .game-info-wrapper {
+  text-shadow: 0 2px 6px rgba(0,0,0,0.9);
+}
+
+/* ---------- 7. Badge ---------- */
+.badge-available {
+  background-color: var(--cyber-yellow) !important;
+  color: #000 !important;
+  border-radius: 1px !important;
+  font-family: 'Consolas', monospace;
+  letter-spacing: 1px;
+  border: 1px solid #000 !important;
+  transform: skew(-6deg);
+  box-shadow: 0 2px 8px rgba(0,0,0,0.5) !important;
+}
+.badge-available.denuvo {
+  background-color: var(--cyber-magenta) !important;
+  color: #fff !important;
+}
+.badge-installed {
+  background-color: var(--cyber-cyan) !important;
+  color: #000 !important;
+  border-radius: 1px !important;
+  font-family: 'Consolas', monospace;
+  transform: skew(-6deg);
+}
+
+/* ---------- 8. Settings toggles & dropdowns FIX ---------- */
+.version-switch span {
+  background-color: #1a1a0a !important;
+  border: 1px solid #3a3a1a !important;
+}
+.version-switch input:checked + span {
+  background-color: var(--cyber-yellow) !important;
+  border-color: var(--cyber-yellow) !important;
+  box-shadow: 0 0 8px rgba(252,238,10,0.4) !important;
+}
+.settings-label {
+  font-family: 'Consolas', monospace;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: var(--cyber-yellow) !important;
+}
+
+/* Nuove classi della sezione Appearance (indentazione, path, asset mancanti). */
+.settings-appearance-sub .settings-toggle-row {
+  border-left: 1px solid rgba(252,238,10,0.2) !important;
+  padding-left: 14px !important;
+}
+.settings-appearance-row {
+  display: flex !important;
+  align-items: center !important;
+  gap: 12px !important;
+  width: 100% !important;
+}
+.settings-appearance-row .settings-desc {
+  flex: 1 1 auto !important;
+  margin: 0 !important;
+}
+.settings-path {
+  font-family: 'Consolas', monospace;
+  color: var(--cyber-cyan) !important;
+  background: rgba(0,240,255,0.08) !important;
+}
+.settings-assets-missing {
+  color: var(--cyber-yellow-dim) !important;
+}
+
+/* Dropdowns equal width fix - force 160px */
+.settings-select,
+.settings-front-filter-select {
+  width: 115px !important;
+  min-width: 115px !important;
+  height: 32px !important;
+  background-color: #0f0f0a !important;
+  border: 1px solid #3a3a1a !important;
+  color: var(--cyber-yellow) !important;
+  font-family: 'Consolas', monospace !important;
+  font-size: 12px !important;
+  border-radius: 2px !important;
+}
+.settings-select:focus,
+.settings-front-filter-select:focus {
+  border-color: var(--cyber-yellow) !important;
+  box-shadow: 0 0 8px rgba(252,238,10,0.3) !important;
+}
+
+/* Theme / Wallpaper picker buttons: stessa classe (dimensioni identiche),
+   stile cyberpunk. */
+.appearance-pick-btn {
+  width: 115px !important;
+  min-width: 115px !important;
+  max-width: 115px !important;
+  height: 30px !important;
+  flex: 0 0 115px !important;
+  background-color: #0f0f0a !important;
+  border: 1px solid var(--cyber-yellow) !important;
+  color: var(--cyber-yellow) !important;
+  font-family: 'Consolas', monospace !important;
+  text-transform: uppercase !important;
+  font-size: 11px !important;
+  font-weight: 700 !important;
+  letter-spacing: 1px !important;
+  border-radius: 2px !important;
+}
+.appearance-pick-btn:hover:not(:disabled) {
+  background-color: var(--cyber-yellow) !important;
+  color: #000 !important;
+  border-color: var(--cyber-yellow) !important;
+  box-shadow: 0 0 10px rgba(252,238,10,0.4) !important;
+}
+
+/* ---------- 9. Modal ---------- */
+.modal-container {
+  background-color: #0f0f0a !important;
+  border: 1px solid var(--cyber-yellow) !important;
+  border-radius: 2px !important;
+  box-shadow: 0 0 30px rgba(252,238,10,0.15), 0 10px 40px rgba(0,0,0,0.8) !important;
+}
+.modal-title {
+  font-family: 'Consolas', monospace;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: var(--cyber-yellow) !important;
+}
+.modal-separator {
+  background-color: rgba(252,238,10,0.15) !important;
+}
+
+.source-box {
+  background-color: #050508 !important;
+  border: 1px solid #2a2a1a !important;
+  border-radius: 2px !important;
+}
+.source-btn.active {
+  background-color: var(--cyber-yellow) !important;
+  color: #000 !important;
+  border-color: var(--cyber-yellow) !important;
+}
+.big-action-btn {
+  border: 1px solid #2a2a1a !important;
+  border-radius: 2px !important;
+  background: #0a0a06 !important;
+}
+.big-action-btn:hover {
+  border-color: var(--cyber-yellow) !important;
+  background-color: #1a1a0a !important;
+}
+.action-icon {
+  background-color: var(--cyber-yellow) !important;
+  color: #000 !important;
+  border-radius: 1px !important;
+  transform: skew(-4deg);
+}
+
+/* Version modal dynamic height fix */
+.version-modal-container {
+  height: auto !important;
+  max-height: min(85vh, 900px) !important;
+  min-height: unset !important;
+  width: min(840px, calc(100vw - 48px)) !important;
+}
+.version-modal-container .modal-body {
+  flex: 0 1 auto !important;
+  height: auto !important;
+  min-height: 0 !important;
+  overflow: visible !important;
+}
+.version-modal-container .version-table-wrapper {
+  flex: 0 1 auto !important;
+  min-height: 0 !important;
+  max-height: min(50vh, 520px) !important;
+  height: auto !important;
+  border: 1px solid rgba(252,238,10,0.15) !important;
+  background-color: #050508 !important;
+}
+
+/* ---------- 10. Scrollbar ---------- */
+::-webkit-scrollbar-thumb {
+  background: #2a2a1a !important;
+  border: 1px solid var(--cyber-yellow) !important;
+  border-radius: 1px !important;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--cyber-yellow) !important;
+}
+* {
+  scrollbar-color: var(--cyber-yellow) #050508 !important;
+}
+
+/* ---------- 11. Animazioni ---------- */
+@keyframes cyberGlitch {
+  0% { transform: translate(0); }
+  20% { transform: translate(-1px, 1px); }
+  40% { transform: translate(1px, -1px); }
+  60% { transform: translate(-1px, 0); }
+  80% { transform: translate(1px, 0); }
+  100% { transform: translate(0); }
+}
+.store-game-card:hover .game-name {
+  animation: cyberGlitch 0.3s steps(2, end);
+  color: var(--cyber-yellow) !important;
+}
+
+/* ---------- 12. Home / Aether panels ---------- */
+.aether-panel, .home-search-panel .home-search-input, .panel-btn {
+  border-radius: 2px !important;
+}
+.panel-btn {
+  font-family: 'Consolas', monospace;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+.panel-btn:hover:not(:disabled) {
+  border-color: var(--cyber-yellow) !important;
+  color: var(--cyber-yellow) !important;
+  background-color: rgba(252,238,10,0.08) !important;
+}
+
+/* ---------- 13. Alert ---------- */
+.settings-alert.info {
+  background-color: rgba(252,238,10,0.08) !important;
+  border-color: rgba(252,238,10,0.25) !important;
+  color: var(--cyber-yellow) !important;
+  font-family: 'Consolas', monospace;
+}
+.settings-alert.success {
+  background-color: rgba(0,240,255,0.08) !important;
+  border-color: rgba(0,240,255,0.25) !important;
+  color: var(--cyber-cyan) !important;
+}
+
+/* ---------- 14. Save button ---------- */
+.save-settings-btn {
+  background-color: var(--cyber-yellow) !important;
+  color: #000 !important;
+  border: 1px solid var(--cyber-yellow) !important;
+  font-family: 'Consolas', monospace;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  font-weight: 800 !important;
+  transform: skew(-2deg);
+}
+.save-settings-btn:hover {
+  background-color: #000 !important;
+  color: var(--cyber-yellow) !important;
+  box-shadow: 0 0 12px rgba(252,238,10,0.4);
+}
+
+/* ---------- 15. Wallpaper fix: centered without sidebar ---------- */
+#aether-personal-wallpaper {
+  position: fixed !important;
+  top: 0 !important;
+  left: var(--sidebar-width, 215px) !important;
+  right: 0 !important;
+  bottom: 0 !important;
+  width: auto !important;
+  height: auto !important;
+  background-position: center center !important;
+  background-size: cover !important;
+  z-index: 0 !important;
+  pointer-events: none !important;
+}
+
+/* Sfondo personale visibile anche con il tema attivo: quando la wallpaper
+   è abilitata il body e i contenitori smettono di dipingere sopra di lei. */
+body.aether-wallpaper-enabled {
+  background-image: none !important;
+}
+body.aether-wallpaper-enabled .main-content,
+body.aether-wallpaper-enabled .store-view,
+body.aether-wallpaper-enabled .settings-view,
+body.aether-wallpaper-enabled .home-view,
+body.aether-wallpaper-enabled .aether-view {
+  background: transparent !important;
+}
+
+/* Ensure badges always on top */
+.store-game-card.backdrop-card .badge-available,
+.store-game-card.backdrop-card .badge-installed,
+.store-game-card .badge-available,
+.store-game-card .badge-installed {
+  z-index: 20 !important;
+}

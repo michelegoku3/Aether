@@ -112,16 +112,15 @@ pub async fn get_trending_store_games(
     let steam_country_code = steam_country_code_for_currency(&store_currency);
     let app_version = app.package_info().version.to_string();
     let info_cache_version = cache_version_with_currency(&app_version, &store_currency);
-    let hubcap_client = (!settings.hubcap_api_key.trim().is_empty())
-        .then(|| HubcapClient::new(settings.hubcap_api_key));
-    let hubcap_checked = hubcap_client.is_some();
 
+    // The store front is Steam-only by design (Hubcap per-item status checks
+    // tripped the IP rate limit during normal browsing), so the cache key has
+    // no hubcap component and no Hubcap client is constructed here.
     let cache = StoreSearchCache::new(
         LocalAppPaths::data_root().join("cache"),
         app_version,
     );
     let cache_key = build_trending_cache_key(
-        hubcap_checked,
         &store_currency,
         &store_front_filter,
         show_store_dlcs,
@@ -136,7 +135,7 @@ pub async fn get_trending_store_games(
             LocalAppPaths::data_root().join("cache"),
             info_cache_version.clone(),
         )
-        .merge_store_results_with_manifest_context(&results, hubcap_checked);
+        .merge_store_results_with_manifest_context(&results, false);
         return Ok(results);
     }
 
@@ -145,7 +144,6 @@ pub async fn get_trending_store_games(
             &store_front_filter,
             start,
             count,
-            hubcap_client,
             show_store_dlcs,
             show_store_nsfw,
             show_store_delisted,
@@ -158,7 +156,7 @@ pub async fn get_trending_store_games(
             SteamAppNameResolver::new(cache_dir.clone())
                 .merge_names(results.iter().map(|game| (game.id, game.name.clone())));
             GameInfoCache::new(cache_dir, info_cache_version)
-                .merge_store_results_with_manifest_context(&results, hubcap_checked);
+                .merge_store_results_with_manifest_context(&results, false);
             let _ = cache.put(&cache_key, results.clone());
             Ok(results)
         }
@@ -431,7 +429,6 @@ fn build_store_cache_key(
 }
 
 fn build_trending_cache_key(
-    hubcap_enabled: bool,
     store_currency: &str,
     store_front_filter: &str,
     show_store_dlcs: bool,
@@ -441,9 +438,8 @@ fn build_trending_cache_key(
     count: usize,
 ) -> String {
     format!(
-        "storefront={}|{}|currency={}|dlcs={}|nsfw={}|delisted={}|start={}|count={}",
+        "storefront={}|steam|currency={}|dlcs={}|nsfw={}|delisted={}|start={}|count={}",
         store_front_filter,
-        if hubcap_enabled { "hubcap" } else { "steam" },
         store_currency,
         show_store_dlcs,
         show_store_nsfw,
