@@ -25,8 +25,8 @@
   --sidebar-width: 215px;
   /* Alternative game card defaults (0..100), overridden per-grid by the
      Settings live preview via inline CSS variables. */
-  --alt-card-opacity: 70;
-  --alt-card-fade: 90;
+  --alt-card-opacity: 100;
+  --alt-card-fade: 50;
 }
 
 * {
@@ -2269,7 +2269,7 @@ body {
   z-index: 0;
   background-size: cover;
   background-position: center;
-  opacity: calc(var(--alt-card-opacity, 70) / 100);
+  opacity: calc(var(--alt-card-opacity, 100) / 100);
 }
 
 .store-game-card.backdrop-card::after {
@@ -2279,9 +2279,9 @@ body {
   z-index: 1;
   background: linear-gradient(
     180deg,
-    rgba(0, 0, 0, calc(var(--alt-card-fade, 90) * 0.0018)) 0%,
-    rgba(0, 0, 0, calc(var(--alt-card-fade, 90) * 0.0072)) 58%,
-    rgba(0, 0, 0, calc(var(--alt-card-fade, 90) * 0.0092)) 100%
+    rgba(0, 0, 0, calc(var(--alt-card-fade, 50) * 0.0018)) 0%,
+    rgba(0, 0, 0, calc(var(--alt-card-fade, 50) * 0.0072)) 58%,
+    rgba(0, 0, 0, calc(var(--alt-card-fade, 50) * 0.0092)) 100%
   );
   pointer-events: none;
 }
