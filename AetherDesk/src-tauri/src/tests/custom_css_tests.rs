@@ -39,8 +39,11 @@ fn ensure_default_assets_creates_dirs_and_seeds_defaults() {
     assert!(themes_dir().join("cyberpunk.css").is_file());
     assert!(themes_dir().join("goldmine.css").is_file());
     assert!(themes_dir().join("frieren.css").is_file());
+    assert!(themes_dir().join("halo.css").is_file());
     assert!(wallpapers_dir().join("cyberpunk.jpg").is_file());
+    assert!(wallpapers_dir().join("goldmine.jpg").is_file());
     assert!(wallpapers_dir().join("frieren.jpg").is_file());
+    assert!(wallpapers_dir().join("halo.jpg").is_file());
 
     cleanup_appearance_dirs();
 }
