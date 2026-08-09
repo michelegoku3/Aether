@@ -35,9 +35,9 @@ export const SettingsView = ({ hubcapUsage, onRefreshUsage, onRefreshCustomCss, 
   const [storeFrontFilter, setStoreFrontFilter] = useState('upcoming');
   const [customCssEnabled, setCustomCssEnabled] = useState(false);
   const [personalWallpaperEnabled, setPersonalWallpaperEnabled] = useState(false);
-  const [personalWallpaperOpacity, setPersonalWallpaperOpacity] = useState(35);
-  const [alternativeCardsOpacity, setAlternativeCardsOpacity] = useState(70);
-  const [alternativeCardsFade, setAlternativeCardsFade] = useState(90);
+  const [personalWallpaperOpacity, setPersonalWallpaperOpacity] = useState(20);
+  const [alternativeCardsOpacity, setAlternativeCardsOpacity] = useState(100);
+  const [alternativeCardsFade, setAlternativeCardsFade] = useState(50);
   const [themeSelectedFile, setThemeSelectedFile] = useState('');
   const [wallpaperSelectedFile, setWallpaperSelectedFile] = useState('');
   const [ryuuKey, setRyuuKey] = useState('');
@@ -97,9 +97,9 @@ export const SettingsView = ({ hubcapUsage, onRefreshUsage, onRefreshCustomCss, 
           setStoreFrontFilter(settings.store_front_filter || 'upcoming');
           setCustomCssEnabled(Boolean(settings.custom_css_enabled));
           setPersonalWallpaperEnabled(Boolean(settings.personal_wallpaper_enabled));
-          setPersonalWallpaperOpacity(clamp0to100(Number(settings.personal_wallpaper_opacity ?? 35)));
-          setAlternativeCardsOpacity(clamp0to100(Number(settings.alternative_cards_opacity ?? 70)));
-          setAlternativeCardsFade(clamp0to100(Number(settings.alternative_cards_fade ?? 90)));
+          setPersonalWallpaperOpacity(clamp0to100(Number(settings.personal_wallpaper_opacity ?? 20)));
+          setAlternativeCardsOpacity(clamp0to100(Number(settings.alternative_cards_opacity ?? 100)));
+          setAlternativeCardsFade(clamp0to100(Number(settings.alternative_cards_fade ?? 50)));
           setThemeSelectedFile(settings.theme_selected_file || '');
           setWallpaperSelectedFile(settings.wallpaper_selected_file || '');
           setRyuuKey(settings.ryuu_api_key || '');
@@ -649,13 +649,13 @@ export const SettingsView = ({ hubcapUsage, onRefreshUsage, onRefreshCustomCss, 
               setStoreFrontFilter('upcoming');
               setCustomCssEnabled(false);
               setPersonalWallpaperEnabled(false);
-              setPersonalWallpaperOpacity(35);
-              setAlternativeCardsOpacity(70);
-              setAlternativeCardsFade(90);
+              setPersonalWallpaperOpacity(20);
+              setAlternativeCardsOpacity(100);
+              setAlternativeCardsFade(50);
               setThemeSelectedFile('');
               setWallpaperSelectedFile('');
-              onPreviewPersonalWallpaper(false, 35);
-              onPreviewAlternativeCards(70, 90);
+              onPreviewPersonalWallpaper(false, 20);
+              onPreviewAlternativeCards(100, 50);
               setStoreCurrency('eur');
               try {
                 await invoke('save_settings', {
@@ -675,11 +675,11 @@ export const SettingsView = ({ hubcapUsage, onRefreshUsage, onRefreshCustomCss, 
                     store_front_filter: 'upcoming',
                     custom_css_enabled: false,
                     personal_wallpaper_enabled: false,
-                    personal_wallpaper_opacity: 35,
+                    personal_wallpaper_opacity: 20,
                     wallpaper_selected_file: '',
                     theme_selected_file: '',
-                    alternative_cards_opacity: 70,
-                    alternative_cards_fade: 90,
+                    alternative_cards_opacity: 100,
+                    alternative_cards_fade: 50,
                     store_currency: 'eur',
                     antivirus_exclusion_done: rawSettings.antivirus_exclusion_done ?? false
                   }

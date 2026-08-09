@@ -298,14 +298,15 @@ body {
   background-color: #1b2733 !important;
 }
 .game-card-backdrop-bg {
-  filter: saturate(0.9) brightness(0.95);
+  /* Nessun filtro sull'immagine: opacità 100 = immagine piena.
+     L'unico effetto è il fade in basso, controllato da Settings. */
 }
 .store-game-card.backdrop-card::after {
   background: linear-gradient(
     180deg,
-    rgba(8, 12, 18, calc(var(--alt-card-fade, 90) * 0.0022)) 0%,
-    rgba(8, 12, 18, calc(var(--alt-card-fade, 90) * 0.0062)) 45%,
-    rgba(8, 12, 18, calc(var(--alt-card-fade, 90) * 0.0094)) 100%
+    rgba(8, 12, 18, calc(var(--alt-card-fade, 50) * 0.0022)) 0%,
+    rgba(8, 12, 18, calc(var(--alt-card-fade, 50) * 0.0062)) 45%,
+    rgba(8, 12, 18, calc(var(--alt-card-fade, 50) * 0.0094)) 100%
   ) !important;
   border-radius: inherit;
 }
@@ -588,3 +589,80 @@ body.aether-wallpaper-enabled .aether-view {
 .store-game-card .badge-installed {
   z-index: 20 !important;
 }
+
+/* ==========================================================================
+   15. Copertura completa pagine (Home · Aether · modali · pagination)
+   ========================================================================== */
+
+/* Modal header/close + source buttons */
+.modal-close-btn { color: #91a2ae !important; }
+.modal-close-btn:hover { color: var(--frieren-azure) !important; }
+.source-btn { color: var(--frieren-white) !important; }
+.action-title { color: var(--frieren-azure) !important; }
+.action-desc { color: #91a2ae !important; }
+
+/* Game action modal (Library → Modify) */
+.game-action-modal { background-color: var(--frieren-night) !important; border: 1px solid #344452 !important; border-radius: 12px !important; }
+.game-action-hero-overlay { background: linear-gradient(180deg, transparent 40%, var(--frieren-night) 100%) !important; }
+.game-action-hero-fallback { background-color: #0e151e !important; color: var(--frieren-silver) !important; }
+.game-action-btn { background-color: #141d27 !important; border: 1px solid #344452 !important; border-radius: 8px !important; color: var(--frieren-white) !important; }
+.game-action-btn:hover:not(:disabled) { border-color: var(--fern-lavender) !important; color: var(--fern-lavender) !important; background-color: #1b2733 !important; }
+.game-action-close-btn:hover:not(:disabled) { border-color: var(--stark-warm) !important; color: var(--stark-warm) !important; }
+
+/* Game info modal */
+.info-modal-container { background-color: var(--frieren-night) !important; border: 1px solid #344452 !important; border-radius: 12px !important; }
+.info-hero-text { background: linear-gradient(180deg, transparent 30%, rgba(16, 25, 35, 0.92) 100%) !important; }
+.info-hero-fallback { background-color: #0e151e !important; }
+.info-label { color: var(--frieren-silver) !important; }
+.info-value { color: var(--frieren-white) !important; }
+.info-section-title { color: var(--frieren-azure) !important; border-bottom: 1px solid #243142 !important; }
+.info-section-body { color: #91a2ae !important; }
+.info-screenshot-link { border: 1px solid #344452 !important; border-radius: 8px !important; }
+.info-screenshot-link:hover { border-color: var(--fern-lavender) !important; }
+.info-lightbox { background-color: rgba(8, 12, 18, 0.92) !important; }
+.info-lightbox-close { color: var(--frieren-azure) !important; }
+.info-loading { color: var(--frieren-silver) !important; }
+
+/* Antivirus modal */
+.av-modal-container { background-color: var(--frieren-night) !important; border: 1px solid #344452 !important; border-radius: 12px !important; }
+.av-modal-text { color: var(--frieren-white) !important; }
+.av-link-btn { color: var(--fern-lavender) !important; }
+.av-link-btn:hover:not(:disabled) { color: var(--frieren-white) !important; }
+
+/* Crack modal */
+.crack-modal-container { background-color: var(--frieren-night) !important; border: 1px solid #344452 !important; border-radius: 12px !important; }
+.crack-drop-files { border: 1px dashed #3a4a5c !important; border-radius: 8px !important; background-color: #0e151e !important; }
+.crack-drop-filename { color: var(--frieren-azure) !important; }
+.crack-drop-hint { color: #5c6b78 !important; }
+.crack-btn { background-color: #141d27 !important; border: 1px solid #344452 !important; border-radius: 8px !important; color: var(--frieren-white) !important; }
+.crack-btn:hover:not(:disabled) { border-color: var(--fern-lavender) !important; color: var(--fern-lavender) !important; background-color: #1b2733 !important; }
+.crack-achievement-row { border-bottom: 1px solid #1c2633 !important; }
+.crack-achievement-text { color: var(--frieren-white) !important; }
+
+/* Home view */
+.home-search-panel { background-color: var(--frieren-night) !important; border: 1px solid #344452 !important; border-radius: 12px !important; }
+.home-search-results { background-color: var(--frieren-night) !important; border: 1px solid #344452 !important; border-radius: 8px !important; }
+.home-search-result-name { color: var(--frieren-white) !important; }
+.home-search-result-appid { color: var(--frieren-azure) !important; }
+.home-search-empty { color: #5c6b78 !important; }
+.home-search-clear { color: var(--frieren-silver) !important; }
+.home-search-clear:hover { color: var(--frieren-azure) !important; }
+
+/* Aether view dettagli */
+.panel-title { color: var(--frieren-azure) !important; }
+.panel-meta { color: #5c6b78 !important; }
+.btn-update-dot { background-color: var(--stark-red) !important; box-shadow: 0 0 10px var(--stark-red) !important; }
+
+/* Pagination & Library */
+.pagination-btn { background-color: #141d27 !important; border: 1px solid #344452 !important; border-radius: 8px !important; color: var(--frieren-white) !important; }
+.pagination-btn:hover:not(:disabled) { border-color: var(--fern-lavender) !important; color: var(--fern-lavender) !important; }
+.pagination-btn:disabled { opacity: 0.4; }
+.pagination-info { color: var(--frieren-silver) !important; }
+.library-count { color: var(--frieren-silver) !important; }
+.store-no-results { color: #5c6b78 !important; }
+
+/* Misc */
+.settings-small-btn { background-color: #141d27 !important; border: 1px solid #344452 !important; color: var(--frieren-white) !important; border-radius: 8px !important; }
+.settings-small-btn:hover { border-color: var(--fern-lavender) !important; color: var(--fern-lavender) !important; }
+.sidebar-update-dot { background-color: var(--stark-red) !important; box-shadow: 0 0 8px var(--stark-red) !important; }
+.blank-canvas { background-color: var(--bg-app) !important; }

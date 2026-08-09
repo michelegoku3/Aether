@@ -88,12 +88,12 @@ pub struct AppSettings {
 
 /// Serde default provider for the alt-cards backdrop opacity.
 fn default_alt_cards_opacity() -> u8 {
-    70
+    100
 }
 
 /// Serde default provider for the alt-cards bottom fade.
 fn default_alt_cards_fade() -> u8 {
-    90
+    50
 }
 
 /// Serde default provider for boolean settings that ship enabled.
@@ -110,7 +110,7 @@ fn default_store_front_filter() -> String {
 }
 
 fn default_wallpaper_opacity() -> u8 {
-    35
+    20
 }
 
 pub fn normalize_store_currency(value: &str) -> String {

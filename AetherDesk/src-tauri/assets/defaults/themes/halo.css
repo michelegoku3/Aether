@@ -1,0 +1,870 @@
+/* ==========================================================================
+   AetherDesk — Custom CSS | Tema HALO (UNSC • Master Chief • MJOLNIR)
+   Metti questo file in: <cartella di AetherDesk.exe>/AetherData/config/themes/
+   (il primo file .css presente nella cartella viene applicato automaticamente).
+   Abilita in: Settings → Appearance → Enable theme.
+
+   Palette (come da specifica):
+     Base UNSC          : bg #080D0B · sidebar #0C1210 · card #121A16
+                          card hover #19231D · border #34443A · text #D8DED8
+     Master Chief/MJOLNIR: #4F623C · #687A4B (primary) · #89986A · #293729 · #7B8150
+     Halo HUD           : #D6C75A (accento) · #F0E66A · #D99B45 (warning) · #9BB7A0
+     Forerunner         : #4F8C96 · #6BB8C0 · #9AD9D5
+     Danger             : #A84D42
+
+   Gerarchia: 70% neri/verdi scuri · 20% verde MJOLNIR · 7% giallo HUD ·
+   3% blu Forerunner. Console UNSC: squadrata, militare, consumata.
+   ========================================================================== */
+
+/* ---------- 1. Variabili base ---------- */
+:root {
+  --bg-app: #080d0b;
+  --bg-sidebar: #0c1210;
+  --bg-item-hover: #19231d;
+  --bg-item-active: #1f2b24;
+  --color-text: #d8ded8;
+  --color-muted: #87948a;
+  --color-cyan: #d6c75a; /* accent HUD giallo (selettori/indicatori) */
+  --color-cyan-rgb: 214, 199, 90;
+  --color-denuvo: #a84d42;
+  --color-nsfw-pink: #a84d42;
+  --color-nsfw-pink-hover: #c87862;
+  --color-delisted-white: #9bb7a0;
+  --color-delisted-white-hover: #d8ded8;
+  --border-color: #34443a;
+  --radius-card: 6px; /* squadrato, militare */
+  --radius-card-cover: 5px;
+  --radius-card-cover-inset: 3px;
+
+  --halo-chief: #4f623c;
+  --halo-armor: #687a4b; /* primary */
+  --halo-armor-light: #89986a; /* primary hover */
+  --halo-armor-dark: #293729;
+  --halo-olive: #7b8150;
+  --halo-hud: #d6c75a;
+  --halo-hud-bright: #f0e66a;
+  --halo-warning: #d99b45;
+  --halo-energy: #9bb7a0;
+  --halo-forerunner: #4f8c96;
+  --halo-plasma: #6bb8c0;
+  --halo-cyan: #9ad9d5;
+  --halo-danger: #a84d42;
+}
+
+/* ---------- 2. Sfondo app — scuro militare con leggera vignettatura ---------- */
+body {
+  background-color: var(--bg-app) !important;
+  background-image: radial-gradient(ellipse at 50% 0%, rgba(104, 122, 75, 0.06), transparent 55%);
+  background-size: 100% 100%;
+}
+
+.app-container {
+  position: relative;
+}
+
+/* ---------- 3. Sidebar ---------- */
+.sidebar {
+  background-color: #0c1210 !important;
+  border-right: 1px solid #34443a !important;
+  box-shadow: 4px 0 24px rgba(0, 0, 0, 0.4);
+}
+
+.brand-icon {
+  width: 41px !important;
+  min-width: 41px !important;
+  height: 41px !important;
+  background: linear-gradient(135deg, var(--halo-armor), var(--halo-chief)) !important;
+  color: #d8ded8 !important;
+  border-radius: 6px !important;
+  border: 1px solid var(--halo-olive);
+  box-shadow: 0 0 14px rgba(104, 122, 75, 0.35);
+  font-weight: 700;
+  letter-spacing: 1px;
+}
+.brand-name {
+  color: var(--halo-armor-light) !important;
+  letter-spacing: 3px !important;
+  text-shadow: 0 0 10px rgba(104, 122, 75, 0.35);
+  text-transform: uppercase;
+}
+
+.group-label {
+  color: var(--halo-olive) !important;
+  font-size: 10px !important;
+  letter-spacing: 2px !important;
+  text-transform: uppercase;
+  opacity: 0.9;
+}
+
+.nav-item {
+  letter-spacing: 0.5px;
+  border-left: 2px solid transparent;
+  transition: all 0.2s ease;
+  text-transform: uppercase;
+  font-size: 14px !important;
+}
+.nav-item:hover {
+  color: var(--halo-hud) !important;
+  background-color: rgba(104, 122, 75, 0.1) !important;
+  border-left-color: var(--halo-olive);
+}
+.nav-item.active {
+  color: #080d0b !important;
+  background: linear-gradient(90deg, var(--halo-armor), var(--halo-chief)) !important;
+  border-left: 3px solid var(--halo-hud) !important;
+  font-weight: 700;
+  box-shadow: 0 0 12px rgba(104, 122, 75, 0.3);
+}
+
+/* Restart Steam = azione "pericolosa" → warning HUD/rosso */
+.restart-steam-btn {
+  color: var(--halo-warning) !important;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  border: 1px solid rgba(217, 155, 69, 0.5);
+  margin: 0 12px;
+  width: calc(100% - 24px) !important;
+  border-radius: 4px !important;
+}
+.restart-steam-btn:hover {
+  background-color: rgba(168, 77, 66, 0.18) !important;
+  color: var(--halo-hud-bright) !important;
+  border-color: var(--halo-danger) !important;
+}
+
+/* ---------- 4. Main content & Store ---------- */
+.main-content {
+  background: radial-gradient(ellipse at 50% -20%, rgba(104, 122, 75, 0.07), transparent 60%),
+              var(--bg-app) !important;
+}
+
+.store-title, .settings-title, .aether-title, .home-title {
+  letter-spacing: 2px !important;
+  color: var(--halo-armor-light) !important;
+  text-transform: uppercase;
+  text-shadow: 0 0 12px rgba(104, 122, 75, 0.25);
+}
+.store-title::after {
+  content: " // UNSC REQUISITION";
+  color: var(--halo-hud);
+  font-size: 11px;
+  letter-spacing: 1px;
+  opacity: 0.75;
+}
+
+.store-subtitle, .settings-subtitle {
+  color: #6f7c72 !important;
+  font-size: 11px !important;
+  letter-spacing: 0.5px;
+}
+
+.store-separator, .settings-separator, .separator {
+  background-color: rgba(104, 122, 75, 0.35) !important;
+  height: 1px !important;
+}
+
+/* ---------- 5. Input & search — militare ---------- */
+.store-search-input, .settings-input, .home-search-input, .settings-number-input {
+  background-color: #0e1411 !important;
+  border: 1px solid #34443a !important;
+  border-radius: 4px !important;
+  color: var(--halo-hud) !important;
+  font-family: 'Consolas', 'Courier New', monospace;
+}
+.store-search-input:focus, .settings-input:focus, .home-search-input:focus, .settings-number-input:focus {
+  border-color: var(--halo-hud) !important;
+  box-shadow: 0 0 0 1px rgba(214, 199, 90, 0.3), 0 0 12px rgba(214, 199, 90, 0.12) !important;
+  background-color: #111813 !important;
+}
+.store-search-input::placeholder, .settings-input::placeholder {
+  color: #5c685f !important;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  font-size: 11px;
+}
+
+.store-search-btn {
+  background-color: var(--halo-armor) !important;
+  color: #d8ded8 !important;
+  border-radius: 4px !important;
+  border: 1px solid var(--halo-olive);
+  font-family: 'Consolas', 'Courier New', monospace;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  font-weight: 700 !important;
+}
+.store-search-btn:hover {
+  background-color: var(--halo-armor-light) !important;
+  border-color: var(--halo-hud) !important;
+  color: #080d0b !important;
+  box-shadow: 0 0 12px rgba(214, 199, 90, 0.25);
+}
+
+/* ---------- 6. Game Card — squadrate, sottili, militari ---------- */
+.store-game-card {
+  background-color: #121a16 !important;
+  border: 1px solid #34443a !important;
+  border-radius: 6px !important;
+  overflow: visible !important;
+  position: relative;
+  clip-path: none !important;
+  transition: transform 0.15s ease, border-color 0.15s ease, background-color 0.15s ease, box-shadow 0.15s ease;
+}
+.store-game-card::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, var(--halo-hud), transparent);
+  opacity: 0;
+  transition: opacity 0.25s;
+  z-index: 2;
+}
+.store-game-card:hover::before {
+  opacity: 0.85;
+}
+.store-game-card:hover {
+  transform: translateY(-2px) !important;
+  background-color: #19231d !important;
+  border-color: var(--halo-olive) !important;
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(104, 122, 75, 0.15) !important;
+}
+.store-game-card.nsfw {
+  border-color: rgba(168, 77, 66, 0.8) !important;
+  box-shadow: 0 0 14px rgba(168, 77, 66, 0.15) !important;
+}
+.store-game-card.delisted {
+  border-color: #56635a !important;
+  opacity: 0.85;
+}
+
+.game-cover-wrapper {
+  border-radius: 5px !important;
+  background-color: #0c1210 !important;
+}
+
+.game-name {
+  color: var(--halo-energy) !important;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  font-size: 15px !important;
+}
+.game-appid {
+  color: var(--halo-forerunner) !important;
+  font-size: 10px !important;
+  font-family: 'Consolas', 'Courier New', monospace;
+}
+
+/* Bottoni card: squadrati, sottili — bordo verde oliva, testo HUD giallo */
+.game-download-btn {
+  border: 1px solid var(--halo-olive) !important;
+  color: var(--halo-hud) !important;
+  border-radius: 4px !important;
+  font-family: 'Consolas', 'Courier New', monospace;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  font-size: 11px !important;
+  background: transparent !important;
+  transition: color 0.15s ease, background-color 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+}
+.game-download-btn:hover {
+  background-color: var(--halo-armor) !important;
+  color: #d8ded8 !important;
+  border-color: var(--halo-hud) !important;
+  box-shadow: 0 0 10px rgba(214, 199, 90, 0.25);
+}
+.game-download-btn.secondary {
+  border-color: rgba(79, 140, 150, 0.6) !important;
+  color: var(--halo-plasma) !important;
+}
+.game-download-btn.secondary:hover {
+  background-color: rgba(79, 140, 150, 0.15) !important;
+  color: var(--halo-cyan) !important;
+  border-color: var(--halo-forerunner) !important;
+}
+
+/* Backdrop cards — squadrate, badge dentro, fade live */
+.store-game-card.backdrop-card {
+  overflow: hidden !important;
+  border: 1px solid #34443a !important;
+  background-color: #121a16 !important;
+  border-radius: 6px !important;
+  clip-path: none !important;
+}
+.store-game-card.backdrop-card:hover {
+  border-color: var(--halo-olive) !important;
+  background-color: #19231d !important;
+}
+.game-card-backdrop-bg {
+  /* Nessun filtro sull'immagine: opacità 100 = immagine piena.
+     L'unico effetto è il fade in basso, controllato da Settings. */
+}
+.store-game-card.backdrop-card::after {
+  background: linear-gradient(
+    180deg,
+    rgba(5, 8, 6, calc(var(--alt-card-fade, 50) * 0.0022)) 0%,
+    rgba(5, 8, 6, calc(var(--alt-card-fade, 50) * 0.0062)) 45%,
+    rgba(5, 8, 6, calc(var(--alt-card-fade, 50) * 0.0094)) 100%
+  ) !important;
+  border-radius: inherit;
+}
+.game-card-backdrop-bg,
+.store-game-card.backdrop-card::after {
+  border-radius: inherit;
+}
+.store-game-card.backdrop-card .badge-available,
+.store-game-card.backdrop-card .badge-installed {
+  top: 10px !important;
+  right: 10px !important;
+}
+.store-grid.alt-card-grid {
+  gap: 18px 16px !important;
+}
+.store-game-card.backdrop-card .game-info-wrapper {
+  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.8);
+}
+
+/* ---------- 7. Badge — HUD/Forerunner ---------- */
+.badge-available {
+  background: linear-gradient(135deg, var(--halo-hud), var(--halo-warning)) !important;
+  color: #080d0b !important;
+  border-radius: 4px !important;
+  font-family: 'Consolas', 'Courier New', monospace;
+  letter-spacing: 1px;
+  border: 1px solid rgba(0, 0, 0, 0.4) !important;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.45) !important;
+}
+.badge-available.denuvo {
+  background: linear-gradient(135deg, var(--halo-danger), #7d3730) !important;
+  color: #d8ded8 !important;
+}
+.badge-installed {
+  background: linear-gradient(135deg, var(--halo-plasma), var(--halo-forerunner)) !important;
+  color: #080d0b !important;
+  border-radius: 4px !important;
+  font-family: 'Consolas', 'Courier New', monospace;
+  letter-spacing: 1px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.4) !important;
+}
+
+/* ---------- 8. Settings toggles & dropdowns ---------- */
+.version-switch span {
+  background-color: #141b17 !important;
+  border: 1px solid #3a4c40 !important;
+}
+.version-switch input:checked + span {
+  background-color: var(--halo-hud) !important;
+  border-color: var(--halo-hud) !important;
+  box-shadow: 0 0 8px rgba(214, 199, 90, 0.35) !important;
+}
+.settings-label {
+  font-family: 'Consolas', 'Courier New', monospace;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: var(--halo-hud) !important;
+}
+
+/* Dropdown: stessa larghezza dei bottoni picker (115px). */
+.settings-select,
+.settings-front-filter-select {
+  width: 115px !important;
+  min-width: 115px !important;
+  height: 30px !important;
+  background-color: #0e1411 !important;
+  border: 1px solid #34443a !important;
+  color: var(--halo-hud) !important;
+  font-size: 12px !important;
+  border-radius: 4px !important;
+}
+.settings-select:focus,
+.settings-front-filter-select:focus {
+  border-color: var(--halo-hud) !important;
+  box-shadow: 0 0 8px rgba(214, 199, 90, 0.25) !important;
+}
+
+/* Sezione Appearance: indentazione, path, riga testo+bottone. */
+.settings-appearance-sub .settings-toggle-row {
+  border-left: 1px solid rgba(104, 122, 75, 0.25) !important;
+  padding-left: 14px !important;
+}
+.settings-appearance-row {
+  display: flex !important;
+  align-items: center !important;
+  gap: 12px !important;
+  width: 100% !important;
+}
+.settings-appearance-row .settings-desc {
+  flex: 1 1 auto !important;
+  margin: 0 !important;
+}
+.settings-path {
+  font-family: 'Consolas', monospace;
+  color: var(--halo-plasma) !important;
+  background: rgba(79, 140, 150, 0.1) !important;
+  padding: 1px 5px;
+  border-radius: 3px;
+}
+.settings-assets-missing {
+  color: var(--halo-warning) !important;
+}
+
+/* Bottone picker: stesso ingombro esatto dei dropdown (115x30), centrato. */
+.appearance-pick-btn {
+  width: 115px !important;
+  min-width: 115px !important;
+  max-width: 115px !important;
+  height: 30px !important;
+  flex: 0 0 115px !important;
+  background-color: #0e1411 !important;
+  border: 1px solid var(--halo-olive) !important;
+  color: var(--halo-hud) !important;
+  font-family: 'Consolas', 'Courier New', monospace !important;
+  text-transform: uppercase !important;
+  font-size: 11px !important;
+  font-weight: 700 !important;
+  letter-spacing: 1px !important;
+  border-radius: 4px !important;
+}
+.appearance-pick-btn:hover:not(:disabled) {
+  background-color: var(--halo-armor) !important;
+  color: #d8ded8 !important;
+  border-color: var(--halo-hud) !important;
+  box-shadow: 0 0 10px rgba(214, 199, 90, 0.2) !important;
+}
+
+/* ---------- 9. Modali ---------- */
+.modal-container {
+  background-color: #0e1411 !important;
+  border: 1px solid #34443a !important;
+  border-radius: 8px !important;
+  box-shadow: 0 0 30px rgba(0, 0, 0, 0.55), 0 12px 40px rgba(0, 0, 0, 0.65) !important;
+}
+.modal-title {
+  font-family: 'Consolas', 'Courier New', monospace;
+  letter-spacing: 1px;
+  color: var(--halo-hud) !important;
+}
+.modal-separator {
+  background-color: rgba(104, 122, 75, 0.35) !important;
+}
+.modal-close-btn {
+  color: var(--halo-olive) !important;
+}
+.modal-close-btn:hover {
+  color: var(--halo-hud) !important;
+}
+
+.source-box {
+  background-color: #0a0f0c !important;
+  border: 1px solid #34443a !important;
+  border-radius: 6px !important;
+}
+.source-btn {
+  color: var(--halo-energy) !important;
+}
+.source-btn.active {
+  background: linear-gradient(135deg, var(--halo-armor), var(--halo-chief)) !important;
+  color: #d8ded8 !important;
+  border-color: var(--halo-hud) !important;
+}
+.big-action-btn {
+  border: 1px solid #34443a !important;
+  border-radius: 6px !important;
+  background: #0c1210 !important;
+  color: var(--halo-energy) !important;
+}
+.big-action-btn:hover {
+  border-color: var(--halo-hud) !important;
+  background-color: #19231d !important;
+  color: var(--halo-hud) !important;
+}
+.action-icon {
+  background: linear-gradient(135deg, var(--halo-armor), var(--halo-chief)) !important;
+  color: #d8ded8 !important;
+  border-radius: 4px !important;
+}
+.action-title {
+  color: var(--halo-armor-light) !important;
+}
+.action-desc {
+  color: #87948a !important;
+}
+
+/* Version modal — altezza dinamica + tabella */
+.version-modal-container {
+  height: auto !important;
+  max-height: min(85vh, 900px) !important;
+  min-height: unset !important;
+  width: min(840px, calc(100vw - 48px)) !important;
+}
+.version-modal-container .modal-body {
+  flex: 0 1 auto !important;
+  height: auto !important;
+  min-height: 0 !important;
+  overflow: visible !important;
+}
+.version-modal-container .version-table-wrapper {
+  flex: 0 1 auto !important;
+  min-height: 0 !important;
+  max-height: min(50vh, 520px) !important;
+  height: auto !important;
+  border: 1px solid rgba(104, 122, 75, 0.3) !important;
+  background-color: #0a0f0c !important;
+}
+.version-table th {
+  background-color: #121a16 !important;
+  color: var(--halo-hud) !important;
+  font-family: 'Consolas', 'Courier New', monospace;
+  letter-spacing: 1px;
+}
+.version-appid {
+  color: var(--halo-plasma) !important;
+}
+.version-manifest-input {
+  background-color: #0e1411 !important;
+  border: 1px solid #34443a !important;
+  border-radius: 4px !important;
+  color: var(--halo-hud) !important;
+  font-family: 'Consolas', monospace;
+}
+.version-manifest-input:focus {
+  border-color: var(--halo-hud) !important;
+}
+
+/* Game action modal (Library → Modify) */
+.game-action-modal {
+  background-color: #0e1411 !important;
+  border: 1px solid #34443a !important;
+  border-radius: 8px !important;
+}
+.game-action-hero-overlay {
+  background: linear-gradient(180deg, transparent 40%, #0e1411 100%) !important;
+}
+.game-action-hero-fallback {
+  background-color: #121a16 !important;
+  color: var(--halo-olive) !important;
+}
+.game-action-btn {
+  background-color: #121a16 !important;
+  border: 1px solid #34443a !important;
+  border-radius: 6px !important;
+  color: var(--halo-energy) !important;
+  font-family: 'Consolas', 'Courier New', monospace;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+.game-action-btn:hover:not(:disabled) {
+  border-color: var(--halo-hud) !important;
+  color: var(--halo-hud) !important;
+  background-color: #19231d !important;
+}
+.game-action-close-btn:hover:not(:disabled) {
+  border-color: var(--halo-danger) !important;
+  color: var(--halo-danger) !important;
+}
+
+/* Game info modal */
+.info-modal-container {
+  background-color: #0e1411 !important;
+  border: 1px solid #34443a !important;
+  border-radius: 8px !important;
+}
+.info-hero-text {
+  background: linear-gradient(180deg, transparent 30%, rgba(8, 13, 11, 0.92) 100%) !important;
+}
+.info-hero-fallback {
+  background-color: #121a16 !important;
+}
+.info-label {
+  color: var(--halo-olive) !important;
+}
+.info-value {
+  color: var(--halo-energy) !important;
+}
+.info-section-title {
+  color: var(--halo-hud) !important;
+  border-bottom: 1px solid #26332b !important;
+  font-family: 'Consolas', 'Courier New', monospace;
+  letter-spacing: 1px;
+}
+.info-section-body {
+  color: #87948a !important;
+}
+.info-screenshot-link {
+  border: 1px solid #34443a !important;
+  border-radius: 4px !important;
+}
+.info-screenshot-link:hover {
+  border-color: var(--halo-forerunner) !important;
+}
+.info-lightbox {
+  background-color: rgba(5, 8, 6, 0.92) !important;
+}
+.info-lightbox-close {
+  color: var(--halo-hud) !important;
+}
+.info-loading {
+  color: var(--halo-olive) !important;
+}
+
+/* Antivirus modal */
+.av-modal-container {
+  background-color: #0e1411 !important;
+  border: 1px solid #34443a !important;
+  border-radius: 8px !important;
+}
+.av-modal-text {
+  color: var(--halo-energy) !important;
+}
+.av-link-btn {
+  color: var(--halo-plasma) !important;
+}
+.av-link-btn:hover:not(:disabled) {
+  color: var(--halo-cyan) !important;
+}
+
+/* Crack modal */
+.crack-modal-container {
+  background-color: #0e1411 !important;
+  border: 1px solid #34443a !important;
+  border-radius: 8px !important;
+}
+.crack-drop-files {
+  border: 1px dashed #3a4c40 !important;
+  border-radius: 6px !important;
+  background-color: #0a0f0c !important;
+}
+.crack-drop-filename {
+  color: var(--halo-hud) !important;
+}
+.crack-drop-hint {
+  color: #5c685f !important;
+}
+.crack-btn {
+  background-color: #121a16 !important;
+  border: 1px solid #34443a !important;
+  border-radius: 6px !important;
+  color: var(--halo-energy) !important;
+  font-family: 'Consolas', 'Courier New', monospace;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+.crack-btn:hover:not(:disabled) {
+  border-color: var(--halo-hud) !important;
+  color: var(--halo-hud) !important;
+  background-color: #19231d !important;
+}
+.crack-achievement-row {
+  border-bottom: 1px solid #1c261f !important;
+}
+.crack-achievement-text {
+  color: var(--halo-energy) !important;
+}
+
+/* ---------- 10. Home view ---------- */
+.home-search-panel {
+  background-color: #0e1411 !important;
+  border: 1px solid #34443a !important;
+  border-radius: 8px !important;
+}
+.home-search-results {
+  background-color: #0e1411 !important;
+  border: 1px solid #34443a !important;
+  border-radius: 6px !important;
+}
+.home-search-result-name {
+  color: var(--halo-energy) !important;
+}
+.home-search-result-appid {
+  color: var(--halo-forerunner) !important;
+}
+.home-search-empty {
+  color: #5c685f !important;
+}
+.home-search-clear {
+  color: var(--halo-olive) !important;
+}
+.home-search-clear:hover {
+  color: var(--halo-hud) !important;
+}
+
+/* ---------- 11. Aether view ---------- */
+.aether-panel {
+  background-color: #0e1411 !important;
+  border: 1px solid #34443a !important;
+  border-radius: 8px !important;
+}
+.panel-title {
+  color: var(--halo-armor-light) !important;
+  font-family: 'Consolas', 'Courier New', monospace;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+.panel-meta {
+  color: #5c685f !important;
+}
+.panel-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+}
+.panel-btn {
+  background-color: #121a16 !important;
+  border: 1px solid #34443a !important;
+  color: var(--halo-energy) !important;
+  border-radius: 6px !important;
+  font-family: 'Consolas', 'Courier New', monospace;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+.panel-btn:hover:not(:disabled) {
+  border-color: var(--halo-hud) !important;
+  color: var(--halo-hud) !important;
+  background-color: #19231d !important;
+}
+.av-link-btn {
+  color: var(--halo-plasma) !important;
+}
+.btn-update-dot {
+  background-color: var(--halo-hud) !important;
+  box-shadow: 0 0 10px var(--halo-hud) !important;
+}
+
+/* ---------- 12. Pagination & Library ---------- */
+.pagination-btn {
+  background-color: #121a16 !important;
+  border: 1px solid #34443a !important;
+  border-radius: 4px !important;
+  color: var(--halo-energy) !important;
+  font-family: 'Consolas', 'Courier New', monospace;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  font-size: 11px !important;
+}
+.pagination-btn:hover:not(:disabled) {
+  border-color: var(--halo-hud) !important;
+  color: var(--halo-hud) !important;
+}
+.pagination-btn:disabled {
+  opacity: 0.4;
+}
+.pagination-info {
+  color: var(--halo-olive) !important;
+  font-family: 'Consolas', 'Courier New', monospace;
+  letter-spacing: 1px;
+}
+.library-count {
+  color: var(--halo-olive) !important;
+  font-family: 'Consolas', 'Courier New', monospace;
+  letter-spacing: 0.5px;
+}
+.store-no-results {
+  color: #5c685f !important;
+}
+
+/* ---------- 13. Scrollbar ---------- */
+::-webkit-scrollbar-thumb {
+  background: #26332b !important;
+  border: 1px solid var(--halo-olive) !important;
+  border-radius: 2px !important;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--halo-hud) !important;
+}
+* {
+  scrollbar-color: var(--halo-olive) #080d0b !important;
+}
+
+/* ---------- 14. Alert ---------- */
+.settings-alert.info {
+  background-color: rgba(104, 122, 75, 0.12) !important;
+  border-color: rgba(104, 122, 75, 0.4) !important;
+  color: var(--halo-armor-light) !important;
+  font-family: 'Consolas', 'Courier New', monospace;
+}
+.settings-alert.success {
+  background-color: rgba(79, 140, 150, 0.12) !important;
+  border-color: rgba(79, 140, 150, 0.4) !important;
+  color: var(--halo-plasma) !important;
+}
+.settings-alert.error {
+  background-color: rgba(168, 77, 66, 0.12) !important;
+  border-color: rgba(168, 77, 66, 0.45) !important;
+  color: var(--halo-danger) !important;
+}
+
+/* ---------- 15. Save / small buttons ---------- */
+.save-settings-btn {
+  background: linear-gradient(135deg, var(--halo-armor), var(--halo-chief)) !important;
+  color: #d8ded8 !important;
+  border: 1px solid var(--halo-olive) !important;
+  border-radius: 4px !important;
+  font-family: 'Consolas', 'Courier New', monospace;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  font-weight: 700 !important;
+}
+.save-settings-btn:hover {
+  background-color: var(--halo-armor-light) !important;
+  color: #080d0b !important;
+  border-color: var(--halo-hud) !important;
+  box-shadow: 0 0 12px rgba(214, 199, 90, 0.25);
+}
+.settings-small-btn {
+  background-color: #121a16 !important;
+  border: 1px solid #34443a !important;
+  color: var(--halo-energy) !important;
+  border-radius: 4px !important;
+  font-family: 'Consolas', 'Courier New', monospace;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  font-size: 11px !important;
+}
+.settings-small-btn:hover {
+  border-color: var(--halo-hud) !important;
+  color: var(--halo-hud) !important;
+}
+.sidebar-update-dot {
+  background-color: var(--halo-hud) !important;
+  box-shadow: 0 0 8px var(--halo-hud) !important;
+}
+.blank-canvas {
+  background-color: var(--bg-app) !important;
+}
+
+/* ---------- 16. Wallpaper: visibile anche col tema attivo ---------- */
+#aether-personal-wallpaper {
+  position: fixed !important;
+  top: 0 !important;
+  left: var(--sidebar-width, 215px) !important;
+  right: 0 !important;
+  bottom: 0 !important;
+  width: auto !important;
+  height: auto !important;
+  background-position: center center !important;
+  background-size: cover !important;
+  z-index: 0 !important;
+  pointer-events: none !important;
+}
+
+body.aether-wallpaper-enabled {
+  background-image: none !important;
+  background-color: var(--bg-app) !important;
+}
+body.aether-wallpaper-enabled .main-content,
+body.aether-wallpaper-enabled .store-view,
+body.aether-wallpaper-enabled .settings-view,
+body.aether-wallpaper-enabled .home-view,
+body.aether-wallpaper-enabled .aether-view {
+  background: transparent !important;
+}
+
+/* Badge sempre sopra il contenuto delle card */
+.store-game-card.backdrop-card .badge-available,
+.store-game-card.backdrop-card .badge-installed,
+.store-game-card .badge-available,
+.store-game-card .badge-installed {
+  z-index: 20 !important;
+}

@@ -33,9 +33,9 @@ export default function App() {
   // Appearance toggles — single source of truth for the whole app.
   const [customCssEnabled, setCustomCssEnabled] = useState(false);
   const [personalWallpaperEnabled, setPersonalWallpaperEnabled] = useState(false);
-  const [personalWallpaperOpacity, setPersonalWallpaperOpacity] = useState(35);
-  const [alternativeCardsOpacity, setAlternativeCardsOpacity] = useState(70);
-  const [alternativeCardsFade, setAlternativeCardsFade] = useState(90);
+  const [personalWallpaperOpacity, setPersonalWallpaperOpacity] = useState(20);
+  const [alternativeCardsOpacity, setAlternativeCardsOpacity] = useState(100);
+  const [alternativeCardsFade, setAlternativeCardsFade] = useState(50);
   // Bumped whenever the wallpaper file selection changes so the hook re-reads
   // the data URI even when `enabled` stays true.
   const [wallpaperRevision, setWallpaperRevision] = useState(0);
@@ -48,9 +48,9 @@ export default function App() {
       setUseAlternativeGameCards(Boolean(settings.use_alternative_game_cards));
       setCustomCssEnabled(Boolean(settings.custom_css_enabled));
       setPersonalWallpaperEnabled(Boolean(settings.personal_wallpaper_enabled));
-      setPersonalWallpaperOpacity(Math.max(0, Math.min(100, Number(settings.personal_wallpaper_opacity ?? 35))));
-      setAlternativeCardsOpacity(Math.max(0, Math.min(100, Number(settings.alternative_cards_opacity ?? 70))));
-      setAlternativeCardsFade(Math.max(0, Math.min(100, Number(settings.alternative_cards_fade ?? 90))));
+      setPersonalWallpaperOpacity(Math.max(0, Math.min(100, Number(settings.personal_wallpaper_opacity ?? 20))));
+      setAlternativeCardsOpacity(Math.max(0, Math.min(100, Number(settings.alternative_cards_opacity ?? 100))));
+      setAlternativeCardsFade(Math.max(0, Math.min(100, Number(settings.alternative_cards_fade ?? 50))));
       setSettingsRevision((value) => value + 1);
       setWallpaperRevision((value) => value + 1);
       setThemeRevision((value) => value + 1);
@@ -58,9 +58,9 @@ export default function App() {
       setUseAlternativeGameCards(false);
       setCustomCssEnabled(false);
       setPersonalWallpaperEnabled(false);
-      setPersonalWallpaperOpacity(35);
-      setAlternativeCardsOpacity(70);
-      setAlternativeCardsFade(90);
+      setPersonalWallpaperOpacity(20);
+      setAlternativeCardsOpacity(100);
+      setAlternativeCardsFade(50);
     }
   };
   // Real-time theme toggling: called straight from the Settings switch (no
