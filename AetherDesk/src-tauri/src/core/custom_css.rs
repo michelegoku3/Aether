@@ -30,21 +30,33 @@ const DEFAULT_GOLDMINE_THEME: &str = include_str!("../../assets/defaults/themes/
 /// Frieren theme (Frieren • Fern • Stark palette).
 const DEFAULT_FRIEREN_THEME: &str = include_str!("../../assets/defaults/themes/frieren.css");
 
+/// Halo theme (UNSC / Master Chief / MJOLNIR palette).
+const DEFAULT_HALO_THEME: &str = include_str!("../../assets/defaults/themes/halo.css");
+
 /// Default wallpaper shipped with AetherDesk (4K Cyberpunk 2077 art, embedded).
 const DEFAULT_CYBERPUNK_WALLPAPER: &[u8] = include_bytes!("../../assets/defaults/wallpapers/cyberpunk.jpg");
 
 /// Default Frieren wallpaper shipped with AetherDesk.
 const DEFAULT_FRIEREN_WALLPAPER: &[u8] = include_bytes!("../../assets/defaults/wallpapers/frieren.jpg");
 
+/// Default Goldmine wallpaper shipped with AetherDesk.
+const DEFAULT_GOLDMINE_WALLPAPER: &[u8] = include_bytes!("../../assets/defaults/wallpapers/goldmine.jpg");
+
+/// Default Halo wallpaper shipped with AetherDesk.
+const DEFAULT_HALO_WALLPAPER: &[u8] = include_bytes!("../../assets/defaults/wallpapers/halo.jpg");
+
 /// File names used when writing the embedded defaults into the user folders.
 const DEFAULT_THEME_FILES: &[(&str, &str)] = &[
     ("cyberpunk.css", DEFAULT_CYBERPUNK_THEME),
     ("goldmine.css", DEFAULT_GOLDMINE_THEME),
     ("frieren.css", DEFAULT_FRIEREN_THEME),
+    ("halo.css", DEFAULT_HALO_THEME),
 ];
 const DEFAULT_WALLPAPER_FILES: &[(&str, &[u8])] = &[
     ("cyberpunk.jpg", DEFAULT_CYBERPUNK_WALLPAPER),
+    ("goldmine.jpg", DEFAULT_GOLDMINE_WALLPAPER),
     ("frieren.jpg", DEFAULT_FRIEREN_WALLPAPER),
+    ("halo.jpg", DEFAULT_HALO_WALLPAPER),
 ];
 
 /// Image extensions the wallpaper picker accepts (browser-renderable set).

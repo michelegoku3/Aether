@@ -273,15 +273,16 @@ body {
   border-color: rgba(217, 179, 108, 0.65) !important;
 }
 .game-card-backdrop-bg {
-  filter: saturate(0.85) brightness(0.95);
+  /* Nessun filtro sull'immagine: opacità 100 = immagine piena.
+     L'unico effetto è il fade in basso, controllato da Settings. */
 }
 /* Fade verso il basso: usa la variabile live di Settings (--alt-card-fade 0..100). */
 .store-game-card.backdrop-card::after {
   background: linear-gradient(
     180deg,
-    rgba(10, 12, 18, calc(var(--alt-card-fade, 90) * 0.0022)) 0%,
-    rgba(10, 12, 18, calc(var(--alt-card-fade, 90) * 0.0062)) 45%,
-    rgba(10, 12, 18, calc(var(--alt-card-fade, 90) * 0.0094)) 100%
+    rgba(10, 12, 18, calc(var(--alt-card-fade, 50) * 0.0022)) 0%,
+    rgba(10, 12, 18, calc(var(--alt-card-fade, 50) * 0.0062)) 45%,
+    rgba(10, 12, 18, calc(var(--alt-card-fade, 50) * 0.0094)) 100%
   ) !important;
   border-radius: inherit;
 }
@@ -564,3 +565,80 @@ body.aether-wallpaper-enabled .aether-view {
 .store-game-card .badge-installed {
   z-index: 20 !important;
 }
+
+/* ==========================================================================
+   15. Copertura completa pagine (Home · Aether · modali · pagination)
+   ========================================================================== */
+
+/* Modal header/close + source buttons */
+.modal-close-btn { color: #9aa3b2 !important; }
+.modal-close-btn:hover { color: var(--goldmine-gold) !important; }
+.source-btn { color: var(--goldmine-silver) !important; }
+.action-title { color: var(--goldmine-gold) !important; }
+.action-desc { color: #9aa3b2 !important; }
+
+/* Game action modal (Library → Modify) */
+.game-action-modal { background-color: #131722 !important; border: 1px solid #2c3447 !important; border-radius: 12px !important; }
+.game-action-hero-overlay { background: linear-gradient(180deg, transparent 40%, #131722 100%) !important; }
+.game-action-hero-fallback { background-color: #0f1219 !important; color: var(--goldmine-gold-dim) !important; }
+.game-action-btn { background-color: #161a26 !important; border: 1px solid #2c3447 !important; border-radius: 8px !important; color: var(--goldmine-cream) !important; }
+.game-action-btn:hover:not(:disabled) { border-color: var(--goldmine-gold) !important; color: var(--goldmine-gold) !important; background-color: #1a2030 !important; }
+.game-action-close-btn:hover:not(:disabled) { border-color: #c96f6f !important; color: #c96f6f !important; }
+
+/* Game info modal */
+.info-modal-container { background-color: #131722 !important; border: 1px solid #2c3447 !important; border-radius: 12px !important; }
+.info-hero-text { background: linear-gradient(180deg, transparent 30%, rgba(16, 19, 26, 0.92) 100%) !important; }
+.info-hero-fallback { background-color: #0f1219 !important; }
+.info-label { color: var(--goldmine-gold-dim) !important; }
+.info-value { color: var(--goldmine-cream) !important; }
+.info-section-title { color: var(--goldmine-gold) !important; border-bottom: 1px solid #232b3d !important; }
+.info-section-body { color: #9aa3b2 !important; }
+.info-screenshot-link { border: 1px solid #2c3447 !important; border-radius: 8px !important; }
+.info-screenshot-link:hover { border-color: var(--goldmine-sky) !important; }
+.info-lightbox { background-color: rgba(10, 12, 18, 0.92) !important; }
+.info-lightbox-close { color: var(--goldmine-gold) !important; }
+.info-loading { color: var(--goldmine-gold-dim) !important; }
+
+/* Antivirus modal */
+.av-modal-container { background-color: #131722 !important; border: 1px solid #2c3447 !important; border-radius: 12px !important; }
+.av-modal-text { color: var(--goldmine-cream) !important; }
+.av-link-btn { color: var(--goldmine-sky) !important; }
+.av-link-btn:hover:not(:disabled) { color: var(--goldmine-silver) !important; }
+
+/* Crack modal */
+.crack-modal-container { background-color: #131722 !important; border: 1px solid #2c3447 !important; border-radius: 12px !important; }
+.crack-drop-files { border: 1px dashed #3a4358 !important; border-radius: 8px !important; background-color: #0f1219 !important; }
+.crack-drop-filename { color: var(--goldmine-gold) !important; }
+.crack-drop-hint { color: #5f6880 !important; }
+.crack-btn { background-color: #161a26 !important; border: 1px solid #2c3447 !important; border-radius: 8px !important; color: var(--goldmine-cream) !important; }
+.crack-btn:hover:not(:disabled) { border-color: var(--goldmine-gold) !important; color: var(--goldmine-gold) !important; background-color: #1a2030 !important; }
+.crack-achievement-row { border-bottom: 1px solid #1c2130 !important; }
+.crack-achievement-text { color: var(--goldmine-cream) !important; }
+
+/* Home view */
+.home-search-panel { background-color: #131722 !important; border: 1px solid #2c3447 !important; border-radius: 12px !important; }
+.home-search-results { background-color: #131722 !important; border: 1px solid #2c3447 !important; border-radius: 8px !important; }
+.home-search-result-name { color: var(--goldmine-cream) !important; }
+.home-search-result-appid { color: var(--goldmine-sky) !important; }
+.home-search-empty { color: #5f6880 !important; }
+.home-search-clear { color: var(--goldmine-gold-dim) !important; }
+.home-search-clear:hover { color: var(--goldmine-gold) !important; }
+
+/* Aether view dettagli */
+.panel-title { color: var(--goldmine-gold) !important; }
+.panel-meta { color: #5f6880 !important; }
+.btn-update-dot { background-color: var(--goldmine-gold) !important; box-shadow: 0 0 10px var(--goldmine-gold) !important; }
+
+/* Pagination & Library */
+.pagination-btn { background-color: #161a26 !important; border: 1px solid #2c3447 !important; border-radius: 8px !important; color: var(--goldmine-cream) !important; }
+.pagination-btn:hover:not(:disabled) { border-color: var(--goldmine-gold) !important; color: var(--goldmine-gold) !important; }
+.pagination-btn:disabled { opacity: 0.4; }
+.pagination-info { color: var(--goldmine-gold-dim) !important; }
+.library-count { color: var(--goldmine-gold-dim) !important; }
+.store-no-results { color: #5f6880 !important; }
+
+/* Misc */
+.settings-small-btn { background-color: #161a26 !important; border: 1px solid #2c3447 !important; color: var(--goldmine-cream) !important; border-radius: 8px !important; }
+.settings-small-btn:hover { border-color: var(--goldmine-gold) !important; color: var(--goldmine-gold) !important; }
+.sidebar-update-dot { background-color: var(--goldmine-gold) !important; box-shadow: 0 0 8px var(--goldmine-gold) !important; }
+.blank-canvas { background-color: var(--bg-app) !important; }

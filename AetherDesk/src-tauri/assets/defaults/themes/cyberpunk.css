@@ -312,15 +312,16 @@ body {
   border-color: var(--cyber-yellow) !important;
 }
 .game-card-backdrop-bg {
-  filter: saturate(0.9) contrast(1.1);
+  /* Nessun filtro sull'immagine: opacità 100 = immagine piena.
+     L'unico effetto è il fade in basso, controllato da Settings. */
 }
 /* Fade verso il basso: usa la variabile live di Settings (--alt-card-fade 0..100). */
 .store-game-card.backdrop-card::after {
   background: linear-gradient(
     180deg,
-    rgba(0,0,0, calc(var(--alt-card-fade, 90) * 0.0018)) 0%,
-    rgba(0,0,0, calc(var(--alt-card-fade, 90) * 0.0055)) 45%,
-    rgba(0,0,0, calc(var(--alt-card-fade, 90) * 0.0092)) 100%
+    rgba(0,0,0, calc(var(--alt-card-fade, 50) * 0.0018)) 0%,
+    rgba(0,0,0, calc(var(--alt-card-fade, 50) * 0.0055)) 45%,
+    rgba(0,0,0, calc(var(--alt-card-fade, 50) * 0.0092)) 100%
   ) !important;
 }
 /* Badge DENTRO la card: con il bordo superiore destro tagliato e overflow
