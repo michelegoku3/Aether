@@ -3,17 +3,37 @@ use tauri::Manager;
 
 const LOCAL_DATA_DIR_NAME: &str = "AetherData";
 
-/// Centralized path resolver for AetherDesk-owned files.
+/// Resolver centralizzato per i path di AetherDesk.
 ///
-/// User preference: keep AetherDesk data next to the installed executable, i.e. the
-/// folder opened by "Open file location". Therefore the primary data root is:
+/// ## Fix v3 — Tutto unificato in un'unica cartella (09/08/2026)
+/// Requisito utente: *l'intera cartella di Aether deve avere tutto dentro di lei*.
+/// Non deve esserci un pezzo in `AppData\Local` e uno in `AppData\Roaming`.
+/// Soluzione: sia l'eseguibile che `AetherData` vivono dentro la stessa
+/// cartella di installazione, che con `installMode=currentUser` è
+/// `%LOCALAPPDATA%\AetherDesk\` (scrivibile senza UAC, quindi temi/wallpaper
+/// sono editabili senza admin). Struttura:
 ///
-/// `<folder-containing-aether_desk.exe>/AetherData/`
+///   %LOCALAPPDATA%\AetherDesk\
+///     ├─ AetherDesk.exe
+///     ├─ ExternalTools\Steamless\...
+///     └─ AetherData\
+///         ├─ config\themes\*.css
+///         ├─ config\wallpapers\*.jpg
+///         ├─ config\settings.json
+///         └─ backup\...
 ///
-/// Legacy AppData paths are exposed only for one-time migration/cleanup from older builds.
+/// Vecchie location (da migrare):
+///   - Legacy Program Files: `<exe_parent>\AetherData` quando l'app era in `C:\Program Files`
+///   - Fix v2 Roaming: `%APPDATA%\com.aether.desk` (Roaming)
+/// Entrambe vengono migrate automaticamente al primo avvio verso la nuova
+/// `install_root/AetherData`.
 pub struct LocalAppPaths;
 
+#[allow(dead_code)]
 impl LocalAppPaths {
+    /// Cartella contenente l'eseguibile.
+    /// Con `currentUser` → `%LOCALAPPDATA%\AetherDesk\`
+    /// Con `Program Files` (vecchie install) → `C:\Program Files\AetherDesk\`
     pub fn install_root() -> PathBuf {
         std::env::current_exe()
             .ok()
@@ -21,10 +41,39 @@ impl LocalAppPaths {
             .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")))
     }
 
+    /// Path primario e unico: `<install_root>/AetherData`.
+    /// È l'unica location usata da ora in poi.
     pub fn data_root() -> PathBuf {
         Self::install_root().join(LOCAL_DATA_DIR_NAME)
     }
 
+    /// Alias per compatibilità con codice che passava `&AppHandle`.
+    /// Ora ignora `app` e ritorna sempre `install_root/AetherData` (unificato).
+    pub fn data_root_for_app(_app: &tauri::AppHandle) -> PathBuf {
+        Self::data_root()
+    }
+
+    pub fn data_root_fallback() -> PathBuf {
+        Self::data_root()
+    }
+
+    /// Legacy Roaming del fix v2: `%APPDATA%\com.aether.desk`
+    /// Mantenuto solo per migrazione di ritorno verso l'install unificata.
+    pub fn legacy_roaming_data_root() -> PathBuf {
+        if let Some(base) = dirs::data_dir() {
+            return base.join("com.aether.desk");
+        }
+        Self::install_root().join(LOCAL_DATA_DIR_NAME)
+    }
+
+    /// Legacy diretta accanto all'exe quando l'installer era `both`/`perMachine`.
+    /// Ora coincide con `data_root()` quando l'install è ancora in Program Files,
+    /// ma la distinguiamo per la migrazione verso LocalAppData.
+    pub fn legacy_program_files_data_root() -> PathBuf {
+        Self::install_root().join(LOCAL_DATA_DIR_NAME)
+    }
+
+    /// Directory dei tool esterni — resta accanto all'exe (read-only bundled).
     pub fn external_tools_dir() -> PathBuf {
         Self::install_root().join("ExternalTools")
     }
@@ -37,12 +86,16 @@ impl LocalAppPaths {
         Self::data_root().join("config")
     }
 
-    /// Temporary staging directory under AetherData, used for extracting crack
-    /// archives before they are applied. Keeping it inside AetherData (which
-    /// the user adds to Windows Defender exclusions) avoids the OS temp folder
-    /// being flagged by the antivirus.
+    pub fn config_dir_for_app(_app: &tauri::AppHandle) -> PathBuf {
+        Self::config_dir()
+    }
+
     pub fn temp_dir() -> PathBuf {
         Self::data_root().join("temp")
+    }
+
+    pub fn temp_dir_for_app(_app: &tauri::AppHandle) -> PathBuf {
+        Self::temp_dir()
     }
 
     pub fn legacy_app_data_dir(app: &tauri::AppHandle) -> Option<PathBuf> {

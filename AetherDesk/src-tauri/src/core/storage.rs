@@ -13,7 +13,7 @@ pub struct AppStorage {
 impl AppStorage {
     pub fn new(app: &tauri::AppHandle) -> Self {
         Self {
-            app_dir: LocalAppPaths::data_root(),
+            app_dir: LocalAppPaths::data_root_for_app(app),
             legacy_app_dir: LocalAppPaths::legacy_app_data_dir(app),
         }
     }
