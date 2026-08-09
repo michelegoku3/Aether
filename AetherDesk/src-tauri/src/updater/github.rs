@@ -67,10 +67,26 @@ impl GithubReleaseManager {
         }
     }
 
-    pub fn tags_are_different_versions(installed: &str, latest_tag: &str) -> bool {
+    /// True only when the GitHub tag represents a version NEWER than the
+    /// installed one.
+    ///
+    /// This is the correct gate for the "update available" dot: the old
+    /// implementation compared for *difference* (`!=`), so a local build that
+    /// was already AHEAD of the latest published tag (e.g. local 1.0.0 vs
+    /// published desk-0.9.5) still got flagged as "update available" — and
+    /// the subsequent install failed because the Tauri updater correctly
+    /// refused to downgrade.
+    pub fn latest_is_newer_than(installed: &str, latest_tag: &str) -> bool {
         let installed_norm = Self::normalize_version(installed);
-        let latest_norm = Self::normalize_version(&Self::component_version_from_tag(latest_tag));
-        installed_norm != latest_norm
+        let latest_norm = Self::component_version_from_tag(latest_tag);
+        if installed_norm.is_empty()
+            || latest_norm.is_empty()
+            || installed_norm.eq_ignore_ascii_case("n/a")
+            || latest_norm.eq_ignore_ascii_case("n/a")
+        {
+            return false;
+        }
+        Self::compare_version_tags(&latest_norm, &installed_norm) == std::cmp::Ordering::Greater
     }
 
     fn normalize_version(version: &str) -> String {
@@ -271,7 +287,7 @@ impl GithubReleaseManager {
 
     pub fn build_desk_update_info(current_version: String, release: &GithubRelease) -> ComponentUpdateInfo {
         let latest_version = Self::component_version_from_tag(&release.tag_name);
-        let update_available = Self::tags_are_different_versions(&current_version, &release.tag_name);
+        let update_available = Self::latest_is_newer_than(&current_version, &release.tag_name);
 
         ComponentUpdateInfo {
             installed_version: current_version,

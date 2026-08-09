@@ -30,7 +30,7 @@ pub async fn install_aether_desk_update(app: tauri::AppHandle) -> Result<String,
     let manager = GithubReleaseManager::new();
     let release = manager.fetch_latest_desk_release().await?;
 
-    if !GithubReleaseManager::tags_are_different_versions(&current_version, &release.tag_name) {
+    if !GithubReleaseManager::latest_is_newer_than(&current_version, &release.tag_name) {
         return Ok(format!("AetherDesk is already up to date ({})", current_version));
     }
 
