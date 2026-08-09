@@ -5,10 +5,23 @@ interface SettingsViewProps {
   hubcapUsage: { usage: number; limit: number; hasKey: boolean };
   onRefreshUsage: (forcedKey?: string) => Promise<void>;
   onRefreshCustomCss: () => Promise<void>;
+  onCustomCssChange: (enabled: boolean) => void;
   onPreviewPersonalWallpaper: (enabled: boolean, opacity: number) => void;
+  onPreviewAlternativeCards: (opacity: number, fade: number) => void;
 }
 
-export const SettingsView = ({ hubcapUsage, onRefreshUsage, onRefreshCustomCss, onPreviewPersonalWallpaper }: SettingsViewProps) => {
+interface AppearanceAssets {
+  themeExists: boolean;
+  themeName: string | null;
+  wallpaperExists: boolean;
+  wallpaperName: string | null;
+  themesDir: string;
+  wallpapersDir: string;
+}
+
+const clamp0to100 = (value: number) => Math.max(0, Math.min(100, Number.isFinite(value) ? value : 0));
+
+export const SettingsView = ({ hubcapUsage, onRefreshUsage, onRefreshCustomCss, onCustomCssChange, onPreviewPersonalWallpaper, onPreviewAlternativeCards }: SettingsViewProps) => {
   const [apiKey, setApiKey] = useState('');
   const [steamPath, setSteamPath] = useState('C:\\Program Files (x86)\\Steam');
   const [activeLibrary, setActiveLibrary] = useState('');
@@ -23,8 +36,24 @@ export const SettingsView = ({ hubcapUsage, onRefreshUsage, onRefreshCustomCss, 
   const [customCssEnabled, setCustomCssEnabled] = useState(false);
   const [personalWallpaperEnabled, setPersonalWallpaperEnabled] = useState(false);
   const [personalWallpaperOpacity, setPersonalWallpaperOpacity] = useState(35);
+  const [alternativeCardsOpacity, setAlternativeCardsOpacity] = useState(70);
+  const [alternativeCardsFade, setAlternativeCardsFade] = useState(90);
+  const [themeSelectedFile, setThemeSelectedFile] = useState('');
+  const [wallpaperSelectedFile, setWallpaperSelectedFile] = useState('');
   const [ryuuKey, setRyuuKey] = useState('');
   const [storeCurrency, setStoreCurrency] = useState<'eur' | 'usd' | 'jpy'>('eur');
+
+  // Appearance assets availability: when no theme/wallpaper file exists, the
+  // corresponding switch must stay disabled (cannot be enabled).
+  const [appearanceAssets, setAppearanceAssets] = useState<AppearanceAssets>({
+    themeExists: false,
+    themeName: null,
+    wallpaperExists: false,
+    wallpaperName: null,
+    themesDir: '',
+    wallpapersDir: '',
+  });
+  const [isPicking, setIsPicking] = useState<'theme' | 'wallpaper' | null>(null);
 
   // Raw settings as loaded from the backend. Saving always spreads this object
   // back, so fields owned by other flows (e.g. `antivirus_exclusion_done`) are
@@ -32,6 +61,20 @@ export const SettingsView = ({ hubcapUsage, onRefreshUsage, onRefreshCustomCss, 
   const [rawSettings, setRawSettings] = useState<Record<string, any>>({});
 
   const [statusMsg, setStatusMsg] = useState({ text: '', type: 'info' });
+
+  const showStatus = (text: string, type: 'info' | 'success' | 'error') => {
+    setStatusMsg({ text, type });
+    setTimeout(() => setStatusMsg({ text: '', type: 'info' }), 6000);
+  };
+
+  const loadAppearanceAssets = async () => {
+    try {
+      const assets: AppearanceAssets = await invoke('get_appearance_assets');
+      setAppearanceAssets(assets);
+    } catch (err) {
+      console.warn('[settings] failed to load appearance assets:', err);
+    }
+  };
 
   // Load settings from the backend when the component mounts
   useEffect(() => {
@@ -54,7 +97,11 @@ export const SettingsView = ({ hubcapUsage, onRefreshUsage, onRefreshCustomCss, 
           setStoreFrontFilter(settings.store_front_filter || 'upcoming');
           setCustomCssEnabled(Boolean(settings.custom_css_enabled));
           setPersonalWallpaperEnabled(Boolean(settings.personal_wallpaper_enabled));
-          setPersonalWallpaperOpacity(Math.max(0, Math.min(100, Number(settings.personal_wallpaper_opacity ?? 35))));
+          setPersonalWallpaperOpacity(clamp0to100(Number(settings.personal_wallpaper_opacity ?? 35)));
+          setAlternativeCardsOpacity(clamp0to100(Number(settings.alternative_cards_opacity ?? 70)));
+          setAlternativeCardsFade(clamp0to100(Number(settings.alternative_cards_fade ?? 90)));
+          setThemeSelectedFile(settings.theme_selected_file || '');
+          setWallpaperSelectedFile(settings.wallpaper_selected_file || '');
           setRyuuKey(settings.ryuu_api_key || '');
           setStoreCurrency(['usd', 'jpy'].includes(settings.store_currency) ? settings.store_currency : 'eur');
         }
@@ -63,17 +110,13 @@ export const SettingsView = ({ hubcapUsage, onRefreshUsage, onRefreshCustomCss, 
       }
     };
     loadSettings();
+    loadAppearanceAssets();
     onRefreshUsage();
   }, []);
 
-  const showStatus = (text: string, type: 'info' | 'success' | 'error') => {
-    setStatusMsg({ text, type });
-    setTimeout(() => setStatusMsg({ text: '', type: 'info' }), 6000);
-  };
-
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     // Validazione API key se presente
     if (apiKey.trim()) {
       showStatus('Validating API key...', 'info');
@@ -88,7 +131,7 @@ export const SettingsView = ({ hubcapUsage, onRefreshUsage, onRefreshCustomCss, 
         return;
       }
     }
-    
+
     // Salvataggio
     try {
       showStatus('Saving settings...', 'info');
@@ -109,6 +152,10 @@ export const SettingsView = ({ hubcapUsage, onRefreshUsage, onRefreshCustomCss, 
           custom_css_enabled: customCssEnabled,
           personal_wallpaper_enabled: personalWallpaperEnabled,
           personal_wallpaper_opacity: personalWallpaperOpacity,
+          wallpaper_selected_file: wallpaperSelectedFile,
+          theme_selected_file: themeSelectedFile,
+          alternative_cards_opacity: alternativeCardsOpacity,
+          alternative_cards_fade: alternativeCardsFade,
           ryuu_api_key: ryuuKey,
           download_games_with_updates_on: downloadGamesWithUpdatesOn,
           show_store_front_games: showStoreFrontGames,
@@ -121,10 +168,72 @@ export const SettingsView = ({ hubcapUsage, onRefreshUsage, onRefreshCustomCss, 
       showStatus('Settings saved successfully!', 'success');
       onRefreshUsage(apiKey);
       onRefreshCustomCss();
+      loadAppearanceAssets();
     } catch (err: any) {
       showStatus(`Error during save: ${err}`, 'error');
     }
   };
+
+  /** Persists a freshly picked theme/wallpaper file immediately (the selection
+   *  is part of settings) and refreshes the live preview. The enabled flags
+   *  are included so a refresh after picking never reverts a toggle the user
+   *  switched on without clicking Save (real-time behaviour). */
+  const persistAppearanceSelection = async (patch: Record<string, any>) => {
+    await invoke('save_settings', {
+      settings: {
+        ...rawSettings,
+        custom_css_enabled: customCssEnabled,
+        personal_wallpaper_enabled: personalWallpaperEnabled,
+        ...patch,
+      }
+    });
+  };
+
+  const handlePickTheme = async () => {
+    setIsPicking('theme');
+    try {
+      const fileName: string = await invoke('pick_theme_file');
+      setThemeSelectedFile(fileName);
+      await persistAppearanceSelection({ theme_selected_file: fileName });
+      await onRefreshCustomCss();
+      await loadAppearanceAssets();
+      showStatus(`Theme selected: ${fileName}`, 'success');
+    } catch (err: any) {
+      // "No file selected" is a normal cancellation, not an error.
+      if (String(err).includes('No file selected')) return;
+      showStatus(`Failed to pick theme: ${err}`, 'error');
+    } finally {
+      setIsPicking(null);
+    }
+  };
+
+  const handlePickWallpaper = async () => {
+    setIsPicking('wallpaper');
+    try {
+      const fileName: string = await invoke('pick_wallpaper_file');
+      setWallpaperSelectedFile(fileName);
+      await persistAppearanceSelection({ wallpaper_selected_file: fileName });
+      await onRefreshCustomCss();
+      await loadAppearanceAssets();
+      showStatus(`Wallpaper selected: ${fileName}`, 'success');
+    } catch (err: any) {
+      if (String(err).includes('No file selected')) return;
+      showStatus(`Failed to pick wallpaper: ${err}`, 'error');
+    } finally {
+      setIsPicking(null);
+    }
+  };
+
+  const appearancePickBtn = (label: string, onClick: () => void, disabled: boolean, busy: boolean) => (
+    <button
+      type="button"
+      className="appearance-pick-btn"
+      onClick={onClick}
+      disabled={disabled || busy}
+    >
+      {busy ? '...' : label}
+    </button>
+  );
 
   return (
     <div className="settings-view">
@@ -142,51 +251,51 @@ export const SettingsView = ({ hubcapUsage, onRefreshUsage, onRefreshCustomCss, 
       )}
 
       <form onSubmit={handleSave} className="settings-form">
-        <div className="settings-top-action-row" title="Use the alternate backdrop-focused game card layout in Store and Library.">
-          <span className="settings-toggle-text">Use alternative game cards</span>
-          <label className="version-switch">
-            <input
-              type="checkbox"
-              checked={useAlternativeGameCards}
-              onChange={(e) => setUseAlternativeGameCards(e.target.checked)}
-            />
-            <span></span>
-          </label>
-        </div>
+        {/* AETHER section: dev utilities, titled like the other groups. */}
+        <div className="settings-group">
+          <label className="settings-label">AETHER</label>
+          <div className="settings-toggle-row" title="Open WebView developer tools. They open only when you switch this ON manually.">
+            <span className="settings-toggle-text">Enable WebView devtools</span>
+            <label className="version-switch">
+              <input
+                type="checkbox"
+                checked={enableWebviewDevtools}
+                onChange={async (e) => {
+                  const next = e.target.checked;
+                  setEnableWebviewDevtools(next);
+                  // Open the devtools only on an explicit user action, never
+                  // automatically on startup/save.
+                  if (next) {
+                    try { await invoke('open_webview_devtools'); } catch (err) { console.warn('Unable to open WebView devtools:', err); }
+                  }
+                }}
+              />
+              <span></span>
+            </label>
+          </div>
 
-        <div className="settings-top-action-row" title="Open WebView developer tools on startup/after saving settings when supported by the build.">
-          <span className="settings-toggle-text">Enable WebView devtools</span>
-          <label className="version-switch">
-            <input
-              type="checkbox"
-              checked={enableWebviewDevtools}
-              onChange={(e) => setEnableWebviewDevtools(e.target.checked)}
-            />
-            <span></span>
-          </label>
-        </div>
-
-        <div className="settings-top-action-row" title="Clear AetherDesk cache files such as store search, game info, Steam names and Denuvo cache. Settings and backups are preserved.">
-          <span className="settings-toggle-text">Clear AetherDesk caches</span>
-          <button
-            type="button"
-            className="settings-small-btn"
-            onClick={async () => {
-              try {
-                const result: string = await invoke('clear_app_caches');
+          <div className="settings-toggle-row" title="Clear AetherDesk cache files such as store search, game info, Steam names and Denuvo cache. Settings and backups are preserved.">
+            <span className="settings-toggle-text">Clear AetherDesk caches</span>
+            <button
+              type="button"
+              className="settings-small-btn"
+              onClick={async () => {
                 try {
-                  Object.keys(localStorage)
-                    .filter((key) => key.startsWith('aether_cover_'))
-                    .forEach((key) => localStorage.removeItem(key));
-                } catch {}
-                showStatus(result, 'success');
-              } catch (err: any) {
-                showStatus(`Failed to clear caches: ${err}`, 'error');
-              }
-            }}
-          >
-            Clear Cache
-          </button>
+                  const result: string = await invoke('clear_app_caches');
+                  try {
+                    Object.keys(localStorage)
+                      .filter((key) => key.startsWith('aether_cover_'))
+                      .forEach((key) => localStorage.removeItem(key));
+                  } catch {}
+                  showStatus(result, 'success');
+                } catch (err: any) {
+                  showStatus(`Failed to clear caches: ${err}`, 'error');
+                }
+              }}
+            >
+              Clear Cache
+            </button>
+          </div>
         </div>
 
         <div className="settings-separator"></div>
@@ -316,18 +425,6 @@ export const SettingsView = ({ hubcapUsage, onRefreshUsage, onRefreshCustomCss, 
             </div>
           )}
 
-          <div className="settings-toggle-row" title="After latest-version downloads, comment setManifestid pins so Steam can update the game normally">
-            <span className="settings-toggle-text">Download games with updates on</span>
-            <label className="version-switch">
-              <input
-                type="checkbox"
-                checked={downloadGamesWithUpdatesOn}
-                onChange={(e) => setDownloadGamesWithUpdatesOn(e.target.checked)}
-              />
-              <span></span>
-            </label>
-          </div>
-
           <div className="settings-toggle-row" title="Preferred currency for Steam prices shown in Store and Info">
             <span className="settings-toggle-text">Store price currency</span>
             <select
@@ -340,22 +437,39 @@ export const SettingsView = ({ hubcapUsage, onRefreshUsage, onRefreshCustomCss, 
               <option value="jpy">Yen (¥)</option>
             </select>
           </div>
+
+          <div className="settings-toggle-row" title="After latest-version downloads, comment setManifestid pins so Steam can update the game normally">
+            <span className="settings-toggle-text">Download games with updates on</span>
+            <label className="version-switch">
+              <input
+                type="checkbox"
+                checked={downloadGamesWithUpdatesOn}
+                onChange={(e) => setDownloadGamesWithUpdatesOn(e.target.checked)}
+              />
+              <span></span>
+            </label>
+          </div>
         </div>
 
         <div className="settings-separator"></div>
 
-        {/* Appearance — Custom CSS */}
+        {/* Appearance — Theme, Personal Wallpaper, Alternative game cards */}
         <div className="settings-group">
           <label className="settings-label">Appearance</label>
-          <div className="settings-toggle-row" title="Load AetherData/config/custom.css after the default theme.">
-            <span className="settings-toggle-text">Enable custom CSS</span>
+
+          {/* Enable theme (first CSS in config/themes). Applies in real time:
+              no "Save Settings" needed to see the theme. */}
+          <div className="settings-toggle-row" title="Load the first .css file found in AetherData/config/themes after the default theme. Applies immediately.">
+            <span className="settings-toggle-text">Enable theme</span>
             <label className="version-switch">
               <input
                 type="checkbox"
                 checked={customCssEnabled}
+                disabled={!appearanceAssets.themeExists}
                 onChange={async (e) => {
                   const next = e.target.checked;
                   setCustomCssEnabled(next);
+                  onCustomCssChange(next);
                   if (next) {
                     try { await invoke('ensure_custom_css'); } catch {}
                   }
@@ -365,12 +479,41 @@ export const SettingsView = ({ hubcapUsage, onRefreshUsage, onRefreshCustomCss, 
             </label>
           </div>
 
-          <div className="settings-toggle-row" title="Use AetherData/config/wallpaper.<ext> as the app background.">
+          {!appearanceAssets.themeExists && (
+            <p className="settings-desc settings-assets-missing">
+              No theme found in AetherData/config/themes — the switch is disabled. Add a .css file to enable it.
+            </p>
+          )}
+
+          {customCssEnabled && appearanceAssets.themeExists && (
+            <div className="settings-appearance-sub">
+              {/* Single paragraph, simple line break: the button on the right
+                  is vertically centered to the whole description. */}
+              <div className="settings-appearance-row">
+                <p className="settings-desc">
+                  The first .css file in <code className="settings-path">{appearanceAssets.themesDir}</code> is applied automatically.
+                  <br />
+                  {appearanceAssets.themeName ? <>Currently active: <strong>{appearanceAssets.themeName}</strong>. </> : ''}
+                  Use the button to pick a different theme.
+                </p>
+                {appearancePickBtn(
+                  'THEME',
+                  handlePickTheme,
+                  !appearanceAssets.themeExists && !customCssEnabled,
+                  isPicking === 'theme'
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Enable personal wallpaper (first image in config/wallpapers) */}
+          <div className="settings-toggle-row" title="Use the first image found in AetherData/config/wallpapers as the app background.">
             <span className="settings-toggle-text">Enable personal wallpaper</span>
             <label className="version-switch">
               <input
                 type="checkbox"
                 checked={personalWallpaperEnabled}
+                disabled={!appearanceAssets.wallpaperExists}
                 onChange={async (e) => {
                   const next = e.target.checked;
                   setPersonalWallpaperEnabled(next);
@@ -384,25 +527,100 @@ export const SettingsView = ({ hubcapUsage, onRefreshUsage, onRefreshCustomCss, 
             </label>
           </div>
 
-          {personalWallpaperEnabled && (
-            <div className="settings-toggle-row" title="Adjust the personal wallpaper opacity from 0 to 100.">
-              <span className="settings-toggle-text">Wallpaper opacity</span>
-              <input
-                type="text"
-                inputMode="numeric"
-                pattern="[0-9]*"
-                className="settings-number-input"
-                value={personalWallpaperOpacity}
-                onChange={(e) => {
-                  const numeric = e.target.value.replace(/\D/g, '');
-                  const next = Math.max(0, Math.min(100, Number(numeric || 0)));
-                  setPersonalWallpaperOpacity(next);
-                  onPreviewPersonalWallpaper(personalWallpaperEnabled, next);
-                }}
-              />
+          {!appearanceAssets.wallpaperExists && (
+            <p className="settings-desc settings-assets-missing">
+              No wallpaper found in AetherData/config/wallpapers — the switch is disabled. Add an image to enable it.
+            </p>
+          )}
+
+          {personalWallpaperEnabled && appearanceAssets.wallpaperExists && (
+            <div className="settings-appearance-sub">
+              {/* Single paragraph, simple line break: the button on the right
+                  is vertically centered to the whole description. */}
+              <div className="settings-appearance-row">
+                <p className="settings-desc">
+                  The first image in <code className="settings-path">{appearanceAssets.wallpapersDir}</code> is used as the app background.
+                  <br />
+                  {appearanceAssets.wallpaperName ? <>Currently active: <strong>{appearanceAssets.wallpaperName}</strong>. </> : ''}
+                  Use the button to pick a different wallpaper.
+                </p>
+                {appearancePickBtn(
+                  'WALLPAPER',
+                  handlePickWallpaper,
+                  !appearanceAssets.wallpaperExists && !personalWallpaperEnabled,
+                  isPicking === 'wallpaper'
+                )}
+              </div>
+              {/* Same layout as the alternative-cards fields: label left,
+                  numeric input right, indented under the wallpaper switch. */}
+              <div className="settings-toggle-row" title="Adjust the personal wallpaper opacity from 0 to 100.">
+                <span className="settings-toggle-text">Wallpaper opacity</span>
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  pattern="[0-9]*"
+                  className="settings-number-input"
+                  value={personalWallpaperOpacity}
+                  onChange={(e) => {
+                    const numeric = e.target.value.replace(/\D/g, '');
+                    const next = clamp0to100(Number(numeric || 0));
+                    setPersonalWallpaperOpacity(next);
+                    onPreviewPersonalWallpaper(personalWallpaperEnabled, next);
+                  }}
+                />
+              </div>
             </div>
           )}
 
+          {/* Alternative game cards — moved below the personal wallpaper switch */}
+          <div className="settings-toggle-row" title="Use the alternate backdrop-focused game card layout in Store and Library.">
+            <span className="settings-toggle-text">Use alternative game cards</span>
+            <label className="version-switch">
+              <input
+                type="checkbox"
+                checked={useAlternativeGameCards}
+                onChange={(e) => setUseAlternativeGameCards(e.target.checked)}
+              />
+              <span></span>
+            </label>
+          </div>
+
+          {useAlternativeGameCards && (
+            <div className="settings-appearance-sub">
+              <div className="settings-toggle-row" title="Adjust the backdrop image opacity of the alternative game cards from 0 to 100.">
+                <span className="settings-toggle-text">Backdrop opacity</span>
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  pattern="[0-9]*"
+                  className="settings-number-input"
+                  value={alternativeCardsOpacity}
+                  onChange={(e) => {
+                    const numeric = e.target.value.replace(/\D/g, '');
+                    const next = clamp0to100(Number(numeric || 0));
+                    setAlternativeCardsOpacity(next);
+                    onPreviewAlternativeCards(next, alternativeCardsFade);
+                  }}
+                />
+              </div>
+              <div className="settings-toggle-row" title="Adjust the fade-out toward the bottom of the alternative game cards from 0 (no fade) to 100 (fully dark).">
+                <span className="settings-toggle-text">Backdrop fade (bottom)</span>
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  pattern="[0-9]*"
+                  className="settings-number-input"
+                  value={alternativeCardsFade}
+                  onChange={(e) => {
+                    const numeric = e.target.value.replace(/\D/g, '');
+                    const next = clamp0to100(Number(numeric || 0));
+                    setAlternativeCardsFade(next);
+                    onPreviewAlternativeCards(alternativeCardsOpacity, next);
+                  }}
+                />
+              </div>
+            </div>
+          )}
         </div>
 
         <div className="settings-separator"></div>
@@ -432,7 +650,12 @@ export const SettingsView = ({ hubcapUsage, onRefreshUsage, onRefreshCustomCss, 
               setCustomCssEnabled(false);
               setPersonalWallpaperEnabled(false);
               setPersonalWallpaperOpacity(35);
+              setAlternativeCardsOpacity(70);
+              setAlternativeCardsFade(90);
+              setThemeSelectedFile('');
+              setWallpaperSelectedFile('');
               onPreviewPersonalWallpaper(false, 35);
+              onPreviewAlternativeCards(70, 90);
               setStoreCurrency('eur');
               try {
                 await invoke('save_settings', {
@@ -453,6 +676,10 @@ export const SettingsView = ({ hubcapUsage, onRefreshUsage, onRefreshCustomCss, 
                     custom_css_enabled: false,
                     personal_wallpaper_enabled: false,
                     personal_wallpaper_opacity: 35,
+                    wallpaper_selected_file: '',
+                    theme_selected_file: '',
+                    alternative_cards_opacity: 70,
+                    alternative_cards_fade: 90,
                     store_currency: 'eur',
                     antivirus_exclusion_done: rawSettings.antivirus_exclusion_done ?? false
                   }
@@ -460,6 +687,7 @@ export const SettingsView = ({ hubcapUsage, onRefreshUsage, onRefreshCustomCss, 
                 showStatus('Settings reset to defaults!', 'success');
                 onRefreshUsage('');
                 onRefreshCustomCss();
+                loadAppearanceAssets();
               } catch (err: any) {
                 showStatus(`Failed to reset settings: ${err}`, 'error');
               }

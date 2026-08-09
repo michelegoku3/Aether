@@ -4,16 +4,17 @@ import { invoke } from '@tauri-apps/api/core';
 const STYLE_ID = 'aether-custom-css';
 
 /**
- * Injects `AetherData/config/custom.css` as a `<style>` tag when `enabled` is true.
- * - When `false`, any existing tag is removed (so toggling OFF instantly reverts the theme).
- * - When `true`, fetches the file via Tauri (`get_custom_css`) and injects it as
- *   the *last* child of `<head>` so it wins by cascade order over `style.css`.
- * - Fail-open: empty file, missing file, or read error → no tag, no crash, just a console.warn.
- *
- * This hook is intentionally tiny (SRP) and has no knowledge of settings persistence.
- * The caller (App.tsx) owns the `enabled` boolean via `get_settings`.
+ * Injects the active theme (`AetherData/config/themes/*.css`) as a `<style>`
+ * tag when `enabled` is true.
+ * - When `false`, any existing tag is removed (so toggling OFF instantly reverts).
+ * - When `true`, fetches the theme via Tauri (`get_custom_css`) and injects it
+ *   as the *last* child of `<head>` so it wins by cascade order over `style.css`.
+ * - `revision` lets the caller force a refetch while `enabled` stays true
+ *   (e.g. right after picking a different theme file or saving settings),
+ *   which makes theme changes apply in real time without restarting.
+ * - Fail-open: empty file, missing file, or read error → no tag, no crash.
  */
-export function useCustomCss(enabled: boolean) {
+export function useCustomCss(enabled: boolean, revision = 0) {
   useEffect(() => {
     const existing = document.getElementById(STYLE_ID) as HTMLStyleElement | null;
 
@@ -51,5 +52,5 @@ export function useCustomCss(enabled: boolean) {
     return () => {
       cancelled = true;
     };
-  }, [enabled]);
+  }, [enabled, revision]);
 }

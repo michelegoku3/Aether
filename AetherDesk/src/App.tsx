@@ -34,30 +34,51 @@ export default function App() {
   const [customCssEnabled, setCustomCssEnabled] = useState(false);
   const [personalWallpaperEnabled, setPersonalWallpaperEnabled] = useState(false);
   const [personalWallpaperOpacity, setPersonalWallpaperOpacity] = useState(35);
+  const [alternativeCardsOpacity, setAlternativeCardsOpacity] = useState(70);
+  const [alternativeCardsFade, setAlternativeCardsFade] = useState(90);
+  // Bumped whenever the wallpaper file selection changes so the hook re-reads
+  // the data URI even when `enabled` stays true.
+  const [wallpaperRevision, setWallpaperRevision] = useState(0);
+  // Bumped whenever the theme changes (toggle, picker, settings save) so the
+  // custom-CSS hook re-fetches and applies the theme in real time.
+  const [themeRevision, setThemeRevision] = useState(0);
   const refreshCustomCss = async () => {
     try {
       const settings: any = await invoke('get_settings');
       setUseAlternativeGameCards(Boolean(settings.use_alternative_game_cards));
-      if (settings.enable_webview_devtools) {
-        try { await invoke('open_webview_devtools'); } catch (err) { console.warn('Unable to open WebView devtools:', err); }
-      }
       setCustomCssEnabled(Boolean(settings.custom_css_enabled));
       setPersonalWallpaperEnabled(Boolean(settings.personal_wallpaper_enabled));
       setPersonalWallpaperOpacity(Math.max(0, Math.min(100, Number(settings.personal_wallpaper_opacity ?? 35))));
+      setAlternativeCardsOpacity(Math.max(0, Math.min(100, Number(settings.alternative_cards_opacity ?? 70))));
+      setAlternativeCardsFade(Math.max(0, Math.min(100, Number(settings.alternative_cards_fade ?? 90))));
       setSettingsRevision((value) => value + 1);
+      setWallpaperRevision((value) => value + 1);
+      setThemeRevision((value) => value + 1);
     } catch {
       setUseAlternativeGameCards(false);
       setCustomCssEnabled(false);
       setPersonalWallpaperEnabled(false);
       setPersonalWallpaperOpacity(35);
+      setAlternativeCardsOpacity(70);
+      setAlternativeCardsFade(90);
     }
+  };
+  // Real-time theme toggling: called straight from the Settings switch (no
+  // "Save Settings" needed). Also re-reads the theme file immediately.
+  const changeCustomCss = (enabled: boolean) => {
+    setCustomCssEnabled(enabled);
+    setThemeRevision((value) => value + 1);
   };
   const previewPersonalWallpaper = (enabled: boolean, opacity: number) => {
     setPersonalWallpaperEnabled(enabled);
     setPersonalWallpaperOpacity(Math.max(0, Math.min(100, opacity)));
   };
-  useCustomCss(customCssEnabled);
-  usePersonalWallpaper(personalWallpaperEnabled, personalWallpaperOpacity);
+  const previewAlternativeCards = (opacity: number, fade: number) => {
+    setAlternativeCardsOpacity(Math.max(0, Math.min(100, opacity)));
+    setAlternativeCardsFade(Math.max(0, Math.min(100, fade)));
+  };
+  useCustomCss(customCssEnabled, themeRevision);
+  usePersonalWallpaper(personalWallpaperEnabled, personalWallpaperOpacity, wallpaperRevision);
 
   const refreshHubcapUsage = async (forcedKey?: string) => {
     try {
@@ -178,9 +199,13 @@ export default function App() {
         dllStatus={dllStatus}
         onDllStatusChange={checkDllStatus}
         onRefreshCustomCss={refreshCustomCss}
+        onCustomCssChange={changeCustomCss}
         onPreviewPersonalWallpaper={previewPersonalWallpaper}
+        onPreviewAlternativeCards={previewAlternativeCards}
         settingsRevision={settingsRevision}
         useAlternativeGameCards={useAlternativeGameCards}
+        alternativeCardsOpacity={alternativeCardsOpacity}
+        alternativeCardsFade={alternativeCardsFade}
       />
     </div>
   );

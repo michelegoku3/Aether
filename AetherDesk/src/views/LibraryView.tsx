@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { SpecificVersionModal, LuaManifestRow } from '../modals/SpecificVersionModal';
 import { LibraryGameActionsModal } from '../modals/LibraryGameActionsModal';
@@ -12,9 +12,11 @@ import { requireSteamPath } from '../hooks/useSettings';
 
 interface LibraryViewProps {
   useAlternativeGameCards: boolean;
+  alternativeCardsOpacity: number;
+  alternativeCardsFade: number;
 }
 
-export const LibraryView = ({ useAlternativeGameCards }: LibraryViewProps) => {
+export const LibraryView = ({ useAlternativeGameCards, alternativeCardsOpacity, alternativeCardsFade }: LibraryViewProps) => {
   const { games, isLoading, status, setStatus, loadInstalledGames } = useLibraryGames();
   const [actionGame, setActionGame] = useState<InstalledGame | null>(null);
   const [infoGame, setInfoGame] = useState<InstalledGame | null>(null);
@@ -73,7 +75,13 @@ export const LibraryView = ({ useAlternativeGameCards }: LibraryViewProps) => {
 
       <div className="store-separator"></div>
 
-      <div className={useAlternativeGameCards ? 'store-grid alt-card-grid' : 'store-grid'}>
+      <div
+        className={useAlternativeGameCards ? 'store-grid alt-card-grid' : 'store-grid'}
+        style={useAlternativeGameCards ? {
+          '--alt-card-opacity': Math.max(0, Math.min(100, alternativeCardsOpacity)),
+          '--alt-card-fade': Math.max(0, Math.min(100, alternativeCardsFade)),
+        } as React.CSSProperties : undefined}
+      >
         {isLoading ? (
           <div className="store-no-results">Scanning Steam appmanifest files...</div>
         ) : games.length > 0 ? (

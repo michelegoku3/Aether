@@ -22,7 +22,13 @@ const ensureWallpaperStyle = () => {
   style.textContent = `
 #aether-personal-wallpaper {
   position: fixed;
-  inset: 0;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  /* The wallpaper must cover only the content area, never the sidebar:
+     the image is centered on the main column, so it cannot overflow
+     underneath the sidebar when the window is resized. */
+  left: var(--sidebar-width, 215px);
   z-index: 0;
   pointer-events: none;
   background-size: cover;
@@ -44,7 +50,7 @@ body.aether-wallpaper-enabled .aether-view {
 `;
 };
 
-export function usePersonalWallpaper(enabled: boolean, opacityPercent: number) {
+export function usePersonalWallpaper(enabled: boolean, opacityPercent: number, revision = 0) {
   const latestOpacity = useRef(opacityPercent);
 
   useEffect(() => {
@@ -92,5 +98,5 @@ export function usePersonalWallpaper(enabled: boolean, opacityPercent: number) {
     return () => {
       cancelled = true;
     };
-  }, [enabled]);
+  }, [enabled, revision]);
 }

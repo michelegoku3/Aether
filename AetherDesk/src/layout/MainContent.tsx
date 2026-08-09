@@ -16,12 +16,16 @@ interface MainContentProps {
   dllStatus: DllStatusInfo;
   onDllStatusChange: () => Promise<void>;
   onRefreshCustomCss: () => Promise<void>;
+  onCustomCssChange: (enabled: boolean) => void;
   onPreviewPersonalWallpaper: (enabled: boolean, opacity: number) => void;
+  onPreviewAlternativeCards: (opacity: number, fade: number) => void;
   settingsRevision: number;
   useAlternativeGameCards: boolean;
+  alternativeCardsOpacity: number;
+  alternativeCardsFade: number;
 }
 
-export const MainContent = ({ activeTab, dllUpdateAvailable, deskUpdateAvailable, onUpdateComplete, hubcapUsage, onRefreshUsage, dllStatus, onDllStatusChange, onRefreshCustomCss, onPreviewPersonalWallpaper, settingsRevision, useAlternativeGameCards }: MainContentProps) => {
+export const MainContent = ({ activeTab, dllUpdateAvailable, deskUpdateAvailable, onUpdateComplete, hubcapUsage, onRefreshUsage, dllStatus, onDllStatusChange, onRefreshCustomCss, onCustomCssChange, onPreviewPersonalWallpaper, onPreviewAlternativeCards, settingsRevision, useAlternativeGameCards, alternativeCardsOpacity, alternativeCardsFade }: MainContentProps) => {
   const renderActiveNonStoreView = () => {
     if (activeTab === 'store') {
       return null;
@@ -38,7 +42,11 @@ export const MainContent = ({ activeTab, dllUpdateAvailable, deskUpdateAvailable
     if (activeTab === 'library') {
       return (
         <main className="main-content">
-          <LibraryView useAlternativeGameCards={useAlternativeGameCards} />
+          <LibraryView
+            useAlternativeGameCards={useAlternativeGameCards}
+            alternativeCardsOpacity={alternativeCardsOpacity}
+            alternativeCardsFade={alternativeCardsFade}
+          />
         </main>
       );
     }
@@ -50,7 +58,9 @@ export const MainContent = ({ activeTab, dllUpdateAvailable, deskUpdateAvailable
             hubcapUsage={hubcapUsage}
             onRefreshUsage={onRefreshUsage}
             onRefreshCustomCss={onRefreshCustomCss}
+            onCustomCssChange={onCustomCssChange}
             onPreviewPersonalWallpaper={onPreviewPersonalWallpaper}
+            onPreviewAlternativeCards={onPreviewAlternativeCards}
           />
         </main>
       );
@@ -111,6 +121,8 @@ export const MainContent = ({ activeTab, dllUpdateAvailable, deskUpdateAvailable
           isActive={activeTab === 'store'}
           settingsRevision={settingsRevision}
           useAlternativeGameCards={useAlternativeGameCards}
+          alternativeCardsOpacity={alternativeCardsOpacity}
+          alternativeCardsFade={alternativeCardsFade}
         />
       </main>
       {renderActiveNonStoreView()}
