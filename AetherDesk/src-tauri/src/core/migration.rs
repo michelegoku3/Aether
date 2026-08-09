@@ -1,5 +1,9 @@
 // One-time migration da layout vecchi a quello unificato
 // `%LOCALAPPDATA%\AetherDesk\AetherData` (fix v3 - 09/08/2026).
+//
+// Principi: DRY, alta coesione, basso accoppiamento, singola responsabilità.
+// Ogni migrazione è idempotente, best-effort e logga senza bloccare l'avvio.
+
 use crate::core::backup::GameBackup;
 use crate::core::paths::LocalAppPaths;
 use crate::manifest::pins::LuaManifestPins;
@@ -8,6 +12,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 const LEGACY_LUA_BACKUPS_DIR: &str = "lua_backups";
+const OBSOLETE_COMPONENT_VERSION_DIR: &str = "component_versions";
 
 #[derive(Debug, Default)]
 pub struct MigrationReport {
@@ -17,190 +22,196 @@ pub struct MigrationReport {
 }
 
 // ---------------------------------------------------------------------------
-// FIX v3: tutto unificato in <install_root>/AetherData
-// Migra sia da Program Files legacy che da Roaming v2 verso la nuova location
+// Helpers riusabili (DRY) — filesystem
 // ---------------------------------------------------------------------------
+mod fs_utils {
+    use super::*;
 
-/// Migra i dati dal fix v2 Roaming (`%APPDATA%\com.aether.desk`) verso
-/// la cartella unificata `%LOCALAPPDATA%\AetherDesk\AetherData` (install_root).
-/// Idempotente: copia solo file mancanti, non sovrascrive custom dell'utente.
-pub fn migrate_roaming_to_local_install() -> Result<bool, String> {
-    let roaming = LocalAppPaths::legacy_roaming_data_root();
-    let local = LocalAppPaths::data_root();
-
-    if roaming == local || !roaming.exists() || !roaming.is_dir() {
-        return Ok(false);
-    }
-    if !local.exists() {
-        fs::create_dir_all(&local)
-            .map_err(|e| format!("Failed to create local data root {}: {}", local.display(), e))?;
-    }
-    let copied = copy_dir_recursive_missing_only(&roaming, &local)?;
-    if copied > 0 {
-        eprintln!(
-            "[AetherDesk] migrated {} file(s) from Roaming {} to unified {}",
-            copied,
-            roaming.display(),
-            local.display()
-        );
-    }
-    if legacy_copied_successfully(&roaming, &local) {
-        match fs::remove_dir_all(&roaming) {
-            Ok(()) => eprintln!("[AetherDesk] removed Roaming legacy at {}", roaming.display()),
-            Err(e) => eprintln!("[AetherDesk] keep Roaming (remove failed) {}: {}", roaming.display(), e),
-        }
-    }
-    Ok(copied > 0)
-}
-
-/// Migra da vecchia install in Program Files verso la nuova Local install
-/// e rimuove la vecchia AetherData se copiata con successo.
-pub fn migrate_programfiles_to_local_install() -> Result<bool, String> {
-    let candidates = [
-        Path::new("C:\\Program Files\\AetherDesk\\AetherData").to_path_buf(),
-        Path::new("C:\\Program Files (x86)\\AetherDesk\\AetherData").to_path_buf(),
-    ];
-    let local = LocalAppPaths::data_root();
-    let mut did = false;
-    for legacy in candidates {
-        if legacy == local || !legacy.exists() || !legacy.is_dir() {
-            continue;
-        }
-        if !local.exists() {
-            fs::create_dir_all(&local)
-                .map_err(|e| format!("Failed to create local data root {}: {}", local.display(), e))?;
-        }
-        let copied = copy_dir_recursive_missing_only(&legacy, &local)?;
-        if copied > 0 {
-            eprintln!(
-                "[AetherDesk] migrated {} file(s) from Program Files {} to unified {}",
-                copied,
-                legacy.display(),
-                local.display()
-            );
-            did = true;
-        }
-        if legacy_copied_successfully(&legacy, &local) {
-            let _ = fs::remove_dir_all(&legacy);
-            eprintln!("[AetherDesk] removed legacy Program Files AetherData at {}", legacy.display());
-        }
-    }
-    Ok(did)
-}
-
-/// Rimuove le vecchie installazioni di Aether ovunque siano.
-/// Chiamata ad ogni update/avvio: cerca installazioni legacy in Program Files
-/// e altre location note e le elimina (l'app gira come admin, quindi può).
-/// Non tocca mai la cartella di installazione corrente (`install_root`).
-pub fn remove_legacy_install_folders() {
-    let current = LocalAppPaths::install_root();
-    let current_str = current.to_string_lossy().to_lowercase();
-
-    let mut candidates: Vec<PathBuf> = vec![
-        Path::new("C:\\Program Files\\AetherDesk").to_path_buf(),
-        Path::new("C:\\Program Files (x86)\\AetherDesk").to_path_buf(),
-        Path::new("C:\\Program Files\\Aether").to_path_buf(),
-        Path::new("C:\\Program Files (x86)\\Aether").to_path_buf(),
-    ];
-    if let Some(local) = dirs::data_local_dir() {
-        candidates.push(local.join("AetherDesk"));
-        candidates.push(local.join("Aether"));
-        candidates.push(local.join("Programs").join("AetherDesk"));
-    }
-    candidates.push(LocalAppPaths::legacy_roaming_data_root());
-
-    for cand in candidates {
-        let cand_str = cand.to_string_lossy().to_lowercase();
-        if cand_str == current_str {
-            continue;
-        }
-        if !cand.exists() {
-            continue;
-        }
-        if current_str.starts_with(&cand_str) || cand_str.starts_with(&current_str) {
-            if cand == current {
-                continue;
-            }
-        }
-        let is_legacy_install = cand.join("AetherDesk.exe").exists()
-            || cand.join("Aether.exe").exists()
-            || cand.join("AetherData").exists()
-            || cand.join("Uninstall AetherDesk.exe").exists();
-        let is_program_files_legacy = cand.to_string_lossy().contains("Program Files")
-            && (cand.ends_with("AetherDesk") || cand.ends_with("Aether"));
-        if !is_legacy_install && !is_program_files_legacy {
-            continue;
-        }
-
-        // Evita di cancellare la nuova install se per qualche motivo coincide
-        if cand == current {
-            continue;
-        }
-
-        eprintln!("[AetherDesk] removing legacy installation at {}", cand.display());
-        match fs::remove_dir_all(&cand) {
-            Ok(()) => eprintln!("[AetherDesk] legacy installation removed: {}", cand.display()),
-            Err(e) => eprintln!("[AetherDesk] failed to remove legacy {}: {}", cand.display(), e),
-        }
-
-        #[cfg(target_os = "windows")]
-        {
-            let _ = std::process::Command::new("reg")
-                .args(["delete", "HKLM\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\AetherDesk", "/f"])
-                .output();
-            let _ = std::process::Command::new("reg")
-                .args(["delete", "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\AetherDesk", "/f"])
-                .output();
-            let _ = std::process::Command::new("reg")
-                .args(["delete", "HKLM\\Software\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\AetherDesk", "/f"])
-                .output();
-        }
-    }
-}
-
-fn copy_dir_recursive_missing_only(src: &Path, dst: &Path) -> Result<usize, String> {
-    let mut count = 0usize;
-    for entry in fs::read_dir(src).map_err(|e| format!("Failed to read {}: {}", src.display(), e))? {
-        let entry = entry.map_err(|e| format!("Failed to read entry in {}: {}", src.display(), e))?;
-        let src_path = entry.path();
-        let dst_path = dst.join(entry.file_name());
-        if src_path.is_dir() {
-            if !dst_path.exists() {
-                fs::create_dir_all(&dst_path)
-                    .map_err(|e| format!("Failed to create {}: {}", dst_path.display(), e))?;
-            }
-            count += copy_dir_recursive_missing_only(&src_path, &dst_path)?;
-        } else if src_path.is_file() {
-            if !dst_path.exists() {
-                if let Err(e) = fs::copy(&src_path, &dst_path) {
-                    eprintln!("[AetherDesk] failed to copy {} -> {}: {}", src_path.display(), dst_path.display(), e);
-                } else {
-                    count += 1;
+    /// Copia ricorsivamente solo file mancanti (non sovrascrive custom utente).
+    /// Ritorna numero di file copiati.
+    pub fn copy_missing_only(src: &Path, dst: &Path) -> Result<usize, String> {
+        let mut count = 0;
+        for entry in fs::read_dir(src).map_err(|e| format!("read {}: {}", src.display(), e))? {
+            let entry = entry.map_err(|e| format!("entry in {}: {}", src.display(), e))?;
+            let s = entry.path();
+            let d = dst.join(entry.file_name());
+            if s.is_dir() {
+                if !d.exists() {
+                    fs::create_dir_all(&d).map_err(|e| format!("mkdir {}: {}", d.display(), e))?;
+                }
+                count += copy_missing_only(&s, &d)?;
+            } else if s.is_file() && !d.exists() {
+                match fs::copy(&s, &d) {
+                    Ok(_) => count += 1,
+                    Err(e) => eprintln!("[AetherDesk] copy failed {} -> {}: {}", s.display(), d.display(), e),
                 }
             }
         }
+        Ok(count)
     }
-    Ok(count)
-}
 
-fn legacy_copied_successfully(legacy: &Path, new: &Path) -> bool {
-    fn check(src: &Path, dst: &Path) -> bool {
+    /// Verifica che ogni file in src esista in dst (usato per decidere se rimuovere src).
+    pub fn is_fully_copied(src: &Path, dst: &Path) -> bool {
         let Ok(entries) = fs::read_dir(src) else { return true };
-        for entry in entries.flatten() {
-            let src_path = entry.path();
-            let dst_path = dst.join(entry.file_name());
-            if src_path.is_dir() {
-                if !dst_path.is_dir() || !check(&src_path, &dst_path) {
+        for e in entries.flatten() {
+            let s = e.path();
+            let d = dst.join(e.file_name());
+            if s.is_dir() {
+                if !d.is_dir() || !is_fully_copied(&s, &d) {
                     return false;
                 }
-            } else if src_path.is_file() && !dst_path.exists() {
+            } else if s.is_file() && !d.exists() {
                 return false;
             }
         }
         true
     }
-    check(legacy, new)
+
+    /// Migra una directory src -> dst in modo idempotente.
+    /// - Crea dst se manca
+    /// - Copia solo file mancanti
+    /// - Se tutto copiato, rimuove src (best-effort)
+    /// Ritorna numero di file copiati.
+    pub fn migrate_dir(src: &Path, dst: &Path, label: &str) -> Result<usize, String> {
+        if src == dst || !src.is_dir() {
+            return Ok(0);
+        }
+        if !dst.exists() {
+            fs::create_dir_all(dst).map_err(|e| format!("mkdir {}: {}", dst.display(), e))?;
+        }
+        let n = copy_missing_only(src, dst)?;
+        if n > 0 {
+            eprintln!("[AetherDesk] migrated {n} file(s) {label} {} -> {}", src.display(), dst.display());
+        }
+        if is_fully_copied(src, dst) {
+            match fs::remove_dir_all(src) {
+                Ok(()) => eprintln!("[AetherDesk] removed legacy {label} {}", src.display()),
+                Err(e) => eprintln!("[AetherDesk] keep legacy {label} {}: {}", src.display(), e),
+            }
+        }
+        Ok(n)
+    }
 }
+
+// ---------------------------------------------------------------------------
+// Helpers riusabili — legacy install detection
+// ---------------------------------------------------------------------------
+mod legacy_install {
+    use super::*;
+
+    pub fn candidates() -> Vec<PathBuf> {
+        let mut v = vec![
+            Path::new("C:\\Program Files\\AetherDesk").to_path_buf(),
+            Path::new("C:\\Program Files (x86)\\AetherDesk").to_path_buf(),
+            Path::new("C:\\Program Files\\Aether").to_path_buf(),
+            Path::new("C:\\Program Files (x86)\\Aether").to_path_buf(),
+        ];
+        if let Some(local) = dirs::data_local_dir() {
+            v.push(local.join("AetherDesk"));
+            v.push(local.join("Aether"));
+            v.push(local.join("Programs").join("AetherDesk"));
+        }
+        v.push(LocalAppPaths::legacy_roaming_data_root());
+        v
+    }
+
+    pub fn is_legacy_install(path: &Path) -> bool {
+        path.join("AetherDesk.exe").exists()
+            || path.join("aether_desk.exe").exists()
+            || path.join("Aether.exe").exists()
+            || path.join("AetherData").exists()
+            || path.join("Uninstall AetherDesk.exe").exists()
+            || (path.to_string_lossy().contains("Program Files")
+                && (path.ends_with("AetherDesk") || path.ends_with("Aether")))
+    }
+
+    /// Rimuove binari legacy con nome vecchio (aether_desk.exe) se esiste
+    /// accanto al nuovo AetherDesk.exe nella stessa install. Chiamato a parte
+    /// per non cancellare l'intera cartella corrente.
+    pub fn cleanup_legacy_binary_in_current(current: &Path) {
+        let legacy_bin = current.join("aether_desk.exe");
+        let new_bin = current.join("AetherDesk.exe");
+        if legacy_bin.exists() && new_bin.exists() {
+            let _ = std::fs::remove_file(&legacy_bin);
+            eprintln!("[AetherDesk] removed legacy binary {}", legacy_bin.display());
+        }
+        // Rimuovi anche vecchio uninstaller con nome lower-case se presente
+        let legacy_uninst = current.join("uninstall.exe");
+        // Tauri genera sempre "Uninstall AetherDesk.exe" con maiuscola, ma teniamo pulizia
+        if legacy_uninst.exists() && current.join("Uninstall AetherDesk.exe").exists() {
+            let _ = std::fs::remove_file(&legacy_uninst);
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Migrazioni specifiche — alta coesione, delegano a fs_utils
+// ---------------------------------------------------------------------------
+
+pub fn migrate_roaming_to_local_install() -> Result<bool, String> {
+    let n = fs_utils::migrate_dir(
+        &LocalAppPaths::legacy_roaming_data_root(),
+        &LocalAppPaths::data_root(),
+        "Roaming",
+    )?;
+    Ok(n > 0)
+}
+
+pub fn migrate_programfiles_to_local_install() -> Result<bool, String> {
+    let mut total = 0;
+    for src in [
+        Path::new("C:\\Program Files\\AetherDesk\\AetherData").to_path_buf(),
+        Path::new("C:\\Program Files (x86)\\AetherDesk\\AetherData").to_path_buf(),
+    ] {
+        total += fs_utils::migrate_dir(&src, &LocalAppPaths::data_root(), "ProgramFiles")?;
+    }
+    Ok(total > 0)
+}
+
+/// Rimuove vecchie installazioni ovunque (update). Non tocca mai install_root corrente.
+pub fn remove_legacy_install_folders() {
+    let current = LocalAppPaths::install_root();
+    // Pulisci subito eventuale binario vecchio nella cartella corrente (aether_desk.exe -> AetherDesk.exe)
+    legacy_install::cleanup_legacy_binary_in_current(&current);
+    let cur = current.to_string_lossy().to_lowercase();
+    for cand in legacy_install::candidates() {
+        if cand == current || !cand.exists() {
+            continue;
+        }
+        let s = cand.to_string_lossy().to_lowercase();
+        if cur.starts_with(&s) || s.starts_with(&cur) {
+            continue;
+        }
+        if !legacy_install::is_legacy_install(&cand) {
+            continue;
+        }
+        eprintln!("[AetherDesk] removing legacy installation {}", cand.display());
+        if let Err(e) = fs::remove_dir_all(&cand) {
+            eprintln!("[AetherDesk] failed to remove {}: {}", cand.display(), e);
+        } else {
+            eprintln!("[AetherDesk] legacy removed {}", cand.display());
+        }
+        #[cfg(target_os = "windows")]
+        cleanup_uninstall_registry();
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn cleanup_uninstall_registry() {
+    for key in [
+        "HKLM\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\AetherDesk",
+        "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\AetherDesk",
+        "HKLM\\Software\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\AetherDesk",
+    ] {
+        let _ = std::process::Command::new("reg").args(["delete", key, "/f"]).output();
+    }
+}
+#[cfg(not(target_os = "windows"))]
+fn cleanup_uninstall_registry() {}
+
+// ---------------------------------------------------------------------------
+// Altre migrazioni esistenti (invariate nella logica, solo formattazione)
+// ---------------------------------------------------------------------------
 
 pub fn migrate_legacy_lua_backups(steam_path: &Path) -> Result<MigrationReport, String> {
     let candidates = [
@@ -211,72 +222,48 @@ pub fn migrate_legacy_lua_backups(steam_path: &Path) -> Result<MigrationReport, 
     if !legacy_dir.is_dir() {
         return Ok(MigrationReport::default());
     }
-
     let depotcache_dir = steam_path.join("depotcache");
     let mut report = MigrationReport::default();
-
     let mut lua_files = Vec::new();
-    for entry in fs::read_dir(&legacy_dir)
-        .map_err(|error| format!("Failed to read legacy folder {}: {}", legacy_dir.display(), error))?
-    {
-        let entry = entry
-            .map_err(|error| format!("Failed to read legacy entry: {}", error))?;
-        let path = entry.path();
-        if path.extension().is_some_and(|ext| ext.eq_ignore_ascii_case("lua")) {
-            lua_files.push(path);
+    for entry in fs::read_dir(&legacy_dir).map_err(|e| format!("read {}: {}", legacy_dir.display(), e))? {
+        let e = entry.map_err(|e| format!("entry: {}", e))?;
+        let p = e.path();
+        if p.extension().is_some_and(|ext| ext.eq_ignore_ascii_case("lua")) {
+            lua_files.push(p);
         }
     }
-
     for lua_path in &lua_files {
-        let Some(app_id) = lua_path.file_stem().and_then(|stem| stem.to_string_lossy().parse::<u32>().ok())
-        else {
-            continue;
-        };
-        let content = fs::read_to_string(lua_path)
-            .map_err(|error| format!("Failed to read Lua {}: {}", lua_path.display(), error))?;
+        let Some(app_id) = lua_path.file_stem().and_then(|s| s.to_string_lossy().parse::<u32>().ok()) else { continue };
+        let content = fs::read_to_string(lua_path).map_err(|e| format!("read {}: {}", lua_path.display(), e))?;
         let rows = LuaManifestPins::rows_from_content(&content);
-        let manifest_names: HashSet<String> = rows
-            .iter()
-            .map(|row| format!("{}_{}.manifest", row.app_id, row.manifest_id))
-            .collect();
+        let names: HashSet<String> = rows.iter().map(|r| format!("{}_{}.manifest", r.app_id, r.manifest_id)).collect();
         let backup = GameBackup::for_app(app_id)?;
         backup.backup_lua_artifacts(app_id, &content, &[])?;
         report.lua_files += 1;
-        let mut copied_manifests = 0usize;
+        let mut c = 0;
         if depotcache_dir.is_dir() {
-            for name in &manifest_names {
+            for name in &names {
                 let src = depotcache_dir.join(name);
                 if src.is_file() {
-                    let dest = backup.lua_dir().join(name);
-                    fs::copy(&src, &dest).map_err(|error| {
-                        format!("Failed to copy manifest {} to {}: {}", src.display(), dest.display(), error)
-                    })?;
-                    copied_manifests += 1;
+                    let dst = backup.lua_dir().join(name);
+                    fs::copy(&src, &dst).map_err(|e| format!("copy {}: {}", src.display(), e))?;
+                    c += 1;
                 }
             }
         }
-        report.manifest_files += copied_manifests;
+        report.manifest_files += c;
         report.games += 1;
     }
-
-    fs::remove_dir_all(&legacy_dir)
-        .map_err(|error| format!("Failed to remove legacy folder {}: {}", legacy_dir.display(), error))?;
-
+    fs::remove_dir_all(&legacy_dir).map_err(|e| format!("rm {}: {}", legacy_dir.display(), e))?;
     Ok(report)
 }
 
 pub fn migrate_legacy_settings_if_needed(local_config_dir: &Path, legacy_config_dir: Option<&Path>) {
     let local_path = local_config_dir.join("settings.json");
-    if local_path.exists() {
-        return;
-    }
-    let Some(legacy_dir) = legacy_config_dir else {
-        return;
-    };
+    if local_path.exists() { return; }
+    let Some(legacy_dir) = legacy_config_dir else { return; };
     let legacy_path = legacy_dir.join("settings.json");
-    if !legacy_path.exists() {
-        return;
-    }
+    if !legacy_path.exists() { return; }
     if let Ok(content) = fs::read_to_string(&legacy_path) {
         if let Some(parent) = local_path.parent() {
             if fs::create_dir_all(parent).is_ok() && fs::write(&local_path, content).is_ok() {
@@ -286,66 +273,59 @@ pub fn migrate_legacy_settings_if_needed(local_config_dir: &Path, legacy_config_
     }
 }
 
-const OBSOLETE_COMPONENT_VERSION_DIR: &str = "component_versions";
-
 pub fn remove_obsolete_component_version_dirs(app: &tauri::AppHandle) {
     let mut candidates = vec![
         LocalAppPaths::data_root().join(OBSOLETE_COMPONENT_VERSION_DIR),
         LocalAppPaths::legacy_roaming_data_root().join(OBSOLETE_COMPONENT_VERSION_DIR),
     ];
-    if let Some(legacy_dir) = LocalAppPaths::legacy_app_data_dir(app) {
-        candidates.push(legacy_dir.join(OBSOLETE_COMPONENT_VERSION_DIR));
+    if let Some(d) = LocalAppPaths::legacy_app_data_dir(app) {
+        candidates.push(d.join(OBSOLETE_COMPONENT_VERSION_DIR));
     }
     for dir in candidates {
         if dir.is_dir() {
             match fs::remove_dir_all(&dir) {
-                Ok(()) => eprintln!("[AetherDesk] removed obsolete component version folder {}", dir.display()),
-                Err(error) => eprintln!(
-                    "[AetherDesk] failed to remove obsolete folder {}: {}",
-                    dir.display(),
-                    error
-                ),
+                Ok(()) => eprintln!("[AetherDesk] removed obsolete {}", dir.display()),
+                Err(e) => eprintln!("[AetherDesk] failed rm {}: {}", dir.display(), e),
             }
         }
     }
 }
 
 pub fn ensure_appearance_dirs() {
-    if let Err(error) = crate::core::custom_css::ensure_default_assets() {
-        eprintln!("[AetherDesk] failed to provision appearance folders: {error}");
+    if let Err(e) = crate::core::custom_css::ensure_default_assets() {
+        eprintln!("[AetherDesk] appearance dirs failed: {e}");
+    }
+}
+
+pub fn reset_antivirus_exclusion_flag(app: &tauri::AppHandle) {
+    let m = crate::core::settings::SettingsManager::new(app);
+    let mut s = m.load();
+    if s.antivirus_exclusion_done {
+        s.antivirus_exclusion_done = false;
+        if let Err(e) = m.save(&s) {
+            eprintln!("[AetherDesk] reset antivirus flag failed: {e}");
+        } else {
+            eprintln!("[AetherDesk] reset antivirus_exclusion_done to false");
+        }
     }
 }
 
 pub fn run_startup_migrations(app: &tauri::AppHandle) {
-    if let Err(e) = migrate_roaming_to_local_install() {
-        eprintln!("[AetherDesk] Roaming->Local migration failed: {e}");
-    }
-    if let Err(e) = migrate_programfiles_to_local_install() {
-        eprintln!("[AetherDesk] ProgramFiles->Local migration failed: {e}");
-    }
-    // Nuovo: l'update rimuove le vecchie installazioni ovunque siano
+    if let Err(e) = migrate_roaming_to_local_install() { eprintln!("[AetherDesk] Roaming->Local failed: {e}"); }
+    if let Err(e) = migrate_programfiles_to_local_install() { eprintln!("[AetherDesk] PF->Local failed: {e}"); }
     remove_legacy_install_folders();
-
+    reset_antivirus_exclusion_flag(app);
     let config_dir = LocalAppPaths::config_dir();
     let legacy_config_dir = LocalAppPaths::legacy_app_config_dir(app);
     migrate_legacy_settings_if_needed(&config_dir, legacy_config_dir.as_deref());
-
     let roaming_config = LocalAppPaths::legacy_roaming_data_root().join("config");
     migrate_legacy_settings_if_needed(&config_dir, Some(&roaming_config));
-
     remove_obsolete_component_version_dirs(app);
     ensure_appearance_dirs();
-
     let steam_path = crate::core::settings::SettingsManager::new(app).load().steam_path;
-    match migrate_legacy_lua_backups(std::path::Path::new(&steam_path)) {
-        Ok(report) => {
-            if report.games > 0 {
-                eprintln!(
-                    "[AetherDesk] migrated {} game(s) from lua_backups: {} lua, {} manifest",
-                    report.games, report.lua_files, report.manifest_files
-                );
-            }
-        }
-        Err(error) => eprintln!("[AetherDesk] migration failed: {error}"),
+    match migrate_legacy_lua_backups(Path::new(&steam_path)) {
+        Ok(r) if r.games > 0 => eprintln!("[AetherDesk] migrated {} lua games", r.games),
+        Err(e) => eprintln!("[AetherDesk] lua migration failed: {e}"),
+        _ => {}
     }
 }
