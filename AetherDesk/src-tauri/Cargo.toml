@@ -5,6 +5,10 @@ description = "AetherDesk - Professional Steam & Game Management Interface"
 authors = ["migo3"]
 edition = "2021"
 
+[[bin]]
+name = "AetherDesk"
+path = "src/main.rs"
+
 [build-dependencies]
 tauri-build = { version = "^2", features = [] }
 

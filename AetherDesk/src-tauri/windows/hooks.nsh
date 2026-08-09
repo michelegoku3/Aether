@@ -1,59 +1,83 @@
-; Fix v3 (09/08/2026) — Tutto unificato in %LOCALAPPDATA%\AetherDesk\AetherData
-; Requisito: l'intera cartella di Aether deve stare insieme.
-; - InstallMode=currentUser → $INSTDIR è %LOCALAPPDATA%\AetherDesk (scrivibile senza admin)
-; - Dati in $INSTDIR\AetherData (themes, wallpapers, settings, backup)
-; - Disinstallazione senza spunta dati → rimuove tutto ECCETTO $INSTDIR\AetherData
-; - Disinstallazione con spunta dati → rimuove tutto da %LOCALAPPDATA% (incluso AetherData)
+; Fix v3.1 — Unificato + Best Practices (09/08/2026)
+; - Tutto in %LOCALAPPDATA%\AetherDesk\AetherData (currentUser, scrivibile senza admin)
+; - Scorciatoie Desktop/Start Menu ricreate correttamente con icona dell'exe
+; - Uninstall: rispetta la checkbox originale "Elimina dati" (DeleteAppDataCheckboxState)
+;             invece di un MessageBox ridondante. Se spuntata → cancella AetherData,
+;             altrimenti conserva la cartella Aether\AetherData.
+
+; Helpers DRY per scorciatoie — alta coesione, basso accoppiamento
+!macro _AETHER_CREATE_SHORTCUTS
+  SetShellVarContext current
+  Delete "$DESKTOP\AetherDesk.lnk"
+  Delete "$DESKTOP\Aether.lnk"
+  CreateShortCut "$DESKTOP\AetherDesk.lnk" "$INSTDIR\AetherDesk.exe"
+  CreateDirectory "$SMPROGRAMS\AetherDesk"
+  CreateShortCut "$SMPROGRAMS\AetherDesk\AetherDesk.lnk" "$INSTDIR\AetherDesk.exe"
+  CreateShortCut "$SMPROGRAMS\AetherDesk\Uninstall AetherDesk.lnk" "$INSTDIR\Uninstall AetherDesk.exe"
+!macroend
+
+!macro _AETHER_REMOVE_SHORTCUTS
+  SetShellVarContext current
+  Delete "$DESKTOP\AetherDesk.lnk"
+  Delete "$DESKTOP\Aether.lnk"
+  Delete "$SMPROGRAMS\AetherDesk\AetherDesk.lnk"
+  Delete "$SMPROGRAMS\AetherDesk\Uninstall AetherDesk.lnk"
+  RMDir "$SMPROGRAMS\AetherDesk"
+  Delete "$SMPROGRAMS\Aether\AetherDesk.lnk"
+  RMDir "$SMPROGRAMS\Aether"
+  SetShellVarContext all
+  Delete "$COMMON_DESKTOP\AetherDesk.lnk"
+  Delete "$COMMON_DESKTOP\Aether.lnk"
+  Delete "$COMMON_SMPROGRAMS\AetherDesk\AetherDesk.lnk"
+  Delete "$COMMON_SMPROGRAMS\AetherDesk\Uninstall AetherDesk.lnk"
+  RMDir "$COMMON_SMPROGRAMS\AetherDesk"
+!macroend
 
 !macro NSIS_HOOK_PREINSTALL
-  ; Non serve creare AetherData qui: viene creata a runtime e la migrazione
-  ; da Roaming/Program Files la popola se necessario.
+  ; Pulisci scorciatoie vecchie (Program Files) prima di installare la nuova
+  !insertmacro _AETHER_REMOVE_SHORTCUTS
 !macroend
 
 !macro NSIS_HOOK_POSTINSTALL
   WriteRegStr HKCU "Software\Microsoft\Windows NT\CurrentVersion\AppCompatFlags\Layers" "$INSTDIR\AetherDesk.exe" "RUNASADMIN"
-  ; Assicura che AetherData esista già dopo install (vuota, poi seed a primo avvio)
   CreateDirectory "$INSTDIR\AetherData\config\themes"
   CreateDirectory "$INSTDIR\AetherData\config\wallpapers"
+  ; Ricrea scorciatoie con icona corretta (usa icona embedded dell'exe, niente indice manuale)
+  !insertmacro _AETHER_CREATE_SHORTCUTS
 !macroend
 
-; --- Uninstall: gestisce l'opzione "Elimina anche i dati" ---
-; Tauri NSIS non espone di default una checkbox "delete data", quindi usiamo
-; un MessageBox YES/NO nel pre-uninstall per chiedere all'utente.
-; Se l'utente sceglie NO (conserva dati), spostiamo AetherData fuori da $INSTDIR
-; prima che l'uninstaller faccia RMDir /r $INSTDIR, poi lo ripristiniamo.
+; Uninstall: usa la checkbox originale di Tauri (DeleteAppDataCheckboxState)
+; - 1 = utente ha spuntato "Elimina dati" → cancella AetherData
+; - 0 = non spuntata (o update silenzioso) → conserva AetherData
 
 Var AETHER_KEEP_DATA
 
 !macro NSIS_HOOK_PREUNINSTALL
-  MessageBox MB_YESNO|MB_ICONQUESTION "Vuoi eliminare anche i dati utente?$\n$\nSì = elimina TUTTO da %LOCALAPPDATA%\AetherDesk (incluso AetherData con temi/wallpaper)$\nNo = conserva la cartella Aether\AetherData" IDYES delete_data IDNO keep_data
-  delete_data:
+  ; Salva lo stato della checkbox originale per POSTUNINSTALL
+  StrCpy $AETHER_KEEP_DATA "1"
+  ${If} $DeleteAppDataCheckboxState == 1
     StrCpy $AETHER_KEEP_DATA "0"
-    ; Rimuovi subito AetherData così RMDir /r la elimina
     RMDir /r "$INSTDIR\AetherData"
-    Goto done
-  keep_data:
-    StrCpy $AETHER_KEEP_DATA "1"
-    ; Sposta AetherData fuori da INSTDIR per proteggerla
+  ${Else}
+    ; Conserva: sposta fuori da INSTDIR prima che RMDir /r $INSTDIR lo cancelli
     Rename "$INSTDIR\AetherData" "$TEMP\AetherData_keep"
-  done:
+  ${EndIf}
+  ; Rimuovi scorciatoie subito (saranno ricreate al reinstall)
+  !insertmacro _AETHER_REMOVE_SHORTCUTS
 !macroend
 
 !macro NSIS_HOOK_POSTUNINSTALL
   DeleteRegValue HKCU "Software\Microsoft\Windows NT\CurrentVersion\AppCompatFlags\Layers" "$INSTDIR\AetherDesk.exe"
-  StrCmp $AETHER_KEEP_DATA "1" restore_data no_restore
-  restore_data:
-    ; L'uninstaller ha già fatto RMDir /r $INSTDIR, quindi ricrea la cartella Aether con AetherData
+  ${If} $AETHER_KEEP_DATA == "1"
     CreateDirectory "$INSTDIR"
     Rename "$TEMP\AetherData_keep" "$INSTDIR\AetherData"
-    ; Se per qualche motivo il Rename fallisce (es. $TEMP pulito), prova a non perdere dati da Roaming legacy
     IfFileExists "$INSTDIR\AetherData" +2
       CreateDirectory "$INSTDIR\AetherData"
-    Goto end
-  no_restore:
-    ; Utente ha scelto di eliminare tutto: assicurati che $INSTDIR sia rimosso anche se era stato ricreato
-    RMDir /r "$INSTDIR"
-    ; Pulisci anche eventuale legacy Roaming se esiste ancora
+  ${Else}
+    ; Utente ha scelto di eliminare dati: pulisci anche legacy Roaming
     RMDir /r "$APPDATA\com.aether.desk"
-  end:
+    RMDir /r "$LOCALAPPDATA\com.aether.desk"
+    Delete "$TEMP\AetherData_keep"
+    RMDir /r "$INSTDIR"
+  ${EndIf}
 !macroend
