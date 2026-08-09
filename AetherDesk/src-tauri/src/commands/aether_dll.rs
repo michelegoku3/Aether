@@ -31,9 +31,7 @@ pub async fn check_aether_dll_update(_app: tauri::AppHandle, steam_path: String)
         "N/A".to_string()
     };
 
-    let update_available = installed_version != "N/A"
-        && latest_tag != "N/A"
-        && GithubReleaseManager::tags_are_different_versions(&installed_version, &latest_tag);
+    let update_available = GithubReleaseManager::latest_is_newer_than(&installed_version, &latest_tag);
 
     Ok(serde_json::json!({
         "installed_version": GithubReleaseManager::display_version_from_tag(&installed_version),
