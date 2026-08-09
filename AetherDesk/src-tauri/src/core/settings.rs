@@ -180,7 +180,7 @@ pub struct SettingsManager {
 impl SettingsManager {
     pub fn new(app_handle: &tauri::AppHandle) -> Self {
         let manager = Self {
-            config_dir: LocalAppPaths::config_dir(),
+            config_dir: LocalAppPaths::data_root_for_app(app_handle).join("config"),
             legacy_config_dir: LocalAppPaths::legacy_app_config_dir(app_handle),
         };
         // The migration logic itself lives in `core::migration` (single home
