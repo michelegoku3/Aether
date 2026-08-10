@@ -27,8 +27,6 @@ pub struct MigrationReport {
 mod fs_utils {
     use super::*;
 
-    /// Copia ricorsivamente solo file mancanti (non sovrascrive custom utente).
-    /// Ritorna numero di file copiati.
     pub fn copy_missing_only(src: &Path, dst: &Path) -> Result<usize, String> {
         let mut count = 0;
         for entry in fs::read_dir(src).map_err(|e| format!("read {}: {}", src.display(), e))? {
@@ -50,7 +48,6 @@ mod fs_utils {
         Ok(count)
     }
 
-    /// Verifica che ogni file in src esista in dst (usato per decidere se rimuovere src).
     pub fn is_fully_copied(src: &Path, dst: &Path) -> bool {
         let Ok(entries) = fs::read_dir(src) else { return true };
         for e in entries.flatten() {
@@ -67,11 +64,6 @@ mod fs_utils {
         true
     }
 
-    /// Migra una directory src -> dst in modo idempotente.
-    /// - Crea dst se manca
-    /// - Copia solo file mancanti
-    /// - Se tutto copiato, rimuove src (best-effort)
-    /// Ritorna numero di file copiati.
     pub fn migrate_dir(src: &Path, dst: &Path, label: &str) -> Result<usize, String> {
         if src == dst || !src.is_dir() {
             return Ok(0);
@@ -94,7 +86,7 @@ mod fs_utils {
 }
 
 // ---------------------------------------------------------------------------
-// Helpers riusabili — legacy install detection
+// Helpers — legacy install detection
 // ---------------------------------------------------------------------------
 mod legacy_install {
     use super::*;
@@ -125,9 +117,6 @@ mod legacy_install {
                 && (path.ends_with("AetherDesk") || path.ends_with("Aether")))
     }
 
-    /// Rimuove binari legacy con nome vecchio (aether_desk.exe) se esiste
-    /// accanto al nuovo AetherDesk.exe nella stessa install. Chiamato a parte
-    /// per non cancellare l'intera cartella corrente.
     pub fn cleanup_legacy_binary_in_current(current: &Path) {
         let legacy_bin = current.join("aether_desk.exe");
         let new_bin = current.join("AetherDesk.exe");
@@ -135,9 +124,7 @@ mod legacy_install {
             let _ = std::fs::remove_file(&legacy_bin);
             eprintln!("[AetherDesk] removed legacy binary {}", legacy_bin.display());
         }
-        // Rimuovi anche vecchio uninstaller con nome lower-case se presente
         let legacy_uninst = current.join("uninstall.exe");
-        // Tauri genera sempre "Uninstall AetherDesk.exe" con maiuscola, ma teniamo pulizia
         if legacy_uninst.exists() && current.join("Uninstall AetherDesk.exe").exists() {
             let _ = std::fs::remove_file(&legacy_uninst);
         }
@@ -145,7 +132,7 @@ mod legacy_install {
 }
 
 // ---------------------------------------------------------------------------
-// Migrazioni specifiche — alta coesione, delegano a fs_utils
+// Migrazioni specifiche
 // ---------------------------------------------------------------------------
 
 pub fn migrate_roaming_to_local_install() -> Result<bool, String> {
@@ -168,10 +155,8 @@ pub fn migrate_programfiles_to_local_install() -> Result<bool, String> {
     Ok(total > 0)
 }
 
-/// Rimuove vecchie installazioni ovunque (update). Non tocca mai install_root corrente.
 pub fn remove_legacy_install_folders() {
     let current = LocalAppPaths::install_root();
-    // Pulisci subito eventuale binario vecchio nella cartella corrente (aether_desk.exe -> AetherDesk.exe)
     legacy_install::cleanup_legacy_binary_in_current(&current);
     let cur = current.to_string_lossy().to_lowercase();
     for cand in legacy_install::candidates() {
@@ -208,10 +193,6 @@ fn cleanup_uninstall_registry() {
 }
 #[cfg(not(target_os = "windows"))]
 fn cleanup_uninstall_registry() {}
-
-// ---------------------------------------------------------------------------
-// Altre migrazioni esistenti (invariate nella logica, solo formattazione)
-// ---------------------------------------------------------------------------
 
 pub fn migrate_legacy_lua_backups(steam_path: &Path) -> Result<MigrationReport, String> {
     let candidates = [
@@ -297,31 +278,12 @@ pub fn ensure_appearance_dirs() {
     }
 }
 
-pub fn reset_antivirus_exclusion_flag(app: &tauri::AppHandle) {
-    // One-time reset: dopo il passaggio a %LOCALAPPDATA%\AetherDesk la vecchia
-    // esclusione (Program Files) non copre più il nuovo percorso. Il fix v3 deve
-    // riproporre il popup UNA SOLA VOLTA a tutti, poi rispettare la scelta.
-    // Usiamo un sentinel file in AetherData per non resettare ad ogni avvio
-    // (altrimenti il popup ricompare ad ogni click su Apply Crack).
-    let sentinel = LocalAppPaths::data_root().join(".v3_antivirus_reset_done");
-    if sentinel.exists() {
-        return;
-    }
-    // Crea sentinel subito (anche se flag era già false) così non rientriamo più
-    if let Some(parent) = sentinel.parent() {
-        let _ = fs::create_dir_all(parent);
-    }
-    let m = crate::core::settings::SettingsManager::new(app);
-    let mut s = m.load();
-    if s.antivirus_exclusion_done {
-        s.antivirus_exclusion_done = false;
-        if let Err(e) = m.save(&s) {
-            eprintln!("[AetherDesk] reset antivirus flag failed: {e}");
-        } else {
-            eprintln!("[AetherDesk] reset antivirus_exclusion_done to false (one-time)");
-        }
-    }
-    let _ = fs::write(&sentinel, b"v3");
+// FIX antivirus: torna al comportamento stock (fresh install = false).
+// Non forza più il reset ad ogni avvio — il bug del popup ad ogni "Apply crack"
+// era dovuto al reset incondizionato. Ora il flag resta come da settings.json.
+pub fn reset_antivirus_exclusion_flag(_app: &tauri::AppHandle) {
+    // Intentionally no-op: fresh install ha default false (mostra popup una volta),
+    // update mantiene il valore precedente. Rimuove il bug del popup ricorrente.
 }
 
 pub fn run_startup_migrations(app: &tauri::AppHandle) {
