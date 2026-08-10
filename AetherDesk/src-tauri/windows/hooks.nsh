@@ -10,27 +10,46 @@
   SetShellVarContext current
   Delete "$DESKTOP\AetherDesk.lnk"
   Delete "$DESKTOP\Aether.lnk"
+  Delete "$DESKTOP\aether_desk.lnk"
   CreateShortCut "$DESKTOP\AetherDesk.lnk" "$INSTDIR\AetherDesk.exe"
   CreateDirectory "$SMPROGRAMS\AetherDesk"
   CreateShortCut "$SMPROGRAMS\AetherDesk\AetherDesk.lnk" "$INSTDIR\AetherDesk.exe"
   CreateShortCut "$SMPROGRAMS\AetherDesk\Uninstall AetherDesk.lnk" "$INSTDIR\Uninstall AetherDesk.exe"
+  ; Forza refresh cache icone di Explorer così la vecchia icona generica sparisce senza dover cliccare
+  System::Call 'Shell32::SHChangeNotify(i 0x08000000, i 0, i 0, i 0)'
 !macroend
 
 !macro _AETHER_REMOVE_SHORTCUTS
   SetShellVarContext current
   Delete "$DESKTOP\AetherDesk.lnk"
   Delete "$DESKTOP\Aether.lnk"
+  Delete "$DESKTOP\aether_desk.lnk"
+  Delete "$DESKTOP\AetherDesk - Collegamento.lnk"
   Delete "$SMPROGRAMS\AetherDesk\AetherDesk.lnk"
+  Delete "$SMPROGRAMS\AetherDesk\aether_desk.lnk"
   Delete "$SMPROGRAMS\AetherDesk\Uninstall AetherDesk.lnk"
+  Delete "$SMPROGRAMS\aether_desk\AetherDesk.lnk"
+  Delete "$SMPROGRAMS\aether_desk\aether_desk.lnk"
   RMDir "$SMPROGRAMS\AetherDesk"
+  RMDir "$SMPROGRAMS\aether_desk"
   Delete "$SMPROGRAMS\Aether\AetherDesk.lnk"
   RMDir "$SMPROGRAMS\Aether"
+  Delete "$QUICKLAUNCH\AetherDesk.lnk"
+  Delete "$QUICKLAUNCH\aether_desk.lnk"
   SetShellVarContext all
   Delete "$COMMON_DESKTOP\AetherDesk.lnk"
   Delete "$COMMON_DESKTOP\Aether.lnk"
+  Delete "$COMMON_DESKTOP\aether_desk.lnk"
   Delete "$COMMON_SMPROGRAMS\AetherDesk\AetherDesk.lnk"
+  Delete "$COMMON_SMPROGRAMS\AetherDesk\aether_desk.lnk"
   Delete "$COMMON_SMPROGRAMS\AetherDesk\Uninstall AetherDesk.lnk"
+  Delete "$COMMON_SMPROGRAMS\aether_desk\AetherDesk.lnk"
   RMDir "$COMMON_SMPROGRAMS\AetherDesk"
+  RMDir "$COMMON_SMPROGRAMS\aether_desk"
+  ; Pulisci anche vecchie chiavi Start Menu lasciate da installer per-machine
+  DeleteRegKey HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\AetherDesk"
+  DeleteRegKey HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\AetherDesk"
+  System::Call 'Shell32::SHChangeNotify(i 0x08000000, i 0, i 0, i 0)'
 !macroend
 
 !macro NSIS_HOOK_PREINSTALL

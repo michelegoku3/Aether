@@ -298,6 +298,19 @@ pub fn ensure_appearance_dirs() {
 }
 
 pub fn reset_antivirus_exclusion_flag(app: &tauri::AppHandle) {
+    // One-time reset: dopo il passaggio a %LOCALAPPDATA%\AetherDesk la vecchia
+    // esclusione (Program Files) non copre più il nuovo percorso. Il fix v3 deve
+    // riproporre il popup UNA SOLA VOLTA a tutti, poi rispettare la scelta.
+    // Usiamo un sentinel file in AetherData per non resettare ad ogni avvio
+    // (altrimenti il popup ricompare ad ogni click su Apply Crack).
+    let sentinel = LocalAppPaths::data_root().join(".v3_antivirus_reset_done");
+    if sentinel.exists() {
+        return;
+    }
+    // Crea sentinel subito (anche se flag era già false) così non rientriamo più
+    if let Some(parent) = sentinel.parent() {
+        let _ = fs::create_dir_all(parent);
+    }
     let m = crate::core::settings::SettingsManager::new(app);
     let mut s = m.load();
     if s.antivirus_exclusion_done {
@@ -305,9 +318,10 @@ pub fn reset_antivirus_exclusion_flag(app: &tauri::AppHandle) {
         if let Err(e) = m.save(&s) {
             eprintln!("[AetherDesk] reset antivirus flag failed: {e}");
         } else {
-            eprintln!("[AetherDesk] reset antivirus_exclusion_done to false");
+            eprintln!("[AetherDesk] reset antivirus_exclusion_done to false (one-time)");
         }
     }
+    let _ = fs::write(&sentinel, b"v3");
 }
 
 pub fn run_startup_migrations(app: &tauri::AppHandle) {
