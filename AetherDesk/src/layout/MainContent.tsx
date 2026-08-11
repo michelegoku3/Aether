@@ -10,6 +10,8 @@ interface MainContentProps {
   activeTab: TabType;
   dllUpdateAvailable: boolean; // Passed down from App.tsx orchestrator
   deskUpdateAvailable: boolean; // Passed down from App.tsx orchestrator
+  dllUpdateIsTest: boolean;     // Whether the DLL update is a test build (red)
+  deskUpdateIsTest: boolean;    // Whether the desk update is a test build (red)
   onUpdateComplete: () => void; // Passed down from App.tsx orchestrator
   hubcapUsage: { usage: number; limit: number; hasKey: boolean };
   onRefreshUsage: (forcedKey?: string) => Promise<void>;
@@ -25,7 +27,7 @@ interface MainContentProps {
   alternativeCardsFade: number;
 }
 
-export const MainContent = ({ activeTab, dllUpdateAvailable, deskUpdateAvailable, onUpdateComplete, hubcapUsage, onRefreshUsage, dllStatus, onDllStatusChange, onRefreshCustomCss, onCustomCssChange, onPreviewPersonalWallpaper, onPreviewAlternativeCards, settingsRevision, useAlternativeGameCards, alternativeCardsOpacity, alternativeCardsFade }: MainContentProps) => {
+export const MainContent = ({ activeTab, dllUpdateAvailable, deskUpdateAvailable, dllUpdateIsTest, deskUpdateIsTest, onUpdateComplete, hubcapUsage, onRefreshUsage, dllStatus, onDllStatusChange, onRefreshCustomCss, onCustomCssChange, onPreviewPersonalWallpaper, onPreviewAlternativeCards, settingsRevision, useAlternativeGameCards, alternativeCardsOpacity, alternativeCardsFade }: MainContentProps) => {
   const renderActiveNonStoreView = () => {
     if (activeTab === 'store') {
       return null;
@@ -72,6 +74,8 @@ export const MainContent = ({ activeTab, dllUpdateAvailable, deskUpdateAvailable
           <AetherView
             isUpdateAvailable={dllUpdateAvailable}
             isDeskUpdateAvailable={deskUpdateAvailable}
+            isDllUpdateTest={dllUpdateIsTest}
+            isDeskUpdateTest={deskUpdateIsTest}
             onUpdateComplete={onUpdateComplete}
             dllStatus={dllStatus}
             onDllStatusChange={onDllStatusChange}

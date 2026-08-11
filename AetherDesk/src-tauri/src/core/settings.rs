@@ -56,6 +56,11 @@ pub struct AppSettings {
     /// Enables WebView developer tools when supported by the build/runtime.
     #[serde(default)]
     pub enable_webview_devtools: bool,
+    /// When true, testing releases (`tdesk-*` / `tdll-*`) are also considered
+    /// for updates and take priority over stable ones. Off by default so normal
+    /// users never see testing builds. The UI shows these as red update dots.
+    #[serde(default)]
+    pub enable_test_updates: bool,
     /// Criterion used by the Store front page (`trending`, `latest`, ...).
     #[serde(default = "default_store_front_filter")]
     pub store_front_filter: String,
@@ -160,6 +165,7 @@ impl Default for AppSettings {
             show_store_front_games: true,
             use_alternative_game_cards: false,
             enable_webview_devtools: false,
+            enable_test_updates: false,
             store_front_filter: default_store_front_filter(),
             store_currency: default_store_currency(),
             personal_wallpaper_enabled: false,

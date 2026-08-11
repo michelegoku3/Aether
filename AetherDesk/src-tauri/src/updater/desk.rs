@@ -29,7 +29,7 @@
 //!   ZIP (defense in depth, even though releases come only from the private repo).
 
 use crate::core::paths::LocalAppPaths;
-use crate::updater::github::GithubReleaseManager;
+use crate::updater::github::{GithubRelease, GithubReleaseManager};
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
@@ -52,20 +52,39 @@ fn update_workdir() -> PathBuf {
 
 /// Downloads and extracts the latest portable ZIP into the staging folder.
 ///
-/// Returns `Ok(None)` when the installed version is already the latest, and
-/// `Ok(Some(...))` once a new build is fully staged. Real failures return `Err`.
-/// If the caller receives `Some(...)` it must call [`schedule_restart`] and then
-/// exit the running instance so the swap can proceed.
+/// Update-source selection:
+///   - If testing releases are enabled, the *test* desk release (`tdesk-*`)
+///     takes priority and is staged whenever present (presence = update).
+///   - Otherwise the latest *stable* desk release (`desk-*`) is used, gated on
+///     its version being newer than the installed one.
+///
+/// Returns `Ok(None)` when no update applies, `Ok(Some(...))` once a new build
+/// is fully staged. Real failures return `Err`. If the caller receives
+/// `Some(...)` it must call [`schedule_restart`] and then exit the running
+/// instance so the swap can proceed.
 pub async fn prepare_update(app: &tauri::AppHandle) -> Result<Option<PreparedUpdate>, String> {
     let current_version = app.package_info().version.to_string();
     let manager = GithubReleaseManager::new();
-    let release = manager.fetch_latest_desk_release().await?;
 
+    // Testing updates take priority when enabled.
+    let settings = crate::core::settings::SettingsManager::new(app).load();
+    if settings.enable_test_updates {
+        if let Ok(release) = manager.fetch_latest_desk_test_release().await {
+            return prepare_from_release(&release).await.map(Some);
+        }
+    }
+
+    let release = manager.fetch_latest_desk_release().await?;
     if !GithubReleaseManager::latest_is_newer_than(&current_version, &release.tag_name) {
         return Ok(None);
     }
 
-    let asset = GithubReleaseManager::find_desk_zip_asset(&release)?;
+    prepare_from_release(&release).await.map(Some)
+}
+
+/// Downloads and extracts a given desk release's portable ZIP into staging.
+async fn prepare_from_release(release: &GithubRelease) -> Result<PreparedUpdate, String> {
+    let asset = GithubReleaseManager::find_desk_zip_asset(release)?;
     let workdir = update_workdir();
     fs::create_dir_all(&workdir)
         .map_err(|e| format!("Failed to create update workdir {}: {e}", workdir.display()))?;
@@ -80,10 +99,10 @@ pub async fn prepare_update(app: &tauri::AppHandle) -> Result<Option<PreparedUpd
 
     let app_root = extract_zip(&zip_path, &staging)?;
 
-    Ok(Some(PreparedUpdate {
+    Ok(PreparedUpdate {
         app_root,
         install_root: LocalAppPaths::install_root(),
-    }))
+    })
 }
 
 /// Spawns a copy of the current exe that will perform the swap, then must be

@@ -1,15 +1,31 @@
+use crate::core::settings::SettingsManager;
 use crate::updater::dll::DllInstaller;
 use crate::updater::dll_version::read_installed_dll_version;
 use crate::updater::github::GithubReleaseManager;
 
 #[tauri::command]
-pub async fn check_aether_dll_update(_app: tauri::AppHandle, steam_path: String) -> Result<serde_json::Value, String> {
+pub async fn check_aether_dll_update(app: tauri::AppHandle, steam_path: String) -> Result<serde_json::Value, String> {
     if steam_path.trim().is_empty() {
         return Ok(serde_json::json!({
             "installed_version": "N/A",
             "latest_version": "N/A",
-            "update_available": false
+            "update_available": false,
+            "is_test": false
         }));
+    }
+
+    // Testing releases (`tdll-*`) take priority when enabled: presence = update.
+    if SettingsManager::new(&app).load().enable_test_updates {
+        if let Ok((tag, _)) = GithubReleaseManager::new().fetch_latest_dll_test_release().await {
+            let latest_version = GithubReleaseManager::component_version_from_tag(&tag);
+            return Ok(serde_json::json!({
+                "installed_version": "N/A",
+                "latest_version": GithubReleaseManager::display_version_from_tag(&latest_version),
+                "latest_tag": tag,
+                "update_available": true,
+                "is_test": true
+            }));
+        }
     }
 
     let legacy_version_path = std::path::PathBuf::from(&steam_path).join("AetherDLL_version.txt");
@@ -37,7 +53,8 @@ pub async fn check_aether_dll_update(_app: tauri::AppHandle, steam_path: String)
         "installed_version": GithubReleaseManager::display_version_from_tag(&installed_version),
         "latest_version": GithubReleaseManager::display_version_from_tag(&latest_version),
         "latest_tag": latest_tag,
-        "update_available": update_available
+        "update_available": update_available,
+        "is_test": false
     }))
 }
 
@@ -64,7 +81,7 @@ fn read_legacy_installed_version(legacy_version_path: &std::path::Path, steam_pa
 }
 
 #[tauri::command]
-pub async fn install_aether_dll(_app: tauri::AppHandle, steam_path: String) -> Result<String, String> {
+pub async fn install_aether_dll(app: tauri::AppHandle, steam_path: String) -> Result<String, String> {
     if steam_path.trim().is_empty() {
         return Err("Steam installation path is required".to_string());
     }
@@ -72,7 +89,15 @@ pub async fn install_aether_dll(_app: tauri::AppHandle, steam_path: String) -> R
     ensure_steam_is_closed()?;
 
     let manager = GithubReleaseManager::new();
-    let (tag_name, download_url) = manager.fetch_latest_dll_release().await?;
+    // Testing releases take priority when enabled.
+    let (tag_name, download_url) = if SettingsManager::new(&app).load().enable_test_updates {
+        match manager.fetch_latest_dll_test_release().await {
+            Ok(pair) => pair,
+            Err(_) => manager.fetch_latest_dll_release().await?,
+        }
+    } else {
+        manager.fetch_latest_dll_release().await?
+    };
 
     let response = reqwest::Client::new()
         .get(&download_url)
