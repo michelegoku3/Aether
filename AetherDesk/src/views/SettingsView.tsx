@@ -491,8 +491,7 @@ export const SettingsView = ({ hubcapUsage, onRefreshUsage, onRefreshCustomCss, 
                   is vertically centered to the whole description. */}
               <div className="settings-appearance-row">
                 <p className="settings-desc">
-                  The first .css file in <code className="settings-path">{appearanceAssets.themesDir}</code> is applied automatically.
-                  <br />
+                  The first .css file in <code className="settings-path" title={appearanceAssets.themesDir}>{appearanceAssets.themesDir}</code> is applied automatically.{' '}
                   {appearanceAssets.themeName ? <>Currently active: <strong>{appearanceAssets.themeName}</strong>. </> : ''}
                   Use the button to pick a different theme.
                 </p>
@@ -539,8 +538,7 @@ export const SettingsView = ({ hubcapUsage, onRefreshUsage, onRefreshCustomCss, 
                   is vertically centered to the whole description. */}
               <div className="settings-appearance-row">
                 <p className="settings-desc">
-                  The first image in <code className="settings-path">{appearanceAssets.wallpapersDir}</code> is used as the app background.
-                  <br />
+                  The first image in <code className="settings-path" title={appearanceAssets.wallpapersDir}>{appearanceAssets.wallpapersDir}</code> is used as the app background.{' '}
                   {appearanceAssets.wallpaperName ? <>Currently active: <strong>{appearanceAssets.wallpaperName}</strong>. </> : ''}
                   Use the button to pick a different wallpaper.
                 </p>

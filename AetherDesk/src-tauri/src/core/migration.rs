@@ -9,7 +9,7 @@ use crate::core::paths::LocalAppPaths;
 use crate::manifest::pins::LuaManifestPins;
 use std::collections::HashSet;
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 const LEGACY_LUA_BACKUPS_DIR: &str = "lua_backups";
 const OBSOLETE_COMPONENT_VERSION_DIR: &str = "component_versions";
@@ -86,37 +86,14 @@ mod fs_utils {
 }
 
 // ---------------------------------------------------------------------------
-// Helpers — legacy install detection
+// Helpers — legacy file cleanup
 // ---------------------------------------------------------------------------
 mod legacy_install {
     use super::*;
 
-    pub fn candidates() -> Vec<PathBuf> {
-        let mut v = vec![
-            Path::new("C:\\Program Files\\AetherDesk").to_path_buf(),
-            Path::new("C:\\Program Files (x86)\\AetherDesk").to_path_buf(),
-            Path::new("C:\\Program Files\\Aether").to_path_buf(),
-            Path::new("C:\\Program Files (x86)\\Aether").to_path_buf(),
-        ];
-        if let Some(local) = dirs::data_local_dir() {
-            v.push(local.join("AetherDesk"));
-            v.push(local.join("Aether"));
-            v.push(local.join("Programs").join("AetherDesk"));
-        }
-        v.push(LocalAppPaths::legacy_roaming_data_root());
-        v
-    }
-
-    pub fn is_legacy_install(path: &Path) -> bool {
-        path.join("AetherDesk.exe").exists()
-            || path.join("aether_desk.exe").exists()
-            || path.join("Aether.exe").exists()
-            || path.join("AetherData").exists()
-            || path.join("Uninstall AetherDesk.exe").exists()
-            || (path.to_string_lossy().contains("Program Files")
-                && (path.ends_with("AetherDesk") || path.ends_with("Aether")))
-    }
-
+    /// Removes leftover binaries from a previous installer-based install that
+    /// have no meaning in the portable distribution (old exe name, NSIS
+    /// uninstaller). Best-effort and idempotent.
     pub fn cleanup_legacy_binary_in_current(current: &Path) {
         let legacy_bin = current.join("aether_desk.exe");
         let new_bin = current.join("AetherDesk.exe");
@@ -155,44 +132,13 @@ pub fn migrate_programfiles_to_local_install() -> Result<bool, String> {
     Ok(total > 0)
 }
 
+/// Removes leftover binaries from a previous installer-based install inside the
+/// current (portable) folder. In portable mode there is no system install to
+/// clean and no uninstall registry to touch, so this only tidies the folder.
 pub fn remove_legacy_install_folders() {
     let current = LocalAppPaths::install_root();
     legacy_install::cleanup_legacy_binary_in_current(&current);
-    let cur = current.to_string_lossy().to_lowercase();
-    for cand in legacy_install::candidates() {
-        if cand == current || !cand.exists() {
-            continue;
-        }
-        let s = cand.to_string_lossy().to_lowercase();
-        if cur.starts_with(&s) || s.starts_with(&cur) {
-            continue;
-        }
-        if !legacy_install::is_legacy_install(&cand) {
-            continue;
-        }
-        eprintln!("[AetherDesk] removing legacy installation {}", cand.display());
-        if let Err(e) = fs::remove_dir_all(&cand) {
-            eprintln!("[AetherDesk] failed to remove {}: {}", cand.display(), e);
-        } else {
-            eprintln!("[AetherDesk] legacy removed {}", cand.display());
-        }
-        #[cfg(target_os = "windows")]
-        cleanup_uninstall_registry();
-    }
 }
-
-#[cfg(target_os = "windows")]
-fn cleanup_uninstall_registry() {
-    for key in [
-        "HKLM\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\AetherDesk",
-        "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\AetherDesk",
-        "HKLM\\Software\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\AetherDesk",
-    ] {
-        let _ = std::process::Command::new("reg").args(["delete", key, "/f"]).output();
-    }
-}
-#[cfg(not(target_os = "windows"))]
-fn cleanup_uninstall_registry() {}
 
 pub fn migrate_legacy_lua_backups(steam_path: &Path) -> Result<MigrationReport, String> {
     let candidates = [
@@ -291,6 +237,11 @@ pub fn run_startup_migrations(app: &tauri::AppHandle) {
     if let Err(e) = migrate_programfiles_to_local_install() { eprintln!("[AetherDesk] PF->Local failed: {e}"); }
     remove_legacy_install_folders();
     reset_antivirus_exclusion_flag(app);
+    // Pulizia una-tantum: la release desk-1.0.1 (commit d4ccbb1) scriveva un
+    // sentinel `.v3_antivirus_reset_done` in AetherData per forzare il reset del
+    // flag antivirus. Ora reset_antivirus_exclusion_flag è un no-op, ma il file
+    // resta su disco per chi aveva già installato quella build: lo rimuoviamo.
+    let _ = fs::remove_file(LocalAppPaths::data_root().join(".v3_antivirus_reset_done"));
     let config_dir = LocalAppPaths::config_dir();
     let legacy_config_dir = LocalAppPaths::legacy_app_config_dir(app);
     migrate_legacy_settings_if_needed(&config_dir, legacy_config_dir.as_deref());
