@@ -33,3 +33,24 @@ fn test_component_version_strips_test_prefix() {
     assert_eq!(GithubReleaseManager::component_version_from_tag("desk-1.0.3"), "1.0.3");
     assert_eq!(GithubReleaseManager::component_version_from_tag("dll-0.9.8"), "0.9.8");
 }
+
+#[test]
+fn test_build_desk_test_update_info_respects_version_gate() {
+    use crate::updater::github::GithubRelease;
+    let release = GithubRelease {
+        tag_name: "tdesk-1.0.4".to_string(),
+        body: Some("Test notes".to_string()),
+        html_url: Some("https://github.com/example/release".to_string()),
+        assets: vec![],
+    };
+
+    // Quando la versione locale è uguale (1.0.4) o maggiore, update_available deve essere false
+    let info_equal = GithubReleaseManager::build_desk_test_update_info("1.0.4".to_string(), &release);
+    assert!(!info_equal.update_available);
+    assert!(info_equal.is_test);
+
+    // Quando la versione locale è minore (1.0.3), update_available deve essere true
+    let info_older = GithubReleaseManager::build_desk_test_update_info("1.0.3".to_string(), &release);
+    assert!(info_older.update_available);
+    assert!(info_older.is_test);
+}

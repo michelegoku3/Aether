@@ -22,21 +22,22 @@ pub async fn check_aether_dll_update(app: tauri::AppHandle, steam_path: String) 
     let installed_version = read_installed_dll_version(std::path::Path::new(&steam_path))
         .unwrap_or_else(|| read_legacy_installed_version(&legacy_version_path, &steam_path));
 
-    // Testing releases (`tdll-*`) take priority when enabled, but only if their
-    // version is NEWER than the installed one (same gate as stable releases).
-    // If the test tag is not newer, fall through to the stable stream.
+    // Testing releases (`tdll-*`) take priority when enabled. Their version is
+    // gated by `latest_is_newer_than`, exactly like stable releases: if the test
+    // release is not newer than installed, `update_available` is false and no dot
+    // is shown, without falling through to the stable stream.
     if SettingsManager::new(&app).load().enable_test_updates {
         if let Ok((tag, _)) = GithubReleaseManager::new().fetch_latest_dll_test_release().await {
-            if GithubReleaseManager::latest_is_newer_than(&installed_version, &tag) {
-                let latest_version = GithubReleaseManager::component_version_from_tag(&tag);
-                return Ok(serde_json::json!({
-                    "installed_version": GithubReleaseManager::display_version_from_tag(&installed_version),
-                    "latest_version": GithubReleaseManager::display_version_from_tag(&latest_version),
-                    "latest_tag": tag,
-                    "update_available": true,
-                    "is_test": true
-                }));
-            }
+            let latest_version = GithubReleaseManager::component_version_from_tag(&tag);
+            let update_available =
+                GithubReleaseManager::latest_is_newer_than(&installed_version, &tag);
+            return Ok(serde_json::json!({
+                "installed_version": GithubReleaseManager::display_version_from_tag(&installed_version),
+                "latest_version": GithubReleaseManager::display_version_from_tag(&latest_version),
+                "latest_tag": tag,
+                "update_available": update_available,
+                "is_test": true
+            }));
         }
     }
 
@@ -103,11 +104,11 @@ pub async fn install_aether_dll(app: tauri::AppHandle, steam_path: String) -> Re
             )
         });
 
-    // Testing releases take priority when enabled, but only when newer than installed.
+    // Testing releases take priority when enabled.
     let (tag_name, download_url) = if SettingsManager::new(&app).load().enable_test_updates {
         match manager.fetch_latest_dll_test_release().await {
-            Ok((tag, url)) if GithubReleaseManager::latest_is_newer_than(&installed_version, &tag) => (tag, url),
-            _ => manager.fetch_latest_dll_release().await?,
+            Ok(pair) => pair,
+            Err(_) => manager.fetch_latest_dll_release().await?,
         }
     } else {
         manager.fetch_latest_dll_release().await?

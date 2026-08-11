@@ -18,17 +18,16 @@ pub async fn check_aether_desk_update(app: tauri::AppHandle) -> Result<serde_jso
     let current_version = app.package_info().version.to_string();
     let manager = GithubReleaseManager::new();
 
-    // Testing releases take priority when enabled, but only when actually newer
-    // than the installed version (same gate as stable). If the latest test tag
-    // is not newer, fall through to the stable stream.
+    // Testing releases (`tdesk-*`) take priority when enabled. Their version is
+    // gated by `latest_is_newer_than`, exactly like stable releases: if the test
+    // release is not newer than installed, `update_available` is false and no dot
+    // is shown, without falling through to the stable stream.
     if SettingsManager::new(&app).load().enable_test_updates {
         if let Ok(release) = manager.fetch_latest_desk_test_release().await {
-            if GithubReleaseManager::latest_is_newer_than(&current_version, &release.tag_name) {
-                let info =
-                    GithubReleaseManager::build_desk_test_update_info(current_version, &release);
-                return serde_json::to_value(info)
-                    .map_err(|e| format!("Failed to serialize desk test update info: {e}"));
-            }
+            let info =
+                GithubReleaseManager::build_desk_test_update_info(current_version, &release);
+            return serde_json::to_value(info)
+                .map_err(|e| format!("Failed to serialize desk test update info: {e}"));
         }
     }
 

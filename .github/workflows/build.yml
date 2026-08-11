@@ -142,6 +142,15 @@ jobs:
           $version = "${{ github.ref_name }}" -replace '^t?dll-v?', ''
           echo "version=$version" >> $env:GITHUB_OUTPUT
 
+      - name: Sync DLL Version
+        shell: pwsh
+        run: |
+          $version = "${{ steps.version.outputs.version }}"
+          $cmakePath = "AetherDLL/CMakeLists.txt"
+          $cmake = Get-Content $cmakePath -Raw
+          $cmake = $cmake -replace 'project\(AetherDLL LANGUAGES C CXX RC VERSION [0-9]+(\.[0-9]+)*\)', "project(AetherDLL LANGUAGES C CXX RC VERSION $version)"
+          Set-Content $cmakePath $cmake
+
       - name: Setup MSVC Developer Command Prompt
         uses: ilammy/msvc-dev-cmd@v1
         with:
