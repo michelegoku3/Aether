@@ -3,16 +3,20 @@ name: Build and Release Aether
 on:
   push:
     tags:
-      # Two independent release streams:
+      # Stable release streams:
       #   desk-1.0.0 / desk-v1.0.0 -> AetherDesk native app release
       #   dll-1.0.0  / dll-v1.0.0  -> AetherDLL payload release
+      # Testing streams (prefix t): tdesk-* / tdll-*. There is at most one of
+      # each at a time; they are only surfaced when "Enable test updates" is ON.
       - 'desk-*'
       - 'dll-*'
+      - 'tdesk-*'
+      - 'tdll-*'
 
 jobs:
   release-desk:
     name: Build and Release AetherDesk
-    if: startsWith(github.ref_name, 'desk-')
+    if: startsWith(github.ref_name, 'desk-') || startsWith(github.ref_name, 'tdesk-')
     permissions:
       contents: write
     runs-on: windows-latest
@@ -25,7 +29,8 @@ jobs:
         id: version
         shell: pwsh
         run: |
-          $version = "${{ github.ref_name }}" -replace '^desk-v?', ''
+          # Strip the optional testing prefix (t) and the 'v', e.g. tdesk-v1.2.3 -> 1.2.3
+          $version = "${{ github.ref_name }}" -replace '^t?desk-v?', ''
           echo "version=$version" >> $env:GITHUB_OUTPUT
 
       - name: Setup Node.js
@@ -120,7 +125,7 @@ jobs:
 
   release-dll:
     name: Build and Release AetherDLL
-    if: startsWith(github.ref_name, 'dll-')
+    if: startsWith(github.ref_name, 'dll-') || startsWith(github.ref_name, 'tdll-')
     permissions:
       contents: write
     runs-on: windows-latest
@@ -133,7 +138,8 @@ jobs:
         id: version
         shell: pwsh
         run: |
-          $version = "${{ github.ref_name }}" -replace '^dll-v?', ''
+          # Strip the optional testing prefix (t) and the 'v', e.g. tdll-v0.9.8 -> 0.9.8
+          $version = "${{ github.ref_name }}" -replace '^t?dll-v?', ''
           echo "version=$version" >> $env:GITHUB_OUTPUT
 
       - name: Setup MSVC Developer Command Prompt

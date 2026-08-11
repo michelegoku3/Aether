@@ -1,7 +1,7 @@
 /* Modern Reset and CSS Variables */
 :root {
   --bg-app: #0000ff;
-  --bg-sidebar: #131316;
+  --bg-sidebar: #3cff00;
   --bg-item-hover: #1e1e24;
   --bg-item-active: #23232a;
   --color-text: #e1e1e6;
@@ -1389,6 +1389,26 @@ body {
   0% { transform: scale(0.9); box-shadow: 0 0 4px var(--color-cyan); }
   50% { transform: scale(1.3); box-shadow: 0 0 12px var(--color-cyan); }
   100% { transform: scale(0.9); box-shadow: 0 0 4px var(--color-cyan); }
+}
+
+/* Testing-build update dots are red (cyan is reserved for stable updates). */
+.sidebar-update-dot.test {
+  background-color: var(--color-denuvo);
+  box-shadow: 0 0 8px var(--color-denuvo);
+  animation-name: testPulseGlow;
+}
+
+.btn-update-dot.test {
+  background-color: var(--color-denuvo);
+  box-shadow: 0 0 10px var(--color-denuvo);
+  border-color: #131316;
+  animation-name: testPulseGlow;
+}
+
+@keyframes testPulseGlow {
+  0% { transform: scale(0.9); box-shadow: 0 0 4px var(--color-denuvo); }
+  50% { transform: scale(1.3); box-shadow: 0 0 12px var(--color-denuvo); }
+  100% { transform: scale(0.9); box-shadow: 0 0 4px var(--color-denuvo); }
 }
 
 /* ==========================================

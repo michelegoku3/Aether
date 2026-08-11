@@ -3,14 +3,30 @@
 //! These commands are thin wrappers: all update logic lives in
 //! [`crate::updater::desk`], keeping this file decoupled and easy to maintain.
 
+use crate::core::settings::SettingsManager;
 use crate::updater::desk;
 use crate::updater::github::GithubReleaseManager;
 
-/// Reports the installed version and whether a newer `desk-*` GitHub release exists.
+/// Reports the installed version and whether an update is available.
+///
+/// When testing releases are enabled, a `tdesk-*` release takes priority and is
+/// reported as available (presence = update). Otherwise it falls back to the
+/// latest stable `desk-*` release (version-gated). `is_test` tells the UI how
+/// to color the update dot.
 #[tauri::command]
 pub async fn check_aether_desk_update(app: tauri::AppHandle) -> Result<serde_json::Value, String> {
     let current_version = app.package_info().version.to_string();
     let manager = GithubReleaseManager::new();
+
+    // Testing updates take priority when enabled.
+    if SettingsManager::new(&app).load().enable_test_updates {
+        if let Ok(release) = manager.fetch_latest_desk_test_release().await {
+            let info = GithubReleaseManager::build_desk_test_update_info(current_version, &release);
+            return serde_json::to_value(info)
+                .map_err(|e| format!("Failed to serialize desk test update info: {e}"));
+        }
+    }
+
     let release = match manager.fetch_latest_desk_release().await {
         Ok(release) => release,
         Err(error) => {
@@ -19,6 +35,7 @@ pub async fn check_aether_desk_update(app: tauri::AppHandle) -> Result<serde_jso
                 "latest_version": "N/A",
                 "latest_tag": "N/A",
                 "update_available": false,
+                "is_test": false,
                 "release_url": "",
                 "notes": "",
                 "error": error

@@ -3,6 +3,12 @@ use regex::Regex;
 const DLL_TAG_PREFIXES: &[&str] = &["dll-", "dll-v"];
 const DESK_TAG_PREFIXES: &[&str] = &["desk-", "desk-v"];
 
+// Test-only release streams (used for testing pipeline). A `t` in front of the
+// component prefix marks a testing build: `tdesk-*` and `tdll-*`. There is
+// always at most ONE of each at a time, so "presence" means "update available".
+const TDLL_TAG_PREFIXES: &[&str] = &["tdll-", "tdll-v"];
+const TDESK_TAG_PREFIXES: &[&str] = &["tdesk-", "tdesk-v"];
+
 #[derive(Debug, Clone)]
 pub struct GithubAsset {
     pub name: String,
@@ -23,6 +29,7 @@ pub struct ComponentUpdateInfo {
     pub latest_version: String,
     pub latest_tag: String,
     pub update_available: bool,
+    pub is_test: bool,
     pub release_url: String,
     pub notes: String,
 }
@@ -43,9 +50,16 @@ impl GithubReleaseManager {
         prefixes.iter().any(|prefix| lower.starts_with(prefix))
     }
 
+    /// Returns the version portion of a tag, stripping the component and
+    /// optional `v` prefix. Handles both stable (`desk-`, `dll-`) and test
+    /// (`tdesk-`, `tdll-`) streams.
     pub fn component_version_from_tag(tag: &str) -> String {
         let lower = tag.to_lowercase();
-        let without_component = if let Some(rest) = lower.strip_prefix("desk-") {
+        let without_component = if let Some(rest) = lower.strip_prefix("tdesk-") {
+            rest
+        } else if let Some(rest) = lower.strip_prefix("tdll-") {
+            rest
+        } else if let Some(rest) = lower.strip_prefix("desk-") {
             rest
         } else if let Some(rest) = lower.strip_prefix("dll-") {
             rest
@@ -56,6 +70,11 @@ impl GithubReleaseManager {
             .strip_prefix('v')
             .unwrap_or(without_component)
             .to_string()
+    }
+
+    /// True when the tag belongs to a testing release stream (`tdesk-`/`tdll-`).
+    pub fn is_test_tag(tag: &str) -> bool {
+        Self::tag_has_prefix(tag, TDESK_TAG_PREFIXES) || Self::tag_has_prefix(tag, TDLL_TAG_PREFIXES)
     }
 
     pub fn display_version_from_tag(tag_or_version: &str) -> String {
@@ -92,6 +111,8 @@ impl GithubReleaseManager {
     fn normalize_version(version: &str) -> String {
         let lower = version.trim().to_ascii_lowercase();
         lower
+            .trim_start_matches("tdesk-")
+            .trim_start_matches("tdll-")
             .trim_start_matches("desk-")
             .trim_start_matches("dll-")
             .trim_start_matches('v')
@@ -266,6 +287,26 @@ impl GithubReleaseManager {
         self.fetch_latest_by_prefix(DESK_TAG_PREFIXES).await
     }
 
+    /// Latest AetherDesk *test* release (`tdesk-*`). There is at most one.
+    pub async fn fetch_latest_desk_test_release(&self) -> Result<GithubRelease, String> {
+        self.fetch_latest_by_prefix(TDESK_TAG_PREFIXES).await
+    }
+
+    /// Latest AetherDLL *test* release (`tdll-*`), returning its tag + zip URL.
+    pub async fn fetch_latest_dll_test_release(&self) -> Result<(String, String), String> {
+        let release = self.fetch_latest_by_prefix(TDLL_TAG_PREFIXES).await?;
+        let target_asset = release
+            .assets
+            .iter()
+            .find(|asset| {
+                let name = asset.name.to_lowercase();
+                (name.contains("aetherdll") || name.contains("dll")) && name.ends_with(".zip")
+            })
+            .or_else(|| release.assets.iter().find(|asset| asset.name.to_lowercase().ends_with(".zip")))
+            .ok_or_else(|| format!("Could not find AetherDLL .zip asset in release {}", release.tag_name))?;
+        Ok((release.tag_name, target_asset.browser_download_url.clone()))
+    }
+
     /// Finds the portable ZIP asset for the selected AetherDesk release.
     /// The preferred name is `<something>.zip` whose basename mentions AetherDesk
     /// or the desk tag; as a fallback any `.zip` asset on the release is accepted.
@@ -293,6 +334,8 @@ impl GithubReleaseManager {
             })
     }
 
+    /// Builds the update info for a desk release, marking it as a test build
+    /// when its tag belongs to the testing stream (`tdesk-*`).
     pub fn build_desk_update_info(current_version: String, release: &GithubRelease) -> ComponentUpdateInfo {
         let latest_version = Self::component_version_from_tag(&release.tag_name);
         let update_available = Self::latest_is_newer_than(&current_version, &release.tag_name);
@@ -302,6 +345,22 @@ impl GithubReleaseManager {
             latest_version,
             latest_tag: release.tag_name.clone(),
             update_available,
+            is_test: Self::is_test_tag(&release.tag_name),
+            release_url: release.html_url.clone().unwrap_or_default(),
+            notes: release.body.clone().unwrap_or_default(),
+        }
+    }
+
+    /// Builds the update info for a *test* desk release: presence alone means an
+    /// update is available (there is at most one test release at a time).
+    pub fn build_desk_test_update_info(current_version: String, release: &GithubRelease) -> ComponentUpdateInfo {
+        let latest_version = Self::component_version_from_tag(&release.tag_name);
+        ComponentUpdateInfo {
+            installed_version: current_version,
+            latest_version,
+            latest_tag: release.tag_name.clone(),
+            update_available: true,
+            is_test: true,
             release_url: release.html_url.clone().unwrap_or_default(),
             notes: release.body.clone().unwrap_or_default(),
         }

@@ -5,12 +5,14 @@ import { DllStatusInfo } from '../types/ui';
 interface AetherViewProps {
   isUpdateAvailable: boolean;
   isDeskUpdateAvailable: boolean;
+  isDllUpdateTest: boolean;
+  isDeskUpdateTest: boolean;
   onUpdateComplete: () => void; // Refresh update check in the parent
   dllStatus: DllStatusInfo;
   onDllStatusChange: () => Promise<void>;
 }
 
-export const AetherView = ({ isUpdateAvailable, isDeskUpdateAvailable, onUpdateComplete, dllStatus, onDllStatusChange }: AetherViewProps) => {
+export const AetherView = ({ isUpdateAvailable, isDeskUpdateAvailable, isDllUpdateTest, isDeskUpdateTest, onUpdateComplete, dllStatus, onDllStatusChange }: AetherViewProps) => {
   const [deskVersion, setDeskVersion] = useState('1.0.0');
   
   const [statusMsg, setStatusMsg] = useState({ text: '', type: 'info' });
@@ -205,7 +207,10 @@ export const AetherView = ({ isUpdateAvailable, isDeskUpdateAvailable, onUpdateC
           >
             {isDeskUpdateAvailable ? 'Update' : 'Updated'}
             {isDeskUpdateAvailable && (
-              <span className="btn-update-dot" title="AetherDesk update is ready!"></span>
+              <span
+                className={`btn-update-dot${isDeskUpdateTest ? ' test' : ''}`}
+                title={isDeskUpdateTest ? 'AetherDesk TEST update is ready!' : 'AetherDesk update is ready!'}
+              ></span>
             )}
           </button>
 
@@ -237,7 +242,10 @@ export const AetherView = ({ isUpdateAvailable, isDeskUpdateAvailable, onUpdateC
             {dllStatus.isInstalled && isUpdateAvailable ? 'Update' : dllStatus.isInstalled ? 'Updated' : 'Install'}
             {/* Superimposed glowing update dot overlay directly inside the relative button container! */}
             {dllStatus.isInstalled && isUpdateAvailable && (
-              <span className="btn-update-dot" title="AetherDLL update is ready!"></span>
+              <span
+                className={`btn-update-dot${isDllUpdateTest ? ' test' : ''}`}
+                title={isDllUpdateTest ? 'AetherDLL TEST update is ready!' : 'AetherDLL update is ready!'}
+              ></span>
             )}
           </button>
 

@@ -14,6 +14,9 @@ export default function App() {
   const [dllUpdateAvailable, setDllUpdateAvailable] = useState(false);
   // Global state to track native AetherDesk update availability from desk-* GitHub tags
   const [deskUpdateAvailable, setDeskUpdateAvailable] = useState(false);
+  // Whether the currently available desk/dll update is a *test* build (red dot).
+  const [deskUpdateIsTest, setDeskUpdateIsTest] = useState(false);
+  const [dllUpdateIsTest, setDllUpdateIsTest] = useState(false);
   const [useAlternativeGameCards, setUseAlternativeGameCards] = useState(false);
 
   // DLL installation status (checked only at startup and after install/uninstall)
@@ -105,9 +108,11 @@ export default function App() {
       const deskInfo: any = await invoke('check_aether_desk_update');
       console.log('[AetherDesk update check]', deskInfo);
       setDeskUpdateAvailable(Boolean(deskInfo.update_available));
+      setDeskUpdateIsTest(Boolean(deskInfo.is_test));
     } catch (err) {
       console.error("AetherDesk update check failed:", err);
       setDeskUpdateAvailable(false);
+      setDeskUpdateIsTest(false);
     }
 
     try {
@@ -117,9 +122,12 @@ export default function App() {
         const updateInfo: any = await invoke('check_aether_dll_update', { steamPath });
         console.log('[AetherDLL update check]', updateInfo);
         setDllUpdateAvailable(updateInfo.update_available);
+        setDllUpdateIsTest(Boolean(updateInfo.is_test));
       }
     } catch (err) {
       console.error("AetherDLL update check failed:", err);
+      setDllUpdateAvailable(false);
+      setDllUpdateIsTest(false);
     }
   };
 
@@ -186,6 +194,7 @@ export default function App() {
         onTabChange={setActiveTab} 
         onRestartSteam={handleRestartSteam} 
         dllUpdateAvailable={dllUpdateAvailable || deskUpdateAvailable}
+        updateIsTest={dllUpdateIsTest || deskUpdateIsTest}
       />
 
       {/* Modular Main Content display area */}
@@ -193,6 +202,8 @@ export default function App() {
         activeTab={activeTab} 
         dllUpdateAvailable={dllUpdateAvailable}
         deskUpdateAvailable={deskUpdateAvailable}
+        dllUpdateIsTest={dllUpdateIsTest}
+        deskUpdateIsTest={deskUpdateIsTest}
         onUpdateComplete={checkUpdates}
         hubcapUsage={hubcapUsage}
         onRefreshUsage={refreshHubcapUsage}

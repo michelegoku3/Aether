@@ -5,9 +5,10 @@ interface SidebarProps {
   onTabChange: (tab: TabType) => void;
   onRestartSteam: () => void;
   dllUpdateAvailable: boolean; // Received from parent (App.tsx)
+  updateIsTest: boolean;        // Whether the shown update is a test build (red)
 }
 
-export const Sidebar = ({ activeTab, onTabChange, onRestartSteam, dllUpdateAvailable }: SidebarProps) => {
+export const Sidebar = ({ activeTab, onTabChange, onRestartSteam, dllUpdateAvailable, updateIsTest }: SidebarProps) => {
   return (
     <aside className="sidebar">
       {/* TOP NAVIGATION SECTION */}
@@ -65,7 +66,10 @@ export const Sidebar = ({ activeTab, onTabChange, onRestartSteam, dllUpdateAvail
         >
           <span>Aether</span>
           {dllUpdateAvailable && (
-            <span className="sidebar-update-dot" title="AetherDLL update available!"></span>
+            <span
+              className={`sidebar-update-dot${updateIsTest ? ' test' : ''}`}
+              title={updateIsTest ? 'Aether TEST update available!' : 'AetherDLL update available!'}
+            ></span>
           )}
         </button>
 

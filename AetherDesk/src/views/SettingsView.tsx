@@ -32,6 +32,7 @@ export const SettingsView = ({ hubcapUsage, onRefreshUsage, onRefreshCustomCss, 
   const [showStoreFrontGames, setShowStoreFrontGames] = useState(true);
   const [useAlternativeGameCards, setUseAlternativeGameCards] = useState(false);
   const [enableWebviewDevtools, setEnableWebviewDevtools] = useState(false);
+  const [enableTestUpdates, setEnableTestUpdates] = useState(false);
   const [storeFrontFilter, setStoreFrontFilter] = useState('upcoming');
   const [customCssEnabled, setCustomCssEnabled] = useState(false);
   const [personalWallpaperEnabled, setPersonalWallpaperEnabled] = useState(false);
@@ -94,6 +95,7 @@ export const SettingsView = ({ hubcapUsage, onRefreshUsage, onRefreshCustomCss, 
           setShowStoreFrontGames(settings.show_store_front_games !== false);
           setUseAlternativeGameCards(Boolean(settings.use_alternative_game_cards));
           setEnableWebviewDevtools(Boolean(settings.enable_webview_devtools));
+          setEnableTestUpdates(Boolean(settings.enable_test_updates));
           setStoreFrontFilter(settings.store_front_filter || 'upcoming');
           setCustomCssEnabled(Boolean(settings.custom_css_enabled));
           setPersonalWallpaperEnabled(Boolean(settings.personal_wallpaper_enabled));
@@ -161,6 +163,7 @@ export const SettingsView = ({ hubcapUsage, onRefreshUsage, onRefreshCustomCss, 
           show_store_front_games: showStoreFrontGames,
           use_alternative_game_cards: useAlternativeGameCards,
           enable_webview_devtools: enableWebviewDevtools,
+          enable_test_updates: enableTestUpdates,
           store_front_filter: storeFrontFilter,
           store_currency: storeCurrency
         }
@@ -269,6 +272,18 @@ export const SettingsView = ({ hubcapUsage, onRefreshUsage, onRefreshCustomCss, 
                     try { await invoke('open_webview_devtools'); } catch (err) { console.warn('Unable to open WebView devtools:', err); }
                   }
                 }}
+              />
+              <span></span>
+            </label>
+          </div>
+
+          <div className="settings-toggle-row" title="When ON, AetherDesk also detects testing releases (tdesk-*/tdll-*) and gives them priority. Test updates are shown with a red dot. Keep OFF unless you are testing a build.">
+            <span className="settings-toggle-text">Enable test updates</span>
+            <label className="version-switch">
+              <input
+                type="checkbox"
+                checked={enableTestUpdates}
+                onChange={(e) => setEnableTestUpdates(e.target.checked)}
               />
               <span></span>
             </label>
@@ -644,6 +659,7 @@ export const SettingsView = ({ hubcapUsage, onRefreshUsage, onRefreshCustomCss, 
               setShowStoreFrontGames(true);
               setUseAlternativeGameCards(false);
               setEnableWebviewDevtools(false);
+              setEnableTestUpdates(false);
               setStoreFrontFilter('upcoming');
               setCustomCssEnabled(false);
               setPersonalWallpaperEnabled(false);
@@ -670,6 +686,7 @@ export const SettingsView = ({ hubcapUsage, onRefreshUsage, onRefreshCustomCss, 
                     show_store_front_games: true,
                     use_alternative_game_cards: false,
                     enable_webview_devtools: false,
+                    enable_test_updates: false,
                     store_front_filter: 'upcoming',
                     custom_css_enabled: false,
                     personal_wallpaper_enabled: false,
