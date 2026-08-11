@@ -9,21 +9,26 @@ use crate::updater::github::GithubReleaseManager;
 
 /// Reports the installed version and whether an update is available.
 ///
-/// When testing releases are enabled, a `tdesk-*` release takes priority and is
-/// reported as available (presence = update). Otherwise it falls back to the
-/// latest stable `desk-*` release (version-gated). `is_test` tells the UI how
-/// to color the update dot.
+/// When testing releases are enabled, a `tdesk-*` release takes priority **only
+/// if its version is newer** than the installed one. Otherwise it falls back to
+/// the latest stable `desk-*` release (version-gated). `is_test` tells the UI
+/// how to color the update dot.
 #[tauri::command]
 pub async fn check_aether_desk_update(app: tauri::AppHandle) -> Result<serde_json::Value, String> {
     let current_version = app.package_info().version.to_string();
     let manager = GithubReleaseManager::new();
 
-    // Testing updates take priority when enabled.
+    // Testing releases take priority when enabled, but only when actually newer
+    // than the installed version (same gate as stable). If the latest test tag
+    // is not newer, fall through to the stable stream.
     if SettingsManager::new(&app).load().enable_test_updates {
         if let Ok(release) = manager.fetch_latest_desk_test_release().await {
-            let info = GithubReleaseManager::build_desk_test_update_info(current_version, &release);
-            return serde_json::to_value(info)
-                .map_err(|e| format!("Failed to serialize desk test update info: {e}"));
+            if GithubReleaseManager::latest_is_newer_than(&current_version, &release.tag_name) {
+                let info =
+                    GithubReleaseManager::build_desk_test_update_info(current_version, &release);
+                return serde_json::to_value(info)
+                    .map_err(|e| format!("Failed to serialize desk test update info: {e}"));
+            }
         }
     }
 
