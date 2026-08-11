@@ -351,15 +351,17 @@ impl GithubReleaseManager {
         }
     }
 
-    /// Builds the update info for a *test* desk release: presence alone means an
-    /// update is available (there is at most one test release at a time).
+    /// Builds the update info for a *test* desk release. Like stable releases,
+    /// an update is available only when the test tag's version is NEWER than
+    /// the installed one. It is always marked `is_test`.
     pub fn build_desk_test_update_info(current_version: String, release: &GithubRelease) -> ComponentUpdateInfo {
         let latest_version = Self::component_version_from_tag(&release.tag_name);
+        let update_available = Self::latest_is_newer_than(&current_version, &release.tag_name);
         ComponentUpdateInfo {
             installed_version: current_version,
             latest_version,
             latest_tag: release.tag_name.clone(),
-            update_available: true,
+            update_available,
             is_test: true,
             release_url: release.html_url.clone().unwrap_or_default(),
             notes: release.body.clone().unwrap_or_default(),

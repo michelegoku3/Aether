@@ -66,11 +66,14 @@ pub async fn prepare_update(app: &tauri::AppHandle) -> Result<Option<PreparedUpd
     let current_version = app.package_info().version.to_string();
     let manager = GithubReleaseManager::new();
 
-    // Testing updates take priority when enabled.
+    // Testing updates take priority when enabled, but only if the test tag is
+    // NEWER than the installed version (same gate as stable releases).
     let settings = crate::core::settings::SettingsManager::new(app).load();
     if settings.enable_test_updates {
         if let Ok(release) = manager.fetch_latest_desk_test_release().await {
-            return prepare_from_release(&release).await.map(Some);
+            if GithubReleaseManager::latest_is_newer_than(&current_version, &release.tag_name) {
+                return prepare_from_release(&release).await.map(Some);
+            }
         }
     }
 
