@@ -5,15 +5,14 @@ const LOCAL_DATA_DIR_NAME: &str = "AetherData";
 
 /// Resolver centralizzato per i path di AetherDesk.
 ///
-/// ## Fix v3 — Tutto unificato in un'unica cartella (09/08/2026)
-/// Requisito utente: *l'intera cartella di Aether deve avere tutto dentro di lei*.
-/// Non deve esserci un pezzo in `AppData\Local` e uno in `AppData\Roaming`.
-/// Soluzione: sia l'eseguibile che `AetherData` vivono dentro la stessa
-/// cartella di installazione, che con `installMode=currentUser` è
-/// `%LOCALAPPDATA%\AetherDesk\` (scrivibile senza UAC, quindi temi/wallpaper
-/// sono editabili senza admin). Struttura:
+/// ## Distribuzione portabile (ZIP)
+/// AetherDesk è una cartella portabile auto-contenuta: eseguibile, tool e dati
+/// vivono tutti insieme. L'intera cartella di Aether ha tutto dentro di lei —
+/// nessun pezzo in `AppData\Local` o `AppData\Roaming`. Soluzione: sia
+/// l'eseguibile che `AetherData` vivono dentro la stessa cartella di
+/// installazione (`install_root/`). Struttura:
 ///
-///   %LOCALAPPDATA%\AetherDesk\
+///   <dove-l'utente-la-sballa>/AetherDesk\
 ///     ├─ AetherDesk.exe
 ///     ├─ ExternalTools\Steamless\...
 ///     └─ AetherData\
@@ -22,7 +21,7 @@ const LOCAL_DATA_DIR_NAME: &str = "AetherData";
 ///         ├─ config\settings.json
 ///         └─ backup\...
 ///
-/// Vecchie location (da migrare):
+/// Vecchie location (da migrare solo per chi arriva da una vecchia install):
 ///   - Legacy Program Files: `<exe_parent>\AetherData` quando l'app era in `C:\Program Files`
 ///   - Fix v2 Roaming: `%APPDATA%\com.aether.desk` (Roaming)
 /// Entrambe vengono migrate automaticamente al primo avvio verso la nuova
@@ -53,23 +52,12 @@ impl LocalAppPaths {
         Self::data_root()
     }
 
-    pub fn data_root_fallback() -> PathBuf {
-        Self::data_root()
-    }
-
     /// Legacy Roaming del fix v2: `%APPDATA%\com.aether.desk`
     /// Mantenuto solo per migrazione di ritorno verso l'install unificata.
     pub fn legacy_roaming_data_root() -> PathBuf {
         if let Some(base) = dirs::data_dir() {
             return base.join("com.aether.desk");
         }
-        Self::install_root().join(LOCAL_DATA_DIR_NAME)
-    }
-
-    /// Legacy diretta accanto all'exe quando l'installer era `both`/`perMachine`.
-    /// Ora coincide con `data_root()` quando l'install è ancora in Program Files,
-    /// ma la distinguiamo per la migrazione verso LocalAppData.
-    pub fn legacy_program_files_data_root() -> PathBuf {
         Self::install_root().join(LOCAL_DATA_DIR_NAME)
     }
 
@@ -86,16 +74,8 @@ impl LocalAppPaths {
         Self::data_root().join("config")
     }
 
-    pub fn config_dir_for_app(_app: &tauri::AppHandle) -> PathBuf {
-        Self::config_dir()
-    }
-
     pub fn temp_dir() -> PathBuf {
         Self::data_root().join("temp")
-    }
-
-    pub fn temp_dir_for_app(_app: &tauri::AppHandle) -> PathBuf {
-        Self::temp_dir()
     }
 
     pub fn legacy_app_data_dir(app: &tauri::AppHandle) -> Option<PathBuf> {

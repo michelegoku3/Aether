@@ -19,10 +19,18 @@ mod util;
 mod tests;
 
 fn main() {
+    // Portable self-update entry point: when the app is launched with
+    // `--apply-update <staging> <install_root>` it behaves as the updater that
+    // swaps files in place (no window is shown). Must run before Tauri setup.
+    if let Some(code) = try_run_apply_update() {
+        std::process::exit(code);
+    }
+
     tauri::Builder::default()
-        .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
+            // Clear any leftover artifacts from an interrupted portable self-update.
+            crate::updater::desk::cleanup_stale_artifacts();
             // All startup migrations live in one place: legacy settings move,
             // obsolete data-folder cleanup, and the lua_backups → backup data
             // layout migration. Each step is idempotent and failure-tolerant.
@@ -87,4 +95,18 @@ fn main() {
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+/// Handles the `--apply-update <staging> <install_root>` invocation used by the
+/// portable self-updater. Returns `Some(exit_code)` when the flag is present
+/// (the process should terminate with that code), `None` otherwise.
+fn try_run_apply_update() -> Option<i32> {
+    let args: Vec<String> = std::env::args().collect();
+    let position = args.iter().position(|arg| arg == "--apply-update")?;
+    let staging = args.get(position + 1)?;
+    let install_root = args.get(position + 2)?;
+    Some(crate::updater::desk::run_apply_update(
+        std::path::Path::new(staging),
+        std::path::Path::new(install_root),
+    ))
 }

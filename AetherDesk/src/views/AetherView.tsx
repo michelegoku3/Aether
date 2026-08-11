@@ -43,12 +43,12 @@ export const AetherView = ({ isUpdateAvailable, isDeskUpdateAvailable, onUpdateC
 
   const handleInstallDeskUpdate = async () => {
     setIsProcessing(true);
-    showStatus('Preparing native AetherDesk update...', 'info');
+    showStatus('Preparing AetherDesk portable update...', 'info');
 
     try {
       const result: string = await invoke('install_aether_desk_update');
       showStatus(result, 'success');
-      // The Rust updater restarts the app after a successful native install.
+      // The portable updater swaps files and restarts the app automatically.
       setIsProcessing(false);
     } catch (err: any) {
       showStatus(`AetherDesk update failed: ${err}`, 'error');
@@ -60,7 +60,7 @@ export const AetherView = ({ isUpdateAvailable, isDeskUpdateAvailable, onUpdateC
 
   const handleUninstallDesk = async () => {
     setIsProcessing(true);
-    showStatus('Launching AetherDesk uninstaller...', 'info');
+    showStatus('AetherDesk is portable — closing. Delete the folder to uninstall.', 'info');
 
     try {
       await invoke('uninstall_aether_desk');

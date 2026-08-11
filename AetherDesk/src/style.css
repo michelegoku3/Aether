@@ -2184,7 +2184,11 @@ body {
 
 .settings-appearance-row .settings-desc {
   flex: 1 1 auto;
+  min-width: 0;
   margin: 0;
+  /* La descrizione può andare su più righe: solo il percorso (`.settings-path`)
+     viene troncato con ellipsis, non il testo che lo circonda. */
+  line-height: 1.4;
 }
 
 .settings-path {
@@ -2194,6 +2198,16 @@ body {
   background: rgba(255, 255, 255, 0.05);
   padding: 1px 5px;
   border-radius: 4px;
+  /* Solo il percorso viene troncato con ellipsis: inline-block + max-width
+     permette al resto della frase di andare a capo. Il path completo resta
+     disponibile via tooltip (title). ~420px ≈ 67 caratteri monospace a 11px,
+     ma si riduce se la finestra è più stretta. */
+  display: inline-block;
+  max-width: min(420px, 100%);
+  vertical-align: bottom;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .settings-assets-missing {

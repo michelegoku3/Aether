@@ -266,20 +266,28 @@ impl GithubReleaseManager {
         self.fetch_latest_by_prefix(DESK_TAG_PREFIXES).await
     }
 
-    /// Finds the Tauri updater manifest generated for the selected AetherDesk release.
-    /// The preferred asset name is latest.json; latest-desk.json is also accepted.
-    pub fn find_desk_updater_manifest_url(release: &GithubRelease) -> Result<String, String> {
+    /// Finds the portable ZIP asset for the selected AetherDesk release.
+    /// The preferred name is `<something>.zip` whose basename mentions AetherDesk
+    /// or the desk tag; as a fallback any `.zip` asset on the release is accepted.
+    /// This is the single source of truth used by the portable self-updater.
+    pub fn find_desk_zip_asset(release: &GithubRelease) -> Result<GithubAsset, String> {
         release
             .assets
             .iter()
             .find(|asset| {
-                let name = asset.name.to_lowercase();
-                name == "latest.json" || name == "latest-desk.json" || name.ends_with("latest.json")
+                let lower = asset.name.to_lowercase();
+                (lower.contains("aetherdesk") || lower.contains("desk")) && lower.ends_with(".zip")
             })
-            .map(|asset| asset.browser_download_url.clone())
+            .or_else(|| {
+                release
+                    .assets
+                    .iter()
+                    .find(|asset| asset.name.to_lowercase().ends_with(".zip"))
+            })
+            .cloned()
             .ok_or_else(|| {
                 format!(
-                    "Could not find latest.json/latest-desk.json asset in AetherDesk release {}",
+                    "Could not find a portable .zip asset in AetherDesk release {}",
                     release.tag_name
                 )
             })

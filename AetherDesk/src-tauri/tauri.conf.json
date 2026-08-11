@@ -29,10 +29,7 @@
     }
   },
   "bundle": {
-    "active": true,
-    "targets": [
-      "nsis"
-    ],
+    "active": false,
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
@@ -42,28 +39,6 @@
     ],
     "resources": [
       "ExternalTools/Steamless"
-    ],
-    "windows": {
-      "nsis": {
-        "installMode": "currentUser",
-        "languages": [
-          "English",
-          "Italian"
-        ],
-        "displayLanguageSelector": true,
-        "startMenuFolder": "AetherDesk",
-        "installerHooks": "windows/hooks.nsh"
-      }
-    },
-    "createUpdaterArtifacts": true
-  },
-  "plugins": {
-    "updater": {
-      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEQ1NTgxQ0U0RjNDMzUyNDcKUldSSFVzUHo1QnhZMVQ0QlFwNXEvUzgvOHhaMTlZaHVyVGVlZ3FQME5BQ3dtN1hsRzIybmluemsK",
-      "endpoints": [],
-      "windows": {
-        "installMode": "passive"
-      }
-    }
+    ]
   }
 }
