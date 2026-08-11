@@ -19,7 +19,7 @@ jobs:
 
     steps:
       - name: Checkout Repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Extract Desk Version From Tag
         id: version
@@ -29,9 +29,9 @@ jobs:
           echo "version=$version" >> $env:GITHUB_OUTPUT
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
           cache-dependency-path: AetherDesk/package-lock.json
 
@@ -47,69 +47,76 @@ jobs:
         run: npm ci
         working-directory: AetherDesk
 
-      - name: Sync App Version and Updater Public Key
+      - name: Sync App Version
         shell: pwsh
         run: |
           $version = "${{ steps.version.outputs.version }}"
-          $pubkey = "${{ secrets.TAURI_UPDATER_PUBLIC_KEY }}"
 
-          if ([string]::IsNullOrWhiteSpace($pubkey)) {
-            throw "Missing GitHub secret TAURI_UPDATER_PUBLIC_KEY"
-          }
+          $confPath = "AetherDesk/src-tauri/tauri.conf.json"
+          $conf = Get-Content $confPath -Raw | ConvertFrom-Json
+          $conf.version = $version
+          $conf | ConvertTo-Json -Depth 20 | Set-Content $confPath
 
-          # Use Node instead of direct PowerShell property assignment because older
-          # repository versions may not have plugins.updater/createUpdaterArtifacts yet.
-          # This creates every missing nested object safely.
-          @'
-          const fs = require('fs');
-
-          const version = process.env.AETHER_VERSION;
-          const pubkey = process.env.AETHER_UPDATER_PUBKEY;
-
-          const tauriConfPath = 'AetherDesk/src-tauri/tauri.conf.json';
-          const tauriConf = JSON.parse(fs.readFileSync(tauriConfPath, 'utf8'));
-
-          tauriConf.version = version;
-          tauriConf.bundle ??= {};
-          tauriConf.bundle.createUpdaterArtifacts = true;
-          tauriConf.plugins ??= {};
-          tauriConf.plugins.updater ??= {};
-          tauriConf.plugins.updater.pubkey = pubkey;
-          tauriConf.plugins.updater.endpoints ??= [];
-          tauriConf.plugins.updater.windows ??= {};
-          tauriConf.plugins.updater.windows.installMode ??= 'passive';
-
-          fs.writeFileSync(tauriConfPath, JSON.stringify(tauriConf, null, 2));
-
-          const pkgPath = 'AetherDesk/package.json';
-          const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
-          pkg.version = version;
-          fs.writeFileSync(pkgPath, JSON.stringify(pkg, null, 2));
-          '@ | Set-Content sync-aetherdesk-version.cjs
-
-          $env:AETHER_VERSION = $version
-          $env:AETHER_UPDATER_PUBKEY = $pubkey
-          node sync-aetherdesk-version.cjs
-          Remove-Item sync-aetherdesk-version.cjs
+          $pkgPath = "AetherDesk/package.json"
+          $pkg = Get-Content $pkgPath -Raw | ConvertFrom-Json
+          $pkg.version = $version
+          $pkg | ConvertTo-Json -Depth 20 | Set-Content $pkgPath
 
           $cargoPath = "AetherDesk/src-tauri/Cargo.toml"
           $cargo = Get-Content $cargoPath -Raw
           $cargo = $cargo -replace '(?m)^version\s*=\s*"[^"]+"', "version = `"$version`""
           Set-Content $cargoPath $cargo
 
-      - name: Build and Package Tauri App
-        uses: tauri-apps/tauri-action@v0
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+      - name: Build AetherDesk Binary
+        shell: pwsh
+        working-directory: AetherDesk
+        run: npm run tauri build
+
+      - name: Assemble Portable ZIP
+        shell: pwsh
+        run: |
+          $version = "${{ steps.version.outputs.version }}"
+          $root = "AetherDesk"
+          $staging = "$root/build/portable/AetherDesk"
+          if (Test-Path $staging) { Remove-Item -Recurse -Force $staging }
+          New-Item -ItemType Directory -Force -Path $staging | Out-Null
+
+          Copy-Item "$root/src-tauri/target/release/AetherDesk.exe" "$staging/AetherDesk.exe"
+          Copy-Item -Recurse "$root/src-tauri/ExternalTools" "$staging/ExternalTools"
+
+          # Seed default themes/wallpapers into the portable folder.
+          New-Item -ItemType Directory -Force -Path "$staging/AetherData/config/themes" | Out-Null
+          New-Item -ItemType Directory -Force -Path "$staging/AetherData/config/wallpapers" | Out-Null
+          Copy-Item "$root/src-tauri/assets/defaults/themes/*.css" "$staging/AetherData/config/themes"
+          Copy-Item "$root/src-tauri/assets/defaults/wallpapers/*" "$staging/AetherData/config/wallpapers"
+
+          $zip = "$root/build/portable/AetherDesk-$version.zip"
+          if (Test-Path $zip) { Remove-Item $zip -Force }
+          Compress-Archive -Path $staging -DestinationPath $zip -Force
+          if (!(Test-Path $zip)) {
+            throw "Portable ZIP not found: $zip"
+          }
+          New-Item -ItemType Directory -Force -Path release | Out-Null
+          Copy-Item $zip "release/$([System.IO.Path]::GetFileName($zip))"
+          @{
+            component  = "AetherDesk"
+            version    = $version
+            tag        = "${{ github.ref_name }}"
+            portable   = $true
+            published_at = (Get-Date).ToUniversalTime().ToString("o")
+          } | ConvertTo-Json | Set-Content "release/latest-desk.json"
+
+      - name: Publish AetherDesk Release
+        uses: softprops/action-gh-release@v2
         with:
-          tagName: ${{ github.ref_name }}
-          releaseName: 'AetherDesk ${{ steps.version.outputs.version }}'
-          releaseBody: 'Automated AetherDesk release compiled and signed on GitHub Actions.'
-          releaseDraft: false
+          tag_name: ${{ github.ref_name }}
+          name: AetherDesk ${{ steps.version.outputs.version }}
+          body: Automated AetherDesk portable release compiled on GitHub Actions.
+          draft: false
           prerelease: false
-          projectPath: ./AetherDesk
+          files: |
+            release/AetherDesk-${{ steps.version.outputs.version }}.zip
+            release/latest-desk.json
 
   release-dll:
     name: Build and Release AetherDLL
@@ -120,7 +127,7 @@ jobs:
 
     steps:
       - name: Checkout Repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Extract DLL Version From Tag
         id: version

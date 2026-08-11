@@ -1,6 +1,6 @@
 [package]
 name = "aether_desk"
-version = "1.0.0"
+version = "1.0.2"
 description = "AetherDesk - Professional Steam & Game Management Interface"
 authors = ["migo3"]
 edition = "2021"
