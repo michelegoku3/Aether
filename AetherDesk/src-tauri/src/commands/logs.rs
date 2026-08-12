@@ -41,25 +41,46 @@ pub fn export_logs_bundle(app: tauri::AppHandle) -> Result<String, String> {
         .map_err(|e| format!("Failed to create temporary export directory: {e}"))?;
 
     let desk_log_dir = crate::core::paths::LocalAppPaths::data_root().join("logs");
+    let install_root = crate::core::paths::LocalAppPaths::install_root();
     let steam_path = crate::core::settings::SettingsManager::new(&app).load().steam_path;
-    let dll_log_dir = PathBuf::from(&steam_path).join("aethercore");
-    let dll_log_dir_alt = PathBuf::from(&steam_path).join("AetherDLL");
+    let steam_path_buf = PathBuf::from(&steam_path);
 
     let mut copied = 0;
+
+    // 1. AetherDesk logs
     for (src, dest_name) in [
         (desk_log_dir.join("desk.log"), "desk.log.txt"),
         (desk_log_dir.join("desk.log.last"), "desk.log.last.txt"),
         (desk_log_dir.join("status.json"), "desk_status.json.txt"),
-        (dll_log_dir.join("main.log"), "aetherdll_main.log.txt"),
-        (dll_log_dir_alt.join("main.log"), "aetherdll_main.log.txt"),
-        (dll_log_dir.join("main.log.last"), "aetherdll_main.log.last.txt"),
-        (dll_log_dir_alt.join("main.log.last"), "aetherdll_main.log.last.txt"),
-        (dll_log_dir.join("status.json"), "status.json.txt"),
-        (dll_log_dir_alt.join("status.json"), "status.json.txt"),
     ] {
         if src.is_file() {
             if let Ok(_) = std::fs::copy(&src, stage_dir.join(dest_name)) {
                 copied += 1;
+            }
+        }
+    }
+
+    // 2. AetherDLL logs across all candidate directories
+    let candidate_dirs = [
+        steam_path_buf.join("aethercore"),
+        steam_path_buf.join("AetherDLL"),
+        steam_path_buf.join("logs"),
+        steam_path_buf.clone(),
+        desk_log_dir.clone(),
+        install_root.clone(),
+    ];
+    for dir in &candidate_dirs {
+        for (file_name, dest_name) in [
+            ("main.log", "aetherdll_main.log.txt"),
+            ("main.log.last", "aetherdll_main.log.last.txt"),
+            ("status.json", "aetherdll_status.json.txt"),
+        ] {
+            let src = dir.join(file_name);
+            let dest = stage_dir.join(dest_name);
+            if src.is_file() && !dest.exists() {
+                if let Ok(_) = std::fs::copy(&src, &dest) {
+                    copied += 1;
+                }
             }
         }
     }
