@@ -293,21 +293,20 @@ export const StoreView = ({ onRefreshUsage, isActive, settingsRevision, useAlter
 
       {/* Search Input Area */}
       <form onSubmit={handleSearch} className="store-search-form">
-        <div className="store-search-input-wrapper" style={{ position: 'relative', flexGrow: 1 }}>
+        <div className="home-search-wrapper" style={{ position: 'relative', flexGrow: 1 }}>
           <input
             type="text"
             placeholder="Search games by name or App ID on Steam..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             className="store-search-input"
-            style={{ width: '100%', paddingRight: searchQuery ? '32px' : '16px' }}
+            style={{ width: '100%', paddingRight: '36px' }}
           />
           {searchQuery && (
             <button
               type="button"
               className="home-search-clear"
               aria-label="Clear search"
-              style={{ right: '10px' }}
               onClick={() => {
                 setSearchQuery('');
                 clear();

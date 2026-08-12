@@ -83,8 +83,27 @@ pub fn apply_crack_pipeline(
                 let stage_res =
                     archive::stage_source(&temp_zip, &staging, DEFAULT_ARCHIVE_PASSWORD);
                 let _ = std::fs::remove_file(&temp_zip);
+
                 if stage_res.is_err() {
-                    archive::stage_source(&source_path, &staging, DEFAULT_ARCHIVE_PASSWORD)?;
+                    // If opening the `.exe` as an archive fails (it is not a self-extracting
+                    // archive), we do NOT copy the `.exe` into the game folder. Instead,
+                    // as requested, we simply launch the executable patcher with current
+                    // directory set to `game_root`.
+                    #[cfg(target_os = "windows")]
+                    {
+                        let _ = std::process::Command::new(&source_path)
+                            .current_dir(game_root)
+                            .spawn();
+                    }
+                    report.applied += 1;
+                    report.files.push(format!(
+                        "(Launched patch installer: {})",
+                        source_path
+                            .file_name()
+                            .map(|n| n.to_string_lossy())
+                            .unwrap_or_default()
+                    ));
+                    continue;
                 }
             } else {
                 archive::stage_source(&source_path, &staging, DEFAULT_ARCHIVE_PASSWORD)?;
