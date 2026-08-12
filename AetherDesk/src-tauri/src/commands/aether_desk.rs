@@ -74,6 +74,7 @@ pub async fn install_aether_desk_update(app: tauri::AppHandle) -> Result<String,
 /// simply deleting its folder. This command just closes the running instance.
 #[tauri::command]
 pub fn uninstall_aether_desk(app: tauri::AppHandle) -> Result<(), String> {
+    crate::desk_log_info!("lifecycle", "AetherDesk uninstall command invoked: closing running instance for portable folder removal.");
     app.exit(0);
     Ok(())
 }

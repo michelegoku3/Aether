@@ -64,36 +64,48 @@ export const LogView = () => {
 
   return (
     <div className="log-view-container">
-      <div className="log-view-header">
-        <div className="log-header-left">
-          <h1 className="home-title" style={{ margin: 0 }}>LOGS</h1>
+      {/* Upper header section */}
+      <div className="store-header">
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px', width: '100%' }}>
+          <div>
+            <h1 className="store-title">Logs</h1>
+            <p className="store-subtitle">
+              Real-time terminal console monitoring desk.log for session diagnostics and lifecycle events.
+            </p>
+          </div>
           <span className="log-live-badge">
             <span className="log-live-dot"></span>
             Live Monitoring — desk.log
           </span>
         </div>
+      </div>
 
-        <div className="log-header-controls">
-          <div className="home-search-wrapper" style={{ width: '220px' }}>
-            <input
-              type="text"
-              placeholder="Filter logs by keyword..."
-              value={filterQuery}
-              onChange={(e) => setFilterQuery(e.target.value)}
-              className="store-search-input"
-              style={{ padding: '6px 28px 6px 12px', fontSize: '12.5px' }}
-            />
-            {filterQuery && (
-              <button
-                type="button"
-                className="home-search-clear"
-                onClick={() => setFilterQuery('')}
-              >
-                &times;
-              </button>
-            )}
-          </div>
+      {/* Separator line */}
+      <div className="store-separator"></div>
 
+      {/* Control bar */}
+      <div className="log-header-controls" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '16px', width: '100%' }}>
+        <div className="home-search-wrapper" style={{ position: 'relative', width: '260px' }}>
+          <input
+            type="text"
+            placeholder="Filter logs by keyword..."
+            value={filterQuery}
+            onChange={(e) => setFilterQuery(e.target.value)}
+            className="store-search-input"
+            style={{ width: '100%', paddingRight: '36px' }}
+          />
+          {filterQuery && (
+            <button
+              type="button"
+              className="home-search-clear"
+              onClick={() => setFilterQuery('')}
+            >
+              &times;
+            </button>
+          )}
+        </div>
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: '16px', flexWrap: 'wrap' }}>
           <div className="log-level-pills">
             {(['ALL', 'INFO', 'WARN', 'ERROR'] as const).map((lvl) => (
               <button
@@ -107,19 +119,17 @@ export const LogView = () => {
             ))}
           </div>
 
-          <label
-            className="version-switch"
-            title="Auto-scroll to latest entries"
-            style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}
-          >
-            <span style={{ fontSize: '12px', color: '#a0a0b0', userSelect: 'none' }}>Auto-scroll</span>
-            <input
-              type="checkbox"
-              checked={autoScroll}
-              onChange={(e) => setAutoScroll(e.target.checked)}
-            />
-            <span className="crack-checkbox-box" style={{ position: 'relative' }}></span>
-          </label>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', userSelect: 'none' }}>
+            <span style={{ fontSize: '13px', color: 'var(--color-muted)', fontWeight: 600 }}>Auto-scroll</span>
+            <label className="version-switch" title="Auto-scroll to latest entries">
+              <input
+                type="checkbox"
+                checked={autoScroll}
+                onChange={(e) => setAutoScroll(e.target.checked)}
+              />
+              <span></span>
+            </label>
+          </div>
 
           <button
             type="button"

@@ -177,6 +177,7 @@ pub fn apply_antivirus_exclusion(app: tauri::AppHandle) -> Result<String, String
 /// add the exclusion manually.
 #[tauri::command]
 pub fn open_windows_security() {
+    crate::desk_log_info!("antivirus", "Opening Windows Security settings page");
     let _ = std::process::Command::new("cmd")
         .args(["/C", "start", "", "windowsdefender://threatsettings"])
         .spawn();
@@ -186,6 +187,7 @@ pub fn open_windows_security() {
 #[tauri::command]
 pub fn open_app_folder() {
     let path = LocalAppPaths::install_root();
+    crate::desk_log_info!("antivirus", "Opening app install folder in Explorer: {}", path.display());
     let _ = std::process::Command::new("explorer.exe")
         .arg(path)
         .spawn();

@@ -12,9 +12,13 @@ pub fn open_home_resource(site: String, game_name: String) -> Result<(), String>
         "onlinefix" => build_onlinefix_url(game_name),
         "gcw" => build_gcw_url(game_name),
         "csrinru" => build_csrinru_url(game_name),
-        _ => return Err(format!("Unsupported external resource: {}", site)),
+        _ => {
+            crate::desk_log_warn!("home_links", "Unsupported external resource site requested: '{}'", site);
+            return Err(format!("Unsupported external resource: {}", site));
+        }
     };
 
+    crate::desk_log_info!("home_links", "Opening external resource site='{}' for game '{}' (url: {})", site, game_name, url);
     open_external_url(&url)
 }
 

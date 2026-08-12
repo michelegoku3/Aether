@@ -33,6 +33,7 @@ pub struct AppearanceAssets {
 #[tauri::command]
 pub fn get_custom_css(app: tauri::AppHandle) -> Result<String, String> {
     let selected = SettingsManager::new(&app).load().theme_selected_file;
+    crate::desk_log_debug!("appearance", "Loading custom CSS theme (selected='{}')", selected);
     custom_css::read_theme_css(&selected)
 }
 
@@ -58,6 +59,7 @@ pub fn ensure_custom_css() -> Result<String, String> {
 /// Opens the folder containing the active theme in the system file explorer.
 #[tauri::command]
 pub fn open_custom_css_folder(_app: tauri::AppHandle) -> Result<(), String> {
+    crate::desk_log_info!("appearance", "Opening themes directory in OS explorer");
     let folder = custom_css::themes_dir();
     open_folder_in_explorer(&folder)
 }
@@ -65,6 +67,7 @@ pub fn open_custom_css_folder(_app: tauri::AppHandle) -> Result<(), String> {
 /// Opens `AetherData/config/wallpapers/` in the system file explorer.
 #[tauri::command]
 pub fn open_wallpapers_folder() -> Result<(), String> {
+    crate::desk_log_info!("appearance", "Opening wallpapers directory in OS explorer");
     open_folder_in_explorer(&custom_css::wallpapers_dir())
 }
 
@@ -112,6 +115,7 @@ pub fn get_personal_wallpaper_path(app: tauri::AppHandle) -> Result<String, Stri
 #[tauri::command]
 pub fn get_personal_wallpaper_data_uri(app: tauri::AppHandle) -> Result<String, String> {
     let selected = SettingsManager::new(&app).load().wallpaper_selected_file;
+    crate::desk_log_debug!("appearance", "Loading personal wallpaper image (selected='{}')", selected);
     Ok(custom_css::read_personal_wallpaper_data_uri(&selected)?.unwrap_or_default())
 }
 

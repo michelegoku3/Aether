@@ -170,11 +170,13 @@ pub fn reset_aether_steam_path(_app: tauri::AppHandle, steam_path: String) -> Re
         return Err("Steam installation path is required".to_string());
     }
     ensure_steam_is_closed()?;
+    crate::desk_log_info!("updater", "Resetting Aether files in Steam directory '{}'", steam_path);
 
     let legacy_version_path = std::path::PathBuf::from(&steam_path).join("AetherDLL_version.txt");
     let _ = std::fs::remove_file(legacy_version_path);
 
-    let removed = DllInstaller::new(steam_path).reset_aether_files()?;
+    let removed = DllInstaller::new(steam_path.clone()).reset_aether_files()?;
+    crate::desk_log_info!("updater", "Steam path reset completed: removed {} item(s) from '{}'", removed, steam_path);
     Ok(format!(
         "Steam path reset completed. Removed {} Aether-created item(s).",
         removed
