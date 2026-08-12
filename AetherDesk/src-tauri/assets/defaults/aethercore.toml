@@ -1,0 +1,67 @@
+# AetherCore configuration.
+#
+# Located at <AetherData>\config\aethercore.toml (managed by AetherDesk).
+# Every key is optional; omitted keys fall back to the documented defaults.
+
+[log]
+# Minimum level written to aethercore\main.log.
+# One of: "trace", "debug", "info", "warn", "error", "off".
+level = "trace"
+
+# Session logging: when true, saves the previous session's main.log as main.log.last
+# upon Steam/AetherCore startup, starting a clean main.log for the current session.
+keep_last_session = true
+
+[lua]
+# Extra directories scanned for *.lua manifest scripts, in addition to the
+# default <Steam>\config\stplug-in. These directories are also watched for
+# hot-reload (add/remove a .lua to add/remove a game without restarting Steam).
+extra_paths = []
+
+# Extra hosts the lcHttpGet() binding may reach, on top of the built-in
+# baseline (raw.githubusercontent.com, cdn.jsdelivr.net, manifesthub). Exact,
+# case-insensitive host match; no wildcards. Also used by Lua-driven runtime
+# features such as seteticketurl() backend POSTs.
+http_allowlist = []
+
+[network]
+# Optional override for pattern downloads. Placeholders {subdir} and {sha} are
+# substituted at runtime. Leave empty to use the built-in mirror chain.
+pattern_mirror = ""
+
+[manifest_fetch]
+# HTTP fallback for depot manifest request codes Steam refuses for fake-owned
+# depots. URL templates accept {gid}, {appid}, {depotid}. The body may be a bare
+# decimal code or JSON with a digit-string field such as "content".
+#
+# If this section is omitted, AetherCore uses the built-in default chain:
+#   1. https://manifest.opensteamtool.com/{gid}
+#   2. https://manifest.steam.run/api/manifest/{gid}
+#   3. http://gmrc.wudrm.com/manifest/{gid}
+#
+# Uncomment urls=[] to disable the bridge explicitly.
+# urls = []
+# You may also override with a custom chain:
+# urls = ["https://manifest.opensteamtool.com/{gid}"]
+# Single-URL legacy form is also accepted:
+# url = "https://manifest.opensteamtool.com/{gid}"
+# Limit fetches to these hosts (default mirrors shown here).
+# trusted_hosts = ["manifest.opensteamtool.com", "manifest.steam.run", "gmrc.wudrm.com"]
+# Per-request wall-clock budget before falling through to Steam's original reply.
+timeout_sec = 12
+
+[presence]
+# Unified friends/UI presence (with AND without -onlinefix).
+# Does NOT change GetAppIDForCurrentPipe / multiplayer session identity.
+#
+# inject_local: stage/patch local PersonaState for Lua-managed non-owned games
+#   so the local client shows real app id + name instead of generic "Online".
+inject_local = true
+# always_extra_info: always fill GamesPlayed.game_extra_info with the display
+#   name when known. Under -onlinefix, game_id stays 480 and extra_info carries
+#   the real title; without -onlinefix the game_id is already real and this is
+#   cosmetic polish on the same pipeline.
+always_extra_info = true
+# onlinefix_persona_patch: rewrite inbound PersonaState friend entries that
+#   still show Spacewar/480 while an OnlineFix session is active.
+onlinefix_persona_patch = true

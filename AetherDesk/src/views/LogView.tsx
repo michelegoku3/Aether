@@ -4,14 +4,28 @@ import { invoke } from '@tauri-apps/api/core';
 export const LogView = () => {
   const [lines, setLines] = useState<string[]>([]);
   const [filterQuery, setFilterQuery] = useState('');
-  const [levelFilter, setLevelFilter] = useState<string>('ALL');
+  const [logLevel, setLogLevel] = useState('trace');
+  const [logSource, setLogSource] = useState<'desk' | 'dll' | 'both'>('desk');
   const [exportStatus, setExportStatus] = useState('');
   const containerRef = useRef<HTMLDivElement | null>(null);
   const isAtBottomRef = useRef(true);
 
+  useEffect(() => {
+    invoke('get_settings')
+      .then((s: any) => {
+        if (s && s.log_level) {
+          setLogLevel(s.log_level.toLowerCase());
+        }
+      })
+      .catch(() => {});
+  }, []);
+
   const fetchLogs = async () => {
     try {
-      const recent: string[] = await invoke('get_recent_log_lines', { tailLines: 500 });
+      const recent: string[] = await invoke('get_recent_log_lines', {
+        tailLines: 500,
+        source: logSource,
+      });
       setLines(recent || []);
     } catch (err) {
       console.warn('Failed to fetch logs:', err);
@@ -20,9 +34,13 @@ export const LogView = () => {
 
   useEffect(() => {
     fetchLogs();
+  }, [logSource]);
+
+  useEffect(() => {
+    fetchLogs();
     const interval = setInterval(fetchLogs, 2500);
     return () => clearInterval(interval);
-  }, []);
+  }, [logSource]);
 
   const handleScroll = () => {
     if (!containerRef.current) return;
@@ -38,7 +56,7 @@ export const LogView = () => {
 
   const handleClearLogs = async () => {
     try {
-      await invoke('clear_session_log');
+      await invoke('clear_session_log', { source: logSource });
       await fetchLogs();
     } catch (err) {
       console.warn('Failed to clear logs:', err);
@@ -57,15 +75,7 @@ export const LogView = () => {
   };
 
   const filteredLines = lines.filter((line) => {
-    const queryMatch = !filterQuery.trim() || line.toLowerCase().includes(filterQuery.toLowerCase());
-    if (!queryMatch) return false;
-
-    if (levelFilter === 'ALL') return true;
-    if (levelFilter === 'INFO') return line.includes('[INFO ]');
-    if (levelFilter === 'WARN') return line.includes('[WARN ]');
-    if (levelFilter === 'ERROR') return line.includes('[ERROR]');
-    if (levelFilter === 'DEBUG') return line.includes('[DEBUG]');
-    return true;
+    return !filterQuery.trim() || line.toLowerCase().includes(filterQuery.toLowerCase());
   });
 
   const getLineClass = (line: string) => {
@@ -120,23 +130,46 @@ export const LogView = () => {
           )}
         </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: '16px', flexWrap: 'wrap' }}>
-          <div className="log-level-pills">
-            {(['ALL', 'INFO', 'WARN', 'ERROR'] as const).map((lvl) => (
-              <button
-                key={lvl}
-                type="button"
-                className={`log-pill-btn ${levelFilter === lvl ? 'active' : ''}`}
-                onClick={() => setLevelFilter(lvl)}
-              >
-                {lvl}
-              </button>
-            ))}
-          </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+          <select
+            className="settings-select"
+            value={logSource}
+            style={{ width: '105px', height: '33px', padding: '0 8px', boxSizing: 'border-box' }}
+            onChange={(e) => setLogSource(e.target.value as 'desk' | 'dll' | 'both')}
+            title="Select log source to view"
+          >
+            <option value="desk">Desk</option>
+            <option value="dll">DLL</option>
+            <option value="both">Desk &amp; DLL</option>
+          </select>
+
+          <select
+            className="settings-select"
+            value={logLevel}
+            style={{ width: '90px', height: '33px', padding: '0 8px', boxSizing: 'border-box' }}
+            onChange={async (e) => {
+              const next = e.target.value;
+              setLogLevel(next);
+              try {
+                await invoke('set_session_log_level', { level: next });
+              } catch (err) {
+                console.warn('Failed to set session log level:', err);
+              }
+            }}
+            title="Set logging level for Desk &amp; DLL"
+          >
+            <option value="trace">TRACE</option>
+            <option value="debug">DEBUG</option>
+            <option value="info">INFO</option>
+            <option value="warn">WARN</option>
+            <option value="error">ERROR</option>
+            <option value="off">OFF</option>
+          </select>
 
           <button
             type="button"
             className="settings-small-btn"
+            style={{ width: '80px', height: '33px', padding: '0', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', boxSizing: 'border-box' }}
             onClick={handleSaveBundle}
             title="Export AetherDesk & AetherDLL logs as .zip in Downloads folder"
           >
@@ -146,9 +179,9 @@ export const LogView = () => {
           <button
             type="button"
             className="settings-small-btn"
-            style={{ borderColor: 'var(--color-denuvo, #e63946)', color: 'var(--color-denuvo, #e63946)' }}
+            style={{ width: '80px', height: '33px', padding: '0', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', boxSizing: 'border-box', borderColor: 'var(--color-denuvo, #e63946)', color: 'var(--color-denuvo, #e63946)' }}
             onClick={handleClearLogs}
-            title="Clear current desk.log session file"
+            title="Clear current log session file(s)"
           >
             Clear
           </button>

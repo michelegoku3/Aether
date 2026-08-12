@@ -10,8 +10,8 @@ pub fn get_settings(app: tauri::AppHandle) -> Result<AppSettings, String> {
 
 #[tauri::command]
 pub fn save_settings(app: tauri::AppHandle, settings: AppSettings) -> Result<(), String> {
-    crate::desk_log_info!("settings", "Saving user settings to disk (log_level='{}', steam_path='{}', hubcap_key_set={})",
-        settings.log_level, settings.steam_path, !settings.hubcap_api_key.trim().is_empty());
+    crate::desk_log_info!("settings", "Saving user settings to disk (steam_path='{}', hubcap_key_set={})",
+        settings.steam_path, !settings.hubcap_api_key.trim().is_empty());
     let manager = SettingsManager::new(&app);
     manager.save(&settings)
 }

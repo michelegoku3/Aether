@@ -7,15 +7,179 @@
 use std::path::PathBuf;
 
 #[tauri::command]
-pub fn get_recent_log_lines(tail_lines: Option<usize>) -> Result<Vec<String>, String> {
+pub fn get_recent_log_lines(
+    app: tauri::AppHandle,
+    tail_lines: Option<usize>,
+    source: Option<String>,
+) -> Result<Vec<String>, String> {
     let limit = tail_lines.unwrap_or(200);
-    crate::core::logger::read_tail_lines(limit)
+    let mode = source.unwrap_or_else(|| "desk".to_string()).to_lowercase();
+
+    if mode == "dll" {
+        return Ok(read_dll_tail_lines(&app, limit));
+    }
+
+    let desk_lines = crate::core::logger::read_tail_lines(limit)?;
+    if mode == "desk" {
+        return Ok(desk_lines);
+    }
+
+    // Both: tag desk lines with [DESK], DLL lines with [DLL ], merge and sort chronologically
+    let dll_lines = read_dll_tail_lines(&app, limit);
+
+    let mut merged = Vec::with_capacity(desk_lines.len() + dll_lines.len());
+    for line in desk_lines {
+        if let Some(pos) = line.find(']') {
+            let (ts_part, rest) = line.split_at(pos + 1);
+            merged.push(format!("{} [DESK]{}", ts_part, rest));
+        } else {
+            merged.push(format!("[DESK] {}", line));
+        }
+    }
+    for line in dll_lines {
+        if let Some(pos) = line.find(']') {
+            let (ts_part, rest) = line.split_at(pos + 1);
+            merged.push(format!("{} [DLL ]{}", ts_part, rest));
+        } else {
+            merged.push(format!("[DLL ] {}", line));
+        }
+    }
+
+    merged.sort_by(|a, b| {
+        let ts_a = a.split(']').next().unwrap_or(a);
+        let ts_b = b.split(']').next().unwrap_or(b);
+        ts_a.cmp(ts_b)
+    });
+
+    if merged.len() <= limit {
+        Ok(merged)
+    } else {
+        Ok(merged[merged.len() - limit..].to_vec())
+    }
 }
 
 #[tauri::command]
-pub fn clear_session_log() -> Result<String, String> {
-    crate::core::logger::clear_current_log()?;
+pub fn clear_session_log(
+    app: tauri::AppHandle,
+    source: Option<String>,
+) -> Result<String, String> {
+    let mode = source.unwrap_or_else(|| "desk".to_string()).to_lowercase();
+    if mode == "desk" || mode == "both" {
+        crate::core::logger::clear_current_log()?;
+    }
+    if mode == "dll" || mode == "both" {
+        clear_dll_log(&app);
+    }
     Ok("Session log cleared.".to_string())
+}
+
+#[tauri::command]
+pub fn set_session_log_level(
+    app: tauri::AppHandle,
+    level: String,
+) -> Result<String, String> {
+    let lower = level.trim().to_lowercase();
+    crate::core::logger::set_level_from_str(&lower);
+
+    // 1. Ensure the bridge pointer desk_path.cfg and toml exist
+    crate::core::migration::ensure_aethercore_bridge(&app);
+
+    // 2. Update <install_root>\AetherData\config\aethercore.toml (new primary home)
+    let config_dir = crate::core::paths::LocalAppPaths::config_dir();
+    let toml_path = config_dir.join("aethercore.toml");
+
+    let new_content = if toml_path.exists() {
+        let content = std::fs::read_to_string(&toml_path).unwrap_or_default();
+        if content.contains("[log]") {
+            let re = regex::Regex::new(r#"(?m)^level\s*=\s*".*""#).unwrap();
+            if re.is_match(&content) {
+                re.replace(&content, format!("level = \"{}\"", lower)).to_string()
+            } else {
+                content.replace("[log]", &format!("[log]\nlevel = \"{}\"", lower))
+            }
+        } else {
+            format!("{}\n\n[log]\nlevel = \"{}\"\nkeep_last_session = true\n", content, lower)
+        }
+    } else {
+        format!("# AetherCore configuration.\n# Located at AetherData/config/aethercore.toml (managed by AetherDesk).\n[log]\nlevel = \"{}\"\nkeep_last_session = true\n", lower)
+    };
+    let _ = std::fs::write(&toml_path, new_content);
+
+    // 3. Also update <Steam>\aethercore\aethercore.toml if present for legacy compatibility
+    let steam_path = crate::core::settings::SettingsManager::new(&app).load().steam_path;
+    if !steam_path.trim().is_empty() {
+        let steam_toml = PathBuf::from(&steam_path).join("aethercore").join("aethercore.toml");
+        if steam_toml.exists() {
+            let content = std::fs::read_to_string(&steam_toml).unwrap_or_default();
+            let re = regex::Regex::new(r#"(?m)^level\s*=\s*".*""#).unwrap();
+            let updated = if re.is_match(&content) {
+                re.replace(&content, format!("level = \"{}\"", lower)).to_string()
+            } else {
+                format!("{}\n\n[log]\nlevel = \"{}\"\nkeep_last_session = true\n", content, lower)
+            };
+            let _ = std::fs::write(&steam_toml, updated);
+        }
+    }
+
+    crate::desk_log_info!("logs", "Set logging level to '{}' for Desk and DLL (aethercore.toml)", lower);
+    Ok(format!("Logging level set to '{}' for Desk and DLL.", lower))
+}
+
+fn read_dll_tail_lines(app: &tauri::AppHandle, limit: usize) -> Vec<String> {
+    let steam_path = crate::core::settings::SettingsManager::new(app).load().steam_path;
+    let steam_path_buf = PathBuf::from(&steam_path);
+    let desk_log_dir = crate::core::paths::LocalAppPaths::data_root().join("logs");
+    let install_root = crate::core::paths::LocalAppPaths::install_root();
+
+    for dir in [
+        steam_path_buf.join("aethercore"),
+        steam_path_buf.join("AetherDLL"),
+        steam_path_buf.join("logs"),
+        steam_path_buf.clone(),
+        desk_log_dir.clone(),
+        install_root.clone(),
+    ] {
+        let path = dir.join("main.log");
+        if path.is_file() {
+            if let Ok(mut file) = std::fs::File::open(&path) {
+                let mut content = String::new();
+                if let Ok(_) = std::io::Read::read_to_string(&mut file, &mut content) {
+                    let lines: Vec<String> = content.lines().map(|s| s.to_string()).collect();
+                    if lines.len() <= limit {
+                        return lines;
+                    } else {
+                        return lines[lines.len() - limit..].to_vec();
+                    }
+                }
+            }
+        }
+    }
+    Vec::new()
+}
+
+fn clear_dll_log(app: &tauri::AppHandle) {
+    let steam_path = crate::core::settings::SettingsManager::new(app).load().steam_path;
+    let steam_path_buf = PathBuf::from(&steam_path);
+    let desk_log_dir = crate::core::paths::LocalAppPaths::data_root().join("logs");
+    let install_root = crate::core::paths::LocalAppPaths::install_root();
+
+    for dir in [
+        steam_path_buf.join("aethercore"),
+        steam_path_buf.join("AetherDLL"),
+        steam_path_buf.join("logs"),
+        steam_path_buf.clone(),
+        desk_log_dir.clone(),
+        install_root.clone(),
+    ] {
+        let path = dir.join("main.log");
+        if path.is_file() {
+            let _ = std::fs::OpenOptions::new()
+                .create(true)
+                .write(true)
+                .truncate(true)
+                .open(&path);
+        }
+    }
 }
 
 #[cfg(target_os = "windows")]
