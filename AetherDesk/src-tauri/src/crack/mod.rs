@@ -37,6 +37,7 @@ pub fn apply_crack_pipeline(
     game_root: &Path,
     backup: &GameBackup,
     sources: &[String],
+    vn_patch_mode: bool,
 ) -> Result<CrackReport, String> {
     if sources.is_empty() {
         return Err("No crack files selected.".to_string());
@@ -54,8 +55,38 @@ pub fn apply_crack_pipeline(
                 return Err(format!("Crack file not found: {}", source_path.display()));
             }
 
-            // Stage: extract (or copy, for loose files) into the staging root.
-            archive::stage_source(&source_path, &staging, DEFAULT_ARCHIVE_PASSWORD)?;
+            // When `vn_patch_mode` is ON and the source file is an executable (.exe),
+            // we stage it as an archive by copying it to a temporary `.exe.zip`
+            // file in the staging directory's parent folder, so archive extractors
+            // (zip / 7z / rar) open and extract its contents automatically.
+            let is_vn_exe = vn_patch_mode
+                && source_path
+                    .extension()
+                    .and_then(|ext| ext.to_str())
+                    .map(|ext| ext.eq_ignore_ascii_case("exe"))
+                    .unwrap_or(false);
+
+            if is_vn_exe {
+                let temp_zip = staging
+                    .parent()
+                    .unwrap_or(&staging)
+                    .join(format!(
+                        "temp_vn_{}.exe.zip",
+                        source_path
+                            .file_name()
+                            .map(|n| n.to_string_lossy())
+                            .unwrap_or_default()
+                    ));
+                std::fs::copy(&source_path, &temp_zip).map_err(|e| {
+                    format!("Failed to stage VN patch .exe as .exe.zip: {e}")
+                })?;
+                let stage_res =
+                    archive::stage_source(&temp_zip, &staging, DEFAULT_ARCHIVE_PASSWORD);
+                let _ = std::fs::remove_file(&temp_zip);
+                stage_res?;
+            } else {
+                archive::stage_source(&source_path, &staging, DEFAULT_ARCHIVE_PASSWORD)?;
+            }
 
             // Locate each staged file's destination inside the game and apply
             // (back up originals & crack files, write inventory, copy).

@@ -26,6 +26,7 @@ export const CrackModal = ({ game, onClose }: CrackModalProps) => {
   const [selectedFiles, setSelectedFiles] = useState<string[]>([]);
   const [isDragOver, setIsDragOver] = useState(false);
   const [isApplying, setIsApplying] = useState(false);
+  const [vnPatchMode, setVnPatchMode] = useState(false);
   const [status, setStatus] = useState<StatusMessage>(emptyStatus());
 
   const showStatus = (text: string, type: StatusMessage['type']) =>
@@ -111,6 +112,7 @@ export const CrackModal = ({ game, onClose }: CrackModalProps) => {
 
   const clearFiles = () => {
     setSelectedFiles([]);
+    setVnPatchMode(false);
     setStatus(emptyStatus());
   };
 
@@ -123,6 +125,7 @@ export const CrackModal = ({ game, onClose }: CrackModalProps) => {
       const message: string = await invoke('apply_crack', {
         appId: Number(game.appId),
         crackFiles: selectedFiles,
+        vnPatchMode: vnPatchMode,
       });
       showStatus(message, 'success');
     } catch (err: any) {
@@ -208,13 +211,32 @@ export const CrackModal = ({ game, onClose }: CrackModalProps) => {
             <span className="crack-achievement-text">
               Make the crack achievement compatible (it could break the crack)
             </span>
-            <span className="version-switch">
+            <span className="crack-checkbox-label">
               <input
                 type="checkbox"
+                className="crack-checkbox-input"
                 checked={false}
                 disabled={true}
               />
-              <span></span>
+              <span className="crack-checkbox-box"></span>
+            </span>
+          </label>
+
+          <label
+            className="crack-achievement-row"
+            title="When ON, Visual Novel self-extracting .exe patches are staged and extracted as archives (.exe.zip) so their contents can be applied automatically."
+          >
+            <span className="crack-achievement-text">
+              Make Apply Crack work for VNs .exe patches
+            </span>
+            <span className="crack-checkbox-label">
+              <input
+                type="checkbox"
+                className="crack-checkbox-input"
+                checked={vnPatchMode}
+                onChange={(e) => setVnPatchMode(e.target.checked)}
+              />
+              <span className="crack-checkbox-box"></span>
             </span>
           </label>
 

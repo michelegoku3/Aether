@@ -1670,6 +1670,60 @@ body {
   font-size: 13px;
 }
 
+/* Custom Checkboxes for Crack Modal options (intuitively designed, dark theme compatible, cyan when checked) */
+.crack-checkbox-label {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  cursor: pointer;
+  user-select: none;
+}
+
+.crack-checkbox-input {
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.crack-checkbox-box {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  background-color: #1a1a22; /* Dark theme color, no bright white eyesore */
+  border: 1.5px solid var(--border-color, #3a3a46);
+  border-radius: 4px;
+  transition: all 0.2s ease;
+}
+
+/* Crisp SVG checkmark icon when checked */
+.crack-checkbox-box::after {
+  content: '';
+  width: 5px;
+  height: 9px;
+  border: solid #131316;
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg) scale(0);
+  transition: transform 0.15s ease;
+}
+
+.crack-checkbox-input:checked + .crack-checkbox-box {
+  background-color: var(--color-cyan, #00b4d8);
+  border-color: var(--color-cyan, #00b4d8);
+  box-shadow: 0 0 10px rgba(0, 180, 216, 0.35);
+}
+
+.crack-checkbox-input:checked + .crack-checkbox-box::after {
+  transform: rotate(45deg) scale(1);
+}
+
+.crack-checkbox-input:disabled + .crack-checkbox-box {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
 /* Clear ("x") button inside the home search input. */
 .home-search-wrapper .home-search-clear {
   position: absolute;

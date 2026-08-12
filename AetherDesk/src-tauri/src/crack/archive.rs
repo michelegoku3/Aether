@@ -25,7 +25,11 @@ pub fn stage_source(source: &Path, staging: &Path, default_password: &str) -> Re
         .to_ascii_lowercase();
 
     match extension.as_str() {
-        "zip" => extract_zip(source, staging, default_password),
+        "zip" => {
+            extract_zip(source, staging, default_password)
+                .or_else(|_| extract_7z(source, staging, default_password))
+                .or_else(|_| extract_rar(source, staging, default_password))
+        }
         "rar" => extract_rar(source, staging, default_password),
         "7z" => extract_7z(source, staging, default_password),
         _ => copy_loose_file(source, staging),
