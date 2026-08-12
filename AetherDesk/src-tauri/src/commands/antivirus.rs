@@ -144,6 +144,7 @@ pub fn apply_antivirus_exclusion(app: tauri::AppHandle) -> Result<String, String
     }
 
     let script = script.join("; ");
+    crate::desk_log_info!("antivirus", "Applying Windows Defender exclusions for {} folders and {} processes", folders.len(), APP_PROCESS_EXCLUSIONS.len());
 
     let mut command = Command::new("powershell.exe");
     command.args(["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", &script]);
@@ -155,6 +156,7 @@ pub fn apply_antivirus_exclusion(app: tauri::AppHandle) -> Result<String, String
 
     if output.status.success() {
         acknowledge_antivirus_exclusion(app)?;
+        crate::desk_log_info!("antivirus", "Successfully applied Windows Defender exclusions");
         let mut summary: Vec<String> = APP_PROCESS_EXCLUSIONS.iter().map(|s| s.to_string()).collect();
         summary.extend(folders.iter().map(|p| p.to_string_lossy().to_string()));
         Ok(format!(
@@ -163,6 +165,7 @@ pub fn apply_antivirus_exclusion(app: tauri::AppHandle) -> Result<String, String
         ))
     } else {
         let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        crate::desk_log_error!("antivirus", "Failed to apply Windows Defender exclusions via PowerShell: {}", stderr);
         Err(format!(
             "Windows Defender refused the exclusion ({}). You can add the folders manually in Windows Security.",
             if stderr.is_empty() { "unknown error".to_string() } else { stderr }

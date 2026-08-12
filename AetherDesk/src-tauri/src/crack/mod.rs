@@ -85,6 +85,7 @@ pub fn apply_crack_pipeline(
                 let _ = std::fs::remove_file(&temp_zip);
 
                 if stage_res.is_err() {
+                    crate::desk_log_info!("crack", "Opening VN .exe patch as archive failed (not a self-extracting archive). Launching installer executable: {}", source_path.display());
                     // If opening the `.exe` as an archive fails (it is not a self-extracting
                     // archive), we do NOT copy the `.exe` into the game folder. Instead,
                     // as requested, we simply launch the executable patcher with current

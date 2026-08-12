@@ -31,6 +31,7 @@ pub async fn check_aether_dll_update(app: tauri::AppHandle, steam_path: String) 
             let latest_version = GithubReleaseManager::component_version_from_tag(&tag);
             let update_available =
                 GithubReleaseManager::latest_is_newer_than(&installed_version, &tag);
+            crate::desk_log_info_once!("updater", "AetherDLL test release check: tag {}, installed {}, update_available={}", tag, installed_version, update_available);
             return Ok(serde_json::json!({
                 "installed_version": GithubReleaseManager::display_version_from_tag(&installed_version),
                 "latest_version": GithubReleaseManager::display_version_from_tag(&latest_version),
@@ -92,6 +93,7 @@ pub async fn install_aether_dll(app: tauri::AppHandle, steam_path: String) -> Re
     }
 
     ensure_steam_is_closed()?;
+    crate::desk_log_info!("updater", "Starting installation of AetherDLL into steam_path='{}'", steam_path);
 
     let manager = GithubReleaseManager::new();
 
@@ -104,6 +106,8 @@ pub async fn install_aether_dll(app: tauri::AppHandle, steam_path: String) -> Re
     } else {
         manager.fetch_latest_dll_release().await?
     };
+
+    crate::desk_log_info!("updater", "Downloading AetherDLL release tag {} from {}", tag_name, download_url);
 
     let response = reqwest::Client::new()
         .get(&download_url)
@@ -133,9 +137,11 @@ pub async fn install_aether_dll(app: tauri::AppHandle, steam_path: String) -> Re
         let legacy_version_path = std::path::PathBuf::from(&steam_path).join("AetherDLL_version.txt");
         let _ = std::fs::remove_file(legacy_version_path);
 
+        crate::desk_log_info!("updater", "AetherDLL {} successfully installed into Steam directory '{}'", tag_name, steam_path);
         return Ok(format!("AetherDLL {} successfully installed into Steam!", tag_name));
     }
 
+    crate::desk_log_info!("updater", "AetherDLL {} successfully installed into Steam directory '{}'", tag_name, steam_path);
     install_result.map(|_| format!("AetherDLL {} successfully installed into Steam!", tag_name))
 }
 
@@ -146,6 +152,7 @@ pub fn uninstall_aether_dll(_app: tauri::AppHandle, steam_path: String) -> Resul
     }
 
     ensure_steam_is_closed()?;
+    crate::desk_log_info!("updater", "Uninstalling AetherDLL from Steam directory '{}'", steam_path);
 
     // Rimuove l'eventuale bookmark residuo nella dir Steam (i .dll li elimina
     // l'installer qui sotto; in AetherData non viene più scritto nulla).

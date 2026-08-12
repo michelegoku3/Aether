@@ -41,6 +41,9 @@ pub async fn search_store(
         .then(|| HubcapClient::new(settings.hubcap_api_key));
     let hubcap_checked = hubcap_client.is_some();
 
+    crate::desk_log_info!("store", "Searching store for query='{}' (currency={}, dlcs={}, nsfw={}, delisted={}, hubcap_key_active={})",
+        query, store_currency, show_store_dlcs, show_store_nsfw, show_store_delisted, hubcap_checked);
+
     let cache = StoreSearchCache::new(
         LocalAppPaths::data_root().join("cache"),
         app_version.clone(),
@@ -76,6 +79,7 @@ pub async fn search_store(
             GameInfoCache::new(cache_dir, info_cache_version.clone())
                 .merge_store_results_with_manifest_context(&results, hubcap_checked);
             let _ = cache.put(&cache_key, results.clone());
+            crate::desk_log_info!("store", "Store search query='{}' completed: {} game(s) returned", query, results.len());
             Ok(results)
         }
         Err(error) => {
@@ -85,8 +89,10 @@ pub async fn search_store(
                     info_cache_version.clone(),
                 )
                 .merge_store_results_with_manifest_context(&results, hubcap_checked);
+                crate::desk_log_warn!("store", "Store search query='{}' network error ({}); served {} fallback cached result(s)", query, error, results.len());
                 Ok(results)
             } else {
+                crate::desk_log_error!("store", "Store search query='{}' failed: {}", query, error);
                 Err(error)
             }
         }
@@ -243,6 +249,9 @@ pub async fn trigger_hubcap_download(
 ) -> Result<String, String> {
     validate_download_inputs(&api_key, &steam_path, "call Hubcap Manifest")?;
 
+    crate::desk_log_info!("store", "Triggering download for AppID {} (source: {})",
+        app_id, if api_key == "oureveryday_public" { "oureveryday" } else { "hubcap" });
+
     let steam = SteamCompat::new(steam_path.clone());
     let package = if api_key == "oureveryday_public" {
         let oe_client = crate::providers::oureveryday::OureverydayClient::new();
@@ -269,6 +278,9 @@ pub async fn trigger_hubcap_download(
     GameBackup::for_app(app_id)?
         .backup_lua_artifacts(app_id, &installed_lua, &package.manifest_files)?;
     let manifest_count = package.manifest_files.len();
+
+    crate::desk_log_info!("store", "Successfully completed download for AppID {}: Lua installed, {} manifest file(s) preloaded into Steam depotcache",
+        app_id, manifest_count);
 
     Ok(format!(
         "Successfully completed download for App ID {}. Lua installed, {} manifest file(s) preloaded into Steam depotcache.",
@@ -327,6 +339,8 @@ pub async fn trigger_ryuu_download(
 ) -> Result<String, String> {
     validate_download_inputs(&api_key, &steam_path, "call Ryuu")?;
 
+    crate::desk_log_info!("store", "Triggering Ryuu download for AppID {}", app_id);
+
     let steam = SteamCompat::new(steam_path.clone());
     let client = RyuuClient::new(api_key);
     let package = client.download_lua_package(app_id).await?;
@@ -338,6 +352,9 @@ pub async fn trigger_ryuu_download(
     GameBackup::for_app(app_id)?
         .backup_lua_artifacts(app_id, &installed_lua, &package.manifest_files)?;
     let manifest_count = package.manifest_files.len();
+
+    crate::desk_log_info!("store", "Successfully completed Ryuu download for AppID {}: Lua installed, {} manifest file(s) preloaded into Steam depotcache",
+        app_id, manifest_count);
 
     Ok(format!(
         "Successfully completed Ryuu download for App ID {}. Lua installed, {} manifest file(s) preloaded into Steam depotcache.",

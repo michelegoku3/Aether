@@ -92,6 +92,13 @@ pub struct AppSettings {
     /// Backdrop fade-out toward the bottom (0..=100) of the alternative game cards.
     #[serde(default = "default_alt_cards_fade")]
     pub alternative_cards_fade: u8,
+    /// Minimum log level for `desk.log` (`"trace"`, `"debug"`, `"info"`, `"warn"`, `"error"`, `"off"`).
+    #[serde(default = "default_log_level")]
+    pub log_level: String,
+}
+
+fn default_log_level() -> String {
+    "info".to_string()
 }
 
 /// Serde default provider for the alt-cards backdrop opacity.
@@ -181,6 +188,7 @@ impl Default for AppSettings {
             theme_selected_file: String::new(),
             alternative_cards_opacity: default_alt_cards_opacity(),
             alternative_cards_fade: default_alt_cards_fade(),
+            log_level: default_log_level(),
         }
     }
 }
@@ -225,10 +233,13 @@ impl SettingsManager {
             Err(_) => return AppSettings::default(),
         };
 
-        serde_json::from_str::<AppSettings>(&content).unwrap_or_else(|_| AppSettings::default())
+        let settings = serde_json::from_str::<AppSettings>(&content).unwrap_or_else(|_| AppSettings::default());
+        crate::core::logger::set_level_from_str(&settings.log_level);
+        settings
     }
 
     pub fn save(&self, settings: &AppSettings) -> Result<(), String> {
+        crate::core::logger::set_level_from_str(&settings.log_level);
         if !self.config_dir.exists() {
             fs::create_dir_all(&self.config_dir)
                 .map_err(|e| format!("Failed to create local settings folder next to AetherDesk: {}", e))?;

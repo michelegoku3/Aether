@@ -1,6 +1,6 @@
 [package]
 name = "aether_desk"
-version = "1.0.4"
+version = "1.0.0"
 description = "AetherDesk - Professional Steam & Game Management Interface"
 authors = ["migo3"]
 edition = "2021"
@@ -30,4 +30,4 @@ regex = "1"
 # DLL version is read directly from the PE version resource inside the .dll files
 # (Windows-only API; the DLL domain is Windows-only by design).
 [target.'cfg(windows)'.dependencies]
-windows-sys = { version = "0.59", features = ["Win32_Storage_FileSystem"] }
+windows-sys = { version = "0.59", features = ["Win32_Storage_FileSystem", "Win32_System_SystemInformation", "Win32_Foundation"] }

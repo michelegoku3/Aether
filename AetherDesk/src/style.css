@@ -2424,3 +2424,142 @@ body {
   border-radius: inherit;
   overflow: hidden;
 }
+
+/* ==========================================
+   LOGS VIEW (Real-Time Terminal Console)
+   ========================================== */
+.log-view-container {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  width: 100%;
+  padding: 16px 24px;
+  gap: 14px;
+  box-sizing: border-box;
+}
+
+.log-view-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 14px;
+}
+
+.log-header-left {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.log-live-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background-color: rgba(0, 180, 216, 0.1);
+  border: 1px solid rgba(0, 180, 216, 0.3);
+  color: var(--color-cyan, #00b4d8);
+  font-size: 11.5px;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: 999px;
+  letter-spacing: 0.5px;
+}
+
+.log-live-dot {
+  width: 7px;
+  height: 7px;
+  background-color: var(--color-cyan, #00b4d8);
+  border-radius: 50%;
+  box-shadow: 0 0 8px var(--color-cyan, #00b4d8);
+  animation: logPulse 1.5s infinite ease-in-out;
+}
+
+@keyframes logPulse {
+  0% { transform: scale(0.85); opacity: 0.7; }
+  50% { transform: scale(1.25); opacity: 1; }
+  100% { transform: scale(0.85); opacity: 0.7; }
+}
+
+.log-header-controls {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.log-level-pills {
+  display: inline-flex;
+  background-color: #0e0e12;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.log-pill-btn {
+  background: transparent;
+  border: none;
+  color: var(--color-muted);
+  font-size: 11.5px;
+  font-weight: 600;
+  padding: 6px 12px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.log-pill-btn:hover {
+  color: #ffffff;
+}
+
+.log-pill-btn.active {
+  background-color: var(--color-cyan, #00b4d8);
+  color: #131316;
+}
+
+.log-view-terminal {
+  flex: 1 1 auto;
+  min-height: 0;
+  background-color: #08080a;
+  border: 1px solid #1a1a22;
+  border-radius: 8px;
+  padding: 14px 18px;
+  overflow-y: auto;
+  font-family: 'Consolas', 'Cascadia Code', 'Courier New', monospace;
+  font-size: 12px;
+  line-height: 1.6;
+  color: #d0d0d8;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  box-shadow: inset 0 0 20px rgba(0, 0, 0, 0.4);
+}
+
+.log-line {
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.log-line.error {
+  color: var(--color-denuvo, #e63946);
+  font-weight: 600;
+}
+
+.log-line.warn {
+  color: #ffb703;
+}
+
+.log-line.debug {
+  color: #8f8f9e;
+}
+
+.log-line.trace {
+  color: #555565;
+}
+
+.log-empty-state {
+  margin: auto;
+  text-align: center;
+  color: var(--color-muted);
+  font-size: 13px;
+  font-family: inherit;
+}

@@ -17,6 +17,7 @@ pub async fn get_installed_library_games(
         return Ok(Vec::new());
     }
 
+    crate::desk_log_info!("library", "Scanning Steam library for Lua games (steam_path='{}')", settings.steam_path);
     let store_currency = settings.store_currency.clone();
     let scanner = SteamLibraryScanner::new(settings.steam_path, Some(settings.active_library));
     let mut games = scanner.scan_installed_games();
@@ -53,6 +54,7 @@ pub async fn get_installed_library_games(
     );
     GameInfoCache::new(cache_dir, info_cache_version)
         .merge_library_games(&games);
+    crate::desk_log_info!("library", "Library scan completed: returned {} installed Lua game(s)", games.len());
     Ok(games)
 }
 
@@ -71,6 +73,7 @@ pub async fn warm_library_game_cache(app: tauri::AppHandle) -> Result<usize, Str
         return Ok(0);
     }
 
+    crate::desk_log_info!("library", "Starting background metadata cache warm-up for {} installed game App ID(s)", app_ids.len());
     let cache_dir = LocalAppPaths::data_root().join("cache");
     let resolver = SteamAppNameResolver::new(cache_dir);
     let names = resolver.resolve_names(app_ids.clone()).await;
@@ -87,6 +90,7 @@ pub async fn warm_library_game_cache(app: tauri::AppHandle) -> Result<usize, Str
             .filter_map(|(app_id, meta)| meta.hero_image_url.map(|url| (app_id, url))),
     );
 
+    crate::desk_log_info!("library", "Background metadata cache warm-up complete: {} name(s) cached", names.len());
     Ok(names.len())
 }
 

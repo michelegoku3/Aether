@@ -84,6 +84,7 @@ pub fn apply_staged_files(
 
             // 3. Apply the crack to the resolved destination.
             copy_preserving(abs, &target, "apply crack")?;
+            crate::desk_log_info!("crack", "Applied crack file: {} -> {}", abs.display(), target.display());
 
             report.applied += 1;
             report.files.push(game_rel_string.clone());

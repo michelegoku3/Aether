@@ -29,6 +29,8 @@ fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
+            // Initialize the session logger (rotates desk.log -> desk.log.last on startup).
+            crate::core::logger::init(&app.handle());
             // Clear any leftover artifacts from an interrupted portable self-update.
             crate::updater::desk::cleanup_stale_artifacts();
             // All startup migrations live in one place: legacy settings move,
@@ -92,6 +94,8 @@ fn main() {
             commands::aether_desk::check_aether_desk_update,
             commands::aether_desk::install_aether_desk_update,
             commands::aether_desk::uninstall_aether_desk,
+            commands::logs::get_recent_log_lines,
+            commands::logs::clear_session_log,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

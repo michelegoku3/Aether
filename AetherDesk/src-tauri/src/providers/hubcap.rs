@@ -105,18 +105,25 @@ impl HubcapClient {
     }
 
     pub async fn validate_api_key(&self) -> Result<bool, String> {
+        crate::desk_log_info!("hubcap", "Validating API key with {}/user/stats", BASE_URL);
         let url = format!("{}/user/stats", BASE_URL);
         let response = self.client.get(&url)
             .headers(self.headers())
             .send()
             .await
-            .map_err(|e| format!("Network error: {}", e))?;
+            .map_err(|e| {
+                crate::desk_log_error!("hubcap", "Network error validating API key: {}", e);
+                format!("Network error: {}", e)
+            })?;
 
         if response.status().is_success() {
+            crate::desk_log_info!("hubcap", "API key validated successfully (200 OK)");
             Ok(true)
         } else if response.status().as_u16() == 401 {
+            crate::desk_log_warn!("hubcap", "API key validation returned 401 Unauthorized");
             Ok(false)
         } else {
+            crate::desk_log_error!("hubcap", "API key validation server error: HTTP {}", response.status());
             Err(format!("Server returned HTTP error: {}", response.status()))
         }
     }
@@ -129,20 +136,30 @@ impl HubcapClient {
     }
 
     async fn download_manifest_zip(&self, app_id: u32) -> Result<Vec<u8>, String> {
+        crate::desk_log_info!("hubcap", "Requesting Hubcap manifest ZIP for AppID {} from {}", app_id, BASE_URL);
         let url = format!("{}/manifest/{}", BASE_URL, app_id);
         let response = self.client.get(&url)
             .headers(self.headers())
             .send()
             .await
-            .map_err(|e| format!("Failed to send manifest ZIP request: {}", e))?;
+            .map_err(|e| {
+                crate::desk_log_error!("hubcap", "Network error requesting Hubcap manifest ZIP for AppID {}: {}", app_id, e);
+                format!("Failed to send manifest ZIP request: {}", e)
+            })?;
 
         if !response.status().is_success() {
+            crate::desk_log_error!("hubcap", "Hubcap manifest ZIP request for AppID {} failed with HTTP status {}", app_id, response.status());
             return Err(format!("Failed to retrieve manifest ZIP. HTTP Status: {}", response.status()));
         }
 
-        response.bytes().await
+        let bytes = response.bytes().await
             .map(|bytes| bytes.to_vec())
-            .map_err(|e| format!("Failed to read manifest ZIP bytes: {}", e))
+            .map_err(|e| {
+                crate::desk_log_error!("hubcap", "Failed to read Hubcap manifest ZIP bytes for AppID {}: {}", app_id, e);
+                format!("Failed to read manifest ZIP bytes: {}", e)
+            })?;
+        crate::desk_log_info!("hubcap", "Downloaded Hubcap manifest ZIP for AppID {} successfully ({} bytes)", app_id, bytes.len());
+        Ok(bytes)
     }
 
     /// Lightweight existence check: does Hubcap have a manifest for this `app_id`?

@@ -36,9 +36,10 @@ pub async fn pick_and_run_steamless(
     };
 
     let exe_path = file_path_to_path_buf(file_path)?;
+    crate::desk_log_info!("steamless", "Running Steamless on executable: {} (game: '{}')", exe_path.display(), game.name);
     let tool = SteamlessToolLocator::new(app.clone()).locate()?;
 
-    tauri::async_runtime::spawn_blocking(move || {
+    let res = tauri::async_runtime::spawn_blocking(move || {
         SteamlessRunner::new(tool).run(SteamlessRunRequest {
             exe_path,
             game_root,
@@ -46,7 +47,10 @@ pub async fn pick_and_run_steamless(
         })
     })
     .await
-    .map_err(|e| format!("Steamless worker failed: {}", e))?
+    .map_err(|e| format!("Steamless worker failed: {}", e))??;
+
+    crate::desk_log_info!("steamless", "Steamless run finished: success={}, message='{}'", res.success, res.message);
+    Ok(res)
 }
 
 fn file_path_to_path_buf(file_path: FilePath) -> Result<PathBuf, String> {

@@ -83,9 +83,9 @@ export const Sidebar = ({ activeTab, onTabChange, onRestartSteam, dllUpdateAvail
 
         {/* Logs */}
         <button
-          disabled={true}
-          title="Logs is not available yet"
-          className="nav-item"
+          onClick={() => onTabChange('log')}
+          className={`nav-item ${activeTab === 'log' ? 'active' : ''}`}
+          title="Session Logs & Real-Time Terminal Console"
         >
           Logs
         </button>
