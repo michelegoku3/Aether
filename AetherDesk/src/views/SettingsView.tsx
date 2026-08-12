@@ -33,7 +33,7 @@ export const SettingsView = ({ hubcapUsage, onRefreshUsage, onRefreshCustomCss, 
   const [useAlternativeGameCards, setUseAlternativeGameCards] = useState(false);
   const [enableWebviewDevtools, setEnableWebviewDevtools] = useState(false);
   const [enableTestUpdates, setEnableTestUpdates] = useState(false);
-  const [logLevel, setLogLevel] = useState('info');
+  const [logLevel, setLogLevel] = useState('trace');
   const [storeFrontFilter, setStoreFrontFilter] = useState('upcoming');
   const [customCssEnabled, setCustomCssEnabled] = useState(false);
   const [personalWallpaperEnabled, setPersonalWallpaperEnabled] = useState(false);
@@ -107,7 +107,7 @@ export const SettingsView = ({ hubcapUsage, onRefreshUsage, onRefreshCustomCss, 
           setWallpaperSelectedFile(settings.wallpaper_selected_file || '');
           setRyuuKey(settings.ryuu_api_key || '');
           setStoreCurrency(['usd', 'jpy'].includes(settings.store_currency) ? settings.store_currency : 'eur');
-          setLogLevel((settings.log_level || 'info').toLowerCase());
+          setLogLevel((settings.log_level || 'trace').toLowerCase());
         }
       } catch (err: any) {
         showStatus(`Error loading settings: ${err}`, 'error');
@@ -300,14 +300,25 @@ export const SettingsView = ({ hubcapUsage, onRefreshUsage, onRefreshCustomCss, 
             <select
               className="settings-select"
               value={logLevel}
-              onChange={(e) => setLogLevel(e.target.value)}
+              style={{ width: '110px' }}
+              onChange={async (e) => {
+                const next = e.target.value;
+                setLogLevel(next);
+                try {
+                  await invoke('save_settings', {
+                    settings: buildCurrentSettings({ log_level: next }),
+                  });
+                } catch (err) {
+                  console.warn('Failed to update log level:', err);
+                }
+              }}
             >
-              <option value="trace">Trace (Verbose diagnostics)</option>
-              <option value="debug">Debug (Detailed info)</option>
-              <option value="info">Info (Default lifecycle &amp; events)</option>
-              <option value="warn">Warn (Warnings &amp; errors only)</option>
-              <option value="error">Error (Errors only)</option>
-              <option value="off">Off (Disable log file)</option>
+              <option value="trace">Trace</option>
+              <option value="debug">Debug</option>
+              <option value="info">Info</option>
+              <option value="warn">Warn</option>
+              <option value="error">Error</option>
+              <option value="off">Off</option>
             </select>
           </div>
 
@@ -682,7 +693,7 @@ export const SettingsView = ({ hubcapUsage, onRefreshUsage, onRefreshCustomCss, 
               setUseAlternativeGameCards(false);
               setEnableWebviewDevtools(false);
               setEnableTestUpdates(false);
-              setLogLevel('info');
+              setLogLevel('trace');
               setStoreFrontFilter('upcoming');
               setCustomCssEnabled(false);
               setPersonalWallpaperEnabled(false);
@@ -710,7 +721,7 @@ export const SettingsView = ({ hubcapUsage, onRefreshUsage, onRefreshCustomCss, 
                     use_alternative_game_cards: false,
                     enable_webview_devtools: false,
                     enable_test_updates: false,
-                    log_level: 'info',
+                    log_level: 'trace',
                     store_front_filter: 'upcoming',
                     custom_css_enabled: false,
                     personal_wallpaper_enabled: false,

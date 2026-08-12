@@ -100,7 +100,7 @@ pub fn open_steamdb_depots(app_id: u32) -> Result<(), String> {
         return Err("A valid Steam App ID is required".to_string());
     }
 
-    crate::desk_log_info!("library", "Opening SteamDB depots page for AppID {}", app_id);
+    crate::desk_log_info!("library", "Opening SteamDB depots page for {}", crate::core::logger::format_appid(app_id));
     let url = format!("https://steamdb.info/app/{}/depots/", app_id);
     open_external_url(&url)
 }
@@ -113,14 +113,14 @@ pub fn get_installed_lua_manifest_rows(
     steam_path: String,
 ) -> Result<Vec<LuaManifestRow>, String> {
     validate_steam_path(&steam_path)?;
-    crate::desk_log_debug!("library", "Reading installed Lua manifest rows for AppID {} from '{}'", app_id, steam_path);
+    crate::desk_log_debug!("library", "Reading installed Lua manifest rows for {} from '{}'", crate::core::logger::format_appid(app_id), steam_path);
     LuaManifestPins::new(steam_path, app_id).rows_from_file()
 }
 
 #[tauri::command]
 pub fn get_lua_game_update_state(app_id: u32, steam_path: String) -> Result<bool, String> {
     validate_steam_path(&steam_path)?;
-    crate::desk_log_debug!("library", "Checking update state for AppID {} in '{}'", app_id, steam_path);
+    crate::desk_log_debug!("library", "Checking update state for {} in '{}'", crate::core::logger::format_appid(app_id), steam_path);
     LuaManifestPins::new(steam_path, app_id).updates_are_enabled()
 }
 
@@ -131,15 +131,15 @@ pub fn set_lua_game_updates_enabled(
     enabled: bool,
 ) -> Result<String, String> {
     validate_steam_path(&steam_path)?;
-    crate::desk_log_info!("library", "Setting updates_enabled={} for AppID {} in steam_path='{}'", enabled, app_id, steam_path);
+    crate::desk_log_info!("library", "Setting updates_enabled={} for {} in steam_path='{}'", enabled, crate::core::logger::format_appid(app_id), steam_path);
     let changed = match LuaManifestPins::new(steam_path.clone(), app_id).set_updates_enabled(enabled) {
         Ok(c) => c,
         Err(e) => {
-            crate::desk_log_error!("library", "Failed to set updates_enabled={} for AppID {}: {}", enabled, app_id, e);
+            crate::desk_log_error!("library", "Failed to set updates_enabled={} for {}: {}", enabled, crate::core::logger::format_appid(app_id), e);
             return Err(e);
         }
     };
-    crate::desk_log_info!("library", "Updates {} for AppID {}: {} manifest pin(s) modified", if enabled { "enabled" } else { "disabled" }, app_id, changed);
+    crate::desk_log_info!("library", "Updates {} for {}: {} manifest pin(s) modified", if enabled { "enabled" } else { "disabled" }, crate::core::logger::format_appid(app_id), changed);
 
     if enabled {
         Ok(format!(
@@ -161,12 +161,12 @@ pub fn remove_lua_game_from_library(
     steam_path: String,
 ) -> Result<String, String> {
     validate_steam_path(&steam_path)?;
-    crate::desk_log_info!("library", "Removing Lua game AppID {} from library (steam_path='{}')", app_id, steam_path);
+    crate::desk_log_info!("library", "Removing Lua game {} from library (steam_path='{}')", crate::core::logger::format_appid(app_id), steam_path);
 
     let settings = SettingsManager::new(&app).load();
     let scanner = SteamLibraryScanner::new(steam_path.clone(), Some(settings.active_library));
     if scanner.is_app_installed(app_id) {
-        crate::desk_log_warn!("library", "Cannot remove AppID {}: game is currently installed in Steam", app_id);
+        crate::desk_log_warn!("library", "Cannot remove {}: game is currently installed in Steam", crate::core::logger::format_appid(app_id));
         return Err("This game is installed in Steam. Remove is allowed only for Lua-only games that are not installed.".to_string());
     }
 
@@ -187,10 +187,10 @@ pub fn remove_lua_game_from_library(
     }
 
     if removed {
-        crate::desk_log_info!("library", "Successfully removed Lua files for AppID {} from stplug-in", app_id);
+        crate::desk_log_info!("library", "Successfully removed Lua files for {} from stplug-in", crate::core::logger::format_appid(app_id));
         Ok(format!("App ID {} removed from Aether library.", app_id))
     } else {
-        crate::desk_log_warn!("library", "No Lua file found for AppID {} in stplug-in", app_id);
+        crate::desk_log_warn!("library", "No Lua file found for {} in stplug-in", crate::core::logger::format_appid(app_id));
         Ok(format!("No Lua file found for App ID {}.", app_id))
     }
 }
@@ -202,14 +202,14 @@ pub fn apply_specific_version_edits(
     edits: Vec<LuaManifestEdit>,
 ) -> Result<Vec<LuaManifestRow>, String> {
     validate_steam_path(&steam_path)?;
-    crate::desk_log_info!("library", "Applying {} specific version edit(s) for AppID {} in steam_path='{}'", edits.len(), app_id, steam_path);
+    crate::desk_log_info!("library", "Applying {} specific version edit(s) for {} in steam_path='{}'", edits.len(), crate::core::logger::format_appid(app_id), steam_path);
     match LuaManifestPins::new(steam_path.clone(), app_id).apply_edits(edits) {
         Ok(rows) => {
-            crate::desk_log_info!("library", "Successfully applied specific version edits for AppID {}: {} row(s) active", app_id, rows.len());
+            crate::desk_log_info!("library", "Successfully applied specific version edits for {}: {} row(s) active", crate::core::logger::format_appid(app_id), rows.len());
             Ok(rows)
         }
         Err(e) => {
-            crate::desk_log_error!("library", "Failed to apply specific version edits for AppID {}: {}", app_id, e);
+            crate::desk_log_error!("library", "Failed to apply specific version edits for {}: {}", crate::core::logger::format_appid(app_id), e);
             Err(e)
         }
     }
