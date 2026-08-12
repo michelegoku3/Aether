@@ -39,6 +39,13 @@ pub fn apply_staged_files(
     let mut inventory: Vec<String> = Vec::new();
     let mut applied_targets: Vec<(PathBuf, PathBuf)> = Vec::new(); // (source, target)
 
+    // Check if all staged files are normal files without folders (no subdirectory components).
+    let is_flat_crack = staged.iter().all(|abs| {
+        abs.strip_prefix(staging)
+            .map(|rel| rel.components().count() == 1)
+            .unwrap_or(false)
+    });
+
     for abs in &staged {
         let archive_rel = abs.strip_prefix(staging).map_err(|_| {
             format!(
@@ -49,34 +56,40 @@ pub fn apply_staged_files(
         })?;
 
         // Where does this crack file actually belong inside the game?
-        let target = locate::resolve_file_target(archive_rel, game_root);
-        let game_rel = target.strip_prefix(game_root).map_err(|_| {
-            format!(
-                "Internal error: target {} is outside the game root {}",
-                target.display(),
-                game_root.display()
-            )
-        })?;
-        let game_rel_string = game_rel.to_string_lossy().to_string();
+        // When `is_flat_crack` is true, we recursively search for matching files
+        // across all game subfolders and replace every match; if no matches exist,
+        // it falls back to placing the file at the game root.
+        let targets = locate::resolve_file_targets(archive_rel, game_root, is_flat_crack);
 
-        // 1. Back up the original game file if it will be replaced.
-        if target.exists() {
-            let backup_dest = backup.original_dir().join(&game_rel_string);
-            copy_preserving(&target, backup_dest, "back up original")?;
-            report.replaced += 1;
+        for target in targets {
+            let game_rel = target.strip_prefix(game_root).map_err(|_| {
+                format!(
+                    "Internal error: target {} is outside the game root {}",
+                    target.display(),
+                    game_root.display()
+                )
+            })?;
+            let game_rel_string = game_rel.to_string_lossy().to_string();
+
+            // 1. Back up the original game file if it will be replaced.
+            if target.exists() {
+                let backup_dest = backup.original_dir().join(&game_rel_string);
+                copy_preserving(&target, backup_dest, "back up original")?;
+                report.replaced += 1;
+            }
+
+            // 2. Store the crack file in the dedicated crack backup folder.
+            let crack_dest = backup.crack_dir().join(&game_rel_string);
+            copy_preserving(abs, crack_dest, "store crack file")?;
+
+            // 3. Apply the crack to the resolved destination.
+            copy_preserving(abs, &target, "apply crack")?;
+
+            report.applied += 1;
+            report.files.push(game_rel_string.clone());
+            inventory.push(game_rel_string);
+            applied_targets.push((abs.clone(), target));
         }
-
-        // 2. Store the crack file in the dedicated crack backup folder.
-        let crack_dest = backup.crack_dir().join(&game_rel_string);
-        copy_preserving(abs, crack_dest, "store crack file")?;
-
-        // 3. Apply the crack to the resolved destination.
-        copy_preserving(abs, &target, "apply crack")?;
-
-        report.applied += 1;
-        report.files.push(game_rel_string.clone());
-        inventory.push(game_rel_string);
-        applied_targets.push((abs.clone(), target));
     }
 
     // Verify all files were actually copied to their destinations

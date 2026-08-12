@@ -48,3 +48,54 @@ pub fn resolve_file_target(archive_rel: &Path, game_root: &Path) -> PathBuf {
     // Defensive fallback (unreachable in practice because game_root is a dir).
     game_root.join(archive_rel)
 }
+
+/// Determine all target locations in `game_root` for a staged file whose path
+/// relative to the archive root is `archive_rel`.
+///
+/// When `is_flat_crack` is true (meaning every file in the crack source is a plain
+/// normal file without any folder structure, e.g. `steam_api64.dll`), we recursively
+/// search `game_root` for any existing files whose name matches `archive_rel.file_name()`.
+///   - If matching files are found in any subdirectory of `game_root`, all their
+///     paths are returned so every matching file in the game is replaced.
+///   - If no matching files exist in `game_root`, we fall back to placing the
+///     file at the game root (`[game_root.join(archive_rel)]`), as established.
+///
+/// When `is_flat_crack` is false (the crack archive contains folder structure),
+/// it returns `[resolve_file_target(archive_rel, game_root)]`.
+pub fn resolve_file_targets(
+    archive_rel: &Path,
+    game_root: &Path,
+    is_flat_crack: bool,
+) -> Vec<PathBuf> {
+    if is_flat_crack {
+        if let Some(file_name) = archive_rel.file_name().and_then(|n| n.to_str()) {
+            let mut matches = Vec::new();
+            find_matching_files_recursive(game_root, file_name, &mut matches);
+            if !matches.is_empty() {
+                matches.sort();
+                matches.dedup();
+                return matches;
+            }
+        }
+    }
+
+    vec![resolve_file_target(archive_rel, game_root)]
+}
+
+/// Recursively searches `dir` for any existing file whose name matches `target_name`
+/// (case-insensitive).
+fn find_matching_files_recursive(dir: &Path, target_name: &str, matches: &mut Vec<PathBuf>) {
+    let Ok(entries) = std::fs::read_dir(dir) else { return; };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            find_matching_files_recursive(&path, target_name, matches);
+        } else if path.is_file() {
+            if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+                if name.eq_ignore_ascii_case(target_name) {
+                    matches.push(path);
+                }
+            }
+        }
+    }
+}
