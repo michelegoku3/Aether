@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { SpecificVersionModal, LuaManifestRow } from '../modals/SpecificVersionModal';
 import { GameInfoModal } from '../modals/GameInfoModal';
+import { LocalDownloadModal } from '../modals/LocalDownloadModal';
 import { preloadGameCovers } from '../ui/GameCover';
 import { GameCard } from '../ui/GameCard';
 import { StatusAlert } from '../ui/StatusAlert';
@@ -53,6 +54,10 @@ export const StoreView = ({ onRefreshUsage, isActive, settingsRevision, useAlter
   // Specific-version editor state. The normal download modal closes before this modal opens.
   const [versionGame, setVersionGame] = useState<StoreGame | null>(null);
   const [manifestRows, setManifestRows] = useState<LuaManifestRow[]>([]);
+
+  // Local-install modal state. Opens on top of the download modal when the
+  // "Local" source is picked; the download modal stays open underneath.
+  const [localGame, setLocalGame] = useState<StoreGame | null>(null);
 
   const mergeTrendingGames = (incoming: StoreGame[]) => {
     setResults((prev) => {
@@ -179,6 +184,11 @@ export const StoreView = ({ onRefreshUsage, isActive, settingsRevision, useAlter
   const handleDownloadSteam = async () => {
     if (!selectedGame) return;
 
+    if (selectedSource === 'local') {
+      setDownloadStatus({ text: 'The Local source installs from your own files: click the Local button above to open its popup.', type: 'error' });
+      return;
+    }
+
     setIsDownloading(true);
     setDownloadStatus({ text: 'Initializing pipeline...', type: 'info' });
 
@@ -233,6 +243,11 @@ export const StoreView = ({ onRefreshUsage, isActive, settingsRevision, useAlter
 
   const handleDownloadOlder = async () => {
     if (!selectedGame) return;
+
+    if (selectedSource === 'local') {
+      setDownloadStatus({ text: 'The Local source installs from your own files: click the Local button above to open its popup.', type: 'error' });
+      return;
+    }
 
     setIsDownloading(true);
     setDownloadStatus({ text: 'Downloading Lua and preparing version table...', type: 'info' });
@@ -483,9 +498,15 @@ export const StoreView = ({ onRefreshUsage, isActive, settingsRevision, useAlter
                     OurEveryday
                   </button>
                   <button
-                    disabled={true}
-                    title="Local download is not available yet"
-                    className="source-btn"
+                    disabled={isDownloading}
+                    onClick={() => {
+                      setSelectedSource('local');
+                      // Open the Local install popup (same layout as Apply
+                      // Crack, without the option checkboxes).
+                      setLocalGame(selectedGame);
+                    }}
+                    title="Install game files from a local archive or loose files"
+                    className={`source-btn ${selectedSource === 'local' ? 'active' : ''}`}
                   >
                     Local
                   </button>
@@ -536,6 +557,21 @@ export const StoreView = ({ onRefreshUsage, isActive, settingsRevision, useAlter
           onClose={() => {
             setVersionGame(null);
             setManifestRows([]);
+          }}
+        />
+      )}
+
+      {/* Local install modal: opened from the "Local" source button inside the
+          download modal. Rendered last so it stacks on top of it. */}
+      {localGame && (
+        <LocalDownloadModal
+          game={{ name: localGame.name, appId: localGame.appId }}
+          onClose={() => setLocalGame(null)}
+          onInstalled={() => {
+            setLocalGame(null);
+            setSelectedGame(null);
+            setDownloadStatus({ text: '', type: 'info' });
+            onRefreshUsage?.();
           }}
         />
       )}
