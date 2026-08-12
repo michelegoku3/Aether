@@ -116,6 +116,37 @@ export const SettingsView = ({ hubcapUsage, onRefreshUsage, onRefreshCustomCss, 
     onRefreshUsage();
   }, []);
 
+  /** Constructs the full current settings object from React state variables,
+   *  merging over `rawSettings`. Using this helper ensures that any save
+   *  operation (manual Save, theme selection, wallpaper selection) always
+   *  preserves every modified setting in React memory, never overwriting
+   *  `hubcap_api_key` or other fields with stale `rawSettings`. */
+  const buildCurrentSettings = (overrides: Record<string, any> = {}) => ({
+    ...rawSettings,
+    hubcap_api_key: apiKey,
+    steam_path: steamPath,
+    active_library: activeLibrary,
+    show_store_dlcs: showStoreDlcs,
+    show_store_nsfw: showStoreNsfw,
+    show_store_delisted: showStoreDelisted,
+    custom_css_enabled: customCssEnabled,
+    personal_wallpaper_enabled: personalWallpaperEnabled,
+    personal_wallpaper_opacity: personalWallpaperOpacity,
+    wallpaper_selected_file: wallpaperSelectedFile,
+    theme_selected_file: themeSelectedFile,
+    alternative_cards_opacity: alternativeCardsOpacity,
+    alternative_cards_fade: alternativeCardsFade,
+    ryuu_api_key: ryuuKey,
+    download_games_with_updates_on: downloadGamesWithUpdatesOn,
+    show_store_front_games: showStoreFrontGames,
+    use_alternative_game_cards: useAlternativeGameCards,
+    enable_webview_devtools: enableWebviewDevtools,
+    enable_test_updates: enableTestUpdates,
+    store_front_filter: storeFrontFilter,
+    store_currency: storeCurrency,
+    ...overrides,
+  });
+
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
 
@@ -142,32 +173,9 @@ export const SettingsView = ({ hubcapUsage, onRefreshUsage, onRefreshCustomCss, 
       if (customCssEnabled || personalWallpaperEnabled) {
         try { await invoke('ensure_custom_css'); } catch {}
       }
-      await invoke('save_settings', {
-        settings: {
-          ...rawSettings,
-          hubcap_api_key: apiKey,
-          steam_path: steamPath,
-          active_library: activeLibrary,
-          show_store_dlcs: showStoreDlcs,
-          show_store_nsfw: showStoreNsfw,
-          show_store_delisted: showStoreDelisted,
-          custom_css_enabled: customCssEnabled,
-          personal_wallpaper_enabled: personalWallpaperEnabled,
-          personal_wallpaper_opacity: personalWallpaperOpacity,
-          wallpaper_selected_file: wallpaperSelectedFile,
-          theme_selected_file: themeSelectedFile,
-          alternative_cards_opacity: alternativeCardsOpacity,
-          alternative_cards_fade: alternativeCardsFade,
-          ryuu_api_key: ryuuKey,
-          download_games_with_updates_on: downloadGamesWithUpdatesOn,
-          show_store_front_games: showStoreFrontGames,
-          use_alternative_game_cards: useAlternativeGameCards,
-          enable_webview_devtools: enableWebviewDevtools,
-          enable_test_updates: enableTestUpdates,
-          store_front_filter: storeFrontFilter,
-          store_currency: storeCurrency
-        }
-      });
+      const newSettings = buildCurrentSettings();
+      await invoke('save_settings', { settings: newSettings });
+      setRawSettings(newSettings);
       showStatus('Settings saved successfully!', 'success');
       onRefreshUsage(apiKey);
       onRefreshCustomCss();
@@ -178,18 +186,13 @@ export const SettingsView = ({ hubcapUsage, onRefreshUsage, onRefreshCustomCss, 
   };
 
   /** Persists a freshly picked theme/wallpaper file immediately (the selection
-   *  is part of settings) and refreshes the live preview. The enabled flags
-   *  are included so a refresh after picking never reverts a toggle the user
-   *  switched on without clicking Save (real-time behaviour). */
+   *  is part of settings) and refreshes the live preview. Using buildCurrentSettings
+   *  and updating rawSettings guarantees we never revert toggles or wipe out
+   *  an un-saved API key. */
   const persistAppearanceSelection = async (patch: Record<string, any>) => {
-    await invoke('save_settings', {
-      settings: {
-        ...rawSettings,
-        custom_css_enabled: customCssEnabled,
-        personal_wallpaper_enabled: personalWallpaperEnabled,
-        ...patch,
-      }
-    });
+    const newSettings = buildCurrentSettings(patch);
+    await invoke('save_settings', { settings: newSettings });
+    setRawSettings(newSettings);
   };
 
   const handlePickTheme = async () => {

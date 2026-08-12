@@ -255,4 +255,65 @@ pub fn run_startup_migrations(app: &tauri::AppHandle) {
         Err(e) => eprintln!("[AetherDesk] lua migration failed: {e}"),
         _ => {}
     }
+    ensure_start_menu_shortcut();
 }
+
+/// Ensures that Windows Start Menu search finds this portable application by
+/// creating or updating `AetherDesk.lnk` in `%APPDATA%\Microsoft\Windows\Start Menu\Programs`.
+///
+/// This function is idempotent and non-blocking: if the `.lnk` file already
+/// exists and points to the running `AetherDesk.exe`, no disk modification is performed.
+#[cfg(target_os = "windows")]
+pub fn ensure_start_menu_shortcut() {
+    use std::os::windows::process::CommandExt;
+    use std::process::Command;
+
+    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+
+    let Ok(exe_path) = std::env::current_exe() else { return; };
+    // Skip if running as temporary updater
+    if exe_path
+        .file_name()
+        .and_then(|n| n.to_str())
+        .map(|n| n.eq_ignore_ascii_case("aether_updater.exe"))
+        .unwrap_or(false)
+    {
+        return;
+    }
+
+    let Some(work_dir) = exe_path.parent() else { return; };
+    let Ok(appdata) = std::env::var("APPDATA") else { return; };
+
+    let programs_dir = Path::new(&appdata)
+        .join("Microsoft")
+        .join("Windows")
+        .join("Start Menu")
+        .join("Programs");
+
+    if !programs_dir.exists() {
+        if let Err(e) = fs::create_dir_all(&programs_dir) {
+            eprintln!("[AetherDesk] Failed to create Start Menu Programs folder: {e}");
+            return;
+        }
+    }
+
+    let shortcut_path = programs_dir.join("AetherDesk.lnk");
+
+    // PowerShell script to create or update the shortcut only when TargetPath differs.
+    // Using Single Quote literals prevents PowerShell from interpreting backslashes.
+    let script = format!(
+        r#"$ws = New-Object -ComObject WScript.Shell; $s = $ws.CreateShortcut('{}'); if ($s.TargetPath -ne '{}') {{ $s.TargetPath = '{}'; $s.WorkingDirectory = '{}'; $s.Description = 'AetherDesk - Steam Library Manager'; $s.Save(); }}"#,
+        shortcut_path.display().to_string().replace('\'', "''"),
+        exe_path.display().to_string().replace('\'', "''"),
+        exe_path.display().to_string().replace('\'', "''"),
+        work_dir.display().to_string().replace('\'', "''"),
+    );
+
+    let _ = Command::new("powershell.exe")
+        .args(["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", &script])
+        .creation_flags(CREATE_NO_WINDOW)
+        .spawn();
+}
+
+#[cfg(not(target_os = "windows"))]
+pub fn ensure_start_menu_shortcut() {}
