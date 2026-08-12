@@ -18,6 +18,20 @@ pub fn clear_session_log() -> Result<String, String> {
     Ok("Session log cleared.".to_string())
 }
 
+#[cfg(target_os = "windows")]
+fn current_time_filename_str() -> String {
+    use windows_sys::Win32::Foundation::SYSTEMTIME;
+    use windows_sys::Win32::System::SystemInformation::GetLocalTime;
+    let mut st: SYSTEMTIME = unsafe { std::mem::zeroed() };
+    unsafe { GetLocalTime(&mut st) };
+    format!("{:02}-{:02}-{:02}", st.wHour, st.wMinute, st.wSecond)
+}
+
+#[cfg(not(target_os = "windows"))]
+fn current_time_filename_str() -> String {
+    "00-00-00".to_string()
+}
+
 #[tauri::command]
 pub fn export_logs_bundle(app: tauri::AppHandle) -> Result<String, String> {
     crate::desk_log_info!("logs", "Starting export of AetherDesk and AetherDLL session logs bundle");
@@ -28,7 +42,8 @@ pub fn export_logs_bundle(app: tauri::AppHandle) -> Result<String, String> {
 
     let desk_log_dir = crate::core::paths::LocalAppPaths::data_root().join("logs");
     let steam_path = crate::core::settings::SettingsManager::new(&app).load().steam_path;
-    let dll_log_dir = PathBuf::from(steam_path).join("AetherDLL");
+    let dll_log_dir = PathBuf::from(&steam_path).join("aethercore");
+    let dll_log_dir_alt = PathBuf::from(&steam_path).join("AetherDLL");
 
     let mut copied = 0;
     for (src, dest_name) in [
@@ -36,8 +51,11 @@ pub fn export_logs_bundle(app: tauri::AppHandle) -> Result<String, String> {
         (desk_log_dir.join("desk.log.last"), "desk.log.last.txt"),
         (desk_log_dir.join("status.json"), "desk_status.json.txt"),
         (dll_log_dir.join("main.log"), "aetherdll_main.log.txt"),
+        (dll_log_dir_alt.join("main.log"), "aetherdll_main.log.txt"),
         (dll_log_dir.join("main.log.last"), "aetherdll_main.log.last.txt"),
+        (dll_log_dir_alt.join("main.log.last"), "aetherdll_main.log.last.txt"),
         (dll_log_dir.join("status.json"), "status.json.txt"),
+        (dll_log_dir_alt.join("status.json"), "status.json.txt"),
     ] {
         if src.is_file() {
             if let Ok(_) = std::fs::copy(&src, stage_dir.join(dest_name)) {
@@ -49,7 +67,8 @@ pub fn export_logs_bundle(app: tauri::AppHandle) -> Result<String, String> {
     let downloads_dir = dirs::download_dir().unwrap_or_else(|| {
         std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."))
     });
-    let zip_path = downloads_dir.join("Aether_Logs_Bundle.zip");
+    let zip_name = format!("AetherLogs_{}.zip", current_time_filename_str());
+    let zip_path = downloads_dir.join(&zip_name);
     if zip_path.exists() {
         let _ = std::fs::remove_file(&zip_path);
     }
