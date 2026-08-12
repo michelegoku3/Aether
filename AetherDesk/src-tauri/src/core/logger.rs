@@ -54,8 +54,7 @@ pub struct Logger {
 
 static LOGGER: OnceLock<Mutex<Logger>> = OnceLock::new();
 
-/// Formats local timestamp as `YYYY-MM-DD HH:MM:SS.mmm` using Windows `GetLocalTime`
-/// exactly like AetherDLL (`Logger.cpp`).
+/// Formats local time as `HH:MM:SS.mmm` using Windows `GetLocalTime`.
 #[cfg(target_os = "windows")]
 fn format_timestamp_ms() -> String {
     use windows_sys::Win32::Foundation::SYSTEMTIME;
@@ -63,14 +62,29 @@ fn format_timestamp_ms() -> String {
     let mut st: SYSTEMTIME = unsafe { std::mem::zeroed() };
     unsafe { GetLocalTime(&mut st) };
     format!(
-        "{:04}-{:02}-{:02} {:02}:{:02}:{:02}.{:03}",
-        st.wYear, st.wMonth, st.wDay, st.wHour, st.wMinute, st.wSecond, st.wMilliseconds
+        "{:02}:{:02}:{:02}.{:03}",
+        st.wHour, st.wMinute, st.wSecond, st.wMilliseconds
     )
 }
 
 #[cfg(not(target_os = "windows"))]
 fn format_timestamp_ms() -> String {
-    "2026-08-12 00:00:00.000".to_string()
+    "00:00:00.000".to_string()
+}
+
+/// Helper that formats an AppID with its game name in parentheses:
+/// e.g. `AppID 4145350 (Spider-Man)`
+pub fn format_appid(app_id: u32) -> String {
+    let name = crate::steam::app_names::get_cached_game_name(app_id);
+    format!("AppID {} ({})", app_id, name)
+}
+
+fn capitalize_first(s: &str) -> String {
+    let mut chars = s.chars();
+    match chars.next() {
+        None => String::new(),
+        Some(f) => f.to_uppercase().collect::<String>() + chars.as_str(),
+    }
 }
 
 pub fn parse_level(s: &str, fallback: LogLevel) -> LogLevel {
@@ -123,7 +137,7 @@ fn current_thread_id() -> u64 {
 /// Initializes the global session logger, rotating `desk.log` → `desk.log.last`.
 pub fn init(app: &tauri::AppHandle) {
     let settings = crate::core::settings::SettingsManager::new(app).load();
-    let level = parse_level(&settings.log_level, LogLevel::Info);
+    let level = parse_level(&settings.log_level, LogLevel::Trace);
 
     let log_dir = crate::core::paths::LocalAppPaths::data_root().join("logs");
     let log_path = log_dir.join("desk.log");
@@ -180,8 +194,9 @@ pub fn write(level: LogLevel, module: &str, msg: &str) {
     let Some(mutex) = LOGGER.get() else {
         // Fallback before init()
         let ts = format_timestamp_ms();
+        let mod_cap = capitalize_first(module);
         eprintln!("[{}] [PID:{:05}] [TID:{:05}] [{}] [{:<10}] {}",
-            ts, std::process::id(), current_thread_id(), level.tag(), module, msg);
+            ts, std::process::id(), current_thread_id(), level.tag(), mod_cap, msg);
         return;
     };
 
@@ -190,13 +205,14 @@ pub fn write(level: LogLevel, module: &str, msg: &str) {
         return;
     }
 
+    let mod_cap = capitalize_first(module);
     let formatted = format!(
         "[{}] [PID:{:05}] [TID:{:05}] [{}] [{:<10}] {}\n",
         format_timestamp_ms(),
         std::process::id(),
         current_thread_id(),
         level.tag(),
-        module,
+        mod_cap,
         msg
     );
 

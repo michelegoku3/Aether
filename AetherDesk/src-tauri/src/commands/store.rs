@@ -249,8 +249,8 @@ pub async fn trigger_hubcap_download(
 ) -> Result<String, String> {
     validate_download_inputs(&api_key, &steam_path, "call Hubcap Manifest")?;
 
-    crate::desk_log_info!("store", "Triggering download for AppID {} (source: {})",
-        app_id, if api_key == "oureveryday_public" { "oureveryday" } else { "hubcap" });
+    crate::desk_log_info!("store", "Triggering download for {} (source: {})",
+        crate::core::logger::format_appid(app_id), if api_key == "oureveryday_public" { "oureveryday" } else { "hubcap" });
 
     let steam = SteamCompat::new(steam_path.clone());
     let package = if api_key == "oureveryday_public" {
@@ -279,8 +279,8 @@ pub async fn trigger_hubcap_download(
         .backup_lua_artifacts(app_id, &installed_lua, &package.manifest_files)?;
     let manifest_count = package.manifest_files.len();
 
-    crate::desk_log_info!("store", "Successfully completed download for AppID {}: Lua installed, {} manifest file(s) preloaded into Steam depotcache",
-        app_id, manifest_count);
+    crate::desk_log_info!("store", "Successfully completed download for {}: Lua installed, {} manifest file(s) preloaded into Steam depotcache",
+        crate::core::logger::format_appid(app_id), manifest_count);
 
     Ok(format!(
         "Successfully completed download for App ID {}. Lua installed, {} manifest file(s) preloaded into Steam depotcache.",
@@ -296,6 +296,7 @@ pub async fn prepare_specific_version_download(
     steam_path: String,
 ) -> Result<Vec<LuaManifestRow>, String> {
     validate_download_inputs(&api_key, &steam_path, "download the Lua file")?;
+    crate::desk_log_info!("store", "Preparing specific version download for {} (source key: {})", crate::core::logger::format_appid(app_id), if api_key == "oureveryday_public" { "oureveryday" } else { "hubcap" });
 
     let package = if api_key == "oureveryday_public" {
         let oe_client = crate::providers::oureveryday::OureverydayClient::new();
@@ -327,6 +328,7 @@ pub async fn prepare_specific_version_download(
         ));
     }
 
+    crate::desk_log_info!("store", "Successfully prepared specific version download for {}: {} row(s) installed", crate::core::logger::format_appid(app_id), installed_rows.len());
     Ok(installed_rows)
 }
 
@@ -339,7 +341,7 @@ pub async fn trigger_ryuu_download(
 ) -> Result<String, String> {
     validate_download_inputs(&api_key, &steam_path, "call Ryuu")?;
 
-    crate::desk_log_info!("store", "Triggering Ryuu download for AppID {}", app_id);
+    crate::desk_log_info!("store", "Triggering Ryuu download for {}", crate::core::logger::format_appid(app_id));
 
     let steam = SteamCompat::new(steam_path.clone());
     let client = RyuuClient::new(api_key);
@@ -353,8 +355,8 @@ pub async fn trigger_ryuu_download(
         .backup_lua_artifacts(app_id, &installed_lua, &package.manifest_files)?;
     let manifest_count = package.manifest_files.len();
 
-    crate::desk_log_info!("store", "Successfully completed Ryuu download for AppID {}: Lua installed, {} manifest file(s) preloaded into Steam depotcache",
-        app_id, manifest_count);
+    crate::desk_log_info!("store", "Successfully completed Ryuu download for {}: Lua installed, {} manifest file(s) preloaded into Steam depotcache",
+        crate::core::logger::format_appid(app_id), manifest_count);
 
     Ok(format!(
         "Successfully completed Ryuu download for App ID {}. Lua installed, {} manifest file(s) preloaded into Steam depotcache.",
@@ -370,6 +372,7 @@ pub async fn prepare_ryuu_specific_version_download(
     steam_path: String,
 ) -> Result<Vec<LuaManifestRow>, String> {
     validate_download_inputs(&api_key, &steam_path, "download the Lua file from Ryuu")?;
+    crate::desk_log_info!("store", "Preparing Ryuu specific version download for {}", crate::core::logger::format_appid(app_id));
 
     let client = RyuuClient::new(api_key);
     let package = client.download_lua_package(app_id).await?;
@@ -395,6 +398,7 @@ pub async fn prepare_ryuu_specific_version_download(
         ));
     }
 
+    crate::desk_log_info!("store", "Successfully prepared Ryuu specific version download for {}: {} row(s) installed", crate::core::logger::format_appid(app_id), installed_rows.len());
     Ok(installed_rows)
 }
 

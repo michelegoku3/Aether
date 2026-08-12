@@ -98,7 +98,7 @@ pub struct AppSettings {
 }
 
 fn default_log_level() -> String {
-    "info".to_string()
+    "trace".to_string()
 }
 
 /// Serde default provider for the alt-cards backdrop opacity.

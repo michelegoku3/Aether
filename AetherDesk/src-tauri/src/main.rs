@@ -96,6 +96,7 @@ fn main() {
             commands::aether_desk::uninstall_aether_desk,
             commands::logs::get_recent_log_lines,
             commands::logs::clear_session_log,
+            commands::logs::export_logs_bundle,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

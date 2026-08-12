@@ -316,3 +316,14 @@ impl SteamAppNameResolver {
         Ok(AppNameDetails { name, image_url, hero_image_url })
     }
 }
+
+/// Helper that synchronously retrieves the cached game title for an AppID without network I/O.
+pub fn get_cached_game_name(app_id: u32) -> String {
+    let cache_dir = crate::core::paths::LocalAppPaths::data_root().join("cache");
+    let resolver = SteamAppNameResolver::new(cache_dir);
+    resolver
+        .cached_names(vec![app_id])
+        .get(&app_id)
+        .cloned()
+        .unwrap_or_else(|| "Unknown Game".to_string())
+}

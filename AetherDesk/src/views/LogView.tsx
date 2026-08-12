@@ -5,19 +5,16 @@ export const LogView = () => {
   const [lines, setLines] = useState<string[]>([]);
   const [filterQuery, setFilterQuery] = useState('');
   const [levelFilter, setLevelFilter] = useState<string>('ALL');
-  const [autoScroll, setAutoScroll] = useState(true);
-  const [isLoading, setIsLoading] = useState(false);
+  const [exportStatus, setExportStatus] = useState('');
   const containerRef = useRef<HTMLDivElement | null>(null);
+  const isAtBottomRef = useRef(true);
 
   const fetchLogs = async () => {
-    setIsLoading(true);
     try {
-      const recent: string[] = await invoke('get_recent_log_lines', { tailLines: 400 });
+      const recent: string[] = await invoke('get_recent_log_lines', { tailLines: 500 });
       setLines(recent || []);
     } catch (err) {
       console.warn('Failed to fetch logs:', err);
-    } finally {
-      setIsLoading(false);
     }
   };
 
@@ -27,11 +24,17 @@ export const LogView = () => {
     return () => clearInterval(interval);
   }, []);
 
+  const handleScroll = () => {
+    if (!containerRef.current) return;
+    const { scrollTop, scrollHeight, clientHeight } = containerRef.current;
+    isAtBottomRef.current = scrollHeight - (scrollTop + clientHeight) < 20;
+  };
+
   useEffect(() => {
-    if (autoScroll && containerRef.current) {
+    if (isAtBottomRef.current && containerRef.current) {
       containerRef.current.scrollTop = containerRef.current.scrollHeight;
     }
-  }, [lines, autoScroll]);
+  }, [lines]);
 
   const handleClearLogs = async () => {
     try {
@@ -39,6 +42,17 @@ export const LogView = () => {
       await fetchLogs();
     } catch (err) {
       console.warn('Failed to clear logs:', err);
+    }
+  };
+
+  const handleSaveBundle = async () => {
+    try {
+      const msg: string = await invoke('export_logs_bundle');
+      setExportStatus(msg);
+      setTimeout(() => setExportStatus(''), 5000);
+    } catch (err: any) {
+      setExportStatus(`Export failed: ${err}`);
+      setTimeout(() => setExportStatus(''), 6000);
     }
   };
 
@@ -66,22 +80,25 @@ export const LogView = () => {
     <div className="log-view-container">
       {/* Upper header section */}
       <div className="store-header">
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px', width: '100%' }}>
-          <div>
-            <h1 className="store-title">Logs</h1>
-            <p className="store-subtitle">
-              Real-time terminal console monitoring desk.log for session diagnostics and lifecycle events.
-            </p>
-          </div>
-          <span className="log-live-badge">
-            <span className="log-live-dot"></span>
-            Live Monitoring — desk.log
-          </span>
+        <div>
+          <h1 className="store-title">Logs</h1>
+          <p className="store-subtitle">
+            Real-time terminal console monitoring desk.log for session diagnostics and lifecycle events.
+          </p>
         </div>
       </div>
 
       {/* Separator line */}
       <div className="store-separator"></div>
+
+      {exportStatus && (
+        <div
+          className="settings-alert info"
+          style={{ padding: '8px 14px', fontSize: '12px' }}
+        >
+          {exportStatus}
+        </div>
+      )}
 
       {/* Control bar */}
       <div className="log-header-controls" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '16px', width: '100%' }}>
@@ -119,26 +136,13 @@ export const LogView = () => {
             ))}
           </div>
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', userSelect: 'none' }}>
-            <span style={{ fontSize: '13px', color: 'var(--color-muted)', fontWeight: 600 }}>Auto-scroll</span>
-            <label className="version-switch" title="Auto-scroll to latest entries">
-              <input
-                type="checkbox"
-                checked={autoScroll}
-                onChange={(e) => setAutoScroll(e.target.checked)}
-              />
-              <span></span>
-            </label>
-          </div>
-
           <button
             type="button"
             className="settings-small-btn"
-            onClick={fetchLogs}
-            disabled={isLoading}
-            title="Refresh logs now"
+            onClick={handleSaveBundle}
+            title="Export AetherDesk & AetherDLL logs as .zip in Downloads folder"
           >
-            Refresh
+            Save
           </button>
 
           <button
@@ -153,7 +157,7 @@ export const LogView = () => {
         </div>
       </div>
 
-      <div className="log-view-terminal" ref={containerRef}>
+      <div className="log-view-terminal" ref={containerRef} onScroll={handleScroll}>
         {filteredLines.length > 0 ? (
           filteredLines.map((line, idx) => (
             <div key={idx} className={getLineClass(line)}>

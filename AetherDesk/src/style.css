@@ -2540,12 +2540,13 @@ body {
 }
 
 .log-line.error {
-  color: var(--color-denuvo, #e63946);
+  color: #ff4d4d;
   font-weight: 600;
 }
 
 .log-line.warn {
   color: #ffb703;
+  font-weight: 500;
 }
 
 .log-line.debug {
