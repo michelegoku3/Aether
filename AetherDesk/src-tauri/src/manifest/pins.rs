@@ -112,6 +112,7 @@ impl LuaManifestPins {
         }
 
         self.write_lua(&next_content)?;
+        crate::desk_log_info!("manifest", "Lua manifest {}: set_updates_enabled({}) completed -> {} pin(s) modified", self.lua_path.display(), enabled, changed);
         Ok(changed)
     }
 
@@ -152,7 +153,9 @@ impl LuaManifestPins {
         }
 
         self.write_lua(&next_content)?;
-        self.rows_from_file()
+        let rows = self.rows_from_file()?;
+        crate::desk_log_info!("manifest", "Lua manifest {}: apply_edits completed -> {} row(s) active", self.lua_path.display(), rows.len());
+        Ok(rows)
     }
 
     fn pins_from_content(content: &str) -> Vec<ManifestPin> {
