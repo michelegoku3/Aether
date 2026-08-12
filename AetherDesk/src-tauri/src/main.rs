@@ -7,6 +7,7 @@ mod commands;
 mod core;
 mod crack;
 mod game_info;
+mod local;
 mod manifest;
 mod providers;
 mod steam;
@@ -58,6 +59,8 @@ fn main() {
             commands::custom_css::pick_wallpaper_file,
             commands::crack::pick_crack_files,
             commands::crack::apply_crack,
+            commands::local::pick_local_files,
+            commands::local::install_local_game,
             commands::antivirus::get_antivirus_exclusion_done,
             commands::antivirus::acknowledge_antivirus_exclusion,
             commands::antivirus::apply_antivirus_exclusion,
