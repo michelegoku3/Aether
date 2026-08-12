@@ -1,25 +1,35 @@
 use regex::Regex;
+use serde::Deserialize;
+
+const RELEASES_API_URL: &str = "https://api.github.com/repos/michelegoku3/Aether/releases?per_page=100";
+const RELEASES_ATOM_URL: &str = "https://github.com/michelegoku3/Aether/releases.atom";
+const REPO_OWNER: &str = "michelegoku3";
+const REPO_NAME: &str = "Aether";
+const USER_AGENT: &str = "AetherDesk-Updater";
 
 const DLL_TAG_PREFIXES: &[&str] = &["dll-", "dll-v"];
 const DESK_TAG_PREFIXES: &[&str] = &["desk-", "desk-v"];
-
-// Test-only release streams (used for testing pipeline). A `t` in front of the
-// component prefix marks a testing build: `tdesk-*` and `tdll-*`. There is
-// always at most ONE of each at a time, so "presence" means "update available".
 const TDLL_TAG_PREFIXES: &[&str] = &["tdll-", "tdll-v"];
 const TDESK_TAG_PREFIXES: &[&str] = &["tdesk-", "tdesk-v"];
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct GithubAsset {
     pub name: String,
     pub browser_download_url: String,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct GithubRelease {
     pub tag_name: String,
+    #[serde(default)]
     pub body: Option<String>,
+    #[serde(default)]
     pub html_url: Option<String>,
+    #[serde(default)]
+    pub draft: bool,
+    #[serde(default)]
+    pub prerelease: bool,
+    #[serde(default)]
     pub assets: Vec<GithubAsset>,
 }
 
@@ -72,7 +82,6 @@ impl GithubReleaseManager {
             .to_string()
     }
 
-    /// True when the tag belongs to a testing release stream (`tdesk-`/`tdll-`).
     pub fn is_test_tag(tag: &str) -> bool {
         Self::tag_has_prefix(tag, TDESK_TAG_PREFIXES) || Self::tag_has_prefix(tag, TDLL_TAG_PREFIXES)
     }
@@ -88,13 +97,6 @@ impl GithubReleaseManager {
 
     /// True only when the GitHub tag represents a version NEWER than the
     /// installed one.
-    ///
-    /// This is the correct gate for the "update available" dot: the old
-    /// implementation compared for *difference* (`!=`), so a local build that
-    /// was already AHEAD of the latest published tag (e.g. local 1.0.0 vs
-    /// published desk-0.9.5) still got flagged as "update available" — and
-    /// the subsequent install failed because the Tauri updater correctly
-    /// refused to downgrade.
     pub fn latest_is_newer_than(installed: &str, latest_tag: &str) -> bool {
         let installed_norm = Self::normalize_version(installed);
         let latest_norm = Self::component_version_from_tag(latest_tag);
@@ -149,24 +151,172 @@ impl GithubReleaseManager {
         std::cmp::Ordering::Equal
     }
 
+    /// Primary: GitHub REST API. On any failure, public fallback (no API).
     pub async fn fetch_latest_by_prefix(&self, prefixes: &[&str]) -> Result<GithubRelease, String> {
-        self.fetch_latest_by_prefix_public_fallback(prefixes).await
+        crate::desk_log_info!(
+            "updater",
+            "Looking up latest release for prefixes {:?} via GitHub REST API",
+            prefixes
+        );
+        match self.fetch_latest_by_prefix_api(prefixes).await {
+            Ok(release) => {
+                crate::desk_log_info!(
+                    "updater",
+                    "GitHub API ok for {:?}: tag={} assets={} draft={} prerelease={}",
+                    prefixes,
+                    release.tag_name,
+                    release.assets.len(),
+                    release.draft,
+                    release.prerelease
+                );
+                Ok(release)
+            }
+            Err(api_error) => {
+                crate::desk_log_error!(
+                    "updater",
+                    "GitHub API failed for {:?}: {}. Trying public fallback (no API).",
+                    prefixes,
+                    api_error
+                );
+                match self.fetch_latest_by_prefix_public_fallback(prefixes).await {
+                    Ok(release) => {
+                        crate::desk_log_info!(
+                            "updater",
+                            "Public fallback ok for {:?}: tag={} assets={}",
+                            prefixes,
+                            release.tag_name,
+                            release.assets.len()
+                        );
+                        Ok(release)
+                    }
+                    Err(fallback_error) => {
+                        crate::desk_log_error!(
+                            "updater",
+                            "Update lookup failed for {:?}. API: {}. Fallback: {}",
+                            prefixes,
+                            api_error,
+                            fallback_error
+                        );
+                        Err(format!(
+                            "GitHub API failed ({}) and public fallback failed ({})",
+                            api_error, fallback_error
+                        ))
+                    }
+                }
+            }
+        }
     }
 
+    async fn fetch_latest_by_prefix_api(&self, prefixes: &[&str]) -> Result<GithubRelease, String> {
+        let releases = self.fetch_releases_api().await?;
+        crate::desk_log_debug!(
+            "updater",
+            "GitHub API returned {} release(s); filtering prefixes {:?}",
+            releases.len(),
+            prefixes
+        );
+        let allow_prerelease = prefixes
+            .iter()
+            .any(|prefix| prefix.starts_with('t'));
+        releases
+            .into_iter()
+            .filter(|release| {
+                if release.draft {
+                    crate::desk_log_debug!("updater", "Skipping draft release {}", release.tag_name);
+                    return false;
+                }
+                if release.prerelease && !allow_prerelease {
+                    crate::desk_log_debug!(
+                        "updater",
+                        "Skipping prerelease {} (stable stream)",
+                        release.tag_name
+                    );
+                    return false;
+                }
+                Self::tag_has_prefix(&release.tag_name, prefixes)
+            })
+            .max_by(|a, b| Self::compare_version_tags(&a.tag_name, &b.tag_name))
+            .ok_or_else(|| format!("No published GitHub release found for prefixes {:?}", prefixes))
+    }
+
+    async fn fetch_releases_api(&self) -> Result<Vec<GithubRelease>, String> {
+        crate::desk_log_info!("updater", "GET {}", RELEASES_API_URL);
+        let response = self
+            .client
+            .get(RELEASES_API_URL)
+            .header("User-Agent", USER_AGENT)
+            .header("Accept", "application/vnd.github+json")
+            .header("X-GitHub-Api-Version", "2022-11-28")
+            .send()
+            .await
+            .map_err(|e| format!("GitHub API network error: {}", e))?;
+
+        let status = response.status();
+        let remaining = header_str(response.headers(), "x-ratelimit-remaining");
+        let limit = header_str(response.headers(), "x-ratelimit-limit");
+        let reset = header_str(response.headers(), "x-ratelimit-reset");
+        crate::desk_log_info!(
+            "updater",
+            "GitHub API status={} rate_limit={}/{} rate_reset={}",
+            status,
+            remaining,
+            limit,
+            reset
+        );
+        if remaining != "unknown" {
+            if let Ok(left) = remaining.parse::<u32>() {
+                if left == 0 {
+                    crate::desk_log_error!(
+                        "updater",
+                        "GitHub API rate limit exhausted (0/{}). Resets at unix {}",
+                        limit,
+                        reset
+                    );
+                } else if left <= 10 {
+                    crate::desk_log_warn!(
+                        "updater",
+                        "GitHub API rate limit nearly exhausted: {}/{} remaining (reset {})",
+                        remaining,
+                        limit,
+                        reset
+                    );
+                }
+            }
+        }
+
+        if !status.is_success() {
+            let body = response.text().await.unwrap_or_default();
+            let preview: String = body.chars().take(400).collect();
+            return Err(format!(
+                "GitHub API HTTP {}. rate_remaining={}, rate_reset={}, body={}",
+                status, remaining, reset, preview
+            ));
+        }
+
+        response
+            .json::<Vec<GithubRelease>>()
+            .await
+            .map_err(|e| format!("Failed to parse GitHub releases JSON: {}", e))
+    }
+
+    /// No REST API: Atom feed for tags + conventional download URLs from CI names.
     async fn fetch_latest_by_prefix_public_fallback(
         &self,
         prefixes: &[&str],
     ) -> Result<GithubRelease, String> {
+        crate::desk_log_info!("updater", "GET {} (public fallback, no API)", RELEASES_ATOM_URL);
         let atom = self
             .client
-            .get("https://github.com/michelegoku3/Aether/releases.atom")
-            .header("User-Agent", "AetherDesk-Updater")
+            .get(RELEASES_ATOM_URL)
+            .header("User-Agent", USER_AGENT)
             .send()
             .await
             .map_err(|e| format!("GitHub releases.atom network error: {}", e))?;
 
-        if !atom.status().is_success() {
-            return Err(format!("GitHub releases.atom returned HTTP error: {}", atom.status()));
+        let status = atom.status();
+        crate::desk_log_info!("updater", "releases.atom HTTP {}", status);
+        if !status.is_success() {
+            return Err(format!("GitHub releases.atom returned HTTP error: {}", status));
         }
 
         let atom_text = atom
@@ -174,25 +324,49 @@ impl GithubReleaseManager {
             .await
             .map_err(|e| format!("Failed to read GitHub releases.atom: {}", e))?;
         let tags = Self::release_tags_from_atom(&atom_text);
+        crate::desk_log_info!(
+            "updater",
+            "releases.atom parsed {} tag(s): {}",
+            tags.len(),
+            tags.join(", ")
+        );
         let tag_name = tags
             .into_iter()
             .filter(|tag| Self::tag_has_prefix(tag, prefixes))
             .max_by(|a, b| Self::compare_version_tags(a, b))
             .ok_or_else(|| format!("No release atom entry found for prefixes {:?}", prefixes))?;
 
-        let html_url = format!("https://github.com/michelegoku3/Aether/releases/tag/{}", tag_name);
-        let assets = self.fetch_release_assets_from_html(&tag_name, &html_url).await?;
+        let html_url = format!(
+            "https://github.com/{}/{}/releases/tag/{}",
+            REPO_OWNER, REPO_NAME, tag_name
+        );
+        let assets = Self::conventional_assets(&tag_name);
+        crate::desk_log_info!(
+            "updater",
+            "Fallback constructed {} conventional asset URL(s) for {}",
+            assets.len(),
+            tag_name
+        );
+        if assets.is_empty() {
+            return Err(format!("No conventional assets for tag {}", tag_name));
+        }
 
         Ok(GithubRelease {
             tag_name,
             body: None,
             html_url: Some(html_url),
+            draft: false,
+            prerelease: false,
             assets,
         })
     }
 
-    fn release_tags_from_atom(atom: &str) -> Vec<String> {
-        let Ok(re) = Regex::new(r#"https://github\.com/michelegoku3/Aether/releases/tag/([^"<]+)"#) else {
+    pub fn release_tags_from_atom(atom: &str) -> Vec<String> {
+        let Ok(re) = Regex::new(&format!(
+            r#"(?:https://github\.com)?/{}/{}/releases/tag/([^"'<>?\s]+)"#,
+            regex::escape(REPO_OWNER),
+            regex::escape(REPO_NAME)
+        )) else {
             return Vec::new();
         };
 
@@ -205,112 +379,76 @@ impl GithubReleaseManager {
         tags
     }
 
-    async fn fetch_release_assets_from_html(
-        &self,
-        tag_name: &str,
-        html_url: &str,
-    ) -> Result<Vec<GithubAsset>, String> {
-        let expanded_assets_url = format!(
-            "https://github.com/michelegoku3/Aether/releases/expanded_assets/{}",
-            tag_name
-        );
-        let response = self
-            .client
-            .get(&expanded_assets_url)
-            .header("User-Agent", "AetherDesk-Updater")
-            .header("Accept", "text/html")
-            .send()
-            .await
-            .map_err(|e| format!("GitHub expanded assets network error: {}", e))?;
-
-        if !response.status().is_success() {
-            return Err(format!(
-                "GitHub expanded assets returned HTTP error: {}",
-                response.status()
-            ));
-        }
-
-        let html = response
-            .text()
-            .await
-            .map_err(|e| format!("Failed to read GitHub expanded assets: {}", e))?;
-        let escaped_tag = regex::escape(tag_name);
-        let pattern = format!(
-            r#"href=["'](?P<href>/michelegoku3/Aether/releases/download/{}/(?P<name>[^"'?#]+))"#,
-            escaped_tag
-        );
-        let re = Regex::new(&pattern).map_err(|e| format!("Internal release asset regex error: {}", e))?;
-
+    /// Known CI asset names from `.github/workflows/build.yml`.
+    pub fn conventional_assets(tag_name: &str) -> Vec<GithubAsset> {
+        let version = Self::component_version_from_tag(tag_name);
+        let lower = tag_name.to_ascii_lowercase();
         let mut assets = Vec::new();
-        for captures in re.captures_iter(&html) {
-            let Some(href) = captures.name("href") else { continue; };
-            let Some(name) = captures.name("name") else { continue; };
-            let asset_name = html_unescape(name.as_str());
-            let browser_download_url = format!("https://github.com{}", html_unescape(href.as_str()));
-            if !assets.iter().any(|asset: &GithubAsset| asset.name == asset_name) {
-                assets.push(GithubAsset {
-                    name: asset_name,
-                    browser_download_url,
-                });
-            }
+
+        if lower.starts_with("tdesk-") || lower.starts_with("desk-") {
+            let name = format!("AetherDesk-{}.zip", version);
+            assets.push(Self::download_asset(&name, tag_name));
+        } else if lower.starts_with("tdll-") || lower.starts_with("dll-") {
+            let name = format!("AetherDLL-{}.zip", version);
+            assets.push(Self::download_asset(&name, tag_name));
         }
 
-        if assets.is_empty() {
-            return Err(format!(
-                "No downloadable assets found on GitHub expanded assets page {} (release {})",
-                expanded_assets_url, html_url
-            ));
-        }
-
-        Ok(assets)
+        assets
     }
 
-    /// Latest AetherDLL release. It intentionally ignores AetherDesk releases.
+    fn download_asset(name: &str, tag_name: &str) -> GithubAsset {
+        GithubAsset {
+            name: name.to_string(),
+            browser_download_url: format!(
+                "https://github.com/{}/{}/releases/download/{}/{}",
+                REPO_OWNER, REPO_NAME, tag_name, name
+            ),
+        }
+    }
+
     pub async fn fetch_latest_dll_release(&self) -> Result<(String, String), String> {
         let release = self.fetch_latest_by_prefix(DLL_TAG_PREFIXES).await?;
-
-        let target_asset = release
-            .assets
-            .iter()
-            .find(|asset| {
-                let name = asset.name.to_lowercase();
-                (name.contains("aetherdll") || name.contains("dll")) && name.ends_with(".zip")
-            })
-            .or_else(|| release.assets.iter().find(|asset| asset.name.to_lowercase().ends_with(".zip")))
-            .ok_or_else(|| format!("Could not find AetherDLL .zip asset in release {}", release.tag_name))?;
-
-        Ok((release.tag_name, target_asset.browser_download_url.clone()))
+        let url = Self::dll_zip_url(&release)?;
+        Ok((release.tag_name, url))
     }
 
-    /// Latest AetherDesk release. It intentionally ignores AetherDLL releases.
     pub async fn fetch_latest_desk_release(&self) -> Result<GithubRelease, String> {
         self.fetch_latest_by_prefix(DESK_TAG_PREFIXES).await
     }
 
-    /// Latest AetherDesk *test* release (`tdesk-*`). There is at most one.
     pub async fn fetch_latest_desk_test_release(&self) -> Result<GithubRelease, String> {
         self.fetch_latest_by_prefix(TDESK_TAG_PREFIXES).await
     }
 
-    /// Latest AetherDLL *test* release (`tdll-*`), returning its tag + zip URL.
     pub async fn fetch_latest_dll_test_release(&self) -> Result<(String, String), String> {
         let release = self.fetch_latest_by_prefix(TDLL_TAG_PREFIXES).await?;
-        let target_asset = release
+        let url = Self::dll_zip_url(&release)?;
+        Ok((release.tag_name, url))
+    }
+
+    fn dll_zip_url(release: &GithubRelease) -> Result<String, String> {
+        release
             .assets
             .iter()
             .find(|asset| {
                 let name = asset.name.to_lowercase();
                 (name.contains("aetherdll") || name.contains("dll")) && name.ends_with(".zip")
             })
-            .or_else(|| release.assets.iter().find(|asset| asset.name.to_lowercase().ends_with(".zip")))
-            .ok_or_else(|| format!("Could not find AetherDLL .zip asset in release {}", release.tag_name))?;
-        Ok((release.tag_name, target_asset.browser_download_url.clone()))
+            .or_else(|| {
+                release
+                    .assets
+                    .iter()
+                    .find(|asset| asset.name.to_lowercase().ends_with(".zip"))
+            })
+            .map(|asset| asset.browser_download_url.clone())
+            .ok_or_else(|| {
+                format!(
+                    "Could not find AetherDLL .zip asset in release {}",
+                    release.tag_name
+                )
+            })
     }
 
-    /// Finds the portable ZIP asset for the selected AetherDesk release.
-    /// The preferred name is `<something>.zip` whose basename mentions AetherDesk
-    /// or the desk tag; as a fallback any `.zip` asset on the release is accepted.
-    /// This is the single source of truth used by the portable self-updater.
     pub fn find_desk_zip_asset(release: &GithubRelease) -> Result<GithubAsset, String> {
         release
             .assets
@@ -334,8 +472,6 @@ impl GithubReleaseManager {
             })
     }
 
-    /// Builds the update info for a desk release, marking it as a test build
-    /// when its tag belongs to the testing stream (`tdesk-*`).
     pub fn build_desk_update_info(current_version: String, release: &GithubRelease) -> ComponentUpdateInfo {
         let latest_version = Self::component_version_from_tag(&release.tag_name);
         let update_available = Self::latest_is_newer_than(&current_version, &release.tag_name);
@@ -351,9 +487,6 @@ impl GithubReleaseManager {
         }
     }
 
-    /// Builds the update info for a *test* desk release. Like stable releases,
-    /// an update is available only when the test tag's version is NEWER than
-    /// the installed one. It is always marked `is_test`.
     pub fn build_desk_test_update_info(current_version: String, release: &GithubRelease) -> ComponentUpdateInfo {
         let latest_version = Self::component_version_from_tag(&release.tag_name);
         let update_available = Self::latest_is_newer_than(&current_version, &release.tag_name);
@@ -367,6 +500,14 @@ impl GithubReleaseManager {
             notes: release.body.clone().unwrap_or_default(),
         }
     }
+}
+
+fn header_str(headers: &reqwest::header::HeaderMap, name: &str) -> String {
+    headers
+        .get(name)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("unknown")
+        .to_string()
 }
 
 fn html_unescape(value: &str) -> String {

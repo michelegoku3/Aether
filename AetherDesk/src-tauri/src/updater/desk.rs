@@ -71,20 +71,25 @@ pub async fn prepare_update(app: &tauri::AppHandle) -> Result<Option<PreparedUpd
     // is not newer than installed, we return Ok(None) (up to date).
     let settings = crate::core::settings::SettingsManager::new(app).load();
     if settings.enable_test_updates {
-        if let Ok(release) = manager.fetch_latest_desk_test_release().await {
-            if GithubReleaseManager::latest_is_newer_than(&current_version, &release.tag_name) {
-                crate::desk_log_info!("updater", "AetherDesk test update available: {} (current: {})", release.tag_name, current_version);
-                return prepare_from_release(&release).await.map(Some);
-            } else {
-                crate::desk_log_info_once!("updater", "AetherDesk test release {} is not newer than installed version {}", release.tag_name, current_version);
-                return Ok(None);
+        match manager.fetch_latest_desk_test_release().await {
+            Ok(release) => {
+                if GithubReleaseManager::latest_is_newer_than(&current_version, &release.tag_name) {
+                    crate::desk_log_info!("updater", "AetherDesk test update available: {} (current: {})", release.tag_name, current_version);
+                    return prepare_from_release(&release).await.map(Some);
+                } else {
+                    crate::desk_log_info!("updater", "AetherDesk test release {} is not newer than installed version {}", release.tag_name, current_version);
+                    return Ok(None);
+                }
+            }
+            Err(error) => {
+                crate::desk_log_warn!("updater", "AetherDesk test release lookup failed during install: {}", error);
             }
         }
     }
 
     let release = manager.fetch_latest_desk_release().await?;
     if !GithubReleaseManager::latest_is_newer_than(&current_version, &release.tag_name) {
-        crate::desk_log_info_once!("updater", "AetherDesk stable release {} is not newer than installed version {}", release.tag_name, current_version);
+        crate::desk_log_info!("updater", "AetherDesk stable release {} is not newer than installed version {}", release.tag_name, current_version);
         return Ok(None);
     }
 
@@ -95,6 +100,13 @@ pub async fn prepare_update(app: &tauri::AppHandle) -> Result<Option<PreparedUpd
 /// Downloads and extracts a given desk release's portable ZIP into staging.
 async fn prepare_from_release(release: &GithubRelease) -> Result<PreparedUpdate, String> {
     let asset = GithubReleaseManager::find_desk_zip_asset(release)?;
+    crate::desk_log_info!(
+        "updater",
+        "Staging AetherDesk {} from {} ({})",
+        release.tag_name,
+        asset.browser_download_url,
+        asset.name
+    );
     let workdir = update_workdir();
     fs::create_dir_all(&workdir)
         .map_err(|e| format!("Failed to create update workdir {}: {e}", workdir.display()))?;
@@ -192,21 +204,36 @@ fn wait_until_replaceable(path: &Path) -> bool {
 
 /// Downloads `url` into `dest_path` (atomic write via temp file).
 async fn download_zip(url: &str, dest_path: &Path) -> Result<(), String> {
+    crate::desk_log_info!("updater", "Downloading AetherDesk zip from {}", url);
     let response = reqwest::Client::new()
         .get(url)
         .header("User-Agent", "AetherDesk-Updater")
         .send()
         .await
-        .map_err(|e| format!("Failed to reach download server: {e}"))?;
+        .map_err(|e| {
+            crate::desk_log_error!("updater", "AetherDesk download network error: {e}");
+            format!("Failed to reach download server: {e}")
+        })?;
 
+    crate::desk_log_info!("updater", "AetherDesk download HTTP {}", response.status());
     if !response.status().is_success() {
+        crate::desk_log_error!(
+            "updater",
+            "AetherDesk download failed: HTTP {} from {}",
+            response.status(),
+            url
+        );
         return Err(format!("Download server returned HTTP error: {}", response.status()));
     }
 
     let bytes = response
         .bytes()
         .await
-        .map_err(|e| format!("Failed to read downloaded bytes: {e}"))?;
+        .map_err(|e| {
+            crate::desk_log_error!("updater", "AetherDesk download body error: {e}");
+            format!("Failed to read downloaded bytes: {e}")
+        })?;
+    crate::desk_log_info!("updater", "AetherDesk zip size={} bytes", bytes.len());
 
     let temp_path = dest_path.with_extension("tmp");
     fs::write(&temp_path, &bytes).map_err(|e| format!("Failed to write update ZIP: {e}"))?;

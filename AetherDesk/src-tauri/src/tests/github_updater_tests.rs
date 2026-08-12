@@ -35,12 +35,53 @@ fn test_component_version_strips_test_prefix() {
 }
 
 #[test]
+fn test_atom_and_html_tag_parsing() {
+    let atom = r#"
+        <feed>
+          <entry>
+            <link rel="alternate" href="https://github.com/michelegoku3/Aether/releases/tag/desk-1.0.4"/>
+          </entry>
+          <entry>
+            <id>tag:github.com,2008:Repository/1305584107/dll-0.9.8</id>
+            <link href="https://github.com/michelegoku3/Aether/releases/tag/dll-0.9.8"/>
+          </entry>
+        </feed>
+    "#;
+    let tags = GithubReleaseManager::release_tags_from_atom(atom);
+    assert!(tags.contains(&"desk-1.0.4".to_string()));
+    assert!(tags.contains(&"dll-0.9.8".to_string()));
+
+    let html = r#"<a href="/michelegoku3/Aether/releases/tag/tdesk-1.0.5">tdesk-1.0.5</a>"#;
+    let html_tags = GithubReleaseManager::release_tags_from_atom(html);
+    assert_eq!(html_tags, vec!["tdesk-1.0.5".to_string()]);
+}
+
+#[test]
+fn test_conventional_download_urls_do_not_use_api() {
+    let desk = GithubReleaseManager::conventional_assets("desk-1.0.4");
+    assert!(desk.iter().any(|asset| {
+        asset.name == "AetherDesk-1.0.4.zip"
+            && asset.browser_download_url
+                == "https://github.com/michelegoku3/Aether/releases/download/desk-1.0.4/AetherDesk-1.0.4.zip"
+    }));
+
+    let dll = GithubReleaseManager::conventional_assets("dll-0.9.8");
+    assert!(dll.iter().any(|asset| {
+        asset.name == "AetherDLL-0.9.8.zip"
+            && asset.browser_download_url
+                == "https://github.com/michelegoku3/Aether/releases/download/dll-0.9.8/AetherDLL-0.9.8.zip"
+    }));
+}
+
+#[test]
 fn test_build_desk_test_update_info_respects_version_gate() {
     use crate::updater::github::GithubRelease;
     let release = GithubRelease {
         tag_name: "tdesk-1.0.4".to_string(),
         body: Some("Test notes".to_string()),
         html_url: Some("https://github.com/example/release".to_string()),
+        draft: false,
+        prerelease: false,
         assets: vec![],
     };
 
