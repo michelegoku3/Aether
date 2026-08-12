@@ -26,21 +26,36 @@ impl OureverydayClient {
     /// Downloads the public Lua file by App ID from the luagen API (revobd.club)
     /// and extracts it.
     pub async fn download_lua_only(&self, app_id: u32) -> Result<String, String> {
+        crate::desk_log_info!("oureveryday", "Requesting public Lua package for {} from https://api.luagen.revobd.club/{}.zip", crate::core::logger::format_appid(app_id), app_id);
         let url = format!("https://api.luagen.revobd.club/{}.zip", app_id);
         
         let response = self.client.get(&url)
             .send()
             .await
-            .map_err(|e| format!("Network error connecting to luagen server: {}", e))?;
+            .map_err(|e| {
+                crate::desk_log_error!("oureveryday", "Network error connecting to luagen server for {}: {}", crate::core::logger::format_appid(app_id), e);
+                format!("Network error connecting to luagen server: {}", e)
+            })?;
 
         if !response.status().is_success() {
+            crate::desk_log_error!("oureveryday", "The public luagen server returned HTTP status {} for {}", response.status(), crate::core::logger::format_appid(app_id));
             return Err(format!("The public luagen server returned HTTP status: {}", response.status()));
         }
 
         let bytes = response.bytes().await
-            .map_err(|e| format!("Failed to read luagen ZIP bytes: {}", e))?;
+            .map_err(|e| {
+                crate::desk_log_error!("oureveryday", "Failed to read luagen ZIP bytes for {}: {}", crate::core::logger::format_appid(app_id), e);
+                format!("Failed to read luagen ZIP bytes: {}", e)
+            })?;
 
-        let package = ManifestPackageExtractor::from_zip(app_id, &bytes)?;
+        let package = match ManifestPackageExtractor::from_zip(app_id, &bytes) {
+            Ok(p) => p,
+            Err(e) => {
+                crate::desk_log_error!("oureveryday", "Failed to extract package from luagen ZIP for {}: {}", crate::core::logger::format_appid(app_id), e);
+                return Err(e);
+            }
+        };
+        crate::desk_log_info!("oureveryday", "Downloaded public Lua package for {} successfully", crate::core::logger::format_appid(app_id));
         Ok(package.lua_content)
     }
 
@@ -80,6 +95,7 @@ impl OureverydayClient {
             }
         }
 
+        crate::desk_log_error!("oureveryday", "Failed to download manifest {}_{}.manifest from all public GitHub mirrors: {}", depot_id, manifest_id, last_err);
         Err(last_err)
     }
 
@@ -126,6 +142,7 @@ impl OureverydayClient {
             }
         }
 
+        crate::desk_log_info!("oureveryday", "Successfully packaged {} with {} manifest file(s) from Oureveryday", crate::core::logger::format_appid(app_id), manifest_files.len());
         Ok(ManifestPackage {
             lua_content,
             manifest_files,
