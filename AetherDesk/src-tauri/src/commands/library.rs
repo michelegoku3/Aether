@@ -21,11 +21,16 @@ pub async fn get_installed_library_games(
     let scanner = SteamLibraryScanner::new(settings.steam_path, Some(settings.active_library));
     let mut games = scanner.scan_installed_games();
 
-    // UI-critical path: use persistent cache only, never wait for Steam/network here.
+    // UI-critical path: use persistent cache first; if any app names are missing
+    // on first start, resolve them immediately so Library and Home search render
+    // with real game names instead of raw App IDs.
     let cache_dir = LocalAppPaths::data_root().join("cache");
     let resolver = SteamAppNameResolver::new(cache_dir.clone());
     let app_ids: Vec<u32> = games.iter().map(|game| game.id).collect();
-    let names = resolver.cached_names(app_ids.clone());
+    let mut names = resolver.cached_names(app_ids.clone());
+    if names.len() < app_ids.len() {
+        names = resolver.resolve_names(app_ids.clone()).await;
+    }
     let image_urls = resolver.cached_image_urls(app_ids.clone());
     let hero_image_urls = resolver.cached_hero_image_urls(app_ids);
 

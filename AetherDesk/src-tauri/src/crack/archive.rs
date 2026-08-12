@@ -29,6 +29,12 @@ pub fn stage_source(source: &Path, staging: &Path, default_password: &str) -> Re
             extract_zip(source, staging, default_password)
                 .or_else(|_| extract_7z(source, staging, default_password))
                 .or_else(|_| extract_rar(source, staging, default_password))
+                .map_err(|_| {
+                    format!(
+                        "Failed to extract archive {}: not a valid ZIP, 7Z, or RAR archive",
+                        source.display()
+                    )
+                })
         }
         "rar" => extract_rar(source, staging, default_password),
         "7z" => extract_7z(source, staging, default_password),

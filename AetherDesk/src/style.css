@@ -1652,6 +1652,12 @@ body {
   word-break: break-all;
 }
 
+.crack-options-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
 /* Achievement compatibility opt-in row: text on the left, toggle on the right.
    The toggle itself reuses the app's `.version-switch` (dark track in the
    palette, cyan when active). */
@@ -1659,15 +1665,15 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 16px;
-  padding: 4px 0;
+  gap: 12px;
+  padding: 1px 0;
   cursor: pointer;
   user-select: none;
 }
 
 .crack-achievement-text {
   color: var(--color-muted);
-  font-size: 13px;
+  font-size: 12.5px;
 }
 
 /* Custom Checkboxes for Crack Modal options (intuitively designed, dark theme compatible, cyan when checked) */
@@ -1690,8 +1696,8 @@ body {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 20px;
-  height: 20px;
+  width: 18px;
+  height: 18px;
   background-color: #1a1a22; /* Dark theme color, no bright white eyesore */
   border: 1.5px solid var(--border-color, #3a3a46);
   border-radius: 4px;
