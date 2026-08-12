@@ -62,12 +62,23 @@ pub async fn apply_crack(
     // Show the full game-relative path of each applied file.
     let names: Vec<String> = report.files.clone();
 
-    Ok(format!(
+    let mut msg = format!(
         "Crack applied: {} file(s) ({} replaced). Originals & crack files backed up. Files: {}",
         report.applied,
         report.replaced,
         names.join(", ")
-    ))
+    );
+
+    if msg.len() > 500 {
+        let mut cutoff = 497;
+        while !msg.is_char_boundary(cutoff) && cutoff > 0 {
+            cutoff -= 1;
+        }
+        msg.truncate(cutoff);
+        msg.push_str("...");
+    }
+
+    Ok(msg)
 }
 
 fn file_path_to_string(file_path: FilePath) -> Option<String> {

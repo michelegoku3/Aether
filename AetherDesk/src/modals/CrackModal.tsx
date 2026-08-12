@@ -207,38 +207,40 @@ export const CrackModal = ({ game, onClose }: CrackModalProps) => {
             )}
           </div>
 
-          <label className="crack-achievement-row" title="Achievement compatibility is not available yet">
-            <span className="crack-achievement-text">
-              Make the crack achievement compatible (it could break the crack)
-            </span>
-            <span className="crack-checkbox-label">
-              <input
-                type="checkbox"
-                className="crack-checkbox-input"
-                checked={false}
-                disabled={true}
-              />
-              <span className="crack-checkbox-box"></span>
-            </span>
-          </label>
+          <div className="crack-options-group">
+            <label className="crack-achievement-row" title="Achievement compatibility is not available yet">
+              <span className="crack-achievement-text">
+                Make the crack achievement compatible (it could break the crack)
+              </span>
+              <span className="crack-checkbox-label">
+                <input
+                  type="checkbox"
+                  className="crack-checkbox-input"
+                  checked={false}
+                  disabled={true}
+                />
+                <span className="crack-checkbox-box"></span>
+              </span>
+            </label>
 
-          <label
-            className="crack-achievement-row"
-            title="When ON, Visual Novel self-extracting .exe patches are staged and extracted as archives (.exe.zip) so their contents can be applied automatically."
-          >
-            <span className="crack-achievement-text">
-              Make Apply Crack work for VNs .exe patches
-            </span>
-            <span className="crack-checkbox-label">
-              <input
-                type="checkbox"
-                className="crack-checkbox-input"
-                checked={vnPatchMode}
-                onChange={(e) => setVnPatchMode(e.target.checked)}
-              />
-              <span className="crack-checkbox-box"></span>
-            </span>
-          </label>
+            <label
+              className="crack-achievement-row"
+              title="When ON, Visual Novel self-extracting .exe patches are staged and extracted as archives (.exe.zip) so their contents can be applied automatically."
+            >
+              <span className="crack-achievement-text">
+                Make Apply Crack work for VNs .exe patches
+              </span>
+              <span className="crack-checkbox-label">
+                <input
+                  type="checkbox"
+                  className="crack-checkbox-input"
+                  checked={vnPatchMode}
+                  onChange={(e) => setVnPatchMode(e.target.checked)}
+                />
+                <span className="crack-checkbox-box"></span>
+              </span>
+            </label>
+          </div>
 
           <div className="crack-actions">
             <button

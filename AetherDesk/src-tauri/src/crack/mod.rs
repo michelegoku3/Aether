@@ -83,7 +83,9 @@ pub fn apply_crack_pipeline(
                 let stage_res =
                     archive::stage_source(&temp_zip, &staging, DEFAULT_ARCHIVE_PASSWORD);
                 let _ = std::fs::remove_file(&temp_zip);
-                stage_res?;
+                if stage_res.is_err() {
+                    archive::stage_source(&source_path, &staging, DEFAULT_ARCHIVE_PASSWORD)?;
+                }
             } else {
                 archive::stage_source(&source_path, &staging, DEFAULT_ARCHIVE_PASSWORD)?;
             }
