@@ -89,11 +89,9 @@ jobs:
           Copy-Item "$root/src-tauri/target/release/AetherDesk.exe" "$staging/AetherDesk.exe"
           Copy-Item -Recurse "$root/src-tauri/ExternalTools" "$staging/ExternalTools"
 
-          # Seed default themes/wallpapers into the portable folder.
-          New-Item -ItemType Directory -Force -Path "$staging/AetherData/config/themes" | Out-Null
-          New-Item -ItemType Directory -Force -Path "$staging/AetherData/config/wallpapers" | Out-Null
-          Copy-Item "$root/src-tauri/assets/defaults/themes/*.css" "$staging/AetherData/config/themes"
-          Copy-Item "$root/src-tauri/assets/defaults/wallpapers/*" "$staging/AetherData/config/wallpapers"
+          # Plug-and-play defaults seed: copy everything under defaults/ into AetherData/config/
+          New-Item -ItemType Directory -Force -Path "$staging/AetherData/config" | Out-Null
+          Copy-Item -Recurse -Force "$root/src-tauri/assets/defaults/*" "$staging/AetherData/config/"
 
           $zip = "$root/build/portable/AetherDesk-$version.zip"
           if (Test-Path $zip) { Remove-Item $zip -Force }

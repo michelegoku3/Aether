@@ -135,24 +135,10 @@ fn current_thread_id() -> u64 {
 }
 
 /// Initializes the global session logger, rotating `desk.log` → `desk.log.last`.
-pub fn init(app: &tauri::AppHandle) {
-    let settings = crate::core::settings::SettingsManager::new(app).load();
-    let level = parse_level(&settings.log_level, LogLevel::Trace);
-
+/// Default logging level is always `Trace` (not modifiable by settings).
+pub fn init(_app: &tauri::AppHandle) {
     let log_dir = crate::core::paths::LocalAppPaths::data_root().join("logs");
     let log_path = log_dir.join("desk.log");
-
-    if level == LogLevel::Off {
-        let logger = Logger {
-            file: None,
-            log_path: log_path.clone(),
-            dedup_set: HashSet::new(),
-            min_level: LogLevel::Off,
-        };
-        let _ = LOGGER.set(Mutex::new(logger));
-        return;
-    }
-
     let _ = std::fs::create_dir_all(&log_dir);
 
     if log_path.exists() {
@@ -172,7 +158,7 @@ pub fn init(app: &tauri::AppHandle) {
         file,
         log_path: log_path.clone(),
         dedup_set: HashSet::new(),
-        min_level: level,
+        min_level: LogLevel::Trace,
     };
 
     let _ = LOGGER.set(Mutex::new(logger));

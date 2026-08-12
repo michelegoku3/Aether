@@ -97,6 +97,7 @@ fn main() {
             commands::logs::get_recent_log_lines,
             commands::logs::clear_session_log,
             commands::logs::export_logs_bundle,
+            commands::logs::set_session_log_level,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

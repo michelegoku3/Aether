@@ -250,6 +250,7 @@ pub fn run_startup_migrations(app: &tauri::AppHandle) {
     migrate_legacy_settings_if_needed(&config_dir, Some(&roaming_config));
     remove_obsolete_component_version_dirs(app);
     ensure_appearance_dirs();
+    ensure_aethercore_bridge(app);
     let steam_path = crate::core::settings::SettingsManager::new(app).load().steam_path;
     match migrate_legacy_lua_backups(Path::new(&steam_path)) {
         Ok(r) if r.games > 0 => eprintln!("[AetherDesk] migrated {} lua games", r.games),
@@ -320,3 +321,36 @@ pub fn ensure_start_menu_shortcut() {
 
 #[cfg(not(target_os = "windows"))]
 pub fn ensure_start_menu_shortcut() {}
+
+/// Ensures that `AetherData/config/aethercore.toml` exists and writes a locator
+/// pointer file `<Steam>/aethercore/desk_path.cfg` containing `<AetherData>`'s path
+/// so AetherDLL can discover configuration and logs cleanly.
+pub fn ensure_aethercore_bridge(app: &tauri::AppHandle) {
+    let data_root = crate::core::paths::LocalAppPaths::data_root();
+    let config_dir = crate::core::paths::LocalAppPaths::config_dir();
+    let toml_path = config_dir.join("aethercore.toml");
+    let _ = fs::create_dir_all(&config_dir);
+
+    let steam_path = crate::core::settings::SettingsManager::new(app).load().steam_path;
+    if !steam_path.trim().is_empty() {
+        let steam_aethercore_dir = Path::new(&steam_path).join("aethercore");
+        let _ = fs::create_dir_all(&steam_aethercore_dir);
+
+        // Migrate legacy aethercore.toml from steam folder if needed
+        let legacy_toml = steam_aethercore_dir.join("aethercore.toml");
+        if legacy_toml.exists() && !toml_path.exists() {
+            let _ = fs::copy(&legacy_toml, &toml_path);
+            let _ = fs::remove_file(&legacy_toml);
+        }
+
+        // Write desk_path.cfg pointer
+        let desk_cfg = steam_aethercore_dir.join("desk_path.cfg");
+        let _ = fs::write(&desk_cfg, data_root.display().to_string());
+    }
+
+    if !toml_path.exists() {
+        const DEFAULT_AETHERCORE_TOML: &str =
+            include_str!("../../assets/defaults/aethercore.toml");
+        let _ = fs::write(&toml_path, DEFAULT_AETHERCORE_TOML);
+    }
+}
