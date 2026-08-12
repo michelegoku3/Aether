@@ -300,7 +300,7 @@ export const SettingsView = ({ hubcapUsage, onRefreshUsage, onRefreshCustomCss, 
             <select
               className="settings-select"
               value={logLevel}
-              style={{ width: '110px' }}
+              style={{ width: '96px', minWidth: '96px', maxWidth: '96px', height: '33px', padding: '0 8px', boxSizing: 'border-box' }}
               onChange={async (e) => {
                 const next = e.target.value;
                 setLogLevel(next);
@@ -327,6 +327,7 @@ export const SettingsView = ({ hubcapUsage, onRefreshUsage, onRefreshCustomCss, 
             <button
               type="button"
               className="settings-small-btn"
+              style={{ width: '96px', minWidth: '96px', maxWidth: '96px', height: '33px', padding: '0', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', boxSizing: 'border-box' }}
               onClick={async () => {
                 try {
                   const result: string = await invoke('clear_app_caches');

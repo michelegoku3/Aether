@@ -80,12 +80,10 @@ export const LogView = () => {
     <div className="log-view-container">
       {/* Upper header section */}
       <div className="store-header">
-        <div>
-          <h1 className="store-title">Logs</h1>
-          <p className="store-subtitle">
-            Real-time terminal console monitoring desk.log for session diagnostics and lifecycle events.
-          </p>
-        </div>
+        <h1 className="store-title">Logs</h1>
+        <p className="store-subtitle">
+          Real-time terminal console monitoring desk.log for session diagnostics and lifecycle events.
+        </p>
       </div>
 
       {/* Separator line */}

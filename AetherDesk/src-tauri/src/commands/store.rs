@@ -247,45 +247,51 @@ pub async fn trigger_hubcap_download(
     api_key: String,
     steam_path: String,
 ) -> Result<String, String> {
-    validate_download_inputs(&api_key, &steam_path, "call Hubcap Manifest")?;
+    if let Err(e) = validate_download_inputs(&api_key, &steam_path, "call Hubcap Manifest") {
+        crate::desk_log_error!("store", "Download failed for {}: {}", crate::core::logger::format_appid(app_id), e);
+        return Err(e);
+    }
 
     crate::desk_log_info!("store", "Triggering download for {} (source: {})",
         crate::core::logger::format_appid(app_id), if api_key == "oureveryday_public" { "oureveryday" } else { "hubcap" });
 
-    let steam = SteamCompat::new(steam_path.clone());
-    let package = if api_key == "oureveryday_public" {
-        let oe_client = crate::providers::oureveryday::OureverydayClient::new();
-        let package = oe_client.download_lua_package(app_id).await?;
-        steam.install_lua_config(app_id, &package.lua_content)?;
-        steam.install_manifest_files(&package.manifest_files)?;
-        package
-    } else {
-        let client = HubcapClient::new(api_key);
-        let result = DownloadOrchestrator::new(client, steam.clone())
-            .execute_hubcap_download(app_id)
-            .await?;
-        // Reconstruct the installed package for the central backup.
-        ManifestPackage {
-            lua_content: steam.read_lua_config(app_id)?,
-            manifest_files: result.manifest_files,
-        }
-    };
+    let res = async {
+        let steam = SteamCompat::new(steam_path.clone());
+        let package = if api_key == "oureveryday_public" {
+            let oe_client = crate::providers::oureveryday::OureverydayClient::new();
+            let package = oe_client.download_lua_package(app_id).await?;
+            steam.install_lua_config(app_id, &package.lua_content)?;
+            steam.install_manifest_files(&package.manifest_files)?;
+            package
+        } else {
+            let client = HubcapClient::new(api_key.clone());
+            let result = DownloadOrchestrator::new(client, steam.clone())
+                .execute_hubcap_download(app_id)
+                .await?;
+            ManifestPackage {
+                lua_content: steam.read_lua_config(app_id)?,
+                manifest_files: result.manifest_files,
+            }
+        };
 
-    apply_default_update_policy(&app, app_id, &steam_path)?;
-    let installed_lua = steam.read_lua_config(app_id).unwrap_or(package.lua_content.clone());
+        apply_default_update_policy(&app, app_id, &steam_path)?;
+        let installed_lua = steam.read_lua_config(app_id).unwrap_or(package.lua_content.clone());
 
-    // Centralized Lua/manifest backup (AetherData/backup/<app_id>/lua).
-    GameBackup::for_app(app_id)?
-        .backup_lua_artifacts(app_id, &installed_lua, &package.manifest_files)?;
-    let manifest_count = package.manifest_files.len();
+        GameBackup::for_app(app_id)?
+            .backup_lua_artifacts(app_id, &installed_lua, &package.manifest_files)?;
+        let manifest_count = package.manifest_files.len();
 
-    crate::desk_log_info!("store", "Successfully completed download for {}: Lua installed, {} manifest file(s) preloaded into Steam depotcache",
-        crate::core::logger::format_appid(app_id), manifest_count);
+        Ok(format!(
+            "Successfully completed download for App ID {}. Lua installed, {} manifest file(s) preloaded into Steam depotcache.",
+            app_id, manifest_count
+        ))
+    }.await;
 
-    Ok(format!(
-        "Successfully completed download for App ID {}. Lua installed, {} manifest file(s) preloaded into Steam depotcache.",
-        app_id, manifest_count
-    ))
+    match &res {
+        Ok(msg) => crate::desk_log_info!("store", "Successfully completed download for {}: {}", crate::core::logger::format_appid(app_id), msg),
+        Err(e) => crate::desk_log_error!("store", "Download failed for {} (source: {}): {}", crate::core::logger::format_appid(app_id), if api_key == "oureveryday_public" { "oureveryday" } else { "hubcap" }, e),
+    }
+    res
 }
 
 #[tauri::command]
@@ -295,41 +301,51 @@ pub async fn prepare_specific_version_download(
     api_key: String,
     steam_path: String,
 ) -> Result<Vec<LuaManifestRow>, String> {
-    validate_download_inputs(&api_key, &steam_path, "download the Lua file")?;
+    if let Err(e) = validate_download_inputs(&api_key, &steam_path, "download the Lua file") {
+        crate::desk_log_error!("store", "Specific version download failed for {}: {}", crate::core::logger::format_appid(app_id), e);
+        return Err(e);
+    }
+
     crate::desk_log_info!("store", "Preparing specific version download for {} (source key: {})", crate::core::logger::format_appid(app_id), if api_key == "oureveryday_public" { "oureveryday" } else { "hubcap" });
 
-    let package = if api_key == "oureveryday_public" {
-        let oe_client = crate::providers::oureveryday::OureverydayClient::new();
-        oe_client.download_lua_package(app_id).await?
-    } else {
-        HubcapClient::new(api_key)
-            .download_lua_package(app_id)
-            .await?
-    };
-    let lua_content = package.lua_content;
-    let manifest_rows = LuaManifestPins::rows_from_content(&lua_content);
+    let res = async {
+        let package = if api_key == "oureveryday_public" {
+            let oe_client = crate::providers::oureveryday::OureverydayClient::new();
+            oe_client.download_lua_package(app_id).await?
+        } else {
+            HubcapClient::new(api_key)
+                .download_lua_package(app_id)
+                .await?
+        };
+        let lua_content = package.lua_content;
+        let manifest_rows = LuaManifestPins::rows_from_content(&lua_content);
 
-    if manifest_rows.is_empty() {
-        return Err("The downloaded Lua does not contain any setManifestid entries, so it was not installed. Try another source or verify the provider returned the full Lua with manifests.".to_string());
+        if manifest_rows.is_empty() {
+            return Err("The downloaded Lua does not contain any setManifestid entries, so it was not installed. Try another source or verify the provider returned the full Lua with manifests.".to_string());
+        }
+
+        let steam = SteamCompat::new(steam_path.clone());
+        steam.install_lua_config(app_id, &lua_content)?;
+        steam.install_manifest_files(&package.manifest_files)?;
+        GameBackup::for_app(app_id)?
+            .backup_lua_artifacts(app_id, &lua_content, &package.manifest_files)?;
+
+        let installed_rows = LuaManifestPins::new(steam_path, app_id).rows_from_file()?;
+        if installed_rows.len() != manifest_rows.len() {
+            return Err(format!(
+                "Lua install verification failed: downloaded file had {} setManifestid entries, installed file has {}.",
+                manifest_rows.len(), installed_rows.len()
+            ));
+        }
+
+        Ok(installed_rows)
+    }.await;
+
+    match &res {
+        Ok(rows) => crate::desk_log_info!("store", "Successfully prepared specific version download for {}: {} row(s) installed", crate::core::logger::format_appid(app_id), rows.len()),
+        Err(e) => crate::desk_log_error!("store", "Specific version download failed for {}: {}", crate::core::logger::format_appid(app_id), e),
     }
-
-    let steam = SteamCompat::new(steam_path.clone());
-    steam.install_lua_config(app_id, &lua_content)?;
-    steam.install_manifest_files(&package.manifest_files)?;
-    // Centralized Lua/manifest backup (AetherData/backup/<app_id>/lua).
-    GameBackup::for_app(app_id)?
-        .backup_lua_artifacts(app_id, &lua_content, &package.manifest_files)?;
-
-    let installed_rows = LuaManifestPins::new(steam_path, app_id).rows_from_file()?;
-    if installed_rows.len() != manifest_rows.len() {
-        return Err(format!(
-            "Lua install verification failed: downloaded file had {} setManifestid entries, installed file has {}.",
-            manifest_rows.len(), installed_rows.len()
-        ));
-    }
-
-    crate::desk_log_info!("store", "Successfully prepared specific version download for {}: {} row(s) installed", crate::core::logger::format_appid(app_id), installed_rows.len());
-    Ok(installed_rows)
+    res
 }
 
 #[tauri::command]
@@ -339,29 +355,37 @@ pub async fn trigger_ryuu_download(
     api_key: String,
     steam_path: String,
 ) -> Result<String, String> {
-    validate_download_inputs(&api_key, &steam_path, "call Ryuu")?;
+    if let Err(e) = validate_download_inputs(&api_key, &steam_path, "call Ryuu") {
+        crate::desk_log_error!("store", "Ryuu download failed for {}: {}", crate::core::logger::format_appid(app_id), e);
+        return Err(e);
+    }
 
     crate::desk_log_info!("store", "Triggering Ryuu download for {}", crate::core::logger::format_appid(app_id));
 
-    let steam = SteamCompat::new(steam_path.clone());
-    let client = RyuuClient::new(api_key);
-    let package = client.download_lua_package(app_id).await?;
-    steam.install_lua_config(app_id, &package.lua_content)?;
-    steam.install_manifest_files(&package.manifest_files)?;
-    apply_default_update_policy(&app, app_id, &steam_path)?;
-    let installed_lua = steam.read_lua_config(app_id).unwrap_or(package.lua_content.clone());
+    let res = async {
+        let steam = SteamCompat::new(steam_path.clone());
+        let client = RyuuClient::new(api_key);
+        let package = client.download_lua_package(app_id).await?;
+        steam.install_lua_config(app_id, &package.lua_content)?;
+        steam.install_manifest_files(&package.manifest_files)?;
+        apply_default_update_policy(&app, app_id, &steam_path)?;
+        let installed_lua = steam.read_lua_config(app_id).unwrap_or(package.lua_content.clone());
 
-    GameBackup::for_app(app_id)?
-        .backup_lua_artifacts(app_id, &installed_lua, &package.manifest_files)?;
-    let manifest_count = package.manifest_files.len();
+        GameBackup::for_app(app_id)?
+            .backup_lua_artifacts(app_id, &installed_lua, &package.manifest_files)?;
+        let manifest_count = package.manifest_files.len();
 
-    crate::desk_log_info!("store", "Successfully completed Ryuu download for {}: Lua installed, {} manifest file(s) preloaded into Steam depotcache",
-        crate::core::logger::format_appid(app_id), manifest_count);
+        Ok(format!(
+            "Successfully completed Ryuu download for App ID {}. Lua installed, {} manifest file(s) preloaded into Steam depotcache.",
+            app_id, manifest_count
+        ))
+    }.await;
 
-    Ok(format!(
-        "Successfully completed Ryuu download for App ID {}. Lua installed, {} manifest file(s) preloaded into Steam depotcache.",
-        app_id, manifest_count
-    ))
+    match &res {
+        Ok(msg) => crate::desk_log_info!("store", "Successfully completed Ryuu download for {}: {}", crate::core::logger::format_appid(app_id), msg),
+        Err(e) => crate::desk_log_error!("store", "Ryuu download failed for {}: {}", crate::core::logger::format_appid(app_id), e),
+    }
+    res
 }
 
 #[tauri::command]
@@ -408,10 +432,14 @@ fn validate_download_inputs(
     api_action: &str,
 ) -> Result<(), String> {
     if api_key.trim().is_empty() {
-        return Err(format!("API Key is required to {}", api_action));
+        let err = format!("API Key is required to {}", api_action);
+        crate::desk_log_error!("store", "Download validation failed: {}", err);
+        return Err(err);
     }
     if steam_path.trim().is_empty() {
-        return Err("Steam installation path is required".to_string());
+        let err = "Steam installation path is required".to_string();
+        crate::desk_log_error!("store", "Download validation failed: {}", err);
+        return Err(err);
     }
     Ok(())
 }

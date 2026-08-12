@@ -2490,21 +2490,29 @@ body {
 
 .log-level-pills {
   display: inline-flex;
+  align-items: center;
+  height: 33px;
   background-color: #0e0e12;
   border: 1px solid var(--border-color);
-  border-radius: 6px;
+  border-radius: 7px;
   overflow: hidden;
+  box-sizing: border-box;
 }
 
 .log-pill-btn {
   background: transparent;
   border: none;
   color: var(--color-muted);
-  font-size: 11.5px;
-  font-weight: 600;
-  padding: 6px 12px;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 0 12px;
+  height: 100%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   cursor: pointer;
   transition: all 0.2s ease;
+  box-sizing: border-box;
 }
 
 .log-pill-btn:hover {
