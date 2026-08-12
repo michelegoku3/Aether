@@ -58,6 +58,7 @@ impl SteamCompat {
             return Err("Installed Lua differs from downloaded Lua; refusing to continue.".to_string());
         }
 
+        crate::desk_log_info!("steam", "Installed Lua config for AppID {} into {}", app_id, target_path.display());
         Ok(())
     }
 
@@ -95,6 +96,7 @@ impl SteamCompat {
             installed += 1;
         }
 
+        crate::desk_log_info!("steam", "Installed {} manifest file(s) into Steam depotcache ({})", installed, depotcache_dir.display());
         Ok(installed)
     }
 

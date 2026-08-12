@@ -56,8 +56,14 @@ pub async fn apply_crack(
     let backup = GameBackup::for_app(app_id)?;
 
     let vn_patch_mode = vn_patch_mode.unwrap_or(false);
+    crate::desk_log_info!("crack", "Applying crack for AppID {} with {} source file(s) (vn_patch_mode: {})",
+        app_id, crack_files.len(), vn_patch_mode);
+
     let report =
         crack::apply_crack_pipeline(app_id, &game_root, &backup, &crack_files, vn_patch_mode)?;
+
+    crate::desk_log_info!("crack", "Successfully applied crack for AppID {}: {} files applied, {} replaced",
+        app_id, report.applied, report.replaced);
 
     // Show the full game-relative path of each applied file.
     let names: Vec<String> = report.files.clone();

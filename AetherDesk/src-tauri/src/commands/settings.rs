@@ -10,6 +10,8 @@ pub fn get_settings(app: tauri::AppHandle) -> Result<AppSettings, String> {
 
 #[tauri::command]
 pub fn save_settings(app: tauri::AppHandle, settings: AppSettings) -> Result<(), String> {
+    crate::desk_log_info!("settings", "Saving user settings to disk (log_level='{}', steam_path='{}', hubcap_key_set={})",
+        settings.log_level, settings.steam_path, !settings.hubcap_api_key.trim().is_empty());
     let manager = SettingsManager::new(&app);
     manager.save(&settings)
 }
@@ -20,7 +22,14 @@ pub async fn validate_hubcap_key(api_key: String) -> Result<bool, String> {
         return Err("API Key cannot be empty".to_string());
     }
 
-    HubcapClient::new(api_key).validate_api_key().await
+    crate::desk_log_info!("settings", "Validating Hubcap API key with hubcapmanifest.com...");
+    let res = HubcapClient::new(api_key).validate_api_key().await;
+    match &res {
+        Ok(true) => crate::desk_log_info!("settings", "Hubcap API key validated successfully"),
+        Ok(false) => crate::desk_log_warn!("settings", "Hubcap API key validation returned false (invalid key)"),
+        Err(e) => crate::desk_log_error!("settings", "Hubcap API key validation request failed: {}", e),
+    }
+    res
 }
 
 #[tauri::command]
@@ -46,6 +55,7 @@ pub async fn get_hubcap_usage(api_key: String) -> Result<serde_json::Value, Stri
 
 #[tauri::command]
 pub fn clear_app_caches() -> Result<String, String> {
+    crate::desk_log_info!("settings", "Clearing AetherDesk cache folder...");
     let cache_dir = LocalAppPaths::data_root().join("cache");
     if cache_dir.is_dir() {
         std::fs::remove_dir_all(&cache_dir)

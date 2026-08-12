@@ -73,8 +73,10 @@ pub async fn prepare_update(app: &tauri::AppHandle) -> Result<Option<PreparedUpd
     if settings.enable_test_updates {
         if let Ok(release) = manager.fetch_latest_desk_test_release().await {
             if GithubReleaseManager::latest_is_newer_than(&current_version, &release.tag_name) {
+                crate::desk_log_info!("updater", "AetherDesk test update available: {} (current: {})", release.tag_name, current_version);
                 return prepare_from_release(&release).await.map(Some);
             } else {
+                crate::desk_log_info_once!("updater", "AetherDesk test release {} is not newer than installed version {}", release.tag_name, current_version);
                 return Ok(None);
             }
         }
@@ -82,9 +84,11 @@ pub async fn prepare_update(app: &tauri::AppHandle) -> Result<Option<PreparedUpd
 
     let release = manager.fetch_latest_desk_release().await?;
     if !GithubReleaseManager::latest_is_newer_than(&current_version, &release.tag_name) {
+        crate::desk_log_info_once!("updater", "AetherDesk stable release {} is not newer than installed version {}", release.tag_name, current_version);
         return Ok(None);
     }
 
+    crate::desk_log_info!("updater", "AetherDesk stable update available: {} (current: {})", release.tag_name, current_version);
     prepare_from_release(&release).await.map(Some)
 }
 

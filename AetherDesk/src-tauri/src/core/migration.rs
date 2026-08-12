@@ -233,6 +233,7 @@ pub fn reset_antivirus_exclusion_flag(_app: &tauri::AppHandle) {
 }
 
 pub fn run_startup_migrations(app: &tauri::AppHandle) {
+    crate::desk_log_info!("migration", "Running AetherDesk startup migrations...");
     if let Err(e) = migrate_roaming_to_local_install() { eprintln!("[AetherDesk] Roaming->Local failed: {e}"); }
     if let Err(e) = migrate_programfiles_to_local_install() { eprintln!("[AetherDesk] PF->Local failed: {e}"); }
     remove_legacy_install_folders();
@@ -267,6 +268,8 @@ pub fn run_startup_migrations(app: &tauri::AppHandle) {
 pub fn ensure_start_menu_shortcut() {
     use std::os::windows::process::CommandExt;
     use std::process::Command;
+
+    crate::desk_log_info_once!("migration", "Verifying Windows Start Menu shortcut AetherDesk.lnk");
 
     const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 

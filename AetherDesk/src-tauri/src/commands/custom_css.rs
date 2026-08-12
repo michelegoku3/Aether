@@ -154,7 +154,11 @@ pub fn pick_theme_file(app: tauri::AppHandle) -> Result<String, String> {
 
     let path = picked_path_or_error(picked)?;
 
-    custom_css::import_selected_file(&folder, &path)
+    let res = custom_css::import_selected_file(&folder, &path);
+    if let Ok(name) = &res {
+        crate::desk_log_info!("appearance", "Selected theme file: '{}'", name);
+    }
+    res
 }
 
 /// Native file picker for wallpapers. Opens directly inside
@@ -178,5 +182,9 @@ pub fn pick_wallpaper_file(app: tauri::AppHandle) -> Result<String, String> {
 
     let path = picked_path_or_error(picked)?;
 
-    custom_css::import_selected_file(&folder, &path)
+    let res = custom_css::import_selected_file(&folder, &path);
+    if let Ok(name) = &res {
+        crate::desk_log_info!("appearance", "Selected wallpaper file: '{}'", name);
+    }
+    res
 }

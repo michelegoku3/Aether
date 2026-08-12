@@ -5,6 +5,9 @@ use crate::steam::update_guard::SteamUpdateGuard;
 
 #[tauri::command]
 pub fn restart_steam(app: tauri::AppHandle) -> Result<(), String> {
+    crate::core::logger::reset_session_dedup();
+    crate::desk_log_info!("lifecycle", "Steam restart requested. Resetting AetherDesk session deduplication set.");
+
     let mut sys = sysinfo::System::new_all();
     sys.refresh_processes();
 
@@ -65,6 +68,7 @@ pub fn is_steam_blocked(steam_path: String) -> Result<bool, String> {
 #[tauri::command]
 pub fn block_steam_updates(steam_path: String) -> Result<String, String> {
     validate_steam_path(&steam_path)?;
+    crate::desk_log_info!("steam", "Blocking Steam updates in directory '{}'", steam_path);
     SteamUpdateGuard::new(steam_path).block_updates()?;
     Ok("Steam updates are now blocked.".to_string())
 }
@@ -72,6 +76,7 @@ pub fn block_steam_updates(steam_path: String) -> Result<String, String> {
 #[tauri::command]
 pub fn unblock_steam_updates(steam_path: String) -> Result<String, String> {
     validate_steam_path(&steam_path)?;
+    crate::desk_log_info!("steam", "Unblocking Steam updates in directory '{}'", steam_path);
     SteamUpdateGuard::new(steam_path).unblock_updates()?;
     Ok("Steam updates are now unblocked.".to_string())
 }

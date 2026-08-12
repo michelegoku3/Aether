@@ -4,6 +4,7 @@ import { SettingsView } from '../views/SettingsView';
 import { AetherView } from '../views/AetherView';
 import { LibraryView } from '../views/LibraryView';
 import { HomeView } from '../views/HomeView';
+import { LogView } from '../views/LogView';
 import { DllStatusInfo } from '../types/ui';
 
 interface MainContentProps {
@@ -84,11 +85,17 @@ export const MainContent = ({ activeTab, dllUpdateAvailable, deskUpdateAvailable
       );
     }
 
+    if (activeTab === 'log') {
+      return (
+        <main className="main-content">
+          <LogView />
+        </main>
+      );
+    }
+
     const title = activeTab === 'backup'
       ? 'Backup View'
-      : activeTab === 'log'
-        ? 'Logs View'
-        : 'Blank View';
+      : 'Blank View';
 
     return (
       <main className="main-content">

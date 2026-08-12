@@ -33,6 +33,7 @@ export const SettingsView = ({ hubcapUsage, onRefreshUsage, onRefreshCustomCss, 
   const [useAlternativeGameCards, setUseAlternativeGameCards] = useState(false);
   const [enableWebviewDevtools, setEnableWebviewDevtools] = useState(false);
   const [enableTestUpdates, setEnableTestUpdates] = useState(false);
+  const [logLevel, setLogLevel] = useState('info');
   const [storeFrontFilter, setStoreFrontFilter] = useState('upcoming');
   const [customCssEnabled, setCustomCssEnabled] = useState(false);
   const [personalWallpaperEnabled, setPersonalWallpaperEnabled] = useState(false);
@@ -106,6 +107,7 @@ export const SettingsView = ({ hubcapUsage, onRefreshUsage, onRefreshCustomCss, 
           setWallpaperSelectedFile(settings.wallpaper_selected_file || '');
           setRyuuKey(settings.ryuu_api_key || '');
           setStoreCurrency(['usd', 'jpy'].includes(settings.store_currency) ? settings.store_currency : 'eur');
+          setLogLevel((settings.log_level || 'info').toLowerCase());
         }
       } catch (err: any) {
         showStatus(`Error loading settings: ${err}`, 'error');
@@ -142,6 +144,7 @@ export const SettingsView = ({ hubcapUsage, onRefreshUsage, onRefreshCustomCss, 
     use_alternative_game_cards: useAlternativeGameCards,
     enable_webview_devtools: enableWebviewDevtools,
     enable_test_updates: enableTestUpdates,
+    log_level: logLevel,
     store_front_filter: storeFrontFilter,
     store_currency: storeCurrency,
     ...overrides,
@@ -290,6 +293,22 @@ export const SettingsView = ({ hubcapUsage, onRefreshUsage, onRefreshCustomCss, 
               />
               <span></span>
             </label>
+          </div>
+
+          <div className="settings-toggle-row" title="Minimum log level written to desk.log in AetherData/logs.">
+            <span className="settings-toggle-text">Log level</span>
+            <select
+              className="settings-select"
+              value={logLevel}
+              onChange={(e) => setLogLevel(e.target.value)}
+            >
+              <option value="trace">Trace (Verbose diagnostics)</option>
+              <option value="debug">Debug (Detailed info)</option>
+              <option value="info">Info (Default lifecycle &amp; events)</option>
+              <option value="warn">Warn (Warnings &amp; errors only)</option>
+              <option value="error">Error (Errors only)</option>
+              <option value="off">Off (Disable log file)</option>
+            </select>
           </div>
 
           <div className="settings-toggle-row" title="Clear AetherDesk cache files such as store search, game info, Steam names and Denuvo cache. Settings and backups are preserved.">
@@ -663,6 +682,7 @@ export const SettingsView = ({ hubcapUsage, onRefreshUsage, onRefreshCustomCss, 
               setUseAlternativeGameCards(false);
               setEnableWebviewDevtools(false);
               setEnableTestUpdates(false);
+              setLogLevel('info');
               setStoreFrontFilter('upcoming');
               setCustomCssEnabled(false);
               setPersonalWallpaperEnabled(false);
@@ -690,6 +710,7 @@ export const SettingsView = ({ hubcapUsage, onRefreshUsage, onRefreshCustomCss, 
                     use_alternative_game_cards: false,
                     enable_webview_devtools: false,
                     enable_test_updates: false,
+                    log_level: 'info',
                     store_front_filter: 'upcoming',
                     custom_css_enabled: false,
                     personal_wallpaper_enabled: false,
