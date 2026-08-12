@@ -10,7 +10,7 @@ export default function App() {
   // Setup state to manage the active view, defaulting to 'home'
   const [activeTab, setActiveTab] = useState<TabType>('home');
 
-  // Global state to track AetherDLL update availability from live GitHub Release API
+  // Global state to track AetherDLL update availability from GitHub release tags
   const [dllUpdateAvailable, setDllUpdateAvailable] = useState(false);
   // Global state to track native AetherDesk update availability from desk-* GitHub tags
   const [deskUpdateAvailable, setDeskUpdateAvailable] = useState(false);
@@ -161,17 +161,12 @@ export default function App() {
       .catch(err => console.warn('Library cache warm-up failed:', err));
   }, []);
 
-  // Run update checks on startup and then only occasionally.
-  // GitHub public API is limited to 60 unauthenticated requests/hour per IP: polling every
-  // 45 seconds can quickly cause 403 Forbidden/rate-limit errors, especially because Desk
-  // and DLL are checked separately.
+  // Update check runs once at startup. Close and reopen Aether to check again.
   useEffect(() => {
     checkUpdates();
     checkDllStatus();
     refreshHubcapUsage();
     refreshCustomCss();
-    const interval = setInterval(checkUpdates, 30 * 60 * 1000);
-    return () => clearInterval(interval);
   }, []);
 
   // Professional decoupled action handler to kill and restart Steam via Rust.

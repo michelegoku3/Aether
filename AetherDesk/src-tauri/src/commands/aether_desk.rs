@@ -16,39 +16,57 @@ use crate::updater::github::GithubReleaseManager;
 #[tauri::command]
 pub async fn check_aether_desk_update(app: tauri::AppHandle) -> Result<serde_json::Value, String> {
     let current_version = app.package_info().version.to_string();
-    crate::desk_log_info_once!("updater", "Checking for AetherDesk updates (current: {})", current_version);
+    crate::desk_log_info!(
+        "updater",
+        "Checking for AetherDesk updates (installed={})",
+        current_version
+    );
     let manager = GithubReleaseManager::new();
 
-    // Testing releases (`tdesk-*`) take priority when enabled. Their version is
-    // gated by `latest_is_newer_than`, exactly like stable releases: if the test
-    // release is not newer than installed, `update_available` is false and no dot
-    // is shown, without falling through to the stable stream.
     if SettingsManager::new(&app).load().enable_test_updates {
-        if let Ok(release) = manager.fetch_latest_desk_test_release().await {
-            let info =
-                GithubReleaseManager::build_desk_test_update_info(current_version, &release);
-            return serde_json::to_value(info)
-                .map_err(|e| format!("Failed to serialize desk test update info: {e}"));
+        crate::desk_log_info!("updater", "Test updates enabled: probing tdesk-* first");
+        match manager.fetch_latest_desk_test_release().await {
+            Ok(release) => {
+                let info =
+                    GithubReleaseManager::build_desk_test_update_info(current_version.clone(), &release);
+                crate::desk_log_info!(
+                    "updater",
+                    "AetherDesk TEST check: installed={} latest={} tag={} update_available={}",
+                    info.installed_version,
+                    info.latest_version,
+                    info.latest_tag,
+                    info.update_available
+                );
+                return serde_json::to_value(info)
+                    .map_err(|e| format!("Failed to serialize desk test update info: {e}"));
+            }
+            Err(error) => {
+                crate::desk_log_warn!(
+                    "updater",
+                    "No usable tdesk-* release ({}). Falling through to stable desk-*",
+                    error
+                );
+            }
         }
     }
 
     let release = match manager.fetch_latest_desk_release().await {
         Ok(release) => release,
         Err(error) => {
-            return Ok(serde_json::json!({
-                "installed_version": current_version,
-                "latest_version": "N/A",
-                "latest_tag": "N/A",
-                "update_available": false,
-                "is_test": false,
-                "release_url": "",
-                "notes": "",
-                "error": error
-            }));
+            crate::desk_log_error!("updater", "AetherDesk update check failed: {}", error);
+            return Err(error);
         }
     };
 
     let info = GithubReleaseManager::build_desk_update_info(current_version, &release);
+    crate::desk_log_info!(
+        "updater",
+        "AetherDesk check: installed={} latest={} tag={} update_available={}",
+        info.installed_version,
+        info.latest_version,
+        info.latest_tag,
+        info.update_available
+    );
     serde_json::to_value(info).map_err(|e| format!("Failed to serialize desk update info: {e}"))
 }
 

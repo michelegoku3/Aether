@@ -87,6 +87,7 @@ fn main() {
             commands::steam::is_steam_blocked,
             commands::steam::block_steam_updates,
             commands::steam::unblock_steam_updates,
+            commands::aether_dll::get_installed_dll_version,
             commands::aether_dll::check_aether_dll_update,
             commands::aether_dll::install_aether_dll,
             commands::aether_dll::uninstall_aether_dll,

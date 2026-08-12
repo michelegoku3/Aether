@@ -2433,8 +2433,8 @@ body {
   flex-direction: column;
   height: 100%;
   width: 100%;
-  padding: 16px 24px;
-  gap: 14px;
+  padding: 24px 32px;
+  gap: 12px;
   box-sizing: border-box;
 }
 
@@ -2524,13 +2524,62 @@ body {
   color: #131316;
 }
 
+.log-view-container .settings-select {
+  width: 105px;
+  min-width: 105px;
+}
+
+.log-view-terminal-wrap {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.log-copy-btn {
+  position: absolute;
+  top: 8px;
+  right: 15px;
+  z-index: 3;
+  width: 28px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background-color: rgba(20, 20, 24, 0.92);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  color: var(--color-muted);
+  cursor: pointer;
+  opacity: 0;
+  pointer-events: none;
+  transition: color 0.2s ease, border-color 0.2s ease, background-color 0.2s ease, opacity 0.15s ease;
+}
+
+.log-view-terminal-wrap:hover .log-copy-btn {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.log-copy-btn:hover {
+  color: #ffffff;
+  border-color: var(--color-cyan);
+  background-color: #192128;
+}
+
+.log-copy-btn.copied {
+  color: #10b981;
+  border-color: #10b981;
+}
+
 .log-view-terminal {
   flex: 1 1 auto;
   min-height: 0;
   background-color: #08080a;
   border: 1px solid #1a1a22;
   border-radius: 8px;
-  padding: 14px 18px;
+  padding: 14px 10px 14px 18px;
   overflow-y: auto;
   font-family: 'Consolas', 'Cascadia Code', 'Courier New', monospace;
   font-size: 12px;

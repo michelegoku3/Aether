@@ -6,6 +6,8 @@
 [log]
 # Minimum level written to aethercore\main.log.
 # One of: "trace", "debug", "info", "warn", "error", "off".
+# TRACE is the default and is not changed by the Logs UI (that dropdown
+# only filters what is displayed).
 level = "trace"
 
 # Session logging: when true, saves the previous session's main.log as main.log.last

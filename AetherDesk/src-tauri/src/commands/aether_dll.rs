@@ -4,6 +4,17 @@ use crate::updater::dll_version::read_installed_dll_version;
 use crate::updater::github::GithubReleaseManager;
 
 #[tauri::command]
+pub fn get_installed_dll_version(steam_path: String) -> String {
+    if steam_path.trim().is_empty() {
+        return "N/A".to_string();
+    }
+    let legacy_version_path = std::path::PathBuf::from(&steam_path).join("AetherDLL_version.txt");
+    let raw = read_installed_dll_version(std::path::Path::new(&steam_path))
+        .unwrap_or_else(|| read_legacy_installed_version(&legacy_version_path, &steam_path));
+    GithubReleaseManager::display_version_from_tag(&raw)
+}
+
+#[tauri::command]
 pub async fn check_aether_dll_update(app: tauri::AppHandle, steam_path: String) -> Result<serde_json::Value, String> {
     if steam_path.trim().is_empty() {
         return Ok(serde_json::json!({
@@ -26,34 +37,66 @@ pub async fn check_aether_dll_update(app: tauri::AppHandle, steam_path: String) 
     // gated by `latest_is_newer_than`, exactly like stable releases: if the test
     // release is not newer than installed, `update_available` is false and no dot
     // is shown, without falling through to the stable stream.
+    crate::desk_log_info!(
+        "updater",
+        "Checking for AetherDLL updates (installed={}, steam_path='{}')",
+        installed_version,
+        steam_path
+    );
+
     if SettingsManager::new(&app).load().enable_test_updates {
-        if let Ok((tag, _)) = GithubReleaseManager::new().fetch_latest_dll_test_release().await {
-            let latest_version = GithubReleaseManager::component_version_from_tag(&tag);
-            let update_available =
-                GithubReleaseManager::latest_is_newer_than(&installed_version, &tag);
-            crate::desk_log_info_once!("updater", "AetherDLL test release check: tag {}, installed {}, update_available={}", tag, installed_version, update_available);
-            return Ok(serde_json::json!({
-                "installed_version": GithubReleaseManager::display_version_from_tag(&installed_version),
-                "latest_version": GithubReleaseManager::display_version_from_tag(&latest_version),
-                "latest_tag": tag,
-                "update_available": update_available,
-                "is_test": true
-            }));
+        crate::desk_log_info!("updater", "Test updates enabled: probing tdll-* first");
+        match GithubReleaseManager::new().fetch_latest_dll_test_release().await {
+            Ok((tag, url)) => {
+                let latest_version = GithubReleaseManager::component_version_from_tag(&tag);
+                let update_available =
+                    GithubReleaseManager::latest_is_newer_than(&installed_version, &tag);
+                crate::desk_log_info!(
+                    "updater",
+                    "AetherDLL TEST check: installed={} latest={} tag={} url={} update_available={}",
+                    installed_version,
+                    latest_version,
+                    tag,
+                    url,
+                    update_available
+                );
+                return Ok(serde_json::json!({
+                    "installed_version": GithubReleaseManager::display_version_from_tag(&installed_version),
+                    "latest_version": GithubReleaseManager::display_version_from_tag(&latest_version),
+                    "latest_tag": tag,
+                    "update_available": update_available,
+                    "is_test": true
+                }));
+            }
+            Err(error) => {
+                crate::desk_log_warn!(
+                    "updater",
+                    "No usable tdll-* release ({}). Falling through to stable dll-*",
+                    error
+                );
+            }
         }
     }
 
     let manager = GithubReleaseManager::new();
-    let latest_tag = match manager.fetch_latest_dll_release().await {
-        Ok((tag, _)) => tag,
-        Err(_) => "N/A".to_string(),
+    let (latest_tag, download_url) = match manager.fetch_latest_dll_release().await {
+        Ok(pair) => pair,
+        Err(error) => {
+            crate::desk_log_error!("updater", "AetherDLL update check failed: {}", error);
+            return Err(error);
+        }
     };
-    let latest_version = if latest_tag != "N/A" {
-        GithubReleaseManager::component_version_from_tag(&latest_tag)
-    } else {
-        "N/A".to_string()
-    };
-
+    let latest_version = GithubReleaseManager::component_version_from_tag(&latest_tag);
     let update_available = GithubReleaseManager::latest_is_newer_than(&installed_version, &latest_tag);
+    crate::desk_log_info!(
+        "updater",
+        "AetherDLL check: installed={} latest={} tag={} url={} update_available={}",
+        installed_version,
+        latest_version,
+        latest_tag,
+        download_url,
+        update_available
+    );
 
     Ok(serde_json::json!({
         "installed_version": GithubReleaseManager::display_version_from_tag(&installed_version),
@@ -100,8 +143,18 @@ pub async fn install_aether_dll(app: tauri::AppHandle, steam_path: String) -> Re
     // Testing releases take priority when enabled.
     let (tag_name, download_url) = if SettingsManager::new(&app).load().enable_test_updates {
         match manager.fetch_latest_dll_test_release().await {
-            Ok(pair) => pair,
-            Err(_) => manager.fetch_latest_dll_release().await?,
+            Ok(pair) => {
+                crate::desk_log_info!("updater", "Install will use TEST DLL tag {}", pair.0);
+                pair
+            }
+            Err(error) => {
+                crate::desk_log_warn!(
+                    "updater",
+                    "TEST DLL release unavailable ({}). Using stable dll-*",
+                    error
+                );
+                manager.fetch_latest_dll_release().await?
+            }
         }
     } else {
         manager.fetch_latest_dll_release().await?
@@ -114,14 +167,28 @@ pub async fn install_aether_dll(app: tauri::AppHandle, steam_path: String) -> Re
         .header("User-Agent", "AetherDesk-Downloader")
         .send()
         .await
-        .map_err(|e| format!("Failed to reach download server: {}", e))?;
+        .map_err(|e| {
+            crate::desk_log_error!("updater", "AetherDLL download network error: {}", e);
+            format!("Failed to reach download server: {}", e)
+        })?;
 
+    crate::desk_log_info!("updater", "AetherDLL download HTTP {}", response.status());
     if !response.status().is_success() {
+        crate::desk_log_error!(
+            "updater",
+            "AetherDLL download failed: HTTP {} from {}",
+            response.status(),
+            download_url
+        );
         return Err(format!("Download server returned HTTP error: {}", response.status()));
     }
 
     let bytes = response.bytes().await
-        .map_err(|e| format!("Failed to read downloaded bytes: {}", e))?;
+        .map_err(|e| {
+            crate::desk_log_error!("updater", "AetherDLL download body error: {}", e);
+            format!("Failed to read downloaded bytes: {}", e)
+        })?;
+    crate::desk_log_info!("updater", "AetherDLL zip size={} bytes", bytes.len());
 
     let temp_zip_path = std::env::temp_dir().join("aether_dll_latest.zip");
     std::fs::write(&temp_zip_path, &bytes)
@@ -131,18 +198,29 @@ pub async fn install_aether_dll(app: tauri::AppHandle, steam_path: String) -> Re
     let install_result = installer.install_from_zip(&temp_zip_path);
     let _ = std::fs::remove_file(temp_zip_path);
 
-    if install_result.is_ok() {
-        // Nessun file di versione esterno: la versione vive dentro i .dll (version
-        // resource PE). Rimuoviamo solo l'eventuale bookmark residuo nella dir Steam.
-        let legacy_version_path = std::path::PathBuf::from(&steam_path).join("AetherDLL_version.txt");
-        let _ = std::fs::remove_file(legacy_version_path);
-
-        crate::desk_log_info!("updater", "AetherDLL {} successfully installed into Steam directory '{}'", tag_name, steam_path);
-        return Ok(format!("AetherDLL {} successfully installed into Steam!", tag_name));
+    match install_result {
+        Ok(()) => {
+            let legacy_version_path = std::path::PathBuf::from(&steam_path).join("AetherDLL_version.txt");
+            let _ = std::fs::remove_file(legacy_version_path);
+            crate::desk_log_info!(
+                "updater",
+                "AetherDLL {} successfully installed into Steam directory '{}'",
+                tag_name,
+                steam_path
+            );
+            Ok(format!("AetherDLL {} successfully installed into Steam!", tag_name))
+        }
+        Err(error) => {
+            crate::desk_log_error!(
+                "updater",
+                "AetherDLL {} install failed in '{}': {}",
+                tag_name,
+                steam_path,
+                error
+            );
+            Err(error)
+        }
     }
-
-    crate::desk_log_info!("updater", "AetherDLL {} successfully installed into Steam directory '{}'", tag_name, steam_path);
-    install_result.map(|_| format!("AetherDLL {} successfully installed into Steam!", tag_name))
 }
 
 #[tauri::command]

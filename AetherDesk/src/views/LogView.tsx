@@ -1,24 +1,33 @@
 import { useEffect, useState, useRef } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 
+const LEVEL_RANK: Record<string, number> = {
+  trace: 0,
+  debug: 1,
+  info: 2,
+  warn: 3,
+  error: 4,
+  off: 5,
+};
+
+const lineRank = (line: string) => {
+  if (line.includes('[ERROR]')) return 4;
+  if (line.includes('[WARN ]') || line.includes('[WARN]')) return 3;
+  if (line.includes('[INFO ]') || line.includes('[INFO]')) return 2;
+  if (line.includes('[DEBUG]')) return 1;
+  if (line.includes('[TRACE]')) return 0;
+  return 2;
+};
+
 export const LogView = () => {
   const [lines, setLines] = useState<string[]>([]);
   const [filterQuery, setFilterQuery] = useState('');
   const [logLevel, setLogLevel] = useState('trace');
   const [logSource, setLogSource] = useState<'desk' | 'dll' | 'both'>('desk');
   const [exportStatus, setExportStatus] = useState('');
+  const [copied, setCopied] = useState(false);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const isAtBottomRef = useRef(true);
-
-  useEffect(() => {
-    invoke('get_settings')
-      .then((s: any) => {
-        if (s && s.log_level) {
-          setLogLevel(s.log_level.toLowerCase());
-        }
-      })
-      .catch(() => {});
-  }, []);
 
   const fetchLogs = async () => {
     try {
@@ -31,10 +40,6 @@ export const LogView = () => {
       console.warn('Failed to fetch logs:', err);
     }
   };
-
-  useEffect(() => {
-    fetchLogs();
-  }, [logSource]);
 
   useEffect(() => {
     fetchLogs();
@@ -75,12 +80,26 @@ export const LogView = () => {
   };
 
   const filteredLines = lines.filter((line) => {
+    if (logLevel === 'off') return false;
+    const minRank = LEVEL_RANK[logLevel] ?? 0;
+    if (lineRank(line) < minRank) return false;
     return !filterQuery.trim() || line.toLowerCase().includes(filterQuery.toLowerCase());
   });
 
+  const handleCopyVisible = async () => {
+    const text = filteredLines.join('\n');
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch (err) {
+      console.warn('Failed to copy logs:', err);
+    }
+  };
+
   const getLineClass = (line: string) => {
     if (line.includes('[ERROR]')) return 'log-line error';
-    if (line.includes('[WARN ]')) return 'log-line warn';
+    if (line.includes('[WARN ]') || line.includes('[WARN]')) return 'log-line warn';
     if (line.includes('[DEBUG]')) return 'log-line debug';
     if (line.includes('[TRACE]')) return 'log-line trace';
     return 'log-line info';
@@ -134,7 +153,7 @@ export const LogView = () => {
           <select
             className="settings-select"
             value={logSource}
-            style={{ width: '105px', height: '33px', padding: '0 8px', boxSizing: 'border-box' }}
+            style={{ width: '105px', minWidth: '105px', height: '33px', padding: '0 8px', boxSizing: 'border-box' }}
             onChange={(e) => setLogSource(e.target.value as 'desk' | 'dll' | 'both')}
             title="Select log source to view"
           >
@@ -146,17 +165,9 @@ export const LogView = () => {
           <select
             className="settings-select"
             value={logLevel}
-            style={{ width: '90px', height: '33px', padding: '0 8px', boxSizing: 'border-box' }}
-            onChange={async (e) => {
-              const next = e.target.value;
-              setLogLevel(next);
-              try {
-                await invoke('set_session_log_level', { level: next });
-              } catch (err) {
-                console.warn('Failed to set session log level:', err);
-              }
-            }}
-            title="Set logging level for Desk &amp; DLL"
+            style={{ width: '110px', minWidth: '110px', height: '33px', padding: '0 8px', boxSizing: 'border-box' }}
+            onChange={(e) => setLogLevel(e.target.value)}
+            title="Filter visible lines by minimum level. TRACE is the default view; the live log level itself is not changed."
           >
             <option value="trace">TRACE</option>
             <option value="debug">DEBUG</option>
@@ -188,20 +199,39 @@ export const LogView = () => {
         </div>
       </div>
 
-      <div className="log-view-terminal" ref={containerRef} onScroll={handleScroll}>
-        {filteredLines.length > 0 ? (
-          filteredLines.map((line, idx) => (
-            <div key={idx} className={getLineClass(line)}>
-              {line}
+      <div className="log-view-terminal-wrap">
+        <button
+          type="button"
+          className={`log-copy-btn${copied ? ' copied' : ''}`}
+          onClick={handleCopyVisible}
+          title={copied ? 'Copied' : 'Copy visible log text'}
+        >
+          {copied ? (
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M5 13l4 4L19 7" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          ) : (
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <rect x="9" y="9" width="11" height="11" rx="2" stroke="currentColor" strokeWidth="2" />
+              <path d="M5 15V5a2 2 0 0 1 2-2h10" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+            </svg>
+          )}
+        </button>
+        <div className="log-view-terminal" ref={containerRef} onScroll={handleScroll}>
+          {filteredLines.length > 0 ? (
+            filteredLines.map((line, idx) => (
+              <div key={idx} className={getLineClass(line)}>
+                {line}
+              </div>
+            ))
+          ) : (
+            <div className="log-empty-state">
+              {lines.length === 0
+                ? 'No session logs recorded yet in desk.log.'
+                : 'No log entries match the active filter.'}
             </div>
-          ))
-        ) : (
-          <div className="log-empty-state">
-            {lines.length === 0
-              ? 'No session logs recorded yet in desk.log.'
-              : 'No log entries match the active filter.'}
-          </div>
-        )}
+          )}
+        </div>
       </div>
     </div>
   );
