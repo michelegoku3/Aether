@@ -7,7 +7,7 @@
 use crate::core::backup::GameBackup;
 use crate::util::game_resolver::resolve_installed_game;
 use crate::crack;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use tauri_plugin_dialog::{DialogExt, FilePath};
 
 /// Open the native file picker and return the chosen paths (possibly empty if
@@ -49,24 +49,18 @@ pub async fn apply_crack(
     app: tauri::AppHandle,
     app_id: u32,
     crack_files: Vec<String>,
+    vn_patch_mode: Option<bool>,
 ) -> Result<String, String> {
     let game = resolve_installed_game(&app, app_id)?;
     let game_root = PathBuf::from(&game.game_path);
     let backup = GameBackup::for_app(app_id)?;
 
-    let report = crack::apply_crack_pipeline(app_id, &game_root, &backup, &crack_files)?;
+    let vn_patch_mode = vn_patch_mode.unwrap_or(false);
+    let report =
+        crack::apply_crack_pipeline(app_id, &game_root, &backup, &crack_files, vn_patch_mode)?;
 
-    // Show only file names in the UI message; the inventory keeps full paths.
-    let names: Vec<String> = report
-        .files
-        .iter()
-        .map(|path| {
-            Path::new(path)
-                .file_name()
-                .map(|name| name.to_string_lossy().to_string())
-                .unwrap_or_else(|| path.clone())
-        })
-        .collect();
+    // Show the full game-relative path of each applied file.
+    let names: Vec<String> = report.files.clone();
 
     Ok(format!(
         "Crack applied: {} file(s) ({} replaced). Originals & crack files backed up. Files: {}",
