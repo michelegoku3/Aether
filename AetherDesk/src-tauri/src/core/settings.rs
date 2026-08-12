@@ -5,8 +5,11 @@ use crate::core::paths::LocalAppPaths;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct AppSettings {
+    #[serde(default)]
     pub hubcap_api_key: String,
+    #[serde(default = "default_steam_path")]
     pub steam_path: String,
+    #[serde(default)]
     pub active_library: String,
     /// Set to true once the user has been asked (and handled) the Windows
     /// Defender exclusion prompt, so it never shows again (install or update).
@@ -104,6 +107,10 @@ fn default_alt_cards_fade() -> u8 {
 /// Serde default provider for boolean settings that ship enabled.
 fn default_true() -> bool {
     true
+}
+
+fn default_steam_path() -> String {
+    "C:\\Program Files (x86)\\Steam".to_string()
 }
 
 fn default_store_currency() -> String {

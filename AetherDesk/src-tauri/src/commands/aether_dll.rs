@@ -95,15 +95,6 @@ pub async fn install_aether_dll(app: tauri::AppHandle, steam_path: String) -> Re
 
     let manager = GithubReleaseManager::new();
 
-    // Determine installed DLL version so we can gate test releases by version too.
-    let installed_version = read_installed_dll_version(std::path::Path::new(&steam_path))
-        .unwrap_or_else(|| {
-            read_legacy_installed_version(
-                &std::path::PathBuf::from(&steam_path).join("AetherDLL_version.txt"),
-                &steam_path,
-            )
-        });
-
     // Testing releases take priority when enabled.
     let (tag_name, download_url) = if SettingsManager::new(&app).load().enable_test_updates {
         match manager.fetch_latest_dll_test_release().await {
