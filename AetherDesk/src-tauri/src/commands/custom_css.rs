@@ -24,8 +24,11 @@ pub struct AppearanceAssets {
     pub theme_name: Option<String>,
     pub wallpaper_exists: bool,
     pub wallpaper_name: Option<String>,
+    pub icon_exists: bool,
+    pub icon_name: Option<String>,
     pub themes_dir: String,
     pub wallpapers_dir: String,
+    pub icons_dir: String,
 }
 
 /// Returns the raw CSS text of the active theme
@@ -127,13 +130,17 @@ pub fn get_appearance_assets(app: tauri::AppHandle) -> Result<AppearanceAssets, 
     let settings = SettingsManager::new(&app).load();
     let theme_name = custom_css::active_theme_name(&settings.theme_selected_file);
     let wallpaper_name = custom_css::active_wallpaper_name(&settings.wallpaper_selected_file);
+    let icon_name = custom_css::active_icon_name(&settings.icon_selected_file);
     Ok(AppearanceAssets {
         theme_exists: theme_name.is_some(),
         theme_name,
         wallpaper_exists: wallpaper_name.is_some(),
         wallpaper_name,
+        icon_exists: icon_name.is_some(),
+        icon_name,
         themes_dir: custom_css::themes_dir().display().to_string(),
         wallpapers_dir: custom_css::wallpapers_dir().display().to_string(),
+        icons_dir: custom_css::icons_dir().display().to_string(),
     })
 }
 
@@ -191,4 +198,32 @@ pub fn pick_wallpaper_file(app: tauri::AppHandle) -> Result<String, String> {
         crate::desk_log_info!("appearance", "Selected wallpaper file: '{}'", name);
     }
     res
+}
+
+#[tauri::command]
+pub fn pick_icon_file(app: tauri::AppHandle) -> Result<String, String> {
+    let folder = custom_css::icons_dir();
+    std::fs::create_dir_all(&folder)
+        .map_err(|e| format!("Failed to create icons folder: {}", e))?;
+
+    let picked = app
+        .dialog()
+        .file()
+        .set_title("Choose an app icon")
+        .add_filter("Icons & images", custom_css::ICON_EXTENSIONS)
+        .add_filter("All files", &["*"])
+        .set_directory(folder.clone())
+        .blocking_pick_file();
+
+    let path = picked_path_or_error(picked)?;
+    let res = custom_css::import_selected_file(&folder, &path);
+    if let Ok(name) = &res {
+        crate::desk_log_info!("appearance", "Selected icon file: '{}'", name);
+    }
+    res
+}
+
+#[tauri::command]
+pub fn apply_window_icon(app: tauri::AppHandle) -> Result<(), String> {
+    custom_css::apply_window_icon(&app)
 }

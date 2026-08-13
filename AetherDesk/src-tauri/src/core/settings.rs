@@ -86,6 +86,12 @@ pub struct AppSettings {
     /// Empty means "use the first detected theme" (sorted by name).
     #[serde(default)]
     pub theme_selected_file: String,
+    /// Use a custom window icon from `config/icons/`.
+    #[serde(default)]
+    pub custom_icon_enabled: bool,
+    /// Explicitly chosen icon file name inside `config/icons/`.
+    #[serde(default)]
+    pub icon_selected_file: String,
     /// Backdrop image opacity (0..=100) of the alternative game cards.
     #[serde(default = "default_alt_cards_opacity")]
     pub alternative_cards_opacity: u8,
@@ -179,6 +185,8 @@ impl Default for AppSettings {
             personal_wallpaper_opacity: default_wallpaper_opacity(),
             wallpaper_selected_file: String::new(),
             theme_selected_file: String::new(),
+            custom_icon_enabled: false,
+            icon_selected_file: String::new(),
             alternative_cards_opacity: default_alt_cards_opacity(),
             alternative_cards_fade: default_alt_cards_fade(),
         }
