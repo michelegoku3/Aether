@@ -121,7 +121,21 @@ export const LibraryGameActionsModal = ({
             aria-label="Close"
             title="Close"
           >
-            &times;
+            <svg
+              viewBox="0 0 24 24"
+              width="16"
+              height="16"
+              aria-hidden="true"
+              focusable="false"
+            >
+              <path
+                d="M5 5 L19 19 M19 5 L5 19"
+                stroke="currentColor"
+                strokeWidth="2.6"
+                strokeLinecap="round"
+                fill="none"
+              />
+            </svg>
           </button>
         </div>
 

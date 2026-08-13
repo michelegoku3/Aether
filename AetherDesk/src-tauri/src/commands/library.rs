@@ -1,12 +1,18 @@
 use crate::core::paths::LocalAppPaths;
 use crate::game_info::cache::GameInfoCache;
 use crate::manifest::pins::{LuaManifestEdit, LuaManifestPins, LuaManifestRow};
-use crate::core::settings::{cache_version_with_currency, SettingsManager};
+use crate::core::settings::{cache_version_with_currency, steam_country_code_for_currency, SettingsManager};
 use crate::steam::app_names::SteamAppNameResolver;
 use crate::steam::library::{InstalledSteamGame, SteamLibraryScanner};
 use crate::steam::store_items;
 use crate::util::validation::validate_steam_path;
 use crate::util::browser::open_external_url;
+
+fn is_library_capsule_url(url: &str) -> bool {
+    let lower = url.to_ascii_lowercase();
+    (lower.contains("library_capsule") || lower.contains("library_600x900"))
+        && !lower.contains("hero")
+}
 
 #[tauri::command]
 pub async fn get_installed_library_games(
@@ -32,18 +38,60 @@ pub async fn get_installed_library_games(
     if names.len() < app_ids.len() {
         names = resolver.resolve_names(app_ids.clone()).await;
     }
-    let image_urls = resolver.cached_image_urls(app_ids.clone());
-    let hero_image_urls = resolver.cached_hero_image_urls(app_ids);
+    let mut image_urls = resolver.cached_image_urls(app_ids.clone());
+    let mut hero_image_urls = resolver.cached_hero_image_urls(app_ids.clone());
+
+    // First launch / after cache wipe: do not paint guessed CDN paths
+    // (library_600x900.jpg, header.jpg, …). Those 404 or look like heroes.
+    // appdetails `capsule_image` is a wide store banner — also not a library
+    // capsule. The GetItems batch used after restart has the hashed
+    // library_capsule; call it now so the first paint is correct.
+    let missing_covers: Vec<u32> = app_ids
+        .iter()
+        .copied()
+        .filter(|app_id| {
+            image_urls
+                .get(app_id)
+                .map(|url| !is_library_capsule_url(url))
+                .unwrap_or(true)
+        })
+        .collect();
+    if !missing_covers.is_empty() {
+        let country = steam_country_code_for_currency(&store_currency);
+        crate::desk_log_info!(
+            "library",
+            "Fetching Steam GetItems capsules for {} uncached App ID(s) (country={})",
+            missing_covers.len(),
+            country
+        );
+        let metas = store_items::fetch_store_items_for_country(missing_covers, country).await;
+        resolver.merge_image_urls(
+            metas
+                .iter()
+                .filter_map(|(app_id, meta)| meta.library_capsule_url.clone().map(|url| (*app_id, url))),
+        );
+        resolver.merge_hero_image_urls(
+            metas
+                .into_iter()
+                .filter_map(|(app_id, meta)| meta.hero_image_url.map(|url| (app_id, url))),
+        );
+        image_urls = resolver.cached_image_urls(app_ids.clone());
+        hero_image_urls = resolver.cached_hero_image_urls(app_ids.clone());
+    }
 
     for game in &mut games {
         if let Some(name) = names.get(&game.id) {
             game.name = name.clone();
         }
-        if let Some(image_url) = image_urls.get(&game.id) {
+        if let Some(image_url) = image_urls.get(&game.id).filter(|url| is_library_capsule_url(url)) {
             game.image_url = image_url.clone();
+        } else {
+            game.image_url.clear();
         }
         if let Some(hero_image_url) = hero_image_urls.get(&game.id) {
             game.hero_image_url = hero_image_url.clone();
+        } else {
+            game.hero_image_url.clear();
         }
     }
 
@@ -77,7 +125,8 @@ pub async fn warm_library_game_cache(app: tauri::AppHandle) -> Result<usize, Str
     let cache_dir = LocalAppPaths::data_root().join("cache");
     let resolver = SteamAppNameResolver::new(cache_dir);
     let names = resolver.resolve_names(app_ids.clone()).await;
-    let metas = store_items::fetch_store_items_for_country(app_ids, "US").await;
+    let country = steam_country_code_for_currency(&settings.store_currency);
+    let metas = store_items::fetch_store_items_for_country(app_ids, country).await;
     let meta_values: Vec<(u32, store_items::StoreItemMeta)> = metas.into_iter().collect();
     resolver.merge_image_urls(
         meta_values
