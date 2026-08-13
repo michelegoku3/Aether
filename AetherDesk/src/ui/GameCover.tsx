@@ -141,6 +141,24 @@ const classifyLoadedImage = (image: HTMLImageElement): CoverFit | null => {
   return ratio <= PORTRAIT_RATIO_THRESHOLD ? 'portrait' : 'landscape';
 };
 
+// The capsule slot must NEVER show a hero/header/background banner. These are
+// landscape "hero" assets used by the Modify popup (library_hero, header,
+// background), not cover capsules. After a cache clean / first launch the
+// backend can still hand us one (e.g. from a stale `steam_app_names.json` that
+// stored a header_image as the cover, or a legacy localStorage entry), so we
+// reject them here as a hard guarantee regardless of upstream state.
+const isHeroAssetUrl = (url: string): boolean => {
+  const lower = url.toLowerCase();
+  return lower.includes('library_hero')
+    || lower.includes('library_header')
+    || lower.includes('hero_capsule')
+    || lower.includes('background_raw')
+    || lower.includes('/background')
+    || lower.includes('/header.jpg')
+    || lower.includes('/header.png')
+    || lower.includes('/header_');
+};
+
 const initialCachedCover = (appId: string) => getCachedCover(appId);
 
 const preloadCoverChain = (
@@ -163,6 +181,14 @@ const preloadCoverChain = (
     image.decoding = 'async';
     image.onload = () => {
       if (cancelled) return;
+
+      // Hard guarantee: never put a hero/header/background banner in the
+      // capsule slot, even if a stale cache or backend hands us one.
+      if (isHeroAssetUrl(url)) {
+        index += 1;
+        tryNext();
+        return;
+      }
 
       const fit = classifyLoadedImage(image);
       if (!fit) {
