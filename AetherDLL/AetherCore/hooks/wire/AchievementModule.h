@@ -17,11 +17,7 @@ std::int32_t HandleRecvClientGetUserStatsResponse(const WireFrame& frame, std::u
 // Gestione dei salvataggi (Store)
 std::int32_t HandleSendStoreUserStats2(const WireFrame& frame, std::uint8_t* out, std::uint32_t outCap);
 
-// ---- Donor resolution (A1: async, non-blocking) ---------------------------
-// Number of donor app ids currently queued/in-flight on the background worker.
-std::size_t PendingDonorResolves();
-
-// Stops and joins the donor worker thread. Safe to call when never started.
+// Cleanly tears down any internal state. Safe to call when never started.
 void Shutdown();
 
 } // namespace ac::hooks::AchievementModule
