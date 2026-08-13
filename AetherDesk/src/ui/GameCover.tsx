@@ -1,19 +1,31 @@
 import { useEffect, useMemo, useState } from 'react';
 
-// v3 intentionally prioritizes Steam API/store capsule URLs. Older cache
-// generations may contain portrait/library artwork from previous experiments.
+// ────────────────────────────────────────────────────────────────────────────
+// GameCover — resolves a capsule/cover image for a game card.
+//
+// Design rules (rewritten cleanly, no incremental patches):
+//   • The capsule slot must ONLY ever show a real Steam cover/capsule asset.
+//     Hero/header/background banners belong to the Modify popup, never here.
+//   • Instead of trying to blacklist every "hero" URL shape (that kept leaking
+//     cases like .../bg.jpg from appdetails, or landscape capsules that look
+//     like heroes), we use an ALLOWLIST: an image is accepted only if its URL
+//     is recognizably a capsule/cover asset. Everything else is skipped.
+//   • The allowlist is applied when the URL list is built AND when a cached
+//     entry is read, so a stale cache (e.g. written before this fix) can never
+//     put a hero in the capsule slot.
+//   • If no cover resolves, we render the placeholder (Æ) instead of a wrong
+//     hero image.
+// ────────────────────────────────────────────────────────────────────────────
+
 const COVER_CACHE_PREFIX = 'aether_cover_v3_';
 const MIN_USABLE_WIDTH = 120;
-// Steam storesearch often returns 231x87 capsule images. They are wide, but
-// perfectly usable in our landscape-cover fallback; rejecting them caused many
-// valid games to show the Æ placeholder.
 const MIN_USABLE_HEIGHT = 60;
 const PORTRAIT_RATIO_THRESHOLD = 0.85;
 
+// Predictable CDN capsule paths for older apps whose covers are still served
+// from the un-hashed URL scheme. Modern apps need the hashed URL provided via
+// `canonicalUrl` (storesearch/appdetails), which is tried first.
 const STEAM_CAPSULE_FALLBACK_TEMPLATES = [
-  // Fallbacks for older apps whose capsules are still reachable through the
-  // predictable CDN path. Modern apps often require hashed capsule URLs from
-  // storesearch/appdetails, passed as `canonicalUrl`.
   'https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/{id}/capsule_231x87.jpg',
   'https://shared.fastly.steamstatic.com/store_item_assets/steam/apps/{id}/capsule_231x87.jpg',
   'https://shared.steamstatic.com/store_item_assets/steam/apps/{id}/capsule_231x87.jpg',
@@ -24,11 +36,22 @@ const STEAM_CAPSULE_FALLBACK_TEMPLATES = [
   'https://shared.steamstatic.com/store_item_assets/steam/apps/{id}/capsule_616x353.jpg',
 ];
 
-// NOTE: intentionally NO header/last-resort templates here. The capsule slot
-// must show capsule artwork only. Previously the chain ended on `header.jpg`
-// (a landscape "hero" banner), so after a cache clean the cover frequently
-// resolved to the hero image — reported as "hero but in the capsule slot". If
-// no capsule resolves we show the placeholder rather than a wrong hero image.
+// The ONLY URL shapes that count as a cover/capsule. Anything not matching
+// this allowlist (library_hero, header, background, hero_capsule, .../bg.jpg,
+// etc.) is rejected so it can never land in the capsule slot.
+const isCoverAssetUrl = (url: string): boolean => {
+  const lower = url.toLowerCase();
+  // `capsule_` alone matches `hero_capsule` (a landscape banner). Exclude it.
+  if (lower.includes('hero_capsule') || lower.includes('library_hero') || lower.includes('/header')) {
+    return false;
+  }
+  return lower.includes('library_capsule')
+    || lower.includes('main_capsule')
+    || lower.includes('small_capsule')
+    || lower.includes('capsule_231x87')
+    || lower.includes('capsule_616x353')
+    || lower.includes('library_600x900');
+};
 
 type CoverFit = 'portrait' | 'landscape';
 
@@ -55,25 +78,21 @@ const parseCachedCover = (raw: string): ResolvedCover | null => {
   const trimmed = raw.trim();
   if (!trimmed) return null;
 
+  let url = trimmed;
+  let fit: CoverFit | undefined;
   try {
     const parsed = JSON.parse(trimmed) as Partial<ResolvedCover>;
     if (typeof parsed.url === 'string' && parsed.url.trim()) {
-      return {
-        url: parsed.url.trim(),
-        fit: parsed.fit === 'portrait' || parsed.fit === 'landscape'
-          ? parsed.fit
-          : inferFitFromUrl(parsed.url),
-      };
+      url = parsed.url.trim();
+      fit = parsed.fit === 'portrait' || parsed.fit === 'landscape' ? parsed.fit : undefined;
     }
   } catch {
-    // Backward compatibility with the old cache format where the value was
-    // just the URL string.
+    // Old format: the value was just the URL string.
   }
 
-  return {
-    url: trimmed,
-    fit: inferFitFromUrl(trimmed),
-  };
+  // Reject non-cover URLs on read so a stale cache can never leak a hero.
+  if (!isCoverAssetUrl(url)) return null;
+  return { url, fit: fit ?? inferFitFromUrl(url) };
 };
 
 const getCachedCover = (appId: string): ResolvedCover | null => {
@@ -101,30 +120,30 @@ const saveCachedCover = (appId: string, cover: ResolvedCover) => {
   }
 };
 
-const normalizeCanonicalUrl = (url?: string) => {
+const normalizeCanonicalUrl = (url?: string): string | null => {
   const trimmed = url?.trim();
   if (!trimmed) return null;
   return trimmed.split('?')[0];
 };
 
-const buildCoverUrls = (appId: string, canonicalUrl?: string) => {
+// Build the ordered list of cover candidates. Only cover-shaped URLs survive;
+// hero/header/background URLs are dropped here, before any fetch happens.
+const buildCoverUrls = (appId: string, canonicalUrl?: string): string[] => {
   const seen = new Set<string>();
   const urls: string[] = [];
 
   const push = (url: string | null) => {
     if (!url || seen.has(url)) return;
+    if (!isCoverAssetUrl(url)) return;
     seen.add(url);
     urls.push(url);
   };
 
-  // Priority is deliberate:
-  // 1. Canonical Steam API/store URL (storesearch tiny_image / appdetails capsule_image).
-  // 2. Previously resolved v3 cover cache.
-  // 3. Predictable capsule CDN paths for older apps.
-  // (No header last-resort: the capsule slot must not fall back to hero art.)
+  // Priority: canonical API/store URL, then resolved cover cache, then
+  // predictable capsule CDN paths. No header/hero fallback, ever.
   push(normalizeCanonicalUrl(canonicalUrl));
   push(getCachedCover(appId)?.url || null);
-  STEAM_CAPSULE_FALLBACK_TEMPLATES.forEach(template => push(template.replace('{id}', appId)));
+  STEAM_CAPSULE_FALLBACK_TEMPLATES.forEach((template) => push(template.replace('{id}', appId)));
 
   return urls;
 };
@@ -132,7 +151,6 @@ const buildCoverUrls = (appId: string, canonicalUrl?: string) => {
 const classifyLoadedImage = (image: HTMLImageElement): CoverFit | null => {
   const { naturalWidth, naturalHeight } = image;
 
-  // Skip tiny placeholder-like images instead of rendering pixelated covers.
   if (naturalWidth < MIN_USABLE_WIDTH || naturalHeight < MIN_USABLE_HEIGHT) {
     return null;
   }
@@ -141,30 +159,12 @@ const classifyLoadedImage = (image: HTMLImageElement): CoverFit | null => {
   return ratio <= PORTRAIT_RATIO_THRESHOLD ? 'portrait' : 'landscape';
 };
 
-// The capsule slot must NEVER show a hero/header/background banner. These are
-// landscape "hero" assets used by the Modify popup (library_hero, header,
-// background), not cover capsules. After a cache clean / first launch the
-// backend can still hand us one (e.g. from a stale `steam_app_names.json` that
-// stored a header_image as the cover, or a legacy localStorage entry), so we
-// reject them here as a hard guarantee regardless of upstream state.
-const isHeroAssetUrl = (url: string): boolean => {
-  const lower = url.toLowerCase();
-  return lower.includes('library_hero')
-    || lower.includes('library_header')
-    || lower.includes('hero_capsule')
-    || lower.includes('background_raw')
-    || lower.includes('/background')
-    || lower.includes('/header.jpg')
-    || lower.includes('/header.png')
-    || lower.includes('/header_');
-};
-
-const initialCachedCover = (appId: string) => getCachedCover(appId);
+const initialCachedCover = (appId: string): ResolvedCover | null => getCachedCover(appId);
 
 const preloadCoverChain = (
   urls: string[],
   onResolved: (cover: ResolvedCover | null) => void,
-) => {
+): (() => void) => {
   let cancelled = false;
   let index = 0;
 
@@ -181,14 +181,6 @@ const preloadCoverChain = (
     image.decoding = 'async';
     image.onload = () => {
       if (cancelled) return;
-
-      // Hard guarantee: never put a hero/header/background banner in the
-      // capsule slot, even if a stale cache or backend hands us one.
-      if (isHeroAssetUrl(url)) {
-        index += 1;
-        tryNext();
-        return;
-      }
 
       const fit = classifyLoadedImage(image);
       if (!fit) {
@@ -239,7 +231,7 @@ export const GameCover = ({ appId, name, canonicalUrl }: GameCoverProps) => {
   const appIdString = String(appId);
   const urls = useMemo(
     () => buildCoverUrls(appIdString, canonicalUrl),
-    [appIdString, canonicalUrl]
+    [appIdString, canonicalUrl],
   );
   const [resolvedCover, setResolvedCover] = useState<ResolvedCover | null>(() => initialCachedCover(appIdString));
   const [hasFinishedLookup, setHasFinishedLookup] = useState(() => Boolean(initialCachedCover(appIdString)));

@@ -87,10 +87,11 @@ impl SteamLibraryScanner {
                     .map(|m| m.game_path.display().to_string())
                     .unwrap_or_default(),
                 installed,
-                image_url: format!(
-                    "https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/{}/library_600x900.jpg",
-                    lua.app_id
-                ),
+                // Never guess a CDN filename. Modern Steam assets are hashed;
+                // unhashed library_600x900 / header.jpg either 404 or the UI
+                // treats a landscape fallback as a "hero" in the capsule slot.
+                // Real URLs come from IStoreBrowseService/GetItems.
+                image_url: String::new(),
                 hero_image_url: String::new(),
             });
         }
