@@ -303,7 +303,7 @@ export const SettingsView = ({ hubcapUsage, onRefreshUsage, onRefreshCustomCss, 
                   const result: string = await invoke('clear_app_caches');
                   try {
                     Object.keys(localStorage)
-                      .filter((key) => key.startsWith('aether_cover_'))
+                      .filter((key) => key.startsWith('aether_cover_') || key.startsWith('aether_hero_'))
                       .forEach((key) => localStorage.removeItem(key));
                   } catch {}
                   showStatus(result, 'success');

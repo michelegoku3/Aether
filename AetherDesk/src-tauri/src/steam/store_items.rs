@@ -241,13 +241,16 @@ fn resolve_asset_url(assets: &GetItemAssets, filename: &str) -> Option<String> {
 }
 
 fn resolve_library_capsule_url(assets: &GetItemAssets) -> Option<String> {
+    // Capsule slot must show capsule artwork only. We deliberately do NOT fall
+    // back to `assets.header` here: header is a wide landscape "hero" banner and
+    // would leak into the capsule slot (reported after cache clean). If the game
+    // has no capsule asset we return None and let the UI show a placeholder.
     let filename = assets
         .library_capsule
         .as_deref()
         .or(assets.library_capsule_2x.as_deref())
         .or(assets.main_capsule.as_deref())
-        .or(assets.small_capsule.as_deref())
-        .or(assets.header.as_deref())?;
+        .or(assets.small_capsule.as_deref())?;
     resolve_asset_url(assets, filename)
 }
 
