@@ -24,6 +24,34 @@ pub struct CachedStoreSearchResponse {
     pub cache_state: String,
 }
 
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StoreSuggestItem {
+    pub id: u32,
+    pub name: String,
+    pub app_id: String,
+}
+
+#[tauri::command]
+pub async fn suggest_store_games(
+    app: tauri::AppHandle,
+    query: String,
+) -> Result<Vec<StoreSuggestItem>, String> {
+    let settings = SettingsManager::new(&app).load();
+    let country = steam_country_code_for_currency(&settings.store_currency);
+    let items = crate::steam::store::SteamStore::new()
+        .suggest_for_country(query.trim(), country)
+        .await?;
+    Ok(items
+        .into_iter()
+        .map(|item| StoreSuggestItem {
+            id: item.id,
+            name: item.name,
+            app_id: item.id.to_string(),
+        })
+        .collect())
+}
+
 #[tauri::command]
 pub async fn search_store(
     app: tauri::AppHandle,

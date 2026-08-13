@@ -4,6 +4,7 @@ import { InstalledGame, useLibraryGames } from '../hooks/useLibraryGames';
 import { CrackModal } from '../modals/CrackModal';
 import { AntivirusExclusionModal } from '../modals/AntivirusExclusionModal';
 import { FindCrackModal } from '../modals/FindCrackModal';
+import { SearchSuggest, moveSuggestIndex } from '../ui/SearchSuggest';
 
 const MAX_VISIBLE_RESULTS = 5;
 
@@ -65,7 +66,6 @@ export const HomeView = () => {
   // When non-null, the antivirus modal is shown; once dismissed the CrackModal opens.
   const [pendingCrack, setPendingCrack] = useState<{ name: string; appId: string } | null>(null);
   const searchPanelRef = useRef<HTMLDivElement | null>(null);
-  const resultRefs = useRef<Array<HTMLButtonElement | null>>([]);
 
   useEffect(() => {
     const handlePointerDown = (event: MouseEvent) => {
@@ -99,15 +99,6 @@ export const HomeView = () => {
     }
   }, [activeResultIndex, filteredGames.length]);
 
-  useEffect(() => {
-    if (!isSearchOpen || activeResultIndex === null) return;
-    resultRefs.current[activeResultIndex]?.scrollIntoView({
-      block: 'nearest',
-    });
-  }, [activeResultIndex, isSearchOpen]);
-
-
-  const visibleRowCount = Math.min(MAX_VISIBLE_RESULTS, Math.max(filteredGames.length, 1));
   const hasSelectedGame = Boolean(selectedGame);
 
   const selectGame = (game: InstalledGame) => {
@@ -205,17 +196,11 @@ export const HomeView = () => {
               if (event.key === 'ArrowDown') {
                 event.preventDefault();
                 setIsSearchOpen(true);
-                setActiveResultIndex(prev => {
-                  if (filteredGames.length === 0) return null;
-                  return prev === null ? 0 : Math.min(prev + 1, filteredGames.length - 1);
-                });
+                setActiveResultIndex((prev) => moveSuggestIndex(prev, filteredGames.length, 1));
               } else if (event.key === 'ArrowUp') {
                 event.preventDefault();
                 setIsSearchOpen(true);
-                setActiveResultIndex(prev => {
-                  if (filteredGames.length === 0) return null;
-                  return prev === null ? filteredGames.length - 1 : Math.max(prev - 1, 0);
-                });
+                setActiveResultIndex((prev) => moveSuggestIndex(prev, filteredGames.length, -1));
               } else if (event.key === 'Enter' || event.key === 'Delete') {
                 // Empty search (no text typed, no game selected): dismiss the
                 // whole suggestion list instead of selecting a game.
@@ -249,31 +234,18 @@ export const HomeView = () => {
             </button>
           )}
 
-          {isSearchOpen && !isLoading && (
-            <div
-              className="home-search-results"
-              style={{ maxHeight: `${visibleRowCount * 42}px` }}
-            >
-              {filteredGames.length > 0 ? (
-                filteredGames.map((game, index) => (
-                  <button
-                    key={game.id}
-                    type="button"
-                    ref={(element) => { resultRefs.current[index] = element; }}
-                    className={`home-search-result ${index === activeResultIndex ? 'active' : ''}`}
-                    onMouseEnter={() => setActiveResultIndex(index)}
-                    onMouseDown={(event) => event.preventDefault()}
-                    onClick={() => selectGame(game)}
-                  >
-                    <span className="home-search-result-name">{game.name}</span>
-                    <span className="home-search-result-appid">{game.appId}</span>
-                  </button>
-                ))
-              ) : (
-                <div className="home-search-empty">No Lua games found.</div>
-              )}
-            </div>
-          )}
+          <SearchSuggest
+            open={isSearchOpen && !isLoading}
+            items={filteredGames}
+            emptyText="No Lua games found."
+            activeIndex={activeResultIndex}
+            maxVisible={MAX_VISIBLE_RESULTS}
+            onHoverIndex={setActiveResultIndex}
+            onSelect={(item) => {
+              const game = filteredGames.find((candidate) => candidate.id === item.id);
+              if (game) selectGame(game);
+            }}
+          />
         </div>
 
       </div>

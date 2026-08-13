@@ -1,5 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
+import { SearchSuggest, moveSuggestIndex } from '../ui/SearchSuggest';
+import { useSteamSuggest } from '../hooks/useSteamSuggest';
 import { SpecificVersionModal, LuaManifestRow } from '../modals/SpecificVersionModal';
 import { GameInfoModal } from '../modals/GameInfoModal';
 import { LocalDownloadModal } from '../modals/LocalDownloadModal';
@@ -23,7 +25,11 @@ interface StoreViewProps {
 
 export const StoreView = ({ onRefreshUsage, isActive, settingsRevision, useAlternativeGameCards, alternativeCardsOpacity, alternativeCardsFade }: StoreViewProps) => {
   const [searchQuery, setSearchQuery] = useState('');
+  const [isSuggestOpen, setIsSuggestOpen] = useState(false);
+  const [activeSuggestIndex, setActiveSuggestIndex] = useState<number | null>(null);
+  const searchPanelRef = useRef<HTMLDivElement | null>(null);
   const [page, setPage] = useState(1);
+  const { items: suggestItems, isLoading: isSuggestLoading } = useSteamSuggest(searchQuery, isSuggestOpen);
   const itemsPerPage = 20; // 10 rows * 2 columns = 20 items per page
   const {
     results: storeGames,
@@ -91,6 +97,21 @@ export const StoreView = ({ onRefreshUsage, isActive, settingsRevision, useAlter
   useEffect(() => {
     loadTrendingGames(0, itemsPerPage);
   }, []);
+
+  useEffect(() => {
+    const handlePointerDown = (event: MouseEvent) => {
+      const target = event.target as Node | null;
+      if (target && !searchPanelRef.current?.contains(target)) {
+        setIsSuggestOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handlePointerDown);
+    return () => document.removeEventListener('mousedown', handlePointerDown);
+  }, []);
+
+  useEffect(() => {
+    setActiveSuggestIndex(null);
+  }, [searchQuery]);
 
   useEffect(() => {
     if (!isActive || hasActivatedStoreFront.current || activeQuery.trim()) return;
@@ -163,11 +184,13 @@ export const StoreView = ({ onRefreshUsage, isActive, settingsRevision, useAlter
     };
   }, [pageKey]);
 
-  const handleSearch = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const runSearch = async (query: string) => {
+    setSearchQuery(query);
     setPage(1);
+    setIsSuggestOpen(false);
+    setActiveSuggestIndex(null);
     try {
-      if (!searchQuery.trim()) {
+      if (!query.trim()) {
         clear();
         trendingRequests.current.clear();
         nextTrendingStart.current = 0;
@@ -175,10 +198,19 @@ export const StoreView = ({ onRefreshUsage, isActive, settingsRevision, useAlter
         await loadTrendingGames(0, itemsPerPage);
         return;
       }
-      await search(searchQuery);
+      await search(query);
     } catch (err: any) {
       alert(`Search error: ${err}`);
     }
+  };
+
+  const handleSearch = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (isSuggestOpen && activeSuggestIndex !== null && suggestItems[activeSuggestIndex]) {
+      await runSearch(suggestItems[activeSuggestIndex].name);
+      return;
+    }
+    await runSearch(searchQuery);
   };
 
   const handleDownloadSteam = async () => {
@@ -308,14 +340,31 @@ export const StoreView = ({ onRefreshUsage, isActive, settingsRevision, useAlter
 
       {/* Search Input Area */}
       <form onSubmit={handleSearch} className="store-search-form">
-        <div className="home-search-wrapper" style={{ position: 'relative', flexGrow: 1 }}>
+        <div className="home-search-wrapper store-suggest-wrap" ref={searchPanelRef}>
           <input
             type="text"
             placeholder="Search games by name or App ID on Steam..."
             value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
+            onChange={(e) => {
+              setSearchQuery(e.target.value);
+              setIsSuggestOpen(true);
+              setActiveSuggestIndex(null);
+            }}
+            onFocus={() => setIsSuggestOpen(true)}
+            onKeyDown={(event) => {
+              if (event.key === 'ArrowDown') {
+                event.preventDefault();
+                setIsSuggestOpen(true);
+                setActiveSuggestIndex((prev) => moveSuggestIndex(prev, suggestItems.length, 1));
+              } else if (event.key === 'ArrowUp') {
+                event.preventDefault();
+                setIsSuggestOpen(true);
+                setActiveSuggestIndex((prev) => moveSuggestIndex(prev, suggestItems.length, -1));
+              } else if (event.key === 'Escape') {
+                setIsSuggestOpen(false);
+              }
+            }}
             className="store-search-input"
-            style={{ width: '100%', paddingRight: '36px' }}
           />
           {searchQuery && (
             <button
@@ -324,6 +373,8 @@ export const StoreView = ({ onRefreshUsage, isActive, settingsRevision, useAlter
               aria-label="Clear search"
               onClick={() => {
                 setSearchQuery('');
+                setIsSuggestOpen(false);
+                setActiveSuggestIndex(null);
                 clear();
                 trendingRequests.current.clear();
                 nextTrendingStart.current = 0;
@@ -334,6 +385,15 @@ export const StoreView = ({ onRefreshUsage, isActive, settingsRevision, useAlter
               &times;
             </button>
           )}
+          <SearchSuggest
+            open={isSuggestOpen && searchQuery.trim().length >= 2}
+            items={suggestItems}
+            emptyText="No Steam suggestions."
+            statusText={isSuggestLoading ? 'Searching Steam…' : undefined}
+            activeIndex={activeSuggestIndex}
+            onHoverIndex={setActiveSuggestIndex}
+            onSelect={(item) => { void runSearch(item.name); }}
+          />
         </div>
         <button type="submit" className="store-search-btn" disabled={isLoading} title="Search Catalog">
           {isLoading ? (

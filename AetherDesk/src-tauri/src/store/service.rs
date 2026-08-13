@@ -82,68 +82,10 @@ impl StoreService {
         normalize::normalize_string(s)
     }
 
-    /// Reusable professional scoring algorithm supporting exactness-boost and Levenshtein fuzzy search
+    /// Exact / prefix / substring, then **per-token** Damerau-Levenshtein.
+    /// Whole-title edit distance cannot match `witchr 3` to a long official name.
     pub fn calculate_relevance_score(&self, query: &str, name: &str) -> usize {
-        let q_norm = self.normalize_string(query);
-        let n_norm = self.normalize_string(name);
-
-        if q_norm == n_norm {
-            // Tier 1: Normalized Exact Match (Highest Priority!)
-            0
-        } else if n_norm.starts_with(&q_norm) {
-            // Tier 2: Normalized Prefix Match (Shorter names come first)
-            // Example: "The Witch" -> "The Witch" (score 1) sorts BEFORE "The Witcher" (score 4)
-            1 + (n_norm.len() - q_norm.len())
-        } else if n_norm.contains(&q_norm) {
-            // Tier 3: Normalized Substring Match (Early position boosts priority)
-            let pos = n_norm.find(&q_norm).unwrap_or(0);
-            100 + pos + (n_norm.len() - q_norm.len())
-        } else {
-            // Tier 4: Fuzzy Levenshtein Distance on normalized strings
-            let dist = self.levenshtein_distance(&q_norm, &n_norm);
-            
-            // Allow larger Levenshtein matching on longer queries
-            let max_dist = if q_norm.len() > 8 { 3 } else { 2 };
-
-            if dist <= max_dist && q_norm.len() > 3 {
-                1000 + dist
-            } else {
-                10000 // Not a reasonable match, deprioritize
-            }
-        }
-    }
-
-    /// Helper utility to calculate Levenshtein distance (edit distance) between two strings
-    fn levenshtein_distance(&self, s1: &str, s2: &str) -> usize {
-        let len1 = s1.chars().count();
-        let len2 = s2.chars().count();
-        
-        let mut dp = vec![vec![0; len2 + 1]; len1 + 1];
-
-        for i in 0..=len1 {
-            dp[i][0] = i;
-        }
-        for j in 0..=len2 {
-            dp[0][j] = j;
-        }
-
-        for (i, c1) in s1.chars().enumerate() {
-            for (j, c2) in s2.chars().enumerate() {
-                if c1 == c2 {
-                    dp[i + 1][j + 1] = dp[i][j];
-                } else {
-                    dp[i + 1][j + 1] = 1 + std::cmp::min(
-                        dp[i][j + 1], // Deletion
-                        std::cmp::min(
-                            dp[i + 1][j], // Insertion
-                            dp[i][j] // Substitution
-                        )
-                    );
-                }
-            }
-        }
-
-        dp[len1][len2]
+        normalize::relevance_score(query, name)
     }
 
     /// Collect the merged Hubcap availability set for a query.
@@ -168,7 +110,7 @@ impl StoreService {
             return Vec::new();
         };
 
-        // Build deduplicated Hubcap query set: raw variants + sanitized variants.
+        // Build deduplicated Hubcap query set: alias expansions + sanitized punctuation.
         let base_variants = aliases::primary_variants(query);
         let mut all_queries: Vec<String> = Vec::new();
         let mut seen_lower: HashSet<String> = HashSet::new();
@@ -410,11 +352,23 @@ impl StoreService {
         // sanitization guarantees coverage if Steam's matcher ever treats symbols literally
         // or if Hubcap's name copy differs in punctuation.
         let steam_queries: Vec<String> = {
-            let mut v = vec![query.to_string()];
-            if let Some(san) = normalize::sanitize_query_for_hubcap(query) {
-                if san.to_lowercase() != query.trim().to_lowercase() {
-                    v.push(san);
+            let mut v: Vec<String> = Vec::new();
+            let mut seen = HashSet::new();
+            let push = |list: &mut Vec<String>, seen: &mut HashSet<String>, value: String| {
+                let key = value.trim().to_lowercase();
+                if key.is_empty() || !seen.insert(key) {
+                    return;
                 }
+                list.push(value);
+            };
+            for variant in aliases::primary_variants(query) {
+                push(&mut v, &mut seen, variant.clone());
+                if let Some(san) = normalize::sanitize_query_for_hubcap(&variant) {
+                    push(&mut v, &mut seen, san);
+                }
+            }
+            if v.len() > 3 {
+                v.truncate(3);
             }
             v
         };
@@ -425,6 +379,20 @@ impl StoreService {
             let mut seen: std::collections::HashSet<u32> = std::collections::HashSet::new();
             // Fire up to 2 Steam searches in parallel via JoinSet-style match.
             let batches: Vec<Result<Vec<crate::steam::store::SteamStoreItem>, String>> = match steam_queries_for_fut.len() {
+                3 => {
+                    let q0 = steam_queries_for_fut[0].clone();
+                    let q1 = steam_queries_for_fut[1].clone();
+                    let q2 = steam_queries_for_fut[2].clone();
+                    let s0 = steam_store_clone.clone();
+                    let s1 = steam_store_clone.clone();
+                    let s2 = steam_store_clone.clone();
+                    let (a, b, c) = tokio::join!(
+                        s0.search_catalog_for_country(&q0, steam_country_code),
+                        s1.search_catalog_for_country(&q1, steam_country_code),
+                        s2.search_catalog_for_country(&q2, steam_country_code)
+                    );
+                    vec![a, b, c]
+                }
                 2 => {
                     let q0 = steam_queries_for_fut[0].clone();
                     let q1 = steam_queries_for_fut[1].clone();
@@ -588,6 +556,7 @@ impl StoreService {
                 added_ids.insert(hg.app_id);
             }
         }
+        let steam_result_ids = added_ids.clone();
         unified_list.extend(hubcap_extras);
 
         // 4a. Cheap pre-filter + cap BEFORE the metadata batch.
@@ -607,7 +576,9 @@ impl StoreService {
                 .unwrap_or(10000)
         };
         if !is_numeric {
-            unified_list.retain(|game| best_score(&game.name) < 10000);
+            unified_list.retain(|game| {
+                steam_result_ids.contains(&game.id) || best_score(&game.name) < 10000
+            });
             if unified_list.len() > MAX_CLASSIFIED_RESULTS {
                 let mut keyed: Vec<(usize, UnifiedStoreGame)> = unified_list
                     .into_iter()

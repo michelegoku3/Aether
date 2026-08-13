@@ -27,6 +27,29 @@
 /// This replaces the former narrow replace-chain (`.`, `'`, `:`, `®`, `™`, `-`, `_`)
 /// which left `!` etc untouched and broke exact/prefix checks for titles with
 /// trailing `!!`.
+///
+/// Ranking helper for Hubcap-only tail rows. Steam hits are never dropped
+/// by this score. No typo/Levenshtein: that cannot beat Steam's own search.
+pub fn relevance_score(query: &str, name: &str) -> usize {
+    let q_norm = normalize_string(query);
+    let n_norm = normalize_string(name);
+
+    if q_norm.is_empty() {
+        return 10000;
+    }
+    if q_norm == n_norm {
+        return 0;
+    }
+    if n_norm.starts_with(&q_norm) {
+        return 1 + (n_norm.len() - q_norm.len());
+    }
+    if n_norm.contains(&q_norm) {
+        let pos = n_norm.find(&q_norm).unwrap_or(0);
+        return 100 + pos + (n_norm.len() - q_norm.len());
+    }
+    10000
+}
+
 pub fn normalize_string(s: &str) -> String {
     let lower = s.to_lowercase();
 

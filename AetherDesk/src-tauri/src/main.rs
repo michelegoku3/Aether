@@ -66,6 +66,7 @@ fn main() {
             commands::antivirus::apply_antivirus_exclusion,
             commands::antivirus::open_windows_security,
             commands::antivirus::open_app_folder,
+            commands::store::suggest_store_games,
             commands::store::search_store,
             commands::store::get_cached_store_search,
             commands::store::get_trending_store_games,
