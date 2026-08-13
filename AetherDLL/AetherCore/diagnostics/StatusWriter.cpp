@@ -98,12 +98,6 @@ void Write() {
     json << "  \"eticket_mint_failures\": " << g_state.eticketFetch.mintFailureCount.load() << ",\n";
     json << "  \"eticket_runtime_cache_entries\": " << eticketfetch::CacheCount() << ",\n";
     json << "  \"eticket_inflight\": " << eticketfetch::InflightCount() << ",\n";
-    json << "  \"achievement_donor_pending\": " << hooks::AchievementModule::PendingDonorResolves() << ",\n";
-    json << "  \"achievement_donor_cache_size\": " << g_state.achievements.apiCache.Size() << ",\n";
-    json << "  \"achievement_donor_cache_hits\": " << g_state.achievements.apiCache.HitCount() << ",\n";
-    json << "  \"achievement_donor_cache_misses\": " << g_state.achievements.apiCache.MissCount() << ",\n";
-    json << "  \"achievement_donor_cache_evictions\": " << g_state.achievements.apiCache.EvictionCount() << ",\n";
-    json << "  \"achievement_donor_cache_negative\": " << g_state.achievements.apiCache.NegativeCount() << ",\n";
     json << "  \"ticket_forge_successes\": " << g_state.ticketForgeSuccessCount.load() << ",\n";
     json << "  \"ticket_forge_failures\": " << g_state.ticketForgeFailureCount.load() << ",\n";
     json << "  \"manifest_fetch_pending\": " << manifestfetch::PendingCount() << ",\n";

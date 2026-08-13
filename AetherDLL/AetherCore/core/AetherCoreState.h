@@ -55,17 +55,12 @@ struct ManifestOverride {
     std::uint64_t size = 0;
 };
 
-// Subsystem Achievement/UserStats state (stats/achievement spoofing & API cache)
+// Subsystem Achievement/UserStats state.
+// Donor selection and pool-learning state now live as file-local statics in
+// hooks/wire/AchievementModule.cpp (LumaCore-style per-app preferred pool).
 struct AchievementStore {
-    // Donor ID cache with TTL (24h) and LRU eviction (512 entries max).
-    // Positive entries: appId -> donor SteamID
-    // Negative entries: appId -> 0 (no donor found, use fallback pool)
-    // Thread-safe via internal shared_mutex.
-    utils::TtlCache<steam::AppId, std::uint64_t> apiCache{512, std::chrono::hours(24)};
-    
-    // Round-robin index for fallback pool (per-app, no TTL needed).
-    mutable std::shared_mutex poolMutex;
-    std::unordered_map<steam::AppId, std::size_t> nextPoolIndex;
+    // Intentionally empty: the OpenSteamTool donor API was removed and the
+    // per-app pool bookkeeping moved into AchievementModule.cpp.
 };
 
 struct AetherCoreState {
