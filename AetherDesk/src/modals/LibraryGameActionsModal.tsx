@@ -111,7 +111,19 @@ export const LibraryGameActionsModal = ({
   return (
     <div className="modal-overlay">
       <div className="modal-container game-action-modal">
-        <GameHeroImage appId={game.appId} name={game.name} canonicalUrl={game.heroImageUrl || game.imageUrl} />
+        <div className="game-action-hero-wrap">
+          <GameHeroImage appId={game.appId} name={game.name} canonicalUrl={game.heroImageUrl || game.imageUrl} />
+          <button
+            type="button"
+            className="game-action-hero-close"
+            onClick={onClose}
+            disabled={disabled}
+            aria-label="Close"
+            title="Close"
+          >
+            &times;
+          </button>
+        </div>
 
         <div className="game-action-body">
           <div className="game-action-grid">
@@ -133,10 +145,6 @@ export const LibraryGameActionsModal = ({
               Remove
             </button>
           </div>
-
-          <button className="game-action-close-btn" onClick={onClose} disabled={disabled}>
-            Close
-          </button>
         </div>
       </div>
     </div>

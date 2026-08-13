@@ -677,6 +677,41 @@ body {
   overflow: hidden;
 }
 
+.game-action-hero-wrap {
+  position: relative;
+}
+
+.game-action-hero-close {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  width: 34px;
+  height: 34px;
+  border: none;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.55);
+  color: #ffffff;
+  font-size: 24px;
+  font-weight: 700;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  z-index: 5;
+  transition: background-color 0.2s ease, color 0.2s ease;
+}
+
+.game-action-hero-close:hover:not(:disabled) {
+  background: rgba(0, 180, 216, 0.85);
+  color: #050505;
+}
+
+.game-action-hero-close:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
 .game-action-hero {
   position: relative;
   width: 100%;
@@ -769,36 +804,9 @@ body {
   background-color: rgba(255, 59, 95, 0.08);
 }
 
-.game-action-btn:disabled,
-.game-action-close-btn:disabled {
+.game-action-btn:disabled {
   opacity: 0.45;
   cursor: not-allowed;
-}
-
-.game-action-close-btn {
-  width: 150px;
-  height: 50px;
-  background-color: #1c1c21;
-  border: 2px solid var(--border-color);
-  border-radius: 8px;
-  color: #ffffff;
-  font-size: 15px;
-  font-weight: 800;
-  font-family: inherit;
-  text-transform: uppercase;
-  letter-spacing: 1.2px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  text-align: center;
-  cursor: pointer;
-  transition: all 0.2s ease;
-}
-
-.game-action-close-btn:hover:not(:disabled) {
-  border-color: var(--color-cyan);
-  color: var(--color-cyan);
-  background-color: #192128;
 }
 
 /* Specific version manifest editor */
