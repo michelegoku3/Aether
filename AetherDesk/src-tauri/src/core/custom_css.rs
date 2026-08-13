@@ -64,7 +64,7 @@ const DEFAULT_WALLPAPER_FILES: &[(&str, &[u8])] = &[
     ("halo.jpg", DEFAULT_HALO_WALLPAPER),
 ];
 
-const DEFAULT_AETHER_ICON: &[u8] = include_bytes!("../../assets/defaults/icons/aether.ico");
+pub const DEFAULT_AETHER_ICON: &[u8] = include_bytes!("../../assets/defaults/icons/aether.ico");
 const DEFAULT_ICON_FILES: &[(&str, &[u8])] = &[("aether.ico", DEFAULT_AETHER_ICON)];
 
 /// Image extensions the wallpaper picker accepts (browser-renderable set).
@@ -298,7 +298,18 @@ pub fn apply_window_icon(app: &tauri::AppHandle) -> Result<(), String> {
     };
     window
         .set_icon(image)
-        .map_err(|e| format!("Failed to set window icon: {}", e))
+        .map_err(|e| format!("Failed to set window icon: {}", e))?;
+
+    let source = if settings.custom_icon_enabled {
+        icon_path(&settings.icon_selected_file).ok().flatten()
+    } else {
+        None
+    };
+    match crate::core::shell_shortcuts::materialize_shell_ico(source.as_deref()) {
+        Ok(shell_ico) => crate::core::shell_shortcuts::sync_windows_shortcuts(&shell_ico),
+        Err(e) => eprintln!("[AetherDesk] shell icon materialize failed: {e}"),
+    }
+    Ok(())
 }
 
 // ---------------------------------------------------------------------------

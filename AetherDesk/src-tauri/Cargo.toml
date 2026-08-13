@@ -31,4 +31,4 @@ image = { version = "0.25", default-features = false, features = ["png", "jpeg",
 # DLL version is read directly from the PE version resource inside the .dll files
 # (Windows-only API; the DLL domain is Windows-only by design).
 [target.'cfg(windows)'.dependencies]
-windows-sys = { version = "0.59", features = ["Win32_Storage_FileSystem", "Win32_System_SystemInformation", "Win32_Foundation"] }
+windows-sys = { version = "0.59", features = ["Win32_Storage_FileSystem", "Win32_System_SystemInformation", "Win32_Foundation", "Win32_UI_Shell"] }

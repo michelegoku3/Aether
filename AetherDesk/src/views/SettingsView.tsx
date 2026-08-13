@@ -508,7 +508,7 @@ export const SettingsView = ({ hubcapUsage, onRefreshUsage, onRefreshCustomCss, 
           {/* Enable theme (first CSS in config/themes). Applies in real time:
               no "Save Settings" needed to see the theme. */}
           <div className="settings-toggle-row" title="Load the first .css file found in AetherData/config/themes after the default theme. Applies immediately.">
-            <span className="settings-toggle-text">Enable theme</span>
+            <span className="settings-toggle-text">Enable custom theme</span>
             <label className="version-switch">
               <input
                 type="checkbox"
@@ -555,7 +555,7 @@ export const SettingsView = ({ hubcapUsage, onRefreshUsage, onRefreshCustomCss, 
 
           {/* Enable personal wallpaper (first image in config/wallpapers) */}
           <div className="settings-toggle-row" title="Use the first image found in AetherData/config/wallpapers as the app background.">
-            <span className="settings-toggle-text">Enable personal wallpaper</span>
+            <span className="settings-toggle-text">Enable custom wallpaper</span>
             <label className="version-switch">
               <input
                 type="checkbox"
@@ -619,7 +619,7 @@ export const SettingsView = ({ hubcapUsage, onRefreshUsage, onRefreshCustomCss, 
           )}
 
           <div className="settings-toggle-row" title="Use a custom window icon from AetherData/config/icons.">
-            <span className="settings-toggle-text">Enable custom app icon</span>
+            <span className="settings-toggle-text">Enable custom icon</span>
             <label className="version-switch">
               <input
                 type="checkbox"
@@ -649,7 +649,7 @@ export const SettingsView = ({ hubcapUsage, onRefreshUsage, onRefreshCustomCss, 
                 <p className="settings-desc">
                   The first icon in <code className="settings-path" title={appearanceAssets.iconsDir}>{appearanceAssets.iconsDir}</code> is used as the window icon.{' '}
                   {appearanceAssets.iconName ? <>Currently active: <strong>{appearanceAssets.iconName}</strong>. </> : ''}
-                  Use the button to pick a different icon (.ico, png, jpg, webp, gif, bmp, tiff).
+                  Use the button to pick a different icon.
                 </p>
                 {appearancePickBtn(
                   'ICON',
