@@ -18,6 +18,11 @@ pub fn wallpapers_dir() -> PathBuf {
     LocalAppPaths::config_dir().join("wallpapers")
 }
 
+/// Custom window icons live in `AetherData/config/icons/`.
+pub fn icons_dir() -> PathBuf {
+    LocalAppPaths::config_dir().join("icons")
+}
+
 /// Default Goldmine theme shipped with AetherDesk (embedded in the binary so
 /// no bundle/resource path resolution is needed in dev or in production).
 /// NOTE: `include_str!` paths are relative to THIS source file, so two `..`
@@ -59,8 +64,16 @@ const DEFAULT_WALLPAPER_FILES: &[(&str, &[u8])] = &[
     ("halo.jpg", DEFAULT_HALO_WALLPAPER),
 ];
 
+const DEFAULT_AETHER_ICON: &[u8] = include_bytes!("../../assets/defaults/icons/aether.ico");
+const DEFAULT_ICON_FILES: &[(&str, &[u8])] = &[("aether.ico", DEFAULT_AETHER_ICON)];
+
 /// Image extensions the wallpaper picker accepts (browser-renderable set).
 const WALLPAPER_EXTENSIONS: &[&str] = &["jpg", "jpeg", "png", "webp", "gif", "bmp", "avif", "ico"];
+
+/// Raster / icon formats we can decode into a window icon.
+pub const ICON_EXTENSIONS: &[&str] = &[
+    "ico", "png", "jpg", "jpeg", "webp", "gif", "bmp", "tif", "tiff",
+];
 
 // ---------------------------------------------------------------------------
 // First-run provisioning
@@ -74,11 +87,14 @@ const WALLPAPER_EXTENSIONS: &[&str] = &["jpg", "jpeg", "png", "webp", "gif", "bm
 pub fn ensure_default_assets() -> Result<(), String> {
     let themes_dir = themes_dir();
     let wallpapers_dir = wallpapers_dir();
+    let icons_dir = icons_dir();
 
     fs::create_dir_all(&themes_dir)
         .map_err(|e| format!("Failed to create themes directory: {}", e))?;
     fs::create_dir_all(&wallpapers_dir)
         .map_err(|e| format!("Failed to create wallpapers directory: {}", e))?;
+    fs::create_dir_all(&icons_dir)
+        .map_err(|e| format!("Failed to create icons directory: {}", e))?;
 
     for (file_name, content) in DEFAULT_THEME_FILES {
         let file = themes_dir.join(file_name);
@@ -94,6 +110,15 @@ pub fn ensure_default_assets() -> Result<(), String> {
         if !file.exists() {
             if let Err(e) = fs::write(&file, content) {
                 eprintln!("[AetherDesk] failed to write default wallpaper {}: {}", file_name, e);
+            }
+        }
+    }
+
+    for (file_name, content) in DEFAULT_ICON_FILES {
+        let file = icons_dir.join(file_name);
+        if !file.exists() {
+            if let Err(e) = fs::write(&file, content) {
+                eprintln!("[AetherDesk] failed to write default icon {}: {}", file_name, e);
             }
         }
     }
@@ -216,6 +241,66 @@ pub fn active_theme_name(selected_file: &str) -> Option<String> {
         .and_then(|path| path.file_name().map(|name| name.to_string_lossy().to_string()))
 }
 
+pub fn icon_path(selected_file: &str) -> Result<Option<PathBuf>, String> {
+    let selected = resolve_selected(&icons_dir(), selected_file)?;
+    if let Some(path) = selected {
+        return Ok(Some(path));
+    }
+    Ok(icon_candidates()?.into_iter().next())
+}
+
+fn icon_candidates() -> Result<Vec<PathBuf>, String> {
+    list_files_with_extension(&icons_dir(), "icon")
+}
+
+pub fn active_icon_name(selected_file: &str) -> Option<String> {
+    icon_path(selected_file)
+        .ok()
+        .flatten()
+        .and_then(|path| path.file_name().map(|name| name.to_string_lossy().to_string()))
+}
+
+fn icon_from_bytes(bytes: &[u8]) -> Result<tauri::image::Image<'static>, String> {
+    let decoded = image::load_from_memory(bytes)
+        .map_err(|e| format!("Unsupported icon format: {}", e))?;
+    let rgba = decoded.to_rgba8();
+    let (width, height) = rgba.dimensions();
+    if width == 0 || height == 0 {
+        return Err("Icon image is empty".to_string());
+    }
+    Ok(tauri::image::Image::new_owned(rgba.into_raw(), width, height))
+}
+
+pub fn load_window_icon(path: &Path) -> Result<tauri::image::Image<'static>, String> {
+    let bytes = fs::read(path).map_err(|e| format!("Failed to read icon {}: {}", path.display(), e))?;
+    icon_from_bytes(&bytes)
+}
+
+pub fn default_window_icon() -> Result<tauri::image::Image<'static>, String> {
+    icon_from_bytes(DEFAULT_AETHER_ICON)
+}
+
+pub fn apply_window_icon(app: &tauri::AppHandle) -> Result<(), String> {
+    use tauri::Manager;
+
+    let settings = crate::core::settings::SettingsManager::new(app).load();
+    let image = if settings.custom_icon_enabled {
+        match icon_path(&settings.icon_selected_file)? {
+            Some(path) => load_window_icon(&path)?,
+            None => default_window_icon()?,
+        }
+    } else {
+        default_window_icon()?
+    };
+
+    let Some(window) = app.get_webview_window("main") else {
+        return Ok(());
+    };
+    window
+        .set_icon(image)
+        .map_err(|e| format!("Failed to set window icon: {}", e))
+}
+
 // ---------------------------------------------------------------------------
 // Selection / import helpers (used by the native file picker commands)
 // ---------------------------------------------------------------------------
@@ -286,6 +371,15 @@ fn list_files_with_extension(dir: &Path, kind: &str) -> Result<Vec<PathBuf>, Str
                 .extension()
                 .and_then(|ext| ext.to_str())
                 .map(|ext| ext.eq_ignore_ascii_case("css"))
+                .unwrap_or(false),
+            "icon" => path
+                .extension()
+                .and_then(|ext| ext.to_str())
+                .map(|ext| {
+                    ICON_EXTENSIONS
+                        .iter()
+                        .any(|allowed| ext.eq_ignore_ascii_case(allowed))
+                })
                 .unwrap_or(false),
             _ => path
                 .extension()

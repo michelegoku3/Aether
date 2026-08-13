@@ -13,7 +13,11 @@ pub fn save_settings(app: tauri::AppHandle, settings: AppSettings) -> Result<(),
     crate::desk_log_info!("settings", "Saving user settings to disk (steam_path='{}', hubcap_key_set={})",
         settings.steam_path, !settings.hubcap_api_key.trim().is_empty());
     let manager = SettingsManager::new(&app);
-    manager.save(&settings)
+    manager.save(&settings)?;
+    if let Err(e) = crate::core::custom_css::apply_window_icon(&app) {
+        crate::desk_log_warn!("settings", "Window icon apply after save failed: {}", e);
+    }
+    Ok(())
 }
 
 #[tauri::command]

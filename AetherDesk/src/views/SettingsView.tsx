@@ -15,8 +15,11 @@ interface AppearanceAssets {
   themeName: string | null;
   wallpaperExists: boolean;
   wallpaperName: string | null;
+  iconExists: boolean;
+  iconName: string | null;
   themesDir: string;
   wallpapersDir: string;
+  iconsDir: string;
 }
 
 const clamp0to100 = (value: number) => Math.max(0, Math.min(100, Number.isFinite(value) ? value : 0));
@@ -41,6 +44,8 @@ export const SettingsView = ({ hubcapUsage, onRefreshUsage, onRefreshCustomCss, 
   const [alternativeCardsFade, setAlternativeCardsFade] = useState(50);
   const [themeSelectedFile, setThemeSelectedFile] = useState('');
   const [wallpaperSelectedFile, setWallpaperSelectedFile] = useState('');
+  const [customIconEnabled, setCustomIconEnabled] = useState(false);
+  const [iconSelectedFile, setIconSelectedFile] = useState('');
   const [ryuuKey, setRyuuKey] = useState('');
   const [storeCurrency, setStoreCurrency] = useState<'eur' | 'usd' | 'jpy'>('eur');
 
@@ -51,10 +56,13 @@ export const SettingsView = ({ hubcapUsage, onRefreshUsage, onRefreshCustomCss, 
     themeName: null,
     wallpaperExists: false,
     wallpaperName: null,
+    iconExists: false,
+    iconName: null,
     themesDir: '',
     wallpapersDir: '',
+    iconsDir: '',
   });
-  const [isPicking, setIsPicking] = useState<'theme' | 'wallpaper' | null>(null);
+  const [isPicking, setIsPicking] = useState<'theme' | 'wallpaper' | 'icon' | null>(null);
 
   // Raw settings as loaded from the backend. Saving always spreads this object
   // back, so fields owned by other flows (e.g. `antivirus_exclusion_done`) are
@@ -104,6 +112,8 @@ export const SettingsView = ({ hubcapUsage, onRefreshUsage, onRefreshCustomCss, 
           setAlternativeCardsFade(clamp0to100(Number(settings.alternative_cards_fade ?? 50)));
           setThemeSelectedFile(settings.theme_selected_file || '');
           setWallpaperSelectedFile(settings.wallpaper_selected_file || '');
+          setCustomIconEnabled(Boolean(settings.custom_icon_enabled));
+          setIconSelectedFile(settings.icon_selected_file || '');
           setRyuuKey(settings.ryuu_api_key || '');
           setStoreCurrency(['usd', 'jpy'].includes(settings.store_currency) ? settings.store_currency : 'eur');
         }
@@ -134,6 +144,8 @@ export const SettingsView = ({ hubcapUsage, onRefreshUsage, onRefreshCustomCss, 
     personal_wallpaper_opacity: personalWallpaperOpacity,
     wallpaper_selected_file: wallpaperSelectedFile,
     theme_selected_file: themeSelectedFile,
+    custom_icon_enabled: customIconEnabled,
+    icon_selected_file: iconSelectedFile,
     alternative_cards_opacity: alternativeCardsOpacity,
     alternative_cards_fade: alternativeCardsFade,
     ryuu_api_key: ryuuKey,
@@ -208,6 +220,23 @@ export const SettingsView = ({ hubcapUsage, onRefreshUsage, onRefreshCustomCss, 
       // "No file selected" is a normal cancellation, not an error.
       if (String(err).includes('No file selected')) return;
       showStatus(`Failed to pick theme: ${err}`, 'error');
+    } finally {
+      setIsPicking(null);
+    }
+  };
+
+  const handlePickIcon = async () => {
+    setIsPicking('icon');
+    try {
+      const fileName: string = await invoke('pick_icon_file');
+      setIconSelectedFile(fileName);
+      await persistAppearanceSelection({ icon_selected_file: fileName, custom_icon_enabled: true });
+      await invoke('apply_window_icon');
+      await loadAppearanceAssets();
+      showStatus(`Icon selected: ${fileName}`, 'success');
+    } catch (err: any) {
+      if (String(err).includes('No file selected')) return;
+      showStatus(`Failed to pick icon: ${err}`, 'error');
     } finally {
       setIsPicking(null);
     }
@@ -589,6 +618,49 @@ export const SettingsView = ({ hubcapUsage, onRefreshUsage, onRefreshCustomCss, 
             </div>
           )}
 
+          <div className="settings-toggle-row" title="Use a custom window icon from AetherData/config/icons.">
+            <span className="settings-toggle-text">Enable custom app icon</span>
+            <label className="version-switch">
+              <input
+                type="checkbox"
+                checked={customIconEnabled}
+                disabled={!appearanceAssets.iconExists}
+                onChange={async (e) => {
+                  const next = e.target.checked;
+                  setCustomIconEnabled(next);
+                  try { await invoke('ensure_custom_css'); } catch {}
+                  await persistAppearanceSelection({ custom_icon_enabled: next });
+                  try { await invoke('apply_window_icon'); } catch (err) { console.warn('Failed to apply window icon:', err); }
+                }}
+              />
+              <span></span>
+            </label>
+          </div>
+
+          {!appearanceAssets.iconExists && (
+            <p className="settings-desc settings-assets-missing">
+              No icon found in AetherData/config/icons — the switch is disabled. Add an image or .ico to enable it.
+            </p>
+          )}
+
+          {customIconEnabled && appearanceAssets.iconExists && (
+            <div className="settings-appearance-sub">
+              <div className="settings-appearance-row">
+                <p className="settings-desc">
+                  The first icon in <code className="settings-path" title={appearanceAssets.iconsDir}>{appearanceAssets.iconsDir}</code> is used as the window icon.{' '}
+                  {appearanceAssets.iconName ? <>Currently active: <strong>{appearanceAssets.iconName}</strong>. </> : ''}
+                  Use the button to pick a different icon (.ico, png, jpg, webp, gif, bmp, tiff).
+                </p>
+                {appearancePickBtn(
+                  'ICON',
+                  handlePickIcon,
+                  !appearanceAssets.iconExists && !customIconEnabled,
+                  isPicking === 'icon'
+                )}
+              </div>
+            </div>
+          )}
+
           {/* Alternative game cards — moved below the personal wallpaper switch */}
           <div className="settings-toggle-row" title="Use the alternate backdrop-focused game card layout in Store and Library.">
             <span className="settings-toggle-text">Use alternative game cards</span>
@@ -697,6 +769,8 @@ export const SettingsView = ({ hubcapUsage, onRefreshUsage, onRefreshCustomCss, 
                     personal_wallpaper_opacity: 20,
                     wallpaper_selected_file: '',
                     theme_selected_file: '',
+                    custom_icon_enabled: false,
+                    icon_selected_file: '',
                     alternative_cards_opacity: 100,
                     alternative_cards_fade: 50,
                     store_currency: 'eur',

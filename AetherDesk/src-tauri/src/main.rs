@@ -38,6 +38,9 @@ fn main() {
             // obsolete data-folder cleanup, and the lua_backups → backup data
             // layout migration. Each step is idempotent and failure-tolerant.
             crate::core::migration::run_startup_migrations(&app.handle());
+            if let Err(e) = crate::core::custom_css::apply_window_icon(&app.handle()) {
+                eprintln!("[AetherDesk] window icon apply failed: {e}");
+            }
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -57,6 +60,8 @@ fn main() {
             commands::custom_css::get_appearance_assets,
             commands::custom_css::pick_theme_file,
             commands::custom_css::pick_wallpaper_file,
+            commands::custom_css::pick_icon_file,
+            commands::custom_css::apply_window_icon,
             commands::crack::pick_crack_files,
             commands::crack::apply_crack,
             commands::local::pick_local_files,
