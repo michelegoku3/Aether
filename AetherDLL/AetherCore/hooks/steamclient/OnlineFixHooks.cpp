@@ -2,6 +2,9 @@
 #include "hooks/steamclient/OnlineFixHooks.h"
 
 #include <cstring>
+#include <fstream>
+#include <regex>
+#include <sstream>
 #include <string>
 
 #include "core/AetherCoreState.h"
@@ -44,6 +47,119 @@ static bool HasOnlineFixFlag(const char* cmdLine) {
     return false;
 }
 
+// ---------------------------------------------------------------------------
+// SyncLanguageToSpacewar — copies the "language" field from the real game's
+// appmanifest ACF to the Spacewar (480) appmanifest ACF.
+//
+// When a game is masked as 480, Steam reads the language from appmanifest_480.acf.
+// If the real game uses Italian but the 480 ACF says "english", the game launches
+// in English. This function synchronises them so the game starts in the correct
+// language.
+//
+// ACF format (Valve Data Format):
+//   "AppState"
+//   {
+//       "appid"  "1703340"
+//       "UserConfig"
+//       {
+//           "language"  "italian"
+//       }
+//   }
+// ---------------------------------------------------------------------------
+void SyncLanguageToSpacewar(AppId realAppId) {
+    if (realAppId == 0 || realAppId == constants::kSpacewarAppId) return;
+
+    const std::string steamPath = g_state.steamInstallPath;
+    if (steamPath.empty()) return;
+
+    const std::string realAcf = steamPath + "\\steamapps\\appmanifest_" +
+                                std::to_string(realAppId) + ".acf";
+    const std::string swAcf   = steamPath + "\\steamapps\\appmanifest_" +
+                                std::to_string(constants::kSpacewarAppId) + ".acf";
+
+    // Read the real game's ACF and extract the language field.
+    std::ifstream realFile(realAcf);
+    if (!realFile.is_open()) {
+        AC_LOG_DEBUG(kModule, "SyncLanguage: cannot open %s.", realAcf.c_str());
+        return;
+    }
+    std::string realContent((std::istreambuf_iterator<char>(realFile)),
+                             std::istreambuf_iterator<char>());
+    realFile.close();
+
+    // Simple regex to find "language" "value" inside the ACF.
+    // ACF files are small (< 4 KB) so this is efficient enough.
+    std::smatch match;
+    std::regex langRegex(R"re("language"\s+"([^"]+)")re", std::regex::icase);
+    if (!std::regex_search(realContent, match, langRegex)) {
+        AC_LOG_DEBUG(kModule, "SyncLanguage: no language field in appmanifest_%u.acf.", realAppId);
+        return;
+    }
+    const std::string language = match[1].str();
+    if (language.empty()) return;
+
+    AC_LOG_INFO(kModule, "SyncLanguage: app %u language='%s'.", realAppId, language.c_str());
+
+    // Read or create the 480 ACF and update/insert the language field.
+    std::string swContent;
+    {
+        std::ifstream swFile(swAcf);
+        if (swFile.is_open()) {
+            swContent.assign((std::istreambuf_iterator<char>(swFile)),
+                              std::istreambuf_iterator<char>());
+            swFile.close();
+        }
+    }
+
+    if (swContent.empty()) {
+        // No 480 ACF exists yet — create a minimal one with just the language.
+        std::ostringstream oss;
+        oss << "\"AppState\"\n{\n"
+            << "\t\"appid\"\t\t\"" << constants::kSpacewarAppId << "\"\n"
+            << "\t\"UserConfig\"\n\t{\n"
+            << "\t\t\"language\"\t\t\"" << language << "\"\n"
+            << "\t}\n}\n";
+        swContent = oss.str();
+    } else if (std::regex_search(swContent, langRegex)) {
+        // Replace existing language field.
+        swContent = std::regex_replace(swContent,
+            std::regex(R"re("language"\s+"[^"]+")re", std::regex::icase),
+            "\"language\"\t\t\"" + language + "\"");
+    } else {
+        // Language field missing — insert it before the last closing brace.
+        // Find "UserConfig" section and add language inside it.
+        const auto ucPos = swContent.find("\"UserConfig\"");
+        if (ucPos != std::string::npos) {
+            const auto bracePos = swContent.find('{', ucPos);
+            if (bracePos != std::string::npos) {
+                swContent.insert(bracePos + 1,
+                    "\n\t\t\"language\"\t\t\"" + language + "\"");
+            }
+        } else {
+            // No UserConfig section — add one before the last closing brace.
+            const auto lastBrace = swContent.rfind('}');
+            if (lastBrace != std::string::npos) {
+                std::ostringstream oss;
+                oss << "\t\"UserConfig\"\n\t{\n"
+                    << "\t\t\"language\"\t\t\"" << language << "\"\n"
+                    << "\t}\n";
+                swContent.insert(lastBrace, oss.str());
+            }
+        }
+    }
+
+    // Write the updated 480 ACF.
+    std::ofstream outFile(swAcf, std::ios::trunc);
+    if (outFile.is_open()) {
+        outFile << swContent;
+        outFile.close();
+        AC_LOG_INFO(kModule, "SyncLanguage: wrote language='%s' to appmanifest_480.acf.",
+                    language.c_str());
+    } else {
+        AC_LOG_WARN(kModule, "SyncLanguage: cannot write %s.", swAcf.c_str());
+    }
+}
+
 bool h_SpawnProcess(void* user, const char* exe, const char* cmdLine, const char* workDir,
                     std::uint64_t* gameId, const void* blob, std::uint32_t blobSize,
                     std::int32_t launchOption) {
@@ -56,6 +172,9 @@ bool h_SpawnProcess(void* user, const char* exe, const char* cmdLine, const char
             *gameId = (*gameId & ~constants::kGameIdAppIdMask) | constants::kSpacewarAppId;
             AC_LOG_INFO(kModule, "Masked AppId %u as Spacewar (%u) for OnlineFix.",
                         realApp, constants::kSpacewarAppId);
+            // Synchronise the game's language to the 480 ACF so the game
+            // starts in the correct language instead of defaulting to English.
+            SyncLanguageToSpacewar(realApp);
         } else {
             g_state.onlineFixRealAppId.store(0);
         }

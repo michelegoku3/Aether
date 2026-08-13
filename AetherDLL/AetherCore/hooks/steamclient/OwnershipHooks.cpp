@@ -348,6 +348,47 @@ bool h_SendCallbackToPipe(void* engine, HSteamPipe pipe, HSteamUser user, int cb
         AC_LOG_WARN(kModule, "SendCallbackToPipe: AppLicensesChanged without reload payload; "
                              "ownership may not refresh.");
     }
+
+    // ── OnlineFix achievement callback dual-dispatch ─────────────────────────
+    // When a game is masked as Spacewar/480 for OnlineFix multiplayer, it
+    // registers Steamworks callbacks (UserStatsReceived, UserAchievementStored,
+    // etc.) under appid 480. But Steam dispatches them with the REAL appid in
+    // m_nGameID. The game's handlers never fire because the appid doesn't match.
+    //
+    // Fix: first dispatch with the real appid (so any real-appid bindings work),
+    // then rewrite m_nGameID low 24 bits from real → 480 and dispatch again so
+    // the game's 480-registered handlers also fire.
+    //
+    // m_nGameID is the first field (uint64) in all achievement callback structs:
+    //   UserStatsReceived_t::m_nGameID
+    //   UserStatsStored_t::m_nGameID
+    //   UserAchievementStored_t::m_nGameID
+    //   UserAchievementIconFetched_t::m_nGameID
+    const AppId realApp = g_state.onlineFixRealAppId.load(std::memory_order_acquire);
+    if (realApp != 0 && realApp != constants::kSpacewarAppId &&
+        constants::achievement_cb::IsAchievementCallback(cb) &&
+        data && size >= static_cast<int>(sizeof(std::uint64_t)))
+    {
+        auto* pGameId = static_cast<std::uint64_t*>(data);
+        const AppId currentApp = static_cast<AppId>(*pGameId & constants::kGameIdAppIdMask);
+
+        // Only rewrite when the payload genuinely carries the real appid.
+        if (currentApp == realApp) {
+            // First dispatch: real appid (for any real-appid bindings).
+            o_SendCallbackToPipe(engine, pipe, user, cb, data, size);
+
+            // Rewrite m_nGameID: real → 480.
+            *pGameId = (*pGameId & ~static_cast<std::uint64_t>(constants::kGameIdAppIdMask))
+                      | static_cast<std::uint64_t>(constants::kSpacewarAppId);
+
+            AC_LOG_DEBUG_ONCE(kModule, "OnlineFix dual-dispatch: cb=%d %u -> %u.",
+                              cb, realApp, constants::kSpacewarAppId);
+
+            // Second dispatch: 480 (for the game's 480-registered handlers).
+            return o_SendCallbackToPipe(engine, pipe, user, cb, data, size);
+        }
+    }
+
     return o_SendCallbackToPipe(engine, pipe, user, cb, data, size);
 }
 

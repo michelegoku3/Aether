@@ -66,6 +66,23 @@ inline constexpr std::uint64_t kGameIdAppIdMask = 0xFFFFFFull;
 // Callback id Steam fires when app licenses change.
 inline constexpr int kCallbackAppLicensesChanged = 1020094;
 
+// Steamworks achievement/stats callback IDs. Used by the OnlineFix dual-dispatch
+// in SendCallbackToPipe: when a game is masked as Spacewar/480, it registers
+// callbacks under appid 480, but Steam dispatches them with the real appid.
+// The dual-dispatch rewrites m_nGameID (low 24 bits) from real → 480 and
+// re-emits so the game's 480-registered handlers also fire.
+namespace achievement_cb {
+inline constexpr int kUserStatsReceived      = 1101;
+inline constexpr int kUserStatsStored        = 1102;
+inline constexpr int kUserAchievementStored  = 1103;
+inline constexpr int kUserAchievementIconFetched = 1109;
+
+inline bool IsAchievementCallback(int cb) {
+    return cb == kUserStatsReceived || cb == kUserStatsStored ||
+           cb == kUserAchievementStored || cb == kUserAchievementIconFetched;
+}
+}  // namespace achievement_cb
+
 // ---------------------------------------------------------------------------
 // IPC bus wire format (game <-> Steam).
 //
