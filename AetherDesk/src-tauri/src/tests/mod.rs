@@ -8,3 +8,4 @@ pub mod github_updater_tests;
 pub mod normalize_tests;
 pub mod service_tests;
 pub mod store_items_tests;
+pub mod store_suggest_tests;

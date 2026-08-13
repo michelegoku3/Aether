@@ -256,14 +256,24 @@ body {
   display: flex;
   gap: 12px;
   width: 100%;
+  position: relative;
+  z-index: 20;
+}
+
+.store-suggest-wrap {
+  position: relative;
+  flex-grow: 1;
 }
 
 .store-search-input {
-  flex-grow: 1;
+  display: block;
+  width: 100%;
+  min-height: 42px;
+  box-sizing: border-box;
   background-color: #141417;
   border: 1px solid var(--border-color);
   border-radius: 8px;
-  padding: 10px 36px 10px 16px; /* right padding leaves room for the clear "x" */
+  padding: 10px 36px 10px 16px;
   color: #ffffff;
   font-size: 14px;
   outline: none;

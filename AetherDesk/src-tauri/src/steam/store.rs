@@ -1,9 +1,19 @@
 use crate::providers::http;
 use regex::Regex;
+use reqwest::header::USER_AGENT;
 use serde::{Deserialize, Serialize};
+use std::collections::{HashMap, VecDeque};
+use std::sync::{Mutex, OnceLock};
+use std::time::{Duration, Instant};
+
+const STEAM_BROWSER_UA: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
 
 const STEAM_SEARCH_TIMEOUT_SECONDS: u64 = 5;
 const STEAM_SEARCH_RESULTS_URL: &str = "https://store.steampowered.com/search/results/";
+const STEAM_SUGGEST_URL: &str = "https://store.steampowered.com/search/suggest";
+const STEAM_SEARCH_APPS_URL: &str = "https://steamcommunity.com/actions/SearchApps";
+const SUGGEST_CACHE_CAP: usize = 80;
+const SUGGEST_CACHE_TTL: Duration = Duration::from_secs(10 * 60);
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct SteamStoreItem {
@@ -57,6 +67,28 @@ struct SteamSearchResultsResponse {
     results_html: Option<String>,
 }
 
+/// Community SearchApps JSON. `appid` is sometimes a string, sometimes a number.
+#[derive(Debug, Deserialize)]
+struct SteamSearchApp {
+    #[serde(deserialize_with = "deserialize_appid_as_string")]
+    appid: String,
+    name: String,
+    #[serde(default)]
+    logo: Option<String>,
+}
+
+fn deserialize_appid_as_string<'de, D>(deserializer: D) -> Result<String, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let value = serde_json::Value::deserialize(deserializer)?;
+    match value {
+        serde_json::Value::String(s) => Ok(s),
+        serde_json::Value::Number(n) => Ok(n.to_string()),
+        _ => Err(serde::de::Error::custom("appid must be a string or number")),
+    }
+}
+
 #[derive(Clone)]
 pub struct SteamStore {
     client: reqwest::Client,
@@ -69,9 +101,108 @@ impl SteamStore {
         }
     }
 
-    /// Queries Steam's official public Store Search API with an explicit country
-    /// code so price currency can follow the user's settings without changing
-    /// the caller's filtering/ranking semantics.
+    /// Autocomplete for the Store typeahead.
+    ///
+    /// Steam `/search/suggest` returns a short ranked list (~5). We merge it
+    /// with `SearchApps` (longer list) so the UI can scroll past the first five
+    /// without losing Steam's ranking on top. Identical queries are served from
+    /// a process-lifetime LRU and never hit Steam twice.
+    pub async fn suggest_for_country(&self, query: &str, country_code: &str) -> Result<Vec<SteamStoreItem>, String> {
+        let trimmed = query.trim();
+        if trimmed.len() < 2 {
+            return Ok(Vec::new());
+        }
+
+        let cache_key = suggest_cache_key(country_code, trimmed);
+        if let Some(cached) = suggest_cache_get(&cache_key) {
+            return Ok(cached);
+        }
+
+        let (suggest_res, apps_res) = tokio::join!(
+            self.fetch_suggest_html(trimmed, country_code),
+            self.fetch_search_apps(trimmed),
+        );
+
+        let mut merged = Vec::new();
+        let mut seen = std::collections::HashSet::new();
+        for batch in [suggest_res.unwrap_or_default(), apps_res.unwrap_or_default()] {
+            for item in batch {
+                if seen.insert(item.id) {
+                    merged.push(item);
+                }
+            }
+        }
+
+        suggest_cache_put(cache_key, merged.clone());
+        Ok(merged)
+    }
+
+    async fn fetch_suggest_html(&self, query: &str, country_code: &str) -> Result<Vec<SteamStoreItem>, String> {
+        let response = self
+            .client
+            .get(STEAM_SUGGEST_URL)
+            .header(USER_AGENT, STEAM_BROWSER_UA)
+            .query(&[
+                ("term", query),
+                ("f", "games"),
+                ("cc", country_code),
+                ("l", "italian"),
+                ("realm", "1"),
+            ])
+            .send()
+            .await
+            .map_err(|e| format!("Steam suggest request failed: {}", e))?;
+
+        if !response.status().is_success() {
+            return Err(format!("Steam suggest returned HTTP {}", response.status()));
+        }
+
+        let html = response
+            .text()
+            .await
+            .map_err(|e| format!("Failed to read Steam suggest body: {}", e))?;
+        Ok(parse_suggest_html(&html))
+    }
+
+    async fn fetch_search_apps(&self, query: &str) -> Result<Vec<SteamStoreItem>, String> {
+        let encoded = urlencoding_path(query);
+        let url = format!("{}/{}", STEAM_SEARCH_APPS_URL, encoded);
+        let response = self
+            .client
+            .get(&url)
+            .header(USER_AGENT, STEAM_BROWSER_UA)
+            .send()
+            .await
+            .map_err(|e| format!("Steam SearchApps request failed: {}", e))?;
+
+        if !response.status().is_success() {
+            return Ok(Vec::new());
+        }
+
+        let apps: Vec<SteamSearchApp> = response.json().await.unwrap_or_default();
+        Ok(apps
+            .into_iter()
+            .filter_map(|app| {
+                let id = app.appid.parse::<u32>().ok()?;
+                let name = app.name.trim().to_string();
+                if name.is_empty() {
+                    return None;
+                }
+                Some(SteamStoreItem {
+                    id,
+                    name,
+                    image_url: app.logo.unwrap_or_default(),
+                    item_type: Some("app".to_string()),
+                    price: None,
+                    metascore: None,
+                    platforms: None,
+                    streamingvideo: None,
+                    controller_support: None,
+                })
+            })
+            .collect())
+    }
+
     pub async fn search_catalog_for_country(&self, query: &str, country_code: &str) -> Result<Vec<SteamStoreItem>, String> {
         if query.trim().is_empty() {
             return Ok(Vec::new());
@@ -135,6 +266,71 @@ impl SteamStore {
     }
 }
 
+
+pub fn parse_suggest_html(html: &str) -> Vec<SteamStoreItem> {
+    let Ok(row_re) = Regex::new(
+        r#"(?s)data-ds-appid="(?P<appid>\d+)"(?P<body>.*?)(?:</a>|$)"#,
+    ) else {
+        return Vec::new();
+    };
+    let name_re = Regex::new(r#"(?s)class="match_name"[^>]*>(?P<name>.*?)</div>"#).ok();
+    let img_re = Regex::new(r#"<img\s+src="(?P<src>[^"]+)""#).ok();
+    let mut seen = std::collections::HashSet::new();
+    let mut items = Vec::new();
+
+    for captures in row_re.captures_iter(html) {
+        let Some(id) = captures.name("appid").and_then(|m| m.as_str().parse::<u32>().ok()) else {
+            continue;
+        };
+        if !seen.insert(id) {
+            continue;
+        }
+        let body = captures.name("body").map(|m| m.as_str()).unwrap_or("");
+        let name = name_re
+            .as_ref()
+            .and_then(|re| re.captures(body))
+            .and_then(|caps| caps.name("name"))
+            .map(|m| decode_html(m.as_str()))
+            .filter(|title| !title.trim().is_empty());
+        let Some(name) = name else { continue };
+        let image_url = img_re
+            .as_ref()
+            .and_then(|re| re.captures(body))
+            .and_then(|caps| caps.name("src"))
+            .map(|m| decode_html(m.as_str()))
+            .unwrap_or_default();
+
+        items.push(SteamStoreItem {
+            id,
+            name,
+            image_url,
+            item_type: Some("app".to_string()),
+            price: None,
+            metascore: None,
+            platforms: None,
+            streamingvideo: None,
+            controller_support: None,
+        });
+    }
+
+    items
+}
+
+fn urlencoding_path(value: &str) -> String {
+    let mut out = String::with_capacity(value.len());
+    for ch in value.chars() {
+        match ch {
+            'A'..='Z' | 'a'..='z' | '0'..='9' | '-' | '_' | '.' | '~' => out.push(ch),
+            ' ' => out.push_str("%20"),
+            _ => {
+                for byte in ch.encode_utf8(&mut [0; 4]).as_bytes() {
+                    out.push_str(&format!("%{:02X}", byte));
+                }
+            }
+        }
+    }
+    out
+}
 
 fn store_front_params(
     filter: &str,
@@ -233,6 +429,58 @@ fn currency_for_country(country_code: &str) -> &'static str {
         "US" => "USD",
         "JP" => "JPY",
         _ => "EUR",
+    }
+}
+
+fn suggest_cache_key(country_code: &str, query: &str) -> String {
+    format!(
+        "{}:{}",
+        country_code.trim().to_uppercase(),
+        query.split_whitespace().collect::<Vec<_>>().join(" ").to_lowercase()
+    )
+}
+
+struct SuggestCache {
+    entries: HashMap<String, (Instant, Vec<SteamStoreItem>)>,
+    order: VecDeque<String>,
+}
+
+fn suggest_cache() -> &'static Mutex<SuggestCache> {
+    static CACHE: OnceLock<Mutex<SuggestCache>> = OnceLock::new();
+    CACHE.get_or_init(|| {
+        Mutex::new(SuggestCache {
+            entries: HashMap::new(),
+            order: VecDeque::new(),
+        })
+    })
+}
+
+fn suggest_cache_get(key: &str) -> Option<Vec<SteamStoreItem>> {
+    let mut cache = suggest_cache().lock().ok()?;
+    let (stored_at, items) = cache.entries.get(key)?.clone();
+    if stored_at.elapsed() > SUGGEST_CACHE_TTL {
+        cache.entries.remove(key);
+        cache.order.retain(|existing| existing != key);
+        return None;
+    }
+    if let Some(index) = cache.order.iter().position(|existing| existing == key) {
+        cache.order.remove(index);
+        cache.order.push_back(key.to_string());
+    }
+    Some(items)
+}
+
+fn suggest_cache_put(key: String, items: Vec<SteamStoreItem>) {
+    let Ok(mut cache) = suggest_cache().lock() else {
+        return;
+    };
+    if cache.entries.insert(key.clone(), (Instant::now(), items)).is_none() {
+        cache.order.push_back(key.clone());
+    }
+    while cache.order.len() > SUGGEST_CACHE_CAP {
+        if let Some(oldest) = cache.order.pop_front() {
+            cache.entries.remove(&oldest);
+        }
     }
 }
 
