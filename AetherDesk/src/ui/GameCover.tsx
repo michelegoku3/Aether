@@ -24,15 +24,11 @@ const STEAM_CAPSULE_FALLBACK_TEMPLATES = [
   'https://shared.steamstatic.com/store_item_assets/steam/apps/{id}/capsule_616x353.jpg',
 ];
 
-const STEAM_LAST_RESORT_TEMPLATES = [
-  // Non-capsule last resorts. Kept only to avoid falling back to Æ when Steam
-  // exposes no capsule URL to us yet.
-  'https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/{id}/header.jpg',
-  'https://shared.fastly.steamstatic.com/store_item_assets/steam/apps/{id}/header.jpg',
-  'https://shared.steamstatic.com/store_item_assets/steam/apps/{id}/header.jpg',
-  'https://cdn.akamai.steamstatic.com/steam/apps/{id}/header.jpg',
-  'https://cdn.cloudflare.steamstatic.com/steam/apps/{id}/header.jpg',
-];
+// NOTE: intentionally NO header/last-resort templates here. The capsule slot
+// must show capsule artwork only. Previously the chain ended on `header.jpg`
+// (a landscape "hero" banner), so after a cache clean the cover frequently
+// resolved to the hero image — reported as "hero but in the capsule slot". If
+// no capsule resolves we show the placeholder rather than a wrong hero image.
 
 type CoverFit = 'portrait' | 'landscape';
 
@@ -125,11 +121,10 @@ const buildCoverUrls = (appId: string, canonicalUrl?: string) => {
   // 1. Canonical Steam API/store URL (storesearch tiny_image / appdetails capsule_image).
   // 2. Previously resolved v3 cover cache.
   // 3. Predictable capsule CDN paths for older apps.
-  // 4. Header last-resort fallback.
+  // (No header last-resort: the capsule slot must not fall back to hero art.)
   push(normalizeCanonicalUrl(canonicalUrl));
   push(getCachedCover(appId)?.url || null);
   STEAM_CAPSULE_FALLBACK_TEMPLATES.forEach(template => push(template.replace('{id}', appId)));
-  STEAM_LAST_RESORT_TEMPLATES.forEach(template => push(template.replace('{id}', appId)));
 
   return urls;
 };

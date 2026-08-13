@@ -294,7 +294,10 @@ impl SteamAppNameResolver {
             .map(|name| name.to_string())
             .ok_or_else(|| format!("Steam appdetails did not include a name for {}", app_id))?;
 
-        let image_url = ["capsule_image", "capsule_imagev5", "header_image"]
+        // Cover URL must be a capsule, never a header. `header_image` is a wide
+        // landscape "hero" banner and was leaking into the capsule slot after a
+        // cache clean (reported as "hero but in the capsule slot").
+        let image_url = ["capsule_image", "capsule_imagev5"]
             .iter()
             .find_map(|key| {
                 data.get(*key)
