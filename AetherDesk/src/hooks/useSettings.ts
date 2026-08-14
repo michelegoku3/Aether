@@ -32,6 +32,11 @@ export interface AppSettings {
   personal_wallpaper_enabled?: boolean;
   /** Wallpaper opacity percentage (0..100). */
   personal_wallpaper_opacity?: number;
+  /**
+   * Library install-status filter:
+   * `all` (default) | `installed` | `not_installed`.
+   */
+  library_install_filter?: 'all' | 'installed' | 'not_installed' | string;
 }
 
 export const getSettings = async (): Promise<AppSettings> => {

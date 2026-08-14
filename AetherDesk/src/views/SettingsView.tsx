@@ -774,6 +774,9 @@ export const SettingsView = ({ hubcapUsage, onRefreshUsage, onRefreshCustomCss, 
                     alternative_cards_opacity: 100,
                     alternative_cards_fade: 50,
                     store_currency: 'eur',
+                    // Library toolbar filter is owned by LibraryView; keep the
+                    // user's current choice across a Settings reset.
+                    library_install_filter: rawSettings.library_install_filter || 'all',
                     antivirus_exclusion_done: rawSettings.antivirus_exclusion_done ?? false
                   }
                 });

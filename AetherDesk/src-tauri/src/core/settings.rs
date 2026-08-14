@@ -98,6 +98,11 @@ pub struct AppSettings {
     /// Backdrop fade-out toward the bottom (0..=100) of the alternative game cards.
     #[serde(default = "default_alt_cards_fade")]
     pub alternative_cards_fade: u8,
+    /// Library install-status filter cycle:
+    /// `all` (default) | `installed` | `not_installed`.
+    /// Driven by the square play/x toggle next to Refresh in Library.
+    #[serde(default = "default_library_install_filter")]
+    pub library_install_filter: String,
 }
 
 /// Serde default provider for the alt-cards backdrop opacity.
@@ -129,6 +134,18 @@ fn default_store_front_filter() -> String {
 
 fn default_wallpaper_opacity() -> u8 {
     20
+}
+
+fn default_library_install_filter() -> String {
+    "all".to_string()
+}
+
+pub fn normalize_library_install_filter(value: &str) -> String {
+    match value.trim().to_lowercase().as_str() {
+        "installed" => "installed".to_string(),
+        "not_installed" | "not-installed" | "uninstalled" => "not_installed".to_string(),
+        _ => "all".to_string(),
+    }
 }
 
 pub fn normalize_store_currency(value: &str) -> String {
@@ -189,6 +206,7 @@ impl Default for AppSettings {
             icon_selected_file: String::new(),
             alternative_cards_opacity: default_alt_cards_opacity(),
             alternative_cards_fade: default_alt_cards_fade(),
+            library_install_filter: default_library_install_filter(),
         }
     }
 }
@@ -248,6 +266,8 @@ impl SettingsManager {
         let mut normalized = settings.clone();
         normalized.store_currency = normalize_store_currency(&normalized.store_currency);
         normalized.store_front_filter = normalize_store_front_filter(&normalized.store_front_filter);
+        normalized.library_install_filter =
+            normalize_library_install_filter(&normalized.library_install_filter);
         normalized.personal_wallpaper_opacity = normalized.personal_wallpaper_opacity.min(100);
         normalized.alternative_cards_opacity = normalized.alternative_cards_opacity.min(100);
         normalized.alternative_cards_fade = normalized.alternative_cards_fade.min(100);
