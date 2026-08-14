@@ -13,6 +13,7 @@
 #include "core/Logger.h"
 #include "scripting/LuaData.h"
 #include "core/SteamTypes.h"
+#include "hooks/ipc/SteamCapture.h"
 
 namespace ac::hooks {
 namespace {
@@ -187,18 +188,40 @@ AppId h_GetAppIDForCurrentPipe(void* engine) {
     if (g_state.steamEngine.compare_exchange_strong(prev, engine)) {
         AC_LOG_INFO(kModule, "Captured steamEngine pointer 0x%p.", engine);
     }
-    // Return Steam's original value unchanged. OnlineFix masks the process as
-    // Spacewar/480 for multiplayer routing. The real app identity for DLC and
-    // overlay queries comes from SteamOverlayGameId, patched by
-    // h_BuildSpawnEnvBlock below.
+
+    AppId appId = o_GetAppIDForCurrentPipe(engine);
+
+    // Scoped OnlineFix stats override (see capture::EnterStatsScope).
     //
-    // MUST NOT translate 480 → real here. That was the pre-9aa4a76 "Meccha"
-    // regression path: it fixed DLC as a side effect but leaked real app
-    // identity into multiplayer routing, and the reverse (passthrough) made
-    // friends presence look like Spacewar. Friends/UI presence is handled by
-    // the wire pipeline (GamesPlayed extra_info + PersonaInject), never by
-    // GetAppID. See docs/03-presence-identity-plan.md.
-    return o_GetAppIDForCurrentPipe(engine);
+    // OnlineFix masks the process as Spacewar/480 for multiplayer routing. The
+    // real app identity for DLC and overlay queries comes from
+    // SteamOverlayGameId, patched by h_BuildSpawnEnvBlock below, and the
+    // friends/UI presence is handled by the wire pipeline (GamesPlayed
+    // extra_info + PersonaInject), never by GetAppID.
+    //
+    // The one exception: while an IClientUserStats IPC call is being dispatched
+    // (stats scope active on this thread), the client's stats subsystem reads
+    // the "current game" through GetAppIDForCurrentPipe to store/read stats.
+    // Without the override it would write under app 480, so the overlay and
+    // library would never see unlocks and nothing would persist for the real
+    // game. Within the scope only, we translate 480 → real.
+    //
+    // This mirrors LumaCore's g_userStatsAppIdOverrideDepth override. Every
+    // other call path keeps the engine's value untouched, so the pre-9aa4a76
+    // "Meccha" regression (leaking real identity into multiplayer routing /
+    // friends presence) cannot reappear: the scope is active exclusively on
+    // IClientUserStats dispatches.
+    if (capture::IsStatsScopeActive()) {
+        const AppId realAppId = g_state.onlineFixRealAppId.load(std::memory_order_acquire);
+        if (realAppId != 0 && realAppId != constants::kSpacewarAppId &&
+            appId == constants::kSpacewarAppId) {
+            AC_LOG_DEBUG(kModule, "GetAppIDForCurrentPipe: stats-scope override %u -> %u.",
+                         appId, realAppId);
+            return realAppId;
+        }
+    }
+
+    return appId;
 }
 
 // -----------------------------------------------------------------------

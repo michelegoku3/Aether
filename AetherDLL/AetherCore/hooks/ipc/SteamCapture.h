@@ -8,10 +8,6 @@
 // Captures the SteamEngine pointer (via the OnlineFix GetAppIDForCurrentPipe
 // hook), resolves the effective app id for the current pipe, and grows IPC
 // response buffers using Steam's own CUtlBuffer::EnsureCapacity.
-//
-// NOTE: LumaCore's RuntimeCapture also held the UserStats "stats scope" gate
-// used purely by the achievement spoofer. That machinery is excluded here
-// because all achievement code is out of scope for this project.
 // ---------------------------------------------------------------------------
 namespace ac::capture {
 
@@ -29,5 +25,26 @@ steam::AppId CurrentRouteAppId();
 
 // Grows pWrite to at least 'size' bytes and sets its put cursor to 'size'.
 void EnsureBufferSize(steam::CUtlBuffer* pWrite, std::int32_t size);
+
+// ---------------------------------------------------------------------------
+// OnlineFix stats-scope.
+//
+// While an IClientUserStats IPC call is being dispatched (see IPCBus), the
+// Steam client resolves the "current game" for stats operations through
+// GetAppIDForCurrentPipe. Under -onlinefix that returns the Spacewar/480
+// masquerade, so the client's stats subsystem would store/read stats for app
+// 480: unlocks never reach the overlay or library and nothing persists for the
+// real game. Bracketing the dispatch with EnterStatsScope/LeaveStatsScope lets
+// GetAppIDForCurrentPipe resolve the real app id for the duration of the call
+// only — every other path keeps the 480 identity (see OnlineFixHooks).
+//
+// Depth-based so nested IClientUserStats dispatches on the same thread stay
+// correctly bracketed (mirrors LumaCore's SetUserStatsContext).
+// ---------------------------------------------------------------------------
+void EnterStatsScope();
+void LeaveStatsScope();
+
+// True when this thread is currently inside an IClientUserStats dispatch.
+bool IsStatsScopeActive();
 
 }  // namespace ac::capture
