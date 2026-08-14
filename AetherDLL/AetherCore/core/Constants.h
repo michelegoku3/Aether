@@ -117,6 +117,11 @@ inline constexpr std::uint8_t kHandshake = 9;
 namespace ipc_iface {
 inline constexpr std::uint8_t kClientUser = 1;
 inline constexpr std::uint8_t kClientUtils = 4;
+// Steam's protocol constant for IClientUserStats (matches LumaCore's
+// EIPCInterface). Used by IPCBus to bracket IClientUserStats dispatches in the
+// OnlineFix stats-scope (see capture::EnterStatsScope) so the client's stats
+// subsystem resolves the real app id instead of the Spacewar/480 mask.
+inline constexpr std::uint8_t kClientUserStats = 11;
 }  // namespace ipc_iface
 
 // Pre-computed method-name hashes Steam uses for InterfaceCall dispatch.

@@ -54,10 +54,27 @@ void LogDispatchOnce(const char* handlerName, steam::AppId appId) {
     AC_LOG_DEBUG_ONCE(kModule, "Dispatch %s (appId=%u).", handlerName, appId);
 }
 
+// RAII: brackets the duration of an IClientUserStats IPC dispatch so
+// GetAppIDForCurrentPipe resolves the OnlineFix Spacewar/480 masquerade to the
+// real app id (see capture::EnterStatsScope / OnlineFixHooks). Only activates
+// for stats interface calls; no-ops otherwise.
+struct StatsScopeGuard {
+    explicit StatsScopeGuard(bool active) : m_active(active) {
+        if (m_active) capture::EnterStatsScope();
+    }
+    ~StatsScopeGuard() {
+        if (m_active) capture::LeaveStatsScope();
+    }
+
+private:
+    bool m_active;
+};
+
 bool h_IPCProcessMessage(void* server, steam::HSteamPipe hSteamPipe,
                          steam::CUtlBuffer* pRead, steam::CUtlBuffer* pWrite) {
     const IpcHandlerEntry* entry = nullptr;
     steam::CSteamPipeClient* pipe = GetPipe(server, hSteamPipe);
+    bool statsScope = false;
 
     if (pRead && pRead->Base() && pRead->TellPut() > 0) {
         const std::uint8_t* data = pRead->Base();
@@ -75,6 +92,9 @@ bool h_IPCProcessMessage(void* server, steam::HSteamPipe hSteamPipe,
             pipewatch::TouchPipe(pipe);
             if (pRead->TellPut() >= kIpcHeaderSize) {
                 const std::uint8_t iface = data[kIpcOffsetInterfaceId];
+                // Stats calls are bracketed so the client resolves the real app
+                // id during Steam's own stats processing (see StatsScopeGuard).
+                statsScope = (iface == ipc_iface::kClientUserStats);
                 std::uint32_t funcHash = 0;
                 std::memcpy(&funcHash, data + kIpcOffsetFuncHash, sizeof(funcHash));
                 entry = FindHandler(iface, funcHash);
@@ -83,6 +103,7 @@ bool h_IPCProcessMessage(void* server, steam::HSteamPipe hSteamPipe,
     }
 
     // Always run Steam's original processing first.
+    const StatsScopeGuard statsGuard(statsScope);
     const bool ok = o_IPCProcessMessage(server, hSteamPipe, pRead, pWrite);
     if (!ok || !entry || !pipe) return ok;
 

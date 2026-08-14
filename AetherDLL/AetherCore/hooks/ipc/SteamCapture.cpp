@@ -15,7 +15,28 @@ constexpr const char* kModule = "Capture";
 using EnsureCapacity_t = void* (*)(steam::CUtlBuffer*, int);
 EnsureCapacity_t o_EnsureCapacity = nullptr;
 
+// Depth of IClientUserStats dispatches currently on this thread's stack.
+// Thread-local: IPC dispatches run concurrently per pipe on worker threads,
+// and the depth must never bleed across threads (see SteamCapture.h).
+thread_local std::uint32_t t_statsScopeDepth = 0;
+
 }  // namespace
+
+void EnterStatsScope() {
+    ++t_statsScopeDepth;
+}
+
+void LeaveStatsScope() {
+    if (t_statsScopeDepth > 0) {
+        --t_statsScopeDepth;
+    } else {
+        AC_LOG_WARN(kModule, "LeaveStatsScope called with depth=0; clamping.");
+    }
+}
+
+bool IsStatsScopeActive() {
+    return t_statsScopeDepth > 0;
+}
 
 void Init(HMODULE diversion) {
     if (void* addr = pattern::ResolveAddress("CUtlBufferEnsureCapacity", "steamclient", diversion)) {
