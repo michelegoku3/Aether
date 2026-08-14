@@ -8,9 +8,9 @@ export interface StatusMessage {
 export const emptyStatus = (): StatusMessage => ({ text: '', type: 'info' });
 
 /**
- * Stato installazione/versione di AetherDLL, condiviso App → MainContent → AetherView.
- * La versione è letta dal backend direttamente dalla version resource PE dentro i
- * .dll della cartella Steam (nessun file esterno di versionamento).
+ * AetherDLL install/version state, shared App → MainContent → AetherView.
+ * Version is read by the backend from the PE version resource inside the
+ * Steam-folder DLLs (no external versioning file).
  */
 export interface DllStatusInfo {
   isInstalled: boolean;

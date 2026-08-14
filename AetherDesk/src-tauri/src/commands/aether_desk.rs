@@ -88,11 +88,27 @@ pub async fn install_aether_desk_update(app: tauri::AppHandle) -> Result<String,
     Ok("AetherDesk update downloaded. Restarting to apply...".to_string())
 }
 
-/// In portable mode there is no installer/uninstaller: removing AetherDesk is
-/// simply deleting its folder. This command just closes the running instance.
+/// Portable uninstall:
+/// 1. stages an external helper (`aether_uninstaller.exe` in system temp);
+/// 2. the helper force-kills leftover desk processes, optionally relocates
+///    `AetherData` next to the install folder, then deletes `install_root`;
+/// 3. this process hard-exits so WebView2 cannot keep it alive in background.
+///
+/// Steam cleanup (Reset Path) is orchestrated by the frontend *before* this
+/// command when the user confirmed it in the steam-clean modal.
+///
+/// `delete_user_data`:
+/// - `true`  → wipe the whole portable folder including AetherData
+/// - `false` → move AetherData to the parent directory, then wipe the folder
 #[tauri::command]
-pub fn uninstall_aether_desk(app: tauri::AppHandle) -> Result<(), String> {
-    crate::desk_log_info!("lifecycle", "AetherDesk uninstall command invoked: closing running instance for portable folder removal.");
-    app.exit(0);
-    Ok(())
+pub fn uninstall_aether_desk(_app: tauri::AppHandle, delete_user_data: bool) -> Result<(), String> {
+    crate::desk_log_info!(
+        "lifecycle",
+        "AetherDesk uninstall requested (delete_user_data={})",
+        delete_user_data
+    );
+    desk::schedule_uninstall(delete_user_data)?;
+    // Hard exit: `app.exit` alone can leave WebView2 / the process alive long
+    // enough that the install folder stays locked (empty folder leftover).
+    std::process::exit(0);
 }

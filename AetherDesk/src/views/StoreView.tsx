@@ -438,7 +438,7 @@ export const StoreView = ({ onRefreshUsage, isActive, settingsRevision, useAlter
                     setDownloadStatus({ text: '', type: 'info' });
                     setIsDownloading(false);
 
-                    // Carica impostazioni per verificare se c'è una chiave Hubcap valida
+                    // Prefer Hubcap when a key is configured and a manifest exists.
                     try {
                       const settings = await getSettings();
                       const hasValidHubcapKey = settings.hubcap_api_key?.trim() !== '';
@@ -449,7 +449,7 @@ export const StoreView = ({ onRefreshUsage, isActive, settingsRevision, useAlter
                         setSelectedSource('oureveryday');
                       }
                     } catch (err) {
-                      // Fallback a oureveryday se c'è un errore
+                      // Fall back to OurEveryday if settings cannot be read.
                       setSelectedSource('oureveryday');
                     }
                   },

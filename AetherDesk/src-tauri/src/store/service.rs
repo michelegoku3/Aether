@@ -75,13 +75,6 @@ impl StoreService {
         }
     }
 
-    /// Normalizes strings for high-fidelity comparison.
-    /// Delegates to the shared `store::normalize` module so scoring, filtering
-    /// and Hubcap sanitization share a single implementation (DRY).
-    pub fn normalize_string(&self, s: &str) -> String {
-        normalize::normalize_string(s)
-    }
-
     /// Exact / prefix / substring, then **per-token** Damerau-Levenshtein.
     /// Whole-title edit distance cannot match `witchr 3` to a long official name.
     pub fn calculate_relevance_score(&self, query: &str, name: &str) -> usize {
