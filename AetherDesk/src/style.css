@@ -408,6 +408,71 @@ body {
   font-weight: 500;
 }
 
+/* Square icon buttons in the Library toolbar (filter cycle + refresh).
+   Same footprint so the pair stays visually balanced. */
+.library-toolbar-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.library-icon-btn {
+  width: 34px;
+  height: 34px;
+  min-width: 34px;
+  min-height: 34px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background-color: #131316;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  color: #ffffff;
+  cursor: pointer;
+  box-sizing: border-box;
+  transition: all 0.2s ease;
+}
+
+.library-icon-btn svg {
+  display: block;
+  flex-shrink: 0;
+}
+
+.library-icon-btn:hover:not(:disabled) {
+  border-color: var(--color-cyan);
+  color: var(--color-cyan);
+}
+
+.library-icon-btn:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
+/* Active filter states use a colored glyph so the mode is obvious at a glance. */
+.library-icon-btn.active.filter-installed {
+  color: #10b981;
+  border-color: rgba(16, 185, 129, 0.55);
+  background-color: rgba(16, 185, 129, 0.1);
+}
+
+.library-icon-btn.active.filter-installed:hover:not(:disabled) {
+  color: #34d399;
+  border-color: #10b981;
+}
+
+.library-icon-btn.active.filter-missing {
+  color: var(--color-denuvo);
+  border-color: rgba(255, 59, 95, 0.55);
+  background-color: rgba(255, 59, 95, 0.1);
+}
+
+.library-icon-btn.active.filter-missing:hover:not(:disabled) {
+  color: #ff6b8a;
+  border-color: var(--color-denuvo);
+}
+
 @keyframes badgePopIn {
   from {
     transform: scale(0.8);
