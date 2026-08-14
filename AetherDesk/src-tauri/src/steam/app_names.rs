@@ -47,15 +47,6 @@ impl SteamAppNameResolver {
         }
     }
 
-    /// Every cached display name.
-    pub fn all_cached_names(&self) -> Vec<String> {
-        self.load_cache()
-            .names
-            .into_values()
-            .filter(|name| !name.trim().is_empty())
-            .collect()
-    }
-
     /// Returns names already present in the persistent cache without doing any network I/O.
     ///
     /// This method is intentionally synchronous and fast: it is used by the Library UI path so

@@ -162,7 +162,7 @@ export const SettingsView = ({ hubcapUsage, onRefreshUsage, onRefreshCustomCss, 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    // Validazione API key se presente
+    // Validate API key when present
     if (apiKey.trim()) {
       showStatus('Validating API key...', 'info');
       try {
@@ -177,11 +177,11 @@ export const SettingsView = ({ hubcapUsage, onRefreshUsage, onRefreshCustomCss, 
       }
     }
 
-    // Salvataggio
+    // Persist settings
     try {
       showStatus('Saving settings...', 'info');
-      // Se l'utente ha appena attivato Custom CSS, assicurati che il file esista
-      // prima di salvare, così la prossima apertura dell'editor non trova una cartella vuota.
+      // If the user just enabled Custom CSS, ensure the file exists before
+      // saving so the next editor open does not find an empty folder.
       if (customCssEnabled || personalWallpaperEnabled) {
         try { await invoke('ensure_custom_css'); } catch {}
       }

@@ -20,10 +20,13 @@ mod util;
 mod tests;
 
 fn main() {
-    // Portable self-update entry point: when the app is launched with
-    // `--apply-update <staging> <install_root>` it behaves as the updater that
-    // swaps files in place (no window is shown). Must run before Tauri setup.
+    // Portable helper entry points (no UI window). Must run before Tauri setup.
+    //   --apply-update <staging> <install_root>
+    //   --uninstall-desk <install_root> (--delete-user-data | --keep-user-data)
     if let Some(code) = try_run_apply_update() {
+        std::process::exit(code);
+    }
+    if let Some(code) = try_run_uninstall_desk() {
         std::process::exit(code);
     }
 
@@ -101,6 +104,7 @@ fn main() {
             commands::aether_dll::install_aether_dll,
             commands::aether_dll::uninstall_aether_dll,
             commands::aether_dll::reset_aether_steam_path,
+            commands::aether_dll::probe_aether_steam_residuals,
             commands::aether_desk::check_aether_desk_update,
             commands::aether_desk::install_aether_desk_update,
             commands::aether_desk::uninstall_aether_desk,
@@ -124,5 +128,18 @@ fn try_run_apply_update() -> Option<i32> {
     Some(crate::updater::desk::run_apply_update(
         std::path::Path::new(staging),
         std::path::Path::new(install_root),
+    ))
+}
+
+/// Handles `--uninstall-desk <install_root> (--delete-user-data|--keep-user-data)`.
+/// Default is keep user data unless `--delete-user-data` is explicit.
+fn try_run_uninstall_desk() -> Option<i32> {
+    let args: Vec<String> = std::env::args().collect();
+    let position = args.iter().position(|arg| arg == "--uninstall-desk")?;
+    let install_root = args.get(position + 1)?;
+    let delete_user_data = args.iter().any(|arg| arg == "--delete-user-data");
+    Some(crate::updater::desk::run_uninstall(
+        std::path::Path::new(install_root),
+        delete_user_data,
     ))
 }

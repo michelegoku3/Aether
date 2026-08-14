@@ -261,6 +261,23 @@ pub fn reset_aether_steam_path(_app: tauri::AppHandle, steam_path: String) -> Re
     ))
 }
 
+/// Reports how many residual Aether artifacts exist under `steam_path`, using
+/// the same target list as Reset Path (`DllInstaller::count_aether_residuals`).
+/// Safe while Steam is running — read-only probe for the Uninstall confirm UI.
+#[tauri::command]
+pub fn probe_aether_steam_residuals(steam_path: String) -> Result<usize, String> {
+    if steam_path.trim().is_empty() {
+        return Ok(0);
+    }
+    let count = DllInstaller::new(steam_path).count_aether_residuals();
+    crate::desk_log_info!(
+        "lifecycle",
+        "Probed Aether Steam residuals: {} item(s)",
+        count
+    );
+    Ok(count)
+}
+
 fn ensure_steam_is_closed() -> Result<(), String> {
     let mut sys = sysinfo::System::new_all();
     sys.refresh_processes();

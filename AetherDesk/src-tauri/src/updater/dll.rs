@@ -107,6 +107,7 @@ impl DllInstaller {
     }
 
     /// Removes every known file/folder created by Aether inside the Steam directory.
+    /// Targets are the single source of truth shared with [`Self::count_aether_residuals`].
     pub fn reset_aether_files(&self) -> Result<usize, String> {
         if !self.steam_path.exists() {
             return Err("Steam installation path does not exist".to_string());
@@ -135,6 +136,30 @@ impl DllInstaller {
         Ok(removed)
     }
 
+    /// Counts residual Aether artifacts under Steam using the same targets as
+    /// [`Self::reset_aether_files`] (files, dirs, and non-empty depotcache).
+    /// Used by the portable Uninstall flow to decide whether to prompt for a
+    /// Steam clean. Does not require Steam to be closed.
+    pub fn count_aether_residuals(&self) -> usize {
+        if !self.steam_path.exists() {
+            return 0;
+        }
+
+        let mut count = 0;
+        for path in self.aether_files() {
+            if path.exists() {
+                count += 1;
+            }
+        }
+        for path in self.aether_directories() {
+            if path.exists() {
+                count += 1;
+            }
+        }
+        count += self.depotcache_entry_count();
+        count
+    }
+
     fn aether_files(&self) -> Vec<PathBuf> {
         let mut files: Vec<PathBuf> = AETHER_DLL_FILES
             .iter()
@@ -149,9 +174,20 @@ impl DllInstaller {
 
     fn aether_directories(&self) -> Vec<PathBuf> {
         vec![
+            // Includes desk_path.cfg pointer + any legacy aethercore.toml bridge.
             self.steam_path.join("aethercore"),
             self.steam_path.join("config").join("stplug-in"),
         ]
+    }
+
+    fn depotcache_entry_count(&self) -> usize {
+        let depotcache = self.steam_path.join("depotcache");
+        if !depotcache.is_dir() {
+            return 0;
+        }
+        fs::read_dir(&depotcache)
+            .map(|entries| entries.flatten().count())
+            .unwrap_or(0)
     }
 
     fn clear_depotcache_contents(&self) -> Result<usize, String> {

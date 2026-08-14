@@ -187,6 +187,359 @@ pub fn cleanup_stale_artifacts() {
     let _ = fs::remove_dir_all(update_workdir());
 }
 
+// ---------------------------------------------------------------------------
+// Portable self-uninstall
+// ---------------------------------------------------------------------------
+//
+// Same constraint as the updater: a running `.exe` cannot delete its own
+// directory on Windows. We stage a copy of the binary in the *system* temp
+// folder (never inside install_root / AetherData — both may be deleted) and
+// launch it with `--uninstall-desk` so it can wait for the lock and wipe the
+// folder after the main process exits.
+//
+// Extra Windows hardness:
+// - the main process exits via `std::process::exit` (not only `app.exit`) so
+//   WebView2 cannot keep the process alive in the background;
+// - the helper force-kills leftover `AetherDesk.exe` instances before delete;
+// - folder wipe clears contents first, then removes the root (avoids the
+//   classic "empty folder still locked by cwd" leftover).
+
+const UNINSTALL_HELPER_NAME: &str = "aether_uninstaller.exe";
+const DATA_DIR_NAME: &str = "AetherData";
+const DESK_PROCESS_NAME: &str = "aetherdesk.exe";
+
+fn uninstall_helper_path() -> PathBuf {
+    std::env::temp_dir().join(UNINSTALL_HELPER_NAME)
+}
+
+/// Stages and launches the external uninstaller helper.
+///
+/// The caller **must** hard-exit the running instance afterwards so the install
+/// folder (and `AetherDesk.exe`) become deletable.
+///
+/// - `delete_user_data = true`  → remove the whole install folder (incl. AetherData)
+/// - `delete_user_data = false` → move `AetherData` to the parent of install_root,
+///   then remove the install folder
+pub fn schedule_uninstall(delete_user_data: bool) -> Result<(), String> {
+    let current_exe = std::env::current_exe()
+        .map_err(|e| format!("Failed to resolve current exe: {e}"))?;
+    let install_root = LocalAppPaths::install_root();
+    let helper = uninstall_helper_path();
+
+    if let Some(parent) = helper.parent() {
+        fs::create_dir_all(parent)
+            .map_err(|e| format!("Failed to prepare uninstaller temp dir: {e}"))?;
+    }
+    // Overwrite any stale helper from a previous attempt.
+    let _ = fs::remove_file(&helper);
+    fs::copy(&current_exe, &helper)
+        .map_err(|e| format!("Failed to stage uninstaller helper: {e}"))?;
+
+    let mut cmd = Command::new(&helper);
+    // Run from system temp so the helper's cwd cannot lock install_root.
+    if let Some(temp_parent) = helper.parent() {
+        cmd.current_dir(temp_parent);
+    }
+    cmd.arg("--uninstall-desk")
+        .arg(install_root.to_string_lossy().as_ref());
+    if delete_user_data {
+        cmd.arg("--delete-user-data");
+    } else {
+        cmd.arg("--keep-user-data");
+    }
+
+    // Detach helper so it survives the hard exit of the parent process.
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NEW_PROCESS_GROUP: u32 = 0x00000200;
+        const DETACHED_PROCESS: u32 = 0x00000008;
+        const CREATE_NO_WINDOW: u32 = 0x08000000;
+        cmd.creation_flags(CREATE_NEW_PROCESS_GROUP | DETACHED_PROCESS | CREATE_NO_WINDOW);
+    }
+
+    cmd.spawn()
+        .map_err(|e| format!("Failed to launch uninstaller helper: {e}"))?;
+
+    crate::desk_log_info!(
+        "lifecycle",
+        "Scheduled portable uninstall (delete_user_data={}, install_root={})",
+        delete_user_data,
+        install_root.display()
+    );
+    Ok(())
+}
+
+/// Runs as the external `--uninstall-desk` helper (from system temp).
+pub fn run_uninstall(install_root: &Path, delete_user_data: bool) -> i32 {
+    // Give the parent a moment to begin exiting after spawning us.
+    thread::sleep(Duration::from_millis(800));
+
+    // Force-kill any leftover AetherDesk.exe (main app / WebView host) that
+    // would keep directory handles open. Never touches aether_uninstaller.exe.
+    force_kill_desk_processes();
+    thread::sleep(Duration::from_millis(600));
+
+    let exe = install_root.join("AetherDesk.exe");
+    if exe.exists() {
+        // Prefer waiting for a clean unlock; if it never unlocks, kill again
+        // and continue — we still want to wipe as much as possible.
+        if !wait_until_replaceable(&exe) {
+            eprintln!("[AetherDesk] exe still locked after wait; force-killing again");
+            force_kill_desk_processes();
+            thread::sleep(Duration::from_millis(800));
+            let _ = wait_until_replaceable(&exe);
+        }
+    }
+
+    if !delete_user_data {
+        if let Err(e) = preserve_user_data(install_root) {
+            eprintln!("[AetherDesk] failed to preserve AetherData: {e}");
+            // Abort so the user does not lose data if the move failed.
+            return 1;
+        }
+    }
+
+    match wipe_install_root(install_root) {
+        Ok(()) => {
+            eprintln!(
+                "[AetherDesk] uninstall complete: removed {}",
+                install_root.display()
+            );
+            schedule_helper_self_delete();
+            0
+        }
+        Err(e) => {
+            eprintln!(
+                "[AetherDesk] failed to remove {}: {e}",
+                install_root.display()
+            );
+            // Last resort on Windows: cmd rmdir after another kill pass.
+            force_kill_desk_processes();
+            thread::sleep(Duration::from_millis(500));
+            if shell_rmdir(install_root) {
+                eprintln!(
+                    "[AetherDesk] uninstall complete via shell rmdir: {}",
+                    install_root.display()
+                );
+                schedule_helper_self_delete();
+                0
+            } else {
+                1
+            }
+        }
+    }
+}
+
+/// Terminates every running process named `AetherDesk.exe` (case-insensitive).
+/// The helper binary is `aether_uninstaller.exe`, so it is never targeted.
+fn force_kill_desk_processes() {
+    let mut sys = sysinfo::System::new();
+    sys.refresh_processes();
+    let self_pid = sysinfo::get_current_pid().ok();
+
+    for (pid, process) in sys.processes() {
+        if self_pid == Some(*pid) {
+            continue;
+        }
+        let name = process.name().to_lowercase();
+        if name == DESK_PROCESS_NAME {
+            eprintln!("[AetherDesk] killing leftover process {} (pid={})", name, pid);
+            let _ = process.kill();
+        }
+    }
+
+    // Also hit taskkill as a belt-and-suspenders path for stubborn children
+    // that sysinfo may not enumerate the same way (msedgewebview2 is separate
+    // but the main lock is AetherDesk.exe itself).
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x08000000;
+        let _ = Command::new("taskkill")
+            .args(["/F", "/IM", "AetherDesk.exe", "/T"])
+            .creation_flags(CREATE_NO_WINDOW)
+            .output();
+    }
+}
+
+/// Moves `<install_root>/AetherData` to `<install_root>/../AetherData`
+/// (with numeric suffix if the destination already exists).
+fn preserve_user_data(install_root: &Path) -> Result<(), String> {
+    let data_dir = install_root.join(DATA_DIR_NAME);
+    if !data_dir.exists() {
+        return Ok(());
+    }
+
+    let parent = install_root.parent().ok_or_else(|| {
+        format!(
+            "Install root {} has no parent; cannot relocate AetherData",
+            install_root.display()
+        )
+    })?;
+
+    let dest = unique_sibling_dir(parent, DATA_DIR_NAME);
+    // Prefer rename (atomic on same volume). Fall back to copy+delete.
+    match fs::rename(&data_dir, &dest) {
+        Ok(()) => {}
+        Err(rename_err) => {
+            copy_dir_recursive(&data_dir, &dest).map_err(|e| {
+                format!(
+                    "Failed to relocate {} → {} (rename: {rename_err}; copy: {e})",
+                    data_dir.display(),
+                    dest.display()
+                )
+            })?;
+            let _ = fs::remove_dir_all(&data_dir);
+        }
+    }
+    eprintln!(
+        "[AetherDesk] preserved user data at {}",
+        dest.display()
+    );
+    Ok(())
+}
+
+fn copy_dir_recursive(src: &Path, dst: &Path) -> Result<(), String> {
+    fs::create_dir_all(dst).map_err(|e| format!("create {}: {e}", dst.display()))?;
+    for entry in fs::read_dir(src).map_err(|e| format!("read {}: {e}", src.display()))? {
+        let entry = entry.map_err(|e| format!("entry in {}: {e}", src.display()))?;
+        let from = entry.path();
+        let to = dst.join(entry.file_name());
+        if from.is_dir() {
+            copy_dir_recursive(&from, &to)?;
+        } else {
+            if let Some(parent) = to.parent() {
+                fs::create_dir_all(parent)
+                    .map_err(|e| format!("create {}: {e}", parent.display()))?;
+            }
+            fs::copy(&from, &to)
+                .map_err(|e| format!("copy {} -> {}: {e}", from.display(), to.display()))?;
+        }
+    }
+    Ok(())
+}
+
+fn unique_sibling_dir(parent: &Path, base_name: &str) -> PathBuf {
+    let candidate = parent.join(base_name);
+    if !candidate.exists() {
+        return candidate;
+    }
+    for i in 1..1000 {
+        let alt = parent.join(format!("{base_name}-{i}"));
+        if !alt.exists() {
+            return alt;
+        }
+    }
+    parent.join(format!(
+        "{base_name}-{}",
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0)
+    ))
+}
+
+/// Wipes install_root thoroughly: delete children first, then the root itself.
+fn wipe_install_root(path: &Path) -> Result<(), String> {
+    if !path.exists() {
+        return Ok(());
+    }
+
+    let mut last_err = String::new();
+    for attempt in 0..50 {
+        // Clear children so a locked cwd on the empty root is less likely.
+        if path.is_dir() {
+            if let Ok(entries) = fs::read_dir(path) {
+                for entry in entries.flatten() {
+                    let child = entry.path();
+                    // Best-effort child cleanup; root remove below owns errors.
+                    if child.is_dir() {
+                        let _ = fs::remove_dir_all(&child);
+                    } else {
+                        let _ = fs::remove_file(&child);
+                    }
+                }
+            }
+        }
+
+        match fs::remove_dir_all(path) {
+            Ok(()) => return Ok(()),
+            Err(_) if !path.exists() => return Ok(()),
+            Err(e) => {
+                last_err = e.to_string();
+                // On stubborn locks, re-kill desk processes mid-retry.
+                if attempt == 10 || attempt == 25 {
+                    force_kill_desk_processes();
+                }
+                thread::sleep(Duration::from_millis(200 + (attempt as u64) * 40));
+            }
+        }
+    }
+
+    // Success if nothing is left (even if the last call returned an error).
+    if !path.exists() {
+        return Ok(());
+    }
+    // Empty dir left behind still counts as failure — try one last remove_dir.
+    if path.is_dir() {
+        if let Ok(mut entries) = fs::read_dir(path) {
+            if entries.next().is_none() {
+                if fs::remove_dir(path).is_ok() || !path.exists() {
+                    return Ok(());
+                }
+            }
+        }
+    }
+    Err(last_err)
+}
+
+/// Windows `rmdir /s /q` fallback when Rust fs APIs cannot finish the job.
+fn shell_rmdir(path: &Path) -> bool {
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x08000000;
+        let status = Command::new("cmd")
+            .args(["/C", "rmdir", "/s", "/q"])
+            .arg(path)
+            .creation_flags(CREATE_NO_WINDOW)
+            .status();
+        match status {
+            Ok(s) if s.success() => !path.exists(),
+            _ => !path.exists(),
+        }
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = path;
+        false
+    }
+}
+
+/// Best-effort delayed self-delete of the helper sitting in system temp.
+fn schedule_helper_self_delete() {
+    let helper = uninstall_helper_path();
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x08000000;
+        // ping ≈ 3s delay without needing timeout.exe / PowerShell policies.
+        let cmdline = format!(
+            "ping 127.0.0.1 -n 4 > nul & del /F /Q \"{}\"",
+            helper.display()
+        );
+        let _ = Command::new("cmd")
+            .args(["/C", &cmdline])
+            .creation_flags(CREATE_NO_WINDOW)
+            .spawn();
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = fs::remove_file(&helper);
+    }
+}
+
 /// Polls until `path` can be renamed (i.e. no process holds it open).
 fn wait_until_replaceable(path: &Path) -> bool {
     let probe = path.with_extension("exe.lock");

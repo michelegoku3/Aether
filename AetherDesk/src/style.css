@@ -1887,6 +1887,164 @@ body {
   cursor: not-allowed;
 }
 
+/* =========================================================
+   Uninstall modals — compact, ordered confirm dialogs
+   ========================================================= */
+.uninstall-modal {
+  width: min(460px, calc(100vw - 48px));
+  overflow: hidden;
+}
+
+.uninstall-modal .modal-header {
+  padding: 18px 22px 14px;
+}
+
+.uninstall-modal .modal-title {
+  color: #ffffff;
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0.2px;
+}
+
+.uninstall-modal-body {
+  padding: 20px 22px 22px !important;
+  gap: 14px !important;
+}
+
+.uninstall-modal-lead {
+  margin: 0;
+  color: #ffffff;
+  font-size: 14.5px;
+  font-weight: 600;
+  line-height: 1.45;
+}
+
+.uninstall-modal-copy {
+  margin: 0;
+  color: var(--color-muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.uninstall-modal-copy code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+  color: var(--color-cyan);
+  background: rgba(0, 180, 216, 0.08);
+  border: 1px solid rgba(0, 180, 216, 0.18);
+  border-radius: 4px;
+  padding: 1px 5px;
+}
+
+.uninstall-option-card {
+  margin-top: 2px;
+  padding: 4px 0;
+}
+
+/* Label left, custom checkbox right (reuses .crack-checkbox-* visuals). */
+.uninstall-userdata-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  width: 100%;
+  cursor: pointer;
+  user-select: none;
+  position: relative;
+}
+
+.uninstall-userdata-text {
+  color: var(--color-text);
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.35;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.uninstall-userdata-row:hover .uninstall-userdata-text {
+  color: #ffffff;
+}
+
+.uninstall-userdata-row .crack-checkbox-box {
+  flex-shrink: 0;
+  margin-left: auto;
+}
+
+.uninstall-userdata-row .crack-checkbox-input:disabled + .crack-checkbox-box {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.uninstall-modal-actions {
+  display: flex;
+  align-items: center;
+  justify-content: stretch;
+  gap: 10px;
+  margin-top: 6px;
+}
+
+.uninstall-btn {
+  flex: 1 1 0;
+  min-height: 42px;
+  border-radius: 8px;
+  border: 1px solid var(--border-color);
+  background: #1c1c21;
+  color: #ffffff;
+  font-size: 13px;
+  font-weight: 700;
+  font-family: inherit;
+  cursor: pointer;
+  padding: 10px 14px;
+  transition: border-color 0.2s ease, background-color 0.2s ease, color 0.2s ease, opacity 0.2s ease;
+}
+
+.uninstall-btn:hover:not(:disabled) {
+  border-color: var(--color-cyan);
+  color: var(--color-cyan);
+  background-color: #192128;
+}
+
+.uninstall-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.uninstall-btn-primary {
+  background: rgba(0, 180, 216, 0.14);
+  border-color: rgba(0, 180, 216, 0.45);
+  color: var(--color-cyan);
+}
+
+.uninstall-btn-primary:hover:not(:disabled) {
+  background: rgba(0, 180, 216, 0.22);
+  border-color: var(--color-cyan);
+  color: #ffffff;
+}
+
+.uninstall-btn-danger {
+  background: rgba(255, 59, 95, 0.12);
+  border-color: rgba(255, 59, 95, 0.45);
+  color: #ff6b8a;
+}
+
+.uninstall-btn-danger:hover:not(:disabled) {
+  background: rgba(255, 59, 95, 0.2);
+  border-color: var(--color-denuvo);
+  color: #ffffff;
+}
+
+.uninstall-btn-secondary {
+  background: #141417;
+  color: var(--color-muted);
+}
+
+.uninstall-btn-secondary:hover:not(:disabled) {
+  color: #ffffff;
+  border-color: #3e3e4a;
+  background: #1a1a20;
+}
+
 /* Card action row: supports secondary Info + primary action without duplicating card markup. */
 .game-card-actions {
   display: flex;
@@ -2340,8 +2498,8 @@ body {
   width: 100%;
 }
 
-/* Riga testo + bottone sullo stesso livello: il testo occupa lo spazio
-   rimanente e il bottone (largo quanto i dropdown, 115px) sta a destra. */
+/* Text + button on one row: text fills remaining space, button (same width
+   as the dropdowns, 115px) stays on the right. */
 .settings-appearance-row {
   display: flex;
   align-items: center;
@@ -2353,8 +2511,8 @@ body {
   flex: 1 1 auto;
   min-width: 0;
   margin: 0;
-  /* La descrizione può andare su più righe: solo il percorso (`.settings-path`)
-     viene troncato con ellipsis, non il testo che lo circonda. */
+  /* Description may wrap; only the path (`.settings-path`) is ellipsized,
+     not the surrounding sentence. */
   line-height: 1.4;
 }
 
@@ -2365,10 +2523,9 @@ body {
   background: rgba(255, 255, 255, 0.05);
   padding: 1px 5px;
   border-radius: 4px;
-  /* Solo il percorso viene troncato con ellipsis: inline-block + max-width
-     permette al resto della frase di andare a capo. Il path completo resta
-     disponibile via tooltip (title). ~420px ≈ 67 caratteri monospace a 11px,
-     ma si riduce se la finestra è più stretta. */
+  /* Only the path is ellipsized: inline-block + max-width lets the rest of
+     the sentence wrap. Full path remains available via tooltip (title).
+     ~420px ≈ 67 monospace chars at 11px; shrinks on narrower windows. */
   display: inline-block;
   max-width: min(420px, 100%);
   vertical-align: bottom;
