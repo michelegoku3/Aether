@@ -292,12 +292,24 @@ pub fn run_uninstall(install_root: &Path, delete_user_data: bool) -> i32 {
         }
     }
 
+    // Icon restore must run against a path that *survives* uninstall:
+    // - keep user data → move AetherData first, then write official shell.ico there
+    // - wipe everything → write official shell.ico to a small durable AppData cache
+    //   so Start Menu / Desktop shortcuts stop pointing at a deleted custom icon
+    let mut preserved_data: Option<PathBuf> = None;
     if !delete_user_data {
-        if let Err(e) = preserve_user_data(install_root) {
-            eprintln!("[AetherDesk] failed to preserve AetherData: {e}");
-            // Abort so the user does not lose data if the move failed.
-            return 1;
+        match preserve_user_data(install_root) {
+            Ok(dest) => preserved_data = dest,
+            Err(e) => {
+                eprintln!("[AetherDesk] failed to preserve AetherData: {e}");
+                // Abort so the user does not lose data if the move failed.
+                return 1;
+            }
         }
+    }
+
+    if let Err(e) = restore_default_icon_after_uninstall(preserved_data.as_deref()) {
+        eprintln!("[AetherDesk] failed to restore default shell icon before wipe: {e}");
     }
 
     match wipe_install_root(install_root) {
@@ -365,10 +377,12 @@ fn force_kill_desk_processes() {
 
 /// Moves `<install_root>/AetherData` to `<install_root>/../AetherData`
 /// (with numeric suffix if the destination already exists).
-fn preserve_user_data(install_root: &Path) -> Result<(), String> {
+/// Returns the final destination when a move happened, or `None` if there
+/// was nothing to preserve.
+fn preserve_user_data(install_root: &Path) -> Result<Option<PathBuf>, String> {
     let data_dir = install_root.join(DATA_DIR_NAME);
     if !data_dir.exists() {
-        return Ok(());
+        return Ok(None);
     }
 
     let parent = install_root.parent().ok_or_else(|| {
@@ -397,6 +411,38 @@ fn preserve_user_data(install_root: &Path) -> Result<(), String> {
         "[AetherDesk] preserved user data at {}",
         dest.display()
     );
+    Ok(Some(dest))
+}
+
+/// Point Start Menu / Desktop shortcuts back at the official AetherDesk icon.
+///
+/// `preserved_data` is the relocated `AetherData` folder when the user kept
+/// their data; otherwise a durable AppData cache path is used so shortcuts
+/// do not keep referencing a deleted custom `shell.ico`.
+fn restore_default_icon_after_uninstall(preserved_data: Option<&Path>) -> Result<(), String> {
+    let shell_ico = if let Some(data_root) = preserved_data {
+        let dest = data_root.join("config").join("icons").join("shell.ico");
+        if let Some(parent) = dest.parent() {
+            fs::create_dir_all(parent)
+                .map_err(|e| format!("Failed to create icons folder: {e}"))?;
+        }
+        fs::write(&dest, crate::core::custom_css::DEFAULT_AETHER_ICON)
+            .map_err(|e| format!("Failed to write default shell.ico: {e}"))?;
+        dest
+    } else {
+        // Full wipe: keep a tiny durable icon outside the deleted install tree.
+        let cache = dirs::data_local_dir()
+            .unwrap_or_else(std::env::temp_dir)
+            .join("AetherDesk");
+        fs::create_dir_all(&cache)
+            .map_err(|e| format!("Failed to create icon cache folder: {e}"))?;
+        let dest = cache.join("shell.ico");
+        fs::write(&dest, crate::core::custom_css::DEFAULT_AETHER_ICON)
+            .map_err(|e| format!("Failed to write default shell.ico: {e}"))?;
+        dest
+    };
+
+    crate::core::shell_shortcuts::sync_windows_shortcuts(&shell_ico);
     Ok(())
 }
 

@@ -17,6 +17,10 @@ pub fn shell_ico_path() -> PathBuf {
 
 /// Write the ICO used by shortcuts. Overwrites in place; the shell is then
 /// notified so the cache picks up the new bytes.
+///
+/// `source = None` always materialises the **official** bundled AetherDesk icon
+/// (never a leftover custom file). Callers that disable custom icons or run
+/// uninstall must pass `None` so Start Menu / Desktop return to stock.
 pub fn materialize_shell_ico(source: Option<&Path>) -> Result<PathBuf, String> {
     let dest = shell_ico_path();
     if let Some(parent) = dest.parent() {
@@ -24,6 +28,8 @@ pub fn materialize_shell_ico(source: Option<&Path>) -> Result<PathBuf, String> {
             .map_err(|e| format!("Failed to create icons folder: {}", e))?;
     }
 
+    // Always rewrite shell.ico so a previous custom icon cannot stick around
+    // after the user disables custom icons or uninstalls.
     match source {
         Some(src) if is_ico(src) => {
             fs::copy(src, &dest)
