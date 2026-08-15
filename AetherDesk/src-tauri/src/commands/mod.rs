@@ -8,6 +8,7 @@ pub mod game_info;
 pub mod library;
 pub mod local;
 pub mod logs;
+pub mod online;
 pub mod settings;
 pub mod steam;
 pub mod steamless;

@@ -2,8 +2,9 @@ use std::fs;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 
-const BACKUP_SUFFIX: &str = ".steamstub.bak";
-const UNPACKED_SUFFIX: &str = ".unpacked.exe";
+use crate::external_tools::constants::{
+    is_steamless_backup_name, is_steamless_unpacked_name,
+};
 
 pub fn validate_executable(exe_path: &Path, game_root: &Path) -> Result<(), String> {
     if !exe_path.is_file() {
@@ -23,7 +24,7 @@ pub fn validate_executable(exe_path: &Path, game_root: &Path) -> Result<(), Stri
         .unwrap_or_default()
         .to_lowercase();
 
-    if name_lower.ends_with(UNPACKED_SUFFIX) || name_lower.ends_with(BACKUP_SUFFIX) {
+    if is_steamless_unpacked_name(&name_lower) || is_steamless_backup_name(&name_lower) {
         return Err(
             "Select the original game executable, not a Steamless output or backup file."
                 .to_string(),

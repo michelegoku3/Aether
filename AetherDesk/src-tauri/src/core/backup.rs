@@ -13,6 +13,7 @@
 // filesystem service: it takes no AppHandle and knows nothing about Steam, so
 // it stays small, testable and decoupled from the Tauri command layer.
 use crate::core::paths::LocalAppPaths;
+use crate::external_tools::fs::write_atomic;
 use crate::manifest::package::ManifestPackageFile;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -141,16 +142,6 @@ impl GameBackup {
 
         Ok(())
     }
-}
-
-/// Write bytes to `path` atomically via a temp file + rename.
-fn write_atomic(path: &Path, bytes: &[u8]) -> Result<(), String> {
-    let temp_path = PathBuf::from(format!("{}.tmp", path.display()));
-
-    fs::write(&temp_path, bytes)
-        .map_err(|error| format!("Failed to write temporary file {}: {}", temp_path.display(), error))?;
-    fs::rename(&temp_path, path)
-        .map_err(|error| format!("Failed to finalize file {}: {}", path.display(), error))
 }
 
 fn dir_has_files(dir: &Path) -> bool {
