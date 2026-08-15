@@ -153,6 +153,144 @@ fn collect_files_into(dir: &Path, out: &mut Vec<PathBuf>) -> Result<(), String> 
     Ok(())
 }
 
+/// Re-apply files already stored in `backup/crack/` (game-relative layout).
+pub fn reapply_saved_crack_files(
+    app_id: u32,
+    game_root: &Path,
+    backup: &GameBackup,
+) -> Result<ApplyReport, String> {
+    let saved = backup.list_saved_crack_files()?;
+    if saved.is_empty() {
+        return Err("No saved crack files found in the backup folder.".to_string());
+    }
+
+    let crack_dir = backup.crack_dir();
+    let mut report = ApplyReport::default();
+    let mut inventory: Vec<String> = Vec::new();
+    let mut applied_targets: Vec<PathBuf> = Vec::new();
+
+    for rel in &saved {
+        // Normalise separators so Windows paths under backup still resolve.
+        let rel_path = PathBuf::from(rel.replace('/', &main_sep()));
+        let source = crack_dir.join(&rel_path);
+        if !source.is_file() {
+            continue;
+        }
+
+        let target = game_root.join(&rel_path);
+        let game_rel_string = rel_path.to_string_lossy().replace('\\', "/");
+
+        if target.exists() {
+            let backup_dest = backup.original_dir().join(&rel_path);
+            // Keep the first original only — do not overwrite an older backup.
+            if !backup_dest.exists() {
+                copy_preserving(&target, backup_dest, "back up original")?;
+            }
+            report.replaced += 1;
+        }
+
+        copy_preserving(&source, &target, "re-apply crack")?;
+        crate::desk_log_info!(
+            "crack",
+            "Re-applied saved crack file: {} -> {}",
+            source.display(),
+            target.display()
+        );
+
+        report.applied += 1;
+        report.files.push(game_rel_string.clone());
+        inventory.push(game_rel_string);
+        applied_targets.push(target);
+    }
+
+    if report.applied == 0 {
+        return Err("Saved crack folder is empty or unreadable.".to_string());
+    }
+
+    let mut missing = Vec::new();
+    for target in &applied_targets {
+        if !target.exists() {
+            missing.push(
+                target
+                    .strip_prefix(game_root)
+                    .unwrap_or(target)
+                    .display()
+                    .to_string(),
+            );
+        }
+    }
+    if !missing.is_empty() {
+        return Err(format!(
+            "Re-apply failed! {} file(s) were not written:\n\n{}\n\n\
+             Restart Steam through Aether and try again.",
+            missing.len(),
+            missing
+                .iter()
+                .map(|f| format!("  • {f}"))
+                .collect::<Vec<_>>()
+                .join("\n")
+        ));
+    }
+
+    write_inventory(backup, app_id, &inventory)?;
+    Ok(report)
+}
+
+/// Remove crack files currently present in the game, using the inventory.
+/// Falls back to listing `backup/crack/` when the inventory file is missing.
+pub fn remove_applied_crack_files(
+    app_id: u32,
+    game_root: &Path,
+    backup: &GameBackup,
+) -> Result<usize, String> {
+    let mut paths = backup.read_crack_inventory(app_id)?;
+    if paths.is_empty() {
+        paths = backup.list_saved_crack_files()?;
+    }
+    if paths.is_empty() {
+        return Ok(0);
+    }
+
+    let mut removed = 0usize;
+    for rel in &paths {
+        let rel_path = PathBuf::from(rel.replace('/', &main_sep()));
+        let target = game_root.join(&rel_path);
+        if target.is_file() {
+            fs::remove_file(&target).map_err(|error| {
+                format!(
+                    "Failed to remove crack file {}: {}",
+                    target.display(),
+                    error
+                )
+            })?;
+            removed += 1;
+            crate::desk_log_info!("crack", "Removed applied crack file: {}", target.display());
+            // Best-effort: drop empty parent dirs left behind under the game.
+            remove_empty_parents(&target, game_root);
+        }
+    }
+
+    backup.clear_crack_inventory(app_id)?;
+    Ok(removed)
+}
+
+fn remove_empty_parents(file: &Path, stop_at: &Path) {
+    let mut current = file.parent().map(|p| p.to_path_buf());
+    while let Some(dir) = current {
+        if dir == stop_at {
+            break;
+        }
+        match fs::remove_dir(&dir) {
+            Ok(()) => current = dir.parent().map(|p| p.to_path_buf()),
+            Err(_) => break,
+        }
+    }
+}
+
+fn main_sep() -> String {
+    std::path::MAIN_SEPARATOR.to_string()
+}
+
 /// Write the inventory file (game-relative paths only, one per line) under the
 /// `original` backup folder.
 fn write_inventory(backup: &GameBackup, app_id: u32, files: &[String]) -> Result<(), String> {

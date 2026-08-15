@@ -65,16 +65,95 @@ pub async fn apply_crack(
     crate::desk_log_info!("crack", "Successfully applied crack for AppID {}: {} files applied, {} replaced",
         app_id, report.applied, report.replaced);
 
-    // Show the full game-relative path of each applied file.
-    let names: Vec<String> = report.files.clone();
-
-    let mut msg = format!(
-        "Crack applied: {} file(s) ({} replaced). Originals & crack files backed up. Files: {}",
+    Ok(format_apply_message(
+        "Crack applied",
         report.applied,
         report.replaced,
-        names.join(", ")
+        &report.files,
+    ))
+}
+
+/// Whether `AetherData/backup/<app_id>/crack/` already holds saved crack files.
+#[tauri::command]
+pub fn has_saved_crack(app_id: u32) -> bool {
+    crack::has_saved_crack(app_id)
+}
+
+/// Re-apply the crack previously stored under `backup/<app_id>/crack/`.
+#[tauri::command]
+pub async fn reapply_saved_crack(app: tauri::AppHandle, app_id: u32) -> Result<String, String> {
+    let game = resolve_installed_game(&app, app_id)?;
+    let game_root = PathBuf::from(&game.game_path);
+    let backup = GameBackup::for_app(app_id)?;
+
+    if !backup.has_saved_crack() {
+        return Err("No saved crack found for this game.".to_string());
+    }
+
+    crate::desk_log_info!(
+        "crack",
+        "Re-applying saved crack for AppID {} from {}",
+        app_id,
+        backup.crack_dir().display()
     );
 
+    let report = crack::reapply_saved_crack(app_id, &game_root, &backup)?;
+
+    crate::desk_log_info!(
+        "crack",
+        "Re-applied saved crack for AppID {}: {} files ({} replaced)",
+        app_id,
+        report.applied,
+        report.replaced
+    );
+
+    Ok(format_apply_message(
+        "Saved crack re-applied",
+        report.applied,
+        report.replaced,
+        &report.files,
+    ))
+}
+
+/// Remove the crack currently present in the game install (inventory / saved
+/// crack paths). Used when the user declines reusing the saved crack and wants
+/// a fresh drop/apply flow instead.
+#[tauri::command]
+pub async fn remove_applied_crack(app: tauri::AppHandle, app_id: u32) -> Result<String, String> {
+    let game = resolve_installed_game(&app, app_id)?;
+    let game_root = PathBuf::from(&game.game_path);
+    let backup = GameBackup::for_app(app_id)?;
+
+    crate::desk_log_info!(
+        "crack",
+        "Removing applied crack from game for AppID {}",
+        app_id
+    );
+
+    let removed = crack::remove_applied_crack_from_game(app_id, &game_root, &backup)?;
+
+    crate::desk_log_info!(
+        "crack",
+        "Removed {} applied crack file(s) for AppID {}",
+        removed,
+        app_id
+    );
+
+    if removed == 0 {
+        Ok("No applied crack files were found in the game folder.".to_string())
+    } else {
+        Ok(format!(
+            "Removed {} crack file(s) from the game. You can drop a new crack now.",
+            removed
+        ))
+    }
+}
+
+fn format_apply_message(prefix: &str, applied: usize, replaced: usize, files: &[String]) -> String {
+    let mut msg = format!(
+        "{prefix}: {applied} file(s) ({replaced} replaced). Files: {}",
+        files.join(", ")
+    );
     if msg.len() > 500 {
         let mut cutoff = 497;
         while !msg.is_char_boundary(cutoff) && cutoff > 0 {
@@ -83,8 +162,7 @@ pub async fn apply_crack(
         msg.truncate(cutoff);
         msg.push_str("...");
     }
-
-    Ok(msg)
+    msg
 }
 
 fn file_path_to_string(file_path: FilePath) -> Option<String> {
