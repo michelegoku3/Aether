@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { InstalledGame, useLibraryGames } from '../hooks/useLibraryGames';
-import { CrackModal } from '../modals/CrackModal';
+import { CrackModal, CrackTargetGame } from '../modals/CrackModal';
 import { AntivirusExclusionModal } from '../modals/AntivirusExclusionModal';
 import { FindCrackModal } from '../modals/FindCrackModal';
+import { SavedCrackModal } from '../modals/SavedCrackModal';
 import { SearchSuggest, moveSuggestIndex } from '../ui/SearchSuggest';
 
 const MAX_VISIBLE_RESULTS = 5;
@@ -59,13 +60,34 @@ export const HomeView = () => {
   const [activeResultIndex, setActiveResultIndex] = useState<number | null>(null);
   const [status, setStatus] = useState<HomeStatus>({ text: '', type: 'info' });
   const [isSteamlessRunning, setIsSteamlessRunning] = useState(false);
-  // Game targeted by the "Apply Crack" popup; null means the popup is closed.
-  const [crackTarget, setCrackTarget] = useState<{ name: string; appId: string } | null>(null);
+  // Drop-zone Apply Crack modal target.
+  const [crackTarget, setCrackTarget] = useState<CrackTargetGame | null>(null);
+  // Saved-crack reuse prompt (backup/<appId>/crack already populated).
+  const [savedCrackTarget, setSavedCrackTarget] = useState<CrackTargetGame | null>(null);
   const [showFindCrack, setShowFindCrack] = useState(false);
-  // Pending crack target waiting for the antivirus exclusion prompt to be dismissed.
-  // When non-null, the antivirus modal is shown; once dismissed the CrackModal opens.
-  const [pendingCrack, setPendingCrack] = useState<{ name: string; appId: string } | null>(null);
+  // Waiting for antivirus exclusion prompt; after dismiss we continue the crack flow.
+  const [pendingCrack, setPendingCrack] = useState<CrackTargetGame | null>(null);
   const searchPanelRef = useRef<HTMLDivElement | null>(null);
+
+  /**
+   * Entry point after antivirus gate: probe for a saved crack backup, then
+   * either prompt to reuse it or open the normal drop-zone modal.
+   */
+  const beginCrackFlow = async (target: CrackTargetGame) => {
+    try {
+      const hasSaved: boolean = await invoke('has_saved_crack', {
+        appId: Number(target.appId),
+      });
+      if (hasSaved) {
+        setSavedCrackTarget(target);
+      } else {
+        setCrackTarget(target);
+      }
+    } catch {
+      // Probe failure must not block Apply Crack.
+      setCrackTarget(target);
+    }
+  };
 
   useEffect(() => {
     const handlePointerDown = (event: MouseEvent) => {
@@ -269,21 +291,21 @@ export const HomeView = () => {
           disabled={!hasSelectedGame}
           onClick={async () => {
             if (!selectedGame) return;
-            const target = { name: selectedGame.name, appId: selectedGame.appId };
+            const target: CrackTargetGame = {
+              name: selectedGame.name,
+              appId: selectedGame.appId,
+            };
 
-            // Check whether the antivirus exclusion has been confirmed.
-            // If not, show the exclusion prompt first — but regardless of
-            // the user's choice (confirm or X), always proceed to the
-            // CrackModal so the user is never blocked.
+            // Antivirus gate first (never blocks Apply Crack). After that,
+            // probe for a saved crack and branch to reuse prompt or drop modal.
             try {
               const done: boolean = await invoke('get_antivirus_exclusion_done');
               if (done) {
-                setCrackTarget(target);
+                await beginCrackFlow(target);
               } else {
                 setPendingCrack(target);
               }
             } catch {
-              // If the check fails, err on the side of showing the prompt.
               setPendingCrack(target);
             }
           }}
@@ -319,14 +341,34 @@ export const HomeView = () => {
       )}
 
       {/* Antivirus exclusion prompt: shown before Apply Crack if never confirmed.
-          Regardless of the user's choice, the CrackModal opens afterwards so the
-          user is never blocked from applying the crack. */}
+          Regardless of the user's choice, the crack flow continues afterwards. */}
       {pendingCrack && (
-        <AntivirusExclusionModal onDone={() => {
-          const target = pendingCrack;
-          setPendingCrack(null);
-          setCrackTarget(target);
-        }} />
+        <AntivirusExclusionModal
+          onDone={() => {
+            const target = pendingCrack;
+            setPendingCrack(null);
+            void beginCrackFlow(target);
+          }}
+        />
+      )}
+
+      {savedCrackTarget && (
+        <SavedCrackModal
+          game={savedCrackTarget}
+          onReapplied={(message) => {
+            setSavedCrackTarget(null);
+            setStatus({ text: message, type: 'success' });
+          }}
+          onDeclined={(cleanupMessage) => {
+            const target = savedCrackTarget;
+            setSavedCrackTarget(null);
+            if (cleanupMessage) {
+              setStatus({ text: cleanupMessage, type: 'info' });
+            }
+            setCrackTarget(target);
+          }}
+          onCancel={() => setSavedCrackTarget(null)}
+        />
       )}
 
       {crackTarget && (

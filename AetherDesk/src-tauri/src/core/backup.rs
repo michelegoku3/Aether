@@ -55,6 +55,70 @@ impl GameBackup {
         self.root.join(CRACK_SUBDIR)
     }
 
+    /// Path of the crack inventory file (`original/crack_<app_id>.txt`).
+    pub fn crack_inventory_path(&self, app_id: u32) -> PathBuf {
+        self.original_dir().join(format!("crack_{}.txt", app_id))
+    }
+
+    /// Open an existing backup tree without creating folders.
+    /// Returns `None` when `backup/<app_id>` does not exist yet.
+    pub fn open_existing(app_id: u32) -> Option<Self> {
+        let root = LocalAppPaths::data_root()
+            .join(BACKUP_ROOT)
+            .join(app_id.to_string());
+        if root.is_dir() {
+            Some(Self { root })
+        } else {
+            None
+        }
+    }
+
+    /// True when `backup/<app_id>/crack/` contains at least one file.
+    pub fn has_saved_crack(&self) -> bool {
+        dir_has_files(&self.crack_dir())
+    }
+
+    /// Recursively list files under `crack/` as paths relative to the crack dir
+    /// (same layout as game-relative paths used when the crack was applied).
+    pub fn list_saved_crack_files(&self) -> Result<Vec<String>, String> {
+        let crack_dir = self.crack_dir();
+        if !crack_dir.is_dir() {
+            return Ok(Vec::new());
+        }
+        let mut files = Vec::new();
+        collect_relative_files(&crack_dir, &crack_dir, &mut files)?;
+        files.sort();
+        Ok(files)
+    }
+
+    /// Read the crack inventory (game-relative paths, one per line).
+    pub fn read_crack_inventory(&self, app_id: u32) -> Result<Vec<String>, String> {
+        let path = self.crack_inventory_path(app_id);
+        if !path.is_file() {
+            return Ok(Vec::new());
+        }
+        let content = fs::read_to_string(&path).map_err(|error| {
+            format!("Failed to read crack inventory {}: {}", path.display(), error)
+        })?;
+        Ok(content
+            .lines()
+            .map(str::trim)
+            .filter(|line| !line.is_empty())
+            .map(|line| line.to_string())
+            .collect())
+    }
+
+    /// Clear the crack inventory after the applied crack has been removed from the game.
+    pub fn clear_crack_inventory(&self, app_id: u32) -> Result<(), String> {
+        let path = self.crack_inventory_path(app_id);
+        if path.exists() {
+            fs::remove_file(&path).map_err(|error| {
+                format!("Failed to remove crack inventory {}: {}", path.display(), error)
+            })?;
+        }
+        Ok(())
+    }
+
     /// Persist the Lua and any bundled Steam `.manifest` files for a game.
     ///
     /// This is the central "Lua backup" step: it is called every time a Lua is
@@ -87,4 +151,45 @@ fn write_atomic(path: &Path, bytes: &[u8]) -> Result<(), String> {
         .map_err(|error| format!("Failed to write temporary file {}: {}", temp_path.display(), error))?;
     fs::rename(&temp_path, path)
         .map_err(|error| format!("Failed to finalize file {}: {}", path.display(), error))
+}
+
+fn dir_has_files(dir: &Path) -> bool {
+    let mut stack = vec![dir.to_path_buf()];
+    while let Some(current) = stack.pop() {
+        let Ok(entries) = fs::read_dir(&current) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_file() {
+                return true;
+            }
+            if path.is_dir() {
+                stack.push(path);
+            }
+        }
+    }
+    false
+}
+
+fn collect_relative_files(root: &Path, dir: &Path, out: &mut Vec<String>) -> Result<(), String> {
+    let entries = fs::read_dir(dir)
+        .map_err(|error| format!("Failed to read folder {}: {}", dir.display(), error))?;
+    for entry in entries {
+        let entry = entry.map_err(|error| format!("Failed to read folder entry: {}", error))?;
+        let path = entry.path();
+        if path.is_dir() {
+            collect_relative_files(root, &path, out)?;
+        } else if path.is_file() {
+            let rel = path.strip_prefix(root).map_err(|_| {
+                format!(
+                    "Internal error: file {} is outside {}",
+                    path.display(),
+                    root.display()
+                )
+            })?;
+            out.push(rel.to_string_lossy().replace('\\', "/"));
+        }
+    }
+    Ok(())
 }

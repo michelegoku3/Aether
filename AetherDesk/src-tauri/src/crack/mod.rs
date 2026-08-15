@@ -129,3 +129,39 @@ pub fn apply_crack_pipeline(
     result.map_err(|error| error)?;
     Ok(report)
 }
+
+/// Probe whether a previously applied crack is stored under `backup/<app_id>/crack/`.
+/// Does not create folders — pure read of existing backup state.
+pub fn has_saved_crack(app_id: u32) -> bool {
+    GameBackup::open_existing(app_id)
+        .map(|backup| backup.has_saved_crack())
+        .unwrap_or(false)
+}
+
+/// Re-apply every file stored in `backup/<app_id>/crack/` into the game install.
+///
+/// Layout under `crack/` mirrors game-relative paths, so no archive extraction
+/// or locate heuristics are needed — each file is copied straight to its path.
+pub fn reapply_saved_crack(
+    app_id: u32,
+    game_root: &Path,
+    backup: &GameBackup,
+) -> Result<CrackReport, String> {
+    apply::reapply_saved_crack_files(app_id, game_root, backup).map(|sub| CrackReport {
+        sources: 1,
+        applied: sub.applied,
+        replaced: sub.replaced,
+        files: sub.files,
+    })
+}
+
+/// Delete every game file listed in the crack inventory (the crack currently
+/// present in the game install). Originals under `backup/original/` are left
+/// untouched so the user can still recover them; the inventory itself is cleared.
+pub fn remove_applied_crack_from_game(
+    app_id: u32,
+    game_root: &Path,
+    backup: &GameBackup,
+) -> Result<usize, String> {
+    apply::remove_applied_crack_files(app_id, game_root, backup)
+}
