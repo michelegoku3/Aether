@@ -25,12 +25,12 @@ void LogResolutionOnce(steam::AppId appId, const char* source, std::uint64_t val
     }
 }
 
-// 1. HKCU\...\Apps\<appId>\SteamID (REG_SZ written by Steam for some titles).
+// Cached HKCU\...\Apps\<appId>\SteamID (REG_SZ). May be stale after account switch.
 std::uint64_t FromAppSteamIdValue(steam::AppId appId) {
     return credential::ReadAppSteamIdValue(appId);
 }
 
-// 2. The SteamID baked into the cached AppOwnershipTicket at offset 8.
+// SteamID baked into the cached AppOwnershipTicket at offset 8.
 std::uint64_t FromOwnershipTicket(steam::AppId appId) {
     std::vector<std::uint8_t> ticket = credential::ReadAppOwnershipTicket(appId);
     if (ticket.size() < ticket::kAppTicketSteamIdOffset + sizeof(std::uint64_t))
@@ -40,7 +40,7 @@ std::uint64_t FromOwnershipTicket(steam::AppId appId) {
     return id;
 }
 
-// 3. A userdata\<accountId>\<appId>\ folder means this account has played it.
+// A userdata\<accountId>\<appId>\ folder means this account has played it.
 std::uint64_t FromUserdataFolder(steam::AppId appId) {
     const std::string steamPath = credential::ReadSteamPath();
     if (steamPath.empty()) return 0;
@@ -68,6 +68,22 @@ std::uint64_t FromUserdataFolder(steam::AppId appId) {
     } while (FindNextFileA(find, &fd));
     FindClose(find);
     return result;
+}
+
+// Keep Apps\<appId>\SteamID aligned with the live identity so later cold-start
+// fallbacks are less stale. Best-effort; resolution does not depend on write.
+void RefreshAppSteamIdCache(steam::AppId appId, std::uint64_t activeId) {
+    if (activeId == 0) return;
+    const std::uint64_t cached = FromAppSteamIdValue(appId);
+    if (cached == activeId) return;
+    const bool wrote = credential::WriteAppSteamIdValue(appId, activeId);
+    AC_LOG_DEBUG_ONCE(
+        kModule,
+        "App %u: refreshed SteamID cache %llu -> %llu (wrote=%d).",
+        appId,
+        static_cast<unsigned long long>(cached),
+        static_cast<unsigned long long>(activeId),
+        wrote ? 1 : 0);
 }
 
 }  // namespace
@@ -108,30 +124,28 @@ std::uint64_t GetActiveSteamId64() {
 std::uint64_t GetSpoofSteamId(steam::AppId appId) {
     if (!luadata::HasDepot(appId)) return 0;
 
-    // 1. Steam-written registry value (genuine-owned apps).
+    // 1. Current account identity is authoritative. Cached per-app values can
+    //    belong to a previous login on the same machine and must not win.
+    if (std::uint64_t id = GetActiveSteamId64()) {
+        RefreshAppSteamIdCache(appId, id);
+        LogResolutionOnce(appId, "active", id);
+        return id;
+    }
+
+    // 2–4. Offline / unresolved-active fallbacks only.
     if (std::uint64_t id = FromAppSteamIdValue(appId)) {
         LogResolutionOnce(appId, "registry", id);
         return id;
     }
-    // 2. SteamID baked into the cached AppTicket.
     if (std::uint64_t id = FromOwnershipTicket(appId)) {
         LogResolutionOnce(appId, "ticket", id);
         return id;
     }
-    // 3. An account that has previously played this app (filesystem hint).
     if (std::uint64_t id = FromUserdataFolder(appId)) {
         LogResolutionOnce(appId, "userdata", id);
         return id;
     }
-    // 4. Active-user fallback. Catches the case where the user added the
-    //    game via Lua, has not played it genuinely, and Steam has not yet
-    //    populated Apps\<id>\SteamID. Persisting the resolved id to the
-    //    registry lets the next IPC call short-circuit on step 1.
-    if (std::uint64_t id = GetActiveSteamId64()) {
-        const bool wrote = credential::WriteAppSteamIdValue(appId, id);
-        LogResolutionOnce(appId, wrote ? "active-written" : "active-ephemeral", id);
-        return id;
-    }
+
     LogResolutionOnce(appId, "none", 0);
     return 0;
 }
