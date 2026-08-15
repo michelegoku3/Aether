@@ -32,7 +32,7 @@ endif()
 # .dll files in the Steam folder: NO sidecar .txt/.json version files involved.
 # Bump this at each release (keep it aligned with the "dll-x.y.z" git tag).
 # ============================================================================
-project(AetherDLL LANGUAGES C CXX RC VERSION 0.9.8)
+project(AetherDLL LANGUAGES C CXX RC VERSION 0.9.10)
 
 if(NOT WIN32)
     message(FATAL_ERROR "AetherDLL targets Windows only.")
