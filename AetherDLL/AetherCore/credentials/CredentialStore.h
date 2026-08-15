@@ -52,9 +52,8 @@ std::uint64_t ReadAppSteamIdValue(steam::AppId appId);
 
 // Writes Apps\<appId>\SteamID (REG_SZ, decimal). Returns true on success.
 // Refuses to write 0 (would poison the cache). Symmetric with
-// ReadAppSteamIdValue; used by the per-app owner fallback to persist the
-// active-user resolution so subsequent calls can short-circuit on the
-// registry read instead of re-walking userdata.
+// ReadAppSteamIdValue. Used by GetSpoofSteamId to keep the per-app cache
+// aligned with the currently active Steam identity (account switches).
 bool WriteAppSteamIdValue(steam::AppId appId, std::uint64_t steamId);
 
 // Reads the Steam installation path from the registry. Returns "" on failure.
