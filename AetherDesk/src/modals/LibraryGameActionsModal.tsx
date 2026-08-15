@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { GameHeroImage } from '../ui/GameHeroImage';
 import { requireSteamPath } from '../hooks/useSettings';
+import { OnlinePanel } from './OnlinePanel';
 
 export interface LibraryActionGame {
   id: number;
@@ -34,6 +35,7 @@ export const LibraryGameActionsModal = ({
 }: LibraryGameActionsModalProps) => {
   const [updatesEnabled, setUpdatesEnabled] = useState(false);
   const [isBusy, setIsBusy] = useState(false);
+  const [showOnline, setShowOnline] = useState(false);
   const disabled = isProcessing || isBusy;
 
   const refreshUpdateState = async () => {
@@ -147,7 +149,7 @@ export const LibraryGameActionsModal = ({
             <button className="game-action-btn" onClick={() => onOpenVersionEditor(game)} disabled={disabled}>
               Change Version
             </button>
-            <button className="game-action-btn" disabled title="Enable Online is not available yet.">
+            <button className="game-action-btn" onClick={() => setShowOnline(true)} disabled={disabled}>
               Enable Online
             </button>
             <button
@@ -161,6 +163,8 @@ export const LibraryGameActionsModal = ({
           </div>
         </div>
       </div>
+
+      {showOnline && <OnlinePanel game={game} onClose={() => setShowOnline(false)} />}
     </div>
   );
 };

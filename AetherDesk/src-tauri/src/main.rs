@@ -6,9 +6,11 @@
 mod commands;
 mod core;
 mod crack;
+mod external_tools;
 mod game_info;
 mod local;
 mod manifest;
+mod online;
 mod providers;
 mod steam;
 mod steamless;
@@ -92,6 +94,10 @@ fn main() {
             commands::home_links::open_home_resource,
             commands::game_info::get_game_info,
             commands::steamless::pick_and_run_steamless,
+            commands::online::get_online_status,
+            commands::online::plan_online,
+            commands::online::enable_online,
+            commands::online::disable_online,
             commands::library::get_installed_lua_manifest_rows,
             commands::library::get_lua_game_update_state,
             commands::library::set_lua_game_updates_enabled,

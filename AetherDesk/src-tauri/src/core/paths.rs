@@ -70,8 +70,23 @@ impl LocalAppPaths {
         Self::external_tools_dir().join("Steamless")
     }
 
+    /// Directory del bundle UCOnline2 (emulatore Steamworks + plugin).
+    pub fn uco2_dir() -> PathBuf {
+        Self::external_tools_dir().join("UCOnline2")
+    }
+
     pub fn config_dir() -> PathBuf {
         Self::data_root().join("config")
+    }
+
+    /// Directory di stato (uc_online2.json e altri stati applicativi).
+    pub fn state_dir() -> PathBuf {
+        Self::data_root().join("state")
+    }
+
+    /// Root dei backup per-gioco (`<AetherData>/backup`).
+    pub fn backup_root() -> PathBuf {
+        Self::data_root().join("backup")
     }
 
     pub fn temp_dir() -> PathBuf {
