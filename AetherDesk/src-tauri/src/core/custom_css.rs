@@ -337,24 +337,6 @@ pub fn apply_window_icon(app: &tauri::AppHandle) -> Result<(), String> {
     Ok(())
 }
 
-/// Restore title-bar + Start Menu / Desktop shortcuts to the official AetherDesk
-/// icon. Safe to call without an `AppHandle` (uninstall helper, CLI paths).
-pub fn restore_default_window_icon(app: Option<&tauri::AppHandle>) -> Result<(), String> {
-    if let Some(app) = app {
-        use tauri::Manager;
-        if let Some(window) = app.get_webview_window("main") {
-            let image = default_window_icon()?;
-            window
-                .set_icon(image)
-                .map_err(|e| format!("Failed to restore window icon: {}", e))?;
-        }
-    }
-
-    let shell_ico = crate::core::shell_shortcuts::materialize_shell_ico(None)?;
-    crate::core::shell_shortcuts::sync_windows_shortcuts(&shell_ico);
-    Ok(())
-}
-
 // ---------------------------------------------------------------------------
 // Selection / import helpers (used by the native file picker commands)
 // ---------------------------------------------------------------------------
