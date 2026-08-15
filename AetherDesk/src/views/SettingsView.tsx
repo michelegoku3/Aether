@@ -629,7 +629,15 @@ export const SettingsView = ({ hubcapUsage, onRefreshUsage, onRefreshCustomCss, 
                   const next = e.target.checked;
                   setCustomIconEnabled(next);
                   try { await invoke('ensure_custom_css'); } catch {}
-                  await persistAppearanceSelection({ custom_icon_enabled: next });
+                  // When turning custom icons OFF, clear the selection so the
+                  // next enable starts fresh and settings never keep a stale
+                  // custom path while the official icon is shown.
+                  await persistAppearanceSelection(
+                    next
+                      ? { custom_icon_enabled: true }
+                      : { custom_icon_enabled: false, icon_selected_file: '' },
+                  );
+                  if (!next) setIconSelectedFile('');
                   try { await invoke('apply_window_icon'); } catch (err) { console.warn('Failed to apply window icon:', err); }
                 }}
               />
@@ -744,6 +752,8 @@ export const SettingsView = ({ hubcapUsage, onRefreshUsage, onRefreshCustomCss, 
               setAlternativeCardsFade(50);
               setThemeSelectedFile('');
               setWallpaperSelectedFile('');
+              setCustomIconEnabled(false);
+              setIconSelectedFile('');
               onPreviewPersonalWallpaper(false, 20);
               onPreviewAlternativeCards(100, 50);
               setStoreCurrency('eur');
@@ -780,6 +790,8 @@ export const SettingsView = ({ hubcapUsage, onRefreshUsage, onRefreshCustomCss, 
                     antivirus_exclusion_done: rawSettings.antivirus_exclusion_done ?? false
                   }
                 });
+                // Official window + shell icon after custom icon is cleared.
+                try { await invoke('apply_window_icon'); } catch {}
                 showStatus('Settings reset to defaults!', 'success');
                 onRefreshUsage('');
                 onRefreshCustomCss();

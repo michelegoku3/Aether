@@ -64,8 +64,16 @@ const DEFAULT_WALLPAPER_FILES: &[(&str, &[u8])] = &[
     ("halo.jpg", DEFAULT_HALO_WALLPAPER),
 ];
 
-pub const DEFAULT_AETHER_ICON: &[u8] = include_bytes!("../../assets/defaults/icons/aether.ico");
-const DEFAULT_ICON_FILES: &[(&str, &[u8])] = &[("aether.ico", DEFAULT_AETHER_ICON)];
+/// Official AetherDesk window icon (bundled Tauri icon resource).
+/// Used whenever custom icons are disabled and as the shell-shortcut default.
+pub const DEFAULT_AETHER_ICON: &[u8] = include_bytes!("../../icons/icon.ico");
+
+/// Optional meme / alternate icon shipped into `config/icons/` for the picker.
+/// Named explicitly so it is never confused with the official app icon.
+const DEFAULT_ICON_FILES: &[(&str, &[u8])] = &[(
+    "aether_genshin.ico",
+    include_bytes!("../../assets/defaults/icons/aether_genshin.ico"),
+)];
 
 /// Image extensions the wallpaper picker accepts (browser-renderable set).
 const WALLPAPER_EXTENSIONS: &[&str] = &["jpg", "jpeg", "png", "webp", "gif", "bmp", "avif", "ico"];
@@ -111,6 +119,20 @@ pub fn ensure_default_assets() -> Result<(), String> {
             if let Err(e) = fs::write(&file, content) {
                 eprintln!("[AetherDesk] failed to write default wallpaper {}: {}", file_name, e);
             }
+        }
+    }
+
+    // Migrate legacy meme icon name from older builds.
+    let legacy_meme = icons_dir.join("aether.ico");
+    let renamed_meme = icons_dir.join("aether_genshin.ico");
+    if legacy_meme.is_file() && !renamed_meme.exists() {
+        if let Err(e) = fs::rename(&legacy_meme, &renamed_meme) {
+            eprintln!(
+                "[AetherDesk] failed to rename legacy icon {} → {}: {}",
+                legacy_meme.display(),
+                renamed_meme.display(),
+                e
+            );
         }
     }
 
@@ -290,6 +312,8 @@ pub fn apply_window_icon(app: &tauri::AppHandle) -> Result<(), String> {
             None => default_window_icon()?,
         }
     } else {
+        // Custom icons OFF → always the official bundled icon, never the
+        // first file sitting in config/icons/ (that folder is only a picker source).
         default_window_icon()?
     };
 
@@ -300,6 +324,7 @@ pub fn apply_window_icon(app: &tauri::AppHandle) -> Result<(), String> {
         .set_icon(image)
         .map_err(|e| format!("Failed to set window icon: {}", e))?;
 
+    // Shortcuts / shell cache: custom source when enabled, official default otherwise.
     let source = if settings.custom_icon_enabled {
         icon_path(&settings.icon_selected_file).ok().flatten()
     } else {
@@ -309,6 +334,24 @@ pub fn apply_window_icon(app: &tauri::AppHandle) -> Result<(), String> {
         Ok(shell_ico) => crate::core::shell_shortcuts::sync_windows_shortcuts(&shell_ico),
         Err(e) => eprintln!("[AetherDesk] shell icon materialize failed: {e}"),
     }
+    Ok(())
+}
+
+/// Restore title-bar + Start Menu / Desktop shortcuts to the official AetherDesk
+/// icon. Safe to call without an `AppHandle` (uninstall helper, CLI paths).
+pub fn restore_default_window_icon(app: Option<&tauri::AppHandle>) -> Result<(), String> {
+    if let Some(app) = app {
+        use tauri::Manager;
+        if let Some(window) = app.get_webview_window("main") {
+            let image = default_window_icon()?;
+            window
+                .set_icon(image)
+                .map_err(|e| format!("Failed to restore window icon: {}", e))?;
+        }
+    }
+
+    let shell_ico = crate::core::shell_shortcuts::materialize_shell_ico(None)?;
+    crate::core::shell_shortcuts::sync_windows_shortcuts(&shell_ico);
     Ok(())
 }
 

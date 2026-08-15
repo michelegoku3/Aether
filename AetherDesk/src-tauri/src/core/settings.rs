@@ -148,6 +148,16 @@ pub fn normalize_library_install_filter(value: &str) -> String {
     }
 }
 
+/// Migrate legacy meme icon file name (`aether.ico` → `aether_genshin.ico`).
+pub fn normalize_icon_selected_file(value: &str) -> String {
+    let trimmed = value.trim();
+    if trimmed.eq_ignore_ascii_case("aether.ico") {
+        "aether_genshin.ico".to_string()
+    } else {
+        trimmed.to_string()
+    }
+}
+
 pub fn normalize_store_currency(value: &str) -> String {
     match value.trim().to_lowercase().as_str() {
         "usd" => "usd".to_string(),
@@ -268,6 +278,8 @@ impl SettingsManager {
         normalized.store_front_filter = normalize_store_front_filter(&normalized.store_front_filter);
         normalized.library_install_filter =
             normalize_library_install_filter(&normalized.library_install_filter);
+        normalized.icon_selected_file =
+            normalize_icon_selected_file(&normalized.icon_selected_file);
         normalized.personal_wallpaper_opacity = normalized.personal_wallpaper_opacity.min(100);
         normalized.alternative_cards_opacity = normalized.alternative_cards_opacity.min(100);
         normalized.alternative_cards_fade = normalized.alternative_cards_fade.min(100);
