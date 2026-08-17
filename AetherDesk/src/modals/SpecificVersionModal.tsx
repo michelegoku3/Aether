@@ -1,6 +1,7 @@
-import React, { useEffect, useState } from 'react';
+import React, { useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { requireSteamPath } from '../hooks/useSettings';
+import { useModalDismiss } from '../hooks/useModalDismiss';
 
 // Geometry used to size the depot table to its content: each row is ~41px
 // (10px padding ×2 + 17px text + 1px border) and the sticky header ~37px.
@@ -56,16 +57,8 @@ export const SpecificVersionModal = ({ game, initialRows, onClose }: SpecificVer
     setRows(prev => prev.map(row => row.rowId === rowId ? { ...row, ...patch } : row));
   };
 
-  useEffect(() => {
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape' && !isApplying) {
-        onClose();
-      }
-    };
-
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isApplying, onClose]);
+  // ESC + click fuori chiudono il popup (rispettando un'operazione in corso).
+  useModalDismiss(onClose, isApplying);
 
   const handleOpenSteamDb = async () => {
     try {
@@ -106,10 +99,11 @@ export const SpecificVersionModal = ({ game, initialRows, onClose }: SpecificVer
   };
 
   return (
-    <div className="modal-overlay">
+    <div className="modal-overlay" onClick={isApplying ? undefined : onClose}>
       <div
         className="modal-container version-modal-container"
         style={{ '--version-table-max-height': `${tableMaxHeight}px` } as React.CSSProperties}
+        onClick={(e) => e.stopPropagation()}
       >
         <div className="modal-header">
           <span className="modal-title">

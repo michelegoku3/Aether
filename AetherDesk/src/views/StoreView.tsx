@@ -10,6 +10,7 @@ import { GameCard } from '../ui/GameCard';
 import { StatusAlert } from '../ui/StatusAlert';
 import { useStoreSearch, StoreGameResult as StoreGame } from '../hooks/useStoreSearch';
 import { enrichDenuvoFlags } from '../hooks/useDenuvoEnrichment';
+import { useModalDismiss } from '../hooks/useModalDismiss';
 import { emptyStatus, StatusMessage } from '../types/ui';
 import { getSettings } from '../hooks/useSettings';
 
@@ -56,6 +57,10 @@ export const StoreView = ({ onRefreshUsage, isActive, settingsRevision, useAlter
   // Status message for download operations inside the modal
   const [downloadStatus, setDownloadStatus] = useState<StatusMessage>(emptyStatus());
   const [isDownloading, setIsDownloading] = useState(false);
+
+  // ESC chiude il modal di download (uniforme con gli altri popup); il click
+  // fuori è gestito dall'overlay. Entrambi bloccati durante un download.
+  useModalDismiss(() => setSelectedGame(null), isDownloading);
 
   // Specific-version editor state. The normal download modal closes before this modal opens.
   const [versionGame, setVersionGame] = useState<StoreGame | null>(null);
@@ -503,8 +508,8 @@ export const StoreView = ({ onRefreshUsage, isActive, settingsRevision, useAlter
 
       {/* DYNAMIC DOWNLOAD MODAL / POPUP */}
       {selectedGame && (
-        <div className="modal-overlay">
-          <div className="modal-container">
+        <div className="modal-overlay" onClick={isDownloading ? undefined : () => setSelectedGame(null)}>
+          <div className="modal-container" onClick={(e) => e.stopPropagation()}>
             {/* Header: Title + Close Button */}
             <div className="modal-header">
               <span className="modal-title">

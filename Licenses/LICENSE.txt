@@ -1,0 +1,64 @@
+Aether
+Copyright (C) 2026 Aether's author
+
+This software is provided under the following terms, inspired by the
+permissive-but-protective spirit of the projects it credits (see the
+`licenses/` folder). It is a CC BY-NC-SA style license: free to use,
+free to share, never for profit, and always open.
+
+========================================================================
+LICENSE
+========================================================================
+
+You are free to use, copy, modify, merge, publish and distribute this
+software, in source code form or as compiled binaries, for any
+NON-COMMERCIAL purpose, by any means, subject to the following
+conditions:
+
+1. CREDIT (BY). Any use, modification or redistribution of this
+   software — in whole or in part, in source or binary form — MUST
+   retain this license notice and MUST give credit to the original
+   author and to the projects credited in `licenses/CREDITS.md`
+   (SteaMidra/SFF by Midrag, Steamless by atom0s, UCOnline2 by
+   LukeWarmSodas), whose own licenses apply to their respective parts
+   and are included in the `licenses/` folder. Credit may be given in
+   the source code, in a README, in an about dialog, or in any other
+   reasonable place.
+
+2. NON-COMMERCIAL (NC). This software may NOT be used for commercial
+   purposes. It must remain free of charge. You may not sell it, may
+   not sell access to it, may not bundle it into a paid product, may
+   not use it (or modified versions of it) as part of any revenue-
+   generating service, and may not accept payment of any kind in
+   exchange for it or for services whose primary value is this
+   software. Donations to cover hosting or development costs are
+   acceptable; charging users is not.
+
+3. OPEN SOURCE (SA — ShareAlike). Any modified version, derivative
+   work, or application that uses this code MUST be distributed under
+   this same license (or a compatible one with at least the same
+   restrictions: credit required, non-commercial, open source). If you
+   publish it — publicly or privately, in source or binary form — you
+   MUST make the complete corresponding source code available, free of
+   charge, under these same terms. No closed-source or proprietary
+   distributions are allowed.
+
+4. DISCLAIMER OF PURPOSE. This project is primarily for the personal
+   use of its author and their friends. It is published as a public
+   GitHub repository only for convenient access from AI assistants and
+   the author's own accounts. Treat it as such: it is not a commercial
+   product, it comes with no support and no promises, and it may
+   change, break or be removed at any time without notice.
+
+5. NO WARRANTY. THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF
+   ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE
+   WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+   NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS BE LIABLE FOR ANY
+   CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
+   TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
+   SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+========================================================================
+
+Even though this project is personal, the credits to the projects it
+borrows from are still included and respected: see `licenses/`.
