@@ -1,7 +1,12 @@
 use crate::util::validation::validate_steam_path;
 use crate::updater::dll::DllInstaller;
 use crate::core::settings::SettingsManager;
+use crate::steam::launch_options;
 use crate::steam::update_guard::SteamUpdateGuard;
+use std::path::Path;
+
+/// Argomento di avvio che Aether usa per attivare il suo onlinefix per un gioco.
+const AETHER_ONLINEFIX_TOKEN: &str = "-onlinefix";
 
 #[tauri::command]
 pub fn restart_steam(app: tauri::AppHandle) -> Result<(), String> {
@@ -79,5 +84,58 @@ pub fn unblock_steam_updates(steam_path: String) -> Result<String, String> {
     crate::desk_log_info!("steam", "Unblocking Steam updates in directory '{}'", steam_path);
     SteamUpdateGuard::new(steam_path).unblock_updates()?;
     Ok("Steam updates are now unblocked.".to_string())
+}
+
+/// True quando il gioco ha il token `-onlinefix` nelle LaunchOptions di Steam.
+#[tauri::command]
+pub fn get_aether_onlinefix(app: tauri::AppHandle, app_id: u32) -> Result<bool, String> {
+    let steam_path = SettingsManager::new(&app).load().steam_path;
+    if steam_path.trim().is_empty() {
+        return Ok(false);
+    }
+    match launch_options::get_launch_options(Path::new(&steam_path), app_id) {
+        Ok(options) => Ok(launch_options::has_launch_token(&options, AETHER_ONLINEFIX_TOKEN)),
+        // Nessuna localconfig ancora (Steam mai avviato): semplicemente non attivo.
+        Err(e) if e.contains("not found") => Ok(false),
+        Err(e) => Err(e),
+    }
+}
+
+/// Aggiunge o rimuove `-onlinefix` dalle LaunchOptions di Steam per il gioco,
+/// preservando gli altri argomenti già presenti.
+#[tauri::command]
+pub fn set_aether_onlinefix(
+    app: tauri::AppHandle,
+    app_id: u32,
+    enabled: bool,
+) -> Result<String, String> {
+    let steam_path = SettingsManager::new(&app).load().steam_path;
+    if steam_path.trim().is_empty() {
+        return Err("Steam installation path is required.".to_string());
+    }
+
+    let current = launch_options::get_launch_options(Path::new(&steam_path), app_id)?;
+    let updated = launch_options::toggle_launch_token(&current, AETHER_ONLINEFIX_TOKEN, enabled);
+    if updated == current {
+        return Ok(if enabled {
+            format!("Aether onlinefix is already enabled for app {app_id}.")
+        } else {
+            format!("Aether onlinefix is already disabled for app {app_id}.")
+        });
+    }
+
+    launch_options::set_launch_options(Path::new(&steam_path), app_id, &updated)?;
+    crate::desk_log_info!(
+        "steam",
+        "Aether onlinefix {} for app {} (launch options: '{}')",
+        if enabled { "enabled" } else { "disabled" },
+        app_id,
+        updated
+    );
+    Ok(if enabled {
+        format!("Aether onlinefix enabled for app {app_id} (-onlinefix added to launch options).")
+    } else {
+        format!("Aether onlinefix disabled for app {app_id} (-onlinefix removed from launch options).")
+    })
 }
 

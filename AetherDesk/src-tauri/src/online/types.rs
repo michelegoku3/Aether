@@ -191,8 +191,12 @@ pub struct OnlineEnableRequest {
     pub emulate_ticket: bool,
     /// [Settings] WarnOverlayDisabled: avviso quando l'overlay è disabilitato.
     pub warn_overlay_disabled: bool,
+    /// [Settings] SDR: contesto Steam Datagram Relay per i giochi che lo usano.
+    pub sdr: bool,
     /// [DLC] UnlockAll: sblocca tutti i DLC (default true nella UI).
     pub unlock_all_dlc: bool,
+    /// Deploy del plugin Photon (toggle UI, default off come EOS).
+    pub deploy_photon: bool,
     pub photon: PhotonOptions,
     pub eos: EosOptions,
     pub playfab: PlayfabOptions,

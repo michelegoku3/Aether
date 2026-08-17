@@ -90,13 +90,16 @@ impl GameInspector {
             return Ok(Self::report_for_unreal(root, &shipping_exe));
         }
 
-        if let Some(steam_api_dir) = Self::pick_steam_api64_dir(root) {
+        // Generic: la DLL Steamworks può essere x64 O x86 (SpeedRunners e
+        // molti altri titoli 32-bit hanno solo steam_api.dll, senza _Data
+        // né Shipping exe). steam_api_dir_for copre entrambe.
+        if let Some(steam_api_dir) = Self::steam_api_dir_for(root, None) {
             return Ok(Self::report_for_generic(root, &steam_api_dir));
         }
 
         Err(DetectionError::UnrecognizedGame(format!(
             "Could not identify the game in '{}': looked for a '<Game>_Data' folder \
-             (Unity), a '*-Win64-Shipping.exe' (Unreal) and any steam_api64.dll, \
+             (Unity), a '*-Win64-Shipping.exe' (Unreal) and any steam_api(64).dll, \
              and found none of them.",
             root.display()
         )))

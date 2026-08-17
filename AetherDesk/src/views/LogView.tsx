@@ -25,7 +25,6 @@ export const LogView = () => {
   const [logLevel, setLogLevel] = useState('trace');
   const [logSource, setLogSource] = useState<'desk' | 'dll' | 'uco2' | 'both'>('desk');
   const [exportStatus, setExportStatus] = useState('');
-  const [copied, setCopied] = useState(false);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const isAtBottomRef = useRef(true);
 
@@ -86,14 +85,16 @@ export const LogView = () => {
     return !filterQuery.trim() || line.toLowerCase().includes(filterQuery.toLowerCase());
   });
 
-  const handleCopyVisible = async () => {
-    const text = filteredLines.join('\n');
+  // Downloads the single log document for the selected source (desk/dll/uco2),
+  // or the merged "all" document, with the same time-stamped naming as the .zip.
+  const handleDownloadSource = async () => {
     try {
-      await navigator.clipboard.writeText(text);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
-    } catch (err) {
-      console.warn('Failed to copy logs:', err);
+      const msg: string = await invoke('export_log_source', { source: logSource });
+      setExportStatus(msg);
+      setTimeout(() => setExportStatus(''), 5000);
+    } catch (err: any) {
+      setExportStatus(`Export failed: ${err}`);
+      setTimeout(() => setExportStatus(''), 6000);
     }
   };
 
@@ -203,20 +204,14 @@ export const LogView = () => {
       <div className="log-view-terminal-wrap">
         <button
           type="button"
-          className={`log-copy-btn${copied ? ' copied' : ''}`}
-          onClick={handleCopyVisible}
-          title={copied ? 'Copied' : 'Copy visible log text'}
+          className="log-copy-btn"
+          onClick={handleDownloadSource}
+          title="Download the current log document (same naming as the .zip)"
         >
-          {copied ? (
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-              <path d="M5 13l4 4L19 7" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
-            </svg>
-          ) : (
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-              <rect x="9" y="9" width="11" height="11" rx="2" stroke="currentColor" strokeWidth="2" />
-              <path d="M5 15V5a2 2 0 0 1 2-2h10" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-            </svg>
-          )}
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <path d="M12 3v12m0 0l-4-4m4 4l4-4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+            <path d="M4 21h16" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+          </svg>
         </button>
         <div className="log-view-terminal" ref={containerRef} onScroll={handleScroll}>
           {filteredLines.length > 0 ? (

@@ -5,3 +5,4 @@ pub mod store_items;
 pub mod app_names;
 pub mod compat;
 pub mod update_guard;
+pub mod launch_options;
