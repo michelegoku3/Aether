@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { GameHeroImage } from '../ui/GameHeroImage';
 import { requireSteamPath } from '../hooks/useSettings';
-import { OnlinePanel, type OnlineActionResult, type OnlineStatus } from './OnlinePanel';
+import { OnlinePanel, type OnlineActionResult } from './OnlinePanel';
 import { OnlineChoiceModal } from './OnlineChoiceModal';
 
 export interface LibraryActionGame {
@@ -117,12 +117,14 @@ export const LibraryGameActionsModal = ({
 
   const refreshOnlineStates = async () => {
     try {
-      const [aetherOn, status] = await Promise.all([
+      // Parallel check: Aether via LaunchOptions (-onlinefix), UCO2 via the
+      // presence of union-crax.ini next to the game executable.
+      const [aetherOn, uco2On] = await Promise.all([
         invoke<boolean>('get_aether_onlinefix', { appId: Number(game.appId) }),
-        invoke<OnlineStatus>('get_online_status', { appId: Number(game.appId) }),
+        invoke<boolean>('is_uco2_active', { appId: Number(game.appId) }),
       ]);
       setAetherOnlinefix(Boolean(aetherOn));
-      setUco2Online(status?.state === 'enabled');
+      setUco2Online(Boolean(uco2On));
     } catch {
       // Keep the previous state on failure.
     }

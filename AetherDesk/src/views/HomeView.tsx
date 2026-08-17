@@ -2,7 +2,6 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { InstalledGame, useLibraryGames } from '../hooks/useLibraryGames';
 import { CrackModal, CrackTargetGame } from '../modals/CrackModal';
-import { AntivirusExclusionModal } from '../modals/AntivirusExclusionModal';
 import { FindCrackModal } from '../modals/FindCrackModal';
 import { SavedCrackModal } from '../modals/SavedCrackModal';
 import { SearchSuggest, moveSuggestIndex } from '../ui/SearchSuggest';
@@ -66,7 +65,6 @@ export const HomeView = () => {
   const [savedCrackTarget, setSavedCrackTarget] = useState<CrackTargetGame | null>(null);
   const [showFindCrack, setShowFindCrack] = useState(false);
   // Waiting for antivirus exclusion prompt; after dismiss we continue the crack flow.
-  const [pendingCrack, setPendingCrack] = useState<CrackTargetGame | null>(null);
   const searchPanelRef = useRef<HTMLDivElement | null>(null);
 
   /**
@@ -295,19 +293,7 @@ export const HomeView = () => {
               name: selectedGame.name,
               appId: selectedGame.appId,
             };
-
-            // Antivirus gate first (never blocks Apply Crack). After that,
-            // probe for a saved crack and branch to reuse prompt or drop modal.
-            try {
-              const done: boolean = await invoke('get_antivirus_exclusion_done');
-              if (done) {
-                await beginCrackFlow(target);
-              } else {
-                setPendingCrack(target);
-              }
-            } catch {
-              setPendingCrack(target);
-            }
+            await beginCrackFlow(target);
           }}
         >
           Apply Crack
@@ -336,18 +322,6 @@ export const HomeView = () => {
           onSelect={(site) => {
             setShowFindCrack(false);
             openResource(site);
-          }}
-        />
-      )}
-
-      {/* Antivirus exclusion prompt: shown before Apply Crack if never confirmed.
-          Regardless of the user's choice, the crack flow continues afterwards. */}
-      {pendingCrack && (
-        <AntivirusExclusionModal
-          onDone={() => {
-            const target = pendingCrack;
-            setPendingCrack(null);
-            void beginCrackFlow(target);
           }}
         />
       )}

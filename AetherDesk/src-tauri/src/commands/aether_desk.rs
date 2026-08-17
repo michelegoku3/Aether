@@ -88,6 +88,26 @@ pub async fn install_aether_desk_update(app: tauri::AppHandle) -> Result<String,
     Ok("AetherDesk update downloaded. Restarting to apply...".to_string())
 }
 
+/// Riporta AetherDesk alla build stabile (uscita dal canale test): scarica
+/// l'ultima release `desk-*`, la prepara e riavvia l'app per applicarla.
+#[tauri::command]
+pub async fn restore_stable_desk(app: tauri::AppHandle) -> Result<String, String> {
+    crate::desk_log_info!("updater", "Restoring stable AetherDesk build (leaving test channel)...");
+    let Some(prepared) = desk::prepare_stable_restore(&app).await? else {
+        return Ok("AetherDesk is already on the latest stable build.".to_string());
+    };
+
+    crate::desk_log_info!(
+        "updater",
+        "Stable AetherDesk staged at {}; scheduling restart and exiting current instance",
+        prepared.app_root.display()
+    );
+    desk::schedule_restart(&prepared)?;
+
+    app.exit(0);
+    Ok("Stable AetherDesk restored. Restarting to apply...".to_string())
+}
+
 /// Portable uninstall:
 /// 1. stages an external helper (`aether_uninstaller.exe` in system temp);
 /// 2. the helper force-kills leftover desk processes, optionally relocates

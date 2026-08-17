@@ -47,6 +47,7 @@ export const AetherView = ({
   const [statusMsg, setStatusMsg] = useState({ text: '', type: 'info' as StatusTone });
   const [isProcessing, setIsProcessing] = useState(false);
   const [uninstallStep, setUninstallStep] = useState<UninstallStep | null>(null);
+  const [testUpdatesEnabled, setTestUpdatesEnabled] = useState(false);
 
   const showStatus = useCallback((text: string, type: StatusTone) => {
     setStatusMsg({ text, type });
@@ -79,6 +80,10 @@ export const AetherView = ({
 
   useEffect(() => {
     void checkDeskVersion();
+    // "Restore" replaces "Uninstall" while test updates are enabled.
+    getSettings()
+      .then((settings) => setTestUpdatesEnabled(Boolean(settings.enable_test_updates)))
+      .catch(() => {});
   }, [isUpdateAvailable, isDeskUpdateAvailable]);
 
   const handleInstallDeskUpdate = async () => {
@@ -133,6 +138,22 @@ export const AetherView = ({
   const handleUninstallDesk = () => {
     if (isProcessing) return;
     setUninstallStep({ kind: 'confirm' });
+  };
+
+  // Test updates mode: the Uninstall button becomes Restore. Restore downloads
+  // and reinstalls the latest stable AetherDesk build (the non-test version),
+  // then restarts the app to apply it.
+  const handleRestoreStable = async () => {
+    if (isProcessing) return;
+    setIsProcessing(true);
+    showStatus('Restoring the stable AetherDesk build...', 'info');
+    try {
+      const result: string = await invoke('restore_stable_desk');
+      showStatus(result, 'success');
+    } catch (err: any) {
+      showStatus(`Restore failed: ${err}`, 'error');
+      setIsProcessing(false);
+    }
   };
 
   const handleUninstallConfirm = async (deleteUserData: boolean) => {
@@ -297,8 +318,13 @@ export const AetherView = ({
             )}
           </button>
 
-          <button onClick={handleUninstallDesk} className="panel-btn" disabled={isProcessing}>
-            Uninstall
+          <button
+            onClick={testUpdatesEnabled ? handleRestoreStable : handleUninstallDesk}
+            className="panel-btn"
+            disabled={isProcessing}
+            title={testUpdatesEnabled ? 'Restore the stable build (leave test channel)' : undefined}
+          >
+            {testUpdatesEnabled ? 'Restore' : 'Uninstall'}
           </button>
         </div>
       </div>

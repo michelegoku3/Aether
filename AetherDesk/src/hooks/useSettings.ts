@@ -37,6 +37,8 @@ export interface AppSettings {
    * `all` (default) | `installed` | `not_installed`.
    */
   library_install_filter?: 'all' | 'installed' | 'not_installed' | string;
+  /** When true, AetherDesk also detects testing releases (tdesk, tdll prefixes). */
+  enable_test_updates?: boolean;
 }
 
 export const getSettings = async (): Promise<AppSettings> => {

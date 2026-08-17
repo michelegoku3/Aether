@@ -2171,6 +2171,14 @@ body {
   overflow-wrap: anywhere;
 }
 
+/* Long lists (e.g. Categories) are clamped to at most 2 lines. */
+.info-value-clamp {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
 .info-screenshot-strip {
   display: flex;
   gap: 10px;
@@ -2866,12 +2874,14 @@ body {
   font-family: inherit;
 }
 
-/* Shared button hover (Online panel footer and any .modal-btn usage) */
+/* Shared button hover (Online panel footer and any .modal-btn usage):
+   lights up and outlines with the primary color, like the other buttons. */
 .modal-btn {
-  transition: filter 0.15s ease, transform 0.05s ease;
+  transition: filter 0.15s ease, transform 0.05s ease, box-shadow 0.15s ease;
 }
 .modal-btn:hover:not(:disabled) {
-  filter: brightness(1.25);
+  filter: brightness(1.15);
+  box-shadow: 0 0 0 1px var(--color-cyan), 0 0 12px rgba(0, 180, 216, 0.35);
 }
 .modal-btn:active:not(:disabled) {
   transform: translateY(1px);
