@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import type { LibraryActionGame } from './LibraryGameActionsModal';
 import { folderOf, openInFileManager, pathFromGameRoot, shortenPath } from '../util/paths';
+import { useModalDismiss } from '../hooks/useModalDismiss';
 
 // ---------------------------------------------------------------------------
 // Mirror types of the Rust commands (serde rename_all = camelCase)
@@ -217,6 +218,10 @@ export const OnlinePanel = ({ game, onClose }: OnlinePanelProps) => {
   useEffect(() => {
     refresh();
   }, [refresh]);
+
+  // ESC chiude il popup (uniforme con tutti gli altri modali); il click
+  // fuori è già gestito dall'overlay qui sotto (entrambi bloccati quando busy).
+  useModalDismiss(onClose, busy);
 
   const handleEnable = async () => {
     setBusy(true);

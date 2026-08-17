@@ -1,6 +1,7 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { emptyStatus, StatusMessage } from '../types/ui';
+import { useModalDismiss } from '../hooks/useModalDismiss';
 
 interface AntivirusExclusionModalProps {
   /**
@@ -29,16 +30,10 @@ export const AntivirusExclusionModal = ({ onDone }: AntivirusExclusionModalProps
   const [isApplying, setIsApplying] = useState(false);
   const [status, setStatus] = useState<StatusMessage>(emptyStatus());
 
-  // ESC dismisses without confirming (same as clicking the X).
-  useEffect(() => {
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape' && !isApplying) {
-        onDone(false);
-      }
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isApplying, onDone]);
+  // ESC / click fuori chiudono senza confermare (come la X): onDone(false)
+  // non persiste il flag, quindi il popup riapparirà alla prossima occasione.
+  const dismiss = () => onDone(false);
+  useModalDismiss(dismiss, isApplying);
 
   const handleApply = async () => {
     setIsApplying(true);
@@ -64,8 +59,8 @@ export const AntivirusExclusionModal = ({ onDone }: AntivirusExclusionModalProps
   };
 
   return (
-    <div className="modal-overlay">
-      <div className="modal-container av-modal-container">
+    <div className="modal-overlay" onClick={isApplying ? undefined : dismiss}>
+      <div className="modal-container av-modal-container" onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
           <span className="modal-title">
             Windows Defender Exclusion

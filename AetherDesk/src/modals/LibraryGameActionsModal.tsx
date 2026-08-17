@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { GameHeroImage } from '../ui/GameHeroImage';
 import { requireSteamPath } from '../hooks/useSettings';
+import { useModalDismiss } from '../hooks/useModalDismiss';
 import { OnlinePanel } from './OnlinePanel';
 import { OnlineChoiceModal } from './OnlineChoiceModal';
 
@@ -60,16 +61,8 @@ export const LibraryGameActionsModal = ({
     refreshUpdateState();
   }, [game.appId]);
 
-  useEffect(() => {
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape' && !disabled) {
-        onClose();
-      }
-    };
-
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [disabled, onClose]);
+  // ESC + click fuori chiudono il popup (rispettando le operazioni in corso).
+  useModalDismiss(onClose, disabled);
 
   const handleToggleUpdates = async () => {
     setIsBusy(true);
@@ -166,8 +159,8 @@ export const LibraryGameActionsModal = ({
   };
 
   return (
-    <div className="modal-overlay">
-      <div className="modal-container game-action-modal">
+    <div className="modal-overlay" onClick={disabled ? undefined : onClose}>
+      <div className="modal-container game-action-modal" onClick={(e) => e.stopPropagation()}>
         <div className="game-action-hero-wrap">
           <GameHeroImage appId={game.appId} name={game.name} canonicalUrl={game.heroImageUrl || game.imageUrl} />
           <button

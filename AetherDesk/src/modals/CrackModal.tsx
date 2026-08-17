@@ -3,6 +3,7 @@ import type { DragEvent as ReactDragEvent } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow';
 import { emptyStatus, StatusMessage } from '../types/ui';
+import { useModalDismiss } from '../hooks/useModalDismiss';
 
 // The game a crack is being applied to. `name` and `appId` are enough for the
 // popup; all heavy work happens in the Rust backend.
@@ -98,17 +99,8 @@ export const CrackModal = ({ game, onClose }: CrackModalProps) => {
     };
   }, []);
 
-  // ESC closes the popup (respecting an in-flight apply operation).
-  useEffect(() => {
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape' && !isApplying) {
-        onClose();
-      }
-    };
-
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isApplying, onClose]);
+  // ESC + click fuori chiudono il popup (rispettando un'operazione in corso).
+  useModalDismiss(onClose, isApplying);
 
   const clearFiles = () => {
     setSelectedFiles([]);
@@ -148,8 +140,8 @@ export const CrackModal = ({ game, onClose }: CrackModalProps) => {
   };
 
   return (
-    <div className="modal-overlay">
-      <div className="modal-container crack-modal-container">
+    <div className="modal-overlay" onClick={isApplying ? undefined : onClose}>
+      <div className="modal-container crack-modal-container" onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
           <span className="modal-title">
             Apply Crack for: <strong style={{ color: '#ffffff' }}>{game.name}</strong> ({game.appId})

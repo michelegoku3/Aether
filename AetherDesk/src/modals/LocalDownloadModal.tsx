@@ -4,6 +4,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow';
 import { emptyStatus, StatusMessage } from '../types/ui';
 import { AntivirusExclusionModal } from './AntivirusExclusionModal';
+import { useModalDismiss } from '../hooks/useModalDismiss';
 
 // The game local content is being installed for. `name` and `appId` are enough
 // for the popup; all heavy work happens in the Rust backend.
@@ -95,17 +96,8 @@ export const LocalDownloadModal = ({ game, onClose, onInstalled }: LocalDownload
     };
   }, []);
 
-  // ESC closes the popup (respecting an in-flight install operation).
-  useEffect(() => {
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape' && !isInstalling) {
-        onClose();
-      }
-    };
-
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isInstalling, onClose]);
+  // ESC + click fuori chiudono il popup (rispettando un'installazione in corso).
+  useModalDismiss(onClose, isInstalling);
 
   const clearFiles = () => {
     setSelectedFiles([]);
@@ -167,8 +159,8 @@ export const LocalDownloadModal = ({ game, onClose, onInstalled }: LocalDownload
   };
 
   return (
-    <div className="modal-overlay">
-      <div className="modal-container crack-modal-container">
+    <div className="modal-overlay" onClick={isInstalling ? undefined : onClose}>
+      <div className="modal-container crack-modal-container" onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
           <span className="modal-title">
             Local Install for: <strong style={{ color: '#ffffff' }}>{game.name}</strong> ({game.appId})

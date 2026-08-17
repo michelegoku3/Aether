@@ -1,4 +1,5 @@
 import React from 'react';
+import { useModalDismiss } from '../hooks/useModalDismiss';
 
 type FindCrackResource = 'onlinefix' | 'gcw' | 'csrinru';
 
@@ -8,6 +9,9 @@ interface FindCrackModalProps {
 }
 
 export const FindCrackModal: React.FC<FindCrackModalProps> = ({ onClose, onSelect }) => {
+  // ESC chiude il popup (uniforme con gli altri modali); il click fuori è
+  // già gestito dall'overlay sotto.
+  useModalDismiss(onClose);
   return (
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal-container" onClick={(e) => e.stopPropagation()}>

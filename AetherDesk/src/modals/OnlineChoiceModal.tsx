@@ -1,4 +1,5 @@
 import type { LibraryActionGame } from './LibraryGameActionsModal';
+import { useModalDismiss } from '../hooks/useModalDismiss';
 
 interface OnlineChoiceModalProps {
   game: LibraryActionGame;
@@ -50,6 +51,9 @@ export const OnlineChoiceModal = ({
   onOpenUco2Panel,
   onClose,
 }: OnlineChoiceModalProps) => {
+  // ESC chiude il popup (uniforme con gli altri modali); il click fuori è
+  // gestito dall'overlay sotto. Entrambi bloccati quando busy.
+  useModalDismiss(onClose, busy);
   const aetherDisabled = busy || (uco2Enabled && !aetherEnabled);
   const uco2Disabled = busy || (aetherEnabled && !uco2Enabled);
 
