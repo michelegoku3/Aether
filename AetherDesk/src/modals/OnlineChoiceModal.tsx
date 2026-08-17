@@ -6,8 +6,7 @@ interface OnlineChoiceModalProps {
   uco2Enabled: boolean;
   busy: boolean;
   onToggleAether: () => void;
-  onEnableUco2: () => void;
-  onDisableUco2: () => void;
+  onOpenUco2Panel: () => void;
   onClose: () => void;
 }
 
@@ -37,9 +36,10 @@ const styles = {
 
 /**
  * Popup di scelta per l'online di un gioco: Enable/Disable Aether (aggiunge
- * `-onlinefix` alle LaunchOptions di Steam) oppure Enable/Disable UCO2
- * (apre il pannello di configurazione UCOnline2). I due sono mutuamente
- * esclusivi: quando uno è attivo, l'altro diventa non cliccabile.
+ * `-onlinefix` alle LaunchOptions di Steam) oppure UCO2. Il tasto UCO2 apre
+ * SEMPRE il pannello di configurazione (per vedere i settings anche quando
+ * UCO2 è già attivo); la disattivazione avviene solo dentro il pannello.
+ * I due sono mutuamente esclusivi: quando uno è attivo, l'altro è disabilitato.
  */
 export const OnlineChoiceModal = ({
   game,
@@ -47,8 +47,7 @@ export const OnlineChoiceModal = ({
   uco2Enabled,
   busy,
   onToggleAether,
-  onEnableUco2,
-  onDisableUco2,
+  onOpenUco2Panel,
   onClose,
 }: OnlineChoiceModalProps) => {
   const aetherDisabled = busy || (uco2Enabled && !aetherEnabled);
@@ -83,11 +82,11 @@ export const OnlineChoiceModal = ({
               type="button"
               className="modal-btn"
               style={{ ...styles.option, ...(uco2Disabled ? styles.optionDisabled : {}) }}
-              onClick={uco2Enabled ? onDisableUco2 : onEnableUco2}
+              onClick={onOpenUco2Panel}
               disabled={uco2Disabled}
               title={aetherEnabled && !uco2Enabled ? 'Disable Aether first' : undefined}
             >
-              <span>{uco2Enabled ? 'Disable UCO2' : 'Enable UCO2'}</span>
+              <span>{uco2Enabled ? 'UCO2' : 'Enable UCO2'}</span>
             </button>
           </div>
         </div>

@@ -4,6 +4,7 @@ import { InstalledGame, useLibraryGames } from '../hooks/useLibraryGames';
 import { CrackModal, CrackTargetGame } from '../modals/CrackModal';
 import { FindCrackModal } from '../modals/FindCrackModal';
 import { SavedCrackModal } from '../modals/SavedCrackModal';
+import { AntivirusExclusionModal } from '../modals/AntivirusExclusionModal';
 import { SearchSuggest, moveSuggestIndex } from '../ui/SearchSuggest';
 
 const MAX_VISIBLE_RESULTS = 5;
@@ -97,6 +98,22 @@ export const HomeView = () => {
 
     document.addEventListener('mousedown', handlePointerDown);
     return () => document.removeEventListener('mousedown', handlePointerDown);
+  }, []);
+
+  // Antivirus exclusion prompt at the START of a new AetherDesk installation:
+  // first launch after install/update, when the flag in settings.json is still
+  // false, shows the modal once. Confirming persists the flag; dismissing via X
+  // keeps it false so the prompt reappears on the next launch.
+  const [showAntivirus, setShowAntivirus] = useState(false);
+
+  useEffect(() => {
+    invoke<boolean>('get_antivirus_exclusion_done')
+      .then((done) => {
+        if (!done) setShowAntivirus(true);
+      })
+      .catch(() => {
+        // Never block the app if the settings read fails.
+      });
   }, []);
 
   const filteredGames = useMemo(() => {
@@ -324,6 +341,10 @@ export const HomeView = () => {
             openResource(site);
           }}
         />
+      )}
+
+      {showAntivirus && (
+        <AntivirusExclusionModal onDone={() => setShowAntivirus(false)} />
       )}
 
       {savedCrackTarget && (
