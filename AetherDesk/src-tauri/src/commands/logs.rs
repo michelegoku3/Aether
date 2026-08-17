@@ -98,11 +98,7 @@ fn merge_tagged(
         }
     }
 
-    merged.sort_by(|a, b| {
-        let ts_a = a.split(']').next().unwrap_or(a);
-        let ts_b = b.split(']').next().unwrap_or(b);
-        ts_a.cmp(ts_b)
-    });
+    merged.sort_by(|a, b| sort_key(a).cmp(&sort_key(b)));
 
     if merged.len() <= limit {
         merged
@@ -183,13 +179,48 @@ fn read_uco2_tail_lines(limit: usize) -> Vec<String> {
         return Vec::new();
     }
     if let Ok(content) = std::fs::read_to_string(&path) {
-        let lines: Vec<String> = content.lines().map(|s| s.to_string()).collect();
+        // UCO2 scrive timestamp completi ("[2026-08-17 12:45:40.924]"); li
+        // riduciamo a solo ora ("[12:45:40.924]") lato AetherDesk, senza
+        // dover ricompilare la DLL.
+        let lines: Vec<String> = content
+            .lines()
+            .map(strip_date_from_timestamp)
+            .collect();
         if lines.len() <= limit {
             return lines;
         }
         return lines[lines.len() - limit..].to_vec();
     }
     Vec::new()
+}
+
+/// "[YYYY-MM-DD HH:MM:SS.mmm] ..." -> "[HH:MM:SS.mmm] ..." (no-op se non matcha).
+fn strip_date_from_timestamp(line: &str) -> String {
+    let bytes = line.as_bytes();
+    if line.len() > 24
+        && bytes[0] == b'['
+        && bytes[5] == b'-'
+        && bytes[8] == b'-'
+        && bytes[11] == b' '
+        && bytes[24] == b']'
+    {
+        // La ']' originale (indice 24) viene saltata: la reinseriamo noi.
+        return format!("[{}]{}", &line[12..24], &line[25..]);
+    }
+    line.to_string()
+}
+
+/// Chiave di ordinamento cronologico: toglie l'eventuale data "[YYYY-MM-DD "
+/// dal prefisso timestamp, così righe con formati diversi (Desk full, UCO2
+/// ridotto) si ordinano correttamente per orario.
+fn sort_key(line: &str) -> String {
+    let inside = line.split(']').next().unwrap_or("").trim_start_matches('[').trim();
+    let b = inside.as_bytes();
+    if inside.len() >= 11 && b[4] == b'-' && b[7] == b'-' && b[10] == b' ' {
+        inside[11..].to_string()
+    } else {
+        inside.to_string()
+    }
 }
 
 fn read_dll_tail_lines(app: &tauri::AppHandle, limit: usize) -> Vec<String> {

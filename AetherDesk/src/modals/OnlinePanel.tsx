@@ -104,7 +104,7 @@ const styles = {
   row: { display: 'flex' as const, gap: '10px', alignItems: 'center', marginBottom: '8px', flexWrap: 'wrap' as const },
   label: { fontSize: '12px', opacity: 0.75, minWidth: '150px' },
   input: { background: '#1b1b1f', border: '1px solid #2c2c31', borderRadius: '6px', color: '#eee', padding: '6px 8px', fontSize: '13px', flex: 1, minWidth: '160px' },
-  chip: { padding: '2px 10px', borderRadius: '8px', fontSize: '12px', fontWeight: 600 },
+  chip: { padding: '2px 10px', borderRadius: 0, fontSize: '12px', fontWeight: 600 },
   chipEnabled: { background: '#16351f', color: '#6fdb8c' },
   chipOff: { background: '#2a2a2e', color: '#9a9aa0' },
   chipBroken: { background: '#3a1d1d', color: '#e07b7b' },
@@ -113,10 +113,10 @@ const styles = {
   error: { color: '#e07b7b' },
   ok: { color: '#6fdb8c' },
   muted: { opacity: 0.6 },
-  pathLink: { color: '#8ab4f8', cursor: 'pointer', textDecoration: 'underline', wordBreak: 'break-all' as const },
+  pathLink: { color: 'var(--color-cyan)', cursor: 'pointer', textDecoration: 'underline', wordBreak: 'break-all' as const },
   footer: { display: 'flex' as const, gap: '10px', justifyContent: 'center' as const, padding: '12px 20px', borderTop: '1px solid #232329' },
   footerBtn: { flex: 1, maxWidth: 160, minWidth: 140, padding: '8px 16px', fontSize: '13px', fontWeight: 600, cursor: 'pointer' },
-  btn: { background: '#2c6e42', color: '#fff', border: 'none', borderRadius: '8px' },
+  btn: { background: 'var(--color-cyan)', color: '#0b0b0f', border: 'none', borderRadius: '8px' },
   btnDisabled: { opacity: 0.45, cursor: 'not-allowed' },
   btnGhost: { background: '#232329', color: '#ddd', border: '1px solid #2f2f35', borderRadius: '8px' },
   btnDanger: { background: '#5a2323', color: '#ffd9d9', border: 'none', borderRadius: '8px' },
@@ -276,16 +276,21 @@ export const OnlinePanel = ({ game, onClose }: OnlinePanelProps) => {
     }
   };
 
-  // Checkbox row: description on the left, checkbox on the far right.
+  // Checkbox row: description on the left, custom checkbox (same style as
+  // Apply Crack) on the far right.
   const checkboxRow = (checked: boolean, disabled: boolean, onChange: (v: boolean) => void, description: string) => (
     <div style={styles.checkboxRow}>
       <span style={styles.checkboxDesc}>{description}</span>
-      <input
-        type="checkbox"
-        checked={checked}
-        onChange={(e) => onChange(e.target.checked)}
-        disabled={disabled}
-      />
+      <label className="crack-checkbox-label" style={{ marginLeft: 'auto' }}>
+        <input
+          type="checkbox"
+          className="crack-checkbox-input"
+          checked={checked}
+          onChange={(e) => onChange(e.target.checked)}
+          disabled={disabled}
+        />
+        <span className="crack-checkbox-box"></span>
+      </label>
     </div>
   );
 
@@ -419,7 +424,7 @@ export const OnlinePanel = ({ game, onClose }: OnlinePanelProps) => {
               {/* Photon */}
               {plan && plan.detection.backends.photon !== 'none' && (
                 <div style={styles.box}>
-                  <div style={styles.sectionTitle}>Photon ({photonFlavorLabel(plan.detection.backends.photon)})</div>
+                  <div style={styles.sectionTitle}>Photon</div>
                   {checkboxRow(
                     request.deployPhoton,
                     enabled,
@@ -550,33 +555,32 @@ export const OnlinePanel = ({ game, onClose }: OnlinePanelProps) => {
           )}
         </div>
 
+        {/* I due tasti non cambiano mai posizione: Enable/Disable a sinistra,
+            Reset a destra. Reset diventa non cliccabile quando UCO2 è attivo. */}
         <div style={styles.footer}>
-          {enabled || broken ? (
-            <>
-              <button type="button" className="modal-btn" style={{ ...styles.footerBtn, ...styles.btnGhost }} onClick={onClose} disabled={busy}>
-                Close
-              </button>
-              <button type="button" className="modal-btn" style={{ ...styles.footerBtn, ...styles.btnDanger }} onClick={handleDisable} disabled={busy}>
-                {busy ? 'Disabling...' : 'Disable UCO2'}
-              </button>
-            </>
-          ) : (
-            <>
-              <button
-                type="button"
-                className="modal-btn"
-                style={{ ...styles.footerBtn, ...styles.btn, ...(blocked || busy ? styles.btnDisabled : {}) }}
-                onClick={handleEnable}
-                disabled={blocked || busy}
-                title={blocked ? 'Resolve the missing prerequisites first' : undefined}
-              >
-                {busy ? 'Enabling...' : 'Enable UCO2'}
-              </button>
-              <button type="button" className="modal-btn" style={{ ...styles.footerBtn, ...styles.btnGhost }} onClick={handleReset} disabled={busy}>
-                Reset
-              </button>
-            </>
-          )}
+          <button
+            type="button"
+            className="modal-btn"
+            style={{
+              ...styles.footerBtn,
+              ...(enabled || broken ? styles.btnGhost : styles.btn),
+              ...(blocked || busy ? styles.btnDisabled : {}),
+            }}
+            onClick={enabled || broken ? handleDisable : handleEnable}
+            disabled={enabled || broken ? busy : blocked || busy}
+            title={!enabled && !broken && blocked ? 'Resolve the missing prerequisites first' : undefined}
+          >
+            {busy ? (enabled || broken ? 'Disabling...' : 'Enabling...') : enabled || broken ? 'Disable' : 'Enable'}
+          </button>
+          <button
+            type="button"
+            className="modal-btn"
+            style={{ ...styles.footerBtn, ...styles.btnGhost, ...(enabled || broken || busy ? styles.btnDisabled : {}) }}
+            onClick={handleReset}
+            disabled={enabled || broken || busy}
+          >
+            Reset
+          </button>
         </div>
       </div>
     </div>

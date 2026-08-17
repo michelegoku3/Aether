@@ -212,10 +212,12 @@ const normalizeScreenshots = (...groups: Array<GameInfoScreenshot[] | undefined>
     });
 };
 
-const InfoRow = ({ label, value }: { label: string; value?: string | number | null }) => (
+const InfoRow = ({ label, value, clamp = false }: { label: string; value?: string | number | null; clamp?: boolean }) => (
   <div className="info-row">
     <span className="info-label">{label}</span>
-    <span className="info-value">{value === undefined || value === null || value === '' ? NA : value}</span>
+    <span className={`info-value${clamp ? ' info-value-clamp' : ''}`}>
+      {value === undefined || value === null || value === '' ? NA : value}
+    </span>
   </div>
 );
 
@@ -360,7 +362,7 @@ export const GameInfoModal = ({ appId, fallbackName, fallbackImageUrl, onClose }
                   <InfoRow label="Publishers" value={formatList(details?.publishers)} />
                   <InfoRow label="Developers" value={formatList(details?.developers)} />
                   <InfoRow label="Genres" value={formatList(details?.genres)} />
-                  <InfoRow label="Categories" value={formatList(details?.categories)} />
+                  <InfoRow label="Categories" value={formatList(details?.categories)} clamp />
                   <InfoRow label="Achievements" value={details?.achievementsTotal} />
                   <InfoRow label="Recommendations" value={details?.recommendationsTotal} />
                 </InfoSection>

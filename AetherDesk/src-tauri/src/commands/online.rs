@@ -22,6 +22,20 @@ pub async fn get_online_status(app_id: u32) -> Result<OnlineStatus, String> {
     Ok(OnlineEngine::status(app_id, &state_path))
 }
 
+/// True quando UCO2 risulta attivo per il gioco, verificato dalla presenza
+/// del file `union-crax.ini` (scritto da UCO2 accanto all'exe in esecuzione).
+/// Rilevamento basato sui file, indipendente dal record di stato di Aether.
+#[tauri::command]
+pub fn is_uco2_active(app: tauri::AppHandle, app_id: u32) -> Result<bool, String> {
+    let game = resolve_installed_game(&app, app_id)?;
+    let game_root = PathBuf::from(&game.game_path);
+
+    match crate::online::detect::GameInspector::inspect(&game_root) {
+        Ok(detection) => Ok(detection.ini_dir.join("union-crax.ini").is_file()),
+        Err(_) => Ok(false),
+    }
+}
+
 /// Piano di attivazione (dry-run: nessun effetto sul disco).
 #[tauri::command]
 pub async fn plan_online(app: tauri::AppHandle, app_id: u32) -> Result<OnlinePlan, String> {

@@ -32,7 +32,6 @@ const styles = {
     fontWeight: 700,
     cursor: 'pointer',
   },
-  optionDesc: { fontSize: '11px', fontWeight: 400, opacity: 0.65, textAlign: 'center' as const, lineHeight: 1.4 },
   optionDisabled: { opacity: 0.4, cursor: 'not-allowed' },
 };
 
@@ -78,7 +77,6 @@ export const OnlineChoiceModal = ({
               title={uco2Enabled && !aetherEnabled ? 'Disable UCO2 first' : undefined}
             >
               <span>{aetherEnabled ? 'Disable Aether' : 'Enable Aether'}</span>
-              <span style={styles.optionDesc}>Adds the -onlinefix Steam launch option</span>
             </button>
 
             <button
@@ -90,7 +88,6 @@ export const OnlineChoiceModal = ({
               title={aetherEnabled && !uco2Enabled ? 'Disable Aether first' : undefined}
             >
               <span>{uco2Enabled ? 'Disable UCO2' : 'Enable UCO2'}</span>
-              <span style={styles.optionDesc}>Opens the UCOnline2 setup panel</span>
             </button>
           </div>
         </div>

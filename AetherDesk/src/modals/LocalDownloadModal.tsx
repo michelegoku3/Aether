@@ -3,6 +3,7 @@ import type { DragEvent as ReactDragEvent } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow';
 import { emptyStatus, StatusMessage } from '../types/ui';
+import { AntivirusExclusionModal } from './AntivirusExclusionModal';
 
 // The game local content is being installed for. `name` and `appId` are enough
 // for the popup; all heavy work happens in the Rust backend.
@@ -33,6 +34,7 @@ export const LocalDownloadModal = ({ game, onClose, onInstalled }: LocalDownload
   const [selectedFiles, setSelectedFiles] = useState<string[]>([]);
   const [isDragOver, setIsDragOver] = useState(false);
   const [isInstalling, setIsInstalling] = useState(false);
+  const [showAntivirus, setShowAntivirus] = useState(false);
   const [status, setStatus] = useState<StatusMessage>(emptyStatus());
 
   const showStatus = (text: string, type: StatusMessage['type']) =>
@@ -110,9 +112,25 @@ export const LocalDownloadModal = ({ game, onClose, onInstalled }: LocalDownload
     setStatus(emptyStatus());
   };
 
+  // Antivirus gate at the START of a new installation (not at Apply Crack).
+  // If the user already granted the exclusion (settings.json value), nothing
+  // is shown and the install proceeds directly.
   const handleInstall = async () => {
     if (selectedFiles.length === 0) return;
 
+    try {
+      const done: boolean = await invoke('get_antivirus_exclusion_done');
+      if (!done) {
+        setShowAntivirus(true);
+        return;
+      }
+    } catch {
+      // On error, do not block the install.
+    }
+    await doInstall();
+  };
+
+  const doInstall = async () => {
     setIsInstalling(true);
     showStatus('Installing local content into Steam...', 'info');
     try {
@@ -234,6 +252,18 @@ export const LocalDownloadModal = ({ game, onClose, onInstalled }: LocalDownload
           </div>
         </div>
       </div>
+
+      {/* Antivirus exclusion prompt: shown at the start of a new installation
+          when the user never granted the exclusion (settings.json). After the
+          choice, the install continues. */}
+      {showAntivirus && (
+        <AntivirusExclusionModal
+          onDone={() => {
+            setShowAntivirus(false);
+            void doInstall();
+          }}
+        />
+      )}
     </div>
   );
 };
