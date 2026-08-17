@@ -5,8 +5,8 @@
 //! (DRY) e i test fanno affidamento sugli stessi valori usati in produzione.
 
 /// Suffisso dei backup degli eseguibili processati da Steamless
-/// (es. `game.exe.steamstub.bak`).
-pub const STEAMSTUB_BACKUP_SUFFIX: &str = ".steamstub.bak";
+/// (es. `game.exe.steamstub.bak` — naming del tool Steamless stesso).
+pub const STEAMLESS_BACKUP_SUFFIX: &str = ".steamstub.bak";
 
 /// Suffisso dell'output di Steamless prima che sostituisca l'originale
 /// (es. `game.exe.unpacked.exe`).
@@ -23,7 +23,7 @@ pub const UCO_PROXY_MAX_BYTES: u64 = 307_200;
 
 /// True quando un nome file è un backup Steamless.
 pub fn is_steamless_backup_name(name: &str) -> bool {
-    name.to_ascii_lowercase().ends_with(STEAMSTUB_BACKUP_SUFFIX)
+    name.to_ascii_lowercase().ends_with(STEAMLESS_BACKUP_SUFFIX)
 }
 
 /// True quando un nome file è un output Steamless non ancora applicato.

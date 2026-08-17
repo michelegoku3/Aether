@@ -48,7 +48,6 @@ fn base_request() -> OnlineEnableRequest {
     OnlineEnableRequest {
         og_app_id: 1144200,
         spoof_app_id: 480,
-        steam_stub_patch: false,
         photon: PhotonOptions {
             realtime_guid: "rt-guid".to_string(),
             voice_guid: "vo-guid".to_string(),
@@ -90,7 +89,6 @@ fn ini_golden_unity_photon_voice_playfab() {
 AppId=480\r\n\
 ogAppId=1144200\r\n\
 PluginsFolder=plugins\r\n\
-GetStubbedLol=false\r\n\
 \r\n\
 [DLC]\r\n\
 ; UnlockAll answers any \"do I own this DLC?\" check, for any id, so DLC\r\n\
@@ -121,12 +119,10 @@ fn ini_fusion_and_stub_and_coherence_shared() {
     let detection = GameInspector::inspect(tmp.path()).unwrap();
     let mut request = base_request();
     request.photon.fusion_guid = "fu-guid".to_string();
-    request.steam_stub_patch = true;
     request.coherence.use_shared = true;
 
     let ini = build_ini(&detection, &request, &[]);
     assert!(ini.contains("[Fusion]\r\nPhotonAppIdFusion=fu-guid\r\nForcedAuthType=0"));
-    assert!(ini.contains("GetStubbedLol=true"));
     let coherence_section = format!(
         "[Coherence]\r\nForceGuestLogin=true\r\nRuntimeKey={}\r\nLocalMode=false",
         COHERENCE_SHARED_KEY

@@ -173,11 +173,14 @@ impl GameInspector {
         let warnings = Self::warnings_for(root, arch, &backends);
         let steamless_applied = has_steamless_markers(root);
 
+        // Convenzione Unity: `<Game>_Data` sta accanto a `<Game>.exe`.
+        let game_name = unity_game_name(data_dir);
+
         DetectionReport {
             game_root: root.to_path_buf(),
             engine: Engine::Unity,
             arch,
-            game_exe: Self::biggest_exe_in(&ini_dir),
+            game_exe: Self::pick_game_exe(&ini_dir, &game_name),
             unity_data_dir: Some(data_dir.to_path_buf()),
             steam_api_dir,
             ini_dir,
@@ -241,11 +244,16 @@ impl GameInspector {
         let warnings = Self::warnings_for(root, arch, &backends);
         let steamless_applied = has_steamless_markers(root);
 
+        let game_name = root
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or_default();
+
         DetectionReport {
             game_root: root.to_path_buf(),
             engine: Engine::Generic,
             arch,
-            game_exe: Self::biggest_exe_in(steam_api_dir),
+            game_exe: Self::pick_game_exe(steam_api_dir, &game_name),
             unity_data_dir: None,
             steam_api_dir: Some(steam_api_dir.to_path_buf()),
             ini_dir: steam_api_dir.to_path_buf(),
@@ -408,24 +416,24 @@ impl GameInspector {
 
         if root.join(COLD_CLIENT_INI).is_file() {
             warnings.push(
-                "Rilevato setup gbe/ColdClientLoader (steamclient64.ini): lancia il vero \
-                 exe del gioco, non il loader — UCOnline2 è un passthrough e ha bisogno \
-                 del client Steam reale."
+                "Detected a gbe/ColdClientLoader setup (steamclient64.ini): launch the \
+                 real game exe, not the loader. UCOnline2 is a passthrough and needs \
+                 the real Steam client."
                     .to_string(),
             );
         }
 
         if arch == GameArch::X86 {
             warnings.push(
-                "Gioco a 32 bit: verrà installata la build x86 (steam_api.dll)."
+                "32-bit game: the x86 build (steam_api.dll) will be installed."
                     .to_string(),
             );
         }
 
         if !backends.has_any() {
             warnings.push(
-                "Nessun backend secondario rilevato: se il multiplayer è Steam P2P puro \
-                 (lobby/P2P) non serve alcun plugin — prova prima senza."
+                "No secondary backend detected: if multiplayer is pure Steam P2P \
+                 (lobbies/P2P) no plugin is needed, test it bare first."
                     .to_string(),
             );
         }
@@ -433,26 +441,26 @@ impl GameInspector {
         warnings
     }
 
-    /// True quando Steamless ha già lasciato i suoi marcatori nel gioco.
-    fn biggest_exe_in(dir: &Path) -> Option<PathBuf> {
-        let entries = fs::read_dir(dir).ok()?;
-        let mut best: Option<(u64, PathBuf)> = None;
-        for entry in entries.flatten() {
-            let path = entry.path();
-            let is_exe = path
-                .extension()
-                .and_then(|ext| ext.to_str())
-                .map(|ext| ext.eq_ignore_ascii_case("exe"))
-                .unwrap_or(false);
-            if !is_exe {
-                continue;
-            }
-            let size = fs::metadata(&path).map(|meta| meta.len()).unwrap_or(0);
-            if best.as_ref().map(|(s, _)| size > *s).unwrap_or(true) {
-                best = Some((size, path));
-            }
+    /// Eseguibile principale del gioco in `dir`, scelto con euristiche che
+    /// evitano i falsi positivi (UnityCrashHandler64.exe è più grande di
+    /// REPO.exe ma non è il gioco):
+    ///   1. stem che corrisponde ESATTAMENTE a `expected_name`
+    ///      (convenzione Unity: `<Game>_Data` sta accanto a `<Game>.exe`);
+    ///   2. stem che contiene `expected_name` o viceversa;
+    ///   3. il più grande tra i candidati non-helper;
+    ///   4. fallback: il più grande in assoluto (mai None se c'è un .exe).
+    fn pick_game_exe(dir: &Path, expected_name: &str) -> Option<PathBuf> {
+        let all = list_exes(dir);
+        let playable: Vec<PathBuf> = all.iter().filter(|p| !is_non_game_exe(p)).cloned().collect();
+        let pool = if playable.is_empty() { &all } else { &playable };
+
+        if let Some(exact) = pool.iter().find(|p| exe_stem_eq(p, expected_name)) {
+            return Some(exact.clone());
         }
-        best.map(|(_, path)| path)
+        if let Some(partial) = pool.iter().find(|p| exe_stem_contains(p, expected_name)) {
+            return Some(partial.clone());
+        }
+        biggest_exe(pool)
     }
 }
 
@@ -508,4 +516,79 @@ fn has_steamless_markers(root: &Path) -> bool {
         let name = file.file_name().and_then(|n| n.to_str()).unwrap_or("");
         is_steamless_backup_name(name) || is_steamless_unpacked_name(name)
     })
+}
+
+/// Sottostringhe che identificano eseguibili che non sono MAI il gioco:
+/// helper di engine (UnityCrashHandler*, CrashReportClient*), disinstallatori
+/// (unins000.exe) e installer. La sottostringa è volutamente generica per
+/// coprire tutte le varianti conosciute.
+fn is_non_game_exe(path: &Path) -> bool {
+    let name = path
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or_default()
+        .to_ascii_lowercase();
+    const NON_GAME_SUBSTR: &[&str] = &[
+        "unitycrashhandler",
+        "crashreport",
+        "unins",
+        "uninstall",
+        "installer",
+        "setup",
+    ];
+    NON_GAME_SUBSTR.iter().any(|marker| name.contains(marker))
+}
+
+/// `.exe` presenti direttamente in `dir`.
+fn list_exes(dir: &Path) -> Vec<PathBuf> {
+    let Ok(entries) = fs::read_dir(dir) else {
+        return Vec::new();
+    };
+    let mut exes: Vec<PathBuf> = entries
+        .flatten()
+        .map(|entry| entry.path())
+        .filter(|path| {
+            path.extension()
+                .and_then(|ext| ext.to_str())
+                .map(|ext| ext.eq_ignore_ascii_case("exe"))
+                .unwrap_or(false)
+        })
+        .collect();
+    exes.sort();
+    exes
+}
+
+/// Il `.exe` più grande tra i candidati (0 candidati => None).
+fn biggest_exe(candidates: &[PathBuf]) -> Option<PathBuf> {
+    candidates
+        .iter()
+        .max_by_key(|path| fs::metadata(path).map(|meta| meta.len()).unwrap_or(0))
+        .cloned()
+}
+
+/// Stem dell'exe uguale (case-insensitive) al nome atteso.
+fn exe_stem_eq(path: &Path, expected: &str) -> bool {
+    path.file_stem()
+        .and_then(|s| s.to_str())
+        .map(|stem| stem.eq_ignore_ascii_case(expected))
+        .unwrap_or(false)
+}
+
+/// Stem dell'exe che contiene il nome atteso, o viceversa (case-insensitive).
+fn exe_stem_contains(path: &Path, expected: &str) -> bool {
+    let Some(stem) = path.file_stem().and_then(|s| s.to_str()) else {
+        return false;
+    };
+    let stem_l = stem.to_ascii_lowercase();
+    let expected_l = expected.to_ascii_lowercase();
+    !expected_l.is_empty() && (stem_l.contains(&expected_l) || expected_l.contains(&stem_l))
+}
+
+/// Nome del gioco dalla cartella Unity `<Game>_Data` (stem senza `_Data`).
+fn unity_game_name(data_dir: &Path) -> String {
+    data_dir
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .map(|stem| stem.strip_suffix(UNITY_DATA_SUFFIX).unwrap_or(stem).to_string())
+        .unwrap_or_default()
 }

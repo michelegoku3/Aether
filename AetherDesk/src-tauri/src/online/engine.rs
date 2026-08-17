@@ -57,7 +57,7 @@ impl OnlineEngine {
         let store = OnlineStateStore::load(state_path);
         let current = store.get(app_id).cloned();
 
-        let suggestions = build_suggestions(&detection);
+        let notices = build_notices(&detection);
 
         Ok(OnlinePlan {
             detection,
@@ -68,7 +68,7 @@ impl OnlineEngine {
                 errors,
             },
             current,
-            suggestions,
+            notices,
         })
     }
 
@@ -137,9 +137,11 @@ fn inspect(game_root: &Path) -> Result<DetectionReport, String> {
     GameInspector::inspect(game_root).map_err(|error| error.to_string())
 }
 
-/// Suggerimenti fattuali per la UI (mai blocchi: decide l'utente).
-fn build_suggestions(detection: &DetectionReport) -> Vec<String> {
-    let mut suggestions = Vec::new();
+/// Notice mostrate nella UI in un unico gruppo ⚠ (niente più 💡 separati:
+/// i suggerimenti che duplicavano gli avvisi sono stati fusi qui).
+/// Unisce gli avvisi di detection alle note operative, senza duplicati.
+fn build_notices(detection: &DetectionReport) -> Vec<String> {
+    let mut notices = detection.warnings.clone();
 
     if detection.conflicts.iter().any(|c| {
         matches!(
@@ -150,55 +152,49 @@ fn build_suggestions(detection: &DetectionReport) -> Vec<String> {
                 | Conflict::NamedFixFile(_)
         )
     }) {
-        suggestions.push(
-            "Rilevato un emulatore concorrente (ColdClientLoader/SteamFix/OnlineFix): \
-             verrà neutralizzato in modo reversibile (*.uco-disabled)."
+        notices.push(
+            "A competing emulator was detected (ColdClientLoader/SteamFix/OnlineFix): \
+             it will be neutralized reversibly (*.uco-disabled)."
                 .to_string(),
         );
     }
 
     if detection.backends.eos {
-        suggestions.push(
-            "EOS rilevato: fornisci le credenziali di un'app Epic tua per deployare \
-             EOS_custom (o lascia vuoto per saltare)."
+        notices.push(
+            "Without at least the ProductId, EOS_custom will NOT be installed (avoids \
+             the game getting stuck on the EOS login)."
                 .to_string(),
         );
     }
     if detection.backends.photon != PhotonFlavor::None {
-        suggestions.push(
-            "Photon rilevato: servono i GUID degli app Photon (Realtime/Fusion e Voice \
-             se presente) per il multiplayer Photon."
+        notices.push(
+            "Photon detected: your Photon app GUIDs (Realtime/Fusion and Voice when \
+             present) are required for Photon multiplayer."
                 .to_string(),
         );
     }
     if detection.backends.playfab {
-        suggestions.push(
-            "PlayFab rilevato: il plugin resta inerte finché non imposti un TitleId."
+        notices.push(
+            "PlayFab detected: the plugin stays inert until you set a TitleId."
                 .to_string(),
         );
     }
     if detection.backends.coherence {
-        suggestions.push(
-            "coherence rilevato: serve una runtime key (progetto tuo con schema caricato, \
-             oppure il progetto SHARED community)."
-                .to_string(),
-        );
-    }
-    if !detection.backends.has_any() {
-        suggestions.push(
-            "Nessun backend secondario: se il multiplayer è Steam P2P puro, prova prima \
-             senza plugin."
+        notices.push(
+            "coherence detected: a runtime key is required (your own project with the \
+             schema uploaded, or the shared community project)."
                 .to_string(),
         );
     }
     if detection.steamless_applied {
-        suggestions.push(
-            "Steamless ha già processato un exe del gioco: nessun conflitto con UCOnline2."
+        notices.push(
+            "Steamless already processed one of the game executables: no conflict with \
+             UCOnline2."
                 .to_string(),
         );
     }
 
-    suggestions
+    notices
 }
 
 /// Probe di scrittura: crea e rimuove un file temporaneo nella directory.

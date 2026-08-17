@@ -69,10 +69,10 @@ fn online_plan_serializes_camel_case() {
         detection: detection_sample(),
         prerequisites: Prerequisites::default(),
         current: None,
-        suggestions: vec!["s".to_string()],
+        notices: vec!["n".to_string()],
     };
     let json = serde_json::to_value(&plan).unwrap();
-    for key in ["detection", "prerequisites", "current", "suggestions"] {
+    for key in ["detection", "prerequisites", "current", "notices"] {
         assert!(json.get(key).is_some(), "chiave '{key}' manca: {json}");
     }
     // Il bug storico: bundleOk deve essere raggiungibile via prerequisites.bundleOk.
@@ -85,7 +85,6 @@ fn enable_request_deserializes_from_camel_case() {
     let json = serde_json::json!({
         "ogAppId": 1144200,
         "spoofAppId": 480,
-        "steamStubPatch": true,
         "photon": { "realtimeGuid": "rt", "voiceGuid": "vo", "fusionGuid": "fu" },
         "eos": { "productId": "p", "sandboxId": "s", "deploymentId": "d", "clientId": "c", "clientSecret": "sec" },
         "playfab": { "titleId": "TITLE" },
@@ -95,7 +94,6 @@ fn enable_request_deserializes_from_camel_case() {
     let request: OnlineEnableRequest = serde_json::from_value(json).expect("deve deserializzare");
     assert_eq!(request.og_app_id, 1144200);
     assert_eq!(request.spoof_app_id, 480);
-    assert!(request.steam_stub_patch);
     assert_eq!(request.photon.realtime_guid, "rt");
     assert_eq!(request.photon.voice_guid, "vo");
     assert_eq!(request.photon.fusion_guid, "fu");
@@ -141,7 +139,6 @@ fn record_and_status_serialize_camel_case() {
         bundle_version: Some("v1.19.3".to_string()),
         og_app_id: 440,
         spoof_app_id: 480,
-        steam_stub_patch: false,
         ini_path: PathBuf::from("C:\\ini"),
         steam_api_path: PathBuf::from("C:\\dll"),
         arch: GameArch::X86,
@@ -149,7 +146,7 @@ fn record_and_status_serialize_camel_case() {
         backup_dir: PathBuf::from("C:\\backup"),
     };
     let json = serde_json::to_value(&record).unwrap();
-    for key in ["appId", "enabledAt", "bundleVersion", "ogAppId", "spoofAppId", "steamStubPatch", "iniPath", "steamApiPath", "arch", "backendsDeployed", "backupDir"] {
+    for key in ["appId", "enabledAt", "bundleVersion", "ogAppId", "spoofAppId", "iniPath", "steamApiPath", "arch", "backendsDeployed", "backupDir"] {
         assert!(json.get(key).is_some(), "chiave '{key}' manca: {json}");
     }
 

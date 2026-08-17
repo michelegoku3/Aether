@@ -2865,3 +2865,27 @@ body {
   font-size: 13px;
   font-family: inherit;
 }
+
+/* Shared button hover (Online panel footer and any .modal-btn usage) */
+.modal-btn {
+  transition: filter 0.15s ease, transform 0.05s ease;
+}
+.modal-btn:hover:not(:disabled) {
+  filter: brightness(1.25);
+}
+.modal-btn:active:not(:disabled) {
+  transform: translateY(1px);
+}
+.modal-btn:disabled {
+  cursor: not-allowed;
+}
+
+/* Clickable folder path (ClickablePath component) */
+.settings-path-clickable {
+  cursor: pointer;
+  text-decoration: underline dotted;
+  transition: background 0.15s ease;
+}
+.settings-path-clickable:hover {
+  background: rgba(255, 255, 255, 0.12);
+}

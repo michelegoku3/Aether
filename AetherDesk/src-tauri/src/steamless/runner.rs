@@ -192,7 +192,7 @@ fn map_steamless_failure(
 
     if combined.contains("all unpackers failed") {
         return format!(
-            "Steamless detected SteamStub markers in {}, but none of the bundled unpackers support this wrapper variant yet.",
+            "Steamless detected protected-code markers in {}, but none of the bundled unpackers support this wrapper variant yet.",
             exe_name
         );
     }
@@ -201,11 +201,11 @@ fn map_steamless_failure(
         || combined.contains("is not packed")
         || combined.contains("no .bind section")
     {
-        return format!("Steamless did not find SteamStub DRM in {}.", exe_name);
+        return format!("Steamless did not find the expected DRM protection in {}.", exe_name);
     }
 
     format!(
-        "Steamless did not produce an unpacked executable for {}. The file may not be SteamStub-protected or may use an unsupported wrapper variant.",
+        "Steamless did not produce an unpacked executable for {}. The file may not be protected, or may use an unsupported wrapper variant.",
         exe_name
     )
 }

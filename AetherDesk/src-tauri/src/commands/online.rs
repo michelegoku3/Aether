@@ -14,7 +14,7 @@ use std::path::{Path, PathBuf};
 
 const UCO2_RESOURCE_DIR: &str = "ExternalTools/UCOnline2";
 
-/// Stato online di un gioco (per la UI: chip + record).
+/// Stato online di un gioco (per la UI: footer + record).
 #[tauri::command]
 pub async fn get_online_status(app_id: u32) -> Result<OnlineStatus, String> {
     let state_path = LocalAppPaths::state_dir().join("uc_online2.json");
@@ -36,8 +36,8 @@ pub async fn plan_online(app: tauri::AppHandle, app_id: u32) -> Result<OnlinePla
     // Verifica "gioco in esecuzione" (solo informativa nel piano).
     if let Some(exe) = &plan.detection.game_exe {
         if is_exe_running(exe) {
-            plan.suggestions.push(format!(
-                "Il gioco sembra essere in esecuzione ({}): chiudilo prima di attivare.",
+            plan.notices.push(format!(
+                "The game appears to be running ({}): close it before enabling.",
                 exe.file_name().and_then(|n| n.to_str()).unwrap_or("exe")
             ));
         }
@@ -89,11 +89,10 @@ pub async fn enable_online(
 
     crate::desk_log_info!(
         "online",
-        "enable_online: app={} ogAppId={} spoof={} stub={} eos_deploy={}",
+        "enable_online: app={} ogAppId={} spoof={} eos_deploy={}",
         app_id,
         request.og_app_id,
         request.spoof_app_id,
-        request.steam_stub_patch,
         request.deploy_eos_custom
     );
 

@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { invoke } from '@tauri-apps/api/core';
+import { ClickablePath } from '../ui/ClickablePath';
 
 interface SettingsViewProps {
   hubcapUsage: { usage: number; limit: number; hasKey: boolean };
@@ -539,7 +540,7 @@ export const SettingsView = ({ hubcapUsage, onRefreshUsage, onRefreshCustomCss, 
                   is vertically centered to the whole description. */}
               <div className="settings-appearance-row">
                 <p className="settings-desc">
-                  The first .css file in <code className="settings-path" title={appearanceAssets.themesDir}>{appearanceAssets.themesDir}</code> is applied automatically.{' '}
+                  The first .css file in <ClickablePath path={appearanceAssets.themesDir} onError={(msg) => showStatus(msg, 'error')} /> is applied automatically.{' '}
                   {appearanceAssets.themeName ? <>Currently active: <strong>{appearanceAssets.themeName}</strong>. </> : ''}
                   Use the button to pick a different theme.
                 </p>
@@ -586,7 +587,7 @@ export const SettingsView = ({ hubcapUsage, onRefreshUsage, onRefreshCustomCss, 
                   is vertically centered to the whole description. */}
               <div className="settings-appearance-row">
                 <p className="settings-desc">
-                  The first image in <code className="settings-path" title={appearanceAssets.wallpapersDir}>{appearanceAssets.wallpapersDir}</code> is used as the app background.{' '}
+                  The first image in <ClickablePath path={appearanceAssets.wallpapersDir} onError={(msg) => showStatus(msg, 'error')} /> is used as the app background.{' '}
                   {appearanceAssets.wallpaperName ? <>Currently active: <strong>{appearanceAssets.wallpaperName}</strong>. </> : ''}
                   Use the button to pick a different wallpaper.
                 </p>
@@ -655,7 +656,7 @@ export const SettingsView = ({ hubcapUsage, onRefreshUsage, onRefreshCustomCss, 
             <div className="settings-appearance-sub">
               <div className="settings-appearance-row">
                 <p className="settings-desc">
-                  The first icon in <code className="settings-path" title={appearanceAssets.iconsDir}>{appearanceAssets.iconsDir}</code> is used as the window icon.{' '}
+                  The first icon in <ClickablePath path={appearanceAssets.iconsDir} onError={(msg) => showStatus(msg, 'error')} /> is used as the window icon.{' '}
                   {appearanceAssets.iconName ? <>Currently active: <strong>{appearanceAssets.iconName}</strong>. </> : ''}
                   Use the button to pick a different icon.
                 </p>
