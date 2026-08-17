@@ -74,6 +74,15 @@ pub fn open_wallpapers_folder() -> Result<(), String> {
     open_folder_in_explorer(&custom_css::wallpapers_dir())
 }
 
+/// Generic, reusable command: opens any folder in the system file manager.
+/// Used by the Online panel (game exe/DLL folders) and by the Settings view
+/// (themes, wallpapers, icons folders).
+#[tauri::command]
+pub fn reveal_in_file_manager(path: String) -> Result<(), String> {
+    crate::desk_log_info!("fs", "Opening folder in OS file manager: {path}");
+    open_folder_in_explorer(std::path::Path::new(&path))
+}
+
 fn open_folder_in_explorer(folder: &std::path::Path) -> Result<(), String> {
     std::fs::create_dir_all(folder)
         .map_err(|e| format!("Failed to create folder {}: {}", folder.display(), e))?;

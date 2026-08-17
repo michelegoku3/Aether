@@ -130,7 +130,7 @@ pub struct DetectionReport {
     pub backends: BackendReport,
     pub conflicts: Vec<Conflict>,
     /// True quando Steamless ha già processato un eseguibile del gioco
-    /// (backup `.steamstub.bak` o output `.unpacked.exe` presenti).
+    /// (backup Steamless o output `.unpacked.exe` presenti).
     pub steamless_applied: bool,
     pub warnings: Vec<String>,
 }
@@ -185,8 +185,6 @@ pub struct OnlineEnableRequest {
     pub og_app_id: u32,
     /// AppId spoofato davanti a Steam (Spacewar).
     pub spoof_app_id: u32,
-    /// GetStubbedLol: patch SteamStub a runtime (fase F7; già scrivibile ora).
-    pub steam_stub_patch: bool,
     pub photon: PhotonOptions,
     pub eos: EosOptions,
     pub playfab: PlayfabOptions,
@@ -211,7 +209,6 @@ pub struct OnlineRecord {
     pub bundle_version: Option<String>,
     pub og_app_id: u32,
     pub spoof_app_id: u32,
-    pub steam_stub_patch: bool,
     /// Path di `union-crax.ini` scritto (per riconciliazione/status).
     pub ini_path: PathBuf,
     /// Path della DLL Steamworks installata (per riconciliazione/status).
@@ -244,7 +241,8 @@ pub struct OnlinePlan {
     pub detection: DetectionReport,
     pub prerequisites: Prerequisites,
     pub current: Option<OnlineRecord>,
-    pub suggestions: Vec<String>,
+    /// Notice ⚠ per la UI (avvisi di detection + note operative, un solo gruppo).
+    pub notices: Vec<String>,
 }
 
 /// Stato riconciliato di un gioco rispetto a UCOnline2 (file sul disco =

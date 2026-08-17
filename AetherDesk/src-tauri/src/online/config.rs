@@ -34,10 +34,6 @@ pub fn build_ini(
     push_line(&mut out, &format!("AppId={}", request.spoof_app_id));
     push_line(&mut out, &format!("ogAppId={}", request.og_app_id));
     push_line(&mut out, "PluginsFolder=plugins");
-    push_line(
-        &mut out,
-        &format!("GetStubbedLol={}", bool_str(request.steam_stub_patch)),
-    );
 
     // [DLC] — sempre UnlockAll=true; le entry harvestate servono ai giochi
     // che ENUMERANO i DLC via GetDLCCount/BGetDLCDataByIndex.
@@ -207,12 +203,4 @@ fn harvest_from_numeric_dirs(ini_dir: &Path) -> Vec<DlcEntry> {
 fn push_line(out: &mut String, line: &str) {
     out.push_str(line);
     out.push_str("\r\n");
-}
-
-fn bool_str(value: bool) -> &'static str {
-    if value {
-        "true"
-    } else {
-        "false"
-    }
 }

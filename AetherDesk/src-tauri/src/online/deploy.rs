@@ -200,7 +200,6 @@ pub fn deploy(
         bundle_version: bundle.version(),
         og_app_id: request.og_app_id,
         spoof_app_id: request.spoof_app_id,
-        steam_stub_patch: request.steam_stub_patch,
         ini_path: ini_path.clone(),
         steam_api_path: steam_api_path.clone(),
         arch: detection.arch,

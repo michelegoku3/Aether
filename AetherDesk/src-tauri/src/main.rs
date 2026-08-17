@@ -62,6 +62,7 @@ fn main() {
             commands::custom_css::ensure_custom_css,
             commands::custom_css::open_custom_css_folder,
             commands::custom_css::open_wallpapers_folder,
+            commands::custom_css::reveal_in_file_manager,
             commands::custom_css::get_appearance_assets,
             commands::custom_css::pick_theme_file,
             commands::custom_css::pick_wallpaper_file,

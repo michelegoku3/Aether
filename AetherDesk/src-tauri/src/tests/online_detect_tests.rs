@@ -70,6 +70,66 @@ fn unity_game_is_detected() {
 }
 
 #[test]
+fn unity_crash_handler_is_never_picked_as_game_exe() {
+    // Caso REPO: UnityCrashHandler64.exe è PIÙ GRANDE di REPO.exe; la scelta
+    // deve comunque cadere su REPO.exe (match col nome del gioco + esclusione
+    // degli helper di engine).
+    let tmp = tempfile::tempdir().unwrap();
+    write(tmp.path(), "REPO.exe", b"small real game");
+    write(
+        tmp.path(),
+        "UnityCrashHandler64.exe",
+        b"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+    );
+    write(tmp.path(), "REPO_Data/Managed/Assembly-CSharp.dll", b"assembly");
+
+    let report = GameInspector::inspect(tmp.path()).expect("Unity game must be detected");
+    assert_eq!(
+        report
+            .game_exe
+            .as_ref()
+            .and_then(|p| p.file_name())
+            .map(|n| n.to_string_lossy().into_owned())
+            .as_deref(),
+        Some("REPO.exe".into())
+    );
+}
+
+#[test]
+fn unity_game_exe_inside_subfolder_is_found() {
+    // Caso Machine Party: la cartella del gioco sta un livello sotto la root
+    // (`<Game>_Windows\\`) e l'exe è accanto a `<Game>_Data`.
+    let tmp = tempfile::tempdir().unwrap();
+    write(
+        tmp.path(),
+        "Machine Party_Windows/Machine Party.exe",
+        b"MZreal",
+    );
+    write(
+        tmp.path(),
+        "Machine Party_Windows/Machine Party_Data/Managed/a.dll",
+        b"a",
+    );
+    write(
+        tmp.path(),
+        "Machine Party_Windows/Machine Party_Data/Plugins/x86_64/steam_api64.dll",
+        b"dll",
+    );
+
+    let report = GameInspector::inspect(tmp.path()).expect("Unity game must be detected");
+    assert_eq!(report.engine, Engine::Unity);
+    assert_eq!(
+        report
+            .game_exe
+            .as_ref()
+            .and_then(|p| p.file_name())
+            .map(|n| n.to_string_lossy().into_owned())
+            .as_deref(),
+        Some("Machine Party.exe".into())
+    );
+}
+
+#[test]
 fn unity_without_marker_is_not_unity() {
     // `web_data` di Farming Simulator: *_Data senza Managed né il2cpp.
     let tmp = tempfile::tempdir().unwrap();
