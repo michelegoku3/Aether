@@ -34,8 +34,14 @@ pub fn build_ini(
     push_line(&mut out, &format!("AppId={}", request.spoof_app_id));
     push_line(&mut out, &format!("ogAppId={}", request.og_app_id));
     push_line(&mut out, "PluginsFolder=plugins");
+    push_line(&mut out, &format!("VerboseLog={}", bool_str(request.verbose_log)));
+    push_line(&mut out, &format!("EmulateTicket={}", bool_str(request.emulate_ticket)));
+    push_line(
+        &mut out,
+        &format!("WarnOverlayDisabled={}", bool_str(request.warn_overlay_disabled)),
+    );
 
-    // [DLC] — sempre UnlockAll=true; le entry harvestate servono ai giochi
+    // [DLC] — UnlockAll (toggle UI) + entry harvestate per i giochi
     // che ENUMERANO i DLC via GetDLCCount/BGetDLCDataByIndex.
     push_line(&mut out, "");
     push_line(&mut out, "[DLC]");
@@ -52,7 +58,7 @@ pub fn build_ini(
         &mut out,
         "; its DLC to build a menu. Both work together - UnlockAll is the fallback.",
     );
-    push_line(&mut out, "UnlockAll=true");
+    push_line(&mut out, &format!("UnlockAll={}", bool_str(request.unlock_all_dlc)));
     for (id, name) in dlc_entries {
         push_line(&mut out, &format!("{id}={name}"));
     }
@@ -203,4 +209,12 @@ fn harvest_from_numeric_dirs(ini_dir: &Path) -> Vec<DlcEntry> {
 fn push_line(out: &mut String, line: &str) {
     out.push_str(line);
     out.push_str("\r\n");
+}
+
+fn bool_str(value: bool) -> &'static str {
+    if value {
+        "true"
+    } else {
+        "false"
+    }
 }

@@ -37,6 +37,10 @@ fn main() {
         .setup(|app| {
             // Initialize the session logger (rotates desk.log -> desk.log.last on startup).
             crate::core::logger::init(&app.handle());
+            // UCOnline2 appends to %TEMP%\uc_online2.log while games run; remove it
+            // at startup so the log shown/exported by AetherDesk is always clean
+            // (UCO2 recreates it automatically on the next game launch).
+            crate::commands::logs::clear_uco2_log_file();
             // Clear any leftover artifacts from an interrupted portable self-update.
             crate::updater::desk::cleanup_stale_artifacts();
             // All startup migrations live in one place: legacy settings move,

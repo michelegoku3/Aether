@@ -48,6 +48,10 @@ fn base_request() -> OnlineEnableRequest {
     OnlineEnableRequest {
         og_app_id: 1144200,
         spoof_app_id: 480,
+        verbose_log: true,
+        emulate_ticket: false,
+        warn_overlay_disabled: false,
+        unlock_all_dlc: true,
         photon: PhotonOptions {
             realtime_guid: "rt-guid".to_string(),
             voice_guid: "vo-guid".to_string(),
@@ -89,6 +93,9 @@ fn ini_golden_unity_photon_voice_playfab() {
 AppId=480\r\n\
 ogAppId=1144200\r\n\
 PluginsFolder=plugins\r\n\
+VerboseLog=true\r\n\
+EmulateTicket=false\r\n\
+WarnOverlayDisabled=false\r\n\
 \r\n\
 [DLC]\r\n\
 ; UnlockAll answers any \"do I own this DLC?\" check, for any id, so DLC\r\n\
@@ -146,6 +153,26 @@ fn ini_steam_only_has_no_backend_sections() {
     assert!(!ini.contains("[EOS]"));
     assert!(!ini.contains("[Coherence]"));
     assert!(!ini.contains("[PlayFab]"));
+}
+
+#[test]
+fn ini_settings_toggles_are_written() {
+    let tmp = tempfile::tempdir().unwrap();
+    write(tmp.path(), "TGame.exe", b"MZ");
+    write(tmp.path(), "TGame_Data/Managed/Assembly-CSharp.dll", b"asm");
+
+    let detection = GameInspector::inspect(tmp.path()).unwrap();
+    let mut request = base_request();
+    request.verbose_log = false;
+    request.emulate_ticket = true;
+    request.warn_overlay_disabled = true;
+    request.unlock_all_dlc = false;
+
+    let ini = build_ini(&detection, &request, &[]);
+    assert!(ini.contains("VerboseLog=false\r\n"));
+    assert!(ini.contains("EmulateTicket=true\r\n"));
+    assert!(ini.contains("WarnOverlayDisabled=true\r\n"));
+    assert!(ini.contains("UnlockAll=false\r\n"));
 }
 
 #[test]
