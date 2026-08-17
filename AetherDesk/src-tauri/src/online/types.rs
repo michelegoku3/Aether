@@ -68,24 +68,6 @@ impl BackendReport {
             || self.playfab
             || self.coherence
     }
-
-    /// Nomi dei plugin UCOnline2 che i backend rilevati richiedono.
-    pub fn required_plugins(&self) -> Vec<&'static str> {
-        let mut plugins = Vec::new();
-        if self.photon != PhotonFlavor::None {
-            plugins.push("photon_universal");
-        }
-        if self.eos {
-            plugins.push("EOS_custom");
-        }
-        if self.playfab {
-            plugins.push("playfab_universal");
-        }
-        if self.coherence {
-            plugins.push("coherence_universal");
-        }
-        plugins
-    }
 }
 
 /// Emulatori/proxy concorrenti che vanno neutralizzati (rinomina reversibile

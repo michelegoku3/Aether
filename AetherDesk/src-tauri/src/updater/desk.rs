@@ -100,7 +100,7 @@ pub async fn prepare_update(app: &tauri::AppHandle) -> Result<Option<PreparedUpd
 /// Scarica e prepara l'ultima release STABILE di AetherDesk senza gate di
 /// versione: usata per uscire dal canale test ("Restore" nella UI) tornando
 /// alla build stabile precedente. Il processo viene poi riavviato dal chiamante.
-pub async fn prepare_stable_restore(app: &tauri::AppHandle) -> Result<Option<PreparedUpdate>, String> {
+pub async fn prepare_stable_restore() -> Result<Option<PreparedUpdate>, String> {
     let manager = GithubReleaseManager::new();
     let release = manager.fetch_latest_desk_release().await?;
     crate::desk_log_info!(

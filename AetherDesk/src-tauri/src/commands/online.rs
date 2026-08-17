@@ -7,6 +7,7 @@
 use crate::external_tools::bundle::ToolBundleLocator;
 use crate::online::bundle::Uco2Bundle;
 use crate::online::engine::OnlineEngine;
+use crate::online::state::OnlineStateStore;
 use crate::online::types::{OnlineEnableRequest, OnlinePlan, OnlineStatus, OnlineActionResult};
 use crate::util::game_resolver::resolve_installed_game;
 use crate::core::paths::LocalAppPaths;
@@ -14,10 +15,15 @@ use std::path::{Path, PathBuf};
 
 const UCO2_RESOURCE_DIR: &str = "ExternalTools/UCOnline2";
 
+/// Path del file di stato UCOnline2 (fonte unica: `STATE_FILE`).
+fn state_path() -> PathBuf {
+    OnlineStateStore::state_path(&LocalAppPaths::data_root())
+}
+
 /// Stato online di un gioco (per la UI: footer + record).
 #[tauri::command]
 pub async fn get_online_status(app_id: u32) -> Result<OnlineStatus, String> {
-    let state_path = LocalAppPaths::state_dir().join("uc_online2.json");
+    let state_path = state_path();
 
     Ok(OnlineEngine::status(app_id, &state_path))
 }
@@ -43,7 +49,7 @@ pub async fn plan_online(app: tauri::AppHandle, app_id: u32) -> Result<OnlinePla
     let game_root = PathBuf::from(&game.game_path);
 
     let bundle = locate_bundle(&app);
-    let state_path = LocalAppPaths::state_dir().join("uc_online2.json");
+    let state_path = state_path();
 
     let mut plan = OnlineEngine::plan(app_id, &game_root, &bundle, &state_path)?;
 
@@ -86,7 +92,7 @@ pub async fn enable_online(
         app_id,
         &game_root,
         &Err("bundle not needed for inspection".to_string()),
-        &LocalAppPaths::state_dir().join("uc_online2.json"),
+        &state_path(),
     )?;
     if let Some(exe) = &inspection.detection.game_exe {
         if is_exe_running(exe) {
@@ -99,7 +105,7 @@ pub async fn enable_online(
 
     let bundle = locate_bundle(&app)?;
     let backup_root = LocalAppPaths::backup_root();
-    let state_path = LocalAppPaths::state_dir().join("uc_online2.json");
+    let state_path = state_path();
 
     crate::desk_log_info!(
         "online",
@@ -124,7 +130,7 @@ pub async fn enable_online(
 #[tauri::command]
 pub async fn disable_online(app_id: u32) -> Result<OnlineActionResult, String> {
     let backup_root = LocalAppPaths::backup_root();
-    let state_path = LocalAppPaths::state_dir().join("uc_online2.json");
+    let state_path = state_path();
 
     crate::desk_log_info!("online", "disable_online: app={}", app_id);
 

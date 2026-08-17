@@ -53,10 +53,6 @@ impl Uco2Bundle {
             && plugins_dir_has_dlls(&dir.join(PLUGINS_SUBDIR))
     }
 
-    pub fn dir(&self) -> &Path {
-        &self.dir
-    }
-
     /// Versione del bundle (dal file VERSION, es. "v1.19.3"), se presente.
     pub fn version(&self) -> Option<String> {
         let path = self.dir.join(VERSION_FILE);

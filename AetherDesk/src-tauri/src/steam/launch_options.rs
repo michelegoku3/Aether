@@ -157,7 +157,7 @@ fn read_app_launch_options(content: &str, app_id: u32) -> String {
     };
 
     let apps_block = &content[apps_open + 1..apps_close];
-    let Some((app_start, app_after)) = find_key(apps_block, &app_key) else {
+    let Some((_, app_after)) = find_key(apps_block, &app_key) else {
         return String::new();
     };
     // Indici relativi ad apps_block: la `{` del blocco app sta dopo la chiave.
