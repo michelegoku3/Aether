@@ -4,15 +4,19 @@ import { invoke } from '@tauri-apps/api/core';
 export const MAX_PATH_CHARS = 80;
 
 /**
- * Displays a path starting directly from the game root folder name, i.e. the
- * first folder right inside steamapps/common (e.g. "REPO\REPO.exe" instead of
- * "C:\Program Files (x86)\Steam\steamapps\common\REPO\REPO.exe").
- * Falls back to the absolute path when it is not under the game root.
+ * Displays a path starting from the folder right inside steamapps/common,
+ * i.e. the parent of the game root. The game root folder name is kept:
+ * e.g. "REPO\REPO.exe" or "party project\Machine Party_Windows\Machine Party.exe"
+ * instead of "C:\Program Files (x86)\Steam\steamapps\common\...".
+ * Falls back to the absolute path when it is not under the common folder.
  */
 export const pathFromGameRoot = (gameRoot: string, absolutePath: string): string => {
   const root = gameRoot.replace(/[\\/]+$/, '');
-  const rest = absolutePath.slice(root.length).replace(/^[\\/]+/, '');
-  if (rest && absolutePath.toLowerCase().startsWith(root.toLowerCase())) {
+  // The common folder is the parent of the game root.
+  const idx = Math.max(root.lastIndexOf('\\'), root.lastIndexOf('/'));
+  const commonRoot = idx > 0 ? root.slice(0, idx) : root;
+  const rest = absolutePath.slice(commonRoot.length).replace(/^[\\/]+/, '');
+  if (rest && absolutePath.toLowerCase().startsWith(commonRoot.toLowerCase())) {
     return rest;
   }
   return absolutePath;

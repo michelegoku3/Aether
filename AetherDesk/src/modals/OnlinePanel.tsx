@@ -80,6 +80,10 @@ export interface OnlineActionResult {
 export interface OnlineEnableRequest {
   ogAppId: number;
   spoofAppId: number;
+  verboseLog: boolean;
+  emulateTicket: boolean;
+  warnOverlayDisabled: boolean;
+  unlockAllDlc: boolean;
   photon: { realtimeGuid: string; voiceGuid: string; fusionGuid: string };
   eos: { productId: string; sandboxId: string; deploymentId: string; clientId: string; clientSecret: string };
   playfab: { titleId: string };
@@ -98,7 +102,7 @@ const styles = {
   row: { display: 'flex' as const, gap: '10px', alignItems: 'center', marginBottom: '8px', flexWrap: 'wrap' as const },
   label: { fontSize: '12px', opacity: 0.75, minWidth: '150px' },
   input: { background: '#1b1b1f', border: '1px solid #2c2c31', borderRadius: '6px', color: '#eee', padding: '6px 8px', fontSize: '13px', flex: 1, minWidth: '160px' },
-  chip: { padding: '2px 10px', borderRadius: '10px', fontSize: '12px', fontWeight: 600 },
+  chip: { padding: '2px 10px', borderRadius: '8px', fontSize: '12px', fontWeight: 600 },
   chipEnabled: { background: '#16351f', color: '#6fdb8c', border: '1px solid #2c6e42' },
   chipOff: { background: '#2a2a2e', color: '#9a9aa0', border: '1px solid #3a3a40' },
   chipBroken: { background: '#3a1d1d', color: '#e07b7b', border: '1px solid #6e2c2c' },
@@ -124,6 +128,10 @@ const styles = {
 const emptyRequest = (ogAppId: number): OnlineEnableRequest => ({
   ogAppId,
   spoofAppId: 480,
+  verboseLog: true,
+  emulateTicket: false,
+  warnOverlayDisabled: false,
+  unlockAllDlc: true,
   photon: { realtimeGuid: '', voiceGuid: '', fusionGuid: '' },
   eos: { productId: '', sandboxId: '', deploymentId: '', clientId: '', clientSecret: '' },
   playfab: { titleId: '' },
@@ -139,10 +147,17 @@ const engineLabel = (engine: EngineKind): string => {
   }
 };
 
+const photonFlavorLabel = (flavor: PhotonFlavorKind): string => {
+  switch (flavor) {
+    case 'fusion': return 'Fusion';
+    default: return 'Realtime';
+  }
+};
+
 const backendChips = (backends: OnlineBackendReport): string[] => {
   const chips: string[] = [];
   if (backends.photon !== 'none') {
-    chips.push(`Photon ${backends.photon}${backends.photonVoice ? ' + Voice' : ''}`);
+    chips.push(`Photon ${photonFlavorLabel(backends.photon)}${backends.photonVoice ? ' + Voice' : ''}`);
   }
   if (backends.eos) chips.push('EOS');
   if (backends.playfab) chips.push('PlayFab');
@@ -258,6 +273,19 @@ export const OnlinePanel = ({ game, onClose }: OnlinePanelProps) => {
     }
   };
 
+  // Checkbox row: description on the left, checkbox on the far right.
+  const checkboxRow = (checked: boolean, disabled: boolean, onChange: (v: boolean) => void, description: string) => (
+    <div style={styles.checkboxRow}>
+      <span style={styles.checkboxDesc}>{description}</span>
+      <input
+        type="checkbox"
+        checked={checked}
+        onChange={(e) => onChange(e.target.checked)}
+        disabled={disabled}
+      />
+    </div>
+  );
+
   return (
     <div className="modal-overlay" onClick={busy ? undefined : onClose}>
       <div
@@ -288,15 +316,15 @@ export const OnlinePanel = ({ game, onClose }: OnlinePanelProps) => {
               {plan && (
                 <div style={styles.box}>
                   <div style={styles.row}>
-                    <span style={styles.label}>UCOnline2 bundle</span>
+                    <span style={styles.label}>UCO2</span>
                     <span style={plan.prerequisites.bundleOk ? styles.ok : styles.error}>
                       {plan.prerequisites.bundleOk
-                        ? plan.prerequisites.bundleVersion ?? 'Available'
+                        ? `${plan.prerequisites.bundleVersion ?? 'Available'} ✓`
                         : 'N/A ✗'}
                     </span>
                   </div>
                   <div style={styles.row}>
-                    <span style={styles.label}>Writable game folder</span>
+                    <span style={styles.label}>Writable folder</span>
                     <span style={plan.prerequisites.steamApiDirWritable ? styles.ok : styles.error}>
                       {plan.prerequisites.steamApiDirWritable ? 'Yes ✓' : 'No ✗'}
                     </span>
@@ -325,7 +353,7 @@ export const OnlinePanel = ({ game, onClose }: OnlinePanelProps) => {
                         title={plan.detection.steamApiDir}
                         onClick={() => openFolder(plan.detection.steamApiDir!)}
                       >
-                        {shortenPath(pathFromGameRoot(plan.detection.gameRoot, plan.detection.steamApiDir))}
+                        {shortenPath(`${pathFromGameRoot(plan.detection.gameRoot, plan.detection.steamApiDir)}\\`)}
                       </span>
                     </div>
                   )}
@@ -343,15 +371,14 @@ export const OnlinePanel = ({ game, onClose }: OnlinePanelProps) => {
                       </span>
                     </div>
                   )}
-                </div>
-              )}
-
-              {/* Notices: single ⚠ group (detection warnings + operational notes) */}
-              {plan && plan.notices.length > 0 && (
-                <div style={styles.box}>
-                  {plan.notices.map((notice, index) => (
-                    <div key={index} style={styles.warn}>⚠ {notice}</div>
-                  ))}
+                  {/* Notices: always the last lines of this box */}
+                  {plan.notices.length > 0 && (
+                    <div style={{ marginTop: 4 }}>
+                      {plan.notices.map((notice, index) => (
+                        <div key={index} style={styles.warn}>⚠ {notice}</div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -360,7 +387,7 @@ export const OnlinePanel = ({ game, onClose }: OnlinePanelProps) => {
                 <div style={styles.box}>
                   <div style={styles.sectionTitle}>Options</div>
                   <div style={styles.row}>
-                    <span style={styles.label}>AppID spoof</span>
+                    <span style={styles.label}>Spoof</span>
                     <input
                       style={styles.input}
                       type="text"
@@ -383,84 +410,113 @@ export const OnlinePanel = ({ game, onClose }: OnlinePanelProps) => {
                       disabled={enabled}
                     />
                   </div>
+                </div>
+              )}
 
-                  {plan.detection.backends.photon !== 'none' && (
-                    <div style={{ ...styles.box, marginTop: 8 }}>
-                      <div style={styles.sectionTitle}>Photon ({plan.detection.backends.photon})</div>
-                      {plan.detection.backends.photon === 'fusion' ? (
+              {/* Ini settings */}
+              {plan && (
+                <div style={styles.box}>
+                  <div style={styles.sectionTitle}>Ini settings</div>
+                  {checkboxRow(
+                    request.verboseLog,
+                    enabled,
+                    (v) => set('verboseLog', v),
+                    'Verbose UCO2 logs (enabled by default)'
+                  )}
+                  {checkboxRow(
+                    request.emulateTicket,
+                    enabled,
+                    (v) => set('emulateTicket', v),
+                    'Emulate auth ticket (ogAppID)'
+                  )}
+                  {checkboxRow(
+                    request.warnOverlayDisabled,
+                    enabled,
+                    (v) => set('warnOverlayDisabled', v),
+                    'Warn when Steam overlay is disabled'
+                  )}
+                  {checkboxRow(
+                    request.unlockAllDlc,
+                    enabled,
+                    (v) => set('unlockAllDlc', v),
+                    'Unlock all DLC'
+                  )}
+                </div>
+              )}
+
+              {/* Photon */}
+              {plan && plan.detection.backends.photon !== 'none' && (
+                <div style={styles.box}>
+                  <div style={styles.sectionTitle}>Photon ({photonFlavorLabel(plan.detection.backends.photon)})</div>
+                  {plan.detection.backends.photon === 'fusion' ? (
+                    <div style={styles.row}>
+                      <span style={styles.label}>Fusion App GUID</span>
+                      <input style={styles.input} value={request.photon.fusionGuid} onChange={(e) => setPhoton('fusionGuid', e.target.value)} disabled={enabled} placeholder="app-id-xxxx" />
+                    </div>
+                  ) : (
+                    <>
+                      <div style={styles.row}>
+                        <span style={styles.label}>Realtime App GUID</span>
+                        <input style={styles.input} value={request.photon.realtimeGuid} onChange={(e) => setPhoton('realtimeGuid', e.target.value)} disabled={enabled} placeholder="app-id-xxxx" />
+                      </div>
+                      {plan.detection.backends.photonVoice && (
                         <div style={styles.row}>
-                          <span style={styles.label}>Fusion App GUID</span>
-                          <input style={styles.input} value={request.photon.fusionGuid} onChange={(e) => setPhoton('fusionGuid', e.target.value)} disabled={enabled} placeholder="app-id-xxxx" />
-                        </div>
-                      ) : (
-                        <>
-                          <div style={styles.row}>
-                            <span style={styles.label}>Realtime App GUID</span>
-                            <input style={styles.input} value={request.photon.realtimeGuid} onChange={(e) => setPhoton('realtimeGuid', e.target.value)} disabled={enabled} placeholder="app-id-xxxx" />
-                          </div>
-                          {plan.detection.backends.photonVoice && (
-                            <div style={styles.row}>
-                              <span style={styles.label}>Voice App GUID</span>
-                              <input style={styles.input} value={request.photon.voiceGuid} onChange={(e) => setPhoton('voiceGuid', e.target.value)} disabled={enabled} placeholder="app-id-xxxx" />
-                            </div>
-                          )}
-                        </>
-                      )}
-                    </div>
-                  )}
-
-                  {plan.detection.backends.playfab && (
-                    <div style={{ ...styles.box, marginTop: 8 }}>
-                      <div style={styles.sectionTitle}>PlayFab</div>
-                      <div style={styles.row}>
-                        <span style={styles.label}>TitleId (yours)</span>
-                        <input style={styles.input} value={request.playfab.titleId} onChange={(e) => set('playfab', { ...request.playfab, titleId: e.target.value })} disabled={enabled} placeholder="XXXXX (empty = inert plugin)" />
-                      </div>
-                    </div>
-                  )}
-
-                  {plan.detection.backends.coherence && (
-                    <div style={{ ...styles.box, marginTop: 8 }}>
-                      <div style={styles.sectionTitle}>coherence</div>
-                      <div style={styles.row}>
-                        <span style={styles.label}>Runtime key</span>
-                        <input style={styles.input} value={request.coherence.runtimeKey} onChange={(e) => set('coherence', { ...request.coherence, runtimeKey: e.target.value })} disabled={enabled || request.coherence.useShared} placeholder="your project (schema uploaded)" />
-                      </div>
-                      <div style={styles.checkboxRow}>
-                        <span style={styles.checkboxDesc}>Use the SHARED community project (no account, availability not guaranteed)</span>
-                        <input
-                          type="checkbox"
-                          checked={request.coherence.useShared}
-                          onChange={(e) => set('coherence', { ...request.coherence, useShared: e.target.checked })}
-                          disabled={enabled}
-                        />
-                      </div>
-                    </div>
-                  )}
-
-                  {plan.detection.backends.eos && (
-                    <div style={{ ...styles.box, marginTop: 8 }}>
-                      <div style={styles.sectionTitle}>EOS (Epic Online Services)</div>
-                      <div style={styles.checkboxRow}>
-                        <span style={styles.checkboxDesc}>Deploy EOS_custom (your own Epic app, anonymous login)</span>
-                        <input
-                          type="checkbox"
-                          checked={request.deployEosCustom}
-                          onChange={(e) => set('deployEosCustom', e.target.checked)}
-                          disabled={enabled}
-                        />
-                      </div>
-                      {request.deployEosCustom && (
-                        <div style={{ marginTop: 6 }}>
-                          {(['productId', 'sandboxId', 'deploymentId', 'clientId', 'clientSecret'] as const).map((key) => (
-                            <div style={styles.row} key={key}>
-                              <span style={styles.label}>{key}</span>
-                              <input style={styles.input} value={request.eos[key]} onChange={(e) => setEos(key, e.target.value)} disabled={enabled} placeholder={key === 'clientSecret' ? '...' : ''} />
-                            </div>
-                          ))}
+                          <span style={styles.label}>Voice App GUID</span>
+                          <input style={styles.input} value={request.photon.voiceGuid} onChange={(e) => setPhoton('voiceGuid', e.target.value)} disabled={enabled} placeholder="app-id-xxxx" />
                         </div>
                       )}
+                    </>
+                  )}
+                </div>
+              )}
+
+              {/* EOS */}
+              {plan && plan.detection.backends.eos && (
+                <div style={styles.box}>
+                  <div style={styles.sectionTitle}>EOS (Epic Online Services)</div>
+                  {checkboxRow(
+                    request.deployEosCustom,
+                    enabled,
+                    (v) => set('deployEosCustom', v),
+                    'Deploy EOS_custom (your own Epic app, anonymous login)'
+                  )}
+                  {request.deployEosCustom && (
+                    <div style={{ marginTop: 6 }}>
+                      {(['productId', 'sandboxId', 'deploymentId', 'clientId', 'clientSecret'] as const).map((key) => (
+                        <div style={styles.row} key={key}>
+                          <span style={styles.label}>{key}</span>
+                          <input style={styles.input} value={request.eos[key]} onChange={(e) => setEos(key, e.target.value)} disabled={enabled} />
+                        </div>
+                      ))}
                     </div>
+                  )}
+                </div>
+              )}
+
+              {/* PlayFab */}
+              {plan && plan.detection.backends.playfab && (
+                <div style={styles.box}>
+                  <div style={styles.sectionTitle}>PlayFab</div>
+                  <div style={styles.row}>
+                    <span style={styles.label}>TitleId (yours)</span>
+                    <input style={styles.input} value={request.playfab.titleId} onChange={(e) => set('playfab', { ...request.playfab, titleId: e.target.value })} disabled={enabled} placeholder="XXXXX (empty = inert plugin)" />
+                  </div>
+                </div>
+              )}
+
+              {/* coherence */}
+              {plan && plan.detection.backends.coherence && (
+                <div style={styles.box}>
+                  <div style={styles.sectionTitle}>coherence</div>
+                  <div style={styles.row}>
+                    <span style={styles.label}>Runtime key</span>
+                    <input style={styles.input} value={request.coherence.runtimeKey} onChange={(e) => set('coherence', { ...request.coherence, runtimeKey: e.target.value })} disabled={enabled || request.coherence.useShared} placeholder="your project (schema uploaded)" />
+                  </div>
+                  {checkboxRow(
+                    request.coherence.useShared,
+                    enabled,
+                    (v) => set('coherence', { ...request.coherence, useShared: v }),
+                    'Use the SHARED community project (no account, availability not guaranteed)'
                   )}
                 </div>
               )}

@@ -185,6 +185,14 @@ pub struct OnlineEnableRequest {
     pub og_app_id: u32,
     /// AppId spoofato davanti a Steam (Spacewar).
     pub spoof_app_id: u32,
+    /// [Settings] VerboseLog: log UCO2 dettagliati (default true nella UI).
+    pub verbose_log: bool,
+    /// [Settings] EmulateTicket: emulazione ticket con ogAppId.
+    pub emulate_ticket: bool,
+    /// [Settings] WarnOverlayDisabled: avviso quando l'overlay è disabilitato.
+    pub warn_overlay_disabled: bool,
+    /// [DLC] UnlockAll: sblocca tutti i DLC (default true nella UI).
+    pub unlock_all_dlc: bool,
     pub photon: PhotonOptions,
     pub eos: EosOptions,
     pub playfab: PlayfabOptions,

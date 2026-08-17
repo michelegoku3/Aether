@@ -23,7 +23,7 @@ export const LogView = () => {
   const [lines, setLines] = useState<string[]>([]);
   const [filterQuery, setFilterQuery] = useState('');
   const [logLevel, setLogLevel] = useState('trace');
-  const [logSource, setLogSource] = useState<'desk' | 'dll' | 'both'>('desk');
+  const [logSource, setLogSource] = useState<'desk' | 'dll' | 'uco2' | 'both'>('desk');
   const [exportStatus, setExportStatus] = useState('');
   const [copied, setCopied] = useState(false);
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -111,7 +111,7 @@ export const LogView = () => {
       <div className="store-header">
         <h1 className="store-title">Logs</h1>
         <p className="store-subtitle">
-          Real-time terminal console monitoring desk.log for session diagnostics and lifecycle events.
+          Real-time console monitoring for Desk, DLL and UCO2 logs.
         </p>
       </div>
 
@@ -154,12 +154,13 @@ export const LogView = () => {
             className="settings-select"
             value={logSource}
             style={{ width: '105px', minWidth: '105px', height: '33px', padding: '0 8px', boxSizing: 'border-box' }}
-            onChange={(e) => setLogSource(e.target.value as 'desk' | 'dll' | 'both')}
+            onChange={(e) => setLogSource(e.target.value as 'desk' | 'dll' | 'uco2' | 'both')}
             title="Select log source to view"
           >
             <option value="desk">Desk</option>
             <option value="dll">DLL</option>
-            <option value="both">Desk &amp; DLL</option>
+            <option value="uco2">UCO2</option>
+            <option value="both">All</option>
           </select>
 
           <select
@@ -182,7 +183,7 @@ export const LogView = () => {
             className="settings-small-btn"
             style={{ width: '80px', height: '33px', padding: '0', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', boxSizing: 'border-box' }}
             onClick={handleSaveBundle}
-            title="Export AetherDesk & AetherDLL logs as .zip in Downloads folder"
+            title="Export AetherDesk, AetherDLL and UCO2 logs as .zip in Downloads folder"
           >
             Save
           </button>
@@ -227,7 +228,7 @@ export const LogView = () => {
           ) : (
             <div className="log-empty-state">
               {lines.length === 0
-                ? 'No session logs recorded yet in desk.log.'
+                ? 'No session logs recorded yet.'
                 : 'No log entries match the active filter.'}
             </div>
           )}

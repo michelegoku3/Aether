@@ -1,10 +1,19 @@
-//! Tauri commands for retrieving and clearing AetherDesk session logs (`desk.log`).
-//!
-//! # Purpose
-//! Exposes `crate::core::logger` session logs to the frontend "Logs View" UI
-//! (`activeTab === 'log'`), allowing real-time inspection and clearing.
+//! Tauri commands for retrieving and clearing AetherDesk session logs (`desk.log`),
+//! AetherDLL logs (`main.log`) and UCOnline2 logs (`uc_online2.log` in %TEMP%).
 
 use std::path::PathBuf;
+
+/// UCOnline2 writes its log to `%TEMP%\uc_online2.log` (single file, appended
+/// while any UCO2 game runs).
+fn uco2_log_path() -> PathBuf {
+    std::env::temp_dir().join("uc_online2.log")
+}
+
+/// Removes the UCOnline2 log file. Called at AetherDesk startup so the log is
+/// always clean and recreated automatically by UCO2 on the next game run.
+pub fn clear_uco2_log_file() {
+    let _ = std::fs::remove_file(uco2_log_path());
+}
 
 #[tauri::command]
 pub fn get_recent_log_lines(
@@ -18,16 +27,21 @@ pub fn get_recent_log_lines(
     if mode == "dll" {
         return Ok(read_dll_tail_lines(&app, limit));
     }
+    if mode == "uco2" {
+        return Ok(read_uco2_tail_lines(limit));
+    }
 
     let desk_lines = crate::core::logger::read_tail_lines(limit)?;
     if mode == "desk" {
         return Ok(desk_lines);
     }
 
-    // Both: tag desk lines with [DESK], DLL lines with [DLL ], merge and sort chronologically
+    // Both (All): tag desk lines with [DESK], DLL lines with [DLL ] and UCO2
+    // lines with [UCO2], merge and sort chronologically.
     let dll_lines = read_dll_tail_lines(&app, limit);
+    let uco2_lines = read_uco2_tail_lines(limit);
 
-    let mut merged = Vec::with_capacity(desk_lines.len() + dll_lines.len());
+    let mut merged = Vec::with_capacity(desk_lines.len() + dll_lines.len() + uco2_lines.len());
     for line in desk_lines {
         if let Some(pos) = line.find(']') {
             let (ts_part, rest) = line.split_at(pos + 1);
@@ -42,6 +56,14 @@ pub fn get_recent_log_lines(
             merged.push(format!("{} [DLL ]{}", ts_part, rest));
         } else {
             merged.push(format!("[DLL ] {}", line));
+        }
+    }
+    for line in uco2_lines {
+        if let Some(pos) = line.find(']') {
+            let (ts_part, rest) = line.split_at(pos + 1);
+            merged.push(format!("{} [UCO2]{}", ts_part, rest));
+        } else {
+            merged.push(format!("[UCO2] {}", line));
         }
     }
 
@@ -69,6 +91,9 @@ pub fn clear_session_log(
     }
     if mode == "dll" || mode == "both" {
         clear_dll_log(&app);
+    }
+    if mode == "uco2" || mode == "both" {
+        clear_uco2_log_file();
     }
     Ok("Session log cleared.".to_string())
 }
@@ -123,6 +148,21 @@ pub fn set_session_log_level(
 
     crate::desk_log_info!("logs", "Set logging level to '{}' for Desk and DLL (aethercore.toml)", lower);
     Ok(format!("Logging level set to '{}' for Desk and DLL.", lower))
+}
+
+fn read_uco2_tail_lines(limit: usize) -> Vec<String> {
+    let path = uco2_log_path();
+    if !path.is_file() {
+        return Vec::new();
+    }
+    if let Ok(content) = std::fs::read_to_string(&path) {
+        let lines: Vec<String> = content.lines().map(|s| s.to_string()).collect();
+        if lines.len() <= limit {
+            return lines;
+        }
+        return lines[lines.len() - limit..].to_vec();
+    }
+    Vec::new()
 }
 
 fn read_dll_tail_lines(app: &tauri::AppHandle, limit: usize) -> Vec<String> {
@@ -196,13 +236,29 @@ fn current_time_filename_str() -> String {
     "00-00-00".to_string()
 }
 
+/// Appends the current HH-MM-SS time to a log file name, matching the time
+/// format used in the exported .zip name (e.g. `desk.log.txt` becomes
+/// `desk.log_14-32-05.txt`).
+fn with_time_suffix(file_name: &str, time: &str) -> String {
+    match file_name.rfind('.') {
+        Some(idx) if idx > 0 => {
+            let (stem, ext) = file_name.split_at(idx);
+            format!("{stem}_{time}{ext}")
+        }
+        _ => format!("{file_name}_{time}"),
+    }
+}
+
 #[tauri::command]
 pub fn export_logs_bundle(app: tauri::AppHandle) -> Result<String, String> {
-    crate::desk_log_info!("logs", "Starting export of AetherDesk and AetherDLL session logs bundle");
+    crate::desk_log_info!("logs", "Starting export of AetherDesk, AetherDLL and UCOnline2 session logs bundle");
     let stage_dir = std::env::temp_dir().join(format!("aether_logs_export_{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&stage_dir);
     std::fs::create_dir_all(&stage_dir)
         .map_err(|e| format!("Failed to create temporary export directory: {e}"))?;
+
+    let time = current_time_filename_str();
+    let timed = |name: &str| with_time_suffix(name, &time);
 
     let desk_log_dir = crate::core::paths::LocalAppPaths::data_root().join("logs");
     let install_root = crate::core::paths::LocalAppPaths::install_root();
@@ -218,7 +274,7 @@ pub fn export_logs_bundle(app: tauri::AppHandle) -> Result<String, String> {
         (desk_log_dir.join("status.json"), "desk_status.json.txt"),
     ] {
         if src.is_file() {
-            if let Ok(_) = std::fs::copy(&src, stage_dir.join(dest_name)) {
+            if let Ok(_) = std::fs::copy(&src, stage_dir.join(timed(dest_name))) {
                 copied += 1;
             }
         }
@@ -240,7 +296,7 @@ pub fn export_logs_bundle(app: tauri::AppHandle) -> Result<String, String> {
             ("status.json", "aetherdll_status.json.txt"),
         ] {
             let src = dir.join(file_name);
-            let dest = stage_dir.join(dest_name);
+            let dest = stage_dir.join(timed(dest_name));
             if src.is_file() && !dest.exists() {
                 if let Ok(_) = std::fs::copy(&src, &dest) {
                     copied += 1;
@@ -249,10 +305,18 @@ pub fn export_logs_bundle(app: tauri::AppHandle) -> Result<String, String> {
         }
     }
 
+    // 3. UCOnline2 log (%TEMP%\uc_online2.log)
+    let uco2_src = uco2_log_path();
+    if uco2_src.is_file() {
+        if let Ok(_) = std::fs::copy(&uco2_src, stage_dir.join(timed("uc_online2.log.txt"))) {
+            copied += 1;
+        }
+    }
+
     let downloads_dir = dirs::download_dir().unwrap_or_else(|| {
         std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."))
     });
-    let zip_name = format!("AetherLogs_{}.zip", current_time_filename_str());
+    let zip_name = format!("AetherLogs_{}.zip", time);
     let zip_path = downloads_dir.join(&zip_name);
     if zip_path.exists() {
         let _ = std::fs::remove_file(&zip_path);

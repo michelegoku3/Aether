@@ -85,6 +85,10 @@ fn enable_request_deserializes_from_camel_case() {
     let json = serde_json::json!({
         "ogAppId": 1144200,
         "spoofAppId": 480,
+        "verboseLog": true,
+        "emulateTicket": false,
+        "warnOverlayDisabled": false,
+        "unlockAllDlc": true,
         "photon": { "realtimeGuid": "rt", "voiceGuid": "vo", "fusionGuid": "fu" },
         "eos": { "productId": "p", "sandboxId": "s", "deploymentId": "d", "clientId": "c", "clientSecret": "sec" },
         "playfab": { "titleId": "TITLE" },
@@ -94,6 +98,10 @@ fn enable_request_deserializes_from_camel_case() {
     let request: OnlineEnableRequest = serde_json::from_value(json).expect("deve deserializzare");
     assert_eq!(request.og_app_id, 1144200);
     assert_eq!(request.spoof_app_id, 480);
+    assert!(request.verbose_log);
+    assert!(!request.emulate_ticket);
+    assert!(!request.warn_overlay_disabled);
+    assert!(request.unlock_all_dlc);
     assert_eq!(request.photon.realtime_guid, "rt");
     assert_eq!(request.photon.voice_guid, "vo");
     assert_eq!(request.photon.fusion_guid, "fu");
