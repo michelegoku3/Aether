@@ -40,6 +40,7 @@ pub fn build_ini(
         &mut out,
         &format!("WarnOverlayDisabled={}", bool_str(request.warn_overlay_disabled)),
     );
+    push_line(&mut out, &format!("SDR={}", bool_str(request.sdr)));
 
     // [DLC] — UnlockAll (toggle UI) + entry harvestate per i giochi
     // che ENUMERANO i DLC via GetDLCCount/BGetDLCDataByIndex.
@@ -63,32 +64,35 @@ pub fn build_ini(
         push_line(&mut out, &format!("{id}={name}"));
     }
 
-    // Photon: Realtime o Fusion (mai entrambi — patch.bat sceglie il flavor).
-    match detection.backends.photon {
-        PhotonFlavor::None => {}
-        PhotonFlavor::Fusion => {
-            push_line(&mut out, "");
-            push_line(&mut out, "[Fusion]");
-            push_line(
-                &mut out,
-                &format!("PhotonAppIdFusion={}", request.photon.fusion_guid),
-            );
-            push_line(&mut out, "ForcedAuthType=0");
-        }
-        PhotonFlavor::Realtime => {
-            push_line(&mut out, "");
-            push_line(&mut out, "[Realtime]");
-            push_line(
-                &mut out,
-                &format!("PhotonAppIdRealtime={}", request.photon.realtime_guid),
-            );
-            if detection.backends.photon_voice {
+    // Photon — solo se il plugin è stato richiesto (deploy_photon).
+    // Realtime o Fusion (mai entrambi — patch.bat sceglie il flavor).
+    if request.deploy_photon {
+        match detection.backends.photon {
+            PhotonFlavor::None => {}
+            PhotonFlavor::Fusion => {
+                push_line(&mut out, "");
+                push_line(&mut out, "[Fusion]");
                 push_line(
                     &mut out,
-                    &format!("PhotonAppIdVoice={}", request.photon.voice_guid),
+                    &format!("PhotonAppIdFusion={}", request.photon.fusion_guid),
                 );
+                push_line(&mut out, "ForcedAuthType=0");
             }
-            push_line(&mut out, "ForcedAuthType=0");
+            PhotonFlavor::Realtime => {
+                push_line(&mut out, "");
+                push_line(&mut out, "[Realtime]");
+                push_line(
+                    &mut out,
+                    &format!("PhotonAppIdRealtime={}", request.photon.realtime_guid),
+                );
+                if detection.backends.photon_voice {
+                    push_line(
+                        &mut out,
+                        &format!("PhotonAppIdVoice={}", request.photon.voice_guid),
+                    );
+                }
+                push_line(&mut out, "ForcedAuthType=0");
+            }
         }
     }
 

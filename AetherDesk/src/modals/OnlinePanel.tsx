@@ -83,7 +83,9 @@ export interface OnlineEnableRequest {
   verboseLog: boolean;
   emulateTicket: boolean;
   warnOverlayDisabled: boolean;
+  sdr: boolean;
   unlockAllDlc: boolean;
+  deployPhoton: boolean;
   photon: { realtimeGuid: string; voiceGuid: string; fusionGuid: string };
   eos: { productId: string; sandboxId: string; deploymentId: string; clientId: string; clientSecret: string };
   playfab: { titleId: string };
@@ -103,9 +105,9 @@ const styles = {
   label: { fontSize: '12px', opacity: 0.75, minWidth: '150px' },
   input: { background: '#1b1b1f', border: '1px solid #2c2c31', borderRadius: '6px', color: '#eee', padding: '6px 8px', fontSize: '13px', flex: 1, minWidth: '160px' },
   chip: { padding: '2px 10px', borderRadius: '8px', fontSize: '12px', fontWeight: 600 },
-  chipEnabled: { background: '#16351f', color: '#6fdb8c', border: '1px solid #2c6e42' },
-  chipOff: { background: '#2a2a2e', color: '#9a9aa0', border: '1px solid #3a3a40' },
-  chipBroken: { background: '#3a1d1d', color: '#e07b7b', border: '1px solid #6e2c2c' },
+  chipEnabled: { background: '#16351f', color: '#6fdb8c' },
+  chipOff: { background: '#2a2a2e', color: '#9a9aa0' },
+  chipBroken: { background: '#3a1d1d', color: '#e07b7b' },
   box: { background: '#17171b', border: '1px solid #232329', borderRadius: '8px', padding: '10px 12px', marginBottom: '8px', fontSize: '12px' },
   warn: { color: '#e0b06a' },
   error: { color: '#e07b7b' },
@@ -131,7 +133,9 @@ const emptyRequest = (ogAppId: number): OnlineEnableRequest => ({
   verboseLog: true,
   emulateTicket: false,
   warnOverlayDisabled: false,
+  sdr: false,
   unlockAllDlc: true,
+  deployPhoton: false,
   photon: { realtimeGuid: '', voiceGuid: '', fusionGuid: '' },
   eos: { productId: '', sandboxId: '', deploymentId: '', clientId: '', clientSecret: '' },
   playfab: { titleId: '' },
@@ -198,10 +202,9 @@ export const OnlinePanel = ({ game, onClose }: OnlinePanelProps) => {
       ]);
       setPlan(planResult);
       setStatus(statusResult);
-      // Pre-fill the EOS default from detection (UCO2 is the preferred fix).
+      // Deploy EOS stays OFF by default; only ogAppId is pre-filled.
       setRequest((prev) => ({
         ...prev,
-        deployEosCustom: planResult.detection.backends.eos ? prev.deployEosCustom || true : prev.deployEosCustom,
         ogAppId: prev.ogAppId || Number(game.appId) || 0,
       }));
     } catch (err) {
@@ -382,10 +385,10 @@ export const OnlinePanel = ({ game, onClose }: OnlinePanelProps) => {
                 </div>
               )}
 
-              {/* Options */}
+              {/* AppID */}
               {plan && (
                 <div style={styles.box}>
-                  <div style={styles.sectionTitle}>Options</div>
+                  <div style={styles.sectionTitle}>AppID</div>
                   <div style={styles.row}>
                     <span style={styles.label}>Spoof</span>
                     <input
@@ -413,59 +416,38 @@ export const OnlinePanel = ({ game, onClose }: OnlinePanelProps) => {
                 </div>
               )}
 
-              {/* Ini settings */}
-              {plan && (
-                <div style={styles.box}>
-                  <div style={styles.sectionTitle}>Ini settings</div>
-                  {checkboxRow(
-                    request.verboseLog,
-                    enabled,
-                    (v) => set('verboseLog', v),
-                    'Verbose UCO2 logs (enabled by default)'
-                  )}
-                  {checkboxRow(
-                    request.emulateTicket,
-                    enabled,
-                    (v) => set('emulateTicket', v),
-                    'Emulate auth ticket (ogAppID)'
-                  )}
-                  {checkboxRow(
-                    request.warnOverlayDisabled,
-                    enabled,
-                    (v) => set('warnOverlayDisabled', v),
-                    'Warn when Steam overlay is disabled'
-                  )}
-                  {checkboxRow(
-                    request.unlockAllDlc,
-                    enabled,
-                    (v) => set('unlockAllDlc', v),
-                    'Unlock all DLC'
-                  )}
-                </div>
-              )}
-
               {/* Photon */}
               {plan && plan.detection.backends.photon !== 'none' && (
                 <div style={styles.box}>
                   <div style={styles.sectionTitle}>Photon ({photonFlavorLabel(plan.detection.backends.photon)})</div>
-                  {plan.detection.backends.photon === 'fusion' ? (
-                    <div style={styles.row}>
-                      <span style={styles.label}>Fusion App GUID</span>
-                      <input style={styles.input} value={request.photon.fusionGuid} onChange={(e) => setPhoton('fusionGuid', e.target.value)} disabled={enabled} placeholder="app-id-xxxx" />
-                    </div>
-                  ) : (
-                    <>
-                      <div style={styles.row}>
-                        <span style={styles.label}>Realtime App GUID</span>
-                        <input style={styles.input} value={request.photon.realtimeGuid} onChange={(e) => setPhoton('realtimeGuid', e.target.value)} disabled={enabled} placeholder="app-id-xxxx" />
-                      </div>
-                      {plan.detection.backends.photonVoice && (
+                  {checkboxRow(
+                    request.deployPhoton,
+                    enabled,
+                    (v) => set('deployPhoton', v),
+                    'Deploy Photon plugin'
+                  )}
+                  {request.deployPhoton && (
+                    <div style={{ marginTop: 6 }}>
+                      {plan.detection.backends.photon === 'fusion' ? (
                         <div style={styles.row}>
-                          <span style={styles.label}>Voice App GUID</span>
-                          <input style={styles.input} value={request.photon.voiceGuid} onChange={(e) => setPhoton('voiceGuid', e.target.value)} disabled={enabled} placeholder="app-id-xxxx" />
+                          <span style={styles.label}>Fusion App GUID</span>
+                          <input style={styles.input} value={request.photon.fusionGuid} onChange={(e) => setPhoton('fusionGuid', e.target.value)} disabled={enabled} placeholder="app-id-xxxx" />
                         </div>
+                      ) : (
+                        <>
+                          <div style={styles.row}>
+                            <span style={styles.label}>Realtime App GUID</span>
+                            <input style={styles.input} value={request.photon.realtimeGuid} onChange={(e) => setPhoton('realtimeGuid', e.target.value)} disabled={enabled} placeholder="app-id-xxxx" />
+                          </div>
+                          {plan.detection.backends.photonVoice && (
+                            <div style={styles.row}>
+                              <span style={styles.label}>Voice App GUID</span>
+                              <input style={styles.input} value={request.photon.voiceGuid} onChange={(e) => setPhoton('voiceGuid', e.target.value)} disabled={enabled} placeholder="app-id-xxxx" />
+                            </div>
+                          )}
+                        </>
                       )}
-                    </>
+                    </div>
                   )}
                 </div>
               )}
@@ -473,7 +455,7 @@ export const OnlinePanel = ({ game, onClose }: OnlinePanelProps) => {
               {/* EOS */}
               {plan && plan.detection.backends.eos && (
                 <div style={styles.box}>
-                  <div style={styles.sectionTitle}>EOS (Epic Online Services)</div>
+                  <div style={styles.sectionTitle}>Epic Online Services</div>
                   {checkboxRow(
                     request.deployEosCustom,
                     enabled,
@@ -521,6 +503,43 @@ export const OnlinePanel = ({ game, onClose }: OnlinePanelProps) => {
                 </div>
               )}
 
+              {/* Settings */}
+              {plan && (
+                <div style={styles.box}>
+                  <div style={styles.sectionTitle}>Settings</div>
+                  {checkboxRow(
+                    request.verboseLog,
+                    enabled,
+                    (v) => set('verboseLog', v),
+                    'Verbose UCO2 logs'
+                  )}
+                  {checkboxRow(
+                    request.emulateTicket,
+                    enabled,
+                    (v) => set('emulateTicket', v),
+                    'Emulate auth ticket'
+                  )}
+                  {checkboxRow(
+                    request.warnOverlayDisabled,
+                    enabled,
+                    (v) => set('warnOverlayDisabled', v),
+                    'Warn when Steam overlay is disabled'
+                  )}
+                  {checkboxRow(
+                    request.unlockAllDlc,
+                    enabled,
+                    (v) => set('unlockAllDlc', v),
+                    'Unlock all DLC'
+                  )}
+                  {checkboxRow(
+                    request.sdr,
+                    enabled,
+                    (v) => set('sdr', v),
+                    'Steam Datagram Relay'
+                  )}
+                </div>
+              )}
+
               {/* Result message */}
               {message && (
                 <div style={{ ...styles.box, color: message.kind === 'error' ? '#e07b7b' : message.kind === 'success' ? '#6fdb8c' : '#d0d0d0' }}>
@@ -538,7 +557,7 @@ export const OnlinePanel = ({ game, onClose }: OnlinePanelProps) => {
                 Close
               </button>
               <button type="button" className="modal-btn" style={{ ...styles.footerBtn, ...styles.btnDanger }} onClick={handleDisable} disabled={busy}>
-                {busy ? 'Disabling...' : 'Disable Online'}
+                {busy ? 'Disabling...' : 'Disable UCO2'}
               </button>
             </>
           ) : (
@@ -551,7 +570,7 @@ export const OnlinePanel = ({ game, onClose }: OnlinePanelProps) => {
                 disabled={blocked || busy}
                 title={blocked ? 'Resolve the missing prerequisites first' : undefined}
               >
-                {busy ? 'Enabling...' : 'Enable'}
+                {busy ? 'Enabling...' : 'Enable UCO2'}
               </button>
               <button type="button" className="modal-btn" style={{ ...styles.footerBtn, ...styles.btnGhost }} onClick={handleReset} disabled={busy}>
                 Reset

@@ -217,7 +217,7 @@ pub fn required_plugins(
     request: &OnlineEnableRequest,
 ) -> Vec<&'static str> {
     let mut plugins = Vec::new();
-    if detection.backends.photon != PhotonFlavor::None {
+    if request.deploy_photon && detection.backends.photon != PhotonFlavor::None {
         plugins.push("photon_universal");
     }
     if detection.backends.eos && request.deploy_eos_custom {

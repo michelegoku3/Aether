@@ -51,7 +51,9 @@ fn base_request() -> OnlineEnableRequest {
         verbose_log: true,
         emulate_ticket: false,
         warn_overlay_disabled: false,
+        sdr: false,
         unlock_all_dlc: true,
+        deploy_photon: true,
         photon: PhotonOptions {
             realtime_guid: "rt-guid".to_string(),
             voice_guid: "vo-guid".to_string(),
@@ -96,6 +98,7 @@ PluginsFolder=plugins\r\n\
 VerboseLog=true\r\n\
 EmulateTicket=false\r\n\
 WarnOverlayDisabled=false\r\n\
+SDR=false\r\n\
 \r\n\
 [DLC]\r\n\
 ; UnlockAll answers any \"do I own this DLC?\" check, for any id, so DLC\r\n\
@@ -166,13 +169,35 @@ fn ini_settings_toggles_are_written() {
     request.verbose_log = false;
     request.emulate_ticket = true;
     request.warn_overlay_disabled = true;
+    request.sdr = true;
     request.unlock_all_dlc = false;
 
     let ini = build_ini(&detection, &request, &[]);
     assert!(ini.contains("VerboseLog=false\r\n"));
     assert!(ini.contains("EmulateTicket=true\r\n"));
     assert!(ini.contains("WarnOverlayDisabled=true\r\n"));
+    assert!(ini.contains("SDR=true\r\n"));
     assert!(ini.contains("UnlockAll=false\r\n"));
+}
+
+#[test]
+fn ini_photon_section_requires_deploy_photon() {
+    let tmp = tempfile::tempdir().unwrap();
+    write(tmp.path(), "PGame.exe", b"MZ");
+    write(tmp.path(), "PGame_Data/Managed/PhotonRealtime.dll", b"photon");
+    write(tmp.path(), "PGame_Data/Managed/Assembly-CSharp.dll", b"asm");
+
+    let detection = GameInspector::inspect(tmp.path()).unwrap();
+    let mut request = base_request();
+    request.deploy_photon = false;
+
+    let ini = build_ini(&detection, &request, &[]);
+    assert!(!ini.contains("[Realtime]"));
+    assert!(!ini.contains("PhotonAppIdRealtime"));
+
+    request.deploy_photon = true;
+    let ini = build_ini(&detection, &request, &[]);
+    assert!(ini.contains("[Realtime]\r\nPhotonAppIdRealtime=rt-guid"));
 }
 
 #[test]

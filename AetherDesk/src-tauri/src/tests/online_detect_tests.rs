@@ -130,6 +130,29 @@ fn unity_game_exe_inside_subfolder_is_found() {
 }
 
 #[test]
+fn generic_game_with_only_32bit_steam_api_is_detected() {
+    // SpeedRunners e simili: solo steam_api.dll (32-bit), nessun _Data né
+    // Shipping exe. Prima del fix la detection falliva.
+    let tmp = tempfile::tempdir().unwrap();
+    write(tmp.path(), "SpeedRunners.exe", b"MZ");
+    write(tmp.path(), "steam_api.dll", b"dll32");
+
+    let report = GameInspector::inspect(tmp.path()).expect("generic 32-bit game must be detected");
+    assert_eq!(report.engine, Engine::Generic);
+    assert_eq!(report.arch, GameArch::X86);
+    assert_eq!(report.steam_api_dir.as_deref(), Some(tmp.path()));
+    assert_eq!(
+        report
+            .game_exe
+            .as_ref()
+            .and_then(|p| p.file_name())
+            .map(|n| n.to_string_lossy().into_owned())
+            .as_deref(),
+        Some("SpeedRunners.exe".into())
+    );
+}
+
+#[test]
 fn unity_without_marker_is_not_unity() {
     // `web_data` di Farming Simulator: *_Data senza Managed né il2cpp.
     let tmp = tempfile::tempdir().unwrap();

@@ -88,7 +88,9 @@ fn enable_request_deserializes_from_camel_case() {
         "verboseLog": true,
         "emulateTicket": false,
         "warnOverlayDisabled": false,
+        "sdr": false,
         "unlockAllDlc": true,
+        "deployPhoton": false,
         "photon": { "realtimeGuid": "rt", "voiceGuid": "vo", "fusionGuid": "fu" },
         "eos": { "productId": "p", "sandboxId": "s", "deploymentId": "d", "clientId": "c", "clientSecret": "sec" },
         "playfab": { "titleId": "TITLE" },
@@ -101,7 +103,9 @@ fn enable_request_deserializes_from_camel_case() {
     assert!(request.verbose_log);
     assert!(!request.emulate_ticket);
     assert!(!request.warn_overlay_disabled);
+    assert!(!request.sdr);
     assert!(request.unlock_all_dlc);
+    assert!(!request.deploy_photon);
     assert_eq!(request.photon.realtime_guid, "rt");
     assert_eq!(request.photon.voice_guid, "vo");
     assert_eq!(request.photon.fusion_guid, "fu");

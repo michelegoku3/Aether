@@ -113,6 +113,8 @@ fn main() {
             commands::steam::is_steam_blocked,
             commands::steam::block_steam_updates,
             commands::steam::unblock_steam_updates,
+            commands::steam::get_aether_onlinefix,
+            commands::steam::set_aether_onlinefix,
             commands::aether_dll::get_installed_dll_version,
             commands::aether_dll::check_aether_dll_update,
             commands::aether_dll::install_aether_dll,
@@ -125,6 +127,7 @@ fn main() {
             commands::logs::get_recent_log_lines,
             commands::logs::clear_session_log,
             commands::logs::export_logs_bundle,
+            commands::logs::export_log_source,
             commands::logs::set_session_log_level,
         ])
         .run(tauri::generate_context!())

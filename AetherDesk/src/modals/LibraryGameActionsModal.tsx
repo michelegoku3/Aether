@@ -2,7 +2,8 @@ import { useEffect, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { GameHeroImage } from '../ui/GameHeroImage';
 import { requireSteamPath } from '../hooks/useSettings';
-import { OnlinePanel } from './OnlinePanel';
+import { OnlinePanel, type OnlineActionResult, type OnlineStatus } from './OnlinePanel';
+import { OnlineChoiceModal } from './OnlineChoiceModal';
 
 export interface LibraryActionGame {
   id: number;
@@ -35,8 +36,12 @@ export const LibraryGameActionsModal = ({
 }: LibraryGameActionsModalProps) => {
   const [updatesEnabled, setUpdatesEnabled] = useState(false);
   const [isBusy, setIsBusy] = useState(false);
-  const [showOnline, setShowOnline] = useState(false);
-  const disabled = isProcessing || isBusy;
+  const [showOnlineChoice, setShowOnlineChoice] = useState(false);
+  const [showOnlinePanel, setShowOnlinePanel] = useState(false);
+  const [onlineBusy, setOnlineBusy] = useState(false);
+  const [aetherOnlinefix, setAetherOnlinefix] = useState(false);
+  const [uco2Online, setUco2Online] = useState(false);
+  const disabled = isProcessing || isBusy || onlineBusy;
 
   const refreshUpdateState = async () => {
     try {
@@ -110,6 +115,69 @@ export const LibraryGameActionsModal = ({
     }
   };
 
+  const refreshOnlineStates = async () => {
+    try {
+      const [aetherOn, status] = await Promise.all([
+        invoke<boolean>('get_aether_onlinefix', { appId: Number(game.appId) }),
+        invoke<OnlineStatus>('get_online_status', { appId: Number(game.appId) }),
+      ]);
+      setAetherOnlinefix(Boolean(aetherOn));
+      setUco2Online(status?.state === 'enabled');
+    } catch {
+      // Keep the previous state on failure.
+    }
+  };
+
+  const handleOpenOnline = async () => {
+    await refreshOnlineStates();
+    setShowOnlineChoice(true);
+  };
+
+  const handleToggleAether = async () => {
+    setOnlineBusy(true);
+    try {
+      const nextEnabled = !aetherOnlinefix;
+      const result: string = await invoke('set_aether_onlinefix', {
+        appId: Number(game.appId),
+        enabled: nextEnabled,
+      });
+      onStatus(result, 'success');
+      setAetherOnlinefix(nextEnabled);
+      if (nextEnabled) {
+        setUco2Online(false);
+      }
+    } catch (err: any) {
+      onStatus(`Failed to toggle Aether onlinefix: ${err}`, 'error');
+    } finally {
+      setOnlineBusy(false);
+    }
+  };
+
+  const handleDisableUco2 = async () => {
+    setOnlineBusy(true);
+    try {
+      const result: OnlineActionResult = await invoke('disable_online', {
+        appId: Number(game.appId),
+      });
+      onStatus(result.message, result.success ? 'success' : 'error');
+      setUco2Online(false);
+    } catch (err: any) {
+      onStatus(`Failed to disable UCO2: ${err}`, 'error');
+    } finally {
+      setOnlineBusy(false);
+    }
+  };
+
+  const handleOpenUco2Panel = () => {
+    setShowOnlineChoice(false);
+    setShowOnlinePanel(true);
+  };
+
+  const handleCloseUco2Panel = async () => {
+    setShowOnlinePanel(false);
+    await refreshOnlineStates();
+  };
+
   return (
     <div className="modal-overlay">
       <div className="modal-container game-action-modal">
@@ -149,8 +217,8 @@ export const LibraryGameActionsModal = ({
             <button className="game-action-btn" onClick={() => onOpenVersionEditor(game)} disabled={disabled}>
               Change Version
             </button>
-            <button className="game-action-btn" onClick={() => setShowOnline(true)} disabled={disabled}>
-              Enable Online
+            <button className="game-action-btn" onClick={handleOpenOnline} disabled={disabled}>
+              ONLINE
             </button>
             <button
               className="game-action-btn danger"
@@ -164,7 +232,19 @@ export const LibraryGameActionsModal = ({
         </div>
       </div>
 
-      {showOnline && <OnlinePanel game={game} onClose={() => setShowOnline(false)} />}
+      {showOnlineChoice && (
+        <OnlineChoiceModal
+          game={game}
+          aetherEnabled={aetherOnlinefix}
+          uco2Enabled={uco2Online}
+          busy={onlineBusy}
+          onToggleAether={handleToggleAether}
+          onEnableUco2={handleOpenUco2Panel}
+          onDisableUco2={handleDisableUco2}
+          onClose={() => setShowOnlineChoice(false)}
+        />
+      )}
+      {showOnlinePanel && <OnlinePanel game={game} onClose={handleCloseUco2Panel} />}
     </div>
   );
 };
