@@ -2527,7 +2527,7 @@ body {
 .settings-path {
   font-family: monospace;
   font-size: 11px;
-  color: var(--color-cyan);
+  color: #f0f0f5; /* Fixed bright white for every path (not theme-dependent) */
   background: rgba(255, 255, 255, 0.05);
   padding: 1px 5px;
   border-radius: 4px;
@@ -2891,14 +2891,21 @@ body {
 }
 
 /* Clickable folder path (ClickablePath component).
-   Fixed bright-white color: identical for every clickable path, independent
-   of themes (overrides .settings-path cyan). */
+   Interactivity only: color and background are inherited from `.settings-path`
+   (the component always renders both classes, so they stay DRY). */
 .settings-path-clickable {
-  color: #f0f0f5;
   cursor: pointer;
   text-decoration: underline dotted;
   transition: background 0.15s ease;
 }
 .settings-path-clickable:hover {
   background: rgba(255, 255, 255, 0.12);
+}
+
+/* Variant for paths whose truncation is already done in JS (e.g. OnlinePanel
+   uses shortenPath): no CSS ellipsis, text may wrap. */
+.settings-path--wide {
+  max-width: none;
+  white-space: normal;
+  overflow: visible;
 }

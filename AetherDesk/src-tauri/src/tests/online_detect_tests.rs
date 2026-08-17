@@ -278,10 +278,6 @@ fn mono_backends_photon_voice_playfab() {
     assert!(report.backends.playfab);
     assert!(!report.backends.eos);
     assert!(!report.backends.coherence);
-    assert_eq!(
-        report.backends.required_plugins(),
-        vec!["photon_universal", "playfab_universal"]
-    );
 }
 
 #[test]

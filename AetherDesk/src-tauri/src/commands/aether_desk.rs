@@ -96,7 +96,7 @@ pub async fn install_aether_desk_update(app: tauri::AppHandle) -> Result<String,
 #[tauri::command]
 pub async fn restore_stable_desk(app: tauri::AppHandle) -> Result<String, String> {
     crate::desk_log_info!("updater", "Restoring stable AetherDesk build (leaving test channel)...");
-    let Some(prepared) = desk::prepare_stable_restore(&app).await? else {
+    let Some(prepared) = desk::prepare_stable_restore().await? else {
         return Ok("AetherDesk is already on the latest stable build.".to_string());
     };
 

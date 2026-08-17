@@ -9,7 +9,8 @@ use crate::external_tools::fs::write_atomic;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-const STATE_FILE: &str = "uc_online2.json";
+/// Nome del file di stato UCOnline2 (usato da comandi e store — fonte unica).
+pub const STATE_FILE: &str = "uc_online2.json";
 
 /// Store dello stato UCOnline2.
 #[derive(Debug, Clone, Default)]

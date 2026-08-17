@@ -59,59 +59,6 @@ pub fn ensure_custom_css() -> Result<String, String> {
     Ok(custom_css::themes_dir().display().to_string())
 }
 
-/// Opens the folder containing the active theme in the system file explorer.
-#[tauri::command]
-pub fn open_custom_css_folder(_app: tauri::AppHandle) -> Result<(), String> {
-    crate::desk_log_info!("appearance", "Opening themes directory in OS explorer");
-    let folder = custom_css::themes_dir();
-    open_folder_in_explorer(&folder)
-}
-
-/// Opens `AetherData/config/wallpapers/` in the system file explorer.
-#[tauri::command]
-pub fn open_wallpapers_folder() -> Result<(), String> {
-    crate::desk_log_info!("appearance", "Opening wallpapers directory in OS explorer");
-    open_folder_in_explorer(&custom_css::wallpapers_dir())
-}
-
-/// Generic, reusable command: opens any folder in the system file manager.
-/// Used by the Online panel (game exe/DLL folders) and by the Settings view
-/// (themes, wallpapers, icons folders).
-#[tauri::command]
-pub fn reveal_in_file_manager(path: String) -> Result<(), String> {
-    crate::desk_log_info!("fs", "Opening folder in OS file manager: {path}");
-    open_folder_in_explorer(std::path::Path::new(&path))
-}
-
-fn open_folder_in_explorer(folder: &std::path::Path) -> Result<(), String> {
-    std::fs::create_dir_all(folder)
-        .map_err(|e| format!("Failed to create folder {}: {}", folder.display(), e))?;
-
-    #[cfg(target_os = "windows")]
-    {
-        std::process::Command::new("explorer")
-            .arg(folder)
-            .spawn()
-            .map_err(|e| format!("Failed to open folder: {}", e))?;
-    }
-    #[cfg(target_os = "macos")]
-    {
-        std::process::Command::new("open")
-            .arg(folder)
-            .spawn()
-            .map_err(|e| format!("Failed to open folder: {}", e))?;
-    }
-    #[cfg(all(not(target_os = "windows"), not(target_os = "macos")))]
-    {
-        std::process::Command::new("xdg-open")
-            .arg(folder)
-            .spawn()
-            .map_err(|e| format!("Failed to open folder: {}", e))?;
-    }
-
-    Ok(())
-}
-
 /// Returns the absolute path of the active personal wallpaper file.
 /// Empty string means no wallpaper file is configured.
 #[tauri::command]
