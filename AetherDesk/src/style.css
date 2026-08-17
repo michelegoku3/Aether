@@ -1786,7 +1786,7 @@ body {
   width: 18px;
   height: 18px;
   background-color: #1a1a22; /* Dark theme color, no bright white eyesore */
-  border: 1.5px solid var(--border-color, #3a3a46);
+  border: 1.5px solid var(--color-cyan, #00b4d8); /* Primary color so the box is visible */
   border-radius: 4px;
   transition: all 0.2s ease;
 }
@@ -2890,8 +2890,11 @@ body {
   cursor: not-allowed;
 }
 
-/* Clickable folder path (ClickablePath component) */
+/* Clickable folder path (ClickablePath component).
+   Fixed bright-white color: identical for every clickable path, independent
+   of themes (overrides .settings-path cyan). */
 .settings-path-clickable {
+  color: #f0f0f5;
   cursor: pointer;
   text-decoration: underline dotted;
   transition: background 0.15s ease;

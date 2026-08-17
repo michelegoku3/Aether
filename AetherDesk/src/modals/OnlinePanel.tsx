@@ -113,7 +113,7 @@ const styles = {
   error: { color: '#e07b7b' },
   ok: { color: '#6fdb8c' },
   muted: { opacity: 0.6 },
-  pathLink: { color: 'var(--color-cyan)', cursor: 'pointer', textDecoration: 'underline', wordBreak: 'break-all' as const },
+  pathLink: { color: '#f0f0f5', cursor: 'pointer', textDecoration: 'underline', wordBreak: 'break-all' as const },
   footer: { display: 'flex' as const, gap: '10px', justifyContent: 'center' as const, padding: '12px 20px', borderTop: '1px solid #232329' },
   footerBtn: { flex: 1, maxWidth: 160, minWidth: 140, padding: '8px 16px', fontSize: '13px', fontWeight: 600, cursor: 'pointer' },
   btn: { background: 'var(--color-cyan)', color: '#0b0b0f', border: 'none', borderRadius: '8px' },

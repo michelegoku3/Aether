@@ -179,12 +179,9 @@ fn read_uco2_tail_lines(limit: usize) -> Vec<String> {
         return Vec::new();
     }
     if let Ok(content) = std::fs::read_to_string(&path) {
-        // UCO2 scrive timestamp completi ("[2026-08-17 12:45:40.924]"); li
-        // riduciamo a solo ora ("[12:45:40.924]") lato AetherDesk, senza
-        // dover ricompilare la DLL.
-        let lines: Vec<String> = content
+        let lines: Vec<String> = normalize_uco2_content(&content)
             .lines()
-            .map(strip_date_from_timestamp)
+            .map(|s| s.to_string())
             .collect();
         if lines.len() <= limit {
             return lines;
@@ -192,6 +189,18 @@ fn read_uco2_tail_lines(limit: usize) -> Vec<String> {
         return lines[lines.len() - limit..].to_vec();
     }
     Vec::new()
+}
+
+/// Normalizza il contenuto del log UCO2 lato AetherDesk (senza ricompilare
+/// la DLL): timestamp ridotti a sola ora ("[2026-08-17 12:45:40.924]" ->
+/// "[12:45:40.924]") e prefisso messaggi "[UCOnline2]" -> "[UCO2]".
+fn normalize_uco2_content(content: &str) -> String {
+    content
+        .lines()
+        .map(strip_date_from_timestamp)
+        .map(|line| line.replace("[UCOnline2]", "[UCO2]"))
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 /// "[YYYY-MM-DD HH:MM:SS.mmm] ..." -> "[HH:MM:SS.mmm] ..." (no-op se non matcha).
@@ -371,11 +380,16 @@ fn export_logs_bundle_sync(app: &tauri::AppHandle) -> Result<String, String> {
         }
     }
 
-    // 3. UCOnline2 log (%TEMP%\uc_online2.log)
+    // 3. UCOnline2 log (%TEMP%\uc_online2.log) — normalized like the viewer
+    //    (short timestamp + [UCO2] prefix).
     let uco2_src = uco2_log_path();
     if uco2_src.is_file() {
-        if let Ok(_) = std::fs::copy(&uco2_src, stage_dir.join(timed("uc_online2.log.txt"))) {
-            copied += 1;
+        if let Ok(content) = std::fs::read_to_string(&uco2_src) {
+            let normalized = normalize_uco2_content(&content);
+            let dest = stage_dir.join(timed("uc_online2.log.txt"));
+            if std::fs::write(&dest, normalized).is_ok() {
+                copied += 1;
+            }
         }
     }
 

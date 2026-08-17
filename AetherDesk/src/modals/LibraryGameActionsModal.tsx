@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { GameHeroImage } from '../ui/GameHeroImage';
 import { requireSteamPath } from '../hooks/useSettings';
-import { OnlinePanel, type OnlineActionResult } from './OnlinePanel';
+import { OnlinePanel } from './OnlinePanel';
 import { OnlineChoiceModal } from './OnlineChoiceModal';
 
 export interface LibraryActionGame {
@@ -155,21 +155,6 @@ export const LibraryGameActionsModal = ({
     }
   };
 
-  const handleDisableUco2 = async () => {
-    setOnlineBusy(true);
-    try {
-      const result: OnlineActionResult = await invoke('disable_online', {
-        appId: Number(game.appId),
-      });
-      onStatus(result.message, result.success ? 'success' : 'error');
-      setUco2Online(false);
-    } catch (err: any) {
-      onStatus(`Failed to disable UCO2: ${err}`, 'error');
-    } finally {
-      setOnlineBusy(false);
-    }
-  };
-
   const handleOpenUco2Panel = () => {
     setShowOnlineChoice(false);
     setShowOnlinePanel(true);
@@ -241,8 +226,7 @@ export const LibraryGameActionsModal = ({
           uco2Enabled={uco2Online}
           busy={onlineBusy}
           onToggleAether={handleToggleAether}
-          onEnableUco2={handleOpenUco2Panel}
-          onDisableUco2={handleDisableUco2}
+          onOpenUco2Panel={handleOpenUco2Panel}
           onClose={() => setShowOnlineChoice(false)}
         />
       )}
