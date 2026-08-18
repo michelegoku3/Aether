@@ -2,7 +2,8 @@ import React, { useEffect, useRef, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { SearchSuggest, moveSuggestIndex } from '../ui/SearchSuggest';
 import { useSteamSuggest } from '../hooks/useSteamSuggest';
-import { SpecificVersionModal, LuaManifestRow } from '../modals/SpecificVersionModal';
+import { LuaManifestRow } from '../modals/SpecificVersionModal';
+import ChangeVersionModal from '../modals/ChangeVersionModal';
 import { GameInfoModal } from '../modals/GameInfoModal';
 import { LocalDownloadModal } from '../modals/LocalDownloadModal';
 import { preloadGameCovers } from '../ui/GameCover';
@@ -614,9 +615,9 @@ export const StoreView = ({ onRefreshUsage, isActive, settingsRevision, useAlter
         </div>
       )}
 
-      {/* Reusable specific-version modal. The same component can be opened later from Library/Installed games. */}
+      {/* Change Version modal (Manual / Auto / Builds). Also reachable from Library/Installed games. */}
       {versionGame && (
-        <SpecificVersionModal
+        <ChangeVersionModal
           game={versionGame}
           initialRows={manifestRows}
           onClose={() => {

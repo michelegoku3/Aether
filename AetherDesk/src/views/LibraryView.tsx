@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
-import { SpecificVersionModal, LuaManifestRow } from '../modals/SpecificVersionModal';
+import { LuaManifestRow } from '../modals/SpecificVersionModal';
+import ChangeVersionModal from '../modals/ChangeVersionModal';
 import { LibraryGameActionsModal } from '../modals/LibraryGameActionsModal';
 import { GameInfoModal } from '../modals/GameInfoModal';
 import { preloadGameCovers } from '../ui/GameCover';
@@ -185,7 +186,7 @@ export const LibraryView = ({
       )}
 
       {versionGame && (
-        <SpecificVersionModal
+        <ChangeVersionModal
           game={versionGame}
           initialRows={manifestRows}
           onClose={() => {

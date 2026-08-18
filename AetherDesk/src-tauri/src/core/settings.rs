@@ -45,6 +45,11 @@ pub struct AppSettings {
     /// Limit is 50 uses per day (enforced server-side).
     #[serde(default)]
     pub ryuu_api_key: String,
+    /// Depotbox build-details access token. Empty = use the built-in default
+    /// (the service key shipped by SFF). Override when SFF rotates its key;
+    /// the `AETHERDESK_BUILD_TOKEN` environment variable takes precedence.
+    #[serde(default)]
+    pub build_details_token: String,
     /// When true, latest-version downloads comment setManifestid pins after
     /// installing the Lua so Steam can keep the game updated. Specific-version
     /// downloads intentionally ignore this setting.
@@ -201,6 +206,7 @@ impl Default for AppSettings {
             show_store_delisted: true,
             custom_css_enabled: false,
             ryuu_api_key: String::new(),
+            build_details_token: String::new(),
             download_games_with_updates_on: true,
             show_store_front_games: true,
             use_alternative_game_cards: false,

@@ -10,6 +10,7 @@ pub mod library;
 pub mod local;
 pub mod logs;
 pub mod online;
+pub mod versioning;
 pub mod settings;
 pub mod steam;
 pub mod steamless;

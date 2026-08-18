@@ -25,13 +25,17 @@ export interface SpecificVersionGame {
   appId: string;
 }
 
-interface SpecificVersionModalProps {
+interface ManualVersionEditorProps {
   game: SpecificVersionGame;
   initialRows: LuaManifestRow[];
   onClose: () => void;
 }
 
-export const SpecificVersionModal = ({ game, initialRows, onClose }: SpecificVersionModalProps) => {
+/**
+ * The classic per-depot manifest editor (the former "Specific Version" UI).
+ * Extracted so the Change Version modal can host it as its "Manual" tab.
+ */
+export const ManualVersionEditor = ({ game, initialRows, onClose }: ManualVersionEditorProps) => {
   const [rows, setRows] = useState<LuaManifestRow[]>(
     initialRows.map(row => ({ ...row, manifestInput: row.manifestInput || '' }))
   );
@@ -42,6 +46,17 @@ export const SpecificVersionModal = ({ game, initialRows, onClose }: SpecificVer
     type: initialRows.length > 0 ? 'info' : 'error'
   });
   const [isApplying, setIsApplying] = useState(false);
+  const watchdogRef = React.useRef<number | null>(null);
+
+  const clearWatchdog = () => {
+    if (watchdogRef.current !== null) {
+      window.clearTimeout(watchdogRef.current);
+      watchdogRef.current = null;
+    }
+  };
+
+  // Clear any pending watchdog when the editor unmounts.
+  React.useEffect(() => clearWatchdog, []);
 
   // Dynamic modal height: grows with the number of editable depots, capped at
   // what fits the current window (the table scrolls when many depots exist).
@@ -69,10 +84,24 @@ export const SpecificVersionModal = ({ game, initialRows, onClose }: SpecificVer
   };
 
   const handleApply = async () => {
+    if (isApplying) {
+      return;
+    }
     setIsApplying(true);
     setStatus({ text: 'Applying Lua manifest edits...', type: 'info' });
 
     try {
+      // Watchdog: the edit command is synchronous and fast on the backend.
+      // If it does not settle, stop the spinner and show a real message
+      // instead of loading forever.
+      watchdogRef.current = window.setTimeout(() => {
+        setStatus({
+          text: 'The edit is taking longer than expected. Check the Logs view for details.',
+          type: 'error',
+        });
+        setIsApplying(false);
+      }, 30_000);
+
       const steamPath = await requireSteamPath();
 
       const edits = rows.map(row => ({ 
@@ -87,108 +116,120 @@ export const SpecificVersionModal = ({ game, initialRows, onClose }: SpecificVer
         edits,
       });
 
+      clearWatchdog();
+
       // Successful apply is the user's confirmation. Close immediately to avoid
       // forcing a second click on X. If opened from Library, the parent Modify
       // popup remains mounted and becomes visible again.
       onClose();
     } catch (err: any) {
+      clearWatchdog();
       setStatus({ text: `Failed to apply specific version edits: ${err}`, type: 'error' });
     } finally {
+      clearWatchdog();
       setIsApplying(false);
     }
   };
 
   return (
-    <div className="modal-overlay" onClick={isApplying ? undefined : onClose}>
+    <div className="modal-body">
+      {status.text && (
+        <div className={`settings-alert ${status.type}`} style={{ padding: '10px 15px', fontSize: '12px' }}>
+          {status.text}
+        </div>
+      )}
+
       <div
-        className="modal-container version-modal-container"
+        className="version-table-wrapper"
         style={{ '--version-table-max-height': `${tableMaxHeight}px` } as React.CSSProperties}
-        onClick={(e) => e.stopPropagation()}
       >
-        <div className="modal-header">
-          <span className="modal-title">
-            Specific Version: <strong style={{ color: '#ffffff' }}>{game.name}</strong> ({game.appId})
-          </span>
-          <button
-            onClick={() => {
-              if (!isApplying) {
-                onClose();
-              }
-            }}
-            className="modal-close-btn"
-            disabled={isApplying}
-            style={{ opacity: isApplying ? 0.3 : 1 }}
-          >
-            &times;
-          </button>
-        </div>
+        <table className="version-table">
+          <thead>
+            <tr>
+              <th>App ID</th>
+              <th>setManifest ID</th>
+              <th>Enabled</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map(row => (
+              <tr key={row.rowId} className={!row.enabled ? 'disabled' : ''}>
+                <td className="version-appid">{row.appId}</td>
+                <td>
+                  <input
+                    className="version-manifest-input"
+                    value={row.manifestInput || ''}
+                    placeholder={row.manifestId}
+                    disabled={isApplying || !row.enabled}
+                    onChange={(e) => updateRow(row.rowId, { manifestInput: e.target.value })}
+                  />
+                </td>
+                <td className="version-switch-cell">
+                  <label className="version-switch">
+                    <input
+                      type="checkbox"
+                      checked={row.enabled}
+                      disabled={isApplying}
+                      onChange={(e) => updateRow(row.rowId, { enabled: e.target.checked })}
+                    />
+                    <span></span>
+                  </label>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
 
-        <div className="modal-separator"></div>
-
-        <div className="modal-body">
-          {status.text && (
-            <div className={`settings-alert ${status.type}`} style={{ padding: '10px 15px', fontSize: '12px' }}>
-              {status.text}
-            </div>
-          )}
-
-          <div className="version-table-wrapper">
-            <table className="version-table">
-              <thead>
-                <tr>
-                  <th>App ID</th>
-                  <th>setManifest ID</th>
-                  <th>Enabled</th>
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map(row => (
-                  <tr key={row.rowId} className={!row.enabled ? 'disabled' : ''}>
-                    <td className="version-appid">{row.appId}</td>
-                    <td>
-                      <input
-                        className="version-manifest-input"
-                        value={row.manifestInput || ''}
-                        placeholder={row.manifestId}
-                        disabled={isApplying || !row.enabled}
-                        onChange={(e) => updateRow(row.rowId, { manifestInput: e.target.value })}
-                      />
-                    </td>
-                    <td className="version-switch-cell">
-                      <label className="version-switch">
-                        <input
-                          type="checkbox"
-                          checked={row.enabled}
-                          disabled={isApplying}
-                          onChange={(e) => updateRow(row.rowId, { enabled: e.target.checked })}
-                        />
-                        <span></span>
-                      </label>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-
-          <div className="version-actions">
-            <button
-              className="panel-btn"
-              onClick={handleOpenSteamDb}
-              disabled={isApplying}
-            >
-              Open SteamDB
-            </button>
-            <button
-              className="panel-btn"
-              onClick={handleApply}
-              disabled={isApplying || rows.length === 0}
-            >
-              {isApplying ? 'Applying...' : 'Apply Edits'}
-            </button>
-          </div>
-        </div>
+      <div className="version-actions">
+        <button
+          className="panel-btn"
+          onClick={handleOpenSteamDb}
+          disabled={isApplying}
+        >
+          Open SteamDB
+        </button>
+        <button
+          className="panel-btn"
+          onClick={handleApply}
+          disabled={isApplying || rows.length === 0}
+        >
+          {isApplying ? 'Applying...' : 'Apply Edits'}
+        </button>
       </div>
     </div>
   );
 };
+
+interface SpecificVersionModalProps {
+  game: SpecificVersionGame;
+  initialRows: LuaManifestRow[];
+  onClose: () => void;
+}
+
+/**
+ * Backwards-compatible standalone modal wrapping the manual editor. New
+ * callers should use `ChangeVersionModal` instead, which hosts this editor
+ * as one of its tabs.
+ */
+const SpecificVersionModal = ({ game, initialRows, onClose }: SpecificVersionModalProps) => (
+  <div className="modal-overlay" onClick={onClose}>
+    <div
+      className="modal-container version-modal-container"
+      onClick={(e) => e.stopPropagation()}
+    >
+      <div className="modal-header">
+        <span className="modal-title">
+          Specific Version: <strong style={{ color: '#ffffff' }}>{game.name}</strong> ({game.appId})
+        </span>
+        <button onClick={onClose} className="modal-close-btn">&times;</button>
+      </div>
+
+      <div className="modal-separator"></div>
+
+      <ManualVersionEditor game={game} initialRows={initialRows} onClose={onClose} />
+    </div>
+  </div>
+);
+
+export default SpecificVersionModal;

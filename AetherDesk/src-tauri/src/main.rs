@@ -17,6 +17,7 @@ mod steamless;
 mod store;
 mod updater;
 mod util;
+mod versioning;
 
 #[cfg(test)]
 mod tests;
@@ -47,6 +48,9 @@ fn main() {
             // obsolete data-folder cleanup, and the lua_backups → backup data
             // layout migration. Each step is idempotent and failure-tolerant.
             crate::core::migration::run_startup_migrations(&app.handle());
+            // Background worker that retries ACF build edits queued by the
+            // version pipeline (ACF missing until download, or held by Steam).
+            crate::versioning::queue::spawn_retry_worker(app.handle().clone());
             if let Err(e) = crate::core::custom_css::apply_window_icon(&app.handle()) {
                 eprintln!("[AetherDesk] window icon apply failed: {e}");
             }
@@ -128,6 +132,13 @@ fn main() {
             commands::logs::export_logs_bundle,
             commands::logs::export_log_source,
             commands::logs::set_session_log_level,
+            commands::versioning::get_game_builds,
+            commands::versioning::get_saved_builds,
+            commands::versioning::save_build,
+            commands::versioning::remove_saved_build,
+            commands::versioning::get_build_preview,
+            commands::versioning::apply_game_version,
+            commands::versioning::get_pending_version_edits,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
