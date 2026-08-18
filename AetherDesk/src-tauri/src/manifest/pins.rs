@@ -27,6 +27,27 @@ pub struct LuaManifestEdit {
     pub enabled: bool,
 }
 
+/// One (depot, manifest) pair of a game version snapshot. Manifest GIDs are
+/// kept as strings: they exceed 2^53, so numeric transport would lose
+/// precision (same rule SFF follows).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct DepotManifestPin {
+    pub depot_id: u32,
+    pub manifest_id: String,
+}
+
+/// Outcome of `LuaManifestPins::apply_build_pins`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ApplyBuildResult {
+    /// Number of pins written into the Lua.
+    pub applied_pins: usize,
+    /// Depots present in the Lua but absent from the target build
+    /// (they did not exist in that version and were disabled).
+    pub disabled_depots: Vec<u32>,
+}
+
 #[derive(Debug, Clone)]
 struct ManifestPin {
     row: LuaManifestRow,
@@ -48,6 +69,105 @@ impl LuaManifestPins {
                 .join("stplug-in")
                 .join(format!("{}.lua", root_app_id)),
         }
+    }
+
+    /// Path of the `<appid>.lua` file this editor operates on.
+    pub fn lua_path(&self) -> &std::path::Path {
+        &self.lua_path
+    }
+
+    pub fn path_exists(&self) -> bool {
+        self.lua_path.exists()
+    }
+
+    /// Copies the Lua to `<appid>.lua.bak` next to it. The backup is the
+    /// restore point used by the version pipeline before any pin edit.
+    pub fn backup(&self) -> Result<PathBuf, String> {
+        if !self.path_exists() {
+            return Err(format!(
+                "Cannot back up {}: file does not exist",
+                self.lua_path.display()
+            ));
+        }
+        let backup_path = PathBuf::from(format!("{}.bak", self.lua_path.display()));
+        fs::copy(&self.lua_path, &backup_path).map_err(|e| {
+            format!(
+                "Failed to back up {} to {}: {}",
+                self.lua_path.display(),
+                backup_path.display(),
+                e
+            )
+        })?;
+        Ok(backup_path)
+    }
+
+    /// Applies a full build snapshot to the Lua: every depot listed in `pins`
+    /// gets its manifest pinned and is enabled; every depot present in the Lua
+    /// but absent from the build is disabled (commented out) because it did
+    /// not exist in that version. The row count is verified before saving —
+    /// the same safety net as `apply_edits`.
+    pub fn apply_build_pins(&self, pins: &[DepotManifestPin]) -> Result<ApplyBuildResult, String> {
+        let content = self.read_lua()?;
+        let current = Self::pins_from_content(&content);
+        let before_count = current.len();
+        let mut lines: Vec<String> = content.lines().map(str::to_string).collect();
+
+        let wanted: std::collections::HashMap<u32, &str> = pins
+            .iter()
+            .map(|pin| (pin.depot_id, pin.manifest_id.as_str()))
+            .collect();
+
+        let mut applied = 0usize;
+        let mut disabled_depots: Vec<u32> = Vec::new();
+
+        for pin in &current {
+            match wanted.get(&pin.row.app_id) {
+                Some(manifest_id) => {
+                    // Depot exists in the target build: enable it and pin the manifest.
+                    if let Some(addappid_line) = pin.addappid_line {
+                        Self::set_commented(&mut lines[addappid_line], false);
+                    }
+                    Self::set_commented(&mut lines[pin.setmanifest_line], false);
+                    if *manifest_id != pin.row.manifest_id {
+                        lines[pin.setmanifest_line] = Self::rewrite_setmanifest_without_size(
+                            &lines[pin.setmanifest_line],
+                            manifest_id,
+                        )?;
+                    }
+                    applied += 1;
+                }
+                None => {
+                    // Depot does not exist in that build: disable its lines.
+                    if let Some(addappid_line) = pin.addappid_line {
+                        Self::set_commented(&mut lines[addappid_line], true);
+                    }
+                    Self::set_commented(&mut lines[pin.setmanifest_line], true);
+                    disabled_depots.push(pin.row.app_id);
+                }
+            }
+        }
+
+        let next_content = Self::join_lua_lines(&lines);
+        let after_count = Self::pins_from_content(&next_content).len();
+        if after_count != before_count {
+            return Err(format!(
+                "Safety check failed: setManifestid count changed from {} to {}. File was not saved.",
+                before_count, after_count
+            ));
+        }
+
+        self.write_lua(&next_content)?;
+        crate::desk_log_info!(
+            "manifest",
+            "Lua manifest {}: apply_build_pins completed -> {} pin(s) applied, {} depot(s) disabled",
+            self.lua_path.display(),
+            applied,
+            disabled_depots.len()
+        );
+        Ok(ApplyBuildResult {
+            applied_pins: applied,
+            disabled_depots,
+        })
     }
 
     /// SFF-style extraction: do not execute or normalize the Lua; only scan text lines

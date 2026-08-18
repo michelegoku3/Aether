@@ -2909,3 +2909,285 @@ body {
   white-space: normal;
   overflow: visible;
 }
+
+/* ── Change Version modal: tabs (Manual / Auto / Builds) ───────────────── */
+
+.version-tabs {
+  display: flex;
+  gap: 6px;
+  padding: 14px 20px 0;
+}
+
+.version-tab {
+  flex: 1 1 0%;
+  background-color: #121216;
+  border: 1px solid var(--border-color);
+  color: #999;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 9px 12px;
+  border-radius: 8px 8px 0 0;
+  border-bottom: none;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.version-tab:hover {
+  color: #ddd;
+}
+
+.version-tab.active {
+  background-color: #1c1c21;
+  color: #00b3ff;
+  border-color: #00b3ff66;
+  box-shadow: inset 0 -2px 0 #00b3ff;
+}
+
+.version-tab-body {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding-bottom: 4px;
+}
+
+/* Auto tab */
+
+.version-auto-row {
+  display: flex;
+  gap: 10px;
+}
+
+.version-build-input {
+  flex: 1 1 0%;
+  background-color: #08080a;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  color: #fff;
+  font-size: 14px;
+  padding: 12px 14px;
+  outline: none;
+  transition: border-color 0.2s ease;
+}
+
+.version-build-input:focus {
+  border-color: #00b3ff;
+}
+
+.version-preview {
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background-color: #0c0c10;
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.version-preview-header {
+  color: #fff;
+  font-size: 14px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.version-preview-date {
+  color: #888;
+  font-size: 12px;
+  font-weight: 400;
+}
+
+.version-preview-facts {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  color: #bbb;
+  font-size: 13px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.version-preview-facts li strong {
+  color: #00b3ff;
+}
+
+.version-preview-facts .version-preview-warn {
+  color: #ffb020;
+}
+
+.version-progress {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.version-progress-bar {
+  height: 8px;
+  border-radius: 4px;
+  background-color: #1c1c21;
+  overflow: hidden;
+}
+
+.version-progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #00b3ff, #4dc9ff);
+  transition: width 0.3s ease;
+}
+
+.version-progress-label {
+  color: #888;
+  font-size: 12px;
+}
+
+.version-report {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.version-report-note {
+  color: #bbb;
+  font-size: 12px;
+  border-left: 3px solid #00b3ff66;
+  padding: 4px 0 4px 10px;
+}
+
+/* Builds tab */
+
+.version-builds-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.version-filter-chips {
+  display: flex;
+  gap: 6px;
+}
+
+.version-chip {
+  background-color: #121216;
+  border: 1px solid var(--border-color);
+  color: #999;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 6px 14px;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.version-chip.active {
+  background-color: #00b3ff22;
+  border-color: #00b3ff66;
+  color: #00b3ff;
+}
+
+.version-refresh-btn {
+  background-color: #121216;
+  border: 1px solid var(--border-color);
+  color: #999;
+  font-size: 15px;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.version-refresh-btn:hover {
+  color: #fff;
+  border-color: #00b3ff66;
+}
+
+.version-builds-empty {
+  color: #777;
+  font-size: 13px;
+  text-align: center;
+  padding: 24px 0;
+}
+
+.version-build-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 340px;
+  overflow-y: auto;
+  padding-right: 2px;
+}
+
+.version-build-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background-color: #0c0c10;
+  padding: 10px 12px;
+  transition: border-color 0.2s ease;
+}
+
+.version-build-row:hover {
+  border-color: #00b3ff44;
+}
+
+.version-build-star {
+  background: none;
+  border: none;
+  color: #666;
+  font-size: 18px;
+  cursor: pointer;
+  padding: 2px 4px;
+  transition: color 0.15s ease, transform 0.15s ease;
+}
+
+.version-build-star:hover {
+  transform: scale(1.15);
+}
+
+.version-build-star.saved {
+  color: #ffd24d;
+}
+
+.version-build-main {
+  flex: 1 1 0%;
+  min-width: 0;
+}
+
+.version-build-title {
+  color: #eee;
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.version-build-meta {
+  display: flex;
+  gap: 10px;
+  margin-top: 2px;
+}
+
+.version-build-date {
+  color: #888;
+  font-size: 11px;
+}
+
+.version-build-bid {
+  color: #00b3ff;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.version-build-use {
+  flex: 0 0 auto;
+  padding: 7px 16px;
+  font-size: 12px;
+}
