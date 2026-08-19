@@ -191,23 +191,50 @@ export const LibraryGameActionsModal = ({
 
         <div className="game-action-body">
           <div className="game-action-grid">
-            <button className="game-action-btn" onClick={handleToggleUpdates} disabled={disabled}>
-              {updatesEnabled ? 'Disable Update' : 'Enable Update'}
-            </button>
-            <button className="game-action-btn" onClick={() => onOpenVersionEditor(game)} disabled={disabled}>
-              Change Version
-            </button>
-            <button className="game-action-btn" onClick={handleOpenOnline} disabled={disabled}>
-              ONLINE
-            </button>
-            <button
-              className="game-action-btn danger"
-              onClick={handleRemove}
-              disabled={disabled || game.installed}
+            {/* Each button is wrapped so the tooltip still appears when the
+                button itself is disabled (Chromium/WebView2 suppress hover on
+                disabled controls, so the title must live on the wrapper). */}
+            <span className="game-action-btn-wrap">
+              <button className="game-action-btn" onClick={handleToggleUpdates} disabled={disabled}>
+                {updatesEnabled ? 'Disable Update' : 'Enable Update'}
+              </button>
+            </span>
+            <span
+              className="game-action-btn-wrap"
+              title={updatesEnabled ? 'Updates are enabled for this game — disable them first to change the version.' : undefined}
+            >
+              <button
+                className="game-action-btn"
+                onClick={() => onOpenVersionEditor(game)}
+                disabled={disabled || updatesEnabled}
+              >
+                Change Version
+              </button>
+            </span>
+            <span
+              className="game-action-btn-wrap"
+              title={!game.installed ? 'Online requires the game to be installed in Steam first.' : undefined}
+            >
+              <button
+                className="game-action-btn"
+                onClick={handleOpenOnline}
+                disabled={disabled || !game.installed}
+              >
+                ONLINE
+              </button>
+            </span>
+            <span
+              className="game-action-btn-wrap"
               title={game.installed ? 'Installed games cannot be removed from Aether Library.' : 'Remove Lua from Aether Library'}
             >
-              Remove
-            </button>
+              <button
+                className="game-action-btn danger"
+                onClick={handleRemove}
+                disabled={disabled || game.installed}
+              >
+                Remove
+              </button>
+            </span>
           </div>
         </div>
       </div>

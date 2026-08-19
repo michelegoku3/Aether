@@ -30,6 +30,11 @@ export const ManualVersionEditor = ({ game, initialRows, onClose }: ManualVersio
   const [rows, setRows] = useState<LuaManifestRow[]>(
     initialRows.map(row => ({ ...row, manifestInput: row.manifestInput || '' }))
   );
+  // Baseline = the state we consider "unchanged". Starts as the rows passed by
+  // the caller, then is replaced by what is actually on disk once loaded, so a
+  // build applied in the Auto tab (or any external edit) becomes the new
+  // baseline instead of being flagged as a manual change.
+  const [baseline, setBaseline] = useState<LuaManifestRow[]>(initialRows);
   const [status, setStatus] = useState({
     text: initialRows.length > 0
       ? 'Lua ready. Edit manifest IDs or disable depots, then apply.'
@@ -49,6 +54,40 @@ export const ManualVersionEditor = ({ game, initialRows, onClose }: ManualVersio
   // Clear any pending watchdog when the editor unmounts.
   React.useEffect(() => clearWatchdog, []);
 
+  // Refresh the rows from disk on mount: the Manual tab must show the live Lua
+  // state (e.g. the manifests just written by an apply in the Auto tab), not a
+  // snapshot captured when the popup opened.
+  React.useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const steamPath = await requireSteamPath();
+        const fresh = await invoke<LuaManifestRow[]>('get_installed_lua_manifest_rows', {
+          appId: Number(game.appId),
+          steamPath,
+        });
+        if (cancelled) return;
+        const normalized = (fresh || []).map(row => ({
+          ...row,
+          manifestInput: row.manifestInput || '',
+        }));
+        setRows(normalized);
+        setBaseline(normalized);
+        if (normalized.length === 0) {
+          setStatus({
+            text: 'Lua ready, but no editable setManifestid entries were found.',
+            type: 'error',
+          });
+        }
+      } catch {
+        // Keep the rows passed by the caller if the refresh fails.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [game.appId]);
+
   const updateRow = (rowId: number, patch: Partial<LuaManifestRow>) => {
     setRows(prev => prev.map(row => row.rowId === rowId ? { ...row, ...patch } : row));
   };
@@ -59,14 +98,14 @@ export const ManualVersionEditor = ({ game, initialRows, onClose }: ManualVersio
   // real edit worth writing.
   const hasChanges = useMemo(() => {
     return rows.some((row) => {
-      const original = initialRows.find((r) => r.rowId === row.rowId);
+      const original = baseline.find((r) => r.rowId === row.rowId);
       const enabledChanged = row.enabled !== (original ? original.enabled : row.enabled);
       const typed = row.manifestInput?.trim() ?? '';
       const manifestChanged =
         typed.length > 0 && typed !== (original?.manifestId ?? row.manifestId);
       return enabledChanged || manifestChanged;
     });
-  }, [rows, initialRows]);
+  }, [rows, baseline]);
 
   // ESC + click fuori chiudono il popup (rispettando un'operazione in corso).
   useModalDismiss(onClose, isApplying);

@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { ClickablePath } from '../ui/ClickablePath';
+import { EyeIcon, EyeOffIcon } from '../ui/icons';
 
 interface SettingsViewProps {
   hubcapUsage: { usage: number; limit: number; hasKey: boolean };
@@ -27,6 +28,7 @@ const clamp0to100 = (value: number) => Math.max(0, Math.min(100, Number.isFinite
 
 export const SettingsView = ({ hubcapUsage, onRefreshUsage, onRefreshCustomCss, onCustomCssChange, onPreviewPersonalWallpaper, onPreviewAlternativeCards }: SettingsViewProps) => {
   const [apiKey, setApiKey] = useState('');
+  const [showApiKey, setShowApiKey] = useState(false);
   const [steamPath, setSteamPath] = useState('C:\\Program Files (x86)\\Steam');
   const [activeLibrary, setActiveLibrary] = useState('');
   const [showStoreDlcs, setShowStoreDlcs] = useState(false);
@@ -48,6 +50,7 @@ export const SettingsView = ({ hubcapUsage, onRefreshUsage, onRefreshCustomCss, 
   const [customIconEnabled, setCustomIconEnabled] = useState(false);
   const [iconSelectedFile, setIconSelectedFile] = useState('');
   const [ryuuKey, setRyuuKey] = useState('');
+  const [showRyuuKey, setShowRyuuKey] = useState(false);
   const [storeCurrency, setStoreCurrency] = useState<'eur' | 'usd' | 'jpy'>('eur');
 
   // Appearance assets availability: when no theme/wallpaper file exists, the
@@ -360,13 +363,26 @@ export const SettingsView = ({ hubcapUsage, onRefreshUsage, onRefreshCustomCss, 
               </span>
             )}
           </div>
-          <input 
-            type="password" 
-            placeholder="Enter API key (e.g. smm_...)"
-            value={apiKey}
-            onChange={(e) => setApiKey(e.target.value)}
-            className="settings-input"
-          />
+          <div className="settings-input-wrap">
+            <input
+              type={showApiKey ? 'text' : 'password'}
+              placeholder="Enter API key (e.g. smm_...)"
+              value={apiKey}
+              onChange={(e) => setApiKey(e.target.value)}
+              className="settings-input"
+              autoComplete="off"
+              spellCheck={false}
+            />
+            <button
+              type="button"
+              className="settings-input-eye"
+              title={showApiKey ? 'Hide API key' : 'Show API key'}
+              aria-label={showApiKey ? 'Hide API key' : 'Show API key'}
+              onClick={() => setShowApiKey((v) => !v)}
+            >
+              {showApiKey ? <EyeOffIcon size={16} /> : <EyeIcon size={16} />}
+            </button>
+          </div>
         </div>
 
         {/* Ryuu API Key Section */}
@@ -380,13 +396,26 @@ export const SettingsView = ({ hubcapUsage, onRefreshUsage, onRefreshCustomCss, 
               </span>
             )}
           </div>
-          <input 
-            type="password" 
-            placeholder="Enter Ryuu key (e.g. V1nr...)"
-            value={ryuuKey}
-            onChange={(e) => setRyuuKey(e.target.value)}
-            className="settings-input"
-          />
+          <div className="settings-input-wrap">
+            <input
+              type={showRyuuKey ? 'text' : 'password'}
+              placeholder="Enter Ryuu key (e.g. V1nr...)"
+              value={ryuuKey}
+              onChange={(e) => setRyuuKey(e.target.value)}
+              className="settings-input"
+              autoComplete="off"
+              spellCheck={false}
+            />
+            <button
+              type="button"
+              className="settings-input-eye"
+              title={showRyuuKey ? 'Hide API key' : 'Show API key'}
+              aria-label={showRyuuKey ? 'Hide API key' : 'Show API key'}
+              onClick={() => setShowRyuuKey((v) => !v)}
+            >
+              {showRyuuKey ? <EyeOffIcon size={16} /> : <EyeIcon size={16} />}
+            </button>
+          </div>
         </div>
 
         <div className="settings-separator"></div>
