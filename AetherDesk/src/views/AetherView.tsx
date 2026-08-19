@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
+import { getVersion } from '@tauri-apps/api/app';
 import {
   UninstallDeskConfirmModal,
   UninstallSteamCleanModal,
@@ -43,7 +44,7 @@ export const AetherView = ({
   dllStatus,
   onDllStatusChange,
 }: AetherViewProps) => {
-  const [deskVersion, setDeskVersion] = useState('1.0.0');
+  const [deskVersion, setDeskVersion] = useState('…');
   const [statusMsg, setStatusMsg] = useState({ text: '', type: 'info' as StatusTone });
   const [isProcessing, setIsProcessing] = useState(false);
   const [uninstallStep, setUninstallStep] = useState<UninstallStep | null>(null);
@@ -56,6 +57,7 @@ export const AetherView = ({
 
   const formatVersion = (value: string) => {
     if (!value || value === 'N/A') return 'N/A';
+    if (value === '…') return '…'; // still resolving
     const normalized = value
       .toLowerCase()
       .replace(/^desk-/, '')
@@ -79,11 +81,26 @@ export const AetherView = ({
   };
 
   useEffect(() => {
+    // The desk version is the packaged Tauri version: `getVersion()` is a fast
+    // local IPC (no network), so the panel shows the correct value from the
+    // first render — no more flickering "1.0.0" placeholder while the update
+    // check (which hits GitHub) resolves.
+    let cancelled = false;
+    getVersion()
+      .then((v) => {
+        if (!cancelled) setDeskVersion(v || 'N/A');
+      })
+      .catch(() => {
+        if (!cancelled) setDeskVersion('N/A');
+      });
     void checkDeskVersion();
     // "Restore" replaces "Uninstall" while test updates are enabled.
     getSettings()
       .then((settings) => setTestUpdatesEnabled(Boolean(settings.enable_test_updates)))
       .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
   }, [isUpdateAvailable, isDeskUpdateAvailable]);
 
   const handleInstallDeskUpdate = async () => {
