@@ -7,7 +7,6 @@ use crate::versioning::apply::{apply_build_version, ProgressFn};
 use crate::versioning::cache::VersionCache;
 use crate::versioning::error::VersionError;
 use crate::versioning::model::{ApplyVersionReport, BuildInfo, BuildPreview, SavedBuild};
-use crate::versioning::queue::{self, PendingAcfEdit};
 use crate::versioning::saved::SavedBuildsStore;
 use crate::versioning::sources::{
     self, depotbox::DepotboxSource, steamdb::SteamDbPatchnotesSource, BuildDetailsSource,
@@ -128,10 +127,6 @@ impl VersionService {
         self.saved.list(app_id)
     }
 
-    pub fn saved_ids(&self, app_id: u32) -> HashSet<u64> {
-        self.saved.saved_ids(app_id)
-    }
-
     pub fn save_build(
         &self,
         app_id: u32,
@@ -160,10 +155,6 @@ impl VersionService {
                 context: "saved builds",
                 detail: e,
             })
-    }
-
-    pub fn pending_edits(&self) -> Vec<PendingAcfEdit> {
-        queue::list()
     }
 
     /// (date, title) of a build if its metadata is already cached.

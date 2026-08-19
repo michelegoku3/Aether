@@ -1,16 +1,7 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { requireSteamPath } from '../hooks/useSettings';
 import { useModalDismiss } from '../hooks/useModalDismiss';
-
-// Geometry used to size the depot table to its content: each row is ~41px
-// (10px padding ×2 + 17px text + 1px border) and the sticky header ~37px.
-const VERSION_ROW_HEIGHT_PX = 41;
-const VERSION_HEADER_HEIGHT_PX = 37;
-// Vertical space consumed by the modal chrome around the table: header,
-// separator, status alert, actions row and paddings.
-const VERSION_MODAL_CHROME_PX = 300;
-const VERSION_TABLE_MIN_PX = 140;
 
 export interface LuaManifestRow {
   rowId: number;
@@ -58,19 +49,24 @@ export const ManualVersionEditor = ({ game, initialRows, onClose }: ManualVersio
   // Clear any pending watchdog when the editor unmounts.
   React.useEffect(() => clearWatchdog, []);
 
-  // Dynamic modal height: grows with the number of editable depots, capped at
-  // what fits the current window (the table scrolls when many depots exist).
-  const tableMaxHeight = Math.max(
-    VERSION_TABLE_MIN_PX,
-    Math.min(
-      rows.length * VERSION_ROW_HEIGHT_PX + VERSION_HEADER_HEIGHT_PX,
-      Math.max(VERSION_TABLE_MIN_PX, window.innerHeight - VERSION_MODAL_CHROME_PX)
-    )
-  );
-
   const updateRow = (rowId: number, patch: Partial<LuaManifestRow>) => {
     setRows(prev => prev.map(row => row.rowId === rowId ? { ...row, ...patch } : row));
   };
+
+  // Apply Edits must stay disabled while nothing differs from the Lua file:
+  // the backend treats an empty input as "keep the original manifest ID", so
+  // only a typed (non-empty, different) manifest ID or a disabled depot is a
+  // real edit worth writing.
+  const hasChanges = useMemo(() => {
+    return rows.some((row) => {
+      const original = initialRows.find((r) => r.rowId === row.rowId);
+      const enabledChanged = row.enabled !== (original ? original.enabled : row.enabled);
+      const typed = row.manifestInput?.trim() ?? '';
+      const manifestChanged =
+        typed.length > 0 && typed !== (original?.manifestId ?? row.manifestId);
+      return enabledChanged || manifestChanged;
+    });
+  }, [rows, initialRows]);
 
   // ESC + click fuori chiudono il popup (rispettando un'operazione in corso).
   useModalDismiss(onClose, isApplying);
@@ -132,17 +128,14 @@ export const ManualVersionEditor = ({ game, initialRows, onClose }: ManualVersio
   };
 
   return (
-    <div className="modal-body">
+    <>
       {status.text && (
         <div className={`settings-alert ${status.type}`} style={{ padding: '10px 15px', fontSize: '12px' }}>
           {status.text}
         </div>
       )}
 
-      <div
-        className="version-table-wrapper"
-        style={{ '--version-table-max-height': `${tableMaxHeight}px` } as React.CSSProperties}
-      >
+      <div className="version-table-wrapper">
         <table className="version-table">
           <thead>
             <tr>
@@ -192,12 +185,12 @@ export const ManualVersionEditor = ({ game, initialRows, onClose }: ManualVersio
         <button
           className="panel-btn"
           onClick={handleApply}
-          disabled={isApplying || rows.length === 0}
+          disabled={isApplying || rows.length === 0 || !hasChanges}
         >
           {isApplying ? 'Applying...' : 'Apply Edits'}
         </button>
       </div>
-    </div>
+    </>
   );
 };
 
@@ -227,7 +220,9 @@ const SpecificVersionModal = ({ game, initialRows, onClose }: SpecificVersionMod
 
       <div className="modal-separator"></div>
 
-      <ManualVersionEditor game={game} initialRows={initialRows} onClose={onClose} />
+      <div className="modal-body version-modal-body">
+        <ManualVersionEditor game={game} initialRows={initialRows} onClose={onClose} />
+      </div>
     </div>
   </div>
 );
