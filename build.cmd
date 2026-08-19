@@ -19,6 +19,9 @@ REM  Usage:
 REM    build.cmd             -> full build
 REM    build.cmd /skipaudit  -> skip the audit step (faster)
 REM
+REM  The window stays open at the end (pause on success, failure and the
+REM  early guard error) so the result is readable when double-clicked.
+REM
 REM  Notes:
 REM    - No multi-line if() blocks (incompatible with files saved
 REM      in LF); control flow uses goto labels instead.
@@ -43,6 +46,8 @@ REM --- Guard: the AetherDesk folder must exist ------------------------
 if exist "%DESK_DIR%" goto :desk_ok
 echo [ERROR] AetherDesk folder not found: %DESK_DIR%
 echo         Run this script from the repository root.
+echo.
+pause
 exit /b 1
 
 :desk_ok
@@ -102,9 +107,17 @@ echo.
 echo ============================================
 echo   BUILD COMPLETED SUCCESSFULLY
 echo ============================================
-endlocal & exit /b 0
+echo.
+echo Press any key to close this window...
+endlocal
+pause >nul
+exit /b 0
 
 :fail
 echo.
 echo BUILD FAILED.
-endlocal & exit /b 1
+echo.
+echo Press any key to close this window...
+endlocal
+pause >nul
+exit /b 1
