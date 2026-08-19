@@ -23,6 +23,8 @@ export interface BuildPreview {
   title: string;
   pins: DepotManifestPin[];
   matchingPins: DepotManifestPin[];
+  /** Lua depots absent from this build's diff — they stay unchanged (a build's
+   * depot list is a patch diff, so absence means "not changed", not "removed"). */
   missingDepots: number[];
   unlistedDepots: number[];
   luaDepotCount: number;

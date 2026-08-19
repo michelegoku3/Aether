@@ -14,8 +14,10 @@ pub type ProgressFn<'a> = dyn Fn(u8, &str) + Send + Sync + 'a;
 ///
 ///  1. validate the game has a stplug-in Lua
 ///  2. back the Lua up to `<appid>.lua.bak`
-///  3. pin the build manifests into the Lua (depots missing from the build
-///     get disabled) — LumaCore picks the change up live
+///  3. pin the build manifests into the Lua — only depots that CHANGED in the
+///     build are written; depots absent from the build's depot list are left
+///     untouched (a patch diff, not a full snapshot, so absence ≠ removal) —
+///     LumaCore picks the change up live
 ///  4. count which pinned `.manifest` files already exist locally
 ///  5. sync the ACF (`buildid` / `TargetBuildID` / `InstalledDepots[].manifest`);
 ///     when the ACF is missing or held by Steam the edit is queued and
@@ -65,10 +67,10 @@ pub fn apply_build_version(
         Ok(result) => {
             crate::desk_log_info!(
                 "versioning",
-                "Lua pins written for app {}: {} applied, {} disabled",
+                "Lua pins written for app {}: {} applied, {} unchanged (not in this build's diff)",
                 app_id,
                 result.applied_pins,
-                result.disabled_depots.len()
+                before_count.saturating_sub(result.applied_pins)
             );
             result
         }
