@@ -201,7 +201,7 @@ export const LibraryGameActionsModal = ({
             </span>
             <span
               className="game-action-btn-wrap"
-              title={updatesEnabled ? 'Updates are enabled for this game — disable them first to change the version.' : undefined}
+              title={updatesEnabled ? 'Disable updates for this game.' : undefined}
             >
               <button
                 className="game-action-btn"
