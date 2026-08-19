@@ -172,11 +172,10 @@ pub async fn apply_game_version(
         Ok(report) => {
             crate::desk_log_info!(
                 "versioning",
-                "Build {} applied for {}: {} pin(s), {} disabled depot(s), acf_synced={}, acf_queued={}",
+                "Build {} applied for {}: {} pin(s) written (absent-from-diff depots left unchanged), acf_synced={}, acf_queued={}",
                 build_id,
                 crate::core::logger::format_appid(app_id),
                 report.applied_pins,
-                report.disabled_depots.len(),
                 report.acf_synced_now,
                 report.acf_queued
             );

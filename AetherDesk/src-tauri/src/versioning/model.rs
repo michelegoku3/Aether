@@ -25,7 +25,9 @@ pub struct BuildPreview {
     pub pins: Vec<DepotManifestPin>,
     /// Pins whose depot is present in the game's Lua — these get applied.
     pub matching_pins: Vec<DepotManifestPin>,
-    /// Depots in the Lua that this build does not have — they get disabled.
+    /// Depots in the Lua that this build's depot list does not mention. A
+    /// build's depot list is a patch diff, so these depots simply did NOT
+    /// change in this build — they stay pinned to their current manifest.
     pub missing_depots: Vec<u32>,
     /// Depots of the build that the Lua does not know — informational only.
     pub unlisted_depots: Vec<u32>,
@@ -39,7 +41,9 @@ pub struct BuildPreview {
 pub struct ApplyVersionReport {
     /// Number of manifest pins written into the Lua.
     pub applied_pins: usize,
-    /// Depots disabled because they do not exist in the target build.
+    /// Always empty with the current apply policy: depots absent from a build's
+    /// depot list are left unchanged, never disabled (auto-apply only writes
+    /// pins for depots that changed in the build). Kept for API stability.
     pub disabled_depots: Vec<u32>,
     /// How many of the pinned `.manifest` files were already present locally.
     pub manifests_found: usize,

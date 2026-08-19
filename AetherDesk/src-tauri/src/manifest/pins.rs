@@ -43,8 +43,10 @@ pub struct DepotManifestPin {
 pub struct ApplyBuildResult {
     /// Number of pins written into the Lua.
     pub applied_pins: usize,
-    /// Depots present in the Lua but absent from the target build
-    /// (they did not exist in that version and were disabled).
+    /// Kept for API compatibility; always empty with the current apply policy.
+    /// A depot absent from a build's depot list is a depot that did NOT change
+    /// in that patch, not a depot that was removed — so auto-apply never
+    /// disables anything (the Manual editor remains the way to disable).
     pub disabled_depots: Vec<u32>,
 }
 
@@ -101,11 +103,12 @@ impl LuaManifestPins {
         Ok(backup_path)
     }
 
-    /// Applies a full build snapshot to the Lua: every depot listed in `pins`
-    /// gets its manifest pinned and is enabled; every depot present in the Lua
-    /// but absent from the build is disabled (commented out) because it did
-    /// not exist in that version. The row count is verified before saving —
-    /// the same safety net as `apply_edits`.
+    /// Applies a build's pin diff to the Lua: every depot listed in `pins`
+    /// gets its manifest pinned and is enabled; depots present in the Lua but
+    /// absent from the build's depot list are left untouched (a build's list
+    /// is a patch diff, so absence means the depot did not change in that
+    /// build — never that it was removed). The row count is verified before
+    /// saving — the same safety net as `apply_edits`.
     pub fn apply_build_pins(&self, pins: &[DepotManifestPin]) -> Result<ApplyBuildResult, String> {
         let content = self.read_lua()?;
         let current = Self::pins_from_content(&content);
@@ -118,12 +121,11 @@ impl LuaManifestPins {
             .collect();
 
         let mut applied = 0usize;
-        let mut disabled_depots: Vec<u32> = Vec::new();
 
         for pin in &current {
             match wanted.get(&pin.row.app_id) {
                 Some(manifest_id) => {
-                    // Depot exists in the target build: enable it and pin the manifest.
+                    // Depot changed in the target build: enable it and pin the manifest.
                     if let Some(addappid_line) = pin.addappid_line {
                         Self::set_commented(&mut lines[addappid_line], false);
                     }
@@ -137,12 +139,15 @@ impl LuaManifestPins {
                     applied += 1;
                 }
                 None => {
-                    // Depot does not exist in that build: disable its lines.
-                    if let Some(addappid_line) = pin.addappid_line {
-                        Self::set_commented(&mut lines[addappid_line], true);
-                    }
-                    Self::set_commented(&mut lines[pin.setmanifest_line], true);
-                    disabled_depots.push(pin.row.app_id);
+                    // Depot absent from this build's depot list. A build's list
+                    // is a patch diff: it only contains depots that CHANGED in
+                    // that build, so an absent depot means "did not change", NOT
+                    // "was removed" (e.g. the Windows/Linux/arch variants that
+                    // often skip a patch). The existing pin stays enabled with
+                    // its current manifest — Steam keeps serving that depot.
+                    //
+                    // Depots genuinely dropped from a game are handled in the
+                    // Manual editor; auto-apply never disables anything.
                 }
             }
         }
@@ -159,14 +164,14 @@ impl LuaManifestPins {
         self.write_lua(&next_content)?;
         crate::desk_log_info!(
             "manifest",
-            "Lua manifest {}: apply_build_pins completed -> {} pin(s) applied, {} depot(s) disabled",
+            "Lua manifest {}: apply_build_pins completed -> {} pin(s) applied, {} depot(s) left unchanged (absent from the build diff)",
             self.lua_path.display(),
             applied,
-            disabled_depots.len()
+            current.len() - applied
         );
         Ok(ApplyBuildResult {
             applied_pins: applied,
-            disabled_depots,
+            disabled_depots: Vec::new(),
         })
     }
 
