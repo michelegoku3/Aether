@@ -4,9 +4,9 @@ use std::fs;
 use std::path::PathBuf;
 
 const HIDDEN_SYSTEM_DEPOTS: &[u32] = &[
-    228981, 228982, 228983, 228984, 228985, 228986, 228987, 228988, 228989, 228990, 229000,
-    229001, 229002, 229003, 229004, 229005, 229006, 229007, 229010, 229011, 229012, 229020,
-    229030, 229031, 229032, 229033,
+    228981, 228982, 228983, 228984, 228985, 228986, 228987, 228988, 228989, 228990, 229000, 229001,
+    229002, 229003, 229004, 229005, 229006, 229007, 229010, 229011, 229012, 229020, 229030, 229031,
+    229032, 229033,
 ];
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -43,11 +43,6 @@ pub struct DepotManifestPin {
 pub struct ApplyBuildResult {
     /// Number of pins written into the Lua.
     pub applied_pins: usize,
-    /// Kept for API compatibility; always empty with the current apply policy.
-    /// A depot absent from a build's depot list is a depot that did NOT change
-    /// in that patch, not a depot that was removed — so auto-apply never
-    /// disables anything (the Manual editor remains the way to disable).
-    pub disabled_depots: Vec<u32>,
 }
 
 #[derive(Debug, Clone)]
@@ -103,12 +98,12 @@ impl LuaManifestPins {
         Ok(backup_path)
     }
 
-    /// Applies a build's pin diff to the Lua: every depot listed in `pins`
-    /// gets its manifest pinned and is enabled; depots present in the Lua but
-    /// absent from the build's depot list are left untouched (a build's list
-    /// is a patch diff, so absence means the depot did not change in that
-    /// build — never that it was removed). The row count is verified before
-    /// saving — the same safety net as `apply_edits`.
+    /// Applies a reconstructed build snapshot to the Lua: every depot listed
+    /// in `pins` gets its manifest pinned and is enabled. The automatic flow
+    /// resolves a complete snapshot before calling this method; an absent row
+    /// is nevertheless left untouched as a final safety guard rather than
+    /// being incorrectly disabled. The row count is verified before saving —
+    /// the same safety net as `apply_edits`.
     pub fn apply_build_pins(&self, pins: &[DepotManifestPin]) -> Result<ApplyBuildResult, String> {
         let content = self.read_lua()?;
         let current = Self::pins_from_content(&content);
@@ -139,15 +134,11 @@ impl LuaManifestPins {
                     applied += 1;
                 }
                 None => {
-                    // Depot absent from this build's depot list. A build's list
-                    // is a patch diff: it only contains depots that CHANGED in
-                    // that build, so an absent depot means "did not change", NOT
-                    // "was removed" (e.g. the Windows/Linux/arch variants that
-                    // often skip a patch). The existing pin stays enabled with
-                    // its current manifest — Steam keeps serving that depot.
-                    //
-                    // Depots genuinely dropped from a game are handled in the
-                    // Manual editor; auto-apply never disables anything.
+                    // A complete snapshot is expected here. If a caller ever
+                    // supplies a partial one, preserving this pin is safer than
+                    // disabling it or writing a manifest from the wrong era.
+                    // The automatic resolver normally rejects that situation
+                    // before this file is backed up or modified.
                 }
             }
         }
@@ -164,14 +155,13 @@ impl LuaManifestPins {
         self.write_lua(&next_content)?;
         crate::desk_log_info!(
             "manifest",
-            "Lua manifest {}: apply_build_pins completed -> {} pin(s) applied, {} depot(s) left unchanged (absent from the build diff)",
+            "Lua manifest {}: apply_build_pins completed -> {} pin(s) applied, {} depot(s) absent from the supplied snapshot and safely left unchanged",
             self.lua_path.display(),
             applied,
             current.len() - applied
         );
         Ok(ApplyBuildResult {
             applied_pins: applied,
-            disabled_depots: Vec::new(),
         })
     }
 
@@ -192,6 +182,20 @@ impl LuaManifestPins {
         Ok(Self::rows_from_content(&content))
     }
 
+    /// Every game depot managed by the version editor. Steam's hidden system
+    /// depots are intentionally excluded: they do not belong to the game's
+    /// build history and therefore cannot be reconstructed from its patches.
+    pub fn depot_ids_from_file(&self) -> Result<Vec<u32>, String> {
+        let content = self.read_lua()?;
+        let mut depot_ids: Vec<u32> = Self::rows_from_content(&content)
+            .into_iter()
+            .map(|row| row.app_id)
+            .collect();
+        depot_ids.sort_unstable();
+        depot_ids.dedup();
+        Ok(depot_ids)
+    }
+
     pub fn updates_are_enabled(&self) -> Result<bool, String> {
         let content = self.read_lua()?;
         let lines: Vec<&str> = content.lines().collect();
@@ -203,10 +207,12 @@ impl LuaManifestPins {
         Ok(Self::pins_from_content(&content)
             .into_iter()
             .filter(|pin| pin.addappid_enabled)
-            .any(|pin| lines
-                .get(pin.setmanifest_line)
-                .map(|line| line.trim_start().starts_with("--"))
-                .unwrap_or(false)))
+            .any(|pin| {
+                lines
+                    .get(pin.setmanifest_line)
+                    .map(|line| line.trim_start().starts_with("--"))
+                    .unwrap_or(false)
+            }))
     }
 
     pub fn set_updates_enabled(&self, enabled: bool) -> Result<usize, String> {
@@ -237,7 +243,13 @@ impl LuaManifestPins {
         }
 
         self.write_lua(&next_content)?;
-        crate::desk_log_info!("manifest", "Lua manifest {}: set_updates_enabled({}) completed -> {} pin(s) modified", self.lua_path.display(), enabled, changed);
+        crate::desk_log_info!(
+            "manifest",
+            "Lua manifest {}: set_updates_enabled({}) completed -> {} pin(s) modified",
+            self.lua_path.display(),
+            enabled,
+            changed
+        );
         Ok(changed)
     }
 
@@ -279,7 +291,12 @@ impl LuaManifestPins {
 
         self.write_lua(&next_content)?;
         let rows = self.rows_from_file()?;
-        crate::desk_log_info!("manifest", "Lua manifest {}: apply_edits completed -> {} row(s) active", self.lua_path.display(), rows.len());
+        crate::desk_log_info!(
+            "manifest",
+            "Lua manifest {}: apply_edits completed -> {} row(s) active",
+            self.lua_path.display(),
+            rows.len()
+        );
         Ok(rows)
     }
 
@@ -288,12 +305,16 @@ impl LuaManifestPins {
         let mut pins = Vec::new();
 
         for (line_index, line) in lines.iter().enumerate() {
-            let Some((app_id, manifest_id, setmanifest_commented)) = Self::parse_setmanifest_line(line) else {
+            let Some((app_id, manifest_id, setmanifest_commented)) =
+                Self::parse_setmanifest_line(line)
+            else {
                 continue;
             };
             let addappid_line = Self::find_nearest_addappid(&lines, line_index, app_id);
             let addappid_enabled = addappid_line
-                .and_then(|index| Self::parse_addappid_line(lines[index]).map(|(_, commented)| !commented))
+                .and_then(|index| {
+                    Self::parse_addappid_line(lines[index]).map(|(_, commented)| !commented)
+                })
                 .unwrap_or(!setmanifest_commented);
 
             pins.push(ManifestPin {
@@ -330,9 +351,8 @@ impl LuaManifestPins {
     }
 
     fn parse_addappid_line(line: &str) -> Option<(u32, bool)> {
-        let re = Regex::new(
-            r#"^\s*(?P<comment>--\s*)?(?i:addappid)\s*\(\s*(?P<appid>\d+)\b"#,
-        ).ok()?;
+        let re =
+            Regex::new(r#"^\s*(?P<comment>--\s*)?(?i:addappid)\s*\(\s*(?P<appid>\d+)\b"#).ok()?;
         let caps = re.captures(line)?;
         Some((
             caps.name("appid")?.as_str().parse().ok()?,
@@ -340,7 +360,11 @@ impl LuaManifestPins {
         ))
     }
 
-    fn find_nearest_addappid(lines: &[&str], setmanifest_line: usize, app_id: u32) -> Option<usize> {
+    fn find_nearest_addappid(
+        lines: &[&str],
+        setmanifest_line: usize,
+        app_id: u32,
+    ) -> Option<usize> {
         lines
             .iter()
             .enumerate()
@@ -353,7 +377,10 @@ impl LuaManifestPins {
             })
     }
 
-    fn rewrite_setmanifest_without_size(line: &str, next_manifest_id: &str) -> Result<String, String> {
+    fn rewrite_setmanifest_without_size(
+        line: &str,
+        next_manifest_id: &str,
+    ) -> Result<String, String> {
         let re = Regex::new(
             r#"^(?P<indent>\s*)(?P<comment>--\s*)?(?P<func>(?i:setmanifestid))\s*\(\s*(?P<appid>\d+)\s*,\s*["'][^"']+["']\s*(?:,[^)]*)?\)(?P<suffix>.*)$"#,
         ).map_err(|e| format!("Internal regex error: {}", e))?;
@@ -365,7 +392,9 @@ impl LuaManifestPins {
             "{}{}{}({}, \"{}\"){}",
             caps.name("indent").map(|m| m.as_str()).unwrap_or(""),
             caps.name("comment").map(|m| m.as_str()).unwrap_or(""),
-            caps.name("func").map(|m| m.as_str()).unwrap_or("setManifestid"),
+            caps.name("func")
+                .map(|m| m.as_str())
+                .unwrap_or("setManifestid"),
             caps.name("appid").map(|m| m.as_str()).unwrap_or("0"),
             next_manifest_id,
             caps.name("suffix").map(|m| m.as_str()).unwrap_or(""),

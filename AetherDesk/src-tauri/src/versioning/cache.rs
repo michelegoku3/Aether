@@ -69,24 +69,49 @@ impl VersionCache {
     }
 
     pub fn get_build_pins(&self, build_id: u64) -> Option<Vec<DepotManifestPin>> {
-        let cache = self.load()?;
-        let entry = cache.build_pins.get(&build_id.to_string())?;
-        if now_unix().saturating_sub(entry.fetched_at) > BUILD_PINS_TTL_SECS {
-            return None;
-        }
-        Some(entry.value.clone())
+        self.get_build_pins_many(&[build_id]).remove(&build_id)
+    }
+
+    /// Reads the cache file once for an entire lookup batch.
+    pub fn get_build_pins_many(&self, build_ids: &[u64]) -> HashMap<u64, Vec<DepotManifestPin>> {
+        let Some(cache) = self.load() else {
+            return HashMap::new();
+        };
+        let now = now_unix();
+        build_ids
+            .iter()
+            .filter_map(|build_id| {
+                let entry = cache.build_pins.get(&build_id.to_string())?;
+                if now.saturating_sub(entry.fetched_at) > BUILD_PINS_TTL_SECS {
+                    return None;
+                }
+                Some((*build_id, entry.value.clone()))
+            })
+            .collect()
     }
 
     pub fn put_build_pins(&self, build_id: u64, pins: Vec<DepotManifestPin>) -> Result<(), String> {
+        self.put_build_pins_many([(build_id, pins)])
+    }
+
+    /// Commits all successful results from a network batch with one atomic
+    /// cache write instead of repeatedly loading and replacing the same file.
+    pub fn put_build_pins_many(
+        &self,
+        entries: impl IntoIterator<Item = (u64, Vec<DepotManifestPin>)>,
+    ) -> Result<(), String> {
         let mut cache = self.load().unwrap_or_default();
         cache.schema_version = CACHE_SCHEMA_VERSION;
-        cache.build_pins.insert(
-            build_id.to_string(),
-            TimedEntry {
-                fetched_at: now_unix(),
-                value: pins,
-            },
-        );
+        let fetched_at = now_unix();
+        for (build_id, pins) in entries {
+            cache.build_pins.insert(
+                build_id.to_string(),
+                TimedEntry {
+                    fetched_at,
+                    value: pins,
+                },
+            );
+        }
         self.save(&cache)
     }
 

@@ -1,7 +1,5 @@
 use serde::{Deserialize, Serialize};
 
-use crate::manifest::pins::DepotManifestPin;
-
 /// One entry of a game's build history (from the SteamDB PatchnotesRSS feed).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -19,10 +17,6 @@ pub struct BuildInfo {
 pub struct ApplyVersionReport {
     /// Number of manifest pins written into the Lua.
     pub applied_pins: usize,
-    /// Always empty with the current apply policy: depots absent from a build's
-    /// depot list are left unchanged, never disabled (auto-apply only writes
-    /// pins for depots that changed in the build). Kept for API stability.
-    pub disabled_depots: Vec<u32>,
     /// How many of the pinned `.manifest` files were already present locally.
     pub manifests_found: usize,
     /// `"depot:manifest"` pairs still missing from the depotcache folders.

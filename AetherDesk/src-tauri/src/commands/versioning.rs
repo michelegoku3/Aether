@@ -1,6 +1,7 @@
 use serde::Serialize;
 use tauri::{AppHandle, Emitter};
 
+use crate::manifest::pins::LuaManifestPins;
 use crate::util::validation::validate_steam_path;
 use crate::versioning::model::{ApplyVersionReport, BuildInfo, SavedBuild};
 use crate::versioning::queue::PendingAcfEdit;
@@ -21,8 +22,9 @@ struct VersionProgressEvent {
 
 fn build_service(app: &AppHandle) -> VersionService {
     let settings = crate::core::settings::SettingsManager::new(app).load();
-    let token =
-        crate::versioning::sources::resolve_build_details_token(Some(&settings.build_details_token));
+    let token = crate::versioning::sources::resolve_build_details_token(Some(
+        &settings.build_details_token,
+    ));
     VersionService::with_token(token)
 }
 
@@ -84,8 +86,24 @@ pub async fn apply_game_version(
         },
     );
 
+    // Read the complete Lua depot set before resolving remote data. A build's
+    // details contain only depots changed by that patch; the service needs the
+    // full desired set to reconstruct every depot's state at the target build.
+    let lua = LuaManifestPins::new(steam_path.clone(), app_id);
+    let depot_ids = lua.depot_ids_from_file().map_err(|err| {
+        if !lua.path_exists() {
+            crate::versioning::error::VersionError::LuaMissing(lua.lua_path().display().to_string())
+                .to_string()
+        } else {
+            crate::versioning::error::VersionError::Lua(err).to_string()
+        }
+    })?;
+
     let service = build_service(&app);
-    let pins = match service.resolve_pins(build_id).await {
+    let pins = match service
+        .resolve_snapshot_pins(app_id, build_id, &depot_ids)
+        .await
+    {
         Ok(pins) => pins,
         Err(err) => {
             crate::desk_log_error!(
@@ -120,7 +138,14 @@ pub async fn apply_game_version(
                 },
             );
         };
-        service.apply_build_sync(app_id, build_id, &steam_path, &library_path, &pins, &progress)
+        service.apply_build_sync(
+            app_id,
+            build_id,
+            &steam_path,
+            &library_path,
+            &pins,
+            &progress,
+        )
     })
     .await
     .map_err(|e| format!("Version task failed: {e}"))?;
@@ -129,7 +154,7 @@ pub async fn apply_game_version(
         Ok(report) => {
             crate::desk_log_info!(
                 "versioning",
-                "Build {} applied for {}: {} pin(s) written (absent-from-diff depots left unchanged), acf_synced={}, acf_queued={}",
+                "Build {} applied for {}: {} pin(s) written from the reconstructed snapshot, acf_synced={}, acf_queued={}",
                 build_id,
                 crate::core::logger::format_appid(app_id),
                 report.applied_pins,

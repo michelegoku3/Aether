@@ -5,4 +5,5 @@ pub mod model;
 pub mod queue;
 pub mod saved;
 pub mod service;
+pub(crate) mod snapshot;
 pub mod sources;
