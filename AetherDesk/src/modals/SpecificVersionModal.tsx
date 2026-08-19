@@ -2,6 +2,9 @@ import React, { useMemo, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { requireSteamPath } from '../hooks/useSettings';
 import { useModalDismiss } from '../hooks/useModalDismiss';
+import { useWatchdog } from '../hooks/useWatchdog';
+import { StatusAlert } from '../ui/StatusAlert';
+import { StatusMessage } from '../types/ui';
 
 export interface LuaManifestRow {
   rowId: number;
@@ -35,24 +38,13 @@ export const ManualVersionEditor = ({ game, initialRows, onClose }: ManualVersio
   // build applied in the Auto tab (or any external edit) becomes the new
   // baseline instead of being flagged as a manual change.
   const [baseline, setBaseline] = useState<LuaManifestRow[]>(initialRows);
-  const [status, setStatus] = useState({
-    text: initialRows.length > 0
-      ? 'Lua ready. Edit manifest IDs or disable depots, then apply.'
-      : 'Lua ready, but no editable setManifestid entries were found.',
-    type: initialRows.length > 0 ? 'info' : 'error'
-  });
+  const [status, setStatus] = useState<StatusMessage>(
+    initialRows.length > 0
+      ? { text: 'Lua ready. Edit manifest IDs or disable depots, then apply.', type: 'info' }
+      : { text: 'Lua ready, but no editable setManifestid entries were found.', type: 'error' }
+  );
   const [isApplying, setIsApplying] = useState(false);
-  const watchdogRef = React.useRef<number | null>(null);
-
-  const clearWatchdog = () => {
-    if (watchdogRef.current !== null) {
-      window.clearTimeout(watchdogRef.current);
-      watchdogRef.current = null;
-    }
-  };
-
-  // Clear any pending watchdog when the editor unmounts.
-  React.useEffect(() => clearWatchdog, []);
+  const { arm: armWatchdog, clear: clearWatchdog } = useWatchdog();
 
   // Refresh the rows from disk on mount: the Manual tab must show the live Lua
   // state (e.g. the manifests just written by an apply in the Auto tab), not a
@@ -129,7 +121,7 @@ export const ManualVersionEditor = ({ game, initialRows, onClose }: ManualVersio
       // Watchdog: the edit command is synchronous and fast on the backend.
       // If it does not settle, stop the spinner and show a real message
       // instead of loading forever.
-      watchdogRef.current = window.setTimeout(() => {
+      armWatchdog(() => {
         setStatus({
           text: 'The edit is taking longer than expected. Check the Logs view for details.',
           type: 'error',
@@ -168,11 +160,7 @@ export const ManualVersionEditor = ({ game, initialRows, onClose }: ManualVersio
 
   return (
     <>
-      {status.text && (
-        <div className={`settings-alert ${status.type}`} style={{ padding: '10px 15px', fontSize: '12px' }}>
-          {status.text}
-        </div>
-      )}
+      <StatusAlert status={status} className="settings-alert--compact" />
 
       <div className="version-table-wrapper">
         <table className="version-table">

@@ -138,7 +138,6 @@ fn main() {
             commands::versioning::get_saved_builds,
             commands::versioning::save_build,
             commands::versioning::remove_saved_build,
-            commands::versioning::get_build_preview,
             commands::versioning::apply_game_version,
             commands::versioning::get_pending_version_edits,
         ])

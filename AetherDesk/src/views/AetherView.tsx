@@ -282,8 +282,8 @@ export const AetherView = ({
 
       {statusMsg.text && (
         <div
-          className={`settings-alert ${statusMsg.type}`}
-          style={{ width: '460px', padding: '10px 15px', fontSize: '12px', textAlign: 'center' }}
+          className={`settings-alert ${statusMsg.type} settings-alert--compact`}
+          style={{ width: '460px', textAlign: 'center' }}
         >
           {statusMsg.text}
         </div>
