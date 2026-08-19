@@ -35,11 +35,20 @@
   padding: 0;
 }
 
+html {
+  /* Root scroller lock: without it, scroll chaining from a modal's internal
+     scroll area can reach <html> and scroll the whole window behind the
+     fixed overlay. Body is already overflow:hidden; html needs it too. */
+  overflow: hidden;
+  height: 100%;
+}
+
 body {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
   background-color: var(--bg-app);
   color: var(--color-text);
   overflow: hidden;
+  height: 100%;
 }
 
 /* Custom Dark & Cyan Scrollbar Styling for Edge/WebView2 */
@@ -672,6 +681,9 @@ body {
   align-items: center;
   justify-content: center;
   z-index: 999; /* Always on top of everything */
+  /* Stop scroll chaining: reaching the edge of a modal's internal scroll
+     area must never scroll the views behind the overlay. */
+  overscroll-behavior: contain;
 }
 
 .modal-container {
@@ -688,11 +700,13 @@ body {
 
 .version-modal-container {
   width: 840px;
-  /* Dynamic height: the modal grows with the number of editable depots.
-     `height: auto` + viewport cap; the table wrapper height is computed by
-     the component from the row count (see SpecificVersionModal.tsx). */
+  /* The popup sizes to its content and never exceeds the viewport: it only
+     grows as tall as the visible components need (1 depot → small popup,
+     many builds → taller, capped at viewport − 48px). Anything beyond the
+     cap scrolls inside the modal body, never the window behind it. */
   max-height: calc(100vh - 48px);
   height: auto;
+  overflow: hidden;
 }
 
 @keyframes modalScaleIn {
@@ -978,6 +992,8 @@ body {
   display: flex;
   justify-content: center;
   gap: 12px;
+  padding-top: 4px;
+  flex-shrink: 0;
 }
 
 .version-actions .panel-btn {
@@ -2430,12 +2446,28 @@ body {
   min-height: 0;
   display: flex;
   flex-direction: column;
+  /* 12px top keeps a small breathing gap between the tab strip and the first
+     tab component (the strip's bottom is flush), while 8px bottom keeps the
+     action buttons close to the popup edge. */
+  padding: 12px 24px 8px;
+  gap: 8px;
 }
 
+/* In the version modal, status alerts and the transient apply report must
+   always stay visible above the scrollable build/table list, so they do not
+   shrink. */
+.version-modal-container .settings-alert,
+.version-modal-container .version-report {
+  flex-shrink: 0;
+}
+
+/* The table shows every depot and only scrolls once the modal hits its
+   viewport cap: no fixed max-height, the wrapper simply fills the space the
+   auto-height modal allocates to it. */
 .version-modal-container .version-table-wrapper {
-  flex: 0 1 auto;
-  max-height: var(--version-table-max-height, 300px);
+  flex: 1 1 auto;
   min-height: 0;
+  max-height: none;
 }
 
 /* Equal card action buttons: Download is the reference width; Modify and Info
@@ -2910,12 +2942,14 @@ body {
   overflow: visible;
 }
 
-/* ── Change Version modal: tabs (Manual / Auto / Builds) ───────────────── */
+/* ── Change Version modal: tabs (Manual / Auto) ──────────────────────── */
 
 .version-tabs {
   display: flex;
   gap: 6px;
-  padding: 14px 20px 0;
+  /* Horizontal padding matches the modal body (24px) so the tab strip is
+     exactly as wide as the content below it. */
+  padding: 12px 24px 0;
 }
 
 .version-tab {
@@ -2946,28 +2980,95 @@ body {
 .version-tab-body {
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 10px;
   flex: 1 1 auto;
   min-height: 0;
-  overflow-y: auto;
-  padding-bottom: 4px;
+  overflow: hidden;
+  padding-bottom: 2px;
 }
 
-/* Auto tab */
+/* Auto+Builds merged tab */
 
-.version-auto-row {
+.version-auto-input-row {
   display: flex;
-  gap: 10px;
+  gap: 8px;
+  align-items: stretch;
+  flex-shrink: 0;
+}
+
+.version-build-input-wrap {
+  position: relative;
+  flex: 1 1 0%;
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+
+.version-build-input-wrap .version-build-input {
+  width: 100%;
+  padding-right: 34px; /* leave room for the clear × */
+}
+
+.version-build-clear {
+  position: absolute;
+  right: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 22px;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  border-radius: 50%;
+  color: var(--color-muted);
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+  transition: color 0.2s ease, background-color 0.2s ease;
+}
+
+.version-build-clear:hover {
+  color: #ffffff;
+  background-color: rgba(255, 255, 255, 0.08);
+}
+
+.version-star-filter-btn {
+  background-color: #121216;
+  border: 1px solid var(--border-color);
+  color: #666;
+  font-size: 18px;
+  width: 38px;
+  min-width: 38px;
+  border-radius: 8px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+  flex-shrink: 0;
+}
+
+.version-star-filter-btn:hover {
+  color: #ffd24d;
+  border-color: #ffd24d44;
+}
+
+.version-star-filter-btn.active {
+  color: #ffd24d;
+  background-color: rgba(255, 210, 77, 0.08);
+  border-color: #ffd24d66;
 }
 
 .version-build-input {
-  flex: 1 1 0%;
+  width: 100%;
   background-color: #08080a;
   border: 1px solid var(--border-color);
   border-radius: 8px;
   color: #fff;
   font-size: 14px;
-  padding: 12px 14px;
+  padding: 10px 14px;
   outline: none;
   transition: border-color 0.2s ease;
 }
@@ -2976,128 +3077,28 @@ body {
   border-color: #00b3ff;
 }
 
-.version-preview {
-  border: 1px solid var(--border-color);
-  border-radius: 8px;
-  background-color: #0c0c10;
-  padding: 14px;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.version-preview-header {
-  color: #fff;
-  font-size: 14px;
-  font-weight: 600;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.version-preview-date {
-  color: #888;
-  font-size: 12px;
-  font-weight: 400;
-}
-
-.version-preview-facts {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  color: #bbb;
-  font-size: 13px;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.version-preview-facts li strong {
-  color: #00b3ff;
-}
-
-.version-preview-facts .version-preview-warn {
-  color: #ffb020;
-}
-
-.version-progress {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.version-progress-bar {
-  height: 8px;
-  border-radius: 4px;
-  background-color: #1c1c21;
-  overflow: hidden;
-}
-
-.version-progress-fill {
-  height: 100%;
-  background: linear-gradient(90deg, #00b3ff, #4dc9ff);
-  transition: width 0.3s ease;
-}
-
-.version-progress-label {
-  color: #888;
-  font-size: 12px;
-}
-
 .version-report {
   display: flex;
   flex-direction: column;
   gap: 8px;
 }
 
-.version-report-note {
-  color: #bbb;
-  font-size: 12px;
-  border-left: 3px solid #00b3ff66;
-  padding: 4px 0 4px 10px;
-}
-
-/* Builds tab */
-
-.version-builds-toolbar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-}
-
-.version-filter-chips {
-  display: flex;
-  gap: 6px;
-}
-
-.version-chip {
-  background-color: #121216;
-  border: 1px solid var(--border-color);
-  color: #999;
-  font-size: 12px;
-  font-weight: 600;
-  padding: 6px 14px;
-  border-radius: 999px;
-  cursor: pointer;
-  transition: all 0.2s ease;
-}
-
-.version-chip.active {
-  background-color: #00b3ff22;
-  border-color: #00b3ff66;
-  color: #00b3ff;
-}
+/* Builds list */
 
 .version-refresh-btn {
   background-color: #121216;
   border: 1px solid var(--border-color);
   color: #999;
-  font-size: 15px;
-  width: 32px;
-  height: 32px;
+  width: 38px;
+  height: 38px;
+  min-width: 38px;
+  min-height: 38px;
   border-radius: 8px;
   cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
   transition: all 0.2s ease;
 }
 
@@ -3117,7 +3118,8 @@ body {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  max-height: 340px;
+  flex: 1 1 auto;
+  min-height: 0;
   overflow-y: auto;
   padding-right: 2px;
 }

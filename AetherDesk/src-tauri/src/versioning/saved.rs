@@ -1,4 +1,3 @@
-use std::collections::HashSet;
 use std::fs;
 use std::path::PathBuf;
 
@@ -42,13 +41,6 @@ impl SavedBuildsStore {
             .collect();
         builds.sort_by(|a, b| b.saved_at.cmp(&a.saved_at));
         builds
-    }
-
-    pub fn saved_ids(&self, app_id: u32) -> HashSet<u64> {
-        self.list(app_id)
-            .into_iter()
-            .map(|b| b.build_id)
-            .collect()
     }
 
     pub fn add(&self, build: SavedBuild) -> Result<SavedBuild, String> {

@@ -41,10 +41,6 @@ impl SteamAcfEditor {
         }
     }
 
-    pub fn path(&self) -> &Path {
-        &self.path
-    }
-
     pub fn exists(&self) -> bool {
         self.path.exists()
     }
@@ -57,17 +53,6 @@ impl SteamAcfEditor {
     /// Current `AppState.buildid` value, if present.
     pub fn build_id(&self) -> Result<String, String> {
         Self::find_value(&self.read_raw()?, "buildid")
-    }
-
-    /// `AppState.StateFlags` as a number (0 when unreadable).
-    pub fn state_flags(&self) -> u64 {
-        match self.read_raw() {
-            Ok(content) => Self::find_value(&content, "StateFlags")
-                .ok()
-                .and_then(|v| v.parse::<u64>().ok())
-                .unwrap_or(0),
-            Err(_) => 0,
-        }
     }
 
     pub fn is_readonly(&self) -> Result<bool, String> {

@@ -98,6 +98,7 @@ fn main() {
             commands::library::get_installed_library_games,
             commands::library::warm_library_game_cache,
             commands::library::open_steamdb_depots,
+            commands::library::open_steamdb_patchnotes,
             commands::home_links::open_home_resource,
             commands::game_info::get_game_info,
             commands::steamless::pick_and_run_steamless,

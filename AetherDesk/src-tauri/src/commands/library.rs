@@ -154,6 +154,20 @@ pub fn open_steamdb_depots(app_id: u32) -> Result<(), String> {
     open_external_url(&url)
 }
 
+/// Open SteamDB patch notes page for the given App ID (used by the Auto tab
+/// of the Change Version popup, since the Auto flow is build-driven and the
+/// depots page is only useful in the per-depot Manual flow).
+#[tauri::command]
+pub fn open_steamdb_patchnotes(app_id: u32) -> Result<(), String> {
+    if app_id == 0 {
+        return Err("A valid Steam App ID is required".to_string());
+    }
+
+    crate::desk_log_info!("library", "Opening SteamDB patchnotes page for {}", crate::core::logger::format_appid(app_id));
+    let url = format!("https://steamdb.info/app/{}/patchnotes/", app_id);
+    open_external_url(&url)
+}
+
 
 
 #[tauri::command]
