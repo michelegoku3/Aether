@@ -79,10 +79,7 @@ export const SavedCrackModal = ({
       </p>
 
       {error && (
-        <div
-          className="settings-alert error"
-          style={{ padding: '10px 15px', fontSize: '12px' }}
-        >
+        <div className="settings-alert error settings-alert--compact">
           {error}
         </div>
       )}

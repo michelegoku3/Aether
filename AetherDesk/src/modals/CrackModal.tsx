@@ -162,10 +162,7 @@ export const CrackModal = ({ game, onClose }: CrackModalProps) => {
 
         <div className="modal-body">
           {status.text && (
-            <div
-              className={`settings-alert ${status.type}`}
-              style={{ padding: '10px 15px', fontSize: '12px' }}
-            >
+            <div className={`settings-alert ${status.type} settings-alert--compact`}>
               {status.text}
             </div>
           )}

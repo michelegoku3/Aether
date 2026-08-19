@@ -681,9 +681,24 @@ body {
   align-items: center;
   justify-content: center;
   z-index: 999; /* Always on top of everything */
-  /* Stop scroll chaining: reaching the edge of a modal's internal scroll
-     area must never scroll the views behind the overlay. */
-  overscroll-behavior: contain;
+}
+
+/* Background scroll lock while a modal is open.
+   The overlay is position:fixed, but it is still a DOM CHILD of the scrollable
+   view (store/settings/aether/...), so a wheel event over the popup bubbles to
+   that view and scrolls the content behind the overlay — overscroll-behavior
+   on the overlay cannot help because the overlay itself is not a scroll
+   container. Locking the view's overflow while it contains a .modal-overlay
+   (CSS :has, supported by the WebView2/Chromium engine) stops the chaining for
+   EVERY modal, present or future, with a single rule. The fixed overlay and
+   its own scroll areas (build list, table, ...) are unaffected: ancestor
+   overflow does not clip position:fixed descendants. */
+.store-view:has(.modal-overlay),
+.settings-view:has(.modal-overlay),
+.aether-view:has(.modal-overlay),
+.home-view:has(.modal-overlay),
+.log-view-container:has(.modal-overlay) {
+  overflow: hidden;
 }
 
 .modal-container {
@@ -1224,6 +1239,13 @@ body {
   border: 1px solid transparent;
   white-space: pre-wrap;
   animation: fadeIn 0.2s ease;
+}
+
+/* Compact variant for alerts inside popups/modals: less chrome, smaller text.
+   Replaces the repeated inline `padding/fontSize` styles (DRY). */
+.settings-alert--compact {
+  padding: 10px 15px;
+  font-size: 12px;
 }
 
 @keyframes fadeIn {

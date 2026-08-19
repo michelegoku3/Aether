@@ -3,7 +3,11 @@ import { invoke } from '@tauri-apps/api/core';
 import { requireSteamPath } from '../hooks/useSettings';
 import { useModalDismiss } from '../hooks/useModalDismiss';
 import { useGameBuilds, BuildInfo } from '../hooks/useGameBuilds';
+import { useWatchdog } from '../hooks/useWatchdog';
 import { RefreshIcon } from '../ui/icons';
+import { StatusAlert } from '../ui/StatusAlert';
+import { emptyStatus, StatusMessage } from '../types/ui';
+import { formatDateDDMMYYYY } from '../util/dates';
 import {
   ManualVersionEditor,
   LuaManifestRow,
@@ -11,24 +15,6 @@ import {
 } from './SpecificVersionModal';
 
 export type VersionTab = 'manual' | 'auto';
-
-export interface DepotManifestPin {
-  depotId: number;
-  manifestId: string;
-}
-
-export interface BuildPreview {
-  buildId: number;
-  date: string;
-  title: string;
-  pins: DepotManifestPin[];
-  matchingPins: DepotManifestPin[];
-  /** Lua depots absent from this build's diff — they stay unchanged (a build's
-   * depot list is a patch diff, so absence means "not changed", not "removed"). */
-  missingDepots: number[];
-  unlistedDepots: number[];
-  luaDepotCount: number;
-}
 
 export interface ApplyVersionReport {
   appliedPins: number;
@@ -50,18 +36,6 @@ interface ChangeVersionModalProps {
 const TAB_LABELS: Record<VersionTab, string> = {
   manual: 'Manual',
   auto: 'Auto',
-};
-
-/** Format any date string to DD/MM/YYYY. */
-const formatDateDDMMYYYY = (dateStr: string): string => {
-  if (!dateStr) return '';
-  // Try parsing as a Date
-  const d = new Date(dateStr);
-  if (isNaN(d.getTime())) return dateStr; // fallback: return as-is
-  const dd = String(d.getDate()).padStart(2, '0');
-  const mm = String(d.getMonth() + 1).padStart(2, '0');
-  const yyyy = d.getFullYear();
-  return `${dd}/${mm}/${yyyy}`;
 };
 
 /**
@@ -135,23 +109,14 @@ const AutoBuildsTab = ({ appId, onClose }: AutoBuildsTabProps) => {
   const [buildIdInput, setBuildIdInput] = useState('');
   const [report, setReport] = useState<ApplyVersionReport | null>(null);
   const [appliedBuildId, setAppliedBuildId] = useState(0);
-  const [status, setStatus] = useState<{ text: string; type: string }>({ text: '', type: 'info' });
+  const [status, setStatus] = useState<StatusMessage>(emptyStatus());
   const [isApplying, setIsApplying] = useState(false);
   const { builds, savedIds, loading, error, reload, toggleSaved } = useGameBuilds(appId);
   const [onlySaved, setOnlySaved] = useState(false);
   const [savingId, setSavingId] = useState<number | null>(null);
-  const watchdogRef = React.useRef<number | null>(null);
+  const { arm: armWatchdog, clear: clearWatchdog } = useWatchdog();
 
   useModalDismiss(onClose, isApplying);
-
-  const clearWatchdog = () => {
-    if (watchdogRef.current !== null) {
-      window.clearTimeout(watchdogRef.current);
-      watchdogRef.current = null;
-    }
-  };
-
-  React.useEffect(() => clearWatchdog, []);
 
   // The success toast is transient: give the user a moment to read it, then
   // dismiss it on its own (same behaviour as the other green status alerts).
@@ -186,7 +151,7 @@ const AutoBuildsTab = ({ appId, onClose }: AutoBuildsTabProps) => {
     setStatus({ text: '', type: 'info' });
 
     try {
-      watchdogRef.current = window.setTimeout(() => {
+      armWatchdog(() => {
         setStatus({
           text: 'This is taking longer than expected. The operation continues in the background — check the Logs view for details.',
           type: 'error',
@@ -281,19 +246,13 @@ const AutoBuildsTab = ({ appId, onClose }: AutoBuildsTabProps) => {
         </button>
       </div>
 
-      {status.text && (
-        <div className={`settings-alert ${status.type}`} style={{ padding: '10px 15px', fontSize: '12px' }}>
-          {status.text}
-        </div>
-      )}
+      <StatusAlert status={status} className="settings-alert--compact" />
 
       {/* Builds list */}
       {loading && <div className="version-builds-empty">Loading builds…</div>}
 
       {!loading && error && (
-        <div className="settings-alert error" style={{ padding: '10px 15px', fontSize: '12px' }}>
-          {error}
-        </div>
+        <StatusAlert status={{ text: error, type: 'error' }} className="settings-alert--compact" />
       )}
 
       {!loading && !error && visibleBuilds.length === 0 && (
@@ -337,12 +296,17 @@ const AutoBuildsTab = ({ appId, onClose }: AutoBuildsTabProps) => {
 
       {report && (
         <div className="version-report">
-          <div className="settings-alert success" style={{ padding: '10px 15px', fontSize: '12px' }}>
-            Build {appliedBuildId} applied: {report.appliedPins} manifest pin(s) written.
-            {report.disabledDepots.length > 0 && (
-              <> {report.disabledDepots.length} depot(s) disabled because they do not exist in this build.</>
-            )}
-          </div>
+          <StatusAlert
+            status={{
+              text: `Build ${appliedBuildId} applied: ${report.appliedPins} manifest pin(s) written.${
+                report.disabledDepots.length > 0
+                  ? ` ${report.disabledDepots.length} depot(s) disabled because they do not exist in this build.`
+                  : ''
+              }`,
+              type: 'success',
+            }}
+            className="settings-alert--compact"
+          />
         </div>
       )}
 

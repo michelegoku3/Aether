@@ -88,7 +88,7 @@ export const AntivirusExclusionModal = ({ onDone }: AntivirusExclusionModalProps
           </p>
 
           {status.text && (
-            <div className={`settings-alert ${status.type}`} style={{ padding: '10px 15px', fontSize: '12px' }}>
+            <div className={`settings-alert ${status.type} settings-alert--compact`}>
               {status.text}
             </div>
           )}

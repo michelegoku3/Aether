@@ -536,7 +536,7 @@ export const StoreView = ({ onRefreshUsage, isActive, settingsRevision, useAlter
             {/* Modal Body Content */}
             <div className="modal-body">
               {/* Operation Feedback inside the Modal */}
-              <StatusAlert status={downloadStatus} style={{ padding: '10px 15px', fontSize: '12px' }} />
+              <StatusAlert status={downloadStatus} className="settings-alert--compact" />
 
               {/* Dark Source Box Panel */}
               <div className="source-box">

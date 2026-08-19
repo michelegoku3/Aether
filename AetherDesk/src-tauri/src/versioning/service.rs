@@ -1,12 +1,11 @@
-use std::collections::HashSet;
 use std::sync::Arc;
 
 use crate::core::paths::LocalAppPaths;
-use crate::manifest::pins::{DepotManifestPin, LuaManifestPins};
+use crate::manifest::pins::DepotManifestPin;
 use crate::versioning::apply::{apply_build_version, ProgressFn};
 use crate::versioning::cache::VersionCache;
 use crate::versioning::error::VersionError;
-use crate::versioning::model::{ApplyVersionReport, BuildInfo, BuildPreview, SavedBuild};
+use crate::versioning::model::{ApplyVersionReport, BuildInfo, SavedBuild};
 use crate::versioning::saved::SavedBuildsStore;
 use crate::versioning::sources::{
     self, depotbox::DepotboxSource, steamdb::SteamDbPatchnotesSource, BuildDetailsSource,
@@ -64,50 +63,6 @@ impl VersionService {
         Ok(pins)
     }
 
-    /// Plan of what applying a build would do — read-only, no file touched.
-    pub async fn preview_build(
-        &self,
-        app_id: u32,
-        build_id: u64,
-        steam_path: &str,
-    ) -> Result<BuildPreview, VersionError> {
-        let (date, title) = self.lookup_build_meta(app_id, build_id).await;
-        let pins = self.resolve_pins(build_id).await?;
-
-        let lua = LuaManifestPins::new(steam_path.to_string(), app_id);
-        if !lua.path_exists() {
-            return Err(VersionError::LuaMissing(
-                lua.lua_path().display().to_string(),
-            ));
-        }
-        let rows = lua.rows_from_file().map_err(VersionError::Lua)?;
-        let lua_depots: HashSet<u32> = rows.iter().map(|row| row.app_id).collect();
-        let build_depots: HashSet<u32> = pins.iter().map(|pin| pin.depot_id).collect();
-
-        let matching_pins: Vec<DepotManifestPin> = pins
-            .iter()
-            .filter(|pin| lua_depots.contains(&pin.depot_id))
-            .cloned()
-            .collect();
-        let mut missing_depots: Vec<u32> =
-            lua_depots.difference(&build_depots).copied().collect();
-        missing_depots.sort_unstable();
-        let mut unlisted_depots: Vec<u32> =
-            build_depots.difference(&lua_depots).copied().collect();
-        unlisted_depots.sort_unstable();
-
-        Ok(BuildPreview {
-            build_id,
-            date,
-            title,
-            pins,
-            matching_pins,
-            missing_depots,
-            unlisted_depots,
-            lua_depot_count: rows.len(),
-        })
-    }
-
     /// Applies a build (blocking file I/O — call from a blocking task).
     /// `pins` must come from `resolve_pins` first, so the network work stays
     /// async while the file pipeline runs off the async runtime.
@@ -157,13 +112,4 @@ impl VersionService {
             })
     }
 
-    /// (date, title) of a build if its metadata is already cached.
-    async fn lookup_build_meta(&self, app_id: u32, build_id: u64) -> (String, String) {
-        if let Some(history) = self.cache.get_build_history(app_id) {
-            if let Some(info) = history.iter().find(|info| info.build_id == build_id) {
-                return (info.date.clone(), info.title.clone());
-            }
-        }
-        (String::new(), String::new())
-    }
 }

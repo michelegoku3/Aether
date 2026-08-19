@@ -13,28 +13,6 @@ pub struct BuildInfo {
     pub title: String,
 }
 
-/// What applying a build WOULD do to the game's Lua — computed without
-/// touching any file, so the UI can show a plan before the user confirms.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct BuildPreview {
-    pub build_id: u64,
-    pub date: String,
-    pub title: String,
-    /// All (depot, manifest) pins of the build.
-    pub pins: Vec<DepotManifestPin>,
-    /// Pins whose depot is present in the game's Lua — these get applied.
-    pub matching_pins: Vec<DepotManifestPin>,
-    /// Depots in the Lua that this build's depot list does not mention. A
-    /// build's depot list is a patch diff, so these depots simply did NOT
-    /// change in this build — they stay pinned to their current manifest.
-    pub missing_depots: Vec<u32>,
-    /// Depots of the build that the Lua does not know — informational only.
-    pub unlisted_depots: Vec<u32>,
-    /// Total editable depot rows in the Lua.
-    pub lua_depot_count: usize,
-}
-
 /// Outcome of `apply_game_version` — always the real state that was reached.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

@@ -2,7 +2,7 @@ use serde::Serialize;
 use tauri::{AppHandle, Emitter};
 
 use crate::util::validation::validate_steam_path;
-use crate::versioning::model::{ApplyVersionReport, BuildInfo, BuildPreview, SavedBuild};
+use crate::versioning::model::{ApplyVersionReport, BuildInfo, SavedBuild};
 use crate::versioning::queue::PendingAcfEdit;
 use crate::versioning::service::VersionService;
 
@@ -52,49 +52,6 @@ pub async fn get_game_builds(app: AppHandle, app_id: u32) -> Result<Vec<BuildInf
         .list_builds(app_id)
         .await
         .map_err(String::from)
-}
-
-/// Read-only plan of what applying a build would change.
-#[tauri::command]
-pub async fn get_build_preview(
-    app: AppHandle,
-    app_id: u32,
-    build_id: u64,
-    steam_path: String,
-) -> Result<BuildPreview, String> {
-    validate_steam_path(&steam_path)?;
-    validate_app_build(app_id, build_id)?;
-    crate::desk_log_info!(
-        "versioning",
-        "Previewing build {} for {}",
-        build_id,
-        crate::core::logger::format_appid(app_id)
-    );
-    match build_service(&app)
-        .preview_build(app_id, build_id, &steam_path)
-        .await
-    {
-        Ok(preview) => {
-            crate::desk_log_info!(
-                "versioning",
-                "Preview ready for build {}: {} matching pin(s), {} depot(s) to disable",
-                build_id,
-                preview.matching_pins.len(),
-                preview.missing_depots.len()
-            );
-            Ok(preview)
-        }
-        Err(err) => {
-            crate::desk_log_error!(
-                "versioning",
-                "Preview of build {} for {} failed: {}",
-                build_id,
-                crate::core::logger::format_appid(app_id),
-                err
-            );
-            Err(err.into())
-        }
-    }
 }
 
 /// Applies a build: pins the Lua, syncs the ACF (or queues the edit) and
