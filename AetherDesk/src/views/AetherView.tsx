@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
-import { getVersion } from '@tauri-apps/api/app';
 import {
   UninstallDeskConfirmModal,
   UninstallSteamCleanModal,
@@ -11,6 +10,9 @@ import { DllStatusInfo } from '../types/ui';
 interface AetherViewProps {
   isUpdateAvailable: boolean;
   isDeskUpdateAvailable: boolean;
+  /** Installed AetherDesk version, resolved at app startup (passed down from
+   * App.tsx) so the panel shows the correct value from its first render. */
+  deskVersion: string;
   isDllUpdateTest: boolean;
   isDeskUpdateTest: boolean;
   onUpdateComplete: () => void;
@@ -38,13 +40,13 @@ const withSteamPath = async <T,>(
 export const AetherView = ({
   isUpdateAvailable,
   isDeskUpdateAvailable,
+  deskVersion,
   isDllUpdateTest,
   isDeskUpdateTest,
   onUpdateComplete,
   dllStatus,
   onDllStatusChange,
 }: AetherViewProps) => {
-  const [deskVersion, setDeskVersion] = useState('…');
   const [statusMsg, setStatusMsg] = useState({ text: '', type: 'info' as StatusTone });
   const [isProcessing, setIsProcessing] = useState(false);
   const [uninstallStep, setUninstallStep] = useState<UninstallStep | null>(null);
@@ -71,36 +73,13 @@ export const AetherView = ({
     onUpdateComplete();
   };
 
-  const checkDeskVersion = async () => {
-    try {
-      const deskInfo: any = await invoke('check_aether_desk_update');
-      setDeskVersion(deskInfo.installed_version || 'N/A');
-    } catch (err: any) {
-      console.error('Failed to query AetherDesk update state:', err);
-    }
-  };
-
   useEffect(() => {
-    // The desk version is the packaged Tauri version: `getVersion()` is a fast
-    // local IPC (no network), so the panel shows the correct value from the
-    // first render — no more flickering "1.0.0" placeholder while the update
-    // check (which hits GitHub) resolves.
-    let cancelled = false;
-    getVersion()
-      .then((v) => {
-        if (!cancelled) setDeskVersion(v || 'N/A');
-      })
-      .catch(() => {
-        if (!cancelled) setDeskVersion('N/A');
-      });
-    void checkDeskVersion();
+    // The desk version comes from App.tsx (resolved at startup via a local IPC,
+    // no network), so the panel shows the correct value from its first render.
     // "Restore" replaces "Uninstall" while test updates are enabled.
     getSettings()
       .then((settings) => setTestUpdatesEnabled(Boolean(settings.enable_test_updates)))
       .catch(() => {});
-    return () => {
-      cancelled = true;
-    };
   }, [isUpdateAvailable, isDeskUpdateAvailable]);
 
   const handleInstallDeskUpdate = async () => {

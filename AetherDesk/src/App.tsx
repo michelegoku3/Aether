@@ -13,6 +13,7 @@ export default function App() {
   // Global state to track AetherDLL update availability from GitHub release tags
   const [dllUpdateAvailable, setDllUpdateAvailable] = useState(false);
   // Global state to track native AetherDesk update availability from desk-* GitHub tags
+  const [deskVersion, setDeskVersion] = useState('…');
   const [deskUpdateAvailable, setDeskUpdateAvailable] = useState(false);
   // Whether the currently available desk/dll update is a *test* build (red dot).
   const [deskUpdateIsTest, setDeskUpdateIsTest] = useState(false);
@@ -109,6 +110,9 @@ export default function App() {
       console.log('[AetherDesk update check]', deskInfo);
       setDeskUpdateAvailable(Boolean(deskInfo.update_available));
       setDeskUpdateIsTest(Boolean(deskInfo.is_test));
+      if (deskInfo.installed_version) {
+        setDeskVersion(deskInfo.installed_version);
+      }
     } catch (err) {
       console.error("AetherDesk update check failed:", err);
       setDeskUpdateAvailable(false);
@@ -163,6 +167,12 @@ export default function App() {
 
   // Update check runs once at startup. Close and reopen Aether to check again.
   useEffect(() => {
+    // Resolve the desk version instantly (local IPC, no network) so the Aether
+    // panel shows the correct value from its first render — the GitHub-backed
+    // check below refreshes it later without any flicker.
+    invoke<string>('get_desk_version')
+      .then((v) => setDeskVersion(v || 'N/A'))
+      .catch(() => setDeskVersion('N/A'));
     checkUpdates();
     checkDllStatus();
     refreshHubcapUsage();
@@ -197,6 +207,7 @@ export default function App() {
         activeTab={activeTab} 
         dllUpdateAvailable={dllUpdateAvailable}
         deskUpdateAvailable={deskUpdateAvailable}
+        deskVersion={deskVersion}
         dllUpdateIsTest={dllUpdateIsTest}
         deskUpdateIsTest={deskUpdateIsTest}
         onUpdateComplete={checkUpdates}

@@ -124,6 +124,7 @@ fn main() {
             commands::aether_dll::uninstall_aether_dll,
             commands::aether_dll::reset_aether_steam_path,
             commands::aether_dll::probe_aether_steam_residuals,
+            commands::aether_desk::get_desk_version,
             commands::aether_desk::check_aether_desk_update,
             commands::aether_desk::install_aether_desk_update,
             commands::aether_desk::restore_stable_desk,

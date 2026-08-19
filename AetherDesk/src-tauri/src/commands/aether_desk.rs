@@ -7,6 +7,14 @@ use crate::core::settings::SettingsManager;
 use crate::updater::desk;
 use crate::updater::github::GithubReleaseManager;
 
+/// Instant, local-only report of the running AetherDesk version. Unlike
+/// `check_aether_desk_update` it performs no network call, so the UI can show
+/// the correct version from the first render instead of a placeholder.
+#[tauri::command]
+pub fn get_desk_version(app: tauri::AppHandle) -> Result<String, String> {
+    Ok(app.package_info().version.to_string())
+}
+
 /// Reports the installed version and whether an update is available.
 ///
 /// When testing releases are enabled, a `tdesk-*` release takes priority **only

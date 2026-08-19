@@ -166,18 +166,23 @@ export const SettingsView = ({ hubcapUsage, onRefreshUsage, onRefreshCustomCss, 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    // Validate API key when present
+    // API key validation must never block the whole save: when the key is
+    // invalid the rest of the settings still persist, the bad key field is
+    // cleared and a warning tells the user what happened. Only a genuinely
+    // invalid key is wiped — if validation itself cannot complete (e.g. the
+    // service is unreachable) the key is kept and the save still goes through.
+    let invalidApiKey = false;
+    let apiKeyWarning = '';
     if (apiKey.trim()) {
       showStatus('Validating API key...', 'info');
       try {
         const isValid: any = await invoke('validate_hubcap_key', { apiKey });
         if (!isValid) {
-          showStatus('Invalid API key. Settings not saved.', 'error');
-          return;
+          invalidApiKey = true;
+          apiKeyWarning = 'The Hubcap API key is invalid and was cleared; the rest of your settings were saved.';
         }
       } catch (err: any) {
-        showStatus(`API key validation failed: ${err}`, 'error');
-        return;
+        apiKeyWarning = `Hubcap API key could not be validated (${err}); the rest of your settings were saved anyway.`;
       }
     }
 
@@ -189,11 +194,19 @@ export const SettingsView = ({ hubcapUsage, onRefreshUsage, onRefreshCustomCss, 
       if (customCssEnabled || personalWallpaperEnabled) {
         try { await invoke('ensure_custom_css'); } catch {}
       }
-      const newSettings = buildCurrentSettings();
+      const newSettings = buildCurrentSettings(
+        invalidApiKey ? { hubcap_api_key: '' } : {}
+      );
       await invoke('save_settings', { settings: newSettings });
       setRawSettings(newSettings);
-      showStatus('Settings saved successfully!', 'success');
-      onRefreshUsage(apiKey);
+      if (invalidApiKey) {
+        setApiKey(''); // clear the wrong key from the field
+      }
+      showStatus(
+        apiKeyWarning || 'Settings saved successfully!',
+        apiKeyWarning ? 'error' : 'success'
+      );
+      onRefreshUsage(invalidApiKey ? '' : apiKey);
       onRefreshCustomCss();
       loadAppearanceAssets();
     } catch (err: any) {
