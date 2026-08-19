@@ -14,10 +14,10 @@ pub type ProgressFn<'a> = dyn Fn(u8, &str) + Send + Sync + 'a;
 ///
 ///  1. validate the game has a stplug-in Lua
 ///  2. back the Lua up to `<appid>.lua.bak`
-///  3. pin the build manifests into the Lua — only depots that CHANGED in the
-///     build are written; depots absent from the build's depot list are left
-///     untouched (a patch diff, not a full snapshot, so absence ≠ removal) —
-///     LumaCore picks the change up live
+///  3. pin the reconstructed full build snapshot into the Lua. The resolver
+///     has already walked older patch diffs to find the latest manifest at or
+///     before the target build for every Lua depot — LumaCore picks the change
+///     up live
 ///  4. count which pinned `.manifest` files already exist locally
 ///  5. sync the ACF (`buildid` / `TargetBuildID` / `InstalledDepots[].manifest`);
 ///     when the ACF is missing or held by Steam the edit is queued and
@@ -37,9 +37,7 @@ pub fn apply_build_version(
             lua.lua_path().display().to_string(),
         ));
     }
-    let before_rows = lua
-        .rows_from_file()
-        .map_err(VersionError::Lua)?;
+    let before_rows = lua.rows_from_file().map_err(VersionError::Lua)?;
     let before_count = before_rows.len();
     crate::desk_log_info!(
         "versioning",
@@ -67,15 +65,19 @@ pub fn apply_build_version(
         Ok(result) => {
             crate::desk_log_info!(
                 "versioning",
-                "Lua pins written for app {}: {} applied, {} unchanged (not in this build's diff)",
+                "Lua pins written for app {}: {} applied from the reconstructed build snapshot",
                 app_id,
-                result.applied_pins,
-                before_count.saturating_sub(result.applied_pins)
+                result.applied_pins
             );
             result
         }
         Err(e) => {
-            crate::desk_log_error!("versioning", "Lua pin write failed for app {}: {}", app_id, e);
+            crate::desk_log_error!(
+                "versioning",
+                "Lua pin write failed for app {}: {}",
+                app_id,
+                e
+            );
             return Err(VersionError::Lua(e));
         }
     };
@@ -119,10 +121,7 @@ pub fn apply_build_version(
     };
 
     progress(95, "Verifying");
-    let after_count = lua
-        .rows_from_file()
-        .map_err(VersionError::Lua)?
-        .len();
+    let after_count = lua.rows_from_file().map_err(VersionError::Lua)?.len();
     if after_count != before_count {
         crate::desk_log_error!(
             "versioning",
@@ -141,7 +140,6 @@ pub fn apply_build_version(
 
     Ok(ApplyVersionReport {
         applied_pins: apply_result.applied_pins,
-        disabled_depots: apply_result.disabled_depots,
         manifests_found,
         manifests_missing,
         acf_synced_now,
@@ -167,10 +165,7 @@ pub fn try_apply_pending(edit: &PendingAcfEdit) -> Result<bool, VersionError> {
 
 /// Counts how many pinned `.manifest` files are already present in Steam's
 /// depotcache folders. Returns `(found, missing "depot:manifest" pairs)`.
-fn count_local_manifests(
-    steam_path: &str,
-    pins: &[DepotManifestPin],
-) -> (usize, Vec<String>) {
+fn count_local_manifests(steam_path: &str, pins: &[DepotManifestPin]) -> (usize, Vec<String>) {
     let mut search_dirs = vec![PathBuf::from(steam_path).join("depotcache")];
     search_dirs.push(PathBuf::from(steam_path).join("config").join("depotcache"));
 

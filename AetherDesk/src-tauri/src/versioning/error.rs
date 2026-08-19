@@ -11,18 +11,30 @@ pub enum VersionError {
     BuildNotFound,
     /// The build history feed returned no builds for this app.
     BuildHistoryEmpty,
+    /// The available history ended before every Lua depot could be resolved.
+    /// Applying a partial snapshot would mix manifests from different eras.
+    IncompleteSnapshot(Vec<u32>),
     /// The Depotbox token was rejected (401).
     TokenInvalid,
     /// A remote source failed or refused the request (network, HTTP, VPN block, ...).
-    SourceUnavailable { source: &'static str, detail: String },
+    SourceUnavailable {
+        source: &'static str,
+        detail: String,
+    },
     /// The game has no `stplug-in` Lua yet — version changes need it.
     LuaMissing(String),
     /// The Lua could not be parsed or edited.
     Lua(String),
     /// Local file I/O failure with machine context.
-    Io { context: &'static str, detail: String },
+    Io {
+        context: &'static str,
+        detail: String,
+    },
     /// Remote payload could not be parsed/validated.
-    Parse { context: &'static str, detail: String },
+    Parse {
+        context: &'static str,
+        detail: String,
+    },
 }
 
 impl VersionError {
@@ -56,6 +68,11 @@ impl fmt::Display for VersionError {
             Self::BuildHistoryEmpty => write!(
                 f,
                 "No builds found for this game. The SteamDB build history feed may be unreachable."
+            ),
+            Self::IncompleteSnapshot(depots) => write!(
+                f,
+                "Could not reconstruct a complete build snapshot: no manifest at or before the target build was found for depot(s) {}. Nothing was changed; use the Manual editor for this build.",
+                depots.iter().map(u32::to_string).collect::<Vec<_>>().join(", ")
             ),
             Self::TokenInvalid => write!(
                 f,

@@ -14,3 +14,4 @@ pub mod online_serde_tests;
 pub mod service_tests;
 pub mod store_items_tests;
 pub mod store_suggest_tests;
+pub mod versioning_snapshot_tests;

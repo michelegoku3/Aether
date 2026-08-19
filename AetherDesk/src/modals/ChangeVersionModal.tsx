@@ -18,7 +18,6 @@ export type VersionTab = 'manual' | 'auto';
 
 export interface ApplyVersionReport {
   appliedPins: number;
-  disabledDepots: number[];
   manifestsFound: number;
   manifestsMissing: string[];
   acfSyncedNow: boolean;
@@ -298,11 +297,7 @@ const AutoBuildsTab = ({ appId, onClose }: AutoBuildsTabProps) => {
         <div className="version-report">
           <StatusAlert
             status={{
-              text: `Build ${appliedBuildId} applied: ${report.appliedPins} manifest pin(s) written.${
-                report.disabledDepots.length > 0
-                  ? ` ${report.disabledDepots.length} depot(s) disabled because they do not exist in this build.`
-                  : ''
-              }`,
+              text: `Build ${appliedBuildId} applied: ${report.appliedPins} manifest pin(s) written.`,
               type: 'success',
             }}
             className="settings-alert--compact"
