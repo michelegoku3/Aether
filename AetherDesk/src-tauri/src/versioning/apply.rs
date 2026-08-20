@@ -9,15 +9,14 @@ use crate::versioning::queue::{self, PendingAcfEdit};
 /// Progress callback used by the pipeline: `(percent, human message)`.
 pub type ProgressFn<'a> = dyn Fn(u8, &str) + Send + Sync + 'a;
 
-/// Applies a full build snapshot to a game. Every step is idempotent and the
-/// report always describes the real state that was reached:
+/// Applies the safely resolved portion of a build snapshot. Every step is
+/// idempotent and the report always describes the real state that was reached:
 ///
 ///  1. validate the game has a stplug-in Lua
 ///  2. back the Lua up to `<appid>.lua.bak`
-///  3. pin the reconstructed full build snapshot into the Lua. The resolver
-///     has already walked older patch diffs to find the latest manifest at or
-///     before the target build for every Lua depot — LumaCore picks the change
-///     up live
+///  3. pin every manifest resolved at or before the target into the Lua;
+///     depots outside the available history remain byte-for-byte unchanged —
+///     LumaCore picks the resolved changes up live
 ///  4. count which pinned `.manifest` files already exist locally
 ///  5. sync the ACF (`buildid` / `TargetBuildID` / `InstalledDepots[].manifest`);
 ///     when the ACF is missing or held by Steam the edit is queued and

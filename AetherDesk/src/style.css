@@ -1155,6 +1155,22 @@ body {
   background-color: #192128; /* Subtle blue highlight background tint */
 }
 
+/* LuaTools login choices are buttons, so their text must not inherit the
+   browser's dark default button color. Keep the heading readable while the
+   explanatory copy retains the standard muted settings color. */
+.luatools-login-choice {
+  color: #ffffff;
+  text-align: left;
+}
+
+.luatools-login-choice > div {
+  width: 100%;
+}
+
+.luatools-login-choice strong {
+  color: #ffffff;
+}
+
 .action-icon {
   font-size: 20px;
   width: 36px;
