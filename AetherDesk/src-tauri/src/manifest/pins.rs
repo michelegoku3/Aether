@@ -98,12 +98,11 @@ impl LuaManifestPins {
         Ok(backup_path)
     }
 
-    /// Applies a reconstructed build snapshot to the Lua: every depot listed
-    /// in `pins` gets its manifest pinned and is enabled. The automatic flow
-    /// resolves a complete snapshot before calling this method; an absent row
-    /// is nevertheless left untouched as a final safety guard rather than
-    /// being incorrectly disabled. The row count is verified before saving —
-    /// the same safety net as `apply_edits`.
+    /// Applies the resolved portion of a build snapshot to the Lua: every
+    /// listed depot gets its manifest pinned and is enabled. Depots absent from
+    /// `pins` are deliberately left untouched because the finite history may
+    /// simply not reach their last update; absence is never interpreted as
+    /// removal. The row count is verified before saving.
     pub fn apply_build_pins(&self, pins: &[DepotManifestPin]) -> Result<ApplyBuildResult, String> {
         let content = self.read_lua()?;
         let current = Self::pins_from_content(&content);
@@ -134,11 +133,10 @@ impl LuaManifestPins {
                     applied += 1;
                 }
                 None => {
-                    // A complete snapshot is expected here. If a caller ever
-                    // supplies a partial one, preserving this pin is safer than
-                    // disabling it or writing a manifest from the wrong era.
-                    // The automatic resolver normally rejects that situation
-                    // before this file is backed up or modified.
+                    // No trustworthy historical manifest was resolved for this
+                    // depot. Preserve both its enabled/disabled state and its
+                    // current manifest; a short provider history is not proof
+                    // that the depot did not exist at the target build.
                 }
             }
         }

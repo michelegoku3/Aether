@@ -1,4 +1,5 @@
 use crate::providers::hubcap::HubcapClient;
+use crate::providers::luatools_auth::{LuaToolsAuth, LuaToolsAuthStatus};
 use crate::core::paths::LocalAppPaths;
 use crate::core::settings::{AppSettings, SettingsManager};
 
@@ -55,6 +56,52 @@ pub async fn get_hubcap_usage(api_key: String) -> Result<serde_json::Value, Stri
             Ok(serde_json::json!({ "usage": 0, "limit": 25 }))
         }
     }
+}
+
+#[tauri::command]
+pub fn get_luatools_auth_status() -> Result<LuaToolsAuthStatus, String> {
+    Ok(LuaToolsAuth::new().status())
+}
+
+#[tauri::command]
+pub async fn sign_in_luatools() -> Result<LuaToolsAuthStatus, String> {
+    crate::desk_log_info!("luatools", "Starting LuaTools Discord PKCE sign-in");
+    let result = LuaToolsAuth::new().sign_in().await;
+    match &result {
+        Ok(status) => crate::desk_log_info!(
+            "luatools",
+            "LuaTools sign-in completed for {}",
+            status
+                .display_name
+                .as_deref()
+                .or(status.email.as_deref())
+                .unwrap_or("account")
+        ),
+        Err(error) => crate::desk_log_error!("luatools", "LuaTools sign-in failed: {}", error),
+    }
+    result
+}
+
+#[tauri::command]
+pub async fn sign_in_luatools_with_code(code: String) -> Result<LuaToolsAuthStatus, String> {
+    crate::desk_log_info!("luatools", "Redeeming privacy-oriented @Luie login code");
+    let result = LuaToolsAuth::new().sign_in_with_code(&code).await;
+    match &result {
+        Ok(_) => crate::desk_log_info!("luatools", "LuaTools code sign-in completed"),
+        Err(error) => crate::desk_log_error!(
+            "luatools",
+            "LuaTools code sign-in failed: {}",
+            error
+        ),
+    }
+    result
+}
+
+#[tauri::command]
+pub fn sign_out_luatools() -> Result<(), String> {
+    LuaToolsAuth::new().sign_out()?;
+    crate::desk_log_info!("luatools", "LuaTools session removed");
+    Ok(())
 }
 
 #[tauri::command]

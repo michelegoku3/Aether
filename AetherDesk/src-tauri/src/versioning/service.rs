@@ -82,12 +82,15 @@ impl VersionService {
         Ok(pins)
     }
 
-    /// Reconstructs the complete manifest snapshot visible at `build_id` for
-    /// the depots present in the game's Lua.
+    /// Reconstructs as much of the target snapshot as the available build
+    /// history can prove for depots represented in the game's Lua.
     ///
     /// Build details are patch diffs, not full snapshots. The assembler takes
-    /// the target diff and then older diffs until every required depot has its
-    /// nearest manifest at or before the target.
+    /// the target diff and then older diffs, keeping the nearest manifest at or
+    /// before the target. Depots beyond SteamDB's finite RSS window are omitted
+    /// from the result so the Lua writer safely leaves their existing rows
+    /// enabled and unchanged; missing historical data is never treated as
+    /// evidence that a depot was removed.
     pub async fn resolve_snapshot_pins(
         &self,
         app_id: u32,
@@ -127,20 +130,32 @@ impl VersionService {
             }
         }
 
-        if !snapshot.is_complete() {
-            return Err(VersionError::IncompleteSnapshot(
-                snapshot.missing_depots(),
-            ));
-        }
-
+        let unresolved = snapshot.missing_depots();
         let pins = snapshot.into_pins();
-        crate::desk_log_info!(
-            "versioning",
-            "Build {} reconstructed as a complete {}-depot snapshot for app {}",
-            build_id,
-            pins.len(),
-            app_id
-        );
+        if unresolved.is_empty() {
+            crate::desk_log_info!(
+                "versioning",
+                "Build {} reconstructed as a complete {}-depot snapshot for app {}",
+                build_id,
+                pins.len(),
+                app_id
+            );
+        } else {
+            // The SteamDB RSS feed is intentionally short. Not finding a depot
+            // in that window does not prove that it did not exist at the target
+            // build. Apply every manifest we could resolve and preserve the
+            // existing Lua rows for the rest, matching the safe policy from
+            // commit 0a778fb (absence from available diffs is not removal).
+            crate::desk_log_warn!(
+                "versioning",
+                "Build {} for app {} resolved {} depot(s); {} depot(s) were outside the available history and will remain unchanged: {:?}",
+                build_id,
+                app_id,
+                pins.len(),
+                unresolved.len(),
+                unresolved
+            );
+        }
         Ok(pins)
     }
 
@@ -184,9 +199,9 @@ impl VersionService {
         Ok(results)
     }
 
-    /// Applies a build (blocking file I/O — call from a blocking task).
-    /// `pins` must be a complete snapshot from `resolve_snapshot_pins`, so the
-    /// network work stays async while file I/O runs off the async runtime.
+    /// Applies the resolved portion of a build (blocking file I/O — call from
+    /// a blocking task). Unresolved depots are intentionally absent from
+    /// `pins`, causing the Lua writer to preserve them unchanged.
     pub fn apply_build_sync(
         &self,
         app_id: u32,

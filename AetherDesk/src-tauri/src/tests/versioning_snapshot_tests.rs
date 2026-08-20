@@ -1,6 +1,6 @@
-//! Regression tests for reconstructing a complete build snapshot from build
-//! patch diffs. This covers upgrading from a very old version when the target
-//! patch changed only one of several depots.
+//! Regression tests for reconstructing the provable portion of a build
+//! snapshot from patch diffs. Unresolved depots are reported separately so the
+//! writer can preserve their existing Lua state instead of disabling them.
 
 use crate::manifest::pins::DepotManifestPin;
 use crate::versioning::model::BuildInfo;

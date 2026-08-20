@@ -52,8 +52,9 @@ export const StoreView = ({ onRefreshUsage, isActive, settingsRevision, useAlter
   const [selectedGame, setSelectedGame] = useState<StoreGame | null>(null);
   const [infoGame, setInfoGame] = useState<StoreGame | null>(null);
 
-  // Selected key/manifest source state ('hubcap', 'ryuu', 'oureveryday', 'local')
-  const [selectedSource, setSelectedSource] = useState<'hubcap' | 'ryuu' | 'oureveryday' | 'local'>('oureveryday');
+  // Selected manifest source. LuaTools uses its own authenticated session;
+  // Hubcap/Ryuu use the API keys configured in Settings.
+  const [selectedSource, setSelectedSource] = useState<'hubcap' | 'luatools' | 'ryuu' | 'oureveryday' | 'local'>('oureveryday');
 
   // Status message for download operations inside the modal
   const [downloadStatus, setDownloadStatus] = useState<StatusMessage>(emptyStatus());
@@ -256,12 +257,15 @@ export const StoreView = ({ onRefreshUsage, isActive, settingsRevision, useAlter
 
       // 2. Invoke the decoupled, professional Rust download orchestrator!
       setDownloadStatus({ text: `Connecting to source ${selectedSource.toUpperCase()}...`, type: 'info' });
-      const command = selectedSource === 'ryuu' ? 'trigger_ryuu_download' : 'trigger_hubcap_download';
-      const result: string = await invoke(command, {
-        appId: Number(selectedGame.appId),
-        apiKey: apiKeyToUse,
-        steamPath: steamPathToUse
-      });
+      const command = selectedSource === 'luatools'
+        ? 'trigger_luatools_download'
+        : selectedSource === 'ryuu'
+          ? 'trigger_ryuu_download'
+          : 'trigger_hubcap_download';
+      const args = selectedSource === 'luatools'
+        ? { appId: Number(selectedGame.appId), steamPath: steamPathToUse }
+        : { appId: Number(selectedGame.appId), apiKey: apiKeyToUse, steamPath: steamPathToUse };
+      const result: string = await invoke(command, args);
 
       setDownloadStatus({ text: result, type: 'success' });
       setIsDownloading(false);
@@ -311,12 +315,15 @@ export const StoreView = ({ onRefreshUsage, isActive, settingsRevision, useAlter
         return;
       }
 
-      const command = selectedSource === 'ryuu' ? 'prepare_ryuu_specific_version_download' : 'prepare_specific_version_download';
-      const rows: LuaManifestRow[] = await invoke(command, {
-        appId: Number(selectedGame.appId),
-        apiKey: apiKeyToUse,
-        steamPath: steamPathToUse
-      });
+      const command = selectedSource === 'luatools'
+        ? 'prepare_luatools_specific_version_download'
+        : selectedSource === 'ryuu'
+          ? 'prepare_ryuu_specific_version_download'
+          : 'prepare_specific_version_download';
+      const args = selectedSource === 'luatools'
+        ? { appId: Number(selectedGame.appId), steamPath: steamPathToUse }
+        : { appId: Number(selectedGame.appId), apiKey: apiKeyToUse, steamPath: steamPathToUse };
+      const rows: LuaManifestRow[] = await invoke(command, args);
 
       setManifestRows((rows || []).map(row => ({ ...row, manifestInput: '' })));
       setVersionGame(selectedGame);
@@ -548,6 +555,14 @@ export const StoreView = ({ onRefreshUsage, isActive, settingsRevision, useAlter
                     className={`source-btn ${selectedSource === 'hubcap' ? 'active' : ''}`}
                   >
                     Hubcap
+                  </button>
+                  <button
+                    disabled={isDownloading}
+                    onClick={() => setSelectedSource('luatools')}
+                    className={`source-btn ${selectedSource === 'luatools' ? 'active' : ''}`}
+                    title="Uses your signed-in lua.tools account and automatically selects an available source"
+                  >
+                    LuaTools
                   </button>
                   <button
                     disabled={isDownloading}

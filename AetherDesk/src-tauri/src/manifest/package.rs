@@ -16,12 +16,42 @@ pub struct ManifestPackage {
 /// Generic extractor for provider archives containing a SteamTools/LumaCore Lua
 /// plus optional Steam `.manifest` files.
 ///
-/// This is intentionally provider-agnostic. Hubcap uses it today; future sources
-/// can reuse the same extraction path as long as they deliver a ZIP-like archive
-/// with a `.lua` and optional `.manifest` files.
+/// This is intentionally provider-agnostic. Hubcap and Ryuu use ZIP packages;
+/// LuaTools may return either the same ZIP shape or a bare pinned Lua file.
 pub struct ManifestPackageExtractor;
 
 impl ManifestPackageExtractor {
+    /// Parses a provider response that may be either a ZIP package or a bare
+    /// Lua file. LuaTools intentionally supports both formats while serving
+    /// them from the same download endpoint, so the payload bytes — not the
+    /// URL or Content-Disposition filename — are the source of truth.
+    pub fn from_provider_bytes(app_id: u32, bytes: &[u8]) -> Result<ManifestPackage, String> {
+        if Self::has_zip_signature(bytes) {
+            return Self::from_zip(app_id, bytes);
+        }
+
+        let content = std::str::from_utf8(bytes)
+            .map_err(|_| "Provider returned neither a ZIP archive nor UTF-8 Lua text".to_string())?
+            .trim_start_matches('\u{feff}')
+            .to_string();
+        if !Self::contains_setmanifestid(&content) {
+            let preview: String = content
+                .chars()
+                .take(160)
+                .map(|character| if character.is_control() { ' ' } else { character })
+                .collect();
+            return Err(format!(
+                "Provider returned neither a manifest ZIP nor a pinned Lua file. Response starts with: {:?}",
+                preview.trim()
+            ));
+        }
+
+        Ok(ManifestPackage {
+            lua_content: content,
+            manifest_files: Vec::new(),
+        })
+    }
+
     pub fn from_zip(app_id: u32, bytes: &[u8]) -> Result<ManifestPackage, String> {
         let cursor = Cursor::new(bytes);
         let mut archive = ZipArchive::new(cursor)
@@ -69,6 +99,12 @@ impl ManifestPackageExtractor {
             .ok_or_else(|| "Manifest ZIP did not contain a Lua file with setManifestid pins".to_string())?;
 
         Ok(ManifestPackage { lua_content, manifest_files })
+    }
+
+    fn has_zip_signature(bytes: &[u8]) -> bool {
+        bytes.starts_with(b"PK\x03\x04")
+            || bytes.starts_with(b"PK\x05\x06")
+            || bytes.starts_with(b"PK\x07\x08")
     }
 
     fn contains_setmanifestid(content: &str) -> bool {
