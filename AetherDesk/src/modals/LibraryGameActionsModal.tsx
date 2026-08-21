@@ -201,7 +201,7 @@ export const LibraryGameActionsModal = ({
             </span>
             <span
               className="game-action-btn-wrap"
-              title={updatesEnabled ? 'Disable updates for this game.' : undefined}
+              title={updatesEnabled ? 'Disable updates for this game' : undefined}
             >
               <button
                 className="game-action-btn"
@@ -213,7 +213,7 @@ export const LibraryGameActionsModal = ({
             </span>
             <span
               className="game-action-btn-wrap"
-              title={!game.installed ? 'Online requires the game to be installed in Steam first.' : undefined}
+              title={!game.installed ? 'Online requires the game to be installed in Steam first' : undefined}
             >
               <button
                 className="game-action-btn"
@@ -225,7 +225,7 @@ export const LibraryGameActionsModal = ({
             </span>
             <span
               className="game-action-btn-wrap"
-              title={game.installed ? 'Installed games cannot be removed from Aether Library.' : 'Remove Lua from Aether Library'}
+              title={game.installed ? 'Installed games cannot be removed from Aether Library' : 'Remove Lua from Aether Library'}
             >
               <button
                 className="game-action-btn danger"

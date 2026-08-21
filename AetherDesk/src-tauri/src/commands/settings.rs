@@ -83,6 +83,12 @@ pub async fn sign_in_luatools() -> Result<LuaToolsAuthStatus, String> {
 }
 
 #[tauri::command]
+pub fn cancel_luatools_sign_in() {
+    LuaToolsAuth::cancel_sign_in();
+    crate::desk_log_info!("luatools", "LuaTools OAuth sign-in cancelled by user");
+}
+
+#[tauri::command]
 pub async fn sign_in_luatools_with_code(code: String) -> Result<LuaToolsAuthStatus, String> {
     crate::desk_log_info!("luatools", "Redeeming privacy-oriented @Luie login code");
     let result = LuaToolsAuth::new().sign_in_with_code(&code).await;

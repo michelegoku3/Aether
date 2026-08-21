@@ -1,7 +1,5 @@
-import { useEffect, useRef, useState } from 'react';
-import type { DragEvent as ReactDragEvent } from 'react';
+import { useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
-import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow';
 import { emptyStatus, StatusMessage } from '../types/ui';
 import { AntivirusExclusionModal } from './AntivirusExclusionModal';
 import { useModalDismiss } from '../hooks/useModalDismiss';
@@ -21,7 +19,7 @@ interface LocalDownloadModalProps {
   onInstalled?: () => void;
 }
 
-const DROP_ZONE_HINT = 'Click to browse or drag & drop game archive(s) or file(s) here';
+const DROP_ZONE_HINT = 'Click to browse for game archive(s) or file(s)';
 
 // Maximum number of file rows shown in the drop zone; extra files collapse
 // into a single ellipsis row so the popup never grows too tall.
@@ -33,7 +31,6 @@ export const LocalDownloadModal = ({ game, onClose, onInstalled }: LocalDownload
   // Multiple files are supported: dropped files append to the list and are
   // shown stacked, one per line.
   const [selectedFiles, setSelectedFiles] = useState<string[]>([]);
-  const [isDragOver, setIsDragOver] = useState(false);
   const [isInstalling, setIsInstalling] = useState(false);
   const [showAntivirus, setShowAntivirus] = useState(false);
   const [status, setStatus] = useState<StatusMessage>(emptyStatus());
@@ -46,55 +43,17 @@ export const LocalDownloadModal = ({ game, onClose, onInstalled }: LocalDownload
     setStatus(emptyStatus());
   };
 
-  // Keep the latest addFiles in a ref so the drag-drop subscriptions below can
-  // be set up once (mount) without re-subscribing on every state change.
-  const addFilesRef = useRef(addFiles);
-  addFilesRef.current = addFiles;
-
-  // Click on the drop zone → native OS file picker (backend opens the dialog).
+  // Click on the drop zone → native OS file picker.
   const openFilePicker = async () => {
     try {
       const paths: string[] = await invoke('pick_local_files', {
         appId: Number(game.appId),
       });
-      if (paths && paths.length > 0) addFiles(paths);
+      if (paths.length > 0) addFiles(paths);
     } catch (err: any) {
       showStatus(`Failed to open file picker: ${err}`, 'error');
     }
   };
-
-  // Drag & drop of OS files — same dual-path strategy as CrackModal:
-  //   1. Native: getCurrentWebviewWindow().onDragDropEvent(...) yields real
-  //      filesystem paths inside the Tauri WebView.
-  //   2. Browser fallback: element-level onDragOver/onDrop, used only outside
-  //      a Tauri WebView and guarded so it never double-processes.
-  useEffect(() => {
-    // Allow a valid drop cursor across the whole window.
-    const preventDragDefault = (event: DragEvent) => event.preventDefault();
-    window.addEventListener('dragover', preventDragDefault);
-
-    let unlisten: (() => void) | null = null;
-    getCurrentWebviewWindow()
-      .onDragDropEvent((event) => {
-        const type = event.payload.type;
-        if (type === 'enter') {
-          setIsDragOver(true);
-        } else if (type === 'leave') {
-          setIsDragOver(false);
-        } else if (type === 'drop') {
-          setIsDragOver(false);
-          addFilesRef.current(event.payload.paths);
-        }
-      })
-      .then((unlistenFn) => {
-        unlisten = unlistenFn;
-      });
-
-    return () => {
-      unlisten?.();
-      window.removeEventListener('dragover', preventDragDefault);
-    };
-  }, []);
 
   // ESC + click fuori chiudono il popup (rispettando un'installazione in corso).
   useModalDismiss(onClose, isInstalling);
@@ -152,15 +111,6 @@ export const LocalDownloadModal = ({ game, onClose, onInstalled }: LocalDownload
   const visibleFileNames = fileNames.slice(0, MAX_VISIBLE_FILES);
   const hiddenFileCount = fileNames.length - visibleFileNames.length;
 
-  // Browser fallback handler (only acts outside a Tauri WebView).
-  const handleBrowserDrop = (event: ReactDragEvent) => {
-    event.preventDefault();
-    if ('__TAURI_INTERNALS__' in window) return; // native handler owns it
-    const files = Array.from(event.dataTransfer.files);
-    if (files.length > 0) {
-      addFiles(files.map((file) => file.name));
-    }
-  };
 
   return (
     <div className="modal-overlay" onClick={isInstalling ? undefined : onClose}>
@@ -191,7 +141,7 @@ export const LocalDownloadModal = ({ game, onClose, onInstalled }: LocalDownload
           )}
 
           <div
-            className={`crack-drop-zone ${isDragOver ? 'drag-over' : ''} ${
+            className={`crack-drop-zone ${
               fileNames.length > 0 ? 'has-file' : ''
             }`}
             role="button"
@@ -203,8 +153,6 @@ export const LocalDownloadModal = ({ game, onClose, onInstalled }: LocalDownload
             onKeyDown={(event) => {
               if (event.key === 'Enter' && !isInstalling) openFilePicker();
             }}
-            onDragOver={(event) => event.preventDefault()}
-            onDrop={handleBrowserDrop}
           >
             {fileNames.length > 0 ? (
               <div className="crack-drop-files">

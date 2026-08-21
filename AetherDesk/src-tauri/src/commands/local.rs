@@ -127,11 +127,10 @@ pub async fn install_local_game(
         app_id, report.applied, report.lua_files, report.manifest_files, report.target);
 
     let mut msg = format!(
-        "Local install completed: {} file(s) installed ({} lua → config/stplug-in, {} manifest → depotcache, rest → {}). Original sources backed up in AetherData. Files: {}",
+        "Local install completed: {} file(s) installed ({} lua, {} manifest). Original sources backed up in AetherData. Files: {}",
         report.applied,
         report.lua_files,
         report.manifest_files,
-        report.target,
         report.files.join(", ")
     );
     if msg.len() > 500 {
