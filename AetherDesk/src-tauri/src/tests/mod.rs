@@ -8,6 +8,8 @@ pub mod github_updater_tests;
 pub mod manifest_package_tests;
 pub mod manifest_pins_tests;
 pub mod luatools_provider_tests;
+pub mod lua_build_validation_tests;
+pub mod local_lua_name_tests;
 pub mod normalize_tests;
 pub mod online_bundle_tests;
 pub mod online_deploy_config_tests;

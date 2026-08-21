@@ -705,7 +705,7 @@ body {
   background-color: #131316; /* Clean container background */
   border: 1px solid var(--border-color);
   border-radius: 12px;
-  width: 640px; /* Enlarged for 4 sources (Hubcap/Ryuu/OurEveryday/Local) */
+  width: 640px; /* Sized for 5 sources (Hubcap/LuaTools/Ryuu/MOED/Local) */
   max-width: 95%;
   display: flex;
   flex-direction: column;
@@ -1116,6 +1116,7 @@ body {
   color: var(--color-muted);
   font-size: 13px;
   font-weight: 600;
+  text-align: center;
   padding: 8px 16px;
   border-radius: 6px;
   cursor: pointer;

@@ -72,6 +72,49 @@ pub async fn install_local_game(
     crate::desk_log_info!("local", "Local install for AppID {} ({}) with {} source file(s)",
         app_id, app_name, local_files.len());
 
+    // Validate build-labelled loose Lua files concurrently. This is advisory:
+    // providers may offer only the closest historical snapshot, which is still
+    // useful, so mismatches become visible warnings and never reject a file.
+    let token = crate::versioning::sources::resolve_build_details_token(Some(
+        &settings.build_details_token,
+    ))
+    .unwrap_or_else(|| crate::versioning::sources::DEFAULT_BUILD_DETAILS_TOKEN.to_string());
+    let mut validation_tasks = tokio::task::JoinSet::new();
+    for file in &local_files {
+        let path = PathBuf::from(file);
+        let is_lua = path
+            .extension()
+            .and_then(|extension| extension.to_str())
+            .map(|extension| extension.eq_ignore_ascii_case("lua"))
+            .unwrap_or(false);
+        if is_lua {
+            let task_token = token.clone();
+            validation_tasks.spawn(async move {
+                crate::versioning::lua_validation::validate_claimed_build(&path, task_token).await
+            });
+        }
+    }
+    let mut validation_warnings = Vec::new();
+    while let Some(result) = validation_tasks.join_next().await {
+        match result {
+            Ok(Ok(Some(warning))) => {
+                crate::desk_log_warn!("local", "{}", warning);
+                validation_warnings.push(warning);
+            }
+            Ok(Ok(None)) => {}
+            Ok(Err(error)) => crate::desk_log_warn!(
+                "local",
+                "Build validation unavailable; continuing without rejection: {}",
+                error
+            ),
+            Err(error) => crate::desk_log_warn!(
+                "local",
+                "Build validation task failed; continuing without rejection: {}",
+                error
+            ),
+        }
+    }
+
     let report = local::install_local_pipeline(
         app_id,
         &app_name,
@@ -91,7 +134,6 @@ pub async fn install_local_game(
         report.target,
         report.files.join(", ")
     );
-
     if msg.len() > 500 {
         let mut cutoff = 497;
         while !msg.is_char_boundary(cutoff) && cutoff > 0 {
@@ -99,6 +141,10 @@ pub async fn install_local_game(
         }
         msg.truncate(cutoff);
         msg.push_str("...");
+    }
+    if !validation_warnings.is_empty() {
+        msg.push_str(" ");
+        msg.push_str(&validation_warnings.join(" "));
     }
 
     Ok(msg)
