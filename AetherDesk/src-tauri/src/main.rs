@@ -110,6 +110,8 @@ fn main() {
             commands::game_info::get_game_info,
             commands::steamless::pick_and_run_steamless,
             commands::online::get_online_status,
+            commands::online::get_online_preferences,
+            commands::online::clear_online_preferences,
             commands::online::is_uco2_active,
             commands::online::plan_online,
             commands::online::enable_online,

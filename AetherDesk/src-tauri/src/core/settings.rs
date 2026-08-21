@@ -232,6 +232,14 @@ pub struct SettingsManager {
     legacy_config_dir: Option<PathBuf>,
 }
 
+#[derive(Debug, Default, Serialize, Deserialize)]
+struct ProviderCredentials {
+    #[serde(default)]
+    hubcap_api_key: String,
+    #[serde(default)]
+    ryuu_api_key: String,
+}
+
 impl SettingsManager {
     pub fn new(app_handle: &tauri::AppHandle) -> Self {
         let manager = Self {
@@ -252,6 +260,23 @@ impl SettingsManager {
         self.config_dir.join("settings.json")
     }
 
+    fn credentials_path(&self) -> PathBuf {
+        self.config_dir.join("provider_credentials.dat")
+    }
+
+    fn load_credentials(&self) -> Option<ProviderCredentials> {
+        let encrypted = fs::read(self.credentials_path()).ok()?;
+        let plain = crate::core::secure_storage::unprotect(&encrypted).ok()?;
+        serde_json::from_slice(&plain).ok()
+    }
+
+    fn save_credentials(&self, credentials: &ProviderCredentials) -> Result<(), String> {
+        let plain = serde_json::to_vec(credentials)
+            .map_err(|error| format!("Failed to serialize provider credentials: {error}"))?;
+        let encrypted = crate::core::secure_storage::protect(&plain)?;
+        crate::external_tools::fs::write_atomic(&self.credentials_path(), &encrypted)
+    }
+
     fn get_legacy_file_path(&self) -> Option<PathBuf> {
         self.legacy_config_dir.as_ref().map(|dir| dir.join("settings.json"))
     }
@@ -267,7 +292,13 @@ impl SettingsManager {
             Err(_) => return AppSettings::default(),
         };
 
-        serde_json::from_str::<AppSettings>(&content).unwrap_or_else(|_| AppSettings::default())
+        let mut settings =
+            serde_json::from_str::<AppSettings>(&content).unwrap_or_else(|_| AppSettings::default());
+        if let Some(credentials) = self.load_credentials() {
+            settings.hubcap_api_key = credentials.hubcap_api_key;
+            settings.ryuu_api_key = credentials.ryuu_api_key;
+        }
+        settings
     }
 
     pub fn save(&self, settings: &AppSettings) -> Result<(), String> {
@@ -279,7 +310,17 @@ impl SettingsManager {
         let path = self.get_file_path();
         let temp_path = path.with_extension("tmp");
 
+        let credentials = ProviderCredentials {
+            hubcap_api_key: settings.hubcap_api_key.clone(),
+            ryuu_api_key: settings.ryuu_api_key.clone(),
+        };
+        self.save_credentials(&credentials)?;
+
         let mut normalized = settings.clone();
+        // Secrets are returned to the UI at runtime for the existing settings
+        // experience, but are never persisted in plaintext settings.json.
+        normalized.hubcap_api_key.clear();
+        normalized.ryuu_api_key.clear();
         normalized.store_currency = normalize_store_currency(&normalized.store_currency);
         normalized.store_front_filter = normalize_store_front_filter(&normalized.store_front_filter);
         normalized.library_install_filter =
