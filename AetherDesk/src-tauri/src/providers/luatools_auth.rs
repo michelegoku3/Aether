@@ -307,7 +307,7 @@ impl LuaToolsAuth {
         }
         let encrypted = fs::read(&self.path)
             .map_err(|e| format!("Could not read the LuaTools session: {e}"))?;
-        let plain = unprotect(&encrypted)?;
+        let plain = crate::core::secure_storage::unprotect(&encrypted)?;
         serde_json::from_slice(&plain)
             .map(Some)
             .map_err(|e| format!("Could not parse the stored LuaTools session: {e}"))
@@ -316,7 +316,7 @@ impl LuaToolsAuth {
     fn save_session(&self, session: &StoredSession) -> Result<(), String> {
         let plain = serde_json::to_vec(session)
             .map_err(|e| format!("Could not serialize the LuaTools session: {e}"))?;
-        let encrypted = protect(&plain)?;
+        let encrypted = crate::core::secure_storage::protect(&plain)?;
         let parent = self
             .path
             .parent()
@@ -446,99 +446,4 @@ fn now_unix() -> u64 {
         .duration_since(UNIX_EPOCH)
         .map(|duration| duration.as_secs())
         .unwrap_or(0)
-}
-
-#[cfg(target_os = "windows")]
-fn protect(plain: &[u8]) -> Result<Vec<u8>, String> {
-    use std::ptr::{null, null_mut};
-    use windows_sys::Win32::Security::Cryptography::{
-        CryptProtectData, CRYPTPROTECT_UI_FORBIDDEN, CRYPT_INTEGER_BLOB,
-    };
-
-    // Win32 calls this structure DATA_BLOB in dpapi.h. windows-sys exposes
-    // the same ABI type under its canonical metadata name CRYPT_INTEGER_BLOB.
-    let input = CRYPT_INTEGER_BLOB {
-        cbData: plain.len() as u32,
-        pbData: plain.as_ptr() as *mut u8,
-    };
-    let mut output = CRYPT_INTEGER_BLOB {
-        cbData: 0,
-        pbData: null_mut(),
-    };
-    let success = unsafe {
-        CryptProtectData(
-            &input,
-            null(),
-            null(),
-            null(),
-            null(),
-            CRYPTPROTECT_UI_FORBIDDEN,
-            &mut output,
-        )
-    };
-    if success == 0 {
-        return Err("Windows could not protect the LuaTools session".to_string());
-    }
-    take_dpapi_output(output)
-}
-
-#[cfg(target_os = "windows")]
-fn unprotect(encrypted: &[u8]) -> Result<Vec<u8>, String> {
-    use std::ptr::{null, null_mut};
-    use windows_sys::Win32::Security::Cryptography::{
-        CryptUnprotectData, CRYPTPROTECT_UI_FORBIDDEN, CRYPT_INTEGER_BLOB,
-    };
-
-    let input = CRYPT_INTEGER_BLOB {
-        cbData: encrypted.len() as u32,
-        pbData: encrypted.as_ptr() as *mut u8,
-    };
-    let mut output = CRYPT_INTEGER_BLOB {
-        cbData: 0,
-        pbData: null_mut(),
-    };
-    let success = unsafe {
-        CryptUnprotectData(
-            &input,
-            null_mut(),
-            null(),
-            null(),
-            null(),
-            CRYPTPROTECT_UI_FORBIDDEN,
-            &mut output,
-        )
-    };
-    if success == 0 {
-        return Err("Windows could not unlock the LuaTools session".to_string());
-    }
-    take_dpapi_output(output)
-}
-
-
-#[cfg(target_os = "windows")]
-fn take_dpapi_output(
-    output: windows_sys::Win32::Security::Cryptography::CRYPT_INTEGER_BLOB,
-) -> Result<Vec<u8>, String> {
-    use windows_sys::Win32::Foundation::LocalFree;
-
-    if output.pbData.is_null() {
-        return Err("Windows DPAPI returned an empty output buffer".to_string());
-    }
-    let bytes = unsafe {
-        std::slice::from_raw_parts(output.pbData, output.cbData as usize).to_vec()
-    };
-    // CryptProtectData/CryptUnprotectData allocate pbData with LocalAlloc;
-    // ownership transfers to us and must always be released with LocalFree.
-    unsafe { LocalFree(output.pbData as _) };
-    Ok(bytes)
-}
-
-#[cfg(not(target_os = "windows"))]
-fn protect(_plain: &[u8]) -> Result<Vec<u8>, String> {
-    Err("Secure LuaTools session storage is currently available only on Windows".to_string())
-}
-
-#[cfg(not(target_os = "windows"))]
-fn unprotect(_encrypted: &[u8]) -> Result<Vec<u8>, String> {
-    Err("Secure LuaTools session storage is currently available only on Windows".to_string())
 }

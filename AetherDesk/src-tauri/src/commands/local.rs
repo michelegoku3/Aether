@@ -3,8 +3,10 @@
 // All heavy lifting (archive extraction, folder copying, Steam folder
 // resolution, backup) lives in the Tauri-agnostic engine `crate::local`.
 // This file only opens the file picker, loads settings and calls the engine.
+use crate::core::backup::GameBackup;
 use crate::core::settings::SettingsManager;
 use crate::local;
+use crate::manifest::pins::LuaManifestPins;
 use std::path::PathBuf;
 use tauri_plugin_dialog::{DialogExt, FilePath};
 
@@ -126,21 +128,25 @@ pub async fn install_local_game(
     crate::desk_log_info!("local", "Successfully installed local content for AppID {}: {} file(s) ({} lua, {} manifest), game files into {}",
         app_id, report.applied, report.lua_files, report.manifest_files, report.target);
 
+    // Local packages follow the same update policy as every remote provider.
+    // When updates are enabled, comment active setManifestid rows in the live
+    // canonical Lua and refresh the canonical backup with the final bytes.
+    if report.lua_files > 0 && settings.download_games_with_updates_on {
+        let lua = LuaManifestPins::new(steam_path.clone(), app_id);
+        lua.set_updates_enabled(true)?;
+        let installed_lua = std::fs::read_to_string(lua.lua_path())
+            .map_err(|error| format!("Failed to read the installed Lua after applying update policy: {error}"))?;
+        GameBackup::for_app(app_id)?
+            .backup_lua_artifacts(app_id, &installed_lua, &[])?;
+    }
+
     let mut msg = format!(
-        "Local install completed: {} file(s) installed ({} lua, {} manifest). Original sources backed up in AetherData. Files: {}",
+        "Local install completed: {} file(s) installed ({} lua, {} manifest). Original sources backed up in AetherData/backup/{}.",
         report.applied,
         report.lua_files,
         report.manifest_files,
-        report.files.join(", ")
+        app_id
     );
-    if msg.len() > 500 {
-        let mut cutoff = 497;
-        while !msg.is_char_boundary(cutoff) && cutoff > 0 {
-            cutoff -= 1;
-        }
-        msg.truncate(cutoff);
-        msg.push_str("...");
-    }
     if !validation_warnings.is_empty() {
         msg.push_str(" ");
         msg.push_str(&validation_warnings.join(" "));

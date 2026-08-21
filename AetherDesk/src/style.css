@@ -1151,9 +1151,13 @@ body {
   transition: all 0.2s ease;
 }
 
-.big-action-btn:hover {
+.big-action-btn:not(:disabled):hover {
   border-color: var(--color-cyan);
   background-color: #192128; /* Subtle blue highlight background tint */
+}
+
+.big-action-btn:disabled {
+  cursor: not-allowed;
 }
 
 /* LuaTools login choices are buttons, so their text must not inherit the
@@ -1185,7 +1189,7 @@ body {
   color: var(--color-cyan);
 }
 
-.big-action-btn:hover .action-icon {
+.big-action-btn:not(:disabled):hover .action-icon {
   background-color: var(--color-cyan);
   color: #ffffff;
 }

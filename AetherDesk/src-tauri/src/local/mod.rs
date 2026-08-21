@@ -47,6 +47,27 @@ pub struct LocalInstallReport {
 /// message anyway; this avoids unbounded memory use on huge games).
 const MAX_REPORT_FILES: usize = 500;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum LocalFileKind {
+    Lua,
+    Manifest,
+    GameFile,
+}
+
+pub(crate) fn classify_local_file(path: &Path) -> LocalFileKind {
+    match path
+        .extension()
+        .and_then(|extension| extension.to_str())
+        .unwrap_or("")
+        .to_ascii_lowercase()
+        .as_str()
+    {
+        "lua" => LocalFileKind::Lua,
+        "manifest" => LocalFileKind::Manifest,
+        _ => LocalFileKind::GameFile,
+    }
+}
+
 /// Run the local install pipeline for the given sources.
 ///
 /// Lua and manifest files found anywhere in the staged content are routed to
@@ -278,15 +299,11 @@ fn install_staged_tree(
             continue;
         }
 
-        let extension = path
-            .extension()
-            .and_then(|ext| ext.to_str())
-            .unwrap_or("")
-            .to_ascii_lowercase();
+        let file_kind = classify_local_file(&path);
         let file_name = entry.file_name();
 
-        let (dest, display_path, also_backup) = match extension.as_str() {
-            "lua" => {
+        let (dest, display_path, also_backup) = match file_kind {
+            LocalFileKind::Lua => {
                 report.lua_files += 1;
                 // Steam loads only <appid>.lua. Provider files may preserve a
                 // build suffix (<appid>_<buildid>.lua); validation above proves
@@ -305,7 +322,7 @@ fn install_staged_tree(
                     true,
                 )
             }
-            "manifest" => {
+            LocalFileKind::Manifest => {
                 report.manifest_files += 1;
                 crate::desk_log_info!("local", "Routing manifest file {} → depotcache", file_name.to_string_lossy());
                 (
@@ -314,7 +331,7 @@ fn install_staged_tree(
                     true,
                 )
             }
-            _ => {
+            LocalFileKind::GameFile => {
                 let relative = path
                     .strip_prefix(root)
                     .map(|rel| rel.to_path_buf())

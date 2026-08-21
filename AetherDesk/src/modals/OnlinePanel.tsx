@@ -197,17 +197,18 @@ export const OnlinePanel = ({ game, onClose }: OnlinePanelProps) => {
 
   const refresh = useCallback(async () => {
     try {
-      const [planResult, statusResult] = await Promise.all([
-        invoke<OnlinePlan>('plan_online', { appId: Number(game.appId) }),
-        invoke<OnlineStatus>('get_online_status', { appId: Number(game.appId) }),
+      const appId = Number(game.appId);
+      const [planResult, statusResult, savedRequest] = await Promise.all([
+        invoke<OnlinePlan>('plan_online', { appId }),
+        invoke<OnlineStatus>('get_online_status', { appId }),
+        invoke<OnlineEnableRequest | null>('get_online_preferences', { appId }),
       ]);
       setPlan(planResult);
       setStatus(statusResult);
-      // Deploy EOS stays OFF by default; only ogAppId is pre-filled.
-      setRequest((prev) => ({
-        ...prev,
-        ogAppId: prev.ogAppId || Number(game.appId) || 0,
-      }));
+      setRequest((previous) => savedRequest ?? {
+        ...previous,
+        ogAppId: previous.ogAppId || appId || 0,
+      });
     } catch (err) {
       setMessage({ text: `Plan unavailable: ${err}`, kind: 'error' });
     } finally {
@@ -254,10 +255,16 @@ export const OnlinePanel = ({ game, onClose }: OnlinePanelProps) => {
     }
   };
 
-  // Restores the form to its initial values.
-  const handleReset = () => {
-    setRequest(emptyRequest(Number(game.appId) || 0));
-    setMessage(null);
+  // Restores defaults and explicitly clears the persisted per-game choices.
+  const handleReset = async () => {
+    const appId = Number(game.appId) || 0;
+    try {
+      await invoke('clear_online_preferences', { appId });
+      setRequest(emptyRequest(appId));
+      setMessage(null);
+    } catch (err) {
+      setMessage({ text: `Reset failed: ${err}`, kind: 'error' });
+    }
   };
 
   const set = <K extends keyof OnlineEnableRequest>(key: K, value: OnlineEnableRequest[K]) =>

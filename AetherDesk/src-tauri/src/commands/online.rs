@@ -7,6 +7,7 @@
 use crate::external_tools::bundle::ToolBundleLocator;
 use crate::online::bundle::Uco2Bundle;
 use crate::online::engine::OnlineEngine;
+use crate::online::preferences::OnlinePreferencesStore;
 use crate::online::state::OnlineStateStore;
 use crate::online::types::{OnlineEnableRequest, OnlinePlan, OnlineStatus, OnlineActionResult};
 use crate::util::game_resolver::resolve_installed_game;
@@ -18,6 +19,21 @@ const UCO2_RESOURCE_DIR: &str = "ExternalTools/UCOnline2";
 /// Path del file di stato UCOnline2 (fonte unica: `STATE_FILE`).
 fn state_path() -> PathBuf {
     OnlineStateStore::state_path(&LocalAppPaths::data_root())
+}
+
+fn preferences_path() -> PathBuf {
+    OnlinePreferencesStore::path(&LocalAppPaths::data_root())
+}
+
+#[tauri::command]
+pub fn get_online_preferences(app_id: u32) -> Result<Option<OnlineEnableRequest>, String> {
+    Ok(OnlinePreferencesStore::load(&preferences_path()).get(app_id))
+}
+
+#[tauri::command]
+pub fn clear_online_preferences(app_id: u32) -> Result<(), String> {
+    let path = preferences_path();
+    OnlinePreferencesStore::load(&path).remove(app_id, &path)
 }
 
 /// Stato online di un gioco (per la UI: footer + record).
@@ -115,6 +131,13 @@ pub async fn enable_online(
         request.spoof_app_id,
         request.deploy_eos_custom
     );
+
+    // Preferences have a longer lifecycle than the deployment journal. Save
+    // before deployment so user input survives failures, closing the popup and
+    // later disabling/re-enabling UCO2.
+    let preferences_path = preferences_path();
+    OnlinePreferencesStore::load(&preferences_path)
+        .upsert(app_id, request.clone(), &preferences_path)?;
 
     let result = tauri::async_runtime::spawn_blocking(move || {
         OnlineEngine::enable(app_id, &game_root, &bundle, &request, &backup_root, &state_path)

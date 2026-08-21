@@ -13,6 +13,7 @@ pub mod config;
 pub mod deploy;
 pub mod detect;
 pub mod engine;
+pub mod preferences;
 pub mod revert;
 pub mod state;
 pub mod types;
