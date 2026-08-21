@@ -518,9 +518,14 @@ export const SettingsView = ({ hubcapUsage, onRefreshUsage, onRefreshCustomCss, 
             and protected with Windows DPAPI for the current user. */}
         <div className="settings-group">
           <label className="settings-label">LuaTools Account</label>
-          <p className="settings-desc">
-            Log in to your lua.tools account to download from its available manifest sources.
-          </p>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
+            <p className="settings-desc">Log in to your lua.tools account to download from its available manifest sources.</p>
+            {luaToolsAuth.signedIn && (
+              <span style={{ fontSize: '12px', color: '#8f8f9e', fontWeight: 'bold', marginLeft: '12px', whiteSpace: 'nowrap' }}>
+                25/day
+              </span>
+            )}
+          </div>
           <div className="settings-toggle-row">
             <span className="settings-toggle-text">
               {luaToolsAuth.signedIn

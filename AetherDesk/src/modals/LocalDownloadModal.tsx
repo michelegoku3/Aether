@@ -131,12 +131,16 @@ export const LocalDownloadModal = ({ game, onClose, onInstalled }: LocalDownload
         appName: game.name,
         localFiles: selectedFiles,
       });
-      showStatus(message, 'success');
+      const hasBuildWarning = message.includes('Warning:');
+      showStatus(message, hasBuildWarning ? 'info' : 'success');
 
-      // Auto close after a short delay on success, like the download modal.
-      setTimeout(() => {
-        onInstalled?.();
-      }, 3000);
+      // Keep advisory build-mismatch warnings visible so the user can read
+      // them. Ordinary successful installs retain the normal auto-close.
+      if (!hasBuildWarning) {
+        setTimeout(() => {
+          onInstalled?.();
+        }, 3000);
+      }
     } catch (err: any) {
       showStatus(`${err}`, 'error');
     } finally {

@@ -137,6 +137,7 @@ pub fn install_local_pipeline(
 
             // Route the staged tree into the right Steam locations.
             install_staged_tree(
+                app_id,
                 &staging,
                 &staging,
                 &game_dir,
@@ -166,10 +167,24 @@ pub fn install_local_pipeline(
     Ok(report)
 }
 
-/// Recursively validate every staged `.lua` file: its file name must be a
-/// numeric App ID matching the selected game. A Lua for a different App ID
-/// means the archive belongs to a different game, so the whole source is
-/// rejected before anything is written into Steam.
+/// Reads the leading numeric AppID from provider-style Lua names. Supports the
+/// canonical `<appid>.lua` and build-labelled `<appid>_<buildid>.lua` forms
+/// without accepting an AppID that merely appears later in an unrelated name.
+pub(crate) fn app_id_from_lua_stem(stem: &str) -> Option<u32> {
+    let digit_count = stem
+        .chars()
+        .take_while(|character| character.is_ascii_digit())
+        .count();
+    if digit_count == 0 {
+        return None;
+    }
+    stem[..digit_count].parse().ok()
+}
+
+/// Recursively validate every staged `.lua` file: its leading App ID must
+/// match the selected game. A Lua for a different App ID means the archive
+/// belongs to a different game, so the source is rejected before Steam is
+/// touched. Build-labelled names are canonicalized during routing.
 fn validate_staged_lua_files(current: &Path, app_id: u32) -> Result<(), String> {
     for entry in fs::read_dir(current)
         .map_err(|error| format!("Failed to read folder {}: {}", current.display(), error))?
@@ -197,21 +212,26 @@ fn validate_staged_lua_files(current: &Path, app_id: u32) -> Result<(), String> 
             .map(|stem| stem.to_string_lossy().to_string())
             .unwrap_or_default();
 
-        match stem.parse::<u32>() {
-            Ok(lua_app_id) if lua_app_id == app_id => {
-                crate::desk_log_info!("local", "Lua file {} validated: App ID matches the selected game ({})", file_name, app_id);
+        match app_id_from_lua_stem(&stem) {
+            Some(lua_app_id) if lua_app_id == app_id => {
+                crate::desk_log_info!(
+                    "local",
+                    "Lua file {} validated: leading App ID matches the selected game ({})",
+                    file_name,
+                    app_id
+                );
             }
-            Ok(lua_app_id) => {
+            Some(lua_app_id) => {
                 crate::desk_log_error!("local", "Lua file {} belongs to App ID {} but the selected game is App ID {}: refusing to install", file_name, lua_app_id, app_id);
                 return Err(format!(
                     "The Lua file {} belongs to App ID {}, but the selected game is App ID {}. They are not the same game: installation aborted.",
                     file_name, lua_app_id, app_id
                 ));
             }
-            Err(_) => {
-                crate::desk_log_error!("local", "Lua file {} has no numeric App ID name (expected <appid>.lua): refusing to install", file_name);
+            None => {
+                crate::desk_log_error!("local", "Lua file {} has no leading numeric App ID: refusing to install", file_name);
                 return Err(format!(
-                    "The Lua file {} is not named after a Steam App ID (<appid>.lua), so it cannot be verified against the selected game. Installation aborted.",
+                    "The Lua file {} does not start with a Steam App ID, so it cannot be verified against the selected game. Accepted names include <appid>.lua and <appid>_<buildid>.lua.",
                     file_name
                 ));
             }
@@ -229,6 +249,7 @@ fn validate_staged_lua_files(current: &Path, app_id: u32) -> Result<(), String> 
 /// central Lua-backup step of the online download pipeline. Existing files are
 /// overwritten.
 fn install_staged_tree(
+    app_id: u32,
     root: &Path,
     current: &Path,
     game_dir: &Path,
@@ -244,7 +265,16 @@ fn install_staged_tree(
         let path = entry.path();
 
         if path.is_dir() {
-            install_staged_tree(root, &path, game_dir, plugin_dir, depotcache_dir, lua_backup_dir, report)?;
+            install_staged_tree(
+                app_id,
+                root,
+                &path,
+                game_dir,
+                plugin_dir,
+                depotcache_dir,
+                lua_backup_dir,
+                report,
+            )?;
             continue;
         }
 
@@ -258,10 +288,20 @@ fn install_staged_tree(
         let (dest, display_path, also_backup) = match extension.as_str() {
             "lua" => {
                 report.lua_files += 1;
-                crate::desk_log_info!("local", "Routing lua file {} → config/stplug-in", file_name.to_string_lossy());
+                // Steam loads only <appid>.lua. Provider files may preserve a
+                // build suffix (<appid>_<buildid>.lua); validation above proves
+                // the leading AppID belongs to the selected game, then routing
+                // canonicalizes the live filename while backup keeps the source.
+                let live_name = format!("{}.lua", app_id);
+                crate::desk_log_info!(
+                    "local",
+                    "Routing lua file {} → config/stplug-in/{}",
+                    file_name.to_string_lossy(),
+                    live_name
+                );
                 (
-                    plugin_dir.join(&file_name),
-                    format!("config/stplug-in/{}", file_name.to_string_lossy()),
+                    plugin_dir.join(&live_name),
+                    format!("config/stplug-in/{}", live_name),
                     true,
                 )
             }

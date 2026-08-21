@@ -462,7 +462,7 @@ export const StoreView = ({ onRefreshUsage, isActive, settingsRevision, useAlter
                         setSelectedSource('oureveryday');
                       }
                     } catch (err) {
-                      // Fall back to OurEveryday if settings cannot be read.
+                      // Fall back to MOED if settings cannot be read.
                       setSelectedSource('oureveryday');
                     }
                   },
@@ -575,8 +575,9 @@ export const StoreView = ({ onRefreshUsage, isActive, settingsRevision, useAlter
                     disabled={isDownloading}
                     onClick={() => setSelectedSource('oureveryday')}
                     className={`source-btn ${selectedSource === 'oureveryday' ? 'active' : ''}`}
+                    title="MOED manifest source"
                   >
-                    OurEveryday
+                    MOED
                   </button>
                   <button
                     disabled={isDownloading}

@@ -16,6 +16,15 @@ redistributing Aether** (see `LICENSE.txt`).
 
 ---
 
+## LuaTools — by LuaTools contributors
+
+- **Repository:** https://github.com/madoiscool/LuaTools
+- **Used for:** the optional lua.tools account integration, including the
+  Supabase PKCE login flow and authenticated manifest-package download model.
+- **License:** MIT — see `LUATOOLS_LICENSE.txt`.
+
+---
+
 ## Steamless — by atom0s
 
 - **Repository:** https://github.com/atom0s/Steamless

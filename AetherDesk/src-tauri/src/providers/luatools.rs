@@ -5,8 +5,6 @@ use crate::providers::http;
 use crate::providers::luatools_auth::LuaToolsAuth;
 
 const API_BASE_URL: &str = "https://lua.tools";
-const MANIFEST_BACKEND_URL: &str = "http://167.235.229.108";
-const MANIFEST_BACKEND_USER_AGENT: &str = "secretgoonpoon";
 const DOWNLOAD_TIMEOUT_SECONDS: u64 = 5 * 60;
 
 /// LuaTools is an authenticated source aggregator. Availability is discovered
@@ -26,8 +24,8 @@ impl LuaToolsClient {
     }
 
     pub async fn download_lua_package(&self, app_id: u32) -> Result<ManifestPackage, String> {
-        let source = self.select_source(app_id).await?;
         let access_token = self.auth.valid_access_token().await?;
+        let source = self.select_source(app_id, &access_token).await?;
         let response = self
             .client
             .get(format!("{API_BASE_URL}/api/manifest/download"))
@@ -67,11 +65,11 @@ impl LuaToolsClient {
         ManifestPackageExtractor::from_provider_bytes(app_id, bytes.as_ref())
     }
 
-    async fn select_source(&self, app_id: u32) -> Result<String, String> {
+    async fn select_source(&self, app_id: u32, access_token: &str) -> Result<String, String> {
         let response = self
             .client
-            .get(format!("{MANIFEST_BACKEND_URL}/check_apis"))
-            .header("User-Agent", MANIFEST_BACKEND_USER_AGENT)
+            .get(format!("{API_BASE_URL}/api/manifest/check"))
+            .bearer_auth(access_token)
             .query(&[("appid", app_id)])
             .send()
             .await
