@@ -60,6 +60,7 @@ export const SettingsView = ({ hubcapUsage, onRefreshUsage, onRefreshCustomCss, 
   const [storeCurrency, setStoreCurrency] = useState<'eur' | 'usd' | 'jpy'>('eur');
   const [luaToolsAuth, setLuaToolsAuth] = useState<LuaToolsAuthStatus>({ signedIn: false, displayName: null, email: null });
   const [isLuaToolsAuthBusy, setIsLuaToolsAuthBusy] = useState(false);
+  const [isLuaToolsOAuthBusy, setIsLuaToolsOAuthBusy] = useState(false);
   const [showLuaToolsLoginModal, setShowLuaToolsLoginModal] = useState(false);
   const [luaToolsLoginMode, setLuaToolsLoginMode] = useState<'choice' | 'code'>('choice');
   const [luaToolsLoginCode, setLuaToolsLoginCode] = useState('');
@@ -310,14 +311,30 @@ export const SettingsView = ({ hubcapUsage, onRefreshUsage, onRefreshCustomCss, 
     if (isLuaToolsAuthBusy) return;
     setShowLuaToolsLoginModal(false);
     setIsLuaToolsAuthBusy(true);
-    showStatus('Complete the LuaTools OAuth sign-in in your browser...', 'info');
+    setIsLuaToolsOAuthBusy(true);
+    showStatus('Complete the LuaTools OAuth sign-in in Discord or your browser...', 'info');
     try {
       const auth = await invoke<LuaToolsAuthStatus>('sign_in_luatools');
       setLuaToolsAuth(auth);
       showStatus(`LuaTools connected${auth.displayName ? ` as ${auth.displayName}` : ''}.`, 'success');
     } catch (err: any) {
-      showStatus(`LuaTools sign-in failed: ${err}`, 'error');
+      if (!String(err).toLowerCase().includes('cancelled')) {
+        showStatus(`LuaTools sign-in failed: ${err}`, 'error');
+      }
     } finally {
+      setIsLuaToolsOAuthBusy(false);
+      setIsLuaToolsAuthBusy(false);
+    }
+  };
+
+  const cancelLuaToolsOAuth = async () => {
+    try {
+      await invoke('cancel_luatools_sign_in');
+      showStatus('LuaTools sign-in cancelled.', 'info');
+    } catch (err: any) {
+      showStatus(`Could not cancel LuaTools sign-in: ${err}`, 'error');
+    } finally {
+      setIsLuaToolsOAuthBusy(false);
       setIsLuaToolsAuthBusy(false);
     }
   };
@@ -526,7 +543,7 @@ export const SettingsView = ({ hubcapUsage, onRefreshUsage, onRefreshCustomCss, 
               </span>
             )}
           </div>
-          <div className="settings-toggle-row">
+          <div className="settings-toggle-row" style={{ padding: 0 }}>
             <span className="settings-toggle-text">
               {luaToolsAuth.signedIn
                 ? `Connected${luaToolsAuth.displayName ? ` as ${luaToolsAuth.displayName}` : luaToolsAuth.email ? ` as ${luaToolsAuth.email}` : ''}`
@@ -536,10 +553,16 @@ export const SettingsView = ({ hubcapUsage, onRefreshUsage, onRefreshCustomCss, 
               type="button"
               className="settings-small-btn"
               style={{ width: '96px', minWidth: '96px', maxWidth: '96px', height: '33px', padding: '0', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', boxSizing: 'border-box' }}
-              disabled={isLuaToolsAuthBusy}
-              onClick={() => void (luaToolsAuth.signedIn ? handleLuaToolsSignOut() : openLuaToolsLogin())}
+              disabled={isLuaToolsAuthBusy && !isLuaToolsOAuthBusy}
+              onClick={() => void (
+                isLuaToolsOAuthBusy
+                  ? cancelLuaToolsOAuth()
+                  : luaToolsAuth.signedIn
+                    ? handleLuaToolsSignOut()
+                    : openLuaToolsLogin()
+              )}
             >
-              {isLuaToolsAuthBusy ? '...' : luaToolsAuth.signedIn ? 'Logout' : 'Login'}
+              {isLuaToolsOAuthBusy ? 'Cancel' : isLuaToolsAuthBusy ? '...' : luaToolsAuth.signedIn ? 'Logout' : 'Login'}
             </button>
           </div>
         </div>
@@ -711,7 +734,7 @@ export const SettingsView = ({ hubcapUsage, onRefreshUsage, onRefreshCustomCss, 
           )}
 
           {/* Enable personal wallpaper (first image in config/wallpapers) */}
-          <div className="settings-toggle-row" title="Use the first image found in AetherData/config/wallpapers as the app background.">
+          <div className="settings-toggle-row" title="Use the first image found in AetherData/config/wallpapers as the app background">
             <span className="settings-toggle-text">Enable custom wallpaper</span>
             <label className="version-switch">
               <input
@@ -756,7 +779,7 @@ export const SettingsView = ({ hubcapUsage, onRefreshUsage, onRefreshCustomCss, 
               </div>
               {/* Same layout as the alternative-cards fields: label left,
                   numeric input right, indented under the wallpaper switch. */}
-              <div className="settings-toggle-row" title="Adjust the personal wallpaper opacity from 0 to 100.">
+              <div className="settings-toggle-row" title="Adjust the personal wallpaper opacity from 0 to 100">
                 <span className="settings-toggle-text">Wallpaper opacity</span>
                 <input
                   type="text"
@@ -775,7 +798,7 @@ export const SettingsView = ({ hubcapUsage, onRefreshUsage, onRefreshCustomCss, 
             </div>
           )}
 
-          <div className="settings-toggle-row" title="Use a custom window icon from AetherData/config/icons.">
+          <div className="settings-toggle-row" title="Use a custom window icon from AetherData/config/icons">
             <span className="settings-toggle-text">Enable custom icon</span>
             <label className="version-switch">
               <input
@@ -827,7 +850,7 @@ export const SettingsView = ({ hubcapUsage, onRefreshUsage, onRefreshCustomCss, 
           )}
 
           {/* Alternative game cards — moved below the personal wallpaper switch */}
-          <div className="settings-toggle-row" title="Use the alternate backdrop-focused game card layout in Store and Library.">
+          <div className="settings-toggle-row" title="Use the alternate backdrop-focused game card layout in Store and Library">
             <span className="settings-toggle-text">Use alternative game cards</span>
             <label className="version-switch">
               <input
@@ -841,7 +864,7 @@ export const SettingsView = ({ hubcapUsage, onRefreshUsage, onRefreshCustomCss, 
 
           {useAlternativeGameCards && (
             <div className="settings-appearance-sub">
-              <div className="settings-toggle-row" title="Adjust the backdrop image opacity of the alternative game cards from 0 to 100.">
+              <div className="settings-toggle-row" title="Adjust the backdrop image opacity of the alternative game cards from 0 to 100">
                 <span className="settings-toggle-text">Backdrop opacity</span>
                 <input
                   type="text"
@@ -857,7 +880,7 @@ export const SettingsView = ({ hubcapUsage, onRefreshUsage, onRefreshCustomCss, 
                   }}
                 />
               </div>
-              <div className="settings-toggle-row" title="Adjust the fade-out toward the bottom of the alternative game cards from 0 (no fade) to 100 (fully dark).">
+              <div className="settings-toggle-row" title="Adjust the fade-out toward the bottom of the alternative game cards from 0 (no fade) to 100 (fully dark)">
                 <span className="settings-toggle-text">Backdrop fade (bottom)</span>
                 <input
                   type="text"
@@ -1050,6 +1073,14 @@ export const SettingsView = ({ hubcapUsage, onRefreshUsage, onRefreshCustomCss, 
                     <button
                       type="button"
                       className="panel-btn"
+                      disabled={isLuaToolsAuthBusy || luaToolsLoginCode.length !== 6}
+                      onClick={() => void handleLuaToolsCodeSignIn()}
+                    >
+                      {isLuaToolsAuthBusy ? 'Connecting...' : 'Connect'}
+                    </button>
+                    <button
+                      type="button"
+                      className="panel-btn"
                       disabled={isLuaToolsAuthBusy}
                       onClick={() => {
                         setLuaToolsLoginMode('choice');
@@ -1057,14 +1088,6 @@ export const SettingsView = ({ hubcapUsage, onRefreshUsage, onRefreshCustomCss, 
                       }}
                     >
                       Back
-                    </button>
-                    <button
-                      type="button"
-                      className="panel-btn"
-                      disabled={isLuaToolsAuthBusy || luaToolsLoginCode.length !== 6}
-                      onClick={() => void handleLuaToolsCodeSignIn()}
-                    >
-                      {isLuaToolsAuthBusy ? 'Connecting...' : 'Connect'}
                     </button>
                   </div>
                 </>

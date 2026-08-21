@@ -63,6 +63,7 @@ fn main() {
             commands::settings::get_hubcap_usage,
             commands::settings::get_luatools_auth_status,
             commands::settings::sign_in_luatools,
+            commands::settings::cancel_luatools_sign_in,
             commands::settings::sign_in_luatools_with_code,
             commands::settings::sign_out_luatools,
             commands::settings::clear_app_caches,

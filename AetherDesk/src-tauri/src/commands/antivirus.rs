@@ -15,8 +15,9 @@
 //      (main install + any extra libraries registered in libraryfolders.vdf),
 //      excluded by absolute path as a second layer.
 //
-// Because the app runs with admin rights, exclusions are applied via
-// PowerShell (`Add-MpPreference`) with a hidden console window.
+// AetherDesk runs elevated because its core workflows write into protected
+// Steam and game folders. Defender exclusions therefore run in a hidden child
+// PowerShell without requesting a second elevation.
 use crate::core::paths::LocalAppPaths;
 use crate::core::settings::SettingsManager;
 use crate::steam::library::SteamLibraryScanner;
@@ -106,9 +107,9 @@ const APP_PROCESS_EXCLUSIONS: [&str; 3] = [
     "steam.exe",
 ];
 
-/// Try to add the relevant exclusions to Windows Defender via PowerShell
-/// (hidden window, admin rights already present). On success the prompt is
-/// marked as done.
+/// Try to add the relevant exclusions to Windows Defender via a hidden
+/// PowerShell child. AetherDesk is already elevated, so no second UAC boundary
+/// or visible elevated console is necessary.
 ///
 /// The exclusions are two kinds:
 ///   - *Process* exclusions (`AetherDesk.exe`, `aether_updater.exe`, `steam.exe`):
@@ -122,8 +123,8 @@ const APP_PROCESS_EXCLUSIONS: [&str; 3] = [
 pub fn apply_antivirus_exclusion(app: tauri::AppHandle) -> Result<String, String> {
     let folders = collect_exclusion_paths(&app);
 
-    // Build a single PowerShell script that adds every exclusion in one
-    // invocation, so the user sees only one UAC/PowerShell flash instead of N.
+    // Build a single PowerShell script that adds every exclusion in one hidden
+    // invocation instead of spawning one child process per exclusion.
     let mut script = Vec::new();
 
     // 1. Process exclusions — location-independent, cover the app + updater.
@@ -147,7 +148,7 @@ pub fn apply_antivirus_exclusion(app: tauri::AppHandle) -> Result<String, String
     crate::desk_log_info!("antivirus", "Applying Windows Defender exclusions for {} folders and {} processes", folders.len(), APP_PROCESS_EXCLUSIONS.len());
 
     let mut command = Command::new("powershell.exe");
-    command.args(["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", &script]);
+    command.args(["-NoProfile", "-WindowStyle", "Hidden", "-ExecutionPolicy", "Bypass", "-Command", &script]);
     hide_window(&mut command);
 
     let output = command

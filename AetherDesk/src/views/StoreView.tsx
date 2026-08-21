@@ -451,18 +451,31 @@ export const StoreView = ({ onRefreshUsage, isActive, settingsRevision, useAlter
                     setDownloadStatus({ text: '', type: 'info' });
                     setIsDownloading(false);
 
-                    // Prefer Hubcap when a key is configured and a manifest exists.
+                    // Pick the best configured source in a deterministic order:
+                    // Hubcap key → LuaTools session → Ryuu key → public MOED.
                     try {
-                      const settings = await getSettings();
-                      const hasValidHubcapKey = settings.hubcap_api_key?.trim() !== '';
-
-                      if (hasValidHubcapKey && selected.has_manifest) {
+                      const [settingsResult, authResult] = await Promise.allSettled([
+                        getSettings(),
+                        invoke<{ signedIn: boolean }>('get_luatools_auth_status'),
+                      ]);
+                      if (settingsResult.status !== 'fulfilled') {
+                        setSelectedSource('oureveryday');
+                        return;
+                      }
+                      const settings = settingsResult.value;
+                      const luaToolsSignedIn = authResult.status === 'fulfilled' && authResult.value.signedIn;
+                      if (settings.hubcap_api_key?.trim()) {
                         setSelectedSource('hubcap');
+                      } else if (luaToolsSignedIn) {
+                        setSelectedSource('luatools');
+                      } else if (settings.ryuu_api_key?.trim()) {
+                        setSelectedSource('ryuu');
                       } else {
                         setSelectedSource('oureveryday');
                       }
-                    } catch (err) {
-                      // Fall back to MOED if settings cannot be read.
+                    } catch {
+                      // Authentication/settings lookup failure must not block
+                      // the modal: MOED is the no-credential fallback.
                       setSelectedSource('oureveryday');
                     }
                   },
@@ -599,8 +612,8 @@ export const StoreView = ({ onRefreshUsage, isActive, settingsRevision, useAlter
               <button
                 onClick={handleDownloadSteam}
                 className="big-action-btn"
-                disabled={isDownloading}
-                style={{ opacity: isDownloading ? 0.5 : 1 }}
+                disabled={isDownloading || selectedSource === 'local'}
+                style={{ opacity: isDownloading || selectedSource === 'local' ? 0.5 : 1 }}
               >
                 <div className="action-icon">⚡</div>
                 <div className="action-info">
@@ -615,8 +628,8 @@ export const StoreView = ({ onRefreshUsage, isActive, settingsRevision, useAlter
               <button
                 onClick={handleDownloadOlder}
                 className="big-action-btn"
-                disabled={isDownloading}
-                style={{ opacity: isDownloading ? 0.5 : 1 }}
+                disabled={isDownloading || selectedSource === 'local'}
+                style={{ opacity: isDownloading || selectedSource === 'local' ? 0.5 : 1 }}
               >
                 <div className="action-icon">📦</div>
                 <div className="action-info">

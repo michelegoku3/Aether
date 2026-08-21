@@ -19,8 +19,9 @@ REM  Usage:
 REM    build.cmd             -> full build
 REM    build.cmd /skipaudit  -> skip the audit step (faster)
 REM
-REM  The window stays open at the end (pause on success, failure and the
-REM  early guard error) so the result is readable when double-clicked.
+REM  Build output is streamed live through PowerShell Tee-Object (UTF-8 +
+REM  forced ANSI colors) while also being captured for the final diagnostic
+REM  scan. A clean success closes automatically; warnings/errors stay open.
 REM
 REM  Notes:
 REM    - No multi-line if() blocks (incompatible with files saved
@@ -41,6 +42,10 @@ set "EXTERNAL_TOOLS=%DESK_DIR%\src-tauri\ExternalTools"
 set "DEFAULTS_DIR=%DESK_DIR%\src-tauri\assets\defaults"
 set "DATA_CONFIG=%PORTABLE_DIR%\AetherData\config"
 set "TAURI_CONF=%DESK_DIR%\src-tauri\tauri.conf.json"
+set "BUILD_LOG=%TEMP%\aether_build_%RANDOM%_%RANDOM%.log"
+set "FORCE_COLOR=1"
+set "CARGO_TERM_COLOR=always"
+type nul > "%BUILD_LOG%"
 
 REM --- Guard: the AetherDesk folder must exist ------------------------
 if exist "%DESK_DIR%" goto :desk_ok
@@ -61,14 +66,19 @@ call npm install-scripts approve esbuild >nul 2>&1
 REM --- Step 2: install dependencies ------------------------------------
 echo.
 echo [2/5] Installing frontend dependencies (npm ci)...
-call npm ci
+powershell.exe -NoProfile -ExecutionPolicy Bypass -Command ^
+  "$utf8=New-Object System.Text.UTF8Encoding($false); [Console]::OutputEncoding=$utf8; $OutputEncoding=$utf8;" ^
+  "& cmd.exe /d /s /c 'npm ci 2>&1' | Tee-Object -FilePath '%BUILD_LOG%' -Append; $code=$LASTEXITCODE; exit $code"
 if errorlevel 1 goto :fail
 
 REM --- Step 3: audit fix (optional) -------------------------------------
 if /i "%~1"=="/skipaudit" goto :skip_audit
 echo.
 echo [3/5] Fixing known vulnerabilities (npm audit fix)...
-call npm audit fix
+powershell.exe -NoProfile -ExecutionPolicy Bypass -Command ^
+  "$utf8=New-Object System.Text.UTF8Encoding($false); [Console]::OutputEncoding=$utf8; $OutputEncoding=$utf8;" ^
+  "& cmd.exe /d /s /c 'npm audit fix 2>&1' | Tee-Object -FilePath '%BUILD_LOG%' -Append; $code=$LASTEXITCODE; exit $code"
+if errorlevel 1 goto :fail
 goto :after_audit
 
 :skip_audit
@@ -80,7 +90,9 @@ echo [3/5] Audit skipped.
 REM --- Step 4: compile the binary ---------------------------------------
 echo.
 echo [4/5] Compiling AetherDesk (npm run tauri build)...
-call npm run tauri build
+powershell.exe -NoProfile -ExecutionPolicy Bypass -Command ^
+  "$utf8=New-Object System.Text.UTF8Encoding($false); [Console]::OutputEncoding=$utf8; $OutputEncoding=$utf8;" ^
+  "& cmd.exe /d /s /c 'npm run tauri build 2>&1' | Tee-Object -FilePath '%BUILD_LOG%' -Append; $code=$LASTEXITCODE; exit $code"
 if errorlevel 1 goto :fail
 
 REM --- Step 5: assemble the portable folder + ZIP -----------------------
@@ -108,7 +120,19 @@ echo ============================================
 echo   BUILD COMPLETED SUCCESSFULLY
 echo ============================================
 echo.
+findstr /i /c:"warning:" /c:"npm warn" /c:"deprecated" "%BUILD_LOG%" >nul && goto :success_with_warnings
+findstr /l /i /c:"error:" /c:"npm error" /c:"error[" "%BUILD_LOG%" >nul && goto :success_with_warnings
+findstr /i "vulnerabilit" "%BUILD_LOG%" | findstr /v /i /c:"found 0 vulnerabilities" >nul && goto :success_with_warnings
+if exist "%BUILD_LOG%" del /q "%BUILD_LOG%" >nul 2>&1
+endlocal
+exit /b 0
+
+:success_with_warnings
+echo BUILD SUCCEEDED WITH WARNINGS.
+echo Review the warning lines above before closing this window.
+echo.
 echo Press any key to close this window...
+if exist "%BUILD_LOG%" del /q "%BUILD_LOG%" >nul 2>&1
 endlocal
 pause >nul
 exit /b 0
@@ -118,6 +142,7 @@ echo.
 echo BUILD FAILED.
 echo.
 echo Press any key to close this window...
+if exist "%BUILD_LOG%" del /q "%BUILD_LOG%" >nul 2>&1
 endlocal
 pause >nul
 exit /b 1

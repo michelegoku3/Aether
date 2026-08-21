@@ -1,11 +1,15 @@
 use std::fs;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Mutex;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use base64::Engine;
+use once_cell::sync::Lazy;
 use rand::RngCore;
 use serde::{Deserialize, Serialize};
+use tokio::sync::oneshot;
 use sha2::{Digest, Sha256};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
@@ -19,6 +23,13 @@ const CALLBACK_PORT: u16 = 53789;
 const CALLBACK_URL: &str = "http://localhost:53789/callback";
 const AUTH_TIMEOUT_SECONDS: u64 = 5 * 60;
 const AUTH_FILE_NAME: &str = "luatools_auth.dat";
+
+/// At most one interactive OAuth listener exists per process. The sender lets
+/// the Settings UI cancel a browser flow when the user closes or denies it,
+/// instead of leaving the Login button busy until the timeout expires.
+static OAUTH_CANCEL: Lazy<Mutex<Option<oneshot::Sender<()>>>> =
+    Lazy::new(|| Mutex::new(None));
+static OAUTH_CANCEL_REQUESTED: AtomicBool = AtomicBool::new(false);
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -115,12 +126,34 @@ impl LuaToolsAuth {
         );
 
         crate::util::browser::open_external_url(&authorize_url)?;
-        let code = tokio::time::timeout(
+
+        let (cancel_tx, cancel_rx) = oneshot::channel();
+        if let Ok(mut slot) = OAUTH_CANCEL.lock() {
+            if let Some(previous) = slot.replace(cancel_tx) {
+                let _ = previous.send(());
+            }
+            // Handles the small race where the user presses Cancel before the
+            // async command has finished registering its sender.
+            if OAUTH_CANCEL_REQUESTED.swap(false, Ordering::SeqCst) {
+                if let Some(cancel) = slot.take() {
+                    let _ = cancel.send(());
+                }
+            }
+        }
+        let callback = tokio::time::timeout(
             Duration::from_secs(AUTH_TIMEOUT_SECONDS),
             wait_for_callback(listener),
-        )
-        .await
-        .map_err(|_| "LuaTools sign-in timed out after 5 minutes".to_string())??;
+        );
+        let code_result = tokio::select! {
+            result = callback => result
+                .map_err(|_| "LuaTools sign-in timed out after 5 minutes".to_string())?,
+            _ = cancel_rx => Err("LuaTools sign-in cancelled".to_string()),
+        };
+        if let Ok(mut slot) = OAUTH_CANCEL.lock() {
+            slot.take();
+        }
+        OAUTH_CANCEL_REQUESTED.store(false, Ordering::SeqCst);
+        let code = code_result?;
 
         let response = self
             .client
@@ -204,6 +237,15 @@ impl LuaToolsAuth {
         let session: SupabaseSession = serde_json::from_str(&verify_body)
             .map_err(|e| format!("Could not parse the verified LuaTools session: {e}"))?;
         self.persist_session(session)
+    }
+
+    pub fn cancel_sign_in() {
+        OAUTH_CANCEL_REQUESTED.store(true, Ordering::SeqCst);
+        if let Ok(mut slot) = OAUTH_CANCEL.lock() {
+            if let Some(cancel) = slot.take() {
+                let _ = cancel.send(());
+            }
+        }
     }
 
     pub fn sign_out(&self) -> Result<(), String> {
@@ -492,11 +534,11 @@ fn take_dpapi_output(
 }
 
 #[cfg(not(target_os = "windows"))]
-fn protect(plain: &[u8]) -> Result<Vec<u8>, String> {
-    Ok(plain.to_vec())
+fn protect(_plain: &[u8]) -> Result<Vec<u8>, String> {
+    Err("Secure LuaTools session storage is currently available only on Windows".to_string())
 }
 
 #[cfg(not(target_os = "windows"))]
-fn unprotect(encrypted: &[u8]) -> Result<Vec<u8>, String> {
-    Ok(encrypted.to_vec())
+fn unprotect(_encrypted: &[u8]) -> Result<Vec<u8>, String> {
+    Err("Secure LuaTools session storage is currently available only on Windows".to_string())
 }

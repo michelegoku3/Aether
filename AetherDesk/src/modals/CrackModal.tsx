@@ -1,7 +1,5 @@
-import { useEffect, useRef, useState } from 'react';
-import type { DragEvent as ReactDragEvent } from 'react';
+import { useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
-import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow';
 import { emptyStatus, StatusMessage } from '../types/ui';
 import { useModalDismiss } from '../hooks/useModalDismiss';
 
@@ -17,7 +15,7 @@ interface CrackModalProps {
   onClose: () => void;
 }
 
-const DROP_ZONE_HINT = 'Click to browse or drag & drop crack file(s) here';
+const DROP_ZONE_HINT = 'Click to browse for crack file(s)';
 
 const basename = (path: string): string => path.split(/[\\/]/).pop() ?? path;
 
@@ -25,7 +23,6 @@ export const CrackModal = ({ game, onClose }: CrackModalProps) => {
   // Multiple files are supported: dropped files append to the list and are
   // shown stacked, one per line.
   const [selectedFiles, setSelectedFiles] = useState<string[]>([]);
-  const [isDragOver, setIsDragOver] = useState(false);
   const [isApplying, setIsApplying] = useState(false);
   const [vnPatchMode, setVnPatchMode] = useState(false);
   const [status, setStatus] = useState<StatusMessage>(emptyStatus());
@@ -38,66 +35,17 @@ export const CrackModal = ({ game, onClose }: CrackModalProps) => {
     setStatus(emptyStatus());
   };
 
-  // Keep the latest addFiles in a ref so the drag-drop subscriptions below can
-  // be set up once (mount) without re-subscribing on every state change.
-  const addFilesRef = useRef(addFiles);
-  addFilesRef.current = addFiles;
-
-  // Click on the drop zone → native OS file picker (backend opens the dialog).
+  // Click on the drop zone → native OS file picker.
   const openFilePicker = async () => {
     try {
       const paths: string[] = await invoke('pick_crack_files', {
         appId: Number(game.appId),
       });
-      if (paths && paths.length > 0) addFiles(paths);
+      if (paths.length > 0) addFiles(paths);
     } catch (err: any) {
       showStatus(`Failed to open file picker: ${err}`, 'error');
     }
   };
-
-  // Drag & drop of OS files.
-  //
-  // On Windows/WebView2 this is a known, partially-unresolved area in Tauri:
-  //   * With dragDropEnabled = true (our config) Tauri registers an OS-level
-  //     drop listener that can "hijack" the window, sometimes showing a 🚫
-  //     cursor and not delivering paths.
-  //   * The browser onDragOver/onDrop DOM events do NOT fire for OS file drops
-  //     inside a Tauri WebView.
-  // We therefore use BOTH paths defensively:
-  //   1. Native: getCurrentWebviewWindow().onDragDropEvent(...) — the primary
-  //      production path that yields real filesystem paths.
-  //   2. Browser fallback: element-level onDragOver/onDrop reading
-  //      e.dataTransfer.files — only used when running outside a Tauri WebView
-  //      (e.g. plain browser), guarded so it never double-processes.
-  // A window-level dragover preventDefault is kept so the drop cursor is shown
-  // as valid ("copy") instead of the OS "blocked" cursor.
-  useEffect(() => {
-    // Allow a valid drop cursor across the whole window.
-    const preventDragDefault = (event: DragEvent) => event.preventDefault();
-    window.addEventListener('dragover', preventDragDefault);
-
-    let unlisten: (() => void) | null = null;
-    getCurrentWebviewWindow()
-      .onDragDropEvent((event) => {
-        const type = event.payload.type;
-        if (type === 'enter') {
-          setIsDragOver(true);
-        } else if (type === 'leave') {
-          setIsDragOver(false);
-        } else if (type === 'drop') {
-          setIsDragOver(false);
-          addFilesRef.current(event.payload.paths);
-        }
-      })
-      .then((unlistenFn) => {
-        unlisten = unlistenFn;
-      });
-
-    return () => {
-      unlisten?.();
-      window.removeEventListener('dragover', preventDragDefault);
-    };
-  }, []);
 
   // ESC + click fuori chiudono il popup (rispettando un'operazione in corso).
   useModalDismiss(onClose, isApplying);
@@ -129,15 +77,6 @@ export const CrackModal = ({ game, onClose }: CrackModalProps) => {
 
   const fileNames = selectedFiles.map(basename);
 
-  // Browser fallback handler (only acts outside a Tauri WebView).
-  const handleBrowserDrop = (event: ReactDragEvent) => {
-    event.preventDefault();
-    if ('__TAURI_INTERNALS__' in window) return; // native handler owns it
-    const files = Array.from(event.dataTransfer.files);
-    if (files.length > 0) {
-      addFiles(files.map((file) => file.name));
-    }
-  };
 
   return (
     <div className="modal-overlay" onClick={isApplying ? undefined : onClose}>
@@ -168,7 +107,7 @@ export const CrackModal = ({ game, onClose }: CrackModalProps) => {
           )}
 
           <div
-            className={`crack-drop-zone ${isDragOver ? 'drag-over' : ''} ${
+            className={`crack-drop-zone ${
               fileNames.length > 0 ? 'has-file' : ''
             }`}
             role="button"
@@ -180,8 +119,6 @@ export const CrackModal = ({ game, onClose }: CrackModalProps) => {
             onKeyDown={(event) => {
               if (event.key === 'Enter' && !isApplying) openFilePicker();
             }}
-            onDragOver={(event) => event.preventDefault()}
-            onDrop={handleBrowserDrop}
           >
             {fileNames.length > 0 ? (
               <div className="crack-drop-files">
@@ -214,7 +151,7 @@ export const CrackModal = ({ game, onClose }: CrackModalProps) => {
 
             <label
               className="crack-achievement-row"
-              title="When ON, Visual Novel self-extracting .exe patches are staged and extracted as archives (.exe.zip) so their contents can be applied automatically."
+              title="When ON, Visual Novel self-extracting .exe patches are staged and extracted as archives (.exe.zip) so their contents can be applied automatically"
             >
               <span className="crack-achievement-text">
                 Make Apply Crack work for VNs .exe patches
