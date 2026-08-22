@@ -45,6 +45,7 @@ export const SettingsView = ({ hubcapUsage, onRefreshUsage, onRefreshCustomCss, 
   const [useAlternativeGameCards, setUseAlternativeGameCards] = useState(false);
   const [enableWebviewDevtools, setEnableWebviewDevtools] = useState(false);
   const [enableTestUpdates, setEnableTestUpdates] = useState(false);
+  const [customGameName, setCustomGameName] = useState('');
   const [storeFrontFilter, setStoreFrontFilter] = useState('upcoming');
   const [customCssEnabled, setCustomCssEnabled] = useState(false);
   const [personalWallpaperEnabled, setPersonalWallpaperEnabled] = useState(false);
@@ -121,6 +122,7 @@ export const SettingsView = ({ hubcapUsage, onRefreshUsage, onRefreshCustomCss, 
           setUseAlternativeGameCards(Boolean(settings.use_alternative_game_cards));
           setEnableWebviewDevtools(Boolean(settings.enable_webview_devtools));
           setEnableTestUpdates(Boolean(settings.enable_test_updates));
+          setCustomGameName(settings.custom_game_name || '');
           setStoreFrontFilter(settings.store_front_filter || 'upcoming');
           setCustomCssEnabled(Boolean(settings.custom_css_enabled));
           setPersonalWallpaperEnabled(Boolean(settings.personal_wallpaper_enabled));
@@ -174,6 +176,7 @@ export const SettingsView = ({ hubcapUsage, onRefreshUsage, onRefreshCustomCss, 
     use_alternative_game_cards: useAlternativeGameCards,
     enable_webview_devtools: enableWebviewDevtools,
     enable_test_updates: enableTestUpdates,
+    custom_game_name: customGameName.trim(),
     store_front_filter: storeFrontFilter,
     store_currency: storeCurrency,
     ...overrides,
@@ -436,6 +439,20 @@ export const SettingsView = ({ hubcapUsage, onRefreshUsage, onRefreshCustomCss, 
               />
               <span></span>
             </label>
+          </div>
+
+          <div className="settings-toggle-row" style={{ alignItems: 'flex-start', flexDirection: 'column', gap: '6px', padding: '4px 0' }}>
+            <span className="settings-toggle-text">Custom game display name</span>
+            <p className="settings-desc">
+              Overrides the game name shown to friends on Steam, leave empty to show the real title.
+            </p>
+            <input
+              type="text"
+              className="settings-input"
+              placeholder="e.g. My Custom Game"
+              value={customGameName}
+              onChange={(e) => setCustomGameName(e.target.value)}
+            />
           </div>
 
           <div className="settings-toggle-row" title="Clear AetherDesk cache files such as store search, game info, Steam names and Denuvo cache. Settings and backups are preserved.">
@@ -953,6 +970,7 @@ export const SettingsView = ({ hubcapUsage, onRefreshUsage, onRefreshCustomCss, 
                     use_alternative_game_cards: false,
                     enable_webview_devtools: false,
                     enable_test_updates: false,
+                    custom_game_name: '',
                     store_front_filter: 'upcoming',
                     custom_css_enabled: false,
                     personal_wallpaper_enabled: false,

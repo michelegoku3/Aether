@@ -79,6 +79,9 @@ void ExtractStringKVs(const std::uint8_t* data, std::uint32_t size,
 }  // namespace
 
 std::int32_t HandleSend(const WireFrame& frame, std::uint8_t* out, std::uint32_t outCap) {
+    // Hot-reload settings in real time if aethercore.toml was updated by AetherDesk
+    Settings::ReloadIfModified(g_state.configPath);
+
     CMsgClientGamesPlayed msg;
     if (!msg.ParseFromArray(frame.body, static_cast<int>(frame.bodyLen))) {
         return kNoChange;
@@ -157,7 +160,12 @@ std::int32_t HandleSend(const WireFrame& frame, std::uint8_t* out, std::uint32_t
         }
         if (nameApp == 0) continue;
 
-        const std::string name = gamename::ForApp(nameApp);
+        std::string name;
+        if (!g_state.settings.presenceCustomGameName.empty()) {
+            name = g_state.settings.presenceCustomGameName;
+        } else {
+            name = gamename::ForApp(nameApp);
+        }
         if (name.empty()) continue;
         if (game->has_game_extra_info() && game->game_extra_info() == name) continue;
 

@@ -18,7 +18,43 @@ pub fn save_settings(app: tauri::AppHandle, settings: AppSettings) -> Result<(),
     if let Err(e) = crate::core::custom_css::apply_window_icon(&app) {
         crate::desk_log_warn!("settings", "Window icon apply after save failed: {}", e);
     }
+    sync_custom_game_name_to_aethercore_toml(&app, &settings.custom_game_name);
     Ok(())
+}
+
+fn sync_custom_game_name_to_aethercore_toml(app: &tauri::AppHandle, custom_name: &str) {
+    let config_dir = crate::core::paths::LocalAppPaths::config_dir();
+    let toml_path = config_dir.join("aethercore.toml");
+    update_custom_name_in_toml(&toml_path, custom_name);
+
+    let steam_path = crate::core::settings::SettingsManager::new(app).load().steam_path;
+    if !steam_path.trim().is_empty() {
+        let steam_toml = std::path::PathBuf::from(&steam_path).join("aethercore").join("aethercore.toml");
+        update_custom_name_in_toml(&steam_toml, custom_name);
+    }
+}
+
+fn update_custom_name_in_toml(path: &std::path::Path, custom_name: &str) {
+    if !path.exists() {
+        return;
+    }
+    let Ok(content) = std::fs::read_to_string(path) else {
+        return;
+    };
+    let escaped = custom_name.replace('\\', "\\\\").replace('"', "\\\"");
+    let new_line = format!("custom_game_name = \"{}\"", escaped);
+
+    let updated = if content.contains("[presence]") {
+        let re = regex::Regex::new(r#"(?m)^custom_game_name\s*=\s*".*""#).unwrap();
+        if re.is_match(&content) {
+            re.replace(&content, new_line).to_string()
+        } else {
+            content.replace("[presence]", &format!("[presence]\n{}", new_line))
+        }
+    } else {
+        format!("{}\n\n[presence]\n{}\n", content.trim_end(), new_line)
+    };
+    let _ = std::fs::write(path, updated);
 }
 
 #[tauri::command]

@@ -51,9 +51,13 @@ struct Settings {
     bool presenceInjectLocal = true;
     bool presenceAlwaysExtraInfo = true;
     bool presenceOnlineFixPersonaPatch = true;
+    std::string presenceCustomGameName;
 
     // Parses the TOML at configPath.
     static Settings Load(const std::string& configPath);
+
+    // Checks if configPath has been modified on disk and reloads settings in memory.
+    static void ReloadIfModified(const std::string& configPath);
 };
 
 }  // namespace ac

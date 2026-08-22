@@ -108,6 +108,9 @@ pub struct AppSettings {
     /// Driven by the square play/x toggle next to Refresh in Library.
     #[serde(default = "default_library_install_filter")]
     pub library_install_filter: String,
+    /// Custom game name displayed to friends on Steam (game_extra_info).
+    #[serde(default)]
+    pub custom_game_name: String,
 }
 
 /// Serde default provider for the alt-cards backdrop opacity.
@@ -223,6 +226,7 @@ impl Default for AppSettings {
             alternative_cards_opacity: default_alt_cards_opacity(),
             alternative_cards_fade: default_alt_cards_fade(),
             library_install_filter: default_library_install_filter(),
+            custom_game_name: String::new(),
         }
     }
 }
