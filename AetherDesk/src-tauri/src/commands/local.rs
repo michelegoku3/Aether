@@ -161,3 +161,12 @@ fn file_path_to_string(file_path: FilePath) -> Option<String> {
         .ok()
         .map(|path| path.to_string_lossy().to_string())
 }
+
+/// List every archived Lua version for a game (current backup + history/).
+/// Data source for the future "all builds" tab in Change Version.
+#[tauri::command]
+pub async fn list_lua_history(
+    app_id: u32,
+) -> Result<Vec<crate::core::backup::LuaHistoryEntry>, String> {
+    crate::core::backup::list_lua_history(app_id)
+}

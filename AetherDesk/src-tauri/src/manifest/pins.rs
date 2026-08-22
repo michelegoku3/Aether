@@ -77,26 +77,6 @@ impl LuaManifestPins {
         self.lua_path.exists()
     }
 
-    /// Copies the Lua to `<appid>.lua.bak` next to it. The backup is the
-    /// restore point used by the version pipeline before any pin edit.
-    pub fn backup(&self) -> Result<PathBuf, String> {
-        if !self.path_exists() {
-            return Err(format!(
-                "Cannot back up {}: file does not exist",
-                self.lua_path.display()
-            ));
-        }
-        let backup_path = PathBuf::from(format!("{}.bak", self.lua_path.display()));
-        fs::copy(&self.lua_path, &backup_path).map_err(|e| {
-            format!(
-                "Failed to back up {} to {}: {}",
-                self.lua_path.display(),
-                backup_path.display(),
-                e
-            )
-        })?;
-        Ok(backup_path)
-    }
 
     /// Applies the resolved portion of a build snapshot to the Lua: every
     /// listed depot gets its manifest pinned and is enabled. Depots absent from

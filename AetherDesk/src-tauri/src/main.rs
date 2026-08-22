@@ -48,6 +48,38 @@ fn main() {
             // obsolete data-folder cleanup, and the lua_backups → backup data
             // layout migration. Each step is idempotent and failure-tolerant.
             crate::core::migration::run_startup_migrations(&app.handle());
+            // Lua backup sync (background, non-blocking): mirror every .lua in
+            // stplug-in into backup/<app_id>/lua — creates missing backups and
+            // archives+updates changed ones (history/ keeps old versions).
+            {
+                let app_handle = app.handle().clone();
+                let steam_path =
+                    crate::core::settings::SettingsManager::new(&app_handle).load().steam_path;
+                tauri::async_runtime::spawn(async move {
+                    let report = tauri::async_runtime::spawn_blocking(move || {
+                        crate::core::backup::sync_lua_backups_from_stplug_in(
+                            std::path::Path::new(&steam_path),
+                        )
+                    })
+                    .await;
+                    if let Ok(report) = report {
+                        if report.created > 0 || report.updated > 0 {
+                            crate::desk_log_info!(
+                                "backup",
+                                "Startup Lua backup sync: {} scanned, {} created, {} updated, {} unchanged, {} skipped",
+                                report.scanned, report.created, report.updated,
+                                report.unchanged, report.skipped
+                            );
+                        } else {
+                            crate::desk_log_debug!(
+                                "backup",
+                                "Startup Lua backup sync: everything up to date ({} scanned, {} unchanged, {} skipped)",
+                                report.scanned, report.unchanged, report.skipped
+                            );
+                        }
+                    }
+                });
+            }
             // Background worker that retries ACF build edits queued by the
             // version pipeline (ACF missing until download, or held by Steam).
             crate::versioning::queue::spawn_retry_worker(app.handle().clone());
@@ -86,6 +118,7 @@ fn main() {
             commands::crack::remove_applied_crack,
             commands::local::pick_local_files,
             commands::local::install_local_game,
+            commands::local::list_lua_history,
             commands::antivirus::get_antivirus_exclusion_done,
             commands::antivirus::acknowledge_antivirus_exclusion,
             commands::antivirus::apply_antivirus_exclusion,

@@ -37,11 +37,15 @@ impl SteamCompat {
         let target_path = plugin_dir.join(format!("{}.lua", app_id));
         let temp_path = target_path.with_extension("tmp");
 
-        // Keep a non-.lua backup before overwriting. This is intentionally not named
-        // *.lua so LumaCore/AetherDLL will not try to load it as another plugin file.
+        // Prima di sovrascrivere, il .lua attuale viene preservato nell'albero
+        // di backup AetherData (history/ se è una versione non ancora nota).
+        // Niente più .lua.bak in stplug-in.
         if target_path.exists() {
-            let backup_path = target_path.with_extension("lua.bak");
-            let _ = fs::copy(&target_path, backup_path);
+            if let Ok(old_lua) = fs::read(&target_path) {
+                if let Ok(backup) = crate::core::backup::GameBackup::for_app(app_id) {
+                    let _ = backup.store_history_version(app_id, &old_lua);
+                }
+            }
         }
 
         fs::write(&temp_path, content)

@@ -104,3 +104,39 @@ Default decision:
 - hook trampoline -> module-local `o_*`;
 - per-thread scratch -> `thread_local t_*`;
 - temporary function data -> local variable.
+
+## Achievement diagnostics (logging + backup)
+
+`hooks/wire/AchievementModule.cpp` (wire logic + logging, backed by the
+`hooks/wire/AchievementBackup` persistence module) instruments every stage of the user-stats
+flow with `[eMsg ...]`-prefixed log lines, so a single `main.log` session shows
+the whole story: request spoofing (151/818), donor response rewriting
+(152/819, including the data stripped from the donor and the risky
+"response not correlated to our spoof" path, logged at WARN), and the in-game
+unlock commits (5466) with `*** ACHIEVEMENT UNLOCKED ***` lines.
+
+Because Steam never acks `StoreUserStats2` for apps the account does not own,
+the client's local cache (`appcache\stats\UserGameStats_<account>_<appid>.bin`)
+is the ONLY copy of the user's progress (`PendingChanges > 0` in that file is
+the tell-tale). Every unlock is therefore also mirrored into the AetherDesk
+backup tree (resolved via `aethercore\desk_path.cfg`, with an `aethercore\backup`
+fallback), using Steam's own per-(account, app) naming:
+
+```
+<AetherData>\backup\<appid>\achievements\
+    UserGameStats_<account>_<appid>.json    snapshot of unlocks (mirror format)
+    UserGameStats_<account>_<appid>.bin     copy of Steam's cache file
+    UserGameStatsSchema_<appid>.bin         copy of the game schema
+```
+
+All disk I/O runs on a dedicated lazy-started worker thread owned by
+`AchievementBackup` (`RecordUnlock()` only enqueues — no filesystem work on
+Steam's network thread); `FlushOnShutdown()` drains the queue, takes the final
+`.bin` copies and joins the worker. The JSON is rewritten atomically on each
+unlock (merge keeps the earliest unlock time). If the Steam cache is ever
+wiped again, restore by copying the `.bin` back into `appcache\stats` (Steam
+closed) or rebuild it from the JSON with `Tools/achievement_decoder.py rebuild`.
+
+`Tools/achievement_decoder.py` decodes/encodes the Steam cache, schema and
+mirror JSON files (`decode`, `snapshot`, `rebuild` commands) — use it together
+with `main.log` when investigating achievement issues.
