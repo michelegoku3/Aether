@@ -6,6 +6,7 @@ import { FindCrackModal } from '../modals/FindCrackModal';
 import { SavedCrackModal } from '../modals/SavedCrackModal';
 import { AntivirusExclusionModal } from '../modals/AntivirusExclusionModal';
 import { SearchSuggest, moveSuggestIndex } from '../ui/SearchSuggest';
+import { filterAndSortGames } from '../util/search';
 
 const MAX_VISIBLE_RESULTS = 5;
 
@@ -22,35 +23,6 @@ interface SteamlessRunResult {
 }
 
 type HomeStatus = { text: string; type: 'info' | 'success' | 'error' };
-
-const normalizeSearchText = (value: string) =>
-  value
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/[^a-z0-9]+/g, ' ')
-    .trim();
-
-const fuzzyScore = (query: string, candidate: string) => {
-  const q = normalizeSearchText(query);
-  const c = normalizeSearchText(candidate);
-
-  if (!q) return 0;
-  if (c === q) return 0;
-  if (c.startsWith(q)) return 1 + c.length - q.length;
-  if (c.includes(q)) return 100 + (c.indexOf(q) * 2) + c.length - q.length;
-
-  let lastIndex = -1;
-  let score = 500;
-  for (const char of q) {
-    const index = c.indexOf(char, lastIndex + 1);
-    if (index === -1) return Number.POSITIVE_INFINITY;
-    score += index - lastIndex;
-    lastIndex = index;
-  }
-
-  return score + c.length - q.length;
-};
 
 export const HomeView = () => {
   const { games, isLoading } = useLibraryGames();
@@ -117,13 +89,7 @@ export const HomeView = () => {
   }, []);
 
   const filteredGames = useMemo(() => {
-    const sortedGames = [...games].sort((a, b) => a.name.localeCompare(b.name));
-
-    if (!query.trim()) {
-      return sortedGames;
-    }
-
-    return sortedGames.filter(game => Number.isFinite(fuzzyScore(query, game.name)));
+    return filterAndSortGames(games, query);
   }, [games, query]);
 
   useEffect(() => {
