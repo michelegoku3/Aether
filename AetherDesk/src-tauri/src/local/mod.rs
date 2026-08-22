@@ -30,7 +30,6 @@ const DEFAULT_ARCHIVE_PASSWORD: &str = "online-fix.me";
 /// Human-readable report of a bulk local import run.
 #[derive(Debug, Default)]
 pub struct BulkInstallReport {
-    pub sources: usize,
     pub lua_files: usize,
     pub manifest_files: usize,
     pub unique_apps: usize,
@@ -118,10 +117,7 @@ pub fn install_bulk_local_pipeline(
         return Err("No valid .lua (<appid>.lua) or .manifest (<depotid>_<manifestid>.manifest) files were found in the selected sources.".to_string());
     }
 
-    let mut report = BulkInstallReport {
-        sources: sources.len(),
-        ..BulkInstallReport::default()
-    };
+    let mut report = BulkInstallReport::default();
     let mut unique_apps = std::collections::HashSet::new();
 
     // Route .manifest files (must strictly match <depotid>_<manifestid>.manifest)

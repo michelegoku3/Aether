@@ -101,35 +101,39 @@ impl VersionService {
             VersionError::InvalidInput("The game Lua does not contain any manifest depots"),
         )?;
 
-        snapshot.push_diff(&self.resolve_pins(build_id).await?);
+        if let Ok(target_pins) = self.resolve_pins(build_id).await {
+            snapshot.push_diff(&target_pins);
+        }
+
         if !snapshot.is_complete() {
-            let history = self.list_builds(app_id).await?;
-            let candidates = older_build_ids(&history, build_id);
+            if let Ok(history) = self.list_builds(app_id).await {
+                let candidates = older_build_ids(&history, build_id);
 
-            for batch in candidates.chunks(LOOKUP_BATCH_SIZE) {
-                if snapshot.is_complete() {
-                    break;
-                }
-                let mut results = self.resolve_pins_batch(batch).await?;
-
-                // Requests finish in arbitrary order; consume them in the
-                // candidate order to preserve nearest-build semantics.
-                for &candidate in batch {
+                for batch in candidates.chunks(LOOKUP_BATCH_SIZE) {
                     if snapshot.is_complete() {
                         break;
                     }
-                    if let Some(result) = results.remove(&candidate) {
-                        match result {
-                            Ok(pins) => {
-                                snapshot.push_diff(&pins);
+                    if let Ok(mut results) = self.resolve_pins_batch(batch).await {
+                        // Requests finish in arbitrary order; consume them in the
+                        // candidate order to preserve nearest-build semantics.
+                        for &candidate in batch {
+                            if snapshot.is_complete() {
+                                break;
                             }
-                            Err(err) => {
-                                crate::desk_log_debug!(
-                                    "versioning",
-                                    "Build {} pin resolution failed (skipping): {}",
-                                    candidate,
-                                    err
-                                );
+                            if let Some(result) = results.remove(&candidate) {
+                                match result {
+                                    Ok(pins) => {
+                                        snapshot.push_diff(&pins);
+                                    }
+                                    Err(err) => {
+                                        crate::desk_log_debug!(
+                                            "versioning",
+                                            "Build {} pin resolution failed (skipping): {}",
+                                            candidate,
+                                            err
+                                        );
+                                    }
+                                }
                             }
                         }
                     }

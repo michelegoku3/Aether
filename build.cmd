@@ -120,9 +120,13 @@ echo ============================================
 echo   BUILD COMPLETED SUCCESSFULLY
 echo ============================================
 echo.
-findstr /i /c:"warning:" /c:"npm warn" /c:"deprecated" "%BUILD_LOG%" >nul && goto :success_with_warnings
-findstr /l /i /c:"error:" /c:"npm error" /c:"error[" "%BUILD_LOG%" >nul && goto :success_with_warnings
-findstr /i "vulnerabilit" "%BUILD_LOG%" | findstr /v /i /c:"found 0 vulnerabilities" >nul && goto :success_with_warnings
+powershell.exe -NoProfile -ExecutionPolicy Bypass -Command ^
+  "$log = if (Test-Path '%BUILD_LOG%') { Get-Content '%BUILD_LOG%' -Raw } else { '' };" ^
+  "$plain = $log -replace '\x1b\[[0-9;]*[a-zA-Z]', '';" ^
+  "$hasWarn = $plain -match '(?i)(warning:|\bwarning\b|npm warn|deprecated|error:|error\[|npm error)';" ^
+  "$hasVuln = ($plain -match '(?i)vulnerabilit') -and ($plain -notmatch '(?i)found 0 vulnerabilities');" ^
+  "if ($hasWarn -or $hasVuln) { exit 2 } else { exit 0 }"
+if errorlevel 2 goto :success_with_warnings
 if exist "%BUILD_LOG%" del /q "%BUILD_LOG%" >nul 2>&1
 endlocal
 exit /b 0
