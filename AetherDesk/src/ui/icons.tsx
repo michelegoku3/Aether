@@ -35,6 +35,13 @@ export const RefreshIcon = ({ size = 15 }: { size?: number }) => (
   </svg>
 );
 
+/** Thick upward arrow icon (e.g. update indicator). */
+export const ArrowUpThickIcon = ({ size = 15 }: { size?: number }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+    <path d="M12 3.5L4 11.5h4.5V20.5h7V11.5H20L12 3.5z" />
+  </svg>
+);
+
 /** Show-password eye (toggles a secret input into plain text). */
 export const EyeIcon = ({ size = 16 }: { size?: number }) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true">

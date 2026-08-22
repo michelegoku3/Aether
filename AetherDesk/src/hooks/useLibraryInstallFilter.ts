@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { getSettings } from './useSettings';
 import type { InstalledGame } from './useLibraryGames';
+import { filterAndSortGames } from '../util/search';
 
 /** Persisted install-status filter for the Library toolbar. */
 export type LibraryInstallFilter = 'all' | 'installed' | 'not_installed';
@@ -34,8 +35,12 @@ const countLabelFor = (
   shown: number,
   isLoading: boolean,
   ready: boolean,
+  searchQuery: string = '',
 ): string => {
   if (isLoading || !ready) return 'Scanning Lua library...';
+  if (searchQuery.trim()) {
+    return `${shown} Lua game${shown === 1 ? '' : 's'} found`;
+  }
   if (filter === 'all') {
     return `${total} Lua game${total === 1 ? '' : 's'} found`;
   }
@@ -45,9 +50,16 @@ const countLabelFor = (
   return `${shown} non-installed Lua game${shown === 1 ? '' : 's'} (${total} total)`;
 };
 
-const emptyMessageFor = (filter: LibraryInstallFilter, total: number): string => {
+const emptyMessageFor = (
+  filter: LibraryInstallFilter,
+  total: number,
+  searchQuery: string = '',
+): string => {
   if (total === 0) {
     return 'No installed Steam games were found. Check your Steam path in Settings and press Refresh.';
+  }
+  if (searchQuery.trim()) {
+    return `No Lua games found matching "${searchQuery.trim()}".`;
   }
   if (filter === 'installed') {
     return 'No installed Lua games match this filter. Click the filter button or Refresh.';
@@ -62,8 +74,15 @@ const emptyMessageFor = (filter: LibraryInstallFilter, total: number): string =>
  * Owns Library install-filter state: load/persist from settings.json, cycle
  * through modes, and derive the filtered list + UI copy. Keeps LibraryView
  * focused on layout and game actions (SRP / high cohesion).
+ *
+ * When `searchQuery` is provided, search searches across ALL games (ignoring
+ * the active install filter) in real time.
  */
-export const useLibraryInstallFilter = (games: InstalledGame[], isLoading: boolean) => {
+export const useLibraryInstallFilter = (
+  games: InstalledGame[],
+  isLoading: boolean,
+  searchQuery: string = '',
+) => {
   const [filter, setFilter] = useState<LibraryInstallFilter>('all');
   const [ready, setReady] = useState(false);
 
@@ -87,11 +106,17 @@ export const useLibraryInstallFilter = (games: InstalledGame[], isLoading: boole
     };
   }, []);
 
+  const hasSearch = Boolean(searchQuery.trim());
+
   const filteredGames = useMemo(() => {
+    // When searching, ignore the active filter and search all games in real time
+    if (hasSearch) {
+      return filterAndSortGames(games, searchQuery);
+    }
     if (filter === 'installed') return games.filter((game) => game.installed);
     if (filter === 'not_installed') return games.filter((game) => !game.installed);
-    return games;
-  }, [games, filter]);
+    return [...games].sort((a, b) => a.name.localeCompare(b.name));
+  }, [games, filter, searchQuery, hasSearch]);
 
   const persist = useCallback(async (next: LibraryInstallFilter) => {
     const settings = await getSettings();
@@ -116,8 +141,8 @@ export const useLibraryInstallFilter = (games: InstalledGame[], isLoading: boole
     filteredGames,
     cycleFilter,
     filterTitle: filterTitleFor(filter),
-    countLabel: countLabelFor(filter, games.length, filteredGames.length, isLoading, ready),
-    emptyMessage: emptyMessageFor(filter, games.length),
+    countLabel: countLabelFor(filter, games.length, filteredGames.length, isLoading, ready, searchQuery),
+    emptyMessage: emptyMessageFor(filter, games.length, searchQuery),
     /** CSS modifiers for the active filter button. */
     filterButtonClass:
       filter === 'installed'
