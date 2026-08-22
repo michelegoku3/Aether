@@ -41,10 +41,6 @@ impl SteamAcfEditor {
         }
     }
 
-    pub fn exists(&self) -> bool {
-        self.path.exists()
-    }
-
     pub fn read_raw(&self) -> Result<String, String> {
         fs::read_to_string(&self.path)
             .map_err(|e| format!("Failed to read {}: {}", self.path.display(), e))
@@ -63,7 +59,7 @@ impl SteamAcfEditor {
 
     /// Applies a build downgrade to the ACF. Returns an error when the file
     /// cannot be read/written (missing, locked by Steam, permissions); the
-    /// caller decides whether to queue a retry.
+    /// caller logs a WARN and continues (best-effort metadata sync).
     pub fn apply_build(&self, build_id: u64, pins: &[DepotManifestPin]) -> Result<(), String> {
         let content = self.read_raw()?;
         let lines: Vec<String> = content.lines().map(str::to_string).collect();

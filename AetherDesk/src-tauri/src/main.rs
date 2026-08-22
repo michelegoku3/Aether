@@ -80,9 +80,6 @@ fn main() {
                     }
                 });
             }
-            // Background worker that retries ACF build edits queued by the
-            // version pipeline (ACF missing until download, or held by Steam).
-            crate::versioning::queue::spawn_retry_worker(app.handle().clone());
             if let Err(e) = crate::core::custom_css::apply_window_icon(&app.handle()) {
                 eprintln!("[AetherDesk] window icon apply failed: {e}");
             }
@@ -181,7 +178,6 @@ fn main() {
             commands::versioning::save_build,
             commands::versioning::remove_saved_build,
             commands::versioning::apply_game_version,
-            commands::versioning::get_pending_version_edits,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -64,6 +64,10 @@ add_library(AetherCore SHARED
     hooks/wire/PacketRouter.cpp
     hooks/wire/AchievementModule.cpp
     hooks/wire/AchievementBackup.cpp
+    hooks/wire/BackupIo.cpp
+    hooks/wire/UserStatsSnapshot.cpp
+    hooks/wire/SteamStatsCache.cpp
+    hooks/wire/PlaytimeMirror.cpp
     hooks/wire/AccessTokenModule.cpp
     hooks/wire/EticketModule.cpp
     hooks/wire/FamilySharingModule.cpp
