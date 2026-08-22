@@ -36,6 +36,25 @@ pub struct BulkInstallReport {
     pub unique_apps: usize,
 }
 
+/// Validates Steam depot manifest naming: `<depot_id>_<manifest_id>.manifest`.
+/// Both depot_id and manifest_id must be non-empty numeric digits.
+pub fn is_valid_manifest_filename(file_name: &str) -> bool {
+    let Some(stem) = file_name
+        .strip_suffix(".manifest")
+        .or_else(|| file_name.strip_suffix(".MANIFEST"))
+    else {
+        return false;
+    };
+    let parts: Vec<&str> = stem.split('_').collect();
+    if parts.len() != 2 {
+        return false;
+    }
+    !parts[0].is_empty()
+        && parts[0].chars().all(|c| c.is_ascii_digit())
+        && !parts[1].is_empty()
+        && parts[1].chars().all(|c| c.is_ascii_digit())
+}
+
 /// Bulk recursive importer for any combination of loose files, folders, and archives (.zip/.rar/.7z).
 /// Searches recursively everywhere, identifies every .lua and .manifest file, and routes them to Steam.
 pub fn install_bulk_local_pipeline(
@@ -96,7 +115,7 @@ pub fn install_bulk_local_pipeline(
 
     if discovered_lua.is_empty() && discovered_manifests.is_empty() {
         let _ = fs::remove_dir_all(&root_staging);
-        return Err("No .lua or .manifest files were found in the selected files, folders, or archives.".to_string());
+        return Err("No valid .lua (<appid>.lua) or .manifest (<depotid>_<manifestid>.manifest) files were found in the selected sources.".to_string());
     }
 
     let mut report = BulkInstallReport {
@@ -105,19 +124,22 @@ pub fn install_bulk_local_pipeline(
     };
     let mut unique_apps = std::collections::HashSet::new();
 
-    // Route .manifest files
+    // Route .manifest files (must strictly match <depotid>_<manifestid>.manifest)
     for manifest_path in &discovered_manifests {
         if let Some(file_name) = manifest_path.file_name() {
-            let dest = depotcache_dir.join(file_name);
-            if let Err(e) = fs::copy(manifest_path, &dest) {
-                crate::desk_log_error!("local", "Failed to copy manifest {}: {}", manifest_path.display(), e);
-            } else {
-                report.manifest_files += 1;
+            let name_str = file_name.to_string_lossy();
+            if is_valid_manifest_filename(&name_str) {
+                let dest = depotcache_dir.join(file_name);
+                if let Err(e) = fs::copy(manifest_path, &dest) {
+                    crate::desk_log_error!("local", "Failed to copy manifest {}: {}", manifest_path.display(), e);
+                } else {
+                    report.manifest_files += 1;
+                }
             }
         }
     }
 
-    // Route .lua files
+    // Route .lua files (must have a leading numeric App ID in filename stem)
     for lua_path in &discovered_lua {
         if let Some(file_name) = lua_path.file_name() {
             let stem = lua_path
@@ -125,10 +147,7 @@ pub fn install_bulk_local_pipeline(
                 .map(|s| s.to_string_lossy().to_string())
                 .unwrap_or_default();
 
-            let app_id_opt = app_id_from_lua_stem(&stem)
-                .or_else(|| extract_app_id_from_lua_content(lua_path));
-
-            let live_name = if let Some(app_id) = app_id_opt {
+            if let Some(app_id) = app_id_from_lua_stem(&stem) {
                 unique_apps.insert(app_id);
                 if let Ok(backup) = GameBackup::for_app(app_id) {
                     let backup_dir = backup.lua_dir();
@@ -136,17 +155,12 @@ pub fn install_bulk_local_pipeline(
                     let backup_dest = backup_dir.join(file_name);
                     let _ = fs::copy(lua_path, &backup_dest);
                 }
-                format!("{}.lua", app_id)
-            } else {
-                file_name.to_string_lossy().to_string()
-            };
-
-            let dest = plugin_dir.join(&live_name);
-            if let Err(e) = fs::copy(lua_path, &dest) {
-                crate::desk_log_error!("local", "Failed to copy lua {}: {}", lua_path.display(), e);
-            } else {
-                report.lua_files += 1;
-                if let Some(app_id) = app_id_opt {
+                let live_name = format!("{}.lua", app_id);
+                let dest = plugin_dir.join(&live_name);
+                if let Err(e) = fs::copy(lua_path, &dest) {
+                    crate::desk_log_error!("local", "Failed to copy lua {}: {}", lua_path.display(), e);
+                } else {
+                    report.lua_files += 1;
                     if download_games_with_updates_on {
                         let lua = LuaManifestPins::new(steam_path.to_path_buf(), app_id);
                         let _ = lua.set_updates_enabled(true);
@@ -197,10 +211,26 @@ fn explore_and_extract_recursive(
             .unwrap_or("")
             .to_ascii_lowercase();
 
+        let file_name = current
+            .file_name()
+            .map(|f| f.to_string_lossy().to_string())
+            .unwrap_or_default();
+
+        let stem = current
+            .file_stem()
+            .map(|s| s.to_string_lossy().to_string())
+            .unwrap_or_default();
+
         if ext == "lua" {
-            lua_out.push(current.to_path_buf());
+            // Must have a leading numeric App ID extractable from the filename stem
+            if app_id_from_lua_stem(&stem).is_some() {
+                lua_out.push(current.to_path_buf());
+            }
         } else if ext == "manifest" {
-            manifest_out.push(current.to_path_buf());
+            // Must strictly match <depotid>_<manifestid>.manifest
+            if is_valid_manifest_filename(&file_name) {
+                manifest_out.push(current.to_path_buf());
+            }
         } else if matches!(ext.as_str(), "zip" | "rar" | "7z") {
             let sub_staging = staging_root.join(format!("extract_{}", *counter));
             *counter += 1;
@@ -219,32 +249,6 @@ fn explore_and_extract_recursive(
     }
 
     Ok(())
-}
-
-fn extract_app_id_from_lua_content(path: &Path) -> Option<u32> {
-    let content = fs::read_to_string(path).ok()?;
-    for line in content.lines() {
-        let trimmed = line.trim();
-        if trimmed.starts_with("--") {
-            continue;
-        }
-        for keyword in &["setManifestid", "setmanifestid", "addappid", "addAppId", "appid", "AppId"] {
-            if let Some(pos) = trimmed.find(keyword) {
-                let rest = &trimmed[pos + keyword.len()..];
-                let digits: String = rest
-                    .chars()
-                    .skip_while(|c| !c.is_ascii_digit())
-                    .take_while(|c| c.is_ascii_digit())
-                    .collect();
-                if let Ok(id) = digits.parse::<u32>() {
-                    if id > 0 {
-                        return Some(id);
-                    }
-                }
-            }
-        }
-    }
-    None
 }
 
 /// Human-readable summary of one local install run.
