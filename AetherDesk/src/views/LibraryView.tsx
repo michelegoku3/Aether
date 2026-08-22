@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { LuaManifestRow } from '../modals/SpecificVersionModal';
 import ChangeVersionModal from '../modals/ChangeVersionModal';
@@ -8,14 +8,10 @@ import { preloadGameCovers } from '../ui/GameCover';
 import { GameCard } from '../ui/GameCard';
 import { StatusAlert } from '../ui/StatusAlert';
 import { ArrowUpThickIcon, CloseIcon, PlayIcon, RefreshIcon } from '../ui/icons';
-import { SearchSuggest, moveSuggestIndex, SearchSuggestItem } from '../ui/SearchSuggest';
 import { useLibraryGames, InstalledGame } from '../hooks/useLibraryGames';
 import { useLibraryInstallFilter } from '../hooks/useLibraryInstallFilter';
 import { StatusType } from '../types/ui';
 import { requireSteamPath } from '../hooks/useSettings';
-
-const MAX_VISIBLE_RESULTS = 3;
-const AUTO_DISMISS_SUGGEST_DELAY_MS = 1000;
 
 interface LibraryViewProps {
   useAlternativeGameCards: boolean;
@@ -30,10 +26,6 @@ export const LibraryView = ({
 }: LibraryViewProps) => {
   const { games, isLoading, status, setStatus, loadInstalledGames } = useLibraryGames();
   const [searchQuery, setSearchQuery] = useState('');
-  const [isSearchOpen, setIsSearchOpen] = useState(false);
-  const [activeResultIndex, setActiveResultIndex] = useState<number | null>(null);
-  const searchPanelRef = useRef<HTMLDivElement | null>(null);
-  const suggestTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const {
     filter,
@@ -55,26 +47,6 @@ export const LibraryView = ({
     setStatus({ text, type });
   };
 
-  const clearSuggestTimer = () => {
-    if (suggestTimerRef.current) {
-      clearTimeout(suggestTimerRef.current);
-      suggestTimerRef.current = null;
-    }
-  };
-
-  const scheduleSuggestDismiss = () => {
-    clearSuggestTimer();
-    suggestTimerRef.current = setTimeout(() => {
-      setIsSearchOpen(false);
-    }, AUTO_DISMISS_SUGGEST_DELAY_MS);
-  };
-
-  useEffect(() => {
-    return () => {
-      clearSuggestTimer();
-    };
-  }, []);
-
   useEffect(() => {
     if (filteredGames.length > 0) {
       preloadGameCovers(
@@ -83,88 +55,6 @@ export const LibraryView = ({
       );
     }
   }, [filteredGames]);
-
-  useEffect(() => {
-    const handlePointerDown = (event: MouseEvent) => {
-      const target = event.target as Node | null;
-      if (target && !searchPanelRef.current?.contains(target)) {
-        clearSuggestTimer();
-        setIsSearchOpen(false);
-      }
-    };
-
-    document.addEventListener('mousedown', handlePointerDown);
-    return () => document.removeEventListener('mousedown', handlePointerDown);
-  }, []);
-
-  useEffect(() => {
-    setActiveResultIndex(null);
-  }, [searchQuery]);
-
-  useEffect(() => {
-    if (activeResultIndex !== null && activeResultIndex >= filteredGames.length) {
-      setActiveResultIndex(filteredGames.length > 0 ? filteredGames.length - 1 : null);
-    }
-  }, [activeResultIndex, filteredGames.length]);
-
-  const selectActiveResult = () => {
-    clearSuggestTimer();
-    const game = activeResultIndex !== null
-      ? filteredGames[activeResultIndex]
-      : filteredGames.length === 1
-        ? filteredGames[0]
-        : null;
-    if (game) {
-      setSearchQuery(game.name);
-      setIsSearchOpen(false);
-      setActiveResultIndex(null);
-    }
-  };
-
-  const handleSelectSuggest = (item: SearchSuggestItem) => {
-    clearSuggestTimer();
-    setSearchQuery(item.name);
-    setIsSearchOpen(false);
-    setActiveResultIndex(null);
-  };
-
-  const handleClearSearch = () => {
-    clearSuggestTimer();
-    setSearchQuery('');
-    setIsSearchOpen(false);
-    setActiveResultIndex(null);
-  };
-
-  const handleKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
-    const hasQuery = Boolean(searchQuery.trim());
-
-    if (event.key === 'ArrowDown') {
-      if (hasQuery && filteredGames.length > 0) {
-        event.preventDefault();
-        setIsSearchOpen(true);
-        setActiveResultIndex((prev) => moveSuggestIndex(prev, filteredGames.length, 1));
-        scheduleSuggestDismiss();
-      }
-    } else if (event.key === 'ArrowUp') {
-      if (hasQuery && filteredGames.length > 0) {
-        event.preventDefault();
-        setIsSearchOpen(true);
-        setActiveResultIndex((prev) => moveSuggestIndex(prev, filteredGames.length, -1));
-        scheduleSuggestDismiss();
-      }
-    } else if (event.key === 'Enter') {
-      event.preventDefault();
-      if (isSearchOpen && (activeResultIndex !== null || filteredGames.length === 1)) {
-        selectActiveResult();
-      } else {
-        clearSuggestTimer();
-        setIsSearchOpen(false);
-      }
-    } else if (event.key === 'Escape') {
-      clearSuggestTimer();
-      setIsSearchOpen(false);
-    }
-  };
 
   const handleCycleFilter = async () => {
     try {
@@ -197,8 +87,6 @@ export const LibraryView = ({
     }
   };
 
-  const isSuggestVisible = isSearchOpen && !isLoading && Boolean(searchQuery.trim());
-
   return (
     <div className="store-view">
       <div className="store-header">
@@ -216,16 +104,7 @@ export const LibraryView = ({
       <div className="library-toolbar">
         <span className="library-count">{countLabel}</span>
 
-        <div
-          className="library-search-panel"
-          ref={searchPanelRef}
-          onMouseEnter={clearSuggestTimer}
-          onMouseLeave={() => {
-            if (isSearchOpen && searchQuery.trim()) {
-              scheduleSuggestDismiss();
-            }
-          }}
-        >
+        <div className="library-search-panel">
           <div className="home-search-wrapper library-search-wrapper">
             <input
               type="text"
@@ -233,19 +112,12 @@ export const LibraryView = ({
               value={searchQuery}
               placeholder={isLoading ? 'Loading Lua games...' : 'Search a Lua game...'}
               disabled={isLoading}
-              onChange={(event) => {
-                const val = event.target.value;
-                setSearchQuery(val);
-                setActiveResultIndex(null);
-                if (val.trim()) {
-                  setIsSearchOpen(true);
-                  scheduleSuggestDismiss();
-                } else {
-                  clearSuggestTimer();
-                  setIsSearchOpen(false);
+              onChange={(event) => setSearchQuery(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === 'Escape') {
+                  setSearchQuery('');
                 }
               }}
-              onKeyDown={handleKeyDown}
             />
 
             {searchQuery && (
@@ -253,21 +125,11 @@ export const LibraryView = ({
                 type="button"
                 className="home-search-clear"
                 aria-label="Clear search"
-                onClick={handleClearSearch}
+                onClick={() => setSearchQuery('')}
               >
                 &times;
               </button>
             )}
-
-            <SearchSuggest
-              open={isSuggestVisible}
-              items={filteredGames}
-              emptyText="No Lua games found."
-              activeIndex={activeResultIndex}
-              maxVisible={MAX_VISIBLE_RESULTS}
-              onHoverIndex={setActiveResultIndex}
-              onSelect={handleSelectSuggest}
-            />
           </div>
         </div>
 

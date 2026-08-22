@@ -4,22 +4,21 @@ import { emptyStatus, StatusMessage } from '../types/ui';
 import { AntivirusExclusionModal } from './AntivirusExclusionModal';
 import { useModalDismiss } from '../hooks/useModalDismiss';
 
-// The game local content is being installed for. `name` and `appId` are enough
-// for the popup; all heavy work happens in the Rust backend.
+// Optional target game for backwards compatibility. When omitted, the modal
+// operates in Bulk Mode (recursive search for any .lua and .manifest).
 export interface LocalTargetGame {
   name: string;
   appId: string;
 }
 
 interface LocalDownloadModalProps {
-  game: LocalTargetGame;
+  game?: LocalTargetGame | null;
   onClose: () => void;
-  // Called after a successful install so the parent can close the download
-  // modal and refresh usage statistics.
+  // Called after a successful install so the parent can refresh statistics.
   onInstalled?: () => void;
 }
 
-const DROP_ZONE_HINT = 'Click to browse for game archive(s) or file(s)';
+const DROP_ZONE_HINT = 'Click to browse for .lua, .manifest, folders, or archives (.zip, .7z, .rar)';
 
 // Maximum number of file rows shown in the drop zone; extra files collapse
 // into a single ellipsis row so the popup never grows too tall.
@@ -28,8 +27,6 @@ const MAX_VISIBLE_FILES = 5;
 const basename = (path: string): string => path.split(/[\\/]/).pop() ?? path;
 
 export const LocalDownloadModal = ({ game, onClose, onInstalled }: LocalDownloadModalProps) => {
-  // Multiple files are supported: dropped files append to the list and are
-  // shown stacked, one per line.
   const [selectedFiles, setSelectedFiles] = useState<string[]>([]);
   const [isInstalling, setIsInstalling] = useState(false);
   const [showAntivirus, setShowAntivirus] = useState(false);
@@ -39,17 +36,23 @@ export const LocalDownloadModal = ({ game, onClose, onInstalled }: LocalDownload
     setStatus({ text, type });
 
   const addFiles = (paths: string[]) => {
-    setSelectedFiles((prev) => [...prev, ...paths]);
+    setSelectedFiles((prev) => {
+      const set = new Set(prev);
+      for (const p of paths) {
+        if (p && p.trim()) set.add(p);
+      }
+      return Array.from(set);
+    });
     setStatus(emptyStatus());
   };
 
-  // Click on the drop zone → native OS file picker.
+  // Click on the drop zone → native OS file/folder picker.
   const openFilePicker = async () => {
     try {
       const paths: string[] = await invoke('pick_local_files', {
-        appId: Number(game.appId),
+        appId: game ? Number(game.appId) : undefined,
       });
-      if (paths.length > 0) addFiles(paths);
+      if (paths && paths.length > 0) addFiles(paths);
     } catch (err: any) {
       showStatus(`Failed to open file picker: ${err}`, 'error');
     }
@@ -63,9 +66,6 @@ export const LocalDownloadModal = ({ game, onClose, onInstalled }: LocalDownload
     setStatus(emptyStatus());
   };
 
-  // Antivirus gate at the START of a new installation (not at Apply Crack).
-  // If the user already granted the exclusion (settings.json value), nothing
-  // is shown and the install proceeds directly.
   const handleInstall = async () => {
     if (selectedFiles.length === 0) return;
 
@@ -83,18 +83,24 @@ export const LocalDownloadModal = ({ game, onClose, onInstalled }: LocalDownload
 
   const doInstall = async () => {
     setIsInstalling(true);
-    showStatus('Installing local content into Steam...', 'info');
+    showStatus('Scanning and importing .lua and .manifest files into Steam...', 'info');
     try {
-      const message: string = await invoke('install_local_game', {
-        appId: Number(game.appId),
-        appName: game.name,
-        localFiles: selectedFiles,
-      });
+      let message: string;
+      if (game) {
+        message = await invoke('install_local_game', {
+          appId: Number(game.appId),
+          appName: game.name,
+          localFiles: selectedFiles,
+        });
+      } else {
+        message = await invoke('install_bulk_local', {
+          localFiles: selectedFiles,
+        });
+      }
+
       const hasBuildWarning = message.includes('Warning:');
       showStatus(message, hasBuildWarning ? 'info' : 'success');
 
-      // Keep advisory build-mismatch warnings visible so the user can read
-      // them. Ordinary successful installs retain the normal auto-close.
       if (!hasBuildWarning) {
         setTimeout(() => {
           onInstalled?.();
@@ -111,13 +117,22 @@ export const LocalDownloadModal = ({ game, onClose, onInstalled }: LocalDownload
   const visibleFileNames = fileNames.slice(0, MAX_VISIBLE_FILES);
   const hiddenFileCount = fileNames.length - visibleFileNames.length;
 
+  const modalTitle = game
+    ? `Local Install for: ${game.name} (${game.appId})`
+    : 'Local Import (Bulk Lua & Manifests)';
 
   return (
     <div className="modal-overlay" onClick={isInstalling ? undefined : onClose}>
       <div className="modal-container crack-modal-container" onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
           <span className="modal-title">
-            Local Install for: <strong style={{ color: '#ffffff' }}>{game.name}</strong> ({game.appId})
+            {game ? (
+              <>
+                Local Install for: <strong style={{ color: '#ffffff' }}>{game.name}</strong> ({game.appId})
+              </>
+            ) : (
+              <strong style={{ color: '#ffffff' }}>{modalTitle}</strong>
+            )}
           </span>
           <button
             onClick={() => {
@@ -146,7 +161,7 @@ export const LocalDownloadModal = ({ game, onClose, onInstalled }: LocalDownload
             }`}
             role="button"
             tabIndex={0}
-            aria-label="Select game archive(s) or file(s)"
+            aria-label="Select files, folders, or archives"
             onClick={() => {
               if (!isInstalling) openFilePicker();
             }}
@@ -166,7 +181,7 @@ export const LocalDownloadModal = ({ game, onClose, onInstalled }: LocalDownload
                     className="crack-drop-filename"
                     title={selectedFiles.slice(MAX_VISIBLE_FILES).join('\n')}
                   >
-                    … (+{hiddenFileCount} more file{hiddenFileCount === 1 ? '' : 's'})
+                    … (+{hiddenFileCount} more item{hiddenFileCount === 1 ? '' : 's'})
                   </span>
                 )}
               </div>
@@ -181,14 +196,14 @@ export const LocalDownloadModal = ({ game, onClose, onInstalled }: LocalDownload
               onClick={handleInstall}
               disabled={isInstalling || selectedFiles.length === 0}
             >
-              {isInstalling ? 'Installing...' : 'Install into Steam'}
+              {isInstalling ? 'Importing...' : 'Import into Steam'}
             </button>
             <button
               className="panel-btn crack-btn"
               onClick={clearFiles}
               disabled={isInstalling || selectedFiles.length === 0}
             >
-              Clean File
+              Clean List
             </button>
           </div>
         </div>

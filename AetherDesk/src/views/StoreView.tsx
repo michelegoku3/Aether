@@ -9,6 +9,7 @@ import { LocalDownloadModal } from '../modals/LocalDownloadModal';
 import { preloadGameCovers } from '../ui/GameCover';
 import { GameCard } from '../ui/GameCard';
 import { StatusAlert } from '../ui/StatusAlert';
+import { FolderPlusIcon } from '../ui/icons';
 import { useStoreSearch, StoreGameResult as StoreGame } from '../hooks/useStoreSearch';
 import { enrichDenuvoFlags } from '../hooks/useDenuvoEnrichment';
 import { useModalDismiss } from '../hooks/useModalDismiss';
@@ -54,7 +55,7 @@ export const StoreView = ({ onRefreshUsage, isActive, settingsRevision, useAlter
 
   // Selected manifest source. LuaTools uses its own authenticated session;
   // Hubcap/Ryuu use the API keys configured in Settings.
-  const [selectedSource, setSelectedSource] = useState<'hubcap' | 'luatools' | 'ryuu' | 'oureveryday' | 'local'>('oureveryday');
+  const [selectedSource, setSelectedSource] = useState<'hubcap' | 'luatools' | 'ryuu' | 'oureveryday'>('oureveryday');
 
   // Status message for download operations inside the modal
   const [downloadStatus, setDownloadStatus] = useState<StatusMessage>(emptyStatus());
@@ -68,9 +69,8 @@ export const StoreView = ({ onRefreshUsage, isActive, settingsRevision, useAlter
   const [versionGame, setVersionGame] = useState<StoreGame | null>(null);
   const [manifestRows, setManifestRows] = useState<LuaManifestRow[]>([]);
 
-  // Local-install modal state. Opens on top of the download modal when the
-  // "Local" source is picked; the download modal stays open underneath.
-  const [localGame, setLocalGame] = useState<StoreGame | null>(null);
+  // Bulk local import modal state (opened from the bottom-right square button).
+  const [showBulkLocalImport, setShowBulkLocalImport] = useState(false);
 
   const mergeTrendingGames = (incoming: StoreGame[]) => {
     setResults((prev) => {
@@ -223,11 +223,6 @@ export const StoreView = ({ onRefreshUsage, isActive, settingsRevision, useAlter
   const handleDownloadSteam = async () => {
     if (!selectedGame) return;
 
-    if (selectedSource === 'local') {
-      setDownloadStatus({ text: 'The Local source installs from your own files: click the Local button above to open its popup.', type: 'error' });
-      return;
-    }
-
     setIsDownloading(true);
     setDownloadStatus({ text: 'Initializing pipeline...', type: 'info' });
 
@@ -285,11 +280,6 @@ export const StoreView = ({ onRefreshUsage, isActive, settingsRevision, useAlter
 
   const handleDownloadOlder = async () => {
     if (!selectedGame) return;
-
-    if (selectedSource === 'local') {
-      setDownloadStatus({ text: 'The Local source installs from your own files: click the Local button above to open its popup.', type: 'error' });
-      return;
-    }
 
     setIsDownloading(true);
     setDownloadStatus({ text: 'Downloading Lua and preparing version table...', type: 'info' });
@@ -592,19 +582,6 @@ export const StoreView = ({ onRefreshUsage, isActive, settingsRevision, useAlter
                   >
                     MOED
                   </button>
-                  <button
-                    disabled={isDownloading}
-                    onClick={() => {
-                      setSelectedSource('local');
-                      // Open the Local install popup (same layout as Apply
-                      // Crack, without the option checkboxes).
-                      setLocalGame(selectedGame);
-                    }}
-                    title="Install game files from a local archive or loose files"
-                    className={`source-btn ${selectedSource === 'local' ? 'active' : ''}`}
-                  >
-                    Local
-                  </button>
                 </div>
               </div>
 
@@ -612,8 +589,7 @@ export const StoreView = ({ onRefreshUsage, isActive, settingsRevision, useAlter
               <button
                 onClick={handleDownloadSteam}
                 className="big-action-btn"
-                disabled={isDownloading || selectedSource === 'local'}
-                style={{ opacity: isDownloading || selectedSource === 'local' ? 0.5 : 1 }}
+                disabled={isDownloading}
               >
                 <div className="action-icon">⚡</div>
                 <div className="action-info">
@@ -628,8 +604,7 @@ export const StoreView = ({ onRefreshUsage, isActive, settingsRevision, useAlter
               <button
                 onClick={handleDownloadOlder}
                 className="big-action-btn"
-                disabled={isDownloading || selectedSource === 'local'}
-                style={{ opacity: isDownloading || selectedSource === 'local' ? 0.5 : 1 }}
+                disabled={isDownloading}
               >
                 <div className="action-icon">📦</div>
                 <div className="action-info">
@@ -656,16 +631,22 @@ export const StoreView = ({ onRefreshUsage, isActive, settingsRevision, useAlter
         />
       )}
 
-      {/* Local install modal: opened from the "Local" source button inside the
-          download modal. Rendered last so it stacks on top of it. */}
-      {localGame && (
+      {/* Square Bulk Local Import Button at bottom-right corner of Store */}
+      <button
+        type="button"
+        className="store-local-fab"
+        onClick={() => setShowBulkLocalImport(true)}
+        title="Bulk Local Import (.lua, .manifest, archives)"
+        aria-label="Bulk Local Import"
+      >
+        <FolderPlusIcon size={20} />
+      </button>
+
+      {/* Bulk Local Import Modal */}
+      {showBulkLocalImport && (
         <LocalDownloadModal
-          game={{ name: localGame.name, appId: localGame.appId }}
-          onClose={() => setLocalGame(null)}
+          onClose={() => setShowBulkLocalImport(false)}
           onInstalled={() => {
-            setLocalGame(null);
-            setSelectedGame(null);
-            setDownloadStatus({ text: '', type: 'info' });
             onRefreshUsage?.();
           }}
         />
