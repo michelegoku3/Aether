@@ -30,27 +30,11 @@ interface MainContentProps {
 }
 
 export const MainContent = ({ activeTab, dllUpdateAvailable, deskUpdateAvailable, deskVersion, dllUpdateIsTest, deskUpdateIsTest, onUpdateComplete, hubcapUsage, onRefreshUsage, dllStatus, onDllStatusChange, onRefreshCustomCss, onCustomCssChange, onPreviewPersonalWallpaper, onPreviewAlternativeCards, settingsRevision, useAlternativeGameCards, alternativeCardsOpacity, alternativeCardsFade }: MainContentProps) => {
-  const renderActiveNonStoreView = () => {
-    if (activeTab === 'store') {
-      return null;
-    }
-
+  const renderActiveTransientView = () => {
     if (activeTab === 'home') {
       return (
         <main className="main-content">
           <HomeView />
-        </main>
-      );
-    }
-
-    if (activeTab === 'library') {
-      return (
-        <main className="main-content">
-          <LibraryView
-            useAlternativeGameCards={useAlternativeGameCards}
-            alternativeCardsOpacity={alternativeCardsOpacity}
-            alternativeCardsFade={alternativeCardsFade}
-          />
         </main>
       );
     }
@@ -87,12 +71,8 @@ export const MainContent = ({ activeTab, dllUpdateAvailable, deskUpdateAvailable
       );
     }
 
-    if (activeTab === 'log') {
-      return (
-        <main className="main-content">
-          <LogView />
-        </main>
-      );
+    if (activeTab === 'store' || activeTab === 'library' || activeTab === 'log') {
+      return null;
     }
 
     const title = activeTab === 'backup'
@@ -123,7 +103,7 @@ export const MainContent = ({ activeTab, dllUpdateAvailable, deskUpdateAvailable
   return (
     <>
       {/* Store stays mounted so trending results, pagination state and resolved
-          cover cache survive sidebar tab switches. It is hidden, not unmounted. */}
+          cover cache survive sidebar tab switches. */}
       <main
         className="main-content"
         style={{ display: activeTab === 'store' ? 'flex' : 'none' }}
@@ -138,7 +118,32 @@ export const MainContent = ({ activeTab, dllUpdateAvailable, deskUpdateAvailable
           alternativeCardsFade={alternativeCardsFade}
         />
       </main>
-      {renderActiveNonStoreView()}
+
+      {/* Library stays mounted so search query, filter state, scroll position
+          and loaded games survive tab switches. */}
+      <main
+        className="main-content"
+        style={{ display: activeTab === 'library' ? 'flex' : 'none' }}
+        aria-hidden={activeTab !== 'library'}
+      >
+        <LibraryView
+          useAlternativeGameCards={useAlternativeGameCards}
+          alternativeCardsOpacity={alternativeCardsOpacity}
+          alternativeCardsFade={alternativeCardsFade}
+        />
+      </main>
+
+      {/* Logs stay mounted so active source selection (Desk/DLL/UCO2/All),
+          log level filter, search keyword and terminal scroll position persist. */}
+      <main
+        className="main-content"
+        style={{ display: activeTab === 'log' ? 'flex' : 'none' }}
+        aria-hidden={activeTab !== 'log'}
+      >
+        <LogView />
+      </main>
+
+      {renderActiveTransientView()}
     </>
   );
 };

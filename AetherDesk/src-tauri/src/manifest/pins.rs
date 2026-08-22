@@ -99,24 +99,40 @@ impl LuaManifestPins {
         for pin in &current {
             match wanted.get(&pin.row.app_id) {
                 Some(manifest_id) => {
-                    // Depot changed in the target build: enable it and pin the manifest.
+                    let old_manifest = &pin.row.manifest_id;
                     if let Some(addappid_line) = pin.addappid_line {
                         Self::set_commented(&mut lines[addappid_line], false);
                     }
                     Self::set_commented(&mut lines[pin.setmanifest_line], false);
                     if *manifest_id != pin.row.manifest_id {
+                        crate::desk_log_info!(
+                            "manifest",
+                            "Depot {}: manifest modified from '{}' to '{}'",
+                            pin.row.app_id,
+                            old_manifest,
+                            manifest_id
+                        );
                         lines[pin.setmanifest_line] = Self::rewrite_setmanifest_without_size(
                             &lines[pin.setmanifest_line],
                             manifest_id,
                         )?;
+                    } else {
+                        crate::desk_log_info!(
+                            "manifest",
+                            "Depot {}: manifest unchanged ('{}')",
+                            pin.row.app_id,
+                            manifest_id
+                        );
                     }
                     applied += 1;
                 }
                 None => {
-                    // No trustworthy historical manifest was resolved for this
-                    // depot. Preserve both its enabled/disabled state and its
-                    // current manifest; a short provider history is not proof
-                    // that the depot did not exist at the target build.
+                    crate::desk_log_info!(
+                        "manifest",
+                        "Depot {}: absent from build snapshot, preserved as-is ('{}')",
+                        pin.row.app_id,
+                        pin.row.manifest_id
+                    );
                 }
             }
         }
@@ -250,6 +266,13 @@ impl LuaManifestPins {
 
             if let Some(next_manifest_id) = edit.manifest_id.as_deref().map(str::trim) {
                 if !next_manifest_id.is_empty() && next_manifest_id != pin.row.manifest_id {
+                    crate::desk_log_info!(
+                        "manifest",
+                        "Depot {}: manifest modified from '{}' to '{}' (manual edit)",
+                        pin.row.app_id,
+                        pin.row.manifest_id,
+                        next_manifest_id
+                    );
                     lines[pin.setmanifest_line] = Self::rewrite_setmanifest_without_size(
                         &lines[pin.setmanifest_line],
                         next_manifest_id,
