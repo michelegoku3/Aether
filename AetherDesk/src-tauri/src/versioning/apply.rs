@@ -13,7 +13,9 @@ pub type ProgressFn<'a> = dyn Fn(u8, &str) + Send + Sync + 'a;
 /// idempotent and the report always describes the real state that was reached:
 ///
 ///  1. validate the game has a stplug-in Lua
-///  2. back the Lua up to `<appid>.lua.bak`
+///  2. preserve the pre-change Lua into the AetherData backup tree
+///     (`backup/<appid>/lua/history/`, deduplicated by content — no more
+///     `.lua.bak` files in stplug-in)
 ///  3. pin every manifest resolved at or before the target into the Lua;
 ///     depots outside the available history remain byte-for-byte unchanged —
 ///     LumaCore picks the resolved changes up live
@@ -48,16 +50,32 @@ pub fn apply_build_version(
     );
 
     progress(10, "Backing up the game Lua");
-    let backup_path = match lua.backup() {
-        Ok(path) => {
-            crate::desk_log_info!("versioning", "Lua backed up to {}", path.display());
-            path
-        }
-        Err(e) => {
-            crate::desk_log_error!("versioning", "Lua backup failed for app {}: {}", app_id, e);
-            return Err(VersionError::Lua(e));
-        }
-    };
+    // Niente più .lua.bak in stplug-in: il contenuto PRE-modifica viene
+    // preservato nell'albero di backup AetherData (history/ se non già noto).
+    let history_dir = crate::core::backup::GameBackup::for_app(app_id)
+        .map(|backup| {
+            let dir = backup.lua_dir().join(crate::core::backup::LUA_HISTORY_SUBDIR);
+            if let Ok(pre_lua) = std::fs::read(lua.lua_path()) {
+                if let Err(e) = backup.store_history_version(app_id, &pre_lua) {
+                    crate::desk_log_warn!(
+                        "versioning",
+                        "Could not archive pre-change Lua for app {}: {}",
+                        app_id,
+                        e
+                    );
+                }
+            }
+            dir
+        })
+        .unwrap_or_else(|e| {
+            crate::desk_log_warn!(
+                "versioning",
+                "Backup tree unavailable for app {}: {}",
+                app_id,
+                e
+            );
+            std::path::PathBuf::from("unavailable")
+        });
 
     progress(30, "Pinning build manifests in the Lua");
     let apply_result = match lua.apply_build_pins(pins) {
@@ -80,6 +98,32 @@ pub fn apply_build_version(
             return Err(VersionError::Lua(e));
         }
     };
+
+    // La versione con i pin applicati è una VERSIONE MODIFICATA: va in
+    // history/ (l'originale pristino nel backup non si tocca). Aggiornamento
+    // immediato, non più al riavvio di Desk. Best-effort.
+    if let Ok(final_lua) = std::fs::read_to_string(lua.lua_path()) {
+        match crate::core::backup::GameBackup::for_app(app_id)
+            .and_then(|backup| backup.store_history_version(app_id, final_lua.as_bytes()))
+        {
+            Ok(true) => crate::desk_log_info!(
+                "versioning",
+                "Lua version archived to history for app {} right after pin apply",
+                app_id
+            ),
+            Ok(false) => crate::desk_log_info!(
+                "versioning",
+                "Lua version for app {} already known (history unchanged)",
+                app_id
+            ),
+            Err(e) => crate::desk_log_warn!(
+                "versioning",
+                "History archive failed for app {} (will retry at next Desk start): {}",
+                app_id,
+                e
+            ),
+        }
+    }
 
     progress(55, "Checking local manifest files");
     let (manifests_found, manifests_missing) = count_local_manifests(steam_path, pins);
@@ -130,10 +174,10 @@ pub fn apply_build_version(
             after_count
         );
         return Err(VersionError::Lua(format!(
-            "Verification failed: setManifestid count changed from {} to {} after applying the build. Restore {} to undo.",
+            "Verification failed: setManifestid count changed from {} to {} after applying the build. Restore from {} to undo.",
             before_count,
             after_count,
-            backup_path.display()
+            history_dir.display()
         )));
     }
 
@@ -143,7 +187,7 @@ pub fn apply_build_version(
         manifests_missing,
         acf_synced_now,
         acf_queued,
-        lua_backup_path: Some(backup_path.display().to_string()),
+        lua_backup_path: Some(history_dir.display().to_string()),
     })
 }
 

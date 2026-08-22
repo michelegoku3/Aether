@@ -76,6 +76,10 @@ void Init(const std::string& filePath, bool keepLastSession) {
     s_file.open(filePath, std::ios::out | std::ios::trunc);
 }
 
+bool IsEnabled(LogLevel level) {
+    return static_cast<int>(level) >= static_cast<int>(s_minLevel.load(std::memory_order_relaxed));
+}
+
 void SetLevel(LogLevel level) {
     s_minLevel.store(level, std::memory_order_relaxed);
 }

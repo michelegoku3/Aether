@@ -215,8 +215,10 @@ AppId h_GetAppIDForCurrentPipe(void* engine) {
         const AppId realAppId = g_state.onlineFixRealAppId.load(std::memory_order_acquire);
         if (realAppId != 0 && realAppId != constants::kSpacewarAppId &&
             appId == constants::kSpacewarAppId) {
-            AC_LOG_DEBUG(kModule, "GetAppIDForCurrentPipe: stats-scope override %u -> %u.",
-                         appId, realAppId);
+            // Hot path: il gioco chiama GetAppIDForCurrentPipe di continuo;
+            // una riga per sessione di gioco basta (DEBUG_ONCE).
+            AC_LOG_DEBUG_ONCE(kModule, "GetAppIDForCurrentPipe: stats-scope override %u -> %u.",
+                              appId, realAppId);
             return realAppId;
         }
     }

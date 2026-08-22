@@ -23,6 +23,7 @@
 #include "hooks/steamclient/LicenseHooks.h"
 #include "hooks/steamclient/OwnershipHooks.h"
 #include "hooks/steamui/SteamUIHook.h"
+#include "hooks/wire/AchievementBackup.h"
 #include "hooks/wire/AchievementModule.h"
 #include "network/EticketFetcher.h"
 
@@ -172,6 +173,13 @@ namespace {
         //    Depends on: diversion (module handle) + pattern engine (addresses)
         //                + lua data (maps populated).
         ac::hooks::InstallAllHooks();
+
+        // 10. Achievement safety net: snapshot di TUTTI i .bin stats degli app
+        //     gestiti (async, una volta per processo). Va il prima possibile:
+        //     il login-reconcile del client può scartare i cambi pendenti
+        //     (perdita del 21/08) e questa copia deve batterlo sul tempo.
+        //     Dipende da: lua data (HasDepot) + aethercore dir (desk_path.cfg).
+        ac::hooks::AchievementBackup::BackupAllKnownStatsAtStartup();
 
         // 10. DirWatch: starts the Lua hot-reload watcher so games can be
         //    added/removed without restarting Steam. Runs AFTER the initial

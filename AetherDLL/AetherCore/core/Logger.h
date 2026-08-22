@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstddef>
+#include <atomic>
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -34,6 +35,13 @@ void Init(const std::string& filePath, bool keepLastSession = true);
 
 // Adjusts the minimum level emitted. Messages below this are dropped cheaply.
 void SetLevel(LogLevel level);
+
+// True when `level` would currently be emitted. Use to guard the evaluation of
+// EXPENSIVE log arguments (e.g. hashing a 150KB schema for a fingerprint):
+// Write() skips formatting for filtered levels, but call-site arguments are
+// evaluated regardless — wrap them with this when they are not free.
+bool IsEnabled(LogLevel level);
+inline bool Enabled(LogLevel level) { return IsEnabled(level); }
 
 // Parses "trace"/"debug"/"info"/"warn"/"error"/"off" (case-insensitive).
 // Unknown strings fall back to the provided default.

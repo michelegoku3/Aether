@@ -68,7 +68,7 @@ function(attach_version_resource TARGET_NAME INTERNAL_NAME ORIGINAL_FILENAME DES
     # AetherDesk could never version-check. Never silently skip.
     add_custom_command(TARGET ${TARGET_NAME} POST_BUILD
         COMMAND powershell -NoProfile -ExecutionPolicy Bypass -File
-                "${CMAKE_SOURCE_DIR}/common/verify-version.ps1"
+                "${CMAKE_SOURCE_DIR}/../Tools/verify_version.ps1"
                 -TargetFile "$<TARGET_FILE:${TARGET_NAME}>"
                 -ExpectedVersion "${AETHER_PRODUCT_VERSION}"
         VERBATIM)
@@ -129,6 +129,19 @@ FetchContent_Declare(protobuf
     GIT_REPOSITORY https://github.com/protocolbuffers/protobuf.git
     GIT_TAG v25.3)
 FetchContent_MakeAvailable(protobuf)
+
+# Il codice di Google (protoc/libprotobuf) compila su MSVC con una cascata di
+# warning innocui e non azionabili da noi: C4141 ('inline' specificato più
+# volte), C4715 nei generatori objectivec di protoc, C4723 (possibile
+# divisione per 0), C4805 (mix bool/int). Silenziamoli sui target di
+# protobuf così la console di build mostra solo i warning del NOSTRO codice.
+if(MSVC)
+    foreach(_pb_target protoc libprotoc libprotobuf libprotobuf-lite)
+        if(TARGET ${_pb_target})
+            target_compile_options(${_pb_target} PRIVATE /w)
+        endif()
+    endforeach()
+endif()
 
 set(AC_PROTOBUF_LITE_TARGET protobuf::libprotobuf-lite)
 if(NOT TARGET protobuf::libprotobuf-lite AND TARGET libprotobuf-lite)
