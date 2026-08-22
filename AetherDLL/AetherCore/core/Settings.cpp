@@ -1,9 +1,30 @@
 #include "pch.h"
 #include "core/Settings.h"
 
+#include <filesystem>
 #include <toml++/toml.hpp>
+#include "core/AetherCoreState.h"
 
 namespace ac {
+
+void Settings::ReloadIfModified(const std::string& configPath) {
+    if (configPath.empty()) return;
+    std::error_code ec;
+    auto lastWrite = std::filesystem::last_write_time(configPath, ec);
+    if (ec) return;
+
+    static std::filesystem::file_time_type s_lastLoadedTime{};
+    if (s_lastLoadedTime == std::filesystem::file_time_type{}) {
+        s_lastLoadedTime = lastWrite;
+        return;
+    }
+    if (lastWrite != s_lastLoadedTime) {
+        s_lastLoadedTime = lastWrite;
+        g_state.settings = Settings::Load(configPath);
+        AC_LOG_INFO("Settings", "Hot-reloaded settings from %s (custom_game_name='%s').",
+                    configPath.c_str(), g_state.settings.presenceCustomGameName.c_str());
+    }
+}
 
 Settings Settings::Load(const std::string& configPath) {
     Settings s;  // Start from defaults; only override what the file provides.
@@ -79,6 +100,9 @@ Settings Settings::Load(const std::string& configPath) {
         }
         if (auto v = (*presence)["onlinefix_persona_patch"].value<bool>()) {
             s.presenceOnlineFixPersonaPatch = *v;
+        }
+        if (auto v = (*presence)["custom_game_name"].value<std::string>()) {
+            s.presenceCustomGameName = *v;
         }
     }
 

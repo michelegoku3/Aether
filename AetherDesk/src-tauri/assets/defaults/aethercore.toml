@@ -67,3 +67,8 @@ always_extra_info = true
 # onlinefix_persona_patch: rewrite inbound PersonaState friend entries that
 #   still show Spacewar/480 while an OnlineFix session is active.
 onlinefix_persona_patch = true
+
+# custom_game_name: optional custom game name sent in game_extra_info to friends.
+# When set (non-empty), friends on Steam see this exact title when you are in-game.
+# Leave empty ("") to show the real title resolved from Steam.
+custom_game_name = ""
