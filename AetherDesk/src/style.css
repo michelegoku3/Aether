@@ -2525,6 +2525,72 @@ body {
   color: var(--color-cyan);
 }
 
+.info-lightbox-nav {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  border: none;
+  background: transparent;
+  padding: 0;
+  color: rgba(255, 255, 255, 0.75);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  z-index: 10;
+  opacity: 0;
+  pointer-events: none;
+  filter: drop-shadow(0 2px 10px rgba(0, 0, 0, 0.9));
+  transition: opacity 0.25s ease, color 0.2s ease, transform 0.2s ease, filter 0.2s ease;
+}
+
+.info-lightbox-nav.visible {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.info-lightbox-nav:hover {
+  color: var(--color-cyan);
+  filter: drop-shadow(0 0 16px rgba(0, 180, 216, 0.95)) drop-shadow(0 2px 10px rgba(0, 0, 0, 0.9));
+  transform: translateY(-50%) scale(1.18);
+}
+
+.info-lightbox-nav.prev {
+  left: 20px;
+}
+
+.info-lightbox-nav.next {
+  right: 20px;
+}
+
+/* Square Local Import FAB button in Store bottom-right corner */
+.store-local-fab {
+  position: fixed;
+  bottom: 28px;
+  right: 32px;
+  width: 44px;
+  height: 44px;
+  background-color: #131316;
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  color: var(--color-cyan);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  z-index: 50;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
+  transition: all 0.2s ease;
+}
+
+.store-local-fab:hover {
+  border-color: var(--color-cyan);
+  background-color: #192128;
+  color: #ffffff;
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(0, 180, 216, 0.3);
+}
+
 @media (max-width: 760px) {
   .info-screenshot-link {
     flex-basis: 220px;

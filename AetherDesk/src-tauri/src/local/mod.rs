@@ -18,6 +18,7 @@
 use crate::core::backup::GameBackup;
 use crate::core::paths::LocalAppPaths;
 use crate::crack::archive;
+use crate::manifest::pins::LuaManifestPins;
 use crate::steam::compat::SteamCompat;
 use crate::steam::library::SteamLibraryScanner;
 use std::fs;
@@ -25,6 +26,226 @@ use std::path::{Path, PathBuf};
 
 /// Default password tried for password-protected archives (same as cracks).
 const DEFAULT_ARCHIVE_PASSWORD: &str = "online-fix.me";
+
+/// Human-readable report of a bulk local import run.
+#[derive(Debug, Default)]
+pub struct BulkInstallReport {
+    pub sources: usize,
+    pub lua_files: usize,
+    pub manifest_files: usize,
+    pub unique_apps: usize,
+}
+
+/// Bulk recursive importer for any combination of loose files, folders, and archives (.zip/.rar/.7z).
+/// Searches recursively everywhere, identifies every .lua and .manifest file, and routes them to Steam.
+pub fn install_bulk_local_pipeline(
+    steam_path: &Path,
+    sources: &[String],
+    download_games_with_updates_on: bool,
+) -> Result<BulkInstallReport, String> {
+    if sources.is_empty() {
+        return Err("No local files or folders selected.".to_string());
+    }
+
+    let steam = SteamCompat::new(steam_path.display().to_string());
+    let plugin_dir = steam.get_plugin_dir();
+    let depotcache_dir = steam.get_depotcache_dir();
+
+    fs::create_dir_all(&plugin_dir)
+        .map_err(|e| format!("Failed to create plugin dir {}: {}", plugin_dir.display(), e))?;
+    fs::create_dir_all(&depotcache_dir)
+        .map_err(|e| format!("Failed to create depotcache dir {}: {}", depotcache_dir.display(), e))?;
+
+    let root_staging = LocalAppPaths::temp_dir().join(format!(
+        "bulk_local_{}_{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis())
+            .unwrap_or(0)
+    ));
+    fs::create_dir_all(&root_staging)
+        .map_err(|e| format!("Failed to create temp staging {}: {}", root_staging.display(), e))?;
+
+    let mut discovered_lua: Vec<PathBuf> = Vec::new();
+    let mut discovered_manifests: Vec<PathBuf> = Vec::new();
+    let mut counter: usize = 0;
+
+    let result = (|| -> Result<(), String> {
+        for source in sources {
+            let path = PathBuf::from(source);
+            if !path.exists() {
+                continue;
+            }
+            explore_and_extract_recursive(
+                &path,
+                &root_staging,
+                &mut discovered_lua,
+                &mut discovered_manifests,
+                &mut counter,
+                0,
+            )?;
+        }
+        Ok(())
+    })();
+
+    if let Err(e) = result {
+        let _ = fs::remove_dir_all(&root_staging);
+        return Err(e);
+    }
+
+    if discovered_lua.is_empty() && discovered_manifests.is_empty() {
+        let _ = fs::remove_dir_all(&root_staging);
+        return Err("No .lua or .manifest files were found in the selected files, folders, or archives.".to_string());
+    }
+
+    let mut report = BulkInstallReport {
+        sources: sources.len(),
+        ..BulkInstallReport::default()
+    };
+    let mut unique_apps = std::collections::HashSet::new();
+
+    // Route .manifest files
+    for manifest_path in &discovered_manifests {
+        if let Some(file_name) = manifest_path.file_name() {
+            let dest = depotcache_dir.join(file_name);
+            if let Err(e) = fs::copy(manifest_path, &dest) {
+                crate::desk_log_error!("local", "Failed to copy manifest {}: {}", manifest_path.display(), e);
+            } else {
+                report.manifest_files += 1;
+            }
+        }
+    }
+
+    // Route .lua files
+    for lua_path in &discovered_lua {
+        if let Some(file_name) = lua_path.file_name() {
+            let stem = lua_path
+                .file_stem()
+                .map(|s| s.to_string_lossy().to_string())
+                .unwrap_or_default();
+
+            let app_id_opt = app_id_from_lua_stem(&stem)
+                .or_else(|| extract_app_id_from_lua_content(lua_path));
+
+            let live_name = if let Some(app_id) = app_id_opt {
+                unique_apps.insert(app_id);
+                if let Ok(backup) = GameBackup::for_app(app_id) {
+                    let backup_dir = backup.lua_dir();
+                    let _ = fs::create_dir_all(&backup_dir);
+                    let backup_dest = backup_dir.join(file_name);
+                    let _ = fs::copy(lua_path, &backup_dest);
+                }
+                format!("{}.lua", app_id)
+            } else {
+                file_name.to_string_lossy().to_string()
+            };
+
+            let dest = plugin_dir.join(&live_name);
+            if let Err(e) = fs::copy(lua_path, &dest) {
+                crate::desk_log_error!("local", "Failed to copy lua {}: {}", lua_path.display(), e);
+            } else {
+                report.lua_files += 1;
+                if let Some(app_id) = app_id_opt {
+                    if download_games_with_updates_on {
+                        let lua = LuaManifestPins::new(steam_path.to_path_buf(), app_id);
+                        let _ = lua.set_updates_enabled(true);
+                    }
+                }
+            }
+        }
+    }
+
+    report.unique_apps = unique_apps.len();
+    let _ = fs::remove_dir_all(&root_staging);
+
+    Ok(report)
+}
+
+fn explore_and_extract_recursive(
+    current: &Path,
+    staging_root: &Path,
+    lua_out: &mut Vec<PathBuf>,
+    manifest_out: &mut Vec<PathBuf>,
+    counter: &mut usize,
+    depth: usize,
+) -> Result<(), String> {
+    if depth > 10 {
+        return Ok(());
+    }
+
+    if current.is_dir() {
+        let entries = match fs::read_dir(current) {
+            Ok(e) => e,
+            Err(_) => return Ok(()),
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            explore_and_extract_recursive(
+                &path,
+                staging_root,
+                lua_out,
+                manifest_out,
+                counter,
+                depth + 1,
+            )?;
+        }
+    } else if current.is_file() {
+        let ext = current
+            .extension()
+            .and_then(|e| e.to_str())
+            .unwrap_or("")
+            .to_ascii_lowercase();
+
+        if ext == "lua" {
+            lua_out.push(current.to_path_buf());
+        } else if ext == "manifest" {
+            manifest_out.push(current.to_path_buf());
+        } else if matches!(ext.as_str(), "zip" | "rar" | "7z") {
+            let sub_staging = staging_root.join(format!("extract_{}", *counter));
+            *counter += 1;
+            let _ = fs::create_dir_all(&sub_staging);
+            if archive::stage_source(current, &sub_staging, DEFAULT_ARCHIVE_PASSWORD).is_ok() {
+                explore_and_extract_recursive(
+                    &sub_staging,
+                    staging_root,
+                    lua_out,
+                    manifest_out,
+                    counter,
+                    depth + 1,
+                )?;
+            }
+        }
+    }
+
+    Ok(())
+}
+
+fn extract_app_id_from_lua_content(path: &Path) -> Option<u32> {
+    let content = fs::read_to_string(path).ok()?;
+    for line in content.lines() {
+        let trimmed = line.trim();
+        if trimmed.starts_with("--") {
+            continue;
+        }
+        for keyword in &["setManifestid", "setmanifestid", "addappid", "addAppId", "appid", "AppId"] {
+            if let Some(pos) = trimmed.find(keyword) {
+                let rest = &trimmed[pos + keyword.len()..];
+                let digits: String = rest
+                    .chars()
+                    .skip_while(|c| !c.is_ascii_digit())
+                    .take_while(|c| c.is_ascii_digit())
+                    .collect();
+                if let Ok(id) = digits.parse::<u32>() {
+                    if id > 0 {
+                        return Some(id);
+                    }
+                }
+            }
+        }
+    }
+    None
+}
 
 /// Human-readable summary of one local install run.
 #[derive(Debug, Default)]

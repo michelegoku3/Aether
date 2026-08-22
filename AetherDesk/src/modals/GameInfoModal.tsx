@@ -232,7 +232,8 @@ export const GameInfoModal = ({ appId, fallbackName, fallbackImageUrl, onClose }
   const [info, setInfo] = useState<GameInfo | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
-  const [selectedScreenshot, setSelectedScreenshot] = useState<{ src: string; alt: string } | null>(null);
+  const [selectedScreenshotIndex, setSelectedScreenshotIndex] = useState<number | null>(null);
+  const [mouseQuarter, setMouseQuarter] = useState<'first' | 'fourth' | 'middle'>('middle');
 
   useEffect(() => {
     let cancelled = false;
@@ -258,23 +259,45 @@ export const GameInfoModal = ({ appId, fallbackName, fallbackImageUrl, onClose }
     };
   }, [appId]);
 
-  useEffect(() => {
-    if (!selectedScreenshot) return;
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        setSelectedScreenshot(null);
-      }
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [selectedScreenshot]);
-
   const title = info?.name || fallbackName;
   const imageUrl = info?.imageUrl || info?.appDetails?.capsuleImage || fallbackImageUrl;
   const details = info?.appDetails;
   const local = info?.local;
   const screenshots = normalizeScreenshots(info?.screenshots, details?.screenshots);
   const shortDescription = decodeHtmlEntities(details?.shortDescription);
+
+  const handlePrevScreenshot = (e?: React.MouseEvent) => {
+    e?.stopPropagation();
+    if (screenshots.length === 0) return;
+    setSelectedScreenshotIndex((prev) =>
+      prev !== null ? (prev - 1 + screenshots.length) % screenshots.length : 0,
+    );
+  };
+
+  const handleNextScreenshot = (e?: React.MouseEvent) => {
+    e?.stopPropagation();
+    if (screenshots.length === 0) return;
+    setSelectedScreenshotIndex((prev) =>
+      prev !== null ? (prev + 1) % screenshots.length : 0,
+    );
+  };
+
+  useEffect(() => {
+    if (selectedScreenshotIndex === null) return;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setSelectedScreenshotIndex(null);
+      } else if (event.key === 'ArrowLeft') {
+        event.preventDefault();
+        handlePrevScreenshot();
+      } else if (event.key === 'ArrowRight') {
+        event.preventDefault();
+        handleNextScreenshot();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [selectedScreenshotIndex, screenshots.length]);
 
   const cacheSummary = useMemo(() => {
     if (!info) return [];
@@ -322,14 +345,13 @@ export const GameInfoModal = ({ appId, fallbackName, fallbackImageUrl, onClose }
                     <div className="info-screenshot-strip">
                       {screenshots.map((shot, index) => {
                         const src = shot.thumbnail || shot.full || '';
-                        const href = shot.full || shot.thumbnail || src;
                         const alt = `${title} screenshot ${index + 1}`;
                         return (
                           <button
                             key={`${shot.id ?? index}-${src}`}
                             type="button"
                             className="info-screenshot-link"
-                            onClick={() => setSelectedScreenshot({ src: href, alt })}
+                            onClick={() => setSelectedScreenshotIndex(index)}
                           >
                             <img src={src} alt={alt} />
                           </button>
@@ -387,24 +409,68 @@ export const GameInfoModal = ({ appId, fallbackName, fallbackImageUrl, onClose }
         </div>
       </div>
 
-      {selectedScreenshot && (
+      {selectedScreenshotIndex !== null && screenshots[selectedScreenshotIndex] && (
         <div
           className="info-lightbox"
+          onMouseMove={(event) => {
+            const w = window.innerWidth;
+            const x = event.clientX;
+            if (x < w * 0.25) {
+              setMouseQuarter('first');
+            } else if (x > w * 0.75) {
+              setMouseQuarter('fourth');
+            } else {
+              setMouseQuarter('middle');
+            }
+          }}
+          onMouseLeave={() => setMouseQuarter('middle')}
           onClick={(event) => {
             event.stopPropagation();
-            setSelectedScreenshot(null);
+            setSelectedScreenshotIndex(null);
           }}
         >
           <div className="info-lightbox-content" onClick={(event) => event.stopPropagation()}>
             <button
               type="button"
               className="info-lightbox-close"
-              onClick={() => setSelectedScreenshot(null)}
+              onClick={() => setSelectedScreenshotIndex(null)}
               aria-label="Close screenshot preview"
             >
               &times;
             </button>
-            <img src={selectedScreenshot.src} alt={selectedScreenshot.alt} />
+
+            {screenshots.length > 1 && (
+              <>
+                <button
+                  type="button"
+                  className={`info-lightbox-nav prev ${mouseQuarter === 'first' ? 'visible' : ''}`}
+                  onClick={handlePrevScreenshot}
+                  aria-label="Previous screenshot"
+                  title="Previous screenshot"
+                >
+                  <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                    <polyline points="15 18 9 12 15 6" />
+                  </svg>
+                </button>
+
+                <button
+                  type="button"
+                  className={`info-lightbox-nav next ${mouseQuarter === 'fourth' ? 'visible' : ''}`}
+                  onClick={handleNextScreenshot}
+                  aria-label="Next screenshot"
+                  title="Next screenshot"
+                >
+                  <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                    <polyline points="9 18 15 12 9 6" />
+                  </svg>
+                </button>
+              </>
+            )}
+
+            <img
+              src={screenshots[selectedScreenshotIndex].full || screenshots[selectedScreenshotIndex].thumbnail || ''}
+              alt={`${title} screenshot ${selectedScreenshotIndex + 1}`}
+            />
           </div>
         </div>
       )}
