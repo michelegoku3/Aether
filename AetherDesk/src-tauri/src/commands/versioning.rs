@@ -4,7 +4,6 @@ use tauri::{AppHandle, Emitter};
 use crate::manifest::pins::LuaManifestPins;
 use crate::util::validation::validate_steam_path;
 use crate::versioning::model::{ApplyVersionReport, BuildInfo, SavedBuild};
-use crate::versioning::queue::PendingAcfEdit;
 use crate::versioning::service::VersionService;
 
 /// Progress event emitted while `apply_game_version` runs (and later by the
@@ -154,12 +153,11 @@ pub async fn apply_game_version(
         Ok(report) => {
             crate::desk_log_info!(
                 "versioning",
-                "Build {} applied for {}: {} pin(s) written from the reconstructed snapshot, acf_synced={}, acf_queued={}",
+                "Build {} applied for {}: {} pin(s) written from the reconstructed snapshot, acf_synced={}",
                 build_id,
                 crate::core::logger::format_appid(app_id),
                 report.applied_pins,
-                report.acf_synced_now,
-                report.acf_queued
+                report.acf_synced_now
             );
             Ok(report)
         }
@@ -210,8 +208,3 @@ pub fn remove_saved_build(app: AppHandle, app_id: u32, build_id: u64) -> Result<
         .map_err(String::from)
 }
 
-/// ACF edits waiting for the game to be downloaded / Steam to release the file.
-#[tauri::command]
-pub fn get_pending_version_edits(_app: AppHandle) -> Result<Vec<PendingAcfEdit>, String> {
-    Ok(crate::versioning::queue::list())
-}

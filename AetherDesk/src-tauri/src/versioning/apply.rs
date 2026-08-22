@@ -4,7 +4,6 @@ use crate::manifest::pins::{DepotManifestPin, LuaManifestPins};
 use crate::steam::acf::SteamAcfEditor;
 use crate::versioning::error::VersionError;
 use crate::versioning::model::ApplyVersionReport;
-use crate::versioning::queue::{self, PendingAcfEdit};
 
 /// Progress callback used by the pipeline: `(percent, human message)`.
 pub type ProgressFn<'a> = dyn Fn(u8, &str) + Send + Sync + 'a;
@@ -20,10 +19,7 @@ pub type ProgressFn<'a> = dyn Fn(u8, &str) + Send + Sync + 'a;
 ///     depots outside the available history remain byte-for-byte unchanged —
 ///     LumaCore picks the resolved changes up live
 ///  4. count which pinned `.manifest` files already exist locally
-///  5. sync the ACF (`buildid` / `TargetBuildID` / `InstalledDepots[].manifest`);
-///     when the ACF is missing or held by Steam the edit is queued and
-///     retried in the background
-///  6. verify the Lua pin count did not change and report
+///  5. verify the Lua pin count did not change and report
 pub fn apply_build_version(
     app_id: u32,
     build_id: u64,
@@ -136,30 +132,21 @@ pub fn apply_build_version(
     );
 
     progress(75, "Syncing the Steam ACF");
+    // Best-effort: se l'ACF manca o è bloccato si logga un WARN e si prosegue
+    // (la coda "pending ACF" è stata rimossa: i pin nel .lua fanno il lavoro
+    // vero, l'ACF è solo metadato).
     let acf = SteamAcfEditor::for_app(library_path, app_id);
-    let (acf_synced_now, acf_queued) = match acf.apply_build(build_id, pins) {
-        Ok(()) => (true, false),
+    let acf_synced_now = match acf.apply_build(build_id, pins) {
+        Ok(()) => true,
         Err(acf_error) => {
             crate::desk_log_warn!(
                 "versioning",
-                "ACF sync for app {} (build {}) deferred: {}",
+                "ACF sync for app {} (build {}) skipped: {}",
                 app_id,
                 build_id,
                 acf_error
             );
-            queue::enqueue(PendingAcfEdit {
-                app_id,
-                build_id,
-                pins: pins.to_vec(),
-                steam_path: steam_path.to_string(),
-                library_path: library_path.to_string(),
-                queued_at: 0, // filled by enqueue
-            })
-            .map_err(|e| VersionError::Io {
-                context: "acf queue",
-                detail: e,
-            })?;
-            (false, true)
+            false
         }
     };
 
@@ -186,25 +173,10 @@ pub fn apply_build_version(
         manifests_found,
         manifests_missing,
         acf_synced_now,
-        acf_queued,
         lua_backup_path: Some(history_dir.display().to_string()),
     })
 }
 
-/// Retries a queued ACF edit. `Ok(true)` = applied now; `Ok(false)` = still
-/// not possible (missing/locked ACF); `Err` = give up on this pass.
-pub fn try_apply_pending(edit: &PendingAcfEdit) -> Result<bool, VersionError> {
-    let acf = SteamAcfEditor::for_app(&edit.library_path, edit.app_id);
-    if !acf.exists() {
-        return Ok(false);
-    }
-    acf.apply_build(edit.build_id, &edit.pins)
-        .map_err(|e| VersionError::Io {
-            context: "acf retry",
-            detail: e,
-        })
-        .map(|_| true)
-}
 
 /// Counts how many pinned `.manifest` files are already present in Steam's
 /// depotcache folders. Returns `(found, missing "depot:manifest" pairs)`.

@@ -21,7 +21,6 @@ export interface ApplyVersionReport {
   manifestsFound: number;
   manifestsMissing: string[];
   acfSyncedNow: boolean;
-  acfQueued: boolean;
   luaBackupPath: string | null;
 }
 

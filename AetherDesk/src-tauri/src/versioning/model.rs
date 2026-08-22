@@ -23,9 +23,6 @@ pub struct ApplyVersionReport {
     pub manifests_missing: Vec<String>,
     /// True when the ACF was updated right now.
     pub acf_synced_now: bool,
-    /// True when the ACF edit was queued (ACF missing or held by Steam) and
-    /// will be retried automatically in the background.
-    pub acf_queued: bool,
     /// Restore point of the Lua, if a backup was written.
     pub lua_backup_path: Option<String>,
 }

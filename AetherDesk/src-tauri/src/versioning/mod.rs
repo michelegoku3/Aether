@@ -3,7 +3,6 @@ pub mod cache;
 pub mod error;
 pub mod lua_validation;
 pub mod model;
-pub mod queue;
 pub mod saved;
 pub mod service;
 pub(crate) mod snapshot;
