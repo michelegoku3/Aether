@@ -118,14 +118,21 @@ impl VersionService {
                     if snapshot.is_complete() {
                         break;
                     }
-                    let result = results.remove(&candidate).ok_or_else(|| {
-                        VersionError::source(
-                            "build details source",
-                            format!("build {candidate} lookup produced no result"),
-                        )
-                    })?;
-                    let pins = result?;
-                    snapshot.push_diff(&pins);
+                    if let Some(result) = results.remove(&candidate) {
+                        match result {
+                            Ok(pins) => {
+                                snapshot.push_diff(&pins);
+                            }
+                            Err(err) => {
+                                crate::desk_log_debug!(
+                                    "versioning",
+                                    "Build {} pin resolution failed (skipping): {}",
+                                    candidate,
+                                    err
+                                );
+                            }
+                        }
+                    }
                 }
             }
         }

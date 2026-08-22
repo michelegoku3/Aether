@@ -233,7 +233,7 @@ export const GameInfoModal = ({ appId, fallbackName, fallbackImageUrl, onClose }
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
   const [selectedScreenshotIndex, setSelectedScreenshotIndex] = useState<number | null>(null);
-  const [mouseQuarter, setMouseQuarter] = useState<'first' | 'fourth' | 'middle'>('middle');
+  const [isEdgeZone, setIsEdgeZone] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -415,15 +415,10 @@ export const GameInfoModal = ({ appId, fallbackName, fallbackImageUrl, onClose }
           onMouseMove={(event) => {
             const w = window.innerWidth;
             const x = event.clientX;
-            if (x < w * 0.25) {
-              setMouseQuarter('first');
-            } else if (x > w * 0.75) {
-              setMouseQuarter('fourth');
-            } else {
-              setMouseQuarter('middle');
-            }
+            // First (0 - 25%) or fourth (75% - 100%) quadrant -> show both arrows
+            setIsEdgeZone(x < w * 0.25 || x > w * 0.75);
           }}
-          onMouseLeave={() => setMouseQuarter('middle')}
+          onMouseLeave={() => setIsEdgeZone(false)}
           onClick={(event) => {
             event.stopPropagation();
             setSelectedScreenshotIndex(null);
@@ -443,7 +438,7 @@ export const GameInfoModal = ({ appId, fallbackName, fallbackImageUrl, onClose }
               <>
                 <button
                   type="button"
-                  className={`info-lightbox-nav prev ${mouseQuarter === 'first' ? 'visible' : ''}`}
+                  className={`info-lightbox-nav prev ${isEdgeZone ? 'visible' : ''}`}
                   onClick={handlePrevScreenshot}
                   aria-label="Previous screenshot"
                   title="Previous screenshot"
@@ -455,7 +450,7 @@ export const GameInfoModal = ({ appId, fallbackName, fallbackImageUrl, onClose }
 
                 <button
                   type="button"
-                  className={`info-lightbox-nav next ${mouseQuarter === 'fourth' ? 'visible' : ''}`}
+                  className={`info-lightbox-nav next ${isEdgeZone ? 'visible' : ''}`}
                   onClick={handleNextScreenshot}
                   aria-label="Next screenshot"
                   title="Next screenshot"

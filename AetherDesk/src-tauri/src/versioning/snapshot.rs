@@ -68,12 +68,23 @@ impl SnapshotAssembler {
 /// are globally monotonic, so this also works when a manually entered target
 /// is valid but absent from the RSS response.
 pub(crate) fn older_build_ids(builds: &[BuildInfo], target_build_id: u64) -> Vec<u64> {
-    let mut ids: Vec<u64> = builds
+    let mut ids: Vec<u64> = Vec::new();
+
+    if let Some(target_idx) = builds.iter().position(|b| b.build_id == target_build_id) {
+        for b in &builds[target_idx + 1..] {
+            if b.build_id != target_build_id && !ids.contains(&b.build_id) {
+                ids.push(b.build_id);
+            }
+        }
+    }
+
+    let mut remaining: Vec<u64> = builds
         .iter()
-        .map(|build| build.build_id)
-        .filter(|build_id| *build_id < target_build_id)
+        .map(|b| b.build_id)
+        .filter(|&id| id < target_build_id && !ids.contains(&id))
         .collect();
-    ids.sort_unstable_by(|a, b| b.cmp(a));
+    remaining.sort_unstable_by(|a, b| b.cmp(a));
+    ids.extend(remaining);
     ids.dedup();
     ids
 }
