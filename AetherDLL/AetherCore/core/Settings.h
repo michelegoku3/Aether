@@ -80,6 +80,18 @@ struct Settings {
     // argv / launch options strictly (Selene ~Apoptosis~, Z.A.T.O.).
     std::vector<std::uint32_t> presenceShowOnlineApps;
 
+    // Centralised per-app launch policy (docs/05 §12). The DLL resolves ONE
+    // mode per app at SpawnProcess — no launch arguments involved:
+    //   onlinefix_apps  -> full Spacewar/480 process mask (superset of presence)
+    //   exclude_apps    -> hard opt-out, beats tokens and every other array
+    // OnlineFix crack-compat note: a self-masking crack needs nothing here;
+    // these arrays are for OUR integration.
+    std::vector<std::uint32_t> presenceOnlineFixApps;
+    std::vector<std::uint32_t> presenceExcludeApps;
+    // Policy default for apps in NO array (intention over enumeration):
+    //   default_mode = "showonline" -> presence broadcast for every launch.
+    bool presenceDefaultShowOnline = false;
+
     // Parses the TOML at configPath.
     static Settings Load(const std::string& configPath);
 

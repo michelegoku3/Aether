@@ -89,6 +89,23 @@ showonline_broadcast = true
 # the file at every game launch, so no Steam restart is needed.
 showonline_apps = []
 
+# onlinefix_apps: appids that activate the FULL OnlineFix integration (process
+# masked as Spacewar/480 + friend presence), again with a clean command line
+# (docs/05 §12). OnlineFix is a superset of showonline; an app belongs to ONE
+# of the three lists at a time.
+onlinefix_apps = []
+
+# exclude_apps: hard opt-out. The DLL ignores these apps entirely — no
+# presence, no masking — and exclude beats every other list AND any legacy
+# argv token still sitting in Steam launch options.
+exclude_apps = []
+
+# default_mode: policy for apps in NONE of the lists (intention over
+# enumeration — no need to materialise your whole library into an array):
+#   "none"       -> only explicitly listed apps get Aether behaviour
+#   "showonline" -> every launch broadcasts "now playing" to your friends
+default_mode = "none"
+
 # appid_blob: encode the appid into GamePlayed.game_data_blob (field 8; CM
 # recycles it as Friend.game_data_blob, field 60). Deterministic, invisible to
 # vanilla friends in EVERY sense (no tofu, no " | appid" text).
