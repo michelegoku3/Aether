@@ -57,6 +57,50 @@ static bool HasShowOnlineFlag(const char* cmdLine) {
     return HasFlagArg(cmdLine, constants::kShowOnlineFlag);
 }
 
+// Centralised per-app launch policy (docs/05 §12): is the launch a normal
+// one, a -showonline presence session, or a -onlinefix masked session?
+// The TOML arrays in [presence] are the source of truth; the legacy argv
+// tokens keep working for unmigrated configs but are always stripped from
+// the child command line below.
+enum class LaunchMode : std::uint8_t { None, ShowOnline, OnlineFix };
+
+static bool InAppList(const std::vector<std::uint32_t>& list, AppId app) {
+    return std::find(list.begin(), list.end(), static_cast<std::uint32_t>(app)) != list.end();
+}
+
+// Precedence (documented): exclude > onlinefix > showonline > default_mode.
+// exclude is a HARD opt-out: it beats even a forgotten legacy argv token.
+static LaunchMode ResolveLaunchMode(AppId app, bool onlineFixToken, bool showOnlineToken,
+                                    const char** sourceOut) {
+    const auto& s = g_state.settings;
+    *sourceOut = "none";
+    if (InAppList(s.presenceExcludeApps, app)) {
+        *sourceOut = "exclude_apps (hard opt-out)";
+        return LaunchMode::None;
+    }
+    if (InAppList(s.presenceOnlineFixApps, app)) {
+        *sourceOut = "onlinefix_apps";
+        return LaunchMode::OnlineFix;
+    }
+    if (InAppList(s.presenceShowOnlineApps, app)) {
+        *sourceOut = "showonline_apps";
+        return LaunchMode::ShowOnline;
+    }
+    if (onlineFixToken) {
+        *sourceOut = "legacy -onlinefix argv token";
+        return LaunchMode::OnlineFix;
+    }
+    if (showOnlineToken) {
+        *sourceOut = "legacy -showonline argv token";
+        return LaunchMode::ShowOnline;
+    }
+    if (s.presenceDefaultShowOnline) {
+        *sourceOut = "default_mode=showonline";
+        return LaunchMode::ShowOnline;
+    }
+    return LaunchMode::None;
+}
+
 // Returns cmdLine minus every Aether control token (-onlinefix / -showonline).
 // Same whitespace-tokenisation as HasFlagArg; outStripped tells whether at
 // least one token was removed. Aether consumes those flags here, in
@@ -209,30 +253,26 @@ bool h_SpawnProcess(void* user, const char* exe, const char* cmdLine, const char
     std::string childCmdStorage;
     const char* childCmd = cmdLine;
     if (gameId) {
-        // Refresh config before deciding: AetherDesk edits showonline_apps
-        // while Steam is running, and a cold launch may reach this hook
-        // before the next GamesPlayed frame would reload (mtime check, cheap).
+        // Refresh config before deciding: AetherDesk edits the [presence]
+        // arrays while Steam is running, and a cold launch may reach this
+        // hook before the next GamesPlayed frame would reload (mtime, cheap).
         Settings::ReloadIfModified(g_state.configPath);
 
         AppId realApp = static_cast<AppId>(*gameId & constants::kGameIdAppIdMask);
-        const bool isOnlineFix = HasOnlineFixFlag(cmdLine);
-        // Marker-based activation (docs/05 §11): showonline_apps in the TOML
-        // replaces the -showonline LAUNCH ARGUMENT as the source of truth. The
-        // argv token keeps working for legacy configs — and is still stripped
-        // below — but new installs must never put anything on the game's
-        // command line: strict argv / launch-option parsers hard-crash on it
-        // (Selene ~Apoptosis~ 2026-08-24, Z.A.T.O. app 4122860 same day).
-        const bool fromMarker =
-            std::find(g_state.settings.presenceShowOnlineApps.begin(),
-                      g_state.settings.presenceShowOnlineApps.end(),
-                      static_cast<std::uint32_t>(realApp)) !=
-            g_state.settings.presenceShowOnlineApps.end();
-        const bool isShowOnline = HasShowOnlineFlag(cmdLine) || fromMarker;
 
-        // Aether flags are consumed HERE; hand the child process a clean argv
-        // (see StripAetherFlagArgs). Empty string (never nullptr) when the tag
-        // was the only argument.
-        if (isOnlineFix || isShowOnline) {
+        // Centralised resolution (docs/05 §12): TOML arrays are the source of
+        // truth; argv tokens (-onlinefix / -showonline) are LEGACY hints that
+        // keep working for unmigrated configs and are ALWAYS stripped from
+        // the child command line below. exclude_apps wins over tokens too.
+        const bool hasOfToken = HasOnlineFixFlag(cmdLine);
+        const bool hasSoToken = HasShowOnlineFlag(cmdLine);
+        const char* modeSource = nullptr;
+        const LaunchMode mode = ResolveLaunchMode(realApp, hasOfToken, hasSoToken, &modeSource);
+
+        // Hand the child process a clean argv whenever an Aether token was
+        // present (see StripAetherFlagArgs). Never null; empty string only
+        // when the token was the whole command line.
+        if (hasOfToken || hasSoToken) {
             bool stripped = false;
             childCmdStorage = StripAetherFlagArgs(cmdLine, &stripped);
             if (stripped) {
@@ -244,20 +284,20 @@ bool h_SpawnProcess(void* user, const char* exe, const char* cmdLine, const char
             }
         }
 
-        if (isOnlineFix && luadata::HasDepot(realApp)) {
-            // -onlinefix wins over -showonline when both flags are present:
-            // the full 480 process mask is a strict superset of what
+        if (mode == LaunchMode::OnlineFix && luadata::HasDepot(realApp)) {
+            // OnlineFix: full 480 process mask — a strict superset of what
             // -showonline needs (server presence + friend notification), and
-            // keeping the mask is what real multiplayer requires.
+            // the mask is what real multiplayer through a crack requires.
             g_state.onlineFixRealAppId.store(realApp);
             g_state.showOnlineAppId.store(0);
             *gameId = (*gameId & ~constants::kGameIdAppIdMask) | constants::kSpacewarAppId;
-            AC_LOG_INFO(kModule, "Masked AppId %u as Spacewar (%u) for OnlineFix.",
-                        realApp, constants::kSpacewarAppId);
+            AC_LOG_INFO(kModule,
+                        "Masked AppId %u as Spacewar (%u) for OnlineFix (source: %s).",
+                        realApp, constants::kSpacewarAppId, modeSource);
             // Synchronise the game's language to the 480 ACF so the game
             // starts in the correct language instead of defaulting to English.
             SyncLanguageToSpacewar(realApp);
-        } else if (isShowOnline && luadata::HasDepot(realApp)) {
+        } else if (mode == LaunchMode::ShowOnline && luadata::HasDepot(realApp)) {
             // ShowOnline session: NO process mask. The game stays registered
             // under its real appid, so achievements, DLC, cloud, overlay,
             // screenshots and the community hub behave exactly like a
@@ -269,10 +309,7 @@ bool h_SpawnProcess(void* user, const char* exe, const char* cmdLine, const char
             AC_LOG_INFO(kModule,
                         "ShowOnline session for app %u: process NOT masked; "
                         "wire-level presence rewrite only (source: %s).",
-                        realApp,
-                        HasShowOnlineFlag(cmdLine)
-                            ? "launch arg (legacy; strip applied below)"
-                            : "showonline_apps marker (clean argv)");
+                        realApp, modeSource);
         } else {
             g_state.onlineFixRealAppId.store(0);
             g_state.showOnlineAppId.store(0);

@@ -417,3 +417,64 @@ options Steam, il problema è interno al gioco/ambiente e fuori dalla portata
 di Aether (test: mettere `-test123` qualsiasi nelle launch options SENZA
 Aether attivo — se crasha, il gioco è semplicemente fragile ai launch
 arguments, cosa nota per lui, e il marker resta la sola via sana).
+
+---
+
+## 12. Config centralizzata nel TOML (fix8): policy + overrides, zero argv
+
+### Il modello professionale adottato
+- **TOML come unica fonte di verità** (`[presence]`): i tre array
+  `showonline_apps`, `onlinefix_apps`, `exclude_apps` + la policy
+  `default_mode = "none" | "showonline"`.
+- **Policy + overrides, NON enumerazione**: "ogni gioco senza configurazione
+  va in presenza" = UNA riga `default_mode = "showonline"` invece di
+  materializzare l'intera libreria Steam nell'array (anti-pattern: dati
+  derivati scritti come intenti, file inutilmente enorme, writer multipli,
+  install/disinstall lasciano spazzatura).
+- **Precedenza fissa e documentata**: `exclude > onlinefix > showonline >
+  default_mode`. Legata in `ResolveLaunchMode()` (h_SpawnProcess); harness
+  C++ 12/12 (include: exclude batte perfino un token legacy dimenticato).
+- **`exclude_apps` = hard opt-out**: la DLL ignora l'app interamente; i token
+  residui in argv vengono comunque strappati (strip).
+- **Mutua esclusione lato scrittura**: ogni comando Desk rimuove l'app da
+  tutti gli array e la aggiunge al massimo a uno → configurazioni sporche
+  "app in due liste" non si creano; se scritta a mano, l'ordine di precedenza
+  decide (deterministico).
+
+### AetherDesk (fix8)
+- I quattro comandi esistenti mantengono nomi e firme → la UI non cambia.
+  `set_aether_showonline` / `set_aether_onlinefix` ora scrivono negli array
+  del toml (entrambe le copie) e **rimuovono sempre i token legacy** dalle
+  Launch Options (migrazione progressiva).
+- Nuovi comandi registrati: `get/set_aether_excluded` (opt-out) e
+  `get/set_presence_default_mode` (policy globale showonline default).
+- Editor TOML generalizzato: upsert canonico delle tre chiavi sotto
+  `[presence]`, creazione sezione se assente, preservazione di tutto il resto;
+  test mirror Python 11/11 (idempotenza, canonical order, dedupe, append).
+- La DLL fa ReloadIfModified in SpawnProcess → **zero riavvi di Steam**.
+
+### Risposta alla domanda sulle crack (online-fix.me / UCO2)
+Osservazione utente: `-showonline` ha funzionato con crack che PENSANO di
+essere Spacewar. Motivo architetturale: showonline non tocca il processo —
+riscrive solo le frame di presenza in uscita — quindi convive con qualunque
+masking locale. Ma:
+- **-showonline + -onlinefix sullo STESSO gioco non va combinato** e non
+  serve: la modalità OnlineFix (mask 480 reale) è un superset funzionale —
+  la presenza verso gli amici è inclusa nel suo percorso di annotazione.
+  La mutua esclusione (un solo array per app) è la forma corretta.
+- Con una crack che si maska DA SOLA (senza `-onlinefix` di Aether): il
+  cablaggio di annotazione showonline non si attiva (require
+  `luadata::IsConfigured`/depot): gli amici vedono semplicemente "Spacewar".
+  Se vuoi nome+appid agli amici su quel gioco, usa `onlinefix_apps`.
+- "La pipeline del multiplayer non dovrebbe essere occupata": corretto per
+  UCO2 — showonline non riserva nulla lato processo; l'unica zona condivisa è
+  il canale wire di presenza, gestito dal CM.
+
+### Procedura utente dopo l'update (migrazione)
+1. Ricompilare DLL + Desk.
+2. In AetherDesk: ri-togleggere (off→on) ogni gioco precedentemente marcato →
+   i token spariscono dalle Launch Options e compaiono gli array nel toml.
+3. Per il plug-and-play globale: `set_presence_default_mode(true)` (futuro
+   toggle UI) o a mano `default_mode = "showonline"` nel toml.
+4. Verifica log: stamp `showonline-suffix+fix8`; alla spawn riga con
+   `(source: showonline_apps|onlinefix_apps|default_mode=showonline|...)`.

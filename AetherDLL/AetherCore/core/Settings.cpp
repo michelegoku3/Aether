@@ -126,6 +126,29 @@ Settings Settings::Load(const std::string& configPath) {
                 }
             }
         }
+        if (auto* arr = (*presence)["onlinefix_apps"].as_array()) {
+            s.presenceOnlineFixApps.clear();
+            for (const auto& item : *arr) {
+                if (auto v = item.value<std::int64_t>()) {
+                    if (*v > 0) {
+                        s.presenceOnlineFixApps.push_back(static_cast<std::uint32_t>(*v));
+                    }
+                }
+            }
+        }
+        if (auto* arr = (*presence)["exclude_apps"].as_array()) {
+            s.presenceExcludeApps.clear();
+            for (const auto& item : *arr) {
+                if (auto v = item.value<std::int64_t>()) {
+                    if (*v > 0) {
+                        s.presenceExcludeApps.push_back(static_cast<std::uint32_t>(*v));
+                    }
+                }
+            }
+        }
+        if (auto v = (*presence)["default_mode"].value<std::string>()) {
+            s.presenceDefaultShowOnline = (*v == "showonline");
+        }
     }
 
     AC_LOG_INFO("Settings",
