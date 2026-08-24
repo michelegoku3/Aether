@@ -40,7 +40,7 @@ static bool HasFlagArg(const char* cmdLine, const char* flag) {
     while (pos < cl.size()) {
         while (pos < cl.size() && (cl[pos] == ' ' || cl[pos] == '\t')) ++pos;
         if (pos >= cl.size()) break;
-        std::size_t end = cl.find(' ', pos);
+        std::size_t end = cl.find_first_of(" \t", pos);  // whitespace-consistent with StripAetherFlagArgs
         if (end == std::string::npos) end = cl.size();
         if (cl.substr(pos, end - pos) == flag) return true;
         pos = end;
@@ -54,6 +54,39 @@ static bool HasOnlineFixFlag(const char* cmdLine) {
 
 static bool HasShowOnlineFlag(const char* cmdLine) {
     return HasFlagArg(cmdLine, constants::kShowOnlineFlag);
+}
+
+// Returns cmdLine minus every Aether control token (-onlinefix / -showonline).
+// Same whitespace-tokenisation as HasFlagArg; outStripped tells whether at
+// least one token was removed. Aether consumes those flags here, in
+// SpawnProcess — the child process must NEVER see them in argv: Steam itself
+// ignores unknown launch arguments, but some games hard-crash on them.
+// MEASURED, 2026-08-24 log: "Selene ~Apoptosis~" exits 3-4 s after every
+// launch with -showonline left in the command line (three runs in a row,
+// 4.6 s / 4.2 s lifetimes) and runs ~28 s on the flag-less launch. Gamblers
+// Table and Stanley Parable tolerate it; strict argv parsers do not.
+static std::string StripAetherFlagArgs(const char* cmdLine, bool* outStripped) {
+    std::string out;
+    if (outStripped) *outStripped = false;
+    if (!cmdLine) return out;
+    const std::string cl(cmdLine);
+    out.reserve(cl.size());
+    std::size_t pos = 0;
+    while (pos < cl.size()) {
+        while (pos < cl.size() && (cl[pos] == ' ' || cl[pos] == '\t')) ++pos;
+        if (pos >= cl.size()) break;
+        std::size_t end = cl.find_first_of(" \t", pos);
+        if (end == std::string::npos) end = cl.size();
+        const std::string tok = cl.substr(pos, end - pos);
+        pos = end;
+        if (tok == constants::kOnlineFixFlag || tok == constants::kShowOnlineFlag) {
+            if (outStripped) *outStripped = true;
+            continue;
+        }
+        if (!out.empty()) out.push_back(' ');
+        out += tok;
+    }
+    return out;
 }
 
 // ---------------------------------------------------------------------------
@@ -172,10 +205,27 @@ void SyncLanguageToSpacewar(AppId realAppId) {
 bool h_SpawnProcess(void* user, const char* exe, const char* cmdLine, const char* workDir,
                     std::uint64_t* gameId, const void* blob, std::uint32_t blobSize,
                     std::int32_t launchOption) {
+    std::string childCmdStorage;
+    const char* childCmd = cmdLine;
     if (gameId) {
         AppId realApp = static_cast<AppId>(*gameId & constants::kGameIdAppIdMask);
         const bool isOnlineFix = HasOnlineFixFlag(cmdLine);
         const bool isShowOnline = HasShowOnlineFlag(cmdLine);
+
+        // Aether flags are consumed HERE; hand the child process a clean argv
+        // (see StripAetherFlagArgs). Empty string (never nullptr) when the tag
+        // was the only argument.
+        if (isOnlineFix || isShowOnline) {
+            bool stripped = false;
+            childCmdStorage = StripAetherFlagArgs(cmdLine, &stripped);
+            if (stripped) {
+                childCmd = childCmdStorage.c_str();
+                AC_LOG_INFO(kModule,
+                            "Stripped Aether launch flags from child cmdline "
+                            "(app %u, was '%s').",
+                            realApp, cmdLine ? cmdLine : "");
+            }
+        }
 
         if (isOnlineFix && luadata::HasDepot(realApp)) {
             // -onlinefix wins over -showonline when both flags are present:
@@ -207,7 +257,7 @@ bool h_SpawnProcess(void* user, const char* exe, const char* cmdLine, const char
             g_state.showOnlineAppId.store(0);
         }
     }
-    return o_SpawnProcess(user, exe, cmdLine, workDir, gameId, blob, blobSize, launchOption);
+    return o_SpawnProcess(user, exe, childCmd, workDir, gameId, blob, blobSize, launchOption);
 }
 
 AppId h_GetAppIDForCurrentPipe(void* engine) {
