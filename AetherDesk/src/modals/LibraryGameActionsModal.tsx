@@ -3,8 +3,8 @@ import { invoke } from '@tauri-apps/api/core';
 import { GameHeroImage } from '../ui/GameHeroImage';
 import { requireSteamPath } from '../hooks/useSettings';
 import { useModalDismiss } from '../hooks/useModalDismiss';
-import { OnlinePanel } from './OnlinePanel';
-import { OnlineChoiceModal } from './OnlineChoiceModal';
+import { OnlinePanel, type OnlineStatus } from './OnlinePanel';
+import { OnlineChoiceModal, type AppPresenceMode } from './OnlineChoiceModal';
 
 export interface LibraryActionGame {
   id: number;
@@ -43,6 +43,8 @@ export const LibraryGameActionsModal = ({
   const [aetherOnlinefix, setAetherOnlinefix] = useState(false);
   const [uco2Online, setUco2Online] = useState(false);
   const [showOnline, setShowOnline] = useState(false);
+  const [aetherExcluded, setAetherExcluded] = useState(false);
+  const [presenceDefaultShowOnline, setPresenceDefaultShowOnline] = useState(true);
   const disabled = isProcessing || isBusy || onlineBusy;
 
   const refreshUpdateState = async () => {
@@ -111,16 +113,24 @@ export const LibraryGameActionsModal = ({
 
   const refreshOnlineStates = async () => {
     try {
-      // Parallel check: Aether via LaunchOptions (-onlinefix / -showonline),
-      // UCO2 via the presence of union-crax.ini next to the game executable.
-      const [aetherOn, uco2On, showOn] = await Promise.all([
+      // Parallel checks. UCO2 viene letto da get_online_status — il record di
+      // stato scritto dal pannello (Engine::status: record presente + ini/dll
+      // effettivamente sul disco). NON is_uco2_active: quel probe legge
+      // union-crax.ini, un file di RUNTIME che UCO2 lascia sul disco anche
+      // dopo il Disable → falso "sempre attivo" che bloccava Online Aether.
+      // 'broken' (record senza file) conta come non attivo ai fini del gate.
+      const [aetherOn, uco2Status, showOn, excludedOn, defaultShowOnline] = await Promise.all([
         invoke<boolean>('get_aether_onlinefix', { appId: Number(game.appId) }),
-        invoke<boolean>('is_uco2_active', { appId: Number(game.appId) }),
+        invoke<OnlineStatus>('get_online_status', { appId: Number(game.appId) }),
         invoke<boolean>('get_aether_showonline', { appId: Number(game.appId) }),
+        invoke<boolean>('get_aether_excluded', { appId: Number(game.appId) }),
+        invoke<boolean>('get_presence_default_mode'),
       ]);
       setAetherOnlinefix(Boolean(aetherOn));
-      setUco2Online(Boolean(uco2On));
+      setUco2Online(uco2Status?.state === 'enabled');
       setShowOnline(Boolean(showOn));
+      setAetherExcluded(Boolean(excludedOn));
+      setPresenceDefaultShowOnline(defaultShowOnline !== false);
     } catch {
       // Keep the previous state on failure.
     }
@@ -131,44 +141,37 @@ export const LibraryGameActionsModal = ({
     setShowOnlineChoice(true);
   };
 
-  const handleToggleAether = async () => {
-    setOnlineBusy(true);
-    try {
-      const nextEnabled = !aetherOnlinefix;
-      const result: string = await invoke('set_aether_onlinefix', {
-        appId: Number(game.appId),
-        enabled: nextEnabled,
-      });
-      onStatus(result, 'success');
-      setAetherOnlinefix(nextEnabled);
-      if (nextEnabled) {
-        setUco2Online(false);
-        setShowOnline(false);
-      }
-    } catch (err: any) {
-      onStatus(`Failed to toggle Aether onlinefix: ${err}`, 'error');
-    } finally {
-      setOnlineBusy(false);
-    }
-  };
+  // Modalità EFFETTIVA per il popup (docs/05 §12): un'app senza entry nelle
+  // liste ricade in default_mode — mostrato come la scelta corrente, così
+  // l'utente vede lo stato reale e non quello formale.
+  const currentPresenceMode: AppPresenceMode = aetherOnlinefix
+    ? 'onlinefix'
+    : showOnline
+      ? 'showonline'
+      : aetherExcluded
+        ? 'none'
+        : presenceDefaultShowOnline
+          ? 'showonline'
+          : 'none';
 
-  const handleToggleShowOnline = async () => {
+  const handleSelectPresenceMode = async (next: AppPresenceMode) => {
+    if (next === currentPresenceMode) return;
     setOnlineBusy(true);
     try {
-      const nextEnabled = !showOnline;
-      // -showonline and -onlinefix are mutually exclusive; the backend strips
-      // the other token automatically when one is enabled.
-      const result: string = await invoke('set_aether_showonline', {
+      const command =
+        next === 'onlinefix'
+          ? 'set_aether_onlinefix'
+          : next === 'showonline'
+            ? 'set_aether_showonline'
+            : 'set_aether_excluded';
+      const result: string = await invoke(command, {
         appId: Number(game.appId),
-        enabled: nextEnabled,
+        enabled: true,
       });
       onStatus(result, 'success');
-      setShowOnline(nextEnabled);
-      if (nextEnabled) {
-        setAetherOnlinefix(false);
-      }
+      await refreshOnlineStates();
     } catch (err: any) {
-      onStatus(`Failed to toggle Show Online: ${err}`, 'error');
+      onStatus(`Failed to set online mode: ${err}`, 'error');
     } finally {
       setOnlineBusy(false);
     }
@@ -251,24 +254,6 @@ export const LibraryGameActionsModal = ({
             </span>
             <span
               className="game-action-btn-wrap"
-              title={
-                !game.installed
-                  ? 'Show Online requires the game to be installed in Steam first'
-                  : showOnline
-                    ? 'Stop showing this game to your Steam friends (singleplayer presence)'
-                    : 'Show your Steam friends what you are playing (singleplayer, no online features)'
-              }
-            >
-              <button
-                className="game-action-btn"
-                onClick={handleToggleShowOnline}
-                disabled={disabled || onlineBusy || !game.installed}
-              >
-                {showOnline ? 'Disable Show Online' : 'Show Online'}
-              </button>
-            </span>
-            <span
-              className="game-action-btn-wrap"
               title={game.installed ? 'Installed games cannot be removed from Aether Library' : 'Remove Lua from Aether Library'}
             >
               <button
@@ -286,10 +271,10 @@ export const LibraryGameActionsModal = ({
       {showOnlineChoice && (
         <OnlineChoiceModal
           game={game}
-          aetherEnabled={aetherOnlinefix}
+          mode={currentPresenceMode}
           uco2Enabled={uco2Online}
           busy={onlineBusy}
-          onToggleAether={handleToggleAether}
+          onSelectMode={handleSelectPresenceMode}
           onOpenUco2Panel={handleOpenUco2Panel}
           onClose={() => setShowOnlineChoice(false)}
         />

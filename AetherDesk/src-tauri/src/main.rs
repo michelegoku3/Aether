@@ -48,6 +48,10 @@ fn main() {
             // obsolete data-folder cleanup, and the lua_backups → backup data
             // layout migration. Each step is idempotent and failure-tolerant.
             crate::core::migration::run_startup_migrations(&app.handle());
+            // Steam process monitor (single shared poller): keeps is_steam_running
+            // O(1) and pushes `steam://runtime-state` to the UI only on changes
+            // (Sidebar Start/Restart label, per-game guards, ...).
+            crate::core::steam_monitor::start(app.handle().clone());
             // Lua backup sync (background, non-blocking): mirror every .lua in
             // stplug-in into backup/<app_id>/lua — creates missing backups and
             // archives+updates changed ones (history/ keeps old versions).
@@ -156,6 +160,7 @@ fn main() {
             commands::steam::restart_steam,
             commands::steam::is_dll_installed,
             commands::steam::is_steam_blocked,
+            commands::steam::is_steam_running,
             commands::steam::block_steam_updates,
             commands::steam::unblock_steam_updates,
             commands::steam::get_aether_onlinefix,

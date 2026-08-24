@@ -4,11 +4,14 @@ interface SidebarProps {
   activeTab: TabType;
   onTabChange: (tab: TabType) => void;
   onRestartSteam: () => void;
+  // Stato Steam dal monitor condiviso (core::steam_monitor): null = in attesa
+  // della prima lettura. Guida l'etichetta Start/Restart.
+  steamRunning: boolean | null;
   dllUpdateAvailable: boolean; // Received from parent (App.tsx)
   updateIsTest: boolean;        // Whether the shown update is a test build (red)
 }
 
-export const Sidebar = ({ activeTab, onTabChange, onRestartSteam, dllUpdateAvailable, updateIsTest }: SidebarProps) => {
+export const Sidebar = ({ activeTab, onTabChange, onRestartSteam, steamRunning, dllUpdateAvailable, updateIsTest }: SidebarProps) => {
   return (
     <aside className="sidebar">
       {/* TOP NAVIGATION SECTION */}
@@ -98,12 +101,15 @@ export const Sidebar = ({ activeTab, onTabChange, onRestartSteam, dllUpdateAvail
         {/* Separator Line */}
         <div className="separator"></div>
 
-        {/* Restart Steam Button (Action, not a tab) */}
+        {/* Start/Restart Steam Button (Action, not a tab): il comando backend
+            e' idempotente (start se chiuso, restart se aperto), cambia solo
+            l'etichetta in base allo stato del processo monitorato. */}
         <button
           onClick={onRestartSteam}
           className="nav-item restart-steam-btn"
+          title={steamRunning ? 'Restart Steam (currently running)' : 'Start Steam (currently not running)'}
         >
-          Restart Steam
+          {steamRunning === null ? 'Steam' : steamRunning ? 'Restart Steam' : 'Start Steam'}
         </button>
       </div>
     </aside>

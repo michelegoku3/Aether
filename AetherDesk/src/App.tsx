@@ -3,6 +3,7 @@ import { Sidebar, TabType } from './layout/Sidebar';
 import { MainContent } from './layout/MainContent';
 import { DllStatusInfo } from './types/ui';
 import { invoke } from '@tauri-apps/api/core';
+import { listen } from '@tauri-apps/api/event';
 import { useCustomCss } from './hooks/useCustomCss';
 import { usePersonalWallpaper } from './hooks/usePersonalWallpaper';
 
@@ -37,6 +38,8 @@ export default function App() {
   // Appearance toggles — single source of truth for the whole app.
   const [customCssEnabled, setCustomCssEnabled] = useState(false);
   const [personalWallpaperEnabled, setPersonalWallpaperEnabled] = useState(false);
+  // null = prima lettura ancora in corso; boolean = stato noto del monitor.
+  const [steamRunning, setSteamRunning] = useState<boolean | null>(null);
   const [personalWallpaperOpacity, setPersonalWallpaperOpacity] = useState(20);
   const [alternativeCardsOpacity, setAlternativeCardsOpacity] = useState(100);
   const [alternativeCardsFade, setAlternativeCardsFade] = useState(50);
@@ -179,17 +182,40 @@ export default function App() {
     refreshCustomCss();
   }, []);
 
-  // Professional decoupled action handler to kill and restart Steam via Rust.
-  // Keep this silent: the sidebar button is an immediate utility action and should not
-  // interrupt the user with browser-level alerts.
+  // Professional decoupled action handler to start (or restart) Steam via Rust.
+  // restart_steam is already idempotent: killing is a no-op when Steam is
+  // closed, so the same command covers both the Start and Restart semantics —
+  // only the LABEL changes, driven by the shared backend monitor.
   const handleRestartSteam = async () => {
     try {
       await invoke('restart_steam');
-      console.log('Steam restart requested successfully.');
+      console.log('Steam start/restart requested successfully.');
+      // Safety net per l'etichetta Start/Restart: il monitor emette l'evento
+      // di stato a ogni transizione, ma dopo un'azione esplicita rileggiamo
+      // comunque lo stato una volta (copre il caso di evento perso/anticipo).
+      window.setTimeout(async () => {
+        try {
+          setSteamRunning(await invoke<boolean>('is_steam_running'));
+        } catch { /* il monitor ci riprova al prossimo tick */ }
+      }, 2000);
     } catch (err: any) {
-      console.error('Failed to restart Steam:', err);
+      console.error('Failed to start/restart Steam:', err);
     }
   };
+
+  // Live Steam presence: initial O(1) read from the backend monitor, then
+  // push events on every state transition (no per-render process scans).
+  useEffect(() => {
+    let active = true;
+    let unlisten: (() => void) | undefined;
+    invoke<boolean>('is_steam_running')
+      .then((running) => { if (active) setSteamRunning(running); })
+      .catch((err) => console.warn('is_steam_running failed:', err));
+    listen<boolean>('steam://runtime-state', (event) => {
+      setSteamRunning(event.payload);
+    }).then((off) => { unlisten = off; });
+    return () => { active = false; unlisten?.(); };
+  }, []);
 
   return (
     <div className="app-container">
@@ -198,6 +224,7 @@ export default function App() {
         activeTab={activeTab} 
         onTabChange={setActiveTab} 
         onRestartSteam={handleRestartSteam} 
+        steamRunning={steamRunning}
         dllUpdateAvailable={dllUpdateAvailable || deskUpdateAvailable}
         updateIsTest={dllUpdateIsTest || deskUpdateIsTest}
       />

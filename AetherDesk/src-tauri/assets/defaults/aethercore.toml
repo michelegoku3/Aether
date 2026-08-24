@@ -40,13 +40,7 @@ pattern_mirror = ""
 #   1. https://manifest.opensteamtool.com/{gid}
 #   2. https://manifest.steam.run/api/manifest/{gid}
 #   3. http://gmrc.wudrm.com/manifest/{gid}
-#
-# Uncomment urls=[] to disable the bridge explicitly.
-# urls = []
-# You may also override with a custom chain:
 # urls = ["https://manifest.opensteamtool.com/{gid}"]
-# Single-URL legacy form is also accepted:
-# url = "https://manifest.opensteamtool.com/{gid}"
 # Limit fetches to these hosts (default mirrors shown here).
 # trusted_hosts = ["manifest.opensteamtool.com", "manifest.steam.run", "gmrc.wudrm.com"]
 # Per-request wall-clock budget before falling through to Steam's original reply.
@@ -72,3 +66,25 @@ onlinefix_persona_patch = true
 # When set (non-empty), friends on Steam see this exact title when you are in-game.
 # Leave empty ("") to show the real title resolved from Steam.
 custom_game_name = ""
+
+# Aether friends-presence policy (docs/05 §11-§13). The DLL hot-reloads these
+# values on every game launch (mtime check): no Steam restart needed.
+#
+# default_mode: policy for apps in NONE of the lists below (policy + overrides,
+# not enumeration):
+#   "showonline" -> EVERY game you launch shows friends "now playing"
+#   "none"       -> only the apps listed below get Aether behaviour
+default_mode = "showonline"
+
+# Presence invisible to vanilla clients (wire 480 + blob/gid channels):
+# Aether friends recover the real appid and name; vanilla friends see only
+# the name.
+showonline_apps = []
+
+# Full OnlineFix integration (process masked as Spacewar/480 + presence):
+# a superset of showonline — an app lives in exactly ONE list.
+onlinefix_apps = []
+
+# Hard opt-out: the DLL ignores these apps entirely (no presence, no masking);
+# exclude beats every other list and the legacy argv tokens.
+exclude_apps = []

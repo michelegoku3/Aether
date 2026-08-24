@@ -353,4 +353,17 @@ pub fn ensure_aethercore_bridge(app: &tauri::AppHandle) {
             include_str!("../../assets/defaults/aethercore.toml");
         let _ = fs::write(&toml_path, DEFAULT_AETHERCORE_TOML);
     }
+
+    // Schema evolution of the [presence] section (docs/05 §11-§13): existing
+    // installs predate showonline_apps/onlinefix_apps/exclude_apps and
+    // default_mode. Insert ONLY the missing canonical keys (never overriding
+    // user choices) so the DLL resolver and the Desk commands always find a
+    // complete, predictable config. Idempotent, line-based, comment-safe.
+    crate::core::presence_config::ensure_defaults(&toml_path);
+    if !steam_path.trim().is_empty() {
+        let legacy_toml = Path::new(&steam_path)
+            .join("aethercore")
+            .join("aethercore.toml");
+        crate::core::presence_config::ensure_defaults(&legacy_toml);
+    }
 }

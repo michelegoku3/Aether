@@ -6,3 +6,5 @@ pub mod custom_css;
 pub mod shell_shortcuts;
 pub mod logger;
 pub mod secure_storage;
+pub mod presence_config;
+pub mod steam_monitor;
