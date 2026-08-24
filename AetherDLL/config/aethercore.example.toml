@@ -70,3 +70,17 @@ onlinefix_persona_patch = true
 # When set (non-empty), friends on Steam see this exact title when you are in-game.
 # Leave empty ("") to show the real title resolved from Steam.
 custom_game_name = ""
+
+# showonline_broadcast: for masked sessions (-showonline / -onlinefix), rewrite
+# the outbound presence so the server announces Spacewar/480 with the REAL
+# appid hidden at the tail of game_extra_info ("<name> | <appid>"). The CM
+# recycles that text into Friend.game_name, letting Aether-equipped friends
+# recover the exact appid deterministically. Vanilla friends see the whole
+# string (name readable first).
+showonline_broadcast = true
+
+# friend_appid_from_name: when a friend is masked (Spacewar/480), rebuild the
+# real app id locally — first from the appid suffix above (exact), then from
+# the title via the configured-library reverse lookup. Purely local rewrite on
+# THIS pc: it restores the real game icon in your friends list.
+friend_appid_from_name = true

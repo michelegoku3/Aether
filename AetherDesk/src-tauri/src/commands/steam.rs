@@ -8,6 +8,12 @@ use std::path::Path;
 /// Argomento di avvio che Aether usa per attivare il suo onlinefix per un gioco.
 const AETHER_ONLINEFIX_TOKEN: &str = "-onlinefix";
 
+/// Argomento di avvio che Aether usa per mostrare agli amici il gioco
+/// singleplayer a cui si sta giocando (presenza server-side Spacewar/480 +
+/// nome reale via game_extra_info, nessuna funzionalità online/masking
+/// locale: il processo resta registrato con l'appid reale).
+const AETHER_SHOWONLINE_TOKEN: &str = "-showonline";
+
 #[tauri::command]
 pub fn restart_steam(app: tauri::AppHandle) -> Result<(), String> {
     crate::core::logger::reset_session_dedup();
@@ -102,7 +108,9 @@ pub fn get_aether_onlinefix(app: tauri::AppHandle, app_id: u32) -> Result<bool, 
 }
 
 /// Aggiunge o rimuove `-onlinefix` dalle LaunchOptions di Steam per il gioco,
-/// preservando gli altri argomenti già presenti.
+/// preservando gli altri argomenti già presenti. Quando viene attivato,
+/// rimuove `-showonline`: i due tag sono mutuamente esclusivi (il masking 480
+/// di -onlinefix è un superset funzionale della sola presenza di -showonline).
 #[tauri::command]
 pub fn set_aether_onlinefix(
     app: tauri::AppHandle,
@@ -115,7 +123,10 @@ pub fn set_aether_onlinefix(
     }
 
     let current = launch_options::get_launch_options(Path::new(&steam_path), app_id)?;
-    let updated = launch_options::toggle_launch_token(&current, AETHER_ONLINEFIX_TOKEN, enabled);
+    let mut updated = launch_options::toggle_launch_token(&current, AETHER_ONLINEFIX_TOKEN, enabled);
+    if enabled {
+        updated = launch_options::toggle_launch_token(&updated, AETHER_SHOWONLINE_TOKEN, false);
+    }
     if updated == current {
         return Ok(if enabled {
             format!("Aether onlinefix is already enabled for app {app_id}.")
@@ -136,6 +147,64 @@ pub fn set_aether_onlinefix(
         format!("Aether onlinefix enabled for app {app_id} (-onlinefix added to launch options).")
     } else {
         format!("Aether onlinefix disabled for app {app_id} (-onlinefix removed from launch options).")
+    })
+}
+
+/// True quando il gioco ha il token `-showonline` nelle LaunchOptions di Steam.
+#[tauri::command]
+pub fn get_aether_showonline(app: tauri::AppHandle, app_id: u32) -> Result<bool, String> {
+    let steam_path = SettingsManager::new(&app).load().steam_path;
+    if steam_path.trim().is_empty() {
+        return Ok(false);
+    }
+    match launch_options::get_launch_options(Path::new(&steam_path), app_id) {
+        Ok(options) => Ok(launch_options::has_launch_token(&options, AETHER_SHOWONLINE_TOKEN)),
+        // Nessuna localconfig ancora (Steam mai avviato): semplicemente non attivo.
+        Err(e) if e.contains("not found") => Ok(false),
+        Err(e) => Err(e),
+    }
+}
+
+/// Aggiunge o rimuove `-showonline` dalle LaunchOptions di Steam per il gioco.
+/// Quando viene attivato, rimuove `-onlinefix` (mutua esclusione): -showonline
+/// è pensato per giochi singleplayer — niente masking del processo, nessuna
+/// funzionalità online; solo la presenza "sta giocando a" verso gli amici.
+#[tauri::command]
+pub fn set_aether_showonline(
+    app: tauri::AppHandle,
+    app_id: u32,
+    enabled: bool,
+) -> Result<String, String> {
+    let steam_path = SettingsManager::new(&app).load().steam_path;
+    if steam_path.trim().is_empty() {
+        return Err("Steam installation path is required.".to_string());
+    }
+
+    let current = launch_options::get_launch_options(Path::new(&steam_path), app_id)?;
+    let mut updated = launch_options::toggle_launch_token(&current, AETHER_SHOWONLINE_TOKEN, enabled);
+    if enabled {
+        updated = launch_options::toggle_launch_token(&updated, AETHER_ONLINEFIX_TOKEN, false);
+    }
+    if updated == current {
+        return Ok(if enabled {
+            format!("Aether showonline is already enabled for app {app_id}.")
+        } else {
+            format!("Aether showonline is already disabled for app {app_id}.")
+        });
+    }
+
+    launch_options::set_launch_options(Path::new(&steam_path), app_id, &updated)?;
+    crate::desk_log_info!(
+        "steam",
+        "Aether showonline {} for app {} (launch options: '{}')",
+        if enabled { "enabled" } else { "disabled" },
+        app_id,
+        updated
+    );
+    Ok(if enabled {
+        format!("Aether showonline enabled for app {app_id} (-showonline added to launch options; friends will see what you're playing).")
+    } else {
+        format!("Aether showonline disabled for app {app_id} (-showonline removed from launch options).")
     })
 }
 

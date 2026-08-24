@@ -52,6 +52,15 @@ struct Settings {
     bool presenceAlwaysExtraInfo = true;
     bool presenceOnlineFixPersonaPatch = true;
     std::string presenceCustomGameName;
+    // -showonline: rewrite the outgoing presence frames of masked sessions
+    // (-showonline / -onlinefix) so the server announces Spacewar/480 with the
+    // real appid carried as suffix in game_extra_info.
+    bool presenceShowOnlineBroadcast = true;
+    // Friend side: rebuild a friend's real app id locally — first from the
+    // appid suffix the sender embeds in game_extra_info (relayed as
+    // Friend.game_name), then from the title via the configured-library
+    // reverse lookup. Local view only; recovers the game icon.
+    bool presenceFriendAppIdFromName = true;
 
     // Parses the TOML at configPath.
     static Settings Load(const std::string& configPath);

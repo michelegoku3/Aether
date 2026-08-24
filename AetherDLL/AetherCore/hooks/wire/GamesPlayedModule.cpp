@@ -1,6 +1,7 @@
 #include "pch.h"
 #include "hooks/wire/GamesPlayedModule.h"
 
+#include <atomic>
 #include <cstdint>
 #include <string>
 #include <utility>
@@ -76,6 +77,24 @@ void ExtractStringKVs(const std::uint8_t* data, std::uint32_t size,
     }
 }
 
+// Name shown in game_extra_info: the user's custom override when set,
+// else the localized title resolved through Steam's own AppInfo cache.
+std::string DisplayName(steam::AppId appId) {
+    if (!g_state.settings.presenceCustomGameName.empty()) {
+        return g_state.settings.presenceCustomGameName;
+    }
+    return gamename::ForApp(appId);
+}
+
+// game_extra_info is the one field the CM reliably recycles into
+// Friend.game_name for masked (480) sessions (measured, see
+// docs/04-showonline-plan.md §1). We hide the exact appid at its tail so the
+// friend's AetherDLL can recover it deterministically
+// ("<name> | <appid>"); vanilla friends still see the human name first.
+std::string WithAppIdSuffix(const std::string& name, steam::AppId appId) {
+    return name + constants::kExtraInfoAppIdSep + std::to_string(appId);
+}
+
 }  // namespace
 
 std::int32_t HandleSend(const WireFrame& frame, std::uint8_t* out, std::uint32_t outCap) {
@@ -135,44 +154,106 @@ std::int32_t HandleSend(const WireFrame& frame, std::uint8_t* out, std::uint32_t
         }
     }
 
+    // [DIAG] Cosa stiamo realmente annunciando al CM, loggato solo su
+    // variazione (GamesPlayed e' periodico).
+    {
+        static std::atomic<std::uint64_t> s_lastTxSig{~0ull};
+        std::uint64_t sig = static_cast<std::uint64_t>(msg.games_played_size());
+        for (int i = 0; i < msg.games_played_size(); ++i) {
+            sig = sig * 1000003ull + msg.games_played(i).game_id();
+        }
+        if (s_lastTxSig.exchange(sig) != sig) {
+            for (int i = 0; i < msg.games_played_size(); ++i) {
+                const auto& g = msg.games_played(i);
+                AC_LOG_INFO(kModule,
+                            "[DIAG] TX[%d] game_id=%llu (app=%u) extra='%s' "
+                            "owner_id=%u process_id=%u game_flags=%u",
+                            i, static_cast<unsigned long long>(g.game_id()),
+                            AppIdFromGameId(g.game_id()),
+                            g.game_extra_info().c_str(), g.owner_id(),
+                            g.process_id(), g.game_flags());
+            }
+            if (msg.games_played_size() == 0) {
+                AC_LOG_INFO(kModule, "[DIAG] TX: games_played vuoto (uscita dal gioco).");
+            }
+        }
+    }
+
+    // ---- -showonline wire presence rewrite ----------------------------------
+    // The -showonline process keeps its real appid everywhere locally (set by
+    // h_SpawnProcess, never masked); only this outbound frame is rewritten so
+    // the server announces the session exactly like an -onlinefix mask: appid
+    // bits -> 480, extra_info carries "<name> | <real appid>". The suffix lets
+    // Aether-equipped friends recover the exact appid (see PersonaInject);
+    // vanilla friends still see the human name first.
+    // Gated by presenceShowOnlineBroadcast, independent of always_extra_info.
+    bool patched = false;
+
+    const steam::AppId soSession = g_state.showOnlineAppId.load();
+    if (soSession != 0 && soSession != constants::kSpacewarAppId &&
+        g_state.settings.presenceShowOnlineBroadcast) {
+        const std::string soName = DisplayName(soSession);
+        for (int i = 0; i < msg.games_played_size(); ++i) {
+            auto* game = msg.mutable_games_played(i);
+            if (!game->has_game_id()) continue;
+            if (AppIdFromGameId(game->game_id()) != soSession) continue;
+
+            // Rewrite ONLY the appid bits; type/owner bits are preserved.
+            game->set_game_id((game->game_id() & ~constants::kGameIdAppIdMask) |
+                              static_cast<std::uint64_t>(constants::kSpacewarAppId));
+            if (!soName.empty()) {
+                game->set_game_extra_info(WithAppIdSuffix(soName, soSession));
+            }
+            patched = true;
+            AC_LOG_INFO_ONCE(kModule,
+                             "showonline: games_played %u -> 480 (extra_info '%s%s%u'); "
+                             "the process stays registered under the real appid.",
+                             soSession, soName.c_str(), constants::kExtraInfoAppIdSep,
+                             soSession);
+        }
+    }
+
     // ---- game_extra_info (always-on when enabled) --------------------------
     // Unified path: with and without -onlinefix.
-    //   OF entry (game_id 480): extra_info = name(real)
+    //   OF entry (game_id 480): extra_info = "name(real) | real"
     //   normal entry:           extra_info = name(that appid) if we care
-    if (!g_state.settings.presenceAlwaysExtraInfo) return kNoChange;
+    // Entries just rewritten by the -showonline block above (480 without an OF
+    // session) are untouched here: their extra_info is already set.
+    if (g_state.settings.presenceAlwaysExtraInfo) {
+        const steam::AppId ofReal = g_state.onlineFixRealAppId.load();
 
-    bool patched = false;
-    const steam::AppId ofReal = g_state.onlineFixRealAppId.load();
+        for (int i = 0; i < msg.games_played_size(); ++i) {
+            auto* game = msg.mutable_games_played(i);
+            if (!game->has_game_id()) continue;
+            const steam::AppId app = AppIdFromGameId(game->game_id());
 
-    for (int i = 0; i < msg.games_played_size(); ++i) {
-        auto* game = msg.mutable_games_played(i);
-        if (!game->has_game_id()) continue;
-        const steam::AppId app = AppIdFromGameId(game->game_id());
+            steam::AppId nameApp = 0;
+            if (app == constants::kSpacewarAppId && ofReal != 0) {
+                // OnlineFix: never rewrite game_id; only annotate.
+                nameApp = ofReal;
+            } else if (app != 0 && app != constants::kSpacewarAppId) {
+                // No-OF (or non-480 entry): optional polish on the real id.
+                // Prefer Lua-managed / configured apps to avoid touching unrelated titles.
+                if (luadata::IsConfigured(app) || luadata::HasDepot(app)) nameApp = app;
+            }
+            if (nameApp == 0) continue;
 
-        steam::AppId nameApp = 0;
-        if (app == constants::kSpacewarAppId && ofReal != 0) {
-            // OnlineFix: never rewrite game_id; only annotate.
-            nameApp = ofReal;
-        } else if (app != 0 && app != constants::kSpacewarAppId) {
-            // No-OF (or non-480 entry): optional polish on the real id.
-            // Prefer Lua-managed / configured apps to avoid touching unrelated titles.
-            if (luadata::IsConfigured(app) || luadata::HasDepot(app)) nameApp = app;
+            const std::string name = DisplayName(nameApp);
+            if (name.empty()) continue;
+
+            // The appid suffix travels only on MASKED entries (wire 480): for
+            // real entries the CM relays the true appid by itself.
+            const std::string display =
+                (app == constants::kSpacewarAppId && g_state.settings.presenceShowOnlineBroadcast)
+                    ? WithAppIdSuffix(name, nameApp)
+                    : name;
+            if (game->has_game_extra_info() && game->game_extra_info() == display) continue;
+
+            game->set_game_extra_info(display);
+            patched = true;
+            AC_LOG_INFO_ONCE(kModule, "game_extra_info appid=%u (wire=%u) -> '%s'.",
+                             nameApp, app, display.c_str());
         }
-        if (nameApp == 0) continue;
-
-        std::string name;
-        if (!g_state.settings.presenceCustomGameName.empty()) {
-            name = g_state.settings.presenceCustomGameName;
-        } else {
-            name = gamename::ForApp(nameApp);
-        }
-        if (name.empty()) continue;
-        if (game->has_game_extra_info() && game->game_extra_info() == name) continue;
-
-        game->set_game_extra_info(name);
-        patched = true;
-        AC_LOG_INFO_ONCE(kModule, "game_extra_info appid=%u (wire=%u) -> '%s'.", nameApp, app,
-                    name.c_str());
     }
 
     if (!patched) return kNoChange;
