@@ -402,7 +402,7 @@ namespace ac::hooks {
         // running. If it never appears in the log, the loaded DLL is not the
         // patched build (the updater reports the same version for both).
         AC_LOG_INFO(kModule,
-                    "[DIAG] BUILD showonline-suffix+fix2 | inject_local=%d always_extra_info=%d "
+                    "[DIAG] BUILD showonline-suffix+fix3 | inject_local=%d always_extra_info=%d "
                     "showonline_broadcast=%d friend_appid_from_name=%d",
                     g_state.settings.presenceInjectLocal ? 1 : 0,
                     g_state.settings.presenceAlwaysExtraInfo ? 1 : 0,

@@ -203,7 +203,7 @@ Default `[log] level = "trace"` → attivo senza modifiche config.
   (thread UI): i dump/Event Viewer indicano il modulo reale; si rimuove il flight
   recorder dopo la diagnosi.
 
-### 7.4 Cache-causa del crash — TROVATA E FIXATA (2026-08-24, build `+flightrec`)
+### 7.4 Colpevole del crash — TROVATO E FIXATO (2026-08-24, build `+flightrec`)
 
 Log nuovi: catena recovery **funzionante** su Gamblers Table (`Patched friend
 76561199876393402: 480 -> 3618390 (extra_info)`), crash immediato su Stanley:
@@ -234,3 +234,24 @@ Fix applicato:
 Atteso al retest T3 (Stanley): `Patched friend ... (extra_info)`, poi
 `[DIAG] app 1703340 missing from local AppInfo cache; requesting PICS`, poi
 `[DIAG] SendClientFrame eMsg=8903 ... -> ok`; icona che si riempie a cache fatta.
+
+**CONFERMA FIX (log 13:19–13:27, build `+fix2`)**: portatile patchea e richiede PICS
+per tutte le app sconosciute senza crash — `Patched friend ... -> 3618390/1703340/1398210
+(extra_info)` + `SendClientFrame eMsg=8903 ... -> ok`; Steam vivo fino all'export.
+
+## 8. Crash del GIOCO con `-showonline` su parser argv rigidi (2026-08-24, `+fix3`)
+
+**Sintomo**: "Selene ~Apoptosis~" (1398210) esce ~3–4 s dopo ogni avvio con
+`-showonline` (3 lanci tra 13:21:31 e 13:21:57, vite 4.6 s / 4.2 s), mentre il lancio
+senza flag vive 28 s. Gamblers Table e Stanley tollerano il flag — Selene no.
+
+**Causa**: con `-showonline` il processo NON è mascherato, NON riceve payload né env
+patch — l'**unica** differenza visibile al figlio rispetto al lancio plain è il token
+`-showonline` lasciato nella riga di comando (SpawnProcess passa `cmdLine` invariata).
+I giochi con parser argv rigido (o che trattano argomenti ignoti come path) crashano.
+
+**Fix** (`hooks/steamclient/OnlineFixHooks.cpp`): `h_SpawnProcess` ora toglie i token
+Aether (`-onlinefix`, `-showonline`) dalla cmdline prima di chiamare
+`o_SpawnProcess` → il figlio riceve argv pulito (log: `Stripped Aether launch flags
+from child cmdline (app <id>, was '...').`). Bonus: stessa protezione per `-onlinefix`.
+Tokenizzazione di `HasFlagArg` resa coerente (spazio+tab). Test harness 14/14.
