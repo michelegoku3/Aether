@@ -53,7 +53,7 @@ std::string ExtraInfoKV(const CMsgClientPersonaState::Friend& f) {
 // Parses the "<name> | <appid>" marker appended by Aether senders
 // (kExtraInfoAppIdSep). Returns the appid and writes the clean display name
 // back to nameOut; returns 0 when the text carries no valid suffix.
-steam::AppId AppIdFromSuffix(const std::string& text, std::string& nameOut) {
+steam::AppId AppIdFromAsciiSuffix(const std::string& text, std::string& nameOut) {
     nameOut = text;
     const std::string sep = constants::kExtraInfoAppIdSep;
     const std::size_t pos = text.rfind(sep);
@@ -69,6 +69,54 @@ steam::AppId AppIdFromSuffix(const std::string& text, std::string& nameOut) {
         return 0;
     }
     nameOut = text.substr(0, pos);
+    return static_cast<steam::AppId>(v);
+}
+
+// Invisible channel (constants::kExtraInfoInvisible*): exact tail of the text
+// must be U+200B (E2 80 8B) followed by 6 bytes-triples 0xEE 0xB8 (0x80|nib).
+// 24-bit value, big-endian nibbles. Vanilla renderers draw nothing.
+steam::AppId AppIdFromInvisibleSuffix(const std::string& text, std::string& nameOut) {
+    nameOut = text;
+    constexpr std::size_t markLen = sizeof(constants::kExtraInfoInvisibleMark) - 1;  // 3
+    constexpr std::size_t digits = constants::kExtraInfoInvisibleDigits;             // 6
+    constexpr std::size_t tailLen = markLen + digits * 3;                            // 21
+    if (text.size() < tailLen) return 0;
+    const std::size_t markPos = text.size() - tailLen;
+    if (text.compare(markPos, markLen, constants::kExtraInfoInvisibleMark) != 0) return 0;
+
+    std::uint32_t v = 0;
+    for (std::size_t i = 0; i < digits; ++i) {
+        const std::size_t o = markPos + markLen + i * 3;
+        const unsigned char b0 = static_cast<unsigned char>(text[o]);
+        const unsigned char b1 = static_cast<unsigned char>(text[o + 1]);
+        const unsigned char b2 = static_cast<unsigned char>(text[o + 2]);
+        if (b0 != 0xEE || b1 != 0xB8 || b2 < 0x80 || b2 > 0x8F) return 0;
+        v = (v << 4) | (b2 & 0xF);
+    }
+    if (v == 0 || v == constants::kSpacewarAppId) return 0;
+    nameOut = text.substr(0, markPos);
+    return static_cast<steam::AppId>(v);
+}
+
+// Combined parse: ASCII suffix (legacy senders) first, invisible channel next.
+steam::AppId AppIdFromSuffix(const std::string& text, std::string& nameOut) {
+    if (const steam::AppId a = AppIdFromAsciiSuffix(text, nameOut)) return a;
+    return AppIdFromInvisibleSuffix(text, nameOut);
+}
+
+// Preferred channel (docs/05 §10): build fix5+ senders hide the appid in
+// games_played.game_data_blob; the CM recycles it into
+// Friend.game_data_blob for masked sessions. Raw bytes — no client UI ever
+// renders them, vanilla friends see only the plain name from game_name.
+steam::AppId AppIdFromBlob(const std::string& blob) {
+    if (blob.size() != constants::kAppIdBlobLen) return 0;
+    if (blob.compare(0, 4, constants::kAppIdBlobMagic, 4) != 0) return 0;
+    if (static_cast<std::uint8_t>(blob[4]) != constants::kAppIdBlobVersion) return 0;
+    const std::uint32_t v = static_cast<std::uint8_t>(blob[5]) |
+                            (static_cast<std::uint8_t>(blob[6]) << 8) |
+                            (static_cast<std::uint8_t>(blob[7]) << 16) |
+                            (static_cast<std::uint32_t>(static_cast<std::uint8_t>(blob[8])) << 24);
+    if (v == 0 || v > constants::kGameIdAppIdMask || v == constants::kSpacewarAppId) return 0;
     return static_cast<steam::AppId>(v);
 }
 
@@ -382,6 +430,49 @@ std::int32_t OnPersonaStateRecv(const WireFrame& frame, std::uint8_t* out, std::
             std::string extra = ExtraInfoKV(*f);
             if (extra.empty() && f->has_game_name()) extra = f->game_name();
             real = AppIdFromSuffix(extra, displayName);
+            // fix5 channels (docs/05 §10): raw-bytes blob + plan B appid packed
+            // in gid bits 32-63. One shot of per-friend DIAG proves WHAT the
+            // CM actually relayed (field test 16:38 2026-08-24: neither the
+            // blob nor high bits arrived from a fix5 build — decide channels
+            // from hex/len here).
+            if (real == 0 && f->has_game_data_blob()) {
+                real = AppIdFromBlob(f->game_data_blob());
+                if (real != 0) {
+                    source = "blob";
+                    displayName = extra;
+                }
+            }
+            uint32_t gidHi = 0;
+            if (f->has_gameid()) gidHi = static_cast<std::uint32_t>(f->gameid() >> 32);
+            if (real == 0 && gidHi != 0 && gidHi <= constants::kGameIdAppIdMask &&
+                gidHi != constants::kSpacewarAppId) {
+                real = gidHi;
+                source = "gameid";
+                displayName = extra;
+            }
+            {
+                static std::unordered_set<std::uint64_t> s_diagFriends;
+                const std::uint64_t fid = f->has_friendid() ? f->friendid() : 0ull;
+                if (s_diagFriends.insert(fid).second) {
+                    char hex[32] = "-";
+                    std::size_t blobLen = 0;
+                    if (f->has_game_data_blob()) {
+                        const std::string& blob = f->game_data_blob();
+                        blobLen = blob.size();
+                        for (std::size_t b = 0; b < blob.size() && b < 4; ++b) {
+                            std::snprintf(hex + (b == 0 ? 0 : std::strlen(hex)), 4,
+                                          "%s%02X", b == 0 ? "" : " ",
+                                          static_cast<unsigned char>(blob[b]));
+                        }
+                    }
+                    AC_LOG_INFO(kModule,
+                                "[DIAG] mask friend %llu: gid=%llu gidHi=%u bloblen=%zu "
+                                "blobhead=%s extra='%s'",
+                                static_cast<unsigned long long>(fid),
+                                static_cast<unsigned long long>(f->has_gameid() ? f->gameid() : 0ull),
+                                gidHi, blobLen, hex, extra.c_str());
+                }
+            }
 
             if (real == 0 && g_state.settings.presenceFriendAppIdFromName &&
                 f->has_game_name() && !f->game_name().empty()) {
@@ -403,7 +494,7 @@ std::int32_t OnPersonaStateRecv(const WireFrame& frame, std::uint8_t* out, std::
             if (real == 0) {
                 AC_LOG_DEBUG_ONCE(kModule,
                                   "Friend %llu shows 480 with no recoverable appid "
-                                  "(no suffix, no title match, no local session).",
+                                  "(no suffix, no blob, no gid-hi, no title match, no local session).",
                                   static_cast<unsigned long long>(f->friendid()));
                 continue;
             }

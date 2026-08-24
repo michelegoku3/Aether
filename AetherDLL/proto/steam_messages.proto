@@ -73,6 +73,8 @@ message CMsgClientPersonaState {
         optional uint32 game_played_app_id = 3;
         optional string game_name = 55;
         optional fixed64 gameid = 56;
+        // CM-recycled GamePlayed.game_data_blob for masked sessions (docs/05 §10).
+        optional bytes game_data_blob = 60;
         repeated KV rich_presence = 71;
     }
     optional uint32 status_flags = 1;
@@ -88,6 +90,9 @@ message CMsgClientGamesPlayed {
         optional uint64 steam_id_gs = 1;
         optional fixed64 game_id = 2;
         optional string game_extra_info = 7;
+        // Raw-bytes appid channel for masked sessions (docs/05 §10); field
+        // number verified against the complete Steam protobuf set.
+        optional bytes game_data_blob = 8;
 
         // Field numbers verified against SteamKit / SteamDatabase Protobufs.
         // Read-only for now: the ShowOnline diagnostics print them to see what

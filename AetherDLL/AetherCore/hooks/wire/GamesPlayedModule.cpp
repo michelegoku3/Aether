@@ -89,10 +89,60 @@ std::string DisplayName(steam::AppId appId) {
 // game_extra_info is the one field the CM reliably recycles into
 // Friend.game_name for masked (480) sessions (measured, see
 // docs/04-showonline-plan.md §1). We hide the exact appid at its tail so the
-// friend's AetherDLL can recover it deterministically
-// ("<name> | <appid>"); vanilla friends still see the human name first.
+// friend's AetherDLL can recover it deterministically. Default form is the
+// invisible channel (U+200B + 6 VS nibbles, constants::kExtraInfoInvisible*):
+// vanilla friends see ONLY the clean human name; the ASCII form
+// "<name> | <appid>" remains for legacy receivers (suffix_invisible=false).
 std::string WithAppIdSuffix(const std::string& name, steam::AppId appId) {
-    return name + constants::kExtraInfoAppIdSep + std::to_string(appId);
+    if (!g_state.settings.presenceSuffixInvisible) {
+        return name + constants::kExtraInfoAppIdSep + std::to_string(appId);
+    }
+    std::string out = name + constants::kExtraInfoInvisibleMark;
+    constexpr std::size_t digits = constants::kExtraInfoInvisibleDigits;
+    for (std::size_t i = 0; i < digits; ++i) {
+        const int shift = static_cast<int>((digits - 1 - i) * 4);
+        const std::uint8_t nib = static_cast<std::uint8_t>((appId >> shift) & 0xF);
+        out += "\xEE\xB8";
+        out.push_back(static_cast<char>(0x80 | nib));
+    }
+    return out;
+}
+
+// Preferred appid carrier (docs/05 §10): pack the appid into
+// GamePlayed.game_data_blob — raw bytes the CM recycles into
+// Friend.game_data_blob for masked sessions. It is never rendered by any
+// client UI: vanilla friends see ONLY the plain name from game_extra_info.
+std::string MakeAppIdBlob(steam::AppId appId) {
+    std::string b(constants::kAppIdBlobMagic, 4);
+    b.push_back(static_cast<char>(constants::kAppIdBlobVersion));
+    b.push_back(static_cast<char>(appId & 0xFF));
+    b.push_back(static_cast<char>((appId >> 8) & 0xFF));
+    b.push_back(static_cast<char>((appId >> 16) & 0xFF));
+    b.push_back(static_cast<char>((appId >> 24) & 0xFF));
+    return b;
+}
+
+// Annotates a MASKED (wire 480) games_played entry: blob channel when enabled
+// (extra_info = plain name), else the suffix fallback in game_extra_info.
+// Annotates a MASKED (wire 480) games_played entry. Layers:
+//   1) game_data_blob when enabled (raw bytes; CM recycling UNVERIFIED — one
+//      field test 16:38 2026-08-24 suggests the CM strips it from Friend relay)
+//   2) plan B (always for -showonline): the real appid packed into game_id
+//      bits 32-63. Vanilla UIs key on low-24 appid bits (480) and the
+//      extra_info text only; mod bits are not rendered. Does not apply to
+//      OnlineFix entries (their gid bits may feed OF's own discovery).
+void AnnotateMaskedEntry(CMsgClientGamesPlayed::GamePlayed& game, const std::string& name,
+                         steam::AppId appId, bool packGameIdHighBits) {
+    if (packGameIdHighBits) {
+        game.set_game_id((game.game_id() & 0x00000000FFFFFFFFull) |
+                         (static_cast<std::uint64_t>(appId) << 32));
+    }
+    if (g_state.settings.presenceAppIdBlob) {
+        game.set_game_data_blob(MakeAppIdBlob(appId));
+        game.set_game_extra_info(name);
+        return;
+    }
+    game.set_game_extra_info(WithAppIdSuffix(name, appId));
 }
 
 }  // namespace
@@ -183,9 +233,9 @@ std::int32_t HandleSend(const WireFrame& frame, std::uint8_t* out, std::uint32_t
     // The -showonline process keeps its real appid everywhere locally (set by
     // h_SpawnProcess, never masked); only this outbound frame is rewritten so
     // the server announces the session exactly like an -onlinefix mask: appid
-    // bits -> 480, extra_info carries "<name> | <real appid>". The suffix lets
-    // Aether-equipped friends recover the exact appid (see PersonaInject);
-    // vanilla friends still see the human name first.
+    // bits -> 480, and the real appid hidden via AnnotateMaskedEntry
+    // (game_data_blob by default — invisible to vanilla friends; suffix
+    // fallback otherwise, see docs/05 §9-§10). PersonaInject decodes both.
     // Gated by presenceShowOnlineBroadcast, independent of always_extra_info.
     bool patched = false;
 
@@ -202,20 +252,24 @@ std::int32_t HandleSend(const WireFrame& frame, std::uint8_t* out, std::uint32_t
             game->set_game_id((game->game_id() & ~constants::kGameIdAppIdMask) |
                               static_cast<std::uint64_t>(constants::kSpacewarAppId));
             if (!soName.empty()) {
-                game->set_game_extra_info(WithAppIdSuffix(soName, soSession));
+                AnnotateMaskedEntry(*game, soName, soSession, /*packGameIdHighBits=*/true);
             }
             patched = true;
+            const char* channel = g_state.settings.presenceAppIdBlob
+                                      ? "blob (game_data_blob; extra_info = plain name)"
+                                      : g_state.settings.presenceSuffixInvisible
+                                          ? "invisible suffix"
+                                          : "ascii suffix";
             AC_LOG_INFO_ONCE(kModule,
-                             "showonline: games_played %u -> 480 (extra_info '%s%s%u'); "
+                             "showonline: games_played %u -> 480 (name '%s', channel=%s); "
                              "the process stays registered under the real appid.",
-                             soSession, soName.c_str(), constants::kExtraInfoAppIdSep,
-                             soSession);
+                             soSession, soName.c_str(), channel);
         }
     }
 
     // ---- game_extra_info (always-on when enabled) --------------------------
     // Unified path: with and without -onlinefix.
-    //   OF entry (game_id 480): extra_info = "name(real) | real"
+    //   OF/masked entry (480):  AnnotateMaskedEntry (blob default + plain name)
     //   normal entry:           extra_info = name(that appid) if we care
     // Entries just rewritten by the -showonline block above (480 without an OF
     // session) are untouched here: their extra_info is already set.
@@ -241,18 +295,31 @@ std::int32_t HandleSend(const WireFrame& frame, std::uint8_t* out, std::uint32_t
             const std::string name = DisplayName(nameApp);
             if (name.empty()) continue;
 
-            // The appid suffix travels only on MASKED entries (wire 480): for
-            // real entries the CM relays the true appid by itself.
-            const std::string display =
-                (app == constants::kSpacewarAppId && g_state.settings.presenceShowOnlineBroadcast)
-                    ? WithAppIdSuffix(name, nameApp)
-                    : name;
-            if (game->has_game_extra_info() && game->game_extra_info() == display) continue;
-
-            game->set_game_extra_info(display);
-            patched = true;
-            AC_LOG_INFO_ONCE(kModule, "game_extra_info appid=%u (wire=%u) -> '%s'.",
-                             nameApp, app, display.c_str());
+            // The appid travels only on MASKED entries (wire 480) — via
+            // game_data_blob when enabled, else as a game_extra_info suffix.
+            // For real entries the CM relays the true appid by itself.
+            const bool masked = app == constants::kSpacewarAppId;
+            if (masked && g_state.settings.presenceShowOnlineBroadcast) {
+                const bool useBlob = g_state.settings.presenceAppIdBlob;
+                const std::string target = useBlob ? name : WithAppIdSuffix(name, nameApp);
+                const bool textOk = game->has_game_extra_info() &&
+                                    game->game_extra_info() == target;
+                const bool blobOk = !useBlob ||
+                                    (game->has_game_data_blob() &&
+                                     game->game_data_blob() == MakeAppIdBlob(nameApp));
+                if (textOk && blobOk) continue;  // already fully annotated
+                AnnotateMaskedEntry(*game, name, nameApp, /*packGameIdHighBits=*/false);
+                patched = true;
+                AC_LOG_INFO_ONCE(kModule, "game_extra_info appid=%u (wire=%u) -> '%s'%s.",
+                                 nameApp, app, target.c_str(),
+                                 useBlob ? "' [blob channel]" : " [suffix channel]");
+            } else {
+                if (game->has_game_extra_info() && game->game_extra_info() == name) continue;
+                game->set_game_extra_info(name);
+                patched = true;
+                AC_LOG_INFO_ONCE(kModule, "game_extra_info appid=%u (wire=%u) -> '%s'.",
+                                 nameApp, app, name.c_str());
+            }
         }
     }
 

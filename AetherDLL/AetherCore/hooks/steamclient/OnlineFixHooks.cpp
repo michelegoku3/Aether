@@ -1,6 +1,7 @@
 #include "pch.h"
 #include "hooks/steamclient/OnlineFixHooks.h"
 
+#include <algorithm>
 #include <cstring>
 #include <fstream>
 #include <regex>
@@ -208,9 +209,25 @@ bool h_SpawnProcess(void* user, const char* exe, const char* cmdLine, const char
     std::string childCmdStorage;
     const char* childCmd = cmdLine;
     if (gameId) {
+        // Refresh config before deciding: AetherDesk edits showonline_apps
+        // while Steam is running, and a cold launch may reach this hook
+        // before the next GamesPlayed frame would reload (mtime check, cheap).
+        Settings::ReloadIfModified(g_state.configPath);
+
         AppId realApp = static_cast<AppId>(*gameId & constants::kGameIdAppIdMask);
         const bool isOnlineFix = HasOnlineFixFlag(cmdLine);
-        const bool isShowOnline = HasShowOnlineFlag(cmdLine);
+        // Marker-based activation (docs/05 §11): showonline_apps in the TOML
+        // replaces the -showonline LAUNCH ARGUMENT as the source of truth. The
+        // argv token keeps working for legacy configs — and is still stripped
+        // below — but new installs must never put anything on the game's
+        // command line: strict argv / launch-option parsers hard-crash on it
+        // (Selene ~Apoptosis~ 2026-08-24, Z.A.T.O. app 4122860 same day).
+        const bool fromMarker =
+            std::find(g_state.settings.presenceShowOnlineApps.begin(),
+                      g_state.settings.presenceShowOnlineApps.end(),
+                      static_cast<std::uint32_t>(realApp)) !=
+            g_state.settings.presenceShowOnlineApps.end();
+        const bool isShowOnline = HasShowOnlineFlag(cmdLine) || fromMarker;
 
         // Aether flags are consumed HERE; hand the child process a clean argv
         // (see StripAetherFlagArgs). Empty string (never nullptr) when the tag
@@ -251,7 +268,11 @@ bool h_SpawnProcess(void* user, const char* exe, const char* cmdLine, const char
             g_state.showOnlineAppId.store(realApp);
             AC_LOG_INFO(kModule,
                         "ShowOnline session for app %u: process NOT masked; "
-                        "wire-level presence rewrite only.", realApp);
+                        "wire-level presence rewrite only (source: %s).",
+                        realApp,
+                        HasShowOnlineFlag(cmdLine)
+                            ? "launch arg (legacy; strip applied below)"
+                            : "showonline_apps marker (clean argv)");
         } else {
             g_state.onlineFixRealAppId.store(0);
             g_state.showOnlineAppId.store(0);

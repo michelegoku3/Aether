@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <string>
 #include <vector>
 
@@ -61,6 +62,23 @@ struct Settings {
     // Friend.game_name), then from the title via the configured-library
     // reverse lookup. Local view only; recovers the game icon.
     bool presenceFriendAppIdFromName = true;
+    // Sender side, primary appid channel: write game_data_blob (raw bytes,
+    // relayed as Friend.game_data_blob) instead of any visible suffix, so the
+    // name traveling in game_extra_info is the ONLY thing vanilla friends see.
+    bool presenceAppIdBlob = true;
+    // Sender side, fallback only (used when appid_blob=false): suffix form.
+    // MEASURED (2026-08-24): Steam's friends UI rasterises the U+200B +
+    // Variation Selectors channel as tofu rectangles — its font lacks those
+    // glyphs. Kept as a compatibility knob for legacy interop; default off.
+    bool presenceSuffixInvisible = false;
+
+    // Appids that activate a -showonline session WITHOUT any launch argument
+    // (docs/05-showonline-suffix-plan.md §11). AetherDesk maintains this list;
+    // via SpawnProcess the session resolves purely from config, so the
+    // game-visible launch surface stays byte-identical to a normal launch.
+    // That designs out the whole class of games that hard-crash parsing
+    // argv / launch options strictly (Selene ~Apoptosis~, Z.A.T.O.).
+    std::vector<std::uint32_t> presenceShowOnlineApps;
 
     // Parses the TOML at configPath.
     static Settings Load(const std::string& configPath);
