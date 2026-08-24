@@ -73,14 +73,36 @@ custom_game_name = ""
 
 # showonline_broadcast: for masked sessions (-showonline / -onlinefix), rewrite
 # the outbound presence so the server announces Spacewar/480 with the REAL
-# appid hidden at the tail of game_extra_info ("<name> | <appid>"). The CM
-# recycles that text into Friend.game_name, letting Aether-equipped friends
-# recover the exact appid deterministically. Vanilla friends see the whole
-# string (name readable first).
+# the real appid hidden in game_data_blob (default, docs/05 §10) — raw bytes
+# the CM recycles into Friend.game_data_blob, never rendered by any client UI:
+# vanilla friends see only the plain name from game_extra_info/game_name.
+# When appid_blob=false the appid rides instead as a suffix in game_extra_info
+# (see suffix_invisible below) for receivers on older builds.
 showonline_broadcast = true
 
+# showonline_apps: appids that activate a -showonline presence session WITHOUT
+# touching the game's command line (docs/05 §11). Preferred over the legacy
+# "-showonline" Steam launch option: some games hard-crash when ANY unknown
+# argument reaches their argv/launch-option surface (measured: Selene
+# ~Apoptosis~, Z.A.T.O. app 4122860 — both exit seconds after launch with a
+# launch argument present). AetherDesk maintains this list; the DLL re-reads
+# the file at every game launch, so no Steam restart is needed.
+showonline_apps = []
+
+# appid_blob: encode the appid into GamePlayed.game_data_blob (field 8; CM
+# recycles it as Friend.game_data_blob, field 60). Deterministic, invisible to
+# vanilla friends in EVERY sense (no tofu, no " | appid" text).
+appid_blob = true
+
+# suffix_invisible: fallback encoder when appid_blob=false. Encodes
+# " | <appid>" as U+200B + 6 Variation Selectors. MEASURED on hardware
+# 2026-08-24: Steam's friends UI renders those as tofu rectangles (its font
+# lacks the glyphs) — do not rely on it; kept for legacy interop only. With
+# false and appid_blob=false the suffix is the visible ASCII " | <appid>".
+suffix_invisible = false
+
 # friend_appid_from_name: when a friend is masked (Spacewar/480), rebuild the
-# real app id locally — first from the appid suffix above (exact), then from
-# the title via the configured-library reverse lookup. Purely local rewrite on
-# THIS pc: it restores the real game icon in your friends list.
+# real app id locally — first from game_data_blob / the appid suffix (exact),
+# then from the title via the configured-library reverse lookup. Purely local
+# rewrite on THIS pc: it restores the real game icon in your friends list.
 friend_appid_from_name = true

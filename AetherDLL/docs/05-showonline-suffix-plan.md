@@ -255,3 +255,165 @@ Aether (`-onlinefix`, `-showonline`) dalla cmdline prima di chiamare
 `o_SpawnProcess` → il figlio riceve argv pulito (log: `Stripped Aether launch flags
 from child cmdline (app <id>, was '...').`). Bonus: stessa protezione per `-onlinefix`.
 Tokenizzazione di `HasFlagArg` resa coerente (spazio+tab). Test harness 14/14.
+
+## 9. Canale invisibile per il suffisso (build `+fix4`, 2026-08-24)
+
+**Motivazione**: con il suffisso ASCII `"Nome | appid"`, gli amici SENZA Aether vedono
+l'intera stringa. Richiesta: mostrare solo il nome ai vanilla, senza perdere la ricezione
+deterministica dell'appid.
+
+**Idea proposta (braille): scartata** — i caratteri braille (U+2800–U+28FF) sono VISIBILI
+(puntini) nei font Windows. Soluzione adottata: **caratteri format Default-Ignorable**,
+invisibili per definizione Unicode in ogni renderer conforme (la friends UI CEF inclusa):
+tag = `U+200B` ZERO WIDTH SPACE (E2 80 8B) + esattamente 6 **Variation Selectors**
+U+FE00..U+FE0F (EE B8 8n), un nibble ciascuno, 24 bit big-endian. U+200B stacca la catena
+VS dall'ultimo carattere visibile (niente restyle di cifre/®/© col FE0F). Overhead 21 byte.
+
+| Lato | File | Comportamento |
+|---|---|---|
+| Mittente | `GamesPlayedModule::WithAppIdSuffix` | `presenceSuffixInvisible` (default **true**, toml `suffix_invisible`) → forma invisibile; `false` → ASCII legacy |
+| Ricevitore | `PersonaInject::AppIdFromSuffix` | prova ASCII **poi** canale invisibile → entrambe le build vecchie e nuove si intendono |
+| Config | `Settings.h/cpp`, `aethercore.example.toml` | nuovo flag `suffix_invisible` |
+
+Round-trip testati in harness (`/tmp` 22 test, ALL PASS): nomi unicode/CJK, trailing ® e
+cifre, appid con zeri iniziali, 480/0 rifiutati, tail malformato rifiutato, back-compat ASCII.
+
+**Limited residui**: (1) ricevitori Aether < `+fix4` non leggono il canale invisibile
+(fallback: match per titolo, come prima); (2) se il CM mai normalizzasse/ripulisse i DICP
+dal game_name, il suffisso invisibile svanirebbe → fallback by-name: da verificare sul campo (T3).
+
+---
+
+## 10. Canale `game_data_blob` (fix5) — appid invisibile ai vanilla, senza nessun testo
+
+### Misura sul campo che chiude §9
+Il canale a caratteri-invisibili FALLISCE live: la UI amici di Steam rasterizza
+U+FE00-FE0F come rettangoli tofu (il font usato per la riga del gioco non ha
+quei glyph — misura 2026-08-24, `all.log` + conferma utente). Qualsiasi
+encoding **testuale** dipende dal font del renderer: soluzione definitiva =
+canale **non-testuale**.
+
+### Il campo
+Il set protobuf Steam completo (verificato su LumaCore/source/proto) definisce
+| messaggio | campo | n. | tipo |
+|---|---|---|---|
+| `CMsgClientGamesPlayed.GamePlayed` | `game_data_blob` | 8 | bytes |
+| `CMsgClientPersonaState.Friend` | `game_data_blob` | 60 | bytes |
+
+Byte grezzi, MAI renderizzati da nessuna UI client (Steam stabile/beta/mobile).
+Come `game_extra_info`→`game_name`, il CM recicla `game_data_blob` nelle frame
+Persona degli amici → canale speculare ma invisibile al 100%.
+
+### Formato (9 byte)
+`"AETR"` (4) + versione `0x01` (1) + appid LE (4). Decoder rigoroso: lunghezza,
+magic, versione, 0 < appid ≤ 0xFFFFFF, appid ≠ 480. Blob estranei (altri
+giochi/emulatori che lo usano davvero) vengono scartati senza effetti.
+
+### Flusso fix5
+- **TX** (GamePlayed): `AnnotateMaskedEntry()` — con `appid_blob=true`
+  `game_extra_info` = **solo nome piano** + `game_data_blob` = blob; entrambi
+  i path (-showonline rewrite e -onlinefix annotate).
+- **RX** (PersonaState): dopo i parse suffix, prima dei fallback by-title:
+  `AppIdFromBlob(f.game_data_blob)` → `source="blob"`, displayName = testo
+  extra pulito. I vaniglia vedono **unicamente il nome**: la richiesta utente
+  ("niente `" | appid"`, niente tofu") è rispettata per definizione (il CM
+  sanitizza `extra_info` con ESATTAMENTE il nome dell'app → nessuna leak
+  testuale possibile).
+- **Policy default**: `appid_blob=true`, `suffix_invisible=false` (ritirato:
+  tofu misurato), suffix ASCII disponibile solo con `appid_blob=false` per
+  receiver legacy (<fix3 non ha nemmeno quello).
+
+### Test sul campo richiesto (punto di prova unico)
+Il comportamento del CM su `game_data_blob` è NON documentato: serve la prova
+che venga riciclato come `game_extra_info`. Build fix5, ricerca nel log RX del
+portatile:
+- `[DIAG] BUILD showonline-suffix+fix5 ... appid_blob=1` (stamp avvio)
+- riga `Patched friend <name>: gameid -> <appid> (blob)` o diagnostica
+  "blob" nella fonte (aggiunta `source="blob"`) → CM **inoltre** il blob: caso
+  OK. Il portatile vede l'appid reale.
+- **Se invece** il CM scarta il blob (presenza ricaduta su by-title/by-name):
+  si passa al piano B (`Friend.gameid` field 56 fixed64 — bit 32-63 liberi
+  quando type=mod: impacchettare appid lì; i vanilla vedono Spacewar, Aether
+  decodifica gli high bit; collisione accettabile solo con mod Spacewar
+  autentiche).
+
+### Edge cases considerati
+- **AM-sanitizzazione extra_info**: irrilevante per l'appid (non viaggia più
+  nel testo); il nome pulito arriva comunque (CM lo ricicla come game_name).
+- **Merge su persona frame**: `FILL` spec per infuse frames (proprie+amici)
+  rispetta unknown→f.relay via proto field 60 dedicato: il codice aggregatore
+  non tocca `game_nome`, il decoder legge il campo diretto.
+- **Versione futura**: byte 4 riservato; bump a `AETR\x02`→ decoder legacy
+  rifiuta e cade su by-title (graceful).
+- **Log DIAG RX**: `Patched friend ... (blob)` codifica la prova sul campo;
+  `showonline` TX logga `channel=blob`.
+
+### Misura sul campo n.2 (build fix5, 2026-08-24 16:38) — il CM non inoltra il blob
+`pc_all.log_16-42-51.txt` (TX, fix5, blob attivo su ogni gioco) e
+`portatile_all.log_16-42-27.txt` (RX, fix5): il ricevitore vede la mask
+(`PERSONA friend ...: app=480 gid=480 name='DAVE THE DIVER'`) ma il recovery
+fallisce su tutta la catena (blob incluso) → **il CM non ricicla
+`game_data_blob` nelle frame Persona**. Il canale extra_info (testo) resta
+l'unico effettivamente riciclato; da qui la vanilla-friendly update: i vanilla
+vedono il nome pulito ✓, ma gli amici Aether non recuperano più l'appid.
+
+### Piano B attivato (fix6): appid nei bit 32-63 di game_id
+- **TX**: sul path -showonline `AnnotateMaskedEntry(packGameIdHighBits=true)`
+  scrive `game_id = (480 | typeBits salvati) | (appid << 32)`. Il path
+  -onlinefix NON tocca i bit alti del gid (rischio per la discovery OF).
+  Invariato per i vanilla: la UI chiave sui bit 0-23 (480) + testo
+  extra_info; i mod bit non sono mai renderizzati.
+- **RX**: dopo il blob, prima di by-title: `gidHi = gameid >> 32` validato
+  (0 < gidHi ≤ 0xFFFFFF, ≠ 480) → `source="gameid"`.
+- **DIAG definitiva RX** (una riga per amico maskato):
+  `[DIAG] mask friend <id>: gid=<gid> gidHi=<hi> bloblen=<n> blobhead=<hex> extra='...'`
+  — decide senza ambiguità quali canali il CM inoltra realmente.
+- Rischio residuo: il CM potrebbe azzerare i mod bit nel relay
+  (`PERSONA friend ... gid=480` del test fix5 NON prova nulla: i bit alti nel
+  TX fix5 erano 0 per costruzione). Se gidHi arriva, il canale è definitivo;
+  in caso contrario la catena ricade su by-title (comportamento noto pre-fix1).
+- Harness: `/tmp/gid_tests.cpp` (8/8: rewrite 480 preserva low, hi decode,
+  rifiuto hi=0/spacewar/>24-bit).
+
+---
+
+## 11. Crash class: i giochi che muoiono sugli argomenti di avvio (marker `showonline_apps`, fix7)
+
+### Perché Selene e Z.A.T.O. crashavano
+`-showonline` era scritto nelle **Launch Options di Steam** (permanente), quindi
+presente in argv ad ogni avvio.
+- **Selene ~Apoptosis~**: parser argv rigido — usciva 3-4 s dopo TUTTI i
+  lanci con il flag (misura 2026-08-24, tre run). Fix B: strip del token in
+  `SpawnProcess` (`StripAetherFlagArgs`).
+- **Z.A.T.O.** (app 4122860): lo strip AVVIENE correttamente (log
+  `pc_all.log_17-05-07.txt` r.1219: `Stripped Aether launch flags ... ZATO.exe
+  -showonline`), il figlio riceve `'"ZATO.exe"'` pulito, eppure muore ~2,5 s
+  dopo il lancio. Conclusione: la superficie argv non era la (sola) via —
+  il gioco legge i launch options anche attraverso un'altra superficie
+  (p.es. `ISteamApps::GetLaunchCommandLine`, che Steam alimenta dalla launch
+  option REGISTRATA, non dalla argv del figlio — il nostro strip non la tocca).
+
+### Prevenzione strutturale (fix7): niente marker sulla riga di comando. MAI.
+L'unica difesa affidabile contro la CLASSE intera è non toccare nessuna
+superficie visibile al gioco:
+- **AetherDesk**: il toggle showonline scrive l'appid in
+  `[presence] showonline_apps` in **entrambe** le copie di aethercore.toml
+  (config dir locale + `<Steam>/aethercore/aethercore.toml`). Niente più
+  `-showonline` nelle Launch Options; i token legacy vengono rimossi al
+  primo toggle (migrazione in `set_aether_showonline`), e il reader
+  (`get_aether_showonline`) riconosce marker O token legacy per compat.
+  Attivare il marker rimuove anche `-onlinefix` (mutua esclusione, invariato).
+- **AetherDLL**: `h_SpawnProcess` chiama `Settings::ReloadIfModified` (mtime;
+  nessun riavvio di Steam) e attiva la sessione se `realApp` è nella lista.
+  Env block, blob, argv, workdir restano byte-identici a un lancio normale:
+  il crash "da argomenti" diventa impossibile per costruzione.
+- Log spawn indicante la sorgente: `(source: showonline_apps marker (clean
+  argv))` vs `(source: launch arg (legacy; strip applied below))`.
+
+### Verifica sul campo prevista
+Abilitare showonline su Z.A.T.O. dalla UI AetherDesk (marker), lanciare: attesa
+vita > 2,5 s (no crash). Se crasha ANCHE senza alcun argomento nelle launch
+options Steam, il problema è interno al gioco/ambiente e fuori dalla portata
+di Aether (test: mettere `-test123` qualsiasi nelle launch options SENZA
+Aether attivo — se crasha, il gioco è semplicemente fragile ai launch
+arguments, cosa nota per lui, e il marker resta la sola via sana).

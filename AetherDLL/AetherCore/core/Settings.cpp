@@ -110,6 +110,22 @@ Settings Settings::Load(const std::string& configPath) {
         if (auto v = (*presence)["friend_appid_from_name"].value<bool>()) {
             s.presenceFriendAppIdFromName = *v;
         }
+        if (auto v = (*presence)["suffix_invisible"].value<bool>()) {
+            s.presenceSuffixInvisible = *v;
+        }
+        if (auto v = (*presence)["appid_blob"].value<bool>()) {
+            s.presenceAppIdBlob = *v;
+        }
+        if (auto* arr = (*presence)["showonline_apps"].as_array()) {
+            s.presenceShowOnlineApps.clear();
+            for (const auto& item : *arr) {
+                if (auto v = item.value<std::int64_t>()) {
+                    if (*v > 0) {
+                        s.presenceShowOnlineApps.push_back(static_cast<std::uint32_t>(*v));
+                    }
+                }
+            }
+        }
     }
 
     AC_LOG_INFO("Settings",

@@ -72,6 +72,29 @@ inline constexpr char kShowOnlineFlag[] = "-showonline";
 // Format: "<display name> | <appid decimal>" — see GamesPlayedModule.
 inline constexpr char kExtraInfoAppIdSep[] = " | ";
 
+// Invisible suffix channel (docs/05-showonline-suffix-plan.md §9), the
+// vanilla-clean alternative to the ASCII suffix above: the appid is appended
+// as one U+200B ZERO WIDTH SPACE (UTF-8 E2 80 8B — also detaches the VS chain
+// from the last visible base char, so FE0F can't restyle a trailing ®© or
+// digit) plus exactly 6 Variation Selectors U+FE00..U+FE0F (UTF-8 EE B8 8n),
+// one 24-bit nibble each, big-endian. Both are Default-Ignorable format
+// characters: every compliant renderer (CEF friends UI included) draws
+// NOTHING. Aether decodes the 6 nibbles back to the exact appid.
+inline constexpr char kExtraInfoInvisibleMark[] = "\xE2\x80\x8B";  // U+200B
+inline constexpr std::size_t kExtraInfoInvisibleDigits = 6;        // 24-bit / 4
+
+// Preferred appid channel (docs/05-showonline-suffix-plan.md §10): hide the
+// appid in CMsgClientGamesPlayed.GamePlayed.game_data_blob (field 8) — a
+// raw-bytes slot the CM recycles into Friend.game_data_blob (field 60) for
+// masked sessions exactly like it recycles game_extra_info into game_name.
+// NO client UI ever renders it, so vanilla friends see just the plain name
+// (no suffix, no appid — and no font-inventory pitfalls; the
+// U+200B+VariationSelector encoding above fails there, it draws tofu).
+// Format: magic "AETR", version byte (=1), appid little-endian (4 bytes).
+inline constexpr char kAppIdBlobMagic[] = "AETR";
+inline constexpr std::uint8_t kAppIdBlobVersion = 1;
+inline constexpr std::size_t kAppIdBlobLen = 9;  // 4 + 1 + 4
+
 // GameID layout: the low 24 bits of a Steam GameID carry the AppId.
 inline constexpr std::uint64_t kGameIdAppIdMask = 0xFFFFFFull;
 
