@@ -38,4 +38,17 @@ struct WireFrame {
 // Installs the two network hooks (queued in the shared HookManager batch).
 void RegisterPacketRouter(HMODULE diversion);
 
+// ---------------------------------------------------------------------------
+// Originate a client->CM protobuf frame from our own code.
+//
+// Reuses the connection object and the CMsgProtoBufHeader (steamid +
+// client_sessionid) captured from an observed outbound frame, resetting the
+// job ids so the message reads as a fresh unsolicited client notification.
+// Used by PersonaInject to request AppInfo (PICS) records the local cache
+// lacks, so masked friend sessions can render the real icon.
+// Returns false when nothing has been captured yet, when the body is
+// oversized, or when the send hook is not installed.
+// ---------------------------------------------------------------------------
+bool SendClientFrame(std::uint32_t eMsg, const std::uint8_t* body, std::uint32_t bodyLen);
+
 }  // namespace ac::hooks

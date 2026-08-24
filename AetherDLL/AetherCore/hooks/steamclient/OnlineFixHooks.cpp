@@ -29,11 +29,11 @@ using GetAppIDForCurrentPipe_t = AppId (*)(void*);
 SpawnProcess_t o_SpawnProcess = nullptr;
 GetAppIDForCurrentPipe_t o_GetAppIDForCurrentPipe = nullptr;
 
-// Checks whether cmdLine contains "-onlinefix" as a whole argument
+// Checks whether cmdLine contains 'flag' as a whole argument
 // (space-delimited), not as a substring. strstr() would match "-onlinefix2"
 // or "--onlinefix" which is incorrect — only the exact argument triggers
-// the Spacewar/480 masking.
-static bool HasOnlineFixFlag(const char* cmdLine) {
+// the special session modes.
+static bool HasFlagArg(const char* cmdLine, const char* flag) {
     if (!cmdLine) return false;
     std::string cl(cmdLine);
     std::size_t pos = 0;
@@ -42,10 +42,18 @@ static bool HasOnlineFixFlag(const char* cmdLine) {
         if (pos >= cl.size()) break;
         std::size_t end = cl.find(' ', pos);
         if (end == std::string::npos) end = cl.size();
-        if (cl.substr(pos, end - pos) == constants::kOnlineFixFlag) return true;
+        if (cl.substr(pos, end - pos) == flag) return true;
         pos = end;
     }
     return false;
+}
+
+static bool HasOnlineFixFlag(const char* cmdLine) {
+    return HasFlagArg(cmdLine, constants::kOnlineFixFlag);
+}
+
+static bool HasShowOnlineFlag(const char* cmdLine) {
+    return HasFlagArg(cmdLine, constants::kShowOnlineFlag);
 }
 
 // ---------------------------------------------------------------------------
@@ -166,18 +174,37 @@ bool h_SpawnProcess(void* user, const char* exe, const char* cmdLine, const char
                     std::int32_t launchOption) {
     if (gameId) {
         AppId realApp = static_cast<AppId>(*gameId & constants::kGameIdAppIdMask);
-        bool isOnlineFix = HasOnlineFixFlag(cmdLine);
+        const bool isOnlineFix = HasOnlineFixFlag(cmdLine);
+        const bool isShowOnline = HasShowOnlineFlag(cmdLine);
 
         if (isOnlineFix && luadata::HasDepot(realApp)) {
+            // -onlinefix wins over -showonline when both flags are present:
+            // the full 480 process mask is a strict superset of what
+            // -showonline needs (server presence + friend notification), and
+            // keeping the mask is what real multiplayer requires.
             g_state.onlineFixRealAppId.store(realApp);
+            g_state.showOnlineAppId.store(0);
             *gameId = (*gameId & ~constants::kGameIdAppIdMask) | constants::kSpacewarAppId;
             AC_LOG_INFO(kModule, "Masked AppId %u as Spacewar (%u) for OnlineFix.",
                         realApp, constants::kSpacewarAppId);
             // Synchronise the game's language to the 480 ACF so the game
             // starts in the correct language instead of defaulting to English.
             SyncLanguageToSpacewar(realApp);
+        } else if (isShowOnline && luadata::HasDepot(realApp)) {
+            // ShowOnline session: NO process mask. The game stays registered
+            // under its real appid, so achievements, DLC, cloud, overlay,
+            // screenshots and the community hub behave exactly like a
+            // flag-less launch. Only the outgoing presence frames are
+            // rewritten to Spacewar/480 on the wire (GamesPlayedModule), so
+            // friends still get the "now playing" broadcast.
+            g_state.onlineFixRealAppId.store(0);
+            g_state.showOnlineAppId.store(realApp);
+            AC_LOG_INFO(kModule,
+                        "ShowOnline session for app %u: process NOT masked; "
+                        "wire-level presence rewrite only.", realApp);
         } else {
             g_state.onlineFixRealAppId.store(0);
+            g_state.showOnlineAppId.store(0);
         }
     }
     return o_SpawnProcess(user, exe, cmdLine, workDir, gameId, blob, blobSize, launchOption);

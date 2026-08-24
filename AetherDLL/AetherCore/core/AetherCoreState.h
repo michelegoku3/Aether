@@ -276,6 +276,17 @@ struct AetherCoreState {
     // ---- OnlineFix --------------------------------------------------------
     std::atomic<steam::AppId> onlineFixRealAppId{0};
 
+    // ---- ShowOnline --------------------------------------------------------
+    // Launch flag `-showonline`: the process is NOT masked as 480 — it stays
+    // fully registered under its real appid, so every client subsystem
+    // (achievements, DLC, cloud, overlay, screenshots, community, rich
+    // presence) behaves exactly like a flag-less launch. Only the outgoing
+    // presence frames are rewritten to Spacewar/480 on the wire by
+    // GamesPlayedModule, so the Steam server still broadcasts "now playing"
+    // to friends. 0 = no -showonline session. Written at SpawnProcess, read
+    // by the wire layer on network threads.
+    std::atomic<steam::AppId> showOnlineAppId{0};
+
     // ---- Presence runtime -------------------------------------------------
     // Wire-level friends/UI presence (GamesPlayed track + PersonaState inject).
     // Decoupled from GetAppIDForCurrentPipe / session identity (see plan

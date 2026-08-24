@@ -1,14 +1,22 @@
 #include "pch.h"
 #include "hooks/wire/PersonaInject.h"
 
+#include <atomic>
+#include <cstdio>
+#include <cstdlib>
 #include <cstring>
+#include <mutex>
 #include <string>
+#include <thread>
+#include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
-#include "scripting/LuaData.h"
 #include "core/AetherCoreState.h"
 #include "core/Constants.h"
 #include "core/Logger.h"
+#include "hooks/wire/PacketRouter.h"
+#include "scripting/LuaData.h"
 #include "utils/GameNameResolver.h"
 
 #include "steam_messages.pb.h"
@@ -28,6 +36,80 @@ CMsgClientPersonaState::Friend* FindSelf(CMsgClientPersonaState& msg, std::uint6
         if (f->has_friendid() && f->friendid() == selfId) return f;
     }
     return nullptr;
+}
+
+// The sender hides the session appid in game_extra_info; the CM recycles that
+// text into Friend.game_name for masked sessions (measured). Some clients
+// also ship it as a rich-presence KV — keep both read paths.
+std::string ExtraInfoKV(const CMsgClientPersonaState::Friend& f) {
+    for (const auto& kv : f.rich_presence()) {
+        if (kv.has_key() && kv.key() == "game_extra_info" && kv.has_value()) {
+            return kv.value();
+        }
+    }
+    return {};
+}
+
+// Parses the "<name> | <appid>" marker appended by Aether senders
+// (kExtraInfoAppIdSep). Returns the appid and writes the clean display name
+// back to nameOut; returns 0 when the text carries no valid suffix.
+steam::AppId AppIdFromSuffix(const std::string& text, std::string& nameOut) {
+    nameOut = text;
+    const std::string sep = constants::kExtraInfoAppIdSep;
+    const std::size_t pos = text.rfind(sep);
+    if (pos == std::string::npos) return 0;
+
+    const std::string tail = text.substr(pos + sep.size());
+    if (tail.empty() || tail.size() > 8) return 0;
+    for (const char c : tail) {
+        if (c < '0' || c > '9') return 0;
+    }
+    const unsigned long v = std::strtoul(tail.c_str(), nullptr, 10);
+    if (v == 0 || v > constants::kGameIdAppIdMask || v == constants::kSpacewarAppId) {
+        return 0;
+    }
+    nameOut = text.substr(0, pos);
+    return static_cast<steam::AppId>(v);
+}
+
+// The friend-list icon is keyed on the appid inside the LOCAL AppInfo cache:
+// when that cache cannot name the app at all the UI has nothing to draw, so
+// ask the CM for the PICS record (product metadata is public, not
+// license-gated; the response lands on the stock path and fills the cache).
+void EnsureAppInfo(steam::AppId appId) {
+    static std::mutex s_mutex;
+    static std::unordered_set<steam::AppId> s_requested;
+    {
+        std::lock_guard<std::mutex> lk(s_mutex);
+        if (!s_requested.insert(appId).second) return;  // one-shot per process
+    }
+
+    CMsgClientPICSProductInfoRequest req;
+    auto* app = req.add_apps();
+    app->set_appid(appId);
+    std::string body;
+    if (!req.SerializeToString(&body)) {
+        AC_LOG_WARN(kModule, "PICS appinfo request serialize failed for app %u.", appId);
+        return;
+    }
+    AC_LOG_INFO(kModule,
+                "[DIAG] app %u missing from local AppInfo cache; requesting PICS "
+                "product info (icon/title fill).",
+                appId);
+
+    // Deferred, off the RecvPkt callstack: SendClientFrame re-enters the raw
+    // BBuildAndAsyncSendFrame; doing that synchronously from inside the RecvPkt
+    // callback is an unproven path on this strict a build. A short detached
+    // worker keeps the wire callback clean; the SendClientFrame INFO line
+    // brackets the attempt exactly if it ever faults.
+    std::thread([body = std::move(body), appId]() mutable {
+        Sleep(50);
+        AC_LOG_TRACE(kModule, "[DIAG] PICS appinfo send begin for app %u.", appId);
+        SendClientFrame(constants::emsg::kClientPICSProductInfoRequest,
+                        reinterpret_cast<const std::uint8_t*>(body.data()),
+                        static_cast<std::uint32_t>(body.size()));
+        AC_LOG_TRACE(kModule, "[DIAG] PICS appinfo send done for app %u.", appId);
+    }).detach();
 }
 
 bool BuildInjectLocked(steam::AppId appId) {
@@ -136,8 +218,6 @@ std::int32_t OnPersonaStateRecv(const WireFrame& frame, std::uint8_t* out, std::
     bool changed = false;
     steam::AppId playing = 0;
     std::uint64_t selfId = 0;
-    const bool ofPersonaPatch = g_state.settings.presenceOnlineFixPersonaPatch;
-    const steam::AppId ofReal = g_state.onlineFixRealAppId.load();
 
     {
         std::lock_guard<std::mutex> lock(g_state.presence.mutex);
@@ -195,21 +275,171 @@ std::int32_t OnPersonaStateRecv(const WireFrame& frame, std::uint8_t* out, std::
         }
     }
 
-    // OnlineFix: patch any friend entry still showing Spacewar (local view).
-    if (ofPersonaPatch && ofReal != 0 && luadata::IsConfigured(ofReal)) {
-        const std::string name = gamename::ForApp(ofReal);
+    // [DIAG] SERVER truth, pre-patch: the PersonaState the CM returns for OUR
+    // own SteamID is exactly what gets broadcast to friends. app=<real> would
+    // mean the CM accepts the id; app=480 is the masked baseline; the KV dump
+    // answers whether game_extra_info also arrives as a rich-presence KV.
+    {
+        static std::atomic<std::uint32_t> s_lastServerApp{0xFFFFFFFFu};
+        if (auto* srv = FindSelf(msg, selfId)) {
+            const std::uint32_t app = srv->game_played_app_id();
+            if (s_lastServerApp.exchange(app) != app) {
+                AC_LOG_INFO(kModule,
+                            "[DIAG] SERVER self-push (pre-patch): app=%u gameid=%llu "
+                            "name='%s' rp_kvs=%d status_flags=0x%X",
+                            app, static_cast<unsigned long long>(srv->gameid()),
+                            srv->has_game_name() ? srv->game_name().c_str() : "",
+                            srv->rich_presence_size(), msg.status_flags());
+            }
+            for (int k = 0; k < srv->rich_presence_size(); ++k) {
+                const auto& kv = srv->rich_presence(k);
+                AC_LOG_INFO_ONCE(kModule, "[DIAG] SERVER rp kv: '%s' = '%s'",
+                                 kv.key().c_str(), kv.value().c_str());
+            }
+        }
+
+        // [DIAG] flight-recorder: per OGNI persona frame, logga ogni friend che
+        // sta giocando (appid reale o 480), deduplicato solo sul cambio di stato.
+        // E' l'unico modo di vedere QUANDO una voce amico (es. 1703340 reale)
+        // raggiunge questa macchina: se la riga manca, il CM non l'ha mai
+        // consegnata (o e' arrivata dentro un Multi, vedi trace eMsg=1).
+        {
+            static std::mutex s_friendDumpMutex;
+            static std::unordered_map<std::uint64_t, std::string> s_friendState;
+            std::lock_guard<std::mutex> lk(s_friendDumpMutex);
+            AC_LOG_TRACE(kModule, "[DIAG] PERSONA frame: friends=%d bLen=%u",
+                         msg.friends_size(), frame.bodyLen);
+            for (int i = 0; i < msg.friends_size(); ++i) {
+                const auto& f = msg.friends(i);
+                const std::uint32_t app = f.game_played_app_id();
+                const std::uint64_t gid = f.gameid();
+                if (app == 0 && gid == 0 && !f.has_game_name()) continue;
+                if (!f.has_friendid()) continue;
+                const std::uint64_t fid = f.friendid();
+                char state[256];
+                std::snprintf(state, sizeof(state), "app=%u gid=%llu name='%s' kvs=%d", app,
+                              static_cast<unsigned long long>(gid),
+                              f.has_game_name() ? f.game_name().c_str() : "",
+                              f.rich_presence_size());
+                const bool isSelf = selfId != 0 && fid == selfId;
+                auto it = s_friendState.find(fid);
+                if (it == s_friendState.end() || it->second != state) {
+                    s_friendState[fid] = state;
+                    AC_LOG_INFO(kModule, "[DIAG] PERSONA friend %llu (%s): %s",
+                                static_cast<unsigned long long>(fid), isSelf ? "SELF" : "FRIEND",
+                                state);
+                }
+            }
+        }
+        for (int i = 0; i < msg.friends_size(); ++i) {
+            const auto& f = msg.friends(i);
+            if (selfId != 0 && f.has_friendid() && f.friendid() == selfId) continue;
+            if (f.rich_presence_size() == 0) continue;
+            for (int k = 0; k < f.rich_presence_size(); ++k) {
+                const auto& kv = f.rich_presence(k);
+                AC_LOG_INFO_ONCE(kModule, "[DIAG] FRIEND %llu rp kv: '%s' = '%s' (app=%u)",
+                                 static_cast<unsigned long long>(f.friendid()),
+                                 kv.key().c_str(), kv.value().c_str(),
+                                 f.game_played_app_id());
+            }
+        }
+    }
+
+    // ---- Friend entry recovery (480 -> real appid) -------------------------
+    // The CM never broadcasts an appid the sender has no license for
+    // (measured, docs/04-showonline-plan.md). What it DOES broadcast reliably
+    // is game_extra_info, recycled into Friend.game_name. Aether senders hide
+    // the exact appid in that text ("<name> | <appid>"): recover it here, on
+    // the viewer's machine — exact, language-independent, no shared .lua
+    // needed. Fallbacks: configured-library title match, then the local
+    // -onlinefix session id (pre-suffix behaviour).
+    {
+        const steam::AppId ofReal = g_state.onlineFixRealAppId.load();
+        const bool legacyPatch = g_state.settings.presenceOnlineFixPersonaPatch &&
+                                 ofReal != 0 && luadata::IsConfigured(ofReal);
+        std::vector<steam::AppId> picsQueue;
+
         for (int i = 0; i < msg.friends_size(); ++i) {
             auto* f = msg.mutable_friends(i);
             if (static_cast<steam::AppId>(f->game_played_app_id()) != constants::kSpacewarAppId) {
                 continue;
             }
-            f->set_game_played_app_id(ofReal);
-            f->set_gameid(static_cast<std::uint64_t>(ofReal));
-            if (!name.empty()) f->set_game_name(name);
+            // Never touch our own entry: the local self-view belongs to
+            // presenceInjectLocal, and rewriting the appid the server believes
+            // WE are running can tear down the Spacewar session that backs
+            // -onlinefix (measured regression, see docs/04-showonline-plan.md).
+            if (selfId != 0 && f->has_friendid() && f->friendid() == selfId) {
+                AC_LOG_INFO_ONCE(kModule,
+                                 "[DIAG] self entry arrived as 480; left untouched "
+                                 "(session bookkeeping).");
+                continue;
+            }
+
+            std::string displayName;
+            steam::AppId real = 0;
+            const char* source = "extra_info";
+
+            std::string extra = ExtraInfoKV(*f);
+            if (extra.empty() && f->has_game_name()) extra = f->game_name();
+            real = AppIdFromSuffix(extra, displayName);
+
+            if (real == 0 && g_state.settings.presenceFriendAppIdFromName &&
+                f->has_game_name() && !f->game_name().empty()) {
+                if (const steam::AppId byName = gamename::ResolveAppIdByName(f->game_name())) {
+                    if (byName != constants::kSpacewarAppId) {
+                        real = byName;
+                        displayName = f->game_name();
+                        source = "by name";
+                    }
+                }
+            }
+
+            if (real == 0 && legacyPatch) {
+                real = ofReal;
+                displayName.clear();
+                source = "local session";
+            }
+
+            if (real == 0) {
+                AC_LOG_DEBUG_ONCE(kModule,
+                                  "Friend %llu shows 480 with no recoverable appid "
+                                  "(no suffix, no title match, no local session).",
+                                  static_cast<unsigned long long>(f->friendid()));
+                continue;
+            }
+
+            // Display name: the exact text relayed in extra_info comes first.
+            // It is minted by the sender from ITS own local AppInfo cache
+            // (fresh, already localized), so it beats re-resolving on this
+            // machine. The legacy "local session" source keeps the live cache
+            // lookup: that app is installed HERE, and probing the cache for a
+            // locally-known appid is the path measured safe. Probing for an
+            // appid this machine never had faults inside steamclient (measured
+            // crash, 12:57 log) — never do it on the recovery path.
+            std::string name = displayName;
+            if (name.empty() && source == "local session") {
+                name = gamename::ForApp(real);
+            }
+
+            f->set_game_played_app_id(real);
+            f->set_gameid(static_cast<std::uint64_t>(real));
+            if (!name.empty()) {
+                f->set_game_name(name);
+            } else {
+                f->clear_game_name();
+            }
             changed = true;
-            AC_LOG_INFO_ONCE(kModule, "Patched friend %llu: 480 -> %u.",
-                        static_cast<unsigned long long>(f->friendid()), ofReal);
+            AC_LOG_INFO_ONCE(kModule, "Patched friend %llu: 480 -> %u (%s).",
+                             static_cast<unsigned long long>(f->friendid()), real, source);
+
+            // The icon needs the FULL AppInfo record (clienticon), not just the
+            // title: prime the local cache with one PICS request per appid per
+            // process (see EnsureAppInfo). Skipping it for the local-session
+            // source when the cache already knows the name (record present).
+            if (source != "local session" || name.empty()) picsQueue.push_back(real);
         }
+
+        for (const steam::AppId want : picsQueue) EnsureAppInfo(want);
     }
 
     if (!changed) return kNoChange;

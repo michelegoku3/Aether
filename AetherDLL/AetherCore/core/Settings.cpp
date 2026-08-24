@@ -104,6 +104,12 @@ Settings Settings::Load(const std::string& configPath) {
         if (auto v = (*presence)["custom_game_name"].value<std::string>()) {
             s.presenceCustomGameName = *v;
         }
+        if (auto v = (*presence)["showonline_broadcast"].value<bool>()) {
+            s.presenceShowOnlineBroadcast = *v;
+        }
+        if (auto v = (*presence)["friend_appid_from_name"].value<bool>()) {
+            s.presenceFriendAppIdFromName = *v;
+        }
     }
 
     AC_LOG_INFO("Settings",

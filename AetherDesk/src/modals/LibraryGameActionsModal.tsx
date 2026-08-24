@@ -42,6 +42,7 @@ export const LibraryGameActionsModal = ({
   const [onlineBusy, setOnlineBusy] = useState(false);
   const [aetherOnlinefix, setAetherOnlinefix] = useState(false);
   const [uco2Online, setUco2Online] = useState(false);
+  const [showOnline, setShowOnline] = useState(false);
   const disabled = isProcessing || isBusy || onlineBusy;
 
   const refreshUpdateState = async () => {
@@ -110,14 +111,16 @@ export const LibraryGameActionsModal = ({
 
   const refreshOnlineStates = async () => {
     try {
-      // Parallel check: Aether via LaunchOptions (-onlinefix), UCO2 via the
-      // presence of union-crax.ini next to the game executable.
-      const [aetherOn, uco2On] = await Promise.all([
+      // Parallel check: Aether via LaunchOptions (-onlinefix / -showonline),
+      // UCO2 via the presence of union-crax.ini next to the game executable.
+      const [aetherOn, uco2On, showOn] = await Promise.all([
         invoke<boolean>('get_aether_onlinefix', { appId: Number(game.appId) }),
         invoke<boolean>('is_uco2_active', { appId: Number(game.appId) }),
+        invoke<boolean>('get_aether_showonline', { appId: Number(game.appId) }),
       ]);
       setAetherOnlinefix(Boolean(aetherOn));
       setUco2Online(Boolean(uco2On));
+      setShowOnline(Boolean(showOn));
     } catch {
       // Keep the previous state on failure.
     }
@@ -140,9 +143,32 @@ export const LibraryGameActionsModal = ({
       setAetherOnlinefix(nextEnabled);
       if (nextEnabled) {
         setUco2Online(false);
+        setShowOnline(false);
       }
     } catch (err: any) {
       onStatus(`Failed to toggle Aether onlinefix: ${err}`, 'error');
+    } finally {
+      setOnlineBusy(false);
+    }
+  };
+
+  const handleToggleShowOnline = async () => {
+    setOnlineBusy(true);
+    try {
+      const nextEnabled = !showOnline;
+      // -showonline and -onlinefix are mutually exclusive; the backend strips
+      // the other token automatically when one is enabled.
+      const result: string = await invoke('set_aether_showonline', {
+        appId: Number(game.appId),
+        enabled: nextEnabled,
+      });
+      onStatus(result, 'success');
+      setShowOnline(nextEnabled);
+      if (nextEnabled) {
+        setAetherOnlinefix(false);
+      }
+    } catch (err: any) {
+      onStatus(`Failed to toggle Show Online: ${err}`, 'error');
     } finally {
       setOnlineBusy(false);
     }
@@ -221,6 +247,24 @@ export const LibraryGameActionsModal = ({
                 disabled={disabled || !game.installed}
               >
                 ONLINE
+              </button>
+            </span>
+            <span
+              className="game-action-btn-wrap"
+              title={
+                !game.installed
+                  ? 'Show Online requires the game to be installed in Steam first'
+                  : showOnline
+                    ? 'Stop showing this game to your Steam friends (singleplayer presence)'
+                    : 'Show your Steam friends what you are playing (singleplayer, no online features)'
+              }
+            >
+              <button
+                className="game-action-btn"
+                onClick={handleToggleShowOnline}
+                disabled={disabled || onlineBusy || !game.installed}
+              >
+                {showOnline ? 'Disable Show Online' : 'Show Online'}
               </button>
             </span>
             <span

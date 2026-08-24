@@ -60,6 +60,18 @@ inline constexpr std::uint32_t kSpacewarAppId = 480;
 // OnlineFix: the launch flag that opts a title into the 480-masking path.
 inline constexpr char kOnlineFixFlag[] = "-onlinefix";
 
+// ShowOnline: launch flag that advertises the game to friends as "now
+// playing" (Spacewar/480 on the SERVER-side presence only) WITHOUT any
+// process masking — the client keeps the real appid everywhere else. Handled
+// by the wire-level rewrite inside hooks/wire/GamesPlayedModule.
+inline constexpr char kShowOnlineFlag[] = "-showonline";
+
+// Suffix appended to game_extra_info for masked (480) sessions: it travels
+// server-side inside Friend.game_name and lets Aether-equipped friends
+// recover the exact real appid (no title guessing, no shared .lua).
+// Format: "<display name> | <appid decimal>" — see GamesPlayedModule.
+inline constexpr char kExtraInfoAppIdSep[] = " | ";
+
 // GameID layout: the low 24 bits of a Steam GameID carry the AppId.
 inline constexpr std::uint64_t kGameIdAppIdMask = 0xFFFFFFull;
 

@@ -88,6 +88,14 @@ message CMsgClientGamesPlayed {
         optional uint64 steam_id_gs = 1;
         optional fixed64 game_id = 2;
         optional string game_extra_info = 7;
+
+        // Field numbers verified against SteamKit / SteamDatabase Protobufs.
+        // Read-only for now: the ShowOnline diagnostics print them to see what
+        // identity the client really advertises; owner_id is kept for the
+        // Family-Sharing fallback if we ever go that route.
+        optional uint32 process_id = 9;
+        optional uint32 game_flags = 11;
+        optional uint32 owner_id = 12;
     }
     repeated GamePlayed games_played = 1;
 }

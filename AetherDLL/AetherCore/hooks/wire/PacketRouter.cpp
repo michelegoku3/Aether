@@ -4,7 +4,10 @@
 #include <array>
 #include <cstdint>
 #include <cstring>
+#include <mutex>
 #include <string>
+#include <unordered_map>
+#include <utility>
 #include <vector>
 
 #include "core/AetherCoreState.h"
@@ -87,8 +90,57 @@ namespace ac::hooks {
             return true;
         }
 
+        bool ServiceJobIdSource(const WireFrame& f, std::uint64_t& out) {
+            CMsgProtoBufHeader hdr;
+            if (!hdr.ParseFromArray(f.header, static_cast<int>(f.headerLen))) return false;
+            if (!hdr.has_jobid_source()) return false;
+            out = hdr.jobid_source();
+            return true;
+        }
+
+        // [DIAG]/flight-recorder: correlazione jobid_source -> target_job_name
+        // sui send 151, risolta jobid_target -> nome sui recv 147 (le risposte
+        // non portano il nome del servizio, solo il job id della richiesta).
+        std::mutex s_jobNameMutex;
+        std::unordered_map<std::uint64_t, std::string> s_jobNames;
+
+        void TrackServiceJob(const WireFrame& f) {
+            std::uint64_t id = 0;
+            if (!ServiceJobIdSource(f, id)) return;
+            std::string name;
+            if (!ServiceJobName(f, name)) return;
+            std::lock_guard<std::mutex> lk(s_jobNameMutex);
+            if (s_jobNames.size() > 512) s_jobNames.erase(s_jobNames.begin());
+            s_jobNames.emplace(id, std::move(name));
+        }
+
+        std::string ResolveServiceJob(std::uint64_t jobIdTarget) {
+            std::lock_guard<std::mutex> lk(s_jobNameMutex);
+            auto it = s_jobNames.find(jobIdTarget);
+            if (it == s_jobNames.end()) return {};
+            std::string out = std::move(it->second);
+            s_jobNames.erase(it);
+            return out;
+        }
+
+        // [DIAG] snapshot eresult+jobid_target dell'header di una risposta (147).
+        std::int32_t RecvResponseMeta(const WireFrame& f, std::uint64_t* jobIdTarget) {
+            CMsgProtoBufHeader hdr;
+            if (!hdr.ParseFromArray(f.header, static_cast<int>(f.headerLen))) return -1;
+            if (jobIdTarget && hdr.has_jobid_target()) *jobIdTarget = hdr.jobid_target();
+            return hdr.has_eresult() ? hdr.eresult() : -1;
+        }
+
+        // Trace per-frame bidirezionale (flight-recorder): un frame = una riga,
+        // cosi' l'ultima riga del log e' SEMPRE l'ultimo frame prima del crash.
+        void TraceFrame(const char* dir, const WireFrame& f) {
+            AC_LOG_TRACE(kModule, "%s eMsg=%u hLen=%u bLen=%u", dir, f.eMsg, f.headerLen,
+                         f.bodyLen);
+        }
+
         std::int32_t DispatchSend(const WireFrame& f) {
             EnsureScratch();
+            TraceFrame("send", f);
             switch (f.eMsg) {
             case emsg::kClientPICSProductInfoRequest:
                 return AccessToken::HandleSend(f, t_scratchBody.data(), kWireMaxBodyBytes);
@@ -104,6 +156,7 @@ namespace ac::hooks {
             case emsg::kServiceMethodCallFromClient: {
                 std::string job;
                 if (ServiceJobName(f, job)) {
+                    TrackServiceJob(f);  // [DIAG] flight-recorder jobid->nome
                     std::uint32_t h = FnvHash(job.c_str());
                     if (h == job_hash::kGetManifestRequestCode) {
                         return ManifestBridge::HandleSend(f);
@@ -115,7 +168,6 @@ namespace ac::hooks {
                 return kNoChange;
             }
             default:
-                AC_LOG_TRACE_ONCE(kModule, "Pass-through send frame eMsg=%u bodyLen=%u.", f.eMsg, f.bodyLen);
                 return kNoChange;
             }
         }
@@ -127,6 +179,13 @@ namespace ac::hooks {
         BBuildAndAsyncSendFrame_t o_BBuildAndAsyncSendFrame = nullptr;
         RecvPkt_t o_RecvPkt = nullptr;
 
+        // Connection + proto header captured from real outbound traffic, so
+        // SendClientFrame can originate a frame on the same socket/session
+        // (used to ask the CM for AppInfo records the local cache lacks).
+        std::mutex s_originMutex;
+        void* s_originObj = nullptr;
+        std::vector<std::uint8_t> s_originHeader;
+
         bool h_BBuildAndAsyncSendFrame(void* obj, steam::EWebSocketOpCode opcode, std::uint8_t* data,
             std::uint32_t len) {
             if (opcode != steam::k_eWebSocketOpCode_Binary) {
@@ -135,6 +194,11 @@ namespace ac::hooks {
 
             WireFrame f;
             if (DecodeFrame(data, len, f)) {
+                if (f.headerLen > 0 && f.headerLen <= kWireMaxHeaderBytes) {
+                    std::lock_guard<std::mutex> lk(s_originMutex);
+                    s_originObj = obj;
+                    s_originHeader.assign(f.header, f.header + f.headerLen);
+                }
                 std::int32_t newBodyLen = DispatchSend(f);
                 if (newBodyLen >= 0) {
                     const std::uint32_t newSize = sizeof(MsgHdr) + f.headerLen + newBodyLen;
@@ -155,8 +219,20 @@ namespace ac::hooks {
         std::int32_t DispatchRecv(const WireFrame& f) {
             EnsureScratch();
             t_recvHeaderLen = kNoChange;
+            TraceFrame("recv", f);
             switch (f.eMsg) {
             case emsg::kServiceMethodResponse: {
+                // [DIAG] flight-recorder: OGGI una riga per OGNI risposta
+                // servizio, col nome ricostruito via jobid tracciato al send.
+                {
+                    std::uint64_t jt = 0;
+                    const std::int32_t er = RecvResponseMeta(f, &jt);
+                    const std::string jname = jt ? ResolveServiceJob(jt) : std::string();
+                    AC_LOG_TRACE(kModule,
+                                 "[DIAG] service recv name='%s' jobid=%llu eresult=%d bLen=%u",
+                                 jname.empty() ? "?" : jname.c_str(),
+                                 static_cast<unsigned long long>(jt), er, f.bodyLen);
+                }
                 std::string job;
                 if (!ServiceJobName(f, job)) return kNoChange;
                 std::uint32_t h = FnvHash(job.c_str());
@@ -185,11 +261,17 @@ namespace ac::hooks {
                 return EticketModule::HandleRecv(f, t_scratchBody.data(), kWireMaxBodyBytes);
             case emsg::kClientSharedLibraryLockStatus:
             case emsg::kClientSharedLibraryStopPlaying:
+                // [DIAG] These are the messages with which the CM orders the
+                // client to stop playing: if a masked (Spacewar) session dies,
+                // this line tells whether the server ordered it or the local
+                // client decided on its own.
+                AC_LOG_INFO(kModule,
+                            "[DIAG] SharedLibrary msg eMsg=%u bodyLen=%u suppress=%d",
+                            f.eMsg, f.bodyLen, FamilySharing::ShouldSuppress() ? 1 : 0);
                 return FamilySharing::ShouldSuppress()
                     ? FamilySharing::ClearBody()
                     : kNoChange;
             default:
-                AC_LOG_TRACE_ONCE(kModule, "Pass-through recv frame eMsg=%u bodyLen=%u.", f.eMsg, f.bodyLen);
                 return kNoChange;
             }
         }
@@ -197,8 +279,22 @@ namespace ac::hooks {
         void* h_RecvPkt(void* self, CNetPacket* packet) {
             if (packet) {
                 WireFrame f;
-                if (DecodeFrame(packet->data, packet->dataLen, f) && f.eMsg != emsg::kMulti) {
-                    std::int32_t newBodyLen = DispatchRecv(f);
+                if (DecodeFrame(packet->data, packet->dataLen, f)) {
+                    if (f.eMsg == emsg::kMulti) {
+                        // [DIAG] flight-recorder: i frame Multi non entrano nel
+                        // dispatch, ma devono restare visibili nel trace (con la
+                        // firma dei primi byte del body, per riconoscere lo zlib
+                        // di un payload compresso se servira' decodificarli).
+                        static constexpr char kHex[] = "0123456789ABCDEF";
+                        char head[8 * 2 + 1] = {};
+                        const std::uint32_t n = f.bodyLen < 8 ? f.bodyLen : 8;
+                        for (std::uint32_t i = 0; i < n; ++i) {
+                            head[i * 2] = kHex[(f.body[i] >> 4) & 0xF];
+                            head[i * 2 + 1] = kHex[f.body[i] & 0xF];
+                        }
+                        AC_LOG_TRACE(kModule, "recv eMsg=1 (Multi) bLen=%u head8=%s", f.bodyLen, head);
+                    } else {
+                    const std::int32_t newBodyLen = DispatchRecv(f);
 
                     if (t_recvHeaderLen >= 0 && newBodyLen >= 0) {
                         const std::uint32_t newSize = sizeof(MsgHdr) + t_recvHeaderLen + newBodyLen;
@@ -229,6 +325,7 @@ namespace ac::hooks {
                             packet->dataLen = newSize;
                         }
                     }
+                    }
                 }
 
                 PersonaInject::TryDeliver(self, packet, o_RecvPkt);
@@ -238,12 +335,79 @@ namespace ac::hooks {
 
     }  // namespace
 
+    bool SendClientFrame(std::uint32_t eMsg, const std::uint8_t* body, std::uint32_t bodyLen) {
+        if (!o_BBuildAndAsyncSendFrame) {
+            AC_LOG_WARN(kModule, "SendClientFrame: send hook not installed.");
+            return false;
+        }
+        if (bodyLen > kWireMaxBodyBytes) return false;
+
+        void* obj = nullptr;
+        std::vector<std::uint8_t> hdrBytes;
+        {
+            std::lock_guard<std::mutex> lk(s_originMutex);
+            obj = s_originObj;
+            hdrBytes = s_originHeader;
+        }
+        if (!obj || hdrBytes.empty()) {
+            AC_LOG_WARN(kModule, "SendClientFrame: no captured connection yet.");
+            return false;
+        }
+
+        // Re-serialize the captured header with fresh job ids: keep steamid and
+        // client_sessionid, drop any correlation belonging to the borrowed message.
+        CMsgProtoBufHeader ph;
+        if (!ph.ParseFromArray(hdrBytes.data(), static_cast<int>(hdrBytes.size()))) {
+            AC_LOG_WARN(kModule, "SendClientFrame: captured header unparseable.");
+            return false;
+        }
+        ph.clear_jobid_source();
+        ph.clear_jobid_target();
+        ph.clear_target_job_name();
+        ph.clear_eresult();
+
+        std::string hdrOut;
+        if (!ph.SerializeToString(&hdrOut) || hdrOut.size() > kWireMaxHeaderBytes) return false;
+
+        const std::uint32_t total =
+            sizeof(MsgHdr) + static_cast<std::uint32_t>(hdrOut.size()) + bodyLen;
+        std::vector<std::uint8_t> frame(total);
+        auto* mh = reinterpret_cast<MsgHdr*>(frame.data());
+        mh->eMsg = eMsg | kMsgHdrProtoFlag;
+        mh->headerLength = static_cast<std::uint32_t>(hdrOut.size());
+        std::memcpy(frame.data() + sizeof(MsgHdr), hdrOut.data(), hdrOut.size());
+        if (bodyLen > 0) {
+            std::memcpy(frame.data() + sizeof(MsgHdr) + hdrOut.size(), body, bodyLen);
+        }
+
+        const bool ok = o_BBuildAndAsyncSendFrame(obj, steam::k_eWebSocketOpCode_Binary,
+                                                  frame.data(), total);
+        AC_LOG_INFO(kModule,
+                    "[DIAG] SendClientFrame eMsg=%u hdr=%zu body=%u steamid=%llu sess=%d -> %s",
+                    eMsg, hdrOut.size(), bodyLen,
+                    static_cast<unsigned long long>(ph.steamid()), ph.client_sessionid(),
+                    ok ? "ok" : "FAILED");
+        return ok;
+    }
+
     void RegisterPacketRouter(HMODULE diversion) {
         if (!diversion) {
             AC_LOG_ERROR(kModule, "Diversion module not loaded.");
             return;
         }
         AC_LOG_INFO(kModule, "Registering packet router.");
+
+        // Build/config signature: Settings::Load runs BEFORE the logger is
+        // up, so this stamp is the only reliable proof of WHICH build is
+        // running. If it never appears in the log, the loaded DLL is not the
+        // patched build (the updater reports the same version for both).
+        AC_LOG_INFO(kModule,
+                    "[DIAG] BUILD showonline-suffix+fix2 | inject_local=%d always_extra_info=%d "
+                    "showonline_broadcast=%d friend_appid_from_name=%d",
+                    g_state.settings.presenceInjectLocal ? 1 : 0,
+                    g_state.settings.presenceAlwaysExtraInfo ? 1 : 0,
+                    g_state.settings.presenceShowOnlineBroadcast ? 1 : 0,
+                    g_state.settings.presenceFriendAppIdFromName ? 1 : 0);
 
         g_state.hookManager.TryHook("BBuildAndAsyncSendFrame", "steamclient", diversion,
             o_BBuildAndAsyncSendFrame, h_BBuildAndAsyncSendFrame);
