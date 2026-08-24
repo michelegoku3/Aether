@@ -478,3 +478,108 @@ masking locale. Ma:
    toggle UI) o a mano `default_mode = "showonline"` nel toml.
 4. Verifica log: stamp `showonline-suffix+fix8`; alla spawn riga con
    `(source: showonline_apps|onlinefix_apps|default_mode=showonline|...)`.
+
+---
+
+## 13. UX Desk integrata (fix9): policy default, popup 4 vie, custom name, Steam monitor
+
+- **Bundled defaults**: `AetherDesk/src-tauri/assets/defaults/aethercore.toml`
+  contiene ora `[presence]` con `default_mode = "showonline"` + 3 array vuoti
+  (nuove installazioni). `core/migration::ensure_aethercore_bridge` chiama
+  `presence_config::ensure_defaults` ad ogni avvio → chiavi mancanti inserite
+  su installazioni esistenti, scelte utente MAI toccate (test 8/8).
+- **Modulo condiviso**: `core/presence_config.rs` raccoglie TUTTA la
+  persistenza TOML [presence] (estratta dai comandi: DRY/separation).
+- **Popup ONLINE = segmented control**: None (= exclude_apps, hard opt-out) /
+  Show Online / Online Aether (radio, mutua esclusione; la modalità attiva è
+  marcata ACTIVE, clic sull'attiva = no-op) + UCO2 toggle ortogonale dal suo
+  pannello. Layout: **1 colonna × 4 righe** (lista verticale full-width,
+  titolo fisso 110px + hint a destra). Regole: Online Aether bloccato se UCO2
+  deployato; UCO2 bloccato se Online Aether attivo. La modalità mostrata è
+  EFFETTIVA (fallback su
+  default_mode quando l'app non è in nessuna lista). Rilevazioni: 4 invoke di
+  stato + stato UCO2 dal pannello canonico in parallelo.
+
+### Riscontri dal test live di fix9 (24/08) → correzioni applicate
+
+- **UCO2 "sempre attivo"**: il gating del popup usava `is_uco2_active`, un file
+  probe su `union-crax.ini` — file di RUNTIME che UCO2 lascia su disco anche
+  dopo Disable/undeploy → falso positivo perenne che bloccava Online Aether.
+  Sorgente di verità ora = `get_online_status` (OnlineEngine::status: record in
+  uc_online2.json + ini/dll su disco; `broken`/non configurato = non attivo),
+  la stessa vista del pannello Enable/Disable. Fix in
+  `LibraryGameActionsModal.refreshOnlineStates` (invoke tipizzato
+  `OnlineStatus` importato da `./OnlinePanel`, tsc strict pulito).
+- **Etichetta Start/Restart Steam stagna**: monitor rafforzato — log
+  `lifecycle` a startup e ad ogni transizione di stato (diagnosi via
+  desk.log), `mark(false)`/`mark(true)` sincroni dentro `restart_steam` dopo
+  kill/spawn riusciti (UI reattiva subito; il poller 2,5 s conferma/corregge),
+  re-read difensivo di `is_steam_running` 2 s dopo il click in App.tsx.
+  Wiring evento verificato end-to-end (App.tsx r.219 → Sidebar).
+- **Settings**: switch "Show every game to friends by default" spostato sotto
+  "Enable test updates", sopra "Custom game display name" (ordine richiesto).
+- **Scelta presenza ESCLUSIVA del popup ONLINE**: rimosso dal popup Modify il
+  bottone diretto "Show Online/Disable Show Online" (e il suo handler — dead
+  code): la presenza si decide solo dal popup ONLINE.
+- **ShowOnline da Desk inerte mentre `-showonline` (argv) funziona**: il
+  desk.log prova le scritture riuscite (marker toml, default_mode). Ipotesi
+  primaria = **DLL installata pre-fix9**: la versione PE resta 0.9.10 pinnata e
+  non distingue le build; verifica obbligata = ricompilare AetherDLL e cercare
+  lo stamp `[DIAG] BUILD showonline-suffix+fix9` (r.~405 PacketRouter.cpp) nel
+  main.log della sessione corrente. Stamp assente = marker scritti ma DLL
+  vecchia che non li legge.
+- **Riga-verdetto per OGNI launch** (OnlineFixHooks::h_SpawnProcess): prima il
+  ramo mode==None / depot-miss era SILENTE — niente prova del perché la DLL
+  avesse ignorato un app. Ora ogni launch logga
+  `Presence resolve: app <id> -> none|showonline|onlinefix (source: ...;
+  argv onlinefix=N showonline=N; depot=N)`: lettura marker vs token argv vs
+  default esplicita ad ogni avvio, diagnosi definitiva senza più ipotesi.
+
+## 14. Root cause trovata (fix10): TOML bundlato INVALIDO + circuito di fallimento silenzioso
+
+Test live 24/08: marker scritti ma MAI onorati, log fermi al livello WARN
+benché `[log] level = "trace"`. Diagnosi definitiva con toml++ v3.4 reale:
+
+- **Root cause**: l'asset bundled `AetherDesk/assets/defaults/aethercore.toml`
+  dichiarava `[presence]` DUE volte (merge sbagliato in fix9, con commenti in
+  italiano). TOML 1.0 vieta la ridefinizione di tabella → `toml::parse_file`
+  lancia `parse_error: cannot redefine existing table 'presence'` →
+  `Settings::Load` catch → TUTTI i default: in Release `logLevel=Warn`
+  (ecco i soli warning), liste presenza vuote, `default_mode` ignorato →
+  Desk scriveva, la DLL non leggeva niente. argv `-showonline` funzionava
+  perché non tocca il config. commit 4e5ebf5 irrilevante: regressione
+  introdotta in fix9, mai esistita prima.
+- **Circuito silenzioso rotto**: il catch loggava "No usable config" a INFO,
+  filtrato dal default Warn che il fallimento stesso causava. Ora:
+  `AC_LOG_WARN` con `parse_error.description()` (sempre visibile), riepilogo
+  `Loaded` con livello + conteggi delle liste presenza.
+- **Riparazione automatica dei file su disco** (presence_config
+  `dedup_sections`, chiamato da `ensure_defaults` ad ogni avvio Desk): sezioni
+  duplicate fuse nella prima occorrenza (chiavi uniche del duplicato spostate
+  in coda alla prima; a parità di chiave vince la prima; commenti del blocco
+  duplicato eliminati). I `aethercore.toml` utente si auto-riparano alla prima
+  esecuzione della nuova build, scelte preservate.
+- **Hot-reload completo**: `ReloadIfModified` ora riapplica
+  `log::SetLevel` (cambio livello dal Desk = effetto al launch successivo,
+  niente riavvio Steam) e il confronto mtime usa il timestamp catturato DA
+  `Load` (prima la prima chiamata era warm-up muto → il primo gioco lanciato
+  dopo un edit Desk risolveva su settings stantii).
+- Asset risistemato: singolo `[presence]`, **tutto in inglese**, validato con
+  tomllib e toml++.
+- Test: python mirror 15/15 (riparazione file corrotto reale: marker 1158310,
+  custom name e default utente preservati; idempotenza; legacy upgrade;
+  no-op su asset sano) + gold C++ con toml++ v3.4 reale 6/6 (il file corrotto
+  lancia esattamente `cannot redefine existing table 'presence'` → defaults).
+- Stamp build: `showonline-suffix+fix10` (per distinguere la DLL riparata).
+- **Settings → Aether**: switch "Show every game to friends by default"
+  (set/get_presence_default_mode, applicazione immediata, niente Save).
+- **custom_game_name**: in [presence] ha ora precedenza ARCHITETTURALE —
+  l'app risolve a ShowOnline nel resolver se non ha entry esplicite
+  (exclude/onlinefix restano intoccati; il nome vince comunque in entrambe le
+  pipeline via DisplayName). Comportamento "alleggerito" confermato: mai mask.
+- **Steam monitor** (`core/steam_monitor.rs`): poller dedicato (2.5 s) +
+  AtomicBool + evento `steam://runtime-state` solo ai cambi →
+  `is_steam_running` O(1); Sidebar mostra "Start Steam" chiuso / "Restart
+  Steam" aperto. Il comando restart_steam era già idempotente (kill=no-op se
+  assente → puro start), cambia solo l'etichetta.
+- Resolver harness C++ aggiornato: 16/16 (custom-name + tutte le precedenze).

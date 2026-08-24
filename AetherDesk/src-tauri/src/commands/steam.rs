@@ -36,6 +36,7 @@ pub fn restart_steam(app: tauri::AppHandle) -> Result<(), String> {
     }
 
     if terminated {
+        crate::core::steam_monitor::mark(false);
         std::thread::sleep(std::time::Duration::from_millis(600));
     }
 
@@ -61,6 +62,9 @@ pub fn restart_steam(app: tauri::AppHandle) -> Result<(), String> {
     }
 
     cmd.spawn().map_err(|e| format!("Failed to launch Steam process: {}", e))?;
+    // Kill+spawn riusciti: anticipa lo stato per la UI (il poller del monitor
+    // corregge alla prossima scansione se lo spawn fallisse a valle).
+    crate::core::steam_monitor::mark(true);
     Ok(())
 }
 
@@ -70,6 +74,14 @@ pub fn is_dll_installed(steam_path: String) -> Result<bool, String> {
         return Ok(false);
     }
     Ok(DllInstaller::new(steam_path).verify_installation())
+}
+
+/// Stato "Steam in esecuzione" letto dal monitor condiviso (core::steam_monitor):
+/// O(1), nessuna scansione di processo qui dentro. La UI sottoscrive anche
+/// l'evento `steam://runtime-state` per aggiornarsi in tempo reale.
+#[tauri::command]
+pub fn is_steam_running() -> bool {
+    crate::core::steam_monitor::is_steam_running()
 }
 
 #[tauri::command]
@@ -282,229 +294,10 @@ pub fn set_aether_showonline(
     })
 }
 
-// ---------------------------------------------------------------------------
-// Centralised per-app launch policy in aethercore.toml (docs/05 §12)
-//
-//   [presence]
-//   default_mode    = "none"      # "none" | "showonline" (policy + overrides)
-//   showonline_apps = [...]
-//   onlinefix_apps  = [...]
-//   exclude_apps    = [...]       # hard opt-out: vince su token e array
-//
-// La DLL risolve UNA modalità per app dentro SpawnProcess rileggendo questo
-// file (mtime → nessun riavvio di Steam); nulla finisce in argv. Precedenza
-// documentata: exclude > onlinefix > showonline > default_mode. I token
-// `-onlinefix` / `-showonline` nelle LaunchOptions sono LEGACY: rimossi dai
-// set (migrazione) e comunque riconosciuti dai get finché non migrati.
-// ---------------------------------------------------------------------------
-
-/// Le copie di aethercore.toml aggiornate da AetherDesk (stesso dual-path
-/// già usato per custom_game_name in commands/settings.rs).
-fn aethercore_toml_paths(app: &tauri::AppHandle) -> Vec<std::path::PathBuf> {
-    let mut paths = vec![crate::core::paths::LocalAppPaths::config_dir().join("aethercore.toml")];
-    let steam_path = SettingsManager::new(app).load().steam_path;
-    if !steam_path.trim().is_empty() {
-        paths.push(std::path::PathBuf::from(&steam_path).join("aethercore").join("aethercore.toml"));
-    }
-    paths
-}
-
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum PresenceMode {
-    ShowOnline,
-    OnlineFix,
-    Excluded,
-}
-
-impl PresenceMode {
-    fn key(self) -> &'static str {
-        match self {
-            PresenceMode::ShowOnline => "showonline_apps",
-            PresenceMode::OnlineFix => "onlinefix_apps",
-            PresenceMode::Excluded => "exclude_apps",
-        }
-    }
-    const ALL: [PresenceMode; 3] = [
-        PresenceMode::ShowOnline,
-        PresenceMode::OnlineFix,
-        PresenceMode::Excluded,
-    ];
-}
-
-fn parse_appid_list(text: &str) -> Vec<u32> {
-    text.trim()
-        .trim_start_matches('[')
-        .split_terminator(|c: char| c == ',' || c == ']')
-        .filter_map(|tok| tok.trim().parse::<u32>().ok())
-        .collect()
-}
-
-fn format_appid_list(apps: &[u32]) -> String {
-    format!(
-        "[{}]",
-        apps.iter().map(u32::to_string).collect::<Vec<_>>().join(", ")
-    )
-}
-
-/// (indice riga, contenuto) per la prima riga NON commentata `key = ...`.
-fn find_key_line(lines: &[String], key: &str) -> Option<usize> {
-    for (i, line) in lines.iter().enumerate() {
-        let t = line.trim_start();
-        if t.starts_with('#') {
-            continue;
-        }
-        if let Some(rest) = t.strip_prefix(key) {
-            if rest.trim_start().starts_with('=') {
-                return Some(i);
-            }
-        }
-    }
-    None
-}
-
-fn read_mode_apps(path: &std::path::Path, mode: PresenceMode) -> Option<Vec<u32>> {
-    let content = std::fs::read_to_string(path).ok()?;
-    let lines: Vec<String> = content.lines().map(str::to_string).collect();
-    let idx = find_key_line(&lines, mode.key())?;
-    let after_eq = lines[idx].splitn(2, '=').nth(1)?;
-    Some(parse_appid_list(after_eq))
-}
-
-fn read_default_mode(path: &std::path::Path) -> Option<bool> {
-    let content = std::fs::read_to_string(path).ok()?;
-    let lines: Vec<String> = content.lines().map(str::to_string).collect();
-    let idx = find_key_line(&lines, "default_mode")?;
-    let after_eq = lines[idx].splitn(2, '=').nth(1)?;
-    Some(after_eq.trim().trim_matches('"') == "showonline")
-}
-
-/// Sostituisce la prima riga non commentata `key = value` oppure la inserisce
-/// nella posizione `insert_at` (stabilita dal chiamante: subito sotto
-/// l'header di [presence], avanzando ad ogni inserimento).
-fn upsert_key_line(lines: &mut Vec<String>, key: &str, value: &str, insert_at: &mut usize) {
-    let new_line = format!("{key} = {value}");
-    if let Some(i) = find_key_line(lines, key) {
-        lines[i] = new_line;
-    } else {
-        lines.insert(*insert_at, new_line);
-        *insert_at += 1;
-    }
-}
-
-/// Aggiunge/rimuove app_id dagli array [presence] del toml indicato:
-/// `choice = Some(mode)` → app nella lista di `mode` e fuori dalle altre due
-/// (mutua esclusione); `choice = None` → fuori da tutte (torna al default).
-/// Le tre righe sono (ri)scritte in forma canonica; [presence] e le chiavi
-/// mancanti vengono create. Ritorna true se il file è stato modificato.
-fn update_mode_in_toml(path: &std::path::Path, app_id: u32, choice: Option<PresenceMode>) -> bool {
-    if !path.exists() {
-        return false;
-    }
-    let Ok(content) = std::fs::read_to_string(path) else {
-        return false;
-    };
-    let had_trailing_nl = content.ends_with('\n');
-    let mut lines: Vec<String> = content.lines().map(str::to_string).collect();
-    if lines.len() == 1 && lines[0].is_empty() {
-        lines.clear();
-    }
-
-    let mut lists: [Vec<u32>; 3] = [Vec::new(), Vec::new(), Vec::new()];
-    let mut key_present: [bool; 3] = [false, false, false];
-    let mut presence_hdr: Option<usize> = None;
-    for (i, line) in lines.iter().enumerate() {
-        let t = line.trim_start();
-        if t.starts_with('#') {
-            continue;
-        }
-        if t == "[presence]" {
-            presence_hdr = Some(i);
-        }
-        for (m, mode) in PresenceMode::ALL.iter().enumerate() {
-            if key_present[m] {
-                continue;
-            }
-            if let Some(rest) = t.strip_prefix(mode.key()) {
-                let rest = rest.trim_start();
-                if let Some(list) = rest.strip_prefix('=') {
-                    key_present[m] = true;
-                    lists[m] = parse_appid_list(list);
-                }
-            }
-        }
-    }
-
-    let original = lists.clone();
-    for list in lists.iter_mut() {
-        list.retain(|&a| a != app_id);
-    }
-    if let Some(c) = choice {
-        let m = PresenceMode::ALL.iter().position(|&x| x == c).expect("mode in ALL");
-        lists[m].push(app_id);
-        lists[m].sort_unstable();
-        lists[m].dedup();
-    }
-    if lists == original && key_present.iter().all(|&p| p) {
-        return false; // già nello stato richiesto, niente da riscrivere
-    }
-
-    // Assicura la sezione [presence] (append in coda se assente).
-    let hdr = match presence_hdr {
-        Some(h) => h,
-        None => {
-            lines.push("[presence]".to_string());
-            lines.len() - 1
-        }
-    };
-    let mut insertion = hdr + 1;
-    for (m, mode) in PresenceMode::ALL.iter().enumerate() {
-        upsert_key_line(&mut lines, mode.key(), &format_appid_list(&lists[m]), &mut insertion);
-    }
-
-    let mut out = lines.join("\n");
-    if had_trailing_nl || !out.ends_with('\n') {
-        out.push('\n');
-    }
-    std::fs::write(path, out).is_ok()
-}
-
-/// Scrive `default_mode = "showonline"|"none"` sotto [presence].
-fn set_default_mode_in_toml(path: &std::path::Path, showonline: bool) -> bool {
-    if !path.exists() {
-        return false;
-    }
-    let Ok(content) = std::fs::read_to_string(path) else {
-        return false;
-    };
-    let had_trailing_nl = content.ends_with('\n');
-    let mut lines: Vec<String> = content.lines().map(str::to_string).collect();
-    if lines.len() == 1 && lines[0].is_empty() {
-        lines.clear();
-    }
-    let value = if showonline { "\"showonline\"" } else { "\"none\"" };
-    if let Some(i) = find_key_line(&lines, "default_mode") {
-        if lines[i].splitn(2, '=').nth(1).map(|v| v.trim()) == Some(value) {
-            return false; // già impostato
-        }
-        lines[i] = format!("default_mode = {value}");
-    } else {
-        let hdr = lines
-            .iter()
-            .position(|l| l.trim_start() == "[presence]");
-        match hdr {
-            Some(h) => lines.insert(h + 1, format!("default_mode = {value}")),
-            None => {
-                lines.push("[presence]".to_string());
-                lines.push(format!("default_mode = {value}"));
-            }
-        }
-    }
-    let mut out = lines.join("\n");
-    if had_trailing_nl || !out.ends_with('\n') {
-        out.push('\n');
-    }
-    std::fs::write(path, out).is_ok()
-}
+use crate::core::presence_config::{
+    PresenceMode, aethercore_toml_paths, read_default_mode, read_mode_apps,
+    set_default_mode_in_toml, update_mode_in_toml,
+};
 
 /// True quando il gioco è in exclude_apps (hard opt-out: la DLL ignora
 /// completamente il gioco, anche con token residui in argv).

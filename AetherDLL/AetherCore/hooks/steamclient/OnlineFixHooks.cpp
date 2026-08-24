@@ -86,6 +86,15 @@ static LaunchMode ResolveLaunchMode(AppId app, bool onlineFixToken, bool showOnl
         *sourceOut = "showonline_apps";
         return LaunchMode::ShowOnline;
     }
+    // Global custom presence name (docs/05 §13): when set, EVERY app without
+    // an explicit entry behaves like a -showonline session — presence-only,
+    // never the OnlineFix mask. The name itself already overrides the display
+    // in BOTH pipelines via DisplayName() (GamesPlayedModule), so -onlinefix
+    // games also show the custom name while keeping their mask.
+    if (!s.presenceCustomGameName.empty()) {
+        *sourceOut = "custom_game_name (global presence override)";
+        return LaunchMode::ShowOnline;
+    }
     if (onlineFixToken) {
         *sourceOut = "legacy -onlinefix argv token";
         return LaunchMode::OnlineFix;
@@ -268,6 +277,18 @@ bool h_SpawnProcess(void* user, const char* exe, const char* cmdLine, const char
         const bool hasSoToken = HasShowOnlineFlag(cmdLine);
         const char* modeSource = nullptr;
         const LaunchMode mode = ResolveLaunchMode(realApp, hasOfToken, hasSoToken, &modeSource);
+        // Verdict line for EVERY launch (including mode None / depot misses,
+        // which the branches below leave silent): with the build stamp this
+        // tells you exactly what the DLL decided and why — marker read vs
+        // argv token vs default — instead of guessing after the fact.
+        AC_LOG_INFO(kModule,
+                    "Presence resolve: app %u -> %s (source: %s; argv onlinefix=%d showonline=%d; depot=%d).",
+                    realApp,
+                    mode == LaunchMode::OnlineFix ? "onlinefix"
+                        : mode == LaunchMode::ShowOnline ? "showonline" : "none",
+                    modeSource ? modeSource : "unknown",
+                    hasOfToken ? 1 : 0, hasSoToken ? 1 : 0,
+                    luadata::HasDepot(realApp) ? 1 : 0);
 
         // Hand the child process a clean argv whenever an Aether token was
         // present (see StripAetherFlagArgs). Never null; empty string only

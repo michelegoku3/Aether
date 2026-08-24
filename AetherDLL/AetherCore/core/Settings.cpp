@@ -1,26 +1,41 @@
 #include "pch.h"
 #include "core/Settings.h"
 
+#include <atomic>
+#include <chrono>
 #include <filesystem>
 #include <toml++/toml.hpp>
 #include "core/AetherCoreState.h"
 
 namespace ac {
 
+namespace {
+// Mtime of the config as of the last successful Load() attempt, so
+// ReloadIfModified can compare against what is ACTUALLY in memory instead of
+// initialising its own clock on first call (which silently skipped the first
+// real change: one launch after a Desk edit resolved against stale settings).
+std::atomic<long long> s_lastConfigWriteTicks{0};
+
+long long FileWriteTicks(const std::string& configPath) {
+    std::error_code ec;
+    const auto t = std::filesystem::last_write_time(configPath, ec);
+    if (ec) return 0;
+    return std::chrono::duration_cast<std::chrono::milliseconds>(t.time_since_epoch()).count();
+}
+}  // namespace
+
 void Settings::ReloadIfModified(const std::string& configPath) {
     if (configPath.empty()) return;
-    std::error_code ec;
-    auto lastWrite = std::filesystem::last_write_time(configPath, ec);
-    if (ec) return;
-
-    static std::filesystem::file_time_type s_lastLoadedTime{};
-    if (s_lastLoadedTime == std::filesystem::file_time_type{}) {
-        s_lastLoadedTime = lastWrite;
-        return;
-    }
-    if (lastWrite != s_lastLoadedTime) {
-        s_lastLoadedTime = lastWrite;
+    const long long ticks = FileWriteTicks(configPath);
+    if (ticks == 0) return;
+    long long prev = s_lastConfigWriteTicks.load();
+    if (ticks == prev) return;
+    if (s_lastConfigWriteTicks.compare_exchange_strong(prev, ticks)) {
         g_state.settings = Settings::Load(configPath);
+        // The logger level lives in the config too: re-apply it so a Desk-side
+        // level change takes effect WITHOUT restarting Steam. ReloadIfModified
+        // runs on every game launch, so the worst-case delay is one launch.
+        ac::log::SetLevel(g_state.settings.logLevel);
         AC_LOG_INFO("Settings", "Hot-reloaded settings from %s (custom_game_name='%s').",
                     configPath.c_str(), g_state.settings.presenceCustomGameName.c_str());
     }
@@ -29,11 +44,24 @@ void Settings::ReloadIfModified(const std::string& configPath) {
 Settings Settings::Load(const std::string& configPath) {
     Settings s;  // Start from defaults; only override what the file provides.
 
+    // Record the mtime we are loading, so the next ReloadIfModified sees a
+    // genuine change instead of treating the first call as a warm-up.
+    {
+        const long long ticks = FileWriteTicks(configPath);
+        if (ticks != 0) s_lastConfigWriteTicks.store(ticks);
+    }
+
     toml::table tbl;
     try {
         tbl = toml::parse_file(configPath);
-    } catch (const toml::parse_error&) {
-        AC_LOG_INFO("Settings", "No usable config at %s; using defaults.", configPath.c_str());
+    } catch (const toml::parse_error& e) {
+        // WARN on purpose: a broken config falls back to ALL defaults (log
+        // level included: Warn in release builds), so an INFO here would be
+        // filtered out by the very default it caused — a silent-failure loop
+        // that leaves presence lists empty with zero evidence in main.log.
+        AC_LOG_WARN("Settings",
+                    "Config %s is invalid TOML (%s) — using defaults (policies OFF, log level forced to default).",
+                    configPath.c_str(), e.description());
         return s;
     }
 
@@ -152,12 +180,22 @@ Settings Settings::Load(const std::string& configPath) {
     }
 
     AC_LOG_INFO("Settings",
-                "Loaded %s (keep_last_session=%d, lua extra paths: %zu, "
-                "mirror: %s, manifest urls: %zu).",
-                configPath.c_str(), s.logKeepLastSession ? 1 : 0,
+                "Loaded %s (level=%s, keep_last_session=%d, lua extra paths: %zu, "
+                "mirror: %s, manifest urls: %zu, presence: default=%s show=%zu of=%zu excl=%zu).",
+                configPath.c_str(),
+                s.logLevel == LogLevel::Trace ? "trace"
+                    : s.logLevel == LogLevel::Debug ? "debug"
+                    : s.logLevel == LogLevel::Info ? "info"
+                    : s.logLevel == LogLevel::Warn ? "warn"
+                    : s.logLevel == LogLevel::Error ? "error" : "off",
+                s.logKeepLastSession ? 1 : 0,
                 s.luaExtraPaths.size(),
                 s.patternMirror.empty() ? "default" : "custom",
-                s.manifestFetchUrls.size());
+                s.manifestFetchUrls.size(),
+                s.presenceDefaultShowOnline ? "showonline" : "none",
+                s.presenceShowOnlineApps.size(),
+                s.presenceOnlineFixApps.size(),
+                s.presenceExcludeApps.size());
     return s;
 }
 

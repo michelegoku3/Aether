@@ -45,6 +45,9 @@ export const SettingsView = ({ hubcapUsage, onRefreshUsage, onRefreshCustomCss, 
   const [useAlternativeGameCards, setUseAlternativeGameCards] = useState(false);
   const [enableWebviewDevtools, setEnableWebviewDevtools] = useState(false);
   const [enableTestUpdates, setEnableTestUpdates] = useState(false);
+  // [presence] default_mode in aethercore.toml (docs/05 §12): live nel file
+  // della DLL, NON nelle Desk settings — si applica subito, senza Save.
+  const [presenceDefaultShowOnline, setPresenceDefaultShowOnline] = useState(true);
   const [customGameName, setCustomGameName] = useState('');
   const [storeFrontFilter, setStoreFrontFilter] = useState('upcoming');
   const [customCssEnabled, setCustomCssEnabled] = useState(false);
@@ -142,6 +145,10 @@ export const SettingsView = ({ hubcapUsage, onRefreshUsage, onRefreshCustomCss, 
     };
     loadSettings();
     loadAppearanceAssets();
+    // Presence default policy lives in aethercore.toml (not Desk settings).
+    invoke<boolean>('get_presence_default_mode')
+      .then(setPresenceDefaultShowOnline)
+      .catch((err) => console.warn('[settings] failed to load presence default mode:', err));
     invoke<LuaToolsAuthStatus>('get_luatools_auth_status')
       .then(setLuaToolsAuth)
       .catch((err) => console.warn('[settings] failed to load LuaTools auth status:', err));
@@ -441,10 +448,37 @@ export const SettingsView = ({ hubcapUsage, onRefreshUsage, onRefreshCustomCss, 
             </label>
           </div>
 
+          <div
+            className="settings-toggle-row"
+            title="Controls the [presence] default_mode in aethercore.toml and applies immediately (no Save, no Steam restart). ON: friends see what you play for EVERY game you launch — unless the game has a per-game mode in the ONLINE popup (Show / Online Aether / excluded). OFF: nothing is shown by default; you hand-pick games per-game. With a Custom game display name set, every game is treated as showonline regardless of this policy."
+          >
+            <span className="settings-toggle-text">Show every game to friends by default</span>
+            <label className="version-switch">
+              <input
+                type="checkbox"
+                checked={presenceDefaultShowOnline}
+                onChange={async (e) => {
+                  const next = e.target.checked;
+                  const previous = !next;
+                  // Applica subito (il toggle scrive aethercore.toml, non le
+                  // Desk settings); rollback ottimistico in caso di errore.
+                  setPresenceDefaultShowOnline(next);
+                  try {
+                    await invoke('set_presence_default_mode', { showonline: next });
+                  } catch (err: any) {
+                    setPresenceDefaultShowOnline(previous);
+                    showStatus(`Failed to set presence default mode: ${err}`, 'error');
+                  }
+                }}
+              />
+              <span></span>
+            </label>
+          </div>
+
           <div className="settings-toggle-row" style={{ alignItems: 'flex-start', flexDirection: 'column', gap: '6px', padding: '4px 0' }}>
             <span className="settings-toggle-text">Custom game display name</span>
             <p className="settings-desc">
-              Overrides the game name shown to friends on Steam, leave empty to show the real title.
+              Overrides the game name shown to friends on Steam, leave empty to show the real title. When set, it takes precedence over every per-game presence configuration: every launch behaves like Show Online (presence-only, lightweight — never the onlinefix mask; games set to Online Aether keep their mask but still show this name).
             </p>
             <input
               type="text"
