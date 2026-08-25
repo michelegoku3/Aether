@@ -475,17 +475,32 @@ export const SettingsView = ({ hubcapUsage, onRefreshUsage, onRefreshCustomCss, 
             </label>
           </div>
 
-          <div className="settings-toggle-row" style={{ alignItems: 'flex-start', flexDirection: 'column', gap: '6px', padding: '4px 0' }}>
+          <div className="settings-toggle-row settings-field-column">
             <span className="settings-toggle-text">Custom game display name</span>
             <p className="settings-desc">
-              Overrides the game name shown to friends on Steam, leave empty to show the real title. When set, it takes precedence over every per-game presence configuration: every launch behaves like Show Online (presence-only, lightweight — never the onlinefix mask; games set to Online Aether keep their mask but still show this name).
+              Overrides the game name shown to friends on Steam, leave empty to show the real title.
             </p>
             <input
               type="text"
               className="settings-input"
-              placeholder="e.g. My Custom Game"
+              placeholder="Enter custom game name (e.g. Aether)"
               value={customGameName}
               onChange={(e) => setCustomGameName(e.target.value)}
+            />
+          </div>
+
+          {/* Steam installation path — parte della sezione Aether (sotto il
+              custom game): unica destinazione visiva, niente gruppo staccato
+              tra LuaTools e Store. */}
+          <div className="settings-toggle-row settings-field-column">
+            <span className="settings-toggle-text">Steam Installation Path</span>
+            <p className="settings-desc">The main directory path where Steam is installed on your PC, required for configuration.</p>
+            <input
+              type="text"
+              placeholder="C:\Program Files (x86)\Steam"
+              value={steamPath}
+              onChange={(e) => setSteamPath(e.target.value)}
+              className="settings-input"
             />
           </div>
 
@@ -619,21 +634,8 @@ export const SettingsView = ({ hubcapUsage, onRefreshUsage, onRefreshCustomCss, 
         </div>
 
 
-        <div className="settings-separator"></div>
-
-        {/* Steam Path Section */}
-        <div className="settings-group">
-          <label className="settings-label">Steam Installation Path</label>
-          <p className="settings-desc">The main directory path where Steam is installed on your PC, required for configuration.</p>
-          <input
-            type="text"
-            placeholder="C:\Program Files (x86)\Steam"
-            value={steamPath}
-            onChange={(e) => setSteamPath(e.target.value)}
-            className="settings-input"
-          />
-        </div>
-
+        {/* Un solo separatore tra LuaTools e Store: la sezione Steam
+            Installation Path è stata spostata dentro il gruppo Aether. */}
         <div className="settings-separator"></div>
 
         {/* Store Section */}

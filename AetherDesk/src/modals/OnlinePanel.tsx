@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import type { LibraryActionGame } from './LibraryGameActionsModal';
 import { folderOf, openInFileManager, pathFromGameRoot, shortenPath } from '../util/paths';
-import { useModalDismiss } from '../hooks/useModalDismiss';
+import { useModalDismiss, useOverlayDismiss } from '../hooks/useModalDismiss';
 
 // ---------------------------------------------------------------------------
 // Mirror types of the Rust commands (serde rename_all = camelCase)
@@ -222,7 +222,11 @@ export const OnlinePanel = ({ game, onClose }: OnlinePanelProps) => {
 
   // ESC chiude il popup (uniforme con tutti gli altri modali); il click
   // fuori è già gestito dall'overlay qui sotto (entrambi bloccati quando busy).
+  // stopPropagation centralizzato in useOverlayDismiss: questo pannello è
+  // annidato dentro l'overlay del popup Modify, e il click fuori deve
+  // chiudere solo lui facendo tornare al popup di scelta online.
   useModalDismiss(onClose, busy);
+  const handleOverlayClick = useOverlayDismiss(onClose, busy);
 
   const handleEnable = async () => {
     setBusy(true);
@@ -307,7 +311,7 @@ export const OnlinePanel = ({ game, onClose }: OnlinePanelProps) => {
   );
 
   return (
-    <div className="modal-overlay" onClick={busy ? undefined : onClose}>
+    <div className="modal-overlay" onClick={handleOverlayClick}>
       <div
         className="modal-container"
         style={{ width: 720, maxHeight: '86vh' }}

@@ -46,6 +46,11 @@ export const LibraryGameActionsModal = ({
   const [aetherExcluded, setAetherExcluded] = useState(false);
   const [presenceDefaultShowOnline, setPresenceDefaultShowOnline] = useState(true);
   const disabled = isProcessing || isBusy || onlineBusy;
+  // Un popup figlio (scelta online / pannello UCO2) aperto disattiva il
+  // dismiss di QUESTO popup: ESC e click fuori chiudono solo il figlio in
+  // cima alla catena Modify → Online → UCO2, che scende di un livello alla
+  // volta senza mai chiudere tutto.
+  const childPopupOpen = showOnlineChoice || showOnlinePanel;
 
   const refreshUpdateState = async () => {
     try {
@@ -64,8 +69,7 @@ export const LibraryGameActionsModal = ({
     refreshUpdateState();
   }, [game.appId]);
 
-  // ESC + click fuori chiudono il popup (rispettando le operazioni in corso).
-  useModalDismiss(onClose, disabled);
+  useModalDismiss(onClose, disabled || childPopupOpen);
 
   const handleToggleUpdates = async () => {
     setIsBusy(true);
@@ -182,13 +186,22 @@ export const LibraryGameActionsModal = ({
     setShowOnlinePanel(true);
   };
 
+  // Chiudere il pannello UCO2 NON chiude la catena: si torna al popup di
+  // scelta online (con stati ricaricati, così il badge ACTIVE di UCO2 è
+  // aggiornato), non al popup Modify e tantomeno alla libreria.
   const handleCloseUco2Panel = async () => {
     setShowOnlinePanel(false);
     await refreshOnlineStates();
+    setShowOnlineChoice(true);
   };
 
   return (
-    <div className="modal-overlay" onClick={disabled ? undefined : onClose}>
+    // Il click fuori è ignorato mentre un popup figlio è aperto: il click
+    // appartiene a quel popup, che si chiude da solo e riporta qui.
+    <div
+      className="modal-overlay"
+      onClick={disabled || childPopupOpen ? undefined : onClose}
+    >
       <div className="modal-container game-action-modal" onClick={(e) => e.stopPropagation()}>
         <div className="game-action-hero-wrap">
           <GameHeroImage appId={game.appId} name={game.name} canonicalUrl={game.heroImageUrl || game.imageUrl} />
