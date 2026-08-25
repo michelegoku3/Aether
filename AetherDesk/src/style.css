@@ -7,6 +7,11 @@
   --color-text: #e1e1e6;
   --color-muted: #8f8f9e;
   --color-cyan: #00b4d8;
+  /* Semantic accents: one accent per MEANING, never per decoration.
+     --color-uco2 identifies the UCO2 pipeline everywhere (option state,
+     badges, panel accents) — the online choice popup and the UCO2 panel
+     share it as the single source of truth. */
+  --color-uco2: #9c6bff;
   --color-denuvo: #ff3b5f;
   --color-nsfw-pink: #ff5e8a;
   --color-nsfw-pink-hover: #ff8fb0;
@@ -1370,6 +1375,17 @@ body {
 .settings-toggle-text {
   color: var(--color-muted);
   font-size: 13px;
+}
+
+/* Stacked variant of a settings row (label above description above input),
+   used by free-text fields such as Custom game display name and Steam
+   Installation Path. Replaces the repeated inline style object (DRY). */
+.settings-field-column {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 4px 0;
 }
 
 .settings-label {
@@ -3128,6 +3144,107 @@ body {
 }
 .modal-btn:disabled {
   cursor: not-allowed;
+}
+
+/* ==========================================
+   ONLINE CHOICE POPUP (option rows)
+   ==========================================
+   Palette discipline (see :root tokens):
+   - HOVER    → neutral elevation only (bg token + lighter border + brighter
+                text), exactly like .nav-item:hover. An accent on hover would
+                compete with the selected state and with UCO2's purple.
+   - SELECTED → primary accent (cyan) for the three presence modes; semantic
+                --color-uco2 for the UCO2 toggle. One accent per meaning.
+   - DISABLED → faded, non interactive.
+   Geometry: three FIXED columns (title 110px / badge 62px / hint flex) so
+   titles, ACTIVE badges and hints start at the exact same x in every row. */
+.online-choice-option {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 14px;
+  padding: 14px 18px;
+  border-radius: 8px;
+  background: #1b1b1f;
+  border: 1px solid #2c2c31;
+  color: var(--color-text);
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  text-align: left;
+  transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+}
+
+/* Hover: solo su righe NON ancora selezionate — una riga selezionata non è
+   cliccabile (no-op), quindi niente feedback hover e cursore default.
+   La riga UCO2 selezionata fa eccezione: il click apre il suo pannello. */
+.online-choice-option:hover:not(:disabled):not(.online-choice-option--selected) {
+  background-color: var(--bg-item-hover);
+  border-color: #3a3a44;
+  color: #ffffff;
+}
+
+.online-choice-option:disabled {
+  cursor: not-allowed;
+}
+
+/* Selected: bordo 1px UNIFORME su tutti i lati (niente barra interna che
+   ispessisce il lato sinistro) + tinta leggera dell'accento. La tinta è
+   derivata dal token via color-mix, come .settings-alert: cambia il token,
+   cambia anche la tinta. `--selected` è il marker comune (esclude l'hover);
+   `--selected-uco2` è solo il refinement dell'accento (stack BEM). */
+.online-choice-option--selected {
+  border-color: var(--color-cyan);
+  background-color: color-mix(in srgb, var(--color-cyan) 8%, transparent);
+  color: #ffffff;
+  cursor: default;
+}
+
+.online-choice-option--selected-uco2 {
+  border-color: var(--color-uco2);
+  background-color: color-mix(in srgb, var(--color-uco2) 8%, transparent);
+  color: #ffffff;
+  /* UCO2 attivo resta interattivo (il click riapre il pannello): cursore
+     pointer e hover che intensifica la PROPRIA tinta, mai il grigio neutro. */
+  cursor: pointer;
+}
+
+.online-choice-option--selected-uco2:hover:not(:disabled) {
+  background-color: color-mix(in srgb, var(--color-uco2) 14%, transparent);
+}
+
+.online-choice-option--blocked {
+  opacity: 0.4;
+}
+
+.online-choice-option__title {
+  flex: 0 0 110px;
+  flex-shrink: 0;
+}
+
+.online-choice-option__badge-col {
+  flex: 0 0 62px;
+  flex-shrink: 0;
+}
+
+.online-choice-option__hint {
+  flex: 1;
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--color-muted);
+  line-height: 1.4;
+}
+
+.online-choice-badge {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  color: var(--color-cyan);
+}
+
+.online-choice-badge--uco2 {
+  color: var(--color-uco2);
 }
 
 /* Clickable folder path (ClickablePath component).
