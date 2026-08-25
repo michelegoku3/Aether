@@ -182,7 +182,7 @@ pub fn set_aether_onlinefix(
 
     crate::desk_log_info!(
         "steam",
-        "Aether onlinefix {} for app {} (marker toml={} legacy_tokens_removed={})",
+        "Aether onlinefix {} for app {} (marker toml={} legacy_tokens_found={})",
         if enabled { "enabled" } else { "disabled" },
         app_id,
         touched,

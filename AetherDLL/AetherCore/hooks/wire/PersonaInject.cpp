@@ -98,6 +98,22 @@ steam::AppId AppIdFromInvisibleSuffix(const std::string& text, std::string& name
     return static_cast<steam::AppId>(v);
 }
 
+// Lobby/duo corroboration key: 'steam_player_group' is present in rich
+// presence whenever a client hosts or joins a lobby. Returns 0 when absent.
+std::uint64_t LobbyGroupId(const CMsgClientPersonaState::Friend& f) {
+    for (const auto& kv : f.rich_presence()) {
+        if (kv.has_key() && kv.key() == "steam_player_group" && kv.has_value()) {
+            return std::strtoull(kv.value().c_str(), nullptr, 10);
+        }
+    }
+    return 0;
+}
+
+// Our own current lobby, mirrored from the SELF persona entry on every push.
+// 0 = not in any lobby. Shared-lobby is the ONLY safe corroboration for the
+// legacy local-session attribution below.
+std::atomic<std::uint64_t> g_selfLobby{0};
+
 // Combined parse: ASCII suffix (legacy senders) first, invisible channel next.
 steam::AppId AppIdFromSuffix(const std::string& text, std::string& nameOut) {
     if (const steam::AppId a = AppIdFromAsciiSuffix(text, nameOut)) return a;
@@ -331,6 +347,9 @@ std::int32_t OnPersonaStateRecv(const WireFrame& frame, std::uint8_t* out, std::
         static std::atomic<std::uint32_t> s_lastServerApp{0xFFFFFFFFu};
         if (auto* srv = FindSelf(msg, selfId)) {
             const std::uint32_t app = srv->game_played_app_id();
+            // Track our own lobby membership every push: it is the
+            // corroboration key for the legacy local-session attribution.
+            g_selfLobby.store(LobbyGroupId(*srv), std::memory_order_relaxed);
             if (s_lastServerApp.exchange(app) != app) {
                 AC_LOG_INFO(kModule,
                             "[DIAG] SERVER self-push (pre-patch): app=%u gameid=%llu "
@@ -399,12 +418,13 @@ std::int32_t OnPersonaStateRecv(const WireFrame& frame, std::uint8_t* out, std::
     // is game_extra_info, recycled into Friend.game_name. Aether senders hide
     // the exact appid in that text ("<name> | <appid>"): recover it here, on
     // the viewer's machine — exact, language-independent, no shared .lua
-    // needed. Fallbacks: configured-library title match, then the local
-    // -onlinefix session id (pre-suffix behaviour).
+    // needed. Fallbacks: configured-library title match, then — ONLY when the
+    // friend shares OUR lobby — the local -onlinefix session id (see the
+    // lobby guard at its use site, below).
     {
         const steam::AppId ofReal = g_state.onlineFixRealAppId.load();
-        const bool legacyPatch = g_state.settings.presenceOnlineFixPersonaPatch &&
-                                 ofReal != 0 && luadata::IsConfigured(ofReal);
+        const bool legacyGate = g_state.settings.presenceOnlineFixPersonaPatch &&
+                                ofReal != 0 && luadata::IsConfigured(ofReal);
         std::vector<steam::AppId> picsQueue;
 
         for (int i = 0; i < msg.friends_size(); ++i) {
@@ -426,6 +446,7 @@ std::int32_t OnPersonaStateRecv(const WireFrame& frame, std::uint8_t* out, std::
             std::string displayName;
             steam::AppId real = 0;
             const char* source = "extra_info";
+            bool fromLocalSession = false;
 
             std::string extra = ExtraInfoKV(*f);
             if (extra.empty() && f->has_game_name()) extra = f->game_name();
@@ -485,10 +506,24 @@ std::int32_t OnPersonaStateRecv(const WireFrame& frame, std::uint8_t* out, std::
                 }
             }
 
-            if (real == 0 && legacyPatch) {
-                real = ofReal;
-                displayName.clear();
-                source = "local session";
+            // Legacy local-session fallback (pre-suffix behaviour, kept behind
+            // onlinefix_persona_patch): "a 480-friend while I'm masked must be
+            // my co-op partner in my game". UNGUARDED that guess is WRONG in
+            // general — measured 2026-08-25: a friend in his own unrelated
+            // masked session was displayed as playing OUR game ('MECCHA
+            // CHAMELEON', never installed on his machine). Attribute ONLY when
+            // the friend's lobby (steam_player_group KV) matches our own: a
+            // shared lobby is the only corroboration that cannot lie, while a
+            // bare 480 match fabricates ownership out of thin air.
+            if (real == 0 && legacyGate) {
+                const std::uint64_t selfLobby = g_selfLobby.load(std::memory_order_relaxed);
+                const std::uint64_t friendLobby = LobbyGroupId(*f);
+                if (selfLobby != 0 && friendLobby != 0 && friendLobby == selfLobby) {
+                    real = ofReal;
+                    displayName.clear();
+                    source = "local session (same lobby)";
+                    fromLocalSession = true;
+                }
             }
 
             if (real == 0) {
@@ -508,7 +543,7 @@ std::int32_t OnPersonaStateRecv(const WireFrame& frame, std::uint8_t* out, std::
             // appid this machine never had faults inside steamclient (measured
             // crash, 12:57 log) — never do it on the recovery path.
             std::string name = displayName;
-            if (name.empty() && source == "local session") {
+            if (name.empty() && fromLocalSession) {
                 name = gamename::ForApp(real);
             }
 
@@ -527,7 +562,7 @@ std::int32_t OnPersonaStateRecv(const WireFrame& frame, std::uint8_t* out, std::
             // title: prime the local cache with one PICS request per appid per
             // process (see EnsureAppInfo). Skipping it for the local-session
             // source when the cache already knows the name (record present).
-            if (source != "local session" || name.empty()) picsQueue.push_back(real);
+            if (!fromLocalSession || name.empty()) picsQueue.push_back(real);
         }
 
         for (const steam::AppId want : picsQueue) EnsureAppInfo(want);
