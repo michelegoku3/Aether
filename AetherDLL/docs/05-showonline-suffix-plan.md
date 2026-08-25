@@ -571,6 +571,50 @@ benché `[log] level = "trace"`. Diagnosi definitiva con toml++ v3.4 reale:
   no-op su asset sano) + gold C++ con toml++ v3.4 reale 6/6 (il file corrotto
   lancia esattamente `cannot redefine existing table 'presence'` → defaults).
 - Stamp build: `showonline-suffix+fix10` (per distinguere la DLL riparata).
+
+## 15. Sessione masked Meccha (crash ~5 s) + amico attribuito al gioco sbagliato
+
+Test live 25/08 con log trace funzionante. FATTI misurati nel log:
+
+- **Resolver/mask integri**: `Presence resolve ... -> onlinefix (onlinefix_apps)`,
+  `Masked AppId 4704690 as Spacewar (480)`, overlay 480->4704690, donor stats
+  spoof attivi ad ogni lancio. Il canale marker TOML (fix9-10) funziona.
+- **Il processo del gioco non handshakka MAI la pipe IPC** (nessuna riga
+  PipeWatch per PenguinHotel.exe); muore a ~5,3 s in TUTTI i lanci masked, e a
+  ~8 s anche con lancio pulito showonline (argv senza token). Machine Party
+  (gioco UCO2) handshakka regolarmente (`source=SteamOverlayGameId env=480`)
+  e vive: la morte è dentro l'init del gioco, non nel filo rete.
+- **Diff HEAD vs fix-series sul mask path = superficiale**: SpawnProcess mask,
+  env block, GetAppID scoped, wire egress OF (extra_info/blob), staged
+  persona-inject (inject_local), RP upload: tutto identico o presente anche
+  in HEAD, quando Meccha funzionava. Nessuna regressione dimostrabile lì.
+- Ipotesi aperta principale: ambiente Spaceworks/480 sul PC o build Steam
+  1785799196 — fuori dalla fix-series. Test discriminatorio di 2 minuti
+  (toml, hot-reload al lancio, niente riavvio Steam):
+  `[presence] inject_local = false` (poi, se non basta, anche
+  `always_extra_info = false`). Se Meccha VIVE con inject_local=false → il
+  colpevole è il self-inject durante la sessione masked e va hard-gatato
+  (skip quando onlineFixRealAppId != 0). Se muore uguale → investigare il
+  lato 480/licenze della macchina, non il codice persona.
+- **`legacy_tokens_found`**: il Desk non scrive MAI token argv (solo marker);
+  i `-onlinefix` visti nei lanci 40:11+ erano stati aggiunti a mano (la strip
+  DLL li rimuove comunque). Label del desk.log corretta (era
+  `legacy_tokens_removed` ma stampava "trovati").
+
+### Amico mostrato come "MECCHA CHAMELEON" senza averlo mai installato — ROOT CAUSE + FIX
+
+Il fallback legacy "local session" (pre-suffix) attribuiva OGNI amico con
+app=480 e nessun appid recuperabile al NOSTRO onlineFixRealAppId, basta
+avere una sessione Online Aether attiva. Misurato nel log: amico in una sua
+sessione masked non correlata → mostrato come MECCHA CHAMELEON sul client
+dell'utente. Fix (fix10): l'attribuzione legacy ora richiede
+**corroborazione di lobby**: `steam_player_group` dell'amico uguale alla
+nostra (tracciata dalla entry SELF ad ogni push, `g_selfLobby` atomico) e
+non zero. Niente lobby condivisa = niente indovinello: l'entry resta 480
+(vista vanilla) — un'attribuzione falsa è sempre peggio di un "Spacewar".
+I canali esatti (suffix/blob/gid-hi/by-name) restano invariati e primari.
+Implementazione: nuovo helper `LobbyGroupId(Friend)`, flag `fromLocalSession`
+al posto dei confronti su stringa `source` (rename-proof).
 - **Settings → Aether**: switch "Show every game to friends by default"
   (set/get_presence_default_mode, applicazione immediata, niente Save).
 - **custom_game_name**: in [presence] ha ora precedenza ARCHITETTURALE —
