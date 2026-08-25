@@ -5,10 +5,10 @@
 //!
 //! ```text
 //! UCOnline2/
-//! ├── VERSION              ← tag della release (es. "v1.19.3")
+//! ├── VERSION              ← tag della release (es. "v1.19.8")
 //! ├── x86/steam_api.dll
 //! ├── x64/steam_api64.dll
-//! └── plugins/*.dll
+//! └── plugins/*.dll        ← include overlay_proxy.dll (NON è un plugin ABI)
 //! ```
 //!
 //! Modulo PURO (nessuna dipendenza Tauri): la locazione con `AppHandle`
@@ -44,6 +44,11 @@ impl Uco2Bundle {
             ));
         }
         Ok(Self { dir })
+    }
+
+    /// Directory radice del bundle.
+    pub fn dir(&self) -> &Path {
+        &self.dir
     }
 
     /// True quando la directory contiene un bundle UCOnline2 utilizzabile.
@@ -98,6 +103,16 @@ impl Uco2Bundle {
             }
         }
         None
+    }
+
+    /// Early overlay proxy (`overlay_proxy.dll`). Assente = skip del deploy
+    /// overlay; il bundle resta valido perché non è un plugin ABI obbligatorio.
+    pub fn overlay_proxy_dll(&self) -> Option<PathBuf> {
+        if let Some(in_plugins) = self.plugin_dll("overlay_proxy") {
+            return Some(in_plugins);
+        }
+        let root = self.dir.join("overlay_proxy.dll");
+        root.is_file().then_some(root)
     }
 }
 

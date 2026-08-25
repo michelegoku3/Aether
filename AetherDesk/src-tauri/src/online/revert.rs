@@ -65,7 +65,8 @@ fn revert_from_journal(journal: &Journal, backup_dir: &Path) -> Result<(), Strin
                 }
             }
             JournalEntry::BackedUp { original, backup } => {
-                if backup.is_file() && !original.exists() {
+                // Files AND directories (the original plugins/ folder is a dir).
+                if backup.exists() && !original.exists() {
                     if let Some(parent) = original.parent() {
                         fs::create_dir_all(parent).map_err(|e| e.to_string())?;
                     }
@@ -106,6 +107,11 @@ fn revert_heuristic(record: &OnlineRecord) -> Result<(), String> {
     }
     if record.steam_api_path.is_file() {
         fs::remove_file(&record.steam_api_path).map_err(|e| e.to_string())?;
+    }
+    if let Some(overlay) = &record.overlay_proxy_path {
+        if overlay.is_file() {
+            fs::remove_file(overlay).map_err(|e| e.to_string())?;
+        }
     }
     // 2. Rimuove la cartella plugins deployata (tutta: è nostra).
     if let Some(plugins_dir) = record.ini_path.parent().map(|d| d.join("plugins")) {

@@ -3,20 +3,23 @@
 //! Ogni fase del deploy è idempotente e registra la propria azione inversa
 //! in un JOURNAL (`<backup>/<app_id>/uc_online2/journal.json`): `disable()`
 //! replaya il journal in ordine inverso e ripristina l'albero originale
-//! byte-per-byte (inclusi i file neutralizzati `*.uco-disabled`).
+//! byte-per-byte (inclusi i file Neutralized dei journal 1.19.3).
 //!
 //! Fasi:
 //!   0. pre-flight (bundle, arch, directory scrivibili)
 //!   1. backup originali (dll Steamworks, ini, plugins/) → backup dir
-//!   2. neutralizzazione conflitti (ColdClient/SteamFix/OnlineFix/proxy)
-//!   3. copia DLL UCOnline2 (per architettura)
-//!   4. scrittura union-crax.ini (atomica)
-//!   5. deploy plugin richiesti dai backend rilevati
-//!   6. persistenza del record di stato
+//!   2. quarantena conflitti (spostati in backup/, niente `*.uco-disabled`
+//!      visibili nel game tree — i journal vecchi con Neutralized restano
+//!      supportati in revert)
+//!   3. copia DLL UCOnline2 (per architettura; anche in refresh/upgrade)
+//!   4. early overlay proxy (version.dll / XINPUT1_3.dll)
+//!   5. scrittura union-crax.ini (atomica)
+//!   6. deploy plugin richiesti dai backend rilevati
+//!   7. persistenza del record di stato
 
-use crate::external_tools::constants::UCO_DISABLED_SUFFIX;
 use crate::online::bundle::Uco2Bundle;
 use crate::online::config::{build_ini, harvest_dlc};
+use crate::online::detect::overlay_target;
 use crate::online::state::{now_epoch_secs, OnlineStateStore};
 use crate::online::types::{
     Conflict, DetectionReport, OnlineEnableRequest, OnlineRecord, PhotonFlavor,
@@ -43,8 +46,8 @@ pub enum JournalEntry {
     /// File di gioco spostato nella backup dir. `original` = dove stava,
     /// `backup` = dove è ora (va ripristinato in disable).
     BackedUp { original: PathBuf, backup: PathBuf },
-    /// File neutralizzato rinominato in `<path>.uco-disabled` (va rinominato
-    /// indietro in disable).
+    /// File neutralizzato rinominato in `<path>.uco-disabled` (legacy 1.19.3:
+    /// i deploy nuovi usano `BackedUp` e spostano il file nel backup dir).
     Neutralized { path: PathBuf },
     /// File UCO2 copiato nel gioco (va RIMOSSO in disable).
     Deployed { path: PathBuf },
@@ -70,9 +73,9 @@ impl Journal {
     }
 }
 
-/// Esegue il deploy completo. Idempotente: se il gioco è già attivo
-/// (record presente), riscrive solo ini + plugin (config refresh) senza
-/// toccare backup/DLL.
+/// Esegue il deploy completo. Idempotente: al primo enable journalizza
+/// backup/quarantena; ai refresh successivi ricopia DLL/plugin/overlay dal
+/// bundle corrente (upgrade di versione) e riscrive l'ini.
 pub fn deploy(
     app_id: u32,
     detection: &DetectionReport,
@@ -96,12 +99,12 @@ pub fn deploy(
     let mut store = OnlineStateStore::load(state_path);
     let already_enabled = store.get(app_id).is_some();
 
+    fs::create_dir_all(&backup_dir).map_err(|e| e.to_string())?;
+    fs::create_dir_all(backup_dir.join(ORIGINAL_SUBDIR)).map_err(|e| e.to_string())?;
+    let mut journal = Journal::load(&backup_dir);
+
     if !already_enabled {
         // ---- Fase 1: backup originali ----
-        fs::create_dir_all(&backup_dir).map_err(|e| e.to_string())?;
-        fs::create_dir_all(backup_dir.join(ORIGINAL_SUBDIR)).map_err(|e| e.to_string())?;
-
-        let mut journal = Journal::load(&backup_dir);
         if steam_api_path.is_file() {
             let target = unique_backup_path(&backup_dir, "steam_api");
             fs::rename(&steam_api_path, &target).map_err(|e| e.to_string())?;
@@ -127,73 +130,71 @@ pub fn deploy(
             });
         }
 
-        // ---- Fase 2: neutralizzazione conflitti ----
+        // ---- Fase 2: quarantena conflitti (fuori dal game tree) ----
         for conflict in &detection.conflicts {
             let path = conflict_path(conflict);
-            let disabled = path.with_file_name(format!(
-                "{}{}",
+            if !path.is_file() {
+                continue;
+            }
+            let backup_name = format!(
+                "conflict_{}",
                 path.file_name()
                     .and_then(|n| n.to_str())
-                    .unwrap_or("file"),
-                UCO_DISABLED_SUFFIX
-            ));
-            if path.is_file() && !disabled.exists() {
-                fs::rename(&path, &disabled).map_err(|e| e.to_string())?;
-                journal.entries.push(JournalEntry::Neutralized { path });
-            }
+                    .unwrap_or("file")
+            );
+            let target = unique_backup_path(&backup_dir, &backup_name);
+            fs::rename(&path, &target).map_err(|e| e.to_string())?;
+            journal.entries.push(JournalEntry::BackedUp {
+                original: path,
+                backup: target,
+            });
         }
-        journal.save(&backup_dir)?;
-
-        // ---- Fase 3: copia DLL UCOnline2 ----
-        fs::create_dir_all(steam_api_dir).map_err(|e| e.to_string())?;
-        let bundle_dll = bundle.steam_api_dll(detection.arch);
-        fs::copy(&bundle_dll, &steam_api_path).map_err(|e| {
-            format!(
-                "Failed to copy {} -> {}: {}",
-                bundle_dll.display(),
-                steam_api_path.display(),
-                e
-            )
-        })?;
-        journal
-            .entries
-            .push(JournalEntry::Deployed { path: steam_api_path.clone() });
         journal.save(&backup_dir)?;
     }
 
-    // ---- Fase 4+5 (sempre, anche per refresh): ini + plugin ----
+    // ---- Fase 3: copia DLL UCOnline2 (anche in refresh: bump bundle) ----
+    fs::create_dir_all(steam_api_dir).map_err(|e| e.to_string())?;
+    let bundle_dll = bundle.steam_api_dll(detection.arch);
+    fs::copy(&bundle_dll, &steam_api_path).map_err(|e| {
+        format!(
+            "Failed to copy {} -> {}: {}",
+            bundle_dll.display(),
+            steam_api_path.display(),
+            e
+        )
+    })?;
+    journal_deployed(&mut journal, &steam_api_path);
+    journal.save(&backup_dir)?;
+
+    // ---- Fase 4: early overlay proxy ----
+    let overlay_proxy_path =
+        deploy_overlay_proxy(detection, bundle, request, &backup_dir, &mut journal)?;
+    journal.save(&backup_dir)?;
+
+    // ---- Fase 5: ini (sempre, anche per refresh) ----
     let dlc_entries = harvest_dlc(&detection.game_root, ini_dir);
     let ini_content = build_ini(detection, request, &dlc_entries);
     write_atomic(&ini_path, ini_content.as_bytes())?;
-    if !already_enabled {
-        let mut journal = Journal::load(&backup_dir);
-        journal
-            .entries
-            .push(JournalEntry::Deployed { path: ini_path.clone() });
-        journal.save(&backup_dir)?;
-    }
+    journal_deployed(&mut journal, &ini_path);
+    journal.save(&backup_dir)?;
 
+    // ---- Fase 6: plugin ----
     let mut backends_deployed = Vec::new();
-    if !already_enabled {
-        let mut journal = Journal::load(&backup_dir);
-        for plugin in required_plugins(detection, request) {
-            if let Some(source) = bundle.plugin_dll(plugin) {
-                fs::create_dir_all(&plugins_dir).map_err(|e| e.to_string())?;
-                let dest = plugins_dir.join(format!("{plugin}.dll"));
-                fs::copy(&source, &dest).map_err(|e| e.to_string())?;
-                backends_deployed.push(plugin.to_string());
-                journal
-                    .entries
-                    .push(JournalEntry::Deployed { path: dest });
-            }
+    for plugin in required_plugins(detection, request) {
+        if let Some(source) = bundle.plugin_dll(plugin) {
+            fs::create_dir_all(&plugins_dir).map_err(|e| e.to_string())?;
+            let dest = plugins_dir.join(format!("{plugin}.dll"));
+            fs::copy(&source, &dest).map_err(|e| e.to_string())?;
+            backends_deployed.push(plugin.to_string());
+            journal_deployed(&mut journal, &dest);
         }
-        journal.save(&backup_dir)?;
-    } else {
-        // Refresh: riporta la lista dai plugin presenti in cartella.
+    }
+    if backends_deployed.is_empty() && already_enabled {
         backends_deployed = list_plugins_in(&plugins_dir);
     }
+    journal.save(&backup_dir)?;
 
-    // ---- Fase 6: record ----
+    // ---- Fase 7: record ----
     let record = OnlineRecord {
         app_id,
         enabled_at: now_epoch_secs(),
@@ -205,13 +206,86 @@ pub fn deploy(
         arch: detection.arch,
         backends_deployed,
         backup_dir: backup_dir.clone(),
+        overlay_proxy_path,
     };
     store.upsert(record.clone(), state_path)?;
 
     Ok(record)
 }
 
+/// Aggiunge `Deployed` solo se il path non è già nel journal (refresh).
+fn journal_deployed(journal: &mut Journal, path: &Path) {
+    let already = journal.entries.iter().any(|entry| {
+        matches!(entry, JournalEntry::Deployed { path: existing } if existing == path)
+    });
+    if !already {
+        journal
+            .entries
+            .push(JournalEntry::Deployed { path: path.to_path_buf() });
+    }
+}
+
+/// Installa l'early overlay proxy. Restituisce il path deployato, se c'è.
+fn deploy_overlay_proxy(
+    detection: &DetectionReport,
+    bundle: &Uco2Bundle,
+    request: &OnlineEnableRequest,
+    backup_dir: &Path,
+    journal: &mut Journal,
+) -> Result<Option<PathBuf>, String> {
+    if !request.deploy_overlay_proxy {
+        return Ok(None);
+    }
+    let Ok(target) = overlay_target(detection) else {
+        return Ok(None);
+    };
+    let Some(source) = bundle.overlay_proxy_dll() else {
+        return Ok(None);
+    };
+
+    if target.path.is_file() {
+        let same = fs::read(&target.path)
+            .ok()
+            .zip(fs::read(&source).ok())
+            .map(|(left, right)| left == right)
+            .unwrap_or(false);
+        if same {
+            journal_deployed(journal, &target.path);
+            return Ok(Some(target.path));
+        }
+        let already_backed = journal.entries.iter().any(|entry| {
+            matches!(entry, JournalEntry::BackedUp { original, .. } if original == &target.path)
+        });
+        if !already_backed {
+            let backup = unique_backup_path(backup_dir, target.file_name);
+            fs::copy(&target.path, &backup).map_err(|e| e.to_string())?;
+            fs::remove_file(&target.path).map_err(|e| e.to_string())?;
+            journal.entries.push(JournalEntry::BackedUp {
+                original: target.path.clone(),
+                backup,
+            });
+        } else if target.path.is_file() {
+            fs::remove_file(&target.path).map_err(|e| e.to_string())?;
+        }
+    }
+
+    if let Some(parent) = target.path.parent() {
+        fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    }
+    fs::copy(&source, &target.path).map_err(|e| {
+        format!(
+            "Failed to install overlay proxy {} -> {}: {}",
+            source.display(),
+            target.path.display(),
+            e
+        )
+    })?;
+    journal_deployed(journal, &target.path);
+    Ok(Some(target.path))
+}
+
 /// Plugin richiesti dai backend rilevati (ordine stabile per test/UI).
+/// `overlay_proxy` NON è un plugin ABI e non va in questa lista.
 pub fn required_plugins(
     detection: &DetectionReport,
     request: &OnlineEnableRequest,

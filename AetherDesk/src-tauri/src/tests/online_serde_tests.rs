@@ -32,6 +32,7 @@ fn detection_sample() -> DetectionReport {
         },
         conflicts: Vec::new(),
         steamless_applied: false,
+        steamstub_detected: false,
         warnings: vec!["w".to_string()],
     }
 }
@@ -55,7 +56,7 @@ fn prerequisites_serializes_camel_case() {
 #[test]
 fn detection_report_serializes_camel_case() {
     let json = serde_json::to_value(detection_sample()).unwrap();
-    for key in ["gameRoot", "engine", "arch", "gameExe", "unityDataDir", "steamApiDir", "iniDir", "steamlessApplied", "warnings"] {
+    for key in ["gameRoot", "engine", "arch", "gameExe", "unityDataDir", "steamApiDir", "iniDir", "steamlessApplied", "steamstubDetected", "warnings"] {
         assert!(json.get(key).is_some(), "chiave '{key}' manca: {json}");
     }
     let backends = json.get("backends").unwrap();
@@ -98,6 +99,12 @@ fn enable_request_deserializes_from_camel_case() {
         "deployEosCustom": true
     });
     let request: OnlineEnableRequest = serde_json::from_value(json).expect("deve deserializzare");
+    assert!(request.load_overlay, "LoadOverlay default true se assente");
+    assert!(!request.log_overlay);
+    assert!(!request.get_stubbed_lol);
+    assert!(request.client.is_empty());
+    assert!(request.deploy_overlay_proxy);
+    assert!(!request.playfab.use_shared);
     assert_eq!(request.og_app_id, 1144200);
     assert_eq!(request.spoof_app_id, 480);
     assert!(request.verbose_log);
@@ -156,9 +163,10 @@ fn record_and_status_serialize_camel_case() {
         arch: GameArch::X86,
         backends_deployed: vec!["photon_universal".to_string()],
         backup_dir: PathBuf::from("C:\\backup"),
+        overlay_proxy_path: None,
     };
     let json = serde_json::to_value(&record).unwrap();
-    for key in ["appId", "enabledAt", "bundleVersion", "ogAppId", "spoofAppId", "iniPath", "steamApiPath", "arch", "backendsDeployed", "backupDir"] {
+    for key in ["appId", "enabledAt", "bundleVersion", "ogAppId", "spoofAppId", "iniPath", "steamApiPath", "arch", "backendsDeployed", "backupDir", "overlayProxyPath"] {
         assert!(json.get(key).is_some(), "chiave '{key}' manca: {json}");
     }
 

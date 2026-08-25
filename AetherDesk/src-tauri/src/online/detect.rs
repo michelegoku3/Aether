@@ -18,9 +18,16 @@ use crate::external_tools::constants::{
     is_steamless_backup_name, is_steamless_unpacked_name, UCO_PROXY_MAX_BYTES,
 };
 use crate::external_tools::fs::{contains_bytes, read_for_scan, walk_dirs, walk_files};
+use crate::online::steamstub::detect_steamstub;
 use crate::online::types::{BackendReport, Conflict, DetectionReport, Engine, GameArch, PhotonFlavor};
 use std::fs;
 use std::path::{Path, PathBuf};
+
+/// Nome file dell'early overlay proxy in base all'engine (x64 only).
+pub struct OverlayTarget {
+    pub file_name: &'static str,
+    pub path: PathBuf,
+}
 
 /// Motivo per cui l'ispezione del gioco non è riuscita.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -63,7 +70,20 @@ const NAMED_FIX_FILES: &[&str] = &[
 ];
 
 /// Proxy DLL generici dietro cui un fix può nascondersi (solo se piccoli).
-const PROXY_DLLS: &[&str] = &["version.dll", "dxgi.dll", "dsound.dll", "winhttp.dll"];
+/// `version.dll` e `XINPUT1_3.dll` NON sono qui: dal 1.19.5 sono i nomi
+/// dell'overlay proxy UCO2 e li gestisce il deployer, non la quarantena.
+const PROXY_DLLS: &[&str] = &["dxgi.dll", "dsound.dll", "winhttp.dll"];
+
+/// Nomi riservati all'early overlay proxy (non vanno trattati come conflitto).
+const OVERLAY_PROXY_NAMES: &[&str] = &["version.dll", "xinput1_3.dll"];
+
+/// File extra del launcher OFME da quarantinare solo se c'è OnlineFix.json.
+const OFME_LAUNCHER_FILES: &[&str] = &[
+    "Launcher.exe",
+    "OnlineFix.json",
+    "OnlineFix.url",
+    "PhotonBridge.dll",
+];
 
 /// Stringhe ANSI nei metadati IL2CPP / negli exe Unreal.
 const STR_FUSION: &[u8] = b"NetworkRunner";
@@ -178,18 +198,24 @@ impl GameInspector {
 
         // Convenzione Unity: `<Game>_Data` sta accanto a `<Game>.exe`.
         let game_name = unity_game_name(data_dir);
+        let game_exe = Self::pick_game_exe(&ini_dir, &game_name);
+        let steamstub_detected = game_exe
+            .as_deref()
+            .map(detect_steamstub)
+            .unwrap_or(false);
 
         DetectionReport {
             game_root: root.to_path_buf(),
             engine: Engine::Unity,
             arch,
-            game_exe: Self::pick_game_exe(&ini_dir, &game_name),
+            game_exe,
             unity_data_dir: Some(data_dir.to_path_buf()),
             steam_api_dir,
             ini_dir,
             backends,
             conflicts,
             steamless_applied,
+            steamstub_detected,
             warnings,
         }
     }
@@ -222,6 +248,7 @@ impl GameInspector {
         let conflicts = Self::detect_conflicts(root, steam_api_dir.as_deref());
         let warnings = Self::warnings_for(root, arch, &backends);
         let steamless_applied = has_steamless_markers(root);
+        let steamstub_detected = detect_steamstub(shipping_exe);
 
         DetectionReport {
             game_root: root.to_path_buf(),
@@ -234,6 +261,7 @@ impl GameInspector {
             backends,
             conflicts,
             steamless_applied,
+            steamstub_detected,
             warnings,
         }
     }
@@ -251,18 +279,24 @@ impl GameInspector {
             .file_name()
             .and_then(|n| n.to_str())
             .unwrap_or_default();
+        let game_exe = Self::pick_game_exe(steam_api_dir, &game_name);
+        let steamstub_detected = game_exe
+            .as_deref()
+            .map(detect_steamstub)
+            .unwrap_or(false);
 
         DetectionReport {
             game_root: root.to_path_buf(),
             engine: Engine::Generic,
             arch,
-            game_exe: Self::pick_game_exe(steam_api_dir, &game_name),
+            game_exe,
             unity_data_dir: None,
             steam_api_dir: Some(steam_api_dir.to_path_buf()),
             ini_dir: steam_api_dir.to_path_buf(),
             backends,
             conflicts,
             steamless_applied,
+            steamstub_detected,
             warnings,
         }
     }
@@ -386,10 +420,14 @@ impl GameInspector {
             return conflicts;
         };
 
+        let mut named_fix_proxy = false;
         for &name in NAMED_FIX_FILES {
             let path = dir.join(name);
             if !path.is_file() {
                 continue;
+            }
+            if name.eq_ignore_ascii_case("winmm.dll") {
+                named_fix_proxy = true;
             }
             let conflict = match name {
                 "SteamFix64.dll" => Conflict::SteamFix(path),
@@ -399,14 +437,32 @@ impl GameInspector {
             conflicts.push(conflict);
         }
 
-        for name in PROXY_DLLS {
-            let path = dir.join(name);
-            if path.is_file()
-                && fs::metadata(&path)
-                    .map(|meta| meta.len() < UCO_PROXY_MAX_BYTES)
-                    .unwrap_or(false)
-            {
-                conflicts.push(Conflict::ProxyDll(path));
+        // OFME launcher: solo se OnlineFix.json identifica la catena.
+        let ofme_marker = dir.join("OnlineFix.json");
+        if ofme_marker.is_file() {
+            for &name in OFME_LAUNCHER_FILES {
+                let path = dir.join(name);
+                if path.is_file() && !conflicts.iter().any(|c| conflict_matches(c, &path)) {
+                    conflicts.push(Conflict::NamedFixFile(path));
+                }
+            }
+        }
+
+        // Proxy generici solo se NON c'è già un loader nominativo (winmm):
+        // altrimenti si rischia di toccare lo shim overlay di UCO2.
+        if !named_fix_proxy {
+            for name in PROXY_DLLS {
+                let path = dir.join(name);
+                if is_overlay_proxy_name(&path) {
+                    continue;
+                }
+                if path.is_file()
+                    && fs::metadata(&path)
+                        .map(|meta| meta.len() < UCO_PROXY_MAX_BYTES)
+                        .unwrap_or(false)
+                {
+                    conflicts.push(Conflict::ProxyDll(path));
+                }
             }
         }
 
@@ -594,4 +650,69 @@ fn unity_game_name(data_dir: &Path) -> String {
         .and_then(|s| s.to_str())
         .map(|stem| stem.strip_suffix(UNITY_DATA_SUFFIX).unwrap_or(stem).to_string())
         .unwrap_or_default()
+}
+
+fn conflict_matches(conflict: &Conflict, path: &Path) -> bool {
+    match conflict {
+        Conflict::ColdClientLoader(p)
+        | Conflict::SteamFix(p)
+        | Conflict::OnlineFix(p)
+        | Conflict::NamedFixFile(p)
+        | Conflict::ProxyDll(p) => p == path,
+    }
+}
+
+fn is_overlay_proxy_name(path: &Path) -> bool {
+    path.file_name()
+        .and_then(|n| n.to_str())
+        .map(|n| OVERLAY_PROXY_NAMES.iter().any(|wanted| n.eq_ignore_ascii_case(wanted)))
+        .unwrap_or(false)
+}
+
+fn looks_like_phasmophobia(detection: &DetectionReport) -> bool {
+    let name_hit = |path: &Path| {
+        path.file_stem()
+            .and_then(|s| s.to_str())
+            .map(|s| s.to_ascii_lowercase().contains("phasmophobia"))
+            .unwrap_or(false)
+    };
+    name_hit(&detection.game_root)
+        || detection.game_exe.as_deref().map(name_hit).unwrap_or(false)
+        || detection
+            .ini_dir
+            .file_name()
+            .and_then(|n| n.to_str())
+            .map(|n| n.to_ascii_lowercase().contains("phasmophobia"))
+            .unwrap_or(false)
+}
+
+/// Destinazione dell'early overlay proxy, o il motivo dello skip.
+///
+/// Unity → `version.dll` accanto all'exe; Unreal → `XINPUT1_3.dll` accanto
+/// al Shipping exe. x64 only. Phasmophobia è in denylist (inventaria i file).
+pub fn overlay_target(detection: &DetectionReport) -> Result<OverlayTarget, &'static str> {
+    if detection.arch != GameArch::X64 {
+        return Err("Overlay proxy is x64-only.");
+    }
+    if looks_like_phasmophobia(detection) {
+        return Err("Phasmophobia rejects an extra version.dll; overlay proxy skipped.");
+    }
+    match detection.engine {
+        Engine::Unity => Ok(OverlayTarget {
+            file_name: "version.dll",
+            path: detection.ini_dir.join("version.dll"),
+        }),
+        Engine::Unreal => {
+            let dir = detection
+                .game_exe
+                .as_ref()
+                .and_then(|exe| exe.parent())
+                .unwrap_or(&detection.ini_dir);
+            Ok(OverlayTarget {
+                file_name: "XINPUT1_3.dll",
+                path: dir.join("XINPUT1_3.dll"),
+            })
+        }
+        Engine::Generic => Err("No early overlay proxy rule for generic games."),
+    }
 }

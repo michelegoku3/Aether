@@ -16,4 +16,5 @@ pub mod engine;
 pub mod preferences;
 pub mod revert;
 pub mod state;
+pub mod steamstub;
 pub mod types;

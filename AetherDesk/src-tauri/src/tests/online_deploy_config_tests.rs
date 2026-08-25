@@ -11,7 +11,7 @@ use crate::online::detect::GameInspector;
 use crate::online::revert::disable;
 use crate::online::state::OnlineStateStore;
 use crate::online::types::{
-    CoherenceOptions, EosOptions, OnlineEnableRequest, PhotonOptions, PlayfabOptions,
+    CoherenceOptions, OnlineEnableRequest, PhotonOptions, PlayfabOptions,
 };
 use std::fs;
 use std::path::Path;
@@ -40,6 +40,7 @@ fn bundle_fixture(dir: &Path) -> Uco2Bundle {
     write(dir, "x86/steam_api.dll", b"uco2-x86");
     write(dir, "plugins/photon_universal.dll", b"photon-plugin");
     write(dir, "plugins/playfab_universal.dll", b"playfab-plugin");
+    write(dir, "plugins/overlay_proxy.dll", b"overlay-proxy");
     write(dir, "VERSION", b"v9.9.9\n");
     Uco2Bundle::open(dir.to_path_buf()).expect("bundle fixture valid")
 }
@@ -47,24 +48,17 @@ fn bundle_fixture(dir: &Path) -> Uco2Bundle {
 fn base_request() -> OnlineEnableRequest {
     OnlineEnableRequest {
         og_app_id: 1144200,
-        spoof_app_id: 480,
-        verbose_log: true,
-        emulate_ticket: false,
-        warn_overlay_disabled: false,
-        sdr: false,
-        unlock_all_dlc: true,
         deploy_photon: true,
         photon: PhotonOptions {
             realtime_guid: "rt-guid".to_string(),
             voice_guid: "vo-guid".to_string(),
             fusion_guid: String::new(),
         },
-        eos: EosOptions::default(),
         playfab: PlayfabOptions {
             title_id: "TITLEID".to_string(),
+            use_shared: false,
         },
-        coherence: CoherenceOptions::default(),
-        deploy_eos_custom: false,
+        ..OnlineEnableRequest::default()
     }
 }
 
@@ -99,6 +93,9 @@ VerboseLog=true\r\n\
 EmulateTicket=false\r\n\
 WarnOverlayDisabled=false\r\n\
 SDR=false\r\n\
+LoadOverlay=true\r\n\
+LogOverlay=false\r\n\
+GetStubbedLol=false\r\n\
 \r\n\
 [DLC]\r\n\
 ; UnlockAll answers any \"do I own this DLC?\" check, for any id, so DLC\r\n\
@@ -170,6 +167,10 @@ fn ini_settings_toggles_are_written() {
     request.emulate_ticket = true;
     request.warn_overlay_disabled = true;
     request.sdr = true;
+    request.load_overlay = false;
+    request.log_overlay = true;
+    request.get_stubbed_lol = true;
+    request.client = "017".to_string();
     request.unlock_all_dlc = false;
 
     let ini = build_ini(&detection, &request, &[]);
@@ -177,7 +178,34 @@ fn ini_settings_toggles_are_written() {
     assert!(ini.contains("EmulateTicket=true\r\n"));
     assert!(ini.contains("WarnOverlayDisabled=true\r\n"));
     assert!(ini.contains("SDR=true\r\n"));
+    assert!(ini.contains("LoadOverlay=false\r\n"));
+    assert!(ini.contains("LogOverlay=true\r\n"));
+    assert!(ini.contains("GetStubbedLol=true\r\n"));
+    assert!(ini.contains("Client=017\r\n"));
     assert!(ini.contains("UnlockAll=false\r\n"));
+}
+
+#[test]
+fn ini_omits_empty_client() {
+    let tmp = tempfile::tempdir().unwrap();
+    write(tmp.path(), "TGame.exe", b"MZ");
+    write(tmp.path(), "TGame_Data/Managed/Assembly-CSharp.dll", b"asm");
+    let detection = GameInspector::inspect(tmp.path()).unwrap();
+    let ini = build_ini(&detection, &base_request(), &[]);
+    assert!(!ini.contains("Client="));
+}
+
+#[test]
+fn ini_playfab_shared_title() {
+    let tmp = tempfile::tempdir().unwrap();
+    write(tmp.path(), "PGame.exe", b"MZ");
+    write(tmp.path(), "PGame_Data/Managed/PlayFabAllSDK.dll", b"pf");
+    write(tmp.path(), "PGame_Data/Managed/Assembly-CSharp.dll", b"asm");
+    let detection = GameInspector::inspect(tmp.path()).unwrap();
+    let mut request = base_request();
+    request.playfab.use_shared = true;
+    let ini = build_ini(&detection, &request, &[]);
+    assert!(ini.contains("TitleId=1D861F"));
 }
 
 #[test]
@@ -272,6 +300,9 @@ fn deploy_then_disable_restores_everything() {
     // Plugin deployati.
     assert!(detection.ini_dir.join("plugins/photon_universal.dll").is_file());
     assert!(detection.ini_dir.join("plugins/playfab_universal.dll").is_file());
+    // Overlay proxy Unity x64.
+    assert!(detection.ini_dir.join("version.dll").is_file());
+    assert_eq!(fs::read(detection.ini_dir.join("version.dll")).unwrap(), b"overlay-proxy");
     // Journal presente.
     assert!(!Journal::load(&backup_dir).entries.is_empty());
     // Stato persistito.
@@ -324,9 +355,11 @@ fn deploy_neutralizes_conflicts_and_disable_restores_them() {
     deploy(1144200, &detection, &bundle, &base_request(), &backup_root, &state_path)
         .expect("deploy");
 
-    // Neutralizzato in modo reversibile.
+    // Quarantinato nel backup (niente *.uco-disabled nel game tree).
     assert!(!steam_api_dir.join("SteamFix64.dll").exists());
-    assert!(steam_api_dir.join("SteamFix64.dll.uco-disabled").is_file());
+    assert!(!steam_api_dir.join("SteamFix64.dll.uco-disabled").exists());
+    let backup_dir = backup_dir_for(&backup_root, 1144200);
+    assert!(backup_dir.join("original/conflict_SteamFix64.dll").is_file());
 
     disable(1144200, &backup_root, &state_path).expect("disable");
 

@@ -85,10 +85,10 @@ fn plugin_lookup_is_case_insensitive() {
 fn version_file_is_read() {
     let tmp = tempfile::tempdir().unwrap();
     valid_bundle_fixture(tmp.path());
-    write(tmp.path(), "VERSION", b"v1.19.3\n");
+    write(tmp.path(), "VERSION", b"v1.19.8\n");
 
     let bundle = Uco2Bundle::open(tmp.path().to_path_buf()).unwrap();
-    assert_eq!(bundle.version().as_deref(), Some("v1.19.3"));
+    assert_eq!(bundle.version().as_deref(), Some("v1.19.8"));
 
     // Senza VERSION → None, non errore.
     let tmp2 = tempfile::tempdir().unwrap();
