@@ -114,6 +114,10 @@ pub struct DetectionReport {
     /// True quando Steamless ha già processato un eseguibile del gioco
     /// (backup Steamless o output `.unpacked.exe` presenti).
     pub steamless_applied: bool,
+    /// True quando l'exe principale ha una sezione `.bind` con signature
+    /// SteamStub 1.x–3.x (GetStubbedLol può agganciarlo a runtime).
+    #[serde(default)]
+    pub steamstub_detected: bool,
     pub warnings: Vec<String>,
 }
 
@@ -148,6 +152,9 @@ pub struct EosOptions {
 #[serde(rename_all = "camelCase")]
 pub struct PlayfabOptions {
     pub title_id: String,
+    /// Title community condiviso (`1D861F`), stesso pattern di coherence SHARED.
+    #[serde(default)]
+    pub use_shared: bool,
 }
 
 /// Runtime key coherence: propria (progetto con schema caricato) oppure
@@ -160,7 +167,7 @@ pub struct CoherenceOptions {
 }
 
 /// Richiesta completa di attivazione online (dal pannello UI).
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct OnlineEnableRequest {
     /// AppId VERO del gioco (precompilato dalla UI con l'id di libreria).
@@ -175,6 +182,18 @@ pub struct OnlineEnableRequest {
     pub warn_overlay_disabled: bool,
     /// [Settings] SDR: contesto Steam Datagram Relay per i giochi che lo usano.
     pub sdr: bool,
+    /// [Settings] LoadOverlay. Default true (UCO2 carica GameOverlayRenderer).
+    #[serde(default = "default_true")]
+    pub load_overlay: bool,
+    /// [Settings] LogOverlay: scrive steam_overlay.log accanto all'exe.
+    #[serde(default)]
+    pub log_overlay: bool,
+    /// [Settings] GetStubbedLol: patch SteamStub a runtime.
+    #[serde(default)]
+    pub get_stubbed_lol: bool,
+    /// [Settings] Client: pin SteamClient() per old-SDK (es. "017"). Vuoto = unset.
+    #[serde(default)]
+    pub client: String,
     /// [DLC] UnlockAll: sblocca tutti i DLC (default true nella UI).
     pub unlock_all_dlc: bool,
     /// Deploy del plugin Photon (toggle UI, default off come EOS).
@@ -185,6 +204,38 @@ pub struct OnlineEnableRequest {
     pub coherence: CoherenceOptions,
     /// Deploy di EOS_custom (default: true se EOS rilevato).
     pub deploy_eos_custom: bool,
+    /// Deploy dell'early overlay proxy (version.dll / XINPUT1_3.dll).
+    #[serde(default = "default_true")]
+    pub deploy_overlay_proxy: bool,
+}
+
+fn default_true() -> bool {
+    true
+}
+
+impl Default for OnlineEnableRequest {
+    fn default() -> Self {
+        Self {
+            og_app_id: 0,
+            spoof_app_id: 480,
+            verbose_log: true,
+            emulate_ticket: false,
+            warn_overlay_disabled: false,
+            sdr: false,
+            load_overlay: true,
+            log_overlay: false,
+            get_stubbed_lol: false,
+            client: String::new(),
+            unlock_all_dlc: true,
+            deploy_photon: false,
+            photon: PhotonOptions::default(),
+            eos: EosOptions::default(),
+            playfab: PlayfabOptions::default(),
+            coherence: CoherenceOptions::default(),
+            deploy_eos_custom: false,
+            deploy_overlay_proxy: true,
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -212,6 +263,9 @@ pub struct OnlineRecord {
     pub backends_deployed: Vec<String>,
     /// Path della cartella di backup del deploy (journal + originali).
     pub backup_dir: PathBuf,
+    /// Overlay proxy deployato (`version.dll` / `XINPUT1_3.dll`), se presente.
+    #[serde(default)]
+    pub overlay_proxy_path: Option<PathBuf>,
 }
 
 // ---------------------------------------------------------------------------

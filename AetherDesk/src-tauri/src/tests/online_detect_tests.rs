@@ -393,5 +393,48 @@ fn x86_game_has_warning() {
     assert!(report
         .warnings
         .iter()
-        .any(|w| w.contains("32 bit")));
+        .any(|w| w.contains("32-bit") || w.contains("32 bit")));
+}
+
+#[test]
+fn overlay_target_names_are_not_conflicts() {
+    let tmp = tempfile::tempdir().unwrap();
+    write(tmp.path(), "Game.exe", b"MZ");
+    write(tmp.path(), "steam_api64.dll", b"dll");
+    write(tmp.path(), "version.dll", b"tiny-overlay-or-proxy");
+    write(tmp.path(), "XINPUT1_3.dll", b"tiny-xinput");
+
+    let report = GameInspector::inspect(tmp.path()).unwrap();
+    assert!(
+        !report.conflicts.iter().any(|c| matches!(c, Conflict::ProxyDll(_))),
+        "version.dll / XINPUT1_3.dll belong to the overlay proxy, not conflict quarantine"
+    );
+}
+
+#[test]
+fn named_winmm_skips_generic_proxy_conflicts() {
+    let tmp = tempfile::tempdir().unwrap();
+    write(tmp.path(), "Game.exe", b"MZ");
+    write(tmp.path(), "steam_api64.dll", b"dll");
+    write(tmp.path(), "winmm.dll", b"tiny");
+    write(tmp.path(), "dxgi.dll", b"tiny-dxgi");
+
+    let report = GameInspector::inspect(tmp.path()).unwrap();
+    assert!(report.conflicts.iter().any(|c| matches!(c, Conflict::NamedFixFile(_))));
+    assert!(
+        !report.conflicts.iter().any(|c| matches!(c, Conflict::ProxyDll(_))),
+        "generic proxies stay put when a named winmm loader identifies the chain"
+    );
+}
+
+#[test]
+fn overlay_target_skipped_for_phasmophobia() {
+    let tmp = tempfile::tempdir().unwrap();
+    write(tmp.path(), "Phasmophobia.exe", b"MZ");
+    write(tmp.path(), "Phasmophobia_Data/Managed/Assembly-CSharp.dll", b"a");
+    write(tmp.path(), "Phasmophobia_Data/Plugins/x86_64/steam_api64.dll", b"dll");
+
+    let report = GameInspector::inspect(tmp.path()).unwrap();
+    let err = crate::online::detect::overlay_target(&report).unwrap_err();
+    assert!(err.contains("Phasmophobia"));
 }

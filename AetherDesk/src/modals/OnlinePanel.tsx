@@ -37,6 +37,7 @@ export interface OnlineDetectionReport {
   backends: OnlineBackendReport;
   conflicts: OnlineConflict[];
   steamlessApplied: boolean;
+  steamstubDetected: boolean;
   warnings: string[];
 }
 
@@ -58,6 +59,7 @@ export interface OnlineRecord {
   arch: ArchKind;
   backendsDeployed: string[];
   backupDir: string;
+  overlayProxyPath: string | null;
 }
 
 export interface OnlinePlan {
@@ -85,13 +87,18 @@ export interface OnlineEnableRequest {
   emulateTicket: boolean;
   warnOverlayDisabled: boolean;
   sdr: boolean;
+  loadOverlay: boolean;
+  logOverlay: boolean;
+  getStubbedLol: boolean;
+  client: string;
   unlockAllDlc: boolean;
   deployPhoton: boolean;
   photon: { realtimeGuid: string; voiceGuid: string; fusionGuid: string };
   eos: { productId: string; sandboxId: string; deploymentId: string; clientId: string; clientSecret: string };
-  playfab: { titleId: string };
+  playfab: { titleId: string; useShared: boolean };
   coherence: { runtimeKey: string; useShared: boolean };
   deployEosCustom: boolean;
+  deployOverlayProxy: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -135,13 +142,18 @@ const emptyRequest = (ogAppId: number): OnlineEnableRequest => ({
   emulateTicket: false,
   warnOverlayDisabled: false,
   sdr: false,
+  loadOverlay: true,
+  logOverlay: false,
+  getStubbedLol: false,
+  client: '',
   unlockAllDlc: true,
   deployPhoton: false,
   photon: { realtimeGuid: '', voiceGuid: '', fusionGuid: '' },
   eos: { productId: '', sandboxId: '', deploymentId: '', clientId: '', clientSecret: '' },
-  playfab: { titleId: '' },
+  playfab: { titleId: '', useShared: false },
   coherence: { runtimeKey: '', useShared: false },
   deployEosCustom: false,
+  deployOverlayProxy: true,
 });
 
 const engineLabel = (engine: EngineKind): string => {
@@ -205,9 +217,19 @@ export const OnlinePanel = ({ game, onClose }: OnlinePanelProps) => {
       ]);
       setPlan(planResult);
       setStatus(statusResult);
-      setRequest((previous) => savedRequest ?? {
-        ...previous,
-        ogAppId: previous.ogAppId || appId || 0,
+      setRequest((previous) => {
+        const next = savedRequest ?? {
+          ...previous,
+          ogAppId: previous.ogAppId || appId || 0,
+        };
+        if (
+          !savedRequest
+          && planResult.detection.steamstubDetected
+          && !planResult.detection.steamlessApplied
+        ) {
+          return { ...next, getStubbedLol: true };
+        }
+        return next;
       });
     } catch (err) {
       setMessage({ text: `Plan unavailable: ${err}`, kind: 'error' });
@@ -283,6 +305,10 @@ export const OnlinePanel = ({ game, onClose }: OnlinePanelProps) => {
   const enabled = status?.state === 'enabled';
   const broken = status?.state === 'broken';
   const blocked = !plan?.prerequisites.bundleOk || plan?.prerequisites.errors.length > 0;
+  const bundleUpdate = enabled
+    && !!plan?.prerequisites.bundleVersion
+    && !!status?.record?.bundleVersion
+    && plan.prerequisites.bundleVersion !== status.record.bundleVersion;
 
   const openFolder = async (folder: string) => {
     try {
@@ -436,6 +462,17 @@ export const OnlinePanel = ({ game, onClose }: OnlinePanelProps) => {
                       disabled={enabled}
                     />
                   </div>
+                  <div style={styles.row}>
+                    <span style={styles.label}>Client (old-SDK)</span>
+                    <input
+                      style={styles.input}
+                      type="text"
+                      value={request.client}
+                      onChange={(e) => set('client', e.target.value)}
+                      disabled={enabled}
+                      placeholder="017 — only for old-SDK games (e.g. Rivals of Aether)"
+                    />
+                  </div>
                 </div>
               )}
 
@@ -504,8 +541,20 @@ export const OnlinePanel = ({ game, onClose }: OnlinePanelProps) => {
                   <div style={styles.sectionTitle}>PlayFab</div>
                   <div style={styles.row}>
                     <span style={styles.label}>TitleId (yours)</span>
-                    <input style={styles.input} value={request.playfab.titleId} onChange={(e) => set('playfab', { ...request.playfab, titleId: e.target.value })} disabled={enabled} placeholder="XXXXX (empty = inert plugin)" />
+                    <input
+                      style={styles.input}
+                      value={request.playfab.titleId}
+                      onChange={(e) => set('playfab', { ...request.playfab, titleId: e.target.value })}
+                      disabled={enabled || request.playfab.useShared}
+                      placeholder="XXXXX or SHARED (empty = inert plugin)"
+                    />
                   </div>
+                  {checkboxRow(
+                    request.playfab.useShared,
+                    enabled,
+                    (v) => set('playfab', { ...request.playfab, useShared: v }),
+                    'Use the SHARED community TitleId (1D861F — everyone must match)',
+                  )}
                 </div>
               )}
 
@@ -549,6 +598,24 @@ export const OnlinePanel = ({ game, onClose }: OnlinePanelProps) => {
                     'Warn when Steam overlay is disabled'
                   )}
                   {checkboxRow(
+                    request.loadOverlay,
+                    enabled,
+                    (v) => set('loadOverlay', v),
+                    'Load Steam overlay renderer (LoadOverlay)'
+                  )}
+                  {checkboxRow(
+                    request.logOverlay,
+                    enabled,
+                    (v) => set('logOverlay', v),
+                    'Write steam_overlay.log (LogOverlay)'
+                  )}
+                  {checkboxRow(
+                    request.getStubbedLol,
+                    enabled,
+                    (v) => set('getStubbedLol', v),
+                    'SteamStub runtime hook (GetStubbedLol)'
+                  )}
+                  {checkboxRow(
                     request.unlockAllDlc,
                     enabled,
                     (v) => set('unlockAllDlc', v),
@@ -559,6 +626,14 @@ export const OnlinePanel = ({ game, onClose }: OnlinePanelProps) => {
                     enabled,
                     (v) => set('sdr', v),
                     'Steam Datagram Relay'
+                  )}
+                  {plan.detection.engine !== 'generic' && plan.detection.arch === 'x64' && checkboxRow(
+                    request.deployOverlayProxy,
+                    enabled,
+                    (v) => set('deployOverlayProxy', v),
+                    plan.detection.engine === 'unity'
+                      ? 'Early overlay proxy (version.dll beside the exe)'
+                      : 'Early overlay proxy (XINPUT1_3.dll beside the Shipping exe)',
                   )}
                 </div>
               )}
@@ -576,6 +651,22 @@ export const OnlinePanel = ({ game, onClose }: OnlinePanelProps) => {
         {/* I due tasti non cambiano mai posizione: Enable/Disable a sinistra,
             Reset a destra. Reset diventa non cliccabile quando UCO2 è attivo. */}
         <div style={styles.footer}>
+          {bundleUpdate && (
+            <button
+              type="button"
+              className="modal-btn"
+              style={{
+                ...styles.footerBtn,
+                ...styles.btn,
+                ...(blocked || busy ? styles.btnDisabled : {}),
+              }}
+              onClick={handleEnable}
+              disabled={blocked || busy}
+              title={`Update deployed files to ${plan?.prerequisites.bundleVersion ?? 'the current bundle'}`}
+            >
+              {busy ? 'Updating...' : `Update ${plan?.prerequisites.bundleVersion ?? ''}`.trim()}
+            </button>
+          )}
           <button
             type="button"
             className="modal-btn"

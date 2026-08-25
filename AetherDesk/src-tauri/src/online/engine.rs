@@ -6,7 +6,7 @@
 
 use crate::online::bundle::Uco2Bundle;
 use crate::online::deploy;
-use crate::online::detect::GameInspector;
+use crate::online::detect::{overlay_target, GameInspector};
 use crate::online::revert;
 use crate::online::state::OnlineStateStore;
 use crate::online::types::{
@@ -57,7 +57,7 @@ impl OnlineEngine {
         let store = OnlineStateStore::load(state_path);
         let current = store.get(app_id).cloned();
 
-        let notices = build_notices(&detection);
+        let notices = build_notices(&detection, bundle.as_ref().ok(), current.as_ref());
 
         Ok(OnlinePlan {
             detection,
@@ -140,7 +140,11 @@ fn inspect(game_root: &Path) -> Result<DetectionReport, String> {
 /// Notice mostrate nella UI in un unico gruppo ⚠ (niente più 💡 separati:
 /// i suggerimenti che duplicavano gli avvisi sono stati fusi qui).
 /// Unisce gli avvisi di detection alle note operative, senza duplicati.
-fn build_notices(detection: &DetectionReport) -> Vec<String> {
+fn build_notices(
+    detection: &DetectionReport,
+    bundle: Option<&Uco2Bundle>,
+    current: Option<&crate::online::types::OnlineRecord>,
+) -> Vec<String> {
     let mut notices = detection.warnings.clone();
 
     if detection.conflicts.iter().any(|c| {
@@ -154,7 +158,7 @@ fn build_notices(detection: &DetectionReport) -> Vec<String> {
     }) {
         notices.push(
             "A competing emulator was detected (ColdClientLoader/SteamFix/OnlineFix): \
-             it will be neutralized reversibly (*.uco-disabled)."
+             it will be moved into the AetherDesk backup (reversible)."
                 .to_string(),
         );
     }
@@ -173,9 +177,16 @@ fn build_notices(detection: &DetectionReport) -> Vec<String> {
                 .to_string(),
         );
     }
-    if detection.backends.playfab {
+    if detection.backends.playfab && detection.backends.coherence {
         notices.push(
-            "PlayFab detected: the plugin stays inert until you set a TitleId."
+            "PlayFab detected alongside coherence: leave TitleId empty unless testing \
+             proves PlayFab is required."
+                .to_string(),
+        );
+    } else if detection.backends.playfab {
+        notices.push(
+            "PlayFab is the matchmaking backend: everyone must use the same TitleId \
+             (SHARED uses the community title 1D861F). Blank = game launches, no multiplayer."
                 .to_string(),
         );
     }
@@ -192,6 +203,39 @@ fn build_notices(detection: &DetectionReport) -> Vec<String> {
              UCOnline2."
                 .to_string(),
         );
+    }
+    if detection.steamstub_detected && !detection.steamless_applied {
+        notices.push(
+            "SteamStub detected on the executable: enable GetStubbedLol (runtime hook) \
+             if Steamless cannot unpack it."
+                .to_string(),
+        );
+    }
+
+    match overlay_target(detection) {
+        Ok(_) => {
+            if bundle.is_some_and(|item| item.overlay_proxy_dll().is_none()) {
+                notices.push(
+                    "Early overlay proxy is not in this UCOnline2 bundle: Shift+Tab may \
+                     be missing on engines that init graphics before steam_api."
+                        .to_string(),
+                );
+            }
+        }
+        Err(reason) if reason.contains("Phasmophobia") => {
+            notices.push(reason.to_string());
+        }
+        Err(_) => {}
+    }
+
+    if let (Some(record), Some(active_bundle)) = (current, bundle) {
+        if record.bundle_version.as_deref() != active_bundle.version().as_deref() {
+            notices.push(format!(
+                "Deployed UCO2 {} — bundle is {}. Enable again to update the files.",
+                record.bundle_version.as_deref().unwrap_or("unknown"),
+                active_bundle.version().as_deref().unwrap_or("unknown"),
+            ));
+        }
     }
 
     notices

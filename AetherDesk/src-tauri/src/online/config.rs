@@ -1,7 +1,7 @@
 //! Generazione di `union-crax.ini` (configurazione UCOnline2).
 //!
 //! Builder tipizzato, specchio fedele delle sezioni che scrive `patch.bat`
-//! (commit 797d550). Regole di progetto:
+//! (v1.19.8 + PlayFab SHARED da HEAD). Regole di progetto:
 //!   * l'ini si scrive SEMPRE accanto all'exe in esecuzione (`ini_dir`
 //!     calcolato dalla detection) — un ini nella root dei giochi Unreal
 //!     verrebbe ignorato in silenzio;
@@ -11,7 +11,7 @@
 //!     (Goldberg) o dalle cartelle numeriche nella dir di gioco.
 
 use crate::online::types::{
-    CoherenceOptions, DetectionReport, OnlineEnableRequest, PhotonFlavor,
+    CoherenceOptions, DetectionReport, OnlineEnableRequest, PhotonFlavor, PlayfabOptions,
 };
 use crate::external_tools::fs::walk_files;
 use std::path::Path;
@@ -19,6 +19,9 @@ use std::path::Path;
 /// Runtime key del progetto coherence community condiviso (patch.bat):
 /// client-side identifier, pubblicabile; disponibilità non garantita.
 pub const COHERENCE_SHARED_KEY: &str = "fce1ea692a854b50b9f945ef6aa17758";
+
+/// TitleId PlayFab community condiviso (patch.bat `SHARED`, NMS e altri).
+pub const PLAYFAB_SHARED_TITLE: &str = "1D861F";
 
 /// Entry DLC harvestata: (appid, nome).
 pub type DlcEntry = (String, String);
@@ -41,6 +44,16 @@ pub fn build_ini(
         &format!("WarnOverlayDisabled={}", bool_str(request.warn_overlay_disabled)),
     );
     push_line(&mut out, &format!("SDR={}", bool_str(request.sdr)));
+    push_line(&mut out, &format!("LoadOverlay={}", bool_str(request.load_overlay)));
+    push_line(&mut out, &format!("LogOverlay={}", bool_str(request.log_overlay)));
+    push_line(
+        &mut out,
+        &format!("GetStubbedLol={}", bool_str(request.get_stubbed_lol)),
+    );
+    let client = normalize_client(&request.client);
+    if !client.is_empty() {
+        push_line(&mut out, &format!("Client={client}"));
+    }
 
     // [DLC] — UnlockAll (toggle UI) + entry harvestate per i giochi
     // che ENUMERANO i DLC via GetDLCCount/BGetDLCDataByIndex.
@@ -131,7 +144,10 @@ pub fn build_ini(
     if detection.backends.playfab {
         push_line(&mut out, "");
         push_line(&mut out, "[PlayFab]");
-        push_line(&mut out, &format!("TitleId={}", request.playfab.title_id));
+        push_line(
+            &mut out,
+            &format!("TitleId={}", playfab_title(&request.playfab)),
+        );
     }
 
     out
@@ -145,6 +161,30 @@ pub fn coherence_key(options: &CoherenceOptions) -> String {
     } else {
         options.runtime_key.clone()
     }
+}
+
+/// TitleId PlayFab finale: propria, `SHARED` digitato, oppure il title community.
+pub fn playfab_title(options: &PlayfabOptions) -> String {
+    if options.use_shared || options.title_id.trim().eq_ignore_ascii_case("SHARED") {
+        PLAYFAB_SHARED_TITLE.to_string()
+    } else {
+        options.title_id.clone()
+    }
+}
+
+/// Accetta "017" o "SteamClient017"; restituisce la forma corta da scrivere
+/// nell'ini (UCO2 accetta entrambe). Vuoto se l'utente non ha pinato nulla.
+pub fn normalize_client(raw: &str) -> String {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return String::new();
+    }
+    let stripped = trimmed
+        .strip_prefix("SteamClient")
+        .or_else(|| trimmed.strip_prefix("steamclient"))
+        .unwrap_or(trimmed)
+        .trim();
+    stripped.to_string()
 }
 
 /// Harvest DLC dal gioco, con le stesse due sorgenti di patch.bat:
