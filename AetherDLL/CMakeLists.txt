@@ -87,8 +87,37 @@ if(CMAKE_BUILD_TYPE STREQUAL "Debug")
 endif()
 
 # ============================================================================
+# Optional compiler cache (ccache / sccache) — speeds up even full rebuilds
+# ----------------------------------------------------------------------------
+# A compiler launcher caches every object keyed by (preprocessed source +
+# flags), so even "Rebuild All" recompiles abseil/protobuf/lua from cache in
+# a fraction of the time (this is the standard CI/dev trick for C++).
+#   AUTO (default) : auto-detect sccache/ccache in PATH; no-op if not found
+#   OFF            : disable
+#   <path>         : force a specific binary, e.g. C:/Tools/ccache.exe
+# MSVC + PCH note: with ccache set  CCACHE_SLOPPINESS=pch_defines,time_macros
+# ============================================================================
+set(AETHER_COMPILER_CACHE "AUTO" CACHE STRING "Compiler cache launcher: AUTO | OFF | <path to ccache/sccache>")
+if(NOT AETHER_COMPILER_CACHE STREQUAL "OFF")
+    if(AETHER_COMPILER_CACHE STREQUAL "AUTO")
+        find_program(AETHER_CCL_EXE NAMES sccache ccache)
+    else()
+        set(AETHER_CCL_EXE "${AETHER_COMPILER_CACHE}")
+    endif()
+    if(AETHER_CCL_EXE)
+        set(CMAKE_C_COMPILER_LAUNCHER "${AETHER_CCL_EXE}")
+        set(CMAKE_CXX_COMPILER_LAUNCHER "${AETHER_CCL_EXE}")
+        message(STATUS "[AetherDLL] Compiler cache enabled: ${AETHER_CCL_EXE}")
+    endif()
+endif()
+
+# ============================================================================
 # Shared Dependencies (fetched once, used by all subprojects)
 # ============================================================================
+
+# Skip third-party test-support targets (abseil test utils etc.)
+set(BUILD_TESTING OFF CACHE BOOL "" FORCE)
+
 include(FetchContent)
 
 # toml++
@@ -114,20 +143,57 @@ list(REMOVE_ITEM LUA_SOURCES
 add_library(lua_static STATIC ${LUA_SOURCES})
 target_include_directories(lua_static PUBLIC "${lua_SOURCE_DIR}/src")
 
+# ----------------------------------------------------------------------------
+# PROTO CODEGEN STRATEGY
+# steam_messages.pb.{h,cc} are PRE-GENERATED with protoc 25.3 and checked
+# into proto/generated/. Building protoc+libprotoc costs ~120 compile steps
+# per full rebuild for code that only changes when the .proto changes, so by
+# default we skip them entirely.
+#   AETHER_PROTO_PREGEN=ON  (default) use checked-in pb files, no protoc build
+#   AETHER_PROTO_PREGEN=OFF           build protoc and regenerate at build time
+# After editing proto/steam_messages.proto, refresh the checked-in files with
+# Tools/regen_proto.cmd (or configure once with -DAETHER_PROTO_PREGEN=OFF).
+# ----------------------------------------------------------------------------
+option(AETHER_PROTO_PREGEN "Use checked-in pre-generated protobuf sources (skips building protoc)" ON)
+
+set(AC_PROTO_PREGEN_DIR "${CMAKE_CURRENT_SOURCE_DIR}/proto/generated")
+set(AC_PROTO_PREGEN_SRC "${AC_PROTO_PREGEN_DIR}/steam_messages.pb.cc")
+set(AC_PROTO_PREGEN_HDR "${AC_PROTO_PREGEN_DIR}/steam_messages.pb.h")
+
+if(AETHER_PROTO_PREGEN AND EXISTS "${AC_PROTO_PREGEN_SRC}" AND EXISTS "${AC_PROTO_PREGEN_HDR}")
+    set(AC_PROTO_MODE "pregen")
+    set(protobuf_BUILD_PROTOC_BINARIES OFF CACHE BOOL "" FORCE)
+else()
+    if(AETHER_PROTO_PREGEN)
+        message(WARNING "[AetherDLL] AETHER_PROTO_PREGEN=ON but ${AC_PROTO_PREGEN_SRC} is missing - falling back to building protoc.")
+    endif()
+    set(AC_PROTO_MODE "protoc")
+    set(protobuf_BUILD_PROTOC_BINARIES ON CACHE BOOL "" FORCE)
+endif()
+
 # Protobuf (v25.3 - stable for FetchContent on MSVC)
 set(protobuf_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 set(protobuf_BUILD_CONFORMANCE OFF CACHE BOOL "" FORCE)
 set(protobuf_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
-set(protobuf_BUILD_PROTOC_BINARIES ON CACHE BOOL "" FORCE)
 set(protobuf_BUILD_LIBUPB OFF CACHE BOOL "" FORCE)
 set(protobuf_WITH_ZLIB OFF CACHE BOOL "" FORCE)
 set(protobuf_MSVC_STATIC_RUNTIME OFF CACHE BOOL "" FORCE)
 set(ABSL_PROPAGATE_CXX_STD ON CACHE BOOL "" FORCE)
 set(ABSL_ENABLE_INSTALL ON CACHE BOOL "" FORCE)
 
+# EXCLUDE_FROM_ALL (CMake >= 3.28) keeps third-party targets out of "all":
+# ninja then builds ONLY what AetherDLL actually links (libprotobuf-lite),
+# skipping the full libprotobuf runtime (~70 more objects per full rebuild).
+if(CMAKE_VERSION VERSION_GREATER_EQUAL 3.28)
+    set(_aether_pb_fc_args EXCLUDE_FROM_ALL)
+else()
+    set(_aether_pb_fc_args "")
+endif()
+
 FetchContent_Declare(protobuf
     GIT_REPOSITORY https://github.com/protocolbuffers/protobuf.git
-    GIT_TAG v25.3)
+    GIT_TAG v25.3
+    ${_aether_pb_fc_args})
 FetchContent_MakeAvailable(protobuf)
 
 # Il codice di Google (protoc/libprotobuf) compila su MSVC con una cascata di
@@ -148,24 +214,32 @@ if(NOT TARGET protobuf::libprotobuf-lite AND TARGET libprotobuf-lite)
     set(AC_PROTOBUF_LITE_TARGET libprotobuf-lite)
 endif()
 
-# Proto generation (shared) - put generated files in a stable location
-set(AC_PROTO_DIR "${CMAKE_BINARY_DIR}/generated")
-file(MAKE_DIRECTORY "${AC_PROTO_DIR}")
-set(AC_PROTO_SRC "${AC_PROTO_DIR}/steam_messages.pb.cc")
-set(AC_PROTO_HDR "${AC_PROTO_DIR}/steam_messages.pb.h")
+# Proto sources location (shared):
+#   pregen mode -> checked-in files in proto/generated (nothing to generate)
+#   protoc mode -> generated into ${CMAKE_BINARY_DIR}/generated at build time
+if(AC_PROTO_MODE STREQUAL "pregen")
+    set(AC_PROTO_DIR "${AC_PROTO_PREGEN_DIR}")
+    # Keep the target name stable for add_dependencies() in subprojects.
+    add_custom_target(generate_protos)
+else()
+    set(AC_PROTO_DIR "${CMAKE_BINARY_DIR}/generated")
+    file(MAKE_DIRECTORY "${AC_PROTO_DIR}")
+    set(AC_PROTO_SRC "${AC_PROTO_DIR}/steam_messages.pb.cc")
+    set(AC_PROTO_HDR "${AC_PROTO_DIR}/steam_messages.pb.h")
 
-add_custom_command(
-    OUTPUT "${AC_PROTO_SRC}" "${AC_PROTO_HDR}"
-    COMMAND $<TARGET_FILE:protobuf::protoc>
-            "--cpp_out=lite:${AC_PROTO_DIR}"
-            -I "${CMAKE_CURRENT_SOURCE_DIR}/proto"
-            "${CMAKE_CURRENT_SOURCE_DIR}/proto/steam_messages.proto"
-    DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/proto/steam_messages.proto" protobuf::protoc
-    COMMENT "Generating steam_messages.pb.{h,cc}"
-)
+    add_custom_command(
+        OUTPUT "${AC_PROTO_SRC}" "${AC_PROTO_HDR}"
+        COMMAND $<TARGET_FILE:protobuf::protoc>
+                "--cpp_out=lite:${AC_PROTO_DIR}"
+                -I "${CMAKE_CURRENT_SOURCE_DIR}/proto"
+                "${CMAKE_CURRENT_SOURCE_DIR}/proto/steam_messages.proto"
+        DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/proto/steam_messages.proto" protobuf::protoc
+        COMMENT "Generating steam_messages.pb.{h,cc}"
+    )
 
-# Make proto sources available to subprojects
-add_custom_target(generate_protos DEPENDS "${AC_PROTO_SRC}" "${AC_PROTO_HDR}")
+    # Make proto sources available to subprojects
+    add_custom_target(generate_protos DEPENDS "${AC_PROTO_SRC}" "${AC_PROTO_HDR}")
+endif()
 
 # ============================================================================
 # Subprojects
