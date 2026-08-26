@@ -26,7 +26,7 @@ void SetPlayingApp(steam::AppId appId, bool forceRestage = false);
 steam::AppId PlayingApp();
 
 // PersonaState recv handler. Updates the self template; if we are tracking a
-// playing app (or OnlineFix persona patch is on), rewrites the body.
+// playing app (or AetherOnline persona patch is on), rewrites the body.
 // Returns new body length, or -1 for no change.
 std::int32_t OnPersonaStateRecv(const WireFrame& frame, std::uint8_t* out,
                                 std::uint32_t outCap);

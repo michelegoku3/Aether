@@ -26,7 +26,7 @@ struct GetAPICallResultRequest {
 };
 
 // IClientUtils::GetAppID
-//   SpawnProcess rewrites the GameID to 480 for OnlineFix games, so steamclient
+//   SpawnProcess rewrites the GameID to 480 for AetherOnline games, so steamclient
 //   returns 480 here. Restore the real app id in the reply.
 void GetAppID(steam::CSteamPipeClient* pipe, steam::CUtlBuffer*, steam::CUtlBuffer* pWrite) {
     const steam::AppId realAppId = pipewatch::AppIdForPipe(pipe);

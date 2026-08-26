@@ -60,7 +60,7 @@ message CMsgClientPICSProductInfoRequest {
 }
 
 // ---------------------------------------------------------------------------
-// CMsgClientPersonaState (eMsg 766) — local inject + OnlineFix patch.
+// CMsgClientPersonaState (eMsg 766) — local inject + AetherOnline patch.
 // Only the fields we read/patch are declared.
 // ---------------------------------------------------------------------------
 message CMsgClientPersonaState {

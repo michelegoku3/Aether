@@ -13,7 +13,7 @@
 //
 // Steam IPC handlers often need to answer "which app does this pipe really
 // belong to?". A global answer is fragile for launcher-heavy titles and special
-// routes like OnlineFix. PipeWatch observes the IPC handshake, snapshots the
+// routes like AetherOnline. PipeWatch observes the IPC handshake, snapshots the
 // connecting process (pid, creation time, image, env-derived app id), and lets
 // handlers resolve an app id for *that pipe* with graceful fallback.
 //

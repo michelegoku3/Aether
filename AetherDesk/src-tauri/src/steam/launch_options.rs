@@ -59,7 +59,7 @@ pub fn set_launch_options(steam_path: &Path, app_id: u32, options: &str) -> Resu
     Ok(())
 }
 
-/// True quando le LaunchOptions contengono il token (es. "-onlinefix").
+/// True quando le LaunchOptions contengono il token (es. "-aetheronline").
 pub fn has_launch_token(options: &str, token: &str) -> bool {
     options.split_whitespace().any(|arg| arg.eq_ignore_ascii_case(token))
 }
@@ -278,8 +278,8 @@ mod tests {
 
     #[test]
     fn replaces_existing_value() {
-        let updated = set_app_launch_options(&sample_vdf(), 730, "-novid -onlinefix").unwrap();
-        assert_eq!(read_app_launch_options(&updated, 730), "-novid -onlinefix");
+        let updated = set_app_launch_options(&sample_vdf(), 730, "-novid -aetheronline").unwrap();
+        assert_eq!(read_app_launch_options(&updated, 730), "-novid -aetheronline");
         // Il resto del file è intatto.
         assert!(updated.contains("\"UserLocalConfigStore\""));
         assert!(updated.contains("\"Steam\""));
@@ -287,27 +287,27 @@ mod tests {
 
     #[test]
     fn adds_key_to_existing_app_block() {
-        let updated = set_app_launch_options(&sample_vdf(), 440, "-onlinefix").unwrap();
-        assert_eq!(read_app_launch_options(&updated, 440), "-onlinefix");
+        let updated = set_app_launch_options(&sample_vdf(), 440, "-aetheronline").unwrap();
+        assert_eq!(read_app_launch_options(&updated, 440), "-aetheronline");
         assert_eq!(read_app_launch_options(&updated, 730), "-novid");
     }
 
     #[test]
     fn creates_missing_app_block() {
-        let updated = set_app_launch_options(&sample_vdf(), 1144200, "-onlinefix").unwrap();
-        assert_eq!(read_app_launch_options(&updated, 1144200), "-onlinefix");
+        let updated = set_app_launch_options(&sample_vdf(), 1144200, "-aetheronline").unwrap();
+        assert_eq!(read_app_launch_options(&updated, 1144200), "-aetheronline");
         assert_eq!(read_app_launch_options(&updated, 730), "-novid");
     }
 
     #[test]
     fn toggles_token() {
-        assert_eq!(toggle_launch_token("-novid", "-onlinefix", true), "-novid -onlinefix");
+        assert_eq!(toggle_launch_token("-novid", "-aetheronline", true), "-novid -aetheronline");
         assert_eq!(
-            toggle_launch_token("-novid -onlinefix", "-onlinefix", false),
+            toggle_launch_token("-novid -aetheronline", "-aetheronline", false),
             "-novid"
         );
-        assert!(has_launch_token("-novid -ONLINEFIX", "-onlinefix"));
-        assert!(!has_launch_token("-novid", "-onlinefix"));
+        assert!(has_launch_token("-novid -AETHERONLINE", "-aetheronline"));
+        assert!(!has_launch_token("-novid", "-aetheronline"));
     }
 
     #[test]

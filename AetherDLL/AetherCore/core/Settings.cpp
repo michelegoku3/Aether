@@ -126,8 +126,11 @@ Settings Settings::Load(const std::string& configPath) {
         if (auto v = (*presence)["always_extra_info"].value<bool>()) {
             s.presenceAlwaysExtraInfo = *v;
         }
-        if (auto v = (*presence)["onlinefix_persona_patch"].value<bool>()) {
-            s.presenceOnlineFixPersonaPatch = *v;
+        // aetheronline_persona_patch (legacy key: onlinefix_persona_patch).
+        if (auto v = (*presence)["aetheronline_persona_patch"].value<bool>()) {
+            s.presenceAetherOnlinePersonaPatch = *v;
+        } else if (auto v = (*presence)["onlinefix_persona_patch"].value<bool>()) {
+            s.presenceAetherOnlinePersonaPatch = *v;
         }
         if (auto v = (*presence)["custom_game_name"].value<std::string>()) {
             s.presenceCustomGameName = *v;
@@ -154,12 +157,17 @@ Settings Settings::Load(const std::string& configPath) {
                 }
             }
         }
-        if (auto* arr = (*presence)["onlinefix_apps"].as_array()) {
-            s.presenceOnlineFixApps.clear();
-            for (const auto& item : *arr) {
+        // aetheronline_apps (legacy key: onlinefix_apps — pre-rename configs).
+        const auto* aetherOnlineAppsArr = (*presence)["aetheronline_apps"].as_array();
+        if (!aetherOnlineAppsArr) {
+            aetherOnlineAppsArr = (*presence)["onlinefix_apps"].as_array();
+        }
+        if (aetherOnlineAppsArr) {
+            s.presenceAetherOnlineApps.clear();
+            for (const auto& item : *aetherOnlineAppsArr) {
                 if (auto v = item.value<std::int64_t>()) {
                     if (*v > 0) {
-                        s.presenceOnlineFixApps.push_back(static_cast<std::uint32_t>(*v));
+                        s.presenceAetherOnlineApps.push_back(static_cast<std::uint32_t>(*v));
                     }
                 }
             }
@@ -194,7 +202,7 @@ Settings Settings::Load(const std::string& configPath) {
                 s.manifestFetchUrls.size(),
                 s.presenceDefaultShowOnline ? "showonline" : "none",
                 s.presenceShowOnlineApps.size(),
-                s.presenceOnlineFixApps.size(),
+                s.presenceAetherOnlineApps.size(),
                 s.presenceExcludeApps.size());
     return s;
 }

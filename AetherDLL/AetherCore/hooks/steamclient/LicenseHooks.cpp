@@ -181,7 +181,7 @@ namespace ac::hooks {
 
         // --- hooks ---
         std::int64_t h_OptedInMask(void* self, std::uint32_t appId) {
-            AppId real = g_state.onlineFixRealAppId.load();
+            AppId real = g_state.aetherOnlineRealAppId.load();
             if (appId == constants::kSpacewarAppId && real != 0) return o_OptedInMask(self, real);
             return o_OptedInMask(self, appId);
         }

@@ -3,7 +3,7 @@
 
 #include "core/AetherCoreState.h"
 #include "core/Logger.h"
-#include "hooks/steamclient/OnlineFixHooks.h"
+#include "hooks/steamclient/AetherOnlineHooks.h"
 #include "utils/PatternEngine.h"
 
 namespace ac::capture {
@@ -52,7 +52,7 @@ steam::AppId GetAppIdForCurrentPipe() {
 }
 
 steam::AppId CurrentRouteAppId() {
-    if (steam::AppId real = g_state.onlineFixRealAppId.load()) return real;
+    if (steam::AppId real = g_state.aetherOnlineRealAppId.load()) return real;
     return GetAppIdForCurrentPipe();
 }
 

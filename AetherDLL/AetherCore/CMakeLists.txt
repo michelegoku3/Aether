@@ -49,7 +49,7 @@ add_library(AetherCore SHARED
 
     # Hooks
     hooks/steamui/SteamUIHook.cpp
-    hooks/steamclient/OnlineFixHooks.cpp
+    hooks/steamclient/AetherOnlineHooks.cpp
     hooks/steamclient/OwnershipHooks.cpp
     hooks/steamclient/DepotHooks.cpp
     hooks/steamclient/DecryptionKeyHook.cpp
@@ -75,8 +75,8 @@ add_library(AetherCore SHARED
     hooks/wire/PersonaInject.cpp
     hooks/wire/ManifestBridge.cpp
     hooks/wire/RichPresenceModule.cpp
-    hooks/onlinefix/OnlinePayload.cpp
-    hooks/onlinefix/CreateProcessHooks.cpp
+    hooks/aetheronline/OnlinePayload.cpp
+    hooks/aetheronline/CreateProcessHooks.cpp
 
     # Generated protobuf (location set by the root CMakeLists: AC_PROTO_DIR)
     ${AC_PROTO_DIR}/steam_messages.pb.cc

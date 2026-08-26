@@ -2,7 +2,7 @@
 # AetherPayload - Payload Library (AetherPayload.dll)
 #
 # Online/EOS bridge payload.
-# Injected into -onlinefix game processes by the main DLL.
+# Injected into -aetheronline game processes by the main DLL.
 # Hooks minimal EOS surface and self-propagates to child processes.
 # ============================================================================
 

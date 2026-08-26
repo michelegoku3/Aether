@@ -308,25 +308,25 @@ bool HasStatsPayload(const CMsgClientGetUserStatsResponse& resp) {
 }
 
 // ---------------------------------------------------------------------------
-// OnlineFix session resolution (single source of truth for this module).
+// AetherOnline session resolution (single source of truth for this module).
 //
-// With the "-onlinefix" launch flag the game process is masked as Spacewar
+// With the "-aetheronline" launch flag the game process is masked as Spacewar
 // (AppID 480): every UserStats frame it sends carries appid/game_id == 480,
 // and the Lua-managed gate below (HasDepot) would reject it because depot
 // keys are registered under the REAL app id. Rewriting the frame to the real
-// app id restores the donor-spoofing pipeline for OnlineFix sessions.
+// app id restores the donor-spoofing pipeline for AetherOnline sessions.
 //
-// The real app id is captured at spawn time by OnlineFixHooks::h_SpawnProcess
-// into g_state.onlineFixRealAppId. When no session is active (or the id is
+// The real app id is captured at spawn time by AetherOnlineHooks::h_SpawnProcess
+// into g_state.aetherOnlineRealAppId. When no session is active (or the id is
 // already the real one) the frame is left untouched.
 //
 // Returns true when 'appId' was rewritten, so callers can mirror the new id
 // back into their protobuf request (the 819 response path has no field to
 // mirror — it only uses the resolved id for correlation/gating).
-bool ResolveOnlineFixAppId(steam::AppId& appId, const char* flow) {
-    const steam::AppId real = g_state.onlineFixRealAppId.load();
+bool ResolveAetherOnlineAppId(steam::AppId& appId, const char* flow) {
+    const steam::AppId real = g_state.aetherOnlineRealAppId.load();
     if (appId == constants::kSpacewarAppId && real != 0 && real != constants::kSpacewarAppId) {
-        AC_LOG_INFO_ONCE(kModule, "OnlineFix: %s AppID %u -> %u.", flow, appId, real);
+        AC_LOG_INFO_ONCE(kModule, "AetherOnline: %s AppID %u -> %u.", flow, appId, real);
         appId = real;
         return true;
     }
@@ -348,9 +348,9 @@ std::int32_t HandleSendGetUserStats(const WireFrame& frame, std::uint8_t* out, s
 
     steam::AppId appId = req.appid();
 
-    // OnlineFix: la richiesta può arrivare mascherata come 480 (vedi
-    // ResolveOnlineFixAppId) — riscrivi la frame prima del gate Lua-managed.
-    if (ResolveOnlineFixAppId(appId, "GetUserStats")) {
+    // AetherOnline: la richiesta può arrivare mascherata come 480 (vedi
+    // ResolveAetherOnlineAppId) — riscrivi la frame prima del gate Lua-managed.
+    if (ResolveAetherOnlineAppId(appId, "GetUserStats")) {
         req.set_appid(appId);
     }
 
@@ -419,9 +419,9 @@ std::int32_t HandleSendClientGetUserStats(const WireFrame& frame, std::uint8_t* 
 
     steam::AppId appId = static_cast<steam::AppId>(req.game_id());
 
-    // OnlineFix: la richiesta può arrivare mascherata come 480 (vedi
-    // ResolveOnlineFixAppId) — riscrivi la frame prima del gate Lua-managed.
-    if (ResolveOnlineFixAppId(appId, "ClientGetUserStats")) {
+    // AetherOnline: la richiesta può arrivare mascherata come 480 (vedi
+    // ResolveAetherOnlineAppId) — riscrivi la frame prima del gate Lua-managed.
+    if (ResolveAetherOnlineAppId(appId, "ClientGetUserStats")) {
         req.set_game_id(appId);
     }
 
@@ -602,11 +602,11 @@ std::int32_t HandleRecvClientGetUserStatsResponse(const WireFrame& frame, std::u
 
     steam::AppId appId = static_cast<steam::AppId>(resp.game_id());
 
-    // OnlineFix: la risposta arriva con game_id 480 — risolvi l'appid reale
+    // AetherOnline: la risposta arriva con game_id 480 — risolvi l'appid reale
     // prima del lookup pending, così il response trova l'attempt registrato
     // dal send sul redirect (appid reale). Il body resta invariato: il pipe
     // del gioco è registrato come 480 e deve ricevere game_id=480.
-    ResolveOnlineFixAppId(appId, "ClientGetUserStatsResponse");
+    ResolveAetherOnlineAppId(appId, "ClientGetUserStatsResponse");
 
     if (!ac::luadata::HasDepot(appId)) {
         AC_LOG_DEBUG(kModule,
@@ -741,11 +741,11 @@ std::int32_t HandleSendStoreUserStats2(const WireFrame& frame, std::uint8_t* out
 
     steam::AppId appId = static_cast<steam::AppId>(req.game_id());
 
-    // OnlineFix: la richiesta può arrivare mascherata come 480 (vedi
-    // ResolveOnlineFixAppId) — riscrivi la frame prima del gate Lua-managed,
+    // AetherOnline: la richiesta può arrivare mascherata come 480 (vedi
+    // ResolveAetherOnlineAppId) — riscrivi la frame prima del gate Lua-managed,
     // così gli sblocchi in-game vengono attribuiti al gioco reale e la
     // riscrittura dello SteamID (sotto) ha effetto.
-    if (ResolveOnlineFixAppId(appId, "StoreUserStats2")) {
+    if (ResolveAetherOnlineAppId(appId, "StoreUserStats2")) {
         req.set_game_id(appId);
     }
 

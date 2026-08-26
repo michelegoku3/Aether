@@ -7,14 +7,14 @@
 //! [presence]
 //! default_mode    = "none"      # "none" | "showonline" (policy + overrides)
 //! showonline_apps = [...]
-//! onlinefix_apps  = [...]
+//! aetheronline_apps  = [...]
 //! exclude_apps    = [...]       # hard opt-out: vince su token e array
 //! ```
 //!
 //! La DLL risolve UNA modalità per app dentro SpawnProcess rileggendo questo
 //! file (mtime → nessun riavvio di Steam); nulla finisce in argv. Precedenza
-//! documentata: exclude > onlinefix > showonline > default_mode. I token
-//! `-onlinefix` / `-showonline` nelle LaunchOptions sono LEGACY: rimossi dai
+//! documentata: exclude > aetheronline > showonline > default_mode. I token
+//! `-aetheronline` / `-showonline` nelle LaunchOptions sono LEGACY: rimossi dai
 //! set (migrazione) e comunque riconosciuti dai get finché non migrati.
 //!
 //! Line-based editing intenzionale: il file resta hand-editable, commenti e
@@ -38,7 +38,7 @@ pub fn aethercore_toml_paths(app: &tauri::AppHandle) -> Vec<std::path::PathBuf> 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum PresenceMode {
     ShowOnline,
-    OnlineFix,
+    AetherOnline,
     Excluded,
 }
 
@@ -46,13 +46,13 @@ impl PresenceMode {
     fn key(self) -> &'static str {
         match self {
             PresenceMode::ShowOnline => "showonline_apps",
-            PresenceMode::OnlineFix => "onlinefix_apps",
+            PresenceMode::AetherOnline => "aetheronline_apps",
             PresenceMode::Excluded => "exclude_apps",
         }
     }
     const ALL: [PresenceMode; 3] = [
         PresenceMode::ShowOnline,
-        PresenceMode::OnlineFix,
+        PresenceMode::AetherOnline,
         PresenceMode::Excluded,
     ];
 }
@@ -379,13 +379,54 @@ pub fn ensure_defaults(path: &Path) {
     let wanted: [(&str, String); 4] = [
         ("default_mode", "\"showonline\"".to_string()),
         (PresenceMode::ShowOnline.key(), format_appid_list(&[])),
-        (PresenceMode::OnlineFix.key(), format_appid_list(&[])),
+        (PresenceMode::AetherOnline.key(), format_appid_list(&[])),
         (PresenceMode::Excluded.key(), format_appid_list(&[])),
     ];
     for (key, value) in wanted {
         if find_key_line(&lines, key).is_none() {
             lines.insert(insertion, format!("{key} = {value}"));
             insertion += 1;
+            changed = true;
+        }
+    }
+    if !changed {
+        return;
+    }
+    let mut out = lines.join("\n");
+    if had_trailing_nl || !out.ends_with('\n') {
+        out.push('\n');
+    }
+    let _ = std::fs::write(path, out);
+}
+
+/// Legacy key rename (pre-rename installs): `onlinefix_apps` ->
+/// `aetheronline_apps`, `onlinefix_persona_patch` -> `aetheronline_persona_patch`.
+/// Line-based and comment-safe: only the FIRST non-commented occurrence is
+/// renamed, and ONLY when the new key is not present yet. Idempotent — after
+/// the first migration the legacy line no longer exists.
+pub fn migrate_legacy_presence_keys(path: &Path) {
+    if !path.exists() {
+        return;
+    }
+    let Ok(content) = std::fs::read_to_string(path) else {
+        return;
+    };
+    let had_trailing_nl = content.ends_with('\n');
+    let mut lines: Vec<String> = content.lines().map(str::to_string).collect();
+    let mut changed = false;
+    for (legacy, new) in [
+        ("onlinefix_apps", "aetheronline_apps"),
+        ("onlinefix_persona_patch", "aetheronline_persona_patch"),
+    ] {
+        if find_key_line(&lines, new).is_some() {
+            continue; // already migrated (or hand-written new key)
+        }
+        if let Some(i) = find_key_line(&lines, legacy) {
+            let line = &lines[i];
+            let Some(after_eq) = line.splitn(2, '=').nth(1) else {
+                continue;
+            };
+            lines[i] = format!("{new} = {}", after_eq);
             changed = true;
         }
     }

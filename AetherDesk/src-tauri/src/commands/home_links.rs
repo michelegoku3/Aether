@@ -9,7 +9,7 @@ pub fn open_home_resource(site: String, game_name: String) -> Result<(), String>
     }
 
     let url = match site.as_str() {
-        "onlinefix" => build_onlinefix_url(game_name),
+        "ofme" => build_ofme_url(game_name),
         "gcw" => build_gcw_url(game_name),
         "csrinru" => build_csrinru_url(game_name),
         _ => {
@@ -22,10 +22,12 @@ pub fn open_home_resource(site: String, game_name: String) -> Result<(), String>
     open_external_url(&url)
 }
 
-pub(crate) fn build_onlinefix_url(game_name: &str) -> String {
+// OFME = online-fix.me (la crack). Il nome funzione evita "onlinefix", che
+    // nelle AI si confonde con la modalità AetherOnline (il payload Aether).
+    pub(crate) fn build_ofme_url(game_name: &str) -> String {
     format!(
         "https://online-fix.me/index.php?do=search&subaction=search&story={}",
-        encode_query_value(&build_onlinefix_query(game_name))
+        encode_query_value(&build_ofme_query(game_name))
     )
 }
 
@@ -52,8 +54,8 @@ pub(crate) fn build_csrinru_url(game_name: &str) -> String {
     )
 }
 
-fn build_onlinefix_query(game_name: &str) -> String {
-    normalize_query_title(game_name, QueryFlavor::OnlineFix)
+fn build_ofme_query(game_name: &str) -> String {
+    normalize_query_title(game_name, QueryFlavor::Ofme)
 }
 
 fn build_csrinru_query(game_name: &str) -> String {
@@ -79,16 +81,16 @@ fn build_gcw_query(game_name: &str) -> String {
 
 #[derive(Debug, Clone, Copy)]
 enum QueryFlavor {
-    OnlineFix,
+    Ofme,
     CsRinRu,
 }
 
 fn normalize_query_title(game_name: &str, flavor: QueryFlavor) -> String {
     let without_brackets = remove_bracketed_segments(game_name);
     let base_title = match flavor {
-        // OnlineFix searches should keep real subtitles after ':' so titles like
+        // OFME (online-fix.me) searches should keep real subtitles after ':' so titles like
         // "Call of Duty: Black Ops II" do not degrade to plain "Call of Duty".
-        QueryFlavor::OnlineFix => without_brackets.trim().to_string(),
+        QueryFlavor::Ofme => without_brackets.trim().to_string(),
         // CSRINRU needs the Davigo-style cleanup, but only when the subtitle is
         // platform/mode noise such as "VR vs. PC". Meaningful subtitles like
         // "Shadows Die Twice" are kept.
@@ -96,7 +98,7 @@ fn normalize_query_title(game_name: &str, flavor: QueryFlavor) -> String {
     };
     let without_editions = strip_known_edition_suffixes(&base_title);
     let possessive_policy = match flavor {
-        QueryFlavor::OnlineFix => PossessivePolicy::KeepAsPlainS,
+        QueryFlavor::Ofme => PossessivePolicy::KeepAsPlainS,
         QueryFlavor::CsRinRu => PossessivePolicy::DropPossessiveS,
     };
 
@@ -145,7 +147,7 @@ fn title_tokens(title: &str, options: TokenOptions) -> Vec<String> {
     let normalized = if options.preserve_dot {
         normalized
     } else {
-        // Dotted acronyms such as R.E.P.O. are indexed by OnlineFix/GCW as "repo".
+        // Dotted acronyms such as R.E.P.O. are indexed by OFME/GCW as "repo".
         normalized.replace('.', "")
     };
 

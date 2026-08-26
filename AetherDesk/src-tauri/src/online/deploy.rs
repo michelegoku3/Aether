@@ -310,7 +310,7 @@ fn conflict_path(conflict: &Conflict) -> PathBuf {
     match conflict {
         Conflict::ColdClientLoader(p)
         | Conflict::SteamFix(p)
-        | Conflict::OnlineFix(p)
+        | Conflict::Ofme(p)
         | Conflict::NamedFixFile(p)
         | Conflict::ProxyDll(p) => p.clone(),
     }

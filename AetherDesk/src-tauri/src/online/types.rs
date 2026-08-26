@@ -80,8 +80,10 @@ pub enum Conflict {
     ColdClientLoader(PathBuf),
     /// Emulatore SteamFix (`SteamFix64.dll`).
     SteamFix(PathBuf),
-    /// Emulatore OnlineFix (`OnlineFix64.dll`).
-    OnlineFix(PathBuf),
+    /// Emulatore OFME (`OnlineFix64.dll`) — pack della crack online-fix.me.
+    /// OFME e AetherOnline sono stack diversi: questo variant rappresenta i
+    /// file di OFME trovati sul disco, mai la modalità Aether.
+    Ofme(PathBuf),
     /// File nominativi di un fix (`winmm.dll`, `dlllist.txt`, ...).
     NamedFixFile(PathBuf),
     /// Proxy DLL generico piccolo (`version.dll`, `dxgi.dll`, ... < 300 KiB).

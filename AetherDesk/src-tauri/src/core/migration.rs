@@ -355,15 +355,20 @@ pub fn ensure_aethercore_bridge(app: &tauri::AppHandle) {
     }
 
     // Schema evolution of the [presence] section (docs/05 §11-§13): existing
-    // installs predate showonline_apps/onlinefix_apps/exclude_apps and
+    // installs predate showonline_apps/aetheronline_apps/exclude_apps and
     // default_mode. Insert ONLY the missing canonical keys (never overriding
     // user choices) so the DLL resolver and the Desk commands always find a
     // complete, predictable config. Idempotent, line-based, comment-safe.
+    // Rename legacy [presence] keys (onlinefix_apps -> aetheronline_apps,
+    // onlinefix_persona_patch -> aetheronline_persona_patch) before inserting
+    // defaults, so pre-rename installs migrate to the aetheronline naming.
+    crate::core::presence_config::migrate_legacy_presence_keys(&toml_path);
     crate::core::presence_config::ensure_defaults(&toml_path);
     if !steam_path.trim().is_empty() {
         let legacy_toml = Path::new(&steam_path)
             .join("aethercore")
             .join("aethercore.toml");
+        crate::core::presence_config::migrate_legacy_presence_keys(&legacy_toml);
         crate::core::presence_config::ensure_defaults(&legacy_toml);
     }
 }

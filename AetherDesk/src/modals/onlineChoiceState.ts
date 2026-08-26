@@ -1,4 +1,4 @@
-export type AppPresenceMode = 'none' | 'showonline' | 'onlinefix';
+export type AppPresenceMode = 'none' | 'showonline' | 'aetheronline';
 export type OnlineOptionKey = AppPresenceMode | 'uco2';
 
 export interface OnlineChoiceContext {
@@ -18,14 +18,14 @@ export interface OnlineOptionState {
 /** Modalità effettiva del popup. Un spoof 480 sul disco (OFME o UCO2)
  *  vince su default_mode=showonline: quel rewrite romperebbe gli inviti. */
 export const resolveEffectivePresenceMode = (
-  onlinefix: boolean,
+  aetherOnline: boolean,
   showOnlineListed: boolean,
   excluded: boolean,
   defaultShowOnline: boolean,
   spacewarSpoofPresent: boolean,
 ): AppPresenceMode => {
   if (spacewarSpoofPresent) return 'none';
-  if (onlinefix) return 'onlinefix';
+  if (aetherOnline) return 'aetheronline';
   if (showOnlineListed) return 'showonline';
   if (excluded) return 'none';
   return defaultShowOnline ? 'showonline' : 'none';
@@ -53,7 +53,7 @@ export const resolveOptionState = (
       tooltip: 'online-fix.me files are in this folder. Remove them before enabling UCO2.',
     };
   }
-  if (key === 'onlinefix' && ctx.ofmePresent && !isActive) {
+  if (key === 'aetheronline' && ctx.ofmePresent && !isActive) {
     return {
       isActive,
       isBlocked: true,
@@ -67,7 +67,7 @@ export const resolveOptionState = (
       tooltip: 'This folder already spoofs Spacewar (online-fix.me). Show Online would break invites — keep None.',
     };
   }
-  if (key === 'onlinefix' && ctx.uco2FilesPresent && !isActive) {
+  if (key === 'aetheronline' && ctx.uco2FilesPresent && !isActive) {
     return {
       isActive,
       isBlocked: true,
@@ -91,8 +91,8 @@ export const resolveOptionState = (
   }
 
   const pipelineConflict =
-    (key === 'onlinefix' && ctx.uco2Enabled) ||
-    (key === 'uco2' && ctx.mode === 'onlinefix') ||
+    (key === 'aetheronline' && ctx.uco2Enabled) ||
+    (key === 'uco2' && ctx.mode === 'aetheronline') ||
     (key === 'showonline' && ctx.uco2Enabled);
 
   if (pipelineConflict && !isActive) {
