@@ -5,6 +5,7 @@ import { requireSteamPath } from '../hooks/useSettings';
 import { useModalDismiss } from '../hooks/useModalDismiss';
 import { OnlinePanel, type OnlineStatus } from './OnlinePanel';
 import { OnlineChoiceModal, type AppPresenceMode } from './OnlineChoiceModal';
+import { resolveEffectivePresenceMode } from './onlineChoiceState';
 
 export interface LibraryActionGame {
   id: number;
@@ -42,6 +43,8 @@ export const LibraryGameActionsModal = ({
   const [onlineBusy, setOnlineBusy] = useState(false);
   const [aetherOnlinefix, setAetherOnlinefix] = useState(false);
   const [uco2Online, setUco2Online] = useState(false);
+  const [ofmePresent, setOfmePresent] = useState(false);
+  const [uco2FilesPresent, setUco2FilesPresent] = useState(false);
   const [showOnline, setShowOnline] = useState(false);
   const [aetherExcluded, setAetherExcluded] = useState(false);
   const [presenceDefaultShowOnline, setPresenceDefaultShowOnline] = useState(true);
@@ -123,18 +126,40 @@ export const LibraryGameActionsModal = ({
       // union-crax.ini, un file di RUNTIME che UCO2 lascia sul disco anche
       // dopo il Disable → falso "sempre attivo" che bloccava Online Aether.
       // 'broken' (record senza file) conta come non attivo ai fini del gate.
-      const [aetherOn, uco2Status, showOn, excludedOn, defaultShowOnline] = await Promise.all([
+      const [aetherOnRaw, uco2Status, showOnRaw, excludedOnRaw, defaultShowOnline, foreign] = await Promise.all([
         invoke<boolean>('get_aether_onlinefix', { appId: Number(game.appId) }),
         invoke<OnlineStatus>('get_online_status', { appId: Number(game.appId) }),
         invoke<boolean>('get_aether_showonline', { appId: Number(game.appId) }),
         invoke<boolean>('get_aether_excluded', { appId: Number(game.appId) }),
         invoke<boolean>('get_presence_default_mode'),
+        invoke<{ ofme: boolean; uco2: boolean }>('inspect_foreign_online', { appId: Number(game.appId) }),
       ]);
-      setAetherOnlinefix(Boolean(aetherOn));
-      setUco2Online(uco2Status?.state === 'enabled');
-      setShowOnline(Boolean(showOn));
-      setAetherExcluded(Boolean(excludedOn));
-      setPresenceDefaultShowOnline(defaultShowOnline !== false);
+      const aetherOn = Boolean(aetherOnRaw);
+      const ofme = Boolean(foreign?.ofme);
+      const uco2Files = Boolean(foreign?.uco2);
+      const uco2On = uco2Status?.state === 'enabled' || uco2Files;
+      const defaultOn = defaultShowOnline !== false;
+      let showOn = Boolean(showOnRaw);
+      let excludedOn = Boolean(excludedOnRaw);
+      const spoof = ofme || uco2On;
+
+      if (spoof && !aetherOn && !excludedOn && (showOn || defaultOn)) {
+        try {
+          await invoke('set_aether_excluded', { appId: Number(game.appId), enabled: true });
+          excludedOn = true;
+          showOn = false;
+        } catch {
+          // Display still falls back to None via `spoof`.
+        }
+      }
+
+      setAetherOnlinefix(aetherOn);
+      setUco2Online(uco2On);
+      setOfmePresent(ofme);
+      setUco2FilesPresent(uco2Files);
+      setShowOnline(showOn);
+      setAetherExcluded(excludedOn);
+      setPresenceDefaultShowOnline(defaultOn);
     } catch {
       // Keep the previous state on failure.
     }
@@ -145,18 +170,13 @@ export const LibraryGameActionsModal = ({
     setShowOnlineChoice(true);
   };
 
-  // Modalità EFFETTIVA per il popup (docs/05 §12): un'app senza entry nelle
-  // liste ricade in default_mode — mostrato come la scelta corrente, così
-  // l'utente vede lo stato reale e non quello formale.
-  const currentPresenceMode: AppPresenceMode = aetherOnlinefix
-    ? 'onlinefix'
-    : showOnline
-      ? 'showonline'
-      : aetherExcluded
-        ? 'none'
-        : presenceDefaultShowOnline
-          ? 'showonline'
-          : 'none';
+  const currentPresenceMode: AppPresenceMode = resolveEffectivePresenceMode(
+    aetherOnlinefix,
+    showOnline,
+    aetherExcluded,
+    presenceDefaultShowOnline,
+    ofmePresent || uco2Online || uco2FilesPresent,
+  );
 
   const handleSelectPresenceMode = async (next: AppPresenceMode) => {
     if (next === currentPresenceMode) return;
@@ -181,7 +201,20 @@ export const LibraryGameActionsModal = ({
     }
   };
 
-  const handleOpenUco2Panel = () => {
+  const handleOpenUco2Panel = async () => {
+    // UCO2 richiede None: Show Online sul wire 480 rompe gli inviti.
+    if (currentPresenceMode !== 'none') {
+      setOnlineBusy(true);
+      try {
+        await invoke('set_aether_excluded', { appId: Number(game.appId), enabled: true });
+        await refreshOnlineStates();
+      } catch (err: unknown) {
+        onStatus(`Failed to switch to None for UCO2: ${err}`, 'error');
+        setOnlineBusy(false);
+        return;
+      }
+      setOnlineBusy(false);
+    }
     setShowOnlineChoice(false);
     setShowOnlinePanel(true);
   };
@@ -286,6 +319,8 @@ export const LibraryGameActionsModal = ({
           game={game}
           mode={currentPresenceMode}
           uco2Enabled={uco2Online}
+          ofmePresent={ofmePresent}
+          uco2FilesPresent={uco2FilesPresent}
           busy={onlineBusy}
           onSelectMode={handleSelectPresenceMode}
           onOpenUco2Panel={handleOpenUco2Panel}

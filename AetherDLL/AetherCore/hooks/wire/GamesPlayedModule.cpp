@@ -2,7 +2,9 @@
 #include "hooks/wire/GamesPlayedModule.h"
 
 #include <atomic>
+#include <cctype>
 #include <cstdint>
+#include <cstring>
 #include <string>
 #include <utility>
 #include <vector>
@@ -25,6 +27,67 @@ constexpr std::int32_t kNoChange = -1;
 
 steam::AppId AppIdFromGameId(std::uint64_t gameId) {
     return static_cast<steam::AppId>(gameId & constants::kGameIdAppIdMask);
+}
+
+std::string ImageStem(const std::string& imageName) {
+    const auto slash = imageName.find_last_of("\\/");
+    std::string file = (slash == std::string::npos) ? imageName : imageName.substr(slash + 1);
+    const auto dot = file.find_last_of('.');
+    if (dot != std::string::npos) file.resize(dot);
+    // Unreal: Bodycam-Win64-Shipping -> Bodycam
+    static constexpr const char* kShipping[] = {
+        "-Win64-Shipping", "-Win32-Shipping", "-Win64-Test", "-Win32-Test",
+    };
+    for (const char* suf : kShipping) {
+        const std::size_t n = std::strlen(suf);
+        if (file.size() > n) {
+            const std::string tail = file.substr(file.size() - n);
+            std::string fold = tail;
+            for (char& c : fold) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+            std::string want = suf;
+            for (char& c : want) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+            if (fold == want) {
+                file.resize(file.size() - n);
+                break;
+            }
+        }
+    }
+    // ReadyOrNotSteam-Win64-Shipping -> ReadyOrNot
+    if (file.size() > 5) {
+        std::string tail = file.substr(file.size() - 5);
+        for (char& c : tail) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+        if (tail == "steam") file.resize(file.size() - 5);
+    }
+    return file;
+}
+
+bool SnapshotLooksSpoofed(const pipewatch::ProcessSnapshot& snap) {
+    if (!snap.likelyGame || snap.steamProcess) return false;
+    return snap.appId == constants::kSpacewarAppId
+        || snap.envSteamOverlayGameId == constants::kSpacewarAppId
+        || snap.envSteamAppId == constants::kSpacewarAppId
+        || snap.envSteamGameId == constants::kSpacewarAppId;
+}
+
+// Real app behind a Spacewar (480) session: Online Aether first, then UCO2/OFME
+// recovered from the live pipe image (GetAppID reports 480; the exe name does not).
+steam::AppId RealAppForSpoofedSession() {
+    const steam::AppId ofReal = g_state.onlineFixRealAppId.load();
+    if (ofReal != 0 && ofReal != constants::kSpacewarAppId) return ofReal;
+
+    const steam::AppId spawned = g_state.lastSpawnedAppId.load();
+    if (spawned != 0 && spawned != constants::kSpacewarAppId) return spawned;
+
+    std::lock_guard<std::mutex> lock(g_state.pipeWatch.mutex);
+    for (const auto& entry : g_state.pipeWatch.snapshots) {
+        const auto& snap = entry.second;
+        if (!SnapshotLooksSpoofed(snap)) continue;
+        const std::string stem = ImageStem(snap.imageName.empty() ? snap.imagePath : snap.imageName);
+        if (stem.empty()) continue;
+        const steam::AppId byName = gamename::ResolveAppIdByName(stem);
+        if (byName != 0 && byName != constants::kSpacewarAppId) return byName;
+    }
+    return 0;
 }
 
 void LearnSelfSteamId(const WireFrame& frame) {
@@ -79,11 +142,24 @@ void ExtractStringKVs(const std::uint8_t* data, std::uint32_t size,
 
 // Name shown in game_extra_info: the user's custom override when set,
 // else the localized title resolved through Steam's own AppInfo cache.
+bool NameIsUsable(const std::string& name) {
+    if (name.empty()) return false;
+    std::string fold;
+    fold.reserve(name.size());
+    for (unsigned char c : name) {
+        if (std::isspace(c)) continue;
+        fold.push_back(static_cast<char>(std::tolower(c)));
+    }
+    return fold != "spacewar";
+}
+
 std::string DisplayName(steam::AppId appId) {
+    if (appId == 0 || appId == constants::kSpacewarAppId) return {};
     if (!g_state.settings.presenceCustomGameName.empty()) {
         return g_state.settings.presenceCustomGameName;
     }
-    return gamename::ForApp(appId);
+    const std::string name = gamename::ForApp(appId);
+    return NameIsUsable(name) ? name : std::string{};
 }
 
 // game_extra_info is the one field the CM reliably recycles into
@@ -122,8 +198,6 @@ std::string MakeAppIdBlob(steam::AppId appId) {
     return b;
 }
 
-// Annotates a MASKED (wire 480) games_played entry: blob channel when enabled
-// (extra_info = plain name), else the suffix fallback in game_extra_info.
 // Annotates a MASKED (wire 480) games_played entry. Layers:
 //   1) game_data_blob when enabled (raw bytes; CM recycling UNVERIFIED — one
 //      field test 16:38 2026-08-24 suggests the CM strips it from Friend relay)
@@ -158,50 +232,39 @@ std::int32_t HandleSend(const WireFrame& frame, std::uint8_t* out, std::uint32_t
 
     LearnSelfSteamId(frame);
 
-    // ---- topmost app (banner follows the tail of the stack) ----------------
     steam::AppId topmost = 0;
+    bool stackHas480 = false;
     if (msg.games_played_size() > 0) {
         const auto& tail = msg.games_played(msg.games_played_size() - 1);
         if (tail.has_game_id()) topmost = AppIdFromGameId(tail.game_id());
-    }
-
-    // ---- tracking for local PersonaInject ----------------------------------
-    // Only Lua-managed non-owned apps (HasDepot). Owned titles defer to the
-    // server's natural broadcast. Spacewar/480 is never the inject target —
-    // OnlineFix uses Dual policy: session 480 + local inject of real app via
-    // onlineFixRealAppId when present.
-    steam::AppId newTracked = 0;
-    if (g_state.settings.presenceInjectLocal) {
-        if (topmost != 0 && topmost != constants::kSpacewarAppId && luadata::HasDepot(topmost)) {
-            newTracked = topmost;
-        } else if (topmost == constants::kSpacewarAppId) {
-            // OnlineFix session: prefer real app for local presence inject.
-            const steam::AppId real = g_state.onlineFixRealAppId.load();
-            if (real != 0 && luadata::IsConfigured(real)) newTracked = real;
+        for (int i = 0; i < msg.games_played_size(); ++i) {
+            if (AppIdFromGameId(msg.games_played(i).game_id()) == constants::kSpacewarAppId) {
+                stackHas480 = true;
+                break;
+            }
         }
     }
 
-    const steam::AppId prev = PersonaInject::PlayingApp();
-    if (newTracked != prev) {
-        if (newTracked != 0) {
-            PersonaInject::SetPlayingApp(newTracked);
+    const steam::AppId spoofReal = RealAppForSpoofedSession();
+    // Foreign DLL (UCO2/OFME) owns Spacewar: known at spawn, or 480 already
+    // on the stack. Aether then only writes extra_info on that 480.
+    const bool foreignSpoof = g_state.spacewarSpoofExpected.load()
+        || (stackHas480 && spoofReal != 0);
+
+    if (foreignSpoof) {
+        g_state.showOnlineAppId.store(0);
+        if (PersonaInject::PlayingApp() != 0) PersonaInject::SetPlayingApp(0);
+    } else if (g_state.settings.presenceInjectLocal
+               && topmost != 0 && topmost != constants::kSpacewarAppId
+               && luadata::HasDepot(topmost)) {
+        if (PersonaInject::PlayingApp() != topmost) {
+            PersonaInject::SetPlayingApp(topmost);
             std::lock_guard<std::mutex> lock(g_state.presence.mutex);
             ++g_state.presence.gamesPlayedTrackCount;
-            AC_LOG_INFO_ONCE(kModule, "Tracking topmost/display appid %u (stack top=%u).",
-                        newTracked, topmost);
-        } else if (topmost == 0) {
-            // Stack empty → clear local presence and reset session tracking
-            // so that re-launching the same game re-emits dedup'd logs once.
-            PersonaInject::SetPlayingApp(0);
-            pipewatch::ResetSessionTracking();
-            AC_LOG_DEBUG(kModule, "GamesPlayed empty; clearing local presence.");
-        } else {
-            // Topmost is legit-owned (or unmanaged): do NOT clear inject —
-            // avoids a brief "Online" flicker while the server push lands (OST).
-            AC_LOG_DEBUG(kModule,
-                         "Topmost appid %u is owned/unmanaged; deferring presence to server.",
-                         topmost);
         }
+    } else if (topmost == 0 && PersonaInject::PlayingApp() != 0) {
+        PersonaInject::SetPlayingApp(0);
+        pipewatch::ResetSessionTracking();
     }
 
     // [DIAG] Cosa stiamo realmente annunciando al CM, loggato solo su
@@ -239,7 +302,7 @@ std::int32_t HandleSend(const WireFrame& frame, std::uint8_t* out, std::uint32_t
     // Gated by presenceShowOnlineBroadcast, independent of always_extra_info.
     bool patched = false;
 
-    const steam::AppId soSession = g_state.showOnlineAppId.load();
+    const steam::AppId soSession = foreignSpoof ? 0 : g_state.showOnlineAppId.load();
     if (soSession != 0 && soSession != constants::kSpacewarAppId &&
         g_state.settings.presenceShowOnlineBroadcast) {
         const std::string soName = DisplayName(soSession);
@@ -274,52 +337,42 @@ std::int32_t HandleSend(const WireFrame& frame, std::uint8_t* out, std::uint32_t
     // Entries just rewritten by the -showonline block above (480 without an OF
     // session) are untouched here: their extra_info is already set.
     if (g_state.settings.presenceAlwaysExtraInfo) {
-        const steam::AppId ofReal = g_state.onlineFixRealAppId.load();
-
         for (int i = 0; i < msg.games_played_size(); ++i) {
             auto* game = msg.mutable_games_played(i);
             if (!game->has_game_id()) continue;
             const steam::AppId app = AppIdFromGameId(game->game_id());
 
-            steam::AppId nameApp = 0;
-            if (app == constants::kSpacewarAppId && ofReal != 0) {
-                // OnlineFix: never rewrite game_id; only annotate.
-                nameApp = ofReal;
-            } else if (app != 0 && app != constants::kSpacewarAppId) {
-                // No-OF (or non-480 entry): optional polish on the real id.
-                // Prefer Lua-managed / configured apps to avoid touching unrelated titles.
-                if (luadata::IsConfigured(app) || luadata::HasDepot(app)) nameApp = app;
+            if (foreignSpoof) {
+                if (app != constants::kSpacewarAppId) continue;
+                const steam::AppId nameApp = spoofReal;
+                const std::string name = DisplayName(nameApp);
+                if (name.empty()) continue;
+                if (game->has_game_data_blob()) {
+                    game->clear_game_data_blob();
+                    patched = true;
+                }
+                if ((game->game_id() >> 32) != 0) {
+                    game->set_game_id(game->game_id() & 0x00000000FFFFFFFFull);
+                    patched = true;
+                }
+                if (!game->has_game_extra_info() || game->game_extra_info() != name) {
+                    game->set_game_extra_info(name);
+                    patched = true;
+                }
+                AC_LOG_INFO_ONCE(kModule, "game_extra_info spoof 480 -> '%s' (real=%u).",
+                                 name.c_str(), nameApp);
+                continue;
             }
-            if (nameApp == 0) continue;
 
-            const std::string name = DisplayName(nameApp);
+            if (app == 0 || app == constants::kSpacewarAppId) continue;
+            if (!luadata::IsConfigured(app) && !luadata::HasDepot(app)) continue;
+            const std::string name = DisplayName(app);
             if (name.empty()) continue;
-
-            // The appid travels only on MASKED entries (wire 480) — via
-            // game_data_blob when enabled, else as a game_extra_info suffix.
-            // For real entries the CM relays the true appid by itself.
-            const bool masked = app == constants::kSpacewarAppId;
-            if (masked && g_state.settings.presenceShowOnlineBroadcast) {
-                const bool useBlob = g_state.settings.presenceAppIdBlob;
-                const std::string target = useBlob ? name : WithAppIdSuffix(name, nameApp);
-                const bool textOk = game->has_game_extra_info() &&
-                                    game->game_extra_info() == target;
-                const bool blobOk = !useBlob ||
-                                    (game->has_game_data_blob() &&
-                                     game->game_data_blob() == MakeAppIdBlob(nameApp));
-                if (textOk && blobOk) continue;  // already fully annotated
-                AnnotateMaskedEntry(*game, name, nameApp, /*packGameIdHighBits=*/false);
-                patched = true;
-                AC_LOG_INFO_ONCE(kModule, "game_extra_info appid=%u (wire=%u) -> '%s'%s.",
-                                 nameApp, app, target.c_str(),
-                                 useBlob ? "' [blob channel]" : " [suffix channel]");
-            } else {
-                if (game->has_game_extra_info() && game->game_extra_info() == name) continue;
-                game->set_game_extra_info(name);
-                patched = true;
-                AC_LOG_INFO_ONCE(kModule, "game_extra_info appid=%u (wire=%u) -> '%s'.",
-                                 nameApp, app, name.c_str());
-            }
+            if (game->has_game_extra_info() && game->game_extra_info() == name) continue;
+            game->set_game_extra_info(name);
+            patched = true;
+            AC_LOG_INFO_ONCE(kModule, "game_extra_info appid=%u (wire=%u) -> '%s'.",
+                             app, app, name.c_str());
         }
     }
 

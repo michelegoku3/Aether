@@ -29,7 +29,7 @@ fn valid_bundle_is_accepted() {
     valid_bundle_fixture(tmp.path());
 
     let bundle = Uco2Bundle::open(tmp.path().to_path_buf()).expect("valid bundle");
-    assert_eq!(bundle.dir(), tmp.path());
+    assert!(bundle.steam_api_dll(GameArch::X64).starts_with(tmp.path()));
 }
 
 #[test]

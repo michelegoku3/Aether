@@ -15,6 +15,7 @@ pub mod normalize_tests;
 pub mod online_bundle_tests;
 pub mod online_deploy_config_tests;
 pub mod online_detect_tests;
+pub mod online_foreign_tests;
 pub mod online_serde_tests;
 pub mod service_tests;
 pub mod store_items_tests;

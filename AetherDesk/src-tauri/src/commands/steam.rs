@@ -115,6 +115,15 @@ pub fn unblock_steam_updates(steam_path: String) -> Result<String, String> {
 /// vale ancora finché un set non lo migra.
 #[tauri::command]
 pub fn get_aether_onlinefix(app: tauri::AppHandle, app_id: u32) -> Result<bool, String> {
+    // exclude vince sul token argv residuo: altrimenti il popup mostra
+    // Online Aether ACTIVE insieme a UCO2.
+    if aethercore_toml_paths(&app).iter().any(|p| {
+        read_mode_apps(p, PresenceMode::Excluded)
+            .map(|apps| apps.contains(&app_id))
+            .unwrap_or(false)
+    }) {
+        return Ok(false);
+    }
     for path in aethercore_toml_paths(&app) {
         if let Some(apps) = read_mode_apps(&path, PresenceMode::OnlineFix) {
             if apps.contains(&app_id) {
@@ -149,6 +158,20 @@ pub fn set_aether_onlinefix(
     let steam_path = SettingsManager::new(&app).load().steam_path;
     if steam_path.trim().is_empty() {
         return Err("Steam installation path is required.".to_string());
+    }
+
+    if enabled {
+        let foreign = crate::commands::online::foreign_for_app(&app, app_id);
+        if foreign.ofme {
+            return Err(foreign.refuse_online_aether());
+        }
+        if crate::commands::online::uco2_enabled(app_id) || foreign.uco2 {
+            return Err(if foreign.uco2 && !crate::commands::online::uco2_enabled(app_id) {
+                foreign.refuse_online_aether_uco2()
+            } else {
+                "Disable UCO2 first — Online Aether and UCO2 cannot share a process.".to_string()
+            });
+        }
     }
 
     let marker_active = aethercore_toml_paths(&app)
@@ -243,6 +266,20 @@ pub fn set_aether_showonline(
         return Err("Steam installation path is required.".to_string());
     }
 
+    if enabled {
+        let foreign = crate::commands::online::foreign_for_app(&app, app_id);
+        if foreign.ofme {
+            return Err(foreign.refuse_showonline());
+        }
+        if crate::commands::online::uco2_enabled(app_id) || foreign.uco2 {
+            return Err(if foreign.uco2 {
+                foreign.refuse_showonline_uco2()
+            } else {
+                "Disable UCO2 first — Show Online remaps presence to Spacewar and breaks UCO2 invites.".to_string()
+            });
+        }
+    }
+
     let marker_active = aethercore_toml_paths(&app)
         .iter()
         .any(|p| read_mode_apps(p, PresenceMode::ShowOnline).map(|apps| apps.contains(&app_id)).unwrap_or(false));
@@ -319,15 +356,15 @@ pub fn set_aether_excluded(
     enabled: bool,
 ) -> Result<String, String> {
     let steam_path = SettingsManager::new(&app).load().steam_path;
-    if steam_path.trim().is_empty() {
-        return Err("Steam installation path is required.".to_string());
-    }
-    // Sicurezza: eventuali token Aether residui spariscono comunque.
-    let current = launch_options::get_launch_options(Path::new(&steam_path), app_id)?;
-    let mut updated = launch_options::toggle_launch_token(&current, AETHER_ONLINEFIX_TOKEN, false);
-    updated = launch_options::toggle_launch_token(&updated, AETHER_SHOWONLINE_TOKEN, false);
-    if updated != current {
-        launch_options::set_launch_options(Path::new(&steam_path), app_id, &updated)?;
+    // Token residui: best-effort. L'exclude deve comunque scriversi.
+    if !steam_path.trim().is_empty() {
+        if let Ok(current) = launch_options::get_launch_options(Path::new(&steam_path), app_id) {
+            let mut updated = launch_options::toggle_launch_token(&current, AETHER_ONLINEFIX_TOKEN, false);
+            updated = launch_options::toggle_launch_token(&updated, AETHER_SHOWONLINE_TOKEN, false);
+            if updated != current {
+                let _ = launch_options::set_launch_options(Path::new(&steam_path), app_id, &updated);
+            }
+        }
     }
 
     let choice = if enabled { Some(PresenceMode::Excluded) } else { None };

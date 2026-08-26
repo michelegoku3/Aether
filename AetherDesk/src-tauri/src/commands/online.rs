@@ -9,7 +9,9 @@ use crate::online::bundle::Uco2Bundle;
 use crate::online::engine::OnlineEngine;
 use crate::online::preferences::OnlinePreferencesStore;
 use crate::online::state::OnlineStateStore;
+use crate::online::foreign::ForeignOnlineReport;
 use crate::online::types::{OnlineEnableRequest, OnlinePlan, OnlineStatus, OnlineActionResult};
+use crate::core::presence_config::{PresenceMode, aethercore_toml_paths, update_mode_in_toml};
 use crate::util::game_resolver::resolve_installed_game;
 use crate::core::paths::LocalAppPaths;
 use std::path::{Path, PathBuf};
@@ -38,10 +40,14 @@ pub fn clear_online_preferences(app_id: u32) -> Result<(), String> {
 
 /// Stato online di un gioco (per la UI: footer + record).
 #[tauri::command]
-pub async fn get_online_status(app_id: u32) -> Result<OnlineStatus, String> {
-    let state_path = state_path();
-
-    Ok(OnlineEngine::status(app_id, &state_path))
+pub async fn get_online_status(app: tauri::AppHandle, app_id: u32) -> Result<OnlineStatus, String> {
+    let mut status = OnlineEngine::status(app_id, &state_path());
+    if status.state != crate::online::types::OnlineStateKind::Enabled
+        && foreign_for_app(&app, app_id).uco2
+    {
+        status.state = crate::online::types::OnlineStateKind::Enabled;
+    }
+    Ok(status)
 }
 
 /// True quando UCO2 risulta attivo per il gioco, verificato dalla presenza
@@ -56,6 +62,24 @@ pub fn is_uco2_active(app: tauri::AppHandle, app_id: u32) -> Result<bool, String
         Ok(detection) => Ok(detection.ini_dir.join("union-crax.ini").is_file()),
         Err(_) => Ok(false),
     }
+}
+
+/// Crack online-fix.me / SteamFix sul disco del gioco (non UCO2, non Online Aether).
+pub(crate) fn uco2_enabled(app_id: u32) -> bool {
+    OnlineEngine::status(app_id, &OnlineStateStore::state_path(&LocalAppPaths::data_root())).state
+        == crate::online::types::OnlineStateKind::Enabled
+}
+
+pub(crate) fn foreign_for_app(app: &tauri::AppHandle, app_id: u32) -> ForeignOnlineReport {
+    let Ok(game) = resolve_installed_game(app, app_id) else {
+        return ForeignOnlineReport::default();
+    };
+    crate::online::foreign::scan(Path::new(&game.game_path))
+}
+
+#[tauri::command]
+pub fn inspect_foreign_online(app: tauri::AppHandle, app_id: u32) -> Result<ForeignOnlineReport, String> {
+    Ok(foreign_for_app(&app, app_id))
 }
 
 /// Piano di attivazione (dry-run: nessun effetto sul disco).
@@ -119,6 +143,11 @@ pub async fn enable_online(
         }
     }
 
+    let foreign = ForeignOnlineReport::from_conflicts(&inspection.detection.conflicts);
+    if foreign.ofme {
+        return Err(foreign.refuse_uco2());
+    }
+
     let bundle = locate_bundle(&app)?;
     let backup_root = LocalAppPaths::backup_root();
     let state_path = state_path();
@@ -146,19 +175,27 @@ pub async fn enable_online(
     .map_err(|e| format!("Online worker failed: {e}"))??;
 
     crate::desk_log_info!("online", "enable_online done: success={} message='{}'", result.success, result.message);
+    if result.success {
+        for path in aethercore_toml_paths(&app) {
+            update_mode_in_toml(&path, app_id, Some(PresenceMode::Excluded));
+        }
+    }
     Ok(result)
 }
 
 /// Disattiva UCOnline2 (rollback dal journal).
 #[tauri::command]
-pub async fn disable_online(app_id: u32) -> Result<OnlineActionResult, String> {
+pub async fn disable_online(app: tauri::AppHandle, app_id: u32) -> Result<OnlineActionResult, String> {
     let backup_root = LocalAppPaths::backup_root();
     let state_path = state_path();
+    let game_root = resolve_installed_game(&app, app_id)
+        .ok()
+        .map(|game| PathBuf::from(game.game_path));
 
     crate::desk_log_info!("online", "disable_online: app={}", app_id);
 
     let result = tauri::async_runtime::spawn_blocking(move || {
-        OnlineEngine::disable(app_id, &backup_root, &state_path)
+        OnlineEngine::disable(app_id, &backup_root, &state_path, game_root.as_deref())
     })
     .await
     .map_err(|e| format!("Online worker failed: {e}"))??;

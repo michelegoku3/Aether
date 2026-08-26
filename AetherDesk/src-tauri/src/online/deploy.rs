@@ -103,9 +103,13 @@ pub fn deploy(
     fs::create_dir_all(backup_dir.join(ORIGINAL_SUBDIR)).map_err(|e| e.to_string())?;
     let mut journal = Journal::load(&backup_dir);
 
+    // File UCO2 già sul disco NON sono originali del gioco: backuparli
+    // farebbe ripristinarli al Disable (ini che "non se ne va").
+    let preexisting_uco2 = ini_path.is_file();
+
     if !already_enabled {
         // ---- Fase 1: backup originali ----
-        if steam_api_path.is_file() {
+        if steam_api_path.is_file() && !preexisting_uco2 {
             let target = unique_backup_path(&backup_dir, "steam_api");
             fs::rename(&steam_api_path, &target).map_err(|e| e.to_string())?;
             journal.entries.push(JournalEntry::BackedUp {
@@ -114,14 +118,10 @@ pub fn deploy(
             });
         }
         if ini_path.is_file() {
-            let target = unique_backup_path(&backup_dir, "union-crax.ini");
-            fs::rename(&ini_path, &target).map_err(|e| e.to_string())?;
-            journal.entries.push(JournalEntry::BackedUp {
-                original: ini_path.clone(),
-                backup: target,
-            });
+            // Già UCO2: butta l'ini, non lo salvare come originale.
+            let _ = fs::remove_file(&ini_path);
         }
-        if plugins_dir.is_dir() {
+        if plugins_dir.is_dir() && !preexisting_uco2 {
             let target = unique_backup_path(&backup_dir, "plugins");
             fs::rename(&plugins_dir, &target).map_err(|e| e.to_string())?;
             journal.entries.push(JournalEntry::BackedUp {

@@ -57,18 +57,6 @@ const COHERENCE_SCHEMA: &str = "combined.schema";
 const EOS_DLL_SHIPPING: &str = "EOSSDK-Win64-Shipping.dll";
 const EOS_DLL: &str = "EOSSDK.dll";
 
-/// File nominativi di un fix SteamFix/OnlineFix (sempre da neutralizzare).
-const NAMED_FIX_FILES: &[&str] = &[
-    "winmm.dll",
-    "winmm.txt",
-    "winmm.ini",
-    "SteamFix64.dll",
-    "SteamFix.ini",
-    "OnlineFix64.dll",
-    "OnlineFix.ini",
-    "dlllist.txt",
-];
-
 /// Proxy DLL generici dietro cui un fix può nascondersi (solo se piccoli).
 /// `version.dll` e `XINPUT1_3.dll` NON sono qui: dal 1.19.5 sono i nomi
 /// dell'overlay proxy UCO2 e li gestisce il deployer, non la quarantena.
@@ -76,14 +64,6 @@ const PROXY_DLLS: &[&str] = &["dxgi.dll", "dsound.dll", "winhttp.dll"];
 
 /// Nomi riservati all'early overlay proxy (non vanno trattati come conflitto).
 const OVERLAY_PROXY_NAMES: &[&str] = &["version.dll", "xinput1_3.dll"];
-
-/// File extra del launcher OFME da quarantinare solo se c'è OnlineFix.json.
-const OFME_LAUNCHER_FILES: &[&str] = &[
-    "Launcher.exe",
-    "OnlineFix.json",
-    "OnlineFix.url",
-    "PhotonBridge.dll",
-];
 
 /// Stringhe ANSI nei metadati IL2CPP / negli exe Unreal.
 const STR_FUSION: &[u8] = b"NetworkRunner";
@@ -408,6 +388,9 @@ impl GameInspector {
     // ------------------------------------------------------------------
 
     /// Emulatori concorrenti da neutralizzare prima del deploy.
+    /// OFME/SteamFix: albero intero (i pack Unreal stanno accanto al
+    /// Shipping exe, non accanto a steam_api). Proxy generici: solo
+    /// accanto alla DLL Steamworks, come prima.
     fn detect_conflicts(root: &Path, steam_api_dir: Option<&Path>) -> Vec<Conflict> {
         let mut conflicts = Vec::new();
 
@@ -416,37 +399,34 @@ impl GameInspector {
             conflicts.push(Conflict::ColdClientLoader(cold_client));
         }
 
+        let foreign = crate::online::foreign::scan(root);
+        for path in &foreign.files {
+            conflicts.push(crate::online::foreign::conflict_for_ofme_file(path));
+        }
+
         let Some(dir) = steam_api_dir else {
             return conflicts;
         };
 
-        let mut named_fix_proxy = false;
-        for &name in NAMED_FIX_FILES {
+        // winmm accanto a steam_api è un loader concorrente da quarantinare
+        // al deploy, anche senza sibling OFME (che da solo non è OFME).
+        for name in ["winmm.dll", "winmm.ini", "winmm.txt"] {
             let path = dir.join(name);
-            if !path.is_file() {
-                continue;
+            if path.is_file()
+                && !conflicts.iter().any(|c| matches!(c, Conflict::NamedFixFile(p) if p == &path))
+            {
+                conflicts.push(Conflict::NamedFixFile(path));
             }
-            if name.eq_ignore_ascii_case("winmm.dll") {
-                named_fix_proxy = true;
-            }
-            let conflict = match name {
-                "SteamFix64.dll" => Conflict::SteamFix(path),
-                "OnlineFix64.dll" => Conflict::OnlineFix(path),
-                _ => Conflict::NamedFixFile(path),
-            };
-            conflicts.push(conflict);
         }
 
-        // OFME launcher: solo se OnlineFix.json identifica la catena.
-        let ofme_marker = dir.join("OnlineFix.json");
-        if ofme_marker.is_file() {
-            for &name in OFME_LAUNCHER_FILES {
-                let path = dir.join(name);
-                if path.is_file() && !conflicts.iter().any(|c| conflict_matches(c, &path)) {
-                    conflicts.push(Conflict::NamedFixFile(path));
-                }
-            }
-        }
+        let named_fix_proxy = conflicts.iter().any(|conflict| match conflict {
+            Conflict::NamedFixFile(path) => path
+                .file_name()
+                .and_then(|n| n.to_str())
+                .map(|n| n.eq_ignore_ascii_case("winmm.dll"))
+                .unwrap_or(false),
+            _ => false,
+        });
 
         // Proxy generici solo se NON c'è già un loader nominativo (winmm):
         // altrimenti si rischia di toccare lo shim overlay di UCO2.
@@ -650,16 +630,6 @@ fn unity_game_name(data_dir: &Path) -> String {
         .and_then(|s| s.to_str())
         .map(|stem| stem.strip_suffix(UNITY_DATA_SUFFIX).unwrap_or(stem).to_string())
         .unwrap_or_default()
-}
-
-fn conflict_matches(conflict: &Conflict, path: &Path) -> bool {
-    match conflict {
-        Conflict::ColdClientLoader(p)
-        | Conflict::SteamFix(p)
-        | Conflict::OnlineFix(p)
-        | Conflict::NamedFixFile(p)
-        | Conflict::ProxyDll(p) => p == path,
-    }
 }
 
 fn is_overlay_proxy_name(path: &Path) -> bool {

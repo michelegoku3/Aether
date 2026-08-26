@@ -276,6 +276,16 @@ struct AetherCoreState {
     // ---- OnlineFix --------------------------------------------------------
     std::atomic<steam::AppId> onlineFixRealAppId{0};
 
+    // Last app Steam asked us to spawn (even in exclude/None). Used only to
+    // name a later Spacewar (480) spoof from UCO2/OFME — never to rewrite
+    // that session's game_id.
+    std::atomic<steam::AppId> lastSpawnedAppId{0};
+
+    // True from SpawnProcess when UCO2/OFME files sit next to the exe.
+    // HandleSend then refuses Show Online / self-inject for this launch —
+    // only extra_info on the 480 the foreign DLL will announce.
+    std::atomic<bool> spacewarSpoofExpected{false};
+
     // ---- ShowOnline --------------------------------------------------------
     // Launch flag `-showonline`: the process is NOT masked as 480 — it stays
     // fully registered under its real appid, so every client subsystem

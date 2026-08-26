@@ -46,11 +46,6 @@ impl Uco2Bundle {
         Ok(Self { dir })
     }
 
-    /// Directory radice del bundle.
-    pub fn dir(&self) -> &Path {
-        &self.dir
-    }
-
     /// True quando la directory contiene un bundle UCOnline2 utilizzabile.
     pub fn is_valid_dir(dir: &Path) -> bool {
         dir.join(X64_SUBDIR).join(STEAM_API64_DLL).is_file()

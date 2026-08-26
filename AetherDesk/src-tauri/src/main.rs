@@ -149,6 +149,7 @@ fn main() {
             commands::online::get_online_preferences,
             commands::online::clear_online_preferences,
             commands::online::is_uco2_active,
+            commands::online::inspect_foreign_online,
             commands::online::plan_online,
             commands::online::enable_online,
             commands::online::disable_online,

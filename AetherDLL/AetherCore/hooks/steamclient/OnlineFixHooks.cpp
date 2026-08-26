@@ -57,6 +57,50 @@ static bool HasShowOnlineFlag(const char* cmdLine) {
     return HasFlagArg(cmdLine, constants::kShowOnlineFlag);
 }
 
+static bool FileExists(const std::string& path) {
+    std::ifstream f(path);
+    return f.good();
+}
+
+static std::string DirectoryOf(const char* path) {
+    if (!path || !*path) return {};
+    std::string s(path);
+    if (!s.empty() && s.front() == '"') {
+        s.erase(s.begin());
+        if (!s.empty() && s.back() == '"') s.pop_back();
+    }
+    const auto slash = s.find_last_of("\\/");
+    return (slash == std::string::npos) ? std::string{} : s.substr(0, slash);
+}
+
+// UCO2 (union-crax.ini) or OFME/SteamFix next to the exe: the process will
+// spoof Spacewar. Show Online must not start — same default as Desk None.
+static bool HasSpacewarSpoofOnDisk(const char* exe, const char* workDir) {
+    std::string dirs[3];
+    int n = 0;
+    const std::string exeDir = DirectoryOf(exe);
+    if (!exeDir.empty()) {
+        dirs[n++] = exeDir;
+        const std::string parent = DirectoryOf(exeDir.c_str());
+        if (!parent.empty()) dirs[n++] = parent;
+    }
+    if (workDir && *workDir) dirs[n++] = workDir;
+
+    static constexpr const char* kMarkers[] = {
+        "union-crax.ini",
+        "OnlineFix64.dll", "OnlineFix.dll", "OnlineFix.ini", "OnlineFix.json",
+        "SteamFix64.dll", "SteamFix.dll", "SteamFix.ini",
+    };
+    for (int i = 0; i < n; ++i) {
+        for (const char* marker : kMarkers) {
+            if (FileExists(dirs[i] + "\\" + marker) || FileExists(dirs[i] + "/" + marker)) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
 // Centralised per-app launch policy (docs/05 §12): is the launch a normal
 // one, a -showonline presence session, or a -onlinefix masked session?
 // The TOML arrays in [presence] are the source of truth; the legacy argv
@@ -268,6 +312,9 @@ bool h_SpawnProcess(void* user, const char* exe, const char* cmdLine, const char
         Settings::ReloadIfModified(g_state.configPath);
 
         AppId realApp = static_cast<AppId>(*gameId & constants::kGameIdAppIdMask);
+        if (realApp != 0 && realApp != constants::kSpacewarAppId) {
+            g_state.lastSpawnedAppId.store(realApp);
+        }
 
         // Centralised resolution (docs/05 §12): TOML arrays are the source of
         // truth; argv tokens (-onlinefix / -showonline) are LEGACY hints that
@@ -276,7 +323,13 @@ bool h_SpawnProcess(void* user, const char* exe, const char* cmdLine, const char
         const bool hasOfToken = HasOnlineFixFlag(cmdLine);
         const bool hasSoToken = HasShowOnlineFlag(cmdLine);
         const char* modeSource = nullptr;
-        const LaunchMode mode = ResolveLaunchMode(realApp, hasOfToken, hasSoToken, &modeSource);
+        LaunchMode mode = ResolveLaunchMode(realApp, hasOfToken, hasSoToken, &modeSource);
+        const bool spoofOnDisk = HasSpacewarSpoofOnDisk(exe, workDir);
+        g_state.spacewarSpoofExpected.store(spoofOnDisk);
+        if (mode == LaunchMode::ShowOnline && spoofOnDisk) {
+            mode = LaunchMode::None;
+            modeSource = "UCO2/OFME on disk; skip showonline";
+        }
         // Verdict line for EVERY launch (including mode None / depot misses,
         // which the branches below leave silent): with the build stamp this
         // tells you exactly what the DLL decided and why — marker read vs
