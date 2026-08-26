@@ -17,7 +17,7 @@
 #include "utils/EnvReader.h"
 #include "core/Logger.h"
 #include "scripting/LuaData.h"
-#include "hooks/onlinefix/OnlinePayload.h"
+#include "hooks/aetheronline/OnlinePayload.h"
 #include "diagnostics/StatusWriter.h"
 #include "hooks/ipc/SteamCapture.h"
 #include "utils/SmartIdLog.h"

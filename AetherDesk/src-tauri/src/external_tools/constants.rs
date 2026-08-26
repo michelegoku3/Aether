@@ -13,7 +13,7 @@ pub const STEAMLESS_BACKUP_SUFFIX: &str = ".steamstub.bak";
 pub const STEAMLESS_UNPACKED_SUFFIX: &str = ".unpacked.exe";
 
 /// Suffisso con cui UCOnline2 (patch.bat) neutralizza in modo reversibile
-/// gli emulatori concorrenti (SteamFix/OnlineFix e i loro proxy).
+/// gli emulatori concorrenti (SteamFix/OFME di online-fix.me e i loro proxy).
 pub const UCO_DISABLED_SUFFIX: &str = ".uco-disabled";
 
 /// Soglia (byte) sotto cui un proxy DLL generico (`version.dll`, `dxgi.dll`,

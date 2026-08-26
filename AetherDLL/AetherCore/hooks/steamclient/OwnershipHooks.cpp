@@ -47,13 +47,13 @@ namespace ac::hooks {
         logutil::SmartIdLog s_logFamily(kModule, "Family-shared AppIds");
 
         // ---------------------------------------------------------------------------
-        // OnlineFix achievement callback rewrite (single source of truth).
+        // AetherOnline achievement callback rewrite (single source of truth).
         //
         // Steam delivers user-stats callbacks (UserStatsReceived 1101, UserStatsStored
         // 1102, UserAchievementStored 1103, UserAchievementIconFetched 1109) with the
         // REAL app id in m_nGameID when the stats store was processed for the real
         // game (see the wire-layer 480→real rewrites and the IClientUserStats
-        // stats-scope). Under an OnlineFix session the game process is masked as
+        // stats-scope). Under an AetherOnline session the game process is masked as
         // Spacewar/480 and its Steamworks handlers expect m_nGameID == 480, so the
         // payload must be rewritten to 480 before dispatch or the game ignores the
         // callback.
@@ -62,8 +62,8 @@ namespace ac::hooks {
         // session is active, the callback is not achievement-related, or the payload
         // does not carry the real app id.
         // ---------------------------------------------------------------------------
-        bool RewriteOnlineFixCallbackGameId(int cb, void* data, int size) {
-            const AppId realApp = g_state.onlineFixRealAppId.load(std::memory_order_acquire);
+        bool RewriteAetherOnlineCallbackGameId(int cb, void* data, int size) {
+            const AppId realApp = g_state.aetherOnlineRealAppId.load(std::memory_order_acquire);
             if (realApp == 0 || realApp == constants::kSpacewarAppId) return false;
             if (!constants::achievement_cb::IsAchievementCallback(cb)) return false;
             if (data == nullptr || size < static_cast<int>(sizeof(std::uint64_t))) return false;
@@ -74,13 +74,13 @@ namespace ac::hooks {
 
             *pGameId = (*pGameId & ~static_cast<std::uint64_t>(constants::kGameIdAppIdMask))
                 | static_cast<std::uint64_t>(constants::kSpacewarAppId);
-            AC_LOG_DEBUG_ONCE(kModule, "OnlineFix: callback cb=%d m_nGameID %u -> %u.",
+            AC_LOG_DEBUG_ONCE(kModule, "AetherOnline: callback cb=%d m_nGameID %u -> %u.",
                 cb, realApp, constants::kSpacewarAppId);
             return true;
         }
 
         // ---------------------------------------------------------------------------
-        // OnlineFix callback delivery policy — whether an achievement callback needs a
+        // AetherOnline callback delivery policy — whether an achievement callback needs a
         // second copy with m_nGameID rewritten to the Spacewar/480 mask for the game's
         // own Steamworks handlers.
         //
@@ -402,7 +402,7 @@ namespace ac::hooks {
                     "ownership may not refresh.");
             }
 
-            // ── OnlineFix achievement callbacks ──────────────────────────────────────
+            // ── AetherOnline achievement callbacks ──────────────────────────────────────
             // Steam processes the stats store under the REAL app id (see the
             // wire-layer rewrites and the IClientUserStats stats-scope) and delivers
             // the achievement callbacks (1101/1102/1103/1109) with the real app id in
@@ -432,7 +432,7 @@ namespace ac::hooks {
             //   UserStatsStored_t::m_nGameID
             //   UserAchievementStored_t::m_nGameID
             //   UserAchievementIconFetched_t::m_nGameID
-            const AppId realApp = g_state.onlineFixRealAppId.load(std::memory_order_acquire);
+            const AppId realApp = g_state.aetherOnlineRealAppId.load(std::memory_order_acquire);
             if (realApp != 0 && realApp != constants::kSpacewarAppId &&
                 constants::achievement_cb::IsAchievementCallback(cb) &&
                 data && size >= static_cast<int>(sizeof(std::uint64_t)))
@@ -446,7 +446,7 @@ namespace ac::hooks {
                     // for UserAchievementStored (1103) whose 480 copy would duplicate
                     // the overlay unlock toast (see NeedsRewrittenGameCopy).
                     if (NeedsRewrittenGameCopy(cb)
-                        && RewriteOnlineFixCallbackGameId(cb, data, size)) {
+                        && RewriteAetherOnlineCallbackGameId(cb, data, size)) {
                         return o_SendCallbackToPipe(engine, pipe, user, cb, data, size);
                     }
                     return firstOk;

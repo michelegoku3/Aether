@@ -41,7 +41,7 @@ export const LibraryGameActionsModal = ({
   const [showOnlineChoice, setShowOnlineChoice] = useState(false);
   const [showOnlinePanel, setShowOnlinePanel] = useState(false);
   const [onlineBusy, setOnlineBusy] = useState(false);
-  const [aetherOnlinefix, setAetherOnlinefix] = useState(false);
+  const [aetherOnline, setAetherOnline] = useState(false);
   const [uco2Online, setUco2Online] = useState(false);
   const [ofmePresent, setOfmePresent] = useState(false);
   const [uco2FilesPresent, setUco2FilesPresent] = useState(false);
@@ -127,7 +127,7 @@ export const LibraryGameActionsModal = ({
       // dopo il Disable → falso "sempre attivo" che bloccava Online Aether.
       // 'broken' (record senza file) conta come non attivo ai fini del gate.
       const [aetherOnRaw, uco2Status, showOnRaw, excludedOnRaw, defaultShowOnline, foreign] = await Promise.all([
-        invoke<boolean>('get_aether_onlinefix', { appId: Number(game.appId) }),
+        invoke<boolean>('get_aetheronline', { appId: Number(game.appId) }),
         invoke<OnlineStatus>('get_online_status', { appId: Number(game.appId) }),
         invoke<boolean>('get_aether_showonline', { appId: Number(game.appId) }),
         invoke<boolean>('get_aether_excluded', { appId: Number(game.appId) }),
@@ -153,7 +153,7 @@ export const LibraryGameActionsModal = ({
         }
       }
 
-      setAetherOnlinefix(aetherOn);
+      setAetherOnline(aetherOn);
       setUco2Online(uco2On);
       setOfmePresent(ofme);
       setUco2FilesPresent(uco2Files);
@@ -171,7 +171,7 @@ export const LibraryGameActionsModal = ({
   };
 
   const currentPresenceMode: AppPresenceMode = resolveEffectivePresenceMode(
-    aetherOnlinefix,
+    aetherOnline,
     showOnline,
     aetherExcluded,
     presenceDefaultShowOnline,
@@ -183,8 +183,8 @@ export const LibraryGameActionsModal = ({
     setOnlineBusy(true);
     try {
       const command =
-        next === 'onlinefix'
-          ? 'set_aether_onlinefix'
+        next === 'aetheronline'
+          ? 'set_aetheronline'
           : next === 'showonline'
             ? 'set_aether_showonline'
             : 'set_aether_excluded';

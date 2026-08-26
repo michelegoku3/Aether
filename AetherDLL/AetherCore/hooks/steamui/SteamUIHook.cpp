@@ -7,14 +7,14 @@
 
 #include "core/AetherCoreState.h"
 #include "core/Constants.h"
-#include "hooks/onlinefix/CreateProcessHooks.h"
+#include "hooks/aetheronline/CreateProcessHooks.h"
 #include "hooks/steamclient/DecryptionKeyHook.h"
 #include "hooks/steamclient/DepotHooks.h"
 #include "core/HookManager.h"
 #include "hooks/ipc/IPCBus.h"
 #include "hooks/steamclient/LicenseHooks.h"
 #include "core/Logger.h"
-#include "hooks/steamclient/OnlineFixHooks.h"
+#include "hooks/steamclient/AetherOnlineHooks.h"
 #include "hooks/steamclient/OwnershipHooks.h"
 #include "hooks/wire/PacketRouter.h"
 #include "utils/GameNameResolver.h"
@@ -119,7 +119,7 @@ void InstallSteamClientBatch() {
     RegisterOwnershipHooks(g_state.diversionModule);
     RegisterDepotHooks(g_state.diversionModule);
     RegisterDecryptionKeyHook(g_state.diversionModule);
-    RegisterOnlineFixHooks(g_state.diversionModule);
+    RegisterAetherOnlineHooks(g_state.diversionModule);
 
     // IPC layer: capture helpers must resolve before the bus arms, and the bus
     // registers its command handlers internally.

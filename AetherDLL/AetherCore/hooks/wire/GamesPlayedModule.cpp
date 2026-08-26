@@ -72,7 +72,7 @@ bool SnapshotLooksSpoofed(const pipewatch::ProcessSnapshot& snap) {
 // Real app behind a Spacewar (480) session: Online Aether first, then UCO2/OFME
 // recovered from the live pipe image (GetAppID reports 480; the exe name does not).
 steam::AppId RealAppForSpoofedSession() {
-    const steam::AppId ofReal = g_state.onlineFixRealAppId.load();
+    const steam::AppId ofReal = g_state.aetherOnlineRealAppId.load();
     if (ofReal != 0 && ofReal != constants::kSpacewarAppId) return ofReal;
 
     const steam::AppId spawned = g_state.lastSpawnedAppId.load();
@@ -204,7 +204,7 @@ std::string MakeAppIdBlob(steam::AppId appId) {
 //   2) plan B (always for -showonline): the real appid packed into game_id
 //      bits 32-63. Vanilla UIs key on low-24 appid bits (480) and the
 //      extra_info text only; mod bits are not rendered. Does not apply to
-//      OnlineFix entries (their gid bits may feed OF's own discovery).
+//      AetherOnline entries (their gid bits may feed OF's own discovery).
 void AnnotateMaskedEntry(CMsgClientGamesPlayed::GamePlayed& game, const std::string& name,
                          steam::AppId appId, bool packGameIdHighBits) {
     if (packGameIdHighBits) {
@@ -295,7 +295,7 @@ std::int32_t HandleSend(const WireFrame& frame, std::uint8_t* out, std::uint32_t
     // ---- -showonline wire presence rewrite ----------------------------------
     // The -showonline process keeps its real appid everywhere locally (set by
     // h_SpawnProcess, never masked); only this outbound frame is rewritten so
-    // the server announces the session exactly like an -onlinefix mask: appid
+    // the server announces the session exactly like an -aetheronline mask: appid
     // bits -> 480, and the real appid hidden via AnnotateMaskedEntry
     // (game_data_blob by default — invisible to vanilla friends; suffix
     // fallback otherwise, see docs/05 §9-§10). PersonaInject decodes both.
@@ -331,7 +331,7 @@ std::int32_t HandleSend(const WireFrame& frame, std::uint8_t* out, std::uint32_t
     }
 
     // ---- game_extra_info (always-on when enabled) --------------------------
-    // Unified path: with and without -onlinefix.
+    // Unified path: with and without -aetheronline.
     //   OF/masked entry (480):  AnnotateMaskedEntry (blob default + plain name)
     //   normal entry:           extra_info = name(that appid) if we care
     // Entries just rewritten by the -showonline block above (480 without an OF

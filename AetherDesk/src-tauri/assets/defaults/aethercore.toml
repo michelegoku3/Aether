@@ -47,20 +47,20 @@ pattern_mirror = ""
 timeout_sec = 12
 
 [presence]
-# Unified friends/UI presence (with AND without -onlinefix).
+# Unified friends/UI presence (with AND without -aetheronline).
 # Does NOT change GetAppIDForCurrentPipe / multiplayer session identity.
 #
 # inject_local: stage/patch local PersonaState for Lua-managed non-owned games
 #   so the local client shows real app id + name instead of generic "Online".
 inject_local = true
 # always_extra_info: always fill GamesPlayed.game_extra_info with the display
-#   name when known. Under -onlinefix, game_id stays 480 and extra_info carries
-#   the real title; without -onlinefix the game_id is already real and this is
+#   name when known. Under -aetheronline, game_id stays 480 and extra_info carries
+#   the real title; without -aetheronline the game_id is already real and this is
 #   cosmetic polish on the same pipeline.
 always_extra_info = true
-# onlinefix_persona_patch: rewrite inbound PersonaState friend entries that
-#   still show Spacewar/480 while an OnlineFix session is active.
-onlinefix_persona_patch = true
+# aetheronline_persona_patch: rewrite inbound PersonaState friend entries that
+#   still show Spacewar/480 while an AetherOnline session is active.
+aetheronline_persona_patch = true
 
 # custom_game_name: optional custom game name sent in game_extra_info to friends.
 # When set (non-empty), friends on Steam see this exact title when you are in-game.
@@ -81,9 +81,9 @@ default_mode = "showonline"
 # the name.
 showonline_apps = []
 
-# Full OnlineFix integration (process masked as Spacewar/480 + presence):
+# Full AetherOnline integration (process masked as Spacewar/480 + presence):
 # a superset of showonline — an app lives in exactly ONE list.
-onlinefix_apps = []
+aetheronline_apps = []
 
 # Hard opt-out: the DLL ignores these apps entirely (no presence, no masking);
 # exclude beats every other list and the legacy argv tokens.

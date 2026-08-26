@@ -1,9 +1,11 @@
 //! Classificazione delle crack **esterne** e dei file UCO2 già sul disco.
 //!
-//! Non è Online Aether (payload AetherDLL). Unico posto in cui si decide
-//! “questi file sono OFME / UCO2”: detection, enable_online, set_aether_*
-//! e la UI leggono da qui. La scansione è ricorsiva: Bodycam e gli Unreal
-//! tengono i marker in `Binaries/Win64`, non accanto a `steam_api`.
+//! NON è AetherOnline (il payload di Aether, token `-aetheronline`): qui si
+//! rilevano solo file TERZI di OFME (online-fix.me) e UCO2. Unico posto in
+//! cui si decide “questi file sono OFME / UCO2”: detection, enable_online,
+//! set_aether_* e la UI leggono da qui. La scansione è ricorsiva: Bodycam e
+//! gli Unreal tengono i marker in `Binaries/Win64`, non accanto a
+//! `steam_api`. Vocabolario completo: AGENTS.md in radice.
 
 use crate::online::types::Conflict;
 use serde::{Deserialize, Serialize};
@@ -139,7 +141,7 @@ pub fn conflict_for_ofme_file(path: &Path) -> Conflict {
     let lower = file_name_lower(path).unwrap_or_default();
     match lower.as_str() {
         "steamfix64.dll" | "steamfix.dll" | "steamfix.ini" => Conflict::SteamFix(path.to_path_buf()),
-        "onlinefix64.dll" | "onlinefix.dll" => Conflict::OnlineFix(path.to_path_buf()),
+        "onlinefix64.dll" | "onlinefix.dll" => Conflict::Ofme(path.to_path_buf()),
         _ => Conflict::NamedFixFile(path.to_path_buf()),
     }
 }
@@ -149,7 +151,7 @@ pub fn ofme_files(conflicts: &[Conflict]) -> Vec<PathBuf> {
     conflicts
         .iter()
         .filter_map(|conflict| match conflict {
-            Conflict::OnlineFix(path) | Conflict::SteamFix(path) => Some(path.clone()),
+            Conflict::Ofme(path) | Conflict::SteamFix(path) => Some(path.clone()),
             Conflict::NamedFixFile(path) if named_is_ofme(path) => Some(path.clone()),
             _ => None,
         })

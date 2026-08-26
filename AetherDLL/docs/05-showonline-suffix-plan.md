@@ -11,7 +11,7 @@
 1. **Il CM non diffonde appid non licenziati.** Qualunque sia il `game_id` inviato — tipo
    App, GameMod, Shortcut o P2P — il server valida l'appid nei 24 bit bassi e scarta
    l'intero `ClientGamesPlayed` se non c'è licenza (Fase 0/1).
-2. **Con la maschera 480 (ovvero `-onlinefix`) la presenza viaggia** e il testo
+2. **Con la maschera 480 (ovvero `-aetheronline`) la presenza viaggia** e il testo
    `game_extra_info` che spediamo torna agli amici dentro `Friend.game_name`
    (misurato: `app=480 gameid=480 name='The Stanley Parable: Ultra Deluxe'`).
 3. **Le rich-presence KV non sono un canale affidabile**: la prova del 24/08 (KV
@@ -32,7 +32,7 @@
 
 ## 2. Canale definitivo: suffisso appid in `game_extra_info`
 
-Per ogni sessione mascherata (`-onlinefix`, oppure `-showonline` — dove il processo
+Per ogni sessione mascherata (`-aetheronline`, oppure `-showonline` — dove il processo
 resta reale e solo il frame di presenza viene riscritto), il mittente scrive:
 
 ```
@@ -57,7 +57,7 @@ Catena di risoluzione, in ordine:
 2. **Reverse lookup per titolo** (`friend_appid_from_name`, metodo esistente,
    solo libreria configurata: case/space-insensitive, cache con negativi) —
    copre mittenti senza suffisso.
-3. **Legacy locale** (`onlinefix_persona_patch` + `onlineFixRealAppId`) —
+3. **Legacy locale** (`aetheronline_persona_patch` + `aetherOnlineRealAppId`) —
    comportamento preesistente, invariato.
 
 Applicato il patch (`game_played_app_id`, `gameid`, `game_name` = titolo del cache
@@ -73,7 +73,7 @@ La propria entry viene **sempre saltata** (fatto 5).
 
 - La voce **self** della presenza locale resta gestita da `presenceInjectLocal`
   (gioco reale in vista locale), mai dal friend-patch.
-- `-onlinefix` (processo mascherato + payload multiplayer) **vince** su `-showonline`
+- `-aetheronline` (processo mascherato + payload multiplayer) **vince** su `-showonline`
   se entrambi i flag sono presenti.
 - `-showonline` continua a NON toccare il processo: achievement/DLC/cloud/screenshot/
   overlay restano identici a un avvio senza flag.
@@ -84,18 +84,18 @@ La propria entry viene **sempre saltata** (fatto 5).
 
 | file | contenuto |
 |------|-----------|
-| `hooks/wire/GamesPlayedModule.cpp` | rewrite `-showonline` inline (game_id → 480 + extra_info con suffisso); suffisso anche per le entry 480 di `-onlinefix`; `[DIAG] TX` change-triggered |
+| `hooks/wire/GamesPlayedModule.cpp` | rewrite `-showonline` inline (game_id → 480 + extra_info con suffisso); suffisso anche per le entry 480 di `-aetheronline`; `[DIAG] TX` change-triggered |
 | `hooks/wire/PersonaInject.cpp` | catena suffisso → by-name → legacy; skip self; `EnsureAppInfo` (PICS); `[DIAG] SERVER self-push` + dump KV self/friend |
 | `hooks/wire/PacketRouter.{h,cpp}` | `SendClientFrame` (frame originati con header clonato e job id azzerati); cattura connessione; `[DIAG] SharedLibrary`; timbro `[DIAG] BUILD showonline-suffix` |
 | `utils/GameNameResolver.{h,cpp}` | `ResolveAppIdByName` (lookup inverso libreria configurata, cache ±) |
 | `core/Settings.{h,cpp}` | `presenceShowOnlineBroadcast`, `presenceFriendAppIdFromName` (default ON) |
 | `core/Constants.h` | `kShowOnlineFlag`, `kExtraInfoAppIdSep` |
 | `core/AetherCoreState.h` | `showOnlineAppId` |
-| `hooks/steamclient/OnlineFixHooks.{h,cpp}` | rilevamento flag `-showonline` (niente maschera) |
+| `hooks/steamclient/AetherOnlineHooks.{h,cpp}` | rilevamento flag `-showonline` (niente maschera) |
 | `diagnostics/StatusWriter.cpp` | dump `showonline_appid` + toggle |
 | `proto/steam_messages.proto` | `process_id=9`, `game_flags=11`, `owner_id=12` (numeri verificati su SteamKit; owner_id riservato alla via Family Sharing) |
 | `config/aethercore.example.toml` | documentazione delle due chiavi |
-| `AetherDesk` (`steam.rs`, `main.rs`, `LibraryGameActionsModal.tsx`) | azione "Show Online" + mutua esclusione con `-onlinefix` (round 1, invariata) |
+| `AetherDesk` (`steam.rs`, `main.rs`, `LibraryGameActionsModal.tsx`) | azione "Show Online" + mutua esclusione con `-aetheronline` (round 1, invariata) |
 | `docs/04-showonline-plan.md` | le misurazioni dell'altra fase (riferimento) |
 
 Rimossi tutti i componenti del canale KV `aether_appid` (modulo ShowOnline, merge
@@ -112,7 +112,7 @@ Setup: `[log] level = "debug"` (o `info` per il minimo). Log `<Steam>\aethercore
 - **T1 mittente (`-showonline`)**: `ShowOnline session for app <id>: process NOT masked`;
   `[DIAG] TX[0] game_id=... (app=480) extra='<Nome> | <id>'`;
   `showonline: games_played <id> -> 480 (extra_info ...)`. Achievement/DLC/cloud intonsi.
-- **T2 mittente (`-onlinefix`)**: come prima + `[DIAG] TX` con `extra='<Nome> | <id>'`;
+- **T2 mittente (`-aetheronline`)**: come prima + `[DIAG] TX` con `extra='<Nome> | <id>'`;
   regressione multiplayer/DLC nulla.
 - **T3 amico (due account amici, lista amici aperta)**: sul PC amico cerca
   `Patched friend <steamid>: 480 -> <id> (extra_info)`; lista amici con nome reale e
@@ -122,7 +122,7 @@ Setup: `[log] level = "debug"` (o `info` per il minimo). Log `<Steam>\aethercore
 - **T4 amico senza suffisso** (mittente con build vecchia): deve ancora valere il
   metodo per titolo (`Patched friend ... (by name)`) quando la libreria Lua dell'amico
   contiene il gioco.
-- **T5 stabilità sessione**: con `-onlinefix`, Spacewar **non deve cadere**; se cade,
+- **T5 stabilità sessione**: con `-aetheronline`, Spacewar **non deve cadere**; se cade,
   nel log cercare `[DIAG] SharedLibrary msg` (è il CM a ordinare lo stop) vs
   `[DIAG] self entry arrived as 480` (finestra di desync, non deve toccare self).
 
@@ -139,7 +139,7 @@ Setup: `[log] level = "debug"` (o `info` per il minimo). Log `<Steam>\aethercore
 4. **Titoli con `" | "` finale + cifre**: combacerebbero col parser solo in casi
    patologici (nome che termina esattamente così); il rischio è trascurabile e
    coperto dal limite 24 bit / cifre.
-5. **Playtime server-side** resta attribuito a 480 (come da sempre con `-onlinefix`).
+5. **Playtime server-side** resta attribuito a 480 (come da sempre con `-aetheronline`).
 
 ## 7. Crash del client amico — scenario "gioco mai avuto" (in diagnosi, 2026-08-24)
 
@@ -250,10 +250,10 @@ patch — l'**unica** differenza visibile al figlio rispetto al lancio plain è 
 `-showonline` lasciato nella riga di comando (SpawnProcess passa `cmdLine` invariata).
 I giochi con parser argv rigido (o che trattano argomenti ignoti come path) crashano.
 
-**Fix** (`hooks/steamclient/OnlineFixHooks.cpp`): `h_SpawnProcess` ora toglie i token
-Aether (`-onlinefix`, `-showonline`) dalla cmdline prima di chiamare
+**Fix** (`hooks/steamclient/AetherOnlineHooks.cpp`): `h_SpawnProcess` ora toglie i token
+Aether (`-aetheronline`, `-showonline`) dalla cmdline prima di chiamare
 `o_SpawnProcess` → il figlio riceve argv pulito (log: `Stripped Aether launch flags
-from child cmdline (app <id>, was '...').`). Bonus: stessa protezione per `-onlinefix`.
+from child cmdline (app <id>, was '...').`). Bonus: stessa protezione per `-aetheronline`.
 Tokenizzazione di `HasFlagArg` resa coerente (spazio+tab). Test harness 14/14.
 
 ## 9. Canale invisibile per il suffisso (build `+fix4`, 2026-08-24)
@@ -312,7 +312,7 @@ giochi/emulatori che lo usano davvero) vengono scartati senza effetti.
 ### Flusso fix5
 - **TX** (GamePlayed): `AnnotateMaskedEntry()` — con `appid_blob=true`
   `game_extra_info` = **solo nome piano** + `game_data_blob` = blob; entrambi
-  i path (-showonline rewrite e -onlinefix annotate).
+  i path (-showonline rewrite e -aetheronline annotate).
 - **RX** (PersonaState): dopo i parse suffix, prima dei fallback by-title:
   `AppIdFromBlob(f.game_data_blob)` → `source="blob"`, displayName = testo
   extra pulito. I vaniglia vedono **unicamente il nome**: la richiesta utente
@@ -360,7 +360,7 @@ vedono il nome pulito ✓, ma gli amici Aether non recuperano più l'appid.
 ### Piano B attivato (fix6): appid nei bit 32-63 di game_id
 - **TX**: sul path -showonline `AnnotateMaskedEntry(packGameIdHighBits=true)`
   scrive `game_id = (480 | typeBits salvati) | (appid << 32)`. Il path
-  -onlinefix NON tocca i bit alti del gid (rischio per la discovery OF).
+  -aetheronline NON tocca i bit alti del gid (rischio per la discovery AetherOnline).
   Invariato per i vanilla: la UI chiave sui bit 0-23 (480) + testo
   extra_info; i mod bit non sono mai renderizzati.
 - **RX**: dopo il blob, prima di by-title: `gidHi = gameid >> 32` validato
@@ -402,7 +402,7 @@ superficie visibile al gioco:
   `-showonline` nelle Launch Options; i token legacy vengono rimossi al
   primo toggle (migrazione in `set_aether_showonline`), e il reader
   (`get_aether_showonline`) riconosce marker O token legacy per compat.
-  Attivare il marker rimuove anche `-onlinefix` (mutua esclusione, invariato).
+  Attivare il marker rimuove anche `-aetheronline` (mutua esclusione, invariato).
 - **AetherDLL**: `h_SpawnProcess` chiama `Settings::ReloadIfModified` (mtime;
   nessun riavvio di Steam) e attiva la sessione se `realApp` è nella lista.
   Env block, blob, argv, workdir restano byte-identici a un lancio normale:
@@ -424,14 +424,14 @@ arguments, cosa nota per lui, e il marker resta la sola via sana).
 
 ### Il modello professionale adottato
 - **TOML come unica fonte di verità** (`[presence]`): i tre array
-  `showonline_apps`, `onlinefix_apps`, `exclude_apps` + la policy
+  `showonline_apps`, `aetheronline_apps`, `exclude_apps` + la policy
   `default_mode = "none" | "showonline"`.
 - **Policy + overrides, NON enumerazione**: "ogni gioco senza configurazione
   va in presenza" = UNA riga `default_mode = "showonline"` invece di
   materializzare l'intera libreria Steam nell'array (anti-pattern: dati
   derivati scritti come intenti, file inutilmente enorme, writer multipli,
   install/disinstall lasciano spazzatura).
-- **Precedenza fissa e documentata**: `exclude > onlinefix > showonline >
+- **Precedenza fissa e documentata**: `exclude  > aetheronline > showonline >
   default_mode`. Legata in `ResolveLaunchMode()` (h_SpawnProcess); harness
   C++ 12/12 (include: exclude batte perfino un token legacy dimenticato).
 - **`exclude_apps` = hard opt-out**: la DLL ignora l'app interamente; i token
@@ -443,7 +443,7 @@ arguments, cosa nota per lui, e il marker resta la sola via sana).
 
 ### AetherDesk (fix8)
 - I quattro comandi esistenti mantengono nomi e firme → la UI non cambia.
-  `set_aether_showonline` / `set_aether_onlinefix` ora scrivono negli array
+  `set_aether_showonline` / `set_aetheronline` ora scrivono negli array
   del toml (entrambe le copie) e **rimuovono sempre i token legacy** dalle
   Launch Options (migrazione progressiva).
 - Nuovi comandi registrati: `get/set_aether_excluded` (opt-out) e
@@ -458,14 +458,14 @@ Osservazione utente: `-showonline` ha funzionato con crack che PENSANO di
 essere Spacewar. Motivo architetturale: showonline non tocca il processo —
 riscrive solo le frame di presenza in uscita — quindi convive con qualunque
 masking locale. Ma:
-- **-showonline + -onlinefix sullo STESSO gioco non va combinato** e non
-  serve: la modalità OnlineFix (mask 480 reale) è un superset funzionale —
+- **-showonline + -aetheronline sullo STESSO gioco non va combinato** e non
+  serve: la modalità AetherOnline (mask 480 reale) è un superset funzionale —
   la presenza verso gli amici è inclusa nel suo percorso di annotazione.
   La mutua esclusione (un solo array per app) è la forma corretta.
-- Con una crack che si maska DA SOLA (senza `-onlinefix` di Aether): il
+- Con una crack che si maska DA SOLA (senza `-aetheronline` di Aether): il
   cablaggio di annotazione showonline non si attiva (require
   `luadata::IsConfigured`/depot): gli amici vedono semplicemente "Spacewar".
-  Se vuoi nome+appid agli amici su quel gioco, usa `onlinefix_apps`.
+  Se vuoi nome+appid agli amici su quel gioco, usa `aetheronline_apps`.
 - "La pipeline del multiplayer non dovrebbe essere occupata": corretto per
   UCO2 — showonline non riserva nulla lato processo; l'unica zona condivisa è
   il canale wire di presenza, gestito dal CM.
@@ -477,7 +477,7 @@ masking locale. Ma:
 3. Per il plug-and-play globale: `set_presence_default_mode(true)` (futuro
    toggle UI) o a mano `default_mode = "showonline"` nel toml.
 4. Verifica log: stamp `showonline-suffix+fix8`; alla spawn riga con
-   `(source: showonline_apps|onlinefix_apps|default_mode=showonline|...)`.
+   `(source: showonline_apps|aetheronline_apps|default_mode=showonline|...)`.
 
 ---
 
@@ -528,11 +528,11 @@ masking locale. Ma:
   lo stamp `[DIAG] BUILD showonline-suffix+fix9` (r.~405 PacketRouter.cpp) nel
   main.log della sessione corrente. Stamp assente = marker scritti ma DLL
   vecchia che non li legge.
-- **Riga-verdetto per OGNI launch** (OnlineFixHooks::h_SpawnProcess): prima il
+- **Riga-verdetto per OGNI launch** (AetherOnlineHooks::h_SpawnProcess): prima il
   ramo mode==None / depot-miss era SILENTE — niente prova del perché la DLL
   avesse ignorato un app. Ora ogni launch logga
-  `Presence resolve: app <id> -> none|showonline|onlinefix (source: ...;
-  argv onlinefix=N showonline=N; depot=N)`: lettura marker vs token argv vs
+  `Presence resolve: app <id> -> none|showonline|aetheronline (source: ...;
+  argv aetheronline=N showonline=N; depot=N)`: lettura marker vs token argv vs
   default esplicita ad ogni avvio, diagnosi definitiva senza più ipotesi.
 
 ## 14. Root cause trovata (fix10): TOML bundlato INVALIDO + circuito di fallimento silenzioso
@@ -576,7 +576,7 @@ benché `[log] level = "trace"`. Diagnosi definitiva con toml++ v3.4 reale:
 
 Test live 25/08 con log trace funzionante. FATTI misurati nel log:
 
-- **Resolver/mask integri**: `Presence resolve ... -> onlinefix (onlinefix_apps)`,
+- **Resolver/mask integri**: `Presence resolve ... -> aetheronline (aetheronline_apps)`,
   `Masked AppId 4704690 as Spacewar (480)`, overlay 480->4704690, donor stats
   spoof attivi ad ogni lancio. Il canale marker TOML (fix9-10) funziona.
 - **Il processo del gioco non handshakka MAI la pipe IPC** (nessuna riga
@@ -594,17 +594,17 @@ Test live 25/08 con log trace funzionante. FATTI misurati nel log:
   `[presence] inject_local = false` (poi, se non basta, anche
   `always_extra_info = false`). Se Meccha VIVE con inject_local=false → il
   colpevole è il self-inject durante la sessione masked e va hard-gatato
-  (skip quando onlineFixRealAppId != 0). Se muore uguale → investigare il
+  (skip quando aetherOnlineRealAppId != 0). Se muore uguale → investigare il
   lato 480/licenze della macchina, non il codice persona.
 - **`legacy_tokens_found`**: il Desk non scrive MAI token argv (solo marker);
-  i `-onlinefix` visti nei lanci 40:11+ erano stati aggiunti a mano (la strip
+  i `-aetheronline` visti nei lanci 40:11+ erano stati aggiunti a mano (la strip
   DLL li rimuove comunque). Label del desk.log corretta (era
   `legacy_tokens_removed` ma stampava "trovati").
 
 ### Amico mostrato come "MECCHA CHAMELEON" senza averlo mai installato — ROOT CAUSE + FIX
 
 Il fallback legacy "local session" (pre-suffix) attribuiva OGNI amico con
-app=480 e nessun appid recuperabile al NOSTRO onlineFixRealAppId, basta
+app=480 e nessun appid recuperabile al NOSTRO aetherOnlineRealAppId, basta
 avere una sessione Online Aether attiva. Misurato nel log: amico in una sua
 sessione masked non correlata → mostrato come MECCHA CHAMELEON sul client
 dell'utente. Fix (fix10): l'attribuzione legacy ora richiede
@@ -619,7 +619,7 @@ al posto dei confronti su stringa `source` (rename-proof).
   (set/get_presence_default_mode, applicazione immediata, niente Save).
 - **custom_game_name**: in [presence] ha ora precedenza ARCHITETTURALE —
   l'app risolve a ShowOnline nel resolver se non ha entry esplicite
-  (exclude/onlinefix restano intoccati; il nome vince comunque in entrambe le
+  (exclude/aetheronline restano intoccati; il nome vince comunque in entrambe le
   pipeline via DisplayName). Comportamento "alleggerito" confermato: mai mask.
 - **Steam monitor** (`core/steam_monitor.rs`): poller dedicato (2.5 s) +
   AtomicBool + evento `steam://runtime-state` solo ai cambi →

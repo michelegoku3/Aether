@@ -273,8 +273,8 @@ struct AetherCoreState {
     std::atomic<void*> pPackage0{nullptr};  // Cached package-0 PackageInfo*
     std::atomic<bool> package0Seeded{false};
 
-    // ---- OnlineFix --------------------------------------------------------
-    std::atomic<steam::AppId> onlineFixRealAppId{0};
+    // ---- AetherOnline --------------------------------------------------------
+    std::atomic<steam::AppId> aetherOnlineRealAppId{0};
 
     // Last app Steam asked us to spawn (even in exclude/None). Used only to
     // name a later Spacewar (480) spoof from UCO2/OFME. Cleared on a 480

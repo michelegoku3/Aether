@@ -54,11 +54,15 @@ inline constexpr std::size_t kMaxPatternResponseBytes = 1u * 1024u * 1024u;
 // Lifecycle: how long DllMain(DETACH) waits for the init thread to unwind.
 inline constexpr DWORD kInitThreadJoinTimeoutMs = 5000;
 
-// Spacewar: Valve's public sample app id, used as the OnlineFix mask target.
+// Spacewar: Valve's public sample app id, used as the AetherOnline mask target.
 inline constexpr std::uint32_t kSpacewarAppId = 480;
 
-// OnlineFix: the launch flag that opts a title into the 480-masking path.
-inline constexpr char kOnlineFixFlag[] = "-onlinefix";
+// AetherOnline (Aether's own masked-online mode, "-aetheronline"): the launch flag
+// that opts a title into the 480-masking path. Named to stay distinct from
+// the online-fix.me (OFME) crack — "-onlinefix" is the LEGACY form of the
+// same flag, still recognised and stripped for un-migrated launch options.
+inline constexpr char kAetherOnlineFlag[] = "-aetheronline";
+inline constexpr char kAetherOnlineFlagLegacy[] = "-onlinefix";
 
 // ShowOnline: launch flag that advertises the game to friends as "now
 // playing" (Spacewar/480 on the SERVER-side presence only) WITHOUT any
@@ -101,7 +105,7 @@ inline constexpr std::uint64_t kGameIdAppIdMask = 0xFFFFFFull;
 // Callback id Steam fires when app licenses change.
 inline constexpr int kCallbackAppLicensesChanged = 1020094;
 
-// Steamworks achievement/stats callback IDs. Used by the OnlineFix dual-dispatch
+// Steamworks achievement/stats callback IDs. Used by the AetherOnline dual-dispatch
 // in SendCallbackToPipe: when a game is masked as Spacewar/480, it registers
 // callbacks under appid 480, but Steam dispatches them with the real appid.
 // The dual-dispatch rewrites m_nGameID (low 24 bits) from real → 480 and
@@ -154,7 +158,7 @@ inline constexpr std::uint8_t kClientUser = 1;
 inline constexpr std::uint8_t kClientUtils = 4;
 // Steam's protocol constant for IClientUserStats (matches LumaCore's
 // EIPCInterface). Used by IPCBus to bracket IClientUserStats dispatches in the
-// OnlineFix stats-scope (see capture::EnterStatsScope) so the client's stats
+// AetherOnline stats-scope (see capture::EnterStatsScope) so the client's stats
 // subsystem resolves the real app id instead of the Spacewar/480 mask.
 inline constexpr std::uint8_t kClientUserStats = 11;
 }  // namespace ipc_iface

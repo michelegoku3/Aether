@@ -14,7 +14,7 @@
 #include "core/Logger.h"
 #include "scripting/LuaData.h"
 #include "network/ManifestFetch.h"
-#include "hooks/onlinefix/OnlinePayload.h"
+#include "hooks/aetheronline/OnlinePayload.h"
 #include "hooks/ipc/PipeWatch.h"
 #include "hooks/wire/AchievementModule.h"
 
@@ -146,7 +146,7 @@ void Write() {
          << (g_state.settings.presenceShowOnlineBroadcast ? "true" : "false") << ",\n";
     json << "  \"presence_friend_appid_from_name\": "
          << (g_state.settings.presenceFriendAppIdFromName ? "true" : "false") << ",\n";
-    json << "  \"onlinefix_real_appid\": " << g_state.onlineFixRealAppId.load() << ",\n";
+    json << "  \"aetheronline_real_appid\": " << g_state.aetherOnlineRealAppId.load() << ",\n";
     json << "  \"showonline_appid\": " << g_state.showOnlineAppId.load() << ",\n";
     json << "  \"license_reload_forced_count\": " << g_state.licenseReloadForcedCount.load() << ",\n";
     json << "  \"license_reload_direct_count\": " << g_state.licenseReloadDirectCount.load() << ",\n";

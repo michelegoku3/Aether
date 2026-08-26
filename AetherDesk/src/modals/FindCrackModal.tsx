@@ -1,7 +1,7 @@
 import React from 'react';
 import { useModalDismiss } from '../hooks/useModalDismiss';
 
-type FindCrackResource = 'onlinefix' | 'gcw' | 'csrinru';
+type FindCrackResource = 'ofme' | 'gcw' | 'csrinru';
 
 interface FindCrackModalProps {
   onClose: () => void;
@@ -32,8 +32,8 @@ export const FindCrackModal: React.FC<FindCrackModalProps> = ({ onClose, onSelec
           </p>
 
           <div className="home-action-grid" style={{ gridTemplateColumns: 'repeat(2, 172px)', justifyContent: 'center' }}>
-            <button className="game-action-btn" onClick={() => onSelect('onlinefix')}>
-              OnlineFix
+            <button className="game-action-btn" onClick={() => onSelect('ofme')} title="online-fix.me (OFME)">
+              OFME
             </button>
             <button className="game-action-btn" onClick={() => onSelect('gcw')}>
               GCW

@@ -51,10 +51,10 @@ struct Settings {
     // [presence]
     bool presenceInjectLocal = true;
     bool presenceAlwaysExtraInfo = true;
-    bool presenceOnlineFixPersonaPatch = true;
+    bool presenceAetherOnlinePersonaPatch = true;
     std::string presenceCustomGameName;
     // -showonline: rewrite the outgoing presence frames of masked sessions
-    // (-showonline / -onlinefix) so the server announces Spacewar/480 with the
+    // (-showonline / -aetheronline) so the server announces Spacewar/480 with the
     // real appid carried as suffix in game_extra_info.
     bool presenceShowOnlineBroadcast = true;
     // Friend side: rebuild a friend's real app id locally — first from the
@@ -82,11 +82,11 @@ struct Settings {
 
     // Centralised per-app launch policy (docs/05 §12). The DLL resolves ONE
     // mode per app at SpawnProcess — no launch arguments involved:
-    //   onlinefix_apps  -> full Spacewar/480 process mask (superset of presence)
+    //   aetheronline_apps  -> full Spacewar/480 process mask (superset of presence)
     //   exclude_apps    -> hard opt-out, beats tokens and every other array
-    // OnlineFix crack-compat note: a self-masking crack needs nothing here;
+    // AetherOnline crack-compat note: a self-masking crack needs nothing here;
     // these arrays are for OUR integration.
-    std::vector<std::uint32_t> presenceOnlineFixApps;
+    std::vector<std::uint32_t> presenceAetherOnlineApps;
     std::vector<std::uint32_t> presenceExcludeApps;
     // Policy default for apps in NO array (intention over enumeration):
     //   default_mode = "showonline" -> presence broadcast for every launch.

@@ -51,27 +51,27 @@ pattern_mirror = ""
 timeout_sec = 12
 
 [presence]
-# Unified friends/UI presence (with AND without -onlinefix).
+# Unified friends/UI presence (with AND without -aetheronline).
 # Does NOT change GetAppIDForCurrentPipe / multiplayer session identity.
 #
 # inject_local: stage/patch local PersonaState for Lua-managed non-owned games
 #   so the local client shows real app id + name instead of generic "Online".
 inject_local = true
 # always_extra_info: always fill GamesPlayed.game_extra_info with the display
-#   name when known. Under -onlinefix, game_id stays 480 and extra_info carries
-#   the real title; without -onlinefix the game_id is already real and this is
+#   name when known. Under -aetheronline, game_id stays 480 and extra_info carries
+#   the real title; without -aetheronline the game_id is already real and this is
 #   cosmetic polish on the same pipeline.
 always_extra_info = true
-# onlinefix_persona_patch: rewrite inbound PersonaState friend entries that
-#   still show Spacewar/480 while an OnlineFix session is active.
-onlinefix_persona_patch = true
+# aetheronline_persona_patch: rewrite inbound PersonaState friend entries that
+#   still show Spacewar/480 while an AetherOnline session is active.
+aetheronline_persona_patch = true
 
 # custom_game_name: optional custom game name sent in game_extra_info to friends.
 # When set (non-empty), friends on Steam see this exact title when you are in-game.
 # Leave empty ("") to show the real title resolved from Steam.
 custom_game_name = ""
 
-# showonline_broadcast: for masked sessions (-showonline / -onlinefix), rewrite
+# showonline_broadcast: for masked sessions (-showonline / -aetheronline), rewrite
 # the outbound presence so the server announces Spacewar/480 with the REAL
 # the real appid hidden in game_data_blob (default, docs/05 §10) — raw bytes
 # the CM recycles into Friend.game_data_blob, never rendered by any client UI:
@@ -89,11 +89,11 @@ showonline_broadcast = true
 # the file at every game launch, so no Steam restart is needed.
 showonline_apps = []
 
-# onlinefix_apps: appids that activate the FULL OnlineFix integration (process
+# aetheronline_apps: appids that activate the FULL AetherOnline integration (process
 # masked as Spacewar/480 + friend presence), again with a clean command line
-# (docs/05 §12). OnlineFix is a superset of showonline; an app belongs to ONE
+# (docs/05 §12). AetherOnline is a superset of showonline; an app belongs to ONE
 # of the three lists at a time.
-onlinefix_apps = []
+aetheronline_apps = []
 
 # exclude_apps: hard opt-out. The DLL ignores these apps entirely — no
 # presence, no masking — and exclude beats every other list AND any legacy

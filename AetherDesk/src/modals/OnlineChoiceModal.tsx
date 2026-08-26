@@ -25,9 +25,9 @@ const OPTIONS: readonly OnlineOption[] = [
     accent: 'primary',
   },
   {
-    key: 'onlinefix',
+    key: 'aetheronline',
     title: 'Online Aether',
-    hint: 'Full Spacewar mask + friend presence for OnlineFix sessions',
+    hint: 'Full Spacewar mask + friend presence for AetherOnline sessions',
     accent: 'primary',
   },
   {

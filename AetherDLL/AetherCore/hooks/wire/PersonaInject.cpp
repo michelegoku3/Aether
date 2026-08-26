@@ -419,11 +419,11 @@ std::int32_t OnPersonaStateRecv(const WireFrame& frame, std::uint8_t* out, std::
     // the exact appid in that text ("<name> | <appid>"): recover it here, on
     // the viewer's machine — exact, language-independent, no shared .lua
     // needed. Fallbacks: configured-library title match, then — ONLY when the
-    // friend shares OUR lobby — the local -onlinefix session id (see the
+    // friend shares OUR lobby — the local -aetheronline session id (see the
     // lobby guard at its use site, below).
     {
-        const steam::AppId ofReal = g_state.onlineFixRealAppId.load();
-        const bool legacyGate = g_state.settings.presenceOnlineFixPersonaPatch &&
+        const steam::AppId ofReal = g_state.aetherOnlineRealAppId.load();
+        const bool legacyGate = g_state.settings.presenceAetherOnlinePersonaPatch &&
                                 ofReal != 0 && luadata::IsConfigured(ofReal);
         std::vector<steam::AppId> picsQueue;
 
@@ -435,7 +435,7 @@ std::int32_t OnPersonaStateRecv(const WireFrame& frame, std::uint8_t* out, std::
             // Never touch our own entry: the local self-view belongs to
             // presenceInjectLocal, and rewriting the appid the server believes
             // WE are running can tear down the Spacewar session that backs
-            // -onlinefix (measured regression, see docs/04-showonline-plan.md).
+            // -aetheronline (measured regression, see docs/04-showonline-plan.md).
             if (selfId != 0 && f->has_friendid() && f->friendid() == selfId) {
                 AC_LOG_INFO_ONCE(kModule,
                                  "[DIAG] self entry arrived as 480; left untouched "
@@ -501,7 +501,7 @@ std::int32_t OnPersonaStateRecv(const WireFrame& frame, std::uint8_t* out, std::
             // Show Online senders hide the appid (suffix / blob / gid-hi).
 
             // Legacy local-session fallback (pre-suffix behaviour, kept behind
-            // onlinefix_persona_patch): "a 480-friend while I'm masked must be
+            // aetheronline_persona_patch): "a 480-friend while I'm masked must be
             // my co-op partner in my game". UNGUARDED that guess is WRONG in
             // general — measured 2026-08-25: a friend in his own unrelated
             // masked session was displayed as playing OUR game ('MECCHA

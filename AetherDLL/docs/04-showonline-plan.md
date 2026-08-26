@@ -12,7 +12,7 @@
 |---|---|---|---|---|
 | 1 | Rivals of Aether `383980` | posseduto | `game_id=383980` | ✅ `app=383980` dopo **0,32 s** |
 | 2 | Stanley `1703340` | **non posseduto**, nessun flag | `game_id=1703340` | ❌ **nessun push per 20 s** |
-| 3 | Stanley `1703340` | non posseduto, `-onlinefix` | `game_id=480` | ✅ `app=480 name='The Stanley Parable: Ultra Deluxe'` dopo **0,46 s** |
+| 3 | Stanley `1703340` | non posseduto, `-aetheronline` | `game_id=480` | ✅ `app=480 name='The Stanley Parable: Ultra Deluxe'` dopo **0,46 s** |
 
 Il PersonaState che il CM rimanda per il nostro SteamID è ciò che riceve la lista amici. Nei casi 1 e 3
 risponde in meno di mezzo secondo, nel caso 2 tace. Non è latenza: **è un rifiuto**.
@@ -41,7 +41,7 @@ profilo). Confronto con la riga `Dreadstew`: icona KH + avatar in bianco e nero.
 Questo è dirimente: **il client dell'amico ha risolto l'appid `1158310`**. Con `app=480` sarebbe
 impossibile — Spacewar su SteamDB ha `icon · empty string`, non c'è nulla da disegnare.
 
-Configurazione dell'epoca (confermata): **nessuna licenza reale** su CK3, solo Lua, e l'**onlinefix
+Configurazione dell'epoca (confermata): **nessuna licenza reale** su CK3, solo Lua, e l'**aetheronline
 esterno "buggato" che mandava l'appid del gioco**.
 
 ### Il conflitto apparente, e la sua soluzione
@@ -61,7 +61,7 @@ controllo di licenza non si applica — ma **l'appid reale resta nei 24 bit bass
 dell'amico lo usa per risolvere icona e nome. Risultato: icona CK3 + titolo reale, esattamente la foto.
 
 E spiega anche il resto del tuo ricordo: il **"mezzo e mezzo" in cui DLC e workshop non funzionavano**
-è precisamente questo, perché quell'onlinefix cambiava l'identità **a livello di processo**, rompendo
+è precisamente questo, perché quell'aetheronline cambiava l'identità **a livello di processo**, rompendo
 DLC e workshop lato client.
 
 ---
@@ -72,7 +72,7 @@ Log `all.log_18-09-37.txt` (23/08, 18:04–18:09). Build verificata dal timbro
 `[Wire] [DIAG] BUILD showonline-fase1` a riga 150; hot-reload del TOML confermato
 (la riga `[Settings] [DIAG] presence:` cambia a ogni giro). Sei run valide.
 
-### Senza `-onlinefix` — appid reale non posseduto (Stanley 1703340)
+### Senza `-aetheronline` — appid reale non posseduto (Stanley 1703340)
 
 | type | modid | game_id inviato | risposta del CM |
 |------|-------|-----------------|-----------------|
@@ -89,7 +89,7 @@ Prova ulteriore, decisiva: i quattro push `app=0` (fine sessione) cadono solo a
 Dopo le uscite dalle run 1/2/3 non c'è nessun push di "clear": il CM non aveva
 niente da azzerare perché **non aveva mai accettato il messaggio**.
 
-### Con `-onlinefix` — game_id 480 (i tre tipi, per controllo)
+### Con `-aetheronline` — game_id 480 (i tre tipi, per controllo)
 
 Il blocco ShowOnline salta di proposito le entry 480, quindi il comportamento è
 identico in tutti e tre i giri: push del CM dopo ~0,2–0,3 s con
@@ -115,7 +115,7 @@ di SyntaxCode15**. Il codice per farlo esiste già in repo — è
 `PersonaInject.cpp:229`:
 
 ```cpp
-// OnlineFix: patch any friend entry still showing Spacewar (local view).
+// AetherOnline: patch any friend entry still showing Spacewar (local view).
 if (ofPersonaPatch && ofReal != 0 && luadata::IsConfigured(ofReal)) {
     ...
     if (f->game_played_app_id() != kSpacewarAppId) continue;
@@ -133,7 +133,7 @@ esattamente la riga che nei nostri log produce
 Due vincoli la rendono inerte nel caso normale:
 
 1. `ofReal != 0` — si attiva **solo mentre anche tu stai giocando** qualcosa con
-   `-onlinefix`. Se guardi la lista amici senza giocare, `ofReal` è 0 e non fa nulla.
+   `-aetheronline`. Se guardi la lista amici senza giocare, `ofReal` è 0 e non fa nulla.
 2. Usa **il tuo** appid per la voce **dell'amico**. Funziona solo nel caso
    simmetrico: due PC che giocano lo stesso gioco. Che è, con ogni probabilità,
    proprio la configurazione di un mese fa.
@@ -200,7 +200,7 @@ riporta l'esito negativo, per non farlo riprovare in futuro.
 Sul PC che *guarda* (non serve giocare):
 
 1. `[Wire] [DIAG] BUILD showonline-fase1 | ... friend_appid_from_name=1`
-2. l'amico lancia il gioco con `-onlinefix`
+2. l'amico lancia il gioco con `-aetheronline`
 3. attesa: `[GameName] Reverse lookup 'Crusader Kings III' -> app 1158310.`
    e `[Wire.PersonaInject] [DIAG] Friend ...: 480 -> 1158310 by name '...'`
 4. nella lista amici deve comparire l'icona del gioco al posto di Spacewar
@@ -213,7 +213,7 @@ se non compare (3), il titolo non e' nella libreria Lua locale.
 ## 6. Fase 2 — funziona; regressione aperta: la sessione Spacewar cade
 
 Esito riportato dall'utente: **l'icona compare**. Ma poco dopo Spacewar si chiude
-e si perde lo stato online di `-onlinefix`.
+e si perde lo stato online di `-aetheronline`.
 
 ### Sospetto
 
@@ -223,7 +223,7 @@ l'utente stesso). Il client Steam usa il proprio stato di sessione per sapere
 quale app sta girando: se la persona che il server ci rimanda per noi stessi
 dice "app 1158310" mentre il session manager locale ha viva la sessione 480,
 la riconciliazione puo' concludere che la sessione 480 e' stanca e chiuderla.
-Con `-onlinefix` la sessione 480 *e'* lo stato online.
+Con `-aetheronline` la sessione 480 *e'* lo stato online.
 
 Il tutto e' inutile ai fini della feature: la voce che conta e' quella che
 l'**amico** riscrive sul **suo** PC. Riscrivere la propria e' rischio senza
@@ -241,10 +241,10 @@ blocco `ofReal` logga una riga `[DIAG] self entry arrived as 480 while playing
 
 - con `false` Spacewar **non** cade  -> la causa e' la nostra riscrittura
 - con `false` Spacewar cade lo stesso -> comportamento preesistente di
-  `-onlinefix`, indipendente dalla Fase 2
+  `-aetheronline`, indipendente dalla Fase 2
 
 Nel log servono, attorno al momento della chiusura: `[DIAG] TX: games_played
-vuoto`, `Playing app -> 0`, e le righe `Masked AppId` / `OnlineFix`.
+vuoto`, `Playing app -> 0`, e le righe `Masked AppId` / `AetherOnline`.
 
 ---
 
@@ -268,7 +268,7 @@ poi degradalo a `AC_LOG_DEBUG_ONCE`.
 
 Storia pre-Aether persa (squash `56bccf1`, 19/07/2026). Restano tre riferimenti a codice assente: il
 commit `9aa4a76`, il piano `docs/03-presence-identity-plan.md` mai importato, e la **regressione
-"Meccha"** in `OnlineFixHooks.cpp:209` — *"leaking real identity into multiplayer routing / friends
+"Meccha"** in `AetherOnlineHooks.cpp:209` — *"leaking real identity into multiplayer routing / friends
 presence"*. La "doppia strada" che ricordavi esiste ancora ed è `h_BuildSpawnEnvBlock` (CGameID di
 processo 480 per il routing, `SteamOverlayGameId` reale per DLC e overlay).
 
@@ -276,13 +276,13 @@ processo 480 per il routing, `SteamOverlayGameId` reale per DLC e overlay).
 
 ## 9. `-showonline` come modalità di default — inventario e design
 
-### 9.1 Cosa traduce `-onlinefix` oggi
+### 9.1 Cosa traduce `-aetheronline` oggi
 
 Inventario completo dei punti 480↔reale già in tree:
 
 | punto | direzione | a cosa serve |
 |---|---|---|
-| `OnlineFixHooks::h_SpawnProcess` | reale → **480** | CGameID di process-tracking: è quello che vedono CM e routing multiplayer |
+| `AetherOnlineHooks::h_SpawnProcess` | reale → **480** | CGameID di process-tracking: è quello che vedono CM e routing multiplayer |
 | `h_BuildSpawnEnvBlock` | 480 → **reale** | CGameID dell'overlay: DLC, metadati depot, identità overlay |
 | `CmdUtils::GetAppID` (IPC) | 480 → **reale** | il gioco che chiama `IClientUtils::GetAppID` riceve l'appid vero |
 | `h_GetAppIDForCurrentPipe`, solo *stats scope* | 480 → **reale** | stats e achievement salvati sotto l'app giusta |
@@ -292,7 +292,7 @@ Inventario completo dei punti 480↔reale già in tree:
 | `SteamCapture::CurrentRouteAppId` | reale | routing delle chiamate IPC |
 
 **Quindi: l'idea descritta è già implementata — è esattamente il design di
-`-onlinefix`.** Maschera 480 sul filo e ritraduce in locale dove serve.
+`-aetheronline`.** Maschera 480 sul filo e ritraduce in locale dove serve.
 
 Buco reale: **nessun hook UGC/Workshop esiste** (`grep -rn "UGC\|Workshop"` → 0
 risultati). Workshop oggi funziona solo di riflesso, perché `GetAppID` e il
@@ -305,7 +305,7 @@ attaccata. In concreto salta `OnlinePayload` (iniezione nel processo del gioco)
 e tutto ciò che serve solo al matchmaking — peso e superficie di rischio che per
 un singleplayer non ha motivo di esistere.
 
-Implementazione onesta: `kShowOnlineFlag` accanto a `kOnlineFixFlag`, che entra
+Implementazione onesta: `kShowOnlineFlag` accanto a `kAetherOnlineFlag`, che entra
 nello stesso percorso di mascheramento con un booleano `wantsOnlinePayload` a
 false. Nessun ramo duplicato: due percorsi paralleli che fanno il 90% delle
 stesse cose divergerebbero entro un mese.
@@ -325,7 +325,7 @@ maschera come 480  <=>  luadata::HasDepot(app) && !luadata::IsOwned(app)
 
 cioè solo i giochi gestiti da Lua e non posseduti — quelli che oggi il CM scarta
 in silenzio, dove non c'è niente da perdere. Più la lista di esclusione per i
-titoli con online reale, che restano su `-onlinefix`.
+titoli con online reale, che restano su `-aetheronline`.
 
 ### 9.4 Ricostruzione quando l'amico NON ha il gioco
 
@@ -389,7 +389,7 @@ server le scarta" da "nessuno le ha mai spedite".
 ### Test 1 — Spacewar cade ancora? (1 PC)
 
 `friend_appid_from_name` ha hot-reload: due run, `true` e `false`, stesso gioco
-con `-onlinefix`. Nel log, al momento della caduta, guardare in quest'ordine:
+con `-aetheronline`. Nel log, al momento della caduta, guardare in quest'ordine:
 
 1. `[DIAG] SharedLibrary msg` → **presente**: è il CM che ordina lo stop, la
    nostra riscrittura non c'entra
@@ -400,7 +400,7 @@ con `-onlinefix`. Nel log, al momento della caduta, guardare in quest'ordine:
 
 ### Test 2 — l'appid viaggia in rich presence? (1 PC)
 
-`rp_probe = true`, lanciare un gioco con `-onlinefix`, attendere ~30 s.
+`rp_probe = true`, lanciare un gioco con `-aetheronline`, attendere ~30 s.
 
 - `[DIAG] RP probe: invio` + `SendClientFrame … -> ok` → sonda partita
 - `[DIAG] SERVER rp kv: 'aether_appid' = '1703340'` → **ha fatto il giro**:

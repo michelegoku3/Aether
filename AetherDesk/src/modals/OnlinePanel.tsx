@@ -187,7 +187,7 @@ const conflictLabel = (kind: string): string => {
   switch (kind) {
     case 'coldClientLoader': return 'ColdClientLoader';
     case 'steamFix': return 'SteamFix';
-    case 'onlineFix': return 'OnlineFix';
+    case 'ofme': return 'OFME (online-fix.me)';
     case 'namedFixFile': return 'Fix file (winmm/...)';
     case 'proxyDll': return 'Proxy DLL';
     default: return kind;

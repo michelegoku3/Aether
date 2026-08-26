@@ -55,8 +55,8 @@ void LogDispatchOnce(const char* handlerName, steam::AppId appId) {
 }
 
 // RAII: brackets the duration of an IClientUserStats IPC dispatch so
-// GetAppIDForCurrentPipe resolves the OnlineFix Spacewar/480 masquerade to the
-// real app id (see capture::EnterStatsScope / OnlineFixHooks). Only activates
+// GetAppIDForCurrentPipe resolves the AetherOnline Spacewar/480 masquerade to the
+// real app id (see capture::EnterStatsScope / AetherOnlineHooks). Only activates
 // for stats interface calls; no-ops otherwise.
 struct StatsScopeGuard {
     explicit StatsScopeGuard(bool active) : m_active(active) {

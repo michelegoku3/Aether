@@ -11,7 +11,7 @@ fn write(dir: &Path, rel: &str, bytes: &[u8]) {
 
 #[test]
 fn onlinefix64_is_ofme() {
-    let conflicts = vec![Conflict::OnlineFix(PathBuf::from("C:/game/OnlineFix64.dll"))];
+    let conflicts = vec![Conflict::Ofme(PathBuf::from("C:/game/OnlineFix64.dll"))];
     assert!(has_ofme(&conflicts));
     let report = ForeignOnlineReport::from_conflicts(&conflicts);
     assert!(report.ofme);

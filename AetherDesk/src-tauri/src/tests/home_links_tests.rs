@@ -1,7 +1,7 @@
-use crate::commands::home_links::{build_csrinru_url, build_gcw_url, build_onlinefix_url};
+use crate::commands::home_links::{build_csrinru_url, build_gcw_url, build_ofme_url};
 
 // Helper to extract query values for assertions without depending on private fns.
-fn extract_onlinefix_query(url: &str) -> String {
+fn extract_ofme_query(url: &str) -> String {
     // URL is https://online-fix.me/...?do=search&subaction=search&story=<query>
     url.split("story=").nth(1).unwrap_or("").to_string()
 }
@@ -13,27 +13,27 @@ fn extract_csrinru_keywords(url: &str) -> String {
 }
 
 #[test]
-fn onlinefix_strips_tm_and_keeps_095_form_encoding() {
-    let url = build_onlinefix_url("DARK SOULS™ III");
-    let q = extract_onlinefix_query(&url);
+fn ofme_strips_tm_and_keeps_095_form_encoding() {
+    let url = build_ofme_url("DARK SOULS™ III");
+    let q = extract_ofme_query(&url);
 
     assert_eq!(q, "dark+souls+iii");
     assert!(!q.contains("%E2%84%A2"), "TM should be stripped, got {}", q);
 }
 
 #[test]
-fn onlinefix_keeps_real_subtitle_after_colon() {
-    let url = build_onlinefix_url("Call of Duty: Black Ops II");
-    let q = extract_onlinefix_query(&url);
+fn ofme_keeps_real_subtitle_after_colon() {
+    let url = build_ofme_url("Call of Duty: Black Ops II");
+    let q = extract_ofme_query(&url);
 
     assert_eq!(q, "call+of+duty+black+ops+ii");
     assert_ne!(q, "call+of+duty");
 }
 
 #[test]
-fn onlinefix_strips_editions_without_dropping_real_subtitle() {
-    let sekiro = build_onlinefix_url("Sekiro™: Shadows Die Twice - GOTY Edition");
-    let sekiro_q = extract_onlinefix_query(&sekiro);
+fn ofme_strips_editions_without_dropping_real_subtitle() {
+    let sekiro = build_ofme_url("Sekiro™: Shadows Die Twice - GOTY Edition");
+    let sekiro_q = extract_ofme_query(&sekiro);
 
     assert_eq!(sekiro_q, "sekiro+shadows+die+twice");
     assert!(!sekiro_q.to_lowercase().contains("goty"));
@@ -41,9 +41,9 @@ fn onlinefix_strips_editions_without_dropping_real_subtitle() {
 }
 
 #[test]
-fn onlinefix_rv_there_yet_uses_the_095_cleanup() {
-    let url = build_onlinefix_url("RV There Yet?");
-    let q = extract_onlinefix_query(&url);
+fn ofme_rv_there_yet_uses_the_095_cleanup() {
+    let url = build_ofme_url("RV There Yet?");
+    let q = extract_ofme_query(&url);
 
     // 0.9.5-style cleanup strips punctuation from the search text and uses
     // form-urlencoded spaces. This test documents the restored behavior.

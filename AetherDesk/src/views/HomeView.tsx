@@ -10,7 +10,7 @@ import { filterAndSortGames } from '../util/search';
 
 const MAX_VISIBLE_RESULTS = 5;
 
-type HomeResource = 'onlinefix' | 'gcw' | 'csrinru';
+type HomeResource = 'ofme' | 'gcw' | 'csrinru';
 
 interface SteamlessRunResult {
   success: boolean;
