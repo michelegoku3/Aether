@@ -106,8 +106,9 @@ impl OnlineEngine {
         app_id: u32,
         backup_root: &Path,
         state_path: &Path,
+        game_root: Option<&Path>,
     ) -> Result<OnlineActionResult, String> {
-        revert::disable(app_id, backup_root, state_path)?;
+        revert::disable(app_id, backup_root, state_path, game_root)?;
         Ok(OnlineActionResult {
             success: true,
             message: "Online disabled: files restored and state cleared.".to_string(),
@@ -147,18 +148,18 @@ fn build_notices(
 ) -> Vec<String> {
     let mut notices = detection.warnings.clone();
 
-    if detection.conflicts.iter().any(|c| {
-        matches!(
-            c,
-            Conflict::ColdClientLoader(_)
-                | Conflict::SteamFix(_)
-                | Conflict::OnlineFix(_)
-                | Conflict::NamedFixFile(_)
-        )
+    if crate::online::foreign::has_ofme(&detection.conflicts) {
+        notices.push(
+            "online-fix.me / SteamFix files are in this folder. UCO2 Enable is blocked \
+             until they are removed — the two Spacewar stacks cannot share a process."
+                .to_string(),
+        );
+    } else if detection.conflicts.iter().any(|c| {
+        matches!(c, Conflict::ColdClientLoader(_))
     }) {
         notices.push(
-            "A competing emulator was detected (ColdClientLoader/SteamFix/OnlineFix): \
-             it will be moved into the AetherDesk backup (reversible)."
+            "A competing Steam client loader (steamclient64.ini) was detected: \
+             it will be moved into the AetherDesk backup if you enable UCO2."
                 .to_string(),
         );
     }

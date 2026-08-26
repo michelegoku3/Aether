@@ -193,7 +193,14 @@ namespace ac::hooks {
             }
 
             WireFrame f;
-            if (DecodeFrame(data, len, f)) {
+            if (!DecodeFrame(data, len, f)) {
+                if (data && len >= sizeof(MsgHdr)) {
+                    const auto* hdr = reinterpret_cast<const MsgHdr*>(data);
+                    const std::uint32_t raw = hdr->eMsg;
+                    AC_LOG_TRACE(kModule, "send undecoded eMsg=%u proto=%d len=%u",
+                                 raw & ~kMsgHdrProtoFlag, (raw & kMsgHdrProtoFlag) ? 1 : 0, len);
+                }
+            } else {
                 if (f.headerLen > 0 && f.headerLen <= kWireMaxHeaderBytes) {
                     std::lock_guard<std::mutex> lk(s_originMutex);
                     s_originObj = obj;
@@ -402,7 +409,7 @@ namespace ac::hooks {
         // running. If it never appears in the log, the loaded DLL is not the
         // patched build (the updater reports the same version for both).
         AC_LOG_INFO(kModule,
-                    "[DIAG] BUILD showonline-suffix+fix10 | inject_local=%d always_extra_info=%d "
+                    "[DIAG] BUILD showonline-suffix+fix14 | inject_local=%d always_extra_info=%d "
                     "showonline_broadcast=%d friend_appid_from_name=%d appid_blob=%d suffix_invisible=%d",
                     g_state.settings.presenceInjectLocal ? 1 : 0,
                     g_state.settings.presenceAlwaysExtraInfo ? 1 : 0,

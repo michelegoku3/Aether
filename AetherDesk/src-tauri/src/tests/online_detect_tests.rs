@@ -397,6 +397,32 @@ fn x86_game_has_warning() {
 }
 
 #[test]
+fn nested_onlinefix_is_a_conflict_even_away_from_steam_api() {
+    let tmp = tempfile::tempdir().unwrap();
+    write(
+        tmp.path(),
+        "Engine/Binaries/Win64/MyGame-Win64-Shipping.exe",
+        b"MZshipping",
+    );
+    write(
+        tmp.path(),
+        "Engine/Binaries/ThirdParty/Steamworks/Steamv153/Win64/steam_api64.dll",
+        b"dll",
+    );
+    write(
+        tmp.path(),
+        "Engine/Binaries/Win64/OnlineFix64.dll",
+        b"ofme",
+    );
+
+    let report = GameInspector::inspect(tmp.path()).unwrap();
+    assert!(
+        report.conflicts.iter().any(|c| matches!(c, Conflict::OnlineFix(_))),
+        "OFME next to the Shipping exe must be a conflict"
+    );
+}
+
+#[test]
 fn overlay_target_names_are_not_conflicts() {
     let tmp = tempfile::tempdir().unwrap();
     write(tmp.path(), "Game.exe", b"MZ");

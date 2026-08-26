@@ -349,6 +349,9 @@ export const OnlinePanel = ({ game, onClose }: OnlinePanelProps) => {
         </div>
 
         <div style={styles.body}>
+          <div style={{ ...styles.box, color: '#e0b06a', marginBottom: 8 }}>
+            Invites travel as Spacewar. Accept them from the Steam overlay inside this running game. Do not use Join from the Friends list — Steam will start a second copy.
+          </div>
           {loading ? (
             <div style={styles.muted}>Analyzing the game...</div>
           ) : (

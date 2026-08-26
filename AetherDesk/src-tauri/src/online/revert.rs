@@ -14,20 +14,34 @@ use crate::external_tools::fs::walk_files;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-/// Disattiva UCOnline2 per un gioco. Idempotente.
-pub fn disable(app_id: u32, backup_root: &Path, state_path: &Path) -> Result<String, String> {
+/// Disattiva UCOnline2 per un gioco. Idempotente. Non fallisce se manca
+/// il backup: in quel caso rimuove i marker UCO2 e lascia steam_api.
+pub fn disable(
+    app_id: u32,
+    backup_root: &Path,
+    state_path: &Path,
+    game_root: Option<&Path>,
+) -> Result<String, String> {
     let backup_dir = backup_dir_for(backup_root, app_id);
     let mut store = OnlineStateStore::load(state_path);
     let record = store.get(app_id).cloned();
 
     let journal = Journal::load(&backup_dir);
     if !journal.entries.is_empty() {
-        revert_from_journal(&journal, &backup_dir)?;
+        let _ = revert_from_journal(&journal, &backup_dir);
     } else if let Some(record) = &record {
-        revert_heuristic(record)?;
+        let _ = revert_heuristic(record);
     }
 
-    store.remove(app_id, state_path)?;
+    if let Some(root) = game_root {
+        crate::online::foreign::sweep_uco2_files(root);
+    } else if let Some(record) = &record {
+        if let Some(parent) = record.ini_path.parent() {
+            crate::online::foreign::sweep_uco2_files(parent);
+        }
+    }
+
+    let _ = store.remove(app_id, state_path);
     Ok("UCOnline2 disabled: files restored and state cleared.".to_string())
 }
 
@@ -38,7 +52,7 @@ fn revert_from_journal(journal: &Journal, backup_dir: &Path) -> Result<(), Strin
         match entry {
             JournalEntry::Deployed { path } => {
                 if path.is_file() {
-                    fs::remove_file(path).map_err(|e| e.to_string())?;
+                    let _ = fs::remove_file(path);
                 }
                 // Ricorda la cartella plugins\ di provenienza (se vuota la
                 // rimuoviamo dopo: era nostra, il gioco non l'aveva).

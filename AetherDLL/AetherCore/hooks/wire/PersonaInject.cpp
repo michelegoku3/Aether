@@ -495,16 +495,10 @@ std::int32_t OnPersonaStateRecv(const WireFrame& frame, std::uint8_t* out, std::
                 }
             }
 
-            if (real == 0 && g_state.settings.presenceFriendAppIdFromName &&
-                f->has_game_name() && !f->game_name().empty()) {
-                if (const steam::AppId byName = gamename::ResolveAppIdByName(f->game_name())) {
-                    if (byName != constants::kSpacewarAppId) {
-                        real = byName;
-                        displayName = f->game_name();
-                        source = "by name";
-                    }
-                }
-            }
+            // Do not recover a real appid from the title alone. UCO2/OFME
+            // send a plain extra_info name under Spacewar; by-name would
+            // turn that back into the real game and break 480 invites.
+            // Show Online senders hide the appid (suffix / blob / gid-hi).
 
             // Legacy local-session fallback (pre-suffix behaviour, kept behind
             // onlinefix_persona_patch): "a 480-friend while I'm masked must be

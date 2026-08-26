@@ -323,7 +323,7 @@ fn deploy_then_disable_restores_everything() {
     assert!(!backup_dir.join("original/steam_api.1").exists(), "no double backup");
 
     // --- disable: ripristino completo ---
-    disable(1144200, &backup_root, &state_path).expect("disable must succeed");
+    disable(1144200, &backup_root, &state_path, None).expect("disable must succeed");
 
     assert_eq!(fs::read(&original_dll).unwrap(), b"original-dll");
     assert!(!ini_path.exists(), "ini removed");
@@ -361,7 +361,7 @@ fn deploy_neutralizes_conflicts_and_disable_restores_them() {
     let backup_dir = backup_dir_for(&backup_root, 1144200);
     assert!(backup_dir.join("original/conflict_SteamFix64.dll").is_file());
 
-    disable(1144200, &backup_root, &state_path).expect("disable");
+    disable(1144200, &backup_root, &state_path, None).expect("disable");
 
     // Ripristinato.
     assert!(steam_api_dir.join("SteamFix64.dll").is_file());
