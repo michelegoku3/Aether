@@ -314,6 +314,13 @@ bool h_SpawnProcess(void* user, const char* exe, const char* cmdLine, const char
         AppId realApp = static_cast<AppId>(*gameId & constants::kGameIdAppIdMask);
         if (realApp != 0 && realApp != constants::kSpacewarAppId) {
             g_state.lastSpawnedAppId.store(realApp);
+        } else if (realApp == constants::kSpacewarAppId) {
+            // A 480 launch is the foreign-crack (UCO2/OFME) signature — or the
+            // user playing Spacewar itself. A real appid left over from an
+            // earlier launch must not be attributed to it: the spoofed
+            // session is named from its live pipe image instead
+            // (GamesPlayed::RealAppForSpoofedSession).
+            g_state.lastSpawnedAppId.store(0);
         }
 
         // Centralised resolution (docs/05 §12): TOML arrays are the source of
@@ -330,6 +337,21 @@ bool h_SpawnProcess(void* user, const char* exe, const char* cmdLine, const char
             mode = LaunchMode::None;
             modeSource = "UCO2/OFME on disk; skip showonline";
         }
+        // UCO2/OFME launched FROM THE LIBRARY: the client already registered
+        // this process under its real appid, and a foreign crack cannot re-key
+        // it afterwards — UCO2's Spacewar spoof only applies to the
+        // process-originated Launch (direct exe / steam_appid.txt), which a
+        // library launch never performs. UCO2 would then announce the real
+        // identity on the wire, which breaks the Spacewar-based invite system
+        // (lobbies and invites are keyed on 480). Apply the same 480 process
+        // mask OnlineFix uses, WITHOUT any Online Aether state: the foreign
+        // crack owns the process and the networking (UCO2's AppId=480 ini
+        // matches the mask; ogAppId keeps DLC/tickets/stats on the real app),
+        // Aether only supplies the Spacewar identity. The real appid is
+        // already recorded in lastSpawnedAppId above for the wire naming.
+        const bool spacewarMask = spoofOnDisk && mode != LaunchMode::OnlineFix &&
+                                  realApp != 0 && realApp != constants::kSpacewarAppId;
+        if (spacewarMask) modeSource = "UCO2/OFME on disk; Spacewar mask";
         // Verdict line for EVERY launch (including mode None / depot misses,
         // which the branches below leave silent): with the build stamp this
         // tells you exactly what the DLL decided and why — marker read vs
@@ -384,6 +406,20 @@ bool h_SpawnProcess(void* user, const char* exe, const char* cmdLine, const char
                         "ShowOnline session for app %u: process NOT masked; "
                         "wire-level presence rewrite only (source: %s).",
                         realApp, modeSource);
+        } else if (spacewarMask) {
+            // UCO2/OFME library launch: same 480 registration as OnlineFix,
+            // but NO onlineFixRealAppId — that would arm the Online Aether
+            // payload injection (OnlinePayload::MaybeInject, CreateProcess
+            // hooks) and the OnlineFix-only IPC translations inside a process
+            // the foreign crack already owns.
+            g_state.showOnlineAppId.store(0);
+            *gameId = (*gameId & ~constants::kGameIdAppIdMask) | constants::kSpacewarAppId;
+            AC_LOG_INFO(kModule,
+                        "Masked AppId %u as Spacewar (%u) for UCO2/OFME launch "
+                        "(source: %s).",
+                        realApp, constants::kSpacewarAppId, modeSource);
+            // Same language fix as OnlineFix: the client reads the 480 ACF.
+            SyncLanguageToSpacewar(realApp);
         } else {
             g_state.onlineFixRealAppId.store(0);
             g_state.showOnlineAppId.store(0);
