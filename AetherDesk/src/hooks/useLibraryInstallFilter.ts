@@ -39,15 +39,15 @@ const countLabelFor = (
 ): string => {
   if (isLoading || !ready) return 'Scanning Lua library...';
   if (searchQuery.trim()) {
-    return `${shown} Lua game${shown === 1 ? '' : 's'} found`;
+    return `${shown} games found`;
   }
   if (filter === 'all') {
-    return `${total} Lua game${total === 1 ? '' : 's'} found`;
+    return `${total} games found`;
   }
   if (filter === 'installed') {
-    return `${shown} installed Lua game${shown === 1 ? '' : 's'} (${total} total)`;
+    return `${shown} installed`;
   }
-  return `${shown} non-installed Lua game${shown === 1 ? '' : 's'} (${total} total)`;
+  return `${shown} non-installed`;
 };
 
 const emptyMessageFor = (

@@ -91,7 +91,14 @@ pub async fn plan_online(app: tauri::AppHandle, app_id: u32) -> Result<OnlinePla
     let bundle = locate_bundle(&app);
     let state_path = state_path();
 
-    let mut plan = OnlineEngine::plan(app_id, &game_root, &bundle, &state_path)?;
+    // La detection cammina la cartella del gioco (I/O sincrono pesante):
+    // spawn_blocking, mai sul runtime tokio.
+    let plan_root = game_root.clone();
+    let mut plan = tauri::async_runtime::spawn_blocking(move || {
+        OnlineEngine::plan(app_id, &plan_root, &bundle, &state_path)
+    })
+    .await
+    .map_err(|e| format!("Plan task failed: {e}"))??;
 
     // Verifica "gioco in esecuzione" (solo informativa nel piano).
     if let Some(exe) = &plan.detection.game_exe {

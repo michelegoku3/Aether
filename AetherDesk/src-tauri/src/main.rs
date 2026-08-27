@@ -159,6 +159,7 @@ fn main() {
             commands::library::remove_lua_game_from_library,
             commands::library::apply_specific_version_edits,
             commands::steam::restart_steam,
+            commands::steam::start_steam,
             commands::steam::is_dll_installed,
             commands::steam::is_steam_blocked,
             commands::steam::is_steam_running,

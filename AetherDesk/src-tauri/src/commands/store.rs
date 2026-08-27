@@ -291,6 +291,7 @@ pub async fn trigger_hubcap_download(
             let package = oe_client.download_lua_package(app_id).await?;
             steam.install_lua_config(app_id, &package.lua_content)?;
             steam.install_manifest_files(&package.manifest_files)?;
+        crate::core::library_events::notify_lua_changed(&app);
             package
         } else {
             let client = HubcapClient::new(api_key.clone());
@@ -325,7 +326,7 @@ pub async fn trigger_hubcap_download(
 
 #[tauri::command]
 pub async fn prepare_specific_version_download(
-    _app: tauri::AppHandle,
+    app: tauri::AppHandle,
     app_id: u32,
     api_key: String,
     steam_path: String,
@@ -356,6 +357,7 @@ pub async fn prepare_specific_version_download(
         let steam = SteamCompat::new(steam_path.clone());
         steam.install_lua_config(app_id, &lua_content)?;
         steam.install_manifest_files(&package.manifest_files)?;
+        crate::core::library_events::notify_lua_changed(&app);
         GameBackup::for_app(app_id)?
             .backup_lua_artifacts(app_id, &lua_content, &package.manifest_files)?;
 
@@ -406,7 +408,7 @@ pub async fn trigger_ryuu_download(
 
 #[tauri::command]
 pub async fn prepare_ryuu_specific_version_download(
-    _app: tauri::AppHandle,
+    app: tauri::AppHandle,
     app_id: u32,
     api_key: String,
     steam_path: String,
@@ -415,7 +417,7 @@ pub async fn prepare_ryuu_specific_version_download(
     crate::desk_log_info!("store", "Preparing Ryuu specific version download for {}", crate::core::logger::format_appid(app_id));
 
     let package = RyuuClient::new(api_key).download_lua_package(app_id).await?;
-    let installed_rows = install_specific_package(app_id, &steam_path, package, "Ryuu")?;
+    let installed_rows = install_specific_package(&app, app_id, &steam_path, package, "Ryuu")?;
     crate::desk_log_info!("store", "Successfully prepared Ryuu specific version download for {}: {} row(s) installed", crate::core::logger::format_appid(app_id), installed_rows.len());
     Ok(installed_rows)
 }
@@ -438,6 +440,7 @@ pub async fn trigger_luatools_download(
 
 #[tauri::command]
 pub async fn prepare_luatools_specific_version_download(
+    app: tauri::AppHandle,
     app_id: u32,
     steam_path: String,
 ) -> Result<Vec<LuaManifestRow>, String> {
@@ -448,7 +451,7 @@ pub async fn prepare_luatools_specific_version_download(
         crate::core::logger::format_appid(app_id)
     );
     let package = LuaToolsClient::new().download_lua_package(app_id).await?;
-    install_specific_package(app_id, &steam_path, package, "LuaTools")
+    install_specific_package(&app, app_id, &steam_path, package, "LuaTools")
 }
 
 fn install_standard_package(
@@ -461,6 +464,7 @@ fn install_standard_package(
     let steam = SteamCompat::new(steam_path.to_string());
     steam.install_lua_config(app_id, &package.lua_content)?;
     steam.install_manifest_files(&package.manifest_files)?;
+        crate::core::library_events::notify_lua_changed(&app);
     apply_default_update_policy(app, app_id, steam_path)?;
     let installed_lua = steam
         .read_lua_config(app_id)
@@ -476,6 +480,7 @@ fn install_standard_package(
 }
 
 fn install_specific_package(
+    app: &tauri::AppHandle,
     app_id: u32,
     steam_path: &str,
     package: ManifestPackage,
@@ -492,6 +497,7 @@ fn install_specific_package(
     let steam = SteamCompat::new(steam_path.to_string());
     steam.install_lua_config(app_id, &package.lua_content)?;
     steam.install_manifest_files(&package.manifest_files)?;
+        crate::core::library_events::notify_lua_changed(&app);
     GameBackup::for_app(app_id)?
         .backup_lua_artifacts(app_id, &package.lua_content, &package.manifest_files)?;
 

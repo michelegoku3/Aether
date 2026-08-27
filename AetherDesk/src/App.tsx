@@ -6,6 +6,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { useCustomCss } from './hooks/useCustomCss';
 import { usePersonalWallpaper } from './hooks/usePersonalWallpaper';
+import { STEAM_RUNTIME_EVENT } from './constants/library';
 
 export default function App() {
   // Setup state to manage the active view, defaulting to 'home'
@@ -182,24 +183,31 @@ export default function App() {
     refreshCustomCss();
   }, []);
 
-  // Professional decoupled action handler to start (or restart) Steam via Rust.
-  // restart_steam is already idempotent: killing is a no-op when Steam is
-  // closed, so the same command covers both the Start and Restart semantics —
-  // only the LABEL changes, driven by the shared backend monitor.
-  const handleRestartSteam = async () => {
+  // Steam action: Start (solo spawn, mai kill) vs Restart (kill + wait +
+  // respawn) — i due comandi backend hanno semantica esplicita, qui si sceglie
+  // in base allo stato del monitor condiviso. `steamBusy` blocca il doppio
+  // click durante il restart (che include l'attesa dell'uscita del processo).
+  const [steamBusy, setSteamBusy] = useState(false);
+  const handleSteamAction = async () => {
+    if (steamBusy) return;
+    setSteamBusy(true);
     try {
-      await invoke('restart_steam');
-      console.log('Steam start/restart requested successfully.');
-      // Safety net per l'etichetta Start/Restart: il monitor emette l'evento
-      // di stato a ogni transizione, ma dopo un'azione esplicita rileggiamo
-      // comunque lo stato una volta (copre il caso di evento perso/anticipo).
-      window.setTimeout(async () => {
-        try {
-          setSteamRunning(await invoke<boolean>('is_steam_running'));
-        } catch { /* il monitor ci riprova al prossimo tick */ }
-      }, 2000);
+      const running = steamRunning ?? await invoke<boolean>('is_steam_running');
+      const message = running
+        ? await invoke<string>('restart_steam')
+        : await invoke<string>('start_steam');
+      console.log('Steam action done:', message);
+      // I comandi aggiornano subito lo stato del monitor (mark) e l'evento
+      // `steam://runtime-state` segue; qui forziamo la convergenza
+      // dell'etichetta (l'azione termina sempre con Steam avviato).
+      setSteamRunning(true);
     } catch (err: any) {
       console.error('Failed to start/restart Steam:', err);
+      try {
+        setSteamRunning(await invoke<boolean>('is_steam_running'));
+      } catch { /* il monitor ci riprova al prossimo tick */ }
+    } finally {
+      setSteamBusy(false);
     }
   };
 
@@ -211,7 +219,7 @@ export default function App() {
     invoke<boolean>('is_steam_running')
       .then((running) => { if (active) setSteamRunning(running); })
       .catch((err) => console.warn('is_steam_running failed:', err));
-    listen<boolean>('steam://runtime-state', (event) => {
+    listen<boolean>(STEAM_RUNTIME_EVENT, (event) => {
       setSteamRunning(event.payload);
     }).then((off) => { unlisten = off; });
     return () => { active = false; unlisten?.(); };
@@ -223,8 +231,9 @@ export default function App() {
       <Sidebar 
         activeTab={activeTab} 
         onTabChange={setActiveTab} 
-        onRestartSteam={handleRestartSteam} 
+        onSteamAction={handleSteamAction}
         steamRunning={steamRunning}
+        steamBusy={steamBusy}
         dllUpdateAvailable={dllUpdateAvailable || deskUpdateAvailable}
         updateIsTest={dllUpdateIsTest || deskUpdateIsTest}
       />

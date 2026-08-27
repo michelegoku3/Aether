@@ -3,15 +3,19 @@ export type TabType = 'aether' | 'home' | 'store' | 'library' | 'backup' | 'sett
 interface SidebarProps {
   activeTab: TabType;
   onTabChange: (tab: TabType) => void;
-  onRestartSteam: () => void;
+  onSteamAction: () => void;
   // Stato Steam dal monitor condiviso (core::steam_monitor): null = in attesa
   // della prima lettura. Guida l'etichetta Start/Restart.
   steamRunning: boolean | null;
+  // True mentre un'azione Start/Restart è in volo (il restart include
+  // l'attesa dell'uscita del processo): il button è inibito per evitare
+  // doppi spawn in race con lo shutdown.
+  steamBusy?: boolean;
   dllUpdateAvailable: boolean; // Received from parent (App.tsx)
   updateIsTest: boolean;        // Whether the shown update is a test build (red)
 }
 
-export const Sidebar = ({ activeTab, onTabChange, onRestartSteam, steamRunning, dllUpdateAvailable, updateIsTest }: SidebarProps) => {
+export const Sidebar = ({ activeTab, onTabChange, onSteamAction, steamRunning, steamBusy, dllUpdateAvailable, updateIsTest }: SidebarProps) => {
   return (
     <aside className="sidebar">
       {/* TOP NAVIGATION SECTION */}
@@ -101,15 +105,23 @@ export const Sidebar = ({ activeTab, onTabChange, onRestartSteam, steamRunning, 
         {/* Separator Line */}
         <div className="separator"></div>
 
-        {/* Start/Restart Steam Button (Action, not a tab): il comando backend
-            e' idempotente (start se chiuso, restart se aperto), cambia solo
-            l'etichetta in base allo stato del processo monitorato. */}
+        {/* Start/Restart Steam Button (Action, not a tab): START = solo spawn
+            (mai kill), RESTART = kill + attesa uscita + spawn; l'etichetta
+            segue lo stato del monitor condiviso (evento runtime-state +
+            heartbeat AetherDLL via status.json). */}
         <button
-          onClick={onRestartSteam}
+          onClick={onSteamAction}
           className="nav-item restart-steam-btn"
           title={steamRunning ? 'Restart Steam (currently running)' : 'Start Steam (currently not running)'}
+          disabled={Boolean(steamBusy)}
         >
-          {steamRunning === null ? 'Steam' : steamRunning ? 'Restart Steam' : 'Start Steam'}
+          {steamBusy
+            ? 'Working…'
+            : steamRunning === null
+              ? 'Steam'
+              : steamRunning
+                ? 'Restart Steam'
+                : 'Start Steam'}
         </button>
       </div>
     </aside>
