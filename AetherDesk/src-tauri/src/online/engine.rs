@@ -174,7 +174,8 @@ fn build_notices(
     if detection.backends.photon != PhotonFlavor::None {
         notices.push(
             "Photon detected: your Photon app GUIDs (Realtime/Fusion and Voice when \
-             present) are required for Photon multiplayer."
+             present) are required for Photon multiplayer if it doesn't work out of \
+             the box."
                 .to_string(),
         );
     }

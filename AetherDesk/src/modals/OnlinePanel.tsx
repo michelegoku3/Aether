@@ -101,40 +101,7 @@ export interface OnlineEnableRequest {
   deployOverlayProxy: boolean;
 }
 
-// ---------------------------------------------------------------------------
-// Styles (component-scoped, no impact on the rest of the app)
-// ---------------------------------------------------------------------------
-
-const styles = {
-  body: { padding: '16px 20px', overflowY: 'auto' as const, maxHeight: '62vh' },
-  section: { marginBottom: '14px' },
-  sectionTitle: { fontSize: '12px', fontWeight: 700, textTransform: 'uppercase' as const, letterSpacing: '0.06em', opacity: 0.65, marginBottom: '8px' },
-  row: { display: 'flex' as const, gap: '10px', alignItems: 'center', marginBottom: '8px', flexWrap: 'wrap' as const },
-  label: { fontSize: '12px', opacity: 0.75, minWidth: '150px' },
-  input: { background: '#1b1b1f', border: '1px solid #2c2c31', borderRadius: '6px', color: '#eee', padding: '6px 8px', fontSize: '13px', flex: 1, minWidth: '160px' },
-  chip: { padding: '2px 10px', borderRadius: 0, fontSize: '12px', fontWeight: 600 },
-  chipEnabled: { background: '#16351f', color: '#6fdb8c' },
-  chipOff: { background: '#2a2a2e', color: '#9a9aa0' },
-  chipBroken: { background: '#3a1d1d', color: '#e07b7b' },
-  box: { background: '#17171b', border: '1px solid #232329', borderRadius: '8px', padding: '10px 12px', marginBottom: '8px', fontSize: '12px' },
-  warn: { color: '#e0b06a' },
-  error: { color: '#e07b7b' },
-  ok: { color: '#6fdb8c' },
-  muted: { opacity: 0.6 },
-  pathLink: { wordBreak: 'break-all' as const },
-  footer: { display: 'flex' as const, gap: '10px', justifyContent: 'center' as const, padding: '12px 20px', borderTop: '1px solid #232329' },
-  footerBtn: { flex: 1, maxWidth: 160, minWidth: 140, padding: '8px 16px', fontSize: '13px', fontWeight: 600, cursor: 'pointer' },
-  btn: { background: 'var(--color-cyan)', color: '#0b0b0f', border: 'none', borderRadius: '8px' },
-  btnDisabled: { opacity: 0.45, cursor: 'not-allowed' },
-  btnGhost: { background: '#232329', color: '#ddd', border: '1px solid #2f2f35', borderRadius: '8px' },
-  btnDanger: { background: '#5a2323', color: '#ffd9d9', border: 'none', borderRadius: '8px' },
-  header: { display: 'flex' as const, justifyContent: 'space-between' as const, alignItems: 'center' as const, padding: '14px 20px', borderBottom: '1px solid #232329' },
-  headerTitle: { margin: 0, fontSize: '16px', fontWeight: 700 },
-  close: { background: 'none', border: 'none', color: '#999', fontSize: '20px', cursor: 'pointer', lineHeight: 1 },
-  checkboxRow: { display: 'flex' as const, alignItems: 'center' as const, justifyContent: 'space-between' as const, gap: '12px', marginBottom: '8px', fontSize: '13px' },
-  checkboxDesc: { flex: 1, fontSize: '12px', opacity: 0.85 },
-};
-
+// Stili: classi .oc-*/.op-* in style.css (sezione "Online modals").
 const emptyRequest = (ogAppId: number): OnlineEnableRequest => ({
   ogAppId,
   spoofAppId: 480,
@@ -321,9 +288,9 @@ export const OnlinePanel = ({ game, onClose }: OnlinePanelProps) => {
   // Checkbox row: description on the left, custom checkbox (same style as
   // Apply Crack) on the far right.
   const checkboxRow = (checked: boolean, disabled: boolean, onChange: (v: boolean) => void, description: string) => (
-    <div style={styles.checkboxRow}>
-      <span style={styles.checkboxDesc}>{description}</span>
-      <label className="crack-checkbox-label" style={{ marginLeft: 'auto' }}>
+    <div className="op-checkbox-row">
+      <span className="op-checkbox-desc">{description}</span>
+      <label className="crack-checkbox-label op-checkbox-label">
         <input
           type="checkbox"
           className="crack-checkbox-input"
@@ -339,59 +306,54 @@ export const OnlinePanel = ({ game, onClose }: OnlinePanelProps) => {
   return (
     <div className="modal-overlay" onClick={handleOverlayClick}>
       <div
-        className="modal-container"
-        style={{ width: 720, maxHeight: '86vh' }}
+        className="modal-container op-container"
         onClick={(e) => e.stopPropagation()}
       >
-        <div style={styles.header}>
-          <h3 style={styles.headerTitle}>Enable Online: {game.name} ({game.appId})</h3>
-          <button type="button" style={styles.close} onClick={onClose} disabled={busy} aria-label="Close">×</button>
+        <div className="op-header">
+          <h3 className="op-header-title">Enable Online: {game.name} ({game.appId})</h3>
+          <button type="button" className="op-close" onClick={onClose} disabled={busy} aria-label="Close">×</button>
         </div>
 
-        <div style={styles.body}>
-          <div style={{ ...styles.box, color: '#e0b06a', marginBottom: 8 }}>
-            Invites travel as Spacewar. Accept them from the Steam overlay inside this running game. Do not use Join from the Friends list — Steam will start a second copy.
-          </div>
+        <div className="op-body">
           {loading ? (
-            <div style={styles.muted}>Analyzing the game...</div>
+            <div className="op-muted">Analyzing the game...</div>
           ) : (
             <>
               {/* Prerequisites errors */}
               {plan && plan.prerequisites.errors.length > 0 && (
-                <div style={styles.box}>
+                <div className="op-box">
                   {plan.prerequisites.errors.map((error, index) => (
-                    <div key={index} style={styles.error}>⚠ {error}</div>
+                    <div key={index} className="op-error">⚠ {error}</div>
                   ))}
                 </div>
               )}
 
               {/* Detection */}
               {plan && (
-                <div style={styles.box}>
-                  <div style={styles.row}>
-                    <span style={styles.label}>UCO2</span>
-                    <span style={plan.prerequisites.bundleOk ? styles.ok : styles.error}>
+                <div className="op-box">
+                  <div className="op-row">
+                    <span className="op-label">UCO2</span>
+                    <span className={plan.prerequisites.bundleOk ? 'op-ok' : 'op-error'}>
                       {plan.prerequisites.bundleOk
                         ? `${plan.prerequisites.bundleVersion ?? 'Available'} ✓`
                         : 'N/A ✗'}
                     </span>
                   </div>
-                  <div style={styles.row}>
-                    <span style={styles.label}>Writable folder</span>
-                    <span style={plan.prerequisites.steamApiDirWritable ? styles.ok : styles.error}>
+                  <div className="op-row">
+                    <span className="op-label">Writable folder</span>
+                    <span className={plan.prerequisites.steamApiDirWritable ? 'op-ok' : 'op-error'}>
                       {plan.prerequisites.steamApiDirWritable ? 'Yes ✓' : 'No ✗'}
                     </span>
                   </div>
-                  <div style={styles.row}>
-                    <span style={styles.label}>Engine</span>
+                  <div className="op-row">
+                    <span className="op-label">Engine</span>
                     <span>{engineLabel(plan.detection.engine)} · {plan.detection.arch === 'x64' ? '64-bit' : '32-bit'}</span>
                   </div>
                   {plan.detection.gameExe && (
-                    <div style={styles.row}>
-                      <span style={styles.label}>Executable</span>
+                    <div className="op-row">
+                      <span className="op-label">Executable</span>
                       <span
-                        className="settings-path settings-path--wide settings-path-clickable"
-                        style={styles.pathLink}
+                        className="settings-path settings-path--wide settings-path-clickable op-path-link"
                         title={plan.detection.gameExe}
                         onClick={() => openFolder(folderOf(plan.detection.gameExe!))}
                       >
@@ -400,11 +362,10 @@ export const OnlinePanel = ({ game, onClose }: OnlinePanelProps) => {
                     </div>
                   )}
                   {plan.detection.steamApiDir && (
-                    <div style={styles.row}>
-                      <span style={styles.label}>DLL location</span>
+                    <div className="op-row">
+                      <span className="op-label">DLL location</span>
                       <span
-                        className="settings-path settings-path--wide settings-path-clickable"
-                        style={styles.pathLink}
+                        className="settings-path settings-path--wide settings-path-clickable op-path-link"
                         title={plan.detection.steamApiDir}
                         onClick={() => openFolder(plan.detection.steamApiDir!)}
                       >
@@ -412,25 +373,25 @@ export const OnlinePanel = ({ game, onClose }: OnlinePanelProps) => {
                       </span>
                     </div>
                   )}
-                  <div style={styles.row}>
-                    <span style={styles.label}>Backend</span>
+                  <div className="op-row">
+                    <span className="op-label">Backend</span>
                     <span>{backendChips(plan.detection.backends).map((chip) => (
-                      <span key={chip} style={{ ...styles.chip, ...styles.chipOff, marginRight: 6 }}>{chip}</span>
+                      <span key={chip} className="op-chip op-chip--off">{chip}</span>
                     ))}</span>
                   </div>
                   {plan.detection.conflicts.length > 0 && (
-                    <div style={styles.row}>
-                      <span style={styles.label}>Conflicts</span>
-                      <span style={styles.warn}>
+                    <div className="op-row">
+                      <span className="op-label">Conflicts</span>
+                      <span className="op-warn">
                         {plan.detection.conflicts.map((c) => conflictLabel(c.kind)).join(', ')}: will be neutralized (reversible)
                       </span>
                     </div>
                   )}
                   {/* Notices: always the last lines of this box */}
                   {plan.notices.length > 0 && (
-                    <div style={{ marginTop: 4 }}>
+                    <div className="op-notices">
                       {plan.notices.map((notice, index) => (
-                        <div key={index} style={styles.warn}>⚠ {notice}</div>
+                        <div key={index} className="op-warn">⚠ {notice}</div>
                       ))}
                     </div>
                   )}
@@ -439,12 +400,12 @@ export const OnlinePanel = ({ game, onClose }: OnlinePanelProps) => {
 
               {/* AppID */}
               {plan && (
-                <div style={styles.box}>
-                  <div style={styles.sectionTitle}>AppID</div>
-                  <div style={styles.row}>
-                    <span style={styles.label}>Spoof</span>
+                <div className="op-box">
+                  <div className="op-section-title">AppID</div>
+                  <div className="op-row">
+                    <span className="op-label">Spoof</span>
                     <input
-                      style={styles.input}
+                      className="op-input"
                       type="text"
                       inputMode="numeric"
                       pattern="[0-9]*"
@@ -453,10 +414,10 @@ export const OnlinePanel = ({ game, onClose }: OnlinePanelProps) => {
                       disabled={enabled}
                     />
                   </div>
-                  <div style={styles.row}>
-                    <span style={styles.label}>ogAppID</span>
+                  <div className="op-row">
+                    <span className="op-label">ogAppID</span>
                     <input
-                      style={styles.input}
+                      className="op-input"
                       type="text"
                       inputMode="numeric"
                       pattern="[0-9]*"
@@ -465,24 +426,25 @@ export const OnlinePanel = ({ game, onClose }: OnlinePanelProps) => {
                       disabled={enabled}
                     />
                   </div>
-                  <div style={styles.row}>
-                    <span style={styles.label}>Client (old-SDK)</span>
+                  <div className="op-row">
+                    <span className="op-label">Client (old-SDK)</span>
                     <input
-                      style={styles.input}
+                      className="op-input"
                       type="text"
                       value={request.client}
                       onChange={(e) => set('client', e.target.value)}
                       disabled={enabled}
-                      placeholder="017 — only for old-SDK games (e.g. Rivals of Aether)"
+                      placeholder="017"
                     />
                   </div>
+                  <div className="op-note-warn">⚠ Write 017 for old-SDK games that crash on startup (e.g. SpeedRunners).</div>
                 </div>
               )}
 
               {/* Photon */}
               {plan && plan.detection.backends.photon !== 'none' && (
-                <div style={styles.box}>
-                  <div style={styles.sectionTitle}>Photon</div>
+                <div className="op-box">
+                  <div className="op-section-title">Photon</div>
                   {checkboxRow(
                     request.deployPhoton,
                     enabled,
@@ -490,22 +452,22 @@ export const OnlinePanel = ({ game, onClose }: OnlinePanelProps) => {
                     'Deploy Photon plugin'
                   )}
                   {request.deployPhoton && (
-                    <div style={{ marginTop: 6 }}>
+                    <div className="op-sub">
                       {plan.detection.backends.photon === 'fusion' ? (
-                        <div style={styles.row}>
-                          <span style={styles.label}>Fusion App GUID</span>
-                          <input style={styles.input} value={request.photon.fusionGuid} onChange={(e) => setPhoton('fusionGuid', e.target.value)} disabled={enabled} placeholder="app-id-xxxx" />
+                        <div className="op-row">
+                          <span className="op-label">Fusion App GUID</span>
+                          <input className="op-input" value={request.photon.fusionGuid} onChange={(e) => setPhoton('fusionGuid', e.target.value)} disabled={enabled} placeholder="app-id-xxxx" />
                         </div>
                       ) : (
                         <>
-                          <div style={styles.row}>
-                            <span style={styles.label}>Realtime App GUID</span>
-                            <input style={styles.input} value={request.photon.realtimeGuid} onChange={(e) => setPhoton('realtimeGuid', e.target.value)} disabled={enabled} placeholder="app-id-xxxx" />
+                          <div className="op-row">
+                            <span className="op-label">Realtime App GUID</span>
+                            <input className="op-input" value={request.photon.realtimeGuid} onChange={(e) => setPhoton('realtimeGuid', e.target.value)} disabled={enabled} placeholder="app-id-xxxx" />
                           </div>
                           {plan.detection.backends.photonVoice && (
-                            <div style={styles.row}>
-                              <span style={styles.label}>Voice App GUID</span>
-                              <input style={styles.input} value={request.photon.voiceGuid} onChange={(e) => setPhoton('voiceGuid', e.target.value)} disabled={enabled} placeholder="app-id-xxxx" />
+                            <div className="op-row">
+                              <span className="op-label">Voice App GUID</span>
+                              <input className="op-input" value={request.photon.voiceGuid} onChange={(e) => setPhoton('voiceGuid', e.target.value)} disabled={enabled} placeholder="app-id-xxxx" />
                             </div>
                           )}
                         </>
@@ -517,20 +479,20 @@ export const OnlinePanel = ({ game, onClose }: OnlinePanelProps) => {
 
               {/* EOS */}
               {plan && plan.detection.backends.eos && (
-                <div style={styles.box}>
-                  <div style={styles.sectionTitle}>Epic Online Services</div>
+                <div className="op-box">
+                  <div className="op-section-title">Epic Online Services</div>
                   {checkboxRow(
                     request.deployEosCustom,
                     enabled,
                     (v) => set('deployEosCustom', v),
-                    'Deploy EOS_custom (your own Epic app, anonymous login)'
+                    'Deploy EOS_custom'
                   )}
                   {request.deployEosCustom && (
-                    <div style={{ marginTop: 6 }}>
+                    <div className="op-sub">
                       {(['productId', 'sandboxId', 'deploymentId', 'clientId', 'clientSecret'] as const).map((key) => (
-                        <div style={styles.row} key={key}>
-                          <span style={styles.label}>{key}</span>
-                          <input style={styles.input} value={request.eos[key]} onChange={(e) => setEos(key, e.target.value)} disabled={enabled} />
+                        <div className="op-row" key={key}>
+                          <span className="op-label">{key}</span>
+                          <input className="op-input" value={request.eos[key]} onChange={(e) => setEos(key, e.target.value)} disabled={enabled} />
                         </div>
                       ))}
                     </div>
@@ -540,12 +502,12 @@ export const OnlinePanel = ({ game, onClose }: OnlinePanelProps) => {
 
               {/* PlayFab */}
               {plan && plan.detection.backends.playfab && (
-                <div style={styles.box}>
-                  <div style={styles.sectionTitle}>PlayFab</div>
-                  <div style={styles.row}>
-                    <span style={styles.label}>TitleId (yours)</span>
+                <div className="op-box">
+                  <div className="op-section-title">PlayFab</div>
+                  <div className="op-row">
+                    <span className="op-label">TitleId (yours)</span>
                     <input
-                      style={styles.input}
+                      className="op-input"
                       value={request.playfab.titleId}
                       onChange={(e) => set('playfab', { ...request.playfab, titleId: e.target.value })}
                       disabled={enabled || request.playfab.useShared}
@@ -563,11 +525,11 @@ export const OnlinePanel = ({ game, onClose }: OnlinePanelProps) => {
 
               {/* coherence */}
               {plan && plan.detection.backends.coherence && (
-                <div style={styles.box}>
-                  <div style={styles.sectionTitle}>coherence</div>
-                  <div style={styles.row}>
-                    <span style={styles.label}>Runtime key</span>
-                    <input style={styles.input} value={request.coherence.runtimeKey} onChange={(e) => set('coherence', { ...request.coherence, runtimeKey: e.target.value })} disabled={enabled || request.coherence.useShared} placeholder="your project (schema uploaded)" />
+                <div className="op-box">
+                  <div className="op-section-title">coherence</div>
+                  <div className="op-row">
+                    <span className="op-label">Runtime key</span>
+                    <input className="op-input" value={request.coherence.runtimeKey} onChange={(e) => set('coherence', { ...request.coherence, runtimeKey: e.target.value })} disabled={enabled || request.coherence.useShared} placeholder="your project (schema uploaded)" />
                   </div>
                   {checkboxRow(
                     request.coherence.useShared,
@@ -580,8 +542,8 @@ export const OnlinePanel = ({ game, onClose }: OnlinePanelProps) => {
 
               {/* Settings */}
               {plan && (
-                <div style={styles.box}>
-                  <div style={styles.sectionTitle}>Settings</div>
+                <div className="op-box">
+                  <div className="op-section-title">Settings</div>
                   {checkboxRow(
                     request.verboseLog,
                     enabled,
@@ -635,15 +597,15 @@ export const OnlinePanel = ({ game, onClose }: OnlinePanelProps) => {
                     enabled,
                     (v) => set('deployOverlayProxy', v),
                     plan.detection.engine === 'unity'
-                      ? 'Early overlay proxy (version.dll beside the exe)'
-                      : 'Early overlay proxy (XINPUT1_3.dll beside the Shipping exe)',
+                      ? 'Early overlay proxy (version.dll)'
+                      : 'Early overlay proxy (XINPUT1_3.dll)',
                   )}
                 </div>
               )}
 
               {/* Result message */}
               {message && (
-                <div style={{ ...styles.box, color: message.kind === 'error' ? '#e07b7b' : message.kind === 'success' ? '#6fdb8c' : '#d0d0d0' }}>
+                <div className={`op-box op-message op-message--${message.kind}`}>
                   {message.text}
                 </div>
               )}
@@ -653,16 +615,11 @@ export const OnlinePanel = ({ game, onClose }: OnlinePanelProps) => {
 
         {/* I due tasti non cambiano mai posizione: Enable/Disable a sinistra,
             Reset a destra. Reset diventa non cliccabile quando UCO2 è attivo. */}
-        <div style={styles.footer}>
+        <div className="op-footer">
           {bundleUpdate && (
             <button
               type="button"
-              className="modal-btn"
-              style={{
-                ...styles.footerBtn,
-                ...styles.btn,
-                ...(blocked || busy ? styles.btnDisabled : {}),
-              }}
+              className={`modal-btn op-footer-btn op-btn${blocked || busy ? ' op-btn--disabled' : ''}`}
               onClick={handleEnable}
               disabled={blocked || busy}
               title={`Update deployed files to ${plan?.prerequisites.bundleVersion ?? 'the current bundle'}`}
@@ -672,12 +629,7 @@ export const OnlinePanel = ({ game, onClose }: OnlinePanelProps) => {
           )}
           <button
             type="button"
-            className="modal-btn"
-            style={{
-              ...styles.footerBtn,
-              ...(enabled || broken ? styles.btnGhost : styles.btn),
-              ...(blocked || busy ? styles.btnDisabled : {}),
-            }}
+            className={`modal-btn op-footer-btn ${enabled || broken ? 'op-btn--ghost' : 'op-btn'}${(blocked || busy) ? ' op-btn--disabled' : ''}`}
             onClick={enabled || broken ? handleDisable : handleEnable}
             disabled={enabled || broken ? busy : blocked || busy}
             title={!enabled && !broken && blocked ? 'Resolve the missing prerequisites first' : undefined}
@@ -686,8 +638,7 @@ export const OnlinePanel = ({ game, onClose }: OnlinePanelProps) => {
           </button>
           <button
             type="button"
-            className="modal-btn"
-            style={{ ...styles.footerBtn, ...styles.btnGhost, ...(enabled || broken || busy ? styles.btnDisabled : {}) }}
+            className={`modal-btn op-footer-btn op-btn--ghost${enabled || broken || busy ? ' op-btn--disabled' : ''}`}
             onClick={handleReset}
             disabled={enabled || broken || busy}
           >
