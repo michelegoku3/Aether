@@ -86,6 +86,9 @@ export const LibraryGameActionsModal = ({
         enabled: nextEnabled,
       });
       setUpdatesEnabled(nextEnabled);
+      // The command emits a backend invalidation too; request the shared scan
+      // directly for immediate feedback if the WebView event transport lags.
+      onRefresh();
       onStatus(result, 'success');
     } catch (err: any) {
       onStatus(`Failed to update version pin state: ${err}`, 'error');

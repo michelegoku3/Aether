@@ -24,7 +24,7 @@ export const LibraryView = ({
   alternativeCardsOpacity,
   alternativeCardsFade,
 }: LibraryViewProps) => {
-  const { games, isLoading, status, setStatus, loadInstalledGames } = useLibraryGames();
+  const { games, isLoading, isRefreshing, status, setStatus, loadInstalledGames } = useLibraryGames();
   const [searchQuery, setSearchQuery] = useState('');
 
   const {
@@ -148,9 +148,10 @@ export const LibraryView = ({
             type="button"
             className="library-icon-btn"
             onClick={loadInstalledGames}
-            disabled={isLoading}
-            title="Refresh library"
+            disabled={isLoading || isRefreshing}
+            title={isRefreshing ? 'Refreshing library…' : 'Refresh library'}
             aria-label="Refresh library"
+            aria-busy={isRefreshing}
           >
             <RefreshIcon />
           </button>

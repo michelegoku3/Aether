@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { getSettings } from './useSettings';
 import type { InstalledGame } from './useLibraryGames';
@@ -8,6 +8,12 @@ import { filterAndSortGames } from '../util/search';
 export type LibraryInstallFilter = 'all' | 'installed' | 'not_installed';
 
 const FILTER_CYCLE: readonly LibraryInstallFilter[] = ['all', 'installed', 'not_installed'] as const;
+const FILTER_PERSIST_DEBOUNCE_MS = 750;
+
+type PersistWaiter = {
+  resolve: () => void;
+  reject: (reason: unknown) => void;
+};
 
 export const normalizeLibraryInstallFilter = (value: unknown): LibraryInstallFilter => {
   const raw = String(value ?? '').trim().toLowerCase();
@@ -85,6 +91,11 @@ export const useLibraryInstallFilter = (
 ) => {
   const [filter, setFilter] = useState<LibraryInstallFilter>('all');
   const [ready, setReady] = useState(false);
+  const pendingPersistRef = useRef<{
+    timer: number | undefined;
+    latest: LibraryInstallFilter | undefined;
+    waiters: PersistWaiter[];
+  }>({ timer: undefined, latest: undefined, waiters: [] });
 
   useEffect(() => {
     let cancelled = false;
@@ -118,14 +129,59 @@ export const useLibraryInstallFilter = (
     return [...games].sort((a, b) => a.name.localeCompare(b.name));
   }, [games, filter, searchQuery, hasSearch]);
 
-  const persist = useCallback(async (next: LibraryInstallFilter) => {
-    const settings = await getSettings();
-    await invoke('save_settings', {
-      settings: {
-        ...settings,
-        library_install_filter: next,
-      },
+  const persist = useCallback((next: LibraryInstallFilter): Promise<void> => {
+    return new Promise((resolve, reject) => {
+      const pending = pendingPersistRef.current;
+      pending.latest = next;
+      pending.waiters.push({ resolve, reject });
+      if (pending.timer !== undefined) {
+        window.clearTimeout(pending.timer);
+      }
+
+      // Cycling the compact Library filter can happen several times in quick
+      // succession. Persist only the final choice instead of atomically
+      // rewriting settings.json (and the encrypted credential blob) per click.
+      pending.timer = window.setTimeout(() => {
+        const filterToPersist = pending.latest;
+        const waiters = pending.waiters;
+        pending.timer = undefined;
+        pending.latest = undefined;
+        pending.waiters = [];
+        if (!filterToPersist) {
+          waiters.forEach(({ resolve: done }) => done());
+          return;
+        }
+
+        void (async () => {
+          try {
+            const settings = await getSettings();
+            await invoke('save_settings', {
+              settings: {
+                ...settings,
+                library_install_filter: filterToPersist,
+              },
+            });
+            waiters.forEach(({ resolve: done }) => done());
+          } catch (error) {
+            waiters.forEach(({ reject: fail }) => fail(error));
+          }
+        })();
+      }, FILTER_PERSIST_DEBOUNCE_MS);
     });
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      const pending = pendingPersistRef.current;
+      if (pending.timer !== undefined) {
+        window.clearTimeout(pending.timer);
+      }
+      const cancelled = new Error('Library filter persistence was cancelled during shutdown.');
+      pending.waiters.forEach(({ reject }) => reject(cancelled));
+      pending.timer = undefined;
+      pending.latest = undefined;
+      pending.waiters = [];
+    };
   }, []);
 
   const cycleFilter = useCallback(async () => {

@@ -99,8 +99,13 @@ pub async fn install_bulk_local(
         report.unique_apps
     );
     if report.lua_files > 0 {
-        // Notifica immediata alla UI (il dirwatch resta per i cambi esterni).
-        crate::core::library_events::notify_lua_changed(&app);
+        // One full-library invalidation for the completed batch. The watcher
+        // will reconcile any subsequent manual changes independently.
+        crate::core::library_events::notify_lua_changed(
+            &app,
+            crate::core::library_events::LibraryChangeOrigin::Local,
+            std::iter::empty::<u32>(),
+        );
     }
 
     let msg = if report.unique_apps > 0 {
@@ -210,11 +215,6 @@ pub async fn install_local_game(
 
     crate::desk_log_info!("local", "Successfully installed local content for AppID {}: {} file(s) ({} lua, {} manifest), game files into {}",
         app_id, report.applied, report.lua_files, report.manifest_files, report.target);
-    if report.lua_files > 0 {
-        // Notifica immediata alla UI (il dirwatch resta per i cambi esterni).
-        crate::core::library_events::notify_lua_changed(&app);
-    }
-
     // Local packages follow the same update policy as every remote provider.
     // When updates are enabled, comment active setManifestid rows in the live
     // canonical Lua and refresh the canonical backup with the final bytes.
@@ -225,6 +225,16 @@ pub async fn install_local_game(
             .map_err(|error| format!("Failed to read the installed Lua after applying update policy: {error}"))?;
         GameBackup::for_app(app_id)?
             .backup_lua_artifacts(app_id, &installed_lua, &[])?;
+    }
+
+    if report.lua_files > 0 {
+        // At this point the local pipeline, update policy and final backup
+        // have completed, so consumers can safely rescan the real state.
+        crate::core::library_events::notify_lua_changed(
+            &app,
+            crate::core::library_events::LibraryChangeOrigin::Local,
+            [app_id],
+        );
     }
 
     let mut msg = format!(

@@ -3,6 +3,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { requireSteamPath } from '../hooks/useSettings';
 import { useModalDismiss } from '../hooks/useModalDismiss';
 import { useWatchdog } from '../hooks/useWatchdog';
+import { useLibraryGames } from '../hooks/useLibraryGames';
 import { StatusAlert } from '../ui/StatusAlert';
 import { StatusMessage } from '../types/ui';
 
@@ -45,6 +46,7 @@ export const ManualVersionEditor = ({ game, initialRows, onClose }: ManualVersio
   );
   const [isApplying, setIsApplying] = useState(false);
   const { arm: armWatchdog, clear: clearWatchdog } = useWatchdog();
+  const { loadInstalledGames } = useLibraryGames();
 
   // Refresh the rows from disk on mount: the Manual tab must show the live Lua
   // state (e.g. the manifests just written by an apply in the Auto tab), not a
@@ -143,6 +145,9 @@ export const ManualVersionEditor = ({ game, initialRows, onClose }: ManualVersio
         edits,
       });
 
+      // Keep this direct user flow immediately consistent even if the pushed
+      // invalidation is delayed; the provider coalesces duplicate requests.
+      loadInstalledGames();
       clearWatchdog();
 
       // Successful apply is the user's confirmation. Close immediately to avoid

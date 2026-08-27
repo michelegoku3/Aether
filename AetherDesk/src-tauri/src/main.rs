@@ -3,6 +3,8 @@
     windows_subsystem = "windows"
 )]
 
+use tauri::Manager;
+
 mod commands;
 mod core;
 mod crack;
@@ -52,6 +54,16 @@ fn main() {
             // O(1) and pushes `steam://runtime-state` to the UI only on changes
             // (Sidebar Start/Restart label, per-game guards, ...).
             crate::core::steam_monitor::start(app.handle().clone());
+            // One native watcher owns external stplug-in changes for the entire
+            // process. In-app operations use the same coordinator so the React
+            // Library always performs the canonical full Refresh scan.
+            let initial_steam_path = crate::core::settings::SettingsManager::new(&app.handle())
+                .load()
+                .steam_path;
+            app.manage(crate::core::library_events::LibraryWatchController::start(
+                app.handle().clone(),
+                initial_steam_path,
+            ));
             // Lua backup sync (background, non-blocking): mirror every .lua in
             // stplug-in into backup/<app_id>/lua — creates missing backups and
             // archives+updates changed ones (history/ keeps old versions).
@@ -139,6 +151,7 @@ fn main() {
             commands::store::prepare_luatools_specific_version_download,
             commands::store::prepare_ryuu_specific_version_download,
             commands::library::get_installed_library_games,
+            commands::library::get_library_change_revision,
             commands::library::warm_library_game_cache,
             commands::library::open_steamdb_depots,
             commands::library::open_steamdb_patchnotes,

@@ -3,6 +3,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { emptyStatus, StatusMessage } from '../types/ui';
 import { AntivirusExclusionModal } from './AntivirusExclusionModal';
 import { useModalDismiss } from '../hooks/useModalDismiss';
+import { useLibraryGames } from '../hooks/useLibraryGames';
 
 // Optional target game for backwards compatibility. When omitted, the modal
 // operates in Bulk Mode (recursive search for any .lua and .manifest).
@@ -31,6 +32,7 @@ export const LocalDownloadModal = ({ game, onClose, onInstalled }: LocalDownload
   const [isInstalling, setIsInstalling] = useState(false);
   const [showAntivirus, setShowAntivirus] = useState(false);
   const [status, setStatus] = useState<StatusMessage>(emptyStatus());
+  const { loadInstalledGames } = useLibraryGames();
 
   const showStatus = (text: string, type: StatusMessage['type']) =>
     setStatus({ text, type });
@@ -98,6 +100,9 @@ export const LocalDownloadModal = ({ game, onClose, onInstalled }: LocalDownload
         });
       }
 
+      // The backend watcher/revision channel covers independent filesystem
+      // changes. This direct UI path starts the shared canonical scan at once.
+      loadInstalledGames();
       const hasBuildWarning = message.includes('Warning:');
       showStatus(message, hasBuildWarning ? 'info' : 'success');
 
