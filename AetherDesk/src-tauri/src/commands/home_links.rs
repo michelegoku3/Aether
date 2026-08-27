@@ -55,7 +55,7 @@ pub(crate) fn build_csrinru_url(game_name: &str) -> String {
 }
 
 fn build_ofme_query(game_name: &str) -> String {
-    normalize_query_title(game_name, QueryFlavor::Ofme)
+    normalize_query_title(game_name, QueryFlavor::OFME)
 }
 
 fn build_csrinru_query(game_name: &str) -> String {
@@ -81,7 +81,7 @@ fn build_gcw_query(game_name: &str) -> String {
 
 #[derive(Debug, Clone, Copy)]
 enum QueryFlavor {
-    Ofme,
+    OFME,
     CsRinRu,
 }
 
@@ -90,7 +90,7 @@ fn normalize_query_title(game_name: &str, flavor: QueryFlavor) -> String {
     let base_title = match flavor {
         // OFME (online-fix.me) searches should keep real subtitles after ':' so titles like
         // "Call of Duty: Black Ops II" do not degrade to plain "Call of Duty".
-        QueryFlavor::Ofme => without_brackets.trim().to_string(),
+        QueryFlavor::OFME => without_brackets.trim().to_string(),
         // CSRINRU needs the Davigo-style cleanup, but only when the subtitle is
         // platform/mode noise such as "VR vs. PC". Meaningful subtitles like
         // "Shadows Die Twice" are kept.
@@ -98,7 +98,7 @@ fn normalize_query_title(game_name: &str, flavor: QueryFlavor) -> String {
     };
     let without_editions = strip_known_edition_suffixes(&base_title);
     let possessive_policy = match flavor {
-        QueryFlavor::Ofme => PossessivePolicy::KeepAsPlainS,
+        QueryFlavor::OFME => PossessivePolicy::KeepAsPlainS,
         QueryFlavor::CsRinRu => PossessivePolicy::DropPossessiveS,
     };
 

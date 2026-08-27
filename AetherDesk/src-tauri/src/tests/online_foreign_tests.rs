@@ -11,7 +11,7 @@ fn write(dir: &Path, rel: &str, bytes: &[u8]) {
 
 #[test]
 fn onlinefix64_is_ofme() {
-    let conflicts = vec![Conflict::Ofme(PathBuf::from("C:/game/OnlineFix64.dll"))];
+    let conflicts = vec![Conflict::OFME(PathBuf::from("C:/game/OnlineFix64.dll"))];
     assert!(has_ofme(&conflicts));
     let report = ForeignOnlineReport::from_conflicts(&conflicts);
     assert!(report.ofme);
@@ -43,7 +43,7 @@ fn dlllist_named_file_is_ofme() {
 }
 
 #[test]
-fn nested_onlinefix_next_to_shipping_exe_is_ofme() {
+fn nested_ofme_pack_next_to_shipping_exe_is_detected() {
     // Bodycam-style: steam_api in ThirdParty, OFME accanto al Shipping exe.
     let tmp = tempfile::tempdir().unwrap();
     write(

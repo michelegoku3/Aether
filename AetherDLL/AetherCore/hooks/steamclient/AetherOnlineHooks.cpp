@@ -57,13 +57,10 @@ static bool HasFlagArg(const char* cmdLine, const char* flag) {
     return false;
 }
 
-// AetherOnline token: the new "-aetheronline" or the legacy "-onlinefix"
-// (un-migrated Steam launch options), which Aether still recognises and
-// strips. "-aetheronline" is Aether's own mode — never confused with the
-// online-fix.me (OFME) crack files.
+// AetherOnline token: "-aetheronline" — Aether's own masked-online mode,
+// never confused with the online-fix.me (OFME) crack files.
 static bool HasAetherOnlineFlag(const char* cmdLine) {
-    return HasFlagArg(cmdLine, constants::kAetherOnlineFlag)
-        || HasFlagArg(cmdLine, constants::kAetherOnlineFlagLegacy);
+    return HasFlagArg(cmdLine, constants::kAetherOnlineFlag);
 }
 
 static bool HasShowOnlineFlag(const char* cmdLine) {
@@ -127,7 +124,7 @@ static bool InAppList(const std::vector<std::uint32_t>& list, AppId app) {
 
 // Precedence (documented): exclude > aetheronline > showonline > default_mode.
 // exclude is a HARD opt-out: it beats even a forgotten legacy argv token.
-static LaunchMode ResolveLaunchMode(AppId app, bool onlineFixToken, bool showOnlineToken,
+static LaunchMode ResolveLaunchMode(AppId app, bool aetherOnlineToken, bool showOnlineToken,
                                     const char** sourceOut) {
     const auto& s = g_state.settings;
     *sourceOut = "none";
@@ -152,8 +149,8 @@ static LaunchMode ResolveLaunchMode(AppId app, bool onlineFixToken, bool showOnl
         *sourceOut = "custom_game_name (global presence override)";
         return LaunchMode::ShowOnline;
     }
-    if (onlineFixToken) {
-        *sourceOut = "legacy -onlinefix argv token (mapped to aetheronline)";
+    if (aetherOnlineToken) {
+        *sourceOut = "-aetheronline argv token";
         return LaunchMode::AetherOnline;
     }
     if (showOnlineToken) {
@@ -190,9 +187,7 @@ static std::string StripAetherFlagArgs(const char* cmdLine, bool* outStripped) {
         if (end == std::string::npos) end = cl.size();
         const std::string tok = cl.substr(pos, end - pos);
         pos = end;
-        if (tok == constants::kAetherOnlineFlag
-            || tok == constants::kAetherOnlineFlagLegacy
-            || tok == constants::kShowOnlineFlag) {
+        if (tok == constants::kAetherOnlineFlag || tok == constants::kShowOnlineFlag) {
             if (outStripped) *outStripped = true;
             continue;
         }
