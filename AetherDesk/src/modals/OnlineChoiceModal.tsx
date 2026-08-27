@@ -21,13 +21,13 @@ const OPTIONS: readonly OnlineOption[] = [
   {
     key: 'showonline',
     title: 'Show Online',
-    hint: 'Friends see what you play (presence only, no online features).',
+    hint: 'Friends see what you play: presence only, no online.',
     accent: 'primary',
   },
   {
     key: 'aetheronline',
     title: 'Online Aether',
-    hint: 'Full Spacewar mask + friend presence for AetherOnline sessions',
+    hint: 'Full 480 Spacewar mask: friend presence, yes online.',
     accent: 'primary',
   },
   {
@@ -50,15 +50,6 @@ interface OnlineChoiceModalProps {
   onClose: () => void;
 }
 
-const styles = {
-  header: { display: 'flex' as const, justifyContent: 'space-between' as const, alignItems: 'center' as const, padding: '16px 24px', borderBottom: '1px solid #232329' },
-  headerTitle: { margin: 0, fontSize: '16px', fontWeight: 700 },
-  close: { background: 'none', border: 'none', color: '#999', fontSize: '20px', cursor: 'pointer', lineHeight: 1 },
-  body: { padding: '22px 24px' },
-  grid: { display: 'grid' as const, gridTemplateColumns: '1fr', gap: '12px' },
-  banner: { marginBottom: '12px', padding: '10px 12px', background: '#2a2418', color: '#e0b06a', fontSize: '12px', borderRadius: '8px' },
-};
-
 export const OnlineChoiceModal = ({
   game,
   mode,
@@ -76,22 +67,21 @@ export const OnlineChoiceModal = ({
   return (
     <div className="modal-overlay" onClick={handleOverlayClick}>
       <div
-        className="modal-container"
-        style={{ width: 600, maxHeight: '86vh' }}
+        className="modal-container oc-container"
         onClick={(e) => e.stopPropagation()}
       >
-        <div style={styles.header}>
-          <h3 style={styles.headerTitle}>Online: {game.name} ({game.appId})</h3>
-          <button type="button" style={styles.close} onClick={onClose} disabled={busy} aria-label="Close">×</button>
+        <div className="oc-header">
+          <h3 className="oc-header-title">Online: {game.name} ({game.appId})</h3>
+          <button type="button" className="oc-close" onClick={onClose} disabled={busy} aria-label="Close">×</button>
         </div>
 
-        <div style={styles.body}>
+        <div className="oc-body">
           {ofmePresent && (
-            <div style={styles.banner}>
+            <div className="oc-banner">
               OFME crack files detected, keep None to use that crack. Other options are now locked.
             </div>
           )}
-          <div style={styles.grid}>
+          <div className="oc-grid">
             {OPTIONS.map((option) => {
               const { isActive, isBlocked, tooltip } = resolveOptionState(option.key, {
                 mode,
