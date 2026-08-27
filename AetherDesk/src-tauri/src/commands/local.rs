@@ -81,11 +81,15 @@ pub async fn install_bulk_local(
         local_files.len()
     );
 
-    let report = local::install_bulk_local_pipeline(
-        &steam_path,
-        &local_files,
-        settings.download_games_with_updates_on,
-    )?;
+    // Estrazione archivi + copie file: I/O sincrono pesante -> spawn_blocking.
+    let report = {
+        let (steam_path_b, local_files_b) = (steam_path.clone(), local_files.clone());
+        tauri::async_runtime::spawn_blocking(move || {
+            local::install_bulk_local_pipeline(&steam_path_b, &local_files_b, settings.download_games_with_updates_on)
+        })
+        .await
+        .map_err(|e| format!("Bulk import task failed: {e}"))??
+    };
 
     crate::desk_log_info!(
         "local",
@@ -94,6 +98,10 @@ pub async fn install_bulk_local(
         report.manifest_files,
         report.unique_apps
     );
+    if report.lua_files > 0 {
+        // Notifica immediata alla UI (il dirwatch resta per i cambi esterni).
+        crate::core::library_events::notify_lua_changed(&app);
+    }
 
     let msg = if report.unique_apps > 0 {
         format!(
@@ -189,16 +197,23 @@ pub async fn install_local_game(
         }
     }
 
-    let report = local::install_local_pipeline(
-        app_id,
-        &app_name,
-        &steam_path,
-        active_library.as_deref(),
-        &local_files,
-    )?;
+    // Estrazione archivi + copie file: I/O sincrono pesante -> spawn_blocking.
+    let report = {
+        let (app_name_b, steam_path_b, active_library_b, local_files_b) =
+            (app_name.clone(), steam_path.clone(), active_library.clone(), local_files.clone());
+        tauri::async_runtime::spawn_blocking(move || {
+            local::install_local_pipeline(app_id, &app_name_b, &steam_path_b, active_library_b.as_deref(), &local_files_b)
+        })
+        .await
+        .map_err(|e| format!("Local install task failed: {e}"))??
+    };
 
     crate::desk_log_info!("local", "Successfully installed local content for AppID {}: {} file(s) ({} lua, {} manifest), game files into {}",
         app_id, report.applied, report.lua_files, report.manifest_files, report.target);
+    if report.lua_files > 0 {
+        // Notifica immediata alla UI (il dirwatch resta per i cambi esterni).
+        crate::core::library_events::notify_lua_changed(&app);
+    }
 
     // Local packages follow the same update policy as every remote provider.
     // When updates are enabled, comment active setManifestid rows in the live

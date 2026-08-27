@@ -46,8 +46,9 @@ export const StoreView = ({ onRefreshUsage, isActive, settingsRevision, useAlter
   const [isTrendingLoading, setIsTrendingLoading] = useState(false);
   const trendingRequests = useRef<Set<number>>(new Set());
   const nextTrendingStart = useRef(0);
-  const hasActivatedStoreFront = useRef(false);
   const observedSettingsRevision = useRef(settingsRevision);
+  // Container scrollabile della vista store: al cambio pagina torniamo in cima.
+  const storeScrollRef = useRef<HTMLDivElement | null>(null);
 
   // Active game selected for download modal, null means modal is closed
   const [selectedGame, setSelectedGame] = useState<StoreGame | null>(null);
@@ -86,24 +87,33 @@ export const StoreView = ({ onRefreshUsage, isActive, settingsRevision, useAlter
     });
   };
 
+  // Contatore dei caricamenti in volo: con i prefetch paralleli un semplice
+  // booleano si sbloccava al primo completamento, lasciando la pagina
+  // successiva non pronta. L'arrow Next resta bloccata finché count > 0.
+  const trendingInFlight = useRef(0);
+
   const loadTrendingGames = async (start: number, count: number) => {
     if (trendingRequests.current.has(start)) return;
     trendingRequests.current.add(start);
     nextTrendingStart.current = Math.max(nextTrendingStart.current, start + count);
+    trendingInFlight.current += 1;
     setIsTrendingLoading(true);
     try {
       const games: StoreGame[] = await invoke('get_trending_store_games', { start, count });
       mergeTrendingGames(games || []);
     } catch (err) {
       console.warn('Trending store preload failed:', err);
+      // Un offset fallito deve essere RIPROVABILE: senza questa rimozione
+      // resterebbe nel set di dedup per sempre e la finestra di dati
+      // mancante non verrebbe mai ricaricata (pagina fantasma nel mezzo).
+      trendingRequests.current.delete(start);
     } finally {
-      setIsTrendingLoading(false);
+      trendingInFlight.current = Math.max(0, trendingInFlight.current - 1);
+      if (trendingInFlight.current === 0) {
+        setIsTrendingLoading(false);
+      }
     }
   };
-
-  useEffect(() => {
-    loadTrendingGames(0, itemsPerPage);
-  }, []);
 
   useEffect(() => {
     const handlePointerDown = (event: MouseEvent) => {
@@ -121,12 +131,6 @@ export const StoreView = ({ onRefreshUsage, isActive, settingsRevision, useAlter
   }, [searchQuery]);
 
   useEffect(() => {
-    if (!isActive || hasActivatedStoreFront.current || activeQuery.trim()) return;
-    hasActivatedStoreFront.current = true;
-    loadTrendingGames(itemsPerPage, itemsPerPage);
-  }, [isActive, activeQuery]);
-
-  useEffect(() => {
     if (observedSettingsRevision.current === settingsRevision) return;
     observedSettingsRevision.current = settingsRevision;
     setPage(1);
@@ -139,12 +143,8 @@ export const StoreView = ({ onRefreshUsage, isActive, settingsRevision, useAlter
     clear();
     trendingRequests.current.clear();
     nextTrendingStart.current = 0;
-    hasActivatedStoreFront.current = false;
-    loadTrendingGames(0, itemsPerPage);
-    if (isActive) {
-      hasActivatedStoreFront.current = true;
-      loadTrendingGames(itemsPerPage, itemsPerPage);
-    }
+    // Il ripopolamento (40 a scaglioni) lo fa la regola buffer sotto:
+    // con 0 giochi e isActive, riparte da (0,20) e continua da sola.
   }, [settingsRevision]);
 
   // Pagination calculation
@@ -163,13 +163,27 @@ export const StoreView = ({ onRefreshUsage, isActive, settingsRevision, useAlter
     }
   }, [pageKey]);
 
+  // REGOLA BUFFER (unica, sostituisce mount/attivazione/prefetch/backstop):
+  // se la pagina successiva non è interamente locale, carico altri 40.
+  // All'avvio: 40 subito in un'unica richiesta; ad ogni cambio pagina la
+  // stessa regola mantiene il buffer (40 avanti sulla pagina corrente).
+  // Nessun gate di navigazione: Next è sempre libero dentro i dati caricati,
+  // e il top-up parte PRIMA che la pagina manchi (il vecchio gate bloccava
+  // la navigazione che avrebbe innescato il top-up: deadlock a pagina 3
+  // con 4 pagine totali).
   useEffect(() => {
-    if (!isActive || activeQuery.trim() || storeGames.length === 0) return;
-    const loadedPages = Math.ceil(storeGames.length / itemsPerPage);
-    if (page >= loadedPages) {
-      loadTrendingGames(nextTrendingStart.current, itemsPerPage);
+    if (!isActive || activeQuery.trim()) return;
+    if (storeGames.length < (page + 1) * itemsPerPage) {
+      loadTrendingGames(nextTrendingStart.current, itemsPerPage * 2);
     }
-  }, [page, storeGames.length, activeQuery]);
+    // loadTrendingGames è stabile di fatto (solo ref + setState).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [page, storeGames.length, activeQuery, isActive]);
+
+  // Cambio pagina / nuova ricerca: visuale in cima, non in fondo.
+  useEffect(() => {
+    storeScrollRef.current?.scrollTo({ top: 0 });
+  }, [page, activeQuery]);
 
   useEffect(() => {
     if (pageGames.length === 0 || !activeQuery.trim()) return;
@@ -201,8 +215,7 @@ export const StoreView = ({ onRefreshUsage, isActive, settingsRevision, useAlter
         clear();
         trendingRequests.current.clear();
         nextTrendingStart.current = 0;
-        hasActivatedStoreFront.current = false;
-        await loadTrendingGames(0, itemsPerPage);
+        // Il ripopolamento lo fa la regola buffer (activeQuery vuota).
         return;
       }
       await search(query);
@@ -331,7 +344,7 @@ export const StoreView = ({ onRefreshUsage, isActive, settingsRevision, useAlter
 
 
   return (
-    <div className="store-view">
+    <div className="store-view" ref={storeScrollRef}>
       {/* Upper header section */}
       <div className="store-header">
         <h1 className="store-title">Store</h1>
@@ -381,8 +394,7 @@ export const StoreView = ({ onRefreshUsage, isActive, settingsRevision, useAlter
                 clear();
                 trendingRequests.current.clear();
                 nextTrendingStart.current = 0;
-                hasActivatedStoreFront.current = false;
-                loadTrendingGames(0, itemsPerPage);
+                // Il ripopolamento lo fa la regola buffer (activeQuery vuoto).
               }}
             >
               &times;
@@ -485,7 +497,9 @@ export const StoreView = ({ onRefreshUsage, isActive, settingsRevision, useAlter
         )}
       </div>
 
-      {/* Pagination controls below the grid */}
+      {/* Pagination controls below the grid. Next è sempre navigabile dentro
+          i dati caricati: la regola buffer sopra top-up'a i 40 successivi
+          prima che la pagina successiva manchi. */}
       {!isLoading && totalPages > 1 && (
         <div className="store-pagination">
           <button
@@ -499,7 +513,7 @@ export const StoreView = ({ onRefreshUsage, isActive, settingsRevision, useAlter
             Page {page} of {totalPages}
           </span>
           <button
-            disabled={page === totalPages}
+            disabled={page >= totalPages}
             onClick={() => setPage(prev => Math.min(prev + 1, totalPages))}
             className="pagination-btn"
           >

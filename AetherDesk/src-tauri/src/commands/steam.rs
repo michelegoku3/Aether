@@ -21,53 +21,55 @@ const AETHERONLINE_TOKEN: &str = "-aetheronline";
 const AETHER_SHOWONLINE_TOKEN: &str = "-showonline";
 
 #[tauri::command]
-pub fn restart_steam(app: tauri::AppHandle) -> Result<(), String> {
+pub fn start_steam(app: tauri::AppHandle) -> Result<String, String> {
     crate::core::logger::reset_session_dedup();
-    crate::desk_log_info!("lifecycle", "Steam restart requested. Resetting AetherDesk session deduplication set.");
+    let settings = SettingsManager::new(&app).load();
+    let steam_dir = std::path::PathBuf::from(&settings.steam_path);
 
-    let mut sys = sysinfo::System::new_all();
-    sys.refresh_processes();
-
-    let mut terminated = false;
-    for process in sys.processes().values() {
-        let name = process.name().to_lowercase();
-        if name == "steam.exe" || name == "steam" {
-            let _ = process.kill();
-            terminated = true;
-        }
+    // Start = SOLO spawn: se Steam è già in esecuzione (stato del monitor,
+    // O(1)) è un no-op documentato — non uccide mai nulla.
+    if crate::core::steam_monitor::is_steam_running() {
+        crate::desk_log_info!("lifecycle", "start_steam: Steam already running, no-op");
+        crate::core::steam_monitor::mark(true);
+        return Ok("Steam is already running.".to_string());
     }
 
-    if terminated {
-        crate::core::steam_monitor::mark(false);
-        std::thread::sleep(std::time::Duration::from_millis(600));
-    }
+    crate::desk_log_info!("lifecycle", "start_steam: launching Steam from {}", steam_dir.display());
+    let exe = crate::core::steam_process::spawn_steam(&steam_dir)?;
+    crate::core::steam_monitor::mark(true);
+    crate::desk_log_info!("lifecycle", "start_steam: spawned {}", exe.display());
+    Ok("Steam is starting.".to_string())
+}
+
+#[tauri::command]
+pub fn restart_steam(app: tauri::AppHandle) -> Result<String, String> {
+    crate::core::logger::reset_session_dedup();
+    crate::desk_log_info!("lifecycle", "restart_steam: requested. Resetting AetherDesk session deduplication set.");
 
     let settings = SettingsManager::new(&app).load();
     let steam_dir = std::path::PathBuf::from(&settings.steam_path);
 
-    if !steam_dir.exists() {
-        return Err("Steam installation path does not exist. Please check your settings.".to_string());
+    if crate::core::steam_process::kill_steam() {
+        crate::core::steam_monitor::mark(false);
+        // Attesa vera: lo spawn avviene SOLO dopo che il processo è uscito,
+        // altrimenti un secondo steam.exe entra in race con il single-instance
+        // dell'istanza in uscita (il classico "restart che non funziona").
+        let gone = crate::core::steam_process::wait_steam_gone();
+        if !gone {
+            crate::desk_log_warn!("lifecycle", "restart_steam: Steam still present after kill, proceeding anyway");
+        } else {
+            crate::desk_log_info!("lifecycle", "restart_steam: Steam exited, relaunching");
+        }
+    } else {
+        crate::desk_log_info!("lifecycle", "restart_steam: Steam was not running, just starting");
     }
 
-    let steam_exe = steam_dir.join("steam.exe");
-    if !steam_exe.exists() {
-        return Err(format!("steam.exe was not found in Steam directory: {:?}", steam_exe));
-    }
-
-    let mut cmd = std::process::Command::new(&steam_exe);
-    cmd.current_dir(&steam_dir);
-
-    #[cfg(target_os = "windows")]
-    {
-        use std::os::windows::process::CommandExt;
-        cmd.creation_flags(0x08000000);
-    }
-
-    cmd.spawn().map_err(|e| format!("Failed to launch Steam process: {}", e))?;
-    // Kill+spawn riusciti: anticipa lo stato per la UI (il poller del monitor
+    let exe = crate::core::steam_process::spawn_steam(&steam_dir)?;
+    // Spawn riuscito: anticipa lo stato per la UI (il poller del monitor
     // corregge alla prossima scansione se lo spawn fallisse a valle).
     crate::core::steam_monitor::mark(true);
-    Ok(())
+    crate::desk_log_info!("lifecycle", "restart_steam: spawned {}", exe.display());
+    Ok("Steam is restarting.".to_string())
 }
 
 #[tauri::command]

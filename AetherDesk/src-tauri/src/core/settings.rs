@@ -120,7 +120,7 @@ fn default_alt_cards_opacity() -> u8 {
 
 /// Serde default provider for the alt-cards bottom fade.
 fn default_alt_cards_fade() -> u8 {
-    50
+    20
 }
 
 /// Serde default provider for boolean settings that ship enabled.

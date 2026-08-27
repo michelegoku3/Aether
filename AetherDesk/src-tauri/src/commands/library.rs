@@ -25,8 +25,13 @@ pub async fn get_installed_library_games(
 
     crate::desk_log_info!("library", "Scanning Steam library for Lua games (steam_path='{}')", settings.steam_path);
     let store_currency = settings.store_currency.clone();
+    // La scansione (appmanifest + stplug-in) è I/O sincrono: fuori dal
+    // runtime tokio, altrimenti ogni rescan (anche quelli del watcher)
+    // bloccherebbe i task async dell'app.
     let scanner = SteamLibraryScanner::new(settings.steam_path, Some(settings.active_library));
-    let mut games = scanner.scan_installed_games();
+    let mut games = tauri::async_runtime::spawn_blocking(move || scanner.scan_installed_games())
+        .await
+        .map_err(|e| format!("Library scan task failed: {e}"))?;
 
     // UI-critical path: use persistent cache first; if any app names are missing
     // on first start, resolve them immediately so Library and Home search render
@@ -251,6 +256,8 @@ pub fn remove_lua_game_from_library(
 
     if removed {
         crate::desk_log_info!("library", "Successfully removed Lua files for {} from stplug-in", crate::core::logger::format_appid(app_id));
+        // Notifica immediata alla UI (il dirwatch resta per i cambi esterni).
+        crate::core::library_events::notify_lua_changed(&app);
         Ok(format!("App ID {} removed from Aether library.", app_id))
     } else {
         crate::desk_log_warn!("library", "No Lua file found for {} in stplug-in", crate::core::logger::format_appid(app_id));
