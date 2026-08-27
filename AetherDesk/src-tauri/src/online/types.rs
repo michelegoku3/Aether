@@ -83,7 +83,9 @@ pub enum Conflict {
     /// Emulatore OFME (`OnlineFix64.dll`) — pack della crack online-fix.me.
     /// OFME e AetherOnline sono stack diversi: questo variant rappresenta i
     /// file di OFME trovati sul disco, mai la modalità Aether.
-    Ofme(PathBuf),
+    /// rename esplicito: con rename_all=camelCase "OFME" diverrebbe "oFME".
+    #[serde(rename = "ofme")]
+    OFME(PathBuf),
     /// File nominativi di un fix (`winmm.dll`, `dlllist.txt`, ...).
     NamedFixFile(PathBuf),
     /// Proxy DLL generico piccolo (`version.dll`, `dxgi.dll`, ... < 300 KiB).

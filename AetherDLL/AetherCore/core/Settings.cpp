@@ -126,10 +126,7 @@ Settings Settings::Load(const std::string& configPath) {
         if (auto v = (*presence)["always_extra_info"].value<bool>()) {
             s.presenceAlwaysExtraInfo = *v;
         }
-        // aetheronline_persona_patch (legacy key: onlinefix_persona_patch).
         if (auto v = (*presence)["aetheronline_persona_patch"].value<bool>()) {
-            s.presenceAetherOnlinePersonaPatch = *v;
-        } else if (auto v = (*presence)["onlinefix_persona_patch"].value<bool>()) {
             s.presenceAetherOnlinePersonaPatch = *v;
         }
         if (auto v = (*presence)["custom_game_name"].value<std::string>()) {
@@ -157,12 +154,7 @@ Settings Settings::Load(const std::string& configPath) {
                 }
             }
         }
-        // aetheronline_apps (legacy key: onlinefix_apps — pre-rename configs).
-        const auto* aetherOnlineAppsArr = (*presence)["aetheronline_apps"].as_array();
-        if (!aetherOnlineAppsArr) {
-            aetherOnlineAppsArr = (*presence)["onlinefix_apps"].as_array();
-        }
-        if (aetherOnlineAppsArr) {
+        if (const auto* aetherOnlineAppsArr = (*presence)["aetheronline_apps"].as_array()) {
             s.presenceAetherOnlineApps.clear();
             for (const auto& item : *aetherOnlineAppsArr) {
                 if (auto v = item.value<std::int64_t>()) {

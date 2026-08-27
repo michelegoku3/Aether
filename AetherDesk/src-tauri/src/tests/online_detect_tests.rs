@@ -351,7 +351,7 @@ fn conflicts_are_detected() {
         .map(|c| match c {
             Conflict::ColdClientLoader(_) => "coldclient".to_string(),
             Conflict::SteamFix(_) => "steamfix".to_string(),
-            Conflict::Ofme(_) => "ofme".to_string(),
+            Conflict::OFME(_) => "ofme".to_string(),
             Conflict::NamedFixFile(_) => "named".to_string(),
             Conflict::ProxyDll(_) => "proxy".to_string(),
         })
@@ -397,7 +397,7 @@ fn x86_game_has_warning() {
 }
 
 #[test]
-fn nested_onlinefix_is_a_conflict_even_away_from_steam_api() {
+fn nested_ofme_pack_is_a_conflict_even_away_from_steam_api() {
     let tmp = tempfile::tempdir().unwrap();
     write(
         tmp.path(),
@@ -417,7 +417,7 @@ fn nested_onlinefix_is_a_conflict_even_away_from_steam_api() {
 
     let report = GameInspector::inspect(tmp.path()).unwrap();
     assert!(
-        report.conflicts.iter().any(|c| matches!(c, Conflict::Ofme(_))),
+        report.conflicts.iter().any(|c| matches!(c, Conflict::OFME(_))),
         "OFME next to the Shipping exe must be a conflict"
     );
 }

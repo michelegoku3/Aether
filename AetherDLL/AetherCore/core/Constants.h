@@ -57,12 +57,10 @@ inline constexpr DWORD kInitThreadJoinTimeoutMs = 5000;
 // Spacewar: Valve's public sample app id, used as the AetherOnline mask target.
 inline constexpr std::uint32_t kSpacewarAppId = 480;
 
-// AetherOnline (Aether's own masked-online mode, "-aetheronline"): the launch flag
-// that opts a title into the 480-masking path. Named to stay distinct from
-// the online-fix.me (OFME) crack — "-onlinefix" is the LEGACY form of the
-// same flag, still recognised and stripped for un-migrated launch options.
+// AetherOnline (Aether's own masked-online mode, "-aetheronline"): the launch
+// flag that opts a title into the 480-masking path. Named to stay distinct
+// from the online-fix.me (OFME) crack.
 inline constexpr char kAetherOnlineFlag[] = "-aetheronline";
-inline constexpr char kAetherOnlineFlagLegacy[] = "-onlinefix";
 
 // ShowOnline: launch flag that advertises the game to friends as "now
 // playing" (Spacewar/480 on the SERVER-side presence only) WITHOUT any

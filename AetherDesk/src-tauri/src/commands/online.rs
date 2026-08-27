@@ -200,6 +200,16 @@ pub async fn disable_online(app: tauri::AppHandle, app_id: u32) -> Result<Online
     .await
     .map_err(|e| format!("Online worker failed: {e}"))??;
 
+    if result.success {
+        // UCO2 rimosso: l'app esce da exclude_apps e torna al comportamento
+        // di default globale — Show Online se default_mode=showonline
+        // ("mostra giochi online" attivo), altrimenti None. Senza questo undo
+        // il gioco resterebbe escluso per sempre dopo la disattivazione.
+        for path in aethercore_toml_paths(&app) {
+            let _ = update_mode_in_toml(&path, app_id, None);
+        }
+    }
+
     crate::desk_log_info!("online", "disable_online done: success={}", result.success);
     Ok(result)
 }

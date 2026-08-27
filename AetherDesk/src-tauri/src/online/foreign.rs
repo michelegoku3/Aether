@@ -141,7 +141,7 @@ pub fn conflict_for_ofme_file(path: &Path) -> Conflict {
     let lower = file_name_lower(path).unwrap_or_default();
     match lower.as_str() {
         "steamfix64.dll" | "steamfix.dll" | "steamfix.ini" => Conflict::SteamFix(path.to_path_buf()),
-        "onlinefix64.dll" | "onlinefix.dll" => Conflict::Ofme(path.to_path_buf()),
+        "onlinefix64.dll" | "onlinefix.dll" => Conflict::OFME(path.to_path_buf()),
         _ => Conflict::NamedFixFile(path.to_path_buf()),
     }
 }
@@ -151,7 +151,7 @@ pub fn ofme_files(conflicts: &[Conflict]) -> Vec<PathBuf> {
     conflicts
         .iter()
         .filter_map(|conflict| match conflict {
-            Conflict::Ofme(path) | Conflict::SteamFix(path) => Some(path.clone()),
+            Conflict::OFME(path) | Conflict::SteamFix(path) => Some(path.clone()),
             Conflict::NamedFixFile(path) if named_is_ofme(path) => Some(path.clone()),
             _ => None,
         })

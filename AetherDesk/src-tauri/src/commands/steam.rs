@@ -6,11 +6,9 @@ use crate::steam::update_guard::SteamUpdateGuard;
 use std::path::Path;
 
 /// Argomento di avvio che Aether usa per attivare la sua modalità AetherOnline
-/// (masking 480 + payload) per un gioco. Rinominato da "-onlinefix" (legato
-/// al nome della crack online-fix.me, fonte di confusione): il vecchio token
-/// resta riconosciuto e viene rimosso dalle LaunchOptions come legacy.
+/// (masking 480 + payload) per un gioco. Nome scelto per non confondersi con
+/// la crack online-fix.me (OFME).
 const AETHERONLINE_TOKEN: &str = "-aetheronline";
-const AETHERONLINE_LEGACY_TOKEN: &str = "-onlinefix";
 
 /// LEGACY: argomento di avvio con cui le vecchie build attivavano la presenza
 /// "sta giocando a" (presenza server-side Spacewar/480 + nome reale via
@@ -115,8 +113,8 @@ pub fn unblock_steam_updates(steam_path: String) -> Result<String, String> {
 /// True quando il gioco è in modalità AetherOnline (masking 480 + payload).
 ///
 /// Sorgente di verità: `[presence] aetheronline_apps` in aethercore.toml
-/// (docs/05 §12). LEGACY: i token `-aetheronline`/`-onlinefix` nelle
-/// LaunchOptions di Steam valgono ancora finché un set non li migra.
+/// (docs/05 §12). LEGACY: il token `-aetheronline` nelle LaunchOptions di
+/// Steam vale ancora finché un set non lo migra.
 #[tauri::command]
 pub fn get_aetheronline(app: tauri::AppHandle, app_id: u32) -> Result<bool, String> {
     // exclude vince sul token argv residuo: altrimenti il popup mostra
@@ -140,8 +138,7 @@ pub fn get_aetheronline(app: tauri::AppHandle, app_id: u32) -> Result<bool, Stri
         return Ok(false);
     }
     match launch_options::get_launch_options(Path::new(&steam_path), app_id) {
-        Ok(options) => Ok(launch_options::has_launch_token(&options, AETHERONLINE_TOKEN)
-            || launch_options::has_launch_token(&options, AETHERONLINE_LEGACY_TOKEN)),
+        Ok(options) => Ok(launch_options::has_launch_token(&options, AETHERONLINE_TOKEN)),
         // Nessuna localconfig ancora (Steam mai avviato): semplicemente non attivo.
         Err(e) if e.contains("not found") => Ok(false),
         Err(e) => Err(e),
@@ -152,9 +149,9 @@ pub fn get_aetheronline(app: tauri::AppHandle, app_id: u32) -> Result<bool, Stri
 /// sulla riga di comando: il marker è `[presence] aetheronline_apps` in
 /// aethercore.toml (docs/05 §12). Attivando, l'app esce dalle altre liste
 /// (mutua esclusione: il masking 480 è un superset della sola presenza).
-/// I token `-aetheronline`/`-onlinefix`/`-showonline` residui nelle
-/// LaunchOptions vengono sempre rimossi (migrazione), preservando gli altri
-/// argomenti dell'utente.
+/// I token `-aetheronline`/`-showonline` residui nelle LaunchOptions
+/// vengono sempre rimossi (migrazione), preservando gli altri argomenti
+/// dell'utente.
 #[tauri::command]
 pub fn set_aetheronline(
     app: tauri::AppHandle,
@@ -185,7 +182,6 @@ pub fn set_aetheronline(
         .any(|p| read_mode_apps(p, PresenceMode::AetherOnline).map(|apps| apps.contains(&app_id)).unwrap_or(false));
     let current = launch_options::get_launch_options(Path::new(&steam_path), app_id)?;
     let legacy_active = launch_options::has_launch_token(&current, AETHERONLINE_TOKEN)
-        || launch_options::has_launch_token(&current, AETHERONLINE_LEGACY_TOKEN)
         || launch_options::has_launch_token(&current, AETHER_SHOWONLINE_TOKEN);
     if marker_active == enabled && !legacy_active {
         return Ok(if enabled {
@@ -197,7 +193,6 @@ pub fn set_aetheronline(
 
     // Migrazione: MAI più token Aether nelle LaunchOptions (crash class §11).
     let mut updated = launch_options::toggle_launch_token(&current, AETHERONLINE_TOKEN, false);
-    updated = launch_options::toggle_launch_token(&updated, AETHERONLINE_LEGACY_TOKEN, false);
     updated = launch_options::toggle_launch_token(&updated, AETHER_SHOWONLINE_TOKEN, false);
     if updated != current {
         launch_options::set_launch_options(Path::new(&steam_path), app_id, &updated)?;
@@ -260,7 +255,7 @@ pub fn get_aether_showonline(app: tauri::AppHandle, app_id: u32) -> Result<bool,
 /// aethercore.toml (entrambe le copie gestite da AetherDesk). La DLL lo
 /// rilegge ad ogni SpawnProcess — nessun riavvio di Steam necessario.
 /// Eventuali token legacy in LaunchOptions vengono rimossi; attivando il
-/// marker si rimuovono anche `-aetheronline`/`-onlinefix` (mutua esclusione): -showonline è
+/// marker si rimuove anche `-aetheronline` (mutua esclusione): -showonline è
 /// pensato per giochi singleplayer — niente masking del processo, solo la
 /// presenza "sta giocando a" verso gli amici.
 #[tauri::command]
@@ -293,8 +288,7 @@ pub fn set_aether_showonline(
         .any(|p| read_mode_apps(p, PresenceMode::ShowOnline).map(|apps| apps.contains(&app_id)).unwrap_or(false));
     let current = launch_options::get_launch_options(Path::new(&steam_path), app_id)?;
     let legacy_active = launch_options::has_launch_token(&current, AETHER_SHOWONLINE_TOKEN)
-        || (enabled && launch_options::has_launch_token(&current, AETHERONLINE_TOKEN)
-            || launch_options::has_launch_token(&current, AETHERONLINE_LEGACY_TOKEN));
+        || (enabled && launch_options::has_launch_token(&current, AETHERONLINE_TOKEN));
     if marker_active == enabled && !legacy_active
     {
         return Ok(if enabled {
@@ -306,11 +300,10 @@ pub fn set_aether_showonline(
 
     // 1) Launch options: MAI -showonline (crash class argv/lauch-option,
     //    docs/05 §11). Eventuali token legacy vengono migrati: rimossi qui,
-    //    sostituiti dal marker nel toml. Attivando, via anche -aetheronline/-onlinefix.
+    //    sostituiti dal marker nel toml. Attivando, via anche -aetheronline.
     let mut updated = launch_options::toggle_launch_token(&current, AETHER_SHOWONLINE_TOKEN, false);
     if enabled {
         updated = launch_options::toggle_launch_token(&updated, AETHERONLINE_TOKEN, false);
-        updated = launch_options::toggle_launch_token(&updated, AETHERONLINE_LEGACY_TOKEN, false);
     }
     if updated != current {
         launch_options::set_launch_options(Path::new(&steam_path), app_id, &updated)?;
@@ -370,7 +363,6 @@ pub fn set_aether_excluded(
     if !steam_path.trim().is_empty() {
         if let Ok(current) = launch_options::get_launch_options(Path::new(&steam_path), app_id) {
             let mut updated = launch_options::toggle_launch_token(&current, AETHERONLINE_TOKEN, false);
-            updated = launch_options::toggle_launch_token(&updated, AETHERONLINE_LEGACY_TOKEN, false);
             updated = launch_options::toggle_launch_token(&updated, AETHER_SHOWONLINE_TOKEN, false);
             if updated != current {
                 let _ = launch_options::set_launch_options(Path::new(&steam_path), app_id, &updated);
