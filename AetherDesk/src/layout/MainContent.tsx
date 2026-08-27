@@ -24,12 +24,13 @@ interface MainContentProps {
   onPreviewPersonalWallpaper: (enabled: boolean, opacity: number) => void;
   onPreviewAlternativeCards: (opacity: number, fade: number) => void;
   settingsRevision: number;
+  settingsReady: boolean;
   useAlternativeGameCards: boolean;
   alternativeCardsOpacity: number;
   alternativeCardsFade: number;
 }
 
-export const MainContent = ({ activeTab, dllUpdateAvailable, deskUpdateAvailable, deskVersion, dllUpdateIsTest, deskUpdateIsTest, onUpdateComplete, hubcapUsage, onRefreshUsage, dllStatus, onDllStatusChange, onRefreshCustomCss, onCustomCssChange, onPreviewPersonalWallpaper, onPreviewAlternativeCards, settingsRevision, useAlternativeGameCards, alternativeCardsOpacity, alternativeCardsFade }: MainContentProps) => {
+export const MainContent = ({ activeTab, dllUpdateAvailable, deskUpdateAvailable, deskVersion, dllUpdateIsTest, deskUpdateIsTest, onUpdateComplete, hubcapUsage, onRefreshUsage, dllStatus, onDllStatusChange, onRefreshCustomCss, onCustomCssChange, onPreviewPersonalWallpaper, onPreviewAlternativeCards, settingsRevision, settingsReady, useAlternativeGameCards, alternativeCardsOpacity, alternativeCardsFade }: MainContentProps) => {
   const renderActiveTransientView = () => {
     if (activeTab === 'home') {
       return (
@@ -111,8 +112,8 @@ export const MainContent = ({ activeTab, dllUpdateAvailable, deskUpdateAvailable
       >
         <StoreView
           onRefreshUsage={onRefreshUsage}
-          isActive={activeTab === 'store'}
           settingsRevision={settingsRevision}
+          settingsReady={settingsReady}
           useAlternativeGameCards={useAlternativeGameCards}
           alternativeCardsOpacity={alternativeCardsOpacity}
           alternativeCardsFade={alternativeCardsFade}

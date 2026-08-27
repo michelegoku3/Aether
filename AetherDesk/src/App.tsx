@@ -7,6 +7,7 @@ import { listen } from '@tauri-apps/api/event';
 import { useCustomCss } from './hooks/useCustomCss';
 import { usePersonalWallpaper } from './hooks/usePersonalWallpaper';
 import { STEAM_RUNTIME_EVENT } from './constants/library';
+import { LibraryGamesProvider } from './hooks/useLibraryGames';
 
 export default function App() {
   // Setup state to manage the active view, defaulting to 'home'
@@ -35,6 +36,9 @@ export default function App() {
   // Settings revision: incremented after Settings saves/resets so always-mounted
   // views (Store) can reload data that depends on settings without restarting.
   const [settingsRevision, setSettingsRevision] = useState(0);
+  // Avoid a Store preload against default/incomplete settings while the initial
+  // settings hydration is still in flight.
+  const [settingsReady, setSettingsReady] = useState(false);
 
   // Appearance toggles — single source of truth for the whole app.
   const [customCssEnabled, setCustomCssEnabled] = useState(false);
@@ -69,6 +73,8 @@ export default function App() {
       setPersonalWallpaperOpacity(20);
       setAlternativeCardsOpacity(100);
       setAlternativeCardsFade(50);
+    } finally {
+      setSettingsReady(true);
     }
   };
   // Real-time theme toggling: called straight from the Settings switch (no
@@ -226,40 +232,43 @@ export default function App() {
   }, []);
 
   return (
-    <div className="app-container">
-      {/* Modular Sidebar component with action hooks and global update badge */}
-      <Sidebar 
-        activeTab={activeTab} 
-        onTabChange={setActiveTab} 
-        onSteamAction={handleSteamAction}
-        steamRunning={steamRunning}
-        steamBusy={steamBusy}
-        dllUpdateAvailable={dllUpdateAvailable || deskUpdateAvailable}
-        updateIsTest={dllUpdateIsTest || deskUpdateIsTest}
-      />
+    <LibraryGamesProvider>
+      <div className="app-container">
+        {/* Modular Sidebar component with action hooks and global update badge */}
+        <Sidebar
+          activeTab={activeTab}
+          onTabChange={setActiveTab}
+          onSteamAction={handleSteamAction}
+          steamRunning={steamRunning}
+          steamBusy={steamBusy}
+          dllUpdateAvailable={dllUpdateAvailable || deskUpdateAvailable}
+          updateIsTest={dllUpdateIsTest || deskUpdateIsTest}
+        />
 
-      {/* Modular Main Content display area */}
-      <MainContent 
-        activeTab={activeTab} 
-        dllUpdateAvailable={dllUpdateAvailable}
-        deskUpdateAvailable={deskUpdateAvailable}
-        deskVersion={deskVersion}
-        dllUpdateIsTest={dllUpdateIsTest}
-        deskUpdateIsTest={deskUpdateIsTest}
-        onUpdateComplete={checkUpdates}
-        hubcapUsage={hubcapUsage}
-        onRefreshUsage={refreshHubcapUsage}
-        dllStatus={dllStatus}
-        onDllStatusChange={checkDllStatus}
-        onRefreshCustomCss={refreshCustomCss}
-        onCustomCssChange={changeCustomCss}
-        onPreviewPersonalWallpaper={previewPersonalWallpaper}
-        onPreviewAlternativeCards={previewAlternativeCards}
-        settingsRevision={settingsRevision}
-        useAlternativeGameCards={useAlternativeGameCards}
-        alternativeCardsOpacity={alternativeCardsOpacity}
-        alternativeCardsFade={alternativeCardsFade}
-      />
-    </div>
+        {/* Modular Main Content display area */}
+        <MainContent
+          activeTab={activeTab}
+          dllUpdateAvailable={dllUpdateAvailable}
+          deskUpdateAvailable={deskUpdateAvailable}
+          deskVersion={deskVersion}
+          dllUpdateIsTest={dllUpdateIsTest}
+          deskUpdateIsTest={deskUpdateIsTest}
+          onUpdateComplete={checkUpdates}
+          hubcapUsage={hubcapUsage}
+          onRefreshUsage={refreshHubcapUsage}
+          dllStatus={dllStatus}
+          onDllStatusChange={checkDllStatus}
+          onRefreshCustomCss={refreshCustomCss}
+          onCustomCssChange={changeCustomCss}
+          onPreviewPersonalWallpaper={previewPersonalWallpaper}
+          onPreviewAlternativeCards={previewAlternativeCards}
+          settingsRevision={settingsRevision}
+          settingsReady={settingsReady}
+          useAlternativeGameCards={useAlternativeGameCards}
+          alternativeCardsOpacity={alternativeCardsOpacity}
+          alternativeCardsFade={alternativeCardsFade}
+        />
+      </div>
+    </LibraryGamesProvider>
   );
 }

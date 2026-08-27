@@ -3,7 +3,7 @@ use std::fs;
 use std::path::PathBuf;
 use crate::core::paths::LocalAppPaths;
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 pub struct AppSettings {
     #[serde(default)]
     pub hubcap_api_key: String,

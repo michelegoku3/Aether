@@ -1,6 +1,5 @@
 use crate::core::backup::GameBackup;
 use crate::game_info::cache::GameInfoCache;
-use crate::store::download::DownloadOrchestrator;
 use crate::store::drm::DrmDetector;
 use crate::providers::hubcap::HubcapClient;
 use crate::providers::luatools::LuaToolsClient;
@@ -284,38 +283,26 @@ pub async fn trigger_hubcap_download(
     crate::desk_log_info!("store", "Triggering download for {} (source: {})",
         crate::core::logger::format_appid(app_id), if api_key == "oureveryday_public" { "oureveryday" } else { "hubcap" });
 
+    // Provider acquisition and Steam publication are intentionally separate:
+    // every latest-download source converges on the same verified installer.
+    let source = if api_key == "oureveryday_public" {
+        "MOED"
+    } else {
+        "Hubcap"
+    };
     let res = async {
-        let steam = SteamCompat::new(steam_path.clone());
         let package = if api_key == "oureveryday_public" {
-            let oe_client = crate::providers::oureveryday::OureverydayClient::new();
-            let package = oe_client.download_lua_package(app_id).await?;
-            steam.install_lua_config(app_id, &package.lua_content)?;
-            steam.install_manifest_files(&package.manifest_files)?;
-        crate::core::library_events::notify_lua_changed(&app);
-            package
+            crate::providers::oureveryday::OureverydayClient::new()
+                .download_lua_package(app_id)
+                .await?
         } else {
-            let client = HubcapClient::new(api_key.clone());
-            let result = DownloadOrchestrator::new(client, steam.clone())
-                .execute_hubcap_download(app_id)
-                .await?;
-            ManifestPackage {
-                lua_content: steam.read_lua_config(app_id)?,
-                manifest_files: result.manifest_files,
-            }
+            HubcapClient::new(api_key.clone())
+                .download_lua_package(app_id)
+                .await?
         };
-
-        apply_default_update_policy(&app, app_id, &steam_path)?;
-        let installed_lua = steam.read_lua_config(app_id).unwrap_or(package.lua_content.clone());
-
-        GameBackup::for_app(app_id)?
-            .backup_lua_artifacts(app_id, &installed_lua, &package.manifest_files)?;
-        let manifest_count = package.manifest_files.len();
-
-        Ok(format!(
-            "Successfully completed download for App ID {}. Lua installed, {} manifest file(s) preloaded into Steam depotcache.",
-            app_id, manifest_count
-        ))
-    }.await;
+        install_standard_package(&app, app_id, &steam_path, package, source)
+    }
+    .await;
 
     match &res {
         Ok(msg) => crate::desk_log_info!("store", "Successfully completed download for {}: {}", crate::core::logger::format_appid(app_id), msg),
@@ -357,7 +344,6 @@ pub async fn prepare_specific_version_download(
         let steam = SteamCompat::new(steam_path.clone());
         steam.install_lua_config(app_id, &lua_content)?;
         steam.install_manifest_files(&package.manifest_files)?;
-        crate::core::library_events::notify_lua_changed(&app);
         GameBackup::for_app(app_id)?
             .backup_lua_artifacts(app_id, &lua_content, &package.manifest_files)?;
 
@@ -369,6 +355,11 @@ pub async fn prepare_specific_version_download(
             ));
         }
 
+        crate::core::library_events::notify_lua_changed(
+            &app,
+            crate::core::library_events::LibraryChangeOrigin::Store,
+            [app_id],
+        );
         Ok(installed_rows)
     }.await;
 
@@ -464,13 +455,17 @@ fn install_standard_package(
     let steam = SteamCompat::new(steam_path.to_string());
     steam.install_lua_config(app_id, &package.lua_content)?;
     steam.install_manifest_files(&package.manifest_files)?;
-        crate::core::library_events::notify_lua_changed(&app);
     apply_default_update_policy(app, app_id, steam_path)?;
     let installed_lua = steam
         .read_lua_config(app_id)
         .unwrap_or_else(|_| package.lua_content.clone());
     GameBackup::for_app(app_id)?
         .backup_lua_artifacts(app_id, &installed_lua, &package.manifest_files)?;
+    crate::core::library_events::notify_lua_changed(
+        app,
+        crate::core::library_events::LibraryChangeOrigin::Store,
+        [app_id],
+    );
     Ok(format!(
         "Successfully completed {} download for App ID {}. Lua installed, {} manifest file(s) preloaded into Steam depotcache.",
         source,
@@ -497,7 +492,6 @@ fn install_specific_package(
     let steam = SteamCompat::new(steam_path.to_string());
     steam.install_lua_config(app_id, &package.lua_content)?;
     steam.install_manifest_files(&package.manifest_files)?;
-        crate::core::library_events::notify_lua_changed(&app);
     GameBackup::for_app(app_id)?
         .backup_lua_artifacts(app_id, &package.lua_content, &package.manifest_files)?;
 
@@ -509,6 +503,11 @@ fn install_specific_package(
             installed_rows.len()
         ));
     }
+    crate::core::library_events::notify_lua_changed(
+        app,
+        crate::core::library_events::LibraryChangeOrigin::Store,
+        [app_id],
+    );
     Ok(installed_rows)
 }
 

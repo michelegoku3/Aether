@@ -159,6 +159,11 @@ pub async fn apply_game_version(
                 report.applied_pins,
                 report.acf_synced_now
             );
+            crate::core::library_events::notify_lua_changed(
+                &app,
+                crate::core::library_events::LibraryChangeOrigin::Versioning,
+                [app_id],
+            );
             Ok(report)
         }
         Err(err) => {

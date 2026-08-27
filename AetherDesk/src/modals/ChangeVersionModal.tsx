@@ -4,6 +4,7 @@ import { requireSteamPath } from '../hooks/useSettings';
 import { useModalDismiss } from '../hooks/useModalDismiss';
 import { useGameBuilds, BuildInfo } from '../hooks/useGameBuilds';
 import { useWatchdog } from '../hooks/useWatchdog';
+import { useLibraryGames } from '../hooks/useLibraryGames';
 import { RefreshIcon } from '../ui/icons';
 import { StatusAlert } from '../ui/StatusAlert';
 import { emptyStatus, StatusMessage } from '../types/ui';
@@ -113,6 +114,7 @@ const AutoBuildsTab = ({ appId, onClose }: AutoBuildsTabProps) => {
   const [onlySaved, setOnlySaved] = useState(false);
   const [savingId, setSavingId] = useState<number | null>(null);
   const { arm: armWatchdog, clear: clearWatchdog } = useWatchdog();
+  const { loadInstalledGames } = useLibraryGames();
 
   useModalDismiss(onClose, isApplying);
 
@@ -164,6 +166,9 @@ const AutoBuildsTab = ({ appId, onClose }: AutoBuildsTabProps) => {
         steamPath,
       });
       clearWatchdog();
+      // The backend emits an invalidation as well; ask the shared cache to
+      // rescan now so the Auto flow never depends on event delivery timing.
+      loadInstalledGames();
       setReport(result);
       setAppliedBuildId(buildId);
     } catch (err: any) {

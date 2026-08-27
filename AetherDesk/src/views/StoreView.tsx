@@ -15,23 +15,26 @@ import { enrichDenuvoFlags } from '../hooks/useDenuvoEnrichment';
 import { useModalDismiss } from '../hooks/useModalDismiss';
 import { emptyStatus, StatusMessage } from '../types/ui';
 import { getSettings } from '../hooks/useSettings';
+import { useLibraryGames } from '../hooks/useLibraryGames';
 
 
 interface StoreViewProps {
   onRefreshUsage?: (forcedKey?: string) => Promise<void>;
-  isActive: boolean;
   settingsRevision: number;
+  /** Initial settings hydration completed in App; safe to start background preload. */
+  settingsReady: boolean;
   useAlternativeGameCards: boolean;
   alternativeCardsOpacity: number;
   alternativeCardsFade: number;
 }
 
-export const StoreView = ({ onRefreshUsage, isActive, settingsRevision, useAlternativeGameCards, alternativeCardsOpacity, alternativeCardsFade }: StoreViewProps) => {
+export const StoreView = ({ onRefreshUsage, settingsRevision, settingsReady, useAlternativeGameCards, alternativeCardsOpacity, alternativeCardsFade }: StoreViewProps) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [isSuggestOpen, setIsSuggestOpen] = useState(false);
   const [activeSuggestIndex, setActiveSuggestIndex] = useState<number | null>(null);
   const searchPanelRef = useRef<HTMLDivElement | null>(null);
   const [page, setPage] = useState(1);
+  const { loadInstalledGames } = useLibraryGames();
   const { items: suggestItems, isLoading: isSuggestLoading } = useSteamSuggest(searchQuery, isSuggestOpen);
   const itemsPerPage = 20; // 10 rows * 2 columns = 20 items per page
   const {
@@ -44,9 +47,15 @@ export const StoreView = ({ onRefreshUsage, isActive, settingsRevision, useAlter
     clear,
   } = useStoreSearch();
   const [isTrendingLoading, setIsTrendingLoading] = useState(false);
-  const trendingRequests = useRef<Set<number>>(new Set());
-  const nextTrendingStart = useRef(0);
-  const observedSettingsRevision = useRef(settingsRevision);
+  // A session owns all offsets and in-flight accounting for one Store settings
+  // generation. Late IPC responses from an older configuration are ignored.
+  const trendingSession = useRef({
+    generation: 0,
+    requests: new Set<number>(),
+    nextStart: 0,
+    inFlight: 0,
+  });
+  const observedSettingsRevision = useRef<number | null>(null);
   // Container scrollabile della vista store: al cambio pagina torniamo in cima.
   const storeScrollRef = useRef<HTMLDivElement | null>(null);
 
@@ -73,6 +82,16 @@ export const StoreView = ({ onRefreshUsage, isActive, settingsRevision, useAlter
   // Bulk local import modal state (opened from the bottom-right square button).
   const [showBulkLocalImport, setShowBulkLocalImport] = useState(false);
 
+  const resetTrendingSession = () => {
+    trendingSession.current = {
+      generation: trendingSession.current.generation + 1,
+      requests: new Set<number>(),
+      nextStart: 0,
+      inFlight: 0,
+    };
+    setIsTrendingLoading(false);
+  };
+
   const mergeTrendingGames = (incoming: StoreGame[]) => {
     setResults((prev) => {
       const seen = new Set(prev.map((game) => Number(game.id)));
@@ -87,29 +106,28 @@ export const StoreView = ({ onRefreshUsage, isActive, settingsRevision, useAlter
     });
   };
 
-  // Contatore dei caricamenti in volo: con i prefetch paralleli un semplice
-  // booleano si sbloccava al primo completamento, lasciando la pagina
-  // successiva non pronta. L'arrow Next resta bloccata finché count > 0.
-  const trendingInFlight = useRef(0);
-
   const loadTrendingGames = async (start: number, count: number) => {
-    if (trendingRequests.current.has(start)) return;
-    trendingRequests.current.add(start);
-    nextTrendingStart.current = Math.max(nextTrendingStart.current, start + count);
-    trendingInFlight.current += 1;
+    const session = trendingSession.current;
+    const generation = session.generation;
+    if (session.requests.has(start)) return;
+
+    session.requests.add(start);
+    session.nextStart = Math.max(session.nextStart, start + count);
+    session.inFlight += 1;
     setIsTrendingLoading(true);
     try {
       const games: StoreGame[] = await invoke('get_trending_store_games', { start, count });
+      if (trendingSession.current.generation !== generation) return;
       mergeTrendingGames(games || []);
     } catch (err) {
+      if (trendingSession.current.generation !== generation) return;
       console.warn('Trending store preload failed:', err);
-      // Un offset fallito deve essere RIPROVABILE: senza questa rimozione
-      // resterebbe nel set di dedup per sempre e la finestra di dati
-      // mancante non verrebbe mai ricaricata (pagina fantasma nel mezzo).
-      trendingRequests.current.delete(start);
+      // A failed offset remains retryable in the active configuration.
+      session.requests.delete(start);
     } finally {
-      trendingInFlight.current = Math.max(0, trendingInFlight.current - 1);
-      if (trendingInFlight.current === 0) {
+      if (trendingSession.current.generation !== generation) return;
+      session.inFlight = Math.max(0, session.inFlight - 1);
+      if (session.inFlight === 0) {
         setIsTrendingLoading(false);
       }
     }
@@ -131,9 +149,10 @@ export const StoreView = ({ onRefreshUsage, isActive, settingsRevision, useAlter
   }, [searchQuery]);
 
   useEffect(() => {
-    if (observedSettingsRevision.current === settingsRevision) return;
+    if (!settingsReady || observedSettingsRevision.current === settingsRevision) return;
     observedSettingsRevision.current = settingsRevision;
     setPage(1);
+    resetTrendingSession();
 
     if (activeQuery.trim()) {
       search(activeQuery).catch((err) => console.warn('Store search refresh after settings save failed:', err));
@@ -141,11 +160,12 @@ export const StoreView = ({ onRefreshUsage, isActive, settingsRevision, useAlter
     }
 
     clear();
-    trendingRequests.current.clear();
-    nextTrendingStart.current = 0;
-    // Il ripopolamento (40 a scaglioni) lo fa la regola buffer sotto:
-    // con 0 giochi e isActive, riparte da (0,20) e continua da sola.
-  }, [settingsRevision]);
+    // The background buffer effect below repopulates from the active settings
+    // generation. It runs even when Store is currently hidden.
+    // resetTrendingSession/loadTrendingGames intentionally use refs and remain
+    // stable in behaviour across renders.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [settingsRevision, settingsReady]);
 
   // Pagination calculation
   const totalPages = Math.ceil(storeGames.length / itemsPerPage) || 1;
@@ -163,22 +183,18 @@ export const StoreView = ({ onRefreshUsage, isActive, settingsRevision, useAlter
     }
   }, [pageKey]);
 
-  // REGOLA BUFFER (unica, sostituisce mount/attivazione/prefetch/backstop):
-  // se la pagina successiva non è interamente locale, carico altri 40.
-  // All'avvio: 40 subito in un'unica richiesta; ad ogni cambio pagina la
-  // stessa regola mantiene il buffer (40 avanti sulla pagina corrente).
-  // Nessun gate di navigazione: Next è sempre libero dentro i dati caricati,
-  // e il top-up parte PRIMA che la pagina manchi (il vecchio gate bloccava
-  // la navigazione che avrebbe innescato il top-up: deadlock a pagina 3
-  // con 4 pagine totali).
+  // BUFFER RULE: the first two Store pages are requested as soon as settings
+  // hydration completes, even while Store is hidden. Subsequent top-ups remain
+  // bounded and use the same session-scoped offset state.
   useEffect(() => {
-    if (!isActive || activeQuery.trim()) return;
+    if (!settingsReady || activeQuery.trim()) return;
     if (storeGames.length < (page + 1) * itemsPerPage) {
-      loadTrendingGames(nextTrendingStart.current, itemsPerPage * 2);
+      loadTrendingGames(trendingSession.current.nextStart, itemsPerPage * 2);
     }
-    // loadTrendingGames è stabile di fatto (solo ref + setState).
+    // loadTrendingGames uses refs for session ownership; including it would
+    // reschedule this effect on every render without changing its semantics.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [page, storeGames.length, activeQuery, isActive]);
+  }, [page, storeGames.length, activeQuery, settingsReady]);
 
   // Cambio pagina / nuova ricerca: visuale in cima, non in fondo.
   useEffect(() => {
@@ -213,9 +229,8 @@ export const StoreView = ({ onRefreshUsage, isActive, settingsRevision, useAlter
     try {
       if (!query.trim()) {
         clear();
-        trendingRequests.current.clear();
-        nextTrendingStart.current = 0;
-        // Il ripopolamento lo fa la regola buffer (activeQuery vuota).
+        resetTrendingSession();
+        // The buffer effect repopulates using a fresh settings generation.
         return;
       }
       await search(query);
@@ -275,6 +290,10 @@ export const StoreView = ({ onRefreshUsage, isActive, settingsRevision, useAlter
         : { appId: Number(selectedGame.appId), apiKey: apiKeyToUse, steamPath: steamPathToUse };
       const result: string = await invoke(command, args);
 
+      // This successful UI-originated install can refresh immediately through
+      // the shared Library queue; the native event/revision path remains the
+      // independent safety net for provider and external filesystem changes.
+      loadInstalledGames();
       setDownloadStatus({ text: result, type: 'success' });
       setIsDownloading(false);
       onRefreshUsage?.();
@@ -328,6 +347,9 @@ export const StoreView = ({ onRefreshUsage, isActive, settingsRevision, useAlter
         : { appId: Number(selectedGame.appId), apiKey: apiKeyToUse, steamPath: steamPathToUse };
       const rows: LuaManifestRow[] = await invoke(command, args);
 
+      // Specific-version preparation writes the canonical Lua too, so update
+      // the shared Library cache without waiting for transport-level events.
+      loadInstalledGames();
       setManifestRows((rows || []).map(row => ({ ...row, manifestInput: '' })));
       setVersionGame(selectedGame);
 
@@ -392,9 +414,8 @@ export const StoreView = ({ onRefreshUsage, isActive, settingsRevision, useAlter
                 setIsSuggestOpen(false);
                 setActiveSuggestIndex(null);
                 clear();
-                trendingRequests.current.clear();
-                nextTrendingStart.current = 0;
-                // Il ripopolamento lo fa la regola buffer (activeQuery vuoto).
+                resetTrendingSession();
+                // The buffer effect repopulates using a fresh settings generation.
               }}
             >
               &times;

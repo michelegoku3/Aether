@@ -185,6 +185,16 @@ pub fn get_installed_lua_manifest_rows(
     LuaManifestPins::new(steam_path, app_id).rows_from_file()
 }
 
+/// Last backend Library invalidation revision.
+///
+/// The React provider primarily receives pushed `library://lua-changed` events.
+/// It reads this atomic value only as a low-cost recovery path for a WebView
+/// that misses a native push; this command never scans Steam or the filesystem.
+#[tauri::command]
+pub fn get_library_change_revision(app: tauri::AppHandle) -> u64 {
+    crate::core::library_events::current_library_change_revision(&app)
+}
+
 #[tauri::command]
 pub fn get_lua_game_update_state(app_id: u32, steam_path: String) -> Result<bool, String> {
     validate_steam_path(&steam_path)?;
@@ -194,6 +204,7 @@ pub fn get_lua_game_update_state(app_id: u32, steam_path: String) -> Result<bool
 
 #[tauri::command]
 pub fn set_lua_game_updates_enabled(
+    app: tauri::AppHandle,
     app_id: u32,
     steam_path: String,
     enabled: bool,
@@ -209,17 +220,23 @@ pub fn set_lua_game_updates_enabled(
     };
     crate::desk_log_info!("library", "Updates {} for {}: {} manifest pin(s) modified", if enabled { "enabled" } else { "disabled" }, crate::core::logger::format_appid(app_id), changed);
 
-    if enabled {
-        Ok(format!(
+    let message = if enabled {
+        format!(
             "Updates enabled for App ID {}. {} manifest pin(s) disabled.",
             app_id, changed
-        ))
+        )
     } else {
-        Ok(format!(
+        format!(
             "Updates disabled for App ID {}. {} manifest pin(s) restored.",
             app_id, changed
-        ))
-    }
+        )
+    };
+    crate::core::library_events::notify_lua_changed(
+        &app,
+        crate::core::library_events::LibraryChangeOrigin::LibraryAction,
+        [app_id],
+    );
+    Ok(message)
 }
 
 #[tauri::command]
@@ -256,8 +273,11 @@ pub fn remove_lua_game_from_library(
 
     if removed {
         crate::desk_log_info!("library", "Successfully removed Lua files for {} from stplug-in", crate::core::logger::format_appid(app_id));
-        // Notifica immediata alla UI (il dirwatch resta per i cambi esterni).
-        crate::core::library_events::notify_lua_changed(&app);
+        crate::core::library_events::notify_lua_changed(
+            &app,
+            crate::core::library_events::LibraryChangeOrigin::LibraryAction,
+            [app_id],
+        );
         Ok(format!("App ID {} removed from Aether library.", app_id))
     } else {
         crate::desk_log_warn!("library", "No Lua file found for {} in stplug-in", crate::core::logger::format_appid(app_id));
@@ -267,6 +287,7 @@ pub fn remove_lua_game_from_library(
 
 #[tauri::command]
 pub fn apply_specific_version_edits(
+    app: tauri::AppHandle,
     app_id: u32,
     steam_path: String,
     edits: Vec<LuaManifestEdit>,
@@ -276,6 +297,11 @@ pub fn apply_specific_version_edits(
     match LuaManifestPins::new(steam_path.clone(), app_id).apply_edits(edits) {
         Ok(rows) => {
             crate::desk_log_info!("library", "Successfully applied specific version edits for {}: {} row(s) active", crate::core::logger::format_appid(app_id), rows.len());
+            crate::core::library_events::notify_lua_changed(
+                &app,
+                crate::core::library_events::LibraryChangeOrigin::LibraryAction,
+                [app_id],
+            );
             Ok(rows)
         }
         Err(e) => {

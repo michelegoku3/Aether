@@ -11,10 +11,38 @@ pub fn get_settings(app: tauri::AppHandle) -> Result<AppSettings, String> {
 
 #[tauri::command]
 pub fn save_settings(app: tauri::AppHandle, settings: AppSettings) -> Result<(), String> {
-    crate::desk_log_info!("settings", "Saving user settings to disk (steam_path='{}', hubcap_key_set={})",
-        settings.steam_path, !settings.hubcap_api_key.trim().is_empty());
     let manager = SettingsManager::new(&app);
-    manager.save(&settings)?;
+    let previous = manager.load();
+    let settings_changed = previous != settings;
+    let steam_path_changed = previous.steam_path.trim() != settings.steam_path.trim();
+    let library_filter_changed = previous.library_install_filter != settings.library_install_filter;
+
+    // Some lightweight UI controls (notably the persisted Library filter) can
+    // submit the same object more than once. Do not rewrite settings.json and
+    // encrypted credentials for a semantic no-op.
+    if settings_changed {
+        crate::desk_log_info!(
+            "settings",
+            "Saving changed user settings (steam_path_changed={}, library_filter_changed={}, library_filter='{}' -> '{}', hubcap_key_set={})",
+            steam_path_changed,
+            library_filter_changed,
+            previous.library_install_filter,
+            settings.library_install_filter,
+            !settings.hubcap_api_key.trim().is_empty()
+        );
+        manager.save(&settings)?;
+    }
+
+    // Rebind the single native stplug-in watcher only when its observed root
+    // actually changes. Appearance/provider settings must not restart it.
+    if settings_changed && steam_path_changed {
+        crate::core::library_events::reconfigure_library_watch(&app, &settings.steam_path);
+        crate::core::library_events::notify_lua_changed(
+            &app,
+            crate::core::library_events::LibraryChangeOrigin::Settings,
+            std::iter::empty::<u32>(),
+        );
+    }
     if let Err(e) = crate::core::custom_css::apply_window_icon(&app) {
         crate::desk_log_warn!("settings", "Window icon apply after save failed: {}", e);
     }
