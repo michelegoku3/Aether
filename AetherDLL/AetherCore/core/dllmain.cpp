@@ -1,6 +1,7 @@
 #include "pch.h"
 
 #include <string>
+#include <thread>
 #include <vector>
 #include <fstream>
 
@@ -146,18 +147,27 @@ namespace {
         g_state.steamclientSha = hasher::ComputeFileSha256(g_state.steamclientPath);
         status::Write();
 
-        // 6. Pattern engine: resolves hook addresses from per-build TOML tables.
-        //    Also fills the steamui SHA. Hook installation later depends on this.
-        //    Depends on: diversion (module handle for SHA hashing).
-        if (!pattern::Init()) {
+        // 6. Pattern engine + 7. IPC spec, resolved CONCURRENTLY.
+        //    The pattern engine resolves hook addresses from per-build TOML
+        //    tables (steamclient + steamui in parallel internally); the IPC spec
+        //    fetches the per-build funcHash table. Both can miss the cache on a
+        //    fresh Steam build and block on network round-trips, so running them
+        //    side by side keeps hook installation early enough to catch Steam's
+        //    one-shot startup events (LoadPackage of package 0). The downloader
+        //    creates any cache subdirectory it needs, so there is no ordering
+        //    dependency between the two.
+        bool patternsOk = false;
+        std::thread patternThread([&] {
+            patternsOk = pattern::Init();
+        });
+        std::thread ipcThread([&] {
+            ipcspec::Init();
+        });
+        patternThread.join();
+        ipcThread.join();
+        if (!patternsOk) {
             AC_LOG_WARN(kModule, "Pattern engine produced no tables; some hooks will be skipped.");
         }
-
-        // 7. IPC spec: per-build funcHash overrides so IPC dispatch survives
-        //    Steam client updates. Must run after pattern::Init() (which creates
-        //    the pattern cache directory) and before hook installation (which
-        //    registers IPC handlers that consult the spec).
-        ipcspec::Init();
 
         // 8. Lua scripts: populate ownership/depot/token/manifest data so the
         //    first LoadPackage / CheckAppOwnership call sees the full set.

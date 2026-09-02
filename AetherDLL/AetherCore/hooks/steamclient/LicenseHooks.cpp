@@ -161,9 +161,10 @@ namespace ac::hooks {
             return true;
         }
 
-        // Address data is owned by PatternEngine. It merges the per-build TOML
-        // with the central hardcoded fallback table, so this feature module does
-        // not contain a second scanner or a second source of truth.
+        // Address data is owned entirely by PatternEngine, which resolves hook
+        // addresses from the per-build TOML pattern tables (cache or remote
+        // download), so this feature module contains no scanner or address data
+        // of its own.
         template<typename Fn>
         bool HookPattern(const std::string& name, const std::string& modName, HMODULE mod,
                          Fn& orig, Fn detour) {
@@ -249,9 +250,11 @@ namespace ac::hooks {
         if (!diversion) { AC_LOG_ERROR(kModule, "diversion null"); return; }
         AC_LOG_INFO(kModule, "Registering FIXED v3 - minimal gates to avoid shutdown window");
 
-        // PatternEngine merges the build TOML with PatternFallbacks.h. TOML
-        // entries take precedence; missing entries use the central fallback
-        // table and are reported in status/log diagnostics.
+        // Address data is owned entirely by PatternEngine, which resolves every
+        // hook address from the per-build TOML pattern tables (cache or remote
+        // download). This feature module contains no scanner or address data of
+        // its own; entries missing from the TOML are simply skipped and reported
+        // in status/log diagnostics.
         HookPattern("OptedInMask", "steamclient", diversion, o_OptedInMask, h_OptedInMask);
         HookPattern("RequiresLegacyCDKey", "steamclient", diversion, o_RequiresLegacyCDKey, h_RequiresLegacyCDKey);
         HookPattern("IsCloudEnabledForApp", "steamclient", diversion, o_IsCloudEnabledForApp, h_IsCloudEnabledForApp);

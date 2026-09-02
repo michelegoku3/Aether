@@ -36,6 +36,7 @@ add_library(AetherCore SHARED
     utils/Hasher.cpp
     utils/EnvReader.cpp
     utils/PatternEngine.cpp
+    utils/PatternSource.cpp
     utils/PatternDownloader.cpp
     utils/SmartIdLog.cpp
     utils/IpcSpec.cpp

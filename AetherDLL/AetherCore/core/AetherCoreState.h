@@ -169,7 +169,6 @@ struct AetherCoreState {
     struct PatternEntry {
         std::string rva;
         std::string sig;
-        bool hardcodedFallback = false;
     };
     using PatternIndex = std::unordered_map<std::string, PatternEntry>;
     struct PatternState {
