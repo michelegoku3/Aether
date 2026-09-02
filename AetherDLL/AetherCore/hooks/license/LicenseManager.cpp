@@ -12,6 +12,7 @@
 #include "core/AetherCoreState.h"
 #include "core/Constants.h"
 #include "core/Logger.h"
+#include "hooks/steamclient/OwnershipHooks.h"
 #include "scripting/LuaData.h"
 #include "utils/PatternEngine.h"
 
@@ -211,6 +212,15 @@ namespace ac::hooks::LicenseManager {
             for (int attempts = 0; attempts < constants::kPackageRetryMaxAttempts; ++attempts) {
                 if (s_retryStop.load(std::memory_order_relaxed)) return;
                 if (g_state.package0Seeded.load(std::memory_order_relaxed)) return;
+
+                // If the one-shot LoadPackage(package 0) was missed entirely
+                // (late hook installation, e.g. pattern downloads on a fresh
+                // build), pPackage0 is never published and waiting would stall
+                // forever. Actively re-acquire package 0 through the hooked
+                // GetPackageInfo entry point instead of only waiting for events.
+                if (!g_state.pPackage0.load(std::memory_order_relaxed)) {
+                    ac::hooks::TryAcquirePackage0();
+                }
 
                 // DoStartupInjection only needs package 0 + the grow helper;
                 // CUser/license-update resolution is NOT required for the

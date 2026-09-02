@@ -508,4 +508,40 @@ namespace ac::hooks {
         StopUnlockSummary();
     }
 
+    bool TryAcquirePackage0() {
+        // Already published (by the LoadPackage hook or a previous recovery):
+        // nothing to do.
+        if (g_state.pPackage0.load(std::memory_order_acquire)) return true;
+
+        // We need both the hooked trampoline and the CPackageInfo manager
+        // instance. The latter is captured opportunistically by h_GetPackageInfo
+        // once Steam calls it with any package; early after a late hook install
+        // it may still be null, in which case the caller retries later.
+        auto* getPackageInfo = o_GetPackageInfo;
+        void* manager = g_state.pCPackageInfo.load(std::memory_order_acquire);
+        if (!getPackageInfo || !manager) return false;
+
+        // Actively ask for package 0. Going through the trampoline also routes
+        // through h_GetPackageInfo (capturing the manager if it had not been).
+        auto* info = static_cast<PackageInfo*>(getPackageInfo(manager, 0, 0));
+        if (!info) {
+            AC_LOG_INFO(kModule, "TryAcquirePackage0: GetPackageInfo returned null; package 0 not loaded yet.");
+            return false;
+        }
+
+        // Mirror exactly what the LoadPackage hook does with package 0:
+        // only seed when Steam reports it usable, otherwise just publish the
+        // pointer and defer the injection to the startup retry/login path.
+        if (info->status != 0) {
+            g_state.pPackage0.store(info, std::memory_order_release);
+            AC_LOG_WARN(kModule, "TryAcquirePackage0: package 0 status=%u not available; deferring injection.",
+                info->status);
+            return true;
+        }
+
+        AC_LOG_INFO(kModule, "TryAcquirePackage0: package 0 acquired via GetPackageInfo (missed one-shot LoadPackage).");
+        LicenseManager::SeedPackage0(info);
+        return true;
+    }
+
 }  // namespace ac::hooks

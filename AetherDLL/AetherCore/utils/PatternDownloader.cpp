@@ -1,9 +1,10 @@
 #include "pch.h"
 #include "utils/PatternDownloader.h"
 
+#include <filesystem>
 #include <fstream>
 #include <string>
-#include <utility>
+#include <string_view>
 #include <vector>
 
 #include "core/AetherCoreState.h"
@@ -16,25 +17,53 @@ namespace {
 
 constexpr const char* kModule = "PatternDownloader";
 
+// Result of a single HTTP attempt. `definitiveMissing` is set when the server
+// authoritatively reports 404 (as opposed to a transport error): the file does
+// not exist at that endpoint, so any mirror of the SAME source is not worth
+// consulting — CDNs also tend to cache 404s, so waiting for one would only add
+// latency without changing the outcome.
+struct FetchResult {
+    bool ok = false;
+    bool definitiveMissing = false;
+    std::string body;
+};
+
 // Performs a single GET through RuntimeHttp's shared URL parser/timeouts.
-// Returns the body on HTTP 200, otherwise empty.
-std::string Fetch(const std::string& url) {
+FetchResult Fetch(const std::string& url) {
+    FetchResult result;
     http::Response resp = http::GetUnchecked(url, 12);
-    if (resp.networkError || resp.status != 200) {
-        AC_LOG_WARN(kModule, "GET failed for %s (status=%d, network=%d).", url.c_str(),
-                    resp.status, resp.networkError ? 1 : 0);
-        return {};
+    if (resp.networkError) {
+        AC_LOG_WARN(kModule, "GET failed (network) for %s.", url.c_str());
+        return result;  // transient: a mirror over another transport may work
+    }
+    if (resp.status == 404) {
+        AC_LOG_INFO(kModule, "GET 404 for %s.", url.c_str());
+        result.definitiveMissing = true;
+        return result;
+    }
+    if (resp.status != 200) {
+        AC_LOG_WARN(kModule, "GET failed for %s (status=%d).", url.c_str(), resp.status);
+        return result;
     }
     if (resp.body.size() > constants::kMaxPatternResponseBytes) {
-        AC_LOG_WARN(kModule, "Response exceeds size cap; aborting.");
-        return {};
+        AC_LOG_WARN(kModule, "Response exceeds size cap; aborting (%s).", url.c_str());
+        return result;
     }
-    return resp.body;
+    result.ok = true;
+    result.body = std::move(resp.body);
+    return result;
 }
 
+// Creates every missing directory in `path` so the atomic write below can never
+// fail just because a per-kind subfolder (e.g. steamclientipc) does not exist.
+void EnsureParentDir(const std::string& path) {
+    std::error_code ec;
+    std::filesystem::create_directories(std::filesystem::path(path).parent_path(), ec);
+}
 
 // Writes via temp file + atomic rename so a partial write never corrupts cache.
 bool SaveAtomic(const std::string& path, const std::string& content) {
+    EnsureParentDir(path);
     const std::string tmp = path + ".tmp";
     {
         std::ofstream out(tmp, std::ios::binary | std::ios::trunc);
@@ -48,47 +77,125 @@ bool SaveAtomic(const std::string& path, const std::string& content) {
     return true;
 }
 
-// Substitutes {subdir} and {sha} in a user-supplied mirror template.
-std::string ApplyTemplate(std::string tmpl, const std::string& subdir, const std::string& sha) {
+// Expands {subdir}/{sha} in a user-supplied mirror template.
+std::string ApplyTemplate(std::string tmpl, std::string_view subdir, const std::string& sha) {
     auto replace = [&](const std::string& token, const std::string& value) {
         for (std::size_t p = tmpl.find(token); p != std::string::npos; p = tmpl.find(token, p)) {
             tmpl.replace(p, token.size(), value);
             p += value.size();
         }
     };
-    replace("{subdir}", subdir);
+    replace("{subdir}", std::string(subdir));
     replace("{sha}", sha);
     return tmpl;
 }
 
+// One endpoint to try: a fully-built URL plus the stable label reported back on
+// success (the user mirror id, or "<source>:<mirror>").
+struct Candidate {
+    std::string label;
+    std::string url;
+};
+
+// Candidates at the same priority level are alternative transports serving the
+// SAME data (raw vs CDN). The first success wins; an authoritative 404 from any
+// endpoint ends the level immediately, because the source genuinely does not
+// carry the file. Levels themselves are sources in insertion-priority order:
+// level 0 must fail before level 1 is consulted.
+struct Level {
+    std::vector<Candidate> endpoints;
+};
+
+// Builds the strictly priority-ordered resolution plan: configured mirror first,
+// then the built-in source registry (see PatternSource::DefaultSources).
+std::vector<Level> BuildPlan(Kind kind, const std::string& sha) {
+    std::vector<Level> plan;
+
+    // Level 0: user-supplied mirror has the highest priority when configured.
+    if (!g_state.settings.patternMirror.empty()) {
+        Level level;
+        level.endpoints.push_back(Candidate{
+            "mirror", ApplyTemplate(g_state.settings.patternMirror, KindName(kind), sha)});
+        plan.push_back(std::move(level));
+    }
+
+    // Following levels: built-in sources in registry order.
+    for (const Source& src : DefaultSources()) {
+        const auto mirrors = src.UrlsFor(kind, sha);
+        if (mirrors.empty()) continue;  // this source does not carry that kind
+        Level level;
+        for (const MirrorUrl& m : mirrors) {
+            level.endpoints.push_back(
+                Candidate{std::string(src.id) + ":" + m.label, m.url});
+        }
+        plan.push_back(std::move(level));
+    }
+    return plan;
+}
+
+// Tries one source level. Endpoints are contacted in order (raw, then CDN):
+//   * 200            -> the file is served;
+//   * transport error -> the next endpoint (CDN) is tried, as it is a different
+//                        network path to the identical file;
+//   * 404            -> the source does not have the file: stop immediately
+//                        (waiting on the CDN mirror only burns time).
+// Returns the winning label (empty = level failed) and fills `outBody`.
+std::string TryLevel(const Level& level, std::string& outBody) {
+    for (const Candidate& ep : level.endpoints) {
+        FetchResult res = Fetch(ep.url);
+        if (res.ok) {
+            // The successful save is logged once by the caller (Download).
+            outBody = std::move(res.body);
+            return ep.label;
+        }
+        if (res.definitiveMissing) {
+            AC_LOG_INFO(kModule, "Endpoint '%s' has no pattern yet (404); source skipped.",
+                        ep.label.c_str());
+            return {};
+        }
+        // transport error: try the next transport (CDN) of this source
+        AC_LOG_INFO(kModule, "Endpoint '%s' unreachable; trying next transport of this source.",
+                    ep.label.c_str());
+    }
+    return {};
+}
+
 }  // namespace
 
-bool Download(const std::string& subdir, const std::string& sha, const std::string& outPath,
+bool Download(Kind kind, const std::string& sha, const std::string& outPath,
               std::string* outSource) {
-    AC_LOG_INFO(kModule, "Resolving pattern for %s/%s", subdir.c_str(), sha.c_str());
+    AC_LOG_INFO(kModule, "Resolving '%s/%s'.", KindName(kind), sha.c_str());
 
-    std::vector<std::pair<std::string, std::string>> mirrors;
-    // A configured mirror takes priority when present.
-    if (!g_state.settings.patternMirror.empty()) {
-        mirrors.emplace_back("mirror", ApplyTemplate(g_state.settings.patternMirror, subdir, sha));
+    const std::vector<Level> plan = BuildPlan(kind, sha);
+    if (plan.empty()) {
+        AC_LOG_WARN(kModule, "No sources configured for '%s/%s'.", KindName(kind), sha.c_str());
+        return false;
     }
-    // Built-in chain: GitHub raw, then the jsDelivr CDN mirror of the same repo.
-    mirrors.emplace_back("github", "https://raw.githubusercontent.com/KoriaPolis/Steam-Auto-PT/pattern/" +
-                         subdir + "/" + sha + ".toml");
-    mirrors.emplace_back("cdn", "https://cdn.jsdelivr.net/gh/KoriaPolis/Steam-Auto-PT@pattern/" +
-                         subdir + "/" + sha + ".toml");
 
-    for (const auto& [label, url] : mirrors) {
-        std::string body = Fetch(url);
-        if (!body.empty() && SaveAtomic(outPath, body)) {
-            if (outSource) *outSource = label;
-            AC_LOG_INFO(kModule, "Saved pattern from %s: %s", label.c_str(), outPath.c_str());
-            return true;
+    for (const Level& level : plan) {
+        std::string body;
+        const std::string label = TryLevel(level, body);
+        if (label.empty()) {
+            AC_LOG_INFO(kModule, "Source level could not serve '%s/%s'; trying next source.",
+                        KindName(kind), sha.c_str());
+            continue;
         }
+        if (!SaveAtomic(outPath, body)) {
+            AC_LOG_WARN(kModule, "Failed to write %s; trying next source.", outPath.c_str());
+            continue;
+        }
+        if (outSource) *outSource = label;
+        AC_LOG_INFO(kModule, "Saved pattern from '%s': %s", label.c_str(), outPath.c_str());
+        return true;
     }
 
-    AC_LOG_WARN(kModule, "All mirrors failed for %s/%s.", subdir.c_str(), sha.c_str());
+    AC_LOG_WARN(kModule, "All sources failed for '%s/%s'.", KindName(kind), sha.c_str());
     return false;
+}
+
+bool Download(std::string_view kindName, const std::string& sha, const std::string& outPath,
+              std::string* outSource) {
+    return Download(KindFromName(kindName), sha, outPath, outSource);
 }
 
 }  // namespace ac::downloader

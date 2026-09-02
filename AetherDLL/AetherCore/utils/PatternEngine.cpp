@@ -7,6 +7,7 @@
 #include <filesystem>
 #include <fstream>
 #include <sstream>
+#include <thread>
 #include <unordered_map>
 #include <vector>
 
@@ -14,7 +15,6 @@
 #include "utils/Hasher.h"
 #include "core/Logger.h"
 #include "utils/PatternDownloader.h"
-#include "utils/PatternFallbacks.h"
 
 #pragma comment(lib, "Psapi.lib")
 
@@ -64,29 +64,6 @@ namespace ac::pattern {
             return !outIndex.empty();
         }
 
-        // Fills gaps left by the remote table without allowing a fallback to replace a
-        // build-specific TOML entry. This keeps all fallback knowledge in one file and
-        // keeps hook modules independent from address data.
-        bool MergeHardcodedFallbacks(const std::string& moduleName, PatternIndex& index) {
-            bool added = false;
-            for (const auto& fallback : kHardcodedPatterns) {
-                if (fallback.module != moduleName) continue;
-                if (index.find(std::string(fallback.name)) != index.end()) continue;
-
-                index.emplace(std::string(fallback.name), PatternEntry{
-                    std::string(fallback.rva), std::string(fallback.sig), true });
-                added = true;
-                AC_LOG_WARN(kModule,
-                    "Using hardcoded fallback pattern for %s::%s (rva=%s%s).",
-                    moduleName.c_str(), std::string(fallback.name).c_str(),
-                    std::string(fallback.rva).c_str(),
-                    fallback.sig.empty() ? ", signature absent" : ", signature verified");
-                diag::Record("pattern_hardcoded_fallback",
-                    moduleName + ":" + std::string(fallback.name));
-            }
-            return added;
-        }
-
         bool ParsePatternFile(const std::string& path, const std::string& moduleName,
             toml::table& outTable, PatternIndex& outIndex) {
             std::ifstream file(path);
@@ -126,16 +103,12 @@ namespace ac::pattern {
             outIndex.clear();
             outSha = hasher::ComputeFileSha256(dllPath);
             if (outSha.empty()) {
-                // A hardcoded fallback does not require a cache filename or network
-                // lookup. Keep the feature available when hashing is unavailable, but
-                // still let ResolveAddress apply module bounds/signature validation.
-                const bool usedFallbacks = MergeHardcodedFallbacks(moduleName, outIndex);
-                AC_LOG_ERROR(kModule,
-                    "Could not hash %s; %s available.", dllPath.c_str(),
-                    usedFallbacks ? "hardcoded fallbacks remain" : "no patterns remain");
-                SetPatternStatus(moduleName, usedFallbacks, usedFallbacks ? "hash-failed+hardcoded" : "hash-failed");
-                diag::Record(usedFallbacks ? "pattern_partial" : "pattern_missing", moduleName);
-                return usedFallbacks;
+                // Without a SHA we cannot name the per-build cache file or fetch the
+                // correct table: address resolution is unavailable for this module.
+                AC_LOG_ERROR(kModule, "Could not hash %s; no patterns available.", dllPath.c_str());
+                SetPatternStatus(moduleName, false, "hash-failed");
+                diag::Record("pattern_missing", moduleName);
+                return false;
             }
             AC_LOG_INFO(kModule, "%s SHA-256: %s", moduleName.c_str(), outSha.c_str());
 
@@ -146,9 +119,8 @@ namespace ac::pattern {
             const std::string tomlPath = g_state.patternDir + "\\" + outSha + ".toml";
             if (GetFileAttributesA(tomlPath.c_str()) != INVALID_FILE_ATTRIBUTES) {
                 if (ParsePatternFile(tomlPath, moduleName, table, outIndex)) {
-                    const bool usedFallbacks = MergeHardcodedFallbacks(moduleName, outIndex);
-                    SetPatternStatus(moduleName, true, usedFallbacks ? "cache+hardcoded" : "cache");
-                    diag::Record("pattern", moduleName + ":" + (usedFallbacks ? "cache+hardcoded" : "cache"));
+                    SetPatternStatus(moduleName, true, "cache");
+                    diag::Record("pattern", moduleName + ":cache");
                     return true;
                 }
 
@@ -164,32 +136,25 @@ namespace ac::pattern {
 
             std::string downloadSource;
             if (!downloader::Download(moduleName, outSha, tomlPath, &downloadSource)) {
-                const bool usedFallbacks = MergeHardcodedFallbacks(moduleName, outIndex);
-                AC_LOG_WARN(kModule,
-                    "Download failed for %s; %s available.", moduleName.c_str(),
-                    usedFallbacks ? "hardcoded fallbacks remain" : "no patterns remain");
-                SetPatternStatus(moduleName, usedFallbacks, usedFallbacks ? "missing+hardcoded" : "missing");
-                diag::Record(usedFallbacks ? "pattern_partial" : "pattern_missing", moduleName);
-                return usedFallbacks;
+                AC_LOG_WARN(kModule, "Download failed for %s; no patterns available.", moduleName.c_str());
+                SetPatternStatus(moduleName, false, "missing");
+                diag::Record("pattern_missing", moduleName);
+                return false;
             }
 
             if (ParsePatternFile(tomlPath, moduleName, table, outIndex)) {
-                const bool usedFallbacks = MergeHardcodedFallbacks(moduleName, outIndex);
                 const std::string source = downloadSource.empty() ? "download" : downloadSource;
-                const std::string sourceWithFallback = usedFallbacks ? source + "+hardcoded" : source;
-                SetPatternStatus(moduleName, true, sourceWithFallback);
-                diag::Record("pattern", moduleName + ":" + sourceWithFallback);
+                SetPatternStatus(moduleName, true, source);
+                diag::Record("pattern", moduleName + ":" + source);
                 return true;
             }
 
             DeleteFileA(tomlPath.c_str());
-            const bool usedFallbacks = MergeHardcodedFallbacks(moduleName, outIndex);
-            SetPatternStatus(moduleName, usedFallbacks ? true : false,
-                usedFallbacks ? "invalid+hardcoded" : "invalid");
-            diag::Record(usedFallbacks ? "pattern_partial" : "pattern_invalid", moduleName);
-            AC_LOG_ERROR(kModule, "Downloaded pattern for %s is invalid; cache removed%s.",
-                moduleName.c_str(), usedFallbacks ? "; hardcoded fallbacks retained" : "");
-            return usedFallbacks;
+            SetPatternStatus(moduleName, false, "invalid");
+            diag::Record("pattern_invalid", moduleName);
+            AC_LOG_ERROR(kModule, "Downloaded pattern for %s is invalid; cache removed.",
+                moduleName.c_str());
+            return false;
         }
 
         // Parses a "AA ?? BB" signature string into bytes + mask. Returns false on
@@ -238,12 +203,11 @@ namespace ac::pattern {
 
         // Looks up funcName inside the per-module name index.
         bool FindEntry(const PatternIndex& index, const std::string& funcName,
-            std::string& rva, std::string& sig, bool& hardcodedFallback) {
+            std::string& rva, std::string& sig) {
             auto it = index.find(funcName);
             if (it == index.end()) return false;
             rva = it->second.rva;
             sig = it->second.sig;
-            hardcodedFallback = it->second.hardcodedFallback;
             return !rva.empty();
         }
 
@@ -254,12 +218,39 @@ namespace ac::pattern {
         CreateDirectoryA(g_state.patternDir.c_str(), nullptr);
         SweepTempFiles();
 
-        bool steamclientOk = LoadModule("steamclient", g_state.steamclientPath,
-            g_state.steamclientSha, g_state.patterns.steamclient);
-
         g_state.steamuiPath = g_state.steamInstallPath + "\\steamui.dll";
-        bool steamuiOk = LoadModule("steamui", g_state.steamuiPath,
-            g_state.steamuiSha, g_state.patterns.steamui);
+
+        // Resolve both modules concurrently. On a fresh Steam build every cache
+        // miss costs network round-trips; running them in parallel cuts the
+        // critical path before hook installation in half (steamui's resolution
+        // no longer waits behind steamclient's), so the hooks are in place
+        // before Steam fires the one-shot LoadPackage(package 0) at startup.
+        //
+        // The two threads touch disjoint pattern indexes. They compute their
+        // SHA into LOCAL strings on purpose: dllmain publishes
+        // g_state.steamclientSha before spawning the concurrent IPC-spec
+        // resolution, which reads it — writing the std::string here while that
+        // thread reads it would be a data race. The local steamclient SHA is
+        // identical to the published one; only steamuiSha is owned by Init.
+        bool steamclientOk = false;
+        bool steamuiOk = false;
+        std::string clientSha;
+        std::string uiSha;
+        std::thread clientThread([&] {
+            steamclientOk = LoadModule("steamclient", g_state.steamclientPath,
+                clientSha, g_state.patterns.steamclient);
+        });
+        std::thread uiThread([&] {
+            steamuiOk = LoadModule("steamui", g_state.steamuiPath,
+                uiSha, g_state.patterns.steamui);
+        });
+        clientThread.join();
+        uiThread.join();
+
+        // Published only after both threads join: no concurrent reader exists at
+        // this point (the parallel IPC resolution reads steamclientSha, which is
+        // owned by dllmain and deliberately left untouched above).
+        g_state.steamuiSha = uiSha;
 
         return steamclientOk || steamuiOk;
     }
@@ -272,11 +263,10 @@ namespace ac::pattern {
         }
 
         std::string rvaStr, sigStr;
-        bool hardcodedFallback = false;
-        if (!FindEntry(*index, funcName, rvaStr, sigStr, hardcodedFallback)) {
+        if (!FindEntry(*index, funcName, rvaStr, sigStr)) {
             // Some publishers prefix KeyValues helpers as "KeyValues_<name>". Retry
             // with that alias before giving up.
-            if (!FindEntry(*index, "KeyValues_" + funcName, rvaStr, sigStr, hardcodedFallback)) {
+            if (!FindEntry(*index, "KeyValues_" + funcName, rvaStr, sigStr)) {
                 AC_LOG_WARN(kModule, "'%s' not found in %s patterns.", funcName.c_str(),
                     module.c_str());
                 return nullptr;
@@ -307,13 +297,6 @@ namespace ac::pattern {
 
         auto* target = reinterpret_cast<std::uint8_t*>(modInfo.lpBaseOfDll) + rva;
 
-        if (hardcodedFallback && sigStr.empty()) {
-            AC_LOG_WARN(kModule,
-                "'%s' uses a hardcoded RVA-only fallback; no signature is available.",
-                funcName.c_str());
-            diag::Record("pattern_unverified_fallback", module + ":" + funcName);
-        }
-
         if (!sigStr.empty()) {
             std::vector<std::uint8_t> bytes;
             std::string mask;
@@ -334,8 +317,8 @@ namespace ac::pattern {
             }
         }
 
-        AC_LOG_DEBUG(kModule, "'%s' (%s%s) -> 0x%p", funcName.c_str(), module.c_str(),
-            hardcodedFallback ? "+hardcoded" : "", static_cast<void*>(target));
+        AC_LOG_DEBUG(kModule, "'%s' (%s) -> 0x%p", funcName.c_str(), module.c_str(),
+            static_cast<void*>(target));
         return target;
     }
 

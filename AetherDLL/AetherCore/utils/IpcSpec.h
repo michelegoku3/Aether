@@ -9,8 +9,9 @@
 // Steam identifies IPC methods by a per-build hash (funcHash) that can change
 // when Steam updates. AetherCore ships compile-time fallback hashes in
 // Constants.h, but those only work for the Steam build they were extracted
-// from. This module loads a per-build TOML (from the same KoriaPolis pattern
-// repo) that maps qualified method names to their current funcHash values.
+// from. This module loads a per-build TOML (from the same priority-ordered
+// pattern source registry as the pattern tables) that maps qualified method
+// names to their current funcHash values.
 //
 // Fallback: when no TOML exists (first run, offline, repo doesn't ship IPC
 // specs yet), the IPCBus keeps using the hardcoded constants. When a TOML is
