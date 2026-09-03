@@ -99,10 +99,12 @@ struct Source {
 
 // Default ordered source chain. Ordering == priority: index 0 is tried first.
 //
-// Current policy: KoriaPolis first (it publishes the historical reference
-// layout), OpenSteamTool second — so if KoriaPolis has not yet published the
-// pattern for the current Steam build, the downloader automatically falls back
-// to OpenSteamTool.
+// Current policy: the project's own release repo (michelegoku3/MigoReleases)
+// first — the primary author publishes there before anyone else, so when it
+// carries the current build it should win; then KoriaPolis (historical
+// reference layout), then OpenSteamTool — so if MigoReleases has not yet
+// published the pattern for the current Steam build, the downloader
+// automatically falls back to KoriaPolis and then OpenSteamTool.
 const std::vector<Source>& DefaultSources();
 
 }  // namespace ac::downloader
