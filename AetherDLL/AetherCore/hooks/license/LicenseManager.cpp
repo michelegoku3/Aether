@@ -205,13 +205,26 @@ namespace ac::hooks::LicenseManager {
         std::atomic<bool> s_retryStop{false};
         std::atomic<bool> s_retryStarted{false};
 
+        // Marks the startup-retry idle so a later LicenseManager::Init (e.g.
+        // re-run of the hook batch after late pattern arrival) can start a
+        // fresh retry with a new full budget.
+        void MarkRetryIdle() {
+            s_retryStarted.store(false, std::memory_order_relaxed);
+        }
+
         void StartupRetryThread() {
             // The budget is time-based, not attempt-based: it must expire even
             // when package 0 never becomes ready (e.g. Steam never loads it),
             // otherwise the thread would spin forever waiting.
             for (int attempts = 0; attempts < constants::kPackageRetryMaxAttempts; ++attempts) {
-                if (s_retryStop.load(std::memory_order_relaxed)) return;
-                if (g_state.package0Seeded.load(std::memory_order_relaxed)) return;
+                if (s_retryStop.load(std::memory_order_relaxed)) {
+                    MarkRetryIdle();
+                    return;
+                }
+                if (g_state.package0Seeded.load(std::memory_order_relaxed)) {
+                    MarkRetryIdle();
+                    return;
+                }
 
                 // If the one-shot LoadPackage(package 0) was missed entirely
                 // (late hook installation, e.g. pattern downloads on a fresh
@@ -234,6 +247,7 @@ namespace ac::hooks::LicenseManager {
                     if (g_state.package0Seeded.load(std::memory_order_relaxed)) {
                         AC_LOG_INFO(kModule, "Package 0 seeded after %d retry attempt(s).",
                                     attempts + 1);
+                        MarkRetryIdle();
                         return;
                     }
                 } else if (attempts == 0 || attempts % 30 == 0) {
@@ -251,6 +265,7 @@ namespace ac::hooks::LicenseManager {
             AC_LOG_WARN(kModule, "Package 0 startup retry gave up after %d attempt(s); "
                                  "a later MarkLicenseAsChanged/login will still top up.",
                         constants::kPackageRetryMaxAttempts);
+            MarkRetryIdle();
         }
 
         void StartStartupRetry() {

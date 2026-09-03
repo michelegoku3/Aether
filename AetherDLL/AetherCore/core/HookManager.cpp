@@ -13,10 +13,30 @@ constexpr const char* kModule = "HookManager";
 }
 
 void HookManager::RegisterHook(const std::string& name, void* target, void** original, void* detour) {
+    // Idempotent registration: the hook batch can be re-run in-session when a
+    // pattern table arrives late (late-pattern retry). A hook that is already
+    // queued under the same name must not be queued twice (its target/detour
+    // never change for a given feature module).
+    for (const HookInfo& h : hooks_) {
+        if (h.name == name) return;
+    }
     hooks_.push_back(HookInfo{name, target, original, detour, false});
+    // The name may have been reported missed by an earlier attempt (pattern
+    // unavailable then); the pattern resolves now, so clear the miss.
+    for (auto it = missed_.begin(); it != missed_.end(); ++it) {
+        if (*it == name) {
+            missed_.erase(it);
+            break;
+        }
+    }
 }
 
 void HookManager::RecordMissed(const std::string& name) {
+    // Report each name once per session; re-runs of a registration batch must
+    // not grow the missed list with duplicates.
+    for (const std::string& m : missed_) {
+        if (m == name) return;
+    }
     AC_LOG_WARN(kModule, "Hook '%s' missed: pattern not resolved.", name.c_str());
     diag::Record("hook_miss", name);
     missed_.push_back(name);

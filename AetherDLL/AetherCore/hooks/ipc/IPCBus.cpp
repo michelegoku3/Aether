@@ -196,6 +196,12 @@ void RegisterIpcBus(HMODULE diversion) {
         AC_LOG_ERROR(kModule, "Diversion module not loaded.");
         return;
     }
+    // Idempotent re-run (late-pattern retry re-runs the whole client batch):
+    // an armed bus must not re-register its command handler tables.
+    if (o_GetPipeClient) {
+        AC_LOG_DEBUG(kModule, "IPC bus already armed; skipping re-registration.");
+        return;
+    }
     AC_LOG_INFO(kModule, "Registering IPC bus.");
 
     if (void* addr = pattern::ResolveAddress("GetPipeClient", "steamclient", diversion)) {

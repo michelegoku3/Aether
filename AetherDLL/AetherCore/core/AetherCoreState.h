@@ -242,7 +242,9 @@ struct AetherCoreState {
     std::string steamuiSha;
     bool steamclientTomlFound = false;
     bool steamuiTomlFound = false;
-    std::string steamclientPatternSource;  // cache | download | missing | invalid
+    std::string steamclientPatternSource;  // "<src>:<mirror>" (fresh fetch) |
+                                           // "<src>:<mirror> (cache)" (provenance
+                                           // sidecar) | cache | missing | invalid
     std::string steamuiPatternSource;
 
     // ---- Loaded modules ---------------------------------------------------

@@ -32,6 +32,14 @@ inline constexpr int kSteamUiDeferredTimeoutMs = 30000;
 inline constexpr int kPackageRetryIntervalMs = 1000;
 inline constexpr int kPackageRetryMaxAttempts = 60;  // ~60 s budget
 
+// Late pattern availability: cadence and budget for re-probing the pattern
+// sources when a module table was missing at init (patterns not published
+// yet on a fresh Steam build, or offline start). The moment a table appears,
+// the previously-missed hooks are registered+installed in-session (no Steam
+// restart) and the package-0 startup retry is re-armed.
+inline constexpr int kPatternLateRetryIntervalMs = 10000;
+inline constexpr int kPatternLateRetryMaxAttempts = 60;  // ~10 min budget
+
 // Ownership unlock summary: debounce before emitting the per-file
 // "Unlocked all / Not unlocked" summary after a burst of CheckAppOwnership
 // calls (login, hot-reload, game launch). Keeps the log quiet while still
