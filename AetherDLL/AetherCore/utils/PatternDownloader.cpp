@@ -29,9 +29,10 @@ struct FetchResult {
 };
 
 // Performs a single GET through RuntimeHttp's shared URL parser/timeouts.
-FetchResult Fetch(const std::string& url) {
+// timeoutSec caps this attempt (short values for boot-time provenance probes).
+FetchResult Fetch(const std::string& url, int timeoutSec) {
     FetchResult result;
-    http::Response resp = http::GetUnchecked(url, 12);
+    http::Response resp = http::GetUnchecked(url, timeoutSec);
     if (resp.networkError) {
         AC_LOG_WARN(kModule, "GET failed (network) for %s.", url.c_str());
         return result;  // transient: a mirror over another transport may work
@@ -140,9 +141,9 @@ std::vector<Level> BuildPlan(Kind kind, const std::string& sha) {
 //   * 404            -> the source does not have the file: stop immediately
 //                        (waiting on the CDN mirror only burns time).
 // Returns the winning label (empty = level failed) and fills `outBody`.
-std::string TryLevel(const Level& level, std::string& outBody) {
+std::string TryLevel(const Level& level, std::string& outBody, int timeoutSec) {
     for (const Candidate& ep : level.endpoints) {
-        FetchResult res = Fetch(ep.url);
+        FetchResult res = Fetch(ep.url, timeoutSec);
         if (res.ok) {
             // The successful save is logged once by the caller (Download).
             outBody = std::move(res.body);
@@ -163,7 +164,7 @@ std::string TryLevel(const Level& level, std::string& outBody) {
 }  // namespace
 
 bool Download(Kind kind, const std::string& sha, const std::string& outPath,
-              std::string* outSource) {
+              std::string* outSource, int timeoutSec) {
     AC_LOG_INFO(kModule, "Resolving '%s/%s'.", KindName(kind), sha.c_str());
 
     const std::vector<Level> plan = BuildPlan(kind, sha);
@@ -174,7 +175,7 @@ bool Download(Kind kind, const std::string& sha, const std::string& outPath,
 
     for (const Level& level : plan) {
         std::string body;
-        const std::string label = TryLevel(level, body);
+        const std::string label = TryLevel(level, body, timeoutSec);
         if (label.empty()) {
             AC_LOG_INFO(kModule, "Source level could not serve '%s/%s'; trying next source.",
                         KindName(kind), sha.c_str());
@@ -194,8 +195,8 @@ bool Download(Kind kind, const std::string& sha, const std::string& outPath,
 }
 
 bool Download(std::string_view kindName, const std::string& sha, const std::string& outPath,
-              std::string* outSource) {
-    return Download(KindFromName(kindName), sha, outPath, outSource);
+              std::string* outSource, int timeoutSec) {
+    return Download(KindFromName(kindName), sha, outPath, outSource, timeoutSec);
 }
 
 }  // namespace ac::downloader

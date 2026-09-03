@@ -184,6 +184,13 @@ namespace {
         //                + lua data (maps populated).
         ac::hooks::InstallAllHooks();
 
+        // 9b. Late-pattern retry: if a module pattern table was unavailable at
+        //     init (patterns not published yet on a fresh Steam build, offline
+        //     start, ...), keep re-probing the sources in the background and,
+        //     when a table appears, install the previously-missed hooks
+        //     in-session — no Steam restart needed.
+        ac::hooks::StartPatternLateRetry();
+
         // 10. Achievement safety net: snapshot di TUTTI i .bin stats degli app
         //     gestiti (async, una volta per processo). Va il prima possibile:
         //     il login-reconcile del client può scartare i cambi pendenti
@@ -217,6 +224,9 @@ namespace {
 
         ac::dirwatch::Stop();
         ac::pipewatch::Reset();
+        // Stop the late-pattern retry before the hook/license subsystems go
+        // down, so it can never re-arm them mid-shutdown.
+        ac::hooks::StopPatternLateRetry();
         ac::hooks::LicenseManager::Shutdown();
         ac::hooks::ShutdownOwnershipHooks();
         ac::hooks::ShutdownLicenseHooks();

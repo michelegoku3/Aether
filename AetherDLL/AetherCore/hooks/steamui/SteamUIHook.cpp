@@ -3,6 +3,7 @@
 
 #include <atomic>
 #include <cstring>
+#include <mutex>
 #include <thread>
 
 #include "core/AetherCoreState.h"
@@ -18,6 +19,7 @@
 #include "hooks/steamclient/OwnershipHooks.h"
 #include "hooks/wire/PacketRouter.h"
 #include "utils/GameNameResolver.h"
+#include "utils/IpcSpec.h"
 #include "utils/PatternEngine.h"
 #include "hooks/ipc/SteamCapture.h"
 #include "diagnostics/StatusWriter.h"
@@ -41,6 +43,12 @@ std::thread s_retryThread;
 std::atomic<bool> s_retryStop{false};
 std::atomic<bool> s_retryStarted{false};
 
+// Serialises the hook batches. The batch can be re-run in-session by the
+// late-pattern retry thread while the deferred steamui retry thread may also
+// call InstallSteamUiRedirect — HookManager is not internally synchronised,
+// so both paths take this lock.
+std::mutex s_batchMutex;
+
 HMODULE h_LoadModuleWithPath(const char* path, bool flags) {
     if (path && std::strstr(path, "steamclient64.dll")) {
         AC_LOG_INFO_ONCE(kModule, "Redirecting steamclient64.dll load to acoverlay.dll.");
@@ -53,6 +61,7 @@ HMODULE h_LoadModuleWithPath(const char* path, bool flags) {
 // redirect was registered+enabled (or already present); false when steamui is
 // not available yet (caller decides whether to retry).
 bool InstallSteamUiRedirect() {
+    std::lock_guard<std::mutex> batchLock(s_batchMutex);
     HMODULE steamui = GetModuleHandleA("steamui.dll");
     if (!steamui) return false;
     g_state.steamuiModule = steamui;
@@ -110,8 +119,11 @@ void StopSteamUiRetry() {
 }
 
 // Registers and enables every steamclient (and kernel32) hook in one atomic
-// batch. Does NOT depend on steamui.dll.
+// batch. Does NOT depend on steamui.dll. Idempotent when re-run: HookManager
+// de-duplicates registrations by name, so a second run only queues the hooks
+// that were previously missed (e.g. pattern table arrived late).
 void InstallSteamClientBatch() {
+    std::lock_guard<std::mutex> batchLock(s_batchMutex);
     // kernel32.dll hooks (pre-entry payload injection): install before any game
     // can be launched so the first SpawnProcess → CreateProcessW chain is covered.
     RegisterCreateProcessHooks();
@@ -169,6 +181,92 @@ void InstallAllHooks() {
 
 void ShutdownSteamUiRetry() {
     StopSteamUiRetry();
+}
+
+// ---------------------------------------------------------------------------
+// Late pattern availability retry
+//
+// If a module's pattern table was missing at init (fresh Steam build whose
+// patterns were not published yet, or a slow/offline start), the affected
+// hooks stay skipped for the whole session and a restart is needed once the
+// patterns appear. This background thread re-probes the sources for a bounded
+// window; the moment a table appears it re-runs the (idempotent) hook batch,
+// so the missing hooks install IN-SESSION, and the LicenseManager::Init that
+// runs inside the batch re-arms the package-0 startup retry so ownership
+// top-up can still happen after the one-shot LoadPackage window was missed.
+// ---------------------------------------------------------------------------
+namespace {
+
+std::thread s_patternRetryThread;
+std::atomic<bool> s_patternRetryStop{false};
+std::atomic<bool> s_patternRetryStarted{false};
+
+bool PatternsFullyAvailable() {
+    return !g_state.patterns.steamclient.empty() &&
+           !g_state.patterns.steamui.empty() &&
+           g_state.ipcSpec.loaded;
+}
+
+void PatternLateRetryThread() {
+    for (int attempt = 1; attempt <= constants::kPatternLateRetryMaxAttempts; ++attempt) {
+        if (s_patternRetryStop.load(std::memory_order_relaxed)) return;
+        if (PatternsFullyAvailable()) return;
+
+        bool anyTableAppeared = false;
+        if (!g_state.ipcSpec.loaded) {
+            ipcspec::Init();  // no-op once loaded; loads cache or downloads
+        }
+        anyTableAppeared |= pattern::ReloadModuleIfMissing("steamclient");
+        anyTableAppeared |= pattern::ReloadModuleIfMissing("steamui");
+
+        if (anyTableAppeared) {
+            AC_LOG_INFO(kModule,
+                        "Late pattern(s) became available; re-running hook batch.");
+            InstallAllHooks();  // idempotent: only the previously-missed hooks
+                                // register; LicenseManager::Init re-arms A2.
+            status::Write();
+        } else if (attempt == 1 || attempt % 6 == 0) {
+            AC_LOG_INFO(kModule, "Late pattern retry #%d: steamclient=%d "
+                                 "steamui=%d ipc=%d.",
+                        attempt, static_cast<int>(!g_state.patterns.steamclient.empty()),
+                        static_cast<int>(!g_state.patterns.steamui.empty()),
+                        static_cast<int>(g_state.ipcSpec.loaded));
+        }
+        if (PatternsFullyAvailable()) {
+            AC_LOG_INFO(kModule, "All pattern tables available after retry; "
+                                 "in-session hooks installed.");
+            return;
+        }
+
+        // Sleep the interval in small steps so shutdown stays snappy.
+        for (int elapsed = 0; elapsed < constants::kPatternLateRetryIntervalMs &&
+                            !s_patternRetryStop.load(std::memory_order_relaxed);
+             elapsed += constants::kSteamUiPollIntervalMs) {
+            Sleep(constants::kSteamUiPollIntervalMs);
+        }
+    }
+    AC_LOG_WARN(kModule, "Late pattern retry gave up after %d attempt(s); "
+                         "restart Steam once the patterns are published.",
+                constants::kPatternLateRetryMaxAttempts);
+}
+
+}  // namespace
+
+void StartPatternLateRetry() {
+    if (PatternsFullyAvailable()) return;  // nothing to retry
+    bool expected = false;
+    if (!s_patternRetryStarted.compare_exchange_strong(expected, true)) return;
+    s_patternRetryStop.store(false, std::memory_order_relaxed);
+    AC_LOG_INFO(kModule, "Starting late-pattern retry (some pattern tables "
+                         "were unavailable at init; %d attempts, %d ms apart).",
+                constants::kPatternLateRetryMaxAttempts,
+                constants::kPatternLateRetryIntervalMs);
+    s_patternRetryThread = std::thread(PatternLateRetryThread);
+}
+
+void StopPatternLateRetry() {
+    s_patternRetryStop.store(true, std::memory_order_relaxed);
+    if (s_patternRetryThread.joinable()) s_patternRetryThread.join();
 }
 
 }  // namespace ac::hooks
