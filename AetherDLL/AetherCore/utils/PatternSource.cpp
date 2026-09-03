@@ -54,7 +54,19 @@ std::vector<MirrorUrl> Source::UrlsFor(Kind kind, const std::string& sha) const 
 const std::vector<Source>& DefaultSources() {
     // Priority is defined by array order (index 0 = tried first). Keep the
     // comment above each entry in sync with the layout it publishes.
-    static const std::array<Source, 2> kSources = {{
+    // Index 0 is the user's own release repo (MigoReleases): the primary
+    // author publishes there first, so it must be consulted before the
+    // historical upstreams; koriapolis/opensteamtool remain as fallbacks.
+    static const std::array<Source, 3> kSources = {{
+        {
+            /* id        */ "migo",
+            /* display   */ "michelegoku3 / MigoReleases",
+            /* owner     */ "michelegoku3",
+            /* repo      */ "MigoReleases",
+            /* steamClient    */ {"pattern", "steamclient"},
+            /* steamUi        */ {"pattern", "steamui"},
+            /* steamClientIpc */ {"pattern", "steamclientipc"},
+        },
         {
             /* id        */ "koriapolis",
             /* display   */ "KoriaPolis / Steam-Auto-PT",
