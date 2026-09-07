@@ -188,6 +188,7 @@ fn main() {
             commands::steam::set_presence_default_mode,
             commands::steam::get_ost_source_enabled,
             commands::steam::set_ost_source_enabled,
+            commands::steam::acknowledge_ost_warning,
             commands::aether_dll::get_installed_dll_version,
             commands::aether_dll::check_aether_dll_update,
             commands::aether_dll::install_aether_dll,

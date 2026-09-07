@@ -420,6 +420,16 @@ pub fn set_presence_default_mode(app: tauri::AppHandle, showonline: bool) -> Res
     })
 }
 
+/// Persist that the user has pressed "I understand" on the OST pattern-source
+/// warning, so the popup shows only on first enable.
+#[tauri::command]
+pub fn acknowledge_ost_warning(app: tauri::AppHandle) -> Result<(), String> {
+    let manager = crate::core::settings::SettingsManager::new(&app);
+    let mut settings = manager.load();
+    settings.ost_warning_acknowledged = true;
+    manager.save(&settings)
+}
+
 /// True when the OST pattern source (OpenSteam001/steam-monitor) is enabled
 /// via `[network] use_ost_source`. Missing key => false (opt-in OFF).
 #[tauri::command]
