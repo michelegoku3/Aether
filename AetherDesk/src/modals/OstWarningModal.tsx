@@ -22,14 +22,14 @@ export const OstWarningModal = ({ onConfirm, onCancel }: OstWarningModalProps) =
     containerClassName="uninstall-modal"
     bodyClassName="uninstall-modal-body"
   >
-    <p className="uninstall-modal-lead">
+    <p className="uninstall-modal-copy">
       Aether needs up-to-date patterns for every new Steam version. If Steam
       updates while updates are unlocked and no fresh patterns are available,
       games added with Aether will show Buy instead of Play or Install.
     </p>
     <p className="uninstall-modal-copy">
-      There are two pattern sources: the Aether developer feed (updated within
-      about 1 hour of a Steam update) and OST (usually available within
+      There are two pattern sources: Aether dev own (updated within 
+      1 hour of a Steam update) and OST (usually available within
       minutes). With OST enabled, OST patterns are used right after a Steam
       update, then replaced by the developer feed as soon as it is ready.
     </p>
