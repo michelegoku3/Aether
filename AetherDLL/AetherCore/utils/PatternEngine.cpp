@@ -139,6 +139,7 @@ namespace ac::pattern {
             if (!g_state.settings.patternMirror.empty()) return "mirror";
             const downloader::Kind kind = downloader::KindFromName(moduleName);
             for (const downloader::Source& src : downloader::DefaultSources()) {
+                if (downloader::IsOstSource(src) && !g_state.settings.patternUseOstSource) continue;
                 if (src.LocFor(kind) != nullptr) return std::string(src.id);
             }
             return {};

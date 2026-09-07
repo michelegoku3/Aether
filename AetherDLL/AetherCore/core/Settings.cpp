@@ -92,6 +92,9 @@ Settings Settings::Load(const std::string& configPath) {
     if (auto mirror = tbl["network"]["pattern_mirror"].value<std::string>()) {
         s.patternMirror = *mirror;
     }
+    if (auto useOst = tbl["network"]["use_ost_source"].value<bool>()) {
+        s.patternUseOstSource = *useOst;
+    }
 
     // [manifest_fetch]
     if (auto* mfetch = tbl["manifest_fetch"].as_table()) {
@@ -181,7 +184,7 @@ Settings Settings::Load(const std::string& configPath) {
 
     AC_LOG_INFO("Settings",
                 "Loaded %s (level=%s, keep_last_session=%d, lua extra paths: %zu, "
-                "mirror: %s, manifest urls: %zu, presence: default=%s show=%zu of=%zu excl=%zu).",
+                "mirror: %s, ost=%d, manifest urls: %zu, presence: default=%s show=%zu of=%zu excl=%zu).",
                 configPath.c_str(),
                 s.logLevel == LogLevel::Trace ? "trace"
                     : s.logLevel == LogLevel::Debug ? "debug"
@@ -191,6 +194,7 @@ Settings Settings::Load(const std::string& configPath) {
                 s.logKeepLastSession ? 1 : 0,
                 s.luaExtraPaths.size(),
                 s.patternMirror.empty() ? "default" : "custom",
+                s.patternUseOstSource ? 1 : 0,
                 s.manifestFetchUrls.size(),
                 s.presenceDefaultShowOnline ? "showonline" : "none",
                 s.presenceShowOnlineApps.size(),

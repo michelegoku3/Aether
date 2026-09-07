@@ -45,6 +45,9 @@ export const SettingsView = ({ hubcapUsage, onRefreshUsage, onRefreshCustomCss, 
   const [useAlternativeGameCards, setUseAlternativeGameCards] = useState(false);
   const [enableWebviewDevtools, setEnableWebviewDevtools] = useState(false);
   const [enableTestUpdates, setEnableTestUpdates] = useState(false);
+  // [network] use_ost_source in aethercore.toml: OST pattern source opt-in
+  // (default OFF), applies immediately like the presence default_mode toggle.
+  const [useOstSource, setUseOstSource] = useState(false);
   // [presence] default_mode in aethercore.toml (docs/05 §12): live nel file
   // della DLL, NON nelle Desk settings — si applica subito, senza Save.
   const [presenceDefaultShowOnline, setPresenceDefaultShowOnline] = useState(true);
@@ -149,6 +152,10 @@ export const SettingsView = ({ hubcapUsage, onRefreshUsage, onRefreshCustomCss, 
     invoke<boolean>('get_presence_default_mode')
       .then(setPresenceDefaultShowOnline)
       .catch((err) => console.warn('[settings] failed to load presence default mode:', err));
+    // OST pattern source opt-in lives in aethercore.toml too (default OFF).
+    invoke<boolean>('get_ost_source_enabled')
+      .then(setUseOstSource)
+      .catch((err) => console.warn('[settings] failed to load OST source state:', err));
     invoke<LuaToolsAuthStatus>('get_luatools_auth_status')
       .then(setLuaToolsAuth)
       .catch((err) => console.warn('[settings] failed to load LuaTools auth status:', err));
@@ -443,6 +450,33 @@ export const SettingsView = ({ hubcapUsage, onRefreshUsage, onRefreshCustomCss, 
                 type="checkbox"
                 checked={enableTestUpdates}
                 onChange={(e) => setEnableTestUpdates(e.target.checked)}
+              />
+              <span></span>
+            </label>
+          </div>
+
+          <div
+            className="settings-toggle-row"
+            title="Opt-in fallback to the OpenSteamTool pattern source (OpenSteam001/steam-monitor) for Steam build patterns. OFF by default: only MigoReleases and KoriaPolis are used. Applies immediately (no Save, no Steam restart); takes effect on the next pattern download."
+          >
+            <span className="settings-toggle-text">Use OST pattern source</span>
+            <label className="version-switch">
+              <input
+                type="checkbox"
+                checked={useOstSource}
+                onChange={async (e) => {
+                  const next = e.target.checked;
+                  const previous = !next;
+                  // Applica subito (il toggle scrive aethercore.toml, non le
+                  // Desk settings); rollback ottimistico in caso di errore.
+                  setUseOstSource(next);
+                  try {
+                    await invoke('set_ost_source_enabled', { enabled: next });
+                  } catch (err: any) {
+                    setUseOstSource(previous);
+                    showStatus(`Failed to set OST pattern source: ${err}`, 'error');
+                  }
+                }}
               />
               <span></span>
             </label>

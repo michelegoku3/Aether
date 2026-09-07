@@ -105,6 +105,16 @@ struct Source {
 // reference layout), then OpenSteamTool — so if MigoReleases has not yet
 // published the pattern for the current Steam build, the downloader
 // automatically falls back to KoriaPolis and then OpenSteamTool.
+//
+// OpenSteamTool is OPT-IN (Settings::patternUseOstSource, [network]
+// use_ost_source, default false): callers must skip it unless the user
+// enabled it in AetherDesk settings.
+constexpr const char* kOstSourceId = "opensteamtool";
+
+inline bool IsOstSource(const Source& src) {
+    return src.id != nullptr && std::string_view(src.id) == kOstSourceId;
+}
+
 const std::vector<Source>& DefaultSources();
 
 }  // namespace ac::downloader
