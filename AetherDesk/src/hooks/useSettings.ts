@@ -12,6 +12,8 @@ export interface AppSettings {
   show_store_delisted?: boolean;
   /** Owned by the antivirus-exclusion flow; must be preserved verbatim on save. */
   antivirus_exclusion_done?: boolean;
+  /** Owned by the OST first-enable warning flow; must be preserved verbatim on save. */
+  ost_warning_acknowledged?: boolean;
   /** When true, AetherData/config/custom.css is injected as <style id="aether-custom-css">. Default false. */
   custom_css_enabled?: boolean;
   /** Ryuu API key (generator.ryuu.lol, 50/day, no verification endpoint) */

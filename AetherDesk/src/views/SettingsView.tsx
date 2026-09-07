@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { ClickablePath } from '../ui/ClickablePath';
 import { EyeIcon, EyeOffIcon } from '../ui/icons';
+import { OstWarningModal } from '../modals/OstWarningModal';
 
 interface SettingsViewProps {
   hubcapUsage: { usage: number; limit: number; hasKey: boolean };
@@ -48,6 +49,10 @@ export const SettingsView = ({ hubcapUsage, onRefreshUsage, onRefreshCustomCss, 
   // [network] use_ost_source in aethercore.toml: OST pattern source opt-in
   // (default OFF), applies immediately like the presence default_mode toggle.
   const [useOstSource, setUseOstSource] = useState(false);
+  // First-enable warning: shown once when flipping the OST switch ON before
+  // the user has pressed "I understand". Persisted in settings.json.
+  const [ostWarningAcknowledged, setOstWarningAcknowledged] = useState(false);
+  const [showOstWarning, setShowOstWarning] = useState(false);
   // [presence] default_mode in aethercore.toml (docs/05 §12): live nel file
   // della DLL, NON nelle Desk settings — si applica subito, senza Save.
   const [presenceDefaultShowOnline, setPresenceDefaultShowOnline] = useState(true);
@@ -140,6 +145,7 @@ export const SettingsView = ({ hubcapUsage, onRefreshUsage, onRefreshCustomCss, 
           setCustomIconEnabled(Boolean(settings.custom_icon_enabled));
           setIconSelectedFile(settings.icon_selected_file || '');
           setRyuuKey(settings.ryuu_api_key || '');
+          setOstWarningAcknowledged(Boolean(settings.ost_warning_acknowledged));
           setStoreCurrency(['usd', 'jpy'].includes(settings.store_currency) ? settings.store_currency : 'eur');
         }
       } catch (err: any) {
@@ -393,6 +399,25 @@ export const SettingsView = ({ hubcapUsage, onRefreshUsage, onRefreshCustomCss, 
     }
   };
 
+  /** "I understand" on the OST first-enable warning: persist the ack, then
+   *  enable the source. The switch flips only on success, so any failure
+   *  leaves it OFF and the popup will reappear on the next attempt. */
+  const handleOstWarningConfirm = async () => {
+    try {
+      try { await invoke('acknowledge_ost_warning'); } catch {}
+      await invoke('set_ost_source_enabled', { enabled: true });
+      setOstWarningAcknowledged(true);
+      setUseOstSource(true);
+      setShowOstWarning(false);
+      // Keep rawSettings in sync so a later "Save Settings" (which spreads
+      // rawSettings via buildCurrentSettings) does not regress the ack.
+      setRawSettings((prev) => ({ ...prev, ost_warning_acknowledged: true }));
+    } catch (err: any) {
+      setShowOstWarning(false);
+      showStatus(`Failed to set OST pattern source: ${err}`, 'error');
+    }
+  };
+
   const appearancePickBtn = (label: string, onClick: () => void, disabled: boolean, busy: boolean) => (
     <button
       type="button"
@@ -466,6 +491,13 @@ export const SettingsView = ({ hubcapUsage, onRefreshUsage, onRefreshCustomCss, 
                 checked={useOstSource}
                 onChange={async (e) => {
                   const next = e.target.checked;
+                  // First enable requires the warning popup: opening it
+                  // changes nothing, so dismissing (X/ESC/overlay) leaves the
+                  // switch OFF by construction. Only "I understand" enables.
+                  if (next && !ostWarningAcknowledged) {
+                    setShowOstWarning(true);
+                    return;
+                  }
                   const previous = !next;
                   // Applica subito (il toggle scrive aethercore.toml, non le
                   // Desk settings); rollback ottimistico in caso di errore.
@@ -1055,7 +1087,10 @@ export const SettingsView = ({ hubcapUsage, onRefreshUsage, onRefreshCustomCss, 
                     // Library toolbar filter is owned by LibraryView; keep the
                     // user's current choice across a Settings reset.
                     library_install_filter: rawSettings.library_install_filter || 'all',
-                    antivirus_exclusion_done: rawSettings.antivirus_exclusion_done ?? false
+                    antivirus_exclusion_done: rawSettings.antivirus_exclusion_done ?? false,
+                    // First-enable warning ack is owned by the OST flow; keep
+                    // it across a Settings reset like the antivirus flag.
+                    ost_warning_acknowledged: rawSettings.ost_warning_acknowledged ?? false
                   }
                 });
                 // Official window + shell icon after custom icon is cleared.
@@ -1073,6 +1108,13 @@ export const SettingsView = ({ hubcapUsage, onRefreshUsage, onRefreshCustomCss, 
           </button>
         </div>
       </form>
+
+      {showOstWarning && (
+        <OstWarningModal
+          onConfirm={() => void handleOstWarningConfirm()}
+          onCancel={() => setShowOstWarning(false)}
+        />
+      )}
 
       {showLuaToolsLoginModal && (
         <div className="modal-overlay" onClick={closeLuaToolsLogin}>
