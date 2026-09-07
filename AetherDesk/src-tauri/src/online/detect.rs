@@ -24,6 +24,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 /// Nome file dell'early overlay proxy in base all'engine (x64 only).
+#[derive(Debug)]
 pub struct OverlayTarget {
     pub file_name: &'static str,
     pub path: PathBuf,

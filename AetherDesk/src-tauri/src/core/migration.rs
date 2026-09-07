@@ -364,11 +364,15 @@ pub fn ensure_aethercore_bridge(app: &tauri::AppHandle) {
     // defaults, so pre-rename installs migrate to the aetheronline naming.
     crate::core::presence_config::migrate_legacy_presence_keys(&toml_path);
     crate::core::presence_config::ensure_defaults(&toml_path);
+    // OST pattern source opt-in ([network] use_ost_source, default OFF):
+    // insert only when missing, never overriding an explicit user choice.
+    crate::core::ost_config::ensure_defaults(&toml_path);
     if !steam_path.trim().is_empty() {
         let legacy_toml = Path::new(&steam_path)
             .join("aethercore")
             .join("aethercore.toml");
         crate::core::presence_config::migrate_legacy_presence_keys(&legacy_toml);
         crate::core::presence_config::ensure_defaults(&legacy_toml);
+        crate::core::ost_config::ensure_defaults(&legacy_toml);
     }
 }
