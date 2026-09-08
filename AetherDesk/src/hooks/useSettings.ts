@@ -3,7 +3,6 @@ import { invoke } from '@tauri-apps/api/core';
 export interface AppSettings {
   hubcap_api_key: string;
   steam_path: string;
-  active_library: string;
   /** Defaults to false on the backend: DLC-like rows are hidden from store search. */
   show_store_dlcs?: boolean;
   /** Defaults to TRUE on the backend: NSFW rows stay visible with a pink border. */
@@ -55,4 +54,29 @@ export const requireSteamPath = async () => {
     throw new Error('Please specify the Steam path in Settings first.');
   }
   return settings.steam_path;
+};
+
+/** Backend answer for read-only Steam-path validation (`check_steam_path`). */
+export interface SteamPathCheck {
+  valid: boolean;
+  normalized: string;
+  error: string | null;
+}
+
+/** Validates a Steam path against the backend (single source of truth). */
+export const checkSteamPath = async (path: string): Promise<SteamPathCheck> => {
+  return invoke('check_steam_path', { path });
+};
+
+/** True when the stored Steam path is a valid installation. Backend/IPC
+ *  failures resolve to true: never nag about the Steam path when the check
+ *  itself could not run. */
+export const hasValidSteamPath = async (): Promise<boolean> => {
+  try {
+    const settings = await getSettings();
+    const check = await checkSteamPath(settings.steam_path || '');
+    return check.valid;
+  } catch {
+    return true;
+  }
 };

@@ -1,5 +1,6 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { invoke } from '@tauri-apps/api/core';
+import { getSettings, checkSteamPath, type SteamPathCheck } from '../hooks/useSettings';
 import { ClickablePath } from '../ui/ClickablePath';
 import { EyeIcon, EyeOffIcon } from '../ui/icons';
 import { OstWarningModal } from '../modals/OstWarningModal';
@@ -11,6 +12,8 @@ interface SettingsViewProps {
   onCustomCssChange: (enabled: boolean) => void;
   onPreviewPersonalWallpaper: (enabled: boolean, opacity: number) => void;
   onPreviewAlternativeCards: (opacity: number, fade: number) => void;
+  /** Called when a save is attempted without a valid Steam path (caller shows the warning modal). */
+  onMissingSteamPath: () => void;
 }
 
 interface LuaToolsAuthStatus {
@@ -31,13 +34,23 @@ interface AppearanceAssets {
   iconsDir: string;
 }
 
+// No 'valid' state: valid paths show nothing by design, only checking/invalid.
+type SteamCheckState = 'idle' | 'checking' | 'invalid';
+
+interface SteamCheckStatus {
+  state: SteamCheckState;
+  message: string;
+}
+
 const clamp0to100 = (value: number) => Math.max(0, Math.min(100, Number.isFinite(value) ? value : 0));
 
-export const SettingsView = ({ hubcapUsage, onRefreshUsage, onRefreshCustomCss, onCustomCssChange, onPreviewPersonalWallpaper, onPreviewAlternativeCards }: SettingsViewProps) => {
+export const SettingsView = ({ hubcapUsage, onRefreshUsage, onRefreshCustomCss, onCustomCssChange, onPreviewPersonalWallpaper, onPreviewAlternativeCards, onMissingSteamPath }: SettingsViewProps) => {
   const [apiKey, setApiKey] = useState('');
   const [showApiKey, setShowApiKey] = useState(false);
-  const [steamPath, setSteamPath] = useState('C:\\Program Files (x86)\\Steam');
-  const [activeLibrary, setActiveLibrary] = useState('');
+  const [steamPath, setSteamPath] = useState('');
+  /** Live validation status for the Steam path field (debounced backend check). */
+  const [steamCheck, setSteamCheck] = useState<SteamCheckStatus>({ state: 'idle', message: '' });
+  const steamCheckRequestId = useRef(0);
   const [showStoreDlcs, setShowStoreDlcs] = useState(false);
   const [showStoreNsfw, setShowStoreNsfw] = useState(true);
   const [showStoreDelisted, setShowStoreDelisted] = useState(true);
@@ -114,39 +127,47 @@ export const SettingsView = ({ hubcapUsage, onRefreshUsage, onRefreshCustomCss, 
     }
   };
 
-  // Load settings from the backend when the component mounts
+  /** Applies a settings object to every piece of React state. Single mapping
+   *  shared by initial load and Reset, so the two can never drift apart. */
+  const applySettingsToState = (settings: Record<string, any>) => {
+    setRawSettings(settings);
+    setApiKey(settings.hubcap_api_key || '');
+    setSteamPath(settings.steam_path || '');
+    setShowStoreDlcs(Boolean(settings.show_store_dlcs));
+    // These two default to enabled: only an explicit `false` turns them off.
+    setShowStoreNsfw(settings.show_store_nsfw !== false);
+    setShowStoreDelisted(settings.show_store_delisted !== false);
+    setDownloadGamesWithUpdatesOn(settings.download_games_with_updates_on !== false);
+    setShowStoreFrontGames(settings.show_store_front_games !== false);
+    setUseAlternativeGameCards(Boolean(settings.use_alternative_game_cards));
+    setEnableWebviewDevtools(Boolean(settings.enable_webview_devtools));
+    setEnableTestUpdates(Boolean(settings.enable_test_updates));
+    setCustomGameName(settings.custom_game_name || '');
+    setStoreFrontFilter(settings.store_front_filter || 'upcoming');
+    setCustomCssEnabled(Boolean(settings.custom_css_enabled));
+    setPersonalWallpaperEnabled(Boolean(settings.personal_wallpaper_enabled));
+    setPersonalWallpaperOpacity(clamp0to100(Number(settings.personal_wallpaper_opacity ?? 20)));
+    setAlternativeCardsOpacity(clamp0to100(Number(settings.alternative_cards_opacity ?? 100)));
+    setAlternativeCardsFade(clamp0to100(Number(settings.alternative_cards_fade ?? 50)));
+    setThemeSelectedFile(settings.theme_selected_file || '');
+    setWallpaperSelectedFile(settings.wallpaper_selected_file || '');
+    setCustomIconEnabled(Boolean(settings.custom_icon_enabled));
+    setIconSelectedFile(settings.icon_selected_file || '');
+    setRyuuKey(settings.ryuu_api_key || '');
+    setOstWarningAcknowledged(Boolean(settings.ost_warning_acknowledged));
+    setStoreCurrency(['usd', 'jpy'].includes(settings.store_currency) ? settings.store_currency : 'eur');
+  };
+
+  // Load settings from the backend when the component mounts.
+  // NOTE: the component stays mounted across tab switches (see MainContent),
+  // so this runs once: edits are preserved, and every save merges over a
+  // freshly loaded snapshot (see loadFreshBase) instead of stale state.
   useEffect(() => {
     const loadSettings = async () => {
       try {
         const settings: any = await invoke('get_settings');
         if (settings) {
-          setRawSettings(settings);
-          setApiKey(settings.hubcap_api_key || '');
-          setSteamPath(settings.steam_path || 'C:\\Program Files (x86)\\Steam');
-          setActiveLibrary(settings.active_library || '');
-          setShowStoreDlcs(Boolean(settings.show_store_dlcs));
-          // These two default to enabled: only an explicit `false` turns them off.
-          setShowStoreNsfw(settings.show_store_nsfw !== false);
-          setShowStoreDelisted(settings.show_store_delisted !== false);
-          setDownloadGamesWithUpdatesOn(settings.download_games_with_updates_on !== false);
-          setShowStoreFrontGames(settings.show_store_front_games !== false);
-          setUseAlternativeGameCards(Boolean(settings.use_alternative_game_cards));
-          setEnableWebviewDevtools(Boolean(settings.enable_webview_devtools));
-          setEnableTestUpdates(Boolean(settings.enable_test_updates));
-          setCustomGameName(settings.custom_game_name || '');
-          setStoreFrontFilter(settings.store_front_filter || 'upcoming');
-          setCustomCssEnabled(Boolean(settings.custom_css_enabled));
-          setPersonalWallpaperEnabled(Boolean(settings.personal_wallpaper_enabled));
-          setPersonalWallpaperOpacity(clamp0to100(Number(settings.personal_wallpaper_opacity ?? 20)));
-          setAlternativeCardsOpacity(clamp0to100(Number(settings.alternative_cards_opacity ?? 100)));
-          setAlternativeCardsFade(clamp0to100(Number(settings.alternative_cards_fade ?? 50)));
-          setThemeSelectedFile(settings.theme_selected_file || '');
-          setWallpaperSelectedFile(settings.wallpaper_selected_file || '');
-          setCustomIconEnabled(Boolean(settings.custom_icon_enabled));
-          setIconSelectedFile(settings.icon_selected_file || '');
-          setRyuuKey(settings.ryuu_api_key || '');
-          setOstWarningAcknowledged(Boolean(settings.ost_warning_acknowledged));
-          setStoreCurrency(['usd', 'jpy'].includes(settings.store_currency) ? settings.store_currency : 'eur');
+          applySettingsToState(settings);
         }
       } catch (err: any) {
         showStatus(`Error loading settings: ${err}`, 'error');
@@ -168,16 +189,25 @@ export const SettingsView = ({ hubcapUsage, onRefreshUsage, onRefreshCustomCss, 
     onRefreshUsage();
   }, []);
 
+  /** Fresh settings snapshot for saves: merging UI state over a fresh read
+   *  (instead of the mount-time `rawSettings`) guarantees concurrent saves
+   *  from other flows are never regressed. Falls back to `rawSettings`. */
+  const loadFreshBase = async (): Promise<Record<string, any>> => {
+    try {
+      return await getSettings();
+    } catch {
+      return rawSettings;
+    }
+  };
+
   /** Constructs the full current settings object from React state variables,
-   *  merging over `rawSettings`. Using this helper ensures that any save
-   *  operation (manual Save, theme selection, wallpaper selection) always
-   *  preserves every modified setting in React memory, never overwriting
-   *  `hubcap_api_key` or other fields with stale `rawSettings`. */
-  const buildCurrentSettings = (overrides: Record<string, any> = {}) => ({
-    ...rawSettings,
+   *  merging over a base snapshot. The base should be freshly loaded (see
+   *  `loadFreshBase`): merging over the mount-time `rawSettings` would
+   *  regress concurrent saves from other flows (e.g. the Library filter). */
+  const buildCurrentSettings = (overrides: Record<string, any> = {}, base: Record<string, any> = rawSettings) => ({
+    ...base,
     hubcap_api_key: apiKey,
     steam_path: steamPath,
-    active_library: activeLibrary,
     show_store_dlcs: showStoreDlcs,
     show_store_nsfw: showStoreNsfw,
     show_store_delisted: showStoreDelisted,
@@ -225,7 +255,17 @@ export const SettingsView = ({ hubcapUsage, onRefreshUsage, onRefreshCustomCss, 
       }
     }
 
-    // Persist settings
+    // A save without a valid Steam path is rejected by the backend anyway:
+    // pop the OST-style warning instead of failing into a toast. (If the
+    // check itself fails, fall through so the save surfaces the real error.)
+    try {
+      if (!(await checkSteamPath(steamPath)).valid) {
+        onMissingSteamPath();
+        return;
+      }
+    } catch { /* fall through to the save below */ }
+    // Persist settings, merging over a fresh snapshot (never over the
+    // possibly stale mount-time state).
     try {
       showStatus('Saving settings...', 'info');
       // If the user just enabled Custom CSS, ensure the file exists before
@@ -234,7 +274,8 @@ export const SettingsView = ({ hubcapUsage, onRefreshUsage, onRefreshCustomCss, 
         try { await invoke('ensure_custom_css'); } catch {}
       }
       const newSettings = buildCurrentSettings(
-        invalidApiKey ? { hubcap_api_key: '' } : {}
+        invalidApiKey ? { hubcap_api_key: '' } : {},
+        await loadFreshBase()
       );
       await invoke('save_settings', { settings: newSettings });
       setRawSettings(newSettings);
@@ -258,9 +299,86 @@ export const SettingsView = ({ hubcapUsage, onRefreshUsage, onRefreshCustomCss, 
    *  and updating rawSettings guarantees we never revert toggles or wipe out
    *  an un-saved API key. */
   const persistAppearanceSelection = async (patch: Record<string, any>) => {
-    const newSettings = buildCurrentSettings(patch);
+    const newSettings = buildCurrentSettings(patch, await loadFreshBase());
     await invoke('save_settings', { settings: newSettings });
     setRawSettings(newSettings);
+  };
+
+  /** Live Steam-path validation (debounced, read-only backend check). A
+   *  monotonic request id drops stale responses when the user keeps typing. */
+  useEffect(() => {
+    const requestId = ++steamCheckRequestId.current;
+    setSteamCheck({ state: 'checking', message: 'Checking Steam path...' });
+    const timer = window.setTimeout(() => {
+      void (async () => {
+        let next: SteamCheckStatus;
+        try {
+          const result: SteamPathCheck = await checkSteamPath(steamPath);
+          next = result.valid
+            ? { state: 'idle', message: '' }
+            : { state: 'invalid', message: result.error || 'Invalid Steam path.' };
+        } catch {
+          next = { state: 'invalid', message: 'Could not validate the Steam path.' };
+        }
+        if (requestId === steamCheckRequestId.current) {
+          setSteamCheck(next);
+        }
+      })();
+    }, 400);
+    return () => window.clearTimeout(timer);
+  }, [steamPath]);
+
+  /** Persists ONLY the Steam path over freshly loaded settings (every other
+   *  field preserved, other unsaved UI edits left dirty in the form). Used by
+   *  Browse / Auto Detect, which are explicit enough to save immediately --
+   *  but only after the backend confirms the path is a valid installation. */
+  const saveSteamPathNow = async (path: string, actionLabel: string) => {
+    setSteamPath(path);
+    let check: SteamPathCheck;
+    try {
+      check = await checkSteamPath(path);
+    } catch {
+      check = { valid: false, normalized: path, error: 'Could not validate the Steam path.' };
+    }
+    if (!check.valid) {
+      setSteamCheck({ state: 'invalid', message: check.error || 'Invalid Steam path.' });
+      showStatus(`${actionLabel}, but it is not a valid Steam installation: ${check.error || path}`, 'error');
+      return;
+    }
+    try {
+      const merged = { ...(await loadFreshBase()), steam_path: check.normalized };
+      await invoke('save_settings', { settings: merged });
+      setRawSettings(merged);
+      setSteamPath(check.normalized);
+      setSteamCheck({ state: 'idle', message: '' });
+      showStatus(`${actionLabel}: ${check.normalized}`, 'success');
+      onRefreshCustomCss();
+    } catch (err: any) {
+      showStatus(`Failed to save Steam path: ${err}`, 'error');
+    }
+  };
+
+  const handleBrowseSteamFolder = async () => {
+    try {
+      const picked: string | null = await invoke('pick_steam_folder');
+      if (!picked) return; // dialog cancelled
+      await saveSteamPathNow(picked, 'Steam folder selected');
+    } catch (err: any) {
+      showStatus(`Failed to open folder picker: ${err}`, 'error');
+    }
+  };
+
+  const handleDetectSteamPath = async () => {
+    try {
+      const detected: string | null = await invoke('detect_steam_path');
+      if (!detected) {
+        showStatus('No Steam installation detected. Use Browse to select it manually.', 'error');
+        return;
+      }
+      await saveSteamPathNow(detected, 'Steam auto-detected');
+    } catch (err: any) {
+      showStatus(`Steam auto-detection failed: ${err}`, 'error');
+    }
   };
 
   const handlePickTheme = async () => {
@@ -568,6 +686,33 @@ export const SettingsView = ({ hubcapUsage, onRefreshUsage, onRefreshCustomCss, 
               onChange={(e) => setSteamPath(e.target.value)}
               className="settings-input"
             />
+            {steamCheck.state !== 'idle' && (
+              <p className={`settings-desc steam-path-status steam-path-${steamCheck.state}`}>
+                {steamCheck.message}
+              </p>
+            )}
+          </div>
+          <div className="settings-toggle-row" title="Choose the Steam folder with the system file picker">
+            <span className="settings-toggle-text">Browse for the Steam folder</span>
+            <button
+              type="button"
+              className="settings-small-btn"
+              style={{ minWidth: '96px', height: '33px', padding: '0 12px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', boxSizing: 'border-box' }}
+              onClick={() => void handleBrowseSteamFolder()}
+            >
+              Browse
+            </button>
+          </div>
+          <div className="settings-toggle-row" title="Auto Detect the Steam installation (registry / running Steam)">
+            <span className="settings-toggle-text">Detect Steam automatically</span>
+            <button
+              type="button"
+              className="settings-small-btn"
+              style={{ minWidth: '96px', height: '33px', padding: '0 12px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', boxSizing: 'border-box' }}
+              onClick={() => void handleDetectSteamPath()}
+            >
+              Auto Detect
+            </button>
           </div>
 
           <div className="settings-toggle-row" title="Clear AetherDesk cache files such as store search, game info, Steam names and Denuvo cache. Settings and backups are preserved.">
@@ -1030,69 +1175,15 @@ export const SettingsView = ({ hubcapUsage, onRefreshUsage, onRefreshCustomCss, 
             className="save-settings-btn"
             style={{ flex: '1 1 0', maxWidth: '200px', backgroundColor: '#1c1c21', border: '1px solid var(--border-color)' }}
             onClick={async () => {
-              // Reset to defaults (matching Rust AppSettings::default)
-              setApiKey('');
-              setRyuuKey('');
-              setSteamPath('C:\\Program Files (x86)\\Steam');
-              setActiveLibrary('');
-              setShowStoreDlcs(false);
-              setShowStoreNsfw(true);
-              setShowStoreDelisted(true);
-              setDownloadGamesWithUpdatesOn(true);
-              setShowStoreFrontGames(true);
-              setUseAlternativeGameCards(false);
-              setEnableWebviewDevtools(false);
-              setEnableTestUpdates(false);
-              setStoreFrontFilter('upcoming');
-              setCustomCssEnabled(false);
-              setPersonalWallpaperEnabled(false);
-              setPersonalWallpaperOpacity(20);
-              setAlternativeCardsOpacity(100);
-              setAlternativeCardsFade(50);
-              setThemeSelectedFile('');
-              setWallpaperSelectedFile('');
-              setCustomIconEnabled(false);
-              setIconSelectedFile('');
+              // Reset to backend defaults (single source of truth, including a
+              // freshly detected Steam path). The backend preserves the Library
+              // filter, antivirus flag and OST ack; the UI re-renders from the
+              // returned object via the same mapping as initial load.
               onPreviewPersonalWallpaper(false, 20);
               onPreviewAlternativeCards(100, 50);
-              setStoreCurrency('eur');
               try {
-                await invoke('save_settings', {
-                  settings: {
-                    ...rawSettings,
-                    hubcap_api_key: '',
-                    ryuu_api_key: '',
-                    steam_path: 'C:\\Program Files (x86)\\Steam',
-                    active_library: '',
-                    show_store_dlcs: false,
-                    show_store_nsfw: true,
-                    show_store_delisted: true,
-                    download_games_with_updates_on: true,
-                    show_store_front_games: true,
-                    use_alternative_game_cards: false,
-                    enable_webview_devtools: false,
-                    enable_test_updates: false,
-                    custom_game_name: '',
-                    store_front_filter: 'upcoming',
-                    custom_css_enabled: false,
-                    personal_wallpaper_enabled: false,
-                    personal_wallpaper_opacity: 20,
-                    wallpaper_selected_file: '',
-                    theme_selected_file: '',
-                    custom_icon_enabled: false,
-                    icon_selected_file: '',
-                    alternative_cards_opacity: 100,
-                    alternative_cards_fade: 50,
-                    store_currency: 'eur',
-                    // Library toolbar filter is owned by LibraryView; keep the
-                    // user's current choice across a Settings reset.
-                    library_install_filter: rawSettings.library_install_filter || 'all',
-                    antivirus_exclusion_done: rawSettings.antivirus_exclusion_done ?? false,
-                    // First-enable warning ack is owned by the OST flow; keep
-                    // it across a Settings reset like the antivirus flag.
-                    ost_warning_acknowledged: rawSettings.ost_warning_acknowledged ?? false
-                  }
-                });
+                const defaults: Record<string, any> = await invoke('reset_settings_to_defaults');
+                applySettingsToState(defaults);
                 // Official window + shell icon after custom icon is cleared.
                 try { await invoke('apply_window_icon'); } catch {}
                 showStatus('Settings reset to defaults!', 'success');

@@ -19,16 +19,20 @@ pub async fn get_installed_library_games(
     app: tauri::AppHandle,
 ) -> Result<Vec<InstalledSteamGame>, String> {
     let settings = SettingsManager::new(&app).load();
-    if settings.steam_path.trim().is_empty() {
-        return Ok(Vec::new());
-    }
+    // Unconfigured Steam shows an empty Library; a *misconfigured* one is a
+    // real error so the UI shows "path is wrong" instead of "0 games found".
+    let steam_root = match crate::steam::resolve::resolve_steam_path(&settings.steam_path) {
+        Ok(root) => root,
+        Err(crate::steam::resolve::SteamPathError::Empty) => return Ok(Vec::new()),
+        Err(error) => return Err(error.message(&settings.steam_path)),
+    };
 
-    crate::desk_log_info!("library", "Scanning Steam library for Lua games (steam_path='{}')", settings.steam_path);
+    crate::desk_log_info!("library", "Scanning Steam library for Lua games (steam_path='{}')", steam_root.display());
     let store_currency = settings.store_currency.clone();
     // La scansione (appmanifest + stplug-in) è I/O sincrono: fuori dal
     // runtime tokio, altrimenti ogni rescan (anche quelli del watcher)
     // bloccherebbe i task async dell'app.
-    let scanner = SteamLibraryScanner::new(settings.steam_path, Some(settings.active_library));
+    let scanner = SteamLibraryScanner::new(steam_root);
     let mut games = tauri::async_runtime::spawn_blocking(move || scanner.scan_installed_games())
         .await
         .map_err(|e| format!("Library scan task failed: {e}"))?;
@@ -114,11 +118,18 @@ pub async fn get_installed_library_games(
 #[tauri::command]
 pub async fn warm_library_game_cache(app: tauri::AppHandle) -> Result<usize, String> {
     let settings = SettingsManager::new(&app).load();
-    if settings.steam_path.trim().is_empty() {
-        return Ok(0);
-    }
+    // Fire-and-forget background warm-up: never fail, but log a misconfigured
+    // path instead of silently warming nothing.
+    let steam_root = match crate::steam::resolve::resolve_steam_path(&settings.steam_path) {
+        Ok(root) => root,
+        Err(crate::steam::resolve::SteamPathError::Empty) => return Ok(0),
+        Err(error) => {
+            crate::desk_log_warn!("library", "Cache warm-up skipped: {}", error.message(&settings.steam_path));
+            return Ok(0);
+        }
+    };
 
-    let scanner = SteamLibraryScanner::new(settings.steam_path, Some(settings.active_library));
+    let scanner = SteamLibraryScanner::new(steam_root);
     let games = scanner.scan_installed_games();
     let app_ids: Vec<u32> = games.iter().map(|game| game.id).collect();
 
@@ -248,8 +259,9 @@ pub fn remove_lua_game_from_library(
     validate_steam_path(&steam_path)?;
     crate::desk_log_info!("library", "Removing Lua game {} from library (steam_path='{}')", crate::core::logger::format_appid(app_id), steam_path);
 
-    let settings = SettingsManager::new(&app).load();
-    let scanner = SteamLibraryScanner::new(steam_path.clone(), Some(settings.active_library));
+    // `validate_steam_path` above already strict-validated `steam_path`; the
+    // scanner additionally normalizes, so the raw value is safe to pass.
+    let scanner = SteamLibraryScanner::new(steam_path.clone());
     if scanner.is_app_installed(app_id) {
         crate::desk_log_warn!("library", "Cannot remove {}: game is currently installed in Steam", crate::core::logger::format_appid(app_id));
         return Err("This game is installed in Steam. Remove is allowed only for Lua-only games that are not installed.".to_string());

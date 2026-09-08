@@ -512,10 +512,9 @@ fn install_specific_package(
 }
 
 fn validate_steam_download_path(steam_path: &str) -> Result<(), String> {
-    if steam_path.trim().is_empty() {
-        return Err("Steam installation path is required".to_string());
-    }
-    Ok(())
+    // Full validation (exists + is a dir + contains steam.exe): a typo'd path
+    // must fail here, before any provider download or Steam-side write.
+    crate::util::validation::validate_steam_path(steam_path)
 }
 
 fn validate_download_inputs(
@@ -528,8 +527,7 @@ fn validate_download_inputs(
         crate::desk_log_error!("store", "Download validation failed: {}", err);
         return Err(err);
     }
-    if steam_path.trim().is_empty() {
-        let err = "Steam installation path is required".to_string();
+    if let Err(err) = crate::util::validation::validate_steam_path(steam_path) {
         crate::desk_log_error!("store", "Download validation failed: {}", err);
         return Err(err);
     }

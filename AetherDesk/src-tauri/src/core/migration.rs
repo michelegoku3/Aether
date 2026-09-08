@@ -250,6 +250,10 @@ pub fn run_startup_migrations(app: &tauri::AppHandle) {
     migrate_legacy_settings_if_needed(&config_dir, Some(&roaming_config));
     remove_obsolete_component_version_dirs(app);
     ensure_appearance_dirs();
+    // Adopt an auto-detected Steam installation when the stored value was
+    // never configured (empty or stale legacy default). Runs before the
+    // bridge below so the pointer targets the effective installation.
+    adopt_detected_steam_path_if_unconfigured(app);
     ensure_aethercore_bridge(app);
     let steam_path = crate::core::settings::SettingsManager::new(app).load().steam_path;
     match migrate_legacy_lua_backups(Path::new(&steam_path)) {
@@ -322,31 +326,132 @@ pub fn ensure_start_menu_shortcut() {
 #[cfg(not(target_os = "windows"))]
 pub fn ensure_start_menu_shortcut() {}
 
-/// Ensures that `AetherData/config/aethercore.toml` exists and writes a locator
-/// pointer file `<Steam>/aethercore/desk_path.cfg` containing `<AetherData>`'s path
-/// so AetherDLL can discover configuration and logs cleanly.
-pub fn ensure_aethercore_bridge(app: &tauri::AppHandle) {
+/// Startup self-heal for the Steam installation path (idempotent, best-effort).
+///
+/// * Stored path valid → log it as effective and do nothing.
+/// * Stored path empty or a stale never-configured legacy default → adopt the
+///   auto-detected installation (when one exists) and persist it.
+/// * Stored path is an explicit custom value that is currently unreachable
+///   (unplugged drive, …) → respect it untouched; the Settings UI surfaces the
+///   problem instead of silently overriding the user's choice.
+pub fn adopt_detected_steam_path_if_unconfigured(app: &tauri::AppHandle) {
+    use crate::steam::resolve as steam_resolve;
+
+    let manager = crate::core::settings::SettingsManager::new(app);
+    let mut settings = manager.load();
+    let current = steam_resolve::normalize_steam_path(&settings.steam_path);
+
+    if let Ok(root) = steam_resolve::resolve_steam_path(&current) {
+        crate::desk_log_info!(
+            "migration",
+            "Effective Steam path: {} (source=settings)",
+            root.display()
+        );
+        return;
+    }
+
+    let never_configured =
+        current.is_empty() || steam_resolve::is_legacy_default_path(&current);
+    if !never_configured {
+        crate::desk_log_warn!(
+            "migration",
+            "Configured Steam path '{}' is currently unreachable; keeping it untouched (check the drive or update Settings)",
+            settings.steam_path
+        );
+        return;
+    }
+
+    match steam_resolve::detect_steam_installation() {
+        Some((path, source)) => {
+            crate::desk_log_info!(
+                "migration",
+                "Adopting auto-detected Steam path: {} (source={})",
+                path.display(),
+                source.as_log_label()
+            );
+            settings.steam_path = path.display().to_string();
+            if let Err(error) = manager.save(&settings) {
+                crate::desk_log_warn!("migration", "Could not persist adopted Steam path: {}", error);
+            }
+        }
+        None => {
+            crate::desk_log_warn!(
+                "migration",
+                "No Steam installation detected and no valid path configured; set it in Settings"
+            );
+        }
+    }
+}
+
+/// Writes the locator pointer `<Steam>/aethercore/desk_path.cfg` (containing
+/// `<AetherData>`'s path) so AetherDLL can discover configuration and logs,
+/// migrating a legacy Steam-side `aethercore.toml` when needed.
+///
+/// Best-effort and idempotent. Unlike the historical behavior, this validates
+/// the path first: an unconfigured/invalid path logs a warning and writes
+/// nothing, instead of creating phantom `aethercore` folders at wrong
+/// locations. Shared by startup migrations and the settings-save flow (DRY).
+pub fn ensure_steam_bridge_for_path(steam_path: &str) {
+    let root = match crate::steam::resolve::resolve_steam_path(steam_path) {
+        Ok(root) => root,
+        Err(error) => {
+            crate::desk_log_warn!(
+                "migration",
+                "Skipping AetherDLL bridge: {}",
+                error.message(steam_path)
+            );
+            return;
+        }
+    };
+
     let data_root = crate::core::paths::LocalAppPaths::data_root();
+    let config_dir = crate::core::paths::LocalAppPaths::config_dir();
+    let toml_path = config_dir.join("aethercore.toml");
+    if let Err(error) = fs::create_dir_all(&config_dir) {
+        crate::desk_log_warn!("migration", "Could not create config dir: {}", error);
+        return;
+    }
+
+    let steam_aethercore_dir = root.join("aethercore");
+    if let Err(error) = fs::create_dir_all(&steam_aethercore_dir) {
+        crate::desk_log_warn!(
+            "migration",
+            "Could not create {}: {}",
+            steam_aethercore_dir.display(),
+            error
+        );
+        return;
+    }
+
+    // Migrate legacy aethercore.toml from steam folder if needed
+    let legacy_toml = steam_aethercore_dir.join("aethercore.toml");
+    if legacy_toml.exists() && !toml_path.exists() {
+        let _ = fs::copy(&legacy_toml, &toml_path);
+        let _ = fs::remove_file(&legacy_toml);
+    }
+
+    // Write desk_path.cfg pointer
+    let desk_cfg = steam_aethercore_dir.join("desk_path.cfg");
+    if let Err(error) = fs::write(&desk_cfg, data_root.display().to_string()) {
+        crate::desk_log_warn!(
+            "migration",
+            "Could not write {}: {}",
+            desk_cfg.display(),
+            error
+        );
+    }
+}
+
+/// Ensures that `AetherData/config/aethercore.toml` exists, the Steam-side
+/// bridge pointer is in place (see [`ensure_steam_bridge_for_path`]), and both
+/// TOML copies carry the canonical schema keys.
+pub fn ensure_aethercore_bridge(app: &tauri::AppHandle) {
     let config_dir = crate::core::paths::LocalAppPaths::config_dir();
     let toml_path = config_dir.join("aethercore.toml");
     let _ = fs::create_dir_all(&config_dir);
 
     let steam_path = crate::core::settings::SettingsManager::new(app).load().steam_path;
-    if !steam_path.trim().is_empty() {
-        let steam_aethercore_dir = Path::new(&steam_path).join("aethercore");
-        let _ = fs::create_dir_all(&steam_aethercore_dir);
-
-        // Migrate legacy aethercore.toml from steam folder if needed
-        let legacy_toml = steam_aethercore_dir.join("aethercore.toml");
-        if legacy_toml.exists() && !toml_path.exists() {
-            let _ = fs::copy(&legacy_toml, &toml_path);
-            let _ = fs::remove_file(&legacy_toml);
-        }
-
-        // Write desk_path.cfg pointer
-        let desk_cfg = steam_aethercore_dir.join("desk_path.cfg");
-        let _ = fs::write(&desk_cfg, data_root.display().to_string());
-    }
+    ensure_steam_bridge_for_path(&steam_path);
 
     if !toml_path.exists() {
         const DEFAULT_AETHERCORE_TOML: &str =
@@ -367,10 +472,8 @@ pub fn ensure_aethercore_bridge(app: &tauri::AppHandle) {
     // OST pattern source opt-in ([network] use_ost_source, default OFF):
     // insert only when missing, never overriding an explicit user choice.
     crate::core::ost_config::ensure_defaults(&toml_path);
-    if !steam_path.trim().is_empty() {
-        let legacy_toml = Path::new(&steam_path)
-            .join("aethercore")
-            .join("aethercore.toml");
+    if let Ok(root) = crate::steam::resolve::resolve_steam_path(&steam_path) {
+        let legacy_toml = root.join("aethercore").join("aethercore.toml");
         crate::core::presence_config::migrate_legacy_presence_keys(&legacy_toml);
         crate::core::presence_config::ensure_defaults(&legacy_toml);
         crate::core::ost_config::ensure_defaults(&legacy_toml);

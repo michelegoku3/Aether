@@ -9,8 +9,11 @@ pub struct AppSettings {
     pub hubcap_api_key: String,
     #[serde(default = "default_steam_path")]
     pub steam_path: String,
-    #[serde(default)]
-    pub active_library: String,
+    // NOTE: no `active_library` field. Library discovery already resolves
+    // every folder transitively from `libraryfolders.vdf`, so a separate
+    // "active library" setting was dead configuration (never exposed in the
+    // UI, always empty). Old settings.json files carrying the key still parse:
+    // serde ignores unknown fields by default.
     /// Set to true once the user has been asked (and handled) the Windows
     /// Defender exclusion prompt, so it never shows again (install or update).
     /// `#[serde(default)]` keeps old settings.json files parseable.
@@ -134,7 +137,9 @@ fn default_true() -> bool {
 }
 
 fn default_steam_path() -> String {
-    "C:\\Program Files (x86)\\Steam".to_string()
+    // Fresh installs get the auto-detected installation when one exists,
+    // else the historical location (see `steam::resolve`).
+    crate::steam::resolve::default_steam_path()
 }
 
 fn default_store_currency() -> String {
@@ -206,8 +211,7 @@ impl Default for AppSettings {
     fn default() -> Self {
         Self {
             hubcap_api_key: String::new(),
-            steam_path: "C:\\Program Files (x86)\\Steam".to_string(),
-            active_library: String::new(),
+            steam_path: default_steam_path(),
             antivirus_exclusion_done: false,
             ost_warning_acknowledged: false,
             show_store_dlcs: false,
@@ -331,6 +335,10 @@ impl SettingsManager {
         // experience, but are never persisted in plaintext settings.json.
         normalized.hubcap_api_key.clear();
         normalized.ryuu_api_key.clear();
+        // Quoted/padded copy-paste must never persist verbatim: a trailing
+        // space alone makes the path unusable on Windows. Normalization is
+        // idempotent, so re-saving is a stable no-op.
+        normalized.steam_path = crate::steam::resolve::normalize_steam_path(&normalized.steam_path);
         normalized.store_currency = normalize_store_currency(&normalized.store_currency);
         normalized.store_front_filter = normalize_store_front_filter(&normalized.store_front_filter);
         normalized.library_install_filter =

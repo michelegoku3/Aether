@@ -5,10 +5,11 @@
 // This file only resolves the installed game, builds the per-game backup, and
 // calls the engine.
 use crate::core::backup::GameBackup;
+use crate::util::dialog::file_path_to_string;
 use crate::util::game_resolver::resolve_installed_game;
 use crate::crack;
 use std::path::PathBuf;
-use tauri_plugin_dialog::{DialogExt, FilePath};
+use tauri_plugin_dialog::DialogExt;
 
 /// Open the native file picker and return the chosen paths (possibly empty if
 /// the user cancelled). Multiple files can be selected at once. The dialog
@@ -165,9 +166,4 @@ fn format_apply_message(prefix: &str, applied: usize, replaced: usize, files: &[
     msg
 }
 
-fn file_path_to_string(file_path: FilePath) -> Option<String> {
-    file_path
-        .into_path()
-        .ok()
-        .map(|path| path.to_string_lossy().to_string())
-}
+

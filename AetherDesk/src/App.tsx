@@ -8,10 +8,32 @@ import { useCustomCss } from './hooks/useCustomCss';
 import { usePersonalWallpaper } from './hooks/usePersonalWallpaper';
 import { STEAM_RUNTIME_EVENT } from './constants/library';
 import { LibraryGamesProvider } from './hooks/useLibraryGames';
+import { hasValidSteamPath } from './hooks/useSettings';
+import { SteamPathWarningModal } from './modals/SteamPathWarningModal';
 
 export default function App() {
   // Setup state to manage the active view, defaulting to 'home'
   const [activeTab, setActiveTab] = useState<TabType>('home');
+  // No-Steam-path warning (OST-style modal): shown on startup, when leaving
+  // Settings, or when saving without a valid path — until one is configured.
+  const [showSteamPathWarning, setShowSteamPathWarning] = useState(false);
+
+  /** Shows the Steam-path warning unless the stored path is a valid
+   *  installation. Shared by the startup check and the tab-change guard. */
+  const warnIfSteamPathMissing = async () => {
+    if (!(await hasValidSteamPath())) {
+      setShowSteamPathWarning(true);
+    }
+  };
+
+  /** Leaving Settings without a valid stored Steam path pops the warning.
+   *  Navigation itself is never blocked — the modal offers "Go to Settings". */
+  const handleTabChange = (tab: TabType) => {
+    if (activeTab === 'settings' && tab !== 'settings') {
+      void warnIfSteamPathMissing();
+    }
+    setActiveTab(tab);
+  };
 
   // Global state to track AetherDLL update availability from GitHub release tags
   const [dllUpdateAvailable, setDllUpdateAvailable] = useState(false);
@@ -66,6 +88,9 @@ export default function App() {
       setSettingsRevision((value) => value + 1);
       setWallpaperRevision((value) => value + 1);
       setThemeRevision((value) => value + 1);
+      // A settings save can change the Steam root: re-resolve DLL install
+      // state too, so the Aether panel never shows a stale previous path.
+      void checkDllStatus();
     } catch {
       setUseAlternativeGameCards(false);
       setCustomCssEnabled(false);
@@ -164,6 +189,13 @@ export default function App() {
       }
     } catch (err) {
       console.error("Failed to check DLL status:", err);
+      // Unreachable Steam (or any IPC failure) means "unknown", which the UI
+      // renders as not-installed — never leave a stale previous state.
+      setDllStatus({
+        isInstalled: false,
+        installedVersion: 'N/A',
+        isSteamBlocked: false
+      });
     }
   };
 
@@ -184,9 +216,12 @@ export default function App() {
       .then((v) => setDeskVersion(v || 'N/A'))
       .catch(() => setDeskVersion('N/A'));
     checkUpdates();
-    checkDllStatus();
     refreshHubcapUsage();
+    // refreshCustomCss also refreshes DLL status (single call, no duplicate).
     refreshCustomCss();
+    // No valid stored Steam path → OST-style warning (reappears every
+    // startup until a valid path is configured).
+    void warnIfSteamPathMissing();
   }, []);
 
   // Steam action: Start (solo spawn, mai kill) vs Restart (kill + wait +
@@ -237,7 +272,7 @@ export default function App() {
         {/* Modular Sidebar component with action hooks and global update badge */}
         <Sidebar
           activeTab={activeTab}
-          onTabChange={setActiveTab}
+          onTabChange={handleTabChange}
           onSteamAction={handleSteamAction}
           steamRunning={steamRunning}
           steamBusy={steamBusy}
@@ -267,7 +302,18 @@ export default function App() {
           useAlternativeGameCards={useAlternativeGameCards}
           alternativeCardsOpacity={alternativeCardsOpacity}
           alternativeCardsFade={alternativeCardsFade}
+          onMissingSteamPath={() => setShowSteamPathWarning(true)}
         />
+
+        {showSteamPathWarning && (
+          <SteamPathWarningModal
+            onGoToSettings={() => {
+              setShowSteamPathWarning(false);
+              setActiveTab('settings');
+            }}
+            onClose={() => setShowSteamPathWarning(false)}
+          />
+        )}
       </div>
     </LibraryGamesProvider>
   );

@@ -23,6 +23,7 @@ interface MainContentProps {
   onCustomCssChange: (enabled: boolean) => void;
   onPreviewPersonalWallpaper: (enabled: boolean, opacity: number) => void;
   onPreviewAlternativeCards: (opacity: number, fade: number) => void;
+  onMissingSteamPath: () => void;
   settingsRevision: number;
   settingsReady: boolean;
   useAlternativeGameCards: boolean;
@@ -30,27 +31,12 @@ interface MainContentProps {
   alternativeCardsFade: number;
 }
 
-export const MainContent = ({ activeTab, dllUpdateAvailable, deskUpdateAvailable, deskVersion, dllUpdateIsTest, deskUpdateIsTest, onUpdateComplete, hubcapUsage, onRefreshUsage, dllStatus, onDllStatusChange, onRefreshCustomCss, onCustomCssChange, onPreviewPersonalWallpaper, onPreviewAlternativeCards, settingsRevision, settingsReady, useAlternativeGameCards, alternativeCardsOpacity, alternativeCardsFade }: MainContentProps) => {
+export const MainContent = ({ activeTab, dllUpdateAvailable, deskUpdateAvailable, deskVersion, dllUpdateIsTest, deskUpdateIsTest, onUpdateComplete, hubcapUsage, onRefreshUsage, dllStatus, onDllStatusChange, onRefreshCustomCss, onCustomCssChange, onPreviewPersonalWallpaper, onPreviewAlternativeCards, onMissingSteamPath, settingsRevision, settingsReady, useAlternativeGameCards, alternativeCardsOpacity, alternativeCardsFade }: MainContentProps) => {
   const renderActiveTransientView = () => {
     if (activeTab === 'home') {
       return (
         <main className="main-content">
           <HomeView />
-        </main>
-      );
-    }
-
-    if (activeTab === 'settings') {
-      return (
-        <main className="main-content">
-          <SettingsView
-            hubcapUsage={hubcapUsage}
-            onRefreshUsage={onRefreshUsage}
-            onRefreshCustomCss={onRefreshCustomCss}
-            onCustomCssChange={onCustomCssChange}
-            onPreviewPersonalWallpaper={onPreviewPersonalWallpaper}
-            onPreviewAlternativeCards={onPreviewAlternativeCards}
-          />
         </main>
       );
     }
@@ -72,7 +58,7 @@ export const MainContent = ({ activeTab, dllUpdateAvailable, deskUpdateAvailable
       );
     }
 
-    if (activeTab === 'store' || activeTab === 'library' || activeTab === 'log') {
+    if (activeTab === 'store' || activeTab === 'library' || activeTab === 'log' || activeTab === 'settings') {
       return null;
     }
 
@@ -142,6 +128,25 @@ export const MainContent = ({ activeTab, dllUpdateAvailable, deskUpdateAvailable
         aria-hidden={activeTab !== 'log'}
       >
         <LogView />
+      </main>
+
+      {/* Settings stay mounted so unsaved edits (e.g. the Steam path field)
+          survive tab switches. Saving always merges over freshly loaded
+          settings, so keeping it mounted cannot regress concurrent saves. */}
+      <main
+        className="main-content"
+        style={{ display: activeTab === 'settings' ? 'flex' : 'none' }}
+        aria-hidden={activeTab !== 'settings'}
+      >
+        <SettingsView
+          hubcapUsage={hubcapUsage}
+          onRefreshUsage={onRefreshUsage}
+          onRefreshCustomCss={onRefreshCustomCss}
+          onCustomCssChange={onCustomCssChange}
+          onPreviewPersonalWallpaper={onPreviewPersonalWallpaper}
+          onPreviewAlternativeCards={onPreviewAlternativeCards}
+          onMissingSteamPath={onMissingSteamPath}
+        />
       </main>
 
       {renderActiveTransientView()}

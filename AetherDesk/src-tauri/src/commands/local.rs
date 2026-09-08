@@ -7,8 +7,9 @@ use crate::core::backup::GameBackup;
 use crate::core::settings::SettingsManager;
 use crate::local;
 use crate::manifest::pins::LuaManifestPins;
+use crate::util::dialog::file_path_to_string;
 use std::path::PathBuf;
-use tauri_plugin_dialog::{DialogExt, FilePath};
+use tauri_plugin_dialog::DialogExt;
 
 /// Open the native file picker and return the chosen paths (possibly empty if
 /// the user cancelled). Multiple files can be selected at once. The dialog
@@ -64,16 +65,8 @@ pub async fn install_bulk_local(
     local_files: Vec<String>,
 ) -> Result<String, String> {
     let settings = SettingsManager::new(&app).load();
-    if settings.steam_path.trim().is_empty() {
-        return Err("Steam installation path is required. Set it in Settings first.".to_string());
-    }
-    let steam_path = PathBuf::from(settings.steam_path.trim());
-    if !steam_path.is_dir() {
-        return Err(format!(
-            "The configured Steam path was not found: {}",
-            steam_path.display()
-        ));
-    }
+    let steam_path = crate::steam::resolve::resolve_steam_path(&settings.steam_path)
+        .map_err(|error| error.message(&settings.steam_path))?;
 
     crate::desk_log_info!(
         "local",
@@ -141,20 +134,8 @@ pub async fn install_local_game(
     local_files: Vec<String>,
 ) -> Result<String, String> {
     let settings = SettingsManager::new(&app).load();
-    if settings.steam_path.trim().is_empty() {
-        return Err("Steam installation path is required. Set it in Settings first.".to_string());
-    }
-    let steam_path = PathBuf::from(settings.steam_path.trim());
-    if !steam_path.is_dir() {
-        return Err(format!(
-            "The configured Steam path was not found: {}",
-            steam_path.display()
-        ));
-    }
-    let active_library = {
-        let value = settings.active_library.trim().to_string();
-        if value.is_empty() { None } else { Some(value) }
-    };
+    let steam_path = crate::steam::resolve::resolve_steam_path(&settings.steam_path)
+        .map_err(|error| error.message(&settings.steam_path))?;
 
     crate::desk_log_info!("local", "Local install for AppID {} ({}) with {} source file(s)",
         app_id, app_name, local_files.len());
@@ -204,10 +185,10 @@ pub async fn install_local_game(
 
     // Estrazione archivi + copie file: I/O sincrono pesante -> spawn_blocking.
     let report = {
-        let (app_name_b, steam_path_b, active_library_b, local_files_b) =
-            (app_name.clone(), steam_path.clone(), active_library.clone(), local_files.clone());
+        let (app_name_b, steam_path_b, local_files_b) =
+            (app_name.clone(), steam_path.clone(), local_files.clone());
         tauri::async_runtime::spawn_blocking(move || {
-            local::install_local_pipeline(app_id, &app_name_b, &steam_path_b, active_library_b.as_deref(), &local_files_b)
+            local::install_local_pipeline(app_id, &app_name_b, &steam_path_b, &local_files_b)
         })
         .await
         .map_err(|e| format!("Local install task failed: {e}"))??
@@ -250,13 +231,6 @@ pub async fn install_local_game(
     }
 
     Ok(msg)
-}
-
-fn file_path_to_string(file_path: FilePath) -> Option<String> {
-    file_path
-        .into_path()
-        .ok()
-        .map(|path| path.to_string_lossy().to_string())
 }
 
 /// List every archived Lua version for a game (current backup + history/).

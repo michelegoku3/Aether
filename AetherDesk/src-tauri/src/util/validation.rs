@@ -1,10 +1,8 @@
-/// Validate that a Steam path string is non-empty.
-///
-/// Shared by every Tauri command that receives `steam_path` from the frontend.
-/// Keeps the error message consistent across the codebase.
-pub fn validate_steam_path(steam_path: &str) -> Result<(), String> {
-    if steam_path.trim().is_empty() {
-        return Err("Steam installation path is required".to_string());
-    }
-    Ok(())
-}
+//! Steam-path guard shared by every Tauri command that receives `steam_path`.
+//!
+//! Single source of truth lives in [`crate::steam::resolve`]; this module only
+//! re-exports the canonical guard so existing call sites keep working
+//! unchanged while transparently gaining full filesystem validation
+//! (previously only a non-empty check).
+
+pub use crate::steam::resolve::validate_steam_path;

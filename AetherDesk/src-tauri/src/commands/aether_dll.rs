@@ -1,11 +1,13 @@
 use crate::core::settings::SettingsManager;
+use crate::steam::resolve::resolve_steam_path;
 use crate::updater::dll::DllInstaller;
 use crate::updater::dll_version::read_installed_dll_version;
 use crate::updater::github::GithubReleaseManager;
+use crate::util::validation::validate_steam_path;
 
 #[tauri::command]
 pub fn get_installed_dll_version(steam_path: String) -> String {
-    if steam_path.trim().is_empty() {
+    if resolve_steam_path(&steam_path).is_err() {
         return "N/A".to_string();
     }
     let legacy_version_path = std::path::PathBuf::from(&steam_path).join("AetherDLL_version.txt");
@@ -16,7 +18,10 @@ pub fn get_installed_dll_version(steam_path: String) -> String {
 
 #[tauri::command]
 pub async fn check_aether_dll_update(app: tauri::AppHandle, steam_path: String) -> Result<serde_json::Value, String> {
-    if steam_path.trim().is_empty() {
+    // An unreachable Steam root means "unknown", never "update available":
+    // without this, installed="N/A" compares as older than any tag and shows
+    // a spurious update badge (plus pointless GitHub calls).
+    if resolve_steam_path(&steam_path).is_err() {
         return Ok(serde_json::json!({
             "installed_version": "N/A",
             "latest_version": "N/A",
@@ -131,9 +136,8 @@ fn read_legacy_installed_version(legacy_version_path: &std::path::Path, steam_pa
 
 #[tauri::command]
 pub async fn install_aether_dll(app: tauri::AppHandle, steam_path: String) -> Result<String, String> {
-    if steam_path.trim().is_empty() {
-        return Err("Steam installation path is required".to_string());
-    }
+    // Strict validation first: fail fast before any download or Steam-side write.
+    validate_steam_path(&steam_path)?;
 
     ensure_steam_is_closed()?;
     crate::desk_log_info!("updater", "Starting installation of AetherDLL into steam_path='{}'", steam_path);
@@ -225,9 +229,7 @@ pub async fn install_aether_dll(app: tauri::AppHandle, steam_path: String) -> Re
 
 #[tauri::command]
 pub fn uninstall_aether_dll(_app: tauri::AppHandle, steam_path: String) -> Result<String, String> {
-    if steam_path.trim().is_empty() {
-        return Err("Steam installation path is required".to_string());
-    }
+    validate_steam_path(&steam_path)?;
 
     ensure_steam_is_closed()?;
     crate::desk_log_info!("updater", "Uninstalling AetherDLL from Steam directory '{}'", steam_path);
@@ -244,9 +246,7 @@ pub fn uninstall_aether_dll(_app: tauri::AppHandle, steam_path: String) -> Resul
 
 #[tauri::command]
 pub fn reset_aether_steam_path(_app: tauri::AppHandle, steam_path: String) -> Result<String, String> {
-    if steam_path.trim().is_empty() {
-        return Err("Steam installation path is required".to_string());
-    }
+    validate_steam_path(&steam_path)?;
     ensure_steam_is_closed()?;
     crate::desk_log_info!("updater", "Resetting Aether files in Steam directory '{}'", steam_path);
 
@@ -266,7 +266,7 @@ pub fn reset_aether_steam_path(_app: tauri::AppHandle, steam_path: String) -> Re
 /// Safe while Steam is running — read-only probe for the Uninstall confirm UI.
 #[tauri::command]
 pub fn probe_aether_steam_residuals(steam_path: String) -> Result<usize, String> {
-    if steam_path.trim().is_empty() {
+    if resolve_steam_path(&steam_path).is_err() {
         return Ok(0);
     }
     let count = DllInstaller::new(steam_path).count_aether_residuals();
@@ -279,14 +279,12 @@ pub fn probe_aether_steam_residuals(steam_path: String) -> Result<usize, String>
 }
 
 fn ensure_steam_is_closed() -> Result<(), String> {
-    let mut sys = sysinfo::System::new_all();
+    // Fresh snapshot (not the shared monitor): the install must observe the
+    // process state at this exact instant. Lightweight process-list-only
+    // refresh, and a single shared definition of "is a Steam process" (DRY).
+    let mut sys = sysinfo::System::new();
     sys.refresh_processes();
-    let steam_running = sys.processes().values().any(|process| {
-        let name = process.name().to_lowercase();
-        name == "steam.exe" || name == "steam"
-    });
-
-    if steam_running {
+    if crate::core::steam_process::snapshot_has_steam(&sys) {
         Err("Steam is currently running. Close Steam completely before installing, uninstalling, or resetting AetherDLL files.".to_string())
     } else {
         Ok(())

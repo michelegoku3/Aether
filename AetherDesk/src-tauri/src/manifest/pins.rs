@@ -59,9 +59,13 @@ pub struct LuaManifestPins {
 
 impl LuaManifestPins {
     pub fn new(steam_path: impl Into<PathBuf>, root_app_id: u32) -> Self {
+        // Normalize at the boundary: callers strict-validate at command entry
+        // for actionable errors, while the editor itself stays usable with any
+        // raw-but-normalizable input (quoted copy-paste, trailing spaces).
+        let normalized =
+            crate::steam::resolve::normalize_steam_path(&steam_path.into().to_string_lossy());
         Self {
-            lua_path: steam_path
-                .into()
+            lua_path: PathBuf::from(normalized)
                 .join("config")
                 .join("stplug-in")
                 .join(format!("{}.lua", root_app_id)),

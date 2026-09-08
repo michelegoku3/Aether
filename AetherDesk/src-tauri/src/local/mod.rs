@@ -295,13 +295,12 @@ pub(crate) fn classify_local_file(path: &Path) -> LocalFileKind {
 /// their Steam system folders (`config/stplug-in` and `depotcache`); every
 /// other file goes into the game's Steam install directory: if the game is
 /// already installed (appmanifest present) its current folder is reused,
-/// otherwise `<library>/steamapps/common/<game name>` is created in the active
-/// library (or in the Steam root when no active library is configured).
+/// otherwise `<steam>/steamapps/common/<game name>` is created in the Steam
+/// root library.
 pub fn install_local_pipeline(
     app_id: u32,
     game_name: &str,
     steam_path: &Path,
-    active_library: Option<&str>,
     sources: &[String],
 ) -> Result<LocalInstallReport, String> {
     if sources.is_empty() {
@@ -309,14 +308,13 @@ pub fn install_local_pipeline(
         return Err("No local files selected.".to_string());
     }
 
-    crate::desk_log_info!("local", "Local install pipeline started for AppID {} ({}): {} source(s), steam root {}, active library: {}",
+    crate::desk_log_info!("local", "Local install pipeline started for AppID {} ({}): {} source(s), steam root {}",
         app_id,
         game_name,
         sources.len(),
-        steam_path.display(),
-        active_library.unwrap_or("<not set>"));
+        steam_path.display());
 
-    let game_dir = resolve_target_dir(app_id, game_name, steam_path, active_library);
+    let game_dir = resolve_target_dir(app_id, game_name, steam_path);
     crate::desk_log_info!("local", "Resolved game folder for AppID {}: {}", app_id, game_dir.display());
     // Note: the game folder is created lazily by `install_staged_tree` only
     // when a real game file is written, so a sourceset containing only
@@ -609,14 +607,10 @@ fn resolve_target_dir(
     app_id: u32,
     game_name: &str,
     steam_path: &Path,
-    active_library: Option<&str>,
 ) -> PathBuf {
     // If the game already has an appmanifest, install into its current folder
     // (whichever library it lives in).
-    let scanner = SteamLibraryScanner::new(
-        steam_path.to_path_buf(),
-        active_library.map(|value| value.to_string()),
-    );
+    let scanner = SteamLibraryScanner::new(steam_path.to_path_buf());
     if let Some(game) = scanner
         .scan_installed_games()
         .into_iter()
@@ -632,21 +626,15 @@ fn resolve_target_dir(
         }
     }
 
-    // Otherwise create the folder in the active library (falling back to the
-    // Steam root) under steamapps/common/<game name>.
-    let library = active_library
-        .filter(|value| !value.trim().is_empty())
-        .map(PathBuf::from)
-        .filter(|path| path.is_dir())
-        .unwrap_or_else(|| steam_path.to_path_buf());
-
-    let resolved = library
+    // Otherwise create the folder in the Steam root library under
+    // steamapps/common/<game name>.
+    let resolved = steam_path
         .join("steamapps")
         .join("common")
         .join(sanitize_folder_name(game_name, app_id));
 
     crate::desk_log_info!("local", "AppID {} is not installed, target folder will be {} (library: {})",
-        app_id, resolved.display(), library.display());
+        app_id, resolved.display(), steam_path.display());
 
     resolved
 }

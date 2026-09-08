@@ -17,8 +17,11 @@ pub struct SteamUpdateGuard {
 
 impl SteamUpdateGuard {
     pub fn new(steam_path: impl Into<PathBuf>) -> Self {
+        // Normalize at the boundary so quoted/padded-but-valid paths work.
+        let normalized =
+            crate::steam::resolve::normalize_steam_path(&steam_path.into().to_string_lossy());
         Self {
-            steam_dir: steam_path.into(),
+            steam_dir: PathBuf::from(normalized),
         }
     }
 
@@ -74,21 +77,12 @@ impl SteamUpdateGuard {
     }
 
     fn validate_steam_dir(&self) -> Result<(), String> {
-        if !self.steam_dir.exists() {
-            return Err(format!(
-                "Steam installation path does not exist: {}",
-                self.steam_dir.display()
-            ));
-        }
-
-        if !self.steam_dir.is_dir() {
-            return Err(format!(
-                "Steam installation path is not a directory: {}",
-                self.steam_dir.display()
-            ));
-        }
-
-        Ok(())
+        // Full validation (directory + steam.exe): writing steam.cfg into a
+        // typo'd-but-existing folder would be worse than failing loudly.
+        let raw = self.steam_dir.to_string_lossy();
+        crate::steam::resolve::resolve_steam_path(&raw)
+            .map(|_| ())
+            .map_err(|error| error.message(&raw))
     }
 
     fn read_config(&self) -> Result<String, String> {

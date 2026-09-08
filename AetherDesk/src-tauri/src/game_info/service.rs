@@ -107,12 +107,14 @@ impl GameInfoService {
     }
 
     fn merge_local_info(&self, info: &mut GameInfo) {
+        // Best-effort enrichment: a missing/misconfigured Steam path simply
+        // skips the local merge instead of failing the whole GameInfo call.
         let settings = SettingsManager::new(&self.app).load();
-        if settings.steam_path.trim().is_empty() {
+        let Ok(steam_root) = crate::steam::resolve::resolve_steam_path(&settings.steam_path) else {
             return;
-        }
+        };
 
-        let scanner = SteamLibraryScanner::new(settings.steam_path.clone(), Some(settings.active_library.clone()));
+        let scanner = SteamLibraryScanner::new(steam_root);
         let Some(game) = scanner
             .scan_installed_games()
             .into_iter()
