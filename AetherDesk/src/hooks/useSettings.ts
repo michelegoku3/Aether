@@ -28,7 +28,7 @@ export interface AppSettings {
   /** Store front filter criterion. */
   store_front_filter?: string;
   /** Preferred Steam store currency for prices. */
-  store_currency?: 'eur' | 'usd' | 'jpy' | string;
+  store_currency?: StoreCurrency | string;
   /** Personal wallpaper toggle. */
   personal_wallpaper_enabled?: boolean;
   /** Wallpaper opacity percentage (0..100). */
@@ -43,6 +43,59 @@ export interface AppSettings {
   /** Custom game name displayed to friends on Steam (game_extra_info). */
   custom_game_name?: string;
 }
+
+/** Steam store currencies offered by the Settings selector (ISO 4217). The
+ *  backend re-validates (unknown -> EUR), so this list only drives the UI. */
+export type StoreCurrency =
+  | 'eur' | 'usd' | 'gbp' | 'jpy' | 'ars' | 'brl' | 'cad' | 'aud' | 'chf'
+  | 'cny' | 'krw' | 'inr' | 'mxn' | 'rub' | 'try' | 'pln' | 'sek' | 'nok'
+  | 'dkk' | 'nzd' | 'sgd' | 'hkd' | 'twd' | 'thb' | 'myr' | 'idr' | 'php'
+  | 'ils' | 'aed' | 'sar' | 'clp' | 'cop' | 'pen' | 'uah' | 'kzt' | 'vnd'
+  | 'zar';
+
+export const STORE_CURRENCIES: { code: StoreCurrency; label: string }[] = [
+  { code: 'ars', label: 'Argentine Peso (AR$)' },
+  { code: 'aud', label: 'Australian Dollar (A$)' },
+  { code: 'brl', label: 'Brazilian Real (R$)' },
+  { code: 'gbp', label: 'British Pound (\u00A3)' },
+  { code: 'cad', label: 'Canadian Dollar (CA$)' },
+  { code: 'clp', label: 'Chilean Peso (CL$)' },
+  { code: 'cny', label: 'Chinese Yuan (CN\u00A5)' },
+  { code: 'cop', label: 'Colombian Peso (CO$)' },
+  { code: 'dkk', label: 'Danish Krone (kr)' },
+  { code: 'eur', label: 'Euro (\u20AC)' },
+  { code: 'hkd', label: 'Hong Kong Dollar (HK$)' },
+  { code: 'inr', label: 'Indian Rupee (\u20B9)' },
+  { code: 'idr', label: 'Indonesian Rupiah (Rp)' },
+  { code: 'ils', label: 'Israeli Shekel (\u20AA)' },
+  { code: 'kzt', label: 'Kazakhstani Tenge (\u20B8)' },
+  { code: 'myr', label: 'Malaysian Ringgit (RM)' },
+  { code: 'mxn', label: 'Mexican Peso (MX$)' },
+  { code: 'nzd', label: 'New Zealand Dollar (NZ$)' },
+  { code: 'nok', label: 'Norwegian Krone (kr)' },
+  { code: 'pen', label: 'Peruvian Sol (S/)' },
+  { code: 'php', label: 'Philippine Peso (\u20B1)' },
+  { code: 'pln', label: 'Polish Zloty (z\u0142)' },
+  { code: 'rub', label: 'Russian Ruble (\u20BD)' },
+  { code: 'sar', label: 'Saudi Riyal (SAR)' },
+  { code: 'sgd', label: 'Singapore Dollar (S$)' },
+  { code: 'zar', label: 'South African Rand (R)' },
+  { code: 'krw', label: 'South Korean Won (\u20A9)' },
+  { code: 'sek', label: 'Swedish Krona (kr)' },
+  { code: 'chf', label: 'Swiss Franc (CHF)' },
+  { code: 'twd', label: 'Taiwan Dollar (NT$)' },
+  { code: 'thb', label: 'Thai Baht (\u0E3F)' },
+  { code: 'try', label: 'Turkish Lira (\u20BA)' },
+  { code: 'aed', label: 'UAE Dirham (AED)' },
+  { code: 'uah', label: 'Ukrainian Hryvnia (\u20B4)' },
+  { code: 'usd', label: 'US Dollar ($)' },
+  { code: 'vnd', label: 'Vietnamese Dong (\u20AB)' },
+  { code: 'jpy', label: 'Yen (\u00A5)' },
+];
+
+export const isStoreCurrency = (value: unknown): value is StoreCurrency =>
+  typeof value === 'string' &&
+  STORE_CURRENCIES.some((c) => c.code === value);
 
 export const getSettings = async (): Promise<AppSettings> => {
   return invoke('get_settings');

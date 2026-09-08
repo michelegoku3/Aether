@@ -214,6 +214,7 @@ fn main() {
             commands::versioning::save_build,
             commands::versioning::remove_saved_build,
             commands::versioning::apply_game_version,
+            commands::window::force_close_window,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

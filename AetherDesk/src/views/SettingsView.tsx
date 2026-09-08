@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { invoke } from '@tauri-apps/api/core';
-import { getSettings, checkSteamPath, type SteamPathCheck } from '../hooks/useSettings';
+import { getSettings, checkSteamPath, STORE_CURRENCIES, isStoreCurrency, type SteamPathCheck, type StoreCurrency } from '../hooks/useSettings';
 import { ClickablePath } from '../ui/ClickablePath';
 import { EyeIcon, EyeOffIcon } from '../ui/icons';
 import { OstWarningModal } from '../modals/OstWarningModal';
@@ -14,6 +14,9 @@ interface SettingsViewProps {
   onPreviewAlternativeCards: (opacity: number, fade: number) => void;
   /** Called when a save is attempted without a valid Steam path (caller shows the warning modal). */
   onMissingSteamPath: () => void;
+  /** Navigation guard slot: the view publishes isDirty/save/discard here so
+   *  the App can prompt on tab switch / window close. */
+  guardRef: { current: SettingsGuard | null };
 }
 
 interface LuaToolsAuthStatus {
@@ -42,9 +45,20 @@ interface SteamCheckStatus {
   message: string;
 }
 
+/** Navigation-guard API published by SettingsView for tab-switch and
+ *  window-close prompts (owned by App, which holds the modal). */
+export interface SettingsGuard {
+  /** True when the form differs from the last saved/applied state. */
+  isDirty: () => boolean;
+  /** Saves; resolves true when the save succeeded. */
+  save: () => Promise<boolean>;
+  /** Reverts the form (and live previews) to the last saved/applied state. */
+  discard: () => void;
+}
+
 const clamp0to100 = (value: number) => Math.max(0, Math.min(100, Number.isFinite(value) ? value : 0));
 
-export const SettingsView = ({ hubcapUsage, onRefreshUsage, onRefreshCustomCss, onCustomCssChange, onPreviewPersonalWallpaper, onPreviewAlternativeCards, onMissingSteamPath }: SettingsViewProps) => {
+export const SettingsView = ({ hubcapUsage, onRefreshUsage, onRefreshCustomCss, onCustomCssChange, onPreviewPersonalWallpaper, onPreviewAlternativeCards, onMissingSteamPath, guardRef }: SettingsViewProps) => {
   const [apiKey, setApiKey] = useState('');
   const [showApiKey, setShowApiKey] = useState(false);
   const [steamPath, setSteamPath] = useState('');
@@ -82,7 +96,7 @@ export const SettingsView = ({ hubcapUsage, onRefreshUsage, onRefreshCustomCss, 
   const [iconSelectedFile, setIconSelectedFile] = useState('');
   const [ryuuKey, setRyuuKey] = useState('');
   const [showRyuuKey, setShowRyuuKey] = useState(false);
-  const [storeCurrency, setStoreCurrency] = useState<'eur' | 'usd' | 'jpy'>('eur');
+  const [storeCurrency, setStoreCurrency] = useState<StoreCurrency>('eur');
   const [luaToolsAuth, setLuaToolsAuth] = useState<LuaToolsAuthStatus>({ signedIn: false, displayName: null, email: null });
   const [isLuaToolsAuthBusy, setIsLuaToolsAuthBusy] = useState(false);
   const [isLuaToolsOAuthBusy, setIsLuaToolsOAuthBusy] = useState(false);
@@ -142,7 +156,9 @@ export const SettingsView = ({ hubcapUsage, onRefreshUsage, onRefreshCustomCss, 
     setUseAlternativeGameCards(Boolean(settings.use_alternative_game_cards));
     setEnableWebviewDevtools(Boolean(settings.enable_webview_devtools));
     setEnableTestUpdates(Boolean(settings.enable_test_updates));
-    setCustomGameName(settings.custom_game_name || '');
+    // Trimmed like buildCurrentSettings does on save, so the dirty-compare
+    // never flags a freshly loaded form over surrounding whitespace.
+    setCustomGameName((settings.custom_game_name || '').trim());
     setStoreFrontFilter(settings.store_front_filter || 'upcoming');
     setCustomCssEnabled(Boolean(settings.custom_css_enabled));
     setPersonalWallpaperEnabled(Boolean(settings.personal_wallpaper_enabled));
@@ -155,7 +171,7 @@ export const SettingsView = ({ hubcapUsage, onRefreshUsage, onRefreshCustomCss, 
     setIconSelectedFile(settings.icon_selected_file || '');
     setRyuuKey(settings.ryuu_api_key || '');
     setOstWarningAcknowledged(Boolean(settings.ost_warning_acknowledged));
-    setStoreCurrency(['usd', 'jpy'].includes(settings.store_currency) ? settings.store_currency : 'eur');
+    setStoreCurrency(isStoreCurrency(settings.store_currency) ? settings.store_currency : 'eur');
   };
 
   // Load settings from the backend when the component mounts.
@@ -232,9 +248,9 @@ export const SettingsView = ({ hubcapUsage, onRefreshUsage, onRefreshCustomCss, 
     ...overrides,
   });
 
-  const handleSave = async (e: React.FormEvent) => {
-    e.preventDefault();
-
+  /** Saves the form; resolves true when the save succeeded. Shared by the
+   *  Save button and the unsaved-changes navigation guard. */
+  const doSave = async (): Promise<boolean> => {
     // API key validation must never block the whole save: when the key is
     // invalid the rest of the settings still persist, the bad key field is
     // cleared and a warning tells the user what happened. Only a genuinely
@@ -261,7 +277,7 @@ export const SettingsView = ({ hubcapUsage, onRefreshUsage, onRefreshCustomCss, 
     try {
       if (!(await checkSteamPath(steamPath)).valid) {
         onMissingSteamPath();
-        return;
+        return false;
       }
     } catch { /* fall through to the save below */ }
     // Persist settings, merging over a fresh snapshot (never over the
@@ -289,9 +305,16 @@ export const SettingsView = ({ hubcapUsage, onRefreshUsage, onRefreshCustomCss, 
       onRefreshUsage(invalidApiKey ? '' : apiKey);
       onRefreshCustomCss();
       loadAppearanceAssets();
+      return true;
     } catch (err: any) {
       showStatus(`Error during save: ${err}`, 'error');
+      return false;
     }
+  };
+
+  const handleSave = async (e: React.FormEvent) => {
+    e.preventDefault();
+    await doSave();
   };
 
   /** Persists a freshly picked theme/wallpaper file immediately (the selection
@@ -303,6 +326,61 @@ export const SettingsView = ({ hubcapUsage, onRefreshUsage, onRefreshCustomCss, 
     await invoke('save_settings', { settings: newSettings });
     setRawSettings(newSettings);
   };
+
+  /** True when the form differs from the last saved/applied snapshot
+   *  (rawSettings). Mirrors applySettingsToState normalization so freshly
+   *  loaded/saved forms never compare dirty. Live-only fields (OST source,
+   *  presence default) are excluded: they apply immediately and are never
+   *  "unsaved". */
+  const isSettingsDirty = (): boolean => {
+    const s = rawSettings;
+    return (
+      apiKey !== (s.hubcap_api_key || '') ||
+      steamPath !== (s.steam_path || '') ||
+      showStoreDlcs !== Boolean(s.show_store_dlcs) ||
+      showStoreNsfw !== (s.show_store_nsfw !== false) ||
+      showStoreDelisted !== (s.show_store_delisted !== false) ||
+      downloadGamesWithUpdatesOn !== (s.download_games_with_updates_on !== false) ||
+      showStoreFrontGames !== (s.show_store_front_games !== false) ||
+      useAlternativeGameCards !== Boolean(s.use_alternative_game_cards) ||
+      enableWebviewDevtools !== Boolean(s.enable_webview_devtools) ||
+      enableTestUpdates !== Boolean(s.enable_test_updates) ||
+      customGameName !== ((s.custom_game_name || '') as string).trim() ||
+      storeFrontFilter !== (s.store_front_filter || 'upcoming') ||
+      storeCurrency !== (isStoreCurrency(s.store_currency) ? s.store_currency : 'eur') ||
+      customCssEnabled !== Boolean(s.custom_css_enabled) ||
+      personalWallpaperEnabled !== Boolean(s.personal_wallpaper_enabled) ||
+      personalWallpaperOpacity !== clamp0to100(Number(s.personal_wallpaper_opacity ?? 20)) ||
+      alternativeCardsOpacity !== clamp0to100(Number(s.alternative_cards_opacity ?? 100)) ||
+      alternativeCardsFade !== clamp0to100(Number(s.alternative_cards_fade ?? 50)) ||
+      themeSelectedFile !== (s.theme_selected_file || '') ||
+      wallpaperSelectedFile !== (s.wallpaper_selected_file || '') ||
+      customIconEnabled !== Boolean(s.custom_icon_enabled) ||
+      iconSelectedFile !== (s.icon_selected_file || '') ||
+      ryuuKey !== (s.ryuu_api_key || '')
+    );
+  };
+
+  /** Reverts the form to the last saved/applied snapshot, including live
+   *  previews (custom CSS, wallpaper, alternative cards) which apply
+   *  instantly and would otherwise stay at the discarded values. */
+  const discardChanges = (): void => {
+    applySettingsToState(rawSettings);
+    onCustomCssChange(Boolean(rawSettings.custom_css_enabled));
+    onPreviewPersonalWallpaper(
+      Boolean(rawSettings.personal_wallpaper_enabled),
+      clamp0to100(Number(rawSettings.personal_wallpaper_opacity ?? 20))
+    );
+    onPreviewAlternativeCards(
+      clamp0to100(Number(rawSettings.alternative_cards_opacity ?? 100)),
+      clamp0to100(Number(rawSettings.alternative_cards_fade ?? 50))
+    );
+  };
+
+  // Publish the navigation guard (fresh closures every render; cleared on
+  // unmount so the App never calls into a dead view).
+  guardRef.current = { isDirty: isSettingsDirty, save: doSave, discard: discardChanges };
+  useEffect(() => () => { guardRef.current = null; }, [guardRef]);
 
   /** Live Steam-path validation (debounced, read-only backend check). A
    *  monotonic request id drops stale responses when the user keeps typing. */
@@ -405,6 +483,8 @@ export const SettingsView = ({ hubcapUsage, onRefreshUsage, onRefreshCustomCss, 
       const fileName: string = await invoke('pick_icon_file');
       setIconSelectedFile(fileName);
       await persistAppearanceSelection({ icon_selected_file: fileName, custom_icon_enabled: true });
+      // Picking an icon enables it on disk: reflect it in the toggle too.
+      setCustomIconEnabled(true);
       await invoke('apply_window_icon');
       await loadAppearanceAssets();
       showStatus(`Icon selected: ${fileName}`, 'success');
@@ -922,11 +1002,11 @@ export const SettingsView = ({ hubcapUsage, onRefreshUsage, onRefreshCustomCss, 
             <select
               className="settings-select"
               value={storeCurrency}
-              onChange={(e) => setStoreCurrency(e.target.value as 'eur' | 'usd' | 'jpy')}
+              onChange={(e) => setStoreCurrency(e.target.value as StoreCurrency)}
             >
-              <option value="eur">Euro (€)</option>
-              <option value="usd">Dollar ($)</option>
-              <option value="jpy">Yen (¥)</option>
+              {STORE_CURRENCIES.map(({ code, label }) => (
+                <option key={code} value={code}>{label}</option>
+              ))}
             </select>
           </div>
 

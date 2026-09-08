@@ -1,6 +1,6 @@
 import { TabType } from './Sidebar';
 import { StoreView } from '../views/StoreView';
-import { SettingsView } from '../views/SettingsView';
+import { SettingsView, type SettingsGuard } from '../views/SettingsView';
 import { AetherView } from '../views/AetherView';
 import { LibraryView } from '../views/LibraryView';
 import { HomeView } from '../views/HomeView';
@@ -24,6 +24,7 @@ interface MainContentProps {
   onPreviewPersonalWallpaper: (enabled: boolean, opacity: number) => void;
   onPreviewAlternativeCards: (opacity: number, fade: number) => void;
   onMissingSteamPath: () => void;
+  settingsGuardRef: { current: SettingsGuard | null };
   settingsRevision: number;
   settingsReady: boolean;
   useAlternativeGameCards: boolean;
@@ -31,7 +32,7 @@ interface MainContentProps {
   alternativeCardsFade: number;
 }
 
-export const MainContent = ({ activeTab, dllUpdateAvailable, deskUpdateAvailable, deskVersion, dllUpdateIsTest, deskUpdateIsTest, onUpdateComplete, hubcapUsage, onRefreshUsage, dllStatus, onDllStatusChange, onRefreshCustomCss, onCustomCssChange, onPreviewPersonalWallpaper, onPreviewAlternativeCards, onMissingSteamPath, settingsRevision, settingsReady, useAlternativeGameCards, alternativeCardsOpacity, alternativeCardsFade }: MainContentProps) => {
+export const MainContent = ({ activeTab, dllUpdateAvailable, deskUpdateAvailable, deskVersion, dllUpdateIsTest, deskUpdateIsTest, onUpdateComplete, hubcapUsage, onRefreshUsage, dllStatus, onDllStatusChange, onRefreshCustomCss, onCustomCssChange, onPreviewPersonalWallpaper, onPreviewAlternativeCards, onMissingSteamPath, settingsGuardRef, settingsRevision, settingsReady, useAlternativeGameCards, alternativeCardsOpacity, alternativeCardsFade }: MainContentProps) => {
   const renderActiveTransientView = () => {
     if (activeTab === 'home') {
       return (
@@ -146,6 +147,7 @@ export const MainContent = ({ activeTab, dllUpdateAvailable, deskUpdateAvailable
           onPreviewPersonalWallpaper={onPreviewPersonalWallpaper}
           onPreviewAlternativeCards={onPreviewAlternativeCards}
           onMissingSteamPath={onMissingSteamPath}
+          guardRef={settingsGuardRef}
         />
       </main>
 

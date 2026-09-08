@@ -48,11 +48,11 @@ impl SteamPathError {
         match self {
             SteamPathError::Empty => "Steam installation path is required".to_string(),
             SteamPathError::NotFound => format!(
-                "Steam installation path was not found: {}. Select the right path.",
+                "Steam installation path was not found: {}. Check the path in Settings.",
                 raw.trim()
             ),
             SteamPathError::NotADirectory => format!(
-                "Steam installation path is not a directory: {}. Select the right path.",
+                "Steam installation path is not a directory: {}. Check the path in Settings.",
                 raw.trim()
             ),
             SteamPathError::MissingSteamExe => format!(

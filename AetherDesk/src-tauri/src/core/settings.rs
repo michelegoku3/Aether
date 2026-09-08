@@ -176,10 +176,17 @@ pub fn normalize_icon_selected_file(value: &str) -> String {
     }
 }
 
+/// Major Steam store currencies (ISO 4217, lowercase) offered by the UI.
+/// Unknown values fall back to EUR everywhere (normalize + country map +
+/// cache key), so the frontend can never poison the store queries.
 pub fn normalize_store_currency(value: &str) -> String {
-    match value.trim().to_lowercase().as_str() {
-        "usd" => "usd".to_string(),
-        "jpy" => "jpy".to_string(),
+    let code = value.trim().to_lowercase();
+    match code.as_str() {
+        "eur" | "usd" | "gbp" | "jpy" | "ars" | "brl" | "cad" | "aud" | "chf"
+        | "cny" | "krw" | "inr" | "mxn" | "rub" | "try" | "pln" | "sek" | "nok"
+        | "dkk" | "nzd" | "sgd" | "hkd" | "twd" | "thb" | "myr" | "idr" | "php"
+        | "ils" | "aed" | "sar" | "clp" | "cop" | "pen" | "uah" | "kzt" | "vnd"
+        | "zar" => code,
         _ => "eur".to_string(),
     }
 }
@@ -187,8 +194,42 @@ pub fn normalize_store_currency(value: &str) -> String {
 pub fn steam_country_code_for_currency(value: &str) -> &'static str {
     match normalize_store_currency(value).as_str() {
         "usd" => "US",
+        "gbp" => "GB",
         "jpy" => "JP",
-        _ => "IT",
+        "ars" => "AR",
+        "brl" => "BR",
+        "cad" => "CA",
+        "aud" => "AU",
+        "chf" => "CH",
+        "cny" => "CN",
+        "krw" => "KR",
+        "inr" => "IN",
+        "mxn" => "MX",
+        "rub" => "RU",
+        "try" => "TR",
+        "pln" => "PL",
+        "sek" => "SE",
+        "nok" => "NO",
+        "dkk" => "DK",
+        "nzd" => "NZ",
+        "sgd" => "SG",
+        "hkd" => "HK",
+        "twd" => "TW",
+        "thb" => "TH",
+        "myr" => "MY",
+        "idr" => "ID",
+        "php" => "PH",
+        "ils" => "IL",
+        "aed" => "AE",
+        "sar" => "SA",
+        "clp" => "CL",
+        "cop" => "CO",
+        "pen" => "PE",
+        "uah" => "UA",
+        "kzt" => "KZ",
+        "vnd" => "VN",
+        "zar" => "ZA",
+        _ => "IT", // "eur" + anything unknown
     }
 }
 
