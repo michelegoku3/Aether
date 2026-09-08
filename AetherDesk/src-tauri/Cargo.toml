@@ -17,7 +17,11 @@ tauri = { version = "^2", features = ["devtools"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 reqwest = { version = "0.12", features = ["json"] }
-tokio = { version = "1", features = ["full"] }
+# Minimal tokio surface actually used (join!/select! macros, spawn, JoinSet,
+# sync::{oneshot, Semaphore}, time::{timeout, sleep}, net::{TcpListener,
+# TcpStream}, io::{AsyncReadExt, AsyncWriteExt}): "full" also builds
+# fs/io-std/process/signal, which nothing uses.
+tokio = { version = "1", features = ["macros", "rt", "rt-multi-thread", "sync", "time", "net", "io-util"] }
 sysinfo = "0.30"
 zip = "1.0"
 unrar = "0.5"
@@ -42,7 +46,10 @@ image = { version = "0.25", default-features = false, features = ["png", "jpeg",
 windows-sys = { version = "0.59", features = ["Win32_Storage_FileSystem", "Win32_System_SystemInformation", "Win32_Foundation", "Win32_UI_Shell", "Win32_Security_Cryptography"] }
 # Safe registry access for Steam InstallPath auto-detection (single-purpose,
 # well-maintained crate; keeps resolve.rs free of unsafe Win32 plumbing).
-winreg = "0.50"
+# 0.55 (not 0.50): unifies with the copy already pulled by embed-resource, so
+# the graph keeps ONE winreg on windows-sys 0.59 instead of a second copy on
+# the 0.48 chain. Only the stable RegKey API is used (predef/open_subkey/get_value).
+winreg = "0.55"
 
 [dev-dependencies]
 tempfile = "3"

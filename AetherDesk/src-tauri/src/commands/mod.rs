@@ -15,3 +15,4 @@ pub mod settings;
 pub mod steam;
 pub mod steamless;
 pub mod store;
+pub mod window;

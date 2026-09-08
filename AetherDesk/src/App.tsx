@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Sidebar, TabType } from './layout/Sidebar';
 import { MainContent } from './layout/MainContent';
 import { DllStatusInfo } from './types/ui';
@@ -10,6 +10,9 @@ import { STEAM_RUNTIME_EVENT } from './constants/library';
 import { LibraryGamesProvider } from './hooks/useLibraryGames';
 import { hasValidSteamPath } from './hooks/useSettings';
 import { SteamPathWarningModal } from './modals/SteamPathWarningModal';
+import { UnsavedChangesModal } from './modals/UnsavedChangesModal';
+import { getCurrentWindow } from '@tauri-apps/api/window';
+import type { SettingsGuard } from './views/SettingsView';
 
 export default function App() {
   // Setup state to manage the active view, defaulting to 'home'
@@ -17,6 +20,12 @@ export default function App() {
   // No-Steam-path warning (OST-style modal): shown on startup, when leaving
   // Settings, or when saving without a valid path — until one is configured.
   const [showSteamPathWarning, setShowSteamPathWarning] = useState(false);
+  // Unsaved-changes guard: SettingsView publishes isDirty/save/discard here;
+  // tab switches and window close consult it before proceeding.
+  const settingsGuardRef = useRef<SettingsGuard | null>(null);
+  const [showUnsavedModal, setShowUnsavedModal] = useState(false);
+  const [unsavedBusy, setUnsavedBusy] = useState(false);
+  const pendingActionRef = useRef<{ type: 'tab'; tab: TabType } | { type: 'close' } | null>(null);
 
   /** Shows the Steam-path warning unless the stored path is a valid
    *  installation. Shared by the startup check and the tab-change guard. */
@@ -27,12 +36,66 @@ export default function App() {
   };
 
   /** Leaving Settings without a valid stored Steam path pops the warning.
-   *  Navigation itself is never blocked — the modal offers "Go to Settings". */
+   *  Navigation itself is never blocked — the modal offers "Go to Settings".
+   *  Unsaved form edits take precedence: they pop the unsaved-changes modal
+   *  instead, and the switch only completes after Save / Don't Save. */
   const handleTabChange = (tab: TabType) => {
+    if (showUnsavedModal) return; // decide first — the modal owns the pending action
     if (activeTab === 'settings' && tab !== 'settings') {
+      if (settingsGuardRef.current?.isDirty()) {
+        pendingActionRef.current = { type: 'tab', tab };
+        setShowUnsavedModal(true);
+        return;
+      }
       void warnIfSteamPathMissing();
     }
     setActiveTab(tab);
+  };
+
+  /** Completes a guard-approved pending action (tab switch or window close). */
+  const completePendingAction = async (pending: { type: 'tab'; tab: TabType } | { type: 'close' }) => {
+    if (pending.type === 'tab') {
+      setActiveTab(pending.tab);
+      void warnIfSteamPathMissing();
+    } else {
+      // Default close was prevented: destroy via backend (custom commands
+      // need no capability grant, unlike core window APIs from the frontend).
+      try {
+        await invoke('force_close_window');
+      } catch (err) {
+        console.error('Failed to close window:', err);
+      }
+    }
+  };
+
+  const handleUnsavedSave = async () => {
+    if (unsavedBusy) return;
+    setUnsavedBusy(true);
+    try {
+      const saved = await settingsGuardRef.current?.save();
+      if (!saved) return; // toast/steam modal already shown; keep modal open to retry
+      const pending = pendingActionRef.current;
+      pendingActionRef.current = null;
+      setShowUnsavedModal(false);
+      if (pending) await completePendingAction(pending);
+    } finally {
+      setUnsavedBusy(false);
+    }
+  };
+
+  const handleUnsavedDiscard = () => {
+    if (unsavedBusy) return;
+    const pending = pendingActionRef.current;
+    pendingActionRef.current = null;
+    setShowUnsavedModal(false);
+    settingsGuardRef.current?.discard();
+    if (pending) void completePendingAction(pending);
+  };
+
+  const handleUnsavedCancel = () => {
+    if (unsavedBusy) return;
+    pendingActionRef.current = null;
+    setShowUnsavedModal(false);
   };
 
   // Global state to track AetherDLL update availability from GitHub release tags
@@ -224,6 +287,21 @@ export default function App() {
     void warnIfSteamPathMissing();
   }, []);
 
+  // Window-close guard: with unsaved Settings edits, prevent the default
+  // close and prompt instead (Save/Discard complete via force_close_window).
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    getCurrentWindow().onCloseRequested((event) => {
+      if (settingsGuardRef.current?.isDirty()) {
+        event.preventDefault();
+        // Overwrites any tab-switch pending action: closing wins.
+        pendingActionRef.current = { type: 'close' };
+        setShowUnsavedModal(true);
+      }
+    }).then((off) => { unlisten = off; });
+    return () => unlisten?.();
+  }, []);
+
   // Steam action: Start (solo spawn, mai kill) vs Restart (kill + wait +
   // respawn) — i due comandi backend hanno semantica esplicita, qui si sceglie
   // in base allo stato del monitor condiviso. `steamBusy` blocca il doppio
@@ -303,7 +381,17 @@ export default function App() {
           alternativeCardsOpacity={alternativeCardsOpacity}
           alternativeCardsFade={alternativeCardsFade}
           onMissingSteamPath={() => setShowSteamPathWarning(true)}
+          settingsGuardRef={settingsGuardRef}
         />
+
+        {showUnsavedModal && (
+          <UnsavedChangesModal
+            busy={unsavedBusy}
+            onSave={() => void handleUnsavedSave()}
+            onDiscard={handleUnsavedDiscard}
+            onCancel={handleUnsavedCancel}
+          />
+        )}
 
         {showSteamPathWarning && (
           <SteamPathWarningModal
