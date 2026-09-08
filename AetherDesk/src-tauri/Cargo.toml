@@ -40,6 +40,9 @@ image = { version = "0.25", default-features = false, features = ["png", "jpeg",
 # (Windows-only API; the DLL domain is Windows-only by design).
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.59", features = ["Win32_Storage_FileSystem", "Win32_System_SystemInformation", "Win32_Foundation", "Win32_UI_Shell", "Win32_Security_Cryptography"] }
+# Safe registry access for Steam InstallPath auto-detection (single-purpose,
+# well-maintained crate; keeps resolve.rs free of unsafe Win32 plumbing).
+winreg = "0.50"
 
 [dev-dependencies]
 tempfile = "3"

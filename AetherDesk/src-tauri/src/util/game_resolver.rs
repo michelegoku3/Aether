@@ -18,11 +18,10 @@ pub fn resolve_installed_game(
     app_id: u32,
 ) -> Result<InstalledSteamGame, String> {
     let settings = SettingsManager::new(app).load();
-    if settings.steam_path.trim().is_empty() {
-        return Err("Steam installation path is required.".to_string());
-    }
+    let steam_root = crate::steam::resolve::resolve_steam_path(&settings.steam_path)
+        .map_err(|error| error.message(&settings.steam_path))?;
 
-    let scanner = SteamLibraryScanner::new(settings.steam_path, Some(settings.active_library));
+    let scanner = SteamLibraryScanner::new(steam_root);
     let Some(game) = scanner
         .scan_installed_games()
         .into_iter()

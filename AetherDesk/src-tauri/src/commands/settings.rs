@@ -33,21 +33,56 @@ pub fn save_settings(app: tauri::AppHandle, settings: AppSettings) -> Result<(),
         manager.save(&settings)?;
     }
 
-    // Rebind the single native stplug-in watcher only when its observed root
-    // actually changes. Appearance/provider settings must not restart it.
-    if settings_changed && steam_path_changed {
-        crate::core::library_events::reconfigure_library_watch(&app, &settings.steam_path);
+    apply_post_save_effects(&app, settings_changed && steam_path_changed, &settings);
+    Ok(())
+}
+
+/// Reset every setting to its backend default (including a freshly detected
+/// Steam path) and return the persisted object so the UI can re-render from a
+/// single source of truth instead of duplicating defaults frontend-side.
+///
+/// User choices that Reset must not touch are preserved: the Library toolbar
+/// filter, the antivirus-exclusion flag, and the OST warning acknowledgement.
+#[tauri::command]
+pub fn reset_settings_to_defaults(app: tauri::AppHandle) -> Result<AppSettings, String> {
+    let manager = SettingsManager::new(&app);
+    let previous = manager.load();
+    let mut defaults = AppSettings::default();
+    defaults.library_install_filter = previous.library_install_filter.clone();
+    defaults.antivirus_exclusion_done = previous.antivirus_exclusion_done;
+    defaults.ost_warning_acknowledged = previous.ost_warning_acknowledged;
+
+    let steam_path_changed = previous.steam_path.trim() != defaults.steam_path.trim();
+    crate::desk_log_info!(
+        "settings",
+        "Resetting settings to defaults (steam_path_changed={}, steam_path='{}')",
+        steam_path_changed,
+        defaults.steam_path
+    );
+    manager.save(&defaults)?;
+
+    apply_post_save_effects(&app, steam_path_changed, &defaults);
+    Ok(defaults)
+}
+
+/// Side effects shared by every settings write (save + reset):
+/// rebind the single native stplug-in watcher only when its observed root
+/// actually changes, recreate the DLL bridge pointer for the new root
+/// immediately (no restart needed), then refresh icon and TOML sync.
+fn apply_post_save_effects(app: &tauri::AppHandle, steam_root_changed: bool, settings: &AppSettings) {
+    if steam_root_changed {
+        crate::core::library_events::reconfigure_library_watch(app, &settings.steam_path);
         crate::core::library_events::notify_lua_changed(
-            &app,
+            app,
             crate::core::library_events::LibraryChangeOrigin::Settings,
             std::iter::empty::<u32>(),
         );
+        crate::core::migration::ensure_steam_bridge_for_path(&settings.steam_path);
     }
-    if let Err(e) = crate::core::custom_css::apply_window_icon(&app) {
+    if let Err(e) = crate::core::custom_css::apply_window_icon(app) {
         crate::desk_log_warn!("settings", "Window icon apply after save failed: {}", e);
     }
-    sync_custom_game_name_to_aethercore_toml(&app, &settings.custom_game_name);
-    Ok(())
+    sync_custom_game_name_to_aethercore_toml(app, &settings.custom_game_name);
 }
 
 fn sync_custom_game_name_to_aethercore_toml(app: &tauri::AppHandle, custom_name: &str) {

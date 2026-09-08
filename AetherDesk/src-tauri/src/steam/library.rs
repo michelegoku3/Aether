@@ -21,7 +21,6 @@ pub struct InstalledSteamGame {
 #[derive(Debug, Clone)]
 pub struct SteamLibraryScanner {
     steam_path: PathBuf,
-    active_library: Option<PathBuf>,
 }
 
 #[derive(Debug, Clone)]
@@ -40,14 +39,15 @@ struct LuaEntry {
 }
 
 impl SteamLibraryScanner {
-    pub fn new(steam_path: impl Into<PathBuf>, active_library: Option<String>) -> Self {
-        let active_library = active_library
-            .filter(|path| !path.trim().is_empty())
-            .map(PathBuf::from);
-
+    pub fn new(steam_path: impl Into<PathBuf>) -> Self {
+        // Normalize at the boundary: every consumer stores/uses the same
+        // canonical root, so a quoted/padded-but-valid path works everywhere.
+        // Callers are still expected to strict-validate at command entry for
+        // actionable errors; the scanner itself stays infallible by design.
+        let normalized =
+            crate::steam::resolve::normalize_steam_path(&steam_path.into().to_string_lossy());
         Self {
-            steam_path: steam_path.into(),
-            active_library,
+            steam_path: PathBuf::from(normalized),
         }
     }
 
@@ -276,26 +276,13 @@ impl SteamLibraryScanner {
                 .any(|fragment| lower_comment.contains(fragment))
     }
 
-    fn save_discovered_libraries(&self, libraries: &[PathBuf]) {
-        let config_dir = crate::core::paths::LocalAppPaths::config_dir();
-        if !config_dir.exists() {
-            let _ = fs::create_dir_all(&config_dir);
-        }
-        let file_path = config_dir.join("discovered_libraries.json");
-        let paths_str: Vec<String> = libraries.iter().map(|p| p.to_string_lossy().to_string()).collect();
-        if let Ok(json_data) = serde_json::to_string_pretty(&paths_str) {
-            let _ = fs::write(file_path, json_data);
-        }
-    }
-
     fn discover_libraries(&self) -> Vec<PathBuf> {
         let mut libraries = Vec::new();
         Self::push_unique_existing_dir(&mut libraries, self.steam_path.clone());
 
-        if let Some(active_library) = &self.active_library {
-            Self::push_unique_existing_dir(&mut libraries, active_library.clone());
-        }
-
+        // Every extra library is resolved transitively from each discovered
+        // `steamapps/libraryfolders.vdf` — no separate "active library"
+        // configuration is needed (nor kept).
         let mut index = 0;
         while index < libraries.len() {
             let library = libraries[index].clone();
@@ -304,8 +291,6 @@ impl SteamLibraryScanner {
             }
             index += 1;
         }
-
-        self.save_discovered_libraries(&libraries);
 
         libraries
     }

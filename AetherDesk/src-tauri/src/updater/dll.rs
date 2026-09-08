@@ -13,14 +13,24 @@ pub struct DllInstaller {
 
 impl DllInstaller {
     pub fn new(steam_path: String) -> Self {
+        // Normalize at the boundary so quoted/padded-but-valid paths work.
         Self {
-            steam_path: PathBuf::from(steam_path),
+            steam_path: PathBuf::from(crate::steam::resolve::normalize_steam_path(&steam_path)),
         }
+    }
+
+    /// Validated installation root for every mutating operation. Read-only
+    /// probes (`verify_installation`, `count_aether_residuals`) intentionally
+    /// stay infallible and keep their own cheap existence checks.
+    fn validated_root(&self) -> Result<PathBuf, String> {
+        let raw = self.steam_path.to_string_lossy();
+        crate::steam::resolve::resolve_steam_path(&raw)
+            .map_err(|error| error.message(&raw))
     }
 
     /// Verifies if the 3 target DLL files exist in the main Steam directory
     pub fn verify_installation(&self) -> bool {
-        if !self.steam_path.exists() {
+        if !self.steam_path.is_dir() {
             return false;
         }
 
@@ -32,9 +42,9 @@ impl DllInstaller {
     /// Takes a downloaded release ZIP file and extracts AetherCore.dll, AetherPayload.dll, and dwmapi.dll
     /// directly into the main Steam directory, overwriting any previous versions.
     pub fn install_from_zip(&self, zip_file_path: &Path) -> Result<(), String> {
-        if !self.steam_path.exists() {
-            return Err("Steam installation path does not exist".to_string());
-        }
+        // Fail fast on a typo'd path (before touching the ZIP): the joins
+        // below reuse the already-normalized stored root.
+        self.validated_root()?;
 
         let file = fs::File::open(zip_file_path)
             .map_err(|e| format!("Failed to open downloaded ZIP: {}", e))?;
@@ -83,9 +93,7 @@ impl DllInstaller {
 
     /// Removes AetherCore.dll, AetherPayload.dll, and dwmapi.dll from the Steam directory
     pub fn uninstall(&self) -> Result<(), String> {
-        if !self.steam_path.exists() {
-            return Err("Steam installation path does not exist".to_string());
-        }
+        self.validated_root()?;
 
         let files_to_delete = AETHER_DLL_FILES;
         let mut deleted_count = 0;
@@ -109,9 +117,7 @@ impl DllInstaller {
     /// Removes every known file/folder created by Aether inside the Steam directory.
     /// Targets are the single source of truth shared with [`Self::count_aether_residuals`].
     pub fn reset_aether_files(&self) -> Result<usize, String> {
-        if !self.steam_path.exists() {
-            return Err("Steam installation path does not exist".to_string());
-        }
+        self.validated_root()?;
 
         let mut removed = 0;
 

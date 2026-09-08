@@ -104,6 +104,7 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             commands::settings::get_settings,
             commands::settings::save_settings,
+            commands::settings::reset_settings_to_defaults,
             commands::settings::validate_hubcap_key,
             commands::settings::get_hubcap_usage,
             commands::settings::get_luatools_auth_status,
@@ -189,6 +190,9 @@ fn main() {
             commands::steam::get_ost_source_enabled,
             commands::steam::set_ost_source_enabled,
             commands::steam::acknowledge_ost_warning,
+            commands::steam::pick_steam_folder,
+            commands::steam::check_steam_path,
+            commands::steam::detect_steam_path,
             commands::aether_dll::get_installed_dll_version,
             commands::aether_dll::check_aether_dll_update,
             commands::aether_dll::install_aether_dll,

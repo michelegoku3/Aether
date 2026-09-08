@@ -116,13 +116,9 @@ pub async fn apply_game_version(
         }
     };
 
-    // ACF lives in the active library (falls back to the Steam root folder).
-    let settings = crate::core::settings::SettingsManager::new(&app).load();
-    let library_path = if settings.active_library.trim().is_empty() {
-        steam_path.clone()
-    } else {
-        settings.active_library.clone()
-    };
+    // ACF lives in the Steam root library. (`steam_path` was strict-validated
+    // at command entry; normalize the raw value before reuse.)
+    let library_path = crate::steam::resolve::normalize_steam_path(&steam_path);
 
     let handle = app.clone();
     let pipeline_result = tauri::async_runtime::spawn_blocking(move || {

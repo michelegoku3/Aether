@@ -2,8 +2,11 @@ use crate::util::validation::validate_steam_path;
 use crate::updater::dll::DllInstaller;
 use crate::core::settings::SettingsManager;
 use crate::steam::launch_options;
+use crate::steam::resolve::{normalize_steam_path, resolve_steam_path};
 use crate::steam::update_guard::SteamUpdateGuard;
-use std::path::Path;
+use crate::util::dialog::file_path_to_string;
+use std::path::{Path, PathBuf};
+use tauri_plugin_dialog::DialogExt;
 
 /// Argomento di avvio che Aether usa per attivare la sua modalità AetherOnline
 /// (masking 480 + payload) per un gioco. Nome scelto per non confondersi con
@@ -136,7 +139,8 @@ pub fn get_aetheronline(app: tauri::AppHandle, app_id: u32) -> Result<bool, Stri
         }
     }
     let steam_path = SettingsManager::new(&app).load().steam_path;
-    if steam_path.trim().is_empty() {
+    // Unreachable Steam means no legacy token can be active either.
+    if resolve_steam_path(&steam_path).is_err() {
         return Ok(false);
     }
     match launch_options::get_launch_options(Path::new(&steam_path), app_id) {
@@ -161,9 +165,7 @@ pub fn set_aetheronline(
     enabled: bool,
 ) -> Result<String, String> {
     let steam_path = SettingsManager::new(&app).load().steam_path;
-    if steam_path.trim().is_empty() {
-        return Err("Steam installation path is required.".to_string());
-    }
+    validate_steam_path(&steam_path)?;
 
     if enabled {
         let foreign = crate::commands::online::foreign_for_app(&app, app_id);
@@ -241,7 +243,8 @@ pub fn get_aether_showonline(app: tauri::AppHandle, app_id: u32) -> Result<bool,
         }
     }
     let steam_path = SettingsManager::new(&app).load().steam_path;
-    if steam_path.trim().is_empty() {
+    // Unreachable Steam means no legacy token can be active either.
+    if resolve_steam_path(&steam_path).is_err() {
         return Ok(false);
     }
     match launch_options::get_launch_options(Path::new(&steam_path), app_id) {
@@ -267,9 +270,7 @@ pub fn set_aether_showonline(
     enabled: bool,
 ) -> Result<String, String> {
     let steam_path = SettingsManager::new(&app).load().steam_path;
-    if steam_path.trim().is_empty() {
-        return Err("Steam installation path is required.".to_string());
-    }
+    validate_steam_path(&steam_path)?;
 
     if enabled {
         let foreign = crate::commands::online::foreign_for_app(&app, app_id);
@@ -460,4 +461,105 @@ pub fn set_ost_source_enabled(app: tauri::AppHandle, enabled: bool) -> Result<St
     } else {
         "OST pattern source disabled: only MigoReleases and KoriaPolis are used.".to_string()
     })
+}
+
+// ---------------------------------------------------------------------------
+// Steam installation path: picker, live validation, auto-detection.
+// Thin Tauri wrappers over `steam::resolve` (which owns all the logic).
+// ---------------------------------------------------------------------------
+
+/// Open the native folder picker for the Steam installation directory.
+/// Returns `None` when the user cancels. The dialog starts at the configured
+/// path when usable, else at the auto-detected installation, else at the
+/// default Program Files location.
+#[tauri::command]
+pub async fn pick_steam_folder(app: tauri::AppHandle) -> Result<Option<String>, String> {
+    let start_dir = pick_steam_folder_start_dir(&app);
+    crate::desk_log_info!(
+        "steam",
+        "Opening Steam folder picker (start dir: {})",
+        start_dir.display()
+    );
+
+    let picked = app
+        .dialog()
+        .file()
+        .set_title("Select your Steam installation folder (the one containing steam.exe)")
+        .set_directory(&start_dir)
+        .blocking_pick_folder();
+
+    let selected = picked.and_then(file_path_to_string).map(|path| {
+        // Persist the canonical form immediately at the source: the frontend
+        // saves this value verbatim, and normalization is idempotent.
+        normalize_steam_path(&path)
+    });
+    if let Some(path) = &selected {
+        crate::desk_log_info!("steam", "Steam folder picked: '{}'", path);
+    }
+    Ok(selected.filter(|path| !path.is_empty()))
+}
+
+fn pick_steam_folder_start_dir(app: &tauri::AppHandle) -> PathBuf {
+    let configured = SettingsManager::new(app).load().steam_path;
+    let normalized = normalize_steam_path(&configured);
+    if !normalized.is_empty() {
+        let dir = PathBuf::from(&normalized);
+        // Accept the configured path itself, or its parent when the stored
+        // value points at a file / no longer exists (dialog still opens near
+        // the user's intent instead of a generic location).
+        if dir.is_dir() {
+            return dir;
+        }
+        if let Some(parent) = dir.parent().filter(|parent| parent.is_dir()) {
+            return parent.to_path_buf();
+        }
+    }
+    if let Some(detected) = crate::steam::resolve::detect_steam_path() {
+        return detected;
+    }
+    PathBuf::from(crate::steam::resolve::LEGACY_DEFAULT_STEAM_PATH)
+}
+
+/// Live validation result for the Settings UI: never fails, always answers.
+#[derive(Debug, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SteamPathCheck {
+    pub valid: bool,
+    pub normalized: String,
+    pub error: Option<String>,
+}
+
+/// Validate an arbitrary Steam path string for live UI feedback.
+/// Read-only: inspects the filesystem, writes nothing.
+#[tauri::command]
+pub fn check_steam_path(path: String) -> SteamPathCheck {
+    match resolve_steam_path(&path) {
+        Ok(resolved) => SteamPathCheck {
+            valid: true,
+            normalized: resolved.display().to_string(),
+            error: None,
+        },
+        Err(error) => SteamPathCheck {
+            valid: false,
+            normalized: normalize_steam_path(&path),
+            error: Some(error.message(&path)),
+        },
+    }
+}
+
+/// Best-effort Steam auto-detection (registry → running process →
+/// well-known locations). Returns `None` when nothing is found.
+#[tauri::command]
+pub fn detect_steam_path() -> Option<String> {
+    let found = crate::steam::resolve::detect_steam_installation();
+    match &found {
+        Some((path, source)) => crate::desk_log_info!(
+            "steam",
+            "Auto-detected Steam at {} (source={})",
+            path.display(),
+            source.as_log_label()
+        ),
+        None => crate::desk_log_warn!("steam", "Steam auto-detection found nothing"),
+    }
+    found.map(|(path, _)| path.display().to_string())
 }

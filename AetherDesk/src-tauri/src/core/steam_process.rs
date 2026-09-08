@@ -62,16 +62,13 @@ pub fn wait_steam_gone() -> bool {
 
 /// Spawn `steam.exe` from the given Steam root in a new console (detached).
 pub fn spawn_steam(steam_dir: &Path) -> Result<PathBuf, String> {
-    if !steam_dir.exists() {
-        return Err("Steam installation path does not exist. Please check your settings.".to_string());
-    }
-    let steam_exe = steam_dir.join("steam.exe");
-    if !steam_exe.exists() {
-        return Err(format!("steam.exe was not found in Steam directory: {:?}", steam_exe));
-    }
+    let raw = steam_dir.to_string_lossy();
+    let root = crate::steam::resolve::resolve_steam_path(&raw)
+        .map_err(|error| error.message(&raw))?;
+    let steam_exe = root.join("steam.exe");
 
     let mut cmd = std::process::Command::new(&steam_exe);
-    cmd.current_dir(steam_dir);
+    cmd.current_dir(&root);
     #[cfg(target_os = "windows")]
     {
         use std::os::windows::process::CommandExt;

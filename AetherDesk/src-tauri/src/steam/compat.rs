@@ -11,9 +11,19 @@ pub struct SteamCompat {
 
 impl SteamCompat {
     pub fn new(steam_path: String) -> Self {
+        // Normalize at the boundary so quoted/padded-but-valid paths work.
         Self {
-            steam_path: PathBuf::from(steam_path),
+            steam_path: PathBuf::from(crate::steam::resolve::normalize_steam_path(&steam_path)),
         }
+    }
+
+    /// Validated installation root. Every mutating operation resolves through
+    /// here first: a typo'd path fails with an actionable error instead of
+    /// scattering `config/stplug-in` or `depotcache` folders at wrong locations.
+    fn validated_root(&self) -> Result<PathBuf, String> {
+        let raw = self.steam_path.to_string_lossy();
+        crate::steam::resolve::resolve_steam_path(&raw)
+            .map_err(|error| error.message(&raw))
     }
 
     /// Returns the path to Steam's main plugin directory
@@ -28,7 +38,7 @@ impl SteamCompat {
 
     /// Safely writes the Lua config to the stplug-in directory
     pub fn install_lua_config(&self, app_id: u32, content: &str) -> Result<(), String> {
-        let plugin_dir = self.get_plugin_dir();
+        let plugin_dir = self.validated_root()?.join("config").join("stplug-in");
         if !plugin_dir.exists() {
             fs::create_dir_all(&plugin_dir)
                 .map_err(|e| format!("Failed to create plugin directory: {}", e))?;
@@ -67,7 +77,11 @@ impl SteamCompat {
     }
 
     pub fn read_lua_config(&self, app_id: u32) -> Result<String, String> {
-        let path = self.get_plugin_dir().join(format!("{}.lua", app_id));
+        let path = self
+            .validated_root()?
+            .join("config")
+            .join("stplug-in")
+            .join(format!("{}.lua", app_id));
         fs::read_to_string(&path)
             .map_err(|e| format!("Failed to read plugin Lua {}: {}", path.display(), e))
     }
@@ -78,7 +92,7 @@ impl SteamCompat {
             return Ok(0);
         }
 
-        let depotcache_dir = self.get_depotcache_dir();
+        let depotcache_dir = self.validated_root()?.join("depotcache");
         fs::create_dir_all(&depotcache_dir)
             .map_err(|e| format!("Failed to create depotcache directory: {}", e))?;
 

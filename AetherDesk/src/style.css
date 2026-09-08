@@ -2635,6 +2635,20 @@ body {
   background-color: #192128;
 }
 
+/* Steam path field: live validation status below the input (palette mirrors
+   .settings-alert error; valid paths show nothing by design). */
+.steam-path-status {
+  margin-top: 6px;
+}
+
+.steam-path-invalid {
+  color: #ef4444;
+}
+
+.steam-path-checking {
+  color: #8f8f9e;
+}
+
 /* Keep long Info values compact; inner scroll handles overflow. */
 .info-value {
   max-height: 49px;

@@ -70,20 +70,19 @@ fn collect_exclusion_paths(app: &tauri::AppHandle) -> Vec<PathBuf> {
     push(LocalAppPaths::install_root());
 
     // 2. Steam folders (main path + every library from libraryfolders.vdf).
+    // Best-effort: when Steam is unconfigured/misconfigured the process-name
+    // exclusions below still protect it wherever it lives.
     let settings = SettingsManager::new(app).load();
-    let steam_path = settings.steam_path.trim();
-    if !steam_path.is_empty() {
-        // `SteamLibraryScanner::new` accepts Option<String> for the active
-        // library and internally filters out empty strings, so wrapping in
-        // Some() is always correct here — even when active_library is "".
-        let active_library = if settings.active_library.trim().is_empty() {
-            None
-        } else {
-            Some(settings.active_library.clone())
-        };
-        let scanner = SteamLibraryScanner::new(steam_path, active_library);
-        for library in scanner.discover_library_paths() {
-            push(library);
+    match crate::steam::resolve::resolve_steam_path(&settings.steam_path) {
+        Ok(steam_root) => {
+            let scanner = SteamLibraryScanner::new(steam_root);
+            for library in scanner.discover_library_paths() {
+                push(library);
+            }
+        }
+        Err(crate::steam::resolve::SteamPathError::Empty) => {}
+        Err(error) => {
+            crate::desk_log_warn!("antivirus", "Skipping Steam path exclusions: {}", error.message(&settings.steam_path));
         }
     }
 
