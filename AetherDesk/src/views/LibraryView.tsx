@@ -4,6 +4,7 @@ import { LuaManifestRow } from '../modals/SpecificVersionModal';
 import ChangeVersionModal from '../modals/ChangeVersionModal';
 import { LibraryGameActionsModal } from '../modals/LibraryGameActionsModal';
 import { GameInfoModal } from '../modals/GameInfoModal';
+import { GameUpdatesModal } from '../modals/GameUpdatesModal';
 import { preloadGameCovers } from '../ui/GameCover';
 import { GameCard } from '../ui/GameCard';
 import { StatusAlert } from '../ui/StatusAlert';
@@ -42,6 +43,8 @@ export const LibraryView = ({
   const [infoGame, setInfoGame] = useState<InstalledGame | null>(null);
   const [versionGame, setVersionGame] = useState<InstalledGame | null>(null);
   const [manifestRows, setManifestRows] = useState<LuaManifestRow[]>([]);
+  // Steam path the updates modal operates on; null = modal closed.
+  const [updatesSteamPath, setUpdatesSteamPath] = useState<string | null>(null);
 
   const showStatus = (text: string, type: StatusType) => {
     setStatus({ text, type });
@@ -64,6 +67,14 @@ export const LibraryView = ({
         text: `Unable to save library filter: ${err}`,
         type: 'error',
       });
+    }
+  };
+
+  const handleOpenUpdatesModal = async () => {
+    try {
+      setUpdatesSteamPath(await requireSteamPath());
+    } catch (err: any) {
+      showStatus(`Unable to manage game updates: ${err}`, 'error');
     }
   };
 
@@ -137,10 +148,10 @@ export const LibraryView = ({
           <button
             type="button"
             className="library-icon-btn"
-            disabled={true}
-            tabIndex={-1}
-            title="Update"
-            aria-label="Update"
+            onClick={() => void handleOpenUpdatesModal()}
+            disabled={isLoading}
+            title="Manage game updates (block/unblock all)"
+            aria-label="Manage game updates"
           >
             <ArrowUpThickIcon />
           </button>
@@ -236,6 +247,16 @@ export const LibraryView = ({
             setVersionGame(null);
             setManifestRows([]);
           }}
+        />
+      )}
+
+      {updatesSteamPath && (
+        <GameUpdatesModal
+          games={games}
+          steamPath={updatesSteamPath}
+          onStatus={showStatus}
+          onRefresh={loadInstalledGames}
+          onClose={() => setUpdatesSteamPath(null)}
         />
       )}
     </div>
