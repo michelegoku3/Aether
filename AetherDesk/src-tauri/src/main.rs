@@ -190,6 +190,8 @@ fn main() {
             commands::steam::get_ost_source_enabled,
             commands::steam::set_ost_source_enabled,
             commands::steam::acknowledge_ost_warning,
+            commands::steam::get_manifest_restore_enabled,
+            commands::steam::set_manifest_restore_enabled,
             commands::steam::pick_steam_folder,
             commands::steam::check_steam_path,
             commands::steam::detect_steam_path,

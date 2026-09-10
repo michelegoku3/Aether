@@ -25,6 +25,7 @@
 #include "hooks/steamclient/OwnershipHooks.h"
 #include "hooks/steamui/SteamUIHook.h"
 #include "hooks/wire/AchievementBackup.h"
+#include "hooks/wire/ManifestRestore.h"
 #include "hooks/wire/AchievementModule.h"
 #include "network/EticketFetcher.h"
 
@@ -197,6 +198,14 @@ namespace {
         //     (perdita del 21/08) e questa copia deve batterlo sul tempo.
         //     Dipende da: lua data (HasDepot) + aethercore dir (desk_path.cfg).
         ac::hooks::AchievementBackup::BackupAllKnownStatsAtStartup();
+
+        // 10b. Manifest restore: ricopia in Steam\depotcache i .manifest di
+        //      backup mancanti (async, una volta per processo). Disinstallare
+        //      un gioco cancella i manifest e Steam non li serve più senza
+        //      autenticazione — il backup è l'unica copia rimasta. No-op
+        //      quando [manifest_cache] restore_on_startup è false.
+        //      Dipende da: aethercore dir (desk_path.cfg) + steamInstallPath.
+        ac::hooks::ManifestRestore::RestoreMissingManifestsAtStartup();
 
         // 10. DirWatch: starts the Lua hot-reload watcher so games can be
         //    added/removed without restarting Steam. Runs AFTER the initial

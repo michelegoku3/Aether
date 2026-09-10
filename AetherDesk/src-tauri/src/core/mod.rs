@@ -8,6 +8,7 @@ pub mod logger;
 pub mod secure_storage;
 pub mod presence_config;
 pub mod ost_config;
+pub mod manifest_restore_config;
 pub mod steam_monitor;
 pub mod steam_process;
 pub mod library_events;

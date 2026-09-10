@@ -80,6 +80,10 @@ export const SettingsView = ({ hubcapUsage, onRefreshUsage, onRefreshCustomCss, 
   // the user has pressed "I understand". Persisted in settings.json.
   const [ostWarningAcknowledged, setOstWarningAcknowledged] = useState(false);
   const [showOstWarning, setShowOstWarning] = useState(false);
+  // [manifest_cache] restore_on_startup in aethercore.toml: refill
+  // Steam\depotcache from the manifest backups on every Steam start
+  // (default ON), applies on the next Steam start.
+  const [manifestRestoreOnStartup, setManifestRestoreOnStartup] = useState(true);
   // [presence] default_mode in aethercore.toml (docs/05 §12): live nel file
   // della DLL, NON nelle Desk settings — si applica subito, senza Save.
   const [presenceDefaultShowOnline, setPresenceDefaultShowOnline] = useState(true);
@@ -199,6 +203,10 @@ export const SettingsView = ({ hubcapUsage, onRefreshUsage, onRefreshCustomCss, 
     invoke<boolean>('get_ost_source_enabled')
       .then(setUseOstSource)
       .catch((err) => console.warn('[settings] failed to load OST source state:', err));
+    // Manifest restore on Steam startup lives in aethercore.toml too (default ON).
+    invoke<boolean>('get_manifest_restore_enabled')
+      .then(setManifestRestoreOnStartup)
+      .catch((err) => console.warn('[settings] failed to load manifest restore state:', err));
     invoke<LuaToolsAuthStatus>('get_luatools_auth_status')
       .then(setLuaToolsAuth)
       .catch((err) => console.warn('[settings] failed to load LuaTools auth status:', err));
@@ -705,6 +713,33 @@ export const SettingsView = ({ hubcapUsage, onRefreshUsage, onRefreshCustomCss, 
                   } catch (err: any) {
                     setUseOstSource(previous);
                     showStatus(`Failed to set OST pattern source: ${err}`, 'error');
+                  }
+                }}
+              />
+              <span></span>
+            </label>
+          </div>
+
+          <div
+            className="settings-toggle-row"
+            title="When ON (default), AetherCore copies every backed-up .manifest (AetherData\backup\<app_id>\lua) that is missing from Steam\depotcache back into place on each Steam start. Uninstalling a game wipes its manifests, and Steam no longer serves manifests without authentication — this keeps them always available. Applies immediately (no Save); takes effect on the next Steam start."
+          >
+            <span className="settings-toggle-text">Restore manifests on Steam startup</span>
+            <label className="version-switch">
+              <input
+                type="checkbox"
+                checked={manifestRestoreOnStartup}
+                onChange={async (e) => {
+                  const next = e.target.checked;
+                  const previous = !next;
+                  // Applica subito (il toggle scrive aethercore.toml, non le
+                  // Desk settings); rollback ottimistico in caso di errore.
+                  setManifestRestoreOnStartup(next);
+                  try {
+                    await invoke('set_manifest_restore_enabled', { enabled: next });
+                  } catch (err: any) {
+                    setManifestRestoreOnStartup(previous);
+                    showStatus(`Failed to set manifest restore: ${err}`, 'error');
                   }
                 }}
               />
@@ -1400,3 +1435,4 @@ export const SettingsView = ({ hubcapUsage, onRefreshUsage, onRefreshCustomCss, 
     </div>
   );
 };
+

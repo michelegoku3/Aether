@@ -463,6 +463,41 @@ pub fn set_ost_source_enabled(app: tauri::AppHandle, enabled: bool) -> Result<St
     })
 }
 
+/// True when the missing `*.manifest` backups are recopied from
+/// `AetherData\backup\<app_id>\lua` into `Steam\depotcache` on every Steam
+/// start via `[manifest_cache] restore_on_startup`.
+/// Missing key => true (default ON: uninstalling a game wipes depotcache,
+/// and Steam no longer serves manifests without authentication).
+#[tauri::command]
+pub fn get_manifest_restore_enabled(app: tauri::AppHandle) -> Result<bool, String> {
+    for path in crate::core::manifest_restore_config::aethercore_toml_paths(&app) {
+        if let Some(v) = crate::core::manifest_restore_config::read_manifest_restore_enabled(&path) {
+            return Ok(v);
+        }
+    }
+    Ok(true)
+}
+
+/// Enables/disables the startup refill of `Steam\depotcache` from the local
+/// manifest backups. Applies on the next Steam start (the DLL runs the
+/// restore once per Steam process, right after injection).
+#[tauri::command]
+pub fn set_manifest_restore_enabled(app: tauri::AppHandle, enabled: bool) -> Result<String, String> {
+    for path in crate::core::manifest_restore_config::aethercore_toml_paths(&app) {
+        crate::core::manifest_restore_config::set_manifest_restore_enabled_in_toml(&path, enabled);
+    }
+    crate::desk_log_info!(
+        "steam",
+        "Manifest restore on startup {}",
+        if enabled { "enabled" } else { "disabled" }
+    );
+    Ok(if enabled {
+        "Manifest restore enabled: missing .manifest backups will be copied back into Steam depotcache on every Steam start.".to_string()
+    } else {
+        "Manifest restore disabled: Steam depotcache will no longer be refilled from backups at startup.".to_string()
+    })
+}
+
 // ---------------------------------------------------------------------------
 // Steam installation path: picker, live validation, auto-detection.
 // Thin Tauri wrappers over `steam::resolve` (which owns all the logic).

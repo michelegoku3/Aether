@@ -472,10 +472,15 @@ pub fn ensure_aethercore_bridge(app: &tauri::AppHandle) {
     // OST pattern source opt-in ([network] use_ost_source, default OFF):
     // insert only when missing, never overriding an explicit user choice.
     crate::core::ost_config::ensure_defaults(&toml_path);
+    // Manifest restore on Steam startup ([manifest_cache] restore_on_startup,
+    // default ON): insert only when missing, never overriding an explicit
+    // user choice.
+    crate::core::manifest_restore_config::ensure_defaults(&toml_path);
     if let Ok(root) = crate::steam::resolve::resolve_steam_path(&steam_path) {
         let legacy_toml = root.join("aethercore").join("aethercore.toml");
         crate::core::presence_config::migrate_legacy_presence_keys(&legacy_toml);
         crate::core::presence_config::ensure_defaults(&legacy_toml);
         crate::core::ost_config::ensure_defaults(&legacy_toml);
+        crate::core::manifest_restore_config::ensure_defaults(&legacy_toml);
     }
 }
