@@ -1189,6 +1189,18 @@ body {
   color: #ffffff;
 }
 
+/* Disabled source (e.g. MOED while unavailable, or any source mid-download):
+   clearly non-clickable, with no hover highlight. */
+.source-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.source-btn:disabled:hover {
+  border-color: var(--border-color);
+  color: var(--color-muted);
+}
+
 /* Large Action Buttons Option layout */
 .big-action-btn {
   background: none;

@@ -52,6 +52,15 @@ use_ost_source = false
 # Per-request wall-clock budget before falling through to Steam's original reply.
 timeout_sec = 12
 
+[manifest_cache]
+# Restore *.manifest backups into Steam\depotcache on every Steam start.
+# ON by default: uninstalling a game deletes its manifests from depotcache,
+# and Steam no longer serves manifests without authentication — the local
+# backup under AetherData\backup\<app_id>\lua is the only copy left.
+# Toggle "Restore manifests on Steam startup" in AetherDesk Settings to
+# disable the refill (applies on the next Steam start).
+restore_on_startup = true
+
 [presence]
 # Unified friends/UI presence (with AND without -aetheronline).
 # Does NOT change GetAppIDForCurrentPipe / multiplayer session identity.

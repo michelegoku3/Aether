@@ -52,6 +52,13 @@ struct Settings {
         "gmrc.wudrm.com",
     };
 
+    // [manifest_cache]
+    // Restore *.manifest backups into Steam\depotcache on every Steam start.
+    // Default ON: uninstalling a game wipes its manifests from depotcache,
+    // and Steam no longer serves manifests without authentication — the local
+    // backup under AetherData\backup\<app_id>\lua is the only copy left.
+    bool manifestRestoreOnStartup = true;
+
     // [presence]
     bool presenceInjectLocal = true;
     bool presenceAlwaysExtraInfo = true;

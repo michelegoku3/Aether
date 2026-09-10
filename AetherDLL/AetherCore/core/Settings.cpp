@@ -121,6 +121,13 @@ Settings Settings::Load(const std::string& configPath) {
         }
     }
 
+    // [manifest_cache]
+    if (auto* cache = tbl["manifest_cache"].as_table()) {
+        if (auto v = (*cache)["restore_on_startup"].value<bool>()) {
+            s.manifestRestoreOnStartup = *v;
+        }
+    }
+
     // [presence]
     if (auto* presence = tbl["presence"].as_table()) {
         if (auto v = (*presence)["inject_local"].value<bool>()) {
@@ -184,7 +191,7 @@ Settings Settings::Load(const std::string& configPath) {
 
     AC_LOG_INFO("Settings",
                 "Loaded %s (level=%s, keep_last_session=%d, lua extra paths: %zu, "
-                "mirror: %s, ost=%d, manifest urls: %zu, presence: default=%s show=%zu of=%zu excl=%zu).",
+                "mirror: %s, ost=%d, manifest urls: %zu, manifest_restore=%d, presence: default=%s show=%zu of=%zu excl=%zu).",
                 configPath.c_str(),
                 s.logLevel == LogLevel::Trace ? "trace"
                     : s.logLevel == LogLevel::Debug ? "debug"
@@ -196,6 +203,7 @@ Settings Settings::Load(const std::string& configPath) {
                 s.patternMirror.empty() ? "default" : "custom",
                 s.patternUseOstSource ? 1 : 0,
                 s.manifestFetchUrls.size(),
+                s.manifestRestoreOnStartup ? 1 : 0,
                 s.presenceDefaultShowOnline ? "showonline" : "none",
                 s.presenceShowOnlineApps.size(),
                 s.presenceAetherOnlineApps.size(),

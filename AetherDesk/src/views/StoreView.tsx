@@ -64,8 +64,9 @@ export const StoreView = ({ onRefreshUsage, settingsRevision, settingsReady, use
   const [infoGame, setInfoGame] = useState<StoreGame | null>(null);
 
   // Selected manifest source. LuaTools uses its own authenticated session;
-  // Hubcap/Ryuu use the API keys configured in Settings.
-  const [selectedSource, setSelectedSource] = useState<'hubcap' | 'luatools' | 'ryuu' | 'oureveryday'>('oureveryday');
+  // Hubcap/Ryuu use the API keys configured in Settings. MOED ('oureveryday')
+  // is currently unavailable: its button is disabled and it is never picked.
+  const [selectedSource, setSelectedSource] = useState<'hubcap' | 'luatools' | 'ryuu' | 'oureveryday'>('hubcap');
 
   // Status message for download operations inside the modal
   const [downloadStatus, setDownloadStatus] = useState<StatusMessage>(emptyStatus());
@@ -475,14 +476,15 @@ export const StoreView = ({ onRefreshUsage, settingsRevision, settingsReady, use
                     setIsDownloading(false);
 
                     // Pick the best configured source in a deterministic order:
-                    // Hubcap key → LuaTools session → Ryuu key → public MOED.
+                    // Hubcap key → LuaTools session → Ryuu key → Hubcap.
+                    // (MOED is currently unavailable, so it is never picked.)
                     try {
                       const [settingsResult, authResult] = await Promise.allSettled([
                         getSettings(),
                         invoke<{ signedIn: boolean }>('get_luatools_auth_status'),
                       ]);
                       if (settingsResult.status !== 'fulfilled') {
-                        setSelectedSource('oureveryday');
+                        setSelectedSource('hubcap');
                         return;
                       }
                       const settings = settingsResult.value;
@@ -494,12 +496,12 @@ export const StoreView = ({ onRefreshUsage, settingsRevision, settingsReady, use
                       } else if (settings.ryuu_api_key?.trim()) {
                         setSelectedSource('ryuu');
                       } else {
-                        setSelectedSource('oureveryday');
+                        setSelectedSource('hubcap');
                       }
                     } catch {
                       // Authentication/settings lookup failure must not block
-                      // the modal: MOED is the no-credential fallback.
-                      setSelectedSource('oureveryday');
+                      // the modal: Hubcap is the fallback.
+                      setSelectedSource('hubcap');
                     }
                   },
                 },
@@ -610,10 +612,9 @@ export const StoreView = ({ onRefreshUsage, settingsRevision, settingsReady, use
                     Ryuu
                   </button>
                   <button
-                    disabled={isDownloading}
-                    onClick={() => setSelectedSource('oureveryday')}
-                    className={`source-btn ${selectedSource === 'oureveryday' ? 'active' : ''}`}
-                    title="MOED manifest source"
+                    disabled
+                    className="source-btn source-btn-disabled"
+                    title="MOED source is currently unavailable"
                   >
                     MOED
                   </button>
