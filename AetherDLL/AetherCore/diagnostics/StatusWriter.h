@@ -8,12 +8,14 @@
 // AetherCore has exactly one. It reads everything it needs from g_state and
 // HookManager, so there is no separate counter bookkeeping to keep in sync.
 //
-// Schema v2 (top-level keys include):
+// Schema v3 (top-level keys include):
 //   schema_version, ts
 //   build_id, build_config, build_time, diversion_outcome
 //   steamclient_sha, steamclient_toml_found, steamclient_pattern_source
 //   steamui_sha, steamui_toml_found, steamui_pattern_source
 //   hooks_installed_count, hooks_missed_count
+//   wire_eresult_events, wire_access_denied_events, wire_transport_candidate_events
+//   cloud_blocked_events
 //   package0_captured, package0_seeded
 //   config_store_user_local_captured, config_store_cached_app_tickets
 //   lua_files_loaded, configured_depots, access_tokens, manifest_overrides

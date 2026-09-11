@@ -128,12 +128,3 @@ pub fn sanitize_query_for_hubcap(query: &str) -> Option<String> {
     }
     Some(collapsed)
 }
-
-/// Placeholder retained for backward compatibility; real Hubcap variant expansion
-/// lives in `store::service::collect_hubcap_hits` to avoid a circular dependency
-/// on `store::aliases`. Kept here so external callers/tests can keep importing
-/// through `store::normalize`.
-#[allow(dead_code)]
-pub fn hubcap_query_variants(_query: &str, _max: usize) -> Vec<String> {
-    Vec::new()
-}

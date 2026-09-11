@@ -28,7 +28,6 @@ const LOCAL_DATA_DIR_NAME: &str = "AetherData";
 /// `install_root/AetherData`.
 pub struct LocalAppPaths;
 
-#[allow(dead_code)]
 impl LocalAppPaths {
     /// Cartella contenente l'eseguibile.
     /// Con `currentUser` → `%LOCALAPPDATA%\AetherDesk\`

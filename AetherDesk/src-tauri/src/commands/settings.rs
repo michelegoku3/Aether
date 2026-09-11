@@ -1,4 +1,5 @@
 use crate::providers::hubcap::HubcapClient;
+use crate::providers::hubcap_generation::{MAX_GAME_GENERATIONS_PER_DAY, MAX_WORKSHOP_GENERATIONS_PER_DAY};
 use crate::providers::luatools_auth::{LuaToolsAuth, LuaToolsAuthStatus};
 use crate::core::paths::LocalAppPaths;
 use crate::core::settings::{AppSettings, SettingsManager};
@@ -151,20 +152,36 @@ pub async fn validate_hubcap_key(api_key: String) -> Result<bool, String> {
 #[tauri::command]
 pub async fn get_hubcap_usage(api_key: String) -> Result<serde_json::Value, String> {
     if api_key.trim().is_empty() {
-        return Ok(serde_json::json!({ "usage": 0, "limit": 25 }));
+        return Ok(serde_json::json!({
+            "usage": 0,
+            "limit": MAX_GAME_GENERATIONS_PER_DAY,
+            "workshopLimit": MAX_WORKSHOP_GENERATIONS_PER_DAY,
+            "reset": "midnight EST"
+        }));
     }
 
     match HubcapClient::new(api_key).get_usage_stats().await {
         Ok(stats) => {
-            let limit = stats.role_daily_limit.or(stats.daily_limit).unwrap_or(25);
+            let limit = stats
+                .role_daily_limit
+                .or(stats.daily_limit)
+                .unwrap_or(MAX_GAME_GENERATIONS_PER_DAY);
             let usage = stats.daily_usage.unwrap_or(0);
             Ok(serde_json::json!({
                 "usage": usage,
-                "limit": limit
+                "limit": limit,
+                "workshopLimit": MAX_WORKSHOP_GENERATIONS_PER_DAY,
+                "reset": "midnight EST"
             }))
         }
-        Err(_) => {
-            Ok(serde_json::json!({ "usage": 0, "limit": 25 }))
+        Err(error) => {
+            crate::desk_log_warn!("settings", "Hubcap usage request failed; returning local quota defaults: {}", error);
+            Ok(serde_json::json!({
+                "usage": 0,
+                "limit": MAX_GAME_GENERATIONS_PER_DAY,
+                "workshopLimit": MAX_WORKSHOP_GENERATIONS_PER_DAY,
+                "reset": "midnight EST"
+            }))
         }
     }
 }

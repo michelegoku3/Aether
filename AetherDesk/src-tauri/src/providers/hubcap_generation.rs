@@ -10,8 +10,13 @@ use std::collections::HashMap;
 use std::future::Future;
 use std::path::PathBuf;
 use std::sync::{Arc, OnceLock};
-use std::time::{SystemTime, UNIX_EPOCH};
-use tokio::sync::{Mutex, Notify};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use tokio::sync::{Mutex, Notify, Semaphore};
+
+/// Minimum spacing between logical generation operations. The generation
+/// endpoint and its usage check are both provider traffic; serializing them
+/// without a cadence still produces bursts when a DLC-heavy package finishes.
+const GENERATION_MIN_INTERVAL: Duration = Duration::from_millis(750);
 
 pub const MAX_GAME_GENERATIONS_PER_DAY: u32 = 1_500;
 pub const MAX_WORKSHOP_GENERATIONS_PER_DAY: u32 = 500;
@@ -58,11 +63,21 @@ struct InflightSlot {
 struct GenerationState {
     quota: Mutex<PersistedQuota>,
     inflight: Mutex<HashMap<GenerationKey, Arc<InflightSlot>>>,
+    last_generation_start: Mutex<Option<Instant>>,
 }
 
 fn state() -> &'static Arc<GenerationState> {
     static STATE: OnceLock<Arc<GenerationState>> = OnceLock::new();
     STATE.get_or_init(|| Arc::new(GenerationState::default()))
+}
+
+/// Hubcap rate-limits the generation endpoints separately from the daily
+/// quota. A process-wide gate prevents the Workshop worker, store actions,
+/// and versioning from issuing concurrent usage checks/generations that would
+/// turn one logical operation into a provider-side 429 burst.
+fn generation_network_gate() -> &'static Semaphore {
+    static GATE: OnceLock<Semaphore> = OnceLock::new();
+    GATE.get_or_init(|| Semaphore::new(1))
 }
 
 fn quota_path() -> PathBuf {
@@ -98,13 +113,20 @@ fn current_est_day() -> String {
 
 fn load_persisted() -> PersistedQuota {
     let path = quota_path();
-    let Ok(bytes) = std::fs::read(path) else {
+    let Ok(bytes) = std::fs::read(&path) else {
+        crate::desk_log_debug!("hubcap", "Quota state cache miss path={}", path.display());
         return PersistedQuota {
             day: current_est_day(),
             ..PersistedQuota::default()
         };
     };
-    let mut state: PersistedQuota = serde_json::from_slice(&bytes).unwrap_or_default();
+    let mut state: PersistedQuota = match serde_json::from_slice(&bytes) {
+        Ok(state) => state,
+        Err(error) => {
+            crate::desk_log_warn!("hubcap", "Quota state cache parse failed path={}: {}", path.display(), error);
+            PersistedQuota::default()
+        }
+    };
     let day = current_est_day();
     if state.day != day {
         state = PersistedQuota {
@@ -144,21 +166,55 @@ async fn reserve(kind: GenerationKind) -> Result<QuotaReservation, String> {
         };
     }
 
-    match kind {
-        GenerationKind::Game if quota.game_used >= MAX_GAME_GENERATIONS_PER_DAY => {
-            return Err("Hubcap daily game-manifest generation limit reached (1500; resets at midnight EST).".to_string());
-        }
-        GenerationKind::Workshop if quota.workshop_used >= MAX_WORKSHOP_GENERATIONS_PER_DAY => {
-            return Err("Hubcap daily Workshop-manifest generation limit reached (500; resets at midnight EST).".to_string());
-        }
-        _ => {}
+    let (used, limit) = match kind {
+        GenerationKind::Game => (quota.game_used, MAX_GAME_GENERATIONS_PER_DAY),
+        GenerationKind::Workshop => (quota.workshop_used, MAX_WORKSHOP_GENERATIONS_PER_DAY),
+    };
+    crate::desk_log_debug!(
+        "hubcap",
+        "Quota check kind={:?} day={} used={} limit={} remaining={}",
+        kind,
+        quota.day,
+        used,
+        limit,
+        limit.saturating_sub(used)
+    );
+    if used >= limit {
+        let label = match kind {
+            GenerationKind::Game => "game-manifest",
+            GenerationKind::Workshop => "Workshop-manifest",
+        };
+        crate::desk_log_warn!(
+            "hubcap",
+            "Quota exhausted kind={:?} day={} used={} limit={}",
+            kind,
+            quota.day,
+            used,
+            limit
+        );
+        return Err(format!("Hubcap daily {label} generation limit reached ({limit}; resets at midnight EST)."));
     }
 
     match kind {
         GenerationKind::Game => quota.game_used += 1,
         GenerationKind::Workshop => quota.workshop_used += 1,
     }
-    persist_quota(&quota)?;
+    if let Err(error) = persist_quota(&quota) {
+        match kind {
+            GenerationKind::Game => quota.game_used = quota.game_used.saturating_sub(1),
+            GenerationKind::Workshop => quota.workshop_used = quota.workshop_used.saturating_sub(1),
+        }
+        crate::desk_log_error!("hubcap", "Quota reservation persistence failed kind={:?}: {}", kind, error);
+        return Err(error);
+    }
+    crate::desk_log_info!(
+        "hubcap",
+        "Quota reserved kind={:?} day={} used={} remaining={}",
+        kind,
+        quota.day,
+        used + 1,
+        limit.saturating_sub(used + 1)
+    );
     Ok(QuotaReservation { kind })
 }
 
@@ -169,7 +225,35 @@ async fn release(reservation: QuotaReservation) {
         GenerationKind::Game => quota.game_used = quota.game_used.saturating_sub(1),
         GenerationKind::Workshop => quota.workshop_used = quota.workshop_used.saturating_sub(1),
     }
-    let _ = persist_quota(&quota);
+    if let Err(error) = persist_quota(&quota) {
+        crate::desk_log_error!(
+            "hubcap",
+            "Quota release persistence failed kind={:?}: {}",
+            reservation.kind,
+            error
+        );
+    } else {
+        crate::desk_log_info!(
+            "hubcap",
+            "Quota released kind={:?} day={} game_used={} workshop_used={}",
+            reservation.kind,
+            quota.day,
+            quota.game_used,
+            quota.workshop_used
+        );
+    }
+}
+
+async fn wait_for_generation_cadence() {
+    let shared = state();
+    let mut last = shared.last_generation_start.lock().await;
+    if let Some(previous) = *last {
+        let elapsed = previous.elapsed();
+        if elapsed < GENERATION_MIN_INTERVAL {
+            tokio::time::sleep(GENERATION_MIN_INTERVAL - elapsed).await;
+        }
+    }
+    *last = Some(Instant::now());
 }
 
 /// Process-wide request scheduler. `fetch` runs exactly once for a key, while
@@ -187,10 +271,22 @@ where
     let (slot, leader) = {
         let mut inflight = shared.inflight.lock().await;
         if let Some(slot) = inflight.get(&key) {
+            crate::desk_log_debug!(
+                "hubcap",
+                "Generation deduplicated waiter kind={:?} key={:?}",
+                kind,
+                key
+            );
             (Arc::clone(slot), false)
         } else {
             let slot = Arc::new(InflightSlot::default());
             inflight.insert(key.clone(), Arc::clone(&slot));
+            crate::desk_log_debug!(
+                "hubcap",
+                "Generation registered leader kind={:?} key={:?}",
+                kind,
+                key
+            );
             (slot, true)
         }
     };
@@ -199,6 +295,13 @@ where
         loop {
             let notified = slot.notify.notified();
             if let Some(completed) = slot.result.lock().await.clone() {
+                crate::desk_log_debug!(
+                    "hubcap",
+                    "Generation deduplicated waiter completed kind={:?} key={:?} success={}",
+                    kind,
+                    key,
+                    completed.result.is_ok()
+                );
                 return completed.result;
             }
             notified.await;
@@ -207,13 +310,37 @@ where
 
     let result = match reserve(kind).await {
         Ok(reservation) => {
-            let result = fetch().await;
+            crate::desk_log_debug!("hubcap", "Generation waiting for network gate kind={:?} key={:?}", kind, key);
+            let result = match generation_network_gate().acquire().await {
+                Ok(_permit) => {
+                    crate::desk_log_debug!("hubcap", "Generation network gate acquired kind={:?} key={:?}", kind, key);
+                    wait_for_generation_cadence().await;
+                    fetch().await
+                }
+                Err(error) => Err(format!("Hubcap generation scheduler unavailable: {error}")),
+            };
             if result.is_err() {
                 release(reservation).await;
             }
+            crate::desk_log_info!(
+                "hubcap",
+                "Generation leader completed kind={:?} key={:?} success={}",
+                kind,
+                key,
+                result.is_ok()
+            );
             result
         }
-        Err(error) => Err(error),
+        Err(error) => {
+            crate::desk_log_warn!(
+                "hubcap",
+                "Generation reservation rejected kind={:?} key={:?}: {}",
+                kind,
+                key,
+                error
+            );
+            Err(error)
+        }
     };
 
     *slot.result.lock().await = Some(CompletedRequest {
@@ -230,6 +357,7 @@ pub async fn reset_for_tests() {
     let shared = state();
     *shared.quota.lock().await = PersistedQuota::default();
     shared.inflight.lock().await.clear();
+    *shared.last_generation_start.lock().await = None;
 }
 
 #[cfg(test)]

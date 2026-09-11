@@ -61,9 +61,27 @@ void Write() {
     const auto diagnostics = diag::Snapshot();
     const auto& installed = g_state.hookManager.InstalledHooks();
     const auto& missed = g_state.hookManager.MissedHooks();
+    std::size_t wireEresultEvents = 0;
+    std::size_t wireAccessDeniedEvents = 0;
+    std::size_t wireTransportCandidateEvents = 0;
+    std::size_t cloudBlockedEvents = 0;
+    for (const auto& event : diagnostics) {
+        if (event.category == "wire_eresult") {
+            ++wireEresultEvents;
+            if (event.detail.find("label=AccessDenied") != std::string::npos) {
+                ++wireAccessDeniedEvents;
+            }
+            if (event.detail.find("class=transport_or_provider_candidate") != std::string::npos) {
+                ++wireTransportCandidateEvents;
+            }
+        }
+        if (event.category == "cloud_state_blocked" || event.category == "cloud_close_blocked") {
+            ++cloudBlockedEvents;
+        }
+    }
 
     json << "{\n";
-    json << "  \"schema_version\": 2,\n";
+    json << "  \"schema_version\": 3,\n";
     json << "  \"ts\": " << static_cast<long long>(std::time(nullptr)) << ",\n";
     json << "  \"build_id\": \"" << EscapeJson(g_state.buildId) << "\",\n";
     json << "  \"build_config\": \""
@@ -83,6 +101,10 @@ void Write() {
     json << "  \"steamui_pattern_source\": \"" << EscapeJson(g_state.steamuiPatternSource) << "\",\n";
     json << "  \"hooks_installed_count\": " << installed.size() << ",\n";
     json << "  \"hooks_missed_count\": " << missed.size() << ",\n";
+    json << "  \"wire_eresult_events\": " << wireEresultEvents << ",\n";
+    json << "  \"wire_access_denied_events\": " << wireAccessDeniedEvents << ",\n";
+    json << "  \"wire_transport_candidate_events\": " << wireTransportCandidateEvents << ",\n";
+    json << "  \"cloud_blocked_events\": " << cloudBlockedEvents << ",\n";
     json << "  \"package0_captured\": " << (g_state.pPackage0.load() ? "true" : "false") << ",\n";
     json << "  \"package0_seeded\": " << (g_state.package0Seeded.load() ? "true" : "false") << ",\n";
     json << "  \"config_store_user_local_captured\": "

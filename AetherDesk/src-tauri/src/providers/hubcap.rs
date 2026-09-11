@@ -1,6 +1,7 @@
 use reqwest::header::{HeaderMap, HeaderValue, AUTHORIZATION};
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
+use std::time::{Duration, Instant};
 use crate::manifest::package::{ManifestPackage, ManifestPackageExtractor};
 use crate::providers::http;
 use crate::providers::hubcap_generation::{
@@ -9,23 +10,38 @@ use crate::providers::hubcap_generation::{
 
 const BASE_URL: &str = "https://hubcapmanifest.com/api/v1";
 const HUBCAP_TIMEOUT_SECONDS: u64 = 8;
+const GENERATION_RETRY_ATTEMPTS: u32 = 3;
+
+fn retry_delay(response: &reqwest::Response, attempt: u32) -> Duration {
+    response
+        .headers()
+        .get(reqwest::header::RETRY_AFTER)
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| value.parse::<u64>().ok())
+        .map(|seconds| Duration::from_secs(seconds.clamp(1, 30)))
+        .unwrap_or_else(|| Duration::from_secs(1u64 << attempt.min(4)))
+}
+
+fn is_retryable_status(status: reqwest::StatusCode) -> bool {
+    status.as_u16() == 408
+        || status.as_u16() == 425
+        || status.as_u16() == 429
+        || status.is_server_error()
+}
+
+fn http_failure_class(status: reqwest::StatusCode) -> &'static str {
+    match status.as_u16() {
+        401 | 403 => "authentication_or_authorization",
+        408 | 425 | 429 => "rate_limit_or_transient_client",
+        500..=599 => "provider_unavailable",
+        _ => "http_error",
+    }
+}
 
 /// `/library` gets a moderate page: bigger pages mean bigger payloads and a
 /// longer Hubcap-only tail that the pre-filter then has to cut down anyway.
 const LIBRARY_SEARCH_LIMIT: u32 = 100;
 const CATALOG_SEARCH_LIMIT: u32 = 50;
-
-fn encode_query_component(value: &str) -> String {
-    let mut encoded = String::with_capacity(value.len());
-    for byte in value.bytes() {
-        if byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.' | b'~') {
-            encoded.push(byte as char);
-        } else {
-            encoded.push_str(&format!("%{byte:02X}"));
-        }
-    }
-    encoded
-}
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct HubcapGameItem {
@@ -140,40 +156,69 @@ impl HubcapClient {
     }
 
     pub async fn validate_api_key(&self) -> Result<bool, String> {
-        crate::desk_log_info!("hubcap", "Validating API key with {}/user/stats", BASE_URL);
+        crate::desk_log_info!("hubcap", "API key validation start endpoint=user/stats");
         let url = format!("{}/user/stats", BASE_URL);
-        let response = self.client.get(&url)
-            .headers(self.headers())
-            .send()
-            .await
-            .map_err(|e| {
-                crate::desk_log_error!("hubcap", "Network error validating API key: {}", e);
-                format!("Network error: {}", e)
-            })?;
-
-        if response.status().is_success() {
-            let stats = response
-                .json::<HubcapUserStats>()
-                .await
-                .map_err(|e| format!("Failed to parse Hubcap account status: {e}"))?;
-            let active = stats.can_make_requests.unwrap_or(true);
-            if active {
-                crate::desk_log_info!("hubcap", "API key validated successfully (active account)");
-            } else {
-                crate::desk_log_warn!("hubcap", "Hubcap account is authenticated but cannot make requests");
+        for attempt in 0..GENERATION_RETRY_ATTEMPTS {
+            let response = match self.client.get(&url).headers(self.headers()).send().await {
+                Ok(response) => response,
+                Err(error) if attempt + 1 < GENERATION_RETRY_ATTEMPTS => {
+                    crate::desk_log_warn!(
+                        "hubcap",
+                        "API key validation network error attempt={}/{}; retrying: {}",
+                        attempt + 1,
+                        GENERATION_RETRY_ATTEMPTS,
+                        error
+                    );
+                    tokio::time::sleep(Duration::from_millis(500 * (1u64 << attempt))).await;
+                    continue;
+                }
+                Err(error) => {
+                    crate::desk_log_error!("hubcap", "API key validation network failure after {} attempt(s): {}", GENERATION_RETRY_ATTEMPTS, error);
+                    return Err(format!("Network error: {error}"));
+                }
+            };
+            if is_retryable_status(response.status()) && attempt + 1 < GENERATION_RETRY_ATTEMPTS {
+                let status = response.status();
+                crate::desk_log_warn!(
+                    "hubcap",
+                    "API key validation HTTP {} attempt={}/{}; retrying",
+                    status,
+                    attempt + 1,
+                    GENERATION_RETRY_ATTEMPTS
+                );
+                tokio::time::sleep(retry_delay(&response, attempt)).await;
+                continue;
             }
-            Ok(active)
-        } else if response.status().as_u16() == 401 {
-            crate::desk_log_warn!("hubcap", "API key validation returned 401 Unauthorized");
-            Ok(false)
-        } else {
-            crate::desk_log_error!("hubcap", "API key validation server error: HTTP {}", response.status());
-            Err(format!("Server returned HTTP error: {}", response.status()))
+            if response.status().is_success() {
+                let stats = response
+                    .json::<HubcapUserStats>()
+                    .await
+                    .map_err(|error| format!("Failed to parse Hubcap account status: {error}"))?;
+                let active = stats.can_make_requests.unwrap_or(true);
+                if active {
+                    crate::desk_log_info!("hubcap", "API key validation complete active=true");
+                } else {
+                    crate::desk_log_warn!("hubcap", "API key authenticated but account cannot make requests");
+                }
+                return Ok(active);
+            }
+            if response.status().as_u16() == 401 {
+                crate::desk_log_warn!("hubcap", "API key validation complete active=false reason=unauthorized");
+                return Ok(false);
+            }
+            crate::desk_log_error!(
+                "hubcap",
+                "API key validation failed class={} HTTP {}",
+                http_failure_class(response.status()),
+                response.status()
+            );
+            return Err(format!("Server returned HTTP error: {}", response.status()));
         }
+        unreachable!("API key validation retry loop always returns")
     }
 
-    /// Downloads Hubcap's manifest ZIP with a single API call and delegates archive
-    /// parsing to the provider-agnostic `ManifestPackageExtractor`.
+    /// Downloads Hubcap's manifest ZIP after an authenticated quota check and
+    /// delegates archive parsing to the provider-agnostic `ManifestPackageExtractor`.
     pub async fn download_lua_package(&self, app_id: u32) -> Result<ManifestPackage, String> {
         let bytes = deduplicated_generation(
             GenerationKey::AppBundle {
@@ -189,6 +234,14 @@ impl HubcapClient {
 
     async fn download_manifest_zip(&self, app_id: u32) -> Result<Vec<u8>, String> {
         let stats = self.get_usage_stats().await?;
+        crate::desk_log_debug!(
+            "hubcap",
+            "Manifest ZIP quota check app_id={} daily_usage={:?} daily_limit={:?} can_make_requests={:?}",
+            app_id,
+            stats.daily_usage,
+            stats.role_daily_limit.or(stats.daily_limit),
+            stats.can_make_requests
+        );
         if stats.can_make_requests == Some(false) {
             return Err("Hubcap account is not allowed to make manifest requests.".to_string());
         }
@@ -198,37 +251,100 @@ impl HubcapClient {
                 return Err(format!("Hubcap account daily manifest quota is exhausted ({usage}/{limit})."));
             }
         }
-        crate::desk_log_info!("hubcap", "Requesting Hubcap manifest ZIP for AppID {} from {}", app_id, BASE_URL);
         let url = format!("{}/manifest/{}", BASE_URL, app_id);
-        let response = self.client.get(&url)
-            .headers(self.headers())
-            .send()
-            .await
-            .map_err(|e| {
-                crate::desk_log_error!("hubcap", "Network error requesting Hubcap manifest ZIP for AppID {}: {}", app_id, e);
-                format!("Failed to send manifest ZIP request: {}", e)
-            })?;
-
-        if !response.status().is_success() {
-            crate::desk_log_error!("hubcap", "Hubcap manifest ZIP request for AppID {} failed with HTTP status {}", app_id, response.status());
-            return Err(format!("Failed to retrieve manifest ZIP. HTTP Status: {}", response.status()));
+        let started = Instant::now();
+        for attempt in 0..GENERATION_RETRY_ATTEMPTS {
+            crate::desk_log_info!(
+                "hubcap",
+                "Manifest ZIP request start app_id={} attempt={}/{}",
+                app_id,
+                attempt + 1,
+                GENERATION_RETRY_ATTEMPTS
+            );
+            let response = match self.client.get(&url).headers(self.headers()).send().await {
+                Ok(response) => response,
+                Err(error) if attempt + 1 < GENERATION_RETRY_ATTEMPTS => {
+                    crate::desk_log_warn!(
+                        "hubcap",
+                        "Manifest ZIP network error app_id={} attempt={}/{}; retrying: {}",
+                        app_id,
+                        attempt + 1,
+                        GENERATION_RETRY_ATTEMPTS,
+                        error
+                    );
+                    tokio::time::sleep(Duration::from_millis(500 * (1u64 << attempt))).await;
+                    continue;
+                }
+                Err(error) => {
+                    crate::desk_log_error!(
+                        "hubcap",
+                        "Manifest ZIP network error app_id={} after {} attempt(s): {}",
+                        app_id,
+                        GENERATION_RETRY_ATTEMPTS,
+                        error
+                    );
+                    return Err(format!("Failed to send manifest ZIP request: {error}"));
+                }
+            };
+            if is_retryable_status(response.status()) && attempt + 1 < GENERATION_RETRY_ATTEMPTS {
+                let status = response.status();
+                crate::desk_log_warn!(
+                    "hubcap",
+                    "Manifest ZIP HTTP {} app_id={} attempt={}/{}; retrying",
+                    status,
+                    app_id,
+                    attempt + 1,
+                    GENERATION_RETRY_ATTEMPTS
+                );
+                tokio::time::sleep(retry_delay(&response, attempt)).await;
+                continue;
+            }
+            if !response.status().is_success() {
+                crate::desk_log_error!(
+                    "hubcap",
+                    "Manifest ZIP request failed app_id={} class={} HTTP {} after {} attempt(s)",
+                    app_id,
+                    http_failure_class(response.status()),
+                    response.status(),
+                    attempt + 1
+                );
+                return Err(format!(
+                    "Failed to retrieve manifest ZIP ({}) HTTP Status: {}",
+                    http_failure_class(response.status()),
+                    response.status()
+                ));
+            }
+            let bytes = response.bytes().await.map_err(|error| {
+                crate::desk_log_error!(
+                    "hubcap",
+                    "Manifest ZIP body read failed app_id={} after {} attempt(s): {}",
+                    app_id,
+                    attempt + 1,
+                    error
+                );
+                format!("Failed to read manifest ZIP bytes: {error}")
+            })?.to_vec();
+            if bytes.is_empty() {
+                return Err(format!("Hubcap returned an empty manifest ZIP for AppID {app_id}."));
+            }
+            crate::desk_log_info!(
+                "hubcap",
+                "Manifest ZIP request complete app_id={} bytes={} elapsed_ms={}",
+                app_id,
+                bytes.len(),
+                started.elapsed().as_millis()
+            );
+            return Ok(bytes);
         }
-
-        let bytes = response.bytes().await
-            .map(|bytes| bytes.to_vec())
-            .map_err(|e| {
-                crate::desk_log_error!("hubcap", "Failed to read Hubcap manifest ZIP bytes for AppID {}: {}", app_id, e);
-                format!("Failed to read manifest ZIP bytes: {}", e)
-            })?;
-        crate::desk_log_info!("hubcap", "Downloaded Hubcap manifest ZIP for AppID {} successfully ({} bytes)", app_id, bytes.len());
-        Ok(bytes)
+        unreachable!("manifest ZIP retry loop always returns")
     }
 
     /// Lightweight existence check: does Hubcap have a manifest for this `app_id`?
     /// Uses `GET /status/{id}` (Free - No usage count per Api Endpoints.txt),
     /// never `GET /manifest/{id}` which *counts* toward daily usage.
     /// Interprets `manifest_file_exists == true` or `status == "available"` as true.
-    /// Any non-200, parse error, or network failure is `false` (fail-open).
+    /// Any non-200, parse error, or network failure is `false`; callers must not
+    /// treat an inconclusive status response as a verified manifest.
     pub async fn has_manifest(&self, app_id: u32) -> bool {
         let url = format!("{}/status/{}", BASE_URL, app_id);
         match self.client.get(&url).headers(self.headers()).send().await {
@@ -245,29 +361,77 @@ impl HubcapClient {
                         if let Some(b) = v.get("exists").and_then(|x| x.as_bool()) { return b; }
                         false
                     }
-                    Err(_) => true,
+                    Err(error) => {
+                        crate::desk_log_warn!(
+                            "hubcap",
+                            "Manifest status response parse failed app_id={}: {}",
+                            app_id,
+                            error
+                        );
+                        false
+                    }
                 }
             }
-            Ok(_) => false,
-            Err(_) => false,
+            Ok(response) => {
+                crate::desk_log_warn!(
+                    "hubcap",
+                    "Manifest status check app_id={} HTTP {}",
+                    app_id,
+                    response.status()
+                );
+                false
+            }
+            Err(error) => {
+                crate::desk_log_warn!("hubcap", "Manifest status network check failed app_id={}: {}", app_id, error);
+                false
+            }
         }
     }
 
     pub async fn get_usage_stats(&self) -> Result<HubcapUserStats, String> {
         let url = format!("{}/user/stats", BASE_URL);
-        let response = self.client.get(&url)
-            .headers(self.headers())
-            .send()
-            .await
-            .map_err(|e| format!("Network error: {}", e))?;
-
-        if response.status().is_success() {
-            let stats = response.json::<HubcapUserStats>().await
-                .map_err(|e| format!("Failed to parse user stats: {}", e))?;
-            Ok(stats)
-        } else {
-            Err(format!("Server returned HTTP error ({}): {}", response.status(), response.status().canonical_reason().unwrap_or("Unknown")))
+        for attempt in 0..GENERATION_RETRY_ATTEMPTS {
+            let response = match self.client.get(&url).headers(self.headers()).send().await {
+                Ok(response) => response,
+                Err(error) if attempt + 1 < GENERATION_RETRY_ATTEMPTS => {
+                    crate::desk_log_warn!(
+                        "hubcap",
+                        "Usage stats network error attempt={}/{}; retrying: {}",
+                        attempt + 1,
+                        GENERATION_RETRY_ATTEMPTS,
+                        error
+                    );
+                    tokio::time::sleep(Duration::from_millis(500 * (1u64 << attempt))).await;
+                    continue;
+                }
+                Err(error) => return Err(format!("Network error: {error}")),
+            };
+            if is_retryable_status(response.status()) && attempt + 1 < GENERATION_RETRY_ATTEMPTS {
+                let status = response.status();
+                crate::desk_log_warn!(
+                    "hubcap",
+                    "Usage stats HTTP {} attempt={}/{}; retrying",
+                    status,
+                    attempt + 1,
+                    GENERATION_RETRY_ATTEMPTS
+                );
+                tokio::time::sleep(retry_delay(&response, attempt)).await;
+                continue;
+            }
+            if response.status().is_success() {
+                return response
+                    .json::<HubcapUserStats>()
+                    .await
+                    .map_err(|error| format!("Failed to parse user stats: {error}"));
+            }
+            return Err(format!(
+                "Hubcap usage stats {} (HTTP {}): {}",
+                http_failure_class(response.status()),
+                response.status(),
+                response.status().canonical_reason().unwrap_or("Unknown")
+            ));
         }
+        unreachable!("usage stats retry loop always returns")
     }
 
     /// Returns the server-side generation quota and Steam readiness. This is a
@@ -275,20 +439,71 @@ impl HubcapClient {
     /// the local scheduler still enforces the larger application-level caps.
     pub async fn get_generation_usage(&self) -> Result<HubcapGenerationUsage, String> {
         let url = format!("{}/generate/usage", BASE_URL);
-        let response = self
-            .client
-            .get(&url)
-            .headers(self.headers())
-            .send()
-            .await
-            .map_err(|e| format!("Hubcap generation-usage request failed: {e}"))?;
-        if !response.status().is_success() {
-            return Err(format!("Hubcap generation usage returned HTTP {}", response.status()));
+        for attempt in 0..GENERATION_RETRY_ATTEMPTS {
+            let response = match self
+                .client
+                .get(&url)
+                .headers(self.headers())
+                .send()
+                .await
+            {
+                Ok(response) => response,
+                Err(_error) if attempt + 1 < GENERATION_RETRY_ATTEMPTS => {
+                    crate::desk_log_debug!(
+                        "hubcap",
+                        "Transient Hubcap generation network error; retry {}/{}",
+                        attempt + 2,
+                        GENERATION_RETRY_ATTEMPTS
+                    );
+                    tokio::time::sleep(Duration::from_millis(500 * (1u64 << attempt))).await;
+                    continue;
+                }
+                Err(error) => {
+                    return Err(format!("Hubcap generation-usage request failed: {error}"));
+                }
+            };
+            let status = response.status();
+            let retryable = is_retryable_status(status);
+            if retryable && attempt + 1 < GENERATION_RETRY_ATTEMPTS {
+                crate::desk_log_debug!(
+                    "hubcap",
+                    "Transient Hubcap generation-usage HTTP {}; retry {}/{}",
+                    status,
+                    attempt + 2,
+                    GENERATION_RETRY_ATTEMPTS
+                );
+                tokio::time::sleep(retry_delay(&response, attempt)).await;
+                continue;
+            }
+            if !response.status().is_success() {
+                crate::desk_log_error!(
+                    "hubcap",
+                    "Generation usage failed class={} HTTP {}",
+                    http_failure_class(response.status()),
+                    response.status()
+                );
+                return Err(format!(
+                    "Hubcap generation usage {} (HTTP {})",
+                    http_failure_class(response.status()),
+                    response.status()
+                ));
+            }
+            let usage = response
+                .json::<HubcapGenerationUsage>()
+                .await
+                .map_err(|e| format!("Failed to parse Hubcap generation usage: {e}"))?;
+            crate::desk_log_debug!(
+                "hubcap",
+                "Generation usage received single={:?}/{:?} workshop={:?}/{:?} steam_service_ready={:?}",
+                usage.single.usage,
+                usage.single.limit,
+                usage.workshop.usage,
+                usage.workshop.limit,
+                usage.steam_service_ready
+            );
+            return Ok(usage);
         }
-        response
-            .json::<HubcapGenerationUsage>()
-            .await
-            .map_err(|e| format!("Failed to parse Hubcap generation usage: {e}"))
+        unreachable!("generation usage retry loop always returns")
     }
 
     async fn ensure_generation_available(
@@ -307,37 +522,113 @@ impl HubcapClient {
     }
 
     async fn get_generated_bytes(&self, url: String, description: &str) -> Result<Vec<u8>, String> {
-        let response = self
-            .client
-            .get(&url)
-            .headers(self.headers())
-            .send()
-            .await
-            .map_err(|e| format!("Hubcap {description} request failed: {e}"))?;
-        if !response.status().is_success() {
-            return Err(format!("Hubcap {description} request returned HTTP {}", response.status()));
+        let started = Instant::now();
+        for attempt in 0..GENERATION_RETRY_ATTEMPTS {
+            crate::desk_log_debug!(
+                "hubcap",
+                "Generation request start kind={} attempt={}/{}",
+                description,
+                attempt + 1,
+                GENERATION_RETRY_ATTEMPTS
+            );
+            let response = match self
+                .client
+                .get(&url)
+                .headers(self.headers())
+                .send()
+                .await
+            {
+                Ok(response) => response,
+                Err(_error) if attempt + 1 < GENERATION_RETRY_ATTEMPTS => {
+                    crate::desk_log_debug!(
+                        "hubcap",
+                        "Transient Hubcap generation network error; retry {}/{}",
+                        attempt + 2,
+                        GENERATION_RETRY_ATTEMPTS
+                    );
+                    tokio::time::sleep(Duration::from_millis(500 * (1u64 << attempt))).await;
+                    continue;
+                }
+                Err(error) => {
+                    crate::desk_log_error!(
+                        "hubcap",
+                        "Generation request network failure kind={} after {} attempt(s): {}",
+                        description,
+                        attempt + 1,
+                        error
+                    );
+                    return Err(format!("Hubcap {description} request failed: {error}"));
+                }
+            };
+            let status = response.status();
+            let retryable = is_retryable_status(status);
+            if retryable && attempt + 1 < GENERATION_RETRY_ATTEMPTS {
+                crate::desk_log_debug!(
+                    "hubcap",
+                    "Transient Hubcap generation HTTP {}; retry {}/{}",
+                    status,
+                    attempt + 2,
+                    GENERATION_RETRY_ATTEMPTS
+                );
+                tokio::time::sleep(retry_delay(&response, attempt)).await;
+                continue;
+            }
+            if !response.status().is_success() {
+                crate::desk_log_error!(
+                    "hubcap",
+                    "Generation request failed kind={} class={} HTTP {} after {} attempt(s)",
+                    description,
+                    http_failure_class(response.status()),
+                    response.status(),
+                    attempt + 1
+                );
+                return Err(format!(
+                    "Hubcap {description} request {} (HTTP {})",
+                    http_failure_class(response.status()),
+                    response.status()
+                ));
+            }
+            let content_type = response
+                .headers()
+                .get(reqwest::header::CONTENT_TYPE)
+                .and_then(|value| value.to_str().ok())
+                .unwrap_or("")
+                .to_ascii_lowercase();
+            let bytes = response
+                .bytes()
+                .await
+                .map_err(|error| {
+                    crate::desk_log_error!("hubcap", "Generation response body read failed kind={}: {}", description, error);
+                    format!("Failed to read Hubcap {description} bytes: {error}")
+                })?
+                .to_vec();
+            if bytes.is_empty() {
+                crate::desk_log_error!("hubcap", "Generation response empty kind={}", description);
+                return Err(format!("Hubcap returned an empty {description}."));
+            }
+            // Generation endpoints return binary data. Surface a useful provider
+            // error instead of writing a JSON error document as a .manifest file.
+            if content_type.contains("json") || content_type.starts_with("text/") {
+                let detail = String::from_utf8_lossy(&bytes);
+                crate::desk_log_error!(
+                    "hubcap",
+                    "Generation response non-binary kind={} content_type={} detail_len={}",
+                    description,
+                    content_type,
+                    detail.len()
+                );
+                return Err(format!("Hubcap returned a non-binary {description}: {}", detail.chars().take(240).collect::<String>()));
+            }
+            crate::desk_log_info!(
+                "hubcap",
+                "Generation request complete kind={} bytes={} elapsed_ms={}",
+                description,
+                bytes.len(),
+                started.elapsed().as_millis()
+            );
+            return Ok(bytes);
         }
-        let content_type = response
-            .headers()
-            .get(reqwest::header::CONTENT_TYPE)
-            .and_then(|value| value.to_str().ok())
-            .unwrap_or("")
-            .to_ascii_lowercase();
-        let bytes = response
-            .bytes()
-            .await
-            .map_err(|e| format!("Failed to read Hubcap {description} bytes: {e}"))?
-            .to_vec();
-        if bytes.is_empty() {
-            return Err(format!("Hubcap returned an empty {description}."));
-        }
-        // Generation endpoints return binary data. Surface a useful provider
-        // error instead of writing a JSON error document as a .manifest file.
-        if content_type.contains("json") || content_type.starts_with("text/") {
-            let detail = String::from_utf8_lossy(&bytes);
-            return Err(format!("Hubcap returned a non-binary {description}: {}", detail.chars().take(240).collect::<String>()));
-        }
-        Ok(bytes)
+        unreachable!("generated-byte retry loop always returns")
     }
 
     /// Generate one exact `<depot_id>_<manifest_id>.manifest` payload.
@@ -354,26 +645,6 @@ impl HubcapClient {
                 BASE_URL
             );
             self.get_generated_bytes(url, "single manifest").await
-        })
-        .await
-    }
-
-    /// Generate a complete app bundle for a branch. The caller is responsible
-    /// for extracting and installing it; this method only owns authenticated
-    /// transport, quota checks, and request coalescing.
-    pub async fn generate_appmanifest_bundle(&self, app_id: u32, branch: &str) -> Result<Vec<u8>, String> {
-        if app_id == 0 {
-            return Err("Hubcap app-manifest generation requires a valid App ID.".to_string());
-        }
-        let branch = if branch.trim().is_empty() { "public" } else { branch.trim() };
-        let key = GenerationKey::AppBundle { app_id, branch: branch.to_string() };
-        let branch_owned = branch.to_string();
-        deduplicated_generation(key, GenerationKind::Game, || async move {
-            let usage = self.get_generation_usage().await?;
-            self.ensure_generation_available("app-bundle", usage.bundle.remaining, &usage).await?;
-            let encoded_branch = encode_query_component(&branch_owned);
-            let url = format!("{}/generate/appmanifest/{app_id}?branch={encoded_branch}", BASE_URL);
-            self.get_generated_bytes(url, "app manifest bundle").await
         })
         .await
     }
@@ -410,7 +681,7 @@ impl HubcapClient {
             .map_err(|e| format!("Hubcap API network error: {}", e))?;
 
         if Self::is_soft_failure(response.status()) {
-            eprintln!("[Hubcap] /library soft-failed with {} for '{}'", response.status(), query);
+            crate::desk_log_warn!("hubcap", "Library search soft-failed HTTP {} query_len={}", response.status(), query.len());
             return Ok(Vec::new());
         }
 
@@ -448,7 +719,7 @@ impl HubcapClient {
             .map_err(|e| format!("Hubcap API network error: {}", e))?;
 
         if Self::is_soft_failure(response.status()) {
-            eprintln!("[Hubcap] /search soft-failed with {} for '{}'", response.status(), query);
+            crate::desk_log_warn!("hubcap", "Catalog search soft-failed HTTP {} query_len={}", response.status(), query.len());
             return Ok(Vec::new());
         }
 
@@ -487,8 +758,8 @@ impl HubcapClient {
                         }
                     }
                 }
-                Err(e) => {
-                    eprintln!("[Hubcap] endpoint error for '{}': {}", query, e);
+                Err(error) => {
+                    crate::desk_log_warn!("hubcap", "Search endpoint failed query_len={}: {}", query.len(), error);
                 }
             }
         }
