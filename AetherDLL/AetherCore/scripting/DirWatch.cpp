@@ -3,7 +3,13 @@
 
 #include <algorithm>
 #include <atomic>
+#include <charconv>
+#include <cctype>
+#include <cstdint>
 #include <filesystem>
+#include <string_view>
+#include <system_error>
+#include <optional>
 #include <string>
 #include <thread>
 #include <unordered_map>
@@ -15,6 +21,7 @@
 #include "diagnostics/StatusWriter.h"
 #include "hooks/ipc/PipeWatch.h"
 #include "hooks/license/LicenseManager.h"
+#include "hooks/wire/ManifestRestore.h"
 #include "utils/SmartIdLog.h"
 
 namespace fs = std::filesystem;
@@ -27,18 +34,16 @@ constexpr DWORD kBufferBytes = 64 * 1024;
 constexpr DWORD kDebounceMs = 500;
 
 // Module-owned lifecycle service. This is intentionally not in AetherCoreState:
-// it is not cross-module domain data, but the private thread/control block for
-// the directory watcher. All shared Lua data mutated by the watcher lives in
-// g_state.lua and is accessed through LuaData.
+// it is the private thread/control block for the directory watcher. Lua data
+// mutated by the watcher lives in g_state.lua and is protected by LuaData.
 struct WatcherService {
     std::atomic<bool> running{false};
     std::thread thread;
-    std::vector<std::string> dirs;
+    std::vector<std::string> luaDirs;
+    std::vector<std::string> acfDirs;
 };
 WatcherService s_watch;
 
-// Converts a UTF-16 file name from ReadDirectoryChangesW to UTF-8. This keeps
-// non-ASCII .lua names usable instead of replacing them with '?'.
 std::string WideToUtf8(std::wstring_view w) {
     if (w.empty()) return {};
     int needed = WideCharToMultiByte(CP_UTF8, 0, w.data(), static_cast<int>(w.size()),
@@ -50,17 +55,53 @@ std::string WideToUtf8(std::wstring_view w) {
     return out;
 }
 
+bool HasExtension(const fs::path& path, const char* wanted) {
+    std::string ext = path.extension().string();
+    std::string expected = wanted;
+    if (ext.size() != expected.size()) return false;
+    for (char& c : ext) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    for (char& c : expected) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    return ext == expected;
+}
+
 bool IsLuaPath(const fs::path& path) {
-    return path.extension() == ".lua";
+    return HasExtension(path, ".lua");
+}
+
+bool IsAppManifestPath(const fs::path& path) {
+    if (!HasExtension(path, ".acf")) return false;
+    std::string stem = path.stem().string();
+    constexpr std::string_view prefix = "appmanifest_";
+    if (stem.size() <= prefix.size()) return false;
+    for (std::size_t i = 0; i < prefix.size(); ++i) {
+        const char actual = static_cast<char>(std::tolower(static_cast<unsigned char>(stem[i])));
+        if (actual != prefix[i]) return false;
+    }
+    for (std::size_t i = prefix.size(); i < stem.size(); ++i) {
+        if (stem[i] < '0' || stem[i] > '9') return false;
+    }
+    return true;
+}
+
+std::optional<std::uint32_t> AppIdFromManifestPath(const fs::path& path) {
+    if (!IsAppManifestPath(path)) return std::nullopt;
+    const std::string stem = path.stem().string();
+    constexpr std::size_t prefixLength = sizeof("appmanifest_") - 1;
+    std::uint32_t appId = 0;
+    const char* begin = stem.data() + prefixLength;
+    const char* end = stem.data() + stem.size();
+    const auto result = std::from_chars(begin, end, appId);
+    if (result.ec != std::errc{} || result.ptr != end || appId == 0) return std::nullopt;
+    return appId;
 }
 
 std::string NormalizedPath(const fs::path& path) {
     return path.lexically_normal().make_preferred().string();
 }
 
-// One watched directory: handle + overlapped read + scratch buffer.
 struct Slot {
     std::string path;
+    bool acfOnly = false;
     HANDLE dir = INVALID_HANDLE_VALUE;
     HANDLE event = nullptr;
     OVERLAPPED ov{};
@@ -85,25 +126,20 @@ struct Slot {
 
     bool Arm() {
         DWORD n = 0;
-        // FILE_ACTION_RENAMED_OLD_NAME and FILE_ACTION_RENAMED_NEW_NAME are
-        // included so that renames are treated as remove + add respectively,
-        // keeping the Lua hot-reload view consistent with the filesystem.
         BOOL ok = ReadDirectoryChangesW(dir, buffer.data(), kBufferBytes, FALSE,
                                         FILE_NOTIFY_CHANGE_FILE_NAME | FILE_NOTIFY_CHANGE_LAST_WRITE,
                                         &n, &ov, nullptr);
         return ok || GetLastError() == ERROR_IO_PENDING;
     }
 
-    // Drains one completed read into acc (full path -> last action) and re-arms.
-    // Sets overflowed to true when the buffer was too small, signalling the
-    // caller to do a full directory rescan.
+    bool AcceptName(const fs::path& name) const {
+        return acfOnly ? IsAppManifestPath(name) : IsLuaPath(name);
+    }
+
     bool Harvest(std::unordered_map<std::string, DWORD>& acc, std::vector<std::string>& order,
                  bool& overflowed) {
         overflowed = false;
         DWORD n = 0;
-        // Since WaitForMultipleObjects already signalled completion, the
-        // non-blocking call should succeed. If n == 0 the buffer overflowed
-        // and we lost events — signal the caller for a full rescan.
         if (!GetOverlappedResult(dir, &ov, &n, FALSE) || n == 0) {
             overflowed = (n == 0);
             Arm();
@@ -111,18 +147,18 @@ struct Slot {
         }
         const auto* rec = reinterpret_cast<const FILE_NOTIFY_INFORMATION*>(buffer.data());
         while (rec) {
-            // Rename-from is treated as removal; rename-to as addition.
             if (rec->Action == FILE_ACTION_ADDED || rec->Action == FILE_ACTION_MODIFIED ||
                 rec->Action == FILE_ACTION_REMOVED ||
                 rec->Action == FILE_ACTION_RENAMED_NEW_NAME ||
                 rec->Action == FILE_ACTION_RENAMED_OLD_NAME) {
                 std::wstring_view wname(rec->FileName, rec->FileNameLength / sizeof(wchar_t));
-                if (wname.size() >= 4 && wname.substr(wname.size() - 4) == L".lua") {
-                    std::string name = WideToUtf8(wname);
+                const fs::path relativeName(WideToUtf8(wname));
+                if (!relativeName.empty() && AcceptName(relativeName)) {
+                    const std::string name = WideToUtf8(wname);
                     if (name.empty()) {
-                        AC_LOG_WARN(kModule, "Could not convert changed Lua filename to UTF-8.");
+                        AC_LOG_WARN(kModule, "Could not convert changed filename to UTF-8.");
                     } else {
-                        std::string full = NormalizedPath(fs::path(path) / fs::path(name));
+                        const std::string full = NormalizedPath(fs::path(path) / fs::path(name));
                         if (!acc.count(full)) order.push_back(full);
                         acc[full] = rec->Action;
                         if (rec->Action == FILE_ACTION_REMOVED ||
@@ -147,29 +183,33 @@ struct Slot {
     }
 };
 
-std::unordered_set<std::string> EnumerateLuaFiles(const std::string& dir) {
+std::unordered_set<std::string> EnumerateWatchedFiles(const Slot& slot) {
     std::unordered_set<std::string> out;
-    try {
-        for (const auto& entry : fs::recursive_directory_iterator(dir)) {
-            if (!entry.is_regular_file()) continue;
-            if (!IsLuaPath(entry.path())) continue;
-            out.insert(NormalizedPath(entry.path()));
+    std::error_code ec;
+    if (slot.acfOnly) {
+        for (const auto& entry : fs::directory_iterator(slot.path, ec)) {
+            if (ec) break;
+            if (entry.is_regular_file(ec) && !ec && IsAppManifestPath(entry.path())) {
+                out.insert(NormalizedPath(entry.path()));
+            }
         }
-    } catch (...) {
-        AC_LOG_WARN(kModule, "Enumerating Lua files in '%s' failed.", dir.c_str());
+    } else {
+        for (const auto& entry : fs::recursive_directory_iterator(slot.path, ec)) {
+            if (ec) break;
+            if (entry.is_regular_file(ec) && !ec && IsLuaPath(entry.path())) {
+                out.insert(NormalizedPath(entry.path()));
+            }
+        }
     }
     return out;
 }
 
-// Performs a full rescan after an overflow. Unlike the old recovery path, this
-// detects both additions/modifications and removals by diffing against the
-// slot's known file set.
 void FullRescan(Slot& slot, std::unordered_map<std::string, DWORD>& acc,
                 std::vector<std::string>& order) {
     AC_LOG_WARN(kModule, "Buffer overflow in '%s'; performing full rescan.", slot.path.c_str());
     diag::Record("dirwatch_overflow", slot.path);
 
-    std::unordered_set<std::string> current = EnumerateLuaFiles(slot.path);
+    const std::unordered_set<std::string> current = EnumerateWatchedFiles(slot);
     for (const std::string& path : current) {
         if (!acc.count(path)) order.push_back(path);
         acc[path] = FILE_ACTION_ADDED;
@@ -180,41 +220,70 @@ void FullRescan(Slot& slot, std::unordered_map<std::string, DWORD>& acc,
             acc[oldPath] = FILE_ACTION_REMOVED;
         }
     }
-    slot.knownFiles = std::move(current);
+    slot.knownFiles = current;
 }
 
-// Applies a debounced batch of file changes and refreshes licenses once.
 void ApplyChanges(const std::unordered_map<std::string, DWORD>& acc,
                   const std::vector<std::string>& order) {
     if (order.empty()) return;
-    AC_LOG_INFO(kModule, "Processing %zu Lua change(s).", order.size());
-    diag::Record("lua_hot_reload", std::to_string(order.size()) + " change(s)");
+    AC_LOG_INFO(kModule, "Processing %zu watched change(s).", order.size());
+
+    bool luaChanged = false;
+    std::vector<std::uint32_t> removedApps;
     for (const std::string& path : order) {
-        DWORD action = acc.at(path);
-        // Rename-old is treated as removal; rename-new and additions trigger a re-parse.
+        const DWORD action = acc.at(path);
+        if (IsAppManifestPath(fs::path(path))) {
+            if (action == FILE_ACTION_REMOVED || action == FILE_ACTION_RENAMED_OLD_NAME) {
+                if (const auto appId = AppIdFromManifestPath(fs::path(path))) {
+                    removedApps.push_back(*appId);
+                }
+            }
+            continue;
+        }
+
+        luaChanged = true;
         if (action == FILE_ACTION_REMOVED || action == FILE_ACTION_RENAMED_OLD_NAME) {
             script::UnloadFile(path);
         } else {
             script::ParseFile(path);
         }
     }
-    hooks::LicenseManager::NotifyLicenseChanged();
-    logutil::ResetAllIdLogSessions();
-    log::ResetDedup();
-    pipewatch::ResetSessionTracking();
-    status::Write();
-    AC_LOG_INFO(kModule, "Hot-reload refresh complete.");
+
+    if (luaChanged) {
+        diag::Record("lua_hot_reload", std::to_string(order.size()) + " change(s)");
+        hooks::LicenseManager::NotifyLicenseChanged();
+        logutil::ResetAllIdLogSessions();
+        log::ResetDedup();
+        pipewatch::ResetSessionTracking();
+        status::Write();
+        AC_LOG_INFO(kModule, "Lua hot-reload refresh complete.");
+    }
+
+    std::sort(removedApps.begin(), removedApps.end());
+    removedApps.erase(std::unique(removedApps.begin(), removedApps.end()), removedApps.end());
+    for (const std::uint32_t appId : removedApps) {
+        AC_LOG_INFO(kModule,
+                    "Detected removal of Steam appmanifest_%u.acf; restoring backed-up manifests.",
+                    appId);
+        hooks::ManifestRestore::RestoreMissingManifestsForApp(appId);
+    }
 }
 
 void Run() {
-    std::vector<Slot> slots(s_watch.dirs.size());
+    std::vector<Slot> slots;
+    slots.reserve(s_watch.luaDirs.size() + s_watch.acfDirs.size());
+    for (const std::string& dir : s_watch.luaDirs) slots.push_back(Slot{dir, false});
+    for (const std::string& dir : s_watch.acfDirs) slots.push_back(Slot{dir, true});
+
     std::vector<HANDLE> events;
-    for (std::size_t i = 0; i < s_watch.dirs.size(); ++i) {
-        slots[i].path = s_watch.dirs[i];
+    std::vector<std::size_t> eventSlots;
+    for (std::size_t i = 0; i < slots.size(); ++i) {
         if (slots[i].Open()) {
-            slots[i].knownFiles = EnumerateLuaFiles(slots[i].path);
+            slots[i].knownFiles = EnumerateWatchedFiles(slots[i]);
             events.push_back(slots[i].event);
-            AC_LOG_INFO(kModule, "Watching '%s'.", s_watch.dirs[i].c_str());
+            eventSlots.push_back(i);
+            AC_LOG_INFO(kModule, "Watching '%s' (%s).", slots[i].path.c_str(),
+                        slots[i].acfOnly ? "Steam app manifests" : "Lua files");
         }
     }
     if (events.empty()) {
@@ -223,38 +292,53 @@ void Run() {
     }
 
     // Win32 caps the wait at MAXIMUM_WAIT_OBJECTS handles.
-    DWORD count = static_cast<DWORD>(std::min<std::size_t>(events.size(), MAXIMUM_WAIT_OBJECTS));
+    const DWORD count = static_cast<DWORD>(std::min<std::size_t>(events.size(), MAXIMUM_WAIT_OBJECTS));
 
     while (s_watch.running.load()) {
-        DWORD wr = WaitForMultipleObjects(count, events.data(), FALSE, 1000);
+        const DWORD wr = WaitForMultipleObjects(count, events.data(), FALSE, 1000);
         if (!s_watch.running.load()) break;
-        if (wr < WAIT_OBJECT_0 || wr >= WAIT_OBJECT_0 + count) continue;  // timeout/error
+        if (wr < WAIT_OBJECT_0 || wr >= WAIT_OBJECT_0 + count) continue;
 
         std::unordered_map<std::string, DWORD> acc;
         std::vector<std::string> order;
         bool overflowed = false;
-        slots[wr - WAIT_OBJECT_0].Harvest(acc, order, overflowed);
-        if (overflowed) FullRescan(slots[wr - WAIT_OBJECT_0], acc, order);
+        Slot& first = slots[eventSlots[wr - WAIT_OBJECT_0]];
+        first.Harvest(acc, order, overflowed);
+        if (overflowed) FullRescan(first, acc, order);
 
         // Debounce: keep draining until a quiet window elapses.
         while (s_watch.running.load()) {
-            DWORD dr = WaitForMultipleObjects(count, events.data(), FALSE, kDebounceMs);
+            const DWORD dr = WaitForMultipleObjects(count, events.data(), FALSE, kDebounceMs);
             if (!s_watch.running.load() || dr < WAIT_OBJECT_0 || dr >= WAIT_OBJECT_0 + count) break;
             bool ovf = false;
-            slots[dr - WAIT_OBJECT_0].Harvest(acc, order, ovf);
-            if (ovf) FullRescan(slots[dr - WAIT_OBJECT_0], acc, order);
+            Slot& next = slots[eventSlots[dr - WAIT_OBJECT_0]];
+            next.Harvest(acc, order, ovf);
+            if (ovf) FullRescan(next, acc, order);
         }
         ApplyChanges(acc, order);
     }
 
-    for (auto& s : slots) s.Close();
+    for (auto& slot : slots) slot.Close();
     AC_LOG_INFO(kModule, "Stopped.");
+}
+
+std::string NormalizeDirectory(const std::string& directory) {
+    try {
+        return fs::path(directory).lexically_normal().make_preferred().string();
+    } catch (...) {
+        return directory;
+    }
 }
 
 }  // namespace
 
 void Start(const std::vector<std::string>& directories) {
-    if (directories.empty()) {
+    Start(directories, {});
+}
+
+void Start(const std::vector<std::string>& directories,
+           const std::vector<std::string>& acfDirectories) {
+    if (directories.empty() && acfDirectories.empty()) {
         AC_LOG_WARN(kModule, "No directories configured; watcher not started.");
         return;
     }
@@ -262,13 +346,13 @@ void Start(const std::vector<std::string>& directories) {
         AC_LOG_WARN(kModule, "Already running.");
         return;
     }
-    s_watch.dirs.clear();
-    for (const std::string& d : directories) {
-        try {
-            s_watch.dirs.push_back(fs::path(d).lexically_normal().make_preferred().string());
-        } catch (...) {
-            s_watch.dirs.push_back(d);
-        }
+    s_watch.luaDirs.clear();
+    s_watch.acfDirs.clear();
+    for (const std::string& directory : directories) {
+        s_watch.luaDirs.push_back(NormalizeDirectory(directory));
+    }
+    for (const std::string& directory : acfDirectories) {
+        s_watch.acfDirs.push_back(NormalizeDirectory(directory));
     }
     s_watch.thread = std::thread(Run);
 }

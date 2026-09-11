@@ -60,8 +60,10 @@ pub struct AppSettings {
     pub build_details_token: String,
     /// When true, latest-version downloads comment setManifestid pins after
     /// installing the Lua so Steam can keep the game updated. Specific-version
-    /// downloads intentionally ignore this setting.
-    #[serde(default = "default_true")]
+    /// downloads intentionally ignore this setting. It is disabled by default
+    /// because unauthenticated Steam request-code access no longer provides
+    /// reliable automatic updates or Workshop behavior.
+    #[serde(default = "default_false")]
     pub download_games_with_updates_on: bool,
     /// Show a Steam Store front page in Store when no search query is active.
     #[serde(default = "default_true")]
@@ -134,6 +136,10 @@ fn default_alt_cards_fade() -> u8 {
 /// Serde default provider for boolean settings that ship enabled.
 fn default_true() -> bool {
     true
+}
+
+fn default_false() -> bool {
+    false
 }
 
 fn default_steam_path() -> String {
@@ -261,7 +267,7 @@ impl Default for AppSettings {
             custom_css_enabled: false,
             ryuu_api_key: String::new(),
             build_details_token: String::new(),
-            download_games_with_updates_on: true,
+            download_games_with_updates_on: false,
             show_store_front_games: true,
             use_alternative_game_cards: false,
             enable_webview_devtools: false,

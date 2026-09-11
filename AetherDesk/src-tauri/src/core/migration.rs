@@ -13,6 +13,7 @@ use std::path::Path;
 
 const LEGACY_LUA_BACKUPS_DIR: &str = "lua_backups";
 const OBSOLETE_COMPONENT_VERSION_DIR: &str = "component_versions";
+const DOWNLOAD_UPDATE_DEFAULT_MIGRATION: &str = ".download_updates_default_off_v1";
 
 #[derive(Debug, Default)]
 pub struct MigrationReport {
@@ -232,6 +233,35 @@ pub fn reset_antivirus_exclusion_flag(_app: &tauri::AppHandle) {
     // update mantiene il valore precedente. Rimuove il bug del popup ricorrente.
 }
 
+/// One-time policy migration: latest-version downloads no longer enable
+/// Steam updates by default because the unauthenticated request-code path was
+/// patched. An explicit user choice made after this marker is never touched.
+pub fn migrate_download_update_default_off(app: &tauri::AppHandle) {
+    let marker = LocalAppPaths::data_root().join(DOWNLOAD_UPDATE_DEFAULT_MIGRATION);
+    if marker.exists() {
+        return;
+    }
+
+    let manager = crate::core::settings::SettingsManager::new(app);
+    let mut settings = manager.load();
+    if settings.download_games_with_updates_on {
+        settings.download_games_with_updates_on = false;
+        if let Err(error) = manager.save(&settings) {
+            crate::desk_log_warn!(
+                "migration",
+                "Could not migrate download update policy to OFF: {}",
+                error
+            );
+            return;
+        }
+        crate::desk_log_info!(
+            "migration",
+            "Migrated download_games_with_updates_on to OFF; a valid Hubcap key is required to enable it again."
+        );
+    }
+    let _ = fs::write(marker, b"1\n");
+}
+
 pub fn run_startup_migrations(app: &tauri::AppHandle) {
     crate::desk_log_info!("migration", "Running AetherDesk startup migrations...");
     if let Err(e) = migrate_roaming_to_local_install() { eprintln!("[AetherDesk] Roaming->Local failed: {e}"); }
@@ -248,6 +278,7 @@ pub fn run_startup_migrations(app: &tauri::AppHandle) {
     migrate_legacy_settings_if_needed(&config_dir, legacy_config_dir.as_deref());
     let roaming_config = LocalAppPaths::legacy_roaming_data_root().join("config");
     migrate_legacy_settings_if_needed(&config_dir, Some(&roaming_config));
+    migrate_download_update_default_off(app);
     remove_obsolete_component_version_dirs(app);
     ensure_appearance_dirs();
     // Adopt an auto-detected Steam installation when the stored value was

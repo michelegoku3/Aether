@@ -64,9 +64,10 @@ fn main() {
                 app.handle().clone(),
                 initial_steam_path,
             ));
-            // Lua backup sync (background, non-blocking): mirror every .lua in
-            // stplug-in into backup/<app_id>/lua — creates missing backups and
-            // archives+updates changed ones (history/ keeps old versions).
+            // Lua/manifest backup sync (background, non-blocking): mirror every .lua in
+            // stplug-in into backup/<app_id>/lua, then copy every referenced
+            // depotcache manifest that is not already in that backup. Missing
+            // Lua backups are created and changed ones are archived in history/.
             {
                 let app_handle = app.handle().clone();
                 let steam_path =
@@ -79,18 +80,21 @@ fn main() {
                     })
                     .await;
                     if let Ok(report) = report {
-                        if report.created > 0 || report.updated > 0 {
+                        if report.created > 0 || report.updated > 0 || report.manifests_copied > 0 || report.manifest_errors > 0 {
                             crate::desk_log_info!(
                                 "backup",
-                                "Startup Lua backup sync: {} scanned, {} created, {} updated, {} unchanged, {} skipped",
+                                "Startup Lua/manifest backup sync: {} Lua scanned, {} created, {} updated, {} unchanged, {} skipped; manifests: {} copied, {} unchanged, {} missing, {} errors",
                                 report.scanned, report.created, report.updated,
-                                report.unchanged, report.skipped
+                                report.unchanged, report.skipped, report.manifests_copied,
+                                report.manifests_unchanged, report.manifests_missing,
+                                report.manifest_errors
                             );
                         } else {
                             crate::desk_log_debug!(
                                 "backup",
-                                "Startup Lua backup sync: everything up to date ({} scanned, {} unchanged, {} skipped)",
-                                report.scanned, report.unchanged, report.skipped
+                                "Startup Lua/manifest backup sync: everything up to date ({} Lua scanned, {} unchanged, {} skipped; {} manifests unchanged, {} missing)",
+                                report.scanned, report.unchanged, report.skipped,
+                                report.manifests_unchanged, report.manifests_missing
                             );
                         }
                     }
