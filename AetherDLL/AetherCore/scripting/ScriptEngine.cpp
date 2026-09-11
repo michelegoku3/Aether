@@ -76,6 +76,16 @@ namespace ac::script {
                 AC_LOG_ERROR(kModule, "Error in %s: %s", path.c_str(), err ? err : "unknown");
                 diag::Record("lua_parse_error", path);
                 lua_pop(s_lua, 1);
+
+                // Bindings validate arguments while Lua is executing. A bad
+                // setmanifestid (or any later runtime error) can therefore
+                // have recorded partial contributions before luaL_dofile
+                // aborts. Roll them back so an invalid file is never counted
+                // as a usable configuration or left half-applied in memory.
+                luadata::EndFile();
+                bindings::SetActiveStats(nullptr);
+                luadata::UnloadFile(path);
+                return;
             }
             else {
                 AC_LOG_INFO(kModule,

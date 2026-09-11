@@ -3,6 +3,9 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use crate::manifest::package::{ManifestPackage, ManifestPackageExtractor};
 use crate::providers::http;
+use crate::providers::hubcap_generation::{
+    deduplicated_generation, GenerationKey, GenerationKind,
+};
 
 const BASE_URL: &str = "https://hubcapmanifest.com/api/v1";
 const HUBCAP_TIMEOUT_SECONDS: u64 = 8;
@@ -11,6 +14,18 @@ const HUBCAP_TIMEOUT_SECONDS: u64 = 8;
 /// longer Hubcap-only tail that the pre-filter then has to cut down anyway.
 const LIBRARY_SEARCH_LIMIT: u32 = 100;
 const CATALOG_SEARCH_LIMIT: u32 = 50;
+
+fn encode_query_component(value: &str) -> String {
+    let mut encoded = String::with_capacity(value.len());
+    for byte in value.bytes() {
+        if byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.' | b'~') {
+            encoded.push(byte as char);
+        } else {
+            encoded.push_str(&format!("%{byte:02X}"));
+        }
+    }
+    encoded
+}
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct HubcapGameItem {
@@ -25,6 +40,25 @@ pub struct HubcapUserStats {
     pub daily_usage: Option<u32>,
     pub role_daily_limit: Option<u32>,
     pub daily_limit: Option<u32>,
+    pub can_make_requests: Option<bool>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct HubcapGenerationBucket {
+    pub usage: Option<u32>,
+    pub limit: Option<u32>,
+    pub remaining: Option<u32>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct HubcapGenerationUsage {
+    #[serde(default)]
+    pub single: HubcapGenerationBucket,
+    #[serde(default)]
+    pub bundle: HubcapGenerationBucket,
+    #[serde(default)]
+    pub workshop: HubcapGenerationBucket,
+    pub steam_service_ready: Option<bool>,
 }
 
 /// Envelope of `GET /library`. Every field is optional: Hubcap's payload shape
@@ -78,6 +112,7 @@ pub struct HubcapClient {
 
 impl HubcapClient {
     pub fn new(api_key: String) -> Self {
+        let api_key = api_key.trim().to_string();
         let mut headers = HeaderMap::new();
         if let Ok(value) = HeaderValue::from_str(&format!("Bearer {}", api_key)) {
             headers.insert(AUTHORIZATION, value);
@@ -117,8 +152,17 @@ impl HubcapClient {
             })?;
 
         if response.status().is_success() {
-            crate::desk_log_info!("hubcap", "API key validated successfully (200 OK)");
-            Ok(true)
+            let stats = response
+                .json::<HubcapUserStats>()
+                .await
+                .map_err(|e| format!("Failed to parse Hubcap account status: {e}"))?;
+            let active = stats.can_make_requests.unwrap_or(true);
+            if active {
+                crate::desk_log_info!("hubcap", "API key validated successfully (active account)");
+            } else {
+                crate::desk_log_warn!("hubcap", "Hubcap account is authenticated but cannot make requests");
+            }
+            Ok(active)
         } else if response.status().as_u16() == 401 {
             crate::desk_log_warn!("hubcap", "API key validation returned 401 Unauthorized");
             Ok(false)
@@ -131,11 +175,29 @@ impl HubcapClient {
     /// Downloads Hubcap's manifest ZIP with a single API call and delegates archive
     /// parsing to the provider-agnostic `ManifestPackageExtractor`.
     pub async fn download_lua_package(&self, app_id: u32) -> Result<ManifestPackage, String> {
-        let bytes = self.download_manifest_zip(app_id).await?;
+        let bytes = deduplicated_generation(
+            GenerationKey::AppBundle {
+                app_id,
+                branch: "manifest".to_string(),
+            },
+            GenerationKind::Game,
+            || self.download_manifest_zip(app_id),
+        )
+        .await?;
         ManifestPackageExtractor::from_zip(app_id, bytes.as_ref())
     }
 
     async fn download_manifest_zip(&self, app_id: u32) -> Result<Vec<u8>, String> {
+        let stats = self.get_usage_stats().await?;
+        if stats.can_make_requests == Some(false) {
+            return Err("Hubcap account is not allowed to make manifest requests.".to_string());
+        }
+        let limit = stats.role_daily_limit.or(stats.daily_limit);
+        if let (Some(usage), Some(limit)) = (stats.daily_usage, limit) {
+            if usage >= limit {
+                return Err(format!("Hubcap account daily manifest quota is exhausted ({usage}/{limit})."));
+            }
+        }
         crate::desk_log_info!("hubcap", "Requesting Hubcap manifest ZIP for AppID {} from {}", app_id, BASE_URL);
         let url = format!("{}/manifest/{}", BASE_URL, app_id);
         let response = self.client.get(&url)
@@ -206,6 +268,131 @@ impl HubcapClient {
         } else {
             Err(format!("Server returned HTTP error ({}): {}", response.status(), response.status().canonical_reason().unwrap_or("Unknown")))
         }
+    }
+
+    /// Returns the server-side generation quota and Steam readiness. This is a
+    /// free endpoint and is checked immediately before every generation request;
+    /// the local scheduler still enforces the larger application-level caps.
+    pub async fn get_generation_usage(&self) -> Result<HubcapGenerationUsage, String> {
+        let url = format!("{}/generate/usage", BASE_URL);
+        let response = self
+            .client
+            .get(&url)
+            .headers(self.headers())
+            .send()
+            .await
+            .map_err(|e| format!("Hubcap generation-usage request failed: {e}"))?;
+        if !response.status().is_success() {
+            return Err(format!("Hubcap generation usage returned HTTP {}", response.status()));
+        }
+        response
+            .json::<HubcapGenerationUsage>()
+            .await
+            .map_err(|e| format!("Failed to parse Hubcap generation usage: {e}"))
+    }
+
+    async fn ensure_generation_available(
+        &self,
+        bucket_name: &str,
+        remaining: Option<u32>,
+        usage: &HubcapGenerationUsage,
+    ) -> Result<(), String> {
+        if usage.steam_service_ready == Some(false) {
+            return Err("Hubcap reports that the Steam service is not ready for generation.".to_string());
+        }
+        if remaining == Some(0) {
+            return Err(format!("Hubcap {bucket_name} generation quota is exhausted."));
+        }
+        Ok(())
+    }
+
+    async fn get_generated_bytes(&self, url: String, description: &str) -> Result<Vec<u8>, String> {
+        let response = self
+            .client
+            .get(&url)
+            .headers(self.headers())
+            .send()
+            .await
+            .map_err(|e| format!("Hubcap {description} request failed: {e}"))?;
+        if !response.status().is_success() {
+            return Err(format!("Hubcap {description} request returned HTTP {}", response.status()));
+        }
+        let content_type = response
+            .headers()
+            .get(reqwest::header::CONTENT_TYPE)
+            .and_then(|value| value.to_str().ok())
+            .unwrap_or("")
+            .to_ascii_lowercase();
+        let bytes = response
+            .bytes()
+            .await
+            .map_err(|e| format!("Failed to read Hubcap {description} bytes: {e}"))?
+            .to_vec();
+        if bytes.is_empty() {
+            return Err(format!("Hubcap returned an empty {description}."));
+        }
+        // Generation endpoints return binary data. Surface a useful provider
+        // error instead of writing a JSON error document as a .manifest file.
+        if content_type.contains("json") || content_type.starts_with("text/") {
+            let detail = String::from_utf8_lossy(&bytes);
+            return Err(format!("Hubcap returned a non-binary {description}: {}", detail.chars().take(240).collect::<String>()));
+        }
+        Ok(bytes)
+    }
+
+    /// Generate one exact `<depot_id>_<manifest_id>.manifest` payload.
+    pub async fn generate_manifest(&self, depot_id: u32, manifest_id: u64) -> Result<Vec<u8>, String> {
+        if depot_id == 0 || manifest_id == 0 {
+            return Err("Hubcap generation requires a valid depot ID and manifest ID.".to_string());
+        }
+        let key = GenerationKey::Single { depot_id, manifest_id };
+        deduplicated_generation(key, GenerationKind::Game, || async move {
+            let usage = self.get_generation_usage().await?;
+            self.ensure_generation_available("single-manifest", usage.single.remaining, &usage).await?;
+            let url = format!(
+                "{}/generate/manifest?depot_id={depot_id}&manifest_id={manifest_id}",
+                BASE_URL
+            );
+            self.get_generated_bytes(url, "single manifest").await
+        })
+        .await
+    }
+
+    /// Generate a complete app bundle for a branch. The caller is responsible
+    /// for extracting and installing it; this method only owns authenticated
+    /// transport, quota checks, and request coalescing.
+    pub async fn generate_appmanifest_bundle(&self, app_id: u32, branch: &str) -> Result<Vec<u8>, String> {
+        if app_id == 0 {
+            return Err("Hubcap app-manifest generation requires a valid App ID.".to_string());
+        }
+        let branch = if branch.trim().is_empty() { "public" } else { branch.trim() };
+        let key = GenerationKey::AppBundle { app_id, branch: branch.to_string() };
+        let branch_owned = branch.to_string();
+        deduplicated_generation(key, GenerationKind::Game, || async move {
+            let usage = self.get_generation_usage().await?;
+            self.ensure_generation_available("app-bundle", usage.bundle.remaining, &usage).await?;
+            let encoded_branch = encode_query_component(&branch_owned);
+            let url = format!("{}/generate/appmanifest/{app_id}?branch={encoded_branch}", BASE_URL);
+            self.get_generated_bytes(url, "app manifest bundle").await
+        })
+        .await
+    }
+
+    /// Generate one Workshop item manifest. The returned bytes are deliberately
+    /// not installed here because Workshop storage is owned by Steam and the
+    /// caller must supply the item/depot mapping from the originating request.
+    pub async fn generate_workshop_manifest(&self, workshop_id: u64) -> Result<Vec<u8>, String> {
+        if workshop_id == 0 {
+            return Err("Hubcap Workshop generation requires a valid Workshop ID.".to_string());
+        }
+        let key = GenerationKey::Workshop { workshop_id };
+        deduplicated_generation(key, GenerationKind::Workshop, || async move {
+            let usage = self.get_generation_usage().await?;
+            self.ensure_generation_available("Workshop", usage.workshop.remaining, &usage).await?;
+            let url = format!("{}/generate/workshopmanifest/{workshop_id}", BASE_URL);
+            self.get_generated_bytes(url, "Workshop manifest").await
+        })
+        .await
     }
 
     /// Broad recall search: `GET /library?search=…` with a large page size.

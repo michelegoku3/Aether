@@ -6,15 +6,18 @@
 #include <cctype>
 #include <charconv>
 #include <exception>
+#include <filesystem>
 #include <future>
 #include <memory>
 #include <optional>
 #include <string>
 #include <string_view>
 #include <thread>
+#include <vector>
 
 #include "core/AetherCoreState.h"
 #include "core/Logger.h"
+#include "hooks/wire/BackupIo.h"
 #include "network/RuntimeHttp.h"
 
 namespace ac::manifestfetch {
@@ -144,6 +147,61 @@ bool ParseJsonDigitField(std::string_view body, std::uint64_t* out) {
     return false;
 }
 
+// A manifest already present on disk is authoritative for this bridge. Steam
+// still asks ContentServerDirectory for a request code when a depot is marked
+// as owned by Aether, but a cached manifest does not need a network-issued
+// code. Returning an engaged optional containing zero lets ManifestBridge
+// convert the failed service response into an OK response without contacting a
+// patched/unauthenticated provider.
+std::optional<std::filesystem::path> FindLocalManifest(std::uint64_t gid,
+                                                        std::uint32_t depotId) {
+    namespace fs = std::filesystem;
+    const std::string filename = std::to_string(depotId) + "_" +
+                                  std::to_string(gid) + ".manifest";
+    const fs::path steamRoot(g_state.steamInstallPath);
+    const std::vector<fs::path> directCandidates = {
+        steamRoot / "depotcache" / filename,
+        steamRoot / "config" / "depotcache" / filename,
+    };
+
+    auto usable = [](const fs::path& path) -> bool {
+        std::error_code ec;
+        if (!fs::is_regular_file(path, ec) || ec) return false;
+        const auto size = fs::file_size(path, ec);
+        return !ec && size > 0;
+    };
+
+    for (const fs::path& candidate : directCandidates) {
+        if (usable(candidate)) return candidate;
+    }
+
+    // The targeted ACF-removal restore may be racing with this request, or the
+    // DLL may be running before its restore worker has copied the file back.
+    // Consult the per-game AetherData backup as a second local source and
+    // publish that exact file into Steam/depotcache before claiming a hit.
+    const std::string deskData = backup::io::CachedDeskDataDir();
+    if (!deskData.empty()) {
+        const fs::path backupRoot = fs::path(deskData) / "backup";
+        std::error_code ec;
+        for (fs::directory_iterator it(backupRoot, ec), end; !ec && it != end; it.increment(ec)) {
+            if (!it->is_directory(ec) || ec) continue;
+            const fs::path candidate = it->path() / "lua" / filename;
+            if (!usable(candidate)) continue;
+
+            const fs::path destination = steamRoot / "depotcache" / filename;
+            fs::create_directories(destination.parent_path(), ec);
+            if (ec) continue;
+            fs::copy_file(candidate, destination,
+                          fs::copy_options::overwrite_existing, ec);
+            if (!ec && usable(destination)) return destination;
+            AC_LOG_WARN(kModule,
+                        "Local backup manifest found but could not be published to %s (%s).",
+                        destination.string().c_str(), ec.message().c_str());
+        }
+    }
+    return std::nullopt;
+}
+
 std::optional<std::uint64_t> RunLookup(std::uint64_t gid, std::uint32_t appId,
                                        std::uint32_t depotId) {
     if (g_state.settings.manifestFetchUrls.empty()) {
@@ -212,6 +270,10 @@ std::optional<std::uint64_t> RunLookup(std::uint64_t gid, std::uint32_t appId,
 
 }  // namespace
 
+bool HasLocalManifest(std::uint64_t manifestGid, std::uint32_t depotId) {
+    return FindLocalManifest(manifestGid, depotId).has_value();
+}
+
 void Submit(std::uint64_t jobId, std::uint64_t manifestGid,
             std::uint32_t appId, std::uint32_t depotId) {
     if (jobId == 0 || manifestGid == 0 || appId == 0 || depotId == 0) {
@@ -229,6 +291,23 @@ void Submit(std::uint64_t jobId, std::uint64_t manifestGid,
     if (g_state.manifestFetch.pending.size() >= kMaxPendingJobs) {
         AC_LOG_WARN(kModule, "Manifest pending limit reached; job=%llu rejected.",
                     static_cast<unsigned long long>(jobId));
+        return;
+    }
+
+    // Prefer the exact depot/GID file restored by ManifestRestore (or already
+    // present in either Steam depotcache location). A zero request code is the
+    // local-cache sentinel; it is never sent to an HTTP provider and therefore
+    // does not depend on unauthenticated Steam request-code access.
+    if (const auto local = FindLocalManifest(manifestGid, depotId)) {
+        std::promise<std::optional<std::uint64_t>> ready;
+        ready.set_value(std::optional<std::uint64_t>{0});
+        g_state.manifestFetch.pending.emplace(jobId, ready.get_future().share());
+        g_state.manifestFetch.cache[key] = 0;
+        AC_LOG_INFO(kModule,
+                    "job=%llu gid=%llu local manifest hit: %s; skipping providers.",
+                    static_cast<unsigned long long>(jobId),
+                    static_cast<unsigned long long>(manifestGid),
+                    local->string().c_str());
         return;
     }
 

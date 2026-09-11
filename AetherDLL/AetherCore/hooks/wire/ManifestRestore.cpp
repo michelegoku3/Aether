@@ -16,7 +16,9 @@
 
 #include "core/AetherCoreState.h"
 #include "core/Logger.h"
+#include "hooks/license/LicenseManager.h"
 #include "hooks/wire/BackupIo.h"
+#include "scripting/ScriptEngine.h"
 
 namespace ac::hooks::ManifestRestore {
 namespace {
@@ -149,7 +151,7 @@ void BackupReferencedManifestsAtStartup() {
     const fs::path depotcache = fs::path(g_state.steamInstallPath) / "depotcache";
     const fs::path backupRoot = fs::path(deskData) / "backup";
     const std::regex pinRegex(
-        R"(setManifestid\s*\(\s*([0-9]+)\s*,\s*["']([^"']+)["'])",
+        R"(setManifestid\s*\(\s*([0-9]+)\s*,\s*["']([0-9]+)["'])",
         std::regex_constants::icase);
 
     std::vector<fs::path> luaRoots{fs::path(g_state.luaDir)};
@@ -329,6 +331,31 @@ void RestoreAppOnce(std::uint32_t appId) {
                 "Restore after appmanifest_%u.acf removal: scanned=%zu restored=%zu "
                 "already_present=%zu errors=%zu.",
                 appId, stats.scanned, stats.restored, stats.present, stats.errors);
+
+    if (stats.restored == 0) return;
+
+    // Reinstalling the same Lua and manifest package works because Steam sees a
+    // Lua file change: the script is parsed again, package-0 licenses are
+    // refreshed, and the newly restored depotcache files become visible to the
+    // depot manager. ACF removal previously restored only bytes on disk, leaving
+    // the in-memory Lua/license state stale. Re-run that same refresh sequence
+    // after the targeted restore, without downloading anything.
+    const fs::path luaPath = fs::path(g_state.luaDir) /
+                             (std::to_string(appId) + ".lua");
+    std::error_code luaEc;
+    if (!fs::is_regular_file(luaPath, luaEc) || luaEc) {
+        AC_LOG_WARN(kModule,
+                    "Restored manifests for app %u but live Lua is unavailable at %s; "
+                    "Steam state was not hot-reloaded.",
+                    appId, luaPath.string().c_str());
+        return;
+    }
+
+    ac::script::ParseFile(luaPath.string());
+    ac::hooks::LicenseManager::NotifyLicenseChanged();
+    AC_LOG_INFO(kModule,
+                "Refreshed Lua/license state after restoring manifests for AppID %u.",
+                appId);
 }
 
 }  // namespace

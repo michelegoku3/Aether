@@ -21,8 +21,9 @@ constexpr std::int32_t kNoChange = -1;
 }  // namespace
 
 std::int32_t HandleSend(const WireFrame& frame) {
-    if (g_state.settings.manifestFetchUrls.empty()) return kNoChange;
-
+    // Submit also checks the restored local manifest cache. Do not disable the
+    // bridge merely because HTTP providers are disabled: a local manifest can
+    // satisfy this request without any network access.
     CContentServerDirectory_GetManifestRequestCode_Request req;
     if (!req.ParseFromArray(frame.body, static_cast<int>(frame.bodyLen))) return kNoChange;
     if (!req.has_depot_id() || !req.has_manifest_id()) return kNoChange;
@@ -38,6 +39,11 @@ std::int32_t HandleSend(const WireFrame& frame) {
     const std::uint64_t jobId = hdr.jobid_source();
     const std::uint64_t gid = req.manifest_id();
     const std::uint32_t appId = req.has_app_id() ? req.app_id() : 0;
+
+    if (g_state.settings.manifestFetchUrls.empty() &&
+        !manifestfetch::HasLocalManifest(gid, depotId)) {
+        return kNoChange;
+    }
 
     manifestfetch::Submit(jobId, gid, appId, depotId);
     AC_LOG_INFO(kModule, "Manifest lookup submitted: depot=%u gid=%llu job=%llu.", depotId,
@@ -75,8 +81,14 @@ std::int32_t HandleRecv(const WireFrame& frame, std::uint8_t* out, std::uint32_t
         *outHeaderLen = kNoChange;  // abort the header edit too
         return kNoChange;
     }
-    AC_LOG_INFO(kModule, "Injected manifest code for job %llu.",
-                static_cast<unsigned long long>(jobId));
+    if (*code == 0) {
+        AC_LOG_INFO(kModule,
+                    "Satisfied manifest request for job %llu from the local depotcache/AetherData manifest (request code 0).",
+                    static_cast<unsigned long long>(jobId));
+    } else {
+        AC_LOG_INFO(kModule, "Injected manifest code for job %llu.",
+                    static_cast<unsigned long long>(jobId));
+    }
     return static_cast<std::int32_t>(bodySize);
 }
 

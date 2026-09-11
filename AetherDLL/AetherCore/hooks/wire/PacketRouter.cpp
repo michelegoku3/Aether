@@ -18,7 +18,6 @@
 #include "hooks/wire/EticketModule.h"
 #include "hooks/wire/FamilySharingModule.h"
 #include "hooks/wire/GamesPlayedModule.h"
-#include "hooks/wire/ManifestBridge.h"
 #include "hooks/wire/PersonaInject.h"
 #include "hooks/wire/AchievementModule.h"
 
@@ -158,9 +157,9 @@ namespace ac::hooks {
                 if (ServiceJobName(f, job)) {
                     TrackServiceJob(f);  // [DIAG] flight-recorder jobid->nome
                     std::uint32_t h = FnvHash(job.c_str());
-                    if (h == job_hash::kGetManifestRequestCode) {
-                        return ManifestBridge::HandleSend(f);
-                    }
+                    // ContentServerDirectory.GetManifestRequestCode is
+                    // intentionally not routed: the obsolete request-code
+                    // pipeline is archived, not a production source.
                     if (h == job_hash::kGetUserStats) {
                         return AchievementModule::HandleSendGetUserStats(f, t_scratchBody.data(), kWireMaxBodyBytes);
                     }
@@ -248,11 +247,8 @@ namespace ac::hooks {
                         ? FamilySharing::ClearBody()
                         : kNoChange;
                 }
-                if (h == job_hash::kGetManifestRequestCode) {
-                    return ManifestBridge::HandleRecv(f, t_scratchBody.data(), kWireMaxBodyBytes,
-                        t_scratchHeader.data(), kWireMaxHeaderBytes,
-                        &t_recvHeaderLen);
-                }
+                // The request-code response is passed through unchanged. Current
+                // production acquisition is local-first/Hubcap-owned by Desk.
                 if (h == job_hash::kGetUserStats) {
                     return AchievementModule::HandleRecvGetUserStatsResponse(f, t_scratchBody.data(), kWireMaxBodyBytes,
                         t_scratchHeader.data(), kWireMaxHeaderBytes,

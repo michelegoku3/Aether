@@ -1,4 +1,6 @@
 use std::io::{Cursor, Read};
+
+use crate::manifest::pins::LuaManifestPins;
 use zip::ZipArchive;
 
 #[derive(Debug, Clone)]
@@ -45,6 +47,7 @@ impl ManifestPackageExtractor {
                 preview.trim()
             ));
         }
+        LuaManifestPins::validate_content(&content)?;
 
         Ok(ManifestPackage {
             lua_content: content,
@@ -97,6 +100,7 @@ impl ManifestPackageExtractor {
         let lua_content = preferred_lua
             .or(first_pinned_lua)
             .ok_or_else(|| "Manifest ZIP did not contain a Lua file with setManifestid pins".to_string())?;
+        LuaManifestPins::validate_content(&lua_content)?;
 
         Ok(ManifestPackage { lua_content, manifest_files })
     }

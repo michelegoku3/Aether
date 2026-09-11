@@ -89,6 +89,7 @@ impl LuaManifestPins {
     /// removal. The row count is verified before saving.
     pub fn apply_build_pins(&self, pins: &[DepotManifestPin]) -> Result<ApplyBuildResult, String> {
         let content = self.read_lua()?;
+        Self::validate_content(&content)?;
         let current = Self::pins_from_content(&content);
         let before_count = current.len();
         let mut lines: Vec<String> = content.lines().map(str::to_string).collect();
@@ -175,8 +176,36 @@ impl LuaManifestPins {
         rows
     }
 
+    /// Validates every setManifestid line before a provider or local importer
+    /// writes the Lua to Steam. Commented pins are checked too: enabling
+    /// updates later would execute them, so silently accepting a malformed
+    /// commented GID only defers the failure to the DLL hot-reload path.
+    pub fn validate_content(content: &str) -> Result<(), String> {
+        for (line_index, line) in content.lines().enumerate() {
+            let mut candidate = line.trim_start();
+            if let Some(rest) = candidate.strip_prefix("--") {
+                candidate = rest.trim_start();
+            }
+            if !candidate
+                .get(.."setmanifestid".len())
+                .map(|prefix| prefix.eq_ignore_ascii_case("setmanifestid"))
+                .unwrap_or(false)
+            {
+                continue;
+            }
+            if Self::parse_setmanifest_line(line).is_none() {
+                return Err(format!(
+                    "Invalid setManifestid call at Lua line {}: the manifest GID must be a decimal uint64",
+                    line_index + 1
+                ));
+            }
+        }
+        Ok(())
+    }
+
     pub fn rows_from_file(&self) -> Result<Vec<LuaManifestRow>, String> {
         let content = self.read_lua()?;
+        Self::validate_content(&content)?;
         Ok(Self::rows_from_content(&content))
     }
 
@@ -196,6 +225,7 @@ impl LuaManifestPins {
 
     pub fn updates_are_enabled(&self) -> Result<bool, String> {
         let content = self.read_lua()?;
+        Self::validate_content(&content)?;
         let lines: Vec<&str> = content.lines().collect();
 
         // Updates are considered enabled only when at least one setManifestid pin
@@ -215,6 +245,7 @@ impl LuaManifestPins {
 
     pub fn set_updates_enabled(&self, enabled: bool) -> Result<usize, String> {
         let content = self.read_lua()?;
+        Self::validate_content(&content)?;
         let pins = Self::pins_from_content(&content);
         let mut lines: Vec<String> = content.lines().map(str::to_string).collect();
         let mut changed = 0usize;
@@ -253,6 +284,7 @@ impl LuaManifestPins {
 
     pub fn apply_edits(&self, edits: Vec<LuaManifestEdit>) -> Result<Vec<LuaManifestRow>, String> {
         let content = self.read_lua()?;
+        Self::validate_content(&content)?;
         let pins = Self::pins_from_content(&content);
         let before_count = pins.len();
         let mut lines: Vec<String> = content.lines().map(str::to_string).collect();
@@ -348,9 +380,19 @@ impl LuaManifestPins {
             r#"^\s*(?P<comment>--\s*)?(?i:setmanifestid)\s*\(\s*(?P<appid>\d+)\s*,\s*["'](?P<manifest>[^"']+)["']\s*(?:,[^)]*)?\)"#,
         ).ok()?;
         let caps = re.captures(line)?;
+        let app_id = caps.name("appid")?.as_str().parse().ok()?;
+        let manifest_id = caps.name("manifest")?.as_str();
+        // Steam's Lua binding accepts decimal uint64 GIDs only. Keep the
+        // editor and backup pipeline aligned with that runtime contract and
+        // reject hex/text/overflow values instead of exposing unusable rows.
+        if manifest_id.parse::<u64>().is_err()
+            || !manifest_id.chars().all(|character| character.is_ascii_digit())
+        {
+            return None;
+        }
         Some((
-            caps.name("appid")?.as_str().parse().ok()?,
-            caps.name("manifest")?.as_str().to_string(),
+            app_id,
+            manifest_id.to_string(),
             caps.name("comment").is_some(),
         ))
     }

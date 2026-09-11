@@ -117,6 +117,28 @@ pub fn install_bulk_local_pipeline(
         return Err("No valid .lua (<appid>.lua) or .manifest (<depotid>_<manifestid>.manifest) files were found in the selected sources.".to_string());
     }
 
+    // Validate every discovered Lua before touching Steam, including commented
+    // pins that could be enabled later. This prevents a package such as the
+    // logged 3558400.lua from being copied and then failing only inside the
+    // DLL interpreter.
+    for lua_path in &discovered_lua {
+        let stem = lua_path
+            .file_stem()
+            .map(|value| value.to_string_lossy().to_string())
+            .unwrap_or_default();
+        if app_id_from_lua_stem(&stem).is_none() {
+            let _ = fs::remove_dir_all(&root_staging);
+            return Err(format!(
+                "Lua file {} does not start with a numeric Steam App ID.",
+                lua_path.display()
+            ));
+        }
+        let content = fs::read_to_string(lua_path)
+            .map_err(|error| format!("Failed to read Lua file {}: {}", lua_path.display(), error))?;
+        LuaManifestPins::validate_content(&content)
+            .map_err(|error| format!("Lua file {} is malformed: {}", lua_path.display(), error))?;
+    }
+
     let mut report = BulkInstallReport::default();
     let mut unique_apps = std::collections::HashSet::new();
 
@@ -454,9 +476,15 @@ fn validate_staged_lua_files(current: &Path, app_id: u32) -> Result<(), String> 
 
         match app_id_from_lua_stem(&stem) {
             Some(lua_app_id) if lua_app_id == app_id => {
+                let content = fs::read_to_string(&path).map_err(|error| {
+                    format!("Failed to read Lua file {} for validation: {}", file_name, error)
+                })?;
+                LuaManifestPins::validate_content(&content).map_err(|error| {
+                    format!("Lua file {} is malformed: {}", file_name, error)
+                })?;
                 crate::desk_log_info!(
                     "local",
-                    "Lua file {} validated: leading App ID matches the selected game ({})",
+                    "Lua file {} validated: leading App ID and decimal manifest GIDs match the selected game ({})",
                     file_name,
                     app_id
                 );

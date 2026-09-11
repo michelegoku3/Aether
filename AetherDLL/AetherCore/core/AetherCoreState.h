@@ -109,9 +109,10 @@ struct AetherCoreState {
     };
     LuaStore lua;
 
-    // ---- ManifestFetch -----------------------------------------------------
-    // Shared state for request-code HTTP fallback. Centralised here instead of
-    // module-local statics so ownership/lifetime remain explicit.
+    // Archived reference state for the former request-code provider. It is
+    // deliberately not dispatched by PacketRouter and its translation unit is
+    // excluded from the production target; keeping the type here lets future
+    // authenticated experiments compile the reference module in isolation.
     struct ManifestFetchState {
         mutable std::mutex mutex;
         std::unordered_map<std::uint64_t, std::shared_future<std::optional<std::uint64_t>>> pending;

@@ -13,7 +13,6 @@
 #include "utils/IpcSpec.h"
 #include "core/Logger.h"
 #include "scripting/LuaData.h"
-#include "network/ManifestFetch.h"
 #include "hooks/aetheronline/OnlinePayload.h"
 #include "hooks/ipc/PipeWatch.h"
 #include "hooks/wire/AchievementModule.h"
@@ -100,8 +99,7 @@ void Write() {
     json << "  \"eticket_inflight\": " << eticketfetch::InflightCount() << ",\n";
     json << "  \"ticket_forge_successes\": " << g_state.ticketForgeSuccessCount.load() << ",\n";
     json << "  \"ticket_forge_failures\": " << g_state.ticketForgeFailureCount.load() << ",\n";
-    json << "  \"manifest_fetch_pending\": " << manifestfetch::PendingCount() << ",\n";
-    json << "  \"manifest_fetch_cache_entries\": " << manifestfetch::CacheCount() << ",\n";
+    json << "  \"manifest_fetch_production_route\": \"disabled\",\n";
     json << "  \"online_payload_present\": "
          << (GetFileAttributesA(g_state.payloadDllPath.c_str()) != INVALID_FILE_ATTRIBUTES ? "true" : "false") << ",\n";
     json << "  \"online_payload_injected_pids\": " << hooks::onlinepayload::InjectedPidCount() << ",\n";
