@@ -65,6 +65,11 @@ pub struct AppSettings {
     /// reliable automatic updates or Workshop behavior.
     #[serde(default = "default_false")]
     pub download_games_with_updates_on: bool,
+    /// Records that the one-time safe-default migration for the update policy
+    /// has been applied. This lives in settings.json so the migration does not
+    /// depend on a standalone filesystem sentinel.
+    #[serde(default)]
+    pub download_updates_default_off_migrated: bool,
     /// Show a Steam Store front page in Store when no search query is active.
     #[serde(default = "default_true")]
     pub show_store_front_games: bool,
@@ -268,6 +273,7 @@ impl Default for AppSettings {
             ryuu_api_key: String::new(),
             build_details_token: String::new(),
             download_games_with_updates_on: false,
+            download_updates_default_off_migrated: false,
             show_store_front_games: true,
             use_alternative_game_cards: false,
             enable_webview_devtools: false,

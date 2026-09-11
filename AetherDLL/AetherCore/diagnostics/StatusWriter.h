@@ -20,7 +20,7 @@
 //   eticket_backend_configured, eticket_mint_successes, eticket_mint_failures,
 //     eticket_runtime_cache_entries
 //   ticket_forge_successes, ticket_forge_failures
-//   manifest_fetch_pending, manifest_fetch_cache_entries
+//   manifest_fetch_production_route (always "disabled" in production)
 //   online_payload_present, online_payload_injected_pids,
 //     online_payload_inject_successes, online_payload_inject_failures
 //   pipewatch_snapshots

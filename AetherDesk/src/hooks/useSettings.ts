@@ -19,6 +19,8 @@ export interface AppSettings {
   ryuu_api_key?: string;
   /** Latest-version downloads comment setManifestid pins so Steam can update the game; OFF by default and requires an active Hubcap key. */
   download_games_with_updates_on?: boolean;
+  /** Backend-owned one-time safe-default migration marker persisted in settings.json. */
+  download_updates_default_off_migrated?: boolean;
   /** Show Store front games when no search is active. */
   show_store_front_games?: boolean;
   /** Alternate backdrop-focused card layout. */

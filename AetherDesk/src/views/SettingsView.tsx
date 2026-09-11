@@ -327,7 +327,12 @@ export const SettingsView = ({ hubcapUsage, onRefreshUsage, onRefreshCustomCss, 
       loadAppearanceAssets();
       return true;
     } catch (err: any) {
-      showStatus(`Error during save: ${err}`, 'error');
+      const message = String(err);
+      if (message.includes('HUBCAP_KEY_REQUIRED_FOR_UPDATES')) {
+        setDownloadGamesWithUpdatesOn(false);
+        setShowHubcapUpdateWarning(true);
+      }
+      showStatus(`Error during save: ${message}`, 'error');
       return false;
     }
   };

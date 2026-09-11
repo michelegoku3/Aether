@@ -23,6 +23,10 @@ struct LookupKeyHash {
     }
 };
 
+// Returns true when the exact depot/GID manifest is already available in
+// Steam's depotcache or the per-game AetherData backup.
+bool HasLocalManifest(std::uint64_t manifestGid, std::uint32_t depotId);
+
 void Submit(std::uint64_t jobId, std::uint64_t manifestGid,
             std::uint32_t appId, std::uint32_t depotId);
 std::optional<std::uint64_t> Resolve(std::uint64_t jobId);

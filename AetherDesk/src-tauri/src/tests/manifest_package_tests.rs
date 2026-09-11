@@ -22,6 +22,17 @@ fn provider_bytes_accepts_utf8_bom_before_lua() {
 }
 
 #[test]
+fn provider_bytes_rejects_non_decimal_manifest_gid() {
+    let error = ManifestPackageExtractor::from_provider_bytes(
+        3558400,
+        b"addappid(3558401)\nsetManifestid(3558401, \"not-a-decimal-gid\")\n",
+    )
+    .expect_err("malformed manifest GID must not be installed");
+
+    assert!(error.contains("decimal uint64"));
+}
+
+#[test]
 fn provider_bytes_rejects_successful_json_or_html_responses() {
     let error = ManifestPackageExtractor::from_provider_bytes(
         1,

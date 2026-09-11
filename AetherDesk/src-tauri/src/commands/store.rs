@@ -5,7 +5,7 @@ use crate::providers::hubcap::HubcapClient;
 use crate::providers::luatools::LuaToolsClient;
 use crate::providers::ryuu::RyuuClient;
 use crate::core::paths::LocalAppPaths;
-use crate::manifest::pins::{LuaManifestPins, LuaManifestRow};
+use crate::manifest::pins::{DepotManifestPin, LuaManifestPins, LuaManifestRow};
 use crate::manifest::package::ManifestPackage;
 use crate::core::settings::{cache_version_with_currency, normalize_store_currency, normalize_store_front_filter, steam_country_code_for_currency, SettingsManager};
 use crate::steam::app_names::SteamAppNameResolver;
@@ -291,7 +291,7 @@ pub async fn trigger_hubcap_download(
         "Hubcap"
     };
     let res = async {
-        let package = if api_key == "oureveryday_public" {
+        let mut package = if api_key == "oureveryday_public" {
             crate::providers::oureveryday::OureverydayClient::new()
                 .download_lua_package(app_id)
                 .await?
@@ -300,6 +300,17 @@ pub async fn trigger_hubcap_download(
                 .download_lua_package(app_id)
                 .await?
         };
+        if api_key != "oureveryday_public" {
+            let generated = prepare_hubcap_manifest_files(
+                app_id,
+                &steam_path,
+                &package.lua_content,
+                &package.manifest_files,
+                &api_key,
+            )
+            .await?;
+            package.manifest_files.extend(generated);
+        }
         install_standard_package(&app, app_id, &steam_path, package, source)
     }
     .await;
@@ -330,7 +341,7 @@ pub async fn prepare_specific_version_download(
             let oe_client = crate::providers::oureveryday::OureverydayClient::new();
             oe_client.download_lua_package(app_id).await?
         } else {
-            HubcapClient::new(api_key)
+            HubcapClient::new(api_key.clone())
                 .download_lua_package(app_id)
                 .await?
         };
@@ -342,10 +353,39 @@ pub async fn prepare_specific_version_download(
         }
 
         let steam = SteamCompat::new(steam_path.clone());
-        steam.install_lua_config(app_id, &lua_content)?;
         steam.install_manifest_files(&package.manifest_files)?;
+        let pins: Vec<DepotManifestPin> = manifest_rows
+            .iter()
+            .filter(|row| row.enabled)
+            .map(|row| DepotManifestPin {
+                depot_id: row.app_id,
+                manifest_id: row.manifest_id.clone(),
+            })
+            .collect();
+        let local_steam_path = steam_path.clone();
+        let local_pins = pins.clone();
+        let missing = tauri::async_runtime::spawn_blocking(move || {
+            crate::versioning::apply::prepare_local_manifests(&local_steam_path, app_id, &local_pins)
+        })
+        .await
+        .map_err(|error| format!("Local manifest preparation failed: {error}"))??;
+        let generated = if missing.is_empty() {
+            Vec::new()
+        } else if api_key == "oureveryday_public" {
+            return Err("This specific version includes manifests not present locally. Configure a valid Hubcap API key; the obsolete request-code path is not used.".to_string());
+        } else {
+            crate::commands::versioning::generate_missing_manifests(
+                HubcapClient::new(api_key.clone()),
+                missing,
+            )
+            .await?
+        };
+        steam.install_manifest_files(&generated)?;
+        let mut backup_manifests = package.manifest_files.clone();
+        backup_manifests.extend(generated);
+        steam.install_lua_config(app_id, &lua_content)?;
         GameBackup::for_app(app_id)?
-            .backup_lua_artifacts(app_id, &lua_content, &package.manifest_files)?;
+            .backup_lua_artifacts(app_id, &lua_content, &backup_manifests)?;
 
         let installed_rows = LuaManifestPins::new(steam_path, app_id).rows_from_file()?;
         if installed_rows.len() != manifest_rows.len() {
@@ -443,6 +483,46 @@ pub async fn prepare_luatools_specific_version_download(
     );
     let package = LuaToolsClient::new().download_lua_package(app_id).await?;
     install_specific_package(&app, app_id, &steam_path, package, "LuaTools")
+}
+
+/// Completes a Hubcap package with exact manifest generation for rows that
+/// were not included in the ZIP and are not already present locally.
+async fn prepare_hubcap_manifest_files(
+    app_id: u32,
+    steam_path: &str,
+    lua_content: &str,
+    package_files: &[crate::manifest::package::ManifestPackageFile],
+    api_key: &str,
+) -> Result<Vec<crate::manifest::package::ManifestPackageFile>, String> {
+    let steam = SteamCompat::new(steam_path.to_string());
+    steam.install_manifest_files(package_files)?;
+    let pins: Vec<DepotManifestPin> = LuaManifestPins::rows_from_content(lua_content)
+        .into_iter()
+        .filter(|row| row.enabled)
+        .map(|row| DepotManifestPin {
+            depot_id: row.app_id,
+            manifest_id: row.manifest_id,
+        })
+        .collect();
+    let local_steam_path = steam_path.to_string();
+    let local_pins = pins;
+    let missing = tauri::async_runtime::spawn_blocking(move || {
+        crate::versioning::apply::prepare_local_manifests(&local_steam_path, app_id, &local_pins)
+    })
+    .await
+    .map_err(|error| format!("Local manifest preparation failed: {error}"))??;
+
+    if missing.is_empty() {
+        return Ok(Vec::new());
+    }
+    if api_key.trim().is_empty() || api_key == "oureveryday_public" {
+        return Err("This package needs manifest files that are not stored locally. Configure a valid Hubcap API key; the obsolete request-code path is not used.".to_string());
+    }
+    crate::commands::versioning::generate_missing_manifests(
+        HubcapClient::new(api_key.to_string()),
+        missing,
+    )
+    .await
 }
 
 fn install_standard_package(

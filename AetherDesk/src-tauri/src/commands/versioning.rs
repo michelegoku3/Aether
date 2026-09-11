@@ -1,5 +1,10 @@
 use serde::Serialize;
 use tauri::{AppHandle, Emitter};
+use tokio::task::JoinSet;
+
+use crate::manifest::package::ManifestPackageFile;
+use crate::manifest::pins::DepotManifestPin;
+use crate::providers::hubcap::HubcapClient;
 
 use crate::manifest::pins::LuaManifestPins;
 use crate::util::validation::validate_steam_path;
@@ -36,6 +41,59 @@ fn validate_app_build(app_id: u32, build_id: u64) -> Result<(), String> {
         return Err("A valid Build ID (7+ digits) is required".to_string());
     }
     Ok(())
+}
+
+/// Fetches only the exact manifest pins that are absent from Steam/AetherData.
+/// The small rolling task window prevents a large DLC set from creating an
+/// unbounded request burst while allowing independent Hubcap generations to
+/// run in parallel.
+pub(crate) async fn generate_missing_manifests(
+    client: HubcapClient,
+    missing: Vec<DepotManifestPin>,
+) -> Result<Vec<ManifestPackageFile>, String> {
+    let mut tasks = JoinSet::new();
+    let mut pending = missing.into_iter();
+    let concurrency = 8usize;
+
+    for _ in 0..concurrency {
+        let Some(pin) = pending.next() else { break };
+        let worker = client.clone();
+        tasks.spawn(async move {
+            let result = match pin.manifest_id.parse::<u64>() {
+                Ok(gid) => worker.generate_manifest(pin.depot_id, gid).await,
+                Err(_) => Err(format!("Invalid manifest GID for depot {}", pin.depot_id)),
+            };
+            (pin, result)
+        });
+    }
+
+    let mut files = Vec::new();
+    while let Some(joined) = tasks.join_next().await {
+        let (pin, result) = joined
+            .map_err(|error| format!("Hubcap manifest task failed: {error}"))?;
+        let bytes = result.map_err(|error| {
+            format!(
+                "Hubcap could not generate manifest {}_{}: {}",
+                pin.depot_id, pin.manifest_id, error
+            )
+        })?;
+        files.push(ManifestPackageFile {
+            file_name: format!("{}_{}.manifest", pin.depot_id, pin.manifest_id),
+            bytes,
+        });
+
+        if let Some(next_pin) = pending.next() {
+            let worker = client.clone();
+            tasks.spawn(async move {
+                let result = match next_pin.manifest_id.parse::<u64>() {
+                    Ok(gid) => worker.generate_manifest(next_pin.depot_id, gid).await,
+                    Err(_) => Err(format!("Invalid manifest GID for depot {}", next_pin.depot_id)),
+                };
+                (next_pin, result)
+            });
+        }
+    }
+    Ok(files)
 }
 
 /// All published builds of a game, newest first (cached 24 h).
@@ -116,10 +174,51 @@ pub async fn apply_game_version(
         }
     };
 
+    // Exact local lookup is deliberately first. Backup hits are restored into
+    // Steam/depotcache without spending Hubcap quota; only the remaining pins
+    // enter the authenticated generation scheduler.
+    let local_steam_path = steam_path.clone();
+    let local_pins = pins.clone();
+    let local_missing = tauri::async_runtime::spawn_blocking(move || {
+        crate::versioning::apply::prepare_local_manifests(&local_steam_path, app_id, &local_pins)
+    })
+    .await
+    .map_err(|error| format!("Local manifest preparation failed: {error}"))??;
+
+    let generated_manifests = if local_missing.is_empty() {
+        Vec::new()
+    } else {
+        let hubcap_key = crate::core::settings::SettingsManager::new(&app)
+            .load()
+            .hubcap_api_key;
+        if hubcap_key.trim().is_empty() {
+            let missing = local_missing
+                .iter()
+                .map(|pin| format!("{}:{}", pin.depot_id, pin.manifest_id))
+                .collect::<Vec<_>>()
+                .join(", ");
+            return Err(format!(
+                "This version needs manifest(s) that are not stored locally: {missing}. Configure and validate a Hubcap API key before switching versions; no unauthenticated request-code fallback is used."
+            ));
+        }
+        let _ = app.emit(
+            PROGRESS_EVENT,
+            VersionProgressEvent {
+                app_id,
+                build_id,
+                step: 20,
+                message: format!("Generating {} missing manifest(s) with Hubcap...", local_missing.len()),
+            },
+        );
+        generate_missing_manifests(HubcapClient::new(hubcap_key), local_missing).await?
+    };
+
     // ACF lives in the Steam root library. (`steam_path` was strict-validated
     // at command entry; normalize the raw value before reuse.)
     let library_path = crate::steam::resolve::normalize_steam_path(&steam_path);
 
+    let pins_for_apply = pins;
+    let generated_for_apply = generated_manifests;
     let handle = app.clone();
     let pipeline_result = tauri::async_runtime::spawn_blocking(move || {
         let progress = |step: u8, message: &str| {
@@ -138,7 +237,8 @@ pub async fn apply_game_version(
             build_id,
             &steam_path,
             &library_path,
-            &pins,
+            &pins_for_apply,
+            &generated_for_apply,
             &progress,
         )
     })

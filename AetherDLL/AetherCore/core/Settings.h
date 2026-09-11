@@ -39,18 +39,13 @@ struct Settings {
     bool patternUseOstSource = false;
 
     // [manifest_fetch]
-    std::vector<std::string> manifestFetchUrls = {
-        "https://manifest.opensteamtool.com/{gid}",
-        "https://manifest.steam.run/api/manifest/{gid}",
-        "http://gmrc.wudrm.com/manifest/{gid}",
-    };
+    // Retained only so archived request-code reference files remain readable.
+    // The production target does not compile or dispatch that pipeline.
+    std::vector<std::string> manifestFetchUrls;
+
     int manifestFetchTimeoutSec = 12;
 
-    std::vector<std::string> manifestFetchTrustedHosts = {
-        "manifest.opensteamtool.com",
-        "manifest.steam.run",
-        "gmrc.wudrm.com",
-    };
+    std::vector<std::string> manifestFetchTrustedHosts;
 
     // [manifest_cache]
     // Restore *.manifest backups into Steam\depotcache on every Steam start.

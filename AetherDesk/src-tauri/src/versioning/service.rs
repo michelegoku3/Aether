@@ -4,6 +4,7 @@ use std::sync::Arc;
 use tokio::task::JoinSet;
 
 use crate::core::paths::LocalAppPaths;
+use crate::manifest::package::ManifestPackageFile;
 use crate::manifest::pins::DepotManifestPin;
 use crate::versioning::apply::{apply_build_version, ProgressFn};
 use crate::versioning::cache::VersionCache;
@@ -220,9 +221,18 @@ impl VersionService {
         steam_path: &str,
         library_path: &str,
         pins: &[DepotManifestPin],
+        generated_manifests: &[ManifestPackageFile],
         progress: &ProgressFn<'_>,
     ) -> Result<ApplyVersionReport, VersionError> {
-        apply_build_version(app_id, build_id, steam_path, library_path, pins, progress)
+        apply_build_version(
+            app_id,
+            build_id,
+            steam_path,
+            library_path,
+            pins,
+            generated_manifests,
+            progress,
+        )
     }
 
     pub fn list_saved(&self, app_id: u32) -> Vec<SavedBuild> {

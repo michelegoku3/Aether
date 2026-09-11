@@ -38,19 +38,9 @@ pattern_mirror = ""
 use_ost_source = false
 
 [manifest_fetch]
-# HTTP fallback for depot manifest request codes Steam refuses for fake-owned
-# depots. URL templates accept {gid}, {appid}, {depotid}. The body may be a bare
-# decimal code or JSON with a digit-string field such as "content".
-#
-# If this section is omitted, AetherCore uses the built-in default chain:
-#   1. https://manifest.opensteamtool.com/{gid}
-#   2. https://manifest.steam.run/api/manifest/{gid}
-#   3. http://gmrc.wudrm.com/manifest/{gid}
-# urls = ["https://manifest.opensteamtool.com/{gid}"]
-# Limit fetches to these hosts (default mirrors shown here).
-# trusted_hosts = ["manifest.opensteamtool.com", "manifest.steam.run", "gmrc.wudrm.com"]
-# Per-request wall-clock budget before falling through to Steam's original reply.
-timeout_sec = 12
+# Archived request-code reference only. Production routing is disabled;
+# manifests are acquired locally or through authenticated Hubcap in AetherDesk.
+urls = []
 
 [manifest_cache]
 # Restore *.manifest backups into Steam\depotcache on every Steam start.

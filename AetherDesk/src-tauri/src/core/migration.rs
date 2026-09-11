@@ -13,7 +13,6 @@ use std::path::Path;
 
 const LEGACY_LUA_BACKUPS_DIR: &str = "lua_backups";
 const OBSOLETE_COMPONENT_VERSION_DIR: &str = "component_versions";
-const DOWNLOAD_UPDATE_DEFAULT_MIGRATION: &str = ".download_updates_default_off_v1";
 
 #[derive(Debug, Default)]
 pub struct MigrationReport {
@@ -235,31 +234,42 @@ pub fn reset_antivirus_exclusion_flag(_app: &tauri::AppHandle) {
 
 /// One-time policy migration: latest-version downloads no longer enable
 /// Steam updates by default because the unauthenticated request-code path was
-/// patched. An explicit user choice made after this marker is never touched.
+/// patched. The migration state is persisted in settings.json, alongside the
+/// policy it describes, rather than in a standalone filesystem sentinel.
 pub fn migrate_download_update_default_off(app: &tauri::AppHandle) {
-    let marker = LocalAppPaths::data_root().join(DOWNLOAD_UPDATE_DEFAULT_MIGRATION);
-    if marker.exists() {
+    let manager = crate::core::settings::SettingsManager::new(app);
+    let mut settings = manager.load();
+    if settings.download_updates_default_off_migrated {
         return;
     }
 
-    let manager = crate::core::settings::SettingsManager::new(app);
-    let mut settings = manager.load();
-    if settings.download_games_with_updates_on {
-        settings.download_games_with_updates_on = false;
-        if let Err(error) = manager.save(&settings) {
-            crate::desk_log_warn!(
-                "migration",
-                "Could not migrate download update policy to OFF: {}",
-                error
-            );
-            return;
-        }
+    // Older settings files may have had the old default enabled. Move those
+    // files to the safe default exactly once; an explicit choice can then be
+    // enabled again through the normal Hubcap-key guard.
+    let was_enabled = settings.download_games_with_updates_on;
+    settings.download_games_with_updates_on = false;
+    settings.download_updates_default_off_migrated = true;
+
+    if let Err(error) = manager.save(&settings) {
+        crate::desk_log_warn!(
+            "migration",
+            "Could not persist download update policy migration: {}",
+            error
+        );
+        return;
+    }
+
+    if was_enabled {
         crate::desk_log_info!(
             "migration",
             "Migrated download_games_with_updates_on to OFF; a valid Hubcap key is required to enable it again."
         );
+    } else {
+        crate::desk_log_info!(
+            "migration",
+            "Recorded download update policy migration in settings.json (default OFF)."
+        );
     }
-    let _ = fs::write(marker, b"1\n");
 }
 
 pub fn run_startup_migrations(app: &tauri::AppHandle) {

@@ -100,6 +100,51 @@ fn main() {
                     }
                 });
             }
+            // Workshop manifests are not request-code work. While Desk is
+            // running, periodically inspect Steam's appworkshop ACF files and
+            // stage only missing exact manifests through authenticated Hubcap.
+            // The worker is bounded and local-first, so an unchanged Workshop
+            // library produces no Hubcap traffic.
+            {
+                let app_handle = app.handle().clone();
+                tauri::async_runtime::spawn(async move {
+                    // Let the startup backup/restore synchronization publish
+                    // exact local manifests before any remote quota check.
+                    tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+                    loop {
+                        match crate::commands::manifests::sync_hubcap_game_manifests(app_handle.clone()).await {
+                            Ok(report) if report.generated > 0 || report.failed > 0 => {
+                                crate::desk_log_info!(
+                                    "hubcap",
+                                    "Game manifest sync: games={}, generated={}, already_local={}, failed={}",
+                                    report.games_scanned,
+                                    report.generated,
+                                    report.already_local,
+                                    report.failed
+                                );
+                            }
+                            Ok(_) => {}
+                            Err(error) => crate::desk_log_warn!("hubcap", "Game manifest sync unavailable: {}", error),
+                        }
+                        match crate::commands::workshop::sync_hubcap_workshop_manifests(app_handle.clone()).await {
+                            Ok(report) if report.generated > 0 || report.failed > 0 => {
+                                crate::desk_log_info!(
+                                    "hubcap",
+                                    "Workshop manifest sync: discovered={}, generated={}, cached={}, already_local={}, failed={}",
+                                    report.discovered,
+                                    report.generated,
+                                    report.restored_from_cache,
+                                    report.already_local,
+                                    report.failed
+                                );
+                            }
+                            Ok(_) => {}
+                            Err(error) => crate::desk_log_warn!("hubcap", "Workshop sync unavailable: {}", error),
+                        }
+                        tokio::time::sleep(std::time::Duration::from_secs(30)).await;
+                    }
+                });
+            }
             if let Err(e) = crate::core::custom_css::apply_window_icon(&app.handle()) {
                 eprintln!("[AetherDesk] window icon apply failed: {e}");
             }
@@ -155,6 +200,9 @@ fn main() {
             commands::store::prepare_specific_version_download,
             commands::store::prepare_luatools_specific_version_download,
             commands::store::prepare_ryuu_specific_version_download,
+            commands::workshop::generate_hubcap_workshop_manifest,
+            commands::workshop::sync_hubcap_workshop_manifests,
+            commands::manifests::sync_hubcap_game_manifests,
             commands::library::get_installed_library_games,
             commands::library::get_library_change_revision,
             commands::library::warm_library_game_cache,
