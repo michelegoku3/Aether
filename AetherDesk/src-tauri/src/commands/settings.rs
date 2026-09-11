@@ -11,6 +11,9 @@ pub fn get_settings(app: tauri::AppHandle) -> Result<AppSettings, String> {
 
 #[tauri::command]
 pub fn save_settings(app: tauri::AppHandle, settings: AppSettings) -> Result<(), String> {
+    if settings.download_games_with_updates_on && settings.hubcap_api_key.trim().is_empty() {
+        return Err("HUBCAP_KEY_REQUIRED_FOR_UPDATES: enable updates only with a valid active Hubcap key".to_string());
+    }
     let manager = SettingsManager::new(&app);
     let previous = manager.load();
     let settings_changed = previous != settings;

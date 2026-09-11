@@ -15,6 +15,7 @@
 use crate::core::paths::LocalAppPaths;
 use crate::external_tools::fs::write_atomic;
 use crate::manifest::package::ManifestPackageFile;
+use crate::manifest::pins::LuaManifestPins;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -143,6 +144,94 @@ impl GameBackup {
 
         Ok(())
     }
+
+    /// Copies every manifest referenced by the Lua from Steam/depotcache into
+    /// this game's backup. Provider ZIPs already call `backup_lua_artifacts`,
+    /// but a Lua imported from disk may reference manifests that only exist in
+    /// Steam's cache; startup sync must capture those too.
+    pub fn backup_referenced_manifests(
+        &self,
+        lua_content: &str,
+        depotcache: &Path,
+    ) -> ManifestBackupReport {
+        let rows = LuaManifestPins::rows_from_content(lua_content);
+        let mut report = ManifestBackupReport {
+            scanned: rows.len(),
+            ..ManifestBackupReport::default()
+        };
+
+        for row in rows {
+            let file_name = format!("{}_{}.manifest", row.app_id, row.manifest_id);
+            let source = match find_case_insensitive_file(depotcache, &file_name) {
+                Some(path) => path,
+                None => {
+                    report.missing += 1;
+                    continue;
+                }
+            };
+
+            let destination = self.lua_dir().join(&file_name);
+            if destination.is_file() {
+                // A manifest filename contains its complete depot/GID identity;
+                // retaining an existing non-empty copy is safer than replacing
+                // it while Steam may still be writing the source file.
+                if fs::metadata(&destination)
+                    .map(|meta| meta.len() > 0)
+                    .unwrap_or(false)
+                {
+                    report.unchanged += 1;
+                    continue;
+                }
+                // A zero-byte placeholder is not a backup. Remove it so the
+                // atomic writer also works on platforms where rename does not
+                // replace an existing destination.
+                let _ = fs::remove_file(&destination);
+            }
+
+            match fs::read(&source)
+                .map_err(|error| format!("read {}: {}", source.display(), error))
+                .and_then(|bytes| write_atomic(&destination, &bytes).map(|_| ()))
+            {
+                Ok(()) => report.copied += 1,
+                Err(error) => {
+                    report.errors += 1;
+                    crate::desk_log_debug!(
+                        "backup",
+                        "Could not back up manifest {}: {}",
+                        source.display(),
+                        error
+                    );
+                }
+            }
+        }
+
+        report
+    }
+}
+
+#[derive(Debug, Default, Clone, Copy, serde::Serialize)]
+pub struct ManifestBackupReport {
+    pub scanned: usize,
+    pub copied: usize,
+    pub unchanged: usize,
+    pub missing: usize,
+    pub errors: usize,
+}
+
+fn find_case_insensitive_file(dir: &Path, file_name: &str) -> Option<PathBuf> {
+    let exact = dir.join(file_name);
+    if exact.is_file() {
+        return Some(exact);
+    }
+    let entries = fs::read_dir(dir).ok()?;
+    entries.flatten().map(|entry| entry.path()).find(|path| {
+        path.is_file()
+            && path
+                .file_name()
+                .and_then(|name| name.to_str())
+                .map(|name| name.eq_ignore_ascii_case(file_name))
+                .unwrap_or(false)
+    })
 }
 
 fn dir_has_files(dir: &Path) -> bool {
@@ -229,6 +318,11 @@ pub struct LuaSyncReport {
     pub updated: usize,
     pub unchanged: usize,
     pub skipped: usize,
+    pub manifests_scanned: usize,
+    pub manifests_copied: usize,
+    pub manifests_unchanged: usize,
+    pub manifests_missing: usize,
+    pub manifest_errors: usize,
 }
 
 fn sha256_hex(bytes: &[u8]) -> String {
@@ -344,6 +438,7 @@ pub struct LuaHistoryEntry {
 pub fn sync_lua_backups_from_stplug_in(steam_path: &Path) -> LuaSyncReport {
     let mut report = LuaSyncReport::default();
     let plugin_dir = steam_path.join("config").join("stplug-in");
+    let depotcache = steam_path.join("depotcache");
 
     let entries = match fs::read_dir(&plugin_dir) {
         Ok(entries) => entries,
@@ -360,14 +455,19 @@ pub fn sync_lua_backups_from_stplug_in(steam_path: &Path) -> LuaSyncReport {
 
     for entry in entries.flatten() {
         let path = entry.path();
-        if path.extension().and_then(|e| e.to_str()) != Some("lua") {
-            continue;   // salta .lua.bak e altro
+        if !path
+            .extension()
+            .and_then(|e| e.to_str())
+            .map(|ext| ext.eq_ignore_ascii_case("lua"))
+            .unwrap_or(false)
+        {
+            continue; // salta .lua.bak e altro
         }
         let Some(stem) = path.file_stem().and_then(|s| s.to_str()) else {
             continue;
         };
         let Ok(app_id) = stem.parse::<u32>() else {
-            report.skipped += 1;   // nome non numerico: non è un app id
+            report.skipped += 1; // nome non numerico: non è un app id
             continue;
         };
         report.scanned += 1;
@@ -384,38 +484,48 @@ pub fn sync_lua_backups_from_stplug_in(steam_path: &Path) -> LuaSyncReport {
         // l'ultimo scaricato dalle fonti); ogni contenuto diverso trovato in
         // stplug-in è una versione modificata -> history/ (deduplicata per
         // contenuto, così i riavvii non creano copie).
-        // Prestazioni: open_existing non crea cartelle; for_app (che crea
-        // l'albero) viene usato solo quando c'è davvero qualcosa da scrivere.
-        // Per i 58 giochi già allineati il sync fa SOLO letture.
-        let original_exists = GameBackup::open_existing(app_id)
-            .map(|b| b.lua_dir().join(format!("{app_id}.lua")).exists())
-            .unwrap_or(false);
-        if !original_exists {
-            match GameBackup::for_app(app_id)
-                .and_then(|backup| backup.store_original(app_id, &src))
-            {
+        let backup = GameBackup::open_existing(app_id)
+            .or_else(|| GameBackup::for_app(app_id).ok());
+        let Some(backup) = backup else {
+            report.skipped += 1;
+            continue;
+        };
+
+        let original_path = backup.lua_dir().join(format!("{app_id}.lua"));
+        if !original_path.exists() {
+            match backup.store_original(app_id, &src) {
                 Ok(_) => report.created += 1,
                 Err(_) => report.skipped += 1,
             }
-            continue;
+        } else {
+            // Fast path: se il contenuto coincide con l'originale non c'è
+            // niente da fare — i riavvii non generano copie duplicate.
+            let matches_original = fs::read(&original_path)
+                .map(|original| original == src)
+                .unwrap_or(false);
+            if matches_original {
+                report.unchanged += 1;
+            } else {
+                match backup.store_history_version(app_id, &src) {
+                    Ok(true) => report.updated += 1,
+                    Ok(false) => report.unchanged += 1,
+                    Err(_) => report.skipped += 1,
+                }
+            }
         }
-        // Fast path: se il contenuto coincide con l'originale non c'è niente
-        // da fare (casi più comuni all'avvio) — un solo confronto, zero write.
-        let matches_original = GameBackup::open_existing(app_id)
-            .and_then(|b| fs::read(b.lua_dir().join(format!("{app_id}.lua"))).ok())
-            .is_some_and(|original| original == src);
-        if matches_original {
-            report.unchanged += 1;
-            continue;
-        }
-        match GameBackup::open_existing(app_id)
-            .ok_or_else(|| "backup tree vanished".to_string())
-            .and_then(|backup| backup.store_history_version(app_id, &src))
-        {
-            Ok(true) => report.updated += 1,       // nuova versione -> history
-            Ok(false) => report.unchanged += 1,    // già nota (history)
-            Err(_) => report.skipped += 1,
-        }
+
+        // Questa passata è indipendente dalla versione del Lua: anche un file
+        // già noto può avere un manifest presente in Steam/depotcache ma mai
+        // copiato in AetherData (es. import locale o vecchie installazioni).
+        let manifest_report = backup.backup_referenced_manifests(
+            std::str::from_utf8(&src).unwrap_or_default(),
+            &depotcache,
+        );
+        report.manifests_scanned += manifest_report.scanned;
+        report.manifests_copied += manifest_report.copied;
+        report.manifests_unchanged += manifest_report.unchanged;
+        report.manifests_missing += manifest_report.missing;
+        report.manifest_errors += manifest_report.errors;
     }
 
     report

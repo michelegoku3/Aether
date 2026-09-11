@@ -4,6 +4,7 @@ import { getSettings, checkSteamPath, STORE_CURRENCIES, isStoreCurrency, type St
 import { ClickablePath } from '../ui/ClickablePath';
 import { EyeIcon, EyeOffIcon } from '../ui/icons';
 import { OstWarningModal } from '../modals/OstWarningModal';
+import { HubcapUpdateWarningModal } from '../modals/HubcapUpdateWarningModal';
 
 interface SettingsViewProps {
   hubcapUsage: { usage: number; limit: number; hasKey: boolean };
@@ -68,7 +69,8 @@ export const SettingsView = ({ hubcapUsage, onRefreshUsage, onRefreshCustomCss, 
   const [showStoreDlcs, setShowStoreDlcs] = useState(false);
   const [showStoreNsfw, setShowStoreNsfw] = useState(true);
   const [showStoreDelisted, setShowStoreDelisted] = useState(true);
-  const [downloadGamesWithUpdatesOn, setDownloadGamesWithUpdatesOn] = useState(true);
+  const [downloadGamesWithUpdatesOn, setDownloadGamesWithUpdatesOn] = useState(false);
+  const [showHubcapUpdateWarning, setShowHubcapUpdateWarning] = useState(false);
   const [showStoreFrontGames, setShowStoreFrontGames] = useState(true);
   const [useAlternativeGameCards, setUseAlternativeGameCards] = useState(false);
   const [enableWebviewDevtools, setEnableWebviewDevtools] = useState(false);
@@ -155,7 +157,7 @@ export const SettingsView = ({ hubcapUsage, onRefreshUsage, onRefreshCustomCss, 
     // These two default to enabled: only an explicit `false` turns them off.
     setShowStoreNsfw(settings.show_store_nsfw !== false);
     setShowStoreDelisted(settings.show_store_delisted !== false);
-    setDownloadGamesWithUpdatesOn(settings.download_games_with_updates_on !== false);
+    setDownloadGamesWithUpdatesOn(Boolean(settings.download_games_with_updates_on));
     setShowStoreFrontGames(settings.show_store_front_games !== false);
     setUseAlternativeGameCards(Boolean(settings.use_alternative_game_cards));
     setEnableWebviewDevtools(Boolean(settings.enable_webview_devtools));
@@ -266,10 +268,12 @@ export const SettingsView = ({ hubcapUsage, onRefreshUsage, onRefreshCustomCss, 
     // service is unreachable) the key is kept and the save still goes through.
     let invalidApiKey = false;
     let apiKeyWarning = '';
+    let hubcapKeyValid = false;
     if (apiKey.trim()) {
       showStatus('Validating API key...', 'info');
       try {
-        const isValid: any = await invoke('validate_hubcap_key', { apiKey });
+        const isValid: any = await invoke('validate_hubcap_key', { apiKey: apiKey.trim() });
+        hubcapKeyValid = Boolean(isValid);
         if (!isValid) {
           invalidApiKey = true;
           apiKeyWarning = 'The Hubcap API key is invalid and was cleared; the rest of your settings were saved.';
@@ -277,6 +281,14 @@ export const SettingsView = ({ hubcapUsage, onRefreshUsage, onRefreshCustomCss, 
       } catch (err: any) {
         apiKeyWarning = `Hubcap API key could not be validated (${err}); the rest of your settings were saved anyway.`;
       }
+    }
+
+    if (downloadGamesWithUpdatesOn && !hubcapKeyValid) {
+      // Never persist an enabled update policy without a positively validated
+      // Hubcap key, including when an older settings file had the toggle ON.
+      setDownloadGamesWithUpdatesOn(false);
+      setShowHubcapUpdateWarning(true);
+      return false;
     }
 
     // A save without a valid Steam path is rejected by the backend anyway:
@@ -348,7 +360,7 @@ export const SettingsView = ({ hubcapUsage, onRefreshUsage, onRefreshCustomCss, 
       showStoreDlcs !== Boolean(s.show_store_dlcs) ||
       showStoreNsfw !== (s.show_store_nsfw !== false) ||
       showStoreDelisted !== (s.show_store_delisted !== false) ||
-      downloadGamesWithUpdatesOn !== (s.download_games_with_updates_on !== false) ||
+      downloadGamesWithUpdatesOn !== Boolean(s.download_games_with_updates_on) ||
       showStoreFrontGames !== (s.show_store_front_games !== false) ||
       useAlternativeGameCards !== Boolean(s.use_alternative_game_cards) ||
       enableWebviewDevtools !== Boolean(s.enable_webview_devtools) ||
@@ -602,6 +614,36 @@ export const SettingsView = ({ hubcapUsage, onRefreshUsage, onRefreshCustomCss, 
       showStatus(`LuaTools sign-out failed: ${err}`, 'error');
     } finally {
       setIsLuaToolsAuthBusy(false);
+    }
+  };
+
+  /** Latest-version downloads must use authenticated Hubcap manifest access.
+   * Validate on every enable attempt; there is deliberately no acknowledgement
+   * flag because the warning must reappear whenever the key is absent/invalid. */
+  const handleDownloadGamesWithUpdatesChange = async (enabled: boolean) => {
+    if (!enabled) {
+      setDownloadGamesWithUpdatesOn(false);
+      return;
+    }
+
+    const key = apiKey.trim();
+    if (!key) {
+      setShowHubcapUpdateWarning(true);
+      return;
+    }
+
+    try {
+      const valid = await invoke<boolean>('validate_hubcap_key', { apiKey: key });
+      if (!valid) {
+        setShowHubcapUpdateWarning(true);
+        return;
+      }
+      setDownloadGamesWithUpdatesOn(true);
+      showStatus('Hubcap key validated. Latest downloads may enable Steam updates.', 'success');
+    } catch {
+      // A key that cannot be validated is not treated as active. This keeps
+      // the toggle off instead of silently enabling a broken update path.
+      setShowHubcapUpdateWarning(true);
     }
   };
 
@@ -1045,13 +1087,13 @@ export const SettingsView = ({ hubcapUsage, onRefreshUsage, onRefreshCustomCss, 
             </select>
           </div>
 
-          <div className="settings-toggle-row" title="After latest-version downloads, comment setManifestid pins so Steam can update the game normally">
+          <div className="settings-toggle-row" title="After latest-version downloads, comment setManifestid pins so Steam can update the game normally. Requires a valid active Hubcap key.">
             <span className="settings-toggle-text">Download games with updates on</span>
             <label className="version-switch">
               <input
                 type="checkbox"
                 checked={downloadGamesWithUpdatesOn}
-                onChange={(e) => setDownloadGamesWithUpdatesOn(e.target.checked)}
+                onChange={(e) => void handleDownloadGamesWithUpdatesChange(e.target.checked)}
               />
               <span></span>
             </label>
@@ -1314,6 +1356,10 @@ export const SettingsView = ({ hubcapUsage, onRefreshUsage, onRefreshCustomCss, 
           </button>
         </div>
       </form>
+
+      {showHubcapUpdateWarning && (
+        <HubcapUpdateWarningModal onClose={() => setShowHubcapUpdateWarning(false)} />
+      )}
 
       {showOstWarning && (
         <OstWarningModal

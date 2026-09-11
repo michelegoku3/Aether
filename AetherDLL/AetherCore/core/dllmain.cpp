@@ -1,9 +1,13 @@
 #include "pch.h"
 
+#include <algorithm>
+#include <filesystem>
+#include <fstream>
+#include <iterator>
+#include <regex>
 #include <string>
 #include <thread>
 #include <vector>
-#include <fstream>
 
 #include "core/AetherCoreState.h"
 #include "core/Constants.h"
@@ -112,6 +116,41 @@ namespace {
         }
     }
 
+    // Returns every Steam library's `steamapps` directory. The primary Steam
+    // root is always included; secondary libraries are read from
+    // steamapps/libraryfolders.vdf so uninstall detection also works when a
+    // game lives on another drive.
+    std::vector<std::string> CollectAcfWatchDirs() {
+        std::vector<std::string> dirs;
+        const std::filesystem::path primary =
+            std::filesystem::path(g_state.steamInstallPath) / "steamapps";
+        dirs.push_back(primary.string());
+
+        const std::filesystem::path libraryFile = primary / "libraryfolders.vdf";
+        std::ifstream input(libraryFile);
+        if (!input.is_open()) return dirs;
+        const std::string content((std::istreambuf_iterator<char>(input)),
+                                  std::istreambuf_iterator<char>());
+        const std::regex pathRegex(R"REGEX("path"\s+"([^"]+)")REGEX",
+                                   std::regex_constants::icase);
+        for (std::sregex_iterator it(content.begin(), content.end(), pathRegex), end;
+             it != end; ++it) {
+            std::string library = (*it)[1].str();
+            // VDF escapes Windows separators as `\\\\`.
+            std::string::size_type pos = 0;
+            while ((pos = library.find("\\\\", pos)) != std::string::npos) {
+                library.replace(pos, 2, "\\");
+                ++pos;
+            }
+            const std::filesystem::path steamapps =
+                std::filesystem::path(library) / "steamapps";
+            if (std::find(dirs.begin(), dirs.end(), steamapps.string()) == dirs.end()) {
+                dirs.push_back(steamapps.string());
+            }
+        }
+        return dirs;
+    }
+
     // The real initialisation, run off the loader lock on a dedicated thread.
     // Order matters: every step only depends on those before it.
     void InitThreadLogic(HMODULE self) {
@@ -213,7 +252,12 @@ namespace {
         //    Depends on: luaDir resolved + luaExtraPaths from settings.
         std::vector<std::string> watchDirs{ g_state.luaDir };
         for (const std::string& extra : g_state.settings.luaExtraPaths) watchDirs.push_back(extra);
-        ac::dirwatch::Start(watchDirs);
+        // ACF removals are Steam's durable uninstall signal. Keep this watcher
+        // separate from the recursive Lua paths so a deleted
+        // appmanifest_<app_id>.acf can restore only that app's backed-up
+        // manifests into Steam\depotcache after Steam finishes its cleanup.
+        const std::vector<std::string> acfWatchDirs = CollectAcfWatchDirs();
+        ac::dirwatch::Start(watchDirs, acfWatchDirs);
     }
 
     DWORD WINAPI InitThread(LPVOID param) {
