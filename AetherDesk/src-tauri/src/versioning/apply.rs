@@ -80,9 +80,32 @@ pub fn apply_build_version(
     // atomically before Steam can observe the new Lua, so a successful version
     // switch never points at a manifest that has not been staged yet.
     if !generated_manifests.is_empty() {
-        SteamCompat::new(steam_path.to_string())
+        let installed = SteamCompat::new(steam_path.to_string())
             .install_manifest_files(generated_manifests)
             .map_err(VersionError::Lua)?;
+        crate::desk_log_info!(
+            "versioning",
+            "Generated manifest install completed app_id={} installed={} requested={}",
+            app_id,
+            installed,
+            generated_manifests.len()
+        );
+    }
+
+    let (staged_found, staged_missing) = count_local_manifests(steam_path, app_id, pins);
+    crate::desk_log_info!(
+        "versioning",
+        "Pre-apply manifest gate app_id={} found={} missing={}",
+        app_id,
+        staged_found,
+        staged_missing.len()
+    );
+    if !staged_missing.is_empty() {
+        return Err(VersionError::Lua(format!(
+            "Cannot apply build {build_id}: {} manifest(s) are still missing or empty after staging: {}",
+            staged_missing.len(),
+            staged_missing.join(", ")
+        )));
     }
 
     progress(30, "Pinning build manifests in the Lua");
@@ -162,6 +185,18 @@ pub fn apply_build_version(
         manifests_found,
         pins.len()
     );
+    if !manifests_missing.is_empty() {
+        crate::desk_log_error!(
+            "versioning",
+            "Manifest completion gate failed app_id={} missing={}",
+            app_id,
+            manifests_missing.len()
+        );
+        return Err(VersionError::Lua(format!(
+            "Build {build_id} was not completed: {} referenced manifest(s) are missing or empty after install",
+            manifests_missing.len()
+        )));
+    }
 
     progress(75, "Syncing the Steam ACF");
     // Best-effort: se l'ACF manca o è bloccato si logga un WARN e si prosegue
@@ -239,6 +274,13 @@ pub fn prepare_local_manifests(
     app_id: u32,
     pins: &[DepotManifestPin],
 ) -> Result<Vec<DepotManifestPin>, String> {
+    crate::desk_log_debug!(
+        "versioning",
+        "Local manifest preparation start app_id={} pins={} steam_path_configured={}",
+        app_id,
+        pins.len(),
+        !steam_path.trim().is_empty()
+    );
     let depotcache = PathBuf::from(steam_path).join("depotcache");
     std::fs::create_dir_all(&depotcache)
         .map_err(|e| format!("Could not create Steam depotcache: {e}"))?;
@@ -246,6 +288,13 @@ pub fn prepare_local_manifests(
     for pin in pins {
         let file_name = format!("{}_{}.manifest", pin.depot_id, pin.manifest_id);
         let Some(source) = exact_local_manifest_path(steam_path, app_id, pin) else {
+            crate::desk_log_debug!(
+                "versioning",
+                "Local manifest missing app_id={} depot_id={} manifest_id={}",
+                app_id,
+                pin.depot_id,
+                pin.manifest_id
+            );
             missing.push(pin.clone());
             continue;
         };
@@ -261,8 +310,34 @@ pub fn prepare_local_manifests(
                 .map_err(|e| format!("Could not restore local manifest {file_name}: {e}"))?;
             std::fs::rename(&temporary, &destination)
                 .map_err(|e| format!("Could not install local manifest {file_name}: {e}"))?;
+            let source_len = std::fs::metadata(&source)
+                .map_err(|e| format!("Could not verify source manifest {file_name}: {e}"))?
+                .len();
+            let destination_len = std::fs::metadata(&destination)
+                .map_err(|e| format!("Could not verify restored manifest {file_name}: {e}"))?
+                .len();
+            if source_len == 0 || destination_len != source_len {
+                return Err(format!(
+                    "Restored local manifest {file_name} failed verification (source {} bytes, destination {} bytes)",
+                    source_len,
+                    destination_len
+                ));
+            }
+            crate::desk_log_debug!(
+                "versioning",
+                "Restored local manifest app_id={} file={} bytes={}",
+                app_id,
+                file_name,
+                destination_len
+            );
         }
     }
+    crate::desk_log_info!(
+        "versioning",
+        "Local manifest preparation complete app_id={} missing={}",
+        app_id,
+        missing.len()
+    );
     Ok(missing)
 }
 

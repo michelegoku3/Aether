@@ -26,8 +26,11 @@ impl DownloadOrchestrator {
     pub async fn execute_hubcap_download(&self, app_id: u32) -> Result<DownloadResult, String> {
         let package = self.hubcap_client.download_lua_package(app_id).await?;
 
-        self.steam_compat.install_lua_config(app_id, &package.lua_content)?;
-        self.steam_compat.install_manifest_files(&package.manifest_files)?;
+        self.steam_compat.install_lua_and_manifest_files(
+            app_id,
+            &package.lua_content,
+            &package.manifest_files,
+        )?;
 
         Ok(DownloadResult {
             manifest_files: package.manifest_files,

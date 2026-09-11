@@ -130,6 +130,33 @@ namespace ac::hooks {
             return hdr.has_eresult() ? hdr.eresult() : -1;
         }
 
+        const char* EresultName(std::int32_t eresult) {
+            switch (eresult) {
+            case -1: return "missing_or_unparsed";
+            case 1: return "OK";
+            case 3: return "NoConnection";
+            case 15: return "AccessDenied";
+            case 16: return "Timeout";
+            case 20: return "ServiceUnavailable";
+            case 84: return "RateLimitExceeded";
+            default: return "other";
+            }
+        }
+
+        const char* EresultClass(std::int32_t eresult) {
+            switch (eresult) {
+            case 3:
+            case 16:
+            case 20:
+            case 84:
+                return "transport_or_provider_candidate";
+            case 15:
+                return "auth_or_policy_candidate";
+            default:
+                return "not_classified_as_network";
+            }
+        }
+
         // Trace per-frame bidirezionale (flight-recorder): un frame = una riga,
         // cosi' l'ultima riga del log e' SEMPRE l'ultimo frame prima del crash.
         void TraceFrame(const char* dir, const WireFrame& f) {
@@ -235,9 +262,17 @@ namespace ac::hooks {
                     const std::int32_t er = RecvResponseMeta(f, &jt);
                     const std::string jname = jt ? ResolveServiceJob(jt) : std::string();
                     AC_LOG_TRACE(kModule,
-                                 "[DIAG] service recv name='%s' jobid=%llu eresult=%d bLen=%u",
+                                 "[DIAG] service recv name='%s' jobid=%llu eresult=%d (%s) class=%s bLen=%u",
                                  jname.empty() ? "?" : jname.c_str(),
-                                 static_cast<unsigned long long>(jt), er, f.bodyLen);
+                                 static_cast<unsigned long long>(jt), er, EresultName(er),
+                                 EresultClass(er), f.bodyLen);
+                    diag::Record(
+                        "wire_eresult",
+                        "service=" + (jname.empty() ? std::string("?") : jname)
+                            + " jobid=" + std::to_string(jt)
+                            + " eresult=" + std::to_string(er)
+                            + " label=" + EresultName(er)
+                            + " class=" + EresultClass(er));
                 }
                 std::string job;
                 if (!ServiceJobName(f, job)) return kNoChange;

@@ -116,7 +116,7 @@ export default function App() {
   });
 
   // Hubcap API usage limits
-  const [hubcapUsage, setHubcapUsage] = useState({ usage: 0, limit: 25, hasKey: false });
+  const [hubcapUsage, setHubcapUsage] = useState({ usage: 0, limit: 1500, hasKey: false });
 
   // Settings revision: incremented after Settings saves/resets so always-mounted
   // views (Store) can reload data that depends on settings without restarting.
@@ -193,11 +193,11 @@ export default function App() {
         const stats: any = await invoke('get_hubcap_usage', { apiKey: key });
         setHubcapUsage({ usage: stats.usage, limit: stats.limit, hasKey: true });
       } else {
-        setHubcapUsage({ usage: 0, limit: 25, hasKey: false });
+        setHubcapUsage({ usage: 0, limit: 1500, hasKey: false });
       }
     } catch (err) {
       console.error("Failed to fetch Hubcap usage:", err);
-      setHubcapUsage({ usage: 0, limit: 25, hasKey: false });
+      setHubcapUsage({ usage: 0, limit: 1500, hasKey: false });
     }
   };
 

@@ -13,7 +13,54 @@ use crate::steam::compat::SteamCompat;
 use crate::store::cache::StoreSearchCache;
 use crate::store::service::{StoreService, UnifiedStoreGame};
 use serde::Serialize;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
+use sha2::{Digest, Sha256};
+use std::sync::{Arc, OnceLock};
+use std::time::{Duration, Instant};
+use tokio::sync::{Mutex as AsyncMutex, Semaphore};
+
+/// Latest-package downloads share one provider lane. The per-AppID lock
+/// coalesces duplicate UI/monitor requests, while the semaphore prevents
+/// package ZIP requests for different games from becoming a rate-limit burst.
+fn latest_package_gate() -> &'static Semaphore {
+    static GATE: OnceLock<Semaphore> = OnceLock::new();
+    GATE.get_or_init(|| Semaphore::new(1))
+}
+
+type LatestPackageLocks = AsyncMutex<HashMap<u32, Arc<AsyncMutex<()>>>>;
+
+fn latest_package_locks() -> &'static LatestPackageLocks {
+    static LOCKS: OnceLock<LatestPackageLocks> = OnceLock::new();
+    LOCKS.get_or_init(|| AsyncMutex::new(HashMap::new()))
+}
+
+async fn latest_package_lock(app_id: u32) -> Arc<AsyncMutex<()>> {
+    let mut locks = latest_package_locks().lock().await;
+    locks
+        .entry(app_id)
+        .or_insert_with(|| Arc::new(AsyncMutex::new(())))
+        .clone()
+}
+
+async fn validate_hubcap_key_cached(
+    client: &HubcapClient,
+    api_key: &str,
+) -> Result<bool, String> {
+    static CACHE: OnceLock<AsyncMutex<Option<(Vec<u8>, Instant, bool)>>> = OnceLock::new();
+    let cache = CACHE.get_or_init(|| AsyncMutex::new(None));
+    let fingerprint = Sha256::digest(api_key.as_bytes()).to_vec();
+    {
+        let cached = cache.lock().await;
+        if let Some((cached_fingerprint, checked_at, valid)) = cached.as_ref() {
+            if *cached_fingerprint == fingerprint && checked_at.elapsed() < Duration::from_secs(300) {
+                return Ok(*valid);
+            }
+        }
+    }
+    let valid = client.validate_api_key().await?;
+    *cache.lock().await = Some((fingerprint, Instant::now(), valid));
+    Ok(valid)
+}
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -88,6 +135,7 @@ pub async fn search_store(
     );
 
     if let Some(results) = cache.get_fresh(&cache_key) {
+        crate::desk_log_debug!("store", "Store search cache hit state=fresh query_len={} results={}", query.len(), results.len());
         GameInfoCache::new(
             LocalAppPaths::data_root().join("cache"),
             info_cache_version.clone(),
@@ -106,8 +154,11 @@ pub async fn search_store(
                 .merge_names(results.iter().map(|game| (game.id, game.name.clone())));
             GameInfoCache::new(cache_dir, info_cache_version.clone())
                 .merge_store_results_with_manifest_context(&results, hubcap_checked);
-            let _ = cache.put(&cache_key, results.clone());
-            crate::desk_log_info!("store", "Store search query='{}' completed: {} game(s) returned", query, results.len());
+            match cache.put(&cache_key, results.clone()) {
+                Ok(()) => crate::desk_log_debug!("store", "Store search cache write complete query_len={} results={}", query.len(), results.len()),
+                Err(error) => crate::desk_log_warn!("store", "Store search cache write failed query_len={}: {}", query.len(), error),
+            }
+            crate::desk_log_info!("store", "Store search query_len={} completed results={}", query.len(), results.len());
             Ok(results)
         }
         Err(error) => {
@@ -280,6 +331,13 @@ pub async fn trigger_hubcap_download(
         return Err(e);
     }
 
+    let app_lock = latest_package_lock(app_id).await;
+    let _app_guard = app_lock.lock().await;
+    let _provider_guard = latest_package_gate()
+        .acquire()
+        .await
+        .map_err(|_| "Hubcap package scheduler is unavailable".to_string())?;
+
     crate::desk_log_info!("store", "Triggering download for {} (source: {})",
         crate::core::logger::format_appid(app_id), if api_key == "oureveryday_public" { "oureveryday" } else { "hubcap" });
 
@@ -296,9 +354,11 @@ pub async fn trigger_hubcap_download(
                 .download_lua_package(app_id)
                 .await?
         } else {
-            HubcapClient::new(api_key.clone())
-                .download_lua_package(app_id)
-                .await?
+            let hubcap = HubcapClient::new(api_key.clone());
+            if !validate_hubcap_key_cached(&hubcap, &api_key).await? {
+                return Err("Hubcap API key is not valid or is not allowed to make requests.".to_string());
+            }
+            hubcap.download_lua_package(app_id).await?
         };
         if api_key != "oureveryday_public" {
             let generated = prepare_hubcap_manifest_files(
@@ -341,9 +401,11 @@ pub async fn prepare_specific_version_download(
             let oe_client = crate::providers::oureveryday::OureverydayClient::new();
             oe_client.download_lua_package(app_id).await?
         } else {
-            HubcapClient::new(api_key.clone())
-                .download_lua_package(app_id)
-                .await?
+            let hubcap = HubcapClient::new(api_key.clone());
+            if !hubcap.validate_api_key().await? {
+                return Err("Hubcap API key is not valid or is not allowed to make requests.".to_string());
+            }
+            hubcap.download_lua_package(app_id).await?
         };
         let lua_content = package.lua_content;
         let manifest_rows = LuaManifestPins::rows_from_content(&lua_content);
@@ -353,7 +415,16 @@ pub async fn prepare_specific_version_download(
         }
 
         let steam = SteamCompat::new(steam_path.clone());
-        steam.install_manifest_files(&package.manifest_files)?;
+        let bundled: HashSet<String> = package
+            .manifest_files
+            .iter()
+            .filter_map(|manifest| {
+                let name = std::path::Path::new(&manifest.file_name)
+                    .file_name()
+                    .and_then(|value| value.to_str())?;
+                (!manifest.bytes.is_empty()).then_some(name.to_string())
+            })
+            .collect();
         let pins: Vec<DepotManifestPin> = manifest_rows
             .iter()
             .filter(|row| row.enabled)
@@ -362,13 +433,15 @@ pub async fn prepare_specific_version_download(
                 manifest_id: row.manifest_id.clone(),
             })
             .collect();
-        let local_steam_path = steam_path.clone();
-        let local_pins = pins.clone();
-        let missing = tauri::async_runtime::spawn_blocking(move || {
-            crate::versioning::apply::prepare_local_manifests(&local_steam_path, app_id, &local_pins)
-        })
-        .await
-        .map_err(|error| format!("Local manifest preparation failed: {error}"))??;
+        let missing = pins
+            .iter()
+            .filter(|pin| {
+                let file_name = format!("{}_{}.manifest", pin.depot_id, pin.manifest_id);
+                !bundled.contains(&file_name)
+                    && crate::versioning::apply::exact_local_manifest_path(&steam_path, app_id, pin).is_none()
+            })
+            .cloned()
+            .collect::<Vec<_>>();
         let generated = if missing.is_empty() {
             Vec::new()
         } else if api_key == "oureveryday_public" {
@@ -380,10 +453,10 @@ pub async fn prepare_specific_version_download(
             )
             .await?
         };
-        steam.install_manifest_files(&generated)?;
         let mut backup_manifests = package.manifest_files.clone();
         backup_manifests.extend(generated);
-        steam.install_lua_config(app_id, &lua_content)?;
+        steam.install_lua_and_manifest_files(app_id, &lua_content, &backup_manifests)?;
+        verify_referenced_manifests(app_id, &steam_path, &lua_content)?;
         GameBackup::for_app(app_id)?
             .backup_lua_artifacts(app_id, &lua_content, &backup_manifests)?;
 
@@ -494,8 +567,15 @@ async fn prepare_hubcap_manifest_files(
     package_files: &[crate::manifest::package::ManifestPackageFile],
     api_key: &str,
 ) -> Result<Vec<crate::manifest::package::ManifestPackageFile>, String> {
-    let steam = SteamCompat::new(steam_path.to_string());
-    steam.install_manifest_files(package_files)?;
+    let bundled: HashSet<String> = package_files
+        .iter()
+        .filter_map(|manifest| {
+            let name = std::path::Path::new(&manifest.file_name)
+                .file_name()
+                .and_then(|value| value.to_str())?;
+            (!manifest.bytes.is_empty()).then_some(name.to_string())
+        })
+        .collect();
     let pins: Vec<DepotManifestPin> = LuaManifestPins::rows_from_content(lua_content)
         .into_iter()
         .filter(|row| row.enabled)
@@ -504,13 +584,14 @@ async fn prepare_hubcap_manifest_files(
             manifest_id: row.manifest_id,
         })
         .collect();
-    let local_steam_path = steam_path.to_string();
-    let local_pins = pins;
-    let missing = tauri::async_runtime::spawn_blocking(move || {
-        crate::versioning::apply::prepare_local_manifests(&local_steam_path, app_id, &local_pins)
-    })
-    .await
-    .map_err(|error| format!("Local manifest preparation failed: {error}"))??;
+    let missing = pins
+        .into_iter()
+        .filter(|pin| {
+            let file_name = format!("{}_{}.manifest", pin.depot_id, pin.manifest_id);
+            !bundled.contains(&file_name)
+                && crate::versioning::apply::exact_local_manifest_path(steam_path, app_id, pin).is_none()
+        })
+        .collect::<Vec<_>>();
 
     if missing.is_empty() {
         return Ok(Vec::new());
@@ -525,6 +606,53 @@ async fn prepare_hubcap_manifest_files(
     .await
 }
 
+fn verify_referenced_manifests(
+    app_id: u32,
+    steam_path: &str,
+    lua_content: &str,
+) -> Result<usize, String> {
+    let missing = LuaManifestPins::rows_from_content(lua_content)
+        .into_iter()
+        .filter(|row| row.enabled)
+        .filter(|row| {
+            let file_name = format!("{}_{}.manifest", row.app_id, row.manifest_id);
+            [
+                std::path::PathBuf::from(steam_path).join("depotcache").join(&file_name),
+                std::path::PathBuf::from(steam_path)
+                    .join("config")
+                    .join("depotcache")
+                    .join(&file_name),
+            ]
+            .into_iter()
+            .all(|path| !path.is_file() || std::fs::metadata(path).map(|meta| meta.len() == 0).unwrap_or(true))
+        })
+        .map(|row| format!("{}_{}", row.app_id, row.manifest_id))
+        .collect::<Vec<_>>();
+    if !missing.is_empty() {
+        crate::desk_log_error!(
+            "store",
+            "Manifest completion gate failed app_id={} missing={}",
+            app_id,
+            missing.len()
+        );
+        return Err(format!(
+            "Package was not completed: {} referenced manifest(s) are missing or empty after install: {}",
+            missing.len(),
+            missing.join(", ")
+        ));
+    }
+    crate::desk_log_info!(
+        "store",
+        "Manifest completion gate passed app_id={} verified={}",
+        app_id,
+        LuaManifestPins::rows_from_content(lua_content)
+            .into_iter()
+            .filter(|row| row.enabled)
+            .count()
+    );
+    Ok(missing.len())
+}
+
 fn install_standard_package(
     app: &tauri::AppHandle,
     app_id: u32,
@@ -533,8 +661,8 @@ fn install_standard_package(
     source: &str,
 ) -> Result<String, String> {
     let steam = SteamCompat::new(steam_path.to_string());
-    steam.install_lua_config(app_id, &package.lua_content)?;
-    steam.install_manifest_files(&package.manifest_files)?;
+    steam.install_lua_and_manifest_files(app_id, &package.lua_content, &package.manifest_files)?;
+    verify_referenced_manifests(app_id, steam_path, &package.lua_content)?;
     apply_default_update_policy(app, app_id, steam_path)?;
     let installed_lua = steam
         .read_lua_config(app_id)
@@ -570,8 +698,8 @@ fn install_specific_package(
     }
 
     let steam = SteamCompat::new(steam_path.to_string());
-    steam.install_lua_config(app_id, &package.lua_content)?;
-    steam.install_manifest_files(&package.manifest_files)?;
+    steam.install_lua_and_manifest_files(app_id, &package.lua_content, &package.manifest_files)?;
+    verify_referenced_manifests(app_id, steam_path, &package.lua_content)?;
     GameBackup::for_app(app_id)?
         .backup_lua_artifacts(app_id, &package.lua_content, &package.manifest_files)?;
 
@@ -620,6 +748,12 @@ fn apply_default_update_policy(
     steam_path: &str,
 ) -> Result<(), String> {
     let settings = SettingsManager::new(app).load();
+    crate::desk_log_debug!(
+        "store",
+        "Update policy after package install app_id={} enabled={}",
+        app_id,
+        settings.download_games_with_updates_on
+    );
     if settings.download_games_with_updates_on {
         LuaManifestPins::new(steam_path.to_string(), app_id)
             .set_updates_enabled(true)

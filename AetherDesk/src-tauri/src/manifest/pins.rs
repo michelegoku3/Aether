@@ -176,6 +176,21 @@ impl LuaManifestPins {
         rows
     }
 
+    /// Rows belonging to active `addappid` entries, including commented
+    /// `setManifestid` pins. The latter are exactly the pins that Steam is
+    /// allowed to update while Aether is in update mode, so manifest repair
+    /// must not confuse "updates enabled" with "no manifest required".
+    pub fn rows_for_manifest_sync(content: &str) -> Vec<LuaManifestRow> {
+        let mut rows: Vec<LuaManifestRow> = Self::pins_from_content(content)
+            .into_iter()
+            .filter(|pin| pin.addappid_enabled)
+            .map(|pin| pin.row)
+            .filter(|row| !HIDDEN_SYSTEM_DEPOTS.contains(&row.app_id))
+            .collect();
+        rows.sort_by_key(|row| row.app_id);
+        rows
+    }
+
     /// Validates every setManifestid line before a provider or local importer
     /// writes the Lua to Steam. Commented pins are checked too: enabling
     /// updates later would execute them, so silently accepting a malformed
@@ -258,8 +273,11 @@ impl LuaManifestPins {
                 continue;
             }
 
+            let before = lines[pin.setmanifest_line].clone();
             Self::set_commented(&mut lines[pin.setmanifest_line], enabled);
-            changed += 1;
+            if lines[pin.setmanifest_line] != before {
+                changed += 1;
+            }
         }
 
         let next_content = Self::join_lua_lines(&lines);
@@ -271,7 +289,9 @@ impl LuaManifestPins {
             ));
         }
 
-        self.write_lua(&next_content)?;
+        if changed > 0 {
+            self.write_lua(&next_content)?;
+        }
         crate::desk_log_info!(
             "manifest",
             "Lua manifest {}: set_updates_enabled({}) completed -> {} pin(s) modified",
@@ -282,7 +302,13 @@ impl LuaManifestPins {
         Ok(changed)
     }
 
-    pub fn apply_edits(&self, edits: Vec<LuaManifestEdit>) -> Result<Vec<LuaManifestRow>, String> {
+    /// Builds the edited Lua in memory and validates it without writing it.
+    /// Callers that need remote manifest generation can therefore complete all
+    /// local/provider checks before Steam observes the new pins.
+    pub fn preview_edits(
+        &self,
+        edits: &[LuaManifestEdit],
+    ) -> Result<(String, Vec<LuaManifestRow>), String> {
         let content = self.read_lua()?;
         Self::validate_content(&content)?;
         let pins = Self::pins_from_content(&content);
@@ -325,9 +351,14 @@ impl LuaManifestPins {
                 before_count, after_count
             ));
         }
+        Self::validate_content(&next_content)?;
+        let rows = Self::rows_from_content(&next_content);
+        Ok((next_content, rows))
+    }
 
+    pub fn apply_edits(&self, edits: Vec<LuaManifestEdit>) -> Result<Vec<LuaManifestRow>, String> {
+        let (next_content, rows) = self.preview_edits(&edits)?;
         self.write_lua(&next_content)?;
-        let rows = self.rows_from_file()?;
         crate::desk_log_info!(
             "manifest",
             "Lua manifest {}: apply_edits completed -> {} row(s) active",

@@ -1,6 +1,7 @@
 use serde::Serialize;
 use tauri::{AppHandle, Emitter};
 use tokio::task::JoinSet;
+use std::time::Instant;
 
 use crate::manifest::package::ManifestPackageFile;
 use crate::manifest::pins::DepotManifestPin;
@@ -44,25 +45,45 @@ fn validate_app_build(app_id: u32, build_id: u64) -> Result<(), String> {
 }
 
 /// Fetches only the exact manifest pins that are absent from Steam/AetherData.
-/// The small rolling task window prevents a large DLC set from creating an
-/// unbounded request burst while allowing independent Hubcap generations to
-/// run in parallel.
+/// A single shared provider lane prevents a large DLC set, Workshop work, and
+/// package completion from creating an unbounded request burst.
 pub(crate) async fn generate_missing_manifests(
     client: HubcapClient,
     missing: Vec<DepotManifestPin>,
 ) -> Result<Vec<ManifestPackageFile>, String> {
+    let started = Instant::now();
+    crate::desk_log_info!("versioning", "Manifest generation batch start missing={}", missing.len());
     let mut tasks = JoinSet::new();
     let mut pending = missing.into_iter();
-    let concurrency = 8usize;
+    // Hubcap's generation endpoints are rate limited independently of the
+    // daily quota. Keep a user-triggered multi-depot operation observable and
+    // bounded instead of turning one click into a burst of parallel requests.
+    // Keep this lane serial. Hubcap generation is quota/rate limited and the
+    // provider scheduler already deduplicates requests across game, Workshop,
+    // and store flows; a second task would only create avoidable 429 pressure.
+    let concurrency = 1usize;
 
     for _ in 0..concurrency {
         let Some(pin) = pending.next() else { break };
         let worker = client.clone();
         tasks.spawn(async move {
+            crate::desk_log_info!(
+                "versioning",
+                "Manifest generation start depot_id={} manifest_id={}",
+                pin.depot_id,
+                pin.manifest_id
+            );
             let result = match pin.manifest_id.parse::<u64>() {
                 Ok(gid) => worker.generate_manifest(pin.depot_id, gid).await,
                 Err(_) => Err(format!("Invalid manifest GID for depot {}", pin.depot_id)),
             };
+            crate::desk_log_info!(
+                "versioning",
+                "Manifest generation complete depot_id={} manifest_id={} success={}",
+                pin.depot_id,
+                pin.manifest_id,
+                result.is_ok()
+            );
             (pin, result)
         });
     }
@@ -85,14 +106,33 @@ pub(crate) async fn generate_missing_manifests(
         if let Some(next_pin) = pending.next() {
             let worker = client.clone();
             tasks.spawn(async move {
+                crate::desk_log_info!(
+                    "versioning",
+                    "Manifest generation start depot_id={} manifest_id={}",
+                    next_pin.depot_id,
+                    next_pin.manifest_id
+                );
                 let result = match next_pin.manifest_id.parse::<u64>() {
                     Ok(gid) => worker.generate_manifest(next_pin.depot_id, gid).await,
                     Err(_) => Err(format!("Invalid manifest GID for depot {}", next_pin.depot_id)),
                 };
+                crate::desk_log_info!(
+                    "versioning",
+                    "Manifest generation complete depot_id={} manifest_id={} success={}",
+                    next_pin.depot_id,
+                    next_pin.manifest_id,
+                    result.is_ok()
+                );
                 (next_pin, result)
             });
         }
     }
+    crate::desk_log_info!(
+        "versioning",
+        "Manifest generation batch complete generated={} elapsed_ms={}",
+        files.len(),
+        started.elapsed().as_millis()
+    );
     Ok(files)
 }
 
@@ -124,11 +164,13 @@ pub async fn apply_game_version(
 ) -> Result<ApplyVersionReport, String> {
     validate_steam_path(&steam_path)?;
     validate_app_build(app_id, build_id)?;
+    let started = Instant::now();
     crate::desk_log_info!(
         "versioning",
-        "Applying build {} to {}",
+        "Apply start app_id={} build_id={} steam_path_configured={}",
+        app_id,
         build_id,
-        crate::core::logger::format_appid(app_id)
+        !steam_path.trim().is_empty()
     );
 
     // The build lookup is the only slow phase: report it to the UI so the
@@ -155,13 +197,29 @@ pub async fn apply_game_version(
             crate::versioning::error::VersionError::Lua(err).to_string()
         }
     })?;
+    crate::desk_log_info!(
+        "versioning",
+        "Build snapshot input resolved app_id={} build_id={} depot_count={}",
+        app_id,
+        build_id,
+        depot_ids.len()
+    );
 
     let service = build_service(&app);
     let pins = match service
         .resolve_snapshot_pins(app_id, build_id, &depot_ids)
         .await
     {
-        Ok(pins) => pins,
+        Ok(pins) => {
+            crate::desk_log_info!(
+                "versioning",
+                "Build snapshot pins resolved app_id={} build_id={} pin_count={}",
+                app_id,
+                build_id,
+                pins.len()
+            );
+            pins
+        }
         Err(err) => {
             crate::desk_log_error!(
                 "versioning",
@@ -184,13 +242,28 @@ pub async fn apply_game_version(
     })
     .await
     .map_err(|error| format!("Local manifest preparation failed: {error}"))??;
+    crate::desk_log_info!(
+        "versioning",
+        "Local manifest preparation complete app_id={} build_id={} pins={} missing={}",
+        app_id,
+        build_id,
+        pins.len(),
+        local_missing.len()
+    );
 
     let generated_manifests = if local_missing.is_empty() {
+        crate::desk_log_info!("versioning", "No Hubcap generation required; all pinned manifests are local");
         Vec::new()
     } else {
         let hubcap_key = crate::core::settings::SettingsManager::new(&app)
             .load()
             .hubcap_api_key;
+        crate::desk_log_info!(
+            "versioning",
+            "Missing manifest recovery required count={} hubcap_key_configured={}",
+            local_missing.len(),
+            !hubcap_key.trim().is_empty()
+        );
         if hubcap_key.trim().is_empty() {
             let missing = local_missing
                 .iter()
@@ -210,7 +283,17 @@ pub async fn apply_game_version(
                 message: format!("Generating {} missing manifest(s) with Hubcap...", local_missing.len()),
             },
         );
-        generate_missing_manifests(HubcapClient::new(hubcap_key), local_missing).await?
+        let hubcap = HubcapClient::new(hubcap_key);
+        if !hubcap.validate_api_key().await? {
+            return Err("Hubcap API key is not valid or is not allowed to make requests.".to_string());
+        }
+        let generated = generate_missing_manifests(hubcap, local_missing).await?;
+        crate::desk_log_info!(
+            "versioning",
+            "Missing manifest recovery complete generated={}",
+            generated.len()
+        );
+        generated
     };
 
     // ACF lives in the Steam root library. (`steam_path` was strict-validated
@@ -249,11 +332,14 @@ pub async fn apply_game_version(
         Ok(report) => {
             crate::desk_log_info!(
                 "versioning",
-                "Build {} applied for {}: {} pin(s) written from the reconstructed snapshot, acf_synced={}",
+                "Apply complete app_id={} build_id={} applied_pins={} manifests_found={} manifests_missing={} acf_synced={} elapsed_ms={}",
+                app_id,
                 build_id,
-                crate::core::logger::format_appid(app_id),
                 report.applied_pins,
-                report.acf_synced_now
+                report.manifests_found,
+                report.manifests_missing.len(),
+                report.acf_synced_now,
+                started.elapsed().as_millis()
             );
             crate::core::library_events::notify_lua_changed(
                 &app,

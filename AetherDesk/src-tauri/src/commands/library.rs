@@ -1,6 +1,8 @@
 use crate::core::paths::LocalAppPaths;
 use crate::game_info::cache::GameInfoCache;
-use crate::manifest::pins::{LuaManifestEdit, LuaManifestPins, LuaManifestRow};
+use crate::manifest::pins::{DepotManifestPin, LuaManifestEdit, LuaManifestPins, LuaManifestRow};
+use crate::providers::hubcap::HubcapClient;
+use crate::steam::compat::SteamCompat;
 use crate::core::settings::{cache_version_with_currency, steam_country_code_for_currency, SettingsManager};
 use crate::steam::app_names::SteamAppNameResolver;
 use crate::steam::library::{InstalledSteamGame, SteamLibraryScanner};
@@ -298,29 +300,94 @@ pub fn remove_lua_game_from_library(
 }
 
 #[tauri::command]
-pub fn apply_specific_version_edits(
+pub async fn apply_specific_version_edits(
     app: tauri::AppHandle,
     app_id: u32,
     steam_path: String,
     edits: Vec<LuaManifestEdit>,
 ) -> Result<Vec<LuaManifestRow>, String> {
     validate_steam_path(&steam_path)?;
-    crate::desk_log_info!("library", "Applying {} specific version edit(s) for {} in steam_path='{}'", edits.len(), crate::core::logger::format_appid(app_id), steam_path);
-    match LuaManifestPins::new(steam_path.clone(), app_id).apply_edits(edits) {
-        Ok(rows) => {
-            crate::desk_log_info!("library", "Successfully applied specific version edits for {}: {} row(s) active", crate::core::logger::format_appid(app_id), rows.len());
-            crate::core::library_events::notify_lua_changed(
-                &app,
-                crate::core::library_events::LibraryChangeOrigin::LibraryAction,
-                [app_id],
+    crate::desk_log_info!(
+        "library",
+        "Applying {} specific version edit(s) for {} in steam_path='{}'",
+        edits.len(),
+        crate::core::logger::format_appid(app_id),
+        steam_path
+    );
+
+    let pins_editor = LuaManifestPins::new(steam_path.clone(), app_id);
+    let (next_lua, rows) = pins_editor.preview_edits(&edits)?;
+    let pins: Vec<DepotManifestPin> = LuaManifestPins::rows_for_manifest_sync(&next_lua)
+        .into_iter()
+        .map(|row| DepotManifestPin {
+            depot_id: row.app_id,
+            manifest_id: row.manifest_id,
+        })
+        .collect();
+
+    // First restore exact files from the local depotcache/backup. No provider
+    // call is made when the selected version is already available locally.
+    let local_path = steam_path.clone();
+    let local_pins = pins.clone();
+    let missing = tauri::async_runtime::spawn_blocking(move || {
+        crate::versioning::apply::prepare_local_manifests(&local_path, app_id, &local_pins)
+    })
+    .await
+    .map_err(|error| format!("Local manifest preparation failed: {error}"))??;
+
+    let generated = if missing.is_empty() {
+        Vec::new()
+    } else {
+        let settings = SettingsManager::new(&app).load();
+        if settings.hubcap_api_key.trim().is_empty() {
+            return Err(
+                "The selected version references manifest files that are not local. Configure a valid authenticated Hubcap API key before applying it.".to_string(),
             );
-            Ok(rows)
         }
-        Err(e) => {
-            crate::desk_log_error!("library", "Failed to apply specific version edits for {}: {}", crate::core::logger::format_appid(app_id), e);
-            Err(e)
+        let client = HubcapClient::new(settings.hubcap_api_key);
+        if !client.validate_api_key().await? {
+            return Err("Hubcap API key is not valid or is not allowed to generate manifests.".to_string());
         }
+        crate::commands::versioning::generate_missing_manifests(client, missing).await?
+    };
+
+    // Publish the Lua and any newly generated exact manifests together. The
+    // old Lua remains untouched if staging/generation fails.
+    SteamCompat::new(steam_path.clone())
+        .install_lua_and_manifest_files(app_id, &next_lua, &generated)?;
+
+    let verify_path = steam_path.clone();
+    let verify_pins = pins.clone();
+    let remaining = tauri::async_runtime::spawn_blocking(move || {
+        crate::versioning::apply::prepare_local_manifests(&verify_path, app_id, &verify_pins)
+    })
+    .await
+    .map_err(|error| format!("Specific version manifest verification failed: {error}"))??;
+    if !remaining.is_empty() {
+        return Err(format!(
+            "Specific version was not committed safely: {} manifest(s) are still missing",
+            remaining.len()
+        ));
     }
+
+    if let Ok(backup) = crate::core::backup::GameBackup::for_app(app_id) {
+        let depotcache = std::path::PathBuf::from(&steam_path).join("depotcache");
+        let _ = backup.backup_lua_artifacts(app_id, &next_lua, &generated);
+        let _ = backup.backup_referenced_manifests(&next_lua, &depotcache);
+    }
+    crate::core::library_events::notify_lua_changed(
+        &app,
+        crate::core::library_events::LibraryChangeOrigin::LibraryAction,
+        [app_id],
+    );
+    crate::desk_log_info!(
+        "library",
+        "Successfully applied specific version edits for {}: {} row(s) active, {} manifest(s) generated",
+        crate::core::logger::format_appid(app_id),
+        rows.len(),
+        generated.len()
+    );
+    Ok(rows)
 }
 
 
