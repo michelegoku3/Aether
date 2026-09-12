@@ -109,10 +109,9 @@ struct AetherCoreState {
     };
     LuaStore lua;
 
-    // Archived reference state for the former request-code provider. It is
-    // deliberately not dispatched by PacketRouter and its translation unit is
-    // excluded from the production target; keeping the type here lets future
-    // authenticated experiments compile the reference module in isolation.
+    // Shared state for exact manifest lookups. Request-code jobs share the
+    // cache and in-flight map so duplicate Steam requests are coalesced; the
+    // request-code path remains the authoritative completion point.
     struct ManifestFetchState {
         mutable std::mutex mutex;
         std::unordered_map<std::uint64_t, std::shared_future<std::optional<std::uint64_t>>> pending;
