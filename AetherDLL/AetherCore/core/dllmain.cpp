@@ -39,7 +39,7 @@ namespace {
 
     constexpr const char* kModule = "Core";
 
-    constexpr const char* kStartupLogToken = "B6R2Y8N4";
+    constexpr const char* kStartupLogToken = "R4M7K1C9";
 
     // Guards against the (theoretical) possibility of init running twice.
     volatile LONG s_initFlag = 0;

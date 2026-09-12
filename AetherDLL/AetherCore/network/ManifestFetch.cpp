@@ -5,22 +5,28 @@
 #include <chrono>
 #include <cctype>
 #include <charconv>
+#include <condition_variable>
+#include <deque>
 #include <exception>
 #include <filesystem>
 #include <fstream>
 #include <future>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <string>
 #include <string_view>
 #include <thread>
+#include <unordered_set>
 #include <vector>
 
 #include "core/AetherCoreState.h"
 #include "core/Logger.h"
 #include "hooks/wire/BackupIo.h"
+#include "network/HubcapQuota.h"
 #include "network/RuntimeHttp.h"
 #include "security/ProviderCredentials.h"
+#include "utils/JsonStringField.h"
 
 namespace ac::manifestfetch {
 namespace {
@@ -274,16 +280,52 @@ bool ManifestIdentityMatches(std::string_view bytes, std::uint32_t expectedDepot
     return depot == expectedDepot && gid == expectedGid;
 }
 
-bool InstallHubcapManifest(std::uint64_t gid, std::uint32_t depotId) {
-    const auto apiKey = security::ReadHubcapApiKey();
-    if (!apiKey) {
-        AC_LOG_DEBUG(kModule, "Hubcap skipped: encrypted provider credentials unavailable.");
+// Mirrors AetherDesk's ensure_generation_available: asks the provider whether
+// the authenticated account may generate right now. A definitive "no" fails
+// the lookup before any shared budget is spent; a network/parse failure only
+// skips the check — the runtime bridge must stay responsive inside the 12 s
+// resolve window and the server enforces its own limits anyway.
+bool HubcapGenerationAllowed(const std::string& apiKey) {
+    // Short budget: this probe shares the resolve window with the generation
+    // itself, so it must never eat most of it.
+    constexpr int kUsageProbeTimeoutSec = 5;
+    const http::Response response = http::GetUncheckedWithHeaders(
+        "https://hubcapmanifest.com/api/v1/generate/usage", kUsageProbeTimeoutSec,
+        {"Authorization: Bearer " + apiKey}, L"AetherCore/HubcapManifest/1.0");
+    if (response.networkError || response.status != 200) {
+        AC_LOG_DEBUG(kModule, "Generation usage probe unavailable (network=%d HTTP=%d); proceeding.",
+                     response.networkError ? 1 : 0, response.status);
+        return true;
+    }
+    bool serviceReady = true;
+    if (ac::jsonutil::PullBoolField(response.body, "steam_service_ready", serviceReady) &&
+        !serviceReady) {
+        AC_LOG_WARN(kModule, "Hubcap reports the Steam generation service is not ready.");
         return false;
     }
+    // The payload carries one bucket per kind (single/bundle/workshop); only
+    // the "single" bucket applies to depot-manifest lookups.
+    const std::size_t bucket = response.body.find("\"single\"");
+    if (bucket != std::string::npos) {
+        const std::size_t open = response.body.find('{', bucket);
+        const std::size_t close = response.body.find('}', bucket);
+        if (open != std::string::npos && close != std::string::npos && close > open) {
+            const std::string_view single(response.body.data() + open, close - open);
+            std::uint64_t remaining = 0;
+            if (ac::jsonutil::PullUIntField(single, "remaining", remaining) && remaining == 0) {
+                AC_LOG_WARN(kModule, "Hubcap single-manifest generation quota is exhausted.");
+                return false;
+            }
+        }
+    }
+    return true;
+}
 
-    const std::string url = "https://hubcapmanifest.com/api/v1/generate/manifest?depot_id=" +
-                            std::to_string(depotId) + "&manifest_id=" + std::to_string(gid);
-    const std::vector<std::string> headers = {"Authorization: Bearer " + *apiKey};
+// Performs the authenticated generation request (with the provider's retry
+// policy) and atomically installs the verified manifest into depotcache.
+bool FetchAndInstallManifest(const std::string& url,
+                             const std::vector<std::string>& headers,
+                             std::uint64_t gid, std::uint32_t depotId) {
     for (int attempt = 0; attempt < 3; ++attempt) {
         const http::Response response = http::GetUncheckedWithHeaders(
             url, g_state.settings.manifestFetchTimeoutSec, headers, L"AetherCore/HubcapManifest/1.0");
@@ -297,26 +339,32 @@ bool InstallHubcapManifest(std::uint64_t gid, std::uint32_t depotId) {
                 return false;
             }
 
-            const std::string destination = g_state.steamInstallPath + "\\\\depotcache\\\\" +
-                                            std::to_string(depotId) + "_" + std::to_string(gid) + ".manifest";
-            const std::string temporary = destination + ".aether-tmp";
-            if (!CreateDirectoryA((g_state.steamInstallPath + "\\\\depotcache").c_str(), nullptr) &&
-                GetLastError() != ERROR_ALREADY_EXISTS) {
+            // Paths are built with fs::path (no manual separator strings);
+            // the commit reuses the shared atomic replace helper.
+            namespace fs = std::filesystem;
+            const fs::path destination = fs::path(g_state.steamInstallPath) / "depotcache" /
+                                         (std::to_string(depotId) + "_" +
+                                          std::to_string(gid) + ".manifest");
+            const fs::path temporary = destination.string() + ".aether-tmp";
+            std::error_code dirEc;
+            if (!fs::create_directories(destination.parent_path(), dirEc) && dirEc) {
                 AC_LOG_WARN(kModule, "Could not create Steam depotcache for Hubcap manifest.");
                 return false;
             }
             std::ofstream output(temporary, std::ios::binary | std::ios::trunc);
             output.write(response.body.data(), static_cast<std::streamsize>(response.body.size()));
             output.close();
-            if (!output || !MoveFileExA(temporary.c_str(), destination.c_str(), MOVEFILE_REPLACE_EXISTING)) {
-                DeleteFileA(temporary.c_str());
+            if (!output ||
+                !backup::io::AtomicReplace(temporary.string(), destination.string())) {
+                std::error_code cleanupEc;
+                fs::remove(temporary, cleanupEc);
                 AC_LOG_WARN(kModule, "Could not atomically install Hubcap manifest depot=%u gid=%llu.",
                             depotId, static_cast<unsigned long long>(gid));
                 return false;
             }
-            std::ifstream verify(destination, std::ios::binary | std::ios::ate);
-            const auto size = verify ? verify.tellg() : std::streampos(0);
-            if (size != static_cast<std::streamoff>(response.body.size())) {
+            std::error_code sizeEc;
+            const auto installedSize = fs::file_size(destination, sizeEc);
+            if (sizeEc || installedSize != response.body.size()) {
                 AC_LOG_WARN(kModule, "Hubcap manifest post-install verification failed.");
                 return false;
             }
@@ -333,6 +381,28 @@ bool InstallHubcapManifest(std::uint64_t gid, std::uint32_t depotId) {
         if (attempt < 2) std::this_thread::sleep_for(std::chrono::milliseconds(500u << attempt));
     }
     return false;
+}
+
+bool InstallHubcapManifest(std::uint64_t gid, std::uint32_t depotId) {
+    const auto apiKey = security::ReadHubcapApiKey();
+    if (!apiKey) {
+        AC_LOG_DEBUG(kModule, "Hubcap skipped: encrypted provider credentials unavailable.");
+        return false;
+    }
+    if (!HubcapGenerationAllowed(*apiKey)) return false;
+    // The daily generation budget is shared with AetherDesk through
+    // <AetherData>\state\hubcap_generation_quota.json; a failed request gives
+    // the reserved unit back so a transient failure never burns it.
+    if (!hubcapquota::TryReserveGameGeneration()) return false;
+
+    const std::string url = "https://hubcapmanifest.com/api/v1/generate/manifest?depot_id=" +
+                            std::to_string(depotId) + "&manifest_id=" + std::to_string(gid);
+    const std::vector<std::string> headers = {"Authorization: Bearer " + *apiKey};
+    const bool installed = FetchAndInstallManifest(url, headers, gid, depotId);
+    if (!installed) {
+        hubcapquota::ReleaseGameGeneration();
+    }
+    return installed;
 }
 
 std::optional<std::uint64_t> RunLookup(std::uint64_t gid, std::uint32_t appId,
@@ -405,6 +475,49 @@ std::optional<std::uint64_t> RunLookup(std::uint64_t gid, std::uint32_t appId,
     AC_LOG_WARN(kModule, "gid=%llu all providers exhausted.",
                 static_cast<unsigned long long>(gid));
     return std::nullopt;
+}
+
+// --- Proactive manifest pipeline (dependency-build trigger) -----------------
+// Steam assembles its depot dependency list before every install, update and
+// verify pass. That moment is the earliest build-independent point where the
+// DLL knows exactly which depot/GID Steam is about to need, so it doubles as
+// the default acquisition trigger: local first, then one serialized Hubcap
+// generation at a time (mirrors the Desk-side scheduler philosophy and
+// protects the shared daily quota from parallel request storms).
+constexpr std::size_t kMaxProactiveAttempts = 4096;
+
+std::mutex g_proactiveMutex;
+std::condition_variable g_proactiveCv;
+std::deque<LookupKey> g_proactiveQueue;
+std::unordered_set<LookupKey, LookupKeyHash> g_proactiveAttempted;
+bool g_proactiveWorkerStarted = false;
+
+void ProactiveWorkerLoop() {
+    for (;;) {
+        LookupKey key{};
+        {
+            std::unique_lock<std::mutex> lock(g_proactiveMutex);
+            g_proactiveCv.wait(lock, [] { return !g_proactiveQueue.empty(); });
+            key = g_proactiveQueue.front();
+            g_proactiveQueue.pop_front();
+        }
+        try {
+            if (InstallHubcapManifest(key.gid, key.depotId)) {
+                AC_LOG_INFO(kModule, "Proactive manifest ready: depot=%u gid=%llu.",
+                            key.depotId, static_cast<unsigned long long>(key.gid));
+            } else {
+                AC_LOG_WARN(kModule,
+                            "Proactive manifest fetch failed: depot=%u gid=%llu "
+                            "(no API key, quota exhausted or provider error); "
+                            "it will be retried in the next Steam session.",
+                            key.depotId, static_cast<unsigned long long>(key.gid));
+            }
+        } catch (const std::exception& e) {
+            AC_LOG_ERROR(kModule, "Proactive manifest worker failed: %s", e.what());
+        } catch (...) {
+            AC_LOG_ERROR(kModule, "Proactive manifest worker failed with unknown exception.");
+        }
+    }
 }
 
 }  // namespace
@@ -556,6 +669,35 @@ std::size_t PendingCount() {
 std::size_t CacheCount() {
     std::lock_guard<std::mutex> lock(g_state.manifestFetch.mutex);
     return g_state.manifestFetch.cache.size();
+}
+
+void EnsureManifestAvailable(std::uint32_t appId, std::uint32_t depotId,
+                             std::uint64_t manifestGid) {
+    if (depotId == 0 || manifestGid == 0) return;
+
+    // Local first: FindLocalManifest also publishes a backup copy into
+    // depotcache, so a manifest that exists anywhere on disk never reaches
+    // the network.
+    if (FindLocalManifest(manifestGid, depotId)) return;
+
+    const LookupKey key{manifestGid, appId, depotId};
+    {
+        std::lock_guard<std::mutex> lock(g_proactiveMutex);
+        // One attempt per depot/GID per Steam session: the dependency hook
+        // fires repeatedly while Steam downloads, and a generation that
+        // already failed (missing key, exhausted quota, provider error) must
+        // not be resubmitted on every call.
+        if (g_proactiveAttempted.size() >= kMaxProactiveAttempts) return;
+        if (!g_proactiveAttempted.insert(key).second) return;
+        g_proactiveQueue.push_back(key);
+        if (!g_proactiveWorkerStarted) {
+            g_proactiveWorkerStarted = true;
+            std::thread(ProactiveWorkerLoop).detach();
+        }
+    }
+    g_proactiveCv.notify_one();
+    AC_LOG_INFO(kModule, "Proactive manifest fetch queued: app=%u depot=%u gid=%llu.",
+                appId, depotId, static_cast<unsigned long long>(manifestGid));
 }
 
 }  // namespace ac::manifestfetch

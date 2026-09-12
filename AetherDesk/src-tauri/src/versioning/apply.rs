@@ -92,19 +92,19 @@ pub fn apply_build_version(
         );
     }
 
-    let (staged_found, staged_missing) = count_local_manifests(steam_path, app_id, pins);
+    let staged = crate::manifest::resolver::verify_available(steam_path, app_id, pins);
     crate::desk_log_info!(
         "versioning",
         "Pre-apply manifest gate app_id={} found={} missing={}",
         app_id,
-        staged_found,
-        staged_missing.len()
+        staged.verified,
+        staged.missing.len()
     );
-    if !staged_missing.is_empty() {
+    if !staged.missing.is_empty() {
         return Err(VersionError::Lua(format!(
             "Cannot apply build {build_id}: {} manifest(s) are still missing or empty after staging: {}",
-            staged_missing.len(),
-            staged_missing.join(", ")
+            staged.missing.len(),
+            crate::manifest::resolver::missing_labels(&staged.missing).join(", ")
         )));
     }
 
@@ -177,7 +177,9 @@ pub fn apply_build_version(
     }
 
     progress(55, "Checking local manifest files");
-    let (manifests_found, manifests_missing) = count_local_manifests(steam_path, app_id, pins);
+    let completeness = crate::manifest::resolver::verify_available(steam_path, app_id, pins);
+    let manifests_found = completeness.verified;
+    let manifests_missing = crate::manifest::resolver::missing_labels(&completeness.missing);
     crate::desk_log_info!(
         "versioning",
         "Local manifests for app {}: {} of {} already in depotcache",
@@ -242,120 +244,4 @@ pub fn apply_build_version(
         acf_synced_now,
         lua_backup_path: Some(history_dir.display().to_string()),
     })
-}
-
-
-/// Finds the exact local manifest in Steam's two cache folders or in the
-/// per-game AetherData backup. Empty files are not considered local hits.
-pub fn exact_local_manifest_path(
-    steam_path: &str,
-    app_id: u32,
-    pin: &DepotManifestPin,
-) -> Option<PathBuf> {
-    let file_name = format!("{}_{}.manifest", pin.depot_id, pin.manifest_id);
-    let mut search_dirs = vec![PathBuf::from(steam_path).join("depotcache")];
-    search_dirs.push(PathBuf::from(steam_path).join("config").join("depotcache"));
-    search_dirs.push(
-        crate::core::paths::LocalAppPaths::data_root()
-            .join("backup")
-            .join(app_id.to_string())
-            .join("lua"),
-    );
-    search_dirs.into_iter().map(|dir| dir.join(&file_name)).find(|path| {
-        path.is_file()
-            && std::fs::metadata(path).map(|meta| meta.len() > 0).unwrap_or(false)
-    })
-}
-
-/// Copies exact backup hits into Steam's primary depotcache and returns the
-/// pins still missing. No network or quota is involved in this operation.
-pub fn prepare_local_manifests(
-    steam_path: &str,
-    app_id: u32,
-    pins: &[DepotManifestPin],
-) -> Result<Vec<DepotManifestPin>, String> {
-    crate::desk_log_debug!(
-        "versioning",
-        "Local manifest preparation start app_id={} pins={} steam_path_configured={}",
-        app_id,
-        pins.len(),
-        !steam_path.trim().is_empty()
-    );
-    let depotcache = PathBuf::from(steam_path).join("depotcache");
-    std::fs::create_dir_all(&depotcache)
-        .map_err(|e| format!("Could not create Steam depotcache: {e}"))?;
-    let mut missing = Vec::new();
-    for pin in pins {
-        let file_name = format!("{}_{}.manifest", pin.depot_id, pin.manifest_id);
-        let Some(source) = exact_local_manifest_path(steam_path, app_id, pin) else {
-            crate::desk_log_debug!(
-                "versioning",
-                "Local manifest missing app_id={} depot_id={} manifest_id={}",
-                app_id,
-                pin.depot_id,
-                pin.manifest_id
-            );
-            missing.push(pin.clone());
-            continue;
-        };
-        let destination = depotcache.join(&file_name);
-        let destination_valid = destination.is_file()
-            && std::fs::metadata(&destination)
-                .map(|metadata| metadata.len() > 0)
-                .unwrap_or(false);
-        if source != destination && !destination_valid {
-            let temporary = destination.with_extension("manifest.tmp");
-            let _ = std::fs::remove_file(&destination);
-            std::fs::copy(&source, &temporary)
-                .map_err(|e| format!("Could not restore local manifest {file_name}: {e}"))?;
-            std::fs::rename(&temporary, &destination)
-                .map_err(|e| format!("Could not install local manifest {file_name}: {e}"))?;
-            let source_len = std::fs::metadata(&source)
-                .map_err(|e| format!("Could not verify source manifest {file_name}: {e}"))?
-                .len();
-            let destination_len = std::fs::metadata(&destination)
-                .map_err(|e| format!("Could not verify restored manifest {file_name}: {e}"))?
-                .len();
-            if source_len == 0 || destination_len != source_len {
-                return Err(format!(
-                    "Restored local manifest {file_name} failed verification (source {} bytes, destination {} bytes)",
-                    source_len,
-                    destination_len
-                ));
-            }
-            crate::desk_log_debug!(
-                "versioning",
-                "Restored local manifest app_id={} file={} bytes={}",
-                app_id,
-                file_name,
-                destination_len
-            );
-        }
-    }
-    crate::desk_log_info!(
-        "versioning",
-        "Local manifest preparation complete app_id={} missing={}",
-        app_id,
-        missing.len()
-    );
-    Ok(missing)
-}
-
-/// Counts how many pinned `.manifest` files are locally available. Returns
-/// `(found, missing "depot:manifest" pairs)`.
-fn count_local_manifests(
-    steam_path: &str,
-    app_id: u32,
-    pins: &[DepotManifestPin],
-) -> (usize, Vec<String>) {
-    let mut found = 0usize;
-    let mut missing = Vec::new();
-    for pin in pins {
-        if exact_local_manifest_path(steam_path, app_id, pin).is_some() {
-            found += 1;
-        } else {
-            missing.push(format!("{}:{}", pin.depot_id, pin.manifest_id));
-        }
-    }
-    (found, missing)
 }

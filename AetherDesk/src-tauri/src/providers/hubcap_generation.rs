@@ -1,14 +1,23 @@
 //! Authenticated Hubcap generation scheduling.
 //!
-//! This module owns the process-wide quota and deduplication policy. It never
-//! logs API keys, never requests a manifest that already exists locally (the
+//! This module owns the shared quota and deduplication policy. It never logs
+//! API keys, never requests a manifest that already exists locally (the
 //! caller performs the exact local check), and coalesces identical concurrent
 //! generation requests so one user action cannot spend the same quota twice.
+//!
+//! The daily budget lives in ONE file —
+//! `<AetherData>\state\hubcap_generation_quota.json` — shared with AetherDLL,
+//! which generates manifests on demand inside Steam. Both processes run every
+//! read-modify-write cycle while holding a sibling `.lock` file, so the
+//! counters stay consistent regardless of who writes;
+//! `AetherDLL/AetherCore/network/HubcapQuota.cpp` is the C++ twin of this
+//! protocol. Two budgets exist (game 1500/day, Workshop 500/day) and both
+//! reset at fixed midnight EST, matching the provider's reset.
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::future::Future;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, OnceLock};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tokio::sync::{Mutex, Notify, Semaphore};
@@ -22,10 +31,30 @@ pub const MAX_GAME_GENERATIONS_PER_DAY: u32 = 1_500;
 pub const MAX_WORKSHOP_GENERATIONS_PER_DAY: u32 = 500;
 const EST_OFFSET_SECONDS: i64 = -5 * 60 * 60;
 
+/// Cross-process lock parameters, mirrored by the DLL twin: the critical
+/// section is a tiny read-modify-write, so a lock older than a few seconds
+/// means its holder died without releasing.
+const QUOTA_LOCK_STALE_AFTER: Duration = Duration::from_secs(5);
+const QUOTA_LOCK_TIMEOUT: Duration = Duration::from_secs(10);
+const QUOTA_LOCK_RETRY_INTERVAL: Duration = Duration::from_millis(20);
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum GenerationKind {
     Game,
     Workshop,
+}
+
+/// Local quota accounting for one deduplicated provider operation.
+#[derive(Debug, Clone, Copy)]
+pub enum QuotaPolicy {
+    /// Reserves one unit of the given daily generation budget (the shared
+    /// quota file) and releases it when the operation fails.
+    Generate(GenerationKind),
+    /// No local generation budget: the operation consumes the provider's
+    /// daily *manifest* quota, which the caller already checks against
+    /// `/user/stats` before downloading. This mirrors the server-side
+    /// buckets instead of double-counting package downloads as generations.
+    ManifestDownload,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -61,7 +90,6 @@ struct InflightSlot {
 
 #[derive(Default)]
 struct GenerationState {
-    quota: Mutex<PersistedQuota>,
     inflight: Mutex<HashMap<GenerationKey, Arc<InflightSlot>>>,
     last_generation_start: Mutex<Option<Instant>>,
 }
@@ -84,6 +112,105 @@ fn quota_path() -> PathBuf {
     crate::core::paths::LocalAppPaths::state_dir().join("hubcap_generation_quota.json")
 }
 
+// ============================================================================
+// Shared quota file (AetherDesk + AetherDLL)
+// ============================================================================
+
+/// Creates the lock file exclusively. On Windows the handle carries
+/// FILE_FLAG_DELETE_ON_CLOSE: closing it — normally or on a crash — removes
+/// the file, so a lock can never outlive its owner.
+#[cfg(windows)]
+fn create_lock_file(path: &Path) -> std::io::Result<std::fs::File> {
+    use std::os::windows::fs::OpenOptionsExt;
+    const FILE_FLAG_DELETE_ON_CLOSE: u32 = 0x0400_0000;
+    std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .custom_flags(FILE_FLAG_DELETE_ON_CLOSE)
+        .open(path)
+}
+
+#[cfg(not(windows))]
+fn create_lock_file(path: &Path) -> std::io::Result<std::fs::File> {
+    std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(path)
+}
+
+/// Cross-process guard around the quota file (Desk + AetherDLL). Acquired by
+/// creating the sibling `.lock` file exclusively; released by closing the
+/// handle (Windows deletes it on close; other platforms remove it). A lock
+/// older than `QUOTA_LOCK_STALE_AFTER` is treated as abandoned and broken —
+/// a live holder's critical section lasts milliseconds, so this only fires
+/// when the previous holder died.
+struct QuotaFileGuard {
+    lock_path: PathBuf,
+    _file: std::fs::File,
+}
+
+impl QuotaFileGuard {
+    fn acquire(quota_path: &Path) -> Result<Self, String> {
+        let lock_path = quota_path.with_extension("lock");
+        if let Some(parent) = lock_path.parent() {
+            // The state directory may not exist on a fresh install yet.
+            let _ = std::fs::create_dir_all(parent);
+        }
+        let deadline = Instant::now() + QUOTA_LOCK_TIMEOUT;
+        loop {
+            match create_lock_file(&lock_path) {
+                Ok(file) => return Ok(Self {
+                    lock_path,
+                    _file: file,
+                }),
+                Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
+                    let stale = std::fs::metadata(&lock_path)
+                        .and_then(|meta| meta.modified())
+                        .ok()
+                        .and_then(|modified| modified.elapsed().ok())
+                        .map(|age| age > QUOTA_LOCK_STALE_AFTER)
+                        .unwrap_or(false);
+                    if stale {
+                        // The previous holder died without releasing: break the
+                        // lock and retry. A live holder keeps the file, so the
+                        // remove simply re-races on the next iteration.
+                        let _ = std::fs::remove_file(&lock_path);
+                        crate::desk_log_warn!(
+                            "hubcap",
+                            "Broke stale Hubcap quota lock path={}",
+                            lock_path.display()
+                        );
+                        continue;
+                    }
+                    if Instant::now() >= deadline {
+                        return Err(format!(
+                            "Hubcap quota lock stayed busy for {}s: {}",
+                            QUOTA_LOCK_TIMEOUT.as_secs(),
+                            lock_path.display()
+                        ));
+                    }
+                    std::thread::sleep(QUOTA_LOCK_RETRY_INTERVAL);
+                }
+                Err(error) => {
+                    return Err(format!(
+                        "Could not open Hubcap quota lock {}: {error}",
+                        lock_path.display()
+                    ));
+                }
+            }
+        }
+    }
+}
+
+impl Drop for QuotaFileGuard {
+    fn drop(&mut self) {
+        // Windows: the DELETE_ON_CLOSE handle removed the file when `_file`
+        // closed. Other platforms remove it explicitly.
+        #[cfg(not(windows))]
+        let _ = std::fs::remove_file(&self.lock_path);
+    }
+}
+
 /// Returns the fixed-EST calendar date for a Unix timestamp. This deliberately
 /// does not use the host timezone or daylight-saving rules: the API contract
 /// says the reset is midnight UTC-5.
@@ -103,7 +230,7 @@ fn est_day_from_unix(timestamp: i64) -> String {
     format!("{year:04}-{m:02}-{d:02}")
 }
 
-fn current_est_day() -> String {
+pub(crate) fn current_est_day() -> String {
     let timestamp = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
@@ -111,65 +238,76 @@ fn current_est_day() -> String {
     est_day_from_unix(timestamp)
 }
 
-fn load_persisted() -> PersistedQuota {
-    let path = quota_path();
-    let Ok(bytes) = std::fs::read(&path) else {
-        crate::desk_log_debug!("hubcap", "Quota state cache miss path={}", path.display());
-        return PersistedQuota {
-            day: current_est_day(),
-            ..PersistedQuota::default()
-        };
-    };
-    let mut state: PersistedQuota = match serde_json::from_slice(&bytes) {
-        Ok(state) => state,
-        Err(error) => {
-            crate::desk_log_warn!("hubcap", "Quota state cache parse failed path={}: {}", path.display(), error);
-            PersistedQuota::default()
-        }
-    };
-    let day = current_est_day();
-    if state.day != day {
-        state = PersistedQuota {
-            day,
-            ..PersistedQuota::default()
-        };
+fn quota_limit(kind: GenerationKind) -> u32 {
+    match kind {
+        GenerationKind::Game => MAX_GAME_GENERATIONS_PER_DAY,
+        GenerationKind::Workshop => MAX_WORKSHOP_GENERATIONS_PER_DAY,
     }
-    state
 }
 
-fn persist_quota(quota: &PersistedQuota) -> Result<(), String> {
-    let path = quota_path();
-    if let Some(parent) = path.parent() {
+fn quota_label(kind: GenerationKind) -> &'static str {
+    match kind {
+        GenerationKind::Game => "game-manifest",
+        GenerationKind::Workshop => "Workshop-manifest",
+    }
+}
+
+fn quota_slot(quota: &mut PersistedQuota, kind: GenerationKind) -> &mut u32 {
+    match kind {
+        GenerationKind::Game => &mut quota.game_used,
+        GenerationKind::Workshop => &mut quota.workshop_used,
+    }
+}
+
+/// Reads the persisted quota, resetting it when the fixed-EST day rolled
+/// over. Any read/parse failure yields a fresh zeroed quota for today:
+/// accounting is best-effort and must never wedge generation.
+fn read_quota(quota_path: &Path) -> PersistedQuota {
+    let today = current_est_day();
+    let fresh = || PersistedQuota {
+        day: today.clone(),
+        ..PersistedQuota::default()
+    };
+    let Ok(bytes) = std::fs::read(quota_path) else {
+        return fresh();
+    };
+    match serde_json::from_slice::<PersistedQuota>(&bytes) {
+        Ok(quota) if quota.day == today => quota,
+        Ok(_) => fresh(),
+        Err(error) => {
+            crate::desk_log_warn!(
+                "hubcap",
+                "Quota state parse failed path={}: {}",
+                quota_path.display(),
+                error
+            );
+            fresh()
+        }
+    }
+}
+
+fn write_quota(quota_path: &Path, quota: &PersistedQuota) -> Result<(), String> {
+    if let Some(parent) = quota_path.parent() {
         std::fs::create_dir_all(parent)
             .map_err(|e| format!("Could not create Hubcap quota directory: {e}"))?;
     }
-    let temporary = path.with_extension("json.tmp");
-    let bytes = serde_json::to_vec_pretty(quota)
+    let temporary = quota_path.with_extension("json.tmp");
+    let bytes = serde_json::to_vec(quota)
         .map_err(|e| format!("Could not serialize Hubcap quota state: {e}"))?;
     std::fs::write(&temporary, bytes)
         .map_err(|e| format!("Could not write Hubcap quota state: {e}"))?;
-    std::fs::rename(&temporary, &path)
+    std::fs::rename(&temporary, quota_path)
         .map_err(|e| format!("Could not commit Hubcap quota state: {e}"))
 }
 
-async fn reserve(kind: GenerationKind) -> Result<QuotaReservation, String> {
-    let shared = state();
-    let mut quota = shared.quota.lock().await;
-    if quota.day.is_empty() {
-        *quota = load_persisted();
-    }
-    let day = current_est_day();
-    if quota.day != day {
-        *quota = PersistedQuota {
-            day,
-            ..PersistedQuota::default()
-        };
-    }
-
-    let (used, limit) = match kind {
-        GenerationKind::Game => (quota.game_used, MAX_GAME_GENERATIONS_PER_DAY),
-        GenerationKind::Workshop => (quota.workshop_used, MAX_WORKSHOP_GENERATIONS_PER_DAY),
-    };
+/// Blocking reserve: one read-modify-write cycle under the cross-process
+/// lock. `Err` means the budget is exhausted OR the shared state is
+/// unavailable — both must block the generation.
+pub(crate) fn reserve_quota_at(quota_path: &Path, kind: GenerationKind) -> Result<(), String> {
+    let _guard = QuotaFileGuard::acquire(quota_path)?;
+    let mut quota = read_quota(quota_path);
+    let used = *quota_slot(&mut quota, kind);
+    let limit = quota_limit(kind);
     crate::desk_log_debug!(
         "hubcap",
         "Quota check kind={:?} day={} used={} limit={} remaining={}",
@@ -180,10 +318,6 @@ async fn reserve(kind: GenerationKind) -> Result<QuotaReservation, String> {
         limit.saturating_sub(used)
     );
     if used >= limit {
-        let label = match kind {
-            GenerationKind::Game => "game-manifest",
-            GenerationKind::Workshop => "Workshop-manifest",
-        };
         crate::desk_log_warn!(
             "hubcap",
             "Quota exhausted kind={:?} day={} used={} limit={}",
@@ -192,21 +326,13 @@ async fn reserve(kind: GenerationKind) -> Result<QuotaReservation, String> {
             used,
             limit
         );
-        return Err(format!("Hubcap daily {label} generation limit reached ({limit}; resets at midnight EST)."));
+        return Err(format!(
+            "Hubcap daily {} generation limit reached ({limit}; resets at midnight EST).",
+            quota_label(kind)
+        ));
     }
-
-    match kind {
-        GenerationKind::Game => quota.game_used += 1,
-        GenerationKind::Workshop => quota.workshop_used += 1,
-    }
-    if let Err(error) = persist_quota(&quota) {
-        match kind {
-            GenerationKind::Game => quota.game_used = quota.game_used.saturating_sub(1),
-            GenerationKind::Workshop => quota.workshop_used = quota.workshop_used.saturating_sub(1),
-        }
-        crate::desk_log_error!("hubcap", "Quota reservation persistence failed kind={:?}: {}", kind, error);
-        return Err(error);
-    }
+    *quota_slot(&mut quota, kind) = used + 1;
+    write_quota(quota_path, &quota)?;
     crate::desk_log_info!(
         "hubcap",
         "Quota reserved kind={:?} day={} used={} remaining={}",
@@ -215,31 +341,72 @@ async fn reserve(kind: GenerationKind) -> Result<QuotaReservation, String> {
         used + 1,
         limit.saturating_sub(used + 1)
     );
-    Ok(QuotaReservation { kind })
+    Ok(())
 }
 
-async fn release(reservation: QuotaReservation) {
-    let shared = state();
-    let mut quota = shared.quota.lock().await;
-    match reservation.kind {
-        GenerationKind::Game => quota.game_used = quota.game_used.saturating_sub(1),
-        GenerationKind::Workshop => quota.workshop_used = quota.workshop_used.saturating_sub(1),
-    }
-    if let Err(error) = persist_quota(&quota) {
+/// Blocking release: returns one reserved unit (best effort, never fails the
+/// caller — a lost unit only under-counts).
+pub(crate) fn release_quota_at(quota_path: &Path, kind: GenerationKind) {
+    let guard = match QuotaFileGuard::acquire(quota_path) {
+        Ok(guard) => guard,
+        Err(error) => {
+            crate::desk_log_error!(
+                "hubcap",
+                "Quota release could not acquire the lock kind={:?}: {}",
+                kind,
+                error
+            );
+            return;
+        }
+    };
+    let mut quota = read_quota(quota_path);
+    let used = *quota_slot(&mut quota, kind);
+    *quota_slot(&mut quota, kind) = used.saturating_sub(1);
+    if let Err(error) = write_quota(quota_path, &quota) {
         crate::desk_log_error!(
             "hubcap",
             "Quota release persistence failed kind={:?}: {}",
-            reservation.kind,
+            kind,
             error
         );
     } else {
         crate::desk_log_info!(
             "hubcap",
             "Quota released kind={:?} day={} game_used={} workshop_used={}",
-            reservation.kind,
+            kind,
             quota.day,
             quota.game_used,
             quota.workshop_used
+        );
+    }
+    drop(guard);
+}
+
+/// Reserves one unit of the shared daily budget (see `reserve_quota_at`).
+/// Runs on the blocking pool: the lock loop may sleep while contending with
+/// AetherDLL.
+async fn reserve(kind: GenerationKind) -> Result<QuotaReservation, String> {
+    let quota_path = quota_path();
+    let reserved = tauri::async_runtime::spawn_blocking(move || {
+        reserve_quota_at(&quota_path, kind)
+    })
+    .await
+    .map_err(|error| format!("Hubcap quota reservation task failed: {error}"))?;
+    reserved.map(|_| QuotaReservation { kind })
+}
+
+/// Returns one reserved unit after a failed generation.
+async fn release(reservation: QuotaReservation) {
+    let quota_path = quota_path();
+    let kind = reservation.kind;
+    if let Err(error) =
+        tauri::async_runtime::spawn_blocking(move || release_quota_at(&quota_path, kind)).await
+    {
+        crate::desk_log_error!(
+            "hubcap",
+            "Quota release task failed kind={:?}: {}",
+            reservation.kind,
+            error
         );
     }
 }
@@ -256,11 +423,21 @@ async fn wait_for_generation_cadence() {
     *last = Some(Instant::now());
 }
 
+/// Outcome of the budget step: either generation may proceed (with an owned
+/// reservation to release on failure, or no budget needed at all), or the
+/// request is rejected before any network traffic.
+enum Budget {
+    Allowed(Option<QuotaReservation>),
+    Rejected(String),
+}
+
 /// Process-wide request scheduler. `fetch` runs exactly once for a key, while
-/// all other callers wait for and receive the same result.
+/// all other callers wait for and receive the same result. Depending on
+/// `policy` the leader also holds one unit of the shared daily budget for the
+/// duration of the request.
 pub async fn deduplicated_generation<F, Fut>(
     key: GenerationKey,
-    kind: GenerationKind,
+    policy: QuotaPolicy,
     fetch: F,
 ) -> Result<Vec<u8>, String>
 where
@@ -273,8 +450,8 @@ where
         if let Some(slot) = inflight.get(&key) {
             crate::desk_log_debug!(
                 "hubcap",
-                "Generation deduplicated waiter kind={:?} key={:?}",
-                kind,
+                "Generation deduplicated waiter policy={:?} key={:?}",
+                policy,
                 key
             );
             (Arc::clone(slot), false)
@@ -283,8 +460,8 @@ where
             inflight.insert(key.clone(), Arc::clone(&slot));
             crate::desk_log_debug!(
                 "hubcap",
-                "Generation registered leader kind={:?} key={:?}",
-                kind,
+                "Generation registered leader policy={:?} key={:?}",
+                policy,
                 key
             );
             (slot, true)
@@ -297,8 +474,8 @@ where
             if let Some(completed) = slot.result.lock().await.clone() {
                 crate::desk_log_debug!(
                     "hubcap",
-                    "Generation deduplicated waiter completed kind={:?} key={:?} success={}",
-                    kind,
+                    "Generation deduplicated waiter completed policy={:?} key={:?} success={}",
+                    policy,
                     key,
                     completed.result.is_ok()
                 );
@@ -308,38 +485,58 @@ where
         }
     }
 
-    let result = match reserve(kind).await {
-        Ok(reservation) => {
-            crate::desk_log_debug!("hubcap", "Generation waiting for network gate kind={:?} key={:?}", kind, key);
+    let budget = match policy {
+        QuotaPolicy::ManifestDownload => Budget::Allowed(None),
+        QuotaPolicy::Generate(kind) => match reserve(kind).await {
+            Ok(reservation) => Budget::Allowed(Some(reservation)),
+            Err(error) => {
+                crate::desk_log_warn!(
+                    "hubcap",
+                    "Generation reservation rejected kind={:?} key={:?}: {}",
+                    kind,
+                    key,
+                    error
+                );
+                Budget::Rejected(error)
+            }
+        },
+    };
+
+    let result = match budget {
+        Budget::Rejected(error) => Err(error),
+        Budget::Allowed(reservation) => {
+            crate::desk_log_debug!(
+                "hubcap",
+                "Generation waiting for network gate policy={:?} key={:?}",
+                policy,
+                key
+            );
             let result = match generation_network_gate().acquire().await {
                 Ok(_permit) => {
-                    crate::desk_log_debug!("hubcap", "Generation network gate acquired kind={:?} key={:?}", kind, key);
+                    crate::desk_log_debug!(
+                        "hubcap",
+                        "Generation network gate acquired policy={:?} key={:?}",
+                        policy,
+                        key
+                    );
                     wait_for_generation_cadence().await;
                     fetch().await
                 }
                 Err(error) => Err(format!("Hubcap generation scheduler unavailable: {error}")),
             };
             if result.is_err() {
-                release(reservation).await;
+                if let Some(reservation) = reservation {
+                    release(reservation).await;
+                }
             }
             crate::desk_log_info!(
                 "hubcap",
-                "Generation leader completed kind={:?} key={:?} success={}",
-                kind,
+                "Generation leader completed policy={:?} key={:?} success={}",
+                policy,
                 key,
                 result.is_ok()
             );
             result
-        }
-        Err(error) => {
-            crate::desk_log_warn!(
-                "hubcap",
-                "Generation reservation rejected kind={:?} key={:?}: {}",
-                kind,
-                key,
-                error
-            );
-            Err(error)
         }
     };
 
@@ -349,15 +546,6 @@ where
     slot.notify.notify_waiters();
     shared.inflight.lock().await.remove(&key);
     result
-}
-
-/// Test-only reset hook. Production code never needs to clear quota state.
-#[cfg(test)]
-pub async fn reset_for_tests() {
-    let shared = state();
-    *shared.quota.lock().await = PersistedQuota::default();
-    shared.inflight.lock().await.clear();
-    *shared.last_generation_start.lock().await = None;
 }
 
 #[cfg(test)]

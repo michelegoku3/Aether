@@ -42,6 +42,40 @@ export const ArrowUpThickIcon = ({ size = 15 }: { size?: number }) => (
   </svg>
 );
 
+/** Wrench icon (e.g. repair actions). */
+export const WrenchIcon = ({ size = 15 }: { size?: number }) => (
+  <svg
+    width={size}
+    height={size}
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2.2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    aria-hidden="true"
+  >
+    <path d="M14.7 6.3a4.5 4.5 0 0 0-6.03 5.36L3.5 16.83a2 2 0 1 0 2.83 2.83l5.17-5.17a4.5 4.5 0 0 0 5.36-6.03l-2.64 2.64-2.83-.35-.35-2.83 2.66-2.65z" />
+  </svg>
+);
+
+/** Activity pulse icon (e.g. background sync monitor). */
+export const ActivityIcon = ({ size = 15 }: { size?: number }) => (
+  <svg
+    width={size}
+    height={size}
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2.2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    aria-hidden="true"
+  >
+    <path d="M3 12h4l2.5-6 4 12 2.5-6h5" />
+  </svg>
+);
+
 /** Folder plus / local import icon */
 export const FolderPlusIcon = ({ size = 18 }: { size?: number }) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">

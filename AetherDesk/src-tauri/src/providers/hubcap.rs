@@ -1,16 +1,29 @@
 use reqwest::header::{HeaderMap, HeaderValue, AUTHORIZATION};
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use std::collections::HashSet;
+use std::sync::OnceLock;
 use std::time::{Duration, Instant};
+use tokio::sync::Mutex as AsyncMutex;
 use crate::manifest::package::{ManifestPackage, ManifestPackageExtractor};
 use crate::providers::http;
 use crate::providers::hubcap_generation::{
-    deduplicated_generation, GenerationKey, GenerationKind,
+    deduplicated_generation, GenerationKey, GenerationKind, QuotaPolicy,
 };
 
 const BASE_URL: &str = "https://hubcapmanifest.com/api/v1";
 const HUBCAP_TIMEOUT_SECONDS: u64 = 8;
 const GENERATION_RETRY_ATTEMPTS: u32 = 3;
+/// One provider validation round-trip per key per window, shared by every
+/// command surface (store, versioning, library, Workshop, settings).
+const KEY_VALIDATION_TTL: Duration = Duration::from_secs(300);
+
+/// Session-wide validation cache. The fingerprint is the SHA-256 of the raw
+/// key, so a changed key is always re-validated immediately.
+fn validation_cache() -> &'static AsyncMutex<Option<(Vec<u8>, Instant, bool)>> {
+    static CACHE: OnceLock<AsyncMutex<Option<(Vec<u8>, Instant, bool)>>> = OnceLock::new();
+    CACHE.get_or_init(|| AsyncMutex::new(None))
+}
 
 fn retry_delay(response: &reqwest::Response, attempt: u32) -> Duration {
     response
@@ -155,7 +168,28 @@ impl HubcapClient {
         matches!(status.as_u16(), 400 | 500 | 503)
     }
 
+    /// Validates the API key against `/user/stats`, deduplicated across the
+    /// whole session by a short-lived fingerprint cache. The DLL keeps no
+    /// equivalent (it must stay stateless inside Steam), which is precisely
+    /// why this cache has to live in the one client every Desk command uses.
     pub async fn validate_api_key(&self) -> Result<bool, String> {
+        let fingerprint = Sha256::digest(self.api_key.as_bytes()).to_vec();
+        {
+            let cached = validation_cache().lock().await;
+            if let Some((cached_fingerprint, checked_at, valid)) = cached.as_ref() {
+                if *cached_fingerprint == fingerprint && checked_at.elapsed() < KEY_VALIDATION_TTL
+                {
+                    crate::desk_log_debug!("hubcap", "API key validation served from session cache");
+                    return Ok(*valid);
+                }
+            }
+        }
+        let valid = self.validate_api_key_uncached().await?;
+        *validation_cache().lock().await = Some((fingerprint, Instant::now(), valid));
+        Ok(valid)
+    }
+
+    async fn validate_api_key_uncached(&self) -> Result<bool, String> {
         crate::desk_log_info!("hubcap", "API key validation start endpoint=user/stats");
         let url = format!("{}/user/stats", BASE_URL);
         for attempt in 0..GENERATION_RETRY_ATTEMPTS {
@@ -220,12 +254,16 @@ impl HubcapClient {
     /// Downloads Hubcap's manifest ZIP after an authenticated quota check and
     /// delegates archive parsing to the provider-agnostic `ManifestPackageExtractor`.
     pub async fn download_lua_package(&self, app_id: u32) -> Result<ManifestPackage, String> {
+        // A package download consumes the provider's daily *manifest* quota
+        // (checked against `/user/stats` inside `download_manifest_zip`), not
+        // the generation budget — the local counters must mirror the
+        // server-side buckets instead of double-counting.
         let bytes = deduplicated_generation(
             GenerationKey::AppBundle {
                 app_id,
                 branch: "manifest".to_string(),
             },
-            GenerationKind::Game,
+            QuotaPolicy::ManifestDownload,
             || self.download_manifest_zip(app_id),
         )
         .await?;
@@ -637,7 +675,7 @@ impl HubcapClient {
             return Err("Hubcap generation requires a valid depot ID and manifest ID.".to_string());
         }
         let key = GenerationKey::Single { depot_id, manifest_id };
-        deduplicated_generation(key, GenerationKind::Game, || async move {
+        deduplicated_generation(key, QuotaPolicy::Generate(GenerationKind::Game), || async move {
             let usage = self.get_generation_usage().await?;
             self.ensure_generation_available("single-manifest", usage.single.remaining, &usage).await?;
             let url = format!(
@@ -657,7 +695,7 @@ impl HubcapClient {
             return Err("Hubcap Workshop generation requires a valid Workshop ID.".to_string());
         }
         let key = GenerationKey::Workshop { workshop_id };
-        deduplicated_generation(key, GenerationKind::Workshop, || async move {
+        deduplicated_generation(key, QuotaPolicy::Generate(GenerationKind::Workshop), || async move {
             let usage = self.get_generation_usage().await?;
             self.ensure_generation_available("Workshop", usage.workshop.remaining, &usage).await?;
             let url = format!("{}/generate/workshopmanifest/{workshop_id}", BASE_URL);

@@ -58,6 +58,49 @@ bool IsMissingOrEmpty(const fs::path& dest) {
     return ec ? true : (size == 0);
 }
 
+// Outcome of one shared-contract backup copy.
+enum class BackupCopyOutcome {
+    Present,  // destination already non-empty (or completed by the other writer)
+    Copied,   // copied and verified by this call
+    Failed,   // destination is still missing/empty
+};
+
+// The AetherDLL twin of AetherDesk's `backup_referenced_manifests`
+// (core/backup.rs). Both writers follow the SAME contract, so whichever
+// process sees a file first produces the same backup tree:
+// 1. only files referenced by the current Lua are copied (callers filter);
+// 2. a non-empty destination is never overwritten (the file name is the
+//    manifest's complete depot/GID identity);
+// 3. a zero-byte destination placeholder is replaced;
+// 4. the copy is atomic (temp + replace) and size-verified;
+// 5. a failed copy re-checks the destination: if AetherDesk completed the
+//    same copy in the race window, the file counts as present.
+BackupCopyOutcome CopyAtomicallyIfMissing(const fs::path& source, const fs::path& destination) {
+    if (!IsMissingOrEmpty(destination)) return BackupCopyOutcome::Present;  // rule 2
+
+    const fs::path temporary = destination.string() + ".aether-tmp";
+    std::error_code copyEc;
+    fs::copy_file(source, temporary, fs::copy_options::overwrite_existing, copyEc);
+    // AtomicReplace uses MOVEFILE_REPLACE_EXISTING, which also covers the
+    // zero-byte placeholder of rule 3 in one step.
+    if (copyEc || !backup::io::AtomicReplace(temporary.string(), destination.string())) {
+        std::error_code cleanupEc;
+        fs::remove(temporary, cleanupEc);
+        return IsMissingOrEmpty(destination) ? BackupCopyOutcome::Failed  // rule 5
+                                             : BackupCopyOutcome::Present;
+    }
+    // Rule 4: the committed copy must match the source size.
+    std::error_code sizeEc;
+    const auto sourceSize = fs::file_size(source, sizeEc);
+    const auto destinationSize = sizeEc ? std::uintmax_t{0} : fs::file_size(destination, sizeEc);
+    if (sizeEc || destinationSize != sourceSize) {
+        AC_LOG_WARN(kModule, "Backup copy failed size verification: %s.",
+                    destination.string().c_str());
+        return BackupCopyOutcome::Failed;
+    }
+    return BackupCopyOutcome::Copied;
+}
+
 struct RestoreStats {
     std::size_t scanned = 0;
     std::size_t restored = 0;
@@ -193,24 +236,19 @@ void BackupReferencedManifestsAtStartup() {
             if (ec) continue;
 
             // Steam can be started without AetherDesk. Preserve a newly seen
-            // Lua now, but never replace a non-empty canonical backup here;
-            // AetherDesk's richer startup sync owns history/version decisions.
+            // Lua through the shared-contract copier; AetherDesk's richer
+            // startup sync owns history/version decisions.
             const fs::path luaDestination = appLuaBackup / (std::to_string(appId) + ".lua");
-            if (IsMissingOrEmpty(luaDestination)) {
-                const fs::path temporary = luaDestination.string() + ".aether-tmp";
-                std::error_code copyEc;
-                fs::copy_file(luaEntry.path(), temporary,
-                              fs::copy_options::overwrite_existing, copyEc);
-                if (!copyEc && fs::exists(luaDestination, copyEc)) {
-                    fs::remove(luaDestination, copyEc);
-                }
-                if (!copyEc) fs::rename(temporary, luaDestination, copyEc);
-                if (copyEc) {
-                    std::error_code cleanupEc;
-                    fs::remove(temporary, cleanupEc);
-                } else {
+            switch (CopyAtomicallyIfMissing(luaEntry.path(), luaDestination)) {
+                case BackupCopyOutcome::Copied:
                     ++luaCopied;
-                }
+                    break;
+                case BackupCopyOutcome::Present:
+                    break;
+                case BackupCopyOutcome::Failed:
+                    AC_LOG_DEBUG(kModule, "Cannot backup Lua %s.",
+                                 luaDestination.string().c_str());
+                    break;
             }
 
             std::set<std::string> filenames;
@@ -228,31 +266,16 @@ void BackupReferencedManifestsAtStartup() {
                     ++missing;
                     continue;
                 }
-                const fs::path destination = appLuaBackup / filename;
-                if (!IsMissingOrEmpty(destination)) {
-                    ++alreadyPresent;
-                    continue;
-                }
-
-                const fs::path temporary = destination.string() + ".aether-tmp";
-                std::error_code copyEc;
-                fs::copy_file(source, temporary,
-                              fs::copy_options::overwrite_existing, copyEc);
-                if (!copyEc && fs::exists(destination, copyEc)) {
-                    fs::remove(destination, copyEc);
-                }
-                if (!copyEc) fs::rename(temporary, destination, copyEc);
-                if (copyEc) {
-                    std::error_code cleanupEc;
-                    fs::remove(temporary, cleanupEc);
-                    if (!IsMissingOrEmpty(destination)) {
+                switch (CopyAtomicallyIfMissing(source, appLuaBackup / filename)) {
+                    case BackupCopyOutcome::Copied:
+                        ++copied;
+                        break;
+                    case BackupCopyOutcome::Present:
                         ++alreadyPresent;
-                    } else {
-                        AC_LOG_DEBUG(kModule, "Cannot backup %s (%s).",
-                                     source.string().c_str(), copyEc.message().c_str());
-                    }
-                } else {
-                    ++copied;
+                        break;
+                    case BackupCopyOutcome::Failed:
+                        AC_LOG_DEBUG(kModule, "Cannot backup %s.", source.string().c_str());
+                        break;
                 }
             }
         }

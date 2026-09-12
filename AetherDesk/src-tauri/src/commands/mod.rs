@@ -10,6 +10,7 @@ pub mod library;
 pub mod local;
 pub mod logs;
 pub mod manifests;
+pub mod monitor;
 pub mod online;
 pub mod versioning;
 pub mod settings;

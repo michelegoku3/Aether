@@ -1,17 +1,9 @@
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::sync::{Mutex, OnceLock};
 use std::time::{SystemTime, UNIX_EPOCH};
 use crate::manifest::package::ManifestPackageFile;
-
-/// Prevents concurrent package completions from colliding on the shared
-/// `<depotcache>/<name>.manifest.tmp` path. Network generation is already
-/// deduplicated separately; this protects the final local commit as well.
-fn manifest_install_gate() -> &'static Mutex<()> {
-    static GATE: OnceLock<Mutex<()>> = OnceLock::new();
-    GATE.get_or_init(|| Mutex::new(()))
-}
+use crate::manifest::resolver::depotcache_commit_gate;
 
 #[derive(Clone)]
 pub struct SteamCompat {
@@ -60,7 +52,7 @@ impl SteamCompat {
         if manifests.is_empty() {
             return Ok(0);
         }
-        let _install_guard = manifest_install_gate()
+        let _install_guard = depotcache_commit_gate()
             .lock()
             .map_err(|_| "Manifest installation scheduler is unavailable".to_string())?;
 
@@ -118,7 +110,7 @@ impl SteamCompat {
         if lua_content.trim().is_empty() {
             return Err("Refusing to install an empty Lua package".to_string());
         }
-        let _install_guard = manifest_install_gate()
+        let _install_guard = depotcache_commit_gate()
             .lock()
             .map_err(|_| "Manifest installation scheduler is unavailable".to_string())?;
         let root = self.validated_root()?;

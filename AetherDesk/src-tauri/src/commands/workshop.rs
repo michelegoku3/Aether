@@ -7,7 +7,6 @@ use std::time::Instant;
 use regex::Regex;
 use serde::Serialize;
 use tokio::sync::Mutex;
-use tokio::task::JoinSet;
 use zip::ZipArchive;
 
 use crate::core::paths::LocalAppPaths;
@@ -510,43 +509,34 @@ pub async fn sync_hubcap_workshop_manifests(
         crate::desk_log_error!("workshop", "Workshop sync stopped because the Hubcap API key is not valid or not allowed");
         return Err("Hubcap API key is not valid or is not allowed to make requests.".to_string());
     }
-    let mut tasks = JoinSet::new();
-    let mut pending = items.into_iter();
-    // The provider rate-limits generation separately from the daily quota.
-    // Keep the worker's queue shallow; the process-wide scheduler also
-    // serializes generation traffic shared with store/versioning actions.
-    for _ in 0..1 {
-        let Some(item) = pending.next() else { break };
-        tasks.spawn(sync_one_workshop_item(client.clone(), steam_path.clone(), item));
-    }
-    while let Some(joined) = tasks.join_next().await {
-        match joined {
-            Ok(Ok(SyncOrigin::Generated { content_present })) => {
+    // The provider rate-limits generation separately from the daily quota, and
+    // the process-wide scheduler already serializes generation traffic shared
+    // with store/versioning actions: process the items one at a time.
+    for item in items {
+        match sync_one_workshop_item(client.clone(), steam_path.clone(), item).await {
+            Ok(SyncOrigin::Generated { content_present }) => {
                 report.generated += 1;
-                if !content_present { report.content_missing += 1; }
+                if !content_present {
+                    report.content_missing += 1;
+                }
             }
-            Ok(Ok(SyncOrigin::Cached { content_present })) => {
+            Ok(SyncOrigin::Cached { content_present }) => {
                 report.restored_from_cache += 1;
-                if !content_present { report.content_missing += 1; }
+                if !content_present {
+                    report.content_missing += 1;
+                }
             }
-            Ok(Ok(SyncOrigin::AlreadyLocal { content_present })) => {
+            Ok(SyncOrigin::AlreadyLocal { content_present }) => {
                 if content_present {
                     report.already_local += 1;
                 } else {
                     report.content_missing += 1;
                 }
             }
-            Ok(Err(error)) => {
+            Err(error) => {
                 report.failed += 1;
                 crate::desk_log_warn!("hubcap", "Workshop manifest preparation failed: {}", error);
             }
-            Err(error) => {
-                report.failed += 1;
-                crate::desk_log_warn!("hubcap", "Workshop manifest task failed: {}", error);
-            }
-        }
-        if let Some(item) = pending.next() {
-            tasks.spawn(sync_one_workshop_item(client.clone(), steam_path.clone(), item));
         }
     }
     crate::desk_log_info!(

@@ -19,6 +19,27 @@ export interface LibraryActionGame {
   heroImageUrl?: string;
 }
 
+/** Report returned by the backend `sync_hubcap_game_manifest` command. */
+interface GameManifestSyncReport {
+  appId: number;
+  pins: number;
+  missing: number;
+  generated: number;
+  installed: number;
+  skipped: boolean;
+}
+
+/** Human-readable one-liner for the per-game repair report. */
+const summarizeManifestRepair = (report: GameManifestSyncReport): string => {
+  if (report.skipped || report.pins === 0) {
+    return 'No manifest pins found for this game.';
+  }
+  if (report.generated === 0) {
+    return `All ${report.pins} pinned manifest(s) are available locally; nothing to repair.`;
+  }
+  return `Repaired ${report.generated} of ${report.pins} pinned manifest(s) via Hubcap and installed ${report.installed} into depotcache.`;
+};
+
 interface LibraryGameActionsModalProps {
   game: LibraryActionGame;
   isProcessing: boolean;
@@ -92,6 +113,23 @@ export const LibraryGameActionsModal = ({
       onStatus(result, 'success');
     } catch (err: any) {
       onStatus(`Failed to update version pin state: ${err}`, 'error');
+    } finally {
+      setIsBusy(false);
+    }
+  };
+
+  const handleRepairManifests = async () => {
+    setIsBusy(true);
+    try {
+      onStatus('Repairing manifests for this game...', 'info');
+      // Local-first on the backend: backup/config hits are restored into
+      // depotcache first; only genuinely absent manifests use the Hubcap key.
+      const report = await invoke<GameManifestSyncReport>('sync_hubcap_game_manifest', {
+        appId: Number(game.appId),
+      });
+      onStatus(summarizeManifestRepair(report), 'success');
+    } catch (err: any) {
+      onStatus(`Failed to repair manifests: ${err}`, 'error');
     } finally {
       setIsBusy(false);
     }
@@ -287,6 +325,18 @@ export const LibraryGameActionsModal = ({
                 disabled={disabled || updatesEnabled}
               >
                 Change Version
+              </button>
+            </span>
+            <span
+              className="game-action-btn-wrap"
+              title="Restore from backup or regenerate via Hubcap every manifest referenced by this game's Lua"
+            >
+              <button
+                className="game-action-btn"
+                onClick={handleRepairManifests}
+                disabled={disabled}
+              >
+                Repair Manifests
               </button>
             </span>
             <span

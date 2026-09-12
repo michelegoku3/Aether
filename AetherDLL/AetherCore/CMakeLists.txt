@@ -24,6 +24,7 @@ add_library(AetherCore SHARED
     # Network
     network/RuntimeHttp.cpp
     network/ManifestFetch.cpp
+    network/HubcapQuota.cpp
     network/EticketFetcher.cpp
 
     # Credentials

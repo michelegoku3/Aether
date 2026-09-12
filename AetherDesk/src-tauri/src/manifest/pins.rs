@@ -37,6 +37,19 @@ pub struct DepotManifestPin {
     pub manifest_id: String,
 }
 
+/// Converts manifest rows into the exact (depot, manifest) pins used by the
+/// resolver and the backup pipeline. Row filtering (enabled rows, addappid
+/// active rows, …) stays with the caller: different pipelines sync different
+/// subsets of a Lua.
+pub fn pins_from_rows(rows: impl IntoIterator<Item = LuaManifestRow>) -> Vec<DepotManifestPin> {
+    rows.into_iter()
+        .map(|row| DepotManifestPin {
+            depot_id: row.app_id,
+            manifest_id: row.manifest_id,
+        })
+        .collect()
+}
+
 /// Outcome of `LuaManifestPins::apply_build_pins`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -162,6 +175,59 @@ impl LuaManifestPins {
         Ok(ApplyBuildResult {
             applied_pins: applied,
         })
+    }
+
+    /// Updates the GID of commented `setManifestid` rows whose `addappid` is
+    /// still active to the exact pins supplied, leaving every row's
+    /// commented/enabled state exactly as it was. Used by the background
+    /// synchronizer after Steam completed a build update: active pins are the
+    /// user's explicit version lock and are never touched, and fully-disabled
+    /// depots (both lines commented) stay untouched too. The row count is
+    /// verified before saving, mirroring `apply_build_pins`.
+    pub fn realign_commented_pins(&self, pins: &[DepotManifestPin]) -> Result<usize, String> {
+        let content = self.read_lua()?;
+        Self::validate_content(&content)?;
+        let current = Self::pins_from_content(&content);
+        let before_count = current.len();
+        let wanted: std::collections::HashMap<u32, &str> = pins
+            .iter()
+            .map(|pin| (pin.depot_id, pin.manifest_id.as_str()))
+            .collect();
+        let mut lines: Vec<String> = content.lines().map(str::to_string).collect();
+
+        let mut realigned = 0usize;
+        for pin in &current {
+            // Only informational (commented) pins of depots the Lua still
+            // manages are candidates: the comment must survive the rewrite.
+            if pin.row.enabled || !pin.addappid_enabled {
+                continue;
+            }
+            let Some(manifest_id) = wanted.get(&pin.row.app_id) else {
+                continue;
+            };
+            if *manifest_id == pin.row.manifest_id {
+                continue;
+            }
+            lines[pin.setmanifest_line] = Self::rewrite_setmanifest_without_size(
+                &lines[pin.setmanifest_line],
+                manifest_id,
+            )?;
+            realigned += 1;
+        }
+        if realigned == 0 {
+            return Ok(0);
+        }
+
+        let next_content = Self::join_lua_lines(&lines);
+        if Self::pins_from_content(&next_content).len() != before_count {
+            return Err(format!(
+                "Safety check failed: setManifestid count changed from {} to {}. File was not saved.",
+                before_count,
+                Self::pins_from_content(&next_content).len()
+            ));
+        }
+        self.write_lua(&next_content)?;
+        Ok(realigned)
     }
 
     /// SFF-style extraction: do not execute or normalize the Lua; only scan text lines
@@ -483,7 +549,10 @@ impl LuaManifestPins {
         }
     }
 
-    fn read_lua(&self) -> Result<String, String> {
+    /// Reads the raw Lua content with the editor's standard error context.
+    /// Public read-only accessor: pipelines that need the exact bytes (pin
+    /// realignment, backups, fingerprinting) must not re-derive the path.
+    pub fn read_lua(&self) -> Result<String, String> {
         fs::read_to_string(&self.lua_path)
             .map_err(|e| format!("Failed to read {}: {}", self.lua_path.display(), e))
     }

@@ -11,6 +11,7 @@
 #include "core/Logger.h"
 #include "scripting/LuaData.h"
 #include "core/SteamTypes.h"
+#include "network/ManifestFetch.h"
 #include "utils/SmartIdLog.h"
 #include "utils/SteamKeyPaths.h"
 
@@ -77,22 +78,67 @@ void ApplyManifestOverrides(CUtlVector<DepotEntry>* vec, std::vector<ManifestPat
     }
 }
 
+void LogSteamSelectedManifests(AppId app, const CUtlVector<DepotEntry>* vec) {
+    if (!vec || !vec->mem.memory || vec->size == 0) return;
+    for (std::uint32_t i = 0; i < vec->size; ++i) {
+        const DepotEntry& entry = vec->mem.memory[i];
+        if (entry.depotId == 0 || entry.manifestGid == 0 ||
+            !luadata::HasDepot(entry.depotId)) {
+            continue;
+        }
+        const bool overridden = luadata::ManifestOverrideFor(entry.depotId).has_value();
+        AC_LOG_DEBUG_ONCE(
+            kModule,
+            "Steam manifest selected app=%u depot=%u gid=%llu override=%d; routed to the local/Hubcap pipeline.",
+            app,
+            entry.depotId,
+            static_cast<unsigned long long>(entry.manifestGid),
+            overridden ? 1 : 0);
+    }
+}
+
+// Routes every manifest Steam just selected for a managed depot into the
+// acquisition pipeline: depotcache/config\depotcache and the AetherData
+// backup first (a backup hit is published into depotcache), then an async
+// Hubcap generation for what is really missing. Never blocks: this hook runs
+// on a Steam worker thread, and Steam's own retry picks the file up once it
+// has landed in depotcache.
+void EnsureSelectedManifests(AppId app, const CUtlVector<DepotEntry>* vec) {
+    if (!vec || !vec->mem.memory || vec->size == 0) return;
+    for (std::uint32_t i = 0; i < vec->size; ++i) {
+        const DepotEntry& entry = vec->mem.memory[i];
+        if (entry.depotId == 0 || entry.manifestGid == 0 ||
+            !luadata::HasDepot(entry.depotId)) {
+            continue;
+        }
+        manifestfetch::EnsureManifestAvailable(app, entry.depotId, entry.manifestGid);
+    }
+}
+
 bool h_BuildDepotDependency(void* mgr, AppId app, void* cfg, CUtlVector<DepotEntry>* depots,
                             CUtlVector<DepotEntry>* shared, void* steamApp,
                             std::uint32_t* buildId, bool* betaFallback) {
     bool result = o_BuildDepotDependency(mgr, app, cfg, depots, shared, steamApp, buildId,
                                          betaFallback);
-    if (luadata::HasManifestOverrides()) {
-        std::vector<ManifestPatchLog> patches;
-        ApplyManifestOverrides(depots, patches);
-        ApplyManifestOverrides(shared, patches);
-        if (!patches.empty()) {
-            // Once per unique line (app + patch set) per game session — the
-            // logger's dedup replaces the old hidden function-local static set.
-            AC_LOG_INFO_ONCE(kModule, "Manifest overrides for app %u: %s.", app,
-                             ManifestPatchArray(patches).c_str());
-        }
+    std::vector<ManifestPatchLog> patches;
+    ApplyManifestOverrides(depots, patches);
+    ApplyManifestOverrides(shared, patches);
+    if (!patches.empty()) {
+        // Once per unique line (app + patch set) per game session — the
+        // logger's dedup replaces the old hidden function-local static set.
+        AC_LOG_INFO_ONCE(kModule, "Manifest overrides for app %u: %s.", app,
+                         ManifestPatchArray(patches).c_str());
     }
+
+    // Default acquisition trigger. The GetManifestRequestCode bridge is no
+    // longer reachable on current Steam builds (its service calls bypass the
+    // wire hook), so dependency-build routes every managed depot/GID straight
+    // into the local-first/Hubcap pipeline. The per-depot call is cheap when
+    // the manifest is already on disk and async when it is not.
+    LogSteamSelectedManifests(app, depots);
+    LogSteamSelectedManifests(app, shared);
+    EnsureSelectedManifests(app, depots);
+    EnsureSelectedManifests(app, shared);
     return result;
 }
 

@@ -100,9 +100,12 @@ fn main() {
                     }
                 });
             }
-            // Game update interception is owned exclusively by AetherDLL.
-            // AetherDesk must not poll ACF files, download game packages, or
-            // participate in Steam game-update resolution.
+            // Steam-change synchronizer: reacts to ACF/Lua/Workshop changes
+            // with local work only (pin realignment + backup, local-first
+            // repairs, Workshop staging). Game-update interception and
+            // on-demand manifest generation stay with AetherDLL; this monitor
+            // never downloads game packages.
+            crate::core::hubcap_update_monitor::start(app.handle().clone());
             if let Err(e) = crate::core::custom_css::apply_window_icon(&app.handle()) {
                 eprintln!("[AetherDesk] window icon apply failed: {e}");
             }
@@ -161,6 +164,7 @@ fn main() {
             commands::workshop::generate_hubcap_workshop_manifest,
             commands::workshop::sync_hubcap_workshop_manifests,
             commands::manifests::sync_hubcap_game_manifest,
+            commands::monitor::get_hubcap_monitor_status,
             commands::library::get_installed_library_games,
             commands::library::get_library_change_revision,
             commands::library::warm_library_game_cache,

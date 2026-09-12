@@ -1,7 +1,8 @@
 use crate::core::paths::LocalAppPaths;
 use crate::game_info::cache::GameInfoCache;
-use crate::manifest::pins::{DepotManifestPin, LuaManifestEdit, LuaManifestPins, LuaManifestRow};
-use crate::providers::hubcap::HubcapClient;
+use crate::manifest::pins::{
+    pins_from_rows, DepotManifestPin, LuaManifestEdit, LuaManifestPins, LuaManifestRow,
+};
 use crate::steam::compat::SteamCompat;
 use crate::core::settings::{cache_version_with_currency, steam_country_code_for_currency, SettingsManager};
 use crate::steam::app_names::SteamAppNameResolver;
@@ -317,56 +318,47 @@ pub async fn apply_specific_version_edits(
 
     let pins_editor = LuaManifestPins::new(steam_path.clone(), app_id);
     let (next_lua, rows) = pins_editor.preview_edits(&edits)?;
-    let pins: Vec<DepotManifestPin> = LuaManifestPins::rows_for_manifest_sync(&next_lua)
-        .into_iter()
-        .map(|row| DepotManifestPin {
-            depot_id: row.app_id,
-            manifest_id: row.manifest_id,
-        })
-        .collect();
+    let pins: Vec<DepotManifestPin> = pins_from_rows(LuaManifestPins::rows_for_manifest_sync(
+        &next_lua,
+    ));
 
-    // First restore exact files from the local depotcache/backup. No provider
-    // call is made when the selected version is already available locally.
-    let local_path = steam_path.clone();
-    let local_pins = pins.clone();
-    let missing = tauri::async_runtime::spawn_blocking(move || {
-        crate::versioning::apply::prepare_local_manifests(&local_path, app_id, &local_pins)
-    })
-    .await
-    .map_err(|error| format!("Local manifest preparation failed: {error}"))??;
-
-    let generated = if missing.is_empty() {
-        Vec::new()
+    // Local-first resolution (shared with every other pipeline): backup and
+    // secondary-cache hits are restored into depotcache first; only genuinely
+    // absent manifests are generated through the configured Hubcap key.
+    let settings = SettingsManager::new(&app).load();
+    let generation = if settings.hubcap_api_key.trim().is_empty() {
+        crate::manifest::resolver::Generation::LocalOnly
     } else {
-        let settings = SettingsManager::new(&app).load();
-        if settings.hubcap_api_key.trim().is_empty() {
-            return Err(
-                "The selected version references manifest files that are not local. Configure a valid authenticated Hubcap API key before applying it.".to_string(),
-            );
-        }
-        let client = HubcapClient::new(settings.hubcap_api_key);
-        if !client.validate_api_key().await? {
-            return Err("Hubcap API key is not valid or is not allowed to generate manifests.".to_string());
-        }
-        crate::commands::versioning::generate_missing_manifests(client, missing).await?
+        crate::manifest::resolver::Generation::SettingsKey(settings.hubcap_api_key.clone())
     };
+    let resolution = crate::manifest::resolver::resolve(
+        crate::manifest::resolver::ManifestRequest {
+            steam_path: steam_path.clone(),
+            app_id,
+            pins: pins.clone(),
+            generation,
+        },
+    )
+    .await?;
+    if !resolution.is_complete() {
+        return Err(
+            "The selected version references manifest files that are not local. Configure a valid authenticated Hubcap API key before applying it.".to_string(),
+        );
+    }
+    let generated = resolution.generated;
 
     // Publish the Lua and any newly generated exact manifests together. The
     // old Lua remains untouched if staging/generation fails.
     SteamCompat::new(steam_path.clone())
         .install_lua_and_manifest_files(app_id, &next_lua, &generated)?;
 
-    let verify_path = steam_path.clone();
-    let verify_pins = pins.clone();
-    let remaining = tauri::async_runtime::spawn_blocking(move || {
-        crate::versioning::apply::prepare_local_manifests(&verify_path, app_id, &verify_pins)
-    })
-    .await
-    .map_err(|error| format!("Specific version manifest verification failed: {error}"))??;
-    if !remaining.is_empty() {
+    // Shared completeness gate: the same "present" definition the resolution
+    // used, so a resolved pin can never fail here.
+    let remaining = crate::manifest::resolver::verify_available(&steam_path, app_id, &pins);
+    if !remaining.missing.is_empty() {
         return Err(format!(
             "Specific version was not committed safely: {} manifest(s) are still missing",
-            remaining.len()
+            remaining.missing.len()
         ));
     }
 
