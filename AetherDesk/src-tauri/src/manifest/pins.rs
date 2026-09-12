@@ -356,17 +356,7 @@ impl LuaManifestPins {
         Ok((next_content, rows))
     }
 
-    pub fn apply_edits(&self, edits: Vec<LuaManifestEdit>) -> Result<Vec<LuaManifestRow>, String> {
-        let (next_content, rows) = self.preview_edits(&edits)?;
-        self.write_lua(&next_content)?;
-        crate::desk_log_info!(
-            "manifest",
-            "Lua manifest {}: apply_edits completed -> {} row(s) active",
-            self.lua_path.display(),
-            rows.len()
-        );
-        Ok(rows)
-    }
+
 
     fn pins_from_content(content: &str) -> Vec<ManifestPin> {
         let lines: Vec<&str> = content.lines().collect();

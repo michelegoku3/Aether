@@ -40,11 +40,10 @@ std::int32_t HandleSend(const WireFrame& frame) {
     const std::uint64_t gid = req.manifest_id();
     const std::uint32_t appId = req.has_app_id() ? req.app_id() : 0;
 
-    if (g_state.settings.manifestFetchUrls.empty() &&
-        !manifestfetch::HasLocalManifest(gid, depotId)) {
-        return kNoChange;
-    }
-
+    // Submit even when the archived provider list is empty: ManifestFetch now
+    // owns the production authenticated-Hubcap path and can run standalone
+    // from AetherDLL. It will use local cache/backup first, then Hubcap, and
+    // only fall back to the legacy configured providers when enabled.
     manifestfetch::Submit(jobId, gid, appId, depotId);
     AC_LOG_INFO(kModule, "Manifest lookup submitted: depot=%u gid=%llu job=%llu.", depotId,
                 static_cast<unsigned long long>(gid), static_cast<unsigned long long>(jobId));

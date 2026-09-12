@@ -21,6 +21,8 @@ use std::io::{Read, Write};
 use std::path::PathBuf;
 use std::sync::{Mutex, OnceLock};
 
+const STARTUP_LOG_TOKEN: &str = "F3K7M1Q9";
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 #[repr(u8)]
 pub enum LogLevel {
@@ -167,7 +169,8 @@ pub fn init(_app: &tauri::AppHandle) {
         LogLevel::Info,
         "lifecycle",
         &format!(
-            "AetherDesk session started (version: {}, PID: {})",
+            "[{}] AetherDesk session started (version: {}, PID: {})",
+            STARTUP_LOG_TOKEN,
             env!("CARGO_PKG_VERSION"),
             std::process::id()
         ),

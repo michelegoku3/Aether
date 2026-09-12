@@ -100,11 +100,9 @@ fn main() {
                     }
                 });
             }
-            // Hubcap game updates are event-driven from Steam appmanifest
-            // fingerprints. The monitor is local-first, resumable, keyed per
-            // AppID, and processes at most one package at a time. It does not
-            // poll Hubcap or sweep all Lua files on a timer.
-            crate::core::hubcap_update_monitor::start(app.handle().clone());
+            // Game update interception is owned exclusively by AetherDLL.
+            // AetherDesk must not poll ACF files, download game packages, or
+            // participate in Steam game-update resolution.
             if let Err(e) = crate::core::custom_css::apply_window_icon(&app.handle()) {
                 eprintln!("[AetherDesk] window icon apply failed: {e}");
             }

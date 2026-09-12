@@ -18,7 +18,7 @@ namespace ac::http {
 namespace {
 
 constexpr const char* kModule = "Http";
-constexpr std::size_t kMaxBodyBytes = 8u * 1024u * 1024u;  // 8 MiB
+constexpr std::size_t kLuaMaxBodyBytes = 8u * 1024u * 1024u;  // 8 MiB
 constexpr DWORD kTimeoutMs = 12000;
 
 // Baseline hosts always reachable (manifest sources used by manifest scripts).
@@ -103,7 +103,8 @@ std::wstring JoinHeaders(const std::vector<std::string>& headers) {
 // — callers that need the gate apply it first.
 Response Request(std::wstring_view method, std::string_view url, DWORD timeoutMs,
                  std::wstring_view userAgent, std::string_view requestBody,
-                 const std::vector<std::string>& headers) {
+                 const std::vector<std::string>& headers,
+                 std::size_t maxBodyBytes) {
     Response out;
 
     std::string_view host = ExtractHost(url);
@@ -155,8 +156,9 @@ Response Request(std::wstring_view method, std::string_view url, DWORD timeoutMs
     while (true) {
         DWORD avail = 0;
         if (!WinHttpQueryDataAvailable(request.h, &avail) || avail == 0) break;
-        if (body.size() + avail > kMaxBodyBytes) {
-            AC_LOG_WARN(kModule, "Body exceeds 8 MiB cap; aborting.");
+        if (body.size() + avail > maxBodyBytes) {
+            AC_LOG_WARN(kModule, "Body exceeds configured cap (%llu bytes); aborting.",
+                        static_cast<unsigned long long>(maxBodyBytes));
             return out;  // networkError stays true: caller sees a failed fetch
         }
         std::vector<char> chunk(avail);
@@ -183,7 +185,7 @@ Response Get(std::string_view url) {
         out.status = 403;
         return out;
     }
-    return Request(L"GET", url, kTimeoutMs, L"AetherCore/1.0", {}, {});
+    return Request(L"GET", url, kTimeoutMs, L"AetherCore/1.0", {}, {}, kLuaMaxBodyBytes);
 }
 
 Response Post(std::string_view url, std::string_view body,
@@ -196,12 +198,20 @@ Response Post(std::string_view url, std::string_view body,
         out.status = 403;
         return out;
     }
-    return Request(L"POST", url, kTimeoutMs, L"AetherCore/1.0", body, extraHeaders);
+    return Request(L"POST", url, kTimeoutMs, L"AetherCore/1.0", body, extraHeaders, kLuaMaxBodyBytes);
 }
 
 Response GetUnchecked(std::string_view url, int timeoutSec, std::wstring_view userAgent) {
     DWORD ms = timeoutSec > 0 ? static_cast<DWORD>(timeoutSec) * 1000u : kTimeoutMs;
-    return Request(L"GET", url, ms, userAgent, {}, {});
+    return Request(L"GET", url, ms, userAgent, {}, {}, kLuaMaxBodyBytes);
+}
+
+Response GetUncheckedWithHeaders(std::string_view url, int timeoutSec,
+                                 const std::vector<std::string>& headers,
+                                 std::wstring_view userAgent,
+                                 std::size_t maxBodyBytes) {
+    DWORD ms = timeoutSec > 0 ? static_cast<DWORD>(timeoutSec) * 1000u : kTimeoutMs;
+    return Request(L"GET", url, ms, userAgent, {}, headers, maxBodyBytes);
 }
 
 }  // namespace ac::http
