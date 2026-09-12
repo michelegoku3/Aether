@@ -4,11 +4,10 @@
 
 #include "hooks/wire/PacketRouter.h"
 
-// Archived reference only. ManifestBridge.cpp is intentionally excluded from
-// the production AetherCore target and PacketRouter never dispatches this
-// request-code path. Keep the implementation documented for future, explicitly
-// authenticated pipelines; do not re-enable it as an automatic update or
-// Workshop source without a reviewed provider design.
+// Authenticated manifest bridge. The request-code message is used only as the
+// synchronization point: ManifestFetch obtains and validates the exact local
+// or Hubcap manifest, then the response is adapted back to Steam's expected
+// request-code shape.
 namespace ac::hooks::ManifestBridge {
 
 std::int32_t HandleSend(const WireFrame& frame);

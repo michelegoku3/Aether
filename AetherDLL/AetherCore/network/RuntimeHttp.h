@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstddef>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -13,7 +14,8 @@
 // returns status 403 with an empty body — indistinguishable from a real server
 // refusal, so a script cannot probe the gate.
 //
-// Hard caps: GET only, body <= 8 MiB, total budget 12 s.
+// Lua HTTP calls remain capped at 8 MiB. The authenticated internal manifest
+// route allows up to 256 MiB because some valid depot manifests are much larger.
 // ---------------------------------------------------------------------------
 namespace ac::http {
 
@@ -38,5 +40,13 @@ Response Post(std::string_view url, std::string_view body,
 // Never throws.
 Response GetUnchecked(std::string_view url, int timeoutSec,
                       std::wstring_view userAgent = L"AetherCore/1.0");
+
+// Internal authenticated GET. The caller owns the allowlist decision and must
+// only pass headers built from trusted configuration. Header values are never
+// logged by RuntimeHttp.
+Response GetUncheckedWithHeaders(std::string_view url, int timeoutSec,
+                                 const std::vector<std::string>& headers,
+                                 std::wstring_view userAgent = L"AetherCore/1.0",
+                                 std::size_t maxBodyBytes = 256u * 1024u * 1024u);
 
 }  // namespace ac::http

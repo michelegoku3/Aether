@@ -39,6 +39,8 @@ namespace {
 
     constexpr const char* kModule = "Core";
 
+    constexpr const char* kStartupLogToken = "B6R2Y8N4";
+
     // Guards against the (theoretical) possibility of init running twice.
     volatile LONG s_initFlag = 0;
 
@@ -162,8 +164,9 @@ namespace {
         // 2. Logger: session-oriented initialisation with backup of previous session.
         log::Init(g_state.logFilePath, g_state.settings.logKeepLastSession);
         log::SetLevel(g_state.settings.logLevel);
-        AC_LOG_INFO(kModule, "AetherCore injected. Steam folder: %s",
-            g_state.steamInstallPath.c_str());
+        AC_LOG_INFO(kModule,
+            "[%s] AetherCore injected. Steam folder: %s",
+            kStartupLogToken, g_state.steamInstallPath.c_str());
 
         // PinSelf: must run before LoadDiversion so the own module HMODULE is stable.
         PinSelf();

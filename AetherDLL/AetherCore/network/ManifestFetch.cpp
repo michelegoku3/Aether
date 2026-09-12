@@ -7,6 +7,7 @@
 #include <charconv>
 #include <exception>
 #include <filesystem>
+#include <fstream>
 #include <future>
 #include <memory>
 #include <optional>
@@ -19,6 +20,7 @@
 #include "core/Logger.h"
 #include "hooks/wire/BackupIo.h"
 #include "network/RuntimeHttp.h"
+#include "security/ProviderCredentials.h"
 
 namespace ac::manifestfetch {
 namespace {
@@ -202,8 +204,145 @@ std::optional<std::filesystem::path> FindLocalManifest(std::uint64_t gid,
     return std::nullopt;
 }
 
+bool ReadU32Le(std::string_view bytes, std::size_t& offset, std::uint32_t& out) {
+    if (bytes.size() - std::min(offset, bytes.size()) < 4) return false;
+    const auto* p = reinterpret_cast<const unsigned char*>(bytes.data() + offset);
+    out = static_cast<std::uint32_t>(p[0]) |
+          (static_cast<std::uint32_t>(p[1]) << 8) |
+          (static_cast<std::uint32_t>(p[2]) << 16) |
+          (static_cast<std::uint32_t>(p[3]) << 24);
+    offset += 4;
+    return true;
+}
+
+bool ReadVarint(std::string_view bytes, std::size_t& offset, std::uint64_t& out) {
+    out = 0;
+    for (unsigned shift = 0; shift < 70; shift += 7) {
+        if (offset >= bytes.size()) return false;
+        const auto byte = static_cast<unsigned char>(bytes[offset++]);
+        out |= static_cast<std::uint64_t>(byte & 0x7f) << shift;
+        if ((byte & 0x80) == 0) return true;
+    }
+    return false;
+}
+
+bool ManifestIdentityMatches(std::string_view bytes, std::uint32_t expectedDepot,
+                             std::uint64_t expectedGid) {
+    std::size_t offset = 0;
+    std::uint32_t magic = 0;
+    std::uint32_t length = 0;
+    if (!ReadU32Le(bytes, offset, magic) || !ReadU32Le(bytes, offset, length) ||
+        magic != 0x71F617D0u || bytes.size() - offset < length) return false;
+    offset += length;
+    if (!ReadU32Le(bytes, offset, magic) || !ReadU32Le(bytes, offset, length) ||
+        magic != 0x1F4812BEu || bytes.size() - offset < length) return false;
+
+    const std::string_view metadata = bytes.substr(offset, length);
+    std::size_t cursor = 0;
+    std::uint32_t depot = 0;
+    std::uint64_t gid = 0;
+    while (cursor < metadata.size()) {
+        std::uint64_t tag = 0;
+        if (!ReadVarint(metadata, cursor, tag)) return false;
+        const std::uint64_t field = tag >> 3;
+        switch (tag & 7) {
+        case 0: {
+            std::uint64_t value = 0;
+            if (!ReadVarint(metadata, cursor, value)) return false;
+            if (field == 1) depot = static_cast<std::uint32_t>(value);
+            if (field == 2) gid = value;
+            break;
+        }
+        case 1:
+            if (metadata.size() - cursor < 8) return false;
+            cursor += 8;
+            break;
+        case 2: {
+            std::uint64_t size = 0;
+            if (!ReadVarint(metadata, cursor, size) || size > metadata.size() - cursor) return false;
+            cursor += static_cast<std::size_t>(size);
+            break;
+        }
+        case 5:
+            if (metadata.size() - cursor < 4) return false;
+            cursor += 4;
+            break;
+        default:
+            return false;
+        }
+    }
+    return depot == expectedDepot && gid == expectedGid;
+}
+
+bool InstallHubcapManifest(std::uint64_t gid, std::uint32_t depotId) {
+    const auto apiKey = security::ReadHubcapApiKey();
+    if (!apiKey) {
+        AC_LOG_DEBUG(kModule, "Hubcap skipped: encrypted provider credentials unavailable.");
+        return false;
+    }
+
+    const std::string url = "https://hubcapmanifest.com/api/v1/generate/manifest?depot_id=" +
+                            std::to_string(depotId) + "&manifest_id=" + std::to_string(gid);
+    const std::vector<std::string> headers = {"Authorization: Bearer " + *apiKey};
+    for (int attempt = 0; attempt < 3; ++attempt) {
+        const http::Response response = http::GetUncheckedWithHeaders(
+            url, g_state.settings.manifestFetchTimeoutSec, headers, L"AetherCore/HubcapManifest/1.0");
+        if (response.networkError) {
+            AC_LOG_WARN(kModule, "Hubcap manifest request failed for depot=%u gid=%llu (network).",
+                        depotId, static_cast<unsigned long long>(gid));
+        } else if (response.status == 200 && !response.body.empty()) {
+            if (!ManifestIdentityMatches(response.body, depotId, gid)) {
+                AC_LOG_WARN(kModule, "Hubcap manifest identity mismatch for depot=%u gid=%llu.",
+                            depotId, static_cast<unsigned long long>(gid));
+                return false;
+            }
+
+            const std::string destination = g_state.steamInstallPath + "\\\\depotcache\\\\" +
+                                            std::to_string(depotId) + "_" + std::to_string(gid) + ".manifest";
+            const std::string temporary = destination + ".aether-tmp";
+            if (!CreateDirectoryA((g_state.steamInstallPath + "\\\\depotcache").c_str(), nullptr) &&
+                GetLastError() != ERROR_ALREADY_EXISTS) {
+                AC_LOG_WARN(kModule, "Could not create Steam depotcache for Hubcap manifest.");
+                return false;
+            }
+            std::ofstream output(temporary, std::ios::binary | std::ios::trunc);
+            output.write(response.body.data(), static_cast<std::streamsize>(response.body.size()));
+            output.close();
+            if (!output || !MoveFileExA(temporary.c_str(), destination.c_str(), MOVEFILE_REPLACE_EXISTING)) {
+                DeleteFileA(temporary.c_str());
+                AC_LOG_WARN(kModule, "Could not atomically install Hubcap manifest depot=%u gid=%llu.",
+                            depotId, static_cast<unsigned long long>(gid));
+                return false;
+            }
+            std::ifstream verify(destination, std::ios::binary | std::ios::ate);
+            const auto size = verify ? verify.tellg() : std::streampos(0);
+            if (size != static_cast<std::streamoff>(response.body.size())) {
+                AC_LOG_WARN(kModule, "Hubcap manifest post-install verification failed.");
+                return false;
+            }
+            AC_LOG_INFO(kModule, "Hubcap manifest installed depot=%u gid=%llu bytes=%llu.",
+                        depotId, static_cast<unsigned long long>(gid),
+                        static_cast<unsigned long long>(response.body.size()));
+            return true;
+        } else if (!response.networkError) {
+            AC_LOG_WARN(kModule, "Hubcap manifest request HTTP=%d for depot=%u gid=%llu.",
+                        response.status, depotId, static_cast<unsigned long long>(gid));
+            if (response.status != 408 && response.status != 425 && response.status != 429 &&
+                response.status < 500) return false;
+        }
+        if (attempt < 2) std::this_thread::sleep_for(std::chrono::milliseconds(500u << attempt));
+    }
+    return false;
+}
+
 std::optional<std::uint64_t> RunLookup(std::uint64_t gid, std::uint32_t appId,
                                        std::uint32_t depotId) {
+    // Production path: obtain the exact manifest directly from authenticated
+    // Hubcap at the same request-code synchronization point. AetherDesk is not
+    // required to be running; its DPAPI-protected credential file is read by
+    // the DLL under the current Windows user.
+    if (InstallHubcapManifest(gid, depotId)) return std::uint64_t{0};
+
     if (g_state.settings.manifestFetchUrls.empty()) {
         AC_LOG_DEBUG(kModule, "gid=%llu skipped, no providers configured.",
                      static_cast<unsigned long long>(gid));

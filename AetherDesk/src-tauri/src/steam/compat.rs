@@ -45,49 +45,6 @@ impl SteamCompat {
         self.steam_path.join("depotcache")
     }
 
-    /// Safely writes the Lua config to the stplug-in directory
-    pub fn install_lua_config(&self, app_id: u32, content: &str) -> Result<(), String> {
-        let _install_guard = manifest_install_gate()
-            .lock()
-            .map_err(|_| "Manifest installation scheduler is unavailable".to_string())?;
-        let plugin_dir = self.validated_root()?.join("config").join("stplug-in");
-        if !plugin_dir.exists() {
-            fs::create_dir_all(&plugin_dir)
-                .map_err(|e| format!("Failed to create plugin directory: {}", e))?;
-        }
-
-        let target_path = plugin_dir.join(format!("{}.lua", app_id));
-        let temp_path = target_path.with_extension("tmp");
-
-        // Prima di sovrascrivere, il .lua attuale viene preservato nell'albero
-        // di backup AetherData (history/ se è una versione non ancora nota).
-        // Niente più .lua.bak in stplug-in.
-        if target_path.exists() {
-            if let Ok(old_lua) = fs::read(&target_path) {
-                if let Ok(backup) = crate::core::backup::GameBackup::for_app(app_id) {
-                    let _ = backup.store_history_version(app_id, &old_lua);
-                }
-            }
-        }
-
-        fs::write(&temp_path, content)
-            .map_err(|e| format!("Failed to write plugin Lua: {}", e))?;
-
-        fs::rename(&temp_path, &target_path)
-            .map_err(|e| format!("Failed to install plugin Lua: {}", e))?;
-
-        // Defensive verification: this layer must be a pure writer and must never
-        // transform Lua content. If the installed file differs, stop immediately.
-        let installed = fs::read_to_string(&target_path)
-            .map_err(|e| format!("Failed to verify installed plugin Lua: {}", e))?;
-        if installed != content {
-            return Err("Installed Lua differs from downloaded Lua; refusing to continue.".to_string());
-        }
-
-        crate::desk_log_info!("steam", "Installed Lua config for AppID {} into {}", app_id, target_path.display());
-        Ok(())
-    }
-
     pub fn read_lua_config(&self, app_id: u32) -> Result<String, String> {
         let path = self
             .validated_root()?
@@ -298,25 +255,5 @@ impl SteamCompat {
         Ok(staged.len())
     }
 
-    /// Safely writes a decryption manifest .acf file into a steamapps library folder
-    pub fn write_acf_manifest(&self, library_folder: String, app_id: u32, acf_content: &str) -> Result<(), String> {
-        let library_dir = Path::new(&library_folder);
-        if !library_dir.exists() {
-            return Err("Library folder does not exist".to_string());
-        }
 
-        let target_path = library_dir.join("steamapps").join(format!("appmanifest_{}.acf", app_id));
-        let temp_path = target_path.with_extension("tmp");
-
-        fs::create_dir_all(target_path.parent().unwrap())
-            .map_err(|e| format!("Failed to create steamapps folder: {}", e))?;
-
-        fs::write(&temp_path, acf_content)
-            .map_err(|e| format!("Failed to write temp ACF: {}", e))?;
-
-        fs::rename(&temp_path, &target_path)
-            .map_err(|e| format!("Failed to apply ACF file: {}", e))?;
-
-        Ok(())
-    }
 }

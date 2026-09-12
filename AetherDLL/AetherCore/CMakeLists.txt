@@ -23,11 +23,11 @@ add_library(AetherCore SHARED
 
     # Network
     network/RuntimeHttp.cpp
-    # ManifestFetch.cpp is retained as archived request-code/provider reference
-    # material. It is intentionally not compiled into production.
+    network/ManifestFetch.cpp
     network/EticketFetcher.cpp
 
     # Credentials
+    security/ProviderCredentials.cpp
     credentials/CredentialStore.cpp
     credentials/Ticket.cpp
     credentials/SteamId.cpp
@@ -75,8 +75,7 @@ add_library(AetherCore SHARED
     hooks/wire/FamilySharingModule.cpp
     hooks/wire/GamesPlayedModule.cpp
     hooks/wire/PersonaInject.cpp
-    # ManifestBridge.cpp is retained as archived request-code/provider reference
-    # material. It is intentionally not compiled into production.
+    hooks/wire/ManifestBridge.cpp
     hooks/wire/ManifestRestore.cpp
     hooks/wire/RichPresenceModule.cpp
     hooks/aetheronline/OnlinePayload.cpp

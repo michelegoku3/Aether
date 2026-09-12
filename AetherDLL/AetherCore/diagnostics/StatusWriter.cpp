@@ -83,6 +83,7 @@ void Write() {
     json << "{\n";
     json << "  \"schema_version\": 3,\n";
     json << "  \"ts\": " << static_cast<long long>(std::time(nullptr)) << ",\n";
+
     json << "  \"build_id\": \"" << EscapeJson(g_state.buildId) << "\",\n";
     json << "  \"build_config\": \""
 #ifdef AETHERCORE_RELEASE
@@ -121,7 +122,7 @@ void Write() {
     json << "  \"eticket_inflight\": " << eticketfetch::InflightCount() << ",\n";
     json << "  \"ticket_forge_successes\": " << g_state.ticketForgeSuccessCount.load() << ",\n";
     json << "  \"ticket_forge_failures\": " << g_state.ticketForgeFailureCount.load() << ",\n";
-    json << "  \"manifest_fetch_production_route\": \"disabled\",\n";
+    json << "  \"manifest_fetch_production_route\": \"authenticated_hubcap_standalone\",\n";
     json << "  \"online_payload_present\": "
          << (GetFileAttributesA(g_state.payloadDllPath.c_str()) != INVALID_FILE_ATTRIBUTES ? "true" : "false") << ",\n";
     json << "  \"online_payload_injected_pids\": " << hooks::onlinepayload::InjectedPidCount() << ",\n";
