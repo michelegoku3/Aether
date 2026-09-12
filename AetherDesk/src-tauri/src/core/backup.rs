@@ -149,6 +149,19 @@ impl GameBackup {
     /// this game's backup. Provider ZIPs already call `backup_lua_artifacts`,
     /// but a Lua imported from disk may reference manifests that only exist in
     /// Steam's cache; startup sync must capture those too.
+    ///
+    /// SHARED BACKUP CONTRACT — the AetherDLL twin is
+    /// `BackupReferencedManifestsAtStartup` (hooks/wire/ManifestRestore.cpp),
+    /// which can run while AetherDesk is closed. Both writers follow the same
+    /// rules, so whichever process sees a manifest first produces the same
+    /// backup tree:
+    /// 1. only manifests referenced by the current Lua are copied;
+    /// 2. a non-empty destination is never overwritten (the file name is the
+    ///    manifest's complete depot/GID identity);
+    /// 3. a zero-byte destination placeholder is removed and rewritten;
+    /// 4. the copy is atomic (temp + rename) and size-verified;
+    /// 5. a failed copy re-checks the destination: if the other writer
+    ///    completed it in the race window, it counts as present, not failed.
     pub fn backup_referenced_manifests(
         &self,
         lua_content: &str,
@@ -190,17 +203,41 @@ impl GameBackup {
 
             match fs::read(&source)
                 .map_err(|error| format!("read {}: {}", source.display(), error))
-                .and_then(|bytes| write_atomic(&destination, &bytes).map(|_| ()))
+                .and_then(|bytes| write_atomic(&destination, &bytes).map(|_| bytes))
             {
-                Ok(()) => report.copied += 1,
+                Ok(bytes) => {
+                    // Rule 4: the committed copy must match the bytes read.
+                    let verified = fs::metadata(&destination)
+                        .map(|meta| meta.len() == bytes.len() as u64)
+                        .unwrap_or(false);
+                    if verified {
+                        report.copied += 1;
+                    } else {
+                        report.errors += 1;
+                        crate::desk_log_debug!(
+                            "backup",
+                            "Backed-up manifest {} failed size verification",
+                            source.display()
+                        );
+                    }
+                }
                 Err(error) => {
-                    report.errors += 1;
-                    crate::desk_log_debug!(
-                        "backup",
-                        "Could not back up manifest {}: {}",
-                        source.display(),
-                        error
-                    );
+                    // Rule 5: benign race — AetherDLL's startup backup may
+                    // have completed the same copy while we were working.
+                    if fs::metadata(&destination)
+                        .map(|meta| meta.len() > 0)
+                        .unwrap_or(false)
+                    {
+                        report.unchanged += 1;
+                    } else {
+                        report.errors += 1;
+                        crate::desk_log_debug!(
+                            "backup",
+                            "Could not back up manifest {}: {}",
+                            source.display(),
+                            error
+                        );
+                    }
                 }
             }
         }

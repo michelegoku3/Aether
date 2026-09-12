@@ -29,6 +29,16 @@ bool HasLocalManifest(std::uint64_t manifestGid, std::uint32_t depotId);
 
 void Submit(std::uint64_t jobId, std::uint64_t manifestGid,
             std::uint32_t appId, std::uint32_t depotId);
+
+// Proactive acquisition: make sure the exact depot/GID manifest Steam just
+// selected exists in Steam's depotcache. Local sources first (a backup copy
+// is published into depotcache); anything really missing is generated through
+// the authenticated Hubcap pipeline on a serialized worker thread (shared
+// quota file, atomic install). Never blocks the caller: Steam's own retry
+// picks the file up once it has landed in depotcache.
+void EnsureManifestAvailable(std::uint32_t appId, std::uint32_t depotId,
+                             std::uint64_t manifestGid);
+
 std::optional<std::uint64_t> Resolve(std::uint64_t jobId);
 std::size_t PendingCount();
 std::size_t CacheCount();

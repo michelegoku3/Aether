@@ -21,7 +21,7 @@ use std::io::{Read, Write};
 use std::path::PathBuf;
 use std::sync::{Mutex, OnceLock};
 
-const STARTUP_LOG_TOKEN: &str = "F3K7M1Q9";
+const STARTUP_LOG_TOKEN: &str = "Z8L2Q5N6";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 #[repr(u8)]

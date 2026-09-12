@@ -180,7 +180,11 @@ namespace ac::hooks {
                 return AchievementModule::HandleSendClientGetUserStats(f, t_scratchBody.data(), kWireMaxBodyBytes);
             case emsg::kClientStoreUserStats2:
                 return AchievementModule::HandleSendStoreUserStats2(f, t_scratchBody.data(), kWireMaxBodyBytes);
-            case emsg::kServiceMethodCallFromClient: {
+            case emsg::kServiceMethodCallFromClient:
+            // Newer Steam builds (observed on build 1788652215) send the same
+            // service calls with eMsg 146: without this case the request-code
+            // bridge never sees them and Steam gets the raw AccessDenied.
+            case emsg::kServiceMethodCallFromClientAlt: {
                 std::string job;
                 if (ServiceJobName(f, job)) {
                     TrackServiceJob(f);  // [DIAG] flight-recorder jobid->nome

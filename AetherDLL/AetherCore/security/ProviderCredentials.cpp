@@ -6,6 +6,7 @@
 
 #include <cctype>
 #include <cstdint>
+#include <filesystem>
 #include <fstream>
 #include <iterator>
 #include <optional>
@@ -113,7 +114,8 @@ std::optional<std::string> ReadHubcapApiKey() {
         return std::nullopt;
     }
 
-    const std::string path = deskData + "\\config\\provider_credentials.dat";
+    const std::filesystem::path path =
+        std::filesystem::path(deskData) / "config" / "provider_credentials.dat";
     std::ifstream input(path, std::ios::binary);
     if (!input.is_open()) {
         AC_LOG_DEBUG(kModule, "Provider credentials file is not present.");

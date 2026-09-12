@@ -12,3 +12,4 @@ pub mod manifest_restore_config;
 pub mod steam_monitor;
 pub mod steam_process;
 pub mod library_events;
+pub mod hubcap_update_monitor;

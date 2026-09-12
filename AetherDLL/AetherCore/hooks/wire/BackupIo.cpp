@@ -3,6 +3,7 @@
 
 #include <cstdio>
 #include <ctime>
+#include <filesystem>
 #include <fstream>
 #include <mutex>
 
@@ -77,21 +78,20 @@ std::string CachedDeskDataDir() {
 std::string BackupDirForApp(steam::AppId appId) {
     const std::string deskData = CachedDeskDataDir();
     if (deskData.empty()) return {};
-    const std::string app = std::to_string(appId);
-    const std::string root = deskData + "\\backup";
-    CreateDirectoryA(root.c_str(), nullptr);
-    CreateDirectoryA((root + "\\" + app).c_str(), nullptr);
-    const std::string dir = root + "\\" + app + "\\achievements";
-    CreateDirectoryA(dir.c_str(), nullptr);
-    return dir;
+    const std::filesystem::path dir = std::filesystem::path(deskData) / "backup" /
+                                      std::to_string(appId) / "achievements";
+    std::error_code ec;
+    if (!std::filesystem::create_directories(dir, ec) && ec) return {};
+    return dir.string();
 }
 
 std::string BackupPlaytimeDir() {
     const std::string deskData = CachedDeskDataDir();
     if (deskData.empty()) return {};
-    const std::string dir = deskData + "\\backup\\playtime";
-    CreateDirectoryA(dir.c_str(), nullptr);
-    return dir;
+    const std::filesystem::path dir = std::filesystem::path(deskData) / "backup" / "playtime";
+    std::error_code ec;
+    if (!std::filesystem::create_directories(dir, ec) && ec) return {};
+    return dir.string();
 }
 
 bool AtomicReplace(const std::string& tmp, const std::string& dst) {

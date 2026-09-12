@@ -45,8 +45,10 @@ std::int32_t HandleSend(const WireFrame& frame) {
     // from AetherDLL. It will use local cache/backup first, then Hubcap, and
     // only fall back to the legacy configured providers when enabled.
     manifestfetch::Submit(jobId, gid, appId, depotId);
-    AC_LOG_INFO(kModule, "Manifest lookup submitted: depot=%u gid=%llu job=%llu.", depotId,
-                static_cast<unsigned long long>(gid), static_cast<unsigned long long>(jobId));
+    AC_LOG_INFO(kModule,
+                "Manifest lookup submitted: app=%u depot=%u gid=%llu job=%llu.",
+                appId, depotId, static_cast<unsigned long long>(gid),
+                static_cast<unsigned long long>(jobId));
     return kNoChange;  // never rewrite the outgoing frame
 }
 

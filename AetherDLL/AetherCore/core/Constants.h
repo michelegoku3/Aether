@@ -192,6 +192,11 @@ namespace emsg {
 inline constexpr std::uint32_t kMulti = 1;
 inline constexpr std::uint32_t kServiceMethodResponse = 147;       // recv service jobs
 inline constexpr std::uint32_t kServiceMethodCallFromClient = 151; // send service jobs
+// Steam build 1788652215 (steamclient caba4826…) emits the very same client
+// service calls — protobuf header with target_job_name + jobid_source, e.g.
+// ContentServerDirectory.GetManifestRequestCode — under this eMsg instead of
+// 151. Same wire layout; safe to route through the same dispatch.
+inline constexpr std::uint32_t kServiceMethodCallFromClientAlt = 146;
 inline constexpr std::uint32_t kClientGetUserStats = 818;
 inline constexpr std::uint32_t kClientGetUserStatsResponse = 819;
 inline constexpr std::uint32_t kClientGamesPlayed = 742;           // presence stack

@@ -3,8 +3,7 @@ use std::path::PathBuf;
 use std::time::Instant;
 
 use crate::core::settings::SettingsManager;
-use crate::manifest::pins::{DepotManifestPin, LuaManifestPins};
-use crate::providers::hubcap::HubcapClient;
+use crate::manifest::pins::{pins_from_rows, DepotManifestPin, LuaManifestPins};
 use crate::steam::compat::SteamCompat;
 
 /// Result of an explicit, app-scoped manifest repair. Automatic package
@@ -43,13 +42,8 @@ pub async fn sync_hubcap_game_manifest(
     let content = std::fs::read_to_string(lua.lua_path())
         .map_err(|error| format!("Could not read Lua for app {app_id}: {error}"))?;
     LuaManifestPins::validate_content(&content)?;
-    let pins: Vec<DepotManifestPin> = LuaManifestPins::rows_for_manifest_sync(&content)
-        .into_iter()
-        .map(|row| DepotManifestPin {
-            depot_id: row.app_id,
-            manifest_id: row.manifest_id,
-        })
-        .collect();
+    let pins: Vec<DepotManifestPin> =
+        pins_from_rows(LuaManifestPins::rows_for_manifest_sync(&content));
 
     let mut report = GameManifestSyncReport {
         app_id,
@@ -61,16 +55,28 @@ pub async fn sync_hubcap_game_manifest(
         return Ok(report);
     }
 
-    let local_path = settings.steam_path.clone();
-    let verify_pins = pins.clone();
-    let local_pins = pins;
-    let missing = tauri::async_runtime::spawn_blocking(move || {
-        crate::versioning::apply::prepare_local_manifests(&local_path, app_id, &local_pins)
-    })
-    .await
-    .map_err(|error| format!("Local manifest preparation failed for app {app_id}: {error}"))??;
-    report.missing = missing.len();
-    if missing.is_empty() {
+    // Shared local-first resolution: backup/secondary-cache hits are restored
+    // into depotcache first; only genuinely absent manifests are generated
+    // through the configured Hubcap key.
+    let generation = if settings.hubcap_api_key.trim().is_empty() {
+        crate::manifest::resolver::Generation::LocalOnly
+    } else {
+        crate::manifest::resolver::Generation::SettingsKey(settings.hubcap_api_key.clone())
+    };
+    let resolution = crate::manifest::resolver::resolve(
+        crate::manifest::resolver::ManifestRequest {
+            steam_path: settings.steam_path.clone(),
+            app_id,
+            pins: pins.clone(),
+            generation,
+        },
+    )
+    .await?;
+    report.missing = resolution.generated.len() + resolution.missing.len();
+    if !resolution.is_complete() {
+        return Err("A valid authenticated Hubcap API key is required for missing manifests".to_string());
+    }
+    if resolution.generated.is_empty() {
         crate::desk_log_debug!(
             "hubcap",
             "Explicit game manifest repair already local app_id={} pins={} elapsed_ms={}",
@@ -80,17 +86,10 @@ pub async fn sync_hubcap_game_manifest(
         );
         return Ok(report);
     }
-    if settings.hubcap_api_key.trim().is_empty() {
-        return Err("A valid authenticated Hubcap API key is required for missing manifests".to_string());
-    }
 
-    let expected = missing.len();
-    let client = HubcapClient::new(settings.hubcap_api_key);
-    if !client.validate_api_key().await? {
-        return Err("Hubcap API key is not valid or is not allowed to make requests.".to_string());
-    }
-    let generated = crate::commands::versioning::generate_missing_manifests(client, missing).await?;
-    report.generated = generated.len();
+    report.generated = resolution.generated.len();
+    let expected = resolution.generated.len();
+    let generated = resolution.generated;
     report.installed = SteamCompat::new(settings.steam_path.clone())
         .install_manifest_files(&generated)?;
     if report.installed != expected {
@@ -100,16 +99,14 @@ pub async fn sync_hubcap_game_manifest(
         ));
     }
 
-    let verify_path = settings.steam_path.clone();
-    let remaining = tauri::async_runtime::spawn_blocking(move || {
-        crate::versioning::apply::prepare_local_manifests(&verify_path, app_id, &verify_pins)
-    })
-    .await
-    .map_err(|error| format!("Manifest install verification task failed for app {app_id}: {error}"))??;
-    if !remaining.is_empty() {
+    // Shared completeness gate: the same "present" definition the resolution
+    // used, so a resolved pin can never fail here.
+    let remaining =
+        crate::manifest::resolver::verify_available(&settings.steam_path, app_id, &pins);
+    if !remaining.missing.is_empty() {
         return Err(format!(
             "Manifest completion gate failed for app {app_id}: {} manifest(s) remain missing after install",
-            remaining.len()
+            remaining.missing.len()
         ));
     }
 
