@@ -927,10 +927,46 @@ body {
   gap: 32px;
 }
 
+.game-action-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 26px;
+}
+
 .game-action-grid {
   display: grid;
   grid-template-columns: repeat(2, 172px);
   gap: 28px 34px;
+}
+
+.game-action-repair-wrap {
+  display: block;
+  width: 50px;
+  height: 50px;
+  flex-shrink: 0;
+}
+
+.game-action-repair-wrap .game-action-btn {
+  width: 100%;
+  height: 100%;
+}
+
+.game-action-btn.game-action-repair-btn {
+  width: 50px;
+  height: 50px;
+  min-width: 50px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 0;
+}
+
+.game-action-repair-btn svg {
+  display: block;
+  flex-shrink: 0;
+  transform: translate(-0.5px, 0.5px);
 }
 
 /* Tooltip wrapper around action buttons: carries the `title` so hints still
@@ -2093,7 +2129,7 @@ body {
 }
 
 .uninstall-modal-body {
-  padding: 20px 22px 22px !important;
+  padding: 20px 24px 24px !important;
   gap: 14px !important;
 }
 

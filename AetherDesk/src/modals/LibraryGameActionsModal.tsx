@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { GameHeroImage } from '../ui/GameHeroImage';
+import { WrenchIcon } from '../ui/icons';
 import { requireSteamPath } from '../hooks/useSettings';
 import { useModalDismiss } from '../hooks/useModalDismiss';
 import { OnlinePanel, type OnlineStatus } from './OnlinePanel';
@@ -306,61 +307,65 @@ export const LibraryGameActionsModal = ({
         </div>
 
         <div className="game-action-body">
-          <div className="game-action-grid">
-            {/* Each button is wrapped so the tooltip still appears when the
-                button itself is disabled (Chromium/WebView2 suppress hover on
-                disabled controls, so the title must live on the wrapper). */}
-            <span className="game-action-btn-wrap">
-              <button className="game-action-btn" onClick={handleToggleUpdates} disabled={disabled}>
-                {updatesEnabled ? 'Disable Update' : 'Enable Update'}
-              </button>
-            </span>
-            <span
-              className="game-action-btn-wrap"
-              title={updatesEnabled ? 'Disable updates for this game' : undefined}
-            >
-              <button
-                className="game-action-btn"
-                onClick={() => onOpenVersionEditor(game)}
-                disabled={disabled || updatesEnabled}
+          <div className="game-action-row">
+            <div className="game-action-grid">
+              {/* Each button is wrapped so the tooltip still appears when the
+                  button itself is disabled (Chromium/WebView2 suppress hover on
+                  disabled controls, so the title must live on the wrapper). */}
+              <span className="game-action-btn-wrap">
+                <button className="game-action-btn" onClick={handleToggleUpdates} disabled={disabled}>
+                  {updatesEnabled ? 'Disable Update' : 'Enable Update'}
+                </button>
+              </span>
+              <span
+                className="game-action-btn-wrap"
+                title={updatesEnabled ? 'Disable updates for this game' : undefined}
               >
-                Change Version
-              </button>
-            </span>
+                <button
+                  className="game-action-btn"
+                  onClick={() => onOpenVersionEditor(game)}
+                  disabled={disabled || updatesEnabled}
+                >
+                  Change Version
+                </button>
+              </span>
+              <span
+                className="game-action-btn-wrap"
+                title={!game.installed ? 'Online requires the game to be installed in Steam first' : undefined}
+              >
+                <button
+                  className="game-action-btn"
+                  onClick={handleOpenOnline}
+                  disabled={disabled || !game.installed}
+                >
+                  ONLINE
+                </button>
+              </span>
+              <span
+                className="game-action-btn-wrap"
+                title={game.installed ? 'Installed games cannot be removed from Aether Library' : 'Remove Lua from Aether Library'}
+              >
+                <button
+                  className="game-action-btn danger"
+                  onClick={handleRemove}
+                  disabled={disabled || game.installed}
+                >
+                  Remove
+                </button>
+              </span>
+            </div>
             <span
-              className="game-action-btn-wrap"
+              className="game-action-repair-wrap"
               title="Restore from backup or regenerate via Hubcap every manifest referenced by this game's Lua"
             >
               <button
-                className="game-action-btn"
+                className="game-action-btn game-action-repair-btn"
                 onClick={handleRepairManifests}
                 disabled={disabled}
+                aria-label="Repair manifests"
+                title="Repair manifests"
               >
-                Repair Manifests
-              </button>
-            </span>
-            <span
-              className="game-action-btn-wrap"
-              title={!game.installed ? 'Online requires the game to be installed in Steam first' : undefined}
-            >
-              <button
-                className="game-action-btn"
-                onClick={handleOpenOnline}
-                disabled={disabled || !game.installed}
-              >
-                ONLINE
-              </button>
-            </span>
-            <span
-              className="game-action-btn-wrap"
-              title={game.installed ? 'Installed games cannot be removed from Aether Library' : 'Remove Lua from Aether Library'}
-            >
-              <button
-                className="game-action-btn danger"
-                onClick={handleRemove}
-                disabled={disabled || game.installed}
-              >
-                Remove
+                <WrenchIcon size={18} />
               </button>
             </span>
           </div>
