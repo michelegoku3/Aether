@@ -244,6 +244,34 @@ impl GameBackup {
 
         report
     }
+
+    /// Writes a single manifest whose bytes are already in memory (e.g. a
+    /// freshly generated Workshop manifest) into this game's backup, following
+    /// the shared backup contract: a non-empty destination is never
+    /// overwritten (the file name is the manifest's complete depot/GID
+    /// identity), a zero-byte placeholder is replaced, the write is atomic
+    /// and size-verified. Returns true when a new copy was committed.
+    pub fn backup_manifest_bytes(&self, file_name: &str, bytes: &[u8]) -> bool {
+        if bytes.is_empty() {
+            return false;
+        }
+        let destination = self.lua_dir().join(file_name);
+        if destination.is_file() {
+            if fs::metadata(&destination)
+                .map(|meta| meta.len() > 0)
+                .unwrap_or(false)
+            {
+                return false;
+            }
+            let _ = fs::remove_file(&destination);
+        }
+        if write_atomic(&destination, bytes).is_err() {
+            return false;
+        }
+        fs::metadata(&destination)
+            .map(|meta| meta.len() == bytes.len() as u64)
+            .unwrap_or(false)
+    }
 }
 
 #[derive(Debug, Default, Clone, Copy, serde::Serialize)]
@@ -449,7 +477,16 @@ impl GameBackup {
         let history_dir = self.lua_dir().join(LUA_HISTORY_SUBDIR);
         fs::create_dir_all(&history_dir)
             .map_err(|e| format!("mkdir {}: {}", history_dir.display(), e))?;
-        let path = history_dir.join(format!("{}-{}.lua", app_id, unix_millis()));
+        let millis = unix_millis();
+        let mut path = history_dir.join(format!("{}-{}.lua", app_id, millis));
+        // Same-millisecond archives (e.g. the pre+post Lua of one atomic pin
+        // pipeline) must never overwrite each other: append a counter until
+        // the name is unique. Chronological sort by name is preserved.
+        let mut suffix = 1u32;
+        while path.exists() {
+            path = history_dir.join(format!("{}-{}-{}.lua", app_id, millis, suffix));
+            suffix += 1;
+        }
         fs::write(&path, bytes).map_err(|e| format!("write {}: {}", path.display(), e))?;
         crate::desk_log_info!(
             "backup",
@@ -610,4 +647,77 @@ pub fn list_lua_history(app_id: u32) -> Result<Vec<LuaHistoryEntry>, String> {
         }
     }
     Ok(out)
+}
+
+#[cfg(test)]
+impl GameBackup {
+    /// Test-only constructor: the production layout is anchored to
+    /// `LocalAppPaths::data_root()`, which tests must not touch.
+    fn for_tests(root: PathBuf) -> Self {
+        Self { root }
+    }
+}
+
+/// Contract tests for the SHARED backup rules documented in
+/// `docs/shared_contracts.md` (the AetherDLL twin lives in
+/// `hooks/wire/ManifestRestore.cpp`). If a rule changes here, the twin and
+/// the spec must change together.
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn setup() -> (tempfile::TempDir, GameBackup) {
+        let dir = tempfile::tempdir().expect("tempdir");
+        std::fs::create_dir_all(dir.path().join(LUA_SUBDIR)).expect("lua dir");
+        let backup = GameBackup::for_tests(dir.path().to_path_buf());
+        (dir, backup)
+    }
+
+    #[test]
+    fn manifest_bytes_never_overwrites_non_empty_destination() {
+        let (_dir, backup) = setup();
+        assert!(backup.backup_manifest_bytes("1_2.manifest", b"first"));
+        // Rule 2: same identity, different bytes -> the committed copy stays.
+        assert!(!backup.backup_manifest_bytes("1_2.manifest", b"second-longer"));
+        let committed = std::fs::read(backup.lua_dir().join("1_2.manifest")).unwrap();
+        assert_eq!(committed, b"first");
+    }
+
+    #[test]
+    fn manifest_bytes_replaces_zero_byte_placeholder() {
+        let (_dir, backup) = setup();
+        // Rule 3: a zero-byte destination is a placeholder, not a backup.
+        std::fs::write(backup.lua_dir().join("3_4.manifest"), b"").unwrap();
+        assert!(backup.backup_manifest_bytes("3_4.manifest", b"payload"));
+        let committed = std::fs::read(backup.lua_dir().join("3_4.manifest")).unwrap();
+        assert_eq!(committed, b"payload");
+    }
+
+    #[test]
+    fn manifest_bytes_rejects_empty_payload() {
+        let (_dir, backup) = setup();
+        assert!(!backup.backup_manifest_bytes("5_6.manifest", b""));
+        assert!(!backup.lua_dir().join("5_6.manifest").exists());
+    }
+
+    #[test]
+    fn store_original_archives_previous_and_history_dedupes() {
+        let (_dir, backup) = setup();
+        assert_eq!(backup.store_original(42, b"v1").unwrap(), StoreLuaAction::Created);
+        // Replacing the original archives the previous bytes in history/.
+        assert_eq!(backup.store_original(42, b"v2").unwrap(), StoreLuaAction::Updated);
+        assert_eq!(backup.store_original(42, b"v2").unwrap(), StoreLuaAction::Unchanged);
+        assert!(backup.has_lua_version(42, b"v1"));
+        // Dedup: v2 is already the original, archiving writes nothing.
+        assert!(!backup.store_history_version(42, b"v2").unwrap());
+        // A genuinely new modified version gets its own history entry.
+        assert!(backup.store_history_version(42, b"v3-modified").unwrap());
+        assert!(backup.has_lua_version(42, b"v3-modified"));
+        // History entries never collide (millisecond names) and both exist.
+        let history = std::fs::read_dir(backup.lua_dir().join(LUA_HISTORY_SUBDIR))
+            .unwrap()
+            .flatten()
+            .count();
+        assert_eq!(history, 2);
+    }
 }

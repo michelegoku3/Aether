@@ -65,6 +65,14 @@ pub struct AppSettings {
     /// reliable automatic updates or Workshop behavior.
     #[serde(default = "default_false")]
     pub download_games_with_updates_on: bool,
+    /// When true (default), the periodic Workshop synchronizer asks the
+    /// running Steam client to download the actual Workshop payload
+    /// (`steam://workshop/downloaditem/...`, one spawn at a time) whenever an
+    /// item has a staged manifest but no content directory. When false, the
+    /// sync stages manifests only and content downloads stay on-demand —
+    /// the "no startup-storm" mode after a depotcache wipe.
+    #[serde(default = "default_true")]
+    pub workshop_auto_download_content: bool,
     /// Records that the one-time safe-default migration for the update policy
     /// has been applied. This lives in settings.json so the migration does not
     /// depend on a standalone filesystem sentinel.
@@ -273,6 +281,7 @@ impl Default for AppSettings {
             ryuu_api_key: String::new(),
             build_details_token: String::new(),
             download_games_with_updates_on: false,
+            workshop_auto_download_content: true,
             download_updates_default_off_migrated: false,
             show_store_front_games: true,
             use_alternative_game_cards: false,

@@ -63,8 +63,14 @@ std::int32_t HandleRecv(const WireFrame& frame, std::uint8_t* out, std::uint32_t
     }
     const std::uint64_t jobId = hdr.jobid_target();
 
+    // Bounded wait (settings.manifestBridgeWaitMs, default 2500 ms): this runs
+    // on Steam's CM network thread, so a slow Hubcap generation must never
+    // stall wire traffic. When the window elapses Resolve returns nullopt and
+    // the original CM reply (typically AccessDenied) stands: the job fails
+    // fast, the background fetch continues, and Steam's own retry gets the
+    // instant local hit (code 0) once the manifest has landed in depotcache.
     std::optional<std::uint64_t> code = manifestfetch::Resolve(jobId);
-    if (!code) return kNoChange;  // fetch failed; let Steam's original reply stand
+    if (!code) return kNoChange;  // not ready in time or fetch failed; passthrough
 
     // Rewrite header eresult -> OK.
     hdr.set_eresult(static_cast<std::int32_t>(constants::kEResultOk));

@@ -419,4 +419,80 @@ void RestoreMissingManifestsForApp(std::uint32_t appId) {
     }
 }
 
+void BackupManifestAfterGeneration(std::uint32_t depotId, std::uint64_t gid) {
+    if (depotId == 0 || gid == 0) return;
+    try {
+        const std::string deskData = backup::io::CachedDeskDataDir();
+        if (deskData.empty()) return;
+
+        std::error_code ec;
+        const fs::path source = fs::path(g_state.steamInstallPath) / "depotcache" /
+                                (std::to_string(depotId) + "_" + std::to_string(gid) +
+                                 ".manifest");
+        if (!fs::is_regular_file(source, ec) || ec) return;
+
+        const fs::path backupRoot = fs::path(deskData) / "backup";
+        const std::string depotText = std::to_string(depotId);
+        const std::string gidText = std::to_string(gid);
+        // Stessa regex del backup di startup: intercetta anche i pin
+        // commentati (setManifestid disabilitato = gioco in modalita update).
+        const std::regex pinRegex(
+            R"(setManifestid\s*\(\s*([0-9]+)\s*,\s*["']([0-9]+)["'])",
+            std::regex_constants::icase);
+
+        std::vector<fs::path> luaRoots{fs::path(g_state.luaDir)};
+        for (const std::string& extra : g_state.settings.luaExtraPaths) {
+            luaRoots.emplace_back(extra);
+        }
+
+        std::size_t copied = 0;
+        for (const fs::path& luaRoot : luaRoots) {
+            if (!fs::is_directory(luaRoot, ec) || ec) continue;
+            fs::directory_iterator luaIt(luaRoot, ec);
+            if (ec) continue;
+            for (const auto& luaEntry : luaIt) {
+                std::error_code fileEc;
+                if (!luaEntry.is_regular_file(fileEc) || fileEc ||
+                    !IsLuaPath(luaEntry.path())) {
+                    continue;
+                }
+                std::uint32_t appId = 0;
+                if (!ParseNumericAppId(luaEntry.path().stem().string(), appId)) continue;
+
+                std::ifstream input(luaEntry.path(), std::ios::binary);
+                if (!input.is_open()) continue;
+                const std::string content((std::istreambuf_iterator<char>(input)),
+                                          std::istreambuf_iterator<char>());
+                bool referenced = false;
+                for (std::sregex_iterator match(content.begin(), content.end(), pinRegex), end;
+                     match != end; ++match) {
+                    if ((*match)[1].str() == depotText && (*match)[2].str() == gidText) {
+                        referenced = true;
+                        break;
+                    }
+                }
+                if (!referenced) continue;
+
+                const fs::path appLuaBackup = backupRoot / std::to_string(appId) / "lua";
+                fs::create_directories(appLuaBackup, ec);
+                if (ec) continue;
+                if (CopyAtomicallyIfMissing(source, appLuaBackup / source.filename()) ==
+                    BackupCopyOutcome::Copied) {
+                    ++copied;
+                }
+            }
+        }
+        if (copied > 0) {
+            AC_LOG_INFO(kModule,
+                        "Generated manifest depot=%u gid=%llu archived into %zu app backup(s).",
+                        depotId, static_cast<unsigned long long>(gid), copied);
+        }
+    } catch (const std::exception& e) {
+        AC_LOG_DEBUG(kModule, "Post-generation manifest backup failed depot=%u: %s.", depotId,
+                     e.what());
+    } catch (...) {
+        AC_LOG_DEBUG(kModule, "Post-generation manifest backup failed depot=%u.", depotId);
+    }
+}
+
 }  // namespace ac::hooks::ManifestRestore

@@ -18,6 +18,7 @@ export interface MonitorStatus {
   hubcapKeyConfigured: boolean;
   checkpointInitialized: boolean;
   pinSync: LaneStatus;
+  pinRefresh: LaneStatus;
   repair: LaneStatus;
   workshop: LaneStatus;
 }
@@ -123,6 +124,11 @@ export const SyncStatusModal = ({ onClose }: SyncStatusModalProps) => {
             title="Pin sync (after Steam updates)"
             hint="Realigns commented pins of games with updates enabled and archives the new manifests."
             lane={status.pinSync}
+          />
+          <LaneSection
+            title="Pin refresh (Hubcap contents diff)"
+            hint="Periodically diffs Lua pins against the manifests Hubcap packages (free endpoint), stages missing manifests and realigns commented pins of updates-ON games."
+            lane={status.pinRefresh}
           />
           <LaneSection
             title="Manifest repair (Lua changes)"

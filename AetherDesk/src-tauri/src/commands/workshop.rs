@@ -2,7 +2,7 @@ use std::io::{Cursor, Read};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::OnceLock;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use regex::Regex;
 use serde::Serialize;
@@ -200,9 +200,9 @@ fn manifest_identity(bytes: &[u8]) -> Result<(u32, u64), String> {
 
 #[derive(Debug, Clone, Copy)]
 enum SyncOrigin {
-    Generated { content_present: bool },
-    Cached { content_present: bool },
-    AlreadyLocal { content_present: bool },
+    Generated { content_present: bool, content_deferred: bool },
+    Cached { content_present: bool, content_deferred: bool },
+    AlreadyLocal { content_present: bool, content_deferred: bool },
 }
 
 fn has_local_manifest_gid(steam_path: &str, manifest_gid: u64) -> bool {
@@ -266,10 +266,69 @@ fn request_workshop_content(
         .map_err(|error| format!("Could not request Steam Workshop download: {error}"))
 }
 
+/// Per-run cap on remote Hubcap generations for the periodic synchronizer.
+/// Local/cache hits are unlimited: only provider traffic is rationed. The
+/// monitor re-queues the lane when items are deferred, so the backlog drains
+/// in bounded batches instead of one startup storm.
+const WORKSHOP_MAX_GENERATIONS_PER_RUN: usize = 5;
+
+/// Minimum spacing between `steam://workshop/downloaditem` spawns. Each spawn
+/// makes the running Steam client queue a real Workshop download; without
+/// spacing, N missing items would fire N downloads at once while the user is
+/// doing something else.
+const WORKSHOP_CONTENT_SPAWN_INTERVAL: Duration = Duration::from_secs(4);
+
+/// Per-run cap on content-download spawns. The sync runs inside the monitor
+/// poll loop, so an unbounded spaced-spawn sequence (N missing items × 4 s)
+/// would stall every other lane for minutes. Items beyond the cap are
+/// reported as deferred and picked up by the next lane pass (~90 s later):
+/// a large backlog drains at a bounded rate instead of storming Steam.
+const WORKSHOP_MAX_CONTENT_REQUESTS_PER_RUN: usize = 10;
+
+/// Asks Steam for the actual Workshop payload, honoring the auto-download
+/// setting, the one-at-a-time spawn spacing and the per-run spawn budget
+/// (both shared by the whole sync run). Returns true when the request was
+/// deferred to a future pass because the budget is exhausted — the manifest
+/// is staged either way, only the payload download waits.
+async fn maybe_request_workshop_content(
+    steam_path: &str,
+    item: &WorkshopItem,
+    auto_content: bool,
+    spawn_budget: &mut usize,
+    last_spawn: &mut Option<Instant>,
+) -> bool {
+    if !auto_content {
+        return false; // manifest-only mode by user choice: nothing is deferred
+    }
+    if *spawn_budget == 0 {
+        return true;
+    }
+    if let Some(last) = *last_spawn {
+        let elapsed = last.elapsed();
+        if elapsed < WORKSHOP_CONTENT_SPAWN_INTERVAL {
+            tokio::time::sleep(WORKSHOP_CONTENT_SPAWN_INTERVAL - elapsed).await;
+        }
+    }
+    *spawn_budget -= 1;
+    if let Err(error) = request_workshop_content(steam_path, item.app_id, item.workshop_id) {
+        crate::desk_log_warn!(
+            "workshop",
+            "Workshop content request unavailable item_id={}: {}",
+            item.workshop_id,
+            error
+        );
+    }
+    *last_spawn = Some(Instant::now());
+    false
+}
+
 async fn sync_one_workshop_item(
     client: HubcapClient,
     steam_path: String,
     item: WorkshopItem,
+    auto_content: bool,
+    spawn_budget: &mut usize,
+    last_spawn: &mut Option<Instant>,
 ) -> Result<SyncOrigin, String> {
     let started = Instant::now();
     crate::desk_log_info!(
@@ -291,12 +350,18 @@ async fn sync_one_workshop_item(
             item.manifest_gid,
             content_present
         );
+        let mut content_deferred = false;
         if !content_present {
-            if let Err(error) = request_workshop_content(&steam_path, item.app_id, item.workshop_id) {
-                crate::desk_log_warn!("workshop", "Workshop content request unavailable item_id={}: {}", item.workshop_id, error);
-            }
+            content_deferred = maybe_request_workshop_content(
+                &steam_path,
+                &item,
+                auto_content,
+                spawn_budget,
+                last_spawn,
+            )
+            .await;
         }
-        return Ok(SyncOrigin::AlreadyLocal { content_present });
+        return Ok(SyncOrigin::AlreadyLocal { content_present, content_deferred });
     }
     let cache_path = workshop_cache_path(item.workshop_id);
     if cache_path.is_file() {
@@ -312,11 +377,18 @@ async fn sync_one_workshop_item(
                         gid
                     );
                     install_to_depotcache(&steam_path, depot_id, gid, &bytes)?;
+                    backup_workshop_manifest(item.app_id, depot_id, gid, &bytes);
                     let content_present = has_workshop_content(&steam_path, item.app_id, item.workshop_id);
+                    let mut content_deferred = false;
                     if !content_present {
-                        if let Err(error) = request_workshop_content(&steam_path, item.app_id, item.workshop_id) {
-                            crate::desk_log_warn!("workshop", "Workshop content request unavailable item_id={}: {}", item.workshop_id, error);
-                        }
+                        content_deferred = maybe_request_workshop_content(
+                            &steam_path,
+                            &item,
+                            auto_content,
+                            spawn_budget,
+                            last_spawn,
+                        )
+                        .await;
                     }
                     crate::desk_log_info!(
                         "workshop",
@@ -325,7 +397,7 @@ async fn sync_one_workshop_item(
                         content_present,
                         started.elapsed().as_millis()
                     );
-                    return Ok(SyncOrigin::Cached { content_present });
+                    return Ok(SyncOrigin::Cached { content_present, content_deferred });
                 }
                 Ok((_depot_id, gid)) => crate::desk_log_warn!(
                     "workshop",
@@ -373,11 +445,18 @@ async fn sync_one_workshop_item(
     }
     write_atomic(&cache_path, &bytes)?;
     install_to_depotcache(&steam_path, depot_id, gid, &bytes)?;
+    backup_workshop_manifest(item.app_id, depot_id, gid, &bytes);
     let content_present = has_workshop_content(&steam_path, item.app_id, item.workshop_id);
+    let mut content_deferred = false;
     if !content_present {
-        if let Err(error) = request_workshop_content(&steam_path, item.app_id, item.workshop_id) {
-            crate::desk_log_warn!("workshop", "Workshop content request unavailable item_id={}: {}", item.workshop_id, error);
-        }
+        content_deferred = maybe_request_workshop_content(
+            &steam_path,
+            &item,
+            auto_content,
+            spawn_budget,
+            last_spawn,
+        )
+        .await;
     }
     crate::desk_log_info!(
         "workshop",
@@ -387,7 +466,29 @@ async fn sync_one_workshop_item(
         content_present,
         started.elapsed().as_millis()
     );
-    Ok(SyncOrigin::Generated { content_present })
+    Ok(SyncOrigin::Generated { content_present, content_deferred })
+}
+
+/// Mirrors a freshly staged Workshop manifest into the per-game AetherData
+/// backup (`backup/<app_id>/lua/<depot>_<gid>.manifest`) so the standard
+/// uninstall/restore contract covers Workshop manifests too. Neither the DLL
+/// startup backup nor `backup_referenced_manifests` can capture them: no Lua
+/// pin references a Workshop depot. The Hubcap Workshop cache is keyed by
+/// item id, while the backup tree keeps the manifest identity. Best-effort.
+fn backup_workshop_manifest(app_id: u32, depot_id: u32, manifest_gid: u64, bytes: &[u8]) {
+    let Ok(backup) = crate::core::backup::GameBackup::for_app(app_id) else {
+        return;
+    };
+    if backup.backup_manifest_bytes(&format!("{depot_id}_{manifest_gid}.manifest"), bytes) {
+        crate::desk_log_info!(
+            "workshop",
+            "Workshop manifest archived in AetherData backup app_id={} depot_id={} manifest_gid={} bytes={}",
+            app_id,
+            depot_id,
+            manifest_gid,
+            bytes.len()
+        );
+    }
 }
 
 fn install_to_depotcache(
@@ -461,6 +562,13 @@ pub struct WorkshopSyncReport {
     /// content directory. They are intentionally not counted as complete.
     pub content_missing: usize,
     pub failed: usize,
+    /// Items pushed to the next lane pass by a per-run cap: either their
+    /// manifest needed a remote Hubcap generation beyond
+    /// `WORKSHOP_MAX_GENERATIONS_PER_RUN`, or their content-download spawn
+    /// was beyond `WORKSHOP_MAX_CONTENT_REQUESTS_PER_RUN`. NOT failures: the
+    /// monitor re-runs the lane shortly, so a depotcache wipe can never burn
+    /// the whole daily quota (or stall the poll loop) in one storm.
+    pub deferred: usize,
 }
 
 /// Scans Steam's appworkshop ACF files and proactively stages missing
@@ -511,26 +619,59 @@ pub async fn sync_hubcap_workshop_manifests(
     }
     // The provider rate-limits generation separately from the daily quota, and
     // the process-wide scheduler already serializes generation traffic shared
-    // with store/versioning actions: process the items one at a time.
+    // with store/versioning actions: process the items one at a time. Remote
+    // generations are additionally capped per run (deferred items are picked
+    // up by the next lane pass) and content-download spawns are spaced.
+    let auto_content = settings.workshop_auto_download_content;
+    let mut last_spawn: Option<Instant> = None;
+    let mut spawn_budget = WORKSHOP_MAX_CONTENT_REQUESTS_PER_RUN;
+    let mut remote_attempts = 0usize;
     for item in items {
-        match sync_one_workshop_item(client.clone(), steam_path.clone(), item).await {
-            Ok(SyncOrigin::Generated { content_present }) => {
+        let needs_remote = !has_local_manifest_gid(&steam_path, item.manifest_gid)
+            && !cached_workshop_manifest_matches(item.workshop_id, item.manifest_gid);
+        if needs_remote {
+            if remote_attempts >= WORKSHOP_MAX_GENERATIONS_PER_RUN {
+                report.deferred += 1;
+                continue;
+            }
+            remote_attempts += 1;
+        }
+        match sync_one_workshop_item(
+            client.clone(),
+            steam_path.clone(),
+            item,
+            auto_content,
+            &mut spawn_budget,
+            &mut last_spawn,
+        )
+        .await
+        {
+            Ok(SyncOrigin::Generated { content_present, content_deferred }) => {
                 report.generated += 1;
                 if !content_present {
                     report.content_missing += 1;
                 }
+                if content_deferred {
+                    report.deferred += 1;
+                }
             }
-            Ok(SyncOrigin::Cached { content_present }) => {
+            Ok(SyncOrigin::Cached { content_present, content_deferred }) => {
                 report.restored_from_cache += 1;
                 if !content_present {
                     report.content_missing += 1;
                 }
+                if content_deferred {
+                    report.deferred += 1;
+                }
             }
-            Ok(SyncOrigin::AlreadyLocal { content_present }) => {
+            Ok(SyncOrigin::AlreadyLocal { content_present, content_deferred }) => {
                 if content_present {
                     report.already_local += 1;
                 } else {
                     report.content_missing += 1;
+                }
+                if content_deferred {
+                    report.deferred += 1;
                 }
             }
             Err(error) => {
@@ -541,13 +682,14 @@ pub async fn sync_hubcap_workshop_manifests(
     }
     crate::desk_log_info!(
         "workshop",
-        "Workshop sync complete discovered={} generated={} cached={} already_local={} content_missing={} failed={} elapsed_ms={}",
+        "Workshop sync complete discovered={} generated={} cached={} already_local={} content_missing={} failed={} deferred={} elapsed_ms={}",
         report.discovered,
         report.generated,
         report.restored_from_cache,
         report.already_local,
         report.content_missing,
         report.failed,
+        report.deferred,
         started.elapsed().as_millis()
     );
     Ok(report)

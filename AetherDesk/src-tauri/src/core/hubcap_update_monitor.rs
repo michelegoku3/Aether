@@ -7,12 +7,20 @@
 //! downloads game packages and never spends Hubcap quota on its own; manifest
 //! generation on demand stays with AetherDLL inside Steam.
 //!
-//! Three independent lanes share one poll loop:
+//! Four independent lanes share one poll loop:
 //! - **pin_sync**: after Steam updated a game whose pins allow updates, the
 //!   commented `setManifestid` rows are realigned to the manifests Steam
 //!   actually installed and those manifests are archived into the AetherData
 //!   backup (so a future uninstall can still restore the current version).
 //!   Purely local: no provider traffic.
+//! - **pin_refresh**: on a per-app timer (checkpointed), the Lua pins of
+//!   updates-ON games are diffed against the manifests Hubcap currently
+//!   packages through the FREE `/manifest/{appid}/contents` endpoint (no ZIP
+//!   download; the check itself costs no quota). Moved GIDs are staged
+//!   locally — generation only for genuinely missing manifests — and the
+//!   commented pins are realigned, so "Disable updates" later locks the
+//!   CURRENT version instead of a stale GID. Hubcap-only: no SteamDB, no
+//!   Depotbox.
 //! - **repair**: a changed Lua is a manifest-consistency event, not a request
 //!   to change version. It is repaired through the shared local-first
 //!   `sync_hubcap_game_manifest` command (provider only for what is missing).
@@ -44,6 +52,16 @@ const POLL_INTERVAL: Duration = Duration::from_secs(20);
 pub(crate) const INITIAL_RETRY_DELAY: Duration = Duration::from_secs(30);
 pub(crate) const MAX_RETRY_DELAY: Duration = Duration::from_secs(30 * 60);
 const STATE_FILE: &str = "hubcap_game_updates.json";
+/// How often the pin_refresh lane may re-check one app against Hubcap's free
+/// contents endpoint. The check costs no quota; only genuinely missing
+/// manifests are generated, so a moderate interval keeps the commented pins
+/// fresh without hammering the provider.
+const CONTENTS_REFRESH_INTERVAL: Duration = Duration::from_secs(15 * 60);
+
+/// How soon the workshop lane re-runs after a pass that deferred items to the
+/// next batch (per-run generation cap). Not a failure: the attempt counter is
+/// preserved, so the exponential backoff ladder stays reserved for real errors.
+const WORKSHOP_DEFERRED_RETRY_DELAY: Duration = Duration::from_secs(90);
 
 // ============================================================================
 // Status snapshot (UI-facing)
@@ -81,6 +99,7 @@ pub struct MonitorStatusSnapshot {
     pub hubcap_key_configured: bool,
     pub checkpoint_initialized: bool,
     pub pin_sync: LaneStatus,
+    pub pin_refresh: LaneStatus,
     pub repair: LaneStatus,
     pub workshop: LaneStatus,
 }
@@ -127,6 +146,11 @@ struct PersistedState {
     lua_processed: HashMap<u32, String>,
     #[serde(default)]
     workshop_processed: Option<String>,
+    /// AppID -> epoch seconds of the last completed Hubcap-contents pin
+    /// refresh check. Throttles the pin_refresh lane (free endpoint, but the
+    /// diff must not run on every poll for every game).
+    #[serde(default)]
+    contents_checked: HashMap<u32, u64>,
 }
 
 fn state_path() -> PathBuf {
@@ -444,10 +468,19 @@ pub(crate) fn latest_installed_gid(steam_path: &str, depot_id: u32) -> Option<St
     best.map(|(_, gid)| gid)
 }
 
-/// Realigns the informational (commented) pins of one updated game to the
-/// manifests Steam actually installed and archives them into the AetherData
-/// backup. Returns how many pins were rewritten.
-async fn sync_pins_after_steam_update(app: &AppHandle, steam_path: &str, app_id: u32) -> Result<usize, String> {
+/// Local-only realignment of the informational (commented) pins of one game
+/// to the manifests Steam actually installed (newest `<depot>_<gid>.manifest`
+/// per depot across the depotcache folders). Shared by the pin_sync lane and
+/// by the "disable updates" safety net in the library command, so reactivating
+/// pins can never resurrect a stale GID and downgrade the game. Returns how
+/// many pins were rewritten.
+///
+/// Backup contract: both the pre-change and the post-change Lua are archived
+/// in AetherData (`history/`, content-deduplicated) and every manifest the
+/// new pins reference is copied from depotcache into `backup/<app_id>/lua/`,
+/// so every caller (pin_sync lane, "disable updates" safety net) gets the
+/// full contract without repeating it.
+pub(crate) fn realign_pins_to_installed(steam_path: &str, app_id: u32) -> Result<usize, String> {
     let editor = LuaManifestPins::new(steam_path.to_string(), app_id);
     let content = editor.read_lua()?;
 
@@ -472,11 +505,6 @@ async fn sync_pins_after_steam_update(app: &AppHandle, steam_path: &str, app_id:
         }
     }
     if realignment.is_empty() {
-        crate::desk_log_debug!(
-            "hubcap-updates",
-            "Pin sync found nothing to realign app_id={}",
-            app_id
-        );
         return Ok(0);
     }
 
@@ -486,22 +514,20 @@ async fn sync_pins_after_steam_update(app: &AppHandle, steam_path: &str, app_id:
     }
 
     let realigned = editor.realign_commented_pins(&realignment)?;
-    crate::desk_log_info!(
-        "hubcap-updates",
-        "Pin sync realigned app_id={} pins={}",
-        app_id,
-        realigned
-    );
 
-    // Archive the newly installed manifests so a future uninstall can still
-    // restore the version the user actually has.
-    if let (Ok(final_lua), Ok(backup)) = (editor.read_lua(), crate::core::backup::GameBackup::for_app(app_id)) {
+    // Archive the NEW Lua too (every Lua change must land in AetherData) and
+    // copy the manifests the rewritten pins reference into the backup, so a
+    // future uninstall can still restore the version the user actually has.
+    if let (Ok(final_lua), Ok(backup)) =
+        (editor.read_lua(), crate::core::backup::GameBackup::for_app(app_id))
+    {
+        let _ = backup.store_history_version(app_id, final_lua.as_bytes());
         let depotcache = PathBuf::from(steam_path).join("depotcache");
         let report = backup.backup_referenced_manifests(&final_lua, &depotcache);
-        if report.errors > 0 || report.missing > 0 {
+        if report.copied > 0 || report.errors > 0 || report.missing > 0 {
             crate::desk_log_debug!(
                 "hubcap-updates",
-                "Post-sync manifest backup app_id={}: {} copied, {} unchanged, {} missing, {} errors",
+                "Post-realign manifest backup app_id={}: {} copied, {} unchanged, {} missing, {} errors",
                 app_id,
                 report.copied,
                 report.unchanged,
@@ -510,6 +536,32 @@ async fn sync_pins_after_steam_update(app: &AppHandle, steam_path: &str, app_id:
             );
         }
     }
+    Ok(realigned)
+}
+
+/// Realigns the informational (commented) pins of one updated game to the
+/// manifests Steam actually installed and archives them into the AetherData
+/// backup. Returns how many pins were rewritten.
+async fn sync_pins_after_steam_update(app: &AppHandle, steam_path: &str, app_id: u32) -> Result<usize, String> {
+    let realigned = realign_pins_to_installed(steam_path, app_id)?;
+    if realigned == 0 {
+        crate::desk_log_debug!(
+            "hubcap-updates",
+            "Pin sync found nothing to realign app_id={}",
+            app_id
+        );
+        return Ok(0);
+    }
+    crate::desk_log_info!(
+        "hubcap-updates",
+        "Pin sync realigned app_id={} pins={}",
+        app_id,
+        realigned
+    );
+
+    // Lua archiving (pre AND post change) and the referenced-manifest backup
+    // already happened inside realign_pins_to_installed — do not duplicate
+    // the depotcache scan here.
 
     crate::core::library_events::notify_lua_changed(
         app,
@@ -537,6 +589,7 @@ async fn run(app: AppHandle) {
 
     let mut checkpoint = load_state();
     let mut pin_sync: BTreeMap<u32, PendingTask> = BTreeMap::new();
+    let mut pin_refresh: BTreeMap<u32, PendingTask> = BTreeMap::new();
     let mut repairs: BTreeMap<u32, PendingTask> = BTreeMap::new();
     let mut workshop: Option<PendingTask> = None;
 
@@ -606,6 +659,24 @@ async fn run(app: AppHandle) {
                 }
             }
 
+            // --- pin_refresh: per-app timer diff of the Lua pins against the
+            // manifests Hubcap currently packages (free contents endpoint).
+            // Version-locked games exit the action before any HTTP call, so
+            // queueing every managed Lua is cheap; successes (including
+            // skips) advance the checkpoint timestamp.
+            if key_ready {
+                let now = now_epoch();
+                for app_id in current_luas.keys() {
+                    let last = checkpoint.contents_checked.get(app_id).copied().unwrap_or(0);
+                    if now.saturating_sub(last) >= CONTENTS_REFRESH_INTERVAL.as_secs() {
+                        pin_refresh.entry(*app_id).or_insert(PendingTask {
+                            attempts: 0,
+                            next_attempt: Instant::now(),
+                        });
+                    }
+                }
+            }
+
             // --- workshop: the installed Workshop set changed.
             if key_ready && current_workshop != checkpoint.workshop_processed {
                 if current_workshop.is_some() {
@@ -658,6 +729,42 @@ async fn run(app: AppHandle) {
             }
         }
 
+        // ----- pin_refresh execution (free contents diff + local-first staging)
+        if let Some((app_id, task)) = take_ready(&mut pin_refresh) {
+            match crate::commands::manifests::refresh_game_pins_from_hubcap(app.clone(), app_id).await {
+                Ok(report) => {
+                    checkpoint.contents_checked.insert(app_id, now_epoch());
+                    let _ = save_state(&checkpoint);
+                    with_status(|status| {
+                        status.pin_refresh.processed_count += 1;
+                        status.pin_refresh.last_run_epoch = Some(now_epoch());
+                        status.pin_refresh.last_error = None;
+                    });
+                    crate::desk_log_info!(
+                        "hubcap-updates",
+                        "Pin refresh complete app_id={} skipped={} checked_depots={} staged={} realigned={}",
+                        app_id,
+                        report.skipped,
+                        report.checked_depots,
+                        report.staged,
+                        report.realigned
+                    );
+                }
+                Err(error) => {
+                    with_status(|status| {
+                        status.pin_refresh.last_error = Some(error.clone());
+                    });
+                    crate::desk_log_warn!(
+                        "hubcap-updates",
+                        "Pin refresh deferred app_id={}: {}",
+                        app_id,
+                        error
+                    );
+                    reschedule(&mut pin_refresh, app_id, task);
+                }
+            }
+        }
+
         // ----- repair execution (local-first provider repair)
         if let Some((app_id, task)) = take_ready(&mut repairs) {
             match crate::commands::manifests::sync_hubcap_game_manifest(app.clone(), app_id).await {
@@ -700,7 +807,7 @@ async fn run(app: AppHandle) {
         if workshop_ready {
             let task = workshop.take().expect("readiness checked above");
             match crate::commands::workshop::sync_hubcap_workshop_manifests(app.clone()).await {
-                Ok(report) if report.failed == 0 => {
+                Ok(report) if report.failed == 0 && report.deferred == 0 => {
                     checkpoint.workshop_processed = current_workshop.clone();
                     let _ = save_state(&checkpoint);
                     with_status(|status| {
@@ -717,6 +824,22 @@ async fn run(app: AppHandle) {
                         report.already_local,
                         report.content_missing
                     );
+                }
+                Ok(report) if report.failed == 0 => {
+                    // Deferred items (per-run generation cap): re-run shortly
+                    // WITHOUT touching the checkpoint, so the lane drains the
+                    // backlog in bounded batches. Not a failure — keep the
+                    // attempt counter and its backoff ladder for real errors.
+                    crate::desk_log_info!(
+                        "hubcap-updates",
+                        "Workshop batch complete generated={} deferred={}; next batch scheduled",
+                        report.generated,
+                        report.deferred
+                    );
+                    workshop = Some(PendingTask {
+                        attempts: task.attempts,
+                        next_attempt: Instant::now() + WORKSHOP_DEFERRED_RETRY_DELAY,
+                    });
                 }
                 Ok(report) => {
                     let error = format!("{} Workshop item(s) failed", report.failed);
@@ -750,6 +873,7 @@ async fn run(app: AppHandle) {
             status.hubcap_key_configured = key_ready;
             status.checkpoint_initialized = checkpoint.initialized;
             status.pin_sync.pending = pending_infos(&pin_sync);
+            status.pin_refresh.pending = pending_infos(&pin_refresh);
             status.repair.pending = pending_infos(&repairs);
             status.workshop.pending = workshop
                 .as_ref()

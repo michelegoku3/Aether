@@ -70,6 +70,7 @@ export const SettingsView = ({ hubcapUsage, onRefreshUsage, onRefreshCustomCss, 
   const [showStoreNsfw, setShowStoreNsfw] = useState(true);
   const [showStoreDelisted, setShowStoreDelisted] = useState(true);
   const [downloadGamesWithUpdatesOn, setDownloadGamesWithUpdatesOn] = useState(false);
+  const [workshopAutoDownloadContent, setWorkshopAutoDownloadContent] = useState(true);
   const [showHubcapUpdateWarning, setShowHubcapUpdateWarning] = useState(false);
   const [showStoreFrontGames, setShowStoreFrontGames] = useState(true);
   const [useAlternativeGameCards, setUseAlternativeGameCards] = useState(false);
@@ -158,6 +159,8 @@ export const SettingsView = ({ hubcapUsage, onRefreshUsage, onRefreshCustomCss, 
     setShowStoreNsfw(settings.show_store_nsfw !== false);
     setShowStoreDelisted(settings.show_store_delisted !== false);
     setDownloadGamesWithUpdatesOn(Boolean(settings.download_games_with_updates_on));
+    // Defaults to enabled: only an explicit `false` turns it off.
+    setWorkshopAutoDownloadContent(settings.workshop_auto_download_content !== false);
     setShowStoreFrontGames(settings.show_store_front_games !== false);
     setUseAlternativeGameCards(Boolean(settings.use_alternative_game_cards));
     setEnableWebviewDevtools(Boolean(settings.enable_webview_devtools));
@@ -248,6 +251,7 @@ export const SettingsView = ({ hubcapUsage, onRefreshUsage, onRefreshCustomCss, 
     alternative_cards_fade: alternativeCardsFade,
     ryuu_api_key: ryuuKey,
     download_games_with_updates_on: downloadGamesWithUpdatesOn,
+    workshop_auto_download_content: workshopAutoDownloadContent,
     show_store_front_games: showStoreFrontGames,
     use_alternative_game_cards: useAlternativeGameCards,
     enable_webview_devtools: enableWebviewDevtools,
@@ -366,6 +370,7 @@ export const SettingsView = ({ hubcapUsage, onRefreshUsage, onRefreshCustomCss, 
       showStoreNsfw !== (s.show_store_nsfw !== false) ||
       showStoreDelisted !== (s.show_store_delisted !== false) ||
       downloadGamesWithUpdatesOn !== Boolean(s.download_games_with_updates_on) ||
+      workshopAutoDownloadContent !== (s.workshop_auto_download_content !== false) ||
       showStoreFrontGames !== (s.show_store_front_games !== false) ||
       useAlternativeGameCards !== Boolean(s.use_alternative_game_cards) ||
       enableWebviewDevtools !== Boolean(s.enable_webview_devtools) ||
@@ -1099,6 +1104,18 @@ export const SettingsView = ({ hubcapUsage, onRefreshUsage, onRefreshCustomCss, 
                 type="checkbox"
                 checked={downloadGamesWithUpdatesOn}
                 onChange={(e) => void handleDownloadGamesWithUpdatesChange(e.target.checked)}
+              />
+              <span></span>
+            </label>
+          </div>
+
+          <div className="settings-toggle-row" title="When Workshop items have a staged manifest but no content, ask Steam to download them one at a time (spaced). Turn off to stage manifests only — content then downloads on demand. Prevents a download storm after a depotcache wipe.">
+            <span className="settings-toggle-text">Workshop auto-download content</span>
+            <label className="version-switch">
+              <input
+                type="checkbox"
+                checked={workshopAutoDownloadContent}
+                onChange={(e) => setWorkshopAutoDownloadContent(e.target.checked)}
               />
               <span></span>
             </label>

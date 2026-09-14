@@ -17,12 +17,13 @@
 #include <string>
 #include <string_view>
 #include <thread>
-#include <unordered_set>
+#include <unordered_map>
 #include <vector>
 
 #include "core/AetherCoreState.h"
 #include "core/Logger.h"
 #include "hooks/wire/BackupIo.h"
+#include "hooks/wire/ManifestRestore.h"
 #include "network/HubcapQuota.h"
 #include "network/RuntimeHttp.h"
 #include "security/ProviderCredentials.h"
@@ -283,12 +284,12 @@ bool ManifestIdentityMatches(std::string_view bytes, std::uint32_t expectedDepot
 // Mirrors AetherDesk's ensure_generation_available: asks the provider whether
 // the authenticated account may generate right now. A definitive "no" fails
 // the lookup before any shared budget is spent; a network/parse failure only
-// skips the check — the runtime bridge must stay responsive inside the 12 s
-// resolve window and the server enforces its own limits anyway.
+// skips the check — the probe runs on the background worker and fails open;
+// the server enforces its own limits anyway.
 bool HubcapGenerationAllowed(const std::string& apiKey) {
-    // Short budget: this probe shares the resolve window with the generation
-    // itself, so it must never eat most of it.
-    constexpr int kUsageProbeTimeoutSec = 5;
+    // Tight budget: the probe precedes the generation on the serialized
+    // worker, so a hung connection must not stall the queue.
+    constexpr int kUsageProbeTimeoutSec = 2;
     const http::Response response = http::GetUncheckedWithHeaders(
         "https://hubcapmanifest.com/api/v1/generate/usage", kUsageProbeTimeoutSec,
         {"Authorization: Bearer " + apiKey}, L"AetherCore/HubcapManifest/1.0");
@@ -321,14 +322,20 @@ bool HubcapGenerationAllowed(const std::string& apiKey) {
     return true;
 }
 
-// Performs the authenticated generation request (with the provider's retry
-// policy) and atomically installs the verified manifest into depotcache.
+// Performs the authenticated generation request and atomically installs the
+// verified manifest into depotcache. Runs on the background worker only (never
+// on the wire thread) with a dedicated, short per-attempt budget — observed
+// live generations complete in ~1 s — so a hung connection cannot monopolize
+// the serialized queue. Persistence across failures comes from the proactive
+// backoff schedule, not from long in-pass retries.
 bool FetchAndInstallManifest(const std::string& url,
                              const std::vector<std::string>& headers,
                              std::uint64_t gid, std::uint32_t depotId) {
-    for (int attempt = 0; attempt < 3; ++attempt) {
+    constexpr int kGenerationAttempts = 2;
+    constexpr int kGenerationAttemptTimeoutSec = 6;
+    for (int attempt = 0; attempt < kGenerationAttempts; ++attempt) {
         const http::Response response = http::GetUncheckedWithHeaders(
-            url, g_state.settings.manifestFetchTimeoutSec, headers, L"AetherCore/HubcapManifest/1.0");
+            url, kGenerationAttemptTimeoutSec, headers, L"AetherCore/HubcapManifest/1.0");
         if (response.networkError) {
             AC_LOG_WARN(kModule, "Hubcap manifest request failed for depot=%u gid=%llu (network).",
                         depotId, static_cast<unsigned long long>(gid));
@@ -371,6 +378,11 @@ bool FetchAndInstallManifest(const std::string& url,
             AC_LOG_INFO(kModule, "Hubcap manifest installed depot=%u gid=%llu bytes=%llu.",
                         depotId, static_cast<unsigned long long>(gid),
                         static_cast<unsigned long long>(response.body.size()));
+            // Archivia subito il manifest generato nei backup AetherData delle
+            // app che lo referenziano: deterministicamente, anche con
+            // AetherDesk chiuso (il backup di startup girerebbe solo al
+            // prossimo avvio di Steam). Best-effort per contratto.
+            ac::hooks::ManifestRestore::BackupManifestAfterGeneration(depotId, gid);
             return true;
         } else if (!response.networkError) {
             AC_LOG_WARN(kModule, "Hubcap manifest request HTTP=%d for depot=%u gid=%llu.",
@@ -378,7 +390,7 @@ bool FetchAndInstallManifest(const std::string& url,
             if (response.status != 408 && response.status != 425 && response.status != 429 &&
                 response.status < 500) return false;
         }
-        if (attempt < 2) std::this_thread::sleep_for(std::chrono::milliseconds(500u << attempt));
+        if (attempt + 1 < kGenerationAttempts) std::this_thread::sleep_for(std::chrono::milliseconds(750));
     }
     return false;
 }
@@ -484,12 +496,24 @@ std::optional<std::uint64_t> RunLookup(std::uint64_t gid, std::uint32_t appId,
 // the default acquisition trigger: local first, then one serialized Hubcap
 // generation at a time (mirrors the Desk-side scheduler philosophy and
 // protects the shared daily quota from parallel request storms).
-constexpr std::size_t kMaxProactiveAttempts = 4096;
+constexpr std::size_t kMaxTrackedProactiveKeys = 4096;
+// Failed fetches are retried in the background with this backoff schedule
+// instead of the old one-shot-per-session: the dependency hook refires while
+// Steam downloads/retries and every requeue is gated by nextEligible, so a
+// transiently unavailable manifest (Hubcap lag/down/quota) is reattempted
+// automatically without request storms.
+constexpr int kMaxProactiveRetries = 6;
+constexpr int kProactiveBackoffSec[kMaxProactiveRetries] = {30, 60, 120, 300, 600, 900};
+
+struct ProactiveState {
+    int attempts = 0;
+    std::chrono::steady_clock::time_point nextEligible{};
+};
 
 std::mutex g_proactiveMutex;
 std::condition_variable g_proactiveCv;
 std::deque<LookupKey> g_proactiveQueue;
-std::unordered_set<LookupKey, LookupKeyHash> g_proactiveAttempted;
+std::unordered_map<LookupKey, ProactiveState, LookupKeyHash> g_proactiveStates;
 bool g_proactiveWorkerStarted = false;
 
 void ProactiveWorkerLoop() {
@@ -502,15 +526,40 @@ void ProactiveWorkerLoop() {
             g_proactiveQueue.pop_front();
         }
         try {
+            // Another path (wire-bridge lookup, ManifestRestore, AetherDesk)
+            // may have installed the manifest meanwhile: re-check before
+            // spending shared quota.
+            if (HasLocalManifest(key.gid, key.depotId)) {
+                std::lock_guard<std::mutex> lock(g_proactiveMutex);
+                g_proactiveStates.erase(key);
+                continue;
+            }
+            {
+                // A wire-bridge lookup may still own this key; its failure
+                // continuation requeues with backoff, so skip instead of
+                // double-generating.
+                std::lock_guard<std::mutex> lock(g_state.manifestFetch.mutex);
+                if (g_state.manifestFetch.inflight.count(key) > 0) continue;
+            }
             if (InstallHubcapManifest(key.gid, key.depotId)) {
                 AC_LOG_INFO(kModule, "Proactive manifest ready: depot=%u gid=%llu.",
                             key.depotId, static_cast<unsigned long long>(key.gid));
+                std::lock_guard<std::mutex> lock(g_proactiveMutex);
+                g_proactiveStates.erase(key);
             } else {
+                int attempts = 0;
+                {
+                    std::lock_guard<std::mutex> lock(g_proactiveMutex);
+                    if (auto it = g_proactiveStates.find(key); it != g_proactiveStates.end()) {
+                        attempts = it->second.attempts;
+                    }
+                }
                 AC_LOG_WARN(kModule,
                             "Proactive manifest fetch failed: depot=%u gid=%llu "
                             "(no API key, quota exhausted or provider error); "
-                            "it will be retried in the next Steam session.",
-                            key.depotId, static_cast<unsigned long long>(key.gid));
+                            "attempt %d/%d, next retry follows the backoff schedule.",
+                            key.depotId, static_cast<unsigned long long>(key.gid),
+                            attempts, kMaxProactiveRetries);
             }
         } catch (const std::exception& e) {
             AC_LOG_ERROR(kModule, "Proactive manifest worker failed: %s", e.what());
@@ -518,6 +567,37 @@ void ProactiveWorkerLoop() {
             AC_LOG_ERROR(kModule, "Proactive manifest worker failed with unknown exception.");
         }
     }
+}
+
+// Queues a background fetch with backoff gating. Call from any thread WITHOUT
+// holding g_proactiveMutex or g_state.manifestFetch.mutex (the async-lookup
+// continuation calls this only after releasing the latter). Returns true when
+// the key was actually queued.
+bool EnqueueProactive(const LookupKey& key) {
+    std::lock_guard<std::mutex> lock(g_proactiveMutex);
+    auto it = g_proactiveStates.find(key);
+    if (it == g_proactiveStates.end()) {
+        if (g_proactiveStates.size() >= kMaxTrackedProactiveKeys) return false;
+        it = g_proactiveStates.emplace(key, ProactiveState{}).first;
+    }
+    ProactiveState& state = it->second;
+    if (state.attempts >= kMaxProactiveRetries) {
+        AC_LOG_DEBUG_ONCE(kModule,
+                          "Proactive retries exhausted for depot=%u gid=%llu this session.",
+                          key.depotId, static_cast<unsigned long long>(key.gid));
+        return false;
+    }
+    const auto now = std::chrono::steady_clock::now();
+    if (now < state.nextEligible) return false;  // inside the backoff window
+    state.nextEligible = now + std::chrono::seconds(kProactiveBackoffSec[state.attempts]);
+    ++state.attempts;
+    g_proactiveQueue.push_back(key);
+    if (!g_proactiveWorkerStarted) {
+        g_proactiveWorkerStarted = true;
+        std::thread(ProactiveWorkerLoop).detach();
+    }
+    g_proactiveCv.notify_one();
+    return true;
 }
 
 }  // namespace
@@ -589,31 +669,55 @@ void Submit(std::uint64_t jobId, std::uint64_t manifestGid,
         return;
     }
 
-    std::shared_future<std::optional<std::uint64_t>> fut;
+    // Manual promise + detached thread instead of std::async(launch::async).
+    // The async shared state JOINS its thread from its own destructor when the
+    // last future handle dies, and both places where that can happen here are
+    // unacceptable: on the CM network thread (the Resolve timeout path erases
+    // 'pending', so the destructor would block the wire until the worker
+    // finishes) or on the worker thread itself (the in-flight erase below can
+    // be the last handle -> self-join -> std::system_error EDEADLK ->
+    // terminate; reproduced on libstdc++). A promise-based shared state never
+    // joins; it is simply released when the last handle goes away.
+    auto resultPromise = std::make_shared<std::promise<std::optional<std::uint64_t>>>();
+    std::shared_future<std::optional<std::uint64_t>> fut = resultPromise->get_future().share();
     auto startPromise = std::make_shared<std::promise<void>>();
     const std::shared_future<void> startGate = startPromise->get_future().share();
     try {
-        fut = std::async(std::launch::async, [key, startGate]() -> std::optional<std::uint64_t> {
-        startGate.wait();
-        std::optional<std::uint64_t> result;
-        try {
-            result = RunLookup(key.gid, key.appId, key.depotId);
-        } catch (const std::exception& e) {
-            AC_LOG_ERROR(kModule, "Manifest lookup worker failed: %s", e.what());
-        } catch (...) {
-            AC_LOG_ERROR(kModule, "Manifest lookup worker failed with unknown exception.");
-        }
-
-        std::lock_guard<std::mutex> lock(g_state.manifestFetch.mutex);
-        if (result) {
-            if (g_state.manifestFetch.cache.size() >= kMaxCacheEntries) {
-                g_state.manifestFetch.cache.erase(g_state.manifestFetch.cache.begin());
+        std::thread([key, startGate, resultPromise]() {
+            startGate.wait();
+            std::optional<std::uint64_t> result;
+            try {
+                result = RunLookup(key.gid, key.appId, key.depotId);
+            } catch (const std::exception& e) {
+                AC_LOG_ERROR(kModule, "Manifest lookup worker failed: %s", e.what());
+            } catch (...) {
+                AC_LOG_ERROR(kModule, "Manifest lookup worker failed with unknown exception.");
             }
-            g_state.manifestFetch.cache[key] = *result;
-        }
-        g_state.manifestFetch.inflight.erase(key);
-        return result;
-        }).share();
+
+            {
+                std::lock_guard<std::mutex> lock(g_state.manifestFetch.mutex);
+                if (result) {
+                    if (g_state.manifestFetch.cache.size() >= kMaxCacheEntries) {
+                        g_state.manifestFetch.cache.erase(g_state.manifestFetch.cache.begin());
+                    }
+                    g_state.manifestFetch.cache[key] = *result;
+                }
+                g_state.manifestFetch.inflight.erase(key);
+            }
+            if (!result) {
+                // Continuation: keep retrying in the background with backoff
+                // even if Steam never resubmits this job. Queued only after
+                // the in-flight entry is gone so the worker does not
+                // self-skip.
+                EnqueueProactive(key);
+            }
+            // Satisfy waiters only after all bookkeeping is committed.
+            try {
+                resultPromise->set_value(result);
+            } catch (...) {
+                AC_LOG_ERROR(kModule, "Manifest lookup result could not be published.");
+            }
+        }).detach();
     } catch (const std::exception& e) {
         AC_LOG_ERROR(kModule, "Manifest lookup scheduling failed: %s", e.what());
         return;
@@ -640,11 +744,21 @@ std::optional<std::uint64_t> Resolve(std::uint64_t jobId) {
         g_state.manifestFetch.pending.erase(it);
     }
 
-    const int timeout = g_state.settings.manifestFetchTimeoutSec > 0
-        ? g_state.settings.manifestFetchTimeoutSec : 12;
-    if (fut.wait_for(std::chrono::seconds(timeout)) != std::future_status::ready) {
-        AC_LOG_WARN(kModule, "job=%llu timed out after %ds.",
-                    static_cast<unsigned long long>(jobId), timeout);
+    // Hard, short bound — this runs on Steam's CM network thread. The typical
+    // Hubcap generation (~1 s) fits inside the default 2500 ms window; anything
+    // slower passes the original CM reply through (the job fails fast instead
+    // of stalling wire traffic and heartbeats) while this lookup keeps running
+    // in the background. Once the manifest lands in depotcache, Steam's own
+    // retry resubmits and gets the instant local hit (code 0).
+    const int waitMs = g_state.settings.manifestBridgeWaitMs >= 0
+        ? std::min(g_state.settings.manifestBridgeWaitMs, 10000)
+        : 2500;
+    if (fut.wait_for(std::chrono::milliseconds(waitMs)) != std::future_status::ready) {
+        AC_LOG_WARN(kModule,
+                    "job=%llu not ready within the %dms bridge window; passing the "
+                    "original CM reply through (background fetch continues, Steam's "
+                    "retry picks up the installed manifest).",
+                    static_cast<unsigned long long>(jobId), waitMs);
         diag::Record("manifest_timeout", std::to_string(jobId));
         return std::nullopt;
     }
@@ -675,29 +789,25 @@ void EnsureManifestAvailable(std::uint32_t appId, std::uint32_t depotId,
                              std::uint64_t manifestGid) {
     if (depotId == 0 || manifestGid == 0) return;
 
+    const LookupKey key{manifestGid, appId, depotId};
+
     // Local first: FindLocalManifest also publishes a backup copy into
     // depotcache, so a manifest that exists anywhere on disk never reaches
-    // the network.
-    if (FindLocalManifest(manifestGid, depotId)) return;
-
-    const LookupKey key{manifestGid, appId, depotId};
-    {
+    // the network. A local hit also clears this key's retry schedule.
+    if (FindLocalManifest(manifestGid, depotId)) {
         std::lock_guard<std::mutex> lock(g_proactiveMutex);
-        // One attempt per depot/GID per Steam session: the dependency hook
-        // fires repeatedly while Steam downloads, and a generation that
-        // already failed (missing key, exhausted quota, provider error) must
-        // not be resubmitted on every call.
-        if (g_proactiveAttempted.size() >= kMaxProactiveAttempts) return;
-        if (!g_proactiveAttempted.insert(key).second) return;
-        g_proactiveQueue.push_back(key);
-        if (!g_proactiveWorkerStarted) {
-            g_proactiveWorkerStarted = true;
-            std::thread(ProactiveWorkerLoop).detach();
-        }
+        g_proactiveStates.erase(key);
+        return;
     }
-    g_proactiveCv.notify_one();
-    AC_LOG_INFO(kModule, "Proactive manifest fetch queued: app=%u depot=%u gid=%llu.",
-                appId, depotId, static_cast<unsigned long long>(manifestGid));
+
+    // The dependency hook refires repeatedly while Steam downloads/retries;
+    // EnqueueProactive gates resubmission with a per-key backoff schedule, so
+    // a failed fetch is retried automatically (bounded per session) without
+    // request storms.
+    if (EnqueueProactive(key)) {
+        AC_LOG_INFO(kModule, "Proactive manifest fetch queued: app=%u depot=%u gid=%llu.",
+                    appId, depotId, static_cast<unsigned long long>(manifestGid));
+    }
 }
 
 }  // namespace ac::manifestfetch

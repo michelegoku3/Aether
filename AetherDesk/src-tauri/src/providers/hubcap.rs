@@ -133,6 +133,20 @@ where
     }
 }
 
+/// What Hubcap currently stores for one app, from the FREE
+/// `/manifest/{app_id}/contents` endpoint (lists the manifests inside the
+/// stored ZIP without downloading it; does not count toward generation
+/// limits). This is the "does Hubcap have it" oracle of the pin-refresh
+/// pipeline: the check costs no quota, only genuinely missing manifests do.
+#[derive(Debug, Clone, Default)]
+pub struct HubcapAppContents {
+    pub zip_exists: bool,
+    /// depot_id -> manifest GID in string form (GIDs exceed 2^53, so numeric
+    /// transport would lose precision — same rule the Lua pins follow).
+    pub manifests: std::collections::HashMap<u32, String>,
+    pub last_modified: Option<String>,
+}
+
 #[derive(Clone)]
 pub struct HubcapClient {
     api_key: String,
@@ -424,6 +438,76 @@ impl HubcapClient {
                 false
             }
         }
+    }
+
+    /// Lists the manifests inside Hubcap's stored package for one app.
+    /// Free endpoint: it never consumes generation quota, so the pin-refresh
+    /// lane can diff a Lua against it on a timer. Parsing is tolerant: IDs
+    /// are accepted as JSON strings or numbers and normalized to strings.
+    pub async fn get_app_contents(&self, app_id: u32) -> Result<HubcapAppContents, String> {
+        fn id_to_string(value: Option<&serde_json::Value>) -> Option<String> {
+            match value? {
+                serde_json::Value::String(text) => {
+                    let trimmed = text.trim();
+                    (!trimmed.is_empty()).then(|| trimmed.to_string())
+                }
+                serde_json::Value::Number(number) => Some(number.to_string()),
+                _ => None,
+            }
+        }
+
+        let url = format!("{}/manifest/{}/contents", BASE_URL, app_id);
+        let response = self
+            .client
+            .get(&url)
+            .headers(self.headers())
+            .send()
+            .await
+            .map_err(|error| format!("Hubcap contents request failed for app {app_id}: {error}"))?;
+        if !response.status().is_success() {
+            return Err(format!(
+                "Hubcap contents check for app {app_id} returned HTTP {}",
+                response.status()
+            ));
+        }
+        let body: serde_json::Value = response.json().await.map_err(|error| {
+            format!("Hubcap contents response parse failed for app {app_id}: {error}")
+        })?;
+
+        let mut contents = HubcapAppContents {
+            zip_exists: body.get("zip_exists").and_then(|value| value.as_bool()).unwrap_or(false),
+            last_modified: body
+                .get("last_modified")
+                .and_then(|value| value.as_str())
+                .map(str::to_string),
+            ..Default::default()
+        };
+        if let Some(entries) = body.get("manifests").and_then(|value| value.as_array()) {
+            for entry in entries {
+                let (Some(depot), Some(gid)) = (
+                    id_to_string(entry.get("depot_id")),
+                    id_to_string(entry.get("manifest_id")),
+                ) else {
+                    continue;
+                };
+                let Ok(depot_id) = depot.parse::<u32>() else {
+                    continue;
+                };
+                if depot_id == 0 || gid == "0" {
+                    continue;
+                }
+                contents.manifests.insert(depot_id, gid);
+            }
+        }
+        crate::desk_log_debug!(
+            "hubcap",
+            "Contents check app_id={} zip_exists={} manifests={} last_modified={}",
+            app_id,
+            contents.zip_exists,
+            contents.manifests.len(),
+            contents.last_modified.clone().unwrap_or_else(|| "-".to_string())
+        );
+        Ok(contents)
     }
 
     pub async fn get_usage_stats(&self) -> Result<HubcapUserStats, String> {

@@ -35,10 +35,19 @@ void Submit(std::uint64_t jobId, std::uint64_t manifestGid,
 // is published into depotcache); anything really missing is generated through
 // the authenticated Hubcap pipeline on a serialized worker thread (shared
 // quota file, atomic install). Never blocks the caller: Steam's own retry
-// picks the file up once it has landed in depotcache.
+// picks the file up once it has landed in depotcache. Failed fetches are
+// retried in the background with a bounded backoff schedule (max 6 attempts
+// per depot/GID per session) instead of the old one-shot-per-session.
 void EnsureManifestAvailable(std::uint32_t appId, std::uint32_t depotId,
                              std::uint64_t manifestGid);
 
+// Waits at most settings.manifestBridgeWaitMs (hard bound, default 2500 ms,
+// 0 = pure passthrough) for the pending lookup of a wire job, so Steam's CM
+// network thread never stalls on a slow generation. Returns the request code
+// to inject (0 = satisfied from a local manifest) or nullopt when the
+// original CM reply must pass through — the lookup keeps running in the
+// background and Steam's retry gets the instant local hit once the manifest
+// has been installed.
 std::optional<std::uint64_t> Resolve(std::uint64_t jobId);
 std::size_t PendingCount();
 std::size_t CacheCount();

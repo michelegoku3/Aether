@@ -225,6 +225,30 @@ pub fn set_lua_game_updates_enabled(
 ) -> Result<String, String> {
     validate_steam_path(&steam_path)?;
     crate::desk_log_info!("library", "Setting updates_enabled={} for {} in steam_path='{}'", enabled, crate::core::logger::format_appid(app_id), steam_path);
+    // Safety net before locking a game to a fixed version: realign the
+    // informational pins to the manifests Steam ACTUALLY installed, so
+    // "Disable updates" reactivates the CURRENT version's GIDs. Without this,
+    // updates Steam applied while the synchronizer could not observe them
+    // (Desk closed, checkpoint reset, cleaned depotcache) would resurrect a
+    // stale pin and trigger a downgrade. Local-only and best-effort: a
+    // failure here must not block the user's explicit toggle.
+    if !enabled {
+        match crate::core::hubcap_update_monitor::realign_pins_to_installed(&steam_path, app_id) {
+            Ok(0) => {}
+            Ok(realigned) => crate::desk_log_info!(
+                "library",
+                "Pre-lock pin realignment for {}: {} pin(s) moved to the installed manifests",
+                crate::core::logger::format_appid(app_id),
+                realigned
+            ),
+            Err(error) => crate::desk_log_warn!(
+                "library",
+                "Pre-lock pin realignment failed for {}: {} (continuing with the toggle)",
+                crate::core::logger::format_appid(app_id),
+                error
+            ),
+        }
+    }
     let changed = match LuaManifestPins::new(steam_path.clone(), app_id).set_updates_enabled(enabled) {
         Ok(c) => c,
         Err(e) => {
@@ -233,6 +257,19 @@ pub fn set_lua_game_updates_enabled(
         }
     };
     crate::desk_log_info!("library", "Updates {} for {}: {} manifest pin(s) modified", if enabled { "enabled" } else { "disabled" }, crate::core::logger::format_appid(app_id), changed);
+    // Every Lua change must land in AetherData: the toggle rewrote the pins
+    // (comment/uncomment), so archive the resulting Lua version. Deduplicated
+    // by content — repeated toggles never create duplicate copies. For the
+    // disable direction the pre-lock realignment above already archived its
+    // own pre/post states; this captures the final uncommented-pins version.
+    if changed > 0 {
+        if let (Ok(final_lua), Ok(backup)) = (
+            LuaManifestPins::new(steam_path.clone(), app_id).read_lua(),
+            crate::core::backup::GameBackup::for_app(app_id),
+        ) {
+            let _ = backup.store_history_version(app_id, final_lua.as_bytes());
+        }
+    }
 
     let message = if enabled {
         format!(
