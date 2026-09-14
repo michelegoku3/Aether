@@ -244,6 +244,43 @@ fn has_workshop_content(steam_path: &str, app_id: u32, workshop_id: u64) -> bool
         .any(|path| path.is_dir())
 }
 
+/// Removes a stale/partial Workshop content directory so Steam re-downloads
+/// the item cleanly instead of resuming corrupt chunks (the `50kbps then no
+/// connection` stall). Called ONLY when the item manifest is missing from
+/// depotcache: when the manifest is present the folder is never touched.
+/// Best-effort across all libraries.
+fn remove_stale_workshop_content(steam_path: &str, app_id: u32, workshop_id: u64) {
+    for library in crate::steam::library::SteamLibraryScanner::new(steam_path)
+        .discover_library_paths()
+    {
+        let dir = library
+            .join("steamapps")
+            .join("workshop")
+            .join("content")
+            .join(app_id.to_string())
+            .join(workshop_id.to_string());
+        if dir.is_dir() {
+            match std::fs::remove_dir_all(&dir) {
+                Ok(()) => crate::desk_log_info!(
+                    "workshop",
+                    "Removed stale Workshop content dir app_id={} workshop_id={} path={}",
+                    app_id,
+                    workshop_id,
+                    dir.display()
+                ),
+                Err(error) => crate::desk_log_warn!(
+                    "workshop",
+                    "Could not remove stale Workshop content dir app_id={} workshop_id={} path={}: {}",
+                    app_id,
+                    workshop_id,
+                    dir.display(),
+                    error
+                ),
+            }
+        }
+    }
+}
+
 /// A manifest stages the CDN metadata, not the Workshop payload itself. Ask
 /// the running Steam client to perform the actual item download when the
 /// content directory is still absent. This is best-effort and intentionally
@@ -363,6 +400,10 @@ async fn sync_one_workshop_item(
         }
         return Ok(SyncOrigin::AlreadyLocal { content_present, content_deferred });
     }
+    // Manifest is missing from depotcache: drop any partial content dir so
+    // Steam downloads the item cleanly once the manifest is staged, instead
+    // of resuming a stalled partial download.
+    remove_stale_workshop_content(&steam_path, item.app_id, item.workshop_id);
     let cache_path = workshop_cache_path(item.workshop_id);
     if cache_path.is_file() {
         match std::fs::read(&cache_path) {

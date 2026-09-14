@@ -27,6 +27,9 @@ add_library(AetherCore SHARED
     network/HubcapQuota.cpp
     network/EticketFetcher.cpp
 
+    # Workshop (default owner of Workshop item manifests)
+    workshop/WorkshopSync.cpp
+
     # Credentials
     security/ProviderCredentials.cpp
     credentials/CredentialStore.cpp

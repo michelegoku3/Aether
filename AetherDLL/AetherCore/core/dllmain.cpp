@@ -32,6 +32,7 @@
 #include "hooks/wire/ManifestRestore.h"
 #include "hooks/wire/AchievementModule.h"
 #include "network/EticketFetcher.h"
+#include "workshop/WorkshopSync.h"
 
 using namespace ac;
 
@@ -261,6 +262,13 @@ namespace {
         // manifests into Steam\depotcache after Steam finishes its cleanup.
         const std::vector<std::string> acfWatchDirs = CollectAcfWatchDirs();
         ac::dirwatch::Start(watchDirs, acfWatchDirs);
+
+        // 10b. Workshop manifests: owned by the DLL by default (AetherDesk's
+        //      automatic lane is disabled; its Repair Workshop button stays
+        //      as a manual fallback). Polls appworkshop_*.acf and stages
+        //      missing manifests with a short manifest-only retry schedule.
+        //      Depends on: steamInstallPath + credentials/quota via AetherData.
+        ac::workshop::Start();
     }
 
     DWORD WINAPI InitThread(LPVOID param) {
@@ -278,6 +286,7 @@ namespace {
             g_state.initThread = nullptr;
         }
 
+        ac::workshop::Stop();
         ac::dirwatch::Stop();
         ac::pipewatch::Reset();
         // Stop the late-pattern retry before the hook/license subsystems go

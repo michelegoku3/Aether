@@ -19,6 +19,7 @@ namespace {
 
 constexpr const char* kModule = "HubcapQuota";
 constexpr std::uint64_t kMaxGamePerDay = 1500;
+constexpr std::uint64_t kMaxWorkshopPerDay = 500;
 constexpr int kLockStaleAfterSec = 5;
 constexpr int kLockTimeoutSec = 10;
 constexpr auto kLockRetryInterval = std::chrono::milliseconds(20);
@@ -204,6 +205,52 @@ bool TryReserveGameGeneration() {
                 static_cast<unsigned long long>(quota.gameUsed),
                 static_cast<unsigned long long>(kMaxGamePerDay));
     return true;
+}
+
+bool TryReserveWorkshopGeneration() {
+    const std::string quotaPath = QuotaPath();
+    if (quotaPath.empty()) {
+        AC_LOG_DEBUG(kModule, "Shared quota unavailable (AetherData not configured).");
+        return true;
+    }
+
+    ScopedQuotaLock lock;
+    if (!lock.Acquire(LockPathFor(quotaPath))) return false;
+
+    QuotaState quota = ReadQuota(quotaPath);
+    if (quota.workshopUsed >= kMaxWorkshopPerDay) {
+        AC_LOG_WARN(kModule,
+                    "Shared Workshop-manifest budget exhausted (%llu/%llu; resets at midnight EST).",
+                    static_cast<unsigned long long>(quota.workshopUsed),
+                    static_cast<unsigned long long>(kMaxWorkshopPerDay));
+        return false;
+    }
+    quota.workshopUsed += 1;
+    if (!WriteQuota(quotaPath, quota)) {
+        AC_LOG_WARN(kModule, "Could not persist the shared quota; blocking generation.");
+        return false;
+    }
+    AC_LOG_INFO(kModule, "Shared Workshop-manifest budget reserved (%llu/%llu used today).",
+                static_cast<unsigned long long>(quota.workshopUsed),
+                static_cast<unsigned long long>(kMaxWorkshopPerDay));
+    return true;
+}
+
+void ReleaseWorkshopGeneration() {
+    const std::string quotaPath = QuotaPath();
+    if (quotaPath.empty()) return;
+
+    ScopedQuotaLock lock;
+    if (!lock.Acquire(LockPathFor(quotaPath))) return;  // already logged
+
+    QuotaState quota = ReadQuota(quotaPath);
+    if (quota.workshopUsed > 0) quota.workshopUsed -= 1;
+    if (!WriteQuota(quotaPath, quota)) {
+        AC_LOG_WARN(kModule, "Could not persist the shared quota release.");
+    } else {
+        AC_LOG_INFO(kModule, "Shared Workshop-manifest budget released (%llu used today).",
+                    static_cast<unsigned long long>(quota.workshopUsed));
+    }
 }
 
 void ReleaseGameGeneration() {

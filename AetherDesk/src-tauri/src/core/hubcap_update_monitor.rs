@@ -24,8 +24,9 @@
 //! - **repair**: a changed Lua is a manifest-consistency event, not a request
 //!   to change version. It is repaired through the shared local-first
 //!   `sync_hubcap_game_manifest` command (provider only for what is missing).
-//! - **workshop**: a changed `appworkshop_*.acf` set stages missing Workshop
-//!   manifests through `sync_hubcap_workshop_manifests` (local-first).
+//! - **workshop**: MANUAL ONLY via the Library `Repair Workshop` button
+//!   (`sync_hubcap_workshop_manifests`). The automatic lane is disabled:
+//!   AetherDLL inside Steam is the default owner of Workshop manifests.
 //!
 //! Resumability and pacing mirror the original design: the first run records
 //! the current Steam state without doing anything, the last processed
@@ -58,9 +59,9 @@ const STATE_FILE: &str = "hubcap_game_updates.json";
 /// fresh without hammering the provider.
 const CONTENTS_REFRESH_INTERVAL: Duration = Duration::from_secs(15 * 60);
 
-/// How soon the workshop lane re-runs after a pass that deferred items to the
-/// next batch (per-run generation cap). Not a failure: the attempt counter is
-/// preserved, so the exponential backoff ladder stays reserved for real errors.
+/// Legacy workshop deferred delay (automatic lane disabled; manual Repair
+/// Workshop runs on demand from the Library button instead).
+#[allow(dead_code)]
 const WORKSHOP_DEFERRED_RETRY_DELAY: Duration = Duration::from_secs(90);
 
 // ============================================================================
@@ -144,6 +145,9 @@ struct PersistedState {
     processed: HashMap<u32, String>,
     #[serde(default)]
     lua_processed: HashMap<u32, String>,
+    // Legacy checkpoint for the disabled automatic workshop lane. Kept for
+    // forward-compat of the JSON state file; the manual Repair Workshop
+    // button does not read or write it.
     #[serde(default)]
     workshop_processed: Option<String>,
     /// AppID -> epoch seconds of the last completed Hubcap-contents pin
@@ -276,6 +280,9 @@ fn scan_managed_luas(steam_path: &str) -> HashMap<u32, String> {
         .collect()
 }
 
+/// Legacy scanner for the disabled automatic workshop lane. Kept so the
+/// manual Repair Workshop path and future DLL-parity checks can reuse it.
+#[allow(dead_code)]
 fn scan_workshop_manifests(steam_path: &str) -> Option<String> {
     let scanner = SteamLibraryScanner::new(steam_path);
     let mut files = Vec::new();
@@ -591,21 +598,19 @@ async fn run(app: AppHandle) {
     let mut pin_sync: BTreeMap<u32, PendingTask> = BTreeMap::new();
     let mut pin_refresh: BTreeMap<u32, PendingTask> = BTreeMap::new();
     let mut repairs: BTreeMap<u32, PendingTask> = BTreeMap::new();
-    let mut workshop: Option<PendingTask> = None;
 
     loop {
         let settings = SettingsManager::new(&app).load();
         let steam_ready = !settings.steam_path.trim().is_empty();
         let key_ready = !settings.hubcap_api_key.trim().is_empty();
 
-        let (current_acf, current_luas, current_workshop) = if steam_ready {
+        let (current_acf, current_luas) = if steam_ready {
             (
                 scan_app_manifests(&settings.steam_path),
                 scan_managed_luas(&settings.steam_path),
-                scan_workshop_manifests(&settings.steam_path),
             )
         } else {
-            (HashMap::new(), HashMap::new(), None)
+            (HashMap::new(), HashMap::new())
         };
 
         if !checkpoint.initialized {
@@ -613,10 +618,10 @@ async fn run(app: AppHandle) {
             // current fingerprints become the baseline. Future Steam changes,
             // or fingerprints the previous session never completed, create
             // work through the checkpoint diff below.
+            // (Workshop auto-lane disabled: manual Repair Workshop only.)
             checkpoint.initialized = true;
             checkpoint.processed = current_acf.clone();
             checkpoint.lua_processed = current_luas.clone();
-            checkpoint.workshop_processed = current_workshop.clone();
             if let Err(error) = save_state(&checkpoint) {
                 crate::desk_log_warn!(
                     "hubcap-updates",
@@ -677,18 +682,10 @@ async fn run(app: AppHandle) {
                 }
             }
 
-            // --- workshop: the installed Workshop set changed.
-            if key_ready && current_workshop != checkpoint.workshop_processed {
-                if current_workshop.is_some() {
-                    workshop.get_or_insert(PendingTask {
-                        attempts: 0,
-                        next_attempt: Instant::now(),
-                    });
-                } else {
-                    checkpoint.workshop_processed = None;
-                    checkpoint_dirty = true;
-                }
-            }
+            // --- workshop: AUTOMATIC LANE DISABLED. Workshop manifests are
+            // owned by AetherDLL inside Steam by default; Desk only runs
+            // `sync_hubcap_workshop_manifests` when the user clicks the
+            // manual Repair Workshop button in the Library.
             if checkpoint_dirty {
                 let _ = save_state(&checkpoint);
             }
@@ -799,74 +796,9 @@ async fn run(app: AppHandle) {
             }
         }
 
-        // ----- workshop execution (local-first staging)
-        let workshop_ready = workshop
-            .as_ref()
-            .map(|task| task.next_attempt <= Instant::now())
-            .unwrap_or(false);
-        if workshop_ready {
-            let task = workshop.take().expect("readiness checked above");
-            match crate::commands::workshop::sync_hubcap_workshop_manifests(app.clone()).await {
-                Ok(report) if report.failed == 0 && report.deferred == 0 => {
-                    checkpoint.workshop_processed = current_workshop.clone();
-                    let _ = save_state(&checkpoint);
-                    with_status(|status| {
-                        status.workshop.processed_count += 1;
-                        status.workshop.last_run_epoch = Some(now_epoch());
-                        status.workshop.last_error = None;
-                    });
-                    crate::desk_log_info!(
-                        "hubcap-updates",
-                        "Workshop sync complete discovered={} generated={} cached={} local={} content_missing={}",
-                        report.discovered,
-                        report.generated,
-                        report.restored_from_cache,
-                        report.already_local,
-                        report.content_missing
-                    );
-                }
-                Ok(report) if report.failed == 0 => {
-                    // Deferred items (per-run generation cap): re-run shortly
-                    // WITHOUT touching the checkpoint, so the lane drains the
-                    // backlog in bounded batches. Not a failure — keep the
-                    // attempt counter and its backoff ladder for real errors.
-                    crate::desk_log_info!(
-                        "hubcap-updates",
-                        "Workshop batch complete generated={} deferred={}; next batch scheduled",
-                        report.generated,
-                        report.deferred
-                    );
-                    workshop = Some(PendingTask {
-                        attempts: task.attempts,
-                        next_attempt: Instant::now() + WORKSHOP_DEFERRED_RETRY_DELAY,
-                    });
-                }
-                Ok(report) => {
-                    let error = format!("{} Workshop item(s) failed", report.failed);
-                    with_status(|status| {
-                        status.workshop.last_error = Some(error.clone());
-                    });
-                    crate::desk_log_warn!("hubcap-updates", "Workshop sync incomplete: {}", error);
-                    let attempts = task.attempts.saturating_add(1);
-                    workshop = Some(PendingTask {
-                        attempts,
-                        next_attempt: Instant::now() + retry_delay(attempts),
-                    });
-                }
-                Err(error) => {
-                    with_status(|status| {
-                        status.workshop.last_error = Some(error.clone());
-                    });
-                    crate::desk_log_warn!("hubcap-updates", "Workshop sync deferred: {}", error);
-                    let attempts = task.attempts.saturating_add(1);
-                    workshop = Some(PendingTask {
-                        attempts,
-                        next_attempt: Instant::now() + retry_delay(attempts),
-                    });
-                }
-            }
-        }
-
+        // ----- workshop execution: DISABLED. Manual Repair Workshop button
+        // invokes `sync_hubcap_workshop_manifests` on demand; the background
+        // lane never runs (AetherDLL owns Workshop manifests by default).
         with_status(|status| {
             status.last_scan_epoch = Some(now_epoch());
             status.steam_path_configured = steam_ready;
@@ -875,22 +807,8 @@ async fn run(app: AppHandle) {
             status.pin_sync.pending = pending_infos(&pin_sync);
             status.pin_refresh.pending = pending_infos(&pin_refresh);
             status.repair.pending = pending_infos(&repairs);
-            status.workshop.pending = workshop
-                .as_ref()
-                .map(|task| {
-                    vec![PendingTaskInfo {
-                        app_id: None,
-                        attempts: task.attempts,
-                        next_retry_epoch: Some(
-                            now_epoch()
-                                + task
-                                    .next_attempt
-                                    .saturating_duration_since(Instant::now())
-                                    .as_secs(),
-                        ),
-                    }]
-                })
-                .unwrap_or_default();
+            // Automatic workshop lane disabled; manual Repair Workshop only.
+            status.workshop.pending = Vec::new();
         });
 
         tokio::time::sleep(POLL_INTERVAL).await;
