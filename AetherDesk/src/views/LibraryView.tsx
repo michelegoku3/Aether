@@ -6,12 +6,10 @@ import { LibraryGameActionsModal } from '../modals/LibraryGameActionsModal';
 import { GameInfoModal } from '../modals/GameInfoModal';
 import { GameUpdatesModal } from '../modals/GameUpdatesModal';
 import { WorkshopRepairModal } from '../modals/WorkshopRepairModal';
-import { SyncStatusModal } from '../modals/SyncStatusModal';
 import { preloadGameCovers } from '../ui/GameCover';
 import { GameCard } from '../ui/GameCard';
 import { StatusAlert } from '../ui/StatusAlert';
 import {
-  ActivityIcon,
   ArrowUpThickIcon,
   CloseIcon,
   PlayIcon,
@@ -56,8 +54,6 @@ export const LibraryView = ({
   const [updatesSteamPath, setUpdatesSteamPath] = useState<string | null>(null);
   // Workshop manifest repair (scan appworkshop ACF + stage missing manifests).
   const [showWorkshopRepair, setShowWorkshopRepair] = useState(false);
-  // Live state of the background Steam-change synchronizer.
-  const [showSyncStatus, setShowSyncStatus] = useState(false);
 
   const showStatus = (text: string, type: StatusType) => {
     setStatus({ text, type });
@@ -181,16 +177,6 @@ export const LibraryView = ({
           <button
             type="button"
             className="library-icon-btn"
-            onClick={() => setShowSyncStatus(true)}
-            disabled={isLoading}
-            title="Background sync status (pin sync, repairs, Workshop)"
-            aria-label="Background sync status"
-          >
-            <ActivityIcon />
-          </button>
-          <button
-            type="button"
-            className="library-icon-btn"
             onClick={loadInstalledGames}
             disabled={isLoading || isRefreshing}
             title={isRefreshing ? 'Refreshing library…' : 'Refresh library'}
@@ -299,8 +285,6 @@ export const LibraryView = ({
           onClose={() => setShowWorkshopRepair(false)}
         />
       )}
-
-      {showSyncStatus && <SyncStatusModal onClose={() => setShowSyncStatus(false)} />}
     </div>
   );
 };

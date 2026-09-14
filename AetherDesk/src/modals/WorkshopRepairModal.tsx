@@ -92,9 +92,8 @@ export const WorkshopRepairModal = ({ onStatus, onClose }: WorkshopRepairModalPr
       <p className="uninstall-modal-copy">
         Scan every installed Steam Workshop item and stage its manifest: files already in
         depotcache or in the local cache are reused, everything else is generated through
-        your authenticated Hubcap key (Workshop quota). Items whose content folder is
-        missing are requested from Steam automatically. Complete items are skipped and
-        never touch the provider.
+        your authenticated Hubcap key. Mods whose installation folder is missing are
+        requested from Steam automatically.
       </p>
       {busy && <p className="uninstall-modal-copy">Repairing Workshop manifests…</p>}
       {!busy && result && <p className="uninstall-modal-copy">{result}</p>}
