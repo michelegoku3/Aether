@@ -23,4 +23,13 @@ void RestoreMissingManifestsAtStartup();
 // di appmanifest_<app_id>.acf. È chiamato dal thread DirWatch dopo il debounce.
 void RestoreMissingManifestsForApp(std::uint32_t appId);
 
+// Archivia in AetherData un manifest appena generato da Hubcap
+// (backup/<app_id>/lua/<depot>_<gid>.manifest) per ogni app il cui Lua lo
+// referenzia (pin attivi o commentati). Chiamato dal worker di generazione
+// subito dopo l'install in depotcache: il backup di startup coprirebbe il
+// file solo al prossimo avvio di Steam, e AetherDesk potrebbe non essere in
+// esecuzione. Best-effort: segue il contratto condiviso di copia (destinazione
+// non vuota mai sovrascritta, copia atomica e verificata) e non lancia mai.
+void BackupManifestAfterGeneration(std::uint32_t depotId, std::uint64_t gid);
+
 }  // namespace ac::hooks::ManifestRestore

@@ -640,6 +640,12 @@ async fn install_standard_package(
     source: &str,
 ) -> Result<String, String> {
     let steam = SteamCompat::new(steam_path.to_string());
+    // Deterministic auto-download (P1): failed Steam downloads leave dirty
+    // partial state under steamapps/downloading/<appid>. The Lua commit below
+    // is the DLL hot-reload trigger that makes Steam reconcile at once, and
+    // it would RESUME that dirty state (stalled speed, phantom sizes,
+    // connection errors) instead of starting clean. Remove it first.
+    steam.clear_residual_download_state(app_id);
     steam.install_lua_and_manifest_files(app_id, &package.lua_content, &package.manifest_files)?;
     // Local-first completeness (B1): publish anything restorable from disk
     // before the gate runs. No-op when package planning already restored
@@ -660,6 +666,28 @@ async fn install_standard_package(
         &package.lua_content,
         &package.manifest_files,
     )?;
+    // Pre-stage what Hubcap currently packages beyond the pins this Lua
+    // carries (P1, Hubcap-only): free contents diff, generation only for
+    // genuinely missing manifests, commented-pin realignment when the update
+    // policy left the game in updates-ON mode. Soft-fail by design — the
+    // package is committed already and the monitor's pin_refresh lane retries
+    // periodically, so a provider hiccup must not fail a successful install.
+    match crate::commands::manifests::refresh_game_pins_from_hubcap(app.clone(), app_id).await {
+        Ok(report) if report.staged > 0 || report.realigned > 0 => crate::desk_log_info!(
+            "store",
+            "Post-install pin refresh app_id={} staged={} realigned={}",
+            app_id,
+            report.staged,
+            report.realigned
+        ),
+        Ok(_) => {}
+        Err(error) => crate::desk_log_warn!(
+            "store",
+            "Post-install pin refresh not applied app_id={}: {}",
+            app_id,
+            error
+        ),
+    }
     crate::core::library_events::notify_lua_changed(
         app,
         crate::core::library_events::LibraryChangeOrigin::Store,
@@ -689,6 +717,9 @@ async fn install_specific_package(
     }
 
     let steam = SteamCompat::new(steam_path.to_string());
+    // Same residual-state cleanup as the latest-version installer: a version
+    // switch must never resume dirty chunks of a previous failed download.
+    steam.clear_residual_download_state(app_id);
     steam.install_lua_and_manifest_files(app_id, &package.lua_content, &package.manifest_files)?;
     // Local-first completeness (B1): same restore-before-gate contract as the
     // latest-version installer (covers the Ryuu / LuaTools packages, which

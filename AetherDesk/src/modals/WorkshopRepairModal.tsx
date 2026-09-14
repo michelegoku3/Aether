@@ -12,6 +12,8 @@ export interface WorkshopSyncReport {
   /** Items with a staged manifest but without Steam's content folder. */
   contentMissing: number;
   failed: number;
+  /** Items beyond the per-run generation cap; the next lane pass handles them. */
+  deferred: number;
 }
 
 export interface WorkshopRepairModalProps {
@@ -37,6 +39,9 @@ const formatReport = (report: WorkshopSyncReport): string => {
   }
   if (report.failed > 0) {
     parts.push(`${report.failed} failed`);
+  }
+  if (report.deferred > 0) {
+    parts.push(`${report.deferred} deferred to the next pass (generation cap)`);
   }
   return `Workshop repair: ${parts.join(', ')}.`;
 };

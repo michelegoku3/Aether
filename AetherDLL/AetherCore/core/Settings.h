@@ -45,6 +45,15 @@ struct Settings {
 
     int manifestFetchTimeoutSec = 12;
 
+    // Hard cap (ms) on how long the wire bridge (ManifestBridge recv, running
+    // on Steam's CM network thread) waits for a manifest lookup before
+    // passing the original CM reply through. The lookup continues in the
+    // background; Steam's own retry picks the installed manifest up (instant
+    // local hit -> code-0 rewrite). 0 = never wait (pure passthrough).
+    // Clamped to 0..10000. The typical Hubcap generation is ~1 s, so the
+    // default satisfies most first attempts without stalling CM traffic.
+    int manifestBridgeWaitMs = 2500;
+
     std::vector<std::string> manifestFetchTrustedHosts;
 
     // [manifest_cache]

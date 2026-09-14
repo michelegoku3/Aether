@@ -190,13 +190,13 @@ impl SteamCompat {
             }};
         }
 
-        // Move old targets out of the way first. This works on Windows too,
+        // Commit order matters: MANIFESTS FIRST, LUA LAST. The Lua file is
+        // the DLL hot-reload trigger (DirWatch -> license injection -> Steam
+        // reconciliation), so the moment it appears every manifest it
+        // references — including the informational commented pins Steam can
+        // request right away — must already be visible in depotcache.
+        // Old targets move out of the way first: this works on Windows too,
         // where rename-over-existing is not guaranteed by the standard API.
-        if lua_target.exists() {
-            if let Err(error) = fs::remove_file(&lua_target) {
-                rollback!(format!("Could not replace existing {}: {error}", lua_target.display()));
-            }
-        }
         for (target, _) in &staged {
             if target.exists() {
                 if let Err(error) = fs::remove_file(target) {
@@ -204,23 +204,11 @@ impl SteamCompat {
                 }
             }
         }
-        if let Err(error) = fs::rename(&lua_temp, &lua_target) {
-            rollback!(format!("Failed to commit plugin Lua: {error}"));
-        }
-        committed.push(lua_target.clone());
         for (target, temporary) in &staged {
             if let Err(error) = fs::rename(temporary, target) {
                 rollback!(format!("Failed to commit manifest {}: {error}", target.display()));
             }
             committed.push(target.clone());
-        }
-
-        let installed_lua = match fs::read_to_string(&lua_target) {
-            Ok(content) => content,
-            Err(error) => rollback!(format!("Failed to verify committed Lua: {error}")),
-        };
-        if installed_lua != lua_content {
-            rollback!("Committed Lua differs from the downloaded package".to_string());
         }
         for (target, _) in &staged {
             let expected = files
@@ -231,6 +219,23 @@ impl SteamCompat {
             if expected == 0 || actual != expected as u64 {
                 rollback!(format!("Committed manifest {} failed verification", target.display()));
             }
+        }
+
+        if lua_target.exists() {
+            if let Err(error) = fs::remove_file(&lua_target) {
+                rollback!(format!("Could not replace existing {}: {error}", lua_target.display()));
+            }
+        }
+        if let Err(error) = fs::rename(&lua_temp, &lua_target) {
+            rollback!(format!("Failed to commit plugin Lua: {error}"));
+        }
+        committed.push(lua_target.clone());
+        let installed_lua = match fs::read_to_string(&lua_target) {
+            Ok(content) => content,
+            Err(error) => rollback!(format!("Failed to verify committed Lua: {error}")),
+        };
+        if installed_lua != lua_content {
+            rollback!("Committed Lua differs from the downloaded package".to_string());
         }
 
         if old_files[0].1.is_some() {
@@ -247,5 +252,36 @@ impl SteamCompat {
         Ok(staged.len())
     }
 
-
+    /// Removes leftover `steamapps/downloading/<app_id>` state across every
+    /// library folder. Failed Steam downloads leave dirty partial chunks
+    /// there; when Aether then commits a fresh Lua (the DLL hot-reload trigger
+    /// that makes Steam reconcile at once), Steam would RESUME that dirty
+    /// state instead of starting clean — the stalled-download/phantom-size
+    /// symptom. Best-effort by design: failures are logged, never fatal, and
+    /// the folders are Steam-managed scratch space that Steam recreates.
+    pub fn clear_residual_download_state(&self, app_id: u32) {
+        let scanner = crate::steam::library::SteamLibraryScanner::new(self.steam_path.clone());
+        for library in scanner.discover_library_paths() {
+            let residual = library
+                .join("steamapps")
+                .join("downloading")
+                .join(app_id.to_string());
+            if !residual.exists() {
+                continue;
+            }
+            match fs::remove_dir_all(&residual) {
+                Ok(()) => crate::desk_log_info!(
+                    "steam",
+                    "Cleared residual download state {}",
+                    residual.display()
+                ),
+                Err(error) => crate::desk_log_warn!(
+                    "steam",
+                    "Could not clear residual download state {}: {}",
+                    residual.display(),
+                    error
+                ),
+            }
+        }
+    }
 }

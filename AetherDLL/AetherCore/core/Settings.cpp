@@ -111,6 +111,9 @@ Settings Settings::Load(const std::string& configPath) {
         if (auto secs = (*mfetch)["timeout_sec"].value<int>()) {
             if (*secs > 0) s.manifestFetchTimeoutSec = *secs;
         }
+        if (auto ms = (*mfetch)["bridge_wait_ms"].value<int>()) {
+            if (*ms >= 0 && *ms <= 10000) s.manifestBridgeWaitMs = *ms;
+        }
         if (auto* hosts = (*mfetch)["trusted_hosts"].as_array()) {
             s.manifestFetchTrustedHosts.clear();
             for (const auto& node : *hosts) {
@@ -191,7 +194,7 @@ Settings Settings::Load(const std::string& configPath) {
 
     AC_LOG_INFO("Settings",
                 "Loaded %s (level=%s, keep_last_session=%d, lua extra paths: %zu, "
-                "mirror: %s, ost=%d, manifest urls: %zu, manifest_restore=%d, presence: default=%s show=%zu of=%zu excl=%zu).",
+                "mirror: %s, ost=%d, manifest urls: %zu, bridge_wait=%dms, manifest_restore=%d, presence: default=%s show=%zu of=%zu excl=%zu).",
                 configPath.c_str(),
                 s.logLevel == LogLevel::Trace ? "trace"
                     : s.logLevel == LogLevel::Debug ? "debug"
@@ -203,6 +206,7 @@ Settings Settings::Load(const std::string& configPath) {
                 s.patternMirror.empty() ? "default" : "custom",
                 s.patternUseOstSource ? 1 : 0,
                 s.manifestFetchUrls.size(),
+                s.manifestBridgeWaitMs,
                 s.manifestRestoreOnStartup ? 1 : 0,
                 s.presenceDefaultShowOnline ? "showonline" : "none",
                 s.presenceShowOnlineApps.size(),
