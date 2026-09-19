@@ -65,7 +65,7 @@ fn verify_available_counts_verified_and_missing_pins() {
     let report = verify_available(
         &steam.display().to_string(),
         987_654_321,
-        &[present, empty, absent],
+        &[present, empty.clone(), absent.clone()],
     );
     assert_eq!(report.verified, 1, "empty files are not local hits");
     assert_eq!(report.missing, vec![empty, absent]);

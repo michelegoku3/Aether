@@ -37,6 +37,10 @@ export interface AppSettings {
   personal_wallpaper_enabled?: boolean;
   /** Wallpaper opacity percentage (0..100). */
   personal_wallpaper_opacity?: number;
+  /** Alternative-card backdrop opacity percentage (0..100). */
+  alternative_cards_opacity?: number;
+  /** Alternative-card bottom-fade strength percentage (0..100). */
+  alternative_cards_fade?: number;
   /**
    * Library install-status filter:
    * `all` (default) | `installed` | `not_installed`.

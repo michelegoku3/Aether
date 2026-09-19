@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState, useRef, useMemo } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 
 const LEVEL_RANK: Record<string, number> = {
@@ -10,6 +10,20 @@ const LEVEL_RANK: Record<string, number> = {
   off: 5,
 };
 
+/** How often to poll when the Logs tab is visible and focused. */
+const LOG_POLL_INTERVAL_MS = 2500;
+/** Back-off interval when the tab is hidden (document.hidden) or the view
+ *  is not the active tab — we still refresh occasionally so coming back to
+ *  logs after a while doesn't show a stale dump, but we don't hammer IPC. */
+const LOG_POLL_BACKOFF_MS = 10_000;
+/** Debounce for the free-text filter so typing doesn't re-filter 500 lines
+ *  on every keystroke. */
+const FILTER_DEBOUNCE_MS = 150;
+/** Cap rendered filtered lines to the most recent N: with `tailLines: 500`
+ *  from the backend + worst-case regex per line this keeps rendering
+ *  cheap even under spammy logging. */
+const MAX_RENDER_LINES = 200;
+
 const lineRank = (line: string) => {
   if (line.includes('[ERROR]')) return 4;
   if (line.includes('[WARN ]') || line.includes('[WARN]')) return 3;
@@ -19,14 +33,33 @@ const lineRank = (line: string) => {
   return 2;
 };
 
+/** Cheap deterministic key for a line that stays stable across re-renders.
+ *  Lines don't carry a server-assigned id, so we use the line content plus
+ *  its index within the current snapshot. When a new line is appended the
+ *  existing rendered nodes keep their keys and React doesn't remount them. */
+const lineKey = (line: string, idx: number, snapshot: number) =>
+  `${snapshot}:${idx}:${line.slice(0, 40)}:${line.length}`;
+
 export const LogView = () => {
   const [lines, setLines] = useState<string[]>([]);
   const [filterQuery, setFilterQuery] = useState('');
+  const [debouncedFilter, setDebouncedFilter] = useState('');
   const [logLevel, setLogLevel] = useState('trace');
   const [logSource, setLogSource] = useState<'desk' | 'dll' | 'uco2' | 'both'>('desk');
   const [exportStatus, setExportStatus] = useState('');
   const containerRef = useRef<HTMLDivElement | null>(null);
   const isAtBottomRef = useRef(true);
+  /** Bumped every time we replace the `lines` array so the React keys are
+   *  re-namespaced to the snapshot and a line appended at the tail doesn't
+   *  collide with a previous index. */
+  const snapshotRef = useRef(0);
+  const intervalRef = useRef<number | null>(null);
+
+  // Debounce the text filter.
+  useEffect(() => {
+    const id = window.setTimeout(() => setDebouncedFilter(filterQuery), FILTER_DEBOUNCE_MS);
+    return () => window.clearTimeout(id);
+  }, [filterQuery]);
 
   const fetchLogs = async () => {
     try {
@@ -35,15 +68,27 @@ export const LogView = () => {
         source: logSource,
       });
       setLines(recent || []);
+      snapshotRef.current += 1;
     } catch (err) {
       console.warn('Failed to fetch logs:', err);
     }
   };
 
+  /** Visibility-aware polling: fast cadence while the Logs tab is visible,
+   *  slow cadence when the document is hidden (window minimised / another
+   *  tab focused in the OS / another Aether view active). */
   useEffect(() => {
-    fetchLogs();
-    const interval = setInterval(fetchLogs, 2500);
-    return () => clearInterval(interval);
+    const scheduleNext = () => {
+      const hidden = document.visibilityState !== 'visible';
+      const delay = hidden ? LOG_POLL_BACKOFF_MS : LOG_POLL_INTERVAL_MS;
+      intervalRef.current = window.setTimeout(() => {
+        void fetchLogs().finally(scheduleNext);
+      }, delay);
+    };
+    void fetchLogs().finally(scheduleNext);
+    return () => {
+      if (intervalRef.current !== null) window.clearTimeout(intervalRef.current);
+    };
   }, [logSource]);
 
   const handleScroll = () => {
@@ -78,12 +123,25 @@ export const LogView = () => {
     }
   };
 
-  const filteredLines = lines.filter((line) => {
-    if (logLevel === 'off') return false;
+  // Memoised filter: recompute only when the source lines, the level or the
+  // debounced query change. Lower-casing the needle once (not per-line) and
+  // slicing the result to MAX_RENDER_LINES (most recent) caps the render work
+  // during spammy builds.
+  const filteredLines = useMemo(() => {
+    if (logLevel === 'off') return [];
     const minRank = LEVEL_RANK[logLevel] ?? 0;
-    if (lineRank(line) < minRank) return false;
-    return !filterQuery.trim() || line.toLowerCase().includes(filterQuery.toLowerCase());
-  });
+    const needle = debouncedFilter.trim().toLowerCase();
+    const out: string[] = [];
+    // Lines arrive newest-last from the backend; iterate in reverse to keep
+    // the most recent matches when capping, then reverse back for display.
+    for (let i = lines.length - 1; i >= 0 && out.length < MAX_RENDER_LINES; i--) {
+      const line = lines[i];
+      if (lineRank(line) < minRank) continue;
+      if (needle && !line.toLowerCase().includes(needle)) continue;
+      out.push(line);
+    }
+    return out.reverse();
+  }, [lines, logLevel, debouncedFilter]);
 
   // Downloads the single log document for the selected source (desk/dll/uco2),
   // or the merged "all" document, with the same time-stamped naming as the .zip.
@@ -216,7 +274,10 @@ export const LogView = () => {
         <div className="log-view-terminal" ref={containerRef} onScroll={handleScroll}>
           {filteredLines.length > 0 ? (
             filteredLines.map((line, idx) => (
-              <div key={idx} className={getLineClass(line)}>
+              <div
+                key={lineKey(line, idx, snapshotRef.current)}
+                className={getLineClass(line)}
+              >
                 {line}
               </div>
             ))
@@ -224,7 +285,9 @@ export const LogView = () => {
             <div className="log-empty-state">
               {lines.length === 0
                 ? 'No session logs recorded yet.'
-                : 'No log entries match the active filter.'}
+                : debouncedFilter
+                  ? `No log entries match "${debouncedFilter}" at level ${logLevel.toUpperCase()}.`
+                  : `No log entries at level ${logLevel.toUpperCase()}.`}
             </div>
           )}
         </div>

@@ -428,3 +428,29 @@ impl SettingsManager {
     }
 
 }
+
+/// Convenience: load settings in one call. Replaces the repetitive
+/// `SettingsManager::new(app).load()` idiom that was copy-pasted across every
+/// command and made review harder; a single call-site also makes it trivial
+/// to add caching/memoisation later.
+#[inline]
+pub fn load_settings(app: &tauri::AppHandle) -> AppSettings {
+    SettingsManager::new(app).load()
+}
+
+/// Convenience: return a non-empty `steam_path` or a descriptive error ready
+/// for `?` propagation. Centralises the "steam path required" guard that
+/// dozens of commands reimplemented individually with subtly different
+/// phrasing.
+#[inline]
+pub fn require_steam_path(app: &tauri::AppHandle) -> Result<String, String> {
+    let path = load_settings(app).steam_path;
+    let trimmed = path.trim();
+    if trimmed.is_empty() {
+        return Err(
+            "Steam installation path is not configured. Please set it in Settings first."
+                .to_string(),
+        );
+    }
+    Ok(crate::steam::resolve::normalize_steam_path(trimmed))
+}

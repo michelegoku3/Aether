@@ -21,13 +21,22 @@ use std::path::Path;
 
 /// Dimensione minima della VS_FIXEDFILEINFO (13 DWORD = 52 byte), dalla documentazione
 /// Microsoft: sotto questa soglia il blocco root non può essere una versione valida.
+#[cfg(windows)]
 const FIXED_FILE_INFO_SIZE: u32 = 52;
 /// dwSignature atteso di una VS_FIXEDFILEINFO valida.
+#[cfg(any(windows, test))]
 const FIXED_FILE_INFO_SIGNATURE: u32 = 0xFEEF04BD;
 
 /// Estrae `(major, minor, patch)` dai primi 4 DWORD di una VS_FIXEDFILEINFO.
 /// Funzione pura, unit-testabile: il layout è la parte storicamente più fragile
 /// (dwStrucVersion è 0x00010000 fisso e NON va confuso con la versione del file).
+///
+/// Esiste esattamente dove viene usata: su Windows la chiama
+/// [`read_file_version`], in ogni build di test la chiamano i test puri in
+/// `tests::dll_version_tests`. Sul target non-Windows senza test non ha
+/// acquirenti, quindi non viene compilata (il lint `dead_code` la segnalerebbe
+/// a ragione) — vedi le due costanti qui sopra, usate solo dal suo corpo.
+#[cfg(any(windows, test))]
 pub(crate) fn version_from_fixed_header(header: &[u32; 4]) -> Option<(u16, u16, u16)> {
     if header[0] != FIXED_FILE_INFO_SIGNATURE {
         return None;

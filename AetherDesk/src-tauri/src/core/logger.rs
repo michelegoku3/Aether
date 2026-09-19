@@ -214,6 +214,16 @@ pub fn write(level: LogLevel, module: &str, msg: &str) {
 
 /// Deduplicating writer. Emits a unique `(module, msg)` signature at most once
 /// per session or until `reset_session_dedup()` is called.
+///
+/// Cross-platform API, but its only current caller — `desk_log_info_once!`
+/// inside `migration::ensure_start_menu_shortcut` — is Windows-only, so a
+/// non-Windows build never links it. The loudest possible fix (gating this
+/// function to Windows) would be wrong: nothing here is platform-specific, and
+/// the two exported macros would then silently stop compiling outside Windows.
+/// The dedup state it operates on (`LOGGER.dedup_set`) stays live everywhere
+/// through `reset_session_dedup()`, so this is an unreferenced entry point, not
+/// dead machinery.
+#[allow(dead_code)]
 pub fn write_once(level: LogLevel, module: &str, msg: &str) {
     let Some(mutex) = LOGGER.get() else {
         write(level, module, msg);
