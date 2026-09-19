@@ -3,24 +3,53 @@ import { useEffect, useMemo, useState } from 'react';
 // ────────────────────────────────────────────────────────────────────────────
 // GameCover — resolves a capsule/cover image for a game card.
 //
-// Design rules (rewritten cleanly, no incremental patches):
-//   • The capsule slot must ONLY ever show a real Steam cover/capsule asset.
-//     Hero/header/background banners belong to the Modify popup, never here.
-//   • Instead of trying to blacklist every "hero" URL shape (that kept leaking
-//     cases like .../bg.jpg from appdetails, or landscape capsules that look
-//     like heroes), we use an ALLOWLIST: an image is accepted only if its URL
-//     is recognizably a capsule/cover asset. Everything else is skipped.
-//   • The allowlist is applied when the URL list is built AND when a cached
-//     entry is read, so a stale cache (e.g. written before this fix) can never
-//     put a hero in the capsule slot.
+// Design rules:
+//   • The capsule slot ONLY shows a real Steam cover/capsule asset. Hero/
+//     header/background banners belong to the Modify popup, never here.
+//   • An ALLOWLIST of capsule-shaped URLs is applied both when candidates are
+//     built AND when cached entries are read, so stale caches (pre-fix writes
+//     and evicted TTL entries alike) can never leak a hero into the slot.
+//   • The in-memory cache is a bounded LRU; localStorage entries carry a TTL
+//     and are swept to keep persisted data well under quota.
 //   • If no cover resolves, we render the placeholder (Æ) instead of a wrong
 //     hero image.
 // ────────────────────────────────────────────────────────────────────────────
 
-const COVER_CACHE_PREFIX = 'aether_cover_v3_';
+const COVER_CACHE_PREFIX = 'aether_cover_v4_';
 const MIN_USABLE_WIDTH = 120;
 const MIN_USABLE_HEIGHT = 60;
 const PORTRAIT_RATIO_THRESHOLD = 0.85;
+
+/** Cover-cache policy. Entries older than TTL are transparently discarded on
+ *  read so we never re-render a months-old Steam capsule that may have been
+ *  replaced. The in-memory LRU is bounded to avoid unbounded growth across
+ *  long sessions browsing thousands of pages, and localStorage is swept when
+ *  it exceeds MAX_PERSISTED_ENTRIES. */
+const COVER_CACHE_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
+const MAX_MEMORY_ENTRIES = 500;
+const MAX_PERSISTED_ENTRIES = 200;
+const LEGACY_COVER_CACHE_PREFIX = 'aether_cover_v3_';
+
+type CoverFit = 'portrait' | 'landscape';
+
+interface ResolvedCover {
+  url: string;
+  fit: CoverFit;
+}
+
+interface PersistedCoverEnvelope {
+  v: 4;
+  url: string;
+  fit: CoverFit;
+  /** Epoch ms at which this entry was written. */
+  cachedAt: number;
+}
+
+interface GameCoverProps {
+  appId: string | number;
+  name: string;
+  canonicalUrl?: string;
+}
 
 // Predictable CDN capsule paths for older apps whose covers are still served
 // from the un-hashed URL scheme. Modern apps need the hashed URL provided via
@@ -37,11 +66,11 @@ const STEAM_CAPSULE_FALLBACK_TEMPLATES = [
 ];
 
 // The ONLY URL shapes that count as a cover/capsule. Anything not matching
-// this allowlist (library_hero, header, background, hero_capsule, .../bg.jpg,
-// etc.) is rejected so it can never land in the capsule slot.
+// (library_hero, header, background, hero_capsule, .../bg.jpg, etc.) is
+// rejected so it can never land in the capsule slot.
 const isCoverAssetUrl = (url: string): boolean => {
   const lower = url.toLowerCase();
-  // `capsule_` alone matches `hero_capsule` (a landscape banner). Exclude it.
+  // `capsule_` alone matches `hero_capsule` (a landscape banner) — exclude.
   if (lower.includes('hero_capsule') || lower.includes('library_hero') || lower.includes('/header')) {
     return false;
   }
@@ -53,57 +82,115 @@ const isCoverAssetUrl = (url: string): boolean => {
     || lower.includes('library_600x900');
 };
 
-type CoverFit = 'portrait' | 'landscape';
+/** Bounded LRU map for in-memory cover resolution. `get` promotes the key to
+ *  most-recent so eviction drops the least-recently-used; `set` inserts and
+ *  trims to MAX_MEMORY_ENTRIES. This replaces the previous unbounded `Map`
+ *  (which grew without limit across long sessions). */
+class BoundedCoverCache {
+  private readonly map = new Map<string, ResolvedCover>();
 
-interface ResolvedCover {
-  url: string;
-  fit: CoverFit;
-}
-
-interface GameCoverProps {
-  appId: string | number;
-  name: string;
-  canonicalUrl?: string;
-}
-
-const memoryCoverCache = new Map<string, ResolvedCover>();
-const inFlightCoverLookups = new Set<string>();
-
-const inferFitFromUrl = (url: string): CoverFit => {
-  const normalized = url.toLowerCase();
-  return normalized.includes('library_600x900') ? 'portrait' : 'landscape';
-};
-
-const parseCachedCover = (raw: string): ResolvedCover | null => {
-  const trimmed = raw.trim();
-  if (!trimmed) return null;
-
-  let url = trimmed;
-  let fit: CoverFit | undefined;
-  try {
-    const parsed = JSON.parse(trimmed) as Partial<ResolvedCover>;
-    if (typeof parsed.url === 'string' && parsed.url.trim()) {
-      url = parsed.url.trim();
-      fit = parsed.fit === 'portrait' || parsed.fit === 'landscape' ? parsed.fit : undefined;
-    }
-  } catch {
-    // Old format: the value was just the URL string.
+  get(key: string): ResolvedCover | undefined {
+    const value = this.map.get(key);
+    if (value === undefined) return undefined;
+    this.map.delete(key);
+    this.map.set(key, value);
+    return value;
   }
 
-  // Reject non-cover URLs on read so a stale cache can never leak a hero.
-  if (!isCoverAssetUrl(url)) return null;
-  return { url, fit: fit ?? inferFitFromUrl(url) };
+  set(key: string, value: ResolvedCover) {
+    if (this.map.has(key)) this.map.delete(key);
+    this.map.set(key, value);
+    while (this.map.size > MAX_MEMORY_ENTRIES) {
+      const oldestKey = this.map.keys().next().value;
+      if (oldestKey === undefined) break;
+      this.map.delete(oldestKey);
+    }
+  }
+}
+
+const memoryCoverCache = new BoundedCoverCache();
+const inFlightCoverLookups = new Set<string>();
+
+let haveSweptLegacyKeys = false;
+
+/** One-time sweep: remove v3 (no TTL, raw URL/JSON) entries so they don't
+ *  waste localStorage after the bump to v4. Lazy — runs on the first read. */
+const sweepLegacyAndStaleEntries = () => {
+  if (haveSweptLegacyKeys) return;
+  haveSweptLegacyKeys = true;
+  try {
+    const toRemove: string[] = [];
+    const kept: { key: string; cachedAt: number }[] = [];
+    const now = Date.now();
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (!key) continue;
+      if (key.startsWith(LEGACY_COVER_CACHE_PREFIX)) {
+        toRemove.push(key);
+        continue;
+      }
+      if (!key.startsWith(COVER_CACHE_PREFIX)) continue;
+      // Keep v4 entries whose TTL is still valid; drop anything expired.
+      try {
+        const raw = localStorage.getItem(key);
+        if (!raw) { toRemove.push(key); continue; }
+        const env = JSON.parse(raw) as Partial<PersistedCoverEnvelope>;
+        if (env.v !== 4 || typeof env.cachedAt !== 'number' || !env.url
+            || !isCoverAssetUrl(env.url)
+            || now - env.cachedAt > COVER_CACHE_TTL_MS) {
+          toRemove.push(key);
+          continue;
+        }
+        kept.push({ key, cachedAt: env.cachedAt });
+      } catch {
+        toRemove.push(key);
+      }
+    }
+    toRemove.forEach((k) => { try { localStorage.removeItem(k); } catch { /* ignore */ } });
+    // If we're still over the persisted cap, evict the oldest entries.
+    if (kept.length > MAX_PERSISTED_ENTRIES) {
+      kept.sort((a, b) => a.cachedAt - b.cachedAt);
+      kept.slice(MAX_PERSISTED_ENTRIES).forEach(({ key }) => {
+        try { localStorage.removeItem(key); } catch { /* ignore */ }
+      });
+    }
+  } catch {
+    // localStorage unavailable (private mode / quota) — nothing to do.
+  }
+};
+
+const parseCachedCover = (raw: string | null): ResolvedCover | null => {
+  if (!raw) return null;
+  try {
+    const env = JSON.parse(raw) as Partial<PersistedCoverEnvelope>;
+    if (env.v === 4
+        && typeof env.url === 'string'
+        && (env.fit === 'portrait' || env.fit === 'landscape')
+        && typeof env.cachedAt === 'number'
+        && Date.now() - env.cachedAt <= COVER_CACHE_TTL_MS
+        && isCoverAssetUrl(env.url)) {
+      return { url: env.url, fit: env.fit };
+    }
+  } catch {
+    // Fall through: v3 entries or plain strings are rejected by the legacy
+    // sweep on first read. We return null instead of guessing to stay safe.
+  }
+  return null;
 };
 
 const getCachedCover = (appId: string): ResolvedCover | null => {
+  sweepLegacyAndStaleEntries();
   const memoryHit = memoryCoverCache.get(appId);
   if (memoryHit) return memoryHit;
 
   try {
     const raw = localStorage.getItem(`${COVER_CACHE_PREFIX}${appId}`);
-    const parsed = raw ? parseCachedCover(raw) : null;
+    const parsed = parseCachedCover(raw);
     if (parsed) {
       memoryCoverCache.set(appId, parsed);
+    } else if (raw) {
+      // Defensive: clear any unparseable/expired entry we just read.
+      localStorage.removeItem(`${COVER_CACHE_PREFIX}${appId}`);
     }
     return parsed;
   } catch {
@@ -114,9 +201,15 @@ const getCachedCover = (appId: string): ResolvedCover | null => {
 const saveCachedCover = (appId: string, cover: ResolvedCover) => {
   memoryCoverCache.set(appId, cover);
   try {
-    localStorage.setItem(`${COVER_CACHE_PREFIX}${appId}`, JSON.stringify(cover));
+    const env: PersistedCoverEnvelope = {
+      v: 4,
+      url: cover.url,
+      fit: cover.fit,
+      cachedAt: Date.now(),
+    };
+    localStorage.setItem(`${COVER_CACHE_PREFIX}${appId}`, JSON.stringify(env));
   } catch {
-    // Cache is an optimization only. Ignore storage quota/privacy errors.
+    // Cache is an optimization only; ignore storage quota/privacy errors.
   }
 };
 
@@ -150,11 +243,9 @@ const buildCoverUrls = (appId: string, canonicalUrl?: string): string[] => {
 
 const classifyLoadedImage = (image: HTMLImageElement): CoverFit | null => {
   const { naturalWidth, naturalHeight } = image;
-
   if (naturalWidth < MIN_USABLE_WIDTH || naturalHeight < MIN_USABLE_HEIGHT) {
     return null;
   }
-
   const ratio = naturalWidth / naturalHeight;
   return ratio <= PORTRAIT_RATIO_THRESHOLD ? 'portrait' : 'landscape';
 };
@@ -170,25 +261,21 @@ const preloadCoverChain = (
 
   const tryNext = () => {
     if (cancelled) return;
-
     const url = urls[index];
     if (!url) {
       onResolved(null);
       return;
     }
-
     const image = new Image();
     image.decoding = 'async';
     image.onload = () => {
       if (cancelled) return;
-
       const fit = classifyLoadedImage(image);
       if (!fit) {
         index += 1;
         tryNext();
         return;
       }
-
       onResolved({ url, fit });
     };
     image.onerror = () => {
@@ -216,7 +303,6 @@ export const preloadGameCovers = (games: GameCoverPreloadInput[], maxCount = 40)
     if (getCachedCover(appIdString) || inFlightCoverLookups.has(appIdString)) {
       return;
     }
-
     inFlightCoverLookups.add(appIdString);
     preloadCoverChain(buildCoverUrls(appIdString, game.imageUrl), (cover) => {
       inFlightCoverLookups.delete(appIdString);

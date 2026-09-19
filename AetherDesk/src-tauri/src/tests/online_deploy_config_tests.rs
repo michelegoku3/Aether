@@ -10,9 +10,7 @@ use crate::online::deploy::{backup_dir_for, deploy, Journal};
 use crate::online::detect::GameInspector;
 use crate::online::revert::disable;
 use crate::online::state::OnlineStateStore;
-use crate::online::types::{
-    CoherenceOptions, OnlineEnableRequest, PhotonOptions, PlayfabOptions,
-};
+use crate::online::types::{OnlineEnableRequest, PhotonOptions, PlayfabOptions};
 use std::fs;
 use std::path::Path;
 

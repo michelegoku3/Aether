@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { LuaManifestRow } from '../modals/SpecificVersionModal';
 import ChangeVersionModal from '../modals/ChangeVersionModal';
@@ -26,6 +26,17 @@ interface LibraryViewProps {
   alternativeCardsOpacity: number;
   alternativeCardsFade: number;
 }
+
+/** How many covers to eagerly preload when the visible list changes. One
+ *  screenful of cards (≈ 12) plus one page over-scroll; enough to make
+ *  scrolling feel instant without kicking off dozens of parallel image
+ *  requests the user may never see (the previous value of 60 on every
+ *  filtered-games change was flagged in the audit). */
+const COVER_PRELOAD_WINDOW = 24;
+/** Manifests rows cached for an app are considered fresh for this long
+ *  after fetch. Re-opening the version editor within the window reuses the
+ *  snapshot instead of hammering Steam's filesystem again. */
+const MANIFEST_ROWS_CACHE_TTL_MS = 30_000;
 
 export const LibraryView = ({
   useAlternativeGameCards,
@@ -55,18 +66,29 @@ export const LibraryView = ({
   // Workshop manifest repair (scan appworkshop ACF + stage missing manifests).
   const [showWorkshopRepair, setShowWorkshopRepair] = useState(false);
 
+  const manifestRowsCache = useRef<Map<number, { at: number; rows: LuaManifestRow[] }>>(new Map());
+
   const showStatus = (text: string, type: StatusType) => {
     setStatus({ text, type });
   };
 
   useEffect(() => {
-    if (filteredGames.length > 0) {
-      preloadGameCovers(
-        filteredGames.slice(0, 60).map((game) => ({ appId: game.appId, imageUrl: game.imageUrl })),
-        60,
-      );
-    }
+    if (filteredGames.length === 0) return;
+    // When the tab/document is hidden we skip eager preloading: the GameCard
+    // component itself will resolve its own cover when mounted, so preloading
+    // unseen cards off-screen is wasted work.
+    if (document.visibilityState !== 'visible') return;
+    preloadGameCovers(
+      filteredGames.slice(0, COVER_PRELOAD_WINDOW).map((game) => ({ appId: game.appId, imageUrl: game.imageUrl })),
+      COVER_PRELOAD_WINDOW,
+    );
   }, [filteredGames]);
+
+  // When the installed-games list changes (refresh / install / uninstall),
+  // our short-lived manifest-rows snapshot is potentially stale.
+  useEffect(() => {
+    manifestRowsCache.current.clear();
+  }, [games]);
 
   const handleCycleFilter = async () => {
     try {
@@ -89,15 +111,27 @@ export const LibraryView = ({
 
   const handleOpenVersionEditor = async (game: InstalledGame) => {
     setStatus({ text: '', type: 'info' });
+    const appId = Number(game.appId);
+
+    // Short-lived in-memory cache: avoids a redundant `requireSteamPath` +
+    // filesystem walk if the user closes and re-opens the editor for the
+    // same game within the TTL window (previously every click re-resolved).
+    const cached = manifestRowsCache.current.get(appId);
+    if (cached && Date.now() - cached.at < MANIFEST_ROWS_CACHE_TTL_MS) {
+      setManifestRows(cached.rows.map((row) => ({ ...row, manifestInput: '' })));
+      setVersionGame(game);
+      return;
+    }
 
     try {
       const steamPath = await requireSteamPath();
       const rows: LuaManifestRow[] = await invoke('get_installed_lua_manifest_rows', {
-        appId: Number(game.appId),
+        appId,
         steamPath,
       });
-
-      setManifestRows((rows || []).map((row) => ({ ...row, manifestInput: '' })));
+      const processed = (rows || []).map((row) => ({ ...row, manifestInput: '' }));
+      manifestRowsCache.current.set(appId, { at: Date.now(), rows: processed });
+      setManifestRows(processed);
       setVersionGame(game);
     } catch (err: any) {
       setStatus({

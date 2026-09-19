@@ -8,7 +8,7 @@ import { useCustomCss } from './hooks/useCustomCss';
 import { usePersonalWallpaper } from './hooks/usePersonalWallpaper';
 import { STEAM_RUNTIME_EVENT } from './constants/library';
 import { LibraryGamesProvider } from './hooks/useLibraryGames';
-import { hasValidSteamPath } from './hooks/useSettings';
+import { AppSettings, getSettings, hasValidSteamPath } from './hooks/useSettings';
 import { SteamPathWarningModal } from './modals/SteamPathWarningModal';
 import { UnsavedChangesModal } from './modals/UnsavedChangesModal';
 import { getCurrentWindow } from '@tauri-apps/api/window';
@@ -139,21 +139,31 @@ export default function App() {
   // Bumped whenever the theme changes (toggle, picker, settings save) so the
   // custom-CSS hook re-fetches and applies the theme in real time.
   const [themeRevision, setThemeRevision] = useState(0);
-  const refreshCustomCss = async () => {
+  /** Applies a settings snapshot to local React state. Centralising the mapping
+   *  (instead of re-fetching inside every startup/refresh path) lets callers
+   *  share a single `get_settings` result across many dependents, eliminating
+   *  the startup N+1 IPC pattern reported by the audit. */
+  const applySettingsSnapshot = (settings: AppSettings) => {
+    setUseAlternativeGameCards(Boolean(settings.use_alternative_game_cards));
+    setCustomCssEnabled(Boolean(settings.custom_css_enabled));
+    setPersonalWallpaperEnabled(Boolean(settings.personal_wallpaper_enabled));
+    setPersonalWallpaperOpacity(Math.max(0, Math.min(100, Number(settings.personal_wallpaper_opacity ?? 20))));
+    setAlternativeCardsOpacity(Math.max(0, Math.min(100, Number(settings.alternative_cards_opacity ?? 100))));
+    setAlternativeCardsFade(Math.max(0, Math.min(100, Number(settings.alternative_cards_fade ?? 50))));
+  };
+
+  const refreshCustomCss = async (preloadedSettings?: AppSettings) => {
     try {
-      const settings: any = await invoke('get_settings');
-      setUseAlternativeGameCards(Boolean(settings.use_alternative_game_cards));
-      setCustomCssEnabled(Boolean(settings.custom_css_enabled));
-      setPersonalWallpaperEnabled(Boolean(settings.personal_wallpaper_enabled));
-      setPersonalWallpaperOpacity(Math.max(0, Math.min(100, Number(settings.personal_wallpaper_opacity ?? 20))));
-      setAlternativeCardsOpacity(Math.max(0, Math.min(100, Number(settings.alternative_cards_opacity ?? 100))));
-      setAlternativeCardsFade(Math.max(0, Math.min(100, Number(settings.alternative_cards_fade ?? 50))));
+      const settings = preloadedSettings ?? await getSettings();
+      applySettingsSnapshot(settings);
       setSettingsRevision((value) => value + 1);
       setWallpaperRevision((value) => value + 1);
       setThemeRevision((value) => value + 1);
       // A settings save can change the Steam root: re-resolve DLL install
       // state too, so the Aether panel never shows a stale previous path.
-      void checkDllStatus();
+      // Pass the snapshot we already have so checkDllStatus skips its own
+      // redundant get_settings call.
+      void checkDllStatus(settings);
     } catch {
       setUseAlternativeGameCards(false);
       setCustomCssEnabled(false);
@@ -182,15 +192,15 @@ export default function App() {
   useCustomCss(customCssEnabled, themeRevision);
   usePersonalWallpaper(personalWallpaperEnabled, personalWallpaperOpacity, wallpaperRevision);
 
-  const refreshHubcapUsage = async (forcedKey?: string) => {
+  interface DeskUpdateInfo { update_available?: boolean; is_test?: boolean; installed_version?: string; }
+  interface DllUpdateInfo { update_available?: boolean; is_test?: boolean; installed_version?: string; }
+  interface HubcapUsageStats { usage: number; limit: number; }
+
+  const refreshHubcapUsage = async (forcedKey?: string, preloadedSettings?: AppSettings) => {
     try {
-      let key = forcedKey;
-      if (key === undefined) {
-        const settings: any = await invoke('get_settings');
-        key = settings.hubcap_api_key;
-      }
+      const key = forcedKey ?? (preloadedSettings ?? await getSettings()).hubcap_api_key;
       if (key && key.trim() !== '') {
-        const stats: any = await invoke('get_hubcap_usage', { apiKey: key });
+        const stats = await invoke<HubcapUsageStats>('get_hubcap_usage', { apiKey: key });
         setHubcapUsage({ usage: stats.usage, limit: stats.limit, hasKey: true });
       } else {
         setHubcapUsage({ usage: 0, limit: 1500, hasKey: false });
@@ -201,10 +211,11 @@ export default function App() {
     }
   };
 
-  // Method to check for component updates globally (runs on mount and after operations)
-  const checkUpdates = async () => {
+  /** Desk update check is independent of Steam/settings and can run in
+   *  parallel with the DLL check (which needs steam_path). */
+  const checkDeskUpdates = async () => {
     try {
-      const deskInfo: any = await invoke('check_aether_desk_update');
+      const deskInfo = await invoke<DeskUpdateInfo>('check_aether_desk_update');
       console.log('[AetherDesk update check]', deskInfo);
       setDeskUpdateAvailable(Boolean(deskInfo.update_available));
       setDeskUpdateIsTest(Boolean(deskInfo.is_test));
@@ -216,15 +227,19 @@ export default function App() {
       setDeskUpdateAvailable(false);
       setDeskUpdateIsTest(false);
     }
+  };
 
+  const checkDllUpdates = async (settings: AppSettings) => {
     try {
-      const settings: any = await invoke('get_settings');
       const steamPath = settings.steam_path;
       if (steamPath && steamPath.trim() !== '') {
-        const updateInfo: any = await invoke('check_aether_dll_update', { steamPath });
+        const updateInfo = await invoke<DllUpdateInfo>('check_aether_dll_update', { steamPath });
         console.log('[AetherDLL update check]', updateInfo);
-        setDllUpdateAvailable(updateInfo.update_available);
+        setDllUpdateAvailable(Boolean(updateInfo.update_available));
         setDllUpdateIsTest(Boolean(updateInfo.is_test));
+      } else {
+        setDllUpdateAvailable(false);
+        setDllUpdateIsTest(false);
       }
     } catch (err) {
       console.error("AetherDLL update check failed:", err);
@@ -233,16 +248,20 @@ export default function App() {
     }
   };
 
-  // Check DLL installation status (called at startup and after install/uninstall)
-  const checkDllStatus = async () => {
+  // Check DLL installation status (called at startup and after install/uninstall).
+  // Accepts an optional preloaded settings snapshot so callers that already
+  // fetched settings (e.g. startup) can skip the redundant IPC round-trip.
+  const checkDllStatus = async (preloadedSettings?: AppSettings) => {
     try {
-      const settings: any = await invoke('get_settings');
+      const settings = preloadedSettings ?? await getSettings();
       const steamPath = settings.steam_path;
 
       if (steamPath && steamPath.trim() !== '') {
-        const isInstalled: any = await invoke('is_dll_installed', { steamPath });
-        const isBlocked: any = await invoke('is_steam_blocked', { steamPath });
-        const updateInfo: any = await invoke('check_aether_dll_update', { steamPath });
+        const [isInstalled, isBlocked, updateInfo] = await Promise.all([
+          invoke<boolean>('is_dll_installed', { steamPath }),
+          invoke<boolean>('is_steam_blocked', { steamPath }),
+          invoke<DllUpdateInfo>('check_aether_dll_update', { steamPath }),
+        ]);
 
         setDllStatus({
           isInstalled,
@@ -252,8 +271,6 @@ export default function App() {
       }
     } catch (err) {
       console.error("Failed to check DLL status:", err);
-      // Unreachable Steam (or any IPC failure) means "unknown", which the UI
-      // renders as not-installed — never leave a stale previous state.
       setDllStatus({
         isInstalled: false,
         installedVersion: 'N/A',
@@ -262,29 +279,47 @@ export default function App() {
     }
   };
 
-  // Warm the Library metadata cache as soon as the app starts.
-  // This is fire-and-forget: Library rendering must never wait for Steam network calls.
-  useEffect(() => {
-    invoke('warm_library_game_cache')
-      .then(count => console.log(`[AetherDesk library cache warm-up] ${count} cached names available`))
-      .catch(err => console.warn('Library cache warm-up failed:', err));
-  }, []);
+  /** Manual re-check of desk+dll update availability (triggered from the
+   *  Aether panel "Refresh" button). Mirrors the parallel startup pattern so
+   *  refreshing doesn't refetch settings twice either. */
+  const checkAllUpdates = async () => {
+    const settings = await getSettings();
+    await Promise.all([
+      checkDeskUpdates(),
+      checkDllUpdates(settings),
+    ]);
+  };
 
-  // Update check runs once at startup. Close and reopen Aether to check again.
+  // Startup hydration: previously App.tsx issued four `get_settings` calls
+  // serially (refreshCustomCss + refreshHubcapUsage + checkUpdates.DLL +
+  // checkDllStatus) plus two update checks. We now fetch settings ONCE and
+  // fan-out the snapshot to every consumer via the preloadedSettings
+  // parameter; independent calls (desk version, library cache warm-up) run
+  // in parallel with Promise.all so the UI settles in one round-trip.
   useEffect(() => {
-    // Resolve the desk version instantly (local IPC, no network) so the Aether
-    // panel shows the correct value from its first render — the GitHub-backed
-    // check below refreshes it later without any flicker.
-    invoke<string>('get_desk_version')
-      .then((v) => setDeskVersion(v || 'N/A'))
-      .catch(() => setDeskVersion('N/A'));
-    checkUpdates();
-    refreshHubcapUsage();
-    // refreshCustomCss also refreshes DLL status (single call, no duplicate).
-    refreshCustomCss();
-    // No valid stored Steam path → OST-style warning (reappears every
-    // startup until a valid path is configured).
-    void warnIfSteamPathMissing();
+    const hydrate = async () => {
+      // Kick off independent work first (no shared state with settings).
+      const deskVersionPromise = invoke<string>('get_desk_version')
+        .then((v) => setDeskVersion(v || 'N/A'))
+        .catch(() => setDeskVersion('N/A'));
+      const warmPromise = invoke<number>('warm_library_game_cache')
+        .then(count => console.log(`[AetherDesk library cache warm-up] ${count} cached names available`))
+        .catch(err => console.warn('Library cache warm-up failed:', err));
+
+      // Single settings fetch shared by CSS/Hubcap/DLL dependents.
+      const settingsPromise = getSettings();
+      const [settings] = await Promise.all([settingsPromise, deskVersionPromise, warmPromise]);
+
+      // Fan out the snapshot in parallel — none of these depend on each other.
+      await Promise.all([
+        refreshCustomCss(settings),
+        refreshHubcapUsage(undefined, settings),
+        checkDeskUpdates(),
+        checkDllUpdates(settings),
+        warnIfSteamPathMissing(),
+      ]);
+    };
+    void hydrate();
   }, []);
 
   // Window-close guard: with unsaved Settings edits, prevent the default
@@ -316,10 +351,11 @@ export default function App() {
         ? await invoke<string>('restart_steam')
         : await invoke<string>('start_steam');
       console.log('Steam action done:', message);
-      // I comandi aggiornano subito lo stato del monitor (mark) e l'evento
-      // `steam://runtime-state` segue; qui forziamo la convergenza
-      // dell'etichetta (l'azione termina sempre con Steam avviato).
-      setSteamRunning(true);
+      // Do NOT optimistically `setSteamRunning(true)` here: we let the
+      // dedicated `steam://runtime-state` event (pushed by the backend
+      // monitor when the transition actually completes) converge the label.
+      // If the event is slow to arrive, fall back to an explicit read once.
+      setSteamRunning(await invoke<boolean>('is_steam_running'));
     } catch (err: any) {
       console.error('Failed to start/restart Steam:', err);
       try {
@@ -366,7 +402,7 @@ export default function App() {
           deskVersion={deskVersion}
           dllUpdateIsTest={dllUpdateIsTest}
           deskUpdateIsTest={deskUpdateIsTest}
-          onUpdateComplete={checkUpdates}
+          onUpdateComplete={checkAllUpdates}
           hubcapUsage={hubcapUsage}
           onRefreshUsage={refreshHubcapUsage}
           dllStatus={dllStatus}

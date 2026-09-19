@@ -154,8 +154,7 @@ pub fn set_session_log_level(
     let _ = std::fs::write(&toml_path, new_content);
 
     // 3. Also update <Steam>\aethercore\aethercore.toml if present for legacy compatibility
-    let steam_path = crate::core::settings::SettingsManager::new(&app).load().steam_path;
-    if !steam_path.trim().is_empty() {
+    if let Ok(steam_path) = crate::core::settings::require_steam_path(&app) {
         let steam_toml = PathBuf::from(&steam_path).join("aethercore").join("aethercore.toml");
         if steam_toml.exists() {
             let content = std::fs::read_to_string(&steam_toml).unwrap_or_default();
@@ -233,7 +232,11 @@ fn sort_key(line: &str) -> String {
 }
 
 fn read_dll_tail_lines(app: &tauri::AppHandle, limit: usize) -> Vec<String> {
-    let steam_path = crate::core::settings::SettingsManager::new(app).load().steam_path;
+    // `require_steam_path` gives us a validated, normalised path (or an empty
+    // string if none is configured); in the empty case the candidate-dir
+    // loop below simply finds no main.log and returns an empty vector.
+    let steam_path = crate::core::settings::require_steam_path(app)
+        .unwrap_or_default();
     let steam_path_buf = PathBuf::from(&steam_path);
     let desk_log_dir = crate::core::paths::LocalAppPaths::data_root().join("logs");
     let install_root = crate::core::paths::LocalAppPaths::install_root();
@@ -265,7 +268,8 @@ fn read_dll_tail_lines(app: &tauri::AppHandle, limit: usize) -> Vec<String> {
 }
 
 fn clear_dll_log(app: &tauri::AppHandle) {
-    let steam_path = crate::core::settings::SettingsManager::new(app).load().steam_path;
+    let steam_path = crate::core::settings::require_steam_path(app)
+        .unwrap_or_default();
     let steam_path_buf = PathBuf::from(&steam_path);
     let desk_log_dir = crate::core::paths::LocalAppPaths::data_root().join("logs");
     let install_root = crate::core::paths::LocalAppPaths::install_root();
@@ -337,7 +341,8 @@ fn export_logs_bundle_sync(app: &tauri::AppHandle) -> Result<String, String> {
 
     let desk_log_dir = crate::core::paths::LocalAppPaths::data_root().join("logs");
     let install_root = crate::core::paths::LocalAppPaths::install_root();
-    let steam_path = crate::core::settings::SettingsManager::new(&app).load().steam_path;
+    let steam_path = crate::core::settings::require_steam_path(app)
+        .unwrap_or_default();
     let steam_path_buf = PathBuf::from(&steam_path);
 
     let mut copied = 0;

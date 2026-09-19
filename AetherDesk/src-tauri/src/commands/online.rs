@@ -42,10 +42,18 @@ pub fn clear_online_preferences(app_id: u32) -> Result<(), String> {
 #[tauri::command]
 pub async fn get_online_status(app: tauri::AppHandle, app_id: u32) -> Result<OnlineStatus, String> {
     let mut status = OnlineEngine::status(app_id, &state_path());
-    if status.state != crate::online::types::OnlineStateKind::Enabled
-        && foreign_for_app(&app, app_id).uco2
-    {
-        status.state = crate::online::types::OnlineStateKind::Enabled;
+    if status.state != crate::online::types::OnlineStateKind::Enabled {
+        // foreign_for_app esegue una scansione del filesystem di gioco:
+        // spawn_blocking per non bloccare il runtime.
+        let foreign = tauri::async_runtime::spawn_blocking({
+            let app = app.clone();
+            move || foreign_for_app(&app, app_id)
+        })
+        .await
+        .map_err(|e| format!("Online status task failed: {e}"))?;
+        if foreign.uco2 {
+            status.state = crate::online::types::OnlineStateKind::Enabled;
+        }
     }
     Ok(status)
 }
@@ -53,15 +61,20 @@ pub async fn get_online_status(app: tauri::AppHandle, app_id: u32) -> Result<Onl
 /// True quando UCO2 risulta attivo per il gioco, verificato dalla presenza
 /// del file `union-crax.ini` (scritto da UCO2 accanto all'exe in esecuzione).
 /// Rilevamento basato sui file, indipendente dal record di stato di Aether.
+/// La detection cammina l'intera cartella del gioco (walk+read) e va sempre
+/// eseguita su un thread di blocking I/O, non sul runtime tokio.
 #[tauri::command]
-pub fn is_uco2_active(app: tauri::AppHandle, app_id: u32) -> Result<bool, String> {
+pub async fn is_uco2_active(app: tauri::AppHandle, app_id: u32) -> Result<bool, String> {
     let game = resolve_installed_game(&app, app_id)?;
     let game_root = PathBuf::from(&game.game_path);
-
-    match crate::online::detect::GameInspector::inspect(&game_root) {
-        Ok(detection) => Ok(detection.ini_dir.join("union-crax.ini").is_file()),
-        Err(_) => Ok(false),
-    }
+    tauri::async_runtime::spawn_blocking(move || {
+        match crate::online::detect::GameInspector::inspect(&game_root) {
+            Ok(detection) => Ok(detection.ini_dir.join("union-crax.ini").is_file()),
+            Err(_) => Ok(false),
+        }
+    })
+    .await
+    .map_err(|e| format!("UCO2 check task failed: {e}"))?
 }
 
 /// Crack online-fix.me / SteamFix sul disco del gioco (non UCO2, non Online Aether).
@@ -78,8 +91,13 @@ pub(crate) fn foreign_for_app(app: &tauri::AppHandle, app_id: u32) -> ForeignOnl
 }
 
 #[tauri::command]
-pub fn inspect_foreign_online(app: tauri::AppHandle, app_id: u32) -> Result<ForeignOnlineReport, String> {
-    Ok(foreign_for_app(&app, app_id))
+pub async fn inspect_foreign_online(app: tauri::AppHandle, app_id: u32) -> Result<ForeignOnlineReport, String> {
+    tauri::async_runtime::spawn_blocking({
+        let app = app.clone();
+        move || Ok(foreign_for_app(&app, app_id))
+    })
+    .await
+    .map_err(|e| format!("Foreign-online inspect task failed: {e}"))?
 }
 
 /// Piano di attivazione (dry-run: nessun effetto sul disco).
@@ -133,14 +151,23 @@ pub async fn enable_online(
 ) -> Result<OnlineActionResult, String> {
     let game = resolve_installed_game(&app, app_id)?;
     let game_root = PathBuf::from(&game.game_path);
+    let state_path = state_path();
 
-    // Pre-flight: niente gioco in esecuzione durante il deploy.
-    let inspection = OnlineEngine::plan(
-        app_id,
-        &game_root,
-        &Err("bundle not needed for inspection".to_string()),
-        &state_path(),
-    )?;
+    // Pre-flight: inspection walks the game tree (I/O sincrono pesante). Va
+    // su `spawn_blocking` come plan_online già faceva: non blocchiamo il
+    // runtime tokio per una scansione di cartelle.
+    let preflight_root = game_root.clone();
+    let preflight_state = state_path.clone();
+    let inspection = tauri::async_runtime::spawn_blocking(move || {
+        OnlineEngine::plan(
+            app_id,
+            &preflight_root,
+            &Err("bundle not needed for inspection".to_string()),
+            &preflight_state,
+        )
+    })
+    .await
+    .map_err(|e| format!("Pre-flight inspection task failed: {e}"))??;
     if let Some(exe) = &inspection.detection.game_exe {
         if is_exe_running(exe) {
             return Err(format!(
@@ -157,7 +184,6 @@ pub async fn enable_online(
 
     let bundle = locate_bundle(&app)?;
     let backup_root = LocalAppPaths::backup_root();
-    let state_path = state_path();
 
     crate::desk_log_info!(
         "online",

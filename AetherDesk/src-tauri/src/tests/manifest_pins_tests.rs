@@ -9,6 +9,7 @@
 use crate::manifest::pins::{DepotManifestPin, LuaManifestPins};
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 struct TempDirGuard(PathBuf);
 
@@ -25,9 +26,15 @@ impl Drop for TempDirGuard {
 }
 
 fn tempdir() -> TempDirGuard {
+    // One directory PER CALL: `cargo test` runs the tests of this file on
+    // parallel threads inside a single process, so a process-wide name made
+    // every test delete and recreate the directory its neighbours were writing
+    // into (flaky "No such file or directory" from `write_lua`).
+    static NEXT_ID: AtomicUsize = AtomicUsize::new(0);
     let base = std::env::temp_dir().join(format!(
-        "aether_manifest_pins_test_{}",
-        std::process::id()
+        "aether_manifest_pins_test_{}_{}",
+        std::process::id(),
+        NEXT_ID.fetch_add(1, Ordering::Relaxed)
     ));
     let _ = fs::remove_dir_all(&base);
     fs::create_dir_all(&base).expect("create temp dir");

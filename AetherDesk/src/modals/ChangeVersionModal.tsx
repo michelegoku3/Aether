@@ -5,6 +5,7 @@ import { useModalDismiss } from '../hooks/useModalDismiss';
 import { useGameBuilds, BuildInfo } from '../hooks/useGameBuilds';
 import { useWatchdog } from '../hooks/useWatchdog';
 import { useLibraryGames } from '../hooks/useLibraryGames';
+import { useVersioningProgress } from '../hooks/useVersioningProgress';
 import { RefreshIcon } from '../ui/icons';
 import { StatusAlert } from '../ui/StatusAlert';
 import { emptyStatus, StatusMessage } from '../types/ui';
@@ -115,6 +116,9 @@ const AutoBuildsTab = ({ appId, onClose }: AutoBuildsTabProps) => {
   const [savingId, setSavingId] = useState<number | null>(null);
   const { arm: armWatchdog, clear: clearWatchdog } = useWatchdog();
   const { loadInstalledGames } = useLibraryGames();
+  // Live progress from the backend (apply_game_version + background ACF
+  // worker). Subscribed only while the modal is applying.
+  const liveProgress = useVersioningProgress(appId, isApplying);
 
   useModalDismiss(onClose, isApplying);
 
@@ -250,6 +254,21 @@ const AutoBuildsTab = ({ appId, onClose }: AutoBuildsTabProps) => {
       </div>
 
       <StatusAlert status={status} className="settings-alert--compact" />
+
+      {/* Live progress bar — driven by versioning://progress events. */}
+      {isApplying && liveProgress && (
+        <div className="version-progress" role="status" aria-live="polite">
+          <div className="version-progress-bar">
+            <div
+              className="version-progress-fill"
+              style={{ width: `${Math.max(0, Math.min(100, liveProgress.step))}%` }}
+            />
+          </div>
+          <div className="version-progress-label">
+            Step {liveProgress.step}/100 — {liveProgress.message}
+          </div>
+        </div>
+      )}
 
       {/* Builds list */}
       {loading && <div className="version-builds-empty">Loading builds…</div>}

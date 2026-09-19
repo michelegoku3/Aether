@@ -3581,6 +3581,40 @@ body {
   font-size: 12px;
 }
 
+/* Live progress bar shown during apply_game_version, driven by
+   `versioning://progress` events from the backend. Uses the same cyan accent
+   as every other progress indicator; the label sits underneath so the message
+   never gets clipped by the bar. */
+.version-progress {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 2px 0;
+  flex-shrink: 0;
+}
+
+.version-progress-bar {
+  width: 100%;
+  height: 6px;
+  background-color: #08080a;
+  border: 1px solid var(--border-color);
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.version-progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--color-cyan), #5ce1ff);
+  border-radius: 999px;
+  transition: width 0.25s ease;
+}
+
+.version-progress-label {
+  font-size: 11.5px;
+  color: var(--color-muted);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
 /* ------------------------------------------------------------------ */
 /* Online modals — OnlineChoiceModal (oc-*) / OnlinePanel (op-*)      */
 /* ------------------------------------------------------------------ */

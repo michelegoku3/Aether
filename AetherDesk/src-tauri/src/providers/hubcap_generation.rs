@@ -145,6 +145,10 @@ fn create_lock_file(path: &Path) -> std::io::Result<std::fs::File> {
 /// a live holder's critical section lasts milliseconds, so this only fires
 /// when the previous holder died.
 struct QuotaFileGuard {
+    /// Only needed where the lock file must be unlinked by hand. On Windows
+    /// the `DELETE_ON_CLOSE` handle removes it when the file is closed, so the
+    /// path is never read there and is not stored at all.
+    #[cfg(not(windows))]
     lock_path: PathBuf,
     _file: std::fs::File,
 }
@@ -159,10 +163,13 @@ impl QuotaFileGuard {
         let deadline = Instant::now() + QUOTA_LOCK_TIMEOUT;
         loop {
             match create_lock_file(&lock_path) {
-                Ok(file) => return Ok(Self {
-                    lock_path,
-                    _file: file,
-                }),
+                Ok(file) => {
+                    return Ok(Self {
+                        #[cfg(not(windows))]
+                        lock_path,
+                        _file: file,
+                    })
+                }
                 Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
                     let stale = std::fs::metadata(&lock_path)
                         .and_then(|meta| meta.modified())

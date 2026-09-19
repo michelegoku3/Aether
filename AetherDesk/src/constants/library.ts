@@ -31,3 +31,17 @@ export const LUA_LIBRARY_EVENT = 'library://lua-changed';
  * from `core/steam_monitor.rs`. Drives the Sidebar Start/Restart label.
  */
 export const STEAM_RUNTIME_EVENT = 'steam://runtime-state';
+
+/**
+ * Emitted by `commands/versioning.rs` and `versioning/queue.rs` while a build
+ * is being applied (step 10→95) and when background ACF edits finish (step
+ * 100). Payload uses camelCase (serde rename_all = "camelCase").
+ */
+export const VERSIONING_PROGRESS_EVENT = 'versioning://progress';
+
+export interface VersioningProgress {
+  appId: number;
+  buildId: number;
+  step: number;   // 0..100
+  message: string;
+}
