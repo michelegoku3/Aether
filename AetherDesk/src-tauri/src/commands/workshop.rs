@@ -10,7 +10,7 @@ use tokio::sync::Mutex;
 use zip::ZipArchive;
 
 use crate::core::paths::LocalAppPaths;
-use crate::core::settings::SettingsManager;
+use crate::core::settings::load_settings;
 use crate::providers::hubcap::HubcapClient;
 
 fn workshop_cache_path(workshop_id: u64) -> PathBuf {
@@ -580,7 +580,7 @@ pub async fn sync_hubcap_workshop_manifests(
     app: tauri::AppHandle,
 ) -> Result<WorkshopSyncReport, String> {
     let started = Instant::now();
-    let settings = SettingsManager::new(&app).load();
+    let settings = load_settings(&app);
     crate::desk_log_info!(
         "workshop",
         "Workshop sync start key_configured={} steam_path_configured={}",
@@ -708,7 +708,7 @@ pub async fn generate_hubcap_workshop_manifest(
         return Err("A valid Workshop item ID is required".to_string());
     }
     let path = workshop_cache_path(workshop_id);
-    let settings = SettingsManager::new(&app).load();
+    let settings = load_settings(&app);
     crate::desk_log_info!(
         "workshop",
         "Explicit Workshop generation start workshop_id={} key_configured={} steam_path_configured={}",

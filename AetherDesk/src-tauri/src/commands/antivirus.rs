@@ -28,7 +28,7 @@ use std::process::Command;
 /// Whether the antivirus-exclusion prompt has already been handled by the user.
 #[tauri::command]
 pub fn get_antivirus_exclusion_done(app: tauri::AppHandle) -> Result<bool, String> {
-    Ok(SettingsManager::new(&app).load().antivirus_exclusion_done)
+    Ok(crate::core::settings::load_settings(&app).antivirus_exclusion_done)
 }
 
 /// Persist that the user has handled the exclusion (used by "I added it
@@ -72,7 +72,7 @@ fn collect_exclusion_paths(app: &tauri::AppHandle) -> Vec<PathBuf> {
     // 2. Steam folders (main path + every library from libraryfolders.vdf).
     // Best-effort: when Steam is unconfigured/misconfigured the process-name
     // exclusions below still protect it wherever it lives.
-    let settings = SettingsManager::new(app).load();
+    let settings = crate::core::settings::load_settings(app);
     match crate::steam::resolve::resolve_steam_path(&settings.steam_path) {
         Ok(steam_root) => {
             let scanner = SteamLibraryScanner::new(steam_root);

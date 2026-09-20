@@ -305,7 +305,7 @@ pub fn default_window_icon() -> Result<tauri::image::Image<'static>, String> {
 pub fn apply_window_icon(app: &tauri::AppHandle) -> Result<(), String> {
     use tauri::Manager;
 
-    let settings = crate::core::settings::SettingsManager::new(app).load();
+    let settings = crate::core::settings::load_settings(app);
     let image = if settings.custom_icon_enabled {
         match icon_path(&settings.icon_selected_file)? {
             Some(path) => load_window_icon(&path)?,

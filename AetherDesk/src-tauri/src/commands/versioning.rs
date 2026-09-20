@@ -21,7 +21,7 @@ struct VersionProgressEvent {
 }
 
 fn build_service(app: &AppHandle) -> VersionService {
-    let settings = crate::core::settings::SettingsManager::new(app).load();
+    let settings = crate::core::settings::load_settings(app);
     let token = crate::versioning::sources::resolve_build_details_token(Some(
         &settings.build_details_token,
     ));
@@ -160,8 +160,7 @@ pub async fn apply_game_version(
         crate::desk_log_info!("versioning", "No Hubcap generation required; all pinned manifests are local");
         Vec::new()
     } else {
-        let hubcap_key = crate::core::settings::SettingsManager::new(&app)
-            .load()
+        let hubcap_key = crate::core::settings::load_settings(&app)
             .hubcap_api_key;
         crate::desk_log_info!(
             "versioning",

@@ -8,7 +8,7 @@ use crate::core::paths::LocalAppPaths;
 use crate::manifest::pins::{pins_from_rows, DepotManifestPin, LuaManifestPins, LuaManifestRow};
 use crate::manifest::package::{ManifestPackage, ManifestPackageFile};
 use crate::manifest::resolver;
-use crate::core::settings::{cache_version_with_currency, normalize_store_currency, normalize_store_front_filter, steam_country_code_for_currency, SettingsManager};
+use crate::core::settings::{cache_version_with_currency, load_settings, normalize_store_currency, normalize_store_front_filter, steam_country_code_for_currency};
 use crate::steam::app_names::SteamAppNameResolver;
 use crate::steam::compat::SteamCompat;
 use crate::store::cache::StoreSearchCache;
@@ -63,7 +63,7 @@ pub async fn suggest_store_games(
     app: tauri::AppHandle,
     query: String,
 ) -> Result<Vec<StoreSuggestItem>, String> {
-    let settings = SettingsManager::new(&app).load();
+    let settings = load_settings(&app);
     let country = steam_country_code_for_currency(&settings.store_currency);
     let items = crate::steam::store::SteamStore::new()
         .suggest_for_country(query.trim(), country)
@@ -83,7 +83,7 @@ pub async fn search_store(
     app: tauri::AppHandle,
     query: String,
 ) -> Result<Vec<UnifiedStoreGame>, String> {
-    let settings = SettingsManager::new(&app).load();
+    let settings = load_settings(&app);
     let show_store_dlcs = settings.show_store_dlcs;
     let show_store_nsfw = settings.show_store_nsfw;
     let show_store_delisted = settings.show_store_delisted;
@@ -163,7 +163,7 @@ pub async fn get_trending_store_games(
     start: usize,
     count: usize,
 ) -> Result<Vec<UnifiedStoreGame>, String> {
-    let settings = SettingsManager::new(&app).load();
+    let settings = load_settings(&app);
     if !settings.show_store_front_games {
         return Ok(Vec::new());
     }
@@ -246,7 +246,7 @@ pub fn get_cached_store_search(
         });
     }
 
-    let settings = SettingsManager::new(&app).load();
+    let settings = load_settings(&app);
     let store_currency = normalize_store_currency(&settings.store_currency);
     let hubcap_enabled = !settings.hubcap_api_key.trim().is_empty();
     let cache = StoreSearchCache::new(
@@ -289,7 +289,7 @@ pub async fn check_denuvo_bulk(
 ) -> Result<HashMap<u32, bool>, String> {
     let cache_dir = LocalAppPaths::data_root().join("cache");
     let app_version = app.package_info().version.to_string();
-    let settings = SettingsManager::new(&app).load();
+    let settings = load_settings(&app);
     let info_cache_version = cache_version_with_currency(&app_version, &settings.store_currency);
     let results = DrmDetector::new(cache_dir.clone(), app_version)
         .detect_many(app_ids)
@@ -808,7 +808,7 @@ fn apply_default_update_policy(
     app_id: u32,
     steam_path: &str,
 ) -> Result<(), String> {
-    let settings = SettingsManager::new(app).load();
+    let settings = load_settings(app);
     crate::desk_log_debug!(
         "store",
         "Update policy after package install app_id={} enabled={}",

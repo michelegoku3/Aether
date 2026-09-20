@@ -4,7 +4,7 @@ use crate::manifest::pins::{
     pins_from_rows, DepotManifestPin, LuaManifestEdit, LuaManifestPins, LuaManifestRow,
 };
 use crate::steam::compat::SteamCompat;
-use crate::core::settings::{cache_version_with_currency, steam_country_code_for_currency, SettingsManager};
+use crate::core::settings::{cache_version_with_currency, load_settings, steam_country_code_for_currency};
 use crate::steam::app_names::SteamAppNameResolver;
 use crate::steam::library::{InstalledSteamGame, SteamLibraryScanner};
 use crate::steam::store_items;
@@ -21,7 +21,7 @@ fn is_library_capsule_url(url: &str) -> bool {
 pub async fn get_installed_library_games(
     app: tauri::AppHandle,
 ) -> Result<Vec<InstalledSteamGame>, String> {
-    let settings = SettingsManager::new(&app).load();
+    let settings = load_settings(&app);
     // Unconfigured Steam shows an empty Library; a *misconfigured* one is a
     // real error so the UI shows "path is wrong" instead of "0 games found".
     let steam_root = match crate::steam::resolve::resolve_steam_path(&settings.steam_path) {
@@ -120,7 +120,7 @@ pub async fn get_installed_library_games(
 
 #[tauri::command]
 pub async fn warm_library_game_cache(app: tauri::AppHandle) -> Result<usize, String> {
-    let settings = SettingsManager::new(&app).load();
+    let settings = load_settings(&app);
     // Fire-and-forget background warm-up: never fail, but log a misconfigured
     // path instead of silently warming nothing.
     let steam_root = match crate::steam::resolve::resolve_steam_path(&settings.steam_path) {
@@ -379,7 +379,7 @@ pub async fn apply_specific_version_edits(
     // Local-first resolution (shared with every other pipeline): backup and
     // secondary-cache hits are restored into depotcache first; only genuinely
     // absent manifests are generated through the configured Hubcap key.
-    let settings = SettingsManager::new(&app).load();
+    let settings = load_settings(&app);
     let generation = if settings.hubcap_api_key.trim().is_empty() {
         crate::manifest::resolver::Generation::LocalOnly
     } else {

@@ -1,5 +1,5 @@
 use crate::core::paths::LocalAppPaths;
-use crate::core::settings::{cache_version_with_currency, steam_country_code_for_currency, SettingsManager};
+use crate::core::settings::{cache_version_with_currency, load_settings, steam_country_code_for_currency};
 use crate::game_info::cache::{GameInfoCache, GAME_INFO_TTL_SECONDS};
 use crate::game_info::model::{
     GameInfo, GameInfoAppDetails, GameInfoLocal, GameInfoPlatforms, GameInfoPrice,
@@ -19,7 +19,7 @@ pub struct GameInfoService {
 
 impl GameInfoService {
     pub fn new(app: tauri::AppHandle) -> Self {
-        let settings = SettingsManager::new(&app).load();
+        let settings = load_settings(&app);
         let app_version = app.package_info().version.to_string();
         let cache = GameInfoCache::new(
             LocalAppPaths::data_root().join("cache"),
@@ -109,7 +109,7 @@ impl GameInfoService {
     fn merge_local_info(&self, info: &mut GameInfo) {
         // Best-effort enrichment: a missing/misconfigured Steam path simply
         // skips the local merge instead of failing the whole GameInfo call.
-        let settings = SettingsManager::new(&self.app).load();
+        let settings = load_settings(&self.app);
         let Ok(steam_root) = crate::steam::resolve::resolve_steam_path(&settings.steam_path) else {
             return;
         };
@@ -153,7 +153,7 @@ impl GameInfoService {
     }
 
     async fn fetch_store_items_meta(&self, app_id: u32) -> Option<store_items::StoreItemMeta> {
-        let settings = SettingsManager::new(&self.app).load();
+        let settings = load_settings(&self.app);
         let country_code = steam_country_code_for_currency(&settings.store_currency);
         store_items::fetch_store_items_for_country(vec![app_id], country_code)
             .await
@@ -162,7 +162,7 @@ impl GameInfoService {
     }
 
     async fn fetch_hubcap_manifest(&self, app_id: u32) -> Option<bool> {
-        let settings = SettingsManager::new(&self.app).load();
+        let settings = load_settings(&self.app);
         if settings.hubcap_api_key.trim().is_empty() {
             return None;
         }
@@ -171,7 +171,7 @@ impl GameInfoService {
     }
 
     async fn fetch_appdetails_data(&self, app_id: u32) -> Option<serde_json::Value> {
-        let settings = SettingsManager::new(&self.app).load();
+        let settings = load_settings(&self.app);
         let country_code = steam_country_code_for_currency(&settings.store_currency);
         let client = http::build_client(APPDETAILS_TIMEOUT_SECONDS);
         api::fetch_app_details_for_country(&client, app_id, Some(country_code))

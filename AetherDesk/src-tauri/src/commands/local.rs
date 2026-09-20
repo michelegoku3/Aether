@@ -4,7 +4,7 @@
 // resolution, backup) lives in the Tauri-agnostic engine `crate::local`.
 // This file only opens the file picker, loads settings and calls the engine.
 use crate::core::backup::GameBackup;
-use crate::core::settings::SettingsManager;
+use crate::core::settings::load_settings;
 use crate::local;
 use crate::manifest::pins::LuaManifestPins;
 use crate::util::dialog::file_path_to_string;
@@ -64,7 +64,7 @@ pub async fn install_bulk_local(
     app: tauri::AppHandle,
     local_files: Vec<String>,
 ) -> Result<String, String> {
-    let settings = SettingsManager::new(&app).load();
+    let settings = load_settings(&app);
     let steam_path = crate::steam::resolve::resolve_steam_path(&settings.steam_path)
         .map_err(|error| error.message(&settings.steam_path))?;
 
@@ -133,7 +133,7 @@ pub async fn install_local_game(
     app_name: String,
     local_files: Vec<String>,
 ) -> Result<String, String> {
-    let settings = SettingsManager::new(&app).load();
+    let settings = load_settings(&app);
     let steam_path = crate::steam::resolve::resolve_steam_path(&settings.steam_path)
         .map_err(|error| error.message(&settings.steam_path))?;
 
