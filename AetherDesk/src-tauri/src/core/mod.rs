@@ -1,4 +1,7 @@
+pub mod error;
 pub mod paths;
+#[allow(unused_imports)]
+pub use error::{DeskError, DeskResult};
 pub mod settings;
 pub mod migration;
 pub mod backup;

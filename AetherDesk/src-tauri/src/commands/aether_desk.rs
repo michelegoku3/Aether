@@ -3,7 +3,7 @@
 //! These commands are thin wrappers: all update logic lives in
 //! [`crate::updater::desk`], keeping this file decoupled and easy to maintain.
 
-use crate::core::settings::SettingsManager;
+use crate::core::settings::{load_settings, SettingsManager};
 use crate::updater::desk;
 use crate::updater::github::{GithubReleaseManager, TestChannel};
 
@@ -87,7 +87,7 @@ pub async fn check_aether_desk_update(app: tauri::AppHandle) -> Result<serde_jso
     // Origin label: this same check is reachable from the startup pass, the
     // DLL/Desk-change path and the manual Check button (F7).
     let origin = "desk-check";
-    if SettingsManager::new(&app).load().enable_test_updates {
+    if load_settings(&app).enable_test_updates {
         if let Some(info) = test_channel_desk_update_info(current_version.clone(), origin).await {
             return serde_json::to_value(info)
                 .map_err(|e| format!("Failed to serialize desk test update info: {e}"));

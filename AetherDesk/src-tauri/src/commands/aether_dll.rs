@@ -1,4 +1,4 @@
-use crate::core::settings::SettingsManager;
+use crate::core::settings::load_settings;
 use crate::steam::resolve::resolve_steam_path;
 use crate::updater::dll::DllInstaller;
 use crate::updater::dll_version::read_installed_dll_version;
@@ -53,7 +53,7 @@ pub async fn check_aether_dll_update(app: tauri::AppHandle, steam_path: String) 
         steam_path
     );
 
-    if SettingsManager::new(&app).load().enable_test_updates {
+    if load_settings(&app).enable_test_updates {
         if let Some(response) = test_channel_update_response(&installed_version, origin).await {
             return Ok(response);
         }
@@ -201,7 +201,7 @@ pub async fn install_aether_dll(
     let manager = GithubReleaseManager::new();
 
     // Testing releases take priority when enabled.
-    let (tag_name, download_url) = if SettingsManager::new(&app).load().enable_test_updates {
+    let (tag_name, download_url) = if load_settings(&app).enable_test_updates {
         match manager.fetch_latest_dll_test_release("dll-install").await {
             Ok(pair) => {
                 crate::desk_log_info!("updater", "Install will use TEST DLL tag {}", pair.0);

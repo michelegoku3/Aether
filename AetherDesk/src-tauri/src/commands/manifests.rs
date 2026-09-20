@@ -2,7 +2,7 @@ use serde::Serialize;
 use std::path::PathBuf;
 use std::time::Instant;
 
-use crate::core::settings::SettingsManager;
+use crate::core::settings::load_settings;
 use crate::manifest::pins::{pins_from_rows, DepotManifestPin, LuaManifestPins};
 use crate::providers::hubcap::HubcapClient;
 use crate::steam::compat::SteamCompat;
@@ -38,7 +38,7 @@ pub async fn sync_hubcap_game_manifest(
         return Err("A valid AppID is required".to_string());
     }
 
-    let settings = SettingsManager::new(&app).load();
+    let settings = load_settings(&app);
     if settings.steam_path.trim().is_empty() {
         return Err("Manifest repair cannot run because the Steam path is empty".to_string());
     }
@@ -190,7 +190,7 @@ pub async fn refresh_game_pins_from_hubcap(
     if app_id == 0 {
         return Err("A valid AppID is required".to_string());
     }
-    let settings = SettingsManager::new(&app).load();
+    let settings = load_settings(&app);
     if settings.steam_path.trim().is_empty() {
         return Err("Pin refresh cannot run because the Steam path is empty".to_string());
     }

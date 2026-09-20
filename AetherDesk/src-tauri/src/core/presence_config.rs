@@ -22,13 +22,13 @@
 
 use std::path::Path;
 
-use crate::core::settings::SettingsManager;
+use crate::core::settings::load_settings;
 
 /// Le copie di aethercore.toml aggiornate da AetherDesk (stesso dual-path
 /// già usato per custom_game_name in commands/settings.rs).
 pub fn aethercore_toml_paths(app: &tauri::AppHandle) -> Vec<std::path::PathBuf> {
     let mut paths = vec![crate::core::paths::LocalAppPaths::config_dir().join("aethercore.toml")];
-    let steam_path = SettingsManager::new(app).load().steam_path;
+    let steam_path = load_settings(app).steam_path;
     if !steam_path.trim().is_empty() {
         paths.push(std::path::PathBuf::from(&steam_path).join("aethercore").join("aethercore.toml"));
     }

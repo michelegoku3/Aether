@@ -69,7 +69,7 @@ pub async fn prepare_update(app: &tauri::AppHandle) -> Result<Option<PreparedUpd
     // Testing updates take priority when enabled. Their version is gated by
     // `latest_is_newer_than`, exactly like stable releases: if the test release
     // is not newer than installed, we return Ok(None) (up to date).
-    let settings = crate::core::settings::SettingsManager::new(app).load();
+    let settings = crate::core::settings::load_settings(app);
     if settings.enable_test_updates {
         match manager.fetch_latest_desk_test_release("desk-install").await {
             Ok(release) => {

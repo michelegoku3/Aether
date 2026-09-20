@@ -1,6 +1,6 @@
 use crate::util::validation::validate_steam_path;
 use crate::updater::dll::DllInstaller;
-use crate::core::settings::SettingsManager;
+use crate::core::settings::load_settings;
 use crate::steam::launch_options;
 use crate::steam::resolve::{normalize_steam_path, resolve_steam_path};
 use crate::steam::update_guard::SteamUpdateGuard;
@@ -26,7 +26,7 @@ const AETHER_SHOWONLINE_TOKEN: &str = "-showonline";
 #[tauri::command]
 pub fn start_steam(app: tauri::AppHandle) -> Result<String, String> {
     crate::core::logger::reset_session_dedup();
-    let settings = SettingsManager::new(&app).load();
+    let settings = load_settings(&app);
     let steam_dir = std::path::PathBuf::from(&settings.steam_path);
 
     // Start = SOLO spawn: se Steam è già in esecuzione (stato del monitor,
@@ -49,7 +49,7 @@ pub fn restart_steam(app: tauri::AppHandle) -> Result<String, String> {
     crate::core::logger::reset_session_dedup();
     crate::desk_log_info!("lifecycle", "restart_steam: requested. Resetting AetherDesk session deduplication set.");
 
-    let settings = SettingsManager::new(&app).load();
+    let settings = load_settings(&app);
     let steam_dir = std::path::PathBuf::from(&settings.steam_path);
 
     if crate::core::steam_process::kill_steam() {
@@ -138,7 +138,7 @@ pub fn get_aetheronline(app: tauri::AppHandle, app_id: u32) -> Result<bool, Stri
             }
         }
     }
-    let steam_path = SettingsManager::new(&app).load().steam_path;
+    let steam_path = load_settings(&app).steam_path;
     // Unreachable Steam means no legacy token can be active either.
     if resolve_steam_path(&steam_path).is_err() {
         return Ok(false);
@@ -164,7 +164,7 @@ pub fn set_aetheronline(
     app_id: u32,
     enabled: bool,
 ) -> Result<String, String> {
-    let steam_path = SettingsManager::new(&app).load().steam_path;
+    let steam_path = load_settings(&app).steam_path;
     validate_steam_path(&steam_path)?;
 
     if enabled {
@@ -242,7 +242,7 @@ pub fn get_aether_showonline(app: tauri::AppHandle, app_id: u32) -> Result<bool,
             }
         }
     }
-    let steam_path = SettingsManager::new(&app).load().steam_path;
+    let steam_path = load_settings(&app).steam_path;
     // Unreachable Steam means no legacy token can be active either.
     if resolve_steam_path(&steam_path).is_err() {
         return Ok(false);
@@ -269,7 +269,7 @@ pub fn set_aether_showonline(
     app_id: u32,
     enabled: bool,
 ) -> Result<String, String> {
-    let steam_path = SettingsManager::new(&app).load().steam_path;
+    let steam_path = load_settings(&app).steam_path;
     validate_steam_path(&steam_path)?;
 
     if enabled {
@@ -361,7 +361,7 @@ pub fn set_aether_excluded(
     app_id: u32,
     enabled: bool,
 ) -> Result<String, String> {
-    let steam_path = SettingsManager::new(&app).load().steam_path;
+    let steam_path = load_settings(&app).steam_path;
     // Token residui: best-effort. L'exclude deve comunque scriversi.
     if !steam_path.trim().is_empty() {
         if let Ok(current) = launch_options::get_launch_options(Path::new(&steam_path), app_id) {
@@ -535,7 +535,7 @@ pub async fn pick_steam_folder(app: tauri::AppHandle) -> Result<Option<String>, 
 }
 
 fn pick_steam_folder_start_dir(app: &tauri::AppHandle) -> PathBuf {
-    let configured = SettingsManager::new(app).load().steam_path;
+    let configured = load_settings(app).steam_path;
     let normalized = normalize_steam_path(&configured);
     if !normalized.is_empty() {
         let dir = PathBuf::from(&normalized);
