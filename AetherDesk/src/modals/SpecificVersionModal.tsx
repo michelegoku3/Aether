@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { requireSteamPath } from '../hooks/useSettings';
+import type { LuaManifestIssue } from '../hooks/useLibraryGames';
 import { useModalDismiss } from '../hooks/useModalDismiss';
 import { useWatchdog } from '../hooks/useWatchdog';
 import { useLibraryGames } from '../hooks/useLibraryGames';
@@ -13,7 +14,33 @@ export interface LuaManifestRow {
   manifestId: string;
   enabled: boolean;
   manifestInput?: string;
+  /**
+   * Set when this row is a malformed line rather than an editable pin: the
+   * file cannot load in AetherDLL until it is repaired, and the row is here so
+   * the editor can offer the repair instead of refusing to open.
+   */
+  issue?: LuaManifestIssue;
 }
+
+/**
+ * Prepares backend rows for the editor.
+ *
+ * A malformed row gets the value that is actually in the file (`manifestId`
+ * carries the raw text, e.g. a hex GID) inside its input field: the field that
+ * holds the wrong value is the one that must be seen and corrected, and leaving
+ * it as a grey placeholder would hide exactly what has to change.
+ */
+export const prepareManifestRows = (rows: LuaManifestRow[] | null | undefined): LuaManifestRow[] =>
+  (rows || []).map((row) => ({
+    ...row,
+    manifestInput: row.issue ? row.manifestId : row.manifestInput || '',
+  }));
+
+/** Same rule as the backend (`ensure_decimal_uint64`): digits only, u64 range. */
+const isValidManifestGid = (value: string): boolean => {
+  if (!/^[0-9]{1,20}$/.test(value)) return false;
+  return BigInt(value) <= 18446744073709551615n;
+};
 
 export interface SpecificVersionGame {
   name: string;
@@ -31,9 +58,7 @@ interface ManualVersionEditorProps {
  * Extracted so the Change Version modal can host it as its "Manual" tab.
  */
 export const ManualVersionEditor = ({ game, initialRows, onClose }: ManualVersionEditorProps) => {
-  const [rows, setRows] = useState<LuaManifestRow[]>(
-    initialRows.map(row => ({ ...row, manifestInput: row.manifestInput || '' }))
-  );
+  const [rows, setRows] = useState<LuaManifestRow[]>(prepareManifestRows(initialRows));
   // Baseline = the state we consider "unchanged". Starts as the rows passed by
   // the caller, then is replaced by what is actually on disk once loaded, so a
   // build applied in the Auto tab (or any external edit) becomes the new
@@ -46,31 +71,40 @@ export const ManualVersionEditor = ({ game, initialRows, onClose }: ManualVersio
   );
   const [isApplying, setIsApplying] = useState(false);
   const { arm: armWatchdog, clear: clearWatchdog } = useWatchdog();
-  const { loadInstalledGames } = useLibraryGames();
+  const { loadInstalledGames, queryGameState } = useLibraryGames();
 
   // Refresh the rows from disk on mount: the Manual tab must show the live Lua
   // state (e.g. the manifests just written by an apply in the Auto tab), not a
-  // snapshot captured when the popup opened.
+  // snapshot captured when the popup opened. Served through the shared provider
+  // cache, so the StrictMode double mount does not read the Lua twice.
   React.useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
         const steamPath = await requireSteamPath();
-        const fresh = await invoke<LuaManifestRow[]>('get_installed_lua_manifest_rows', {
-          appId: Number(game.appId),
-          steamPath,
-        });
+        const fresh = await queryGameState<LuaManifestRow[]>(
+          Number(game.appId),
+          'get_installed_lua_manifest_rows',
+          { steamPath },
+        );
         if (cancelled) return;
-        const normalized = (fresh || []).map(row => ({
-          ...row,
-          manifestInput: row.manifestInput || '',
-        }));
+        const normalized = prepareManifestRows(fresh);
         setRows(normalized);
         setBaseline(normalized);
         if (normalized.length === 0) {
           setStatus({
             text: 'Lua ready, but no editable setManifestid entries were found.',
             type: 'error',
+          });
+        } else if (normalized.some(row => row.issue && row.issue.active)) {
+          setStatus({
+            text: 'This Lua contains a malformed pin (marked in red): AetherDLL ignores the whole file until it is repaired. Type a valid decimal manifest GID and press Apply Edits, or turn the row off to comment it out.',
+            type: 'error',
+          });
+        } else if (normalized.some(row => row.issue)) {
+          setStatus({
+            text: 'This Lua contains a commented-out malformed pin (marked in amber). The file loads now, but that call would break it as soon as updates are enabled for this game.',
+            type: 'info',
           });
         }
       } catch {
@@ -100,6 +134,19 @@ export const ManualVersionEditor = ({ game, initialRows, onClose }: ManualVersio
       return enabledChanged || manifestChanged;
     });
   }, [rows, baseline]);
+
+  // Typing is validated here as well as in the backend: the same "digits only,
+  // u64" rule means Apply can stay disabled on an obviously wrong value
+  // instead of failing after the filesystem round-trip.
+  const invalidInputRows = useMemo(
+    () =>
+      rows.filter((row) => {
+        const typed = row.manifestInput?.trim() ?? '';
+        return typed.length > 0 && !isValidManifestGid(typed);
+      }),
+    [rows]
+  );
+
 
   // ESC + click fuori chiudono il popup (rispettando un'operazione in corso).
   useModalDismiss(onClose, isApplying);
@@ -177,15 +224,40 @@ export const ManualVersionEditor = ({ game, initialRows, onClose }: ManualVersio
             </tr>
           </thead>
           <tbody>
-            {rows.map(row => (
-              <tr key={row.rowId} className={!row.enabled ? 'disabled' : ''}>
+            {rows.map(row => {
+              const typed = (row.manifestInput ?? '').trim();
+              const typedInvalid = typed.length > 0 && !isValidManifestGid(typed);
+              // Red = the file does not load (active malformed call, or a value
+              // the user just typed that the runtime would reject).
+              // Amber = a commented malformed call: a trap for "enable updates",
+              // not a broken load today.
+              const severity: 'ok' | 'warn' | 'invalid' =
+                typedInvalid || row.issue?.active
+                  ? 'invalid'
+                  : row.issue
+                    ? 'warn'
+                    : 'ok';
+              return (
+              <tr
+                key={row.rowId}
+                className={[
+                  !row.enabled ? 'disabled' : '',
+                  severity === 'invalid' ? 'version-row-invalid' : '',
+                  severity === 'warn' ? 'version-row-warn' : '',
+                ].filter(Boolean).join(' ')}
+              >
                 <td className="version-appid">{row.appId}</td>
                 <td>
                   <input
-                    className="version-manifest-input"
+                    className={[
+                      'version-manifest-input',
+                      severity === 'invalid' ? 'version-manifest-input--invalid' : '',
+                      severity === 'warn' ? 'version-manifest-input--warn' : '',
+                    ].filter(Boolean).join(' ')}
                     value={row.manifestInput || ''}
                     placeholder={row.manifestId}
-                    disabled={isApplying || !row.enabled}
+                    disabled={isApplying || (!row.enabled && !row.issue)}
+                    aria-invalid={severity === 'invalid'}
                     onChange={(e) => updateRow(row.rowId, { manifestInput: e.target.value })}
                   />
                 </td>
@@ -201,7 +273,8 @@ export const ManualVersionEditor = ({ game, initialRows, onClose }: ManualVersio
                   </label>
                 </td>
               </tr>
-            ))}
+              );
+            })}
           </tbody>
         </table>
       </div>
@@ -217,7 +290,9 @@ export const ManualVersionEditor = ({ game, initialRows, onClose }: ManualVersio
         <button
           className="panel-btn"
           onClick={handleApply}
-          disabled={isApplying || rows.length === 0 || !hasChanges}
+          disabled={
+            isApplying || rows.length === 0 || !hasChanges || invalidInputRows.length > 0
+          }
         >
           {isApplying ? 'Applying...' : 'Apply Edits'}
         </button>

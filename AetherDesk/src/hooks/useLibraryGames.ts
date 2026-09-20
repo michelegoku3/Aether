@@ -13,6 +13,32 @@ import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { emptyStatus, type StatusMessage } from '../types/ui';
 import { LUA_LIBRARY_EVENT, type LuaLibraryChange } from '../constants/library';
 
+/** Why one `setManifestid` line cannot be used (mirrors the Rust enum). */
+export type ManifestGidProblem = 'notDecimalUint64' | 'malformedCall';
+
+/**
+ * One malformed `setManifestid` line found in a game's Lua.
+ *
+ * A single bad line makes AetherDLL reject the whole file, so the game
+ * silently loses every depot override until it is repaired — which is why the
+ * Library card is marked and the version editor has to stay openable.
+ */
+export interface LuaManifestIssue {
+  /** 1-based line number in the Lua file, as Steam's own error reports it. */
+  line: number;
+  /** Depot id read from the call, when the call was readable. */
+  depotId: number | null;
+  /** Offending argument exactly as written in the file. */
+  rawValue: string;
+  problem: ManifestGidProblem;
+  /**
+   * True when the call is executed by the script engine, which is what makes
+   * AetherDLL reject the whole file. An inactive (commented) issue is a trap
+   * for the next "enable updates", not a broken load.
+   */
+  active: boolean;
+}
+
 export interface InstalledGame {
   id: number;
   name: string;
@@ -23,6 +49,8 @@ export interface InstalledGame {
   installed: boolean;
   imageUrl?: string;
   heroImageUrl?: string;
+  /** Malformed pins of this game's Lua (empty/absent for a healthy file). */
+  luaIssues?: LuaManifestIssue[];
 }
 
 type RefreshOrigin = 'initial' | 'manual' | 'automatic';
@@ -31,6 +59,12 @@ type RefreshOrigin = 'initial' | 'manual' | 'automatic';
 // atomic-revision read is only a recovery channel for WebView event loss; it
 // never polls Steam, `stplug-in`, or any other filesystem path.
 const REVISION_RECONCILIATION_INTERVAL_MS = 1_500;
+
+/** Reused per-game backend answer, keyed by command + appId. */
+interface GameStateCacheEntry {
+  revision: number;
+  promise: Promise<unknown>;
+}
 
 interface LibraryGamesContextValue {
   games: InstalledGame[];
@@ -42,6 +76,27 @@ interface LibraryGamesContextValue {
   setStatus: (status: StatusMessage) => void;
   /** Same canonical backend scan used by the Library Refresh button. */
   loadInstalledGames: () => void;
+  /**
+   * Single-flight cache for the per-game backend queries the Library cards and
+   * modals issue (`get_lua_game_update_state`, `get_installed_lua_manifest_rows`,
+   * `get_game_builds`, `get_saved_builds`, …).
+   *
+   * Opening one game used to fire 8 update-state + 6 manifest-rows + 2
+   * build-history IPC calls, each re-reading the same Lua from disk: React
+   * StrictMode mounts twice, and the actions modal, the version editor and the
+   * builds tab each ask independently. Concurrent callers now share one
+   * in-flight Promise, and a completed answer is reused until the library data
+   * is refreshed (every successful scan bumps the revision and clears the
+   * cache, and `library://lua-changed` triggers that scan), so nothing can go
+   * stale behind the user's back.
+   */
+  queryGameState: <T>(
+    appId: number,
+    command: string,
+    args?: Record<string, unknown>
+  ) => Promise<T>;
+  /** Drops cached answers for one app (or all, when omitted). */
+  invalidateGameState: (appId?: number) => void;
 }
 
 const LibraryGamesContext = createContext<LibraryGamesContextValue | null>(null);
@@ -66,6 +121,42 @@ export const LibraryGamesProvider = ({ children }: { children: ReactNode }) => {
   const pendingRef = useRef<RefreshOrigin | null>(null);
   const requestRevisionRef = useRef(0);
   const lastObservedLibraryRevisionRef = useRef<number | null>(null);
+  // Per-game query cache (see `queryGameState`). `gameStateRevisionRef` is
+  // bumped every time a scan commits new data, which is exactly the moment any
+  // cached Lua-derived answer may have become wrong.
+  const gameStateCacheRef = useRef<Map<string, GameStateCacheEntry>>(new Map());
+  const gameStateRevisionRef = useRef(0);
+
+  const invalidateGameState = useCallback((appId?: number) => {
+    const cache = gameStateCacheRef.current;
+    if (appId === undefined) {
+      cache.clear();
+      return;
+    }
+    const suffix = `:${appId}`;
+    for (const key of Array.from(cache.keys())) {
+      if (key.endsWith(suffix)) cache.delete(key);
+    }
+  }, []);
+
+  const queryGameState = useCallback(
+    <T,>(appId: number, command: string, args: Record<string, unknown> = {}): Promise<T> => {
+      const key = `${command}:${appId}`;
+      const cache = gameStateCacheRef.current;
+      const cached = cache.get(key);
+      if (cached && cached.revision === gameStateRevisionRef.current) {
+        return cached.promise as Promise<T>;
+      }
+      const promise = invoke<T>(command, { appId, ...args }).catch((error: unknown) => {
+        // A failure must never be cached: the next caller has to retry.
+        if (cache.get(key)?.promise === promise) cache.delete(key);
+        throw error;
+      });
+      cache.set(key, { revision: gameStateRevisionRef.current, promise });
+      return promise;
+    },
+    []
+  );
 
   const scheduleRefresh = useCallback((origin: RefreshOrigin) => {
     if (loadingRef.current) {
@@ -97,6 +188,9 @@ export const LibraryGamesProvider = ({ children }: { children: ReactNode }) => {
       .then((result) => {
         if (!mountedRef.current || requestRevision !== requestRevisionRef.current) return;
         setGames(result || []);
+        // New library data invalidates every cached per-game answer.
+        gameStateRevisionRef.current += 1;
+        gameStateCacheRef.current.clear();
         hasCompletedInitialScanRef.current = true;
       })
       .catch((error: unknown) => {
@@ -228,6 +322,8 @@ export const LibraryGamesProvider = ({ children }: { children: ReactNode }) => {
     status,
     setStatus,
     loadInstalledGames: () => scheduleRefresh('manual'),
+    queryGameState,
+    invalidateGameState,
   };
 
   return createElement(LibraryGamesContext.Provider, { value }, children);

@@ -12,7 +12,24 @@ use crate::providers::hubcap_generation::{
 };
 
 const BASE_URL: &str = "https://hubcapmanifest.com/api/v1";
+/// Client-wide timeout for Hubcap calls.
+///
+/// This is a *metadata* budget (key validation, catalog search, usage): those
+/// answers either arrive in a couple of seconds or are not coming at all, and
+/// short timeouts keep the UI responsive.
+///
+/// It is NOT a valid budget for `generate/*`, which streams a full depot
+/// manifest: the 8 s value used to fire in the middle of the body read on a
+/// large manifest (measured 8.023 s / 8.027 s), leaving the provider with a
+/// consumed quota slot and Desk with a body-less error. Generation requests
+/// therefore override the timeout per request — see
+/// [`GENERATION_TIMEOUT_SECONDS`].
 const HUBCAP_TIMEOUT_SECONDS: u64 = 8;
+/// Per-request timeout for `generate/*` endpoints, applied on the request
+/// builder so it replaces (not adds to) the client default. Generous on
+/// purpose: a multi-hundred-MB manifest over a slow link is legitimate, while
+/// a hung connection still fails in finite time.
+const GENERATION_TIMEOUT_SECONDS: u64 = 300;
 const GENERATION_RETRY_ATTEMPTS: u32 = 3;
 /// One provider validation round-trip per key per window, shared by every
 /// command surface (store, versioning, library, Workshop, settings).
@@ -657,16 +674,43 @@ impl HubcapClient {
                 .client
                 .get(&url)
                 .headers(self.headers())
+                // Generation gets its own budget instead of the 8 s metadata
+                // one: the client default is a total timeout covering the body
+                // read, so it aborted large manifests mid-download.
+                .timeout(Duration::from_secs(GENERATION_TIMEOUT_SECONDS))
                 .send()
                 .await
             {
                 Ok(response) => response,
-                Err(_error) if attempt + 1 < GENERATION_RETRY_ATTEMPTS => {
+                // A timeout is not transient in the retry sense: the provider
+                // already spent the quota slot and will very likely time out
+                // again, so retrying only multiplies the wait (3 × 300 s of a
+                // blocked serial batch) without changing the outcome. Surface it
+                // once, with the numbers needed to tell a slow link from a hung
+                // connection.
+                Err(error) if error.is_timeout() => {
+                    crate::desk_log_error!(
+                        "hubcap",
+                        "Generation request timed out kind={} timeout_s={} elapsed_ms={} attempt={}/{}",
+                        description,
+                        GENERATION_TIMEOUT_SECONDS,
+                        started.elapsed().as_millis(),
+                        attempt + 1,
+                        GENERATION_RETRY_ATTEMPTS
+                    );
+                    return Err(format!(
+                        "Hubcap {description} request timed out after {}s (timeout_s={})",
+                        started.elapsed().as_secs(),
+                        GENERATION_TIMEOUT_SECONDS
+                    ));
+                }
+                Err(error) if attempt + 1 < GENERATION_RETRY_ATTEMPTS => {
                     crate::desk_log_debug!(
                         "hubcap",
-                        "Transient Hubcap generation network error; retry {}/{}",
+                        "Transient Hubcap generation network error; retry {}/{}: {}",
                         attempt + 2,
-                        GENERATION_RETRY_ATTEMPTS
+                        GENERATION_RETRY_ATTEMPTS,
+                        error
                     );
                     tokio::time::sleep(Duration::from_millis(500 * (1u64 << attempt))).await;
                     continue;
@@ -674,12 +718,16 @@ impl HubcapClient {
                 Err(error) => {
                     crate::desk_log_error!(
                         "hubcap",
-                        "Generation request network failure kind={} after {} attempt(s): {}",
+                        "Generation request network failure kind={} elapsed_ms={} after {} attempt(s): {}",
                         description,
+                        started.elapsed().as_millis(),
                         attempt + 1,
                         error
                     );
-                    return Err(format!("Hubcap {description} request failed: {error}"));
+                    return Err(format!(
+                        "Hubcap {description} request failed after {}s: {error}",
+                        started.elapsed().as_secs()
+                    ));
                 }
             };
             let status = response.status();
@@ -716,12 +764,36 @@ impl HubcapClient {
                 .and_then(|value| value.to_str().ok())
                 .unwrap_or("")
                 .to_ascii_lowercase();
+            // Read the body while the response headers are still available:
+            // when the read fails, the declared length and elapsed time are
+            // what separate "provider sent a broken/truncated body" from "our
+            // own timeout fired mid-download" — the ambiguity that made the
+            // original log line misdiagnosable.
+            let declared_len = response
+                .headers()
+                .get(reqwest::header::CONTENT_LENGTH)
+                .and_then(|value| value.to_str().ok())
+                .and_then(|value| value.parse::<u64>().ok());
             let bytes = response
                 .bytes()
                 .await
                 .map_err(|error| {
-                    crate::desk_log_error!("hubcap", "Generation response body read failed kind={}: {}", description, error);
-                    format!("Failed to read Hubcap {description} bytes: {error}")
+                    crate::desk_log_error!(
+                        "hubcap",
+                        "Generation response body read failed kind={} elapsed_ms={} content_length={:?} timeout_s={} is_timeout={}: {}",
+                        description,
+                        started.elapsed().as_millis(),
+                        declared_len,
+                        GENERATION_TIMEOUT_SECONDS,
+                        error.is_timeout(),
+                        error
+                    );
+                    format!(
+                        "Failed to read Hubcap {description} bytes after {}s (content-length {:?}, timeout_s={}): {error}",
+                        started.elapsed().as_secs(),
+                        declared_len,
+                        GENERATION_TIMEOUT_SECONDS
+                    )
                 })?
                 .to_vec();
             if bytes.is_empty() {
@@ -743,11 +815,23 @@ impl HubcapClient {
             }
             crate::desk_log_info!(
                 "hubcap",
-                "Generation request complete kind={} bytes={} elapsed_ms={}",
+                "Generation request complete kind={} bytes={} declared_bytes={:?} elapsed_ms={}",
                 description,
                 bytes.len(),
+                declared_len,
                 started.elapsed().as_millis()
             );
+            if let Some(declared) = declared_len {
+                if declared != bytes.len() as u64 {
+                    crate::desk_log_warn!(
+                        "hubcap",
+                        "Generation response size mismatch kind={} declared={} received={}",
+                        description,
+                        declared,
+                        bytes.len()
+                    );
+                }
+            }
             return Ok(bytes);
         }
         unreachable!("generated-byte retry loop always returns")

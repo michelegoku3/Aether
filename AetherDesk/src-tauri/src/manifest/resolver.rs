@@ -20,9 +20,12 @@
 //! installs, local restores) shares one commit gate, so concurrent pipelines
 //! can never collide on the temp/final file names.
 
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::{Mutex, OnceLock};
-use std::time::Instant;
+use std::time::{Duration, Instant};
+
+use once_cell::sync::Lazy;
 
 use crate::manifest::package::ManifestPackageFile;
 use crate::manifest::pins::DepotManifestPin;
@@ -231,6 +234,69 @@ impl ManifestResolution {
     }
 }
 
+// ============================================================================
+// Provider-failure memory (per-pin quarantine)
+// ============================================================================
+
+/// Consecutive provider failures after which a pin is quarantined.
+///
+/// The batch used to abort at the first failure, so a single poisoned pin made
+/// every pin of that game ungeneratable: the caller retried the whole batch on
+/// the next poll, the provider answered the same way, and the game never
+/// progressed. Failing per pin already unblocks the healthy ones; this cap
+/// additionally stops asking (and burning quota) for a pin that keeps failing,
+/// while leaving it visible as `missing` so the pipeline reports it honestly.
+pub(crate) const MAX_CONSECUTIVE_FAILURES: u32 = 3;
+
+/// How long a quarantined pin is skipped before it is offered to the provider
+/// again. Long enough to stop the loop, short enough to self-heal after a
+/// transient provider-side problem without a Desk restart.
+const QUARANTINE_COOLDOWN: Duration = Duration::from_secs(30 * 60);
+
+#[derive(Debug, Clone, Copy)]
+struct FailureStreak {
+    consecutive: u32,
+    last_failure: Instant,
+}
+
+/// Process-wide, in-memory failure memory keyed by `depot_manifest`. Not
+/// persisted on purpose: a restart is a legitimate "try again" signal.
+static GENERATION_FAILURES: Lazy<Mutex<HashMap<String, FailureStreak>>> =
+    Lazy::new(|| Mutex::new(HashMap::new()));
+
+fn failure_key(pin: &DepotManifestPin) -> String {
+    format!("{}_{}", pin.depot_id, pin.manifest_id)
+}
+
+/// `Some(streak)` when the pin must be skipped instead of requested.
+pub(crate) fn quarantine_streak(pin: &DepotManifestPin) -> Option<u32> {
+    let key = failure_key(pin);
+    let guard = GENERATION_FAILURES.lock().ok()?;
+    let streak = guard.get(&key)?;
+    if streak.consecutive < MAX_CONSECUTIVE_FAILURES {
+        return None;
+    }
+    (streak.last_failure.elapsed() < QUARANTINE_COOLDOWN).then_some(streak.consecutive)
+}
+
+pub(crate) fn record_generation_failure(pin: &DepotManifestPin) {
+    let Ok(mut guard) = GENERATION_FAILURES.lock() else {
+        return;
+    };
+    let entry = guard.entry(failure_key(pin)).or_insert(FailureStreak {
+        consecutive: 0,
+        last_failure: Instant::now(),
+    });
+    entry.consecutive = entry.consecutive.saturating_add(1);
+    entry.last_failure = Instant::now();
+}
+
+pub(crate) fn clear_generation_failure(pin: &DepotManifestPin) {
+    if let Ok(mut guard) = GENERATION_FAILURES.lock() {
+        guard.remove(&failure_key(pin));
+    }
+}
+
 /// The one entry point every pipeline uses to answer "give me these
 /// manifests": local restore first (backup and secondary-cache hits are
 /// published into depotcache with byte verification), then — only for the
@@ -269,16 +335,18 @@ pub async fn resolve(request: ManifestRequest) -> Result<ManifestResolution, Str
                     "Hubcap API key is not valid or is not allowed to make requests.".to_string(),
                 );
             }
-            resolution.generated =
-                generate_missing_manifests(client, std::mem::take(&mut resolution.missing))
-                    .await?;
+            let (generated, failed) =
+                generate_missing_manifests(client, std::mem::take(&mut resolution.missing)).await;
+            resolution.generated = generated;
+            resolution.missing = failed;
             Ok(resolution)
         }
         Generation::PreValidatedKey(api_key) => {
             let client = HubcapClient::new(api_key);
-            resolution.generated =
-                generate_missing_manifests(client, std::mem::take(&mut resolution.missing))
-                    .await?;
+            let (generated, failed) =
+                generate_missing_manifests(client, std::mem::take(&mut resolution.missing)).await;
+            resolution.generated = generated;
+            resolution.missing = failed;
             Ok(resolution)
         }
     }
@@ -289,37 +357,69 @@ pub async fn resolve(request: ManifestRequest) -> Result<ManifestResolution, Str
 /// process-wide scheduler already deduplicates and enforces cadence across
 /// game, Workshop, and store flows — a second concurrent request would only
 /// add avoidable 429 pressure.
+///
+/// Failure policy (F2): **per pin**, never per batch. One pin the provider
+/// cannot satisfy must not abort the other 29 — that turned a single poisoned
+/// manifest into a permanent stall for the whole game, because the caller
+/// retried the identical batch (same order, same pins) on every poll. Failures
+/// are returned in the second element so the caller's `missing` list stays
+/// truthful instead of reporting an exception that names no pin.
+///
+/// Returns `(generated_files, failed_pins)`.
 async fn generate_missing_manifests(
     client: HubcapClient,
     missing: Vec<DepotManifestPin>,
-) -> Result<Vec<ManifestPackageFile>, String> {
+) -> (Vec<ManifestPackageFile>, Vec<DepotManifestPin>) {
     let started = Instant::now();
-    crate::desk_log_info!(
-        "manifest",
-        "Manifest generation batch start missing={}",
-        missing.len()
-    );
+    let total = missing.len();
+    crate::desk_log_info!("manifest", "Manifest generation batch start missing={}", total);
     let mut files = Vec::new();
+    let mut failed = Vec::new();
     for pin in missing {
+        if let Some(streak) = quarantine_streak(&pin) {
+            crate::desk_log_warn!(
+                "manifest",
+                "Manifest generation skipped depot_id={} manifest_id={}: quarantined after {} consecutive failures (retry in {} min)",
+                pin.depot_id,
+                pin.manifest_id,
+                streak,
+                QUARANTINE_COOLDOWN.as_secs() / 60
+            );
+            failed.push(pin);
+            continue;
+        }
+
         let (pin, result) = generate_one(client.clone(), pin).await;
-        let bytes = result.map_err(|error| {
-            format!(
-                "Hubcap could not generate manifest {}_{}: {}",
-                pin.depot_id, pin.manifest_id, error
-            )
-        })?;
-        files.push(ManifestPackageFile {
-            file_name: manifest_file_name(&pin),
-            bytes,
-        });
+        match result {
+            Ok(bytes) => {
+                clear_generation_failure(&pin);
+                files.push(ManifestPackageFile {
+                    file_name: manifest_file_name(&pin),
+                    bytes,
+                });
+            }
+            Err(error) => {
+                record_generation_failure(&pin);
+                crate::desk_log_warn!(
+                    "manifest",
+                    "Manifest generation failed depot_id={} manifest_id={}: {}",
+                    pin.depot_id,
+                    pin.manifest_id,
+                    error
+                );
+                failed.push(pin);
+            }
+        }
     }
     crate::desk_log_info!(
         "manifest",
-        "Manifest generation batch complete generated={} elapsed_ms={}",
+        "Manifest generation batch complete requested={} generated={} failed={} elapsed_ms={}",
+        total,
         files.len(),
+        failed.len(),
         started.elapsed().as_millis()
     );
-    Ok(files)
+    (files, failed)
 }
 
 /// One serialized generation request with structured start/complete logging.

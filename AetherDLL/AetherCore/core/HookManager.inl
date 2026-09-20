@@ -9,7 +9,7 @@ bool HookManager::TryHook(const std::string& name, const std::string& module, HM
                           Fn& original, Fn detour) {
     void* target = pattern::ResolveAddress(name, module, hModule);
     if (!target) {
-        RecordMissed(name);
+        RecordMissed(name, MissReason::PatternUnresolved);
         return false;
     }
     RegisterHook(name, target, reinterpret_cast<void**>(&original), reinterpret_cast<void*>(detour));

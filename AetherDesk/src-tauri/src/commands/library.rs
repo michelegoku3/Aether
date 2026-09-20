@@ -196,7 +196,24 @@ pub fn get_installed_lua_manifest_rows(
 ) -> Result<Vec<LuaManifestRow>, String> {
     validate_steam_path(&steam_path)?;
     crate::desk_log_debug!("library", "Reading installed Lua manifest rows for {} from '{}'", crate::core::logger::format_appid(app_id), steam_path);
-    LuaManifestPins::new(steam_path, app_id).rows_from_file()
+    // Tolerant read: this feeds the version editor, which must open even when
+    // the Lua contains a malformed setManifestid line — that line is exactly
+    // what the user may be there to fix. Malformed lines come back as rows
+    // carrying `issue`, so the editor can mark and repair them; writing is
+    // still gated by `validate_content` (F4).
+    let pins = LuaManifestPins::new(steam_path, app_id);
+    let rows = pins.editor_rows_from_file()?;
+    if let Some(issue) = rows.iter().find_map(|row| row.issue.as_ref()) {
+        crate::desk_log_warn!(
+            "library",
+            "Lua for {} contains {} malformed setManifestid line(s); first at line {} ({})",
+            crate::core::logger::format_appid(app_id),
+            rows.iter().filter(|row| row.issue.is_some()).count(),
+            issue.line,
+            issue.problem.reason()
+        );
+    }
+    Ok(rows)
 }
 
 /// Last backend Library invalidation revision.

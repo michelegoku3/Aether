@@ -8,7 +8,7 @@
 // AetherCore has exactly one. It reads everything it needs from g_state and
 // HookManager, so there is no separate counter bookkeeping to keep in sync.
 //
-// Schema v3 (top-level keys include):
+// Schema v4 (top-level keys include):
 //   schema_version, ts
 //   build_id, build_config, build_time, diversion_outcome
 //   steamclient_sha, steamclient_toml_found, steamclient_pattern_source
@@ -27,7 +27,11 @@
 //     online_payload_inject_successes, online_payload_inject_failures
 //   pipewatch_snapshots
 //   ipc_spec_loaded, ipc_spec_entries
-//   hooks_installed_list[], hooks_missed_list[], diagnostics[]
+//   hooks_installed_list[], hooks_missed_list[] ("Name (reason)"), diagnostics[]
+//
+// History: v4 changed hooks_missed_list entries from "Name" to
+// "Name (reason)" (the reason is otherwise lost when the log rotates);
+// v3 was the first AetherCore schema.
 // ---------------------------------------------------------------------------
 namespace ac::status {
 

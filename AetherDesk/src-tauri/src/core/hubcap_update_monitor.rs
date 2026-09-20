@@ -57,6 +57,23 @@ const STATE_FILE: &str = "hubcap_game_updates.json";
 /// manifests are generated, so a moderate interval keeps the commented pins
 /// fresh without hammering the provider.
 const CONTENTS_REFRESH_INTERVAL: Duration = Duration::from_secs(15 * 60);
+/// How often an app whose Steam side did NOT change since its last contents
+/// check may be re-diffed. The check itself is free, but it was the dominant
+/// traffic source anyway: every managed Lua was re-diffed on a 15 min timer
+/// (~4300 requests/day measured), which buys nothing for a game that Steam has
+/// not touched and only risks provider-side 429s. Steam-side changes promote
+/// an app back to the fast interval immediately (see `pin_refresh_candidates`).
+const CONTENTS_IDLE_REFRESH_INTERVAL: Duration = Duration::from_secs(60 * 60);
+/// Minimum spacing between two contents diffs, independent of the per-app
+/// timer: keeps the provider lane polite (at most one diff per minute) even
+/// when many apps become due at once. Hubcap's contents endpoint is per-app,
+/// so there is no batch call to amortise this over.
+const PIN_REFRESH_MIN_GAP: Duration = Duration::from_secs(60);
+/// Attempts after which a lane task stops being retried (F2 cap ladder).
+/// Without it, a permanently failing task kept a slot forever on an
+/// ever-growing ladder (60 s → 480 s) and the game never left the queue: the
+/// lane could never catch up with the games behind it.
+pub(crate) const MAX_TASK_ATTEMPTS: u32 = 6;
 
 /// How soon the workshop lane re-runs after a pass that deferred items to the
 /// next batch (per-run generation cap). Not a failure: the attempt counter is
@@ -81,6 +98,12 @@ pub struct PendingTaskInfo {
 #[serde(rename_all = "camelCase")]
 pub struct LaneStatus {
     pub pending: Vec<PendingTaskInfo>,
+    /// Tasks dropped after [`MAX_TASK_ATTEMPTS`] failed attempts. They are no
+    /// longer retried on a timer; the next Steam-side change (or an app
+    /// restart) queues them again. Surfaced so the UI can show "gave up after
+    /// N tries" instead of an eternally pending task.
+    #[serde(default)]
+    pub unresolved: Vec<PendingTaskInfo>,
     /// Tasks completed successfully since the monitor started.
     pub processed_count: u64,
     /// Unix epoch seconds of the last completed task.
@@ -151,6 +174,12 @@ struct PersistedState {
     /// diff must not run on every poll for every game).
     #[serde(default)]
     contents_checked: HashMap<u32, u64>,
+    /// AppID -> Steam ACF fingerprint observed at the last completed contents
+    /// check. Equal to the current fingerprint means "Steam did not touch this
+    /// game since", which is what promotes an app from the idle (1 h) to the
+    /// fast (15 min) contents cadence.
+    #[serde(default)]
+    contents_fingerprint: HashMap<u32, String>,
 }
 
 fn state_path() -> PathBuf {
@@ -318,9 +347,19 @@ fn scan_workshop_manifests(steam_path: &str) -> Option<String> {
 // ============================================================================
 
 #[derive(Debug, Clone)]
-struct PendingTask {
-    attempts: u32,
-    next_attempt: Instant,
+pub(crate) struct PendingTask {
+    pub(crate) attempts: u32,
+    pub(crate) next_attempt: Instant,
+}
+
+impl PendingTask {
+    /// A task that is due now, as every lane queues it.
+    pub(crate) fn due_now() -> Self {
+        Self {
+            attempts: 0,
+            next_attempt: Instant::now(),
+        }
+    }
 }
 
 pub(crate) fn retry_delay(attempts: u32) -> Duration {
@@ -377,6 +416,74 @@ fn managed_update_candidates(
     candidates
 }
 
+/// Which apps the `pin_refresh` lane should re-diff against Hubcap's contents
+/// endpoint on this poll.
+///
+/// Three gates, in order of cost (F8):
+///  1. **installed**: an app with no Steam ACF is not installed, so a moved
+///     GID cannot be applied in place; it costs a request and buys nothing.
+///     (Installing the game later queues it through the ACF diff anyway.)
+///  2. **managed**: only Lua files whose pins allow updates are meaningful —
+///     a version-locked game is pinned on purpose.
+///  3. **cadence**: 15 min for an app whose Steam side changed since its last
+///     check, 1 h for an idle one. The endpoint is free, but re-diffing an
+///     untouched game 96 times a day is pure noise for the provider.
+///
+/// The previous version queued every Lua on the 15 min timer regardless of
+/// these, which produced ~4300 requests/day on a 30-game library.
+pub(crate) fn pin_refresh_candidates(
+    contents_checked: &HashMap<u32, u64>,
+    contents_fingerprint: &HashMap<u32, String>,
+    current_acf: &HashMap<u32, String>,
+    current_luas: &HashMap<u32, String>,
+    steam_path: &str,
+) -> Vec<u32> {
+    let now = now_epoch();
+    let mut candidates = Vec::new();
+    for app_id in current_luas.keys() {
+        let Some(fingerprint) = current_acf.get(app_id) else {
+            continue;
+        };
+        let last_check = contents_checked.get(app_id).copied().unwrap_or(0);
+        let changed_since_check = contents_fingerprint.get(app_id) != Some(fingerprint);
+        let interval = if changed_since_check {
+            CONTENTS_REFRESH_INTERVAL
+        } else {
+            CONTENTS_IDLE_REFRESH_INTERVAL
+        };
+        if now.saturating_sub(last_check) < interval.as_secs() {
+            continue;
+        }
+        let pins = LuaManifestPins::new(steam_path.to_string(), *app_id);
+        if !pins.path_exists() {
+            continue;
+        }
+        match pins.updates_are_enabled() {
+            Ok(true) => {}
+            Ok(false) => {
+                crate::desk_log_debug!(
+                    "hubcap-updates",
+                    "Contents check skipped app_id={}: the user locked this game to a fixed version",
+                    app_id
+                );
+                continue;
+            }
+            Err(error) => {
+                crate::desk_log_warn!(
+                    "hubcap-updates",
+                    "Contents check skipped app_id={}: {}",
+                    app_id,
+                    error
+                );
+                continue;
+            }
+        }
+        candidates.push(*app_id);
+    }
+    candidates.sort_unstable();
+    candidates
+}
+
 /// Takes the first task whose backoff expired, if any (one task per lane per
 /// poll keeps the shared provider lane and the disk quiet).
 fn take_ready(pending: &mut BTreeMap<u32, PendingTask>) -> Option<(u32, PendingTask)> {
@@ -388,8 +495,34 @@ fn take_ready(pending: &mut BTreeMap<u32, PendingTask>) -> Option<(u32, PendingT
     pending.remove(&ready).map(|task| (ready, task))
 }
 
-fn reschedule(pending: &mut BTreeMap<u32, PendingTask>, app_id: u32, task: PendingTask) {
+/// Re-queues a failed task with the next backoff step, or drops it once the
+/// ladder is exhausted.
+///
+/// The ladder used to be unbounded: a task the provider would never satisfy
+/// stayed queued forever (60 s → 480 s, then flat) and, because each lane runs
+/// one task per poll, it also starved every game behind it. Dropping after
+/// [`MAX_TASK_ATTEMPTS`] makes the failure final and visible; a later Steam-side
+/// change, or an app restart, queues the game again.
+///
+/// The last attempt is reported to the caller (which owns the lane status) via
+/// the returned `bool`: `true` = still queued, `false` = given up.
+pub(crate) fn reschedule(
+    pending: &mut BTreeMap<u32, PendingTask>,
+    app_id: u32,
+    task: PendingTask,
+) -> bool {
     let attempts = task.attempts.saturating_add(1);
+    if attempts >= MAX_TASK_ATTEMPTS {
+        pending.remove(&app_id);
+        crate::desk_log_warn!(
+            "hubcap-updates",
+            "Task abandoned app_id={} attempts={} max_attempts={}; it will be queued again on the next Steam-side change",
+            app_id,
+            attempts,
+            MAX_TASK_ATTEMPTS
+        );
+        return false;
+    }
     let delay = retry_delay(attempts);
     crate::desk_log_warn!(
         "hubcap-updates",
@@ -405,6 +538,27 @@ fn reschedule(pending: &mut BTreeMap<u32, PendingTask>, app_id: u32, task: Pendi
             next_attempt: Instant::now() + delay,
         },
     );
+    true
+}
+
+/// Marks one app as given up in the lane status (see [`reschedule`]).
+fn mark_unresolved(lane: fn(&mut MonitorStatusSnapshot) -> &mut LaneStatus, app_id: u32, attempts: u32) {
+    with_status(|status| {
+        let lane = lane(status);
+        lane.unresolved.retain(|info| info.app_id != Some(app_id));
+        lane.unresolved.push(PendingTaskInfo {
+            app_id: Some(app_id),
+            attempts,
+            next_retry_epoch: None,
+        });
+    });
+}
+
+/// Clears the "given up" mark of one app: it is being retried again.
+fn clear_unresolved(lane: fn(&mut MonitorStatusSnapshot) -> &mut LaneStatus, app_id: u32) {
+    with_status(|status| {
+        lane(status).unresolved.retain(|info| info.app_id != Some(app_id));
+    });
 }
 
 fn pending_infos(pending: &BTreeMap<u32, PendingTask>) -> Vec<PendingTaskInfo> {
@@ -592,6 +746,9 @@ async fn run(app: AppHandle) {
     let mut pin_refresh: BTreeMap<u32, PendingTask> = BTreeMap::new();
     let mut repairs: BTreeMap<u32, PendingTask> = BTreeMap::new();
     let mut workshop: Option<PendingTask> = None;
+    // Rate gate for the contents lane: Hubcap's contents endpoint is per-app,
+    // so politeness has to come from spacing the calls (see PIN_REFRESH_MIN_GAP).
+    let mut last_pin_refresh_at: Option<Instant> = None;
 
     loop {
         let settings = SettingsManager::new(&app).load();
@@ -629,10 +786,7 @@ async fn run(app: AppHandle) {
             // --- pin_sync: Steam ACF changed for a game whose pins allow updates.
             let changed_acf = changed_against(&checkpoint.processed, &current_acf);
             for app_id in managed_update_candidates(changed_acf, &settings.steam_path) {
-                pin_sync.entry(app_id).or_insert(PendingTask {
-                    attempts: 0,
-                    next_attempt: Instant::now(),
-                });
+                pin_sync.entry(app_id).or_insert_with(PendingTask::due_now);
             }
             // Games that need no sync must not keep re-qualifying: mark them
             // processed without doing any work.
@@ -652,10 +806,7 @@ async fn run(app: AppHandle) {
             // lane is gated on it to avoid a queue of guaranteed failures.
             if key_ready {
                 for app_id in changed_against(&checkpoint.lua_processed, &current_luas) {
-                    repairs.entry(app_id).or_insert(PendingTask {
-                        attempts: 0,
-                        next_attempt: Instant::now(),
-                    });
+                    repairs.entry(app_id).or_insert_with(PendingTask::due_now);
                 }
             }
 
@@ -665,25 +816,21 @@ async fn run(app: AppHandle) {
             // queueing every managed Lua is cheap; successes (including
             // skips) advance the checkpoint timestamp.
             if key_ready {
-                let now = now_epoch();
-                for app_id in current_luas.keys() {
-                    let last = checkpoint.contents_checked.get(app_id).copied().unwrap_or(0);
-                    if now.saturating_sub(last) >= CONTENTS_REFRESH_INTERVAL.as_secs() {
-                        pin_refresh.entry(*app_id).or_insert(PendingTask {
-                            attempts: 0,
-                            next_attempt: Instant::now(),
-                        });
-                    }
+                for app_id in pin_refresh_candidates(
+                    &checkpoint.contents_checked,
+                    &checkpoint.contents_fingerprint,
+                    &current_acf,
+                    &current_luas,
+                    &settings.steam_path,
+                ) {
+                    pin_refresh.entry(app_id).or_insert_with(PendingTask::due_now);
                 }
             }
 
             // --- workshop: the installed Workshop set changed.
             if key_ready && current_workshop != checkpoint.workshop_processed {
                 if current_workshop.is_some() {
-                    workshop.get_or_insert(PendingTask {
-                        attempts: 0,
-                        next_attempt: Instant::now(),
-                    });
+                    workshop.get_or_insert_with(PendingTask::due_now);
                 } else {
                     checkpoint.workshop_processed = None;
                     checkpoint_dirty = true;
@@ -707,6 +854,7 @@ async fn run(app: AppHandle) {
                         status.pin_sync.last_run_epoch = Some(now_epoch());
                         status.pin_sync.last_error = None;
                     });
+                    clear_unresolved(|status| &mut status.pin_sync, app_id);
                     crate::desk_log_info!(
                         "hubcap-updates",
                         "Pin sync complete app_id={} realigned={}",
@@ -724,30 +872,52 @@ async fn run(app: AppHandle) {
                         app_id,
                         error
                     );
-                    reschedule(&mut pin_sync, app_id, task);
+                    let attempts = task.attempts.saturating_add(1);
+                    if !reschedule(&mut pin_sync, app_id, task) {
+                        mark_unresolved(|status| &mut status.pin_sync, app_id, attempts);
+                    }
                 }
             }
         }
 
         // ----- pin_refresh execution (free contents diff + local-first staging)
-        if let Some((app_id, task)) = take_ready(&mut pin_refresh) {
+        let pin_refresh_gate_open = last_pin_refresh_at
+            .map(|last| last.elapsed() >= PIN_REFRESH_MIN_GAP)
+            .unwrap_or(true);
+        let ready_pin_refresh = if pin_refresh_gate_open {
+            take_ready(&mut pin_refresh)
+        } else {
+            None
+        };
+        if let Some((app_id, task)) = ready_pin_refresh {
+            last_pin_refresh_at = Some(Instant::now());
             match crate::commands::manifests::refresh_game_pins_from_hubcap(app.clone(), app_id).await {
                 Ok(report) => {
                     checkpoint.contents_checked.insert(app_id, now_epoch());
+                    // Remember the Steam state this check is valid for: it is
+                    // what keeps an untouched game on the slow cadence and a
+                    // just-updated one on the fast one.
+                    if let Some(fingerprint) = current_acf.get(&app_id) {
+                        checkpoint
+                            .contents_fingerprint
+                            .insert(app_id, fingerprint.clone());
+                    }
                     let _ = save_state(&checkpoint);
                     with_status(|status| {
                         status.pin_refresh.processed_count += 1;
                         status.pin_refresh.last_run_epoch = Some(now_epoch());
                         status.pin_refresh.last_error = None;
                     });
+                    clear_unresolved(|status| &mut status.pin_refresh, app_id);
                     crate::desk_log_info!(
                         "hubcap-updates",
-                        "Pin refresh complete app_id={} skipped={} checked_depots={} staged={} realigned={}",
+                        "Pin refresh complete app_id={} skipped={} checked_depots={} staged={} realigned={} invalid_pin_line={:?}",
                         app_id,
                         report.skipped,
                         report.checked_depots,
                         report.staged,
-                        report.realigned
+                        report.realigned,
+                        report.invalid_pin_line
                     );
                 }
                 Err(error) => {
@@ -760,7 +930,20 @@ async fn run(app: AppHandle) {
                         app_id,
                         error
                     );
-                    reschedule(&mut pin_refresh, app_id, task);
+                    let attempts = task.attempts.saturating_add(1);
+                    if !reschedule(&mut pin_refresh, app_id, task) {
+                        // Final failure: let the app fall back to the idle
+                        // cadence instead of re-qualifying on the next poll,
+                        // and tell the UI the lane gave up on it.
+                        checkpoint.contents_checked.insert(app_id, now_epoch());
+                        if let Some(fingerprint) = current_acf.get(&app_id) {
+                            checkpoint
+                                .contents_fingerprint
+                                .insert(app_id, fingerprint.clone());
+                        }
+                        let _ = save_state(&checkpoint);
+                        mark_unresolved(|status| &mut status.pin_refresh, app_id, attempts);
+                    }
                 }
             }
         }
@@ -778,6 +961,7 @@ async fn run(app: AppHandle) {
                         status.repair.last_run_epoch = Some(now_epoch());
                         status.repair.last_error = None;
                     });
+                    clear_unresolved(|status| &mut status.repair, app_id);
                     crate::desk_log_info!(
                         "hubcap-updates",
                         "Local Lua manifest repair complete app_id={}",
@@ -794,7 +978,10 @@ async fn run(app: AppHandle) {
                         app_id,
                         error
                     );
-                    reschedule(&mut repairs, app_id, task);
+                    let attempts = task.attempts.saturating_add(1);
+                    if !reschedule(&mut repairs, app_id, task) {
+                        mark_unresolved(|status| &mut status.repair, app_id, attempts);
+                    }
                 }
             }
         }

@@ -7,6 +7,9 @@
   --color-text: #e1e1e6;
   --color-muted: #8f8f9e;
   --color-cyan: #00b4d8;
+  /* Installed (green badge, and the outline the Fix Pins badge wears when the
+     game is installed). One accent, two carriers. */
+  --color-installed-green: #10b981;
   /* Semantic accents: one accent per MEANING, never per decoration.
      --color-uco2 identifies the UCO2 pipeline everywhere (option state,
      badges, panel accents) — the online choice popup and the UCO2 panel
@@ -17,6 +20,16 @@
   --color-nsfw-pink-hover: #ff8fb0;
   --color-delisted-white: #f2f2f5;
   --color-delisted-white-hover: #ffffff;
+  /* Broken Lua pins (a malformed setManifestid line makes AetherDLL reject the
+     whole file). One accent, used by the Library card marker and by the
+     offending row/field in the version editor. */
+  --color-invalid-red: #ff3b3b;
+  --color-invalid-red-hover: #ff6b6b;
+  --color-invalid-red-soft: rgba(255, 59, 59, 0.12);
+  /* Amber: a problem that does not break the current run (an inactive, i.e.
+     commented, malformed pin). */
+  --color-warn-amber: #e5c07b;
+  --color-warn-amber-soft: rgba(229, 192, 123, 0.12);
   --border-color: #22222a;
   /* GameCard geometry: the cover radius must nest inside the card radius
      minus its 1px border; the inset variant is used when a marker border
@@ -366,6 +379,46 @@ body {
   border-color: #2e2e38;
 }
 
+/* `Fix Pins`: white on red in the top-right corner, same shape and position as
+   the Installed/Available badges (only one of the three is ever shown). It is
+   clickable and opens the version editor, where the malformed line is marked
+   in red. Shown only for a Lua that exists and whose malformed call is active:
+   an `Available` game has no file yet, so nothing to repair. */
+.badge-fix-pins {
+  position: absolute;
+  top: -8px;
+  right: -8px;
+  background-color: var(--color-invalid-red);
+  color: #ffffff;
+  font-size: 10px;
+  font-weight: 700;
+  font-family: inherit;
+  text-transform: uppercase;
+  padding: 4px 10px;
+  border-radius: 6px;
+  box-shadow: 0 4px 10px rgba(255, 59, 59, 0.4);
+  letter-spacing: 0.5px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  z-index: 10;
+  cursor: pointer;
+  animation: badgePopIn 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+  transition: background-color 0.15s, transform 0.15s;
+}
+
+/* Installed game with pins to fix: one badge, wearing Installed's green as its
+   outline. The padding shrinks by the extra border so the badge keeps the same
+   footprint as the other two. */
+.badge-fix-pins--installed {
+  border: 2px solid var(--color-installed-green);
+  padding: 3px 9px;
+  box-shadow: 0 4px 10px rgba(255, 59, 59, 0.4), 0 0 0 1px rgba(16, 185, 129, 0.35);
+}
+
+.badge-fix-pins:hover {
+  background-color: var(--color-invalid-red-hover);
+  transform: translateY(-1px);
+}
+
 /* Superimposed availability badge in the top-right corner, protruding slightly */
 .badge-available {
   position: absolute;
@@ -395,7 +448,7 @@ body {
   position: absolute;
   top: -8px;
   right: -8px;
-  background-color: #10b981;
+  background-color: var(--color-installed-green);
   color: #ffffff;
   font-size: 10px;
   font-weight: 700;
@@ -1011,6 +1064,18 @@ body {
   background-color: #192128;
 }
 
+/* Change Version of a game whose Lua needs a pin repaired: red outline, the
+   same red as the `Fix Pins` badge, and the one action that fixes it. */
+.game-action-btn.fix-pins-outline {
+  border-color: var(--color-invalid-red);
+}
+
+.game-action-btn.fix-pins-outline:hover:not(:disabled) {
+  border-color: var(--color-invalid-red-hover);
+  color: var(--color-invalid-red-hover);
+  background-color: var(--color-invalid-red-soft);
+}
+
 .game-action-btn.danger:hover:not(:disabled) {
   border-color: var(--color-denuvo);
   color: var(--color-denuvo);
@@ -1106,6 +1171,35 @@ body {
 
 .version-manifest-input::placeholder {
   color: #5f5f6b;
+}
+
+/* Malformed pin: the value in the file cannot be executed, so the field shows
+   red and the row is tinted. `:focus` above stays cyan on purpose — while the
+   user is typing the repair, the focus ring is the more useful signal. */
+.version-manifest-input--invalid,
+.version-manifest-input--invalid:focus {
+  border-color: var(--color-invalid-red);
+  background-color: var(--color-invalid-red-soft);
+}
+
+.version-table tr.version-row-invalid td {
+  background-color: var(--color-invalid-red-soft);
+}
+
+.version-table tr.version-row-invalid .version-appid {
+  color: var(--color-invalid-red-hover);
+}
+
+/* Amber twin of the red state: a commented malformed call (see the component
+   docs). Same shape, lower severity — the file loads, but the call is a trap. */
+.version-manifest-input--warn,
+.version-manifest-input--warn:focus {
+  border-color: var(--color-warn-amber);
+  background-color: var(--color-warn-amber-soft);
+}
+
+.version-table tr.version-row-warn td {
+  background-color: var(--color-warn-amber-soft);
 }
 
 .version-actions {
@@ -2972,7 +3066,8 @@ body {
 }
 
 .store-game-card.backdrop-card .badge-available,
-.store-game-card.backdrop-card .badge-installed {
+.store-game-card.backdrop-card .badge-installed,
+.store-game-card.backdrop-card .badge-fix-pins {
   z-index: 3;
 }
 

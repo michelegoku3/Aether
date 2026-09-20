@@ -1,3 +1,4 @@
+use crate::manifest::pins::LuaManifestRowIssue;
 use regex::Regex;
 use serde::Serialize;
 use std::collections::{HashMap, HashSet};
@@ -16,6 +17,13 @@ pub struct InstalledSteamGame {
     pub installed: bool,
     pub image_url: String,
     pub hero_image_url: String,
+    /// Malformed `setManifestid` lines found in this game's Lua while scanning.
+    ///
+    /// A single bad line makes AetherDLL reject the **whole file**, so the game
+    /// silently loses every depot override. The scanner reads each Lua anyway,
+    /// so the diagnosis travels with the card (red marker + editable popup)
+    /// instead of requiring a second per-game command.
+    pub lua_issues: Vec<LuaManifestRowIssue>,
 }
 
 #[derive(Debug, Clone)]
@@ -36,6 +44,8 @@ struct AppManifest {
 struct LuaEntry {
     app_id: u32,
     name: Option<String>,
+    /// Malformed pins of this Lua (empty for a healthy file).
+    lua_issues: Vec<LuaManifestRowIssue>,
 }
 
 impl SteamLibraryScanner {
@@ -93,6 +103,7 @@ impl SteamLibraryScanner {
                 // Real URLs come from IStoreBrowseService/GetItems.
                 image_url: String::new(),
                 hero_image_url: String::new(),
+                lua_issues: lua.lua_issues,
             });
         }
 
@@ -161,8 +172,16 @@ impl SteamLibraryScanner {
         let app_id = path.file_stem()?.to_str()?.parse::<u32>().ok()?;
         let content = fs::read_to_string(path).ok()?;
         let name = Self::extract_game_name_from_lua(&content);
+        // Diagnosis for the whole file: AetherDLL's setmanifestid binding
+        // raises on the first malformed call and the script engine rolls the
+        // file back, so one bad line disables every depot of this game.
+        let lua_issues = crate::manifest::pins::invalid_manifest_rows(&content);
 
-        Some(LuaEntry { app_id, name })
+        Some(LuaEntry {
+            app_id,
+            name,
+            lua_issues,
+        })
     }
 
     fn extract_game_name_from_lua(content: &str) -> Option<String> {

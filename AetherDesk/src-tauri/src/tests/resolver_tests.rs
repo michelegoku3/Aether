@@ -14,6 +14,7 @@ fn row(depot: u32, gid: &str, enabled: bool) -> LuaManifestRow {
         app_id: depot,
         manifest_id: gid.to_string(),
         enabled,
+        issue: None,
     }
 }
 
@@ -120,4 +121,79 @@ fn restore_blocking_is_idempotent_for_valid_files() {
     }
 
     let _ = std::fs::remove_dir_all(&steam);
+}
+
+// ============================================================================
+// F2 — a failing pin must not stall the batch forever
+// ============================================================================
+
+/// The provider batch used to abort at the first failure, so one poisoned pin
+/// made every pin of that game ungeneratable and the caller retried the same
+/// batch on every poll. Failures are now per pin and, after a few consecutive
+/// ones, that pin is quarantined instead of burning quota in a loop.
+#[test]
+fn quarantine_engages_only_after_consecutive_failures() {
+    use crate::manifest::resolver::{
+        clear_generation_failure, quarantine_streak, record_generation_failure,
+        MAX_CONSECUTIVE_FAILURES,
+    };
+
+    // Unique ids: the failure memory is process-wide and shared with every
+    // other test running in parallel.
+    let poisoned = pin(900_001, "7000000000000000001");
+    let healthy = pin(900_002, "7000000000000000002");
+    clear_generation_failure(&poisoned);
+    clear_generation_failure(&healthy);
+
+    for attempt in 1..MAX_CONSECUTIVE_FAILURES {
+        record_generation_failure(&poisoned);
+        assert_eq!(
+            quarantine_streak(&poisoned),
+            None,
+            "attempt {attempt} must still be retried"
+        );
+    }
+
+    record_generation_failure(&poisoned);
+    assert_eq!(
+        quarantine_streak(&poisoned),
+        Some(MAX_CONSECUTIVE_FAILURES),
+        "the pin is skipped once the ladder is exhausted"
+    );
+
+    // The memory is per pin, never per batch: the healthy pin stays retryable.
+    assert_eq!(quarantine_streak(&healthy), None);
+    record_generation_failure(&healthy);
+    assert_eq!(quarantine_streak(&healthy), None);
+
+    // A success clears the streak: a provider that recovers is believed.
+    clear_generation_failure(&poisoned);
+    assert_eq!(quarantine_streak(&poisoned), None);
+}
+
+#[test]
+fn quarantine_is_keyed_by_depot_and_manifest() {
+    use crate::manifest::resolver::{
+        clear_generation_failure, quarantine_streak, record_generation_failure,
+        MAX_CONSECUTIVE_FAILURES,
+    };
+
+    let depot_a = pin(900_010, "7000000000000000010");
+    let depot_b = pin(900_011, "7000000000000000010");
+    let other_gid = pin(900_010, "7000000000000000011");
+    for candidate in [&depot_a, &depot_b, &other_gid] {
+        clear_generation_failure(candidate);
+    }
+    for _ in 0..MAX_CONSECUTIVE_FAILURES {
+        record_generation_failure(&depot_a);
+    }
+    assert!(quarantine_streak(&depot_a).is_some());
+    assert!(
+        quarantine_streak(&depot_b).is_none(),
+        "same GID on another depot is a different request"
+    );
+    assert!(
+        quarantine_streak(&other_gid).is_none(),
+        "same depot with another GID is a different request"
+    );
 }

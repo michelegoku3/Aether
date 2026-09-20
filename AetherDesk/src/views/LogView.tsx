@@ -16,13 +16,15 @@ const LOG_POLL_INTERVAL_MS = 2500;
  *  is not the active tab — we still refresh occasionally so coming back to
  *  logs after a while doesn't show a stale dump, but we don't hammer IPC. */
 const LOG_POLL_BACKOFF_MS = 10_000;
-/** Debounce for the free-text filter so typing doesn't re-filter 500 lines
- *  on every keystroke. */
+/** Debounce for the free-text filter so typing doesn't re-filter the whole
+ *  window on every keystroke. */
 const FILTER_DEBOUNCE_MS = 150;
-/** Cap rendered filtered lines to the most recent N: with `tailLines: 500`
- *  from the backend + worst-case regex per line this keeps rendering
- *  cheap even under spammy logging. */
-const MAX_RENDER_LINES = 200;
+/** Window of log lines requested from the backend and the cap on how many of
+ *  the filtered ones are rendered: the newest 1000. Large enough to cover a
+ *  whole troubleshooting session without exporting the file, and still cheap
+ *  to render (the filter walks the array once, newest first). */
+const TAIL_LINES = 1_000;
+const MAX_RENDER_LINES = TAIL_LINES;
 
 const lineRank = (line: string) => {
   if (line.includes('[ERROR]')) return 4;
@@ -64,7 +66,7 @@ export const LogView = () => {
   const fetchLogs = async () => {
     try {
       const recent: string[] = await invoke('get_recent_log_lines', {
-        tailLines: 500,
+        tailLines: TAIL_LINES,
         source: logSource,
       });
       setLines(recent || []);

@@ -147,7 +147,9 @@ void RegisterCreateProcessHooks() {
                                          reinterpret_cast<void**>(&o_CreateProcessW),
                                          reinterpret_cast<void*>(h_CreateProcessW));
     } else {
-        g_state.hookManager.RecordMissed("CreateProcessW");
+        // kernel32 is always loaded; a missing export means the pattern/address
+        // source (GetProcAddress) had nothing usable for this build.
+        g_state.hookManager.RecordMissed("CreateProcessW", MissReason::PatternUnresolved);
         AC_LOG_ERROR(kModule, "CreateProcessW not found in kernel32.dll.");
     }
 
@@ -157,7 +159,7 @@ void RegisterCreateProcessHooks() {
                                          reinterpret_cast<void**>(&o_CreateProcessAsUserW),
                                          reinterpret_cast<void*>(h_CreateProcessAsUserW));
     } else {
-        g_state.hookManager.RecordMissed("CreateProcessAsUserW");
+        g_state.hookManager.RecordMissed("CreateProcessAsUserW", MissReason::PatternUnresolved);
         AC_LOG_ERROR(kModule, "CreateProcessAsUserW not found in kernel32.dll.");
     }
 

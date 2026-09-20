@@ -64,7 +64,6 @@ pub fn reset_settings_to_defaults(app: tauri::AppHandle) -> Result<AppSettings, 
     defaults.library_install_filter = previous.library_install_filter.clone();
     defaults.antivirus_exclusion_done = previous.antivirus_exclusion_done;
     defaults.ost_warning_acknowledged = previous.ost_warning_acknowledged;
-
     let steam_path_changed = previous.steam_path.trim() != defaults.steam_path.trim();
     crate::desk_log_info!(
         "settings",
@@ -149,39 +148,110 @@ pub async fn validate_hubcap_key(api_key: String) -> Result<bool, String> {
     res
 }
 
+/// How long the Hubcap usage counters are believed before asking again.
+///
+/// `/status/{id}` is a metadata endpoint (it does not count against the daily
+/// generation quota), but the account is rate-limited: in a real session log
+/// Desk issued the same request twice within 64 ms — the startup badge and the
+/// Settings mount — and the provider answered `429 Too Many Requests`. The
+/// number only moves when a generation runs, so a minute of reuse is free.
+const USAGE_SNAPSHOT_TTL: std::time::Duration = std::time::Duration::from_secs(60);
+
+/// Last successful usage answer, keyed by the credential it was fetched with
+/// (a different key means a different account: never reuse across keys).
+pub(crate) struct UsageSnapshot {
+    pub api_key: String,
+    pub fetched: std::time::Instant,
+    pub payload: serde_json::Value,
+}
+
+/// Cache decision, kept pure so it can be tested without a network.
+pub(crate) fn usage_snapshot_is_fresh(
+    snapshot: &UsageSnapshot,
+    api_key: &str,
+    now: std::time::Instant,
+    ttl: std::time::Duration,
+) -> bool {
+    snapshot.api_key == api_key && now.saturating_duration_since(snapshot.fetched) < ttl
+}
+
+fn usage_snapshot_slot() -> &'static tokio::sync::Mutex<Option<UsageSnapshot>> {
+    static SLOT: std::sync::OnceLock<tokio::sync::Mutex<Option<UsageSnapshot>>> =
+        std::sync::OnceLock::new();
+    SLOT.get_or_init(|| tokio::sync::Mutex::new(None))
+}
+
+fn usage_defaults() -> serde_json::Value {
+    serde_json::json!({
+        "usage": 0,
+        "limit": MAX_GAME_GENERATIONS_PER_DAY,
+        "workshopLimit": MAX_WORKSHOP_GENERATIONS_PER_DAY,
+        "reset": "midnight EST"
+    })
+}
+
 #[tauri::command]
 pub async fn get_hubcap_usage(api_key: String) -> Result<serde_json::Value, String> {
     if api_key.trim().is_empty() {
-        return Ok(serde_json::json!({
-            "usage": 0,
-            "limit": MAX_GAME_GENERATIONS_PER_DAY,
-            "workshopLimit": MAX_WORKSHOP_GENERATIONS_PER_DAY,
-            "reset": "midnight EST"
-        }));
+        return Ok(usage_defaults());
     }
 
-    match HubcapClient::new(api_key).get_usage_stats().await {
+    // Serializing the callers is what makes the second one reuse the first
+    // one's answer instead of repeating the request: whoever waits here finds
+    // a fresh snapshot and returns immediately.
+    let slot = usage_snapshot_slot();
+    let mut cached = slot.lock().await;
+
+    if let Some(snapshot) = cached.as_ref() {
+        if usage_snapshot_is_fresh(snapshot, &api_key, std::time::Instant::now(), USAGE_SNAPSHOT_TTL)
+        {
+            crate::desk_log_debug!("settings", "Hubcap usage served from session cache");
+            return Ok(snapshot.payload.clone());
+        }
+    }
+
+    let previous = cached.as_ref().map(|snapshot| snapshot.payload.clone());
+    let same_key_as_previous = cached
+        .as_ref()
+        .map(|snapshot| snapshot.api_key == api_key)
+        .unwrap_or(false);
+
+    match HubcapClient::new(api_key.clone()).get_usage_stats().await {
         Ok(stats) => {
             let limit = stats
                 .role_daily_limit
                 .or(stats.daily_limit)
                 .unwrap_or(MAX_GAME_GENERATIONS_PER_DAY);
             let usage = stats.daily_usage.unwrap_or(0);
-            Ok(serde_json::json!({
+            let payload = serde_json::json!({
                 "usage": usage,
                 "limit": limit,
                 "workshopLimit": MAX_WORKSHOP_GENERATIONS_PER_DAY,
                 "reset": "midnight EST"
-            }))
+            });
+            *cached = Some(UsageSnapshot {
+                api_key,
+                fetched: std::time::Instant::now(),
+                payload: payload.clone(),
+            });
+            Ok(payload)
         }
         Err(error) => {
+            // A stale number beats a fabricated zero: the badge would otherwise
+            // claim "0/1500 used" precisely when the provider is unreachable
+            // (rate-limited, offline), which reads as "nothing was used".
+            if same_key_as_previous {
+                if let Some(payload) = previous {
+                    crate::desk_log_warn!(
+                        "settings",
+                        "Hubcap usage request failed; serving the last known snapshot: {}",
+                        error
+                    );
+                    return Ok(payload);
+                }
+            }
             crate::desk_log_warn!("settings", "Hubcap usage request failed; returning local quota defaults: {}", error);
-            Ok(serde_json::json!({
-                "usage": 0,
-                "limit": MAX_GAME_GENERATIONS_PER_DAY,
-                "workshopLimit": MAX_WORKSHOP_GENERATIONS_PER_DAY,
-                "reset": "midnight EST"
-            }))
+            Ok(usage_defaults())
         }
     }
 }

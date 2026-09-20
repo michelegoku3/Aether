@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
+import { useLibraryGames } from './useLibraryGames';
 
 export interface BuildInfo {
   buildId: number;
@@ -21,6 +22,10 @@ export interface SavedBuild {
  * called for the Builds tab.
  */
 export const useGameBuilds = (appId: number) => {
+  // Both queries are read through the shared per-game cache: the Builds tab
+  // and the actions popup asked for the same data independently, and each
+  // StrictMode mount doubled every request.
+  const { queryGameState, invalidateGameState } = useLibraryGames();
   const [builds, setBuilds] = useState<BuildInfo[]>([]);
   const [savedIds, setSavedIds] = useState<Set<number>>(new Set());
   const [loading, setLoading] = useState(true);
@@ -31,8 +36,8 @@ export const useGameBuilds = (appId: number) => {
     setError('');
     try {
       const [all, saved] = await Promise.all([
-        invoke<BuildInfo[]>('get_game_builds', { appId }),
-        invoke<SavedBuild[]>('get_saved_builds', { appId }),
+        queryGameState<BuildInfo[]>(appId, 'get_game_builds'),
+        queryGameState<SavedBuild[]>(appId, 'get_saved_builds'),
       ]);
       setBuilds(all || []);
       setSavedIds(new Set((saved || []).map((s) => s.buildId)));
@@ -41,7 +46,7 @@ export const useGameBuilds = (appId: number) => {
     } finally {
       setLoading(false);
     }
-  }, [appId]);
+  }, [appId, queryGameState]);
 
   useEffect(() => {
     load();
@@ -49,6 +54,9 @@ export const useGameBuilds = (appId: number) => {
 
   const toggleSaved = useCallback(async (build: BuildInfo) => {
     const isSaved = savedIds.has(build.buildId);
+    // The bookmark list is cached with everything else: drop it as soon as the
+    // user changes it, then keep the local state authoritative for this render.
+    invalidateGameState(appId);
     if (isSaved) {
       await invoke('remove_saved_build', { appId, buildId: build.buildId });
       setSavedIds((prev) => {
@@ -65,7 +73,7 @@ export const useGameBuilds = (appId: number) => {
       });
       setSavedIds((prev) => new Set(prev).add(build.buildId));
     }
-  }, [appId, savedIds]);
+  }, [appId, savedIds, invalidateGameState]);
 
   return { builds, savedIds, loading, error, reload: load, toggleSaved };
 };

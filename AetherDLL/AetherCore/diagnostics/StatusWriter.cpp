@@ -81,7 +81,10 @@ void Write() {
     }
 
     json << "{\n";
-    json << "  \"schema_version\": 3,\n";
+    // v4: hooks_missed_list entries carry their reason ("Name (reason)").
+    // The field is still a string list, but its CONTENT changed shape, so a
+    // consumer that parses hook names has to know (v3 readers keep working).
+    json << "  \"schema_version\": 4,\n";
     json << "  \"ts\": " << static_cast<long long>(std::time(nullptr)) << ",\n";
 
     json << "  \"build_id\": \"" << EscapeJson(g_state.buildId) << "\",\n";
@@ -183,9 +186,16 @@ void Write() {
     }
     json << (installed.empty() ? "],\n" : "\n  ],\n");
 
+    // Each entry carries its reason ("Name (address collision with another
+    // hook)"): the status file is the only place a hook miss survives after the
+    // log rotates, and "missed" alone could not distinguish a pattern that the
+    // build does not have from a hook that was deliberately not applied.
     json << "  \"hooks_missed_list\": [";
     for (std::size_t i = 0; i < missed.size(); ++i) {
-        json << (i == 0 ? "\n    " : ",\n    ") << '"' << EscapeJson(missed[i]) << '"';
+        json << (i == 0 ? "\n    " : ",\n    ")
+             << '"' << EscapeJson(MissedHookText(missed[i].name, missed[i].reason,
+                                                 missed[i].detail))
+             << '"';
     }
     json << (missed.empty() ? "],\n" : "\n  ],\n");
 

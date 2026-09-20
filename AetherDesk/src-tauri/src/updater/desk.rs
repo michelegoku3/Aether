@@ -71,7 +71,7 @@ pub async fn prepare_update(app: &tauri::AppHandle) -> Result<Option<PreparedUpd
     // is not newer than installed, we return Ok(None) (up to date).
     let settings = crate::core::settings::SettingsManager::new(app).load();
     if settings.enable_test_updates {
-        match manager.fetch_latest_desk_test_release().await {
+        match manager.fetch_latest_desk_test_release("desk-install").await {
             Ok(release) => {
                 if GithubReleaseManager::latest_is_newer_than(&current_version, &release.tag_name) {
                     crate::desk_log_info!("updater", "AetherDesk test update available: {} (current: {})", release.tag_name, current_version);
@@ -87,7 +87,7 @@ pub async fn prepare_update(app: &tauri::AppHandle) -> Result<Option<PreparedUpd
         }
     }
 
-    let release = manager.fetch_latest_desk_release().await?;
+    let release = manager.fetch_latest_desk_release("desk-install").await?;
     if !GithubReleaseManager::latest_is_newer_than(&current_version, &release.tag_name) {
         crate::desk_log_info!("updater", "AetherDesk stable release {} is not newer than installed version {}", release.tag_name, current_version);
         return Ok(None);
@@ -102,7 +102,7 @@ pub async fn prepare_update(app: &tauri::AppHandle) -> Result<Option<PreparedUpd
 /// alla build stabile precedente. Il processo viene poi riavviato dal chiamante.
 pub async fn prepare_stable_restore() -> Result<Option<PreparedUpdate>, String> {
     let manager = GithubReleaseManager::new();
-    let release = manager.fetch_latest_desk_release().await?;
+    let release = manager.fetch_latest_desk_release("desk-restore-stable").await?;
     crate::desk_log_info!(
         "updater",
         "Restoring latest stable AetherDesk release: {} (leaving test channel)",
