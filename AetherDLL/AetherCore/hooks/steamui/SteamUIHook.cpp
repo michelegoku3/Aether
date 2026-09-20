@@ -76,8 +76,7 @@ bool InstallSteamUiRedirect() {
             AC_LOG_ERROR(kModule, "SteamUI redirect enable failed.");
         }
     } else {
-        g_state.hookManager.RecordMissed("LoadModuleWithPath");
-        AC_LOG_WARN(kModule, "LoadModuleWithPath unresolved; steamclient hooks may not apply.");
+        g_state.hookManager.RecordMissed("LoadModuleWithPath", MissReason::PatternUnresolved);
     }
 
     // Republish the final hook state now that the redirect is (or is not) in.

@@ -1,6 +1,5 @@
-import React, { useEffect, useRef, useState } from 'react';
-import { invoke } from '@tauri-apps/api/core';
-import { LuaManifestRow } from '../modals/SpecificVersionModal';
+import React, { useEffect, useState } from 'react';
+import { LuaManifestRow, prepareManifestRows } from '../modals/SpecificVersionModal';
 import ChangeVersionModal from '../modals/ChangeVersionModal';
 import { LibraryGameActionsModal } from '../modals/LibraryGameActionsModal';
 import { GameInfoModal } from '../modals/GameInfoModal';
@@ -36,14 +35,14 @@ const COVER_PRELOAD_WINDOW = 24;
 /** Manifests rows cached for an app are considered fresh for this long
  *  after fetch. Re-opening the version editor within the window reuses the
  *  snapshot instead of hammering Steam's filesystem again. */
-const MANIFEST_ROWS_CACHE_TTL_MS = 30_000;
 
 export const LibraryView = ({
   useAlternativeGameCards,
   alternativeCardsOpacity,
   alternativeCardsFade,
 }: LibraryViewProps) => {
-  const { games, isLoading, isRefreshing, status, setStatus, loadInstalledGames } = useLibraryGames();
+  const { games, isLoading, isRefreshing, status, setStatus, loadInstalledGames, queryGameState } =
+    useLibraryGames();
   const [searchQuery, setSearchQuery] = useState('');
 
   const {
@@ -66,7 +65,6 @@ export const LibraryView = ({
   // Workshop manifest repair (scan appworkshop ACF + stage missing manifests).
   const [showWorkshopRepair, setShowWorkshopRepair] = useState(false);
 
-  const manifestRowsCache = useRef<Map<number, { at: number; rows: LuaManifestRow[] }>>(new Map());
 
   const showStatus = (text: string, type: StatusType) => {
     setStatus({ text, type });
@@ -83,12 +81,6 @@ export const LibraryView = ({
       COVER_PRELOAD_WINDOW,
     );
   }, [filteredGames]);
-
-  // When the installed-games list changes (refresh / install / uninstall),
-  // our short-lived manifest-rows snapshot is potentially stale.
-  useEffect(() => {
-    manifestRowsCache.current.clear();
-  }, [games]);
 
   const handleCycleFilter = async () => {
     try {
@@ -113,25 +105,17 @@ export const LibraryView = ({
     setStatus({ text: '', type: 'info' });
     const appId = Number(game.appId);
 
-    // Short-lived in-memory cache: avoids a redundant `requireSteamPath` +
-    // filesystem walk if the user closes and re-opens the editor for the
-    // same game within the TTL window (previously every click re-resolved).
-    const cached = manifestRowsCache.current.get(appId);
-    if (cached && Date.now() - cached.at < MANIFEST_ROWS_CACHE_TTL_MS) {
-      setManifestRows(cached.rows.map((row) => ({ ...row, manifestInput: '' })));
-      setVersionGame(game);
-      return;
-    }
-
+    // The shared provider cache covers the "close and re-open the editor"
+    // case (and the StrictMode double mount) without a second, shorter-lived
+    // snapshot to keep coherent: every completed library scan invalidates it.
     try {
       const steamPath = await requireSteamPath();
-      const rows: LuaManifestRow[] = await invoke('get_installed_lua_manifest_rows', {
+      const rows = await queryGameState<LuaManifestRow[]>(
         appId,
-        steamPath,
-      });
-      const processed = (rows || []).map((row) => ({ ...row, manifestInput: '' }));
-      manifestRowsCache.current.set(appId, { at: Date.now(), rows: processed });
-      setManifestRows(processed);
+        'get_installed_lua_manifest_rows',
+        { steamPath },
+      );
+      setManifestRows(prepareManifestRows(rows));
       setVersionGame(game);
     } catch (err: any) {
       setStatus({
@@ -253,6 +237,9 @@ export const LibraryView = ({
               key={game.id}
               game={game}
               cardVariant={useAlternativeGameCards ? 'backdrop' : 'classic'}
+              // The badge is the shortest path to the fix: it opens the same
+              // editor as Modify → Change Version, where the bad line is red.
+              onFixPins={handleOpenVersionEditor}
               actions={[
                 {
                   label: 'Modify',

@@ -19,6 +19,11 @@ pub struct GameManifestSyncReport {
     pub generated: usize,
     pub installed: usize,
     pub skipped: bool,
+    /// 1-based line of the malformed pin that stops this game's Lua from
+    /// loading, when there is one. Set with `skipped`: the UI then tells the
+    /// user to repair that line instead of showing a silent no-op.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub invalid_pin_line: Option<usize>,
 }
 
 /// Local-first repair for one managed game. It never discovers the whole
@@ -42,6 +47,24 @@ pub async fn sync_hubcap_game_manifest(
     let lua = LuaManifestPins::new(settings.steam_path.clone(), app_id);
     let content = std::fs::read_to_string(lua.lua_path())
         .map_err(|error| format!("Could not read Lua for app {app_id}: {error}"))?;
+    // A malformed pin is a user-fixable condition, not a failure to retry: the
+    // repair lane would otherwise burn its whole retry ladder on a file only
+    // the user can fix. Skip with the exact line, and let the editor repair it.
+    if let Some(issue) = LuaManifestPins::first_active_issue(&content) {
+        crate::desk_log_warn!(
+            "hubcap",
+            "Manifest repair skipped app_id={} : malformed setManifestid at Lua line {} ({}); repair it in the version editor",
+            app_id,
+            issue.line,
+            issue.problem.reason()
+        );
+        return Ok(GameManifestSyncReport {
+            app_id,
+            skipped: true,
+            invalid_pin_line: Some(issue.line),
+            ..Default::default()
+        });
+    }
     LuaManifestPins::validate_content(&content)?;
     let pins: Vec<DepotManifestPin> =
         pins_from_rows(LuaManifestPins::rows_for_manifest_sync(&content));
@@ -133,6 +156,10 @@ pub struct PinRefreshReport {
     pub app_id: u32,
     /// The game was out of scope (no Lua, version-locked, or no managed rows).
     pub skipped: bool,
+    /// 1-based line of the malformed pin that stops this game's Lua from
+    /// loading, when that is why the refresh was skipped.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub invalid_pin_line: Option<usize>,
     /// Managed depot rows diffed against the Hubcap contents.
     pub checked_depots: usize,
     /// Manifests staged into depotcache because they were missing locally.
@@ -176,6 +203,23 @@ pub async fn refresh_game_pins_from_hubcap(
         return Ok(PinRefreshReport { app_id, skipped: true, ..Default::default() });
     }
     let content = editor.read_lua()?;
+    // Same policy as the repair lane: a Lua nobody can load is skipped with the
+    // offending line instead of being retried on the backoff ladder.
+    if let Some(issue) = LuaManifestPins::first_active_issue(&content) {
+        crate::desk_log_warn!(
+            "hubcap",
+            "Pin refresh skipped app_id={} : malformed setManifestid at Lua line {} ({}); repair it in the version editor",
+            app_id,
+            issue.line,
+            issue.problem.reason()
+        );
+        return Ok(PinRefreshReport {
+            app_id,
+            skipped: true,
+            invalid_pin_line: Some(issue.line),
+            ..Default::default()
+        });
+    }
     LuaManifestPins::validate_content(&content)?;
 
     // Local backup pass BEFORE any gate and any HTTP: every manifest the
@@ -331,6 +375,7 @@ pub async fn refresh_game_pins_from_hubcap(
     Ok(PinRefreshReport {
         app_id,
         skipped: false,
+        invalid_pin_line: None,
         checked_depots: rows.len(),
         staged,
         realigned,

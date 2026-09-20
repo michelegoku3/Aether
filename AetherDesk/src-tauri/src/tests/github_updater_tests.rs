@@ -95,3 +95,75 @@ fn test_build_desk_test_update_info_respects_version_gate() {
     assert!(info_older.update_available);
     assert!(info_older.is_test);
 }
+
+// ============================================================================
+// F6/F7 — channel absence is not an error, and lookups are deduplicated
+// ============================================================================
+
+#[test]
+fn channel_absence_is_classified_separately_from_a_failed_lookup() {
+    use crate::updater::github::channel_has_no_release;
+
+    // Probing an unpublished test channel is a normal state, not a fault: this
+    // is what turned every update check into two log ERRORs.
+    assert!(channel_has_no_release(
+        "No published GitHub release found for prefixes [\"tdll-\", \"tdll-v\"]"
+    ));
+    assert!(channel_has_no_release(
+        "No release atom entry found for prefixes [\"tdesk-\"]"
+    ));
+
+    // Real failures stay failures.
+    assert!(!channel_has_no_release(
+        "GitHub API network error: connection reset by peer"
+    ));
+    assert!(!channel_has_no_release(
+        "GitHub API request failed with status 403: rate limit exceeded"
+    ));
+}
+
+#[test]
+fn completed_lookup_is_reused_instead_of_refetching() {
+    use crate::updater::github::{fresh_for_tests, lookup_slot_for_tests, publish_for_tests};
+
+    let release = crate::updater::github::GithubRelease {
+        tag_name: "dll-1.2.3".to_string(),
+        body: None,
+        html_url: None,
+        draft: false,
+        prerelease: false,
+        assets: Vec::new(),
+    };
+
+    let slot = lookup_slot_for_tests("test-channel-reuse");
+    assert!(
+        fresh_for_tests(&slot).is_none(),
+        "a fresh slot has nothing to serve"
+    );
+
+    publish_for_tests(&slot, Ok(release));
+    let cached = fresh_for_tests(&slot).expect("published result is reusable");
+    assert_eq!(cached.expect("ok").tag_name, "dll-1.2.3");
+
+    // The same key always resolves to the same slot: the second IPC call of a
+    // settings save joins the first instead of hitting the GitHub API again.
+    let same = lookup_slot_for_tests("test-channel-reuse");
+    assert!(fresh_for_tests(&same).is_some());
+}
+
+#[test]
+fn an_empty_channel_is_also_remembered() {
+    use crate::updater::github::{fresh_for_tests, lookup_slot_for_tests, publish_for_tests};
+
+    let slot = lookup_slot_for_tests("test-channel-empty");
+    publish_for_tests(
+        &slot,
+        Err("No published GitHub release found for prefixes [\"tdll-\"]".to_string()),
+    );
+
+    // Deduplicating only the success path would move the retry storm to the
+    // error path: an empty channel is cached too (for longer, since a release
+    // only appears on release day).
+    let cached = fresh_for_tests(&slot).expect("the absence is remembered");
+    assert!(cached.is_err());
+}

@@ -5,6 +5,8 @@ import { ModalShell } from '../ui/ModalShell';
 /** Live state of one synchronizer lane, mirrored from the Rust snapshot. */
 interface LaneStatus {
   pending: { appId: number | null; attempts: number; nextRetryEpoch: number | null }[];
+  /** Tasks dropped after the bounded retry ladder: no longer auto-retried. */
+  unresolved?: { appId: number | null; attempts: number; nextRetryEpoch: number | null }[];
   processedCount: number;
   lastRunEpoch: number | null;
   lastError: string | null;
@@ -53,6 +55,17 @@ const LaneSection = ({ title, hint, lane }: { title: string; hint: string; lane:
     {lane.lastError && (
       <span style={{ display: 'block', color: '#e06c75', marginBottom: 4 }}>
         Last error: {lane.lastError}
+      </span>
+    )}
+    {(lane.unresolved?.length ?? 0) > 0 && (
+      <span style={{ display: 'block', color: '#e5c07b', marginBottom: 4 }}>
+        Given up on ({lane.unresolved!.length}) — no longer retried; the next Steam-side
+        change queues {lane.unresolved!.length === 1 ? 'it' : 'them'} again:
+        {lane.unresolved!.map((task, index) => (
+          <span key={`${task.appId ?? 'lane'}-unresolved-${index}`} style={{ display: 'block', paddingLeft: 12 }}>
+            {describeApp(task.appId)} — after {task.attempts} attempt{task.attempts === 1 ? '' : 's'}
+          </span>
+        ))}
       </span>
     )}
     {lane.pending.length > 0 ? (

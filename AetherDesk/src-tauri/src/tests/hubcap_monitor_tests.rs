@@ -132,3 +132,125 @@ fn changed_against_checkpoint_detects_new_and_changed_only() {
     changed.sort_unstable();
     assert_eq!(changed, vec![10, 30]);
 }
+
+// ============================================================================
+// F2 — bounded retry ladder
+// ============================================================================
+
+#[test]
+fn retry_ladder_drops_a_task_after_the_cap() {
+    use crate::core::hubcap_update_monitor::{reschedule, PendingTask, MAX_TASK_ATTEMPTS};
+
+    let mut lane: std::collections::BTreeMap<u32, PendingTask> = std::collections::BTreeMap::new();
+    let app_id = 700001u32;
+
+    // Attempts below the cap keep the task queued...
+    let mut task = PendingTask::due_now();
+    for attempt in 1..MAX_TASK_ATTEMPTS {
+        assert!(
+            reschedule(&mut lane, app_id, task.clone()),
+            "attempt {attempt} must stay queued"
+        );
+        assert!(lane.contains_key(&app_id));
+        task = PendingTask::due_now();
+    }
+
+    // ...and the task is dropped once the ladder is exhausted, so one
+    // permanently failing game can no longer occupy the lane forever.
+    let last = PendingTask {
+        attempts: MAX_TASK_ATTEMPTS - 1,
+        next_attempt: std::time::Instant::now(),
+    };
+    assert!(!reschedule(&mut lane, app_id, last));
+    assert!(lane.is_empty(), "a given-up task must not be rescheduled");
+}
+
+// ============================================================================
+// F8 — contents-diff cadence
+// ============================================================================
+
+#[test]
+fn contents_cadence_prefers_changed_games_and_skips_idle_ones() {
+    use crate::core::hubcap_update_monitor::pin_refresh_candidates;
+
+    let steam = temp_dir("cadence");
+    let stplug = steam.join("config").join("stplug-in");
+    std::fs::create_dir_all(&stplug).expect("stplug-in");
+    let managed = "-- Game\naddappid(800001, 1, \"aa\")\n--setManifestid(800001, \"111\")\n";
+    let locked = "addappid(800002, 1, \"aa\")\nsetManifestid(800002, \"222\")\n";
+    std::fs::write(stplug.join("800001.lua"), managed).expect("write managed lua");
+    std::fs::write(stplug.join("800002.lua"), locked).expect("write locked lua");
+
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+    let current_luas = HashMap::from([
+        (800001u32, "lua-a".to_string()),
+        (800002u32, "lua-b".to_string()),
+        // Not installed (no ACF): a moved GID could not be applied in place.
+        (800003u32, "lua-c".to_string()),
+    ]);
+    let current_acf = HashMap::from([
+        (800001u32, "acf-a-new".to_string()),
+        (800002u32, "acf-b".to_string()),
+    ]);
+
+    // Both games were checked five minutes ago; only 800001 is installed AND
+    // updates-enabled. Its Steam side changed since that check, so it is due on
+    // the fast 15-minute cadence; 800002 is version-locked and must never be
+    // diffed; 800003 has no ACF at all.
+    let contents_checked = HashMap::from([(800001u32, now - 5 * 60), (800002u32, now - 5 * 60)]);
+    let contents_fingerprint =
+        HashMap::from([(800001u32, "acf-a-old".to_string()), (800002u32, "acf-b".to_string())]);
+
+    let due = pin_refresh_candidates(
+        &contents_checked,
+        &contents_fingerprint,
+        &current_acf,
+        &current_luas,
+        &steam.display().to_string(),
+    );
+    assert!(
+        due.is_empty(),
+        "five minutes after the last check nothing is due yet, got {due:?}"
+    );
+
+    // Quarter of an hour later the changed, updates-enabled game is due again.
+    let later = HashMap::from([(800001u32, now - 16 * 60), (800002u32, now - 16 * 60)]);
+    let due = pin_refresh_candidates(
+        &later,
+        &contents_fingerprint,
+        &current_acf,
+        &current_luas,
+        &steam.display().to_string(),
+    );
+    assert_eq!(due, vec![800001], "only the changed, managed game is due");
+
+    // The untouched game waits for the idle interval (1 h), not 15 minutes.
+    let idle_checked = HashMap::from([(800001u32, now - 16 * 60)]);
+    let idle_fingerprint = HashMap::from([(800001u32, "acf-a-new".to_string())]);
+    let due = pin_refresh_candidates(
+        &idle_checked,
+        &idle_fingerprint,
+        &current_acf,
+        &current_luas,
+        &steam.display().to_string(),
+    );
+    assert!(
+        due.is_empty(),
+        "an untouched game must not be re-diffed every 15 minutes, got {due:?}"
+    );
+
+    let old_checked = HashMap::from([(800001u32, now - 61 * 60)]);
+    let due = pin_refresh_candidates(
+        &old_checked,
+        &idle_fingerprint,
+        &current_acf,
+        &current_luas,
+        &steam.display().to_string(),
+    );
+    assert_eq!(due, vec![800001], "after an hour the idle game is re-checked");
+
+    let _ = std::fs::remove_dir_all(&steam);
+}

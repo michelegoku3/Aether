@@ -170,7 +170,7 @@ namespace ac::hooks {
                          Fn& orig, Fn detour) {
             void* target = pattern::ResolveAddress(name, modName, mod);
             if (!target) {
-                g_state.hookManager.RecordMissed(name);
+                g_state.hookManager.RecordMissed(name, MissReason::PatternUnresolved);
                 return false;
             }
             g_state.hookManager.RegisterHook(name, target,

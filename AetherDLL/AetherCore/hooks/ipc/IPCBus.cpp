@@ -168,7 +168,8 @@ void RegisterIpcHandlers(const IpcHandlerEntry* entries, std::size_t count) {
             if (!specInterface || !specHash) {
                 AC_LOG_WARN(kModule, "IPC handler '%s' disabled: spec metadata missing.",
                             source.name);
-                g_state.hookManager.RecordMissed(std::string("IPC:") + source.name);
+                g_state.hookManager.RecordMissed(std::string("IPC:") + source.name,
+                                                 MissReason::MetadataUnavailable);
                 continue;
             }
             interfaceId = *specInterface;
@@ -186,7 +187,9 @@ void RegisterIpcHandlers(const IpcHandlerEntry* entries, std::size_t count) {
         if (!inserted) {
             AC_LOG_WARN(kModule, "IPC handler collision: '%s' conflicts with '%s'; second disabled.",
                         source.name, it->second.name ? it->second.name : "<unnamed>");
-            g_state.hookManager.RecordMissed(std::string("IPC collision:") + source.name);
+            g_state.hookManager.RecordMissed(std::string("IPC collision:") + source.name,
+                                             MissReason::HandlerCollision,
+                                             it->second.name ? it->second.name : "<unnamed>");
         }
     }
 }
@@ -209,8 +212,9 @@ void RegisterIpcBus(HMODULE diversion) {
     } else {
         // Without GetPipeClient we cannot apply the internal-pipe filter safely,
         // so we skip the whole bus rather than risk touching Steam traffic.
-        g_state.hookManager.RecordMissed("GetPipeClient");
-        AC_LOG_WARN(kModule, "GetPipeClient unresolved; IPC bus disabled.");
+        // The caller log states the consequence (bus disabled), which the
+        // generic miss line cannot; the reason itself comes from RecordMissed.
+        g_state.hookManager.RecordMissed("GetPipeClient", MissReason::PatternUnresolved);
         return;
     }
 

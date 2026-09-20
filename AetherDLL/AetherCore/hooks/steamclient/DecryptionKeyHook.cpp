@@ -75,16 +75,19 @@ void RegisterDecryptionKeyHook(HMODULE diversion) {
 
     void* cfg = pattern::ResolveAddress("ConfigStoreGetBinary", "steamclient", diversion);
     if (!cfg) {
-        g_state.hookManager.RecordMissed("ConfigStoreGetBinary");
-        AC_LOG_WARN(kModule, "ConfigStoreGetBinary unresolved.");
+        g_state.hookManager.RecordMissed("ConfigStoreGetBinary", MissReason::PatternUnresolved);
         return;
     }
 
     if (void* depot = pattern::ResolveAddress("LoadDepotDecryptionKey", "steamclient", diversion)) {
         if (cfg == depot) {
-            g_state.hookManager.RecordMissed("ConfigStoreGetBinary");
-            AC_LOG_WARN(kModule,
-                        "ConfigStoreGetBinary resolves to the same address as LoadDepotDecryptionKey; skipping hook as pattern metadata is likely wrong.");
+            // Address collision, NOT a pattern miss: both patterns point at the
+            // same function in this build, so hooking here would mean hooking
+            // LoadDepotDecryptionKey twice. The counterpart is named in the
+            // report: without it the entry says "a collision" and the operator
+            // has to guess which of the 22 hooks is involved.
+            g_state.hookManager.RecordMissed("ConfigStoreGetBinary", MissReason::AddressCollision,
+                                             "LoadDepotDecryptionKey");
             return;
         }
     }

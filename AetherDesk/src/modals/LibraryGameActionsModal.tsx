@@ -3,6 +3,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { GameHeroImage } from '../ui/GameHeroImage';
 import { WrenchIcon } from '../ui/icons';
 import { requireSteamPath } from '../hooks/useSettings';
+import { useLibraryGames, type LuaManifestIssue } from '../hooks/useLibraryGames';
 import { useModalDismiss } from '../hooks/useModalDismiss';
 import { OnlinePanel, type OnlineStatus } from './OnlinePanel';
 import { OnlineChoiceModal, type AppPresenceMode } from './OnlineChoiceModal';
@@ -18,6 +19,8 @@ export interface LibraryActionGame {
   installed: boolean;
   imageUrl?: string;
   heroImageUrl?: string;
+  /** Malformed pins of this game's Lua, as reported by the Library scan. */
+  luaIssues?: LuaManifestIssue[];
 }
 
 /** Report returned by the backend `sync_hubcap_game_manifest` command. */
@@ -28,17 +31,56 @@ interface GameManifestSyncReport {
   generated: number;
   installed: number;
   skipped: boolean;
+  /** Set when the Lua has a malformed pin: the repair cannot run until it is fixed. */
+  invalidPinLine?: number | null;
 }
 
-/** Human-readable one-liner for the per-game repair report. */
-const summarizeManifestRepair = (report: GameManifestSyncReport): string => {
+/**
+ * Human-readable one-liner for the per-game repair report, with its severity.
+ *
+ * A Lua that cannot load is a failure of the repair, not a success: it is
+ * reported as an error so the Library alert shows it in red, and it names the
+ * action that fixes it (Modify) instead of leaving the user at a dead end.
+ */
+const summarizeManifestRepair = (
+  report: GameManifestSyncReport,
+): { text: string; type: 'info' | 'success' | 'error' } => {
+  if (report.invalidPinLine) {
+    return {
+      text: `This game's Lua has an invalid pin at line ${report.invalidPinLine}, so AetherDLL ignores the whole file. Open Modify and repair that line.`,
+      type: 'error',
+    };
+  }
   if (report.skipped || report.pins === 0) {
-    return 'No manifest pins found for this game.';
+    return { text: 'No manifest pins found for this game.', type: 'info' };
   }
   if (report.generated === 0) {
-    return `All ${report.pins} pinned manifest(s) are available locally; nothing to repair.`;
+    return {
+      text: `All ${report.pins} pinned manifest(s) are available locally; nothing to repair.`,
+      type: 'success',
+    };
   }
-  return `Repaired ${report.generated} of ${report.pins} pinned manifest(s) via Hubcap and installed ${report.installed} into depotcache.`;
+  return {
+    text: `Repaired ${report.generated} of ${report.pins} pinned manifest(s) via Hubcap and installed ${report.installed} into depotcache.`,
+    type: 'success',
+  };
+};
+
+/**
+ * Failure of the per-game update toggle, phrased for the person who has to
+ * solve it.
+ *
+ * The backend refuses to enable updates while the Lua holds a malformed pin
+ * (enabling them would comment the pins back in and hand Steam a file
+ * AetherDLL cannot load), so the message must point at the repair instead of
+ * leaving a raw command error with no next step.
+ */
+const describeUpdateToggleFailure = (error: string, enabling: boolean): string => {
+  const action = enabling ? 'enable' : 'disable';
+  if (/Invalid setManifestid call at Lua line (\d+)/.test(error)) {
+    return `Cannot ${action} updates for this game: ${error} Open Modify and repair that line first.`;
+  }
+  return `Failed to update version pin state: ${error}`;
 };
 
 interface LibraryGameActionsModalProps {
@@ -58,6 +100,18 @@ export const LibraryGameActionsModal = ({
   onRefresh,
   onOpenVersionEditor,
 }: LibraryGameActionsModalProps) => {
+  const { games, queryGameState, invalidateGameState } = useLibraryGames();
+  /**
+   * Pins this game's Lua still needs repaired: malformed `setManifestid` calls
+   * that the script engine executes, which is what makes AetherDLL reject the
+   * whole file. Read from the current Library scan when the game is in it (the
+   * object handed to the popup is a snapshot taken when the card was clicked),
+   * falling back to that snapshot. Commented-out bad calls do not count: they
+   * only come back when updates are enabled, and the button is disabled then.
+   */
+  const hasPinsToFix = (
+    games.find((entry) => entry.appId === game.appId)?.luaIssues ?? game.luaIssues ?? []
+  ).some((issue) => issue.active !== false);
   const [updatesEnabled, setUpdatesEnabled] = useState(false);
   const [isBusy, setIsBusy] = useState(false);
   const [showOnlineChoice, setShowOnlineChoice] = useState(false);
@@ -80,10 +134,14 @@ export const LibraryGameActionsModal = ({
   const refreshUpdateState = async () => {
     try {
       const steamPath = await requireSteamPath();
-      const state: boolean = await invoke('get_lua_game_update_state', {
-        appId: Number(game.appId),
-        steamPath,
-      });
+      // Served through the shared provider cache: opening one game used to ask
+      // the backend for this state several times over (StrictMode double mount,
+      // the actions popup and the version editor each asking on their own).
+      const state = await queryGameState<boolean>(
+        Number(game.appId),
+        'get_lua_game_update_state',
+        { steamPath },
+      );
       setUpdatesEnabled(Boolean(state));
     } catch {
       setUpdatesEnabled(false);
@@ -98,8 +156,8 @@ export const LibraryGameActionsModal = ({
 
   const handleToggleUpdates = async () => {
     setIsBusy(true);
+    const nextEnabled = !updatesEnabled;
     try {
-      const nextEnabled = !updatesEnabled;
       onStatus(nextEnabled ? 'Enabling updates for this game...' : 'Disabling updates for this game...', 'info');
       const steamPath = await requireSteamPath();
       const result: string = await invoke('set_lua_game_updates_enabled', {
@@ -108,12 +166,16 @@ export const LibraryGameActionsModal = ({
         enabled: nextEnabled,
       });
       setUpdatesEnabled(nextEnabled);
+      // This game's Lua just changed: drop its cached answers immediately
+      // (the backend invalidation and the following scan would clear them a
+      // moment later, but the toast must never describe stale rows).
+      invalidateGameState(Number(game.appId));
       // The command emits a backend invalidation too; request the shared scan
       // directly for immediate feedback if the WebView event transport lags.
       onRefresh();
       onStatus(result, 'success');
     } catch (err: any) {
-      onStatus(`Failed to update version pin state: ${err}`, 'error');
+      onStatus(describeUpdateToggleFailure(String(err), nextEnabled), 'error');
     } finally {
       setIsBusy(false);
     }
@@ -128,7 +190,9 @@ export const LibraryGameActionsModal = ({
       const report = await invoke<GameManifestSyncReport>('sync_hubcap_game_manifest', {
         appId: Number(game.appId),
       });
-      onStatus(summarizeManifestRepair(report), 'success');
+      invalidateGameState(Number(game.appId));
+      const summary = summarizeManifestRepair(report);
+      onStatus(summary.text, summary.type);
     } catch (err: any) {
       onStatus(`Failed to repair manifests: ${err}`, 'error');
     } finally {
@@ -322,7 +386,7 @@ export const LibraryGameActionsModal = ({
                 title={updatesEnabled ? 'Disable updates for this game' : undefined}
               >
                 <button
-                  className="game-action-btn"
+                  className={`game-action-btn${hasPinsToFix ? ' fix-pins-outline' : ''}`}
                   onClick={() => onOpenVersionEditor(game)}
                   disabled={disabled || updatesEnabled}
                 >

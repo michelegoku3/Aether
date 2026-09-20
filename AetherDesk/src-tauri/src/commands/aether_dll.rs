@@ -2,7 +2,7 @@ use crate::core::settings::SettingsManager;
 use crate::steam::resolve::resolve_steam_path;
 use crate::updater::dll::DllInstaller;
 use crate::updater::dll_version::read_installed_dll_version;
-use crate::updater::github::GithubReleaseManager;
+use crate::updater::github::{self, GithubReleaseManager, TestChannel};
 use crate::util::validation::validate_steam_path;
 
 #[tauri::command]
@@ -38,6 +38,10 @@ pub async fn check_aether_dll_update(app: tauri::AppHandle, steam_path: String) 
     let installed_version = read_installed_dll_version(std::path::Path::new(&steam_path))
         .unwrap_or_else(|| read_legacy_installed_version(&legacy_version_path, &steam_path));
 
+    // Origin label: the update check is reachable from the startup pass, the
+    // DLL-change path and the manual Check button; without it a duplicated
+    // check was untraceable in the logs (F7).
+    let origin = "dll-check";
     // Testing releases (`tdll-*`) take priority when enabled. Their version is
     // gated by `latest_is_newer_than`, exactly like stable releases: if the test
     // release is not newer than installed, `update_available` is false and no dot
@@ -50,41 +54,13 @@ pub async fn check_aether_dll_update(app: tauri::AppHandle, steam_path: String) 
     );
 
     if SettingsManager::new(&app).load().enable_test_updates {
-        crate::desk_log_info!("updater", "Test updates enabled: probing tdll-* first");
-        match GithubReleaseManager::new().fetch_latest_dll_test_release().await {
-            Ok((tag, url)) => {
-                let latest_version = GithubReleaseManager::component_version_from_tag(&tag);
-                let update_available =
-                    GithubReleaseManager::latest_is_newer_than(&installed_version, &tag);
-                crate::desk_log_info!(
-                    "updater",
-                    "AetherDLL TEST check: installed={} latest={} tag={} url={} update_available={}",
-                    installed_version,
-                    latest_version,
-                    tag,
-                    url,
-                    update_available
-                );
-                return Ok(serde_json::json!({
-                    "installed_version": GithubReleaseManager::display_version_from_tag(&installed_version),
-                    "latest_version": GithubReleaseManager::display_version_from_tag(&latest_version),
-                    "latest_tag": tag,
-                    "update_available": update_available,
-                    "is_test": true
-                }));
-            }
-            Err(error) => {
-                crate::desk_log_warn!(
-                    "updater",
-                    "No usable tdll-* release ({}). Falling through to stable dll-*",
-                    error
-                );
-            }
+        if let Some(response) = test_channel_update_response(&installed_version, origin).await {
+            return Ok(response);
         }
     }
 
     let manager = GithubReleaseManager::new();
-    let (latest_tag, download_url) = match manager.fetch_latest_dll_release().await {
+    let (latest_tag, download_url) = match manager.fetch_latest_dll_release("dll-install").await {
         Ok(pair) => pair,
         Err(error) => {
             crate::desk_log_error!("updater", "AetherDLL update check failed: {}", error);
@@ -134,8 +110,88 @@ fn read_legacy_installed_version(legacy_version_path: &std::path::Path, steam_pa
     }
 }
 
+/// Result of probing the `tdll-*` test channel during an update check.
+///
+/// `Some(response)` means the test channel published a release and the check is
+/// finished. `None` means "fall through to the stable `dll-*` channel", which
+/// covers all three legitimate reasons: the test channel published nothing, it
+/// is known to be empty in this session, or its lookup failed for a reason that
+/// is not the user's problem to solve.
+async fn test_channel_update_response(
+    installed_version: &str,
+    origin: &str,
+) -> Option<serde_json::Value> {
+    // A session-level memo skips a probe that cannot answer yet: on an install
+    // with no test build published, every check used to spend two GitHub API
+    // requests to learn the same "not published" (F7). A published release
+    // clears the memo immediately, so this never delays a real test build.
+    if github::test_channel_recently_empty(TestChannel::Dll) {
+        crate::desk_log_info!(
+            "updater",
+            "tdll-* channel known empty (checked recently): using the stable dll-* channel"
+        );
+        return None;
+    }
+
+    crate::desk_log_info!("updater", "Test updates enabled: probing tdll-* first");
+    match GithubReleaseManager::new()
+        .fetch_latest_dll_test_release(origin)
+        .await
+    {
+        Ok((tag, url)) => {
+            let latest_version = GithubReleaseManager::component_version_from_tag(&tag);
+            let update_available =
+                GithubReleaseManager::latest_is_newer_than(installed_version, &tag);
+            crate::desk_log_info!(
+                "updater",
+                "AetherDLL TEST check: installed={} latest={} tag={} url={} update_available={}",
+                installed_version,
+                latest_version,
+                tag,
+                url,
+                update_available
+            );
+            Some(serde_json::json!({
+                "installed_version": GithubReleaseManager::display_version_from_tag(installed_version),
+                "latest_version": GithubReleaseManager::display_version_from_tag(&latest_version),
+                "latest_tag": tag,
+                "update_available": update_available,
+                "is_test": true
+            }))
+        }
+        Err(error) if github::channel_has_no_release(&error) => {
+            // Expected whenever no test build is published: not a fault.
+            crate::desk_log_info!(
+                "updater",
+                "No tdll-* release published ({}). Using the stable dll-* channel.",
+                error
+            );
+            None
+        }
+        Err(error) => {
+            crate::desk_log_warn!(
+                "updater",
+                "No usable tdll-* release ({}). Falling through to stable dll-*",
+                error
+            );
+            None
+        }
+    }
+}
+
 #[tauri::command]
-pub async fn install_aether_dll(app: tauri::AppHandle, steam_path: String) -> Result<String, String> {
+pub async fn install_aether_dll(
+    app: tauri::AppHandle,
+    steam_path: String,
+    origin: Option<String>,
+) -> Result<String, String> {
+    let origin = origin.unwrap_or_else(|| "dll-install".to_string());
+    crate::desk_log_info!(
+        "updater",
+        "AetherDLL install requested (origin={}, steam_path='{}')",
+        origin,
+        steam_path
+    );
     // Strict validation first: fail fast before any download or Steam-side write.
     validate_steam_path(&steam_path)?;
 
@@ -146,10 +202,18 @@ pub async fn install_aether_dll(app: tauri::AppHandle, steam_path: String) -> Re
 
     // Testing releases take priority when enabled.
     let (tag_name, download_url) = if SettingsManager::new(&app).load().enable_test_updates {
-        match manager.fetch_latest_dll_test_release().await {
+        match manager.fetch_latest_dll_test_release("dll-install").await {
             Ok(pair) => {
                 crate::desk_log_info!("updater", "Install will use TEST DLL tag {}", pair.0);
                 pair
+            }
+            Err(error) if crate::updater::github::channel_has_no_release(&error) => {
+                crate::desk_log_info!(
+                    "updater",
+                    "No tdll-* release published ({}). Installing from the stable dll-* channel.",
+                    error
+                );
+                manager.fetch_latest_dll_release("dll-install").await?
             }
             Err(error) => {
                 crate::desk_log_warn!(
@@ -157,11 +221,11 @@ pub async fn install_aether_dll(app: tauri::AppHandle, steam_path: String) -> Re
                     "TEST DLL release unavailable ({}). Using stable dll-*",
                     error
                 );
-                manager.fetch_latest_dll_release().await?
+                manager.fetch_latest_dll_release("dll-install").await?
             }
         }
     } else {
-        manager.fetch_latest_dll_release().await?
+        manager.fetch_latest_dll_release("dll-install").await?
     };
 
     crate::desk_log_info!("updater", "Downloading AetherDLL release tag {} from {}", tag_name, download_url);

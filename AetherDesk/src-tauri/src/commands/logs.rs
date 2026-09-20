@@ -3,6 +3,9 @@
 
 use std::path::PathBuf;
 
+/// Lines returned when the caller does not specify a window size.
+const DEFAULT_TAIL_LINES: usize = 1_000;
+
 /// UCOnline2 writes its log to `%TEMP%\uc_online2.log` (single file, appended
 /// while any UCO2 game runs).
 fn uco2_log_path() -> PathBuf {
@@ -21,7 +24,10 @@ pub async fn get_recent_log_lines(
     tail_lines: Option<usize>,
     source: Option<String>,
 ) -> Result<Vec<String>, String> {
-    let limit = tail_lines.unwrap_or(200);
+    // Default window when the caller does not ask for a size. The Logs view
+    // asks explicitly (LogView::TAIL_LINES), so this is the ceiling for any
+    // other caller and the safety net for a missing argument.
+    let limit = tail_lines.unwrap_or(DEFAULT_TAIL_LINES);
     let mode = source.unwrap_or_else(|| "desk".to_string()).to_lowercase();
     tauri::async_runtime::spawn_blocking(move || read_log_lines(&app, limit, &mode))
         .await

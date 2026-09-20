@@ -5,7 +5,7 @@
 
 use crate::core::settings::SettingsManager;
 use crate::updater::desk;
-use crate::updater::github::GithubReleaseManager;
+use crate::updater::github::{GithubReleaseManager, TestChannel};
 
 /// Instant, local-only report of the running AetherDesk version. Unlike
 /// `check_aether_desk_update` it performs no network call, so the UI can show
@@ -21,6 +21,59 @@ pub fn get_desk_version(app: tauri::AppHandle) -> Result<String, String> {
 /// if its version is newer** than the installed one. Otherwise it falls back to
 /// the latest stable `desk-*` release (version-gated). `is_test` tells the UI
 /// how to color the update dot.
+/// Result of probing the `tdesk-*` test channel.
+///
+/// `Some(info)` = a test build is published and it is the answer; `None` = fall
+/// through to the stable `desk-*` channel (nothing published, channel known
+/// empty in this session, or a lookup failure that is not the user's problem).
+async fn test_channel_desk_update_info(
+    current_version: String,
+    origin: &str,
+) -> Option<crate::updater::github::ComponentUpdateInfo> {
+    // Same session-level memo as the DLL check (F7): an unpublished test channel
+    // is not worth two API requests on every startup.
+    if crate::updater::github::test_channel_recently_empty(TestChannel::Desk) {
+        crate::desk_log_info!(
+            "updater",
+            "tdesk-* channel known empty (checked recently): using the stable desk-* channel"
+        );
+        return None;
+    }
+
+    let manager = GithubReleaseManager::new();
+    crate::desk_log_info!("updater", "Test updates enabled: probing tdesk-* first");
+    match manager.fetch_latest_desk_test_release(origin).await {
+        Ok(release) => {
+            let info = GithubReleaseManager::build_desk_test_update_info(current_version, &release);
+            crate::desk_log_info!(
+                "updater",
+                "AetherDesk TEST check: installed={} latest={} tag={} update_available={}",
+                info.installed_version,
+                info.latest_version,
+                info.latest_tag,
+                info.update_available
+            );
+            Some(info)
+        }
+        Err(error) if crate::updater::github::channel_has_no_release(&error) => {
+            crate::desk_log_info!(
+                "updater",
+                "No tdesk-* release published ({}). Using the stable desk-* channel.",
+                error
+            );
+            None
+        }
+        Err(error) => {
+            crate::desk_log_warn!(
+                "updater",
+                "No usable tdesk-* release ({}). Falling through to stable desk-*",
+                error
+            );
+            None
+        }
+    }
+}
+
 #[tauri::command]
 pub async fn check_aether_desk_update(app: tauri::AppHandle) -> Result<serde_json::Value, String> {
     let current_version = app.package_info().version.to_string();
@@ -31,34 +84,17 @@ pub async fn check_aether_desk_update(app: tauri::AppHandle) -> Result<serde_jso
     );
     let manager = GithubReleaseManager::new();
 
+    // Origin label: this same check is reachable from the startup pass, the
+    // DLL/Desk-change path and the manual Check button (F7).
+    let origin = "desk-check";
     if SettingsManager::new(&app).load().enable_test_updates {
-        crate::desk_log_info!("updater", "Test updates enabled: probing tdesk-* first");
-        match manager.fetch_latest_desk_test_release().await {
-            Ok(release) => {
-                let info =
-                    GithubReleaseManager::build_desk_test_update_info(current_version.clone(), &release);
-                crate::desk_log_info!(
-                    "updater",
-                    "AetherDesk TEST check: installed={} latest={} tag={} update_available={}",
-                    info.installed_version,
-                    info.latest_version,
-                    info.latest_tag,
-                    info.update_available
-                );
-                return serde_json::to_value(info)
-                    .map_err(|e| format!("Failed to serialize desk test update info: {e}"));
-            }
-            Err(error) => {
-                crate::desk_log_warn!(
-                    "updater",
-                    "No usable tdesk-* release ({}). Falling through to stable desk-*",
-                    error
-                );
-            }
+        if let Some(info) = test_channel_desk_update_info(current_version.clone(), origin).await {
+            return serde_json::to_value(info)
+                .map_err(|e| format!("Failed to serialize desk test update info: {e}"));
         }
     }
 
-    let release = match manager.fetch_latest_desk_release().await {
+    let release = match manager.fetch_latest_desk_release(origin).await {
         Ok(release) => release,
         Err(error) => {
             crate::desk_log_error!("updater", "AetherDesk update check failed: {}", error);
