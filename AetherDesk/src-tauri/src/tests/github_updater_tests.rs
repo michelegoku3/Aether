@@ -167,3 +167,10 @@ fn an_empty_channel_is_also_remembered() {
     let cached = fresh_for_tests(&slot).expect("the absence is remembered");
     assert!(cached.is_err());
 }
+
+#[test]
+fn test_etag_header_parsing() {
+    let header_val = "\"64f8a3c8e9d1\"";
+    let parsed = header_val.trim_matches('"');
+    assert_eq!(parsed, "64f8a3c8e9d1");
+}
