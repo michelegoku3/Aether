@@ -233,6 +233,19 @@ impl LookupSlot {
     }
 }
 
+#[derive(Clone)]
+struct ReleasesApiEtagCache {
+    etag: Option<String>,
+    releases: Vec<GithubRelease>,
+    #[allow(dead_code)]
+    saved_at: Instant,
+}
+
+fn releases_api_etag_cache() -> &'static Mutex<Option<ReleasesApiEtagCache>> {
+    static CACHE: OnceLock<Mutex<Option<ReleasesApiEtagCache>>> = OnceLock::new();
+    CACHE.get_or_init(|| Mutex::new(None))
+}
+
 pub struct GithubReleaseManager {
     client: reqwest::Client,
 }
@@ -557,13 +570,30 @@ impl GithubReleaseManager {
     }
 
     async fn fetch_releases_api(&self) -> Result<Vec<GithubRelease>, String> {
-        crate::desk_log_info!("updater", "GET {}", RELEASES_API_URL);
-        let response = self
+        let cached_etag = releases_api_etag_cache()
+            .lock()
+            .ok()
+            .and_then(|guard| guard.as_ref().and_then(|c| c.etag.clone()));
+
+        crate::desk_log_info!(
+            "updater",
+            "GET {} (ETag: {})",
+            RELEASES_API_URL,
+            cached_etag.as_deref().unwrap_or("none")
+        );
+
+        let mut req = self
             .client
             .get(RELEASES_API_URL)
             .header("User-Agent", USER_AGENT)
             .header("Accept", "application/vnd.github+json")
-            .header("X-GitHub-Api-Version", "2022-11-28")
+            .header("X-GitHub-Api-Version", "2022-11-28");
+
+        if let Some(ref etag) = cached_etag {
+            req = req.header("If-None-Match", etag);
+        }
+
+        let response = req
             .send()
             .await
             .map_err(|e| format!("GitHub API network error: {}", e))?;
@@ -580,6 +610,20 @@ impl GithubReleaseManager {
             limit,
             reset
         );
+
+        if status == reqwest::StatusCode::NOT_MODIFIED {
+            if let Ok(guard) = releases_api_etag_cache().lock() {
+                if let Some(ref cache) = *guard {
+                    crate::desk_log_info!(
+                        "updater",
+                        "GitHub API 304 Not Modified — reused {} cached releases without consuming rate limit",
+                        cache.releases.len()
+                    );
+                    return Ok(cache.releases.clone());
+                }
+            }
+        }
+
         if remaining != "unknown" {
             if let Ok(left) = remaining.parse::<u32>() {
                 if left == 0 {
@@ -610,10 +654,25 @@ impl GithubReleaseManager {
             ));
         }
 
-        response
+        let response_etag = header_str(response.headers(), "etag");
+        let releases = response
             .json::<Vec<GithubRelease>>()
             .await
-            .map_err(|e| format!("Failed to parse GitHub releases JSON: {}", e))
+            .map_err(|e| format!("Failed to parse GitHub releases JSON: {}", e))?;
+
+        if let Ok(mut guard) = releases_api_etag_cache().lock() {
+            *guard = Some(ReleasesApiEtagCache {
+                etag: if response_etag != "unknown" {
+                    Some(response_etag)
+                } else {
+                    None
+                },
+                releases: releases.clone(),
+                saved_at: Instant::now(),
+            });
+        }
+
+        Ok(releases)
     }
 
     /// No REST API: Atom feed for tags + conventional download URLs from CI names.

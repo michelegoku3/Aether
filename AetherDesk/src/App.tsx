@@ -397,27 +397,35 @@ export default function App() {
         {/* Modular Main Content display area */}
         <MainContent
           activeTab={activeTab}
-          dllUpdateAvailable={dllUpdateAvailable}
-          deskUpdateAvailable={deskUpdateAvailable}
-          deskVersion={deskVersion}
-          dllUpdateIsTest={dllUpdateIsTest}
-          deskUpdateIsTest={deskUpdateIsTest}
-          onUpdateComplete={checkAllUpdates}
-          hubcapUsage={hubcapUsage}
-          onRefreshUsage={refreshHubcapUsage}
-          dllStatus={dllStatus}
-          onDllStatusChange={checkDllStatus}
-          onRefreshCustomCss={refreshCustomCss}
-          onCustomCssChange={changeCustomCss}
-          onPreviewPersonalWallpaper={previewPersonalWallpaper}
-          onPreviewAlternativeCards={previewAlternativeCards}
-          settingsRevision={settingsRevision}
-          settingsReady={settingsReady}
-          useAlternativeGameCards={useAlternativeGameCards}
-          alternativeCardsOpacity={alternativeCardsOpacity}
-          alternativeCardsFade={alternativeCardsFade}
-          onMissingSteamPath={() => setShowSteamPathWarning(true)}
-          settingsGuardRef={settingsGuardRef}
+          updates={{
+            dllAvailable: dllUpdateAvailable,
+            deskAvailable: deskUpdateAvailable,
+            deskVersion,
+            dllIsTest: dllUpdateIsTest,
+            deskIsTest: deskUpdateIsTest,
+            onComplete: checkAllUpdates,
+          }}
+          appearance={{
+            useAlternativeGameCards,
+            alternativeCardsOpacity,
+            alternativeCardsFade,
+            onRefreshCustomCss: refreshCustomCss,
+            onCustomCssChange: changeCustomCss,
+            onPreviewPersonalWallpaper: previewPersonalWallpaper,
+            onPreviewAlternativeCards: previewAlternativeCards,
+          }}
+          settings={{
+            ready: settingsReady,
+            revision: settingsRevision,
+            guardRef: settingsGuardRef,
+            onMissingSteamPath: () => setShowSteamPathWarning(true),
+            hubcapUsage,
+            onRefreshUsage: refreshHubcapUsage,
+          }}
+          dll={{
+            status: dllStatus,
+            onChange: checkDllStatus,
+          }}
         />
 
         {showUnsavedModal && (

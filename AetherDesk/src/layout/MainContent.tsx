@@ -7,32 +7,54 @@ import { HomeView } from '../views/HomeView';
 import { LogView } from '../views/LogView';
 import { DllStatusInfo } from '../types/ui';
 
-interface MainContentProps {
-  activeTab: TabType;
-  dllUpdateAvailable: boolean; // Passed down from App.tsx orchestrator
-  deskUpdateAvailable: boolean; // Passed down from App.tsx orchestrator
-  deskVersion: string;         // Installed AetherDesk version (resolved at startup)
-  dllUpdateIsTest: boolean;     // Whether the DLL update is a test build (red)
-  deskUpdateIsTest: boolean;    // Whether the desk update is a test build (red)
-  onUpdateComplete: () => void; // Passed down from App.tsx orchestrator
-  hubcapUsage: { usage: number; limit: number; hasKey: boolean };
-  onRefreshUsage: (forcedKey?: string) => Promise<void>;
-  dllStatus: DllStatusInfo;
-  onDllStatusChange: () => Promise<void>;
+export interface MainContentUpdates {
+  dllAvailable: boolean;
+  deskAvailable: boolean;
+  deskVersion: string;
+  dllIsTest: boolean;
+  deskIsTest: boolean;
+  onComplete: () => void;
+}
+
+export interface MainContentAppearance {
+  useAlternativeGameCards: boolean;
+  alternativeCardsOpacity: number;
+  alternativeCardsFade: number;
   onRefreshCustomCss: () => Promise<void>;
   onCustomCssChange: (enabled: boolean) => void;
   onPreviewPersonalWallpaper: (enabled: boolean, opacity: number) => void;
   onPreviewAlternativeCards: (opacity: number, fade: number) => void;
-  onMissingSteamPath: () => void;
-  settingsGuardRef: { current: SettingsGuard | null };
-  settingsRevision: number;
-  settingsReady: boolean;
-  useAlternativeGameCards: boolean;
-  alternativeCardsOpacity: number;
-  alternativeCardsFade: number;
 }
 
-export const MainContent = ({ activeTab, dllUpdateAvailable, deskUpdateAvailable, deskVersion, dllUpdateIsTest, deskUpdateIsTest, onUpdateComplete, hubcapUsage, onRefreshUsage, dllStatus, onDllStatusChange, onRefreshCustomCss, onCustomCssChange, onPreviewPersonalWallpaper, onPreviewAlternativeCards, onMissingSteamPath, settingsGuardRef, settingsRevision, settingsReady, useAlternativeGameCards, alternativeCardsOpacity, alternativeCardsFade }: MainContentProps) => {
+export interface MainContentSettings {
+  ready: boolean;
+  revision: number;
+  guardRef: { current: SettingsGuard | null };
+  onMissingSteamPath: () => void;
+  hubcapUsage: { usage: number; limit: number; hasKey: boolean };
+  onRefreshUsage: (forcedKey?: string) => Promise<void>;
+}
+
+export interface MainContentDll {
+  status: DllStatusInfo;
+  onChange: () => Promise<void>;
+}
+
+export interface MainContentProps {
+  activeTab: TabType;
+  updates: MainContentUpdates;
+  appearance: MainContentAppearance;
+  settings: MainContentSettings;
+  dll: MainContentDll;
+}
+
+export const MainContent = ({
+  activeTab,
+  updates,
+  appearance,
+  settings,
+  dll,
+}: MainContentProps) => {
   const renderActiveTransientView = () => {
     if (activeTab === 'home') {
       return (
@@ -46,14 +68,14 @@ export const MainContent = ({ activeTab, dllUpdateAvailable, deskUpdateAvailable
       return (
         <main className="main-content">
           <AetherView
-            isUpdateAvailable={dllUpdateAvailable}
-            isDeskUpdateAvailable={deskUpdateAvailable}
-            deskVersion={deskVersion}
-            isDllUpdateTest={dllUpdateIsTest}
-            isDeskUpdateTest={deskUpdateIsTest}
-            onUpdateComplete={onUpdateComplete}
-            dllStatus={dllStatus}
-            onDllStatusChange={onDllStatusChange}
+            isUpdateAvailable={updates.dllAvailable}
+            isDeskUpdateAvailable={updates.deskAvailable}
+            deskVersion={updates.deskVersion}
+            isDllUpdateTest={updates.dllIsTest}
+            isDeskUpdateTest={updates.deskIsTest}
+            onUpdateComplete={updates.onComplete}
+            dllStatus={dll.status}
+            onDllStatusChange={dll.onChange}
           />
         </main>
       );
@@ -98,12 +120,12 @@ export const MainContent = ({ activeTab, dllUpdateAvailable, deskUpdateAvailable
         aria-hidden={activeTab !== 'store'}
       >
         <StoreView
-          onRefreshUsage={onRefreshUsage}
-          settingsRevision={settingsRevision}
-          settingsReady={settingsReady}
-          useAlternativeGameCards={useAlternativeGameCards}
-          alternativeCardsOpacity={alternativeCardsOpacity}
-          alternativeCardsFade={alternativeCardsFade}
+          onRefreshUsage={settings.onRefreshUsage}
+          settingsRevision={settings.revision}
+          settingsReady={settings.ready}
+          useAlternativeGameCards={appearance.useAlternativeGameCards}
+          alternativeCardsOpacity={appearance.alternativeCardsOpacity}
+          alternativeCardsFade={appearance.alternativeCardsFade}
         />
       </main>
 
@@ -115,9 +137,9 @@ export const MainContent = ({ activeTab, dllUpdateAvailable, deskUpdateAvailable
         aria-hidden={activeTab !== 'library'}
       >
         <LibraryView
-          useAlternativeGameCards={useAlternativeGameCards}
-          alternativeCardsOpacity={alternativeCardsOpacity}
-          alternativeCardsFade={alternativeCardsFade}
+          useAlternativeGameCards={appearance.useAlternativeGameCards}
+          alternativeCardsOpacity={appearance.alternativeCardsOpacity}
+          alternativeCardsFade={appearance.alternativeCardsFade}
         />
       </main>
 
@@ -140,14 +162,14 @@ export const MainContent = ({ activeTab, dllUpdateAvailable, deskUpdateAvailable
         aria-hidden={activeTab !== 'settings'}
       >
         <SettingsView
-          hubcapUsage={hubcapUsage}
-          onRefreshUsage={onRefreshUsage}
-          onRefreshCustomCss={onRefreshCustomCss}
-          onCustomCssChange={onCustomCssChange}
-          onPreviewPersonalWallpaper={onPreviewPersonalWallpaper}
-          onPreviewAlternativeCards={onPreviewAlternativeCards}
-          onMissingSteamPath={onMissingSteamPath}
-          guardRef={settingsGuardRef}
+          hubcapUsage={settings.hubcapUsage}
+          onRefreshUsage={settings.onRefreshUsage}
+          onRefreshCustomCss={appearance.onRefreshCustomCss}
+          onCustomCssChange={appearance.onCustomCssChange}
+          onPreviewPersonalWallpaper={appearance.onPreviewPersonalWallpaper}
+          onPreviewAlternativeCards={appearance.onPreviewAlternativeCards}
+          onMissingSteamPath={settings.onMissingSteamPath}
+          guardRef={settings.guardRef}
         />
       </main>
 

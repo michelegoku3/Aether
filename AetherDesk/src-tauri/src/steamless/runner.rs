@@ -131,6 +131,29 @@ impl SteamlessRunner {
             )
         })?;
 
+        let mut stdout_pipe = child.stdout.take();
+        let mut stderr_pipe = child.stderr.take();
+
+        // Drain stdout and stderr in background reader threads to avoid OS pipe
+        // buffer deadlock when Steamless outputs large unpacker diagnostics.
+        let stdout_reader = std::thread::spawn(move || {
+            let mut buf = Vec::new();
+            if let Some(mut out) = stdout_pipe.take() {
+                use std::io::Read;
+                let _ = out.read_to_end(&mut buf);
+            }
+            buf
+        });
+
+        let stderr_reader = std::thread::spawn(move || {
+            let mut buf = Vec::new();
+            if let Some(mut err) = stderr_pipe.take() {
+                use std::io::Read;
+                let _ = err.read_to_end(&mut buf);
+            }
+            buf
+        });
+
         let timeout = Duration::from_secs(request.timeout_seconds.max(1));
         let started = Instant::now();
         let mut timed_out = false;
@@ -143,18 +166,18 @@ impl SteamlessRunner {
                     let _ = child.kill();
                     break;
                 }
-                Ok(None) => std::thread::sleep(Duration::from_millis(100)),
+                Ok(None) => std::thread::sleep(Duration::from_millis(50)),
                 Err(e) => return Err(format!("Failed while waiting for Steamless: {}", e)),
             }
         }
 
-        let output = child
-            .wait_with_output()
-            .map_err(|e| format!("Failed to collect Steamless output: {}", e))?;
+        let _ = child.wait();
+        let raw_stdout = stdout_reader.join().unwrap_or_default();
+        let raw_stderr = stderr_reader.join().unwrap_or_default();
 
         Ok(SteamlessProcessOutput {
-            stdout: String::from_utf8_lossy(&output.stdout).to_string(),
-            stderr: String::from_utf8_lossy(&output.stderr).to_string(),
+            stdout: String::from_utf8_lossy(&raw_stdout).to_string(),
+            stderr: String::from_utf8_lossy(&raw_stderr).to_string(),
             timed_out,
         })
     }
