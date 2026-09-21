@@ -45,3 +45,14 @@ export interface VersioningProgress {
   step: number;   // 0..100
   message: string;
 }
+
+/**
+ * Emitted by `core/hubcap_update_monitor.rs` only when the status snapshot
+ * ACTUALLY changed (queue moved, a task completed/failed, a retry was
+ * scheduled). Payload is the whole `MonitorStatus` snapshot, camelCase.
+ *
+ * Push-first, polling-as-recovery: the background-sync popup listens to this
+ * and keeps a slow poll only so a missed event cannot leave it stale — the
+ * same contract `library://lua-changed` + `get_library_change_revision` use.
+ */
+export const SYNC_STATUS_EVENT = 'sync://status-changed';

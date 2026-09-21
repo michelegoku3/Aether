@@ -12,8 +12,6 @@ export interface BulkUpdateGame {
 export interface GameUpdatesModalProps {
   /** Full library scan; every Lua entry is targeted, installed or not. */
   games: BulkUpdateGame[];
-  /** Validated Steam root (caller resolves it via requireSteamPath). */
-  steamPath: string;
   /** Toast feedback in the hosting view (same StatusAlert as other actions). */
   onStatus: (text: string, type: StatusType) => void;
   /** Single library rescan after the bulk run (immediate feedback). */
@@ -37,7 +35,7 @@ interface BulkProgress {
  * the library provider coalesces the resulting invalidation events into a
  * single follow-up scan, so no backend bulk command is needed.
  */
-export const GameUpdatesModal = ({ games, steamPath, onStatus, onRefresh, onClose }: GameUpdatesModalProps) => {
+export const GameUpdatesModal = ({ games, onStatus, onRefresh, onClose }: GameUpdatesModalProps) => {
   const [busy, setBusy] = useState<BulkProgress | null>(null);
   const [result, setResult] = useState<string | null>(null);
 
@@ -59,7 +57,6 @@ export const GameUpdatesModal = ({ games, steamPath, onStatus, onRefresh, onClos
       try {
         await invoke('set_lua_game_updates_enabled', {
           appId: Number(game.appId),
-          steamPath,
           enabled,
         });
         ok++;

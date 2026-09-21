@@ -1,5 +1,6 @@
-import { useEffect, useState, useRef, useMemo } from 'react';
+import { useEffect, useState, useRef, useMemo, memo } from 'react';
 import { invoke } from '@tauri-apps/api/core';
+import { useVisiblePolling } from '../hooks/useVisiblePolling';
 
 const LEVEL_RANK: Record<string, number> = {
   trace: 0,
@@ -42,7 +43,7 @@ const lineRank = (line: string) => {
 const lineKey = (line: string, idx: number, snapshot: number) =>
   `${snapshot}:${idx}:${line.slice(0, 40)}:${line.length}`;
 
-export const LogView = () => {
+export const LogView = memo(function LogView() {
   const [lines, setLines] = useState<string[]>([]);
   const [filterQuery, setFilterQuery] = useState('');
   const [debouncedFilter, setDebouncedFilter] = useState('');
@@ -55,7 +56,6 @@ export const LogView = () => {
    *  re-namespaced to the snapshot and a line appended at the tail doesn't
    *  collide with a previous index. */
   const snapshotRef = useRef(0);
-  const intervalRef = useRef<number | null>(null);
 
   // Debounce the text filter.
   useEffect(() => {
@@ -78,20 +78,15 @@ export const LogView = () => {
 
   /** Visibility-aware polling: fast cadence while the Logs tab is visible,
    *  slow cadence when the document is hidden (window minimised / another
-   *  tab focused in the OS / another Aether view active). */
-  useEffect(() => {
-    const scheduleNext = () => {
-      const hidden = document.visibilityState !== 'visible';
-      const delay = hidden ? LOG_POLL_BACKOFF_MS : LOG_POLL_INTERVAL_MS;
-      intervalRef.current = window.setTimeout(() => {
-        void fetchLogs().finally(scheduleNext);
-      }, delay);
-    };
-    void fetchLogs().finally(scheduleNext);
-    return () => {
-      if (intervalRef.current !== null) window.clearTimeout(intervalRef.current);
-    };
-  }, [logSource]);
+   *  tab focused in the OS / another Aether view active). Shared hook: the
+   *  same policy now drives the background-sync popup too, so there is one
+   *  place where "how often do we poll" is decided. `resetKey: logSource`
+   *  reloads immediately when the user switches Desk/DLL/UCO2/All. */
+  useVisiblePolling(fetchLogs, {
+    intervalMs: LOG_POLL_INTERVAL_MS,
+    backoffMs: LOG_POLL_BACKOFF_MS,
+    resetKey: logSource,
+  });
 
   const handleScroll = () => {
     if (!containerRef.current) return;
@@ -296,4 +291,4 @@ export const LogView = () => {
       </div>
     </div>
   );
-};
+});

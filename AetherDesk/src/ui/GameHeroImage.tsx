@@ -32,7 +32,7 @@ const getCachedHero = (appId: string) => {
 };
 
 const saveCachedHero = (appId: string, url: string) => {
-  try { localStorage.setItem(`${HERO_CACHE_PREFIX}${appId}`, url); } catch {}
+  try { localStorage.setItem(`${HERO_CACHE_PREFIX}${appId}`, url); } catch { /* quota o privacy mode: la cache hero è solo un'ottimizzazione */ }
 };
 
 // Whether a URL is plausibly a landscape hero asset we can put in the hero

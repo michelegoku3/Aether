@@ -3,7 +3,7 @@ use tauri::{AppHandle, Emitter};
 use std::time::Instant;
 
 use crate::manifest::pins::LuaManifestPins;
-use crate::util::validation::validate_steam_path;
+use super::command_steam_path;
 use crate::versioning::model::{ApplyVersionReport, BuildInfo, SavedBuild};
 use crate::versioning::service::VersionService;
 
@@ -63,17 +63,19 @@ pub async fn apply_game_version(
     app: AppHandle,
     app_id: u32,
     build_id: u64,
-    steam_path: String,
 ) -> Result<ApplyVersionReport, String> {
-    validate_steam_path(&steam_path)?;
+    // Percorso Steam risolto dal backend (settings → normalizzazione →
+    // validazione filesystem): il client non lo passa più e non può passarlo
+    // diverso da quello configurato.
+    let steam_path = command_steam_path(&app)?;
     validate_app_build(app_id, build_id)?;
     let started = Instant::now();
     crate::desk_log_info!(
         "versioning",
-        "Apply start app_id={} build_id={} steam_path_configured={}",
+        "Apply start app_id={} build_id={} steam_path='{}'",
         app_id,
         build_id,
-        !steam_path.trim().is_empty()
+        steam_path
     );
 
     // The build lookup is the only slow phase: report it to the UI so the

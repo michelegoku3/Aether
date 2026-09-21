@@ -40,7 +40,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
-use tauri::AppHandle;
+use tauri::{AppHandle, Emitter};
 
 use crate::core::paths::LocalAppPaths;
 use crate::core::settings::SettingsManager;
@@ -127,9 +127,88 @@ pub struct MonitorStatusSnapshot {
     pub workshop: LaneStatus,
 }
 
+/// Canale push dello stato del sincronizzatore.
+///
+/// Emesso solo quando cambia la parte **significativa** dello snapshot:
+/// composizione delle code, tentativi, task abbandonati, contatori di
+/// completamento, ultimo errore, flag di readiness. Gli orologi puri
+/// (`last_scan_epoch`, `started_epoch`, `last_run_epoch`, `next_retry_epoch`)
+/// sono esclusi dalla firma di proposito: cambiano ad ogni poll (20 s) e
+/// trasformerebbero il push in un secondo polling. Il popup li aggiorna con il
+/// proprio poll lento di recovery — push per gli eventi, poll per i countdown.
+pub const SYNC_STATUS_EVENT: &str = "sync://status-changed";
+
 fn status_store() -> &'static Mutex<MonitorStatusSnapshot> {
     static STORE: OnceLock<Mutex<MonitorStatusSnapshot>> = OnceLock::new();
     STORE.get_or_init(|| Mutex::new(MonitorStatusSnapshot::default()))
+}
+
+/// Handle per il canale push, registrato da [`start`]. `with_status` viene
+/// chiamato anche da percorsi che non hanno un `AppHandle` in scope: quando la
+/// cella è vuota l'emit viene semplicemente saltato (il polling del client
+/// resta la rete di sicurezza), quindi l'assenza non è mai un errore.
+fn status_handle() -> &'static OnceLock<AppHandle> {
+    static HANDLE: OnceLock<AppHandle> = OnceLock::new();
+    &HANDLE
+}
+
+/// Ultima firma già pubblicata, per non ri-emettere uno snapshot identico.
+fn last_signature() -> &'static Mutex<Option<String>> {
+    static SIGNATURE: OnceLock<Mutex<Option<String>>> = OnceLock::new();
+    SIGNATURE.get_or_init(|| Mutex::new(None))
+}
+
+fn task_key(task: &PendingTaskInfo) -> String {
+    format!(
+        "{}:{}",
+        task.app_id.map(|id| id.to_string()).unwrap_or_else(|| "-".to_string()),
+        task.attempts
+    )
+}
+
+fn lane_signature(label: &str, lane: &LaneStatus) -> String {
+    let keys = |tasks: &[PendingTaskInfo]| -> String {
+        tasks.iter().map(task_key).collect::<Vec<_>>().join(",")
+    };
+    format!(
+        "{}[{}][{}]{}/{}",
+        label,
+        keys(&lane.pending),
+        keys(&lane.unresolved),
+        lane.processed_count,
+        lane.last_error.as_deref().unwrap_or("")
+    )
+}
+
+/// Impronta confrontabile di tutto ciò che il popup mostra, orologi esclusi.
+fn status_signature(status: &MonitorStatusSnapshot) -> String {
+    format!(
+        "run={}|steam={}|key={}|ckpt={}|{}|{}|{}|{}",
+        status.running,
+        status.steam_path_configured,
+        status.hubcap_key_configured,
+        status.checkpoint_initialized,
+        lane_signature("sync", &status.pin_sync),
+        lane_signature("refresh", &status.pin_refresh),
+        lane_signature("repair", &status.repair),
+        lane_signature("workshop", &status.workshop),
+    )
+}
+
+/// Pubblica lo snapshot sul canale push. Chiamata SENZA il lock dello stato:
+/// `emit` serializza e consegna alle webview, e non deve mai avvenire dentro
+/// una sezione critica che altri thread usano per aggiornare le code.
+fn publish_status(payload: MonitorStatusSnapshot) {
+    let Some(app) = status_handle().get() else {
+        return;
+    };
+    if let Err(error) = app.emit(SYNC_STATUS_EVENT, payload) {
+        crate::desk_log_warn!(
+            "hubcap-updates",
+            "Could not emit sync status event: {}",
+            error
+        );
+    }
 }
 
 fn now_epoch() -> u64 {
@@ -148,8 +227,25 @@ pub fn snapshot() -> MonitorStatusSnapshot {
 }
 
 fn with_status(update: impl FnOnce(&mut MonitorStatusSnapshot)) {
-    if let Ok(mut status) = status_store().lock() {
+    // Payload da pubblicare, calcolato dentro il lock ma emesso fuori.
+    let changed = {
+        let Ok(mut status) = status_store().lock() else {
+            return;
+        };
         update(&mut status);
+        let signature = status_signature(&status);
+        let Ok(mut last) = last_signature().lock() else {
+            return;
+        };
+        if last.as_deref() == Some(signature.as_str()) {
+            None
+        } else {
+            *last = Some(signature);
+            Some(status.clone())
+        }
+    };
+    if let Some(payload) = changed {
+        publish_status(payload);
     }
 }
 
@@ -1086,5 +1182,10 @@ async fn run(app: AppHandle) {
 
 /// Starts the single process-wide synchronizer. Tauri setup calls this once.
 pub fn start(app: AppHandle) {
+    // Il canale push (`sync://status-changed`) serve anche fuori da `run`:
+    // `with_status` è il punto unico in cui lo snapshot cambia, e non ha un
+    // handle in scope. Una sola copia process-wide, registrata prima dello
+    // spawn perché il primo aggiornamento di stato arriva subito dopo.
+    let _ = status_handle().set(app.clone());
     tauri::async_runtime::spawn(run(app));
 }

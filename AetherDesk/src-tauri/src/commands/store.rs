@@ -1,3 +1,4 @@
+use super::command_steam_path;
 use crate::core::backup::GameBackup;
 use crate::game_info::cache::GameInfoCache;
 use crate::store::drm::DrmDetector;
@@ -303,8 +304,10 @@ pub async fn trigger_hubcap_download(
     app: tauri::AppHandle,
     app_id: u32,
     api_key: String,
-    steam_path: String,
 ) -> Result<String, String> {
+    // Il percorso Steam viene dalle impostazioni (unico punto di verità):
+    // `validate_download_inputs` continua a validarlo e a loggare l'errore.
+    let steam_path = command_steam_path(&app)?;
     if let Err(e) = validate_download_inputs(&api_key, &steam_path, "call Hubcap Manifest") {
         crate::desk_log_error!("store", "Download failed for {}: {}", crate::core::logger::format_appid(app_id), e);
         return Err(e);
@@ -368,8 +371,8 @@ pub async fn prepare_specific_version_download(
     app: tauri::AppHandle,
     app_id: u32,
     api_key: String,
-    steam_path: String,
 ) -> Result<Vec<LuaManifestRow>, String> {
+    let steam_path = command_steam_path(&app)?;
     if let Err(e) = validate_download_inputs(&api_key, &steam_path, "download the Lua file") {
         crate::desk_log_error!("store", "Specific version download failed for {}: {}", crate::core::logger::format_appid(app_id), e);
         return Err(e);
@@ -455,8 +458,8 @@ pub async fn trigger_ryuu_download(
     app: tauri::AppHandle,
     app_id: u32,
     api_key: String,
-    steam_path: String,
 ) -> Result<String, String> {
+    let steam_path = command_steam_path(&app)?;
     if let Err(e) = validate_download_inputs(&api_key, &steam_path, "call Ryuu") {
         crate::desk_log_error!("store", "Ryuu download failed for {}: {}", crate::core::logger::format_appid(app_id), e);
         return Err(e);
@@ -482,8 +485,8 @@ pub async fn prepare_ryuu_specific_version_download(
     app: tauri::AppHandle,
     app_id: u32,
     api_key: String,
-    steam_path: String,
 ) -> Result<Vec<LuaManifestRow>, String> {
+    let steam_path = command_steam_path(&app)?;
     validate_download_inputs(&api_key, &steam_path, "download the Lua file from Ryuu")?;
     crate::desk_log_info!("store", "Preparing Ryuu specific version download for {}", crate::core::logger::format_appid(app_id));
 
@@ -498,8 +501,8 @@ pub async fn prepare_ryuu_specific_version_download(
 pub async fn trigger_luatools_download(
     app: tauri::AppHandle,
     app_id: u32,
-    steam_path: String,
 ) -> Result<String, String> {
+    let steam_path = command_steam_path(&app)?;
     validate_steam_download_path(&steam_path)?;
     crate::desk_log_info!(
         "store",
@@ -514,8 +517,8 @@ pub async fn trigger_luatools_download(
 pub async fn prepare_luatools_specific_version_download(
     app: tauri::AppHandle,
     app_id: u32,
-    steam_path: String,
 ) -> Result<Vec<LuaManifestRow>, String> {
+    let steam_path = command_steam_path(&app)?;
     validate_steam_download_path(&steam_path)?;
     crate::desk_log_info!(
         "store",

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState, memo } from 'react';
 import { LuaManifestRow, prepareManifestRows } from '../modals/SpecificVersionModal';
 import ChangeVersionModal from '../modals/ChangeVersionModal';
 import { LibraryGameActionsModal } from '../modals/LibraryGameActionsModal';
@@ -6,7 +6,7 @@ import { GameInfoModal } from '../modals/GameInfoModal';
 import { GameUpdatesModal } from '../modals/GameUpdatesModal';
 import { WorkshopRepairModal } from '../modals/WorkshopRepairModal';
 import { preloadGameCovers } from '../ui/GameCover';
-import { GameCard } from '../ui/GameCard';
+import { GameCard, type GameCardAction } from '../ui/GameCard';
 import { StatusAlert } from '../ui/StatusAlert';
 import {
   ArrowUpThickIcon,
@@ -32,15 +32,11 @@ interface LibraryViewProps {
  *  requests the user may never see (the previous value of 60 on every
  *  filtered-games change was flagged in the audit). */
 const COVER_PRELOAD_WINDOW = 24;
-/** Manifests rows cached for an app are considered fresh for this long
- *  after fetch. Re-opening the version editor within the window reuses the
- *  snapshot instead of hammering Steam's filesystem again. */
-
-export const LibraryView = ({
+export const LibraryView = memo(function LibraryView({
   useAlternativeGameCards,
   alternativeCardsOpacity,
   alternativeCardsFade,
-}: LibraryViewProps) => {
+}: LibraryViewProps) {
   const { games, isLoading, isRefreshing, status, setStatus, loadInstalledGames, queryGameState } =
     useLibraryGames();
   const [searchQuery, setSearchQuery] = useState('');
@@ -60,8 +56,9 @@ export const LibraryView = ({
   const [infoGame, setInfoGame] = useState<InstalledGame | null>(null);
   const [versionGame, setVersionGame] = useState<InstalledGame | null>(null);
   const [manifestRows, setManifestRows] = useState<LuaManifestRow[]>([]);
-  // Steam path the updates modal operates on; null = modal closed.
-  const [updatesSteamPath, setUpdatesSteamPath] = useState<string | null>(null);
+  // Gate del bulk editor degli aggiornamenti; false = popup chiuso. Il
+  // percorso Steam non è più un dato della UI: lo risolvono i comandi.
+  const [showUpdatesModal, setShowUpdatesModal] = useState(false);
   // Workshop manifest repair (scan appworkshop ACF + stage missing manifests).
   const [showWorkshopRepair, setShowWorkshopRepair] = useState(false);
 
@@ -95,13 +92,22 @@ export const LibraryView = ({
 
   const handleOpenUpdatesModal = async () => {
     try {
-      setUpdatesSteamPath(await requireSteamPath());
+      // Pre-volo volutamente mantenuto: senza percorso configurato il popup si
+      // aprirebbe per fallire su OGNI gioco (un errore per riga). Costa una
+      // sola lettura impostazioni per click, non una per gioco come prima.
+      await requireSteamPath();
+      setShowUpdatesModal(true);
     } catch (err: any) {
       showStatus(`Unable to manage game updates: ${err}`, 'error');
     }
   };
 
-  const handleOpenVersionEditor = async (game: InstalledGame) => {
+  // useCallback: è la prop `onFixPins` di OGNI card della griglia. Ricrearla a
+  // ogni render annullerebbe `memo(GameCard)`, che è proprio ciò che evita di
+  // ri-renderizzare N card a ogni keystroke della ricerca o a ogni toast.
+  // I setter di stato sono stabili per garanzia React, quindi l'unica
+  // dipendenza reale è `queryGameState` (già useCallback nel provider).
+  const handleOpenVersionEditor = useCallback(async (game: InstalledGame) => {
     setStatus({ text: '', type: 'info' });
     const appId = Number(game.appId);
 
@@ -109,12 +115,7 @@ export const LibraryView = ({
     // case (and the StrictMode double mount) without a second, shorter-lived
     // snapshot to keep coherent: every completed library scan invalidates it.
     try {
-      const steamPath = await requireSteamPath();
-      const rows = await queryGameState<LuaManifestRow[]>(
-        appId,
-        'get_installed_lua_manifest_rows',
-        { steamPath },
-      );
+      const rows = await queryGameState<LuaManifestRow[]>(appId, 'get_installed_lua_manifest_rows');
       setManifestRows(prepareManifestRows(rows));
       setVersionGame(game);
     } catch (err: any) {
@@ -123,7 +124,16 @@ export const LibraryView = ({
         type: 'error',
       });
     }
-  };
+  }, [queryGameState]);
+
+  // Le azioni della card non dipendono dal singolo gioco (ricevono `game` dal
+  // click) e usano solo setter stabili: l'array si costruisce UNA volta.
+  // Ricrearlo per ogni card a ogni render è ciò che rendeva inutile
+  // `memo(GameCard)`.
+  const cardActions = useMemo<Array<GameCardAction<InstalledGame>>>(() => [
+    { label: 'Modify', variant: 'primary', onClick: setActionGame },
+    { label: 'Info', variant: 'secondary', onClick: setInfoGame },
+  ], []);
 
   return (
     <div className="store-view">
@@ -240,18 +250,7 @@ export const LibraryView = ({
               // The badge is the shortest path to the fix: it opens the same
               // editor as Modify → Change Version, where the bad line is red.
               onFixPins={handleOpenVersionEditor}
-              actions={[
-                {
-                  label: 'Modify',
-                  variant: 'primary',
-                  onClick: setActionGame,
-                },
-                {
-                  label: 'Info',
-                  variant: 'secondary',
-                  onClick: setInfoGame,
-                },
-              ]}
+              actions={cardActions}
             />
           ))
         ) : (
@@ -290,13 +289,12 @@ export const LibraryView = ({
         />
       )}
 
-      {updatesSteamPath && (
+      {showUpdatesModal && (
         <GameUpdatesModal
           games={games}
-          steamPath={updatesSteamPath}
           onStatus={showStatus}
           onRefresh={loadInstalledGames}
-          onClose={() => setUpdatesSteamPath(null)}
+          onClose={() => setShowUpdatesModal(false)}
         />
       )}
 
@@ -308,4 +306,4 @@ export const LibraryView = ({
       )}
     </div>
   );
-};
+});

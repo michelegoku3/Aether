@@ -1,3 +1,4 @@
+import { memo } from 'react';
 import { GameCover } from './GameCover';
 
 export interface GameCardModel {
@@ -76,7 +77,7 @@ const markerTooltip = (game: GameCardModel) => {
   return labels.length > 0 ? labels.join(' • ') : undefined;
 };
 
-export const GameCard = <T extends GameCardModel>({ game, actionLabel, onAction, actions, onFixPins, cardVariant = 'classic' }: GameCardProps<T>) => {
+const GameCardInner = <T extends GameCardModel>({ game, actionLabel, onAction, actions, onFixPins, cardVariant = 'classic' }: GameCardProps<T>) => {
   const marker = markerClass(game);
   // Pins can only be broken in a Lua that exists: this is false for a game
   // that is mere `Available` (nothing downloaded yet, so no file to repair).
@@ -166,3 +167,20 @@ export const GameCard = <T extends GameCardModel>({ game, actionLabel, onAction,
     </div>
   );
 };
+
+/**
+ * Card di un gioco, memoizzata.
+ *
+ * `memo` + cast: `memo()` su un componente generico collassa `T` al vincolo
+ * (`GameCardModel`) e rompe l'inferenza nei call site — le callback delle
+ * action perderebbero il tipo concreto del gioco (`InstalledGame`,
+ * `StoreGame`, …). Il cast a `typeof GameCardInner` restituisce a TypeScript
+ * la firma generica; a runtime il componente resta memoizzato. È l'idioma
+ * standard per i componenti React generici.
+ *
+ * Perché serve: la griglia Library ri-renderizza a ogni keystroke della ricerca,
+ * a ogni toast e a ogni apertura/chiusura di popup. Con props stabili
+ * (`game` dallo snapshot del provider, `actions` e `onFixPins` memoizzati in
+ * LibraryView) le N card non ri-renderizzano: solo la toolbar.
+ */
+export const GameCard = memo(GameCardInner) as typeof GameCardInner;

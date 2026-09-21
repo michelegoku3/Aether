@@ -1,6 +1,5 @@
 import React, { useMemo, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
-import { requireSteamPath } from '../hooks/useSettings';
 import { useModalDismiss } from '../hooks/useModalDismiss';
 import { useGameBuilds, BuildInfo } from '../hooks/useGameBuilds';
 import { useWatchdog } from '../hooks/useWatchdog';
@@ -163,11 +162,11 @@ const AutoBuildsTab = ({ appId, onClose }: AutoBuildsTabProps) => {
         setIsApplying(false);
       }, 90_000);
 
-      const steamPath = await requireSteamPath();
+      // Il percorso Steam lo risolve il backend dalle impostazioni: se non è
+      // configurato l'errore arriva da lì, con lo stesso messaggio di prima.
       const result = await invoke<ApplyVersionReport>('apply_game_version', {
         appId,
         buildId,
-        steamPath,
       });
       clearWatchdog();
       // The backend emits an invalidation as well; ask the shared cache to

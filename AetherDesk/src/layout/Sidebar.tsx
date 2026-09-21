@@ -1,3 +1,5 @@
+import { memo } from 'react';
+
 export type TabType = 'aether' | 'home' | 'store' | 'library' | 'backup' | 'settings' | 'log';
 
 interface SidebarProps {
@@ -15,7 +17,7 @@ interface SidebarProps {
   updateIsTest: boolean;        // Whether the shown update is a test build (red)
 }
 
-export const Sidebar = ({ activeTab, onTabChange, onSteamAction, steamRunning, steamBusy, dllUpdateAvailable, updateIsTest }: SidebarProps) => {
+export const Sidebar = memo(function Sidebar({ activeTab, onTabChange, onSteamAction, steamRunning, steamBusy, dllUpdateAvailable, updateIsTest }: SidebarProps) {
   return (
     <aside className="sidebar">
       {/* TOP NAVIGATION SECTION */}
@@ -126,5 +128,5 @@ export const Sidebar = ({ activeTab, onTabChange, onSteamAction, steamRunning, s
       </div>
     </aside>
   );
-};
+});
 export type { SidebarProps };

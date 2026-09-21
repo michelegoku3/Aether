@@ -1,5 +1,10 @@
-export type AppPresenceMode = 'none' | 'showonline' | 'aetheronline';
-export type OnlineOptionKey = AppPresenceMode | 'uco2';
+import type { AppPresenceMode, OnlineOptionKey } from '../types/online';
+
+// I tipi di dominio vivono in `types/online.ts` insieme agli altri contratti
+// IPC (stessa regola applicata a `OnlineStatus`): questo modulo tiene solo la
+// logica pura di risoluzione/gating. Riesportati per non rompere gli import
+// esistenti (`OnlineChoiceModal` li prende da qui).
+export type { AppPresenceMode, OnlineOptionKey, PresenceDefaultMode } from '../types/online';
 
 export interface OnlineChoiceContext {
   mode: AppPresenceMode;

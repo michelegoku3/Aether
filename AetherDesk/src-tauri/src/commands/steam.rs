@@ -1,3 +1,4 @@
+use super::{command_steam_path, configured_steam_path};
 use crate::util::validation::validate_steam_path;
 use crate::updater::dll::DllInstaller;
 use crate::core::settings::load_settings;
@@ -76,7 +77,11 @@ pub fn restart_steam(app: tauri::AppHandle) -> Result<String, String> {
 }
 
 #[tauri::command]
-pub fn is_dll_installed(steam_path: String) -> Result<bool, String> {
+pub fn is_dll_installed(app: tauri::AppHandle) -> Result<bool, String> {
+    // Lettura di stato: senza percorso configurato la risposta è "non
+    // installato", non un errore (stesso comportamento di prima, quando il
+    // client passava una stringa vuota).
+    let steam_path = configured_steam_path(&app).unwrap_or_default();
     if steam_path.trim().is_empty() {
         return Ok(false);
     }
@@ -92,7 +97,8 @@ pub fn is_steam_running() -> bool {
 }
 
 #[tauri::command]
-pub fn is_steam_blocked(steam_path: String) -> Result<bool, String> {
+pub fn is_steam_blocked(app: tauri::AppHandle) -> Result<bool, String> {
+    let steam_path = configured_steam_path(&app).unwrap_or_default();
     if steam_path.trim().is_empty() {
         return Ok(false);
     }
@@ -100,16 +106,17 @@ pub fn is_steam_blocked(steam_path: String) -> Result<bool, String> {
 }
 
 #[tauri::command]
-pub fn block_steam_updates(steam_path: String) -> Result<String, String> {
-    validate_steam_path(&steam_path)?;
+pub fn block_steam_updates(app: tauri::AppHandle) -> Result<String, String> {
+    // Scrittura nella cartella di Steam: validazione rigorosa, errore leggibile.
+    let steam_path = command_steam_path(&app)?;
     crate::desk_log_info!("steam", "Blocking Steam updates in directory '{}'", steam_path);
     SteamUpdateGuard::new(steam_path).block_updates()?;
     Ok("Steam updates are now blocked.".to_string())
 }
 
 #[tauri::command]
-pub fn unblock_steam_updates(steam_path: String) -> Result<String, String> {
-    validate_steam_path(&steam_path)?;
+pub fn unblock_steam_updates(app: tauri::AppHandle) -> Result<String, String> {
+    let steam_path = command_steam_path(&app)?;
     crate::desk_log_info!("steam", "Unblocking Steam updates in directory '{}'", steam_path);
     SteamUpdateGuard::new(steam_path).unblock_updates()?;
     Ok("Steam updates are now unblocked.".to_string())
@@ -404,17 +411,24 @@ pub fn get_presence_default_mode(app: tauri::AppHandle) -> Result<bool, String> 
 
 /// Imposta la policy di default (docs/05 §12): "showonline" rende la presenza
 /// la norma per ogni app non elencata; gli array restano override espliciti.
+///
+/// **Contratto IPC** (`docs/shared_contracts.md` §7): il parametro si chiama
+/// `show_online` e quindi la chiave sul filo è `showOnline` (Tauri 2 converte
+/// in lowerCamelCase e non accetta alcun fallback snake_case). Il **valore**
+/// scritto in `aethercore.toml` resta la stringa `"showonline"`, che è il token
+/// di dominio letto anche da AetherDLL (`Settings.cpp`): i due livelli non
+/// vanno confusi né "allineati".
 #[tauri::command]
-pub fn set_presence_default_mode(app: tauri::AppHandle, showonline: bool) -> Result<String, String> {
+pub fn set_presence_default_mode(app: tauri::AppHandle, show_online: bool) -> Result<String, String> {
     for path in aethercore_toml_paths(&app) {
-        set_default_mode_in_toml(&path, showonline);
+        set_default_mode_in_toml(&path, show_online);
     }
     crate::desk_log_info!(
         "steam",
         "presence default_mode = {}",
-        if showonline { "showonline" } else { "none" }
+        if show_online { "showonline" } else { "none" }
     );
-    Ok(if showonline {
+    Ok(if show_online {
         "Default mode is now showonline: every game (unless excluded/aetheronline) broadcasts what you're playing.".to_string()
     } else {
         "Default mode is now none: only apps explicitly listed get Aether presence.".to_string()

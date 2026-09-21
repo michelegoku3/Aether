@@ -10,20 +10,37 @@ REM  Steps, all inside AetherDesk\:
 REM    1. approve the esbuild install script (npm 11+)
 REM    2. npm ci                -> install dependencies
 REM    3. npm audit fix         -> fix known vulnerabilities
-REM    4. npm run tauri build   -> compile AetherDesk.exe
-REM    5. assemble the portable folder + create the ZIP
+REM    4. npm run build + lint + wiring guard -> tsc/vite (crea dist\), ESLint,
+REM       moduli frontend mai importati
+REM    5. cargo test            -> unit test + test di contratto IPC
+REM    6. npm run tauri build   -> compile AetherDesk.exe
+REM    7. assemble the portable folder + create the ZIP
 REM
 REM  Output: AetherDesk\build\portable\AetherDesk-<version>.zip
 REM
 REM  Usage:
-REM    build.cmd             -> full build
-REM    build.cmd /skipaudit  -> skip the audit step (faster)
+REM    build.cmd                        -> full build (test inclusi)
+REM    build.cmd /skipaudit             -> salta npm audit fix
+REM    build.cmd /skiptests             -> salta guardia cablaggio + cargo test
+REM    build.cmd /skipaudit /skiptests  -> solo build (ordine dei flag libero)
 REM
 REM  Build output is streamed live through PowerShell Tee-Object (UTF-8 +
 REM  forced ANSI colors) while also being captured for the final diagnostic
 REM  scan. A clean success closes automatically; warnings/errors stay open.
 REM
 REM  Notes:
+REM    - I test girano PRIMA del build di release: se falliscono non si
+REM      spendono minuti a compilare un exe che non verrebbe pubblicato.
+REM    - `cargo test` compila ed esegue lo stesso exe dell'app, che su Windows
+REM      embedda il manifest requireAdministrator: senza accorgimenti ogni run
+REM      aprirebbe un prompt UAC (o fallirebbe in un contesto non interattivo,
+REM      come una CI). Lo step 5 imposta quindi AETHERDESK_NO_ADMIN_MANIFEST=1
+REM      SOLO dentro il processo figlio (build.rs produce un exe asInvoker);
+REM      lo step 6 azzera esplicitamente la variabile, così l'exe pubblicato
+REM      resta elevated esattamente come prima.
+REM    - Lo step 4 esegue `npm run build` (tsc + vite) perché `cargo test`
+REM      compila `generate_context!`, che richiede l'esistenza di dist\;
+REM      `npm run tauri build` lo riesegue da beforeBuildCommand.
 REM    - No multi-line if() blocks (incompatible with files saved
 REM      in LF); control flow uses goto labels instead.
 REM    - Multi-line continuation (^) is used only for the PowerShell
@@ -45,6 +62,14 @@ set "TAURI_CONF=%DESK_DIR%\src-tauri\tauri.conf.json"
 set "BUILD_LOG=%TEMP%\aether_build_%RANDOM%_%RANDOM%.log"
 set "FORCE_COLOR=1"
 set "CARGO_TERM_COLOR=always"
+
+REM --- Flags (ordine libero: /skipaudit e /skiptests) -----------------
+set "SKIP_AUDIT=0"
+set "SKIP_TESTS=0"
+if /i "%~1"=="/skipaudit" set "SKIP_AUDIT=1"
+if /i "%~2"=="/skipaudit" set "SKIP_AUDIT=1"
+if /i "%~1"=="/skiptests" set "SKIP_TESTS=1"
+if /i "%~2"=="/skiptests" set "SKIP_TESTS=1"
 type nul > "%BUILD_LOG%"
 
 REM --- Guard: the AetherDesk folder must exist ------------------------
@@ -60,21 +85,21 @@ cd /d "%DESK_DIR%"
 
 REM --- Step 1: approve the esbuild install script (best-effort) ------
 echo.
-echo [1/5] Approving esbuild install script (npm 11+)...
+echo [1/7] Approving esbuild install script (npm 11+)...
 call npm install-scripts approve esbuild >nul 2>&1
 
 REM --- Step 2: install dependencies ------------------------------------
 echo.
-echo [2/5] Installing frontend dependencies (npm ci)...
+echo [2/7] Installing frontend dependencies (npm ci)...
 powershell.exe -NoProfile -ExecutionPolicy Bypass -Command ^
   "$utf8=New-Object System.Text.UTF8Encoding($false); [Console]::OutputEncoding=$utf8; $OutputEncoding=$utf8;" ^
   "& cmd.exe /d /s /c 'npm ci 2>&1' | Tee-Object -FilePath '%BUILD_LOG%' -Append; $code=$LASTEXITCODE; exit $code"
 if errorlevel 1 goto :fail
 
 REM --- Step 3: audit fix (optional) -------------------------------------
-if /i "%~1"=="/skipaudit" goto :skip_audit
+if "%SKIP_AUDIT%"=="1" goto :skip_audit
 echo.
-echo [3/5] Fixing known vulnerabilities (npm audit fix)...
+echo [3/7] Fixing known vulnerabilities (npm audit fix)...
 powershell.exe -NoProfile -ExecutionPolicy Bypass -Command ^
   "$utf8=New-Object System.Text.UTF8Encoding($false); [Console]::OutputEncoding=$utf8; $OutputEncoding=$utf8;" ^
   "& cmd.exe /d /s /c 'npm audit fix 2>&1' | Tee-Object -FilePath '%BUILD_LOG%' -Append; $code=$LASTEXITCODE; exit $code"
@@ -83,13 +108,47 @@ goto :after_audit
 
 :skip_audit
 echo.
-echo [3/5] Audit skipped.
+echo [3/7] Audit skipped.
 
 :after_audit
 
-REM --- Step 4: compile the binary ---------------------------------------
+REM --- Step 4: frontend build + guardia di cablaggio ----------------------
 echo.
-echo [4/5] Compiling AetherDesk (npm run tauri build)...
+echo [4/7] Building frontend (tsc + vite), lint and module wiring...
+REM  lint:ci gira con --quiet: in build compaiono solo gli errori ESLint, non le
+REM  warning (che restano visibili con `npm run lint`). Senza --quiet ogni build
+REM  chiudrebbe con "SUCCEEDED WITH WARNINGS" per rumore non azionabile.
+powershell.exe -NoProfile -ExecutionPolicy Bypass -Command ^
+  "$utf8=New-Object System.Text.UTF8Encoding($false); [Console]::OutputEncoding=$utf8; $OutputEncoding=$utf8;" ^
+  "& cmd.exe /d /s /c 'npm run build 2>&1 && npm run lint:ci 2>&1 && npm run check:wiring 2>&1' | Tee-Object -FilePath '%BUILD_LOG%' -Append; $code=$LASTEXITCODE; exit $code"
+if errorlevel 1 goto :fail
+
+REM --- Step 5: test (unit + contratto IPC), opzionale ----------------------
+if "%SKIP_TESTS%"=="1" goto :skip_tests
+echo.
+echo [5/7] Running Rust tests (cargo test, non-elevated harness)...
+cd /d "%DESK_DIR%\src-tauri"
+powershell.exe -NoProfile -ExecutionPolicy Bypass -Command ^
+  "$utf8=New-Object System.Text.UTF8Encoding($false); [Console]::OutputEncoding=$utf8; $OutputEncoding=$utf8;" ^
+  "$env:AETHERDESK_NO_ADMIN_MANIFEST='1';" ^
+  "& cmd.exe /d /s /c 'cargo test --locked --color always 2>&1' | Tee-Object -FilePath '%BUILD_LOG%' -Append; $code=$LASTEXITCODE; exit $code"
+set "TEST_EXIT=%ERRORLEVEL%"
+cd /d "%DESK_DIR%"
+if not "%TEST_EXIT%"=="0" goto :fail
+goto :after_tests
+
+:skip_tests
+echo.
+echo [5/7] Tests skipped.
+
+:after_tests
+
+REM --- Step 6: compile the binary ---------------------------------------
+REM Il build di release NON deve ereditare AETHERDESK_NO_ADMIN_MANIFEST:
+REM l'exe pubblicato embedda il manifest requireAdministrator.
+set "AETHERDESK_NO_ADMIN_MANIFEST="
+echo.
+echo [6/7] Compiling AetherDesk (npm run tauri build)...
 powershell.exe -NoProfile -ExecutionPolicy Bypass -Command ^
   "$utf8=New-Object System.Text.UTF8Encoding($false); [Console]::OutputEncoding=$utf8; $OutputEncoding=$utf8;" ^
   "& cmd.exe /d /s /c 'npm run tauri build 2>&1' | Tee-Object -FilePath '%BUILD_LOG%' -Append; $code=$LASTEXITCODE; exit $code"
@@ -97,7 +156,7 @@ if errorlevel 1 goto :fail
 
 REM --- Step 5: assemble the portable folder + ZIP -----------------------
 echo.
-echo [5/5] Assembling portable folder and creating ZIP...
+echo [7/7] Assembling portable folder and creating ZIP...
 powershell.exe -NoProfile -ExecutionPolicy Bypass -Command ^
   "$d='%DESK_DIR%';" ^
   "$s='%PORTABLE_DIR%';" ^

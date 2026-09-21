@@ -1,6 +1,7 @@
 import React from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import type { SteamCheckStatus } from './types';
+import type { SetPresenceDefaultModeArgs } from '../../types/online';
 
 interface SettingsAetherSectionProps {
   enableWebviewDevtools: boolean;
@@ -158,7 +159,11 @@ export const SettingsAetherSection: React.FC<SettingsAetherSectionProps> = ({
               const previous = !next;
               setPresenceDefaultShowOnline(next);
               try {
-                await invoke('set_presence_default_mode', { showonline: next });
+                // Chiave IPC `showOnline` (Rust `show_online` → lowerCamelCase),
+                // tipizzata in `types/online.ts`. NON è il valore TOML, che
+                // resta "showonline": vedi docs/shared_contracts.md §7.
+                const args: SetPresenceDefaultModeArgs = { showOnline: next };
+                await invoke<string>('set_presence_default_mode', args);
               } catch (err: any) {
                 setPresenceDefaultShowOnline(previous);
                 showStatus(`Failed to set presence default mode: ${err}`, 'error');
@@ -271,7 +276,7 @@ export const SettingsAetherSection: React.FC<SettingsAetherSectionProps> = ({
                 Object.keys(localStorage)
                   .filter((key) => key.startsWith('aether_cover_') || key.startsWith('aether_hero_'))
                   .forEach((key) => localStorage.removeItem(key));
-              } catch {}
+              } catch { /* localStorage non disponibile: la parte backend è già andata a buon fine */ }
               showStatus(result, 'success');
             } catch (err: any) {
               showStatus(`Failed to clear caches: ${err}`, 'error');

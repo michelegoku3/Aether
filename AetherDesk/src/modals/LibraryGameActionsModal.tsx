@@ -2,12 +2,12 @@ import { useEffect, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { GameHeroImage } from '../ui/GameHeroImage';
 import { WrenchIcon } from '../ui/icons';
-import { requireSteamPath } from '../hooks/useSettings';
 import { useLibraryGames, type LuaManifestIssue } from '../hooks/useLibraryGames';
 import { useModalDismiss } from '../hooks/useModalDismiss';
 import { OnlinePanel, type OnlineStatus } from './OnlinePanel';
 import { OnlineChoiceModal, type AppPresenceMode } from './OnlineChoiceModal';
 import { resolveEffectivePresenceMode } from './onlineChoiceState';
+import type { PresenceToggleArgs } from '../types/online';
 
 export interface LibraryActionGame {
   id: number;
@@ -133,15 +133,10 @@ export const LibraryGameActionsModal = ({
 
   const refreshUpdateState = async () => {
     try {
-      const steamPath = await requireSteamPath();
       // Served through the shared provider cache: opening one game used to ask
       // the backend for this state several times over (StrictMode double mount,
       // the actions popup and the version editor each asking on their own).
-      const state = await queryGameState<boolean>(
-        Number(game.appId),
-        'get_lua_game_update_state',
-        { steamPath },
-      );
+      const state = await queryGameState<boolean>(Number(game.appId), 'get_lua_game_update_state');
       setUpdatesEnabled(Boolean(state));
     } catch {
       setUpdatesEnabled(false);
@@ -159,10 +154,8 @@ export const LibraryGameActionsModal = ({
     const nextEnabled = !updatesEnabled;
     try {
       onStatus(nextEnabled ? 'Enabling updates for this game...' : 'Disabling updates for this game...', 'info');
-      const steamPath = await requireSteamPath();
       const result: string = await invoke('set_lua_game_updates_enabled', {
         appId: Number(game.appId),
-        steamPath,
         enabled: nextEnabled,
       });
       setUpdatesEnabled(nextEnabled);
@@ -209,10 +202,8 @@ export const LibraryGameActionsModal = ({
     setIsBusy(true);
     try {
       onStatus('Removing Lua from Aether library...', 'info');
-      const steamPath = await requireSteamPath();
       const result: string = await invoke('remove_lua_game_from_library', {
         appId: Number(game.appId),
-        steamPath,
       });
       onStatus(result, 'success');
       onClose();
@@ -251,7 +242,7 @@ export const LibraryGameActionsModal = ({
 
       if (spoof && !aetherOn && !excludedOn && (showOn || defaultOn)) {
         try {
-          await invoke('set_aether_excluded', { appId: Number(game.appId), enabled: true });
+          await invoke<string>('set_aether_excluded', { appId: Number(game.appId), enabled: true } satisfies PresenceToggleArgs);
           excludedOn = true;
           showOn = false;
         } catch {
@@ -294,10 +285,11 @@ export const LibraryGameActionsModal = ({
           : next === 'showonline'
             ? 'set_aether_showonline'
             : 'set_aether_excluded';
-      const result: string = await invoke(command, {
-        appId: Number(game.appId),
-        enabled: true,
-      });
+      // Un solo contratto di argomenti per i tre comandi: la shape resta
+      // tipizzata anche se il nome del comando è scelto a runtime, così un
+      // rename lato Rust rompe la compilazione invece del comportamento.
+      const args: PresenceToggleArgs = { appId: Number(game.appId), enabled: true };
+      const result: string = await invoke<string>(command, args);
       onStatus(result, 'success');
       await refreshOnlineStates();
     } catch (err: any) {
@@ -312,7 +304,7 @@ export const LibraryGameActionsModal = ({
     if (currentPresenceMode !== 'none') {
       setOnlineBusy(true);
       try {
-        await invoke('set_aether_excluded', { appId: Number(game.appId), enabled: true });
+        await invoke<string>('set_aether_excluded', { appId: Number(game.appId), enabled: true } satisfies PresenceToggleArgs);
         await refreshOnlineStates();
       } catch (err: unknown) {
         onStatus(`Failed to switch to None for UCO2: ${err}`, 'error');
