@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, memo } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { InstalledGame, useLibraryGames } from '../hooks/useLibraryGames';
 import { CrackModal, CrackTargetGame } from '../modals/CrackModal';
@@ -24,7 +24,7 @@ interface SteamlessRunResult {
 
 type HomeStatus = { text: string; type: 'info' | 'success' | 'error' };
 
-export const HomeView = () => {
+export const HomeView = memo(function HomeView() {
   const { games, isLoading } = useLibraryGames();
   const [query, setQuery] = useState('');
   const [selectedGame, setSelectedGame] = useState<InstalledGame | null>(null);
@@ -337,4 +337,4 @@ export const HomeView = () => {
       )}
     </div>
   );
-};
+});

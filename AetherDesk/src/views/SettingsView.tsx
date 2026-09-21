@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, memo } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { getSettings, checkSteamPath, isStoreCurrency, type SteamPathCheck, type StoreCurrency } from '../hooks/useSettings';
 import { OstWarningModal } from '../modals/OstWarningModal';
@@ -29,7 +29,7 @@ interface SettingsViewProps {
  *  window-close prompts (owned by App, which holds the modal). */
 const clamp0to100 = (value: number) => Math.max(0, Math.min(100, Number.isFinite(value) ? value : 0));
 
-export const SettingsView = ({ hubcapUsage, onRefreshUsage, onRefreshCustomCss, onCustomCssChange, onPreviewPersonalWallpaper, onPreviewAlternativeCards, onMissingSteamPath, guardRef }: SettingsViewProps) => {
+export const SettingsView = memo(function SettingsView({ hubcapUsage, onRefreshUsage, onRefreshCustomCss, onCustomCssChange, onPreviewPersonalWallpaper, onPreviewAlternativeCards, onMissingSteamPath, guardRef }: SettingsViewProps) {
   const [apiKey, setApiKey] = useState('');
   const [showApiKey, setShowApiKey] = useState(false);
   const [steamPath, setSteamPath] = useState('');
@@ -281,7 +281,7 @@ export const SettingsView = ({ hubcapUsage, onRefreshUsage, onRefreshCustomCss, 
       // If the user just enabled Custom CSS, ensure the file exists before
       // saving so the next editor open does not find an empty folder.
       if (customCssEnabled || personalWallpaperEnabled) {
-        try { await invoke('ensure_custom_css'); } catch {}
+        try { await invoke('ensure_custom_css'); } catch { /* best-effort: il save prosegue anche se la cartella del tema non è pronta */ }
       }
       const newSettings = buildCurrentSettings(
         invalidApiKey ? { hubcap_api_key: '' } : {},
@@ -632,7 +632,7 @@ export const SettingsView = ({ hubcapUsage, onRefreshUsage, onRefreshCustomCss, 
    *  leaves it OFF and the popup will reappear on the next attempt. */
   const handleOstWarningConfirm = async () => {
     try {
-      try { await invoke('acknowledge_ost_warning'); } catch {}
+      try { await invoke('acknowledge_ost_warning'); } catch { /* best-effort: l'ack non deve bloccare l'attivazione della sorgente */ }
       await invoke('set_ost_source_enabled', { enabled: true });
       setOstWarningAcknowledged(true);
       setUseOstSource(true);
@@ -789,7 +789,7 @@ export const SettingsView = ({ hubcapUsage, onRefreshUsage, onRefreshCustomCss, 
                 const defaults: Record<string, any> = await invoke('reset_settings_to_defaults');
                 applySettingsToState(defaults);
                 // Official window + shell icon after custom icon is cleared.
-                try { await invoke('apply_window_icon'); } catch {}
+                try { await invoke('apply_window_icon'); } catch { /* best-effort: il reset prosegue anche se l'icona di default non viene ripristinata */ }
                 showStatus('Settings reset to defaults!', 'success');
                 onRefreshUsage('');
                 onRefreshCustomCss();
@@ -927,5 +927,5 @@ export const SettingsView = ({ hubcapUsage, onRefreshUsage, onRefreshCustomCss, 
       )}
     </div>
   );
-};
+});
 

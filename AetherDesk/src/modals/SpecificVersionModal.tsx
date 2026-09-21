@@ -1,6 +1,5 @@
 import React, { useMemo, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
-import { requireSteamPath } from '../hooks/useSettings';
 import type { LuaManifestIssue } from '../hooks/useLibraryGames';
 import { useModalDismiss } from '../hooks/useModalDismiss';
 import { useWatchdog } from '../hooks/useWatchdog';
@@ -81,11 +80,9 @@ export const ManualVersionEditor = ({ game, initialRows, onClose }: ManualVersio
     let cancelled = false;
     (async () => {
       try {
-        const steamPath = await requireSteamPath();
         const fresh = await queryGameState<LuaManifestRow[]>(
           Number(game.appId),
           'get_installed_lua_manifest_rows',
-          { steamPath },
         );
         if (cancelled) return;
         const normalized = prepareManifestRows(fresh);
@@ -178,8 +175,6 @@ export const ManualVersionEditor = ({ game, initialRows, onClose }: ManualVersio
         setIsApplying(false);
       }, 30_000);
 
-      const steamPath = await requireSteamPath();
-
       const edits = rows.map(row => ({ 
         rowId: row.rowId,
         manifestId: row.manifestInput?.trim() ? row.manifestInput.trim() : null,
@@ -188,7 +183,6 @@ export const ManualVersionEditor = ({ game, initialRows, onClose }: ManualVersio
 
       await invoke('apply_specific_version_edits', {
         appId: Number(game.appId),
-        steamPath,
         edits,
       });
 

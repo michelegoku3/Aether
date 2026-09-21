@@ -1,3 +1,4 @@
+import { memo } from 'react';
 import { TabType } from './Sidebar';
 import { StoreView } from '../views/StoreView';
 import { SettingsView, type SettingsGuard } from '../views/SettingsView';
@@ -48,13 +49,26 @@ export interface MainContentProps {
   dll: MainContentDll;
 }
 
-export const MainContent = ({
+/**
+ * Area centrale: tiene montate Store/Library/Log/Settings (nascoste con
+ * `display:none`, così stato e scroll sopravvivono al cambio tab) e monta la
+ * vista transiente attiva.
+ *
+ * `memo` è ciò che rende utile il raggruppamento delle props: App passa quattro
+ * oggetti costruiti con `useMemo` e callback costruite con `useCallback`,
+ * quindi quando App ri-renderizza per stato che non riguarda queste viste
+ * (es. `steamRunning`, che interessa solo la Sidebar) il confronto shallow
+ * delle props fallisce l'aggiornamento e l'intero sotto-albero — Store inclusa,
+ * con le sue card — non ri-renderizza. Senza identità stabile dei gruppi,
+ * `memo` non scatterebbe mai.
+ */
+export const MainContent = memo(function MainContent({
   activeTab,
   updates,
   appearance,
   settings,
   dll,
-}: MainContentProps) => {
+}: MainContentProps) {
   const renderActiveTransientView = () => {
     if (activeTab === 'home') {
       return (
@@ -176,4 +190,4 @@ export const MainContent = ({
       {renderActiveTransientView()}
     </>
   );
-};
+});

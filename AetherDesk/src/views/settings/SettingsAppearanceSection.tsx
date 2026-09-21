@@ -89,7 +89,7 @@ export const SettingsAppearanceSection: React.FC<SettingsAppearanceSectionProps>
               if (next) {
                 try {
                   await invoke('ensure_custom_css');
-                } catch {}
+                } catch { /* best-effort: prepara la cartella del tema, il toggle prosegue comunque */ }
               }
             }}
           />
@@ -150,7 +150,7 @@ export const SettingsAppearanceSection: React.FC<SettingsAppearanceSectionProps>
               if (next) {
                 try {
                   await invoke('ensure_custom_css');
-                } catch {}
+                } catch { /* best-effort: prepara la cartella del tema, il toggle prosegue comunque */ }
               }
             }}
           />
@@ -228,7 +228,7 @@ export const SettingsAppearanceSection: React.FC<SettingsAppearanceSectionProps>
               setCustomIconEnabled(next);
               try {
                 await invoke('ensure_custom_css');
-              } catch {}
+              } catch { /* best-effort: prepara la cartella del tema, il toggle prosegue comunque */ }
               await persistAppearanceSelection(
                 next
                   ? { custom_icon_enabled: true }

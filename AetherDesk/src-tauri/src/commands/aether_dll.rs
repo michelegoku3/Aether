@@ -3,10 +3,14 @@ use crate::steam::resolve::resolve_steam_path;
 use crate::updater::dll::DllInstaller;
 use crate::updater::dll_version::read_installed_dll_version;
 use crate::updater::github::{self, GithubReleaseManager, TestChannel};
-use crate::util::validation::validate_steam_path;
+use super::{command_steam_path, configured_steam_path};
 
 #[tauri::command]
-pub fn get_installed_dll_version(steam_path: String) -> String {
+pub fn get_installed_dll_version(app: tauri::AppHandle) -> String {
+    // Percorso dalle impostazioni, non dal client. Se manca o Steam non è
+    // raggiungibile la risposta resta "N/A": il pannello DLL deve poter dire
+    // "non installato" senza che diventi un errore per l'utente.
+    let steam_path = configured_steam_path(&app).unwrap_or_default();
     if resolve_steam_path(&steam_path).is_err() {
         return "N/A".to_string();
     }
@@ -17,7 +21,8 @@ pub fn get_installed_dll_version(steam_path: String) -> String {
 }
 
 #[tauri::command]
-pub async fn check_aether_dll_update(app: tauri::AppHandle, steam_path: String) -> Result<serde_json::Value, String> {
+pub async fn check_aether_dll_update(app: tauri::AppHandle) -> Result<serde_json::Value, String> {
+    let steam_path = configured_steam_path(&app).unwrap_or_default();
     // An unreachable Steam root means "unknown", never "update available":
     // without this, installed="N/A" compares as older than any tag and shows
     // a spurious update badge (plus pointless GitHub calls).
@@ -182,18 +187,18 @@ async fn test_channel_update_response(
 #[tauri::command]
 pub async fn install_aether_dll(
     app: tauri::AppHandle,
-    steam_path: String,
     origin: Option<String>,
 ) -> Result<String, String> {
     let origin = origin.unwrap_or_else(|| "dll-install".to_string());
+    // Strict validation first: fail fast before any download or Steam-side write.
+    // Il percorso viene dalle impostazioni ed è già validato qui dentro.
+    let steam_path = command_steam_path(&app)?;
     crate::desk_log_info!(
         "updater",
         "AetherDLL install requested (origin={}, steam_path='{}')",
         origin,
         steam_path
     );
-    // Strict validation first: fail fast before any download or Steam-side write.
-    validate_steam_path(&steam_path)?;
 
     ensure_steam_is_closed()?;
     crate::desk_log_info!("updater", "Starting installation of AetherDLL into steam_path='{}'", steam_path);
@@ -292,8 +297,8 @@ pub async fn install_aether_dll(
 }
 
 #[tauri::command]
-pub fn uninstall_aether_dll(_app: tauri::AppHandle, steam_path: String) -> Result<String, String> {
-    validate_steam_path(&steam_path)?;
+pub fn uninstall_aether_dll(app: tauri::AppHandle) -> Result<String, String> {
+    let steam_path = command_steam_path(&app)?;
 
     ensure_steam_is_closed()?;
     crate::desk_log_info!("updater", "Uninstalling AetherDLL from Steam directory '{}'", steam_path);
@@ -309,8 +314,8 @@ pub fn uninstall_aether_dll(_app: tauri::AppHandle, steam_path: String) -> Resul
 }
 
 #[tauri::command]
-pub fn reset_aether_steam_path(_app: tauri::AppHandle, steam_path: String) -> Result<String, String> {
-    validate_steam_path(&steam_path)?;
+pub fn reset_aether_steam_path(app: tauri::AppHandle) -> Result<String, String> {
+    let steam_path = command_steam_path(&app)?;
     ensure_steam_is_closed()?;
     crate::desk_log_info!("updater", "Resetting Aether files in Steam directory '{}'", steam_path);
 
@@ -329,7 +334,8 @@ pub fn reset_aether_steam_path(_app: tauri::AppHandle, steam_path: String) -> Re
 /// the same target list as Reset Path (`DllInstaller::count_aether_residuals`).
 /// Safe while Steam is running — read-only probe for the Uninstall confirm UI.
 #[tauri::command]
-pub fn probe_aether_steam_residuals(steam_path: String) -> Result<usize, String> {
+pub fn probe_aether_steam_residuals(app: tauri::AppHandle) -> Result<usize, String> {
+    let steam_path = configured_steam_path(&app).unwrap_or_default();
     if resolve_steam_path(&steam_path).is_err() {
         return Ok(0);
     }

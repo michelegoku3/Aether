@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState, memo } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { SearchSuggest, moveSuggestIndex } from '../ui/SearchSuggest';
 import { useSteamSuggest } from '../hooks/useSteamSuggest';
@@ -7,7 +7,7 @@ import ChangeVersionModal from '../modals/ChangeVersionModal';
 import { GameInfoModal } from '../modals/GameInfoModal';
 import { LocalDownloadModal } from '../modals/LocalDownloadModal';
 import { preloadGameCovers } from '../ui/GameCover';
-import { GameCard } from '../ui/GameCard';
+import { GameCard, type GameCardAction } from '../ui/GameCard';
 import { StatusAlert } from '../ui/StatusAlert';
 import { FolderPlusIcon } from '../ui/icons';
 import { useStoreSearch, StoreGameResult as StoreGame } from '../hooks/useStoreSearch';
@@ -28,7 +28,7 @@ interface StoreViewProps {
   alternativeCardsFade: number;
 }
 
-export const StoreView = ({ onRefreshUsage, settingsRevision, settingsReady, useAlternativeGameCards, alternativeCardsOpacity, alternativeCardsFade }: StoreViewProps) => {
+export const StoreView = memo(function StoreView({ onRefreshUsage, settingsRevision, settingsReady, useAlternativeGameCards, alternativeCardsOpacity, alternativeCardsFade }: StoreViewProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [isSuggestOpen, setIsSuggestOpen] = useState(false);
   const [activeSuggestIndex, setActiveSuggestIndex] = useState<number | null>(null);
@@ -121,14 +121,20 @@ export const StoreView = ({ onRefreshUsage, settingsRevision, settingsReady, use
       if (trendingSession.current.generation !== generation) return;
       mergeTrendingGames(games || []);
     } catch (err) {
-      if (trendingSession.current.generation !== generation) return;
-      console.warn('Trending store preload failed:', err);
-      // A failed offset remains retryable in the active configuration.
-      session.requests.delete(start);
+      if (trendingSession.current.generation === generation) {
+        console.warn('Trending store preload failed:', err);
+        // A failed offset remains retryable in the active configuration.
+        session.requests.delete(start);
+      }
     } finally {
-      if (trendingSession.current.generation !== generation) return;
+      // Nessun `return` qui dentro (prima c'era, ed è ciò che segnalava
+      // `no-unsafe-finally`): un return in un finally inghiotte il risultato del
+      // try/catch e salta la pulizia che lo segue. Il contatore della sessione
+      // catturata all'ingresso va chiuso sempre; lo stato React invece spetta
+      // solo alla generazione corrente, perché `resetTrendingSession` azzera già
+      // lo spinner quando ne parte una nuova.
       session.inFlight = Math.max(0, session.inFlight - 1);
-      if (session.inFlight === 0) {
+      if (trendingSession.current.generation === generation && session.inFlight === 0) {
         setIsTrendingLoading(false);
       }
     }
@@ -179,9 +185,14 @@ export const StoreView = ({ onRefreshUsage, settingsRevision, settingsReady, use
   // through normal browsing (used to be one appdetails call per result).
   const pageKey = pageGames.map((game) => game.appId).join(',');
   useEffect(() => {
-    if (pageGames.length > 0) {
-      preloadGameCovers(pageGames.map((game) => ({ appId: game.appId, imageUrl: game.imageUrl })), pageGames.length);
-    }
+    if (pageGames.length === 0) return;
+    // Stesso gate della Library: Store resta montata anche a tab nascosta
+    // (`display:none`) e il buffer rule carica le prime due pagine prima che
+    // l'utente ci arrivi. Pre-caricare cover che nessuno sta guardando è lavoro
+    // buttato — e con GameCover lazy la card risolve comunque la propria cover
+    // quando diventa visibile.
+    if (document.visibilityState !== 'visible') return;
+    preloadGameCovers(pageGames.map((game) => ({ appId: game.appId, imageUrl: game.imageUrl })), pageGames.length);
   }, [pageKey]);
 
   // BUFFER RULE: the first two Store pages are requested as soon as settings
@@ -286,9 +297,12 @@ export const StoreView = ({ onRefreshUsage, settingsRevision, settingsReady, use
         : selectedSource === 'ryuu'
           ? 'trigger_ryuu_download'
           : 'trigger_hubcap_download';
+      // `steamPath` non viaggia più nel payload: i comandi lo risolvono dalle
+      // impostazioni (docs/shared_contracts.md §8). Il gate qui sopra resta, e
+      // non costa nulla perché `settings` è già stato letto per la API key.
       const args = selectedSource === 'luatools'
-        ? { appId: Number(selectedGame.appId), steamPath: steamPathToUse }
-        : { appId: Number(selectedGame.appId), apiKey: apiKeyToUse, steamPath: steamPathToUse };
+        ? { appId: Number(selectedGame.appId) }
+        : { appId: Number(selectedGame.appId), apiKey: apiKeyToUse };
       const result: string = await invoke(command, args);
 
       // This successful UI-originated install can refresh immediately through
@@ -343,9 +357,12 @@ export const StoreView = ({ onRefreshUsage, settingsRevision, settingsReady, use
         : selectedSource === 'ryuu'
           ? 'prepare_ryuu_specific_version_download'
           : 'prepare_specific_version_download';
+      // `steamPath` non viaggia più nel payload: i comandi lo risolvono dalle
+      // impostazioni (docs/shared_contracts.md §8). Il gate qui sopra resta, e
+      // non costa nulla perché `settings` è già stato letto per la API key.
       const args = selectedSource === 'luatools'
-        ? { appId: Number(selectedGame.appId), steamPath: steamPathToUse }
-        : { appId: Number(selectedGame.appId), apiKey: apiKeyToUse, steamPath: steamPathToUse };
+        ? { appId: Number(selectedGame.appId) }
+        : { appId: Number(selectedGame.appId), apiKey: apiKeyToUse };
       const rows: LuaManifestRow[] = await invoke(command, args);
 
       // Specific-version preparation writes the canonical Lua too, so update
@@ -365,6 +382,51 @@ export const StoreView = ({ onRefreshUsage, settingsRevision, settingsReady, use
     }
   };
 
+  // ---- Azioni della card Store (identità stabile) -------------------------
+  // L'handler di Download tocca solo setter di stato (stabili per garanzia
+  // React) e due chiamate IPC: nessuna dipendenza reattiva, quindi `[]` è
+  // esatto e non una scorciatoia. Con handler e array stabili, `memo(GameCard)`
+  // può saltare le 20 card della pagina quando StoreView ri-renderizza per la
+  // ricerca, i suggerimenti o la paginazione.
+  const handleStoreDownload = useCallback(async (selected: StoreGame) => {
+    setSelectedGame(selected);
+    setDownloadStatus({ text: '', type: 'info' });
+    setIsDownloading(false);
+
+    // Pick the best configured source in a deterministic order:
+    // Hubcap key → LuaTools session → Ryuu key → Hubcap.
+    // (MOED is currently unavailable, so it is never picked.)
+    try {
+      const [settingsResult, authResult] = await Promise.allSettled([
+        getSettings(),
+        invoke<{ signedIn: boolean }>('get_luatools_auth_status'),
+      ]);
+      if (settingsResult.status !== 'fulfilled') {
+        setSelectedSource('hubcap');
+        return;
+      }
+      const settings = settingsResult.value;
+      const luaToolsSignedIn = authResult.status === 'fulfilled' && authResult.value.signedIn;
+      if (settings.hubcap_api_key?.trim()) {
+        setSelectedSource('hubcap');
+      } else if (luaToolsSignedIn) {
+        setSelectedSource('luatools');
+      } else if (settings.ryuu_api_key?.trim()) {
+        setSelectedSource('ryuu');
+      } else {
+        setSelectedSource('hubcap');
+      }
+    } catch {
+      // Authentication/settings lookup failure must not block
+      // the modal: Hubcap is the fallback.
+      setSelectedSource('hubcap');
+    }
+  }, []);
+
+  const storeCardActions = useMemo<Array<GameCardAction<StoreGame>>>(() => [
+    { label: 'Download', variant: 'primary', onClick: handleStoreDownload },
+    { label: 'Info', variant: 'secondary', onClick: setInfoGame },
+  ], [handleStoreDownload]);
 
   return (
     <div className="store-view" ref={storeScrollRef}>
@@ -466,51 +528,7 @@ export const StoreView = ({ onRefreshUsage, settingsRevision, settingsReady, use
               key={game.id}
               game={game}
               cardVariant={useAlternativeGameCards ? 'backdrop' : 'classic'}
-              actions={[
-                {
-                  label: 'Download',
-                  variant: 'primary',
-                  onClick: async (selected) => {
-                    setSelectedGame(selected);
-                    setDownloadStatus({ text: '', type: 'info' });
-                    setIsDownloading(false);
-
-                    // Pick the best configured source in a deterministic order:
-                    // Hubcap key → LuaTools session → Ryuu key → Hubcap.
-                    // (MOED is currently unavailable, so it is never picked.)
-                    try {
-                      const [settingsResult, authResult] = await Promise.allSettled([
-                        getSettings(),
-                        invoke<{ signedIn: boolean }>('get_luatools_auth_status'),
-                      ]);
-                      if (settingsResult.status !== 'fulfilled') {
-                        setSelectedSource('hubcap');
-                        return;
-                      }
-                      const settings = settingsResult.value;
-                      const luaToolsSignedIn = authResult.status === 'fulfilled' && authResult.value.signedIn;
-                      if (settings.hubcap_api_key?.trim()) {
-                        setSelectedSource('hubcap');
-                      } else if (luaToolsSignedIn) {
-                        setSelectedSource('luatools');
-                      } else if (settings.ryuu_api_key?.trim()) {
-                        setSelectedSource('ryuu');
-                      } else {
-                        setSelectedSource('hubcap');
-                      }
-                    } catch {
-                      // Authentication/settings lookup failure must not block
-                      // the modal: Hubcap is the fallback.
-                      setSelectedSource('hubcap');
-                    }
-                  },
-                },
-                {
-                  label: 'Info',
-                  variant: 'secondary',
-                  onClick: setInfoGame,
-                },
-              ]}
+              actions={storeCardActions}
             />
           ))
         ) : (
@@ -689,4 +707,4 @@ export const StoreView = ({ onRefreshUsage, settingsRevision, settingsReady, use
       )}
     </div>
   );
-};
+});

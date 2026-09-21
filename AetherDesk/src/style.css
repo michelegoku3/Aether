@@ -340,6 +340,17 @@ body {
 
 /* Game Card Component (Horizontal Layout) */
 .store-game-card {
+  /* Le griglie tengono montate decine di card (Store e Library restano montate
+     anche a tab nascosta): `content-visibility: auto` salta layout e paint di
+     quelle completamente fuori viewport. È sicuro qui per due motivi:
+       1. l'altezza è imposta dalla griglia (`grid-auto-rows: 130px`/`150px`),
+          quindi non c'è nessun salto di scrollbar al reveal;
+       2. la containment (`paint`, che clippera l'`overflow: visible` del badge
+          in sovrapposizione) vale SOLO finché la card non interseca il viewport;
+          appena è anche solo parzialmente visibile viene rimossa e il badge
+          torna a uscire dal bordo come prima. */
+  content-visibility: auto;
+  contain-intrinsic-size: auto 130px;
   background-color: #131316;
   border: 1px solid var(--border-color);
   border-radius: var(--radius-card);
@@ -1749,6 +1760,21 @@ body {
   opacity: 0.3;
   cursor: not-allowed;
   color: var(--color-muted);
+}
+
+/* Panel button that carries a leading icon (e.g. "Background sync").
+   `.panel-btn` alone is text-only and centered; this keeps icon + label
+   optically centered on the same baseline. */
+.panel-btn--icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.panel-btn--icon svg {
+  display: block;
+  flex-shrink: 0;
 }
 
 /* ==========================================

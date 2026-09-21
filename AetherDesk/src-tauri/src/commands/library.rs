@@ -1,3 +1,4 @@
+use super::command_steam_path;
 use crate::core::paths::LocalAppPaths;
 use crate::game_info::cache::GameInfoCache;
 use crate::manifest::pins::{
@@ -8,7 +9,6 @@ use crate::core::settings::{cache_version_with_currency, load_settings, steam_co
 use crate::steam::app_names::SteamAppNameResolver;
 use crate::steam::library::{InstalledSteamGame, SteamLibraryScanner};
 use crate::steam::store_items;
-use crate::util::validation::validate_steam_path;
 use crate::util::browser::open_external_url;
 
 fn is_library_capsule_url(url: &str) -> bool {
@@ -191,10 +191,10 @@ pub fn open_steamdb_patchnotes(app_id: u32) -> Result<(), String> {
 
 #[tauri::command]
 pub fn get_installed_lua_manifest_rows(
+    app: tauri::AppHandle,
     app_id: u32,
-    steam_path: String,
 ) -> Result<Vec<LuaManifestRow>, String> {
-    validate_steam_path(&steam_path)?;
+    let steam_path = command_steam_path(&app)?;
     crate::desk_log_debug!("library", "Reading installed Lua manifest rows for {} from '{}'", crate::core::logger::format_appid(app_id), steam_path);
     // Tolerant read: this feeds the version editor, which must open even when
     // the Lua contains a malformed setManifestid line — that line is exactly
@@ -227,8 +227,8 @@ pub fn get_library_change_revision(app: tauri::AppHandle) -> u64 {
 }
 
 #[tauri::command]
-pub fn get_lua_game_update_state(app_id: u32, steam_path: String) -> Result<bool, String> {
-    validate_steam_path(&steam_path)?;
+pub fn get_lua_game_update_state(app: tauri::AppHandle, app_id: u32) -> Result<bool, String> {
+    let steam_path = command_steam_path(&app)?;
     crate::desk_log_debug!("library", "Checking update state for {} in '{}'", crate::core::logger::format_appid(app_id), steam_path);
     LuaManifestPins::new(steam_path, app_id).updates_are_enabled()
 }
@@ -237,10 +237,9 @@ pub fn get_lua_game_update_state(app_id: u32, steam_path: String) -> Result<bool
 pub fn set_lua_game_updates_enabled(
     app: tauri::AppHandle,
     app_id: u32,
-    steam_path: String,
     enabled: bool,
 ) -> Result<String, String> {
-    validate_steam_path(&steam_path)?;
+    let steam_path = command_steam_path(&app)?;
     crate::desk_log_info!("library", "Setting updates_enabled={} for {} in steam_path='{}'", enabled, crate::core::logger::format_appid(app_id), steam_path);
     // Safety net before locking a game to a fixed version: realign the
     // informational pins to the manifests Steam ACTUALLY installed, so
@@ -311,13 +310,12 @@ pub fn set_lua_game_updates_enabled(
 pub fn remove_lua_game_from_library(
     app: tauri::AppHandle,
     app_id: u32,
-    steam_path: String,
 ) -> Result<String, String> {
-    validate_steam_path(&steam_path)?;
+    let steam_path = command_steam_path(&app)?;
     crate::desk_log_info!("library", "Removing Lua game {} from library (steam_path='{}')", crate::core::logger::format_appid(app_id), steam_path);
 
-    // `validate_steam_path` above already strict-validated `steam_path`; the
-    // scanner additionally normalizes, so the raw value is safe to pass.
+    // `command_steam_path` above already strict-validated and normalized the
+    // path; the scanner normalizes again, so the value is safe to pass.
     let scanner = SteamLibraryScanner::new(steam_path.clone());
     if scanner.is_app_installed(app_id) {
         crate::desk_log_warn!("library", "Cannot remove {}: game is currently installed in Steam", crate::core::logger::format_appid(app_id));
@@ -358,10 +356,9 @@ pub fn remove_lua_game_from_library(
 pub async fn apply_specific_version_edits(
     app: tauri::AppHandle,
     app_id: u32,
-    steam_path: String,
     edits: Vec<LuaManifestEdit>,
 ) -> Result<Vec<LuaManifestRow>, String> {
-    validate_steam_path(&steam_path)?;
+    let steam_path = command_steam_path(&app)?;
     crate::desk_log_info!(
         "library",
         "Applying {} specific version edit(s) for {} in steam_path='{}'",

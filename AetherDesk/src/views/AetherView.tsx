@@ -1,10 +1,12 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState, memo } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import {
   UninstallDeskConfirmModal,
   UninstallSteamCleanModal,
 } from '../modals/UninstallDeskModal';
-import { getSettings, requireSteamPath } from '../hooks/useSettings';
+import { SyncStatusModal } from '../modals/SyncStatusModal';
+import { ActivityIcon } from '../ui/icons';
+import { getSettings } from '../hooks/useSettings';
 import { DllStatusInfo } from '../types/ui';
 
 interface AetherViewProps {
@@ -27,17 +29,16 @@ type UninstallStep =
   | { kind: 'steamClean'; residualCount: number; deleteUserData: boolean };
 
 /**
- * Steam-side operations that share the same steam_path prerequisite.
- * Keeps AetherView focused on orchestration, not path plumbing.
+ * Pannello AETHER: ciclo di vita di AetherDesk e AetherDLL (install/update/
+ * uninstall), blocco degli aggiornamenti di Steam, reset del percorso Steam e
+ * diagnostica del sincronizzatore in background.
+ *
+ * Le operazioni lato Steam non ricevono più il percorso dalla UI: lo risolvono
+ * i comandi backend dalle impostazioni (`commands::command_steam_path`), quindi
+ * qui resta solo l'orchestrazione — niente `withSteamPath`, che esisteva unicamente
+ * per passare quel parametro (docs/shared_contracts.md §8).
  */
-const withSteamPath = async <T,>(
-  run: (steamPath: string) => Promise<T>,
-): Promise<T> => {
-  const steamPath = await requireSteamPath();
-  return run(steamPath);
-};
-
-export const AetherView = ({
+export const AetherView = memo(function AetherView({
   isUpdateAvailable,
   isDeskUpdateAvailable,
   deskVersion,
@@ -46,11 +47,15 @@ export const AetherView = ({
   onUpdateComplete,
   dllStatus,
   onDllStatusChange,
-}: AetherViewProps) => {
+}: AetherViewProps) {
   const [statusMsg, setStatusMsg] = useState({ text: '', type: 'info' as StatusTone });
   const [isProcessing, setIsProcessing] = useState(false);
   const [uninstallStep, setUninstallStep] = useState<UninstallStep | null>(null);
   const [testUpdatesEnabled, setTestUpdatesEnabled] = useState(false);
+  /** Background-sync popup (pin sync / pin refresh / repair / workshop lanes).
+   *  Lives here, not in Library: it is plant diagnostics about the
+   *  synchronizer, not an action on a single game. */
+  const [showSyncStatus, setShowSyncStatus] = useState(false);
 
   const showStatus = useCallback((text: string, type: StatusTone) => {
     setStatusMsg({ text, type });
@@ -114,10 +119,10 @@ export const AetherView = ({
 
   /** Optional Reset Path + unblock, then real folder uninstall. */
   const cleanSteamThenUninstall = async (deleteUserData: boolean) => {
-    await withSteamPath(async (steamPath) => {
-      await invoke('reset_aether_steam_path', { steamPath });
-      await invoke('unblock_steam_updates', { steamPath }).catch(() => {});
-    });
+    // Il percorso Steam lo risolvono i comandi (settings lato backend): qui
+    // restano solo le due chiamate, nell'ordine di prima.
+    await invoke('reset_aether_steam_path');
+    await invoke('unblock_steam_updates').catch(() => {});
     await refreshAfterDllChange().catch(() => {});
     await finishUninstall(deleteUserData);
   };
@@ -155,13 +160,10 @@ export const AetherView = ({
   const handleUninstallConfirm = async (deleteUserData: boolean) => {
     setIsProcessing(true);
     try {
-      const settings = await getSettings();
-      const steamPath = (settings.steam_path || '').trim();
-      let residualCount = 0;
-
-      if (steamPath) {
-        residualCount = await invoke<number>('probe_aether_steam_residuals', { steamPath });
-      }
+      // Il probe è read-only e degrada a 0 quando Steam non è configurato o
+      // non è raggiungibile: non serve più leggere le impostazioni per
+      // decidere se chiamarlo (una IPC + una decifratura DPAPI in meno).
+      const residualCount = await invoke<number>('probe_aether_steam_residuals');
 
       if (residualCount > 0) {
         setUninstallStep({ kind: 'steamClean', residualCount, deleteUserData });
@@ -217,9 +219,7 @@ export const AetherView = ({
     showStatus('Fetching latest release from GitHub...', 'info');
 
     try {
-      const result: string = await withSteamPath((steamPath) =>
-        invoke('install_aether_dll', { steamPath }),
-      );
+      const result = await invoke<string>('install_aether_dll');
       showStatus(result, 'success');
       await refreshAfterDllChange();
     } catch (err: any) {
@@ -234,9 +234,7 @@ export const AetherView = ({
     showStatus('Removing AetherDLL binaries...', 'info');
 
     try {
-      const result: string = await withSteamPath((steamPath) =>
-        invoke('uninstall_aether_dll', { steamPath }),
-      );
+      const result = await invoke<string>('uninstall_aether_dll');
       showStatus(result, 'success');
       await refreshAfterDllChange();
     } catch (err: any) {
@@ -248,12 +246,9 @@ export const AetherView = ({
 
   const handleToggleSteamBlock = async () => {
     try {
-      const msg: string = await withSteamPath(async (steamPath) => {
-        if (!dllStatus.isSteamBlocked) {
-          return invoke('block_steam_updates', { steamPath });
-        }
-        return invoke('unblock_steam_updates', { steamPath });
-      });
+      const msg = dllStatus.isSteamBlocked
+        ? await invoke<string>('unblock_steam_updates')
+        : await invoke<string>('block_steam_updates');
       await onDllStatusChange();
       showStatus(msg, 'success');
     } catch (err: any) {
@@ -264,11 +259,11 @@ export const AetherView = ({
   const handleResetPath = async () => {
     showStatus('Resetting configurations... Removing custom plugins and update blocks.', 'info');
     try {
-      const result: string = await withSteamPath(async (steamPath) => {
-        const msg: string = await invoke('reset_aether_steam_path', { steamPath });
-        await invoke('unblock_steam_updates', { steamPath }).catch(() => {});
+      const result = await (async () => {
+        const msg = await invoke<string>('reset_aether_steam_path');
+        await invoke('unblock_steam_updates').catch(() => {});
         return msg;
-      });
+      })();
       await refreshAfterDllChange();
       showStatus(result, 'success');
     } catch (err: any) {
@@ -382,6 +377,24 @@ export const AetherView = ({
         </div>
       </div>
 
+      {/* SECTION 4: Background synchronizer */}
+      <div className="aether-panel">
+        <div className="panel-header">
+          <span className="panel-title">Synchronizer</span>
+          <span className="panel-meta">watches Steam</span>
+        </div>
+        <div className="panel-actions">
+          <button
+            onClick={() => setShowSyncStatus(true)}
+            className="panel-btn panel-btn--icon"
+            title="Live state of the background Steam-change synchronizer: pin sync, pin refresh, manifest repair and Workshop staging — including the tasks it gave up on after the retry ladder."
+          >
+            <ActivityIcon />
+            Background sync
+          </button>
+        </div>
+      </div>
+
       {uninstallStep?.kind === 'confirm' && (
         <UninstallDeskConfirmModal
           isProcessing={isProcessing}
@@ -399,6 +412,8 @@ export const AetherView = ({
           onCancel={cancelUninstall}
         />
       )}
+
+      {showSyncStatus && <SyncStatusModal onClose={() => setShowSyncStatus(false)} />}
     </div>
   );
-};
+});

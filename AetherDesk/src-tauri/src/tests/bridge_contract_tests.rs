@@ -107,24 +107,201 @@ fn test_lua_manifest_row_camel_case_contract() {
     assert!(serialized.get("issue").is_none());
 }
 
-#[test]
-fn test_core_commands_inventory_check() {
-    // Inventory of essential commands that the frontend invokes and relies upon:
-    let expected_core_commands = [
-        "get_settings",
-        "save_settings",
-        "get_installed_library_games",
-        "get_installed_lua_manifest_rows",
-        "save_installed_lua_manifest_rows",
-        "plan_online",
-        "enable_online",
-        "disable_online",
-        "get_recent_log_lines",
-        "check_aether_desk_update",
-        "check_aether_dll_update",
-    ];
+// Il vecchio `test_core_commands_inventory_check` è stato rimosso: elencava nomi
+// di comandi e assertiva che non fossero stringhe vuote — vero per
+// costruzione, quindi incapace di segnalare qualunque deriva (conteneva anche
+// `save_installed_lua_manifest_rows`, comando che non è mai esistito).
+//
+// Il contratto FE <-> BE è ora verificato sul sorgente reale in
+// `src/tests/ipc_contract_tests.rs`: comandi registrati vs definiti, nomi
+// invocati dal frontend vs registrati, chiavi degli argomenti vs firme Rust,
+// forma delle chiavi wire (il caso `showonline`), assenza di `steam_path` nei
+// payload e lista esplicita dei comandi inutilizzati.
 
-    for command in expected_core_commands {
-        assert!(!command.is_empty(), "command {command} should be accounted for");
+// ---------------------------------------------------------------------------
+// Contratto di RISPOSTA: snapshot del sincronizzatore <-> src/types/sync.ts
+// ---------------------------------------------------------------------------
+//
+// Il test di contratto sugli argomenti (`ipc_contract_tests.rs`) copre la
+// direzione frontend -> backend. Qui c'è l'altra: le chiavi che il backend
+// SERIALIZZA devono coincidere con l'interfaccia TypeScript che le legge.
+//
+// È la stessa classe di bug con lo stesso esito silenzioso: `MonitorStatus`
+// dichiara `pinSync`, il Rust serializza `pin_sync`, e il popup mostra una
+// corsia perennemente vuota invece di un errore. Il caso è concreto perché lo
+// snapshot viaggia sia come risposta di `get_hubcap_monitor_status` sia come
+// payload dell'evento push `sync://status-changed`.
+
+use std::collections::BTreeSet;
+
+use crate::core::hubcap_update_monitor::{LaneStatus, MonitorStatusSnapshot, PendingTaskInfo};
+
+/// Chiavi di primo livello di un oggetto JSON.
+fn json_object_keys(value: &Value) -> BTreeSet<String> {
+    value
+        .as_object()
+        .expect("il valore serializzato deve essere un oggetto")
+        .keys()
+        .cloned()
+        .collect()
+}
+
+/// Chiavi dichiarate da `export interface <name> { … }` in un file TS.
+///
+/// Lettura volutamente semplice: una chiave per riga, nella forma
+/// `nome?: tipo;` — è così che sono scritte le interfacce mirror di questo
+/// progetto. Se il formato cambia, il test lo dice invece di passare di
+/// nascosto (nessuna chiave trovata = fallimento).
+fn ts_interface_keys(source: &str, name: &str) -> BTreeSet<String> {
+    let header = format!("export interface {name} {{");
+    let start = source
+        .find(&header)
+        .unwrap_or_else(|| panic!("interfaccia `{name}` non trovata nel file TS"));
+    let body_start = start + header.len();
+    let mut depth = 1usize;
+    let mut end = body_start;
+    for (offset, ch) in source[body_start..].char_indices() {
+        match ch {
+            '{' => depth += 1,
+            '}' => {
+                depth -= 1;
+                if depth == 0 {
+                    end = body_start + offset;
+                    break;
+                }
+            }
+            _ => {}
+        }
+    }
+    let mut keys = BTreeSet::new();
+    for line in source[body_start..end].lines() {
+        let line = line.trim();
+        if line.is_empty() || line.starts_with("/*") || line.starts_with('*') || line.starts_with("//") {
+            continue;
+        }
+        let Some(colon) = line.find(':') else { continue };
+        let key = line[..colon].trim().trim_end_matches('?').trim();
+        if key.is_empty() || !key.chars().all(|ch| ch.is_ascii_alphanumeric() || ch == '_') {
+            continue;
+        }
+        keys.insert(key.to_string());
+    }
+    assert!(
+        !keys.is_empty(),
+        "nessuna chiave estratta dall'interfaccia TS `{name}`: il parser del test va aggiornato"
+    );
+    keys
+}
+
+fn types_sync_source() -> String {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .expect("AetherDesk/ sopra src-tauri/")
+        .join("src")
+        .join("types")
+        .join("sync.ts");
+    std::fs::read_to_string(&path)
+        .unwrap_or_else(|error| panic!("impossibile leggere {}: {error}", path.display()))
+}
+
+fn sample_snapshot() -> MonitorStatusSnapshot {
+    MonitorStatusSnapshot {
+        running: true,
+        started_epoch: Some(1_700_000_000),
+        last_scan_epoch: Some(1_700_000_020),
+        steam_path_configured: true,
+        hubcap_key_configured: false,
+        checkpoint_initialized: true,
+        pin_sync: LaneStatus {
+            pending: vec![PendingTaskInfo {
+                app_id: Some(480),
+                attempts: 1,
+                next_retry_epoch: Some(1_700_000_080),
+            }],
+            unresolved: vec![PendingTaskInfo {
+                app_id: Some(440),
+                attempts: 5,
+                next_retry_epoch: None,
+            }],
+            processed_count: 3,
+            last_run_epoch: Some(1_700_000_010),
+            last_error: Some("manifest not found".to_string()),
+        },
+        ..MonitorStatusSnapshot::default()
+    }
+}
+
+#[test]
+fn monitor_status_snapshot_matches_the_typescript_mirror() {
+    let source = types_sync_source();
+    let json = serde_json::to_value(sample_snapshot()).expect("serialize MonitorStatusSnapshot");
+
+    let rust_top = json_object_keys(&json);
+    let ts_top = ts_interface_keys(&source, "MonitorStatus");
+    assert_eq!(
+        rust_top, ts_top,
+        "\nChiavi dello snapshot divergenti tra Rust e TypeScript.\n  solo Rust: {:?}\n  solo TS:   {:?}\n\
+         Allineare src/types/sync.ts oppure #[serde(rename_all)] in core/hubcap_update_monitor.rs.\n",
+        rust_top.difference(&ts_top).collect::<Vec<_>>(),
+        ts_top.difference(&rust_top).collect::<Vec<_>>(),
+    );
+
+    let lane = json
+        .get("pinSync")
+        .expect("la corsia pinSync deve essere serializzata in camelCase");
+    let rust_lane = json_object_keys(lane);
+    let ts_lane = ts_interface_keys(&source, "LaneStatus");
+    assert_eq!(
+        rust_lane, ts_lane,
+        "\nChiavi di LaneStatus divergenti.\n  solo Rust: {:?}\n  solo TS:   {:?}\n",
+        rust_lane.difference(&ts_lane).collect::<Vec<_>>(),
+        ts_lane.difference(&rust_lane).collect::<Vec<_>>(),
+    );
+
+    let task = lane
+        .get("pending")
+        .and_then(Value::as_array)
+        .and_then(|items| items.first())
+        .expect("pending deve contenere almeno un task nel campione");
+    let rust_task = json_object_keys(task);
+    let ts_task = ts_interface_keys(&source, "PendingTaskInfo");
+    assert_eq!(
+        rust_task, ts_task,
+        "\nChiavi di PendingTaskInfo divergenti.\n  solo Rust: {:?}\n  solo TS:   {:?}\n",
+        rust_task.difference(&ts_task).collect::<Vec<_>>(),
+        ts_task.difference(&rust_task).collect::<Vec<_>>(),
+    );
+}
+
+#[test]
+fn monitor_status_snapshot_serializes_every_field_even_when_empty() {
+    // Il popup legge le quattro corsie senza controlli di presenza: se un campo
+    // `Option` venisse omesso quando è `None` (skip_serializing_if), la UI
+    // riceverebbe `undefined` dove si aspetta un numero o un array.
+    let json = serde_json::to_value(MonitorStatusSnapshot::default()).expect("serialize default");
+    let keys = json_object_keys(&json);
+    for expected in [
+        "running",
+        "startedEpoch",
+        "lastScanEpoch",
+        "steamPathConfigured",
+        "hubcapKeyConfigured",
+        "checkpointInitialized",
+        "pinSync",
+        "pinRefresh",
+        "repair",
+        "workshop",
+    ] {
+        assert!(
+            keys.contains(expected),
+            "lo snapshot vuoto deve comunque esporre `{expected}` (chiavi: {keys:?})"
+        );
+    }
+    let lane = json.get("workshop").expect("corsia workshop");
+    for expected in ["pending", "unresolved", "processedCount", "lastRunEpoch", "lastError"] {
+        assert!(
+            json_object_keys(lane).contains(expected),
+            "la corsia vuota deve comunque esporre `{expected}`"
+        );
     }
 }

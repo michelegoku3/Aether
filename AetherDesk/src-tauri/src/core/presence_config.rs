@@ -195,7 +195,7 @@ pub fn update_mode_in_toml(path: &std::path::Path, app_id: u32, choice: Option<P
 }
 
 /// Scrive `default_mode = "showonline"|"none"` sotto [presence].
-pub fn set_default_mode_in_toml(path: &std::path::Path, showonline: bool) -> bool {
+pub fn set_default_mode_in_toml(path: &std::path::Path, show_online: bool) -> bool {
     if !path.exists() {
         return false;
     }
@@ -207,7 +207,7 @@ pub fn set_default_mode_in_toml(path: &std::path::Path, showonline: bool) -> boo
     if lines.len() == 1 && lines[0].is_empty() {
         lines.clear();
     }
-    let value = if showonline { "\"showonline\"" } else { "\"none\"" };
+    let value = if show_online { "\"showonline\"" } else { "\"none\"" };
     if let Some(i) = find_key_line(&lines, "default_mode") {
         if lines[i].splitn(2, '=').nth(1).map(|v| v.trim()) == Some(value) {
             return false; // già impostato

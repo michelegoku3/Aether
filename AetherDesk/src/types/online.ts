@@ -153,3 +153,53 @@ export const conflictLabel = (kind: string): string => {
     default: return kind;
   }
 };
+
+// ---------------------------------------------------------------------------
+// Presence (aethercore.toml [presence]) — contratto Desk <-> DLL
+// ---------------------------------------------------------------------------
+
+/**
+ * Token di dominio scritto in `aethercore.toml` come `[presence] default_mode`
+ * e come nome degli array (`showonline_apps`, `aetheronline_apps`,
+ * `exclude_apps`).
+ *
+ * È letto ANCHE da AetherDLL (`AetherCore/core/Settings.cpp`): la grafia tutta
+ * minuscola non è una svista di casing e NON va "normalizzata" a `showOnline`.
+ * Vedi `docs/shared_contracts.md` §7.
+ */
+export type PresenceDefaultMode = 'none' | 'showonline';
+
+/**
+ * Modalità di presenza effettiva di un gioco, come la risolve il popup ONLINE.
+ * `'none'` copre sia l'opt-out esplicito (`exclude_apps`) sia l'assenza di
+ * qualsiasi marker con policy di default `none`.
+ */
+export type AppPresenceMode = 'none' | 'showonline' | 'aetheronline';
+
+/** Le opzioni del popup: le tre modalità più il pannello UCO2 (che non è una
+ *  modalità di presenza ma una pipeline separata, e richiede `none`). */
+export type OnlineOptionKey = AppPresenceMode | 'uco2';
+
+/**
+ * Argomenti IPC dei comandi presence.
+ *
+ * Le chiavi sono quelle che Tauri 2 accetta davvero: il proc-macro converte il
+ * parametro Rust in lowerCamelCase e la lookup sul payload è su QUELLA chiave,
+ * senza alcun fallback snake_case (`tauri 2.11.5`, `ipc/command.rs`). Tenere
+ * le shape qui — invece che inline nei `invoke` — è ciò che rende impossibile
+ * scrivere `{ showonline }` quando il backend si aspetta `{ showOnline }`.
+ *
+ * **`type`, non `interface`**: `invoke()` accetta `InvokeArgs =
+ * Record<string, unknown> | ...`, e un `interface` non ha l'index signature
+ * implicita → non è assegnabile (TS2345). Un type alias di object literal lo
+ * è. Regola generale per tutti i contratti di argomenti IPC di questo progetto.
+ */
+export type PresenceToggleArgs = {
+  appId: number;
+  enabled: boolean;
+};
+
+/** `set_presence_default_mode(show_online: bool)` → chiave `showOnline`. */
+export type SetPresenceDefaultModeArgs = {
+  showOnline: boolean;
+};
