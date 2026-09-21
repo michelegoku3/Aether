@@ -1,6 +1,9 @@
 use std::collections::HashMap;
 
-use crate::core::hubcap_update_monitor::{latest_installed_gid, retry_delay, INITIAL_RETRY_DELAY, MAX_RETRY_DELAY};
+use crate::core::hubcap_update_monitor::{
+    acf_installed_gid, installed_gid_for_depot, latest_installed_gid, retry_delay, INITIAL_RETRY_DELAY,
+    MAX_RETRY_DELAY,
+};
 use crate::manifest::pins::{DepotManifestPin, LuaManifestPins};
 
 fn temp_dir(tag: &str) -> std::path::PathBuf {
@@ -251,6 +254,56 @@ fn contents_cadence_prefers_changed_games_and_skips_idle_ones() {
         &steam.display().to_string(),
     );
     assert_eq!(due, vec![800001], "after an hour the idle game is re-checked");
+
+    let _ = std::fs::remove_dir_all(&steam);
+}
+
+#[test]
+fn installed_gid_prefers_steam_acf_over_depotcache_mtimes() {
+    // Scenario behind "Disable updates": Steam has build X installed (ACF),
+    // but depotcache holds a NEWER file for the same depot — a manifest that
+    // was restored from backup, staged for another build, or downloaded for
+    // an update Steam never applied. Locking must follow the ACF, otherwise
+    // reactivating the pins would move the game to a version it does not have.
+    let steam = temp_dir("acf_first");
+    let app_id = 570940u32;
+    let depot = 570941u32;
+    let depotcache = steam.join("depotcache");
+    std::fs::create_dir_all(&depotcache).expect("depotcache");
+    std::fs::write(depotcache.join(format!("{depot}_111.manifest")), b"installed").expect("write");
+    let stray = depotcache.join(format!("{depot}_999.manifest"));
+    std::fs::write(&stray, b"stray").expect("write stray");
+    let later = std::fs::OpenOptions::new().append(true).open(&stray).expect("open stray");
+    later
+        .set_modified(std::time::SystemTime::now() + std::time::Duration::from_secs(3600))
+        .expect("mtime future");
+    drop(later);
+
+    // Without an ACF (game not installed yet) the mtime heuristic is all there is.
+    assert_eq!(acf_installed_gid(&steam.display().to_string(), app_id, depot), None);
+    assert_eq!(
+        installed_gid_for_depot(&steam.display().to_string(), app_id, depot).as_deref(),
+        Some("999")
+    );
+
+    let steamapps = steam.join("steamapps");
+    std::fs::create_dir_all(&steamapps).expect("steamapps");
+    std::fs::write(
+        steamapps.join(format!("appmanifest_{app_id}.acf")),
+        format!(
+            "\"AppState\"\n{{\n\t\"appid\"\t\t\"{app_id}\"\n\t\"installdir\"\t\t\"Game\"\n\t\"InstalledDepots\"\n\t{{\n\t\t\"{depot}\"\n\t\t{{\n\t\t\t\"manifest\"\t\t\"111\"\n\t\t\t\"size\"\t\t\"10\"\n\t\t}}\n\t}}\n}}\n"
+        ),
+    )
+    .expect("acf write");
+
+    assert_eq!(acf_installed_gid(&steam.display().to_string(), app_id, depot).as_deref(), Some("111"));
+    assert_eq!(
+        installed_gid_for_depot(&steam.display().to_string(), app_id, depot).as_deref(),
+        Some("111"),
+        "Steam's InstalledDepots must win over a newer stray file in depotcache"
+    );
+    // A depot the ACF does not list still falls back to depotcache evidence.
+    assert_eq!(installed_gid_for_depot(&steam.display().to_string(), app_id, 42), None);
 
     let _ = std::fs::remove_dir_all(&steam);
 }

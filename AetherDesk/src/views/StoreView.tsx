@@ -300,8 +300,11 @@ export const StoreView = memo(function StoreView({ onRefreshUsage, settingsRevis
       // `steamPath` non viaggia più nel payload: i comandi lo risolvono dalle
       // impostazioni (docs/shared_contracts.md §8). Il gate qui sopra resta, e
       // non costa nulla perché `settings` è già stato letto per la API key.
+      // LuaTools also receives the display name: the `/api/manifest/download`
+      // endpoint accepts an optional `game_name` that only labels the account's
+      // download history on the server (same hint the official client sends).
       const args = selectedSource === 'luatools'
-        ? { appId: Number(selectedGame.appId) }
+        ? { appId: Number(selectedGame.appId), gameName: selectedGame.name || null }
         : { appId: Number(selectedGame.appId), apiKey: apiKeyToUse };
       const result: string = await invoke(command, args);
 
@@ -361,7 +364,7 @@ export const StoreView = memo(function StoreView({ onRefreshUsage, settingsRevis
       // impostazioni (docs/shared_contracts.md §8). Il gate qui sopra resta, e
       // non costa nulla perché `settings` è già stato letto per la API key.
       const args = selectedSource === 'luatools'
-        ? { appId: Number(selectedGame.appId) }
+        ? { appId: Number(selectedGame.appId), gameName: selectedGame.name || null }
         : { appId: Number(selectedGame.appId), apiKey: apiKeyToUse };
       const rows: LuaManifestRow[] = await invoke(command, args);
 

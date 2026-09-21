@@ -34,6 +34,7 @@ pub mod home_links_tests;
 pub mod hubcap_monitor_tests;
 pub mod hubcap_quota_tests;
 pub mod ipc_contract_tests;
+pub mod manifest_identity_tests;
 pub mod manifest_package_tests;
 pub mod manifest_pins_tests;
 pub mod manifest_source_tests;

@@ -23,7 +23,13 @@ reqwest = { version = "0.12", features = ["json"] }
 # fs/io-std/process/signal, which nothing uses.
 tokio = { version = "1", features = ["macros", "rt", "rt-multi-thread", "sync", "time", "net", "io-util"] }
 sysinfo = "0.30"
-zip = "1.0"
+# Default features pull in `zlib-ng` (via libz-ng-sys, built by cmake): on
+# Windows its Debug build links the DLL runtime (/MDd → MSVCRTD), while every
+# other object in a `cargo test` build uses /MD, hence
+# `LNK4098: la libreria predefinita 'MSVCRTD' è in conflitto`. The pure-Rust
+# `deflate` backend (miniz_oxide) has no C toolchain dependency and reads the
+# same provider archives; zopfli (write-side "deflate-zopfli") was never needed.
+zip = { version = "1.0", default-features = false, features = ["aes-crypto", "bzip2", "deflate", "deflate64", "lzma", "time", "zstd"] }
 unrar = "0.5"
 sevenz-rust2 = { version = "0.21", features = ["aes256"] }
 dirs = "6"

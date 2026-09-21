@@ -72,7 +72,9 @@ impl ManifestSource for LuaToolsClient {
     }
 
     fn download_package<'a>(&'a self, app_id: u32) -> SourceBoxFuture<'a, ManifestPackage> {
-        Box::pin(async move { self.download_lua_package(app_id).await })
+        // The generic source contract carries no display name; lua.tools only
+        // uses `game_name` to label the account's download history.
+        Box::pin(async move { self.download_lua_package(app_id, None).await })
     }
 }
 

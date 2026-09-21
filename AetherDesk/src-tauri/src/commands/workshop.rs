@@ -1,4 +1,3 @@
-use std::io::{Cursor, Read};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::OnceLock;
@@ -7,7 +6,6 @@ use std::time::{Duration, Instant};
 use regex::Regex;
 use serde::Serialize;
 use tokio::sync::Mutex;
-use zip::ZipArchive;
 
 use crate::core::paths::LocalAppPaths;
 use crate::core::settings::load_settings;
@@ -112,90 +110,13 @@ fn discover_workshop_items(steam_path: &str) -> Vec<WorkshopItem> {
     items
 }
 
-fn read_manifest_payload(bytes: &[u8]) -> Result<Vec<u8>, String> {
-    if bytes.len() >= 4 && &bytes[..4] == b"PK\x03\x04" {
-        let mut archive = ZipArchive::new(Cursor::new(bytes))
-            .map_err(|e| format!("Workshop manifest ZIP is invalid: {e}"))?;
-        if archive.len() == 0 {
-            return Err("Workshop manifest ZIP is empty".to_string());
-        }
-        let mut file = archive
-            .by_index(0)
-            .map_err(|e| format!("Could not read Workshop manifest ZIP: {e}"))?;
-        let mut payload = Vec::new();
-        file.read_to_end(&mut payload)
-            .map_err(|e| format!("Could not decompress Workshop manifest: {e}"))?;
-        return Ok(payload);
-    }
-    Ok(bytes.to_vec())
-}
-
-fn read_u32_le(bytes: &[u8], offset: &mut usize) -> Result<u32, String> {
-    if bytes.len().saturating_sub(*offset) < 4 {
-        return Err("Workshop manifest header is truncated".to_string());
-    }
-    let value = u32::from_le_bytes(bytes[*offset..*offset + 4].try_into().unwrap());
-    *offset += 4;
-    Ok(value)
-}
-
-fn read_varint(bytes: &[u8], offset: &mut usize) -> Result<u64, String> {
-    let mut value = 0u64;
-    for shift in (0..70).step_by(7) {
-        let byte = *bytes
-            .get(*offset)
-            .ok_or_else(|| "Workshop manifest metadata is truncated".to_string())?;
-        *offset += 1;
-        value |= u64::from(byte & 0x7f) << shift;
-        if byte & 0x80 == 0 { return Ok(value); }
-    }
-    Err("Workshop manifest metadata contains an invalid varint".to_string())
-}
-
-/// Steam manifests are four little-endian framed protobuf sections. We only
-/// need ContentManifestMetadata fields 1 (depot_id) and 2 (gid_manifest), so a
-/// small wire reader avoids coupling the Workshop path to generated protobufs.
+/// Steam manifests are four little-endian framed protobuf sections; the
+/// shared reader in `manifest::identity` extracts fields 1 (depot_id) and 2
+/// (gid_manifest) of the metadata section and unwraps a single-entry ZIP
+/// wrapper when Hubcap returns one.
 fn manifest_identity(bytes: &[u8]) -> Result<(u32, u64), String> {
-    let payload = read_manifest_payload(bytes)?;
-    let mut offset = 0usize;
-    let payload_magic = read_u32_le(&payload, &mut offset)?;
-    let payload_len = read_u32_le(&payload, &mut offset)? as usize;
-    if payload_magic != 0x71F6_17D0 || payload.len().saturating_sub(offset) < payload_len {
-        return Err("Workshop manifest payload section has an unexpected format".to_string());
-    }
-    offset += payload_len;
-    let metadata_magic = read_u32_le(&payload, &mut offset)?;
-    let metadata_len = read_u32_le(&payload, &mut offset)? as usize;
-    if metadata_magic != 0x1F48_12BE || payload.len().saturating_sub(offset) < metadata_len {
-        return Err("Workshop manifest metadata section has an unexpected format".to_string());
-    }
-    let metadata = &payload[offset..offset + metadata_len];
-    let mut cursor = 0usize;
-    let mut depot_id = 0u32;
-    let mut manifest_gid = 0u64;
-    while cursor < metadata.len() {
-        let tag = read_varint(metadata, &mut cursor)?;
-        let field = tag >> 3;
-        match tag & 7 {
-            0 => {
-                let value = read_varint(metadata, &mut cursor)?;
-                if field == 1 { depot_id = value as u32; }
-                if field == 2 { manifest_gid = value; }
-            }
-            1 => cursor = cursor.saturating_add(8),
-            2 => {
-                let length = read_varint(metadata, &mut cursor)? as usize;
-                cursor = cursor.saturating_add(length);
-            }
-            5 => cursor = cursor.saturating_add(4),
-            _ => return Err("Workshop manifest metadata has an unsupported protobuf wire type".to_string()),
-        }
-        if cursor > metadata.len() { return Err("Workshop manifest metadata is truncated".to_string()); }
-    }
-    if depot_id == 0 || manifest_gid == 0 {
-        return Err("Hubcap returned a Workshop manifest without depot/GID metadata".to_string());
-    }
-    Ok((depot_id, manifest_gid))
+    crate::manifest::identity::manifest_identity(bytes)
+        .map_err(|error| format!("Workshop manifest: {error}"))
 }
 
 #[derive(Debug, Clone, Copy)]

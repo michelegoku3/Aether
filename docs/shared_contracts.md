@@ -75,6 +75,18 @@ depotcache. Implementazioni:
   completezza PRIMA di `realign_commented_pins`).
 - DLL: la generazione live scrive in depotcache (temp + `AtomicReplace` +
   verifica size) senza mai toccare il Lua.
+- Desk: `commands/store.rs` → `complete_luatools_package`. Le sorgenti LuaTools
+  che archiviano i manifest rispondono a `/api/manifest/download` con
+  `<appid>.zip` (Lua + `.manifest`); quelle che replicano solo il Lua (es. Luie)
+  rispondono con un Lua nudo i cui pin non sono su disco. Prima di
+  `install_lua_and_manifest_files` i pin abilitati non inclusi nel pacchetto e
+  non già locali vengono recuperati da `GET /api/givemethemanifestpunk/{depot}/{gid}`
+  (stessa sessione, verifica identità depot+GID via `manifest::identity`,
+  nessun consumo del cap giornaliero); solo il residuo passa alla generazione
+  Hubcap, e solo se l'utente ha una chiave configurata. Le sorgenti sono
+  provate in ordine "porta i manifest" → "solo Lua" (`rank_available_sources`)
+  e, se il primo pacchetto non è completabile, si tenta UNA sorgente di riserva
+  (`LUATOOLS_MAX_SOURCE_ATTEMPTS`): ogni tentativo costa un download del cap.
 
 ## 4. Contratto di quota e generazione Hubcap
 
@@ -161,6 +173,7 @@ compilazione, è una Promise rigettata a runtime con
 |---|---|---|
 | `app_id: u32` | `appId` | regola generale |
 | `tail_lines: Option<usize>` | `tailLines` | `Option` → chiave omettibile |
+| `game_name: Option<String>` | `gameName` | `trigger_luatools_download` / `prepare_luatools_specific_version_download`: hint facoltativo inoltrato a lua.tools (`&game_name=`), etichetta solo la cronologia download dell'account |
 | `show_online: bool` | `showOnline` | §7.1 |
 
 ### 7.1 `showonline` è un valore, non una chiave

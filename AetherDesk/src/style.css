@@ -340,17 +340,14 @@ body {
 
 /* Game Card Component (Horizontal Layout) */
 .store-game-card {
-  /* Le griglie tengono montate decine di card (Store e Library restano montate
-     anche a tab nascosta): `content-visibility: auto` salta layout e paint di
-     quelle completamente fuori viewport. È sicuro qui per due motivi:
-       1. l'altezza è imposta dalla griglia (`grid-auto-rows: 130px`/`150px`),
-          quindi non c'è nessun salto di scrollbar al reveal;
-       2. la containment (`paint`, che clippera l'`overflow: visible` del badge
-          in sovrapposizione) vale SOLO finché la card non interseca il viewport;
-          appena è anche solo parzialmente visibile viene rimossa e il badge
-          torna a uscire dal bordo come prima. */
-  content-visibility: auto;
-  contain-intrinsic-size: auto 130px;
+  /* NON usare `content-visibility: auto` su questa card: per specifica
+     (CSS Containment L2) attiva SEMPRE la containment `layout`/`style`/`paint`
+     sull'elemento, anche quando è dentro il viewport — solo lo skip del
+     rendering è condizionato alla visibilità. La paint containment clippa
+     l'`overflow: visible` e i badge AVAILABLE / INSTALLED / FIX PINS
+     (posizionati a -8px oltre il bordo) risultano tagliati.
+     Le cover sono già lazy (`GameCover`) e la griglia impone l'altezza, quindi
+     il costo di paint delle card fuori viewport è già trascurabile. */
   background-color: #131316;
   border: 1px solid var(--border-color);
   border-radius: var(--radius-card);
@@ -2667,13 +2664,23 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 34px;
+  padding: 34px 84px;
 }
 
+/* Stage: sized by the screenshot's aspect ratio (inline style, known from the
+   cached thumbnail) and capped by the viewport on both axes. The thumbnail
+   placeholder and the full image are stacked in the same box, so switching
+   never leaves an empty frame and nothing jumps when the full image lands.
+   The fallback (no ratio yet) is the classic 16:9 Steam screenshot. */
 .info-lightbox-content {
   position: relative;
-  max-width: min(1200px, 94vw);
+  display: grid;
+  width: min(1200px, 100%, calc(90vh * 16 / 9));
+  max-width: 100%;
   max-height: 90vh;
+  aspect-ratio: 16 / 9;
+  min-width: 240px;
+  min-height: 160px;
   border-radius: 10px;
   overflow: hidden;
   border: 1px solid rgba(255, 255, 255, 0.14);
@@ -2682,10 +2689,84 @@ body {
 }
 
 .info-lightbox-content img {
+  grid-area: 1 / 1;
   display: block;
-  max-width: min(1200px, 94vw);
-  max-height: 90vh;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
   object-fit: contain;
+}
+
+.info-lightbox-placeholder {
+  filter: blur(1.5px);
+  transform: scale(1.01); /* hides the blurred edge fringe */
+}
+
+.info-lightbox-full {
+  opacity: 0;
+  transition: opacity 0.18s ease;
+}
+
+.info-lightbox-content.is-loaded .info-lightbox-full {
+  opacity: 1;
+}
+
+.info-lightbox-content.is-loaded .info-lightbox-placeholder {
+  visibility: hidden;
+}
+
+.info-lightbox-content.is-error .info-lightbox-full {
+  visibility: hidden;
+}
+
+.info-lightbox-error {
+  position: absolute;
+  left: 12px;
+  bottom: 12px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.62);
+  border: 1px solid rgba(255, 90, 90, 0.5);
+  color: rgba(255, 255, 255, 0.85);
+  font-size: 12px;
+  z-index: 2;
+  pointer-events: none;
+}
+
+.info-lightbox-spinner {
+  position: absolute;
+  left: 12px;
+  bottom: 12px;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.25);
+  border-top-color: var(--color-cyan);
+  animation: info-lightbox-spin 0.8s linear infinite;
+  z-index: 2;
+  pointer-events: none;
+}
+
+@keyframes info-lightbox-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.info-lightbox-counter {
+  position: absolute;
+  right: 12px;
+  bottom: 12px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.62);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  color: rgba(255, 255, 255, 0.85);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  z-index: 2;
+  pointer-events: none;
 }
 
 .info-lightbox-close {
@@ -2701,7 +2782,7 @@ body {
   font-size: 24px;
   line-height: 1;
   cursor: pointer;
-  z-index: 2;
+  z-index: 3;
 }
 
 .info-lightbox-close:hover {
@@ -2709,6 +2790,8 @@ body {
   color: var(--color-cyan);
 }
 
+/* Prev/Next live on the overlay, anchored to the viewport edges (inside the
+   25% hover zones that reveal them) independently of the image width. */
 .info-lightbox-nav {
   position: absolute;
   top: 50%;
@@ -2728,7 +2811,8 @@ body {
   transition: opacity 0.25s ease, color 0.2s ease, transform 0.2s ease, filter 0.2s ease;
 }
 
-.info-lightbox-nav.visible {
+.info-lightbox-nav.visible,
+.info-lightbox-nav:focus-visible {
   opacity: 1;
   pointer-events: auto;
 }

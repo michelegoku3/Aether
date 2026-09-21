@@ -718,9 +718,40 @@ pub(crate) fn latest_installed_gid(steam_path: &str, depot_id: u32) -> Option<St
     best.map(|(_, gid)| gid)
 }
 
+/// Manifest GID Steam declares installed for one depot of `app_id`:
+/// `InstalledDepots[depot].manifest` in the game's `appmanifest_<app>.acf`,
+/// looked up across every discovered library folder. `None` when the game is
+/// not installed (Lua-only entry) or the depot is not listed there.
+pub(crate) fn acf_installed_gid(steam_path: &str, app_id: u32, depot_id: u32) -> Option<String> {
+    SteamLibraryScanner::new(steam_path)
+        .discover_library_paths()
+        .into_iter()
+        .find_map(|library| {
+            crate::steam::acf::SteamAcfEditor::for_app(&library, app_id)
+                .installed_depot_manifest(depot_id)
+        })
+}
+
+/// The version the user ACTUALLY has for one depot, local-only:
+///
+/// 1. Steam's own statement first — `InstalledDepots[depot].manifest` in the
+///    ACF is what Steam has on disk right now;
+/// 2. the newest `<depot>_<gid>.manifest` in depotcache only as a fallback
+///    (game not installed yet, depot not listed), because file mtimes can be
+///    skewed by a backup restore, a staged manifest of another build or an
+///    update Steam downloaded but never applied.
+///
+/// This is what "disable updates" pins the game to, so it must never point at
+/// a version Steam is not really running.
+pub(crate) fn installed_gid_for_depot(steam_path: &str, app_id: u32, depot_id: u32) -> Option<String> {
+    acf_installed_gid(steam_path, app_id, depot_id)
+        .or_else(|| latest_installed_gid(steam_path, depot_id))
+}
+
 /// Local-only realignment of the informational (commented) pins of one game
-/// to the manifests Steam actually installed (newest `<depot>_<gid>.manifest`
-/// per depot across the depotcache folders). Shared by the pin_sync lane and
+/// to the manifests Steam actually installed (`InstalledDepots` in the ACF,
+/// else the newest `<depot>_<gid>.manifest` per depot across the depotcache
+/// folders — see [`installed_gid_for_depot`]). Shared by the pin_sync lane and
 /// by the "disable updates" safety net in the library command, so reactivating
 /// pins can never resurrect a stale GID and downgrade the game. Returns how
 /// many pins were rewritten.
@@ -745,7 +776,7 @@ pub(crate) fn realign_pins_to_installed(steam_path: &str, app_id: u32) -> Result
         if row.enabled || !active_depots.contains(&row.app_id) {
             continue;
         }
-        if let Some(installed_gid) = latest_installed_gid(steam_path, row.app_id) {
+        if let Some(installed_gid) = installed_gid_for_depot(steam_path, app_id, row.app_id) {
             if installed_gid != row.manifest_id {
                 realignment.push(DepotManifestPin {
                     depot_id: row.app_id,

@@ -273,6 +273,11 @@ pub async fn refresh_game_pins_from_hubcap(
     // Hubcap packaged view get adopted. Manifest GIDs are NOT chronologically
     // ordered, so "different from the pin" is the only available signal — and
     // for an updates-ON game both sources only ever move forward with builds.
+    // (Deliberately the mtime heuristic and not the ACF: manifests this lane
+    // staged for a build Steam has not applied yet must keep counting as the
+    // newest evidence, otherwise the pin would flip between the ACF's build
+    // and Hubcap's on every poll. "Disable updates" re-anchors to the ACF via
+    // `realign_pins_to_installed` right before locking.)
     let mut targets: Vec<DepotManifestPin> = Vec::new();
     for row in &rows {
         let local =

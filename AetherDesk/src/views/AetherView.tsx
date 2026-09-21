@@ -381,16 +381,15 @@ export const AetherView = memo(function AetherView({
       <div className="aether-panel">
         <div className="panel-header">
           <span className="panel-title">Synchronizer</span>
-          <span className="panel-meta">watches Steam</span>
         </div>
         <div className="panel-actions">
           <button
-            onClick={() => setShowSyncStatus(true)}
+            disabled
             className="panel-btn panel-btn--icon"
-            title="Live state of the background Steam-change synchronizer: pin sync, pin refresh, manifest repair and Workshop staging — including the tasks it gave up on after the retry ladder."
+            title="Not available yet"
           >
             <ActivityIcon />
-            Background sync
+            Background Sync
           </button>
         </div>
       </div>
