@@ -23,6 +23,9 @@ const CHUNK_SIZE: usize = 48;
 /// After this many consecutive chunk failures the remaining ids are marked
 /// "unknown" so a transient Steam outage cannot stall the search worker.
 const MAX_CONSECUTIVE_FAILURES: usize = 2;
+/// GetItems chunks fetched concurrently per wave (see
+/// `fetch_store_items_for_country`).
+const MAX_PARALLEL_CHUNKS: usize = 3;
 
 /// Steam content-descriptor ids that mark sexually explicit material:
 /// 3 = "Nudity or Sexual Content", 4 = "Adult Only Sexual Content".
@@ -322,30 +325,68 @@ pub async fn fetch_store_items_for_country(app_ids: Vec<u32>, country_code: &str
 
     let client = get_items_client();
     let mut consecutive_failures = 0usize;
+    let chunks: Vec<Vec<u32>> = pending.chunks(CHUNK_SIZE).map(<[u32]>::to_vec).collect();
 
-    for chunk in pending.chunks(CHUNK_SIZE) {
+    // Chunks are independent, so a franchise-wide query (2-3 chunks) pays one
+    // round-trip instead of a sequential chain. The fan-out stays small on
+    // purpose: GetItems is a public endpoint and the wave size also bounds
+    // the damage when it is failing (see MAX_CONSECUTIVE_FAILURES).
+    for wave in chunks.chunks(MAX_PARALLEL_CHUNKS) {
         if consecutive_failures >= MAX_CONSECUTIVE_FAILURES {
-            mark_unknown(chunk, &mut out);
+            for chunk in wave {
+                mark_unknown(chunk, &mut out);
+            }
             continue;
         }
 
-        match fetch_chunk(&client, chunk, country_code).await {
-            Ok(metas) => {
-                consecutive_failures = 0;
-                if let Ok(mut cache) = meta_cache().lock() {
-                    for (app_id, meta) in &metas {
-                        cache.insert(meta_cache_key(country_code, *app_id), meta.clone());
+        let results: Vec<(Vec<u32>, Result<HashMap<u32, StoreItemMeta>, String>)> =
+            if wave.len() == 1 || tokio::runtime::Handle::try_current().is_err() {
+                let mut results = Vec::with_capacity(wave.len());
+                for chunk in wave {
+                    let result = fetch_chunk(&client, chunk, country_code).await;
+                    results.push((chunk.clone(), result));
+                }
+                results
+            } else {
+                let mut tasks = tokio::task::JoinSet::new();
+                for chunk in wave {
+                    let client = client.clone();
+                    let chunk = chunk.clone();
+                    let country_code = country_code.to_string();
+                    tasks.spawn(async move {
+                        let result = fetch_chunk(&client, &chunk, &country_code).await;
+                        (chunk, result)
+                    });
+                }
+                let mut results = Vec::with_capacity(wave.len());
+                while let Some(joined) = tasks.join_next().await {
+                    if let Ok(pair) = joined {
+                        results.push(pair);
                     }
                 }
-                out.extend(metas);
-            }
-            Err(e) => {
-                consecutive_failures += 1;
-                eprintln!(
-                    "[SteamItems] GetItems failed for chunk starting at {}: {}",
-                    chunk[0], e
-                );
-                mark_unknown(chunk, &mut out);
+                results
+            };
+
+        for (chunk, result) in results {
+            match result {
+                Ok(metas) => {
+                    consecutive_failures = 0;
+                    if let Ok(mut cache) = meta_cache().lock() {
+                        for (app_id, meta) in &metas {
+                            cache.insert(meta_cache_key(country_code, *app_id), meta.clone());
+                        }
+                    }
+                    out.extend(metas);
+                }
+                Err(e) => {
+                    consecutive_failures += 1;
+                    eprintln!(
+                        "[SteamItems] GetItems failed for chunk starting at {}: {}",
+                        chunk.first().copied().unwrap_or_default(),
+                        e
+                    );
+                    mark_unknown(&chunk, &mut out);
+                }
             }
         }
     }

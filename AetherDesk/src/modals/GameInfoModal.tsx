@@ -1,4 +1,4 @@
-import { ReactNode, useEffect, useMemo, useState } from 'react';
+import { ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { GameCover } from '../ui/GameCover';
 
@@ -234,6 +234,17 @@ export const GameInfoModal = ({ appId, fallbackName, fallbackImageUrl, onClose }
   const [error, setError] = useState('');
   const [selectedScreenshotIndex, setSelectedScreenshotIndex] = useState<number | null>(null);
   const [isEdgeZone, setIsEdgeZone] = useState(false);
+  // Full-size URLs that finished loading in the lightbox: while the current
+  // one is still in flight the (already cached) thumbnail is shown in its
+  // place, so switching never looks frozen.
+  const [loadedFullSrcs, setLoadedFullSrcs] = useState<Record<string, true>>({});
+  const [failedFullSrcs, setFailedFullSrcs] = useState<Record<string, true>>({});
+  // Intrinsic size per URL (thumbnail or full): lets the lightbox stage take
+  // the final aspect ratio immediately, so odd (square/portrait) screenshots
+  // are framed correctly and nothing jumps when the full image arrives.
+  const [imageDims, setImageDims] = useState<Record<string, readonly [number, number]>>({});
+  // Keeps the preloaded neighbours alive (the browser cache does the rest).
+  const preloadedRef = useRef<Map<string, HTMLImageElement>>(new Map());
 
   useEffect(() => {
     let cancelled = false;
@@ -263,24 +274,49 @@ export const GameInfoModal = ({ appId, fallbackName, fallbackImageUrl, onClose }
   const imageUrl = info?.imageUrl || info?.appDetails?.capsuleImage || fallbackImageUrl;
   const details = info?.appDetails;
   const local = info?.local;
-  const screenshots = normalizeScreenshots(info?.screenshots, details?.screenshots);
+  const screenshots = useMemo(
+    () => normalizeScreenshots(info?.screenshots, details?.screenshots),
+    [info?.screenshots, details?.screenshots],
+  );
+  const screenshotCount = screenshots.length;
   const shortDescription = decodeHtmlEntities(details?.shortDescription);
 
-  const handlePrevScreenshot = (e?: React.MouseEvent) => {
-    e?.stopPropagation();
-    if (screenshots.length === 0) return;
-    setSelectedScreenshotIndex((prev) =>
-      prev !== null ? (prev - 1 + screenshots.length) % screenshots.length : 0,
-    );
-  };
+  const markFullLoaded = useCallback((src: string) => {
+    if (!src) return;
+    setLoadedFullSrcs((prev) => (prev[src] ? prev : { ...prev, [src]: true }));
+  }, []);
 
-  const handleNextScreenshot = (e?: React.MouseEvent) => {
+  const markFullFailed = useCallback((src: string) => {
+    if (!src) return;
+    setFailedFullSrcs((prev) => (prev[src] ? prev : { ...prev, [src]: true }));
+  }, []);
+
+  const rememberDims = useCallback((src: string, img: HTMLImageElement | null) => {
+    if (!src || !img || !img.naturalWidth || !img.naturalHeight) return;
+    const width = img.naturalWidth;
+    const height = img.naturalHeight;
+    setImageDims((prev) => {
+      const current = prev[src];
+      if (current && current[0] === width && current[1] === height) return prev;
+      return { ...prev, [src]: [width, height] as const };
+    });
+  }, []);
+
+  const handlePrevScreenshot = useCallback((e?: React.MouseEvent) => {
     e?.stopPropagation();
-    if (screenshots.length === 0) return;
+    if (screenshotCount === 0) return;
     setSelectedScreenshotIndex((prev) =>
-      prev !== null ? (prev + 1) % screenshots.length : 0,
+      prev !== null ? (prev - 1 + screenshotCount) % screenshotCount : 0,
     );
-  };
+  }, [screenshotCount]);
+
+  const handleNextScreenshot = useCallback((e?: React.MouseEvent) => {
+    e?.stopPropagation();
+    if (screenshotCount === 0) return;
+    setSelectedScreenshotIndex((prev) =>
+      prev !== null ? (prev + 1) % screenshotCount : 0,
+    );
+  }, [screenshotCount]);
 
   useEffect(() => {
     if (selectedScreenshotIndex === null) return;
@@ -297,7 +333,53 @@ export const GameInfoModal = ({ appId, fallbackName, fallbackImageUrl, onClose }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [selectedScreenshotIndex, screenshots.length]);
+  }, [selectedScreenshotIndex, handlePrevScreenshot, handleNextScreenshot]);
+
+  // Warm the browser cache with the neighbours of the current screenshot so
+  // Next/Prev only has to paint. Full-size Steam screenshots are large and
+  // fetched on demand: without this every arrow press waited for the CDN.
+  useEffect(() => {
+    if (selectedScreenshotIndex === null || screenshotCount < 2) return;
+    const preloaded = preloadedRef.current;
+    for (const offset of [1, -1, 2]) {
+      const shot = screenshots[(selectedScreenshotIndex + offset + screenshotCount) % screenshotCount];
+      const src = shot?.full || shot?.thumbnail;
+      if (!src || preloaded.has(src)) continue;
+      const img = new Image();
+      img.decoding = 'async';
+      img.onload = () => {
+        markFullLoaded(src);
+        rememberDims(src, img);
+      };
+      img.src = src;
+      preloaded.set(src, img);
+      // Bound the retained set: the cache keeps the bytes anyway.
+      if (preloaded.size > 12) {
+        const oldest = preloaded.keys().next().value;
+        if (oldest !== undefined) preloaded.delete(oldest);
+      }
+    }
+  }, [selectedScreenshotIndex, screenshots, screenshotCount, markFullLoaded, rememberDims]);
+
+  useEffect(() => {
+    if (selectedScreenshotIndex === null) setIsEdgeZone(false);
+  }, [selectedScreenshotIndex]);
+
+  const activeShot = selectedScreenshotIndex !== null ? screenshots[selectedScreenshotIndex] : undefined;
+  const activeFullSrc = activeShot?.full || activeShot?.thumbnail || '';
+  const activeThumbSrc = activeShot?.thumbnail || activeShot?.full || '';
+  const activeFullLoaded = !!activeFullSrc && !!loadedFullSrcs[activeFullSrc];
+  const activeFullFailed = !!activeFullSrc && !!failedFullSrcs[activeFullSrc];
+  const stageState = activeFullLoaded ? 'is-loaded' : activeFullFailed ? 'is-error' : 'is-loading';
+  const activeDims = imageDims[activeFullSrc] || imageDims[activeThumbSrc];
+  // Stage geometry: same aspect ratio as the screenshot, capped by the
+  // viewport on both axes. Placeholder and full image share the same box.
+  const stageStyle = activeDims
+    ? {
+        aspectRatio: `${activeDims[0]} / ${activeDims[1]}`,
+        width: `min(1200px, 100%, calc(90vh * ${(activeDims[0] / activeDims[1]).toFixed(4)}))`,
+      }
+    : undefined;
 
   const cacheSummary = useMemo(() => {
     if (!info) return [];
@@ -353,7 +435,13 @@ export const GameInfoModal = ({ appId, fallbackName, fallbackImageUrl, onClose }
                             className="info-screenshot-link"
                             onClick={() => setSelectedScreenshotIndex(index)}
                           >
-                            <img src={src} alt={alt} />
+                            <img
+                              src={src}
+                              alt={alt}
+                              loading="lazy"
+                              decoding="async"
+                              onLoad={(event) => rememberDims(src, event.currentTarget)}
+                            />
                           </button>
                         );
                       })}
@@ -409,7 +497,7 @@ export const GameInfoModal = ({ appId, fallbackName, fallbackImageUrl, onClose }
         </div>
       </div>
 
-      {selectedScreenshotIndex !== null && screenshots[selectedScreenshotIndex] && (
+      {selectedScreenshotIndex !== null && activeShot && (
         <div
           className="info-lightbox"
           onMouseMove={(event) => {
@@ -424,7 +512,43 @@ export const GameInfoModal = ({ appId, fallbackName, fallbackImageUrl, onClose }
             setSelectedScreenshotIndex(null);
           }}
         >
-          <div className="info-lightbox-content" onClick={(event) => event.stopPropagation()}>
+          {/* Arrows live on the overlay (viewport edges), not inside the image
+              box: a square/portrait screenshot makes that box narrow and the
+              arrows used to land outside the 25% hover zones that reveal
+              them, so they looked broken. */}
+          {screenshotCount > 1 && (
+            <>
+              <button
+                type="button"
+                className={`info-lightbox-nav prev ${isEdgeZone ? 'visible' : ''}`}
+                onClick={handlePrevScreenshot}
+                aria-label="Previous screenshot"
+                title="Previous screenshot"
+              >
+                <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <polyline points="15 18 9 12 15 6" />
+                </svg>
+              </button>
+
+              <button
+                type="button"
+                className={`info-lightbox-nav next ${isEdgeZone ? 'visible' : ''}`}
+                onClick={handleNextScreenshot}
+                aria-label="Next screenshot"
+                title="Next screenshot"
+              >
+                <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <polyline points="9 18 15 12 9 6" />
+                </svg>
+              </button>
+            </>
+          )}
+
+          <div
+            className={`info-lightbox-content ${stageState}`}
+            style={stageStyle}
+            onClick={(event) => event.stopPropagation()}
+          >
             <button
               type="button"
               className="info-lightbox-close"
@@ -434,38 +558,47 @@ export const GameInfoModal = ({ appId, fallbackName, fallbackImageUrl, onClose }
               &times;
             </button>
 
-            {screenshots.length > 1 && (
-              <>
-                <button
-                  type="button"
-                  className={`info-lightbox-nav prev ${isEdgeZone ? 'visible' : ''}`}
-                  onClick={handlePrevScreenshot}
-                  aria-label="Previous screenshot"
-                  title="Previous screenshot"
-                >
-                  <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                    <polyline points="15 18 9 12 15 6" />
-                  </svg>
-                </button>
-
-                <button
-                  type="button"
-                  className={`info-lightbox-nav next ${isEdgeZone ? 'visible' : ''}`}
-                  onClick={handleNextScreenshot}
-                  aria-label="Next screenshot"
-                  title="Next screenshot"
-                >
-                  <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                    <polyline points="9 18 15 12 9 6" />
-                  </svg>
-                </button>
-              </>
+            {/* Instant placeholder: the strip thumbnail is already cached. */}
+            {activeThumbSrc && activeThumbSrc !== activeFullSrc && (
+              <img
+                className="info-lightbox-placeholder"
+                src={activeThumbSrc}
+                alt=""
+                aria-hidden="true"
+                decoding="async"
+                onLoad={(event) => rememberDims(activeThumbSrc, event.currentTarget)}
+              />
             )}
 
+            {/* Keyed by URL: a fresh element never keeps painting the previous
+                screenshot while the new one downloads. */}
             <img
-              src={screenshots[selectedScreenshotIndex].full || screenshots[selectedScreenshotIndex].thumbnail || ''}
+              key={activeFullSrc}
+              className="info-lightbox-full"
+              src={activeFullSrc}
               alt={`${title} screenshot ${selectedScreenshotIndex + 1}`}
+              decoding="async"
+              ref={(element) => {
+                if (element && element.complete && element.naturalWidth > 0) {
+                  rememberDims(activeFullSrc, element);
+                  markFullLoaded(activeFullSrc);
+                }
+              }}
+              onLoad={(event) => {
+                rememberDims(activeFullSrc, event.currentTarget);
+                markFullLoaded(activeFullSrc);
+              }}
+              onError={() => markFullFailed(activeFullSrc)}
             />
+
+            {stageState === 'is-loading' && <div className="info-lightbox-spinner" aria-label="Loading screenshot" />}
+            {stageState === 'is-error' && <div className="info-lightbox-error">Full-size image unavailable</div>}
+
+            {screenshotCount > 1 && (
+              <div className="info-lightbox-counter">
+                {selectedScreenshotIndex + 1} / {screenshotCount}
+              </div>
+            )}
           </div>
         </div>
       )}

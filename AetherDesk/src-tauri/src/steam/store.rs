@@ -14,6 +14,12 @@ const STEAM_SUGGEST_URL: &str = "https://store.steampowered.com/search/suggest";
 const STEAM_SEARCH_APPS_URL: &str = "https://steamcommunity.com/actions/SearchApps";
 const SUGGEST_CACHE_CAP: usize = 80;
 const SUGGEST_CACHE_TTL: Duration = Duration::from_secs(10 * 60);
+/// How long the typeahead keeps waiting for `SearchApps` once `/search/suggest`
+/// has answered. The ranked short list is what the user is waiting for; the
+/// long tail only matters when scrolling past it, so a slow steamcommunity
+/// round-trip must not hold the whole suggestion box back. A late tail is
+/// still merged into the cache entry for the next identical query.
+const SEARCH_APPS_GRACE: Duration = Duration::from_millis(250);
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct SteamStoreItem {
@@ -94,10 +100,25 @@ pub struct SteamStore {
     client: reqwest::Client,
 }
 
+/// Process-lifetime HTTP client for the Steam storefront endpoints.
+///
+/// The typeahead fires one request per debounced keystroke and every store
+/// search builds a fresh `StoreService`; constructing a `reqwest::Client` per
+/// call meant a new TCP + TLS handshake to store.steampowered.com /
+/// steamcommunity.com every time (a few hundred ms each from Europe) and no
+/// connection reuse at all. `Client` is an `Arc` inside, so sharing one keeps
+/// the pool warm and makes cloning free.
+fn shared_client() -> reqwest::Client {
+    static CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
+    CLIENT
+        .get_or_init(|| http::build_client(STEAM_SEARCH_TIMEOUT_SECONDS))
+        .clone()
+}
+
 impl SteamStore {
     pub fn new() -> Self {
         Self {
-            client: http::build_client(STEAM_SEARCH_TIMEOUT_SECONDS),
+            client: shared_client(),
         }
     }
 
@@ -118,23 +139,51 @@ impl SteamStore {
             return Ok(cached);
         }
 
-        let (suggest_res, apps_res) = tokio::join!(
-            self.fetch_suggest_html(trimmed, country_code),
-            self.fetch_search_apps(trimmed),
-        );
+        // Both endpoints start together; `/search/suggest` (the ranked short
+        // list) decides when the answer goes back to the UI, `SearchApps` (the
+        // long tail) gets a short grace and otherwise finishes in the
+        // background, enriching the cache entry for the next identical query.
+        let Ok(runtime) = tokio::runtime::Handle::try_current() else {
+            // No Tokio runtime to detach onto (only possible outside the Tauri
+            // async runtime): fall back to the plain fan-out.
+            let (suggest_res, apps_res) = tokio::join!(
+                self.fetch_suggest_html(trimmed, country_code),
+                fetch_search_apps_with(&self.client, trimmed),
+            );
+            return Ok(suggest_cache_merge(
+                &cache_key,
+                suggest_res.unwrap_or_default(),
+                apps_res.unwrap_or_default(),
+            ));
+        };
 
-        let mut merged = Vec::new();
-        let mut seen = std::collections::HashSet::new();
-        for batch in [suggest_res.unwrap_or_default(), apps_res.unwrap_or_default()] {
-            for item in batch {
-                if seen.insert(item.id) {
-                    merged.push(item);
+        let (tail_tx, tail_rx) = tokio::sync::oneshot::channel::<Vec<SteamStoreItem>>();
+        {
+            let client = self.client.clone();
+            let query = trimmed.to_string();
+            let cache_key = cache_key.clone();
+            runtime.spawn(async move {
+                let apps = fetch_search_apps_with(&client, &query)
+                    .await
+                    .unwrap_or_default();
+                if let Err(apps) = tail_tx.send(apps) {
+                    // The caller stopped waiting: merge the late tail so the
+                    // cached entry still grows to the full list.
+                    suggest_cache_merge(&cache_key, Vec::new(), apps);
                 }
-            }
+            });
         }
 
-        suggest_cache_put(cache_key, merged.clone());
-        Ok(merged)
+        let suggest_items = self
+            .fetch_suggest_html(trimmed, country_code)
+            .await
+            .unwrap_or_default();
+        let apps_items = match tokio::time::timeout(SEARCH_APPS_GRACE, tail_rx).await {
+            Ok(Ok(apps)) => apps,
+            _ => Vec::new(),
+        };
+
+        Ok(suggest_cache_merge(&cache_key, suggest_items, apps_items))
     }
 
     async fn fetch_suggest_html(&self, query: &str, country_code: &str) -> Result<Vec<SteamStoreItem>, String> {
@@ -164,44 +213,6 @@ impl SteamStore {
         Ok(parse_suggest_html(&html))
     }
 
-    async fn fetch_search_apps(&self, query: &str) -> Result<Vec<SteamStoreItem>, String> {
-        let encoded = urlencoding_path(query);
-        let url = format!("{}/{}", STEAM_SEARCH_APPS_URL, encoded);
-        let response = self
-            .client
-            .get(&url)
-            .header(USER_AGENT, STEAM_BROWSER_UA)
-            .send()
-            .await
-            .map_err(|e| format!("Steam SearchApps request failed: {}", e))?;
-
-        if !response.status().is_success() {
-            return Ok(Vec::new());
-        }
-
-        let apps: Vec<SteamSearchApp> = response.json().await.unwrap_or_default();
-        Ok(apps
-            .into_iter()
-            .filter_map(|app| {
-                let id = app.appid.parse::<u32>().ok()?;
-                let name = app.name.trim().to_string();
-                if name.is_empty() {
-                    return None;
-                }
-                Some(SteamStoreItem {
-                    id,
-                    name,
-                    image_url: app.logo.unwrap_or_default(),
-                    item_type: Some("app".to_string()),
-                    price: None,
-                    metascore: None,
-                    platforms: None,
-                    streamingvideo: None,
-                    controller_support: None,
-                })
-            })
-            .collect())
-    }
 
     pub async fn search_catalog_for_country(&self, query: &str, country_code: &str) -> Result<Vec<SteamStoreItem>, String> {
         if query.trim().is_empty() {
@@ -432,6 +443,47 @@ fn currency_for_country(country_code: &str) -> &'static str {
     }
 }
 
+/// `steamcommunity.com/actions/SearchApps/<query>`: the long, unranked
+/// autocomplete list. Free function (not a method) so the typeahead can run it
+/// on a detached task that outlives the caller's grace window.
+async fn fetch_search_apps_with(client: &reqwest::Client, query: &str) -> Result<Vec<SteamStoreItem>, String> {
+    let encoded = urlencoding_path(query);
+    let url = format!("{}/{}", STEAM_SEARCH_APPS_URL, encoded);
+    let response = client
+        .get(&url)
+        .header(USER_AGENT, STEAM_BROWSER_UA)
+        .send()
+        .await
+        .map_err(|e| format!("Steam SearchApps request failed: {}", e))?;
+
+    if !response.status().is_success() {
+        return Ok(Vec::new());
+    }
+
+    let apps: Vec<SteamSearchApp> = response.json().await.unwrap_or_default();
+    Ok(apps
+        .into_iter()
+        .filter_map(|app| {
+            let id = app.appid.parse::<u32>().ok()?;
+            let name = app.name.trim().to_string();
+            if name.is_empty() {
+                return None;
+            }
+            Some(SteamStoreItem {
+                id,
+                name,
+                image_url: app.logo.unwrap_or_default(),
+                item_type: Some("app".to_string()),
+                price: None,
+                metascore: None,
+                platforms: None,
+                streamingvideo: None,
+                controller_support: None,
+            })
+        })
+        .collect())
+}
+
 fn suggest_cache_key(country_code: &str, query: &str) -> String {
     format!(
         "{}:{}",
@@ -470,18 +522,53 @@ fn suggest_cache_get(key: &str) -> Option<Vec<SteamStoreItem>> {
     Some(items)
 }
 
-fn suggest_cache_put(key: String, items: Vec<SteamStoreItem>) {
+/// Merges a (possibly partial) suggestion batch into the cache entry for
+/// `key` and returns the merged list. Order is stable regardless of which
+/// half arrives first: Steam's ranked `suggest` rows, then whatever the entry
+/// already held, then the `SearchApps` tail — deduplicated by app id. Called
+/// by the typeahead path and by the detached tail task, so a slow tail
+/// enriches the entry instead of being lost.
+pub(crate) fn suggest_cache_merge(
+    key: &str,
+    ranked: Vec<SteamStoreItem>,
+    tail: Vec<SteamStoreItem>,
+) -> Vec<SteamStoreItem> {
     let Ok(mut cache) = suggest_cache().lock() else {
-        return;
+        let mut merged = Vec::new();
+        let mut seen = std::collections::HashSet::new();
+        for item in ranked.into_iter().chain(tail) {
+            if seen.insert(item.id) {
+                merged.push(item);
+            }
+        }
+        return merged;
     };
-    if cache.entries.insert(key.clone(), (Instant::now(), items)).is_none() {
-        cache.order.push_back(key.clone());
+    let existing = cache
+        .entries
+        .get(key)
+        .filter(|(stored_at, _)| stored_at.elapsed() <= SUGGEST_CACHE_TTL)
+        .map(|(_, items)| items.clone())
+        .unwrap_or_default();
+    let mut merged = Vec::new();
+    let mut seen = std::collections::HashSet::new();
+    for item in ranked.into_iter().chain(existing).chain(tail) {
+        if seen.insert(item.id) {
+            merged.push(item);
+        }
+    }
+    if cache
+        .entries
+        .insert(key.to_string(), (Instant::now(), merged.clone()))
+        .is_none()
+    {
+        cache.order.push_back(key.to_string());
     }
     while cache.order.len() > SUGGEST_CACHE_CAP {
         if let Some(oldest) = cache.order.pop_front() {
             cache.entries.remove(&oldest);
         }
     }
+    merged
 }
 
 fn decode_html(value: &str) -> String {

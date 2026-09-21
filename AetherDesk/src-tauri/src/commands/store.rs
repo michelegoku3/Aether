@@ -501,6 +501,7 @@ pub async fn prepare_ryuu_specific_version_download(
 pub async fn trigger_luatools_download(
     app: tauri::AppHandle,
     app_id: u32,
+    game_name: Option<String>,
 ) -> Result<String, String> {
     let steam_path = command_steam_path(&app)?;
     validate_steam_download_path(&steam_path)?;
@@ -509,7 +510,7 @@ pub async fn trigger_luatools_download(
         "Triggering authenticated LuaTools download for {}",
         crate::core::logger::format_appid(app_id)
     );
-    let package = LuaToolsClient::new().download_lua_package(app_id).await?;
+    let package = download_complete_luatools_package(&app, app_id, &steam_path, game_name.as_deref()).await?;
     install_standard_package(&app, app_id, &steam_path, package, "LuaTools").await
 }
 
@@ -517,6 +518,7 @@ pub async fn trigger_luatools_download(
 pub async fn prepare_luatools_specific_version_download(
     app: tauri::AppHandle,
     app_id: u32,
+    game_name: Option<String>,
 ) -> Result<Vec<LuaManifestRow>, String> {
     let steam_path = command_steam_path(&app)?;
     validate_steam_download_path(&steam_path)?;
@@ -525,8 +527,220 @@ pub async fn prepare_luatools_specific_version_download(
         "Preparing LuaTools specific-version download for {}",
         crate::core::logger::format_appid(app_id)
     );
-    let package = LuaToolsClient::new().download_lua_package(app_id).await?;
+    let package = download_complete_luatools_package(&app, app_id, &steam_path, game_name.as_deref()).await?;
     install_specific_package(&app, app_id, &steam_path, package, "LuaTools").await
+}
+
+/// How many LuaTools sources one download may try. Each attempt is a package
+/// download that counts against the account's daily allowance, so the second
+/// source is only tried when the first one's package could not be completed
+/// (a bare Lua whose manifests neither LuaTools nor Hubcap could provide) —
+/// the alternative at that point is a failed install, not a saved download.
+const LUATOOLS_MAX_SOURCE_ATTEMPTS: usize = 2;
+
+/// Downloads a LuaTools package that is guaranteed complete (Lua + every
+/// enabled manifest) or fails before anything reaches Steam: best source
+/// first, completion through [`complete_luatools_package`], one fallback
+/// source when the first package cannot be completed.
+async fn download_complete_luatools_package(
+    app: &tauri::AppHandle,
+    app_id: u32,
+    steam_path: &str,
+    game_name: Option<&str>,
+) -> Result<ManifestPackage, String> {
+    let client = LuaToolsClient::new();
+    let sources = client.available_sources(app_id).await?;
+    let attempts = sources.len().min(LUATOOLS_MAX_SOURCE_ATTEMPTS);
+    let mut previous_failure: Option<(String, String)> = None;
+    for (index, source) in sources.iter().take(attempts).enumerate() {
+        let mut package = match client.download_lua_package_from(app_id, source, game_name).await {
+            Ok(package) => package,
+            Err(error) => {
+                return Err(match previous_failure {
+                    Some((first_source, first_error)) => format!(
+                        "{error} (fallback after source {first_source} could not be completed: {first_error})"
+                    ),
+                    None => error,
+                });
+            }
+        };
+        match complete_luatools_package(app, app_id, steam_path, &client, &mut package).await {
+            Ok(()) => return Ok(package),
+            Err(error) => {
+                let next = sources.get(index + 1).filter(|_| index + 1 < attempts);
+                match next {
+                    Some(next_source) => {
+                        crate::desk_log_warn!(
+                            "store",
+                            "LuaTools source '{}' package for {} could not be completed ({}); trying source '{}'",
+                            source,
+                            crate::core::logger::format_appid(app_id),
+                            error,
+                            next_source
+                        );
+                        previous_failure = Some((source.clone(), error));
+                    }
+                    None => {
+                        return Err(match previous_failure {
+                            Some((first_source, first_error)) => format!(
+                                "{error} (source {first_source} was tried first: {first_error})"
+                            ),
+                            None => error,
+                        });
+                    }
+                }
+            }
+        }
+    }
+    Err(format!("LuaTools has no available source for App ID {app_id}"))
+}
+
+/// Completes a LuaTools package before it reaches the shared installer.
+///
+/// LuaTools sources come in two families: the ones that archive manifests
+/// answer `/api/manifest/download` with `<appid>.zip` (Lua + `.manifest`
+/// files), the ones that only mirror the entitlement file (e.g. Luie) answer
+/// with a bare pinned Lua whose `setManifestid` rows reference manifests that
+/// are nowhere on disk yet. The manifests-before-Lua contract does not bend
+/// for them: the completion gate in the installer would (correctly) refuse
+/// the package with "N referenced manifest(s) are missing". So, local-first:
+///
+/// 1. pins already bundled in the package or already present in depotcache /
+///    Steam's secondary cache / the AetherData backup are left alone;
+/// 2. every other enabled pin is fetched through LuaTools' own per-depot
+///    endpoint (same signed-in session, verified depot/GID, no daily-cap
+///    cost);
+/// 3. only what LuaTools could not serve is generated through Hubcap, and
+///    only when the user configured a key — never a silent quota spend.
+///
+/// Anything still missing afterwards is reported here with the provider's
+/// reasons, before a single byte is written to Steam.
+async fn complete_luatools_package(
+    app: &tauri::AppHandle,
+    app_id: u32,
+    steam_path: &str,
+    client: &LuaToolsClient,
+    package: &mut ManifestPackage,
+) -> Result<(), String> {
+    let bundled = bundled_manifest_names(&package.manifest_files);
+    let pins: Vec<DepotManifestPin> = enabled_pins_from_content(&package.lua_content)
+        .into_iter()
+        .filter(|pin| !bundled.contains(&resolver::manifest_file_name(pin)))
+        .collect();
+    if pins.is_empty() {
+        crate::desk_log_info!(
+            "store",
+            "LuaTools package for {} is self-contained: {} manifest(s) bundled, nothing to complete",
+            crate::core::logger::format_appid(app_id),
+            package.manifest_files.len()
+        );
+        return Ok(());
+    }
+    let completeness = resolver::verify_available(steam_path, app_id, &pins);
+    if completeness.missing.is_empty() {
+        crate::desk_log_info!(
+            "store",
+            "LuaTools package for {}: {} pin(s) not bundled but already available locally",
+            crate::core::logger::format_appid(app_id),
+            completeness.verified
+        );
+        return Ok(());
+    }
+    crate::desk_log_info!(
+        "store",
+        "LuaTools package for {} needs {} manifest(s) (bundled={}, local={}): completing through LuaTools",
+        crate::core::logger::format_appid(app_id),
+        completeness.missing.len(),
+        package.manifest_files.len(),
+        completeness.verified
+    );
+
+    let completion = client
+        .complete_manifests(app_id, &completeness.missing)
+        .await;
+    let fetched_count = completion.fetched.len();
+    package.manifest_files.extend(completion.fetched);
+    if completion.failed.is_empty() {
+        crate::desk_log_info!(
+            "store",
+            "LuaTools completion for {}: {} manifest(s) fetched, package complete",
+            crate::core::logger::format_appid(app_id),
+            fetched_count
+        );
+        return Ok(());
+    }
+
+    // Hubcap fallback — exact generation of the leftovers, only with a key.
+    let still_missing: Vec<DepotManifestPin> = completion
+        .failed
+        .iter()
+        .map(|(pin, _)| pin.clone())
+        .collect();
+    let hubcap_key = load_settings(app).hubcap_api_key.trim().to_string();
+    let mut unresolved = still_missing.clone();
+    if !hubcap_key.is_empty() && hubcap_key != "oureveryday_public" {
+        crate::desk_log_info!(
+            "store",
+            "LuaTools completion for {}: {} manifest(s) not served by LuaTools, trying Hubcap generation",
+            crate::core::logger::format_appid(app_id),
+            still_missing.len()
+        );
+        match resolver::resolve(resolver::ManifestRequest {
+            steam_path: steam_path.to_string(),
+            app_id,
+            pins: still_missing,
+            generation: resolver::Generation::SettingsKey(hubcap_key.clone()),
+        })
+        .await
+        {
+            Ok(resolution) => {
+                package.manifest_files.extend(resolution.generated);
+                unresolved = resolution.missing;
+            }
+            Err(error) => crate::desk_log_warn!(
+                "store",
+                "Hubcap fallback for LuaTools package {} failed: {}",
+                crate::core::logger::format_appid(app_id),
+                error
+            ),
+        }
+    }
+
+    if unresolved.is_empty() {
+        crate::desk_log_info!(
+            "store",
+            "LuaTools completion for {}: {} fetched from LuaTools, rest generated through Hubcap, package complete",
+            crate::core::logger::format_appid(app_id),
+            fetched_count
+        );
+        return Ok(());
+    }
+
+    let reasons: Vec<String> = completion
+        .failed
+        .iter()
+        .filter(|(pin, _)| unresolved.contains(pin))
+        .map(|(pin, reason)| format!("{}_{} ({})", pin.depot_id, pin.manifest_id, reason))
+        .collect();
+    crate::desk_log_error!(
+        "store",
+        "LuaTools completion for {} incomplete: {} manifest(s) unavailable: {}",
+        crate::core::logger::format_appid(app_id),
+        unresolved.len(),
+        reasons.join("; ")
+    );
+    let hint = if hubcap_key.is_empty() {
+        " Configure a Hubcap API key in Settings to generate the missing manifests, or retry later."
+    } else {
+        " Retry later or try another source."
+    };
+    Err(format!(
+        "LuaTools could not provide {} of the {} manifest(s) this Lua references: {}.{}",
+        unresolved.len(),
+        pins.len(),
+        reasons.join("; "),
+        hint
+    ))
 }
 
 // ============================================================================

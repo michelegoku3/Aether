@@ -13,6 +13,11 @@ const HUBCAP_SEARCH_BUDGET_MS: u64 = 6000;
 /// the batch at one chunk (~48 ids) in the common case instead of several
 /// sequential ones for franchise-wide queries.
 const MAX_CLASSIFIED_RESULTS: usize = 80;
+
+/// Per-probe timeout of the Hubcap exact-match `has_manifest` fallback. The
+/// probes run in parallel with each other and with the GetItems batch, so
+/// this only bounds how long a hanging Hubcap can hold a search back.
+const EXACT_PROBE_TIMEOUT_MS: u64 = 2500;
 use crate::game_info::model::{GameInfoPlatforms, GameInfoPrice, GameInfoStoreCategories};
 use crate::steam::store::{SteamStore, SteamStoreItem};
 use crate::steam::store_items;
@@ -442,12 +447,14 @@ impl StoreService {
         // via `has_manifest(app_id)`. This covers any future Hubcap substring
         // edge-cases (punctuation, 400 soft-fail, etc) with at most one extra
         // cheap HEAD-like request for the exact candidate — still fail-open.
-        let mut available_ids: HashSet<u32> = hubcap_res.iter().map(|g| g.app_id).collect();
+        let available_ids: HashSet<u32> = hubcap_res.iter().map(|g| g.app_id).collect();
         // Only probe when a Hubcap client exists and we have at least one exact
-        // Steam hit that isn't already marked available.
-        if let Some(client) = hubcap_client.as_ref() {
+        // Steam hit that isn't already marked available. The probes themselves
+        // run later, concurrently with the GetItems metadata batch (step 4b):
+        // they only flip `has_manifest`, so nothing below has to wait for them.
+        let mut exact_missing: Vec<u32> = Vec::new();
+        if hubcap_client.is_some() {
             // Collect exact-score candidates (score 0) that lack a manifest flag.
-            let mut exact_missing: Vec<u32> = Vec::new();
             for item in &steam_items {
                 if available_ids.contains(&item.id) {
                     continue;
@@ -459,32 +466,48 @@ impl StoreService {
                     }
                 }
             }
-            if !exact_missing.is_empty() {
-                // Probe sequentially with a short per-probe timeout so we don't
-                // blow the overall 6s budget. Hubcap `has_manifest` reuses the
-                // same auth headers and 8s client timeout.
-                for app_id in exact_missing {
-                    // Wrap in a 4s timeout so a hanging Hubcap doesn't stall the search.
+        }
+        let exact_probe_future = async {
+            let mut verified: Vec<u32> = Vec::new();
+            let Some(client) = hubcap_client.as_ref() else {
+                return verified;
+            };
+            if exact_missing.is_empty() {
+                return verified;
+            }
+            // All probes in parallel, each with its own short timeout: the
+            // old sequential loop could add up to 3 × 4 s to a search.
+            let mut probes = tokio::task::JoinSet::new();
+            for app_id in exact_missing.iter().copied() {
+                let client = client.clone();
+                probes.spawn(async move {
                     let probe = tokio::time::timeout(
-                        Duration::from_millis(4000),
+                        Duration::from_millis(EXACT_PROBE_TIMEOUT_MS),
                         client.has_manifest(app_id),
                     )
                     .await;
-                    match probe {
-                        Ok(true) => {
-                            eprintln!("[Hubcap] Exact fallback verified manifest for {}", app_id);
-                            available_ids.insert(app_id);
-                        }
-                        Ok(false) => {
-                            eprintln!("[Hubcap] Exact fallback: no manifest for {}", app_id);
-                        }
-                        Err(_) => {
-                            eprintln!("[Hubcap] Exact fallback timeout for {}", app_id);
-                        }
+                    (app_id, probe)
+                });
+            }
+            while let Some(joined) = probes.join_next().await {
+                let Ok((app_id, probe)) = joined else {
+                    continue;
+                };
+                match probe {
+                    Ok(true) => {
+                        eprintln!("[Hubcap] Exact fallback verified manifest for {}", app_id);
+                        verified.push(app_id);
+                    }
+                    Ok(false) => {
+                        eprintln!("[Hubcap] Exact fallback: no manifest for {}", app_id);
+                    }
+                    Err(_) => {
+                        eprintln!("[Hubcap] Exact fallback timeout for {}", app_id);
                     }
                 }
             }
-        }
+            verified
+        };
 
         let mut unified_list = Vec::new();
         let mut added_ids = HashSet::new();
@@ -587,12 +610,21 @@ impl StoreService {
         // One batched GetItems call (~50 ids per call, process-cached) provides
         // the classifiers (DLC/NSFW/delisted) AND the release dates for ordering
         // in one shot. "Unknown" metadata always keeps the row.
-        let meta_map = if !unified_list.is_empty() {
+        let meta_future = async {
+            if unified_list.is_empty() {
+                return HashMap::new();
+            }
             let all_ids: Vec<u32> = unified_list.iter().map(|game| game.id).collect();
             store_items::fetch_store_items_for_country(all_ids, steam_country_code).await
-        } else {
-            HashMap::new()
         };
+        let (meta_map, exact_verified) = tokio::join!(meta_future, exact_probe_future);
+        if !exact_verified.is_empty() {
+            for game in unified_list.iter_mut() {
+                if exact_verified.contains(&game.id) {
+                    game.has_manifest = true;
+                }
+            }
+        }
         if !unified_list.is_empty() {
 
             // Tag every row first: the NSFW/delisted flags feed the UI's

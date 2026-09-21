@@ -51,6 +51,64 @@ impl SteamAcfEditor {
         Self::find_value(&self.read_raw()?, "buildid")
     }
 
+    /// `InstalledDepots[depot_id].manifest`: the manifest GID Steam declares
+    /// installed for one depot. `None` when the file is unreadable, the depot
+    /// is not listed or the value is not a positive GID. This is Steam's own
+    /// statement of what is on disk — the authoritative answer to "which
+    /// version does the user actually have", independent of file mtimes in
+    /// depotcache (which restores, stagings and abandoned updates can skew).
+    pub fn installed_depot_manifest(&self, depot_id: u32) -> Option<String> {
+        let content = self.read_raw().ok()?;
+        let lines: Vec<String> = content.lines().map(str::to_string).collect();
+        Self::installed_depot_manifest_in(&lines, depot_id)
+    }
+
+    fn installed_depot_manifest_in(lines: &[String], depot_id: u32) -> Option<String> {
+        // Scope the lookup to the InstalledDepots block: a bare `"<depot>"`
+        // line is also how other blocks (e.g. SharedDepots) open sub-blocks.
+        let block_start = lines.iter().position(|line| {
+            line.trim().eq_ignore_ascii_case("\"InstalledDepots\"")
+        })?;
+        let mut depth = 0i32;
+        let mut opened = false;
+        let mut block_end = lines.len();
+        for (index, line) in lines.iter().enumerate().skip(block_start + 1) {
+            match line.trim() {
+                "{" => {
+                    depth += 1;
+                    opened = true;
+                }
+                "}" => {
+                    depth -= 1;
+                    if opened && depth <= 0 {
+                        block_end = index;
+                        break;
+                    }
+                }
+                _ => {}
+            }
+        }
+        let block = &lines[block_start..block_end];
+        let depot_start = Self::find_depot_block_start(block, depot_id)?;
+        for line in &block[depot_start + 1..] {
+            let trimmed = line.trim();
+            if trimmed == "}" {
+                return None;
+            }
+            if let Some(caps) = KEY_VALUE_RE.captures(line) {
+                if caps[1].eq_ignore_ascii_case("manifest") {
+                    let value = caps[2].trim();
+                    return value
+                        .parse::<u64>()
+                        .ok()
+                        .filter(|gid| *gid > 0)
+                        .map(|_| value.to_string());
+                }
+            }
+        }
+        None
+    }
+
     pub fn is_readonly(&self) -> Result<bool, String> {
         let metadata = fs::metadata(&self.path)
             .map_err(|e| format!("Failed to stat {}: {}", self.path.display(), e))?;
@@ -232,6 +290,28 @@ mod tests {
         assert!(out.contains("\"AutoUpdateBehavior\"\t\t\"1\""));
         assert!(out.contains("\"size\"\t\t\"38173519462\""));
         assert!(out.contains("\"MountedDepots\""));
+    }
+
+    #[test]
+    fn reads_installed_depot_manifests_from_the_installed_depots_block() {
+        let lines: Vec<String> = ACF.lines().map(str::to_string).collect();
+        assert_eq!(
+            SteamAcfEditor::installed_depot_manifest_in(&lines, 2347770).as_deref(),
+            Some("2991528520052157173")
+        );
+        assert_eq!(
+            SteamAcfEditor::installed_depot_manifest_in(&lines, 2347771).as_deref(),
+            Some("8124921270987929782")
+        );
+        // Unknown depot → None; a "0" manifest never counts as installed.
+        assert_eq!(SteamAcfEditor::installed_depot_manifest_in(&lines, 42), None);
+        let zero = ACF.replace("\"8124921270987929782\"", "\"0\"");
+        let lines: Vec<String> = zero.lines().map(str::to_string).collect();
+        assert_eq!(SteamAcfEditor::installed_depot_manifest_in(&lines, 2347771), None);
+        // No InstalledDepots block at all → None.
+        let minimal = "\"AppState\"\n{\n\t\"appid\"\t\t\"730\"\n}\n";
+        let lines: Vec<String> = minimal.lines().map(str::to_string).collect();
+        assert_eq!(SteamAcfEditor::installed_depot_manifest_in(&lines, 2347770), None);
     }
 
     #[test]

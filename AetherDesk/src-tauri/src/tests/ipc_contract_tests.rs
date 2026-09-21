@@ -865,8 +865,10 @@ fn documented_command_contracts_have_the_expected_keys() {
         ("prepare_specific_version_download", &["appId", "apiKey"]),
         ("trigger_ryuu_download", &["appId", "apiKey"]),
         ("prepare_ryuu_specific_version_download", &["appId", "apiKey"]),
-        ("trigger_luatools_download", &["appId"]),
-        ("prepare_luatools_specific_version_download", &["appId"]),
+        // `gameName` è opzionale (Option<String>): il client lo passa quando
+        // conosce il nome (etichetta la cronologia download lato lua.tools).
+        ("trigger_luatools_download", &["appId", "gameName"]),
+        ("prepare_luatools_specific_version_download", &["appId", "gameName"]),
         ("install_aether_dll", &["origin"]),
         ("uninstall_aether_dll", &[]),
         ("reset_aether_steam_path", &[]),
