@@ -18,14 +18,16 @@ bool Init();
 
 // Re-probes a module whose pattern table was missing at init (cache may have
 // appeared, or an upstream may now serve the build). Loads the table into the
-// runtime index when possible. Returns true when the module's index is
-// non-empty after the attempt. Safe to call from the late-pattern retry
-// thread: the index is only read by hook registration afterwards.
+// runtime index when possible. Returns true only when a NEW table is published.
+// Missing maps are built locally then published under patterns.mutex; readers
+// can safely resolve addresses concurrently with the late retry.
 bool ReloadModuleIfMissing(const std::string& module);
 
 // Resolves a function address inside hModule. module is "steamclient" or
 // "steamui". Returns nullptr if the entry is missing or its signature no
 // longer matches (the function moved) — callers must treat null as "skip".
 void* ResolveAddress(const std::string& funcName, const std::string& module, HMODULE hModule);
+
+bool HasModule(const std::string& module);
 
 }  // namespace ac::pattern

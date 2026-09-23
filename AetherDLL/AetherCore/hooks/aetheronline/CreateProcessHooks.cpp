@@ -54,7 +54,7 @@ void InjectIntoChild(HANDLE hProcess, DWORD pid) {
         return;
     }
 
-    const std::wstring path = inject::Widen(g_state.payloadDllPath);
+    const std::wstring path = strings::Widen(g_state.payloadDllPath);
     if (path.empty()) {
         ++g_state.onlinePayload.injectFailureCount;
         AC_LOG_WARN(kModule, "Payload path conversion failed pid=%u.", pid);

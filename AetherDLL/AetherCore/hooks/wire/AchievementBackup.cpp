@@ -31,7 +31,8 @@
 //   * playtime::   mirror del tempo di gioco da localconfig.vdf
 // Contratto pubblico invariato (vedi AchievementBackup.h): RecordUnlock /
 // RecordStats / TouchSession / BackupAllKnownStatsAtStartup /
-// FlushOnShutdown sono non-bloccanti (nessuna I/O nel thread di rete).
+// Le chiamate di accodamento sono non-bloccanti (nessuna I/O nel thread di rete).
+// FlushOnShutdown invece drena e fa join: solo fuori dal loader lock.
 // ============================================================================
 
 namespace ac::hooks::AchievementBackup {

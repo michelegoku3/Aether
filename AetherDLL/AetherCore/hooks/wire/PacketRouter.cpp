@@ -439,6 +439,7 @@ namespace ac::hooks {
     }
 
     void RegisterPacketRouter(HMODULE diversion) {
+        const auto settings = Settings::Snapshot();
         if (!diversion) {
             AC_LOG_ERROR(kModule, "Diversion module not loaded.");
             return;
@@ -452,12 +453,12 @@ namespace ac::hooks {
         AC_LOG_INFO(kModule,
                     "[DIAG] BUILD showonline-suffix+fix14 | inject_local=%d always_extra_info=%d "
                     "showonline_broadcast=%d friend_appid_from_name=%d appid_blob=%d suffix_invisible=%d",
-                    g_state.settings.presenceInjectLocal ? 1 : 0,
-                    g_state.settings.presenceAlwaysExtraInfo ? 1 : 0,
-                    g_state.settings.presenceShowOnlineBroadcast ? 1 : 0,
-                    g_state.settings.presenceFriendAppIdFromName ? 1 : 0,
-                    g_state.settings.presenceAppIdBlob ? 1 : 0,
-                    g_state.settings.presenceSuffixInvisible ? 1 : 0);
+                    settings->presenceInjectLocal ? 1 : 0,
+                    settings->presenceAlwaysExtraInfo ? 1 : 0,
+                    settings->presenceShowOnlineBroadcast ? 1 : 0,
+                    settings->presenceFriendAppIdFromName ? 1 : 0,
+                    settings->presenceAppIdBlob ? 1 : 0,
+                    settings->presenceSuffixInvisible ? 1 : 0);
 
         g_state.hookManager.TryHook("BBuildAndAsyncSendFrame", "steamclient", diversion,
             o_BBuildAndAsyncSendFrame, h_BBuildAndAsyncSendFrame);

@@ -126,7 +126,8 @@ static bool InAppList(const std::vector<std::uint32_t>& list, AppId app) {
 // exclude is a HARD opt-out: it beats even a forgotten legacy argv token.
 static LaunchMode ResolveLaunchMode(AppId app, bool aetherOnlineToken, bool showOnlineToken,
                                     const char** sourceOut) {
-    const auto& s = g_state.settings;
+                                        const auto settings = Settings::Snapshot();
+    const auto& s = *settings;
     *sourceOut = "none";
     if (InAppList(s.presenceExcludeApps, app)) {
         *sourceOut = "exclude_apps (hard opt-out)";
@@ -316,10 +317,8 @@ bool h_SpawnProcess(void* user, const char* exe, const char* cmdLine, const char
     std::string childCmdStorage;
     const char* childCmd = cmdLine;
     if (gameId) {
-        // Refresh config before deciding: AetherDesk edits the [presence]
-        // arrays while Steam is running, and a cold launch may reach this
-        // hook before the next GamesPlayed frame would reload (mtime, cheap).
-        Settings::ReloadIfModified(g_state.configPath);
+        // ResolveLaunchMode retains the latest published snapshot. File polling
+        // belongs to DirWatch, never to this process-creation hook.
 
         AppId realApp = static_cast<AppId>(*gameId & constants::kGameIdAppIdMask);
         if (realApp != 0 && realApp != constants::kSpacewarAppId) {

@@ -185,6 +185,7 @@ bool ParseNumericAppId(const std::string& stem, std::uint32_t& out) {
 // This is deliberately local-only: it never contacts a provider and never fabricates
 // a manifest that is not already present in Steam's depotcache.
 void BackupReferencedManifestsAtStartup() {
+    const auto settings = Settings::Snapshot();
     const std::string deskData = backup::io::CachedDeskDataDir();
     if (deskData.empty()) {
         AC_LOG_DEBUG(kModule, "Manifest backup skipped: AetherData unavailable.");
@@ -198,7 +199,7 @@ void BackupReferencedManifestsAtStartup() {
         std::regex_constants::icase);
 
     std::vector<fs::path> luaRoots{fs::path(g_state.luaDir)};
-    for (const std::string& extra : g_state.settings.luaExtraPaths) {
+    for (const std::string& extra : settings->luaExtraPaths) {
         luaRoots.emplace_back(extra);
     }
 
@@ -288,7 +289,8 @@ void BackupReferencedManifestsAtStartup() {
 }
 
 void RestoreAllOnce() {
-    if (!g_state.settings.manifestRestoreOnStartup) {
+    const auto settings = Settings::Snapshot();
+    if (!settings->manifestRestoreOnStartup) {
         AC_LOG_DEBUG(kModule, "Restore on startup disabled by config; skipping.");
         return;
     }
@@ -335,7 +337,8 @@ void RestoreAllOnce() {
 }
 
 void RestoreAppOnce(std::uint32_t appId) {
-    if (!g_state.settings.manifestRestoreOnStartup) {
+    const auto settings = Settings::Snapshot();
+    if (!settings->manifestRestoreOnStartup) {
         AC_LOG_DEBUG(kModule, "Restore after ACF removal disabled by config; app=%u.", appId);
         return;
     }
@@ -420,6 +423,7 @@ void RestoreMissingManifestsForApp(std::uint32_t appId) {
 }
 
 void BackupManifestAfterGeneration(std::uint32_t depotId, std::uint64_t gid) {
+    const auto settings = Settings::Snapshot();
     if (depotId == 0 || gid == 0) return;
     try {
         const std::string deskData = backup::io::CachedDeskDataDir();
@@ -441,7 +445,7 @@ void BackupManifestAfterGeneration(std::uint32_t depotId, std::uint64_t gid) {
             std::regex_constants::icase);
 
         std::vector<fs::path> luaRoots{fs::path(g_state.luaDir)};
-        for (const std::string& extra : g_state.settings.luaExtraPaths) {
+        for (const std::string& extra : settings->luaExtraPaths) {
             luaRoots.emplace_back(extra);
         }
 

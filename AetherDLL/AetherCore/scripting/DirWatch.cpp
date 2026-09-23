@@ -17,6 +17,7 @@
 #include <vector>
 
 #include "core/Logger.h"
+#include "core/AetherCoreState.h"
 #include "scripting/ScriptEngine.h"
 #include "diagnostics/StatusWriter.h"
 #include "hooks/ipc/PipeWatch.h"
@@ -270,6 +271,7 @@ void ApplyChanges(const std::unordered_map<std::string, DWORD>& acc,
 }
 
 void Run() {
+    AC_LOG_INFO(kModule, "Configuration polling active (1 s); invalid edits retain last good settings.");
     std::vector<Slot> slots;
     slots.reserve(s_watch.luaDirs.size() + s_watch.acfDirs.size());
     for (const std::string& dir : s_watch.luaDirs) slots.push_back(Slot{dir, false});
@@ -287,14 +289,17 @@ void Run() {
         }
     }
     if (events.empty()) {
-        AC_LOG_WARN(kModule, "No directories could be watched; watcher exiting.");
-        return;
+        AC_LOG_WARN(kModule, "No directories could be watched; configuration polling remains active.");
     }
 
     // Win32 caps the wait at MAXIMUM_WAIT_OBJECTS handles.
     const DWORD count = static_cast<DWORD>(std::min<std::size_t>(events.size(), MAXIMUM_WAIT_OBJECTS));
 
-    while (s_watch.running.load()) {
+    while (s_watch.running.load() && !g_state.shuttingDown.load()) {
+        const auto previousSettings = Settings::Snapshot();
+        Settings::ReloadIfModified(g_state.configPath);
+        if (Settings::Snapshot() != previousSettings) status::Write();
+        if (count == 0) { Sleep(1000); continue; }
         const DWORD wr = WaitForMultipleObjects(count, events.data(), FALSE, 1000);
         if (!s_watch.running.load()) break;
         if (wr < WAIT_OBJECT_0 || wr >= WAIT_OBJECT_0 + count) continue;
@@ -307,7 +312,9 @@ void Run() {
         if (overflowed) FullRescan(first, acc, order);
 
         // Debounce: keep draining until a quiet window elapses.
-        while (s_watch.running.load()) {
+        const auto debounceDeadline = GetTickCount64() + 1000;
+        while (s_watch.running.load() && !g_state.shuttingDown.load() &&
+               GetTickCount64() < debounceDeadline) {
             const DWORD dr = WaitForMultipleObjects(count, events.data(), FALSE, kDebounceMs);
             if (!s_watch.running.load() || dr < WAIT_OBJECT_0 || dr >= WAIT_OBJECT_0 + count) break;
             bool ovf = false;
@@ -338,10 +345,6 @@ void Start(const std::vector<std::string>& directories) {
 
 void Start(const std::vector<std::string>& directories,
            const std::vector<std::string>& acfDirectories) {
-    if (directories.empty() && acfDirectories.empty()) {
-        AC_LOG_WARN(kModule, "No directories configured; watcher not started.");
-        return;
-    }
     if (s_watch.running.exchange(true)) {
         AC_LOG_WARN(kModule, "Already running.");
         return;

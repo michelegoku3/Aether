@@ -13,6 +13,7 @@
 #include "core/SteamTypes.h"
 #include "network/ManifestFetch.h"
 #include "utils/SmartIdLog.h"
+#include "utils/LogBurstBudget.h"
 #include "utils/SteamKeyPaths.h"
 
 namespace ac::hooks {
@@ -79,6 +80,8 @@ void ApplyManifestOverrides(CUtlVector<DepotEntry>* vec, std::vector<ManifestPat
 }
 
 void LogSteamSelectedManifests(AppId app, const CUtlVector<DepotEntry>* vec) {
+    if (!log::Enabled(LogLevel::Debug)) return;
+    static logutil::LogBurstBudget detailBudget;  // private logging infrastructure
     if (!vec || !vec->mem.memory || vec->size == 0) return;
     for (std::uint32_t i = 0; i < vec->size; ++i) {
         const DepotEntry& entry = vec->mem.memory[i];
@@ -86,6 +89,12 @@ void LogSteamSelectedManifests(AppId app, const CUtlVector<DepotEntry>* vec) {
             !luadata::HasDepot(entry.depotId)) {
             continue;
         }
+        const auto decision = detailBudget.Admit();
+        if (decision.suppressed) {
+            AC_LOG_DEBUG(kModule, "Manifest detail budget: skipped %llu attempts in previous window (20/10s).",
+                         static_cast<unsigned long long>(decision.suppressed));
+        }
+        if (!decision.emit) continue;
         const bool overridden = luadata::ManifestOverrideFor(entry.depotId).has_value();
         AC_LOG_DEBUG_ONCE(
             kModule,

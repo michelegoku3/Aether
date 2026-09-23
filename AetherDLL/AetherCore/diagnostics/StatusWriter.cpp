@@ -2,6 +2,7 @@
 #include "diagnostics/StatusWriter.h"
 
 #include <ctime>
+#include "utils/CoalescingWorker.h"
 #include <fstream>
 #include <sstream>
 #include <string>
@@ -21,6 +22,10 @@ namespace ac::status {
 namespace {
 
 constexpr const char* kModule = "StatusWriter";
+// Pinned DLL: intentionally process-lifetime allocation, so CRT detach never
+// invokes a joining std::thread destructor. Stop is only called explicitly.
+utils::CoalescingWorker* s_worker = nullptr;
+
 
 // Minimal JSON string escaping. Hook names and SHAs are ASCII, but escaping
 // quotes/backslashes keeps the output valid for any input.
@@ -34,7 +39,14 @@ std::string EscapeJson(const std::string& in) {
             case '\n': out += "\\n";  break;
             case '\r': out += "\\r";  break;
             case '\t': out += "\\t";  break;
-            default:   out += c;      break;
+            default:
+                if (static_cast<unsigned char>(c) < 0x20) {
+                    constexpr char hex[] = "0123456789abcdef";
+                    out += "\\u00";
+                    out += hex[(static_cast<unsigned char>(c) >> 4) & 15];
+                    out += hex[static_cast<unsigned char>(c) & 15];
+                } else out += c;
+                break;
         }
     }
     return out;
@@ -46,6 +58,10 @@ bool SaveAtomic(const std::string& path, const std::string& content) {
         std::ofstream out(tmp, std::ios::binary | std::ios::trunc);
         if (!out.is_open()) return false;
         out.write(content.data(), static_cast<std::streamsize>(content.size()));
+        out.flush();
+        const bool written = out.good();
+        out.close();
+        if (!written || out.fail()) { DeleteFileA(tmp.c_str()); return false; }
     }
     if (!MoveFileExA(tmp.c_str(), path.c_str(), MOVEFILE_REPLACE_EXISTING)) {
         DeleteFileA(tmp.c_str());
@@ -56,11 +72,13 @@ bool SaveAtomic(const std::string& path, const std::string& content) {
 
 }  // namespace
 
-void Write() {
+static void WriteSnapshot(std::uint64_t requests) {
+    const auto settings = Settings::Snapshot();
     std::ostringstream json;
     const auto diagnostics = diag::Snapshot();
-    const auto& installed = g_state.hookManager.InstalledHooks();
-    const auto& missed = g_state.hookManager.MissedHooks();
+    const auto hooks = g_state.hookManager.Snapshot();
+    const auto& installed = hooks.installed;
+    const auto& missed = hooks.missed;
     std::size_t wireEresultEvents = 0;
     std::size_t wireAccessDeniedEvents = 0;
     std::size_t wireTransportCandidateEvents = 0;
@@ -97,12 +115,15 @@ void Write() {
          << "\",\n";
     json << "  \"build_time\": \"" << __DATE__ << " " << __TIME__ << "\",\n";
     json << "  \"diversion_outcome\": \"" << EscapeJson(g_state.diversionOutcome) << "\",\n";
+    {
+    std::lock_guard lock(g_state.statusMetadataMutex);
     json << "  \"steamclient_sha\": \"" << EscapeJson(g_state.steamclientSha) << "\",\n";
     json << "  \"steamclient_toml_found\": " << (g_state.steamclientTomlFound ? "true" : "false") << ",\n";
     json << "  \"steamclient_pattern_source\": \"" << EscapeJson(g_state.steamclientPatternSource) << "\",\n";
     json << "  \"steamui_sha\": \"" << EscapeJson(g_state.steamuiSha) << "\",\n";
     json << "  \"steamui_toml_found\": " << (g_state.steamuiTomlFound ? "true" : "false") << ",\n";
     json << "  \"steamui_pattern_source\": \"" << EscapeJson(g_state.steamuiPatternSource) << "\",\n";
+    }
     json << "  \"hooks_installed_count\": " << installed.size() << ",\n";
     json << "  \"hooks_missed_count\": " << missed.size() << ",\n";
     json << "  \"wire_eresult_events\": " << wireEresultEvents << ",\n";
@@ -133,18 +154,20 @@ void Write() {
     json << "  \"online_payload_inject_failures\": " << g_state.onlinePayload.injectFailureCount.load() << ",\n";
     json << "  \"pipewatch_snapshots\": " << pipewatch::SnapshotCount() << ",\n";
     json << "  \"pipewatch_evictions\": " << pipewatch::EvictionCount() << ",\n";
-    json << "  \"ipc_spec_loaded\": " << (g_state.ipcSpec.loaded ? "true" : "false") << ",\n";
-    json << "  \"ipc_spec_entries\": " << g_state.ipcSpec.methods.size() << ",\n";
-    {
-        std::size_t withFencepost = 0;
-        std::size_t withArgc = 0;
+    // Do not read the maps while the init/retry thread is publishing them.
+    const bool ipcLoaded = g_state.ipcSpec.loaded.load();
+    std::size_t ipcEntries = 0, withFencepost = 0, withArgc = 0;
+    if (ipcLoaded) {
+        ipcEntries = g_state.ipcSpec.methods.size();
         for (const auto& [_, spec] : g_state.ipcSpec.methods) {
             if (spec.fencepost != 0) ++withFencepost;
             if (spec.argc != 0) ++withArgc;
         }
-        json << "  \"ipc_spec_methods_with_fencepost\": " << withFencepost << ",\n";
-        json << "  \"ipc_spec_methods_with_argc\": " << withArgc << ",\n";
     }
+    json << "  \"ipc_spec_loaded\": " << (ipcLoaded ? "true" : "false") << ",\n";
+    json << "  \"ipc_spec_entries\": " << ipcEntries << ",\n";
+    json << "  \"ipc_spec_methods_with_fencepost\": " << withFencepost << ",\n";
+    json << "  \"ipc_spec_methods_with_argc\": " << withArgc << ",\n";
     {
         std::lock_guard<std::mutex> lock(g_state.presence.mutex);
         json << "  \"presence_playing_appid\": " << g_state.presence.playingAppId << ",\n";
@@ -163,13 +186,13 @@ void Write() {
              << ",\n";
     }
     json << "  \"presence_inject_local\": "
-         << (g_state.settings.presenceInjectLocal ? "true" : "false") << ",\n";
+         << (settings->presenceInjectLocal ? "true" : "false") << ",\n";
     json << "  \"presence_always_extra_info\": "
-         << (g_state.settings.presenceAlwaysExtraInfo ? "true" : "false") << ",\n";
+         << (settings->presenceAlwaysExtraInfo ? "true" : "false") << ",\n";
     json << "  \"presence_showonline_broadcast\": "
-         << (g_state.settings.presenceShowOnlineBroadcast ? "true" : "false") << ",\n";
+         << (settings->presenceShowOnlineBroadcast ? "true" : "false") << ",\n";
     json << "  \"presence_friend_appid_from_name\": "
-         << (g_state.settings.presenceFriendAppIdFromName ? "true" : "false") << ",\n";
+         << (settings->presenceFriendAppIdFromName ? "true" : "false") << ",\n";
     json << "  \"aetheronline_real_appid\": " << g_state.aetherOnlineRealAppId.load() << ",\n";
     json << "  \"showonline_appid\": " << g_state.showOnlineAppId.load() << ",\n";
     json << "  \"license_reload_forced_count\": " << g_state.licenseReloadForcedCount.load() << ",\n";
@@ -212,11 +235,32 @@ void Write() {
 
     const std::string path = g_state.aetherCoreDir + "\\status.json";
     if (SaveAtomic(path, json.str())) {
-        AC_LOG_INFO(kModule, "Wrote %s (installed=%zu, missed=%zu).",
-                    path.c_str(), installed.size(), missed.size());
+        AC_LOG_DEBUG(kModule, "Wrote %s (installed=%zu, missed=%zu, coalesced_requests=%llu).",
+                    path.c_str(), installed.size(), missed.size(),
+                    static_cast<unsigned long long>(requests));
     } else {
         AC_LOG_WARN(kModule, "Failed to write %s.", path.c_str());
     }
+}
+
+void Start() {
+    if (s_worker) return;
+    s_worker = new utils::CoalescingWorker;
+    s_worker->Start([](std::uint64_t requests) {
+        try { WriteSnapshot(requests); }
+        catch (const std::exception& e) { AC_LOG_WARN(kModule, "Snapshot failed: %s", e.what()); }
+        catch (...) { AC_LOG_WARN(kModule, "Snapshot failed: unknown exception."); }
+    });
+    AC_LOG_INFO(kModule, "Async writer started (100 ms coalescing). Success details at DEBUG.");
+}
+
+void Write() {
+    if (s_worker && !g_state.shuttingDown.load()) s_worker->Request();
+}
+
+void Stop() {
+    if (s_worker) s_worker->Stop();
+    AC_LOG_INFO(kModule, "Async writer stopped.");
 }
 
 }  // namespace ac::status

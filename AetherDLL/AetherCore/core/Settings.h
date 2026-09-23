@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -108,9 +109,13 @@ struct Settings {
     bool presenceDefaultShowOnline = false;
 
     // Parses the TOML at configPath.
-    static Settings Load(const std::string& configPath);
+    static Settings Load(const std::string& configPath, bool* valid = nullptr);
 
-    // Checks if configPath has been modified on disk and reloads settings in memory.
+    // Keep this owner alive while accessing any string/vector member.
+    static std::shared_ptr<const Settings> Snapshot();
+    static bool Initialize(const std::string& configPath);
+
+    // DirWatch is the sole runtime caller; invalid edits keep the last good snapshot.
     static void ReloadIfModified(const std::string& configPath);
 };
 

@@ -1,4 +1,5 @@
 #include "pch.h"
+#include "utils/Strings.h"
 #include "security/ProviderCredentials.h"
 
 #include <windows.h>
@@ -25,15 +26,8 @@ namespace {
 
 constexpr const char* kModule = "ProviderCredentials";
 
-std::string Trim(std::string value) {
-    while (!value.empty() && std::isspace(static_cast<unsigned char>(value.front()))) {
-        value.erase(value.begin());
-    }
-    while (!value.empty() && std::isspace(static_cast<unsigned char>(value.back()))) {
-        value.pop_back();
-    }
-    return value;
-}
+using strings::Trim;
+
 
 // ProviderCredentials is intentionally parsed without a general JSON
 // dependency: the Rust writer emits a small object with string fields, and the

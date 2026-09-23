@@ -1,0 +1,47 @@
+name: Quality gates
+on:
+  pull_request:
+  push:
+    branches: [main, master]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  desk:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: AetherDesk/package-lock.json
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: ./AetherDesk/src-tauri -> target
+      - run: npm ci
+        working-directory: AetherDesk
+      - run: npm run lint:ci
+        working-directory: AetherDesk
+      - run: npx tsc --noEmit
+        working-directory: AetherDesk
+      - run: npm run check:wiring
+        working-directory: AetherDesk
+      - run: cargo test --locked
+        working-directory: AetherDesk/src-tauri
+  dll:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+      - uses: seanmiddleditch/gha-setup-ninja@master
+      - run: cmake --preset x64-Release
+        working-directory: AetherDLL
+      - run: cmake --build --preset x64-Release
+        working-directory: AetherDLL
+      - run: cmake -S AetherDLL/tests -B utility-tests -G Ninja -DCMAKE_BUILD_TYPE=Release
+      - run: cmake --build utility-tests
+      - run: ctest --test-dir utility-tests --output-on-failure

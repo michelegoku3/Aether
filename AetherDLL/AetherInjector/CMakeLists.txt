@@ -12,6 +12,7 @@ project(AetherInjector LANGUAGES CXX)
 
 add_library(AetherInjector SHARED
     dllmain.cpp
+    pch.cpp
 )
 
 target_include_directories(AetherInjector PRIVATE
@@ -42,3 +43,5 @@ set_target_properties(AetherInjector PROPERTIES
 
 # Embed the Windows version resource (version comes from the root project VERSION)
 attach_version_resource(AetherInjector "AetherInjector" "dwmapi.dll" "AetherDLL DWMAPI Proxy")
+
+aether_check_sources(AetherInjector)

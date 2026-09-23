@@ -1,4 +1,5 @@
 #include "pch.h"
+#include "utils/DeskPaths.h"
 
 #include <algorithm>
 #include <filesystem>
@@ -100,22 +101,11 @@ namespace {
         g_state.patternDir = g_state.aetherCoreDir + "\\pattern";
         g_state.payloadDllPath = g_state.steamInstallPath + "\\AetherPayload.dll";
 
-        // Check desk_path.cfg bridge pointer from AetherDesk to locate central aethercore.toml
-        {
-            const std::string deskCfgPath = g_state.aetherCoreDir + "\\desk_path.cfg";
-            std::ifstream ifs(deskCfgPath);
-            if (ifs.is_open()) {
-                std::string deskDataDir;
-                if (std::getline(ifs, deskDataDir)) {
-                    while (!deskDataDir.empty() && (deskDataDir.back() == '\r' || deskDataDir.back() == '\n' || deskDataDir.back() == ' ')) {
-                        deskDataDir.pop_back();
-                    }
-                    if (!deskDataDir.empty()) {
-                        g_state.configPath = deskDataDir + "\\config\\aethercore.toml";
-                    }
-                }
-            }
+        g_state.deskDataDir = deskpaths::ReadDataDir(g_state.aetherCoreDir);
+        if (!g_state.deskDataDir.empty()) {
+            g_state.configPath = deskpaths::ConfigPath(g_state.deskDataDir).string();
         }
+
     }
 
     // Returns every Steam library's `steamapps` directory. The primary Steam
@@ -159,11 +149,24 @@ namespace {
         ResolvePaths(self);
 
         // 1. Settings: loaded before logger so keep_last_session and log level are known.
-        g_state.settings = Settings::Load(g_state.configPath);
+        const bool configValid = Settings::Initialize(g_state.configPath);
+            const auto settings = Settings::Snapshot();
 
         // 2. Logger: session-oriented initialisation with backup of previous session.
-        log::Init(g_state.logFilePath, g_state.settings.logKeepLastSession);
-        log::SetLevel(g_state.settings.logLevel);
+        log::Init(g_state.logFilePath, settings->logKeepLastSession);
+        log::SetLevel(settings->logLevel);
+
+        // 2b. Async status writer: from here on every status::Write() is a
+        //     coalesced atomic-counter request, never synchronous disk I/O.
+        status::Start();
+        if (!configValid) AC_LOG_WARN(kModule, "Startup config missing/invalid: using defaults (%s).",
+                                     g_state.configPath.c_str());
+        if (g_state.deskDataDir.empty()) {
+            AC_LOG_WARN(kModule, "desk_path.cfg missing/empty: using local config; Desk backups disabled for this session.");
+        } else {
+            AC_LOG_INFO(kModule, "Desk bridge resolved: data=%s config=%s (restart to change bridge).",
+                        g_state.deskDataDir.c_str(), g_state.configPath.c_str());
+        }
         AC_LOG_INFO(kModule,
             "[%s] AetherCore injected. Steam folder: %s",
             kStartupLogToken, g_state.steamInstallPath.c_str());
@@ -254,7 +257,7 @@ namespace {
         //    Lua scan so startup files do not look like hot-reload additions.
         //    Depends on: luaDir resolved + luaExtraPaths from settings.
         std::vector<std::string> watchDirs{ g_state.luaDir };
-        for (const std::string& extra : g_state.settings.luaExtraPaths) watchDirs.push_back(extra);
+        for (const std::string& extra : settings->luaExtraPaths) watchDirs.push_back(extra);
         // ACF removals are Steam's durable uninstall signal. Keep this watcher
         // separate from the recursive Lua paths so a deleted
         // appmanifest_<app_id>.acf can restore only that app's backed-up
@@ -269,15 +272,22 @@ namespace {
     }
 
     void Shutdown() {
-        if (g_state.shuttingDown.exchange(true)) return;
-        AC_LOG_INFO(kModule, "Shutting down.");
+        static std::mutex shutdownMutex;
+        static bool completed = false;
+        std::lock_guard lock(shutdownMutex);
+        if (completed) return;
+        g_state.shuttingDown.store(true);
+        AC_LOG_INFO(kModule, "Explicit shutdown requested outside loader lock; waiting for initialization.");
 
         if (g_state.initThread) {
-            WaitForSingleObject(g_state.initThread, constants::kInitThreadJoinTimeoutMs);
+            // This API is never called by DllMain. Do not tear down state while
+            // initialization is still publishing it after an arbitrary timeout.
+            WaitForSingleObject(g_state.initThread, INFINITE);
             CloseHandle(g_state.initThread);
             g_state.initThread = nullptr;
         }
 
+        status::Stop();
         ac::dirwatch::Stop();
         ac::pipewatch::Reset();
         // Stop the late-pattern retry before the hook/license subsystems go
@@ -292,10 +302,18 @@ namespace {
         ac::hooks::CmdUser::ResetETicketAsyncCalls();
         g_state.hookManager.UninstallAll();
         script::Shutdown();
+        AC_LOG_INFO(kModule, "Explicit shutdown completed; pinned module remains loaded.");
         log::Shutdown();
+        completed = true;
     }
 
 }  // namespace
+
+// Terminal service shutdown only. Host must first quiesce game/Steam activity;
+// this does NOT establish safe dynamic unloading of detached legacy workers.
+extern "C" __declspec(dllexport) void WINAPI AetherCoreShutdown() {
+    Shutdown();
+}
 
 BOOL APIENTRY DllMain(HMODULE instance, DWORD reason, LPVOID reserved) {
     switch (reason) {
@@ -309,16 +327,10 @@ BOOL APIENTRY DllMain(HMODULE instance, DWORD reason, LPVOID reserved) {
         break;
 
     case DLL_PROCESS_DETACH:
-        // On process termination (reserved != nullptr) the OS reclaims
-        // everything and the loader lock is held, so skip full cleanup.
-        // But flush the log so the last diagnostic messages are not lost.
-        // (Audit M3, 2026-07-12.)
-        if (reserved != nullptr) {
-            log::Flush();
-        }
-        else {
-            Shutdown();
-        }
+        // Loader lock: no waits, mutexes, I/O or logging here. Logger flushes
+        // every emitted line already. Normal process exit is not an explicit
+        // service shutdown and cannot guarantee final achievement snapshots.
+        g_state.shuttingDown.store(true, std::memory_order_relaxed);
         break;
 
     default:
