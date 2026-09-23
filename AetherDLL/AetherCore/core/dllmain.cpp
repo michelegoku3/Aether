@@ -1,4 +1,5 @@
 #include "pch.h"
+#include "core/Workers.h"
 #include "utils/DeskPaths.h"
 
 #include <algorithm>
@@ -289,6 +290,9 @@ namespace {
 
         status::Stop();
         ac::dirwatch::Stop();
+        // Task queue + named workers: stop, drain e join mentre gli hook sono
+        // ancora installati (alcuni job one-shot inviano frame via hook).
+        ac::workers::Shutdown();
         ac::pipewatch::Reset();
         // Stop the late-pattern retry before the hook/license subsystems go
         // down, so it can never re-arm them mid-shutdown.

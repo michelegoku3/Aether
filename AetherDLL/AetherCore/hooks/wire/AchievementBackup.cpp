@@ -1,11 +1,13 @@
 #include "pch.h"
 #include "hooks/wire/AchievementBackup.h"
 
+#include <algorithm>
 #include <chrono>
 #include <condition_variable>
 #include <ctime>
 #include <deque>
 #include <mutex>
+#include <optional>
 #include <thread>
 #include <unordered_map>
 #include <unordered_set>
@@ -47,10 +49,14 @@ namespace {
 
 constexpr const char* kModule = "Wire.Achievement";
 
-// Il playtime vive in localconfig.vdf e Steam lo aggiorna durante la
-// sessione: refresh periodico in ambito worker (oltre a quello iniziale e a
-// quello finale di shutdown). Granularità dei dati = minuti.
-constexpr auto kPlaytimeRefreshInterval = std::chrono::minutes(5);
+// Checkpoint periodico (ogni 5 minuti): ricopia forzata dei .bin per ogni
+// (app, account) toccato in sessione + refresh del playtime. È la rete di
+// sicurezza che limita la perdita massima a 5 minuti anche quando Steam esce
+// senza uno shutdown esplicito (il guard monotono protegge da regressioni).
+constexpr auto kCheckpointInterval = std::chrono::minutes(5);
+// La copia finale a fine sessione parte ritardata: Steam scrive la cache
+// stats qualche istante DOPO il frame games_played vuoto.
+constexpr auto kSessionEndDelay = std::chrono::seconds(15);
 
 enum class JobType {
     Unlock,      // aggiorna lo snapshot JSON + copia i .bin (forzata)
@@ -58,6 +64,8 @@ enum class JobType {
     StatsUpdate, // aggiorna la sezione stats dello snapshot JSON
     StartupScan, // snapshot iniziale di tutti i .bin + playtime (1 volta/processo)
 };
+
+using SteadyClock = std::chrono::steady_clock;
 
 struct BackupJob {
     JobType type = JobType::Unlock;
@@ -67,6 +75,8 @@ struct BackupJob {
     std::uint32_t achievementId = 0;
     std::uint32_t unlockTime = 0;
     std::vector<std::pair<std::uint32_t, std::uint32_t>> stats;
+    bool force = false;                      // salta il rate-limit delle copie
+    SteadyClock::time_point runAt{};         // epoch = eseguibile subito
 };
 
 std::mutex g_workerMutex;
@@ -107,7 +117,11 @@ void ProcessUnlock(const BackupJob& job) {
 
 void ProcessBinCopy(const BackupJob& job) {
     g_touched[job.appId].insert(job.accountId);
-    statscache::BackupStatsBins(job.appId, job.accountId);
+    statscache::BackupStatsBins(job.appId, job.accountId, job.force);
+    if (job.force) {
+        AC_LOG_INFO(kModule, "Backup: final/end-of-session stats copy executed for app %u (account %u).",
+                    job.appId, job.accountId);
+    }
 }
 
 void ProcessStatsUpdate(const BackupJob& job) {
@@ -194,26 +208,68 @@ void ProcessStartupScan() {
     playtime::RefreshAllAccounts();
 }
 
+// Primo job scaduto (ordine FIFO tra i dovuti). In shutdown TUTTI i job sono
+// considerati dovuti: la coda si drena, inclusi i checkpoint ritardati.
+std::optional<BackupJob> PopDueJobLocked(SteadyClock::time_point now) {
+    for (auto it = g_jobs.begin(); it != g_jobs.end(); ++it) {
+        if (g_stopping || it->runAt <= now) {
+            BackupJob job = std::move(*it);
+            g_jobs.erase(it);
+            return job;
+        }
+    }
+    return std::nullopt;
+}
+
+SteadyClock::time_point EarliestRunAtLocked() {
+    auto earliest = SteadyClock::time_point::max();
+    for (const auto& job : g_jobs) earliest = std::min(earliest, job.runAt);
+    return earliest;
+}
+
+// Rete di sicurezza periodica: ricopia i .bin di ogni (app, account) toccato
+// in sessione (forzata: il rate-limit varrebbe solo per i salvataggi nei job)
+// e aggiorna il playtime. Il guard monotono impedisce regressioni del backup.
+void PeriodicCheckpoint() {
+    std::size_t pairs = 0;
+    // g_touched è proprietà esclusiva del worker: nessun lock necessario.
+    for (const auto& [appId, accounts] : g_touched) {
+        for (const auto& accountId : accounts) {
+            statscache::BackupStatsBins(appId, accountId, /*force=*/true);
+            ++pairs;
+        }
+    }
+    playtime::RefreshAllAccounts();
+    if (pairs > 0) {
+        AC_LOG_INFO(kModule, "Backup: periodic checkpoint completed (%zu (app,account) pair(s), %zu app(s)).",
+                    pairs, g_touched.size());
+    } else {
+        AC_LOG_DEBUG(kModule, "Backup: periodic checkpoint: nothing touched yet this session.");
+    }
+}
+
 void WorkerLoop() {
+    auto nextCheckpoint = SteadyClock::now() + kCheckpointInterval;
     for (;;) {
         BackupJob job;
         bool hasJob = false;
+        bool doCheckpoint = false;
         {
             std::unique_lock<std::mutex> lock(g_workerMutex);
-            // Attesa con timeout: oltre a job e shutdown, scatta il refresh
-            // periodico del playtime (Steam aggiorna localconfig.vdf durante
-            // la sessione; senza questo il backup resterebbe fermo all'avvio).
-            const bool ready = g_workerCv.wait_for(
-                lock, kPlaytimeRefreshInterval,
-                [] { return g_stopping || !g_jobs.empty(); });
-            if (!g_jobs.empty()) {
-                job = g_jobs.front();
-                g_jobs.pop_front();
-                hasJob = true;
-            } else if (g_stopping) {
-                break;   // coda scaricata: esci prima delle copie finali
-            } else if (ready) {
-                continue;   // risveglio spurio
+            while (!hasJob && !doCheckpoint) {
+                if (auto due = PopDueJobLocked(SteadyClock::now())) {
+                    job = std::move(*due);
+                    hasJob = true;
+                    break;
+                }
+                if (g_stopping) break;   // coda scaricata: esci prima delle copie finali
+                auto wakeAt = nextCheckpoint;
+                if (!g_jobs.empty()) wakeAt = std::min(wakeAt, EarliestRunAtLocked());
+                g_workerCv.wait_until(lock, wakeAt);
+                if (SteadyClock::now() >= nextCheckpoint) {
+                    nextCheckpoint = SteadyClock::now() + kCheckpointInterval;
+                    doCheckpoint = true;
+                }
             }
         }
         if (hasJob) {
@@ -221,8 +277,10 @@ void WorkerLoop() {
             else if (job.type == JobType::BinCopy) ProcessBinCopy(job);
             else if (job.type == JobType::StatsUpdate) ProcessStatsUpdate(job);
             else if (job.type == JobType::StartupScan) ProcessStartupScan();
+        } else if (doCheckpoint) {
+            PeriodicCheckpoint();
         } else {
-            playtime::RefreshAllAccounts();   // timeout: refresh periodico
+            break;
         }
     }
 
@@ -291,6 +349,24 @@ void TouchSession(steam::AppId appId, std::uint64_t steamId64) {
         if (!g_sessionTouched.insert(appId).second) return;   // già toccato
     }
     EnqueueJob(MakeJob(JobType::BinCopy, appId, steamId64));
+}
+
+void SessionEnded(steam::AppId appId, std::uint64_t steamId64) {
+    if (appId == 0 || steamId64 == 0) return;
+    if (!ac::luadata::HasDepot(appId)) {
+        AC_LOG_DEBUG(kModule, "Backup: session end for unmanaged app %u; no final backup needed.", appId);
+        return;
+    }
+    BackupJob job = MakeJob(JobType::BinCopy, appId, steamId64);
+    job.force = true;
+    job.runAt = SteadyClock::now() + kSessionEndDelay;
+    AC_LOG_INFO(kModule,
+                "Game session ended for app %u: final stats backup scheduled in %lld s "
+                "(catches Steam's post-exit cache write).",
+                appId, static_cast<long long>(kSessionEndDelay.count()));
+    if (!EnqueueJob(std::move(job))) {
+        AC_LOG_WARN(kModule, "Backup: session-end backup for app %u rejected (shutdown in progress).", appId);
+    }
 }
 
 void BackupAllKnownStatsAtStartup() {

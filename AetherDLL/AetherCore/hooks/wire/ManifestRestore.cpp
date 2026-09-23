@@ -1,4 +1,5 @@
 #include "pch.h"
+#include "core/Workers.h"
 #include "hooks/wire/ManifestRestore.h"
 
 #include <atomic>
@@ -392,16 +393,20 @@ void RestoreMissingManifestsAtStartup() {
         // Il backup viene eseguito prima del restore: se AetherDesk non è
         // stato avviato, Steam può comunque catturare i manifest ancora
         // presenti in depotcache e conservarli per un futuro uninstall.
-        std::thread([] {
-            try {
-                BackupReferencedManifestsAtStartup();
-                RestoreAllOnce();
-            } catch (const std::exception& e) {
-                AC_LOG_ERROR(kModule, "Startup manifest worker failed: %s.", e.what());
-            } catch (...) {
-                AC_LOG_ERROR(kModule, "Startup manifest worker failed with unknown exception.");
-            }
-        }).detach();
+        // Task queue invece di detach(): il lavoro resta osservabile e viene
+        // drenato/joinato nello shutdown esplicito.
+        if (!workers::Submit([] {
+                try {
+                    BackupReferencedManifestsAtStartup();
+                    RestoreAllOnce();
+                } catch (const std::exception& e) {
+                    AC_LOG_ERROR(kModule, "Startup manifest worker failed: %s.", e.what());
+                } catch (...) {
+                    AC_LOG_ERROR(kModule, "Startup manifest worker failed with unknown exception.");
+                }
+            })) {
+            AC_LOG_WARN(kModule, "Startup manifest worker rejected (workers shut down).");
+        }
     } catch (const std::exception& e) {
         AC_LOG_ERROR(kModule, "Cannot start restore worker: %s.", e.what());
     } catch (...) {

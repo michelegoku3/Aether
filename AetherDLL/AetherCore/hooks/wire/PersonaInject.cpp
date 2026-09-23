@@ -1,4 +1,5 @@
 #include "pch.h"
+#include "core/Workers.h"
 #include "hooks/wire/PersonaInject.h"
 
 #include <atomic>
@@ -166,14 +167,16 @@ void EnsureAppInfo(steam::AppId appId) {
     // callback is an unproven path on this strict a build. A short detached
     // worker keeps the wire callback clean; the SendClientFrame INFO line
     // brackets the attempt exactly if it ever faults.
-    std::thread([body = std::move(body), appId]() mutable {
-        Sleep(50);
-        AC_LOG_TRACE(kModule, "[DIAG] PICS appinfo send begin for app %u.", appId);
-        SendClientFrame(constants::emsg::kClientPICSProductInfoRequest,
-                        reinterpret_cast<const std::uint8_t*>(body.data()),
-                        static_cast<std::uint32_t>(body.size()));
-        AC_LOG_TRACE(kModule, "[DIAG] PICS appinfo send done for app %u.", appId);
-    }).detach();
+    if (!workers::Submit([body = std::move(body), appId]() mutable {
+            Sleep(50);
+            AC_LOG_TRACE(kModule, "[DIAG] PICS appinfo send begin for app %u.", appId);
+            SendClientFrame(constants::emsg::kClientPICSProductInfoRequest,
+                            reinterpret_cast<const std::uint8_t*>(body.data()),
+                            static_cast<std::uint32_t>(body.size()));
+            AC_LOG_TRACE(kModule, "[DIAG] PICS appinfo send done for app %u.", appId);
+        })) {
+        AC_LOG_DEBUG(kModule, "[DIAG] PICS appinfo send for app %u skipped (workers shut down).", appId);
+    }
 }
 
 bool BuildInjectLocked(steam::AppId appId) {

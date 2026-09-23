@@ -1,4 +1,5 @@
 #include "pch.h"
+#include "core/Workers.h"
 #include "utils/Strings.h"
 #include "network/ManifestFetch.h"
 
@@ -139,6 +140,26 @@ bool ParseJsonDigitField(std::string_view body, std::uint64_t* out) {
     return false;
 }
 
+// ---------------------------------------------------------------------------
+// Indice locale dei manifest (hot path di BuildDepotDependency: ~1000+ eventi
+// a sessione). Il walk della cartella backup/<app>/lua era ripetuto a ogni
+// evento; qui lo memorizziamo:
+//   * voce POSITIVA: path noto, riverificato con uno stat a ogni hit;
+//   * voce NEGATIVA con TTL: niente walk per 30 s (i file nuovi — restore,
+//     generazione Hubcap — vengono comunque scoperti alla scadenza, stessa
+//     latenza del backoff già esistente).
+// Stato privato del modulo (cache di lookup, non dominio: stesso statuto dei
+// buffer g_proactive* qui sopra).
+// ---------------------------------------------------------------------------
+struct LocalManifestCacheEntry {
+    std::filesystem::path path;   // valida solo per le voci positive
+    bool positive = false;
+    std::chrono::steady_clock::time_point expires{};
+};
+std::mutex g_localManifestMutex;
+std::unordered_map<std::string, LocalManifestCacheEntry> g_localManifestCache;
+constexpr auto kNegativeTtl = std::chrono::seconds(30);
+
 // A manifest already present on disk is authoritative for this bridge. Steam
 // still asks ContentServerDirectory for a request code when a depot is marked
 // as owned by Aether, but a cached manifest does not need a network-issued
@@ -167,6 +188,23 @@ std::optional<std::filesystem::path> FindLocalManifest(std::uint64_t gid,
         if (usable(candidate)) return candidate;
     }
 
+    // Indice: hit positivo (riverificato), hit negativo dentro il TTL = niente walk.
+    const auto now = std::chrono::steady_clock::now();
+    {
+        std::lock_guard<std::mutex> lock(g_localManifestMutex);
+        auto it = g_localManifestCache.find(filename);
+        if (it != g_localManifestCache.end()) {
+            if (it->second.positive) {
+                if (usable(it->second.path)) return it->second.path;
+                g_localManifestCache.erase(it);   // file sparito: ricalcola
+            } else if (now < it->second.expires) {
+                return std::nullopt;              // miss recente: salta il walk
+            } else {
+                g_localManifestCache.erase(it);
+            }
+        }
+    }
+
     // The targeted ACF-removal restore may be racing with this request, or the
     // DLL may be running before its restore worker has copied the file back.
     // Consult the per-game AetherData backup as a second local source and
@@ -185,12 +223,28 @@ std::optional<std::filesystem::path> FindLocalManifest(std::uint64_t gid,
             if (ec) continue;
             fs::copy_file(candidate, destination,
                           fs::copy_options::overwrite_existing, ec);
-            if (!ec && usable(destination)) return destination;
+            if (!ec && usable(destination)) {
+                std::lock_guard<std::mutex> lock(g_localManifestMutex);
+                g_localManifestCache[filename] =
+                    LocalManifestCacheEntry{destination, true, {}};
+                AC_LOG_DEBUG(kModule,
+                             "Local manifest index: cached positive entry for %s.",
+                             filename.c_str());
+                return destination;
+            }
             AC_LOG_WARN(kModule,
                         "Local backup manifest found but could not be published to %s (%s).",
                         destination.string().c_str(), ec.message().c_str());
         }
     }
+    {
+        std::lock_guard<std::mutex> lock(g_localManifestMutex);
+        g_localManifestCache[filename] =
+            LocalManifestCacheEntry{{}, false, now + kNegativeTtl};
+    }
+    AC_LOG_DEBUG(kModule,
+                 "Local manifest index: %s not on disk; skipping backup walk for %lld s.",
+                 filename.c_str(), static_cast<long long>(kNegativeTtl.count()));
     return std::nullopt;
 }
 
@@ -500,12 +554,13 @@ std::deque<LookupKey> g_proactiveQueue;
 std::unordered_map<LookupKey, ProactiveState, LookupKeyHash> g_proactiveStates;
 bool g_proactiveWorkerStarted = false;
 
-void ProactiveWorkerLoop() {
-    for (;;) {
+void ProactiveWorkerLoop(std::atomic<bool>& stop) {
+    while (!stop.load()) {
         LookupKey key{};
         {
             std::unique_lock<std::mutex> lock(g_proactiveMutex);
-            g_proactiveCv.wait(lock, [] { return !g_proactiveQueue.empty(); });
+            g_proactiveCv.wait(lock, [&] { return stop.load() || !g_proactiveQueue.empty(); });
+            if (stop.load()) return;
             key = g_proactiveQueue.front();
             g_proactiveQueue.pop_front();
         }
@@ -578,7 +633,10 @@ bool EnqueueProactive(const LookupKey& key) {
     g_proactiveQueue.push_back(key);
     if (!g_proactiveWorkerStarted) {
         g_proactiveWorkerStarted = true;
-        std::thread(ProactiveWorkerLoop).detach();
+        if (!workers::StartWorker("manifest_proactive", ProactiveWorkerLoop)) {
+            g_proactiveWorkerStarted = false;   // riprova al prossimo enqueue
+            AC_LOG_WARN(kModule, "Proactive manifest worker rejected (workers shut down).");
+        }
     }
     g_proactiveCv.notify_one();
     return true;
@@ -667,7 +725,9 @@ void Submit(std::uint64_t jobId, std::uint64_t manifestGid,
     auto startPromise = std::make_shared<std::promise<void>>();
     const std::shared_future<void> startGate = startPromise->get_future().share();
     try {
-        std::thread([key, startGate, resultPromise]() {
+        const std::string workerName =
+            "manifest_lookup_" + std::to_string(jobId);
+        if (!workers::StartWorker(workerName, [key, startGate, resultPromise](std::atomic<bool>&) {
             startGate.wait();
             std::optional<std::uint64_t> result;
             try {
@@ -701,7 +761,19 @@ void Submit(std::uint64_t jobId, std::uint64_t manifestGid,
             } catch (...) {
                 AC_LOG_ERROR(kModule, "Manifest lookup result could not be published.");
             }
-        }).detach();
+        })) {
+            AC_LOG_WARN(kModule, "job=%llu lookup worker rejected (workers shut down).",
+                        static_cast<unsigned long long>(jobId));
+            {
+                std::lock_guard<std::mutex> lock(g_state.manifestFetch.mutex);
+                g_state.manifestFetch.inflight.erase(key);
+            }
+            try {
+                resultPromise->set_value(std::nullopt);
+            } catch (...) {
+                AC_LOG_ERROR(kModule, "Manifest lookup result could not be published.");
+            }
+        }
     } catch (const std::exception& e) {
         AC_LOG_ERROR(kModule, "Manifest lookup scheduling failed: %s", e.what());
         return;

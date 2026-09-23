@@ -11,6 +11,7 @@ add_library(AetherCore SHARED
     core/AetherCoreState.cpp
     core/Logger.cpp
     core/Settings.cpp
+    core/Workers.cpp
     core/HookManager.cpp
     core/SteamVersion.cpp
 
