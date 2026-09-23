@@ -150,6 +150,8 @@ bool LoadFromCache() {
 }  // namespace
 
 bool Init() {
+    static std::mutex initMutex;  // private initialization lifecycle
+    std::lock_guard lock(initMutex);
     if (g_state.ipcSpec.loaded) return true;  // already done
 
     if (g_state.steamclientSha.empty() || g_state.steamclientSha.size() != 64) {

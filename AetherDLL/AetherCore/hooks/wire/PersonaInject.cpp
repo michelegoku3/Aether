@@ -250,7 +250,8 @@ bool BuildInjectLocked(steam::AppId appId) {
 }  // namespace
 
 void SetPlayingApp(steam::AppId appId, bool forceRestage) {
-    if (!g_state.settings.presenceInjectLocal && appId != 0) {
+    const auto settings = Settings::Snapshot();
+    if (!settings->presenceInjectLocal && appId != 0) {
         // Still allow clear (appId==0) so toggles clean up.
         std::lock_guard<std::mutex> lock(g_state.presence.mutex);
         if (g_state.presence.playingAppId == 0) return;
@@ -276,6 +277,7 @@ steam::AppId PlayingApp() {
 }
 
 std::int32_t OnPersonaStateRecv(const WireFrame& frame, std::uint8_t* out, std::uint32_t outCap) {
+    const auto settings = Settings::Snapshot();
     CMsgClientPersonaState msg;
     if (!msg.ParseFromArray(frame.body, static_cast<int>(frame.bodyLen))) return kNoChange;
 
@@ -299,7 +301,7 @@ std::int32_t OnPersonaStateRecv(const WireFrame& frame, std::uint8_t* out, std::
         }
 
         // In-place self patch so periodic server pushes cannot wipe inject.
-        if (playing != 0 && g_state.settings.presenceInjectLocal) {
+        if (playing != 0 && settings->presenceInjectLocal) {
             self = FindSelf(msg, selfId);
             if (self) {
                 // Apply without re-entering mutex: copy kvs first.
@@ -423,7 +425,7 @@ std::int32_t OnPersonaStateRecv(const WireFrame& frame, std::uint8_t* out, std::
     // lobby guard at its use site, below).
     {
         const steam::AppId ofReal = g_state.aetherOnlineRealAppId.load();
-        const bool legacyGate = g_state.settings.presenceAetherOnlinePersonaPatch &&
+        const bool legacyGate = settings->presenceAetherOnlinePersonaPatch &&
                                 ofReal != 0 && luadata::IsConfigured(ofReal);
         std::vector<steam::AppId> picsQueue;
 

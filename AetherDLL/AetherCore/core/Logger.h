@@ -64,8 +64,8 @@ void ResetDedup();
 
 void Shutdown();
 
-// Best-effort flush: pushes any buffered data to disk. Safe to call from
-// DllMain(DETACH) before the OS tears down the CRT.
+// Best-effort flush; takes the logger mutex. NEVER call from DllMain.
+// Write/WriteOnce already flush each emitted line.
 void Flush();
 
 }  // namespace log

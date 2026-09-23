@@ -6,6 +6,8 @@
 #include <string>
 #include <string_view>
 
+#include "utils/Strings.h"
+
 // ---------------------------------------------------------------------------
 // RemoteInject — shared helpers for DLL injection into remote processes.
 //
@@ -18,17 +20,9 @@
 // ---------------------------------------------------------------------------
 namespace ac::inject {
 
-// Converts a UTF-8 string_view to a wide string for the Win32 API.
-// Empty input produces an empty wstring; encoding errors produce an empty
-// wstring (callers must check before passing to a path-consuming API).
-inline std::wstring Widen(std::string_view s) {
-    if (s.empty()) return {};
-    int needed = MultiByteToWideChar(CP_UTF8, 0, s.data(), static_cast<int>(s.size()), nullptr, 0);
-    if (needed <= 0) return {};
-    std::wstring out(static_cast<std::size_t>(needed), L'\0');
-    MultiByteToWideChar(CP_UTF8, 0, s.data(), static_cast<int>(s.size()), out.data(), needed);
-    return out;
-}
+// Strict UTF-8 -> UTF-16 (shared implementation, utils/Strings.h).
+// Invalid input produces an empty wstring: callers must check before passing
+// the result to a path-consuming API.
 
 // Returns true when the process identified by |process| is running under
 // WOW64 (i.e. is a 32-bit process on a 64-bit OS).

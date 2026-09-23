@@ -1,6 +1,7 @@
 #pragma once
 
 #include <string>
+#include <mutex>
 #include <vector>
 
 // ---------------------------------------------------------------------------
@@ -90,9 +91,11 @@ public:
     bool UninstallAll();
 
     // ---- Status accessors (consumed by StatusWriter) ----------------------
-    int InstalledCount() const { return installedCount_; }
-    const std::vector<std::string>& InstalledHooks() const { return installed_; }
-    const std::vector<MissedHook>& MissedHooks() const { return missed_; }
+    struct StatusSnapshot {
+        std::vector<std::string> installed;
+        std::vector<MissedHook> missed;
+    };
+    StatusSnapshot Snapshot() const;
 
     // Resolve target via PatternEngine, cast trampoline/detour, and register.
     // Returns false (and records a miss) when the pattern cannot be resolved,
@@ -102,6 +105,7 @@ public:
                  Fn& original, Fn detour);
 
 private:
+    mutable std::mutex mutex_;
     std::vector<HookInfo> hooks_;
     std::vector<std::string> installed_;
     std::vector<MissedHook> missed_;

@@ -135,3 +135,5 @@ attach_version_resource(AetherCore "AetherCore" "AetherCore.dll" "AetherDLL Core
 
 # Ensure proto generation is complete before building
 add_dependencies(AetherCore generate_protos)
+
+aether_check_sources(AetherCore)

@@ -1,4 +1,5 @@
 #include "pch.h"
+#include "utils/Strings.h"
 #include "network/ManifestFetch.h"
 
 #include <algorithm>
@@ -61,34 +62,16 @@ std::string ExpandTemplate(std::string_view tmpl, std::uint64_t gid,
     return out;
 }
 
-bool EqualsIgnoreCase(std::string_view a, std::string_view b) {
-    if (a.size() != b.size()) return false;
-    for (std::size_t i = 0; i < a.size(); ++i) {
-        const unsigned char ac = static_cast<unsigned char>(a[i]);
-        const unsigned char bc = static_cast<unsigned char>(b[i]);
-        if (std::tolower(ac) != std::tolower(bc)) return false;
-    }
-    return true;
-}
+using strings::EqualsIgnoreCase;
 
-std::string_view ExtractHost(std::string_view url) {
-    std::size_t begin = 0;
-    const std::size_t scheme = url.find("://");
-    if (scheme != std::string_view::npos) begin = scheme + 3;
-    std::size_t end = url.find_first_of("/?#", begin);
-    std::string_view host = end == std::string_view::npos
-        ? url.substr(begin)
-        : url.substr(begin, end - begin);
-    const std::size_t at = host.rfind('@');
-    if (at != std::string_view::npos) host.remove_prefix(at + 1);
-    const std::size_t port = host.find(':');
-    if (port != std::string_view::npos) host = host.substr(0, port);
-    return host;
-}
+
+using strings::ExtractHost;
+
 
 bool IsTrustedHost(std::string_view host) {
+    const auto settings = Settings::Snapshot();
     if (host.empty()) return false;
-    for (const auto& trusted : g_state.settings.manifestFetchTrustedHosts) {
+    for (const auto& trusted : settings->manifestFetchTrustedHosts) {
         if (EqualsIgnoreCase(host, trusted)) return true;
     }
     return false;
@@ -419,20 +402,21 @@ bool InstallHubcapManifest(std::uint64_t gid, std::uint32_t depotId) {
 
 std::optional<std::uint64_t> RunLookup(std::uint64_t gid, std::uint32_t appId,
                                        std::uint32_t depotId) {
+                                           const auto settings = Settings::Snapshot();
     // Production path: obtain the exact manifest directly from authenticated
     // Hubcap at the same request-code synchronization point. AetherDesk is not
     // required to be running; its DPAPI-protected credential file is read by
     // the DLL under the current Windows user.
     if (InstallHubcapManifest(gid, depotId)) return std::uint64_t{0};
 
-    if (g_state.settings.manifestFetchUrls.empty()) {
+    if (settings->manifestFetchUrls.empty()) {
         AC_LOG_DEBUG(kModule, "gid=%llu skipped, no providers configured.",
                      static_cast<unsigned long long>(gid));
         return std::nullopt;
     }
 
-    for (std::size_t i = 0; i < g_state.settings.manifestFetchUrls.size(); ++i) {
-        const std::string& tmpl = g_state.settings.manifestFetchUrls[i];
+    for (std::size_t i = 0; i < settings->manifestFetchUrls.size(); ++i) {
+        const std::string& tmpl = settings->manifestFetchUrls[i];
         if (tmpl.empty()) continue;
 
         const std::string url = ExpandTemplate(tmpl, gid, appId, depotId);
@@ -445,13 +429,13 @@ std::optional<std::uint64_t> RunLookup(std::uint64_t gid, std::uint32_t appId,
 
         AC_LOG_INFO(kModule, "gid=%llu provider %zu/%zu GET %s",
                     static_cast<unsigned long long>(gid), i + 1,
-                    g_state.settings.manifestFetchUrls.size(), url.c_str());
+                    settings->manifestFetchUrls.size(), url.c_str());
 
         http::Response resp;
         for (int attempt = 0; attempt < 2; ++attempt) {
             resp = UsesProviderCompatAgent(url)
-                ? http::GetUnchecked(url, g_state.settings.manifestFetchTimeoutSec, L"OpenSteamTool/1.0")
-                : http::GetUnchecked(url, g_state.settings.manifestFetchTimeoutSec);
+                ? http::GetUnchecked(url, settings->manifestFetchTimeoutSec, L"OpenSteamTool/1.0")
+                : http::GetUnchecked(url, settings->manifestFetchTimeoutSec);
             if (!resp.networkError && resp.status == 429 && attempt == 0) {
                 AC_LOG_WARN(kModule, "gid=%llu provider %zu HTTP=429, retrying once.",
                             static_cast<unsigned long long>(gid), i + 1);
@@ -735,6 +719,7 @@ void Submit(std::uint64_t jobId, std::uint64_t manifestGid,
 }
 
 std::optional<std::uint64_t> Resolve(std::uint64_t jobId) {
+    const auto settings = Settings::Snapshot();
     std::shared_future<std::optional<std::uint64_t>> fut;
     {
         std::lock_guard<std::mutex> lock(g_state.manifestFetch.mutex);
@@ -750,8 +735,8 @@ std::optional<std::uint64_t> Resolve(std::uint64_t jobId) {
     // of stalling wire traffic and heartbeats) while this lookup keeps running
     // in the background. Once the manifest lands in depotcache, Steam's own
     // retry resubmits and gets the instant local hit (code 0).
-    const int waitMs = g_state.settings.manifestBridgeWaitMs >= 0
-        ? std::min(g_state.settings.manifestBridgeWaitMs, 10000)
+    const int waitMs = settings->manifestBridgeWaitMs >= 0
+        ? std::min(settings->manifestBridgeWaitMs, 10000)
         : 2500;
     if (fut.wait_for(std::chrono::milliseconds(waitMs)) != std::future_status::ready) {
         AC_LOG_WARN(kModule,

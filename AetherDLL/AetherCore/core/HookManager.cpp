@@ -34,6 +34,7 @@ std::string MissedHookText(const std::string& name, MissReason reason,
 }
 
 void HookManager::RegisterHook(const std::string& name, void* target, void** original, void* detour) {
+    std::lock_guard lock(mutex_);
     // Idempotent registration: the hook batch can be re-run in-session when a
     // pattern table arrives late (late-pattern retry). A hook that is already
     // queued under the same name must not be queued twice (its target/detour
@@ -54,6 +55,7 @@ void HookManager::RegisterHook(const std::string& name, void* target, void** ori
 
 void HookManager::RecordMissed(const std::string& name, MissReason reason,
                                const std::string& detail) {
+    std::lock_guard lock(mutex_);
     // Report each name once per session; re-runs of a registration batch must
     // not grow the missed list with duplicates. A re-report with a MORE
     // specific reason upgrades the entry instead of being swallowed: the first
@@ -84,6 +86,7 @@ void HookManager::RecordMissed(const std::string& name, MissReason reason,
 }
 
 bool HookManager::InstallAll() {
+    std::lock_guard lock(mutex_);
     MH_STATUS init = MH_Initialize();
     if (init != MH_OK && init != MH_ERROR_ALREADY_INITIALIZED) {
         AC_LOG_ERROR(kModule, "MH_Initialize failed: %s", MH_StatusToString(init));
@@ -135,12 +138,18 @@ bool HookManager::InstallAll() {
 }
 
 bool HookManager::UninstallAll() {
+    std::lock_guard lock(mutex_);
     MH_DisableHook(MH_ALL_HOOKS);
     MH_Uninitialize();
     for (auto& hook : hooks_) hook.created = false;
     installed_.clear();
     installedCount_ = 0;
     return true;
+}
+
+HookManager::StatusSnapshot HookManager::Snapshot() const {
+    std::lock_guard lock(mutex_);
+    return {installed_, missed_};
 }
 
 }  // namespace ac

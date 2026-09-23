@@ -131,8 +131,11 @@ fallback), using Steam's own per-(account, app) naming:
 
 All disk I/O runs on a dedicated lazy-started worker thread owned by
 `AchievementBackup` (`RecordUnlock()` only enqueues — no filesystem work on
-Steam's network thread); `FlushOnShutdown()` drains the queue, takes the final
-`.bin` copies and joins the worker. The JSON is rewritten atomically on each
+Steam's network thread). `FlushOnShutdown()` is BLOCKING: it drains the queue,
+copies the `.bin` files and joins the worker. It is only called in the explicit
+off-loader-lock shutdown path, NOT automatically on normal Steam termination.
+Even when called, it cannot guarantee Steam has flushed its cache. Event-driven
+checkpoints/game-exit persistence remain a separate follow-up. The JSON is rewritten atomically on each
 unlock (merge keeps the earliest unlock time). If the Steam cache is ever
 wiped again, restore by copying the `.bin` back into `appcache\stats` (Steam
 closed) or rebuild it from the JSON with `Tools/achievement_decoder.py rebuild`.
@@ -140,3 +143,27 @@ closed) or rebuild it from the JSON with `Tools/achievement_decoder.py rebuild`.
 `Tools/achievement_decoder.py` decodes/encodes the Steam cache, schema and
 mirror JSON files (`decode`, `snapshot`, `rebuild` commands) — use it together
 with `main.log` when investigating achievement issues.
+
+
+## Runtime publication and lifecycle (quick-win batch)
+
+* Settings are immutable `shared_ptr<const Settings>` snapshots, atomically
+  published. Each reader retains its owner for the duration of access. Only
+  DirWatch polls the TOML at runtime (about 1 s, including without Lua watches).
+  Invalid edits retain the last good snapshot. Lua watch-directory changes need
+  a restart; changing settings does not rebuild every initialized service.
+* HookManager serializes registry operations; `Snapshot()` returns owned copies.
+  Bootstrap still serializes whole batches. Status requests only increment an
+  atomic counter; one writer coalesces them at 100 ms intervals. Metadata uses
+  `statusMetadataMutex`; runtime counters keep their existing locks/atomics.
+* IPC maps are published ONCE before setting atomic `loaded`; no reader may
+  touch the maps before acquiring that flag. Init attempts are serialized.
+* Pattern indexes are built locally on late retry, then published under
+  `patterns.mutex`; lookups/availability checks use a shared lock.
+* DllMain detach only sets the shutdown flag: no joins, logging, mutex-taking
+  flush, hook teardown or persistence. Logger already flushes each written line.
+  `AetherCoreShutdown` is an explicit terminal shutdown API for a host that has
+  quiesced activity, called off loader lock; no production caller is installed
+  by this batch. PinSelf prevents normal FreeLibrary unloading. This does not
+  replace a full worker registry/quiescence protocol and does not make arbitrary
+  live unloading safe. Detached legacy jobs remain follow-up work.

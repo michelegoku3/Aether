@@ -55,7 +55,7 @@ void MaybeInject(const pipewatch::ProcessSnapshot& snapshot) {
         return;
     }
 
-    const std::wstring path = inject::Widen(g_state.payloadDllPath);
+    const std::wstring path = strings::Widen(g_state.payloadDllPath);
     const bool ok = !path.empty() && inject::RemoteLoadDll(process, path);
     CloseHandle(process);
 

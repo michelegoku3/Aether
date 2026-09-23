@@ -1,4 +1,5 @@
 #include "pch.h"
+#include "utils/Strings.h"
 #include "network/RuntimeHttp.h"
 
 #include <winhttp.h>
@@ -37,39 +38,20 @@ struct Handle {
     explicit operator bool() const { return h != nullptr; }
 };
 
-bool EqualsIgnoreCase(std::string_view a, std::string_view b) {
-    if (a.size() != b.size()) return false;
-    for (std::size_t i = 0; i < a.size(); ++i) {
-        if (std::tolower(static_cast<unsigned char>(a[i])) !=
-            std::tolower(static_cast<unsigned char>(b[i]))) {
-            return false;
-        }
-    }
-    return true;
-}
+using strings::EqualsIgnoreCase;
+
 
 // Extracts the host portion of an http(s) URL (no scheme, port, or path).
-std::string_view ExtractHost(std::string_view url) {
-    for (std::string_view scheme : {std::string_view("https://"), std::string_view("http://")}) {
-        if (url.size() >= scheme.size() && EqualsIgnoreCase(url.substr(0, scheme.size()), scheme)) {
-            url.remove_prefix(scheme.size());
-            std::size_t end = url.size();
-            for (std::size_t i = 0; i < url.size(); ++i) {
-                char c = url[i];
-                if (c == '/' || c == '?' || c == '#' || c == ':') { end = i; break; }
-            }
-            return url.substr(0, end);
-        }
-    }
-    return {};
-}
+using strings::ExtractHost;
+
 
 bool IsHostAllowed(std::string_view host) {
+    const auto settings = Settings::Snapshot();
     if (host.empty()) return false;
     for (auto h : kBaselineHosts) {
         if (EqualsIgnoreCase(host, h)) return true;
     }
-    for (const auto& h : g_state.settings.httpAllowlistExtra) {
+    for (const auto& h : settings->httpAllowlistExtra) {
         if (EqualsIgnoreCase(host, h)) return true;
     }
     return false;
@@ -79,14 +61,8 @@ bool IsHostAllowed(std::string_view host) {
 // The previous byte-by-byte copy (std::wstring(s.begin(), s.end())) would
 // mangle any non-ASCII character by treating each UTF-8 continuation byte
 // as a separate wchar_t, producing bogus host/path strings for WinHTTP.
-std::wstring Widen(std::string_view s) {
-    if (s.empty()) return {};
-    int needed = MultiByteToWideChar(CP_UTF8, 0, s.data(), static_cast<int>(s.size()), nullptr, 0);
-    if (needed <= 0) return {};
-    std::wstring out(static_cast<std::size_t>(needed), L'\0');
-    MultiByteToWideChar(CP_UTF8, 0, s.data(), static_cast<int>(s.size()), &out[0], needed);
-    return out;
-}
+using strings::Widen;
+
 
 std::wstring JoinHeaders(const std::vector<std::string>& headers) {
     if (headers.empty()) return {};
@@ -108,7 +84,10 @@ Response Request(std::wstring_view method, std::string_view url, DWORD timeoutMs
     Response out;
 
     std::string_view host = ExtractHost(url);
-    if (host.empty()) return out;
+    if (host.empty()) {
+        AC_LOG_WARN_ONCE(kModule, "HTTP request rejected: invalid/unsupported authority (userinfo is forbidden).");
+        return out;
+    }
 
     std::string_view rest = url;
     bool https = true;

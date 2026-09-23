@@ -50,3 +50,5 @@ set_target_properties(AetherPayload PROPERTIES
 
 # Embed the Windows version resource (version comes from the root project VERSION)
 attach_version_resource(AetherPayload "AetherPayload" "AetherPayload.dll" "AetherDLL Online/EOS Payload")
+
+aether_check_sources(AetherPayload)

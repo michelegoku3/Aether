@@ -112,6 +112,7 @@ namespace ac::script {
     }  // namespace
 
     bool Init() {
+        const auto settings = Settings::Snapshot();
         AC_LOG_INFO(kModule, "Initialising script engine.");
 
         g_state.luaDir = g_state.steamInstallPath + "\\config\\stplug-in";
@@ -128,7 +129,7 @@ namespace ac::script {
         bindings::RegisterAll(s_lua);
 
         ScanDirectory(g_state.luaDir);
-        for (const std::string& extra : g_state.settings.luaExtraPaths) {
+        for (const std::string& extra : settings->luaExtraPaths) {
             ScanDirectory(extra);
         }
 

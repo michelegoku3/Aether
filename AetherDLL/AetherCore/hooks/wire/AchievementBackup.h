@@ -31,9 +31,10 @@
 //     Steam — il lavoro viene accodato a un worker dedicato (avviato al primo
 //     sblocco). Lo snapshot viene riscritto in modo atomico (.tmp + move) con
 //     merge (id duplicato -> vince il tempo più antico).
-//   * FlushOnShutdown() scarica la coda, esegue l'ultima copia dei .bin (a
-//     quel punto Steam ha flushato la cache, quindi include anche gli ultimi
-//     sblocchi della sessione) e spegne il worker. Da chiamare in Shutdown().
+//   * FlushOnShutdown() blocca, scarica la coda, copia i .bin e fa join.
+//     Solo nel percorso esplicito fuori dal loader lock, NON in DllMain.
+//     Non garantisce che Steam abbia gia' flushato la propria cache; non e'
+//     chiamato automaticamente alla terminazione normale del processo.
 //   * Tutto è best-effort: un errore di I/O viene solo loggato (WARN) e non
 //     interferisce mai con il traffico di rete.
 // ============================================================================
@@ -67,7 +68,7 @@ void RecordStats(steam::AppId appId, std::uint64_t steamId64,
                  const std::vector<std::pair<std::uint32_t, std::uint32_t>>& stats);
 
 // Scarica la coda, copia i .bin un'ultima volta e spegne il worker. Blocca
-// finché tutto il lavoro pendente è completato (chiamare solo in shutdown).
+// finché tutto il lavoro pendente è completato (solo shutdown esplicito, mai in DllMain).
 void FlushOnShutdown();
 
 }  // namespace ac::hooks::AchievementBackup

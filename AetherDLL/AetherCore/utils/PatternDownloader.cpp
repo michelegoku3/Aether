@@ -110,20 +110,21 @@ struct Level {
 // Builds the strictly priority-ordered resolution plan: configured mirror first,
 // then the built-in source registry (see PatternSource::DefaultSources).
 std::vector<Level> BuildPlan(Kind kind, const std::string& sha) {
+    const auto settings = Settings::Snapshot();
     std::vector<Level> plan;
 
     // Level 0: user-supplied mirror has the highest priority when configured.
-    if (!g_state.settings.patternMirror.empty()) {
+    if (!settings->patternMirror.empty()) {
         Level level;
         level.endpoints.push_back(Candidate{
-            "mirror", ApplyTemplate(g_state.settings.patternMirror, KindName(kind), sha)});
+            "mirror", ApplyTemplate(settings->patternMirror, KindName(kind), sha)});
         plan.push_back(std::move(level));
     }
 
     // Following levels: built-in sources in registry order.
     // OpenSteamTool is opt-in ([network] use_ost_source, default OFF).
     for (const Source& src : DefaultSources()) {
-        if (IsOstSource(src) && !g_state.settings.patternUseOstSource) continue;
+        if (IsOstSource(src) && !settings->patternUseOstSource) continue;
         const auto mirrors = src.UrlsFor(kind, sha);
         if (mirrors.empty()) continue;  // this source does not carry that kind
         Level level;

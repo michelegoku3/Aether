@@ -25,22 +25,6 @@ std::tm LocalTime(std::time_t tt) {
     return tmBuf;
 }
 
-// Cache per processo del percorso AetherData (vedi CachedDeskDataDir).
-std::mutex g_cacheMutex;
-std::string g_cachedDeskData;
-bool g_deskDataResolved = false;
-
-std::string ReadDeskDataDirLocked() {
-    std::ifstream ifs(g_state.aetherCoreDir + "\\desk_path.cfg");
-    if (!ifs.is_open()) return {};
-    std::string line;
-    if (!std::getline(ifs, line)) return {};
-    while (!line.empty() && (line.back() == '\r' || line.back() == '\n' || line.back() == ' ')) {
-        line.pop_back();
-    }
-    return line;
-}
-
 }  // namespace
 
 std::string FormatUnixTime(std::uint64_t unixTime) {
@@ -62,17 +46,8 @@ std::string FormatWallClockNow() {
 }
 
 std::string CachedDeskDataDir() {
-    std::lock_guard<std::mutex> lock(g_cacheMutex);
-    if (!g_deskDataResolved) {
-        g_cachedDeskData = ReadDeskDataDirLocked();
-        g_deskDataResolved = true;
-        if (g_cachedDeskData.empty()) {
-            AC_LOG_WARN_ONCE(kModule,
-                             "Backup: AetherData path unknown (desk_path.cfg missing): "
-                             "achievement backup disabled for this session.");
-        }
-    }
-    return g_cachedDeskData;
+    // Resolved before any backup worker is started; immutable for this session.
+    return g_state.deskDataDir;
 }
 
 std::string BackupDirForApp(steam::AppId appId) {

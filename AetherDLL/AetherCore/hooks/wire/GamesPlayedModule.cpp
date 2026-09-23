@@ -1,4 +1,5 @@
 #include "pch.h"
+#include "utils/LogBurstBudget.h"
 #include "hooks/wire/GamesPlayedModule.h"
 
 #include <atomic>
@@ -153,10 +154,10 @@ bool NameIsUsable(const std::string& name) {
     return fold != "spacewar";
 }
 
-std::string DisplayName(steam::AppId appId) {
+std::string DisplayName(steam::AppId appId, const Settings& settings) {
     if (appId == 0 || appId == constants::kSpacewarAppId) return {};
-    if (!g_state.settings.presenceCustomGameName.empty()) {
-        return g_state.settings.presenceCustomGameName;
+    if (!settings.presenceCustomGameName.empty()) {
+        return settings.presenceCustomGameName;
     }
     const std::string name = gamename::ForApp(appId);
     return NameIsUsable(name) ? name : std::string{};
@@ -169,8 +170,8 @@ std::string DisplayName(steam::AppId appId) {
 // invisible channel (U+200B + 6 VS nibbles, constants::kExtraInfoInvisible*):
 // vanilla friends see ONLY the clean human name; the ASCII form
 // "<name> | <appid>" remains for legacy receivers (suffix_invisible=false).
-std::string WithAppIdSuffix(const std::string& name, steam::AppId appId) {
-    if (!g_state.settings.presenceSuffixInvisible) {
+std::string WithAppIdSuffix(const std::string& name, steam::AppId appId, const Settings& settings) {
+    if (!settings.presenceSuffixInvisible) {
         return name + constants::kExtraInfoAppIdSep + std::to_string(appId);
     }
     std::string out = name + constants::kExtraInfoInvisibleMark;
@@ -206,24 +207,24 @@ std::string MakeAppIdBlob(steam::AppId appId) {
 //      extra_info text only; mod bits are not rendered. Does not apply to
 //      AetherOnline entries (their gid bits may feed OF's own discovery).
 void AnnotateMaskedEntry(CMsgClientGamesPlayed::GamePlayed& game, const std::string& name,
-                         steam::AppId appId, bool packGameIdHighBits) {
+                         steam::AppId appId, bool packGameIdHighBits, const Settings& settings) {
     if (packGameIdHighBits) {
         game.set_game_id((game.game_id() & 0x00000000FFFFFFFFull) |
                          (static_cast<std::uint64_t>(appId) << 32));
     }
-    if (g_state.settings.presenceAppIdBlob) {
+    if (settings.presenceAppIdBlob) {
         game.set_game_data_blob(MakeAppIdBlob(appId));
         game.set_game_extra_info(name);
         return;
     }
-    game.set_game_extra_info(WithAppIdSuffix(name, appId));
+    game.set_game_extra_info(WithAppIdSuffix(name, appId, settings));
 }
 
 }  // namespace
 
 std::int32_t HandleSend(const WireFrame& frame, std::uint8_t* out, std::uint32_t outCap) {
-    // Hot-reload settings in real time if aethercore.toml was updated by AetherDesk
-    Settings::ReloadIfModified(g_state.configPath);
+    const auto settings = Settings::Snapshot();
+    // Retain one immutable configuration for this frame; DirWatch owns reload.
 
     CMsgClientGamesPlayed msg;
     if (!msg.ParseFromArray(frame.body, static_cast<int>(frame.bodyLen))) {
@@ -254,7 +255,7 @@ std::int32_t HandleSend(const WireFrame& frame, std::uint8_t* out, std::uint32_t
     if (foreignSpoof) {
         g_state.showOnlineAppId.store(0);
         if (PersonaInject::PlayingApp() != 0) PersonaInject::SetPlayingApp(0);
-    } else if (g_state.settings.presenceInjectLocal
+    } else if (settings->presenceInjectLocal
                && topmost != 0 && topmost != constants::kSpacewarAppId
                && luadata::HasDepot(topmost)) {
         if (PersonaInject::PlayingApp() != topmost) {
@@ -276,9 +277,19 @@ std::int32_t HandleSend(const WireFrame& frame, std::uint8_t* out, std::uint32_t
             sig = sig * 1000003ull + msg.games_played(i).game_id();
         }
         if (s_lastTxSig.exchange(sig) != sig) {
+            AC_LOG_INFO(kModule, "GamesPlayed state changed: entries=%d topmost_app=%u.",
+                        msg.games_played_size(), topmost);
+            static logutil::LogBurstBudget detailBudget;
             for (int i = 0; i < msg.games_played_size(); ++i) {
+                if (!log::Enabled(LogLevel::Debug)) break;
+                const auto decision = detailBudget.Admit();
+                if (decision.suppressed) {
+                    AC_LOG_DEBUG(kModule, "TX detail budget: skipped %llu attempts in previous window (20/10s).",
+                                 static_cast<unsigned long long>(decision.suppressed));
+                }
+                if (!decision.emit) continue;
                 const auto& g = msg.games_played(i);
-                AC_LOG_INFO(kModule,
+                AC_LOG_DEBUG(kModule,
                             "[DIAG] TX[%d] game_id=%llu (app=%u) extra='%s' "
                             "owner_id=%u process_id=%u game_flags=%u",
                             i, static_cast<unsigned long long>(g.game_id()),
@@ -304,8 +315,8 @@ std::int32_t HandleSend(const WireFrame& frame, std::uint8_t* out, std::uint32_t
 
     const steam::AppId soSession = foreignSpoof ? 0 : g_state.showOnlineAppId.load();
     if (soSession != 0 && soSession != constants::kSpacewarAppId &&
-        g_state.settings.presenceShowOnlineBroadcast) {
-        const std::string soName = DisplayName(soSession);
+        settings->presenceShowOnlineBroadcast) {
+        const std::string soName = DisplayName(soSession, *settings);
         for (int i = 0; i < msg.games_played_size(); ++i) {
             auto* game = msg.mutable_games_played(i);
             if (!game->has_game_id()) continue;
@@ -315,12 +326,12 @@ std::int32_t HandleSend(const WireFrame& frame, std::uint8_t* out, std::uint32_t
             game->set_game_id((game->game_id() & ~constants::kGameIdAppIdMask) |
                               static_cast<std::uint64_t>(constants::kSpacewarAppId));
             if (!soName.empty()) {
-                AnnotateMaskedEntry(*game, soName, soSession, /*packGameIdHighBits=*/true);
+                AnnotateMaskedEntry(*game, soName, soSession, /*packGameIdHighBits=*/true, *settings);
             }
             patched = true;
-            const char* channel = g_state.settings.presenceAppIdBlob
+            const char* channel = settings->presenceAppIdBlob
                                       ? "blob (game_data_blob; extra_info = plain name)"
-                                      : g_state.settings.presenceSuffixInvisible
+                                      : settings->presenceSuffixInvisible
                                           ? "invisible suffix"
                                           : "ascii suffix";
             AC_LOG_INFO_ONCE(kModule,
@@ -336,7 +347,7 @@ std::int32_t HandleSend(const WireFrame& frame, std::uint8_t* out, std::uint32_t
     //   normal entry:           extra_info = name(that appid) if we care
     // Entries just rewritten by the -showonline block above (480 without an OF
     // session) are untouched here: their extra_info is already set.
-    if (g_state.settings.presenceAlwaysExtraInfo) {
+    if (settings->presenceAlwaysExtraInfo) {
         for (int i = 0; i < msg.games_played_size(); ++i) {
             auto* game = msg.mutable_games_played(i);
             if (!game->has_game_id()) continue;
@@ -345,7 +356,7 @@ std::int32_t HandleSend(const WireFrame& frame, std::uint8_t* out, std::uint32_t
             if (foreignSpoof) {
                 if (app != constants::kSpacewarAppId) continue;
                 const steam::AppId nameApp = spoofReal;
-                const std::string name = DisplayName(nameApp);
+                const std::string name = DisplayName(nameApp, *settings);
                 if (name.empty()) continue;
                 if (game->has_game_data_blob()) {
                     game->clear_game_data_blob();
@@ -366,7 +377,7 @@ std::int32_t HandleSend(const WireFrame& frame, std::uint8_t* out, std::uint32_t
 
             if (app == 0 || app == constants::kSpacewarAppId) continue;
             if (!luadata::IsConfigured(app) && !luadata::HasDepot(app)) continue;
-            const std::string name = DisplayName(app);
+            const std::string name = DisplayName(app, *settings);
             if (name.empty()) continue;
             if (game->has_game_extra_info() && game->game_extra_info() == name) continue;
             game->set_game_extra_info(name);

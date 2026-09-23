@@ -52,6 +52,22 @@ jobs:
         run: npm ci
         working-directory: AetherDesk
 
+      - name: Frontend lint
+        working-directory: AetherDesk
+        run: npm run lint:ci
+
+      - name: Frontend type check
+        working-directory: AetherDesk
+        run: npx tsc --noEmit
+
+      - name: Frontend wiring check
+        working-directory: AetherDesk
+        run: npm run check:wiring
+
+      - name: Rust tests
+        working-directory: AetherDesk/src-tauri
+        run: cargo test --locked
+
       - name: Sync App Version
         shell: pwsh
         run: |
@@ -164,6 +180,15 @@ jobs:
       - name: Build AetherDLL
         run: cmake --build --preset x64-Release
         working-directory: AetherDLL
+
+      - name: DLL utility regression tests
+        shell: pwsh
+        run: |
+          cmake -S AetherDLL/tests -B utility-tests -G Ninja -DCMAKE_BUILD_TYPE=Release
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cmake --build utility-tests
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          ctest --test-dir utility-tests --output-on-failure
 
       - name: Package AetherDLL Zip
         shell: pwsh

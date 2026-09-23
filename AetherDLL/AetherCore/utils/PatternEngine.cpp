@@ -38,6 +38,7 @@ namespace ac::pattern {
         }
 
         void SetPatternStatus(const std::string& module, bool found, const std::string& source) {
+            std::lock_guard lock(g_state.statusMetadataMutex);
             if (module == "steamclient") {
                 g_state.steamclientTomlFound = found;
                 g_state.steamclientPatternSource = source;
@@ -136,10 +137,11 @@ namespace ac::pattern {
         // right now: the configured user mirror if any, else the first source in
         // the registry that carries the kind. Empty when nothing can serve it.
         std::string BestExpectedSource(const std::string& moduleName) {
-            if (!g_state.settings.patternMirror.empty()) return "mirror";
+            const auto settings = Settings::Snapshot();
+            if (!settings->patternMirror.empty()) return "mirror";
             const downloader::Kind kind = downloader::KindFromName(moduleName);
             for (const downloader::Source& src : downloader::DefaultSources()) {
-                if (downloader::IsOstSource(src) && !g_state.settings.patternUseOstSource) continue;
+                if (downloader::IsOstSource(src) && !settings->patternUseOstSource) continue;
                 if (src.LocFor(kind) != nullptr) return std::string(src.id);
             }
             return {};
@@ -426,10 +428,11 @@ namespace ac::pattern {
         clientThread.join();
         uiThread.join();
 
-        // Published only after both threads join: no concurrent reader exists at
-        // this point (the parallel IPC resolution reads steamclientSha, which is
-        // owned by dllmain and deliberately left untouched above).
-        g_state.steamuiSha = uiSha;
+        // StatusWriter is already active: protect the diagnostic publication.
+        {
+            std::lock_guard lock(g_state.statusMetadataMutex);
+            g_state.steamuiSha = uiSha;
+        }
 
         return steamclientOk || steamuiOk;
     }
@@ -437,7 +440,10 @@ namespace ac::pattern {
     bool ReloadModuleIfMissing(const std::string& module) {
         PatternIndex* index = IndexFor(module);
         if (!index) return false;
-        if (!index->empty()) return true;  // already loaded this session
+        {
+            std::shared_lock lock(g_state.patterns.mutex);
+            if (!index->empty()) return false;  // no newly published table
+        }
 
         const std::string* dllPath = (module == "steamui") ? &g_state.steamuiPath
                                                            : &g_state.steamclientPath;
@@ -449,12 +455,27 @@ namespace ac::pattern {
         // otherwise. Re-running it here therefore picks up both a table that
         // arrived after init and, at most once per module, an upstream upgrade.
         std::string sha;
-        if (!LoadModule(module, *dllPath, sha, *index)) return false;
-        if (module == "steamui") g_state.steamuiSha = sha;
-        return !index->empty();
+        PatternIndex candidate;
+        if (!LoadModule(module, *dllPath, sha, candidate) || candidate.empty()) return false;
+        {
+            std::unique_lock lock(g_state.patterns.mutex);
+            *index = std::move(candidate);
+        }
+        if (module == "steamui") {
+            std::lock_guard lock(g_state.statusMetadataMutex);
+            g_state.steamuiSha = sha;
+        }
+        return true;
+    }
+
+    bool HasModule(const std::string& module) {
+        std::shared_lock lock(g_state.patterns.mutex);
+        const auto* index = IndexFor(module);
+        return index && !index->empty();
     }
 
     void* ResolveAddress(const std::string& funcName, const std::string& module, HMODULE hModule) {
+        std::shared_lock lock(g_state.patterns.mutex);
         PatternIndex* index = IndexFor(module);
         if (!index) {
             AC_LOG_WARN(kModule, "Unknown module '%s'.", module.c_str());

@@ -35,8 +35,12 @@
 // ---------------------------------------------------------------------------
 namespace ac::status {
 
-// Serialises the current snapshot and writes it atomically. Best-effort:
-// failures are logged, never thrown.
+// Lifecycle functions: initialization owner only, never under loader lock.
+void Start();
+void Stop();
+
+// Requests a write (atomic counter only). One worker coalesces requests at
+// 100 ms intervals, takes snapshots and writes atomically. Best-effort.
 void Write();
 
 }  // namespace ac::status

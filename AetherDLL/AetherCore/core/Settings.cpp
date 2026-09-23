@@ -10,58 +10,69 @@
 namespace ac {
 
 namespace {
-// Mtime of the config as of the last successful Load() attempt, so
-// ReloadIfModified can compare against what is ACTUALLY in memory instead of
-// initialising its own clock on first call (which silently skipped the first
-// real change: one launch after a Desk edit resolved against stale settings).
+// Last attempted file revision. Initialized before DirWatch starts; only the
+// watcher mutates it at runtime (including rejected malformed revisions).
 std::atomic<long long> s_lastConfigWriteTicks{0};
 
 long long FileWriteTicks(const std::string& configPath) {
     std::error_code ec;
     const auto t = std::filesystem::last_write_time(configPath, ec);
     if (ec) return 0;
-    return std::chrono::duration_cast<std::chrono::milliseconds>(t.time_since_epoch()).count();
+    return t.time_since_epoch().count();
 }
 }  // namespace
 
+std::shared_ptr<const Settings> Settings::Snapshot() {
+    return g_state.settings.load();
+}
+
+bool Settings::Initialize(const std::string& configPath) {
+    const auto ticks = FileWriteTicks(configPath);
+    bool valid = false;
+    auto loaded = std::make_shared<const Settings>(Load(configPath, &valid));
+    g_state.settings.store(std::move(loaded));
+    s_lastConfigWriteTicks.store(ticks);
+    return valid;
+}
+
 void Settings::ReloadIfModified(const std::string& configPath) {
     if (configPath.empty()) return;
-    const long long ticks = FileWriteTicks(configPath);
-    if (ticks == 0) return;
-    long long prev = s_lastConfigWriteTicks.load();
-    if (ticks == prev) return;
-    if (s_lastConfigWriteTicks.compare_exchange_strong(prev, ticks)) {
-        g_state.settings = Settings::Load(configPath);
-        // The logger level lives in the config too: re-apply it so a Desk-side
-        // level change takes effect WITHOUT restarting Steam. ReloadIfModified
-        // runs on every game launch, so the worst-case delay is one launch.
-        ac::log::SetLevel(g_state.settings.logLevel);
-        AC_LOG_INFO("Settings", "Hot-reloaded settings from %s (custom_game_name='%s').",
-                    configPath.c_str(), g_state.settings.presenceCustomGameName.c_str());
+    const auto ticks = FileWriteTicks(configPath);
+    if (ticks == 0 || ticks == s_lastConfigWriteTicks.load()) return;
+    // Remember attempted revision too: malformed edits produce one warning,
+    // not one warning every second. A subsequent edit is retried normally.
+    s_lastConfigWriteTicks.store(ticks);
+    bool valid = false;
+    auto candidate = std::make_shared<const Settings>(Load(configPath, &valid));
+    if (!valid) {
+        AC_LOG_WARN("Settings", "Reload rejected; keeping last good configuration (%s).",
+                    configPath.c_str());
+        return;
+    }
+    const auto previous = Snapshot();
+    g_state.settings.store(candidate);
+    log::SetLevel(candidate->logLevel);
+    diag::Record("settings_reloaded", configPath);
+    AC_LOG_INFO("Settings", "Published immutable configuration snapshot (%s, log_level=%d).",
+                configPath.c_str(), static_cast<int>(candidate->logLevel));
+    if (candidate->luaExtraPaths != previous->luaExtraPaths) {
+        AC_LOG_WARN("Settings", "lua.extra_paths changed: restart Steam to rebuild Lua directory watches.");
     }
 }
 
-Settings Settings::Load(const std::string& configPath) {
-    Settings s;  // Start from defaults; only override what the file provides.
-
-    // Record the mtime we are loading, so the next ReloadIfModified sees a
-    // genuine change instead of treating the first call as a warm-up.
-    {
-        const long long ticks = FileWriteTicks(configPath);
-        if (ticks != 0) s_lastConfigWriteTicks.store(ticks);
-    }
+Settings Settings::Load(const std::string& configPath, bool* valid) {
+    Settings s;
+    if (valid) *valid = false;
 
     toml::table tbl;
     try {
         tbl = toml::parse_file(configPath);
     } catch (const toml::parse_error& e) {
-        // WARN on purpose: a broken config falls back to ALL defaults (log
-        // level included: Warn in release builds), so an INFO here would be
-        // filtered out by the very default it caused — a silent-failure loop
-        // that leaves presence lists empty with zero evidence in main.log.
+        // Startup falls back to defaults; runtime reload rejects this candidate.
+        // The init caller also reports failure AFTER logger initialization.
         AC_LOG_WARN("Settings",
-                    "Config %s is invalid TOML (%s) — using defaults (policies OFF, log level forced to default).",
-                    configPath.c_str(), e.description());
+                    "Cannot parse config %s (%s); defaults only apply during startup.",
+                    configPath.c_str(), e.what());
         return s;
     }
 
@@ -212,6 +223,7 @@ Settings Settings::Load(const std::string& configPath) {
                 s.presenceShowOnlineApps.size(),
                 s.presenceAetherOnlineApps.size(),
                 s.presenceExcludeApps.size());
+    if (valid) *valid = true;
     return s;
 }
 

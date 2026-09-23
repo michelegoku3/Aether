@@ -45,8 +45,8 @@ std::atomic<bool> s_retryStarted{false};
 
 // Serialises the hook batches. The batch can be re-run in-session by the
 // late-pattern retry thread while the deferred steamui retry thread may also
-// call InstallSteamUiRedirect — HookManager is not internally synchronised,
-// so both paths take this lock.
+// call InstallSteamUiRedirect. HookManager locks individual operations; this
+// lock also preserves ordering across each complete registration batch.
 std::mutex s_batchMutex;
 
 HMODULE h_LoadModuleWithPath(const char* path, bool flags) {
@@ -201,8 +201,8 @@ std::atomic<bool> s_patternRetryStop{false};
 std::atomic<bool> s_patternRetryStarted{false};
 
 bool PatternsFullyAvailable() {
-    return !g_state.patterns.steamclient.empty() &&
-           !g_state.patterns.steamui.empty() &&
+    return pattern::HasModule("steamclient") &&
+           pattern::HasModule("steamui") &&
            g_state.ipcSpec.loaded;
 }
 
@@ -213,7 +213,7 @@ void PatternLateRetryThread() {
 
         bool anyTableAppeared = false;
         if (!g_state.ipcSpec.loaded) {
-            ipcspec::Init();  // no-op once loaded; loads cache or downloads
+            anyTableAppeared |= ipcspec::Init();  // IPC-only arrival also needs a new batch
         }
         anyTableAppeared |= pattern::ReloadModuleIfMissing("steamclient");
         anyTableAppeared |= pattern::ReloadModuleIfMissing("steamui");
@@ -227,9 +227,9 @@ void PatternLateRetryThread() {
         } else if (attempt == 1 || attempt % 6 == 0) {
             AC_LOG_INFO(kModule, "Late pattern retry #%d: steamclient=%d "
                                  "steamui=%d ipc=%d.",
-                        attempt, static_cast<int>(!g_state.patterns.steamclient.empty()),
-                        static_cast<int>(!g_state.patterns.steamui.empty()),
-                        static_cast<int>(g_state.ipcSpec.loaded));
+                        attempt, static_cast<int>(pattern::HasModule("steamclient")),
+                        static_cast<int>(pattern::HasModule("steamui")),
+                        static_cast<int>(g_state.ipcSpec.loaded.load()));
         }
         if (PatternsFullyAvailable()) {
             AC_LOG_INFO(kModule, "All pattern tables available after retry; "

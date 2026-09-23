@@ -164,7 +164,7 @@ struct AetherCoreState {
 
     // ---- Pattern engine runtime index --------------------------------------
     // Populated during Init() from per-build TOML files. After init, these
-    // maps are read-only: ResolveAddress() looks up function names here.
+    // late retry may publish missing maps. All runtime access takes mutex.
     // Moved from file-scope globals in PatternEngine.cpp (audit 10.2).
     struct PatternEntry {
         std::string rva;
@@ -172,6 +172,7 @@ struct AetherCoreState {
     };
     using PatternIndex = std::unordered_map<std::string, PatternEntry>;
     struct PatternState {
+        mutable std::shared_mutex mutex;
         PatternIndex steamclient;
         PatternIndex steamui;
     };
@@ -181,12 +182,13 @@ struct AetherCoreState {
     // Loaded from a TOML fetched alongside the pattern tables. When loaded,
     // IPCBus uses these hashes instead of the compile-time ipc_hash::* constants
     // so that IPC dispatch survives Steam client updates that shift method hashes.
-    // Populated on the init thread before hooks are installed; read-only after.
+    // Init or late retry publishes maps once, then sets loaded (release).
+    // Readers acquire loaded BEFORE touching maps; maps never change after true.
     // fencepost/argc are optional metadata (0 = absent): parsed for schema
     // compatibility and used only for diagnostics (see IpcSpec.h), never to
     // block dispatch. MethodSpec is the single definition from utils/IpcSpec.h.
     struct IpcSpecState {
-        bool loaded = false;
+        std::atomic<bool> loaded{false};
         std::unordered_map<std::string, std::uint8_t> interfaceIds; // "IFace" -> interface id
         std::unordered_map<std::string, ipcspec::MethodSpec> methods; // "IFace::Method" -> spec
     };
@@ -227,6 +229,7 @@ struct AetherCoreState {
 
     // ---- Resolved runtime paths -------------------------------------------
     std::string steamInstallPath;   // Folder containing steam.exe
+    std::string deskDataDir;       // Startup bridge snapshot shared by config and backups
     std::string aetherCoreDir;      // <steam>\\aethercore
     std::string steamclientPath;    // <steam>\\steamclient64.dll
     std::string steamuiPath;        // <steam>\\steamui.dll
@@ -238,6 +241,8 @@ struct AetherCoreState {
     std::string payloadDllPath;     // <steam>\\AetherPayload.dll
 
     // ---- Pattern diagnostics ---------------------------------------------
+    // Guard mutable status strings/flags during startup and late retry.
+    mutable std::mutex statusMetadataMutex;
     std::string steamclientSha;
     std::string steamuiSha;
     bool steamclientTomlFound = false;
@@ -368,7 +373,7 @@ struct AetherCoreState {
     std::atomic<std::uint64_t> licenseReloadDirectCount{0};
 
     // ---- Configuration ----------------------------------------------------
-    Settings settings;
+    std::atomic<std::shared_ptr<const Settings>> settings{std::make_shared<const Settings>()};
 
     // ---- Hook manager ------------------------------------------------------
     // Centralised hook registry — was extern HookManager g_hookManager.
