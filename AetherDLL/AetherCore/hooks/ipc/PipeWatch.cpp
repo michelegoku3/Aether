@@ -13,6 +13,7 @@
 #include <string_view>
 
 #include "core/AetherCoreState.h"
+#include "core/Workers.h"
 #include "core/Constants.h"
 #include "utils/EnvReader.h"
 #include "core/Logger.h"
@@ -74,18 +75,20 @@ std::string QueryImagePath(HANDLE process) {
     return std::string(path, size);
 }
 
-ProcessSnapshot InspectProcess(steam::CSteamPipeClient* pipe) {
+// Ispezione per (pid, nome processo): nessun puntatore "vivo" di Steam
+// attraversa i thread, quindi può girare sul task queue.
+ProcessSnapshot InspectProcess(std::uint32_t pid, const std::string& processName) {
     ProcessSnapshot snap{};
-    if (!pipe || pipe->clientPid == 0) return snap;
+    if (pid == 0) return snap;
 
-    snap.pid = pipe->clientPid;
+    snap.pid = pid;
     HANDLE process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION | PROCESS_VM_READ,
-                                 FALSE, pipe->clientPid);
+                                 FALSE, pid);
     if (!process) {
-        AC_LOG_DEBUG(kModule, "OpenProcess failed for pid %u.", pipe->clientPid);
+        AC_LOG_DEBUG(kModule, "OpenProcess failed for pid %u.", pid);
         snap.appId = capture::CurrentRouteAppId();
         snap.appIdSource = "fallback";
-        snap.imageName = pipe->processName ? pipe->processName : "";
+        snap.imageName = processName;
         snap.steamProcess = IsSteamProcessName(snap.imageName);
         snap.likelyGame = !snap.steamProcess && snap.appId != 0;
         snap.luaManaged = snap.appId != 0 && luadata::IsConfigured(snap.appId);
@@ -95,7 +98,7 @@ ProcessSnapshot InspectProcess(steam::CSteamPipeClient* pipe) {
     snap.creationTime = QueryCreationTime(process);
     snap.imagePath = QueryImagePath(process);
     snap.imageName = BaseName(snap.imagePath);
-    if (snap.imageName.empty() && pipe->processName) snap.imageName = pipe->processName;
+    if (snap.imageName.empty()) snap.imageName = processName;
 
     // Environment-block AppId resolution delegated to EnvReader.
     if (auto ids = env::ReadSteamEnvAppIds(process)) {
@@ -227,9 +230,7 @@ void EvictIfNeededLocked() {
     }
 }
 
-void StoreSnapshot(const steam::CSteamPipeClient* pipe, ProcessSnapshot snap) {
-    if (!pipe) return;
-    const std::uint64_t key = EncodePipeKey(pipe);
+void StoreSnapshotByKey(std::uint64_t key, ProcessSnapshot snap) {
     if (!key) return;
 
     // Stamp the capture time for FIFO eviction ordering (A5).
@@ -258,6 +259,43 @@ void Reset() {
     g_state.pipeWatch.snapshots.clear();
 }
 
+// Il lavoro pesante dell'handshake (OpenProcess, lettura env remota, immagine,
+// eventuale iniezione payload con attesa fino a 5 s) NON gira più sul thread
+// IPC di Steam: viene eseguito sul task queue. Sul thread IPC restano solo la
+// lettura del pid e l'accodamento (O(1)).
+void CompleteHandshakeAsync(std::uint64_t key, std::uint32_t hSteamPipe,
+                            std::uint32_t pid, std::string processName) {
+    ProcessSnapshot snap = InspectProcess(pid, processName);
+    StoreSnapshotByKey(key, std::move(snap));
+    // Re-read the stored snapshot (same source of truth every consumer uses).
+    const auto stored = [&]() -> std::optional<ProcessSnapshot> {
+        std::lock_guard<std::mutex> lock(g_state.pipeWatch.mutex);
+        auto it = g_state.pipeWatch.snapshots.find(key);
+        if (it == g_state.pipeWatch.snapshots.end()) return std::nullopt;
+        return it->second;
+    }();
+    if (!stored) return;
+    hooks::onlinepayload::MaybeInject(*stored);
+    if (stored->likelyGame) {
+        // Only reset dedup sets when a *different* game starts. Child processes
+        // of the same session (launcher, game exe, overlay) share the same appId
+        // and should not trigger redundant re-emission of ownership/license logs.
+        steam::AppId prev = g_state.pipeWatch.lastSessionAppId.load();
+        if (stored->appId != prev &&
+            g_state.pipeWatch.lastSessionAppId.compare_exchange_strong(prev, stored->appId)) {
+            logutil::ResetAllIdLogSessions();
+            log::ResetDedup();
+        }
+    }
+    status::Write();
+    AC_LOG_INFO(kModule,
+                "Handshake pipe=0x%08X pid=%u image=%s appId=%u source=%s env=%u luaManaged=%d (async).",
+                hSteamPipe, stored->pid,
+                stored->imageName.empty() ? "-" : stored->imageName.c_str(), stored->appId,
+                stored->appIdSource.empty() ? "-" : stored->appIdSource.c_str(), stored->envAppId,
+                stored->luaManaged ? 1 : 0);
+}
+
 void OnHandshake(steam::CSteamPipeClient* pipe, steam::CUtlBuffer* pRead) {
     if (!pipe) return;
 
@@ -266,42 +304,32 @@ void OnHandshake(steam::CSteamPipeClient* pipe, steam::CUtlBuffer* pRead) {
     }
     if (pipe->clientPid == 0) return;
 
-    ProcessSnapshot snap = InspectProcess(pipe);
-    StoreSnapshot(pipe, snap);
-    hooks::onlinepayload::MaybeInject(snap);
-    if (snap.likelyGame) {
-        // Only reset dedup sets when a *different* game starts. Child processes
-        // of the same session (launcher, game exe, overlay) share the same appId
-        // and should not trigger redundant re-emission of ownership/license logs.
-        steam::AppId prev = g_state.pipeWatch.lastSessionAppId.load();
-        if (snap.appId != prev &&
-            g_state.pipeWatch.lastSessionAppId.compare_exchange_strong(prev, snap.appId)) {
-            logutil::ResetAllIdLogSessions();
-            log::ResetDedup();
-        }
+    const std::uint64_t key = EncodePipeKey(pipe);
+    // Copia per valore: il puntatore di Steam e il suo processName non sono
+    // sicuri oltre questa chiamata.
+    std::string processName = pipe->processName ? pipe->processName : "";
+    const std::uint32_t pipeHandle = static_cast<std::uint32_t>(pipe->hSteamPipe);
+    const std::uint32_t pidCopy = pipe->clientPid;
+    if (!workers::Submit([key, pipeHandle, pidCopy, processName = std::move(processName)] {
+            CompleteHandshakeAsync(key, pipeHandle, pidCopy, processName);
+        })) {
+        AC_LOG_DEBUG(kModule, "Handshake inspection for pid %u skipped (workers shut down).", pidCopy);
     }
-    status::Write();
-    AC_LOG_INFO(kModule,
-                "Handshake pipe=0x%08X pid=%u image=%s appId=%u source=%s env=%u luaManaged=%d.",
-                static_cast<std::uint32_t>(pipe->hSteamPipe), snap.pid,
-                snap.imageName.empty() ? "-" : snap.imageName.c_str(), snap.appId,
-                snap.appIdSource.empty() ? "-" : snap.appIdSource.c_str(), snap.envAppId,
-                snap.luaManaged ? 1 : 0);
 }
 
 void TouchPipe(steam::CSteamPipeClient* pipe) {
     if (!pipe || pipe->clientPid == 0) return;
     if (SnapshotForPipe(pipe)) return;
 
-    ProcessSnapshot snap = InspectProcess(pipe);
-    StoreSnapshot(pipe, snap);
-    hooks::onlinepayload::MaybeInject(snap);
-    status::Write();
-    AC_LOG_DEBUG(kModule,
-                 "Late snapshot pipe=0x%08X pid=%u image=%s appId=%u source=%s.",
-                 static_cast<std::uint32_t>(pipe->hSteamPipe), snap.pid,
-                 snap.imageName.empty() ? "-" : snap.imageName.c_str(), snap.appId,
-                 snap.appIdSource.empty() ? "-" : snap.appIdSource.c_str());
+    const std::uint64_t key = EncodePipeKey(pipe);
+    std::string processName = pipe->processName ? pipe->processName : "";
+    const std::uint32_t pipeHandle = static_cast<std::uint32_t>(pipe->hSteamPipe);
+    const std::uint32_t pidCopy = pipe->clientPid;
+    if (!workers::Submit([key, pipeHandle, pidCopy, processName = std::move(processName)] {
+            CompleteHandshakeAsync(key, pipeHandle, pidCopy, processName);
+        })) {
+        AC_LOG_DEBUG(kModule, "Late snapshot for pid %u skipped (workers shut down).", pidCopy);
+    }
 }
 
 std::optional<ProcessSnapshot> SnapshotForPipe(const steam::CSteamPipeClient* pipe) {
@@ -316,8 +344,15 @@ std::optional<ProcessSnapshot> SnapshotForPipe(const steam::CSteamPipeClient* pi
 }
 
 steam::AppId AppIdForPipe(const steam::CSteamPipeClient* pipe) {
-    if (auto snap = SnapshotForPipe(pipe)) {
-        if (snap->appId != 0) return snap->appId;
+    // Lettura diretta del solo appId sotto lock: questo gira su OGNI messaggio
+    // IPC, quindi niente copia dello snapshot (stringhe incluse).
+    if (pipe && pipe->clientPid != 0) {
+        const std::uint64_t key = EncodePipeKey(pipe);
+        std::lock_guard<std::mutex> lock(g_state.pipeWatch.mutex);
+        auto it = g_state.pipeWatch.snapshots.find(key);
+        if (it != g_state.pipeWatch.snapshots.end() && it->second.appId != 0) {
+            return it->second.appId;
+        }
     }
     return capture::CurrentRouteAppId();
 }

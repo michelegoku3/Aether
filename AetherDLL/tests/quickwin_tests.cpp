@@ -6,6 +6,7 @@
 #include "utils/CoalescingWorker.h"
 #include "utils/LogBurstBudget.h"
 #include "propagate/PropagationPolicy.h"
+#include "core/Workers.h"
 #include "MinHook.h"
 #include <atomic>
 #include <chrono>
@@ -154,6 +155,41 @@ void Settings() {
     CHECK(coherent);
     CHECK(ac::Settings::Snapshot()->presenceCustomGameName == "revision99");
 }
+void Workers() {
+    namespace w = ac::workers;
+    std::atomic<int> counter{0};
+    for (int i = 0; i < 100; ++i) CHECK(w::Submit([&] { counter.fetch_add(1); }));
+    auto deadline = std::chrono::steady_clock::now() + 5s;
+    while (counter.load() < 100 && std::chrono::steady_clock::now() < deadline)
+        std::this_thread::sleep_for(1ms);
+    CHECK(counter.load() == 100);
+    // Un job che lancia non uccide la coda: il job successivo gira comunque.
+    CHECK(w::Submit([] { throw std::runtime_error("boom"); }));
+    CHECK(w::Submit([&] { counter.fetch_add(1); }));
+    deadline = std::chrono::steady_clock::now() + 5s;
+    while (counter.load() < 101 && std::chrono::steady_clock::now() < deadline)
+        std::this_thread::sleep_for(1ms);
+    CHECK(counter.load() == 101);
+    // Worker nominato con stop flag: parte, osserva lo stop, viene joinato.
+    std::atomic<bool> ran{false}, sawStop{false};
+    CHECK(w::StartWorker("test_worker", [&](std::atomic<bool>& stop) {
+        ran.store(true);
+        while (!stop.load()) std::this_thread::sleep_for(1ms);
+        sawStop.store(true);
+    }));
+    deadline = std::chrono::steady_clock::now() + 5s;
+    while (!ran.load() && std::chrono::steady_clock::now() < deadline)
+        std::this_thread::sleep_for(1ms);
+    CHECK(ran.load());
+    CHECK(!w::SummaryText().empty());
+    w::Shutdown();
+    CHECK(sawStop.load());              // lo stop flag è arrivato
+    w::Shutdown();                      // idempotente
+    CHECK(!w::Submit([&] { counter.fetch_add(1); }));   // rifiuto post-shutdown
+    CHECK(!w::StartWorker("late", [](std::atomic<bool>&) {}));
+    CHECK(counter.load() == 101);       // nessun job fantasma
+}
+
 void Registry() {
     ac::HookManager manager;
     manager.RecordMissed("late", ac::MissReason::PatternUnresolved);
@@ -188,7 +224,8 @@ int main(int argc, char** argv) {
         if (test == "strings") Strings(); else if (test == "paths") Paths();
         else if (test == "policy") Policy(); else if (test == "worker") Worker();
         else if (test == "budget") Budget(); else if (test == "settings") Settings();
-        else if (test == "registry") Registry(); else CHECK(false);
+        else if (test == "registry") Registry();
+        else if (test == "workers") Workers(); else CHECK(false);
         std::cout << test << ": PASS\n";
         return 0;
     } catch (const std::exception& e) { std::cerr << e.what() << '\n'; return 1; }

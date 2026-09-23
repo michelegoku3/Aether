@@ -31,10 +31,10 @@
 //     Steam — il lavoro viene accodato a un worker dedicato (avviato al primo
 //     sblocco). Lo snapshot viene riscritto in modo atomico (.tmp + move) con
 //     merge (id duplicato -> vince il tempo più antico).
-//   * FlushOnShutdown() blocca, scarica la coda, copia i .bin e fa join.
-//     Solo nel percorso esplicito fuori dal loader lock, NON in DllMain.
-//     Non garantisce che Steam abbia gia' flushato la propria cache; non e'
-//     chiamato automaticamente alla terminazione normale del processo.
+//   * FlushOnShutdown() blocca, scarica la coda (inclusi i job ritardati),
+//     copia i .bin e fa join. Solo nel percorso esplicito fuori dal loader
+//     lock, NON in DllMain. Alla terminazione normale la protezione è data
+//     dal checkpoint periodico + dalla copia finale di SessionEnded.
 //   * Tutto è best-effort: un errore di I/O viene solo loggato (WARN) e non
 //     interferisce mai con il traffico di rete.
 // ============================================================================
@@ -54,6 +54,15 @@ void RecordUnlock(steam::AppId appId, std::uint64_t steamId64,
 // vengono protetti anche se la sessione non produce nuovi sblocchi.
 // Una sola volta per app per processo di Steam. Thread-safe.
 void TouchSession(steam::AppId appId, std::uint64_t steamId64);
+
+// Persistenza GUIDATA DAGLI EVENTI (anti-perdita anche senza shutdown):
+//   * il worker esegue un CHECKPOINT PERIODICO (5 min): ricopia forzata dei
+//     .bin di ogni (app, account) toccato + refresh playtime;
+//   * SessionEnded() schedula una COPIA FINALE ritardata (~15 s) quando il
+//     gioco esce, perché Steam scrive la cache stats dopo il frame vuoto.
+// Con questi due eventi la finestra di perdita massima scende da "intera
+// sessione" a "5 minuti" anche se Steam viene chiuso/terminato normalmente.
+void SessionEnded(steam::AppId appId, std::uint64_t steamId64);
 
 // Snapshot iniziale (una volta per processo): copia i .bin di TUTTI gli app
 // gestiti presenti in appcache\stats, subito dopo l'avvio di Steam e prima

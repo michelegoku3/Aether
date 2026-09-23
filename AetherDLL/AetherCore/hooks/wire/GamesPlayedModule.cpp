@@ -15,6 +15,7 @@
 #include "core/Constants.h"
 #include "core/Logger.h"
 #include "hooks/ipc/PipeWatch.h"
+#include "hooks/wire/AchievementBackup.h"
 #include "hooks/wire/PersonaInject.h"
 #include "utils/GameNameResolver.h"
 
@@ -252,6 +253,7 @@ std::int32_t HandleSend(const WireFrame& frame, std::uint8_t* out, std::uint32_t
     const bool foreignSpoof = g_state.spacewarSpoofExpected.load()
         || (stackHas480 && spoofReal != 0);
 
+    const steam::AppId prevPlaying = PersonaInject::PlayingApp();
     if (foreignSpoof) {
         g_state.showOnlineAppId.store(0);
         if (PersonaInject::PlayingApp() != 0) PersonaInject::SetPlayingApp(0);
@@ -266,6 +268,19 @@ std::int32_t HandleSend(const WireFrame& frame, std::uint8_t* out, std::uint32_t
     } else if (topmost == 0 && PersonaInject::PlayingApp() != 0) {
         PersonaInject::SetPlayingApp(0);
         pipewatch::ResetSessionTracking();
+    }
+
+    // Persistenza guidata dagli eventi: qualunque transizione che TERMINA una
+    // sessione giocata (uscita, cambio gioco, mask 480) schedula la copia
+    // finale degli stats dell'app appena chiuso (ritardata: Steam scrive la
+    // cache dopo il frame vuoto).
+    if (prevPlaying != 0 && prevPlaying != PersonaInject::PlayingApp()) {
+        std::uint64_t selfId = 0;
+        {
+            std::lock_guard<std::mutex> lock(g_state.presence.mutex);
+            selfId = g_state.presence.selfSteamId;
+        }
+        AchievementBackup::SessionEnded(prevPlaying, selfId);
     }
 
     // [DIAG] Cosa stiamo realmente annunciando al CM, loggato solo su

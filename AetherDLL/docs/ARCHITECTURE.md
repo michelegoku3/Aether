@@ -167,3 +167,26 @@ with `main.log` when investigating achievement issues.
   by this batch. PinSelf prevents normal FreeLibrary unloading. This does not
   replace a full worker registry/quiescence protocol and does not make arbitrary
   live unloading safe. Detached legacy jobs remain follow-up work.
+
+## Invasive batch (event-driven persistence, workers, hot paths)
+
+* Achievement persistence is EVENT-DRIVEN, not shutdown-driven: the backup
+  worker runs a periodic checkpoint (5 min: forced .bin re-copy of every
+  touched (app, account) + playtime refresh) and `SessionEnded()` schedules a
+  delayed final copy (~15 s) when a game session ends. Worst-case loss on a
+  hard exit is one checkpoint interval; `FlushOnShutdown()` remains for the
+  explicit shutdown path and now also drains delayed jobs immediately.
+* Background work lives in `core/Workers`: one task queue (one-shot jobs,
+  drained and joined at explicit shutdown) plus a named worker registry with
+  stop flags. There are NO `std::thread(...).detach()` calls left in
+  AetherCore. Workers stop only in the explicit off-loader-lock shutdown;
+  DllMain detach still only sets the global shutdown flag.
+* PipeWatch handshake inspection (OpenProcess, remote env read, image query,
+  payload injection) runs on the task queue, not on Steam's IPC thread; only
+  the pid read and the enqueue stay synchronous. Value types only cross the
+  thread boundary — never Steam pipe pointers. `AppIdForPipe` reads the appId
+  under the snapshots lock without copying the snapshot.
+* `FindLocalManifest` uses a local manifest index: positive entries are
+  re-verified with one stat per hit; negative entries suppress the backup-dir
+  walk for 30 s (matches the existing proactive backoff, so newly generated or
+  restored manifests are still discovered on the next window).

@@ -10,7 +10,8 @@ FetchContent_MakeAvailable(tomlplusplus)
 find_package(Threads REQUIRED)
 enable_testing()
 add_executable(quickwin_tests quickwin_tests.cpp stubs/Services.cpp
-    ../AetherCore/core/Settings.cpp ../AetherCore/core/HookManager.cpp)
+    ../AetherCore/core/Settings.cpp ../AetherCore/core/HookManager.cpp
+    ../AetherCore/core/Workers.cpp)
 target_include_directories(quickwin_tests PRIVATE stubs ../AetherCore ../AetherPayload)
 target_link_libraries(quickwin_tests PRIVATE Threads::Threads tomlplusplus::tomlplusplus)
 if(MSVC)
@@ -18,7 +19,7 @@ if(MSVC)
 else()
     target_compile_options(quickwin_tests PRIVATE -Wall -Wextra -Wpedantic)
 endif()
-foreach(case strings paths policy worker budget settings registry)
+foreach(case strings paths policy worker budget settings registry workers)
     add_test(NAME ${case} COMMAND quickwin_tests ${case})
 endforeach()
 add_test(NAME cmake_source_inventory COMMAND ${CMAKE_COMMAND}
