@@ -17,7 +17,17 @@
 // ---------------------------------------------------------------------------
 namespace ac {
 
+// Selection is fixed at startup; changing it while Steam is running cannot
+// safely move already-installed hooks between copies of steamclient64.dll.
+enum class DiversionMode { Auto, Copy, Live };
+
 struct Settings {
+    // [injection] Auto keeps the proven copy/redirect path when possible, but
+    // selects the live Steam client if it was already mapped before the redirect
+    // could be armed (as on some beta startups). Copy and live are explicit
+    // overrides for targeted diagnostics.
+    DiversionMode diversionMode = DiversionMode::Auto;
+
     // [log]
 #ifdef AETHERCORE_RELEASE
     LogLevel logLevel = LogLevel::Warn;

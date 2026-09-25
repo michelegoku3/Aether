@@ -3,6 +3,7 @@
 
 #include <MinHook.h>
 
+#include <algorithm>
 #include <sstream>
 
 #include "core/Logger.h"
@@ -100,13 +101,22 @@ bool HookManager::InstallAll() {
             hook.created = true;
             ++installedCount_;
             installed_.push_back(hook.name);
+            // A late retry can succeed after an earlier MinHook failure.
+            std::erase_if(missed_, [&](const MissedHook& m) { return m.name == hook.name; });
             diag::Record("hook_installed", hook.name);
         } else {
-            // A single failed hook must not abort the rest (graceful degradation).
-            AC_LOG_ERROR(kModule, "Hook '%s' creation failed: %s",
-                         hook.name.c_str(), MH_StatusToString(status));
-            diag::Record("hook_create_failed", hook.name);
-            missed_.push_back(MissedHook{hook.name, MissReason::InstallFailed, {}});
+            // A missing redirect can be retried every 500 ms. Record one miss
+            // per hook, not one for each attempt; clear it on later success.
+            auto missed = std::find_if(missed_.begin(), missed_.end(),
+                [&](const MissedHook& m) { return m.name == hook.name; });
+            if (missed == missed_.end()) {
+                AC_LOG_ERROR(kModule, "Hook '%s' creation failed: %s",
+                             hook.name.c_str(), MH_StatusToString(status));
+                diag::Record("hook_create_failed", hook.name);
+                missed_.push_back(MissedHook{hook.name, MissReason::InstallFailed, {}});
+            } else {
+                missed->reason = MissReason::InstallFailed;
+            }
         }
     }
 

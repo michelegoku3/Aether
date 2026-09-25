@@ -4,11 +4,13 @@
 
 namespace ac::hooks {
 
-// Installs the steamclient hook batch immediately (does NOT block on
-// steamui.dll), then starts a deferred retry thread that installs the
-// LoadModuleWithPath redirect (steamui.dll) as soon as the module appears,
-// within a bounded budget. Publishes hook status after each batch. Intended
-// to run on the init thread.
+// In copy mode, arm steamui!LoadModuleWithPath as soon as pattern resolution
+// completes, before IPC and Lua initialization can delay it. If steamui is
+// missing, a bounded retry runs in the background. No-op in live mode.
+void ArmSteamUiRedirectEarly();
+
+// Installs the steamclient hook batch; idempotently tries the UI redirect again
+// (also used by the late-pattern retry).
 void InstallAllHooks();
 
 // Stops and joins the deferred steamui retry thread. Safe to call when the

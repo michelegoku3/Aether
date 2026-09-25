@@ -46,9 +46,9 @@ fn main() {
             crate::commands::logs::clear_uco2_log_file();
             // Clear any leftover artifacts from an interrupted portable self-update.
             crate::updater::desk::cleanup_stale_artifacts();
-            // All startup migrations live in one place: legacy settings move,
-            // obsolete data-folder cleanup, and the lua_backups → backup data
-            // layout migration. Each step is idempotent and failure-tolerant.
+            // Startup migrations include legacy settings/data, obsolete Steam
+            // proxy cleanup (only while Steam is closed), and Lua backups.
+            // Each step is idempotent and failure-tolerant.
             crate::core::migration::run_startup_migrations(&app.handle());
             // Steam process monitor (single shared poller): keeps is_steam_running
             // O(1) and pushes `steam://runtime-state` to the UI only on changes

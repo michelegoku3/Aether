@@ -26,6 +26,13 @@ pub fn snapshot_has_steam(sys: &sysinfo::System) -> bool {
     sys.processes().values().any(|p| is_steam_process_name(p.name()))
 }
 
+/// Fresh process snapshot for destructive migrations and DLL changes.
+pub fn is_steam_running_fresh() -> bool {
+    let mut sys = sysinfo::System::new();
+    sys.refresh_processes();
+    snapshot_has_steam(&sys)
+}
+
 /// Kill every steam.exe process. Returns true when at least one was signalled.
 pub fn kill_steam() -> bool {
     let mut sys = sysinfo::System::new_all();

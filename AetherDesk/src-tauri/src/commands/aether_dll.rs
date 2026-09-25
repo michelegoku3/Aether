@@ -14,9 +14,8 @@ pub fn get_installed_dll_version(app: tauri::AppHandle) -> String {
     if resolve_steam_path(&steam_path).is_err() {
         return "N/A".to_string();
     }
-    let legacy_version_path = std::path::PathBuf::from(&steam_path).join("AetherDLL_version.txt");
     let raw = read_installed_dll_version(std::path::Path::new(&steam_path))
-        .unwrap_or_else(|| read_legacy_installed_version(&legacy_version_path, &steam_path));
+        .unwrap_or_else(|| "N/A".to_string());
     GithubReleaseManager::display_version_from_tag(&raw)
 }
 
@@ -35,13 +34,9 @@ pub async fn check_aether_dll_update(app: tauri::AppHandle) -> Result<serde_json
         }));
     }
 
-    let legacy_version_path = std::path::PathBuf::from(&steam_path).join("AetherDLL_version.txt");
-
-    // Fonte di verità primaria: la version resource DENTRO i .dll (scritta a compile
-    // time dal build CMake, root CMakeLists.txt) — nessun file esterno coinvolto.
-    // Se manca (installazioni precedenti alla feature), catena legacy di sola lettura.
+    // The only supported installation has three coherent PE version resources.
     let installed_version = read_installed_dll_version(std::path::Path::new(&steam_path))
-        .unwrap_or_else(|| read_legacy_installed_version(&legacy_version_path, &steam_path));
+        .unwrap_or_else(|| "N/A".to_string());
 
     // Origin label: the update check is reachable from the startup pass, the
     // DLL-change path and the manual Check button; without it a duplicated
@@ -91,28 +86,6 @@ pub async fn check_aether_dll_update(app: tauri::AppHandle) -> Result<serde_json
         "update_available": update_available,
         "is_test": false
     }))
-}
-
-/// Catena legacy **di sola lettura** per installazioni pre-resource (le DLL non hanno
-/// la versione dentro): bookmark residuo nella cartella Steam → sola presenza file
-/// ("?"). Non viene più scritto/letto NULLA in AetherData: la cartella
-/// `component_versions` è ritirata e la migrazione di avvio la elimina.
-fn read_legacy_installed_version(legacy_version_path: &std::path::Path, steam_path: &str) -> String {
-    if legacy_version_path.exists() {
-        std::fs::read_to_string(legacy_version_path)
-            .unwrap_or_else(|_| "N/A".to_string())
-            .trim()
-            .to_string()
-    } else if DllInstaller::new(steam_path.to_string()).verify_installation() {
-        // DLL presenti ma NESSUNA fonte di versione attendibile (né resource PE nei
-        // file, né bookmark legacy): MAI inventare un numero — il vecchio "v2.4.1"
-        // cablato qui mentiva (ed era pure obsoleto). "?" rende onesto l'ignoto:
-        // la UI mostra "v?" e, dato che != ultimo tag, propone l'update — che a sua
-        // volta installa una build con la versione leggibile dentro i .dll.
-        "?".to_string()
-    } else {
-        "N/A".to_string()
-    }
 }
 
 /// Result of probing the `tdll-*` test channel during an update check.
@@ -303,14 +276,11 @@ pub fn uninstall_aether_dll(app: tauri::AppHandle) -> Result<String, String> {
     ensure_steam_is_closed()?;
     crate::desk_log_info!("updater", "Uninstalling AetherDLL from Steam directory '{}'", steam_path);
 
-    // Rimuove l'eventuale bookmark residuo nella dir Steam (i .dll li elimina
-    // l'installer qui sotto; in AetherData non viene più scritto nulla).
+    // The uninstaller also removes the obsolete Steam-root proxy.
+    DllInstaller::new(steam_path.clone()).uninstall()?;
     let legacy_version_path = std::path::PathBuf::from(&steam_path).join("AetherDLL_version.txt");
     let _ = std::fs::remove_file(legacy_version_path);
-
-    DllInstaller::new(steam_path)
-        .uninstall()
-        .map(|_| "AetherDLL files removed successfully from Steam.".to_string())
+    Ok("AetherDLL files removed successfully from Steam.".to_string())
 }
 
 #[tauri::command]
@@ -319,9 +289,7 @@ pub fn reset_aether_steam_path(app: tauri::AppHandle) -> Result<String, String> 
     ensure_steam_is_closed()?;
     crate::desk_log_info!("updater", "Resetting Aether files in Steam directory '{}'", steam_path);
 
-    let legacy_version_path = std::path::PathBuf::from(&steam_path).join("AetherDLL_version.txt");
-    let _ = std::fs::remove_file(legacy_version_path);
-
+    // Reset removes the obsolete proxy and version bookmark too.
     let removed = DllInstaller::new(steam_path.clone()).reset_aether_files()?;
     crate::desk_log_info!("updater", "Steam path reset completed: removed {} item(s) from '{}'", removed, steam_path);
     Ok(format!(
@@ -330,8 +298,8 @@ pub fn reset_aether_steam_path(app: tauri::AppHandle) -> Result<String, String> 
     ))
 }
 
-/// Reports how many residual Aether artifacts exist under `steam_path`, using
-/// the same target list as Reset Path (`DllInstaller::count_aether_residuals`).
+/// Reports residual Aether artifacts, including the obsolete Steam proxy.
+/// Reset Path removes the proxy as part of normal Aether cleanup.
 /// Safe while Steam is running — read-only probe for the Uninstall confirm UI.
 #[tauri::command]
 pub fn probe_aether_steam_residuals(app: tauri::AppHandle) -> Result<usize, String> {
@@ -349,12 +317,8 @@ pub fn probe_aether_steam_residuals(app: tauri::AppHandle) -> Result<usize, Stri
 }
 
 fn ensure_steam_is_closed() -> Result<(), String> {
-    // Fresh snapshot (not the shared monitor): the install must observe the
-    // process state at this exact instant. Lightweight process-list-only
-    // refresh, and a single shared definition of "is a Steam process" (DRY).
-    let mut sys = sysinfo::System::new();
-    sys.refresh_processes();
-    if crate::core::steam_process::snapshot_has_steam(&sys) {
+    // Do not rely on the cached UI monitor for destructive file changes.
+    if crate::core::steam_process::is_steam_running_fresh() {
         Err("Steam is currently running. Close Steam completely before installing, uninstalling, or resetting AetherDLL files.".to_string())
     } else {
         Ok(())

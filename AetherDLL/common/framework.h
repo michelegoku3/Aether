@@ -3,8 +3,7 @@
 // ============================================================================
 // framework.h - Shared Windows configuration header
 //
-// This file is included by all three projects (AetherCore, AetherPayload,
-// AetherInjector) to ensure consistent Windows header configuration.
+// Shared Windows definitions used by the AetherCore and AetherPayload builds.
 //
 // Key settings:
 //   - WIN32_LEAN_AND_MEAN : Reduces the size of windows.h by excluding

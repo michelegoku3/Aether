@@ -12,6 +12,16 @@ level = "trace"
 # upon Steam/AetherCore startup, starting a clean main.log for the current session.
 keep_last_session = true
 
+[injection]
+# auto (default): use the proven copy + SteamUI redirect when the live client
+# is not mapped; if Steam loaded steamclient64.dll early (beta), hook that live
+# module instead, without redirecting SteamUI to a copy. Re-evaluated once
+# before installing the redirect, after the pattern table becomes available.
+# copy: always hook bin\\acoverlay.dll (force stable's historical behaviour).
+# live: always hook Steam's own steamclient64.dll (use if beta still starts too
+# early for the auto selection). Requires restarting Steam to take effect.
+diversion_mode = "auto"
+
 [lua]
 # Extra directories scanned for *.lua manifest scripts, in addition to the
 # default <Steam>\config\stplug-in. These directories are also watched for
