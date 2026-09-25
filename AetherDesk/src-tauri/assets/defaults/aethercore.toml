@@ -14,6 +14,15 @@ level = "trace"
 # upon Steam/AetherCore startup, starting a clean main.log for the current session.
 keep_last_session = true
 
+[injection]
+# auto (default): copy + SteamUI redirect when possible; attach the live
+# steamclient64.dll if Steam already mapped it (e.g. beta startup).
+# The only supported bootstrap is xinput1_4.dll beside steam.exe.
+# copy: force acoverlay.dll and the original redirect (stable).
+# live: force the real steamclient64.dll without a redirect (beta fallback).
+# Changes take effect only after a full Steam restart.
+diversion_mode = "auto"
+
 [lua]
 # Extra directories scanned for *.lua manifest scripts, in addition to the
 # default <Steam>\config\stplug-in. These directories are also watched for

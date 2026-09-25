@@ -5,18 +5,18 @@
 //! (root `CMakeLists.txt` → `common/version.rc.in`), la versione vive dentro i file
 //! stessi — esattamente come la versione di AetherDesk vive dentro AetherDesk.exe
 //! grazie a Tauri/tauri.conf.json. Questo modulo è il lato lettura: interroga la
-//! resource dei 3 binari nella cartella Steam, **senza nessun file esterno**
+//! resource dei 3 binari della configurazione XInput-only nella cartella Steam,
+//! **senza nessun file esterno**
 //! (niente bookmark `.txt`, niente fingerprint `.json`).
 //!
 //! # Contratto
 //! - `read_installed_dll_version` ritorna `Some("x.y.z")` SOLO se tutti e 3 i file
-//!   esistono, hanno la resource e concordano sulla stessa versione (un'installazione
-//!   "mista" con versioni diverse tra loro è ambigua → `None`, il chiamante ricade
-//!   sulla catena legacy per installazioni pre-resource).
+//!   esistono, hanno la resource, concordano sulla stessa versione e nessun
+//!   componente legacy incompatibile è presente. Altrimenti ritorna `None`.
 //! - Fuori da Windows la lettura è uno stub che ritorna sempre `None` (il dominio
 //!   AetherDLL è Windows-only, ma il crate deve compilare ovunque).
 
-use crate::updater::dll::AETHER_DLL_FILES;
+use crate::updater::dll::{AETHER_DLL_FILES, DllInstaller};
 use std::path::Path;
 
 /// Dimensione minima della VS_FIXEDFILEINFO (13 DWORD = 52 byte), dalla documentazione
@@ -87,18 +87,21 @@ pub fn read_file_version(path: &Path) -> Option<(u16, u16, u16)> {
     }
 }
 
-/// Stub non-Windows: nessuna versione leggibile (il chiamante usa il fallback legacy).
+/// Stub non-Windows: nessuna versione PE leggibile.
 #[cfg(not(windows))]
 pub fn read_file_version(_path: &Path) -> Option<(u16, u16, u16)> {
     None
 }
 
-/// Versione concordata dei 3 binari AetherDLL installati nella directory di Steam.
+/// Versione concordata dei 3 binari XInput-only nella directory di Steam.
 ///
 /// Ritorna `Some("x.y.z")` solo con installazione completa e coerente (tutti i file
 /// presenti, tutti con resource, tutti alla stessa versione). In ogni altro caso
 /// `None`: manca file, manca resource (installazioni pre-resource) o versioni miste.
 pub fn read_installed_dll_version(steam_dir: &Path) -> Option<String> {
+    if !DllInstaller::new(steam_dir.to_string_lossy().into_owned()).verify_installation() {
+        return None;
+    }
     let mut agreed: Option<(u16, u16, u16)> = None;
 
     for file_name in AETHER_DLL_FILES {

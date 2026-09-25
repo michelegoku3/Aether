@@ -29,6 +29,7 @@ pub mod bridge_contract_tests;
 pub mod crack_locate_tests;
 pub mod custom_css_tests;
 pub mod dll_version_tests;
+pub mod dll_install_tests;
 pub mod github_updater_tests;
 pub mod home_links_tests;
 pub mod hubcap_monitor_tests;

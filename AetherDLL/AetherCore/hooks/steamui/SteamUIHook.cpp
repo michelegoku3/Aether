@@ -1,8 +1,10 @@
 #include "pch.h"
 #include "hooks/steamui/SteamUIHook.h"
 
+#include <algorithm>
 #include <atomic>
 #include <cstring>
+#include <exception>
 #include <mutex>
 #include <thread>
 
@@ -29,9 +31,9 @@ namespace {
 
 constexpr const char* kModule = "SteamUI";
 
-// steamui.dll!LoadModuleWithPath loads the live steamclient64.dll; we redirect
-// it to our diverted, hookable copy. This hook requires steamui.dll to be
-// mapped, so it is installed in a deferred second batch (see below).
+// In copy mode, steamui.dll!LoadModuleWithPath must receive the copy. In
+// live mode it must run unmodified. Arm the redirect as soon as the pattern
+// table is ready, not after Lua/IPC/network initialization finishes.
 using LoadModuleWithPath_t = HMODULE (*)(const char*, bool);
 LoadModuleWithPath_t o_LoadModuleWithPath = nullptr;
 
@@ -50,38 +52,54 @@ std::atomic<bool> s_retryStarted{false};
 std::mutex s_batchMutex;
 
 HMODULE h_LoadModuleWithPath(const char* path, bool flags) {
-    if (path && std::strstr(path, "steamclient64.dll")) {
-        AC_LOG_INFO_ONCE(kModule, "Redirecting steamclient64.dll load to acoverlay.dll.");
-        return g_state.diversionModule;
+    if (path && !g_state.diversionUsesLive.load(std::memory_order_acquire)) {
+        const char* backslash = std::strrchr(path, '\\');
+        const char* slash = std::strrchr(path, '/');
+        const char* name = backslash && (!slash || backslash > slash) ? backslash + 1
+                         : slash ? slash + 1 : path;
+        if (_stricmp(name, "steamclient64.dll") == 0 && g_state.diversionModule) {
+            g_state.steamUiRedirectUsed.store(true, std::memory_order_release);
+            AC_LOG_INFO_ONCE(kModule, "Redirecting steamclient64.dll to acoverlay.dll.");
+            status::Write();
+            return g_state.diversionModule;
+        }
     }
     return o_LoadModuleWithPath(path, flags);
 }
 
-// Installs the steamui redirect if steamui.dll is mapped. Returns true when the
-// redirect was registered+enabled (or already present); false when steamui is
-// not available yet (caller decides whether to retry).
+// Returns true only when the redirect is actually enabled, or deliberately
+// unnecessary (live mode). A mapped steamui DLL alone is NOT success: a missing
+// TOML or MinHook failure must keep the retry alive.
 bool InstallSteamUiRedirect() {
+    if (g_state.diversionUsesLive.load(std::memory_order_acquire)) return true;
     std::lock_guard<std::mutex> batchLock(s_batchMutex);
+    if (g_state.steamUiRedirectInstalled.load(std::memory_order_acquire)) return true;
     HMODULE steamui = GetModuleHandleA("steamui.dll");
     if (!steamui) return false;
     g_state.steamuiModule = steamui;
 
-    if (void* addr = pattern::ResolveAddress("LoadModuleWithPath", "steamui", steamui)) {
-        g_state.hookManager.RegisterHook("LoadModuleWithPath", addr,
-                                   reinterpret_cast<void**>(&o_LoadModuleWithPath),
-                                   reinterpret_cast<void*>(h_LoadModuleWithPath));
-        if (g_state.hookManager.InstallAll()) {
-            AC_LOG_INFO(kModule, "SteamUI redirect installed.");
-        } else {
-            AC_LOG_ERROR(kModule, "SteamUI redirect enable failed.");
-        }
-    } else {
+    void* addr = pattern::ResolveAddress("LoadModuleWithPath", "steamui", steamui);
+    if (!addr) {
         g_state.hookManager.RecordMissed("LoadModuleWithPath", MissReason::PatternUnresolved);
+        status::Write();
+        return false;
     }
-
-    // Republish the final hook state now that the redirect is (or is not) in.
+    g_state.hookManager.RegisterHook("LoadModuleWithPath", addr,
+                                    reinterpret_cast<void**>(&o_LoadModuleWithPath),
+                                    reinterpret_cast<void*>(h_LoadModuleWithPath));
+    const bool enabled = g_state.hookManager.InstallAll();
+    const auto hooks = g_state.hookManager.Snapshot();
+    const bool created = std::find(hooks.installed.begin(), hooks.installed.end(),
+                                   "LoadModuleWithPath") != hooks.installed.end();
+    if (enabled && created) {
+        g_state.steamUiRedirectInstalled.store(true, std::memory_order_release);
+        AC_LOG_INFO(kModule, "SteamUI redirect installed.");
+    } else {
+        AC_LOG_ERROR(kModule, "SteamUI redirect not enabled; retrying (enabled=%d created=%d).",
+                     enabled ? 1 : 0, created ? 1 : 0);
+    }
     status::Write();
-    return true;
+    return enabled && created;
 }
 
 void SteamUiRetryThread() {
@@ -109,7 +127,12 @@ void StartSteamUiRetry() {
     bool expected = false;
     if (!s_retryStarted.compare_exchange_strong(expected, true)) return;
     s_retryStop.store(false, std::memory_order_relaxed);
-    s_retryThread = std::thread(SteamUiRetryThread);
+    try {
+        s_retryThread = std::thread(SteamUiRetryThread);
+    } catch (const std::exception& e) {
+        s_retryStarted.store(false);
+        AC_LOG_ERROR(kModule, "Could not start SteamUI redirect retry: %s.", e.what());
+    }
 }
 
 void StopSteamUiRetry() {
@@ -161,21 +184,15 @@ void InstallSteamClientBatch() {
 
 }  // namespace
 
+void ArmSteamUiRedirectEarly() {
+    if (!InstallSteamUiRedirect()) StartSteamUiRetry();
+}
+
 void InstallAllHooks() {
-    // 1. Try the steamui redirect immediately (common case: steamui.dll is
-    //    already mapped at init). This registers+enables only the redirect in
-    //    its own batch, so it is active as early as possible.
-    const bool redirectReady = InstallSteamUiRedirect();
-
-    // 2. Install all steamclient hooks immediately (no steamui dependency).
-    //    The redirect batch (if any) and this batch accumulate in HookManager.
+    // The early call happens immediately after patterns are available, before
+    // IPC/Lua. This call is idempotent and also covers late-pattern retries.
+    ArmSteamUiRedirectEarly();
     InstallSteamClientBatch();
-
-    // 3. If steamui.dll was not present yet, retry the redirect in the
-    //    background with a bounded budget.
-    if (!redirectReady) {
-        StartSteamUiRetry();
-    }
 }
 
 void ShutdownSteamUiRetry() {

@@ -4,7 +4,7 @@
 # Structure (clean professional layout):
 #   - AetherCore/         : Main core DLL (AetherCore.dll)
 #   - AetherPayload/      : Online/EOS payload DLL (AetherPayload.dll)
-#   - AetherInjector/     : DWMAPI proxy injector (dwmapi.dll)
+#   - AetherXInput/       : Steam proxy injector (xinput1_4.dll)
 #
 # Dependencies fetched via FetchContent (no manual vendoring required).
 # Professional separation: each project is a self-contained subproject.
@@ -249,16 +249,8 @@ endif()
 
 add_subdirectory(AetherCore)
 add_subdirectory(AetherPayload)
-add_subdirectory(AetherInjector)
+add_subdirectory(AetherXInput)
 
-# ============================================================================
-# Output Directory Configuration (common for all)
-# ============================================================================
-# All DLLs will land in ${CMAKE_BINARY_DIR}/out/<Config>/
-set(OUTPUT_DIR "${CMAKE_BINARY_DIR}/out")
-
-# ============================================================================
-# Installation / Packaging (optional professional touch)
-# ============================================================================
-install(DIRECTORY ${OUTPUT_DIR}/ DESTINATION bin COMPONENT Runtime)
-install(FILES README.md BUILD.md LICENSE DESTINATION .)
+# Install only built targets, never arbitrary or stale DLLs in the output tree.
+install(TARGETS AetherCore AetherPayload AetherXInput
+    RUNTIME DESTINATION bin COMPONENT Runtime)

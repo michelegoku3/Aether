@@ -154,6 +154,20 @@ void Settings() {
     stop = true; reader.join();
     CHECK(coherent);
     CHECK(ac::Settings::Snapshot()->presenceCustomGameName == "revision99");
+
+    // Startup-only injection selection is strict, with auto as the default.
+    bool valid = false;
+    CHECK(ac::Settings::Load("nonexistent.toml", &valid).diversionMode == ac::DiversionMode::Auto);
+    CHECK(!valid);
+    auto modePath = f.Write("injection.toml", "[injection]\ndiversion_mode = 'copy'\n");
+    CHECK(ac::Settings::Load(modePath.string(), &valid).diversionMode == ac::DiversionMode::Copy);
+    CHECK(valid);
+    f.Write("injection.toml", "[injection]\ndiversion_mode = 'live'\n");
+    CHECK(ac::Settings::Load(modePath.string(), &valid).diversionMode == ac::DiversionMode::Live);
+    CHECK(valid);
+    f.Write("injection.toml", "[injection]\ndiversion_mode = 'invalid'\n");
+    ac::Settings::Load(modePath.string(), &valid);
+    CHECK(!valid);
 }
 void Workers() {
     namespace w = ac::workers;
@@ -216,6 +230,17 @@ void Registry() {
     CHECK(manager.Snapshot().installed.size() == 1001);
     manager.UninstallAll(); manager.UninstallAll();
     CHECK(manager.Snapshot().installed.empty());
+
+    ac::HookManager retried;
+    retried.RegisterHook("LoadModuleWithPath", nullptr, nullptr, nullptr);
+    testCreateFails = true;
+    CHECK(retried.InstallAll());
+    CHECK(retried.InstallAll());
+    CHECK(retried.Snapshot().missed.size() == 1);  // no duplicate retry misses
+    testCreateFails = false;
+    CHECK(retried.InstallAll());
+    CHECK(retried.Snapshot().installed.size() == 1);
+    CHECK(retried.Snapshot().missed.empty());
 }
 int main(int argc, char** argv) {
     try {

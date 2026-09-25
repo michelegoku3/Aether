@@ -218,6 +218,34 @@ pub fn remove_obsolete_component_version_dirs(app: &tauri::AppHandle) {
     }
 }
 
+/// Remove the obsolete Steam-root bootstrap once Steam is closed. Safe to run
+/// on every startup: absence is a no-op, and a locked file is retried on the
+/// next launch or by the DLL installer (which also runs this migration).
+pub fn migrate_legacy_steam_proxy(steam_path: &str) -> Result<bool, String> {
+    migrate_legacy_steam_proxy_with_check(
+        steam_path,
+        crate::core::steam_process::is_steam_running_fresh,
+    )
+}
+
+// Inject the process check so deferral and retry can be tested without Steam.
+pub(crate) fn migrate_legacy_steam_proxy_with_check(
+    steam_path: &str,
+    is_steam_running: impl FnOnce() -> bool,
+) -> Result<bool, String> {
+    let Ok(root) = crate::steam::resolve::resolve_steam_path(steam_path) else {
+        return Ok(false); // no configured/reachable Steam install to migrate
+    };
+    let installer = crate::updater::dll::DllInstaller::new(root.to_string_lossy().into_owned());
+    if !installer.has_legacy_proxy() {
+        return Ok(false);
+    }
+    if is_steam_running() {
+        return Err("Steam is running; obsolete proxy removal deferred until Steam is closed".into());
+    }
+    installer.migrate_legacy_proxy()
+}
+
 pub fn ensure_appearance_dirs() {
     if let Err(e) = crate::core::custom_css::ensure_default_assets() {
         eprintln!("[AetherDesk] appearance dirs failed: {e}");
@@ -295,8 +323,13 @@ pub fn run_startup_migrations(app: &tauri::AppHandle) {
     // never configured (empty or stale legacy default). Runs before the
     // bridge below so the pointer targets the effective installation.
     adopt_detected_steam_path_if_unconfigured(app);
-    ensure_aethercore_bridge(app);
     let steam_path = crate::core::settings::SettingsManager::new(app).load().steam_path;
+    match migrate_legacy_steam_proxy(&steam_path) {
+        Ok(true) => crate::desk_log_info!("migration", "Removed obsolete Steam-root DLL proxy"),
+        Err(error) => crate::desk_log_warn!("migration", "Steam proxy migration deferred: {}", error),
+        Ok(false) => {}
+    }
+    ensure_aethercore_bridge(app);
     match migrate_legacy_lua_backups(Path::new(&steam_path)) {
         Ok(r) if r.games > 0 => eprintln!("[AetherDesk] migrated {} lua games", r.games),
         Err(e) => eprintln!("[AetherDesk] lua migration failed: {e}"),

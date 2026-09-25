@@ -58,6 +58,9 @@ void Settings::ReloadIfModified(const std::string& configPath) {
     if (candidate->luaExtraPaths != previous->luaExtraPaths) {
         AC_LOG_WARN("Settings", "lua.extra_paths changed: restart Steam to rebuild Lua directory watches.");
     }
+    if (candidate->diversionMode != previous->diversionMode) {
+        AC_LOG_WARN("Settings", "injection.diversion_mode changed: restart Steam to move the hook target.");
+    }
 }
 
 Settings Settings::Load(const std::string& configPath, bool* valid) {
@@ -74,6 +77,18 @@ Settings Settings::Load(const std::string& configPath, bool* valid) {
                     "Cannot parse config %s (%s); defaults only apply during startup.",
                     configPath.c_str(), e.what());
         return s;
+    }
+
+    // [injection] Parsed at startup, before the module target is selected.
+    if (auto mode = tbl["injection"]["diversion_mode"].value<std::string>()) {
+        if (*mode == "auto") s.diversionMode = DiversionMode::Auto;
+        else if (*mode == "copy") s.diversionMode = DiversionMode::Copy;
+        else if (*mode == "live") s.diversionMode = DiversionMode::Live;
+        else {
+            AC_LOG_WARN("Settings", "Invalid injection.diversion_mode '%s' (auto/copy/live).",
+                        mode->c_str());
+            return s;  // mark invalid, do not publish a partially parsed hot reload
+        }
     }
 
     // [log]
@@ -205,7 +220,7 @@ Settings Settings::Load(const std::string& configPath, bool* valid) {
 
     AC_LOG_INFO("Settings",
                 "Loaded %s (level=%s, keep_last_session=%d, lua extra paths: %zu, "
-                "mirror: %s, ost=%d, manifest urls: %zu, bridge_wait=%dms, manifest_restore=%d, presence: default=%s show=%zu of=%zu excl=%zu).",
+                "mirror: %s, ost=%d, diversion=%s, manifest urls: %zu, bridge_wait=%dms, manifest_restore=%d, presence: default=%s show=%zu of=%zu excl=%zu).",
                 configPath.c_str(),
                 s.logLevel == LogLevel::Trace ? "trace"
                     : s.logLevel == LogLevel::Debug ? "debug"
@@ -216,6 +231,8 @@ Settings Settings::Load(const std::string& configPath, bool* valid) {
                 s.luaExtraPaths.size(),
                 s.patternMirror.empty() ? "default" : "custom",
                 s.patternUseOstSource ? 1 : 0,
+                s.diversionMode == DiversionMode::Auto ? "auto"
+                    : s.diversionMode == DiversionMode::Copy ? "copy" : "live",
                 s.manifestFetchUrls.size(),
                 s.manifestBridgeWaitMs,
                 s.manifestRestoreOnStartup ? 1 : 0,

@@ -114,9 +114,9 @@ static void WriteSnapshot(std::uint64_t requests) {
 #endif
          << "\",\n";
     json << "  \"build_time\": \"" << __DATE__ << " " << __TIME__ << "\",\n";
-    json << "  \"diversion_outcome\": \"" << EscapeJson(g_state.diversionOutcome) << "\",\n";
     {
     std::lock_guard lock(g_state.statusMetadataMutex);
+    json << "  \"diversion_outcome\": \"" << EscapeJson(g_state.diversionOutcome) << "\",\n";
     json << "  \"steamclient_sha\": \"" << EscapeJson(g_state.steamclientSha) << "\",\n";
     json << "  \"steamclient_toml_found\": " << (g_state.steamclientTomlFound ? "true" : "false") << ",\n";
     json << "  \"steamclient_pattern_source\": \"" << EscapeJson(g_state.steamclientPatternSource) << "\",\n";
@@ -124,6 +124,12 @@ static void WriteSnapshot(std::uint64_t requests) {
     json << "  \"steamui_toml_found\": " << (g_state.steamuiTomlFound ? "true" : "false") << ",\n";
     json << "  \"steamui_pattern_source\": \"" << EscapeJson(g_state.steamuiPatternSource) << "\",\n";
     }
+    json << "  \"steamclient_hook_target\": \""
+         << (g_state.diversionUsesLive.load() ? "live" : "copy") << "\",\n";
+    json << "  \"steamui_redirect_installed\": "
+         << (g_state.steamUiRedirectInstalled.load() ? "true" : "false") << ",\n";
+    json << "  \"steamui_redirect_used\": "
+         << (g_state.steamUiRedirectUsed.load() ? "true" : "false") << ",\n";
     json << "  \"hooks_installed_count\": " << installed.size() << ",\n";
     json << "  \"hooks_missed_count\": " << missed.size() << ",\n";
     json << "  \"wire_eresult_events\": " << wireEresultEvents << ",\n";

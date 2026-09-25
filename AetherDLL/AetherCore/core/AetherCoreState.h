@@ -233,7 +233,7 @@ struct AetherCoreState {
     std::string aetherCoreDir;      // <steam>\\aethercore
     std::string steamclientPath;    // <steam>\\steamclient64.dll
     std::string steamuiPath;        // <steam>\\steamui.dll
-    std::string diversionPath;      // <steam>\\bin\\acoverlay.dll (our copy)
+    std::string diversionPath;      // Copy: bin\\acoverlay.dll; live: steamclient64.dll
     std::string logFilePath;        // <steam>\\aethercore\\main.log
     std::string configPath;         // <steam>\\aethercore\\aethercore.toml
     std::string patternDir;         // <steam>\\aethercore\\pattern
@@ -254,8 +254,11 @@ struct AetherCoreState {
 
     // ---- Loaded modules ---------------------------------------------------
     HMODULE selfModule = nullptr;
-    HMODULE diversionModule = nullptr;  // The hookable steamclient copy
+    HMODULE diversionModule = nullptr;  // Copy OR live steamclient hook target
     HMODULE steamuiModule = nullptr;
+    std::atomic<bool> diversionUsesLive{false};
+    std::atomic<bool> steamUiRedirectInstalled{false};
+    std::atomic<bool> steamUiRedirectUsed{false};
 
     // ---- Lifecycle --------------------------------------------------------
     HANDLE initThread = nullptr;
@@ -263,7 +266,7 @@ struct AetherCoreState {
     std::atomic<bool> hooksInstalled{false};
 
     // ---- Diversion diagnostics --------------------------------------------
-    std::string diversionOutcome;  // "loaded" | "copy-failed" | "load-failed" | "not-attempted"
+    std::string diversionOutcome;  // copy-loaded | auto-live | live-loaded | *-failed
 
     // ---- Steam diagnostics ------------------------------------------------
     std::string buildId;  // steam.exe!GetBootstrapperVersion (diagnostic only)

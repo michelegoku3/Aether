@@ -179,7 +179,7 @@ namespace {
         //    Depends on: nothing (reads a steam.exe export).
         g_state.buildId = DetectSteamBuildId();
 
-        // 4. Diversion: creates and loads the hookable steamclient copy.
+        // 4. Diversion: prepare the copy or attach the live client (see [injection]).
         //    Depends on: steamInstallPath from ResolvePaths.
         if (!LoadDiversion()) {
             AC_LOG_ERROR(kModule, "Diversion failed; publishing status and aborting.");
@@ -211,6 +211,14 @@ namespace {
             ipcspec::Init();
         });
         patternThread.join();
+        // Steam beta may have mapped the live steamclient during the pattern
+        // fetch. Decide the final target BEFORE the UI redirect and any
+        // steamclient hooks: never hook a copy that Steam no longer uses.
+        SelectHookTargetBeforeRedirect();
+        // In copy mode, arm LoadModuleWithPath immediately, while the IPC
+        // lookup and Lua scan are still in progress. This closes the old
+        // step-9 window where Steam loaded the live client first.
+        ac::hooks::ArmSteamUiRedirectEarly();
         ipcThread.join();
         if (!patternsOk) {
             AC_LOG_WARN(kModule, "Pattern engine produced no tables; some hooks will be skipped.");
@@ -224,8 +232,8 @@ namespace {
             AC_LOG_ERROR(kModule, "Script engine failed to initialise.");
         }
 
-        // 9. Hook install: waits for steamui.dll internally, then registers
-        //    every steamclient + steamui hook and enables them atomically.
+        // 9. Hook install: the optional UI redirect has already been armed
+        //    (or is retrying); register the steamclient hooks on the chosen target.
         //    Publishes the final status.json.
         //    Depends on: diversion (module handle) + pattern engine (addresses)
         //                + lua data (maps populated).

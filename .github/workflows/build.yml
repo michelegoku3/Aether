@@ -198,8 +198,30 @@ jobs:
           if (!(Test-Path $source)) {
             throw "DLL output folder not found: $source"
           }
-          New-Item -ItemType Directory -Force -Path release | Out-Null
-          Compress-Archive -Path "$source/*" -DestinationPath "release/AetherDLL-$version.zip" -Force
+          # Package only the three supported binaries, never stale build output.
+          $required = @("AetherCore.dll", "AetherPayload.dll", "xinput1_4.dll")
+          $staging = "release/aetherdll-$version-staging"
+          if (Test-Path $staging) { Remove-Item -Recurse -Force $staging }
+          New-Item -ItemType Directory -Force -Path $staging | Out-Null
+          foreach ($name in $required) {
+            $binary = Join-Path $source $name
+            if (!(Test-Path -LiteralPath $binary -PathType Leaf)) {
+              throw "Missing required AetherDLL release file: $binary"
+            }
+            Copy-Item -LiteralPath $binary -Destination (Join-Path $staging $name)
+          }
+          $zipPath = "release/AetherDLL-$version.zip"
+          Compress-Archive -Path "$staging/*" -DestinationPath $zipPath -Force
+          # Verify the ZIP itself, not just the input list.
+          $archive = [System.IO.Compression.ZipFile]::OpenRead((Resolve-Path $zipPath).Path)
+          try {
+            $actual = @($archive.Entries | ForEach-Object { $_.FullName })
+            if ($actual.Count -ne $required.Count -or @(Compare-Object -ReferenceObject $required -DifferenceObject $actual).Count -ne 0) {
+              throw "Unexpected AetherDLL ZIP contents: $($actual -join ', ')"
+            }
+          } finally {
+            $archive.Dispose()
+          }
           @{
             component = "AetherDLL"
             version = $version
@@ -212,7 +234,12 @@ jobs:
         with:
           tag_name: ${{ github.ref_name }}
           name: AetherDLL ${{ steps.version.outputs.version }}
-          body: Automated AetherDLL release compiled on GitHub Actions.
+          body: |
+            Steam stable/beta: XInput-only injection. The ZIP contains only
+            AetherCore.dll, AetherPayload.dll, and xinput1_4.dll.
+            Update AetherDesk first; older versions expect a different proxy.
+            Close Steam and move any unsupported proxy from its installation root
+            to a backup outside Steam before installing. Do not delete unknown files.
           draft: false
           prerelease: false
           files: |
