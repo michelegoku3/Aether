@@ -170,15 +170,19 @@ struct MsgHdr {
 };
 inline constexpr std::uint32_t kMsgHdrProtoFlag = 0x80000000u;
 
-// Incoming network packet handed to RecvPkt. We only touch the data pointer and
-// length; later members preserve layout.
-struct CNetPacket {
-    void* connection;          // +0
-    std::uint8_t* data;        // +8
-    std::uint32_t dataLen;     // +16
-    std::int32_t refCount;     // +20
-    std::uint8_t* networkBuffer;
-    CNetPacket* next;
-};
+// Incoming network packet handed to RecvPkt.
+//
+// DELIBERATELY OPAQUE — do not declare its fields here again.
+//
+// Steam beta 1790380355 inserted two uint32 after m_hConnection and shifted
+// m_pubData/m_cubData/m_cRef by +8. The old flat definition (data @ +8,
+// dataLen @ +16) was WRITTEN through by the wire hooks, so on that build it
+// stored a pointer over a version stamp and dereferenced an integer as a
+// buffer: Steam died before finishing boot.
+//
+// The two fields we use are reached through ac::abi::netpkt::Data()/Size(),
+// which apply an offset identified at runtime from a live packet (and never
+// fall back to a compiled default). See core/NetPacketAbi.h.
+struct CNetPacket;
 
 }  // namespace ac::steam

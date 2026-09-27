@@ -13,6 +13,7 @@
 #include "core/HookManager.h"
 #include "utils/IpcSpec.h"
 #include "core/Logger.h"
+#include "core/NetPacketAbi.h"
 #include "scripting/LuaData.h"
 #include "hooks/aetheronline/OnlinePayload.h"
 #include "hooks/ipc/PipeWatch.h"
@@ -102,7 +103,7 @@ static void WriteSnapshot(std::uint64_t requests) {
     // v4: hooks_missed_list entries carry their reason ("Name (reason)").
     // The field is still a string list, but its CONTENT changed shape, so a
     // consumer that parses hook names has to know (v3 readers keep working).
-    json << "  \"schema_version\": 4,\n";
+    json << "  \"schema_version\": 5,\n";
     json << "  \"ts\": " << static_cast<long long>(std::time(nullptr)) << ",\n";
 
     json << "  \"build_id\": \"" << EscapeJson(g_state.buildId) << "\",\n";
@@ -130,6 +131,10 @@ static void WriteSnapshot(std::uint64_t requests) {
          << (g_state.steamUiRedirectInstalled.load() ? "true" : "false") << ",\n";
     json << "  \"steamui_redirect_used\": "
          << (g_state.steamUiRedirectUsed.load() ? "true" : "false") << ",\n";
+    json << "  \"netpacket_abi_layout\": \"" << abi::netpkt::LayoutName() << "\",\n";
+    json << "  \"netpacket_abi_data_off\": " << abi::netpkt::ResolvedDataOffset() << ",\n";
+    json << "  \"netpacket_abi_resolved\": " << (abi::netpkt::IsResolved() ? "true" : "false") << ",\n";
+    json << "  \"netpacket_abi_probe_attempts\": " << abi::netpkt::ProbeAttempts() << ",\n";
     json << "  \"hooks_installed_count\": " << installed.size() << ",\n";
     json << "  \"hooks_missed_count\": " << missed.size() << ",\n";
     json << "  \"wire_eresult_events\": " << wireEresultEvents << ",\n";

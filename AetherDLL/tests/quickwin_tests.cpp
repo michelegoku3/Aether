@@ -1,6 +1,7 @@
 #include "pch.h"
 #include "core/Settings.h"
 #include "core/HookManager.h"
+#include "core/NetPacketAbi.h"
 #include "utils/Strings.h"
 #include "utils/DeskPaths.h"
 #include "utils/CoalescingWorker.h"
@@ -15,6 +16,8 @@
 #include <iostream>
 #include <stdexcept>
 #include <thread>
+#include <cstring>
+#include <random>
 #include <vector>
 
 #define CHECK(expr) do { if (!(expr)) throw std::runtime_error("Check failed at line " + std::to_string(__LINE__) + ": " #expr); } while (false)
@@ -242,6 +245,170 @@ void Registry() {
     CHECK(retried.Snapshot().installed.size() == 1);
     CHECK(retried.Snapshot().missed.empty());
 }
+
+// ---------------------------------------------------------------------------
+// CNetPacket ABI resolver (core/NetPacketAbi.h).
+//
+// Regression fence for the beta-1790380355 crash: the layout must be
+// identified from live packets, must NEVER latch on garbage, and must
+// disable itself instead of falling back to a compiled default.
+// ---------------------------------------------------------------------------
+namespace netpkt_test {
+using namespace ac::abi::netpkt;
+
+// A synthetic CNetPacket: 0x40 bytes of object plus a frame buffer. `dataOff`
+// selects which layout the fake object is built in, so the same code models
+// both the stable (0x08) and the beta (0x10) client.
+struct FakePacket {
+    alignas(16) std::uint8_t obj[0x40]{};
+    std::uint8_t frame[256]{};
+
+    void Build(std::uint32_t dataOff, std::uint32_t headerLen, std::int32_t ref = 1,
+               std::uint32_t protoFlag = ac::abi::netpkt::kProtoFlag,
+               std::uint32_t frameLen = 0) {
+        std::memset(obj, 0, sizeof(obj));
+        std::memset(frame, 0, sizeof(frame));
+        const std::uint32_t len = frameLen ? frameLen : (8 + headerLen);
+        const std::uint32_t rawEMsg = protoFlag | 0x2BFu;   // a real Steam EMsg
+        std::memcpy(frame, &rawEMsg, 4);
+        std::memcpy(frame + 4, &headerLen, 4);
+        std::uint8_t* ptr = frame;
+        std::memcpy(obj + dataOff, &ptr, sizeof(ptr));
+        std::memcpy(obj + SizeOffFor(dataOff), &len, 4);
+        std::memcpy(obj + RefOffFor(dataOff), &ref, 4);
+    }
+
+    const void* Packet() const { return obj; }
+};
+
+// Readability oracle for the tests: only the fake object and its frame are
+// readable, everything else is "unmapped". Stricter than Windows, which is
+// exactly what we want — a probe that needs real memory to be wrong fails here.
+struct Arena { const FakePacket* p; };
+bool ArenaReadable(const void* addr, std::size_t bytes, void* ctx) {
+    const auto* a = static_cast<const Arena*>(ctx);
+    const auto start = reinterpret_cast<std::uintptr_t>(addr);
+    const auto objLo = reinterpret_cast<std::uintptr_t>(a->p->obj);
+    const auto frameLo = reinterpret_cast<std::uintptr_t>(a->p->frame);
+    const bool inObj = start >= objLo && start + bytes <= objLo + sizeof(a->p->obj);
+    const bool inFrame = start >= frameLo && start + bytes <= frameLo + sizeof(a->p->frame);
+    return inObj || inFrame;
+}
+
+// Drives `r` with the same packet until it latches or gives up.
+Resolver::Step Feed(Resolver& r, const FakePacket& pkt, int times) {
+    Arena arena{&pkt};
+    Resolver::Step last = Resolver::Step::NoEvidence;
+    for (int i = 0; i < times; ++i) last = r.Observe(pkt.Packet(), &ArenaReadable, &arena);
+    return last;
+}
+}  // namespace netpkt_test
+
+void NetPacket() {
+    using namespace ac::abi::netpkt;
+    using netpkt_test::FakePacket;
+    using netpkt_test::Feed;
+
+    // 1. Golden values: the layouts proven by disassembly must not drift.
+    CHECK(kLayouts[0].dataOff == 0x08 && SizeOffFor(0x08) == 0x10 && RefOffFor(0x08) == 0x14);
+    CHECK(kLayouts[1].dataOff == 0x10 && SizeOffFor(0x10) == 0x18 && RefOffFor(0x10) == 0x1C);
+
+    // 2. A stable-layout packet latches on the SECOND agreeing packet, never
+    //    the first (one packet is not proof).
+    {
+        FakePacket pkt; pkt.Build(0x08, 32);
+        Resolver r;
+        CHECK(Feed(r, pkt, 1) == Resolver::Step::AwaitingConfirm);
+        CHECK(!r.IsResolved());
+        CHECK(Feed(r, pkt, 1) == Resolver::Step::Latched);
+        CHECK(r.IsResolved() && r.DataOffset() == 0x08);
+        CHECK(std::string(r.LayoutName()) == "stable");
+    }
+
+    // 3. Same code, beta layout -> the OTHER offset. This is the case that
+    //    crashed Steam when it was compiled in.
+    {
+        FakePacket pkt; pkt.Build(0x10, 64);
+        Resolver r;
+        Feed(r, pkt, 2);
+        CHECK(r.IsResolved() && r.DataOffset() == 0x10);
+        CHECK(std::string(r.LayoutName()) == "beta");
+    }
+
+    // 4. A layout we do not know (future Valve shift) must DISABLE, never
+    //    guess: no field is touched for the rest of the session.
+    {
+        FakePacket pkt; pkt.Build(0x18, 32);          // hypothetical +0x18
+        Resolver r;
+        Feed(r, pkt, kMaxProbeAttempts + 2);
+        CHECK(r.IsDisabled());
+        CHECK(!r.IsResolved() && r.DataOffset() == 0);
+        CHECK(std::string(r.LayoutName()) == "disabled");
+    }
+
+    // 5. Hostile / random memory must never latch anything.
+    {
+        FakePacket pkt;
+        std::mt19937 rng(1234);
+        Resolver r;
+        netpkt_test::Arena arena{&pkt};
+        for (int i = 0; i < 400; ++i) {
+            for (auto& b : pkt.obj) b = static_cast<std::uint8_t>(rng() & 0xFF);
+            for (auto& b : pkt.frame) b = static_cast<std::uint8_t>(rng() & 0xFF);
+            r.Observe(pkt.Packet(), &netpkt_test::ArenaReadable, &arena);
+            CHECK(!r.IsResolved());
+        }
+    }
+
+    // 6. Valve's own predicate is enforced: a non-proto frame, a bogus
+    //    refcount and an out-of-range headerLength are all rejected.
+    {
+        netpkt_test::Arena a{nullptr};
+        FakePacket nonProto; nonProto.Build(0x08, 32, 1, /*protoFlag=*/0);
+        a.p = &nonProto;
+        CHECK(!CandidateMatches(nonProto.Packet(), 0x08, &netpkt_test::ArenaReadable, &a));
+
+        FakePacket freed; freed.Build(0x08, 32, /*ref=*/0);
+        a.p = &freed;
+        CHECK(!CandidateMatches(freed.Packet(), 0x08, &netpkt_test::ArenaReadable, &a));
+
+        FakePacket liar; liar.Build(0x08, /*headerLen=*/900, 1,
+                                    ac::abi::netpkt::kProtoFlag, /*frameLen=*/64);
+        a.p = &liar;   // headerLen > len - 8
+        CHECK(!CandidateMatches(liar.Packet(), 0x08, &netpkt_test::ArenaReadable, &a));
+
+        FakePacket good; good.Build(0x08, 32);
+        a.p = &good;
+        CHECK(CandidateMatches(good.Packet(), 0x08, &netpkt_test::ArenaReadable, &a));
+    }
+
+    // 7. A poisoned hint (what a wrong ABI table would provide) does not
+    //    override the probe: the true layout still wins.
+    {
+        FakePacket pkt; pkt.Build(0x10, 32);
+        Resolver r;
+        r.Hint(0x08);                       // table says stable, packet says beta
+        Feed(r, pkt, 3);
+        CHECK(r.IsResolved() && r.DataOffset() == 0x10);
+    }
+
+    // 8. Accessors are inert while unresolved: writing through them must not
+    //    touch the object (they return the trash sink).
+    {
+        Global().Reset();
+        CHECK(!Global().IsResolved());
+        FakePacket pkt; pkt.Build(0x10, 32);
+        auto* opaque = reinterpret_cast<ac::steam::CNetPacket*>(pkt.obj);
+        std::uint8_t sentinel[4]{1, 2, 3, 4};
+        std::uint8_t before[sizeof(pkt.obj)];
+        std::memcpy(before, pkt.obj, sizeof(before));
+        Data(opaque) = sentinel;
+        Size(opaque) = 0xDEADBEEF;
+        CHECK(std::memcmp(before, pkt.obj, sizeof(before)) == 0);
+        Global().Reset();
+    }
+}
+
 int main(int argc, char** argv) {
     try {
         CHECK(argc == 2);
@@ -250,7 +417,8 @@ int main(int argc, char** argv) {
         else if (test == "policy") Policy(); else if (test == "worker") Worker();
         else if (test == "budget") Budget(); else if (test == "settings") Settings();
         else if (test == "registry") Registry();
-        else if (test == "workers") Workers(); else CHECK(false);
+        else if (test == "workers") Workers();
+        else if (test == "netpacket") NetPacket(); else CHECK(false);
         std::cout << test << ": PASS\n";
         return 0;
     } catch (const std::exception& e) { std::cerr << e.what() << '\n'; return 1; }

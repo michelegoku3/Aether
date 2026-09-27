@@ -13,6 +13,7 @@
 #include "core/AetherCoreState.h"
 #include "core/Constants.h"
 #include "core/HookManager.h"
+#include "core/NetPacketAbi.h"
 #include "core/Logger.h"
 #include "hooks/wire/AccessTokenModule.h"
 #include "hooks/wire/EticketModule.h"
@@ -325,9 +326,16 @@ namespace ac::hooks {
         }
 
         void* h_RecvPkt(void* self, CNetPacket* packet) {
-            if (packet) {
+            // GATE: nothing below may read or write a packet field until the
+            // per-build layout has been identified from live traffic. Before
+            // that (and forever, if the probe gives up) the packet travels
+            // through untouched — Steam boots, we simply do less.
+            if (packet && abi::netpkt::EnsureResolved(packet)) {
+                std::uint8_t*& pktData = abi::netpkt::Data(packet);
+                std::uint32_t& pktLen = abi::netpkt::Size(packet);
+
                 WireFrame f;
-                if (DecodeFrame(packet->data, packet->dataLen, f)) {
+                if (DecodeFrame(pktData, pktLen, f)) {
                     if (f.eMsg == emsg::kMulti) {
                         // [DIAG] flight-recorder: i frame Multi non entrano nel
                         // dispatch, ma devono restare visibili nel trace (con la
@@ -348,29 +356,29 @@ namespace ac::hooks {
                         const std::uint32_t newSize = sizeof(MsgHdr) + t_recvHeaderLen + newBodyLen;
                         std::uint8_t* buf = PoolSlot(newSize);
                         if (buf) {
-                            std::memcpy(buf, packet->data, sizeof(MsgHdr));
+                            std::memcpy(buf, pktData, sizeof(MsgHdr));
                             reinterpret_cast<MsgHdr*>(buf)->headerLength = t_recvHeaderLen;
                             std::memcpy(buf + sizeof(MsgHdr), t_scratchHeader.data(), t_recvHeaderLen);
                             std::memcpy(buf + sizeof(MsgHdr) + t_recvHeaderLen, t_scratchBody.data(),
                                 newBodyLen);
-                            packet->data = buf;
-                            packet->dataLen = newSize;
+                            pktData = buf;
+                            pktLen = newSize;
                         }
                     }
                     else if (newBodyLen == 0) {
-                        packet->dataLen = sizeof(MsgHdr) + f.headerLen;
+                        pktLen = sizeof(MsgHdr) + f.headerLen;
                     }
                     else if (newBodyLen > 0) {
                         const std::uint32_t newSize = sizeof(MsgHdr) + f.headerLen + newBodyLen;
                         std::uint8_t* buf = PoolSlot(newSize);
                         if (buf) {
-                            std::memcpy(buf, packet->data, sizeof(MsgHdr));
+                            std::memcpy(buf, pktData, sizeof(MsgHdr));
                             reinterpret_cast<MsgHdr*>(buf)->headerLength = f.headerLen;
                             std::memcpy(buf + sizeof(MsgHdr), f.header, f.headerLen);
                             std::memcpy(buf + sizeof(MsgHdr) + f.headerLen, t_scratchBody.data(),
                                 newBodyLen);
-                            packet->data = buf;
-                            packet->dataLen = newSize;
+                            pktData = buf;
+                            pktLen = newSize;
                         }
                     }
                     }
