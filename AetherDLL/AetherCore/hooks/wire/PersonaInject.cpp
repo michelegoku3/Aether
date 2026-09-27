@@ -16,6 +16,7 @@
 #include "core/AetherCoreState.h"
 #include "core/Constants.h"
 #include "core/Logger.h"
+#include "core/NetPacketAbi.h"
 #include "hooks/wire/PacketRouter.h"
 #include "scripting/LuaData.h"
 #include "utils/GameNameResolver.h"
@@ -580,6 +581,10 @@ std::int32_t OnPersonaStateRecv(const WireFrame& frame, std::uint8_t* out, std::
 void TryDeliver(void* recvThis, steam::CNetPacket* carrier,
                 void* (*oRecvPkt)(void*, steam::CNetPacket*)) {
     if (!carrier || !oRecvPkt) return;
+    // The carrier's fields are only addressable once the per-build CNetPacket
+    // layout is known (core/NetPacketAbi.h). PacketRouter already gated this
+    // call, but PersonaInject must not depend on its caller for memory safety.
+    if (!abi::netpkt::IsResolved()) return;
 
     std::vector<std::uint8_t> staged;
     {
@@ -589,13 +594,15 @@ void TryDeliver(void* recvThis, steam::CNetPacket* carrier,
         g_state.presence.injectPending = false;
     }
 
-    std::uint8_t* origData = carrier->data;
-    const std::uint32_t origLen = carrier->dataLen;
-    carrier->data = staged.data();
-    carrier->dataLen = static_cast<std::uint32_t>(staged.size());
+    std::uint8_t*& carrierData = abi::netpkt::Data(carrier);
+    std::uint32_t& carrierLen = abi::netpkt::Size(carrier);
+    std::uint8_t* const origData = carrierData;
+    const std::uint32_t origLen = carrierLen;
+    carrierData = staged.data();
+    carrierLen = static_cast<std::uint32_t>(staged.size());
     oRecvPkt(recvThis, carrier);
-    carrier->data = origData;
-    carrier->dataLen = origLen;
+    carrierData = origData;
+    carrierLen = origLen;
 
     {
         std::lock_guard<std::mutex> lock(g_state.presence.mutex);

@@ -19,6 +19,7 @@
 #include "core/HookManager.h"
 #include "utils/IpcSpec.h"
 #include "core/Logger.h"
+#include "core/NetPacketAbi.h"
 #include "utils/PatternEngine.h"
 #include "scripting/ScriptEngine.h"
 #include "core/Settings.h"
@@ -192,6 +193,10 @@ namespace {
         //    carries it even if later stages fail.
         //    Depends on: diversion (steamclientPath resolved).
         g_state.steamclientSha = hasher::ComputeFileSha256(g_state.steamclientPath);
+        // Seed the CNetPacket ABI resolver with what we know about this exact
+        // build. It is only a hint: the layout is still confirmed against live
+        // packets before any field is touched (core/NetPacketAbi.h).
+        abi::netpkt::SeedFromBuild(g_state.steamclientSha);
         status::Write();
 
         // 6. Pattern engine + 7. IPC spec, resolved CONCURRENTLY.

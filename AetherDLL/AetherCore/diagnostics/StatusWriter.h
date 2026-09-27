@@ -8,11 +8,13 @@
 // AetherCore has exactly one. It reads everything it needs from g_state and
 // HookManager, so there is no separate counter bookkeeping to keep in sync.
 //
-// Schema v4 (top-level keys include):
+// Schema v5 (top-level keys include):
 //   schema_version, ts
 //   build_id, build_config, build_time, diversion_outcome
 //   steamclient_sha, steamclient_toml_found, steamclient_pattern_source
 //   steamui_sha, steamui_toml_found, steamui_pattern_source
+//   netpacket_abi_layout, netpacket_abi_data_off, netpacket_abi_resolved,
+//     netpacket_abi_probe_attempts
 //   hooks_installed_count, hooks_missed_count
 //   wire_eresult_events, wire_access_denied_events, wire_transport_candidate_events
 //   cloud_blocked_events
@@ -29,7 +31,10 @@
 //   ipc_spec_loaded, ipc_spec_entries
 //   hooks_installed_list[], hooks_missed_list[] ("Name (reason)"), diagnostics[]
 //
-// History: v4 changed hooks_missed_list entries from "Name" to
+// History: v5 added the netpacket_abi_* keys (per-build CNetPacket layout
+// state: which layout was identified, from how many probe attempts, or
+// whether the wire features are disabled because it could not be);
+// v4 changed hooks_missed_list entries from "Name" to
 // "Name (reason)" (the reason is otherwise lost when the log rotates);
 // v3 was the first AetherCore schema.
 // ---------------------------------------------------------------------------

@@ -13,6 +13,7 @@ add_library(AetherCore SHARED
     core/Settings.cpp
     core/Workers.cpp
     core/HookManager.cpp
+    core/NetPacketAbi.cpp
     core/SteamVersion.cpp
 
     # Scripting
