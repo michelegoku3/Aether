@@ -149,6 +149,10 @@ public:
     };
 
     std::uint32_t State() const { return state_.load(std::memory_order_relaxed); }
+    // How many live packets actually agreed before the latch: 1 means the
+    // build hint supplied the standing agreement and a single packet confirmed
+    // it, 2 means two consecutive packets agreed on their own.
+    int Confirmations() const { return confirmations_.load(std::memory_order_relaxed); }
     bool IsResolved() const {
         const std::uint32_t v = State();
         return v != kUnresolved && v != kDisabled;
@@ -176,6 +180,7 @@ public:
         state_.store(kUnresolved, std::memory_order_relaxed);
         agreed_.store(kUnresolved, std::memory_order_relaxed);
         attempts_.store(0, std::memory_order_relaxed);
+        confirmations_.store(0, std::memory_order_relaxed);
     }
 
     // Seeds the candidate that a per-build table (or a known-SHA hint) claims
@@ -183,7 +188,11 @@ public:
     // it on a live packet before anything is written. The only effect is that
     // the confirmation arrives one packet earlier.
     void Hint(std::uint32_t dataOff) {
-        if (State() == kUnresolved) agreed_.store(dataOff, std::memory_order_relaxed);
+        if (State() != kUnresolved) return;
+        agreed_.store(dataOff, std::memory_order_relaxed);
+        // The hint stands in for the first agreeing packet, so the next live
+        // packet that matches it completes the confirmation.
+        confirmations_.store(0, std::memory_order_relaxed);
     }
 
     std::uint32_t Hinted() const { return agreed_.load(std::memory_order_relaxed); }
@@ -218,13 +227,16 @@ public:
             // Genuine ambiguity — and that IS evidence: do not trust the
             // standing agreement.
             agreed_.store(kUnresolved, std::memory_order_relaxed);
+            confirmations_.store(0, std::memory_order_relaxed);
             return Step::Ambiguous;
         }
         if (agreed_.load(std::memory_order_relaxed) != winner) {
             agreed_.store(winner, std::memory_order_relaxed);
+            confirmations_.store(1, std::memory_order_relaxed);
             return Step::AwaitingConfirm;
         }
 
+        confirmations_.fetch_add(1, std::memory_order_relaxed);
         Latch(winner);
         return Step::Latched;
     }
@@ -235,6 +247,7 @@ private:
     std::atomic<std::uint32_t> state_{kUnresolved};
     std::atomic<std::uint32_t> agreed_{kUnresolved};
     std::atomic<int> attempts_{0};
+    std::atomic<int> confirmations_{0};
 };
 
 // The process-wide resolver.
@@ -286,6 +299,8 @@ void SeedFromBuild(const std::string& steamclientSha256);
 // "unresolved", "disabled".
 const char* LayoutName();
 std::uint32_t ResolvedDataOffset();
+// 1 = build hint + one confirming packet, 2 = two consecutive packets.
+int ProbeConfirmations();
 bool IsResolved();
 bool IsDisabled();
 int ProbeAttempts();

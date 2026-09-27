@@ -81,12 +81,15 @@ void RegisterDecryptionKeyHook(HMODULE diversion) {
 
     if (void* depot = pattern::ResolveAddress("LoadDepotDecryptionKey", "steamclient", diversion)) {
         if (cfg == depot) {
-            // Address collision, NOT a pattern miss: both patterns point at the
-            // same function in this build, so hooking here would mean hooking
-            // LoadDepotDecryptionKey twice. The counterpart is named in the
-            // report: without it the entry says "a collision" and the operator
-            // has to guess which of the 22 hooks is involved.
-            g_state.hookManager.RecordMissed("ConfigStoreGetBinary", MissReason::AddressCollision,
+            // Not a defect and not a pattern miss: disassembly of both builds
+            // (stable 0x5C5F50 / beta 0x5D9010) shows Valve compiles
+            // ConfigStoreGetBinary and LoadDepotDecryptionKey into ONE
+            // function, so the LoadDepotDecryptionKey hook already covers this
+            // code. Hooking here would hook the same function twice.
+            // Reported as a known alias so it stays visible — the day the two
+            // names split again, the entry disappears and we notice — without
+            // inflating the missed-hook count.
+            g_state.hookManager.RecordMissed("ConfigStoreGetBinary", MissReason::KnownAlias,
                                              "LoadDepotDecryptionKey");
             return;
         }

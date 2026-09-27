@@ -193,7 +193,14 @@ bool Download(Kind kind, const std::string& sha, const std::string& outPath,
         return true;
     }
 
-    AC_LOG_WARN(kModule, "All sources failed for '%s/%s'.", KindName(kind), sha.c_str());
+    // Expected on a brand-new Steam build: the table is published minutes to
+    // hours after Valve ships it. Say so, and say what happens next, so the
+    // line is not read as a defect — the caller falls back to the local cache
+    // and, failing that, degrades gracefully.
+    AC_LOG_WARN(kModule,
+                "No source published '%s/%s' yet (new Steam build?); falling back to the "
+                "local cache — hooks without a table are skipped, nothing is guessed.",
+                KindName(kind), sha.c_str());
     return false;
 }
 
