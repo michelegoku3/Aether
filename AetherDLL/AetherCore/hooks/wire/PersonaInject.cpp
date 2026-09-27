@@ -585,6 +585,9 @@ void TryDeliver(void* recvThis, steam::CNetPacket* carrier,
     // layout is known (core/NetPacketAbi.h). PacketRouter already gated this
     // call, but PersonaInject must not depend on its caller for memory safety.
     if (!abi::netpkt::IsResolved()) return;
+    // Same barrier as PacketRouter: we are about to repoint the carrier's
+    // data pointer, which is the single most destructive write Aether makes.
+    if (!abi::netpkt::BeginWrite(carrier)) return;
 
     std::vector<std::uint8_t> staged;
     {

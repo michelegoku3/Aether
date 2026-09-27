@@ -42,6 +42,9 @@ enum class MissReason {
     RuntimeNotApplicable,
     /// MinHook refused to create the hook.
     InstallFailed,
+    /// The ABI sentinel refused the resolved address (it is not a function
+    /// entry point). Hooking it would patch live instructions mid-function.
+    SentinelRejected,
 };
 
 const char* MissReasonText(MissReason reason);

@@ -333,6 +333,12 @@ namespace ac::hooks {
             if (packet && abi::netpkt::EnsureResolved(packet)) {
                 std::uint8_t*& pktData = abi::netpkt::Data(packet);
                 std::uint32_t& pktLen = abi::netpkt::Size(packet);
+                // Write barrier: re-checks the latched layout against THIS
+                // object before we are allowed to mutate it. Reading is
+                // already safe (EnsureResolved + DecodeFrame validate the
+                // frame); writing is what corrupts Steam, so it gets its own
+                // gate.
+                const bool mayWrite = abi::netpkt::BeginWrite(packet);
 
                 WireFrame f;
                 if (DecodeFrame(pktData, pktLen, f)) {
@@ -352,7 +358,14 @@ namespace ac::hooks {
                     } else {
                     const std::int32_t newBodyLen = DispatchRecv(f);
 
-                    if (t_recvHeaderLen >= 0 && newBodyLen >= 0) {
+                    if (!mayWrite) {
+                        // Dispatch already ran (handlers observe traffic and
+                        // keep their caches warm); only the rewrite is
+                        // dropped.
+                        AC_LOG_TRACE_ONCE(kModule,
+                                          "Rewrite skipped: packet rejected by the ABI write barrier.");
+                    }
+                    else if (t_recvHeaderLen >= 0 && newBodyLen >= 0) {
                         const std::uint32_t newSize = sizeof(MsgHdr) + t_recvHeaderLen + newBodyLen;
                         std::uint8_t* buf = PoolSlot(newSize);
                         if (buf) {

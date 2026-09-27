@@ -90,6 +90,11 @@ inline constexpr std::int32_t kMaxRefCount = 1000000;
 inline constexpr std::uintptr_t kMinPtr = 0x10000ull;
 inline constexpr std::uintptr_t kMaxPtr = 0x7FFFFFFF0000ull;
 inline constexpr int kMaxProbeAttempts = 512;
+// Consecutive write-barrier rejections tolerated before the layout is
+// declared wrong and the wire features shut down. One rejection is a weird
+// packet; eight in a row means the object is not what the latched layout
+// says it is, and continuing would corrupt Steam.
+inline constexpr int kMaxWriteMismatches = 8;
 
 // Readability oracle. The Windows implementation is DefaultReadable (in the
 // .cpp); tests pass their own so the state machine stays portable.
@@ -181,6 +186,30 @@ public:
         agreed_.store(kUnresolved, std::memory_order_relaxed);
         attempts_.store(0, std::memory_order_relaxed);
         confirmations_.store(0, std::memory_order_relaxed);
+        mismatches_.store(0, std::memory_order_relaxed);
+        rejects_.store(0, std::memory_order_relaxed);
+    }
+
+    int WriteRejects() const { return rejects_.load(std::memory_order_relaxed); }
+
+    // Write barrier. Called immediately before Aether mutates a packet: the
+    // latched layout is re-checked against THIS object, so a packet that does
+    // not look like the layout we latched is left alone instead of being
+    // written through. Consecutive failures are terminal (see
+    // kMaxWriteMismatches): a layout that stops matching is a layout that was
+    // wrong, and the safe move is to stop touching packets, not to keep
+    // trying. Returns true when the write may proceed.
+    bool BeginWrite(const void* packet, ReadableFn readable, void* ctx) {
+        if (!IsResolved() || !packet) return false;
+        if (CandidateMatches(packet, State(), readable, ctx)) {
+            mismatches_.store(0, std::memory_order_relaxed);
+            return true;
+        }
+        rejects_.fetch_add(1, std::memory_order_relaxed);
+        if (mismatches_.fetch_add(1, std::memory_order_relaxed) + 1 >= kMaxWriteMismatches) {
+            Disable();
+        }
+        return false;
     }
 
     // Seeds the candidate that a per-build table (or a known-SHA hint) claims
@@ -248,6 +277,8 @@ private:
     std::atomic<std::uint32_t> agreed_{kUnresolved};
     std::atomic<int> attempts_{0};
     std::atomic<int> confirmations_{0};
+    std::atomic<int> mismatches_{0};
+    std::atomic<int> rejects_{0};
 };
 
 // The process-wide resolver.
@@ -301,6 +332,11 @@ const char* LayoutName();
 std::uint32_t ResolvedDataOffset();
 // 1 = build hint + one confirming packet, 2 = two consecutive packets.
 int ProbeConfirmations();
+int WriteRejects();
+
+// Write barrier for the hooks: true when `packet` still matches the latched
+// layout and may be mutated. Logs the shutdown if the barrier gives up.
+bool BeginWrite(const steam::CNetPacket* packet);
 bool IsResolved();
 bool IsDisabled();
 int ProbeAttempts();

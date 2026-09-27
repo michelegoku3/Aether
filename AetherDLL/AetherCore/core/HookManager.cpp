@@ -22,6 +22,7 @@ const char* MissReasonText(MissReason reason) {
         case MissReason::HandlerCollision: return "handler collision (duplicate IPC target)";
         case MissReason::RuntimeNotApplicable: return "not applicable in this process";
         case MissReason::InstallFailed: return "MinHook could not create the hook";
+        case MissReason::SentinelRejected: return "rejected by the ABI sentinel (not a function start)";
     }
     return "unknown reason";
 }

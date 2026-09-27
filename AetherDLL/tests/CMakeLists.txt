@@ -13,7 +13,8 @@ add_executable(quickwin_tests quickwin_tests.cpp stubs/Services.cpp
     ../AetherCore/core/Settings.cpp ../AetherCore/core/HookManager.cpp
     ../AetherCore/core/Workers.cpp)
 # NetPacketAbi.h is header-only for everything except the Windows glue, so the
-# resolver is tested without pulling in Win32 (see case "netpacket").
+# resolver and the ABI sentinel classifier are tested without pulling in
+# Win32 (see cases "netpacket" and "sentinel").
 target_include_directories(quickwin_tests PRIVATE stubs ../AetherCore ../AetherPayload)
 target_link_libraries(quickwin_tests PRIVATE Threads::Threads tomlplusplus::tomlplusplus)
 if(MSVC)
@@ -21,7 +22,7 @@ if(MSVC)
 else()
     target_compile_options(quickwin_tests PRIVATE -Wall -Wextra -Wpedantic)
 endif()
-foreach(case strings paths policy worker budget settings registry workers netpacket)
+foreach(case strings paths policy worker budget settings registry workers netpacket sentinel)
     add_test(NAME ${case} COMMAND quickwin_tests ${case})
 endforeach()
 add_test(NAME cmake_source_inventory COMMAND ${CMAKE_COMMAND}
