@@ -135,8 +135,13 @@ static void WriteSnapshot(std::uint64_t requests) {
     json << "  \"netpacket_abi_data_off\": " << abi::netpkt::ResolvedDataOffset() << ",\n";
     json << "  \"netpacket_abi_resolved\": " << (abi::netpkt::IsResolved() ? "true" : "false") << ",\n";
     json << "  \"netpacket_abi_probe_attempts\": " << abi::netpkt::ProbeAttempts() << ",\n";
+    std::size_t benignMisses = 0;
+    for (const auto& m : missed) {
+        if (IsBenignMiss(m.reason)) ++benignMisses;
+    }
     json << "  \"hooks_installed_count\": " << installed.size() << ",\n";
-    json << "  \"hooks_missed_count\": " << missed.size() << ",\n";
+    json << "  \"hooks_missed_count\": " << (missed.size() - benignMisses) << ",\n";
+    json << "  \"hooks_alias_count\": " << benignMisses << ",\n";
     json << "  \"wire_eresult_events\": " << wireEresultEvents << ",\n";
     json << "  \"wire_access_denied_events\": " << wireAccessDeniedEvents << ",\n";
     json << "  \"wire_transport_candidate_events\": " << wireTransportCandidateEvents << ",\n";

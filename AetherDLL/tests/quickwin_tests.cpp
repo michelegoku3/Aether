@@ -323,6 +323,7 @@ void NetPacket() {
         CHECK(Feed(r, pkt, 1) == Resolver::Step::Latched);
         CHECK(r.IsResolved() && r.DataOffset() == 0x08);
         CHECK(std::string(r.LayoutName()) == "stable");
+        CHECK(r.Confirmations() == 2);   // no hint: two packets had to agree
     }
 
     // 3. Same code, beta layout -> the OTHER offset. This is the case that
@@ -390,6 +391,17 @@ void NetPacket() {
         r.Hint(0x08);                       // table says stable, packet says beta
         Feed(r, pkt, 3);
         CHECK(r.IsResolved() && r.DataOffset() == 0x10);
+        CHECK(r.Confirmations() == 2);   // the wrong hint bought nothing
+    }
+
+    // 9. A correct hint latches on the FIRST live packet, and says so
+    //    (Confirmations()==1 is what the log line reports).
+    {
+        FakePacket pkt; pkt.Build(0x10, 32);
+        Resolver r;
+        r.Hint(0x10);
+        CHECK(Feed(r, pkt, 1) == Resolver::Step::Latched);
+        CHECK(r.DataOffset() == 0x10 && r.Attempts() == 1 && r.Confirmations() == 1);
     }
 
     // 8. Accessors are inert while unresolved: writing through them must not

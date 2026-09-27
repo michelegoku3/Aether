@@ -84,15 +84,24 @@ bool EnsureResolved(const steam::CNetPacket* packet) {
     switch (step) {
     case Resolver::Step::Latched:
         if (!g_latchLogged.exchange(true)) {
+            // The wording must match what actually happened: with a build hint
+            // one confirming packet is enough, without one it takes two
+            // agreeing packets. Reporting "two consecutive packets" after a
+            // single attempt reads like a contradiction in the log and hides
+            // whether the hint was in play.
+            const char* how = r.Confirmations() >= 2
+                                  ? "confirmed by 2 consecutive packets"
+                                  : "confirmed by the build hint + 1 live packet";
             AC_LOG_INFO(kModule,
                         "CNetPacket layout = %s (m_pubData +0x%X, m_cubData +0x%X, "
-                        "m_cRef +0x%X), confirmed on two consecutive packets after %d attempt(s).",
+                        "m_cRef +0x%X), %s after %d attempt(s).",
                         r.LayoutName(), r.DataOffset(), SizeOffFor(r.DataOffset()),
-                        RefOffFor(r.DataOffset()), r.Attempts());
+                        RefOffFor(r.DataOffset()), how, r.Attempts());
             diag::Record("netpacket_layout",
                          std::string(r.LayoutName()) + " dataOff=" +
                              std::to_string(r.DataOffset()) + " attempts=" +
-                             std::to_string(r.Attempts()));
+                             std::to_string(r.Attempts()) + " confirmations=" +
+                             std::to_string(r.Confirmations()));
         }
         return true;
 
@@ -149,5 +158,6 @@ std::uint32_t ResolvedDataOffset() { return Global().DataOffset(); }
 bool IsResolved() { return Global().IsResolved(); }
 bool IsDisabled() { return Global().IsDisabled(); }
 int ProbeAttempts() { return Global().Attempts(); }
+int ProbeConfirmations() { return Global().Confirmations(); }
 
 }  // namespace ac::abi::netpkt

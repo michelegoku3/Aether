@@ -28,6 +28,10 @@ enum class MissReason {
     /// Two different hooks resolved to the same address: the pattern metadata
     /// is inconsistent, so hooking would corrupt the wrong function.
     AddressCollision,
+    /// The address is shared with another hook BY DESIGN: Valve compiles the
+    /// two names into one function, so the counterpart already covers it.
+    /// Nothing is missing and nothing needs fixing — see IsBenignMiss().
+    KnownAlias,
     /// Required metadata (e.g. an IPC spec entry) is missing, so the handler
     /// was deliberately disabled.
     MetadataUnavailable,
@@ -60,6 +64,13 @@ struct MissedHook {
 /// diagnostics ring and status.json so the three can never disagree.
 std::string MissedHookText(const std::string& name, MissReason reason,
                            const std::string& detail = {});
+
+/// True for reasons that describe an expected, harmless outcome rather than a
+/// lost capability. Benign entries stay visible in the report (so an alias
+/// that stops being an alias is noticed) but must not be counted as misses or
+/// raise the log level: an operator reading "1 missed" goes hunting for a bug
+/// that does not exist.
+bool IsBenignMiss(MissReason reason);
 
 struct HookInfo {
     std::string name;

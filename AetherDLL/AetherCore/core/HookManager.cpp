@@ -17,12 +17,17 @@ const char* MissReasonText(MissReason reason) {
     switch (reason) {
         case MissReason::PatternUnresolved: return "pattern not resolved";
         case MissReason::AddressCollision: return "address collision with another hook";
+        case MissReason::KnownAlias: return "same function as another hook (known alias)";
         case MissReason::MetadataUnavailable: return "required metadata unavailable";
         case MissReason::HandlerCollision: return "handler collision (duplicate IPC target)";
         case MissReason::RuntimeNotApplicable: return "not applicable in this process";
         case MissReason::InstallFailed: return "MinHook could not create the hook";
     }
     return "unknown reason";
+}
+
+bool IsBenignMiss(MissReason reason) {
+    return reason == MissReason::KnownAlias;
 }
 
 std::string MissedHookText(const std::string& name, MissReason reason,
@@ -80,8 +85,13 @@ void HookManager::RecordMissed(const std::string& name, MissReason reason,
             return;
         }
     }
-    AC_LOG_WARN(kModule, "Hook '%s' missed: %s%s%s.", name.c_str(), MissReasonText(reason),
-                detail.empty() ? "" : " — ", detail.c_str());
+    if (IsBenignMiss(reason)) {
+        AC_LOG_INFO(kModule, "Hook '%s' not installed: %s%s%s.", name.c_str(),
+                    MissReasonText(reason), detail.empty() ? "" : " — ", detail.c_str());
+    } else {
+        AC_LOG_WARN(kModule, "Hook '%s' missed: %s%s%s.", name.c_str(), MissReasonText(reason),
+                    detail.empty() ? "" : " — ", detail.c_str());
+    }
     diag::Record("hook_miss", MissedHookText(name, reason, detail));
     missed_.push_back(MissedHook{name, reason, detail});
 }
@@ -131,17 +141,32 @@ bool HookManager::InstallAll() {
         installed << installed_[i];
     }
 
-    if (missed_.empty()) {
-        AC_LOG_INFO(kModule, "Enabled %d hooks (0 missed): [%s].", installedCount_,
-                    installed.str().c_str());
-    } else {
-        std::ostringstream missed;
-        for (std::size_t i = 0; i < missed_.size(); ++i) {
-            if (i) missed << ", ";
-            missed << missed_[i].name << " (" << MissReasonText(missed_[i].reason) << ")";
+    // Benign entries (known aliases) are reported but not counted as misses,
+    // so the summary line only raises its voice when something is actually
+    // lost.
+    std::size_t realMisses = 0;
+    std::ostringstream missed;
+    for (std::size_t i = 0; i < missed_.size(); ++i) {
+        if (i) missed << ", ";
+        missed << missed_[i].name << " (" << MissReasonText(missed_[i].reason) << ")";
+        if (!IsBenignMiss(missed_[i].reason)) ++realMisses;
+    }
+    const std::size_t benign = missed_.size() - realMisses;
+
+    if (realMisses == 0) {
+        if (benign == 0) {
+            AC_LOG_INFO(kModule, "Enabled %d hooks (0 missed): [%s].", installedCount_,
+                        installed.str().c_str());
+        } else {
+            AC_LOG_INFO(kModule,
+                        "Enabled %d hooks (0 missed, %zu known alias): installed=[%s] "
+                        "aliases=[%s].",
+                        installedCount_, benign, installed.str().c_str(), missed.str().c_str());
         }
-        AC_LOG_WARN(kModule, "Enabled %d hooks (%zu missed): installed=[%s] missed=[%s].",
-                    installedCount_, missed_.size(), installed.str().c_str(),
+    } else {
+        AC_LOG_WARN(kModule, "Enabled %d hooks (%zu missed, %zu known alias): "
+                    "installed=[%s] missed=[%s].",
+                    installedCount_, realMisses, benign, installed.str().c_str(),
                     missed.str().c_str());
     }
     return true;
