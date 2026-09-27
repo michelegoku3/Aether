@@ -153,11 +153,29 @@ void SeedFromBuild(const std::string& steamclientSha256) {
     diag::Record("netpacket_layout", "unknown build, probe-only");
 }
 
+bool BeginWrite(const steam::CNetPacket* packet) {
+    Resolver& r = Global();
+    if (r.BeginWrite(packet, &DefaultReadable, nullptr)) return true;
+
+    if (r.IsDisabled() && !g_disableLogged.exchange(true)) {
+        AC_LOG_ERROR(kModule,
+                     "CNetPacket write barrier refused %d consecutive packets with the latched "
+                     "%s layout — the layout is wrong for this build. Wire features disabled; "
+                     "no packet field will be touched again this session.",
+                     kMaxWriteMismatches, r.LayoutName());
+        diag::Record("netpacket_layout", "disabled by write barrier");
+    } else {
+        AC_LOG_TRACE(kModule, "write barrier: packet does not match the latched layout, skipped.");
+    }
+    return false;
+}
+
 const char* LayoutName() { return Global().LayoutName(); }
 std::uint32_t ResolvedDataOffset() { return Global().DataOffset(); }
 bool IsResolved() { return Global().IsResolved(); }
 bool IsDisabled() { return Global().IsDisabled(); }
 int ProbeAttempts() { return Global().Attempts(); }
 int ProbeConfirmations() { return Global().Confirmations(); }
+int WriteRejects() { return Global().WriteRejects(); }
 
 }  // namespace ac::abi::netpkt

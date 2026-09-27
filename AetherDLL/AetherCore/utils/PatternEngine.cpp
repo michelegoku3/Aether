@@ -11,6 +11,7 @@
 #include <unordered_map>
 #include <vector>
 
+#include "core/AbiSentinel.h"
 #include "core/AetherCoreState.h"
 #include "utils/Hasher.h"
 #include "core/Logger.h"
@@ -535,6 +536,21 @@ namespace ac::pattern {
                     funcName.c_str());
                 return nullptr;
             }
+        }
+
+        // Last gate before anything is hooked: the signature proves the BYTES
+        // match, the sentinel proves the ADDRESS is a function entry. They
+        // catch different defects — a table can carry a correct signature for
+        // an RVA that points a few bytes into the function (it happened with
+        // the 0x5BC460 pin for RecvPkt), and MinHook would then overwrite live
+        // instructions mid-block.
+        std::string sentinelDetail;
+        const auto verdict =
+            abi::sentinel::Verify(funcName, target, hModule, &sentinelDetail);
+        if (!abi::sentinel::Accepted(verdict)) {
+            g_state.hookManager.RecordMissed(funcName, MissReason::SentinelRejected,
+                                             sentinelDetail);
+            return nullptr;
         }
 
         AC_LOG_DEBUG(kModule, "'%s' (%s) -> 0x%p", funcName.c_str(), module.c_str(),

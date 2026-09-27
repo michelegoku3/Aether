@@ -1,6 +1,7 @@
 #include "pch.h"
 #include "core/Settings.h"
 #include "core/HookManager.h"
+#include "core/AbiSentinel.h"
 #include "core/NetPacketAbi.h"
 #include "utils/Strings.h"
 #include "utils/DeskPaths.h"
@@ -394,6 +395,46 @@ void NetPacket() {
         CHECK(r.Confirmations() == 2);   // the wrong hint bought nothing
     }
 
+    // 9b. Write barrier: once latched, a matching packet may be written, a
+    //     packet that no longer matches may not, and eight consecutive
+    //     rejections shut the feature down for good.
+    {
+        FakePacket good; good.Build(0x10, 32);
+        netpkt_test::Arena arena{&good};
+        Resolver r;
+        r.Hint(0x10);
+        Feed(r, good, 1);
+        CHECK(r.IsResolved());
+        CHECK(r.BeginWrite(good.Packet(), &netpkt_test::ArenaReadable, &arena));
+        CHECK(r.WriteRejects() == 0);
+
+        FakePacket bad; bad.Build(0x08, 32);      // stable-shaped object, beta layout latched
+        netpkt_test::Arena badArena{&bad};
+        for (int i = 0; i < kMaxWriteMismatches - 1; ++i) {
+            CHECK(!r.BeginWrite(bad.Packet(), &netpkt_test::ArenaReadable, &badArena));
+            CHECK(!r.IsDisabled());               // one odd packet is not a verdict
+        }
+        CHECK(!r.BeginWrite(bad.Packet(), &netpkt_test::ArenaReadable, &badArena));
+        CHECK(r.IsDisabled());                    // ...eight in a row is
+        CHECK(r.WriteRejects() == kMaxWriteMismatches);
+        // Terminal: even a good packet is refused afterwards.
+        CHECK(!r.BeginWrite(good.Packet(), &netpkt_test::ArenaReadable, &arena));
+    }
+
+    // 9c. A single mismatch does not arm the shutdown: the counter resets as
+    //     soon as a matching packet arrives (login traffic is mixed).
+    {
+        FakePacket good; good.Build(0x10, 32);
+        FakePacket bad; bad.Build(0x08, 32);
+        netpkt_test::Arena ga{&good}, ba{&bad};
+        Resolver r; r.Hint(0x10); Feed(r, good, 1);
+        for (int i = 0; i < 50; ++i) {
+            CHECK(!r.BeginWrite(bad.Packet(), &netpkt_test::ArenaReadable, &ba));
+            CHECK(r.BeginWrite(good.Packet(), &netpkt_test::ArenaReadable, &ga));
+        }
+        CHECK(!r.IsDisabled());
+    }
+
     // 9. A correct hint latches on the FIRST live packet, and says so
     //    (Confirmations()==1 is what the log line reports).
     {
@@ -421,6 +462,110 @@ void NetPacket() {
     }
 }
 
+
+// ---------------------------------------------------------------------------
+// ABI sentinel (core/AbiSentinel.h).
+//
+// The byte sequences below are REAL: taken from steamclient64.dll build
+// 1790380355 (beta). They are the regression fence for the class of defect
+// that a signature check cannot see — a pattern table whose RVA points into
+// the middle of a function.
+// ---------------------------------------------------------------------------
+void Sentinel() {
+    using namespace ac::abi::sentinel;
+
+    // A slice of the real .pdata: RecvPkt's first fragment, the fragment that
+    // contains the bad 0x5BC460 pin, and CNetPacket::AddRef.
+    const PdataEntry pdata[] = {
+        {0x5BC0F0, 0x5BC197},   // CCMConnection::RecvPkt
+        {0x5BC1A0, 0x5BC1B2},   // CCMInterface::RecvPkt (hot fragment)
+        {0x5BC32A, 0x5BD139},   // ...cold fragment: 0x5BC460 lives in here
+        {0xE82730, 0xE827DA},   // CNetPacket::AddRef
+    };
+    const std::size_t n = sizeof(pdata) / sizeof(pdata[0]);
+
+    // 1. Real entry point, listed in .pdata -> accepted.
+    //    0x5BC1A0: preceded by int3 padding, starts with `mov rax,rsp`.
+    {
+        const std::uint8_t first[] = {0x48, 0x8B, 0xC4, 0x55, 0x48, 0x8D, 0xA8, 0xE8};
+        const Verdict v = Classify(0x5BC1A0, true, pdata, n, 0xCC, first, sizeof(first));
+        CHECK(v == Verdict::Ok);
+        CHECK(Accepted(v));
+    }
+
+    // 2. THE regression: 0x5BC460 is inside the cold fragment. Bytes look
+    //    like a perfectly normal instruction and the previous byte is live
+    //    code (`48 8B D3`). Only .pdata can tell, and it does.
+    {
+        const std::uint8_t first[] = {0x48, 0x89, 0x44, 0x24, 0x30, 0x48, 0x8D, 0x4C};
+        const Verdict v = Classify(0x5BC460, true, pdata, n, 0xD3, first, sizeof(first));
+        CHECK(v == Verdict::NotFunctionStart);
+        CHECK(!Accepted(v));
+    }
+
+    // 3. Leaf function with no unwind entry (GetPipeClient, 0x89F270, starts
+    //    with `test edx,edx`): .pdata cannot help, the int3 padding before it
+    //    can. This must NOT be rejected — Aether hooks it.
+    {
+        const std::uint8_t first[] = {0x85, 0xD2, 0x74, 0x30, 0x44, 0x0F, 0xB7, 0xCA};
+        const Verdict v = Classify(0x89F270, true, pdata, n, 0xCC, first, sizeof(first));
+        CHECK(v == Verdict::OkLeaf);
+        CHECK(Accepted(v));
+    }
+
+    // 4. A function that starts right after a `ret` (no padding) is still a
+    //    function: CNetPacket's mini-ctor at 0xE826D0.
+    {
+        const std::uint8_t first[] = {0x33, 0xC0, 0x89, 0x41, 0x1C, 0x48, 0x89, 0x41};
+        CHECK(Classify(0xE826D0, true, pdata, n, 0xC3, first, sizeof(first)) == Verdict::OkLeaf);
+    }
+
+    // 5. An address in a .pdata gap preceded by live code: unprovable, so
+    //    refused. Better a skipped hook than a jump into a basic block.
+    {
+        const std::uint8_t first[] = {0x8B, 0x41, 0x10, 0xC3, 0xCC, 0xCC, 0xCC, 0xCC};
+        CHECK(Classify(0x700000, true, pdata, n, 0x48, first, sizeof(first)) ==
+              Verdict::NoPredecessorBoundary);
+    }
+
+    // 6. Padding, outside-code and unreadable targets.
+    {
+        const std::uint8_t pad[] = {0xCC, 0xCC, 0xCC, 0xCC, 0xCC, 0xCC, 0xCC, 0xCC};
+        CHECK(Classify(0x5BC198, true, pdata, n, 0xC3, pad, sizeof(pad)) ==
+              Verdict::PaddingAtTarget);
+        const std::uint8_t zero[8] = {};
+        CHECK(Classify(0x5BC198, true, pdata, n, 0xC3, zero, sizeof(zero)) ==
+              Verdict::PaddingAtTarget);
+        const std::uint8_t first[] = {0x48, 0x8B, 0xC4};
+        CHECK(Classify(0x1400000, false, pdata, n, 0xCC, first, sizeof(first)) ==
+              Verdict::OutsideCode);
+        CHECK(Classify(0x5BC1A0, true, pdata, n, 0xCC, nullptr, 0) == Verdict::NoBytes);
+    }
+
+    // 7. No .pdata at all (stripped module): the classifier still works off
+    //    the predecessor byte instead of giving up.
+    {
+        const std::uint8_t first[] = {0x40, 0x53, 0x48, 0x83, 0xEC, 0x30, 0xFF, 0x41};
+        CHECK(Classify(0xE82730, true, nullptr, 0, 0xCC, first, sizeof(first)) ==
+              Verdict::OkLeaf);
+        CHECK(Classify(0xE82730, true, nullptr, 0, 0x8B, first, sizeof(first)) ==
+              Verdict::NoPredecessorBoundary);
+    }
+
+    // 8. Every verdict has text, and only the two positive ones are accepted.
+    {
+        const Verdict all[] = {Verdict::Ok, Verdict::OkLeaf, Verdict::NotFunctionStart,
+                               Verdict::NoPredecessorBoundary, Verdict::PaddingAtTarget,
+                               Verdict::OutsideCode, Verdict::NoBytes};
+        int accepted = 0;
+        for (const Verdict v : all) {
+            CHECK(VerdictText(v) != nullptr && VerdictText(v)[0] != '\0');
+            if (Accepted(v)) ++accepted;
+        }
+        CHECK(accepted == 2);
+    }
+}
+
 int main(int argc, char** argv) {
     try {
         CHECK(argc == 2);
@@ -430,7 +575,8 @@ int main(int argc, char** argv) {
         else if (test == "budget") Budget(); else if (test == "settings") Settings();
         else if (test == "registry") Registry();
         else if (test == "workers") Workers();
-        else if (test == "netpacket") NetPacket(); else CHECK(false);
+        else if (test == "netpacket") NetPacket();
+        else if (test == "sentinel") Sentinel(); else CHECK(false);
         std::cout << test << ": PASS\n";
         return 0;
     } catch (const std::exception& e) { std::cerr << e.what() << '\n'; return 1; }
