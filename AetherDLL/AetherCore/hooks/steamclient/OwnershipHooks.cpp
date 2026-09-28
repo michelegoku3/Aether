@@ -16,6 +16,7 @@
 #include "core/HookManager.h"
 #include "hooks/license/LicenseManager.h"
 #include "core/Logger.h"
+#include "core/StructGuard.h"
 #include "scripting/LuaData.h"
 #include "core/SteamTypes.h"
 #include "utils/SmartIdLog.h"
@@ -280,6 +281,18 @@ namespace ac::hooks {
         bool h_CheckAppOwnership(void* self, AppId app, AppOwnership* out) {
             bool result = o_CheckAppOwnership(self, app, out);
             if (!out || !luadata::HasDepot(app)) return result;
+
+            // Struct guard. This is the write that does NOT crash when the
+            // layout is wrong: we would simply feed Steam confident nonsense
+            // about ownership. The 18-bool block (+0x24..+0x35, proven
+            // identical on both shipped builds) is the cheap tell — Valve
+            // only ever stores 0 or 1 there, so a shifted layout fails the
+            // test on the first byte that holds a pointer fragment.
+            if (const auto reason = abi::guard::CheckOwnership(out);
+                !abi::guard::Passed(reason)) {
+                abi::guard::CountRejection("AppOwnership", reason);
+                return result;   // hand back Steam's own answer, untouched
+            }
 
             const auto originalReleaseState = out->releaseState;
             const auto originalExistInPackageNums = out->existInPackageNums;

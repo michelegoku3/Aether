@@ -12,6 +12,7 @@
 #include "core/AetherCoreState.h"
 #include "core/Constants.h"
 #include "core/Logger.h"
+#include "core/StructGuard.h"
 #include "hooks/steamclient/OwnershipHooks.h"
 #include "scripting/LuaData.h"
 #include "utils/PatternEngine.h"
@@ -101,6 +102,18 @@ namespace ac::hooks::LicenseManager {
             }
             out.expected = expectedIds.size();
 
+            // Struct guard before any pointer arithmetic on Valve's vector:
+            // writing past allocationCount is heap corruption that surfaces
+            // minutes later, somewhere else, with no usable evidence. The
+            // invariants (size <= alloc, storage present and aligned, counts
+            // not absurd) are checked on the live object, so a layout that
+            // moved is caught here instead of in a crash dump.
+            if (const auto reason = abi::guard::CheckPackage(pkg);
+                !abi::guard::Passed(reason)) {
+                abi::guard::CountRejection("PackageInfo (package 0)", reason);
+                return out;
+            }
+
             if (pkg->appIdVec.size > 0 && !pkg->appIdVec.mem.memory) {
                 AC_LOG_ERROR(kModule, "Package0Containment reason=%s has null vector memory.",
                     reason ? reason : "unknown");
@@ -154,6 +167,13 @@ namespace ac::hooks::LicenseManager {
                     return out;
                 }
                 o_CUtlMemoryGrow(&pkg->appIdVec, static_cast<int>(missing.size()));
+                if (const auto grown = abi::guard::CheckPackage(pkg);
+                    !abi::guard::Passed(grown)) {
+                    // CUtlMemoryGrow left the vector in a shape we do not
+                    // recognise: stop before the append loop, not after it.
+                    abi::guard::CountRejection("PackageInfo after CUtlMemoryGrow", grown);
+                    return out;
+                }
                 if (!pkg->appIdVec.mem.memory ||
                     pkg->appIdVec.mem.allocationCount < required) {
                     AC_LOG_ERROR(kModule, "CUtlMemoryGrow failed for package 0 (reason=%s).",

@@ -15,6 +15,7 @@ add_library(AetherCore SHARED
     core/HookManager.cpp
     core/AbiSentinel.cpp
     core/NetPacketAbi.cpp
+    core/StructGuard.cpp
     core/SteamVersion.cpp
 
     # Scripting
