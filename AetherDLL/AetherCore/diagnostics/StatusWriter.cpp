@@ -105,7 +105,7 @@ static void WriteSnapshot(std::uint64_t requests) {
     // v4: hooks_missed_list entries carry their reason ("Name (reason)").
     // The field is still a string list, but its CONTENT changed shape, so a
     // consumer that parses hook names has to know (v3 readers keep working).
-    json << "  \"schema_version\": 8,\n";
+    json << "  \"schema_version\": 9,\n";
     json << "  \"ts\": " << static_cast<long long>(std::time(nullptr)) << ",\n";
 
     json << "  \"build_id\": \"" << EscapeJson(g_state.buildId) << "\",\n";
@@ -143,6 +143,9 @@ static void WriteSnapshot(std::uint64_t requests) {
     json << "  \"sentinel_verified_count\": " << abi::sentinel::VerifiedCount() << ",\n";
     json << "  \"sentinel_rejected_count\": " << abi::sentinel::RejectedCount() << ",\n";
     json << "  \"abi_struct_rejects\": " << abi::guard::RejectionCount() << ",\n";
+    json << "  \"abi_table_fields_checked\": " << abi::guard::TableFieldsChecked() << ",\n";
+    json << "  \"abi_layout_contradicted\": "
+         << (abi::guard::LayoutContradicted() ? "true" : "false") << ",\n";
     std::size_t benignMisses = 0;
     for (const auto& m : missed) {
         if (IsBenignMiss(m.reason)) ++benignMisses;

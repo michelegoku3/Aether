@@ -96,13 +96,23 @@ struct CUtlVector {
 };
 
 // Package metadata. AppIdVec is where we inject owned titles into package 0.
+//: The value PackageInfo::status holds when the "status" key was absent from
+//: the package's KeyValues — i.e. the package is not loaded. Valve gates on
+//: exactly this, never on a positive "available" constant.
+inline constexpr std::uint32_t kPackageStatusUnloaded = 3;
+
 struct PackageInfo {
     std::uint32_t packageId;
     std::int32_t changeNumber;
     std::uint64_t picsToken;
     std::uint32_t billingType;
     std::uint32_t licenseType;
-    std::uint32_t status;  // 0 == Available; only inject when available.
+    // Usability gate. There is NO "Available" constant: Valve's own code tests
+    // `status != 3`, where 3 is what the "status" key lookup returns when the
+    // key is absent (round-6 disassembly: LoadPackage writes it with default 3,
+    // and every consumer — CheckAppOwnership x2, ProcessPendingLicenseUpdates,
+    // 0x9E0B00 — discards the package on `== 3`). Offset +0x18, both builds.
+    std::uint32_t status;
     std::uint8_t sha1[20];
     void* packageInfoNodeBegin;
     void* extendNodeBegin;

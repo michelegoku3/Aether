@@ -9,11 +9,15 @@ namespace ac::abi::guard {
 namespace {
 constexpr const char* kModule = "Abi.StructGuard";
 std::atomic<std::uint32_t> g_rejections{0};
+std::atomic<bool> g_contradicted{false};
+std::atomic<std::size_t> g_checked{0};
 }  // namespace
 
 const char* ReasonText(Reason r) {
     switch (r) {
     case Reason::Ok: return "ok";
+    case Reason::TableMismatch:
+        return "the build's ABI table contradicts the layout this DLL was compiled with";
     case Reason::NullObject: return "null object";
     case Reason::BoolBlockNotBoolean: return "bool block holds non-boolean bytes (layout shifted?)";
     case Reason::ReleaseStateOutOfRange: return "releaseState out of range";
@@ -24,6 +28,44 @@ const char* ReasonText(Reason r) {
     case Reason::VectorAllocAbsurd: return "vector allocationCount absurd";
     }
     return "unknown";
+}
+
+bool LayoutContradicted() { return g_contradicted.load(std::memory_order_relaxed); }
+
+std::size_t TableFieldsChecked() { return g_checked.load(std::memory_order_relaxed); }
+
+std::size_t ApplyTable(const std::unordered_map<std::string, std::uint32_t>& published,
+                       const std::string& source) {
+    std::size_t matched = 0;
+    std::size_t mismatched = 0;
+    for (const auto& expected : kExpectedLayout) {
+        const auto it = published.find(expected.key);
+        if (it == published.end()) continue;  // older table: not an opinion
+        if (it->second == expected.compiled) {
+            ++matched;
+            continue;
+        }
+        ++mismatched;
+        AC_LOG_ERROR(kModule,
+                     "ABI table (%s): %s is 0x%X in this build but this DLL was compiled "
+                     "with 0x%zX. A struct cannot be re-laid-out at runtime, so every "
+                     "guarded write is disabled for this session. AetherCore needs a "
+                     "rebuild for this build of Steam.",
+                     source.c_str(), expected.key, it->second, expected.compiled);
+        diag::Record("abi_table_mismatch", std::string(expected.key) + " published=" +
+                                               std::to_string(it->second) + " compiled=" +
+                                               std::to_string(expected.compiled));
+    }
+
+    g_checked.store(matched + mismatched, std::memory_order_relaxed);
+    if (mismatched > 0) {
+        g_contradicted.store(true, std::memory_order_relaxed);
+    } else if (matched > 0) {
+        AC_LOG_INFO(kModule,
+                    "ABI table (%s): %zu field offset(s) confirm the compiled layout.",
+                    source.c_str(), matched);
+    }
+    return matched;
 }
 
 void CountRejection(const char* what, Reason r) {
@@ -38,6 +80,10 @@ void CountRejection(const char* what, Reason r) {
 
 std::uint32_t RejectionCount() { return g_rejections.load(std::memory_order_relaxed); }
 
-void ResetCounters() { g_rejections.store(0, std::memory_order_relaxed); }
+void ResetCounters() {
+    g_rejections.store(0, std::memory_order_relaxed);
+    g_contradicted.store(false, std::memory_order_relaxed);
+    g_checked.store(0, std::memory_order_relaxed);
+}
 
 }  // namespace ac::abi::guard

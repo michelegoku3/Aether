@@ -714,12 +714,45 @@ void StructGuard() {
         CHECK(CheckPackage(nullptr) == Reason::NullObject);
     }
 
+    // 8. Phase 4: the published table is checked against the compiled layout.
+    {
+        ResetCounters();
+        std::unordered_map<std::string, std::uint32_t> table = {
+            {"AppOwnership.bool_block_start", 0x24},
+            {"AppOwnership.size_bytes", 0x36},
+            {"PackageInfo.appIdVec", 0x40},
+            {"PackageInfo.depotIdVec", 0x58},
+            {"CUtlVector.count", 0x10},
+        };
+        CHECK(ApplyTable(table, "test") == 5);
+        CHECK(!LayoutContradicted());
+        AppOwnership fine{};
+        fine.releaseState = ac::steam::AppReleaseState::Released;
+        CHECK(Passed(CheckOwnership(&fine)));
+
+        // A table describing a layout this binary was not compiled with must
+        // stop every guarded write: a C++ struct cannot be re-laid-out at
+        // runtime, so "adapting" would mean writing to the wrong offsets.
+        table["AppOwnership.bool_block_start"] = 0x2C;
+        ApplyTable(table, "test");
+        CHECK(LayoutContradicted());
+        CHECK(CheckOwnership(&fine) == Reason::TableMismatch);
+        PackageInfo pkg{};
+        CHECK(CheckPackage(&pkg) == Reason::TableMismatch);
+
+        // Fields the table does not carry are not an opinion (older tables).
+        ResetCounters();
+        CHECK(ApplyTable({{"Unrelated.field", 1}}, "test") == 0);
+        CHECK(!LayoutContradicted());
+    }
+
     // 7. Every reason has text.
     {
         const Reason all[] = {Reason::Ok, Reason::NullObject, Reason::BoolBlockNotBoolean,
                               Reason::ReleaseStateOutOfRange, Reason::PackageCountAbsurd,
                               Reason::VectorSizeExceedsAlloc, Reason::VectorMemoryNull,
-                              Reason::VectorMemoryMisaligned, Reason::VectorAllocAbsurd};
+                              Reason::VectorMemoryMisaligned, Reason::VectorAllocAbsurd,
+                              Reason::TableMismatch};
         for (const Reason r : all) CHECK(ReasonText(r) != nullptr && ReasonText(r)[0] != '\0');
     }
 }

@@ -476,11 +476,11 @@ namespace ac::hooks {
                 // PR-style guard: only inject when Steam reports the package usable.
                 // Injecting into a non-available package gets the vector clobbered when
                 // Steam reloads it; defer to DoStartupInjection instead.
-                if (info->status != 0) {
+                if (info->status == steam::kPackageStatusUnloaded) {
                     // Publish the pointer here too, so the deferred DoStartupInjection
                     // can actually run post-login (the package is re-read from g_state).
                     g_state.pPackage0.store(info);
-                    AC_LOG_WARN(kModule, "Package 0 status=%u not available; deferring injection.",
+                    AC_LOG_WARN(kModule, "Package 0 status=%u (key absent); deferring injection.",
                         info->status);
                 }
                 else {
@@ -545,9 +545,9 @@ namespace ac::hooks {
         // Mirror exactly what the LoadPackage hook does with package 0:
         // only seed when Steam reports it usable, otherwise just publish the
         // pointer and defer the injection to the startup retry/login path.
-        if (info->status != 0) {
+        if (info->status == steam::kPackageStatusUnloaded) {
             g_state.pPackage0.store(info, std::memory_order_release);
-            AC_LOG_WARN(kModule, "TryAcquirePackage0: package 0 status=%u not available; deferring injection.",
+            AC_LOG_WARN(kModule, "TryAcquirePackage0: package 0 status=%u (key absent); deferring injection.",
                 info->status);
             return true;
         }
