@@ -2,6 +2,7 @@
 #include "core/Settings.h"
 #include "core/HookManager.h"
 #include "core/AbiSentinel.h"
+#include "core/StructGuard.h"
 #include "core/NetPacketAbi.h"
 #include "utils/Strings.h"
 #include "utils/DeskPaths.h"
@@ -408,6 +409,13 @@ void NetPacket() {
         CHECK(r.BeginWrite(good.Packet(), &netpkt_test::ArenaReadable, &arena));
         CHECK(r.WriteRejects() == 0);
 
+        // A legacy (non-protobuf) packet is now WRITABLE: identification
+        // needs the protobuf flag, the write gate does not.
+        FakePacket legacy; legacy.Build(0x10, 32, 1, /*protoFlag=*/0);
+        netpkt_test::Arena legacyArena{&legacy};
+        CHECK(!CandidateMatches(legacy.Packet(), 0x10, &netpkt_test::ArenaReadable, &legacyArena));
+        CHECK(r.BeginWrite(legacy.Packet(), &netpkt_test::ArenaReadable, &legacyArena));
+
         FakePacket bad; bad.Build(0x08, 32);      // stable-shaped object, beta layout latched
         netpkt_test::Arena badArena{&bad};
         for (int i = 0; i < kMaxWriteMismatches - 1; ++i) {
@@ -566,6 +574,115 @@ void Sentinel() {
     }
 }
 
+
+// ---------------------------------------------------------------------------
+// Struct guards (core/StructGuard.h) — PackageInfo and AppOwnership.
+//
+// The layouts are proven by disassembly of both shipped builds; these tests
+// fence the invariants that let us refuse a write instead of corrupting Steam.
+// ---------------------------------------------------------------------------
+void StructGuard() {
+    using namespace ac::abi::guard;
+    using ac::steam::AppOwnership;
+    using ac::steam::PackageInfo;
+    using ac::steam::AppId;
+
+    // 1. The offsets ARE the disassembly. (static_assert already fences them
+    //    at compile time; this keeps the numbers visible in a test too.)
+    CHECK(offsetof(AppOwnership, ownsLicense) == 0x24);
+    CHECK(offsetof(AppOwnership, familyShared) == 0x35);
+    CHECK(offsetof(PackageInfo, appIdVec) == 0x40);
+    CHECK(offsetof(PackageInfo, depotIdVec) == 0x58);
+    CHECK(sizeof(ac::steam::CUtlVector<AppId>) == 0x18);
+
+    // 2. A well-formed ownership record passes.
+    AppOwnership own{};
+    own.releaseState = ac::steam::AppReleaseState::Released;
+    own.existInPackageNums = 2;
+    own.ownsLicense = true;
+    own.familyShared = false;
+    CHECK(Passed(CheckOwnership(&own)));
+    CHECK(CheckOwnership(nullptr) == Reason::NullObject);
+
+    // 3. The decisive test: ONE byte of the bool block holding something that
+    //    is not 0/1 — what a shifted layout looks like — is refused.
+    for (std::size_t i = 0; i < kOwnershipBoolCount; ++i) {
+        AppOwnership shifted{};
+        shifted.releaseState = ac::steam::AppReleaseState::Released;
+        reinterpret_cast<std::uint8_t*>(&shifted)[kOwnershipBoolFirst + i] = 0x7F;
+        CHECK(CheckOwnership(&shifted) == Reason::BoolBlockNotBoolean);
+    }
+
+    // 4. A whole struct filled with pointer-ish garbage (the +8 shift class of
+    //    bug) never passes.
+    {
+        AppOwnership garbage{};
+        std::mt19937 rng(99);
+        for (std::size_t i = 0; i < sizeof(garbage); ++i) {
+            reinterpret_cast<std::uint8_t*>(&garbage)[i] = static_cast<std::uint8_t>(rng() | 2);
+        }
+        CHECK(!Passed(CheckOwnership(&garbage)));
+    }
+
+    // 5. Out-of-range scalars.
+    {
+        AppOwnership bad{};
+        bad.releaseState = static_cast<ac::steam::AppReleaseState>(99);
+        CHECK(CheckOwnership(&bad) == Reason::ReleaseStateOutOfRange);
+        AppOwnership bad2{};
+        bad2.existInPackageNums = 999999;
+        CHECK(CheckOwnership(&bad2) == Reason::PackageCountAbsurd);
+    }
+
+    // 6. PackageInfo vectors: the invariant that protects the heap.
+    {
+        std::vector<AppId> storage(64, 0);
+        PackageInfo pkg{};
+        pkg.appIdVec.mem.memory = storage.data();
+        pkg.appIdVec.mem.allocationCount = 64;
+        pkg.appIdVec.size = 10;
+        CHECK(Passed(CheckPackage(&pkg)));
+
+        pkg.appIdVec.size = 65;                      // size > alloc: would write past the end
+        CHECK(CheckPackage(&pkg) == Reason::VectorSizeExceedsAlloc);
+
+        pkg.appIdVec.size = 10;
+        pkg.appIdVec.mem.memory = nullptr;           // elements but no storage
+        CHECK(CheckPackage(&pkg) == Reason::VectorMemoryNull);
+
+        pkg.appIdVec.mem.memory = storage.data();
+        pkg.appIdVec.mem.allocationCount = 0xFFFFFFF;  // absurd capacity
+        CHECK(CheckPackage(&pkg) == Reason::VectorAllocAbsurd);
+
+        pkg.appIdVec.mem.allocationCount = 64;
+        pkg.appIdVec.mem.memory =
+            reinterpret_cast<AppId*>(reinterpret_cast<std::uint8_t*>(storage.data()) + 1);
+        CHECK(CheckPackage(&pkg) == Reason::VectorMemoryMisaligned);
+
+        // An empty, zeroed vector is legitimate (fresh package).
+        PackageInfo fresh{};
+        CHECK(Passed(CheckPackage(&fresh)));
+
+        // The second vector is checked too, not just the first (the checks
+        // fire in order, so size-vs-alloc is reported before the null test).
+        PackageInfo second{};
+        second.depotIdVec.size = 5;
+        CHECK(CheckPackage(&second) == Reason::VectorSizeExceedsAlloc);
+        second.depotIdVec.mem.allocationCount = 8;   // capacity claimed, storage absent
+        CHECK(CheckPackage(&second) == Reason::VectorMemoryNull);
+        CHECK(CheckPackage(nullptr) == Reason::NullObject);
+    }
+
+    // 7. Every reason has text.
+    {
+        const Reason all[] = {Reason::Ok, Reason::NullObject, Reason::BoolBlockNotBoolean,
+                              Reason::ReleaseStateOutOfRange, Reason::PackageCountAbsurd,
+                              Reason::VectorSizeExceedsAlloc, Reason::VectorMemoryNull,
+                              Reason::VectorMemoryMisaligned, Reason::VectorAllocAbsurd};
+        for (const Reason r : all) CHECK(ReasonText(r) != nullptr && ReasonText(r)[0] != '\0');
+    }
+}
+
 int main(int argc, char** argv) {
     try {
         CHECK(argc == 2);
@@ -576,7 +693,8 @@ int main(int argc, char** argv) {
         else if (test == "registry") Registry();
         else if (test == "workers") Workers();
         else if (test == "netpacket") NetPacket();
-        else if (test == "sentinel") Sentinel(); else CHECK(false);
+        else if (test == "sentinel") Sentinel();
+        else if (test == "structguard") StructGuard(); else CHECK(false);
         std::cout << test << ": PASS\n";
         return 0;
     } catch (const std::exception& e) { std::cerr << e.what() << '\n'; return 1; }

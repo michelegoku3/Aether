@@ -138,6 +138,37 @@ inline bool CandidateMatches(const void* packet, std::uint32_t dataOff,
     return readable(data, kMsgHdrBytes + headerLen, ctx);
 }
 
+// Structural check used by the WRITE barrier, as opposed to CandidateMatches
+// which identifies the layout.
+//
+// The difference matters and cost us six skipped rewrites in the first
+// production session: identification demands a protobuf frame, because a
+// protobuf header is the only thing that lets us tell two candidate layouts
+// apart with certainty. But Steam also carries legacy struct packets (see
+// CStructNetPacket / netpacket_legacy_struct.h), and those are perfectly
+// legitimate objects that simply have no protobuf flag. Refusing to write
+// them was over-caution: the layout is already known at that point, so the
+// gate only has to answer "is this still a CNetPacket?", not "which layout
+// is it?".
+inline bool LayoutPlausible(const void* packet, std::uint32_t dataOff, ReadableFn readable,
+                            void* ctx) {
+    if (!packet || !readable) return false;
+    const auto* base = static_cast<const std::uint8_t*>(packet);
+    if (!readable(base + dataOff, 0x10, ctx)) return false;
+
+    const auto* data = *reinterpret_cast<const std::uint8_t* const*>(base + dataOff);
+    const std::uint32_t len =
+        *reinterpret_cast<const std::uint32_t*>(base + SizeOffFor(dataOff));
+    const std::int32_t ref =
+        *reinterpret_cast<const std::int32_t*>(base + RefOffFor(dataOff));
+
+    const auto addr = reinterpret_cast<std::uintptr_t>(data);
+    if (addr < kMinPtr || addr >= kMaxPtr) return false;
+    if (len < kMsgHdrBytes || len > kMaxFrameBytes) return false;
+    if (ref < kMinRefCount || ref > kMaxRefCount) return false;
+    return readable(data, kMsgHdrBytes, ctx);
+}
+
 // ---- resolver state machine (pure, testable) ------------------------------
 //
 // Latches only when exactly one candidate matches AND the same candidate also
@@ -201,7 +232,7 @@ public:
     // trying. Returns true when the write may proceed.
     bool BeginWrite(const void* packet, ReadableFn readable, void* ctx) {
         if (!IsResolved() || !packet) return false;
-        if (CandidateMatches(packet, State(), readable, ctx)) {
+        if (LayoutPlausible(packet, State(), readable, ctx)) {
             mismatches_.store(0, std::memory_order_relaxed);
             return true;
         }
