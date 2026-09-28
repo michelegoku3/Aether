@@ -453,6 +453,47 @@ void NetPacket() {
         CHECK(r.DataOffset() == 0x10 && r.Attempts() == 1 && r.Confirmations() == 1);
     }
 
+
+    // 10. Phase 4: a layout this binary was never compiled with, proposed by
+    //     the per-build ABI table, is latched only after the probe agrees.
+    {
+        FakePacket pkt; pkt.Build(0x20, 32);          // a future Valve shift
+        netpkt_test::Arena arena{&pkt};
+        Resolver r;
+        CHECK(!CandidateMatches(pkt.Packet(), 0x08, &netpkt_test::ArenaReadable, &arena));
+        // Without the table the layout is unknown and stays unknown.
+        CHECK(Feed(r, pkt, 4) == Resolver::Step::NoEvidence);
+        CHECK(!r.IsResolved());
+
+        // The table proposes it; the probe confirms it on a live packet.
+        Resolver withTable;
+        CHECK(withTable.AddCandidate(0x20));
+        withTable.Hint(0x20);
+        CHECK(Feed(withTable, pkt, 1) == Resolver::Step::Latched);
+        CHECK(withTable.DataOffset() == 0x20);
+        CHECK(std::string(withTable.LayoutName()) == "from-abi-table");
+    }
+
+    // 11. A table that proposes the WRONG layout still loses to the packet.
+    {
+        FakePacket pkt; pkt.Build(0x10, 48);
+        Resolver r;
+        CHECK(r.AddCandidate(0x20));
+        r.Hint(0x20);
+        Feed(r, pkt, 3);
+        CHECK(r.IsResolved() && r.DataOffset() == 0x10);
+    }
+
+    // 12. Candidate registration is idempotent and bounded.
+    {
+        Resolver r;
+        CHECK(r.AddCandidate(0x08));                  // already known: accepted, not stored
+        CHECK(r.AddCandidate(0x20));
+        CHECK(r.AddCandidate(0x20));                  // idempotent
+        for (int i = 0; i < kMaxExtraLayouts; ++i) r.AddCandidate(0x100 + 8 * i);
+        CHECK(!r.AddCandidate(0x900));                // full: refused, not silently dropped
+    }
+
     // 8. Accessors are inert while unresolved: writing through them must not
     //    touch the object (they return the trash sink).
     {

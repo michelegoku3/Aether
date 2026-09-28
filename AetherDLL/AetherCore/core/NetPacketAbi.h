@@ -72,6 +72,13 @@ inline constexpr Layout kLayouts[] = {
     {"beta", 0x10},
 };
 
+//: Layouts learned at runtime from the build's own ABI table, on top of the
+//: two we know. This is the point of phase 4: the table PROPOSES a layout we
+//: have never compiled in, the probe DISPOSES by checking it against a live
+//: packet. A build that shifts the struct again therefore needs a new table,
+//: not a new AetherCore.
+inline constexpr int kMaxExtraLayouts = 4;
+
 inline constexpr std::uint32_t kUnresolved = 0u;
 inline constexpr std::uint32_t kDisabled = 0xFFFFFFFFu;
 
@@ -185,6 +192,23 @@ public:
     };
 
     std::uint32_t State() const { return state_.load(std::memory_order_relaxed); }
+
+    // Adds a layout the compiled table does not know about (from the per-build
+    // ABI section). Ignored once resolved, and never trusted without the probe.
+    bool AddCandidate(std::uint32_t dataOff) {
+        if (dataOff == kUnresolved || dataOff == kDisabled) return false;
+        for (const auto& known : kLayouts) {
+            if (known.dataOff == dataOff) return true;  // already a candidate
+        }
+        const int count = extraCount_.load(std::memory_order_relaxed);
+        for (int i = 0; i < count; ++i) {
+            if (extra_[i].load(std::memory_order_relaxed) == dataOff) return true;
+        }
+        if (count >= kMaxExtraLayouts) return false;
+        extra_[count].store(dataOff, std::memory_order_relaxed);
+        extraCount_.store(count + 1, std::memory_order_relaxed);
+        return true;
+    }
     // How many live packets actually agreed before the latch: 1 means the
     // build hint supplied the standing agreement and a single packet confirmed
     // it, 2 means two consecutive packets agreed on their own.
@@ -204,7 +228,7 @@ public:
         for (const auto& l : kLayouts) {
             if (l.dataOff == v) return l.name;
         }
-        return "custom";
+        return "from-abi-table";
     }
 
     void Latch(std::uint32_t dataOff) { state_.store(dataOff, std::memory_order_relaxed); }
@@ -213,6 +237,7 @@ public:
     void Disable() { state_.store(kDisabled, std::memory_order_relaxed); }
 
     void Reset() {
+        extraCount_.store(0, std::memory_order_relaxed);
         state_.store(kUnresolved, std::memory_order_relaxed);
         agreed_.store(kUnresolved, std::memory_order_relaxed);
         attempts_.store(0, std::memory_order_relaxed);
@@ -275,6 +300,14 @@ public:
                 winner = layout.dataOff;
             }
         }
+        const int extras = extraCount_.load(std::memory_order_relaxed);
+        for (int i = 0; i < extras; ++i) {
+            const std::uint32_t dataOff = extra_[i].load(std::memory_order_relaxed);
+            if (CandidateMatches(packet, dataOff, readable, ctx)) {
+                ++passes;
+                winner = dataOff;
+            }
+        }
 
         if (passes == 0) {
             // What a non-protobuf frame looks like. It is not evidence either
@@ -310,6 +343,8 @@ private:
     std::atomic<int> confirmations_{0};
     std::atomic<int> mismatches_{0};
     std::atomic<int> rejects_{0};
+    std::atomic<int> extraCount_{0};
+    std::atomic<std::uint32_t> extra_[kMaxExtraLayouts]{};
 };
 
 // The process-wide resolver.
@@ -351,6 +386,19 @@ bool DefaultReadable(const void* addr, std::size_t bytes, void* ctx);
 // hook that handles a CNetPacket, and pass the packet through untouched when
 // it returns false. Logs each state transition exactly once.
 bool EnsureResolved(const steam::CNetPacket* packet);
+
+// Seeds the resolver from the per-build ABI table published alongside the
+// patterns (phase 4). Offsets are checked for internal consistency
+// (m_cubData == m_pubData + 8, m_cRef == m_pubData + 0xC) before being
+// accepted as a candidate: a table that disagrees with the shape the
+// accessors assume is a table we must not act on. Returns true when the
+// layout was accepted as a probe candidate.
+bool SeedFromAbiTable(std::uint32_t dataOff, std::uint32_t cubOff, std::uint32_t refOff,
+                      const std::string& source);
+
+// Where the latched layout ultimately came from: "abi-table", "build-hint" or
+// "probe". Diagnostic only — the probe always has the last word.
+const char* HintSource();
 
 // Seeds the resolver from the running build's steamclient SHA-256 when it is
 // one we have disassembled. Pure optimisation: the probe still has to agree.

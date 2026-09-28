@@ -71,6 +71,40 @@ namespace ac::pattern {
             return !outIndex.empty();
         }
 
+        // Reads the `[abi.<Struct>.<field>]` sections a phase-4 table carries.
+        // Absent on older tables, which is why nothing here is fatal: a build
+        // without an ABI section simply falls back to the probe.
+        void CollectAbiTable(const toml::table& table, const std::string& moduleName,
+                             const std::string& sha) {
+            if (moduleName != "steamclient") return;
+            const auto* abi = table["abi"].as_table();
+            if (!abi) return;
+
+            std::unordered_map<std::string, std::uint32_t> offsets;
+            for (const auto& [structKey, structNode] : *abi) {
+                const auto* fields = structNode.as_table();
+                if (!fields) continue;
+                for (const auto& [fieldKey, fieldNode] : *fields) {
+                    const auto* entry = fieldNode.as_table();
+                    if (!entry) continue;
+                    const auto value = (*entry)["offset"].value<std::int64_t>();
+                    if (!value || *value < 0 || *value > 0xFFFF) continue;
+                    offsets.emplace(std::string(structKey.str()) + "." +
+                                        std::string(fieldKey.str()),
+                                    static_cast<std::uint32_t>(*value));
+                }
+            }
+            if (offsets.empty()) return;
+
+            {
+                std::lock_guard lock(g_state.abiTable.mutex);
+                g_state.abiTable.offsets = offsets;
+                g_state.abiTable.source = sha;
+            }
+            AC_LOG_INFO(kModule, "ABI table: %zu field offset(s) published with the patterns.",
+                        offsets.size());
+        }
+
         bool ParsePatternFile(const std::string& path, const std::string& moduleName,
             toml::table& outTable, PatternIndex& outIndex) {
             std::ifstream file(path);
@@ -78,6 +112,8 @@ namespace ac::pattern {
             try {
                 outTable = toml::parse(file);
                 const bool indexed = BuildIndex(outTable, moduleName, outIndex);
+                CollectAbiTable(outTable, moduleName,
+                                std::filesystem::path(path).stem().string());
                 AC_LOG_INFO(kModule, "Loaded %zu TOML section(s), indexed %zu pattern name(s) for %s from %s.",
                     outTable.size(), outIndex.size(), moduleName.c_str(), path.c_str());
                 return indexed;

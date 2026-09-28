@@ -178,6 +178,18 @@ struct AetherCoreState {
     };
     PatternState patterns;
 
+    // ---- ABI table (per-build struct offsets published with the patterns) --
+    // Phase 4: the generator extracts these from the build's own code, so the
+    // DLL stops carrying compiled offsets. Consumed by core/NetPacketAbi.h,
+    // which treats them as a candidate to verify, never as a fact.
+    struct AbiTableState {
+        std::mutex mutex;
+        // "Struct.field" -> offset, exactly as published.
+        std::unordered_map<std::string, std::uint32_t> offsets;
+        std::string source;  // sha of the table the offsets came from
+    };
+    AbiTableState abiTable;
+
     // ---- IPC spec (per-build funcHash + optional fencepost/argc overrides) --
     // Loaded from a TOML fetched alongside the pattern tables. When loaded,
     // IPCBus uses these hashes instead of the compile-time ipc_hash::* constants
