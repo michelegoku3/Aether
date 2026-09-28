@@ -193,10 +193,6 @@ namespace {
         //    carries it even if later stages fail.
         //    Depends on: diversion (steamclientPath resolved).
         g_state.steamclientSha = hasher::ComputeFileSha256(g_state.steamclientPath);
-        // Seed the CNetPacket ABI resolver with what we know about this exact
-        // build. It is only a hint: the layout is still confirmed against live
-        // packets before any field is touched (core/NetPacketAbi.h).
-        abi::netpkt::SeedFromBuild(g_state.steamclientSha);
         status::Write();
 
         // 6. Pattern engine + 7. IPC spec, resolved CONCURRENTLY.
@@ -228,6 +224,35 @@ namespace {
         if (!patternsOk) {
             AC_LOG_WARN(kModule, "Pattern engine produced no tables; some hooks will be skipped.");
         }
+
+        // Phase 4: the build's own ABI table proposes the CNetPacket layout.
+        // It runs BEFORE SeedFromBuild so a published table always wins over
+        // the two layouts compiled into this DLL, and before any hook is
+        // installed so the first packet can already be interpreted.
+        {
+            std::uint32_t dataOff = 0, cubOff = 0, refOff = 0;
+            std::string abiSource;
+            {
+                std::lock_guard lock(g_state.abiTable.mutex);
+                const auto& offsets = g_state.abiTable.offsets;
+                const auto data = offsets.find("CNetPacket.m_pubData");
+                const auto cub = offsets.find("CNetPacket.m_cubData");
+                const auto ref = offsets.find("CNetPacket.m_cRef");
+                if (data != offsets.end() && cub != offsets.end() && ref != offsets.end()) {
+                    dataOff = data->second;
+                    cubOff = cub->second;
+                    refOff = ref->second;
+                    abiSource = g_state.abiTable.source;
+                }
+            }
+            if (dataOff != 0) {
+                abi::netpkt::SeedFromAbiTable(dataOff, cubOff, refOff, abiSource);
+            }
+        }
+
+        // Fallback for machines with no table at all: the two builds whose
+        // layout is compiled in. Skipped when the table already spoke.
+        abi::netpkt::SeedFromBuild(g_state.steamclientSha);
 
         // 8. Lua scripts: populate ownership/depot/token/manifest data so the
         //    first LoadPackage / CheckAppOwnership call sees the full set.

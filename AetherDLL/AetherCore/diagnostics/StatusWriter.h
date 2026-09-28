@@ -8,14 +8,14 @@
 // AetherCore has exactly one. It reads everything it needs from g_state and
 // HookManager, so there is no separate counter bookkeeping to keep in sync.
 //
-// Schema v7 (top-level keys include):
+// Schema v8 (top-level keys include):
 //   schema_version, ts
 //   build_id, build_config, build_time, diversion_outcome
 //   steamclient_sha, steamclient_toml_found, steamclient_pattern_source
 //   steamui_sha, steamui_toml_found, steamui_pattern_source
 //   netpacket_abi_layout, netpacket_abi_data_off, netpacket_abi_resolved,
 //     netpacket_abi_probe_attempts, netpacket_abi_confirmations,
-//     netpacket_abi_write_rejects
+//     netpacket_abi_write_rejects, netpacket_abi_hint_source
 //   sentinel_verified_count, sentinel_rejected_count, abi_struct_rejects
 //   hooks_installed_count, hooks_missed_count, hooks_alias_count
 //   wire_eresult_events, wire_access_denied_events, wire_transport_candidate_events
@@ -33,7 +33,10 @@
 //   ipc_spec_loaded, ipc_spec_entries
 //   hooks_installed_list[], hooks_missed_list[] ("Name (reason)"), diagnostics[]
 //
-// History: v7 added abi_struct_rejects (PackageInfo / AppOwnership writes
+// History: v8 added netpacket_abi_hint_source (which source proposed the
+// layout the probe then confirmed: the per-build ABI table, the compiled
+// build hints, or nothing at all);
+// v7 added abi_struct_rejects (PackageInfo / AppOwnership writes
 // refused by the struct guards);
 // v6 added netpacket_abi_confirmations / netpacket_abi_write_rejects
 // (ABI write barrier) and sentinel_verified_count / sentinel_rejected_count

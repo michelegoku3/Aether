@@ -34,6 +34,9 @@ constexpr BuildHint kBuildHints[] = {
 
 std::atomic<bool> g_latchLogged{false};
 std::atomic<bool> g_disableLogged{false};
+//: "abi-table" | "build-hint" | "probe" — how the candidate that won was
+//: proposed. Never how it was *decided*: that is always the probe.
+std::atomic<const char*> g_hintSource{"probe"};
 
 }  // namespace
 
@@ -133,12 +136,55 @@ bool EnsureResolved(const steam::CNetPacket* packet) {
     }
 }
 
+bool SeedFromAbiTable(std::uint32_t dataOff, std::uint32_t cubOff, std::uint32_t refOff,
+                      const std::string& source) {
+    // The accessors assume one shape: size eight bytes after the pointer,
+    // refcount four after that. Every build disassembled so far agrees. If a
+    // published table ever disagrees, the honest answer is not to "adapt" —
+    // it is to refuse, shout, and let a human look, because the accessors
+    // themselves would be wrong.
+    if (cubOff != SizeOffFor(dataOff) || refOff != RefOffFor(dataOff)) {
+        AC_LOG_ERROR(kModule,
+                     "ABI table from %s describes m_pubData +0x%X / m_cubData +0x%X / "
+                     "m_cRef +0x%X, which is not the shape this build of AetherCore knows "
+                     "(+0x%X / +0x%X). Ignoring the table: the accessors would be wrong.",
+                     source.c_str(), dataOff, cubOff, refOff, SizeOffFor(dataOff),
+                     RefOffFor(dataOff));
+        diag::Record("netpacket_layout", "abi table rejected: inconsistent shape");
+        return false;
+    }
+
+    Resolver& r = Global();
+    if (!r.AddCandidate(dataOff)) {
+        AC_LOG_WARN(kModule, "ABI table candidate +0x%X not registered (table full).", dataOff);
+        return false;
+    }
+    r.Hint(dataOff);
+    g_hintSource.store("abi-table", std::memory_order_relaxed);
+    AC_LOG_INFO(kModule,
+                "ABI table (%s): CNetPacket m_pubData +0x%X — registered as a probe "
+                "candidate; the live packet still decides.",
+                source.c_str(), dataOff);
+    diag::Record("netpacket_layout",
+                 "abi table dataOff=" + std::to_string(dataOff) + " from " + source);
+    return true;
+}
+
+const char* HintSource() { return g_hintSource.load(std::memory_order_relaxed); }
+
 void SeedFromBuild(const std::string& steamclientSha256) {
     if (steamclientSha256.empty()) return;
+
+    if (Global().Hinted() != kUnresolved) {
+        // The per-build table already proposed a layout; the compiled list is
+        // only a fallback for machines that have no table at all.
+        return;
+    }
 
     for (const auto& hint : kBuildHints) {
         if (strings::EqualsIgnoreCase(steamclientSha256, hint.sha256)) {
             Global().Hint(hint.dataOff);
+            g_hintSource.store("build-hint", std::memory_order_relaxed);
             AC_LOG_INFO(kModule,
                         "Known build %s: CNetPacket hint m_pubData +0x%X (still probe-verified).",
                         hint.build, hint.dataOff);
