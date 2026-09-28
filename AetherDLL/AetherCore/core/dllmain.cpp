@@ -20,6 +20,7 @@
 #include "utils/IpcSpec.h"
 #include "core/Logger.h"
 #include "core/NetPacketAbi.h"
+#include "core/StructGuard.h"
 #include "utils/PatternEngine.h"
 #include "scripting/ScriptEngine.h"
 #include "core/Settings.h"
@@ -247,6 +248,16 @@ namespace {
             }
             if (dataOff != 0) {
                 abi::netpkt::SeedFromAbiTable(dataOff, cubOff, refOff, abiSource);
+            }
+
+            // Same table, other structs: here we cannot re-lay-out anything,
+            // so the table acts as a verifier. A contradiction disables the
+            // guarded writes instead of corrupting Steam quietly.
+            {
+                std::lock_guard lock(g_state.abiTable.mutex);
+                if (!g_state.abiTable.offsets.empty()) {
+                    abi::guard::ApplyTable(g_state.abiTable.offsets, g_state.abiTable.source);
+                }
             }
         }
 

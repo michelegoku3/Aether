@@ -2,6 +2,8 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <string>
+#include <unordered_map>
 
 #include "core/SteamTypes.h"
 
@@ -53,6 +55,7 @@ static_assert(offsetof(steam::AppOwnership, ownsLicense) == 0x24, "AppOwnership 
 static_assert(offsetof(steam::AppOwnership, familyShared) == 0x35, "AppOwnership bool block");
 static_assert(sizeof(steam::AppOwnership) == 0x38, "AppOwnership size (0x36 used + padding)");
 
+static_assert(offsetof(steam::PackageInfo, status) == 0x18, "PackageInfo layout");
 static_assert(offsetof(steam::PackageInfo, appIdVec) == 0x40, "PackageInfo layout");
 static_assert(offsetof(steam::PackageInfo, depotIdVec) == 0x58, "PackageInfo layout");
 static_assert(sizeof(steam::CUtlVector<steam::AppId>) == 0x18, "CUtlVector stride");
@@ -62,9 +65,40 @@ static_assert(offsetof(steam::CUtlVector<steam::AppId>, size) == 0x10, "CUtlVect
 inline constexpr std::size_t kOwnershipBoolFirst = 0x24;
 inline constexpr std::size_t kOwnershipBoolCount = 18;
 
+// ---- the published table --------------------------------------------------
+//
+// Phase 4, second half. The generator now extracts these offsets from the
+// build's own code, so we can finally CHECK the layout this DLL was compiled
+// against instead of merely asserting it at build time.
+//
+// What we deliberately do NOT do: adapt. A C++ struct cannot be re-laid-out at
+// runtime, so if the published table disagrees with the compiled layout the
+// only safe move is to stop writing and say so loudly. That converts a silent
+// corruption into a visible, diagnosable degradation — which is the whole
+// point of the exercise.
+struct ExpectedLayout {
+    const char* key;       // "Struct.field" as published
+    std::size_t compiled;  // what this binary was built with
+};
+
+//: Checked against the table at startup. Every entry is proven by
+//: disassembly of both shipped builds (round 3/5).
+inline constexpr ExpectedLayout kExpectedLayout[] = {
+    {"AppOwnership.bool_block_start", 0x24},
+    {"AppOwnership.size_bytes", 0x36},
+    {"AppOwnership.timeStamp", 0x1C},
+    {"AppOwnership.timeExpire", 0x20},
+    {"PackageInfo.status", 0x18},
+    {"PackageInfo.appIdVec", 0x40},
+    {"PackageInfo.depotIdVec", 0x58},
+    {"CUtlVector.allocationCount", 0x08},
+    {"CUtlVector.count", 0x10},
+};
+
 // ---- results --------------------------------------------------------------
 enum class Reason {
     Ok,
+    TableMismatch,  // the build's ABI table contradicts the compiled layout
     NullObject,
     BoolBlockNotBoolean,   // a "bool" byte holds something other than 0/1
     ReleaseStateOutOfRange,
@@ -91,8 +125,13 @@ inline constexpr std::uint32_t kMaxReleaseState = 5;
 // only ever sets to 0 or 1. If the struct shifted, or the pointer is not an
 // AppOwnership at all, those bytes hold pointer fragments or counters and the
 // test fails immediately. It costs 18 byte comparisons.
+// Set when the published table disagrees with the compiled layout: every
+// guarded write is refused from that point on.
+bool LayoutContradicted();
+
 inline Reason CheckOwnership(const steam::AppOwnership* o) {
     if (!o) return Reason::NullObject;
+    if (LayoutContradicted()) return Reason::TableMismatch;
 
     const auto* bytes = reinterpret_cast<const std::uint8_t*>(o);
     for (std::size_t i = 0; i < kOwnershipBoolCount; ++i) {
@@ -120,6 +159,7 @@ inline Reason CheckVector(const steam::CUtlVector<T>& v) {
 
 inline Reason CheckPackage(const steam::PackageInfo* p) {
     if (!p) return Reason::NullObject;
+    if (LayoutContradicted()) return Reason::TableMismatch;
     const Reason apps = CheckVector(p->appIdVec);
     if (!Passed(apps)) return apps;
     return CheckVector(p->depotIdVec);
@@ -129,6 +169,15 @@ inline Reason CheckPackage(const steam::PackageInfo* p) {
 // Every refusal is counted and surfaced in status.json: a guard that fires
 // silently is a guard nobody acts on.
 void CountRejection(const char* what, Reason r);
+
+// Compares the per-build ABI table with kExpectedLayout. Returns the number of
+// fields that matched; any mismatch latches LayoutContradicted() and is
+// logged at ERROR. Fields absent from the table are neither a match nor a
+// mismatch: older tables simply do not carry them.
+std::size_t ApplyTable(const std::unordered_map<std::string, std::uint32_t>& published,
+                       const std::string& source);
+
+std::size_t TableFieldsChecked();
 std::uint32_t RejectionCount();
 void ResetCounters();
 
