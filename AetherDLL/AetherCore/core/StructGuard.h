@@ -52,6 +52,10 @@ static_assert(offsetof(steam::AppOwnership, packageId) == 0x00, "AppOwnership la
 static_assert(offsetof(steam::AppOwnership, timeStamp) == 0x1C, "AppOwnership layout");
 static_assert(offsetof(steam::AppOwnership, timeExpire) == 0x20, "AppOwnership layout");
 static_assert(offsetof(steam::AppOwnership, ownsLicense) == 0x24, "AppOwnership bool block");
+static_assert(offsetof(steam::AppOwnership, freeLicense) == 0x28, "AppOwnership bool block");
+// +0x2F, not +0x31: the byte at +0x31 has unknown meaning and reading it as
+// "borrowed" made Steam show the family-sharing banner on .lua apps.
+static_assert(offsetof(steam::AppOwnership, borrowed) == 0x2F, "AppOwnership borrowed");
 static_assert(offsetof(steam::AppOwnership, familyShared) == 0x35, "AppOwnership bool block");
 static_assert(sizeof(steam::AppOwnership) == 0x38, "AppOwnership size (0x36 used + padding)");
 
@@ -59,6 +63,9 @@ static_assert(offsetof(steam::PackageInfo, status) == 0x18, "PackageInfo layout"
 static_assert(offsetof(steam::PackageInfo, appIdVec) == 0x40, "PackageInfo layout");
 static_assert(offsetof(steam::PackageInfo, depotIdVec) == 0x58, "PackageInfo layout");
 static_assert(sizeof(steam::CUtlVector<steam::AppId>) == 0x18, "CUtlVector stride");
+static_assert(sizeof(steam::DepotEntry) == 0x20, "DepotEntry stride");
+static_assert(offsetof(steam::DepotEntry, manifestGid) == 0x08, "DepotEntry layout");
+static_assert(offsetof(steam::DepotEntry, manifestSize) == 0x10, "DepotEntry layout");
 static_assert(offsetof(steam::CUtlVector<steam::AppId>, size) == 0x10, "CUtlVector::size");
 
 // First and last byte of the contiguous 18-bool block.
@@ -88,6 +95,9 @@ inline constexpr ExpectedLayout kExpectedLayout[] = {
     {"AppOwnership.size_bytes", 0x36},
     {"AppOwnership.timeStamp", 0x1C},
     {"AppOwnership.timeExpire", 0x20},
+    {"AppOwnership.borrowed", 0x2F},
+    {"DepotEntry.manifestGid", 0x08},
+    {"DepotEntry.manifestSize", 0x10},
     {"PackageInfo.status", 0x18},
     {"PackageInfo.appIdVec", 0x40},
     {"PackageInfo.depotIdVec", 0x58},
@@ -107,6 +117,7 @@ enum class Reason {
     VectorMemoryNull,
     VectorMemoryMisaligned,
     VectorAllocAbsurd,
+    DepotEntryImplausible,
 };
 
 const char* ReasonText(Reason r);
@@ -118,6 +129,10 @@ inline bool Passed(Reason r) { return r == Reason::Ok; }
 inline constexpr std::uint32_t kMaxVectorElements = 1u << 20;
 inline constexpr std::uint32_t kMaxExistInPackageNums = 4096;
 inline constexpr std::uint32_t kMaxReleaseState = 5;
+//: A depot larger than this is not a depot. Steam's biggest shipping depots
+//: are a few hundred GB; 4 TB is three orders of magnitude of headroom and
+//: still catches a pointer read as a size.
+inline constexpr std::uint64_t kMaxDepotBytes = 4ull * 1024 * 1024 * 1024 * 1024;
 
 // ---- AppOwnership ---------------------------------------------------------
 //
@@ -153,6 +168,44 @@ inline Reason CheckVector(const steam::CUtlVector<T>& v) {
     if (v.mem.memory != nullptr &&
         (reinterpret_cast<std::uintptr_t>(v.mem.memory) & (alignof(T) - 1)) != 0) {
         return Reason::VectorMemoryMisaligned;
+    }
+    return Reason::Ok;
+}
+
+// ---- DepotEntry -----------------------------------------------------------
+//
+// Why this one needs a guard at all: `manifestGid` is the id of the exact
+// content snapshot Steam is about to download, and Aether REPLACES it. Write
+// it at the wrong offset and the consequences are not a crash — they are a
+// download of the wrong build, or a corrupted dependency table that Steam
+// then acts on. The record is 32 bytes with a very distinctive shape
+// (two ids, two 64-bit quantities, three booleans), so a shifted layout is
+// easy to spot before touching anything.
+inline Reason CheckDepotEntry(const steam::DepotEntry& e) {
+    if (LayoutContradicted()) return Reason::TableMismatch;
+    // A real row always identifies a depot; a zeroed tail row is not a defect.
+    if (e.depotId == 0 && e.manifestGid == 0 && e.manifestSize == 0) return Reason::Ok;
+    if (e.depotId == 0) return Reason::DepotEntryImplausible;
+    if (e.manifestSize > kMaxDepotBytes) return Reason::DepotEntryImplausible;
+    // The three flags are booleans in the binary: anything else means the
+    // record does not start where we think it does.
+    if (e.lcsRequired > 1 || e.notNewTarget > 1 || e.sharedInstall > 1) {
+        return Reason::DepotEntryImplausible;
+    }
+    return Reason::Ok;
+}
+
+// Checks the whole table before Aether rewrites any manifest id. Returns the
+// first problem found, so one bad row stops the pass instead of being skipped
+// silently.
+inline Reason CheckDepotVector(const steam::CUtlVector<steam::DepotEntry>* vec) {
+    if (!vec) return Reason::NullObject;
+    const Reason shape = CheckVector(*vec);
+    if (!Passed(shape)) return shape;
+    if (!vec->mem.memory) return Reason::Ok;  // empty table: nothing to check
+    for (std::uint32_t i = 0; i < vec->size; ++i) {
+        const Reason row = CheckDepotEntry(vec->mem.memory[i]);
+        if (!Passed(row)) return row;
     }
     return Reason::Ok;
 }
