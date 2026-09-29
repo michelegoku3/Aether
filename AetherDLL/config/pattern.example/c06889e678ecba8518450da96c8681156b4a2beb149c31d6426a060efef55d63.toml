@@ -1,0 +1,52 @@
+# Made by migo3 at 29/09/2026 16:22:14 for Steam 1790545198 (beta) build
+# forge generated sha256=c06889e678ecba8518450da96c8681156b4a2beb149c31d6426a060efef55d63
+
+[0xD7B90831]
+name = "AddProtobufAsBinary"
+rva = "0xa13630"
+sig = "40 53 55 56 57 48 83 EC 28 48 8B 05 ?? ?? ?? ?? 48 8B F2 48 8B D9 44 8B"
+
+[0x2BE93D4A]
+name = "BuildCompleteAppOverviewChange"
+rva = "0x610000"
+sig = "4C 89 44 24 ?? 48 89 54 24 ?? 48 89 4C 24 ?? 55 53 56 57 41 54 41 55 41 56 41 57 48 8D 6C 24 ?? 48 81 EC A8 00 00 00 4D"
+
+[0xC65D3382]
+name = "CSteamUIAppControllerRunFrame"
+rva = "0x626f70"
+sig = "48 89 5C 24 ?? 48 89 6C 24 ?? 56 57 41 54 41 56 41 57 48 83 EC 40 0F 29"
+
+[0x3A93CC7A]
+name = "FillInAppOverview"
+rva = "0x616f80"
+sig = "48 89 54 24 ?? 48 89 4C 24 ?? 55 53 56 57 41 54 41 55 41 56 41 57 48 8D 6C 24 ?? 48 81 EC B8 00 00 00 48 8B 05"
+
+[0xDF3D8635]
+name = "GetAppByID"
+rva = "0x6197d0"
+sig = "89 54 24 ?? 53 48 83 EC 40 48 8B 05 ?? ?? ?? ?? 41 0F B6 D8 48 89 7C 24"
+
+[0x2DDCD1F0]
+name = "GetTopManager"
+rva = "0x637df0"
+sig = "48 8B 05 ?? ?? ?? ?? C3 CC CC CC CC CC CC CC CC 40 55 53 56 57 41 56 41"
+
+[0xF7972C0A]
+name = "LoadModuleWithPath"
+rva = "0x8b1c20"
+sig = "48 89 5C 24 ?? 55 56 41 57 48 83 EC 40 48 8B E9 4C 89 74 24 ?? B9 FC FF"
+
+[0xD5ABC650]
+name = "MarkAppChange"
+rva = "0x6a8090"
+sig = "48 83 EC 78 48 8B 05 ?? ?? ?? ?? 48 89 74 24 ?? 8B F2 4C 89 6C 24 ?? 4C"
+
+[0x46AEF584]
+name = "RepeatedFieldUint32_Add"
+rva = "0x703d30"
+sig = "48 89 74 24 ?? 48 89 7C 24 ?? 41 56 48 83 EC 20 8B 31 48 8B F9 8B 49 ?? 4C 8D 34 B5 00 00 00 00 3B F1 75 ?? 48 89 5C 24"
+
+[0xAFD4DBE9]
+name = "ShouldShowAppInLibrary"
+rva = "0x5e5920"
+sig = "40 53 48 83 EC 20 48 8B 01 48 8B D9 FF 10 3D D6 0C 09 00 0F 84"
