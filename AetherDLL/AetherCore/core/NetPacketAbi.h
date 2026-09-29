@@ -348,7 +348,15 @@ private:
 };
 
 // The process-wide resolver.
-Resolver& Global();
+//
+// Inline with a function-local static: one instance across the program, and
+// no symbol for a test binary to link. The hooks can fire on Steam threads
+// that exist before our dynamic initialisation, which is why it is a
+// function-local static and not a namespace-scope object.
+inline Resolver& Global() {
+    static Resolver instance;
+    return instance;
+}
 
 // ---- field accessors ------------------------------------------------------
 //

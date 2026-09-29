@@ -60,7 +60,20 @@ enum class Verdict {
     NoBytes,                // could not read the bytes to judge
 };
 
-const char* VerdictText(Verdict v);
+//: Inline for the same reason as guard::ReasonText: a pure switch should not
+//: force a test binary to link the Windows side.
+inline const char* VerdictText(Verdict v) {
+    switch (v) {
+    case Verdict::Ok: return "function start (.pdata)";
+    case Verdict::OkLeaf: return "function start (leaf, preceded by a boundary)";
+    case Verdict::NotFunctionStart: return "address is INSIDE another function, not its start";
+    case Verdict::NoPredecessorBoundary: return "no unwind entry and preceded by live code";
+    case Verdict::PaddingAtTarget: return "address points at padding";
+    case Verdict::OutsideCode: return "address is outside the executable section";
+    case Verdict::NoBytes: return "target bytes are unreadable";
+    }
+    return "unknown";
+}
 
 inline bool Accepted(Verdict v) { return v == Verdict::Ok || v == Verdict::OkLeaf; }
 

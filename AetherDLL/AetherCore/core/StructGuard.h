@@ -1,5 +1,6 @@
 #pragma once
 
+#include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <string>
@@ -120,7 +121,27 @@ enum class Reason {
     DepotEntryImplausible,
 };
 
-const char* ReasonText(Reason r);
+//: Text for a reason. Inline: it is a pure switch, and keeping it in the
+//: header means a test binary does not have to link the Windows glue just to
+//: print a message.
+inline const char* ReasonText(Reason r) {
+    switch (r) {
+    case Reason::Ok: return "ok";
+    case Reason::TableMismatch:
+        return "the build's ABI table contradicts the layout this DLL was compiled with";
+    case Reason::NullObject: return "null object";
+    case Reason::BoolBlockNotBoolean: return "bool block holds non-boolean bytes (layout shifted?)";
+    case Reason::ReleaseStateOutOfRange: return "releaseState out of range";
+    case Reason::PackageCountAbsurd: return "existInPackageNums absurd";
+    case Reason::VectorSizeExceedsAlloc: return "vector size exceeds allocationCount";
+    case Reason::VectorMemoryNull: return "vector has elements but null storage";
+    case Reason::VectorMemoryMisaligned: return "vector storage is misaligned";
+    case Reason::VectorAllocAbsurd: return "vector allocationCount absurd";
+    case Reason::DepotEntryImplausible:
+        return "depot record does not look like a DepotEntry (layout shifted?)";
+    }
+    return "unknown";
+}
 inline bool Passed(Reason r) { return r == Reason::Ok; }
 
 // ---- tunables -------------------------------------------------------------
@@ -140,9 +161,29 @@ inline constexpr std::uint64_t kMaxDepotBytes = 4ull * 1024 * 1024 * 1024 * 1024
 // only ever sets to 0 or 1. If the struct shifted, or the pointer is not an
 // AppOwnership at all, those bytes hold pointer fragments or counters and the
 // test fails immediately. It costs 18 byte comparisons.
+// ---- state and reporting --------------------------------------------------
+//
+// The POLICY (what counts as a mismatch, what to refuse, what to count) lives
+// here, inline, so the unit tests exercise the real thing. Only the
+// REPORTING — writing a log line, recording a diagnostic — is left to the
+// platform layer, because a test binary has no logger and should not need
+// one. Three hooks, implemented in StructGuard.cpp and stubbed in tests.
+void ReportRejection(const char* what, Reason reason);
+void ReportTableMismatch(const char* field, std::uint32_t published, std::size_t compiled,
+                         const std::string& source);
+void ReportTableAgrees(std::size_t matched, const std::string& source);
+
+namespace detail {
+inline std::atomic<bool> g_contradicted{false};
+inline std::atomic<std::uint32_t> g_rejections{0};
+inline std::atomic<std::size_t> g_tableFields{0};
+}  // namespace detail
+
 // Set when the published table disagrees with the compiled layout: every
 // guarded write is refused from that point on.
-bool LayoutContradicted();
+inline bool LayoutContradicted() {
+    return detail::g_contradicted.load(std::memory_order_relaxed);
+}
 
 inline Reason CheckOwnership(const steam::AppOwnership* o) {
     if (!o) return Reason::NullObject;
@@ -221,17 +262,50 @@ inline Reason CheckPackage(const steam::PackageInfo* p) {
 // ---- counters (StructGuard.cpp) ------------------------------------------
 // Every refusal is counted and surfaced in status.json: a guard that fires
 // silently is a guard nobody acts on.
-void CountRejection(const char* what, Reason r);
+inline void CountRejection(const char* what, Reason r) {
+    detail::g_rejections.fetch_add(1, std::memory_order_relaxed);
+    ReportRejection(what, r);
+}
 
 // Compares the per-build ABI table with kExpectedLayout. Returns the number of
-// fields that matched; any mismatch latches LayoutContradicted() and is
-// logged at ERROR. Fields absent from the table are neither a match nor a
-// mismatch: older tables simply do not carry them.
-std::size_t ApplyTable(const std::unordered_map<std::string, std::uint32_t>& published,
-                       const std::string& source);
+// fields that matched; any mismatch latches LayoutContradicted(). Fields
+// absent from the table are neither a match nor a mismatch: older tables
+// simply do not carry them.
+inline std::size_t ApplyTable(const std::unordered_map<std::string, std::uint32_t>& published,
+                              const std::string& source) {
+    std::size_t matched = 0;
+    std::size_t mismatched = 0;
+    for (const auto& expected : kExpectedLayout) {
+        const auto it = published.find(expected.key);
+        if (it == published.end()) continue;  // older table: not an opinion
+        if (it->second == expected.compiled) {
+            ++matched;
+            continue;
+        }
+        ++mismatched;
+        ReportTableMismatch(expected.key, it->second, expected.compiled, source);
+    }
 
-std::size_t TableFieldsChecked();
-std::uint32_t RejectionCount();
-void ResetCounters();
+    detail::g_tableFields.store(matched + mismatched, std::memory_order_relaxed);
+    if (mismatched > 0) {
+        detail::g_contradicted.store(true, std::memory_order_relaxed);
+    } else if (matched > 0) {
+        ReportTableAgrees(matched, source);
+    }
+    return matched;
+}
+
+inline std::size_t TableFieldsChecked() {
+    return detail::g_tableFields.load(std::memory_order_relaxed);
+}
+inline std::uint32_t RejectionCount() {
+    return detail::g_rejections.load(std::memory_order_relaxed);
+}
+
+inline void ResetCounters() {
+    detail::g_rejections.store(0, std::memory_order_relaxed);
+    detail::g_contradicted.store(false, std::memory_order_relaxed);
+    detail::g_tableFields.store(0, std::memory_order_relaxed);
+}
 
 }  // namespace ac::abi::guard

@@ -100,19 +100,6 @@ ImageView Parse(void* module) {
 
 }  // namespace
 
-const char* VerdictText(Verdict v) {
-    switch (v) {
-    case Verdict::Ok: return "function start (.pdata)";
-    case Verdict::OkLeaf: return "function start (leaf, preceded by a boundary)";
-    case Verdict::NotFunctionStart: return "address is INSIDE another function, not its start";
-    case Verdict::NoPredecessorBoundary: return "no unwind entry and preceded by live code";
-    case Verdict::PaddingAtTarget: return "address points at padding";
-    case Verdict::OutsideCode: return "address is outside the executable section";
-    case Verdict::NoBytes: return "target bytes are unreadable";
-    }
-    return "unknown";
-}
-
 Verdict Verify(const std::string& name, const void* target, void* module, std::string* detail) {
     const ImageView view = Parse(module);
     if (!view.valid || !target) {

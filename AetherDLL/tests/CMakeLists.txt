@@ -10,11 +10,14 @@ FetchContent_MakeAvailable(tomlplusplus)
 find_package(Threads REQUIRED)
 enable_testing()
 add_executable(quickwin_tests quickwin_tests.cpp stubs/Services.cpp
+    stubs/AbiReporting.cpp
     ../AetherCore/core/Settings.cpp ../AetherCore/core/HookManager.cpp
     ../AetherCore/core/Workers.cpp)
-# NetPacketAbi.h is header-only for everything except the Windows glue, so the
-# resolver and the ABI sentinel classifier are tested without pulling in
-# Win32 (see cases "netpacket" and "sentinel").
+# The ABI modules keep their decision logic inline in the headers, so the
+# cases "netpacket", "sentinel" and "structguard" test the real policy
+# without linking the Windows glue (VirtualQuery, the PE walk, the logger).
+# stubs/AbiReporting.cpp supplies the three reporting hooks those headers
+# call; everything else they need is inline.
 target_include_directories(quickwin_tests PRIVATE stubs ../AetherCore ../AetherPayload)
 target_link_libraries(quickwin_tests PRIVATE Threads::Threads tomlplusplus::tomlplusplus)
 if(MSVC)
