@@ -76,13 +76,15 @@ struct AppOwnership {
     bool regionRestricted;                   // +0x2C likely  (flags & 0x30)
     bool autoGrant;                          // +0x2D guess   (license type == 1)
     bool retailLicense;                      // +0x2E likely  (license type == 0x40)
-    bool borrowed;                           // +0x2F guess   (site/guest path) <- read by Aether
+    bool borrowed;                           // +0x2F likely  (set on the site/borrower path,
+                                             //                round 7: setter 0x4C3000) <- read by Aether
     bool allActivationRequired;              // +0x30 guess   (defaults 1, ANDed with bit 11)
-    bool unknown_0x31;                       // +0x31 UNKNOWN (= license field 0x24 == 7)
+    bool timedLicense;                       // +0x31 likely  (license type 7: timed, ~30.7d grace)
     bool anySiteLicense;                     // +0x32 guess   (|= type == 0x50)
     bool allSiteLicenses;                    // +0x33 guess   (defaults 1, ANDed with type == 0x50)
     bool guestPass;                          // +0x34 guess   (defaults 1, ANDed with bit 12)
-    bool familyShared;                       // +0x35 likely  (flags & 0x4000) <- read by Aether
+    bool familyShared;                       // +0x35 likely  (flags & 0x4000 + subscription
+                                             //                match, round 7) <- read by Aether
 };
 
 // Valve's CUtlMemory<T>: a growable, relocatable backing buffer.
@@ -147,8 +149,8 @@ struct PackageInfo {
 // manifestGid — the id of the exact content snapshot Steam will download — so
 // this struct gets the same treatment as the others: guarded, never trusted.
 struct DepotEntry {
-    std::uint32_t depotId;       // 0x00
-    std::uint32_t appId;         // 0x04
+    std::uint32_t depotId;       // 0x00 proven (round 7, from the producer)
+    std::uint32_t appId;         // 0x04 proven (round 7, from the producer)
     std::uint64_t manifestGid;   // 0x08
     std::uint64_t manifestSize;  // 0x10
     std::uint32_t dlcAppId;      // 0x18
