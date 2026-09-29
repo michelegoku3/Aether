@@ -40,13 +40,6 @@ std::atomic<const char*> g_hintSource{"probe"};
 
 }  // namespace
 
-Resolver& Global() {
-    // Function-local static: the hooks can fire on Steam threads that exist
-    // before our dynamic initialization runs.
-    static Resolver instance;
-    return instance;
-}
-
 bool DefaultReadable(const void* addr, std::size_t bytes, void* /*ctx*/) {
     if (!addr || bytes == 0) return false;
 
