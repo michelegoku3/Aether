@@ -9,6 +9,7 @@
 #include "credentials/HexCodec.h"
 #include "core/HookManager.h"
 #include "core/Logger.h"
+#include "core/StructGuard.h"
 #include "scripting/LuaData.h"
 #include "core/SteamTypes.h"
 #include "network/ManifestFetch.h"
@@ -67,6 +68,16 @@ std::int32_t h_LoadDepotDecryptionKey(void* self, std::uint32_t foo, char* keyNa
 // Applies configured manifest overrides to a depot vector in place.
 void ApplyManifestOverrides(CUtlVector<DepotEntry>* vec, std::vector<ManifestPatchLog>& patches) {
     if (!vec || !vec->mem.memory || vec->size == 0) return;
+
+    // Guard before the only place Aether writes into Steam's depot table.
+    // Replacing a manifest id at the wrong offset does not crash: Steam
+    // downloads the wrong content, or acts on a table we corrupted. One pass
+    // over the rows is cheap and turns that into a skipped override.
+    if (const auto reason = abi::guard::CheckDepotVector(vec);
+        !abi::guard::Passed(reason)) {
+        abi::guard::CountRejection("DepotEntry table", reason);
+        return;
+    }
 
     for (std::uint32_t i = 0; i < vec->size; ++i) {
         DepotEntry& entry = vec->mem.memory[i];

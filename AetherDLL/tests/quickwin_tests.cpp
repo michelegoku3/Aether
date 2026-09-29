@@ -746,13 +746,48 @@ void StructGuard() {
         CHECK(!LayoutContradicted());
     }
 
+    // 9. DepotEntry: the table Aether rewrites manifest ids into.
+    {
+        ResetCounters();
+        using ac::steam::DepotEntry;
+        CHECK(sizeof(DepotEntry) == 0x20);              // stride proven by the loops
+        CHECK(offsetof(DepotEntry, manifestGid) == 0x08);
+        CHECK(offsetof(DepotEntry, manifestSize) == 0x10);
+        CHECK(offsetof(ac::steam::AppOwnership, borrowed) == 0x2F);   // not 0x31
+
+        std::vector<DepotEntry> rows(4);
+        rows[0] = DepotEntry{1234, 10, 0xAABBCCDD11223344ull, 50ull * 1024 * 1024, 0, 1, 0, 1, 0};
+        ac::steam::CUtlVector<DepotEntry> vec{};
+        vec.mem.memory = rows.data();
+        vec.mem.allocationCount = 4;
+        vec.size = 2;                                    // row 1 is a zeroed tail row
+        CHECK(Passed(CheckDepotVector(&vec)));
+
+        rows[1].depotId = 0;                             // id missing but data present
+        rows[1].manifestGid = 0x1234;
+        CHECK(CheckDepotVector(&vec) == Reason::DepotEntryImplausible);
+
+        rows[1] = DepotEntry{7, 7, 1, 1, 0, 2, 0, 0, 0}; // a "bool" holding 2
+        CHECK(CheckDepotVector(&vec) == Reason::DepotEntryImplausible);
+
+        rows[1] = DepotEntry{7, 7, 1, 1ull << 60, 0, 0, 0, 0, 0};  // absurd size
+        CHECK(CheckDepotVector(&vec) == Reason::DepotEntryImplausible);
+
+        rows[1] = DepotEntry{7, 7, 99, 1024, 0, 0, 0, 0, 0};
+        CHECK(Passed(CheckDepotVector(&vec)));
+        CHECK(CheckDepotVector(nullptr) == Reason::NullObject);
+
+        vec.size = 9;                                    // size beyond capacity
+        CHECK(CheckDepotVector(&vec) == Reason::VectorSizeExceedsAlloc);
+    }
+
     // 7. Every reason has text.
     {
         const Reason all[] = {Reason::Ok, Reason::NullObject, Reason::BoolBlockNotBoolean,
                               Reason::ReleaseStateOutOfRange, Reason::PackageCountAbsurd,
                               Reason::VectorSizeExceedsAlloc, Reason::VectorMemoryNull,
                               Reason::VectorMemoryMisaligned, Reason::VectorAllocAbsurd,
-                              Reason::TableMismatch};
+                              Reason::TableMismatch, Reason::DepotEntryImplausible};
         for (const Reason r : all) CHECK(ReasonText(r) != nullptr && ReasonText(r)[0] != '\0');
     }
 }

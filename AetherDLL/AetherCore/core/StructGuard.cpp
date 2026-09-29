@@ -26,6 +26,8 @@ const char* ReasonText(Reason r) {
     case Reason::VectorMemoryNull: return "vector has elements but null storage";
     case Reason::VectorMemoryMisaligned: return "vector storage is misaligned";
     case Reason::VectorAllocAbsurd: return "vector allocationCount absurd";
+    case Reason::DepotEntryImplausible:
+        return "depot record does not look like a DepotEntry (layout shifted?)";
     }
     return "unknown";
 }

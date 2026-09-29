@@ -37,34 +37,52 @@ enum class AppReleaseState : std::uint32_t {
 
 // Ownership record returned by CClientUser::CheckAppOwnership. Field order is
 // dictated by Steam; do not reorder.
+// Out-param of CClientUser::CheckAppOwnership.
+//
+// FIELD ORDER IS EVIDENCE, NOT PREFERENCE. Offsets and the extent of the bool
+// block are proven by disassembly of both shipped builds (rounds 3-6); the
+// NAMES of several fields are deductions from the branch that writes them,
+// and the ones that are not certain say so. Getting a name wrong here does
+// not crash: it makes Steam believe something false. That already happened —
+// `borrowed` was declared at +0x31, which is a byte of unknown meaning, and
+// Steam started showing the family-sharing banner on .lua apps.
+//
+// Aether READS:  releaseState, existInPackageNums, borrowed, familyShared
+// Aether WRITES: packageId, releaseState, freeLicense, ownsLicense
+// Everything else is layout: declared so the offsets are right, never touched.
 struct AppOwnership {
-    std::uint32_t packageId;
-    AppReleaseState releaseState;
-    std::uint32_t steamId32;
-    std::uint32_t masterSubscriptionAppId;
-    std::uint32_t trialSeconds;
-    std::uint32_t existInPackageNums;
-    char purchaseCountryCode[4];
-    std::uint32_t timeStamp;
-    std::uint32_t timeExpire;
-    bool ownsLicense;
-    bool licenseExpired;
-    bool isPermanent;
-    bool lowViolence;
-    bool freeLicense;
-    bool regionRestricted;
-    bool fromFreeWeekend;
-    bool licenseLocked;
-    bool licensePending;
-    bool retailLicense;
-    bool autoGrant;
-    bool licensePermanent;
-    bool guestPass;
-    bool borrowed;
-    bool anySiteLicense;
-    bool allSiteLicenses;
-    bool allActivationRequired;
-    bool familyShared;
+    // ---- scalars (offsets proven; names for +0x0C/+0x14 are not) ----------
+    std::uint32_t packageId;                 // +0x00 proven (echoes the appId)
+    AppReleaseState releaseState;            // +0x04 likely (enum from a KV string)
+    std::uint32_t steamId32;                 // +0x08 UNKNOWN name (round 3: masterSubscriptionAppId?)
+    std::uint32_t unknown_0x0C;              // +0x0C UNKNOWN
+    std::uint32_t trialSeconds;              // +0x10 likely (DevComp / TimedTrialMinutes * 60)
+    std::uint32_t existInPackageNums;        // +0x14 likely (a counter: incremented per entry)
+    char purchaseCountryCode[4];             // +0x18 likely (word at +0x18, byte at +0x1A)
+    std::uint32_t timeStamp;                 // +0x1C proven offset
+    std::uint32_t timeExpire;                // +0x20 proven offset
+
+    // ---- the eighteen booleans, +0x24..+0x35, contiguous (proven) --------
+    // Valve only ever stores 0 or 1 here; StructGuard uses that to detect a
+    // shifted layout.
+    bool ownsLicense;                        // +0x24 likely  (= IsOwnedNow(license))
+    bool licenseExpired;                     // +0x25 likely  (bit 2 of license flags)
+    bool isPermanent;                        // +0x26 likely  (permanent/commercial helper)
+    bool lowViolence;                        // +0x27 likely  (bit 6)
+    bool freeLicense;                        // +0x28 guess   (defaults to 1, ANDed per package)
+    bool licensePending;                     // +0x29 likely  (flags 0x100/0x200 path)
+    bool fromFreeWeekend;                    // +0x2A likely  ("FreeWeekend" KV hit)
+    bool licenseLocked;                      // +0x2B guess   (bit 0)
+    bool regionRestricted;                   // +0x2C likely  (flags & 0x30)
+    bool autoGrant;                          // +0x2D guess   (license type == 1)
+    bool retailLicense;                      // +0x2E likely  (license type == 0x40)
+    bool borrowed;                           // +0x2F guess   (site/guest path) <- read by Aether
+    bool allActivationRequired;              // +0x30 guess   (defaults 1, ANDed with bit 11)
+    bool unknown_0x31;                       // +0x31 UNKNOWN (= license field 0x24 == 7)
+    bool anySiteLicense;                     // +0x32 guess   (|= type == 0x50)
+    bool allSiteLicenses;                    // +0x33 guess   (defaults 1, ANDed with type == 0x50)
+    bool guestPass;                          // +0x34 guess   (defaults 1, ANDed with bit 12)
+    bool familyShared;                       // +0x35 likely  (flags & 0x4000) <- read by Aether
 };
 
 // Valve's CUtlMemory<T>: a growable, relocatable backing buffer.
@@ -121,6 +139,13 @@ struct PackageInfo {
 };
 
 // Depot entry. ManifestGid (offset 0x08) is the field we override.
+// One row of the depot dependency table Steam builds before a download.
+//
+// Stride 0x20 is proven on both builds (the loops in BuildDepotDependency
+// index with `shl reg,5`), and manifestGid/manifestSize at +0x08/+0x10 come
+// from the filler helper that writes them (round 5). Aether OVERWRITES
+// manifestGid — the id of the exact content snapshot Steam will download — so
+// this struct gets the same treatment as the others: guarded, never trusted.
 struct DepotEntry {
     std::uint32_t depotId;       // 0x00
     std::uint32_t appId;         // 0x04
