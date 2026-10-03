@@ -46,8 +46,9 @@ pattern_mirror = ""
 use_ost_source = false
 
 [manifest_fetch]
-# Archived request-code reference only. Production routing is disabled;
-# manifests are acquired locally or through authenticated Hubcap in AetherDesk.
+# DEPRECATED — ignored by the DLL (logged once at load). The legacy
+# request-code wire-bridge was removed; manifests come from the local
+# index and authenticated Hubcap generation only.
 urls = []
 
 [presence]

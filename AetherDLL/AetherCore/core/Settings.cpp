@@ -122,32 +122,14 @@ Settings Settings::Load(const std::string& configPath, bool* valid) {
         s.patternUseOstSource = *useOst;
     }
 
-    // [manifest_fetch]
-    if (auto* mfetch = tbl["manifest_fetch"].as_table()) {
-        if (auto* urls = (*mfetch)["urls"].as_array()) {
-            s.manifestFetchUrls.clear();
-            for (const auto& node : *urls) {
-                if (auto u = node.value<std::string>(); u && !u->empty()) {
-                    s.manifestFetchUrls.push_back(*u);
-                }
-            }
-        } else if (auto url = (*mfetch)["url"].value<std::string>()) {
-            s.manifestFetchUrls = { *url };
-        }
-        if (auto secs = (*mfetch)["timeout_sec"].value<int>()) {
-            if (*secs > 0) s.manifestFetchTimeoutSec = *secs;
-        }
-        if (auto ms = (*mfetch)["bridge_wait_ms"].value<int>()) {
-            if (*ms >= 0 && *ms <= 10000) s.manifestBridgeWaitMs = *ms;
-        }
-        if (auto* hosts = (*mfetch)["trusted_hosts"].as_array()) {
-            s.manifestFetchTrustedHosts.clear();
-            for (const auto& node : *hosts) {
-                if (auto h = node.value<std::string>(); h && !h->empty()) {
-                    s.manifestFetchTrustedHosts.push_back(*h);
-                }
-            }
-        }
+    // [manifest_fetch] — DEPRECATED e ignorato. Il wire-bridge
+    // GetManifestRequestCode è stato rimosso: i manifest arrivano solo
+    // dall'indice locale e dalla generazione Hubcap autenticata.
+    if (tbl["manifest_fetch"].as_table()) {
+        AC_LOG_WARN_ONCE("Settings",
+                         "[manifest_fetch] keys are deprecated and ignored: the "
+                         "legacy request-code bridge was removed; manifests use "
+                         "the local index + authenticated Hubcap only.");
     }
 
     // [manifest_cache]
@@ -220,7 +202,7 @@ Settings Settings::Load(const std::string& configPath, bool* valid) {
 
     AC_LOG_INFO("Settings",
                 "Loaded %s (level=%s, keep_last_session=%d, lua extra paths: %zu, "
-                "mirror: %s, ost=%d, diversion=%s, manifest urls: %zu, bridge_wait=%dms, manifest_restore=%d, presence: default=%s show=%zu of=%zu excl=%zu).",
+                "mirror: %s, ost=%d, diversion=%s, manifest_restore=%d, presence: default=%s show=%zu of=%zu excl=%zu).",
                 configPath.c_str(),
                 s.logLevel == LogLevel::Trace ? "trace"
                     : s.logLevel == LogLevel::Debug ? "debug"
@@ -233,8 +215,6 @@ Settings Settings::Load(const std::string& configPath, bool* valid) {
                 s.patternUseOstSource ? 1 : 0,
                 s.diversionMode == DiversionMode::Auto ? "auto"
                     : s.diversionMode == DiversionMode::Copy ? "copy" : "live",
-                s.manifestFetchUrls.size(),
-                s.manifestBridgeWaitMs,
                 s.manifestRestoreOnStartup ? 1 : 0,
                 s.presenceDefaultShowOnline ? "showonline" : "none",
                 s.presenceShowOnlineApps.size(),

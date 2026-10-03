@@ -21,7 +21,6 @@
 #include "hooks/wire/GamesPlayedModule.h"
 #include "hooks/wire/PersonaInject.h"
 #include "hooks/wire/AchievementModule.h"
-#include "hooks/wire/ManifestBridge.h"
 
 #include "steam_messages.pb.h"
 
@@ -183,16 +182,13 @@ namespace ac::hooks {
                 return AchievementModule::HandleSendStoreUserStats2(f, t_scratchBody.data(), kWireMaxBodyBytes);
             case emsg::kServiceMethodCallFromClient:
             // Newer Steam builds (observed on build 1788652215) send the same
-            // service calls with eMsg 146: without this case the request-code
-            // bridge never sees them and Steam gets the raw AccessDenied.
+            // service calls with eMsg 146: without this case the stats
+            // handlers never see them.
             case emsg::kServiceMethodCallFromClientAlt: {
                 std::string job;
                 if (ServiceJobName(f, job)) {
                     TrackServiceJob(f);  // [DIAG] flight-recorder jobid->nome
                     std::uint32_t h = FnvHash(job.c_str());
-                    if (h == job_hash::kGetManifestRequestCode) {
-                        return ManifestBridge::HandleSend(f);
-                    }
                     if (h == job_hash::kGetUserStats) {
                         return AchievementModule::HandleSendGetUserStats(f, t_scratchBody.data(), kWireMaxBodyBytes);
                     }
@@ -288,13 +284,8 @@ namespace ac::hooks {
                         ? FamilySharing::ClearBody()
                         : kNoChange;
                 }
-                // The request-code response is passed through unchanged. Current
-                // production acquisition is local-first/Hubcap-owned by Desk.
-                if (h == job_hash::kGetManifestRequestCode) {
-                    return ManifestBridge::HandleRecv(f, t_scratchBody.data(), kWireMaxBodyBytes,
-                        t_scratchHeader.data(), kWireMaxHeaderBytes,
-                        &t_recvHeaderLen);
-                }
+                // Le risposte request-code passano invariate: l'acquisizione
+                // è locale/Hubcap (il bridge è stato rimosso).
                 if (h == job_hash::kGetUserStats) {
                     return AchievementModule::HandleRecvGetUserStatsResponse(f, t_scratchBody.data(), kWireMaxBodyBytes,
                         t_scratchHeader.data(), kWireMaxHeaderBytes,

@@ -1,18 +1,16 @@
 #include "pch.h"
 #include "core/Workers.h"
-#include "utils/Strings.h"
 #include "network/ManifestFetch.h"
 
 #include <algorithm>
 #include <chrono>
+#include <cstddef>
 #include <cctype>
-#include <charconv>
 #include <condition_variable>
 #include <deque>
 #include <exception>
 #include <filesystem>
 #include <fstream>
-#include <future>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -35,110 +33,23 @@ namespace ac::manifestfetch {
 namespace {
 
 constexpr const char* kModule = "ManifestFetch";
-constexpr std::size_t kMaxPendingJobs = 256;
-constexpr std::size_t kMaxInflightLookups = 128;
-constexpr std::size_t kMaxCacheEntries = 1024;
 
-std::string ExpandTemplate(std::string_view tmpl, std::uint64_t gid,
-                           std::uint32_t appId, std::uint32_t depotId) {
-    std::string out;
-    out.reserve(tmpl.size() + 32);
-    for (std::size_t i = 0; i < tmpl.size();) {
-        if (tmpl[i] != '{') {
-            out.push_back(tmpl[i++]);
-            continue;
-        }
-        const std::size_t end = tmpl.find('}', i + 1);
-        if (end == std::string_view::npos) {
-            out.push_back(tmpl[i++]);
-            continue;
-        }
-        const std::string_view tag = tmpl.substr(i + 1, end - i - 1);
-        if (tag == "gid") out += std::to_string(gid);
-        else if (tag == "appid") out += std::to_string(appId);
-        else if (tag == "depotid") out += std::to_string(depotId);
-        else out.append(tmpl.substr(i, end - i + 1));
-        i = end + 1;
+struct LookupKey {
+    std::uint64_t gid = 0;
+    std::uint32_t appId = 0;
+    std::uint32_t depotId = 0;
+
+    bool operator==(const LookupKey&) const = default;
+};
+
+struct LookupKeyHash {
+    std::size_t operator()(const LookupKey& key) const noexcept {
+        return static_cast<std::size_t>(key.gid) ^
+               (static_cast<std::size_t>(key.gid >> 32) << 1) ^
+               (static_cast<std::size_t>(key.appId) << 2) ^
+               (static_cast<std::size_t>(key.depotId) << 3);
     }
-    return out;
-}
-
-using strings::EqualsIgnoreCase;
-
-
-using strings::ExtractHost;
-
-
-bool IsTrustedHost(std::string_view host) {
-    const auto settings = Settings::Snapshot();
-    if (host.empty()) return false;
-    for (const auto& trusted : settings->manifestFetchTrustedHosts) {
-        if (EqualsIgnoreCase(host, trusted)) return true;
-    }
-    return false;
-}
-
-bool IsSupportedProviderUrl(std::string_view url, std::string_view host) {
-    const bool https = url.size() >= 8 && EqualsIgnoreCase(url.substr(0, 8), "https://");
-    const bool http = url.size() >= 7 && EqualsIgnoreCase(url.substr(0, 7), "http://");
-    if ((!https && !http) || host.empty()) return false;
-    // Credentials are not needed for configured manifest providers and make
-    // host parsing/redirect auditing unnecessarily ambiguous.
-    const std::size_t schemeEnd = url.find("://");
-    const std::size_t authorityEnd = url.find_first_of("/?#", schemeEnd == std::string_view::npos ? 0 : schemeEnd + 3);
-    const std::size_t at = url.find('@', schemeEnd == std::string_view::npos ? 0 : schemeEnd + 3);
-    return at == std::string_view::npos ||
-           (authorityEnd != std::string_view::npos && at > authorityEnd);
-}
-
-bool UsesProviderCompatAgent(std::string_view url) {
-    return EqualsIgnoreCase(ExtractHost(url), "manifest.opensteamtool.com");
-}
-
-bool ParseDigitsOnly(std::string_view body, std::uint64_t* out) {
-    if (!out) return false;
-    std::size_t b = 0;
-    std::size_t e = body.size();
-    while (b < e && (body[b] == ' ' || body[b] == '\r' || body[b] == '\n' || body[b] == '\t')) ++b;
-    while (e > b && (body[e - 1] == ' ' || body[e - 1] == '\r' || body[e - 1] == '\n' || body[e - 1] == '\t')) --e;
-    if (b == e) return false;
-    std::uint64_t value = 0;
-    auto [_, ec] = std::from_chars(body.data() + b, body.data() + e, value);
-    if (ec != std::errc{} || value == 0) return false;
-    *out = value;
-    return true;
-}
-
-bool ParseJsonDigitField(std::string_view body, std::uint64_t* out) {
-    if (!out) return false;
-    static constexpr std::string_view kKeys[] = {
-        "\"manifest_request_code\"", "\"content\"", "\"code\"",
-    };
-    for (auto key : kKeys) {
-        const std::size_t k = body.find(key);
-        if (k == std::string_view::npos) continue;
-        std::size_t pos = body.find(':', k + key.size());
-        if (pos == std::string_view::npos) continue;
-        while (pos + 1 < body.size() && std::isspace(static_cast<unsigned char>(body[pos + 1]))) ++pos;
-        ++pos;
-        if (pos >= body.size()) continue;
-
-        if (body[pos] == '"') {
-            const std::size_t end = body.find('"', pos + 1);
-            if (end != std::string_view::npos &&
-                ParseDigitsOnly(body.substr(pos + 1, end - pos - 1), out)) {
-                return true;
-            }
-            continue;
-        }
-
-        const std::size_t end = body.find_first_not_of("0123456789", pos);
-        const std::string_view digits = body.substr(
-            pos, end == std::string_view::npos ? body.size() - pos : end - pos);
-        if (ParseDigitsOnly(digits, out)) return true;
-    }
-    return false;
-}
+};
 
 // ---------------------------------------------------------------------------
 // Indice locale dei manifest (hot path di BuildDepotDependency: ~1000+ eventi
@@ -160,12 +71,11 @@ std::mutex g_localManifestMutex;
 std::unordered_map<std::string, LocalManifestCacheEntry> g_localManifestCache;
 constexpr auto kNegativeTtl = std::chrono::seconds(30);
 
-// A manifest already present on disk is authoritative for this bridge. Steam
-// still asks ContentServerDirectory for a request code when a depot is marked
-// as owned by Aether, but a cached manifest does not need a network-issued
-// code. Returning an engaged optional containing zero lets ManifestBridge
-// convert the failed service response into an OK response without contacting a
-// patched/unauthenticated provider.
+// A manifest already present on disk is authoritative: Steam's depotcache (or
+// the per-game AetherData backup published into depotcache) satisfies the
+// dependency without any request-code round-trip. The legacy
+// GetManifestRequestCode wire-bridge was removed (see ManifestFetch.h); this
+// local-first lookup is now the primary acquisition path.
 std::optional<std::filesystem::path> FindLocalManifest(std::uint64_t gid,
                                                         std::uint32_t depotId) {
     namespace fs = std::filesystem;
@@ -454,79 +364,6 @@ bool InstallHubcapManifest(std::uint64_t gid, std::uint32_t depotId) {
     return installed;
 }
 
-std::optional<std::uint64_t> RunLookup(std::uint64_t gid, std::uint32_t appId,
-                                       std::uint32_t depotId) {
-                                           const auto settings = Settings::Snapshot();
-    // Production path: obtain the exact manifest directly from authenticated
-    // Hubcap at the same request-code synchronization point. AetherDesk is not
-    // required to be running; its DPAPI-protected credential file is read by
-    // the DLL under the current Windows user.
-    if (InstallHubcapManifest(gid, depotId)) return std::uint64_t{0};
-
-    if (settings->manifestFetchUrls.empty()) {
-        AC_LOG_DEBUG(kModule, "gid=%llu skipped, no providers configured.",
-                     static_cast<unsigned long long>(gid));
-        return std::nullopt;
-    }
-
-    for (std::size_t i = 0; i < settings->manifestFetchUrls.size(); ++i) {
-        const std::string& tmpl = settings->manifestFetchUrls[i];
-        if (tmpl.empty()) continue;
-
-        const std::string url = ExpandTemplate(tmpl, gid, appId, depotId);
-        const std::string_view host = ExtractHost(url);
-        if (!IsSupportedProviderUrl(url, host) || !IsTrustedHost(host)) {
-            AC_LOG_WARN(kModule, "gid=%llu provider %zu skipped, URL/host not trusted.",
-                        static_cast<unsigned long long>(gid), i + 1);
-            continue;
-        }
-
-        AC_LOG_INFO(kModule, "gid=%llu provider %zu/%zu GET %s",
-                    static_cast<unsigned long long>(gid), i + 1,
-                    settings->manifestFetchUrls.size(), url.c_str());
-
-        http::Response resp;
-        for (int attempt = 0; attempt < 2; ++attempt) {
-            resp = UsesProviderCompatAgent(url)
-                ? http::GetUnchecked(url, settings->manifestFetchTimeoutSec, L"OpenSteamTool/1.0")
-                : http::GetUnchecked(url, settings->manifestFetchTimeoutSec);
-            if (!resp.networkError && resp.status == 429 && attempt == 0) {
-                AC_LOG_WARN(kModule, "gid=%llu provider %zu HTTP=429, retrying once.",
-                            static_cast<unsigned long long>(gid), i + 1);
-                std::this_thread::sleep_for(std::chrono::milliseconds(750));
-                continue;
-            }
-            break;
-        }
-
-        if (resp.networkError) {
-            AC_LOG_WARN(kModule, "gid=%llu provider %zu network error, trying next.",
-                        static_cast<unsigned long long>(gid), i + 1);
-            continue;
-        }
-        if (resp.status != 200) {
-            AC_LOG_WARN(kModule, "gid=%llu provider %zu HTTP=%d, trying next.",
-                        static_cast<unsigned long long>(gid), i + 1, resp.status);
-            continue;
-        }
-
-        std::uint64_t code = 0;
-        if (ParseDigitsOnly(resp.body, &code) || ParseJsonDigitField(resp.body, &code)) {
-            AC_LOG_INFO(kModule, "gid=%llu resolved code=%llu via provider %zu.",
-                        static_cast<unsigned long long>(gid),
-                        static_cast<unsigned long long>(code), i + 1);
-            return code;
-        }
-
-        AC_LOG_WARN(kModule, "gid=%llu provider %zu body unparseable, trying next.",
-                    static_cast<unsigned long long>(gid), i + 1);
-    }
-
-    AC_LOG_WARN(kModule, "gid=%llu all providers exhausted.",
-                static_cast<unsigned long long>(gid));
-    return std::nullopt;
-}
-
 // --- Proactive manifest pipeline (dependency-build trigger) -----------------
 // Steam assembles its depot dependency list before every install, update and
 // verify pass. That moment is the earliest build-independent point where the
@@ -565,20 +402,12 @@ void ProactiveWorkerLoop(std::atomic<bool>& stop) {
             g_proactiveQueue.pop_front();
         }
         try {
-            // Another path (wire-bridge lookup, ManifestRestore, AetherDesk)
-            // may have installed the manifest meanwhile: re-check before
-            // spending shared quota.
+            // Another path (ManifestRestore, AetherDesk) may have installed
+            // the manifest meanwhile: re-check before spending shared quota.
             if (HasLocalManifest(key.gid, key.depotId)) {
                 std::lock_guard<std::mutex> lock(g_proactiveMutex);
                 g_proactiveStates.erase(key);
                 continue;
-            }
-            {
-                // A wire-bridge lookup may still own this key; its failure
-                // continuation requeues with backoff, so skip instead of
-                // double-generating.
-                std::lock_guard<std::mutex> lock(g_state.manifestFetch.mutex);
-                if (g_state.manifestFetch.inflight.count(key) > 0) continue;
             }
             if (InstallHubcapManifest(key.gid, key.depotId)) {
                 AC_LOG_INFO(kModule, "Proactive manifest ready: depot=%u gid=%llu.",
@@ -646,200 +475,6 @@ bool EnqueueProactive(const LookupKey& key) {
 
 bool HasLocalManifest(std::uint64_t manifestGid, std::uint32_t depotId) {
     return FindLocalManifest(manifestGid, depotId).has_value();
-}
-
-void Submit(std::uint64_t jobId, std::uint64_t manifestGid,
-            std::uint32_t appId, std::uint32_t depotId) {
-    if (jobId == 0 || manifestGid == 0 || appId == 0 || depotId == 0) {
-        AC_LOG_WARN(kModule, "Rejected invalid manifest lookup identifiers.");
-        return;
-    }
-
-    const LookupKey key{manifestGid, appId, depotId};
-    std::lock_guard<std::mutex> lock(g_state.manifestFetch.mutex);
-    if (g_state.manifestFetch.pending.count(jobId)) {
-        AC_LOG_DEBUG(kModule, "Duplicate submit for job=%llu ignored.",
-                     static_cast<unsigned long long>(jobId));
-        return;
-    }
-    if (g_state.manifestFetch.pending.size() >= kMaxPendingJobs) {
-        AC_LOG_WARN(kModule, "Manifest pending limit reached; job=%llu rejected.",
-                    static_cast<unsigned long long>(jobId));
-        return;
-    }
-
-    // Prefer the exact depot/GID file restored by ManifestRestore (or already
-    // present in either Steam depotcache location). A zero request code is the
-    // local-cache sentinel; it is never sent to an HTTP provider and therefore
-    // does not depend on unauthenticated Steam request-code access.
-    if (const auto local = FindLocalManifest(manifestGid, depotId)) {
-        std::promise<std::optional<std::uint64_t>> ready;
-        ready.set_value(std::optional<std::uint64_t>{0});
-        g_state.manifestFetch.pending.emplace(jobId, ready.get_future().share());
-        g_state.manifestFetch.cache[key] = 0;
-        AC_LOG_INFO(kModule,
-                    "job=%llu gid=%llu local manifest hit: %s; skipping providers.",
-                    static_cast<unsigned long long>(jobId),
-                    static_cast<unsigned long long>(manifestGid),
-                    local->string().c_str());
-        return;
-    }
-
-    if (auto cached = g_state.manifestFetch.cache.find(key);
-        cached != g_state.manifestFetch.cache.end()) {
-        std::promise<std::optional<std::uint64_t>> ready;
-        ready.set_value(cached->second);
-        g_state.manifestFetch.pending.emplace(jobId, ready.get_future().share());
-        AC_LOG_INFO(kModule, "job=%llu gid=%llu served from cache.",
-                    static_cast<unsigned long long>(jobId),
-                    static_cast<unsigned long long>(manifestGid));
-        return;
-    }
-
-    if (auto inflight = g_state.manifestFetch.inflight.find(key);
-        inflight != g_state.manifestFetch.inflight.end()) {
-        g_state.manifestFetch.pending.emplace(jobId, inflight->second);
-        AC_LOG_INFO(kModule, "job=%llu gid=%llu joined in-flight lookup.",
-                    static_cast<unsigned long long>(jobId),
-                    static_cast<unsigned long long>(manifestGid));
-        return;
-    }
-
-    if (g_state.manifestFetch.inflight.size() >= kMaxInflightLookups) {
-        AC_LOG_WARN(kModule, "Manifest in-flight limit reached; job=%llu rejected.",
-                    static_cast<unsigned long long>(jobId));
-        return;
-    }
-
-    // Manual promise + detached thread instead of std::async(launch::async).
-    // The async shared state JOINS its thread from its own destructor when the
-    // last future handle dies, and both places where that can happen here are
-    // unacceptable: on the CM network thread (the Resolve timeout path erases
-    // 'pending', so the destructor would block the wire until the worker
-    // finishes) or on the worker thread itself (the in-flight erase below can
-    // be the last handle -> self-join -> std::system_error EDEADLK ->
-    // terminate; reproduced on libstdc++). A promise-based shared state never
-    // joins; it is simply released when the last handle goes away.
-    auto resultPromise = std::make_shared<std::promise<std::optional<std::uint64_t>>>();
-    std::shared_future<std::optional<std::uint64_t>> fut = resultPromise->get_future().share();
-    auto startPromise = std::make_shared<std::promise<void>>();
-    const std::shared_future<void> startGate = startPromise->get_future().share();
-    try {
-        const std::string workerName =
-            "manifest_lookup_" + std::to_string(jobId);
-        if (!workers::StartWorker(workerName, [key, startGate, resultPromise](std::atomic<bool>&) {
-            startGate.wait();
-            std::optional<std::uint64_t> result;
-            try {
-                result = RunLookup(key.gid, key.appId, key.depotId);
-            } catch (const std::exception& e) {
-                AC_LOG_ERROR(kModule, "Manifest lookup worker failed: %s", e.what());
-            } catch (...) {
-                AC_LOG_ERROR(kModule, "Manifest lookup worker failed with unknown exception.");
-            }
-
-            {
-                std::lock_guard<std::mutex> lock(g_state.manifestFetch.mutex);
-                if (result) {
-                    if (g_state.manifestFetch.cache.size() >= kMaxCacheEntries) {
-                        g_state.manifestFetch.cache.erase(g_state.manifestFetch.cache.begin());
-                    }
-                    g_state.manifestFetch.cache[key] = *result;
-                }
-                g_state.manifestFetch.inflight.erase(key);
-            }
-            if (!result) {
-                // Continuation: keep retrying in the background with backoff
-                // even if Steam never resubmits this job. Queued only after
-                // the in-flight entry is gone so the worker does not
-                // self-skip.
-                EnqueueProactive(key);
-            }
-            // Satisfy waiters only after all bookkeeping is committed.
-            try {
-                resultPromise->set_value(result);
-            } catch (...) {
-                AC_LOG_ERROR(kModule, "Manifest lookup result could not be published.");
-            }
-        })) {
-            AC_LOG_WARN(kModule, "job=%llu lookup worker rejected (workers shut down).",
-                        static_cast<unsigned long long>(jobId));
-            {
-                std::lock_guard<std::mutex> lock(g_state.manifestFetch.mutex);
-                g_state.manifestFetch.inflight.erase(key);
-            }
-            try {
-                resultPromise->set_value(std::nullopt);
-            } catch (...) {
-                AC_LOG_ERROR(kModule, "Manifest lookup result could not be published.");
-            }
-        }
-    } catch (const std::exception& e) {
-        AC_LOG_ERROR(kModule, "Manifest lookup scheduling failed: %s", e.what());
-        return;
-    } catch (...) {
-        AC_LOG_ERROR(kModule, "Manifest lookup scheduling failed with unknown exception.");
-        return;
-    }
-
-    g_state.manifestFetch.inflight.emplace(key, fut);
-    g_state.manifestFetch.pending.emplace(jobId, fut);
-    startPromise->set_value();
-    AC_LOG_INFO(kModule, "job=%llu gid=%llu lookup started.",
-                static_cast<unsigned long long>(jobId),
-                static_cast<unsigned long long>(manifestGid));
-}
-
-std::optional<std::uint64_t> Resolve(std::uint64_t jobId) {
-    const auto settings = Settings::Snapshot();
-    std::shared_future<std::optional<std::uint64_t>> fut;
-    {
-        std::lock_guard<std::mutex> lock(g_state.manifestFetch.mutex);
-        auto it = g_state.manifestFetch.pending.find(jobId);
-        if (it == g_state.manifestFetch.pending.end()) return std::nullopt;
-        fut = it->second;
-        g_state.manifestFetch.pending.erase(it);
-    }
-
-    // Hard, short bound — this runs on Steam's CM network thread. The typical
-    // Hubcap generation (~1 s) fits inside the default 2500 ms window; anything
-    // slower passes the original CM reply through (the job fails fast instead
-    // of stalling wire traffic and heartbeats) while this lookup keeps running
-    // in the background. Once the manifest lands in depotcache, Steam's own
-    // retry resubmits and gets the instant local hit (code 0).
-    const int waitMs = settings->manifestBridgeWaitMs >= 0
-        ? std::min(settings->manifestBridgeWaitMs, 10000)
-        : 2500;
-    if (fut.wait_for(std::chrono::milliseconds(waitMs)) != std::future_status::ready) {
-        AC_LOG_WARN(kModule,
-                    "job=%llu not ready within the %dms bridge window; passing the "
-                    "original CM reply through (background fetch continues, Steam's "
-                    "retry picks up the installed manifest).",
-                    static_cast<unsigned long long>(jobId), waitMs);
-        diag::Record("manifest_timeout", std::to_string(jobId));
-        return std::nullopt;
-    }
-    try {
-        return fut.get();
-    } catch (const std::exception& e) {
-        AC_LOG_ERROR(kModule, "job=%llu result retrieval failed: %s.",
-                     static_cast<unsigned long long>(jobId), e.what());
-        return std::nullopt;
-    } catch (...) {
-        AC_LOG_ERROR(kModule, "job=%llu result retrieval failed with unknown exception.",
-                     static_cast<unsigned long long>(jobId));
-        return std::nullopt;
-    }
-}
-
-std::size_t PendingCount() {
-    std::lock_guard<std::mutex> lock(g_state.manifestFetch.mutex);
-    return g_state.manifestFetch.pending.size();
-}
-
-std::size_t CacheCount() {
-    std::lock_guard<std::mutex> lock(g_state.manifestFetch.mutex);
-    return g_state.manifestFetch.cache.size();
 }
 
 void EnsureManifestAvailable(std::uint32_t appId, std::uint32_t depotId,

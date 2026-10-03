@@ -8,6 +8,7 @@
 #include <string>
 
 #include "core/AetherCoreState.h"
+#include "hooks/aetheronline/PresenceSession.h"
 #include "credentials/CredentialStore.h"
 #include "network/EticketFetcher.h"
 #include "core/HookManager.h"
@@ -220,8 +221,8 @@ static void WriteSnapshot(std::uint64_t requests) {
          << (settings->presenceShowOnlineBroadcast ? "true" : "false") << ",\n";
     json << "  \"presence_friend_appid_from_name\": "
          << (settings->presenceFriendAppIdFromName ? "true" : "false") << ",\n";
-    json << "  \"aetheronline_real_appid\": " << g_state.aetherOnlineRealAppId.load() << ",\n";
-    json << "  \"showonline_appid\": " << g_state.showOnlineAppId.load() << ",\n";
+    json << "  \"aetheronline_real_appid\": " << presence::RealAppId() << ",\n";
+    json << "  \"showonline_appid\": " << presence::ShowOnlineAppId() << ",\n";
     json << "  \"license_reload_forced_count\": " << g_state.licenseReloadForcedCount.load() << ",\n";
     json << "  \"license_reload_direct_count\": " << g_state.licenseReloadDirectCount.load() << ",\n";
     json << "  \"gamename_cache_size\": " << g_state.gameName.nameCache.Size() << ",\n";

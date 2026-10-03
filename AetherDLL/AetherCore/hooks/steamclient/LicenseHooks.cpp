@@ -2,6 +2,7 @@
 #include "hooks/steamclient/LicenseHooks.h"
 
 #include "core/AetherCoreState.h"
+#include "hooks/aetheronline/PresenceSession.h"
 #include "core/Constants.h"
 #include "core/HookManager.h"
 #include "core/Logger.h"
@@ -182,7 +183,7 @@ namespace ac::hooks {
 
         // --- hooks ---
         std::int64_t h_OptedInMask(void* self, std::uint32_t appId) {
-            AppId real = g_state.aetherOnlineRealAppId.load();
+            AppId real = presence::RealAppId();
             if (appId == constants::kSpacewarAppId && real != 0) return o_OptedInMask(self, real);
             return o_OptedInMask(self, appId);
         }

@@ -12,6 +12,7 @@
 #include <vector>
 
 #include "core/AetherCoreState.h"
+#include "hooks/aetheronline/PresenceSession.h"
 #include "core/Constants.h"
 #include "core/HookManager.h"
 #include "hooks/license/LicenseManager.h"
@@ -64,7 +65,7 @@ namespace ac::hooks {
         // does not carry the real app id.
         // ---------------------------------------------------------------------------
         bool RewriteAetherOnlineCallbackGameId(int cb, void* data, int size) {
-            const AppId realApp = g_state.aetherOnlineRealAppId.load(std::memory_order_acquire);
+            const AppId realApp = presence::RealAppId();
             if (realApp == 0 || realApp == constants::kSpacewarAppId) return false;
             if (!constants::achievement_cb::IsAchievementCallback(cb)) return false;
             if (data == nullptr || size < static_cast<int>(sizeof(std::uint64_t))) return false;
@@ -445,7 +446,7 @@ namespace ac::hooks {
             //   UserStatsStored_t::m_nGameID
             //   UserAchievementStored_t::m_nGameID
             //   UserAchievementIconFetched_t::m_nGameID
-            const AppId realApp = g_state.aetherOnlineRealAppId.load(std::memory_order_acquire);
+            const AppId realApp = presence::RealAppId();
             if (realApp != 0 && realApp != constants::kSpacewarAppId &&
                 constants::achievement_cb::IsAchievementCallback(cb) &&
                 data && size >= static_cast<int>(sizeof(std::uint64_t)))

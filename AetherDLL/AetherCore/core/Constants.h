@@ -229,8 +229,6 @@ inline constexpr std::uint32_t FnvHash(const char* s) {
 namespace job_hash {
 inline constexpr std::uint32_t kNotifyRunningApps =
     FnvHash("FamilyGroupsClient.NotifyRunningApps#1");
-inline constexpr std::uint32_t kGetManifestRequestCode =
-    FnvHash("ContentServerDirectory.GetManifestRequestCode#1");
 inline constexpr std::uint32_t kGetUserStats =
     FnvHash("Player.GetUserStats#1");
 }  // namespace job_hash

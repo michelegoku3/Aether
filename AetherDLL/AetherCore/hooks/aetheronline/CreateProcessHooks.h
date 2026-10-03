@@ -20,7 +20,7 @@ namespace ac::hooks {
 
 // Registers detours on kernel32.dll!CreateProcessW and CreateProcessAsUserW.
 // Safe to call during InstallAllHooks() — the hooks are passive until an
-// AetherOnline session sets g_state.aetherOnlineRealAppId.
+// An AetherOnline session publishes the real app via presence::Publish.
 //
 // Uses GetProcAddress directly (not PatternEngine) because these are stable
 // kernel32 exports that never move.

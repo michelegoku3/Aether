@@ -6,4 +6,5 @@
 #include <windows.h>
 #else
 using HMODULE = void*;
+using DWORD = unsigned long;  // Constants.h uses it for a timeout constant
 #endif

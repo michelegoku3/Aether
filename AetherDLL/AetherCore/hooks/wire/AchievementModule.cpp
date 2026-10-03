@@ -5,16 +5,17 @@
 #include <bit>
 #include <chrono>
 #include <ctime>
-#include <deque>
 #include <mutex>
 #include <string>
 #include <unordered_map>
 
 #include "core/AetherCoreState.h"
+#include "hooks/aetheronline/PresenceSession.h"
 #include "core/Constants.h"
 #include "core/Logger.h"
 #include "credentials/SteamId.h"
 #include "hooks/wire/AchievementBackup.h"
+#include "hooks/wire/DonorPool.h"
 #include "scripting/LuaData.h"
 #include "steam_messages.pb.h"
 #include "utils/Hasher.h"
@@ -75,203 +76,16 @@ namespace {
 
 constexpr const char* kModule = "Wire.Achievement";
 constexpr std::int32_t kNoChange = -1;
-constexpr std::size_t kPoolCount = 15;
-
-// 15 SteamID64 ereditati da LumaCore per il pool di fallback (byte-identical).
-constexpr std::uint64_t kLumaCoreStatSteamIdPool[kPoolCount] = {
-    76561198017975643ULL,
-    76561198001678750ULL,
-    76561198355953202ULL,
-    76561197979911851ULL,
-    76561198040673812ULL,
-    76561198367471798ULL,
-    76561198028125071ULL,
-    76561198012616627ULL,
-    76561197971398453ULL,
-    76561197977849691ULL,
-    76561198019373005ULL,
-    76561198155124847ULL,
-    76561198063534772ULL,
-    76561198072711049ULL,
-    76561198028121353ULL,
-};
-
-// LumaCore's default/primary stat SteamID (kDefaultStatSteamId) is the LAST
-// entry of the pool: 76561198028121353 == pool[14]. LumaCore's
-// DefaultPoolIndex() searches the pool for this ID and tries it FIRST on the
-// very first request for an app. Aether previously started at pool[0], so for
-// a game owned only by that donor (e.g. Endacopia) it would cycle 0,1,2,... and
-// the game would give up long before ever reaching index 14. We match LumaCore
-// exactly by making pool[14] the starting point for every new app.
-constexpr std::size_t kDefaultPoolIndex = 14;
-
-using Clock = std::chrono::steady_clock;
-
-// ---------------------------------------------------------------------------
-// Per-app donor pool state (LumaCore-style learning).
-// ---------------------------------------------------------------------------
-struct PoolEntry {
-    std::size_t next = kDefaultPoolIndex;   // LumaCore starts at the default donor
-    std::size_t preferred = 0;
-    bool hasPreferred = false;
-};
-
-std::mutex g_poolMutex;
-std::unordered_map<steam::AppId, PoolEntry> g_pool;
+// Donor pool, attempt correlation e pending 818 vivono in hooks/wire/DonorPool
+// (estrazione P9): qui restano solo i decoder puri e gli handler wire.
+using DonorPool::Correl;
+using DonorPool::StatAttempt;
+using Clock = DonorPool::Clock;
 
 // Ultimo valore noto delle stat bitfield per app (stat_id -> value), per
 // rilevare i NUOVI bit a ogni commit (achievement via stats).
 std::mutex g_statBitsMutex;
 std::unordered_map<steam::AppId, std::unordered_map<std::uint32_t, std::uint32_t>> g_statBits;
-
-std::size_t PickPoolIndex(steam::AppId appId) {
-    std::lock_guard<std::mutex> lock(g_poolMutex);
-    auto& e = g_pool[appId];
-    return e.hasPreferred ? e.preferred : e.next;
-}
-
-// okWithData = the donor actually returned useful schema/stats/achievements.
-void NoteAttemptResult(steam::AppId appId, std::size_t index, bool okWithData) {
-    std::lock_guard<std::mutex> lock(g_poolMutex);
-    auto& e = g_pool[appId];
-    if (okWithData) {
-        e.preferred = index;
-        e.hasPreferred = true;
-        e.next = index;
-        AC_LOG_INFO_ONCE(kModule, "Pool AppID %u: preferred index %zu (donor %llu has data).",
-                    appId, index, kLumaCoreStatSteamIdPool[index]);
-        return;
-    }
-    if (e.hasPreferred && e.preferred == index) {
-        e.hasPreferred = false;
-        e.preferred = 0;
-    }
-    e.next = (index + 1) % kPoolCount;
-    AC_LOG_DEBUG(kModule, "Pool AppID %u: advancing index %zu -> %zu (donor has no data).", appId, index, e.next);
-}
-
-// ---------------------------------------------------------------------------
-// Send->recv correlation so the recv path knows which donor index was used.
-// ---------------------------------------------------------------------------
-// Esito della correlazione tra una risposta e le richieste che abbiamo
-// spoofato. NoMatch = risposta per una richiesta NON nostra (app posseduto o
-// traffico interno di Steam): va lasciata passare intatta. Ambiguous = più
-// richieste spoofate in volo e non sappiamo a quale appartiene la risposta:
-// in quel caso il payload è del DONOR con quasi certezza e va ripulito
-// (vedi il leak "The Fool" di Cyberpunk, 21/08/2026: il donor aveva
-// l'achievement e una risposta non correlata lo ha consegnato al gioco).
-enum class Correl {
-    Resolved,    // attempt riempito e valido
-    Ambiguous,   // più attempt in-flight sovrapposti: appId sconosciuto
-    NoMatch,     // nessun attempt nostro: pass-through corretto
-};
-
-struct StatAttempt {
-    steam::AppId appId = 0;
-    std::size_t poolIndex = 0;
-    std::uint64_t sequence = 0;
-    Clock::time_point seen{};
-};
-
-constexpr auto kAttemptWindow = std::chrono::seconds(15);
-constexpr std::size_t kAttemptCap = 24;
-
-std::mutex g_attemptMutex;
-std::unordered_map<std::uint64_t, StatAttempt> g_jobIdToAttempt;   // jobid_source -> attempt
-std::deque<StatAttempt> g_recentAttempts;
-std::uint64_t g_nextSequence = 1;
-
-void PruneAttemptsLocked(Clock::time_point now) {
-    std::erase_if(g_jobIdToAttempt, [&now](const auto& e) {
-        return now - e.second.seen > std::chrono::seconds(30);
-    });
-    for (auto it = g_recentAttempts.begin(); it != g_recentAttempts.end();) {
-        if (now - it->seen > kAttemptWindow) it = g_recentAttempts.erase(it);
-        else ++it;
-    }
-    while (g_recentAttempts.size() > kAttemptCap) g_recentAttempts.pop_front();
-}
-
-void RecordAttempt(StatAttempt a, bool hasJobId, std::uint64_t jobId) {
-    auto now = Clock::now();
-    a.seen = now;
-    std::lock_guard<std::mutex> lock(g_attemptMutex);
-    PruneAttemptsLocked(now);
-    a.sequence = g_nextSequence++;
-    if (hasJobId) g_jobIdToAttempt[jobId] = a;
-    g_recentAttempts.push_back(a);
-}
-
-// Resolves the attempt that a GetUserStats response belongs to.
-Correl ResolveAttempt(const CMsgProtoBufHeader& hdr, StatAttempt& out) {
-    auto now = Clock::now();
-    std::lock_guard<std::mutex> lock(g_attemptMutex);
-    PruneAttemptsLocked(now);
-
-    if (hdr.has_jobid_target()) {
-        auto it = g_jobIdToAttempt.find(hdr.jobid_target());
-        if (it != g_jobIdToAttempt.end()) {
-            out = it->second;
-            g_jobIdToAttempt.erase(it);
-            // Correlazione riuscita: rimuovi l'attempt ANCHE dalla coda di
-            // fallback, altrimenti resta come "fantasma" per kAttemptWindow e
-            // rende ambiguo (n>1) il fallback della risposta successiva, che a
-            // quel punto passerebbe al gioco NON riscritta (con le stats del
-            // donor). Segnalato dalla revisione esterna del 21/08/2026.
-            for (auto itDq = g_recentAttempts.begin(); itDq != g_recentAttempts.end();) {
-                if (itDq->sequence == out.sequence) itDq = g_recentAttempts.erase(itDq);
-                else ++itDq;
-            }
-            AC_LOG_DEBUG(kModule, "Response correlation via jobid_target %llu -> attempt AppID %u (pool %zu).",
-                        static_cast<unsigned long long>(hdr.jobid_target()), out.appId, out.poolIndex);
-            return Correl::Resolved;
-        }
-    }
-    // Fallback: a single recent in-flight request for this pipe.
-    StatAttempt cand;
-    std::size_t n = 0;
-    for (const auto& a : g_recentAttempts) {
-        if (now - a.seen <= kAttemptWindow) { cand = a; ++n; }
-    }
-    if (n == 1) {
-        out = cand;
-        for (auto it = g_recentAttempts.begin(); it != g_recentAttempts.end();) {
-            if (it->sequence == cand.sequence) it = g_recentAttempts.erase(it);
-            else ++it;
-        }
-        AC_LOG_DEBUG(kModule, "Response correlation without jobid: single recent attempt -> AppID %u (pool %zu).",
-                    out.appId, out.poolIndex);
-        return Correl::Resolved;
-    }
-    if (n > 1) {
-        AC_LOG_WARN(kModule,
-                    "Ambiguous correlation: %zu overlapping spoofed requests in flight. The response will "
-                    "be stripped of the donor payload for safety (no leak to the game).",
-                    n);
-        return Correl::Ambiguous;
-    }
-    return Correl::NoMatch;
-}
-
-// ---------------------------------------------------------------------------
-// Pending spoof correlation for ClientGetUserStats (818) -> response (819).
-// ---------------------------------------------------------------------------
-constexpr auto kPendingWindow = std::chrono::seconds(30);
-std::mutex g_pendingMutex;
-std::unordered_map<steam::AppId, StatAttempt> g_pendingClientStats;
-
-bool TakePendingClientStats(steam::AppId appId, StatAttempt& out) {
-    auto now = Clock::now();
-    std::lock_guard<std::mutex> lock(g_pendingMutex);
-    std::erase_if(g_pendingClientStats, [&now](const auto& e) {
-        return now - e.second.seen > kPendingWindow;
-    });
-    auto it = g_pendingClientStats.find(appId);
-    if (it == g_pendingClientStats.end()) return false;
-    out = it->second;
-    g_pendingClientStats.erase(it);
-    return true;
-}
 
 // Cache dello SteamID attivo: GetActiveSteamId64 legge registry/filesystem a
 // ogni chiamata, ma il 5466 può arrivare molte volte al minuto. L'account non
@@ -293,6 +107,23 @@ std::uint64_t CachedActiveSteamId64() {
         g_cachedActiveSteamIdAt.store(now, std::memory_order_relaxed);
     }
     return resolved;
+}
+
+// Unica coda di serializzazione per tutti gli handler (P9): prima erano 8
+// blocchi "ByteSizeLong + cap + SerializeToArray" quasi identici. warnTag
+// non nullo = logga il fallimento (percorsi send); nullo = silenzio (recv).
+template <class TMsg>
+std::int32_t SerializeTo(const TMsg& msg, std::uint8_t* out, std::uint32_t outCap,
+                         const char* warnTag) {
+    const std::uint32_t size = static_cast<std::uint32_t>(msg.ByteSizeLong());
+    if (size > outCap || !msg.SerializeToArray(out, static_cast<int>(outCap))) {
+        if (warnTag) {
+            AC_LOG_WARN(kModule, "%s serialization failed (size=%u, cap=%u): frame unchanged.",
+                        warnTag, size, outCap);
+        }
+        return kNoChange;
+    }
+    return static_cast<std::int32_t>(size);
 }
 
 bool IsOK(std::int32_t eresult) { return eresult == 1; } // k_EResultOK
@@ -317,14 +148,14 @@ bool HasStatsPayload(const CMsgClientGetUserStatsResponse& resp) {
 // app id restores the donor-spoofing pipeline for AetherOnline sessions.
 //
 // The real app id is captured at spawn time by AetherOnlineHooks::h_SpawnProcess
-// into g_state.aetherOnlineRealAppId. When no session is active (or the id is
+// into the PresenceSession snapshot. When no session is active (or the id is
 // already the real one) the frame is left untouched.
 //
 // Returns true when 'appId' was rewritten, so callers can mirror the new id
 // back into their protobuf request (the 819 response path has no field to
 // mirror — it only uses the resolved id for correlation/gating).
 bool ResolveAetherOnlineAppId(steam::AppId& appId, const char* flow) {
-    const steam::AppId real = g_state.aetherOnlineRealAppId.load();
+    const steam::AppId real = presence::RealAppId();
     if (appId == constants::kSpacewarAppId && real != 0 && real != constants::kSpacewarAppId) {
         AC_LOG_INFO_ONCE(kModule, "AetherOnline: %s AppID %u -> %u.", flow, appId, real);
         appId = real;
@@ -380,8 +211,8 @@ std::int32_t HandleSendGetUserStats(const WireFrame& frame, std::uint8_t* out, s
     // schema (e.g. Endacopia / AppID 2684630).
     req.clear_sha_schema();
 
-    const std::size_t poolIndex = PickPoolIndex(appId);
-    const std::uint64_t donorId = kLumaCoreStatSteamIdPool[poolIndex];
+    const std::size_t poolIndex = DonorPool::PickIndex(appId);
+    const std::uint64_t donorId = DonorPool::DonorSteamId(poolIndex);
 
     // Correlate with the response so we can learn from the donor result.
     StatAttempt attempt;
@@ -394,20 +225,16 @@ std::int32_t HandleSendGetUserStats(const WireFrame& frame, std::uint8_t* out, s
         hasJobId = true;
         jobId = hdr.jobid_source();
     }
-    RecordAttempt(attempt, hasJobId, jobId);
+    DonorPool::RecordAttempt(attempt, hasJobId, jobId);
 
     req.set_steamid(donorId);
 
-    const std::uint32_t size = static_cast<std::uint32_t>(req.ByteSizeLong());
-    if (size > outCap || !req.SerializeToArray(out, static_cast<int>(outCap))) {
-        AC_LOG_WARN(kModule, "[151 GetUserStats] Rewritten serialization failed (size=%u, cap=%u): frame unchanged.",
-                    size, outCap);
-        return kNoChange;
-    }
+    const std::int32_t serialized = SerializeTo(req, out, outCap, "[151 GetUserStats]");
+    if (serialized == kNoChange) return kNoChange;
 
     AC_LOG_INFO_ONCE(kModule, "[151 GetUserStats] Spoofing AppID %u: steamid %llu -> donor %llu (pool %zu, jobid %s).",
                 appId, static_cast<unsigned long long>(originalSteamId), donorId, poolIndex, hasJobId ? "yes" : "no");
-    return static_cast<std::int32_t>(size);
+    return serialized;
 }
 
 std::int32_t HandleSendClientGetUserStats(const WireFrame& frame, std::uint8_t* out, std::uint32_t outCap) {
@@ -430,8 +257,8 @@ std::int32_t HandleSendClientGetUserStats(const WireFrame& frame, std::uint8_t* 
         return kNoChange;
     }
 
-    const std::size_t poolIndex = PickPoolIndex(appId);
-    const std::uint64_t donorId = kLumaCoreStatSteamIdPool[poolIndex];
+    const std::size_t poolIndex = DonorPool::PickIndex(appId);
+    const std::uint64_t donorId = DonorPool::DonorSteamId(poolIndex);
     const std::uint64_t originalUserId = req.steam_id_for_user();
 
     // Backup di sessione: al primo 818 dell'app copia la cache .bin esistente
@@ -460,25 +287,14 @@ std::int32_t HandleSendClientGetUserStats(const WireFrame& frame, std::uint8_t* 
                                    // considerava la entry già scaduta e la
                                    // cancellava: OGNI 819 risultava "non
                                    // correlata" (e con donor con dati, leak).
-    {
-        std::lock_guard<std::mutex> lock(g_pendingMutex);
-        auto now = Clock::now();
-        std::erase_if(g_pendingClientStats, [&now](const auto& e) {
-            return now - e.second.seen > kPendingWindow;
-        });
-        g_pendingClientStats[appId] = attempt;
-    }
+    DonorPool::RecordPendingClientStats(appId, attempt);
 
-    const std::uint32_t size = static_cast<std::uint32_t>(req.ByteSizeLong());
-    if (size > outCap || !req.SerializeToArray(out, static_cast<int>(outCap))) {
-        AC_LOG_WARN(kModule, "[818 ClientGetUserStats] Rewritten serialization failed (size=%u, cap=%u): frame unchanged.",
-                    size, outCap);
-        return kNoChange;
-    }
+    const std::int32_t serialized = SerializeTo(req, out, outCap, "[818 ClientGetUserStats]");
+    if (serialized == kNoChange) return kNoChange;
 
     AC_LOG_DEBUG(kModule, "[818 ClientGetUserStats] Spoofing AppID %u with DonorID %llu (pool %zu): rewritten and forwarded.",
                  appId, donorId, poolIndex);
-    return static_cast<std::int32_t>(size);
+    return serialized;
 }
 
 // ---------------------------------------------------------------------------
@@ -493,7 +309,7 @@ std::int32_t HandleRecvGetUserStatsResponse(const WireFrame& frame, std::uint8_t
         return kNoChange;
     }
     StatAttempt attempt;
-    const Correl correl = ResolveAttempt(hdrMsg, attempt);
+    const Correl correl = DonorPool::ResolveAttempt(hdrMsg.has_jobid_target(), hdrMsg.jobid_target(), attempt);
     if (correl == Correl::NoMatch) {
         AC_LOG_DEBUG(kModule,
                     "[152 GetUserStats Response] No correlated attempt: response passed through unchanged "
@@ -521,17 +337,15 @@ std::int32_t HandleRecvGetUserStatsResponse(const WireFrame& frame, std::uint8_t
         const std::uint32_t schemaBytes = resp.has_schema() ? static_cast<std::uint32_t>(resp.schema().size()) : 0u;
         resp.clear_stats();
         resp.clear_crc_stats();
-        const std::uint32_t size = static_cast<std::uint32_t>(resp.ByteSizeLong());
-        if (size > outCap || !resp.SerializeToArray(out, static_cast<int>(outCap))) {
-            return kNoChange;
-        }
+        const std::int32_t serialized = SerializeTo(resp, out, outCap, nullptr);
+        if (serialized == kNoChange) return kNoChange;
         AC_LOG_WARN(kModule,
                     "[152 GetUserStats Response] Donor response %s: %d stats removed for safety, "
                     "schema preserved (%u byte). No leak to the game.",
                     correl == Correl::Ambiguous ? "not correlatable (overlapping requests)"
                                                 : "for an app no longer managed",
                     removedStats, schemaBytes);
-        return static_cast<std::int32_t>(size);
+        return serialized;
     }
     const std::int32_t originalResult = hdrMsg.has_eresult() ? hdrMsg.eresult() : -1;
     const bool okWithData = IsOK(originalResult) && HasStatsPayload(resp);
@@ -541,7 +355,7 @@ std::int32_t HandleRecvGetUserStatsResponse(const WireFrame& frame, std::uint8_t
     AC_LOG_DEBUG(kModule,
                 "[152 GetUserStats Response] AppID %u donor %llu (pool %zu): eresult=%d, schema=%u byte "
                 "(fnv1a %016llx, sha_schema %s), stats=%d, crc_stats=%u -> donor %s.",
-                attempt.appId, kLumaCoreStatSteamIdPool[attempt.poolIndex], attempt.poolIndex, originalResult,
+                attempt.appId, DonorPool::DonorSteamId(attempt.poolIndex), attempt.poolIndex, originalResult,
                 resp.has_schema() ? static_cast<std::uint32_t>(resp.schema().size()) : 0u,
                 (ac::log::Enabled(LogLevel::Debug) && resp.has_schema())
                     ? static_cast<unsigned long long>(ac::hasher::Fnv1a64(resp.schema().data(), resp.schema().size()))
@@ -567,7 +381,7 @@ std::int32_t HandleRecvGetUserStatsResponse(const WireFrame& frame, std::uint8_t
         }
     }
 
-    NoteAttemptResult(attempt.appId, attempt.poolIndex, okWithData);
+    DonorPool::NoteAttemptResult(attempt.appId, attempt.poolIndex, okWithData);
 
     // 1. Header: forza eresult = k_EResultOK.
     hdrMsg.set_eresult(1); // k_EResultOK
@@ -580,16 +394,14 @@ std::int32_t HandleRecvGetUserStatsResponse(const WireFrame& frame, std::uint8_t
     // 2. Body: rimuovi i progressi del donatore, tenendo lo schema (utile).
     resp.clear_stats();
 
-    const std::uint32_t size = static_cast<std::uint32_t>(resp.ByteSizeLong());
-    if (size > outCap || !resp.SerializeToArray(out, static_cast<int>(outCap))) {
-        return kNoChange;
-    }
+    const std::int32_t serialized = SerializeTo(resp, out, outCap, nullptr);
+    if (serialized == kNoChange) return kNoChange;
 
     AC_LOG_INFO_ONCE(kModule,
                 "[152 GetUserStats Response] Rewritten for the game: eresult=OK, %d donor stats removed, "
                 "schema preserved (%u byte).",
                 donorStatsCount, schemaSize);
-    return static_cast<std::int32_t>(size);
+    return serialized;
 }
 
 std::int32_t HandleRecvClientGetUserStatsResponse(const WireFrame& frame, std::uint8_t* out, std::uint32_t outCap) {
@@ -617,7 +429,7 @@ std::int32_t HandleRecvClientGetUserStatsResponse(const WireFrame& frame, std::u
     }
 
     StatAttempt attempt;
-    const bool wasSpoofed = TakePendingClientStats(appId, attempt);
+    const bool wasSpoofed = DonorPool::TakePendingClientStats(appId, attempt);
     if (!wasSpoofed) {
         // ATTENZIONE: risposta per una richiesta che NON abbiamo spoofato noi
         // (o che non siamo riusciti a correlare). È il percorso da tenere
@@ -665,17 +477,15 @@ std::int32_t HandleRecvClientGetUserStatsResponse(const WireFrame& frame, std::u
         resp.clear_achievement_blocks();
         resp.clear_crc_stats();
         resp.set_eresult(1);
-        const std::uint32_t size = static_cast<std::uint32_t>(resp.ByteSizeLong());
-        if (size > outCap || !resp.SerializeToArray(out, static_cast<int>(outCap))) {
-            return kNoChange;
-        }
+        const std::int32_t serialized = SerializeTo(resp, out, outCap, nullptr);
+        if (serialized == kNoChange) return kNoChange;
         AC_LOG_INFO(kModule,
                     "[819 ClientGetUserStatsResponse] AppID %u: uncorrelated response %s -> normalized "
                     "with payload removed (eresult=OK, schema preserved).",
                     appId,
                     hasPayload ? "WITH payload (possible donor leak blocked)"
                                : "but eresult not OK");
-        return static_cast<std::int32_t>(size);
+        return serialized;
     }
 
     const bool okWithData = IsOK(resp.eresult()) && HasStatsPayload(resp);
@@ -683,7 +493,7 @@ std::int32_t HandleRecvClientGetUserStatsResponse(const WireFrame& frame, std::u
     AC_LOG_DEBUG(kModule,
                 "[819 ClientGetUserStatsResponse] AppID %u donor %llu (pool %zu): eresult=%d, schema=%u byte "
                 "(fnv1a %016llx), stats=%d, achievement_blocks=%d, crc_stats=%u -> %s.",
-                appId, kLumaCoreStatSteamIdPool[attempt.poolIndex], attempt.poolIndex, resp.eresult(),
+                appId, DonorPool::DonorSteamId(attempt.poolIndex), attempt.poolIndex, resp.eresult(),
                 resp.has_schema() ? static_cast<std::uint32_t>(resp.schema().size()) : 0u,
                 (ac::log::Enabled(LogLevel::Debug) && resp.has_schema())
                     ? static_cast<unsigned long long>(ac::hasher::Fnv1a64(resp.schema().data(), resp.schema().size()))
@@ -706,7 +516,7 @@ std::int32_t HandleRecvClientGetUserStatsResponse(const WireFrame& frame, std::u
                      st.stat_id(), st.stat_value());
     }
 
-    NoteAttemptResult(appId, attempt.poolIndex, okWithData);
+    DonorPool::NoteAttemptResult(appId, attempt.poolIndex, okWithData);
 
     // Svuotamento totale degli sblocchi estranei, mantenendo lo schema.
     resp.clear_stats();
@@ -714,17 +524,15 @@ std::int32_t HandleRecvClientGetUserStatsResponse(const WireFrame& frame, std::u
     resp.clear_crc_stats();
     resp.set_eresult(1); // k_EResultOK
 
-    const std::uint32_t size = static_cast<std::uint32_t>(resp.ByteSizeLong());
-    if (size > outCap || !resp.SerializeToArray(out, static_cast<int>(outCap))) {
-        return kNoChange;
-    }
+    const std::int32_t serialized = SerializeTo(resp, out, outCap, nullptr);
+    if (serialized == kNoChange) return kNoChange;
 
     AC_LOG_INFO_ONCE(kModule,
                 "[819 ClientGetUserStatsResponse] AppID %u rewritten for the game: eresult=OK, stats and "
                 "donor achievement_blocks removed, schema preserved (%u byte). The game starts from its "
                 "local cache (UserGameStats).",
                 appId, resp.has_schema() ? static_cast<std::uint32_t>(resp.schema().size()) : 0u);
-    return static_cast<std::int32_t>(size);
+    return serialized;
 }
 
 // ---------------------------------------------------------------------------
