@@ -14,6 +14,7 @@
 #include "core/Logger.h"
 #include "hooks/wire/BackupIo.h"
 #include "core/SteamTypes.h"
+#include "utils/VdfText.h"
 
 namespace ac::backup::playtime {
 namespace {
@@ -44,32 +45,7 @@ constexpr const char* kModule = "Wire.Achievement";
         std::uint32_t lastExit = 0;
     };
 
-    // Esito del parsing di una riga VDF.
-    enum class VdfLine { None, SectionKey, KeyValue };
-
-    // Parsing di una riga: "chiave" "valore" -> KeyValue; "chiave" da sola ->
-    // SectionKey (nei VDF di Steam la graffa di apertura è sulla riga SUCCESSIVA);
-    // qualsiasi altro contenuto -> None.
-    VdfLine ParseVdfLine(const std::string& line, std::string& key, std::string& value) {
-        std::size_t i = 0;
-        const std::size_t n = line.size();
-        auto skipWs = [&] { while (i < n && (line[i] == ' ' || line[i] == '\t')) ++i; };
-        auto readQuoted = [&](std::string& out) {
-            skipWs();
-            if (i >= n || line[i] != '"') return false;
-            ++i;
-            out.clear();
-            while (i < n && line[i] != '"') out += line[i++];
-            ++i;
-            return true;
-            };
-        if (!readQuoted(key)) return VdfLine::None;
-        skipWs();
-        if (i >= n) return VdfLine::SectionKey;          // "chiave" (graffa dopo)
-        if (line[i] == '{' || line[i] == '}') return VdfLine::None;
-        if (!readQuoted(value)) return VdfLine::None;
-        return VdfLine::KeyValue;
-    }
+    // Parsing riga/graffe nel codec condiviso utils/VdfText.h (P11).
 
     std::string AsciiLower(std::string s) {
         for (char& c : s) {
@@ -89,33 +65,30 @@ constexpr const char* kModule = "Wire.Achievement";
         while (std::getline(ifs, line)) {
             // Rimuovi commenti/CR
             if (!line.empty() && line.back() == '\r') line.pop_back();
-            // Trova la prima parentesi graffa fuori da virgolette
-            std::size_t brace = std::string::npos;
-            bool inQuote = false;
-            for (std::size_t i = 0; i < line.size(); ++i) {
-                if (line[i] == '"') inQuote = !inQuote;
-                else if (!inQuote && (line[i] == '{' || line[i] == '}')) { brace = i; break; }
-            }
+            // Prima parentesi graffa fuori da virgolette (codec condiviso).
+            std::size_t brace = 0;
+            char braceChar = 0;
+            const bool hasBrace = vdf::FindUnquotedBrace(line, brace, braceChar);
 
-            if (brace != std::string::npos && line[brace] == '{') {
+            if (hasBrace && braceChar == '{') {
                 // Graffa di apertura: la sezione è la chiave in sospeso (riga
                 // precedente) oppure unnamed.
                 stack.push_back(pendingSection);
                 pendingSection.clear();
                 continue;
             }
-            if (brace != std::string::npos && line[brace] == '}') {
+            if (hasBrace && braceChar == '}') {
                 if (!stack.empty()) stack.pop_back();
                 continue;
             }
 
             std::string key, value;
-            const VdfLine kind = ParseVdfLine(line, key, value);
-            if (kind == VdfLine::SectionKey) {
+            const vdf::LineKind kind = vdf::ParseLine(line, key, value);
+            if (kind == vdf::LineKind::SectionKey) {
                 pendingSection = key;   // attende la graffa sulla riga successiva
                 continue;
             }
-            if (kind != VdfLine::KeyValue) continue;
+            if (kind != vdf::LineKind::KeyValue) continue;
 
             // Cerca .../Apps/<appid>[/<sub>] nello stack (nei localconfig reali la
             // sezione è "Apps" con la maiuscola: confronto case-insensitive).

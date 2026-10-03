@@ -13,6 +13,12 @@
 #include "hooks/wire/GamesPlayedFormat.h"
 #include "core/Constants.h"
 #include "hooks/wire/DonorPool.h"
+#include "utils/KeyValues.h"
+#include "utils/VdfText.h"
+#include "utils/JsonStringField.h"
+#include "network/ManifestIdentity.h"
+#include "hooks/ipc/IpcReply.h"
+#include "hooks/wire/UserStatsSnapshot.h"
 #include "MinHook.h"
 #include <atomic>
 #include <chrono>
@@ -888,6 +894,205 @@ void DonorPoolTest() {
     CHECK(dp::ResolveAttempt(true, 9999ull, got) == dp::Correl::NoMatch);
 }
 
+
+// ---------------------------------------------------------------------------
+// Batch 7-9 cases
+// ---------------------------------------------------------------------------
+
+void KeyValuesTest() {
+    namespace kv1 = ac::kv1;
+    // Blob: root { s1 { str "hello"; i32 = 7 }  str "world"; end; end }
+    const std::uint8_t blob[] = {
+        0x00, 's','1', 0,                       // dict "s1"
+        0x01, 'k','e','y', 0, 'h','e','l','l','o', 0,   // string
+        0x02, 'n', 0, 7, 0, 0, 0,               // int32
+        0x08,                                   // end s1
+        0x01, 't','o','p', 0, 'w','o','r','l','d', 0,   // string
+        0x08,                                   // end root
+    };
+    // Visitor: depth + callback order.
+    struct Rec final : kv1::Visitor {
+        std::vector<std::string> events;
+        void OnDictBegin(const std::string& n, int d) override { events.push_back("D+" + std::to_string(d) + ":" + n); }
+        void OnDictEnd(int d) override { events.push_back("D-" + std::to_string(d)); }
+        void OnString(const std::string& k, const std::string& v, int d) override { events.push_back("S" + std::to_string(d) + ":" + k + "=" + v); }
+        void OnInt32(const std::string& k, std::uint8_t, std::int32_t v, int d) override { events.push_back("I" + std::to_string(d) + ":" + k + "=" + std::to_string(v)); }
+    } rec;
+    CHECK(kv1::WalkBinary(blob, sizeof(blob), rec));
+    CHECK(rec.events.size() == 5);
+    CHECK(rec.events[0] == "D+0:s1");
+    CHECK(rec.events[1] == "S1:key=hello");
+    CHECK(rec.events[2] == "I1:n=7");
+    CHECK(rec.events[3] == "D-0");
+    CHECK(rec.events[4] == "S0:top=world");
+    // ReadStringKVs: flat pairs at any depth.
+    auto pairs = kv1::ReadStringKVs(blob, sizeof(blob));
+    CHECK(pairs.size() == 2);
+    CHECK(pairs[0].first == "key" && pairs[0].second == "hello");
+    CHECK(pairs[1].first == "top" && pairs[1].second == "world");
+    // Writer round-trip.
+    const std::string written = kv1::WriteStringKVs({{"a", "1"}, {"b", "two"}});
+    auto back = kv1::ReadStringKVs(reinterpret_cast<const std::uint8_t*>(written.data()), written.size());
+    CHECK(back.size() == 2 && back[0].first == "a" && back[0].second == "1" &&
+          back[1].first == "b" && back[1].second == "two");
+    // Malformed: unknown type -> false.
+    const std::uint8_t bad[] = {0x77, 'x', 0};
+    struct Empty final : kv1::Visitor {} empty;
+    CHECK(!kv1::WalkBinary(bad, sizeof(bad), empty));
+    // Truncated string -> false.
+    const std::uint8_t trunc[] = {0x01, 'k', 0, 'v'};
+    CHECK(!kv1::WalkBinary(trunc, sizeof(trunc), empty));
+}
+
+void VdfTextTest() {
+    namespace vdf = ac::vdf;
+    std::string k, v;
+    CHECK(vdf::ParseLine("\t\"apps\" \t ", k, v) == vdf::LineKind::SectionKey && k == "apps");
+    CHECK(vdf::ParseLine("\"LastPlayed\" \t \"1700000000\"", k, v) == vdf::LineKind::KeyValue &&
+          k == "LastPlayed" && v == "1700000000");
+    CHECK(vdf::ParseLine("{", k, v) == vdf::LineKind::None);
+    CHECK(vdf::ParseLine("\"key\" {", k, v) == vdf::LineKind::None);
+    CHECK(vdf::ParseLine("garbage", k, v) == vdf::LineKind::None);
+    // Unterminated quote.
+    CHECK(vdf::ParseLine("\"open", k, v) == vdf::LineKind::None);
+    std::size_t pos = 0; char brace = 0;
+    CHECK(vdf::FindUnquotedBrace("\"quoted { brace\"", pos, brace) == false);
+    CHECK(vdf::FindUnquotedBrace("\"a\" \"b\" }", pos, brace) && brace == '}');
+    CHECK(vdf::FindUnquotedBrace("x { y", pos, brace) && brace == '{' && pos == 2);
+    std::string esc = "C:\\\\Games\\\\Steam";   // VDF-escaped C:\Games\Steam
+    vdf::UnescapeBackslashes(esc);
+    CHECK(esc == "C:\\Games\\Steam");
+    const std::string content =
+        "\"libraryfolders\"\n{\n"
+        "  \"0\"\n  {\n"
+        "    \"path\"  \"C:\\\\Steam\"\n"
+        "    \"PATH\"  \"D:\\\\Games\"\n"
+        "  }\n}\n";
+    const auto paths = vdf::ExtractQuotedValues(content, "path");   // case-insensitive
+    CHECK(paths.size() == 2);
+    CHECK(paths[0] == "C:\\Steam");
+    CHECK(paths[1] == "D:\\Games");
+}
+
+void JsonEscapesTest() {
+    namespace ju = ac::jsonutil;
+    std::string out;
+    CHECK(ju::PullEscapedStringField("{\"key\": \"value\"}", "key", out) && out == "value");
+    CHECK(ju::PullEscapedStringField("{\"key\": \"a\\\"b\\\\c\\/d\\n\\t\\r\\b\\f\"}", "key", out) &&
+          out == "a\"b\\c/d\n\t\r\b\f");
+    CHECK(!ju::PullEscapedStringField("{\"key\": \"bad\\u0041\"}", "key", out));   // \u rejected
+    CHECK(!ju::PullEscapedStringField("{\"key\": \"bad\\q\"}", "key", out));        // unknown rejected
+    CHECK(ju::PullEscapedStringField("{\"key\": \"\"}", "key", out) && out.empty());  // empty ok
+    CHECK(!ju::PullEscapedStringField("{\"other\": \"x\"}", "key", out));             // missing
+    CHECK(!ju::PullEscapedStringField("{\"key\": \"unterminated", "key", out));
+    CHECK(!ju::PullEscapedStringField("{\"key\": 42}", "key", out));                   // not a string
+    // Whitespace around colon is tolerated.
+    CHECK(ju::PullEscapedStringField("{\"key\" :\n\"v\"}", "key", out) && out == "v");
+}
+
+void ManifestIdentityTest() {
+    namespace mi = ac::manifestidentity;
+    auto putU32 = [](std::string& s, std::uint32_t v) {
+        s.push_back(static_cast<char>(v & 0xFF));
+        s.push_back(static_cast<char>((v >> 8) & 0xFF));
+        s.push_back(static_cast<char>((v >> 16) & 0xFF));
+        s.push_back(static_cast<char>((v >> 24) & 0xFF));
+    };
+    auto putVarint = [](std::string& s, std::uint64_t v) {
+        while (v >= 0x80) { s.push_back(static_cast<char>((v & 0x7F) | 0x80)); v >>= 7; }
+        s.push_back(static_cast<char>(v));
+    };
+    const std::uint32_t depot = 12345u;
+    const std::uint64_t gid = 7719911223344556677ULL;
+    std::string meta;
+    meta.push_back(0x08); putVarint(meta, depot);        // field 1, varint
+    meta.push_back(0x10); putVarint(meta, gid);          // field 2, varint
+    meta.push_back(0x1A); putVarint(meta, 3); meta += "abc";   // field 3, length-delimited skip
+    meta.push_back(0x09); meta.append(8, '\0');         // field 1, fixed64 skip
+    meta.push_back(0x0D); meta.append(4, '\0');         // field 1, fixed32 skip
+    std::string blob;
+    putU32(blob, 0x71F617D0u); putU32(blob, 2); blob += "XX";   // header w/ payload
+    putU32(blob, 0x1F4812BEu); putU32(blob, static_cast<std::uint32_t>(meta.size())); blob += meta;
+    CHECK(mi::ManifestIdentityMatches(blob, depot, gid));
+    CHECK(!mi::ManifestIdentityMatches(blob, depot + 1, gid));
+    CHECK(!mi::ManifestIdentityMatches(blob, depot, gid + 1));
+    CHECK(!mi::ManifestIdentityMatches(std::string_view(blob).substr(0, blob.size() - 1), depot, gid));
+    std::string badMagic = blob; putU32(badMagic = badMagic.substr(0, 4), 0x12345678u);
+    CHECK(!mi::ManifestIdentityMatches(badMagic, depot, gid));
+    // Unknown wire type is rejected.
+    std::string weirdMeta;
+    weirdMeta.push_back(0x08); putVarint(weirdMeta, depot);
+    weirdMeta.push_back(0x0B);                            // wire type 3: unsupported
+    std::string weirdBlob;
+    putU32(weirdBlob, 0x71F617D0u); putU32(weirdBlob, 0);
+    putU32(weirdBlob, 0x1F4812BEu); putU32(weirdBlob, static_cast<std::uint32_t>(weirdMeta.size()));
+    weirdBlob += weirdMeta;
+    CHECK(!mi::ManifestIdentityMatches(weirdBlob, depot, gid));
+    // Unit checks for the readers themselves.
+    std::size_t off = 0; std::uint32_t u = 0;
+    CHECK(mi::ReadU32Le(std::string_view("\x01\x00\x00\x80", 4), off, u) && u == 0x80000001u && off == 4);
+    CHECK(!mi::ReadU32Le(std::string_view("\x01\x00", 2), off, u));
+    off = 0; std::uint64_t w = 0;
+    CHECK(mi::ReadVarint(std::string_view("\xAC\x02", 2), off, w) && w == 300 && off == 2);
+    CHECK(!mi::ReadVarint(std::string_view("\x80", 1), off, w));   // truncated varint
+}
+
+void IpcReplyTest() {
+    namespace ir = ac::hooks::ipcreply;
+    std::uint8_t storage[64] = {};
+    ac::steam::CUtlBuffer buf{};
+    buf.memory.memory = storage;
+    buf.put = 64;
+    CHECK(ir::CanWrite(&buf, 64));
+    CHECK(!ir::CanWrite(&buf, 65));
+    CHECK(ir::Begin(&buf));
+    CHECK(storage[0] == ac::constants::kIpcReplyTag);
+    CHECK(ir::WriteU32(&buf, 4, 0xDEADBEEFu));
+    CHECK(storage[4] == 0xEF && storage[5] == 0xBE && storage[6] == 0xAD && storage[7] == 0xDE);
+    CHECK(ir::WriteU64(&buf, 8, 0x1122334455667788ULL));
+    CHECK(storage[8] == 0x88 && storage[15] == 0x11);
+    CHECK(ir::WriteAt(&buf, 60, storage + 4, 4));           // exact fit
+    CHECK(!ir::WriteAt(&buf, 61, storage + 4, 4));          // overflow refused
+    CHECK(!ir::WriteU32(&buf, 62, 1u));                     // overflow refused
+    CHECK(ir::WriteAt(&buf, 10, storage, 0));               // zero-byte write ok
+    // Tiny buffer: nothing may be written.
+    std::uint8_t tiny[1] = {0};
+    ac::steam::CUtlBuffer small{}; small.memory.memory = tiny; small.put = 0;
+    CHECK(!ir::CanWrite(&small, 1));
+    CHECK(!ir::Begin(&small));
+    CHECK(!ir::WriteU32(&small, 0, 7u));
+    // Null safety.
+    CHECK(!ir::CanWrite(nullptr, 1));
+    CHECK(!ir::Begin(nullptr));
+    CHECK(!ir::WriteAt(&buf, 0, nullptr, 4));
+}
+
+void SnapshotMergeTest() {
+    namespace snap = ac::backup::snapshot;
+    snap::SnapshotData d;
+    snap::MergeUnlock(d, 10, 0);                            // baseline, unknown time
+    CHECK(snap::HasUnlock(d, 10) && d.unlocks[0].unlockTime == 0);
+    snap::MergeUnlock(d, 10, 1700000000u);                  // real time replaces 0
+    CHECK(d.unlocks[0].unlockTime == 1700000000u);
+    snap::MergeUnlock(d, 10, 1800000000u);                  // later time must NOT win
+    CHECK(d.unlocks[0].unlockTime == 1700000000u);
+    snap::MergeUnlock(d, 10, 1600000000u);                  // earlier time wins
+    CHECK(d.unlocks[0].unlockTime == 1600000000u);
+    snap::MergeUnlock(d, 10, 0);                            // 0 never overwrites real time
+    CHECK(d.unlocks[0].unlockTime == 1600000000u);
+    snap::MergeUnlock(d, 11, 1500000000u);
+    CHECK(d.unlocks.size() == 2);
+    snap::MergeStat(d, 5, 42u);                             // last committed value wins
+    CHECK(snap::HasStat(d, 5) && d.stats[0].value == 42u);
+    snap::MergeStat(d, 5, 43u);
+    CHECK(d.stats[0].value == 43u);
+    snap::MergeStat(d, 6, 1u);
+    snap::MergeUnlock(d, 3, 1u);
+    snap::SortAll(d);
+    CHECK(d.unlocks[0].id == 3 && d.unlocks[1].id == 10 && d.unlocks[2].id == 11);
+    CHECK(d.stats[0].id == 5 && d.stats[1].id == 6);
+}
+
 int main(int argc, char** argv) {
     try {
         CHECK(argc == 2);
@@ -901,7 +1106,13 @@ int main(int argc, char** argv) {
         else if (test == "sentinel") Sentinel();
         else if (test == "structguard") StructGuard();
         else if (test == "gamesplayed_format") GamesPlayedFormatTest();
-        else if (test == "donorpool") DonorPoolTest(); else CHECK(false);
+        else if (test == "donorpool") DonorPoolTest();
+        else if (test == "keyvalues") KeyValuesTest();
+        else if (test == "vdftext") VdfTextTest();
+        else if (test == "jsonutil_escapes") JsonEscapesTest();
+        else if (test == "manifest_identity") ManifestIdentityTest();
+        else if (test == "ipcreply") IpcReplyTest();
+        else if (test == "snapshot_merge") SnapshotMergeTest(); else CHECK(false);
         std::cout << test << ": PASS\n";
         return 0;
     } catch (const std::exception& e) { std::cerr << e.what() << '\n'; return 1; }

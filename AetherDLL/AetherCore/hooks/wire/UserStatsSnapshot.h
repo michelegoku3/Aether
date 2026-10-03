@@ -1,5 +1,6 @@
 #pragma once
 
+#include <algorithm>
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -40,15 +41,48 @@ SnapshotData Load(const std::string& path);
 void Save(const std::string& path, steam::AppId appId, std::uint32_t accountId,
           std::uint64_t steamId64, const SnapshotData& snap);
 
-// --- Regole di merge monotone ------------------------------------------------
+// --- Regole di merge monotone (header-only: pure e testabili senza link) ----
 // Aggiunge uno sblocco o aggiorna la data (0 viene sostituito da un tempo
 // reale; tra due tempi reali vince il più antico).
-void MergeUnlock(SnapshotData& snap, std::uint32_t achievementId, std::uint32_t unlockTime);
-// Aggiorna il valore di una stat (ultimo valore committato vince).
-void MergeStat(SnapshotData& snap, std::uint32_t statId, std::uint32_t value);
+inline void MergeUnlock(SnapshotData& snap, std::uint32_t achievementId, std::uint32_t unlockTime) {
+    for (auto& e : snap.unlocks) {
+        if (e.id != achievementId) continue;
+        // Regola: vince il tempo PIÙ ANTICO, ma 0 (baseline sconosciuta) viene
+        // sostituito da qualsiasi tempo reale.
+        if (e.unlockTime == 0) e.unlockTime = unlockTime;
+        else if (unlockTime != 0 && unlockTime < e.unlockTime) e.unlockTime = unlockTime;
+        return;
+    }
+    snap.unlocks.push_back(UnlockEntry{achievementId, unlockTime});
+}
 
-bool HasUnlock(const SnapshotData& snap, std::uint32_t achievementId);
-bool HasStat(const SnapshotData& snap, std::uint32_t statId);
-void SortAll(SnapshotData& snap);   // id crescente (output deterministico)
+// Aggiorna il valore di una stat (ultimo valore committato vince).
+inline void MergeStat(SnapshotData& snap, std::uint32_t statId, std::uint32_t value) {
+    for (auto& st : snap.stats) {
+        if (st.id == statId) {
+            st.value = value;   // ultimo valore committato vince
+            return;
+        }
+    }
+    snap.stats.push_back(StatEntry{statId, value});
+}
+
+inline bool HasUnlock(const SnapshotData& snap, std::uint32_t achievementId) {
+    return std::any_of(snap.unlocks.begin(), snap.unlocks.end(),
+                       [achievementId](const UnlockEntry& e) { return e.id == achievementId; });
+}
+
+inline bool HasStat(const SnapshotData& snap, std::uint32_t statId) {
+    return std::any_of(snap.stats.begin(), snap.stats.end(),
+                       [statId](const StatEntry& st) { return st.id == statId; });
+}
+
+// id crescente (output deterministico)
+inline void SortAll(SnapshotData& snap) {
+    std::sort(snap.unlocks.begin(), snap.unlocks.end(),
+              [](const UnlockEntry& a, const UnlockEntry& b) { return a.id < b.id; });
+    std::sort(snap.stats.begin(), snap.stats.end(),
+              [](const StatEntry& a, const StatEntry& b) { return a.id < b.id; });
+}
 
 }  // namespace ac::backup::snapshot

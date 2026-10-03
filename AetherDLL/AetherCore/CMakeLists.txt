@@ -13,6 +13,7 @@ add_library(AetherCore SHARED
     core/Settings.cpp
     core/Workers.cpp
     core/HookManager.cpp
+    core/HookBootstrap.cpp
     core/AbiSentinel.cpp
     core/NetPacketAbi.cpp
     core/StructGuard.cpp
@@ -28,6 +29,7 @@ add_library(AetherCore SHARED
     # Network
     network/RuntimeHttp.cpp
     network/ManifestFetch.cpp
+    network/ManifestIdentity.cpp
     network/HubcapQuota.cpp
     network/EticketFetcher.cpp
 
@@ -41,6 +43,7 @@ add_library(AetherCore SHARED
     # Utils
     utils/Hasher.cpp
     utils/EnvReader.cpp
+    utils/KeyValues.cpp
     utils/PatternEngine.cpp
     utils/PatternSource.cpp
     utils/PatternDownloader.cpp

@@ -6,7 +6,6 @@
 #include <filesystem>
 #include <fstream>
 #include <iterator>
-#include <regex>
 #include <string>
 #include <thread>
 #include <vector>
@@ -18,6 +17,7 @@
 #include "utils/Hasher.h"
 #include "core/HookManager.h"
 #include "utils/IpcSpec.h"
+#include "utils/VdfText.h"
 #include "core/Logger.h"
 #include "core/NetPacketAbi.h"
 #include "core/StructGuard.h"
@@ -31,7 +31,7 @@
 #include "hooks/license/LicenseManager.h"
 #include "hooks/steamclient/LicenseHooks.h"
 #include "hooks/steamclient/OwnershipHooks.h"
-#include "hooks/steamui/SteamUIHook.h"
+#include "core/HookBootstrap.h"
 #include "hooks/wire/AchievementBackup.h"
 #include "hooks/wire/ManifestRestore.h"
 #include "hooks/wire/AchievementModule.h"
@@ -126,17 +126,9 @@ namespace {
         if (!input.is_open()) return dirs;
         const std::string content((std::istreambuf_iterator<char>(input)),
                                   std::istreambuf_iterator<char>());
-        const std::regex pathRegex(R"REGEX("path"\s+"([^"]+)")REGEX",
-                                   std::regex_constants::icase);
-        for (std::sregex_iterator it(content.begin(), content.end(), pathRegex), end;
-             it != end; ++it) {
-            std::string library = (*it)[1].str();
-            // VDF escapes Windows separators as `\\\\`.
-            std::string::size_type pos = 0;
-            while ((pos = library.find("\\\\", pos)) != std::string::npos) {
-                library.replace(pos, 2, "\\");
-                ++pos;
-            }
+        // Parser VDF testuale condiviso (utils/VdfText.h, P11): un solo posto
+        // per righe quotate/unescaping, niente regex dedicate.
+        for (const std::string& library : vdf::ExtractQuotedValues(content, "path")) {
             const std::filesystem::path steamapps =
                 std::filesystem::path(library) / "steamapps";
             if (std::find(dirs.begin(), dirs.end(), steamapps.string()) == dirs.end()) {
@@ -220,7 +212,7 @@ namespace {
         // In copy mode, arm LoadModuleWithPath immediately, while the IPC
         // lookup and Lua scan are still in progress. This closes the old
         // step-9 window where Steam loaded the live client first.
-        ac::hooks::ArmSteamUiRedirectEarly();
+        ac::bootstrap::ArmSteamUiRedirect();
         ipcThread.join();
         if (!patternsOk) {
             AC_LOG_WARN(kModule, "Pattern engine produced no tables; some hooks will be skipped.");
@@ -278,14 +270,14 @@ namespace {
         //    Publishes the final status.json.
         //    Depends on: diversion (module handle) + pattern engine (addresses)
         //                + lua data (maps populated).
-        ac::hooks::InstallAllHooks();
+        ac::bootstrap::InstallAllHooks();
 
         // 9b. Late-pattern retry: if a module pattern table was unavailable at
         //     init (patterns not published yet on a fresh Steam build, offline
         //     start, ...), keep re-probing the sources in the background and,
         //     when a table appears, install the previously-missed hooks
         //     in-session — no Steam restart needed.
-        ac::hooks::StartPatternLateRetry();
+        ac::bootstrap::StartPatternLateRetry();
 
         // 10. Achievement safety net: snapshot di TUTTI i .bin stats degli app
         //     gestiti (async, una volta per processo). Va il prima possibile:
@@ -343,13 +335,13 @@ namespace {
         // ancora installati (alcuni job one-shot inviano frame via hook).
         ac::workers::Shutdown();
         ac::pipewatch::Reset();
-        // Stop the late-pattern retry before the hook/license subsystems go
-        // down, so it can never re-arm them mid-shutdown.
-        ac::hooks::StopPatternLateRetry();
+        // I retry hook (steamui redirect + pattern tardivi) sono worker: lo
+        // stop richiesto qui e il join dentro workers::Shutdown() sono già
+        // avvenuti sopra, quindi nessun re-arm è possibile durante lo shutdown.
+        ac::bootstrap::RequestRetryStop();
         ac::hooks::LicenseManager::Shutdown();
         ac::hooks::ShutdownOwnershipHooks();
         ac::hooks::ShutdownLicenseHooks();
-        ac::hooks::ShutdownSteamUiRetry();
         ac::hooks::AchievementModule::Shutdown();
         ac::eticketfetch::Shutdown();
         ac::hooks::CmdUser::ResetETicketAsyncCalls();

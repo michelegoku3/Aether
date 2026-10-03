@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cctype>
 #include <cstdint>
 #include <string>
 #include <string_view>
@@ -77,6 +78,49 @@ inline bool PullBoolField(std::string_view json, std::string_view key, bool& out
         return true;
     }
     return false;
+}
+
+// Escape-aware string pull (strict): handles \" \\ \/ \b \f \n \r \t and
+// REJECTS any other escape (\u included) rather than misinterpreting it.
+// Used for security-sensitive payloads (provider credentials). An empty
+// string value is a successful pull of an empty value; callers decide.
+inline bool PullEscapedStringField(std::string_view json, std::string_view key, std::string& out) {
+    const std::string needle = "\"" + std::string(key) + "\"";
+    const std::size_t k = json.find(needle);
+    if (k == std::string_view::npos) return false;
+
+    std::size_t cursor = k + needle.size();
+    while (cursor < json.size() && std::isspace(static_cast<unsigned char>(json[cursor]))) ++cursor;
+    if (cursor >= json.size() || json[cursor] != ':') return false;
+    ++cursor;
+    while (cursor < json.size() && std::isspace(static_cast<unsigned char>(json[cursor]))) ++cursor;
+    if (cursor >= json.size() || json[cursor] != '"') return false;
+    ++cursor;
+
+    std::string value;
+    bool escaped = false;
+    for (; cursor < json.size(); ++cursor) {
+        const char c = json[cursor];
+        if (escaped) {
+            escaped = false;
+            switch (c) {
+            case '"': value.push_back('"'); break;
+            case '\\': value.push_back('\\'); break;
+            case '/': value.push_back('/'); break;
+            case 'b': value.push_back('\b'); break;
+            case 'f': value.push_back('\f'); break;
+            case 'n': value.push_back('\n'); break;
+            case 'r': value.push_back('\r'); break;
+            case 't': value.push_back('\t'); break;
+            default: return false;   // \u or unknown: reject, never guess
+            }
+            continue;
+        }
+        if (c == '\\') { escaped = true; continue; }
+        if (c == '"') { out = std::move(value); return true; }
+        value.push_back(c);
+    }
+    return false;   // unterminated string
 }
 
 }  // namespace ac::jsonutil
