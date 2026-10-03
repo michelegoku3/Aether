@@ -5,6 +5,7 @@
 #include <cstring>
 
 #include "core/Constants.h"
+#include "utils/KeyValues.h"
 
 namespace ac::hooks::GamesPlayedFormat {
 
@@ -85,37 +86,10 @@ std::string MakeAppIdBlob(steam::AppId appId) {
 
 void ExtractStringKVs(const std::uint8_t* data, std::uint32_t size,
                       std::vector<std::pair<std::string, std::string>>& out) {
-    std::uint32_t pos = 0;
-    int depth = 0;
-    auto readCStr = [&](std::string& s) -> bool {
-        const std::uint32_t start = pos;
-        while (pos < size && data[pos] != 0) ++pos;
-        if (pos >= size) return false;
-        s.assign(reinterpret_cast<const char*>(data + start), pos - start);
-        ++pos;
-        return true;
-    };
-    while (pos < size) {
-        const std::uint8_t type = data[pos++];
-        if (type == 0x08) {
-            if (depth > 0) {
-                --depth;
-                continue;
-            }
-            break;
-        }
-        if (type == 0x00) {
-            std::string ignored;
-            if (!readCStr(ignored)) return;
-            ++depth;
-        } else if (type == 0x01) {
-            std::string key, value;
-            if (!readCStr(key) || !readCStr(value)) return;
-            out.emplace_back(std::move(key), std::move(value));
-        } else {
-            return;
-        }
-    }
+    // Unica implementazione condivisa del KV1 binario (utils/KeyValues, P11).
+    auto pairs = kv1::ReadStringKVs(data, size);
+    out.insert(out.end(), std::make_move_iterator(pairs.begin()),
+               std::make_move_iterator(pairs.end()));
 }
 
 }  // namespace ac::hooks::GamesPlayedFormat

@@ -1,7 +1,6 @@
 #include "pch.h"
 #include "hooks/wire/UserStatsSnapshot.h"
 
-#include <algorithm>
 #include <cstdio>
 #include <ctime>
 #include <fstream>
@@ -95,45 +94,6 @@ void Save(const std::string& path, steam::AppId appId, std::uint32_t accountId,
         AC_LOG_WARN(kModule, "Backup: cannot replace %s (the .tmp file remains on disk).",
                     path.c_str());
     }
-}
-
-void MergeUnlock(SnapshotData& snap, std::uint32_t achievementId, std::uint32_t unlockTime) {
-    for (auto& e : snap.unlocks) {
-        if (e.id != achievementId) continue;
-        // Regola: vince il tempo PIÙ ANTICO, ma 0 (baseline sconosciuta) viene
-        // sostituito da qualsiasi tempo reale.
-        if (e.unlockTime == 0) e.unlockTime = unlockTime;
-        else if (unlockTime != 0 && unlockTime < e.unlockTime) e.unlockTime = unlockTime;
-        return;
-    }
-    snap.unlocks.push_back(UnlockEntry{achievementId, unlockTime});
-}
-
-void MergeStat(SnapshotData& snap, std::uint32_t statId, std::uint32_t value) {
-    for (auto& st : snap.stats) {
-        if (st.id == statId) {
-            st.value = value;   // ultimo valore committato vince
-            return;
-        }
-    }
-    snap.stats.push_back(StatEntry{statId, value});
-}
-
-bool HasUnlock(const SnapshotData& snap, std::uint32_t achievementId) {
-    return std::any_of(snap.unlocks.begin(), snap.unlocks.end(),
-                       [achievementId](const UnlockEntry& e) { return e.id == achievementId; });
-}
-
-bool HasStat(const SnapshotData& snap, std::uint32_t statId) {
-    return std::any_of(snap.stats.begin(), snap.stats.end(),
-                       [statId](const StatEntry& st) { return st.id == statId; });
-}
-
-void SortAll(SnapshotData& snap) {
-    std::sort(snap.unlocks.begin(), snap.unlocks.end(),
-              [](const UnlockEntry& a, const UnlockEntry& b) { return a.id < b.id; });
-    std::sort(snap.stats.begin(), snap.stats.end(),
-              [](const StatEntry& a, const StatEntry& b) { return a.id < b.id; });
 }
 
 }  // namespace ac::backup::snapshot

@@ -2,28 +2,21 @@
 
 #include "framework.h"
 
-namespace ac::hooks {
+// ---------------------------------------------------------------------------
+// SteamUIHook — SOLO il redirect del caricamento di steamclient64.dll (P8).
+//
+// L'orchestrazione (batch steamclient, retry differito, retry dei pattern
+// tardivi) vive in core/HookBootstrap. Questo modulo fa una sola cosa: in copy
+// mode, quando steamui.dll carica steamclient64.dll, la chiamata viene
+// deviata su acoverlay.dll; in live mode è un no-op.
+// ---------------------------------------------------------------------------
+namespace ac::hooks::steamui {
 
-// In copy mode, arm steamui!LoadModuleWithPath as soon as pattern resolution
-// completes, before IPC and Lua initialization can delay it. If steamui is
-// missing, a bounded retry runs in the background. No-op in live mode.
-void ArmSteamUiRedirectEarly();
+// Installa l'hook su steamui!LoadModuleWithPath. Ritorna true solo quando il
+// redirect è effettivamente attivo oppure non serve (live mode): una DLL
+// steamui mappata NON basta (pattern mancante o MinHook fallito tengono vivo
+// il retry del bootstrap). Thread-safe: prende il mutex di batch del
+// bootstrap perché può correre in parallelo alla riesecuzione del batch.
+bool InstallSteamUiRedirect();
 
-// Installs the steamclient hook batch; idempotently tries the UI redirect again
-// (also used by the late-pattern retry).
-void InstallAllHooks();
-
-// Stops and joins the deferred steamui retry thread. Safe to call when the
-// retry never started or already finished. Called from dllmain::Shutdown.
-void ShutdownSteamUiRetry();
-
-// Starts the background late-pattern retry (no-op when every pattern table is
-// already available at init). Re-probes the pattern sources for a bounded
-// window and re-runs the hook batch in-session as soon as a previously-missing
-// table appears, so the hooks install without a Steam restart.
-void StartPatternLateRetry();
-
-// Stops and joins the late-pattern retry thread. Safe when never started.
-void StopPatternLateRetry();
-
-}  // namespace ac::hooks
+}  // namespace ac::hooks::steamui

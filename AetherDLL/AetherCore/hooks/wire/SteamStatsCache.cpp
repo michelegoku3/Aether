@@ -11,6 +11,7 @@
 
 #include "core/AetherCoreState.h"
 #include "core/Logger.h"
+#include "utils/KeyValues.h"
 #include "hooks/wire/BackupIo.h"
 
 namespace ac::backup::statscache {
@@ -42,76 +43,49 @@ constexpr const char* kModule = "Wire.Achievement";
     // una sotto-sezione "bits"). Formato schema: <appid> { stats { <bucket> {
     // bits { ... } } } }: si raccogliono le chiavi dei dizionari a profondità 2
     // che contengono "bits".
-    std::unordered_set<std::uint32_t> ParseSchemaBuckets(const std::string& path) {
+    // Bucket achievement via walker KV1 condiviso (utils/KeyValues, P11):
+    // sezione "stats" a profondità 1; un bucket (profondità 2) è achievement
+    // solo se il suo dizionario "bits" ha almeno una voce.
+    struct SchemaBucketWalker final : kv1::Visitor {
         std::unordered_set<std::uint32_t> buckets;
-        std::ifstream f(path, std::ios::binary);
-        if (!f.is_open()) return buckets;
-        std::vector<std::uint8_t> buf((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
+        bool inStats = false;
+        int bucketDepth = -1;          // profondità dell'entry del bucket corrente
+        std::string currentBucket;
+        int bitsEntries = 0;
 
-        // Parser dedicato (serve la struttura, non solo gli int): visitiamo i
-        // dizionari tenendo traccia del percorso di chiavi.
-        struct Ctx {
-            bool inStats = false;
-            int bucketDepth = -1;
-            std::string currentBucket;
-            int bitsEntries = 0;   // voci dentro il dizionario "bits" del bucket corrente
-        };
-        Ctx ctx;
-
-        std::function<void(std::size_t&, int)> walk = [&](std::size_t& pos, int depth) {
-            while (pos < buf.size()) {
-                const std::uint8_t type = buf[pos++];
-                if (type == 0x08) {
-                    // chiusura dizionario: se stavamo chiudendo un bucket, finalizza
-                    if (depth == ctx.bucketDepth) {
-                        // bucket achievement SOLO se il dizionario "bits" ha almeno
-                        // una voce (negli schema reali quasi tutti i bucket hanno
-                        // "bits" VUOTO: non sono bucket achievement).
-                        if (ctx.inStats && ctx.bitsEntries > 0) {
-                            char* end = nullptr;
-                            unsigned long id = std::strtoul(ctx.currentBucket.c_str(), &end, 10);
-                            if (end && *end == '\0') buckets.insert(static_cast<std::uint32_t>(id));
-                        }
-                        ctx.bucketDepth = -1;
-                        ctx.bitsEntries = 0;
-                    }
-                    if (depth == 2) ctx.inStats = false;   // chiusa la sezione "stats"
-                    return;
-                }
-                std::size_t keyEnd = pos;
-                while (keyEnd < buf.size() && buf[keyEnd] != 0x00) ++keyEnd;
-                if (keyEnd >= buf.size()) return;
-                const std::string key(reinterpret_cast<const char*>(&buf[pos]), keyEnd - pos);
-                pos = keyEnd + 1;
-                if (type == 0x00) {
-                    if (depth == 1 && key == "stats") ctx.inStats = true;
-                    if (ctx.inStats && depth == 2) {
-                        ctx.currentBucket = key;      // potenziale bucket
-                        ctx.bucketDepth = 3;
-                        ctx.bitsEntries = 0;
-                    }
-                    // ogni voce elaborata dentro il dizionario "bits" del bucket
-                    // corrente (i suoi figli stanno a profondità 4) incrementa il
-                    // contatore: bucket valido solo se "bits" NON è vuoto.
-                    if (ctx.bucketDepth == 3 && depth == 4) ++ctx.bitsEntries;
-                    walk(pos, depth + 1);
-                }
-                else if (type == 0x01) {
-                    std::size_t valEnd = pos;
-                    while (valEnd < buf.size() && buf[valEnd] != 0x00) ++valEnd;
-                    pos = valEnd + 1;
-                }
-                else if (type == 0x02 || type == 0x03) {
-                    pos += 4;
-                }
-                else {
-                    return;
-                }
+        void FinalizeBucket() {
+            if (inStats && bitsEntries > 0) {
+                char* end = nullptr;
+                unsigned long id = std::strtoul(currentBucket.c_str(), &end, 10);
+                if (end && *end == '\0') buckets.insert(static_cast<std::uint32_t>(id));
             }
-            };
-        std::size_t pos = 0;
-        walk(pos, 0);
-        return buckets;
+            bucketDepth = -1;
+            bitsEntries = 0;
+        }
+        void OnDictBegin(const std::string& name, int depth) override {
+            if (depth == 1 && name == "stats") inStats = true;
+            if (inStats && depth == 2) {
+                currentBucket = name;   // potenziale bucket
+                bucketDepth = 2;
+                bitsEntries = 0;
+            }
+            // Semantica identica al parser storico: contano solo le voci
+            // DIZIONARIO dentro "bits" (profondità 4).
+            if (bucketDepth == 2 && depth == 4) ++bitsEntries;
+        }
+        void OnDictEnd(int depth) override {
+            if (bucketDepth == 2 && depth == 2) FinalizeBucket();
+            if (inStats && depth == 1) inStats = false;   // chiusa la sezione "stats"
+        }
+    };
+
+    std::unordered_set<std::uint32_t> ParseSchemaBuckets(const std::string& path) {
+        std::ifstream f(path, std::ios::binary);
+        if (!f.is_open()) return {};
+        std::vector<std::uint8_t> buf((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
+        SchemaBucketWalker walker;
+        kv1::WalkBinary(buf.data(), buf.size(), walker);
+        return std::move(walker.buckets);
     }
 
     const std::unordered_set<std::uint32_t>& SchemaBucketsForImpl(steam::AppId appId) {

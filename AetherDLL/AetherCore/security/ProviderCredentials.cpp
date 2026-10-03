@@ -17,6 +17,7 @@
 
 #include "core/AetherCoreState.h"
 #include "core/Logger.h"
+#include "utils/JsonStringField.h"
 #include "hooks/wire/BackupIo.h"
 
 #pragma comment(lib, "crypt32.lib")
@@ -31,51 +32,14 @@ using strings::Trim;
 
 // ProviderCredentials is intentionally parsed without a general JSON
 // dependency: the Rust writer emits a small object with string fields, and the
-// DLL only needs one field. Escaped JSON strings are decoded for the limited
-// escapes that can occur in a credential (including unicode is not needed for
-// an API key and is rejected rather than misinterpreted).
+// DLL only needs one field. Escape handling lives in the shared escape-aware
+// puller (utils/JsonStringField.h, jsonutil::PullEscapedStringField): strict,
+// rejects \u and unknown escapes rather than misinterpreting them.
 std::optional<std::string> JsonStringField(std::string_view json,
                                             std::string_view field) {
-    const std::string needle = "\"" + std::string(field) + "\"";
-    const std::size_t key = json.find(needle);
-    if (key == std::string_view::npos) return std::nullopt;
-
-    std::size_t cursor = key + needle.size();
-    while (cursor < json.size() && std::isspace(static_cast<unsigned char>(json[cursor]))) ++cursor;
-    if (cursor >= json.size() || json[cursor] != ':') return std::nullopt;
-    ++cursor;
-    while (cursor < json.size() && std::isspace(static_cast<unsigned char>(json[cursor]))) ++cursor;
-    if (cursor >= json.size() || json[cursor] != '"') return std::nullopt;
-    ++cursor;
-
     std::string value;
-    value.reserve(64);
-    bool escaped = false;
-    for (; cursor < json.size(); ++cursor) {
-        const char c = json[cursor];
-        if (escaped) {
-            escaped = false;
-            switch (c) {
-            case '"': value.push_back('"'); break;
-            case '\\': value.push_back('\\'); break;
-            case '/': value.push_back('/'); break;
-            case 'b': value.push_back('\b'); break;
-            case 'f': value.push_back('\f'); break;
-            case 'n': value.push_back('\n'); break;
-            case 'r': value.push_back('\r'); break;
-            case 't': value.push_back('\t'); break;
-            default: return std::nullopt;
-            }
-            continue;
-        }
-        if (c == '\\') {
-            escaped = true;
-            continue;
-        }
-        if (c == '"') return value;
-        value.push_back(c);
-    }
-    return std::nullopt;
+    if (!jsonutil::PullEscapedStringField(json, field, value)) return std::nullopt;
+    return value;   // empty string stays empty: caller rejects after Trim
 }
 
 std::optional<std::string> Unprotect(std::vector<std::uint8_t> encrypted) {
