@@ -679,17 +679,17 @@ std::int32_t HandleSendStoreUserStats2(const WireFrame& frame, std::uint8_t* out
         req.set_settor_steam_id(realSteamId);
         req.set_settee_steam_id(realSteamId);
 
-        const std::uint32_t size = static_cast<std::uint32_t>(req.ByteSizeLong());
-        if (size <= outCap && req.SerializeToArray(out, static_cast<int>(outCap))) {
+        // Unica coda di serializzazione del modulo (P9): stesso percorso di
+        // tutti gli altri handler, WARN automatico in caso di frame troppo grande.
+        const std::int32_t serialized = SerializeTo(req, out, outCap, "[5466 StoreUserStats2]");
+        if (serialized != kNoChange) {
             AC_LOG_INFO_ONCE(kModule,
                         "[5466 StoreUserStats2] AppID %u forwarded to the server with real SteamID %llu: "
                         "NOTE: if the server rejects it (game not owned), the achievement remains valid only "
                         "in the Steam local cache (PendingChanges) and in our backup.",
                         appId, static_cast<unsigned long long>(realSteamId));
-            return static_cast<std::int32_t>(size);
+            return serialized;
         }
-        AC_LOG_WARN(kModule, "[5466 StoreUserStats2] AppID %u: rewritten serialization failed (size=%u, cap=%u).",
-                    appId, size, outCap);
     } else {
         AC_LOG_WARN(kModule,
                     "[5466 StoreUserStats2] AppID %u: active SteamID unresolvable, frame unchanged "

@@ -1,8 +1,10 @@
 #include "pch.h"
 #include "hooks/wire/PacketRouter.h"
 
+#include <algorithm>
 #include <array>
 #include <cstdint>
+#include <deque>
 #include <cstring>
 #include <mutex>
 #include <string>
@@ -103,6 +105,9 @@ namespace ac::hooks {
         // non portano il nome del servizio, solo il job id della richiesta).
         std::mutex s_jobNameMutex;
         std::unordered_map<std::uint64_t, std::string> s_jobNames;
+        // Ordine di inserimento: l'eviction al cap butta via la entry PIÙ
+        // VECCHIA (prima: erase(begin()) su unordered_map = elemento arbitrario).
+        std::deque<std::uint64_t> s_jobNameOrder;
 
         void TrackServiceJob(const WireFrame& f) {
             std::uint64_t id = 0;
@@ -110,8 +115,14 @@ namespace ac::hooks {
             std::string name;
             if (!ServiceJobName(f, name)) return;
             std::lock_guard<std::mutex> lk(s_jobNameMutex);
-            if (s_jobNames.size() > 512) s_jobNames.erase(s_jobNames.begin());
-            s_jobNames.emplace(id, std::move(name));
+            if (s_jobNames.emplace(id, std::move(name)).second) {
+                s_jobNameOrder.push_back(id);
+            }
+            while (s_jobNameOrder.size() > 512) {
+                const std::uint64_t oldest = s_jobNameOrder.front();
+                s_jobNameOrder.pop_front();
+                s_jobNames.erase(oldest);
+            }
         }
 
         std::string ResolveServiceJob(std::uint64_t jobIdTarget) {
@@ -120,6 +131,8 @@ namespace ac::hooks {
             if (it == s_jobNames.end()) return {};
             std::string out = std::move(it->second);
             s_jobNames.erase(it);
+            const auto oit = std::find(s_jobNameOrder.begin(), s_jobNameOrder.end(), jobIdTarget);
+            if (oit != s_jobNameOrder.end()) s_jobNameOrder.erase(oit);
             return out;
         }
 
@@ -257,24 +270,31 @@ namespace ac::hooks {
             TraceFrame("recv", f);
             switch (f.eMsg) {
             case emsg::kServiceMethodResponse: {
-                // [DIAG] flight-recorder: OGGI una riga per OGNI risposta
-                // servizio, col nome ricostruito via jobid tracciato al send.
+                // [DIAG] flight-recorder: il nome del servizio è ricostruito
+                // via jobid tracciato al send. ResolveServiceJob va chiamato
+                // sempre (consuma la entry e tiene bounded s_jobNames), ma il
+                // TRACE e l'anello diag sono riservati alle risposte NON OK:
+                // sono quelle che StatusWriter aggrega (AccessDenied /
+                // transport-candidate), e registrare ogni OK costerebbe un
+                // mutex + allocazioni per frame sul path di rete.
                 {
                     std::uint64_t jt = 0;
                     const std::int32_t er = RecvResponseMeta(f, &jt);
                     const std::string jname = jt ? ResolveServiceJob(jt) : std::string();
-                    AC_LOG_TRACE(kModule,
-                                 "[DIAG] service recv name='%s' jobid=%llu eresult=%d (%s) class=%s bLen=%u",
-                                 jname.empty() ? "?" : jname.c_str(),
-                                 static_cast<unsigned long long>(jt), er, EresultName(er),
-                                 EresultClass(er), f.bodyLen);
-                    diag::Record(
-                        "wire_eresult",
-                        "service=" + (jname.empty() ? std::string("?") : jname)
-                            + " jobid=" + std::to_string(jt)
-                            + " eresult=" + std::to_string(er)
-                            + " label=" + EresultName(er)
-                            + " class=" + EresultClass(er));
+                    if (er != 1) {   // 1 = k_EResultOK
+                        AC_LOG_TRACE(kModule,
+                                     "[DIAG] service recv name='%s' jobid=%llu eresult=%d (%s) class=%s bLen=%u",
+                                     jname.empty() ? "?" : jname.c_str(),
+                                     static_cast<unsigned long long>(jt), er, EresultName(er),
+                                     EresultClass(er), f.bodyLen);
+                        diag::Record(
+                            "wire_eresult",
+                            "service=" + (jname.empty() ? std::string("?") : jname)
+                                + " jobid=" + std::to_string(jt)
+                                + " eresult=" + std::to_string(er)
+                                + " label=" + EresultName(er)
+                                + " class=" + EresultClass(er));
+                    }
                 }
                 std::string job;
                 if (!ServiceJobName(f, job)) return kNoChange;

@@ -49,6 +49,7 @@ add_library(AetherCore SHARED
     utils/PatternDownloader.cpp
     utils/SmartIdLog.cpp
     utils/IpcSpec.cpp
+    utils/IpcSpecParse.cpp
     utils/GameNameResolver.cpp
 
     # Inject

@@ -19,6 +19,10 @@
 #include "network/ManifestIdentity.h"
 #include "hooks/ipc/IpcReply.h"
 #include "hooks/wire/UserStatsSnapshot.h"
+#include "utils/TtlCache.h"
+#include "credentials/HexCodec.h"
+#include "utils/SignatureCodec.h"
+#include "utils/IpcSpecParse.h"
 #include "MinHook.h"
 #include <atomic>
 #include <chrono>
@@ -28,6 +32,7 @@
 #include <stdexcept>
 #include <thread>
 #include <cstring>
+#include <unordered_map>
 #include <random>
 #include <vector>
 
@@ -972,6 +977,54 @@ void VdfTextTest() {
     CHECK(paths.size() == 2);
     CHECK(paths[0] == "C:\\Steam");
     CHECK(paths[1] == "D:\\Games");
+
+    // --- ReplaceFirstQuotedValue ---
+    // Caso di regressione dal campo: il campo "language" è l'ULTIMA coppia
+    // quotata di appmanifest_480.acf (dopo ci sono solo graffe di chiusura):
+    // uno scan ingenuo "cerca tre virgolette" falliva lì.
+    std::string acf =
+        "\"AppState\"\n{\n"
+        "\t\"appid\"\t\t\"480\"\n"
+        "\t\"UserConfig\"\n\t{\n"
+        "\t\t\"language\"\t\t\"english\"\n"
+        "\t}\n"
+        "\t\"MountedDepots\"\n\t{\n"
+        "\t\t\"481\"\t\t\"1234567890\"\n"
+        "\t}\n}\n";
+    CHECK(vdf::ReplaceFirstQuotedValue(acf, "language", "italian"));
+    CHECK(vdf::ExtractQuotedValues(acf, "language").size() == 1);
+    CHECK(vdf::ExtractQuotedValues(acf, "language").front() == "italian");
+    CHECK(vdf::ExtractQuotedValues(acf, "appid").front() == "480");       // resto intatto
+    CHECK(vdf::ExtractQuotedValues(acf, "481").front() == "1234567890");  // resto intatto
+
+    // language come ULTIMA coppia quotata del file (nessuna virgoletta dopo).
+    std::string last = "\"AppState\"\n{\n\t\"UserConfig\"\n\t{\n\t\t\"language\"\t\t\"english\"\n\t}\n}\n";
+    CHECK(vdf::ReplaceFirstQuotedValue(last, "language", "italian"));
+    CHECK(last.find("\"italian\"") != std::string::npos);
+    CHECK(last.find("\"english\"") == std::string::npos);
+
+    // Chiave case-insensitive; sostituita solo la PRIMA occorrenza.
+    std::string dup = "\"Language\" \"english\"\n\"LANGUAGE\" \"english\"\n";
+    CHECK(vdf::ReplaceFirstQuotedValue(dup, "language", "italian"));
+    CHECK(vdf::ExtractQuotedValues(dup, "language").size() == 2);
+    CHECK(vdf::ExtractQuotedValues(dup, "language")[0] == "italian");
+    CHECK(vdf::ExtractQuotedValues(dup, "language")[1] == "english");
+
+    // Chiave assente -> false, contenuto intatto.
+    std::string none = "\"AppState\"\n{\n}\n";
+    CHECK(!vdf::ReplaceFirstQuotedValue(none, "language", "italian"));
+    CHECK(none == "\"AppState\"\n{\n}\n");
+
+    // Sezione senza valore (\"UserConfig\" seguito da graffa) non viene toccata.
+    std::string section = "\"UserConfig\"\n{\n\t\"language\" \"english\"\n}\n";
+    CHECK(vdf::ReplaceFirstQuotedValue(section, "UserConfig", "x") == false);
+    CHECK(vdf::ReplaceFirstQuotedValue(section, "language", "french"));
+    CHECK(section.find("\"french\"") != std::string::npos);
+
+    // Fine linea CRLF gestita.
+    std::string crlf = "\"language\" \"english\"\r\n\"appid\" \"480\"\r\n";
+    CHECK(vdf::ReplaceFirstQuotedValue(crlf, "language", "italian"));
+    CHECK(crlf.find("\"italian\"\r\n") != std::string::npos);
 }
 
 void JsonEscapesTest() {
@@ -1095,6 +1148,131 @@ void SnapshotMergeTest() {
     CHECK(d.stats[0].id == 5 && d.stats[1].id == 6);
 }
 
+
+// --- QW1: TtlCache (cattura anche la regressione del Get sotto lock) ---
+void TtlCacheTest() {
+    using ac::utils::TtlCache;
+    {
+        TtlCache<std::string, int> c(2, std::chrono::seconds(60));
+        c.Put("a", 1);
+        CHECK(c.Get("a") == 1);
+        CHECK(!c.Get("missing").has_value());
+        c.Put("b", 2);
+        c.Put("c", 3);                       // sfora il cap di 2: LRU ("a") evicta
+        CHECK(c.Size() == 2);
+        CHECK(!c.Get("a").has_value());      // la più vecchia è uscita
+        CHECK(c.Get("b") == 2);
+        CHECK(c.Get("c") == 3);
+    }
+    {
+        TtlCache<std::string, int> c(8, std::chrono::seconds(1));
+        c.Put("short", 42);
+        CHECK(c.Get("short") == 42);
+        std::this_thread::sleep_for(std::chrono::milliseconds(1050));
+        CHECK(!c.Get("short").has_value());  // scaduta
+        CHECK(c.EvictionCount() >= 1);       // la scadenza conta come eviction
+        c.Put("fresh", 7);
+        CHECK(c.Get("fresh") == 7);          // una entry nuova torna valida
+    }
+    {
+        TtlCache<std::string, int> c(8, std::chrono::seconds(60));
+        c.PutNegative("nope");
+        CHECK(c.NegativeCount() == 1);
+        CHECK(c.Get("nope") == 0);           // negative hit: valore default
+    }
+}
+
+// --- QW8: HexCodec (roundtrip + reject deterministici) ---
+void HexCodecTest() {
+    using namespace ac::hex;
+    const std::vector<std::uint8_t> blob = {0x48, 0x8B, 0x05, 0x00, 0xFF};
+    const std::string hex = Encode(blob);
+    CHECK(hex == "488B0500FF");              // Encode è uppercase
+    CHECK(Decode(hex) == blob);
+    CHECK(Decode("488b05") == std::vector<std::uint8_t>({0x48, 0x8B, 0x05})); // lowercase ok
+    const auto empty = Decode("");
+    CHECK(empty.has_value() && empty->empty());
+    CHECK(!Decode("abc").has_value());       // lunghezza dispari
+    CHECK(!Decode("zz").has_value());        // carattere non hex
+    CHECK(!Decode(" 48").has_value());       // lo spazio non è hex
+    CHECK(!Decode("0x48").has_value());      // niente prefissi
+}
+
+// --- QW8: SignatureCodec (parser signature estratto da PatternEngine) ---
+void SignatureTest() {
+    using ac::pattern::ParseSignature;
+    std::vector<std::uint8_t> bytes;
+    std::string mask;
+    CHECK(ParseSignature("48 8B ?? C3", bytes, mask));
+    CHECK(bytes.size() == 4 && mask.size() == 4);
+    CHECK(mask == "xx?x");
+    CHECK(bytes[0] == 0x48 && bytes[1] == 0x8B && bytes[3] == 0xC3);
+    CHECK(ParseSignature("00", bytes, mask));          // 0x00 è un byte valido
+    CHECK(bytes.size() == 1 && mask == "x" && bytes[0] == 0x00);
+    CHECK(ParseSignature("a1", bytes, mask));          // lowercase accettato
+    CHECK(bytes.size() == 1 && bytes[0] == 0xA1);
+    CHECK(!ParseSignature("", bytes, mask));           // vuoto
+    CHECK(!ParseSignature("???", bytes, mask));        // wildcard malformata
+    CHECK(!ParseSignature("4Z", bytes, mask));         // cifra non hex
+    CHECK(!ParseSignature("1FF", bytes, mask));        // token troppo lungo
+}
+
+// --- QW8: IpcSpecParse (parser TOML puro estratto da IpcSpec) ---
+void IpcSpecParseTest() {
+    using ac::ipcspec::MethodSpec;
+    using ac::ipcspec::ParseSpecToml;
+    std::unordered_map<std::string, std::uint8_t> ifaces;
+    std::unordered_map<std::string, MethodSpec> methods;
+
+    const std::string good =
+        "[IClientUser]\n"
+        "interface_id = 5\n"
+        "[IClientUser.GetSteamID]\n"
+        "funcHash = \"0x1A2B3C4D\"\n"
+        "fencepost = \"1C\"\n"
+        "argc = 3\n";
+    CHECK(ParseSpecToml(good, ifaces, methods));
+    CHECK(ifaces.size() == 1 && ifaces.at("IClientUser") == 5);
+    CHECK(methods.size() == 1);
+    const auto it = methods.find("IClientUser::GetSteamID");
+    CHECK(it != methods.end());
+    CHECK(it->second.hash == 0x1A2B3C4Du);
+    CHECK(it->second.fencepost == 0x1Cu);
+    CHECK(it->second.argc == 3u);
+
+    // interface_id fuori range: l'intera interfaccia (metodi inclusi) è scartata.
+    ifaces.clear(); methods.clear();
+    CHECK(!ParseSpecToml(
+        "[IClientFriends]\ninterface_id = 999\n"
+        "[IClientFriends.GetPersonaName]\nfuncHash = \"ABCD\"\n",
+        ifaces, methods));
+
+    // funcHash malformato: metodo scartato; nessun metodo valido → parse fallito.
+    ifaces.clear(); methods.clear();
+    CHECK(!ParseSpecToml(
+        "[IClientUser]\n[IClientUser.Broken]\nfuncHash = \"nothex\"\n",
+        ifaces, methods));
+
+    // Documento vuoto o TOML invalido → false (lo stato esistente non va toccato).
+    ifaces.clear(); methods.clear();
+    CHECK(!ParseSpecToml("", ifaces, methods));
+    CHECK(!ParseSpecToml("[broken\nkey = 1", ifaces, methods));
+
+    // funcHash senza prefisso 0x e valore minimo accettato (1).
+    ifaces.clear(); methods.clear();
+    CHECK(ParseSpecToml("[I]\n[I.M]\nfuncHash = \"1\"\n", ifaces, methods));
+    CHECK(methods.at("I::M").hash == 1u);
+
+    // funcHash zero rifiutato (hash 0 = metodo assente, per contratto).
+    ifaces.clear(); methods.clear();
+    CHECK(!ParseSpecToml("[I]\n[I.M]\nfuncHash = \"0\"\n", ifaces, methods));
+
+    // argc negativo ignorato, il metodo resta valido.
+    ifaces.clear(); methods.clear();
+    CHECK(ParseSpecToml("[I]\n[I.M2]\nfuncHash = \"AB\"\nargc = -1\n", ifaces, methods));
+    CHECK(methods.at("I::M2").argc == 0u);
+}
+
 int main(int argc, char** argv) {
     try {
         CHECK(argc == 2);
@@ -1114,7 +1292,11 @@ int main(int argc, char** argv) {
         else if (test == "jsonutil_escapes") JsonEscapesTest();
         else if (test == "manifest_identity") ManifestIdentityTest();
         else if (test == "ipcreply") IpcReplyTest();
-        else if (test == "snapshot_merge") SnapshotMergeTest(); else CHECK(false);
+        else if (test == "snapshot_merge") SnapshotMergeTest();
+        else if (test == "ttlcache") TtlCacheTest();
+        else if (test == "hexcodec") HexCodecTest();
+        else if (test == "signature") SignatureTest();
+        else if (test == "ipcspec") IpcSpecParseTest(); else CHECK(false);
         std::cout << test << ": PASS\n";
         return 0;
     } catch (const std::exception& e) { std::cerr << e.what() << '\n'; return 1; }

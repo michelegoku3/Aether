@@ -21,6 +21,7 @@
 #include "scripting/LuaData.h"
 #include "core/SteamTypes.h"
 #include "utils/SmartIdLog.h"
+#include "utils/Paths.h"
 
 namespace ac::hooks {
     namespace {
@@ -127,11 +128,6 @@ namespace ac::hooks {
                 std::chrono::steady_clock::now().time_since_epoch()).count();
         }
 
-        std::string FileBaseName(const std::string& path) {
-            const std::size_t slash = path.find_last_of("\\/");
-            return slash == std::string::npos ? path : path.substr(slash + 1);
-        }
-
         void LogUnlockedSummary() {
             std::unordered_set<AppId> unlocked;
             {
@@ -168,7 +164,7 @@ namespace ac::hooks {
                     }
                 }
 
-                const std::string base = FileBaseName(path);
+                const std::string base = paths::BaseName(path);
                 fingerprint << base << ':';
                 if (missing.empty()) {
                     fingerprint << "OK;";
@@ -203,7 +199,7 @@ namespace ac::hooks {
                     if (luadata::HasDepot(id) && !unlocked.count(id)) missing.push_back(id);
                 }
                 if (missing.empty()) {
-                    AC_LOG_INFO(kModule, "Unlocked all AppID for %s.", FileBaseName(path).c_str());
+                    AC_LOG_INFO(kModule, "Unlocked all AppID for %s.", paths::BaseName(path).c_str());
                 }
                 else {
                     std::ostringstream list;
@@ -211,7 +207,7 @@ namespace ac::hooks {
                         if (i) list << ", ";
                         list << missing[i];
                     }
-                    AC_LOG_WARN(kModule, "Not unlocked for %s: %s.", FileBaseName(path).c_str(),
+                    AC_LOG_WARN(kModule, "Not unlocked for %s: %s.", paths::BaseName(path).c_str(),
                         list.str().c_str());
                 }
             }

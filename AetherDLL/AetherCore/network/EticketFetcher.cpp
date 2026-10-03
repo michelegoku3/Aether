@@ -23,6 +23,10 @@ namespace ac::eticketfetch {
 namespace {
 
 constexpr const char* kModule = "EticketFetch";
+// La cache è keyed per (app, nonce): i nonce cambiano a ogni richiesta, quindi
+// senza cap crescerebbe per tutta la sessione. Oltre il limite si elimina una
+// entry arbitraria: il mint è comunque ri-richiedibile, nessuna funzionalità persa.
+constexpr std::size_t kMaxCacheEntries = 1024;
 
 // ---------------------------------------------------------------------------
 // Background mint worker (A1): the HTTP POST runs here, never on the caller's
@@ -99,6 +103,11 @@ void WorkerMain() {
         if (minted) {
             std::lock_guard<std::mutex> lock(g_state.eticketFetch.mutex);
             g_state.eticketFetch.cache.emplace(key, std::move(*minted));
+            if (g_state.eticketFetch.cache.size() > kMaxCacheEntries) {
+                g_state.eticketFetch.cache.erase(g_state.eticketFetch.cache.begin());
+                AC_LOG_DEBUG(kModule, "Ticket cache over cap (%zu entries); evicted one.",
+                             kMaxCacheEntries);
+            }
         }
 
         {

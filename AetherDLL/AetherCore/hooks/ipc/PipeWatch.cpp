@@ -16,6 +16,7 @@
 #include "core/Workers.h"
 #include "core/Constants.h"
 #include "utils/EnvReader.h"
+#include "utils/Paths.h"
 #include "core/Logger.h"
 #include "scripting/LuaData.h"
 #include "hooks/aetheronline/OnlinePayload.h"
@@ -28,20 +29,6 @@ namespace {
 
 constexpr const char* kModule = "PipeWatch";
 
-std::string LowerAscii(std::string_view text) {
-    std::string out(text);
-    std::transform(out.begin(), out.end(), out.begin(), [](unsigned char ch) {
-        return static_cast<char>(std::tolower(ch));
-    });
-    return out;
-}
-
-std::string BaseName(std::string_view path) {
-    const std::size_t slash = path.find_last_of("\\/");
-    if (slash == std::string_view::npos) return std::string(path);
-    return std::string(path.substr(slash + 1));
-}
-
 bool IsSteamProcessName(std::string_view imageName) {
     static constexpr std::array<std::string_view, 6> kSteamNames = {
         "steam.exe",
@@ -51,7 +38,7 @@ bool IsSteamProcessName(std::string_view imageName) {
         "gameoverlayui.exe",
         "gameoverlayui64.exe",
     };
-    const std::string lowered = LowerAscii(imageName);
+    const std::string lowered = paths::LowerAscii(imageName);
     return std::find(kSteamNames.begin(), kSteamNames.end(), lowered) != kSteamNames.end();
 }
 
@@ -97,7 +84,7 @@ ProcessSnapshot InspectProcess(std::uint32_t pid, const std::string& processName
 
     snap.creationTime = QueryCreationTime(process);
     snap.imagePath = QueryImagePath(process);
-    snap.imageName = BaseName(snap.imagePath);
+    snap.imageName = paths::BaseName(snap.imagePath);
     if (snap.imageName.empty()) snap.imageName = processName;
 
     // Environment-block AppId resolution delegated to EnvReader.
@@ -265,24 +252,20 @@ void Reset() {
 // lettura del pid e l'accodamento (O(1)).
 void CompleteHandshakeAsync(std::uint64_t key, std::uint32_t hSteamPipe,
                             std::uint32_t pid, std::string processName) {
+    // Una copia resta locale: lo store nella mappa è il punto di verità per
+    // i lettori futuri (SnapshotForPipe/AppIdForPipe), ma qui non serve
+    // rileggere sotto lock — si evita un lock+copy immediato.
     ProcessSnapshot snap = InspectProcess(pid, processName);
+    const ProcessSnapshot stored = snap;
     StoreSnapshotByKey(key, std::move(snap));
-    // Re-read the stored snapshot (same source of truth every consumer uses).
-    const auto stored = [&]() -> std::optional<ProcessSnapshot> {
-        std::lock_guard<std::mutex> lock(g_state.pipeWatch.mutex);
-        auto it = g_state.pipeWatch.snapshots.find(key);
-        if (it == g_state.pipeWatch.snapshots.end()) return std::nullopt;
-        return it->second;
-    }();
-    if (!stored) return;
-    hooks::onlinepayload::MaybeInject(*stored);
-    if (stored->likelyGame) {
+    hooks::onlinepayload::MaybeInject(stored);
+    if (stored.likelyGame) {
         // Only reset dedup sets when a *different* game starts. Child processes
         // of the same session (launcher, game exe, overlay) share the same appId
         // and should not trigger redundant re-emission of ownership/license logs.
         steam::AppId prev = g_state.pipeWatch.lastSessionAppId.load();
-        if (stored->appId != prev &&
-            g_state.pipeWatch.lastSessionAppId.compare_exchange_strong(prev, stored->appId)) {
+        if (stored.appId != prev &&
+            g_state.pipeWatch.lastSessionAppId.compare_exchange_strong(prev, stored.appId)) {
             logutil::ResetAllIdLogSessions();
             log::ResetDedup();
         }
@@ -290,10 +273,10 @@ void CompleteHandshakeAsync(std::uint64_t key, std::uint32_t hSteamPipe,
     status::Write();
     AC_LOG_INFO(kModule,
                 "Handshake pipe=0x%08X pid=%u image=%s appId=%u source=%s env=%u luaManaged=%d (async).",
-                hSteamPipe, stored->pid,
-                stored->imageName.empty() ? "-" : stored->imageName.c_str(), stored->appId,
-                stored->appIdSource.empty() ? "-" : stored->appIdSource.c_str(), stored->envAppId,
-                stored->luaManaged ? 1 : 0);
+                hSteamPipe, stored.pid,
+                stored.imageName.empty() ? "-" : stored.imageName.c_str(), stored.appId,
+                stored.appIdSource.empty() ? "-" : stored.appIdSource.c_str(), stored.envAppId,
+                stored.luaManaged ? 1 : 0);
 }
 
 void OnHandshake(steam::CSteamPipeClient* pipe, steam::CUtlBuffer* pRead) {

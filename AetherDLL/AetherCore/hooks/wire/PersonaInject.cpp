@@ -377,7 +377,10 @@ std::int32_t OnPersonaStateRecv(const WireFrame& frame, std::uint8_t* out, std::
         // E' l'unico modo di vedere QUANDO una voce amico (es. 1703340 reale)
         // raggiunge questa macchina: se la riga manca, il CM non l'ha mai
         // consegnata (o e' arrivata dentro un Multi, vedi trace eMsg=1).
-        {
+        // Gate di livello: il diff della mappa (mutex + snprintf per amico)
+        // girava su ogni frame anche a log Warn/Error/Off — da oggi solo con
+        // Info attivo, altrimenti il costo sul path di rete è zero.
+        if (ac::log::Enabled(LogLevel::Info)) {
             static std::mutex s_friendDumpMutex;
             static std::unordered_map<std::uint64_t, std::string> s_friendState;
             std::lock_guard<std::mutex> lk(s_friendDumpMutex);

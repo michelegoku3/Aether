@@ -112,9 +112,18 @@ bool StartWorker(const std::string& name,
         // a ogni StartWorker, quindi nessun riferimento agli elementi.
         entry.thread = std::thread([name, stop, done, body = std::move(body)] {
             AC_LOG_INFO(kModule, "Worker '%s' started.", name.c_str());
-            body(*stop);
+            try {
+                body(*stop);
+                AC_LOG_INFO(kModule, "Worker '%s' exited.", name.c_str());
+            } catch (const std::exception& e) {
+                AC_LOG_WARN(kModule, "Worker '%s' failed: %s", name.c_str(), e.what());
+            } catch (...) {
+                AC_LOG_WARN(kModule, "Worker '%s' failed with unknown exception.", name.c_str());
+            }
+            // Va impostato SEMPRE: se il corpo lancia, un done mancante
+            // lascerebbe l'entry nel registry per sempre (mai joinata dal
+            // reap, SummaryText la riporterebbe "running" in eterno).
             done->store(true);
-            AC_LOG_INFO(kModule, "Worker '%s' exited.", name.c_str());
         });
     }
     s_startedCount.fetch_add(1);

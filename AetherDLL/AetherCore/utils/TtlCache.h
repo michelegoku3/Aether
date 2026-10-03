@@ -74,18 +74,23 @@ public:
             return std::nullopt;
         }
 
-        // Update lastAccess for LRU (requires unique lock)
+        // Update lastAccess for LRU (requires unique lock). The value is
+        // COPIED under the same lock: returning through the iterator after
+        // releasing the lock would be a use-after-invalidation race (a
+        // concurrent Put/eviction can rehash or erase the entry).
+        V value{};
         lock.unlock();
         {
             std::unique_lock<std::shared_mutex> writeLock(mutex_);
             it = entries_.find(key);
             if (it != entries_.end()) {
                 it->second.lastAccess = Clock::now();
+                value = it->second.value;
             }
         }
 
         ++hitCount_;
-        return it->second.value;
+        return value;
     }
 
     // Inserts or updates a value in the cache.

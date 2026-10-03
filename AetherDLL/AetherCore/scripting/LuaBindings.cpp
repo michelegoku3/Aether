@@ -1,4 +1,3 @@
-#include "pch.h"
 // ---------------------------------------------------------------------------
 // Lua binding registration.
 //
@@ -28,6 +27,7 @@ extern "C" {
 #include "scripting/LuaSandbox.h"
 #include "core/Logger.h"
 #include "network/RuntimeHttp.h"
+#include "utils/Paths.h"
 
 namespace ac::script::bindings {
     namespace {
@@ -190,20 +190,14 @@ namespace ac::script::bindings {
 
         // ---- Case-insensitive globals ----------------------------------------------
 
-        std::string ToLower(const char* s) {
-            std::string out(s);
-            for (char& c : out) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-            return out;
-        }
-
         int L_GlobalsIndex(lua_State* L) {
-            lua_pushstring(L, ToLower(luaL_checkstring(L, 2)).c_str());
+            lua_pushstring(L, paths::LowerAscii(luaL_checkstring(L, 2)).c_str());
             lua_rawget(L, 1);
             return 1;
         }
 
         int L_GlobalsNewIndex(lua_State* L) {
-            lua_pushstring(L, ToLower(luaL_checkstring(L, 2)).c_str());
+            lua_pushstring(L, paths::LowerAscii(luaL_checkstring(L, 2)).c_str());
             lua_pushvalue(L, 3);
             lua_rawset(L, 1);
             return 0;
