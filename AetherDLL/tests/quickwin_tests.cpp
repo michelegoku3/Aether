@@ -1056,11 +1056,13 @@ void IpcReplyTest() {
     CHECK(!ir::WriteU32(&buf, 62, 1u));                     // overflow refused
     CHECK(ir::WriteAt(&buf, 10, storage, 0));               // zero-byte write ok
     // Tiny buffer: nothing may be written.
+    // NB: non chiamarla "small": l'SDK Windows (rpcndr.h) definisce
+    // #define small char e MSVC espanderebbe il nome della variabile.
     std::uint8_t tiny[1] = {0};
-    ac::steam::CUtlBuffer small{}; small.memory.memory = tiny; small.put = 0;
-    CHECK(!ir::CanWrite(&small, 1));
-    CHECK(!ir::Begin(&small));
-    CHECK(!ir::WriteU32(&small, 0, 7u));
+    ac::steam::CUtlBuffer tinyBuf{}; tinyBuf.memory.memory = tiny; tinyBuf.put = 0;
+    CHECK(!ir::CanWrite(&tinyBuf, 1));
+    CHECK(!ir::Begin(&tinyBuf));
+    CHECK(!ir::WriteU32(&tinyBuf, 0, 7u));
     // Null safety.
     CHECK(!ir::CanWrite(nullptr, 1));
     CHECK(!ir::Begin(nullptr));
