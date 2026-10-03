@@ -2,6 +2,7 @@
 #include "hooks/ipc/SteamCapture.h"
 
 #include "core/AetherCoreState.h"
+#include "hooks/aetheronline/PresenceSession.h"
 #include "core/Logger.h"
 #include "hooks/steamclient/AetherOnlineHooks.h"
 #include "utils/PatternEngine.h"
@@ -52,7 +53,7 @@ steam::AppId GetAppIdForCurrentPipe() {
 }
 
 steam::AppId CurrentRouteAppId() {
-    if (steam::AppId real = g_state.aetherOnlineRealAppId.load()) return real;
+    if (steam::AppId real = presence::RealAppId()) return real;
     return GetAppIdForCurrentPipe();
 }
 

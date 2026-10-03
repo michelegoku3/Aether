@@ -4,6 +4,7 @@
 #include <string>
 
 #include "core/AetherCoreState.h"
+#include "hooks/aetheronline/PresenceSession.h"
 #include "core/Constants.h"
 #include "core/Logger.h"
 #include "utils/RemoteInject.h"
@@ -18,7 +19,7 @@ constexpr const char* kModule = "Online.Payload";
 void MaybeInject(const pipewatch::ProcessSnapshot& snapshot) {
     if (!snapshot.likelyGame || snapshot.steamProcess) return;
 
-    const auto active = g_state.aetherOnlineRealAppId.load();
+    const auto active = presence::RealAppId();
     if (active == 0) return;
 
     const auto effectiveAppId =

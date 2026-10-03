@@ -12,7 +12,9 @@ enable_testing()
 add_executable(quickwin_tests quickwin_tests.cpp stubs/Services.cpp
     stubs/AbiReporting.cpp
     ../AetherCore/core/Settings.cpp ../AetherCore/core/HookManager.cpp
-    ../AetherCore/core/Workers.cpp)
+    ../AetherCore/core/Workers.cpp
+    ../AetherCore/hooks/wire/GamesPlayedFormat.cpp
+    ../AetherCore/hooks/wire/DonorPool.cpp)
 # The ABI modules keep their decision logic inline in the headers, so the
 # cases "netpacket", "sentinel" and "structguard" test the real policy
 # without linking the Windows glue (VirtualQuery, the PE walk, the logger).
@@ -25,7 +27,7 @@ if(MSVC)
 else()
     target_compile_options(quickwin_tests PRIVATE -Wall -Wextra -Wpedantic)
 endif()
-foreach(case strings paths policy worker budget settings registry workers netpacket sentinel structguard)
+foreach(case strings paths policy worker budget settings registry workers netpacket sentinel structguard gamesplayed_format donorpool)
     add_test(NAME ${case} COMMAND quickwin_tests ${case})
 endforeach()
 add_test(NAME cmake_source_inventory COMMAND ${CMAKE_COMMAND}

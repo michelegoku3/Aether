@@ -10,6 +10,9 @@
 #include "utils/LogBurstBudget.h"
 #include "propagate/PropagationPolicy.h"
 #include "core/Workers.h"
+#include "hooks/wire/GamesPlayedFormat.h"
+#include "core/Constants.h"
+#include "hooks/wire/DonorPool.h"
 #include "MinHook.h"
 #include <atomic>
 #include <chrono>
@@ -792,6 +795,99 @@ void StructGuard() {
     }
 }
 
+
+void GamesPlayedFormatTest() {
+    namespace fmt = ac::hooks::GamesPlayedFormat;
+    // AppIdFromGameId: low-24 mask.
+    CHECK(fmt::AppIdFromGameId(0x020000000000ull | 1687950u) == 1687950u);
+    CHECK(fmt::AppIdFromGameId(480u) == 480u);
+    // ImageStem: path strip, Unreal suffix, trailing "-steam".
+    CHECK(fmt::ImageStem("C:\\games\\Bodycam-Win64-Shipping.exe") == "Bodycam");
+    CHECK(fmt::ImageStem("ReadyOrNotSteam-Win64-Shipping.exe") == "ReadyOrNot");
+    CHECK(fmt::ImageStem("P5R.exe") == "P5R");
+    CHECK(fmt::ImageStem("") == "");
+    // NameIsUsable: rejects empty and the Spacewar fold.
+    CHECK(!fmt::NameIsUsable(""));
+    CHECK(!fmt::NameIsUsable("Spacewar"));
+    CHECK(!fmt::NameIsUsable("S p a c e w a r"));
+    CHECK(fmt::NameIsUsable("Persona 5 Royal"));
+    // MakeAppIdBlob: magic + version + LE appid.
+    const std::string blob = fmt::MakeAppIdBlob(0x01020304u);
+    CHECK(blob.size() == 4 + 1 + 4);
+    CHECK(blob.compare(0, 4, ac::constants::kAppIdBlobMagic) == 0);
+    CHECK(static_cast<std::uint8_t>(blob[4]) == ac::constants::kAppIdBlobVersion);
+    CHECK(static_cast<std::uint8_t>(blob[5]) == 0x04);
+    CHECK(static_cast<std::uint8_t>(blob[6]) == 0x03);
+    CHECK(static_cast<std::uint8_t>(blob[7]) == 0x02);
+    CHECK(static_cast<std::uint8_t>(blob[8]) == 0x01);
+    // WithAppIdSuffix (invisible): mark + 6 VS nibbles encoding the appid.
+    ac::Settings st;
+    st.presenceSuffixInvisible = true;
+    const std::string inv = fmt::WithAppIdSuffix("Game", 0xABCDEFu, st);
+    CHECK(inv.rfind("Game", 0) == 0);
+    CHECK(inv.find(ac::constants::kExtraInfoInvisibleMark) == 4);
+    std::uint32_t decoded = 0;
+    std::size_t pos = 4 + 3;  // skip name + mark
+    for (std::size_t i = 0; i < ac::constants::kExtraInfoInvisibleDigits; ++i) {
+        CHECK(pos + 3 <= inv.size());
+        CHECK(static_cast<std::uint8_t>(inv[pos]) == 0xEE);
+        CHECK(static_cast<std::uint8_t>(inv[pos + 1]) == 0xB8);
+        const std::uint32_t nib = static_cast<std::uint8_t>(inv[pos + 2]) & 0x0Fu;
+        decoded = (decoded << 4) | nib;
+        pos += 3;
+    }
+    CHECK(decoded == 0xABCDEFu);
+    st.presenceSuffixInvisible = false;
+    CHECK(fmt::WithAppIdSuffix("Game", 480u, st) == std::string("Game") + ac::constants::kExtraInfoAppIdSep + "480");
+    // ExtractStringKVs: nested struct + string pairs + end markers.
+    const std::uint8_t kv[] = {
+        0x00, 'a', 0,                       // struct "a"
+        0x01, 'k', '1', 0, 'v', '1', 0,     // string k1=v1
+        0x08,                               // end struct
+        0x01, 'k', '2', 0, 'v', '2', 0,     // string k2=v2
+        0x08,                               // end root
+    };
+    std::vector<std::pair<std::string, std::string>> kvs;
+    fmt::ExtractStringKVs(kv, sizeof(kv), kvs);
+    CHECK(kvs.size() == 2);
+    CHECK(kvs[0].first == "k1" && kvs[0].second == "v1");
+    CHECK(kvs[1].first == "k2" && kvs[1].second == "v2");
+    // Truncated input stops cleanly keeping parsed-so-far pairs.
+    kvs.clear();
+    fmt::ExtractStringKVs(kv, 8, kvs);   // cuts mid first value
+    CHECK(kvs.empty());
+}
+
+void DonorPoolTest() {
+    namespace dp = ac::hooks::DonorPool;
+    CHECK(dp::kPoolCount == 15);
+    CHECK(dp::DonorSteamId(14) == 76561198028121353ULL);  // LumaCore default donor
+    CHECK(dp::DonorSteamId(0) != dp::DonorSteamId(1));
+    // Fresh app starts at the LumaCore default index (14).
+    const ac::steam::AppId app = 999001u;
+    CHECK(dp::PickIndex(app) == 14);
+    // A data-less answer advances the round-robin.
+    dp::NoteAttemptResult(app, 14, /*okWithData=*/false);
+    CHECK(dp::PickIndex(app) == 0);
+    // A data-bearing answer pins the donor as preferred.
+    dp::NoteAttemptResult(app, 3, /*okWithData=*/true);
+    CHECK(dp::PickIndex(app) == 3);
+    // Pending client-stats correlation: record then take consumes it.
+    dp::StatAttempt a; a.appId = app; a.poolIndex = 3; a.seen = dp::Clock::now();
+    dp::RecordPendingClientStats(app, a);
+    dp::StatAttempt out;
+    CHECK(dp::TakePendingClientStats(app, out));
+    CHECK(out.appId == app && out.poolIndex == 3);
+    CHECK(!dp::TakePendingClientStats(app, out));  // consumed
+    // Service-path correlation by jobid.
+    dp::StatAttempt b; b.appId = app; b.poolIndex = 7;
+    dp::RecordAttempt(b, /*hasJobId=*/true, 4242ull);
+    dp::StatAttempt got;
+    CHECK(dp::ResolveAttempt(true, 4242ull, got) == dp::Correl::Resolved);
+    CHECK(got.appId == app && got.poolIndex == 7);
+    CHECK(dp::ResolveAttempt(true, 9999ull, got) == dp::Correl::NoMatch);
+}
+
 int main(int argc, char** argv) {
     try {
         CHECK(argc == 2);
@@ -803,7 +899,9 @@ int main(int argc, char** argv) {
         else if (test == "workers") Workers();
         else if (test == "netpacket") NetPacket();
         else if (test == "sentinel") Sentinel();
-        else if (test == "structguard") StructGuard(); else CHECK(false);
+        else if (test == "structguard") StructGuard();
+        else if (test == "gamesplayed_format") GamesPlayedFormatTest();
+        else if (test == "donorpool") DonorPoolTest(); else CHECK(false);
         std::cout << test << ": PASS\n";
         return 0;
     } catch (const std::exception& e) { std::cerr << e.what() << '\n'; return 1; }

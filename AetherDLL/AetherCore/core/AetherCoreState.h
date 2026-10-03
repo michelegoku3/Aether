@@ -13,7 +13,6 @@
 
 #include "network/EticketFetcher.h"
 #include "core/HookManager.h"
-#include "network/ManifestFetch.h"
 #include "core/Settings.h"
 #include "core/SteamTypes.h"
 #include "hooks/ipc/PipeWatch.h"
@@ -108,21 +107,6 @@ struct AetherCoreState {
         std::string currentFile;
     };
     LuaStore lua;
-
-    // Shared state for exact manifest lookups. Request-code jobs share the
-    // cache and in-flight map so duplicate Steam requests are coalesced; the
-    // request-code path remains the authoritative completion point.
-    struct ManifestFetchState {
-        mutable std::mutex mutex;
-        std::unordered_map<std::uint64_t, std::shared_future<std::optional<std::uint64_t>>> pending;
-        std::unordered_map<manifestfetch::LookupKey,
-                           std::shared_future<std::optional<std::uint64_t>>,
-                           manifestfetch::LookupKeyHash> inflight;
-        std::unordered_map<manifestfetch::LookupKey,
-                           std::uint64_t,
-                           manifestfetch::LookupKeyHash> cache;
-    };
-    ManifestFetchState manifestFetch;
 
     // ---- E-ticket runtime --------------------------------------------------
     struct EticketFetchState {
@@ -295,7 +279,9 @@ struct AetherCoreState {
     std::atomic<bool> package0Seeded{false};
 
     // ---- AetherOnline --------------------------------------------------------
-    std::atomic<steam::AppId> aetherOnlineRealAppId{0};
+    // Session identity (real app behind the 480 mask, showonline, UCO2/OFME
+    // spoof flag) lives in hooks/aetheronline/PresenceSession — owned by
+    // AetherOnlineHooks::h_SpawnProcess, consumed via immutable snapshot.
 
     // Last app Steam asked us to spawn (even in exclude/None). Used only to
     // name a later Spacewar (480) spoof from UCO2/OFME. Cleared on a 480
@@ -303,26 +289,6 @@ struct AetherCoreState {
     // the spoofed session is then named from its live pipe image, not from an
     // earlier real game.
     std::atomic<steam::AppId> lastSpawnedAppId{0};
-
-    // True from SpawnProcess when UCO2/OFME files sit next to the exe.
-    // HandleSend then refuses Show Online / self-inject for this launch —
-    // only extra_info on the 480 entry. A library launch of such a game is
-    // additionally masked as 480 in SpawnProcess itself: the foreign crack
-    // can only spoof process-originated launches, which a library launch
-    // skips, so without the mask the client would keep announcing the real
-    // appid (breaking the Spacewar-based invite system).
-    std::atomic<bool> spacewarSpoofExpected{false};
-
-    // ---- ShowOnline --------------------------------------------------------
-    // Launch flag `-showonline`: the process is NOT masked as 480 — it stays
-    // fully registered under its real appid, so every client subsystem
-    // (achievements, DLC, cloud, overlay, screenshots, community, rich
-    // presence) behaves exactly like a flag-less launch. Only the outgoing
-    // presence frames are rewritten to Spacewar/480 on the wire by
-    // GamesPlayedModule, so the Steam server still broadcasts "now playing"
-    // to friends. 0 = no -showonline session. Written at SpawnProcess, read
-    // by the wire layer on network threads.
-    std::atomic<steam::AppId> showOnlineAppId{0};
 
     // ---- Presence runtime -------------------------------------------------
     // Wire-level friends/UI presence (GamesPlayed track + PersonaState inject).

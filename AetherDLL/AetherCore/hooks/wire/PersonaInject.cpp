@@ -14,6 +14,7 @@
 #include <vector>
 
 #include "core/AetherCoreState.h"
+#include "hooks/aetheronline/PresenceSession.h"
 #include "core/Constants.h"
 #include "core/Logger.h"
 #include "core/NetPacketAbi.h"
@@ -428,7 +429,7 @@ std::int32_t OnPersonaStateRecv(const WireFrame& frame, std::uint8_t* out, std::
     // friend shares OUR lobby — the local -aetheronline session id (see the
     // lobby guard at its use site, below).
     {
-        const steam::AppId ofReal = g_state.aetherOnlineRealAppId.load();
+        const steam::AppId ofReal = presence::RealAppId();
         const bool legacyGate = settings->presenceAetherOnlinePersonaPatch &&
                                 ofReal != 0 && luadata::IsConfigured(ofReal);
         std::vector<steam::AppId> picsQueue;

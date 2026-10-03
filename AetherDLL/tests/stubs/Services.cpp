@@ -4,6 +4,7 @@ namespace ac {
 TestCoreState g_state;
 namespace log {
 void Write(LogLevel, const char*, const char*, ...) {}
+void WriteOnce(LogLevel, const char*, const char*, ...) {}
 void SetLevel(LogLevel) {}
 LogLevel ParseLevel(const std::string& text, LogLevel fallback) {
     if (text == "debug") return LogLevel::Debug;

@@ -71,6 +71,9 @@ add_library(AetherCore SHARED
     hooks/wire/PacketRouter.cpp
     hooks/wire/AchievementModule.cpp
     hooks/wire/AchievementBackup.cpp
+    hooks/wire/DonorPool.cpp
+    hooks/wire/GamesPlayedFormat.cpp
+    hooks/wire/GamesPlayedRewriter.cpp
     hooks/wire/BackupIo.cpp
     hooks/wire/UserStatsSnapshot.cpp
     hooks/wire/SteamStatsCache.cpp
@@ -80,10 +83,10 @@ add_library(AetherCore SHARED
     hooks/wire/FamilySharingModule.cpp
     hooks/wire/GamesPlayedModule.cpp
     hooks/wire/PersonaInject.cpp
-    hooks/wire/ManifestBridge.cpp
     hooks/wire/ManifestRestore.cpp
     hooks/wire/RichPresenceModule.cpp
     hooks/aetheronline/OnlinePayload.cpp
+    hooks/aetheronline/PresenceSession.cpp
     hooks/aetheronline/CreateProcessHooks.cpp
 
     # Generated protobuf (location set by the root CMakeLists: AC_PROTO_DIR)

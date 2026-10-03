@@ -9,6 +9,7 @@
 #include <string>
 
 #include "core/AetherCoreState.h"
+#include "hooks/aetheronline/PresenceSession.h"
 #include "core/Constants.h"
 #include "core/HookManager.h"
 #include "core/Logger.h"
@@ -341,7 +342,8 @@ bool h_SpawnProcess(void* user, const char* exe, const char* cmdLine, const char
         const char* modeSource = nullptr;
         LaunchMode mode = ResolveLaunchMode(realApp, hasAetherOnlineToken, hasSoToken, &modeSource);
         const bool spoofOnDisk = HasSpacewarSpoofOnDisk(exe, workDir);
-        g_state.spacewarSpoofExpected.store(spoofOnDisk);
+        presence::SessionSnapshot session;
+        session.spacewarSpoofExpected = spoofOnDisk;
         if (mode == LaunchMode::ShowOnline && spoofOnDisk) {
             mode = LaunchMode::None;
             modeSource = "UCO2/OFME on disk; skip showonline";
@@ -393,8 +395,7 @@ bool h_SpawnProcess(void* user, const char* exe, const char* cmdLine, const char
             // AetherOnline: full 480 process mask — a strict superset of what
             // -showonline needs (server presence + friend notification), and
             // the mask is what real multiplayer through a crack requires.
-            g_state.aetherOnlineRealAppId.store(realApp);
-            g_state.showOnlineAppId.store(0);
+            session.realAppId = realApp;
             *gameId = (*gameId & ~constants::kGameIdAppIdMask) | constants::kSpacewarAppId;
             AC_LOG_INFO(kModule,
                         "Masked AppId %u as Spacewar (%u) for AetherOnline (source: %s).",
@@ -409,8 +410,7 @@ bool h_SpawnProcess(void* user, const char* exe, const char* cmdLine, const char
             // flag-less launch. Only the outgoing presence frames are
             // rewritten to Spacewar/480 on the wire (GamesPlayedModule), so
             // friends still get the "now playing" broadcast.
-            g_state.aetherOnlineRealAppId.store(0);
-            g_state.showOnlineAppId.store(realApp);
+            session.showOnlineAppId = realApp;
             AC_LOG_INFO(kModule,
                         "ShowOnline session for app %u: process NOT masked; "
                         "wire-level presence rewrite only (source: %s).",
@@ -421,7 +421,6 @@ bool h_SpawnProcess(void* user, const char* exe, const char* cmdLine, const char
             // payload injection (OnlinePayload::MaybeInject, CreateProcess
             // hooks) and the AetherOnline-only IPC translations inside a process
             // the foreign crack already owns.
-            g_state.showOnlineAppId.store(0);
             *gameId = (*gameId & ~constants::kGameIdAppIdMask) | constants::kSpacewarAppId;
             AC_LOG_INFO(kModule,
                         "Masked AppId %u as Spacewar (%u) for UCO2/OFME launch "
@@ -429,10 +428,10 @@ bool h_SpawnProcess(void* user, const char* exe, const char* cmdLine, const char
                         realApp, constants::kSpacewarAppId, modeSource);
             // Same language fix as AetherOnline: the client reads the 480 ACF.
             SyncLanguageToSpacewar(realApp);
-        } else {
-            g_state.aetherOnlineRealAppId.store(0);
-            g_state.showOnlineAppId.store(0);
         }
+        // Unica pubblicazione atomica di tutti i campi: i lettori non possono
+        // osservare stati intermedi tra i vecchi store separati.
+        presence::Publish(session);
     }
     return o_SpawnProcess(user, exe, childCmd, workDir, gameId, blob, blobSize, launchOption);
 }
@@ -466,7 +465,7 @@ AppId h_GetAppIDForCurrentPipe(void* engine) {
     // friends presence) cannot reappear: the scope is active exclusively on
     // IClientUserStats dispatches.
     if (capture::IsStatsScopeActive()) {
-        const AppId realAppId = g_state.aetherOnlineRealAppId.load(std::memory_order_acquire);
+        const AppId realAppId = presence::RealAppId();
         if (realAppId != 0 && realAppId != constants::kSpacewarAppId &&
             appId == constants::kSpacewarAppId) {
             // Hot path: il gioco chiama GetAppIDForCurrentPipe di continuo;
@@ -501,7 +500,7 @@ std::int64_t h_BuildSpawnEnvBlock(
     std::uint64_t* pOverlayCGameID, void* a6, std::int32_t a7,
     void* a8, void* a9, std::uint32_t a10, char a11)
 {
-    AppId realAppId = g_state.aetherOnlineRealAppId.load();
+    AppId realAppId = presence::RealAppId();
 
     if (realAppId && pOverlayCGameID) {
         AppId overlayAppId = static_cast<AppId>(

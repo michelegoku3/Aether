@@ -190,3 +190,24 @@ with `main.log` when investigating achievement issues.
   re-verified with one stat per hit; negative entries suppress the backup-dir
   walk for 30 s (matches the existing proactive backoff, so newly generated or
   restored manifests are still discovered on the next window).
+
+## Invasive batch 2 (legacy bridge removal, PresenceSession, module splits)
+
+* The legacy GetManifestRequestCode wire-bridge (ManifestBridge +
+  ManifestFetch Submit/Resolve/provider URL templates) is REMOVED: it was
+  unreachable on current Steam builds (zero dispatches across 8+ h of real
+  logs). Manifest acquisition is only local-index + authenticated Hubcap
+  generation. `[manifest_fetch]` TOML keys are deprecated: Settings logs a
+  one-shot WARN and ignores them.
+* Presence state (real app behind the 480 mask, showonline, UCO2/OFME spoof
+  flag) lives in `hooks/aetheronline/PresenceSession` — owned by
+  AetherOnlineHooks::h_SpawnProcess through `Publish()` (single atomic
+  publication of all fields), read by everyone via immutable snapshot or
+  hot-path atomic accessors. `EndSession()` resets the state when Steam
+  reports zero running games, closing the old stale window between game exit
+  and the next SpawnProcess.
+* Module splits (P9): `GamesPlayedFormat` (pure wire-format helpers, unit
+  tested), `GamesPlayedRewriter` (the two presence rewrite passes as one
+  deterministic function), `DonorPool` (donor learning + send/recv
+  correlation for the UserStats spoof). AchievementModule keeps a single
+  `SerializeTo` tail instead of eight duplicated blocks.

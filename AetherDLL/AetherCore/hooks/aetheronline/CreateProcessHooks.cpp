@@ -6,6 +6,7 @@
 #include <string>
 
 #include "core/AetherCoreState.h"
+#include "hooks/aetheronline/PresenceSession.h"
 #include "core/HookManager.h"
 #include "core/Logger.h"
 #include "utils/RemoteInject.h"
@@ -81,7 +82,7 @@ BOOL WINAPI h_CreateProcessW(LPCWSTR appName, LPWSTR cmdLine,
                              LPVOID environment, LPCWSTR currentDir,
                              LPSTARTUPINFOW startupInfo,
                              LPPROCESS_INFORMATION processInfo) {
-    steam::AppId appId = g_state.aetherOnlineRealAppId.load();
+    steam::AppId appId = presence::RealAppId();
     if (appId == 0) {
         return o_CreateProcessW(appName, cmdLine, processAttrs, threadAttrs,
                                 inheritHandles, creationFlags, environment,
@@ -109,7 +110,7 @@ BOOL WINAPI h_CreateProcessAsUserW(HANDLE token, LPCWSTR appName, LPWSTR cmdLine
                                    LPVOID environment, LPCWSTR currentDir,
                                    LPSTARTUPINFOW startupInfo,
                                    LPPROCESS_INFORMATION processInfo) {
-    steam::AppId appId = g_state.aetherOnlineRealAppId.load();
+    steam::AppId appId = presence::RealAppId();
     if (appId == 0) {
         return o_CreateProcessAsUserW(token, appName, cmdLine, processAttrs, threadAttrs,
                                       inheritHandles, creationFlags, environment,
