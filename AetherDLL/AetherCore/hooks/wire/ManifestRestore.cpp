@@ -19,6 +19,7 @@
 #include "core/Logger.h"
 #include "hooks/license/LicenseManager.h"
 #include "hooks/wire/BackupIo.h"
+#include "utils/Paths.h"
 #include "scripting/ScriptEngine.h"
 
 namespace ac::hooks::ManifestRestore {
@@ -32,21 +33,12 @@ constexpr const char* kModule = "ManifestRestore";
 // invece RestoreMissingManifestsForApp(), che può essere richiamato più volte.
 std::atomic<bool> s_started{false};
 
-bool HasExtension(const fs::path& path, const char* wanted) {
-    std::string ext = path.extension().string();
-    std::string expected = wanted;
-    if (ext.size() != expected.size()) return false;
-    for (char& c : ext) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-    for (char& c : expected) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-    return ext == expected;
-}
-
 bool HasManifestExtension(const fs::path& path) {
-    return HasExtension(path, ".manifest");
+    return paths::HasExtension(path, ".manifest");
 }
 
 bool IsLuaPath(const fs::path& path) {
-    return HasExtension(path, ".lua");
+    return paths::HasExtension(path, ".lua");
 }
 
 // Destino considerato "mancante": assente oppure vuoto (0 byte). Un manifest

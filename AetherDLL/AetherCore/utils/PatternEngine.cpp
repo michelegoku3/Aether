@@ -16,6 +16,7 @@
 #include "utils/Hasher.h"
 #include "core/Logger.h"
 #include "utils/PatternDownloader.h"
+#include "utils/SignatureCodec.h"
 
 #pragma comment(lib, "Psapi.lib")
 
@@ -375,41 +376,8 @@ namespace ac::pattern {
             return false;
         }
 
-        // Parses a "AA ?? BB" signature string into bytes + mask. Returns false on
-        // malformed input.
-        bool ParseSignature(const std::string& sig, std::vector<std::uint8_t>& bytes, std::string& mask) {
-            bytes.clear();
-            mask.clear();
-            std::istringstream iss(sig);
-            std::string token;
-            while (iss >> token) {
-                if (token == "??") {
-                    bytes.push_back(0);
-                    mask.push_back('?');
-                }
-                else {
-                    try {
-                        if (token.size() != 2) {
-                            AC_LOG_WARN(kModule, "Bad signature token '%s'.", token.c_str());
-                            return false;
-                        }
-                        std::size_t consumed = 0;
-                        unsigned long value = std::stoul(token, &consumed, 16);
-                        if (consumed != token.size() || value > 0xFFul) {
-                            AC_LOG_WARN(kModule, "Bad signature token '%s'.", token.c_str());
-                            return false;
-                        }
-                        bytes.push_back(static_cast<std::uint8_t>(value));
-                        mask.push_back('x');
-                    }
-                    catch (...) {
-                        AC_LOG_WARN(kModule, "Bad signature token '%s'.", token.c_str());
-                        return false;
-                    }
-                }
-            }
-            return !bytes.empty();
-        }
+        // ParseSignature vive ora in utils/SignatureCodec.h (ac::pattern,
+        // inline, testabile dalla suite "signature" di quickwin_tests).
 
         bool VerifySignature(const std::uint8_t* addr, const std::vector<std::uint8_t>& bytes,
             const std::string& mask) {

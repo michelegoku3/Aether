@@ -96,4 +96,55 @@ inline std::vector<std::string> ExtractQuotedValues(const std::string& content,
     return out;
 }
 
+// Replaces the value of the FIRST `"key" "<value>"` line (case-insensitive
+// key match, same line semantics as ExtractQuotedValues) with newValue,
+// touching only the value span. Returns false when no such line exists —
+// content is left unchanged. Line-aware on purpose: a naive "find the next
+// three quotes" scan breaks when the pair is the last quoted field in the
+// file (real appmanifest_480.acf case), because no third quote follows.
+inline bool ReplaceFirstQuotedValue(std::string& content, const std::string& key,
+                                    const std::string& newValue) {
+    std::size_t lineStart = 0;
+    while (lineStart <= content.size()) {
+        std::size_t lineEnd = content.find('\n', lineStart);
+        if (lineEnd == std::string::npos) lineEnd = content.size();
+        std::size_t stop = lineEnd;
+        if (stop > lineStart && content[stop - 1] == '\r') --stop;   // strip \r
+
+        std::size_t i = lineStart;
+        auto skipWs = [&] { while (i < stop && (content[i] == ' ' || content[i] == '\t')) ++i; };
+        // Reads `"token"` starting at the first non-ws char; sets open/close
+        // quote indices. Returns false when no complete quoted token exists.
+        auto readQuoted = [&](std::size_t& open, std::size_t& close) {
+            skipWs();
+            if (i >= stop || content[i] != '"') return false;
+            open = i++;
+            while (i < stop && content[i] != '"') ++i;
+            if (i >= stop) return false;      // unterminated quote
+            close = i++;
+            return true;
+        };
+
+        std::size_t kOpen = 0, kClose = 0, vOpen = 0, vClose = 0;
+        if (readQuoted(kOpen, kClose)) {
+            const std::string k = content.substr(kOpen + 1, kClose - kOpen - 1);
+            bool same = k.size() == key.size();
+            for (std::size_t j = 0; same && j < k.size(); ++j) {
+                const char a = k[j], b = key[j];
+                same = (a == b) ||
+                       (a >= 'A' && a <= 'Z' && static_cast<char>(a - 'A' + 'a') == b) ||
+                       (b >= 'A' && b <= 'Z' && static_cast<char>(b - 'A' + 'a') == a);
+            }
+            if (same && readQuoted(vOpen, vClose)) {
+                content.replace(vOpen + 1, vClose - vOpen - 1, newValue);
+                return true;
+            }
+        }
+
+        if (lineEnd == content.size()) break;
+        lineStart = lineEnd + 1;
+    }
+    return false;
+}
+
 }  // namespace ac::vdf

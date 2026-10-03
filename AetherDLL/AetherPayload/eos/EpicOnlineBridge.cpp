@@ -127,11 +127,14 @@ void InstallOn(HMODULE eosModule) {
         return;
     }
 
-    if (MH_CreateHook(oLogin, hkLogin, reinterpret_cast<void**>(&oLogin)) != MH_OK ||
-        MH_CreateHook(oIPOAdd, hkIPOAdd, reinterpret_cast<void**>(&oIPOAdd)) != MH_OK ||
-        MH_CreateHook(oCreateLobby, hkCreateLobby, reinterpret_cast<void**>(&oCreateLobby)) != MH_OK ||
-        MH_CreateHook(oJoinLobby, hkJoinLobby, reinterpret_cast<void**>(&oJoinLobby)) != MH_OK ||
-        MH_CreateHook(oJoinLobbyById, hkJoinLobbyById, reinterpret_cast<void**>(&oJoinLobbyById)) != MH_OK) {
+    // Cast espliciti function-pointer -> LPVOID: la conversione implicita è
+    // rifiutata dai compilatori non-MSVC (conditionnally-supported), e questi
+    // erano i FAIL permanenti del syntax-check MinGW.
+    if (MH_CreateHook(reinterpret_cast<void*>(oLogin), reinterpret_cast<void*>(hkLogin), reinterpret_cast<void**>(&oLogin)) != MH_OK ||
+        MH_CreateHook(reinterpret_cast<void*>(oIPOAdd), reinterpret_cast<void*>(hkIPOAdd), reinterpret_cast<void**>(&oIPOAdd)) != MH_OK ||
+        MH_CreateHook(reinterpret_cast<void*>(oCreateLobby), reinterpret_cast<void*>(hkCreateLobby), reinterpret_cast<void**>(&oCreateLobby)) != MH_OK ||
+        MH_CreateHook(reinterpret_cast<void*>(oJoinLobby), reinterpret_cast<void*>(hkJoinLobby), reinterpret_cast<void**>(&oJoinLobby)) != MH_OK ||
+        MH_CreateHook(reinterpret_cast<void*>(oJoinLobbyById), reinterpret_cast<void*>(hkJoinLobbyById), reinterpret_cast<void**>(&oJoinLobbyById)) != MH_OK) {
         payloadlog::Write("EOS hook creation failed.");
         s_installed.store(false);
         return;

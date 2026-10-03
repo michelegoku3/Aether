@@ -142,7 +142,10 @@ void RegisterCreateProcessHooks() {
         return;
     }
 
-    void* cpw = GetProcAddress(k32, "CreateProcessW");
+    // Cast esplicito: FARPROC -> void* è conditionally-supported; senza cast
+    // GCC/MinHook-w64 rifiuta la conversione implicita (il file restava fuori
+    // dal coverage del syntax-check cross-compilatore).
+    void* cpw = reinterpret_cast<void*>(GetProcAddress(k32, "CreateProcessW"));
     if (cpw) {
         g_state.hookManager.RegisterHook("CreateProcessW", cpw,
                                          reinterpret_cast<void**>(&o_CreateProcessW),
@@ -154,7 +157,7 @@ void RegisterCreateProcessHooks() {
         AC_LOG_ERROR(kModule, "CreateProcessW not found in kernel32.dll.");
     }
 
-    void* cpau = GetProcAddress(k32, "CreateProcessAsUserW");
+    void* cpau = reinterpret_cast<void*>(GetProcAddress(k32, "CreateProcessAsUserW"));
     if (cpau) {
         g_state.hookManager.RegisterHook("CreateProcessAsUserW", cpau,
                                          reinterpret_cast<void**>(&o_CreateProcessAsUserW),

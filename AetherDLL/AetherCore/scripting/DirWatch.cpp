@@ -24,6 +24,7 @@
 #include "hooks/license/LicenseManager.h"
 #include "hooks/wire/ManifestRestore.h"
 #include "utils/SmartIdLog.h"
+#include "utils/Paths.h"
 
 namespace fs = std::filesystem;
 
@@ -56,21 +57,12 @@ std::string WideToUtf8(std::wstring_view w) {
     return out;
 }
 
-bool HasExtension(const fs::path& path, const char* wanted) {
-    std::string ext = path.extension().string();
-    std::string expected = wanted;
-    if (ext.size() != expected.size()) return false;
-    for (char& c : ext) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-    for (char& c : expected) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-    return ext == expected;
-}
-
 bool IsLuaPath(const fs::path& path) {
-    return HasExtension(path, ".lua");
+    return paths::HasExtension(path, ".lua");
 }
 
 bool IsAppManifestPath(const fs::path& path) {
-    if (!HasExtension(path, ".acf")) return false;
+    if (!paths::HasExtension(path, ".acf")) return false;
     std::string stem = path.stem().string();
     constexpr std::string_view prefix = "appmanifest_";
     if (stem.size() <= prefix.size()) return false;

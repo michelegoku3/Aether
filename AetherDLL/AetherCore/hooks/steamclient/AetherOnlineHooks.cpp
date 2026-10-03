@@ -4,7 +4,7 @@
 #include <algorithm>
 #include <cstring>
 #include <fstream>
-#include <regex>
+#include <filesystem>
 #include <sstream>
 #include <string>
 
@@ -16,6 +16,8 @@
 #include "scripting/LuaData.h"
 #include "core/SteamTypes.h"
 #include "hooks/ipc/SteamCapture.h"
+#include "hooks/wire/BackupIo.h"
+#include "utils/VdfText.h"
 
 // ---------------------------------------------------------------------------
 // AetherOnline — la modalità online PROPRIA di Aether (payload AetherDLL +
@@ -229,37 +231,42 @@ void SyncLanguageToSpacewar(AppId realAppId) {
     const std::string swAcf   = steamPath + "\\steamapps\\appmanifest_" +
                                 std::to_string(constants::kSpacewarAppId) + ".acf";
 
-    // Read the real game's ACF and extract the language field.
-    std::ifstream realFile(realAcf);
-    if (!realFile.is_open()) {
-        AC_LOG_DEBUG(kModule, "SyncLanguage: cannot open %s.", realAcf.c_str());
-        return;
+    // Language is read with the shared VDF codec (utils/VdfText.h): the ACF
+    // files are VDF text, and this closes the last regex-based VDF parser
+    // (P11). Case-insensitive, unescapes `\\\\` pairs like Steam's own reader.
+    std::string realContent;
+    {
+        std::ifstream realFile(realAcf);
+        if (!realFile.is_open()) {
+            AC_LOG_DEBUG(kModule, "SyncLanguage: cannot open %s.", realAcf.c_str());
+            return;
+        }
+        realContent.assign((std::istreambuf_iterator<char>(realFile)),
+                            std::istreambuf_iterator<char>());
     }
-    std::string realContent((std::istreambuf_iterator<char>(realFile)),
-                             std::istreambuf_iterator<char>());
-    realFile.close();
-
-    // Simple regex to find "language" "value" inside the ACF.
-    // ACF files are small (< 4 KB) so this is efficient enough.
-    std::smatch match;
-    std::regex langRegex(R"re("language"\s+"([^"]+)")re", std::regex::icase);
-    if (!std::regex_search(realContent, match, langRegex)) {
+    const auto languages = vdf::ExtractQuotedValues(realContent, "language");
+    if (languages.empty()) {
         AC_LOG_DEBUG(kModule, "SyncLanguage: no language field in appmanifest_%u.acf.", realAppId);
         return;
     }
-    const std::string language = match[1].str();
+    const std::string language = languages.front();
     if (language.empty()) return;
+    // A value containing quotes/backslashes cannot round-trip through the
+    // hand-written insert below: refuse instead of risking a malformed ACF.
+    if (language.find_first_of("\"\\") != std::string::npos) {
+        AC_LOG_WARN(kModule, "SyncLanguage: language '%s' contains unsupported "
+                             "characters; 480 ACF left untouched.", language.c_str());
+        return;
+    }
 
     AC_LOG_INFO(kModule, "SyncLanguage: app %u language='%s'.", realAppId, language.c_str());
 
-    // Read or create the 480 ACF and update/insert the language field.
     std::string swContent;
     {
         std::ifstream swFile(swAcf);
         if (swFile.is_open()) {
             swContent.assign((std::istreambuf_iterator<char>(swFile)),
                               std::istreambuf_iterator<char>());
-            swFile.close();
         }
     }
 
@@ -272,23 +279,26 @@ void SyncLanguageToSpacewar(AppId realAppId) {
             << "\t\t\"language\"\t\t\"" << language << "\"\n"
             << "\t}\n}\n";
         swContent = oss.str();
-    } else if (std::regex_search(swContent, langRegex)) {
-        // Replace existing language field.
-        swContent = std::regex_replace(swContent,
-            std::regex(R"re("language"\s+"[^"]+")re", std::regex::icase),
-            "\"language\"\t\t\"" + language + "\"");
+    } else if (!vdf::ExtractQuotedValues(swContent, "language").empty()) {
+        // Replace the value of the first "language" "<value>" line with the
+        // shared VDF codec: line-aware, so it also works when the field is
+        // the LAST quoted pair in the file (the real appmanifest_480.acf
+        // case — a raw quote scan wanted a third quote that isn't there).
+        if (!vdf::ReplaceFirstQuotedValue(swContent, "language", language)) {
+            AC_LOG_WARN(kModule, "SyncLanguage: malformed language field in the 480 ACF; file left untouched.");
+            return;
+        }
     } else {
-        // Language field missing — insert it before the last closing brace.
-        // Find "UserConfig" section and add language inside it.
+        // Language field missing — insert it inside UserConfig when present,
+        // else just before the last closing brace.
+        const std::string line = "\n\t\t\"language\"\t\t\"" + language + "\"";
         const auto ucPos = swContent.find("\"UserConfig\"");
         if (ucPos != std::string::npos) {
             const auto bracePos = swContent.find('{', ucPos);
             if (bracePos != std::string::npos) {
-                swContent.insert(bracePos + 1,
-                    "\n\t\t\"language\"\t\t\"" + language + "\"");
+                swContent.insert(bracePos + 1, line);
             }
         } else {
-            // No UserConfig section — add one before the last closing brace.
             const auto lastBrace = swContent.rfind('}');
             if (lastBrace != std::string::npos) {
                 std::ostringstream oss;
@@ -300,16 +310,32 @@ void SyncLanguageToSpacewar(AppId realAppId) {
         }
     }
 
-    // Write the updated 480 ACF.
-    std::ofstream outFile(swAcf, std::ios::trunc);
-    if (outFile.is_open()) {
+    // Atomic write (tmp + rename): a crash mid-write can no longer leave a
+    // corrupted appmanifest_480.acf behind.
+    const std::string tmpPath = swAcf + ".aether-tmp";
+    {
+        std::ofstream outFile(tmpPath, std::ios::trunc);
+        if (!outFile.is_open()) {
+            AC_LOG_WARN(kModule, "SyncLanguage: cannot write %s.", tmpPath.c_str());
+            return;
+        }
         outFile << swContent;
-        outFile.close();
-        AC_LOG_INFO(kModule, "SyncLanguage: wrote language='%s' to appmanifest_480.acf.",
-                    language.c_str());
-    } else {
-        AC_LOG_WARN(kModule, "SyncLanguage: cannot write %s.", swAcf.c_str());
+        outFile.flush();
+        if (!outFile.good()) {
+            outFile.close();
+            DeleteFileA(tmpPath.c_str());
+            AC_LOG_WARN(kModule, "SyncLanguage: write failed for %s.", tmpPath.c_str());
+            return;
+        }
     }
+    if (!backup::io::AtomicReplace(tmpPath, swAcf)) {
+        std::error_code cleanupEc;
+        std::filesystem::remove(tmpPath, cleanupEc);
+        AC_LOG_WARN(kModule, "SyncLanguage: cannot atomically replace appmanifest_480.acf.");
+        return;
+    }
+    AC_LOG_INFO(kModule, "SyncLanguage: wrote language='%s' to appmanifest_480.acf (atomic).",
+                language.c_str());
 }
 
 bool h_SpawnProcess(void* user, const char* exe, const char* cmdLine, const char* workDir,

@@ -39,6 +39,9 @@ AetherDLL/cmake_install.cmake
 AetherDLL/install_manifest.txt
 AetherDLL/compile_commands.json
 
+# Test build directories (quickwin_tests: build/, build-asan/, ...)
+AetherDLL/tests/build*/
+
 # --- General Compiled Files ---
 *.o
 *.obj
