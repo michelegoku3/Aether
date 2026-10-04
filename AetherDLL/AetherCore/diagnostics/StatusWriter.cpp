@@ -4,8 +4,8 @@
 #include <ctime>
 #include "utils/CoalescingWorker.h"
 #include <fstream>
-#include <sstream>
 #include <string>
+#include <vector>
 
 #include "core/AetherCoreState.h"
 #include "hooks/aetheronline/PresenceSession.h"
@@ -14,6 +14,7 @@
 #include "core/HookManager.h"
 #include "utils/IpcSpec.h"
 #include "core/Logger.h"
+#include "utils/JsonWriter.h"
 #include "core/AbiSentinel.h"
 #include "core/NetPacketAbi.h"
 #include "core/StructGuard.h"
@@ -30,31 +31,6 @@ constexpr const char* kModule = "StatusWriter";
 // invokes a joining std::thread destructor. Stop is only called explicitly.
 utils::CoalescingWorker* s_worker = nullptr;
 
-
-// Minimal JSON string escaping. Hook names and SHAs are ASCII, but escaping
-// quotes/backslashes keeps the output valid for any input.
-std::string EscapeJson(const std::string& in) {
-    std::string out;
-    out.reserve(in.size() + 2);
-    for (char c : in) {
-        switch (c) {
-            case '"':  out += "\\\""; break;
-            case '\\': out += "\\\\"; break;
-            case '\n': out += "\\n";  break;
-            case '\r': out += "\\r";  break;
-            case '\t': out += "\\t";  break;
-            default:
-                if (static_cast<unsigned char>(c) < 0x20) {
-                    constexpr char hex[] = "0123456789abcdef";
-                    out += "\\u00";
-                    out += hex[(static_cast<unsigned char>(c) >> 4) & 15];
-                    out += hex[static_cast<unsigned char>(c) & 15];
-                } else out += c;
-                break;
-        }
-    }
-    return out;
-}
 
 bool SaveAtomic(const std::string& path, const std::string& content) {
     const std::string tmp = path + ".tmp";
@@ -77,8 +53,11 @@ bool SaveAtomic(const std::string& path, const std::string& content) {
 }  // namespace
 
 static void WriteSnapshot(std::uint64_t requests) {
+    // I-C: emissione dichiarativa via jsonw::Writer. La punteggiatura JSON
+    // (virgole/indent/newline) vive nel writer, qui c'è solo la lista dei
+    // campi. Il formato resta byte-compatibile con schema_version 9: il
+    // golden test della suite "jsonwriter" lo fissa carattere per carattere.
     const auto settings = Settings::Snapshot();
-    std::ostringstream json;
     const auto diagnostics = diag::Snapshot();
     const auto hooks = g_state.hookManager.Snapshot();
     const auto& installed = hooks.installed;
@@ -102,86 +81,81 @@ static void WriteSnapshot(std::uint64_t requests) {
         }
     }
 
-    json << "{\n";
+    jsonw::Writer w;
     // v4: hooks_missed_list entries carry their reason ("Name (reason)").
     // The field is still a string list, but its CONTENT changed shape, so a
     // consumer that parses hook names has to know (v3 readers keep working).
-    json << "  \"schema_version\": 9,\n";
-    json << "  \"ts\": " << static_cast<long long>(std::time(nullptr)) << ",\n";
+    w.Int64("schema_version", 9);
+    w.Int64("ts", static_cast<long long>(std::time(nullptr)));
 
-    json << "  \"build_id\": \"" << EscapeJson(g_state.buildId) << "\",\n";
-    json << "  \"build_config\": \""
+    w.Str("build_id", g_state.buildId);
+    w.Str("build_config",
 #ifdef AETHERCORE_RELEASE
-         << "Release"
+          "Release"
 #else
-         << "Debug"
+          "Debug"
 #endif
-         << "\",\n";
-    json << "  \"build_time\": \"" << __DATE__ << " " << __TIME__ << "\",\n";
+    );
+    w.Str("build_time", __DATE__ " " __TIME__);
     {
-    std::lock_guard lock(g_state.statusMetadataMutex);
-    json << "  \"diversion_outcome\": \"" << EscapeJson(g_state.diversionOutcome) << "\",\n";
-    json << "  \"steamclient_sha\": \"" << EscapeJson(g_state.steamclientSha) << "\",\n";
-    json << "  \"steamclient_toml_found\": " << (g_state.steamclientTomlFound ? "true" : "false") << ",\n";
-    json << "  \"steamclient_pattern_source\": \"" << EscapeJson(g_state.steamclientPatternSource) << "\",\n";
-    json << "  \"steamui_sha\": \"" << EscapeJson(g_state.steamuiSha) << "\",\n";
-    json << "  \"steamui_toml_found\": " << (g_state.steamuiTomlFound ? "true" : "false") << ",\n";
-    json << "  \"steamui_pattern_source\": \"" << EscapeJson(g_state.steamuiPatternSource) << "\",\n";
+        std::lock_guard lock(g_state.statusMetadataMutex);
+        w.Str("diversion_outcome", g_state.diversionOutcome);
+        w.Str("steamclient_sha", g_state.steamclientSha);
+        w.Bool("steamclient_toml_found", g_state.steamclientTomlFound);
+        w.Str("steamclient_pattern_source", g_state.steamclientPatternSource);
+        w.Str("steamui_sha", g_state.steamuiSha);
+        w.Bool("steamui_toml_found", g_state.steamuiTomlFound);
+        w.Str("steamui_pattern_source", g_state.steamuiPatternSource);
     }
-    json << "  \"steamclient_hook_target\": \""
-         << (g_state.diversionUsesLive.load() ? "live" : "copy") << "\",\n";
-    json << "  \"steamui_redirect_installed\": "
-         << (g_state.steamUiRedirectInstalled.load() ? "true" : "false") << ",\n";
-    json << "  \"steamui_redirect_used\": "
-         << (g_state.steamUiRedirectUsed.load() ? "true" : "false") << ",\n";
-    json << "  \"netpacket_abi_layout\": \"" << abi::netpkt::LayoutName() << "\",\n";
-    json << "  \"netpacket_abi_data_off\": " << abi::netpkt::ResolvedDataOffset() << ",\n";
-    json << "  \"netpacket_abi_resolved\": " << (abi::netpkt::IsResolved() ? "true" : "false") << ",\n";
-    json << "  \"netpacket_abi_probe_attempts\": " << abi::netpkt::ProbeAttempts() << ",\n";
-    json << "  \"netpacket_abi_confirmations\": " << abi::netpkt::ProbeConfirmations() << ",\n";
-    json << "  \"netpacket_abi_write_rejects\": " << abi::netpkt::WriteRejects() << ",\n";
-    json << "  \"netpacket_abi_hint_source\": \"" << abi::netpkt::HintSource() << "\",\n";
-    json << "  \"sentinel_verified_count\": " << abi::sentinel::VerifiedCount() << ",\n";
-    json << "  \"sentinel_rejected_count\": " << abi::sentinel::RejectedCount() << ",\n";
-    json << "  \"abi_struct_rejects\": " << abi::guard::RejectionCount() << ",\n";
-    json << "  \"abi_table_fields_checked\": " << abi::guard::TableFieldsChecked() << ",\n";
-    json << "  \"abi_layout_contradicted\": "
-         << (abi::guard::LayoutContradicted() ? "true" : "false") << ",\n";
+    w.Str("steamclient_hook_target", g_state.diversionUsesLive.load() ? "live" : "copy");
+    w.Bool("steamui_redirect_installed", g_state.steamUiRedirectInstalled.load());
+    w.Bool("steamui_redirect_used", g_state.steamUiRedirectUsed.load());
+    w.Str("netpacket_abi_layout", abi::netpkt::LayoutName());
+    w.UInt64("netpacket_abi_data_off", abi::netpkt::ResolvedDataOffset());
+    w.Bool("netpacket_abi_resolved", abi::netpkt::IsResolved());
+    w.Int64("netpacket_abi_probe_attempts", abi::netpkt::ProbeAttempts());
+    w.Int64("netpacket_abi_confirmations", abi::netpkt::ProbeConfirmations());
+    w.Int64("netpacket_abi_write_rejects", abi::netpkt::WriteRejects());
+    w.Str("netpacket_abi_hint_source", abi::netpkt::HintSource());
+    w.UInt64("sentinel_verified_count", abi::sentinel::VerifiedCount());
+    w.UInt64("sentinel_rejected_count", abi::sentinel::RejectedCount());
+    w.UInt64("abi_struct_rejects", abi::guard::RejectionCount());
+    w.SizeT("abi_table_fields_checked", abi::guard::TableFieldsChecked());
+    w.Bool("abi_layout_contradicted", abi::guard::LayoutContradicted());
     std::size_t benignMisses = 0;
     for (const auto& m : missed) {
         if (IsBenignMiss(m.reason)) ++benignMisses;
     }
-    json << "  \"hooks_installed_count\": " << installed.size() << ",\n";
-    json << "  \"hooks_missed_count\": " << (missed.size() - benignMisses) << ",\n";
-    json << "  \"hooks_alias_count\": " << benignMisses << ",\n";
-    json << "  \"wire_eresult_events\": " << wireEresultEvents << ",\n";
-    json << "  \"wire_access_denied_events\": " << wireAccessDeniedEvents << ",\n";
-    json << "  \"wire_transport_candidate_events\": " << wireTransportCandidateEvents << ",\n";
-    json << "  \"cloud_blocked_events\": " << cloudBlockedEvents << ",\n";
-    json << "  \"package0_captured\": " << (g_state.pPackage0.load() ? "true" : "false") << ",\n";
-    json << "  \"package0_seeded\": " << (g_state.package0Seeded.load() ? "true" : "false") << ",\n";
-    json << "  \"config_store_user_local_captured\": "
-         << (g_state.pConfigStoreUserLocal.load() ? "true" : "false") << ",\n";
-    json << "  \"config_store_cached_app_tickets\": " << credential::CachedConfigStoreTicketCount() << ",\n";
-    json << "  \"lua_files_loaded\": " << luadata::LoadedFileCount() << ",\n";
-    json << "  \"configured_depots\": " << luadata::ConfiguredDepotCount() << ",\n";
-    json << "  \"access_tokens\": " << luadata::AccessTokenCount() << ",\n";
-    json << "  \"manifest_overrides\": " << luadata::ManifestOverrideCount() << ",\n";
-    json << "  \"eticket_backend_configured\": " << (!luadata::EticketUrl().empty() ? "true" : "false") << ",\n";
-    json << "  \"eticket_mint_successes\": " << g_state.eticketFetch.mintSuccessCount.load() << ",\n";
-    json << "  \"eticket_mint_failures\": " << g_state.eticketFetch.mintFailureCount.load() << ",\n";
-    json << "  \"eticket_runtime_cache_entries\": " << eticketfetch::CacheCount() << ",\n";
-    json << "  \"eticket_inflight\": " << eticketfetch::InflightCount() << ",\n";
-    json << "  \"ticket_forge_successes\": " << g_state.ticketForgeSuccessCount.load() << ",\n";
-    json << "  \"ticket_forge_failures\": " << g_state.ticketForgeFailureCount.load() << ",\n";
-    json << "  \"manifest_fetch_production_route\": \"authenticated_hubcap_standalone\",\n";
-    json << "  \"online_payload_present\": "
-         << (GetFileAttributesA(g_state.payloadDllPath.c_str()) != INVALID_FILE_ATTRIBUTES ? "true" : "false") << ",\n";
-    json << "  \"online_payload_injected_pids\": " << hooks::onlinepayload::InjectedPidCount() << ",\n";
-    json << "  \"online_payload_inject_successes\": " << g_state.onlinePayload.injectSuccessCount.load() << ",\n";
-    json << "  \"online_payload_inject_failures\": " << g_state.onlinePayload.injectFailureCount.load() << ",\n";
-    json << "  \"pipewatch_snapshots\": " << pipewatch::SnapshotCount() << ",\n";
-    json << "  \"pipewatch_evictions\": " << pipewatch::EvictionCount() << ",\n";
+    w.SizeT("hooks_installed_count", installed.size());
+    w.SizeT("hooks_missed_count", missed.size() - benignMisses);
+    w.SizeT("hooks_alias_count", benignMisses);
+    w.SizeT("wire_eresult_events", wireEresultEvents);
+    w.SizeT("wire_access_denied_events", wireAccessDeniedEvents);
+    w.SizeT("wire_transport_candidate_events", wireTransportCandidateEvents);
+    w.SizeT("cloud_blocked_events", cloudBlockedEvents);
+    w.Bool("package0_captured", g_state.pPackage0.load() != nullptr);
+    w.Bool("package0_seeded", g_state.package0Seeded.load());
+    w.Bool("config_store_user_local_captured", g_state.pConfigStoreUserLocal.load() != nullptr);
+    w.SizeT("config_store_cached_app_tickets", credential::CachedConfigStoreTicketCount());
+    w.SizeT("lua_files_loaded", luadata::LoadedFileCount());
+    w.SizeT("configured_depots", luadata::ConfiguredDepotCount());
+    w.SizeT("access_tokens", luadata::AccessTokenCount());
+    w.SizeT("manifest_overrides", luadata::ManifestOverrideCount());
+    w.Bool("eticket_backend_configured", !luadata::EticketUrl().empty());
+    w.UInt64("eticket_mint_successes", g_state.eticketFetch.mintSuccessCount.load());
+    w.UInt64("eticket_mint_failures", g_state.eticketFetch.mintFailureCount.load());
+    w.SizeT("eticket_runtime_cache_entries", eticketfetch::CacheCount());
+    w.SizeT("eticket_inflight", eticketfetch::InflightCount());
+    w.UInt64("ticket_forge_successes", g_state.ticketForgeSuccessCount.load());
+    w.UInt64("ticket_forge_failures", g_state.ticketForgeFailureCount.load());
+    w.Str("manifest_fetch_production_route", "authenticated_hubcap_standalone");
+    w.Bool("online_payload_present",
+           GetFileAttributesA(g_state.payloadDllPath.c_str()) != INVALID_FILE_ATTRIBUTES);
+    w.SizeT("online_payload_injected_pids", hooks::onlinepayload::InjectedPidCount());
+    w.UInt64("online_payload_inject_successes", g_state.onlinePayload.injectSuccessCount.load());
+    w.UInt64("online_payload_inject_failures", g_state.onlinePayload.injectFailureCount.load());
+    w.SizeT("pipewatch_snapshots", pipewatch::SnapshotCount());
+    w.SizeT("pipewatch_evictions", pipewatch::EvictionCount());
     // Do not read the maps while the init/retry thread is publishing them.
     const bool ipcLoaded = g_state.ipcSpec.loaded.load();
     std::size_t ipcEntries = 0, withFencepost = 0, withArgc = 0;
@@ -192,77 +166,58 @@ static void WriteSnapshot(std::uint64_t requests) {
             if (spec.argc != 0) ++withArgc;
         }
     }
-    json << "  \"ipc_spec_loaded\": " << (ipcLoaded ? "true" : "false") << ",\n";
-    json << "  \"ipc_spec_entries\": " << ipcEntries << ",\n";
-    json << "  \"ipc_spec_methods_with_fencepost\": " << withFencepost << ",\n";
-    json << "  \"ipc_spec_methods_with_argc\": " << withArgc << ",\n";
+    w.Bool("ipc_spec_loaded", ipcLoaded);
+    w.SizeT("ipc_spec_entries", ipcEntries);
+    w.SizeT("ipc_spec_methods_with_fencepost", withFencepost);
+    w.SizeT("ipc_spec_methods_with_argc", withArgc);
     {
         std::lock_guard<std::mutex> lock(g_state.presence.mutex);
-        json << "  \"presence_playing_appid\": " << g_state.presence.playingAppId << ",\n";
-        json << "  \"presence_self_steamid\": " << g_state.presence.selfSteamId << ",\n";
-        json << "  \"presence_have_template\": "
-             << (g_state.presence.haveSelfTemplate ? "true" : "false") << ",\n";
-        json << "  \"presence_inject_pending\": "
-             << (g_state.presence.injectPending ? "true" : "false") << ",\n";
-        json << "  \"presence_inject_deliveries\": " << g_state.presence.injectDeliverCount
-             << ",\n";
-        json << "  \"presence_inject_build_fails\": " << g_state.presence.injectBuildFailCount
-             << ",\n";
-        json << "  \"presence_gamesplayed_tracks\": " << g_state.presence.gamesPlayedTrackCount
-             << ",\n";
-        json << "  \"presence_extra_info_patches\": " << g_state.presence.extraInfoPatchCount
-             << ",\n";
+        w.UInt64("presence_playing_appid", g_state.presence.playingAppId);
+        w.UInt64("presence_self_steamid", g_state.presence.selfSteamId);
+        w.Bool("presence_have_template", g_state.presence.haveSelfTemplate);
+        w.Bool("presence_inject_pending", g_state.presence.injectPending);
+        w.UInt64("presence_inject_deliveries", g_state.presence.injectDeliverCount);
+        w.UInt64("presence_inject_build_fails", g_state.presence.injectBuildFailCount);
+        w.UInt64("presence_gamesplayed_tracks", g_state.presence.gamesPlayedTrackCount);
+        w.UInt64("presence_extra_info_patches", g_state.presence.extraInfoPatchCount);
     }
-    json << "  \"presence_inject_local\": "
-         << (settings->presenceInjectLocal ? "true" : "false") << ",\n";
-    json << "  \"presence_always_extra_info\": "
-         << (settings->presenceAlwaysExtraInfo ? "true" : "false") << ",\n";
-    json << "  \"presence_showonline_broadcast\": "
-         << (settings->presenceShowOnlineBroadcast ? "true" : "false") << ",\n";
-    json << "  \"presence_friend_appid_from_name\": "
-         << (settings->presenceFriendAppIdFromName ? "true" : "false") << ",\n";
-    json << "  \"aetheronline_real_appid\": " << presence::RealAppId() << ",\n";
-    json << "  \"showonline_appid\": " << presence::ShowOnlineAppId() << ",\n";
-    json << "  \"license_reload_forced_count\": " << g_state.licenseReloadForcedCount.load() << ",\n";
-    json << "  \"license_reload_direct_count\": " << g_state.licenseReloadDirectCount.load() << ",\n";
-    json << "  \"gamename_cache_size\": " << g_state.gameName.nameCache.Size() << ",\n";
-    json << "  \"gamename_cache_hits\": " << g_state.gameName.nameCache.HitCount() << ",\n";
-    json << "  \"gamename_cache_misses\": " << g_state.gameName.nameCache.MissCount() << ",\n";
-    json << "  \"gamename_cache_evictions\": " << g_state.gameName.nameCache.EvictionCount() << ",\n";
-    json << "  \"gamename_cache_negative\": " << g_state.gameName.nameCache.NegativeCount() << ",\n";
+    w.Bool("presence_inject_local", settings->presenceInjectLocal);
+    w.Bool("presence_always_extra_info", settings->presenceAlwaysExtraInfo);
+    w.Bool("presence_showonline_broadcast", settings->presenceShowOnlineBroadcast);
+    w.Bool("presence_friend_appid_from_name", settings->presenceFriendAppIdFromName);
+    w.UInt64("aetheronline_real_appid", presence::RealAppId());
+    w.UInt64("showonline_appid", presence::ShowOnlineAppId());
+    w.UInt64("license_reload_forced_count", g_state.licenseReloadForcedCount.load());
+    w.UInt64("license_reload_direct_count", g_state.licenseReloadDirectCount.load());
+    w.SizeT("gamename_cache_size", g_state.gameName.nameCache.Size());
+    w.SizeT("gamename_cache_hits", g_state.gameName.nameCache.HitCount());
+    w.SizeT("gamename_cache_misses", g_state.gameName.nameCache.MissCount());
+    w.SizeT("gamename_cache_evictions", g_state.gameName.nameCache.EvictionCount());
+    w.SizeT("gamename_cache_negative", g_state.gameName.nameCache.NegativeCount());
 
-    json << "  \"hooks_installed_list\": [";
-    for (std::size_t i = 0; i < installed.size(); ++i) {
-        json << (i == 0 ? "\n    " : ",\n    ") << '"' << EscapeJson(installed[i]) << '"';
-    }
-    json << (installed.empty() ? "],\n" : "\n  ],\n");
+    w.StrArray("hooks_installed_list", installed);
 
     // Each entry carries its reason ("Name (address collision with another
-    // hook)"): the status file is the only place a hook miss survives after the
-    // log rotates, and "missed" alone could not distinguish a pattern that the
-    // build does not have from a hook that was deliberately not applied.
-    json << "  \"hooks_missed_list\": [";
-    for (std::size_t i = 0; i < missed.size(); ++i) {
-        json << (i == 0 ? "\n    " : ",\n    ")
-             << '"' << EscapeJson(MissedHookText(missed[i].name, missed[i].reason,
-                                                 missed[i].detail))
-             << '"';
+    // hook)"): the status file is the only place a hook miss survives after
+    // the log rotates, and "missed" alone could not distinguish a pattern
+    // that the build does not have from a hook deliberately not applied.
+    std::vector<std::string> missedTexts;
+    missedTexts.reserve(missed.size());
+    for (const auto& m : missed) {
+        missedTexts.push_back(MissedHookText(m.name, m.reason, m.detail));
     }
-    json << (missed.empty() ? "],\n" : "\n  ],\n");
+    w.StrArray("hooks_missed_list", missedTexts);
 
-    json << "  \"diagnostics\": [";
-    for (std::size_t i = 0; i < diagnostics.size(); ++i) {
-        const auto& d = diagnostics[i];
-        json << (i == 0 ? "\n    " : ",\n    ")
-             << "{\"ts_ms\": " << d.timestampMs
-             << ", \"category\": \"" << EscapeJson(d.category)
-             << "\", \"detail\": \"" << EscapeJson(d.detail) << "\"}";
+    w.ObjectArray("diagnostics");
+    for (const auto& d : diagnostics) {
+        w.RawObject("{\"ts_ms\": " + std::to_string(d.timestampMs) +
+                    ", \"category\": \"" + jsonw::Escape(d.category) +
+                    "\", \"detail\": \"" + jsonw::Escape(d.detail) + "\"}");
     }
-    json << (diagnostics.empty() ? "]\n" : "\n  ]\n");
-    json << "}\n";
+    w.ArrayEnd();
 
     const std::string path = g_state.aetherCoreDir + "\\status.json";
-    if (SaveAtomic(path, json.str())) {
+    if (SaveAtomic(path, w.Finish())) {
         AC_LOG_DEBUG(kModule, "Wrote %s (installed=%zu, missed=%zu, coalesced_requests=%llu).",
                     path.c_str(), installed.size(), missed.size(),
                     static_cast<unsigned long long>(requests));

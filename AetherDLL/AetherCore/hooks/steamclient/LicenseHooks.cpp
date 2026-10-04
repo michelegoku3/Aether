@@ -6,6 +6,7 @@
 #include "core/Constants.h"
 #include "core/HookManager.h"
 #include "core/Logger.h"
+#include "core/Workers.h"
 #include "scripting/LuaData.h"
 #include "core/SteamTypes.h"
 #include "utils/PatternEngine.h"
@@ -15,7 +16,6 @@
 #include <cstdint>
 #include <mutex>
 #include <string>
-#include <thread>
 #include <unordered_set>
 
 namespace ac::hooks {
@@ -51,8 +51,7 @@ namespace ac::hooks {
         std::mutex s_cdKeyMutex;
         std::unordered_set<AppId> s_cdKeySuppressed;
         std::size_t s_cdKeyLastLoggedSize = 0;
-        std::thread s_cdKeyThread;
-        std::atomic<bool> s_cdKeyStop{false};
+        // I-A: il thread gira in workers::StartWorker; stop+join centralizzati.
         std::atomic<bool> s_cdKeyStarted{false};
         std::atomic<std::int64_t> s_cdKeyDeadline{0};
 
@@ -73,9 +72,9 @@ namespace ac::hooks {
                         unique);
         }
 
-        void CdKeySummaryThread() {
+        void CdKeySummaryWorker(std::atomic<bool>& stop) {
             for (;;) {
-                if (s_cdKeyStop.load(std::memory_order_relaxed)) return;
+                if (stop.load(std::memory_order_relaxed)) return;
                 const std::int64_t deadline = s_cdKeyDeadline.load(std::memory_order_relaxed);
                 if (deadline != 0 && CdKeySteadyNowMs() >= deadline) {
                     s_cdKeyDeadline.store(0, std::memory_order_relaxed);
@@ -90,14 +89,18 @@ namespace ac::hooks {
                                   std::memory_order_relaxed);
             bool expected = false;
             if (s_cdKeyStarted.compare_exchange_strong(expected, true)) {
-                s_cdKeyStop.store(false, std::memory_order_relaxed);
-                s_cdKeyThread = std::thread(CdKeySummaryThread);
+                if (!workers::StartWorker("cdkey_summary", CdKeySummaryWorker)) {
+                    s_cdKeyStarted.store(false, std::memory_order_relaxed);
+                    AC_LOG_ERROR(kModule, "Could not start the CD-key summary worker; "
+                                          "suppression summary will not be logged.");
+                }
             }
         }
 
         void StopCdKeySummary() {
-            s_cdKeyStop.store(true, std::memory_order_relaxed);
-            if (s_cdKeyThread.joinable()) s_cdKeyThread.join();
+            // I-A: stop+join avvengono dentro workers::Shutdown() (chiamato
+            // prima di ShutdownLicenseHooks in dllmain).
+            AC_LOG_DEBUG(kModule, "CD-key summary stop requested; join handled by workers::Shutdown.");
         }
 
         void RecordCdKeySuppressed(AppId app) {

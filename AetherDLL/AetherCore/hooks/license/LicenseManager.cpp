@@ -5,7 +5,6 @@
 #include <limits>
 #include <mutex>
 #include <string>
-#include <thread>
 #include <unordered_set>
 #include <vector>
 
@@ -13,6 +12,7 @@
 #include "core/Constants.h"
 #include "core/Logger.h"
 #include "core/StructGuard.h"
+#include "core/Workers.h"
 #include "hooks/steamclient/OwnershipHooks.h"
 #include "scripting/LuaData.h"
 #include "utils/PatternEngine.h"
@@ -215,14 +215,12 @@ namespace ac::hooks::LicenseManager {
         // usable yet — so a dedicated thread re-attempts the top-up on a
         // throttled cadence until the seed completes or the budget is spent.
         //
-        // The thread is module plumbing (ARCHITECTURE.md §allowed-exceptions
-        // #2: private lifecycle of a service module), so its control block is
-        // module-local, not AetherCoreState. It calls the existing
-        // DoStartupInjection() (idempotent, owns s_packageMutationMutex) and
-        // observes the shared g_state.package0Seeded atomic.
+        // Il thread gira nell'infrastruttura workers::StartWorker (I-A): il
+        // registry centrale fa stop+join durante workers::Shutdown() con log
+        // espliciti; qui resta solo il guard "già avviato". Il corpo chiama il
+        // solito DoStartupInjection() (idempotente, possiede
+        // s_packageMutationMutex) e osserva g_state.package0Seeded.
         // -------------------------------------------------------------------
-        std::thread s_retryThread;
-        std::atomic<bool> s_retryStop{false};
         std::atomic<bool> s_retryStarted{false};
 
         // Marks the startup-retry idle so a later LicenseManager::Init (e.g.
@@ -232,12 +230,12 @@ namespace ac::hooks::LicenseManager {
             s_retryStarted.store(false, std::memory_order_relaxed);
         }
 
-        void StartupRetryThread() {
+        void StartupRetryWorker(std::atomic<bool>& stop) {
             // The budget is time-based, not attempt-based: it must expire even
             // when package 0 never becomes ready (e.g. Steam never loads it),
             // otherwise the thread would spin forever waiting.
             for (int attempts = 0; attempts < constants::kPackageRetryMaxAttempts; ++attempts) {
-                if (s_retryStop.load(std::memory_order_relaxed)) {
+                if (stop.load(std::memory_order_relaxed)) {
                     MarkRetryIdle();
                     return;
                 }
@@ -277,7 +275,7 @@ namespace ac::hooks::LicenseManager {
                 // Sleep the interval in 10 ms steps so shutdown stays snappy.
                 constexpr int kTickMs = 10;
                 for (int elapsed = 0; elapsed < constants::kPackageRetryIntervalMs &&
-                                    !s_retryStop.load(std::memory_order_relaxed);
+                                    !stop.load(std::memory_order_relaxed);
                      elapsed += kTickMs) {
                     Sleep(kTickMs);
                 }
@@ -291,13 +289,20 @@ namespace ac::hooks::LicenseManager {
         void StartStartupRetry() {
             bool expected = false;
             if (!s_retryStarted.compare_exchange_strong(expected, true)) return;
-            s_retryStop.store(false, std::memory_order_relaxed);
-            s_retryThread = std::thread(StartupRetryThread);
+            if (!workers::StartWorker("license_package0_retry", StartupRetryWorker)) {
+                s_retryStarted.store(false, std::memory_order_relaxed);
+                AC_LOG_ERROR(kModule, "Could not start the package-0 startup retry worker; "
+                                      "top-up relies on LoadPackage/MarkLicenseAsChanged.");
+            }
         }
 
         void StopStartupRetry() {
-            s_retryStop.store(true, std::memory_order_relaxed);
-            if (s_retryThread.joinable()) s_retryThread.join();
+            // I-A: il join avviene dentro workers::Shutdown() (chiamato PRIMA
+            // di LicenseManager::Shutdown in dllmain), quindi qui non resta
+            // che tracciare la richiesta. MarkRetryIdle consente un nuovo
+            // retry con budget pieno se Init viene rieseguito.
+            MarkRetryIdle();
+            AC_LOG_DEBUG(kModule, "Startup retry stop requested; join handled by workers::Shutdown.");
         }
 
     }  // namespace

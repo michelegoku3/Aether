@@ -280,11 +280,29 @@ void SyncLanguageToSpacewar(AppId realAppId) {
             << "\t}\n}\n";
         swContent = oss.str();
     } else if (!vdf::ExtractQuotedValues(swContent, "language").empty()) {
-        // Replace the value of the first "language" "<value>" line with the
-        // shared VDF codec: line-aware, so it also works when the field is
-        // the LAST quoted pair in the file (the real appmanifest_480.acf
-        // case — a raw quote scan wanted a third quote that isn't there).
-        if (!vdf::ReplaceFirstQuotedValue(swContent, "language", language)) {
+        // Replace the value of the first "language" "<value>" pair.
+        // Local scan instead of regex: find the quoted key (case-insensitive),
+        // then the quoted value after it, and swap only the value span.
+        const std::string needle = "\"language\"";
+        std::size_t keyPos = std::string::npos;
+        for (std::size_t pos = 0; pos + needle.size() <= swContent.size(); ++pos) {
+            bool same = true;
+            for (std::size_t i = 0; same && i < needle.size(); ++i) {
+                const char a = swContent[pos + i], b = needle[i];
+                same = (a == b) ||
+                       (a >= 'A' && a <= 'Z' && static_cast<char>(a - 'A' + 'a') == b);
+            }
+            if (same) { keyPos = pos; break; }
+        }
+        const std::size_t vOpen = keyPos == std::string::npos ? std::string::npos
+                                  : swContent.find('"', keyPos + needle.size());
+        const std::size_t vStart = vOpen == std::string::npos ? std::string::npos
+                                   : swContent.find('"', vOpen + 1);
+        const std::size_t vEnd = vStart == std::string::npos ? std::string::npos
+                                 : swContent.find('"', vStart + 1);
+        if (vStart != std::string::npos && vEnd != std::string::npos) {
+            swContent.replace(vStart + 1, vEnd - vStart - 1, language);
+        } else {
             AC_LOG_WARN(kModule, "SyncLanguage: malformed language field in the 480 ACF; file left untouched.");
             return;
         }
