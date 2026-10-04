@@ -7,7 +7,6 @@
 #include <mutex>
 #include <sstream>
 #include <string>
-#include <thread>
 #include <unordered_set>
 #include <vector>
 
@@ -17,6 +16,7 @@
 #include "core/HookManager.h"
 #include "hooks/license/LicenseManager.h"
 #include "core/Logger.h"
+#include "core/Workers.h"
 #include "core/StructGuard.h"
 #include "scripting/LuaData.h"
 #include "core/SteamTypes.h"
@@ -113,8 +113,7 @@ namespace ac::hooks {
         // ---------------------------------------------------------------------------
         std::mutex s_unlockMutex;
         std::unordered_set<AppId> s_unlockedAppIds;
-        std::thread s_summaryThread;
-        std::atomic<bool> s_summaryStop{ false };
+        // I-A: il thread gira in workers::StartWorker; stop+join centralizzati.
         std::atomic<bool> s_summaryStarted{ false };
         std::atomic<std::int64_t> s_summaryDeadline{ 0 };
         // Last emitted outcome fingerprint: "per-file missing list" as a stable string.
@@ -216,9 +215,9 @@ namespace ac::hooks {
                 unlockedTotal, expectedTotal, files);
         }
 
-        void UnlockSummaryThread() {
+        void UnlockSummaryWorker(std::atomic<bool>& stop) {
             for (;;) {
-                if (s_summaryStop.load(std::memory_order_relaxed)) return;
+                if (stop.load(std::memory_order_relaxed)) return;
                 const std::int64_t deadline = s_summaryDeadline.load(std::memory_order_relaxed);
                 if (deadline != 0 && SteadyNowMs() >= deadline) {
                     s_summaryDeadline.store(0, std::memory_order_relaxed);
@@ -233,14 +232,18 @@ namespace ac::hooks {
                 std::memory_order_relaxed);
             bool expected = false;
             if (s_summaryStarted.compare_exchange_strong(expected, true)) {
-                s_summaryStop.store(false, std::memory_order_relaxed);
-                s_summaryThread = std::thread(UnlockSummaryThread);
+                if (!workers::StartWorker("unlock_summary", UnlockSummaryWorker)) {
+                    s_summaryStarted.store(false, std::memory_order_relaxed);
+                    AC_LOG_ERROR(kModule, "Could not start the unlock summary worker; "
+                                          "ownership spoofing summary will not be logged.");
+                }
             }
         }
 
         void StopUnlockSummary() {
-            s_summaryStop.store(true, std::memory_order_relaxed);
-            if (s_summaryThread.joinable()) s_summaryThread.join();
+            // I-A: stop+join avvengono dentro workers::Shutdown() (chiamato
+            // prima di ShutdownOwnershipHooks in dllmain).
+            AC_LOG_DEBUG(kModule, "Unlock summary stop requested; join handled by workers::Shutdown.");
         }
 
         void RecordUnlocked(AppId app) {

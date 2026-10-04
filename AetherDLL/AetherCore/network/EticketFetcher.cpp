@@ -1,13 +1,13 @@
 #include "pch.h"
 #include "network/EticketFetcher.h"
 
+#include <chrono>
 #include <condition_variable>
 #include <deque>
 #include <mutex>
 #include <optional>
 #include <span>
 #include <string>
-#include <thread>
 #include <unordered_set>
 #include <vector>
 
@@ -15,6 +15,7 @@
 #include "credentials/CredentialStore.h"
 #include "credentials/HexCodec.h"
 #include "core/Logger.h"
+#include "core/Workers.h"
 #include "scripting/LuaData.h"
 #include "network/RuntimeHttp.h"
 #include "utils/JsonStringField.h"
@@ -36,8 +37,9 @@ std::mutex s_mutex;
 std::condition_variable s_cv;
 std::deque<MintKey> s_queue;
 std::unordered_set<MintKey, MintKeyHash> s_inflight;
-std::thread s_worker;
-std::atomic<bool> s_stop{false};
+// I-A: il worker gira in workers::StartWorker. Il wait ha comunque un timeout
+// (100 ms) perché workers::Shutdown imposta il flag di stop ma NON notifica
+// questa cv: senza timeout il join centralizzato deadlockerebbe.
 std::atomic<bool> s_started{false};
 
 // The synchronous mint logic (HTTP + parse + persist). Only ever called from
@@ -88,13 +90,21 @@ std::optional<TicketPair> MintSync(steam::AppId appId, const std::string& nonceH
     return pair;
 }
 
-void WorkerMain() {
+void WorkerMain(std::atomic<bool>& stop) {
     for (;;) {
         MintKey key;
         {
             std::unique_lock<std::mutex> lock(s_mutex);
-            s_cv.wait(lock, [] { return s_stop.load(std::memory_order_relaxed) || !s_queue.empty(); });
-            if (s_stop.load(std::memory_order_relaxed)) return;
+            // wait_for (non wait): lo stop arriva dal flag del registry senza
+            // notify su s_cv; il timeout garantisce il risveglio entro 100 ms.
+            if (!s_cv.wait_for(lock, std::chrono::milliseconds(100),
+                               [&stop] { return stop.load(std::memory_order_relaxed) ||
+                                                !s_queue.empty(); })) {
+                if (stop.load(std::memory_order_relaxed)) return;
+                continue;   // timeout a vuoto: ricontrolla stop/coda
+            }
+            if (stop.load(std::memory_order_relaxed)) return;
+            if (s_queue.empty()) continue;   // sveglia spuria/notifica tardiva
             key = std::move(s_queue.front());
             s_queue.pop_front();
         }
@@ -120,8 +130,11 @@ void WorkerMain() {
 void EnsureWorkerStarted() {
     bool expected = false;
     if (s_started.compare_exchange_strong(expected, true)) {
-        s_stop.store(false, std::memory_order_relaxed);
-        s_worker = std::thread(WorkerMain);
+        if (!workers::StartWorker("eticket_mint", WorkerMain)) {
+            s_started.store(false, std::memory_order_relaxed);
+            AC_LOG_ERROR(kModule, "Could not start the eticket mint worker; "
+                                  "ticket minting is disabled for this session.");
+        }
     }
 }
 
@@ -163,14 +176,19 @@ std::size_t CacheCount() {
 }
 
 void Shutdown() {
+    // I-A: stop+join del worker sono già avvenuti in workers::Shutdown()
+    // (chiamato prima di eticketfetch::Shutdown in dllmain). Qui resta la
+    // pulizia dello stato: coda e inflight non devono sopravvivere.
+    std::size_t dropped = 0;
     {
         std::lock_guard<std::mutex> lock(s_mutex);
-        s_stop.store(true, std::memory_order_relaxed);
+        dropped = s_queue.size();
         s_queue.clear();
         s_inflight.clear();
     }
     s_cv.notify_all();
-    if (s_worker.joinable()) s_worker.join();
+    AC_LOG_INFO(kModule, "Shutdown: mint worker already joined by workers; dropped %zu queued request(s).",
+                dropped);
 }
 
 }  // namespace ac::eticketfetch

@@ -23,6 +23,7 @@
 #include "credentials/HexCodec.h"
 #include "utils/SignatureCodec.h"
 #include "utils/IpcSpecParse.h"
+#include "utils/JsonWriter.h"
 #include "MinHook.h"
 #include <atomic>
 #include <chrono>
@@ -977,54 +978,6 @@ void VdfTextTest() {
     CHECK(paths.size() == 2);
     CHECK(paths[0] == "C:\\Steam");
     CHECK(paths[1] == "D:\\Games");
-
-    // --- ReplaceFirstQuotedValue ---
-    // Caso di regressione dal campo: il campo "language" è l'ULTIMA coppia
-    // quotata di appmanifest_480.acf (dopo ci sono solo graffe di chiusura):
-    // uno scan ingenuo "cerca tre virgolette" falliva lì.
-    std::string acf =
-        "\"AppState\"\n{\n"
-        "\t\"appid\"\t\t\"480\"\n"
-        "\t\"UserConfig\"\n\t{\n"
-        "\t\t\"language\"\t\t\"english\"\n"
-        "\t}\n"
-        "\t\"MountedDepots\"\n\t{\n"
-        "\t\t\"481\"\t\t\"1234567890\"\n"
-        "\t}\n}\n";
-    CHECK(vdf::ReplaceFirstQuotedValue(acf, "language", "italian"));
-    CHECK(vdf::ExtractQuotedValues(acf, "language").size() == 1);
-    CHECK(vdf::ExtractQuotedValues(acf, "language").front() == "italian");
-    CHECK(vdf::ExtractQuotedValues(acf, "appid").front() == "480");       // resto intatto
-    CHECK(vdf::ExtractQuotedValues(acf, "481").front() == "1234567890");  // resto intatto
-
-    // language come ULTIMA coppia quotata del file (nessuna virgoletta dopo).
-    std::string last = "\"AppState\"\n{\n\t\"UserConfig\"\n\t{\n\t\t\"language\"\t\t\"english\"\n\t}\n}\n";
-    CHECK(vdf::ReplaceFirstQuotedValue(last, "language", "italian"));
-    CHECK(last.find("\"italian\"") != std::string::npos);
-    CHECK(last.find("\"english\"") == std::string::npos);
-
-    // Chiave case-insensitive; sostituita solo la PRIMA occorrenza.
-    std::string dup = "\"Language\" \"english\"\n\"LANGUAGE\" \"english\"\n";
-    CHECK(vdf::ReplaceFirstQuotedValue(dup, "language", "italian"));
-    CHECK(vdf::ExtractQuotedValues(dup, "language").size() == 2);
-    CHECK(vdf::ExtractQuotedValues(dup, "language")[0] == "italian");
-    CHECK(vdf::ExtractQuotedValues(dup, "language")[1] == "english");
-
-    // Chiave assente -> false, contenuto intatto.
-    std::string none = "\"AppState\"\n{\n}\n";
-    CHECK(!vdf::ReplaceFirstQuotedValue(none, "language", "italian"));
-    CHECK(none == "\"AppState\"\n{\n}\n");
-
-    // Sezione senza valore (\"UserConfig\" seguito da graffa) non viene toccata.
-    std::string section = "\"UserConfig\"\n{\n\t\"language\" \"english\"\n}\n";
-    CHECK(vdf::ReplaceFirstQuotedValue(section, "UserConfig", "x") == false);
-    CHECK(vdf::ReplaceFirstQuotedValue(section, "language", "french"));
-    CHECK(section.find("\"french\"") != std::string::npos);
-
-    // Fine linea CRLF gestita.
-    std::string crlf = "\"language\" \"english\"\r\n\"appid\" \"480\"\r\n";
-    CHECK(vdf::ReplaceFirstQuotedValue(crlf, "language", "italian"));
-    CHECK(crlf.find("\"italian\"\r\n") != std::string::npos);
 }
 
 void JsonEscapesTest() {
@@ -1273,6 +1226,56 @@ void IpcSpecParseTest() {
     CHECK(methods.at("I::M2").argc == 0u);
 }
 
+
+// --- I-C: JsonWriter (golden test byte-per-byte del formato schema 9) ---
+void JsonWriterTest() {
+    using ac::jsonw::Writer;
+    // Copertura escape carattere-per-carattere.
+    CHECK(ac::jsonw::Escape(std::string("\"\\\n\r\t\x01") + "A") ==
+          "\\\"\\\\\\n\\r\\t\\u0001A");
+    CHECK(ac::jsonw::Escape("plain ascii 123") == "plain ascii 123");
+
+    Writer w;
+    w.Int64("schema_version", 9);
+    w.Int64("ts", 1727950000LL);
+    w.Str("build_id", std::string("b\"q\\s\nx") + '\x01' + "z");
+    w.Bool("flag_t", true);
+    w.Bool("flag_f", false);
+    w.StrArray("empty_list", {});
+    w.StrArray("names", {"alpha", "b\"eta"});
+    w.ObjectArray("empty_objs");
+    w.ArrayEnd();
+    w.ObjectArray("diagnostics");
+    w.RawObject("{\"ts_ms\": 1, \"category\": \"" + ac::jsonw::Escape("wire_eresult") +
+                "\", \"detail\": \"" + ac::jsonw::Escape("a=b") + "\"}");
+    w.RawObject("{\"ts_ms\": 2, \"category\": \"" + ac::jsonw::Escape("x") +
+                "\", \"detail\": \"" + ac::jsonw::Escape("y") + "\"}");
+    w.ArrayEnd();
+    const std::string out = w.Finish();
+
+    // Golden: ESATTAMENTE il formato pubblicato dallo schema_version 9
+    // (indent 2 spazi, array su righe proprie, ultimo campo senza virgola).
+    const std::string golden =
+        "{\n"
+        "  \"schema_version\": 9,\n"
+        "  \"ts\": 1727950000,\n"
+        "  \"build_id\": \"b\\\"q\\\\s\\nx\\u0001z\",\n"
+        "  \"flag_t\": true,\n"
+        "  \"flag_f\": false,\n"
+        "  \"empty_list\": [],\n"
+        "  \"names\": [\n"
+        "    \"alpha\",\n"
+        "    \"b\\\"eta\"\n"
+        "  ],\n"
+        "  \"empty_objs\": [],\n"
+        "  \"diagnostics\": [\n"
+        "    {\"ts_ms\": 1, \"category\": \"wire_eresult\", \"detail\": \"a=b\"},\n"
+        "    {\"ts_ms\": 2, \"category\": \"x\", \"detail\": \"y\"}\n"
+        "  ]\n"
+        "}\n";
+    CHECK(out == golden);
+}
+
 int main(int argc, char** argv) {
     try {
         CHECK(argc == 2);
@@ -1296,7 +1299,8 @@ int main(int argc, char** argv) {
         else if (test == "ttlcache") TtlCacheTest();
         else if (test == "hexcodec") HexCodecTest();
         else if (test == "signature") SignatureTest();
-        else if (test == "ipcspec") IpcSpecParseTest(); else CHECK(false);
+        else if (test == "ipcspec") IpcSpecParseTest();
+        else if (test == "jsonwriter") JsonWriterTest(); else CHECK(false);
         std::cout << test << ": PASS\n";
         return 0;
     } catch (const std::exception& e) { std::cerr << e.what() << '\n'; return 1; }

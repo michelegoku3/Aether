@@ -254,6 +254,301 @@ bool BuildInjectLocked(steam::AppId appId) {
 
 }  // namespace
 
+// ---------------------------------------------------------------------------
+// I-B: OnPersonaStateRecv è orchestrata da helper dedicati. Contratto
+// threading degli static usati dagli helper (documentato e fatto rispettare):
+//   * s_lastServerApp ........ atomico lock-free (solo DiagServerTruth).
+//   * s_friendDumpMutex ...... protegge s_friendState (flight-recorder diff);
+//                              toccata solo in DiagServerTruth e solo con
+//                              LogLevel::Info attivo.
+//   * s_diagFriendsMutex ..... protegge s_diagFriends (one-shot DIAG per amico
+//                              mascherato). PRIMA era uno static function-local
+//                              SENZA mutex: questo split chiude il buco.
+//   * g_selfLobby ............ atomico relaxed; scritto da DiagServerTruth e
+//                              letto da RecoverMaskedFriends (l'ordine tra le
+//                              due è vincolante: diag PRIMA del recovery).
+//   * CacheSelfTemplateLocked/PatchSelfLocked vanno chiamate SOLO tenendo
+//     g_state.presence.mutex; FillSelfGameName/DiagServerTruth/
+//     RecoverMaskedFriends NON lo tengono (gamename ha il suo lock interno).
+// ---------------------------------------------------------------------------
+
+std::atomic<std::uint32_t> s_lastServerApp{0xFFFFFFFFu};
+std::mutex s_friendDumpMutex;
+std::unordered_map<std::uint64_t, std::string> s_friendState;
+std::mutex s_diagFriendsMutex;
+std::unordered_set<std::uint64_t> s_diagFriends;
+
+namespace {
+
+// Caches the SELF persona template (raw frame bytes, pre-patch) whenever a
+// push includes our own friend entry. Caller MUST hold g_state.presence.mutex.
+void CacheSelfTemplateLocked(CMsgClientPersonaState& msg, const WireFrame& frame,
+                             std::uint64_t selfId) {
+    auto& pr = g_state.presence;
+    CMsgClientPersonaState::Friend* self = FindSelf(msg, selfId);
+    if (self && frame.headerLen <= constants::kWireMaxHeaderBytes &&
+        frame.bodyLen <= constants::kWireMaxBodyBytes) {
+        pr.selfHdr.assign(frame.header, frame.header + frame.headerLen);
+        pr.selfBody.assign(frame.body, frame.body + frame.bodyLen);
+        pr.haveSelfTemplate = !pr.selfHdr.empty() && !pr.selfBody.empty();
+    }
+}
+
+// In-place self patch so periodic server pushes cannot wipe the inject.
+// Caller MUST hold g_state.presence.mutex. Returns true when patched.
+bool PatchSelfLocked(CMsgClientPersonaState& msg, std::uint64_t selfId, steam::AppId playing) {
+    auto& pr = g_state.presence;
+    CMsgClientPersonaState::Friend* self = FindSelf(msg, selfId);
+    if (!self) return false;
+
+    // Copy KVs under the lock; the name lookup happens later, off-lock.
+    std::vector<std::pair<std::string, std::string>> kvsCopy;
+    auto it = pr.rpKvs.find(playing);
+    if (it != pr.rpKvs.end()) kvsCopy = it->second;
+
+    self->set_game_played_app_id(playing);
+    self->set_gameid(static_cast<std::uint64_t>(playing));
+    self->clear_rich_presence();
+    if (!kvsCopy.empty()) {
+        for (const auto& kv : kvsCopy) {
+            auto* kvOut = self->add_rich_presence();
+            kvOut->set_key(kv.first);
+            kvOut->set_value(kv.second);
+        }
+        msg.set_status_flags(msg.status_flags() | constants::kStatusFlagRichPresence);
+    } else {
+        msg.set_status_flags(msg.status_flags() & ~constants::kStatusFlagRichPresence);
+    }
+    return true;
+}
+
+// Fills game_name on the SELF entry WITHOUT holding presence.mutex
+// (gamename::ForApp uses its own cache mutex).
+void FillSelfGameName(CMsgClientPersonaState& msg, std::uint64_t selfId, steam::AppId playing) {
+    for (int i = 0; i < msg.friends_size(); ++i) {
+        auto* f = msg.mutable_friends(i);
+        if (selfId && f->has_friendid() && f->friendid() == selfId) {
+            const std::string name = gamename::ForApp(playing);
+            if (!name.empty()) f->set_game_name(name);
+            break;
+        }
+    }
+}
+
+// [DIAG] server-truth + flight-recorder. MUST run BEFORE
+// RecoverMaskedFriends: aggiorna g_selfLobby, che il fallback legacy legge.
+void DiagServerTruth(const CMsgClientPersonaState& msg, std::uint64_t selfId,
+                     const WireFrame& frame) {
+    // The PersonaState the CM returns for OUR own SteamID is exactly what gets
+    // broadcast to friends. NOTA: gira DOPO il self-patch, quindi per la voce
+    // SELF i campi letti sono quelli post-patch quando l'inject è attivo
+    // (comportamento preesistente allo split, preservato byte-per-byte).
+    if (auto* srv = FindSelf(const_cast<CMsgClientPersonaState&>(msg), selfId)) {
+        const std::uint32_t app = srv->game_played_app_id();
+        // Track our own lobby membership every push: it is the corroboration
+        // key for the legacy local-session attribution.
+        g_selfLobby.store(LobbyGroupId(*srv), std::memory_order_relaxed);
+        if (s_lastServerApp.exchange(app) != app) {
+            AC_LOG_INFO(kModule,
+                        "[DIAG] SERVER self-push: app=%u gameid=%llu "
+                        "name='%s' rp_kvs=%d status_flags=0x%X",
+                        app, static_cast<unsigned long long>(srv->gameid()),
+                        srv->has_game_name() ? srv->game_name().c_str() : "",
+                        srv->rich_presence_size(), msg.status_flags());
+        }
+        for (int k = 0; k < srv->rich_presence_size(); ++k) {
+            const auto& kv = srv->rich_presence(k);
+            AC_LOG_INFO_ONCE(kModule, "[DIAG] SERVER rp kv: '%s' = '%s'",
+                             kv.key().c_str(), kv.value().c_str());
+        }
+    }
+
+    // [DIAG] flight-recorder: per OGNI persona frame, logga ogni friend che
+    // sta giocando (appid reale o 480), deduplicato solo sul cambio di stato.
+    // Gate di livello: il diff della mappa girava su ogni frame anche a log
+    // Warn/Error/Off — ora solo con Info attivo, altrimenti costo zero.
+    if (ac::log::Enabled(LogLevel::Info)) {
+        std::lock_guard<std::mutex> lk(s_friendDumpMutex);
+        AC_LOG_TRACE(kModule, "[DIAG] PERSONA frame: friends=%d bLen=%u",
+                     msg.friends_size(), frame.bodyLen);
+        for (int i = 0; i < msg.friends_size(); ++i) {
+            const auto& f = msg.friends(i);
+            const std::uint32_t app = f.game_played_app_id();
+            const std::uint64_t gid = f.gameid();
+            if (app == 0 && gid == 0 && !f.has_game_name()) continue;
+            if (!f.has_friendid()) continue;
+            const std::uint64_t fid = f.friendid();
+            char state[256];
+            std::snprintf(state, sizeof(state), "app=%u gid=%llu name='%s' kvs=%d", app,
+                          static_cast<unsigned long long>(gid),
+                          f.has_game_name() ? f.game_name().c_str() : "",
+                          f.rich_presence_size());
+            const bool isSelf = selfId != 0 && fid == selfId;
+            auto it = s_friendState.find(fid);
+            if (it == s_friendState.end() || it->second != state) {
+                s_friendState[fid] = state;
+                AC_LOG_INFO(kModule, "[DIAG] PERSONA friend %llu (%s): %s",
+                            static_cast<unsigned long long>(fid), isSelf ? "SELF" : "FRIEND",
+                            state);
+            }
+        }
+    }
+    for (int i = 0; i < msg.friends_size(); ++i) {
+        const auto& f = msg.friends(i);
+        if (selfId != 0 && f.has_friendid() && f.friendid() == selfId) continue;
+        if (f.rich_presence_size() == 0) continue;
+        for (int k = 0; k < f.rich_presence_size(); ++k) {
+            const auto& kv = f.rich_presence(k);
+            AC_LOG_INFO_ONCE(kModule, "[DIAG] FRIEND %llu rp kv: '%s' = '%s' (app=%u)",
+                             static_cast<unsigned long long>(f.friendid()),
+                             kv.key().c_str(), kv.value().c_str(),
+                             f.game_played_app_id());
+        }
+    }
+}
+
+// ---- Friend entry recovery (480 -> real appid) + PICS prime ---------------
+// The CM never broadcasts an appid the sender has no license for (measured,
+// docs/04-showonline-plan.md); it DOES relay game_extra_info. Aether senders
+// hide the exact appid in that text / in the blob / in gid-hi: recover it
+// here, on the viewer's machine. Returns true when at least one friend entry
+// was patched.
+bool RecoverMaskedFriends(CMsgClientPersonaState& msg, std::uint64_t selfId,
+                          bool aetherOnlinePersonaPatch) {
+    bool changed = false;
+    const steam::AppId ofReal = presence::RealAppId();
+    const bool legacyGate = aetherOnlinePersonaPatch &&
+                            ofReal != 0 && luadata::IsConfigured(ofReal);
+    std::vector<steam::AppId> picsQueue;
+
+    for (int i = 0; i < msg.friends_size(); ++i) {
+        auto* f = msg.mutable_friends(i);
+        if (static_cast<steam::AppId>(f->game_played_app_id()) != constants::kSpacewarAppId) {
+            continue;
+        }
+        // Never touch our own entry: the local self-view belongs to
+        // presenceInjectLocal, and rewriting the appid the server believes WE
+        // are running can tear down the Spacewar session that backs
+        // -aetheronline (measured regression, docs/04-showonline-plan.md).
+        if (selfId != 0 && f->has_friendid() && f->friendid() == selfId) {
+            AC_LOG_INFO_ONCE(kModule,
+                             "[DIAG] self entry arrived as 480; left untouched "
+                             "(session bookkeeping).");
+            continue;
+        }
+
+        std::string displayName;
+        steam::AppId real = 0;
+        const char* source = "extra_info";
+        bool fromLocalSession = false;
+
+        std::string extra = ExtraInfoKV(*f);
+        if (extra.empty() && f->has_game_name()) extra = f->game_name();
+        real = AppIdFromSuffix(extra, displayName);
+        // fix5 channels (docs/05 §10): raw-bytes blob + plan B appid packed in
+        // gid bits 32-63. One shot of per-friend DIAG proves WHAT the CM
+        // actually relayed.
+        if (real == 0 && f->has_game_data_blob()) {
+            real = AppIdFromBlob(f->game_data_blob());
+            if (real != 0) {
+                source = "blob";
+                displayName = extra;
+            }
+        }
+        uint32_t gidHi = 0;
+        if (f->has_gameid()) gidHi = static_cast<std::uint32_t>(f->gameid() >> 32);
+        if (real == 0 && gidHi != 0 && gidHi <= constants::kGameIdAppIdMask &&
+            gidHi != constants::kSpacewarAppId) {
+            real = gidHi;
+            source = "gameid";
+            displayName = extra;
+        }
+        {
+            // One-shot DIAG per masked friend (ora con mutex, vedi contratto).
+            std::lock_guard<std::mutex> lk(s_diagFriendsMutex);
+            const std::uint64_t fid = f->has_friendid() ? f->friendid() : 0ull;
+            if (s_diagFriends.insert(fid).second) {
+                char hex[32] = "-";
+                std::size_t blobLen = 0;
+                if (f->has_game_data_blob()) {
+                    const std::string& blob = f->game_data_blob();
+                    blobLen = blob.size();
+                    for (std::size_t b = 0; b < blob.size() && b < 4; ++b) {
+                        std::snprintf(hex + (b == 0 ? 0 : std::strlen(hex)), 4,
+                                      "%s%02X", b == 0 ? "" : " ",
+                                      static_cast<unsigned char>(blob[b]));
+                    }
+                }
+                AC_LOG_INFO(kModule,
+                            "[DIAG] mask friend %llu: gid=%llu gidHi=%u bloblen=%zu "
+                            "blobhead=%s extra='%s'",
+                            static_cast<unsigned long long>(fid),
+                            static_cast<unsigned long long>(f->has_gameid() ? f->gameid() : 0ull),
+                            gidHi, blobLen, hex, extra.c_str());
+            }
+        }
+
+        // Do not recover a real appid from the title alone. UCO2/OFME send a
+        // plain extra_info name under Spacewar; by-name would turn that back
+        // into the real game and break 480 invites. Show Online senders hide
+        // the appid (suffix / blob / gid-hi).
+
+        // Legacy local-session fallback (pre-suffix behaviour, kept behind
+        // aetheronline_persona_patch): attribute ONLY when the friend's lobby
+        // (steam_player_group KV) matches our own — the only corroboration
+        // that cannot lie.
+        if (real == 0 && legacyGate) {
+            const std::uint64_t selfLobby = g_selfLobby.load(std::memory_order_relaxed);
+            const std::uint64_t friendLobby = LobbyGroupId(*f);
+            if (selfLobby != 0 && friendLobby != 0 && friendLobby == selfLobby) {
+                real = ofReal;
+                displayName.clear();
+                source = "local session (same lobby)";
+                fromLocalSession = true;
+            }
+        }
+
+        if (real == 0) {
+            AC_LOG_DEBUG_ONCE(kModule,
+                              "Friend %llu shows 480 with no recoverable appid "
+                              "(no suffix, no blob, no gid-hi, no title match, no local session).",
+                              static_cast<unsigned long long>(f->friendid()));
+            continue;
+        }
+
+        // Display name: the exact text relayed in extra_info comes first
+        // (minted by the sender from ITS fresh local cache). The legacy
+        // "local session" source keeps the live cache lookup: that app is
+        // installed HERE. Probing for an appid this machine never had faults
+        // inside steamclient (measured crash, 12:57 log) — never on this path.
+        std::string name = displayName;
+        if (name.empty() && fromLocalSession) {
+            name = gamename::ForApp(real);
+        }
+
+        f->set_game_played_app_id(real);
+        f->set_gameid(static_cast<std::uint64_t>(real));
+        if (!name.empty()) {
+            f->set_game_name(name);
+        } else {
+            f->clear_game_name();
+        }
+        changed = true;
+        AC_LOG_INFO_ONCE(kModule, "Patched friend %llu: 480 -> %u (%s).",
+                         static_cast<unsigned long long>(f->friendid()), real, source);
+
+        // The icon needs the FULL AppInfo record: prime the local cache with
+        // one PICS request per appid per process (EnsureAppInfo). Skip for the
+        // local-session source when the cache already knows the name.
+        if (!fromLocalSession || name.empty()) picsQueue.push_back(real);
+    }
+
+    for (const steam::AppId want : picsQueue) EnsureAppInfo(want);
+    return changed;
+}
+
+}  // namespace
+
 void SetPlayingApp(steam::AppId appId, bool forceRestage) {
     const auto settings = Settings::Snapshot();
     if (!settings->presenceInjectLocal && appId != 0) {
@@ -282,6 +577,8 @@ steam::AppId PlayingApp() {
 }
 
 std::int32_t OnPersonaStateRecv(const WireFrame& frame, std::uint8_t* out, std::uint32_t outCap) {
+    // I-B: orchestratore sottile; la logica vive negli helper sopra
+    // (contratto threading documentato in testa al blocco).
     const auto settings = Settings::Snapshot();
     CMsgClientPersonaState msg;
     if (!msg.ParseFromArray(frame.body, static_cast<int>(frame.bodyLen))) return kNoChange;
@@ -292,284 +589,30 @@ std::int32_t OnPersonaStateRecv(const WireFrame& frame, std::uint8_t* out, std::
 
     {
         std::lock_guard<std::mutex> lock(g_state.presence.mutex);
-        auto& pr = g_state.presence;
-        selfId = pr.selfSteamId;
-        playing = pr.playingAppId;
+        selfId = g_state.presence.selfSteamId;
+        playing = g_state.presence.playingAppId;
 
         // Cache self template from any push that includes our friend entry.
-        CMsgClientPersonaState::Friend* self = FindSelf(msg, selfId);
-        if (self && frame.headerLen <= constants::kWireMaxHeaderBytes &&
-            frame.bodyLen <= constants::kWireMaxBodyBytes) {
-            pr.selfHdr.assign(frame.header, frame.header + frame.headerLen);
-            pr.selfBody.assign(frame.body, frame.body + frame.bodyLen);
-            pr.haveSelfTemplate = !pr.selfHdr.empty() && !pr.selfBody.empty();
-        }
+        CacheSelfTemplateLocked(msg, frame, selfId);
 
         // In-place self patch so periodic server pushes cannot wipe inject.
         if (playing != 0 && settings->presenceInjectLocal) {
-            self = FindSelf(msg, selfId);
-            if (self) {
-                // Apply without re-entering mutex: copy kvs first.
-                std::vector<std::pair<std::string, std::string>> kvsCopy;
-                auto it = pr.rpKvs.find(playing);
-                if (it != pr.rpKvs.end()) kvsCopy = it->second;
-
-                self->set_game_played_app_id(playing);
-                self->set_gameid(static_cast<std::uint64_t>(playing));
-                // Name outside: drop lock first? ForApp is independent.
-                // We'll set name after unlock for cleanliness — set placeholder now.
-                self->clear_rich_presence();
-                if (!kvsCopy.empty()) {
-                    for (const auto& kv : kvsCopy) {
-                        auto* kvOut = self->add_rich_presence();
-                        kvOut->set_key(kv.first);
-                        kvOut->set_value(kv.second);
-                    }
-                    msg.set_status_flags(msg.status_flags() | constants::kStatusFlagRichPresence);
-                } else {
-                    msg.set_status_flags(msg.status_flags() & ~constants::kStatusFlagRichPresence);
-                }
-                changed = true;
-            }
+            changed = PatchSelfLocked(msg, selfId, playing);
         }
     }
 
     if (changed && playing != 0) {
         // Fill name without holding presence.mutex.
-        for (int i = 0; i < msg.friends_size(); ++i) {
-            auto* f = msg.mutable_friends(i);
-            if (selfId && f->has_friendid() && f->friendid() == selfId) {
-                const std::string name = gamename::ForApp(playing);
-                if (!name.empty()) f->set_game_name(name);
-                break;
-            }
-        }
+        FillSelfGameName(msg, selfId, playing);
     }
 
-    // [DIAG] SERVER truth, pre-patch: the PersonaState the CM returns for OUR
-    // own SteamID is exactly what gets broadcast to friends. app=<real> would
-    // mean the CM accepts the id; app=480 is the masked baseline; the KV dump
-    // answers whether game_extra_info also arrives as a rich-presence KV.
-    {
-        static std::atomic<std::uint32_t> s_lastServerApp{0xFFFFFFFFu};
-        if (auto* srv = FindSelf(msg, selfId)) {
-            const std::uint32_t app = srv->game_played_app_id();
-            // Track our own lobby membership every push: it is the
-            // corroboration key for the legacy local-session attribution.
-            g_selfLobby.store(LobbyGroupId(*srv), std::memory_order_relaxed);
-            if (s_lastServerApp.exchange(app) != app) {
-                AC_LOG_INFO(kModule,
-                            "[DIAG] SERVER self-push (pre-patch): app=%u gameid=%llu "
-                            "name='%s' rp_kvs=%d status_flags=0x%X",
-                            app, static_cast<unsigned long long>(srv->gameid()),
-                            srv->has_game_name() ? srv->game_name().c_str() : "",
-                            srv->rich_presence_size(), msg.status_flags());
-            }
-            for (int k = 0; k < srv->rich_presence_size(); ++k) {
-                const auto& kv = srv->rich_presence(k);
-                AC_LOG_INFO_ONCE(kModule, "[DIAG] SERVER rp kv: '%s' = '%s'",
-                                 kv.key().c_str(), kv.value().c_str());
-            }
-        }
+    // [DIAG] server truth + flight-recorder. DEVE precedere il recovery:
+    // aggiorna g_selfLobby, usato dal fallback legacy "stesso lobby".
+    DiagServerTruth(msg, selfId, frame);
 
-        // [DIAG] flight-recorder: per OGNI persona frame, logga ogni friend che
-        // sta giocando (appid reale o 480), deduplicato solo sul cambio di stato.
-        // E' l'unico modo di vedere QUANDO una voce amico (es. 1703340 reale)
-        // raggiunge questa macchina: se la riga manca, il CM non l'ha mai
-        // consegnata (o e' arrivata dentro un Multi, vedi trace eMsg=1).
-        // Gate di livello: il diff della mappa (mutex + snprintf per amico)
-        // girava su ogni frame anche a log Warn/Error/Off — da oggi solo con
-        // Info attivo, altrimenti il costo sul path di rete è zero.
-        if (ac::log::Enabled(LogLevel::Info)) {
-            static std::mutex s_friendDumpMutex;
-            static std::unordered_map<std::uint64_t, std::string> s_friendState;
-            std::lock_guard<std::mutex> lk(s_friendDumpMutex);
-            AC_LOG_TRACE(kModule, "[DIAG] PERSONA frame: friends=%d bLen=%u",
-                         msg.friends_size(), frame.bodyLen);
-            for (int i = 0; i < msg.friends_size(); ++i) {
-                const auto& f = msg.friends(i);
-                const std::uint32_t app = f.game_played_app_id();
-                const std::uint64_t gid = f.gameid();
-                if (app == 0 && gid == 0 && !f.has_game_name()) continue;
-                if (!f.has_friendid()) continue;
-                const std::uint64_t fid = f.friendid();
-                char state[256];
-                std::snprintf(state, sizeof(state), "app=%u gid=%llu name='%s' kvs=%d", app,
-                              static_cast<unsigned long long>(gid),
-                              f.has_game_name() ? f.game_name().c_str() : "",
-                              f.rich_presence_size());
-                const bool isSelf = selfId != 0 && fid == selfId;
-                auto it = s_friendState.find(fid);
-                if (it == s_friendState.end() || it->second != state) {
-                    s_friendState[fid] = state;
-                    AC_LOG_INFO(kModule, "[DIAG] PERSONA friend %llu (%s): %s",
-                                static_cast<unsigned long long>(fid), isSelf ? "SELF" : "FRIEND",
-                                state);
-                }
-            }
-        }
-        for (int i = 0; i < msg.friends_size(); ++i) {
-            const auto& f = msg.friends(i);
-            if (selfId != 0 && f.has_friendid() && f.friendid() == selfId) continue;
-            if (f.rich_presence_size() == 0) continue;
-            for (int k = 0; k < f.rich_presence_size(); ++k) {
-                const auto& kv = f.rich_presence(k);
-                AC_LOG_INFO_ONCE(kModule, "[DIAG] FRIEND %llu rp kv: '%s' = '%s' (app=%u)",
-                                 static_cast<unsigned long long>(f.friendid()),
-                                 kv.key().c_str(), kv.value().c_str(),
-                                 f.game_played_app_id());
-            }
-        }
-    }
-
-    // ---- Friend entry recovery (480 -> real appid) -------------------------
-    // The CM never broadcasts an appid the sender has no license for
-    // (measured, docs/04-showonline-plan.md). What it DOES broadcast reliably
-    // is game_extra_info, recycled into Friend.game_name. Aether senders hide
-    // the exact appid in that text ("<name> | <appid>"): recover it here, on
-    // the viewer's machine — exact, language-independent, no shared .lua
-    // needed. Fallbacks: configured-library title match, then — ONLY when the
-    // friend shares OUR lobby — the local -aetheronline session id (see the
-    // lobby guard at its use site, below).
-    {
-        const steam::AppId ofReal = presence::RealAppId();
-        const bool legacyGate = settings->presenceAetherOnlinePersonaPatch &&
-                                ofReal != 0 && luadata::IsConfigured(ofReal);
-        std::vector<steam::AppId> picsQueue;
-
-        for (int i = 0; i < msg.friends_size(); ++i) {
-            auto* f = msg.mutable_friends(i);
-            if (static_cast<steam::AppId>(f->game_played_app_id()) != constants::kSpacewarAppId) {
-                continue;
-            }
-            // Never touch our own entry: the local self-view belongs to
-            // presenceInjectLocal, and rewriting the appid the server believes
-            // WE are running can tear down the Spacewar session that backs
-            // -aetheronline (measured regression, see docs/04-showonline-plan.md).
-            if (selfId != 0 && f->has_friendid() && f->friendid() == selfId) {
-                AC_LOG_INFO_ONCE(kModule,
-                                 "[DIAG] self entry arrived as 480; left untouched "
-                                 "(session bookkeeping).");
-                continue;
-            }
-
-            std::string displayName;
-            steam::AppId real = 0;
-            const char* source = "extra_info";
-            bool fromLocalSession = false;
-
-            std::string extra = ExtraInfoKV(*f);
-            if (extra.empty() && f->has_game_name()) extra = f->game_name();
-            real = AppIdFromSuffix(extra, displayName);
-            // fix5 channels (docs/05 §10): raw-bytes blob + plan B appid packed
-            // in gid bits 32-63. One shot of per-friend DIAG proves WHAT the
-            // CM actually relayed (field test 16:38 2026-08-24: neither the
-            // blob nor high bits arrived from a fix5 build — decide channels
-            // from hex/len here).
-            if (real == 0 && f->has_game_data_blob()) {
-                real = AppIdFromBlob(f->game_data_blob());
-                if (real != 0) {
-                    source = "blob";
-                    displayName = extra;
-                }
-            }
-            uint32_t gidHi = 0;
-            if (f->has_gameid()) gidHi = static_cast<std::uint32_t>(f->gameid() >> 32);
-            if (real == 0 && gidHi != 0 && gidHi <= constants::kGameIdAppIdMask &&
-                gidHi != constants::kSpacewarAppId) {
-                real = gidHi;
-                source = "gameid";
-                displayName = extra;
-            }
-            {
-                static std::unordered_set<std::uint64_t> s_diagFriends;
-                const std::uint64_t fid = f->has_friendid() ? f->friendid() : 0ull;
-                if (s_diagFriends.insert(fid).second) {
-                    char hex[32] = "-";
-                    std::size_t blobLen = 0;
-                    if (f->has_game_data_blob()) {
-                        const std::string& blob = f->game_data_blob();
-                        blobLen = blob.size();
-                        for (std::size_t b = 0; b < blob.size() && b < 4; ++b) {
-                            std::snprintf(hex + (b == 0 ? 0 : std::strlen(hex)), 4,
-                                          "%s%02X", b == 0 ? "" : " ",
-                                          static_cast<unsigned char>(blob[b]));
-                        }
-                    }
-                    AC_LOG_INFO(kModule,
-                                "[DIAG] mask friend %llu: gid=%llu gidHi=%u bloblen=%zu "
-                                "blobhead=%s extra='%s'",
-                                static_cast<unsigned long long>(fid),
-                                static_cast<unsigned long long>(f->has_gameid() ? f->gameid() : 0ull),
-                                gidHi, blobLen, hex, extra.c_str());
-                }
-            }
-
-            // Do not recover a real appid from the title alone. UCO2/OFME
-            // send a plain extra_info name under Spacewar; by-name would
-            // turn that back into the real game and break 480 invites.
-            // Show Online senders hide the appid (suffix / blob / gid-hi).
-
-            // Legacy local-session fallback (pre-suffix behaviour, kept behind
-            // aetheronline_persona_patch): "a 480-friend while I'm masked must be
-            // my co-op partner in my game". UNGUARDED that guess is WRONG in
-            // general — measured 2026-08-25: a friend in his own unrelated
-            // masked session was displayed as playing OUR game ('MECCHA
-            // CHAMELEON', never installed on his machine). Attribute ONLY when
-            // the friend's lobby (steam_player_group KV) matches our own: a
-            // shared lobby is the only corroboration that cannot lie, while a
-            // bare 480 match fabricates ownership out of thin air.
-            if (real == 0 && legacyGate) {
-                const std::uint64_t selfLobby = g_selfLobby.load(std::memory_order_relaxed);
-                const std::uint64_t friendLobby = LobbyGroupId(*f);
-                if (selfLobby != 0 && friendLobby != 0 && friendLobby == selfLobby) {
-                    real = ofReal;
-                    displayName.clear();
-                    source = "local session (same lobby)";
-                    fromLocalSession = true;
-                }
-            }
-
-            if (real == 0) {
-                AC_LOG_DEBUG_ONCE(kModule,
-                                  "Friend %llu shows 480 with no recoverable appid "
-                                  "(no suffix, no blob, no gid-hi, no title match, no local session).",
-                                  static_cast<unsigned long long>(f->friendid()));
-                continue;
-            }
-
-            // Display name: the exact text relayed in extra_info comes first.
-            // It is minted by the sender from ITS own local AppInfo cache
-            // (fresh, already localized), so it beats re-resolving on this
-            // machine. The legacy "local session" source keeps the live cache
-            // lookup: that app is installed HERE, and probing the cache for a
-            // locally-known appid is the path measured safe. Probing for an
-            // appid this machine never had faults inside steamclient (measured
-            // crash, 12:57 log) — never do it on the recovery path.
-            std::string name = displayName;
-            if (name.empty() && fromLocalSession) {
-                name = gamename::ForApp(real);
-            }
-
-            f->set_game_played_app_id(real);
-            f->set_gameid(static_cast<std::uint64_t>(real));
-            if (!name.empty()) {
-                f->set_game_name(name);
-            } else {
-                f->clear_game_name();
-            }
-            changed = true;
-            AC_LOG_INFO_ONCE(kModule, "Patched friend %llu: 480 -> %u (%s).",
-                             static_cast<unsigned long long>(f->friendid()), real, source);
-
-            // The icon needs the FULL AppInfo record (clienticon), not just the
-            // title: prime the local cache with one PICS request per appid per
-            // process (see EnsureAppInfo). Skipping it for the local-session
-            // source when the cache already knows the name (record present).
-            if (!fromLocalSession || name.empty()) picsQueue.push_back(real);
-        }
-
-        for (const steam::AppId want : picsQueue) EnsureAppInfo(want);
+    // Friend entry recovery (480 -> real appid) + PICS prime.
+    if (RecoverMaskedFriends(msg, selfId, settings->presenceAetherOnlinePersonaPatch)) {
+        changed = true;
     }
 
     if (!changed) return kNoChange;
