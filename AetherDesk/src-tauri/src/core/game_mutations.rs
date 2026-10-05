@@ -1,4 +1,5 @@
-//! Per-(canonical Steam root, AppID) commit ownership. Preparation (network)
+//! In-process-only per-(canonical Steam root, AppID) commit ownership.
+//! No lock files: separate Desk processes are NOT coordinated here. Preparation (network)
 //! is optimistic: any intervening Desk mutation or external Lua/ACF edit
 //! invalidates the plan. Never hold a synchronous mutex across an await.
 //! Lock order: game -> depotcache/config. Nested game acquisition is forbidden.
@@ -60,7 +61,6 @@ fn slot(root: &Path, app_id: u32) -> Result<(Key, Arc<Slot>), String> {
 }
 
 pub struct MutationGuard {
-    _file_lock: std::fs::File,
     _lock: OwnedMutexGuard<()>,
     slot: Arc<Slot>,
     key: Key,
@@ -75,25 +75,6 @@ impl MutationGuard {
         key: Key,
         operation: &'static str,
     ) -> Result<Self, String> {
-        let lock_dir = Path::new(&key.root).join("aethercore/desk-locks");
-        std::fs::create_dir_all(&lock_dir)
-            .map_err(|e| format!("Cannot create mutation lock directory: {e}"))?;
-        let file = std::fs::OpenOptions::new()
-            .create(true)
-            .truncate(false)
-            .read(true)
-            .write(true)
-            .open(lock_dir.join(format!("{}.lock", key.app_id)))
-            .map_err(|e| format!("Cannot open mutation lock: {e}"))?;
-        file.try_lock().map_err(|e| {
-            crate::desk_log_warn!(
-                "mutations",
-                "Cross-process lock unavailable app_id={}: {}",
-                key.app_id,
-                e
-            );
-            format!("GAME_BUSY: cannot acquire app {} lock: {e}", key.app_id)
-        })?;
         static NEXT: AtomicU64 = AtomicU64::new(1);
         let id = NEXT.fetch_add(1, Ordering::Relaxed);
         crate::desk_log_info!(
@@ -105,7 +86,6 @@ impl MutationGuard {
             key.root
         );
         Ok(Self {
-            _file_lock: file,
             _lock: lock,
             slot,
             key,
@@ -119,17 +99,6 @@ impl Drop for MutationGuard {
     fn drop(&mut self) {
         // Also invalidate plans after partial failures; release != success.
         self.slot.generation.fetch_add(1, Ordering::SeqCst);
-        // Explicit unlock before releasing the in-process gate. Closing alone
-        // can briefly retain a Unix flock in a concurrently forked child until
-        // exec closes its inherited descriptor, causing a spurious GAME_BUSY.
-        if let Err(error) = self._file_lock.unlock() {
-            crate::desk_log_warn!(
-                "mutations",
-                "OS unlock failed id={}: {} (closing handle)",
-                self.id,
-                error
-            );
-        }
         crate::desk_log_info!(
             "mutations",
             "release id={} operation={} app_id={} elapsed_ms={} (outcome in caller log)",
@@ -350,30 +319,15 @@ mod tests {
         assert!(try_acquire(d.path(), 1, "after").is_ok());
     }
     #[test]
-    fn cross_process_child_probe() {
-        let Some(root) = std::env::var_os("AETHER_MUTATION_LOCK_TEST_ROOT") else {
-            return;
-        };
-        assert!(try_acquire(Path::new(&root), 1, "child").is_err());
-    }
-    #[test]
-    fn cross_process_lock_excludes_second_desk() {
-        let d = tempfile::tempdir().unwrap();
-        let _guard = try_acquire(d.path(), 1, "parent").unwrap();
-        let result = std::process::Command::new(std::env::current_exe().unwrap())
-            .args([
-                "--exact",
-                "core::game_mutations::tests::cross_process_child_probe",
-                "--nocapture",
-            ])
-            .env("AETHER_MUTATION_LOCK_TEST_ROOT", d.path())
-            .output()
-            .unwrap();
-        assert!(
-            result.status.success(),
-            "{}",
-            String::from_utf8_lossy(&result.stderr)
-        );
+    fn game_coordination_creates_no_files() {
+        let root = tempfile::tempdir().unwrap();
+        let guard = try_acquire(root.path(), 1, "first").unwrap();
+        assert!(try_acquire(root.path(), 1, "same-game").is_err());
+        assert!(try_acquire(root.path(), 2, "other-game").is_ok());
+        assert_eq!(std::fs::read_dir(root.path()).unwrap().count(), 0);
+        drop(guard);
+        assert!(try_acquire(root.path(), 1, "released").is_ok());
+        assert_eq!(std::fs::read_dir(root.path()).unwrap().count(), 0);
     }
     #[tokio::test]
     async fn toggle_invalidates_remote_plan_without_losing_new_lua() {
