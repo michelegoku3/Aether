@@ -373,8 +373,3 @@ pub(crate) fn rank_available_sources(statuses: &HashMap<String, String>) -> Vec<
     ranked.extend(others);
     ranked
 }
-
-/// First entry of [`rank_available_sources`].
-pub(crate) fn choose_available_source(statuses: &HashMap<String, String>) -> Option<String> {
-    rank_available_sources(statuses).into_iter().next()
-}

@@ -1276,6 +1276,43 @@ void JsonWriterTest() {
     CHECK(out == golden);
 }
 
+
+// --- I-E: contract fixture DLL<->Desk per l'identità manifest (D4) ---
+// Gli STESSI blob in Tools/contract_fixtures/manifest sono asseriti qui e in
+// AetherDesk/src-tauri/src/tests/manifest_contract_tests.rs: se un lato
+// cambia verdetto, uno dei due test si rompe.
+void ManifestContractTest() {
+    namespace mi = ac::manifestidentity;
+    constexpr std::uint32_t kDepot = 489831;
+    constexpr std::uint64_t kGid = 4940892828028256588ull;
+    const fs::path dir = CONTRACT_FIXTURES_DIR;
+
+    const auto Read = [&](const char* name) {
+        std::ifstream f(dir / name, std::ios::binary);
+        CHECK(f.is_open());
+        std::string body((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
+        return body;
+    };
+
+    // Validi: identità letta dal metadata, match solo con gli attesi esatti.
+    const std::string valid = Read("valid_basic.bin");
+    CHECK(mi::ManifestIdentityMatches(valid, kDepot, kGid));
+    CHECK(!mi::ManifestIdentityMatches(valid, kDepot + 1, kGid));
+    CHECK(!mi::ManifestIdentityMatches(valid, kDepot, kGid + 1));
+
+    const std::string extra = Read("valid_extra_wiretypes.bin");
+    CHECK(mi::ManifestIdentityMatches(extra, kDepot, kGid));
+
+    // Malformati: tutti rifiutati (anche con attesi zero).
+    for (const char* bad : {"bad_magic_payload.bin", "bad_magic_metadata.bin",
+                            "truncated_payload.bin", "truncated_metadata_varint.bin",
+                            "bad_wire_type.bin", "empty.bin", "garbage_short.bin"}) {
+        const std::string body = Read(bad);
+        CHECK(!mi::ManifestIdentityMatches(body, kDepot, kGid));
+        CHECK(!mi::ManifestIdentityMatches(body, 0, 0));
+    }
+}
+
 int main(int argc, char** argv) {
     try {
         CHECK(argc == 2);
@@ -1300,7 +1337,8 @@ int main(int argc, char** argv) {
         else if (test == "hexcodec") HexCodecTest();
         else if (test == "signature") SignatureTest();
         else if (test == "ipcspec") IpcSpecParseTest();
-        else if (test == "jsonwriter") JsonWriterTest(); else CHECK(false);
+        else if (test == "jsonwriter") JsonWriterTest();
+        else if (test == "manifest_contract") ManifestContractTest(); else CHECK(false);
         std::cout << test << ": PASS\n";
         return 0;
     } catch (const std::exception& e) { std::cerr << e.what() << '\n'; return 1; }

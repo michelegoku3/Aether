@@ -33,16 +33,12 @@
 //! poll, and failures stay queued with bounded exponential backoff — all
 //! visible to the UI through `get_hubcap_monitor_status`.
 
-use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, HashMap};
 use std::fs;
-use std::path::{Path, PathBuf};
-use std::sync::{Mutex, OnceLock};
-use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
-use tauri::{AppHandle, Emitter};
+use std::path::PathBuf;
+use std::time::{Duration, Instant, SystemTime};
+use tauri::AppHandle;
 
-use crate::core::paths::LocalAppPaths;
 use crate::core::settings::SettingsManager;
 use crate::manifest::pins::{DepotManifestPin, LuaManifestPins};
 use crate::steam::library::SteamLibraryScanner;
@@ -51,7 +47,6 @@ const START_DELAY: Duration = Duration::from_secs(8);
 const POLL_INTERVAL: Duration = Duration::from_secs(20);
 pub(crate) const INITIAL_RETRY_DELAY: Duration = Duration::from_secs(30);
 pub(crate) const MAX_RETRY_DELAY: Duration = Duration::from_secs(30 * 60);
-const STATE_FILE: &str = "hubcap_game_updates.json";
 /// How often the pin_refresh lane may re-check one app against Hubcap's free
 /// contents endpoint. The check costs no quota; only genuinely missing
 /// manifests are generated, so a moderate interval keeps the commented pins
@@ -80,363 +75,21 @@ pub(crate) const MAX_TASK_ATTEMPTS: u32 = 6;
 /// preserved, so the exponential backoff ladder stays reserved for real errors.
 const WORKSHOP_DEFERRED_RETRY_DELAY: Duration = Duration::from_secs(90);
 
-// ============================================================================
-// Status snapshot (UI-facing)
-// ============================================================================
+// I-F: il modulo è diviso in tre responsabilità — questo file è
+// l'orchestratore (lane, backoff, poll loop); `status.rs` possiede lo
+// snapshot UI e il canale push; `scans.rs` possiede le letture lato Steam e
+// il checkpoint durevole. I re-export qui sotto mantengono l'API pubblica e
+// pub(crate) identica a prima dello split.
 
-#[derive(Debug, Clone, Serialize, Default)]
-#[serde(rename_all = "camelCase")]
-pub struct PendingTaskInfo {
-    /// `None` for lane-wide tasks (the Workshop sync is not per-app).
-    pub app_id: Option<u32>,
-    pub attempts: u32,
-    /// Unix epoch seconds of the next scheduled attempt, when known.
-    pub next_retry_epoch: Option<u64>,
-}
+mod scans;
+mod status;
 
-#[derive(Debug, Clone, Serialize, Default)]
-#[serde(rename_all = "camelCase")]
-pub struct LaneStatus {
-    pub pending: Vec<PendingTaskInfo>,
-    /// Tasks dropped after [`MAX_TASK_ATTEMPTS`] failed attempts. They are no
-    /// longer retried on a timer; the next Steam-side change (or an app
-    /// restart) queues them again. Surfaced so the UI can show "gave up after
-    /// N tries" instead of an eternally pending task.
-    #[serde(default)]
-    pub unresolved: Vec<PendingTaskInfo>,
-    /// Tasks completed successfully since the monitor started.
-    pub processed_count: u64,
-    /// Unix epoch seconds of the last completed task.
-    pub last_run_epoch: Option<u64>,
-    /// Last failure message, kept until the next success.
-    pub last_error: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Default)]
-#[serde(rename_all = "camelCase")]
-pub struct MonitorStatusSnapshot {
-    pub running: bool,
-    pub started_epoch: Option<u64>,
-    pub last_scan_epoch: Option<u64>,
-    pub steam_path_configured: bool,
-    pub hubcap_key_configured: bool,
-    pub checkpoint_initialized: bool,
-    pub pin_sync: LaneStatus,
-    pub pin_refresh: LaneStatus,
-    pub repair: LaneStatus,
-    pub workshop: LaneStatus,
-}
-
-/// Canale push dello stato del sincronizzatore.
-///
-/// Emesso solo quando cambia la parte **significativa** dello snapshot:
-/// composizione delle code, tentativi, task abbandonati, contatori di
-/// completamento, ultimo errore, flag di readiness. Gli orologi puri
-/// (`last_scan_epoch`, `started_epoch`, `last_run_epoch`, `next_retry_epoch`)
-/// sono esclusi dalla firma di proposito: cambiano ad ogni poll (20 s) e
-/// trasformerebbero il push in un secondo polling. Il popup li aggiorna con il
-/// proprio poll lento di recovery — push per gli eventi, poll per i countdown.
-pub const SYNC_STATUS_EVENT: &str = "sync://status-changed";
-
-fn status_store() -> &'static Mutex<MonitorStatusSnapshot> {
-    static STORE: OnceLock<Mutex<MonitorStatusSnapshot>> = OnceLock::new();
-    STORE.get_or_init(|| Mutex::new(MonitorStatusSnapshot::default()))
-}
-
-/// Handle per il canale push, registrato da [`start`]. `with_status` viene
-/// chiamato anche da percorsi che non hanno un `AppHandle` in scope: quando la
-/// cella è vuota l'emit viene semplicemente saltato (il polling del client
-/// resta la rete di sicurezza), quindi l'assenza non è mai un errore.
-fn status_handle() -> &'static OnceLock<AppHandle> {
-    static HANDLE: OnceLock<AppHandle> = OnceLock::new();
-    &HANDLE
-}
-
-/// Ultima firma già pubblicata, per non ri-emettere uno snapshot identico.
-fn last_signature() -> &'static Mutex<Option<String>> {
-    static SIGNATURE: OnceLock<Mutex<Option<String>>> = OnceLock::new();
-    SIGNATURE.get_or_init(|| Mutex::new(None))
-}
-
-fn task_key(task: &PendingTaskInfo) -> String {
-    format!(
-        "{}:{}",
-        task.app_id.map(|id| id.to_string()).unwrap_or_else(|| "-".to_string()),
-        task.attempts
-    )
-}
-
-fn lane_signature(label: &str, lane: &LaneStatus) -> String {
-    let keys = |tasks: &[PendingTaskInfo]| -> String {
-        tasks.iter().map(task_key).collect::<Vec<_>>().join(",")
-    };
-    format!(
-        "{}[{}][{}]{}/{}",
-        label,
-        keys(&lane.pending),
-        keys(&lane.unresolved),
-        lane.processed_count,
-        lane.last_error.as_deref().unwrap_or("")
-    )
-}
-
-/// Impronta confrontabile di tutto ciò che il popup mostra, orologi esclusi.
-fn status_signature(status: &MonitorStatusSnapshot) -> String {
-    format!(
-        "run={}|steam={}|key={}|ckpt={}|{}|{}|{}|{}",
-        status.running,
-        status.steam_path_configured,
-        status.hubcap_key_configured,
-        status.checkpoint_initialized,
-        lane_signature("sync", &status.pin_sync),
-        lane_signature("refresh", &status.pin_refresh),
-        lane_signature("repair", &status.repair),
-        lane_signature("workshop", &status.workshop),
-    )
-}
-
-/// Pubblica lo snapshot sul canale push. Chiamata SENZA il lock dello stato:
-/// `emit` serializza e consegna alle webview, e non deve mai avvenire dentro
-/// una sezione critica che altri thread usano per aggiornare le code.
-fn publish_status(payload: MonitorStatusSnapshot) {
-    let Some(app) = status_handle().get() else {
-        return;
-    };
-    if let Err(error) = app.emit(SYNC_STATUS_EVENT, payload) {
-        crate::desk_log_warn!(
-            "hubcap-updates",
-            "Could not emit sync status event: {}",
-            error
-        );
-    }
-}
-
-fn now_epoch() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_secs()
-}
-
-/// Reads the live monitor state for the UI (`get_hubcap_monitor_status`).
-pub fn snapshot() -> MonitorStatusSnapshot {
-    status_store()
-        .lock()
-        .map(|status| status.clone())
-        .unwrap_or_default()
-}
-
-fn with_status(update: impl FnOnce(&mut MonitorStatusSnapshot)) {
-    // Payload da pubblicare, calcolato dentro il lock ma emesso fuori.
-    let changed = {
-        let Ok(mut status) = status_store().lock() else {
-            return;
-        };
-        update(&mut status);
-        let signature = status_signature(&status);
-        let Ok(mut last) = last_signature().lock() else {
-            return;
-        };
-        if last.as_deref() == Some(signature.as_str()) {
-            None
-        } else {
-            *last = Some(signature);
-            Some(status.clone())
-        }
-    };
-    if let Some(payload) = changed {
-        publish_status(payload);
-    }
-}
-
-// ============================================================================
-// Durable checkpoint
-// ============================================================================
-
-#[derive(Debug, Serialize, Deserialize, Default)]
-struct PersistedState {
-    initialized: bool,
-    /// AppID -> last Steam ACF fingerprint whose pin sync completed (or that
-    /// was inspected and needed no sync). This is the resumable checkpoint,
-    /// not a migration marker.
-    #[serde(default)]
-    processed: HashMap<u32, String>,
-    #[serde(default)]
-    lua_processed: HashMap<u32, String>,
-    #[serde(default)]
-    workshop_processed: Option<String>,
-    /// AppID -> epoch seconds of the last completed Hubcap-contents pin
-    /// refresh check. Throttles the pin_refresh lane (free endpoint, but the
-    /// diff must not run on every poll for every game).
-    #[serde(default)]
-    contents_checked: HashMap<u32, u64>,
-    /// AppID -> Steam ACF fingerprint observed at the last completed contents
-    /// check. Equal to the current fingerprint means "Steam did not touch this
-    /// game since", which is what promotes an app from the idle (1 h) to the
-    /// fast (15 min) contents cadence.
-    #[serde(default)]
-    contents_fingerprint: HashMap<u32, String>,
-}
-
-fn state_path() -> PathBuf {
-    LocalAppPaths::state_dir().join(STATE_FILE)
-}
-
-fn load_state() -> PersistedState {
-    let path = state_path();
-    let Ok(bytes) = fs::read(&path) else {
-        return PersistedState::default();
-    };
-    match serde_json::from_slice(&bytes) {
-        Ok(state) => state,
-        Err(error) => {
-            crate::desk_log_warn!(
-                "hubcap-updates",
-                "Ignoring invalid synchronizer checkpoint at {}: {}",
-                path.display(),
-                error
-            );
-            PersistedState::default()
-        }
-    }
-}
-
-fn save_state(state: &PersistedState) -> Result<(), String> {
-    let path = state_path();
-    let parent = path
-        .parent()
-        .ok_or_else(|| "Synchronizer state has no parent directory".to_string())?
-        .to_path_buf();
-    fs::create_dir_all(&parent)
-        .map_err(|error| format!("Could not create synchronizer state directory: {error}"))?;
-    let temporary = path.with_extension("json.tmp");
-    let bytes = serde_json::to_vec_pretty(state)
-        .map_err(|error| format!("Could not serialize synchronizer state: {error}"))?;
-    fs::write(&temporary, bytes)
-        .map_err(|error| format!("Could not write synchronizer state: {error}"))?;
-    fs::rename(&temporary, &path)
-        .map_err(|error| format!("Could not commit synchronizer state: {error}"))
-}
-
-// ============================================================================
-// Steam-side scans (fingerprints)
-// ============================================================================
-
-fn app_id_from_manifest(path: &Path) -> Option<u32> {
-    let name = path.file_name()?.to_str()?;
-    name.strip_prefix("appmanifest_")?
-        .strip_suffix(".acf")?
-        .parse::<u32>()
-        .ok()
-        .filter(|id| *id > 0)
-}
-
-fn file_fingerprint(path: &Path) -> Option<String> {
-    let bytes = fs::read(path).ok()?;
-    let digest = Sha256::digest(bytes);
-    Some(format!("{digest:x}"))
-}
-
-fn scan_app_manifests(steam_path: &str) -> HashMap<u32, String> {
-    let scanner = SteamLibraryScanner::new(steam_path);
-    let mut per_app: HashMap<u32, Vec<(String, String)>> = HashMap::new();
-
-    for library in scanner.discover_library_paths() {
-        let steamapps = library.join("steamapps");
-        let Ok(entries) = fs::read_dir(steamapps) else {
-            continue;
-        };
-        for entry in entries.flatten() {
-            let path = entry.path();
-            let Some(app_id) = app_id_from_manifest(&path) else {
-                continue;
-            };
-            let Some(fingerprint) = file_fingerprint(&path) else {
-                continue;
-            };
-            per_app
-                .entry(app_id)
-                .or_default()
-                .push((path.to_string_lossy().into_owned(), fingerprint));
-        }
-    }
-
-    let mut by_app = HashMap::new();
-    for (app_id, mut files) in per_app {
-        // An app can be present in more than one library: aggregate sorted
-        // path+fingerprint pairs so the digest is stable regardless of
-        // directory iteration order.
-        files.sort_unstable_by(|left, right| left.0.cmp(&right.0));
-        let mut hasher = Sha256::new();
-        for (path, fingerprint) in files {
-            hasher.update(path.as_bytes());
-            hasher.update([0]);
-            hasher.update(fingerprint.as_bytes());
-            hasher.update([0]);
-        }
-        by_app.insert(app_id, format!("{:x}", hasher.finalize()));
-    }
-    by_app
-}
-
-fn scan_managed_luas(steam_path: &str) -> HashMap<u32, String> {
-    let directory = PathBuf::from(steam_path).join("config").join("stplug-in");
-    let Ok(entries) = fs::read_dir(directory) else {
-        return HashMap::new();
-    };
-    entries
-        .flatten()
-        .filter_map(|entry| {
-            let path = entry.path();
-            let app_id = path
-                .extension()
-                .and_then(|extension| extension.to_str())
-                .filter(|extension| extension.eq_ignore_ascii_case("lua"))
-                .and_then(|_| path.file_stem())
-                .and_then(|stem| stem.to_str())
-                .and_then(|stem| stem.parse::<u32>().ok())
-                .filter(|id| *id > 0)?;
-            Some((app_id, file_fingerprint(&path)?))
-        })
-        .collect()
-}
-
-fn scan_workshop_manifests(steam_path: &str) -> Option<String> {
-    let scanner = SteamLibraryScanner::new(steam_path);
-    let mut files = Vec::new();
-    for library in scanner.discover_library_paths() {
-        let directory = library.join("steamapps").join("workshop");
-        let Ok(entries) = fs::read_dir(directory) else {
-            continue;
-        };
-        for entry in entries.flatten() {
-            let path = entry.path();
-            let is_acf = path
-                .file_name()
-                .and_then(|name| name.to_str())
-                .map(|name| name.starts_with("appworkshop_") && name.ends_with(".acf"))
-                .unwrap_or(false);
-            if !is_acf {
-                continue;
-            }
-            if let Some(fingerprint) = file_fingerprint(&path) {
-                files.push((path.to_string_lossy().into_owned(), fingerprint));
-            }
-        }
-    }
-    if files.is_empty() {
-        return None;
-    }
-    files.sort_unstable_by(|left, right| left.0.cmp(&right.0));
-    let mut hasher = Sha256::new();
-    for (path, fingerprint) in files {
-        hasher.update(path.as_bytes());
-        hasher.update([0]);
-        hasher.update(fingerprint.as_bytes());
-        hasher.update([0]);
-    }
-    Some(format!("{:x}", hasher.finalize()))
-}
+pub use status::{snapshot, LaneStatus, MonitorStatusSnapshot, PendingTaskInfo};
+use scans::{
+    changed_against, load_state, managed_update_candidates, save_state, scan_app_manifests,
+    scan_managed_luas, scan_workshop_manifests,
+};
+use status::{now_epoch, status_handle, with_status};
 
 // ============================================================================
 // Lane helpers
@@ -464,52 +117,6 @@ pub(crate) fn retry_delay(attempts: u32) -> Duration {
         .checked_mul(multiplier as u32)
         .unwrap_or(MAX_RETRY_DELAY)
         .min(MAX_RETRY_DELAY)
-}
-
-/// AppIDs whose current fingerprint differs from the checkpoint's.
-fn changed_against(
-    checkpoint: &HashMap<u32, String>,
-    current: &HashMap<u32, String>,
-) -> Vec<u32> {
-    current
-        .iter()
-        .filter_map(|(app_id, fingerprint)| {
-            (checkpoint.get(app_id) != Some(fingerprint)).then_some(*app_id)
-        })
-        .collect()
-}
-
-/// Games whose Lua pins allow updates (at least one commented setManifestid
-/// with an active addappid). Everything else is an explicit version lock and
-/// must never be realigned.
-fn managed_update_candidates(
-    changed_apps: impl IntoIterator<Item = u32>,
-    steam_path: &str,
-) -> Vec<u32> {
-    let mut candidates = Vec::new();
-    for app_id in changed_apps {
-        let pins = LuaManifestPins::new(steam_path.to_string(), app_id);
-        if !pins.path_exists() {
-            continue;
-        }
-        match pins.updates_are_enabled() {
-            Ok(true) => candidates.push(app_id),
-            Ok(false) => crate::desk_log_debug!(
-                "hubcap-updates",
-                "No pin sync needed app_id={}: its Lua pins are still enabled for a fixed version",
-                app_id
-            ),
-            Err(error) => crate::desk_log_warn!(
-                "hubcap-updates",
-                "Could not inspect update policy app_id={}: {}",
-                app_id,
-                error
-            ),
-        }
-    }
-    candidates.sort_unstable();
-    candidates.dedup();
-    candidates
 }
 
 /// Which apps the `pin_refresh` lane should re-diff against Hubcap's contents
