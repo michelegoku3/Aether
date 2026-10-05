@@ -7,6 +7,7 @@ import { SettingsAetherSection } from './settings/SettingsAetherSection';
 import { SettingsProvidersSection } from './settings/SettingsProvidersSection';
 import { SettingsStoreSection } from './settings/SettingsStoreSection';
 import { SettingsAppearanceSection } from './settings/SettingsAppearanceSection';
+import { LuaToolsLoginModal } from './settings/LuaToolsLoginModal';
 import type { AppearanceAssets, LuaToolsAuthStatus, SettingsGuard, SteamCheckStatus } from './settings/types';
 export type { SettingsGuard } from './settings/types';
 
@@ -815,116 +816,25 @@ export const SettingsView = memo(function SettingsView({ hubcapUsage, onRefreshU
         />
       )}
 
-      {showLuaToolsLoginModal && (
-        <div className="modal-overlay" onClick={closeLuaToolsLogin}>
-          <div className="modal-container" onClick={(event) => event.stopPropagation()}>
-            <div className="modal-header">
-              <span className="modal-title">Login to <strong>LuaTools</strong></span>
-              <button
-                type="button"
-                className="modal-close-btn"
-                disabled={isLuaToolsAuthBusy}
-                onClick={closeLuaToolsLogin}
-              >
-                &times;
-              </button>
-            </div>
-            <div className="modal-separator"></div>
+      <LuaToolsLoginModal
+        open={showLuaToolsLoginModal}
+        busy={isLuaToolsAuthBusy}
+        mode={luaToolsLoginMode}
+        code={luaToolsLoginCode}
+        error={luaToolsLoginError}
+        onClose={closeLuaToolsLogin}
+        onSetMode={(mode) => {
+          setLuaToolsLoginMode(mode);
+          setLuaToolsLoginError('');
+        }}
+        onCodeChange={(value) => {
+          setLuaToolsLoginCode(value.replace(/[^a-z0-9]/gi, '').toUpperCase());
+          setLuaToolsLoginError('');
+        }}
+        onOAuthSignIn={() => void handleLuaToolsSignIn()}
+        onCodeSignIn={() => void handleLuaToolsCodeSignIn()}
+      />
 
-            <div className="modal-body">
-              {luaToolsLoginMode === 'choice' ? (
-                <>
-                  <p className="settings-desc" style={{ margin: '0 0 8px' }}>
-                    Choose how to authenticate. Both methods create the same LuaTools session for downloads.
-                  </p>
-                  <div style={{ display: 'grid', gap: '10px' }}>
-                    <button
-                      type="button"
-                      className="big-action-btn luatools-login-choice"
-                      onClick={() => void handleLuaToolsSignIn()}
-                    >
-                      <div>
-                        <strong>Discord OAuth</strong>
-                        <p className="settings-desc" style={{ margin: '5px 0 0' }}>
-                          Easiest option. Opens Discord in your browser, but Discord/Supabase may share the email linked to your account.
-                        </p>
-                      </div>
-                    </button>
-                    <button
-                      type="button"
-                      className="big-action-btn luatools-login-choice"
-                      onClick={() => {
-                        setLuaToolsLoginMode('code');
-                        setLuaToolsLoginError('');
-                      }}
-                    >
-                      <div>
-                        <strong>/login code</strong>
-                        <p className="settings-desc" style={{ margin: '5px 0 0' }}>
-                          More private: generate a one-time code with @Luie. LuaTools states that only your Discord username is collected, not your Discord email.
-                        </p>
-                      </div>
-                    </button>
-                  </div>
-                </>
-              ) : (
-                <>
-                  <p className="settings-desc">
-                    Send <strong>/login</strong> to <strong>@Luie</strong> in Discord, then enter the 6-character code below. Codes are single-use and expire after about 5 minutes.
-                  </p>
-                  <input
-                    className="settings-input"
-                    type="text"
-                    inputMode="text"
-                    autoComplete="one-time-code"
-                    maxLength={6}
-                    placeholder="ABC123"
-                    value={luaToolsLoginCode}
-                    disabled={isLuaToolsAuthBusy}
-                    onChange={(event) => {
-                      setLuaToolsLoginCode(event.target.value.replace(/[^a-z0-9]/gi, '').toUpperCase());
-                      setLuaToolsLoginError('');
-                    }}
-                    onKeyDown={(event) => {
-                      if (event.key === 'Enter') {
-                        event.preventDefault();
-                        void handleLuaToolsCodeSignIn();
-                      }
-                    }}
-                    style={{ marginTop: '14px', textTransform: 'uppercase', letterSpacing: '4px', textAlign: 'center' }}
-                  />
-                  {luaToolsLoginError && (
-                    <div className="settings-alert error" style={{ marginTop: '10px' }}>
-                      {luaToolsLoginError}
-                    </div>
-                  )}
-                  <div className="version-actions" style={{ marginTop: '14px' }}>
-                    <button
-                      type="button"
-                      className="panel-btn"
-                      disabled={isLuaToolsAuthBusy || luaToolsLoginCode.length !== 6}
-                      onClick={() => void handleLuaToolsCodeSignIn()}
-                    >
-                      {isLuaToolsAuthBusy ? 'Connecting...' : 'Connect'}
-                    </button>
-                    <button
-                      type="button"
-                      className="panel-btn"
-                      disabled={isLuaToolsAuthBusy}
-                      onClick={() => {
-                        setLuaToolsLoginMode('choice');
-                        setLuaToolsLoginError('');
-                      }}
-                    >
-                      Back
-                    </button>
-                  </div>
-                </>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 });

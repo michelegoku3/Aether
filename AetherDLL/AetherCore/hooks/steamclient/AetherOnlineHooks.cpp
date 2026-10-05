@@ -356,19 +356,135 @@ void SyncLanguageToSpacewar(AppId realAppId) {
                 language.c_str());
 }
 
+// ---------------------------------------------------------------------------
+// I-D: h_SpawnProcess è orchestrata da tre helper dedicati. La semantica è
+// IDENTICA alla vecchia funzione inline (stesso ordine di operazioni, stessi
+// log): ResolveLaunchDecision NON logga, i log vivono dove vivevano prima.
+// ---------------------------------------------------------------------------
+
+// Tutto ciò che lo spawn hook deve sapere PRIMA di toccare gameId/sessione:
+// appid reale, launch mode (TOML > argv token), spoof UCO2/OFME su disco e
+// decisione maschera-480.
+struct LaunchDecision {
+    AppId realApp = 0;
+    LaunchMode mode = LaunchMode::None;
+    const char* modeSource = nullptr;
+    bool spoofOnDisk = false;
+    bool spacewarMask = false;
+    bool hasAetherOnlineToken = false;
+    bool hasShowOnlineToken = false;
+};
+
+static LaunchDecision ResolveLaunchDecision(std::uint64_t gameId, const char* cmdLine,
+                                            const char* exe, const char* workDir) {
+    LaunchDecision d;
+    d.realApp = static_cast<AppId>(gameId & constants::kGameIdAppIdMask);
+    d.hasAetherOnlineToken = HasAetherOnlineFlag(cmdLine);
+    d.hasShowOnlineToken = HasShowOnlineFlag(cmdLine);
+    d.mode = ResolveLaunchMode(d.realApp, d.hasAetherOnlineToken, d.hasShowOnlineToken,
+                               &d.modeSource);
+    d.spoofOnDisk = HasSpacewarSpoofOnDisk(exe, workDir);
+    if (d.mode == LaunchMode::ShowOnline && d.spoofOnDisk) {
+        d.mode = LaunchMode::None;
+        d.modeSource = "UCO2/OFME on disk; skip showonline";
+    }
+    // UCO2/OFME launched FROM THE LIBRARY: the client already registered this
+    // process under its real appid, and a foreign crack cannot re-key it
+    // afterwards — UCO2's Spacewar spoof only applies to the process-originated
+    // Launch (direct exe / steam_appid.txt), which a library launch never
+    // performs. UCO2 would then announce the real identity on the wire, which
+    // breaks the Spacewar-based invite system (lobbies and invites are keyed
+    // on 480). Apply the same 480 process mask AetherOnline uses, WITHOUT any
+    // Online Aether state: the foreign crack owns the process and the
+    // networking (UCO2's AppId=480 ini matches the mask; ogAppId keeps
+    // DLC/tickets/stats on the real app), Aether only supplies the Spacewar
+    // identity.
+    d.spacewarMask = d.spoofOnDisk && d.mode != LaunchMode::AetherOnline &&
+                     d.realApp != 0 && d.realApp != constants::kSpacewarAppId;
+    if (d.spacewarMask) d.modeSource = "UCO2/OFME on disk; Spacewar mask";
+    return d;
+}
+
+// Hands the child process a clean argv whenever an Aether token was present
+// (see StripAetherFlagArgs). Returns the command line the child must receive
+// (never null; may point into outStorage).
+static const char* PrepareChildCommandLine(const char* cmdLine, const LaunchDecision& d,
+                                           std::string& outStorage) {
+    if (d.hasAetherOnlineToken || d.hasShowOnlineToken) {
+        bool stripped = false;
+        outStorage = StripAetherFlagArgs(cmdLine, &stripped);
+        if (stripped) {
+            AC_LOG_INFO(kModule,
+                        "Stripped Aether launch flags from child cmdline "
+                        "(app %u, was '%s').",
+                        d.realApp, cmdLine ? cmdLine : "");
+            return outStorage.c_str();
+        }
+    }
+    return cmdLine;
+}
+
+// Applies the launch decision: 480 process mask (AetherOnline / UCO2-OFME) or
+// ShowOnline session, plus the 480 ACF language sync. `session` is expected
+// freshly constructed by the caller; spacewarSpoofExpected is always set.
+static void ApplyLaunchMask(const LaunchDecision& d, std::uint64_t* gameId,
+                            presence::SessionSnapshot& session) {
+    session.spacewarSpoofExpected = d.spoofOnDisk;
+    if (d.mode == LaunchMode::AetherOnline && luadata::HasDepot(d.realApp)) {
+        // AetherOnline: full 480 process mask — a strict superset of what
+        // -showonline needs (server presence + friend notification), and the
+        // mask is what real multiplayer through a crack requires.
+        session.realAppId = d.realApp;
+        *gameId = (*gameId & ~constants::kGameIdAppIdMask) | constants::kSpacewarAppId;
+        AC_LOG_INFO(kModule,
+                    "Masked AppId %u as Spacewar (%u) for AetherOnline (source: %s).",
+                    d.realApp, constants::kSpacewarAppId, d.modeSource);
+        // Synchronise the game's language to the 480 ACF so the game starts
+        // in the correct language instead of defaulting to English.
+        SyncLanguageToSpacewar(d.realApp);
+    } else if (d.mode == LaunchMode::ShowOnline && luadata::HasDepot(d.realApp)) {
+        // ShowOnline session: NO process mask. The game stays registered under
+        // its real appid, so achievements, DLC, cloud, overlay, screenshots
+        // and the community hub behave exactly like a flag-less launch. Only
+        // the outgoing presence frames are rewritten to Spacewar/480 on the
+        // wire (GamesPlayedModule), so friends still get the "now playing"
+        // broadcast.
+        session.showOnlineAppId = d.realApp;
+        AC_LOG_INFO(kModule,
+                    "ShowOnline session for app %u: process NOT masked; "
+                    "wire-level presence rewrite only (source: %s).",
+                    d.realApp, d.modeSource);
+    } else if (d.spacewarMask) {
+        // UCO2/OFME library launch: same 480 registration as AetherOnline, but
+        // NO aetherOnlineRealAppId — that would arm the Online Aether payload
+        // injection (OnlinePayload::MaybeInject, CreateProcess hooks) and the
+        // AetherOnline-only IPC translations inside a process the foreign crack
+        // already owns.
+        *gameId = (*gameId & ~constants::kGameIdAppIdMask) | constants::kSpacewarAppId;
+        AC_LOG_INFO(kModule,
+                    "Masked AppId %u as Spacewar (%u) for UCO2/OFME launch "
+                    "(source: %s).",
+                    d.realApp, constants::kSpacewarAppId, d.modeSource);
+        // Same language fix as AetherOnline: the client reads the 480 ACF.
+        SyncLanguageToSpacewar(d.realApp);
+    }
+}
+
 bool h_SpawnProcess(void* user, const char* exe, const char* cmdLine, const char* workDir,
                     std::uint64_t* gameId, const void* blob, std::uint32_t blobSize,
                     std::int32_t launchOption) {
+    // I-D: orchestratore sottile; la logica vive negli helper sopra
+    // (ResolveLaunchDecision / PrepareChildCommandLine / ApplyLaunchMask).
     std::string childCmdStorage;
     const char* childCmd = cmdLine;
     if (gameId) {
         // ResolveLaunchMode retains the latest published snapshot. File polling
         // belongs to DirWatch, never to this process-creation hook.
+        const LaunchDecision d = ResolveLaunchDecision(*gameId, cmdLine, exe, workDir);
 
-        AppId realApp = static_cast<AppId>(*gameId & constants::kGameIdAppIdMask);
-        if (realApp != 0 && realApp != constants::kSpacewarAppId) {
-            g_state.lastSpawnedAppId.store(realApp);
-        } else if (realApp == constants::kSpacewarAppId) {
+        if (d.realApp != 0 && d.realApp != constants::kSpacewarAppId) {
+            g_state.lastSpawnedAppId.store(d.realApp);
+        } else if (d.realApp == constants::kSpacewarAppId) {
             // A 480 launch is the foreign-crack (UCO2/OFME) signature — or the
             // user playing Spacewar itself. A real appid left over from an
             // earlier launch must not be attributed to it: the spoofed
@@ -376,103 +492,25 @@ bool h_SpawnProcess(void* user, const char* exe, const char* cmdLine, const char
             // (GamesPlayed::RealAppForSpoofedSession).
             g_state.lastSpawnedAppId.store(0);
         }
-
-        // Centralised resolution (docs/05 §12): TOML arrays are the source of
-        // truth; argv tokens (-aetheronline / -showonline) are LEGACY hints that
-        // keep working for unmigrated configs and are ALWAYS stripped from
-        // the child command line below. exclude_apps wins over tokens too.
-        const bool hasAetherOnlineToken = HasAetherOnlineFlag(cmdLine);
-        const bool hasSoToken = HasShowOnlineFlag(cmdLine);
-        const char* modeSource = nullptr;
-        LaunchMode mode = ResolveLaunchMode(realApp, hasAetherOnlineToken, hasSoToken, &modeSource);
-        const bool spoofOnDisk = HasSpacewarSpoofOnDisk(exe, workDir);
-        presence::SessionSnapshot session;
-        session.spacewarSpoofExpected = spoofOnDisk;
-        if (mode == LaunchMode::ShowOnline && spoofOnDisk) {
-            mode = LaunchMode::None;
-            modeSource = "UCO2/OFME on disk; skip showonline";
-        }
-        // UCO2/OFME launched FROM THE LIBRARY: the client already registered
-        // this process under its real appid, and a foreign crack cannot re-key
-        // it afterwards — UCO2's Spacewar spoof only applies to the
-        // process-originated Launch (direct exe / steam_appid.txt), which a
-        // library launch never performs. UCO2 would then announce the real
-        // identity on the wire, which breaks the Spacewar-based invite system
-        // (lobbies and invites are keyed on 480). Apply the same 480 process
-        // mask AetherOnline uses, WITHOUT any Online Aether state: the foreign
-        // crack owns the process and the networking (UCO2's AppId=480 ini
-        // matches the mask; ogAppId keeps DLC/tickets/stats on the real app),
-        // Aether only supplies the Spacewar identity. The real appid is
-        // already recorded in lastSpawnedAppId above for the wire naming.
-        const bool spacewarMask = spoofOnDisk && mode != LaunchMode::AetherOnline &&
-                                  realApp != 0 && realApp != constants::kSpacewarAppId;
-        if (spacewarMask) modeSource = "UCO2/OFME on disk; Spacewar mask";
         // Verdict line for EVERY launch (including mode None / depot misses,
-        // which the branches below leave silent): with the build stamp this
+        // which the mask branches leave silent): with the build stamp this
         // tells you exactly what the DLL decided and why — marker read vs
         // argv token vs default — instead of guessing after the fact.
         AC_LOG_INFO(kModule,
                     "Presence resolve: app %u -> %s (source: %s; argv aetheronline=%d showonline=%d; depot=%d).",
-                    realApp,
-                    mode == LaunchMode::AetherOnline ? "aetheronline"
-                        : mode == LaunchMode::ShowOnline ? "showonline" : "none",
-                    modeSource ? modeSource : "unknown",
-                    hasAetherOnlineToken ? 1 : 0, hasSoToken ? 1 : 0,
-                    luadata::HasDepot(realApp) ? 1 : 0);
+                    d.realApp,
+                    d.mode == LaunchMode::AetherOnline ? "aetheronline"
+                        : d.mode == LaunchMode::ShowOnline ? "showonline" : "none",
+                    d.modeSource ? d.modeSource : "unknown",
+                    d.hasAetherOnlineToken ? 1 : 0, d.hasShowOnlineToken ? 1 : 0,
+                    luadata::HasDepot(d.realApp) ? 1 : 0);
 
-        // Hand the child process a clean argv whenever an Aether token was
-        // present (see StripAetherFlagArgs). Never null; empty string only
-        // when the token was the whole command line.
-        if (hasAetherOnlineToken || hasSoToken) {
-            bool stripped = false;
-            childCmdStorage = StripAetherFlagArgs(cmdLine, &stripped);
-            if (stripped) {
-                childCmd = childCmdStorage.c_str();
-                AC_LOG_INFO(kModule,
-                            "Stripped Aether launch flags from child cmdline "
-                            "(app %u, was '%s').",
-                            realApp, cmdLine ? cmdLine : "");
-            }
-        }
+        // Clean argv for the child whenever an Aether token was present.
+        // Never null; empty string only when the token was the whole line.
+        childCmd = PrepareChildCommandLine(cmdLine, d, childCmdStorage);
 
-        if (mode == LaunchMode::AetherOnline && luadata::HasDepot(realApp)) {
-            // AetherOnline: full 480 process mask — a strict superset of what
-            // -showonline needs (server presence + friend notification), and
-            // the mask is what real multiplayer through a crack requires.
-            session.realAppId = realApp;
-            *gameId = (*gameId & ~constants::kGameIdAppIdMask) | constants::kSpacewarAppId;
-            AC_LOG_INFO(kModule,
-                        "Masked AppId %u as Spacewar (%u) for AetherOnline (source: %s).",
-                        realApp, constants::kSpacewarAppId, modeSource);
-            // Synchronise the game's language to the 480 ACF so the game
-            // starts in the correct language instead of defaulting to English.
-            SyncLanguageToSpacewar(realApp);
-        } else if (mode == LaunchMode::ShowOnline && luadata::HasDepot(realApp)) {
-            // ShowOnline session: NO process mask. The game stays registered
-            // under its real appid, so achievements, DLC, cloud, overlay,
-            // screenshots and the community hub behave exactly like a
-            // flag-less launch. Only the outgoing presence frames are
-            // rewritten to Spacewar/480 on the wire (GamesPlayedModule), so
-            // friends still get the "now playing" broadcast.
-            session.showOnlineAppId = realApp;
-            AC_LOG_INFO(kModule,
-                        "ShowOnline session for app %u: process NOT masked; "
-                        "wire-level presence rewrite only (source: %s).",
-                        realApp, modeSource);
-        } else if (spacewarMask) {
-            // UCO2/OFME library launch: same 480 registration as AetherOnline,
-            // but NO aetherOnlineRealAppId — that would arm the Online Aether
-            // payload injection (OnlinePayload::MaybeInject, CreateProcess
-            // hooks) and the AetherOnline-only IPC translations inside a process
-            // the foreign crack already owns.
-            *gameId = (*gameId & ~constants::kGameIdAppIdMask) | constants::kSpacewarAppId;
-            AC_LOG_INFO(kModule,
-                        "Masked AppId %u as Spacewar (%u) for UCO2/OFME launch "
-                        "(source: %s).",
-                        realApp, constants::kSpacewarAppId, modeSource);
-            // Same language fix as AetherOnline: the client reads the 480 ACF.
-            SyncLanguageToSpacewar(realApp);
-        }
+        presence::SessionSnapshot session;
+        ApplyLaunchMask(d, gameId, session);
         // Unica pubblicazione atomica di tutti i campi: i lettori non possono
         // osservare stati intermedi tra i vecchi store separati.
         presence::Publish(session);

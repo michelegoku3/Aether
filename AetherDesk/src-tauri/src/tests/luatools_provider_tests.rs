@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::providers::luatools::{choose_available_source, describe_api_error, rank_available_sources};
+use crate::providers::luatools::{describe_api_error, rank_available_sources};
 use reqwest::StatusCode;
 
 #[test]
@@ -11,14 +11,14 @@ fn chooses_available_source_by_stable_preference() {
         ("Luie".to_string(), "unavailable".to_string()),
     ]);
 
-    assert_eq!(choose_available_source(&statuses).as_deref(), Some("Ryuu"));
+    assert_eq!(rank_available_sources(&statuses).first().map(String::as_str), Some("Ryuu"));
 }
 
 #[test]
 fn source_status_matching_is_case_insensitive() {
     let statuses = HashMap::from([("rYuU".to_string(), "AVAILABLE".to_string())]);
 
-    assert_eq!(choose_available_source(&statuses).as_deref(), Some("rYuU"));
+    assert_eq!(rank_available_sources(&statuses).first().map(String::as_str), Some("rYuU"));
 }
 
 #[test]
@@ -28,17 +28,17 @@ fn falls_back_deterministically_for_future_source_names() {
         ("Alpha".to_string(), "available".to_string()),
     ]);
 
-    assert_eq!(choose_available_source(&statuses).as_deref(), Some("Alpha"));
+    assert_eq!(rank_available_sources(&statuses).first().map(String::as_str), Some("Alpha"));
 }
 
 #[test]
-fn returns_none_when_no_source_is_available() {
+fn returns_empty_ranking_when_no_source_is_available() {
     let statuses = HashMap::from([
         ("Luie".to_string(), "unavailable".to_string()),
         ("Ryuu".to_string(), "offline".to_string()),
     ]);
 
-    assert_eq!(choose_available_source(&statuses), None);
+    assert!(rank_available_sources(&statuses).is_empty());
 }
 
 #[test]
@@ -75,7 +75,7 @@ fn ranking_prefers_sources_that_ship_manifests_and_keeps_luie_as_fallback() {
         rank_available_sources(&statuses),
         vec!["Ryuu".to_string(), "Luie".to_string(), "Alpha".to_string(), "Zulu".to_string()]
     );
-    assert_eq!(choose_available_source(&statuses).as_deref(), Some("Ryuu"));
+    assert_eq!(rank_available_sources(&statuses).first().map(String::as_str), Some("Ryuu"));
 
     let luie_only = HashMap::from([
         ("Luie".to_string(), "available".to_string()),

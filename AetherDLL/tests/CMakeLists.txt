@@ -26,13 +26,16 @@ add_executable(quickwin_tests quickwin_tests.cpp stubs/Services.cpp
 # stubs/AbiReporting.cpp supplies the three reporting hooks those headers
 # call; everything else they need is inline.
 target_include_directories(quickwin_tests PRIVATE stubs ../AetherCore ../AetherPayload)
+# I-E: fixture binarie condivise con i test Rust di AetherDesk (D4).
+target_compile_definitions(quickwin_tests PRIVATE
+    CONTRACT_FIXTURES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../../Tools/contract_fixtures/manifest")
 target_link_libraries(quickwin_tests PRIVATE Threads::Threads tomlplusplus::tomlplusplus)
 if(MSVC)
     target_compile_options(quickwin_tests PRIVATE /W4 /utf-8 /EHsc)
 else()
     target_compile_options(quickwin_tests PRIVATE -Wall -Wextra -Wpedantic)
 endif()
-foreach(case strings paths policy worker budget settings registry workers netpacket sentinel structguard gamesplayed_format donorpool keyvalues vdftext jsonutil_escapes manifest_identity ipcreply snapshot_merge ttlcache hexcodec signature ipcspec jsonwriter)
+foreach(case strings paths policy worker budget settings registry workers netpacket sentinel structguard gamesplayed_format donorpool keyvalues vdftext jsonutil_escapes manifest_identity ipcreply snapshot_merge ttlcache hexcodec signature ipcspec jsonwriter manifest_contract)
     add_test(NAME ${case} COMMAND quickwin_tests ${case})
 endforeach()
 add_test(NAME cmake_source_inventory COMMAND ${CMAKE_COMMAND}
