@@ -24,6 +24,7 @@
 #include "utils/SignatureCodec.h"
 #include "utils/IpcSpecParse.h"
 #include "utils/JsonWriter.h"
+#include "hooks/wire/SchemaBuckets.h"
 #include "MinHook.h"
 #include <atomic>
 #include <chrono>
@@ -216,12 +217,81 @@ void Workers() {
         std::this_thread::sleep_for(1ms);
     CHECK(ran.load());
     CHECK(!w::SummaryText().empty());
+    // Completion is waitable independently of registry reaping/join ownership.
+    w::WorkerCompletion success, failure;
+    CHECK(w::StartWorker("completion", [](std::atomic<bool>&) {}, &success));
+    CHECK(success.wait_for(5s) == std::future_status::ready);
+    success.get();
+    CHECK(w::StartWorker("throwing", [](std::atomic<bool>&) {
+        throw std::runtime_error("worker failure");
+    }, &failure));
+    CHECK(failure.wait_for(5s) == std::future_status::ready);
+    failure.get(); // exceptions are logged by the registry, not rethrown here
     w::Shutdown();
     CHECK(sawStop.load());              // lo stop flag è arrivato
     w::Shutdown();                      // idempotente
     CHECK(!w::Submit([&] { counter.fetch_add(1); }));   // rifiuto post-shutdown
     CHECK(!w::StartWorker("late", [](std::atomic<bool>&) {}));
+    CHECK(!w::StartWorker("late_completion", [](std::atomic<bool>&) {}, &success));
+    CHECK(!success.valid());
     CHECK(counter.load() == 101);       // nessun job fantasma
+}
+
+void WorkersShutdownRace() {
+    namespace w = ac::workers;
+    std::atomic<bool> go{false};
+    std::atomic<int> entered{0}, accepted{0}, exited{0};
+    std::vector<std::thread> producers;
+    for (int i = 0; i < 8; ++i) producers.emplace_back([&] {
+        ++entered;
+        while (!go.load()) std::this_thread::yield();
+        for (int j = 0; j < 100; ++j) {
+            if (!w::StartWorker("racing", [&](std::atomic<bool>& stop) {
+                while (!stop.load()) std::this_thread::sleep_for(1ms);
+                ++exited;
+            })) break;
+            ++accepted;
+        }
+    });
+    while (entered < 8) std::this_thread::yield();
+    go = true;
+    std::this_thread::sleep_for(1ms);
+    w::Shutdown();
+    for (auto& producer : producers) producer.join();
+    CHECK(accepted == exited);
+    CHECK(w::SummaryText().find("workers_registered=0 running=0") != std::string::npos);
+    CHECK(!w::StartWorker("after_race", [](std::atomic<bool>&) {}));
+}
+
+void SchemaBuckets() {
+    auto fixture = [](const std::string& bucket, const std::string& child,
+                      bool entry, const std::string& section = "stats") {
+        std::vector<std::uint8_t> data;
+        auto dict = [&](const std::string& name) {
+            data.push_back(0); data.insert(data.end(), name.begin(), name.end()); data.push_back(0);
+        };
+        dict("123"); dict(section); dict(bucket); dict(child);
+        if (entry) { dict("0"); data.push_back(8); }
+        for (int i = 0; i < 5; ++i) data.push_back(8);
+        return data;
+    };
+    auto parse = [](const std::vector<std::uint8_t>& data) {
+        ac::backup::statscache::detail::SchemaBucketWalker walker;
+        CHECK(ac::kv1::WalkBinary(data.data(), data.size(), walker));
+        return walker.buckets;
+    };
+    CHECK(parse(fixture("0", "bits", true)).count(0) == 1);
+    CHECK(parse(fixture("200", "bits", true)).count(200) == 1);
+    CHECK(parse(fixture("200", "bits", false)).empty());
+    CHECK(parse(fixture("200", "display", true)).empty());
+    CHECK(parse(fixture("200", "bits", true, "other")).empty());
+    for (const auto* bad : {"", "no", "-1", "1x", "4294967296"})
+        CHECK(parse(fixture(bad, "bits", true)).empty());
+    auto truncated = fixture("200", "bits", true);
+    truncated.resize(6); // truncated key; no completed bucket
+    ac::backup::statscache::detail::SchemaBucketWalker walker;
+    CHECK(!ac::kv1::WalkBinary(truncated.data(), truncated.size(), walker));
+    CHECK(walker.buckets.empty());
 }
 
 void Registry() {
@@ -1322,6 +1392,8 @@ int main(int argc, char** argv) {
         else if (test == "budget") Budget(); else if (test == "settings") Settings();
         else if (test == "registry") Registry();
         else if (test == "workers") Workers();
+        else if (test == "schema_buckets") SchemaBuckets();
+        else if (test == "workers_race") WorkersShutdownRace();
         else if (test == "netpacket") NetPacket();
         else if (test == "sentinel") Sentinel();
         else if (test == "structguard") StructGuard();

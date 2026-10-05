@@ -12,6 +12,7 @@
 #include "core/AetherCoreState.h"
 #include "core/Logger.h"
 #include "utils/KeyValues.h"
+#include "hooks/wire/SchemaBuckets.h"
 #include "hooks/wire/BackupIo.h"
 
 namespace ac::backup::statscache {
@@ -39,51 +40,11 @@ constexpr const char* kModule = "Wire.Achievement";
     std::unordered_map<steam::AppId, std::unordered_set<std::uint32_t>> g_schemaBuckets;
     std::unordered_set<steam::AppId> g_schemaParsed;
 
-    // Estrae i bucket achievement (chiavi della sezione "stats" che contengono
-    // una sotto-sezione "bits"). Formato schema: <appid> { stats { <bucket> {
-    // bits { ... } } } }: si raccogliono le chiavi dei dizionari a profondità 2
-    // che contengono "bits".
-    // Bucket achievement via walker KV1 condiviso (utils/KeyValues, P11):
-    // sezione "stats" a profondità 1; un bucket (profondità 2) è achievement
-    // solo se il suo dizionario "bits" ha almeno una voce.
-    struct SchemaBucketWalker final : kv1::Visitor {
-        std::unordered_set<std::uint32_t> buckets;
-        bool inStats = false;
-        int bucketDepth = -1;          // profondità dell'entry del bucket corrente
-        std::string currentBucket;
-        int bitsEntries = 0;
-
-        void FinalizeBucket() {
-            if (inStats && bitsEntries > 0) {
-                char* end = nullptr;
-                unsigned long id = std::strtoul(currentBucket.c_str(), &end, 10);
-                if (end && *end == '\0') buckets.insert(static_cast<std::uint32_t>(id));
-            }
-            bucketDepth = -1;
-            bitsEntries = 0;
-        }
-        void OnDictBegin(const std::string& name, int depth) override {
-            if (depth == 1 && name == "stats") inStats = true;
-            if (inStats && depth == 2) {
-                currentBucket = name;   // potenziale bucket
-                bucketDepth = 2;
-                bitsEntries = 0;
-            }
-            // Semantica identica al parser storico: contano solo le voci
-            // DIZIONARIO dentro "bits" (profondità 4).
-            if (bucketDepth == 2 && depth == 4) ++bitsEntries;
-        }
-        void OnDictEnd(int depth) override {
-            if (bucketDepth == 2 && depth == 2) FinalizeBucket();
-            if (inStats && depth == 1) inStats = false;   // chiusa la sezione "stats"
-        }
-    };
-
     std::unordered_set<std::uint32_t> ParseSchemaBuckets(const std::string& path) {
         std::ifstream f(path, std::ios::binary);
         if (!f.is_open()) return {};
         std::vector<std::uint8_t> buf((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
-        SchemaBucketWalker walker;
+        detail::SchemaBucketWalker walker;
         kv1::WalkBinary(buf.data(), buf.size(), walker);
         return std::move(walker.buckets);
     }

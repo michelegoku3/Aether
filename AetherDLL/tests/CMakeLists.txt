@@ -35,10 +35,27 @@ if(MSVC)
 else()
     target_compile_options(quickwin_tests PRIVATE -Wall -Wextra -Wpedantic)
 endif()
-foreach(case strings paths policy worker budget settings registry workers netpacket sentinel structguard gamesplayed_format donorpool keyvalues vdftext jsonutil_escapes manifest_identity ipcreply snapshot_merge ttlcache hexcodec signature ipcspec jsonwriter manifest_contract)
+foreach(case strings paths policy worker budget settings registry workers netpacket sentinel structguard gamesplayed_format donorpool keyvalues vdftext jsonutil_escapes manifest_identity ipcreply snapshot_merge ttlcache hexcodec signature ipcspec jsonwriter manifest_contract schema_buckets workers_race)
     add_test(NAME ${case} COMMAND quickwin_tests ${case})
 endforeach()
 add_test(NAME cmake_source_inventory COMMAND ${CMAKE_COMMAND}
     -DTEST_BINARY_DIR=${CMAKE_CURRENT_BINARY_DIR}/inventory-test
     -DCHECK_MODULE=${CMAKE_CURRENT_SOURCE_DIR}/../cmake/CheckSources.cmake
     -P ${CMAKE_CURRENT_SOURCE_DIR}/source_inventory_test.cmake)
+
+# Real backup queue + real worker registry, with disk/Steam dependencies stubbed.
+add_executable(backup_lifecycle_tests backup_lifecycle_tests.cpp
+    ../AetherCore/hooks/wire/AchievementBackup.cpp ../AetherCore/core/Workers.cpp)
+target_include_directories(backup_lifecycle_tests PRIVATE backup_stubs ../AetherCore)
+target_link_libraries(backup_lifecycle_tests PRIVATE Threads::Threads)
+if(MSVC)
+    target_compile_options(backup_lifecycle_tests PRIVATE /W4 /utf-8 /EHsc)
+else()
+    target_compile_options(backup_lifecycle_tests PRIVATE -Wall -Wextra -Wpedantic)
+endif()
+foreach(case registry_first flush_first concurrent job_failure registration_refused idle_registry startup_scan)
+    add_test(NAME backup_${case} COMMAND backup_lifecycle_tests ${case})
+    set_tests_properties(backup_${case} PROPERTIES TIMEOUT 10)
+endforeach()
+
+set_tests_properties(workers workers_race PROPERTIES TIMEOUT 15)

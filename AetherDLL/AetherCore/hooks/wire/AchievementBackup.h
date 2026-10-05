@@ -32,7 +32,8 @@
 //     sblocco). Lo snapshot viene riscritto in modo atomico (.tmp + move) con
 //     merge (id duplicato -> vince il tempo più antico).
 //   * FlushOnShutdown() blocca, scarica la coda (inclusi i job ritardati),
-//     copia i .bin e fa join. Solo nel percorso esplicito fuori dal loader
+//     copia i .bin e attende il completamento (join nel registry Workers).
+//     Solo nel percorso esplicito fuori dal loader
 //     lock, NON in DllMain. Alla terminazione normale la protezione è data
 //     dal checkpoint periodico + dalla copia finale di SessionEnded.
 //   * Tutto è best-effort: un errore di I/O viene solo loggato (WARN) e non
