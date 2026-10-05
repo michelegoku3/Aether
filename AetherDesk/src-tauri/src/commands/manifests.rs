@@ -2,7 +2,6 @@ use serde::Serialize;
 use std::path::PathBuf;
 use std::time::Instant;
 
-use crate::core::settings::load_settings;
 use crate::manifest::pins::{pins_from_rows, DepotManifestPin, LuaManifestPins};
 use crate::providers::hubcap::HubcapClient;
 use crate::steam::compat::SteamCompat;
@@ -38,11 +37,12 @@ pub async fn sync_hubcap_game_manifest(
         return Err("A valid AppID is required".to_string());
     }
 
-    let settings = load_settings(&app);
+    let settings = crate::core::settings::SettingsManager::new(&app).try_load()?;
     if settings.steam_path.trim().is_empty() {
         return Err("Manifest repair cannot run because the Steam path is empty".to_string());
     }
 
+    let plan = crate::core::game_mutations::MutationPlan::prepare(std::path::Path::new(&settings.steam_path), app_id, "manifest-repair")?;
     let started = Instant::now();
     let lua = LuaManifestPins::new(settings.steam_path.clone(), app_id);
     let content = std::fs::read_to_string(lua.lua_path())
@@ -111,6 +111,7 @@ pub async fn sync_hubcap_game_manifest(
         return Ok(report);
     }
 
+    let _mutation = plan.commit_for(&app).await?;
     report.generated = resolution.generated.len();
     let expected = resolution.generated.len();
     let generated = resolution.generated;
@@ -190,7 +191,7 @@ pub async fn refresh_game_pins_from_hubcap(
     if app_id == 0 {
         return Err("A valid AppID is required".to_string());
     }
-    let settings = load_settings(&app);
+    let settings = crate::core::settings::SettingsManager::new(&app).try_load()?;
     if settings.steam_path.trim().is_empty() {
         return Err("Pin refresh cannot run because the Steam path is empty".to_string());
     }
@@ -198,6 +199,7 @@ pub async fn refresh_game_pins_from_hubcap(
         return Err("Pin refresh requires a configured Hubcap API key".to_string());
     }
 
+    let plan = crate::core::game_mutations::MutationPlan::prepare(std::path::Path::new(&settings.steam_path), app_id, "pin-refresh")?;
     let editor = LuaManifestPins::new(settings.steam_path.clone(), app_id);
     if !editor.path_exists() {
         return Ok(PinRefreshReport { app_id, skipped: true, ..Default::default() });
@@ -325,6 +327,7 @@ pub async fn refresh_game_pins_from_hubcap(
             resolution.missing.len()
         ));
     }
+    let _mutation = plan.commit_for(&app).await?;
     let mut staged = 0usize;
     if !resolution.generated.is_empty() {
         let expected = resolution.generated.len();

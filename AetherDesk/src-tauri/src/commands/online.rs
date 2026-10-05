@@ -149,6 +149,9 @@ pub async fn enable_online(
     app_id: u32,
     request: OnlineEnableRequest,
 ) -> Result<OnlineActionResult, String> {
+    let steam_root = crate::commands::command_steam_path(&app)?;
+    let mutation = crate::core::game_mutations::acquire(Path::new(&steam_root), app_id, "enable_online").await?;
+    crate::core::game_mutations::ensure_current_root(&app, Path::new(&steam_root))?;
     let game = resolve_installed_game(&app, app_id)?;
     let game_root = PathBuf::from(&game.game_path);
     let state_path = state_path();
@@ -201,16 +204,19 @@ pub async fn enable_online(
     OnlinePreferencesStore::load(&preferences_path)
         .upsert(app_id, request.clone(), &preferences_path)?;
 
-    let result = tauri::async_runtime::spawn_blocking(move || {
-        OnlineEngine::enable(app_id, &game_root, &bundle, &request, &backup_root, &state_path)
+    let (_mutation, result) = tauri::async_runtime::spawn_blocking(move || {
+        let result = OnlineEngine::enable(app_id, &game_root, &bundle, &request, &backup_root, &state_path);
+        (mutation, result)
     })
     .await
-    .map_err(|e| format!("Online worker failed: {e}"))??;
+    .map_err(|e| format!("Online worker failed: {e}"))?;
+    let result = result?;
 
     crate::desk_log_info!("online", "enable_online done: success={} message='{}'", result.success, result.message);
     if result.success {
         for path in aethercore_toml_paths(&app) {
-            update_mode_in_toml(&path, app_id, Some(PresenceMode::Excluded));
+            update_mode_in_toml(&path, app_id, Some(PresenceMode::Excluded))
+                .map_err(|e| format!("Online files deployed, presence configuration incomplete: {e}"))?;
         }
     }
     Ok(result)
@@ -219,6 +225,9 @@ pub async fn enable_online(
 /// Disattiva UCOnline2 (rollback dal journal).
 #[tauri::command]
 pub async fn disable_online(app: tauri::AppHandle, app_id: u32) -> Result<OnlineActionResult, String> {
+    let steam_root = crate::commands::command_steam_path(&app)?;
+    let mutation = crate::core::game_mutations::acquire(Path::new(&steam_root), app_id, "disable_online").await?;
+    crate::core::game_mutations::ensure_current_root(&app, Path::new(&steam_root))?;
     let backup_root = LocalAppPaths::backup_root();
     let state_path = state_path();
     let game_root = resolve_installed_game(&app, app_id)
@@ -227,11 +236,13 @@ pub async fn disable_online(app: tauri::AppHandle, app_id: u32) -> Result<Online
 
     crate::desk_log_info!("online", "disable_online: app={}", app_id);
 
-    let result = tauri::async_runtime::spawn_blocking(move || {
-        OnlineEngine::disable(app_id, &backup_root, &state_path, game_root.as_deref())
+    let (_mutation, result) = tauri::async_runtime::spawn_blocking(move || {
+        let result = OnlineEngine::disable(app_id, &backup_root, &state_path, game_root.as_deref());
+        (mutation, result)
     })
     .await
-    .map_err(|e| format!("Online worker failed: {e}"))??;
+    .map_err(|e| format!("Online worker failed: {e}"))?;
+    let result = result?;
 
     if result.success {
         // UCO2 rimosso: l'app esce da exclude_apps e torna al comportamento
@@ -239,7 +250,8 @@ pub async fn disable_online(app: tauri::AppHandle, app_id: u32) -> Result<Online
         // ("mostra giochi online" attivo), altrimenti None. Senza questo undo
         // il gioco resterebbe escluso per sempre dopo la disattivazione.
         for path in aethercore_toml_paths(&app) {
-            let _ = update_mode_in_toml(&path, app_id, None);
+            update_mode_in_toml(&path, app_id, None)
+                .map_err(|e| format!("Online files reverted, presence configuration incomplete: {e}"))?;
         }
     }
 

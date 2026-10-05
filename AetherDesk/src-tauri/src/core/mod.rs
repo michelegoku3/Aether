@@ -16,3 +16,7 @@ pub mod steam_monitor;
 pub mod steam_process;
 pub mod library_events;
 pub mod hubcap_update_monitor;
+
+pub mod state_io;
+pub mod config_document;
+pub mod game_mutations;

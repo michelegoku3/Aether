@@ -212,7 +212,7 @@ pub fn set_aetheronline(
     let choice = if enabled { Some(PresenceMode::AetherOnline) } else { None };
     let mut touched = false;
     for path in aethercore_toml_paths(&app) {
-        if update_mode_in_toml(&path, app_id, choice) {
+        if update_mode_in_toml(&path, app_id, choice)? {
             touched = true;
         }
     }
@@ -324,7 +324,7 @@ pub fn set_aether_showonline(
     let choice = if enabled { Some(PresenceMode::ShowOnline) } else { None };
     let mut touched = false;
     for path in aethercore_toml_paths(&app) {
-        if update_mode_in_toml(&path, app_id, choice) {
+        if update_mode_in_toml(&path, app_id, choice)? {
             touched = true;
         }
     }
@@ -382,7 +382,7 @@ pub fn set_aether_excluded(
 
     let choice = if enabled { Some(PresenceMode::Excluded) } else { None };
     for path in aethercore_toml_paths(&app) {
-        update_mode_in_toml(&path, app_id, choice);
+        update_mode_in_toml(&path, app_id, choice)?;
     }
     crate::desk_log_info!(
         "steam",
@@ -421,7 +421,7 @@ pub fn get_presence_default_mode(app: tauri::AppHandle) -> Result<bool, String> 
 #[tauri::command]
 pub fn set_presence_default_mode(app: tauri::AppHandle, show_online: bool) -> Result<String, String> {
     for path in aethercore_toml_paths(&app) {
-        set_default_mode_in_toml(&path, show_online);
+        set_default_mode_in_toml(&path, show_online)?;
     }
     crate::desk_log_info!(
         "steam",
@@ -440,9 +440,10 @@ pub fn set_presence_default_mode(app: tauri::AppHandle, show_online: bool) -> Re
 #[tauri::command]
 pub fn acknowledge_ost_warning(app: tauri::AppHandle) -> Result<(), String> {
     let manager = crate::core::settings::SettingsManager::new(&app);
-    let mut settings = manager.load();
-    settings.ost_warning_acknowledged = true;
-    manager.save(&settings)
+    manager.update("acknowledge-ost_warning_acknowledged", |settings| {
+        settings.ost_warning_acknowledged = true;
+        Ok(())
+    }).map(|_| ())
 }
 
 /// True when the OST pattern source (OpenSteam001/steam-monitor) is enabled
@@ -463,7 +464,7 @@ pub fn get_ost_source_enabled(app: tauri::AppHandle) -> Result<bool, String> {
 #[tauri::command]
 pub fn set_ost_source_enabled(app: tauri::AppHandle, enabled: bool) -> Result<String, String> {
     for path in crate::core::ost_config::aethercore_toml_paths(&app) {
-        crate::core::ost_config::set_ost_enabled_in_toml(&path, enabled);
+        crate::core::ost_config::set_ost_enabled_in_toml(&path, enabled)?;
     }
     crate::desk_log_info!(
         "steam",
@@ -498,7 +499,7 @@ pub fn get_manifest_restore_enabled(app: tauri::AppHandle) -> Result<bool, Strin
 #[tauri::command]
 pub fn set_manifest_restore_enabled(app: tauri::AppHandle, enabled: bool) -> Result<String, String> {
     for path in crate::core::manifest_restore_config::aethercore_toml_paths(&app) {
-        crate::core::manifest_restore_config::set_manifest_restore_enabled_in_toml(&path, enabled);
+        crate::core::manifest_restore_config::set_manifest_restore_enabled_in_toml(&path, enabled)?;
     }
     crate::desk_log_info!(
         "steam",

@@ -12,6 +12,7 @@ pub async fn pick_and_run_steamless(
     app: tauri::AppHandle,
     app_id: u32,
 ) -> Result<SteamlessRunResult, String> {
+    let steam_root = crate::commands::command_steam_path(&app)?;
     let game = resolve_installed_game(&app, app_id)?;
     let game_root = PathBuf::from(&game.game_path);
 
@@ -39,7 +40,10 @@ pub async fn pick_and_run_steamless(
     crate::desk_log_info!("steamless", "Running Steamless on executable: {} (game: '{}')", exe_path.display(), game.name);
     let tool = SteamlessToolLocator::new(app.clone()).locate()?;
 
+    let mutation = crate::core::game_mutations::acquire(std::path::Path::new(&steam_root), app_id, "external-tool").await?;
+    crate::core::game_mutations::ensure_current_root(&app, std::path::Path::new(&steam_root))?;
     let res = tauri::async_runtime::spawn_blocking(move || {
+        let _mutation = mutation;
         SteamlessRunner::new(tool).run(SteamlessRunRequest {
             exe_path,
             game_root,

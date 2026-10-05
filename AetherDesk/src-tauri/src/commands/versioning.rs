@@ -69,6 +69,7 @@ pub async fn apply_game_version(
     // diverso da quello configurato.
     let steam_path = command_steam_path(&app)?;
     validate_app_build(app_id, build_id)?;
+    let plan = crate::core::game_mutations::MutationPlan::prepare(std::path::Path::new(&steam_path), app_id, "apply-version")?;
     let started = Instant::now();
     crate::desk_log_info!(
         "versioning",
@@ -208,10 +209,13 @@ pub async fn apply_game_version(
     // at command entry; normalize the raw value before reuse.)
     let library_path = crate::steam::resolve::normalize_steam_path(&steam_path);
 
+    let mutation = plan.commit_for(&app).await?;
     let pins_for_apply = pins;
     let generated_for_apply = generated_manifests;
     let handle = app.clone();
     let pipeline_result = tauri::async_runtime::spawn_blocking(move || {
+        // Worker owns guard even if the awaiting command is cancelled.
+        let _mutation = mutation;
         let progress = |step: u8, message: &str| {
             let _ = handle.emit(
                 PROGRESS_EVENT,

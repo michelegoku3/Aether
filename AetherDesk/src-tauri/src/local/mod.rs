@@ -74,16 +74,7 @@ pub fn install_bulk_local_pipeline(
     fs::create_dir_all(&depotcache_dir)
         .map_err(|e| format!("Failed to create depotcache dir {}: {}", depotcache_dir.display(), e))?;
 
-    let root_staging = LocalAppPaths::temp_dir().join(format!(
-        "bulk_local_{}_{}",
-        std::process::id(),
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_millis())
-            .unwrap_or(0)
-    ));
-    fs::create_dir_all(&root_staging)
-        .map_err(|e| format!("Failed to create temp staging {}: {}", root_staging.display(), e))?;
+    let root_staging = crate::core::state_io::create_staging(&LocalAppPaths::temp_dir(), "bulk_local")?;
 
     let mut discovered_lua: Vec<PathBuf> = Vec::new();
     let mut discovered_manifests: Vec<PathBuf> = Vec::new();
@@ -137,6 +128,17 @@ pub fn install_bulk_local_pipeline(
             .map_err(|error| format!("Failed to read Lua file {}: {}", lua_path.display(), error))?;
         LuaManifestPins::validate_content(&content)
             .map_err(|error| format!("Lua file {} is malformed: {}", lua_path.display(), error))?;
+    }
+
+    let mut app_ids: Vec<u32> = discovered_lua.iter().filter_map(|p| p.file_stem())
+        .filter_map(|stem| app_id_from_lua_stem(&stem.to_string_lossy())).collect();
+    app_ids.sort_unstable(); app_ids.dedup();
+    let mut _mutations = Vec::new();
+    for id in app_ids {
+        match crate::core::game_mutations::try_acquire(steam_path, id, "bulk-local") {
+            Ok(guard) => _mutations.push(guard),
+            Err(e) => { let _ = fs::remove_dir_all(&root_staging); return Err(e); }
+        }
     }
 
     let mut report = BulkInstallReport::default();
@@ -324,6 +326,7 @@ pub fn install_local_pipeline(
     game_name: &str,
     steam_path: &Path,
     sources: &[String],
+    download_games_with_updates_on: bool,
 ) -> Result<LocalInstallReport, String> {
     if sources.is_empty() {
         crate::desk_log_info!("local", "Local install aborted for AppID {}: no source files selected", app_id);
@@ -336,6 +339,7 @@ pub fn install_local_pipeline(
         sources.len(),
         steam_path.display());
 
+    let _mutation = crate::core::game_mutations::try_acquire(steam_path, app_id, "local-install")?;
     let game_dir = resolve_target_dir(app_id, game_name, steam_path);
     crate::desk_log_info!("local", "Resolved game folder for AppID {}: {}", app_id, game_dir.display());
     // Note: the game folder is created lazily by `install_staged_tree` only
@@ -426,6 +430,12 @@ pub fn install_local_pipeline(
     }
 
     result?;
+    if report.lua_files > 0 && download_games_with_updates_on {
+        let lua = LuaManifestPins::new(steam_path.to_path_buf(), app_id);
+        lua.set_updates_enabled(true)?;
+        let installed = lua.read_lua()?;
+        GameBackup::for_app(app_id)?.backup_lua_artifacts(app_id, &installed, &[])?;
+    }
     Ok(report)
 }
 
@@ -687,19 +697,7 @@ fn sanitize_folder_name(game_name: &str, app_id: u32) -> String {
 /// Lives under `AetherData/temp` (like the crack staging) so Defender
 /// exclusions on AetherData also cover local installs.
 fn create_local_staging(app_id: u32) -> Result<PathBuf, String> {
-    let staging = LocalAppPaths::temp_dir().join(format!(
-        "local_{}_{}",
-        app_id,
-        std::process::id()
-    ));
-    fs::create_dir_all(&staging).map_err(|error| {
-        format!(
-            "Failed to create staging folder {}: {}",
-            staging.display(),
-            error
-        )
-    })?;
-    Ok(staging)
+    crate::core::state_io::create_staging(&LocalAppPaths::temp_dir(), &format!("local_{app_id}"))
 }
 
 /// Recursively copy the contents of `src` into `dest`, overwriting existing

@@ -168,8 +168,8 @@ export const MainContent = memo(function MainContent({
       </main>
 
       {/* Settings stay mounted so unsaved edits (e.g. the Steam path field)
-          survive tab switches. Saving always merges over freshly loaded
-          settings, so keeping it mounted cannot regress concurrent saves. */}
+          survive tab switches. The backend applies a three-way patch against the form baseline,
+          preserving unrelated updates and rejecting conflicting saves. */}
       <main
         className="main-content"
         style={{ display: activeTab === 'settings' ? 'flex' : 'none' }}

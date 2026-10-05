@@ -30,7 +30,12 @@ pub fn aethercore_toml_paths(app: &tauri::AppHandle) -> Vec<std::path::PathBuf> 
     let mut paths = vec![crate::core::paths::LocalAppPaths::config_dir().join("aethercore.toml")];
     let steam_path = load_settings(app).steam_path;
     if !steam_path.trim().is_empty() {
-        paths.push(std::path::PathBuf::from(&steam_path).join("aethercore").join("aethercore.toml"));
+        let legacy = std::path::PathBuf::from(&steam_path)
+            .join("aethercore")
+            .join("aethercore.toml");
+        if legacy.exists() && !paths.contains(&legacy) {
+            paths.push(legacy);
+        }
     }
     paths
 }
@@ -57,181 +62,66 @@ impl PresenceMode {
     ];
 }
 
-pub fn parse_appid_list(text: &str) -> Vec<u32> {
-    text.trim()
-        .trim_start_matches('[')
-        .split_terminator(|c: char| c == ',' || c == ']')
-        .filter_map(|tok| tok.trim().parse::<u32>().ok())
-        .collect()
-}
-
-pub fn format_appid_list(apps: &[u32]) -> String {
-    format!(
-        "[{}]",
-        apps.iter().map(u32::to_string).collect::<Vec<_>>().join(", ")
+pub fn read_mode_apps(path: &Path, mode: PresenceMode) -> Option<Vec<u32>> {
+    let doc = super::config_document::read(path)?;
+    Some(
+        doc.get("presence")?
+            .get(mode.key())?
+            .as_array()?
+            .iter()
+            .filter_map(|v| v.as_integer().and_then(|n| u32::try_from(n).ok()))
+            .collect(),
     )
 }
-
-/// (indice riga, contenuto) per la prima riga NON commentata `key = ...`.
-pub fn find_key_line(lines: &[String], key: &str) -> Option<usize> {
-    for (i, line) in lines.iter().enumerate() {
-        let t = line.trim_start();
-        if t.starts_with('#') {
-            continue;
-        }
-        if let Some(rest) = t.strip_prefix(key) {
-            if rest.trim_start().starts_with('=') {
-                return Some(i);
+pub fn read_default_mode(path: &Path) -> Option<bool> {
+    let doc = super::config_document::read(path)?;
+    Some(doc.get("presence")?.get("default_mode")?.as_str()? == "showonline")
+}
+pub fn update_mode_in_toml(
+    path: &Path,
+    app_id: u32,
+    choice: Option<PresenceMode>,
+) -> Result<bool, String> {
+    super::config_document::edit(path, "presence-app", |doc| {
+        for mode in PresenceMode::ALL {
+            let mut apps: Vec<u32> = doc
+                .get("presence")
+                .and_then(|s| s.get(mode.key()))
+                .and_then(|v| v.as_array())
+                .map(|a| {
+                    a.iter()
+                        .filter_map(|v| v.as_integer().and_then(|n| u32::try_from(n).ok()))
+                        .collect()
+                })
+                .unwrap_or_default();
+            apps.retain(|&id| id != app_id);
+            if choice == Some(mode) {
+                apps.push(app_id);
             }
-        }
-    }
-    None
-}
-
-pub fn read_mode_apps(path: &std::path::Path, mode: PresenceMode) -> Option<Vec<u32>> {
-    let content = std::fs::read_to_string(path).ok()?;
-    let lines: Vec<String> = content.lines().map(str::to_string).collect();
-    let idx = find_key_line(&lines, mode.key())?;
-    let after_eq = lines[idx].splitn(2, '=').nth(1)?;
-    Some(parse_appid_list(after_eq))
-}
-
-pub fn read_default_mode(path: &std::path::Path) -> Option<bool> {
-    let content = std::fs::read_to_string(path).ok()?;
-    let lines: Vec<String> = content.lines().map(str::to_string).collect();
-    let idx = find_key_line(&lines, "default_mode")?;
-    let after_eq = lines[idx].splitn(2, '=').nth(1)?;
-    Some(after_eq.trim().trim_matches('"') == "showonline")
-}
-
-/// Sostituisce la prima riga non commentata `key = value` oppure la inserisce
-/// nella posizione `insert_at` (stabilita dal chiamante: subito sotto
-/// l'header di [presence], avanzando ad ogni inserimento).
-pub fn upsert_key_line(lines: &mut Vec<String>, key: &str, value: &str, insert_at: &mut usize) {
-    let new_line = format!("{key} = {value}");
-    if let Some(i) = find_key_line(lines, key) {
-        lines[i] = new_line;
-    } else {
-        lines.insert(*insert_at, new_line);
-        *insert_at += 1;
-    }
-}
-
-/// Aggiunge/rimuove app_id dagli array [presence] del toml indicato:
-/// `choice = Some(mode)` → app nella lista di `mode` e fuori dalle altre due
-/// (mutua esclusione); `choice = None` → fuori da tutte (torna al default).
-/// Le tre righe sono (ri)scritte in forma canonica; [presence] e le chiavi
-/// mancanti vengono create. Ritorna true se il file è stato modificato.
-pub fn update_mode_in_toml(path: &std::path::Path, app_id: u32, choice: Option<PresenceMode>) -> bool {
-    if !path.exists() {
-        return false;
-    }
-    let Ok(content) = std::fs::read_to_string(path) else {
-        return false;
-    };
-    let had_trailing_nl = content.ends_with('\n');
-    let mut lines: Vec<String> = content.lines().map(str::to_string).collect();
-    if lines.len() == 1 && lines[0].is_empty() {
-        lines.clear();
-    }
-
-    let mut lists: [Vec<u32>; 3] = [Vec::new(), Vec::new(), Vec::new()];
-    let mut key_present: [bool; 3] = [false, false, false];
-    let mut presence_hdr: Option<usize> = None;
-    for (i, line) in lines.iter().enumerate() {
-        let t = line.trim_start();
-        if t.starts_with('#') {
-            continue;
-        }
-        if t == "[presence]" {
-            presence_hdr = Some(i);
-        }
-        for (m, mode) in PresenceMode::ALL.iter().enumerate() {
-            if key_present[m] {
-                continue;
+            apps.sort_unstable();
+            apps.dedup();
+            let mut array = toml_edit::Array::new();
+            for id in apps {
+                array.push(i64::from(id));
             }
-            if let Some(rest) = t.strip_prefix(mode.key()) {
-                let rest = rest.trim_start();
-                if let Some(list) = rest.strip_prefix('=') {
-                    key_present[m] = true;
-                    lists[m] = parse_appid_list(list);
-                }
-            }
+            super::config_document::set(
+                doc,
+                "presence",
+                mode.key(),
+                toml_edit::Value::Array(array),
+            )?;
         }
-    }
-
-    let original = lists.clone();
-    for list in lists.iter_mut() {
-        list.retain(|&a| a != app_id);
-    }
-    if let Some(c) = choice {
-        let m = PresenceMode::ALL.iter().position(|&x| x == c).expect("mode in ALL");
-        lists[m].push(app_id);
-        lists[m].sort_unstable();
-        lists[m].dedup();
-    }
-    if lists == original && key_present.iter().all(|&p| p) {
-        return false; // già nello stato richiesto, niente da riscrivere
-    }
-
-    // Assicura la sezione [presence] (append in coda se assente).
-    let hdr = match presence_hdr {
-        Some(h) => h,
-        None => {
-            lines.push("[presence]".to_string());
-            lines.len() - 1
-        }
-    };
-    let mut insertion = hdr + 1;
-    for (m, mode) in PresenceMode::ALL.iter().enumerate() {
-        upsert_key_line(&mut lines, mode.key(), &format_appid_list(&lists[m]), &mut insertion);
-    }
-
-    let mut out = lines.join("\n");
-    if had_trailing_nl || !out.ends_with('\n') {
-        out.push('\n');
-    }
-    std::fs::write(path, out).is_ok()
+        Ok(())
+    })
 }
-
-/// Scrive `default_mode = "showonline"|"none"` sotto [presence].
-pub fn set_default_mode_in_toml(path: &std::path::Path, show_online: bool) -> bool {
-    if !path.exists() {
-        return false;
-    }
-    let Ok(content) = std::fs::read_to_string(path) else {
-        return false;
-    };
-    let had_trailing_nl = content.ends_with('\n');
-    let mut lines: Vec<String> = content.lines().map(str::to_string).collect();
-    if lines.len() == 1 && lines[0].is_empty() {
-        lines.clear();
-    }
-    let value = if show_online { "\"showonline\"" } else { "\"none\"" };
-    if let Some(i) = find_key_line(&lines, "default_mode") {
-        if lines[i].splitn(2, '=').nth(1).map(|v| v.trim()) == Some(value) {
-            return false; // già impostato
-        }
-        lines[i] = format!("default_mode = {value}");
-    } else {
-        let hdr = lines
-            .iter()
-            .position(|l| l.trim_start() == "[presence]");
-        match hdr {
-            Some(h) => lines.insert(h + 1, format!("default_mode = {value}")),
-            None => {
-                lines.push("[presence]".to_string());
-                lines.push(format!("default_mode = {value}"));
-            }
-        }
-    }
-    let mut out = lines.join("\n");
-    if had_trailing_nl || !out.ends_with('\n') {
-        out.push('\n');
-    }
-    std::fs::write(path, out).is_ok()
+pub fn set_default_mode_in_toml(path: &Path, show_online: bool) -> Result<bool, String> {
+    super::config_document::set_value(
+        path,
+        "presence",
+        "default_mode",
+        toml_edit::Value::from(if show_online { "showonline" } else { "none" }),
+    )
 }
-
 
 /// Header di sezione TOML (`[x]`, esclusi gli array-of-tables `[[x]]` che
 /// possono legittimamente ripetersi). Restituisce il nome tra le parentesi.
@@ -253,7 +143,10 @@ fn toml_key_of(s: &str) -> Option<String> {
     if t.starts_with('#') || section_header_name(t).is_some() {
         return None;
     }
-    t.split('=').next().map(|k| k.trim().to_string()).filter(|k| !k.is_empty())
+    t.split('=')
+        .next()
+        .map(|k| k.trim().to_string())
+        .filter(|k| !k.is_empty())
 }
 
 /// Rimuove sezioni TOML duplicate (`[x]` dichiarato due volte): TOML 1.0 lo
@@ -297,13 +190,19 @@ pub fn dedup_sections(lines: &mut Vec<String>) -> bool {
             j
         };
         let first_end = next_hdr(first + 1);
-        let known: Vec<String> = (first + 1..first_end).filter_map(|i| toml_key_of(&lines[i])).collect();
+        let known: Vec<String> = (first + 1..first_end)
+            .filter_map(|i| toml_key_of(&lines[i]))
+            .collect();
         let mut merged: Vec<String> = Vec::new();
         for &dup in &idxs[1..] {
             let dup_end = next_hdr(dup + 1);
             for i in dup..dup_end {
                 if let Some(k) = toml_key_of(&lines[i]) {
-                    if !known.contains(&k) && !merged.iter().any(|m| toml_key_of(m).as_deref() == Some(k.as_str())) {
+                    if !known.contains(&k)
+                        && !merged
+                            .iter()
+                            .any(|m| toml_key_of(m).as_deref() == Some(k.as_str()))
+                    {
                         merged.push(lines[i].trim().to_string());
                     }
                 }
@@ -336,106 +235,50 @@ pub fn dedup_sections(lines: &mut Vec<String>) -> bool {
     true
 }
 
-/// Inserisce le chiavi `[presence]` canoniche MANCANTI senza toccare quelle
-/// esistenti (usato dal bridge di migrazione ad ogni avvio Desk; la stessa
-/// policy entra nel default bundlato per le nuove installazioni).
-/// `showonline` come default_mode base: presenza globale opt-out (§13).
 pub fn ensure_defaults(path: &Path) {
     if !path.exists() {
         return;
     }
-    let Ok(content) = std::fs::read_to_string(path) else {
-        return;
-    };
-    let had_trailing_nl = content.ends_with('\n');
-    let mut lines: Vec<String> = content.lines().map(str::to_string).collect();
-    if lines.len() == 1 && lines[0].is_empty() {
-        lines.clear();
-    }
-
-    // Prima di ogni altra operazione: ripara sezioni duplicate (una copia
-    // bundlata di aethercore.toml finita su disco in passato dichiarava
-    // [presence] due volte → file INVALIDO per TOML 1.0 → la DLL azzerava
-    // silenziosamente tutta la config ai default: livello log Warn e liste
-    // presenza vuote). Senza questa riparazione i file già danneggiati sul
-    // disco resterebbero inutilizzabili per sempre.
-    let mut changed = dedup_sections(&mut lines);
-
-    let hdr = match lines.iter().position(|l| l.trim_start() == "[presence]") {
-        Some(h) => h,
-        None => {
-            if !lines.is_empty() {
-                lines.push(String::new());
+    let _ = super::config_document::edit(path, "presence-defaults", |doc| {
+        for (key, value) in [
+            ("default_mode", toml_edit::Value::from("showonline")),
+            (
+                "showonline_apps",
+                toml_edit::Value::Array(toml_edit::Array::new()),
+            ),
+            (
+                "aetheronline_apps",
+                toml_edit::Value::Array(toml_edit::Array::new()),
+            ),
+            (
+                "exclude_apps",
+                toml_edit::Value::Array(toml_edit::Array::new()),
+            ),
+        ] {
+            if doc.get("presence").and_then(|s| s.get(key)).is_none() {
+                super::config_document::set(doc, "presence", key, value)?;
             }
-            lines.push("[presence]".to_string());
-            lines.len() - 1
         }
-    };
-    if hdr == lines.len() - 1 && !lines.is_empty() && lines.last().map(|l| l == "[presence]").unwrap_or(false) {
-        changed = true; // sezione creata ora
-    }
-
-    let mut insertion = hdr + 1;
-    let wanted: [(&str, String); 4] = [
-        ("default_mode", "\"showonline\"".to_string()),
-        (PresenceMode::ShowOnline.key(), format_appid_list(&[])),
-        (PresenceMode::AetherOnline.key(), format_appid_list(&[])),
-        (PresenceMode::Excluded.key(), format_appid_list(&[])),
-    ];
-    for (key, value) in wanted {
-        if find_key_line(&lines, key).is_none() {
-            lines.insert(insertion, format!("{key} = {value}"));
-            insertion += 1;
-            changed = true;
-        }
-    }
-    if !changed {
-        return;
-    }
-    let mut out = lines.join("\n");
-    if had_trailing_nl || !out.ends_with('\n') {
-        out.push('\n');
-    }
-    let _ = std::fs::write(path, out);
+        Ok(())
+    }); // Startup best-effort; editor logs every failure.
 }
-
-/// Legacy key rename (pre-rename installs): `onlinefix_apps` ->
-/// `aetheronline_apps`, `onlinefix_persona_patch` -> `aetheronline_persona_patch`.
-/// Line-based and comment-safe: only the FIRST non-commented occurrence is
-/// renamed, and ONLY when the new key is not present yet. Idempotent — after
-/// the first migration the legacy line no longer exists.
 pub fn migrate_legacy_presence_keys(path: &Path) {
     if !path.exists() {
         return;
     }
-    let Ok(content) = std::fs::read_to_string(path) else {
-        return;
-    };
-    let had_trailing_nl = content.ends_with('\n');
-    let mut lines: Vec<String> = content.lines().map(str::to_string).collect();
-    let mut changed = false;
-    for (legacy, new) in [
-        ("onlinefix_apps", "aetheronline_apps"),
-        ("onlinefix_persona_patch", "aetheronline_persona_patch"),
-    ] {
-        if find_key_line(&lines, new).is_some() {
-            continue; // already migrated (or hand-written new key)
+    let _ = super::config_document::edit(path, "presence-legacy-keys", |doc| {
+        if let Some(table) = doc.get_mut("presence").and_then(|s| s.as_table_mut()) {
+            for (old, new) in [
+                ("onlinefix_apps", "aetheronline_apps"),
+                ("onlinefix_persona_patch", "aetheronline_persona_patch"),
+            ] {
+                if !table.contains_key(new) {
+                    if let Some(value) = table.remove(old) {
+                        table.insert(new, value);
+                    }
+                }
+            }
         }
-        if let Some(i) = find_key_line(&lines, legacy) {
-            let line = &lines[i];
-            let Some(after_eq) = line.splitn(2, '=').nth(1) else {
-                continue;
-            };
-            lines[i] = format!("{new} = {}", after_eq);
-            changed = true;
-        }
-    }
-    if !changed {
-        return;
-    }
-    let mut out = lines.join("\n");
-    if had_trailing_nl || !out.ends_with('\n') {
-        out.push('\n');
-    }
-    let _ = std::fs::write(path, out);
+        Ok(())
+    });
 }

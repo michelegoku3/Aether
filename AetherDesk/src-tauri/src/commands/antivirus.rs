@@ -36,9 +36,10 @@ pub fn get_antivirus_exclusion_done(app: tauri::AppHandle) -> Result<bool, Strin
 #[tauri::command]
 pub fn acknowledge_antivirus_exclusion(app: tauri::AppHandle) -> Result<(), String> {
     let manager = SettingsManager::new(&app);
-    let mut settings = manager.load();
-    settings.antivirus_exclusion_done = true;
-    manager.save(&settings)
+    manager.update("acknowledge-antivirus_exclusion_done", |settings| {
+        settings.antivirus_exclusion_done = true;
+        Ok(())
+    }).map(|_| ())
 }
 
 /// Collect every folder that needs a Windows Defender exclusion.

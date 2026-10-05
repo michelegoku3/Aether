@@ -1,3 +1,4 @@
+use crate::core::game_mutations::MutationPlan;
 use super::command_steam_path;
 use crate::core::backup::GameBackup;
 use crate::game_info::cache::GameInfoCache;
@@ -308,6 +309,7 @@ pub async fn trigger_hubcap_download(
     // Il percorso Steam viene dalle impostazioni (unico punto di verità):
     // `validate_download_inputs` continua a validarlo e a loggare l'errore.
     let steam_path = command_steam_path(&app)?;
+    let plan = MutationPlan::prepare(std::path::Path::new(&steam_path), app_id, "trigger_hubcap_download")?;
     if let Err(e) = validate_download_inputs(&api_key, &steam_path, "call Hubcap Manifest") {
         crate::desk_log_error!("store", "Download failed for {}: {}", crate::core::logger::format_appid(app_id), e);
         return Err(e);
@@ -355,7 +357,7 @@ pub async fn trigger_hubcap_download(
             .await?;
             package.manifest_files.extend(generated);
         }
-        install_standard_package(&app, app_id, &steam_path, package, source).await
+        install_standard_package(&app, app_id, &steam_path, package, source, plan).await
     }
     .await;
 
@@ -373,6 +375,7 @@ pub async fn prepare_specific_version_download(
     api_key: String,
 ) -> Result<Vec<LuaManifestRow>, String> {
     let steam_path = command_steam_path(&app)?;
+    let plan = MutationPlan::prepare(std::path::Path::new(&steam_path), app_id, "prepare_specific_version_download")?;
     if let Err(e) = validate_download_inputs(&api_key, &steam_path, "download the Lua file") {
         crate::desk_log_error!("store", "Specific version download failed for {}: {}", crate::core::logger::format_appid(app_id), e);
         return Err(e);
@@ -426,6 +429,7 @@ pub async fn prepare_specific_version_download(
         let generated = resolution.generated;
         let mut backup_manifests = package.manifest_files.clone();
         backup_manifests.extend(generated);
+        let _mutation = plan.commit_for(&app).await?;
         steam.install_lua_and_manifest_files(app_id, &lua_content, &backup_manifests)?;
         verify_referenced_manifests(app_id, &steam_path, &lua_content)?;
         apply_update_policy_and_backup(&app, app_id, &steam_path, &lua_content, &backup_manifests)?;
@@ -460,6 +464,7 @@ pub async fn trigger_ryuu_download(
     api_key: String,
 ) -> Result<String, String> {
     let steam_path = command_steam_path(&app)?;
+    let plan = MutationPlan::prepare(std::path::Path::new(&steam_path), app_id, "trigger_ryuu_download")?;
     if let Err(e) = validate_download_inputs(&api_key, &steam_path, "call Ryuu") {
         crate::desk_log_error!("store", "Ryuu download failed for {}: {}", crate::core::logger::format_appid(app_id), e);
         return Err(e);
@@ -469,7 +474,7 @@ pub async fn trigger_ryuu_download(
 
     let res = async {
         let package = RyuuClient::new(api_key).download_lua_package(app_id).await?;
-        install_standard_package(&app, app_id, &steam_path, package, "Ryuu").await
+        install_standard_package(&app, app_id, &steam_path, package, "Ryuu", plan).await
     }
     .await;
 
@@ -487,12 +492,13 @@ pub async fn prepare_ryuu_specific_version_download(
     api_key: String,
 ) -> Result<Vec<LuaManifestRow>, String> {
     let steam_path = command_steam_path(&app)?;
+    let plan = MutationPlan::prepare(std::path::Path::new(&steam_path), app_id, "prepare_ryuu_specific_version_download")?;
     validate_download_inputs(&api_key, &steam_path, "download the Lua file from Ryuu")?;
     crate::desk_log_info!("store", "Preparing Ryuu specific version download for {}", crate::core::logger::format_appid(app_id));
 
     let package = RyuuClient::new(api_key).download_lua_package(app_id).await?;
     let installed_rows =
-        install_specific_package(&app, app_id, &steam_path, package, "Ryuu").await?;
+        install_specific_package(&app, app_id, &steam_path, package, "Ryuu", plan).await?;
     crate::desk_log_info!("store", "Successfully prepared Ryuu specific version download for {}: {} row(s) installed", crate::core::logger::format_appid(app_id), installed_rows.len());
     Ok(installed_rows)
 }
@@ -504,6 +510,7 @@ pub async fn trigger_luatools_download(
     game_name: Option<String>,
 ) -> Result<String, String> {
     let steam_path = command_steam_path(&app)?;
+    let plan = MutationPlan::prepare(std::path::Path::new(&steam_path), app_id, "trigger_luatools_download")?;
     validate_steam_download_path(&steam_path)?;
     crate::desk_log_info!(
         "store",
@@ -511,7 +518,7 @@ pub async fn trigger_luatools_download(
         crate::core::logger::format_appid(app_id)
     );
     let package = download_complete_luatools_package(&app, app_id, &steam_path, game_name.as_deref()).await?;
-    install_standard_package(&app, app_id, &steam_path, package, "LuaTools").await
+    install_standard_package(&app, app_id, &steam_path, package, "LuaTools", plan).await
 }
 
 #[tauri::command]
@@ -521,6 +528,7 @@ pub async fn prepare_luatools_specific_version_download(
     game_name: Option<String>,
 ) -> Result<Vec<LuaManifestRow>, String> {
     let steam_path = command_steam_path(&app)?;
+    let plan = MutationPlan::prepare(std::path::Path::new(&steam_path), app_id, "prepare_luatools_specific_version_download")?;
     validate_steam_download_path(&steam_path)?;
     crate::desk_log_info!(
         "store",
@@ -528,7 +536,7 @@ pub async fn prepare_luatools_specific_version_download(
         crate::core::logger::format_appid(app_id)
     );
     let package = download_complete_luatools_package(&app, app_id, &steam_path, game_name.as_deref()).await?;
-    install_specific_package(&app, app_id, &steam_path, package, "LuaTools").await
+    install_specific_package(&app, app_id, &steam_path, package, "LuaTools", plan).await
 }
 
 /// How many LuaTools sources one download may try. Each attempt is a package
@@ -855,7 +863,9 @@ async fn install_standard_package(
     steam_path: &str,
     package: ManifestPackage,
     source: &str,
+    plan: MutationPlan,
 ) -> Result<String, String> {
+    let mutation = plan.commit_for(app).await?;
     let steam = SteamCompat::new(steam_path.to_string());
     // Deterministic auto-download (P1): failed Steam downloads leave dirty
     // partial state under steamapps/downloading/<appid>. The Lua commit below
@@ -883,6 +893,7 @@ async fn install_standard_package(
         &package.lua_content,
         &package.manifest_files,
     )?;
+    drop(mutation); // The refresh below acquires its own plan; never nest game locks.
     // Pre-stage what Hubcap currently packages beyond the pins this Lua
     // carries (P1, Hubcap-only): free contents diff, generation only for
     // genuinely missing manifests, commented-pin realignment when the update
@@ -924,6 +935,7 @@ async fn install_specific_package(
     steam_path: &str,
     package: ManifestPackage,
     source: &str,
+    plan: MutationPlan,
 ) -> Result<Vec<LuaManifestRow>, String> {
     let manifest_rows = LuaManifestPins::rows_from_content(&package.lua_content);
     if manifest_rows.is_empty() {
@@ -933,6 +945,7 @@ async fn install_specific_package(
         ));
     }
 
+    let _mutation = plan.commit_for(app).await?;
     let steam = SteamCompat::new(steam_path.to_string());
     // Same residual-state cleanup as the latest-version installer: a version
     // switch must never resume dirty chunks of a previous failed download.

@@ -52,6 +52,9 @@ pub async fn apply_crack(
     crack_files: Vec<String>,
     vn_patch_mode: Option<bool>,
 ) -> Result<String, String> {
+    let steam_root = crate::commands::command_steam_path(&app)?;
+    let _mutation = crate::core::game_mutations::acquire(std::path::Path::new(&steam_root), app_id, "apply_crack").await?;
+    crate::core::game_mutations::ensure_current_root(&app, std::path::Path::new(&steam_root))?;
     let game = resolve_installed_game(&app, app_id)?;
     let game_root = PathBuf::from(&game.game_path);
     let backup = GameBackup::for_app(app_id)?;
@@ -83,6 +86,9 @@ pub fn has_saved_crack(app_id: u32) -> bool {
 /// Re-apply the crack previously stored under `backup/<app_id>/crack/`.
 #[tauri::command]
 pub async fn reapply_saved_crack(app: tauri::AppHandle, app_id: u32) -> Result<String, String> {
+    let steam_root = crate::commands::command_steam_path(&app)?;
+    let _mutation = crate::core::game_mutations::acquire(std::path::Path::new(&steam_root), app_id, "reapply_saved_crack").await?;
+    crate::core::game_mutations::ensure_current_root(&app, std::path::Path::new(&steam_root))?;
     let game = resolve_installed_game(&app, app_id)?;
     let game_root = PathBuf::from(&game.game_path);
     let backup = GameBackup::for_app(app_id)?;
@@ -121,6 +127,9 @@ pub async fn reapply_saved_crack(app: tauri::AppHandle, app_id: u32) -> Result<S
 /// a fresh drop/apply flow instead.
 #[tauri::command]
 pub async fn remove_applied_crack(app: tauri::AppHandle, app_id: u32) -> Result<String, String> {
+    let steam_root = crate::commands::command_steam_path(&app)?;
+    let _mutation = crate::core::game_mutations::acquire(std::path::Path::new(&steam_root), app_id, "remove_applied_crack").await?;
+    crate::core::game_mutations::ensure_current_root(&app, std::path::Path::new(&steam_root))?;
     let game = resolve_installed_game(&app, app_id)?;
     let game_root = PathBuf::from(&game.game_path);
     let backup = GameBackup::for_app(app_id)?;

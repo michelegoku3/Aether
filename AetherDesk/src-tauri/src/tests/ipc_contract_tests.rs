@@ -732,6 +732,7 @@ fn no_wire_key_is_an_unseparated_compound_word() {
 
 /// Vocabolario delle chiavi wire di una sola parola accettate dal codice.
 const COMMON_SINGLE_WORDS: &[&str] = &[
+    "base", // expected settings snapshot for conflict-aware three-way patch
     "code",
     "content",
     "count",
@@ -880,7 +881,7 @@ fn documented_command_contracts_have_the_expected_keys() {
         ("block_steam_updates", &[]),
         ("unblock_steam_updates", &[]),
         // Contratti stabili citati in docs/shared_contracts.md.
-        ("save_settings", &["settings"]),
+        ("save_settings", &["settings", "base"]),
         ("get_recent_log_lines", &["tailLines", "source"]),
         ("enable_online", &["appId", "request"]),
         ("plan_online", &["appId"]),

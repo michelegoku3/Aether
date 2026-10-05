@@ -360,7 +360,7 @@ impl LuaManifestPins {
             ));
         }
 
-        self.write_lua(&next_content)?;
+        self.write_lua(&content, &next_content)?;
         crate::desk_log_info!(
             "manifest",
             "Lua manifest {}: apply_build_pins completed -> {} pin(s) applied, {} depot(s) absent from the supplied snapshot and safely left unchanged",
@@ -422,7 +422,7 @@ impl LuaManifestPins {
                 Self::pins_from_content(&next_content).len()
             ));
         }
-        self.write_lua(&next_content)?;
+        self.write_lua(&content, &next_content)?;
         Ok(realigned)
     }
 
@@ -616,7 +616,7 @@ impl LuaManifestPins {
         }
 
         if changed > 0 {
-            self.write_lua(&next_content)?;
+            self.write_lua(&content, &next_content)?;
         }
         crate::desk_log_info!(
             "manifest",
@@ -932,12 +932,8 @@ impl LuaManifestPins {
             .map_err(|e| format!("Failed to read {}: {}", self.lua_path.display(), e))
     }
 
-    fn write_lua(&self, content: &str) -> Result<(), String> {
-        let temp_path = self.lua_path.with_extension("tmp");
-        fs::write(&temp_path, content)
-            .map_err(|e| format!("Failed to write temporary Lua file: {}", e))?;
-        fs::rename(&temp_path, &self.lua_path)
-            .map_err(|e| format!("Failed to save Lua file: {}", e))
+    fn write_lua(&self, expected: &str, content: &str) -> Result<(), String> {
+        crate::core::state_io::write_if_unchanged(&self.lua_path, expected.as_bytes(), content.as_bytes())
     }
 
     fn join_lua_lines(lines: &[String]) -> String {

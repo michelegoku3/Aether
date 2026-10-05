@@ -186,18 +186,24 @@ pub fn migrate_legacy_lua_backups(steam_path: &Path) -> Result<MigrationReport, 
 }
 
 pub fn migrate_legacy_settings_if_needed(local_config_dir: &Path, legacy_config_dir: Option<&Path>) {
-    let local_path = local_config_dir.join("settings.json");
-    if local_path.exists() { return; }
-    let Some(legacy_dir) = legacy_config_dir else { return; };
-    let legacy_path = legacy_dir.join("settings.json");
-    if !legacy_path.exists() { return; }
-    if let Ok(content) = fs::read_to_string(&legacy_path) {
-        if let Some(parent) = local_path.parent() {
-            if fs::create_dir_all(parent).is_ok() && fs::write(&local_path, content).is_ok() {
-                let _ = fs::remove_file(legacy_path);
-            }
-        }
-    }
+    let result = (|| -> Result<(), String> {
+        let _lock = crate::core::state_io::lock(&local_config_dir.join("settings.lock"))?;
+        let local_path = local_config_dir.join("settings.json");
+        if local_path.exists() || local_config_dir.join("settings.pending.json").exists() { return Ok(()); }
+        let Some(legacy_dir) = legacy_config_dir else { return Ok(()); };
+        let legacy_path = legacy_dir.join("settings.json");
+        let content = match fs::read(&legacy_path) {
+            Ok(content) => content,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+            Err(e) => return Err(format!("Cannot read legacy settings: {e}")),
+        };
+        serde_json::from_slice::<crate::core::settings::AppSettings>(&content)
+            .map_err(|_| "Invalid legacy settings; source preserved".to_string())?;
+        crate::core::state_io::write_atomic(&local_path, &content)?;
+        crate::desk_log_info!("settings", "Legacy settings copied atomically; original retained for recovery");
+        Ok(())
+    })();
+    if let Err(e) = result { crate::desk_log_error!("settings", "Legacy migration failed: {}", e); }
 }
 
 pub fn remove_obsolete_component_version_dirs(app: &tauri::AppHandle) {
@@ -266,7 +272,7 @@ pub fn reset_antivirus_exclusion_flag(_app: &tauri::AppHandle) {
 /// policy it describes, rather than in a standalone filesystem sentinel.
 pub fn migrate_download_update_default_off(app: &tauri::AppHandle) {
     let manager = crate::core::settings::SettingsManager::new(app);
-    let mut settings = manager.load();
+    let settings = manager.load();
     if settings.download_updates_default_off_migrated {
         return;
     }
@@ -275,10 +281,13 @@ pub fn migrate_download_update_default_off(app: &tauri::AppHandle) {
     // files to the safe default exactly once; an explicit choice can then be
     // enabled again through the normal Hubcap-key guard.
     let was_enabled = settings.download_games_with_updates_on;
-    settings.download_games_with_updates_on = false;
-    settings.download_updates_default_off_migrated = true;
-
-    if let Err(error) = manager.save(&settings) {
+    if let Err(error) = manager.update("migrate-update-default", |current| {
+        if !current.download_updates_default_off_migrated {
+            current.download_games_with_updates_on = false;
+            current.download_updates_default_off_migrated = true;
+        }
+        Ok(())
+    }) {
         crate::desk_log_warn!(
             "migration",
             "Could not persist download update policy migration: {}",
@@ -412,7 +421,7 @@ pub fn adopt_detected_steam_path_if_unconfigured(app: &tauri::AppHandle) {
     use crate::steam::resolve as steam_resolve;
 
     let manager = crate::core::settings::SettingsManager::new(app);
-    let mut settings = manager.load();
+    let settings = manager.load();
     let current = steam_resolve::normalize_steam_path(&settings.steam_path);
 
     if let Ok(root) = steam_resolve::resolve_steam_path(&current) {
@@ -443,8 +452,13 @@ pub fn adopt_detected_steam_path_if_unconfigured(app: &tauri::AppHandle) {
                 path.display(),
                 source.as_log_label()
             );
-            settings.steam_path = path.display().to_string();
-            if let Err(error) = manager.save(&settings) {
+            if let Err(error) = manager.update("detect-steam-path", |current_settings| {
+                if current_settings.steam_path != settings.steam_path {
+                    return Err("SETTINGS_CONFLICT: Steam path changed during detection".into());
+                }
+                current_settings.steam_path = path.display().to_string();
+                Ok(())
+            }) {
                 crate::desk_log_warn!("migration", "Could not persist adopted Steam path: {}", error);
             }
         }
@@ -499,9 +513,10 @@ pub fn ensure_steam_bridge_for_path(steam_path: &str) {
 
     // Migrate legacy aethercore.toml from steam folder if needed
     let legacy_toml = steam_aethercore_dir.join("aethercore.toml");
-    if legacy_toml.exists() && !toml_path.exists() {
-        let _ = fs::copy(&legacy_toml, &toml_path);
-        let _ = fs::remove_file(&legacy_toml);
+    if let Err(error) = crate::core::config_document::initialize(
+        &toml_path, Some(&legacy_toml), include_str!("../../assets/defaults/aethercore.toml"),
+    ) {
+        crate::desk_log_error!("migration", "DLL config initialization failed: {}", error);
     }
 
     // Write desk_path.cfg pointer
@@ -527,10 +542,10 @@ pub fn ensure_aethercore_bridge(app: &tauri::AppHandle) {
     let steam_path = crate::core::settings::SettingsManager::new(app).load().steam_path;
     ensure_steam_bridge_for_path(&steam_path);
 
-    if !toml_path.exists() {
-        const DEFAULT_AETHERCORE_TOML: &str =
-            include_str!("../../assets/defaults/aethercore.toml");
-        let _ = fs::write(&toml_path, DEFAULT_AETHERCORE_TOML);
+    if let Err(error) = crate::core::config_document::initialize(
+        &toml_path, None, include_str!("../../assets/defaults/aethercore.toml"),
+    ) {
+        crate::desk_log_error!("migration", "DLL config initialization failed: {}", error);
     }
 
     // Schema evolution of the [presence] section (docs/05 §11-§13): existing
@@ -552,6 +567,7 @@ pub fn ensure_aethercore_bridge(app: &tauri::AppHandle) {
     crate::core::manifest_restore_config::ensure_defaults(&toml_path);
     if let Ok(root) = crate::steam::resolve::resolve_steam_path(&steam_path) {
         let legacy_toml = root.join("aethercore").join("aethercore.toml");
+        if !legacy_toml.exists() { return; }
         crate::core::presence_config::migrate_legacy_presence_keys(&legacy_toml);
         crate::core::presence_config::ensure_defaults(&legacy_toml);
         crate::core::ost_config::ensure_defaults(&legacy_toml);
