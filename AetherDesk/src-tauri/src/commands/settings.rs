@@ -275,6 +275,9 @@ pub async fn sign_in_luatools() -> Result<LuaToolsAuthStatus, String> {
                 .or(status.email.as_deref())
                 .unwrap_or("account")
         ),
+        Err(error) if error == "LuaTools sign-in cancelled" => {
+            crate::desk_log_info!("luatools", "LuaTools sign-in cancelled");
+        }
         Err(error) => crate::desk_log_error!("luatools", "LuaTools sign-in failed: {}", error),
     }
     result

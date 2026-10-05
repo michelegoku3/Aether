@@ -140,6 +140,9 @@ namespace ac::hooks {
             std::size_t files = 0;
             // Stable fingerprint of the outcome; identical outcomes are logged once.
             std::ostringstream fingerprint;
+            struct SummaryRow { std::string base; std::vector<AppId> missing; };
+            std::vector<SummaryRow> rows;
+            rows.reserve(byFile.size());
 
             for (const auto& [path, ids] : byFile) {
                 std::vector<AppId> expected;
@@ -149,7 +152,12 @@ namespace ac::hooks {
                     // legitimately covered by Steam and must not be reported as missing.
                     if (luadata::HasDepot(id)) expected.push_back(id);
                 }
-                if (expected.empty()) continue;
+                if (expected.empty()) {
+                    // Preserve the historical per-file OK line even when the
+                    // file contributes no currently eligible IDs.
+                    rows.push_back({paths::BaseName(path), {}});
+                    continue;
+                }
                 ++files;
                 expectedTotal += expected.size();
 
@@ -177,6 +185,7 @@ namespace ac::hooks {
                     }
                     fingerprint << ';';
                 }
+                rows.push_back({base, std::move(missing)});
             }
 
             // Emit only when the outcome changed since the last emission. This stops
@@ -192,13 +201,10 @@ namespace ac::hooks {
             }
 
             // Fingerprint changed (or first time): emit the per-file lines + totals.
-            for (const auto& [path, ids] : byFile) {
-                std::vector<AppId> missing;
-                for (AppId id : ids) {
-                    if (luadata::HasDepot(id) && !unlocked.count(id)) missing.push_back(id);
-                }
+            for (const auto& row : rows) {
+                const auto& missing = row.missing;
                 if (missing.empty()) {
-                    AC_LOG_INFO(kModule, "Unlocked all AppID for %s.", paths::BaseName(path).c_str());
+                    AC_LOG_INFO(kModule, "Unlocked all AppID for %s.", row.base.c_str());
                 }
                 else {
                     std::ostringstream list;
@@ -206,7 +212,7 @@ namespace ac::hooks {
                         if (i) list << ", ";
                         list << missing[i];
                     }
-                    AC_LOG_WARN(kModule, "Not unlocked for %s: %s.", paths::BaseName(path).c_str(),
+                    AC_LOG_WARN(kModule, "Not unlocked for %s: %s.", row.base.c_str(),
                         list.str().c_str());
                 }
             }

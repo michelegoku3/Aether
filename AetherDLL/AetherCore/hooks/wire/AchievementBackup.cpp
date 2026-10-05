@@ -8,7 +8,6 @@
 #include <deque>
 #include <mutex>
 #include <optional>
-#include <thread>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
@@ -16,6 +15,7 @@
 
 #include "core/AetherCoreState.h"
 #include "core/Logger.h"
+#include "core/Workers.h"
 #include "hooks/wire/BackupIo.h"
 #include "hooks/wire/PlaytimeMirror.h"
 #include "hooks/wire/SteamStatsCache.h"
@@ -34,7 +34,8 @@
 // Contratto pubblico invariato (vedi AchievementBackup.h): RecordUnlock /
 // RecordStats / TouchSession / BackupAllKnownStatsAtStartup /
 // Le chiamate di accodamento sono non-bloccanti (nessuna I/O nel thread di rete).
-// FlushOnShutdown invece drena e fa join: solo fuori dal loader lock.
+// FlushOnShutdown drena e attende il completamento; il registry fa join.
+// Solo fuori dal loader lock.
 // ============================================================================
 
 namespace ac::hooks::AchievementBackup {
@@ -83,7 +84,8 @@ std::mutex g_workerMutex;
 std::condition_variable g_workerCv;
 std::deque<BackupJob> g_jobs;
 bool g_stopping = false;
-std::thread g_worker;   // avviato al primo job, fermato da FlushOnShutdown()
+std::size_t g_failedJobs = 0; // worker-owned; read only after completion
+workers::WorkerCompletion g_worker; // registry owns the thread; flush waits on completion
 
 // Proprietà esclusiva del worker (nessun lock necessario).
 std::unordered_map<steam::AppId, std::unordered_set<std::uint32_t>> g_touched;
@@ -185,12 +187,15 @@ void ProcessStartupScan() {
                 dot == std::string::npos) {
                 continue;
             }
+            // Keep the parsed strings alive while inspecting strtoul's end
+            // pointer (a pointer into substr(...).c_str() would dangle).
+            const std::string accountText = name.substr(u1 + 1, u2 - u1 - 1);
+            const std::string appText = name.substr(u2 + 1, dot - u2 - 1);
             char* end = nullptr;
-            const unsigned long account =
-                std::strtoul(name.substr(u1 + 1, u2 - u1 - 1).c_str(), &end, 10);
+            const unsigned long account = std::strtoul(accountText.c_str(), &end, 10);
             if (!end || *end != '\0') continue;
             const unsigned long app =
-                std::strtoul(name.substr(u2 + 1, dot - u2 - 1).c_str(), &end, 10);
+                std::strtoul(appText.c_str(), &end, 10);
             if (!end || *end != '\0' || app == 0) continue;
             if (!ac::luadata::HasDepot(static_cast<steam::AppId>(app))) continue;
 
@@ -248,7 +253,21 @@ void PeriodicCheckpoint() {
     }
 }
 
-void WorkerLoop() {
+// A bad file/job must not strand the remaining queue or skip final backups.
+template<class F>
+void RunBackupTask(const char* stage, F&& task) {
+    try {
+        task();
+    } catch (const std::exception& error) {
+        ++g_failedJobs;
+        AC_LOG_WARN(kModule, "Backup: %s failed: %s; continuing drain.", stage, error.what());
+    } catch (...) {
+        ++g_failedJobs;
+        AC_LOG_WARN(kModule, "Backup: %s failed with unknown exception; continuing drain.", stage);
+    }
+}
+
+void WorkerLoop(std::atomic<bool>& stop) {
     auto nextCheckpoint = SteadyClock::now() + kCheckpointInterval;
     for (;;) {
         BackupJob job;
@@ -257,6 +276,13 @@ void WorkerLoop() {
         {
             std::unique_lock<std::mutex> lock(g_workerMutex);
             while (!hasJob && !doCheckpoint) {
+                // Central shutdown happens before AchievementModule::Shutdown.
+                // Seal and drain here too: otherwise the registry join would
+                // wait forever for the later FlushOnShutdown call.
+                if (stop.load() && !g_stopping) {
+                    g_stopping = true;
+                    AC_LOG_INFO(kModule, "Backup: registry stop; draining %zu queued job(s).", g_jobs.size());
+                }
                 if (auto due = PopDueJobLocked(SteadyClock::now())) {
                     job = std::move(*due);
                     hasJob = true;
@@ -265,6 +291,9 @@ void WorkerLoop() {
                 if (g_stopping) break;   // coda scaricata: esci prima delle copie finali
                 auto wakeAt = nextCheckpoint;
                 if (!g_jobs.empty()) wakeAt = std::min(wakeAt, EarliestRunAtLocked());
+                // The registry stop flag has no CV notification. Bound only
+                // that observation latency; disk flush remains fully blocking.
+                wakeAt = std::min(wakeAt, SteadyClock::now() + std::chrono::milliseconds(250));
                 g_workerCv.wait_until(lock, wakeAt);
                 if (SteadyClock::now() >= nextCheckpoint) {
                     nextCheckpoint = SteadyClock::now() + kCheckpointInterval;
@@ -273,12 +302,14 @@ void WorkerLoop() {
             }
         }
         if (hasJob) {
-            if (job.type == JobType::Unlock) ProcessUnlock(job);
-            else if (job.type == JobType::BinCopy) ProcessBinCopy(job);
-            else if (job.type == JobType::StatsUpdate) ProcessStatsUpdate(job);
-            else if (job.type == JobType::StartupScan) ProcessStartupScan();
+            RunBackupTask("queued job", [&] {
+                if (job.type == JobType::Unlock) ProcessUnlock(job);
+                else if (job.type == JobType::BinCopy) ProcessBinCopy(job);
+                else if (job.type == JobType::StatsUpdate) ProcessStatsUpdate(job);
+                else if (job.type == JobType::StartupScan) ProcessStartupScan();
+            });
         } else if (doCheckpoint) {
-            PeriodicCheckpoint();
+            RunBackupTask("periodic checkpoint", [] { PeriodicCheckpoint(); });
         } else {
             break;
         }
@@ -288,18 +319,25 @@ void WorkerLoop() {
     // Steam sta chiudendo e la sua cache include anche gli ultimi sblocchi.
     for (const auto& [appId, accounts] : g_touched) {
         for (const auto& accountId : accounts) {
-            statscache::BackupStatsBins(appId, accountId, /*force=*/true);
+            RunBackupTask("final stats copy", [&] {
+                statscache::BackupStatsBins(appId, accountId, /*force=*/true);
+            });
         }
     }
     // Anche il playtime di fine sessione (include i minuti appena giocati).
-    playtime::RefreshAllAccounts();
+    RunBackupTask("final playtime copy", [] { playtime::RefreshAllAccounts(); });
+    AC_LOG_INFO(kModule, "Backup: queue drained and final copies attempted (%zu failed task(s)).", g_failedJobs);
 }
 
-void EnsureWorkerLocked() {
-    if (!g_worker.joinable()) {
-        g_worker = std::thread(WorkerLoop);
-        AC_LOG_DEBUG(kModule, "Backup: async worker started (I/O off the network thread).");
+bool EnsureWorkerLocked() {
+    if (g_worker.valid()) return true;
+    if (!workers::StartWorker("achievement_backup", WorkerLoop, &g_worker)) {
+        g_stopping = true;
+        AC_LOG_WARN(kModule, "Backup: worker registration refused (registry stopped).");
+        return false;
     }
+    AC_LOG_DEBUG(kModule, "Backup: async worker registered (I/O off the network thread).");
+    return true;
 }
 
 // Accoda un job; false = rifiutato perché lo shutdown è già in corso
@@ -308,7 +346,7 @@ bool EnqueueJob(BackupJob job) {
     {
         std::lock_guard<std::mutex> lock(g_workerMutex);
         if (g_stopping) return false;
-        EnsureWorkerLocked();
+        if (!EnsureWorkerLocked()) return false;
         g_jobs.push_back(std::move(job));
     }
     g_workerCv.notify_one();
@@ -387,16 +425,19 @@ void FlushOnShutdown() {
     }
     g_workerCv.notify_all();
 
-    // Sposta il thread fuori dalla struttura globale PRIMA del join: così il
-    // join avviene senza tenere il mutex (evitare lock+join previene deadlock
-    // se il worker deve ancora acquisirlo per l'ultima volta).
-    std::thread worker;
+    workers::WorkerCompletion completion;
     {
         std::lock_guard<std::mutex> lock(g_workerMutex);
-        if (g_worker.joinable()) worker = std::move(g_worker);
+        completion = g_worker;
+        AC_LOG_INFO(kModule, "Backup: flush requested (%zu queued job(s)).", g_jobs.size());
     }
-    if (worker.joinable()) worker.join();   // il worker scarica la coda,
-                                            // esegue le copie finali ed esce
+    // No queue lock while waiting; safe before OR after registry shutdown.
+    if (completion.valid()) completion.wait();
+    if (g_failedJobs != 0) {
+        AC_LOG_WARN(kModule, "Backup: flush completed with %zu failed task(s); see earlier warnings.", g_failedJobs);
+    } else {
+        AC_LOG_INFO(kModule, "Backup: flush worker completed.");
+    }
 }
 
 }  // namespace ac::hooks::AchievementBackup

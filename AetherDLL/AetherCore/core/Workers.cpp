@@ -99,32 +99,45 @@ bool Submit(std::function<void()> job) {
 }
 
 bool StartWorker(const std::string& name,
-                 std::function<void(std::atomic<bool>&)> body) {
+                 std::function<void(std::atomic<bool>&)> body,
+                 WorkerCompletion* completion) {
+    if (completion) *completion = {};
     if (!body || s_shutDown.load()) return false;
     auto stop = std::make_shared<std::atomic<bool>>(false);
     auto done = std::make_shared<std::atomic<bool>>(false);
+    auto finished = std::make_shared<std::promise<void>>();
+    auto future = finished->get_future().share();
     {
         std::lock_guard<std::mutex> lock(s_registryMutex);
+        // Shutdown may have won after the optimistic check above.
+        if (s_shutDown.load()) return false;
         ReapCompletedLocked();
         s_workers.push_back(WorkerEntry{name, stop, done, {}});
         WorkerEntry& entry = s_workers.back();
         // La lambda cattura COPIE (name/stop/done): il vector può reallocare
         // a ogni StartWorker, quindi nessun riferimento agli elementi.
-        entry.thread = std::thread([name, stop, done, body = std::move(body)] {
-            AC_LOG_INFO(kModule, "Worker '%s' started.", name.c_str());
-            try {
-                body(*stop);
-                AC_LOG_INFO(kModule, "Worker '%s' exited.", name.c_str());
-            } catch (const std::exception& e) {
-                AC_LOG_WARN(kModule, "Worker '%s' failed: %s", name.c_str(), e.what());
-            } catch (...) {
-                AC_LOG_WARN(kModule, "Worker '%s' failed with unknown exception.", name.c_str());
-            }
-            // Va impostato SEMPRE: se il corpo lancia, un done mancante
-            // lascerebbe l'entry nel registry per sempre (mai joinata dal
-            // reap, SummaryText la riporterebbe "running" in eterno).
-            done->store(true);
-        });
+        try {
+            entry.thread = std::thread([name, stop, done, finished, body = std::move(body)] {
+                AC_LOG_INFO(kModule, "Worker '%s' started.", name.c_str());
+                try {
+                    body(*stop);
+                    AC_LOG_INFO(kModule, "Worker '%s' exited.", name.c_str());
+                } catch (const std::exception& e) {
+                    AC_LOG_WARN(kModule, "Worker '%s' failed: %s", name.c_str(), e.what());
+                } catch (...) {
+                    AC_LOG_WARN(kModule, "Worker '%s' failed with unknown exception.", name.c_str());
+                }
+                // Va impostato SEMPRE: se il corpo lancia, un done mancante
+                // lascerebbe l'entry nel registry per sempre (mai joinata dal
+                // reap, SummaryText la riporterebbe "running" in eterno).
+                done->store(true);
+                finished->set_value();
+            });
+        } catch (...) {
+            s_workers.pop_back(); // no phantom entry on thread-creation failure
+            throw;
+        }
+        if (completion) *completion = std::move(future);
     }
     s_startedCount.fetch_add(1);
     AC_LOG_DEBUG(kModule, "Worker '%s' registered.", name.c_str());

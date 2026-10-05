@@ -129,10 +129,10 @@ fallback), using Steam's own per-(account, app) naming:
     UserGameStatsSchema_<appid>.bin         copy of the game schema
 ```
 
-All disk I/O runs on a dedicated lazy-started worker thread owned by
-`AchievementBackup` (`RecordUnlock()` only enqueues — no filesystem work on
+All disk I/O runs on the lazy-started `achievement_backup` worker owned by
+`core/Workers` (`RecordUnlock()` only enqueues — no filesystem work on
 Steam's network thread). `FlushOnShutdown()` is BLOCKING: it drains the queue,
-copies the `.bin` files and joins the worker. It is only called in the explicit
+copies the `.bin` files and waits for worker completion (the registry owns the join). It is only called in the explicit
 off-loader-lock shutdown path, NOT automatically on normal Steam termination.
 Even when called, it cannot guarantee Steam has flushed its cache. Event-driven
 checkpoints/game-exit persistence remain a separate follow-up. The JSON is rewritten atomically on each
@@ -211,3 +211,18 @@ with `main.log` when investigating achievement issues.
   deterministic function), `DonorPool` (donor learning + send/recv
   correlation for the UserStats spoof). AchievementModule keeps a single
   `SerializeTo` tail instead of eight duplicated blocks.
+
+### Backup lifecycle and pattern boundaries (2026-10-05)
+
+- `AchievementBackup` keeps queue scheduling and persistence ordering. The
+  named worker registry owns its thread. Either `FlushOnShutdown` or the
+  registry stop flag seals the queue and makes **all** delayed jobs due.
+- The worker observes registry stop within a 250 ms idle polling interval;
+  this is not a deadline on disk I/O. Final copies remain blocking. Flush
+  waits outside the queue mutex on a shared completion signal and is safe
+  before or after registry shutdown. Task exceptions are logged and the
+  remaining queue is still drained; completion does not imply all I/O succeeded.
+- `PatternEngine` owns initialization, concurrent module loading and index
+  publication; `PatternCache` owns TOML/cache/provenance/download policy;
+  `PatternResolver` owns lookup, bounds/signature verification and the existing
+  ABI sentinel call. Public entry points and safety gates are unchanged.

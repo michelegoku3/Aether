@@ -2,6 +2,7 @@
 
 #include <atomic>
 #include <functional>
+#include <future>
 #include <string>
 
 // ---------------------------------------------------------------------------
@@ -27,8 +28,13 @@ bool Submit(std::function<void()> job);
 // poll it (and use it in any wait predicate) so shutdown stays snappy.
 // Completed workers are reaped automatically on the next StartWorker call.
 // Returns false when workers are shut down (caller logs).
+// Optional completion becomes ready after body + exception reporting. Waiting
+// does not own/join the thread: the registry alone retains thread ownership.
+// On refusal the output is invalid. Do not wait while holding a body-used lock.
+using WorkerCompletion = std::shared_future<void>;
 bool StartWorker(const std::string& name,
-                 std::function<void(std::atomic<bool>& stop)> body);
+                 std::function<void(std::atomic<bool>& stop)> body,
+                 WorkerCompletion* completion = nullptr);
 
 // Stops everything: sets stop flags, drains and joins the task queue, joins
 // every worker. Logs a full summary. Idempotent; NEVER call from DllMain
