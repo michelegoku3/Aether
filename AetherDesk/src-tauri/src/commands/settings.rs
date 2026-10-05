@@ -1,135 +1,102 @@
-use crate::providers::hubcap::HubcapClient;
-use crate::providers::hubcap_generation::{MAX_GAME_GENERATIONS_PER_DAY, MAX_WORKSHOP_GENERATIONS_PER_DAY};
-use crate::providers::luatools_auth::{LuaToolsAuth, LuaToolsAuthStatus};
 use crate::core::paths::LocalAppPaths;
 use crate::core::settings::{AppSettings, SettingsManager};
+use crate::providers::hubcap::HubcapClient;
+use crate::providers::hubcap_generation::{
+    MAX_GAME_GENERATIONS_PER_DAY, MAX_WORKSHOP_GENERATIONS_PER_DAY,
+};
+use crate::providers::luatools_auth::{LuaToolsAuth, LuaToolsAuthStatus};
 
 #[tauri::command]
 pub fn get_settings(app: tauri::AppHandle) -> Result<AppSettings, String> {
-    let manager = SettingsManager::new(&app);
-    Ok(manager.load())
+    SettingsManager::new(&app).try_load()
 }
 
 #[tauri::command]
-pub async fn save_settings(app: tauri::AppHandle, settings: AppSettings) -> Result<(), String> {
-    if settings.download_games_with_updates_on {
-        if settings.hubcap_api_key.trim().is_empty() {
-            return Err("HUBCAP_KEY_REQUIRED_FOR_UPDATES: enable updates only with a valid active Hubcap key".to_string());
+pub async fn save_settings(
+    app: tauri::AppHandle,
+    settings: AppSettings,
+    base: AppSettings,
+) -> Result<AppSettings, String> {
+    let manager = SettingsManager::new(&app);
+    let previous = manager.try_load()?;
+    let candidate = crate::core::settings::merge_settings(&base, &settings, &previous)?;
+    if candidate.download_games_with_updates_on {
+        if candidate.hubcap_api_key.trim().is_empty() {
+            return Err("HUBCAP_KEY_REQUIRED_FOR_UPDATES: enable updates only with a valid active Hubcap key".into());
         }
-        let active = HubcapClient::new(settings.hubcap_api_key.clone())
+        let active = HubcapClient::new(candidate.hubcap_api_key.clone())
             .validate_api_key()
             .await
-            .map_err(|error| format!("HUBCAP_KEY_REQUIRED_FOR_UPDATES: {error}"))?;
+            .map_err(|e| format!("HUBCAP_KEY_REQUIRED_FOR_UPDATES: {e}"))?;
         if !active {
-            return Err("HUBCAP_KEY_REQUIRED_FOR_UPDATES: the Hubcap key is not active".to_string());
+            return Err("HUBCAP_KEY_REQUIRED_FOR_UPDATES: the Hubcap key is not active".into());
         }
     }
-    let manager = SettingsManager::new(&app);
-    let previous = manager.load();
-    let settings_changed = previous != settings;
-    let steam_path_changed = previous.steam_path.trim() != settings.steam_path.trim();
-    let library_filter_changed = previous.library_install_filter != settings.library_install_filter;
-
-    // Some lightweight UI controls (notably the persisted Library filter) can
-    // submit the same object more than once. Do not rewrite settings.json and
-    // encrypted credentials for a semantic no-op.
-    if settings_changed {
-        crate::desk_log_info!(
-            "settings",
-            "Saving changed user settings (steam_path_changed={}, library_filter_changed={}, library_filter='{}' -> '{}', hubcap_key_set={})",
-            steam_path_changed,
-            library_filter_changed,
-            previous.library_install_filter,
-            settings.library_install_filter,
-            !settings.hubcap_api_key.trim().is_empty()
-        );
-        manager.save(&settings)?;
-    }
-
-    apply_post_save_effects(&app, settings_changed && steam_path_changed, &settings);
-    Ok(())
+    manager.update("ui-patch", |current| {
+        let next = crate::core::settings::merge_settings(&base, &settings, current)?;
+        if next.download_games_with_updates_on
+            && (!candidate.download_games_with_updates_on
+                || next.hubcap_api_key != candidate.hubcap_api_key)
+        {
+            return Err(
+                "SETTINGS_CONFLICT: update policy/key changed during validation; retry".into(),
+            );
+        }
+        *current = next;
+        Ok(())
+    })?;
+    apply_post_save_effects(&app, &previous.steam_path)?;
+    manager.try_load()
 }
 
-/// Reset every setting to its backend default (including a freshly detected
-/// Steam path) and return the persisted object so the UI can re-render from a
-/// single source of truth instead of duplicating defaults frontend-side.
-///
-/// User choices that Reset must not touch are preserved: the Library toolbar
-/// filter, the antivirus-exclusion flag, and the OST warning acknowledgement.
 #[tauri::command]
 pub fn reset_settings_to_defaults(app: tauri::AppHandle) -> Result<AppSettings, String> {
     let manager = SettingsManager::new(&app);
-    let previous = manager.load();
-    let mut defaults = AppSettings::default();
-    defaults.library_install_filter = previous.library_install_filter.clone();
-    defaults.antivirus_exclusion_done = previous.antivirus_exclusion_done;
-    defaults.ost_warning_acknowledged = previous.ost_warning_acknowledged;
-    let steam_path_changed = previous.steam_path.trim() != defaults.steam_path.trim();
-    crate::desk_log_info!(
-        "settings",
-        "Resetting settings to defaults (steam_path_changed={}, steam_path='{}')",
-        steam_path_changed,
-        defaults.steam_path
-    );
-    manager.save(&defaults)?;
-
-    apply_post_save_effects(&app, steam_path_changed, &defaults);
-    Ok(defaults)
+    let mut previous_root = String::new();
+    manager.update("reset-defaults", |current| {
+        previous_root = current.steam_path.clone();
+        let mut defaults = AppSettings::default();
+        defaults.library_install_filter = current.library_install_filter.clone();
+        defaults.antivirus_exclusion_done = current.antivirus_exclusion_done;
+        defaults.ost_warning_acknowledged = current.ost_warning_acknowledged;
+        defaults.download_updates_default_off_migrated =
+            current.download_updates_default_off_migrated;
+        *current = defaults;
+        Ok(())
+    })?;
+    apply_post_save_effects(&app, &previous_root)?;
+    manager.try_load()
 }
 
-/// Side effects shared by every settings write (save + reset):
-/// rebind the single native stplug-in watcher only when its observed root
-/// actually changes, recreate the DLL bridge pointer for the new root
-/// immediately (no restart needed), then refresh icon and TOML sync.
-fn apply_post_save_effects(app: &tauri::AppHandle, steam_root_changed: bool, settings: &AppSettings) {
-    if steam_root_changed {
+/// Serialize side effects and re-read the committed truth, never an older
+/// command's snapshot. A failed effect is reported as a PARTIAL save.
+fn apply_post_save_effects(app: &tauri::AppHandle, previous_root: &str) -> Result<(), String> {
+    static EFFECTS: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None);
+    let mut last_root = EFFECTS.lock().map_err(|_| "Settings effects unavailable")?;
+    let settings = SettingsManager::new(app).try_load()?;
+    if last_root.as_deref().unwrap_or(previous_root).trim() != settings.steam_path.trim() {
         crate::core::library_events::reconfigure_library_watch(app, &settings.steam_path);
         crate::core::library_events::notify_lua_changed(
             app,
             crate::core::library_events::LibraryChangeOrigin::Settings,
             std::iter::empty::<u32>(),
         );
-        crate::core::migration::ensure_steam_bridge_for_path(&settings.steam_path);
     }
+    *last_root = Some(settings.steam_path.clone());
+    crate::core::migration::ensure_aethercore_bridge(app);
     if let Err(e) = crate::core::custom_css::apply_window_icon(app) {
-        crate::desk_log_warn!("settings", "Window icon apply after save failed: {}", e);
+        crate::desk_log_warn!("settings", "Window icon apply after commit failed: {}", e);
     }
-    sync_custom_game_name_to_aethercore_toml(app, &settings.custom_game_name);
-}
-
-fn sync_custom_game_name_to_aethercore_toml(app: &tauri::AppHandle, custom_name: &str) {
-    let config_dir = crate::core::paths::LocalAppPaths::config_dir();
-    let toml_path = config_dir.join("aethercore.toml");
-    update_custom_name_in_toml(&toml_path, custom_name);
-
-    let steam_path = crate::core::settings::SettingsManager::new(app).load().steam_path;
-    if !steam_path.trim().is_empty() {
-        let steam_toml = std::path::PathBuf::from(&steam_path).join("aethercore").join("aethercore.toml");
-        update_custom_name_in_toml(&steam_toml, custom_name);
+    for path in crate::core::presence_config::aethercore_toml_paths(app) {
+        crate::core::config_document::set_value(
+            &path,
+            "presence",
+            "custom_game_name",
+            toml_edit::Value::from(settings.custom_game_name.as_str()),
+        )
+        .map_err(|e| format!("Settings committed, DLL configuration sync incomplete: {e}"))?;
     }
-}
-
-fn update_custom_name_in_toml(path: &std::path::Path, custom_name: &str) {
-    if !path.exists() {
-        return;
-    }
-    let Ok(content) = std::fs::read_to_string(path) else {
-        return;
-    };
-    let escaped = custom_name.replace('\\', "\\\\").replace('"', "\\\"");
-    let new_line = format!("custom_game_name = \"{}\"", escaped);
-
-    let updated = if content.contains("[presence]") {
-        let re = regex::Regex::new(r#"(?m)^custom_game_name\s*=\s*".*""#).unwrap();
-        if re.is_match(&content) {
-            re.replace(&content, new_line).to_string()
-        } else {
-            content.replace("[presence]", &format!("[presence]\n{}", new_line))
-        }
-    } else {
-        format!("{}\n\n[presence]\n{}\n", content.trim_end(), new_line)
-    };
-    let _ = std::fs::write(path, updated);
+    Ok(())
 }
 
 #[tauri::command]
@@ -138,12 +105,22 @@ pub async fn validate_hubcap_key(api_key: String) -> Result<bool, String> {
         return Err("API Key cannot be empty".to_string());
     }
 
-    crate::desk_log_info!("settings", "Validating Hubcap API key with hubcapmanifest.com...");
+    crate::desk_log_info!(
+        "settings",
+        "Validating Hubcap API key with hubcapmanifest.com..."
+    );
     let res = HubcapClient::new(api_key).validate_api_key().await;
     match &res {
         Ok(true) => crate::desk_log_info!("settings", "Hubcap API key validated successfully"),
-        Ok(false) => crate::desk_log_warn!("settings", "Hubcap API key validation returned false (invalid key)"),
-        Err(e) => crate::desk_log_error!("settings", "Hubcap API key validation request failed: {}", e),
+        Ok(false) => crate::desk_log_warn!(
+            "settings",
+            "Hubcap API key validation returned false (invalid key)"
+        ),
+        Err(e) => crate::desk_log_error!(
+            "settings",
+            "Hubcap API key validation request failed: {}",
+            e
+        ),
     }
     res
 }
@@ -203,8 +180,12 @@ pub async fn get_hubcap_usage(api_key: String) -> Result<serde_json::Value, Stri
     let mut cached = slot.lock().await;
 
     if let Some(snapshot) = cached.as_ref() {
-        if usage_snapshot_is_fresh(snapshot, &api_key, std::time::Instant::now(), USAGE_SNAPSHOT_TTL)
-        {
+        if usage_snapshot_is_fresh(
+            snapshot,
+            &api_key,
+            std::time::Instant::now(),
+            USAGE_SNAPSHOT_TTL,
+        ) {
             crate::desk_log_debug!("settings", "Hubcap usage served from session cache");
             return Ok(snapshot.payload.clone());
         }
@@ -250,7 +231,11 @@ pub async fn get_hubcap_usage(api_key: String) -> Result<serde_json::Value, Stri
                     return Ok(payload);
                 }
             }
-            crate::desk_log_warn!("settings", "Hubcap usage request failed; returning local quota defaults: {}", error);
+            crate::desk_log_warn!(
+                "settings",
+                "Hubcap usage request failed; returning local quota defaults: {}",
+                error
+            );
             Ok(usage_defaults())
         }
     }
@@ -295,11 +280,7 @@ pub async fn sign_in_luatools_with_code(code: String) -> Result<LuaToolsAuthStat
     let result = LuaToolsAuth::new().sign_in_with_code(&code).await;
     match &result {
         Ok(_) => crate::desk_log_info!("luatools", "LuaTools code sign-in completed"),
-        Err(error) => crate::desk_log_error!(
-            "luatools",
-            "LuaTools code sign-in failed: {}",
-            error
-        ),
+        Err(error) => crate::desk_log_error!("luatools", "LuaTools code sign-in failed: {}", error),
     }
     result
 }
@@ -316,11 +297,21 @@ pub fn clear_app_caches() -> Result<String, String> {
     crate::desk_log_info!("settings", "Clearing AetherDesk cache folder...");
     let cache_dir = LocalAppPaths::data_root().join("cache");
     if cache_dir.is_dir() {
-        std::fs::remove_dir_all(&cache_dir)
-            .map_err(|error| format!("Failed to clear cache folder {}: {}", cache_dir.display(), error))?;
+        std::fs::remove_dir_all(&cache_dir).map_err(|error| {
+            format!(
+                "Failed to clear cache folder {}: {}",
+                cache_dir.display(),
+                error
+            )
+        })?;
     }
-    std::fs::create_dir_all(&cache_dir)
-        .map_err(|error| format!("Failed to recreate cache folder {}: {}", cache_dir.display(), error))?;
+    std::fs::create_dir_all(&cache_dir).map_err(|error| {
+        format!(
+            "Failed to recreate cache folder {}: {}",
+            cache_dir.display(),
+            error
+        )
+    })?;
 
     Ok("AetherDesk caches cleared successfully.".to_string())
 }

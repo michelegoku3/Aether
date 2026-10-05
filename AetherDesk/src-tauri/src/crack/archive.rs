@@ -48,14 +48,7 @@ pub fn stage_source(source: &Path, staging: &Path, default_password: &str) -> Re
 /// once the user adds AetherData to Windows Defender exclusions, the extracted
 /// crack files are not flagged by the antivirus.
 pub fn create_staging(app_id: u32) -> Result<PathBuf, String> {
-    let staging = LocalAppPaths::temp_dir().join(format!(
-        "crack_{}_{}",
-        app_id,
-        std::process::id()
-    ));
-    fs::create_dir_all(&staging)
-        .map_err(|error| format!("Failed to create staging folder {}: {}", staging.display(), error))?;
-    Ok(staging)
+    crate::core::state_io::create_staging(&LocalAppPaths::temp_dir(), &format!("crack_{app_id}"))
 }
 
 /// Remove every file/folder currently inside `staging` (for the next source).

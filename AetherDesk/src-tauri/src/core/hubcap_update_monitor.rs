@@ -368,7 +368,7 @@ pub(crate) fn installed_gid_for_depot(steam_path: &str, app_id: u32, depot_id: u
 /// new pins reference is copied from depotcache into `backup/<app_id>/lua/`,
 /// so every caller (pin_sync lane, "disable updates" safety net) gets the
 /// full contract without repeating it.
-pub(crate) fn realign_pins_to_installed(steam_path: &str, app_id: u32) -> Result<usize, String> {
+pub(crate) fn realign_pins_to_installed(steam_path: &str, app_id: u32, _mutation: &crate::core::game_mutations::MutationGuard) -> Result<usize, String> {
     let editor = LuaManifestPins::new(steam_path.to_string(), app_id);
     let content = editor.read_lua()?;
 
@@ -431,7 +431,9 @@ pub(crate) fn realign_pins_to_installed(steam_path: &str, app_id: u32) -> Result
 /// manifests Steam actually installed and archives them into the AetherData
 /// backup. Returns how many pins were rewritten.
 async fn sync_pins_after_steam_update(app: &AppHandle, steam_path: &str, app_id: u32) -> Result<usize, String> {
-    let realigned = realign_pins_to_installed(steam_path, app_id)?;
+    let mutation = crate::core::game_mutations::acquire(std::path::Path::new(steam_path), app_id, "monitor-installed-pins").await?;
+    crate::core::game_mutations::ensure_current_root(app, std::path::Path::new(steam_path))?;
+    let realigned = realign_pins_to_installed(steam_path, app_id, &mutation)?;
     if realigned == 0 {
         crate::desk_log_debug!(
             "hubcap-updates",

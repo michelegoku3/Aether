@@ -233,3 +233,28 @@ save). Non è il percorso configurato, quindi il client deve passarlo.
 `get_settings` (lettura file + decifratura DPAPI del keystore) e 22 firme dove
 il client poteva mandare un percorso diverso da quello configurato. La regola è
 protetta da `tests/ipc_contract_tests.rs::no_command_takes_a_steam_path_from_the_client`.
+
+## 9. Ownership delle mutazioni Desk (batch settings/coordinatore, 2026-10-05)
+
+### Settings e configurazione DLL
+
+- `SettingsManager::update` esegue **load rigoroso → patch tipizzata → normalizzazione → commit** sotto mutex e lock advisory `settings.lock`. La closure deve essere pura, senza I/O remoto né chiamate ricorsive al repository.
+- IPC `save_settings` riceve `settings` **e `base`** (snapshot visto dal form) e restituisce lo snapshot effettivo. I campi invariati rispetto a `base` mantengono il valore attuale. Un conflitto sullo stesso campo restituisce `SETTINGS_CONFLICT`, senza valori sensibili nel messaggio.
+- `settings.json` e `provider_credentials.dat` conservano i formati esistenti. `settings.pending.json` contiene versione del journal, JSON sanitizzato e ciphertext DPAPI: viene pubblicato prima dei due file e rigiocato idempotentemente prima di ogni lettura/mutazione del repository. `settings.last-good.json` conserva una coppia precedente nello **stesso formato del journal**, non il formato del normale settings JSON.
+- Non confondere un journal presente con un lock abbandonato: il journal va recuperato, mentre i file `.lock` possono rimanere legittimamente dopo lo stop; l'ownership del lock è nel sistema operativo.
+- `load()` resta un adapter read-only con fallback loggato; comandi di scrittura e `get_settings` usano caricamento rigoroso. Un errore di parsing/DPAPI non autorizza il salvataggio dei default.
+- Tutti gli editor Desk di `aethercore.toml` passano da `core/config_document.rs`: parser lossless, chiavi section-aware, lock sul documento e temp unici. La copia legacy è aggiornata solo se presente. Le due copie TOML non costituiscono una transazione multi-file: un errore di sincronizzazione è riportato, non dichiarato successo.
+- Rust minimo 1.89 per i lock advisory di `std::fs::File`; nessuna nuova libreria di locking. `toml_edit` diventa dipendenza diretta, riusando la versione già nel lockfile.
+
+### Mutazioni per gioco
+
+- `core/game_mutations.rs` identifica la risorsa con **Steam root canonicalizzata + AppID**. Alias equivalenti convergono; su Windows la chiave è case-insensitive. La mappa conserva riferimenti deboli per non crescere indefinitamente.
+- Operazioni remote: `MutationPlan::prepare` PRIMA di leggere gli input/preparare il download; `commit_for` immediatamente prima della pubblicazione. Nel frattempo nessun lock gioco è trattenuto per il networking. Il commit controlla generazione Desk, fingerprint Lua/ACF/libraryfolders e root corrente. Una modifica concorrente restituisce `GAME_STATE_CONFLICT`, senza pubblicare il Lua/ACF preparato sul vecchio stato. Eventuali manifest immutabili già ripristinati dal resolver possono restare in cache.
+- Operazioni sincrone: `try_acquire` restituisce `GAME_BUSY` invece di bloccare il runtime. Le corsie async possono aspettare il mutex dello stesso gioco. Il lock advisory `<Steam>/aethercore/desk-locks/<appid>.lock` coordina anche istanze Desk aggiornate; un lock occupato da altro processo dà busy, senza attesa bloccante nell'executor.
+- **Ordine lock:** gioco → gate depotcache/editor configurazione. Non riacquisire lo stesso gioco da un helper: il post-install refresh Store parte DOPO il rilascio della transazione principale. Il realignment condiviso riceve il guard dal caller.
+- Se si delega a `spawn_blocking`, il worker riceve il guard per valore: la cancellazione del waiter non deve liberare un lock mentre il worker sta ancora scrivendo. Questo vale anche per i wrapper dei tool esterni e del deploy online.
+- Le importazioni locali conservano l'ownership durante le scritture, policy update e backup finale. Il bulk acquisisce gli AppID scoperti in ordine prima di modificare i file. I writer Workshop di manifest, che non riscrivono Lua/ACF del gioco, mantengono il proprio gate/cache identity contract.
+- **Limite deliberato:** Steam, DLL, editor manuali e vecchie build Desk non obbediscono ai nuovi lock. Fingerprint e recheck prima della sostituzione rilevano modifiche osservabili, ma non offrono un CAS atomico contro scrittori esterni non cooperanti. Non introdurre un blocco del processo Steam per simulare questa garanzia.
+- Il coordinatore non è un journal di rollback multi-file e non risolve il read-modify-write dei JSON globali di cache/stato online tra AppID differenti: questi sono domini distinti.
+
+Log diagnostici: `settings` (prepared/applying/finalized/conflict), `config` (operation/path/changed/error, mai valori), `mutations` (begin/release con ID, operazione, AppID/root, durata; busy/conflict). **Release significa risorsa liberata, non operazione riuscita**: l'esito rimane nel log del caller.

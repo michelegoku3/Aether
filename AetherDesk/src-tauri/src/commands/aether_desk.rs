@@ -147,12 +147,11 @@ pub async fn restore_stable_desk(app: tauri::AppHandle) -> Result<String, String
     // Turn the test-updates switch off so the UI is consistent after restart.
     {
         let manager = SettingsManager::new(&app);
-        let mut settings = manager.load();
-        if settings.enable_test_updates {
+        manager.update("restore-stable", |settings| {
             settings.enable_test_updates = false;
-            let _ = manager.save(&settings);
-            crate::desk_log_info!("updater", "Disabled test updates while restoring stable build");
-        }
+            Ok(())
+        })?;
+        crate::desk_log_info!("updater", "Disabled test updates while restoring stable build");
     }
 
     crate::desk_log_info!(

@@ -4,6 +4,8 @@ version = "1.4.3"
 description = "AetherDesk - Professional Steam & Game Management Interface"
 authors = ["migo3"]
 edition = "2021"
+# std::fs advisory locking is used by settings/config/game transactions.
+rust-version = "1.89"
 
 [[bin]]
 name = "AetherDesk"
@@ -37,6 +39,8 @@ tauri-plugin-dialog = "2"
 url = "2"
 regex = "1"
 roxmltree = "0.20"
+# Lossless shared editor for DLL configuration (already in the dependency graph).
+toml_edit = "0.25"
 once_cell = "1"
 base64 = "0.22"
 rand = "0.8"

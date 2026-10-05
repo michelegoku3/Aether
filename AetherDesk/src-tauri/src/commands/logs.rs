@@ -133,46 +133,14 @@ pub fn set_session_log_level(
     level: String,
 ) -> Result<String, String> {
     let lower = level.trim().to_lowercase();
-    crate::core::logger::set_level_from_str(&lower);
-
-    // 1. Ensure the bridge pointer desk_path.cfg and toml exist
-    crate::core::migration::ensure_aethercore_bridge(&app);
-
-    // 2. Update <install_root>\AetherData\config\aethercore.toml (new primary home)
-    let config_dir = crate::core::paths::LocalAppPaths::config_dir();
-    let toml_path = config_dir.join("aethercore.toml");
-
-    let new_content = if toml_path.exists() {
-        let content = std::fs::read_to_string(&toml_path).unwrap_or_default();
-        if content.contains("[log]") {
-            let re = regex::Regex::new(r#"(?m)^level\s*=\s*".*""#).unwrap();
-            if re.is_match(&content) {
-                re.replace(&content, format!("level = \"{}\"", lower)).to_string()
-            } else {
-                content.replace("[log]", &format!("[log]\nlevel = \"{}\"", lower))
-            }
-        } else {
-            format!("{}\n\n[log]\nlevel = \"{}\"\nkeep_last_session = true\n", content, lower)
-        }
-    } else {
-        format!("# AetherCore configuration.\n# Located at AetherData/config/aethercore.toml (managed by AetherDesk).\n[log]\nlevel = \"{}\"\nkeep_last_session = true\n", lower)
-    };
-    let _ = std::fs::write(&toml_path, new_content);
-
-    // 3. Also update <Steam>\aethercore\aethercore.toml if present for legacy compatibility
-    if let Ok(steam_path) = crate::core::settings::require_steam_path(&app) {
-        let steam_toml = PathBuf::from(&steam_path).join("aethercore").join("aethercore.toml");
-        if steam_toml.exists() {
-            let content = std::fs::read_to_string(&steam_toml).unwrap_or_default();
-            let re = regex::Regex::new(r#"(?m)^level\s*=\s*".*""#).unwrap();
-            let updated = if re.is_match(&content) {
-                re.replace(&content, format!("level = \"{}\"", lower)).to_string()
-            } else {
-                format!("{}\n\n[log]\nlevel = \"{}\"\nkeep_last_session = true\n", content, lower)
-            };
-            let _ = std::fs::write(&steam_toml, updated);
-        }
+    if !matches!(lower.as_str(), "trace" | "debug" | "info" | "warn" | "error" | "off") {
+        return Err("Unsupported log level".into());
     }
+    crate::core::migration::ensure_aethercore_bridge(&app);
+    for path in crate::core::presence_config::aethercore_toml_paths(&app) {
+        crate::core::config_document::set_value(&path, "log", "level", toml_edit::Value::from(lower.as_str()))?;
+    }
+    crate::core::logger::set_level_from_str(&lower);
 
     crate::desk_log_info!("logs", "Set logging level to '{}' for Desk and DLL (aethercore.toml)", lower);
     Ok(format!("Logging level set to '{}' for Desk and DLL.", lower))

@@ -3,10 +3,7 @@
 // All heavy lifting (archive extraction, folder copying, Steam folder
 // resolution, backup) lives in the Tauri-agnostic engine `crate::local`.
 // This file only opens the file picker, loads settings and calls the engine.
-use crate::core::backup::GameBackup;
-use crate::core::settings::load_settings;
 use crate::local;
-use crate::manifest::pins::LuaManifestPins;
 use crate::util::dialog::file_path_to_string;
 use std::path::PathBuf;
 use tauri_plugin_dialog::DialogExt;
@@ -64,7 +61,7 @@ pub async fn install_bulk_local(
     app: tauri::AppHandle,
     local_files: Vec<String>,
 ) -> Result<String, String> {
-    let settings = load_settings(&app);
+    let settings = crate::core::settings::SettingsManager::new(&app).try_load()?;
     let steam_path = crate::steam::resolve::resolve_steam_path(&settings.steam_path)
         .map_err(|error| error.message(&settings.steam_path))?;
 
@@ -133,7 +130,7 @@ pub async fn install_local_game(
     app_name: String,
     local_files: Vec<String>,
 ) -> Result<String, String> {
-    let settings = load_settings(&app);
+    let settings = crate::core::settings::SettingsManager::new(&app).try_load()?;
     let steam_path = crate::steam::resolve::resolve_steam_path(&settings.steam_path)
         .map_err(|error| error.message(&settings.steam_path))?;
 
@@ -183,12 +180,14 @@ pub async fn install_local_game(
         }
     }
 
+    crate::core::game_mutations::ensure_current_root(&app, &steam_path)?;
+
     // Estrazione archivi + copie file: I/O sincrono pesante -> spawn_blocking.
     let report = {
         let (app_name_b, steam_path_b, local_files_b) =
             (app_name.clone(), steam_path.clone(), local_files.clone());
         tauri::async_runtime::spawn_blocking(move || {
-            local::install_local_pipeline(app_id, &app_name_b, &steam_path_b, &local_files_b)
+            local::install_local_pipeline(app_id, &app_name_b, &steam_path_b, &local_files_b, settings.download_games_with_updates_on)
         })
         .await
         .map_err(|e| format!("Local install task failed: {e}"))??
@@ -196,18 +195,6 @@ pub async fn install_local_game(
 
     crate::desk_log_info!("local", "Successfully installed local content for AppID {}: {} file(s) ({} lua, {} manifest), game files into {}",
         app_id, report.applied, report.lua_files, report.manifest_files, report.target);
-    // Local packages follow the same update policy as every remote provider.
-    // When updates are enabled, comment active setManifestid rows in the live
-    // canonical Lua and refresh the canonical backup with the final bytes.
-    if report.lua_files > 0 && settings.download_games_with_updates_on {
-        let lua = LuaManifestPins::new(steam_path.clone(), app_id);
-        lua.set_updates_enabled(true)?;
-        let installed_lua = std::fs::read_to_string(lua.lua_path())
-            .map_err(|error| format!("Failed to read the installed Lua after applying update policy: {error}"))?;
-        GameBackup::for_app(app_id)?
-            .backup_lua_artifacts(app_id, &installed_lua, &[])?;
-    }
-
     if report.lua_files > 0 {
         // At this point the local pipeline, update policy and final backup
         // have completed, so consumers can safely rescan the real state.

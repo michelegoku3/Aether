@@ -240,6 +240,7 @@ pub fn set_lua_game_updates_enabled(
     enabled: bool,
 ) -> Result<String, String> {
     let steam_path = command_steam_path(&app)?;
+    let _mutation = crate::core::game_mutations::try_acquire(std::path::Path::new(&steam_path), app_id, "set_lua_game_updates_enabled")?;
     crate::desk_log_info!("library", "Setting updates_enabled={} for {} in steam_path='{}'", enabled, crate::core::logger::format_appid(app_id), steam_path);
     // Safety net before locking a game to a fixed version: realign the
     // informational pins to the manifests Steam ACTUALLY installed, so
@@ -249,7 +250,7 @@ pub fn set_lua_game_updates_enabled(
     // stale pin and trigger a downgrade. Local-only and best-effort: a
     // failure here must not block the user's explicit toggle.
     if !enabled {
-        match crate::core::hubcap_update_monitor::realign_pins_to_installed(&steam_path, app_id) {
+        match crate::core::hubcap_update_monitor::realign_pins_to_installed(&steam_path, app_id, &_mutation) {
             Ok(0) => {}
             Ok(realigned) => crate::desk_log_info!(
                 "library",
@@ -312,6 +313,7 @@ pub fn remove_lua_game_from_library(
     app_id: u32,
 ) -> Result<String, String> {
     let steam_path = command_steam_path(&app)?;
+    let _mutation = crate::core::game_mutations::try_acquire(std::path::Path::new(&steam_path), app_id, "remove_lua_game_from_library")?;
     crate::desk_log_info!("library", "Removing Lua game {} from library (steam_path='{}')", crate::core::logger::format_appid(app_id), steam_path);
 
     // `command_steam_path` above already strict-validated and normalized the
@@ -359,6 +361,7 @@ pub async fn apply_specific_version_edits(
     edits: Vec<LuaManifestEdit>,
 ) -> Result<Vec<LuaManifestRow>, String> {
     let steam_path = command_steam_path(&app)?;
+    let plan = crate::core::game_mutations::MutationPlan::prepare(std::path::Path::new(&steam_path), app_id, "specific-edits")?;
     crate::desk_log_info!(
         "library",
         "Applying {} specific version edit(s) for {} in steam_path='{}'",
@@ -397,6 +400,8 @@ pub async fn apply_specific_version_edits(
         );
     }
     let generated = resolution.generated;
+
+    let _mutation = plan.commit_for(&app).await?;
 
     // Publish the Lua and any newly generated exact manifests together. The
     // old Lua remains untouched if staging/generation fails.

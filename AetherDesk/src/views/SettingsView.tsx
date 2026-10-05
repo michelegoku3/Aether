@@ -98,15 +98,16 @@ export const SettingsView = memo(function SettingsView({ hubcapUsage, onRefreshU
   });
   const [isPicking, setIsPicking] = useState<'theme' | 'wallpaper' | 'icon' | null>(null);
 
-  // Raw settings as loaded from the backend. Saving always spreads this object
-  // back, so fields owned by other flows (e.g. `antivirus_exclusion_done`) are
-  // never silently reset by a settings save.
+  // Baseline seen by the user. Backend three-way merging preserves unrelated
+  // concurrent fields and rejects conflicting edits rather than overwriting.
   const [rawSettings, setRawSettings] = useState<Record<string, any>>({});
 
   const [statusMsg, setStatusMsg] = useState({ text: '', type: 'info' });
+  const [settingsConflict, setSettingsConflict] = useState(false);
 
   const showStatus = (text: string, type: 'info' | 'success' | 'error') => {
     setStatusMsg({ text, type });
+    if (text.includes('SETTINGS_CONFLICT')) setSettingsConflict(true);
     setTimeout(() => setStatusMsg({ text: '', type: 'info' }), 6000);
   };
 
@@ -123,6 +124,7 @@ export const SettingsView = memo(function SettingsView({ hubcapUsage, onRefreshU
    *  shared by initial load and Reset, so the two can never drift apart. */
   const applySettingsToState = (settings: Record<string, any>) => {
     setRawSettings(settings);
+    setSettingsConflict(false);
     setApiKey(settings.hubcap_api_key || '');
     setSteamPath(settings.steam_path || '');
     setShowStoreDlcs(Boolean(settings.show_store_dlcs));
@@ -156,8 +158,8 @@ export const SettingsView = memo(function SettingsView({ hubcapUsage, onRefreshU
 
   // Load settings from the backend when the component mounts.
   // NOTE: the component stays mounted across tab switches (see MainContent),
-  // so this runs once: edits are preserved, and every save merges over a
-  // freshly loaded snapshot (see loadFreshBase) instead of stale state.
+  // so this runs once. The backend compares our baseline with the current
+  // snapshot, preserving unrelated updates and rejecting conflicting edits.
   useEffect(() => {
     const loadSettings = async () => {
       try {
@@ -189,21 +191,11 @@ export const SettingsView = memo(function SettingsView({ hubcapUsage, onRefreshU
     onRefreshUsage();
   }, []);
 
-  /** Fresh settings snapshot for saves: merging UI state over a fresh read
-   *  (instead of the mount-time `rawSettings`) guarantees concurrent saves
-   *  from other flows are never regressed. Falls back to `rawSettings`. */
-  const loadFreshBase = async (): Promise<Record<string, any>> => {
-    try {
-      return await getSettings();
-    } catch {
-      return rawSettings;
-    }
-  };
+  // Backend performs a three-way patch using the snapshot the user saw.
+  // Never fall back after a read error: a corrupt file must block writes.
+  const loadFreshBase = async (): Promise<Record<string, any>> => getSettings();
 
-  /** Constructs the full current settings object from React state variables,
-   *  merging over a base snapshot. The base should be freshly loaded (see
-   *  `loadFreshBase`): merging over the mount-time `rawSettings` would
-   *  regress concurrent saves from other flows (e.g. the Library filter). */
+  /** Full form snapshot; the backend persists only fields changed vs base. */
   const buildCurrentSettings = (overrides: Record<string, any> = {}, base: Record<string, any> = rawSettings) => ({
     ...base,
     hubcap_api_key: apiKey,
@@ -275,8 +267,8 @@ export const SettingsView = memo(function SettingsView({ hubcapUsage, onRefreshU
         return false;
       }
     } catch { /* fall through to the save below */ }
-    // Persist settings, merging over a fresh snapshot (never over the
-    // possibly stale mount-time state).
+    // Send the baseline the user actually saw; only dirty fields are patched
+    // under the backend repository lock, with conflict detection.
     try {
       showStatus('Saving settings...', 'info');
       // If the user just enabled Custom CSS, ensure the file exists before
@@ -286,10 +278,10 @@ export const SettingsView = memo(function SettingsView({ hubcapUsage, onRefreshU
       }
       const newSettings = buildCurrentSettings(
         invalidApiKey ? { hubcap_api_key: '' } : {},
-        await loadFreshBase()
+        rawSettings
       );
-      await invoke('save_settings', { settings: newSettings });
-      setRawSettings(newSettings);
+      const saved = await invoke<Record<string, unknown>>('save_settings', { settings: newSettings, base: rawSettings });
+      applySettingsToState(saved);
       if (invalidApiKey) {
         setApiKey(''); // clear the wrong key from the field
       }
@@ -322,9 +314,9 @@ export const SettingsView = memo(function SettingsView({ hubcapUsage, onRefreshU
    *  and updating rawSettings guarantees we never revert toggles or wipe out
    *  an un-saved API key. */
   const persistAppearanceSelection = async (patch: Record<string, any>) => {
-    const newSettings = buildCurrentSettings(patch, await loadFreshBase());
-    await invoke('save_settings', { settings: newSettings });
-    setRawSettings(newSettings);
+    const newSettings = buildCurrentSettings(patch, rawSettings);
+    const saved = await invoke<Record<string, unknown>>('save_settings', { settings: newSettings, base: rawSettings });
+    applySettingsToState(saved);
   };
 
   /** True when the form differs from the last saved/applied snapshot
@@ -425,9 +417,11 @@ export const SettingsView = memo(function SettingsView({ hubcapUsage, onRefreshU
       return;
     }
     try {
-      const merged = { ...(await loadFreshBase()), steam_path: check.normalized };
-      await invoke('save_settings', { settings: merged });
-      setRawSettings(merged);
+      const base = await loadFreshBase();
+      const merged = { ...base, steam_path: check.normalized };
+      const saved = await invoke<Record<string, unknown>>('save_settings', { settings: merged, base });
+      // Only this field was saved; preserve the baseline of unsaved form edits.
+      setRawSettings(previous => ({ ...previous, steam_path: saved.steam_path }));
       setSteamPath(check.normalized);
       setSteamCheck({ state: 'idle', message: '' });
       showStatus(`${actionLabel}: ${check.normalized}`, 'success');
@@ -670,6 +664,21 @@ export const SettingsView = memo(function SettingsView({ hubcapUsage, onRefreshU
       {statusMsg.text && (
         <div className={`settings-alert ${statusMsg.type}`}>
           {statusMsg.text}
+        </div>
+      )}
+
+      {settingsConflict && (
+        <div className="settings-alert error">
+          Settings changed elsewhere. Your unsaved edits have not been overwritten.
+          <button type="button" className="action-btn" onClick={async () => {
+            try {
+              applySettingsToState(await getSettings());
+              onRefreshCustomCss();
+              showStatus('Saved settings reloaded. Unsaved edits discarded.', 'info');
+            } catch (error) {
+              showStatus(`Could not reload settings: ${String(error)}`, 'error');
+            }
+          }}>Reload saved settings (discard edits)</button>
         </div>
       )}
 

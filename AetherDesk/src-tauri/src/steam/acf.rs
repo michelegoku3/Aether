@@ -128,13 +128,9 @@ impl SteamAcfEditor {
             let _ = self.set_readonly(false);
         }
 
-        let write_result = (|| {
-            let tmp = self.path.with_extension("acf.tmp");
-            fs::write(&tmp, &new_content)
-                .map_err(|e| format!("Failed to write {}: {}", tmp.display(), e))?;
-            fs::rename(&tmp, &self.path)
-                .map_err(|e| format!("Failed to replace {}: {}", self.path.display(), e))
-        })();
+        let write_result = crate::core::state_io::write_if_unchanged(
+            &self.path, content.as_bytes(), new_content.as_bytes(),
+        );
 
         if was_readonly {
             let _ = self.set_readonly(true);
