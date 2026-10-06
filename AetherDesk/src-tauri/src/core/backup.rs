@@ -410,7 +410,7 @@ impl GameBackup {
     /// fonti, o il primo .lua visto in stplug-in quando non c'è backup).
     /// - identica     -> Unchanged, nessuna scrittura
     /// - diversa      -> l'originale precedente viene archiviata in history/
-    ///                   e la nuova diventa l'originale (Updated)
+    ///   e la nuova diventa l'originale (Updated)
     /// - assente      -> Created
     pub fn store_original(&self, app_id: u32, lua_bytes: &[u8]) -> Result<StoreLuaAction, String> {
         let lua_path = self.lua_dir().join(format!("{app_id}.lua"));

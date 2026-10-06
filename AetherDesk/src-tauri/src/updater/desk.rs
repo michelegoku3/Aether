@@ -544,10 +544,10 @@ fn wipe_install_root(path: &Path) -> Result<(), String> {
     // Empty dir left behind still counts as failure — try one last remove_dir.
     if path.is_dir() {
         if let Ok(mut entries) = fs::read_dir(path) {
-            if entries.next().is_none() {
-                if fs::remove_dir(path).is_ok() || !path.exists() {
-                    return Ok(());
-                }
+            if entries.next().is_none()
+                && (fs::remove_dir(path).is_ok() || !path.exists())
+            {
+                return Ok(());
             }
         }
     }

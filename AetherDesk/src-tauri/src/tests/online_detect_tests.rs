@@ -64,7 +64,7 @@ fn unity_game_is_detected() {
             .and_then(|p| p.file_name())
             .map(|n| n.to_string_lossy().into_owned())
             .as_deref(),
-        Some("MyGame.exe".into())
+        Some("MyGame.exe")
     );
     assert!(ends_with_components(&report.unity_data_dir.unwrap(), &["MyGame_Data"]));
 }
@@ -91,7 +91,7 @@ fn unity_crash_handler_is_never_picked_as_game_exe() {
             .and_then(|p| p.file_name())
             .map(|n| n.to_string_lossy().into_owned())
             .as_deref(),
-        Some("REPO.exe".into())
+        Some("REPO.exe")
     );
 }
 
@@ -125,7 +125,7 @@ fn unity_game_exe_inside_subfolder_is_found() {
             .and_then(|p| p.file_name())
             .map(|n| n.to_string_lossy().into_owned())
             .as_deref(),
-        Some("Machine Party.exe".into())
+        Some("Machine Party.exe")
     );
 }
 
@@ -148,7 +148,7 @@ fn generic_game_with_only_32bit_steam_api_is_detected() {
             .and_then(|p| p.file_name())
             .map(|n| n.to_string_lossy().into_owned())
             .as_deref(),
-        Some("SpeedRunners.exe".into())
+        Some("SpeedRunners.exe")
     );
 }
 

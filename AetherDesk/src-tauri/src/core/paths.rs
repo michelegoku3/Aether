@@ -22,10 +22,9 @@ const LOCAL_DATA_DIR_NAME: &str = "AetherData";
 ///         └─ backup\...
 ///
 /// Vecchie location (da migrare solo per chi arriva da una vecchia install):
-///   - Legacy Program Files: `<exe_parent>\AetherData` quando l'app era in `C:\Program Files`
-///   - Fix v2 Roaming: `%APPDATA%\com.aether.desk` (Roaming)
-/// Entrambe vengono migrate automaticamente al primo avvio verso la nuova
-/// `install_root/AetherData`.
+/// Vecchia posizione Program Files: `<exe_parent>\AetherData`, quando l'app era in `C:\Program Files`.
+/// Vecchia posizione Roaming: `%APPDATA%\com.aether.desk` (Roaming).
+/// Entrambe vengono migrate automaticamente al primo avvio verso `install_root/AetherData`.
 pub struct LocalAppPaths;
 
 impl LocalAppPaths {
