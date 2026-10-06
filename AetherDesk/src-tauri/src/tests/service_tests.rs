@@ -16,7 +16,7 @@ fn scoring_is_exact_prefix_or_substring_only() {
     let prefix = svc.calculate_relevance_score("stray", "Stray Cat");
     let substring = svc.calculate_relevance_score("stray", "My Stray Game");
     assert!(prefix > 0 && prefix < 100);
-    assert!(substring >= 100 && substring < 1000);
+    assert!((100..1000).contains(&substring));
     // Typos are Steam/suggest's job, not local Levenshtein.
     assert_eq!(svc.calculate_relevance_score("stray", "Stary"), 10000);
     assert_eq!(svc.calculate_relevance_score("witchr 3", "The Witcher 3: Wild Hunt"), 10000);

@@ -112,7 +112,7 @@ fn restore_blocking_is_idempotent_for_valid_files() {
         let outcome = restore_local_blocking(
             &steam.display().to_string(),
             987_654_321,
-            &[present.clone()],
+            std::slice::from_ref(&present),
         )
         .expect("restore");
         assert_eq!(outcome.already_local, 1);

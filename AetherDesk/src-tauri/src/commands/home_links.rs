@@ -22,7 +22,7 @@ pub fn open_home_resource(site: String, game_name: String) -> Result<(), String>
     open_external_url(&url)
 }
 
-// OFME = online-fix.me (la crack). Il nome funzione evita "onlinefix", che
+// Ofme = online-fix.me (la crack). Il nome funzione evita "onlinefix", che
     // nelle AI si confonde con la modalità AetherOnline (il payload Aether).
     pub(crate) fn build_ofme_url(game_name: &str) -> String {
     format!(
@@ -55,11 +55,11 @@ pub(crate) fn build_csrinru_url(game_name: &str) -> String {
 }
 
 fn build_ofme_query(game_name: &str) -> String {
-    normalize_query_title(game_name, QueryFlavor::OFME)
+    normalize_query_title(game_name, QueryFlavor::Ofme)
 }
 
 fn build_csrinru_query(game_name: &str) -> String {
-    normalize_query_title(game_name, QueryFlavor::CsRinRu)
+    normalize_query_title(game_name, QueryFlavor::CsRinru)
 }
 
 fn build_gcw_query(game_name: &str) -> String {
@@ -81,34 +81,34 @@ fn build_gcw_query(game_name: &str) -> String {
 
 #[derive(Debug, Clone, Copy)]
 enum QueryFlavor {
-    OFME,
-    CsRinRu,
+    Ofme,
+    CsRinru,
 }
 
 fn normalize_query_title(game_name: &str, flavor: QueryFlavor) -> String {
     let without_brackets = remove_bracketed_segments(game_name);
     let base_title = match flavor {
-        // OFME (online-fix.me) searches should keep real subtitles after ':' so titles like
+        // Ofme (online-fix.me) searches should keep real subtitles after ':' so titles like
         // "Call of Duty: Black Ops II" do not degrade to plain "Call of Duty".
-        QueryFlavor::OFME => without_brackets.trim().to_string(),
+        QueryFlavor::Ofme => without_brackets.trim().to_string(),
         // CSRINRU needs the Davigo-style cleanup, but only when the subtitle is
         // platform/mode noise such as "VR vs. PC". Meaningful subtitles like
         // "Shadows Die Twice" are kept.
-        QueryFlavor::CsRinRu => strip_noisy_colon_subtitle(&without_brackets),
+        QueryFlavor::CsRinru => strip_noisy_colon_subtitle(&without_brackets),
     };
     let without_editions = strip_known_edition_suffixes(&base_title);
     let possessive_policy = match flavor {
-        QueryFlavor::OFME => PossessivePolicy::KeepAsPlainS,
-        QueryFlavor::CsRinRu => PossessivePolicy::DropPossessiveS,
+        QueryFlavor::Ofme => PossessivePolicy::KeepAsPlainS,
+        QueryFlavor::CsRinru => PossessivePolicy::DropPossessiveS,
     };
 
     let tokens = title_tokens(
         &without_editions,
         TokenOptions {
             preserve_hyphen: false,
-            preserve_dot: matches!(flavor, QueryFlavor::CsRinRu),
+            preserve_dot: matches!(flavor, QueryFlavor::CsRinru),
             possessive_policy,
-            drop_numeric_tokens: matches!(flavor, QueryFlavor::CsRinRu),
+            drop_numeric_tokens: matches!(flavor, QueryFlavor::CsRinru),
         },
     );
 
@@ -139,15 +139,13 @@ enum PossessivePolicy {
 
 fn title_tokens(title: &str, options: TokenOptions) -> Vec<String> {
     let normalized = normalize_apostrophes(title)
-        .replace('™', "")
-        .replace('®', "")
-        .replace('©', "")
+        .replace(['™', '®', '©'], "")
         .replace('&', " and ");
 
     let normalized = if options.preserve_dot {
         normalized
     } else {
-        // Dotted acronyms such as R.E.P.O. are indexed by OFME/GCW as "repo".
+        // Dotted acronyms such as R.E.P.O. are indexed by Ofme/GCW as "repo".
         normalized.replace('.', "")
     };
 

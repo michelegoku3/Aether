@@ -3,7 +3,7 @@ use crate::updater::dll::AETHER_DLL_FILES;
 
 #[test]
 fn fixed_header_layout_reads_file_version_not_struc_version() {
-    let header: [u32; 4] = [0xFEEF04BD, 0x00010000, (0 << 16) | 9, 7 << 16];
+    let header: [u32; 4] = [0xFEEF04BD, 0x00010000, 9, 7 << 16];
     assert_eq!(version_from_fixed_header(&header), Some((0, 9, 7)));
 
     let header: [u32; 4] = [0xFEEF04BD, 0x00010000, (2 << 16) | 4, 1 << 16];
