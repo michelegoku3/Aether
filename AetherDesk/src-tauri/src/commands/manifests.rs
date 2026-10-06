@@ -115,7 +115,7 @@ pub async fn sync_hubcap_game_manifest(
     report.generated = resolution.generated.len();
     let expected = resolution.generated.len();
     let generated = resolution.generated;
-    report.installed = SteamCompat::new(settings.steam_path.clone())
+    report.installed = SteamCompat::new(&settings.steam_path)
         .install_manifest_files(&generated)?;
     if report.installed != expected {
         return Err(format!(
@@ -250,7 +250,7 @@ pub async fn refresh_game_pins_from_hubcap(
     }
 
     let started = Instant::now();
-    let client = HubcapClient::new(settings.hubcap_api_key.clone());
+    let client = HubcapClient::new(&settings.hubcap_api_key);
     if !client.validate_api_key().await? {
         return Err("Hubcap API key is not valid or is not allowed to make requests.".to_string());
     }
@@ -332,7 +332,7 @@ pub async fn refresh_game_pins_from_hubcap(
     if !resolution.generated.is_empty() {
         let expected = resolution.generated.len();
         staged =
-            SteamCompat::new(settings.steam_path.clone()).install_manifest_files(&resolution.generated)?;
+            SteamCompat::new(&settings.steam_path).install_manifest_files(&resolution.generated)?;
         if staged != expected {
             return Err(format!(
                 "Pin refresh gate failed for app {app_id}: expected {expected} staged manifests, installed {staged}"

@@ -151,7 +151,7 @@ fn retry_ladder_drops_a_task_after_the_cap() {
     let mut task = PendingTask::due_now();
     for attempt in 1..MAX_TASK_ATTEMPTS {
         assert!(
-            reschedule(&mut lane, app_id, task.clone()),
+            reschedule(&mut lane, app_id, &task),
             "attempt {attempt} must stay queued"
         );
         assert!(lane.contains_key(&app_id));
@@ -164,7 +164,7 @@ fn retry_ladder_drops_a_task_after_the_cap() {
         attempts: MAX_TASK_ATTEMPTS - 1,
         next_attempt: std::time::Instant::now(),
     };
-    assert!(!reschedule(&mut lane, app_id, last));
+    assert!(!reschedule(&mut lane, app_id, &last));
     assert!(lane.is_empty(), "a given-up task must not be rescheduled");
 }
 

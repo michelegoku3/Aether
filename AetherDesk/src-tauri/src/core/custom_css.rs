@@ -163,7 +163,7 @@ fn theme_candidates() -> Result<Vec<PathBuf>, String> {
 /// 2. otherwise the first `.css` file in `config/themes/`;
 /// 3. otherwise `None`.
 pub fn theme_path(selected_file: &str) -> Result<Option<PathBuf>, String> {
-    let selected = resolve_selected(&themes_dir(), selected_file)?;
+    let selected = resolve_selected(&themes_dir(), selected_file);
     if let Some(path) = selected {
         return Ok(Some(path));
     }
@@ -189,7 +189,7 @@ pub fn read_theme_css(selected_file: &str) -> Result<String, String> {
 /// 3. otherwise the legacy `config/wallpaper.<ext>` file when present;
 /// 4. otherwise `None`.
 pub fn personal_wallpaper_path(selected_file: &str) -> Result<Option<PathBuf>, String> {
-    let selected = resolve_selected(&wallpapers_dir(), selected_file)?;
+    let selected = resolve_selected(&wallpapers_dir(), selected_file);
     if let Some(path) = selected {
         return Ok(Some(path));
     }
@@ -264,7 +264,7 @@ pub fn active_theme_name(selected_file: &str) -> Option<String> {
 }
 
 pub fn icon_path(selected_file: &str) -> Result<Option<PathBuf>, String> {
-    let selected = resolve_selected(&icons_dir(), selected_file)?;
+    let selected = resolve_selected(&icons_dir(), selected_file);
     if let Some(path) = selected {
         return Ok(Some(path));
     }
@@ -378,16 +378,16 @@ pub fn import_selected_file(folder: &Path, picked_path: &Path) -> Result<String,
 
 /// Resolves a stored selection: only when the folder exists, the file name is
 /// non-empty and the file still exists. Otherwise `None` (fall back to first).
-fn resolve_selected(folder: &Path, selected_file: &str) -> Result<Option<PathBuf>, String> {
+fn resolve_selected(folder: &Path, selected_file: &str) -> Option<PathBuf> {
     let selected_file = selected_file.trim();
     if selected_file.is_empty() {
-        return Ok(None);
+        return None;
     }
     let candidate = folder.join(selected_file);
     if candidate.is_file() {
-        Ok(Some(candidate))
+        Some(candidate)
     } else {
-        Ok(None)
+        None
     }
 }
 

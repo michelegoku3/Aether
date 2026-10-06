@@ -240,7 +240,7 @@ pub async fn install_aether_dll(
     std::fs::write(&temp_zip_path, &bytes)
         .map_err(|e| format!("Failed to write temporary ZIP: {}", e))?;
 
-    let installer = DllInstaller::new(steam_path.clone());
+    let installer = DllInstaller::new(&steam_path);
     let install_result = installer.install_from_zip(&temp_zip_path);
     let _ = std::fs::remove_file(temp_zip_path);
 
@@ -277,7 +277,7 @@ pub fn uninstall_aether_dll(app: tauri::AppHandle) -> Result<String, String> {
     crate::desk_log_info!("updater", "Uninstalling AetherDLL from Steam directory '{}'", steam_path);
 
     // The uninstaller also removes the obsolete Steam-root proxy.
-    DllInstaller::new(steam_path.clone()).uninstall()?;
+    DllInstaller::new(&steam_path).uninstall()?;
     let legacy_version_path = std::path::PathBuf::from(&steam_path).join("AetherDLL_version.txt");
     let _ = std::fs::remove_file(legacy_version_path);
     Ok("AetherDLL files removed successfully from Steam.".to_string())
@@ -290,7 +290,7 @@ pub fn reset_aether_steam_path(app: tauri::AppHandle) -> Result<String, String> 
     crate::desk_log_info!("updater", "Resetting Aether files in Steam directory '{}'", steam_path);
 
     // Reset removes the obsolete proxy and version bookmark too.
-    let removed = DllInstaller::new(steam_path.clone()).reset_aether_files()?;
+    let removed = DllInstaller::new(&steam_path).reset_aether_files()?;
     crate::desk_log_info!("updater", "Steam path reset completed: removed {} item(s) from '{}'", removed, steam_path);
     Ok(format!(
         "Steam path reset completed. Removed {} Aether-created item(s).",
@@ -307,7 +307,7 @@ pub fn probe_aether_steam_residuals(app: tauri::AppHandle) -> Result<usize, Stri
     if resolve_steam_path(&steam_path).is_err() {
         return Ok(0);
     }
-    let count = DllInstaller::new(steam_path).count_aether_residuals();
+    let count = DllInstaller::new(&steam_path).count_aether_residuals();
     crate::desk_log_info!(
         "lifecycle",
         "Probed Aether Steam residuals: {} item(s)",

@@ -190,6 +190,11 @@ pub fn current_library_change_revision(app: &AppHandle) -> u64 {
         .unwrap_or(0)
 }
 
+// Il worker gira su un thread dedicato (`std::thread` richiede `'static`): i parametri
+// by value SONO il trasferimento di proprietà nel thread; un riferimento non
+// compilerebbe allo spawn. Clippy non vede il consumo perché `Receiver::recv`
+// e gli atomici prendono `&self`.
+#[allow(clippy::needless_pass_by_value)]
 fn run_watch_worker(
     app: AppHandle,
     command_rx: Receiver<WatchCommand>,

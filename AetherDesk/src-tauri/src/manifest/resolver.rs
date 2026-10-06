@@ -329,7 +329,7 @@ pub async fn resolve(request: ManifestRequest) -> Result<ManifestResolution, Str
     match generation {
         Generation::LocalOnly => Ok(resolution),
         Generation::SettingsKey(api_key) => {
-            let client = HubcapClient::new(api_key);
+            let client = HubcapClient::new(&api_key);
             if !client.validate_api_key().await? {
                 return Err(
                     "Hubcap API key is not valid or is not allowed to make requests.".to_string(),
@@ -342,7 +342,7 @@ pub async fn resolve(request: ManifestRequest) -> Result<ManifestResolution, Str
             Ok(resolution)
         }
         Generation::PreValidatedKey(api_key) => {
-            let client = HubcapClient::new(api_key);
+            let client = HubcapClient::new(&api_key);
             let (generated, failed) =
                 generate_missing_manifests(client, std::mem::take(&mut resolution.missing)).await;
             resolution.generated = generated;

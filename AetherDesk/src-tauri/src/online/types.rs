@@ -85,7 +85,7 @@ pub enum Conflict {
     /// file di OFME trovati sul disco, mai la modalità Aether.
     /// rename esplicito: con rename_all=camelCase "OFME" diverrebbe "oFME".
     #[serde(rename = "ofme")]
-    OFME(PathBuf),
+    Ofme(PathBuf),
     /// File nominativi di un fix (`winmm.dll`, `dlllist.txt`, ...).
     NamedFixFile(PathBuf),
     /// Proxy DLL generico piccolo (`version.dll`, `dxgi.dll`, ... < 300 KiB).

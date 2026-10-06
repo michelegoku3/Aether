@@ -102,7 +102,7 @@ pub fn read_file_version(_path: &Path) -> Option<(u16, u16, u16)> {
 /// presenti, tutti con resource, tutti alla stessa versione). In ogni altro caso
 /// `None`: manca file, manca resource (installazioni pre-resource) o versioni miste.
 pub fn read_installed_dll_version(steam_dir: &Path) -> Option<String> {
-    if !DllInstaller::new(steam_dir.to_string_lossy().into_owned()).verify_installation() {
+    if !DllInstaller::new(&steam_dir.to_string_lossy()).verify_installation() {
         return None;
     }
     let mut agreed: Option<(u16, u16, u16)> = None;

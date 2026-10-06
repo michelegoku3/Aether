@@ -337,8 +337,8 @@ impl StoreService {
     ///   * Hubcap is the *availability authority*: for every query variant
     ///     (original + first alias expansion) both `/library` and `/search`
     ///     are queried in parallel and merged by app id.
-    /// Neither source may take the other down: a Steam outage still yields the
-    /// Hubcap-only list, a Hubcap outage still yields the plain Steam catalog.
+    ///     Neither source may take the other down: a Steam outage still yields the
+    ///     Hubcap-only list, a Hubcap outage still yields the plain Steam catalog.
     pub async fn search_store(&self, query: &str, hubcap_client: Option<HubcapClient>, show_store_dlcs: bool, show_store_nsfw: bool, show_store_delisted: bool, steam_country_code: &str) -> Result<Vec<UnifiedStoreGame>, String> {
         if query.trim().is_empty() {
             return Ok(Vec::new());

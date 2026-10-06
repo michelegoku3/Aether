@@ -116,7 +116,7 @@ fn merge_tagged(
 /// Cancellazione sincrona usata dentro `spawn_blocking`.
 fn clear_log_lines(app: &tauri::AppHandle, mode: &str) -> Result<String, String> {
     if mode == "desk" || mode == "both" {
-        crate::core::logger::clear_current_log()?;
+        crate::core::logger::clear_current_log();
     }
     if mode == "dll" || mode == "both" {
         clear_dll_log(app);

@@ -17,6 +17,27 @@
 //! messaggio utente leggibile) o [`configured_steam_path`] (degrada con garbo
 //! quando il percorso manca o Steam non è raggiungibile).
 
+// ---------------------------------------------------------------------------
+// Lint policy del confine IPC (eccezioni deliberate, motivate).
+//
+// `clippy::needless_pass_by_value`: i parametri dei comandi sono risolti dalla
+// macro `generate_handler!` tramite il trait `tauri::ipc::CommandArg`, che è
+// implementato solo per tipi **by value** (`AppHandle`, `String`, ...): le
+// firme `&AppHandle`/`&str` suggerite dal lint non compilano. Il by value qui
+// è un vincolo del framework, non una scelta di stile.
+//
+// `clippy::unnecessary_wraps`: la firma `Result<T, String>` è il contratto IPC
+// intenzionale: ogni comando espone al frontend la stessa superficie di errore
+// finché la migrazione a `DeskError` non sarà completata (policy in
+// Cargo.toml). Rimuovere `Result` dai singoli comandi "che oggi non falliscono"
+// renderebbe il contratto disomogeneo e impedirebbe di aggiungere percorsi di
+// errore senza breaking change per la UI.
+//
+// Le funzioni interne non-comando restano soggette a entrambi i lint.
+// ---------------------------------------------------------------------------
+#![allow(clippy::needless_pass_by_value)]
+#![allow(clippy::unnecessary_wraps)]
+
 pub mod aether_desk;
 pub mod aether_dll;
 pub mod antivirus;

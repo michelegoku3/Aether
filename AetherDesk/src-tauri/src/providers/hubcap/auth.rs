@@ -9,10 +9,13 @@ use super::types::{
     GENERATION_RETRY_ATTEMPTS, HubcapGenerationUsage, HubcapUserStats, KEY_VALIDATION_TTL,
 };
 
+/// (fingerprint SHA-256 della chiave, istante della verifica, esito).
+type CachedValidation = Option<(Vec<u8>, Instant, bool)>;
+
 /// Session-wide validation cache. The fingerprint is the SHA-256 of the raw
 /// key, so a changed key is always re-validated immediately.
-fn validation_cache() -> &'static AsyncMutex<Option<(Vec<u8>, Instant, bool)>> {
-    static CACHE: OnceLock<AsyncMutex<Option<(Vec<u8>, Instant, bool)>>> = OnceLock::new();
+fn validation_cache() -> &'static AsyncMutex<CachedValidation> {
+    static CACHE: OnceLock<AsyncMutex<CachedValidation>> = OnceLock::new();
     CACHE.get_or_init(|| AsyncMutex::new(None))
 }
 

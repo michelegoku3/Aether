@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -45,8 +45,8 @@ struct DenuvoCacheEntry {
 ///   2. bounded concurrency (3) on the rate-limited appdetails endpoint;
 ///   3. circuit breaker on HTTP 429: the first rate-limited response aborts
 ///      every pending fetch instead of making Steam more angry.
-/// Failed fetches are simply absent from the result map (never cached as
-/// `false`), so a transient outage never poisons future lookups.
+///      Failed fetches are simply absent from the result map (never cached as
+///      `false`), so a transient outage never poisons future lookups.
 pub struct DrmDetector {
     client: reqwest::Client,
     cache_path: PathBuf,
@@ -56,7 +56,7 @@ pub struct DrmDetector {
 }
 
 impl DrmDetector {
-    pub fn new(cache_dir: PathBuf, app_version: String) -> Self {
+    pub fn new(cache_dir: &Path, app_version: String) -> Self {
         Self {
             client: http::build_client(DRM_TIMEOUT_SECONDS),
             cache_path: cache_dir.join(CACHE_FILE_NAME),

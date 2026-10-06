@@ -21,7 +21,7 @@ pub struct DepotboxSource {
 }
 
 impl DepotboxSource {
-    pub fn new(token: String) -> Self {
+    pub fn new(token: &str) -> Self {
         let mut headers = HeaderMap::new();
         if let Ok(value) = HeaderValue::from_str(token.trim()) {
             headers.insert("x-api-key", value);

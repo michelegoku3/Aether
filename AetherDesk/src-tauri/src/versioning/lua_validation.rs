@@ -32,7 +32,7 @@ pub async fn validate_claimed_build(
         .and_then(|value| value.as_str().parse::<u64>().ok())
         .ok_or_else(|| "The Lua build claim is not a valid BuildID".to_string())?;
 
-    let expected = DepotboxSource::new(token).pins_for_build(build_id).await?;
+    let expected = DepotboxSource::new(&token).pins_for_build(build_id).await?;
     let actual: HashMap<u32, String> = LuaManifestPins::rows_from_content(&content)
         .into_iter()
         .map(|row| (row.app_id, row.manifest_id))

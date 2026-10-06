@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use crate::providers::http;
 use crate::steam::api::{self, AppDetailsEnvelope};
 
@@ -40,7 +40,7 @@ pub struct SteamAppNameResolver {
 }
 
 impl SteamAppNameResolver {
-    pub fn new(cache_dir: PathBuf) -> Self {
+    pub fn new(cache_dir: &Path) -> Self {
         Self {
             cache_path: cache_dir.join(CACHE_FILE_NAME),
             client: http::build_client(NAME_RESOLVE_TIMEOUT_SECONDS),
@@ -53,19 +53,19 @@ impl SteamAppNameResolver {
     /// games can be rendered immediately even when Steam is offline or slow.
     pub fn cached_names(&self, app_ids: Vec<u32>) -> HashMap<u32, String> {
         let cache = self.load_cache();
-        Self::filter_cached_names(cache, app_ids)
+        Self::filter_cached_names(&cache, app_ids)
     }
 
     /// Returns cached cover/capsule URLs without doing network I/O.
     pub fn cached_image_urls(&self, app_ids: Vec<u32>) -> HashMap<u32, String> {
         let cache = self.load_cache();
-        Self::filter_cached_images(cache, app_ids)
+        Self::filter_cached_images(&cache, app_ids)
     }
 
     /// Returns cached landscape/header URLs without doing network I/O.
     pub fn cached_hero_image_urls(&self, app_ids: Vec<u32>) -> HashMap<u32, String> {
         let cache = self.load_cache();
-        Self::filter_cached_heroes(cache, app_ids)
+        Self::filter_cached_heroes(&cache, app_ids)
     }
 
     /// Resolves missing names/images through Steam and persists them for future
@@ -114,7 +114,7 @@ impl SteamAppNameResolver {
             }
         }
 
-        Self::filter_cached_names(cache, unique_ids)
+        Self::filter_cached_names(&cache, unique_ids)
     }
 
     fn unique_app_ids(mut app_ids: Vec<u32>) -> Vec<u32> {
@@ -123,7 +123,7 @@ impl SteamAppNameResolver {
         app_ids
     }
 
-    fn filter_cached_names(cache: NameCacheFile, app_ids: Vec<u32>) -> HashMap<u32, String> {
+    fn filter_cached_names(cache: &NameCacheFile, app_ids: Vec<u32>) -> HashMap<u32, String> {
         Self::unique_app_ids(app_ids)
             .into_iter()
             .filter_map(|app_id| {
@@ -137,7 +137,7 @@ impl SteamAppNameResolver {
             .collect()
     }
 
-    fn filter_cached_images(cache: NameCacheFile, app_ids: Vec<u32>) -> HashMap<u32, String> {
+    fn filter_cached_images(cache: &NameCacheFile, app_ids: Vec<u32>) -> HashMap<u32, String> {
         Self::unique_app_ids(app_ids)
             .into_iter()
             .filter_map(|app_id| {
@@ -151,7 +151,7 @@ impl SteamAppNameResolver {
             .collect()
     }
 
-    fn filter_cached_heroes(cache: NameCacheFile, app_ids: Vec<u32>) -> HashMap<u32, String> {
+    fn filter_cached_heroes(cache: &NameCacheFile, app_ids: Vec<u32>) -> HashMap<u32, String> {
         Self::unique_app_ids(app_ids)
             .into_iter()
             .filter_map(|app_id| {
@@ -323,7 +323,7 @@ impl SteamAppNameResolver {
 /// Helper that synchronously retrieves the cached game title for an AppID without network I/O.
 pub fn get_cached_game_name(app_id: u32) -> String {
     let cache_dir = crate::core::paths::LocalAppPaths::data_root().join("cache");
-    let resolver = SteamAppNameResolver::new(cache_dir);
+    let resolver = SteamAppNameResolver::new(&cache_dir);
     resolver
         .cached_names(vec![app_id])
         .get(&app_id)

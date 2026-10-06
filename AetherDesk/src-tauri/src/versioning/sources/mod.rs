@@ -34,18 +34,18 @@ pub trait BuildDetailsSource: Send + Sync {
 pub const DEFAULT_BUILD_DETAILS_TOKEN: &str = "dbxpriv_7785b0eca2c32385830332832ed8443539ab4f5b084779f7";
 
 /// Resolution order: env override → user setting → built-in default.
-pub fn resolve_build_details_token(settings_token: Option<&str>) -> Option<String> {
+pub fn resolve_build_details_token(settings_token: Option<&str>) -> String {
     if let Ok(env_value) = std::env::var("AETHERDESK_BUILD_TOKEN") {
         let env_value = env_value.trim().to_string();
         if !env_value.is_empty() {
-            return Some(env_value);
+            return env_value;
         }
     }
     if let Some(setting) = settings_token {
         let setting = setting.trim().to_string();
         if !setting.is_empty() {
-            return Some(setting);
+            return setting;
         }
     }
-    Some(DEFAULT_BUILD_DETAILS_TOKEN.to_string())
+    DEFAULT_BUILD_DETAILS_TOKEN.to_string()
 }

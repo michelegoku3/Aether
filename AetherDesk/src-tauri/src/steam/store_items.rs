@@ -339,7 +339,9 @@ pub async fn fetch_store_items_for_country(app_ids: Vec<u32>, country_code: &str
             continue;
         }
 
-        let results: Vec<(Vec<u32>, Result<HashMap<u32, StoreItemMeta>, String>)> =
+        // Un chunk dell'ondata: ID richiesti + esito del fetch.
+        type ChunkFetch = (Vec<u32>, Result<HashMap<u32, StoreItemMeta>, String>);
+        let results: Vec<ChunkFetch> =
             if wave.len() == 1 || tokio::runtime::Handle::try_current().is_err() {
                 let mut results = Vec::with_capacity(wave.len());
                 for chunk in wave {

@@ -85,7 +85,7 @@ pub fn is_dll_installed(app: tauri::AppHandle) -> Result<bool, String> {
     if steam_path.trim().is_empty() {
         return Ok(false);
     }
-    Ok(DllInstaller::new(steam_path).verify_installation())
+    Ok(DllInstaller::new(&steam_path).verify_installation())
 }
 
 /// Stato "Steam in esecuzione" letto dal monitor condiviso (core::steam_monitor):

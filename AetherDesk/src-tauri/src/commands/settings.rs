@@ -24,7 +24,7 @@ pub async fn save_settings(
         if candidate.hubcap_api_key.trim().is_empty() {
             return Err("HUBCAP_KEY_REQUIRED_FOR_UPDATES: enable updates only with a valid active Hubcap key".into());
         }
-        let active = HubcapClient::new(candidate.hubcap_api_key.clone())
+        let active = HubcapClient::new(&candidate.hubcap_api_key)
             .validate_api_key()
             .await
             .map_err(|e| format!("HUBCAP_KEY_REQUIRED_FOR_UPDATES: {e}"))?;
@@ -110,7 +110,7 @@ pub async fn validate_hubcap_key(api_key: String) -> Result<bool, String> {
         "settings",
         "Validating Hubcap API key with hubcapmanifest.com..."
     );
-    let res = HubcapClient::new(api_key).validate_api_key().await;
+    let res = HubcapClient::new(&api_key).validate_api_key().await;
     match &res {
         Ok(true) => crate::desk_log_info!("settings", "Hubcap API key validated successfully"),
         Ok(false) => crate::desk_log_warn!(
@@ -198,7 +198,7 @@ pub async fn get_hubcap_usage(api_key: String) -> Result<serde_json::Value, Stri
         .map(|snapshot| snapshot.api_key == api_key)
         .unwrap_or(false);
 
-    match HubcapClient::new(api_key.clone()).get_usage_stats().await {
+    match HubcapClient::new(&api_key).get_usage_stats().await {
         Ok(stats) => {
             let limit = stats
                 .role_daily_limit

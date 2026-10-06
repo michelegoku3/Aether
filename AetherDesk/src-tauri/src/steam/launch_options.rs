@@ -127,8 +127,8 @@ fn find_key(content: &str, key: &str) -> Option<(usize, usize)> {
 fn find_matching_brace(s: &str, open_idx: usize) -> Option<usize> {
     let bytes = s.as_bytes();
     let mut depth = 0usize;
-    for i in open_idx..bytes.len() {
-        match bytes[i] {
+    for (i, &byte) in bytes.iter().enumerate().skip(open_idx) {
+        match byte {
             b'{' => depth += 1,
             b'}' => {
                 depth = depth.saturating_sub(1);

@@ -242,7 +242,6 @@ pub async fn disable_online(app: tauri::AppHandle, app_id: u32) -> Result<Online
     })
     .await
     .map_err(|e| format!("Online worker failed: {e}"))?;
-    let result = result?;
 
     if result.success {
         // UCO2 rimosso: l'app esce da exclude_apps e torna al comportamento

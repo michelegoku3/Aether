@@ -25,7 +25,7 @@ fn build_service(app: &AppHandle) -> VersionService {
     let token = crate::versioning::sources::resolve_build_details_token(Some(
         &settings.build_details_token,
     ));
-    VersionService::with_token(token)
+    VersionService::with_token(&token)
 }
 
 fn validate_app_build(app_id: u32, build_id: u64) -> Result<(), String> {

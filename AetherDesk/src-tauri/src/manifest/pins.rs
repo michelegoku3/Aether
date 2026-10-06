@@ -79,8 +79,8 @@ pub struct LuaManifestRowIssue {
     ///    every depot override (red card, must be repaired);
     ///  * inactive issue -> the file loads fine today, but the call is a trap
     ///    for whenever updates are enabled (amber, repair when convenient).
-    /// The field is what lets one diagnostic describe both states honestly
-    /// instead of treating a commented line like a fatal one.
+    ///    The field is what lets one diagnostic describe both states honestly
+    ///    instead of treating a commented line like a fatal one.
     pub active: bool,
 }
 

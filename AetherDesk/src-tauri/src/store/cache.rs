@@ -2,7 +2,7 @@ use crate::store::service::UnifiedStoreGame;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 const CACHE_FILE_NAME: &str = "store_search_cache.json";
@@ -39,7 +39,7 @@ pub struct StoreSearchCache {
 }
 
 impl StoreSearchCache {
-    pub fn new(cache_dir: PathBuf, app_version: String) -> Self {
+    pub fn new(cache_dir: &Path, app_version: &str) -> Self {
         Self {
             cache_path: cache_dir.join(CACHE_FILE_NAME),
             app_version: format!("{}|{}", app_version, CACHE_SCHEMA_VERSION),

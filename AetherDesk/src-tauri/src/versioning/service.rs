@@ -13,7 +13,7 @@ use crate::versioning::model::{ApplyVersionReport, BuildInfo, SavedBuild};
 use crate::versioning::saved::SavedBuildsStore;
 use crate::versioning::snapshot::{older_build_ids, SnapshotAssembler};
 use crate::versioning::sources::{
-    self, depotbox::DepotboxSource, steamdb::SteamDbPatchnotesSource, BuildDetailsSource,
+    depotbox::DepotboxSource, steamdb::SteamDbPatchnotesSource, BuildDetailsSource,
     BuildHistorySource,
 };
 
@@ -29,15 +29,14 @@ pub struct VersionService {
 }
 
 impl VersionService {
-    /// Builds the service with the real sources. `token` is the Depotbox
-    /// access token; `None` falls back to the built-in default.
-    pub fn with_token(token: Option<String>) -> Self {
-        let token = token.unwrap_or_else(|| sources::DEFAULT_BUILD_DETAILS_TOKEN.to_string());
+    /// Builds the service with the real sources. `token` is the resolved
+    /// Depotbox access token (see `resolve_build_details_token`).
+    pub fn with_token(token: &str) -> Self {
         Self {
             history_source: Arc::new(SteamDbPatchnotesSource::new()),
             details_source: Arc::new(DepotboxSource::new(token)),
-            cache: VersionCache::new(LocalAppPaths::data_root().join("cache")),
-            saved: SavedBuildsStore::new(LocalAppPaths::data_root()),
+            cache: VersionCache::new(&LocalAppPaths::data_root().join("cache")),
+            saved: SavedBuildsStore::new(&LocalAppPaths::data_root()),
         }
     }
 

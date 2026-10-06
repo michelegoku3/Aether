@@ -80,7 +80,7 @@ pub fn apply_build_version(
     // atomically before Steam can observe the new Lua, so a successful version
     // switch never points at a manifest that has not been staged yet.
     if !generated_manifests.is_empty() {
-        let installed = SteamCompat::new(steam_path.to_string())
+        let installed = SteamCompat::new(steam_path)
             .install_manifest_files(generated_manifests)
             .map_err(VersionError::Lua)?;
         crate::desk_log_info!(

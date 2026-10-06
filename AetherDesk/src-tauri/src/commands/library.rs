@@ -44,7 +44,7 @@ pub async fn get_installed_library_games(
     // on first start, resolve them immediately so Library and Home search render
     // with real game names instead of raw App IDs.
     let cache_dir = LocalAppPaths::data_root().join("cache");
-    let resolver = SteamAppNameResolver::new(cache_dir.clone());
+    let resolver = SteamAppNameResolver::new(&cache_dir);
     let app_ids: Vec<u32> = games.iter().map(|game| game.id).collect();
     let mut names = resolver.cached_names(app_ids.clone());
     if names.len() < app_ids.len() {
@@ -112,7 +112,7 @@ pub async fn get_installed_library_games(
         &app.package_info().version.to_string(),
         &store_currency,
     );
-    GameInfoCache::new(cache_dir, info_cache_version)
+    GameInfoCache::new(&cache_dir, info_cache_version)
         .merge_library_games(&games);
     crate::desk_log_info!("library", "Library scan completed: returned {} installed Lua game(s)", games.len());
     Ok(games)
@@ -142,7 +142,7 @@ pub async fn warm_library_game_cache(app: tauri::AppHandle) -> Result<usize, Str
 
     crate::desk_log_info!("library", "Starting background metadata cache warm-up for {} installed game App ID(s)", app_ids.len());
     let cache_dir = LocalAppPaths::data_root().join("cache");
-    let resolver = SteamAppNameResolver::new(cache_dir);
+    let resolver = SteamAppNameResolver::new(&cache_dir);
     let names = resolver.resolve_names(app_ids.clone()).await;
     let country = steam_country_code_for_currency(&settings.store_currency);
     let metas = store_items::fetch_store_items_for_country(app_ids, country).await;
@@ -405,7 +405,7 @@ pub async fn apply_specific_version_edits(
 
     // Publish the Lua and any newly generated exact manifests together. The
     // old Lua remains untouched if staging/generation fails.
-    SteamCompat::new(steam_path.clone())
+    SteamCompat::new(&steam_path)
         .install_lua_and_manifest_files(app_id, &next_lua, &generated)?;
 
     // Shared completeness gate: the same "present" definition the resolution

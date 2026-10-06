@@ -44,7 +44,7 @@ pub async fn pick_and_run_steamless(
     crate::core::game_mutations::ensure_current_root(&app, std::path::Path::new(&steam_root))?;
     let res = tauri::async_runtime::spawn_blocking(move || {
         let _mutation = mutation;
-        SteamlessRunner::new(tool).run(SteamlessRunRequest {
+        SteamlessRunner::new(tool).run(&SteamlessRunRequest {
             exe_path,
             game_root,
             timeout_seconds: STEAMLESS_TIMEOUT_SECONDS,

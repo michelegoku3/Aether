@@ -6,7 +6,7 @@ use crate::providers::oureveryday::OureverydayClient;
 
 #[test]
 fn test_manifest_source_metadata() {
-    let hubcap = HubcapClient::new("test-key".to_string());
+    let hubcap = HubcapClient::new("test-key");
     assert_eq!(hubcap.source_id(), "hubcap");
     assert_eq!(hubcap.display_name(), "Hubcap");
 
@@ -26,7 +26,7 @@ fn test_manifest_source_metadata() {
 #[test]
 fn test_manifest_source_trait_object() {
     let sources: Vec<Box<dyn ManifestSource>> = vec![
-        Box::new(HubcapClient::new("key".to_string())),
+        Box::new(HubcapClient::new("key")),
         Box::new(RyuuClient::new("key".to_string())),
         Box::new(LuaToolsClient::new()),
         Box::new(OureverydayClient::new()),

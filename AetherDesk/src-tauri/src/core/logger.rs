@@ -275,7 +275,7 @@ pub fn read_tail_lines(tail_lines: usize) -> Result<Vec<String>, String> {
 }
 
 /// Clears the current session log and resets the deduplication set.
-pub fn clear_current_log() -> Result<(), String> {
+pub fn clear_current_log() {
     if let Some(mutex) = LOGGER.get() {
         if let Ok(mut logger) = mutex.lock() {
             logger.dedup_set.clear();
@@ -291,7 +291,6 @@ pub fn clear_current_log() -> Result<(), String> {
     }
 
     write(LogLevel::Info, "lifecycle", "Session log cleared by user command.");
-    Ok(())
 }
 
 // ---------------------------------------------------------------------------
