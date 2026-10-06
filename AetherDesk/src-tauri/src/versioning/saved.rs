@@ -39,7 +39,7 @@ impl SavedBuildsStore {
             .into_iter()
             .filter(|b| b.app_id == app_id)
             .collect();
-        builds.sort_by(|a, b| b.saved_at.cmp(&a.saved_at));
+        builds.sort_by_key(|build| std::cmp::Reverse(build.saved_at));
         builds
     }
 

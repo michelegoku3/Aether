@@ -22,9 +22,9 @@ fn varint(mut value: u64, out: &mut Vec<u8>) {
 fn synthetic_manifest(depot_id: u32, manifest_gid: u64) -> Vec<u8> {
     let payload = b"payload-bytes".to_vec();
     let mut metadata = Vec::new();
-    varint((1 << 3) | 0, &mut metadata);
+    varint(1 << 3, &mut metadata);
     varint(u64::from(depot_id), &mut metadata);
-    varint((2 << 3) | 0, &mut metadata);
+    varint(2 << 3, &mut metadata);
     varint(manifest_gid, &mut metadata);
     // field 7, wire type 2 (bytes): must be skipped without affecting identity
     varint((7 << 3) | 2, &mut metadata);
