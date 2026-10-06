@@ -9,7 +9,7 @@ pub struct HubcapClient {
 }
 
 impl HubcapClient {
-    pub fn new(api_key: String) -> Self {
+    pub fn new(api_key: &str) -> Self {
         let api_key = api_key.trim().to_string();
         let mut headers = HeaderMap::new();
         if let Ok(value) = HeaderValue::from_str(&format!("Bearer {}", api_key)) {

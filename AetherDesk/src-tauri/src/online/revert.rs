@@ -21,7 +21,7 @@ pub fn disable(
     backup_root: &Path,
     state_path: &Path,
     game_root: Option<&Path>,
-) -> Result<String, String> {
+) -> String {
     let backup_dir = backup_dir_for(backup_root, app_id);
     let mut store = OnlineStateStore::load(state_path);
     let record = store.get(app_id).cloned();
@@ -42,7 +42,7 @@ pub fn disable(
     }
 
     let _ = store.remove(app_id, state_path);
-    Ok("UCOnline2 disabled: files restored and state cleared.".to_string())
+    "UCOnline2 disabled: files restored and state cleared.".to_string()
 }
 
 /// Revert guidato dal journal (ordine inverso).

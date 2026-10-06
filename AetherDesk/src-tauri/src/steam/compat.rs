@@ -11,10 +11,10 @@ pub struct SteamCompat {
 }
 
 impl SteamCompat {
-    pub fn new(steam_path: String) -> Self {
+    pub fn new(steam_path: &str) -> Self {
         // Normalize at the boundary so quoted/padded-but-valid paths work.
         Self {
-            steam_path: PathBuf::from(crate::steam::resolve::normalize_steam_path(&steam_path)),
+            steam_path: PathBuf::from(crate::steam::resolve::normalize_steam_path(steam_path)),
         }
     }
 

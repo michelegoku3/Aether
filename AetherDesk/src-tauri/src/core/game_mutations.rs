@@ -74,7 +74,7 @@ impl MutationGuard {
         slot: Arc<Slot>,
         key: Key,
         operation: &'static str,
-    ) -> Result<Self, String> {
+    ) -> Self {
         static NEXT: AtomicU64 = AtomicU64::new(1);
         let id = NEXT.fetch_add(1, Ordering::Relaxed);
         crate::desk_log_info!(
@@ -85,14 +85,14 @@ impl MutationGuard {
             key.app_id,
             key.root
         );
-        Ok(Self {
+        Self {
             _lock: lock,
             slot,
             key,
             operation,
             id,
             started: Instant::now(),
-        })
+        }
     }
 }
 impl Drop for MutationGuard {
@@ -123,7 +123,7 @@ pub async fn acquire(
         key.root
     );
     let lock = slot.gate.clone().lock_owned().await;
-    MutationGuard::new(lock, slot, key, operation)
+    Ok(MutationGuard::new(lock, slot, key, operation))
 }
 /// Synchronous command/worker entry: fail busy, never block the UI/runtime or
 /// deadlock against an async job. The monitor's existing retry handles busy.
@@ -144,7 +144,7 @@ pub fn try_acquire(
             "GAME_BUSY: another mutation is committing for app {app_id}; retry when it finishes"
         )
     })?;
-    MutationGuard::new(lock, slot, key, operation)
+    Ok(MutationGuard::new(lock, slot, key, operation))
 }
 
 #[derive(PartialEq, Eq)]
@@ -205,7 +205,7 @@ impl MutationPlan {
     }
     pub async fn commit(self) -> Result<MutationGuard, String> {
         let lock = self.slot.gate.clone().lock_owned().await;
-        let guard = MutationGuard::new(lock, self.slot.clone(), self.key.clone(), self.operation)?;
+        let guard = MutationGuard::new(lock, self.slot.clone(), self.key.clone(), self.operation);
         if self.slot.generation.load(Ordering::SeqCst) != self.generation
             || snapshot(&self.root, self.key.app_id)? != self.files
         {

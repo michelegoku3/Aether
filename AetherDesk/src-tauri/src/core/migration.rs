@@ -242,7 +242,7 @@ pub(crate) fn migrate_legacy_steam_proxy_with_check(
     let Ok(root) = crate::steam::resolve::resolve_steam_path(steam_path) else {
         return Ok(false); // no configured/reachable Steam install to migrate
     };
-    let installer = crate::updater::dll::DllInstaller::new(root.to_string_lossy().into_owned());
+    let installer = crate::updater::dll::DllInstaller::new(&root.to_string_lossy());
     if !installer.has_legacy_proxy() {
         return Ok(false);
     }

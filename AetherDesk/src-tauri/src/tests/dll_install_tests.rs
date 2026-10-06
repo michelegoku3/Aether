@@ -19,7 +19,7 @@ impl SteamFixture {
         Self(root)
     }
     fn installer(&self) -> DllInstaller {
-        DllInstaller::new(self.0.to_string_lossy().into_owned())
+        DllInstaller::new(&self.0.to_string_lossy())
     }
     fn zip(&self, entries: &[&str]) -> PathBuf {
         let path = self.0.join("release.zip");

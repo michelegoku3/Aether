@@ -140,10 +140,8 @@ pub async fn install_local_game(
     // Validate build-labelled loose Lua files concurrently. This is advisory:
     // providers may offer only the closest historical snapshot, which is still
     // useful, so mismatches become visible warnings and never reject a file.
-    let token = crate::versioning::sources::resolve_build_details_token(Some(
-        &settings.build_details_token,
-    ))
-    .unwrap_or_else(|| crate::versioning::sources::DEFAULT_BUILD_DETAILS_TOKEN.to_string());
+    let token =
+        crate::versioning::sources::resolve_build_details_token(Some(&settings.build_details_token));
     let mut validation_tasks = tokio::task::JoinSet::new();
     for file in &local_files {
         let path = PathBuf::from(file);

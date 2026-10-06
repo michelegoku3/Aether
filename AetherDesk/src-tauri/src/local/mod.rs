@@ -65,7 +65,7 @@ pub fn install_bulk_local_pipeline(
         return Err("No local files or folders selected.".to_string());
     }
 
-    let steam = SteamCompat::new(steam_path.display().to_string());
+    let steam = SteamCompat::new(&steam_path.display().to_string());
     let plugin_dir = steam.get_plugin_dir();
     let depotcache_dir = steam.get_depotcache_dir();
 
@@ -209,9 +209,8 @@ fn explore_and_extract_recursive(
     }
 
     if current.is_dir() {
-        let entries = match fs::read_dir(current) {
-            Ok(e) => e,
-            Err(_) => return Ok(()),
+        let Ok(entries) = fs::read_dir(current) else {
+            return Ok(());
         };
         for entry in entries.flatten() {
             let path = entry.path();
@@ -348,7 +347,7 @@ pub fn install_local_pipeline(
 
     // Steam system folders for routed files (same locations used by the
     // online download pipeline: Lua configs and depot manifests).
-    let steam = SteamCompat::new(steam_path.display().to_string());
+    let steam = SteamCompat::new(&steam_path.display().to_string());
     let plugin_dir = steam.get_plugin_dir();
     let depotcache_dir = steam.get_depotcache_dir();
     crate::desk_log_info!("local", "Routing folders: lua → {}, manifest → {}", plugin_dir.display(), depotcache_dir.display());

@@ -1,5 +1,5 @@
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
@@ -25,7 +25,7 @@ pub struct SavedBuildsStore {
 }
 
 impl SavedBuildsStore {
-    pub fn new(data_dir: PathBuf) -> Self {
+    pub fn new(data_dir: &Path) -> Self {
         Self {
             path: data_dir.join(SAVED_FILE_NAME),
         }

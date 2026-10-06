@@ -94,15 +94,15 @@ pub async fn search_store(
     let app_version = app.package_info().version.to_string();
     let info_cache_version = cache_version_with_currency(&app_version, &store_currency);
     let hubcap_client = (!settings.hubcap_api_key.trim().is_empty())
-        .then(|| HubcapClient::new(settings.hubcap_api_key));
+        .then(|| HubcapClient::new(&settings.hubcap_api_key));
     let hubcap_checked = hubcap_client.is_some();
 
     crate::desk_log_info!("store", "Searching store for query='{}' (currency={}, dlcs={}, nsfw={}, delisted={}, hubcap_key_active={})",
         query, store_currency, show_store_dlcs, show_store_nsfw, show_store_delisted, hubcap_checked);
 
     let cache = StoreSearchCache::new(
-        LocalAppPaths::data_root().join("cache"),
-        app_version.clone(),
+        &LocalAppPaths::data_root().join("cache"),
+        &app_version,
     );
     // The filter flags are part of the cache key: toggling any setting must
     // not replay 24h-stale results built under other flag values.
@@ -118,7 +118,7 @@ pub async fn search_store(
     if let Some(results) = cache.get_fresh(&cache_key) {
         crate::desk_log_debug!("store", "Store search cache hit state=fresh query_len={} results={}", query.len(), results.len());
         GameInfoCache::new(
-            LocalAppPaths::data_root().join("cache"),
+            &LocalAppPaths::data_root().join("cache"),
             info_cache_version.clone(),
         )
         .merge_store_results_with_manifest_context(&results, hubcap_checked);
@@ -131,9 +131,9 @@ pub async fn search_store(
     {
         Ok(results) => {
             let cache_dir = LocalAppPaths::data_root().join("cache");
-            SteamAppNameResolver::new(cache_dir.clone())
+            SteamAppNameResolver::new(&cache_dir)
                 .merge_names(results.iter().map(|game| (game.id, game.name.clone())));
-            GameInfoCache::new(cache_dir, info_cache_version.clone())
+            GameInfoCache::new(&cache_dir, info_cache_version.clone())
                 .merge_store_results_with_manifest_context(&results, hubcap_checked);
             match cache.put(&cache_key, results.clone()) {
                 Ok(()) => crate::desk_log_debug!("store", "Store search cache write complete query_len={} results={}", query.len(), results.len()),
@@ -145,7 +145,7 @@ pub async fn search_store(
         Err(error) => {
             if let Some(results) = cache.get_any(&cache_key) {
                 GameInfoCache::new(
-                    LocalAppPaths::data_root().join("cache"),
+                    &LocalAppPaths::data_root().join("cache"),
                     info_cache_version.clone(),
                 )
                 .merge_store_results_with_manifest_context(&results, hubcap_checked);
@@ -183,8 +183,8 @@ pub async fn get_trending_store_games(
     // tripped the IP rate limit during normal browsing), so the cache key has
     // no hubcap component and no Hubcap client is constructed here.
     let cache = StoreSearchCache::new(
-        LocalAppPaths::data_root().join("cache"),
-        app_version,
+        &LocalAppPaths::data_root().join("cache"),
+        &app_version,
     );
     let cache_key = build_trending_cache_key(
         &store_currency,
@@ -198,7 +198,7 @@ pub async fn get_trending_store_games(
 
     if let Some(results) = cache.get_fresh_for(&cache_key, 24 * 60 * 60) {
         GameInfoCache::new(
-            LocalAppPaths::data_root().join("cache"),
+            &LocalAppPaths::data_root().join("cache"),
             info_cache_version.clone(),
         )
         .merge_store_results_with_manifest_context(&results, false);
@@ -219,9 +219,9 @@ pub async fn get_trending_store_games(
     {
         Ok(results) => {
             let cache_dir = LocalAppPaths::data_root().join("cache");
-            SteamAppNameResolver::new(cache_dir.clone())
+            SteamAppNameResolver::new(&cache_dir)
                 .merge_names(results.iter().map(|game| (game.id, game.name.clone())));
-            GameInfoCache::new(cache_dir, info_cache_version)
+            GameInfoCache::new(&cache_dir, info_cache_version)
                 .merge_store_results_with_manifest_context(&results, false);
             let _ = cache.put(&cache_key, results.clone());
             Ok(results)
@@ -252,8 +252,8 @@ pub fn get_cached_store_search(
     let store_currency = normalize_store_currency(&settings.store_currency);
     let hubcap_enabled = !settings.hubcap_api_key.trim().is_empty();
     let cache = StoreSearchCache::new(
-        LocalAppPaths::data_root().join("cache"),
-        app.package_info().version.to_string(),
+        &LocalAppPaths::data_root().join("cache"),
+        &app.package_info().version.to_string(),
     );
     let cache_key = build_store_cache_key(
         hubcap_enabled,
@@ -293,10 +293,10 @@ pub async fn check_denuvo_bulk(
     let app_version = app.package_info().version.to_string();
     let settings = load_settings(&app);
     let info_cache_version = cache_version_with_currency(&app_version, &settings.store_currency);
-    let results = DrmDetector::new(cache_dir.clone(), app_version)
+    let results = DrmDetector::new(&cache_dir, app_version)
         .detect_many(app_ids)
         .await?;
-    GameInfoCache::new(cache_dir, info_cache_version).merge_denuvo_flags(&results);
+    GameInfoCache::new(&cache_dir, info_cache_version).merge_denuvo_flags(&results);
     Ok(results)
 }
 
@@ -338,7 +338,7 @@ pub async fn trigger_hubcap_download(
                 .download_lua_package(app_id)
                 .await?
         } else {
-            let hubcap = HubcapClient::new(api_key.clone());
+            let hubcap = HubcapClient::new(&api_key);
             // Validation is deduplicated session-wide by the shared client
             // cache, so repeated downloads within the TTL cost no round-trip.
             if !hubcap.validate_api_key().await? {
@@ -388,7 +388,7 @@ pub async fn prepare_specific_version_download(
             let oe_client = crate::providers::oureveryday::OureverydayClient::new();
             oe_client.download_lua_package(app_id).await?
         } else {
-            let hubcap = HubcapClient::new(api_key.clone());
+            let hubcap = HubcapClient::new(&api_key);
             if !hubcap.validate_api_key().await? {
                 return Err("Hubcap API key is not valid or is not allowed to make requests.".to_string());
             }
@@ -401,7 +401,7 @@ pub async fn prepare_specific_version_download(
             return Err("The downloaded Lua does not contain any setManifestid entries, so it was not installed. Try another source or verify the provider returned the full Lua with manifests.".to_string());
         }
 
-        let steam = SteamCompat::new(steam_path.clone());
+        let steam = SteamCompat::new(&steam_path);
         // Local-first (B1): bundled files install with the package itself, so
         // only the remaining pins are resolved — backup/secondary-cache hits
         // are restored into depotcache first, and only genuinely absent pins
@@ -866,7 +866,7 @@ async fn install_standard_package(
     plan: MutationPlan,
 ) -> Result<String, String> {
     let mutation = plan.commit_for(app).await?;
-    let steam = SteamCompat::new(steam_path.to_string());
+    let steam = SteamCompat::new(steam_path);
     // Deterministic auto-download (P1): failed Steam downloads leave dirty
     // partial state under steamapps/downloading/<appid>. The Lua commit below
     // is the DLL hot-reload trigger that makes Steam reconcile at once, and
@@ -946,7 +946,7 @@ async fn install_specific_package(
     }
 
     let _mutation = plan.commit_for(app).await?;
-    let steam = SteamCompat::new(steam_path.to_string());
+    let steam = SteamCompat::new(steam_path);
     // Same residual-state cleanup as the latest-version installer: a version
     // switch must never resume dirty chunks of a previous failed download.
     steam.clear_residual_download_state(app_id);
@@ -1025,7 +1025,7 @@ fn apply_update_policy_and_backup(
     manifests: &[ManifestPackageFile],
 ) -> Result<(), String> {
     apply_default_update_policy(app, app_id, steam_path)?;
-    let installed_lua = SteamCompat::new(steam_path.to_string())
+    let installed_lua = SteamCompat::new(steam_path)
         .read_lua_config(app_id)
         .unwrap_or_else(|_| lua_fallback.to_string());
     GameBackup::for_app(app_id)?

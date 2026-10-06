@@ -37,11 +37,11 @@ impl SteamlessRunner {
         Self { tool }
     }
 
-    pub fn run(&self, request: SteamlessRunRequest) -> Result<SteamlessRunResult, String> {
+    pub fn run(&self, request: &SteamlessRunRequest) -> Result<SteamlessRunResult, String> {
         validate_executable(&request.exe_path, &request.game_root)?;
         remove_stale_unpacked_outputs(&request.exe_path);
 
-        let output = self.run_process(&request)?;
+        let output = self.run_process(request)?;
         let stdout_tail = tail(&output.stdout, 1500);
         let stderr_tail = tail(&output.stderr, 500);
 
@@ -53,7 +53,7 @@ impl SteamlessRunner {
                 success: false,
                 cancelled: false,
                 message: map_steamless_failure(
-                    &request,
+                    request,
                     &output.stdout,
                     &output.stderr,
                     output.timed_out,

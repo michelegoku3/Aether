@@ -190,14 +190,13 @@ impl SteamAcfEditor {
             let Some(depot_start) = Self::find_depot_block_start(&out, pin.depot_id) else {
                 continue;
             };
-            for index in depot_start + 1..out.len() {
-                let trimmed = out[index].trim();
+            for line in out.iter_mut().skip(depot_start + 1) {
+                let trimmed = line.trim();
                 if trimmed == "}" {
                     break; // end of this depot block — manifest line not found
                 }
                 if trimmed.starts_with("\"manifest\"") {
-                    out[index] =
-                        Self::rewrite_value(&out[index], "manifest", &pin.manifest_id)?;
+                    *line = Self::rewrite_value(line, "manifest", &pin.manifest_id)?;
                     break;
                 }
             }

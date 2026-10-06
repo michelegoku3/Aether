@@ -533,7 +533,7 @@ pub async fn sync_hubcap_workshop_manifests(
     if needs_remote_generation && settings.hubcap_api_key.trim().is_empty() {
         return Err("A valid authenticated Hubcap API key is required for missing Workshop manifests.".to_string());
     }
-    let client = HubcapClient::new(settings.hubcap_api_key);
+    let client = HubcapClient::new(&settings.hubcap_api_key);
     if needs_remote_generation && !client.validate_api_key().await? {
         crate::desk_log_error!("workshop", "Workshop sync stopped because the Hubcap API key is not valid or not allowed");
         return Err("Hubcap API key is not valid or is not allowed to make requests.".to_string());
@@ -676,7 +676,7 @@ pub async fn generate_hubcap_workshop_manifest(
     if settings.hubcap_api_key.trim().is_empty() {
         return Err("A valid Hubcap API key is required for Workshop manifest generation.".to_string());
     }
-    let hubcap = HubcapClient::new(settings.hubcap_api_key);
+    let hubcap = HubcapClient::new(&settings.hubcap_api_key);
     if !hubcap.validate_api_key().await? {
         return Err("Hubcap API key is not valid or is not allowed to make requests.".to_string());
     }

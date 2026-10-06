@@ -175,12 +175,9 @@ impl GameBackup {
 
         for row in rows {
             let file_name = format!("{}_{}.manifest", row.app_id, row.manifest_id);
-            let source = match find_case_insensitive_file(depotcache, &file_name) {
-                Some(path) => path,
-                None => {
-                    report.missing += 1;
-                    continue;
-                }
+            let Some(source) = find_case_insensitive_file(depotcache, &file_name) else {
+                report.missing += 1;
+                continue;
             };
 
             let destination = self.lua_dir().join(&file_name);
@@ -546,12 +543,9 @@ pub fn sync_lua_backups_from_stplug_in(steam_path: &Path) -> LuaSyncReport {
         };
         report.scanned += 1;
 
-        let src = match fs::read(&path) {
-            Ok(bytes) => bytes,
-            Err(_) => {
-                report.skipped += 1;
-                continue;
-            }
+        let Ok(src) = fs::read(&path) else {
+            report.skipped += 1;
+            continue;
         };
 
         // Modello: l'ORIGINALE è la versione pristina (primo .lua visto, o

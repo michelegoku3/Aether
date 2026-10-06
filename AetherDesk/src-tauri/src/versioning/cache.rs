@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
@@ -40,7 +40,7 @@ pub struct VersionCache {
 }
 
 impl VersionCache {
-    pub fn new(cache_dir: PathBuf) -> Self {
+    pub fn new(cache_dir: &Path) -> Self {
         Self {
             path: cache_dir.join(CACHE_FILE_NAME),
         }

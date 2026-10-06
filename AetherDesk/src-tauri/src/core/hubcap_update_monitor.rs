@@ -212,7 +212,7 @@ fn take_ready(pending: &mut BTreeMap<u32, PendingTask>) -> Option<(u32, PendingT
 pub(crate) fn reschedule(
     pending: &mut BTreeMap<u32, PendingTask>,
     app_id: u32,
-    task: PendingTask,
+    task: &PendingTask,
 ) -> bool {
     let attempts = task.attempts.saturating_add(1);
     if attempts >= MAX_TASK_ATTEMPTS {
@@ -609,7 +609,7 @@ async fn run(app: AppHandle) {
                         error
                     );
                     let attempts = task.attempts.saturating_add(1);
-                    if !reschedule(&mut pin_sync, app_id, task) {
+                    if !reschedule(&mut pin_sync, app_id, &task) {
                         mark_unresolved(|status| &mut status.pin_sync, app_id, attempts);
                     }
                 }
@@ -667,7 +667,7 @@ async fn run(app: AppHandle) {
                         error
                     );
                     let attempts = task.attempts.saturating_add(1);
-                    if !reschedule(&mut pin_refresh, app_id, task) {
+                    if !reschedule(&mut pin_refresh, app_id, &task) {
                         // Final failure: let the app fall back to the idle
                         // cadence instead of re-qualifying on the next poll,
                         // and tell the UI the lane gave up on it.
@@ -715,7 +715,7 @@ async fn run(app: AppHandle) {
                         error
                     );
                     let attempts = task.attempts.saturating_add(1);
-                    if !reschedule(&mut repairs, app_id, task) {
+                    if !reschedule(&mut repairs, app_id, &task) {
                         mark_unresolved(|status| &mut status.repair, app_id, attempts);
                     }
                 }

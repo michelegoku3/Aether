@@ -22,7 +22,7 @@ impl GameInfoService {
         let settings = load_settings(&app);
         let app_version = app.package_info().version.to_string();
         let cache = GameInfoCache::new(
-            LocalAppPaths::data_root().join("cache"),
+            &LocalAppPaths::data_root().join("cache"),
             cache_version_with_currency(&app_version, &settings.store_currency),
         );
         Self { app, cache }
@@ -167,7 +167,7 @@ impl GameInfoService {
             return None;
         }
 
-        Some(HubcapClient::new(settings.hubcap_api_key).has_manifest(app_id).await)
+        Some(HubcapClient::new(&settings.hubcap_api_key).has_manifest(app_id).await)
     }
 
     async fn fetch_appdetails_data(&self, app_id: u32) -> Option<serde_json::Value> {
