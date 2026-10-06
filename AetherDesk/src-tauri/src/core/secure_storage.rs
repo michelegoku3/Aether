@@ -12,7 +12,7 @@ pub fn protect(plain: &[u8]) -> Result<Vec<u8>, String> {
     };
 
     let input = CRYPT_INTEGER_BLOB {
-        cbData: plain.len() as u32,
+        cbData: u32::try_from(plain.len()).map_err(|_| "Secret data is too large for Windows DPAPI".to_string())?,
         pbData: plain.as_ptr() as *mut u8,
     };
     let mut output = CRYPT_INTEGER_BLOB {
@@ -44,7 +44,7 @@ pub fn unprotect(encrypted: &[u8]) -> Result<Vec<u8>, String> {
     };
 
     let input = CRYPT_INTEGER_BLOB {
-        cbData: encrypted.len() as u32,
+        cbData: u32::try_from(encrypted.len()).map_err(|_| "Encrypted secret is too large for Windows DPAPI".to_string())?,
         pbData: encrypted.as_ptr() as *mut u8,
     };
     let mut output = CRYPT_INTEGER_BLOB {
@@ -78,7 +78,7 @@ fn take_dpapi_output(
         return Err("Windows DPAPI returned an empty output buffer".to_string());
     }
     let bytes = unsafe {
-        std::slice::from_raw_parts(output.pbData, output.cbData as usize).to_vec()
+        std::slice::from_raw_parts(output.pbData, usize::try_from(output.cbData).expect("Windows DWORD fits in usize")).to_vec()
     };
     unsafe { LocalFree(output.pbData as _) };
     Ok(bytes)

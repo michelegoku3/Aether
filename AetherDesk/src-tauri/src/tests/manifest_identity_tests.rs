@@ -33,10 +33,10 @@ fn synthetic_manifest(depot_id: u32, manifest_gid: u64) -> Vec<u8> {
 
     let mut bytes = Vec::new();
     bytes.extend_from_slice(&0x71F6_17D0u32.to_le_bytes());
-    bytes.extend_from_slice(&(payload.len() as u32).to_le_bytes());
+    bytes.extend_from_slice(&(u32::try_from(payload.len()).expect("test payload fits in u32")).to_le_bytes());
     bytes.extend_from_slice(&payload);
     bytes.extend_from_slice(&0x1F48_12BEu32.to_le_bytes());
-    bytes.extend_from_slice(&(metadata.len() as u32).to_le_bytes());
+    bytes.extend_from_slice(&(u32::try_from(metadata.len()).expect("test metadata fits in u32")).to_le_bytes());
     bytes.extend_from_slice(&metadata);
     bytes
 }

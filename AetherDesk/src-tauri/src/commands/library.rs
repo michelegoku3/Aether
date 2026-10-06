@@ -281,7 +281,7 @@ pub fn set_lua_game_updates_enabled(
     // own pre/post states; this captures the final uncommented-pins version.
     if changed > 0 {
         if let (Ok(final_lua), Ok(backup)) = (
-            LuaManifestPins::new(steam_path.clone(), app_id).read_lua(),
+            LuaManifestPins::new(steam_path, app_id).read_lua(),
             crate::core::backup::GameBackup::for_app(app_id),
         ) {
             let _ = backup.store_history_version(app_id, final_lua.as_bytes());

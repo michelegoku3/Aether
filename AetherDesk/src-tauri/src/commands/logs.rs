@@ -271,7 +271,9 @@ fn clear_dll_log(app: &tauri::AppHandle) {
 fn current_time_filename_str() -> String {
     use windows_sys::Win32::Foundation::SYSTEMTIME;
     use windows_sys::Win32::System::SystemInformation::GetLocalTime;
+    // SAFETY: SYSTEMTIME is a plain Windows FFI struct, so zero initialization is valid before GetLocalTime fills it.
     let mut st: SYSTEMTIME = unsafe { std::mem::zeroed() };
+    // SAFETY: st is valid writable storage with the SYSTEMTIME layout required by GetLocalTime.
     unsafe { GetLocalTime(&mut st) };
     format!("{:02}-{:02}-{:02}", st.wHour, st.wMinute, st.wSecond)
 }

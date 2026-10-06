@@ -94,7 +94,7 @@ where
 {
     let value = serde_json::Value::deserialize(deserializer)?;
     match value {
-        serde_json::Value::Number(num) => Ok(num.as_u64().unwrap_or(0) as u32),
+        serde_json::Value::Number(num) => u32::try_from(num.as_u64().unwrap_or(0)).map_err(serde::de::Error::custom),
         serde_json::Value::String(s) => s.parse::<u32>().map_err(serde::de::Error::custom),
         _ => Err(serde::de::Error::custom("Invalid App ID type")),
     }
