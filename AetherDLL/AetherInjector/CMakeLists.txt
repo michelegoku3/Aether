@@ -45,3 +45,5 @@ set_target_properties(AetherInjector PROPERTIES
 attach_version_resource(AetherInjector "AetherInjector" "dwmapi.dll" "AetherDLL DWMAPI Proxy")
 
 aether_check_sources(AetherInjector)
+aether_check_headers(AetherInjector)
+aether_apply_quality(AetherInjector)

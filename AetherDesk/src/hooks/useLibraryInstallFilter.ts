@@ -17,7 +17,7 @@ const LOCAL_FILTER_KEY = 'aether.library_install_filter';
  *  for this preference. */
 const LEGACY_FILTER_KEY: keyof import('./useSettings').AppSettings = 'library_install_filter';
 
-export const normalizeLibraryInstallFilter = (value: unknown): LibraryInstallFilter => {
+const normalizeLibraryInstallFilter = (value: unknown): LibraryInstallFilter => {
   const raw = String(value ?? '').trim().toLowerCase();
   if (raw === 'installed') return 'installed';
   if (raw === 'not_installed' || raw === 'not-installed' || raw === 'uninstalled') {

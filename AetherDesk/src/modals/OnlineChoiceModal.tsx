@@ -2,7 +2,7 @@ import type { LibraryActionGame } from './LibraryGameActionsModal';
 import { useModalDismiss, useOverlayDismiss } from '../hooks/useModalDismiss';
 import { resolveOptionState, type AppPresenceMode, type OnlineOptionKey } from './onlineChoiceState';
 
-export type { AppPresenceMode, OnlineOptionKey };
+export type { AppPresenceMode };
 
 interface OnlineOption {
   key: OnlineOptionKey;

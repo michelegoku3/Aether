@@ -8,7 +8,7 @@ import { SYNC_LANES, type LaneStatus, type MonitorStatus } from '../types/sync';
 
 // I tipi vivono in `types/sync.ts` (contratto IPC); riesportati qui perché i
 // consumatori storici li importavano dal modale.
-export type { LaneStatus, MonitorStatus, PendingTaskInfo } from '../types/sync';
+export type { MonitorStatus } from '../types/sync';
 
 export interface SyncStatusModalProps {
   /** X / Escape / overlay — dismiss. */
