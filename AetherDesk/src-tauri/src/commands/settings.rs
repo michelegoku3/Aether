@@ -55,12 +55,13 @@ pub fn reset_settings_to_defaults(app: tauri::AppHandle) -> Result<AppSettings, 
     let mut previous_root = String::new();
     manager.update("reset-defaults", |current| {
         previous_root = current.steam_path.clone();
-        let mut defaults = AppSettings::default();
-        defaults.library_install_filter = current.library_install_filter.clone();
-        defaults.antivirus_exclusion_done = current.antivirus_exclusion_done;
-        defaults.ost_warning_acknowledged = current.ost_warning_acknowledged;
-        defaults.download_updates_default_off_migrated =
-            current.download_updates_default_off_migrated;
+        let defaults = AppSettings {
+            library_install_filter: current.library_install_filter.clone(),
+            antivirus_exclusion_done: current.antivirus_exclusion_done,
+            ost_warning_acknowledged: current.ost_warning_acknowledged,
+            download_updates_default_off_migrated: current.download_updates_default_off_migrated,
+            ..AppSettings::default()
+        };
         *current = defaults;
         Ok(())
     })?;

@@ -107,7 +107,7 @@ pub async fn get_installed_library_games(
         }
     }
 
-    games.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+    games.sort_by_key(|a| a.name.to_lowercase());
     let info_cache_version = cache_version_with_currency(
         &app.package_info().version.to_string(),
         &store_currency,

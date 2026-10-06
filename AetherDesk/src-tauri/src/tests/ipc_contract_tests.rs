@@ -149,7 +149,7 @@ fn wire_key(param: &str) -> String {
 
 /// Estrae il contenuto tra la prima `(` (o `[`, `{`) dopo `from` e la sua
 /// chiusura, rispettando la nidificazione. Restituisce `(interno, indice_dopo)`.
-fn balanced<'a>(source: &'a str, from: usize, open: char, close: char) -> Option<(&'a str, usize)> {
+fn balanced(source: &str, from: usize, open: char, close: char) -> Option<(&str, usize)> {
     let start = source[from..].find(open)? + from;
     let mut depth = 0usize;
     for (offset, ch) in source[start..].char_indices() {

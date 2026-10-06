@@ -27,7 +27,7 @@ pub fn unwrap_manifest_payload(bytes: &[u8]) -> Result<Vec<u8>, String> {
     if bytes.len() >= 4 && &bytes[..4] == b"PK\x03\x04" {
         let mut archive = ZipArchive::new(Cursor::new(bytes))
             .map_err(|e| format!("Manifest ZIP is invalid: {e}"))?;
-        if archive.len() == 0 {
+        if archive.is_empty() {
             return Err("Manifest ZIP is empty".to_string());
         }
         for index in 0..archive.len() {
