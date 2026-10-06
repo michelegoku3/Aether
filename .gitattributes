@@ -1,0 +1,7 @@
+# Gli script eseguiti da cmd.exe richiedono line ending CRLF: con LF il parser
+# di cmd perde il primo carattere dei comandi dopo i salti di etichetta/goto.
+# `text eol=crlf` = nel repository restano normalizzati LF, nel working tree
+# vengono SEMPRE estratti CRLF (indipendente da core.autocrlf).
+*.cmd text eol=crlf
+*.bat text eol=crlf
+*.ps1 text eol=crlf
