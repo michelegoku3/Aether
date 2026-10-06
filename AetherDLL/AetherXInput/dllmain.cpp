@@ -38,7 +38,7 @@ DWORD WINAPI LoadCoreOutsideLoaderLock(LPVOID parameter) {
         OutputDebugStringW(L"[Aether] XInput: AetherCore path too long.\n");
         return 0;
     }
-    std::wcscpy(proxyName + 1, kCore);
+    wcscpy_s(proxyName + 1, MAX_PATH - (proxyDirLen + 1), kCore);
 
     if (!LoadLibraryW(proxyPath)) {
         OutputDebugStringW(L"[Aether] XInput could not load AetherCore.dll from Steam root.\n");
@@ -68,7 +68,7 @@ BOOL CALLBACK LoadRealXInput(PINIT_ONCE, PVOID, PVOID*) {
     if (!length || length >= MAX_PATH || length + sizeof(kName) / sizeof(wchar_t) > MAX_PATH) {
         return FALSE;  // InitOnceExecuteOnce can retry on a later call.
     }
-    std::wcscpy(path + length, kName);
+    wcscpy_s(path + length, MAX_PATH - length, kName);
     HMODULE real = LoadLibraryExW(path, nullptr, LOAD_LIBRARY_SEARCH_SYSTEM32);
     if (!real || real == s_self) {
         // Never bounce back into our own exports if the system DLL is missing.

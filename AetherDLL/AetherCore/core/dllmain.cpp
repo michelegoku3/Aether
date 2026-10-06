@@ -360,7 +360,7 @@ extern "C" __declspec(dllexport) void WINAPI AetherCoreShutdown() {
     Shutdown();
 }
 
-BOOL APIENTRY DllMain(HMODULE instance, DWORD reason, LPVOID reserved) {
+BOOL APIENTRY DllMain(HMODULE instance, DWORD reason, LPVOID /*reserved*/) {
     switch (reason) {
     case DLL_PROCESS_ATTACH:
         DisableThreadLibraryCalls(instance);

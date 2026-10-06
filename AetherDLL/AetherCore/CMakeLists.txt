@@ -95,9 +95,6 @@ add_library(AetherCore SHARED
     hooks/aetheronline/PresenceSession.cpp
     hooks/aetheronline/CreateProcessHooks.cpp
 
-    # Generated protobuf (location set by the root CMakeLists: AC_PROTO_DIR)
-    ${AC_PROTO_DIR}/steam_messages.pb.cc
-
     # Precompiled header source
     pch.cpp
 )
@@ -105,7 +102,6 @@ add_library(AetherCore SHARED
 target_include_directories(AetherCore PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}
     ${CMAKE_CURRENT_SOURCE_DIR}/..
-    ${AC_PROTO_DIR}
     ${CMAKE_SOURCE_DIR}/common
 )
 
@@ -118,7 +114,7 @@ target_link_libraries(AetherCore PRIVATE
     lua_static
     minhook
     tomlplusplus::tomlplusplus
-    ${AC_PROTOBUF_LITE_TARGET}
+    aether_proto   # steam_messages.pb.cc + protobuf-lite (PUBLIC)
     bcrypt
     winhttp
     shlwapi
@@ -146,7 +142,6 @@ set_target_properties(AetherCore PROPERTIES
 # Embed the Windows version resource (version comes from the root project VERSION)
 attach_version_resource(AetherCore "AetherCore" "AetherCore.dll" "AetherDLL Core")
 
-# Ensure proto generation is complete before building
-add_dependencies(AetherCore generate_protos)
-
 aether_check_sources(AetherCore)
+aether_check_headers(AetherCore)
+aether_apply_quality(AetherCore)
