@@ -213,7 +213,7 @@ pub async fn install_local_game(
         app_id
     );
     if !validation_warnings.is_empty() {
-        msg.push_str(" ");
+        msg.push(' ');
         msg.push_str(&validation_warnings.join(" "));
     }
 

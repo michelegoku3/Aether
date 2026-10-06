@@ -11,7 +11,7 @@ use super::types::{
 };
 
 impl HubcapClient {
-    pub(crate) async fn ensure_generation_available(
+    pub(crate) fn ensure_generation_available(
         &self,
         bucket_name: &str,
         remaining: Option<u32>,
@@ -196,7 +196,7 @@ impl HubcapClient {
         let key = GenerationKey::Single { depot_id, manifest_id };
         deduplicated_generation(key, QuotaPolicy::Generate(GenerationKind::Game), || async move {
             let usage = self.get_generation_usage().await?;
-            self.ensure_generation_available("single-manifest", usage.single.remaining, &usage).await?;
+            self.ensure_generation_available("single-manifest", usage.single.remaining, &usage)?;
             let url = format!(
                 "{}/generate/manifest?depot_id={depot_id}&manifest_id={manifest_id}",
                 BASE_URL
@@ -214,7 +214,7 @@ impl HubcapClient {
         let key = GenerationKey::Workshop { workshop_id };
         deduplicated_generation(key, QuotaPolicy::Generate(GenerationKind::Workshop), || async move {
             let usage = self.get_generation_usage().await?;
-            self.ensure_generation_available("Workshop", usage.workshop.remaining, &usage).await?;
+            self.ensure_generation_available("Workshop", usage.workshop.remaining, &usage)?;
             let url = format!("{}/generate/workshopmanifest/{workshop_id}", BASE_URL);
             self.get_generated_bytes(url, "Workshop manifest").await
         })

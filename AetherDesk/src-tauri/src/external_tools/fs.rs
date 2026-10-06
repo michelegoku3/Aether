@@ -129,8 +129,8 @@ pub fn read_for_scan(path: &Path) -> Result<Vec<u8>, String> {
             .map_err(|error| format!("Failed to read {}: {}", path.display(), error));
     }
 
-    let head = HEAD_LIMIT as usize;
-    let tail = TAIL_LIMIT as usize;
+    let head = usize::try_from(HEAD_LIMIT).expect("head limit fits in usize");
+    let tail = usize::try_from(TAIL_LIMIT).expect("tail limit fits in usize");
     let mut file = fs::File::open(path)
         .map_err(|error| format!("Failed to open {}: {}", path.display(), error))?;
 

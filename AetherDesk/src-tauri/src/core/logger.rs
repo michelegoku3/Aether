@@ -61,7 +61,9 @@ static LOGGER: OnceLock<Mutex<Logger>> = OnceLock::new();
 fn format_timestamp_ms() -> String {
     use windows_sys::Win32::Foundation::SYSTEMTIME;
     use windows_sys::Win32::System::SystemInformation::GetLocalTime;
+    // SAFETY: SYSTEMTIME is a plain Windows FFI struct, so zero initialization is valid before GetLocalTime fills it.
     let mut st: SYSTEMTIME = unsafe { std::mem::zeroed() };
+    // SAFETY: st is valid writable storage with the SYSTEMTIME layout required by GetLocalTime.
     unsafe { GetLocalTime(&mut st) };
     format!(
         "{:02}:{:02}:{:02}.{:03}",
@@ -113,7 +115,6 @@ pub fn set_level(level: LogLevel) {
                 }
                 logger.file = OpenOptions::new()
                     .create(true)
-                    .write(true)
                     .append(true)
                     .open(&logger.log_path)
                     .ok();
@@ -133,7 +134,7 @@ fn current_thread_id() -> u64 {
     use std::hash::{Hash, Hasher};
     let mut hasher = DefaultHasher::new();
     std::thread::current().id().hash(&mut hasher);
-    (hasher.finish() % 99999) as u64
+    hasher.finish() % 99999
 }
 
 /// Initializes the global session logger, rotating `desk.log` → `desk.log.last`.
@@ -158,7 +159,7 @@ pub fn init(_app: &tauri::AppHandle) {
 
     let logger = Logger {
         file,
-        log_path: log_path.clone(),
+        log_path,
         dedup_set: HashSet::new(),
         min_level: LogLevel::Trace,
     };

@@ -107,7 +107,7 @@ mod tests {
         // section name ".bind"
         image[0x98..0x9d].copy_from_slice(b".bind");
         // raw size at header+16
-        let raw_size: u32 = SIG_STUB1.len() as u32;
+        let raw_size: u32 = u32::try_from(SIG_STUB1.len()).expect("stub signature length fits in u32");
         image[0x98 + 16..0x98 + 20].copy_from_slice(&raw_size.to_le_bytes());
         // raw ptr at header+20
         let raw_ptr: u32 = 0x180;

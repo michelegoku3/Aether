@@ -114,7 +114,7 @@ impl PendingTask {
 pub(crate) fn retry_delay(attempts: u32) -> Duration {
     let multiplier = 1u64 << attempts.min(6);
     INITIAL_RETRY_DELAY
-        .checked_mul(multiplier as u32)
+        .checked_mul(u32::try_from(multiplier).unwrap_or(u32::MAX))
         .unwrap_or(MAX_RETRY_DELAY)
         .min(MAX_RETRY_DELAY)
 }
