@@ -150,6 +150,13 @@ REM                  E' l'equivalente di `npm audit` per le crate: zip, unrar,
 REM                  sevenz, image, reqwest parsano input scaricato da terzi.
 REM  cargo machete : dipendenze dichiarate in Cargo.toml ma mai usate.
 REM  Entrambi vengono installati al primo uso se mancano.
+REM
+REM  --ignore: AetherDesk è solo Windows. I due advisory ignorati riguardano
+REM  crate dello stack GTK/webkit che tauri dichiara per il target Linux: non
+REM  vengono MAI compilati nell'exe Windows (restano nel Cargo.lock solo perche'
+REM  cargo risolve il grafo completo di tauri).
+REM    RUSTSEC-2024-0429  glib (unsound, solo Linux)
+REM    RUSTSEC-2024-0370  proc-macro-error (unmaintained, macro di glib/gtk, solo Linux)
 if "%SKIP_AUDIT%"=="1" goto :skip_cargo_audit
 echo.
 echo [6/9] Auditing Rust dependencies (cargo audit + cargo machete)...
@@ -158,7 +165,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -Command ^
   "$utf8=New-Object System.Text.UTF8Encoding($false); [Console]::OutputEncoding=$utf8; $OutputEncoding=$utf8;" ^
   "& cmd.exe /d /s /c 'cargo audit --version >nul 2>&1 || cargo install cargo-audit --locked 2>&1' | Tee-Object -FilePath '%BUILD_LOG%' -Append;" ^
   "& cmd.exe /d /s /c 'cargo machete --version >nul 2>&1 || cargo install cargo-machete --locked 2>&1' | Tee-Object -FilePath '%BUILD_LOG%' -Append;" ^
-  "& cmd.exe /d /s /c 'cargo audit --color always 2>&1 && cargo machete 2>&1' | Tee-Object -FilePath '%BUILD_LOG%' -Append; $code=$LASTEXITCODE; exit $code"
+  "& cmd.exe /d /s /c 'cargo audit --color always --ignore RUSTSEC-2024-0429 --ignore RUSTSEC-2024-0370 2>&1 && cargo machete 2>&1' | Tee-Object -FilePath '%BUILD_LOG%' -Append; $code=$LASTEXITCODE; exit $code"
 set "AUDIT_EXIT=%ERRORLEVEL%"
 cd /d "%DESK_DIR%"
 if not "%AUDIT_EXIT%"=="0" goto :fail

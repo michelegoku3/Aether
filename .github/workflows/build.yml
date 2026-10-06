@@ -83,7 +83,10 @@ jobs:
 
       - name: Rust dependency audit (RustSec CVE database)
         working-directory: AetherDesk/src-tauri
-        run: cargo audit
+        # AetherDesk è solo Windows: ignorati gli advisory dello stack GTK/webkit
+        # (target Linux di tauri, mai compilato nell'exe): glib unsound e
+        # proc-macro-error unmaintained. Vedere il commento in build.cmd.
+        run: cargo audit --ignore RUSTSEC-2024-0429 --ignore RUSTSEC-2024-0370
 
       - name: Rust unused dependencies (cargo machete)
         working-directory: AetherDesk/src-tauri
