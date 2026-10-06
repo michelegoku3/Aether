@@ -57,7 +57,7 @@ pub fn start(app: AppHandle) {
     sys.refresh_processes();
     STEAM_RUNNING.store(crate::core::steam_process::snapshot_has_steam(&sys), Ordering::Relaxed);
 
-    let handle = app.clone();
+    let handle = app;
     std::thread::Builder::new()
         .name("steam-monitor".to_string())
         .spawn(move || {

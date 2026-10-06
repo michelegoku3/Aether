@@ -177,11 +177,7 @@ fn title_tokens(title: &str, options: TokenOptions) -> Vec<String> {
 }
 
 fn normalize_apostrophes(value: &str) -> String {
-    value
-        .replace('’', "'")
-        .replace('‘', "'")
-        .replace('`', "'")
-        .replace('´', "'")
+    value.replace(['’', '‘', '`', '´'], "'")
 }
 
 fn remove_possessive_s(value: &str) -> String {

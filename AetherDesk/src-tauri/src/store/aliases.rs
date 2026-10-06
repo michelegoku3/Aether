@@ -191,7 +191,7 @@ pub fn expanded_queries(query: &str) -> Vec<String> {
     let raw_lower = raw.to_lowercase();
     let mut whole_hit_expansions: Option<&[&str]> = lookup(&raw_lower);
     if whole_hit_expansions.is_none() {
-        let cleaned_whole = clean_token(&raw);
+        let cleaned_whole = clean_token(raw);
         if cleaned_whole != raw_lower {
             whole_hit_expansions = lookup(&cleaned_whole);
         }

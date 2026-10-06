@@ -43,35 +43,6 @@ pub fn write_atomic(path: &Path, bytes: &[u8]) -> Result<(), String> {
     result
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    #[test]
-    fn replaces_existing_and_cleans_temporary_on_failure() {
-        let d = tempfile::tempdir().unwrap();
-        let p = d.path().join("state");
-        write_atomic(&p, b"old").unwrap();
-        write_atomic(&p, b"new").unwrap();
-        assert_eq!(fs::read(&p).unwrap(), b"new");
-        let dir = d.path().join("directory");
-        fs::create_dir(&dir).unwrap();
-        assert!(write_atomic(&dir, b"bad").is_err());
-        assert_eq!(fs::read_dir(d.path()).unwrap().count(), 2);
-    }
-    #[test]
-    fn stale_snapshot_is_not_published_and_staging_is_unique() {
-        let d = tempfile::tempdir().unwrap();
-        let p = d.path().join("lua");
-        fs::write(&p, b"current").unwrap();
-        assert!(write_if_unchanged(&p, b"old", b"replacement").is_err());
-        assert_eq!(fs::read(&p).unwrap(), b"current");
-        assert_ne!(
-            create_staging(d.path(), "test").unwrap(),
-            create_staging(d.path(), "test").unwrap()
-        );
-    }
-}
-
 /// Advisory lock shared by cooperating Desk processes. The OS releases it
 /// on crash; the small sidecar may remain and is NOT a stale-lock sentinel.
 pub fn lock(path: &Path) -> Result<std::fs::File, String> {
@@ -120,5 +91,34 @@ pub fn create_staging(parent: &Path, prefix: &str) -> Result<std::path::PathBuf,
             Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => continue,
             Err(e) => return Err(format!("Cannot reserve staging directory: {e}")),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn replaces_existing_and_cleans_temporary_on_failure() {
+        let d = tempfile::tempdir().unwrap();
+        let p = d.path().join("state");
+        write_atomic(&p, b"old").unwrap();
+        write_atomic(&p, b"new").unwrap();
+        assert_eq!(fs::read(&p).unwrap(), b"new");
+        let dir = d.path().join("directory");
+        fs::create_dir(&dir).unwrap();
+        assert!(write_atomic(&dir, b"bad").is_err());
+        assert_eq!(fs::read_dir(d.path()).unwrap().count(), 2);
+    }
+    #[test]
+    fn stale_snapshot_is_not_published_and_staging_is_unique() {
+        let d = tempfile::tempdir().unwrap();
+        let p = d.path().join("lua");
+        fs::write(&p, b"current").unwrap();
+        assert!(write_if_unchanged(&p, b"old", b"replacement").is_err());
+        assert_eq!(fs::read(&p).unwrap(), b"current");
+        assert_ne!(
+            create_staging(d.path(), "test").unwrap(),
+            create_staging(d.path(), "test").unwrap()
+        );
     }
 }

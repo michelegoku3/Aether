@@ -241,7 +241,6 @@ pub fn invalid_manifest_rows(content: &str) -> Vec<LuaManifestRowIssue> {
             continue;
         }
         let (depot_id, raw_value) = loose_setmanifest_args(line)
-            .map(|(depot_id, value)| (depot_id, value))
             .unwrap_or((None, None));
         // A call that matches the strict *shape* but not the value rule has a
         // broken GID; anything else is a broken call. The difference decides
