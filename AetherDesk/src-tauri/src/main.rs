@@ -39,7 +39,7 @@ fn main() {
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             // Initialize the session logger (rotates desk.log -> desk.log.last on startup).
-            crate::core::logger::init(&app.handle());
+            crate::core::logger::init(app.handle());
             // UCOnline2 appends to %TEMP%\uc_online2.log while games run; remove it
             // at startup so the log shown/exported by AetherDesk is always clean
             // (UCO2 recreates it automatically on the next game launch).
@@ -49,7 +49,7 @@ fn main() {
             // Startup migrations include legacy settings/data, obsolete Steam
             // proxy cleanup (only while Steam is closed), and Lua backups.
             // Each step is idempotent and failure-tolerant.
-            crate::core::migration::run_startup_migrations(&app.handle());
+            crate::core::migration::run_startup_migrations(app.handle());
             // Steam process monitor (single shared poller): keeps is_steam_running
             // O(1) and pushes `steam://runtime-state` to the UI only on changes
             // (Sidebar Start/Restart label, per-game guards, ...).
@@ -57,7 +57,7 @@ fn main() {
             // One native watcher owns external stplug-in changes for the entire
             // process. In-app operations use the same coordinator so the React
             // Library always performs the canonical full Refresh scan.
-            let initial_steam_path = crate::core::settings::SettingsManager::new(&app.handle())
+            let initial_steam_path = crate::core::settings::SettingsManager::new(app.handle())
                 .load()
                 .steam_path;
             app.manage(crate::core::library_events::LibraryWatchController::start(
@@ -106,7 +106,7 @@ fn main() {
             // on-demand manifest generation stay with AetherDLL; this monitor
             // never downloads game packages.
             crate::core::hubcap_update_monitor::start(app.handle().clone());
-            if let Err(e) = crate::core::custom_css::apply_window_icon(&app.handle()) {
+            if let Err(e) = crate::core::custom_css::apply_window_icon(app.handle()) {
                 eprintln!("[AetherDesk] window icon apply failed: {e}");
             }
             Ok(())

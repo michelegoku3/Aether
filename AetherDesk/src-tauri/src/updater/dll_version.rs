@@ -63,6 +63,9 @@ pub fn read_file_version(path: &Path) -> Option<(u16, u16, u16)> {
     // "\" = blocco root: VerQueryValueW lo espone come VS_FIXEDFILEINFO.
     let root_block: Vec<u16> = "\\".encode_utf16().chain(Some(0)).collect();
 
+    // SAFETY: all pointers passed to the Windows version-resource APIs point to
+    // NUL-terminated buffers or writable storage owned by this function; the
+    // returned data pointer is validated before it is read.
     unsafe {
         let size = GetFileVersionInfoSizeW(wide_path.as_ptr(), std::ptr::null_mut());
         if size == 0 {

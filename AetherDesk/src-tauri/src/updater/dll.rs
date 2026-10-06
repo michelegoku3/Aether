@@ -39,7 +39,7 @@ impl DllInstaller {
         match fs::remove_file(&legacy) {
             Ok(()) => Ok(true),
             Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(false),
-            Err(error) => Err(format_file_operation_error("remove obsolete DLL", &legacy, error)),
+            Err(error) => Err(format_file_operation_error("remove obsolete DLL", &legacy, &error)),
         }
     }
 
@@ -108,11 +108,11 @@ impl DllInstaller {
                     .by_index(entries[i].expect("validated ZIP index"))
                     .map_err(|e| format!("Failed to read {name}: {e}", name = AETHER_DLL_FILES[i]))?;
                 let mut output = fs::File::create(temp_path)
-                    .map_err(|e| format_file_operation_error("create", temp_path, e))?;
+                    .map_err(|e| format_file_operation_error("create", temp_path, &e))?;
                 io::copy(&mut input, &mut output)
                     .map_err(|e| format!("Failed to extract {}: {e}", AETHER_DLL_FILES[i]))?;
                 output.sync_all()
-                    .map_err(|e| format_file_operation_error("write", temp_path, e))?;
+                    .map_err(|e| format_file_operation_error("write", temp_path, &e))?;
             }
             Ok(())
         })();
@@ -141,14 +141,14 @@ impl DllInstaller {
                         return Err(format!("DLL target is not a file: {}", target.display()));
                     }
                     fs::rename(&target, &backups[i])
-                        .map_err(|e| format_file_operation_error("back up", &target, e))?;
+                        .map_err(|e| format_file_operation_error("back up", &target, &e))?;
                     backed_up.push(i);
                 }
             }
             for (i, name) in AETHER_DLL_FILES.iter().enumerate() {
                 let target = self.steam_path.join(name);
                 fs::rename(&staged[i], &target)
-                    .map_err(|e| format_file_operation_error("install", &target, e))?;
+                    .map_err(|e| format_file_operation_error("install", &target, &e))?;
                 installed.push(i);
             }
             // Migrate only after the ZIP and all new binaries are in place.
@@ -178,7 +178,7 @@ impl DllInstaller {
         for backup in &backups {
             if backup.exists() {
                 fs::remove_file(backup)
-                    .map_err(|e| format_file_operation_error("delete obsolete backup", backup, e))?;
+                    .map_err(|e| format_file_operation_error("delete obsolete backup", backup, &e))?;
             }
         }
         Ok(())
@@ -193,7 +193,7 @@ impl DllInstaller {
             let file_path = self.steam_path.join(file_name);
             if file_path.exists() {
                 fs::remove_file(&file_path)
-                    .map_err(|e| format_file_operation_error("delete", &file_path, e))?;
+                    .map_err(|e| format_file_operation_error("delete", &file_path, &e))?;
                 deleted_count += 1;
             }
         }
@@ -214,7 +214,7 @@ impl DllInstaller {
         for file_path in self.aether_files() {
             if file_path.exists() {
                 fs::remove_file(&file_path)
-                    .map_err(|e| format_file_operation_error("delete", &file_path, e))?;
+                    .map_err(|e| format_file_operation_error("delete", &file_path, &e))?;
                 removed += 1;
             }
         }
@@ -222,7 +222,7 @@ impl DllInstaller {
         for dir_path in self.aether_directories() {
             if dir_path.exists() {
                 fs::remove_dir_all(&dir_path)
-                    .map_err(|e| format_file_operation_error("delete folder", &dir_path, e))?;
+                    .map_err(|e| format_file_operation_error("delete folder", &dir_path, &e))?;
                 removed += 1;
             }
         }
@@ -297,16 +297,16 @@ impl DllInstaller {
 
         let mut removed = 0;
         for entry in fs::read_dir(&depotcache)
-            .map_err(|e| format_file_operation_error("read folder", &depotcache, e))?
+            .map_err(|e| format_file_operation_error("read folder", &depotcache, &e))?
         {
             let entry = entry.map_err(|e| format!("Failed to read depotcache entry: {}", e))?;
             let path = entry.path();
             if path.is_dir() {
                 fs::remove_dir_all(&path)
-                    .map_err(|e| format_file_operation_error("delete folder", &path, e))?;
+                    .map_err(|e| format_file_operation_error("delete folder", &path, &e))?;
             } else {
                 fs::remove_file(&path)
-                    .map_err(|e| format_file_operation_error("delete", &path, e))?;
+                    .map_err(|e| format_file_operation_error("delete", &path, &e))?;
             }
             removed += 1;
         }
@@ -315,7 +315,7 @@ impl DllInstaller {
     }
 }
 
-fn format_file_operation_error(action: &str, path: &Path, error: std::io::Error) -> String {
+fn format_file_operation_error(action: &str, path: &Path, error: &std::io::Error) -> String {
     format!(
         "Failed to {} {}. If Steam is running, close Steam completely and try again. Details: {}",
         action,

@@ -32,7 +32,7 @@ fn expansion_is_case_insensitive_and_deduped() {
     let mut deduped = lowercase.clone();
     deduped.dedup();
     deduped.sort();
-    let mut sorted = lowercase.clone();
+    let mut sorted = lowercase;
     sorted.sort();
     assert_eq!(sorted, deduped);
 }

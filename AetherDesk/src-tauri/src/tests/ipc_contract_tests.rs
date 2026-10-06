@@ -367,7 +367,7 @@ fn frontend_calls() -> Vec<FrontendCall> {
     for path in frontend_files() {
         let source = read(&path);
         let relative = path
-            .strip_prefix(&desk_dir())
+            .strip_prefix(desk_dir())
             .unwrap_or(&path)
             .to_string_lossy()
             .replace('\\', "/");
