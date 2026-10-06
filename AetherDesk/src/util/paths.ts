@@ -1,7 +1,7 @@
 import { invoke } from '@tauri-apps/api/core';
 
 /** Maximum length for a displayed path (80 chars, ellipsis dots included). */
-export const MAX_PATH_CHARS = 80;
+const MAX_PATH_CHARS = 80;
 
 /**
  * Displays a path starting from the folder right inside steamapps/common,

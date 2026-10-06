@@ -132,7 +132,7 @@ constexpr const char* kModule = "Wire.Achievement";
             const std::size_t p = line.find("{\"appid\":");
             if (p == std::string::npos) continue;
             PlaytimeEntry e{};
-            if (std::sscanf(line.c_str() + p,
+            if (sscanf_s(line.c_str() + p,
                 "{\"appid\": %u, \"playtime_min\": %u, \"playtime_2wks_min\": %u, "
                 "\"playtime_disconnected_min\": %u, \"last_played\": %u, "
                 "\"last_launch\": %u, \"last_exit\": %u}",

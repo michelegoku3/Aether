@@ -124,7 +124,7 @@ export const engineLabel = (engine: EngineKind): string => {
   }
 };
 
-export const photonFlavorLabel = (flavor: PhotonFlavorKind): string => {
+const photonFlavorLabel = (flavor: PhotonFlavorKind): string => {
   switch (flavor) {
     case 'fusion': return 'Fusion';
     default: return 'Realtime';
@@ -167,7 +167,6 @@ export const conflictLabel = (kind: string): string => {
  * minuscola non è una svista di casing e NON va "normalizzata" a `showOnline`.
  * Vedi `docs/shared_contracts.md` §7.
  */
-export type PresenceDefaultMode = 'none' | 'showonline';
 
 /**
  * Modalità di presenza effettiva di un gioco, come la risolve il popup ONLINE.

@@ -30,7 +30,7 @@ SnapshotData Load(const std::string& path) {
     while (std::getline(ifs, line)) {
         if (const std::size_t p = line.find("{\"id\":"); p != std::string::npos) {
             UnlockEntry e{};
-            if (std::sscanf(line.c_str() + p, "{\"id\": %u, \"unlock_time\": %u",
+            if (sscanf_s(line.c_str() + p, "{\"id\": %u, \"unlock_time\": %u",
                             &e.id, &e.unlockTime) == 2) {
                 out.unlocks.push_back(e);
             }
@@ -38,7 +38,7 @@ SnapshotData Load(const std::string& path) {
         }
         if (const std::size_t p = line.find("{\"sid\":"); p != std::string::npos) {
             StatEntry st{};
-            if (std::sscanf(line.c_str() + p, "{\"sid\": %u, \"value\": %u",
+            if (sscanf_s(line.c_str() + p, "{\"sid\": %u, \"value\": %u",
                             &st.id, &st.value) == 2) {
                 out.stats.push_back(st);
             }

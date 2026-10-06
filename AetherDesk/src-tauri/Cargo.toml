@@ -63,3 +63,47 @@ winreg = "0.55"
 
 [dev-dependencies]
 tempfile = "3"
+
+# ----------------------------------------------------------------------------
+# Lint policy (applicata da `cargo clippy -- -D warnings` in build.cmd e CI).
+# Dichiararla qui e non nella riga di comando la rende identica ovunque:
+# IDE (rust-analyzer), build locale, GitHub Actions.
+#
+#   rust: codice morto / import inutilizzati / unsafe senza commento SAFETY
+#   clippy::all        correttezza + stile + complessita' + perf (default)
+#   clippy::pedantic   opt-in selettivo sotto: solo quelli che trovano bug
+#
+# `allow` motivati: il backend converte ogni errore in String al confine IPC,
+# quindi `module_name_repetitions`/`too_many_lines` sarebbero solo rumore
+# finche' non e' completata la migrazione a DeskError.
+# ----------------------------------------------------------------------------
+[lints.rust]
+dead_code = "warn"
+unused_imports = "warn"
+unused_must_use = "deny"
+unreachable_pub = "allow"
+unsafe_op_in_unsafe_fn = "warn"
+# Richiede `// SAFETY:` sopra ogni blocco unsafe (11 nel codice: DPAPI, Win32).
+# Clippy lo verifica tramite undocumented_unsafe_blocks sotto.
+
+[lints.clippy]
+all = { level = "warn", priority = -1 }
+# --- pedantic selezionati: bug reali, non stile ---
+undocumented_unsafe_blocks = "warn"
+await_holding_lock = "deny"          # std::Mutex tenuto attraverso .await = deadlock tokio
+await_holding_refcell_ref = "deny"
+large_futures = "warn"
+needless_pass_by_value = "warn"
+redundant_clone = "warn"
+unnecessary_wraps = "warn"
+unused_async = "warn"                # fn async che non awaita nulla
+implicit_clone = "warn"
+cast_possible_truncation = "warn"    # u64 -> u32 silenzioso su AppID/size
+manual_let_else = "warn"
+semicolon_if_nothing_returned = "warn"
+# --- rumore noto, disattivato con motivo ---
+too_many_arguments = "allow"         # comandi Tauri con molti parametri
+module_name_repetitions = "allow"
+too_many_lines = "allow"             # commands/store.rs: da risolvere con refactor, non con un lint
+missing_errors_doc = "allow"
+missing_panics_doc = "allow"
