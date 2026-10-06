@@ -52,20 +52,47 @@ jobs:
         run: npm ci
         working-directory: AetherDesk
 
+      # ---- Quality gates: stessi comandi di build.cmd, stesso ordine ----------
       - name: Frontend lint
         working-directory: AetherDesk
         run: npm run lint:ci
 
       - name: Frontend type check
         working-directory: AetherDesk
-        run: npx tsc --noEmit
+        run: npm run typecheck
 
-      - name: Frontend wiring check
+      - name: Frontend wiring check (orphan modules)
         working-directory: AetherDesk
         run: npm run check:wiring
 
+      - name: Frontend unused exports / dependencies (knip)
+        working-directory: AetherDesk
+        run: npm run check:unused
+
+      - name: Rust lint (clippy, warnings are errors)
+        working-directory: AetherDesk/src-tauri
+        env:
+          AETHERDESK_NO_ADMIN_MANIFEST: "1"
+        run: cargo clippy --locked --all-targets -- -D warnings
+
+      - name: Install cargo-audit / cargo-machete
+        shell: pwsh
+        run: |
+          cargo audit --version 2>$null;   if ($LASTEXITCODE -ne 0) { cargo install cargo-audit --locked }
+          cargo machete --version 2>$null; if ($LASTEXITCODE -ne 0) { cargo install cargo-machete --locked }
+
+      - name: Rust dependency audit (RustSec CVE database)
+        working-directory: AetherDesk/src-tauri
+        run: cargo audit
+
+      - name: Rust unused dependencies (cargo machete)
+        working-directory: AetherDesk/src-tauri
+        run: cargo machete
+
       - name: Rust tests
         working-directory: AetherDesk/src-tauri
+        env:
+          AETHERDESK_NO_ADMIN_MANIFEST: "1"
         run: cargo test --locked
 
       - name: Sync App Version
@@ -173,22 +200,19 @@ jobs:
       - name: Setup Ninja
         uses: seanmiddleditch/gha-setup-ninja@master
 
+      # Il configure applica i gate di cmake/Quality.cmake: /W4 /WX,
+      # clang-tidy (se presente nell'immagine), header/sorgenti orfani,
+      # e i test unitari come parte di ALL. Identico a "Compila tutto" in VS.
       - name: Configure AetherDLL
         run: cmake --preset x64-Release
         working-directory: AetherDLL
 
-      - name: Build AetherDLL
+      - name: Build AetherDLL (includes unit tests via aether_run_tests)
         run: cmake --build --preset x64-Release
         working-directory: AetherDLL
 
-      - name: DLL utility regression tests
-        shell: pwsh
-        run: |
-          cmake -S AetherDLL/tests -B utility-tests -G Ninja -DCMAKE_BUILD_TYPE=Release
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          cmake --build utility-tests
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          ctest --test-dir utility-tests --output-on-failure
+      - name: DLL unit tests (explicit report)
+        run: ctest --test-dir AetherDLL/out/build/x64-Release --output-on-failure -C Release
 
       - name: Package AetherDLL Zip
         shell: pwsh

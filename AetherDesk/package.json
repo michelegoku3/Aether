@@ -7,9 +7,11 @@
     "dev": "vite",
     "build": "tsc && vite build",
     "check:wiring": "node scripts/check_frontend_wiring.mjs",
+    "check:unused": "knip",
+    "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "lint:ci": "eslint . --quiet",
-    "verify": "npm run build && npm run lint:ci && npm run check:wiring",
+    "verify": "npm run build && npm run lint:ci && npm run check:wiring && npm run check:unused",
     "preview": "vite preview",
     "tauri": "tauri"
   },
@@ -19,15 +21,16 @@
     "react-dom": "^18.2.0"
   },
   "devDependencies": {
-    "@eslint/js": "^9.39.5",
+    "@eslint/js": "^10.0.1",
     "@tauri-apps/cli": "^2",
     "@types/react": "^18.2.0",
     "@types/react-dom": "^18.2.0",
     "@vitejs/plugin-react": "^4.7.0",
-    "eslint": "^9.39.5",
+    "eslint": "^10.12.0",
     "eslint-plugin-react-hooks": "^7.1.1",
+    "knip": "^6.39.0",
     "typescript": "^5.2.0",
-    "typescript-eslint": "^8.70.0",
+    "typescript-eslint": "^8.71.1",
     "vite": "^6.4.3"
   },
   "trustedDependencies": [

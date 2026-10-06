@@ -4,7 +4,7 @@ import type { AppPresenceMode, OnlineOptionKey } from '../types/online';
 // IPC (stessa regola applicata a `OnlineStatus`): questo modulo tiene solo la
 // logica pura di risoluzione/gating. Riesportati per non rompere gli import
 // esistenti (`OnlineChoiceModal` li prende da qui).
-export type { AppPresenceMode, OnlineOptionKey, PresenceDefaultMode } from '../types/online';
+export type { AppPresenceMode, OnlineOptionKey } from '../types/online';
 
 export interface OnlineChoiceContext {
   mode: AppPresenceMode;

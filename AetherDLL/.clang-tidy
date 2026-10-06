@@ -1,0 +1,67 @@
+# clang-tidy per AetherDLL — l'equivalente C++ di `cargo clippy`.
+#
+# Filosofia: pochi check, tutti azionabili, tutti bloccanti (vedi
+# cmake/Quality.cmake: --warnings-as-errors=*). Un check che produce rumore
+# va rimosso da qui, non ignorato con commenti sparsi nel codice.
+#
+# Gruppi:
+#   bugprone-*      bug reali: use-after-move, narrowing, copie accidentali,
+#                   confronti sospetti, buffer size errati
+#   cert-*          regole CERT C++ (sicurezza, UB)
+#   concurrency-*   mt-unsafe, lock mancanti
+#   performance-*   copie evitabili, parametri per valore, move mancanti
+#   misc-*          codice morto / include inutili (selezione)
+#   modernize-*     solo quelli che evitano bug (nullptr, override, use-after-move)
+#
+# Esclusi con motivazione:
+#   bugprone-easily-swappable-parameters   troppo rumore su API Win32/Steam
+#   bugprone-reserved-identifier           macro Win32 e __try
+#   cert-err58-cpp                         static init con mutex/string e' voluto
+#   performance-avoid-endl                 non usiamo iostream nei hot path
+#   misc-non-private-member-variables-in-classes  AetherCoreState e' una struct di dati
+#   misc-no-recursion                      i parser VDF/KeyValues sono ricorsivi per design
+#   modernize-use-trailing-return-type     stile, non correttezza
+#   modernize-avoid-c-arrays               buffer Win32 fissi (MAX_PATH)
+Checks: >
+  -*,
+  bugprone-*,
+  -bugprone-easily-swappable-parameters,
+  -bugprone-reserved-identifier,
+  -bugprone-exception-escape,
+  cert-*,
+  -cert-err58-cpp,
+  -cert-dcl37-c,
+  -cert-dcl51-cpp,
+  concurrency-*,
+  performance-*,
+  -performance-avoid-endl,
+  misc-unused-using-decls,
+  misc-unused-alias-decls,
+  misc-redundant-expression,
+  misc-misplaced-const,
+  misc-static-assert,
+  misc-definitions-in-headers,
+  modernize-use-nullptr,
+  modernize-use-override,
+  modernize-use-equals-default,
+  modernize-use-equals-delete,
+  modernize-redundant-void-arg,
+  modernize-use-bool-literals,
+  readability-misleading-indentation,
+  readability-redundant-string-cstr,
+  readability-container-size-empty,
+  readability-delete-null-pointer
+
+# Analizza solo il nostro codice: niente header di terze parti (FetchContent
+# scarica in out/build/_deps) ne' protobuf generato.
+HeaderFilterRegex: '^(?!.*(_deps|proto/generated|pb\.h)).*(AetherCore|AetherPayload|AetherXInput|common)[/\\].*'
+
+WarningsAsErrors: '*'
+
+CheckOptions:
+  - key: bugprone-unused-return-value.CheckedFunctions
+    value: '::std::async;::std::launder;::std::remove;::std::remove_if;::std::unique;::std::unique_ptr::release;::std::basic_string::empty;::std::vector::empty;::std::back_inserter;::std::distance;::std::find;::std::find_if;::std::lower_bound;::std::upper_bound;::std::max;::std::min;::std::move'
+  - key: performance-unnecessary-value-param.AllowedTypes
+    value: 'shared_ptr;unique_ptr'
+  - key: misc-definitions-in-headers.HeaderFileExtensions
+    value: 'h,hpp,inl'

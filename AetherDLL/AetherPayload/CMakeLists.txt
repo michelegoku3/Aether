@@ -52,3 +52,5 @@ set_target_properties(AetherPayload PROPERTIES
 attach_version_resource(AetherPayload "AetherPayload" "AetherPayload.dll" "AetherDLL Online/EOS Payload")
 
 aether_check_sources(AetherPayload)
+aether_check_headers(AetherPayload)
+aether_apply_quality(AetherPayload)

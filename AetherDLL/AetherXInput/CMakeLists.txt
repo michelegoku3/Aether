@@ -24,3 +24,5 @@ set_target_properties(AetherXInput PROPERTIES
 
 attach_version_resource(AetherXInput "AetherXInput" "xinput1_4.dll" "AetherDLL XInput Proxy")
 aether_check_sources(AetherXInput)
+aether_check_headers(AetherXInput)
+aether_apply_quality(AetherXInput)

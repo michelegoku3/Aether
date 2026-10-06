@@ -294,38 +294,3 @@ export const ManualVersionEditor = ({ game, initialRows, onClose }: ManualVersio
     </>
   );
 };
-
-interface SpecificVersionModalProps {
-  game: SpecificVersionGame;
-  initialRows: LuaManifestRow[];
-  onClose: () => void;
-}
-
-/**
- * Backwards-compatible standalone modal wrapping the manual editor. New
- * callers should use `ChangeVersionModal` instead, which hosts this editor
- * as one of its tabs.
- */
-const SpecificVersionModal = ({ game, initialRows, onClose }: SpecificVersionModalProps) => (
-  <div className="modal-overlay" onClick={onClose}>
-    <div
-      className="modal-container version-modal-container"
-      onClick={(e) => e.stopPropagation()}
-    >
-      <div className="modal-header">
-        <span className="modal-title">
-          Specific Version: <strong style={{ color: '#ffffff' }}>{game.name}</strong> ({game.appId})
-        </span>
-        <button onClick={onClose} className="modal-close-btn">&times;</button>
-      </div>
-
-      <div className="modal-separator"></div>
-
-      <div className="modal-body version-modal-body">
-        <ManualVersionEditor game={game} initialRows={initialRows} onClose={onClose} />
-      </div>
-    </div>
-  </div>
-);
-
-export default SpecificVersionModal;

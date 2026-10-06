@@ -108,9 +108,9 @@ namespace ac::hooks::LicenseManager {
             // invariants (size <= alloc, storage present and aligned, counts
             // not absurd) are checked on the live object, so a layout that
             // moved is caught here instead of in a crash dump.
-            if (const auto reason = abi::guard::CheckPackage(pkg);
-                !abi::guard::Passed(reason)) {
-                abi::guard::CountRejection("PackageInfo (package 0)", reason);
+            if (const auto guardReason = abi::guard::CheckPackage(pkg);
+                !abi::guard::Passed(guardReason)) {
+                abi::guard::CountRejection("PackageInfo (package 0)", guardReason);
                 return out;
             }
 

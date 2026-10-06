@@ -7,7 +7,7 @@
  * Normalizes input text by lowercasing, stripping diacritics / accents,
  * converting punctuation to spaces, and trimming.
  */
-export const normalizeSearchText = (value: string): string =>
+const normalizeSearchText = (value: string): string =>
   value
     .toLowerCase()
     .normalize('NFD')
@@ -19,7 +19,7 @@ export const normalizeSearchText = (value: string): string =>
  * Calculates a fuzzy match score between a search query and candidate string.
  * Lower score = better match. Returns Infinity if no match is found.
  */
-export const fuzzyScore = (query: string, candidate: string): number => {
+const fuzzyScore = (query: string, candidate: string): number => {
   const q = normalizeSearchText(query);
   const c = normalizeSearchText(candidate);
 
@@ -43,7 +43,7 @@ export const fuzzyScore = (query: string, candidate: string): number => {
 /**
  * Evaluates the best match score for a game considering both name and optional appId.
  */
-export const matchGameScore = (query: string, name: string, appId?: string): number => {
+const matchGameScore = (query: string, name: string, appId?: string): number => {
   const trimmed = query.trim();
   if (!trimmed) return 0;
 

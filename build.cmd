@@ -10,18 +10,23 @@ REM  Steps, all inside AetherDesk\:
 REM    1. approve the esbuild install script (npm 11+)
 REM    2. npm ci                -> install dependencies
 REM    3. npm audit fix         -> fix known vulnerabilities
-REM    4. npm run build + lint + wiring guard -> tsc/vite (crea dist\), ESLint,
-REM       moduli frontend mai importati
-REM    5. cargo test            -> unit test + test di contratto IPC
-REM    6. npm run tauri build   -> compile AetherDesk.exe
-REM    7. assemble the portable folder + create the ZIP
+REM    4. npm run build + lint + wiring + knip -> tsc/vite (crea dist\), ESLint,
+REM       moduli frontend mai importati, export/dipendenze npm inutilizzati
+REM    5. cargo clippy          -> lint Rust (warning = errore, policy in Cargo.toml)
+REM    6. cargo audit + machete -> CVE nelle crate + dipendenze Cargo inutilizzate
+REM    7. cargo test            -> unit test + test di contratto IPC
+REM    8. npm run tauri build   -> compile AetherDesk.exe
+REM    9. assemble the portable folder + create the ZIP
+REM
+REM  I tool Rust extra (cargo-audit, cargo-machete) vengono installati la
+REM  prima volta con `cargo install` se mancano (una tantum, ~1-2 min).
 REM
 REM  Output: AetherDesk\build\portable\AetherDesk-<version>.zip
 REM
 REM  Usage:
 REM    build.cmd                        -> full build (test inclusi)
-REM    build.cmd /skipaudit             -> salta npm audit fix
-REM    build.cmd /skiptests             -> salta guardia cablaggio + cargo test
+REM    build.cmd /skipaudit             -> salta npm audit fix + cargo audit/machete
+REM    build.cmd /skiptests             -> salta cargo test (clippy e lint restano)
 REM    build.cmd /skipaudit /skiptests  -> solo build (ordine dei flag libero)
 REM
 REM  Build output is streamed live through PowerShell Tee-Object (UTF-8 +
@@ -85,12 +90,12 @@ cd /d "%DESK_DIR%"
 
 REM --- Step 1: approve the esbuild install script (best-effort) ------
 echo.
-echo [1/7] Approving esbuild install script (npm 11+)...
+echo [1/9] Approving esbuild install script (npm 11+)...
 call npm install-scripts approve esbuild >nul 2>&1
 
 REM --- Step 2: install dependencies ------------------------------------
 echo.
-echo [2/7] Installing frontend dependencies (npm ci)...
+echo [2/9] Installing frontend dependencies (npm ci)...
 powershell.exe -NoProfile -ExecutionPolicy Bypass -Command ^
   "$utf8=New-Object System.Text.UTF8Encoding($false); [Console]::OutputEncoding=$utf8; $OutputEncoding=$utf8;" ^
   "& cmd.exe /d /s /c 'npm ci 2>&1' | Tee-Object -FilePath '%BUILD_LOG%' -Append; $code=$LASTEXITCODE; exit $code"
@@ -99,7 +104,7 @@ if errorlevel 1 goto :fail
 REM --- Step 3: audit fix (optional) -------------------------------------
 if "%SKIP_AUDIT%"=="1" goto :skip_audit
 echo.
-echo [3/7] Fixing known vulnerabilities (npm audit fix)...
+echo [3/9] Fixing known vulnerabilities (npm audit fix)...
 powershell.exe -NoProfile -ExecutionPolicy Bypass -Command ^
   "$utf8=New-Object System.Text.UTF8Encoding($false); [Console]::OutputEncoding=$utf8; $OutputEncoding=$utf8;" ^
   "& cmd.exe /d /s /c 'npm audit fix 2>&1' | Tee-Object -FilePath '%BUILD_LOG%' -Append; $code=$LASTEXITCODE; exit $code"
@@ -108,25 +113,67 @@ goto :after_audit
 
 :skip_audit
 echo.
-echo [3/7] Audit skipped.
+echo [3/9] Audit skipped.
 
 :after_audit
 
 REM --- Step 4: frontend build + guardia di cablaggio ----------------------
 echo.
-echo [4/7] Building frontend (tsc + vite), lint and module wiring...
+echo [4/9] Building frontend (tsc + vite), lint, module wiring, unused exports (knip)...
 REM  lint:ci gira con --quiet: in build compaiono solo gli errori ESLint, non le
 REM  warning (che restano visibili con `npm run lint`). Senza --quiet ogni build
 REM  chiudrebbe con "SUCCEEDED WITH WARNINGS" per rumore non azionabile.
 powershell.exe -NoProfile -ExecutionPolicy Bypass -Command ^
   "$utf8=New-Object System.Text.UTF8Encoding($false); [Console]::OutputEncoding=$utf8; $OutputEncoding=$utf8;" ^
-  "& cmd.exe /d /s /c 'npm run build 2>&1 && npm run lint:ci 2>&1 && npm run check:wiring 2>&1' | Tee-Object -FilePath '%BUILD_LOG%' -Append; $code=$LASTEXITCODE; exit $code"
+  "& cmd.exe /d /s /c 'npm run build 2>&1 && npm run lint:ci 2>&1 && npm run check:wiring 2>&1 && npm run check:unused 2>&1' | Tee-Object -FilePath '%BUILD_LOG%' -Append; $code=$LASTEXITCODE; exit $code"
 if errorlevel 1 goto :fail
 
-REM --- Step 5: test (unit + contratto IPC), opzionale ----------------------
+REM --- Step 5: clippy (lint Rust) -------------------------------------------
+REM  La policy dei lint vive in src-tauri/Cargo.toml ([lints.rust]/[lints.clippy]),
+REM  cosi' rust-analyzer nell'IDE, questo script e GitHub mostrano le stesse cose.
+REM  -D warnings: ogni warning (anche dead_code/unused di rustc) blocca il build.
+REM  --all-targets include i test, cosi' anche il codice di test e' pulito.
+echo.
+echo [5/9] Linting Rust (cargo clippy, warnings are errors)...
+cd /d "%DESK_DIR%\src-tauri"
+powershell.exe -NoProfile -ExecutionPolicy Bypass -Command ^
+  "$utf8=New-Object System.Text.UTF8Encoding($false); [Console]::OutputEncoding=$utf8; $OutputEncoding=$utf8;" ^
+  "$env:AETHERDESK_NO_ADMIN_MANIFEST='1';" ^
+  "& cmd.exe /d /s /c 'cargo clippy --locked --all-targets --color always -- -D warnings 2>&1' | Tee-Object -FilePath '%BUILD_LOG%' -Append; $code=$LASTEXITCODE; exit $code"
+set "CLIPPY_EXIT=%ERRORLEVEL%"
+cd /d "%DESK_DIR%"
+if not "%CLIPPY_EXIT%"=="0" goto :fail
+
+REM --- Step 6: cargo audit + cargo machete (opzionale con /skipaudit) ---------
+REM  cargo audit   : confronta Cargo.lock con il database RustSec (CVE note).
+REM                  E' l'equivalente di `npm audit` per le crate: zip, unrar,
+REM                  sevenz, image, reqwest parsano input scaricato da terzi.
+REM  cargo machete : dipendenze dichiarate in Cargo.toml ma mai usate.
+REM  Entrambi vengono installati al primo uso se mancano.
+if "%SKIP_AUDIT%"=="1" goto :skip_cargo_audit
+echo.
+echo [6/9] Auditing Rust dependencies (cargo audit + cargo machete)...
+cd /d "%DESK_DIR%\src-tauri"
+powershell.exe -NoProfile -ExecutionPolicy Bypass -Command ^
+  "$utf8=New-Object System.Text.UTF8Encoding($false); [Console]::OutputEncoding=$utf8; $OutputEncoding=$utf8;" ^
+  "& cmd.exe /d /s /c 'cargo audit --version >nul 2>&1 || cargo install cargo-audit --locked 2>&1' | Tee-Object -FilePath '%BUILD_LOG%' -Append;" ^
+  "& cmd.exe /d /s /c 'cargo machete --version >nul 2>&1 || cargo install cargo-machete --locked 2>&1' | Tee-Object -FilePath '%BUILD_LOG%' -Append;" ^
+  "& cmd.exe /d /s /c 'cargo audit --color always 2>&1 && cargo machete 2>&1' | Tee-Object -FilePath '%BUILD_LOG%' -Append; $code=$LASTEXITCODE; exit $code"
+set "AUDIT_EXIT=%ERRORLEVEL%"
+cd /d "%DESK_DIR%"
+if not "%AUDIT_EXIT%"=="0" goto :fail
+goto :after_cargo_audit
+
+:skip_cargo_audit
+echo.
+echo [6/9] Cargo audit skipped.
+
+:after_cargo_audit
+
+REM --- Step 7: test (unit + contratto IPC), opzionale ----------------------
 if "%SKIP_TESTS%"=="1" goto :skip_tests
 echo.
-echo [5/7] Running Rust tests (cargo test, non-elevated harness)...
+echo [7/9] Running Rust tests (cargo test, non-elevated harness)...
 cd /d "%DESK_DIR%\src-tauri"
 powershell.exe -NoProfile -ExecutionPolicy Bypass -Command ^
   "$utf8=New-Object System.Text.UTF8Encoding($false); [Console]::OutputEncoding=$utf8; $OutputEncoding=$utf8;" ^
@@ -139,24 +186,24 @@ goto :after_tests
 
 :skip_tests
 echo.
-echo [5/7] Tests skipped.
+echo [7/9] Tests skipped.
 
 :after_tests
 
-REM --- Step 6: compile the binary ---------------------------------------
+REM --- Step 8: compile the binary ---------------------------------------
 REM Il build di release NON deve ereditare AETHERDESK_NO_ADMIN_MANIFEST:
 REM l'exe pubblicato embedda il manifest requireAdministrator.
 set "AETHERDESK_NO_ADMIN_MANIFEST="
 echo.
-echo [6/7] Compiling AetherDesk (npm run tauri build)...
+echo [8/9] Compiling AetherDesk (npm run tauri build)...
 powershell.exe -NoProfile -ExecutionPolicy Bypass -Command ^
   "$utf8=New-Object System.Text.UTF8Encoding($false); [Console]::OutputEncoding=$utf8; $OutputEncoding=$utf8;" ^
   "& cmd.exe /d /s /c 'npm run tauri build 2>&1' | Tee-Object -FilePath '%BUILD_LOG%' -Append; $code=$LASTEXITCODE; exit $code"
 if errorlevel 1 goto :fail
 
-REM --- Step 5: assemble the portable folder + ZIP -----------------------
+REM --- Step 9: assemble the portable folder + ZIP -----------------------
 echo.
-echo [7/7] Assembling portable folder and creating ZIP...
+echo [9/9] Assembling portable folder and creating ZIP...
 powershell.exe -NoProfile -ExecutionPolicy Bypass -Command ^
   "$d='%DESK_DIR%';" ^
   "$s='%PORTABLE_DIR%';" ^

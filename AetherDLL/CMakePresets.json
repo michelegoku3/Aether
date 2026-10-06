@@ -1,6 +1,10 @@
 {
   "version": 3,
-  "cmakeMinimumRequired": { "major": 3, "minor": 21, "patch": 0 },
+  "cmakeMinimumRequired": {
+    "major": 3,
+    "minor": 21,
+    "patch": 0
+  },
   "configurePresets": [
     {
       "name": "x64-Release",
@@ -10,10 +14,30 @@
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release"
       },
-      "architecture": { "value": "x64", "strategy": "external" }
+      "architecture": {
+        "value": "x64",
+        "strategy": "external"
+      }
+    },
+    {
+      "name": "x64-Release-Baseline",
+      "displayName": "x64 Release (warnings visible, not fatal) — one-time cleanup",
+      "description": "Stesso build di x64-Release ma con AETHER_WARNINGS_AS_ERRORS=OFF: usalo UNA volta per vedere l'intero arretrato /W4 in un solo passaggio, poi torna a x64-Release.",
+      "inherits": "x64-Release",
+      "binaryDir": "${sourceDir}/out/build/x64-Release",
+      "cacheVariables": {
+        "AETHER_WARNINGS_AS_ERRORS": "OFF"
+      }
     }
   ],
   "buildPresets": [
-    { "name": "x64-Release", "configurePreset": "x64-Release" }
+    {
+      "name": "x64-Release",
+      "configurePreset": "x64-Release"
+    },
+    {
+      "name": "x64-Release-Baseline",
+      "configurePreset": "x64-Release-Baseline"
+    }
   ]
 }

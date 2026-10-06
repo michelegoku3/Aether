@@ -42,6 +42,7 @@ if(NOT CMAKE_SIZEOF_VOID_P EQUAL 8)
 endif()
 
 include(cmake/CheckSources.cmake)
+include(cmake/Quality.cmake)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -243,6 +244,25 @@ else()
     add_custom_target(generate_protos DEPENDS "${AC_PROTO_SRC}" "${AC_PROTO_HDR}")
 endif()
 
+# ----------------------------------------------------------------------------
+# aether_proto: il sorgente generato da protoc vive in un target suo.
+# Cosi' AetherCore resta a /W4 (+/WX se richiesto) senza dover forzare /W0
+# per singolo file - cosa che su MSVC produce il warning D9025 "override di
+# /W4 con /W0" e, con il PCH, non e' nemmeno affidabile. Questo target NON
+# passa da aether_apply_quality(): codice di Google, non nostro.
+# ----------------------------------------------------------------------------
+add_library(aether_proto STATIC "${AC_PROTO_DIR}/steam_messages.pb.cc")
+add_dependencies(aether_proto generate_protos)
+target_include_directories(aether_proto PUBLIC "${AC_PROTO_DIR}")
+target_link_libraries(aether_proto PUBLIC ${AC_PROTOBUF_LITE_TARGET})
+target_compile_definitions(aether_proto PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX _WIN32_WINNT=0x0A00)
+set_target_properties(aether_proto PROPERTIES FOLDER "ThirdParty" SKIP_LINTING ON)
+if(MSVC)
+    target_compile_options(aether_proto PRIVATE /w /WX-)
+else()
+    target_compile_options(aether_proto PRIVATE -w)
+endif()
+
 # ============================================================================
 # Subprojects
 # ============================================================================
@@ -254,3 +274,25 @@ add_subdirectory(AetherXInput)
 # Install only built targets, never arbitrary or stale DLLs in the output tree.
 install(TARGETS AetherCore AetherPayload AetherXInput
     RUNTIME DESTINATION bin COMPONENT Runtime)
+
+# ============================================================================
+# Unit test come parte del build normale
+# ----------------------------------------------------------------------------
+# I test in tests/ (quickwin_tests, backup_lifecycle_tests, inventario
+# sorgenti) girano gia' in CI al tag. Da qui girano anche in locale a ogni
+# "Compila tutto": il target aether_run_tests e' in ALL, quindi un test rosso
+# fa fallire il build nello stesso modo di un errore di compilazione.
+#   -DAETHER_BUILD_TESTS=OFF   per saltarli (es. build di packaging puro)
+# ============================================================================
+option(AETHER_BUILD_TESTS "Build and run the AetherDLL unit tests as part of ALL" ON)
+if(AETHER_BUILD_TESTS)
+    enable_testing()
+    add_subdirectory(tests)
+    add_custom_target(aether_run_tests ALL
+        COMMAND ${CMAKE_CTEST_COMMAND} --output-on-failure -C $<CONFIG>
+        WORKING_DIRECTORY "${CMAKE_BINARY_DIR}"
+        DEPENDS quickwin_tests backup_lifecycle_tests
+        COMMENT "[AetherDLL] Running unit tests (ctest)"
+        VERBATIM)
+    message(STATUS "[AetherDLL] Unit tests enabled: ctest runs on every build (AETHER_BUILD_TESTS=OFF to skip)")
+endif()
