@@ -260,7 +260,7 @@ impl GameInspector {
             .file_name()
             .and_then(|n| n.to_str())
             .unwrap_or_default();
-        let game_exe = Self::pick_game_exe(steam_api_dir, &game_name);
+        let game_exe = Self::pick_game_exe(steam_api_dir, game_name);
         let steamstub_detected = game_exe
             .as_deref()
             .map(detect_steamstub)

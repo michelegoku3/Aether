@@ -135,6 +135,33 @@ pub fn read(path: &Path) -> Option<DocumentMut> {
     }
 }
 
+/// Initialization/migration is part of the SAME writer contract. Existing
+/// documents win; never remove the source on a failed publication.
+pub fn initialize(path: &Path, legacy: Option<&Path>, default: &str) -> Result<(), String> {
+    let _guard = EDIT
+        .lock()
+        .map_err(|_| "Configuration editor unavailable")?;
+    let _file_lock = super::state_io::lock(&path.with_extension("toml.lock"))?;
+    match fs::metadata(path) {
+        Ok(_) => return Ok(()),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+        Err(e) => return Err(format!("Cannot inspect configuration: {e}")),
+    }
+    let content = if let Some(legacy) = legacy.filter(|p| p.is_file()) {
+        fs::read_to_string(legacy).map_err(|e| format!("Cannot read legacy configuration: {e}"))?
+    } else {
+        default.to_owned()
+    };
+    super::state_io::write_atomic(path, content.as_bytes())?;
+    // Keep the legacy original; compatibility sync will update it explicitly.
+    crate::desk_log_info!(
+        "config",
+        "Initialized configuration {} (legacy source retained)",
+        path.display()
+    );
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -207,31 +234,4 @@ mod tests {
         initialize(&p, None, "[log]\nlevel = \"error\"\n").unwrap();
         assert_eq!(read(&p).unwrap()["log"]["level"].as_str(), Some("debug"));
     }
-}
-
-/// Initialization/migration is part of the SAME writer contract. Existing
-/// documents win; never remove the source on a failed publication.
-pub fn initialize(path: &Path, legacy: Option<&Path>, default: &str) -> Result<(), String> {
-    let _guard = EDIT
-        .lock()
-        .map_err(|_| "Configuration editor unavailable")?;
-    let _file_lock = super::state_io::lock(&path.with_extension("toml.lock"))?;
-    match fs::metadata(path) {
-        Ok(_) => return Ok(()),
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
-        Err(e) => return Err(format!("Cannot inspect configuration: {e}")),
-    }
-    let content = if let Some(legacy) = legacy.filter(|p| p.is_file()) {
-        fs::read_to_string(legacy).map_err(|e| format!("Cannot read legacy configuration: {e}"))?
-    } else {
-        default.to_owned()
-    };
-    super::state_io::write_atomic(path, content.as_bytes())?;
-    // Keep the legacy original; compatibility sync will update it explicitly.
-    crate::desk_log_info!(
-        "config",
-        "Initialized configuration {} (legacy source retained)",
-        path.display()
-    );
-    Ok(())
 }

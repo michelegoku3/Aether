@@ -36,10 +36,10 @@ pub fn detect_steamstub_bytes(bytes: &[u8]) -> bool {
     let Some(bind) = bind_section_payload(bytes) else {
         return false;
     };
-    contains_seq(&bind, SIG_STUB64)
-        || contains_seq(&bind, SIG_STUB3)
-        || contains_seq(&bind, SIG_STUB2)
-        || contains_seq(&bind, SIG_STUB1)
+    contains_seq(bind, SIG_STUB64)
+        || contains_seq(bind, SIG_STUB3)
+        || contains_seq(bind, SIG_STUB2)
+        || contains_seq(bind, SIG_STUB1)
 }
 
 fn bind_section_payload(bytes: &[u8]) -> Option<&[u8]> {

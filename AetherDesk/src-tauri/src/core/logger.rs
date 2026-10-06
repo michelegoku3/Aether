@@ -152,7 +152,6 @@ pub fn init(_app: &tauri::AppHandle) {
 
     let file = OpenOptions::new()
         .create(true)
-        .write(true)
         .append(true)
         .open(&log_path)
         .ok();
@@ -280,12 +279,11 @@ pub fn clear_current_log() -> Result<(), String> {
     if let Some(mutex) = LOGGER.get() {
         if let Ok(mut logger) = mutex.lock() {
             logger.dedup_set.clear();
-            if let Some(file) = OpenOptions::new()
+            if let Ok(file) = OpenOptions::new()
                 .create(true)
                 .write(true)
                 .truncate(true)
                 .open(&logger.log_path)
-                .ok()
             {
                 logger.file = Some(file);
             }

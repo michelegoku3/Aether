@@ -104,7 +104,7 @@ fn merge_tagged(
         }
     }
 
-    merged.sort_by(|a, b| sort_key(a).cmp(&sort_key(b)));
+    merged.sort_by_key(|a| sort_key(a));
 
     if merged.len() <= limit {
         merged
@@ -220,14 +220,14 @@ fn read_dll_tail_lines(app: &tauri::AppHandle, limit: usize) -> Vec<String> {
         steam_path_buf.join("AetherDLL"),
         steam_path_buf.join("logs"),
         steam_path_buf.clone(),
-        desk_log_dir.clone(),
-        install_root.clone(),
+        desk_log_dir,
+        install_root,
     ] {
         let path = dir.join("main.log");
         if path.is_file() {
             if let Ok(mut file) = std::fs::File::open(&path) {
                 let mut content = String::new();
-                if let Ok(_) = std::io::Read::read_to_string(&mut file, &mut content) {
+                if std::io::Read::read_to_string(&mut file, &mut content).is_ok() {
                     let lines: Vec<String> = content.lines().map(|s| s.to_string()).collect();
                     if lines.len() <= limit {
                         return lines;
@@ -253,8 +253,8 @@ fn clear_dll_log(app: &tauri::AppHandle) {
         steam_path_buf.join("AetherDLL"),
         steam_path_buf.join("logs"),
         steam_path_buf.clone(),
-        desk_log_dir.clone(),
-        install_root.clone(),
+        desk_log_dir,
+        install_root,
     ] {
         let path = dir.join("main.log");
         if path.is_file() {
@@ -329,11 +329,10 @@ fn export_logs_bundle_sync(app: &tauri::AppHandle) -> Result<String, String> {
         (desk_log_dir.join("desk.log.last"), "desk.log.last.txt"),
         (desk_log_dir.join("status.json"), "desk_status.json.txt"),
     ] {
-        if src.is_file() {
-            if let Ok(_) = std::fs::copy(&src, stage_dir.join(timed(dest_name))) {
+        if src.is_file()
+            && std::fs::copy(&src, stage_dir.join(timed(dest_name))).is_ok() {
                 copied += 1;
             }
-        }
     }
 
     // 2. AetherDLL logs across all candidate directories
@@ -342,8 +341,8 @@ fn export_logs_bundle_sync(app: &tauri::AppHandle) -> Result<String, String> {
         steam_path_buf.join("AetherDLL"),
         steam_path_buf.join("logs"),
         steam_path_buf.clone(),
-        desk_log_dir.clone(),
-        install_root.clone(),
+        desk_log_dir,
+        install_root,
     ];
     for dir in &candidate_dirs {
         for (file_name, dest_name) in [
@@ -353,10 +352,8 @@ fn export_logs_bundle_sync(app: &tauri::AppHandle) -> Result<String, String> {
         ] {
             let src = dir.join(file_name);
             let dest = stage_dir.join(timed(dest_name));
-            if src.is_file() && !dest.exists() {
-                if let Ok(_) = std::fs::copy(&src, &dest) {
-                    copied += 1;
-                }
+            if src.is_file() && !dest.exists() && std::fs::copy(&src, &dest).is_ok() {
+                copied += 1;
             }
         }
     }
