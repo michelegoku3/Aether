@@ -627,7 +627,7 @@ async fn run(app: AppHandle) {
         };
         if let Some((app_id, task)) = ready_pin_refresh {
             last_pin_refresh_at = Some(Instant::now());
-            match crate::commands::manifests::refresh_game_pins_from_hubcap(app.clone(), app_id).await {
+            match crate::manifest::pin_refresh::refresh_game_pins_from_hubcap(app.clone(), app_id).await {
                 Ok(report) => {
                     checkpoint.contents_checked.insert(app_id, now_epoch());
                     // Remember the Steam state this check is valid for: it is

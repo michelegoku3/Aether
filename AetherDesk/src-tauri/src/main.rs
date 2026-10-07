@@ -5,6 +5,7 @@
 
 use tauri::Manager;
 
+mod application;
 mod commands;
 mod core;
 mod crack;
