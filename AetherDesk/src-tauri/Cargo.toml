@@ -104,6 +104,6 @@ semicolon_if_nothing_returned = "warn"
 # --- rumore noto, disattivato con motivo ---
 too_many_arguments = "allow"         # comandi Tauri con molti parametri
 module_name_repetitions = "allow"
-too_many_lines = "allow"             # commands/store.rs: da risolvere con refactor, non con un lint
+too_many_lines = "allow"             # orchestratori legacy: il limite rigido incentiva split artificiali
 missing_errors_doc = "allow"
 missing_panics_doc = "allow"

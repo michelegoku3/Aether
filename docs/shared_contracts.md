@@ -71,11 +71,12 @@ momento in cui appare, ogni manifest che referenzia deve essere già visibile in
 depotcache. Implementazioni:
 - Desk: `steam/compat.rs` → `install_lua_and_manifest_files` (staging → remove
   vecchi target → rename manifest → verifica → rename Lua → verifica).
-- Desk: `commands/manifests.rs` → `refresh_game_pins_from_hubcap` (gate di
+- Desk: `manifest/pin_refresh.rs` → `refresh_game_pins_from_hubcap` (gate di
   completezza PRIMA di `realign_commented_pins`).
 - DLL: la generazione live scrive in depotcache (temp + `AtomicReplace` +
   verifica size) senza mai toccare il Lua.
-- Desk: `commands/store.rs` → `complete_luatools_package`. Le sorgenti LuaTools
+- Desk: `application/store/package_completion.rs` → `complete_luatools_package`.
+  Le sorgenti LuaTools
   che archiviano i manifest rispondono a `/api/manifest/download` con
   `<appid>.zip` (Lua + `.manifest`); quelle che replicano solo il Lua (es. Luie)
   rispondono con un Lua nudo i cui pin non sono su disco. Prima di
