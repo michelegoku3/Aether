@@ -1,8 +1,7 @@
-//! Stato del sincronizzatore visibile alla UI + canale push (split I-F).
+//! Synchronizer state exposed to the UI and its deduplicated push channel.
 //!
-//! Estratto da `hubcap_update_monitor.rs`: qui vivono SOLO lo snapshot, la
-//! sua firma di deduplicazione e l'emit Tauri. Il loop di poll e le lane
-//! restano nel modulo padre, che accede agli helper interni via `pub(super)`.
+//! Owns only the snapshot store, significant-state signature and Tauri emit.
+//! Poll orchestration and lane execution live in sibling modules.
 
 use serde::Serialize;
 use std::sync::{Mutex, OnceLock};

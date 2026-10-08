@@ -1,8 +1,7 @@
-//! Scan lato Steam (fingerprint) + checkpoint durevole (split I-F).
+//! Steam-side fingerprints and durable synchronizer checkpoint.
 //!
-//! Estratto da `hubcap_update_monitor.rs`: lettura dello stato di Steam
-//! (appmanifest, Lua gestiti, workshop) e persistenza atomica del
-//! checkpoint. Nessuna dipendenza Tauri: solo filesystem e hashing.
+//! Owns appmanifest, managed-Lua and Workshop scans plus atomic checkpoint
+//! persistence. It has no Tauri dependency: only filesystem and hashing.
 
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
