@@ -7,36 +7,50 @@
     "dev": "vite",
     "build": "tsc && vite build",
     "check:wiring": "node scripts/check_frontend_wiring.mjs",
-    "check:unused": "knip",
+    "check:tauri-versions": "node scripts/check_tauri_versions.mjs",
+    "check:unused": "node scripts/check_unused.mjs",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "lint:ci": "eslint . --quiet",
-    "verify": "npm run build && npm run lint:ci && npm run check:wiring && npm run check:unused",
+    "test": "vitest",
+    "test:run": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "test:ci": "vitest run --coverage",
+    "verify": "npm run check:tauri-versions && npm run build && npm run lint:ci && npm run test:ci && npm run check:wiring && npm run check:unused",
     "preview": "vite preview",
     "tauri": "tauri"
   },
   "dependencies": {
-    "@tauri-apps/api": "^2",
+    "@tauri-apps/api": "2.11.1",
     "react": "^18.2.0",
     "react-dom": "^18.2.0"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
-    "@tauri-apps/cli": "^2",
+    "@tauri-apps/cli": "2.11.5",
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.3",
+    "@testing-library/user-event": "^14.6.7",
     "@types/react": "^18.2.0",
     "@types/react-dom": "^18.2.0",
     "@vitejs/plugin-react": "^4.7.0",
+    "@vitest/coverage-v8": "^5.0.3",
     "eslint": "^10.12.0",
     "eslint-plugin-react-hooks": "^7.1.1",
-    "knip": "^6.39.0",
+    "jsdom": "^28.0.0",
+    "knip": "6.39.0",
     "typescript": "^5.2.0",
     "typescript-eslint": "^8.71.1",
-    "vite": "^6.4.3"
+    "vite": "^6.4.3",
+    "vitest": "^5.0.3"
   },
   "trustedDependencies": [
     "esbuild"
   ],
   "allowScripts": {
     "esbuild@0.25.12": true
+  },
+  "engines": {
+    "node": "^22.12.0 || >=24.0.0"
   }
 }

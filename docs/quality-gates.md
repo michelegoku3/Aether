@@ -9,11 +9,13 @@ ultima barriera prima della pubblicazione.
 
 | Step | Comando | Cosa blocca | Dove si configura |
 |---|---|---|---|
-| 3 | `npm audit fix` | CVE note nelle dipendenze npm | — (`/skipaudit` per saltare) |
-| 4 | `npm run build` | errori di tipo TS (`strict`, `noUnusedLocals/Parameters`) | `tsconfig.json` |
-| 4 | `npm run lint:ci` | regole ESLint a livello `error` (hook, import inutilizzati, fallthrough) | `eslint.config.js` |
-| 4 | `npm run check:wiring` | file `.tsx/.ts` mai importati da `main.tsx` | `scripts/check_frontend_wiring.mjs` |
-| 4 | `npm run check:unused` (**knip**) | export/tipi mai importati, dipendenze npm non usate o non dichiarate | `knip.json` |
+| 3 | `npm audit --audit-level=high` | CVE high/critical nelle dipendenze npm, senza modificare lockfile o working tree | — (`/skipaudit` per saltare) |
+| 4 | `npm run verify` → `check:tauri-versions` | disallineamento major/minor tra runtime Rust, API JS e CLI Tauri | `scripts/check_tauri_versions.mjs` |
+| 4 | `npm run verify` → build | errori di tipo TS (`strict`, `noUnusedLocals/Parameters`) | `tsconfig.json` |
+| 4 | `npm run verify` → `lint:ci` | regole ESLint a livello `error` (hook, import inutilizzati, fallthrough) | `eslint.config.js` |
+| 4 | `npm run verify` → `test:ci` | regressioni React/TypeScript e soglie coverage | `vitest.config.ts` |
+| 4 | `npm run verify` → `check:wiring` | file `.tsx/.ts` mai importati da `main.tsx` | `scripts/check_frontend_wiring.mjs` |
+| 4 | `npm run verify` → `check:unused` (**knip**) | export/tipi mai importati, dipendenze npm non usate o non dichiarate | `knip.json`, `scripts/check_unused.mjs` |
 | 5 | `cargo clippy --all-targets -- -D warnings` | ogni warning rustc/clippy: codice morto, import inutili, `unsafe` senza `// SAFETY:`, lock tenuti attraverso `.await`, clone ridondanti, troncamenti di cast | `Cargo.toml` → `[lints.rust]`, `[lints.clippy]` |
 | 6 | `cargo audit` | CVE note nelle crate (database RustSec) | — (`/skipaudit`) |
 | 6 | `cargo machete` | dipendenze in `Cargo.toml` mai usate | — |
@@ -27,6 +29,9 @@ ultima barriera prima della pubblicazione.
   è rumore sistematico, si disattiva **in `Cargo.toml` con un commento che dice
   perché**, non con `#[allow]` sparsi nel codice. Un `#[allow]` locale è
   accettabile solo con un commento sulla riga.
+- **npm audit**: aggiornare esplicitamente la dipendenza diretta e rigenerare il
+  lockfile; il build non esegue `npm audit fix`, perché un quality gate non deve
+  mutare dipendenze o sorgenti mentre li verifica.
 - **knip – unused export**: la funzione/tipo è esportata ma nessun altro file
   la importa → togliere `export` (se è usata solo lì) o cancellarla.
 - **knip – unused dependency**: rimuoverla da `package.json`.

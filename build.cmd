@@ -9,9 +9,9 @@ REM
 REM  Steps, all inside AetherDesk\:
 REM    1. approve the esbuild install script (npm 11+)
 REM    2. npm ci                -> install dependencies
-REM    3. npm audit fix         -> fix known vulnerabilities
-REM    4. npm run build + lint + wiring + knip -> tsc/vite (crea dist\), ESLint,
-REM       moduli frontend mai importati, export/dipendenze npm inutilizzati
+REM    3. npm audit             -> block high/critical vulnerabilities
+REM    4. npm run verify         -> tsc/vite, ESLint, test/coverage,
+REM       wiring frontend, export/dipendenze npm inutilizzati
 REM    5. cargo clippy          -> lint Rust (warning = errore, policy in Cargo.toml)
 REM    6. cargo audit + machete -> CVE nelle crate + dipendenze Cargo inutilizzate
 REM    7. cargo test            -> unit test + test di contratto IPC
@@ -25,7 +25,7 @@ REM  Output: AetherDesk\build\portable\AetherDesk-<version>.zip
 REM
 REM  Usage:
 REM    build.cmd                        -> full build (test inclusi)
-REM    build.cmd /skipaudit             -> salta npm audit fix + cargo audit/machete
+REM    build.cmd /skipaudit             -> salta npm audit + cargo audit/machete
 REM    build.cmd /skiptests             -> salta cargo test (clippy e lint restano)
 REM    build.cmd /skipaudit /skiptests  -> solo build (ordine dei flag libero)
 REM
@@ -43,7 +43,7 @@ REM      come una CI). Lo step 5 imposta quindi AETHERDESK_NO_ADMIN_MANIFEST=1
 REM      SOLO dentro il processo figlio (build.rs produce un exe asInvoker);
 REM      lo step 6 azzera esplicitamente la variabile, così l'exe pubblicato
 REM      resta elevated esattamente come prima.
-REM    - Lo step 4 esegue `npm run build` (tsc + vite) perché `cargo test`
+REM    - Lo step 4 esegue `npm run verify` (inclusi tsc + vite) perché `cargo test`
 REM      compila `generate_context!`, che richiede l'esistenza di dist\;
 REM      `npm run tauri build` lo riesegue da beforeBuildCommand.
 REM    - No multi-line if() blocks (incompatible with files saved
@@ -101,13 +101,13 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -Command ^
   "& cmd.exe /d /s /c 'npm ci 2>&1' | Tee-Object -FilePath '%BUILD_LOG%' -Append; $code=$LASTEXITCODE; exit $code"
 if errorlevel 1 goto :fail
 
-REM --- Step 3: audit fix (optional) -------------------------------------
+REM --- Step 3: dependency audit (optional, non-mutating) ----------------
 if "%SKIP_AUDIT%"=="1" goto :skip_audit
 echo.
-echo [3/9] Fixing known vulnerabilities (npm audit fix)...
+echo [3/9] Checking high/critical dependency vulnerabilities (npm audit)...
 powershell.exe -NoProfile -ExecutionPolicy Bypass -Command ^
   "$utf8=New-Object System.Text.UTF8Encoding($false); [Console]::OutputEncoding=$utf8; $OutputEncoding=$utf8;" ^
-  "& cmd.exe /d /s /c 'npm audit fix 2>&1' | Tee-Object -FilePath '%BUILD_LOG%' -Append; $code=$LASTEXITCODE; exit $code"
+  "& cmd.exe /d /s /c 'npm audit --audit-level=high 2>&1' | Tee-Object -FilePath '%BUILD_LOG%' -Append; $code=$LASTEXITCODE; exit $code"
 if errorlevel 1 goto :fail
 goto :after_audit
 
@@ -119,13 +119,13 @@ echo [3/9] Audit skipped.
 
 REM --- Step 4: frontend build + guardia di cablaggio ----------------------
 echo.
-echo [4/9] Building frontend (tsc + vite), lint, module wiring, unused exports (knip)...
+echo [4/9] Verifying Tauri versions + frontend (build, lint, tests, wiring, unused)...
 REM  lint:ci gira con --quiet: in build compaiono solo gli errori ESLint, non le
 REM  warning (che restano visibili con `npm run lint`). Senza --quiet ogni build
 REM  chiudrebbe con "SUCCEEDED WITH WARNINGS" per rumore non azionabile.
 powershell.exe -NoProfile -ExecutionPolicy Bypass -Command ^
   "$utf8=New-Object System.Text.UTF8Encoding($false); [Console]::OutputEncoding=$utf8; $OutputEncoding=$utf8;" ^
-  "& cmd.exe /d /s /c 'npm run build 2>&1 && npm run lint:ci 2>&1 && npm run check:wiring 2>&1 && npm run check:unused 2>&1' | Tee-Object -FilePath '%BUILD_LOG%' -Append; $code=$LASTEXITCODE; exit $code"
+  "& cmd.exe /d /s /c 'npm run verify 2>&1' | Tee-Object -FilePath '%BUILD_LOG%' -Append; $code=$LASTEXITCODE; exit $code"
 if errorlevel 1 goto :fail
 
 REM --- Step 5: clippy (lint Rust) -------------------------------------------

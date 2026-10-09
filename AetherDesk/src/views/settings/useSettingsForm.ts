@@ -1,5 +1,5 @@
-import { useCallback, useMemo, useRef, useState } from 'react';
-import { getSettings, type AppSettings } from '../../hooks/useSettings';
+import { useCallback, useRef, useState } from 'react';
+import type { AppSettings } from '../../hooks/useSettings';
 import {
   buildSettings,
   isFormDirty,
@@ -9,11 +9,6 @@ import {
 } from './settingsModel';
 
 const EMPTY_SETTINGS = {} as AppSettings;
-
-export interface PersistResult {
-  merged: AppSettings;
-  conflictedKeys: string[];
-}
 
 export function useSettingsForm() {
   const [rawSettings, setRawSettings] = useState<AppSettings>(EMPTY_SETTINGS);
@@ -38,41 +33,22 @@ export function useSettingsForm() {
     [form, rawSettings],
   );
 
-  const mergeWithFreshSettings = useCallback(async (
-    local: AppSettings,
-    baseline = baselineRef.current,
-  ): Promise<PersistResult> => {
-    const fresh = await getSettings();
-    const changedKeys = new Set<string>();
-    const allKeys = new Set([...Object.keys(baseline), ...Object.keys(local)]);
-    allKeys.forEach((key) => {
-      if (JSON.stringify(local[key]) !== JSON.stringify(baseline[key])) changedKeys.add(key);
-    });
-
-    const conflictedKeys = [...changedKeys].filter(
-      (key) => JSON.stringify(fresh[key]) !== JSON.stringify(baseline[key]),
-    );
-    const patch = Object.fromEntries([...changedKeys].map((key) => [key, local[key]]));
-    return { merged: { ...fresh, ...patch }, conflictedKeys };
-  }, []);
-
   const acceptPersistedSettings = useCallback((settings: AppSettings) => {
     baselineRef.current = settings;
     setRawSettings(settings);
   }, []);
 
-  const dirty = useMemo(() => isFormDirty(form, baselineRef.current), [form, rawSettings]);
+  // Cheap pure comparison; computing directly avoids coupling memo invalidation to
+  // rawSettings solely because the mutable baseline ref changed.
+  const dirty = isFormDirty(form, baselineRef.current);
 
   return {
     form,
-    setForm,
     setField,
     rawSettings,
-    baselineRef,
     dirty,
     applySettings,
     getLocalSettings,
-    mergeWithFreshSettings,
     acceptPersistedSettings,
   };
 }
