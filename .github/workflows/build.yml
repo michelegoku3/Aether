@@ -53,21 +53,13 @@ jobs:
         working-directory: AetherDesk
 
       # ---- Quality gates: stessi comandi di build.cmd, stesso ordine ----------
-      - name: Frontend lint
+      - name: Frontend dependency audit
         working-directory: AetherDesk
-        run: npm run lint:ci
+        run: npm audit --audit-level=high
 
-      - name: Frontend type check
+      - name: Frontend verification (build, lint, tests, wiring, unused)
         working-directory: AetherDesk
-        run: npm run typecheck
-
-      - name: Frontend wiring check (orphan modules)
-        working-directory: AetherDesk
-        run: npm run check:wiring
-
-      - name: Frontend unused exports / dependencies (knip)
-        working-directory: AetherDesk
-        run: npm run check:unused
+        run: npm run verify
 
       - name: Rust lint (clippy, warnings are errors)
         working-directory: AetherDesk/src-tauri

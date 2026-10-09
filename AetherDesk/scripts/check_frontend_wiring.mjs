@@ -50,11 +50,15 @@ function walk(dir, out = []) {
   for (const name of readdirSync(dir)) {
     const path = join(dir, name);
     if (statSync(path).isDirectory()) {
+      // Test modules are Vitest entry points, not production modules reachable
+      // from main.tsx; production dead-code analysis intentionally excludes them.
+      if (name === 'test' || name === '__tests__') continue;
       walk(path, out);
       continue;
     }
     if (!extensions.some((ext) => path.endsWith(ext))) continue;
     if (path.endsWith('.d.ts')) continue; // moduli ambient: nessuno li importa
+    if (/\.(?:test|spec)\.[^.]+$/.test(path)) continue;
     out.push(path);
   }
   return out;
