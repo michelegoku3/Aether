@@ -1,6 +1,4 @@
-import { useState, useEffect, useRef, memo } from 'react';
-import { invoke } from '@tauri-apps/api/core';
-import { getSettings, checkSteamPath, isStoreCurrency, type SteamPathCheck, type StoreCurrency } from '../hooks/useSettings';
+import { memo, type FormEvent } from 'react';
 import { OstWarningModal } from '../modals/OstWarningModal';
 import { HubcapUpdateWarningModal } from '../modals/HubcapUpdateWarningModal';
 import { SettingsAetherSection } from './settings/SettingsAetherSection';
@@ -8,7 +6,8 @@ import { SettingsProvidersSection } from './settings/SettingsProvidersSection';
 import { SettingsStoreSection } from './settings/SettingsStoreSection';
 import { SettingsAppearanceSection } from './settings/SettingsAppearanceSection';
 import { LuaToolsLoginModal } from './settings/LuaToolsLoginModal';
-import type { AppearanceAssets, LuaToolsAuthStatus, SettingsGuard, SteamCheckStatus } from './settings/types';
+import type { SettingsGuard } from './settings/types';
+import { useSettingsController } from './settings/useSettingsController';
 export type { SettingsGuard } from './settings/types';
 
 interface SettingsViewProps {
@@ -18,636 +17,15 @@ interface SettingsViewProps {
   onCustomCssChange: (enabled: boolean) => void;
   onPreviewPersonalWallpaper: (enabled: boolean, opacity: number) => void;
   onPreviewAlternativeCards: (opacity: number, fade: number) => void;
-  /** Called when a save is attempted without a valid Steam path (caller shows the warning modal). */
   onMissingSteamPath: () => void;
-  /** Navigation guard slot: the view publishes isDirty/save/discard here so
-   *  the App can prompt on tab switch / window close. */
   guardRef: { current: SettingsGuard | null };
 }
 
-// No 'valid' state: valid paths show nothing by design, only checking/invalid.
-/** Navigation-guard API published by SettingsView for tab-switch and
- *  window-close prompts (owned by App, which holds the modal). */
-const clamp0to100 = (value: number) => Math.max(0, Math.min(100, Number.isFinite(value) ? value : 0));
-
-export const SettingsView = memo(function SettingsView({ hubcapUsage, onRefreshUsage, onRefreshCustomCss, onCustomCssChange, onPreviewPersonalWallpaper, onPreviewAlternativeCards, onMissingSteamPath, guardRef }: SettingsViewProps) {
-  const [apiKey, setApiKey] = useState('');
-  const [showApiKey, setShowApiKey] = useState(false);
-  const [steamPath, setSteamPath] = useState('');
-  /** Live validation status for the Steam path field (debounced backend check). */
-  const [steamCheck, setSteamCheck] = useState<SteamCheckStatus>({ state: 'idle', message: '' });
-  const steamCheckRequestId = useRef(0);
-  const [showStoreDlcs, setShowStoreDlcs] = useState(false);
-  const [showStoreNsfw, setShowStoreNsfw] = useState(true);
-  const [showStoreDelisted, setShowStoreDelisted] = useState(true);
-  const [downloadGamesWithUpdatesOn, setDownloadGamesWithUpdatesOn] = useState(false);
-  const [workshopAutoDownloadContent, setWorkshopAutoDownloadContent] = useState(true);
-  const [showHubcapUpdateWarning, setShowHubcapUpdateWarning] = useState(false);
-  const [showStoreFrontGames, setShowStoreFrontGames] = useState(true);
-  const [useAlternativeGameCards, setUseAlternativeGameCards] = useState(false);
-  const [enableWebviewDevtools, setEnableWebviewDevtools] = useState(false);
-  const [enableTestUpdates, setEnableTestUpdates] = useState(false);
-  // [network] use_ost_source in aethercore.toml: OST pattern source opt-in
-  // (default OFF), applies immediately like the presence default_mode toggle.
-  const [useOstSource, setUseOstSource] = useState(false);
-  // First-enable warning: shown once when flipping the OST switch ON before
-  // the user has pressed "I understand". Persisted in settings.json.
-  const [ostWarningAcknowledged, setOstWarningAcknowledged] = useState(false);
-  const [showOstWarning, setShowOstWarning] = useState(false);
-  // [manifest_cache] restore_on_startup in aethercore.toml: refill
-  // Steam\depotcache from the manifest backups on every Steam start
-  // (default ON), applies on the next Steam start.
-  const [manifestRestoreOnStartup, setManifestRestoreOnStartup] = useState(true);
-  // [presence] default_mode in aethercore.toml (docs/05 §12): live nel file
-  // della DLL, NON nelle Desk settings — si applica subito, senza Save.
-  const [presenceDefaultShowOnline, setPresenceDefaultShowOnline] = useState(true);
-  const [customGameName, setCustomGameName] = useState('');
-  const [storeFrontFilter, setStoreFrontFilter] = useState('upcoming');
-  const [customCssEnabled, setCustomCssEnabled] = useState(false);
-  const [personalWallpaperEnabled, setPersonalWallpaperEnabled] = useState(false);
-  const [personalWallpaperOpacity, setPersonalWallpaperOpacity] = useState(20);
-  const [alternativeCardsOpacity, setAlternativeCardsOpacity] = useState(100);
-  const [alternativeCardsFade, setAlternativeCardsFade] = useState(50);
-  const [themeSelectedFile, setThemeSelectedFile] = useState('');
-  const [wallpaperSelectedFile, setWallpaperSelectedFile] = useState('');
-  const [customIconEnabled, setCustomIconEnabled] = useState(false);
-  const [iconSelectedFile, setIconSelectedFile] = useState('');
-  const [ryuuKey, setRyuuKey] = useState('');
-  const [showRyuuKey, setShowRyuuKey] = useState(false);
-  const [storeCurrency, setStoreCurrency] = useState<StoreCurrency>('eur');
-  const [luaToolsAuth, setLuaToolsAuth] = useState<LuaToolsAuthStatus>({ signedIn: false, displayName: null, email: null });
-  const [isLuaToolsAuthBusy, setIsLuaToolsAuthBusy] = useState(false);
-  const [isLuaToolsOAuthBusy, setIsLuaToolsOAuthBusy] = useState(false);
-  const [showLuaToolsLoginModal, setShowLuaToolsLoginModal] = useState(false);
-  const [luaToolsLoginMode, setLuaToolsLoginMode] = useState<'choice' | 'code'>('choice');
-  const [luaToolsLoginCode, setLuaToolsLoginCode] = useState('');
-  const [luaToolsLoginError, setLuaToolsLoginError] = useState('');
-
-  // Appearance assets availability: when no theme/wallpaper file exists, the
-  // corresponding switch must stay disabled (cannot be enabled).
-  const [appearanceAssets, setAppearanceAssets] = useState<AppearanceAssets>({
-    themeExists: false,
-    themeName: null,
-    wallpaperExists: false,
-    wallpaperName: null,
-    iconExists: false,
-    iconName: null,
-    themesDir: '',
-    wallpapersDir: '',
-    iconsDir: '',
-  });
-  const [isPicking, setIsPicking] = useState<'theme' | 'wallpaper' | 'icon' | null>(null);
-
-  // Baseline seen by the user. Backend three-way merging preserves unrelated
-  // concurrent fields and rejects conflicting edits rather than overwriting.
-  const [rawSettings, setRawSettings] = useState<Record<string, any>>({});
-
-  const [statusMsg, setStatusMsg] = useState({ text: '', type: 'info' });
-  const [settingsConflict, setSettingsConflict] = useState(false);
-
-  const showStatus = (text: string, type: 'info' | 'success' | 'error') => {
-    setStatusMsg({ text, type });
-    if (text.includes('SETTINGS_CONFLICT')) setSettingsConflict(true);
-    setTimeout(() => setStatusMsg({ text: '', type: 'info' }), 6000);
-  };
-
-  const loadAppearanceAssets = async () => {
-    try {
-      const assets: AppearanceAssets = await invoke('get_appearance_assets');
-      setAppearanceAssets(assets);
-    } catch (err) {
-      console.warn('[settings] failed to load appearance assets:', err);
-    }
-  };
-
-  /** Applies a settings object to every piece of React state. Single mapping
-   *  shared by initial load and Reset, so the two can never drift apart. */
-  const applySettingsToState = (settings: Record<string, any>) => {
-    setRawSettings(settings);
-    setSettingsConflict(false);
-    setApiKey(settings.hubcap_api_key || '');
-    setSteamPath(settings.steam_path || '');
-    setShowStoreDlcs(Boolean(settings.show_store_dlcs));
-    // These two default to enabled: only an explicit `false` turns them off.
-    setShowStoreNsfw(settings.show_store_nsfw !== false);
-    setShowStoreDelisted(settings.show_store_delisted !== false);
-    setDownloadGamesWithUpdatesOn(Boolean(settings.download_games_with_updates_on));
-    // Defaults to enabled: only an explicit `false` turns it off.
-    setWorkshopAutoDownloadContent(settings.workshop_auto_download_content !== false);
-    setShowStoreFrontGames(settings.show_store_front_games !== false);
-    setUseAlternativeGameCards(Boolean(settings.use_alternative_game_cards));
-    setEnableWebviewDevtools(Boolean(settings.enable_webview_devtools));
-    setEnableTestUpdates(Boolean(settings.enable_test_updates));
-    // Trimmed like buildCurrentSettings does on save, so the dirty-compare
-    // never flags a freshly loaded form over surrounding whitespace.
-    setCustomGameName((settings.custom_game_name || '').trim());
-    setStoreFrontFilter(settings.store_front_filter || 'upcoming');
-    setCustomCssEnabled(Boolean(settings.custom_css_enabled));
-    setPersonalWallpaperEnabled(Boolean(settings.personal_wallpaper_enabled));
-    setPersonalWallpaperOpacity(clamp0to100(Number(settings.personal_wallpaper_opacity ?? 20)));
-    setAlternativeCardsOpacity(clamp0to100(Number(settings.alternative_cards_opacity ?? 100)));
-    setAlternativeCardsFade(clamp0to100(Number(settings.alternative_cards_fade ?? 50)));
-    setThemeSelectedFile(settings.theme_selected_file || '');
-    setWallpaperSelectedFile(settings.wallpaper_selected_file || '');
-    setCustomIconEnabled(Boolean(settings.custom_icon_enabled));
-    setIconSelectedFile(settings.icon_selected_file || '');
-    setRyuuKey(settings.ryuu_api_key || '');
-    setOstWarningAcknowledged(Boolean(settings.ost_warning_acknowledged));
-    setStoreCurrency(isStoreCurrency(settings.store_currency) ? settings.store_currency : 'eur');
-  };
-
-  // Load settings from the backend when the component mounts.
-  // NOTE: the component stays mounted across tab switches (see MainContent),
-  // so this runs once. The backend compares our baseline with the current
-  // snapshot, preserving unrelated updates and rejecting conflicting edits.
-  useEffect(() => {
-    const loadSettings = async () => {
-      try {
-        const settings: any = await invoke('get_settings');
-        if (settings) {
-          applySettingsToState(settings);
-        }
-      } catch (err: any) {
-        showStatus(`Error loading settings: ${err}`, 'error');
-      }
-    };
-    loadSettings();
-    loadAppearanceAssets();
-    // Presence default policy lives in aethercore.toml (not Desk settings).
-    invoke<boolean>('get_presence_default_mode')
-      .then(setPresenceDefaultShowOnline)
-      .catch((err) => console.warn('[settings] failed to load presence default mode:', err));
-    // OST pattern source opt-in lives in aethercore.toml too (default OFF).
-    invoke<boolean>('get_ost_source_enabled')
-      .then(setUseOstSource)
-      .catch((err) => console.warn('[settings] failed to load OST source state:', err));
-    // Manifest restore on Steam startup lives in aethercore.toml too (default ON).
-    invoke<boolean>('get_manifest_restore_enabled')
-      .then(setManifestRestoreOnStartup)
-      .catch((err) => console.warn('[settings] failed to load manifest restore state:', err));
-    invoke<LuaToolsAuthStatus>('get_luatools_auth_status')
-      .then(setLuaToolsAuth)
-      .catch((err) => console.warn('[settings] failed to load LuaTools auth status:', err));
-    onRefreshUsage();
-  }, []);
-
-  // Backend performs a three-way patch using the snapshot the user saw.
-  // Never fall back after a read error: a corrupt file must block writes.
-  const loadFreshBase = async (): Promise<Record<string, any>> => getSettings();
-
-  /** Full form snapshot; the backend persists only fields changed vs base. */
-  const buildCurrentSettings = (overrides: Record<string, any> = {}, base: Record<string, any> = rawSettings) => ({
-    ...base,
-    hubcap_api_key: apiKey,
-    steam_path: steamPath,
-    show_store_dlcs: showStoreDlcs,
-    show_store_nsfw: showStoreNsfw,
-    show_store_delisted: showStoreDelisted,
-    custom_css_enabled: customCssEnabled,
-    personal_wallpaper_enabled: personalWallpaperEnabled,
-    personal_wallpaper_opacity: personalWallpaperOpacity,
-    wallpaper_selected_file: wallpaperSelectedFile,
-    theme_selected_file: themeSelectedFile,
-    custom_icon_enabled: customIconEnabled,
-    icon_selected_file: iconSelectedFile,
-    alternative_cards_opacity: alternativeCardsOpacity,
-    alternative_cards_fade: alternativeCardsFade,
-    ryuu_api_key: ryuuKey,
-    download_games_with_updates_on: downloadGamesWithUpdatesOn,
-    workshop_auto_download_content: workshopAutoDownloadContent,
-    show_store_front_games: showStoreFrontGames,
-    use_alternative_game_cards: useAlternativeGameCards,
-    enable_webview_devtools: enableWebviewDevtools,
-    enable_test_updates: enableTestUpdates,
-    custom_game_name: customGameName.trim(),
-    store_front_filter: storeFrontFilter,
-    store_currency: storeCurrency,
-    ...overrides,
-  });
-
-  /** Saves the form; resolves true when the save succeeded. Shared by the
-   *  Save button and the unsaved-changes navigation guard. */
-  const doSave = async (): Promise<boolean> => {
-    // API key validation must never block the whole save: when the key is
-    // invalid the rest of the settings still persist, the bad key field is
-    // cleared and a warning tells the user what happened. Only a genuinely
-    // invalid key is wiped — if validation itself cannot complete (e.g. the
-    // service is unreachable) the key is kept and the save still goes through.
-    let invalidApiKey = false;
-    let apiKeyWarning = '';
-    let hubcapKeyValid = false;
-    if (apiKey.trim()) {
-      showStatus('Validating API key...', 'info');
-      try {
-        const isValid: any = await invoke('validate_hubcap_key', { apiKey: apiKey.trim() });
-        hubcapKeyValid = Boolean(isValid);
-        if (!isValid) {
-          invalidApiKey = true;
-          apiKeyWarning = 'The Hubcap API key is invalid and was cleared; the rest of your settings were saved.';
-        }
-      } catch (err: any) {
-        apiKeyWarning = `Hubcap API key could not be validated (${err}); the rest of your settings were saved anyway.`;
-      }
-    }
-
-    if (downloadGamesWithUpdatesOn && !hubcapKeyValid) {
-      // Never persist an enabled update policy without a positively validated
-      // Hubcap key, including when an older settings file had the toggle ON.
-      setDownloadGamesWithUpdatesOn(false);
-      setShowHubcapUpdateWarning(true);
-      return false;
-    }
-
-    // A save without a valid Steam path is rejected by the backend anyway:
-    // pop the OST-style warning instead of failing into a toast. (If the
-    // check itself fails, fall through so the save surfaces the real error.)
-    try {
-      if (!(await checkSteamPath(steamPath)).valid) {
-        onMissingSteamPath();
-        return false;
-      }
-    } catch { /* fall through to the save below */ }
-    // Send the baseline the user actually saw; only dirty fields are patched
-    // under the backend repository lock, with conflict detection.
-    try {
-      showStatus('Saving settings...', 'info');
-      // If the user just enabled Custom CSS, ensure the file exists before
-      // saving so the next editor open does not find an empty folder.
-      if (customCssEnabled || personalWallpaperEnabled) {
-        try { await invoke('ensure_custom_css'); } catch { /* best-effort: il save prosegue anche se la cartella del tema non è pronta */ }
-      }
-      const newSettings = buildCurrentSettings(
-        invalidApiKey ? { hubcap_api_key: '' } : {},
-        rawSettings
-      );
-      const saved = await invoke<Record<string, unknown>>('save_settings', { settings: newSettings, base: rawSettings });
-      applySettingsToState(saved);
-      if (invalidApiKey) {
-        setApiKey(''); // clear the wrong key from the field
-      }
-      showStatus(
-        apiKeyWarning || 'Settings saved successfully!',
-        apiKeyWarning ? 'error' : 'success'
-      );
-      onRefreshUsage(invalidApiKey ? '' : apiKey);
-      onRefreshCustomCss();
-      loadAppearanceAssets();
-      return true;
-    } catch (err: any) {
-      const message = String(err);
-      if (message.includes('HUBCAP_KEY_REQUIRED_FOR_UPDATES')) {
-        setDownloadGamesWithUpdatesOn(false);
-        setShowHubcapUpdateWarning(true);
-      }
-      showStatus(`Error during save: ${message}`, 'error');
-      return false;
-    }
-  };
-
-  const handleSave = async (e: React.FormEvent) => {
-    e.preventDefault();
-    await doSave();
-  };
-
-  /** Persists a freshly picked theme/wallpaper file immediately (the selection
-   *  is part of settings) and refreshes the live preview. Using buildCurrentSettings
-   *  and updating rawSettings guarantees we never revert toggles or wipe out
-   *  an un-saved API key. */
-  const persistAppearanceSelection = async (patch: Record<string, any>) => {
-    const newSettings = buildCurrentSettings(patch, rawSettings);
-    const saved = await invoke<Record<string, unknown>>('save_settings', { settings: newSettings, base: rawSettings });
-    applySettingsToState(saved);
-  };
-
-  /** True when the form differs from the last saved/applied snapshot
-   *  (rawSettings). Mirrors applySettingsToState normalization so freshly
-   *  loaded/saved forms never compare dirty. Live-only fields (OST source,
-   *  presence default) are excluded: they apply immediately and are never
-   *  "unsaved". */
-  const isSettingsDirty = (): boolean => {
-    const s = rawSettings;
-    return (
-      apiKey !== (s.hubcap_api_key || '') ||
-      steamPath !== (s.steam_path || '') ||
-      showStoreDlcs !== Boolean(s.show_store_dlcs) ||
-      showStoreNsfw !== (s.show_store_nsfw !== false) ||
-      showStoreDelisted !== (s.show_store_delisted !== false) ||
-      downloadGamesWithUpdatesOn !== Boolean(s.download_games_with_updates_on) ||
-      workshopAutoDownloadContent !== (s.workshop_auto_download_content !== false) ||
-      showStoreFrontGames !== (s.show_store_front_games !== false) ||
-      useAlternativeGameCards !== Boolean(s.use_alternative_game_cards) ||
-      enableWebviewDevtools !== Boolean(s.enable_webview_devtools) ||
-      enableTestUpdates !== Boolean(s.enable_test_updates) ||
-      customGameName !== ((s.custom_game_name || '') as string).trim() ||
-      storeFrontFilter !== (s.store_front_filter || 'upcoming') ||
-      storeCurrency !== (isStoreCurrency(s.store_currency) ? s.store_currency : 'eur') ||
-      customCssEnabled !== Boolean(s.custom_css_enabled) ||
-      personalWallpaperEnabled !== Boolean(s.personal_wallpaper_enabled) ||
-      personalWallpaperOpacity !== clamp0to100(Number(s.personal_wallpaper_opacity ?? 20)) ||
-      alternativeCardsOpacity !== clamp0to100(Number(s.alternative_cards_opacity ?? 100)) ||
-      alternativeCardsFade !== clamp0to100(Number(s.alternative_cards_fade ?? 50)) ||
-      themeSelectedFile !== (s.theme_selected_file || '') ||
-      wallpaperSelectedFile !== (s.wallpaper_selected_file || '') ||
-      customIconEnabled !== Boolean(s.custom_icon_enabled) ||
-      iconSelectedFile !== (s.icon_selected_file || '') ||
-      ryuuKey !== (s.ryuu_api_key || '')
-    );
-  };
-
-  /** Reverts the form to the last saved/applied snapshot, including live
-   *  previews (custom CSS, wallpaper, alternative cards) which apply
-   *  instantly and would otherwise stay at the discarded values. */
-  const discardChanges = (): void => {
-    applySettingsToState(rawSettings);
-    onCustomCssChange(Boolean(rawSettings.custom_css_enabled));
-    onPreviewPersonalWallpaper(
-      Boolean(rawSettings.personal_wallpaper_enabled),
-      clamp0to100(Number(rawSettings.personal_wallpaper_opacity ?? 20))
-    );
-    onPreviewAlternativeCards(
-      clamp0to100(Number(rawSettings.alternative_cards_opacity ?? 100)),
-      clamp0to100(Number(rawSettings.alternative_cards_fade ?? 50))
-    );
-  };
-
-  // Publish the navigation guard (fresh closures every render; cleared on
-  // unmount so the App never calls into a dead view).
-  guardRef.current = { isDirty: isSettingsDirty, save: doSave, discard: discardChanges };
-  useEffect(() => () => { guardRef.current = null; }, [guardRef]);
-
-  /** Live Steam-path validation (debounced, read-only backend check). A
-   *  monotonic request id drops stale responses when the user keeps typing. */
-  useEffect(() => {
-    const requestId = ++steamCheckRequestId.current;
-    setSteamCheck({ state: 'checking', message: 'Checking Steam path...' });
-    const timer = window.setTimeout(() => {
-      void (async () => {
-        let next: SteamCheckStatus;
-        try {
-          const result: SteamPathCheck = await checkSteamPath(steamPath);
-          next = result.valid
-            ? { state: 'idle', message: '' }
-            : { state: 'invalid', message: result.error || 'Invalid Steam path.' };
-        } catch {
-          next = { state: 'invalid', message: 'Could not validate the Steam path.' };
-        }
-        if (requestId === steamCheckRequestId.current) {
-          setSteamCheck(next);
-        }
-      })();
-    }, 400);
-    return () => window.clearTimeout(timer);
-  }, [steamPath]);
-
-  /** Persists ONLY the Steam path over freshly loaded settings (every other
-   *  field preserved, other unsaved UI edits left dirty in the form). Used by
-   *  Browse / Auto Detect, which are explicit enough to save immediately --
-   *  but only after the backend confirms the path is a valid installation. */
-  const saveSteamPathNow = async (path: string, actionLabel: string) => {
-    setSteamPath(path);
-    let check: SteamPathCheck;
-    try {
-      check = await checkSteamPath(path);
-    } catch {
-      check = { valid: false, normalized: path, error: 'Could not validate the Steam path.' };
-    }
-    if (!check.valid) {
-      setSteamCheck({ state: 'invalid', message: check.error || 'Invalid Steam path.' });
-      showStatus(`${actionLabel}, but it is not a valid Steam installation: ${check.error || path}`, 'error');
-      return;
-    }
-    try {
-      const base = await loadFreshBase();
-      const merged = { ...base, steam_path: check.normalized };
-      const saved = await invoke<Record<string, unknown>>('save_settings', { settings: merged, base });
-      // Only this field was saved; preserve the baseline of unsaved form edits.
-      setRawSettings(previous => ({ ...previous, steam_path: saved.steam_path }));
-      setSteamPath(check.normalized);
-      setSteamCheck({ state: 'idle', message: '' });
-      showStatus(`${actionLabel}: ${check.normalized}`, 'success');
-      onRefreshCustomCss();
-    } catch (err: any) {
-      showStatus(`Failed to save Steam path: ${err}`, 'error');
-    }
-  };
-
-  const handleBrowseSteamFolder = async () => {
-    try {
-      const picked: string | null = await invoke('pick_steam_folder');
-      if (!picked) return; // dialog cancelled
-      await saveSteamPathNow(picked, 'Steam folder selected');
-    } catch (err: any) {
-      showStatus(`Failed to open folder picker: ${err}`, 'error');
-    }
-  };
-
-  const handleDetectSteamPath = async () => {
-    try {
-      const detected: string | null = await invoke('detect_steam_path');
-      if (!detected) {
-        showStatus('No Steam installation detected. Use Browse to select it manually.', 'error');
-        return;
-      }
-      await saveSteamPathNow(detected, 'Steam auto-detected');
-    } catch (err: any) {
-      showStatus(`Steam auto-detection failed: ${err}`, 'error');
-    }
-  };
-
-  const handlePickTheme = async () => {
-    setIsPicking('theme');
-    try {
-      const fileName: string = await invoke('pick_theme_file');
-      setThemeSelectedFile(fileName);
-      await persistAppearanceSelection({ theme_selected_file: fileName });
-      await onRefreshCustomCss();
-      await loadAppearanceAssets();
-      showStatus(`Theme selected: ${fileName}`, 'success');
-    } catch (err: any) {
-      // "No file selected" is a normal cancellation, not an error.
-      if (String(err).includes('No file selected')) return;
-      showStatus(`Failed to pick theme: ${err}`, 'error');
-    } finally {
-      setIsPicking(null);
-    }
-  };
-
-  const handlePickIcon = async () => {
-    setIsPicking('icon');
-    try {
-      const fileName: string = await invoke('pick_icon_file');
-      setIconSelectedFile(fileName);
-      await persistAppearanceSelection({ icon_selected_file: fileName, custom_icon_enabled: true });
-      // Picking an icon enables it on disk: reflect it in the toggle too.
-      setCustomIconEnabled(true);
-      await invoke('apply_window_icon');
-      await loadAppearanceAssets();
-      showStatus(`Icon selected: ${fileName}`, 'success');
-    } catch (err: any) {
-      if (String(err).includes('No file selected')) return;
-      showStatus(`Failed to pick icon: ${err}`, 'error');
-    } finally {
-      setIsPicking(null);
-    }
-  };
-
-  const handlePickWallpaper = async () => {
-    setIsPicking('wallpaper');
-    try {
-      const fileName: string = await invoke('pick_wallpaper_file');
-      setWallpaperSelectedFile(fileName);
-      await persistAppearanceSelection({ wallpaper_selected_file: fileName });
-      await onRefreshCustomCss();
-      await loadAppearanceAssets();
-      showStatus(`Wallpaper selected: ${fileName}`, 'success');
-    } catch (err: any) {
-      if (String(err).includes('No file selected')) return;
-      showStatus(`Failed to pick wallpaper: ${err}`, 'error');
-    } finally {
-      setIsPicking(null);
-    }
-  };
-
-  const openLuaToolsLogin = () => {
-    setLuaToolsLoginMode('choice');
-    setLuaToolsLoginCode('');
-    setLuaToolsLoginError('');
-    setShowLuaToolsLoginModal(true);
-  };
-
-  const closeLuaToolsLogin = () => {
-    if (isLuaToolsAuthBusy) return;
-    setShowLuaToolsLoginModal(false);
-    setLuaToolsLoginMode('choice');
-    setLuaToolsLoginCode('');
-    setLuaToolsLoginError('');
-  };
-
-  const handleLuaToolsSignIn = async () => {
-    if (isLuaToolsAuthBusy) return;
-    setShowLuaToolsLoginModal(false);
-    setIsLuaToolsAuthBusy(true);
-    setIsLuaToolsOAuthBusy(true);
-    showStatus('Complete the LuaTools OAuth sign-in in Discord or your browser...', 'info');
-    try {
-      const auth = await invoke<LuaToolsAuthStatus>('sign_in_luatools');
-      setLuaToolsAuth(auth);
-      showStatus(`LuaTools connected${auth.displayName ? ` as ${auth.displayName}` : ''}.`, 'success');
-    } catch (err: any) {
-      if (!String(err).toLowerCase().includes('cancelled')) {
-        showStatus(`LuaTools sign-in failed: ${err}`, 'error');
-      }
-    } finally {
-      setIsLuaToolsOAuthBusy(false);
-      setIsLuaToolsAuthBusy(false);
-    }
-  };
-
-  const cancelLuaToolsOAuth = async () => {
-    try {
-      await invoke('cancel_luatools_sign_in');
-      showStatus('LuaTools sign-in cancelled.', 'info');
-    } catch (err: any) {
-      showStatus(`Could not cancel LuaTools sign-in: ${err}`, 'error');
-    } finally {
-      setIsLuaToolsOAuthBusy(false);
-      setIsLuaToolsAuthBusy(false);
-    }
-  };
-
-  const handleLuaToolsCodeSignIn = async () => {
-    if (isLuaToolsAuthBusy) return;
-    const code = luaToolsLoginCode.trim().toUpperCase();
-    if (code.length !== 6) {
-      setLuaToolsLoginError('Enter the 6-character code generated by @Luie.');
-      return;
-    }
-    setIsLuaToolsAuthBusy(true);
-    setLuaToolsLoginError('');
-    try {
-      const auth = await invoke<LuaToolsAuthStatus>('sign_in_luatools_with_code', { code });
-      setLuaToolsAuth(auth);
-      setShowLuaToolsLoginModal(false);
-      setLuaToolsLoginMode('choice');
-      setLuaToolsLoginCode('');
-      showStatus(`LuaTools connected privately${auth.displayName ? ` as ${auth.displayName}` : ''}.`, 'success');
-    } catch (err: any) {
-      setLuaToolsLoginError(String(err));
-    } finally {
-      setIsLuaToolsAuthBusy(false);
-    }
-  };
-
-  const handleLuaToolsSignOut = async () => {
-    if (isLuaToolsAuthBusy) return;
-    setIsLuaToolsAuthBusy(true);
-    try {
-      await invoke('sign_out_luatools');
-      setLuaToolsAuth({ signedIn: false, displayName: null, email: null });
-      showStatus('LuaTools disconnected.', 'success');
-    } catch (err: any) {
-      showStatus(`LuaTools sign-out failed: ${err}`, 'error');
-    } finally {
-      setIsLuaToolsAuthBusy(false);
-    }
-  };
-
-  /** Latest-version downloads must use authenticated Hubcap manifest access.
-   * Validate on every enable attempt; there is deliberately no acknowledgement
-   * flag because the warning must reappear whenever the key is absent/invalid. */
-  const handleDownloadGamesWithUpdatesChange = async (enabled: boolean) => {
-    if (!enabled) {
-      setDownloadGamesWithUpdatesOn(false);
-      return;
-    }
-
-    const key = apiKey.trim();
-    if (!key) {
-      setShowHubcapUpdateWarning(true);
-      return;
-    }
-
-    try {
-      const valid = await invoke<boolean>('validate_hubcap_key', { apiKey: key });
-      if (!valid) {
-        setShowHubcapUpdateWarning(true);
-        return;
-      }
-      setDownloadGamesWithUpdatesOn(true);
-      showStatus('Hubcap key validated. Latest downloads may enable Steam updates.', 'success');
-    } catch {
-      // A key that cannot be validated is not treated as active. This keeps
-      // the toggle off instead of silently enabling a broken update path.
-      setShowHubcapUpdateWarning(true);
-    }
-  };
-
-  /** "I understand" on the OST first-enable warning: persist the ack, then
-   *  enable the source. The switch flips only on success, so any failure
-   *  leaves it OFF and the popup will reappear on the next attempt. */
-  const handleOstWarningConfirm = async () => {
-    try {
-      try { await invoke('acknowledge_ost_warning'); } catch { /* best-effort: l'ack non deve bloccare l'attivazione della sorgente */ }
-      await invoke('set_ost_source_enabled', { enabled: true });
-      setOstWarningAcknowledged(true);
-      setUseOstSource(true);
-      setShowOstWarning(false);
-      // Keep rawSettings in sync so a later "Save Settings" (which spreads
-      // rawSettings via buildCurrentSettings) does not regress the ack.
-      setRawSettings((prev) => ({ ...prev, ost_warning_acknowledged: true }));
-    } catch (err: any) {
-      setShowOstWarning(false);
-      showStatus(`Failed to set OST pattern source: ${err}`, 'error');
-    }
-  };
-
-  const appearancePickBtn = (label: string, onClick: () => void, disabled: boolean, busy: boolean) => (
-    <button
-      type="button"
-      className="appearance-pick-btn"
-      onClick={onClick}
-      disabled={disabled || busy}
-    >
+export const SettingsView = memo(function SettingsView(props: SettingsViewProps) {
+  const c = useSettingsController(props);
+  const { form, appearance: a, luaTools: lua } = c;
+  const pickButton = (label: string, onClick: () => void, disabled: boolean, busy: boolean) => (
+    <button type="button" className="appearance-pick-btn" onClick={onClick} disabled={disabled || busy}>
       {busy ? '...' : label}
     </button>
   );
@@ -658,193 +36,133 @@ export const SettingsView = memo(function SettingsView({ hubcapUsage, onRefreshU
         <h1 className="settings-title">Settings</h1>
         <p className="settings-subtitle">Manage system configurations, API keys, Steam injection paths, and other settings.</p>
       </div>
-
       <div className="settings-separator"></div>
-
-      {statusMsg.text && (
-        <div className={`settings-alert ${statusMsg.type}`}>
-          {statusMsg.text}
-        </div>
-      )}
-
-      {settingsConflict && (
+      {c.status.text && <div className={`settings-alert ${c.status.type}`}>{c.status.text}</div>}
+      {c.settingsConflict && (
         <div className="settings-alert error">
           Settings changed elsewhere. Your unsaved edits have not been overwritten.
-          <button type="button" className="action-btn" onClick={async () => {
-            try {
-              applySettingsToState(await getSettings());
-              onRefreshCustomCss();
-              showStatus('Saved settings reloaded. Unsaved edits discarded.', 'info');
-            } catch (error) {
-              showStatus(`Could not reload settings: ${String(error)}`, 'error');
-            }
-          }}>Reload saved settings (discard edits)</button>
+          <button type="button" className="action-btn" onClick={() => void c.reloadSaved()}>
+            Reload saved settings (discard edits)
+          </button>
         </div>
       )}
 
-      <form onSubmit={handleSave} className="settings-form">
+      <form className="settings-form" onSubmit={(event: FormEvent) => { event.preventDefault(); void c.save(); }}>
         <SettingsAetherSection
-          enableWebviewDevtools={enableWebviewDevtools}
-          setEnableWebviewDevtools={setEnableWebviewDevtools}
-          enableTestUpdates={enableTestUpdates}
-          setEnableTestUpdates={setEnableTestUpdates}
-          useOstSource={useOstSource}
-          setUseOstSource={setUseOstSource}
-          ostWarningAcknowledged={ostWarningAcknowledged}
-          setShowOstWarning={setShowOstWarning}
-          manifestRestoreOnStartup={manifestRestoreOnStartup}
-          setManifestRestoreOnStartup={setManifestRestoreOnStartup}
-          presenceDefaultShowOnline={presenceDefaultShowOnline}
-          setPresenceDefaultShowOnline={setPresenceDefaultShowOnline}
-          customGameName={customGameName}
-          setCustomGameName={setCustomGameName}
-          steamPath={steamPath}
-          setSteamPath={setSteamPath}
-          steamCheck={steamCheck}
-          onBrowseSteamFolder={handleBrowseSteamFolder}
-          onDetectSteamPath={handleDetectSteamPath}
-          showStatus={showStatus}
+          enableWebviewDevtools={form.enableWebviewDevtools}
+          setEnableWebviewDevtools={(value) => c.setField('enableWebviewDevtools', value)}
+          enableTestUpdates={form.enableTestUpdates}
+          setEnableTestUpdates={(value) => c.setField('enableTestUpdates', value)}
+          useOstSource={c.useOstSource}
+          setUseOstSource={c.setUseOstSource}
+          ostWarningAcknowledged={form.ostWarningAcknowledged}
+          setShowOstWarning={c.setShowOstWarning}
+          manifestRestoreOnStartup={c.manifestRestoreOnStartup}
+          setManifestRestoreOnStartup={c.setManifestRestoreOnStartup}
+          presenceDefaultShowOnline={c.presenceDefaultShowOnline}
+          setPresenceDefaultShowOnline={c.setPresenceDefaultShowOnline}
+          customGameName={form.customGameName}
+          setCustomGameName={(value) => c.setField('customGameName', value)}
+          steamPath={form.steamPath}
+          setSteamPath={(value) => c.setField('steamPath', value)}
+          steamCheck={c.steamCheck}
+          onBrowseSteamFolder={c.browseSteam}
+          onDetectSteamPath={c.detectSteam}
+          showStatus={c.showStatus}
         />
-
         <div className="settings-separator"></div>
 
         <SettingsProvidersSection
-          hubcapUsage={hubcapUsage}
-          apiKey={apiKey}
-          setApiKey={setApiKey}
-          showApiKey={showApiKey}
-          setShowApiKey={setShowApiKey}
-          ryuuKey={ryuuKey}
-          setRyuuKey={setRyuuKey}
-          showRyuuKey={showRyuuKey}
-          setShowRyuuKey={setShowRyuuKey}
-          luaToolsAuth={luaToolsAuth}
-          isLuaToolsAuthBusy={isLuaToolsAuthBusy}
-          isLuaToolsOAuthBusy={isLuaToolsOAuthBusy}
-          onLuaToolsSignOut={handleLuaToolsSignOut}
-          onOpenLuaToolsLogin={openLuaToolsLogin}
-          onCancelLuaToolsOAuth={cancelLuaToolsOAuth}
+          hubcapUsage={props.hubcapUsage}
+          apiKey={form.apiKey}
+          setApiKey={(value) => c.setField('apiKey', value)}
+          showApiKey={c.showApiKey}
+          setShowApiKey={c.setShowApiKey}
+          ryuuKey={form.ryuuKey}
+          setRyuuKey={(value) => c.setField('ryuuKey', value)}
+          showRyuuKey={c.showRyuuKey}
+          setShowRyuuKey={c.setShowRyuuKey}
+          luaToolsAuth={lua.auth}
+          isLuaToolsAuthBusy={lua.busy}
+          isLuaToolsOAuthBusy={lua.oauthBusy}
+          onLuaToolsSignOut={lua.signOut}
+          onOpenLuaToolsLogin={lua.open}
+          onCancelLuaToolsOAuth={lua.cancelOAuth}
         />
-
         <div className="settings-separator"></div>
 
         <SettingsStoreSection
-          showStoreDlcs={showStoreDlcs}
-          setShowStoreDlcs={setShowStoreDlcs}
-          showStoreDelisted={showStoreDelisted}
-          setShowStoreDelisted={setShowStoreDelisted}
-          showStoreNsfw={showStoreNsfw}
-          setShowStoreNsfw={setShowStoreNsfw}
-          showStoreFrontGames={showStoreFrontGames}
-          setShowStoreFrontGames={setShowStoreFrontGames}
-          storeFrontFilter={storeFrontFilter}
-          setStoreFrontFilter={setStoreFrontFilter}
-          storeCurrency={storeCurrency}
-          setStoreCurrency={setStoreCurrency}
-          downloadGamesWithUpdatesOn={downloadGamesWithUpdatesOn}
-          onDownloadGamesWithUpdatesChange={handleDownloadGamesWithUpdatesChange}
-          workshopAutoDownloadContent={workshopAutoDownloadContent}
-          setWorkshopAutoDownloadContent={setWorkshopAutoDownloadContent}
+          showStoreDlcs={form.showStoreDlcs}
+          setShowStoreDlcs={(value) => c.setField('showStoreDlcs', value)}
+          showStoreDelisted={form.showStoreDelisted}
+          setShowStoreDelisted={(value) => c.setField('showStoreDelisted', value)}
+          showStoreNsfw={form.showStoreNsfw}
+          setShowStoreNsfw={(value) => c.setField('showStoreNsfw', value)}
+          showStoreFrontGames={form.showStoreFrontGames}
+          setShowStoreFrontGames={(value) => c.setField('showStoreFrontGames', value)}
+          storeFrontFilter={form.storeFrontFilter}
+          setStoreFrontFilter={(value) => c.setField('storeFrontFilter', value)}
+          storeCurrency={form.storeCurrency}
+          setStoreCurrency={(value) => c.setField('storeCurrency', value)}
+          downloadGamesWithUpdatesOn={form.downloadGamesWithUpdatesOn}
+          onDownloadGamesWithUpdatesChange={c.changeDownloadUpdates}
+          workshopAutoDownloadContent={form.workshopAutoDownloadContent}
+          setWorkshopAutoDownloadContent={(value) => c.setField('workshopAutoDownloadContent', value)}
         />
-
         <div className="settings-separator"></div>
 
         <SettingsAppearanceSection
-          appearanceAssets={appearanceAssets}
-          customCssEnabled={customCssEnabled}
-          setCustomCssEnabled={setCustomCssEnabled}
-          onCustomCssChange={onCustomCssChange}
-          handlePickTheme={handlePickTheme}
-          isPicking={isPicking}
-          personalWallpaperEnabled={personalWallpaperEnabled}
-          setPersonalWallpaperEnabled={setPersonalWallpaperEnabled}
-          onPreviewPersonalWallpaper={onPreviewPersonalWallpaper}
-          handlePickWallpaper={handlePickWallpaper}
-          personalWallpaperOpacity={personalWallpaperOpacity}
-          setPersonalWallpaperOpacity={setPersonalWallpaperOpacity}
-          customIconEnabled={customIconEnabled}
-          setCustomIconEnabled={setCustomIconEnabled}
-          handlePickIcon={handlePickIcon}
-          useAlternativeGameCards={useAlternativeGameCards}
-          setUseAlternativeGameCards={setUseAlternativeGameCards}
-          alternativeCardsOpacity={alternativeCardsOpacity}
-          setAlternativeCardsOpacity={setAlternativeCardsOpacity}
-          alternativeCardsFade={alternativeCardsFade}
-          setAlternativeCardsFade={setAlternativeCardsFade}
-          onPreviewAlternativeCards={onPreviewAlternativeCards}
-          persistAppearanceSelection={persistAppearanceSelection}
-          setIconSelectedFile={setIconSelectedFile}
-          showStatus={showStatus}
-          appearancePickBtn={appearancePickBtn}
+          appearanceAssets={a.assets}
+          customCssEnabled={form.customCssEnabled}
+          setCustomCssEnabled={(value) => c.setField('customCssEnabled', value)}
+          onCustomCssChange={props.onCustomCssChange}
+          handlePickTheme={() => void a.pickTheme()}
+          isPicking={a.picking}
+          personalWallpaperEnabled={form.personalWallpaperEnabled}
+          setPersonalWallpaperEnabled={(value) => c.setField('personalWallpaperEnabled', value)}
+          onPreviewPersonalWallpaper={props.onPreviewPersonalWallpaper}
+          handlePickWallpaper={() => void a.pickWallpaper()}
+          personalWallpaperOpacity={form.personalWallpaperOpacity}
+          setPersonalWallpaperOpacity={(value) => c.setField('personalWallpaperOpacity', value)}
+          customIconEnabled={form.customIconEnabled}
+          setCustomIconEnabled={(value) => c.setField('customIconEnabled', value)}
+          handlePickIcon={() => void a.pickIcon()}
+          useAlternativeGameCards={form.useAlternativeGameCards}
+          setUseAlternativeGameCards={(value) => c.setField('useAlternativeGameCards', value)}
+          alternativeCardsOpacity={form.alternativeCardsOpacity}
+          setAlternativeCardsOpacity={(value) => c.setField('alternativeCardsOpacity', value)}
+          alternativeCardsFade={form.alternativeCardsFade}
+          setAlternativeCardsFade={(value) => c.setField('alternativeCardsFade', value)}
+          onPreviewAlternativeCards={props.onPreviewAlternativeCards}
+          persistAppearanceSelection={c.persistAppearance}
+          setIconSelectedFile={(value) => c.setField('iconSelectedFile', value)}
+          showStatus={c.showStatus}
+          appearancePickBtn={pickButton}
         />
-
         <div className="settings-separator"></div>
 
         <div className="form-actions" style={{ justifyContent: 'center', gap: '12px' }}>
-          <button type="submit" className="save-settings-btn" style={{ flex: '1 1 0', maxWidth: '200px' }}>
-            Save Settings
-          </button>
-          <button
-            type="button"
-            className="save-settings-btn"
-            style={{ flex: '1 1 0', maxWidth: '200px', backgroundColor: '#1c1c21', border: '1px solid var(--border-color)' }}
-            onClick={async () => {
-              // Reset to backend defaults (single source of truth, including a
-              // freshly detected Steam path). The backend preserves the Library
-              // filter, antivirus flag and OST ack; the UI re-renders from the
-              // returned object via the same mapping as initial load.
-              onPreviewPersonalWallpaper(false, 20);
-              onPreviewAlternativeCards(100, 50);
-              try {
-                const defaults: Record<string, any> = await invoke('reset_settings_to_defaults');
-                applySettingsToState(defaults);
-                // Official window + shell icon after custom icon is cleared.
-                try { await invoke('apply_window_icon'); } catch { /* best-effort: il reset prosegue anche se l'icona di default non viene ripristinata */ }
-                showStatus('Settings reset to defaults!', 'success');
-                onRefreshUsage('');
-                onRefreshCustomCss();
-                loadAppearanceAssets();
-              } catch (err: any) {
-                showStatus(`Failed to reset settings: ${err}`, 'error');
-              }
-            }}
-          >
+          <button type="submit" className="save-settings-btn" style={{ flex: '1 1 0', maxWidth: '200px' }}>Save Settings</button>
+          <button type="button" className="save-settings-btn" style={{ flex: '1 1 0', maxWidth: '200px', backgroundColor: '#1c1c21', border: '1px solid var(--border-color)' }} onClick={() => void c.reset()}>
             Reset Settings
           </button>
         </div>
       </form>
 
-      {showHubcapUpdateWarning && (
-        <HubcapUpdateWarningModal onClose={() => setShowHubcapUpdateWarning(false)} />
-      )}
-
-      {showOstWarning && (
-        <OstWarningModal
-          onConfirm={() => void handleOstWarningConfirm()}
-          onCancel={() => setShowOstWarning(false)}
-        />
-      )}
-
+      {c.showHubcapWarning && <HubcapUpdateWarningModal onClose={() => c.setShowHubcapWarning(false)} />}
+      {c.showOstWarning && <OstWarningModal onConfirm={() => void c.confirmOst()} onCancel={() => c.setShowOstWarning(false)} />}
       <LuaToolsLoginModal
-        open={showLuaToolsLoginModal}
-        busy={isLuaToolsAuthBusy}
-        mode={luaToolsLoginMode}
-        code={luaToolsLoginCode}
-        error={luaToolsLoginError}
-        onClose={closeLuaToolsLogin}
-        onSetMode={(mode) => {
-          setLuaToolsLoginMode(mode);
-          setLuaToolsLoginError('');
-        }}
-        onCodeChange={(value) => {
-          setLuaToolsLoginCode(value.replace(/[^a-z0-9]/gi, '').toUpperCase());
-          setLuaToolsLoginError('');
-        }}
-        onOAuthSignIn={() => void handleLuaToolsSignIn()}
-        onCodeSignIn={() => void handleLuaToolsCodeSignIn()}
+        open={lua.modalOpen}
+        busy={lua.busy}
+        mode={lua.mode}
+        code={lua.code}
+        error={lua.error}
+        onClose={lua.close}
+        onSetMode={lua.changeMode}
+        onCodeChange={lua.changeCode}
+        onOAuthSignIn={() => void lua.signIn()}
+        onCodeSignIn={() => void lua.codeSignIn()}
       />
-
     </div>
   );
 });
-

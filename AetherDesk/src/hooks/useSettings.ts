@@ -1,6 +1,8 @@
 import { invoke } from '@tauri-apps/api/core';
 
 export interface AppSettings {
+  /** Preserve backend-owned fields during three-way settings merges. */
+  [key: string]: unknown;
   hubcap_api_key: string;
   steam_path: string;
   /** Defaults to false on the backend: DLC-like rows are hidden from store search. */
@@ -33,6 +35,14 @@ export interface AppSettings {
   store_front_filter?: string;
   /** Preferred Steam store currency for prices. */
   store_currency?: StoreCurrency | string;
+  /** Selected custom-theme filename. */
+  theme_selected_file?: string;
+  /** Selected wallpaper filename. */
+  wallpaper_selected_file?: string;
+  /** Whether the selected custom window icon is active. */
+  custom_icon_enabled?: boolean;
+  /** Selected custom-icon filename. */
+  icon_selected_file?: string;
   /** Personal wallpaper toggle. */
   personal_wallpaper_enabled?: boolean;
   /** Wallpaper opacity percentage (0..100). */
