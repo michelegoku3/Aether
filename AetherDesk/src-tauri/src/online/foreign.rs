@@ -221,28 +221,6 @@ fn walk_marker_files(root: &Path) -> Vec<PathBuf> {
     out
 }
 
-/// True quando il file è un artefatto UCO2 (mai da ripristinare come originale).
-pub fn is_uco2_owned_name(path: &Path) -> bool {
-    file_name_lower(path)
-        .map(|lower| UCO2_MARKERS.iter().any(|n| *n == lower))
-        .unwrap_or(false)
-}
-
-/// Rimuove i marker UCO2 dal disco. Non tocca steam_api(64).dll (senza
-/// backup l'originale non è recuperabile). Best-effort: non fallisce.
-pub fn sweep_uco2_files(root: &Path) -> usize {
-    let mut removed = 0;
-    for path in walk_marker_files(root) {
-        if !is_uco2_owned_name(&path) {
-            continue;
-        }
-        if path.is_file() && fs::remove_file(&path).is_ok() {
-            removed += 1;
-        }
-    }
-    removed
-}
-
 fn display_files(files: &[PathBuf]) -> String {
     files
         .iter()

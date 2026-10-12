@@ -208,19 +208,11 @@ pub fn cleanup_stale_artifacts() {
 // Same constraint as the updater: a running `.exe` cannot delete its own
 // directory on Windows. We stage a copy of the binary in the *system* temp
 // folder (never inside install_root / AetherData — both may be deleted) and
-// launch it with `--uninstall-desk` so it can wait for the lock and wipe the
-// folder after the main process exits.
-//
-// Extra Windows hardness:
-// - the main process exits via `std::process::exit` (not only `app.exit`) so
-//   WebView2 cannot keep the process alive in the background;
-// - the helper force-kills leftover `AetherDesk.exe` instances before delete;
-// - folder wipe clears contents first, then removes the root (avoids the
-//   classic "empty folder still locked by cwd" leftover).
+// launch it with `--uninstall-desk` to remove only verified application files.
+// Unknown files and kept AetherData stay in place. The install root is removed
+// only when empty; neither Rust nor a shell recursively removes the parent.
 
 const UNINSTALL_HELPER_NAME: &str = "aether_uninstaller.exe";
-const DATA_DIR_NAME: &str = "AetherData";
-const DESK_PROCESS_NAME: &str = "aetherdesk.exe";
 
 fn uninstall_helper_path() -> PathBuf {
     std::env::temp_dir().join(UNINSTALL_HELPER_NAME)
@@ -231,13 +223,15 @@ fn uninstall_helper_path() -> PathBuf {
 /// The caller **must** hard-exit the running instance afterwards so the install
 /// folder (and `AetherDesk.exe`) become deletable.
 ///
-/// - `delete_user_data = true`  → remove the whole install folder (incl. AetherData)
-/// - `delete_user_data = false` → move `AetherData` to the parent of install_root,
-///   then remove the install folder
+/// - `delete_user_data = true`  → also remove the verified AetherData subtree
+/// - `delete_user_data = false` → leave AetherData in place
+///
+/// Unknown/modified files are retained for manual review.
 pub fn schedule_uninstall(delete_user_data: bool) -> Result<(), String> {
     let current_exe = std::env::current_exe()
         .map_err(|e| format!("Failed to resolve current exe: {e}"))?;
-    let install_root = LocalAppPaths::install_root();
+    let install_root =
+        super::desk_uninstall::validate_target(&LocalAppPaths::install_root())?;
     let helper = uninstall_helper_path();
 
     if let Some(parent) = helper.parent() {
@@ -286,295 +280,42 @@ pub fn schedule_uninstall(delete_user_data: bool) -> Result<(), String> {
 
 /// Runs as the external `--uninstall-desk` helper (from system temp).
 pub fn run_uninstall(install_root: &Path, delete_user_data: bool) -> i32 {
-    // Give the parent a moment to begin exiting after spawning us.
+    // Validate even direct CLI invocations before any side effects.
+    let install_root = match super::desk_uninstall::validate_target(install_root) {
+        Ok(root) => root,
+        Err(error) => {
+            eprintln!("[AetherDesk] refusing uninstall: {error}");
+            return 1;
+        }
+    };
     thread::sleep(Duration::from_millis(800));
-
-    // Force-kill any leftover AetherDesk.exe (main app / WebView host) that
-    // would keep directory handles open. Never touches aether_uninstaller.exe.
-    force_kill_desk_processes();
-    thread::sleep(Duration::from_millis(600));
-
-    let exe = install_root.join("AetherDesk.exe");
-    if exe.exists() {
-        // Prefer waiting for a clean unlock; if it never unlocks, kill again
-        // and continue — we still want to wipe as much as possible.
-        if !wait_until_replaceable(&exe) {
-            eprintln!("[AetherDesk] exe still locked after wait; force-killing again");
-            force_kill_desk_processes();
-            thread::sleep(Duration::from_millis(800));
-            let _ = wait_until_replaceable(&exe);
-        }
+    if let Err(error) = super::desk_uninstall::uninstall(&install_root, delete_user_data) {
+        eprintln!("[AetherDesk] uninstall incomplete: {error}");
+        return 1;
     }
-
-    // Icon restore must run against a path that *survives* uninstall:
-    // - keep user data → move AetherData first, then write official shell.ico there
-    // - wipe everything → write official shell.ico to a small durable AppData cache
-    //   so Start Menu / Desktop shortcuts stop pointing at a deleted custom icon
-    let mut preserved_data: Option<PathBuf> = None;
-    if !delete_user_data {
-        match preserve_user_data(install_root) {
-            Ok(dest) => preserved_data = dest,
-            Err(e) => {
-                eprintln!("[AetherDesk] failed to preserve AetherData: {e}");
-                // Abort so the user does not lose data if the move failed.
-                return 1;
-            }
-        }
-    }
-
-    if let Err(e) = restore_default_icon_after_uninstall(preserved_data.as_deref()) {
-        eprintln!("[AetherDesk] failed to restore default shell icon before wipe: {e}");
-    }
-
-    match wipe_install_root(install_root) {
-        Ok(()) => {
-            eprintln!(
-                "[AetherDesk] uninstall complete: removed {}",
-                install_root.display()
-            );
-            schedule_helper_self_delete();
-            0
-        }
-        Err(e) => {
-            eprintln!(
-                "[AetherDesk] failed to remove {}: {e}",
-                install_root.display()
-            );
-            // Last resort on Windows: cmd rmdir after another kill pass.
-            force_kill_desk_processes();
-            thread::sleep(Duration::from_millis(500));
-            if shell_rmdir(install_root) {
-                eprintln!(
-                    "[AetherDesk] uninstall complete via shell rmdir: {}",
-                    install_root.display()
-                );
-                schedule_helper_self_delete();
-                0
-            } else {
-                1
-            }
-        }
-    }
-}
-
-/// Terminates every running process named `AetherDesk.exe` (case-insensitive).
-/// The helper binary is `aether_uninstaller.exe`, so it is never targeted.
-fn force_kill_desk_processes() {
-    let mut sys = sysinfo::System::new();
-    sys.refresh_processes();
-    let self_pid = sysinfo::get_current_pid().ok();
-
-    for (pid, process) in sys.processes() {
-        if self_pid == Some(*pid) {
-            continue;
-        }
-        let name = process.name().to_lowercase();
-        if name == DESK_PROCESS_NAME {
-            eprintln!("[AetherDesk] killing leftover process {} (pid={})", name, pid);
-            let _ = process.kill();
-        }
-    }
-
-    // Also hit taskkill as a belt-and-suspenders path for stubborn children
-    // that sysinfo may not enumerate the same way (msedgewebview2 is separate
-    // but the main lock is AetherDesk.exe itself).
-    #[cfg(windows)]
-    {
-        use std::os::windows::process::CommandExt;
-        const CREATE_NO_WINDOW: u32 = 0x08000000;
-        let _ = Command::new("taskkill")
-            .args(["/F", "/IM", "AetherDesk.exe", "/T"])
-            .creation_flags(CREATE_NO_WINDOW)
-            .output();
-    }
-}
-
-/// Moves `<install_root>/AetherData` to `<install_root>/../AetherData`
-/// (with numeric suffix if the destination already exists).
-/// Returns the final destination when a move happened, or `None` if there
-/// was nothing to preserve.
-fn preserve_user_data(install_root: &Path) -> Result<Option<PathBuf>, String> {
-    let data_dir = install_root.join(DATA_DIR_NAME);
-    if !data_dir.exists() {
-        return Ok(None);
-    }
-
-    let parent = install_root.parent().ok_or_else(|| {
-        format!(
-            "Install root {} has no parent; cannot relocate AetherData",
-            install_root.display()
-        )
-    })?;
-
-    let dest = unique_sibling_dir(parent, DATA_DIR_NAME);
-    // Prefer rename (atomic on same volume). Fall back to copy+delete.
-    match fs::rename(&data_dir, &dest) {
-        Ok(()) => {}
-        Err(rename_err) => {
-            copy_dir_recursive(&data_dir, &dest).map_err(|e| {
-                format!(
-                    "Failed to relocate {} → {} (rename: {rename_err}; copy: {e})",
-                    data_dir.display(),
-                    dest.display()
-                )
-            })?;
-            let _ = fs::remove_dir_all(&data_dir);
-        }
+    if let Err(error) = restore_default_icon_after_uninstall() {
+        eprintln!("[AetherDesk] failed to restore default shell icon: {error}");
     }
     eprintln!(
-        "[AetherDesk] preserved user data at {}",
-        dest.display()
+        "[AetherDesk] verified app files removed; retained files/data stay in {}",
+        install_root.display()
     );
-    Ok(Some(dest))
+    schedule_helper_self_delete();
+    0
 }
 
-/// Point Start Menu / Desktop shortcuts back at the official AetherDesk icon.
-///
-/// `preserved_data` is the relocated `AetherData` folder when the user kept
-/// their data; otherwise a durable AppData cache path is used so shortcuts
-/// do not keep referencing a deleted custom `shell.ico`.
-fn restore_default_icon_after_uninstall(preserved_data: Option<&Path>) -> Result<(), String> {
-    let shell_ico = if let Some(data_root) = preserved_data {
-        let dest = data_root.join("config").join("icons").join("shell.ico");
-        if let Some(parent) = dest.parent() {
-            fs::create_dir_all(parent)
-                .map_err(|e| format!("Failed to create icons folder: {e}"))?;
-        }
-        fs::write(&dest, crate::core::custom_css::DEFAULT_AETHER_ICON)
-            .map_err(|e| format!("Failed to write default shell.ico: {e}"))?;
-        dest
-    } else {
-        // Full wipe: keep a tiny durable icon outside the deleted install tree.
-        let cache = dirs::data_local_dir()
-            .unwrap_or_else(std::env::temp_dir)
-            .join("AetherDesk");
-        fs::create_dir_all(&cache)
-            .map_err(|e| format!("Failed to create icon cache folder: {e}"))?;
-        let dest = cache.join("shell.ico");
-        fs::write(&dest, crate::core::custom_css::DEFAULT_AETHER_ICON)
-            .map_err(|e| format!("Failed to write default shell.ico: {e}"))?;
-        dest
-    };
-
-    crate::core::shell_shortcuts::sync_windows_shortcuts(&shell_ico);
+/// Keep the official shortcut icon in a durable app-specific cache. Never
+/// write into the install root or retained user-data paths during uninstall.
+fn restore_default_icon_after_uninstall() -> Result<(), String> {
+    let cache = dirs::data_local_dir()
+        .unwrap_or_else(std::env::temp_dir)
+        .join("AetherDesk");
+    fs::create_dir_all(&cache).map_err(|e| format!("Failed to create icon cache folder: {e}"))?;
+    let dest = cache.join("shell.ico");
+    fs::write(&dest, crate::core::custom_css::DEFAULT_AETHER_ICON)
+        .map_err(|e| format!("Failed to write default shell.ico: {e}"))?;
+    crate::core::shell_shortcuts::sync_windows_shortcuts(&dest);
     Ok(())
-}
-
-fn copy_dir_recursive(src: &Path, dst: &Path) -> Result<(), String> {
-    fs::create_dir_all(dst).map_err(|e| format!("create {}: {e}", dst.display()))?;
-    for entry in fs::read_dir(src).map_err(|e| format!("read {}: {e}", src.display()))? {
-        let entry = entry.map_err(|e| format!("entry in {}: {e}", src.display()))?;
-        let from = entry.path();
-        let to = dst.join(entry.file_name());
-        if from.is_dir() {
-            copy_dir_recursive(&from, &to)?;
-        } else {
-            if let Some(parent) = to.parent() {
-                fs::create_dir_all(parent)
-                    .map_err(|e| format!("create {}: {e}", parent.display()))?;
-            }
-            fs::copy(&from, &to)
-                .map_err(|e| format!("copy {} -> {}: {e}", from.display(), to.display()))?;
-        }
-    }
-    Ok(())
-}
-
-fn unique_sibling_dir(parent: &Path, base_name: &str) -> PathBuf {
-    let candidate = parent.join(base_name);
-    if !candidate.exists() {
-        return candidate;
-    }
-    for i in 1..1000 {
-        let alt = parent.join(format!("{base_name}-{i}"));
-        if !alt.exists() {
-            return alt;
-        }
-    }
-    parent.join(format!(
-        "{base_name}-{}",
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_secs())
-            .unwrap_or(0)
-    ))
-}
-
-/// Wipes install_root thoroughly: delete children first, then the root itself.
-fn wipe_install_root(path: &Path) -> Result<(), String> {
-    if !path.exists() {
-        return Ok(());
-    }
-
-    let mut last_err = String::new();
-    for attempt in 0..50 {
-        // Clear children so a locked cwd on the empty root is less likely.
-        if path.is_dir() {
-            if let Ok(entries) = fs::read_dir(path) {
-                for entry in entries.flatten() {
-                    let child = entry.path();
-                    // Best-effort child cleanup; root remove below owns errors.
-                    if child.is_dir() {
-                        let _ = fs::remove_dir_all(&child);
-                    } else {
-                        let _ = fs::remove_file(&child);
-                    }
-                }
-            }
-        }
-
-        match fs::remove_dir_all(path) {
-            Ok(()) => return Ok(()),
-            Err(_) if !path.exists() => return Ok(()),
-            Err(e) => {
-                last_err = e.to_string();
-                // On stubborn locks, re-kill desk processes mid-retry.
-                if attempt == 10 || attempt == 25 {
-                    force_kill_desk_processes();
-                }
-                thread::sleep(Duration::from_millis(200 + (attempt as u64) * 40));
-            }
-        }
-    }
-
-    // Success if nothing is left (even if the last call returned an error).
-    if !path.exists() {
-        return Ok(());
-    }
-    // Empty dir left behind still counts as failure — try one last remove_dir.
-    if path.is_dir() {
-        if let Ok(mut entries) = fs::read_dir(path) {
-            if entries.next().is_none()
-                && (fs::remove_dir(path).is_ok() || !path.exists())
-            {
-                return Ok(());
-            }
-        }
-    }
-    Err(last_err)
-}
-
-/// Windows `rmdir /s /q` fallback when Rust fs APIs cannot finish the job.
-fn shell_rmdir(path: &Path) -> bool {
-    #[cfg(windows)]
-    {
-        use std::os::windows::process::CommandExt;
-        const CREATE_NO_WINDOW: u32 = 0x08000000;
-        let status = Command::new("cmd")
-            .args(["/C", "rmdir", "/s", "/q"])
-            .arg(path)
-            .creation_flags(CREATE_NO_WINDOW)
-            .status();
-        match status {
-            Ok(s) if s.success() => !path.exists(),
-            _ => !path.exists(),
-        }
-    }
-    #[cfg(not(windows))]
-    {
-        let _ = path;
-        false
-    }
 }
 
 /// Best-effort delayed self-delete of the helper sitting in system temp.

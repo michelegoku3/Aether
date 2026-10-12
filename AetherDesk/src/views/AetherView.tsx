@@ -105,13 +105,13 @@ export const AetherView = memo(function AetherView({
 
   /**
    * Schedules the external uninstaller helper and exits.
-   * `deleteUserData` controls whether AetherData is wiped or relocated.
+   * `deleteUserData` controls whether AetherData is deleted or kept in place.
    */
   const finishUninstall = async (deleteUserData: boolean) => {
     showStatus(
       deleteUserData
         ? 'Removing AetherDesk and user data...'
-        : 'Removing AetherDesk (keeping AetherData next to the folder)...',
+        : 'Removing verified AetherDesk files (keeping AetherData in place)...',
       'info',
     );
     await invoke('uninstall_aether_desk', { deleteUserData });

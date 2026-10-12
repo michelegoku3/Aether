@@ -97,46 +97,44 @@ impl VersionService {
         build_id: u64,
         depot_ids: &[u32],
     ) -> Result<Vec<DepotManifestPin>, VersionError> {
-        let mut snapshot = SnapshotAssembler::new(depot_ids).ok_or(
-            VersionError::InvalidInput("The game Lua does not contain any manifest depots"),
-        )?;
+        let mut snapshot = SnapshotAssembler::new(depot_ids).ok_or(VersionError::InvalidInput(
+            "The game Lua does not contain any manifest depots",
+        ))?;
 
-        if let Ok(target_pins) = self.resolve_pins(build_id).await {
-            snapshot.push_diff(&target_pins);
-        }
+        // An unavailable target is not an empty diff: older pins cannot prove it.
+        let target_pins = self.resolve_pins(build_id).await?;
+        snapshot.push_diff(&target_pins);
 
         if !snapshot.is_complete() {
-            if let Ok(history) = self.list_builds(app_id).await {
-                let candidates = older_build_ids(&history, build_id);
-
-                for batch in candidates.chunks(LOOKUP_BATCH_SIZE) {
+            let history = self.list_builds(app_id).await?;
+            let candidates = older_build_ids(&history, build_id);
+            for batch in candidates.chunks(LOOKUP_BATCH_SIZE) {
+                if snapshot.is_complete() {
+                    break;
+                }
+                let mut results = self.resolve_pins_batch(batch).await.map_err(|error| {
+                    VersionError::source(
+                        "build snapshot",
+                        format!("Cannot reconstruct build {build_id}; historical batch {batch:?} failed: {error}"),
+                    )
+                })?;
+                // Fetch completion order cannot change nearest-build provenance.
+                for &candidate in batch {
                     if snapshot.is_complete() {
                         break;
                     }
-                    if let Ok(mut results) = self.resolve_pins_batch(batch).await {
-                        // Requests finish in arbitrary order; consume them in the
-                        // candidate order to preserve nearest-build semantics.
-                        for &candidate in batch {
-                            if snapshot.is_complete() {
-                                break;
-                            }
-                            if let Some(result) = results.remove(&candidate) {
-                                match result {
-                                    Ok(pins) => {
-                                        snapshot.push_diff(&pins);
-                                    }
-                                    Err(err) => {
-                                        crate::desk_log_debug!(
-                                            "versioning",
-                                            "Build {} pin resolution failed (skipping): {}",
-                                            candidate,
-                                            err
-                                        );
-                                    }
-                                }
-                            }
-                        }
-                    }
+                    let pins = results.remove(&candidate).ok_or_else(|| {
+                        VersionError::source(
+                            "build snapshot",
+                            format!("Missing historical diff {candidate} for build {build_id}"),
+                        )
+                    })?.map_err(|error| {
+                        VersionError::source(
+                            "build snapshot",
+                            format!("Cannot reconstruct build {build_id}; required historical diff {candidate} failed: {error}"),
+                        )
+                    })?;
+                    snapshot.push_diff(&pins);
                 }
             }
         }
@@ -266,5 +264,243 @@ impl VersionService {
                 context: "saved builds",
                 detail: e,
             })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::versioning::sources::BoxFuture;
+    use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
+    use std::sync::Mutex;
+
+    const TARGET: u64 = 2_000_100;
+    const NEAR: u64 = TARGET - 1;
+    const FAR: u64 = TARGET - 2;
+
+    struct FixtureSource {
+        history: Result<Vec<BuildInfo>, VersionError>,
+        details: HashMap<u64, Result<Vec<DepotManifestPin>, VersionError>>,
+        calls: Mutex<Vec<u64>>,
+        history_calls: AtomicUsize,
+        panic_at: AtomicU64,
+    }
+
+    impl BuildHistorySource for FixtureSource {
+        fn build_history(
+            &self,
+            _app_id: u32,
+        ) -> BoxFuture<'_, Result<Vec<BuildInfo>, VersionError>> {
+            Box::pin(async move {
+                self.history_calls.fetch_add(1, Ordering::Relaxed);
+                self.history.clone()
+            })
+        }
+    }
+
+    impl BuildDetailsSource for FixtureSource {
+        fn pins_for_build(
+            &self,
+            build_id: u64,
+        ) -> BoxFuture<'_, Result<Vec<DepotManifestPin>, VersionError>> {
+            Box::pin(async move {
+                self.calls.lock().unwrap().push(build_id);
+                assert_ne!(
+                    self.panic_at.load(Ordering::Relaxed),
+                    build_id,
+                    "fixture task failure"
+                );
+                // Ensure an older response can finish before the nearer one.
+                if build_id == NEAR {
+                    tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+                }
+                self.details
+                    .get(&build_id)
+                    .cloned()
+                    .unwrap_or(Err(VersionError::BuildNotFound))
+            })
+        }
+    }
+
+    fn pin(depot_id: u32, manifest_id: &str) -> DepotManifestPin {
+        DepotManifestPin {
+            depot_id,
+            manifest_id: manifest_id.to_string(),
+        }
+    }
+
+    fn build(build_id: u64) -> BuildInfo {
+        BuildInfo {
+            build_id,
+            date: "2026-01-01".into(),
+            title: "fixture".into(),
+        }
+    }
+
+    fn fixture(
+        history: Result<Vec<BuildInfo>, VersionError>,
+        details: HashMap<u64, Result<Vec<DepotManifestPin>, VersionError>>,
+    ) -> (tempfile::TempDir, VersionService, Arc<FixtureSource>) {
+        let temp = tempfile::tempdir().unwrap();
+        let source = Arc::new(FixtureSource {
+            history,
+            details,
+            calls: Mutex::new(Vec::new()),
+            history_calls: AtomicUsize::new(0),
+            panic_at: AtomicU64::new(0),
+        });
+        let service = VersionService {
+            history_source: source.clone(),
+            details_source: source.clone(),
+            cache: VersionCache::new(&temp.path().join("cache")),
+            saved: SavedBuildsStore::new(temp.path()),
+        };
+        (temp, service, source)
+    }
+
+    #[tokio::test]
+    async fn failed_target_cannot_authorize_older_pins_even_when_they_are_cached() {
+        for failure in [
+            VersionError::source("fixture", "timeout"),
+            VersionError::parse("fixture", "invalid payload"),
+            VersionError::BuildNotFound,
+        ] {
+            let (_temp, service, source) = fixture(
+                Ok(vec![build(TARGET), build(NEAR)]),
+                HashMap::from([(TARGET, Err(failure)), (NEAR, Ok(vec![pin(101, "10001")]))]),
+            );
+            service
+                .cache
+                .put_build_pins(NEAR, vec![pin(101, "10001")])
+                .unwrap();
+            assert!(service
+                .resolve_snapshot_pins(42, TARGET, &[101])
+                .await
+                .is_err());
+            assert_eq!(*source.calls.lock().unwrap(), vec![TARGET]);
+            assert_eq!(source.history_calls.load(Ordering::Relaxed), 0);
+        }
+    }
+
+    #[tokio::test]
+    async fn failed_required_intermediate_diff_cannot_be_skipped_for_an_older_pin() {
+        let (_temp, service, _source) = fixture(
+            Ok(vec![build(TARGET), build(NEAR), build(FAR)]),
+            HashMap::from([
+                (TARGET, Ok(vec![pin(101, "10001")])),
+                (NEAR, Err(VersionError::source("fixture", "HTTP 503"))),
+                (FAR, Ok(vec![pin(102, "10200")])),
+            ]),
+        );
+        let error = service
+            .resolve_snapshot_pins(42, TARGET, &[101, 102])
+            .await
+            .unwrap_err()
+            .to_string();
+        assert!(
+            error.contains(&NEAR.to_string()),
+            "failed interval must identify its provenance"
+        );
+    }
+
+    #[tokio::test]
+    async fn successful_empty_target_diff_can_use_proven_older_changes() {
+        let (_temp, service, _source) = fixture(
+            Ok(vec![build(TARGET), build(NEAR)]),
+            HashMap::from([
+                (TARGET, Ok(Vec::new())),
+                (NEAR, Ok(vec![pin(101, "10001")])),
+            ]),
+        );
+        assert_eq!(
+            service
+                .resolve_snapshot_pins(42, TARGET, &[101])
+                .await
+                .unwrap(),
+            vec![pin(101, "10001")]
+        );
+    }
+
+    #[tokio::test]
+    async fn nearer_pins_win_despite_out_of_order_completion_and_unneeded_older_failure() {
+        let (_temp, service, _source) = fixture(
+            Ok(vec![build(TARGET), build(NEAR), build(FAR)]),
+            HashMap::from([
+                (TARGET, Ok(vec![pin(101, "10001")])),
+                (NEAR, Ok(vec![pin(102, "10201")])),
+                (
+                    FAR,
+                    Err(VersionError::source("fixture", "unneeded old diff failed")),
+                ),
+            ]),
+        );
+        assert_eq!(
+            service
+                .resolve_snapshot_pins(42, TARGET, &[101, 102])
+                .await
+                .unwrap(),
+            vec![pin(101, "10001"), pin(102, "10201")]
+        );
+    }
+
+    #[tokio::test]
+    async fn finite_successful_history_still_returns_only_the_proven_depots() {
+        let (_temp, service, _source) = fixture(
+            Ok(vec![build(TARGET)]),
+            HashMap::from([(TARGET, Ok(vec![pin(101, "10001")]))]),
+        );
+        assert_eq!(
+            service
+                .resolve_snapshot_pins(42, TARGET, &[101, 102])
+                .await
+                .unwrap(),
+            vec![pin(101, "10001")]
+        );
+    }
+
+    #[tokio::test]
+    async fn unavailable_history_is_not_known_finite_history() {
+        let (_temp, service, _source) = fixture(
+            Err(VersionError::source("fixture", "RSS unavailable")),
+            HashMap::from([(TARGET, Ok(vec![pin(101, "10001")]))]),
+        );
+        assert!(service
+            .resolve_snapshot_pins(42, TARGET, &[101, 102])
+            .await
+            .is_err());
+    }
+
+    #[tokio::test]
+    async fn task_failure_in_required_history_batch_is_propagated() {
+        let (_temp, service, source) = fixture(
+            Ok(vec![build(TARGET), build(NEAR)]),
+            HashMap::from([(TARGET, Ok(Vec::new()))]),
+        );
+        source.panic_at.store(NEAR, Ordering::Relaxed);
+        assert!(service
+            .resolve_snapshot_pins(42, TARGET, &[101])
+            .await
+            .is_err());
+    }
+
+    #[tokio::test]
+    async fn valid_immutable_target_cache_needs_no_remote_fallback() {
+        let (_temp, service, source) = fixture(
+            Err(VersionError::BuildHistoryEmpty),
+            HashMap::from([(TARGET, Err(VersionError::TokenInvalid))]),
+        );
+        service
+            .cache
+            .put_build_pins(TARGET, vec![pin(101, "10001")])
+            .unwrap();
+        assert_eq!(
+            service
+                .resolve_snapshot_pins(42, TARGET, &[101])
+                .await
+                .unwrap(),
+            vec![pin(101, "10001")]
+        );
+        assert!(source.calls.lock().unwrap().is_empty());
+        assert_eq!(source.history_calls.load(Ordering::Relaxed), 0);
     }
 }

@@ -104,15 +104,34 @@ fn winmm_alone_on_disk_is_not_ofme() {
 }
 
 #[test]
-fn sweep_removes_union_crax_not_steam_api() {
+fn uco2_marker_scan_preserves_every_file_including_original_plugins() {
     let tmp = tempfile::tempdir().unwrap();
-    write(tmp.path(), "Binaries/Win64/union-crax.ini", b"[Settings]");
-    write(tmp.path(), "Binaries/Win64/steam_api64.dll", b"dll");
+    let files: [(&str, &[u8]); 7] = [
+        ("Binaries/Win64/union-crax.ini", b"[Settings]"),
+        ("Binaries/Win64/overlay_proxy.dll", b"proxy sentinel"),
+        (
+            "Binaries/Win64/plugins/Photon_Universal.dll",
+            b"photon sentinel",
+        ),
+        ("Binaries/Win64/plugins/EOS_custom.dll", b"original EOS plugin"),
+        (
+            "Binaries/Win64/plugins/coherence_universal.dll",
+            b"coherence sentinel",
+        ),
+        ("Binaries/Win64/steam_api64.dll", b"original steam DLL"),
+        ("Binaries/Win64/plugins/original.dll", b"original plugin"),
+    ];
+    for (relative, bytes) in files {
+        write(tmp.path(), relative, bytes);
+    }
 
-    let removed = crate::online::foreign::sweep_uco2_files(tmp.path());
-    assert_eq!(removed, 1);
-    assert!(!tmp.path().join("Binaries/Win64/union-crax.ini").is_file());
-    assert!(tmp.path().join("Binaries/Win64/steam_api64.dll").is_file());
+    let report = scan(tmp.path());
+    assert!(report.uco2);
+    assert!(!report.ofme);
+    assert!(report.files.is_empty(), "only OFME paths belong in this list");
+    for (relative, bytes) in files {
+        assert_eq!(fs::read(tmp.path().join(relative)).unwrap(), bytes);
+    }
 }
 
 #[test]

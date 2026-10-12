@@ -321,7 +321,7 @@ fn deploy_then_disable_restores_everything() {
     assert!(!backup_dir.join("original/steam_api.1").exists(), "no double backup");
 
     // --- disable: ripristino completo ---
-    disable(1144200, &backup_root, &state_path, None);
+    disable(1144200, &backup_root, &state_path, None).expect("disable must succeed");
 
     assert_eq!(fs::read(&original_dll).unwrap(), b"original-dll");
     assert!(!ini_path.exists(), "ini removed");
@@ -359,9 +359,309 @@ fn deploy_neutralizes_conflicts_and_disable_restores_them() {
     let backup_dir = backup_dir_for(&backup_root, 1144200);
     assert!(backup_dir.join("original/conflict_SteamFix64.dll").is_file());
 
-    disable(1144200, &backup_root, &state_path, None);
+    disable(1144200, &backup_root, &state_path, None).expect("disable must succeed");
 
     // Ripristinato.
     assert!(steam_api_dir.join("SteamFix64.dll").is_file());
     assert!(!steam_api_dir.join("SteamFix64.dll.uco-disabled").exists());
+}
+
+// Regression fixtures exercise the real deploy/engine/filesystem, never live games.
+fn deployed_with_original_plugins() -> (
+    tempfile::TempDir,
+    tempfile::TempDir,
+    crate::online::types::OnlineRecord,
+    std::path::PathBuf,
+    std::path::PathBuf,
+) {
+    let game = tempfile::tempdir().unwrap();
+    unity_photon_voice_playfab_fixture(game.path());
+    write(game.path(), "plugins/original.dll", b"original plugin");
+    // Even a marker-shaped original must not be swept after restoration.
+    write(
+        game.path(),
+        "plugins/EOS_custom.dll",
+        b"original marker-shaped plugin",
+    );
+    let bundle_dir = tempfile::tempdir().unwrap();
+    let bundle = bundle_fixture(bundle_dir.path());
+    let data = tempfile::tempdir().unwrap();
+    let backup_root = data.path().join("backup");
+    let state_path = data.path().join("state/uc_online2.json");
+    let detection = GameInspector::inspect(game.path()).unwrap();
+    let record = deploy(
+        1144200,
+        &detection,
+        &bundle,
+        &base_request(),
+        &backup_root,
+        &state_path,
+    )
+    .unwrap();
+    (game, data, record, backup_root, state_path)
+}
+
+#[test]
+fn disable_restores_preexisting_plugins_and_does_not_sweep_originals() {
+    let (game, _data, record, backup_root, state_path) = deployed_with_original_plugins();
+    let result = crate::online::engine::OnlineEngine::disable(
+        1144200,
+        &backup_root,
+        &state_path,
+        Some(game.path()),
+    )
+    .unwrap();
+    assert!(result.success);
+    assert_eq!(
+        fs::read(game.path().join("plugins/original.dll")).unwrap(),
+        b"original plugin"
+    );
+    assert_eq!(
+        fs::read(game.path().join("plugins/EOS_custom.dll")).unwrap(),
+        b"original marker-shaped plugin"
+    );
+    assert_eq!(fs::read(&record.steam_api_path).unwrap(), b"original-dll");
+    assert!(!record.backup_dir.exists());
+    assert!(OnlineStateStore::load(&state_path).get(1144200).is_none());
+    assert!(
+        crate::online::engine::OnlineEngine::disable(1144200, &backup_root, &state_path, None)
+            .unwrap()
+            .success
+    );
+}
+
+#[test]
+fn disable_collision_keeps_backup_and_state_then_retries_successfully() {
+    let (game, _data, record, backup_root, state_path) = deployed_with_original_plugins();
+    let collision = game.path().join("plugins/user-sentinel.txt");
+    fs::write(&collision, b"user sentinel").unwrap();
+    assert!(crate::online::engine::OnlineEngine::disable(
+        1144200,
+        &backup_root,
+        &state_path,
+        Some(game.path())
+    )
+    .is_err());
+    assert_eq!(fs::read(&collision).unwrap(), b"user sentinel");
+    assert_eq!(
+        fs::read(record.backup_dir.join("original/plugins/original.dll")).unwrap(),
+        b"original plugin"
+    );
+    assert!(!Journal::load(&record.backup_dir).entries.is_empty());
+    assert!(OnlineStateStore::load(&state_path).get(1144200).is_some());
+    let kept = game.path().join("kept-sentinel.txt");
+    fs::rename(collision, &kept).unwrap();
+    assert!(
+        crate::online::engine::OnlineEngine::disable(
+            1144200,
+            &backup_root,
+            &state_path,
+            Some(game.path())
+        )
+        .unwrap()
+        .success
+    );
+    assert_eq!(fs::read(kept).unwrap(), b"user sentinel");
+    assert_eq!(
+        fs::read(game.path().join("plugins/original.dll")).unwrap(),
+        b"original plugin"
+    );
+}
+
+#[test]
+fn failed_deployed_removal_is_reported_and_does_not_discard_recovery() {
+    let (game, _data, record, backup_root, state_path) = deployed_with_original_plugins();
+    let blocked = game.path().join("plugins/photon_universal.dll");
+    fs::remove_file(&blocked).unwrap();
+    fs::create_dir(&blocked).unwrap();
+    fs::write(blocked.join("sentinel.txt"), b"do not delete").unwrap();
+    assert!(crate::online::engine::OnlineEngine::disable(
+        1144200,
+        &backup_root,
+        &state_path,
+        Some(game.path())
+    )
+    .is_err());
+    assert_eq!(
+        fs::read(blocked.join("sentinel.txt")).unwrap(),
+        b"do not delete"
+    );
+    assert!(!Journal::load(&record.backup_dir).entries.is_empty());
+    assert!(OnlineStateStore::load(&state_path).get(1144200).is_some());
+    fs::rename(&blocked, game.path().join("kept-blocker")).unwrap();
+    assert!(
+        crate::online::engine::OnlineEngine::disable(
+            1144200,
+            &backup_root,
+            &state_path,
+            Some(game.path())
+        )
+        .unwrap()
+        .success
+    );
+    assert_eq!(fs::read(&record.steam_api_path).unwrap(), b"original-dll");
+    assert_eq!(
+        fs::read(game.path().join("kept-blocker/sentinel.txt")).unwrap(),
+        b"do not delete"
+    );
+}
+
+#[test]
+fn state_save_failure_keeps_empty_journal_for_a_safe_retry() {
+    let (game, _data, record, backup_root, state_path) = deployed_with_original_plugins();
+    let blocked_temp = std::path::PathBuf::from(format!("{}.tmp", state_path.display()));
+    fs::create_dir(&blocked_temp).unwrap();
+    assert!(crate::online::engine::OnlineEngine::disable(
+        1144200,
+        &backup_root,
+        &state_path,
+        Some(game.path())
+    )
+    .is_err());
+    assert!(record.backup_dir.join("journal.json").is_file());
+    assert!(Journal::load(&record.backup_dir).entries.is_empty());
+    assert!(OnlineStateStore::load(&state_path).get(1144200).is_some());
+    assert_eq!(fs::read(&record.steam_api_path).unwrap(), b"original-dll");
+    fs::remove_dir(blocked_temp).unwrap();
+    assert!(
+        crate::online::engine::OnlineEngine::disable(
+            1144200,
+            &backup_root,
+            &state_path,
+            Some(game.path())
+        )
+        .unwrap()
+        .success
+    );
+    assert_eq!(fs::read(&record.steam_api_path).unwrap(), b"original-dll");
+    assert!(!record.backup_dir.exists());
+}
+
+#[test]
+fn missing_or_corrupt_journal_never_authorizes_heuristic_deletion() {
+    for corrupt in [false, true] {
+        let (game, _data, record, backup_root, state_path) = deployed_with_original_plugins();
+        let journal = record.backup_dir.join("journal.json");
+        if corrupt {
+            fs::write(&journal, b"not valid JSON").unwrap();
+        } else {
+            fs::remove_file(&journal).unwrap();
+        }
+        let state_before = fs::read(&state_path).unwrap();
+        assert!(crate::online::engine::OnlineEngine::disable(
+            1144200,
+            &backup_root,
+            &state_path,
+            Some(game.path())
+        )
+        .is_err());
+        assert_eq!(fs::read(&record.steam_api_path).unwrap(), b"uco2-x64");
+        assert_eq!(
+            fs::read(record.backup_dir.join("original/steam_api")).unwrap(),
+            b"original-dll"
+        );
+        assert_eq!(fs::read(&state_path).unwrap(), state_before);
+    }
+}
+
+#[test]
+fn journal_save_failure_after_restore_can_be_retried_without_deleting_original() {
+    use crate::online::deploy::JournalEntry;
+    let temp = tempfile::tempdir().unwrap();
+    let backup_root = temp.path().join("backup");
+    let backup_dir = backup_dir_for(&backup_root, 1144200);
+    let state_path = temp.path().join("state.json");
+    let original = temp.path().join("restored.dll");
+    let backup = backup_dir.join("original/dll");
+    fs::create_dir_all(backup.parent().unwrap()).unwrap();
+    fs::write(&backup, b"pristine").unwrap();
+    Journal {
+        entries: vec![JournalEntry::BackedUp {
+            original: original.clone(),
+            backup: backup.clone(),
+        }],
+    }
+    .save(&backup_dir)
+    .unwrap();
+    let blocked = backup_dir.join("journal.json.tmp");
+    fs::create_dir(&blocked).unwrap();
+    assert!(
+        crate::online::engine::OnlineEngine::disable(1144200, &backup_root, &state_path, None)
+            .is_err()
+    );
+    assert_eq!(fs::read(&original).unwrap(), b"pristine");
+    assert!(!backup.exists());
+    assert!(backup_dir.join("rollback_pending.json").is_file());
+    assert_eq!(Journal::load(&backup_dir).entries.len(), 1);
+    fs::remove_dir(blocked).unwrap();
+    assert!(
+        crate::online::engine::OnlineEngine::disable(1144200, &backup_root, &state_path, None)
+            .unwrap()
+            .success
+    );
+    assert_eq!(fs::read(&original).unwrap(), b"pristine");
+    assert!(!backup_dir.exists());
+}
+
+#[test]
+fn legacy_neutralized_entry_is_still_restored() {
+    use crate::online::deploy::JournalEntry;
+    let temp = tempfile::tempdir().unwrap();
+    let backup_root = temp.path().join("backup");
+    let backup_dir = backup_dir_for(&backup_root, 1144200);
+    let state_path = temp.path().join("state.json");
+    let original = temp.path().join("legacy.dll");
+    fs::write(
+        temp.path().join("legacy.dll.uco-disabled"),
+        b"legacy original",
+    )
+    .unwrap();
+    Journal {
+        entries: vec![JournalEntry::Neutralized {
+            path: original.clone(),
+        }],
+    }
+    .save(&backup_dir)
+    .unwrap();
+    assert!(
+        crate::online::engine::OnlineEngine::disable(1144200, &backup_root, &state_path, None)
+            .unwrap()
+            .success
+    );
+    assert_eq!(fs::read(original).unwrap(), b"legacy original");
+    assert!(!temp.path().join("legacy.dll.uco-disabled").exists());
+}
+
+#[cfg(windows)]
+#[test]
+fn locked_deployed_file_keeps_recovery_and_succeeds_after_unlock() {
+    use std::os::windows::fs::OpenOptionsExt;
+    let (game, _data, record, backup_root, state_path) = deployed_with_original_plugins();
+    let locked = fs::OpenOptions::new()
+        .read(true)
+        .share_mode(0)
+        .open(&record.steam_api_path)
+        .unwrap();
+    assert!(crate::online::engine::OnlineEngine::disable(
+        1144200,
+        &backup_root,
+        &state_path,
+        Some(game.path())
+    )
+    .is_err());
+    assert!(record.backup_dir.join("original/steam_api").is_file());
+    assert!(record.backup_dir.join("journal.json").is_file());
+    assert!(OnlineStateStore::load(&state_path).get(1144200).is_some());
+    drop(locked);
+    assert!(
+        crate::online::engine::OnlineEngine::disable(
+            1144200,
+            &backup_root,
+            &state_path,
+            Some(game.path())
+        )
+        .unwrap()
+        .success
+    );
+    assert_eq!(fs::read(&record.steam_api_path).unwrap(), b"original-dll");
 }

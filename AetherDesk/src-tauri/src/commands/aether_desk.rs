@@ -167,16 +167,16 @@ pub async fn restore_stable_desk(app: tauri::AppHandle) -> Result<String, String
 
 /// Portable uninstall:
 /// 1. stages an external helper (`aether_uninstaller.exe` in system temp);
-/// 2. the helper force-kills leftover desk processes, optionally relocates
-///    `AetherData` next to the install folder, then deletes `install_root`;
+/// 2. the helper removes only verified application files and, when requested,
+///    the AetherData subtree; unrelated files and kept data remain in place;
 /// 3. this process hard-exits so WebView2 cannot keep it alive in background.
 ///
 /// Steam cleanup (Reset Path) is orchestrated by the frontend *before* this
 /// command when the user confirmed it in the steam-clean modal.
 ///
 /// `delete_user_data`:
-/// - `true`  → wipe the whole portable folder including AetherData
-/// - `false` → move AetherData to the parent directory, then wipe the folder
+/// - `true`  → also remove AetherData
+/// - `false` → keep AetherData in its current directory
 #[tauri::command]
 pub fn uninstall_aether_desk(_app: tauri::AppHandle, delete_user_data: bool) -> Result<(), String> {
     crate::desk_log_info!(

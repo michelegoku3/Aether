@@ -107,13 +107,13 @@ impl OnlineEngine {
         backup_root: &Path,
         state_path: &Path,
         game_root: Option<&Path>,
-    ) -> OnlineActionResult {
-        revert::disable(app_id, backup_root, state_path, game_root);
-        OnlineActionResult {
+    ) -> Result<OnlineActionResult, String> {
+        let message = revert::disable(app_id, backup_root, state_path, game_root)?;
+        Ok(OnlineActionResult {
             success: true,
-            message: "Online disabled: files restored and state cleared.".to_string(),
+            message,
             record: None,
-        }
+        })
     }
 
     /// Stato riconciliato (record + file sul disco).

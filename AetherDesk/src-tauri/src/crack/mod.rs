@@ -44,6 +44,18 @@ pub fn apply_crack_pipeline(
     }
 
     let staging = archive::create_staging(app_id)?;
+    apply_sources_in_staging(app_id, game_root, backup, sources, vn_patch_mode, &staging)
+}
+
+// Explicit staging keeps regression tests entirely inside their TempDir.
+fn apply_sources_in_staging(
+    app_id: u32,
+    game_root: &Path,
+    backup: &GameBackup,
+    sources: &[String],
+    vn_patch_mode: bool,
+    staging: &Path,
+) -> Result<CrackReport, String> {
     let mut report = CrackReport::default();
 
     // Ensure staging is cleaned up even when a source fails mid-way.
@@ -69,7 +81,7 @@ pub fn apply_crack_pipeline(
             if is_vn_exe {
                 let temp_zip = staging
                     .parent()
-                    .unwrap_or(&staging)
+                    .unwrap_or(staging)
                     .join(format!(
                         "temp_vn_{}.exe.zip",
                         source_path
@@ -81,7 +93,7 @@ pub fn apply_crack_pipeline(
                     format!("Failed to stage VN patch .exe as .exe.zip: {e}")
                 })?;
                 let stage_res =
-                    archive::stage_source(&temp_zip, &staging, DEFAULT_ARCHIVE_PASSWORD);
+                    archive::stage_source(&temp_zip, staging, DEFAULT_ARCHIVE_PASSWORD);
                 let _ = std::fs::remove_file(&temp_zip);
 
                 if stage_res.is_err() {
@@ -107,24 +119,24 @@ pub fn apply_crack_pipeline(
                     continue;
                 }
             } else {
-                archive::stage_source(&source_path, &staging, DEFAULT_ARCHIVE_PASSWORD)?;
+                archive::stage_source(&source_path, staging, DEFAULT_ARCHIVE_PASSWORD)?;
             }
 
             // Locate each staged file's destination inside the game and apply
             // (back up originals & crack files, write inventory, copy).
-            let sub_report = apply::apply_staged_files(app_id, &staging, game_root, backup)?;
+            let sub_report = apply::apply_staged_files(app_id, staging, game_root, backup)?;
             report.applied += sub_report.applied;
             report.replaced += sub_report.replaced;
             report.files.extend(sub_report.files);
 
             // Clear staged files before processing the next source.
-            archive::clear_staging_contents(&staging)?;
+            archive::clear_staging_contents(staging)?;
         }
         Ok(())
     })();
 
     // Best-effort cleanup regardless of success/error.
-    let _ = archive::remove_staging(&staging);
+    let _ = archive::remove_staging(staging);
 
     result?;
     Ok(report)
@@ -164,4 +176,103 @@ pub fn remove_applied_crack_from_game(
     backup: &GameBackup,
 ) -> Result<usize, String> {
     apply::remove_applied_crack_files(app_id, game_root, backup)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+    const APP_ID: u32 = 424243;
+
+    fn run(
+        sources: &[(&str, &[u8])],
+        fail_last: bool,
+    ) -> (
+        tempfile::TempDir,
+        GameBackup,
+        PathBuf,
+        Result<CrackReport, String>,
+    ) {
+        let temp = tempfile::tempdir().unwrap();
+        let backup_root = temp.path().join("backup");
+        for directory in ["lua", "original", "crack"] {
+            fs::create_dir_all(backup_root.join(directory)).unwrap();
+        }
+        let backup = GameBackup::for_tests(backup_root);
+        let game = temp.path().join("game");
+        let staging = temp.path().join("stage");
+        let input = temp.path().join("input");
+        fs::create_dir_all(&game).unwrap();
+        fs::create_dir_all(&staging).unwrap();
+        fs::create_dir_all(&input).unwrap();
+        fs::write(game.join("a.dll"), b"original a").unwrap();
+        let mut paths = Vec::new();
+        for (index, (name, bytes)) in sources.iter().enumerate() {
+            let directory = input.join(index.to_string());
+            fs::create_dir_all(&directory).unwrap();
+            let path = directory.join(name);
+            fs::write(&path, bytes).unwrap();
+            paths.push(path.to_str().unwrap().to_string());
+        }
+        if fail_last {
+            paths.push(input.join("missing.dll").to_str().unwrap().to_string());
+        }
+        let result = apply_sources_in_staging(APP_ID, &game, &backup, &paths, false, &staging);
+        assert!(
+            !staging.exists(),
+            "only explicit temporary staging is cleaned"
+        );
+        (temp, backup, game, result)
+    }
+
+    #[test]
+    fn multiple_disjoint_sources_are_all_in_the_removal_inventory() {
+        let (_temp, backup, game, result) =
+            run(&[("a.dll", b"patch a"), ("b.dll", b"patch b")], false);
+        let report = result.unwrap();
+        assert_eq!(report.sources, 2);
+        assert_eq!(report.applied, 2);
+        assert_eq!(
+            backup.read_crack_inventory(APP_ID).unwrap(),
+            vec!["a.dll", "b.dll"]
+        );
+        assert_eq!(
+            remove_applied_crack_from_game(APP_ID, &game, &backup).unwrap(),
+            2
+        );
+        assert_eq!(
+            std::fs::read(backup.original_dir().join("a.dll")).unwrap(),
+            b"original a"
+        );
+        assert!(!backup.original_dir().join("b.dll").exists());
+    }
+
+    #[test]
+    fn overlapping_sources_keep_original_and_apply_the_last_payload() {
+        let (_temp, backup, game, result) =
+            run(&[("a.dll", b"patch one"), ("a.dll", b"patch two")], false);
+        assert_eq!(result.unwrap().applied, 2);
+        assert_eq!(fs::read(game.join("a.dll")).unwrap(), b"patch two");
+        assert_eq!(
+            fs::read(backup.original_dir().join("a.dll")).unwrap(),
+            b"original a"
+        );
+        assert_eq!(backup.read_crack_inventory(APP_ID).unwrap(), vec!["a.dll"]);
+    }
+
+    #[test]
+    fn later_source_failure_leaves_a_complete_recoverable_prefix() {
+        let (_temp, backup, game, result) = run(&[("a.dll", b"patch a")], true);
+        assert!(result.is_err());
+        assert_eq!(fs::read(game.join("a.dll")).unwrap(), b"patch a");
+        assert_eq!(backup.read_crack_inventory(APP_ID).unwrap(), vec!["a.dll"]);
+        assert_eq!(
+            remove_applied_crack_from_game(APP_ID, &game, &backup).unwrap(),
+            1
+        );
+        assert_eq!(
+            fs::read(backup.original_dir().join("a.dll")).unwrap(),
+            b"original a"
+        );
+    }
 }

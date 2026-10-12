@@ -97,6 +97,12 @@ pub fn parse_build_details(json: &Value) -> Result<Vec<DepotManifestPin>, Versio
         .and_then(Value::as_array)
         .ok_or_else(|| VersionError::parse("Depotbox response", "missing `depots` array"))?;
 
+    // A successful, explicitly empty diff is known absence of changes,
+    // unlike a failed lookup or a non-empty payload with no valid rows.
+    if depots.is_empty() {
+        return Ok(Vec::new());
+    }
+
     let mut pins: Vec<DepotManifestPin> = Vec::new();
     for entry in depots {
         let depot = value_to_string(entry.get("depot_id")).unwrap_or_default();
@@ -123,7 +129,10 @@ pub fn parse_build_details(json: &Value) -> Result<Vec<DepotManifestPin>, Versio
     pins.sort_by_key(|pin| pin.depot_id);
     pins.dedup_by_key(|pin| pin.depot_id);
     if pins.is_empty() {
-        return Err(VersionError::BuildNotFound);
+        return Err(VersionError::parse(
+            "Depotbox response",
+            "no valid depot manifest rows",
+        ));
     }
     Ok(pins)
 }
@@ -201,9 +210,19 @@ mod tests {
             parse_build_details(&json!({ "success": false, "error": "vpn_blocked", "message": "Turn off your VPN" })),
             Err(VersionError::SourceUnavailable { source: "Depotbox", .. })
         ));
+        assert!(parse_build_details(&json!({ "success": true, "depots": [] })).unwrap().is_empty());
+    }
+    #[test]
+    fn all_malformed_rows_are_parse_failure_not_a_valid_empty_diff() {
         assert!(matches!(
-            parse_build_details(&json!({ "success": true, "depots": [] })),
-            Err(VersionError::BuildNotFound)
+            parse_build_details(
+                &json!({"success": true, "depots": [{"depot_id": "bad", "manifest_id": "123"}]})
+            ),
+            Err(VersionError::Parse { .. })
+        ));
+        assert!(matches!(
+            parse_build_details(&json!({"success": true})),
+            Err(VersionError::Parse { .. })
         ));
     }
 }

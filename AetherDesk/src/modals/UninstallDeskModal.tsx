@@ -12,7 +12,7 @@ export interface UninstallDeskConfirmModalProps {
 /**
  * First step of portable Uninstall: "Are you sure?" plus optional wipe of
  * AetherData. YES advances to the Steam-clean step (if residuals exist) or
- * starts the real folder removal.
+ * starts removal of verified application files.
  */
 export const UninstallDeskConfirmModal = ({
   isProcessing,
@@ -33,16 +33,17 @@ export const UninstallDeskConfirmModal = ({
         Are you sure you want to uninstall AetherDesk?
       </p>
       <p className="uninstall-modal-copy">
-        The portable application folder will be removed from this PC.
+        Only verified AetherDesk application files will be removed. Unrelated
+        or modified files will be kept.
         {deleteUserData
           ? ' User data (settings, themes, wallpapers, backups) will be deleted too.'
-          : ' User data will be kept next to the folder as AetherData.'}
+          : ' User data will stay in AetherData at its current location.'}
       </p>
 
       <div className="uninstall-option-card">
         <label
           className="uninstall-userdata-row"
-          title="If checked, AetherData is deleted with the app. If unchecked, it is moved next to the app folder before removal."
+          title="If checked, AetherData is deleted. If unchecked, it stays at its current location. Other files are never deleted."
         >
           <span className="uninstall-userdata-text">Delete user data?</span>
           <input

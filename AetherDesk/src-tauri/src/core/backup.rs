@@ -62,6 +62,11 @@ impl GameBackup {
         self.original_dir().join(format!("crack_{}.txt", app_id))
     }
 
+    /// Private recovery metadata; the legacy text inventory stays unchanged.
+    pub(crate) fn crack_recovery_path(&self, app_id: u32) -> PathBuf {
+        self.root.join(format!("crack_{app_id}.state.json"))
+    }
+
     /// Open an existing backup tree without creating folders.
     /// Returns `None` when `backup/<app_id>` does not exist yet.
     pub fn open_existing(app_id: u32) -> Option<Self> {
@@ -647,7 +652,7 @@ pub fn list_lua_history(app_id: u32) -> Result<Vec<LuaHistoryEntry>, String> {
 impl GameBackup {
     /// Test-only constructor: the production layout is anchored to
     /// `LocalAppPaths::data_root()`, which tests must not touch.
-    fn for_tests(root: PathBuf) -> Self {
+    pub(crate) fn for_tests(root: PathBuf) -> Self {
         Self { root }
     }
 }

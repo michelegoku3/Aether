@@ -1,160 +1,290 @@
-//! Rollback del deploy UCOnline2 (disattivazione).
+//! Verified, retryable rollback of the UCOnline2 deployment journal.
 //!
-//! `disable()` replaya il JOURNAL in ordine inverso: rimuove i file UCO2
-//! deployati, ripristina gli originali dalla backup dir e rinomina indietro
-//! i file neutralizzati. Se il journal manca (installazione esterna), fa
-//! revert euristico dai file di backup e dal record di stato.
+//! Completed entries are retired only after their filesystem action succeeds.
+//! A private restore checkpoint bridges a successful rename and a failed
+//! journal save, so a retry never deletes an original already restored.
 
 use crate::external_tools::constants::UCO_DISABLED_SUFFIX;
-use crate::online::deploy::backup_dir_for;
+use crate::external_tools::fs::write_atomic;
+use crate::online::deploy::{backup_dir_for, Journal, JournalEntry};
 use crate::online::state::OnlineStateStore;
-use crate::online::types::OnlineRecord;
-use crate::online::deploy::{Journal, JournalEntry};
-use crate::external_tools::fs::walk_files;
+use sha2::{Digest, Sha256};
 use std::fs;
+use std::io::{self, Read};
 use std::path::{Path, PathBuf};
 
-/// Disattiva UCOnline2 per un gioco. Idempotente. Non fallisce se manca
-/// il backup: in quel caso rimuove i marker UCO2 e lascia steam_api.
+const RESTORE_CHECKPOINT: &str = "rollback_pending.json";
+
 pub fn disable(
     app_id: u32,
     backup_root: &Path,
     state_path: &Path,
     game_root: Option<&Path>,
-) -> String {
+) -> Result<String, String> {
     let backup_dir = backup_dir_for(backup_root, app_id);
-    let mut store = OnlineStateStore::load(state_path);
-    let record = store.get(app_id).cloned();
-
-    let journal = Journal::load(&backup_dir);
-    if !journal.entries.is_empty() {
-        let _ = revert_from_journal(&journal, &backup_dir);
-    } else if let Some(record) = &record {
-        let _ = revert_heuristic(record);
-    }
-
-    if let Some(root) = game_root {
-        crate::online::foreign::sweep_uco2_files(root);
-    } else if let Some(record) = &record {
-        if let Some(parent) = record.ini_path.parent() {
-            crate::online::foreign::sweep_uco2_files(parent);
+    // Do not turn a corrupt/unreadable recovery index into an empty store.
+    let mut store: OnlineStateStore = match fs::read_to_string(state_path) {
+        Ok(content) => serde_json::from_str(&content)
+            .map_err(|e| format!("Invalid online state {}: {e}", state_path.display()))?,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => OnlineStateStore::default(),
+        Err(error) => {
+            return Err(format!(
+                "Read online state {}: {error}",
+                state_path.display()
+            ))
         }
-    }
+    };
+    let journal_path = backup_dir.join("journal.json");
+    let mut journal: Journal = match fs::read_to_string(&journal_path) {
+        Ok(content) => serde_json::from_str(&content)
+            .map_err(|e| format!("Invalid recovery journal {}: {e}", journal_path.display()))?,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => {
+            if store.get(app_id).is_some() || backup_dir.try_exists().map_err(|e| e.to_string())? {
+                return Err(format!(
+                    "Recovery journal is missing at {}; state and backups retained for manual recovery",
+                    journal_path.display()
+                ));
+            }
+            if game_root.is_some_and(|root| crate::online::foreign::scan(root).uco2) {
+                return Err("External UCOnline2 files have no recovery journal; automatic restoration is unsafe".into());
+            }
+            return Ok("No tracked UCOnline2 deployment to restore; no files changed.".into());
+        }
+        Err(error) => {
+            return Err(format!(
+                "Read recovery journal {}: {error}",
+                journal_path.display()
+            ))
+        }
+    };
 
-    let _ = store.remove(app_id, state_path);
-    "UCOnline2 disabled: files restored and state cleared.".to_string()
+    revert_from_journal(&mut journal, &backup_dir)?;
+    // The now-empty journal stays available if persisting the index fails.
+    if store.get(app_id).is_some() {
+        store.remove(app_id, state_path)?;
+    }
+    remove_file_if_present(&journal_path)?;
+    remove_empty_dir(&backup_dir)?;
+    Ok("Online disabled: journaled files restored and state cleared.".into())
 }
 
-/// Revert guidato dal journal (ordine inverso).
-fn revert_from_journal(journal: &Journal, backup_dir: &Path) -> Result<(), String> {
-    let mut plugin_dirs: Vec<PathBuf> = Vec::new();
-    for entry in journal.entries.iter().rev() {
+fn remove_file_if_present(path: &Path) -> Result<(), String> {
+    match fs::remove_file(path) {
+        Ok(()) => Ok(()),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(format!("Remove {}: {error}", path.display())),
+    }
+}
+
+fn remove_empty_dir(path: &Path) -> Result<(), String> {
+    match fs::remove_dir(path) {
+        Ok(()) => Ok(()),
+        Err(error)
+            if matches!(
+                error.kind(),
+                io::ErrorKind::NotFound | io::ErrorKind::DirectoryNotEmpty
+            ) =>
+        {
+            Ok(())
+        }
+        Err(error) => Err(format!(
+            "Remove empty directory {}: {error}",
+            path.display()
+        )),
+    }
+}
+
+fn revert_from_journal(journal: &mut Journal, backup_dir: &Path) -> Result<(), String> {
+    while let Some(entry) = journal.entries.last() {
         match entry {
             JournalEntry::Deployed { path } => {
-                if path.is_file() {
-                    let _ = fs::remove_file(path);
-                }
-                // Ricorda la cartella plugins\ di provenienza (se vuota la
-                // rimuoviamo dopo: era nostra, il gioco non l'aveva).
-                if let Some(parent) = path.parent() {
-                    let is_plugins = parent
+                remove_file_if_present(path)?;
+                if let Some(parent) = path.parent().filter(|parent| {
+                    parent
                         .file_name()
-                        .and_then(|n| n.to_str())
-                        .map(|n| n.eq_ignore_ascii_case("plugins"))
-                        .unwrap_or(false);
-                    if is_plugins && !plugin_dirs.iter().any(|p| p == parent) {
-                        plugin_dirs.push(parent.to_path_buf());
-                    }
+                        .is_some_and(|name| name.eq_ignore_ascii_case("plugins"))
+                }) {
+                    // Remove owned empty deployment directories BEFORE restoring originals.
+                    remove_empty_dir(parent)?;
                 }
             }
             JournalEntry::Neutralized { path } => {
-                // path = nome originale; il file attuale è path + suffisso.
                 let disabled = path.with_file_name(format!(
                     "{}{}",
                     path.file_name().and_then(|n| n.to_str()).unwrap_or("file"),
                     UCO_DISABLED_SUFFIX
                 ));
-                if disabled.is_file() && !path.exists() {
-                    fs::rename(&disabled, path).map_err(|e| e.to_string())?;
-                }
+                restore_backup(path, &disabled, backup_dir)?;
             }
             JournalEntry::BackedUp { original, backup } => {
-                // Files AND directories (the original plugins/ folder is a dir).
-                if backup.exists() && !original.exists() {
-                    if let Some(parent) = original.parent() {
-                        fs::create_dir_all(parent).map_err(|e| e.to_string())?;
-                    }
-                    fs::rename(backup, original).map_err(|e| e.to_string())?;
-                }
+                restore_backup(original, backup, backup_dir)?;
             }
         }
+        let _ = journal.entries.pop();
+        journal.save(backup_dir)?;
+        remove_file_if_present(&backup_dir.join(RESTORE_CHECKPOINT))?;
     }
-
-    // Rimuove le cartelle plugins\ ormai vuote (best-effort).
-    for dir in plugin_dirs {
-        let empty = dir
-            .read_dir()
-            .map(|mut entries| entries.next().is_none())
-            .unwrap_or(false);
-        if empty {
-            let _ = fs::remove_dir(dir);
+    remove_file_if_present(&backup_dir.join(RESTORE_CHECKPOINT))?;
+    // Never discard originals not accounted for by the journal (e.g. a failed enable).
+    let originals = backup_dir.join("original");
+    match fs::remove_dir(&originals) {
+        Ok(()) => {}
+        Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+        Err(error) => {
+            return Err(format!(
+                "Original backups remain at {}; recovery state retained: {error}",
+                originals.display()
+            ))
         }
     }
-
-    // Rimuove journal e, se non restano file, l'intera struttura di backup.
-    let _ = fs::remove_file(backup_dir.join("journal.json"));
-    let leftovers: Vec<PathBuf> = walk_files(backup_dir);
-    if leftovers.is_empty() {
-        let _ = fs::remove_dir_all(backup_dir);
-    }
-
     Ok(())
 }
 
-/// Revert euristico quando il journal manca: ripristina dagli originali
-/// nella backup dir (se esistono) e rimuove i file deployati noti dal
-/// record. Best-effort: non tocca file che non riconosce.
-fn revert_heuristic(record: &OnlineRecord) -> Result<(), String> {
-    // 1. Rimuove ini e dll deployate (solo se esistono e il record le indica).
-    if record.ini_path.is_file() {
-        fs::remove_file(&record.ini_path).map_err(|e| e.to_string())?;
+fn restore_backup(original: &Path, backup: &Path, backup_dir: &Path) -> Result<(), String> {
+    let checkpoint_path = backup_dir.join(RESTORE_CHECKPOINT);
+    if !backup.try_exists().map_err(|e| e.to_string())? {
+        // A previous rename may have succeeded just before journal.save failed.
+        let content = fs::read_to_string(&checkpoint_path).map_err(|e| {
+            format!(
+                "Missing backup {}; cannot prove restoration: {e}",
+                backup.display()
+            )
+        })?;
+        let (saved_original, saved_backup, expected): (PathBuf, PathBuf, String) =
+            serde_json::from_str(&content).map_err(|e| e.to_string())?;
+        if saved_original == original
+            && saved_backup == backup
+            && fingerprint(original)? == expected
+        {
+            return Ok(());
+        }
+        return Err(format!(
+            "Missing backup {}; restored content not verified",
+            backup.display()
+        ));
     }
-    if record.steam_api_path.is_file() {
-        fs::remove_file(&record.steam_api_path).map_err(|e| e.to_string())?;
-    }
-    if let Some(overlay) = &record.overlay_proxy_path {
-        if overlay.is_file() {
-            fs::remove_file(overlay).map_err(|e| e.to_string())?;
+    if original.try_exists().map_err(|e| e.to_string())? {
+        // A deployed plugins directory may exist even when a plugin copy failed.
+        // Only an EMPTY directory can be removed; never overwrite user collisions.
+        let metadata = fs::symlink_metadata(original).map_err(|e| e.to_string())?;
+        let linked = metadata.file_type().is_symlink();
+        #[cfg(windows)]
+        let linked = {
+            use std::os::windows::fs::MetadataExt;
+            linked || metadata.file_attributes() & 0x400 != 0
+        };
+        if !linked && backup.is_dir() && metadata.is_dir() {
+            fs::remove_dir(original).map_err(|e| {
+                format!(
+                    "Restore collision at {}; backup retained: {e}",
+                    original.display()
+                )
+            })?;
+        } else {
+            return Err(format!(
+                "Restore collision at {}; backup retained at {}",
+                original.display(),
+                backup.display()
+            ));
         }
     }
-    // 2. Rimuove la cartella plugins deployata (tutta: è nostra).
-    if let Some(plugins_dir) = record.ini_path.parent().map(|d| d.join("plugins")) {
-        if plugins_dir.is_dir() {
-            fs::remove_dir_all(&plugins_dir).map_err(|e| e.to_string())?;
-        }
+    let expected = fingerprint(backup)?;
+    let checkpoint =
+        serde_json::to_vec(&(original, backup, &expected)).map_err(|e| e.to_string())?;
+    write_atomic(&checkpoint_path, &checkpoint)?;
+    if let Some(parent) = original.parent() {
+        fs::create_dir_all(parent).map_err(|e| e.to_string())?;
     }
-    // 3. Ripristina gli originali dalla backup dir se presenti.
-    let original_dir = record.backup_dir.join("original");
-    if original_dir.is_dir() {
-        for file in walk_files(&original_dir) {
-            let name = file.file_name().and_then(|n| n.to_str()).unwrap_or("");
-            let target = match name {
-                "steam_api64.dll" | "steam_api.dll" => {
-                    record.steam_api_path.parent().map(|p| p.join(name))
-                }
-                "union-crax.ini" => record.ini_path.parent().map(|p| p.join(name)),
-                _ => None,
-            };
-            if let Some(target) = target {
-                if file.is_file() && !target.exists() {
-                    if let Some(parent) = target.parent() {
-                        fs::create_dir_all(parent).map_err(|e| e.to_string())?;
-                    }
-                    fs::rename(&file, target).map_err(|e| e.to_string())?;
-                }
-            }
-        }
+    fs::rename(backup, original).map_err(|e| {
+        format!(
+            "Restore {} from {}: {e}",
+            original.display(),
+            backup.display()
+        )
+    })?;
+    if fingerprint(original)? != expected {
+        return Err(format!(
+            "Restored content differs at {}; checkpoint retained",
+            original.display()
+        ));
     }
-    let _ = fs::remove_dir_all(&record.backup_dir);
     Ok(())
+}
+
+fn fingerprint(path: &Path) -> Result<String, String> {
+    fn visit(path: &Path, digest: &mut Sha256) -> Result<(), String> {
+        let metadata = fs::symlink_metadata(path).map_err(|e| e.to_string())?;
+        let linked = metadata.file_type().is_symlink();
+        #[cfg(windows)]
+        let linked = {
+            use std::os::windows::fs::MetadataExt;
+            linked || metadata.file_attributes() & 0x400 != 0
+        };
+        if linked {
+            return Err(format!(
+                "Cannot fingerprint linked backup {}",
+                path.display()
+            ));
+        }
+        if metadata.is_dir() {
+            digest.update(b"D");
+            let mut entries = fs::read_dir(path)
+                .map_err(|e| e.to_string())?
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(|e| e.to_string())?;
+            entries.sort_by_key(fs::DirEntry::file_name);
+            // Encode tree boundaries, not just preorder names and contents.
+            let count = u64::try_from(entries.len()).map_err(|e| e.to_string())?;
+            digest.update(count.to_le_bytes());
+            for entry in entries {
+                let name = entry.file_name();
+                let bytes = name.as_encoded_bytes();
+                let length = u64::try_from(bytes.len()).map_err(|e| e.to_string())?;
+                digest.update(length.to_le_bytes());
+                digest.update(bytes);
+                visit(&entry.path(), digest)?;
+            }
+        } else if metadata.is_file() {
+            digest.update(b"F");
+            digest.update(metadata.len().to_le_bytes());
+            let mut file = fs::File::open(path).map_err(|e| e.to_string())?;
+            let mut buffer = [0_u8; 16 * 1024];
+            loop {
+                let count = file.read(&mut buffer).map_err(|e| e.to_string())?;
+                if count == 0 {
+                    break;
+                }
+                digest.update(&buffer[..count]);
+            }
+        } else {
+            return Err(format!(
+                "Cannot fingerprint special file {}",
+                path.display()
+            ));
+        }
+        Ok(())
+    }
+    let mut digest = Sha256::new();
+    visit(path, &mut digest)?;
+    Ok(format!("{:x}", digest.finalize()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn recovery_fingerprint_distinguishes_sibling_from_nested_file() {
+        let temp = tempfile::tempdir().unwrap();
+        let first = temp.path().join("first");
+        let second = temp.path().join("second");
+        for root in [&first, &second] {
+            fs::create_dir_all(root.join("a")).unwrap();
+            fs::write(root.join("a/b"), b"b sentinel").unwrap();
+        }
+        fs::write(first.join("c"), b"c sentinel").unwrap();
+        fs::write(second.join("a/c"), b"c sentinel").unwrap();
+        assert_ne!(fingerprint(&first).unwrap(), fingerprint(&second).unwrap());
+        assert_eq!(fs::read(first.join("c")).unwrap(), b"c sentinel");
+    }
 }
