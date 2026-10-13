@@ -478,8 +478,16 @@ pub async fn apply_specific_version_edits(
         })
         .await?;
     if !resolution.is_complete() {
+        // Same symptom, two different causes: without a key the resolver
+        // could only look locally (wrong version and missing key look
+        // identical here — say so); with a key, generation itself failed.
+        if settings.hubcap_api_key.trim().is_empty() {
+            return Err(
+                "The selected version could not be resolved locally: check the build/version, or configure a Hubcap API key to generate the missing manifests.".to_string(),
+            );
+        }
         return Err(
-            "The selected version references manifest files that are not local. Configure a valid authenticated Hubcap API key before applying it.".to_string(),
+            "The selected version could not be completed with the Hubcap key (generation failed or unsupported). Check the build/version.".to_string(),
         );
     }
     let generated = resolution.generated;

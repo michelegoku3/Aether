@@ -28,8 +28,16 @@ pub async fn save_settings(
     base: AppSettings,
 ) -> Result<AppSettings, String> {
     let manager = SettingsManager::new(&app);
-    let previous = manager.try_load()?;
-    let candidate = crate::core::settings::merge_settings(&base, &settings, &previous)?;
+    let previous_result = manager.try_load();
+    // A corrupt store has no trustworthy base to merge against: the form the
+    // user just reviewed wins over garbage (quarantined aside, never deleted).
+    let previous_healthy = previous_result.is_ok();
+    let previous = previous_result.unwrap_or_default();
+    let candidate = if previous_healthy {
+        crate::core::settings::merge_settings(&base, &settings, &previous)?
+    } else {
+        settings.clone()
+    };
     if candidate.download_games_with_updates_on {
         if candidate.hubcap_api_key.trim().is_empty() {
             return Err(DeskError::coded(
@@ -48,18 +56,22 @@ pub async fn save_settings(
             ));
         }
     }
-    manager.update("ui-patch", |current| {
-        let next = crate::core::settings::merge_settings(&base, &settings, current)?;
-        if next.download_games_with_updates_on
-            && (!candidate.download_games_with_updates_on
-                || next.hubcap_api_key != candidate.hubcap_api_key)
-        {
-            return Err(DeskError::coded(
-                codes::SETTINGS_CONFLICT,
-                "update policy/key changed during validation; retry",
-            ));
+    manager.update_or_reset("ui-patch", |current| {
+        if previous_healthy {
+            let next = crate::core::settings::merge_settings(&base, &settings, current)?;
+            if next.download_games_with_updates_on
+                && (!candidate.download_games_with_updates_on
+                    || next.hubcap_api_key != candidate.hubcap_api_key)
+            {
+                return Err(DeskError::coded(
+                    codes::SETTINGS_CONFLICT,
+                    "update policy/key changed during validation; retry",
+                ));
+            }
+            *current = next;
+        } else {
+            *current = candidate.clone();
         }
-        *current = next;
         Ok(())
     })?;
     apply_post_save_effects(&app, &previous.steam_path)?;
@@ -70,18 +82,21 @@ pub async fn save_settings(
 pub fn reset_settings_to_defaults(app: tauri::AppHandle) -> Result<AppSettings, String> {
     let manager = SettingsManager::new(&app);
     let mut previous_root = String::new();
-    manager.update("reset-defaults", |current| {
-        previous_root = current.steam_path.clone();
-        let defaults = AppSettings {
-            library_install_filter: current.library_install_filter.clone(),
-            antivirus_exclusion_done: current.antivirus_exclusion_done,
-            ost_warning_acknowledged: current.ost_warning_acknowledged,
-            download_updates_default_off_migrated: current.download_updates_default_off_migrated,
-            ..AppSettings::default()
-        };
-        *current = defaults;
-        Ok(())
-    })?;
+    manager
+        .update_or_reset("reset-defaults", |current| {
+            previous_root = current.steam_path.clone();
+            let defaults = AppSettings {
+                library_install_filter: current.library_install_filter.clone(),
+                antivirus_exclusion_done: current.antivirus_exclusion_done,
+                ost_warning_acknowledged: current.ost_warning_acknowledged,
+                download_updates_default_off_migrated: current
+                    .download_updates_default_off_migrated,
+                ..AppSettings::default()
+            };
+            *current = defaults;
+            Ok(())
+        })
+        .map(|(settings, _recovered)| settings)?;
     apply_post_save_effects(&app, &previous_root)?;
     manager.try_load()
 }
@@ -349,5 +364,18 @@ pub fn open_webview_devtools(app: tauri::AppHandle) -> Result<(), String> {
         return Err("Main WebView window was not found.".to_string());
     };
     window.open_devtools();
+    Ok(())
+}
+
+/// Closes the WebView devtools. Ungated on purpose: closing can never widen
+/// any attack surface, and the toggle-OFF path must work even if the saved
+/// setting somehow disagrees with the checkbox.
+#[tauri::command]
+pub fn close_webview_devtools(app: tauri::AppHandle) -> Result<(), String> {
+    use tauri::Manager;
+    let Some(window) = app.get_webview_window("main") else {
+        return Err("Main WebView window was not found.".to_string());
+    };
+    window.close_devtools();
     Ok(())
 }

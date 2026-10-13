@@ -37,7 +37,7 @@ pub fn get_antivirus_exclusion_done(app: tauri::AppHandle) -> Result<bool, Strin
 pub fn acknowledge_antivirus_exclusion(app: tauri::AppHandle) -> Result<(), String> {
     let manager = SettingsManager::new(&app);
     manager
-        .update("acknowledge-antivirus_exclusion_done", |settings| {
+        .update_or_reset("acknowledge-antivirus_exclusion_done", |settings| {
             settings.antivirus_exclusion_done = true;
             Ok(())
         })

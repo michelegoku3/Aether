@@ -142,22 +142,53 @@ describe('useSettingsController', () => {
     warn.mockRestore();
   });
 
-  it('persistDevtools saves the opt-in flag for the backend gate', async () => {
-    mockInvokeCommands(commandDefaults());
+  it('opens devtools on save when the flag turns on', async () => {
+    mockInvokeCommands({
+      ...commandDefaults(),
+      save_settings: (args: unknown) => ({
+        ...(args as { settings: AppSettings }).settings,
+        enable_webview_devtools: true,
+      }),
+    });
+    const params = createParams();
+    const { result } = renderHook(() => useSettingsController(params));
+    await waitFor(() => expect(result.current.form.steamPath).toBe('C:/Steam'));
+    act(() => result.current.setField('enableWebviewDevtools', true));
+
+    let success = false;
+    await act(async () => {
+      success = await result.current.save();
+    });
+
+    expect(success).toBe(true);
+    expect(invokeMock).toHaveBeenCalledWith('open_webview_devtools');
+    expect(invokeMock).not.toHaveBeenCalledWith('close_webview_devtools');
+  });
+
+  it('closes devtools on save when the flag turns off', async () => {
+    mockInvokeCommands({
+      ...commandDefaults(),
+      save_settings: (args: unknown) => (args as { settings: AppSettings }).settings,
+    });
     const params = createParams();
     const { result } = renderHook(() => useSettingsController(params));
     await waitFor(() => expect(result.current.form.steamPath).toBe('C:/Steam'));
 
+    // Simulate a previously saved opt-in, then switch it off.
+    act(() => result.current.setField('enableWebviewDevtools', true));
     await act(async () => {
-      await result.current.persistDevtools(true);
+      await result.current.save();
+    });
+    expect(invokeMock).toHaveBeenCalledWith('open_webview_devtools');
+
+    invokeMock.mockClear();
+    act(() => result.current.setField('enableWebviewDevtools', false));
+    await act(async () => {
+      await result.current.save();
     });
 
-    expect(invokeMock).toHaveBeenCalledWith(
-      'save_settings',
-      expect.objectContaining({
-        settings: expect.objectContaining({ enable_webview_devtools: true }),
-      })
-    );
+    expect(invokeMock).toHaveBeenCalledWith('close_webview_devtools');
+    expect(invokeMock).not.toHaveBeenCalledWith('open_webview_devtools');
   });
 
   it('flags corrupt stored settings for the banner and clears on save', async () => {
@@ -508,5 +539,59 @@ describe('useSettingsController', () => {
     });
     expect(result.current.form.iconSelectedFile).toBe('aether_genshin.ico');
     expect(result.current.form.customIconEnabled).toBe(true);
+  });
+
+  it('a stale status timer never clears a newer message', async () => {
+    mockInvokeCommands(commandDefaults());
+    const params = createParams();
+    const { result } = renderHook(() => useSettingsController(params));
+    await waitFor(() => expect(result.current.form.steamPath).toBe('C:/Steam'));
+
+    vi.useFakeTimers();
+    try {
+      act(() => result.current.showStatus('Validating...', 'info'));
+      act(() => {
+        vi.advanceTimersByTime(5000);
+      });
+      // A newer message replaces the first one before its timer fires.
+      act(() => result.current.showStatus('Saving...', 'info'));
+      act(() => {
+        vi.advanceTimersByTime(2000);
+      });
+      // The first timer fired here: the live message must survive it.
+      expect(result.current.status.text).toBe('Saving...');
+      act(() => {
+        vi.advanceTimersByTime(5000);
+      });
+      expect(result.current.status.text).toBe('');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('a persistent progress message outlives its own expiry', async () => {
+    mockInvokeCommands(commandDefaults());
+    const params = createParams();
+    const { result } = renderHook(() => useSettingsController(params));
+    await waitFor(() => expect(result.current.form.steamPath).toBe('C:/Steam'));
+
+    vi.useFakeTimers();
+    try {
+      act(() => result.current.showStatus('Validating...', 'info', { persist: true }));
+      // Past the normal 6s expiry: a long validation must stay visible.
+      act(() => {
+        vi.advanceTimersByTime(10000);
+      });
+      expect(result.current.status.text).toBe('Validating...');
+      // ...until the next message replaces it, which then expires normally.
+      act(() => result.current.showStatus('done', 'success'));
+      expect(result.current.status.text).toBe('done');
+      act(() => {
+        vi.advanceTimersByTime(6000);
+      });
+      expect(result.current.status.text).toBe('');
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

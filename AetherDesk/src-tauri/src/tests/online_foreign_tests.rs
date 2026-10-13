@@ -147,3 +147,28 @@ fn content_dir_is_not_scanned() {
     let report = scan(tmp.path());
     assert!(!report.ofme, "asset folders must not produce OFME hits");
 }
+
+#[test]
+fn variant_spellings_match_by_family_stem() {
+    let tmp = tempfile::tempdir().unwrap();
+    write(tmp.path(), "Game.exe", b"MZ");
+    write(tmp.path(), "Binaries/Win64/My-OnlineFix-Pack.dll", b"ofme");
+    write(tmp.path(), "Binaries/Win64/SteamFix_loader.dll", b"ofme");
+
+    let report = scan(tmp.path());
+    assert!(report.ofme, "stem variants must be detected");
+    assert_eq!(report.files.len(), 2);
+}
+
+#[test]
+fn lookalike_names_without_stems_are_not_ofme() {
+    let tmp = tempfile::tempdir().unwrap();
+    write(tmp.path(), "Game.exe", b"MZ");
+    write(tmp.path(), "online.dll", b"legit");
+    write(tmp.path(), "fixer.dll", b"legit");
+    write(tmp.path(), "steam_api64.dll", b"legit");
+
+    let report = scan(tmp.path());
+    assert!(!report.ofme);
+    assert!(report.files.is_empty());
+}

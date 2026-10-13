@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { checkSteamPath, getSettings, type AppSettings } from '../../hooks/useSettings';
 import type { SettingsGuard } from './types';
@@ -35,10 +35,19 @@ export function useSettingsController(params: Params) {
   const [manifestRestoreOnStartup, setManifestRestoreOnStartup] = useState(true);
   const [presenceDefaultShowOnline, setPresenceDefaultShowOnline] = useState(true);
 
-  const showStatus = useCallback((text: string, type: StatusKind) => {
+  const showStatusSeq = useRef(0);
+  const showStatus = useCallback((text: string, type: StatusKind, options?: { persist?: boolean }) => {
+    const seq = (showStatusSeq.current += 1);
     setStatus({ text, type });
     if (isSettingsConflict(text)) setSettingsConflict(true);
-    window.setTimeout(() => setStatus({ text: '', type: 'info' }), 6000);
+    // Progress messages (`persist: true`) outlive the 6s expiry on purpose:
+    // a 10s key validation must stay on screen the whole time instead of
+    // going silent mid-operation. They are still replaced by the next
+    // showStatus call, and final messages keep expiring as before.
+    if (options?.persist) return;
+    window.setTimeout(() => {
+      if (showStatusSeq.current === seq) setStatus({ text: '', type: 'info' });
+    }, 6000);
   }, []);
 
   const applySettings = useCallback(
@@ -57,17 +66,6 @@ export function useSettingsController(params: Params) {
     [applySettings, model]
   );
 
-  /// Persists the devtools opt-in immediately so the backend gate sees it
-  /// before `open_webview_devtools` is invoked. Same single-field pattern as
-  /// `persistAppearance`.
-  const persistDevtools = useCallback(
-    async (enabled: boolean) => {
-      const settings = model.getLocalSettings({ enable_webview_devtools: enabled });
-      const saved = await invoke<AppSettings>('save_settings', { settings, base: model.rawSettings });
-      applySettings(saved);
-    },
-    [applySettings, model]
-  );
   const appearance = useAppearanceSettings({
     persist: persistAppearance,
     setTheme: (value) => setField('themeSelectedFile', value),
@@ -117,7 +115,7 @@ export function useSettingsController(params: Params) {
     let apiKeyWarning = '';
     let hubcapKeyValid = false;
     if (form.apiKey.trim()) {
-      showStatus('Validating API key...', 'info');
+      showStatus('Validating API key...', 'info', { persist: true });
       try {
         hubcapKeyValid = Boolean(await invoke('validate_hubcap_key', { apiKey: form.apiKey.trim() }));
         if (!hubcapKeyValid) {
@@ -125,7 +123,7 @@ export function useSettingsController(params: Params) {
           apiKeyWarning = 'The Hubcap API key is invalid and was cleared; the rest of your settings were saved.';
         }
       } catch (err) {
-        apiKeyWarning = `Hubcap API key could not be validated (${err}); the rest of your settings were saved anyway.`;
+        apiKeyWarning = `Hubcap API key could not be validated (${toErrorMessage(err)}); the rest of your settings were saved anyway.`;
       }
     }
     if (form.downloadGamesWithUpdatesOn && !hubcapKeyValid) {
@@ -142,7 +140,7 @@ export function useSettingsController(params: Params) {
       /* let the repository surface the real save error */
     }
     try {
-      showStatus('Saving settings...', 'info');
+      showStatus('Saving settings...', 'info', { persist: true });
       if (form.customCssEnabled || form.personalWallpaperEnabled) {
         try {
           await invoke('ensure_custom_css');
@@ -151,11 +149,35 @@ export function useSettingsController(params: Params) {
         }
       }
       const settings = model.getLocalSettings(invalidApiKey ? { hubcap_api_key: '' } : {});
+      const hadDevtools = model.rawSettings.enable_webview_devtools;
       const saved = await invoke<AppSettings>('save_settings', { settings, base: model.rawSettings });
       applySettings(saved);
+      const wasCorrupt = settingsCorrupt;
       setSettingsCorrupt(false);
       if (invalidApiKey) setField('apiKey', '');
-      showStatus(apiKeyWarning || 'Settings saved successfully!', apiKeyWarning ? 'error' : 'success');
+      // Devtools follow the saved setting and only change on Save (never on
+      // toggle): opening right after persisting satisfies the backend gate,
+      // and closing needs no gate at all.
+      let devtoolsNote = '';
+      if (saved.enable_webview_devtools && !hadDevtools) {
+        try {
+          await invoke('open_webview_devtools');
+        } catch (err) {
+          devtoolsNote = ` (devtools did not open: ${toErrorMessage(err)})`;
+        }
+      } else if (!saved.enable_webview_devtools && hadDevtools) {
+        try {
+          await invoke('close_webview_devtools');
+        } catch {
+          // Already closed or window gone: nothing to do.
+        }
+      }
+      showStatus(
+        wasCorrupt
+          ? `Settings recovered and saved successfully!${devtoolsNote}`
+          : apiKeyWarning || `Settings saved successfully!${devtoolsNote}`,
+        apiKeyWarning || devtoolsNote ? 'error' : 'success'
+      );
       await params.onRefreshUsage(invalidApiKey ? '' : form.apiKey);
       await params.onRefreshCustomCss();
       await appearance.reload();
@@ -171,7 +193,7 @@ export function useSettingsController(params: Params) {
       showStatus(`Error during save: ${toErrorMessage(err)}`, 'error');
       return false;
     }
-  }, [appearance, applySettings, form, model, params, setField, showStatus]);
+  }, [appearance, applySettings, form, model, params, setField, settingsCorrupt, showStatus]);
 
   const discard = useCallback(() => {
     const baseline = model.rawSettings;
@@ -303,6 +325,5 @@ export function useSettingsController(params: Params) {
     confirmOst,
     reloadSaved,
     persistAppearance,
-    persistDevtools,
   };
 }

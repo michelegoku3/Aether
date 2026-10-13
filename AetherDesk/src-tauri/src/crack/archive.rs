@@ -24,23 +24,60 @@ pub fn stage_source(source: &Path, staging: &Path, default_password: &str) -> Re
         .to_ascii_lowercase();
 
     match extension.as_str() {
-        // A `.zip` that is actually 7z/RAR-packed still gets a chance, but
-        // every attempt reports its own cause: a wrong password used to
-        // surface as "not a valid archive", hiding the real problem.
-        "zip" => extract_zip(source, staging, default_password).or_else(|zip_err| {
-            extract_7z(source, staging, default_password).or_else(|sevenz_err| {
-                extract_rar(source, staging, default_password).map_err(|rar_err| {
-                    format!(
-                        "Failed to extract archive {}: not a valid ZIP ({zip_err}), 7Z ({sevenz_err}), or RAR archive ({rar_err})",
-                        source.display()
-                    )
-                })
-            })
-        }),
+        // A `.zip` that is actually 7z/RAR-packed still gets a chance. The UI
+        // gets ONE short message (password hint vs. invalid file); the full
+        // per-attempt causes go to the session log, never the popup.
+        "zip" => {
+            let zip_err = match extract_zip(source, staging, default_password) {
+                Ok(()) => return Ok(()),
+                Err(error) => error,
+            };
+            let sevenz_err = match extract_7z(source, staging, default_password) {
+                Ok(()) => return Ok(()),
+                Err(error) => error,
+            };
+            let rar_err = match extract_rar(source, staging, default_password) {
+                Ok(()) => return Ok(()),
+                Err(error) => error,
+            };
+            crate::desk_log_warn!(
+                "crack",
+                "Archive extraction failed for {}: ZIP ({}); 7Z ({}); RAR ({})",
+                source.display(),
+                zip_err,
+                sevenz_err,
+                rar_err
+            );
+            Err(concise_archive_error(
+                source,
+                &[zip_err, sevenz_err, rar_err],
+            ))
+        }
         "rar" => extract_rar(source, staging, default_password),
         "7z" => extract_7z(source, staging, default_password),
         _ => copy_loose_file(source, staging),
     }
+}
+
+/// One-line UI message for a failed multi-format extraction. Names the
+/// password explicitly when any attempt smelled like a password problem
+/// (the vocabularies are pinned: zip "password ... incorrect/required",
+/// unrar "Password .../Wrong password ...", 7z mapped below) — otherwise a
+/// plain invalid-file message. Never contains the password itself.
+fn concise_archive_error(source: &Path, causes: &[String]) -> String {
+    if causes.iter().any(|cause| {
+        let lower = cause.to_lowercase();
+        lower.contains("password") || lower.contains("encrypted")
+    }) {
+        return format!(
+            "Failed to extract archive {}: the stored password was rejected (tried ZIP, 7Z and RAR).",
+            source.display()
+        );
+    }
+    format!(
+        "Failed to extract archive {}: not a valid ZIP, 7Z or RAR archive. See the log for details.",
+        source.display()
+    )
 }
 
 /// Create a unique staging directory for an app's crack run.
@@ -219,19 +256,17 @@ fn extract_rar(source: &Path, dest: &Path, default_password: &str) -> Result<(),
     Ok(())
 }
 
-/// Wrap a RAR error into a readable message.
-/// The tried password is deliberately NOT included: error strings reach the
-/// UI and the session log, and the default password is often reused.
+/// Wrap a RAR error into a readable message. Deliberately neutral about
+/// passwords: the unrar messages already say "Wrong password was specified"
+/// when that is the case, and claiming a password attempt on every failure
+/// would misclassify corrupt archives as password rejections downstream.
+/// Never includes the password itself.
 fn rar_password_hint(
     source: &Path,
     _default_password: &str,
     error: impl std::fmt::Display,
 ) -> String {
-    format!(
-        "Failed to extract RAR {} (stored password tried): {}",
-        source.display(),
-        error
-    )
+    format!("Failed to extract RAR {}: {}", source.display(), error)
 }
 
 /// Extract a `.7z` archive into `dest` using the pure-Rust `sevenz-rust2` crate.
@@ -246,9 +281,13 @@ fn extract_7z(source: &Path, dest: &Path, default_password: &str) -> Result<(), 
     match extract_7z_with(source, dest, None) {
         Ok(()) => Ok(()),
         Err(plain_err) => extract_7z_with(source, dest, Some(default_password)).map_err(|error| {
+            // Note: deliberately no word "password" here — `concise_archive_error`
+            // classifies on that word, and this wrapper fires for corrupt files too.
             format!(
-                "Failed to extract 7z {} (tried plain [{plain_err}] and stored password [{error}])",
+                "Failed to extract 7z {} (tried plain [{}] and with stored key [{}])",
                 source.display(),
+                plain_err,
+                error
             )
         }),
     }
@@ -258,8 +297,13 @@ fn extract_7z_with(source: &Path, dest: &Path, password: Option<&str>) -> Result
     use sevenz_rust2::{ArchiveReader, Password};
 
     let credential = password.map_or_else(Password::empty, Password::from);
-    let mut reader = ArchiveReader::open(source, credential)
-        .map_err(|error| format!("Failed to open 7z {}: {}", source.display(), error))?;
+    let mut reader = ArchiveReader::open(source, credential).map_err(|error| {
+        format!(
+            "Failed to open 7z {}: {}",
+            source.display(),
+            short_sevenz_error(&error)
+        )
+    })?;
 
     reader
         .for_each_entries(|entry, input| {
@@ -299,6 +343,28 @@ fn extract_7z_with(source: &Path, dest: &Path, password: Option<&str>) -> Result
             Ok(true)
         })
         .map_err(|error| format!("Failed to extract 7z {}: {}", source.display(), error))
+}
+
+/// Short, UI-safe rendering of a 7z open failure: no byte dumps, no `Debug`
+/// internals, no password. Unknown errors are trimmed to one short line.
+fn short_sevenz_error(error: &sevenz_rust2::Error) -> String {
+    use sevenz_rust2::Error as SevenZError;
+    match error {
+        SevenZError::BadSignature(_) => "not a 7z archive".to_string(),
+        SevenZError::PasswordRequired | SevenZError::MaybeBadPassword(_) => {
+            "password required or incorrect".to_string()
+        }
+        other => {
+            const MAX_CHARS: usize = 160;
+            let text = other.to_string();
+            if text.chars().count() <= MAX_CHARS {
+                text
+            } else {
+                let short: String = text.chars().take(MAX_CHARS).collect();
+                format!("{short}…")
+            }
+        }
+    }
 }
 
 /// Wrap any displayable error into the `std::io::Error` that `for_each_entries`
@@ -556,7 +622,7 @@ mod tests {
     }
 
     #[test]
-    fn zip_fallback_reports_every_attempt_cause() {
+    fn bogus_zip_reports_one_short_message_and_logs_causes() {
         let temp = tempfile::tempdir().unwrap();
         let source = temp.path().join("bogus.zip");
         fs::write(&source, b"definitely not an archive").unwrap();
@@ -564,9 +630,28 @@ mod tests {
         fs::create_dir_all(&staging).unwrap();
         let secret = "s3cr3t-pw-zzz";
         let err = stage_source(&source, &staging, secret).unwrap_err();
-        for marker in ["ZIP (", "7Z (", "RAR archive ("] {
-            assert!(err.contains(marker), "missing {marker} in: {err}");
-        }
+        assert_eq!(
+            err,
+            format!(
+                "Failed to extract archive {}: not a valid ZIP, 7Z or RAR archive. See the log for details.",
+                source.display()
+            )
+        );
+        assert!(!err.contains(secret), "password leaked: {err}");
+    }
+
+    #[test]
+    fn wrong_password_reports_rejection_not_invalid_format() {
+        let (_temp, source, staging) = fixture(ENCRYPTED_ZIP);
+        let secret = "definitely-wrong-password";
+        let err = stage_source(&source, &staging, secret).unwrap_err();
+        assert_eq!(
+            err,
+            format!(
+                "Failed to extract archive {}: the stored password was rejected (tried ZIP, 7Z and RAR).",
+                source.display()
+            )
+        );
         assert!(!err.contains(secret), "password leaked: {err}");
     }
 

@@ -39,7 +39,9 @@ pub fn disable(
         Ok(content) => serde_json::from_str(&content)
             .map_err(|e| format!("Invalid recovery journal {}: {e}", journal_path.display()))?,
         Err(error) if error.kind() == io::ErrorKind::NotFound => {
-            if store.get(app_id).is_some() || backup_dir.try_exists().map_err(|e| e.to_string())? {
+            if store.get(app_id).is_some() {
+                // A state record without its journal: originals may be orphaned
+                // in the backup dir — never guess, manual recovery it is.
                 return Err(format!(
                     "Recovery journal is missing at {}; state and backups retained for manual recovery",
                     journal_path.display()
@@ -47,6 +49,16 @@ pub fn disable(
             }
             if game_root.is_some_and(|root| crate::online::foreign::scan(root).uco2) {
                 return Err("External UCOnline2 files have no recovery journal; automatic restoration is unsafe".into());
+            }
+            // An empty leftover backup dir (e.g. from a failed enable) is not
+            // "state": clean it and report the no-op instead of erroring.
+            if backup_dir.exists() && !backup_dir_has_content(&backup_dir)? {
+                let _ = fs::remove_dir(&backup_dir);
+            } else if backup_dir.exists() {
+                return Err(format!(
+                    "Recovery journal is missing at {}; backups retained for manual recovery",
+                    journal_path.display()
+                ));
             }
             return Ok("No tracked UCOnline2 deployment to restore; no files changed.".into());
         }
@@ -66,6 +78,19 @@ pub fn disable(
     remove_file_if_present(&journal_path)?;
     remove_empty_dir(&backup_dir)?;
     Ok("Online disabled: journaled files restored and state cleared.".into())
+}
+
+/// True when the backup dir holds anything worth retaining (originals,
+/// journals, checkpoints). An existing-but-empty dir is just litter.
+fn backup_dir_has_content(backup_dir: &Path) -> Result<bool, String> {
+    match fs::read_dir(backup_dir) {
+        Ok(mut entries) => Ok(entries.next().is_some()),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(false),
+        Err(error) => Err(format!(
+            "Read backup directory {}: {error}",
+            backup_dir.display()
+        )),
+    }
 }
 
 fn remove_file_if_present(path: &Path) -> Result<(), String> {
@@ -272,6 +297,44 @@ fn fingerprint(path: &Path) -> Result<String, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::online::deploy::backup_dir_for;
+
+    fn empty_ctx() -> (tempfile::TempDir, PathBuf, PathBuf, PathBuf) {
+        let temp = tempfile::tempdir().unwrap();
+        let backup_root = temp.path().join("backup");
+        let state_path = temp.path().join("uc_online2.json");
+        let game_root = temp.path().join("game");
+        fs::create_dir_all(&game_root).unwrap();
+        (temp, backup_root, state_path, game_root)
+    }
+
+    #[test]
+    fn disable_without_any_state_is_a_noop_not_an_error() {
+        let (_temp, backup_root, state_path, game_root) = empty_ctx();
+        let message = disable(4242, &backup_root, &state_path, Some(&game_root)).unwrap();
+        assert!(message.contains("No tracked"), "got: {message}");
+    }
+
+    #[test]
+    fn disable_cleans_an_empty_leftover_backup_dir() {
+        let (_temp, backup_root, state_path, game_root) = empty_ctx();
+        fs::create_dir_all(backup_dir_for(&backup_root, 4242)).unwrap();
+        let message = disable(4242, &backup_root, &state_path, Some(&game_root)).unwrap();
+        assert!(message.contains("No tracked"), "got: {message}");
+        assert!(!backup_dir_for(&backup_root, 4242).exists());
+    }
+
+    #[test]
+    fn disable_refuses_orphaned_backups_without_a_journal() {
+        let (_temp, backup_root, state_path, game_root) = empty_ctx();
+        let backup_dir = backup_dir_for(&backup_root, 4242);
+        fs::create_dir_all(backup_dir.join("original")).unwrap();
+        fs::write(backup_dir.join("original/game.dll"), b"original").unwrap();
+        let error = disable(4242, &backup_root, &state_path, Some(&game_root)).unwrap_err();
+        assert!(error.contains("manual recovery"), "got: {error}");
+        // Nothing was touched: the orphan is still there for manual recovery.
+        assert!(backup_dir.join("original/game.dll").is_file());
+    }
 
     #[test]
     fn recovery_fingerprint_distinguishes_sibling_from_nested_file() {

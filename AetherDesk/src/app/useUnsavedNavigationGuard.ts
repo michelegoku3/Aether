@@ -57,7 +57,14 @@ export function useUnsavedNavigationGuard() {
     setUnsavedBusy(true);
     try {
       const saved = await settingsGuardRef.current?.save();
-      if (!saved) return;
+      if (!saved) {
+        // The save failed (the form shows why): staying with a stale pending
+        // action would stack this modal over every follow-up dialog, so drop
+        // both. The form is still dirty, so the next navigation re-prompts.
+        pendingActionRef.current = null;
+        setShowUnsavedModal(false);
+        return;
+      }
       const pending = pendingActionRef.current;
       pendingActionRef.current = null;
       setShowUnsavedModal(false);

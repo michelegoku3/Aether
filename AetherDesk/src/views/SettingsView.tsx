@@ -82,7 +82,6 @@ export const SettingsView = memo(function SettingsView(props: SettingsViewProps)
           steamCheck={c.steamCheck}
           onBrowseSteamFolder={c.browseSteam}
           onDetectSteamPath={c.detectSteam}
-          persistDevtools={c.persistDevtools}
           showStatus={c.showStatus}
         />
         <div className="settings-separator"></div>

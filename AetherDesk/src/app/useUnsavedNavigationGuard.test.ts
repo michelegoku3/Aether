@@ -50,7 +50,7 @@ describe('useUnsavedNavigationGuard', () => {
     expect(result.current.showUnsavedModal).toBe(false);
   });
 
-  it('keeps the modal open when Save fails', async () => {
+  it('dismisses the modal and drops the pending action when Save fails', async () => {
     const settingsGuard = guard({ save: vi.fn().mockResolvedValue(false) });
     const { result } = renderHook(useUnsavedNavigationGuard);
     act(() => result.current.changeTab('settings'));
@@ -59,9 +59,15 @@ describe('useUnsavedNavigationGuard', () => {
 
     await act(() => result.current.saveUnsaved());
 
+    // The form shows why the save failed; keeping this modal (and its stale
+    // pending action) open would stack it over follow-up dialogs.
     expect(result.current.activeTab).toBe('settings');
-    expect(result.current.showUnsavedModal).toBe(true);
+    expect(result.current.showUnsavedModal).toBe(false);
     expect(result.current.unsavedBusy).toBe(false);
+
+    // The form is still dirty, so the next navigation re-prompts cleanly.
+    act(() => result.current.changeTab('store'));
+    expect(result.current.showUnsavedModal).toBe(true);
   });
 
   it('discards before completing a pending tab switch', async () => {

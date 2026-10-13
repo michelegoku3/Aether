@@ -193,6 +193,76 @@ impl SettingsManager {
         result
     }
 
+    /// Like `update`, but when the stored state is unreadable the corrupt
+    /// files are quarantined aside and the mutation starts from defaults
+    /// instead of failing.
+    ///
+    /// Returns `(settings, recovered)`. For flows with no meaningful base to
+    /// protect (saving over garbage, reset-to-defaults, one-flag
+    /// acknowledgements): without this, a single corrupt `settings.json`
+    /// dead-ends every mutation, including the save that would fix it.
+    /// Lock failures still error — another process may be mid-commit.
+    pub fn update_or_reset(
+        &self,
+        operation: &str,
+        change: impl FnOnce(&mut AppSettings) -> Result<(), String>,
+    ) -> Result<(AppSettings, bool), String> {
+        let _guard = SETTINGS_LOCK
+            .lock()
+            .map_err(|_| "Settings repository unavailable")?;
+        let _file_lock = crate::core::state_io::lock(&self.config_dir.join("settings.lock"))?;
+        let (previous, recovered) = match self.load_locked() {
+            Ok(previous) => (previous, false),
+            Err(error) => {
+                crate::desk_log_warn!(
+                    "settings",
+                    "Stored state unreadable ({}); quarantining aside and starting from defaults",
+                    error
+                );
+                self.quarantine_corrupt()?;
+                (AppSettings::default(), true)
+            }
+        };
+        let mut next = previous.clone();
+        change(&mut next)?;
+        normalize_settings(&mut next);
+        if next == previous && !recovered {
+            crate::desk_log_debug!("settings", "Mutation unchanged operation={}", operation);
+            return Ok((next, false));
+        }
+        self.commit_locked(&previous, &next)?;
+        crate::desk_log_info!(
+            "settings",
+            "Mutation committed operation={} recovered={} (values redacted)",
+            operation,
+            recovered
+        );
+        Ok((next, recovered))
+    }
+
+    /// Rename unreadable state files aside (never delete: the bytes may still
+    /// hold the user's keys). Best-effort per file; a failed rename surfaces
+    /// because proceeding would silently orphan the data.
+    fn quarantine_corrupt(&self) -> Result<(), String> {
+        let stamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
+        for name in [
+            "settings.json",
+            "provider_credentials.dat",
+            "settings.pending.json",
+        ] {
+            let from = self.config_dir.join(name);
+            if !from.exists() {
+                continue;
+            }
+            let to = self.config_dir.join(format!("{name}.corrupt-{stamp}.bak"));
+            fs::rename(&from, &to).map_err(|e| format!("Cannot quarantine corrupt {name}: {e}"))?;
+        }
+        Ok(())
+    }
+
     fn commit_locked(&self, previous: &AppSettings, settings: &AppSettings) -> Result<(), String> {
         let credentials = ProviderCredentials {
             hubcap_api_key: settings.hubcap_api_key.clone(),
@@ -380,6 +450,61 @@ mod repository_tests {
         assert!(error.contains("SETTINGS_CONFLICT"));
         assert!(!error.contains("secret"));
         assert!(merge_settings(&base, &requested, &requested).is_ok());
+    }
+    #[test]
+    fn update_or_reset_quarantines_garbage_and_starts_from_defaults() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(dir.path().join("settings.json"), b"bad-json").unwrap();
+        let manager = SettingsManager {
+            config_dir: dir.path().into(),
+            legacy_config_dir: None,
+        };
+        let (saved, recovered) = manager
+            .update_or_reset("test", |s| {
+                s.custom_game_name = "fresh start".into();
+                Ok(())
+            })
+            .unwrap();
+        assert!(recovered);
+        assert_eq!(saved.custom_game_name, "fresh start");
+        // The garbage is preserved aside, never deleted; the live file is valid.
+        let quarantined: Vec<_> = fs::read_dir(dir.path())
+            .unwrap()
+            .filter_map(|entry| entry.ok().map(|e| e.file_name()))
+            .filter(|name| name.to_string_lossy().contains("corrupt-"))
+            .collect();
+        assert_eq!(quarantined.len(), 1);
+        let loaded = manager.try_load().unwrap();
+        assert_eq!(loaded.custom_game_name, "fresh start");
+    }
+    #[test]
+    fn update_or_reset_keeps_healthy_state_untouched() {
+        let dir = tempfile::tempdir().unwrap();
+        let manager = SettingsManager {
+            config_dir: dir.path().into(),
+            legacy_config_dir: None,
+        };
+        manager
+            .update("test", |s| {
+                s.custom_game_name = "kept".into();
+                Ok(())
+            })
+            .unwrap();
+        let (saved, recovered) = manager
+            .update_or_reset("test", |s| {
+                s.steam_path = "C:\\Games\\Steam".into();
+                Ok(())
+            })
+            .unwrap();
+        assert!(!recovered);
+        assert_eq!(saved.custom_game_name, "kept");
+        assert_eq!(saved.steam_path, "C:\\Games\\Steam");
+        let stray: Vec<_> = fs::read_dir(dir.path())
+            .unwrap()
+            .filter_map(|entry| entry.ok().map(|e| e.file_name()))
+            .filter(|name| name.to_string_lossy().contains("corrupt-"))
+            .collect();
+        assert!(stray.is_empty());
     }
     #[test]
     fn corrupt_settings_blocks_mutation() {

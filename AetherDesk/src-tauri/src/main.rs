@@ -126,6 +126,7 @@ fn main() {
             commands::settings::sign_out_luatools,
             commands::settings::clear_app_caches,
             commands::settings::open_webview_devtools,
+            commands::settings::close_webview_devtools,
             commands::custom_css::get_custom_css,
             commands::custom_css::get_custom_css_path,
             commands::custom_css::get_personal_wallpaper_path,

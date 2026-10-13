@@ -107,6 +107,14 @@ impl ForeignOnlineReport {
     }
 }
 
+/// Family stems: any file name containing one (already lowercased) belongs
+/// to an online-fix.me / SteamFix pack, including variant spellings the
+/// exact lists above never heard of. Legit games do not ship such names,
+/// so this is a strong signal, not a guess.
+fn has_ofme_stem(lower: &str) -> bool {
+    lower.contains("onlinefix") || lower.contains("steamfix")
+}
+
 /// Engine-independent recursive scan: works even when `GameInspector`
 /// does not recognize the game.
 pub fn scan(root: &Path) -> ForeignOnlineReport {
@@ -121,7 +129,10 @@ pub fn scan(root: &Path) -> ForeignOnlineReport {
             uco2.push(path);
             continue;
         }
-        if OFME_STRONG.iter().any(|n| *n == lower) || OFME_SUPPORT.iter().any(|n| *n == lower) {
+        if OFME_STRONG.iter().any(|n| *n == lower)
+            || OFME_SUPPORT.iter().any(|n| *n == lower)
+            || has_ofme_stem(&lower)
+        {
             ofme.push(path);
             continue;
         }
@@ -169,7 +180,10 @@ fn named_is_ofme(path: &Path) -> bool {
     let Some(lower) = file_name_lower(path) else {
         return false;
     };
-    if OFME_STRONG.iter().any(|n| *n == lower) || OFME_SUPPORT.iter().any(|n| *n == lower) {
+    if OFME_STRONG.iter().any(|n| *n == lower)
+        || OFME_SUPPORT.iter().any(|n| *n == lower)
+        || has_ofme_stem(&lower)
+    {
         return true;
     }
     is_winmm_name(&lower) && ofme_sibling(path)

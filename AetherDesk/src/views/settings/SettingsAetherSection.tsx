@@ -24,7 +24,6 @@ interface SettingsAetherSectionProps {
   steamCheck: SteamCheckStatus;
   onBrowseSteamFolder: () => Promise<void>;
   onDetectSteamPath: () => Promise<void>;
-  persistDevtools: (enabled: boolean) => Promise<void>;
   showStatus: (message: string, kind: 'success' | 'error') => void;
 }
 
@@ -48,7 +47,6 @@ export const SettingsAetherSection: React.FC<SettingsAetherSectionProps> = ({
   steamCheck,
   onBrowseSteamFolder,
   onDetectSteamPath,
-  persistDevtools,
   showStatus,
 }) => {
   return (
@@ -63,19 +61,7 @@ export const SettingsAetherSection: React.FC<SettingsAetherSectionProps> = ({
           <input
             type="checkbox"
             checked={enableWebviewDevtools}
-            onChange={async (e) => {
-              const next = e.target.checked;
-              setEnableWebviewDevtools(next);
-              if (next) {
-                try {
-                  // Persist first: the backend gate reads the saved setting.
-                  await persistDevtools(true);
-                  await invoke('open_webview_devtools');
-                } catch (err) {
-                  showStatus(`Unable to open WebView devtools: ${toErrorMessage(err)}`, 'error');
-                }
-              }
-            }}
+            onChange={(e) => setEnableWebviewDevtools(e.target.checked)}
           />
           <span></span>
         </label>
