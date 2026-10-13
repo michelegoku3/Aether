@@ -114,8 +114,8 @@ bool StartWorker(const std::string& name,
         ReapCompletedLocked();
         s_workers.push_back(WorkerEntry{name, stop, done, {}});
         WorkerEntry& entry = s_workers.back();
-        // La lambda cattura COPIE (name/stop/done): il vector può reallocare
-        // a ogni StartWorker, quindi nessun riferimento agli elementi.
+        // The lambda captures COPIES (name/stop/done): the vector may reallocate
+        // on every StartWorker, so no references to elements.
         try {
             entry.thread = std::thread([name, stop, done, finished, body = std::move(body)] {
                 AC_LOG_INFO(kModule, "Worker '%s' started.", name.c_str());
@@ -127,9 +127,9 @@ bool StartWorker(const std::string& name,
                 } catch (...) {
                     AC_LOG_WARN(kModule, "Worker '%s' failed with unknown exception.", name.c_str());
                 }
-                // Va impostato SEMPRE: se il corpo lancia, un done mancante
-                // lascerebbe l'entry nel registry per sempre (mai joinata dal
-                // reap, SummaryText la riporterebbe "running" in eterno).
+                // Must ALWAYS be set: when the body throws, a missing done would
+                // leave the entry in the registry forever (never joined by the
+                // reap, SummaryText would report it "running" eternally).
                 done->store(true);
                 finished->set_value();
             });

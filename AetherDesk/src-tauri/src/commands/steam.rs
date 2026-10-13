@@ -9,19 +9,18 @@ use crate::util::dialog::file_path_to_string;
 use std::path::{Path, PathBuf};
 use tauri_plugin_dialog::DialogExt;
 
-/// Argomento di avvio che Aether usa per attivare la sua modalità AetherOnline
-/// (masking 480 + payload) per un gioco. Nome scelto per non confondersi con
-/// la crack online-fix.me (OFME).
+/// Launch argument Aether uses to activate its AetherOnline mode
+/// (480 masking + payload) for a game. Named to avoid confusion with
+/// the online-fix.me crack (OFME).
 const AETHERONLINE_TOKEN: &str = "-aetheronline";
 
-/// LEGACY: argomento di avvio con cui le vecchie build attivavano la presenza
-/// "sta giocando a" (presenza server-side Spacewar/480 + nome reale via
-/// game_extra_info; il processo resta registrato con l'appid reale). Oggi
-/// AetherDesk attiva la stessa sessione tramite `[presence] showonline_apps`
-/// in aethercore.toml — niente sulla riga di comando del gioco (alcuni giochi
-/// crashano su qualunque argomento extra: Selene ~Apoptosis~, Z.A.T.O.).
-/// Il token resta riconosciuto/rimosso qui per migrare le configurazioni
-/// esistenti.
+/// LEGACY: launch argument with which old builds activated the "now playing"
+/// presence (server-side Spacewar/480 presence + real name via game_extra_info;
+/// the process stays registered under the real appid). Today AetherDesk
+/// activates the same session through `[presence] showonline_apps` in
+/// aethercore.toml — nothing on the game's command line (some games crash on
+/// any extra argument: Selene ~Apoptosis~, Z.A.T.O.).
+/// The token stays recognized/removed here to migrate existing configs.
 const AETHER_SHOWONLINE_TOKEN: &str = "-showonline";
 
 #[tauri::command]
@@ -30,8 +29,8 @@ pub fn start_steam(app: tauri::AppHandle) -> Result<String, String> {
     let settings = load_settings(&app);
     let steam_dir = std::path::PathBuf::from(&settings.steam_path);
 
-    // Start = SOLO spawn: se Steam è già in esecuzione (stato del monitor,
-    // O(1)) è un no-op documentato — non uccide mai nulla.
+    // Start = spawn ONLY: when Steam is already running (monitor state,
+    // O(1)) it is a documented no-op — it never kills anything.
     if crate::core::steam_monitor::is_steam_running() {
         crate::desk_log_info!("lifecycle", "start_steam: Steam already running, no-op");
         crate::core::steam_monitor::mark(true);
@@ -55,9 +54,9 @@ pub fn restart_steam(app: tauri::AppHandle) -> Result<String, String> {
 
     if crate::core::steam_process::kill_steam() {
         crate::core::steam_monitor::mark(false);
-        // Attesa vera: lo spawn avviene SOLO dopo che il processo è uscito,
-        // altrimenti un secondo steam.exe entra in race con il single-instance
-        // dell'istanza in uscita (il classico "restart che non funziona").
+        // Real wait: the spawn happens ONLY after the process has exited,
+        // otherwise a second steam.exe races the single instance of the
+        // exiting one (the classic "restart that does nothing").
         let gone = crate::core::steam_process::wait_steam_gone();
         if !gone {
             crate::desk_log_warn!("lifecycle", "restart_steam: Steam still present after kill, proceeding anyway");
@@ -69,8 +68,8 @@ pub fn restart_steam(app: tauri::AppHandle) -> Result<String, String> {
     }
 
     let exe = crate::core::steam_process::spawn_steam(&steam_dir)?;
-    // Spawn riuscito: anticipa lo stato per la UI (il poller del monitor
-    // corregge alla prossima scansione se lo spawn fallisse a valle).
+    // Spawn succeeded: anticipate the state for the UI (the monitor poller
+    // corrects it on the next scan if the downstream spawn failed).
     crate::core::steam_monitor::mark(true);
     crate::desk_log_info!("lifecycle", "restart_steam: spawned {}", exe.display());
     Ok("Steam is restarting.".to_string())
@@ -78,9 +77,9 @@ pub fn restart_steam(app: tauri::AppHandle) -> Result<String, String> {
 
 #[tauri::command]
 pub fn is_dll_installed(app: tauri::AppHandle) -> Result<bool, String> {
-    // Lettura di stato: senza percorso configurato la risposta è "non
-    // installato", non un errore (stesso comportamento di prima, quando il
-    // client passava una stringa vuota).
+    // State read: with no configured path the answer is "not installed",
+    // not an error (same behavior as before, when the client passed an
+    // empty string).
     let steam_path = configured_steam_path(&app).unwrap_or_default();
     if steam_path.trim().is_empty() {
         return Ok(false);
@@ -88,9 +87,9 @@ pub fn is_dll_installed(app: tauri::AppHandle) -> Result<bool, String> {
     Ok(DllInstaller::new(&steam_path).verify_installation())
 }
 
-/// Stato "Steam in esecuzione" letto dal monitor condiviso (core::steam_monitor):
-/// O(1), nessuna scansione di processo qui dentro. La UI sottoscrive anche
-/// l'evento `steam://runtime-state` per aggiornarsi in tempo reale.
+/// "Steam running" state read from the shared monitor (core::steam_monitor):
+/// O(1), no process scan in here. The UI also subscribes to the
+/// `steam://runtime-state` event for real-time updates.
 #[tauri::command]
 pub fn is_steam_running() -> bool {
     crate::core::steam_monitor::is_steam_running()
@@ -107,7 +106,7 @@ pub fn is_steam_blocked(app: tauri::AppHandle) -> Result<bool, String> {
 
 #[tauri::command]
 pub fn block_steam_updates(app: tauri::AppHandle) -> Result<String, String> {
-    // Scrittura nella cartella di Steam: validazione rigorosa, errore leggibile.
+    // Write into the Steam folder: strict validation, readable error.
     let steam_path = command_steam_path(&app)?;
     crate::desk_log_info!("steam", "Blocking Steam updates in directory '{}'", steam_path);
     SteamUpdateGuard::new(steam_path).block_updates()?;
@@ -122,15 +121,15 @@ pub fn unblock_steam_updates(app: tauri::AppHandle) -> Result<String, String> {
     Ok("Steam updates are now unblocked.".to_string())
 }
 
-/// True quando il gioco è in modalità AetherOnline (masking 480 + payload).
+/// True when the game is in AetherOnline mode (480 masking + payload).
 ///
-/// Sorgente di verità: `[presence] aetheronline_apps` in aethercore.toml
-/// (docs/05 §12). LEGACY: il token `-aetheronline` nelle LaunchOptions di
-/// Steam vale ancora finché un set non lo migra.
+/// Source of truth: `[presence] aetheronline_apps` in aethercore.toml
+/// (docs/05 §12). LEGACY: the `-aetheronline` token in Steam LaunchOptions
+/// still counts until a set migrates it.
 #[tauri::command]
 pub fn get_aetheronline(app: tauri::AppHandle, app_id: u32) -> Result<bool, String> {
-    // exclude vince sul token argv residuo: altrimenti il popup mostra
-    // Online Aether ACTIVE insieme a UCO2.
+    // exclude wins over the leftover argv token: otherwise the popup shows
+    // Online Aether ACTIVE together with UCO2.
     if aethercore_toml_paths(&app).iter().any(|p| {
         read_mode_apps(p, PresenceMode::Excluded)
             .map(|apps| apps.contains(&app_id))
@@ -152,19 +151,18 @@ pub fn get_aetheronline(app: tauri::AppHandle, app_id: u32) -> Result<bool, Stri
     }
     match launch_options::get_launch_options(Path::new(&steam_path), app_id) {
         Ok(options) => Ok(launch_options::has_launch_token(&options, AETHERONLINE_TOKEN)),
-        // Nessuna localconfig ancora (Steam mai avviato): semplicemente non attivo.
+        // No localconfig yet (Steam never launched): simply not active.
         Err(e) if e.contains("not found") => Ok(false),
         Err(e) => Err(e),
     }
 }
 
-/// Attiva/disattiva la modalità AetherOnline per il gioco SENZA scrivere nulla
-/// sulla riga di comando: il marker è `[presence] aetheronline_apps` in
-/// aethercore.toml (docs/05 §12). Attivando, l'app esce dalle altre liste
-/// (mutua esclusione: il masking 480 è un superset della sola presenza).
-/// I token `-aetheronline`/`-showonline` residui nelle LaunchOptions
-/// vengono sempre rimossi (migrazione), preservando gli altri argomenti
-/// dell'utente.
+/// Enables/disables AetherOnline mode for the game WITHOUT writing anything
+/// on the command line: the marker is `[presence] aetheronline_apps` in
+/// aethercore.toml (docs/05 §12). On enable, the app leaves the other lists
+/// (mutual exclusion: 480 masking is a superset of presence alone).
+/// Leftover `-aetheronline`/`-showonline` tokens in LaunchOptions are always
+/// removed (migration), preserving the user's other arguments.
 #[tauri::command]
 pub fn set_aetheronline(
     app: tauri::AppHandle,
@@ -202,7 +200,7 @@ pub fn set_aetheronline(
         });
     }
 
-    // Migrazione: MAI più token Aether nelle LaunchOptions (crash class §11).
+    // Migration: NEVER any Aether tokens in LaunchOptions anymore (crash class §11).
     let mut updated = launch_options::toggle_launch_token(&current, AETHERONLINE_TOKEN, false);
     updated = launch_options::toggle_launch_token(&updated, AETHER_SHOWONLINE_TOKEN, false);
     if updated != current {
@@ -232,16 +230,16 @@ pub fn set_aetheronline(
     })
 }
 
-/// True quando il gioco ha un marker showonline attivo per Aether.
+/// True when the game has an active showonline marker for Aether.
 ///
-/// Sorgente di verità: `[presence] showonline_apps` in aethercore.toml (docs/05
-/// §11). LEGACY: i token `-showonline` nelle LaunchOptions di Steam (build
-/// precedenti) valgono ancora — la DLL continua a consumarli — ma ai prossimi
-/// set AetherDesk li migra/rimuove perché alcuni giochi crashano su qualunque
-/// argomento extra in argv (Selene ~Apoptosis~, Z.A.T.O.).
+/// Source of truth: `[presence] showonline_apps` in aethercore.toml (docs/05
+/// §11). LEGACY: `-showonline` tokens in Steam LaunchOptions (previous builds)
+/// still count — the DLL keeps consuming them — but on the next sets AetherDesk
+/// migrates/removes them because some games crash on any extra argv argument
+/// (Selene ~Apoptosis~, Z.A.T.O.).
 #[tauri::command]
 pub fn get_aether_showonline(app: tauri::AppHandle, app_id: u32) -> Result<bool, String> {
-    // Il marker nel toml è la fonte di verità e non dipende da steam_path.
+    // The toml marker is the source of truth and does not depend on steam_path.
     for path in aethercore_toml_paths(&app) {
         if let Some(apps) = read_mode_apps(&path, PresenceMode::ShowOnline) {
             if apps.contains(&app_id) {
@@ -256,20 +254,19 @@ pub fn get_aether_showonline(app: tauri::AppHandle, app_id: u32) -> Result<bool,
     }
     match launch_options::get_launch_options(Path::new(&steam_path), app_id) {
         Ok(options) => Ok(launch_options::has_launch_token(&options, AETHER_SHOWONLINE_TOKEN)),
-        // Nessuna localconfig ancora (Steam mai avviato): semplicemente non attivo.
+        // No localconfig yet (Steam never launched): simply not active.
         Err(e) if e.contains("not found") => Ok(false),
         Err(e) => Err(e),
     }
 }
 
-/// Attiva/disattiva la presenza "-showonline" per il gioco SENZA scrivere
-/// nulla sulla riga di comando del gioco: il marker è `showonline_apps` in
-/// aethercore.toml (entrambe le copie gestite da AetherDesk). La DLL lo
-/// rilegge ad ogni SpawnProcess — nessun riavvio di Steam necessario.
-/// Eventuali token legacy in LaunchOptions vengono rimossi; attivando il
-/// marker si rimuove anche `-aetheronline` (mutua esclusione): -showonline è
-/// pensato per giochi singleplayer — niente masking del processo, solo la
-/// presenza "sta giocando a" verso gli amici.
+/// Enables/disables the "-showonline" presence for the game WITHOUT writing
+/// anything on the game's command line: the marker is `showonline_apps` in
+/// aethercore.toml (both AetherDesk-managed copies). The DLL re-reads it on
+/// every SpawnProcess — no Steam restart needed.
+/// Any legacy tokens in LaunchOptions are removed; on enable `-aetheronline`
+/// is removed too (mutual exclusion): -showonline targets singleplayer games —
+/// no process masking, just the "now playing" presence for friends.
 #[tauri::command]
 pub fn set_aether_showonline(
     app: tauri::AppHandle,
@@ -308,9 +305,9 @@ pub fn set_aether_showonline(
         });
     }
 
-    // 1) Launch options: MAI -showonline (crash class argv/lauch-option,
-    //    docs/05 §11). Eventuali token legacy vengono migrati: rimossi qui,
-    //    sostituiti dal marker nel toml. Attivando, via anche -aetheronline.
+    // 1) Launch options: NEVER -showonline (argv/launch-option crash class,
+    //    docs/05 §11). Any legacy tokens are migrated: removed here, replaced
+    //    by the toml marker. On enable, -aetheronline goes too.
     let mut updated = launch_options::toggle_launch_token(&current, AETHER_SHOWONLINE_TOKEN, false);
     if enabled {
         updated = launch_options::toggle_launch_token(&updated, AETHERONLINE_TOKEN, false);
@@ -319,8 +316,8 @@ pub fn set_aether_showonline(
         launch_options::set_launch_options(Path::new(&steam_path), app_id, &updated)?;
     }
 
-    // 2) Marker negli array [presence] in TUTTE le copie di aethercore.toml
-    //    esistenti: l'app esce da ogni lista e rientra solo in quella scelta.
+    // 2) Marker in the [presence] arrays of ALL existing aethercore.toml
+    //    copies: the app leaves every list and re-enters only the chosen one.
     let choice = if enabled { Some(PresenceMode::ShowOnline) } else { None };
     let mut touched = false;
     for path in aethercore_toml_paths(&app) {
@@ -349,8 +346,8 @@ use crate::core::presence_config::{
     set_default_mode_in_toml, update_mode_in_toml,
 };
 
-/// True quando il gioco è in exclude_apps (hard opt-out: la DLL ignora
-/// completamente il gioco, anche con token residui in argv).
+/// True when the game is in exclude_apps (hard opt-out: the DLL fully
+/// ignores the game, even with leftover argv tokens).
 #[tauri::command]
 pub fn get_aether_excluded(app: tauri::AppHandle, app_id: u32) -> Result<bool, String> {
     Ok(aethercore_toml_paths(&app).iter().any(|p| {
@@ -360,8 +357,8 @@ pub fn get_aether_excluded(app: tauri::AppHandle, app_id: u32) -> Result<bool, S
     }))
 }
 
-/// Mette/toglie l'app dalla lista exclude_apps (ignorata interamente da
-/// Aether: niente presenza, niente aetheronline, nessun token in argv).
+/// Adds/removes the app to/from the exclude_apps list (fully ignored by
+/// Aether: no presence, no aetheronline, no argv tokens).
 #[tauri::command]
 pub fn set_aether_excluded(
     app: tauri::AppHandle,
@@ -397,8 +394,8 @@ pub fn set_aether_excluded(
     })
 }
 
-/// True quando la policy di default è `default_mode = "showonline"`: ogni
-/// gioco presenta agli amici "sta giocando a" senza configurazione per-gioco.
+/// True when the default policy is `default_mode = "showonline"`: every game
+/// shows "now playing" to friends with no per-game configuration.
 #[tauri::command]
 pub fn get_presence_default_mode(app: tauri::AppHandle) -> Result<bool, String> {
     for path in aethercore_toml_paths(&app) {
@@ -409,15 +406,15 @@ pub fn get_presence_default_mode(app: tauri::AppHandle) -> Result<bool, String> 
     Ok(false)
 }
 
-/// Imposta la policy di default (docs/05 §12): "showonline" rende la presenza
-/// la norma per ogni app non elencata; gli array restano override espliciti.
+/// Sets the default policy (docs/05 §12): "showonline" makes presence the
+/// norm for every unlisted app; the arrays stay explicit overrides.
 ///
-/// **Contratto IPC** (`docs/shared_contracts.md` §7): il parametro si chiama
-/// `show_online` e quindi la chiave sul filo è `showOnline` (Tauri 2 converte
-/// in lowerCamelCase e non accetta alcun fallback snake_case). Il **valore**
-/// scritto in `aethercore.toml` resta la stringa `"showonline"`, che è il token
-/// di dominio letto anche da AetherDLL (`Settings.cpp`): i due livelli non
-/// vanno confusi né "allineati".
+/// **IPC contract** (`docs/shared_contracts.md` §7): the parameter is named
+/// `show_online` so the on-the-wire key is `showOnline` (Tauri 2 converts to
+/// lowerCamelCase and accepts no snake_case fallback). The **value** written
+/// in `aethercore.toml` stays the string `"showonline"`, which is the domain
+/// token also read by AetherDLL (`Settings.cpp`): the two levels must neither
+/// be confused nor "aligned".
 #[tauri::command]
 pub fn set_presence_default_mode(app: tauri::AppHandle, show_online: bool) -> Result<String, String> {
     for path in aethercore_toml_paths(&app) {

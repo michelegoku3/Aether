@@ -1,18 +1,18 @@
-//! Classificazione delle crack **esterne** e dei file UCO2 già sul disco.
+//! Classification of **foreign** cracks and UCO2 files already on disk.
 //!
-//! NON è AetherOnline (il payload di Aether, token `-aetheronline`): qui si
-//! rilevano solo file TERZI di OFME (online-fix.me) e UCO2. Unico posto in
-//! cui si decide “questi file sono OFME / UCO2”: detection, enable_online,
-//! set_aether_* e la UI leggono da qui. La scansione è ricorsiva: Bodycam e
-//! gli Unreal tengono i marker in `Binaries/Win64`, non accanto a
-//! `steam_api`. Vocabolario completo: AGENTS.md in radice.
+//! This is NOT AetherOnline (the Aether payload, `-aetheronline` token): only
+//! THIRD-PARTY OFME (online-fix.me) and UCO2 files are detected here. The single
+//! place that decides "these files are OFME / UCO2": detection, enable_online,
+//! set_aether_* and the UI all read from here. Scanning is recursive: Bodycam and
+//! Unreal titles keep markers in `Binaries/Win64`, not next to `steam_api`.
+//! Full vocabulary: AGENTS.md at the root.
 
 use crate::online::types::Conflict;
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::{Path, PathBuf};
 
-/// Nomi file che, da soli, identificano un pack online-fix.me / SteamFix.
+/// File names that alone identify an online-fix.me / SteamFix pack.
 const OFME_STRONG: &[&str] = &[
     "onlinefix64.dll",
     "onlinefix.dll",
@@ -31,8 +31,8 @@ const OFME_SUPPORT: &[&str] = &[
     "photonbridge.dll",
 ];
 
-/// Marker UCO2 (non OFME). `union-crax.ini` è la firma; i plugin/proxy
-/// hanno nomi propri della release UCOnline2.
+/// UCO2 markers (not OFME). `union-crax.ini` is the signature; plugins/proxies
+/// carry UCOnline2 release proper names.
 const UCO2_MARKERS: &[&str] = &[
     "union-crax.ini",
     "overlay_proxy.dll",
@@ -41,8 +41,8 @@ const UCO2_MARKERS: &[&str] = &[
     "coherence_universal.dll",
 ];
 
-/// Cartelle Unreal/asset da non scansionare: niente crack lì, e Bodycam
-/// ha decine di GB in `Content/`.
+/// Unreal/asset folders to skip while scanning: no cracks there, and Bodycam
+/// holds tens of GB in `Content/`.
 const SKIP_DIRS: &[&str] = &[
     "content",
     "intermediate",
@@ -54,15 +54,15 @@ const SKIP_DIRS: &[&str] = &[
     "node_modules",
 ];
 
-/// Esito serializzato verso la UI (camelCase).
+/// Outcome serialized to the UI (camelCase).
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ForeignOnlineReport {
-    /// Pack online-fix.me / SteamFix sul disco (anche innestato).
+    /// online-fix.me / SteamFix pack on disk (even nested).
     pub ofme: bool,
-    /// File UCOnline2 già presenti (anche senza record Aether).
+    /// UCOnline2 files already present (even with no Aether record).
     pub uco2: bool,
-    /// Path OFME che hanno fatto scattare il verdetto (per i messaggi).
+    /// OFME paths that triggered the verdict (for messages).
     pub files: Vec<PathBuf>,
 }
 
@@ -106,8 +106,8 @@ impl ForeignOnlineReport {
     }
 }
 
-/// Scansione ricorsiva indipendente da Unity/Unreal: funziona anche se
-/// `GameInspector` non riconosce il gioco.
+/// Engine-independent recursive scan: works even when `GameInspector`
+/// does not recognize the game.
 pub fn scan(root: &Path) -> ForeignOnlineReport {
     let mut ofme = Vec::new();
     let mut uco2 = Vec::new();
@@ -136,7 +136,7 @@ pub fn scan(root: &Path) -> ForeignOnlineReport {
     }
 }
 
-/// Conflitto da quarantinare per un file OFME già classificato.
+/// Conflict to quarantine for an already-classified OFME file.
 pub fn conflict_for_ofme_file(path: &Path) -> Conflict {
     let lower = file_name_lower(path).unwrap_or_default();
     match lower.as_str() {
@@ -146,7 +146,7 @@ pub fn conflict_for_ofme_file(path: &Path) -> Conflict {
     }
 }
 
-/// File OFME/SteamFix da una lista di conflitti già calcolata.
+/// OFME/SteamFix files from an already-computed conflict list.
 pub fn ofme_files(conflicts: &[Conflict]) -> Vec<PathBuf> {
     conflicts
         .iter()

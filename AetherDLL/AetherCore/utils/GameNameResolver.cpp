@@ -123,12 +123,12 @@ bool Ready() {
 std::string ForApp(steam::AppId appId) {
     if (appId == 0) return {};
 
-    // 1. Cache hit (positive o negative)
+    // 1. Cache hit (positive or negative)
     if (auto cached = g_state.gameName.nameCache.Get(appId)) {
-        return *cached;  // Può essere "" (negative) o nome reale
+        return *cached;  // May be "" (negative) or the real name
     }
 
-    // 2. Cache miss → query Steam
+    // 2. Cache miss → Steam query
     std::string name;
     if (Ready()) {
         char buf[256] = {};

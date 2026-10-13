@@ -1,12 +1,12 @@
-//! Engine UCOnline2 di AetherDesk: rilevamento, configurazione, deploy e
-//! rollback di UCOnline2 su un gioco installato.
+//! AetherDesk's UCOnline2 engine: detection, configuration, deploy and
+//! rollback of UCOnline2 onto an installed game.
 //!
-//! Regole architetturali:
-//!   * questo modulo è PURO — nessuna dipendenza da Tauri; riceve `PathBuf`
-//!     e struct, restituisce struct `Serialize`;
-//!   * i comandi Tauri (`commands/online.rs`) fanno solo da collante;
-//!   * ogni responsabilità vive nel proprio file (detect, config, deploy,
-//!     revert, state) — niente file tuttofare.
+//! Architecture rules:
+//!   * this module is PURE — no Tauri dependency; takes `PathBuf`
+//!     and structs, returns `Serialize` structs;
+//!   * the Tauri commands (`commands/online.rs`) only glue things together;
+//!   * every responsibility lives in its own file (detect, config, deploy,
+//!     revert, state) — no catch-all files.
 
 pub mod bundle;
 pub mod config;

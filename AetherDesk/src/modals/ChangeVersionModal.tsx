@@ -163,8 +163,8 @@ const AutoBuildsTab = ({ appId, onClose }: AutoBuildsTabProps) => {
         setIsApplying(false);
       }, 90_000);
 
-      // Il percorso Steam lo risolve il backend dalle impostazioni: se non è
-      // configurato l'errore arriva da lì, con lo stesso messaggio di prima.
+      // The backend resolves the Steam path from settings: when unconfigured
+      // the error comes from there, with the same message as before.
       const result = await invoke<ApplyVersionReport>('apply_game_version', {
         appId,
         buildId,

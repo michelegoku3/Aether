@@ -1,6 +1,6 @@
 use crate::core::custom_css::{
     active_theme_name, active_wallpaper_name, ensure_default_assets, personal_wallpaper_path,
-    read_theme_css, theme_path, themes_dir, wallpapers_dir,
+    read_personal_wallpaper_data_uri, read_theme_css, theme_path, themes_dir, wallpapers_dir,
 };
 use std::fs;
 use std::sync::{Mutex, OnceLock};
@@ -173,6 +173,26 @@ fn traversal_selections_fall_back_to_first_detected() {
             assert!(p.starts_with(themes_dir()), "escaped themes dir: {}", p.display());
         }
     }
+
+    cleanup_appearance_dirs();
+}
+
+#[test]
+fn oversized_wallpaper_is_refused_with_a_clear_error() {
+    let _guard = lock();
+    cleanup_appearance_dirs();
+    ensure_default_assets().expect("seeding should succeed");
+
+    // 9 MiB of zeros with a valid extension: over the 8 MiB cap.
+    let big = wallpapers_dir().join("huge.jpg");
+    fs::write(&big, vec![0_u8; 9 * 1024 * 1024]).expect("fixture write should succeed");
+    let error = read_personal_wallpaper_data_uri("huge.jpg").unwrap_err();
+    assert!(error.contains("too large"), "unexpected error: {error}");
+
+    // A normal wallpaper still loads as a data URI.
+    let uri = read_personal_wallpaper_data_uri("").expect("read should succeed");
+    assert!(uri.is_some());
+    assert!(uri.unwrap().starts_with("data:image/"));
 
     cleanup_appearance_dirs();
 }

@@ -1,10 +1,10 @@
-//! Coordinamento delle invalidazioni della libreria Lua.
+//! Lua library invalidation coordination.
 //!
-//! La Library non riceve liste parziali dal backend: riceve una singola
-//! invalidazione e riesegue la stessa scansione completa del pulsante Refresh.
-//! Le invalidazioni provengono sia dalle operazioni concluse di AetherDesk sia
-//! dal watcher della directory `<Steam>/config/stplug-in`, così le modifiche
-//! manuali restano coerenti senza polling del filesystem lato WebView.
+//! The Library never receives partial lists from the backend: it receives a single
+//! invalidation and re-runs the same full scan as the Refresh button.
+//! Invalidations come both from completed AetherDesk operations and from the
+//! `<Steam>/config/stplug-in` directory watcher, so manual edits stay coherent
+//! with no WebView-side filesystem polling.
 
 use notify::{recommended_watcher, Event, RecommendedWatcher, RecursiveMode, Watcher};
 use serde::Serialize;
@@ -190,10 +190,10 @@ pub fn current_library_change_revision(app: &AppHandle) -> u64 {
         .unwrap_or(0)
 }
 
-// Il worker gira su un thread dedicato (`std::thread` richiede `'static`): i parametri
-// by value SONO il trasferimento di proprietà nel thread; un riferimento non
-// compilerebbe allo spawn. Clippy non vede il consumo perché `Receiver::recv`
-// e gli atomici prendono `&self`.
+// The worker runs on a dedicated thread (`std::thread` requires `'static`): the
+// by-value params ARE the ownership transfer into the thread; a reference would
+// not compile at spawn. Clippy cannot see the consumption because `Receiver::recv`
+// and the atomics take `&self`.
 #[allow(clippy::needless_pass_by_value)]
 fn run_watch_worker(
     app: AppHandle,

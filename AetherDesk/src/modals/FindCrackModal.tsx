@@ -9,8 +9,8 @@ interface FindCrackModalProps {
 }
 
 export const FindCrackModal: React.FC<FindCrackModalProps> = ({ onClose, onSelect }) => {
-  // ESC chiude il popup (uniforme con gli altri modali); il click fuori è
-  // già gestito dall'overlay sotto.
+  // ESC closes the popup (consistent with the other modals); outside clicks
+  // are already handled by the overlay below.
   useModalDismiss(onClose);
   return (
     <div className="modal-overlay" onClick={onClose}>

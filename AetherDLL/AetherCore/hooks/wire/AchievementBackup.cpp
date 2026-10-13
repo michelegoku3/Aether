@@ -23,24 +23,24 @@
 #include "scripting/LuaData.h"
 
 // ============================================================================
-// AchievementBackup — facade anti-perdita (achievement + stats + playtime).
+// AchievementBackup — loss-prevention facade (achievements + stats + playtime).
 //
-// Questo modulo è SOLO il coordinatore asincrono: coda di job + worker thread.
-// La persistenza vera vive nei moduli coesi sotto hooks/wire/:
-//   * io::         percorsi AetherData, orari, scrittura atomica
-//   * snapshot::   store JSON achievement/stat (regole di merge monotone)
-//   * statscache:: copia .bin con guard monotono + interpretazione schemi
-//   * playtime::   mirror del tempo di gioco da localconfig.vdf
-// Contratto pubblico invariato (vedi AchievementBackup.h): RecordUnlock /
+// This module is ONLY the async coordinator: job queue + worker thread.
+// Real persistence lives in the cohesive modules under hooks/wire/:
+//   * io::         AetherData paths, times, atomic writes
+//   * snapshot::   achievement/stat JSON store (monotone merge rules)
+//   * statscache:: .bin copy with monotone guard + schema interpretation
+//   * playtime::   playtime mirror from localconfig.vdf
+// Public contract unchanged (see AchievementBackup.h): RecordUnlock /
 // RecordStats / TouchSession / BackupAllKnownStatsAtStartup /
-// Le chiamate di accodamento sono non-bloccanti (nessuna I/O nel thread di rete).
-// FlushOnShutdown drena e attende il completamento; il registry fa join.
-// Solo fuori dal loader lock.
+// FlushOnShutdown. Enqueue calls are non-blocking (no I/O on the network
+// thread). FlushOnShutdown drains and awaits completion; the registry joins.
+// Only outside the loader lock.
 // ============================================================================
 
 namespace ac::hooks::AchievementBackup {
 
-// Alias corti dei moduli di persistenza (vedi hooks/wire/).
+// Short aliases of the persistence modules (see hooks/wire/).
 namespace io = ac::backup::io;
 namespace snapshot = ac::backup::snapshot;
 namespace statscache = ac::backup::statscache;
@@ -50,20 +50,20 @@ namespace {
 
 constexpr const char* kModule = "Wire.Achievement";
 
-// Checkpoint periodico (ogni 5 minuti): ricopia forzata dei .bin per ogni
-// (app, account) toccato in sessione + refresh del playtime. È la rete di
-// sicurezza che limita la perdita massima a 5 minuti anche quando Steam esce
-// senza uno shutdown esplicito (il guard monotono protegge da regressioni).
+// Periodic checkpoint (every 5 minutes): forced re-copy of the .bins for every
+// (app, account) touched in session + playtime refresh. The safety net capping
+// maximum loss at 5 minutes even when Steam exits without an explicit shutdown
+// (the monotone guard protects against regressions).
 constexpr auto kCheckpointInterval = std::chrono::minutes(5);
-// La copia finale a fine sessione parte ritardata: Steam scrive la cache
-// stats qualche istante DOPO il frame games_played vuoto.
+// The end-of-session final copy starts delayed: Steam writes the stats cache
+// a few moments AFTER the empty games_played frame.
 constexpr auto kSessionEndDelay = std::chrono::seconds(15);
 
 enum class JobType {
-    Unlock,      // aggiorna lo snapshot JSON + copia i .bin (forzata)
-    BinCopy,     // copia solo i .bin (es. primo 818/151/5466 della sessione)
-    StatsUpdate, // aggiorna la sezione stats dello snapshot JSON
-    StartupScan, // snapshot iniziale di tutti i .bin + playtime (1 volta/processo)
+    Unlock,      // refresh the JSON snapshot + copy the .bins (forced)
+    BinCopy,     // copy only the .bins (e.g. session's first 818/151/5466)
+    StatsUpdate, // refresh the JSON snapshot's stats section
+    StartupScan, // initial snapshot of every .bin + playtime (once/process)
 };
 
 using SteadyClock = std::chrono::steady_clock;
@@ -76,8 +76,8 @@ struct BackupJob {
     std::uint32_t achievementId = 0;
     std::uint32_t unlockTime = 0;
     std::vector<std::pair<std::uint32_t, std::uint32_t>> stats;
-    bool force = false;                      // salta il rate-limit delle copie
-    SteadyClock::time_point runAt{};         // epoch = eseguibile subito
+    bool force = false;                      // skip the copy rate-limit
+    SteadyClock::time_point runAt{};         // epoch = run immediately
 };
 
 std::mutex g_workerMutex;
@@ -87,21 +87,21 @@ bool g_stopping = false;
 std::size_t g_failedJobs = 0; // worker-owned; read only after completion
 workers::WorkerCompletion g_worker; // registry owns the thread; flush waits on completion
 
-// Proprietà esclusiva del worker (nessun lock necessario).
+// Worker-exclusive ownership (no lock needed).
 std::unordered_map<steam::AppId, std::unordered_set<std::uint32_t>> g_touched;
 
-// Dedup per processo di TouchSession: un solo BinCopy per app a sessione di
-// Steam (il file non cambia finché il gioco non salva).
+// TouchSession per-process dedup: a single BinCopy per app per Steam session
+// (the file does not change until the game saves).
 std::mutex g_touchMutex;
 std::unordered_set<steam::AppId> g_sessionTouched;
 
 // ---------------------------------------------------------------------------
-// Esecuzione dei job (solo thread worker: possiede g_touched e il disco).
+// Job execution (worker thread only: owns g_touched and the disk).
 // ---------------------------------------------------------------------------
 
 void ProcessUnlock(const BackupJob& job) {
     const std::string path = snapshot::SnapshotPath(job.appId, job.accountId);
-    if (path.empty()) return;   // backup non disponibile (niente AetherData)
+    if (path.empty()) return;   // backup unavailable (no AetherData)
 
     g_touched[job.appId].insert(job.accountId);
 
@@ -112,8 +112,8 @@ void ProcessUnlock(const BackupJob& job) {
     AC_LOG_DEBUG(kModule, "Backup: snapshot %s now contains %zu achievements.",
                  path.c_str(), snap.unlocks.size());
 
-    // A ogni SBLOCCO la copia del .bin è sempre forzata (il rate-limit resta
-    // solo per i salvataggi di stat SENZA achievement).
+    // On every UNLOCK the .bin copy is always forced (rate-limit stays only
+    // for stat saves WITHOUT achievements).
     statscache::BackupStatsBins(job.appId, job.accountId, /*force=*/true);
 }
 
@@ -139,9 +139,9 @@ void ProcessStatsUpdate(const BackupJob& job) {
     for (const auto& [id, value] : job.stats) {
         const bool knownStat = snapshot::HasStat(snap, id);
 
-        // Riconciliazione schema-driven: se la stat È un bucket achievement,
-        // ogni bit impostato deve esistere nello snapshot. Data: 'now' se la
-        // stat era già tracciata, 0 se primo avvistamento (baseline).
+        // Schema-driven reconciliation: when a stat IS an achievement bucket,
+        // every set bit must exist in the snapshot. Date: 'now' when the stat
+        // stat was already tracked, 0 on first sighting (baseline).
         if (schemaBuckets.count(id) != 0 && value != 0) {
             for (std::uint32_t bit = 0; bit < 32; ++bit) {
                 if ((value & (1u << bit)) == 0) continue;
@@ -165,9 +165,9 @@ void ProcessStatsUpdate(const BackupJob& job) {
                  path.c_str(), snap.stats.size());
 }
 
-// Copia i .bin di tutti gli app gestiti trovati in appcache\stats: gira una
-// volta per processo, subito dopo l'avvio di Steam, per battere sul tempo il
-// login-reconcile del client (che può scartare i cambi pendenti locali).
+// Copies the .bins of every managed app found in appcache\stats: runs once per
+// process, right after Steam starts, to beat the client's login-reconcile
+// (which may discard local pending changes).
 void ProcessStartupScan() {
     const std::string statsDir = g_state.steamInstallPath + "\\appcache\\stats";
     const std::string pattern = statsDir + "\\UserGameStats_*_*.bin";
@@ -209,12 +209,12 @@ void ProcessStartupScan() {
         AC_LOG_INFO(kModule, "Backup: startup scan copied %zu managed stats file(s).", copied);
     }
 
-    // Nella stessa passata di avvio: backup del playtime per account.
+    // In the same startup pass: per-account playtime backup.
     playtime::RefreshAllAccounts();
 }
 
-// Primo job scaduto (ordine FIFO tra i dovuti). In shutdown TUTTI i job sono
-// considerati dovuti: la coda si drena, inclusi i checkpoint ritardati.
+// First due job (FIFO order among due ones). In shutdown ALL jobs count as
+// due: the queue drains, delayed checkpoints included.
 std::optional<BackupJob> PopDueJobLocked(SteadyClock::time_point now) {
     for (auto it = g_jobs.begin(); it != g_jobs.end(); ++it) {
         if (g_stopping || it->runAt <= now) {
@@ -232,12 +232,12 @@ SteadyClock::time_point EarliestRunAtLocked() {
     return earliest;
 }
 
-// Rete di sicurezza periodica: ricopia i .bin di ogni (app, account) toccato
-// in sessione (forzata: il rate-limit varrebbe solo per i salvataggi nei job)
-// e aggiorna il playtime. Il guard monotono impedisce regressioni del backup.
+// Periodic safety net: re-copies the .bins of every (app, account) touched in
+// session (forced: rate-limit would apply only to saves inside jobs) and
+// refreshes playtime. The monotone guard blocks backup regressions.
 void PeriodicCheckpoint() {
     std::size_t pairs = 0;
-    // g_touched è proprietà esclusiva del worker: nessun lock necessario.
+    // g_touched is worker-exclusive ownership: no lock needed.
     for (const auto& [appId, accounts] : g_touched) {
         for (const auto& accountId : accounts) {
             statscache::BackupStatsBins(appId, accountId, /*force=*/true);
@@ -288,7 +288,7 @@ void WorkerLoop(std::atomic<bool>& stop) {
                     hasJob = true;
                     break;
                 }
-                if (g_stopping) break;   // coda scaricata: esci prima delle copie finali
+                if (g_stopping) break;   // queue drained: exit before the final copies
                 auto wakeAt = nextCheckpoint;
                 if (!g_jobs.empty()) wakeAt = std::min(wakeAt, EarliestRunAtLocked());
                 // The registry stop flag has no CV notification. Bound only
@@ -315,8 +315,8 @@ void WorkerLoop(std::atomic<bool>& stop) {
         }
     }
 
-    // Copie finali dei .bin per ogni (app, account) visto in sessione: ora
-    // Steam sta chiudendo e la sua cache include anche gli ultimi sblocchi.
+    // Final .bin copies for every (app, account) seen in session: Steam is
+    // now closing and its cache includes the latest unlocks too.
     for (const auto& [appId, accounts] : g_touched) {
         for (const auto& accountId : accounts) {
             RunBackupTask("final stats copy", [&] {
@@ -324,7 +324,7 @@ void WorkerLoop(std::atomic<bool>& stop) {
             });
         }
     }
-    // Anche il playtime di fine sessione (include i minuti appena giocati).
+    // End-of-session playtime too (includes the minutes just played).
     RunBackupTask("final playtime copy", [] { playtime::RefreshAllAccounts(); });
     AC_LOG_INFO(kModule, "Backup: queue drained and final copies attempted (%zu failed task(s)).", g_failedJobs);
 }
@@ -340,8 +340,8 @@ bool EnsureWorkerLocked() {
     return true;
 }
 
-// Accoda un job; false = rifiutato perché lo shutdown è già in corso
-// (il chiamante decide se/logga l'avviso).
+// Enqueues a job; false = refused because shutdown is already underway
+// (the caller decides whether/logs the warning).
 bool EnqueueJob(BackupJob job) {
     {
         std::lock_guard<std::mutex> lock(g_workerMutex);
@@ -374,8 +374,8 @@ void RecordUnlock(steam::AppId appId, std::uint64_t steamId64,
     job.achievementId = achievementId;
     job.unlockTime = unlockTime;
     if (!EnqueueJob(std::move(job))) {
-        // Shutdown già in corso: l'unlock è stato loggato comunque dal
-        // modulo wire; qui non possiamo più garantire la persistenza.
+        // Shutdown already underway: the unlock was still logged by the wire
+        // module; persistence can no longer be guaranteed here.
         AC_LOG_WARN(kModule, "Backup: unlock %u received during shutdown, not saved.",
                     achievementId);
     }
@@ -384,7 +384,7 @@ void RecordUnlock(steam::AppId appId, std::uint64_t steamId64,
 void TouchSession(steam::AppId appId, std::uint64_t steamId64) {
     {
         std::lock_guard<std::mutex> lock(g_touchMutex);
-        if (!g_sessionTouched.insert(appId).second) return;   // già toccato
+        if (!g_sessionTouched.insert(appId).second) return;   // already touched
     }
     EnqueueJob(MakeJob(JobType::BinCopy, appId, steamId64));
 }
@@ -415,7 +415,7 @@ void RecordStats(steam::AppId appId, std::uint64_t steamId64,
                  const std::vector<std::pair<std::uint32_t, std::uint32_t>>& stats) {
     BackupJob job = MakeJob(JobType::StatsUpdate, appId, steamId64);
     job.stats = stats;
-    EnqueueJob(std::move(job));   // rifiuto silenzioso in shutdown: mirror best-effort
+    EnqueueJob(std::move(job));   // silent refusal in shutdown: best-effort mirror
 }
 
 void FlushOnShutdown() {

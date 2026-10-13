@@ -24,16 +24,16 @@ constexpr const char* kModule = "Wire.Achievement";
     // ---------------------------------------------------------------------------
     // Backup del TEMPO DI GIOCO per account.
     //
-    // Steam conserva il playtime in `userdata\<account>\config\localconfig.vdf`
-    // (VDF testuale, sezione Software/Valve/Steam/apps): valori in MINUTI
-    // ("Playtime", "Playtime2wks", "PlaytimeDisconnected"), "LastPlayed" unix e
-    // i timestamp di sessione in "autocloud" {lastlaunch,lastexit}. Per i giochi
-    // gestiti da Aether (non posseduti) e per i non-Steam questi dati esistono
-    // SOLO lato client: stessa fragilità degli achievement, stesso rimedio.
+    // Steam keeps playtime in `userdata\<account>\config\localconfig.vdf`
+    // (textual VDF, Software/Valve/Steam/apps section): MINUTE values
+    // ("Playtime", "Playtime2wks", "PlaytimeDisconnected"), unix "LastPlayed"
+    // and session timestamps in "autocloud" {lastlaunch,lastexit}. For Aether-
+    // managed (unowned) games and non-Steam ones this data exists ONLY
+    // client-side: same fragility as achievements, same remedy.
     //
     // Output: <AetherData>\backup\playtime\UserPlaytime_<account>.json
-    // (un file per account, tutti i giochi con playtime registrato; merge con
-    // valore massimo per chiave: il backup non può regredire).
+    // (one file per account, every game with recorded playtime; max-value
+    // merge per key: the backup cannot regress).
     // ---------------------------------------------------------------------------
     struct PlaytimeEntry {
         std::uint32_t appId = 0;
@@ -63,16 +63,16 @@ constexpr const char* kModule = "Wire.Achievement";
         std::string pendingSection;
         std::string line;
         while (std::getline(ifs, line)) {
-            // Rimuovi commenti/CR
+            // Strip comments/CR
             if (!line.empty() && line.back() == '\r') line.pop_back();
-            // Prima parentesi graffa fuori da virgolette (codec condiviso).
+            // First unquoted brace (shared codec).
             std::size_t brace = 0;
             char braceChar = 0;
             const bool hasBrace = vdf::FindUnquotedBrace(line, brace, braceChar);
 
             if (hasBrace && braceChar == '{') {
-                // Graffa di apertura: la sezione è la chiave in sospeso (riga
-                // precedente) oppure unnamed.
+                // Opening brace: the section is the pending key (previous line)
+                // or unnamed.
                 stack.push_back(pendingSection);
                 pendingSection.clear();
                 continue;
@@ -90,8 +90,8 @@ constexpr const char* kModule = "Wire.Achievement";
             }
             if (kind != vdf::LineKind::KeyValue) continue;
 
-            // Cerca .../Apps/<appid>[/<sub>] nello stack (nei localconfig reali la
-            // sezione è "Apps" con la maiuscola: confronto case-insensitive).
+            // Look for .../Apps/<appid>[/<sub>] in the stack (in real localconfigs
+            // the section is "Apps" capitalized: case-insensitive compare).
             int appsIdx = -1;
             for (std::size_t i = 0; i + 1 < stack.size(); ++i) {
                 if (AsciiLower(stack[i]) == "apps") { appsIdx = static_cast<int>(i); break; }
@@ -122,7 +122,7 @@ constexpr const char* kModule = "Wire.Achievement";
         return out;
     }
 
-    // Merge monotono: per ogni campo tieni il massimo tra backup esistente e nuovo.
+    // Monotone merge: per field keep the max of existing backup and new data.
     std::unordered_map<std::uint32_t, PlaytimeEntry> LoadPlaytimeSnapshot(const std::string& path) {
         std::unordered_map<std::uint32_t, PlaytimeEntry> out;
         std::ifstream ifs(path);

@@ -19,12 +19,12 @@ pub fn protect(plain: &[u8]) -> Result<Vec<u8>, String> {
         cbData: 0,
         pbData: null_mut(),
     };
-    // SAFETY: `input.pbData`/`cbData` descrivono esattamente il buffer del
-    // chiamante, ancora vivo per tutta la chiamata (overflow u32 già escluso
-    // sopra); `output` è una CRYPT_INTEGER_BLOB valida che DPAPI popola con un
-    // buffer LocalAlloc, letto e rilasciato con LocalFree in
-    // `take_dpapi_output`. CRYPTPROTECT_UI_FORBIDDEN garantisce che la chiamata
-    // non blocchi su prompt interattivi.
+    // SAFETY: `input.pbData`/`cbData` describe exactly the caller's buffer,
+    // still alive for the whole call (u32 overflow already excluded above);
+    // `output` is a valid CRYPT_INTEGER_BLOB that DPAPI fills with a
+    // LocalAlloc buffer, read and released with LocalFree in
+    // `take_dpapi_output`. CRYPTPROTECT_UI_FORBIDDEN guarantees the call
+    // never blocks on interactive prompts.
     let success = unsafe {
         CryptProtectData(
             &input,
@@ -57,11 +57,11 @@ pub fn unprotect(encrypted: &[u8]) -> Result<Vec<u8>, String> {
         cbData: 0,
         pbData: null_mut(),
     };
-    // SAFETY: `input.pbData`/`cbData` descrivono esattamente il blob cifrato
-    // del chiamante, vivo per tutta la chiamata (overflow u32 già escluso
-    // sopra); `output` è una CRYPT_INTEGER_BLOB valida che DPAPI popola con un
-    // buffer LocalAlloc, letto e rilasciato con LocalFree in
-    // `take_dpapi_output`. CRYPTPROTECT_UI_FORBIDDEN evita prompt interattivi.
+    // SAFETY: `input.pbData`/`cbData` describe exactly the caller's encrypted
+    // blob, alive for the whole call (u32 overflow already excluded above);
+    // `output` is a valid CRYPT_INTEGER_BLOB that DPAPI fills with a
+    // LocalAlloc buffer, read and released with LocalFree in
+    // `take_dpapi_output`. CRYPTPROTECT_UI_FORBIDDEN avoids interactive prompts.
     let success = unsafe {
         CryptUnprotectData(
             &input,
@@ -88,15 +88,15 @@ fn take_dpapi_output(
     if output.pbData.is_null() {
         return Err("Windows DPAPI returned an empty output buffer".to_string());
     }
-    // SAFETY: nel percorso di successo DPAPI restituisce `output.pbData`
-    // puntatore a un buffer LocalAlloc di esattamente `output.cbData` byte
-    // (cbData è un DWORD Windows, sempre rappresentabile su usize a 32/64 bit);
-    // il buffer è vivo perché `LocalFree` avviene solo dopo la copia `.to_vec()`.
+    // SAFETY: on the success path DPAPI returns `output.pbData` as a
+    // pointer to a LocalAlloc buffer of exactly `output.cbData` bytes
+    // (cbData is a Windows DWORD, always representable as usize on 32/64 bit);
+    // the buffer is alive because `LocalFree` only runs after the `.to_vec()` copy.
     let bytes = unsafe {
         std::slice::from_raw_parts(output.pbData, usize::try_from(output.cbData).expect("Windows DWORD fits in usize")).to_vec()
     };
-    // SAFETY: `output.pbData` è stato allocato da DPAPI con LocalAlloc e non
-    // è ancora stato liberato; LocalFree è il deallocatore previsto dalla API.
+    // SAFETY: `output.pbData` was allocated by DPAPI with LocalAlloc and has
+    // not been freed yet; LocalFree is the deallocator the API expects.
     unsafe { LocalFree(output.pbData as _) };
     Ok(bytes)
 }

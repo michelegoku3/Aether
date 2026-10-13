@@ -24,9 +24,9 @@ namespace ac::eticketfetch {
 namespace {
 
 constexpr const char* kModule = "EticketFetch";
-// La cache è keyed per (app, nonce): i nonce cambiano a ogni richiesta, quindi
-// senza cap crescerebbe per tutta la sessione. Oltre il limite si elimina una
-// entry arbitraria: il mint è comunque ri-richiedibile, nessuna funzionalità persa.
+// The cache is keyed by (app, nonce): nonces change on every request, so
+// without a cap it would grow for the whole session. Past the limit an
+// arbitrary entry is dropped: minting is re-requestable anyway, no feature lost.
 constexpr std::size_t kMaxCacheEntries = 1024;
 
 // ---------------------------------------------------------------------------
@@ -37,9 +37,9 @@ std::mutex s_mutex;
 std::condition_variable s_cv;
 std::deque<MintKey> s_queue;
 std::unordered_set<MintKey, MintKeyHash> s_inflight;
-// I-A: il worker gira in workers::StartWorker. Il wait ha comunque un timeout
-// (100 ms) perché workers::Shutdown imposta il flag di stop ma NON notifica
-// questa cv: senza timeout il join centralizzato deadlockerebbe.
+// I-A: the worker runs in workers::StartWorker. The wait still has a timeout
+// (100 ms) because workers::Shutdown sets the stop flag but does NOT notify
+// this cv: without a timeout the centralized join would deadlock.
 std::atomic<bool> s_started{false};
 
 // The synchronous mint logic (HTTP + parse + persist). Only ever called from
@@ -95,13 +95,13 @@ void WorkerMain(std::atomic<bool>& stop) {
         MintKey key;
         {
             std::unique_lock<std::mutex> lock(s_mutex);
-            // wait_for (non wait): lo stop arriva dal flag del registry senza
-            // notify su s_cv; il timeout garantisce il risveglio entro 100 ms.
+            // wait_for (not wait): stop arrives via the registry flag with no
+            // notify on s_cv; the timeout guarantees wakeup within 100 ms.
             if (!s_cv.wait_for(lock, std::chrono::milliseconds(100),
                                [&stop] { return stop.load(std::memory_order_relaxed) ||
                                                 !s_queue.empty(); })) {
                 if (stop.load(std::memory_order_relaxed)) return;
-                continue;   // timeout a vuoto: ricontrolla stop/coda
+                continue;   // empty timeout: recheck stop/queue
             }
             if (stop.load(std::memory_order_relaxed)) return;
             if (s_queue.empty()) continue;   // sveglia spuria/notifica tardiva
@@ -176,9 +176,9 @@ std::size_t CacheCount() {
 }
 
 void Shutdown() {
-    // I-A: stop+join del worker sono già avvenuti in workers::Shutdown()
-    // (chiamato prima di eticketfetch::Shutdown in dllmain). Qui resta la
-    // pulizia dello stato: coda e inflight non devono sopravvivere.
+    // I-A: worker stop+join already happened in workers::Shutdown() (called
+    // before eticketfetch::Shutdown in dllmain). Only state cleanup remains
+    // here: queue and inflight must not survive.
     std::size_t dropped = 0;
     {
         std::lock_guard<std::mutex> lock(s_mutex);

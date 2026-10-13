@@ -236,10 +236,24 @@ fn legacy_wallpaper_path() -> Result<Option<PathBuf>, String> {
 
 /// Read the active wallpaper as a browser-ready data URI. Empty string when no
 /// wallpaper exists. Data URIs avoid Tauri asset-protocol scope issues.
+/// Refuses files over `MAX_WALLPAPER_BYTES`: the whole image is held in
+/// memory plus ~33% Base64 overhead on every appearance refresh, so a huge
+/// file would freeze the UI instead of theming it.
 pub fn read_personal_wallpaper_data_uri(selected_file: &str) -> Result<Option<String>, String> {
+    const MAX_WALLPAPER_BYTES: u64 = 8 * 1024 * 1024;
     let Some(path) = personal_wallpaper_path(selected_file)? else {
         return Ok(None);
     };
+    let size = fs::metadata(&path)
+        .map_err(|e| format!("Failed to read wallpaper {}: {}", path.display(), e))?
+        .len();
+    if size > MAX_WALLPAPER_BYTES {
+        return Err(format!(
+            "Wallpaper {} is too large ({} MiB, max 8 MiB). Pick a smaller image.",
+            path.display(),
+            size / (1024 * 1024)
+        ));
+    }
     let bytes = fs::read(&path)
         .map_err(|e| format!("Failed to read wallpaper {}: {}", path.display(), e))?;
     let mime = wallpaper_mime(&path);

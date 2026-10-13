@@ -107,30 +107,30 @@ fn test_lua_manifest_row_camel_case_contract() {
     assert!(serialized.get("issue").is_none());
 }
 
-// Il vecchio `test_core_commands_inventory_check` è stato rimosso: elencava nomi
-// di comandi e assertiva che non fossero stringhe vuote — vero per
-// costruzione, quindi incapace di segnalare qualunque deriva (conteneva anche
-// `save_installed_lua_manifest_rows`, comando che non è mai esistito).
+// The old `test_core_commands_inventory_check` was removed: it listed command
+// names and asserted they were not empty strings — true by construction, hence
+// unable to flag any drift (it even contained `save_installed_lua_manifest_rows`,
+// a command that never existed).
 //
-// Il contratto FE <-> BE è ora verificato sul sorgente reale in
-// `src/tests/ipc_contract_tests.rs`: comandi registrati vs definiti, nomi
-// invocati dal frontend vs registrati, chiavi degli argomenti vs firme Rust,
-// forma delle chiavi wire (il caso `showonline`), assenza di `steam_path` nei
-// payload e lista esplicita dei comandi inutilizzati.
+// The FE <-> BE contract is now verified against the real sources in
+// `src/tests/ipc_contract_tests.rs`: registered vs defined commands, frontend-
+// invoked names vs registered ones, argument keys vs Rust signatures, wire key
+// shape (the `showonline` case), no `steam_path` in payloads, and an explicit
+// list of unused commands.
 
 // ---------------------------------------------------------------------------
-// Contratto di RISPOSTA: snapshot del sincronizzatore <-> src/types/sync.ts
+// RESPONSE contract: synchronizer snapshot <-> src/types/sync.ts
 // ---------------------------------------------------------------------------
 //
-// Il test di contratto sugli argomenti (`ipc_contract_tests.rs`) copre la
-// direzione frontend -> backend. Qui c'è l'altra: le chiavi che il backend
-// SERIALIZZA devono coincidere con l'interfaccia TypeScript che le legge.
+// The argument contract test (`ipc_contract_tests.rs`) covers the
+// frontend -> backend direction. Here is the other one: the keys the backend
+// SERIALIZES must match the TypeScript interface reading them.
 //
-// È la stessa classe di bug con lo stesso esito silenzioso: `MonitorStatus`
-// dichiara `pinSync`, il Rust serializza `pin_sync`, e il popup mostra una
-// corsia perennemente vuota invece di un errore. Il caso è concreto perché lo
-// snapshot viaggia sia come risposta di `get_hubcap_monitor_status` sia come
-// payload dell'evento push `sync://status-changed`.
+// Same bug class with the same silent outcome: `MonitorStatus` declares
+// `pinSync`, Rust serializes `pin_sync`, and the popup shows a perpetually
+// empty lane instead of an error. The case is concrete because the snapshot
+// travels both as the `get_hubcap_monitor_status` response and as the
+// `sync://status-changed` push event payload.
 
 use std::collections::BTreeSet;
 
@@ -140,23 +140,23 @@ use crate::core::hubcap_update_monitor::{LaneStatus, MonitorStatusSnapshot, Pend
 fn json_object_keys(value: &Value) -> BTreeSet<String> {
     value
         .as_object()
-        .expect("il valore serializzato deve essere un oggetto")
+        .expect("the serialized value must be an object")
         .keys()
         .cloned()
         .collect()
 }
 
-/// Chiavi dichiarate da `export interface <name> { … }` in un file TS.
+/// Keys declared by `export interface <name> { … }` in a TS file.
 ///
-/// Lettura volutamente semplice: una chiave per riga, nella forma
-/// `nome?: tipo;` — è così che sono scritte le interfacce mirror di questo
-/// progetto. Se il formato cambia, il test lo dice invece di passare di
-/// nascosto (nessuna chiave trovata = fallimento).
+/// Deliberately simple reading: one key per line, shaped `name?: type;` —
+/// that is how this project's mirror interfaces are written. When the format
+/// changes, the test says so instead of silently passing (no keys found =
+/// failure).
 fn ts_interface_keys(source: &str, name: &str) -> BTreeSet<String> {
     let header = format!("export interface {name} {{");
     let start = source
         .find(&header)
-        .unwrap_or_else(|| panic!("interfaccia `{name}` non trovata nel file TS"));
+        .unwrap_or_else(|| panic!("interface `{name}` not found in the TS file"));
     let body_start = start + header.len();
     let mut depth = 1usize;
     let mut end = body_start;
@@ -196,7 +196,7 @@ fn ts_interface_keys(source: &str, name: &str) -> BTreeSet<String> {
 fn types_sync_source() -> String {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .parent()
-        .expect("AetherDesk/ sopra src-tauri/")
+        .expect("AetherDesk/ above src-tauri/")
         .join("src")
         .join("types")
         .join("sync.ts");
@@ -240,20 +240,20 @@ fn monitor_status_snapshot_matches_the_typescript_mirror() {
     let ts_top = ts_interface_keys(&source, "MonitorStatus");
     assert_eq!(
         rust_top, ts_top,
-        "\nChiavi dello snapshot divergenti tra Rust e TypeScript.\n  solo Rust: {:?}\n  solo TS:   {:?}\n\
-         Allineare src/types/sync.ts oppure #[serde(rename_all)] in core/hubcap_update_monitor.rs.\n",
+        "\nSnapshot keys diverged between Rust and TypeScript.\n  Rust only: {:?}\n  TS only:   {:?}\n\
+         Align src/types/sync.ts or #[serde(rename_all)] in core/hubcap_update_monitor.rs.\n",
         rust_top.difference(&ts_top).collect::<Vec<_>>(),
         ts_top.difference(&rust_top).collect::<Vec<_>>(),
     );
 
     let lane = json
         .get("pinSync")
-        .expect("la corsia pinSync deve essere serializzata in camelCase");
+        .expect("the pinSync lane must serialize in camelCase");
     let rust_lane = json_object_keys(lane);
     let ts_lane = ts_interface_keys(&source, "LaneStatus");
     assert_eq!(
         rust_lane, ts_lane,
-        "\nChiavi di LaneStatus divergenti.\n  solo Rust: {:?}\n  solo TS:   {:?}\n",
+        "\nLaneStatus keys diverged.\n  Rust only: {:?}\n  TS only:   {:?}\n",
         rust_lane.difference(&ts_lane).collect::<Vec<_>>(),
         ts_lane.difference(&rust_lane).collect::<Vec<_>>(),
     );
@@ -262,12 +262,12 @@ fn monitor_status_snapshot_matches_the_typescript_mirror() {
         .get("pending")
         .and_then(Value::as_array)
         .and_then(|items| items.first())
-        .expect("pending deve contenere almeno un task nel campione");
+        .expect("pending must hold at least one task in the sample");
     let rust_task = json_object_keys(task);
     let ts_task = ts_interface_keys(&source, "PendingTaskInfo");
     assert_eq!(
         rust_task, ts_task,
-        "\nChiavi di PendingTaskInfo divergenti.\n  solo Rust: {:?}\n  solo TS:   {:?}\n",
+        "\nPendingTaskInfo keys diverged.\n  Rust only: {:?}\n  TS only:   {:?}\n",
         rust_task.difference(&ts_task).collect::<Vec<_>>(),
         ts_task.difference(&rust_task).collect::<Vec<_>>(),
     );
@@ -275,9 +275,9 @@ fn monitor_status_snapshot_matches_the_typescript_mirror() {
 
 #[test]
 fn monitor_status_snapshot_serializes_every_field_even_when_empty() {
-    // Il popup legge le quattro corsie senza controlli di presenza: se un campo
-    // `Option` venisse omesso quando è `None` (skip_serializing_if), la UI
-    // riceverebbe `undefined` dove si aspetta un numero o un array.
+    // The popup reads the four lanes with no presence checks: if an `Option`
+    // field were omitted when `None` (skip_serializing_if), the UI would get
+    // `undefined` where it expects a number or an array.
     let json = serde_json::to_value(MonitorStatusSnapshot::default()).expect("serialize default");
     let keys = json_object_keys(&json);
     for expected in [

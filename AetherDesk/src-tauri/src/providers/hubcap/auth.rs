@@ -9,7 +9,7 @@ use super::types::{
     GENERATION_RETRY_ATTEMPTS, HubcapGenerationUsage, HubcapUserStats, KEY_VALIDATION_TTL,
 };
 
-/// (fingerprint SHA-256 della chiave, istante della verifica, esito).
+/// (SHA-256 fingerprint of the key, verification instant, outcome).
 type CachedValidation = Option<(Vec<u8>, Instant, bool)>;
 
 /// Session-wide validation cache. The fingerprint is the SHA-256 of the raw

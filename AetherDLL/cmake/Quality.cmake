@@ -1,36 +1,36 @@
 # ============================================================================
-# Quality gates per i target AetherDLL (AetherCore / AetherPayload / AetherXInput).
+# Quality gates for the AetherDLL targets (AetherCore / AetherPayload / AetherXInput).
 #
-# Obiettivo: ogni build locale ("Compila tutto" in Visual Studio) e ogni build
-# CI applicano GLI STESSI controlli, così un problema appare sulla macchina di
-# chi lo introduce e non al rilascio.
+# Goal: every local build ("Build All" in Visual Studio) and every CI build
+# apply THE SAME checks, so a problem shows up on its author's machine, not at
+# release time.
 #
 #   aether_apply_quality(<target>)
-#       - /W4 /permissive- /Zc:preprocessor su MSVC (prima: livello default W1)
-#       - /WX (warning = errore) se AETHER_WARNINGS_AS_ERRORS=ON (default ON)
-#       - clang-tidy sui sorgenti del target se AETHER_CLANG_TIDY != OFF e il
-#         binario esiste (Visual Studio: componente "C++ Clang tools for
-#         Windows"); configurazione in AetherDLL/.clang-tidy
-#       - i sorgenti generati (protobuf) sono esclusi da lint e /WX
+#       - /W4 /permissive- /Zc:preprocessor on MSVC (before: default level W1)
+#       - /WX (warning = error) when AETHER_WARNINGS_AS_ERRORS=ON (default ON)
+#       - clang-tidy on the target's sources when AETHER_CLANG_TIDY != OFF and
+#         the binary exists (Visual Studio: "C++ Clang tools for Windows"
+#         component); configuration in AetherDLL/.clang-tidy
+#       - generated sources (protobuf) are excluded from lint and /WX
 #
 #   aether_check_headers(<target>)
-#       - header orfani: ogni .h/.inl nella directory del target deve essere
-#         incluso da almeno un sorgente/header del progetto. Complementa
-#         aether_check_sources (che copre solo le translation unit).
+#       - orphan headers: every .h/.inl in the target directory must be
+#         included by at least one project source/header. Complements
+#         aether_check_sources (which covers translation units only).
 #
-# Escape hatch (mai silenzioso: viene stampato a configure):
-#   cmake -DAETHER_WARNINGS_AS_ERRORS=OFF   -> warning visibili ma non bloccanti
-#   cmake -DAETHER_CLANG_TIDY=OFF           -> salta clang-tidy
+# Escape hatch (never silent: printed at configure time):
+#   cmake -DAETHER_WARNINGS_AS_ERRORS=OFF   -> visible but non-blocking warnings
+#   cmake -DAETHER_CLANG_TIDY=OFF           -> skips clang-tidy
 #   cmake -DAETHER_CLANG_TIDY=C:/path/clang-tidy.exe
 # ============================================================================
 
 option(AETHER_WARNINGS_AS_ERRORS "Treat compiler warnings as errors (/WX)" ON)
 set(AETHER_CLANG_TIDY "AUTO" CACHE STRING "clang-tidy: AUTO | OFF | <path to clang-tidy>")
 
-# Risolve il binario di clang-tidy una sola volta per configure.
+# Resolves the clang-tidy binary once per configure.
 if(NOT AETHER_CLANG_TIDY STREQUAL "OFF")
     if(AETHER_CLANG_TIDY STREQUAL "AUTO")
-        # Percorsi tipici di Visual Studio 2022 oltre al PATH.
+        # Typical Visual Studio 2022 paths beyond PATH.
         file(GLOB _aether_vs_llvm
             "C:/Program Files/Microsoft Visual Studio/2022/*/VC/Tools/Llvm/x64/bin"
             "C:/Program Files/Microsoft Visual Studio/2022/*/VC/Tools/Llvm/bin"
@@ -58,16 +58,15 @@ endif()
 
 function(aether_apply_quality target)
     if(MSVC)
-        # /W4            livello warning alto (default MSVC/CMake e' /W1-/W3)
-        # /permissive-   C++ standard-conforme (niente estensioni silenziose MSVC)
-        # /Zc:preprocessor preprocessore conforme (macro variadiche corrette)
-        # /external:W0   zero warning dagli header di terze parti.
-        # /external:I    MSVC considera "esterno" ogni header che sta SOTTO una
-        #                di queste directory, indipendentemente da come e' stato
-        #                incluso (-I normale, virgolette, PCH). Senza questo
-        #                protobuf/abseil (FetchContent in _deps) e il .pb.h
-        #                generato arrivano via -I e producono 60+ C4100 non
-        #                azionabili.
+        # /W4            high warning level (MSVC/CMake default is /W1-/W3)
+        # /permissive-   standards-conforming C++ (no silent MSVC extensions)
+        # /Zc:preprocessor conforming preprocessor (correct variadic macros)
+        # /external:W0   zero warnings from third-party headers.
+        # /external:I    MSVC treats as "external" any header sitting UNDER one
+        #                of these directories, regardless of how it was included
+        #                (plain -I, quotes, PCH). Without this, protobuf/abseil
+        #                (FetchContent in _deps) and the generated .pb.h arrive
+        #                via -I and produce 60+ unactionable C4100s.
         target_compile_options(${target} PRIVATE
             /W4 /permissive- /Zc:preprocessor
             /external:anglebrackets /external:W0
@@ -84,32 +83,32 @@ function(aether_apply_quality target)
         endif()
     endif()
 
-    # Nota: i sorgenti protobuf generati NON passano di qui: stanno nel
-    # target dedicato aether_proto (root CMakeLists) compilato con /w.
+    # Note: generated protobuf sources do NOT go through here: they live in the
+    # dedicated aether_proto target (root CMakeLists) compiled with /w.
 
     if(AETHER_CLANG_TIDY_EXE)
-        # CMake aggiunge da solo --driver-mode=cl quando il compilatore e' MSVC.
-        # Il file .clang-tidy alla radice di AetherDLL governa i check.
+        # CMake adds --driver-mode=cl on its own when the compiler is MSVC.
+        # The .clang-tidy file at the AetherDLL root governs the checks.
         set_target_properties(${target} PROPERTIES
             CXX_CLANG_TIDY "${AETHER_CLANG_TIDY_EXE};--warnings-as-errors=*;--quiet")
     endif()
 endfunction()
 
-# Header orfani: un .h/.inl nella directory del target che nessun file del
-# progetto include e' codice morto (o un refactor dimenticato a meta').
+# Orphan headers: an .h/.inl in the target directory that no project file
+# includes is dead code (or a refactor forgotten halfway).
 function(aether_check_headers target)
     file(GLOB_RECURSE _headers CONFIGURE_DEPENDS
         "${CMAKE_CURRENT_SOURCE_DIR}/*.h" "${CMAKE_CURRENT_SOURCE_DIR}/*.hpp"
         "${CMAKE_CURRENT_SOURCE_DIR}/*.inl")
-    # Tutti i file che possono contenere #include: sorgenti e header di questo
-    # target + la cartella common condivisa (pch.h/framework.h) + i test.
+    # Every file that may hold #include: this target's sources and headers
+    # + the shared common folder (pch.h/framework.h) + the tests.
     file(GLOB_RECURSE _includers CONFIGURE_DEPENDS
         "${CMAKE_CURRENT_SOURCE_DIR}/*.cpp" "${CMAKE_CURRENT_SOURCE_DIR}/*.h"
         "${CMAKE_CURRENT_SOURCE_DIR}/*.inl"
         "${CMAKE_SOURCE_DIR}/common/*.h"
         "${CMAKE_SOURCE_DIR}/tests/*.cpp" "${CMAKE_SOURCE_DIR}/tests/*.h")
 
-    # Raccoglie una sola volta tutte le direttive #include del progetto.
+    # Collects every #include directive of the project exactly once.
     set(_all_includes "")
     foreach(_file IN LISTS _includers)
         file(STRINGS "${_file}" _lines REGEX "^[ \t]*#[ \t]*include[ \t]*[<\"]")
@@ -120,7 +119,7 @@ function(aether_check_headers target)
     set(_orphans "")
     foreach(_hdr IN LISTS _headers)
         get_filename_component(_name "${_hdr}" NAME)
-        # Match su "nome.h" preceduto da / o " o < : copre sia "core/X.h" che "X.h".
+        # Match on "name.h" preceded by / or " or < : covers both "core/X.h" and "X.h".
         string(REGEX MATCH "[/\"<]${_name}[\">]" _hit "${_all_includes_text}")
         if(NOT _hit)
             list(APPEND _orphans "${_hdr}")

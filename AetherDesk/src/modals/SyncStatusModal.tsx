@@ -7,8 +7,8 @@ import { SYNC_STATUS_EVENT } from '../constants/library';
 import { SYNC_LANES, type LaneStatus, type MonitorStatus } from '../types/sync';
 import { toErrorMessage } from '../util/errors';
 
-// I tipi vivono in `types/sync.ts` (contratto IPC); riesportati qui perché i
-// consumatori storici li importavano dal modale.
+// Types live in `types/sync.ts` (IPC contract); re-exported here because
+// historic consumers imported them from the modal.
 export type { MonitorStatus } from '../types/sync';
 
 export interface SyncStatusModalProps {
@@ -16,11 +16,11 @@ export interface SyncStatusModalProps {
   onClose: () => void;
 }
 
-/** Cadenza del polling di recovery mentre il popup è visibile. Il segnale
- *  primario è l'evento `sync://status-changed`: il polling serve solo a non
- *  restare stale se un evento si perde (stesso contratto della Library). */
+/** Recovery polling cadence while the popup is visible. The primary signal
+ *  is the `sync://status-changed` event: polling only avoids going stale if
+ *  an event is lost (same contract as the Library). */
 const SYNC_POLL_INTERVAL_MS = 5_000;
-/** Backoff quando la finestra è nascosta/minimizzata col popup aperto. */
+/** Backoff while the window is hidden/minimized with the popup open. */
 const SYNC_POLL_BACKOFF_MS = 20_000;
 
 const formatEpoch = (epoch: number | null): string => {
@@ -83,11 +83,11 @@ const LaneSection = ({ title, hint, lane }: { title: string; hint: string; lane:
  * Live status of the background Steam-change synchronizer (pin realignment,
  * Lua manifest repair, Workshop staging).
  *
- * Trasporto: **push prima, polling come recovery**. Il backend emette
- * `sync://status-changed` solo quando lo snapshot cambia davvero, quindi il
- * popup è istantaneo e non interroga IPC quando non c'è nulla di nuovo; il
- * poll lento (con backoff a finestra nascosta, hook condiviso con LogView)
- * resta come rete di sicurezza se un evento si perde.
+ * Transport: **push first, polling as recovery**. The backend emits
+ * `sync://status-changed` only when the snapshot really changes, so the popup
+ * is instant and never polls IPC when there is nothing new; the slow poll
+ * (with hidden-window backoff, hook shared with LogView) stays as a safety
+ * net in case an event is lost.
  */
 export const SyncStatusModal = ({ onClose }: SyncStatusModalProps) => {
   const [status, setStatus] = useState<MonitorStatus | null>(null);
@@ -102,7 +102,7 @@ export const SyncStatusModal = ({ onClose }: SyncStatusModalProps) => {
     }
   }, []);
 
-  // Push: ogni cambiamento reale dello snapshot arriva qui.
+  // Push: every real snapshot change arrives here.
   useEffect(() => {
     let unlisten: UnlistenFn | undefined;
     let cancelled = false;
@@ -120,7 +120,7 @@ export const SyncStatusModal = ({ onClose }: SyncStatusModalProps) => {
         unlisten = off;
       })
       .catch(() => {
-        // Il bridge eventi non è disponibile: resta il polling di recovery.
+        // No event bridge available: recovery polling remains.
       });
     return () => {
       cancelled = true;

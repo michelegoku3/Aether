@@ -123,11 +123,11 @@ Correl ResolveAttempt(bool hasJobIdTarget, std::uint64_t jobIdTarget, StatAttemp
         if (it != g_jobIdToAttempt.end()) {
             out = it->second;
             g_jobIdToAttempt.erase(it);
-            // Correlazione riuscita: rimuovi l'attempt ANCHE dalla coda di
-            // fallback, altrimenti resta come "fantasma" per kAttemptWindow e
-            // rende ambiguo (n>1) il fallback della risposta successiva, che a
-            // quel punto passerebbe al gioco NON riscritta (con le stats del
-            // donor). Segnalato dalla revisione esterna del 21/08/2026.
+            // Successful correlation: also drop the attempt from the fallback
+            // queue, otherwise it lingers as a "ghost" for kAttemptWindow and
+            // makes the next response's fallback ambiguous (n>1), which would
+            // then reach the game UNREWRITTEN (with the donor's stats). Flagged
+            // by the 21/08/2026 external review.
             for (auto itDq = g_recentAttempts.begin(); itDq != g_recentAttempts.end();) {
                 if (itDq->sequence == out.sequence) itDq = g_recentAttempts.erase(itDq);
                 else ++itDq;

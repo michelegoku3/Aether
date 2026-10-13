@@ -13,12 +13,12 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 //     and are swept to keep persisted data well under quota.
 //   • If no cover resolves, we render the placeholder (Æ) instead of a wrong
 //     hero image.
-//   • UNA sola catena di risoluzione per appId (registro single-flight): card
-//     montata e preload della griglia condividono lo stesso lavoro, e l'ultimo
-//     sottoscrittore che si stacca annulla davvero la catena, request inclusa.
-//   • Risoluzione lazy (IntersectionObserver): niente probe per le card fuori
-//     viewport o dentro una tab nascosta con `display:none`.
-//   • Una sola lettura di cache per mount (prima erano tre).
+//   • ONE resolution chain per appId (single-flight registry): mounted card
+//     and grid preload share the same work, and the last unsubscribing
+//     subscriber really cancels the chain, request included.
+//   • Lazy resolution (IntersectionObserver): no probes for off-viewport cards
+//     or cards inside a hidden tab with `display:none`.
+//   • A single cache read per mount (used to be three).
 // ────────────────────────────────────────────────────────────────────────────
 
 const COVER_CACHE_PREFIX = 'aether_cover_v4_';
@@ -295,9 +295,9 @@ const preloadCoverChain = (
 
   return () => {
     cancelled = true;
-    // Interrompe anche la request in volo. Prima il cancel fermava solo i
-    // callback: il download continuava comunque, e con 9 URL per card su griglie
-    // da 20+ card il costo in banda non era trascurabile.
+    // Also aborts the in-flight request. Cancel used to stop only the
+    // callbacks: the download kept going anyway, and with 9 URLs per card on
+    // 20+ card grids the bandwidth cost was not negligible.
     if (currentImage) {
       currentImage.onload = null;
       currentImage.onerror = null;
@@ -308,19 +308,18 @@ const preloadCoverChain = (
 };
 
 // ---------------------------------------------------------------------------
-// Single-flight: UNA catena di risoluzione per appId
+// Single-flight: ONE resolution chain per appId
 // ---------------------------------------------------------------------------
 //
-// Senza questo registro la stessa cover veniva risolta più volte in parallelo:
-// il preload della griglia avviava una catena e ogni `GameCover` montato ne
-// avviava un'altra (React StrictMode monta due volte; Store e Library possono
-// mostrare lo stesso gioco). Ogni catena prova fino a 9 URL con `new Image()`,
-// quindi N catene duplicate significavano N×9 request ai CDN di Steam per la
-// stessa identica immagine.
+// Without this registry the same cover was resolved several times in parallel:
+// the grid preload started one chain and every mounted `GameCover` started
+// another (React StrictMode mounts twice; Store and Library can show the same
+// game). Each chain tries up to 9 URLs with `new Image()`, so N duplicated
+// chains meant N×9 requests to the Steam CDNs for the very same image.
 //
-// Ora i sottoscrittori si agganciano alla catena esistente. L'ultimo che si
-// stacca la cancella davvero — interrompendo anche la request in volo — così un
-// cambio filtro o uno scroll veloce non lasciano code di catene orfane.
+// Now subscribers hook onto the existing chain. The last one to detach really
+// cancels it — aborting the in-flight request too — so a filter change or a
+// fast scroll leaves no queues of orphaned chains.
 
 type CoverListener = (cover: ResolvedCover | null) => void;
 
@@ -340,8 +339,8 @@ const releaseCoverChain = (appId: string, listener: CoverListener) => {
   coverChains.delete(appId);
 };
 
-/** Avvia la catena per `appId` o si aggancia a quella già in corso.
- *  Restituisce la funzione di rilascio (da usare come cleanup di un effect). */
+/** Starts the chain for `appId` or hooks onto the one already running.
+ *  Returns the release function (to use as an effect cleanup). */
 const subscribeToCoverChain = (
   appId: string,
   urls: string[],
@@ -355,9 +354,9 @@ const subscribeToCoverChain = (
   const chain: CoverChain = { listeners: new Set([listener]), cancel: () => {} };
   coverChains.set(appId, chain);
   chain.cancel = preloadCoverChain(urls, (cover) => {
-    // Fuori dal registro PRIMA di notificare: un sottoscrittore che riprova
-    // subito (es. `canonicalUrl` arrivato in ritardo) riparte pulito invece di
-    // agganciarsi a una catena già risolta.
+    // Out of the registry BEFORE notifying: a subscriber retrying right away
+    // (e.g. a late-arriving `canonicalUrl`) restarts clean instead of hooking
+    // onto an already-resolved chain.
     coverChains.delete(appId);
     if (cover) saveCachedCover(appId, cover);
     for (const current of Array.from(chain.listeners)) current(cover);
@@ -366,9 +365,9 @@ const subscribeToCoverChain = (
   return () => releaseCoverChain(appId, listener);
 };
 
-/** True quando la cache contiene già la risposta definitiva: la sua URL è la
- *  prima che la catena proverebbe, quindi una riverifica costerebbe una request
- *  per ottenere lo stesso risultato. */
+/** True when the cache already holds the final answer: its URL is the first
+ *  the chain would try, so re-verifying would cost a request to get the same
+ *  result. */
 const cacheIsFinal = (cached: ResolvedCover | null, urls: string[]): boolean =>
   Boolean(cached && urls[0] && cached.url === urls[0]);
 
@@ -377,19 +376,19 @@ export interface GameCoverPreloadInput {
   imageUrl?: string;
 }
 
-/** Riscalda la cache per un blocco di giochi (chiamato dalle griglie).
- *  Condivide il registro single-flight con `GameCover`: se una card è già
- *  montata — o il preload è già passato di lì — non parte una seconda catena. */
+/** Warms the cache for a batch of games (called by the grids).
+ *  Shares the single-flight registry with `GameCover`: when a card is already
+ *  mounted — or the preload already passed by — no second chain starts. */
 export const preloadGameCovers = (games: GameCoverPreloadInput[], maxCount = 40) => {
   games.slice(0, maxCount).forEach((game) => {
     const appIdString = String(game.appId);
     if (coverChains.has(appIdString)) return;
     const urls = buildCoverUrls(appIdString, game.imageUrl);
     if (cacheIsFinal(getCachedCover(appIdString), urls)) return;
-    // Il preload non ha un ciclo di vita proprio: si stacca a catena finita (a
-    // quel punto l'entry è già rimossa dal registro, quindi è un no-op). Il
-    // contenitore serve perché la funzione di rilascio esiste solo DOPO la
-    // subscribe, che a sua volta riceve il listener.
+    // Preload has no lifecycle of its own: it detaches when the chain ends (at
+    // which point the entry is already removed from the registry, so it is a
+    // no-op). The container exists because the release function only exists
+    // AFTER the subscribe, which in turn receives the listener.
     const release: { current?: () => void } = {};
     release.current = subscribeToCoverChain(appIdString, urls, () => {
       release.current?.();
@@ -408,20 +407,20 @@ export const GameCover = ({ appId, name, canonicalUrl }: GameCoverProps) => {
     [appIdString, canonicalUrl],
   );
 
-  // UNA lettura di cache per mount. Prima due inizializzatori di stato
-  // chiamavano `initialCachedCover` (localStorage.getItem + JSON.parse) a testa
-  // e l'effect la rileggeva una terza volta: I/O sincrono nel primo paint,
-  // moltiplicato per ogni card della griglia.
+  // ONE cache read per mount. Two state initializers used to call
+  // `initialCachedCover` (localStorage.getItem + JSON.parse) each, and the
+  // effect re-read it a third time: synchronous I/O in the first paint,
+  // multiplied by every grid card.
   const [lookup, setLookup] = useState<{ cover: ResolvedCover | null; finished: boolean }>(() => {
     const cover = getCachedCover(appIdString);
     return { cover, finished: Boolean(cover) };
   });
   const resolvedCover = lookup.cover;
 
-  // Lazy start: la catena parte solo quando la card è (quasi) in viewport.
-  // Le griglie tengono montate decine di card e Store/Library restano montate
-  // anche a tab nascosta (`display:none`), dove l'observer non scatta: finché
-  // l'utente non guarda quella tab, il lavoro è zero.
+  // Lazy start: the chain only starts when the card is (nearly) in viewport.
+  // Grids keep dozens of cards mounted and Store/Library stay mounted even on
+  // a hidden tab (`display:none`), where the observer never fires: until the
+  // user looks at that tab, work is zero.
   const wrapperRef = useRef<HTMLDivElement | null>(null);
   const [isNearViewport, setIsNearViewport] = useState(false);
 
@@ -446,8 +445,8 @@ export const GameCover = ({ appId, name, canonicalUrl }: GameCoverProps) => {
     return () => observer.disconnect();
   }, [isNearViewport]);
 
-  // Rilettura della cache solo se cambia appId: al mount ci ha già pensato
-  // l'inizializzatore (ed è qui che prima avveniva la lettura tripla).
+  // Cache re-read only when appId changes: the initializer already handled
+  // the mount (and this is where the triple read used to happen).
   const loadedAppIdRef = useRef(appIdString);
   useEffect(() => {
     if (loadedAppIdRef.current === appIdString) return;
@@ -458,8 +457,8 @@ export const GameCover = ({ appId, name, canonicalUrl }: GameCoverProps) => {
 
   useEffect(() => {
     if (!isNearViewport) return;
-    // `getCachedCover` a questo punto è una hit della LRU in memoria (l'ha
-    // popolata l'inizializzatore): costa un lookup, non un accesso a disco.
+    // `getCachedCover` here is an in-memory LRU hit (the initializer populated
+    // it): it costs a lookup, not disk access.
     const cachedCover = getCachedCover(appIdString);
     if (cacheIsFinal(cachedCover, urls)) {
       setLookup((current) =>

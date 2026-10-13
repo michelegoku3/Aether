@@ -1,18 +1,17 @@
-//! Ispezione di un'installazione di gioco.
+//! Game installation inspection.
 //!
-//! Port in Rust delle regole di rilevamento di UCOnline2 `patch.bat`
-//! (commit 797d550). Ogni funzione è pura (input: path; output: dati) e
-//! non dipende da Tauri: leggibile, testabile con fixture su `tempdir`,
-//! riusabile da qualunque front-end.
+//! Rust port of the UCOnline2 `patch.bat` detection rules (commit 797d550).
+//! Every function is pure (input: path; output: data) and does not depend on
+//! Tauri: readable, testable with `tempdir` fixtures, reusable from any front-end.
 //!
-//! Le regole preservano i casi-bug già risolti da UCOnline2:
-//!   * `*_Data` da solo non basta (Farming Simulator ha `web_data`) — serve
-//!     il marcatore `Managed\` o `il2cpp_data\`;
-//!   * la DLL Steamworks può esistere in più punti (Farming Simulator ha
-//!     una copia in root e una in `x64\`) — vince quella accanto all'exe
-//!     più grande, non il primo match;
-//!   * l'ini va scritto accanto all'EXE IN ESECUZIONE, non nella root
-//!     (per Unreal la root non viene mai letta).
+//! The rules preserve the bug cases already fixed by UCOnline2:
+//!   * `*_Data` alone is not enough (Farming Simulator has `web_data`) — the
+//!     `Managed\` or `il2cpp_data\` marker is required;
+//!   * the Steamworks DLL may exist in several places (Farming Simulator has
+//!     one copy in root and one in `x64\`) — the one next to the biggest exe
+//!     wins, not the first match;
+//!   * the ini goes next to the RUNNING EXE, not in the root
+//!     (for Unreal the root is never read).
 
 use crate::external_tools::constants::{
     is_steamless_backup_name, is_steamless_unpacked_name, UCO_PROXY_MAX_BYTES,
@@ -30,7 +29,7 @@ pub struct OverlayTarget {
     pub path: PathBuf,
 }
 
-/// Motivo per cui l'ispezione del gioco non è riuscita.
+    /// Why the game inspection failed.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DetectionError {
     /// Nessun marcatore noto (Unity / Unreal / steam_api64.dll).
@@ -47,7 +46,7 @@ impl std::fmt::Display for DetectionError {
 
 impl std::error::Error for DetectionError {}
 
-/// Nomi file/stringhe usati come marcatori (specchia patch.bat).
+/// File/string names used as markers (mirrors patch.bat).
 const STEAM_API64_DLL: &str = "steam_api64.dll";
 const STEAM_API_DLL: &str = "steam_api.dll";
 const UNITY_DATA_SUFFIX: &str = "_Data";
@@ -58,12 +57,12 @@ const COHERENCE_SCHEMA: &str = "combined.schema";
 const EOS_DLL_SHIPPING: &str = "EOSSDK-Win64-Shipping.dll";
 const EOS_DLL: &str = "EOSSDK.dll";
 
-/// Proxy DLL generici dietro cui un fix può nascondersi (solo se piccoli).
-/// `version.dll` e `XINPUT1_3.dll` NON sono qui: dal 1.19.5 sono i nomi
-/// dell'overlay proxy UCO2 e li gestisce il deployer, non la quarantena.
+/// Generic proxy DLLs that a fix may hide behind (only when small).
+/// `version.dll` and `XINPUT1_3.dll` are NOT here: since 1.19.5 they are the
+/// UCO2 overlay proxy names and the deployer owns them, not the quarantine.
 const PROXY_DLLS: &[&str] = &["dxgi.dll", "dsound.dll", "winhttp.dll"];
 
-/// Nomi riservati all'early overlay proxy (non vanno trattati come conflitto).
+/// Names reserved for the early overlay proxy (never treated as conflicts).
 const OVERLAY_PROXY_NAMES: &[&str] = &["version.dll", "xinput1_3.dll"];
 
 /// Stringhe ANSI nei metadati IL2CPP / negli exe Unreal.
@@ -91,9 +90,9 @@ impl GameInspector {
             return Ok(Self::report_for_unreal(root, &shipping_exe));
         }
 
-        // Generic: la DLL Steamworks può essere x64 O x86 (SpeedRunners e
-        // molti altri titoli 32-bit hanno solo steam_api.dll, senza _Data
-        // né Shipping exe). steam_api_dir_for copre entrambe.
+        // Generic: the Steamworks DLL can be x64 OR x86 (SpeedRunners and
+        // many other 32-bit titles ship only steam_api.dll, with no _Data
+        // or Shipping exe). steam_api_dir_for covers both.
         if let Some(steam_api_dir) = Self::steam_api_dir_for(root, None) {
             return Ok(Self::report_for_generic(root, &steam_api_dir));
         }
@@ -110,8 +109,8 @@ impl GameInspector {
     // Engine detection
     // ------------------------------------------------------------------
 
-    /// Prima cartella `<name>_Data` che contiene un marcatore Unity vero
-    /// (`Managed\` o `il2cpp_data\`). BFS: la più vicina alla root vince.
+    /// First `<name>_Data` folder containing a real Unity marker
+    /// (`Managed\` or `il2cpp_data\`). BFS: closest to the root wins.
     fn find_unity_data_dir(root: &Path) -> Option<PathBuf> {
         walk_dirs(root).into_iter().find(|dir| {
             let name = dir.file_name().and_then(|n| n.to_str()).unwrap_or("");
@@ -129,19 +128,19 @@ impl GameInspector {
         })
     }
 
-    /// Directory di tutte le `steam_api64.dll` presenti sotto `root`.
+    /// Directory of every `steam_api64.dll` found under `root`.
     fn steam_api64_dirs(root: &Path) -> Vec<PathBuf> {
         dll_dirs(root, STEAM_API64_DLL)
     }
 
-    /// Directory di tutte le `steam_api.dll` (32-bit) presenti sotto `root`.
+    /// Directory of every 32-bit `steam_api.dll` found under `root`.
     fn steam_api32_dirs(root: &Path) -> Vec<PathBuf> {
         dll_dirs(root, STEAM_API_DLL)
     }
 
-    /// La directory con la `steam_api64.dll` "giusta": quando ce ne sono
-    /// più copie, vince quella accanto all'exe più grande (launcher e
-    /// server dedicati sono una frazione del gioco vero).
+    /// The directory with the "right" `steam_api64.dll`: when several copies
+    /// exist, the one next to the biggest exe wins (launchers and dedicated
+    /// servers are a fraction of the real game).
     fn pick_steam_api64_dir(root: &Path) -> Option<PathBuf> {
         let dirs = Self::steam_api64_dirs(root);
         if dirs.is_empty() {
@@ -171,13 +170,13 @@ impl GameInspector {
             .map(Path::to_path_buf)
             .unwrap_or_else(|| root.to_path_buf());
 
-        // Derivati calcolati PRIMA che steam_api_dir/backends vengano mossi
-        // dentro il report (il borrow checker non ammette usi dopo il move).
+        // Derivatives computed BEFORE steam_api_dir/backends are moved into
+        // the report (the borrow checker forbids uses after the move).
         let conflicts = Self::detect_conflicts(root, steam_api_dir.as_deref());
         let warnings = Self::warnings_for(root, arch, &backends);
         let steamless_applied = has_steamless_markers(root);
 
-        // Convenzione Unity: `<Game>_Data` sta accanto a `<Game>.exe`.
+        // Unity convention: `<Game>_Data` sits next to `<Game>.exe`.
         let game_name = unity_game_name(data_dir);
         let game_exe = Self::pick_game_exe(&ini_dir, &game_name);
         let steamstub_detected = game_exe
@@ -207,12 +206,12 @@ impl GameInspector {
             .parent()
             .map(Path::to_path_buf)
             .unwrap_or_else(|| root.to_path_buf());
-        // Fallback convenzione Unreal: la dir del Shipping exe.
+        // Unreal-convention fallback: the Shipping exe's dir.
         let steam_api_dir = Self::steam_api_dir_for(root, Some(exe_dir.clone()));
 
         let mut backends = BackendReport::default();
-        // Stringhe ANSI dei moduli online nell'exe (i literal URL sono
-        // UTF-16 e non matchano — stessa nota di patch.bat).
+        // ANSI strings of the online modules in the exe (URL literals are
+        // UTF-16 and never match — same note as patch.bat).
         if let Ok(scan) = read_for_scan(shipping_exe) {
             if contains_bytes(&scan, STR_EOS_SUBSYSTEM) {
                 backends.eos = true;
@@ -283,10 +282,10 @@ impl GameInspector {
     }
 
     // ------------------------------------------------------------------
-    // Architettura e posizione della DLL
+    // Architecture and DLL placement
     // ------------------------------------------------------------------
 
-    /// X86 solo quando esiste `steam_api.dll` e nessuna `steam_api64.dll`.
+    /// X86 only when `steam_api.dll` exists and no `steam_api64.dll` does.
     fn arch_for(root: &Path) -> GameArch {
         if Self::steam_api64_dirs(root).is_empty() && !Self::steam_api32_dirs(root).is_empty() {
             GameArch::X86
@@ -295,14 +294,14 @@ impl GameInspector {
         }
     }
 
-    /// Dove installare la DLL: la posizione "autoritativa" (dove il gioco
-    /// tiene già la sua copia), altrimenti il fallback convenzione passato
-    /// dal chiamante.
+    /// Where to install the DLL: the "authoritative" location (where the game
+    /// already keeps its copy), otherwise the convention fallback passed by
+    /// the caller.
     fn steam_api_dir_for(root: &Path, convention_fallback: Option<PathBuf>) -> Option<PathBuf> {
         if let Some(best) = Self::pick_steam_api64_dir(root) {
             return Some(best);
         }
-        // Gioco 32-bit: prima `steam_api.dll` trovata.
+        // 32-bit game: first `steam_api.dll` found.
         let dirs = Self::steam_api32_dirs(root);
         if let Some(first) = dirs.first() {
             return Some(first.clone());
@@ -352,13 +351,13 @@ impl GameInspector {
         backends
     }
 
-    /// Backend comuni a tutti gli engine (file SDK nel gioco).
+    /// Backends shared by every engine (SDK files in the game).
     fn merge_common_backends(
         backends: &mut BackendReport,
         root: &Path,
         steam_api_dir: Option<&Path>,
     ) {
-        // EOS: SDK nativo ovunque nel gioco (file presence > string scan).
+        // EOS: native SDK anywhere in the game (file presence > string scan).
         if !backends.eos {
             backends.eos = walk_files(root).into_iter().any(|file| {
                 let name = file.file_name().and_then(|n| n.to_str()).unwrap_or("");
@@ -374,9 +373,9 @@ impl GameInspector {
             }
         }
 
-        // coherence: lo schema è presente in ogni build, è il marcatore
-        // migliore; il file può mancare (schema embedded) — in quel caso i
-        // marcatori Unity sopra l'hanno già coperto.
+        // coherence: the schema ships in every build, so it is the best
+        // marker; the file may be missing (embedded schema) — then the Unity
+        // markers above already covered it.
         if !backends.coherence {
             backends.coherence = walk_files(root)
                 .into_iter()
@@ -385,13 +384,13 @@ impl GameInspector {
     }
 
     // ------------------------------------------------------------------
-    // Conflitti ed euristiche residue
+    // Conflicts and leftover heuristics
     // ------------------------------------------------------------------
 
-    /// Emulatori concorrenti da neutralizzare prima del deploy.
-    /// OFME/SteamFix: albero intero (i pack Unreal stanno accanto al
-    /// Shipping exe, non accanto a steam_api). Proxy generici: solo
-    /// accanto alla DLL Steamworks, come prima.
+    /// Competing emulators to neutralize before deploy.
+    /// OFME/SteamFix: whole tree (Unreal packs sit next to the Shipping exe,
+    /// not next to steam_api). Generic proxies: only next to the Steamworks
+    /// DLL, as before.
     fn detect_conflicts(root: &Path, steam_api_dir: Option<&Path>) -> Vec<Conflict> {
         let mut conflicts = Vec::new();
 
@@ -409,8 +408,8 @@ impl GameInspector {
             return conflicts;
         };
 
-        // winmm accanto a steam_api è un loader concorrente da quarantinare
-        // al deploy, anche senza sibling OFME (che da solo non è OFME).
+        // winmm next to steam_api is a competing loader to quarantine at
+        // deploy, even with no OFME sibling (which alone is not OFME).
         for name in ["winmm.dll", "winmm.ini", "winmm.txt"] {
             let path = dir.join(name);
             if path.is_file()
@@ -429,8 +428,8 @@ impl GameInspector {
             _ => false,
         });
 
-        // Proxy generici solo se NON c'è già un loader nominativo (winmm):
-        // altrimenti si rischia di toccare lo shim overlay di UCO2.
+        // Generic proxies only when NO named loader (winmm) is already there:
+        // otherwise we risk touching the UCO2 overlay shim.
         if !named_fix_proxy {
             for name in PROXY_DLLS {
                 let path = dir.join(name);
@@ -450,7 +449,7 @@ impl GameInspector {
         conflicts
     }
 
-    /// Avvisi fattuali per la UI (mai blocchi: le decisioni sono dell'utente).
+    /// Factual warnings for the UI (never blocks: decisions belong to the user).
     fn warnings_for(root: &Path, arch: GameArch, backends: &BackendReport) -> Vec<String> {
         let mut warnings = Vec::new();
 
@@ -481,14 +480,14 @@ impl GameInspector {
         warnings
     }
 
-    /// Eseguibile principale del gioco in `dir`, scelto con euristiche che
-    /// evitano i falsi positivi (UnityCrashHandler64.exe è più grande di
-    /// REPO.exe ma non è il gioco):
-    ///   1. stem che corrisponde ESATTAMENTE a `expected_name`
-    ///      (convenzione Unity: `<Game>_Data` sta accanto a `<Game>.exe`);
-    ///   2. stem che contiene `expected_name` o viceversa;
-    ///   3. il più grande tra i candidati non-helper;
-    ///   4. fallback: il più grande in assoluto (mai None se c'è un .exe).
+    /// The game's main executable in `dir`, picked with heuristics that
+    /// avoid false positives (UnityCrashHandler64.exe is bigger than
+    /// REPO.exe but is not the game):
+    ///   1. stem EXACTLY matching `expected_name`
+    ///      (Unity convention: `<Game>_Data` sits next to `<Game>.exe`);
+    ///   2. stem containing `expected_name` or vice versa;
+    ///   3. the biggest among non-helper candidates;
+    ///   4. fallback: the biggest overall (never None when an .exe exists).
     fn pick_game_exe(dir: &Path, expected_name: &str) -> Option<PathBuf> {
         let all = list_exes(dir);
         let playable: Vec<PathBuf> = all.iter().filter(|p| !is_non_game_exe(p)).cloned().collect();
@@ -516,7 +515,7 @@ fn dll_dirs(root: &Path, dll_name: &str) -> Vec<PathBuf> {
         .collect()
 }
 
-/// Dimensione massima di un `.exe` direttamente dentro `dir` (0 se nessuno).
+/// Biggest `.exe` size directly inside `dir` (0 when none).
 fn max_exe_bytes_in(dir: &Path) -> u64 {
     let Ok(entries) = fs::read_dir(dir) else {
         return 0;
@@ -539,7 +538,7 @@ fn max_exe_bytes_in(dir: &Path) -> u64 {
         .unwrap_or(0)
 }
 
-/// True quando in `dir` esiste un file con nome `prefix*` + `suffix`.
+/// True when `dir` holds a file named `prefix*` + `suffix`.
 fn has_glob(dir: &Path, prefix: &str, suffix: &str) -> bool {
     let Ok(entries) = fs::read_dir(dir) else {
         return false;
@@ -550,7 +549,7 @@ fn has_glob(dir: &Path, prefix: &str, suffix: &str) -> bool {
     })
 }
 
-/// True quando un backup Steamless o un output non applicato è presente.
+/// True when a Steamless backup or an unapplied output is present.
 fn has_steamless_markers(root: &Path) -> bool {
     walk_files(root).into_iter().any(|file| {
         let name = file.file_name().and_then(|n| n.to_str()).unwrap_or("");
@@ -558,10 +557,10 @@ fn has_steamless_markers(root: &Path) -> bool {
     })
 }
 
-/// Sottostringhe che identificano eseguibili che non sono MAI il gioco:
-/// helper di engine (UnityCrashHandler*, CrashReportClient*), disinstallatori
-/// (unins000.exe) e installer. La sottostringa è volutamente generica per
-/// coprire tutte le varianti conosciute.
+/// Substrings identifying executables that are NEVER the game: engine
+/// helpers (UnityCrashHandler*, CrashReportClient*), uninstallers
+/// (unins000.exe) and installers. The substring is deliberately generic to
+/// cover every known variant.
 fn is_non_game_exe(path: &Path) -> bool {
     let name = path
         .file_name()
@@ -598,7 +597,7 @@ fn list_exes(dir: &Path) -> Vec<PathBuf> {
     exes
 }
 
-/// Il `.exe` più grande tra i candidati (0 candidati => None).
+/// The biggest `.exe` among the candidates (0 candidates => None).
 fn biggest_exe(candidates: &[PathBuf]) -> Option<PathBuf> {
     candidates
         .iter()
@@ -624,7 +623,7 @@ fn exe_stem_contains(path: &Path, expected: &str) -> bool {
     !expected_l.is_empty() && (stem_l.contains(&expected_l) || expected_l.contains(&stem_l))
 }
 
-/// Nome del gioco dalla cartella Unity `<Game>_Data` (stem senza `_Data`).
+/// Game name from the Unity `<Game>_Data` folder (stem minus `_Data`).
 fn unity_game_name(data_dir: &Path) -> String {
     data_dir
         .file_stem()
@@ -657,10 +656,10 @@ fn looks_like_phasmophobia(detection: &DetectionReport) -> bool {
             .unwrap_or(false)
 }
 
-/// Destinazione dell'early overlay proxy, o il motivo dello skip.
+/// Early overlay proxy destination, or the reason for skipping.
 ///
-/// Unity → `version.dll` accanto all'exe; Unreal → `XINPUT1_3.dll` accanto
-/// al Shipping exe. x64 only. Phasmophobia è in denylist (inventaria i file).
+/// Unity → `version.dll` next to the exe; Unreal → `XINPUT1_3.dll` next to
+/// the Shipping exe. x64 only. Phasmophobia is denylisted (it inventories files).
 pub fn overlay_target(detection: &DetectionReport) -> Result<OverlayTarget, &'static str> {
     if detection.arch != GameArch::X64 {
         return Err("Overlay proxy is x64-only.");

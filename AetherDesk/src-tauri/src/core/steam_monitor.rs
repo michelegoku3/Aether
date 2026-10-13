@@ -1,58 +1,58 @@
-//! Steam process monitor: un unico poller condiviso che mantiene lo stato
-//! "Steam in esecuzione" in memoria e notifica la UI SOLO ai cambiamenti.
+//! Steam process monitor: a single shared poller that keeps the
+//! "Steam running" state in memory and notifies the UI ONLY on changes.
 //!
-//! Design: la scansione del processo (sysinfo) è la ground truth per
-//! "steam.exe gira o no" ed è relativamente costosa, quindi NON deve avvenire
-//! a ogni render/click ("is it running?" → O(1) read). Un thread dedicato la
-//! esegue ogni tick (1 s: le transizioni Start/Restart/exit sono percepite in
-//! tempo reale per l'etichetta Sidebar, e il costo resta di pochi ms); lo
-//! stato vive in una `AtomicBool` globale letta da comandi e watcher
-//! indipendenti. Quando lo stato cambia viene emesso l'evento tauri
-//! `steam://runtime-state` con il nuovo booleano (payload `bool`).
+//! Design: the process scan (sysinfo) is the ground truth for
+//! "is steam.exe running or not" and is relatively expensive, so it must NOT
+//! happen on every render/click ("is it running?" → O(1) read). A dedicated
+//! thread runs it every tick (1 s: Start/Restart/exit transitions are perceived
+//! in real time for the Sidebar label, and the cost stays at a few ms); the
+//! state lives in a global `AtomicBool` read by independent commands and
+//! watchers. When the state changes, the tauri `steam://runtime-state` event
+//! is emitted with the new boolean (`bool` payload).
 //!
-//! I comandi start/restart aggiornano lo stato in modo ottimistico
-//! (`mark`) subito dopo kill/spawn, così l'etichetta converge all'istante;
-//! il poller resta la rete di sicurezza per le transizioni esterne
-//! (chiusura manuale di Steam, spawn fallito a valle).
+//! The start/restart commands update the state optimistically
+//! (`mark`) right after kill/spawn, so the label converges instantly;
+//! the poller remains the safety net for external transitions
+//! (manual Steam close, downstream failed spawn).
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use tauri::{AppHandle, Emitter};
 
-/// Nome evento emesso ai listener della UI ad ogni transizione di stato.
+/// Event name emitted to UI listeners on every state transition.
 pub const STEAM_RUNTIME_EVENT: &str = "steam://runtime-state";
 
-/// Intervallo del poller: reattivo ai cambi (transizioni in ~1 s) ma
-/// trascurabile come carico (una scansione processi ogni secondo).
+/// Poller interval: reactive to changes (transitions in ~1 s) but
+/// negligible as load (one process scan per second).
 const POLL_INTERVAL: Duration = Duration::from_millis(1000);
 
 static STEAM_RUNNING: AtomicBool = AtomicBool::new(false);
 static MONITOR_STARTED: AtomicBool = AtomicBool::new(false);
 
-/// True se l'ultima scansione del monitor ha trovato Steam in esecuzione.
-/// Lettura O(1): non esegue nessuna scansione (quella è del thread poller).
+/// True when the monitor's last scan found Steam running.
+/// O(1) read: runs no scan (that belongs to the poller thread).
 pub fn is_steam_running() -> bool {
     STEAM_RUNNING.load(Ordering::Relaxed)
 }
 
-/// Aggiornamento opportunistico dai comandi start/restart: dopo un kill o uno
-/// spawn riuscito la UI reagisce subito, il poller corregge eventuali errori
-/// alla prossima scansione.
+/// Opportunistic update from the start/restart commands: after a kill or a
+/// successful spawn the UI reacts immediately, the poller corrects any errors
+/// on the next scan.
 pub fn mark(running: bool) {
     STEAM_RUNNING.store(running, Ordering::Relaxed);
 }
 
-/// Avvia il poller (idempotente: chiamate ulteriori sono no-op) ed esegue SUBITO
-/// una prima scansione sincrona così lo stato è corretto ancora prima del
-/// primo tick — niente finestra di "loading" nella UI dopo l'apertura.
+/// Starts the poller (idempotent: further calls are no-ops) and runs an
+/// initial synchronous scan right away so the state is correct even before
+/// the first tick — no UI "loading" window after opening.
 pub fn start(app: AppHandle) {
     if MONITOR_STARTED.swap(true, Ordering::SeqCst) {
         return;
     }
-    // Prima scansione SINCRONA: lo stato è corretto prima che la webview si
-    // monti, così il primo `is_steam_running` (etichetta Start/Restart al
-    // boot) legge già il valore giusto se Steam è aperto.
+    // Initial SYNCHRONOUS scan: the state is correct before the webview even
+    // mounts, so the first `is_steam_running` (Start/Restart label at boot)
+    // already reads the right value when Steam is open.
     let mut sys = sysinfo::System::new_all();
     sys.refresh_processes();
     STEAM_RUNNING.store(crate::core::steam_process::snapshot_has_steam(&sys), Ordering::Relaxed);
@@ -73,8 +73,8 @@ pub fn start(app: AppHandle) {
                 let running = crate::core::steam_process::snapshot_has_steam(&sys);
                 let prev = STEAM_RUNNING.swap(running, Ordering::Relaxed);
                 if running != prev || first {
-                    // Primo tick: emetti comunque, così la UI converge subito
-                    // anche se lo stato iniziale coincide col default.
+                    // First tick: always emit, so the UI converges immediately
+                    // even when the initial state matches the default.
                     if !first {
                         crate::desk_log_info!(
                             "lifecycle",

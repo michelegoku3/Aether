@@ -1,35 +1,35 @@
 #pragma once
 
 // ============================================================================
-// ManifestRestore — backup/restore dei manifest Steam in AetherData.
+// ManifestRestore — backup/restore of Steam manifests into AetherData.
 //
 //   <AetherData>\backup\<app_id>\lua\*.manifest
 //
-// All'avvio di Steam il modulo prima copia in AetherData i manifest ancora
-// presenti in Steam\depotcache e poi ripristina quelli mancanti. DirWatch
-// sorveglia inoltre Steam\steamapps\appmanifest_*.acf: dopo la rimozione di
-// un ACF (disinstallazione) richiama il ripristino mirato dell'app.
+// At Steam startup the module first copies into AetherData the manifests still
+// present in Steam\depotcache, then restores the missing ones. DirWatch also
+// watches Steam\steamapps\appmanifest_*.acf: after an ACF removal
+// (uninstall) it re-triggers the app-targeted restore.
 // ============================================================================
 
 #include <cstdint>
 
 namespace ac::hooks::ManifestRestore {
 
-// Scansione + backup/restore async dei manifest all'avvio, una volta per
-// processo. Best-effort e non bloccante per l'inizializzazione di Steam.
+// Async manifest scan + backup/restore at startup, once per process.
+// Best-effort and non-blocking for Steam initialization.
 void RestoreMissingManifestsAtStartup();
 
-// Ripristina in modo sincrono i manifest dell'app indicata dopo la rimozione
-// di appmanifest_<app_id>.acf. È chiamato dal thread DirWatch dopo il debounce.
+// Synchronously restores the indicated app's manifests after the removal of
+// appmanifest_<app_id>.acf. Called from the DirWatch thread after debounce.
 void RestoreMissingManifestsForApp(std::uint32_t appId);
 
-// Archivia in AetherData un manifest appena generato da Hubcap
-// (backup/<app_id>/lua/<depot>_<gid>.manifest) per ogni app il cui Lua lo
-// referenzia (pin attivi o commentati). Chiamato dal worker di generazione
-// subito dopo l'install in depotcache: il backup di startup coprirebbe il
-// file solo al prossimo avvio di Steam, e AetherDesk potrebbe non essere in
-// esecuzione. Best-effort: segue il contratto condiviso di copia (destinazione
-// non vuota mai sovrascritta, copia atomica e verificata) e non lancia mai.
+// Archives in AetherData a Hubcap-generated manifest
+// (backup/<app_id>/lua/<depot>_<gid>.manifest) for every app whose Lua
+// references it (active or commented pins). Called from the generation worker
+// right after the depotcache install: the startup backup would only cover the
+// file at the next Steam launch, and AetherDesk may not be running.
+// Best-effort: follows the shared copy contract (never overwrite a non-empty
+// destination, atomic verified copy) and never throws.
 void BackupManifestAfterGeneration(std::uint32_t depotId, std::uint64_t gid);
 
 }  // namespace ac::hooks::ManifestRestore

@@ -1,117 +1,116 @@
-# Piano `-showonline` — mostrare il gioco reale agli amici (senza online)
+# `-showonline` plan — showing the real game to friends (without online)
 
-> Repo `michelegoku3/Aether` @ `5dc0f2f`. Aggiornato dopo la Fase 0 (log `all.log_14-15-54.txt`)
-> e la foto della lista amici di SyntaxCode15.
-> **Stato: vincolo misurato, meccanismo del ricordo identificato, esperimento Fase 1 pronto in tree.**
+> Repo `michelegoku3/Aether` @ `5dc0f2f`. Updated after Phase 0 (log `all.log_14-15-54.txt`)
+> and SyntaxCode15's friend-list photo.
+> **Status: constraint measured, memory mechanism identified, Phase 1 experiment ready in tree.**
 
 ---
 
-## 1. Misura Fase 0 — il CM valida la licenza (per il tipo `App`)
+## 1. Phase 0 measurement — the CM validates the license (for `App` type)
 
-| # | Gioco | Licenza | Inviato (`TX`) | **Risposta del server** |
+| # | Game | License | Sent (`TX`) | **Server response** |
 |---|---|---|---|---|
-| 1 | Rivals of Aether `383980` | posseduto | `game_id=383980` | ✅ `app=383980` dopo **0,32 s** |
-| 2 | Stanley `1703340` | **non posseduto**, nessun flag | `game_id=1703340` | ❌ **nessun push per 20 s** |
-| 3 | Stanley `1703340` | non posseduto, `-aetheronline` | `game_id=480` | ✅ `app=480 name='The Stanley Parable: Ultra Deluxe'` dopo **0,46 s** |
+| 1 | Rivals of Aether `383980` | owned | `game_id=383980` | ✅ `app=383980` after **0.32 s** |
+| 2 | Stanley `1703340` | **unowned**, no flags | `game_id=1703340` | ❌ **no push for 20 s** |
+| 3 | Stanley `1703340` | unowned, `-aetheronline` | `game_id=480` | ✅ `app=480 name='The Stanley Parable: Ultra Deluxe'` after **0.46 s** |
 
-Il PersonaState che il CM rimanda per il nostro SteamID è ciò che riceve la lista amici. Nei casi 1 e 3
-risponde in meno di mezzo secondo, nel caso 2 tace. Non è latenza: **è un rifiuto**.
+The PersonaState the CM sends back for our SteamID is what the friend list receives. Cases 1 and 3
+answer in under half a second; case 2 stays silent. That is not latency: **it is a refusal**.
 
-**Conclusione:** con `CGameID` di **tipo `App`** e un appid senza licenza sull'account, il server non
-diffonde nulla. Lo spoof di ownership di Aether è client-side e il CM non lo vede.
+**Conclusion:** with a `CGameID` of **type `App`** and an unlicensed appid on the account, the server
+broadcasts nothing. Aether's ownership spoof is client-side and the CM never sees it.
 
-**Effetto collaterale utile (run 3):** il campo `game_extra_info` che spediamo torna indietro come
-`Friend.game_name` nel PersonaState diffuso. Il titolo reale arriva già agli amici anche sotto mask 480.
+**Useful side effect (run 3):** the `game_extra_info` field we send comes back as
+`Friend.game_name` in the broadcast PersonaState. The real title already reaches friends even under a 480 mask.
 
 ---
 
-## 2. La foto: cosa dimostra davvero
+## 2. The photo: what it really proves
 
-Lista amici di SyntaxCode15, riga `michelegoku3`:
+SyntaxCode15's friend list, `michelegoku3` row:
 
 ```
-[icona rossa CK3]  [avatar "?"]  michelegoku3
-                                 Crusader Kings III
+[red CK3 icon]  [avatar "?"]  michelegoku3
+                                  Crusader Kings III
 ```
 
-Lettura corretta (confermata dall'utente): **il quadratino a sinistra è l'icona del gioco**, ed è la
-banda rossa di Crusader Kings III. Il "?" centrale è l'avatar di default (michelegoku3 non ha immagine
-profilo). Confronto con la riga `Dreadstew`: icona KH + avatar in bianco e nero.
+Correct reading (confirmed by the user): **the square on the left is the game icon**, the red
+band of Crusader Kings III. The central "?" is the default avatar (michelegoku3 has no profile
+picture). Compare with the `Dreadstew` row: KH icon + black-and-white avatar.
 
-Questo è dirimente: **il client dell'amico ha risolto l'appid `1158310`**. Con `app=480` sarebbe
-impossibile — Spacewar su SteamDB ha `icon · empty string`, non c'è nulla da disegnare.
+This is decisive: **the friend's client resolved appid `1158310`**. With `app=480` that would be
+impossible — Spacewar on SteamDB has `icon · empty string`, there is nothing to draw.
 
-Configurazione dell'epoca (confermata): **nessuna licenza reale** su CK3, solo Lua, e l'**aetheronline
-esterno "buggato" che mandava l'appid del gioco**.
+Setup of that era (confirmed): **no real license** on CK3, only Lua, and the **"bugged" external
+aetheronline that sent the game's appid**.
 
-### Il conflitto apparente, e la sua soluzione
-Run 2 dice «appid reale non posseduto → il server tace». La foto dice «l'appid reale è arrivato
-all'amico». Entrambe le cose sono vere **se il tipo del CGameID era diverso da `App`**.
+### The apparent conflict, and its resolution
+Run 2 says "unowned real appid → the server stays silent". The photo says "the real appid reached
+the friend". Both are true **if the CGameID type was not `App`**.
 
 ```
 CGameID = appid:24 | type:8 | modid:32          (Valve, steamclientpublic.h)
-  type 0 = App        -> il CM verifica la licenza      [MISURATO: scartato]
-  type 1 = GameMod    -> non e' un claim di ownership
-  type 2 = Shortcut   -> idem
+  type 0 = App        -> the CM verifies the license      [MEASURED: dropped]
+  type 1 = GameMod    -> not an ownership claim
+  type 2 = Shortcut   -> same
   type 3 = P2P
 ```
 
-Con `type != 0` il messaggio **non è** l'affermazione "sto giocando all'app X che possiedo", quindi il
-controllo di licenza non si applica — ma **l'appid reale resta nei 24 bit bassi**, e il client
-dell'amico lo usa per risolvere icona e nome. Risultato: icona CK3 + titolo reale, esattamente la foto.
+With `type != 0` the message **is not** the claim "I'm playing app X which I own", so the
+license check does not apply — but **the real appid stays in the low 24 bits**, and the friend's
+client uses it to resolve icon and name. Result: CK3 icon + real title, exactly the photo.
 
-E spiega anche il resto del tuo ricordo: il **"mezzo e mezzo" in cui DLC e workshop non funzionavano**
-è precisamente questo, perché quell'aetheronline cambiava l'identità **a livello di processo**, rompendo
-DLC e workshop lato client.
-
----
-
-## 3. Fase 1 — ESEGUITA, ipotesi FALSIFICATA
-
-Log `all.log_18-09-37.txt` (23/08, 18:04–18:09). Build verificata dal timbro
-`[Wire] [DIAG] BUILD showonline-fase1` a riga 150; hot-reload del TOML confermato
-(la riga `[Settings] [DIAG] presence:` cambia a ogni giro). Sei run valide.
-
-### Senza `-aetheronline` — appid reale non posseduto (Stanley 1703340)
-
-| type | modid | game_id inviato | risposta del CM |
-|------|-------|-----------------|-----------------|
-| 1 GameMod  | 0x80000001 | 9223372041168223660 | **nessun push, 28 s** |
-| 2 Shortcut | 0x80000002 | 9223372045479968172 | **nessun push, 19 s** |
-| 3 P2P      | 0x80000003 | 9223372049791712684 | **nessun push, 20 s** |
-
-La riscrittura funziona: `[DIAG] ShowOnline: game_id 1703340 -> ...` compare a ogni
-run, il frame parte (`bodyLen` cresce da 86 a 94/97). Il CM semplicemente **non
-risponde**.
-
-Prova ulteriore, decisiva: i quattro push `app=0` (fine sessione) cadono solo a
-18:04:28, 18:08:31, 18:09:06, 18:09:32 — cioè **solo attorno alle run con 480**.
-Dopo le uscite dalle run 1/2/3 non c'è nessun push di "clear": il CM non aveva
-niente da azzerare perché **non aveva mai accettato il messaggio**.
-
-### Con `-aetheronline` — game_id 480 (i tre tipi, per controllo)
-
-Il blocco ShowOnline salta di proposito le entry 480, quindi il comportamento è
-identico in tutti e tre i giri: push del CM dopo ~0,2–0,3 s con
-`app=480 gameid=480 name='The Stanley Parable: Ultra Deluxe'`. Nome sì, icona no.
-
-### Conclusione
-
-**I bit `type` del CGameID non aggirano nulla.** Il CM valida l'appid nei 24 bit
-bassi e scarta l'intero messaggio se non c'è licenza, qualunque sia il tipo.
-La strada "CGameID tipizzato" è chiusa: non riproporla.
-
-Insieme alla Fase 0 questo chiude *tutte* le vie server-side: non esiste alcun
-`ClientGamesPlayed` che convinca il CM a trasmettere agli amici un appid non
-posseduto.
+It also explains the rest of your memory: the **"half and half" where DLC and workshop didn't work**
+is precisely this, because that aetheronline changed identity **at process level**, breaking
+client-side DLC and workshop.
 
 ---
 
-## 4. Fase 2 — la pista giusta: la riscrittura avviene sul PC di CHI GUARDA
+## 3. Phase 1 — DONE, hypothesis FALSIFIED
 
-Se il server non può trasmettere l'appid reale, allora un mese fa **non l'ha mai
-trasmesso**. L'icona di CK3 nella foto è stata ricostruita **localmente dal client
-di SyntaxCode15**. Il codice per farlo esiste già in repo — è
+Log `all.log_18-09-37.txt` (23/08, 18:04–18:09). Build verified by the
+`[Wire] [DIAG] BUILD showonline-fase1` stamp at line 150; TOML hot-reload confirmed
+(the `[Settings] [DIAG] presence:` line changes every round). Six valid runs.
+
+### Without `-aetheronline` — unowned real appid (Stanley 1703340)
+
+| type | modid | sent game_id | CM response |
+|------|-------|--------------|-------------|
+| 1 GameMod  | 0x80000001 | 9223372041168223660 | **no push, 28 s** |
+| 2 Shortcut | 0x80000002 | 9223372045479968172 | **no push, 19 s** |
+| 3 P2P      | 0x80000003 | 9223372049791712684 | **no push, 20 s** |
+
+The rewrite works: `[DIAG] ShowOnline: game_id 1703340 -> ...` appears on every
+run, the frame leaves (`bodyLen` grows from 86 to 94/97). The CM simply **never
+answers**.
+
+Further decisive proof: the four `app=0` pushes (session end) land only at
+18:04:28, 18:08:31, 18:09:06, 18:09:32 — i.e. **only around the 480 runs**.
+After exiting runs 1/2/3 there is no "clear" push: the CM had nothing to zero
+because **it never accepted the message**.
+
+### With `-aetheronline` — game_id 480 (all three types, as control)
+
+The ShowOnline block deliberately skips 480 entries, so behavior is identical
+across all three rounds: CM push after ~0.2–0.3 s with
+`app=480 gameid=480 name='The Stanley Parable: Ultra Deluxe'`. Name yes, icon no.
+
+### Conclusion
+
+**The CGameID `type` bits bypass nothing.** The CM validates the appid in the low
+24 bits and drops the whole message with no license, whatever the type. The
+"typed CGameID" road is closed: do not propose it again.
+
+Together with Phase 0 this closes *every* server-side road: no `ClientGamesPlayed`
+exists that convinces the CM to broadcast an unowned appid to friends.
+
+---
+
+## 4. Phase 2 — the right track: rewriting happens on the VIEWER's PC
+
+If the server cannot transmit the real appid, then a month ago **it never
+transmitted it**. The CK3 icon in the photo was rebuilt **locally by
+SyntaxCode15's client**. The code to do it already exists in repo — it is
 `PersonaInject.cpp:229`:
 
 ```cpp
@@ -124,295 +123,291 @@ if (ofPersonaPatch && ofReal != 0 && luadata::IsConfigured(ofReal)) {
     f->set_game_name(name);
 ```
 
-Riscrive **qualsiasi** voce amico che mostri 480, sostituendovi `ofReal`. È
-esattamente la riga che nei nostri log produce
-`Patched friend 76561199876393402: 480 -> 1703340`.
+It rewrites **any** friend entry showing 480, substituting `ofReal`. That is
+exactly the line producing `Patched friend 76561199876393402: 480 -> 1703340`
+in our logs.
 
-### Perché oggi non basta
+### Why it is not enough today
 
-Due vincoli la rendono inerte nel caso normale:
+Two constraints make it inert in the normal case:
 
-1. `ofReal != 0` — si attiva **solo mentre anche tu stai giocando** qualcosa con
-   `-aetheronline`. Se guardi la lista amici senza giocare, `ofReal` è 0 e non fa nulla.
-2. Usa **il tuo** appid per la voce **dell'amico**. Funziona solo nel caso
-   simmetrico: due PC che giocano lo stesso gioco. Che è, con ogni probabilità,
-   proprio la configurazione di un mese fa.
+1. `ofReal != 0` — it fires **only while you too are playing** something with
+   `-aetheronline`. If you watch the friend list without playing, `ofReal` is 0 and it does nothing.
+2. It uses **your** appid for **your friend's** entry. It only works in the
+   symmetric case: two PCs playing the same game. Which, in all likelihood, is
+   exactly the setup of a month ago.
 
-### Il design corretto: risoluzione per nome
+### The correct design: resolution by name
 
-La Fase 0 ha misurato che il CM ricicla `game_extra_info` dentro
-`Friend.game_name`. Quindi nel messaggio in arrivo il **nome reale c'è già**,
-anche quando l'appid è 480:
+Phase 0 measured that the CM recycles `game_extra_info` into
+`Friend.game_name`. So in the incoming message the **real name is already there**,
+even when the appid is 480:
 
 ```
 app=480 gameid=480 name='The Stanley Parable: Ultra Deluxe'
 ```
 
-Il client che guarda ha tutto il necessario. Serve solo invertire la mappa:
+The watching client has everything it needs. Just invert the map:
 
 ```
-per ogni friend f con f.game_played_app_id == 480 e f.game_name non vuoto:
+for every friend f with f.game_played_app_id == 480 and non-empty f.game_name:
     real = ResolveAppIdByName(f.game_name)
-    se real != 0:
+    if real != 0:
         f.game_played_app_id = real
         f.gameid             = real
 ```
 
-Niente `ofReal`, niente vincolo di simmetria, funziona anche a gioco spento.
-`ResolveAppIdByName` si costruisce dalla `appinfo.vdf` locale (contiene nome +
-`clienticon` di ogni app che il client ha visto), con cache in memoria.
+No `ofReal`, no symmetry constraint, works with the game off.
+`ResolveAppIdByName` builds from the local `appinfo.vdf` (name + `clienticon`
+of every app the client has seen), with an in-memory cache.
 
-### Conferma dall'utente
+### User confirmation
 
-Un mese fa: due PC, due account diversi, **stesso programma e stesso gioco su
-entrambi**. E' il caso simmetrico esatto in cui il blocco `ofReal` esistente si
-attiva. Il meccanismo e' quindi identificato: nessuna magia server-side, solo
-riscrittura locale sul PC di chi guardava.
+A month ago: two PCs, two different accounts, **same program and same game on
+both**. That is the exact symmetric case where the existing `ofReal` block
+fires. The mechanism is therefore identified: no server-side magic, just local
+rewriting on the viewer's PC.
 
-### Il limite da accettare
+### The limit to accept
 
-L'icona la vedono **solo gli amici che eseguono Aether**. Chiunque altro continua
-a vedere Spacewar. Non è una regressione: è il massimo ottenibile, e coincide con
-ciò che è realmente successo un mese fa.
+Only friends **running Aether** see the icon. Everyone else keeps seeing
+Spacewar. That is not a regression: it is the maximum achievable, and it matches
+what really happened a month ago.
 
 ---
 
-## 5. Fase 2 — implementata
+## 5. Phase 2 — implemented
 
-| file | modifica |
+| file | change |
 |------|----------|
-| `utils/GameNameResolver.{h,cpp}` | `ResolveAppIdByName(name)`: lookup inverso sui soli `luadata::LibraryAppIds()`, confronto case/space-insensitive, cache con negativi |
-| `hooks/wire/PersonaInject.cpp` | nuovo blocco *Friend icon recovery by title*, prima del fallback `ofReal` |
-| `core/Settings.{h,cpp}` | chiave `[presence] friend_appid_from_name` (default `true`, hot-reload) |
-| `config/aethercore.example.toml`, `AetherDesk/.../aethercore.toml` | chiave documentata |
+| `utils/GameNameResolver.{h,cpp}` | `ResolveAppIdByName(name)`: reverse lookup over `luadata::LibraryAppIds()` only, case/space-insensitive compare, cache with negatives |
+| `hooks/wire/PersonaInject.cpp` | new *Friend icon recovery by title* block, before the `ofReal` fallback |
+| `core/Settings.{h,cpp}` | `[presence] friend_appid_from_name` key (default `true`, hot-reload) |
+| `config/aethercore.example.toml`, `AetherDesk/.../aethercore.toml` | documented key |
 
-Il lookup inverso non enumera `appinfo.vdf` (100+ MB, formato binario
-versionato): usa la libreria configurata in Lua, che nel nostro scenario
-contiene per costruzione il gioco da riconoscere. Costo: una scansione sola per
-titolo, poi cache.
+The reverse lookup does not enumerate `appinfo.vdf` (100+ MB, versioned binary
+format): it uses the Lua-configured library, which by construction holds the
+game to recognize in our scenario. Cost: a single scan per title, then cache.
 
-Il blocco ShowOnline in uscita resta in tree come strumento di misura ma e'
-**disattivo per default** (`show_online_gameid_type = 0`) e il commento in cima
-riporta l'esito negativo, per non farlo riprovare in futuro.
+The outbound ShowOnline block stays in tree as a measurement tool but is
+**off by default** (`show_online_gameid_type = 0`), and the comment on top
+reports the negative outcome so nobody retries it in the future.
 
-### Come verificare
+### How to verify
 
-Sul PC che *guarda* (non serve giocare):
+On the *watching* PC (no need to play):
 
 1. `[Wire] [DIAG] BUILD showonline-fase1 | ... friend_appid_from_name=1`
-2. l'amico lancia il gioco con `-aetheronline`
-3. attesa: `[GameName] Reverse lookup 'Crusader Kings III' -> app 1158310.`
-   e `[Wire.PersonaInject] [DIAG] Friend ...: 480 -> 1158310 by name '...'`
-4. nella lista amici deve comparire l'icona del gioco al posto di Spacewar
+2. the friend launches the game with `-aetheronline`
+3. wait for: `[GameName] Reverse lookup 'Crusader Kings III' -> app 1158310.`
+   and `[Wire.PersonaInject] [DIAG] Friend ...: 480 -> 1158310 by name '...'`
+4. the friend list must show the game's icon instead of Spacewar
 
-Se compare (3) ma non l'icona, il client non ha in cache l'appinfo dell'app;
-se non compare (3), il titolo non e' nella libreria Lua locale.
-
----
-
-## 6. Fase 2 — funziona; regressione aperta: la sessione Spacewar cade
-
-Esito riportato dall'utente: **l'icona compare**. Ma poco dopo Spacewar si chiude
-e si perde lo stato online di `-aetheronline`.
-
-### Sospetto
-
-Entrambi i blocchi in `PersonaInject` riscrivevano **anche la nostra stessa
-voce** (nei log: `Patched friend 76561199876393402: 480 -> 1703340`, che e'
-l'utente stesso). Il client Steam usa il proprio stato di sessione per sapere
-quale app sta girando: se la persona che il server ci rimanda per noi stessi
-dice "app 1158310" mentre il session manager locale ha viva la sessione 480,
-la riconciliazione puo' concludere che la sessione 480 e' stanca e chiuderla.
-Con `-aetheronline` la sessione 480 *e'* lo stato online.
-
-Il tutto e' inutile ai fini della feature: la voce che conta e' quella che
-l'**amico** riscrive sul **suo** PC. Riscrivere la propria e' rischio senza
-beneficio; la vista locale di se stessi appartiene gia' a `presenceInjectLocal`.
-
-### Correzione applicata
-
-Entrambi i blocchi ora saltano l'entry con `friendid == selfId`. Il vecchio
-blocco `ofReal` logga una riga `[DIAG] self entry arrived as 480 while playing
-%u; left untouched`, che dice se la finestra di desync esiste davvero.
-
-### Come confermare la causalita'
-
-`friend_appid_from_name` ha hot-reload: si puo' fare A/B senza riavviare Steam.
-
-- con `false` Spacewar **non** cade  -> la causa e' la nostra riscrittura
-- con `false` Spacewar cade lo stesso -> comportamento preesistente di
-  `-aetheronline`, indipendente dalla Fase 2
-
-Nel log servono, attorno al momento della chiusura: `[DIAG] TX: games_played
-vuoto`, `Playing app -> 0`, e le righe `Masked AppId` / `AetherOnline`.
+If (3) appears but no icon, the client has no cached appinfo for the app;
+if (3) never appears, the title is not in the local Lua library.
 
 ---
 
-## 7. Stato delle patch in tree
+## 6. Phase 2 — works; open regression: the Spacewar session drops
 
-| File | Contenuto |
+User-reported outcome: **the icon appears**. But shortly after, Spacewar closes
+and the `-aetheronline` online state is lost.
+
+### Suspect
+
+Both blocks in `PersonaInject` also rewrote **our own entry** (in the logs:
+`Patched friend 76561199876393402: 480 -> 1703340`, which is the user
+themselves). The Steam client uses its own session state to know which app is
+running: if the persona the server sends back for ourselves says "app 1158310"
+while the local session manager holds a live 480 session, reconciliation may
+conclude the 480 session is stale and close it. With `-aetheronline` the 480
+session *is* the online state.
+
+All of that is pointless for the feature: the entry that matters is the one the
+**friend** rewrites on **their** PC. Rewriting your own is risk without benefit;
+your local view of yourself already belongs to `presenceInjectLocal`.
+
+### Applied correction
+
+Both blocks now skip the entry with `friendid == selfId`. The old `ofReal`
+block logs a `[DIAG] self entry arrived as 480 while playing %u; left untouched`
+line, telling whether the desync window really exists.
+
+### How to confirm causality
+
+`friend_appid_from_name` hot-reloads: A/B is possible without restarting Steam.
+
+- with `false`, Spacewar does **not** drop -> our rewrite is the cause
+- with `false`, Spacewar drops anyway -> pre-existing `-aetheronline` behavior,
+  independent of Phase 2
+
+The log needs, around the close moment: `[DIAG] TX: empty games_played`,
+`Playing app -> 0`, and the `Masked AppId` / `AetherOnline` lines.
+
+---
+
+## 7. Patch state in tree
+
+| File | Contents |
 |---|---|
-| `docs/showonline-fase0.patch` | diagnostica: `[DIAG] TX` + `[DIAG] SERVER self-push` |
-| `docs/showonline-fase1.patch` | diagnostica **+** riscrittura CGameID + settings + TOML |
+| `docs/showonline-fase0.patch` | diagnostics: `[DIAG] TX` + `[DIAG] SERVER self-push` |
+| `docs/showonline-fase1.patch` | diagnostics **+** CGameID rewrite + settings + TOML |
 
-Aggiunte al `.proto` (`process_id=9`, `game_flags=11`, `owner_id=12`, verificate su SteamKit):
-**tienile**, servono alla via Family Sharing.
-Il log `SERVER self-push` è lo strumento di misura di questa feature: tienilo finché non è validata,
-poi degradalo a `AC_LOG_DEBUG_ONCE`.
+Additions to the `.proto` (`process_id=9`, `game_flags=11`, `owner_id=12`, verified against SteamKit):
+**keep them**, they serve the Family Sharing road.
+The `SERVER self-push` log is this feature's measurement tool: keep it until validated,
+then degrade it to `AC_LOG_DEBUG_ONCE`.
 
-⚠️ La tua DLL installata è **0.9.12**, la repo è a **0.9.10**: applica le patch al tuo albero locale.
-
----
-
-## 8. Nota storica
-
-Storia pre-Aether persa (squash `56bccf1`, 19/07/2026). Restano tre riferimenti a codice assente: il
-commit `9aa4a76`, il piano `docs/03-presence-identity-plan.md` mai importato, e la **regressione
-"Meccha"** in `AetherOnlineHooks.cpp:209` — *"leaking real identity into multiplayer routing / friends
-presence"*. La "doppia strada" che ricordavi esiste ancora ed è `h_BuildSpawnEnvBlock` (CGameID di
-processo 480 per il routing, `SteamOverlayGameId` reale per DLC e overlay).
+⚠️ Your installed DLL is **0.9.12**, the repo is at **0.9.10**: apply the patches to your local tree.
 
 ---
 
-## 9. `-showonline` come modalità di default — inventario e design
+## 8. Historical note
 
-### 9.1 Cosa traduce `-aetheronline` oggi
+Pre-Aether history lost (squash `56bccf1`, 19/07/2026). Three references to absent code remain: the
+`9aa4a76` commit, the never-imported `docs/03-presence-identity-plan.md` plan, and the **"Meccha"
+regression** in `AetherOnlineHooks.cpp:209` — *"leaking real identity into multiplayer routing / friends
+presence"*. The "double road" you remembered still exists and is `h_BuildSpawnEnvBlock` (process 480
+CGameID for routing, real `SteamOverlayGameId` for DLC and overlay).
 
-Inventario completo dei punti 480↔reale già in tree:
+---
 
-| punto | direzione | a cosa serve |
+## 9. `-showonline` as default mode — inventory and design
+
+### 9.1 What `-aetheronline` translates today
+
+Full inventory of the 480↔real points already in tree:
+
+| point | direction | purpose |
 |---|---|---|
-| `AetherOnlineHooks::h_SpawnProcess` | reale → **480** | CGameID di process-tracking: è quello che vedono CM e routing multiplayer |
-| `h_BuildSpawnEnvBlock` | 480 → **reale** | CGameID dell'overlay: DLC, metadati depot, identità overlay |
-| `CmdUtils::GetAppID` (IPC) | 480 → **reale** | il gioco che chiama `IClientUtils::GetAppID` riceve l'appid vero |
-| `h_GetAppIDForCurrentPipe`, solo *stats scope* | 480 → **reale** | stats e achievement salvati sotto l'app giusta |
-| `OwnershipHooks::h_SendCallbackToPipe` | doppia consegna | callback achievement all'overlay (reale) **e** agli handler del gioco (480) |
-| `AchievementModule` (wire) | 480 → **reale** | `ClientGetUserStatsResponse` |
-| `GamesPlayedModule` + `PersonaInject` | annota | `game_extra_info` / `game_name` col titolo reale |
-| `SteamCapture::CurrentRouteAppId` | reale | routing delle chiamate IPC |
+| `AetherOnlineHooks::h_SpawnProcess` | real → **480** | process-tracking CGameID: what the CM and multiplayer routing see |
+| `h_BuildSpawnEnvBlock` | 480 → **real** | overlay CGameID: DLC, depot metadata, overlay identity |
+| `CmdUtils::GetAppID` (IPC) | 480 → **real** | a game calling `IClientUtils::GetAppID` gets the true appid |
+| `h_GetAppIDForCurrentPipe`, *stats scope* only | 480 → **real** | stats and achievements saved under the right app |
+| `OwnershipHooks::h_SendCallbackToPipe` | dual delivery | achievement callbacks to the overlay (real) **and** to the game's handlers (480) |
+| `AchievementModule` (wire) | 480 → **real** | `ClientGetUserStatsResponse` |
+| `GamesPlayedModule` + `PersonaInject` | annotate | `game_extra_info` / `game_name` with the real title |
+| `SteamCapture::CurrentRouteAppId` | real | IPC call routing |
 
-**Quindi: l'idea descritta è già implementata — è esattamente il design di
-`-aetheronline`.** Maschera 480 sul filo e ritraduce in locale dove serve.
+**So: the described idea is already implemented — it is exactly the `-aetheronline`
+design.** 480 mask on the wire, translated back locally where needed.
 
-Buco reale: **nessun hook UGC/Workshop esiste** (`grep -rn "UGC\|Workshop"` → 0
-risultati). Workshop oggi funziona solo di riflesso, perché `GetAppID` e il
-CGameID dell'overlay riportano l'appid vero. Non è mai stato verificato.
+Real hole: **no UGC/Workshop hook exists** (`grep -rn "UGC\|Workshop"` → 0
+results). Workshop works only by reflex today, because `GetAppID` and the
+overlay CGameID report the true appid. Never verified.
 
-### 9.2 Cosa aggiunge davvero `-showonline`
+### 9.2 What `-showonline` really adds
 
-Non un meccanismo nuovo: **una policy**. Stessa pipeline di appid, meno roba
-attaccata. In concreto salta `OnlinePayload` (iniezione nel processo del gioco)
-e tutto ciò che serve solo al matchmaking — peso e superficie di rischio che per
-un singleplayer non ha motivo di esistere.
+Not a new mechanism: **a policy**. Same appid pipeline, less stuff attached.
+Concretely it skips `OnlinePayload` (injection into the game process) and
+everything only matchmaking needs — weight and risk surface with no reason to
+exist for a singleplayer game.
 
-Implementazione onesta: `kShowOnlineFlag` accanto a `kAetherOnlineFlag`, che entra
-nello stesso percorso di mascheramento con un booleano `wantsOnlinePayload` a
-false. Nessun ramo duplicato: due percorsi paralleli che fanno il 90% delle
-stesse cose divergerebbero entro un mese.
+Honest implementation: `kShowOnlineFlag` next to `kAetherOnlineFlag`, entering
+the same masking path with a `wantsOnlinePayload` boolean set to false. No
+duplicated branches: two parallel paths doing 90% of the same things would
+diverge within a month.
 
-### 9.3 Il default non può essere "tutti i giochi"
+### 9.3 The default cannot be "every game"
 
-Va ristretto, per un motivo misurato nella Fase 0: **un gioco che possiedi
-davvero oggi viene già trasmesso correttamente dal CM**, con icona e nome, a
-*tutti* gli amici, anche a chi non ha Aether. Mascherarlo come 480 sarebbe una
-regressione netta.
+It must be narrowed, for a reason measured in Phase 0: **a game you truly own
+is already broadcast correctly by the CM today**, with icon and name, to *all*
+friends, even without Aether. Masking it as 480 would be a net regression.
 
-Default corretto:
+Correct default:
 
 ```
-maschera come 480  <=>  luadata::HasDepot(app) && !luadata::IsOwned(app)
+mask as 480  <=>  luadata::HasDepot(app) && !luadata::IsOwned(app)
 ```
 
-cioè solo i giochi gestiti da Lua e non posseduti — quelli che oggi il CM scarta
-in silenzio, dove non c'è niente da perdere. Più la lista di esclusione per i
-titoli con online reale, che restano su `-aetheronline`.
+i.e. only Lua-managed, unowned games — the ones the CM silently drops today,
+where there is nothing to lose. Plus the exclusion list for real-online titles,
+which stay on `-aetheronline`.
 
-### 9.4 Ricostruzione quando l'amico NON ha il gioco
+### 9.4 Reconstruction when the friend does NOT own the game
 
-Oggi `ResolveAppIdByName` cerca solo in `luadata::LibraryAppIds()`: se l'amico
-non ha quel gioco configurato, nessun match. Tre livelli per superarlo, in
-ordine di robustezza crescente.
+Today `ResolveAppIdByName` only searches `luadata::LibraryAppIds()`: when the
+friend has no such game configured, no match. Three levels to get past it, in
+increasing robustness order.
 
-**(a) Cache nome → appid da Steam.** `ISteamApps/GetAppList/v2` restituisce
-l'elenco completo (~250k voci, ~10 MB), oppure
-`steamcommunity.com/actions/SearchApps/<nome>` per la singola query. Si salva su
-disco e si aggiorna ogni tanto. Funziona, ma eredita due debolezze del match per
-nome: **collisioni** (titoli identici) e soprattutto **localizzazione** — il
-titolo che spediamo viene da `gamename::ForApp` nella lingua del *mittente*,
-mentre la cache del ricevente è in inglese.
+**(a) Name → appid cache from Steam.** `ISteamApps/GetAppList/v2` returns the
+full list (~250k entries, ~10 MB), or `steamcommunity.com/actions/SearchApps/<name>`
+for the single query. Saved to disk and refreshed occasionally. Works, but inherits
+two weaknesses of name matching: **collisions** (identical titles) and above all
+**localization** — the title we ship comes from `gamename::ForApp` in the
+*sender's* language, while the receiver's cache is in English.
 
-**(b) L'icona per un appid mai visto.** Serve l'appinfo (`clienticon`) nella
-cache del client di chi guarda. Ma — differenza cruciale rispetto alla presence
-— **i metadati PICS non sono soggetti a licenza**: il CM risponde a
-`ClientPICSProductInfoRequest` per qualunque appid. Il router già gestisce quel
-messaggio (`AccessToken` module), quindi la richiesta si può emettere. Da
-verificare che il client scarichi poi l'icona dalla CDN.
+**(b) The icon for a never-seen appid.** The viewer's client needs the appinfo
+(`clienticon`) in cache. But — crucial difference from presence — **PICS metadata
+is not license-gated**: the CM answers `ClientPICSProductInfoRequest` for any
+appid. The router already handles that message (`AccessToken` module), so the
+request can go out. To verify that the client then downloads the icon from the CDN.
 
-**(c) Passare l'appid esplicitamente — la strada pulita.** Invece di indovinare
-il titolo, spedirlo: `kClientRichPresenceUpload` (7501) è **già hookato** in
-`GamesPlayedModule::HandleRichPresenceUpload`, e nei log del 23/08 compare tra i
-frame in uscita. Se una KV tipo `aether_appid=1158310` sopravvive fino al
-`PersonaState` degli amici (nel DIAG il campo si legge già: `rp_kvs=N`), allora
-il ricevente ha l'appid **esatto**: niente collisioni, niente problemi di
-lingua, nessuna cache da mantenere. Il match per nome resta come fallback.
+**(c) Passing the appid explicitly — the clean road.** Instead of guessing from
+the title, ship it: `kClientRichPresenceUpload` (7501) is **already hooked** in
+`GamesPlayedModule::HandleRichPresenceUpload`, and in the 23/08 logs it appears
+among outbound frames. If a KV like `aether_appid=1158310` survives to the
+friends' `PersonaState` (in DIAG the field already reads: `rp_kvs=N`), then the
+receiver holds the **exact** appid: no collisions, no language issues, no cache
+to maintain. Name matching stays as fallback.
 
-**Da misurare per prima cosa:** le KV di rich presence arrivano agli amici
-quando l'app dichiarata è 480? Il DIAG `SERVER self-push` stampa già `rp_kvs`,
-quindi la risposta costa un giro di test.
+**To measure first:** do rich-presence KVs reach friends when the declared app
+is 480? The DIAG `SERVER self-push` already prints `rp_kvs`, so the answer
+costs one test round.
 
 ---
 
-## 10. Fase 3 — strumentazione per i due test aperti
+## 10. Phase 3 — instrumentation for the two open tests
 
-Timbro di build aggiornato: cercare `[DIAG] BUILD showonline-fase3`.
+Updated build stamp: look for `[DIAG] BUILD showonline-fase3`.
 
-### Log aggiunti
+### Added logs
 
-| dove | riga | risponde a |
+| where | line | answers |
 |---|---|---|
-| `PacketRouter::DispatchRecv` | `[DIAG] SharedLibrary msg eMsg=… ` | è il CM a ordinare lo stop, o muore il client? |
-| `PersonaInject` (blocco `ofReal`) | `[DIAG] self entry arrived as 480 while playing …` | esiste la finestra di desync sospettata? |
-| `PersonaInject` (self-push) | `[DIAG] SERVER rp kv: 'k' = 'v'` | le nostre KV tornano indietro dal server? |
-| `PersonaInject` (amici) | `[DIAG] FRIEND … rp kv: … (app=…)` | le KV di un altro account arrivano fin qui? |
-| `GamesPlayedModule` | `[DIAG] RP upload appid=… 'k' = 'v'` | il gioco spedisce rich presence di suo? |
-| `GamesPlayedModule` | `[DIAG] RP probe: invio aether_appid=…` | la sonda è partita |
-| `PacketRouter::SendClientFrame` | `[DIAG] SendClientFrame eMsg=… -> ok/FAILED` | il frame sintetico è stato accettato |
+| `PacketRouter::DispatchRecv` | `[DIAG] SharedLibrary msg eMsg=… ` | is the CM ordering the stop, or is the client dying? |
+| `PersonaInject` (`ofReal` block) | `[DIAG] self entry arrived as 480 while playing …` | does the suspected desync window exist? |
+| `PersonaInject` (self-push) | `[DIAG] SERVER rp kv: 'k' = 'v'` | do our KVs come back from the server? |
+| `PersonaInject` (friends) | `[DIAG] FRIEND … rp kv: … (app=…)` | does another account's KV arrive here? |
+| `GamesPlayedModule` | `[DIAG] RP upload appid=… 'k' = 'v'` | does the game upload rich presence on its own? |
+| `GamesPlayedModule` | `[DIAG] RP probe: sending aether_appid=…` | did the probe launch |
+| `PacketRouter::SendClientFrame` | `[DIAG] SendClientFrame eMsg=… -> ok/FAILED` | was the synthetic frame accepted |
 
-### `SendClientFrame` — nuovo strumento
+### `SendClientFrame` — new tool
 
-`PacketRouter` ora sa **originare** un frame client→CM: cattura l'oggetto
-connessione e il `CMsgProtoBufHeader` da un frame in uscita reale, azzera i job
-id e rispedisce con l'eMsg che vogliamo. Serve perché i singleplayer non fanno
-upload di rich presence da soli: senza sonda, `rp_kvs=0` non distingue "il
-server le scarta" da "nessuno le ha mai spedite".
+`PacketRouter` can now **originate** a client→CM frame: it captures the connection
+object and the `CMsgProtoBufHeader` from a real outbound frame, zeroes the job
+ids and resends with the eMsg we want. Needed because singleplayers never upload
+rich presence on their own: without a probe, `rp_kvs=0` cannot tell "the server
+drops them" from "nobody ever sent any".
 
-### Test 1 — Spacewar cade ancora? (1 PC)
+### Test 1 — does Spacewar still drop? (1 PC)
 
-`friend_appid_from_name` ha hot-reload: due run, `true` e `false`, stesso gioco
-con `-aetheronline`. Nel log, al momento della caduta, guardare in quest'ordine:
+`friend_appid_from_name` hot-reloads: two runs, `true` and `false`, same game
+with `-aetheronline`. In the log, at drop time, look in this order:
 
-1. `[DIAG] SharedLibrary msg` → **presente**: è il CM che ordina lo stop, la
-   nostra riscrittura non c'entra
-2. `[DIAG] TX: games_played vuoto` senza SharedLibrary → è il client locale a
-   chiudere la sessione
-3. `[DIAG] self entry arrived as 480 while playing N` → la finestra di desync
-   esiste; con la correzione ora la voce resta intatta
+1. `[DIAG] SharedLibrary msg` → **present**: the CM orders the stop, our
+   rewrite is innocent
+2. `[DIAG] TX: empty games_played` with no SharedLibrary → the local client is
+   closing the session
+3. `[DIAG] self entry arrived as 480 while playing N` → the desync window
+   exists; with the correction the entry now stays intact
 
-### Test 2 — l'appid viaggia in rich presence? (1 PC)
+### Test 2 — does the appid travel in rich presence? (1 PC)
 
-`rp_probe = true`, lanciare un gioco con `-aetheronline`, attendere ~30 s.
+`rp_probe = true`, launch a game with `-aetheronline`, wait ~30 s.
 
-- `[DIAG] RP probe: invio` + `SendClientFrame … -> ok` → sonda partita
-- `[DIAG] SERVER rp kv: 'aether_appid' = '1703340'` → **ha fatto il giro**:
-  l'appid si può trasmettere, il match per nome diventa solo un fallback
-- nessuna riga `SERVER rp kv` per ~30 s → il CM scarta le KV con app 480, e
-  resta il match per nome + cache
+- `[DIAG] RP probe: sending` + `SendClientFrame … -> ok` → probe launched
+- `[DIAG] SERVER rp kv: 'aether_appid' = '1703340'` → **round trip complete**:
+  the appid can be transmitted, name matching becomes a fallback only
+- no `SERVER rp kv` line for ~30 s → the CM drops KVs with app 480, and name
+  matching + cache remain
 
-`SendClientFrame … -> FAILED` o `no captured connection` significa che la sonda
-non è mai partita: il test è nullo, non è una risposta.
+`SendClientFrame … -> FAILED` or `no captured connection` means the probe never
+launched: the test is void, not an answer.
 
-### Cosa NON si misura con un solo PC
+### What is NOT measured with one PC
 
-La vista dell'amico. L'icona ricostruita e la propagazione delle KV a un altro
-account richiedono il secondo PC — ma l'icona è già stata verificata, e il
-punto 2 dà la risposta sul canale usando l'eco del server su di sé.
+The friend's view. The rebuilt icon and KV propagation to another account need
+the second PC — but the icon is already verified, and point 2 answers the
+channel question using the server's echo to yourself.

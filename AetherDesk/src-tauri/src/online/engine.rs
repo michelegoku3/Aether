@@ -1,8 +1,7 @@
-//! Facade dell'engine UCOnline2: piano, abilitazione, disattivazione, stato.
+//! UCOnline2 engine facade: plan, enable, disable, state.
 //!
-//! Compone detection + bundle + deploy/revert + stato in un'unica API
-//! pura (nessuna dipendenza Tauri), usata dai comandi in
-//! `commands/online.rs`.
+//! Composes detection + bundle + deploy/revert + state into a single pure API
+//! (no Tauri dependency), used by the commands in `commands/online.rs`.
 
 use crate::online::bundle::Uco2Bundle;
 use crate::online::deploy;
@@ -18,8 +17,8 @@ use std::path::Path;
 pub struct OnlineEngine;
 
 impl OnlineEngine {
-    /// Piano di attivazione: detection fresca + prerequisiti + stato attuale.
-    /// Nessun effetto sul disco.
+    /// Activation plan: fresh detection + prerequisites + current state.
+    /// No disk effects.
     pub fn plan(
         app_id: u32,
         game_root: &Path,
@@ -116,7 +115,7 @@ impl OnlineEngine {
         })
     }
 
-    /// Stato riconciliato (record + file sul disco).
+    /// Reconciled state (record + files on disk).
     pub fn status(app_id: u32, state_path: &Path) -> OnlineStatus {
         let store = OnlineStateStore::load(state_path);
         let record = store.get(app_id).cloned();
@@ -138,9 +137,9 @@ fn inspect(game_root: &Path) -> Result<DetectionReport, String> {
     GameInspector::inspect(game_root).map_err(|error| error.to_string())
 }
 
-/// Notice mostrate nella UI in un unico gruppo ⚠ (niente più 💡 separati:
-/// i suggerimenti che duplicavano gli avvisi sono stati fusi qui).
-/// Unisce gli avvisi di detection alle note operative, senza duplicati.
+/// Notices shown in the UI as a single ⚠ group (no more separate 💡 hints:
+/// suggestions duplicating warnings were merged here).
+/// Merges detection warnings with operational notes, deduplicated.
 fn build_notices(
     detection: &DetectionReport,
     bundle: Option<&Uco2Bundle>,
@@ -243,11 +242,11 @@ fn build_notices(
     notices
 }
 
-/// Probe di scrittura: crea e rimuove un file temporaneo nella directory.
+/// Write probe: creates and removes a temp file in the directory.
 ///
-/// Se la directory non esiste ancora (fallback convenzione per i giochi che
-/// non hanno una steam_api(64).dll), risale al primo antenato esistente e
-/// verifica la scrivibilità lì — il deploy la creerà con `create_dir_all`.
+/// When the directory does not exist yet (convention fallback for games
+/// without a steam_api(64).dll), it walks up to the first existing ancestor
+/// and checks writability there — deploy will create it with `create_dir_all`.
 fn probe_writable(dir: &Path) -> bool {
     let mut candidate = dir.to_path_buf();
     loop {

@@ -1,39 +1,39 @@
-//! Moduli dei comandi Tauri + contesto di richiesta risolto lato backend.
+//! Tauri command modules + backend-resolved request context.
 //!
-//! ## Il percorso Steam non è un parametro del client
+//! ## The Steam path is not a client parameter
 //!
-//! Fino a qui 22 comandi ricevevano `steam_path: String` dal frontend. Costi
-//! reali di quel contratto:
+//! Up to here 22 commands received `steam_path: String` from the frontend. Real
+//! costs of that contract:
 //!
-//! 1. **Latenza**: per ottenerlo la UI chiamava `get_settings`, che rilegge il
-//!    file di configurazione e **decifra il keystore DPAPI** ad ogni colpo —
-//!    una decifratura per popup, non per sessione.
-//! 2. **Superficie d'attacco/bug**: un client poteva passare un percorso
-//!    diverso da quello configurato, e ogni comando doveva ri-validarlo.
-//! 3. **Deriva**: 22 firme da tenere allineate a mano con 30+ call site TS.
+//! 1. **Latency**: to get it the UI called `get_settings`, which re-reads the
+//!    config file and **decrypts the DPAPI keystore** on every hit —
+//!    one decryption per popup, not per session.
+//! 2. **Attack/bug surface**: a client could pass a path different from the
+//!    configured one, and every command had to re-validate it.
+//! 3. **Drift**: 22 signatures to keep hand-aligned with 30+ TS call sites.
 //!
-//! Ora il percorso è risolto dal backend (unica fonte di verità: le
-//! impostazioni). I comandi usano [`command_steam_path`] (fallisce con un
-//! messaggio utente leggibile) o [`configured_steam_path`] (degrada con garbo
-//! quando il percorso manca o Steam non è raggiungibile).
+//! Now the path is resolved by the backend (single source of truth: the
+//! settings). Commands use [`command_steam_path`] (fails with a readable user
+//! message) or [`configured_steam_path`] (degrades gracefully when the path
+//! is missing or Steam is unreachable).
 
 // ---------------------------------------------------------------------------
-// Lint policy del confine IPC (eccezioni deliberate, motivate).
+// IPC boundary lint policy (deliberate, motivated exceptions).
 //
-// `clippy::needless_pass_by_value`: i parametri dei comandi sono risolti dalla
-// macro `generate_handler!` tramite il trait `tauri::ipc::CommandArg`, che è
-// implementato solo per tipi **by value** (`AppHandle`, `String`, ...): le
-// firme `&AppHandle`/`&str` suggerite dal lint non compilano. Il by value qui
-// è un vincolo del framework, non una scelta di stile.
+// `clippy::needless_pass_by_value`: command params are resolved by the
+// `generate_handler!` macro through the `tauri::ipc::CommandArg` trait, which
+// is implemented only for **by value** types (`AppHandle`, `String`, ...): the
+// `&AppHandle`/`&str` signatures suggested by the lint do not compile. By value
+// here is a framework constraint, not a style choice.
 //
-// `clippy::unnecessary_wraps`: la firma `Result<T, String>` è il contratto IPC
-// intenzionale: ogni comando espone al frontend la stessa superficie di errore
-// finché la migrazione a `DeskError` non sarà completata (policy in
-// Cargo.toml). Rimuovere `Result` dai singoli comandi "che oggi non falliscono"
-// renderebbe il contratto disomogeneo e impedirebbe di aggiungere percorsi di
-// errore senza breaking change per la UI.
+// `clippy::unnecessary_wraps`: the `Result<T, String>` signature is the
+// intentional IPC contract: every command exposes the same error surface to
+// the frontend until the migration to `DeskError` is complete (policy in
+// Cargo.toml). Removing `Result` from individual commands "that cannot fail
+// today" would make the contract inhomogeneous and block adding error paths
+// without a breaking change for the UI.
 //
-// Le funzioni interne non-comando restano soggette a entrambi i lint.
+// Non-command internals stay subject to both lints.
 // ---------------------------------------------------------------------------
 #![allow(clippy::needless_pass_by_value)]
 #![allow(clippy::unnecessary_wraps)]
@@ -63,28 +63,28 @@ pub mod workshop;
 use crate::core::settings::require_steam_path;
 use crate::util::validation::validate_steam_path;
 
-/// Percorso Steam configurato, normalizzato e validato sul filesystem.
+/// Configured Steam path, normalized and filesystem-validated.
 ///
-/// Sostituisce il vecchio parametro `steam_path` dei comandi: stesso errore
-/// leggibile di prima quando il percorso manca (`require_steam_path`) e stessa
-/// validazione rigorosa quando c'è (`validate_steam_path`), ma senza che il client
-/// debba leggerlo né possa alterarlo.
+/// Replaces the old `steam_path` command parameter: same readable error as
+/// before when the path is missing (`require_steam_path`) and same strict
+/// validation when present (`validate_steam_path`), but without the client
+/// having to read it or being able to alter it.
 ///
-/// Usare questa quando il comando **non può** lavorare senza un percorso Steam
-/// valido (install/uninstall, scrittura manifest, download).
+/// Use this when the command **cannot** work without a valid Steam path
+/// (install/uninstall, manifest writes, downloads).
 pub fn command_steam_path(app: &tauri::AppHandle) -> Result<String, String> {
     let steam_path = require_steam_path(app)?;
     validate_steam_path(&steam_path)?;
     Ok(steam_path)
 }
 
-/// Percorso Steam configurato **senza** validazione del filesystem.
+/// Configured Steam path **without** filesystem validation.
 ///
-/// Per i comandi che devono degradare con garbo invece di restituire un errore:
-/// lettura versione DLL, check aggiornamenti, probe dei residui. Con `None`
-/// (non configurato) o con un percorso irraggiungibile il chiamante risponde
-/// "N/A" / 0 / nessun aggiornamento, esattamente come faceva prima quando il
-/// client gli passava una stringa vuota o stale.
+/// For commands that must degrade gracefully instead of returning an error:
+/// DLL version reads, update checks, residue probes. With `None`
+/// (unconfigured) or an unreachable path the caller answers "N/A" / 0 / no
+/// updates, exactly like before when the client passed an empty or stale
+/// string.
 pub fn configured_steam_path(app: &tauri::AppHandle) -> Option<String> {
     require_steam_path(app).ok()
 }

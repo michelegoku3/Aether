@@ -124,17 +124,16 @@ std::int32_t HandleSend(const WireFrame& frame, std::uint8_t* out, std::uint32_t
         pipewatch::ResetSessionTracking();
     }
 
-    // Reset della sessione di presenza quando Steam non riporta più nessun
-    // gioco in esecuzione: elimina lo stato "sporco" che prima sopravviveva
-    // fino allo SpawnProcess successivo (P6).
+    // Presence session reset when Steam no longer reports any running game:
+    // drops the "dirty" state that used to survive until the next SpawnProcess
+    // (P6).
     if (topmost == 0) {
         presence::EndSession();
     }
 
-    // Persistenza guidata dagli eventi: qualunque transizione che TERMINA una
-    // sessione giocata (uscita, cambio gioco, mask 480) schedula la copia
-    // finale degli stats dell'app appena chiuso (ritardata: Steam scrive la
-    // cache dopo il frame vuoto).
+    // Event-driven persistence: any transition ENDING a played session (exit,
+    // game switch, 480 mask) schedules the final stats copy of the just-closed
+    // app (delayed: Steam writes the cache after the empty frame).
     if (prevPlaying != 0 && prevPlaying != PersonaInject::PlayingApp()) {
         std::uint64_t selfId = 0;
         {
@@ -144,8 +143,8 @@ std::int32_t HandleSend(const WireFrame& frame, std::uint8_t* out, std::uint32_t
         AchievementBackup::SessionEnded(prevPlaying, selfId);
     }
 
-    // [DIAG] Cosa stiamo realmente annunciando al CM, loggato solo su
-    // variazione (GamesPlayed e' periodico).
+    // [DIAG] What we are actually announcing to the CM, logged only on change
+    // (GamesPlayed is periodic).
     {
         static std::atomic<std::uint64_t> s_lastTxSig{~0ull};
         std::uint64_t sig = static_cast<std::uint64_t>(msg.games_played_size());
@@ -179,10 +178,10 @@ std::int32_t HandleSend(const WireFrame& frame, std::uint8_t* out, std::uint32_t
         }
     }
 
-    // ---- riscrittura presenza (P9: un unico rewriter puro) -----------------
-    // I due passaggi storici (-showonline mask + game_extra_info) vivono ora in
-    // GamesPlayedRewriter::Rewrite, deterministici in (msg, ctx): qui resta solo
-    // la costruzione del contesto dallo snapshot di presenza + settings.
+    // ---- presence rewrite (P9: a single pure rewriter) -----------------
+    // The two historic passes (-showonline mask + game_extra_info) now live in
+    // GamesPlayedRewriter::Rewrite, deterministic in (msg, ctx): only the
+    // context construction from the presence snapshot + settings remains here.
     GamesPlayedRewriter::RewriteContext rwCtx{
         .settings = *settings,
         .soSession = foreignSpoof ? 0 : presence::ShowOnlineAppId(),

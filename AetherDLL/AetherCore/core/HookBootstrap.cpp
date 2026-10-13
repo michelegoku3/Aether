@@ -45,7 +45,7 @@ std::atomic<bool> s_steamUiRetryStarted{false};
 std::atomic<bool> s_patternRetryStarted{false};
 std::atomic<bool> s_patternRetryStop{false};
 
-// Ritardo fra un tentativo e l'altro del retry steamui (5 × 100 ms = 500 ms).
+// Gap between steamui retry attempts (5 × 100 ms = 500 ms).
 constexpr int kSteamUiTicksPerCheck = 5;
 
 bool PatternsFullyAvailable() {
@@ -162,7 +162,7 @@ void InstallSteamClientBatch() {
 }
 
 void ArmSteamUiRedirect() {
-    if (steamui::InstallSteamUiRedirect()) return;   // già attivo (o live mode)
+    if (steamui::InstallSteamUiRedirect()) return;   // already armed (or live mode)
     bool expected = false;
     if (!s_steamUiRetryStarted.compare_exchange_strong(expected, true)) return;
     AC_LOG_INFO(kModule, "SteamUI redirect not ready yet; starting deferred "
@@ -175,8 +175,8 @@ void ArmSteamUiRedirect() {
 }
 
 void InstallAllHooks() {
-    // Fase 2 prima: il redirect deve armarsi il prima possibile (finestra del
-    // vecchio step-9), poi il batch steamclient. Riesecuzione idempotente.
+    // Phase 2 first: the redirect must arm ASAP (old step-9 window), then the
+    // steamclient batch. Idempotent re-run.
     ArmSteamUiRedirect();
     InstallSteamClientBatch();
 }
@@ -199,10 +199,10 @@ void StartPatternLateRetry() {
 
 void RequestRetryStop() {
     s_patternRetryStop.store(true, std::memory_order_relaxed);
-    // Il flag di stop del worker steamui è gestito dall'infrastruttura workers
-    // (workers::Shutdown imposta tutti i flag e fa il join); qui chiediamo solo
-    // esplicitamente lo stop del retry dei pattern, che ha un flag suo perché
-    // può terminare anche "da solo" quando le tabelle diventano complete.
+    // The steamui worker's stop flag is owned by the workers infrastructure
+    // (workers::Shutdown sets every flag and joins); here we only explicitly
+    // stop the pattern retry, which has its own flag because it may also end
+    // "on its own" when the tables become complete.
     AC_LOG_INFO(kModule, "Hook retry stop requested; workers::Shutdown performs the join.");
 }
 

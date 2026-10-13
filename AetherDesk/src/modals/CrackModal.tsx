@@ -48,7 +48,7 @@ export const CrackModal = ({ game, onClose }: CrackModalProps) => {
     }
   };
 
-  // ESC + click fuori chiudono il popup (rispettando un'operazione in corso).
+  // ESC + outside clicks close the popup (honoring an in-flight operation).
   useModalDismiss(onClose, isApplying);
 
   const clearFiles = () => {

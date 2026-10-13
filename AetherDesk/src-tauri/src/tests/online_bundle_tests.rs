@@ -1,7 +1,7 @@
-//! Test del bundle UCOnline2 (`online::bundle`).
+//! Tests for the UCOnline2 bundle (`online::bundle`).
 //!
-//! NOTA: file condiviso tra la repo (incluso da `tests/mod.rs`) e l'harness
-//! standalone — non cambiare i path di import senza aggiornare entrambi.
+//! NOTE: file shared between the repo (included from `tests/mod.rs`) and the
+//! standalone harness — do not change import paths without updating both.
 
 use crate::online::bundle::Uco2Bundle;
 use crate::online::types::GameArch;
@@ -14,7 +14,7 @@ fn write(dir: &Path, rel: &str, bytes: &[u8]) {
     fs::write(path, bytes).unwrap();
 }
 
-/// Fixture con il layout minimo valido della release ufficiale.
+/// Fixture with the minimal valid layout of the official release.
 fn valid_bundle_fixture(dir: &Path) {
     write(dir, "x64/steam_api64.dll", b"dll64");
     write(dir, "x86/steam_api.dll", b"dll32");
@@ -90,7 +90,7 @@ fn version_file_is_read() {
     let bundle = Uco2Bundle::open(tmp.path().to_path_buf()).unwrap();
     assert_eq!(bundle.version().as_deref(), Some("v1.19.8"));
 
-    // Senza VERSION → None, non errore.
+    // No VERSION → None, not an error.
     let tmp2 = tempfile::tempdir().unwrap();
     valid_bundle_fixture(tmp2.path());
     let bundle2 = Uco2Bundle::open(tmp2.path().to_path_buf()).unwrap();

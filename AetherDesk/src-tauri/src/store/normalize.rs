@@ -22,7 +22,7 @@
 ///    Using a single space keeps token boundaries (so `GTA:San` → `gta san`,
 ///    not `gtasan`).
 /// 3. Collapse whitespace.
-/// 4. Per-token Roman → digit synonym pass (`ix`→`9` …) — `civ`→`civilization` è ora un alias dedicato.
+/// 4. Per-token Roman → digit synonym pass (`ix`→`9` …) — `civ`→`civilization` is now a dedicated alias.
 ///
 /// This replaces the former narrow replace-chain (`.`, `'`, `:`, `®`, `™`, `-`, `_`)
 /// which left `!` etc untouched and broke exact/prefix checks for titles with

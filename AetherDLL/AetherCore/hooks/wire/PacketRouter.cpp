@@ -100,13 +100,13 @@ namespace ac::hooks {
             return true;
         }
 
-        // [DIAG]/flight-recorder: correlazione jobid_source -> target_job_name
-        // sui send 151, risolta jobid_target -> nome sui recv 147 (le risposte
-        // non portano il nome del servizio, solo il job id della richiesta).
+        // [DIAG]/flight-recorder: jobid_source -> target_job_name correlation on
+        // 151 sends, resolved jobid_target -> name on 147 recvs (responses carry
+        // no service name, only the request's job id).
         std::mutex s_jobNameMutex;
         std::unordered_map<std::uint64_t, std::string> s_jobNames;
-        // Ordine di inserimento: l'eviction al cap butta via la entry PIÙ
-        // VECCHIA (prima: erase(begin()) su unordered_map = elemento arbitrario).
+        // Insertion order: eviction at cap drops the OLDEST entry (before:
+        // erase(begin()) on unordered_map = arbitrary element).
         std::deque<std::uint64_t> s_jobNameOrder;
 
         void TrackServiceJob(const WireFrame& f) {
@@ -171,8 +171,8 @@ namespace ac::hooks {
             }
         }
 
-        // Trace per-frame bidirezionale (flight-recorder): un frame = una riga,
-        // cosi' l'ultima riga del log e' SEMPRE l'ultimo frame prima del crash.
+        // Bidirectional per-frame trace (flight-recorder): one frame = one line,
+        // so the log's last line is ALWAYS the last frame before the crash.
         void TraceFrame(const char* dir, const WireFrame& f) {
             AC_LOG_TRACE(kModule, "%s eMsg=%u hLen=%u bLen=%u", dir, f.eMsg, f.headerLen,
                          f.bodyLen);
@@ -270,13 +270,13 @@ namespace ac::hooks {
             TraceFrame("recv", f);
             switch (f.eMsg) {
             case emsg::kServiceMethodResponse: {
-                // [DIAG] flight-recorder: il nome del servizio è ricostruito
-                // via jobid tracciato al send. ResolveServiceJob va chiamato
-                // sempre (consuma la entry e tiene bounded s_jobNames), ma il
-                // TRACE e l'anello diag sono riservati alle risposte NON OK:
-                // sono quelle che StatusWriter aggrega (AccessDenied /
-                // transport-candidate), e registrare ogni OK costerebbe un
-                // mutex + allocazioni per frame sul path di rete.
+                // [DIAG] flight-recorder: the service name is rebuilt via the
+                // jobid tracked at send time. ResolveServiceJob must always run
+                // (it consumes the entry and keeps s_jobNames bounded), but the
+                // TRACE and the diag ring are reserved for NON-OK responses:
+                // those are what StatusWriter aggregates (AccessDenied /
+                // transport-candidate), and logging every OK would cost a mutex
+                // + allocations per frame on the network path.
                 {
                     std::uint64_t jt = 0;
                     const std::int32_t er = RecvResponseMeta(f, &jt);
@@ -304,8 +304,8 @@ namespace ac::hooks {
                         ? FamilySharing::ClearBody()
                         : kNoChange;
                 }
-                // Le risposte request-code passano invariate: l'acquisizione
-                // è locale/Hubcap (il bridge è stato rimosso).
+                // Request-code responses pass through unchanged: acquisition is
+                // local/Hubcap (the bridge was removed).
                 if (h == job_hash::kGetUserStats) {
                     return AchievementModule::HandleRecvGetUserStatsResponse(f, t_scratchBody.data(), kWireMaxBodyBytes,
                         t_scratchHeader.data(), kWireMaxHeaderBytes,

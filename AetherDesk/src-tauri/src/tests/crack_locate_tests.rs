@@ -1,10 +1,10 @@
-//! Unit test per la risoluzione dei target delle crack (locate.rs).
+//! Unit tests for crack target resolution (locate.rs).
 //!
-//! Blinda il supporto a:
-//! - Crack gerarchiche (cartelle): mantengono il consueto suffix-matching.
-//! - Crack piane (`is_flat_crack = true`): ricerca ricorsiva e sostituzione
-//!   di tutti i file corrispondenti in qualsiasi sottocartella, oppure
-//!   fallback nella root se nessun file corrisponde.
+//! Pins support for:
+//! - Hierarchical cracks (folders): keep the usual suffix-matching.
+//! - Flat cracks (`is_flat_crack = true`): recursive search and replacement
+//!   of every matching file in any subfolder, or fallback to the root when
+//!   no file matches.
 
 use crate::crack::locate::{resolve_file_target, resolve_file_targets};
 use std::fs;
@@ -15,7 +15,7 @@ fn test_resolve_file_targets_hierarchical_crack() {
     let temp_dir = tempfile_tempdir();
     let game_root = temp_dir.path();
 
-    // Quando is_flat_crack = false, usa la logica standard
+    // With is_flat_crack = false, use the standard logic
     let rel = Path::new("files").join("Binaries").join("steam_api64.dll");
     let targets = resolve_file_targets(&rel, game_root, false);
     assert_eq!(targets.len(), 1);
@@ -38,7 +38,7 @@ fn test_resolve_file_targets_flat_crack_matches_subdirs() {
     let temp_dir = tempfile_tempdir();
     let game_root = temp_dir.path();
 
-    // Creiamo due file uguali in due sottocartelle diverse
+    // Create two identical files in two different subfolders
     let dir1 = game_root.join("Binaries").join("Win64");
     let dir2 = game_root.join("Engine").join("Binaries");
     fs::create_dir_all(&dir1).unwrap();
@@ -59,7 +59,7 @@ fn test_resolve_file_targets_flat_crack_matches_subdirs() {
     assert_eq!(targets, expected);
 }
 
-/// Fallback helper per test diretti senza dipendenze aggiuntive.
+/// Fallback helper for direct tests with no extra dependencies.
 struct TempDirGuard(std::path::PathBuf);
 impl TempDirGuard {
     fn path(&self) -> &Path {

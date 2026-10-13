@@ -67,7 +67,7 @@ fn civ_alias_expands_to_civilization() {
 
 #[test]
 fn new_aliases_are_present() {
-    // Verifica che molti nuovi alias introdotti siano effettivamente espansi
+    // Verify that many newly introduced aliases actually expand
     assert!(expanded_queries("r6 siege").contains(&"rainbow six siege siege".to_string()) || expanded_queries("r6").contains(&"rainbow six siege".to_string()));
     assert!(expanded_queries("ow2").contains(&"overwatch 2".to_string()));
     assert!(expanded_queries("rdr2").contains(&"red dead redemption 2".to_string()));

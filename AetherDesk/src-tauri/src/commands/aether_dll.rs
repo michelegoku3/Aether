@@ -7,9 +7,9 @@ use super::{command_steam_path, configured_steam_path};
 
 #[tauri::command]
 pub fn get_installed_dll_version(app: tauri::AppHandle) -> String {
-    // Percorso dalle impostazioni, non dal client. Se manca o Steam non è
-    // raggiungibile la risposta resta "N/A": il pannello DLL deve poter dire
-    // "non installato" senza che diventi un errore per l'utente.
+    // Path from settings, not from the client. When missing or Steam is not
+    // reachable the answer stays "N/A": the DLL panel must be able to say
+    // "not installed" without it becoming a user-facing error.
     let steam_path = configured_steam_path(&app).unwrap_or_default();
     if resolve_steam_path(&steam_path).is_err() {
         return "N/A".to_string();
@@ -164,7 +164,7 @@ pub async fn install_aether_dll(
 ) -> Result<String, String> {
     let origin = origin.unwrap_or_else(|| "dll-install".to_string());
     // Strict validation first: fail fast before any download or Steam-side write.
-    // Il percorso viene dalle impostazioni ed è già validato qui dentro.
+    // The path comes from settings and is already validated in here.
     let steam_path = command_steam_path(&app)?;
     crate::desk_log_info!(
         "updater",

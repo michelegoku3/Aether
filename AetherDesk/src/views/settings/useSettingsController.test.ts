@@ -114,8 +114,7 @@ describe('useSettingsController', () => {
     expect(params.onPreviewAlternativeCards).toHaveBeenCalledWith(100, 50);
   });
 
-  it('warns instead of rejecting when mount-time refreshes fail', async () => {
-    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+  it('warns instead of rejecting when mount-time refreshes fail', async () => {    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     mockInvokeCommands(commandDefaults());
     const params = createParams();
     params.onRefreshUsage.mockRejectedValueOnce(new Error('usage offline'));
@@ -128,5 +127,18 @@ describe('useSettingsController', () => {
     ));
 
     warn.mockRestore();
+  });
+
+  it('persistDevtools saves the opt-in flag for the backend gate', async () => {
+    mockInvokeCommands(commandDefaults());
+    const params = createParams();
+    const { result } = renderHook(() => useSettingsController(params));
+    await waitFor(() => expect(result.current.form.steamPath).toBe('C:/Steam'));
+
+    await act(async () => { await result.current.persistDevtools(true); });
+
+    expect(invokeMock).toHaveBeenCalledWith('save_settings', expect.objectContaining({
+      settings: expect.objectContaining({ enable_webview_devtools: true }),
+    }));
   });
 });

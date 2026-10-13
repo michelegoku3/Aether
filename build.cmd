@@ -12,39 +12,39 @@ REM    2. npm ci                -> install dependencies
 REM    3. npm audit             -> block high/critical vulnerabilities
 REM    4. npm run verify         -> tsc/vite, ESLint, test/coverage,
 REM       wiring frontend, export/dipendenze npm inutilizzati
-REM    5. cargo clippy          -> lint Rust (warning = errore, policy in Cargo.toml)
-REM    6. cargo audit + machete -> CVE nelle crate + dipendenze Cargo inutilizzate
-REM    7. cargo test            -> unit test + test di contratto IPC
+REM    5. cargo clippy          -> Rust lint (warnings = errors, policy in Cargo.toml)
+REM    6. cargo audit + machete -> crate CVEs + unused Cargo dependencies
+REM    7. cargo test            -> unit tests + IPC contract tests
 REM    8. npm run tauri build   -> compile AetherDesk.exe
 REM    9. assemble the portable folder + create the ZIP
 REM
-REM  I tool Rust extra (cargo-audit, cargo-machete) vengono installati la
-REM  prima volta con `cargo install` se mancano (una tantum, ~1-2 min).
+REM  The extra Rust tools (cargo-audit, cargo-machete) are installed on first
+REM  use with `cargo install` when missing (one time, ~1-2 min).
 REM
 REM  Output: AetherDesk\build\portable\AetherDesk-<version>.zip
 REM
 REM  Usage:
-REM    build.cmd                        -> full build (test inclusi)
-REM    build.cmd /skipaudit             -> salta npm audit + cargo audit/machete
-REM    build.cmd /skiptests             -> salta cargo test (clippy e lint restano)
-REM    build.cmd /skipaudit /skiptests  -> solo build (ordine dei flag libero)
+REM    build.cmd                        -> full build (tests included)
+REM    build.cmd /skipaudit             -> skip npm audit + cargo audit/machete
+REM    build.cmd /skiptests             -> skip cargo test (clippy and lint stay)
+REM    build.cmd /skipaudit /skiptests  -> build only (flag order is free)
 REM
 REM  Build output is streamed live through PowerShell Tee-Object (UTF-8 +
 REM  forced ANSI colors) while also being captured for the final diagnostic
 REM  scan. A clean success closes automatically; warnings/errors stay open.
 REM
 REM  Notes:
-REM    - I test girano PRIMA del build di release: se falliscono non si
-REM      spendono minuti a compilare un exe che non verrebbe pubblicato.
-REM    - `cargo test` compila ed esegue lo stesso exe dell'app, che su Windows
-REM      embedda il manifest requireAdministrator: senza accorgimenti ogni run
-REM      aprirebbe un prompt UAC (o fallirebbe in un contesto non interattivo,
-REM      come una CI). Lo step 5 imposta quindi AETHERDESK_NO_ADMIN_MANIFEST=1
-REM      SOLO dentro il processo figlio (build.rs produce un exe asInvoker);
-REM      lo step 6 azzera esplicitamente la variabile, così l'exe pubblicato
-REM      resta elevated esattamente come prima.
-REM    - Lo step 4 esegue `npm run verify` (inclusi tsc + vite) perché `cargo test`
-REM      compila `generate_context!`, che richiede l'esistenza di dist\;
+REM    - Tests run BEFORE the release build: when they fail no minutes are
+REM      spent compiling an exe that would never ship.
+REM    - `cargo test` compiles and runs the same exe as the app, which on Windows
+REM      embeds the requireAdministrator manifest: without precautions every run
+REM      would pop a UAC prompt (or fail in a non-interactive context such as a
+REM      CI). Step 5 therefore sets AETHERDESK_NO_ADMIN_MANIFEST=1 ONLY inside
+REM      the child process (build.rs produces an asInvoker exe); step 6
+REM      explicitly clears the variable, so the published exe stays elevated
+REM      exactly as before.
+REM    - Step 4 runs `npm run verify` (including tsc + vite) because `cargo test`
+REM      compiles `generate_context!`, which requires dist\ to exist;
 REM      `npm run tauri build` lo riesegue da beforeBuildCommand.
 REM    - No multi-line if() blocks (incompatible with files saved
 REM      in LF); control flow uses goto labels instead.
@@ -117,22 +117,22 @@ echo [3/9] Audit skipped.
 
 :after_audit
 
-REM --- Step 4: frontend build + guardia di cablaggio ----------------------
+REM --- Step 4: frontend build + wiring guard ----------------------
 echo.
 echo [4/9] Verifying Tauri versions + frontend (build, lint, tests, wiring, unused)...
-REM  lint:ci gira con --quiet: in build compaiono solo gli errori ESLint, non le
-REM  warning (che restano visibili con `npm run lint`). Senza --quiet ogni build
-REM  chiudrebbe con "SUCCEEDED WITH WARNINGS" per rumore non azionabile.
+REM  lint:ci runs with --quiet: only ESLint errors show in the build, not the
+REM  warnings (still visible via `npm run lint`). Without --quiet every build
+REM  would close with "SUCCEEDED WITH WARNINGS" over unactionable noise.
 powershell.exe -NoProfile -ExecutionPolicy Bypass -Command ^
   "$utf8=New-Object System.Text.UTF8Encoding($false); [Console]::OutputEncoding=$utf8; $OutputEncoding=$utf8;" ^
   "& cmd.exe /d /s /c 'npm run verify 2>&1' | Tee-Object -FilePath '%BUILD_LOG%' -Append; $code=$LASTEXITCODE; exit $code"
 if errorlevel 1 goto :fail
 
-REM --- Step 5: clippy (lint Rust) -------------------------------------------
-REM  La policy dei lint vive in src-tauri/Cargo.toml ([lints.rust]/[lints.clippy]),
-REM  cosi' rust-analyzer nell'IDE, questo script e GitHub mostrano le stesse cose.
-REM  -D warnings: ogni warning (anche dead_code/unused di rustc) blocca il build.
-REM  --all-targets include i test, cosi' anche il codice di test e' pulito.
+REM --- Step 5: clippy (Rust lint) -------------------------------------------
+REM  The lint policy lives in src-tauri/Cargo.toml ([lints.rust]/[lints.clippy]),
+REM  so rust-analyzer in the IDE, this script and GitHub all show the same things.
+REM  -D warnings: every warning (even rustc dead_code/unused) blocks the build.
+REM  --all-targets includes tests, so test code stays clean too.
 echo.
 echo [5/9] Linting Rust (cargo clippy, warnings are errors)...
 cd /d "%DESK_DIR%\src-tauri"
@@ -144,19 +144,19 @@ set "CLIPPY_EXIT=%ERRORLEVEL%"
 cd /d "%DESK_DIR%"
 if not "%CLIPPY_EXIT%"=="0" goto :fail
 
-REM --- Step 6: cargo audit + cargo machete (opzionale con /skipaudit) ---------
-REM  cargo audit   : confronta Cargo.lock con il database RustSec (CVE note).
-REM                  E' l'equivalente di `npm audit` per le crate: zip, unrar,
-REM                  sevenz, image, reqwest parsano input scaricato da terzi.
-REM  cargo machete : dipendenze dichiarate in Cargo.toml ma mai usate.
-REM  Entrambi vengono installati al primo uso se mancano.
+REM --- Step 6: cargo audit + cargo machete (optional with /skipaudit) ---------
+REM  cargo audit   : compares Cargo.lock against the RustSec database (known CVEs).
+REM                  The `npm audit` equivalent for crates: zip, unrar, sevenz,
+REM                  image, reqwest parse third-party-downloaded input.
+REM  cargo machete : dependencies declared in Cargo.toml but never used.
+REM  Both are installed on first use when missing.
 REM
-REM  --ignore: AetherDesk è solo Windows. I due advisory ignorati riguardano
-REM  crate dello stack GTK/webkit che tauri dichiara per il target Linux: non
-REM  vengono MAI compilati nell'exe Windows (restano nel Cargo.lock solo perche'
-REM  cargo risolve il grafo completo di tauri).
-REM    RUSTSEC-2024-0429  glib (unsound, solo Linux)
-REM    RUSTSEC-2024-0370  proc-macro-error (unmaintained, macro di glib/gtk, solo Linux)
+REM  --ignore: AetherDesk is Windows-only. The two ignored advisories concern
+REM  crates of the GTK/webkit stack that tauri declares for the Linux target: they
+REM  are NEVER compiled into the Windows exe (they stay in Cargo.lock only because
+REM  cargo resolves tauri's full graph).
+REM    RUSTSEC-2024-0429  glib (unsound, Linux only)
+REM    RUSTSEC-2024-0370  proc-macro-error (unmaintained, glib/gtk macro, Linux only)
 if "%SKIP_AUDIT%"=="1" goto :skip_cargo_audit
 echo.
 echo [6/9] Auditing Rust dependencies (cargo audit + cargo machete)...
@@ -198,8 +198,8 @@ echo [7/9] Tests skipped.
 :after_tests
 
 REM --- Step 8: compile the binary ---------------------------------------
-REM Il build di release NON deve ereditare AETHERDESK_NO_ADMIN_MANIFEST:
-REM l'exe pubblicato embedda il manifest requireAdministrator.
+REM The release build must NOT inherit AETHERDESK_NO_ADMIN_MANIFEST: the
+REM published exe embeds the requireAdministrator manifest.
 set "AETHERDESK_NO_ADMIN_MANIFEST="
 echo.
 echo [8/9] Compiling AetherDesk (npm run tauri build)...

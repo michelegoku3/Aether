@@ -132,11 +132,11 @@ pub async fn install_aether_desk_update(app: tauri::AppHandle) -> Result<String,
     Ok("AetherDesk update downloaded. Restarting to apply...".to_string())
 }
 
-/// Riporta AetherDesk alla build stabile (uscita dal canale test): scarica
-/// l'ultima release `desk-*`, la prepara e riavvia l'app per applicarla.
-/// Spegne anche `enable_test_updates` nei settings: dopo il ripristino si è
-/// su una build stabile (che può anche essere più vecchia della UI corrente),
-/// quindi switch e bottone restano coerenti (switch OFF → bottone Uninstall).
+/// Restores AetherDesk to the stable build (leaves the test channel): downloads
+/// the latest `desk-*` release, stages it and restarts the app to apply it.
+/// Also switches `enable_test_updates` off in settings: after the restore we
+/// are on a stable build (which may even be older than the current UI), so
+/// switch and button stay consistent (switch OFF → Uninstall button).
 #[tauri::command]
 pub async fn restore_stable_desk(app: tauri::AppHandle) -> Result<String, String> {
     crate::desk_log_info!("updater", "Restoring stable AetherDesk build (leaving test channel)...");

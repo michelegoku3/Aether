@@ -53,18 +53,18 @@ struct LookupKeyHash {
 };
 
 // ---------------------------------------------------------------------------
-// Indice locale dei manifest (hot path di BuildDepotDependency: ~1000+ eventi
-// a sessione). Il walk della cartella backup/<app>/lua era ripetuto a ogni
-// evento; qui lo memorizziamo:
-//   * voce POSITIVA: path noto, riverificato con uno stat a ogni hit;
-//   * voce NEGATIVA con TTL: niente walk per 30 s (i file nuovi — restore,
-//     generazione Hubcap — vengono comunque scoperti alla scadenza, stessa
-//     latenza del backoff già esistente).
-// Stato privato del modulo (cache di lookup, non dominio: stesso statuto dei
-// buffer g_proactive* qui sopra).
+// Local manifest index (BuildDepotDependency hot path: ~1000+ events per
+// session). The backup/<app>/lua folder walk used to repeat on every event;
+// here we memoize it:
+//   * POSITIVE entry: known path, re-verified with a stat on every hit;
+//   * NEGATIVE entry with TTL: no walk for 30 s (new files — restore, Hubcap
+//     generation — are still discovered at expiry, same latency as the
+//     pre-existing backoff).
+// Module-private state (lookup cache, not domain: same standing as the
+// g_proactive* buffers above).
 // ---------------------------------------------------------------------------
 struct LocalManifestCacheEntry {
-    std::filesystem::path path;   // valida solo per le voci positive
+    std::filesystem::path path;   // valid for positive entries only
     bool positive = false;
     std::chrono::steady_clock::time_point expires{};
 };
@@ -99,7 +99,7 @@ std::optional<std::filesystem::path> FindLocalManifest(std::uint64_t gid,
         if (usable(candidate)) return candidate;
     }
 
-    // Indice: hit positivo (riverificato), hit negativo dentro il TTL = niente walk.
+    // Index: positive hit (re-verified), negative hit inside the TTL = no walk.
     const auto now = std::chrono::steady_clock::now();
     {
         std::lock_guard<std::mutex> lock(g_localManifestMutex);
@@ -257,10 +257,10 @@ bool FetchAndInstallManifest(const std::string& url,
             AC_LOG_INFO(kModule, "Hubcap manifest installed depot=%u gid=%llu bytes=%llu.",
                         depotId, static_cast<unsigned long long>(gid),
                         static_cast<unsigned long long>(response.body.size()));
-            // Archivia subito il manifest generato nei backup AetherData delle
-            // app che lo referenziano: deterministicamente, anche con
-            // AetherDesk chiuso (il backup di startup girerebbe solo al
-            // prossimo avvio di Steam). Best-effort per contratto.
+            // Immediately archive the generated manifest into the AetherData
+            // backups of referencing apps: deterministically, even with
+            // AetherDesk closed (the startup backup would only run at the next
+            // Steam launch). Best-effort by contract.
             ac::hooks::ManifestRestore::BackupManifestAfterGeneration(depotId, gid);
             return true;
         } else if (!response.networkError) {

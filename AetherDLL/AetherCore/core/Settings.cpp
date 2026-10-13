@@ -122,9 +122,9 @@ Settings Settings::Load(const std::string& configPath, bool* valid) {
         s.patternUseOstSource = *useOst;
     }
 
-    // [manifest_fetch] — DEPRECATED e ignorato. Il wire-bridge
-    // GetManifestRequestCode è stato rimosso: i manifest arrivano solo
-    // dall'indice locale e dalla generazione Hubcap autenticata.
+    // [manifest_fetch] — DEPRECATED and ignored. The GetManifestRequestCode
+    // wire-bridge was removed: manifests only come from the local index and
+    // authenticated Hubcap generation.
     if (tbl["manifest_fetch"].as_table()) {
         AC_LOG_WARN_ONCE("Settings",
                          "[manifest_fetch] keys are deprecated and ignored: the "

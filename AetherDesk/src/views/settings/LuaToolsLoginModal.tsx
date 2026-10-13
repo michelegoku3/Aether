@@ -1,10 +1,10 @@
-// I-F: modale di login LuaTools estratta da SettingsView.tsx. Il flusso
-// (scelta OAuth/codice, input codice, errori) vive qui; lo stato e le azioni
-// restano nella view perché interagiscono con showStatus e i comandi Tauri.
+// I-F: LuaTools login modal extracted from SettingsView.tsx. The flow
+// (OAuth/code choice, code input, errors) lives here; state and actions stay
+// in the view because they interact with showStatus and the Tauri commands.
 
 export interface LuaToolsLoginModalProps {
   open: boolean;
-  /** True mentre una sign-in è in corso (OAuth o codice). */
+  /** True while a sign-in is in flight (OAuth or code). */
   busy: boolean;
   mode: 'choice' | 'code';
   code: string;

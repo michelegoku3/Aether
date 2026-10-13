@@ -30,14 +30,14 @@ type UninstallStep =
   | { kind: 'steamClean'; residualCount: number; deleteUserData: boolean };
 
 /**
- * Pannello AETHER: ciclo di vita di AetherDesk e AetherDLL (install/update/
- * uninstall), blocco degli aggiornamenti di Steam, reset del percorso Steam e
- * diagnostica del sincronizzatore in background.
+ * AETHER panel: AetherDesk and AetherDLL lifecycle (install/update/
+ * uninstall), Steam update blocking, Steam path reset and background
+ * synchronizer diagnostics.
  *
- * Le operazioni lato Steam non ricevono più il percorso dalla UI: lo risolvono
- * i comandi backend dalle impostazioni (`commands::command_steam_path`), quindi
- * qui resta solo l'orchestrazione — niente `withSteamPath`, che esisteva unicamente
- * per passare quel parametro (docs/shared_contracts.md §8).
+ * Steam-side operations no longer receive the path from the UI: the backend
+ * commands resolve it from settings (`commands::command_steam_path`), so only
+ * orchestration remains here — no `withSteamPath`, which existed solely to
+ * pass that parameter (docs/shared_contracts.md §8).
  */
 export const AetherView = memo(function AetherView({
   isUpdateAvailable,
@@ -120,8 +120,8 @@ export const AetherView = memo(function AetherView({
 
   /** Optional Reset Path + unblock, then real folder uninstall. */
   const cleanSteamThenUninstall = async (deleteUserData: boolean) => {
-    // Il percorso Steam lo risolvono i comandi (settings lato backend): qui
-    // restano solo le due chiamate, nell'ordine di prima.
+    // The backend commands resolve the Steam path (backend-side settings):
+    // only the two calls remain here, in the previous order.
     await invoke('reset_aether_steam_path');
     await invoke('unblock_steam_updates').catch(() => {});
     await refreshAfterDllChange().catch(() => {});
@@ -161,9 +161,9 @@ export const AetherView = memo(function AetherView({
   const handleUninstallConfirm = async (deleteUserData: boolean) => {
     setIsProcessing(true);
     try {
-      // Il probe è read-only e degrada a 0 quando Steam non è configurato o
-      // non è raggiungibile: non serve più leggere le impostazioni per
-      // decidere se chiamarlo (una IPC + una decifratura DPAPI in meno).
+      // The probe is read-only and degrades to 0 when Steam is unconfigured
+      // or unreachable: no need to read settings first to decide whether to
+      // call it (one IPC + one DPAPI decryption saved).
       const residualCount = await invoke<number>('probe_aether_steam_residuals');
 
       if (residualCount > 0) {

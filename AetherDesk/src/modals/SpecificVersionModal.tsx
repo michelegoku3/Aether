@@ -146,7 +146,7 @@ export const ManualVersionEditor = ({ game, initialRows, onClose }: ManualVersio
   );
 
 
-  // ESC + click fuori chiudono il popup (rispettando un'operazione in corso).
+  // ESC + outside clicks close the popup (honoring an in-flight operation).
   useModalDismiss(onClose, isApplying);
 
   const handleOpenSteamDb = async () => {

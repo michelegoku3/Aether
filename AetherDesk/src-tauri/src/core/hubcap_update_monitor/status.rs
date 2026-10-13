@@ -51,15 +51,15 @@ pub struct MonitorStatusSnapshot {
     pub workshop: LaneStatus,
 }
 
-/// Canale push dello stato del sincronizzatore.
+/// Push channel for the synchronizer state.
 ///
-/// Emesso solo quando cambia la parte **significativa** dello snapshot:
-/// composizione delle code, tentativi, task abbandonati, contatori di
-/// completamento, ultimo errore, flag di readiness. Gli orologi puri
-/// (`last_scan_epoch`, `started_epoch`, `last_run_epoch`, `next_retry_epoch`)
-/// sono esclusi dalla firma di proposito: cambiano ad ogni poll (20 s) e
-/// trasformerebbero il push in un secondo polling. Il popup li aggiorna con il
-/// proprio poll lento di recovery — push per gli eventi, poll per i countdown.
+/// Emitted only when the **significant** part of the snapshot changes: queue
+/// composition, attempts, abandoned tasks, completion counters, last error,
+/// readiness flags. Pure clocks (`last_scan_epoch`, `started_epoch`,
+/// `last_run_epoch`, `next_retry_epoch`) are excluded from the signature on
+/// purpose: they change on every poll (20 s) and would turn the push into a
+/// second polling loop. The popup refreshes them with its own slow recovery
+/// poll — push for events, poll for countdowns.
 pub const SYNC_STATUS_EVENT: &str = "sync://status-changed";
 
 fn status_store() -> &'static Mutex<MonitorStatusSnapshot> {
@@ -67,16 +67,16 @@ fn status_store() -> &'static Mutex<MonitorStatusSnapshot> {
     STORE.get_or_init(|| Mutex::new(MonitorStatusSnapshot::default()))
 }
 
-/// Handle per il canale push, registrato da [`start`]. `with_status` viene
-/// chiamato anche da percorsi che non hanno un `AppHandle` in scope: quando la
-/// cella è vuota l'emit viene semplicemente saltato (il polling del client
-/// resta la rete di sicurezza), quindi l'assenza non è mai un errore.
+/// Handle for the push channel, registered by [`start`]. `with_status` is also
+/// called from paths with no `AppHandle` in scope: when the cell is empty the
+/// emit is simply skipped (client polling remains the safety net), so absence
+/// is never an error.
 pub(super) fn status_handle() -> &'static OnceLock<AppHandle> {
     static HANDLE: OnceLock<AppHandle> = OnceLock::new();
     &HANDLE
 }
 
-/// Ultima firma già pubblicata, per non ri-emettere uno snapshot identico.
+/// Last already-published signature, to avoid re-emitting an identical snapshot.
 fn last_signature() -> &'static Mutex<Option<String>> {
     static SIGNATURE: OnceLock<Mutex<Option<String>>> = OnceLock::new();
     SIGNATURE.get_or_init(|| Mutex::new(None))
@@ -104,7 +104,7 @@ fn lane_signature(label: &str, lane: &LaneStatus) -> String {
     )
 }
 
-/// Impronta confrontabile di tutto ciò che il popup mostra, orologi esclusi.
+/// Comparable fingerprint of everything the popup shows, clocks excluded.
 fn status_signature(status: &MonitorStatusSnapshot) -> String {
     format!(
         "run={}|steam={}|key={}|ckpt={}|{}|{}|{}|{}",
@@ -119,9 +119,9 @@ fn status_signature(status: &MonitorStatusSnapshot) -> String {
     )
 }
 
-/// Pubblica lo snapshot sul canale push. Chiamata SENZA il lock dello stato:
-/// `emit` serializza e consegna alle webview, e non deve mai avvenire dentro
-/// una sezione critica che altri thread usano per aggiornare le code.
+/// Publishes the snapshot on the push channel. Called WITHOUT holding the state
+/// lock: `emit` serializes and delivers to the webviews, and must never run
+/// inside a critical section other threads use to update the queues.
 fn publish_status(payload: MonitorStatusSnapshot) {
     let Some(app) = status_handle().get() else {
         return;
@@ -151,7 +151,7 @@ pub fn snapshot() -> MonitorStatusSnapshot {
 }
 
 pub(super) fn with_status(update: impl FnOnce(&mut MonitorStatusSnapshot)) {
-    // Payload da pubblicare, calcolato dentro il lock ma emesso fuori.
+    // Payload to publish, computed inside the lock but emitted outside.
     let changed = {
         let Ok(mut status) = status_store().lock() else {
             return;

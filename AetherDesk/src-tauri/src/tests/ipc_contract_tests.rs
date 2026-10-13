@@ -1,56 +1,56 @@
-//! Contratto IPC Desk <-> frontend, verificato sul sorgente reale.
+//! Desk <-> frontend IPC contract, verified against the real sources.
 //!
-//! # Perché questo file esiste
+//! # Why this file exists
 //!
-//! Tauri 2 genera la chiave di ogni argomento di comando con
-//! `param.to_lower_camel_case()` e la cerca nel payload con ESATTAMENTE quella
-//! chiave (`tauri 2.11.5`, `crates/tauri/src/ipc/command.rs`: `v.get(self.key)`).
-//! Non esiste alcun fallback snake_case. Una chiave sbagliata lato frontend non
-//! è quindi un errore di compilazione: è una Promise rigettata a runtime con
+//! Tauri 2 derives every command argument key with
+//! `param.to_lower_camel_case()` and looks it up in the payload with EXACTLY
+//! that key (`tauri 2.11.5`, `crates/tauri/src/ipc/command.rs`: `v.get(self.key)`).
+//! There is no snake_case fallback. So a wrong frontend key is not a compile
+//! error: it is a Promise rejected at runtime with
 //! `command X missing required key Y`.
 //!
-//! Il caso reale che ha motivato questi test: `set_presence_default_mode`
-//! dichiarava `showonline: bool`, parola composta tutta minuscola copiata dal
-//! token di dominio `default_mode = "showonline"` di `aethercore.toml`. La
-//! chiave sul filo era quindi `showonline` e il frontend mandava `{ showonline }`:
-//! funzionava per coincidenza. Un rename "di pulizia" fatto da una sola delle due
-//! parti avrebbe rotto il toggle di presenza senza che `tsc` o `cargo check`
-//! dicessero nulla.
+//! The real case that motivated these tests: `set_presence_default_mode`
+//! declared `showonline: bool`, an all-lowercase compound word copied from the
+//! `default_mode = "showonline"` domain token in `aethercore.toml`. The
+//! on-the-wire key was therefore `showonline` and the frontend sent
+//! `{ showonline }`: it worked by coincidence. A "cleanup" rename done by only
+//! one of the two sides would have broken the presence toggle with neither
+//! `tsc` nor `cargo check` saying anything.
 //!
-//! # Cosa viene verificato
+//! # What is verified
 //!
-//! 1. ogni comando registrato in `generate_handler!` esiste nel layer comandi;
-//! 2. ogni `invoke('…')` del frontend chiama un comando registrato;
-//! 3. le chiavi degli argomenti del frontend coincidono con le chiavi wire
-//!    derivate dalle firme Rust, e le chiavi obbligatorie sono tutte presenti;
-//! 4. nessuna chiave wire è una "parola composta minuscola" (la classe di bug
-//!    di cui sopra), nessuna chiave è un snake_case non convertito;
-//! 5. nessun comando riceve più il percorso Steam dal client;
-//! 6. i comandi citati nei contratti documentati hanno esattamente le chiavi
-//!    attese (regressione puntuale sui casi già accaduti);
-//! 7. l'insieme dei comandi mai chiamati dal frontend è solo quello documentato.
+//! 1. every command registered in `generate_handler!` exists in the command layer;
+//! 2. every frontend `invoke('…')` calls a registered command;
+//! 3. frontend argument keys match the wire keys derived from the Rust
+//!    signatures, and every required key is present;
+//! 4. no wire key is a "lowercase compound word" (the bug class above), no key
+//!    is an unconverted snake_case;
+//! 5. no command receives the Steam path from the client anymore;
+//! 6. commands named in the documented contracts have exactly the expected
+//!    keys (point regression on cases that already happened);
+//! 7. the set of commands never called by the frontend is only the documented one.
 //!
-//! I test leggono i file sorgente invece di usare macro/derive perché il
-//! contratto da proteggere attraversa due linguaggi: l'unico punto in cui le due
-//! metà si incontrano è il testo che finisce nel payload.
+//! The tests read the source files instead of using macros/derives because the
+//! contract to protect spans two languages: the only point where both halves
+//! meet is the text that ends up in the payload.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 
 // ---------------------------------------------------------------------------
-// Percorsi
+// Paths
 // ---------------------------------------------------------------------------
 
 fn crate_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
 }
 
-/// `AetherDesk/`: la radice che contiene sia `src/` (frontend) sia `src-tauri/`.
+/// `AetherDesk/`: the root holding both `src/` (frontend) and `src-tauri/`.
 fn desk_dir() -> PathBuf {
     crate_dir()
         .parent()
-        .expect("src-tauri/ deve stare dentro AetherDesk/")
+        .expect("src-tauri/ must live inside AetherDesk/")
         .to_path_buf()
 }
 
@@ -60,17 +60,17 @@ fn frontend_dir() -> PathBuf {
 
 fn read(path: &Path) -> String {
     fs::read_to_string(path)
-        .unwrap_or_else(|error| panic!("impossibile leggere {}: {error}", path.display()))
+        .unwrap_or_else(|error| panic!("cannot read {}: {error}", path.display()))
 }
 
 // ---------------------------------------------------------------------------
-// Modello del comando Rust
+// Rust command model
 // ---------------------------------------------------------------------------
 
-/// Tipi iniettati dal macro di Tauri: non arrivano dal payload, quindi non
-/// hanno una chiave wire. Riconosciuti dal tipo (non dal nome) perché il nome
-/// è libero: `enable_online(app_id, request: OnlineEnableRequest)` ha un
-/// parametro wire che si chiama proprio `request`.
+/// Types injected by the Tauri macro: they never come from the payload, so they
+/// have no wire key. Recognized by type (not by name) because the name is free:
+/// `enable_online(app_id, request: OnlineEnableRequest)` has a wire param
+/// literally called `request`.
 const INJECTED_TYPE_MARKERS: &[&str] = &[
     "AppHandle",
     "tauri::Window",
@@ -86,22 +86,22 @@ const INJECTED_TYPE_MARKERS: &[&str] = &[
     "Resolver",
 ];
 
-/// Nomi convenzionali usati nel codebase per gli handle iniettati.
+/// Conventional names used across the codebase for injected handles.
 const INJECTED_PARAM_NAMES: &[&str] = &["app", "window", "webview", "state"];
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct WireParam {
-    /// Nome del parametro in Rust (`app_id`).
+    /// Rust parameter name (`app_id`).
     rust_name: String,
-    /// Chiave attesa nel payload IPC (`appId`).
+    /// Expected IPC payload key (`appId`).
     wire_key: String,
-    /// Tipo dichiarato, per distinguere gli `Option<_>` (chiave assente = None).
+    /// Declared type, to tell `Option<_>` apart (absent key = None).
     rust_type: String,
 }
 
 #[derive(Debug, Clone)]
 struct CommandSig {
-    /// `library` per `src/commands/library.rs`.
+    /// `library` for `src/commands/library.rs`.
     module: String,
     name: String,
     params: Vec<WireParam>,
@@ -127,10 +127,10 @@ impl CommandSig {
 
 /// `app_id` -> `appId`.
 ///
-/// Replica di `heck::AsLowerCamelCase` per l'unico alfabeto che il codebase usa
-/// nei parametri (snake_case ASCII): [`test_param_names_stay_inside_the_model`]
-/// fallisce se qualcuno introduce un nome con maiuscole o cifre iniziali, cioè
-/// l'unico caso in cui questa funzione potrebbe divergere da heck.
+/// Replica of `heck::AsLowerCamelCase` for the only alphabet the codebase uses
+/// in params (ASCII snake_case): [`test_param_names_stay_inside_the_model`]
+/// fails when someone introduces a name with leading capitals or digits, i.e.
+/// the only case where this function could diverge from heck.
 fn wire_key(param: &str) -> String {
     let mut words = param.split('_').filter(|word| !word.is_empty());
     let Some(first) = words.next() else {
@@ -147,8 +147,8 @@ fn wire_key(param: &str) -> String {
     out
 }
 
-/// Estrae il contenuto tra la prima `(` (o `[`, `{`) dopo `from` e la sua
-/// chiusura, rispettando la nidificazione. Restituisce `(interno, indice_dopo)`.
+/// Extracts the content between the first `(` (or `[`, `{`) after `from` and its
+/// match, honoring nesting. Returns `(inner, index_after)`.
 fn balanced(source: &str, from: usize, open: char, close: char) -> Option<(&str, usize)> {
     let start = source[from..].find(open)? + from;
     let mut depth = 0usize;
@@ -168,8 +168,8 @@ fn balanced(source: &str, from: usize, open: char, close: char) -> Option<(&str,
     None
 }
 
-/// Divide una lista di parametri (Rust) o di membri (oggetto TS) sulle virgole
-/// di primo livello: ignora le virgole dentro `()`, `[]`, `{}`, `<>`.
+/// Splits a param list (Rust) or member list (TS object) on top-level commas:
+/// ignores commas inside `()`, `[]`, `{}`, `<>`.
 fn split_top_level(input: &str) -> Vec<String> {
     let mut parts = Vec::new();
     let mut current = String::new();
@@ -206,12 +206,12 @@ fn split_params(raw: &str) -> Vec<(String, String)> {
         .collect()
 }
 
-/// Firma di ogni `#[tauri::command]` del layer comandi.
+/// Signature of every `#[tauri::command]` in the command layer.
 fn command_signatures() -> BTreeMap<String, CommandSig> {
     let dir = crate_dir().join("src").join("commands");
     let mut signatures = BTreeMap::new();
     for entry in fs::read_dir(&dir)
-        .unwrap_or_else(|error| panic!("manca {}: {error}", dir.display()))
+        .unwrap_or_else(|error| panic!("missing {}: {error}", dir.display()))
         .flatten()
     {
         let path = entry.path();
@@ -221,8 +221,9 @@ fn command_signatures() -> BTreeMap<String, CommandSig> {
         let module = path.file_stem().unwrap_or_default().to_string_lossy().to_string();
         let source = read(&path);
         for marker in source.match_indices("#[tauri::command") {
-            // Dal marker alla prima `fn` pubblica: in mezzo possono stare altri
-            // attributi (#[allow], doc comment) ma mai un'altra firma.
+            // From the marker to the first public `fn`: other attributes
+            // (#[allow], doc comments) may sit in between, but never another
+            // signature.
             let Some(fn_at) = source[marker.0..].find("fn ") else {
                 continue;
             };
@@ -263,21 +264,21 @@ fn command_signatures() -> BTreeMap<String, CommandSig> {
             let previous_line = previous.as_ref().map(|signature| signature.line).unwrap_or(0);
             assert!(
                 previous.is_none(),
-                "comando duplicato `{name}`: commands/{module}.rs:{line} e                  commands/{previous_module}.rs:{previous_line}. Due #[tauri::command] con lo                  stesso nome rendono ambigua la registrazione in generate_handler!"
+                "duplicate command `{name}`: commands/{module}.rs:{line} and                  commands/{previous_module}.rs:{previous_line}. Two #[tauri::command] with the                  same name make the generate_handler! registration ambiguous!"
             );
         }
     }
     signatures
 }
 
-/// Comandi registrati in `generate_handler![…]` (`src/main.rs`), come
-/// `(modulo, nome)`.
+/// Commands registered in `generate_handler![…]` (`src/main.rs`), as
+/// `(module, name)`.
 fn registered_commands() -> Vec<(String, String)> {
     let source = read(&crate_dir().join("src").join("main.rs"));
     let start = source
         .find("generate_handler!")
-        .expect("src/main.rs deve registrare i comandi con generate_handler!");
-    let (body, _) = balanced(&source, start, '[', ']').expect("generate_handler![…] non bilanciato");
+        .expect("src/main.rs must register commands with generate_handler!");
+    let (body, _) = balanced(&source, start, '[', ']').expect("unbalanced generate_handler![…]");
     let mut out = Vec::new();
     for token in body.split(',') {
         let token = token.trim();
@@ -288,7 +289,7 @@ fn registered_commands() -> Vec<(String, String)> {
         match segments.as_slice() {
             ["commands", module, name] => out.push((module.to_string(), name.to_string())),
             _ => panic!(
-                "voce inattesa in generate_handler!: `{token}` (atteso commands::<modulo>::<nome>)"
+                "unexpected generate_handler! entry: `{token}` (expected commands::<module>::<name>)"
             ),
         }
     }
@@ -296,7 +297,7 @@ fn registered_commands() -> Vec<(String, String)> {
 }
 
 // ---------------------------------------------------------------------------
-// Modello delle chiamate frontend
+// Frontend call model
 // ---------------------------------------------------------------------------
 
 #[derive(Debug, Clone)]
@@ -304,8 +305,8 @@ struct FrontendCall {
     file: String,
     line: usize,
     command: String,
-    /// Chiavi dell'oggetto payload; `None` = payload non letterale (variabile,
-    /// spread, costruzione dinamica): la chiamata non è verificabile qui.
+    /// Payload object keys; `None` = non-literal payload (variable, spread,
+    /// dynamic construction): the call is not verifiable here.
     keys: Option<Vec<String>>,
 }
 
@@ -332,11 +333,11 @@ fn frontend_files() -> Vec<PathBuf> {
     files
 }
 
-/// Chiavi di primo livello di un object literal TS.
+/// Top-level keys of a TS object literal.
 ///
-/// Copre le forme usate nel codebase: `key: value`, shorthand `key`,
-/// `'key': value`, chiave computata/spread (che rendono il payload non
-/// verificabile → `None`).
+/// Covers the shapes used across the codebase: `key: value`, shorthand `key`,
+/// `'key': value`, computed key/spread (which make the payload unverifiable
+/// → `None`).
 fn object_keys(raw: &str) -> Option<Vec<String>> {
     let mut keys = Vec::new();
     for member in split_top_level(raw) {
@@ -360,8 +361,8 @@ fn object_keys(raw: &str) -> Option<Vec<String>> {
     Some(keys)
 }
 
-/// Tutte le chiamate del frontend verso il backend: `invoke('…')` dirette e
-/// `queryGameState(appId, '…')` (che aggiunge `appId` al payload da sola).
+/// Every frontend call into the backend: direct `invoke('…')` and
+/// `queryGameState(appId, '…')` (which adds `appId` to the payload itself).
 fn frontend_calls() -> Vec<FrontendCall> {
     let mut calls = Vec::new();
     for path in frontend_files() {
@@ -377,11 +378,11 @@ fn frontend_calls() -> Vec<FrontendCall> {
             if index > 0 {
                 let previous = source[..index].chars().next_back().unwrap();
                 if previous.is_ascii_alphanumeric() || previous == '_' || previous == '.' {
-                    continue; // `reinvoke`, `foo.invoke`: non è la funzione IPC
+                    continue; // `reinvoke`, `foo.invoke`: not the IPC function
                 }
             }
             let after = index + "invoke".len();
-            // `invoke<…>(` oppure `invoke(`: salta l'eventuale type argument.
+            // `invoke<…>(` or `invoke(`: skip the optional type argument.
             let paren_at = match source[after..].chars().next() {
                 Some('<') => match balanced(&source, after, '<', '>') {
                     Some((_, end)) => end,
@@ -418,8 +419,8 @@ fn frontend_calls() -> Vec<FrontendCall> {
             let Some(command) = parts.get(1).and_then(|raw| string_literal(raw.trim())) else {
                 continue;
             };
-            // Il provider aggiunge sempre `appId`; il terzo argomento (se c'è)
-            // è l'oggetto con le chiavi restanti.
+            // The provider always adds `appId`; the third argument (when present)
+            // is the object with the remaining keys.
             let mut keys = vec!["appId".to_string()];
             let mut unverifiable = false;
             if let Some(extra) = parts.get(2) {
@@ -457,19 +458,19 @@ fn string_literal(raw: &str) -> Option<String> {
     Some(inner.to_string())
 }
 
-/// Primo argomento, se è una stringa letterale.
+/// First argument, when it is a string literal.
 fn string_literal_arg(args: &str) -> Option<String> {
     let first = split_top_level(args).into_iter().next()?;
     string_literal(&first)
 }
 
-/// Chiavi di un argomento payload: object literal inline oppure variabile
-/// locale il cui inizializzatore è un object literal.
+/// Keys of a payload argument: an inline object literal, or a local variable
+/// whose initializer is an object literal.
 ///
-/// La seconda forma è quella che il codebase usa quando gli argomenti sono
-/// tipizzati (`const args: PresenceToggleArgs = { … }; invoke(cmd, args)`):
-/// senza questa risoluzione il test di contratto vedrebbe solo un identificatore
-/// e salterebbe la chiamata, cioè esattamente i casi più interessanti.
+/// The second shape is what the codebase uses when arguments are typed
+/// (`const args: PresenceToggleArgs = { … }; invoke(cmd, args)`): without this
+/// resolution the contract test would only see an identifier and skip the
+/// call — i.e. exactly the most interesting cases.
 fn payload_argument_keys(payload: &str, source: &str) -> Option<Vec<String>> {
     let payload = payload.trim();
     if payload.is_empty() {
@@ -479,8 +480,8 @@ fn payload_argument_keys(payload: &str, source: &str) -> Option<Vec<String>> {
         let (inner, _) = balanced(payload, 0, '{', '}')?;
         return object_keys(inner);
     }
-    // Identificatore semplice (niente member access, chiamate, template):
-    // si risolve nel file corrente.
+    // Plain identifier (no member access, calls, templates): resolved in the
+    // current file.
     let ident = payload.trim_end_matches(',').trim();
     if ident.is_empty()
         || !ident
@@ -492,14 +493,14 @@ fn payload_argument_keys(payload: &str, source: &str) -> Option<Vec<String>> {
     resolve_local_object_keys(source, ident)
 }
 
-/// Cerca `const <ident>` / `let <ident>` (con eventuale annotazione di tipo) il
-/// cui inizializzatore sia un object literal, e ne restituisce le chiavi.
+/// Finds `const <ident>` / `let <ident>` (with optional type annotation) whose
+/// initializer is an object literal, and returns its keys.
 fn resolve_local_object_keys(source: &str, ident: &str) -> Option<Vec<String>> {
     for keyword in ["const ", "let "] {
         let needle = format!("{keyword}{ident}");
         for (index, _) in source.match_indices(&needle) {
             let after = index + needle.len();
-            // Il nome deve finire qui: `const argsX` non è `const args`.
+            // The name must end here: `const argsX` is not `const args`.
             if source[after..]
                 .chars()
                 .next()
@@ -507,20 +508,20 @@ fn resolve_local_object_keys(source: &str, ident: &str) -> Option<Vec<String>> {
             {
                 continue;
             }
-            // Salta l'annotazione di tipo (`: SetPresenceDefaultModeArgs`) fino a `=`.
+            // Skip the type annotation (`: SetPresenceDefaultModeArgs`) up to `=`.
             let Some(offset) = source[after..].find('=') else {
                 continue;
             };
             if offset > 240 {
-                continue; // troppo lontano: non è l'inizializzatore di questa dichiarazione
+                continue; // too far: not this declaration's initializer
             }
             let equals_at = after + offset;
             if source[equals_at..].starts_with("==") {
-                continue; // confronto, non assegnamento
+                continue; // comparison, not assignment
             }
             let rest = source[equals_at + 1..].trim_start();
             if !rest.starts_with('{') {
-                continue; // ternario/espressione: payload non verificabile staticamente
+                continue; // ternary/expression: payload not statically verifiable
             }
             let (inner, _) = balanced(rest, 0, '{', '}')?;
             return object_keys(inner);
@@ -529,8 +530,8 @@ fn resolve_local_object_keys(source: &str, ident: &str) -> Option<Vec<String>> {
     None
 }
 
-/// Chiavi del secondo argomento di `invoke`. Assente (`{}` implicito) quando
-/// `invoke` ha un solo argomento.
+/// Keys of `invoke`'s second argument. Absent (implicit `{}`) when `invoke`
+/// takes a single argument.
 fn payload_keys(args: &str, source: &str) -> Option<Vec<String>> {
     let parts = split_top_level(args);
     let Some(payload) = parts.get(1) else {
@@ -539,19 +540,19 @@ fn payload_keys(args: &str, source: &str) -> Option<Vec<String>> {
     payload_argument_keys(payload, source)
 }
 
-/// Comandi il cui nome compare nel frontend come stringa letterale, anche
-/// quando il nome è scelto a runtime:
+/// Commands whose name appears in the frontend as a string literal, even when
+/// the name is picked at runtime:
 ///
 /// ```ts
 /// const command = selectedSource === 'luatools' ? 'trigger_luatools_download' : 'trigger_hubcap_download';
 /// await invoke(command, args);
 /// ```
 ///
-/// [`frontend_calls`] non può attribuire un payload a queste chiamate (il nome
-/// non è letterale nel punto di `invoke`), quindi qui si cerca il nome ovunque:
-/// è il criterio giusto per decidere se un comando è "mai usato", mentre le
-/// chiavi degli argomenti di questi comandi sono coperte dal test puntuale
-/// [`documented_command_contracts_have_the_expected_keys`].
+/// [`frontend_calls`] cannot attribute a payload to these calls (the name is
+/// not literal at the `invoke` site), so here the name is searched for
+/// everywhere: that is the right criterion to decide whether a command is
+/// "never used", while these commands' argument keys are covered by the point
+/// test [`documented_command_contracts_have_the_expected_keys`].
 fn referenced_command_names() -> BTreeSet<String> {
     let sources: Vec<String> = frontend_files().iter().map(|path| read(path)).collect();
     registered_commands()
@@ -566,7 +567,7 @@ fn referenced_command_names() -> BTreeSet<String> {
 }
 
 // ---------------------------------------------------------------------------
-// 1. Ogni comando registrato esiste davvero
+// 1. Every registered command really exists
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -578,7 +579,7 @@ fn every_registered_command_exists_in_the_commands_layer() {
         match signatures.get(&name) {
             None => missing.push(format!("commands::{module}::{name}")),
             Some(signature) if signature.module != module => wrong_module.push(format!(
-                "commands::{module}::{name} (definito in commands/{}.rs:{})",
+                "commands::{module}::{name} (defined in commands/{}.rs:{})",
                 signature.module, signature.line
             )),
             Some(_) => {}
@@ -586,14 +587,14 @@ fn every_registered_command_exists_in_the_commands_layer() {
     }
     assert!(
         missing.is_empty(),
-        "generate_handler! registra comandi che non esistono: {missing:?}. \
-         È la classe di bug del vecchio test inventario (nomi fantasma come \
-         `save_installed_lua_manifest_rows`): il frontend riceve \
-         \"command not found\" a runtime."
+        "generate_handler! registers commands that do not exist: {missing:?}. \
+         This is the bug class of the old inventory test (ghost names like \
+         `save_installed_lua_manifest_rows`): the frontend gets \
+         \"command not found\" at runtime."
     );
     assert!(
         wrong_module.is_empty(),
-        "generate_handler! punta al modulo sbagliato: {wrong_module:?}"
+        "generate_handler! points at the wrong module: {wrong_module:?}"
     );
 }
 
@@ -608,7 +609,7 @@ fn every_command_is_registered_exactly_once() {
     let duplicates: Vec<_> = counts.iter().filter(|(_, count)| **count > 1).collect();
     assert!(
         duplicates.is_empty(),
-        "comandi registrati più volte in generate_handler!: {duplicates:?}"
+        "commands registered more than once in generate_handler!: {duplicates:?}"
     );
     let unregistered: Vec<_> = signatures
         .keys()
@@ -616,13 +617,13 @@ fn every_command_is_registered_exactly_once() {
         .collect();
     assert!(
         unregistered.is_empty(),
-        "comandi con #[tauri::command] ma assenti da generate_handler! (il frontend non può \
-         chiamarli): {unregistered:?}"
+        "commands with #[tauri::command] but missing from generate_handler! (the frontend cannot \
+         call them): {unregistered:?}"
     );
 }
 
 // ---------------------------------------------------------------------------
-// 2. Ogni invoke del frontend chiama un comando registrato
+// 2. Every frontend invoke calls a registered command
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -638,13 +639,13 @@ fn every_frontend_command_name_is_registered() {
         .collect();
     assert!(
         unknown.is_empty(),
-        "il frontend chiama comandi inesistenti (Promise rigettata a runtime, nessun errore di \
-         compilazione): {unknown:?}"
+        "the frontend calls commands that do not exist (Promise rejected at runtime, no \
+         compile error): {unknown:?}"
     );
 }
 
 // ---------------------------------------------------------------------------
-// 3. Le chiavi degli argomenti coincidono con le firme Rust
+// 3. Argument keys match the Rust signatures
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -655,17 +656,17 @@ fn frontend_argument_keys_match_the_rust_wire_keys() {
 
     for call in frontend_calls() {
         let Some(keys) = call.keys.as_ref() else {
-            continue; // payload dinamico: coperto dai test puntuali sotto
+            continue; // dynamic payload: covered by the point tests below
         };
         let Some(signature) = signatures.get(&call.command) else {
-            continue; // già segnalato da every_frontend_command_name_is_registered
+            continue; // already reported by every_frontend_command_name_is_registered
         };
         let allowed: BTreeSet<&str> = signature.all_keys().into_iter().collect();
         let sent: BTreeSet<&str> = keys.iter().map(String::as_str).collect();
 
         for key in sent.difference(&allowed) {
             unknown_keys.push(format!(
-                "{}:{} → '{}' manda `{key}` ma la firma Rust accetta {:?} (commands/{}.rs:{})",
+                "{}:{} → '{}' sends `{key}` but the Rust signature accepts {:?} (commands/{}.rs:{})",
                 call.file,
                 call.line,
                 call.command,
@@ -677,7 +678,7 @@ fn frontend_argument_keys_match_the_rust_wire_keys() {
         for key in signature.required_keys() {
             if !sent.contains(key) {
                 missing_keys.push(format!(
-                    "{}:{} → '{}' non manda la chiave obbligatoria `{key}` (firma: commands/{}.rs:{})",
+                    "{}:{} → '{}' does not send the required key `{key}` (signature: commands/{}.rs:{})",
                     call.file, call.line, call.command, signature.module, signature.line,
                 ));
             }
@@ -686,19 +687,19 @@ fn frontend_argument_keys_match_the_rust_wire_keys() {
 
     assert!(
         unknown_keys.is_empty(),
-        "\nChiavi IPC non riconosciute dal backend (Tauri 2 accetta solo la chiave lowerCamelCase \
-         derivata dal parametro Rust, senza fallback snake_case):\n  {}\n",
+        "\nIPC keys unrecognized by the backend (Tauri 2 only accepts the lowerCamelCase \
+         key derived from the Rust parameter, with no snake_case fallback):\n  {}\n",
         unknown_keys.join("\n  ")
     );
     assert!(
         missing_keys.is_empty(),
-        "\nChiavi obbligatorie mancanti nel payload:\n  {}\n",
+        "\nRequired keys missing from the payload:\n  {}\n",
         missing_keys.join("\n  ")
     );
 }
 
 // ---------------------------------------------------------------------------
-// 4. Guardie sulla forma delle chiavi wire
+// 4. Guards on the wire key shape
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -711,7 +712,7 @@ fn no_wire_key_is_an_unseparated_compound_word() {
                 let looks_compound = !key.contains(char::is_uppercase);
                 if looks_compound && !COMMON_SINGLE_WORDS.contains(&key) {
                     Some(format!(
-                        "`{}` (parametro `{}` di {}, commands/{}.rs:{})",
+                        "`{}` (param `{}` of {}, commands/{}.rs:{})",
                         key, param.rust_name, signature.name, signature.module, signature.line
                     ))
                 } else {
@@ -722,15 +723,15 @@ fn no_wire_key_is_an_unseparated_compound_word() {
         .collect();
     assert!(
         suspects.is_empty(),
-        "\nChiavi wire tutte-minuscole fuori dal vocabolario di parole singole note: {suspects:?}\n\
-         Se il parametro è davvero una parola singola, aggiungila a COMMON_SINGLE_WORDS in \
-         src/tests/ipc_contract_tests.rs. Se è una parola composta (es. `showonline`), rinomina \
-         il parametro Rust in snake_case (`show_online` → chiave `showOnline`) e allinea il \
-         frontend: Tauri non converte né sana il casing da solo.\n"
+        "\nAll-lowercase wire keys outside the known single-word vocabulary: {suspects:?}\n\
+         If the parameter really is a single word, add it to COMMON_SINGLE_WORDS in \
+         src/tests/ipc_contract_tests.rs. If it is a compound word (e.g. `showonline`), rename \
+         the Rust parameter to snake_case (`show_online` → key `showOnline`) and align the \
+         frontend: Tauri converts and heals no casing by itself.\n"
     );
 }
 
-/// Vocabolario delle chiavi wire di una sola parola accettate dal codice.
+/// Vocabulary of single-word wire keys accepted by the code.
 const COMMON_SINGLE_WORDS: &[&str] = &[
     "base", // expected settings snapshot for conflict-aware three-way patch
     "code",
@@ -774,15 +775,15 @@ fn no_wire_key_keeps_snake_case() {
         .collect();
     assert!(
         offenders.is_empty(),
-        "chiavi wire con underscore: il frontend dovrebbe mandare camelCase, non snake_case: {offenders:?}"
+        "wire keys with underscores: the frontend should send camelCase, not snake_case: {offenders:?}"
     );
 }
 
 #[test]
 fn test_param_names_stay_inside_the_model() {
-    // `wire_key()` replica heck solo per parametri snake_case ASCII: questa
-    // guardia fallisce se qualcuno introduce maiuscole o cifre iniziali, casi
-    // in cui il modello va esteso invece di fidarsi della replica.
+    // `wire_key()` replicates heck only for ASCII snake_case params: this guard
+    // fails when someone introduces leading capitals or digits, cases where the
+    // model must be extended instead of trusting the replica.
     let offenders: Vec<String> = command_signatures()
         .values()
         .flat_map(|signature| {
@@ -806,13 +807,13 @@ fn test_param_names_stay_inside_the_model() {
         .collect();
     assert!(
         offenders.is_empty(),
-        "nomi di parametro fuori dal modello snake_case ASCII: estendere wire_key() prima di \
-         procedere, altrimenti il contratto verificato qui non è quello che genera Tauri: {offenders:?}"
+        "parameter names outside the ASCII snake_case model: extend wire_key() before \
+         proceeding, otherwise the contract verified here is not the one Tauri generates: {offenders:?}"
     );
 }
 
 // ---------------------------------------------------------------------------
-// 5. Il percorso Steam non è più un parametro del client
+// 5. The Steam path is no longer a client parameter
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -823,7 +824,7 @@ fn no_command_takes_a_steam_path_from_the_client() {
             signature.params.iter().filter_map(move |param| {
                 if param.rust_name.contains("steam_path") {
                     Some(format!(
-                        "{} (commands/{}.rs:{}) parametro `{}`",
+                        "{} (commands/{}.rs:{}) param `{}`",
                         signature.name, signature.module, signature.line, param.rust_name
                     ))
                 } else {
@@ -834,28 +835,28 @@ fn no_command_takes_a_steam_path_from_the_client() {
         .collect();
     assert!(
         offenders.is_empty(),
-        "\nIl percorso Steam deve essere risolto dal backend con \
-         commands::command_steam_path / commands::configured_steam_path, non passato dal client \
-         (una lettura impostazioni + decifratura DPAPI per chiamata, e un percorso che può \
-         divergere da quello configurato): {offenders:?}\n\
-         Eccezione ammessa: check_steam_path, che valida un percorso CANDIDATO prima del save.\n"
+        "\nThe Steam path must be resolved by the backend with \
+         commands::command_steam_path / commands::configured_steam_path, not passed by the client \
+         (one settings read + DPAPI decryption per call, and a path that may \
+         diverge from the configured one): {offenders:?}\n\
+         Allowed exception: check_steam_path, which validates a CANDIDATE path before save.\n"
     );
 }
 
 // ---------------------------------------------------------------------------
-// 6. Regressione puntuale sui casi già accaduti
+// 6. Point regression on cases that already happened
 // ---------------------------------------------------------------------------
 
 #[test]
 fn documented_command_contracts_have_the_expected_keys() {
     let signatures = command_signatures();
-    // (comando, chiavi wire attese nell'ordine della firma)
+    // (command, expected wire keys in signature order)
     let contracts: &[(&str, &[&str])] = &[
-        // Il caso #1: parametro Rust `show_online` → chiave `showOnline`.
-        // Il VALORE in aethercore.toml resta "showonline" (token di dominio
-        // condiviso con AetherDLL): i due livelli non vanno allineati.
+        // Case #1: Rust param `show_online` → key `showOnline`.
+        // The VALUE in aethercore.toml stays "showonline" (domain token shared
+        // with AetherDLL): the two levels must not be aligned.
         ("set_presence_default_mode", &["showOnline"]),
-        // steam_path rimosso: restano solo gli argomenti che il client possiede.
+        // steam_path removed: only args the client owns remain.
         ("get_installed_lua_manifest_rows", &["appId"]),
         ("get_lua_game_update_state", &["appId"]),
         ("set_lua_game_updates_enabled", &["appId", "enabled"]),
@@ -866,8 +867,8 @@ fn documented_command_contracts_have_the_expected_keys() {
         ("prepare_specific_version_download", &["appId", "apiKey"]),
         ("trigger_ryuu_download", &["appId", "apiKey"]),
         ("prepare_ryuu_specific_version_download", &["appId", "apiKey"]),
-        // `gameName` è opzionale (Option<String>): il client lo passa quando
-        // conosce il nome (etichetta la cronologia download lato lua.tools).
+        // `gameName` is optional (Option<String>): the client sends it when it
+        // knows the name (labels the download history on the lua.tools side).
         ("trigger_luatools_download", &["appId", "gameName"]),
         ("prepare_luatools_specific_version_download", &["appId", "gameName"]),
         ("install_aether_dll", &["origin"]),
@@ -880,7 +881,7 @@ fn documented_command_contracts_have_the_expected_keys() {
         ("is_steam_blocked", &[]),
         ("block_steam_updates", &[]),
         ("unblock_steam_updates", &[]),
-        // Contratti stabili citati in docs/shared_contracts.md.
+        // Stable contracts quoted in docs/shared_contracts.md.
         ("save_settings", &["settings", "base"]),
         ("get_recent_log_lines", &["tailLines", "source"]),
         ("enable_online", &["appId", "request"]),
@@ -890,13 +891,13 @@ fn documented_command_contracts_have_the_expected_keys() {
 
     for (command, expected) in contracts {
         let signature = signatures.get(*command).unwrap_or_else(|| {
-            panic!("il comando documentato `{command}` non esiste più: aggiornare il contratto")
+            panic!("documented command `{command}` no longer exists: update the contract")
         });
         assert_eq!(
             signature.all_keys(),
             expected.to_vec(),
-            "contratto IPC cambiato per `{command}` (commands/{}.rs:{}): aggiornare il frontend E \
-             docs/shared_contracts.md, poi questa lista",
+            "IPC contract changed for `{command}` (commands/{}.rs:{}): update the frontend AND \
+             docs/shared_contracts.md, then this list",
             signature.module,
             signature.line
         );
@@ -904,55 +905,55 @@ fn documented_command_contracts_have_the_expected_keys() {
 }
 
 // ---------------------------------------------------------------------------
-// 7. Comandi mai chiamati dal frontend
+// 7. Commands never called by the frontend
 // ---------------------------------------------------------------------------
 
-/// Comandi registrati che il frontend non chiama. Sono ammessi qui solo se
-/// inutilizzati **di proposito** (superficie per tooling esterno, flusso non
-/// ancora collegato, comando sostituito ma mantenuto per compatibilità).
+/// Registered commands the frontend never calls. Allowed here only when
+/// unused **on purpose** (surface for external tooling, not-yet-wired flow,
+/// replaced command kept for compatibility).
 ///
-/// Quando un comando nuovo compare in questa lista il test fallisce: è il
-/// segnale che o manca il collegamento nella UI o il comando va rimosso.
+/// When a new command shows up in this list the test fails: it signals either
+/// a missing UI wiring or a command to remove.
 const DOCUMENTED_UNUSED_COMMANDS: &[(&str, &str)] = &[
     (
         "generate_hubcap_workshop_manifest",
-        "la corsia Workshop del sincronizzatore genera i manifest da sola; nessuna UI manuale",
+        "the synchronizer's Workshop lane generates manifests on its own; no manual UI",
     ),
     (
         "get_custom_css_path",
-        "il tema si legge/scrive con read_custom_css + write_custom_css; il percorso non serve alla UI",
+        "the theme is read/written with read_custom_css + write_custom_css; the UI never needs the path",
     ),
     (
         "get_installed_dll_version",
-        "sostituito da check_aether_dll_update, che restituisce già installed_version",
+        "replaced by check_aether_dll_update, which already returns installed_version",
     ),
     (
         "get_personal_wallpaper_path",
-        "la UI usa pick_wallpaper_file + usePersonalWallpaper (asset convertito), non il percorso grezzo",
+        "the UI uses pick_wallpaper_file + usePersonalWallpaper (converted asset), not the raw path",
     ),
     (
         "is_uco2_active",
-        "sostituito da inspect_foreign_online (vedi il commento in LibraryGameActionsModal.tsx)",
+        "replaced by inspect_foreign_online (see the comment in LibraryGameActionsModal.tsx)",
     ),
     (
         "list_lua_history",
-        "storico dei backup Lua: nessuna UI collegata",
+        "Lua backup history: no UI wired to it",
     ),
     (
         "open_app_folder",
-        "apre la cartella di installazione in Explorer: nessun pulsante la invoca",
+        "opens the install folder in Explorer: no button invokes it",
     ),
     (
         "open_windows_security",
-        "apre la pagina Virus & threat protection: nessun pulsante la invoca",
+        "opens the Virus & threat protection page: no button invokes it",
     ),
     (
         "pick_local_folder",
-        "la UI usa pick_local_files e pick_steam_folder",
+        "the UI uses pick_local_files and pick_steam_folder",
     ),
     (
         "set_session_log_level",
-        "il livello di log viaggia dentro save_settings",
+        "the log level travels inside save_settings",
     ),
 ];
 
@@ -975,14 +976,14 @@ fn unused_commands_are_only_the_documented_ones() {
 
     assert!(
         unexpected.is_empty(),
-        "\nComandi registrati ma mai chiamati dal frontend: {unexpected:?}\n\
-         Collegarli alla UI oppure rimuoverli; se restano inutilizzati di proposito, \
-         elencarli in DOCUMENTED_UNUSED_COMMANDS con la motivazione (questa lista è \
-         l'inventario vivo della superficie IPC morta: 10 comandi su 119).\n"
+        "\nCommands registered but never called by the frontend: {unexpected:?}\n\
+         Wire them to the UI or remove them; when they stay unused on purpose, \
+         list them in DOCUMENTED_UNUSED_COMMANDS with the reason (this list is \
+         the live inventory of the dead IPC surface: 10 commands out of 119).\n"
     );
     assert!(
         stale.is_empty(),
-        "DOCUMENTED_UNUSED_COMMANDS elenca comandi che ora il frontend chiama: rimuoverli dalla \
-         lista: {stale:?}"
+        "DOCUMENTED_UNUSED_COMMANDS lists commands the frontend now calls: remove them from \
+         the list: {stale:?}"
     );
 }

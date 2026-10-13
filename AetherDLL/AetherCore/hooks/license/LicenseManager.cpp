@@ -215,11 +215,11 @@ namespace ac::hooks::LicenseManager {
         // usable yet — so a dedicated thread re-attempts the top-up on a
         // throttled cadence until the seed completes or the budget is spent.
         //
-        // Il thread gira nell'infrastruttura workers::StartWorker (I-A): il
-        // registry centrale fa stop+join durante workers::Shutdown() con log
-        // espliciti; qui resta solo il guard "già avviato". Il corpo chiama il
-        // solito DoStartupInjection() (idempotente, possiede
-        // s_packageMutationMutex) e osserva g_state.package0Seeded.
+        // The thread runs in the workers::StartWorker infrastructure (I-A): the
+        // central registry does stop+join during workers::Shutdown() with
+        // explicit logs; only the "already started" guard remains here. The body
+        // calls the usual DoStartupInjection() (idempotent, owns
+        // s_packageMutationMutex) and watches g_state.package0Seeded.
         // -------------------------------------------------------------------
         std::atomic<bool> s_retryStarted{false};
 
@@ -297,10 +297,10 @@ namespace ac::hooks::LicenseManager {
         }
 
         void StopStartupRetry() {
-            // I-A: il join avviene dentro workers::Shutdown() (chiamato PRIMA
-            // di LicenseManager::Shutdown in dllmain), quindi qui non resta
-            // che tracciare la richiesta. MarkRetryIdle consente un nuovo
-            // retry con budget pieno se Init viene rieseguito.
+            // I-A: the join happens inside workers::Shutdown() (called BEFORE
+            // LicenseManager::Shutdown in dllmain), so only tracking the request
+            // remains here. MarkRetryIdle allows a full-budget retry when Init
+            // runs again.
             MarkRetryIdle();
             AC_LOG_DEBUG(kModule, "Startup retry stop requested; join handled by workers::Shutdown.");
         }

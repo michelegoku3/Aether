@@ -1,83 +1,78 @@
-# Compilazione veloce di AetherDLL
+# Fast AetherDLL builds
 
-Guida al workflow di sviluppo con agenti AI nel browser: come ridurre i tempi di
-compilazione da ~576 step ("Ricompila tutto") a pochi secondi.
+Guide to the AI-agent-in-browser dev workflow: cutting build times from ~576 steps ("Rebuild All")
+to a few seconds.
 
-## Il problema
+## The problem
 
-1. I file scaricati da GitHub hanno come timestamp l'ora del commit; il
-   copia-incolla di Windows la conserva. Ninja confronta i timestamp: se il
-   sorgente sembra "più vecchio" degli `.obj` già compilati, **Compila tutto
-   non ricompila nulla** anche se il contenuto è diverso.
-2. Per questo si era costretti a usare **Ricompila tutto**, che però pulisce e
-   ricompila anche protobuf/abseil/lua/minhook (~500 step su 576).
+1. Files downloaded from GitHub carry the commit time as timestamp; Windows
+   copy-paste preserves it. Ninja compares timestamps: when a source looks
+   "older" than the already-compiled `.obj`, **Build All recompiles nothing**
+   even though the content differs.
+2. That forced **Rebuild All**, which also wipes and recompiles
+   protobuf/abseil/lua/minhook (~500 of 576 steps).
 
-## Il nuovo workflow (3 passi)
+## The new workflow (3 steps)
 
-1. **Sostituisci i file** scaricati dentro `AetherDLL\` con il copia-incolla
-   **senza cancellare la cartella** (la `out\` con la cache di build deve
-   sopravvivere).
-2. **Esegui `Tools\sync_aetherdll.cmd`** (doppio click). Confronta gli hash dei
-   contenuti e aggiorna il timestamp **solo dei file davvero cambiati**.
-3. In Visual Studio: **Genera → Compila tutto** (MAI "Ricompila tutto").
-   Ninja ricompila solo i file toccati + link: in genere **10-60 secondi**.
+1. **Replace** the downloaded files inside `AetherDLL\` via copy-paste
+   **without deleting the folder** (the `out\` build cache must survive).
+2. **Run `Tools\sync_aetherdll.cmd`** (double click). It compares content hashes
+   and refreshes the timestamp **only of really changed files**.
+3. In Visual Studio: **Build → Build All** (NEVER "Rebuild All"). Ninja
+   recompiles only touched files + link: typically **10-60 seconds**.
 
-## Protobuf pre-generato (default ON)
+## Pre-generated protobuf (default ON)
 
-`proto/generated/steam_messages.pb.{h,cc}` sono **generati una volta con
-protoc 25.3 e committati nel repo**. Così la build non compila più
-`protoc` + `libprotoc` (~120 step) né il `libprotobuf` completo (~70 step):
-AetherCore linka solo `libprotobuf-lite`, e con `EXCLUDE_FROM_ALL` ninja
-costruisce soltanto le librerie realmente linkate.
+`proto/generated/steam_messages.pb.{h,cc}` are **generated once with protoc 25.3
+and committed in the repo**. So the build no longer compiles `protoc` +
+`libprotoc` (~120 steps) nor full `libprotobuf` (~70 steps): AetherCore links
+only `libprotobuf-lite`, and with `EXCLUDE_FROM_ALL` ninja builds just the
+libraries actually linked.
 
-- **Se modifichi `proto/steam_messages.proto`**: esegui
-  `Tools\regen_proto.cmd` per rigenerare i file in `proto/generated/` e
-  committali insieme al `.proto`. (Richiede protoc 25.3; se non c'è, lo script
-  spiega come ottenerlo.)
-- **Escape hatch**: configura con `-DAETHER_PROTO_PREGEN=OFF` per tornare al
-  comportamento vecchio (protoc compilato e rigenerazione automatica a ogni
-  modifica del `.proto`).
+- **When you edit `proto/steam_messages.proto`**: run `Tools\regen_proto.cmd` to
+  regenerate the files in `proto/generated/` and commit them together with the
+  `.proto`. (Requires protoc 25.3; when missing, the script explains how to get it.)
+- **Escape hatch**: configure with `-DAETHER_PROTO_PREGEN=OFF` to go back to the
+  old behavior (compiled protoc and automatic regen on every `.proto` change).
 
-Verificato: i file committati compilano e serializzano correttamente contro il
-runtime protobuf-lite v25.3 (round-trip test eseguito).
+Verified: the committed files compile and serialize correctly against the
+protobuf-lite v25.3 runtime (round-trip test run).
 
-## ccache / sccache (opzionale, consigliato)
+## ccache / sccache (optional, recommended)
 
-Un *compiler launcher* mette in cache ogni oggetto compilato: anche un
-"Ricompila tutto" diventa quasi istantaneo sulle parti invariate (è la tecnica
-standard usata in CI e nei team C++).
+A *compiler launcher* caches every compiled object: even a "Rebuild All" becomes
+near-instant on unchanged parts (the standard technique in CI and C++ teams).
 
-1. Scarica ccache per Windows: <https://github.com/ccache/ccache/releases>
-   (zip `windows-x86_64`), estrai e metti la cartella nel `PATH`.
-2. Imposta una volta le variabili d'ambiente (richieste con MSVC + PCH):
+1. Download ccache for Windows: <https://github.com/ccache/ccache/releases>
+   (`windows-x86_64` zip), extract and put the folder in `PATH`.
+2. Set once the environment variables (required with MSVC + PCH):
    ```
    setx CCACHE_SLOPPINESS "pch_defines,time_macros"
    setx CCACHE_DIR "%LOCALAPPDATA%\ccache"
    ```
-3. Riavvia Visual Studio: CMake rileva ccache automaticamente
-   (`[AetherDLL] Compiler cache enabled: ...` nell'output di configure).
-   Per disattivarlo: variabile cache `AETHER_COMPILER_CACHE=OFF`.
+3. Restart Visual Studio: CMake detects ccache automatically
+   (`[AetherDLL] Compiler cache enabled: ...` in the configure output).
+   To disable it: `AETHER_COMPILER_CACHE=OFF` cache variable.
 
-## Numeri attesi
+## Expected numbers
 
-| Scenario | Step di compilazione |
+| Scenario | Build steps |
 |---|---|
-| Prima (Ricompila tutto) | 576 |
-| Full rebuild senza protoc/libprotoc/libprotobuf | ~330-390 |
-| Full rebuild **con ccache** (cache calda) | ~330-390 ma quasi tutti da cache |
-| **Workflow normale: sync + Compila tutto** | **solo i file cambiati + link** |
+| Before (Rebuild All) | 576 |
+| Full rebuild without protoc/libprotoc/libprotobuf | ~330-390 |
+| Full rebuild **with ccache** (warm cache) | ~330-390 but almost all cached |
+| **Normal workflow: sync + Build All** | **only changed files + link** |
 
-## Nota per AetherDesk (Tauri/Rust)
+## Note for AetherDesk (Tauri/Rust)
 
-- La UI: usa `npm run build:fast` (solo `vite build`) durante lo sviluppo;
-  `tsc` (typecheck completo, sempre più lento al crescere del codice) resta in
-  `npm run build` per il packaging e in `npm run typecheck` quando vuoi
-  verificarlo.
-- Il backend Rust è **un solo crate**: ogni modifica ricompila tutto il crate e
-  rilinka ~546 dipendenze. Per le build di prova locali valuta
-  `[profile.release] incremental = true` in `Cargo.toml` (binari un po' meno
-  ottimizzati, ricompilazioni molto più rapide; toglilo per i rilasci).
-- Tieni `src-tauri\target\` e `node_modules\` **fuori** dalle cartelle che
-  sostituisci, altrimenti ogni sostituzione riparte da zero (10-20 minuti).
-- Aggiungi un'esclusione di Windows Defender per la cartella del progetto e per
-  `target\`: su Windows è uno dei rallentamenti più comuni.
+- The UI: use `npm run build:fast` (just `vite build`) during development;
+  `tsc` (full typecheck, ever slower as code grows) stays in `npm run build`
+  for packaging and in `npm run typecheck` whenever you want to verify it.
+- The Rust backend is **a single crate**: every change recompiles the whole crate
+  and relinks ~546 dependencies. For local trial builds consider
+  `[profile.release] incremental = true` in `Cargo.toml` (slightly less optimized
+  binaries, much faster rebuilds; remove it for releases).
+- Keep `src-tauri\target\` and `node_modules\` **out** of the folders you
+  replace, otherwise every replacement restarts from zero (10-20 minutes).
+- Add a Windows Defender exclusion for the project folder and for `target\`:
+  on Windows it is one of the most common slowdowns.

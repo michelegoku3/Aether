@@ -1,12 +1,12 @@
 #pragma once
 
 // ---------------------------------------------------------------------------
-// Parser puro del TOML di IPC spec.
+// Pure parser for the IPC spec TOML.
 //
-// Estratto da IpcSpec.cpp::ParseToml: la stessa logica di parsing, ma senza
-// toccare g_state né il filesystem, così la suite "ipcspec" di quickwin_tests
-// può verificarla in isolamento. IpcSpec.cpp resta l'unico consumatore che
-// pubblica il risultato in g_state.ipcSpec.
+// Extracted from IpcSpec.cpp::ParseToml: the same parsing logic, but without
+// touching g_state or the filesystem, so the "ipcspec" suite in quickwin_tests
+// can verify it in isolation. IpcSpec.cpp stays the only consumer publishing
+// the result into g_state.ipcSpec.
 // ---------------------------------------------------------------------------
 
 #include <cstdint>
@@ -17,10 +17,10 @@
 
 namespace ac::ipcspec {
 
-// Parsa un documento TOML di IPC spec nelle mappe di output. Ritorna false
-// se il documento non è TOML valido o non produce nemmeno un metodo valido
-// (stessa semantica di prima: un file vuoto/non parsabile NON deve
-// sovrascrivere lo stato esistente — il chiamante pubblica solo su true).
+// Parses an IPC spec TOML document into the output maps. Returns false when
+// the document is not valid TOML or yields not even one valid method (same
+// semantics as before: an empty/unparsable file must NOT overwrite the
+// existing state — the caller publishes only on true).
 bool ParseSpecToml(const std::string& body,
                    std::unordered_map<std::string, std::uint8_t>& outInterfaceIds,
                    std::unordered_map<std::string, MethodSpec>& outMethods);

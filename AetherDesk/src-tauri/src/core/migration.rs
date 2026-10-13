@@ -1,8 +1,8 @@
-// One-time migration da layout vecchi a quello unificato
+// One-time migration from old layouts to the unified one
 // `%LOCALAPPDATA%\AetherDesk\AetherData` (fix v3 - 09/08/2026).
 //
-// Principi: DRY, alta coesione, basso accoppiamento, singola responsabilità.
-// Ogni migrazione è idempotente, best-effort e logga senza bloccare l'avvio.
+// Principles: DRY, high cohesion, low coupling, single responsibility.
+// Every migration is idempotent, best-effort and logs without blocking startup.
 
 use crate::core::backup::GameBackup;
 use crate::core::paths::LocalAppPaths;
@@ -258,12 +258,12 @@ pub fn ensure_appearance_dirs() {
     }
 }
 
-// FIX antivirus: torna al comportamento stock (fresh install = false).
-// Non forza più il reset ad ogni avvio — il bug del popup ad ogni "Apply crack"
-// era dovuto al reset incondizionato. Ora il flag resta come da settings.json.
+// FIX antivirus: back to stock behavior (fresh install = false).
+// No longer forces the reset on every boot — the popup-on-every-"Apply crack"
+// bug came from the unconditional reset. The flag now stays as settings.json says.
 pub fn reset_antivirus_exclusion_flag(_app: &tauri::AppHandle) {
-    // Intentionally no-op: fresh install ha default false (mostra popup una volta),
-    // update mantiene il valore precedente. Rimuove il bug del popup ricorrente.
+    // Intentionally no-op: fresh installs default to false (popup shows once),
+    // updates keep the previous value. Removes the recurring-popup bug.
 }
 
 /// One-time policy migration: latest-version downloads no longer enable
@@ -315,10 +315,10 @@ pub fn run_startup_migrations(app: &tauri::AppHandle) {
     if let Err(e) = migrate_programfiles_to_local_install() { eprintln!("[AetherDesk] PF->Local failed: {e}"); }
     remove_legacy_install_folders();
     reset_antivirus_exclusion_flag(app);
-    // Pulizia una-tantum: la release desk-1.0.1 (commit d4ccbb1) scriveva un
-    // sentinel `.v3_antivirus_reset_done` in AetherData per forzare il reset del
-    // flag antivirus. Ora reset_antivirus_exclusion_flag è un no-op, ma il file
-    // resta su disco per chi aveva già installato quella build: lo rimuoviamo.
+    // One-time cleanup: the desk-1.0.1 release (commit d4ccbb1) wrote a
+    // `.v3_antivirus_reset_done` sentinel into AetherData to force the reset of
+    // the antivirus flag. Now reset_antivirus_exclusion_flag is a no-op, but the
+    // file stays on disk for anyone who installed that build: remove it.
     let _ = fs::remove_file(LocalAppPaths::data_root().join(".v3_antivirus_reset_done"));
     let config_dir = LocalAppPaths::config_dir();
     let legacy_config_dir = LocalAppPaths::legacy_app_config_dir(app);

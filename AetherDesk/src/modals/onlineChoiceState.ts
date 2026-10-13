@@ -1,9 +1,9 @@
 import type { AppPresenceMode, OnlineOptionKey } from '../types/online';
 
-// I tipi di dominio vivono in `types/online.ts` insieme agli altri contratti
-// IPC (stessa regola applicata a `OnlineStatus`): questo modulo tiene solo la
-// logica pura di risoluzione/gating. Riesportati per non rompere gli import
-// esistenti (`OnlineChoiceModal` li prende da qui).
+// Domain types live in `types/online.ts` with the other IPC contracts (same
+// rule as `OnlineStatus`): this module keeps only the pure
+// resolution/gating logic. Re-exported to keep existing imports working
+// (`OnlineChoiceModal` takes them from here).
 export type { AppPresenceMode, OnlineOptionKey } from '../types/online';
 
 export interface OnlineChoiceContext {
@@ -20,8 +20,8 @@ export interface OnlineOptionState {
   tooltip: string;
 }
 
-/** Modalità effettiva del popup. Un spoof 480 sul disco (OFME o UCO2)
- *  vince su default_mode=showonline: quel rewrite romperebbe gli inviti. */
+/** Effective popup mode. An on-disk 480 spoof (OFME or UCO2) wins over
+ *  default_mode=showonline: that rewrite would break invites. */
 export const resolveEffectivePresenceMode = (
   aetherOnline: boolean,
   showOnlineListed: boolean,
@@ -37,9 +37,9 @@ export const resolveEffectivePresenceMode = (
 };
 
 /**
- * Gating del popup ONLINE. Puro: UCO2 e Online Aether solo con None;
- * OFME sul disco blocca entrambi e Show Online; le due pipeline Aether
- * (Online Aether / UCO2) restano mutuamente esclusive.
+ * ONLINE popup gating. Pure: UCO2 and Online Aether only with None; on-disk
+ * OFME blocks both plus Show Online; the two Aether pipelines (Online Aether
+ * / UCO2) stay mutually exclusive.
  */
 export const resolveOptionState = (
   key: OnlineOptionKey,

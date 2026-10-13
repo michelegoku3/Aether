@@ -1,20 +1,20 @@
 #pragma once
 
 // ============================================================================
-// PlaytimeMirror — backup del tempo di gioco per account.
+// PlaytimeMirror — per-account playtime backup.
 //
-// Fonte: userdata\<account>\config\localconfig.vdf (sezione
-// Software/Valve/Steam/"Apps", valori in MINUTI: Playtime, Playtime2wks,
-// PlaytimeDisconnected, LastPlayed + autocloud {lastlaunch,lastexit}).
-// Dati client-side per i giochi gestiti: stessa fragilità degli achievement.
+// Source: userdata\<account>\config\localconfig.vdf (Software/Valve/Steam/"Apps"
+// section, MINUTE values: Playtime, Playtime2wks, PlaytimeDisconnected,
+// LastPlayed + autocloud {lastlaunch,lastexit}).
+// Client-side data for managed games: same fragility as achievements.
 //
-// Output: <AetherData>\backup\playtime\UserPlaytime_<account>.json con
-// merge MONOTONO (per ogni campo vince il massimo storico).
+// Output: <AetherData>\backup\playtime\UserPlaytime_<account>.json with
+// MONOTONE merge (per field, the historic max wins).
 // ============================================================================
 namespace ac::backup::playtime {
 
-// Rilegge il localconfig di OGNI cartella userdata\* trovata e aggiorna i
-// rispettivi snapshot. Best-effort: errori solo loggati.
+// Re-reads the localconfig of EVERY userdata\* folder found and refreshes the
+// respective snapshots. Best-effort: errors only logged.
 void RefreshAllAccounts();
 
 }  // namespace ac::backup::playtime

@@ -24,6 +24,7 @@ interface SettingsAetherSectionProps {
   steamCheck: SteamCheckStatus;
   onBrowseSteamFolder: () => Promise<void>;
   onDetectSteamPath: () => Promise<void>;
+  persistDevtools: (enabled: boolean) => Promise<void>;
   showStatus: (message: string, kind: 'success' | 'error') => void;
 }
 
@@ -47,6 +48,7 @@ export const SettingsAetherSection: React.FC<SettingsAetherSectionProps> = ({
   steamCheck,
   onBrowseSteamFolder,
   onDetectSteamPath,
+  persistDevtools,
   showStatus,
 }) => {
   return (
@@ -66,9 +68,11 @@ export const SettingsAetherSection: React.FC<SettingsAetherSectionProps> = ({
               setEnableWebviewDevtools(next);
               if (next) {
                 try {
+                  // Persist first: the backend gate reads the saved setting.
+                  await persistDevtools(true);
                   await invoke('open_webview_devtools');
                 } catch (err) {
-                  console.warn('Unable to open WebView devtools:', err);
+                  showStatus(`Unable to open WebView devtools: ${toErrorMessage(err)}`, 'error');
                 }
               }
             }}
@@ -160,9 +164,9 @@ export const SettingsAetherSection: React.FC<SettingsAetherSectionProps> = ({
               const previous = !next;
               setPresenceDefaultShowOnline(next);
               try {
-                // Chiave IPC `showOnline` (Rust `show_online` → lowerCamelCase),
-                // tipizzata in `types/online.ts`. NON è il valore TOML, che
-                // resta "showonline": vedi docs/shared_contracts.md §7.
+                // IPC key `showOnline` (Rust `show_online` → lowerCamelCase),
+                // typed in `types/online.ts`. NOT the TOML value, which
+                // stays "showonline": see docs/shared_contracts.md §7.
                 const args: SetPresenceDefaultModeArgs = { showOnline: next };
                 await invoke<string>('set_presence_default_mode', args);
               } catch (err: unknown) {
@@ -277,7 +281,7 @@ export const SettingsAetherSection: React.FC<SettingsAetherSectionProps> = ({
                 Object.keys(localStorage)
                   .filter((key) => key.startsWith('aether_cover_') || key.startsWith('aether_hero_'))
                   .forEach((key) => localStorage.removeItem(key));
-              } catch { /* localStorage non disponibile: la parte backend è già andata a buon fine */ }
+              } catch { /* localStorage unavailable: the backend part already succeeded */ }
               showStatus(result, 'success');
             } catch (err: unknown) {
               showStatus(`Failed to clear caches: ${toErrorMessage(err)}`, 'error');

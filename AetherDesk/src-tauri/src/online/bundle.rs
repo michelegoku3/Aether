@@ -1,19 +1,19 @@
-//! Locazione e validazione del bundle UCOnline2.
+//! UCOnline2 bundle location and validation.
 //!
-//! Il bundle vive in `ExternalTools/UCOnline2/` (vendored accanto a Steamless)
-//! con il layout della release ufficiale:
+//! The bundle lives in `ExternalTools/UCOnline2/` (vendored next to Steamless)
+//! with the official release layout:
 //!
 //! ```text
 //! UCOnline2/
-//! ├── VERSION              ← tag della release (es. "v1.19.8")
+//! ├── VERSION              ← release tag (e.g. "v1.19.8")
 //! ├── x86/steam_api.dll
 //! ├── x64/steam_api64.dll
-//! └── plugins/*.dll        ← include overlay_proxy.dll (NON è un plugin ABI)
+//! └── plugins/*.dll        ← includes overlay_proxy.dll (NOT an ABI plugin)
 //! ```
 //!
-//! Modulo PURO (nessuna dipendenza Tauri): la locazione con `AppHandle`
-//! (via `external_tools::bundle::ToolBundleLocator`) è delegata al layer
-//! dei comandi, che usa `is_valid_dir` come validatore.
+//! PURE module (no Tauri dependency): location via `AppHandle`
+//! (through `external_tools::bundle::ToolBundleLocator`) belongs to the
+//! command layer, which uses `is_valid_dir` as the validator.
 
 use crate::online::types::GameArch;
 use std::path::{Path, PathBuf};
@@ -46,7 +46,7 @@ impl Uco2Bundle {
         Ok(Self { dir })
     }
 
-    /// True quando la directory contiene un bundle UCOnline2 utilizzabile.
+    /// True when the directory holds a usable UCOnline2 bundle.
     pub fn is_valid_dir(dir: &Path) -> bool {
         dir.join(X64_SUBDIR).join(STEAM_API64_DLL).is_file()
             && dir.join(X86_SUBDIR).join(STEAM_API_DLL).is_file()
@@ -65,7 +65,7 @@ impl Uco2Bundle {
         }
     }
 
-    /// Path della DLL Steamworks da installare per l'architettura data.
+    /// Steamworks DLL path to install for the given architecture.
     pub fn steam_api_dll(&self, arch: GameArch) -> PathBuf {
         let subdir = match arch {
             GameArch::X64 => X64_SUBDIR,
@@ -74,11 +74,11 @@ impl Uco2Bundle {
         self.dir.join(subdir).join(arch.steam_api_file_name())
     }
 
-    /// Path di un plugin per nome (case-insensitive), o `None` se assente.
+    /// Plugin path by name (case-insensitive), or `None` when absent.
     ///
-    /// I nomi dei plugin nella release (es. `EOS_custom.dll`,
-    /// `photon_universal.dll`) non hanno un case garantito: il match è
-    /// case-insensitive per essere robusto.
+    /// Plugin names in the release (e.g. `EOS_custom.dll`,
+    /// `photon_universal.dll`) have no guaranteed case: matching is
+    /// case-insensitive to stay robust.
     pub fn plugin_dll(&self, name: &str) -> Option<PathBuf> {
         let wanted = name.to_ascii_lowercase();
         let plugins_dir = self.dir.join(PLUGINS_SUBDIR);
@@ -100,8 +100,8 @@ impl Uco2Bundle {
         None
     }
 
-    /// Early overlay proxy (`overlay_proxy.dll`). Assente = skip del deploy
-    /// overlay; il bundle resta valido perché non è un plugin ABI obbligatorio.
+    /// Early overlay proxy (`overlay_proxy.dll`). Absent = skip the overlay
+    /// deploy; the bundle stays valid because it is not a mandatory ABI plugin.
     pub fn overlay_proxy_dll(&self) -> Option<PathBuf> {
         if let Some(in_plugins) = self.plugin_dll("overlay_proxy") {
             return Some(in_plugins);
@@ -111,7 +111,7 @@ impl Uco2Bundle {
     }
 }
 
-/// True quando `plugins/` esiste e contiene almeno una `.dll`.
+/// True when `plugins/` exists and holds at least one `.dll`.
 fn plugins_dir_has_dlls(dir: &Path) -> bool {
     std::fs::read_dir(dir)
         .map(|entries| {

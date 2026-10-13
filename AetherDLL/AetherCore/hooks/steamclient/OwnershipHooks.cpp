@@ -247,8 +247,8 @@ namespace ac::hooks {
         }
 
         void StopUnlockSummary() {
-            // I-A: stop+join avvengono dentro workers::Shutdown() (chiamato
-            // prima di ShutdownOwnershipHooks in dllmain).
+            // I-A: stop+join happen inside workers::Shutdown() (called before
+            // ShutdownOwnershipHooks in dllmain).
             AC_LOG_DEBUG(kModule, "Unlock summary stop requested; join handled by workers::Shutdown.");
         }
 

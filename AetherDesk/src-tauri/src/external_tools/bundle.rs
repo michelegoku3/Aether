@@ -1,30 +1,30 @@
-//! Locazione e installazione idempotente dei bundle dei tool esterni.
+//! Location and idempotent installation of external tool bundles.
 //!
-//! Generalizzazione del locator di Steamless (`steamless/tool_locator.rs`):
-//! un tool esterno viene cercato prima nella sua directory installata, poi
-//! copiato dal bundle vendored nella repo/risorse. Ogni tool fornisce il
-//! proprio validatore (es. "esiste Steamless.CLI.exe + Plugins/"), così
-//! questa classe non sa nulla dei singoli tool (basso accoppiamento).
+//! Generalization of the Steamless locator (`steamless/tool_locator.rs`):
+//! an external tool is looked up first in its installed directory, then
+//! copied from the bundle vendored in the repo/resources. Each tool provides
+//! its own validator (e.g. "Steamless.CLI.exe + Plugins/ exists"), so this
+//! class knows nothing about individual tools (low coupling).
 
 use std::fs;
 use std::path::{Path, PathBuf};
 use tauri::Manager;
 
-/// Un bundle di tool esterno localizzato e pronto all'uso.
+/// An external tool bundle, located and ready to use.
 #[derive(Debug, Clone)]
 pub struct ToolBundle {
-    /// Directory radice del tool (es. `<install>/ExternalTools/Steamless`).
+    /// Tool root directory (e.g. `<install>/ExternalTools/Steamless`).
     pub dir: PathBuf,
 }
 
-/// Localizza (e se necessario installa) il bundle di un external tool.
+/// Locates (and when needed installs) an external tool's bundle.
 pub struct ToolBundleLocator {
     app: tauri::AppHandle,
-    /// Sottocartella delle risorse bundled, es. `"ExternalTools/Steamless"`.
+    /// Bundled resources subfolder, e.g. `"ExternalTools/Steamless"`.
     resource_subdir: &'static str,
-    /// Directory installata di destinazione (tipicamente da `LocalAppPaths`).
+    /// Installed destination directory (typically from `LocalAppPaths`).
     installed_dir: PathBuf,
-    /// Predicato che stabilisce se una directory contiene un bundle valido.
+    /// Predicate deciding whether a directory holds a valid bundle.
     validator: Box<dyn Fn(&Path) -> bool>,
 }
 
@@ -43,8 +43,8 @@ impl ToolBundleLocator {
         }
     }
 
-    /// Restituisce un bundle valido, installandolo dal bundled source se
-    /// la directory installata non esiste o non è valida.
+    /// Returns a valid bundle, installing it from the bundled source when
+    /// the installed directory is missing or invalid.
     pub fn locate(&self) -> Result<ToolBundle, String> {
         if self.is_valid(&self.installed_dir) {
             return Ok(ToolBundle {
@@ -85,10 +85,9 @@ impl ToolBundleLocator {
             .find(|candidate| self.is_valid(candidate))
     }
 
-    /// Copia il bundle bundled nella directory installata. Idempotente ma
-    /// distruttivo: una directory installata incompleta/invalida viene
-    /// rimossa e ricreata dal source (stesso comportamento del vecchio
-    /// locator Steamless).
+    /// Copies the vendored bundle into the installed directory. Idempotent but
+    /// destructive: an incomplete/invalid installed directory is removed and
+    /// recreated from source (same behavior as the old Steamless locator).
     fn copy_bundle(&self, source: &Path, destination: &Path) -> Result<(), String> {
         if destination.exists() {
             let _ = fs::remove_dir_all(destination);

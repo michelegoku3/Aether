@@ -62,8 +62,8 @@ std::string QueryImagePath(HANDLE process) {
     return std::string(path, size);
 }
 
-// Ispezione per (pid, nome processo): nessun puntatore "vivo" di Steam
-// attraversa i thread, quindi può girare sul task queue.
+// Per-(pid, process name) inspection: no "live" Steam pointer crosses
+// threads, so it may run on the task queue.
 ProcessSnapshot InspectProcess(std::uint32_t pid, const std::string& processName) {
     ProcessSnapshot snap{};
     if (pid == 0) return snap;
@@ -246,15 +246,15 @@ void Reset() {
     g_state.pipeWatch.snapshots.clear();
 }
 
-// Il lavoro pesante dell'handshake (OpenProcess, lettura env remota, immagine,
-// eventuale iniezione payload con attesa fino a 5 s) NON gira più sul thread
-// IPC di Steam: viene eseguito sul task queue. Sul thread IPC restano solo la
-// lettura del pid e l'accodamento (O(1)).
+// The handshake's heavy work (OpenProcess, remote env read, image, possible
+// payload injection with up to 5 s wait) no longer runs on Steam's IPC thread:
+// it executes on the task queue. The IPC thread keeps only the pid read and
+// the enqueue (O(1)).
 void CompleteHandshakeAsync(std::uint64_t key, std::uint32_t hSteamPipe,
                             std::uint32_t pid, std::string processName) {
-    // Una copia resta locale: lo store nella mappa è il punto di verità per
-    // i lettori futuri (SnapshotForPipe/AppIdForPipe), ma qui non serve
-    // rileggere sotto lock — si evita un lock+copy immediato.
+    // One copy stays local: the map store is the source of truth for future
+    // readers (SnapshotForPipe/AppIdForPipe), but re-reading under lock is
+    // unneeded here — avoids an immediate lock+copy.
     ProcessSnapshot snap = InspectProcess(pid, processName);
     const ProcessSnapshot stored = snap;
     StoreSnapshotByKey(key, std::move(snap));
@@ -288,8 +288,8 @@ void OnHandshake(steam::CSteamPipeClient* pipe, steam::CUtlBuffer* pRead) {
     if (pipe->clientPid == 0) return;
 
     const std::uint64_t key = EncodePipeKey(pipe);
-    // Copia per valore: il puntatore di Steam e il suo processName non sono
-    // sicuri oltre questa chiamata.
+    // Copy by value: Steam's pointer and its processName are not safe past
+    // this call.
     std::string processName = pipe->processName ? pipe->processName : "";
     const std::uint32_t pipeHandle = static_cast<std::uint32_t>(pipe->hSteamPipe);
     const std::uint32_t pidCopy = pipe->clientPid;
@@ -327,8 +327,8 @@ std::optional<ProcessSnapshot> SnapshotForPipe(const steam::CSteamPipeClient* pi
 }
 
 steam::AppId AppIdForPipe(const steam::CSteamPipeClient* pipe) {
-    // Lettura diretta del solo appId sotto lock: questo gira su OGNI messaggio
-    // IPC, quindi niente copia dello snapshot (stringhe incluse).
+    // Direct read of just the appId under lock: this runs on EVERY IPC
+    // message, so no snapshot copy (strings included).
     if (pipe && pipe->clientPid != 0) {
         const std::uint64_t key = EncodePipeKey(pipe);
         std::lock_guard<std::mutex> lock(g_state.pipeWatch.mutex);

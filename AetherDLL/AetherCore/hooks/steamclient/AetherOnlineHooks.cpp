@@ -20,11 +20,11 @@
 #include "utils/VdfText.h"
 
 // ---------------------------------------------------------------------------
-// AetherOnline — la modalità online PROPRIA di Aether (payload AetherDLL +
-// mask 480, token "-aetheronline"). NON è la crack online-fix.me (OFME):
-// i file OFME sul disco sono RILEVATI da AetherDesk (online/foreign.rs), mai
-// lanciati o gestiti da questo modulo. I due stack non convivono in un
-// processo. Vocabolario completo: AGENTS.md in radice.
+// AetherOnline — Aether's OWN online mode (AetherDLL payload + 480 mask,
+// "-aetheronline" token). It is NOT the online-fix.me crack (OFME): OFME files
+// on disk are DETECTED by AetherDesk (online/foreign.rs), never launched or
+// managed by this module. The two stacks never coexist in one process.
+// Full vocabulary: AGENTS.md at the root.
 // ---------------------------------------------------------------------------
 
 namespace ac::hooks {
@@ -357,14 +357,14 @@ void SyncLanguageToSpacewar(AppId realAppId) {
 }
 
 // ---------------------------------------------------------------------------
-// I-D: h_SpawnProcess è orchestrata da tre helper dedicati. La semantica è
-// IDENTICA alla vecchia funzione inline (stesso ordine di operazioni, stessi
-// log): ResolveLaunchDecision NON logga, i log vivono dove vivevano prima.
+// I-D: h_SpawnProcess is orchestrated by three dedicated helpers. Semantics are
+// IDENTICAL to the old inline function (same operation order, same logs):
+// ResolveLaunchDecision does NOT log, logs live where they used to.
 // ---------------------------------------------------------------------------
 
-// Tutto ciò che lo spawn hook deve sapere PRIMA di toccare gameId/sessione:
-// appid reale, launch mode (TOML > argv token), spoof UCO2/OFME su disco e
-// decisione maschera-480.
+// Everything the spawn hook must know BEFORE touching gameId/session: real
+// appid, launch mode (TOML > argv token), on-disk UCO2/OFME spoof and the
+// 480-mask decision.
 struct LaunchDecision {
     AppId realApp = 0;
     LaunchMode mode = LaunchMode::None;
@@ -511,8 +511,8 @@ bool h_SpawnProcess(void* user, const char* exe, const char* cmdLine, const char
 
         presence::SessionSnapshot session;
         ApplyLaunchMask(d, gameId, session);
-        // Unica pubblicazione atomica di tutti i campi: i lettori non possono
-        // osservare stati intermedi tra i vecchi store separati.
+        // Single atomic publication of every field: readers can never observe
+        // intermediate states between the old separate stores.
         presence::Publish(session);
     }
     return o_SpawnProcess(user, exe, childCmd, workDir, gameId, blob, blobSize, launchOption);

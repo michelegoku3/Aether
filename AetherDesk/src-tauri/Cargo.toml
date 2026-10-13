@@ -29,7 +29,7 @@ sysinfo = "0.30"
 # Default features pull in `zlib-ng` (via libz-ng-sys, built by cmake): on
 # Windows its Debug build links the DLL runtime (/MDd → MSVCRTD), while every
 # other object in a `cargo test` build uses /MD, hence
-# `LNK4098: la libreria predefinita 'MSVCRTD' è in conflitto`. The pure-Rust
+# `LNK4098: default library 'MSVCRTD' conflicts`. The pure-Rust
 # `deflate` backend (miniz_oxide) has no C toolchain dependency and reads the
 # same provider archives; zopfli (write-side "deflate-zopfli") was never needed.
 zip = { version = "1.0", default-features = false, features = ["aes-crypto", "bzip2", "deflate", "deflate64", "lzma", "time", "zstd"] }
@@ -66,17 +66,17 @@ winreg = "0.55"
 tempfile = "3"
 
 # ----------------------------------------------------------------------------
-# Lint policy (applicata da `cargo clippy -- -D warnings` in build.cmd e CI).
-# Dichiararla qui e non nella riga di comando la rende identica ovunque:
-# IDE (rust-analyzer), build locale, GitHub Actions.
+# Lint policy (enforced by `cargo clippy -- -D warnings` in build.cmd and CI).
+# Declaring it here instead of on the command line keeps it identical
+# everywhere: IDE (rust-analyzer), local builds, GitHub Actions.
 #
-#   rust: codice morto / import inutilizzati / unsafe senza commento SAFETY
-#   clippy::all        correttezza + stile + complessita' + perf (default)
-#   clippy::pedantic   opt-in selettivo sotto: solo quelli che trovano bug
+#   rust: dead code / unused imports / unsafe without SAFETY comment
+#   clippy::all        correctness + style + complexity + perf (default)
+#   clippy::pedantic   cherry-picked below: only lints that find real bugs
 #
-# `allow` motivati: il backend converte ogni errore in String al confine IPC,
-# quindi `module_name_repetitions`/`too_many_lines` sarebbero solo rumore
-# finche' non e' completata la migrazione a DeskError.
+# Motivated `allow`s: the backend converts every error to String at the IPC
+# boundary, so `module_name_repetitions`/`too_many_lines` would only be noise
+# until the DeskError migration is complete.
 # ----------------------------------------------------------------------------
 [lints.rust]
 dead_code = "warn"
@@ -84,27 +84,27 @@ unused_imports = "warn"
 unused_must_use = "deny"
 unreachable_pub = "allow"
 unsafe_op_in_unsafe_fn = "warn"
-# Richiede `// SAFETY:` sopra ogni blocco unsafe (11 nel codice: DPAPI, Win32).
-# Clippy lo verifica tramite undocumented_unsafe_blocks sotto.
+# Requires `// SAFETY:` above every unsafe block (11 in the code: DPAPI, Win32).
+# Clippy enforces it through undocumented_unsafe_blocks below.
 
 [lints.clippy]
 all = { level = "warn", priority = -1 }
-# --- pedantic selezionati: bug reali, non stile ---
+# --- hand-picked pedantic: real bugs, not style ---
 undocumented_unsafe_blocks = "warn"
-await_holding_lock = "deny"          # std::Mutex tenuto attraverso .await = deadlock tokio
+await_holding_lock = "deny"          # std::Mutex held across .await = tokio deadlock
 await_holding_refcell_ref = "deny"
 large_futures = "warn"
 needless_pass_by_value = "warn"
 redundant_clone = "warn"
 unnecessary_wraps = "warn"
-unused_async = "warn"                # fn async che non awaita nulla
+unused_async = "warn"                # async fn that awaits nothing
 implicit_clone = "warn"
-cast_possible_truncation = "warn"    # u64 -> u32 silenzioso su AppID/size
+cast_possible_truncation = "warn"    # silent u64 -> u32 on AppID/size
 manual_let_else = "warn"
 semicolon_if_nothing_returned = "warn"
-# --- rumore noto, disattivato con motivo ---
-too_many_arguments = "allow"         # comandi Tauri con molti parametri
+# --- known noise, disabled with reason ---
+too_many_arguments = "allow"         # Tauri commands with many params
 module_name_repetitions = "allow"
-too_many_lines = "allow"             # orchestratori legacy: il limite rigido incentiva split artificiali
+too_many_lines = "allow"             # legacy orchestrators: a hard limit would push artificial splits
 missing_errors_doc = "allow"
 missing_panics_doc = "allow"

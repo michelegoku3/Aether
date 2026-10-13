@@ -1,5 +1,5 @@
 use crate::core::paths::LocalAppPaths;
-use crate::core::settings::{AppSettings, SettingsManager};
+use crate::core::settings::{load_settings, AppSettings, SettingsManager};
 use crate::providers::hubcap::HubcapClient;
 use crate::providers::hubcap_generation::{
     MAX_GAME_GENERATIONS_PER_DAY, MAX_WORKSHOP_GENERATIONS_PER_DAY,
@@ -320,6 +320,14 @@ pub fn clear_app_caches() -> Result<String, String> {
 #[tauri::command]
 pub fn open_webview_devtools(app: tauri::AppHandle) -> Result<(), String> {
     use tauri::Manager;
+    // Gate on the persisted opt-in: the Settings UI persists the flag before
+    // invoking (see `persistDevtools`), so the legitimate flow is unaffected
+    // while programmatic callers without the user's explicit toggle are refused.
+    if !load_settings(&app).enable_webview_devtools {
+        return Err(
+            "WebView devtools are disabled. Enable them in Settings → Aether first.".to_string(),
+        );
+    }
     let Some(window) = app.get_webview_window("main") else {
         return Err("Main WebView window was not found.".to_string());
     };

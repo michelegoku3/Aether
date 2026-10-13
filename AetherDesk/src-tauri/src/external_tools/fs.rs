@@ -1,7 +1,7 @@
-//! Utility filesystem condivise (scrittura atomica, walk ricorsivi, scansione).
+//! Shared filesystem utilities (atomic writes, recursive walks, scanning).
 //!
-//! Estratte da `core/backup.rs` perché servono a più domini (backup crack,
-//! deploy online, journal): un'unica implementazione, testata una volta sola.
+//! Extracted from `core/backup.rs` because several domains need them (crack
+//! backup, online deploy, journal): a single implementation, tested once.
 
 use std::fs;
 use std::io::{Read, Seek, SeekFrom};
@@ -9,10 +9,10 @@ use std::path::{Path, PathBuf};
 
 /// Write bytes to `path` atomically via a temp file + rename.
 ///
-/// Crea le directory mancanti del parent. Su Windows `std::fs::rename`
-/// rimpiazza il file di destinazione esistente (MoveFileExW con
-/// REPLACE_EXISTING), quindi la scrittura resta "tutto o niente" anche
-/// quando il file target esiste già.
+/// Creates missing parent directories. On Windows `std::fs::rename`
+/// replaces the existing destination file (MoveFileExW with
+/// REPLACE_EXISTING), so the write stays "all or nothing" even
+/// when the target file already exists.
 pub fn write_atomic(path: &Path, bytes: &[u8]) -> Result<(), String> {
     let temp_path = PathBuf::from(format!("{}.tmp", path.display()));
 
@@ -38,9 +38,9 @@ pub fn write_atomic(path: &Path, bytes: &[u8]) -> Result<(), String> {
     })
 }
 
-/// Tutti i file sotto `root` (ricorsivo, deterministico: ogni livello è
-/// ordinato per nome). Non segue symlink e ignora silenziosamente le
-/// directory illeggibili (best-effort, come gli scan di UCOnline2).
+/// Every file under `root` (recursive, deterministic: each level is
+/// name-sorted). Does not follow symlinks and silently skips unreadable
+/// directories (best-effort, like the UCOnline2 scans).
 pub fn walk_files(root: &Path) -> Vec<PathBuf> {
     let mut out = Vec::new();
     let mut stack = vec![root.to_path_buf()];
@@ -60,8 +60,7 @@ pub fn walk_files(root: &Path) -> Vec<PathBuf> {
                 _ => {}
             }
         }
-        // Ordinamento deterministico: i test e la detection dipendono
-        // dall'ordine stabile dei risultati.
+        // Deterministic ordering: tests and detection depend on stable result order.
         dirs.sort();
         files.sort();
         out.extend(files);
@@ -73,9 +72,8 @@ pub fn walk_files(root: &Path) -> Vec<PathBuf> {
     out
 }
 
-/// Tutte le directory sotto `root` (ricorsivo, BFS: le directory di livello
-/// più basso vengono prima di quelle più profonde). Deterministico, non
-/// segue symlink.
+/// All directories under `root` (recursive, BFS: shallower directories come
+/// before deeper ones). Deterministic, does not follow symlinks.
 pub fn walk_dirs(root: &Path) -> Vec<PathBuf> {
     let mut out = Vec::new();
     let mut queue = std::collections::VecDeque::from([root.to_path_buf()]);
@@ -102,8 +100,8 @@ pub fn walk_dirs(root: &Path) -> Vec<PathBuf> {
     out
 }
 
-/// True quando `haystack` contiene la sequenza `needle` (ricerca binaria su
-/// byte, case-sensitive — equivalente a `findstr` senza `/i`).
+/// True when `haystack` contains the `needle` sequence (byte-wise binary
+/// search, case-sensitive — equivalent to `findstr` without `/i`).
 pub fn contains_bytes(haystack: &[u8], needle: &[u8]) -> bool {
     if needle.is_empty() || haystack.len() < needle.len() {
         return false;
@@ -111,10 +109,9 @@ pub fn contains_bytes(haystack: &[u8], needle: &[u8]) -> bool {
     haystack.windows(needle.len()).any(|window| window == needle)
 }
 
-/// Legge un file per scansione di stringhe: intero se di dimensione
-/// ragionevole, altrimenti inizio + coda (dove vivono tipicamente le
-/// stringhe simboliche degli eseguibili). Mai più di `HEAD_LIMIT + TAIL_LIMIT`
-/// byte in memoria per file.
+/// Reads a file for string scanning: whole when reasonably sized, otherwise
+/// head + tail (where executable symbol strings typically live). Never more
+/// than `HEAD_LIMIT + TAIL_LIMIT` bytes in memory per file.
 pub fn read_for_scan(path: &Path) -> Result<Vec<u8>, String> {
     const FULL_LIMIT: u64 = 256 * 1024 * 1024; // 256 MiB
     const HEAD_LIMIT: u64 = 64 * 1024 * 1024;  // 64 MiB

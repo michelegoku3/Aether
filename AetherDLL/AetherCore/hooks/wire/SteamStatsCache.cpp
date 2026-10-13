@@ -21,21 +21,21 @@ namespace {
 constexpr const char* kModule = "Wire.Achievement";
 
     // ---------------------------------------------------------------------------
-    // Copia dei .bin della cache di Steam (stats account + schema).
+    // Copy of the Steam cache .bins (account stats + schema).
     // ---------------------------------------------------------------------------
 
     // ---------------------------------------------------------------------------
-    // Interpretazione SCHEMA-DRIVEN delle stat bitfield.
+    // SCHEMA-DRIVEN interpretation of bitfield stats.
     //
-    // Il metodo sicuro per sapere se una stat è un bucket achievement è leggere lo
-    // schema del gioco (appcache\stats\UserGameStatsSchema_<appid>.bin): la
-    // sezione "stats" contiene un dizionario per ogni bucket, e i bucket con un
-    // sotto-dizionario "bits" sono bitfield di achievement. Questo elimina ogni
-    // euristica: Stanley usa il bucket 3 con bit 0-4 (ignorati dalla soglia
-    // "bit >= 8" del log veloce), Spider-Man i bucket 0/200/201.
+    // The safe way to know whether a stat is an achievement bucket is reading
+    // the game schema (appcache\stats\UserGameStatsSchema_<appid>.bin): the
+    // "stats" section holds one dictionary per bucket, and buckets with a
+    // "bits" sub-dictionary are achievement bitfields. This removes every
+    // heuristic: Stanley uses bucket 3 with bits 0-4 (ignored by the fast-log
+    // "bit >= 8" threshold), Spider-Man uses buckets 0/200/201.
     //
-    // Cache per app: insieme dei bucket achievement (possibilmente vuoto se lo
-    // schema non esiste). Proprietà esclusiva del worker.
+    // Per-app cache: the achievement bucket set (possibly empty when the
+    // schema does not exist). Worker-exclusive ownership.
     // ---------------------------------------------------------------------------
     std::unordered_map<steam::AppId, std::unordered_set<std::uint32_t>> g_schemaBuckets;
     std::unordered_set<steam::AppId> g_schemaParsed;
@@ -62,11 +62,11 @@ constexpr const char* kModule = "Wire.Achievement";
 
 
     // ---------------------------------------------------------------------------
-    // Valutazione "ricchezza" di un file UserGameStats: conta gli achievement
-    // come somma dei bit impostati nei bitfield `data` di ogni bucket (formato
-    // binario VDF: 0x00=dict, 0x01=stringa, 0x02=int32, 0x08=chiusura dict).
-    // Serve al guard monotono: mai sovrascrivere un backup con una cache più
-    // povera (es. appena azzerata dal login-reconcile). -1 = illeggibile.
+    // "Richness" evaluation of a UserGameStats file: counts achievements as the
+    // sum of set bits in each bucket's `data` bitfields (binary VDF format:
+    // 0x00=dict, 0x01=string, 0x02=int32, 0x08=dict close).
+    // Feeds the monotone guard: never overwrite a backup with a poorer cache
+    // (e.g. just wiped by login-reconcile). -1 = unreadable.
     // ---------------------------------------------------------------------------
 
     int CountDictAchievements(const std::vector<std::uint8_t>& buf, std::size_t& pos, int depth) {
@@ -117,26 +117,26 @@ constexpr const char* kModule = "Wire.Achievement";
 
 
 
-    // Copia i .bin della cache di Steam (stats account + schema). `force` salta il
-    // rate-limit (usato per le copie finali di shutdown); altrimenti il worker
-    // limita le copie dello stesso (app, account) a una ogni kBinCopyMinInterval
-    // per non copiare il file a ogni stat salvata dal gioco.
+    // Copies the Steam cache .bins (account stats + schema). `force` skips the
+    // rate-limit (used for shutdown final copies); otherwise the worker limits
+    // copies of the same (app, account) to one every kBinCopyMinInterval so it
+    // does not copy the file on every game-saved stat.
     constexpr auto kBinCopyMinInterval = std::chrono::seconds(60);
 
-    // Proprietà esclusiva del worker: ultimo istante di copia per (app, account).
+    // Worker-exclusive ownership: last copy instant per (app, account).
     std::unordered_map<std::uint64_t, std::chrono::steady_clock::time_point> g_lastBinCopy;
 
     void BackupStatsBinsImpl(steam::AppId appId, std::uint32_t accountId, bool force = false) {
         const std::string statsDir = g_state.steamInstallPath + "\\appcache\\stats";
         const std::string dstDir = io::BackupDirForApp(appId);
-        if (dstDir.empty()) return;   // backup non disponibile (niente AetherData)
+        if (dstDir.empty()) return;   // backup unavailable (no AetherData)
 
         if (!force) {
             const std::uint64_t key = (static_cast<std::uint64_t>(appId) << 32) | accountId;
             const auto now = std::chrono::steady_clock::now();
             auto it = g_lastBinCopy.find(key);
             if (it != g_lastBinCopy.end() && now - it->second < kBinCopyMinInterval) {
-                return;   // copiata di recente: salta silenziosamente
+                return;   // recently copied: skip silently
             }
             g_lastBinCopy[key] = now;
         }
@@ -146,11 +146,11 @@ constexpr const char* kModule = "Wire.Achievement";
         const std::string schemaBin = "UserGameStatsSchema_" + std::to_string(appId) + ".bin";
 
         if (GetFileAttributesA((statsDir + "\\" + userBin).c_str()) != INVALID_FILE_ATTRIBUTES) {
-            // GUARD MONOTONO: mai sovrascrivere un backup con una cache più povera.
-            // Se la cache di Steam è stata appena azzerata (login-reconcile), il
-            // file sorgente ha MENO achievement del backup: in quel caso si tiene
-            // il backup e si logga un WARN ben visibile. Il backup può solo
-            // crescere, mai regredire.
+            // MONOTONE GUARD: never overwrite a backup with a poorer cache. When
+            // the Steam cache was just wiped (login-reconcile), the source file
+            // holds FEWER achievements than the backup: then the backup is kept
+            // and a highly visible WARN is logged. Backups can only grow, never
+            // regress.
             const std::string dstUserBin = dstDir + "\\" + userBin;
             if (GetFileAttributesA(dstUserBin.c_str()) != INVALID_FILE_ATTRIBUTES) {
                 const int srcCount = CountAchievementsInBinFile(statsDir + "\\" + userBin);

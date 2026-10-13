@@ -64,9 +64,9 @@ pub async fn apply_game_version(
     app_id: u32,
     build_id: u64,
 ) -> Result<ApplyVersionReport, String> {
-    // Percorso Steam risolto dal backend (settings → normalizzazione →
-    // validazione filesystem): il client non lo passa più e non può passarlo
-    // diverso da quello configurato.
+    // Steam path resolved by the backend (settings → normalization →
+    // filesystem validation): the client no longer passes it and cannot pass
+    // one different from the configured value.
     let steam_path = command_steam_path(&app)?;
     validate_app_build(app_id, build_id)?;
     let plan = crate::core::game_mutations::MutationPlan::prepare(std::path::Path::new(&steam_path), app_id, "apply-version")?;

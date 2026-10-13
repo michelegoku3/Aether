@@ -49,8 +49,8 @@ pub fn apply_build_version(
     );
 
     progress(10, "Backing up the game Lua");
-    // Niente più .lua.bak in stplug-in: il contenuto PRE-modifica viene
-    // preservato nell'albero di backup AetherData (history/ se non già noto).
+    // No more .lua.bak in stplug-in: the PRE-change content is preserved
+    // in the AetherData backup tree (history/ unless already known).
     let history_dir = crate::core::backup::GameBackup::for_app(app_id)
         .map(|backup| {
             let dir = backup.lua_dir().join(crate::core::backup::LUA_HISTORY_SUBDIR);
@@ -130,9 +130,9 @@ pub fn apply_build_version(
         }
     };
 
-    // La versione con i pin applicati è una VERSIONE MODIFICATA: va in
-    // history/ (l'originale pristino nel backup non si tocca). Aggiornamento
-    // immediato, non più al riavvio di Desk. Best-effort.
+    // The version with pins applied is a MODIFIED VERSION: it goes to
+    // history/ (the pristine original in the backup is untouched). Immediate
+    // update, no longer at Desk restart. Best-effort.
     if let Ok(final_lua) = std::fs::read_to_string(lua.lua_path()) {
         match crate::core::backup::GameBackup::for_app(app_id)
             .and_then(|backup| backup.store_history_version(app_id, final_lua.as_bytes()))
@@ -201,9 +201,9 @@ pub fn apply_build_version(
     }
 
     progress(75, "Syncing the Steam ACF");
-    // Best-effort: se l'ACF manca o è bloccato si logga un WARN e si prosegue
-    // (la coda "pending ACF" è stata rimossa: i pin nel .lua fanno il lavoro
-    // vero, l'ACF è solo metadato).
+    // Best-effort: when the ACF is missing or locked, log a WARN and carry on
+    // (the "pending ACF" queue was removed: the pins in the .lua do the real
+    // work, the ACF is only metadata).
     let acf = SteamAcfEditor::for_app(library_path, app_id);
     let acf_synced_now = match acf.apply_build(build_id, pins) {
         Ok(()) => true,

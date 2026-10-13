@@ -3,9 +3,9 @@
 // ---------------------------------------------------------------------------
 // IDA-style hex signature parser ("48 8B 05 ?? ?? ?? ?? C3").
 //
-// Estratto dal namespace anonimo di PatternEngine.cpp: la logica è pura
-// (nessun I/O, nessuno stato globale) e qui vive in un header inline così
-// può essere testata in isolamento dalla suite "signature" di quickwin_tests.
+// Extracted from PatternEngine.cpp's anonymous namespace: the logic is pure
+// (no I/O, no global state) and lives here in an inline header so it can be
+// tested in isolation by quickwin_tests' "signature" suite.
 // ---------------------------------------------------------------------------
 
 #include <cstdint>
@@ -17,10 +17,10 @@
 
 namespace ac::pattern {
 
-// Parsa una signature hex separata da spazi in una sequenza di byte + una
-// maschera di pari lunghezza ('x' = byte significativo, '?' = wildcard).
-// Ritorna false su token malformati o input vuoto. I log di errore usano il
-// modulo "PatternEngine" per continuità con i log storici.
+// Parses a space-separated hex signature into a byte sequence + an
+// equal-length mask ('x' = significant byte, '?' = wildcard). Returns false
+// on malformed tokens or empty input. Error logs use the "PatternEngine"
+// module for continuity with historic logs.
 inline bool ParseSignature(const std::string& sig, std::vector<std::uint8_t>& bytes, std::string& mask) {
     constexpr const char* kSigModule = "PatternEngine";
     bytes.clear();

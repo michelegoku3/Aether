@@ -29,8 +29,8 @@ namespace fs = std::filesystem;
 
 constexpr const char* kModule = "ManifestRestore";
 
-// Una sola scansione completa per processo di Steam. Gli eventi ACF usano
-// invece RestoreMissingManifestsForApp(), che può essere richiamato più volte.
+// A single full scan per Steam process. ACF events use
+// RestoreMissingManifestsForApp() instead, which may run multiple times.
 std::atomic<bool> s_started{false};
 
 bool HasManifestExtension(const fs::path& path) {
@@ -41,9 +41,9 @@ bool IsLuaPath(const fs::path& path) {
     return paths::HasExtension(path, ".lua");
 }
 
-// Destino considerato "mancante": assente oppure vuoto (0 byte). Un manifest
-// vuoto non è mai valido, quindi va ripristinato come se mancasse. Tutto il
-// resto viene lasciato intatto: mai sovrascrivere un file esistente.
+// A destination counts as "missing": absent or empty (0 bytes). An empty
+// manifest is never valid, so it is restored as if missing. Everything else
+// is left untouched: never overwrite an existing file.
 bool IsMissingOrEmpty(const fs::path& dest) {
     std::error_code ec;
     if (!fs::exists(dest, ec) || ec) return true;
@@ -143,8 +143,8 @@ RestoreStats RestoreLuaDirectory(const fs::path& luaDir, const fs::path& depotca
             fs::copy_file(src, dest, fs::copy_options::none, fileEc);
         }
         if (fileEc) {
-            // RACE benigna: il file è comparso nel frattempo (Steam o un altro
-            // worker). Ricontrolla prima di segnalare l'errore.
+            // Benign RACE: the file appeared in the meantime (Steam or another
+            // worker). Recheck before reporting the error.
             if (!IsMissingOrEmpty(dest)) {
                 ++stats.present;
             } else {
@@ -380,13 +380,13 @@ void RestoreAppOnce(std::uint32_t appId) {
 }  // namespace
 
 void RestoreMissingManifestsAtStartup() {
-    if (s_started.exchange(true)) return;  // una sola volta per processo
+    if (s_started.exchange(true)) return;  // once per process
     try {
-        // Il backup viene eseguito prima del restore: se AetherDesk non è
-        // stato avviato, Steam può comunque catturare i manifest ancora
-        // presenti in depotcache e conservarli per un futuro uninstall.
-        // Task queue invece di detach(): il lavoro resta osservabile e viene
-        // drenato/joinato nello shutdown esplicito.
+        // Backup runs before restore: when AetherDesk was never started, Steam
+        // can still capture the manifests still present in depotcache and keep
+        // them for a future uninstall.
+        // Task queue instead of detach(): the work stays observable and is
+        // drained/joined on explicit shutdown.
         if (!workers::Submit([] {
                 try {
                     BackupReferencedManifestsAtStartup();
@@ -409,8 +409,8 @@ void RestoreMissingManifestsAtStartup() {
 void RestoreMissingManifestsForApp(std::uint32_t appId) {
     if (appId == 0) return;
     try {
-        // Chiamata dal thread DirWatch già dopo il debounce dell'evento ACF;
-        // tenerla sincrona evita che Steam possa uscire prima del trasferimento.
+        // Called from the DirWatch thread after the ACF event debounce; keeping
+        // it synchronous stops Steam from exiting mid-transfer.
         RestoreAppOnce(appId);
     } catch (const std::exception& e) {
         AC_LOG_ERROR(kModule, "Restore for AppID %u failed: %s.", appId, e.what());
@@ -435,8 +435,8 @@ void BackupManifestAfterGeneration(std::uint32_t depotId, std::uint64_t gid) {
         const fs::path backupRoot = fs::path(deskData) / "backup";
         const std::string depotText = std::to_string(depotId);
         const std::string gidText = std::to_string(gid);
-        // Stessa regex del backup di startup: intercetta anche i pin
-        // commentati (setManifestid disabilitato = gioco in modalita update).
+        // Same regex as the startup backup: also catches commented pins
+        // (disabled setManifestid = game in update mode).
         const std::regex pinRegex(
             R"(setManifestid\s*\(\s*([0-9]+)\s*,\s*["']([0-9]+)["'])",
             std::regex_constants::icase);

@@ -1,13 +1,13 @@
-//! Tipi di dominio dell'engine UCOnline2 (`online`).
+//! UCOnline2 engine domain types (`online`).
 //!
-//! Nessuna dipendenza da Tauri: queste strutture viaggiano tra l'engine
-//! puro e i comandi Tauri, e vengono serializzate verso la UI. Regola:
-//! i moduli di questo crate referenziano `crate::online::types` SOLO qui.
+//! No Tauri dependency: these structs travel between the pure engine and the
+//! Tauri commands, and are serialized to the UI. Rule: modules in this crate
+//! reference `crate::online::types` ONLY here.
 
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
-/// Motore di gioco rilevato (regole di UCOnline2 patch.bat).
+/// Detected game engine (UCOnline2 patch.bat rules).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Engine {
@@ -16,7 +16,7 @@ pub enum Engine {
     Generic,
 }
 
-/// Architettura del binario Steamworks del gioco.
+/// The game's Steamworks binary architecture.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum GameArch {
@@ -25,7 +25,7 @@ pub enum GameArch {
 }
 
 impl GameArch {
-    /// Nome della DLL Steamworks da installare per questa architettura.
+    /// Steamworks DLL name to install for this architecture.
     pub fn steam_api_file_name(self) -> &'static str {
         match self {
             GameArch::X64 => "steam_api64.dll",
@@ -34,8 +34,8 @@ impl GameArch {
     }
 }
 
-/// Variante Photon rilevata (il plugin `photon_universal` è unico ma il
-/// config INI cambia tra Realtime e Fusion).
+/// Detected Photon variant (the `photon_universal` plugin is unique but the
+/// config INI differs between Realtime and Fusion).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "lowercase")]
 pub enum PhotonFlavor {
@@ -45,10 +45,10 @@ pub enum PhotonFlavor {
     Fusion,
 }
 
-/// Backend di multiplayer secondari rilevati nel gioco.
+/// Secondary multiplayer backends detected in the game.
 ///
-/// Ogni flag corrisponde a un plugin UCOnline2 da deployare (o da offrire
-/// all'utente) in fase di configurazione.
+/// Each flag maps to a UCOnline2 plugin to deploy (or offer to the user)
+/// during configuration.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BackendReport {
@@ -60,7 +60,7 @@ pub struct BackendReport {
 }
 
 impl BackendReport {
-    /// True quando almeno un backend secondario è stato rilevato.
+    /// True when at least one secondary backend was detected.
     pub fn has_any(&self) -> bool {
         self.photon != PhotonFlavor::None
             || self.photon_voice
@@ -70,67 +70,67 @@ impl BackendReport {
     }
 }
 
-/// Emulatori/proxy concorrenti che vanno neutralizzati (rinomina reversibile
-/// `*.uco-disabled`) prima del deploy, altrimenti litigano con UCOnline2.
+/// Competing emulators/proxies to neutralize (reversible `*.uco-disabled`
+/// rename) before deploy, otherwise they fight UCOnline2.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", content = "path", rename_all = "camelCase")]
 pub enum Conflict {
-    /// Setup gbe/ColdClientLoader (`steamclient64.ini`): inietta la sua
-    /// steamclient e rompe il passthrough di UCOnline2.
+    /// gbe/ColdClientLoader setup (`steamclient64.ini`): injects its own
+    /// steamclient and breaks UCOnline2 passthrough.
     ColdClientLoader(PathBuf),
-    /// Emulatore SteamFix (`SteamFix64.dll`).
+    /// SteamFix emulator (`SteamFix64.dll`).
     SteamFix(PathBuf),
-    /// Emulatore OFME (`OnlineFix64.dll`) — pack della crack online-fix.me.
-    /// OFME e AetherOnline sono stack diversi: questo variant rappresenta i
-    /// file di OFME trovati sul disco, mai la modalità Aether.
-    /// rename esplicito: con rename_all=camelCase "OFME" diverrebbe "oFME".
+    /// OFME emulator (`OnlineFix64.dll`) — the online-fix.me crack pack.
+    /// OFME and AetherOnline are different stacks: this variant represents
+    /// OFME files found on disk, never the Aether mode.
+    /// Explicit rename: with rename_all=camelCase "OFME" would become "oFME".
     #[serde(rename = "ofme")]
     Ofme(PathBuf),
-    /// File nominativi di un fix (`winmm.dll`, `dlllist.txt`, ...).
+    /// Named files of a fix (`winmm.dll`, `dlllist.txt`, ...).
     NamedFixFile(PathBuf),
-    /// Proxy DLL generico piccolo (`version.dll`, `dxgi.dll`, ... < 300 KiB).
+    /// Small generic proxy DLL (`version.dll`, `dxgi.dll`, ... < 300 KiB).
     ProxyDll(PathBuf),
 }
 
-/// Esito dell'ispezione di un'installazione di gioco: tutti i fatti che
-/// servono per decidere se/come deployare UCOnline2.
+/// Outcome of a game installation inspection: every fact needed to decide
+/// whether/how to deploy UCOnline2.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DetectionReport {
-    /// Radice dell'installazione del gioco (per harvest DLC e operazioni).
+    /// Game installation root (for DLC harvest and operations).
     pub game_root: PathBuf,
     pub engine: Engine,
     pub arch: GameArch,
-    /// Eseguibile principale del gioco (Shipping exe per Unreal, altrimenti
-    /// il più grande accanto alla DLL Steamworks). Usato per la UI e per il
-    /// pre-flight "gioco in esecuzione" in fase di deploy.
+    /// Main game executable (Shipping exe for Unreal, otherwise the biggest
+    /// next to the Steamworks DLL). Used by the UI and for the "game running"
+    /// pre-flight at deploy time.
     pub game_exe: Option<PathBuf>,
-    /// Per Unity: la cartella `<Game>_Data` (con `Managed\` o `il2cpp_data\`).
+    /// For Unity: the `<Game>_Data` folder (with `Managed\` or `il2cpp_data\`).
     pub unity_data_dir: Option<PathBuf>,
-    /// Dove andrà installata la DLL UCOnline2 (dove il gioco tiene già la
-    /// sua `steam_api(64).dll`, con fallback alle convenzioni engine).
+    /// Where the UCOnline2 DLL will be installed (where the game already keeps
+    /// its `steam_api(64).dll`, falling back to engine conventions).
     pub steam_api_dir: Option<PathBuf>,
-    /// Dove va scritto `union-crax.ini`: la directory dell'exe in esecuzione
-    /// (per Unreal NON è la root del gioco — un ini lì verrebbe ignorato).
+    /// Where `union-crax.ini` goes: the running exe's directory (for Unreal
+    /// NOT the game root — an ini there would be ignored).
     pub ini_dir: PathBuf,
     pub backends: BackendReport,
     pub conflicts: Vec<Conflict>,
-    /// True quando Steamless ha già processato un eseguibile del gioco
-    /// (backup Steamless o output `.unpacked.exe` presenti).
+    /// True when Steamless already processed a game executable (Steamless
+    /// backup or `.unpacked.exe` output present).
     pub steamless_applied: bool,
-    /// True quando l'exe principale ha una sezione `.bind` con signature
-    /// SteamStub 1.x–3.x (GetStubbedLol può agganciarlo a runtime).
+    /// True when the main exe has a `.bind` section with a SteamStub 1.x–3.x
+    /// signature (GetStubbedLol can hook it at runtime).
     #[serde(default)]
     pub steamstub_detected: bool,
     pub warnings: Vec<String>,
 }
 
 // ---------------------------------------------------------------------------
-// Opzioni di configurazione (payload UI → enable_online)
+// Configuration options (UI payload → enable_online)
 // ---------------------------------------------------------------------------
 
-/// Opzioni Photon: GUID degli app Photon dell'utente. Vuoto = non configurato
-/// (il plugin resta deployato ma inerte finché l'ini non ha i GUID).
+/// Photon options: the user's Photon app GUIDs. Empty = unconfigured
+/// (the plugin stays deployed but inert until the ini has the GUIDs).
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PhotonOptions {
@@ -139,8 +139,8 @@ pub struct PhotonOptions {
     pub fusion_guid: String,
 }
 
-/// Credenziali di un'app Epic (dev.epicgames.com) per EOS_custom.
-/// Vuote = plugin non deployato (come patch.bat: "detected but not configured").
+/// Credentials of an Epic app (dev.epicgames.com) for EOS_custom.
+/// Empty = plugin not deployed (like patch.bat: "detected but not configured").
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct EosOptions {
@@ -151,18 +151,18 @@ pub struct EosOptions {
     pub client_secret: String,
 }
 
-/// TitleId PlayFab dell'utente. Vuoto = plugin deployato ma inerte.
+/// The user's PlayFab TitleId. Empty = deployed but inert plugin.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PlayfabOptions {
     pub title_id: String,
-    /// Title community condiviso (`1D861F`), stesso pattern di coherence SHARED.
+    /// Shared community TitleId (`1D861F`), same pattern as coherence SHARED.
     #[serde(default)]
     pub use_shared: bool,
 }
 
-/// Runtime key coherence: propria (progetto con schema caricato) oppure
-/// il progetto community condiviso (SHARED — disponibilità non garantita).
+/// Coherence runtime key: your own (project with uploaded schema) or
+/// the shared community project (SHARED — availability not guaranteed).
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CoherenceOptions {
@@ -170,45 +170,45 @@ pub struct CoherenceOptions {
     pub use_shared: bool,
 }
 
-/// Richiesta completa di attivazione online (dal pannello UI).
+/// Full online activation request (from the UI panel).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct OnlineEnableRequest {
-    /// AppId VERO del gioco (precompilato dalla UI con l'id di libreria).
+    /// The game's REAL AppId (pre-filled by the UI with the library id).
     pub og_app_id: u32,
-    /// AppId spoofato davanti a Steam (Spacewar).
+    /// AppId spoofed in front of Steam (Spacewar).
     pub spoof_app_id: u32,
-    /// [Settings] VerboseLog: log UCO2 dettagliati (default true nella UI).
+    /// [Settings] VerboseLog: detailed UCO2 logs (default true in the UI).
     pub verbose_log: bool,
-    /// [Settings] EmulateTicket: emulazione ticket con ogAppId.
+    /// [Settings] EmulateTicket: ticket emulation with ogAppId.
     pub emulate_ticket: bool,
-    /// [Settings] WarnOverlayDisabled: avviso quando l'overlay è disabilitato.
+    /// [Settings] WarnOverlayDisabled: warning when the overlay is disabled.
     pub warn_overlay_disabled: bool,
-    /// [Settings] SDR: contesto Steam Datagram Relay per i giochi che lo usano.
+    /// [Settings] SDR: Steam Datagram Relay context for games using it.
     pub sdr: bool,
-    /// [Settings] LoadOverlay. Default true (UCO2 carica GameOverlayRenderer).
+    /// [Settings] LoadOverlay. Default true (UCO2 loads GameOverlayRenderer).
     #[serde(default = "default_true")]
     pub load_overlay: bool,
-    /// [Settings] LogOverlay: scrive steam_overlay.log accanto all'exe.
+    /// [Settings] LogOverlay: writes steam_overlay.log next to the exe.
     #[serde(default)]
     pub log_overlay: bool,
-    /// [Settings] GetStubbedLol: patch SteamStub a runtime.
+    /// [Settings] GetStubbedLol: runtime SteamStub patch.
     #[serde(default)]
     pub get_stubbed_lol: bool,
-    /// [Settings] Client: pin SteamClient() per old-SDK (es. "017"). Vuoto = unset.
+    /// [Settings] Client: SteamClient() pin for old SDKs (e.g. "017"). Empty = unset.
     #[serde(default)]
     pub client: String,
-    /// [DLC] UnlockAll: sblocca tutti i DLC (default true nella UI).
+    /// [DLC] UnlockAll: unlocks every DLC (default true in the UI).
     pub unlock_all_dlc: bool,
-    /// Deploy del plugin Photon (toggle UI, default off come EOS).
+    /// Photon plugin deploy (UI toggle, default off like EOS).
     pub deploy_photon: bool,
     pub photon: PhotonOptions,
     pub eos: EosOptions,
     pub playfab: PlayfabOptions,
     pub coherence: CoherenceOptions,
-    /// Deploy di EOS_custom (default: true se EOS rilevato).
+    /// EOS_custom deploy (default: true when EOS detected).
     pub deploy_eos_custom: bool,
-    /// Deploy dell'early overlay proxy (version.dll / XINPUT1_3.dll).
+    /// Early overlay proxy deploy (version.dll / XINPUT1_3.dll).
     #[serde(default = "default_true")]
     pub deploy_overlay_proxy: bool,
 }
@@ -243,40 +243,40 @@ impl Default for OnlineEnableRequest {
 }
 
 // ---------------------------------------------------------------------------
-// Record persistito (stato UCOnline2 per gioco)
+// Persisted record (per-game UCOnline2 state)
 // ---------------------------------------------------------------------------
 
-/// Record di un gioco con online attivo. Persistito in
-/// `<AetherData>/state/uc_online2.json` (chiave: app_id).
+/// Record of a game with online enabled. Persisted in
+/// `<AetherData>/state/uc_online2.json` (key: app_id).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct OnlineRecord {
     pub app_id: u32,
-    /// Timestamp epoch (secondi) dell'attivazione.
+    /// Epoch timestamp (seconds) of the activation.
     pub enabled_at: u64,
-    /// Versione del bundle UCO2 usata (es. "v1.19.3"), se nota.
+    /// UCO2 bundle version used (e.g. "v1.19.3"), when known.
     pub bundle_version: Option<String>,
     pub og_app_id: u32,
     pub spoof_app_id: u32,
-    /// Path di `union-crax.ini` scritto (per riconciliazione/status).
+    /// Path of the written `union-crax.ini` (for reconciliation/status).
     pub ini_path: PathBuf,
-    /// Path della DLL Steamworks installata (per riconciliazione/status).
+    /// Path of the installed Steamworks DLL (for reconciliation/status).
     pub steam_api_path: PathBuf,
     pub arch: GameArch,
-    /// Plugin deployati (nomi file, es. "photon_universal").
+    /// Deployed plugins (file names, e.g. "photon_universal").
     pub backends_deployed: Vec<String>,
-    /// Path della cartella di backup del deploy (journal + originali).
+    /// Deploy backup folder path (journal + originals).
     pub backup_dir: PathBuf,
-    /// Overlay proxy deployato (`version.dll` / `XINPUT1_3.dll`), se presente.
+    /// Deployed overlay proxy (`version.dll` / `XINPUT1_3.dll`), when present.
     #[serde(default)]
     pub overlay_proxy_path: Option<PathBuf>,
 }
 
 // ---------------------------------------------------------------------------
-// Piano, prerequisiti e stato
+// Plan, prerequisites and state
 // ---------------------------------------------------------------------------
 
-/// Prerequisiti calcolati in fase di piano (nessun effetto sul disco).
+/// Prerequisites computed at plan time (no disk effects).
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Prerequisites {
@@ -286,25 +286,25 @@ pub struct Prerequisites {
     pub errors: Vec<String>,
 }
 
-/// Risultato di `plan_online`: tutto ciò che serve alla UI per decidere.
+/// Result of `plan_online`: everything the UI needs to decide.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct OnlinePlan {
     pub detection: DetectionReport,
     pub prerequisites: Prerequisites,
     pub current: Option<OnlineRecord>,
-    /// Notice ⚠ per la UI (avvisi di detection + note operative, un solo gruppo).
+    /// Notice ⚠ for the UI (detection warnings + operational notes, one group).
     pub notices: Vec<String>,
 }
 
-/// Stato riconciliato di un gioco rispetto a UCOnline2 (file sul disco =
-/// verità, il record è solo un indice).
+/// Reconciled state of a game vs UCOnline2 (files on disk are the truth,
+/// the record is just an index).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum OnlineStateKind {
     NotConfigured,
     Enabled,
-    /// Il record esiste ma i file (ini/dll) non sono più sul disco.
+    /// The record exists but the files (ini/dll) are no longer on disk.
     Broken,
 }
 
@@ -315,7 +315,7 @@ pub struct OnlineStatus {
     pub record: Option<OnlineRecord>,
 }
 
-/// Esito di `enable_online` / `disable_online`.
+/// Outcome of `enable_online` / `disable_online`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct OnlineActionResult {

@@ -15,13 +15,13 @@ fn normalize_strips_punctuation_to_space() {
 fn normalize_roman_conversion() {
     assert_eq!(normalize_string("Dark Souls II"), "dark souls 2");
     assert_eq!(normalize_string("ix"), "9");
-    // civ è ora alias, non roman — deve rimanere civ
+    // civ is now an alias, not a roman numeral — must stay civ
     assert_eq!(normalize_string("Civ VI"), "civ 6");
 }
 
 #[test]
 fn normalize_civ_not_converted() {
-    // civ -> civilization è alias, non normalizzazione
+    // civ -> civilization is an alias, not a normalization
     assert_eq!(normalize_string("civ"), "civ");
     assert_eq!(normalize_string("civ 6"), "civ 6");
 }
@@ -58,7 +58,7 @@ fn sanitize_hubcap_preserves_alphanumeric() {
 
 #[test]
 fn normalize_take_me_exact() {
-    // Il titolo con !! e senza !! collassano allo stesso normalize → score 0
+    // Titles with and without !! collapse to the same normalized form → score 0
     assert_eq!(
         normalize_string("Take Me To The Dungeon!!"),
         normalize_string("Take Me To The Dungeon")

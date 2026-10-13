@@ -36,39 +36,39 @@
 //      stops returning data we advance to the next pool entry.
 //
 // ----------------------------------------------------------------------------
-// LOGGING, MIRROR E BACKUP (sessione di debug agosto 2026 — perdita achievement):
+// LOGGING, MIRROR AND BACKUP (August 2026 debug session — achievement loss):
 //
-// Il client Steam conserva gli achievement SOLO nella cache locale
-// (<steam>\appcache\stats\UserGameStats_<account>_<appid>.bin): il server
-// rifiuta i StoreUserStats2 degli account che non possiedono il gioco, quindi
-// quella cache è l'UNICA copia dei progressi e qualunque invalidazione
-// client-side è una perdita definitiva (vedi anche il campo "PendingChanges"
-// nel file binario: cambi mai confermati dal server).
+// The Steam client keeps achievements ONLY in the local cache
+// (<steam>\appcache\stats\UserGameStats_<account>_<appid>.bin): the server
+// rejects StoreUserStats2 from accounts that do not own the game, so that
+// cache is the ONLY copy of progress and any client-side invalidation is a
+// permanent loss (see also the "PendingChanges" field in the binary file:
+// changes never confirmed by the server).
 //
-// Per questo ogni fase del flusso lascia una traccia dettagliata nel log e,
-// soprattutto, ogni sblocco viene replicato nella sezione Backup di AetherDesk
-// (se installata, tramite desk_path.cfg) con la stessa convenzione di nomi di
-// Steam — un file per (account, appid). La persistenza vive nel modulo dedicato
-// hooks/wire/AchievementBackup (separazione dei compiti): RecordUnlock() è
-// asincrona, nessuna I/O su disco nel thread di rete di Steam.
+// That is why every stage of the flow leaves a detailed trace in the log and,
+// above all, every unlock is replicated into AetherDesk's Backup section
+// (when installed, via desk_path.cfg) with the same Steam naming convention —
+// one file per (account, appid). Persistence lives in the dedicated module
+// hooks/wire/AchievementBackup (separation of concerns): RecordUnlock() is
+// asynchronous, no disk I/O on Steam's network thread.
 //
 //   <AetherData>\backup\<appid>\achievements\            [via desk_path.cfg]
 //   <steam>\aethercore\backup\<appid>\achievements\      [fallback]
-//       UserGameStats_<account>_<appid>.json   snapshot sblocchi (leggibile,
-//                                               rigenera il .bin con il tool)
-//       UserGameStats_<account>_<appid>.bin    copia della cache Steam
-//       UserGameStatsSchema_<appid>.bin        copia dello schema del gioco
+//       UserGameStats_<account>_<appid>.json   unlock snapshot (readable,
+//                                               regenerates the .bin with the tool)
+//       UserGameStats_<account>_<appid>.bin    copy of the Steam cache
+//       UserGameStatsSchema_<appid>.bin        copy of the game schema
 //
-// Se la cache di Steam venisse di nuovo azzerata, dal backup si recupera tutto:
-// o rimettendo i .bin al loro posto (Steam chiuso), o ricostruendo il .bin dal
-// JSON con Tools/achievement_decoder.py (comando `rebuild`).
+// If Steam's cache were wiped again, everything is recoverable from the backup:
+// either by putting the .bins back in place (Steam closed), or by rebuilding the
+// .bin from JSON with Tools/achievement_decoder.py (the `rebuild` command).
 //
 // Flusso tracciato (con eMsg):
-//   151  Send  Player.GetUserStats (servizio)          -> donor spoofing
-//   152  Recv  Player.GetUserStats response (147)      -> pulizia dati donor
+//   151  Send  Player.GetUserStats (service)          -> donor spoofing
+//   152  Recv  Player.GetUserStats response (147)      -> donor data cleanup
 //   818  Send  ClientGetUserStats                      -> donor spoofing
-//   819  Recv  ClientGetUserStatsResponse              -> pulizia dati donor
-//   5466 Send  ClientStoreUserStats2                   -> SBLOCCO achievement
+//   819  Recv  ClientGetUserStatsResponse              -> donor data cleanup
+//   5466 Send  ClientStoreUserStats2                   -> achievement UNLOCK
 // ============================================================================
 
 namespace ac::hooks::AchievementModule {
@@ -76,21 +76,21 @@ namespace {
 
 constexpr const char* kModule = "Wire.Achievement";
 constexpr std::int32_t kNoChange = -1;
-// Donor pool, attempt correlation e pending 818 vivono in hooks/wire/DonorPool
-// (estrazione P9): qui restano solo i decoder puri e gli handler wire.
+// Donor pool, attempt correlation and pending 818s live in hooks/wire/DonorPool
+// (P9 extraction): only pure decoders and wire handlers remain here.
 using DonorPool::Correl;
 using DonorPool::StatAttempt;
 using Clock = DonorPool::Clock;
 
-// Ultimo valore noto delle stat bitfield per app (stat_id -> value), per
-// rilevare i NUOVI bit a ogni commit (achievement via stats).
+// Last known value of the bitfield stats per app (stat_id -> value), to
+// detect NEW bits on every commit (achievements via stats).
 std::mutex g_statBitsMutex;
 std::unordered_map<steam::AppId, std::unordered_map<std::uint32_t, std::uint32_t>> g_statBits;
 
-// Cache dello SteamID attivo: GetActiveSteamId64 legge registry/filesystem a
-// ogni chiamata, ma il 5466 può arrivare molte volte al minuto. L'account non
-// cambia senza un riavvio di Steam: TTL di 30s (compromesso tra freschezza e
-// costo), atomici senza lock (il valore a 64 bit è atomico su x64).
+// Active SteamID cache: GetActiveSteamId64 reads registry/filesystem on
+// every call, but 5466 can arrive many times per minute. The account never
+// changes without a Steam restart: 30s TTL (freshness-vs-cost tradeoff),
+// lock-free atomics (a 64-bit value is atomic on x64).
 std::atomic<std::uint64_t> g_cachedActiveSteamId{0};
 std::atomic<Clock::rep> g_cachedActiveSteamIdAt{0};
 constexpr auto kSteamIdCacheTtl = std::chrono::seconds(30);
@@ -109,9 +109,9 @@ std::uint64_t CachedActiveSteamId64() {
     return resolved;
 }
 
-// Unica coda di serializzazione per tutti gli handler (P9): prima erano 8
-// blocchi "ByteSizeLong + cap + SerializeToArray" quasi identici. warnTag
-// non nullo = logga il fallimento (percorsi send); nullo = silenzio (recv).
+// Single serialization queue for all handlers (P9): previously 8 nearly
+// identical "ByteSizeLong + cap + SerializeToArray" blocks. Non-null warnTag
+// = log the failure (send paths); null = silence (recv).
 template <class TMsg>
 std::int32_t SerializeTo(const TMsg& msg, std::uint8_t* out, std::uint32_t outCap,
                          const char* warnTag) {
@@ -167,7 +167,7 @@ bool ResolveAetherOnlineAppId(steam::AppId& appId, const char* flow) {
 } // namespace
 
 // ---------------------------------------------------------------------------
-// Intercettazione e Spoofing delle Richieste in Uscita (HandleSend)
+// Outgoing Request Interception and Spoofing (HandleSend)
 // ---------------------------------------------------------------------------
 
 std::int32_t HandleSendGetUserStats(const WireFrame& frame, std::uint8_t* out, std::uint32_t outCap) {
@@ -179,8 +179,8 @@ std::int32_t HandleSendGetUserStats(const WireFrame& frame, std::uint8_t* out, s
 
     steam::AppId appId = req.appid();
 
-    // AetherOnline: la richiesta può arrivare mascherata come 480 (vedi
-    // ResolveAetherOnlineAppId) — riscrivi la frame prima del gate Lua-managed.
+    // AetherOnline: the request may arrive masked as 480 (see
+    // ResolveAetherOnlineAppId) — rewrite the frame before the Lua-managed gate.
     if (ResolveAetherOnlineAppId(appId, "GetUserStats")) {
         req.set_appid(appId);
     }
@@ -246,8 +246,8 @@ std::int32_t HandleSendClientGetUserStats(const WireFrame& frame, std::uint8_t* 
 
     steam::AppId appId = static_cast<steam::AppId>(req.game_id());
 
-    // AetherOnline: la richiesta può arrivare mascherata come 480 (vedi
-    // ResolveAetherOnlineAppId) — riscrivi la frame prima del gate Lua-managed.
+    // AetherOnline: the request may arrive masked as 480 (see
+    // ResolveAetherOnlineAppId) — rewrite the frame before the Lua-managed gate.
     if (ResolveAetherOnlineAppId(appId, "ClientGetUserStats")) {
         req.set_game_id(appId);
     }
@@ -261,8 +261,8 @@ std::int32_t HandleSendClientGetUserStats(const WireFrame& frame, std::uint8_t* 
     const std::uint64_t donorId = DonorPool::DonorSteamId(poolIndex);
     const std::uint64_t originalUserId = req.steam_id_for_user();
 
-    // Backup di sessione: al primo 818 dell'app copia la cache .bin esistente
-    // (protegge i progressi già accumulati anche senza nuovi sblocchi).
+    // Session backup: on the app's first 818, copy the existing .bin cache
+    // (protects already-accumulated progress even with no new unlocks).
     AchievementBackup::TouchSession(appId, originalUserId);
 
     AC_LOG_DEBUG(kModule,
@@ -272,8 +272,8 @@ std::int32_t HandleSendClientGetUserStats(const WireFrame& frame, std::uint8_t* 
                 appId, static_cast<unsigned long long>(originalUserId), req.crc_stats(),
                 req.schema_local_version(), donorId, poolIndex);
 
-    // Forza la richiesta dello schema azzerando la versione locale (ottiene lo
-    // schema aggiornato) e la crc locale (come LumaCore).
+    // Force the schema request by zeroing the local version (fetches the
+    // updated schema) and the local crc (like LumaCore).
     req.clear_crc_stats();
     req.set_schema_local_version(-1);
 
@@ -282,11 +282,12 @@ std::int32_t HandleSendClientGetUserStats(const WireFrame& frame, std::uint8_t* 
     StatAttempt attempt;
     attempt.appId = appId;
     attempt.poolIndex = poolIndex;
-    attempt.seen = Clock::now();   // FIX (log 21/08): senza questo il default è
-                                   // epoch → il prune di TakePendingClientStats
-                                   // considerava la entry già scaduta e la
-                                   // cancellava: OGNI 819 risultava "non
-                                   // correlata" (e con donor con dati, leak).
+    attempt.seen = Clock::now();   // FIX (21/08 log): without this the default
+                                   // is epoch → TakePendingClientStats' prune
+                                   // treated the entry as already expired and
+                                   // deleted it: EVERY 819 came out
+                                   // "uncorrelated" (and with a data-carrying
+                                   // donor, a leak).
     DonorPool::RecordPendingClientStats(appId, attempt);
 
     const std::int32_t serialized = SerializeTo(req, out, outCap, "[818 ClientGetUserStats]");
@@ -298,7 +299,7 @@ std::int32_t HandleSendClientGetUserStats(const WireFrame& frame, std::uint8_t* 
 }
 
 // ---------------------------------------------------------------------------
-// Normalizzazione delle Risposte in Entrata (HandleRecv)
+// Incoming Response Normalization (HandleRecv)
 // ---------------------------------------------------------------------------
 
 std::int32_t HandleRecvGetUserStatsResponse(const WireFrame& frame, std::uint8_t* out, std::uint32_t outCap,
@@ -326,12 +327,12 @@ std::int32_t HandleRecvGetUserStatsResponse(const WireFrame& frame, std::uint8_t
         return kNoChange;
     }
 
-    // Risposta del DONOR non correlabile con precisione: Ambiguous (più
-    // richieste spoofate in volo) oppure Resolved su un app diventato non
-    // gestito dopo il send (es. MarkOwned scattato nel frattempo). In entrambi
-    // i casi il payload appartiene al donor e NON deve raggiungere il gioco
-    // (leak "The Fool": achievement del donor consegnati all'utente). Ripuliamo
-    // stats e crc, conserviamo lo schema, header invariato.
+    // DONOR response not precisely correlatable: Ambiguous (multiple spoofed
+    // requests in flight) or Resolved onto an app that became unmanaged after
+    // the send (e.g. MarkOwned fired in the meantime). In both cases the
+    // payload belongs to the donor and must NOT reach the game (the "The Fool"
+    // leak: donor achievements delivered to the user). We strip stats and crc,
+    // keep the schema, header unchanged.
     if (correl == Correl::Ambiguous || !ac::luadata::HasDepot(attempt.appId)) {
         const int removedStats = resp.stats_size();
         const std::uint32_t schemaBytes = resp.has_schema() ? static_cast<std::uint32_t>(resp.schema().size()) : 0u;
@@ -363,9 +364,9 @@ std::int32_t HandleRecvGetUserStatsResponse(const WireFrame& frame, std::uint8_t
                 (resp.has_sha_schema() && !resp.sha_schema().empty()) ? "present" : "absent",
                 resp.stats_size(), resp.crc_stats(), okWithData ? "WITH data" : "WITHOUT data");
 
-    // Dettaglio dei dati del donor che stanno per essere rimossi (debug).
-    // Il loop viene saltato interamente quando Debug non è attivo: il donor
-    // può portare decine di stat e il parsing per il log non è gratis.
+    // Detail of the donor data about to be dropped (debug).
+    // The loop is skipped entirely when Debug is off: the donor can carry
+    // dozens of stats and log-time parsing is not free.
     if (ac::log::Enabled(LogLevel::Debug)) for (const auto& st : resp.stats()) {
         if (st.unlock_times_size() > 0) {
             for (const auto& ut : st.unlock_times()) {
@@ -383,7 +384,7 @@ std::int32_t HandleRecvGetUserStatsResponse(const WireFrame& frame, std::uint8_t
 
     DonorPool::NoteAttemptResult(attempt.appId, attempt.poolIndex, okWithData);
 
-    // 1. Header: forza eresult = k_EResultOK.
+    // 1. Header: force eresult = k_EResultOK.
     hdrMsg.set_eresult(1); // k_EResultOK
     const std::uint32_t newHdrSize = static_cast<std::uint32_t>(hdrMsg.ByteSizeLong());
     if (newHdrSize > outHdrCap || !hdrMsg.SerializeToArray(outHdr, static_cast<int>(outHdrCap))) {
@@ -391,7 +392,7 @@ std::int32_t HandleRecvGetUserStatsResponse(const WireFrame& frame, std::uint8_t
     }
     *outNewHdrLen = static_cast<std::int32_t>(newHdrSize);
 
-    // 2. Body: rimuovi i progressi del donatore, tenendo lo schema (utile).
+    // 2. Body: drop the donor's progress, keeping the schema (useful).
     resp.clear_stats();
 
     const std::int32_t serialized = SerializeTo(resp, out, outCap, nullptr);
@@ -414,10 +415,11 @@ std::int32_t HandleRecvClientGetUserStatsResponse(const WireFrame& frame, std::u
 
     steam::AppId appId = static_cast<steam::AppId>(resp.game_id());
 
-    // AetherOnline: la risposta arriva con game_id 480 — risolvi l'appid reale
-    // prima del lookup pending, così il response trova l'attempt registrato
-    // dal send sul redirect (appid reale). Il body resta invariato: il pipe
-    // del gioco è registrato come 480 e deve ricevere game_id=480.
+    // AetherOnline: the response arrives with game_id 480 — resolve the real
+    // appid before the pending lookup, so the response finds the attempt
+    // registered by the send on redirect (real appid). The body stays
+    // untouched: the game's pipe is registered as 480 and must receive
+    // game_id=480.
     ResolveAetherOnlineAppId(appId, "ClientGetUserStatsResponse");
 
     if (!ac::luadata::HasDepot(appId)) {
@@ -431,17 +433,16 @@ std::int32_t HandleRecvClientGetUserStatsResponse(const WireFrame& frame, std::u
     StatAttempt attempt;
     const bool wasSpoofed = DonorPool::TakePendingClientStats(appId, attempt);
     if (!wasSpoofed) {
-        // ATTENZIONE: risposta per una richiesta che NON abbiamo spoofato noi
-        // (o che non siamo riusciti a correlare). È il percorso da tenere
-        // d'occhio nei log quando si indaga una perdita: una risposta "OK con
-        // stats vuote" consegnata al client PUO' indurlo a riscrivere la
-        // cache locale (UserGameStats_*.bin) che — per gli app non posseduti —
-        // è l'unica copia dei progressi. Ed è anche la porta del leak donor:
-        // se la risposta porta stats/achievement con eresult OK, per un app
-        // gestito può trattarsi SOLO della risposta del donor (due 818
-        // ravvicinati, finestra 30s scaduta, ...): il pass-through integrale
-        // consegnerebbe al gioco gli achievement del donor — es. "The Fool"
-        // di Cyberpunk sbloccato al primo avvio (21/08/2026).
+        // WARNING: response to a request WE did not spoof (or failed to
+        // correlate). This is the path to watch in the logs when investigating
+        // a loss: an "OK with empty stats" response delivered to the client MAY
+        // induce it to rewrite the local cache (UserGameStats_*.bin) which —
+        // for unowned apps — is the only copy of progress. And it is also the
+        // donor-leak door: when the response carries stats/achievements with
+        // eresult OK, for a managed app it can ONLY be the donor's response
+        // (two close 818s, expired 30s window, ...): full pass-through would
+        // deliver the donor's achievements to the game — e.g. Cyberpunk's
+        // "The Fool" unlocked on first launch (21/08/2026).
         AC_LOG_WARN(kModule,
                     "[819 ClientGetUserStatsResponse] AppID %u: response NOT correlated to one of our spoofs "
                     "(eresult=%d, stats=%d, achievement_blocks=%d, schema=%u byte fnv1a %016llx, crc_stats=%u). "
@@ -454,7 +455,7 @@ std::int32_t HandleRecvClientGetUserStatsResponse(const WireFrame& frame, std::u
                         : 0ull,
                     resp.crc_stats());
 
-        // Dettaglio dei blocchi achievement presenti nella risposta.
+        // Detail of the achievement blocks present in the response.
         if (ac::log::Enabled(LogLevel::Debug)) for (const auto& blk : resp.achievement_blocks()) {
             for (int i = 0; i < blk.unlock_time_size(); ++i) {
                 AC_LOG_DEBUG(kModule,
@@ -465,10 +466,10 @@ std::int32_t HandleRecvClientGetUserStatsResponse(const WireFrame& frame, std::u
             }
         }
 
-        // Risposta OK SENZA payload: innocua (es. utente reale senza stats),
-        // passa intatta. Risposta OK CON payload (possibile donor leak) o
-        // errore: normalizziamo svuotando stats/achievement — mai fidarsi di
-        // dati che non possiamo attribuire con certezza al vero utente.
+        // OK response WITHOUT payload: harmless (e.g. real user with no stats),
+        // passes through untouched. OK response WITH payload (possible donor
+        // leak) or error: normalize by emptying stats/achievements — never
+        // trust data we cannot attribute to the real user with certainty.
         const bool hasPayload = resp.stats_size() > 0 || resp.achievement_blocks_size() > 0;
         if (IsOK(resp.eresult()) && !hasPayload) {
             return kNoChange;
@@ -501,7 +502,7 @@ std::int32_t HandleRecvClientGetUserStatsResponse(const WireFrame& frame, std::u
                 resp.stats_size(), resp.achievement_blocks_size(), resp.crc_stats(),
                 okWithData ? "donor WITH data" : "donor WITHOUT data");
 
-    // Dettaglio dei blocchi achievement del donor che stanno per essere rimossi.
+    // Detail of the donor's achievement blocks about to be dropped.
     for (const auto& blk : resp.achievement_blocks()) {
         for (int i = 0; i < blk.unlock_time_size(); ++i) {
             AC_LOG_DEBUG(kModule,
@@ -518,7 +519,7 @@ std::int32_t HandleRecvClientGetUserStatsResponse(const WireFrame& frame, std::u
 
     DonorPool::NoteAttemptResult(appId, attempt.poolIndex, okWithData);
 
-    // Svuotamento totale degli sblocchi estranei, mantenendo lo schema.
+    // Total wipe of foreign unlocks, keeping the schema.
     resp.clear_stats();
     resp.clear_achievement_blocks();
     resp.clear_crc_stats();
@@ -536,7 +537,7 @@ std::int32_t HandleRecvClientGetUserStatsResponse(const WireFrame& frame, std::u
 }
 
 // ---------------------------------------------------------------------------
-// Monitoraggio e Cattura degli Sblocchi in-game (StoreStats)
+// In-game Unlock Monitoring and Capture (StoreStats)
 // ---------------------------------------------------------------------------
 
 std::int32_t HandleSendStoreUserStats2(const WireFrame& frame, std::uint8_t* out, std::uint32_t outCap) {
@@ -549,10 +550,10 @@ std::int32_t HandleSendStoreUserStats2(const WireFrame& frame, std::uint8_t* out
 
     steam::AppId appId = static_cast<steam::AppId>(req.game_id());
 
-    // AetherOnline: la richiesta può arrivare mascherata come 480 (vedi
-    // ResolveAetherOnlineAppId) — riscrivi la frame prima del gate Lua-managed,
-    // così gli sblocchi in-game vengono attribuiti al gioco reale e la
-    // riscrittura dello SteamID (sotto) ha effetto.
+    // AetherOnline: the request may arrive masked as 480 (see
+    // ResolveAetherOnlineAppId) — rewrite the frame before the Lua-managed
+    // gate, so in-game unlocks are attributed to the real game and the
+    // SteamID rewrite (below) takes effect.
     if (ResolveAetherOnlineAppId(appId, "StoreUserStats2")) {
         req.set_game_id(appId);
     }
@@ -575,29 +576,29 @@ std::int32_t HandleSendStoreUserStats2(const WireFrame& frame, std::uint8_t* out
                 static_cast<unsigned long long>(originalSettee),
                 static_cast<unsigned long long>(realSteamId));
 
-    // Commit vuoto: il gioco ha inviato uno Store senza ne' achievement ne'
-    // stat. Non e' un errore di per se', ma distinguerlo nei log aiuta a
-    // capire se un mancato salvataggio dipende dal gioco o dal flusso.
+    // Empty commit: the game sent a Store with neither achievements nor stats.
+    // Not an error per se, but telling it apart in the logs helps understand
+    // whether a missed save is the game's or the pipeline's fault.
     if (req.achievement_blocks_size() == 0 && req.stats_size() == 0) {
         AC_LOG_DEBUG(kModule, "[5466 StoreUserStats2] AppID %u: empty packet (0 achievements, 0 stats).",
                      appId);
     }
 
-    // Intercettazione degli achievement committati dal gioco.
-    // Ogni sblocco viene: (1) loggato con timestamp leggibile, (2) salvato nel
-    // backup per (account, appid) — snapshot JSON + copia dei .bin di Steam —
-    // così una successiva perdita della cache resta recuperabile.
+    // Interception of game-committed achievements.
+    // Every unlock is: (1) logged with a readable timestamp, (2) saved to the
+    // per-(account, appid) backup — JSON snapshot + copy of Steam's .bins —
+    // so a later cache loss stays recoverable.
     const std::uint64_t mirrorAccount = realSteamId != 0 ? realSteamId
                                                          : (originalSettee != 0 ? originalSettee : originalSettor);
     AchievementBackup::TouchSession(appId, mirrorAccount);
 
-    // Molti giochi (es. Spider-Man Remastered) committano gli achievement NON
-    // come achievement_blocks ma come STAT bitfield: stat_id = bucket dello
-    // schema, value = bitfield 32 bit degli achievement sbloccati. Esempio
-    // reale (21/08): stat_id=0 value=0x40000000 = bit 30 bucket 0 = "Wing It".
-    // Tracciamo i bitfield in memoria, logghiamo i NUOVI bit (sopra il bit 7,
-    // per non confonderli con contatori che crescono di poco) e li salviamo
-    // nello snapshot JSON come achievement veri.
+    // Many games (e.g. Spider-Man Remastered) commit achievements NOT as
+    // achievement_blocks but as STAT bitfields: stat_id = the schema bucket,
+    // value = 32-bit bitfield of unlocked achievements. Real example (08/21):
+    // stat_id=0 value=0x40000000 = bit 30 bucket 0 = "Wing It". We track the
+    // bitfields in memory, log NEW bits (above bit 7, to avoid mistaking them
+    // for slowly-growing counters) and save them into the JSON snapshot as
+    // real achievements.
     {
         std::lock_guard<std::mutex> lock(g_statBitsMutex);
         auto& known = g_statBits[appId];
@@ -609,13 +610,13 @@ std::int32_t HandleSendStoreUserStats2(const WireFrame& frame, std::uint8_t* out
             const bool firstSighting = known.find(st.stat_id()) == known.end();
             std::uint32_t old = 0;
             if (!firstSighting) old = known[st.stat_id()];
-            const std::uint32_t newBits = (value & ~old) & 0xFFFFFF00u;   // solo bit >= 8
+            const std::uint32_t newBits = (value & ~old) & 0xFFFFFF00u;   // bits >= 8 only
             if (newBits != 0) {
-                // Euristica baseline: il PRIMO avvistamento di una stat con molti
-                // bit nuovi è quasi sempre lo stato accumulato che il gioco
-                // ricommita all'avvio (es. 15 achievement gia' sbloccati), non
-                // 15 sblocchi simultanei. Lo registriamo come baseline senza
-                // spammare log/JSON (le date vere restano nei .bin del backup).
+                // Baseline heuristic: the FIRST sighting of a stat with many new
+                // bits is almost always accumulated state the game recommits at
+                // startup (e.g. 15 already-unlocked achievements), not 15
+                // simultaneous unlocks. We record it as baseline without
+                // spamming logs/JSON (real dates stay in the backup .bins).
                 const bool looksAccumulated = firstSighting && std::popcount(newBits) > 3;
                 if (looksAccumulated) {
                     AC_LOG_INFO(kModule,
@@ -654,18 +655,18 @@ std::int32_t HandleSendStoreUserStats2(const WireFrame& frame, std::uint8_t* out
         AchievementBackup::RecordUnlock(appId, mirrorAccount, ach.achievement_id(), unlockTime);
     }
 
-    // Dettaglio delle stat numeriche inviate dal gioco (per debug finemente
-    // granulari: contatori, tempi, ecc.). Loop saltato quando Debug è filtrato.
+    // Detail of the numeric stats sent by the game (for fine-grained debug:
+    // counters, times, etc.). Loop skipped when Debug is filtered.
     if (ac::log::Enabled(LogLevel::Debug)) for (const auto& st : req.stats()) {
         AC_LOG_DEBUG(kModule, "[5466 StoreUserStats2] AppID %u: stat_id=%u value=%u.",
                      appId, st.stat_id(), st.stat_value());
     }
 
-    // RISOLUZIONE BUG DI MISMATCH STEAMID:
-    // Se il gioco crede che l'utente sia lo SteamID fittizio di spoofing, tenterà
-    // di salvare le stats per quell'ID, ma il Connection Manager di Steam rifiuterà
-    // la scrittura perché la sessione loggata appartiene al vero utente. Riscriviamo
-    // settor_steam_id e settee_steam_id con il vero SteamID attivo dell'utente.
+    // STEAMID MISMATCH BUG RESOLUTION:
+    // If the game believes the user is the spoofed spoofing SteamID, it will try
+    // to save stats for that ID, but Steam's Connection Manager will refuse the
+    // write because the logged-in session belongs to the real user. We rewrite
+    // settor_steam_id and settee_steam_id with the user's real active SteamID.
     if (realSteamId != 0) {
         if (originalSettor != realSteamId || originalSettee != realSteamId) {
             AC_LOG_INFO(kModule,
@@ -679,8 +680,8 @@ std::int32_t HandleSendStoreUserStats2(const WireFrame& frame, std::uint8_t* out
         req.set_settor_steam_id(realSteamId);
         req.set_settee_steam_id(realSteamId);
 
-        // Unica coda di serializzazione del modulo (P9): stesso percorso di
-        // tutti gli altri handler, WARN automatico in caso di frame troppo grande.
+        // The module's single serialization queue (P9): same path as every
+        // other handler, automatic WARN on oversized frames.
         const std::int32_t serialized = SerializeTo(req, out, outCap, "[5466 StoreUserStats2]");
         if (serialized != kNoChange) {
             AC_LOG_INFO_ONCE(kModule,
@@ -702,8 +703,8 @@ std::int32_t HandleSendStoreUserStats2(const WireFrame& frame, std::uint8_t* out
 }
 
 void Shutdown() {
-    // Il teardown del backup (scarico coda + ultime copie .bin + join del
-    // worker) vive nel modulo dedicato: qui ci limitiamo a delegarlo.
+    // Backup teardown (queue drain + final .bin copies + worker join) lives in
+    // the dedicated module: here we only delegate it.
     AchievementBackup::FlushOnShutdown();
 }
 

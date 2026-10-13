@@ -1,18 +1,18 @@
 #pragma once
 
 // ---------------------------------------------------------------------------
-// JsonWriter — emitter JSON dichiarativo per StatusWriter (I-C).
+// JsonWriter — declarative JSON emitter for StatusWriter (I-C).
 //
-// Prima WriteSnapshot concatenava ~150 righe di `json << "  \"key\": ...,\n"`
-// a mano: aggiungere, togliere o spostare un campo rischiava di rompere DUE
-// virgole (quella del campo vicino). Qui la punteggiatura (virgole, indent,
-// newline) è gestita UNA volta sola dal writer; ogni campo è una chiamata
-// autoconclusiva.
+// Before, WriteSnapshot concatenated ~150 hand-written lines of
+// `json << "  \"key\": ...,\n"`: adding, removing or moving a field risked
+// breaking TWO commas (the neighboring field's). Here punctuation (commas,
+// indent, newlines) is handled ONCE by the writer; every field is a
+// self-contained call.
 //
-// Compatibilità byte-per-byte: il formato riproduce esattamente lo
-// schema_version 9 pubblicato (2 spazi di indent, array su righe proprie,
-// ultimo campo senza virgola, chiusura "}\n"). La suite "jsonwriter" di
-// quickwin_tests lo fissa con un golden test.
+// Byte-for-byte compatibility: the format reproduces exactly the published
+// schema_version 9 (2-space indent, arrays on their own lines, last field
+// without comma, "}\n" close). The "jsonwriter" suite in quickwin_tests pins
+// it with a golden test.
 // ---------------------------------------------------------------------------
 
 #include <cstddef>
@@ -21,8 +21,8 @@
 
 namespace ac::jsonw {
 
-// Escape identico al vecchio EscapeJson di StatusWriter (ASCII previsto;
-// quote/backslash/newline e controlli <0x20 -> \u00XX).
+// Identical escape to StatusWriter's old EscapeJson (ASCII expected;
+// quote/backslash/newline and <0x20 controls -> \u00XX).
 inline std::string Escape(const std::string& in) {
     std::string out;
     out.reserve(in.size() + 2);
@@ -66,8 +66,8 @@ public:
         Field(key, "\"" + Escape(value) + "\"");
     }
 
-    // Array di stringhe: [] vuoto inline, altrimenti un elemento per riga
-    // (4 spazi), chiusura "\n  ]" — come le hooks_*_list dello schema 9.
+    // String array: empty [] inline, otherwise one element per line (4 spaces),
+    // "\n  ]" close — like the schema 9 hooks_*_list.
     void StrArray(const char* key, const std::vector<std::string>& items) {
         std::string body = "[";
         for (std::size_t i = 0; i < items.size(); ++i) {
@@ -81,8 +81,8 @@ public:
         Field(key, body);
     }
 
-    // Array di oggetti già renderizzati inline (elemento "{...}"): usato dai
-    // diagnostics. ObjectArray apre, RawObject aggiunge, ArrayEnd chiude.
+    // Array of already-rendered inline objects ("{...}" element): used by
+    // diagnostics. ObjectArray opens, RawObject appends, ArrayEnd closes.
     void ObjectArray(const char* key) {
         Separator();
         out_ += "  \"";
@@ -100,8 +100,8 @@ public:
         out_ += "]";
     }
 
-    // Chiude l'oggetto: l'ultimo campo resta SENZA virgola; la riga finale è
-    // "\n}\n" ( newline prima della graffa, come il vecchio emitter ).
+    // Closes the object: the last field stays WITHOUT comma; the final line is
+    // "\n}\n" (newline before the brace, like the old emitter).
     std::string Finish() {
         out_ += "\n}\n";
         return std::move(out_);

@@ -1,8 +1,8 @@
-//! Unit test per la logica di confronto versioni degli update (github.rs).
+//! Unit tests for the update version-comparison logic (github.rs).
 //!
-//! Blinda il gate "la release test conta solo se piu' nuova dell'installata",
-//! che e' la causa dei pallini rossi spuri quando l'utente e' gia' su una
-//! versione piu' alta della release di test.
+//! Pins the "a test release only counts when newer than the installed one" gate,
+//! the cause of spurious red dots when the user is already on a version higher
+//! than the test release.
 
 use crate::updater::github::GithubReleaseManager;
 
@@ -21,7 +21,7 @@ fn test_test_release_newer_is_update() {
 
 #[test]
 fn test_stable_release_newer_is_update_after_test() {
-    // Dopo aver installato la test 1.0.1, la stabile 1.0.3 e' un update.
+    // After installing test 1.0.1, stable 1.0.3 is an update.
     assert!(!GithubReleaseManager::latest_is_newer_than("1.0.1", "tdesk-1.0.1"));
     assert!(GithubReleaseManager::latest_is_newer_than("1.0.1", "desk-1.0.3"));
 }
@@ -85,12 +85,12 @@ fn test_build_desk_test_update_info_respects_version_gate() {
         assets: vec![],
     };
 
-    // Quando la versione locale è uguale (1.0.4) o maggiore, update_available deve essere false
+    // When the local version is equal (1.0.4) or newer, update_available must be false
     let info_equal = GithubReleaseManager::build_desk_test_update_info("1.0.4".to_string(), &release);
     assert!(!info_equal.update_available);
     assert!(info_equal.is_test);
 
-    // Quando la versione locale è minore (1.0.3), update_available deve essere true
+    // When the local version is older (1.0.3), update_available must be true
     let info_older = GithubReleaseManager::build_desk_test_update_info("1.0.3".to_string(), &release);
     assert!(info_older.update_available);
     assert!(info_older.is_test);

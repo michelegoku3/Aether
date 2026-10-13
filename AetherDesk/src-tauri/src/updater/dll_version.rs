@@ -1,41 +1,41 @@
-//! Lettura della versione AetherDLL **direttamente dai file .dll** (PE version resource).
+//! Reads the AetherDLL version **directly from the .dll files** (PE version resource).
 //!
-//! # Perché esiste
-//! Da quando la repo AetherDLL embedde una `VS_VERSION_INFO` resource in ogni binario
-//! (root `CMakeLists.txt` → `common/version.rc.in`), la versione vive dentro i file
-//! stessi — esattamente come la versione di AetherDesk vive dentro AetherDesk.exe
-//! grazie a Tauri/tauri.conf.json. Questo modulo è il lato lettura: interroga la
-//! resource dei 3 binari della configurazione XInput-only nella cartella Steam,
-//! **senza nessun file esterno**
-//! (niente bookmark `.txt`, niente fingerprint `.json`).
+//! # Why it exists
+//! Since the AetherDLL repo embeds a `VS_VERSION_INFO` resource in every binary
+//! (root `CMakeLists.txt` → `common/version.rc.in`), the version lives inside the
+//! files themselves — exactly like the AetherDesk version lives inside AetherDesk.exe
+//! thanks to Tauri/tauri.conf.json. This module is the read side: it queries the
+//! resource of the 3 binaries of the XInput-only configuration in the Steam folder,
+//! **with no external files**
+//! (no `.txt` bookmarks, no `.json` fingerprints).
 //!
-//! # Contratto
-//! - `read_installed_dll_version` ritorna `Some("x.y.z")` SOLO se tutti e 3 i file
-//!   esistono, hanno la resource, concordano sulla stessa versione e nessun
-//!   componente legacy incompatibile è presente. Altrimenti ritorna `None`.
-//! - Fuori da Windows la lettura è uno stub che ritorna sempre `None` (il dominio
-//!   AetherDLL è Windows-only, ma il crate deve compilare ovunque).
+//! # Contract
+//! - `read_installed_dll_version` returns `Some("x.y.z")` ONLY when all 3 files
+//!   exist, carry the resource, agree on the same version and no incompatible
+//!   legacy component is present. Otherwise returns `None`.
+//! - Off Windows the read is a stub that always returns `None` (the AetherDLL
+//!   domain is Windows-only, but the crate must compile everywhere).
 
 use crate::updater::dll::{AETHER_DLL_FILES, DllInstaller};
 use std::path::Path;
 
-/// Dimensione minima della VS_FIXEDFILEINFO (13 DWORD = 52 byte), dalla documentazione
-/// Microsoft: sotto questa soglia il blocco root non può essere una versione valida.
+/// Minimum size of a VS_FIXEDFILEINFO (13 DWORDs = 52 bytes), per Microsoft's
+/// docs: below this threshold the root block cannot be a valid version.
 #[cfg(windows)]
 const FIXED_FILE_INFO_SIZE: u32 = 52;
-/// dwSignature atteso di una VS_FIXEDFILEINFO valida.
+/// Expected dwSignature of a valid VS_FIXEDFILEINFO.
 #[cfg(any(windows, test))]
 const FIXED_FILE_INFO_SIGNATURE: u32 = 0xFEEF04BD;
 
-/// Estrae `(major, minor, patch)` dai primi 4 DWORD di una VS_FIXEDFILEINFO.
-/// Funzione pura, unit-testabile: il layout è la parte storicamente più fragile
-/// (dwStrucVersion è 0x00010000 fisso e NON va confuso con la versione del file).
+/// Extracts `(major, minor, patch)` from the first 4 DWORDs of a VS_FIXEDFILEINFO.
+/// Pure, unit-testable function: the layout is the historically most fragile part
+/// (dwStrucVersion is fixed 0x00010000 and must NOT be confused with the file version).
 ///
-/// Esiste esattamente dove viene usata: su Windows la chiama
-/// [`read_file_version`], in ogni build di test la chiamano i test puri in
-/// `tests::dll_version_tests`. Sul target non-Windows senza test non ha
-/// acquirenti, quindi non viene compilata (il lint `dead_code` la segnalerebbe
-/// a ragione) — vedi le due costanti qui sopra, usate solo dal suo corpo.
+/// It lives exactly where it is used: on Windows [`read_file_version`] calls it,
+/// in every test build the pure tests in `tests::dll_version_tests` call it. On
+/// non-Windows targets without tests it has no callers, so it is not compiled
+/// (the `dead_code` lint would rightly flag it) — see the two constants above,
+/// used only by its body.
 #[cfg(any(windows, test))]
 pub(crate) fn version_from_fixed_header(header: &[u32; 4]) -> Option<(u16, u16, u16)> {
     if header[0] != FIXED_FILE_INFO_SIGNATURE {
@@ -60,7 +60,7 @@ pub fn read_file_version(path: &Path) -> Option<(u16, u16, u16)> {
     };
 
     let wide_path: Vec<u16> = path.as_os_str().encode_wide().chain(Some(0)).collect();
-    // "\" = blocco root: VerQueryValueW lo espone come VS_FIXEDFILEINFO.
+    // "\" = root block: VerQueryValueW exposes it as VS_FIXEDFILEINFO.
     let root_block: Vec<u16> = "\\".encode_utf16().chain(Some(0)).collect();
 
     // SAFETY: all pointers passed to the Windows version-resource APIs point to
@@ -96,11 +96,12 @@ pub fn read_file_version(_path: &Path) -> Option<(u16, u16, u16)> {
     None
 }
 
-/// Versione concordata dei 3 binari XInput-only nella directory di Steam.
+/// Agreed version of the 3 XInput-only binaries in the Steam directory.
 ///
-/// Ritorna `Some("x.y.z")` solo con installazione completa e coerente (tutti i file
-/// presenti, tutti con resource, tutti alla stessa versione). In ogni altro caso
-/// `None`: manca file, manca resource (installazioni pre-resource) o versioni miste.
+/// Returns `Some("x.y.z")` only with a complete, coherent install (every file
+/// present, every file with the resource, every file at the same version).
+/// `None` in every other case: missing file, missing resource (pre-resource
+/// installs) or mixed versions.
 pub fn read_installed_dll_version(steam_dir: &Path) -> Option<String> {
     if !DllInstaller::new(&steam_dir.to_string_lossy()).verify_installation() {
         return None;
@@ -112,7 +113,7 @@ pub fn read_installed_dll_version(steam_dir: &Path) -> Option<String> {
         match agreed {
             None => agreed = Some(version),
             Some(existing) if existing == version => {}
-            Some(_) => return None, // versioni diverse tra i file: stato ambiguo
+            Some(_) => return None, // files disagree: ambiguous state
         }
     }
 

@@ -199,11 +199,11 @@ FetchContent_Declare(protobuf
     ${_aether_pb_fc_args})
 FetchContent_MakeAvailable(protobuf)
 
-# Il codice di Google (protoc/libprotobuf) compila su MSVC con una cascata di
-# warning innocui e non azionabili da noi: C4141 ('inline' specificato più
-# volte), C4715 nei generatori objectivec di protoc, C4723 (possibile
-# divisione per 0), C4805 (mix bool/int). Silenziamoli sui target di
-# protobuf così la console di build mostra solo i warning del NOSTRO codice.
+# Google code (protoc/libprotobuf) compiles on MSVC with a cascade of harmless,
+# unactionable-by-us warnings: C4141 ('inline' specified more than once),
+# C4715 in protoc's objectivec generators, C4723 (possible division by 0),
+# C4805 (bool/int mix). Silence them on the protobuf targets so the build
+# console shows only warnings from OUR code.
 if(MSVC)
     foreach(_pb_target protoc libprotoc libprotobuf libprotobuf-lite)
         if(TARGET ${_pb_target})
@@ -245,11 +245,11 @@ else()
 endif()
 
 # ----------------------------------------------------------------------------
-# aether_proto: il sorgente generato da protoc vive in un target suo.
-# Cosi' AetherCore resta a /W4 (+/WX se richiesto) senza dover forzare /W0
-# per singolo file - cosa che su MSVC produce il warning D9025 "override di
-# /W4 con /W0" e, con il PCH, non e' nemmeno affidabile. Questo target NON
-# passa da aether_apply_quality(): codice di Google, non nostro.
+# aether_proto: protoc-generated sources live in their own target. This keeps
+# AetherCore at /W4 (+/WX when requested) without forcing /W0 per file — which
+# on MSVC emits warning D9025 "override of /W4 with /W0" and, with the PCH, is
+# not even reliable. This target does NOT go through aether_apply_quality():
+# Google code, not ours.
 # ----------------------------------------------------------------------------
 add_library(aether_proto STATIC "${AC_PROTO_DIR}/steam_messages.pb.cc")
 add_dependencies(aether_proto generate_protos)
@@ -276,13 +276,13 @@ install(TARGETS AetherCore AetherPayload AetherXInput
     RUNTIME DESTINATION bin COMPONENT Runtime)
 
 # ============================================================================
-# Unit test come parte del build normale
+# Unit tests as part of the normal build
 # ----------------------------------------------------------------------------
-# I test in tests/ (quickwin_tests, backup_lifecycle_tests, inventario
-# sorgenti) girano gia' in CI al tag. Da qui girano anche in locale a ogni
-# "Compila tutto": il target aether_run_tests e' in ALL, quindi un test rosso
-# fa fallire il build nello stesso modo di un errore di compilazione.
-#   -DAETHER_BUILD_TESTS=OFF   per saltarli (es. build di packaging puro)
+# The tests in tests/ (quickwin_tests, backup_lifecycle_tests, source
+# inventory) already run in CI at tag time. From here they also run locally on
+# every "Build All": the aether_run_tests target is in ALL, so a red test
+# fails the build exactly like a compile error.
+#   -DAETHER_BUILD_TESTS=OFF   to skip them (e.g. pure packaging builds)
 # ============================================================================
 option(AETHER_BUILD_TESTS "Build and run the AetherDLL unit tests as part of ALL" ON)
 if(AETHER_BUILD_TESTS)

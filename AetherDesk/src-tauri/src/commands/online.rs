@@ -1,8 +1,8 @@
-//! Comandi Tauri per UCOnline2 (Enable Online).
+//! Tauri commands for UCOnline2 (Enable Online).
 //!
-//! Thin layer: risolve il gioco installato, localizza il bundle e delega
-//! all'engine puro (`online::engine`). Tutto il lavoro pesante è eseguito
-//! su `spawn_blocking` (pattern di `commands/steamless.rs`).
+//! Thin layer: resolves the installed game, locates the bundle and delegates
+//! to the pure engine (`online::engine`). All heavy work runs on
+//! `spawn_blocking` (the `commands/steamless.rs` pattern).
 
 use crate::external_tools::bundle::ToolBundleLocator;
 use crate::online::bundle::Uco2Bundle;
@@ -18,7 +18,7 @@ use std::path::{Path, PathBuf};
 
 const UCO2_RESOURCE_DIR: &str = "ExternalTools/UCOnline2";
 
-/// Path del file di stato UCOnline2 (fonte unica: `STATE_FILE`).
+/// UCOnline2 state file path (single source: `STATE_FILE`).
 fn state_path() -> PathBuf {
     OnlineStateStore::state_path(&LocalAppPaths::data_root())
 }
@@ -38,7 +38,7 @@ pub fn clear_online_preferences(app_id: u32) -> Result<(), String> {
     OnlinePreferencesStore::load(&path).remove(app_id, &path)
 }
 
-/// Stato online di un gioco (per la UI: footer + record).
+/// A game's online state (for the UI: footer + record).
 #[tauri::command]
 pub async fn get_online_status(app: tauri::AppHandle, app_id: u32) -> Result<OnlineStatus, String> {
     let mut status = OnlineEngine::status(app_id, &state_path());
@@ -58,11 +58,11 @@ pub async fn get_online_status(app: tauri::AppHandle, app_id: u32) -> Result<Onl
     Ok(status)
 }
 
-/// True quando UCO2 risulta attivo per il gioco, verificato dalla presenza
-/// del file `union-crax.ini` (scritto da UCO2 accanto all'exe in esecuzione).
-/// Rilevamento basato sui file, indipendente dal record di stato di Aether.
-/// La detection cammina l'intera cartella del gioco (walk+read) e va sempre
-/// eseguita su un thread di blocking I/O, non sul runtime tokio.
+/// True when UCO2 is active for the game, verified by the presence of the
+/// `union-crax.ini` file (written by UCO2 next to the running exe).
+/// File-based detection, independent of Aether's state record.
+/// Detection walks the whole game folder (walk+read) and must always run on
+/// a blocking I/O thread, never on the tokio runtime.
 #[tauri::command]
 pub async fn is_uco2_active(app: tauri::AppHandle, app_id: u32) -> Result<bool, String> {
     let game = resolve_installed_game(&app, app_id)?;
@@ -109,8 +109,8 @@ pub async fn plan_online(app: tauri::AppHandle, app_id: u32) -> Result<OnlinePla
     let bundle = locate_bundle(&app);
     let state_path = state_path();
 
-    // La detection cammina la cartella del gioco (I/O sincrono pesante):
-    // spawn_blocking, mai sul runtime tokio.
+    // Detection walks the game folder (heavy synchronous I/O):
+    // spawn_blocking, never on the tokio runtime.
     let plan_root = game_root.clone();
     let mut plan = tauri::async_runtime::spawn_blocking(move || {
         OnlineEngine::plan(app_id, &plan_root, &bundle, &state_path)
@@ -118,7 +118,7 @@ pub async fn plan_online(app: tauri::AppHandle, app_id: u32) -> Result<OnlinePla
     .await
     .map_err(|e| format!("Plan task failed: {e}"))??;
 
-    // Verifica "gioco in esecuzione" (solo informativa nel piano).
+    // "Game running" check (informational only in the plan).
     if let Some(exe) = &plan.detection.game_exe {
         if is_exe_running(exe) {
             plan.notices.push(format!(
@@ -156,9 +156,9 @@ pub async fn enable_online(
     let game_root = PathBuf::from(&game.game_path);
     let state_path = state_path();
 
-    // Pre-flight: inspection walks the game tree (I/O sincrono pesante). Va
-    // su `spawn_blocking` come plan_online già faceva: non blocchiamo il
-    // runtime tokio per una scansione di cartelle.
+    // Pre-flight: inspection walks the game tree (heavy synchronous I/O). It
+    // goes on `spawn_blocking` like plan_online already did: never block the
+    // tokio runtime for a folder scan.
     let preflight_root = game_root.clone();
     let preflight_state = state_path.clone();
     let inspection = tauri::async_runtime::spawn_blocking(move || {
@@ -245,10 +245,10 @@ pub async fn disable_online(app: tauri::AppHandle, app_id: u32) -> Result<Online
     let result = result?;
 
     if result.success {
-        // UCO2 rimosso: l'app esce da exclude_apps e torna al comportamento
-        // di default globale — Show Online se default_mode=showonline
-        // ("mostra giochi online" attivo), altrimenti None. Senza questo undo
-        // il gioco resterebbe escluso per sempre dopo la disattivazione.
+        // UCO2 removed: the app leaves exclude_apps and returns to the global
+        // default behavior — Show Online when default_mode=showonline
+        // ("show online games" on), None otherwise. Without this undo the game
+        // would stay excluded forever after deactivation.
         for path in aethercore_toml_paths(&app) {
             update_mode_in_toml(&path, app_id, None)
                 .map_err(|e| format!("Online files reverted, presence configuration incomplete: {e}"))?;
@@ -259,10 +259,10 @@ pub async fn disable_online(app: tauri::AppHandle, app_id: u32) -> Result<Online
     Ok(result)
 }
 
-/// Localizza il bundle UCOnline2 (installato o vendored).
+/// Locates the UCOnline2 bundle (installed or vendored).
 ///
-/// In caso di errore restituisce un messaggio con i path ESATTI controllati,
-/// così l'utente sa dove mettere la cartella (build portabile e repo).
+/// On error returns a message with the EXACT paths checked, so the user
+/// knows where to put the folder (portable build and repo).
 fn locate_bundle(app: &tauri::AppHandle) -> Result<Uco2Bundle, String> {
     let locator = ToolBundleLocator::new(
         app.clone(),
@@ -273,14 +273,14 @@ fn locate_bundle(app: &tauri::AppHandle) -> Result<Uco2Bundle, String> {
     match locator.locate() {
         Ok(bundle) => Uco2Bundle::open(bundle.dir),
         Err(_) => Err(format!(
-            "Bundle UCOnline2 non trovato. Cercato in:\n  - {} (installato)\n  - {} (bundled nella repo)\nCopiaci la cartella 'UCOnline2' (con x86/, x64/ e plugins/) oppure scarica l'ultima release da https://github.com/LukeWarmSodas/uc-online2/releases ed estraila come ExternalTools\\UCOnline2.",
+            "UCOnline2 bundle not found. Looked in:\n  - {} (installed)\n  - {} (bundled in the repo)\nCopy the 'UCOnline2' folder (with x86/, x64/ and plugins/) there, or download the latest release from https://github.com/LukeWarmSodas/uc-online2/releases and extract it as ExternalTools\\UCOnline2.",
             LocalAppPaths::uco2_dir().display(),
             PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(UCO2_RESOURCE_DIR).display()
         )),
     }
 }
 
-/// True quando un processo in esecuzione ha lo stesso nome file di `exe`.
+/// True when a running process has the same file name as `exe`.
 fn is_exe_running(exe_path: &Path) -> bool {
     let Some(target) = exe_path.file_name().and_then(|n| n.to_str()) else {
         return false;
@@ -288,8 +288,8 @@ fn is_exe_running(exe_path: &Path) -> bool {
     let target_lower = target.to_ascii_lowercase();
 
     let mut system = sysinfo::System::new_all();
-    // sysinfo 0.30: refresh_processes() non accetta argomenti
-    // (l'API con ProcessesToUpdate è arrivata in 0.31).
+    // sysinfo 0.30: refresh_processes() takes no arguments
+    // (the ProcessesToUpdate API arrived in 0.31).
     system.refresh_processes();
     system
         .processes()

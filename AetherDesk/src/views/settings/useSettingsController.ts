@@ -50,6 +50,14 @@ export function useSettingsController(params: Params) {
     applySettings(saved);
   }, [applySettings, model]);
 
+  /// Persists the devtools opt-in immediately so the backend gate sees it
+  /// before `open_webview_devtools` is invoked. Same single-field pattern as
+  /// `persistAppearance`.
+  const persistDevtools = useCallback(async (enabled: boolean) => {
+    const settings = model.getLocalSettings({ enable_webview_devtools: enabled });
+    const saved = await invoke<AppSettings>('save_settings', { settings, base: model.rawSettings });
+    applySettings(saved);
+  }, [applySettings, model]);
   const appearance = useAppearanceSettings({
     persist: persistAppearance,
     setTheme: (value) => setField('themeSelectedFile', value),
@@ -186,6 +194,6 @@ export function useSettingsController(params: Params) {
     presenceDefaultShowOnline, setPresenceDefaultShowOnline, appearance, luaTools,
     showStatus, save, reset, browseSteam: steamPath.browse, detectSteam: steamPath.detect,
     changeDownloadUpdates, confirmOst, reloadSaved,
-    persistAppearance,
+    persistAppearance, persistDevtools,
   };
 }

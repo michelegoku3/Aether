@@ -7,28 +7,28 @@
 #include "core/SteamTypes.h"
 
 // ============================================================================
-// SteamStatsCache — accesso ai file cache stats di Steam (appcache\stats):
-// copia dei .bin con GUARD MONOTONO (mai sovrascrivere un backup più ricco
-// con una cache appena azzerata) e rate-limit; conteggio achievement dei .bin
-// binari; interpretazione degli schemi (bucket achievement) per tradurre le
-// stat bitfield in achievement.
+// SteamStatsCache — access to Steam's stats cache files (appcache\stats):
+// .bin copies with a MONOTONE GUARD (never overwrite a richer backup with a
+// just-wiped cache) and rate-limit; achievement counting of binary .bins;
+// schema interpretation (achievement buckets) to translate bitfield stats
+// into achievements.
 //
-// Stato interno (cache schema per app, rate-limit per (app,account)):
-// proprietà del thread worker del facade — non serve concorrenza interna.
+// Internal state (per-app schema cache, per-(app,account) rate-limit): owned
+// by the facade's worker thread — no internal concurrency needed.
 // ============================================================================
 namespace ac::backup::statscache {
 
-// Copia UserGameStats_<account>_<appid>.bin + UserGameStatsSchema_<appid>.bin
-// nel backup. `force` salta il rate-limit (sblocchi e copie finali).
+// Copies UserGameStats_<account>_<appid>.bin + UserGameStatsSchema_<appid>.bin
+// into the backup. `force` skips the rate-limit (unlocks and final copies).
 void BackupStatsBins(steam::AppId appId, std::uint32_t accountId, bool force = false);
 
-// Achievement presenti in un .bin UserGameStats (somma dei bit dei bitfield
-// "data"); -1 se illeggibile. Usato dal guard monotono.
+// Achievements present in a UserGameStats .bin (sum of the "data" bitfield
+// bits); -1 when unreadable. Used by the monotone guard.
 int CountAchievementsInBinFile(const std::string& path);
 
-// Insieme dei bucket achievement del gioco letti dallo schema
-// (UserGameStatsSchema_<appid>.bin; cache per processo). Bucket con "bits"
-// vuoto NON sono bucket achievement.
+// The game's achievement bucket set read from the schema
+// (UserGameStatsSchema_<appid>.bin; per-process cache). Buckets with an empty
+// "bits" are NOT achievement buckets.
 const std::unordered_set<std::uint32_t>& SchemaBucketsFor(steam::AppId appId);
 
 }  // namespace ac::backup::statscache

@@ -61,7 +61,7 @@ export const LocalDownloadModal = ({ game, onClose, onInstalled }: LocalDownload
     }
   };
 
-  // ESC + click fuori chiudono il popup (rispettando un'installazione in corso).
+  // ESC + outside clicks close the popup (honoring an in-flight install).
   useModalDismiss(onClose, isInstalling);
 
   const clearFiles = () => {

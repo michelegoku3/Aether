@@ -31,8 +31,8 @@ export const AntivirusExclusionModal = ({ onDone }: AntivirusExclusionModalProps
   const [isApplying, setIsApplying] = useState(false);
   const [status, setStatus] = useState<StatusMessage>(emptyStatus());
 
-  // ESC / click fuori chiudono senza confermare (come la X): onDone(false)
-  // non persiste il flag, quindi il popup riapparirà alla prossima occasione.
+  // ESC / outside click close without confirming (like the X): onDone(false)
+  // does not persist the flag, so the popup will reappear next time.
   const dismiss = () => onDone(false);
   useModalDismiss(dismiss, isApplying);
 

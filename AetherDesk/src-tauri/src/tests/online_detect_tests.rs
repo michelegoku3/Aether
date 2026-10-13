@@ -1,11 +1,11 @@
-//! Test dell'engine di rilevamento UCOnline2 (`online::detect`).
+//! Tests for the UCOnline2 detection engine (`online::detect`).
 //!
-//! Le fixture sono alberi di cartelle fittizi creati su `tempdir`: nessun
-//! gioco reale, nessuna dipendenza da Steam o Tauri.
+//! Fixtures are fake folder trees built on `tempdir`: no real games, no Steam
+//! or Tauri dependency.
 //!
-//! NOTA: questo file è condiviso tra la repo (incluso da `tests/mod.rs`) e
-//! l'harness di verifica standalone (`uco2_engine_harness`, incluso via
-//! `#[path]`): non cambiare i path di import senza aggiornare entrambi.
+//! NOTE: this file is shared between the repo (included from `tests/mod.rs`) and
+//! the standalone verification harness (`uco2_engine_harness`, included via
+//! `#[path]`): do not change import paths without updating both.
 
 use crate::online::detect::{DetectionError, GameInspector};
 use crate::online::types::{Conflict, Engine, GameArch, PhotonFlavor};
@@ -18,8 +18,8 @@ fn write(dir: &Path, rel: &str, bytes: &[u8]) {
     fs::write(path, bytes).unwrap();
 }
 
-/// True quando gli ultimi componenti di `path` sono esattamente `comps`
-/// (cross-platform: niente confronti su stringhe con `/` o `\`).
+/// True when the trailing components of `path` are exactly `comps`
+/// (cross-platform: no string comparisons with `/` or `\`).
 fn ends_with_components(path: &Path, comps: &[&str]) -> bool {
     let actual: Vec<String> = path
         .components()
@@ -52,7 +52,7 @@ fn unity_game_is_detected() {
     assert_eq!(report.engine, Engine::Unity);
     assert_eq!(report.arch, GameArch::X64);
     assert_eq!(report.ini_dir, tmp.path());
-    // La DLL esiste già in <Data>\Plugins\x86_64\ → è la posizione autoritativa.
+    // The DLL already lives in <Data>\Plugins\x86_64\ → the authoritative spot.
     assert!(ends_with_components(
         &report.steam_api_dir.unwrap(),
         &["MyGame_Data", "Plugins", "x86_64"]
@@ -71,9 +71,8 @@ fn unity_game_is_detected() {
 
 #[test]
 fn unity_crash_handler_is_never_picked_as_game_exe() {
-    // Caso REPO: UnityCrashHandler64.exe è PIÙ GRANDE di REPO.exe; la scelta
-    // deve comunque cadere su REPO.exe (match col nome del gioco + esclusione
-    // degli helper di engine).
+    // REPO case: UnityCrashHandler64.exe is BIGGER than REPO.exe; the pick must
+    // still fall on REPO.exe (game-name match + engine-helper exclusion).
     let tmp = tempfile::tempdir().unwrap();
     write(tmp.path(), "REPO.exe", b"small real game");
     write(
@@ -97,8 +96,8 @@ fn unity_crash_handler_is_never_picked_as_game_exe() {
 
 #[test]
 fn unity_game_exe_inside_subfolder_is_found() {
-    // Caso Machine Party: la cartella del gioco sta un livello sotto la root
-    // (`<Game>_Windows\\`) e l'exe è accanto a `<Game>_Data`.
+    // Machine Party case: the game folder sits one level under the root
+    // (`<Game>_Windows\\`) and the exe is next to `<Game>_Data`.
     let tmp = tempfile::tempdir().unwrap();
     write(
         tmp.path(),
@@ -131,8 +130,8 @@ fn unity_game_exe_inside_subfolder_is_found() {
 
 #[test]
 fn generic_game_with_only_32bit_steam_api_is_detected() {
-    // SpeedRunners e simili: solo steam_api.dll (32-bit), nessun _Data né
-    // Shipping exe. Prima del fix la detection falliva.
+    // SpeedRunners and the like: only steam_api.dll (32-bit), no _Data and no
+    // Shipping exe. Detection used to fail before the fix.
     let tmp = tempfile::tempdir().unwrap();
     write(tmp.path(), "SpeedRunners.exe", b"MZ");
     write(tmp.path(), "steam_api.dll", b"dll32");
@@ -154,7 +153,7 @@ fn generic_game_with_only_32bit_steam_api_is_detected() {
 
 #[test]
 fn unity_without_marker_is_not_unity() {
-    // `web_data` di Farming Simulator: *_Data senza Managed né il2cpp.
+    // Farming Simulator's `web_data`: *_Data with neither Managed nor il2cpp.
     let tmp = tempfile::tempdir().unwrap();
     write(tmp.path(), "Game/web_data/whatever.bin", b"x");
     write(tmp.path(), "Game/Game.exe", b"MZ");
@@ -193,7 +192,7 @@ fn unreal_shipping_exe_found_and_crash_report_skipped() {
         "Engine/Binaries/Win64/CrashReportClient-Win64-Shipping.exe",
         b"MZcrash",
     );
-    // Posizione tipica della DLL per Unreal.
+    // Typical DLL spot for Unreal.
     write(
         tmp.path(),
         "Engine/Binaries/ThirdParty/Steamworks/Steamv153/Win64/steam_api64.dll",
@@ -206,7 +205,7 @@ fn unreal_shipping_exe_found_and_crash_report_skipped() {
         &report.game_exe.unwrap(),
         &["Engine", "Binaries", "Win64", "MyGame-Win64-Shipping.exe"]
     ));
-    // ini va accanto all'exe in esecuzione, NON nella root!
+    // ini goes next to the running exe, NOT in the root!
     assert!(ends_with_components(&report.ini_dir, &["Engine", "Binaries", "Win64"]));
     assert!(ends_with_components(
         &report.steam_api_dir.unwrap(),
@@ -217,10 +216,10 @@ fn unreal_shipping_exe_found_and_crash_report_skipped() {
 #[test]
 fn duplicate_steam_api64_picks_dir_next_to_biggest_exe() {
     let tmp = tempfile::tempdir().unwrap();
-    // Copia in root accanto a un launcher piccolo...
+    // Copy in root next to a small launcher...
     write(tmp.path(), "MyGame.exe", b"MZsmalllauncher");
     write(tmp.path(), "steam_api64.dll", b"root-copy");
-    // ...e copia in x64\ accanto al binario vero (più grande).
+    // ...and copy in x64\ next to the real (bigger) binary.
     write(tmp.path(), "x64/MyGame.exe", b"MZthis-is-the-big-real-game-binary");
     write(tmp.path(), "x64/steam_api64.dll", b"real-copy");
 
@@ -242,7 +241,7 @@ fn nested_repack_unity_is_found_recursively() {
 
     let report = GameInspector::inspect(tmp.path()).unwrap();
     assert_eq!(report.engine, Engine::Unity);
-    // ini_dir = parent della *_Data (la dir del gioco annidato).
+    // ini_dir = parent of the *_Data (the nested game's dir).
     assert!(ends_with_components(&report.ini_dir, &["Vampire Survivors"]));
 }
 
@@ -259,7 +258,7 @@ fn x86_game_is_detected() {
         &report.steam_api_dir.unwrap(),
         &["OldGame_Data", "Plugins", "x86"]
     ));
-    // La DLL da installare per questo gioco è quella x86.
+    // The DLL to install for this game is the x86 one.
     assert_eq!(report.arch.steam_api_file_name(), "steam_api.dll");
 }
 
@@ -340,7 +339,7 @@ fn conflicts_are_detected() {
     write(tmp.path(), "steam_api64.dll", b"dll");
     write(tmp.path(), "SteamFix64.dll", b"fix");
     write(tmp.path(), "winmm.dll", b"tiny-proxy");
-    // Proxy grande → NON è un conflitto (file di gioco legittimo).
+    // Big proxy → NOT a conflict (legitimate game file).
     let big = vec![0u8; 500_000];
     write(tmp.path(), "dxgi.dll", &big);
 

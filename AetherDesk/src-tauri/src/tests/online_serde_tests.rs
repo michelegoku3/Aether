@@ -1,11 +1,11 @@
-//! Test di serializzazione (anti-regressione per il bug snake_case/camelCase).
+//! Serialization tests (anti-regression for the snake_case/camelCase bug).
 //!
-//! Tutte le struct che attraversano il confine Tauri (Rust ⇄ UI) DEVONO
-//! serializzare in camelCase e deserializzare da camelCase. Questo file
-//! blocca la classe di bug che rendeva "Enable Online" permanentemente
-//! disabilitato (la UI leggeva `bundleOk`, il JSON aveva `bundle_ok`).
+//! Every struct crossing the Tauri boundary (Rust ⇄ UI) MUST serialize to
+//! camelCase and deserialize from camelCase. This file pins the bug class
+//! that left "Enable Online" permanently disabled (the UI read `bundleOk`,
+//! the JSON had `bundle_ok`).
 //!
-//! NOTA: file condiviso tra la repo e l'harness standalone.
+//! NOTE: file shared between the repo and the standalone harness.
 
 use crate::online::types::{
     BackendReport, CoherenceOptions, DetectionReport, Engine, EosOptions, GameArch,
@@ -46,7 +46,7 @@ fn prerequisites_serializes_camel_case() {
         errors: vec![],
     };
     let json = serde_json::to_value(&pre).unwrap();
-    assert!(json.get("bundleOk").is_some(), "bundleOk manca: {json}");
+    assert!(json.get("bundleOk").is_some(), "bundleOk missing: {json}");
     assert!(json.get("bundleVersion").is_some());
     assert!(json.get("steamApiDirWritable").is_some());
     assert!(json.get("errors").is_some());
@@ -57,10 +57,10 @@ fn prerequisites_serializes_camel_case() {
 fn detection_report_serializes_camel_case() {
     let json = serde_json::to_value(detection_sample()).unwrap();
     for key in ["gameRoot", "engine", "arch", "gameExe", "unityDataDir", "steamApiDir", "iniDir", "steamlessApplied", "steamstubDetected", "warnings"] {
-        assert!(json.get(key).is_some(), "chiave '{key}' manca: {json}");
+        assert!(json.get(key).is_some(), "key '{key}' missing: {json}");
     }
     let backends = json.get("backends").unwrap();
-    assert!(backends.get("photonVoice").is_some(), "photonVoice manca: {backends}");
+    assert!(backends.get("photonVoice").is_some(), "photonVoice missing: {backends}");
     assert!(backends.get("photon_voice").is_none());
 }
 
@@ -74,15 +74,15 @@ fn online_plan_serializes_camel_case() {
     };
     let json = serde_json::to_value(&plan).unwrap();
     for key in ["detection", "prerequisites", "current", "notices"] {
-        assert!(json.get(key).is_some(), "chiave '{key}' manca: {json}");
+        assert!(json.get(key).is_some(), "key '{key}' missing: {json}");
     }
-    // Il bug storico: bundleOk deve essere raggiungibile via prerequisites.bundleOk.
+    // The historic bug: bundleOk must be reachable via prerequisites.bundleOk.
     assert!(json["prerequisites"].get("bundleOk").is_some());
 }
 
 #[test]
 fn enable_request_deserializes_from_camel_case() {
-    // Questo è ESATTAMENTE il JSON che la UI (OnlinePanel.tsx) invia.
+    // This is EXACTLY the JSON the UI (OnlinePanel.tsx) sends.
     let json = serde_json::json!({
         "ogAppId": 1144200,
         "spoofAppId": 480,
@@ -167,7 +167,7 @@ fn record_and_status_serialize_camel_case() {
     };
     let json = serde_json::to_value(&record).unwrap();
     for key in ["appId", "enabledAt", "bundleVersion", "ogAppId", "spoofAppId", "iniPath", "steamApiPath", "arch", "backendsDeployed", "backupDir", "overlayProxyPath"] {
-        assert!(json.get(key).is_some(), "chiave '{key}' manca: {json}");
+        assert!(json.get(key).is_some(), "key '{key}' missing: {json}");
     }
 
     let status = OnlineStatus {

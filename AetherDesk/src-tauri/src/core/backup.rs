@@ -138,8 +138,8 @@ impl GameBackup {
         lua_content: &str,
         manifest_files: &[ManifestPackageFile],
     ) -> Result<(), String> {
-        // Un download dalle fonti è la versione PRISTINA: diventa/sostituisce
-        // l'originale nel backup (quella precedente finisce in history/).
+        // A download from the sources is the PRISTINE version: it becomes/replaces
+        // the original in the backup (the previous one goes to history/).
         self.store_original(app_id, lua_content.as_bytes())?;
 
         for manifest in manifest_files {
@@ -343,32 +343,32 @@ fn collect_relative_files(root: &Path, dir: &Path, out: &mut Vec<String>) -> Res
 }
 
 // ============================================================================
-// Sincronizzazione all'avvio: stplug-in -> backup/<app_id>/lua
+// Startup sync: stplug-in -> backup/<app_id>/lua
 // ============================================================================
-// Il backup lua viene scritto normalmente da `backup_lua_artifacts` quando un
-// .lua passa dall'app, ma l'utente può anche aggiungere o modificare i .lua a
-// mano in `config\stplug-in` (o cambiarli con Change Version). Questa funzione,
-// lanciata all'avvio in background, riporta il backup allo stato attuale:
+// The lua backup is normally written by `backup_lua_artifacts` when a .lua
+// flows through the app, but the user can also add or edit .lua files by hand
+// in `config\stplug-in` (or change them with Change Version). This function,
+// launched at startup in the background, brings the backup to the current state:
 //
-//   * .lua senza backup        -> backup creato
-//   * backup diverso dal .lua  -> la versione precedente viene archiviata in
-//                                 `lua\history\<app_id>-<unix_secs>.lua` e il
-//                                 backup aggiornato (nessuna "build" persa:
-//                                 è la base per la futura scheda "tutte le
-//                                 versioni" in Change Version)
-//   * backup identico          -> nessuna scrittura (confronto byte; i .lua
-//                                 sono piccoli, leggere è più economico e
-//                                 più esatto di hash + firma su disco)
+//   * .lua with no backup        -> backup created
+//   * backup differing from .lua -> the previous version is archived in
+//                                 `lua\history\<app_id>-<unix_secs>.lua` and the
+//                                 backup updated (no "build" lost: this is the
+//                                 base for the future "all versions" tab in
+//                                 Change Version)
+//   * identical backup           -> no write (byte comparison; .lua files
+//                                 are small, reading is cheaper and more exact
+//                                 than hash + disk signature)
 //
-// I file rimossi da stplug-in NON cancellano il backup: l'ultima versione
-// nota resta disponibile (comportamento voluto per un backup).
-// La funzione è pura I/O bloccante: avvolgerla in spawn_blocking.
+// Files removed from stplug-in do NOT delete the backup: the last known
+// version stays available (intended backup behavior).
+// The function is pure blocking I/O: wrap it in spawn_blocking.
 
 use sha2::{Digest, Sha256};
 
 pub const LUA_HISTORY_SUBDIR: &str = "history";
 
-/// Esito della scrittura di una versione lua nel backup.
+/// Outcome of writing a lua version into the backup.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum StoreLuaAction {
@@ -377,7 +377,7 @@ pub enum StoreLuaAction {
     Unchanged,
 }
 
-/// Esito aggregato della sincronizzazione (log + futuro uso UI).
+/// Aggregate outcome of the sync (logs + future UI use).
 #[derive(Debug, Default, Clone, serde::Serialize)]
 pub struct LuaSyncReport {
     pub scanned: usize,
@@ -398,8 +398,8 @@ fn sha256_hex(bytes: &[u8]) -> String {
     hasher.finalize().iter().map(|b| format!("{b:02x}")).collect()
 }
 
-/// Timestamp con precisione millisecondi: due archivi nella stessa giornata
-/// non si sovrascrivono mai (bug della versione a secondi).
+/// Millisecond-precision timestamp: two archives on the same day never
+/// overwrite each other (bug of the seconds-precision version).
 fn unix_millis() -> u128 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -408,12 +408,13 @@ fn unix_millis() -> u128 {
 }
 
 impl GameBackup {
-    /// Scrive la versione ORIGINALE del .lua (quella pristina scaricata dalle
-    /// fonti, o il primo .lua visto in stplug-in quando non c'è backup).
-    /// - identica     -> Unchanged, nessuna scrittura
-    /// - diversa      -> l'originale precedente viene archiviata in history/
-    ///   e la nuova diventa l'originale (Updated)
-    /// - assente      -> Created
+    /// Writes the ORIGINAL version of the .lua (the pristine one downloaded
+    /// from the sources, or the first .lua seen in stplug-in when no backup
+    /// exists).
+    /// - identical -> Unchanged, no write
+    /// - different  -> the previous original is archived in history/ and the
+    ///   new one becomes the original (Updated)
+    /// - missing    -> Created
     pub fn store_original(&self, app_id: u32, lua_bytes: &[u8]) -> Result<StoreLuaAction, String> {
         let lua_path = self.lua_dir().join(format!("{app_id}.lua"));
         match fs::read(&lua_path) {
@@ -446,10 +447,10 @@ impl GameBackup {
         }
     }
 
-    /// Archivia una VERSIONE MODIFICATA del .lua in `lua\history\` (cambio
-    /// versione, modifiche manuali, ecc.). Deduplicata per contenuto: se la
-    /// versione è già l'originale o è già in history, non riscrive nulla.
-    /// Ritorna true se ha scritto una nuova entry.
+    /// Archives a MODIFIED VERSION of the .lua in `lua\history\` (version
+    /// change, manual edits, etc.). Deduplicated by content: when the version
+    /// is already the original or already in history, writes nothing.
+    /// Returns true when it wrote a new entry.
     pub fn store_history_version(&self, app_id: u32, lua_bytes: &[u8]) -> Result<bool, String> {
         if self.has_lua_version(app_id, lua_bytes) {
             return Ok(false);
@@ -457,8 +458,8 @@ impl GameBackup {
         self.archive_lua_history(app_id, lua_bytes).map(|_| true)
     }
 
-    /// True se `lua_bytes` coincide con l'originale o con una versione già
-    /// presente in history (confronto byte, file piccoli).
+    /// True when `lua_bytes` matches the original or a version already
+    /// present in history (byte comparison, small files).
     pub fn has_lua_version(&self, app_id: u32, lua_bytes: &[u8]) -> bool {
         let original = self.lua_dir().join(format!("{app_id}.lua"));
         if fs::read(&original).is_ok_and(|current| current == lua_bytes) {
@@ -500,7 +501,7 @@ impl GameBackup {
     }
 }
 
-/// Una voce dello storico delle versioni lua di un app.
+/// One entry of an app's archived lua version history.
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct LuaHistoryEntry {
     pub file_name: String,
@@ -509,8 +510,8 @@ pub struct LuaHistoryEntry {
     pub sha256: String,
 }
 
-/// Sincronizza i backup lua leggendo `steam_path\config\stplug-in`.
-/// Bloccante: chiamare dentro `spawn_blocking` (vedi main.rs).
+/// Syncs lua backups by reading `steam_path\config\stplug-in`.
+/// Blocking: call inside `spawn_blocking` (see main.rs).
 pub fn sync_lua_backups_from_stplug_in(steam_path: &Path) -> LuaSyncReport {
     let mut report = LuaSyncReport::default();
     let plugin_dir = steam_path.join("config").join("stplug-in");
@@ -537,13 +538,13 @@ pub fn sync_lua_backups_from_stplug_in(steam_path: &Path) -> LuaSyncReport {
             .map(|ext| ext.eq_ignore_ascii_case("lua"))
             .unwrap_or(false)
         {
-            continue; // salta .lua.bak e altro
+            continue; // skip .lua.bak and others
         }
         let Some(stem) = path.file_stem().and_then(|s| s.to_str()) else {
             continue;
         };
         let Ok(app_id) = stem.parse::<u32>() else {
-            report.skipped += 1; // nome non numerico: non è un app id
+            report.skipped += 1; // non-numeric name: not an app id
             continue;
         };
         report.scanned += 1;
@@ -553,10 +554,10 @@ pub fn sync_lua_backups_from_stplug_in(steam_path: &Path) -> LuaSyncReport {
             continue;
         };
 
-        // Modello: l'ORIGINALE è la versione pristina (primo .lua visto, o
-        // l'ultimo scaricato dalle fonti); ogni contenuto diverso trovato in
-        // stplug-in è una versione modificata -> history/ (deduplicata per
-        // contenuto, così i riavvii non creano copie).
+        // Model: the ORIGINAL is the pristine version (first .lua seen, or
+        // the last one downloaded from the sources); any differing content
+        // found in stplug-in is a modified version -> history/ (deduplicated
+        // by content, so restarts create no copies).
         let backup = GameBackup::open_existing(app_id)
             .or_else(|| GameBackup::for_app(app_id).ok());
         let Some(backup) = backup else {
@@ -571,8 +572,8 @@ pub fn sync_lua_backups_from_stplug_in(steam_path: &Path) -> LuaSyncReport {
                 Err(_) => report.skipped += 1,
             }
         } else {
-            // Fast path: se il contenuto coincide con l'originale non c'è
-            // niente da fare — i riavvii non generano copie duplicate.
+            // Fast path: when the content matches the original there is
+            // nothing to do — restarts generate no duplicate copies.
             let matches_original = fs::read(&original_path)
                 .map(|original| original == src)
                 .unwrap_or(false);
@@ -587,9 +588,9 @@ pub fn sync_lua_backups_from_stplug_in(steam_path: &Path) -> LuaSyncReport {
             }
         }
 
-        // Questa passata è indipendente dalla versione del Lua: anche un file
-        // già noto può avere un manifest presente in Steam/depotcache ma mai
-        // copiato in AetherData (es. import locale o vecchie installazioni).
+        // This pass is independent of the Lua version: even a known file may
+        // have a manifest present in Steam/depotcache but never copied to
+        // AetherData (e.g. local import or old installs).
         let manifest_report = backup.backup_referenced_manifests(
             std::str::from_utf8(&src).unwrap_or_default(),
             &depotcache,
@@ -604,9 +605,9 @@ pub fn sync_lua_backups_from_stplug_in(steam_path: &Path) -> LuaSyncReport {
     report
 }
 
-/// Elenca lo storico delle versioni lua archiviate per un app (per la futura
-/// scheda "tutte le build" in Change Version). Include anche il backup corrente
-/// come prima voce quando esiste.
+/// Lists the archived lua version history for an app (for the future "all
+/// builds" tab in Change Version). Also includes the current backup as the
+/// first entry when present.
 pub fn list_lua_history(app_id: u32) -> Result<Vec<LuaHistoryEntry>, String> {
     let backup = GameBackup::for_app(app_id)?;
     let mut out = Vec::new();

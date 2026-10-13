@@ -50,17 +50,16 @@ export interface MainContentProps {
 }
 
 /**
- * Area centrale: tiene montate Store/Library/Log/Settings (nascoste con
- * `display:none`, così stato e scroll sopravvivono al cambio tab) e monta la
- * vista transiente attiva.
+ * Central area: keeps Store/Library/Log/Settings mounted (hidden with
+ * `display:none`, so state and scroll survive tab switches) and mounts the
+ * active transient view.
  *
- * `memo` è ciò che rende utile il raggruppamento delle props: App passa quattro
- * oggetti costruiti con `useMemo` e callback costruite con `useCallback`,
- * quindi quando App ri-renderizza per stato che non riguarda queste viste
- * (es. `steamRunning`, che interessa solo la Sidebar) il confronto shallow
- * delle props fallisce l'aggiornamento e l'intero sotto-albero — Store inclusa,
- * con le sue card — non ri-renderizza. Senza identità stabile dei gruppi,
- * `memo` non scatterebbe mai.
+ * `memo` is what makes the prop grouping worthwhile: App passes four
+ * `useMemo`-built objects and `useCallback`-built callbacks, so when App
+ * re-renders for state unrelated to these views (e.g. `steamRunning`, which
+ * only concerns the Sidebar) the shallow prop comparison skips the update and
+ * the whole subtree — Store included, cards and all — does not re-render.
+ * Without stable group identity, `memo` would never kick in.
  */
 export const MainContent = memo(function MainContent({
   activeTab,

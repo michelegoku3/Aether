@@ -1,11 +1,11 @@
-//! Mattoni condivisi tra i tool esterni integrati in AetherDesk
+//! Building blocks shared by the external tools integrated in AetherDesk
 //! (Steamless, UCOnline2, ...).
 //!
-//! Ogni tool mantiene la propria logica specifica (runner per Steamless,
-//! deployer per UCOnline2) nel proprio modulo; qui vive solo ciò che è
-//! davvero identico tra loro: locazione/installazione del bundle, utilità
-//! filesystem e costanti di contratto. Regola: se un pezzo serve a due
-//! tool, sta qui; se serve a uno solo, sta nel modulo del tool.
+//! Each tool keeps its specific logic (runner for Steamless, deployer for
+//! UCOnline2) in its own module; only what is truly identical between them
+//! lives here: bundle location/installation, filesystem utilities and contract
+//! constants. Rule: a piece needed by two tools lives here; needed by one
+//! tool only, it lives in that tool's module.
 
 pub mod bundle;
 pub mod constants;

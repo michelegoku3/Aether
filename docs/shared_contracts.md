@@ -1,261 +1,256 @@
 # Shared contracts — AetherDesk ↔ AetherDLL
 
-Specifica unica delle logiche **gemellate** tra AetherDesk (Rust/Tauri) e
-AetherDLL (C++, in-process in Steam). Le due parti girano in processi diversi,
-in momenti diversi (Desk può essere chiuso; il DLL vive dentro Steam) e devono
-comunque produrre **lo stesso albero di backup, la stessa cache e lo stesso
-consumo di quota**. Questa pagina è la fonte di verità della *policy*; il codice
-la implementa due volte, i test di contratto (§6) la proteggono.
+Single specification of the **twinned** logic between AetherDesk (Rust/Tauri)
+and AetherDLL (C++, in-process in Steam). The two sides run in different
+processes, at different times (Desk may be closed; the DLL lives inside Steam)
+yet must produce **the same backup tree, the same cache and the same quota
+consumption**. This page is the source of truth for the *policy*; the code
+implements it twice, the contract tests (§6) protect it.
 
-> **Regola di manutenzione**: se cambi un valore o una regola qui, devi
-> allineare ENTRAMBE le implementazioni e aggiornare questa tabella nella
-> stessa commit. Ogni sezione elenca i due "gemelli" con path precisi.
+> **Maintenance rule**: when you change a value or a rule here, you must align
+> BOTH implementations and update this table in the same commit. Every section
+> lists the two "twins" with precise paths.
 
 ---
 
-## 1. Layout su disco (single source of truth)
+## 1. On-disk layout (single source of truth)
 
-| Percorso | Contenuto | Scrittori |
+| Path | Contents | Writers |
 |---|---|---|
-| `<Steam>\depotcache\<depot>_<gid>.manifest` | cache primaria di Steam | Steam, Desk (resolver/workshop/store), DLL (generazione live, restore) |
-| `<Steam>\config\depotcache\` | cache secondaria di Steam (sola lettura per noi) | Steam |
-| `<AetherData>\backup\<app_id>\lua\<app_id>.lua` | Lua **originale** (pristino dalle fonti) | Desk (`store_original`) |
-| `<AetherData>\backup\<app_id>\lua\history\<app>-<millis>[-n].lua` | versioni modificate, deduplicate per contenuto | Desk (`archive_lua_history`), DLL (solo copia "as-missing") |
-| `<AetherData>\backup\<app_id>\lua\<depot>_<gid>.manifest` | manifest referenziati (pin attivi E commentati) + manifest Workshop | Desk e DLL (contratto §2) |
-| `<AetherData>\state\hubcap_generation_quota.json` (+ `.lock` sibling) | budget giornaliero condiviso | Desk e DLL (contratto §4) |
-| `<AetherData>\temp\hubcap\workshop\<item>.manifest` | cache Workshop keyed per item (solo Desk) | Desk |
-| `<AetherData>\state\hubcap_game_updates.json` | checkpoint del monitor (fingerprint, `contents_checked`, …) | solo Desk |
+| `<Steam>\depotcache\<depot>_<gid>.manifest` | Steam's primary cache | Steam, Desk (resolver/workshop/store), DLL (live generation, restore) |
+| `<Steam>\config\depotcache\` | Steam's secondary cache (read-only for us) | Steam |
+| `<AetherData>\backup\<app_id>\lua\<app_id>.lua` | **original** Lua (pristine, from the sources) | Desk (`store_original`) |
+| `<AetherData>\backup\<app_id>\lua\history\<app>-<millis>[-n].lua` | modified versions, content-deduplicated | Desk (`archive_lua_history`), DLL ("as-missing" copy only) |
+| `<AetherData>\backup\<app_id>\lua\<depot>_<gid>.manifest` | referenced manifests (active AND commented pins) + Workshop manifests | Desk and DLL (contract §2) |
+| `<AetherData>\state\hubcap_generation_quota.json` (+ `.lock` sibling) | shared daily budget | Desk and DLL (contract §4) |
+| `<AetherData>\temp\hubcap\workshop\<item>.manifest` | per-item keyed Workshop cache (Desk only) | Desk |
+| `<AetherData>\state\hubcap_game_updates.json` | monitor checkpoint (fingerprint, `contents_checked`, …) | Desk only |
 
-Il nome file `<depot>_<gid>.manifest` è l'**identità completa** del manifest:
-due byte diversi con lo stesso nome non esistono in pratica; per questo il
-contratto di copia non sovrascrive mai (§2).
+The `<depot>_<gid>.manifest` file name is the manifest's **complete identity**:
+two different bytes under the same name do not happen in practice; hence the
+copy contract never overwrites (§2).
 
-## 2. Contratto di backup/restore dei manifest
+## 2. Manifest backup/restore contract
 
-Gemelli:
+Twins:
 - Desk: `AetherDesk/src-tauri/src/core/backup.rs` → `backup_referenced_manifests`,
   `backup_manifest_bytes`, `sync_lua_backups_from_stplug_in`.
 - DLL: `AetherDLL/AetherCore/hooks/wire/ManifestRestore.cpp` →
   `CopyAtomicallyIfMissing`, `BackupReferencedManifestsAtStartup`,
   `BackupManifestAfterGeneration`, `RestoreLuaDirectory`/`RestoreAppOnce`.
 
-Regole (identiche nei due processi):
-1. si copiano **solo** i manifest referenziati dal Lua corrente (pin attivi o
-   commentati — la regex non è ancorata a inizio riga, quindi `--setManifestid`
-   conta come referenza); i manifest Workshop hanno un canale dedicato
-   (`backup_manifest_bytes` lato Desk, keyed sull'app proprietaria);
-2. una destinazione **non vuota non viene mai sovrascritta**;
-3. una destinazione da **0 byte è un placeholder**: va rimossa e riscritta;
-4. la copia è **atomica** (temp + rename/`AtomicReplace`) e **verificata per
-   size**;
-5. una copia fallita **ricontrolla la destinazione**: se l'altro processo ha
-   completato nella finestra di race, il file conta come presente, non come
-   errore.
+Rules (identical in both processes):
+1. only manifests referenced by the current Lua are copied (active or commented
+   pins — the regex is not line-anchored, so `--setManifestid` counts as a
+   reference); Workshop manifests have a dedicated channel
+   (`backup_manifest_bytes` on the Desk side, keyed on the owning app);
+2. a **non-empty destination is never overwritten**;
+3. a **0-byte destination is a placeholder**: remove and rewrite it;
+4. the copy is **atomic** (temp + rename/`AtomicReplace`) and **size-verified**;
+5. a failed copy **rechecks the destination**: when the other process completed
+   inside the race window, the file counts as present, not as an error.
 
-Ordinamento di ripristino (local-first, identico nei due):
+Restore order (local-first, identical in both):
 `depotcache` → `config\depotcache` → `backup\<app_id>\lua`.
-Il DLL, quando trova il file nel backup, lo **pubblica** in depotcache prima di
-rispondere hit; il Desk (`manifest/resolver.rs`) fa lo stesso restore-then-gate.
-Un file vuoto non è MAI un hit locale.
+When the DLL finds the file in the backup, it **publishes** it to depotcache
+before answering hit; Desk (`manifest/resolver.rs`) does the same
+restore-then-gate. An empty file is NEVER a local hit.
 
-Backup del **Lua**: l'originale è la versione pristina (primo Lua visto o
-ultimo scaricato dalle fonti); ogni contenuto diverso va in `history/`,
-deduplicato per byte. Gli archivi nella stessa millisecondo prendono un
-suffisso `-n` (i pipeline pin archiviano pre+post back-to-back). Chiunque
-riscriva un Lua deve archiviare **pre E post** (vedi §5, matrice nel report §12).
+**Lua** backup: the original is the pristine version (first Lua seen or last
+downloaded from the sources); every differing content goes to `history/`,
+byte-deduplicated. Archives within the same millisecond take an `-n` suffix
+(pin pipelines archive pre+post back-to-back). Anyone rewriting a Lua must
+archive **pre AND post** (see §5, matrix in report §12).
 
-## 3. Contratto di commit "manifest prima, Lua ultimo"
+## 3. "Manifest first, Lua last" commit contract
 
-Il Lua in `config\stplug-in\` è il **grilletto** dell'hot-reload del DLL: nel
-momento in cui appare, ogni manifest che referenzia deve essere già visibile in
-depotcache. Implementazioni:
+The Lua in `config\stplug-in\` is the DLL hot-reload **trigger**: the moment it
+appears, every manifest it references must already be visible in depotcache.
+Implementations:
 - Desk: `steam/compat.rs` → `install_lua_and_manifest_files` (staging → remove
-  vecchi target → rename manifest → verifica → rename Lua → verifica).
-- Desk: `manifest/pin_refresh.rs` → `refresh_game_pins_from_hubcap` (gate di
-  completezza PRIMA di `realign_commented_pins`).
-- DLL: la generazione live scrive in depotcache (temp + `AtomicReplace` +
-  verifica size) senza mai toccare il Lua.
+  old targets → rename manifests → verify → rename Lua → verify).
+- Desk: `manifest/pin_refresh.rs` → `refresh_game_pins_from_hubcap` (completeness
+  gate BEFORE `realign_commented_pins`).
+- DLL: live generation writes to depotcache (temp + `AtomicReplace` + size
+  verification) without ever touching the Lua.
 - Desk: `application/store/package_completion.rs` → `complete_luatools_package`.
-  Le sorgenti LuaTools
-  che archiviano i manifest rispondono a `/api/manifest/download` con
-  `<appid>.zip` (Lua + `.manifest`); quelle che replicano solo il Lua (es. Luie)
-  rispondono con un Lua nudo i cui pin non sono su disco. Prima di
-  `install_lua_and_manifest_files` i pin abilitati non inclusi nel pacchetto e
-  non già locali vengono recuperati da `GET /api/givemethemanifestpunk/{depot}/{gid}`
-  (stessa sessione, verifica identità depot+GID via `manifest::identity`,
-  nessun consumo del cap giornaliero); solo il residuo passa alla generazione
-  Hubcap, e solo se l'utente ha una chiave configurata. Le sorgenti sono
-  provate in ordine "porta i manifest" → "solo Lua" (`rank_available_sources`)
-  e, se il primo pacchetto non è completabile, si tenta UNA sorgente di riserva
-  (`LUATOOLS_MAX_SOURCE_ATTEMPTS`): ogni tentativo costa un download del cap.
+  LuaTools sources that archive manifests answer `/api/manifest/download` with
+  `<appid>.zip` (Lua + `.manifest`); sources replicating only the Lua (e.g. Luie)
+  answer with a naked Lua whose pins are not on disk. Before
+  `install_lua_and_manifest_files`, enabled pins missing from the package and
+  not already local are fetched from `GET /api/givemethemanifestpunk/{depot}/{gid}`
+  (same session, depot+GID identity check via `manifest::identity`, no daily cap
+  consumed); only the remainder goes to Hubcap generation, and only when the
+  user has a configured key. Sources are tried in "brings manifests" →
+  "Lua only" order (`rank_available_sources`); when the first package cannot be
+  completed, ONE fallback source is tried (`LUATOOLS_MAX_SOURCE_ATTEMPTS`): every
+  attempt costs one cap download.
 
-## 4. Contratto di quota e generazione Hubcap
+## 4. Hubcap quota and generation contract
 
-Gemelli: `AetherDesk/src-tauri/src/providers/hubcap_generation.rs` ↔
+Twins: `AetherDesk/src-tauri/src/providers/hubcap_generation.rs` ↔
 `AetherDLL/AetherCore/network/HubcapQuota.cpp`.
 
-- Budget giornaliero: **game 1500/giorno**, **workshop 500/giorno**; reset a
-  **mezzanotte EST fissa** (come il provider), non mezzanotte locale.
-- Un solo file di stato + `.lock` sibling: ogni ciclo read-modify-write avviene
-  sotto lock, quindi i contatori restano coerenti qualunque processo scriva.
-- **reserve → request → release-on-failure**: un tentativo fallito restituisce
-  l'unità riservata (nessun errore transitorio brucia quota).
-- Il DLL riserva solo generazioni *game* (il workshop è solo Desk).
-- Endpoint di generazione game: `GET /generate/manifest?depot_id=&manifest_id=`;
-  la risposta va validata per identità (depot+gid nel protobuf) prima
-  dell'install.
+- Daily budget: **1500 game/day**, **500 workshop/day**; reset at fixed **EST
+  midnight** (like the provider), not local midnight.
+- One state file + `.lock` sibling: every read-modify-write cycle happens under
+  lock, so counters stay coherent no matter which process writes.
+- **reserve → request → release-on-failure**: a failed attempt returns the
+  reserved unit (no transient error burns quota).
+- The DLL reserves game generations only (workshop is Desk-only).
+- Game generation endpoint: `GET /generate/manifest?depot_id=&manifest_id=`;
+  the response must be identity-validated (depot+gid in the protobuf) before
+  install.
 
-Policy di traffico (valori attuali — allineare qui se cambiano):
+Traffic policy (current values — align here when they change):
 
-| Parametro | Desk | DLL |
+| Parameter | Desk | DLL |
 |---|---|---|
-| Serializzazione generazioni | scheduler di processo, intervallo min **750 ms** | worker serializzato (coda), niente retry lunghi in-pass |
-| Tentativi per generazione | 1 (il retry è a livello lane) | **2** × timeout **6 s**, sleep 750 ms tra tentativi |
-| Backoff su fallimento | lane monitor: **30 s × 2^n**, cap **30 min** | proactive: **{30, 60, 120, 300, 600, 900} s**, max **6** retry |
-| Finestra bridge (recv CM) | — | `manifestBridgeWaitMs` default **2500 ms** (clamp 0–10000), poi passthrough + continuazione background |
-| Cap per passata | workshop: **5** generazioni remote/run (deferred → re-run dopo **90 s**); pin_refresh: 1 app/poll, intervallo **15 min** | proactive queue: 1 chiave (gid,depot) alla volta, dedup per chiave |
-| Poll/cadenza | monitor: start delay **8 s**, poll **20 s** | DirWatch/event-driven + coda proactive |
+| Generation serialization | process scheduler, min interval **750 ms** | serialized worker (queue), no long in-pass retries |
+| Attempts per generation | 1 (retry lives at lane level) | **2** × **6 s** timeout, 750 ms sleep between attempts |
+| Backoff on failure | monitor lane: **30 s × 2^n**, cap **30 min** | proactive: **{30, 60, 120, 300, 600, 900} s**, max **6** retries |
+| Bridge window (CM recv) | — | `manifestBridgeWaitMs` default **2500 ms** (clamp 0–10000), then passthrough + background continuation |
+| Cap per pass | workshop: **5** remote generations/run (deferred → re-run after **90 s**); pin_refresh: 1 app/poll, **15 min** interval | proactive queue: 1 (gid,depot) key at a time, dedup per key |
+| Poll/cadence | monitor: start delay **8 s**, poll **20 s** | DirWatch/event-driven + proactive queue |
 
-Le asimmetrie sono **intenzionali**: il DLL sta dentro il thread di rete di
-Steam (deve rispondere in ~ms e non può accodare work infinito), il Desk è un
-orchestratore UI (può permettersi lane periodiche e batch). I valori però
-devono restare compatibili: es. la finestra del bridge (2,5 s) ≥ p95 della
-generazione live (~1 s); il backoff DLL (max 15 min) ≈ cap backoff Desk (30 min).
+Asymmetries are **intentional**: the DLL sits inside Steam's network thread (must
+answer in ~ms and cannot queue infinite work), Desk is a UI orchestrator (can
+afford periodic lanes and batches). The values must stay compatible though:
+e.g. the bridge window (2.5 s) ≥ live-generation p95 (~1 s); the DLL backoff
+(max 15 min) ≈ Desk backoff cap (30 min).
 
-## 5. Contratto dei pin Lua
+## 5. Lua pin contract
 
-- Pin **attivo** (`setManifestid(depot,"gid")`) = version-lock: Steam deve
-  restare su quel gid; i pipeline automatici non lo toccano MAI.
-- Pin **commentato** = informativo: il gioco è in modalità update; il valore
-  commentato deve puntare all'ultima versione nota perché "Disable updates"
-  lo riattiva.
-- I **GID non sono ordinati cronologicamente**: "più nuovo" non esiste; il
-  segnale è "diverso dal pin", con priorità all'evidenza locale
-  (`latest_installed_gid`, mtime su depotcache) rispetto alla vista Hubcap
-  (`/manifest/{appid}/contents`, endpoint gratuito).
-- Ogni riscrittura di Lua (realign, toggle, policy, versione, edits) deve
-  archiviare pre+post in `history/` e backuppare i manifest referenziati
-  (matrice completa: report §12).
+- **Active** pin (`setManifestid(depot,"gid")`) = version lock: Steam must stay
+  on that gid; automatic pipelines NEVER touch it.
+- **Commented** pin = informational: the game is in update mode; the commented
+  value must point at the last known version because "Disable updates" turns
+  it back on.
+- **GIDs are not chronologically ordered**: "newer" does not exist; the signal
+  is "different from the pin", prioritizing local evidence
+  (`latest_installed_gid`, mtime on depotcache) over the Hubcap view
+  (`/manifest/{appid}/contents`, free endpoint).
+- Every Lua rewrite (realign, toggle, policy, version, edits) must archive
+  pre+post to `history/` and back up the referenced manifests (full matrix:
+  report §12).
 
-## 6. Test di contratto
+## 6. Contract tests
 
 - **Desk** (`cargo test` in `AetherDesk/src-tauri`):
-  `tests/ipc_contract_tests.rs` — regole §7/§8: comandi registrati vs definiti,
-  nomi invocati dal frontend vs registrati, chiavi degli argomenti vs firme
-  Rust, forma delle chiavi wire, assenza di `steam_path` nei payload, inventario
-  dei comandi inutilizzati.
-  `core/backup.rs::tests` — regole 2/3/4 del contratto di copia
-  (`backup_manifest_bytes`), sostituzione placeholder 0-byte, payload vuoto
-  rifiutato, `store_original` (Created/Updated/Unchanged), dedup di
-  `store_history_version`, unicità degli archivi same-millisecond.
-- **DLL**: nessuna harness nel repo (build Windows). Checklist manuale quando
-  si tocca `ManifestRestore.cpp`/`ManifestFetch.cpp`:
-  1. copia con destinazione non vuota → invariata; 2. destinazione 0 byte →
-  sostituita; 3. size verificata post-copy; 4. race Desk/DLL → nessun errore
-  spurio (regola 5); 5. `BackupManifestAfterGeneration` intercetta anche i pin
-  commentati; 6. quota: release su fallimento.
-- Se una regola di §2–§5 cambia: aggiornare entrambi i gemelli, questa pagina
-  e i test nella stessa commit.
+  `tests/ipc_contract_tests.rs` — §7/§8 rules: registered vs defined commands,
+  frontend-invoked names vs registered, argument keys vs Rust signatures, wire
+  key shape, no `steam_path` in payloads, unused-command inventory.
+  `core/backup.rs::tests` — copy-contract rules 2/3/4 (`backup_manifest_bytes`),
+  0-byte placeholder replacement, rejected empty payload, `store_original`
+  (Created/Updated/Unchanged), `store_history_version` dedup, same-millisecond
+  archive uniqueness.
+- **DLL**: no harness in the repo (Windows build). Manual checklist when
+  touching `ManifestRestore.cpp`/`ManifestFetch.cpp`:
+  1. copy with non-empty destination → unchanged; 2. 0-byte destination →
+  replaced; 3. post-copy size verified; 4. Desk/DLL race → no spurious error
+  (rule 5); 5. `BackupManifestAfterGeneration` also catches commented pins;
+  6. quota: release on failure.
+- When a §2–§5 rule changes: update both twins, this page and the tests in the
+  same commit.
 
 ---
 
-## 7. Contratto IPC Desk → frontend (chiavi degli argomenti)
+## 7. Desk → frontend IPC contract (argument keys)
 
-Il frontend chiama i comandi con `invoke('nome_comando', { chiave: valore })`.
+The frontend calls commands with `invoke('command_name', { key: value })`.
 
-**Regola**: Tauri 2 deriva la chiave di ogni argomento dal nome del parametro
-Rust con `to_lower_camel_case()` e cerca nel payload **esattamente** quella
-chiave (`tauri 2.11.5`, `crates/tauri/src/ipc/command.rs`: `v.get(self.key)`).
-Non esiste fallback snake_case: una chiave sbagliata non è un errore di
-compilazione, è una Promise rigettata a runtime con
-`command X missing required key Y`.
+**Rule**: Tauri 2 derives every argument's key from the Rust parameter name with
+`to_lower_camel_case()` and looks it up in the payload with **exactly** that
+key (`tauri 2.11.5`, `crates/tauri/src/ipc/command.rs`: `v.get(self.key)`).
+There is no snake_case fallback: a wrong key is not a compile error, it is a
+Promise rejected at runtime with `command X missing required key Y`.
 
-| Parametro Rust | Chiave nel payload | Note |
+| Rust parameter | Payload key | Notes |
 |---|---|---|
-| `app_id: u32` | `appId` | regola generale |
-| `tail_lines: Option<usize>` | `tailLines` | `Option` → chiave omettibile |
-| `game_name: Option<String>` | `gameName` | `trigger_luatools_download` / `prepare_luatools_specific_version_download`: hint facoltativo inoltrato a lua.tools (`&game_name=`), etichetta solo la cronologia download dell'account |
+| `app_id: u32` | `appId` | general rule |
+| `tail_lines: Option<usize>` | `tailLines` | `Option` → omittable key |
+| `game_name: Option<String>` | `gameName` | `trigger_luatools_download` / `prepare_luatools_specific_version_download`: optional hint forwarded to lua.tools (`&game_name=`), labels only the account's download history |
 | `show_online: bool` | `showOnline` | §7.1 |
 
-### 7.1 `showonline` è un valore, non una chiave
+### 7.1 `showonline` is a value, not a key
 
-`aethercore.toml` contiene `[presence] default_mode = "showonline"` e gli array
-`showonline_apps` / `aetheronline_apps` / `exclude_apps`. Quel token **tutto
-minuscolo** è letto anche da AetherDLL (`AetherCore/core/Settings.cpp`): è
-vocabolario di dominio condiviso, non casing da sistemare.
+`aethercore.toml` holds `[presence] default_mode = "showonline"` and the
+`showonline_apps` / `aetheronline_apps` / `exclude_apps` arrays. That
+**all-lowercase** token is also read by AetherDLL (`AetherCore/core/Settings.cpp`):
+shared domain vocabulary, not casing to fix.
 
-Il comando che lo imposta, però, attraversa l'IPC:
+The command setting it, though, crosses IPC:
 
-- parametro Rust: `show_online: bool` → chiave wire `showOnline`
+- Rust parameter: `show_online: bool` → wire key `showOnline`
   (`commands/steam.rs::set_presence_default_mode`);
-- payload frontend: `{ showOnline: next }`
+- frontend payload: `{ showOnline: next }`
   (`src/views/settings/SettingsAetherSection.tsx`);
-- valore scritto nel TOML: la stringa `"showonline"`
+- value written to TOML: the `"showonline"` string
   (`core/presence_config.rs::set_default_mode_in_toml`).
 
-Storicamente il parametro si chiamava `showonline` (token di dominio copiato nel
-nome del parametro) e il frontend mandava `{ showonline }`: funzionava per
-coincidenza, e un rename "di pulizia" da una sola delle due parti avrebbe rotto
-il toggle di presenza in silenzio. I tre livelli sopra vanno tenuti distinti.
+Historically the parameter was named `showonline` (domain token copied into the
+parameter name) and the frontend sent `{ showonline }`: it worked by coincidence,
+and a "cleanup" rename from only one of the two sides would have silently broken
+the presence toggle. Keep the three levels above distinct.
 
-### 7.2 Come si aggiunge o si rinomina un comando
+### 7.2 Adding or renaming a command
 
-1. firma in `src-tauri/src/commands/<modulo>.rs` con `#[tauri::command]`;
-2. registrazione in `generate_handler!` (`src-tauri/src/main.rs`);
-3. payload nel frontend con le chiavi lowerCamelCase derivate dalla firma;
-4. `cargo test ipc_contract` — `tests/ipc_contract_tests.rs` verifica 1↔2↔3 sul
-   sorgente reale e va aggiornato solo se il contratto cambia **di proposito**
-   (liste `documented_command_contracts_have_the_expected_keys` e
-   `DOCUMENTED_UNUSED_COMMANDS`).
+1. signature in `src-tauri/src/commands/<module>.rs` with `#[tauri::command]`;
+2. registration in `generate_handler!` (`src-tauri/src/main.rs`);
+3. frontend payload with the lowerCamelCase keys derived from the signature;
+4. `cargo test ipc_contract` — `tests/ipc_contract_tests.rs` verifies 1↔2↔3 on
+   the real sources and is updated only when the contract changes **on purpose**
+   (the `documented_command_contracts_have_the_expected_keys` and
+   `DOCUMENTED_UNUSED_COMMANDS` lists).
 
-Regola di stile: quando gli argomenti sono più di uno, dichiararli in un type
-alias in `src/types/` (es. `PresenceToggleArgs`) invece che inline. **`type`,
-non `interface`**: `invoke()` accetta `Record<string, unknown>` e un `interface`
-non ha l'index signature implicita, quindi non è assegnabile (TS2345).
+Style rule: with more than one argument, declare them in a type alias in
+`src/types/` (e.g. `PresenceToggleArgs`) instead of inline. **`type`, not
+`interface`**: `invoke()` takes `Record<string, unknown>` and an `interface`
+has no implicit index signature, so it is not assignable (TS2345).
 
 ---
 
-## 8. Il percorso Steam non è un parametro del client
+## 8. The Steam path is not a client parameter
 
-**Regola**: nessun comando riceve `steam_path` dal frontend. Il percorso si
-risolve nel backend, dalle impostazioni, con due helper in
+**Rule**: no command receives `steam_path` from the frontend. The path resolves
+in the backend, from settings, with two helpers in
 `src-tauri/src/commands/mod.rs`:
 
-| Helper | Quando | Comportamento senza percorso |
+| Helper | When | Behavior without a path |
 |---|---|---|
-| `command_steam_path(&app)` | il comando non può lavorare senza un percorso valido (install/uninstall, scrittura manifest, download) | `Err` con messaggio utente ("Steam installation path is not configured…") + validazione filesystem |
-| `configured_steam_path(&app)` | il comando deve degradare con garbo (lettura versione DLL, check aggiornamenti, probe residui) | `None` → il chiamante risponde `N/A` / `0` / "nessun aggiornamento" |
+| `command_steam_path(&app)` | the command cannot work without a valid path (install/uninstall, manifest writes, downloads) | `Err` with a user message ("Steam installation path is not configured…") + filesystem validation |
+| `configured_steam_path(&app)` | the command must degrade gracefully (DLL version reads, update checks, residue probes) | `None` → the caller answers `N/A` / `0` / "no updates" |
 
-**Eccezione ammessa**: `commands/steam.rs::check_steam_path(path)` valida un
-percorso **candidato** (quello che l'utente sta scrivendo in Settings, prima del
-save). Non è il percorso configurato, quindi il client deve passarlo.
+**Allowed exception**: `commands/steam.rs::check_steam_path(path)` validates a
+**candidate** path (what the user is typing in Settings, before save). It is
+not the configured path, so the client must pass it.
 
-**Perché**: con il parametro nel payload ogni chiamata costava alla UI una
-`get_settings` (lettura file + decifratura DPAPI del keystore) e 22 firme dove
-il client poteva mandare un percorso diverso da quello configurato. La regola è
-protetta da `tests/ipc_contract_tests.rs::no_command_takes_a_steam_path_from_the_client`.
+**Why**: with the parameter in the payload every call cost the UI a
+`get_settings` (file read + DPAPI keystore decryption) and 22 signatures where
+the client could send a path different from the configured one. The rule is
+guarded by `tests/ipc_contract_tests.rs::no_command_takes_a_steam_path_from_the_client`.
 
-## 9. Ownership delle mutazioni Desk (batch settings/coordinatore, 2026-10-05)
+## 9. Desk mutation ownership (settings batch/coordinator, 2026-10-05)
 
-### Settings e configurazione DLL
+### Settings and DLL configuration
 
-- `SettingsManager::update` esegue **load rigoroso → patch tipizzata → normalizzazione → commit** sotto mutex e lock advisory `settings.lock`. La closure deve essere pura, senza I/O remoto né chiamate ricorsive al repository.
-- IPC `save_settings` riceve `settings` **e `base`** (snapshot visto dal form) e restituisce lo snapshot effettivo. I campi invariati rispetto a `base` mantengono il valore attuale. Un conflitto sullo stesso campo restituisce `SETTINGS_CONFLICT`, senza valori sensibili nel messaggio.
-- `settings.json` e `provider_credentials.dat` conservano i formati esistenti. `settings.pending.json` contiene versione del journal, JSON sanitizzato e ciphertext DPAPI: viene pubblicato prima dei due file e rigiocato idempotentemente prima di ogni lettura/mutazione del repository. `settings.last-good.json` conserva una coppia precedente nello **stesso formato del journal**, non il formato del normale settings JSON.
-- Non confondere un journal presente con un lock abbandonato: il journal va recuperato, mentre i file `.lock` possono rimanere legittimamente dopo lo stop; l'ownership del lock è nel sistema operativo.
-- `load()` resta un adapter read-only con fallback loggato; comandi di scrittura e `get_settings` usano caricamento rigoroso. Un errore di parsing/DPAPI non autorizza il salvataggio dei default.
-- Tutti gli editor Desk di `aethercore.toml` passano da `core/config_document.rs`: parser lossless, chiavi section-aware, lock sul documento e temp unici. La copia legacy è aggiornata solo se presente. Le due copie TOML non costituiscono una transazione multi-file: un errore di sincronizzazione è riportato, non dichiarato successo.
-- Rust minimo 1.89 per i lock advisory di `std::fs::File`; nessuna nuova libreria di locking. `toml_edit` diventa dipendenza diretta, riusando la versione già nel lockfile.
+- `SettingsManager::update` runs **strict load → typed patch → normalization → commit** under mutex and advisory `settings.lock`. The closure must be pure: no remote I/O, no recursive repository calls.
+- IPC `save_settings` takes `settings` **and `base`** (the form-seen snapshot) and returns the effective snapshot. Fields unchanged vs `base` keep the current value. A same-field conflict returns `SETTINGS_CONFLICT`, with no sensitive values in the message.
+- `settings.json` and `provider_credentials.dat` keep their existing formats. `settings.pending.json` holds a journal version, sanitized JSON and DPAPI ciphertext: published before both files and replayed idempotently before every repository read/mutation. `settings.last-good.json` keeps an older pair in the **same journal format**, not the plain settings JSON format.
+- Do not confuse a present journal with an abandoned lock: the journal is recovered, while `.lock` files may legitimately linger after stop; lock ownership belongs to the OS.
+- `load()` stays a read-only adapter with logged fallback; write commands and `get_settings` use strict loading. A parse/DPAPI error never authorizes saving the defaults.
+- Every Desk editor of `aethercore.toml` goes through `core/config_document.rs`: lossless parser, section-aware keys, per-document lock and unique temps. The legacy copy is updated only when present. The two TOML copies are not a multi-file transaction: a sync error is reported, not declared success.
+- Rust 1.89 minimum for `std::fs::File` advisory locks; no new locking library. `toml_edit` becomes a direct dependency, reusing the version already in the lockfile.
 
-### Mutazioni per gioco
+### Per-game mutations
 
-- `core/game_mutations.rs` identifica la risorsa con **Steam root canonicalizzata + AppID**. Alias equivalenti convergono; su Windows la chiave è case-insensitive. La mappa conserva riferimenti deboli per non crescere indefinitamente.
-- Operazioni remote: `MutationPlan::prepare` PRIMA di leggere gli input/preparare il download; `commit_for` immediatamente prima della pubblicazione. Nel frattempo nessun lock gioco è trattenuto per il networking. Il commit controlla generazione Desk, fingerprint Lua/ACF/libraryfolders e root corrente. Una modifica concorrente restituisce `GAME_STATE_CONFLICT`, senza pubblicare il Lua/ACF preparato sul vecchio stato. Eventuali manifest immutabili già ripristinati dal resolver possono restare in cache.
-- Operazioni sincrone: `try_acquire` restituisce `GAME_BUSY` invece di bloccare il runtime. Le corsie async possono aspettare il mutex dello stesso gioco. Il coordinamento è solo in memoria e non crea file `desk-locks`. Processi Desk distinti non sono coordinati da questo meccanismo.
-- **Ordine lock:** gioco → gate depotcache/editor configurazione. Non riacquisire lo stesso gioco da un helper: il post-install refresh Store parte DOPO il rilascio della transazione principale. Il realignment condiviso riceve il guard dal caller.
-- Se si delega a `spawn_blocking`, il worker riceve il guard per valore: la cancellazione del waiter non deve liberare un lock mentre il worker sta ancora scrivendo. Questo vale anche per i wrapper dei tool esterni e del deploy online.
-- Le importazioni locali conservano l'ownership durante le scritture, policy update e backup finale. Il bulk acquisisce gli AppID scoperti in ordine prima di modificare i file. I writer Workshop di manifest, che non riscrivono Lua/ACF del gioco, mantengono il proprio gate/cache identity contract.
-- **Limite deliberato:** Steam, DLL, editor manuali e vecchie build Desk non obbediscono ai nuovi lock. Fingerprint e recheck prima della sostituzione rilevano modifiche osservabili, ma non offrono un CAS atomico contro scrittori esterni non cooperanti. Non introdurre un blocco del processo Steam per simulare questa garanzia.
-- Il coordinatore non è un journal di rollback multi-file e non risolve il read-modify-write dei JSON globali di cache/stato online tra AppID differenti: questi sono domini distinti.
+- `core/game_mutations.rs` identifies the resource with **canonicalized Steam root + AppID**. Equivalent aliases converge; on Windows the key is case-insensitive. The map keeps weak references to avoid growing forever.
+- Remote operations: `MutationPlan::prepare` BEFORE reading inputs/preparing the download; `commit_for` immediately before publication. Meanwhile no game lock is held for networking. The commit checks Desk generation, Lua/ACF/libraryfolders fingerprint and current root. A concurrent change returns `GAME_STATE_CONFLICT` without publishing the Lua/ACF prepared on the old state. Already-restored immutable manifests from the resolver may stay cached.
+- Synchronous operations: `try_acquire` returns `GAME_BUSY` instead of blocking the runtime. Async lanes may await the same game's mutex. Coordination is in-memory only and creates no `desk-locks` files. Distinct Desk processes are not coordinated by this mechanism.
+- **Lock order:** game → depotcache/config-editor gate. Never re-acquire the same game from a helper: the post-install Store refresh starts AFTER the main transaction releases. The shared realignment receives the guard from the caller.
+- When delegating to `spawn_blocking`, the worker receives the guard by value: cancelling the waiter must not free a lock while the worker is still writing. This also holds for the external-tool and online-deploy wrappers.
+- Local imports keep ownership during writes, policy update and final backup. Bulk acquires discovered AppIDs in order before touching files. Manifest Workshop writers, which never rewrite the game's Lua/ACF, keep their own gate/cache identity contract.
+- **Deliberate limit:** Steam, the DLL, manual editors and old Desk builds do not obey the new locks. Fingerprint and pre-replacement recheck detect observable changes but offer no atomic CAS against uncooperative external writers. Do not block the Steam process to fake this guarantee.
+- The coordinator is not a multi-file rollback journal and does not solve the read-modify-write of global JSON cache/online state across different AppIDs: those are distinct domains.
 
-Log diagnostici: `settings` (prepared/applying/finalized/conflict), `config` (operation/path/changed/error, mai valori), `mutations` (begin/release con ID, operazione, AppID/root, durata; busy/conflict). **Release significa risorsa liberata, non operazione riuscita**: l'esito rimane nel log del caller.
+Diagnostics logs: `settings` (prepared/applying/finalized/conflict), `config` (operation/path/changed/error, never values), `mutations` (begin/release with ID, operation, AppID/root, duration; busy/conflict). **Release means freed resource, not successful operation**: the outcome stays in the caller's log.

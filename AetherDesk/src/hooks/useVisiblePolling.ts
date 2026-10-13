@@ -1,43 +1,43 @@
 import { useCallback, useEffect, useRef } from 'react';
 
 export interface VisiblePollingOptions {
-  /** Cadenza mentre il documento è visibile. */
+  /** Cadence while the document is visible. */
   intervalMs: number;
-  /** Cadenza ridotta mentre il documento è nascosto (finestra minimizzata,
-   *  altro tab del SO attivo). Il polling non si ferma del tutto: tornando
-   *  alla vista i dati non devono risultare troppo vecchi. */
+  /** Reduced cadence while the document is hidden (minimized window,
+   *  another OS tab active). Polling never stops entirely: coming back to
+   *  the view must not show overly stale data. */
   backoffMs: number;
-  /** `false` ferma completamente il loop (es. pannello chiuso). */
+  /** `false` stops the loop completely (e.g. closed panel). */
   enabled?: boolean;
-  /** Esegue un tick immediato all'attivazione invece di attendere il primo
-   *  intervallo. Default `true`. */
+  /** Runs one tick immediately on activation instead of waiting for the first
+   *  interval. Default `true`. */
   immediate?: boolean;
-  /** Cambiare questa valore riavvia il loop (e, con `immediate`, esegue subito
-   *  un tick). Serve ai consumatori la cui query dipende da un input UI — per
-   *  esempio la sorgente log selezionata — e che quindi devono ricaricare i
-   *  dati al cambio, non al prossimo tick. */
+  /** Changing this value restarts the loop (and, with `immediate`, runs a tick
+   *  right away). For consumers whose query depends on UI input — e.g. the
+   *  selected log source — which must reload data on change, not on the next
+   *  tick. */
   resetKey?: unknown;
 }
 
 /**
- * Polling "visibility-aware" condiviso.
+ * Shared "visibility-aware" polling.
  *
- * Regole (le stesse che `LogView` applicava a mano e che l'audit chiedeva di
- * estendere a `SyncStatusModal`):
+ * Rules (the same ones `LogView` applied by hand and the audit asked to
+ * extend to `SyncStatusModal`):
  *
- * 1. **setTimeout auto-rischedulante, mai setInterval**: il tick successivo
- *    parte DOPO il completamento della chiamata, quindi una IPC lenta non può
- *    accumulare richieste concorrenti.
- * 2. **Backoff quando il documento è nascosto**: `backoffMs` invece di
- *    `intervalMs`, rivalutato ad ogni tick (l'utente può minimizzare in
- *    qualsiasi momento).
- * 3. **Ripresa immediata al ritorno visibile**: `visibilitychange` → un tick
- *    subito, poi la catena riparte.
- * 4. **Una sola catena alla volta**: ogni catena ha un id; un tick in volo al
- *    momento del cleanup (o di un `resetKey`) non può rischedulare nulla.
+ * 1. **Self-rescheduling setTimeout, never setInterval**: the next tick starts
+ *    AFTER the call completes, so a slow IPC call cannot pile up concurrent
+ *    requests.
+ * 2. **Backoff while the document is hidden**: `backoffMs` instead of
+ *    `intervalMs`, re-evaluated on every tick (the user may minimize at any
+ *    moment).
+ * 3. **Immediate resume when visible again**: `visibilitychange` → one tick
+ *    right away, then the chain restarts.
+ * 4. **A single chain at a time**: every chain has an id; an in-flight tick at
+ *    cleanup (or `resetKey`) time cannot reschedule anything.
  *
- * Il `tick` è letto da un ref: il consumatore può passare una funzione creata
- * ad ogni render (che chiude sopra il proprio stato) senza riavviare il loop.
+ * `tick` is read through a ref: consumers may pass a function created on every
+ * render (closing over their own state) without restarting the loop.
  */
 export const useVisiblePolling = (
   tick: () => void | Promise<void>,
@@ -45,8 +45,8 @@ export const useVisiblePolling = (
 ): void => {
   const tickRef = useRef(tick);
 
-  // Aggiornato dopo ogni render (non durante: scrivere un ref in fase di
-  // render non è sicuro con il concurrent rendering).
+  // Updated after every render (not during: writing a ref during render is
+  // unsafe with concurrent rendering).
   useEffect(() => {
     tickRef.current = tick;
   });
@@ -55,8 +55,8 @@ export const useVisiblePolling = (
     try {
       await tickRef.current();
     } catch {
-      // Il tick è responsabile del proprio stato di errore (es. mostrarlo in
-      // UI). Qui si ingoia l'eccezione solo per non interrompere la catena.
+      // The tick owns its error state (e.g. showing it in the UI). The
+      // exception is swallowed here only to keep the chain alive.
     }
   }, []);
 
@@ -67,8 +67,8 @@ export const useVisiblePolling = (
     let stopped = false;
     let chain = 0;
 
-    // Function declarations (hoisted): `schedule` e `startChain` si chiamano a
-    // vicenda, e nessuna delle due viene eseguita prima che entrambe esistano.
+    // Function declarations (hoisted): `schedule` and `startChain` call each
+    // other, and neither runs before both exist.
     function schedule(owner: number) {
       if (stopped || owner !== chain) return;
       const hidden = document.visibilityState !== 'visible';
@@ -83,8 +83,8 @@ export const useVisiblePolling = (
 
     const onVisibilityChange = () => {
       if (document.visibilityState !== 'visible') return;
-      // Annulla il timer (eventualmente in backoff) e riparti subito: chi
-      // torna sulla finestra non deve aspettare il residuo del backoff.
+      // Cancel the timer (possibly backing off) and restart right away: whoever
+      // returns to the window must not wait out the backoff remainder.
       window.clearTimeout(timer);
       startChain();
     };
@@ -103,7 +103,7 @@ export const useVisiblePolling = (
       window.clearTimeout(timer);
       document.removeEventListener('visibilitychange', onVisibilityChange);
     };
-    // `resetKey` è deliberatamente tra le dipendenze: è il segnale con cui il
-    // consumatore chiede di riavviare il loop (e ricaricare subito i dati).
+    // `resetKey` is deliberately in the deps: it is how the consumer asks to
+    // restart the loop (and reload data right away).
   }, [enabled, intervalMs, backoffMs, immediate, resetKey, runOnce]);
 };

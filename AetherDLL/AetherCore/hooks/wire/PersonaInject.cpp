@@ -255,21 +255,21 @@ bool BuildInjectLocked(steam::AppId appId) {
 }  // namespace
 
 // ---------------------------------------------------------------------------
-// I-B: OnPersonaStateRecv è orchestrata da helper dedicati. Contratto
-// threading degli static usati dagli helper (documentato e fatto rispettare):
-//   * s_lastServerApp ........ atomico lock-free (solo DiagServerTruth).
-//   * s_friendDumpMutex ...... protegge s_friendState (flight-recorder diff);
-//                              toccata solo in DiagServerTruth e solo con
-//                              LogLevel::Info attivo.
-//   * s_diagFriendsMutex ..... protegge s_diagFriends (one-shot DIAG per amico
-//                              mascherato). PRIMA era uno static function-local
-//                              SENZA mutex: questo split chiude il buco.
-//   * g_selfLobby ............ atomico relaxed; scritto da DiagServerTruth e
-//                              letto da RecoverMaskedFriends (l'ordine tra le
-//                              due è vincolante: diag PRIMA del recovery).
-//   * CacheSelfTemplateLocked/PatchSelfLocked vanno chiamate SOLO tenendo
+// I-B: OnPersonaStateRecv is orchestrated by dedicated helpers. Threading
+// contract of the helper-used statics (documented and enforced):
+//   * s_lastServerApp ........ lock-free atomic (DiagServerTruth only).
+//   * s_friendDumpMutex ...... guards s_friendState (flight-recorder diff);
+//                              touched only in DiagServerTruth and only with
+//                              LogLevel::Info active.
+//   * s_diagFriendsMutex ..... guards s_diagFriends (per-friend one-shot DIAG
+//                              when masked). It USED to be a mutex-less
+//                              function-local static: this split closes the hole.
+//   * g_selfLobby ............ relaxed atomic; written by DiagServerTruth and
+//                              read by RecoverMaskedFriends (the order between
+//                              the two is binding: diag BEFORE recovery).
+//   * CacheSelfTemplateLocked/PatchSelfLocked must be called ONLY while holding
 //     g_state.presence.mutex; FillSelfGameName/DiagServerTruth/
-//     RecoverMaskedFriends NON lo tengono (gamename ha il suo lock interno).
+//     RecoverMaskedFriends do NOT hold it (gamename has its own inner lock).
 // ---------------------------------------------------------------------------
 
 std::atomic<std::uint32_t> s_lastServerApp{0xFFFFFFFFu};
@@ -340,9 +340,9 @@ void FillSelfGameName(CMsgClientPersonaState& msg, std::uint64_t selfId, steam::
 void DiagServerTruth(const CMsgClientPersonaState& msg, std::uint64_t selfId,
                      const WireFrame& frame) {
     // The PersonaState the CM returns for OUR own SteamID is exactly what gets
-    // broadcast to friends. NOTA: gira DOPO il self-patch, quindi per la voce
-    // SELF i campi letti sono quelli post-patch quando l'inject è attivo
-    // (comportamento preesistente allo split, preservato byte-per-byte).
+    // broadcast to friends. NOTE: it runs AFTER the self-patch, so for the SELF
+    // entry the fields read are the post-patch ones when inject is active
+    // (pre-existing behavior before the split, preserved byte-for-byte).
     if (auto* srv = FindSelf(const_cast<CMsgClientPersonaState&>(msg), selfId)) {
         const std::uint32_t app = srv->game_played_app_id();
         // Track our own lobby membership every push: it is the corroboration
@@ -363,10 +363,10 @@ void DiagServerTruth(const CMsgClientPersonaState& msg, std::uint64_t selfId,
         }
     }
 
-    // [DIAG] flight-recorder: per OGNI persona frame, logga ogni friend che
-    // sta giocando (appid reale o 480), deduplicato solo sul cambio di stato.
-    // Gate di livello: il diff della mappa girava su ogni frame anche a log
-    // Warn/Error/Off — ora solo con Info attivo, altrimenti costo zero.
+    // [DIAG] flight-recorder: for EVERY persona frame, log every friend who
+    // is playing (real appid or 480), deduplicated on state change only.
+    // Level gate: the map diff ran on every frame even at Warn/Error/Off log
+    // levels — now only with Info active, otherwise zero cost.
     if (ac::log::Enabled(LogLevel::Info)) {
         std::lock_guard<std::mutex> lk(s_friendDumpMutex);
         AC_LOG_TRACE(kModule, "[DIAG] PERSONA frame: friends=%d bLen=%u",
@@ -606,8 +606,8 @@ std::int32_t OnPersonaStateRecv(const WireFrame& frame, std::uint8_t* out, std::
         FillSelfGameName(msg, selfId, playing);
     }
 
-    // [DIAG] server truth + flight-recorder. DEVE precedere il recovery:
-    // aggiorna g_selfLobby, usato dal fallback legacy "stesso lobby".
+    // [DIAG] server truth + flight-recorder. MUST precede recovery: it
+    // updates g_selfLobby, used by the legacy "same lobby" fallback.
     DiagServerTruth(msg, selfId, frame);
 
     // Friend entry recovery (480 -> real appid) + PICS prime.

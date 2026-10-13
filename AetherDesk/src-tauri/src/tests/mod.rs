@@ -1,28 +1,27 @@
-//! Test suite dedicata ai moduli applicativi.
+//! Test suite dedicated to application modules.
 //!
-//! ## Convenzione reale (aggiornata: prima questo commento la descriveva male)
+//! ## Real convention (updated: this comment used to describe it wrongly)
 //!
-//! Nel crate convivono **due** stili, entrambi legittimi:
+//! Two styles coexist in the crate, both legitimate:
 //!
-//! 1. **Test trasversali / di contratto** → qui in `src/tests/`, un file per
-//!    area (`ipc_contract_tests.rs`, `manifest_pins_tests.rs`, …). Sono i test
-//!    che attraversano più moduli o che verificano un contratto verso l'esterno
-//!    (frontend, AetherDLL, formato su disco). Importano via `crate::`.
-//! 2. **Test unitari inline** → `#[cfg(test)] mod tests` in fondo al file che
-//!    implementa la logica. Sono 13 file / 46 test (es. `steam/resolve.rs`,
-//!    `core/backup.rs`, `versioning/sources/*`): vivono accanto al codice che
-//!    coprono perché ne testano funzioni private o dettagli locali.
+//! 1. **Cross-cutting / contract tests** → here in `src/tests/`, one file per
+//!    area (`ipc_contract_tests.rs`, `manifest_pins_tests.rs`, …). These are the
+//!    tests spanning several modules or verifying a contract toward the outside
+//!    (frontend, AetherDLL, on-disk format). They import via `crate::`.
+//! 2. **Inline unit tests** → `#[cfg(test)] mod tests` at the bottom of the file
+//!    implementing the logic. 13 files / 46 tests (e.g. `steam/resolve.rs`,
+//!    `core/backup.rs`, `versioning/sources/*`): they live next to the code they
+//!    cover because they test private functions or local details.
 //!
-//! Totale: 240 test (`cargo test`). La regola pratica per scegliere dove
-//! mettere un test nuovo:
+//! Total: 240 tests (`cargo test`). The rule of thumb for placing a new test:
 //!
-//! - tocca **più di un modulo**, o verifica qualcosa che un'altra parte del
-//!   sistema (frontend, DLL, file su disco) deve rispettare → `src/tests/`;
-//! - testa una funzione **privata** o un invariante locale → inline nel file.
+//! - touches **more than one module**, or verifies something another part of the
+//!   system (frontend, DLL, files on disk) must honor → `src/tests/`;
+//! - tests a **private** function or a local invariant → inline in the file.
 //!
-//! Nota storica: questo file affermava "nessun `#[cfg(test)]` nei file
-//! sorgente", smentito dal codice. Spostare i 46 test inline qui sarebbe churn
-//! senza beneficio; la convenzione doppia è ora documentata com'è davvero.
+//! Historical note: this file used to claim "no `#[cfg(test)]` in source
+//! files", disproved by the code. Moving the 46 inline tests here would be churn
+//! without benefit; the dual convention is now documented as it really is.
 
 pub mod aliases_tests;
 pub mod bridge_contract_tests;

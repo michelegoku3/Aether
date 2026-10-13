@@ -229,14 +229,14 @@ fn rar_password_hint(
 /// Extract a `.7z` archive into `dest` using the pure-Rust `sevenz-rust2` crate.
 ///
 /// Tries an unencrypted pass first, then retries with `default_password` for
-/// protected archives. A clear error is reported if both fail.
+/// protected archives. Every entry goes through the same `sanitize_rel_path`
+/// gate as ZIP/RAR (absolute / `..` paths are skipped), and files are
+/// published atomically (temp + rename) like the ZIP path — never through
+/// the library's direct-to-`dest` extraction, which performs no validation.
+/// A clear error is reported if both passes fail (never including the password).
 fn extract_7z(source: &Path, dest: &Path, default_password: &str) -> Result<(), String> {
-    let plain = sevenz_rust2::decompress_file(source, dest);
-    if plain.is_ok() {
-        return Ok(());
-    }
-
-    sevenz_rust2::decompress_file_with_password(source, dest, default_password.into())
+    extract_7z_with(source, dest, None)
+        .or_else(|_| extract_7z_with(source, dest, Some(default_password)))
         .map_err(|error| {
             format!(
                 "Failed to extract 7z {} (tried plain and stored password): {}",
@@ -244,6 +244,59 @@ fn extract_7z(source: &Path, dest: &Path, default_password: &str) -> Result<(), 
                 error
             )
         })
+}
+
+fn extract_7z_with(source: &Path, dest: &Path, password: Option<&str>) -> Result<(), String> {
+    use sevenz_rust2::{ArchiveReader, Password};
+
+    let credential = password.map_or_else(Password::empty, Password::from);
+    let mut reader = ArchiveReader::open(source, credential)
+        .map_err(|error| format!("Failed to open 7z {}: {}", source.display(), error))?;
+
+    reader
+        .for_each_entries(|entry, input| {
+            if entry.is_directory() {
+                if let Some(relative) = sanitize_rel_path(entry.name()) {
+                    fs::create_dir_all(dest.join(&relative)).map_err(io_other)?;
+                }
+                return Ok(true);
+            }
+            let Some(relative) = sanitize_rel_path(entry.name()) else {
+                return Ok(true); // skip unsafe (absolute / `..`) like ZIP/RAR
+            };
+            let out_path = dest.join(&relative);
+            if let Some(parent) = out_path.parent() {
+                fs::create_dir_all(parent).map_err(io_other)?;
+            }
+            // Atomic publish like the ZIP path: never leave a partial file if
+            // decompression or the write fails mid-entry.
+            let parent = out_path
+                .parent()
+                .ok_or_else(|| io_other("7z destination has no parent"))?;
+            let temporary = parent.join(format!(".aether-7z-{:016x}.tmp", rand::random::<u64>()));
+            let mut output = fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(&temporary)
+                .map_err(io_other)?;
+            let copied = std::io::copy(input, &mut output).map_err(io_other);
+            drop(output);
+            match copied {
+                Ok(_) => fs::rename(&temporary, &out_path).map_err(io_other)?,
+                Err(error) => {
+                    let _ = fs::remove_file(&temporary);
+                    return Err(error.into());
+                }
+            }
+            Ok(true)
+        })
+        .map_err(|error| format!("Failed to extract 7z {}: {}", source.display(), error))
+}
+
+/// Wrap any displayable error into the `std::io::Error` that `for_each_entries`
+/// converts into a 7z error via its `From<std::io::Error>` impl.
+fn io_other(error: impl std::fmt::Display) -> std::io::Error {
+    std::io::Error::other(error.to_string())
 }
 
 /// Normalize an archive entry name into a safe relative path, or `None` if it
@@ -503,5 +556,33 @@ mod tests {
         let dest = tempfile::tempdir().unwrap();
         let err = extract_7z(missing, dest.path(), secret).unwrap_err();
         assert!(!err.contains(secret), "7z error leaked password: {err}");
+    }
+
+    #[test]
+    fn sevenz_traversal_entries_never_escape_staging() {
+        use sevenz_rust2::{ArchiveEntry, ArchiveWriter};
+        let temp = tempfile::tempdir().unwrap();
+        let source = temp.path().join("evil.7z");
+        let staging = temp.path().join("staging");
+        fs::create_dir_all(&staging).unwrap();
+        let sentinel = temp.path().join("outside-sentinel.txt");
+        fs::write(&sentinel, b"protected").unwrap();
+        {
+            let mut writer = ArchiveWriter::create(&source).unwrap();
+            let mut safe: &[u8] = b"safe payload";
+            writer
+                .push_archive_entry(ArchiveEntry::new_file("safe/ok.txt"), Some(&mut safe))
+                .unwrap();
+            let mut evil: &[u8] = b"evil payload";
+            writer
+                .push_archive_entry(ArchiveEntry::new_file("../outside.txt"), Some(&mut evil))
+                .unwrap();
+            writer.finish().unwrap();
+        }
+        extract_7z(&source, &staging, "").unwrap();
+        assert_eq!(fs::read(staging.join("safe/ok.txt")).unwrap(), b"safe payload");
+        assert!(!staging.join("outside.txt").exists());
+        assert!(!temp.path().join("outside.txt").exists());
+        assert_eq!(fs::read(&sentinel).unwrap(), b"protected");
     }
 }

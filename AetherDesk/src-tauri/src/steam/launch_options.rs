@@ -1,19 +1,19 @@
-//! Lettura/scrittura delle LaunchOptions di Steam in `localconfig.vdf`.
+//! Reading/writing Steam LaunchOptions in `localconfig.vdf`.
 //!
-//! Steam salva gli argomenti di avvio per gioco in:
-//! `<Steam>/userdata/<user>/config/localconfig.vdf`, sezione
+//! Steam stores per-game launch arguments in:
+//! `<Steam>/userdata/<user>/config/localconfig.vdf`, section
 //! `"Apps"` -> `"<appid>"` -> `"LaunchOptions"`.
 //!
-//! Il file è VDF testuale; Steam lo riscrive quando esce, quindi le nostre
-//! modifiche vengono preservate finché Steam è chiuso o le riscrive da sé.
-//! Le funzioni qui lavorano sul testo preservando tutto il resto del file.
+//! The file is textual VDF; Steam rewrites it on exit, so our edits survive
+//! while Steam is closed or until it rewrites them itself.
+//! The functions here work on the text, preserving everything else in the file.
 
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::UNIX_EPOCH;
 
-/// Cerca `localconfig.vdf` nella userdata di Steam: tra tutte le cartelle
-/// utente, preferisce quella con il file modificato più di recente.
+/// Finds `localconfig.vdf` in Steam's userdata: among all user folders,
+/// prefers the one with the most recently modified file.
 pub fn find_localconfig(steam_path: &Path) -> Option<PathBuf> {
     let userdata = steam_path.join("userdata");
     let mut best: Option<(std::time::SystemTime, PathBuf)> = None;
@@ -51,7 +51,7 @@ pub fn set_launch_options(steam_path: &Path, app_id: u32, options: &str) -> Resu
     let updated = set_app_launch_options(&content, app_id, options)
         .ok_or_else(|| "Failed to update localconfig.vdf (unexpected structure).".to_string())?;
 
-    // Backup prima di scrivere.
+    // Back up before writing.
     let backup = path.with_extension("vdf.bak");
     let _ = fs::copy(&path, &backup);
     fs::write(&path, updated)
@@ -59,13 +59,13 @@ pub fn set_launch_options(steam_path: &Path, app_id: u32, options: &str) -> Resu
     Ok(())
 }
 
-/// True quando le LaunchOptions contengono il token (es. "-aetheronline").
+/// True when the LaunchOptions contain the token (e.g. "-aetheronline").
 pub fn has_launch_token(options: &str, token: &str) -> bool {
     options.split_whitespace().any(|arg| arg.eq_ignore_ascii_case(token))
 }
 
-/// Aggiunge o rimuove un token dalle LaunchOptions preservando gli altri
-/// argomenti. Ritorna le nuove LaunchOptions.
+/// Adds or removes a token from the LaunchOptions while preserving the other
+/// arguments. Returns the new LaunchOptions.
 pub fn toggle_launch_token(options: &str, token: &str, enabled: bool) -> String {
     let args: Vec<&str> = options.split_whitespace().collect();
     let mut kept: Vec<&str> = Vec::with_capacity(args.len() + 1);
@@ -80,12 +80,12 @@ pub fn toggle_launch_token(options: &str, token: &str, enabled: bool) -> String 
     kept.join(" ")
 }
 
-/// Escaping VDF per un valore di chiave: `\` e `"`.
+/// VDF escaping for a key value: `\` and `"`.
 fn vdf_escape(value: &str) -> String {
     value.replace('\\', "\\\\").replace('"', "\\\"")
 }
 
-/// Indice della prima `"` non preceduta da un numero dispari di backslash.
+/// Index of the first `"` not preceded by an odd number of backslashes.
 fn find_unescaped_quote(s: &str, from: usize) -> Option<usize> {
     let bytes = s.as_bytes();
     let mut i = from;
@@ -106,8 +106,8 @@ fn find_unescaped_quote(s: &str, from: usize) -> Option<usize> {
     None
 }
 
-/// Posizione della riga `"<key>"` (seguita da `{` per i blocchi, o da un
-/// valore per le chiavi) e della fine della chiave.
+/// Position of the `"<key>"` line (followed by `{` for blocks, or by a
+/// value for keys) and of the key's end.
 fn find_key(content: &str, key: &str) -> Option<(usize, usize)> {
     let mut search = 0;
     while let Some(rel) = content[search..].find(key) {
@@ -123,7 +123,7 @@ fn find_key(content: &str, key: &str) -> Option<(usize, usize)> {
     None
 }
 
-/// Indice della `}` che chiude il blocco aperto da `{` in `open_idx`.
+/// Index of the `}` closing the block opened by `{` at `open_idx`.
 fn find_matching_brace(s: &str, open_idx: usize) -> Option<usize> {
     let bytes = s.as_bytes();
     let mut depth = 0usize;
@@ -160,7 +160,7 @@ fn read_app_launch_options(content: &str, app_id: u32) -> String {
     let Some((_, app_after)) = find_key(apps_block, &app_key) else {
         return String::new();
     };
-    // Indici relativi ad apps_block: la `{` del blocco app sta dopo la chiave.
+    // Indices relative to apps_block: the app block's `{` sits after the key.
     let Some(open_rel) = apps_block[app_after..].find('{') else {
         return String::new();
     };
@@ -217,7 +217,7 @@ fn set_app_launch_options(content: &str, app_id: u32, options: &str) -> Option<S
             return Some(updated);
         }
 
-        // Nessuna LaunchOptions nel blocco app: inserisce subito dopo `{`.
+        // No LaunchOptions in the app block: insert right after `{`.
         let insert = format!("\t\"LaunchOptions\"\t\t\"{escaped}\"\n");
         let mut updated = String::with_capacity(content.len() + insert.len());
         updated.push_str(&content[..abs_open + 1]);
@@ -227,7 +227,7 @@ fn set_app_launch_options(content: &str, app_id: u32, options: &str) -> Option<S
         return Some(updated);
     }
 
-    // Il blocco app non esiste: lo crea dentro `Apps`, prima della `}`.
+    // No app block: create it inside `Apps`, before the closing `}`.
     let insert = format!(
         "\n\t\"{app_id}\"\n\t{{\n\t\t\"LaunchOptions\"\t\t\"{escaped}\"\n\t}}\n"
     );
@@ -280,7 +280,7 @@ mod tests {
     fn replaces_existing_value() {
         let updated = set_app_launch_options(&sample_vdf(), 730, "-novid -aetheronline").unwrap();
         assert_eq!(read_app_launch_options(&updated, 730), "-novid -aetheronline");
-        // Il resto del file è intatto.
+        // The rest of the file is intact.
         assert!(updated.contains("\"UserLocalConfigStore\""));
         assert!(updated.contains("\"Steam\""));
     }

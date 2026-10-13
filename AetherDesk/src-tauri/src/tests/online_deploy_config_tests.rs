@@ -1,8 +1,8 @@
-//! Test di `online::config` (golden test dell'ini) e del deploy/revert
-//! roundtrip su gioco fittizio.
+//! Tests for `online::config` (ini golden test) and the deploy/revert
+//! roundtrip on a fake game.
 //!
-//! NOTA: file condiviso tra la repo e l'harness standalone — non cambiare
-//! i path di import senza aggiornare entrambi.
+//! NOTE: file shared between the repo and the standalone harness — do not
+//! change import paths without updating both.
 
 use crate::online::bundle::Uco2Bundle;
 use crate::online::config::{build_ini, harvest_dlc, COHERENCE_SHARED_KEY};
@@ -133,7 +133,7 @@ fn ini_fusion_and_stub_and_coherence_shared() {
         COHERENCE_SHARED_KEY
     );
     assert!(ini.contains(&coherence_section));
-    // Niente sezioni non rilevate.
+    // No undetected sections.
     assert!(!ini.contains("[Realtime]"));
     assert!(!ini.contains("[EOS]"));
     assert!(!ini.contains("[PlayFab]"));
@@ -231,7 +231,7 @@ fn dlc_harvest_falls_back_to_numeric_dirs() {
     let tmp = tempfile::tempdir().unwrap();
     write(tmp.path(), "G.exe", b"MZ");
     write(tmp.path(), "G_Data/Managed/Assembly-CSharp.dll", b"asm");
-    // Nessun configs.app.ini; cartelle numeriche nella dir di gioco.
+    // No configs.app.ini; numbered folders in the game dir.
     write(tmp.path(), "211/readme.txt", b"dlc");
     write(tmp.path(), "212/readme.txt", b"dlc");
     write(tmp.path(), "not-a-dlc/readme.txt", b"x");
@@ -286,9 +286,9 @@ fn deploy_then_disable_restores_everything() {
     );
     assert_eq!(record.bundle_version.as_deref(), Some("v9.9.9"));
 
-    // DLL sostituita con quella UCO2.
+    // DLL replaced with the UCO2 one.
     assert_eq!(fs::read(&original_dll).unwrap(), b"uco2-x64");
-    // L'originale è in backup.
+    // The original is in backup.
     let backup_dir = backup_dir_for(&backup_root, 1144200);
     assert!(backup_dir.join("original/steam_api").is_file());
     // Ini scritto.
@@ -301,9 +301,9 @@ fn deploy_then_disable_restores_everything() {
     // Overlay proxy Unity x64.
     assert!(detection.ini_dir.join("version.dll").is_file());
     assert_eq!(fs::read(detection.ini_dir.join("version.dll")).unwrap(), b"overlay-proxy");
-    // Journal presente.
+    // Journal present.
     assert!(!Journal::load(&backup_dir).entries.is_empty());
-    // Stato persistito.
+    // Persisted state.
     let store = OnlineStateStore::load(&state_path);
     assert!(store.get(1144200).is_some());
 
@@ -353,7 +353,7 @@ fn deploy_neutralizes_conflicts_and_disable_restores_them() {
     deploy(1144200, &detection, &bundle, &base_request(), &backup_root, &state_path)
         .expect("deploy");
 
-    // Quarantinato nel backup (niente *.uco-disabled nel game tree).
+    // Quarantined in the backup (no *.uco-disabled in the game tree).
     assert!(!steam_api_dir.join("SteamFix64.dll").exists());
     assert!(!steam_api_dir.join("SteamFix64.dll.uco-disabled").exists());
     let backup_dir = backup_dir_for(&backup_root, 1144200);

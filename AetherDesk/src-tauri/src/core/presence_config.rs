@@ -11,21 +11,21 @@
 //! exclude_apps    = [...]       # hard opt-out: vince su token e array
 //! ```
 //!
-//! La DLL risolve UNA modalità per app dentro SpawnProcess rileggendo questo
-//! file (mtime → nessun riavvio di Steam); nulla finisce in argv. Precedenza
-//! documentata: exclude > aetheronline > showonline > default_mode. I token
-//! `-aetheronline` / `-showonline` nelle LaunchOptions sono LEGACY: rimossi dai
-//! set (migrazione) e comunque riconosciuti dai get finché non migrati.
+//! The DLL resolves ONE mode per app inside SpawnProcess by re-reading this
+//! file (mtime → no Steam restart); nothing lands in argv. Documented
+//! precedence: exclude > aetheronline > showonline > default_mode. The
+//! `-aetheronline` / `-showonline` tokens in LaunchOptions are LEGACY: removed
+//! from the sets (migration) yet still honored by the getters until migrated.
 //!
-//! Line-based editing intenzionale: il file resta hand-editable, commenti e
-//! sezioni estranee sono preservati byte-per-line.
+//! Intentional line-based editing: the file stays hand-editable, foreign
+//! comments and sections are preserved byte-for-line.
 
 use std::path::Path;
 
 use crate::core::settings::load_settings;
 
-/// Le copie di aethercore.toml aggiornate da AetherDesk (stesso dual-path
-/// già usato per custom_game_name in commands/settings.rs).
+/// The aethercore.toml copies updated by AetherDesk (same dual-path already
+/// used for custom_game_name in commands/settings.rs).
 pub fn aethercore_toml_paths(app: &tauri::AppHandle) -> Vec<std::path::PathBuf> {
     let mut paths = vec![crate::core::paths::LocalAppPaths::config_dir().join("aethercore.toml")];
     let steam_path = load_settings(app).steam_path;
@@ -123,10 +123,10 @@ pub fn set_default_mode_in_toml(path: &Path, show_online: bool) -> Result<bool, 
     )
 }
 
-/// Header di sezione TOML (`[x]`, esclusi gli array-of-tables `[[x]]` che
-/// possono legittimamente ripetersi). Restituisce il nome tra le parentesi.
-/// fn e non closure: l'elision lifetime delle fn lega il riferimento
-/// restituito all'input, quella delle closure no (errore '1 vs '2).
+/// TOML section header (`[x]`, excluding array-of-tables `[[x]]` which may
+/// legitimately repeat). Returns the name in brackets.
+/// fn, not closure: fn lifetime elision ties the returned reference to the
+/// input, closure elision does not ('1 vs '2 error).
 fn section_header_name(s: &str) -> Option<&str> {
     let t = s.trim();
     if t.starts_with('[') && t.ends_with(']') && !t.starts_with("[[") {
@@ -149,15 +149,15 @@ fn toml_key_of(s: &str) -> Option<String> {
         .filter(|k| !k.is_empty())
 }
 
-/// Rimuove sezioni TOML duplicate (`[x]` dichiarato due volte): TOML 1.0 lo
-/// vieta, quindi una sola sezione doppia rende INVALIDO l'intero file e i
-/// parser reali (toml++) azzerano TUTTO ai default. Merge conservativo: le
-/// righe `key = value` del duplicato vengono spostate in coda alla prima
-/// occorrenza della stessa sezione, saltando le chiavi già presenti lì (vince
-/// sempre la prima occorrenza = scritta per prima). Commenti e righe vuote del
-/// blocco duplicato vengono eliminati. Restituisce true se ha modificato.
+/// Removes duplicate TOML sections (`[x]` declared twice): TOML 1.0 forbids
+/// them, so a single doubled section makes the WHOLE file INVALID and real
+/// parsers (toml++) reset EVERYTHING to defaults. Conservative merge: the
+/// duplicate's `key = value` lines are moved to the tail of the first
+/// occurrence of the same section, skipping keys already present there (the
+/// first occurrence always wins = written first). Comments and blank lines of
+/// the duplicate block are dropped. Returns true when modified.
 pub fn dedup_sections(lines: &mut Vec<String>) -> bool {
-    // Mappa sezione -> indici di tutte le sue occorrenze.
+    // Section name -> indices of all its occurrences.
     let mut occurrences: Vec<(String, Vec<usize>)> = Vec::new();
     for (i, l) in lines.iter().enumerate() {
         if let Some(name) = section_header_name(l) {
@@ -171,17 +171,17 @@ pub fn dedup_sections(lines: &mut Vec<String>) -> bool {
         return false;
     }
 
-    // Per ogni sezione duplicata: estrai le chiavi uniche dai blocchi extra e
-    // marca per la cancellazione tutte le righe di quei blocchi.
+    // For every duplicated section: extract the unique keys from the extra
+    // blocks and mark every line of those blocks for deletion.
     let mut dropped = vec![false; lines.len()];
-    // (posizione di inserzione in coda alla prima sezione, chiavi da fondere)
+    // (append position at the tail of the first section, keys to merge)
     let mut merge_at: Vec<(usize, Vec<String>)> = Vec::new();
     for (_, idxs) in &occurrences {
         if idxs.len() < 2 {
             continue;
         }
         let first = idxs[0];
-        // Chiavi già presenti nella prima occorrenza.
+        // Keys already present in the first occurrence.
         let next_hdr = |from: usize| -> usize {
             let mut j = from;
             while j < lines.len() && section_header_name(&lines[j]).is_none() {
@@ -225,7 +225,7 @@ pub fn dedup_sections(lines: &mut Vec<String>) -> bool {
             out.push(l.clone());
         }
     }
-    // Chiusura file: se la prima sezione arrivava a EOF, il merge va in coda.
+    // File tail: when the first section ran to EOF, the merge goes at the end.
     for (pos, merged) in &merge_at {
         if *pos == lines.len() {
             out.extend(merged.iter().cloned());

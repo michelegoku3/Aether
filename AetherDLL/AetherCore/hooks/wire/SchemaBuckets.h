@@ -7,17 +7,16 @@
 
 // Pure visitor shared by the disk adapter and synthetic KV1 tests.
 namespace ac::backup::statscache::detail {
-    // Estrae i bucket achievement (chiavi della sezione "stats" che contengono
-    // una sotto-sezione "bits"). Formato schema: <appid> { stats { <bucket> {
-    // bits { ... } } } }: si raccogliono le chiavi dei dizionari a profondità 2
-    // che contengono "bits".
-    // Bucket achievement via walker KV1 condiviso (utils/KeyValues, P11):
-    // sezione "stats" a profondità 1; un bucket (profondità 2) è achievement
-    // solo se il suo dizionario "bits" ha almeno una voce.
+    // Extracts achievement buckets (keys of the "stats" section holding a
+    // "bits" subsection). Schema format: <appid> { stats { <bucket> {
+    // bits { ... } } } }: collects depth-2 dictionary keys containing "bits".
+    // Achievement buckets via shared KV1 walker (utils/KeyValues, P11):
+    // depth-1 "stats" section; a depth-2 bucket is an achievement bucket only
+    // when its "bits" dictionary holds at least one entry.
     struct SchemaBucketWalker final : kv1::Visitor {
         std::unordered_set<std::uint32_t> buckets;
         bool inStats = false;
-        int bucketDepth = -1;          // profondità dell'entry del bucket corrente
+        int bucketDepth = -1;          // depth of the current bucket's entry
         std::string currentBucket;
         bool inBits = false;
         int bitsEntries = 0;
@@ -41,15 +40,15 @@ namespace ac::backup::statscache::detail {
                 bucketDepth = 2;
                 bitsEntries = 0;
             }
-            // Semantica identica al parser storico: contano solo le voci
-            // DIZIONARIO dentro "bits" (profondità 4).
+            // Same semantics as the historic parser: only DICTIONARY entries
+            // inside "bits" count (depth 4).
             if (bucketDepth == 2 && depth == 3 && name == "bits") inBits = true;
             if (inBits && depth == 4) ++bitsEntries;
         }
         void OnDictEnd(int depth) override {
             if (depth == 3) inBits = false;
             if (bucketDepth == 2 && depth == 2) FinalizeBucket();
-            if (inStats && depth == 1) inStats = false;   // chiusa la sezione "stats"
+            if (inStats && depth == 1) inStats = false;   // "stats" section closed
         }
     };
 

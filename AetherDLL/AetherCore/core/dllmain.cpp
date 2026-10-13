@@ -126,8 +126,8 @@ namespace {
         if (!input.is_open()) return dirs;
         const std::string content((std::istreambuf_iterator<char>(input)),
                                   std::istreambuf_iterator<char>());
-        // Parser VDF testuale condiviso (utils/VdfText.h, P11): un solo posto
-        // per righe quotate/unescaping, niente regex dedicate.
+        // Shared textual VDF parser (utils/VdfText.h, P11): a single place for
+        // quoted lines/unescaping, no dedicated regexes.
         for (const std::string& library : vdf::ExtractQuotedValues(content, "path")) {
             const std::filesystem::path steamapps =
                 std::filesystem::path(library) / "steamapps";
@@ -279,19 +279,19 @@ namespace {
         //     in-session — no Steam restart needed.
         ac::bootstrap::StartPatternLateRetry();
 
-        // 10. Achievement safety net: snapshot di TUTTI i .bin stats degli app
-        //     gestiti (async, una volta per processo). Va il prima possibile:
-        //     il login-reconcile del client può scartare i cambi pendenti
-        //     (perdita del 21/08) e questa copia deve batterlo sul tempo.
-        //     Dipende da: lua data (HasDepot) + aethercore dir (desk_path.cfg).
+        // 10. Achievement safety net: snapshot of ALL managed apps' stats .bins
+        //     (async, once per process). As early as possible: the client's
+        //     login-reconcile may discard pending changes (the 21/08 loss) and
+        //     this copy must beat it to it.
+        //     Depends on: lua data (HasDepot) + aethercore dir (desk_path.cfg).
         ac::hooks::AchievementBackup::BackupAllKnownStatsAtStartup();
 
-        // 10b. Manifest restore: ricopia in Steam\depotcache i .manifest di
-        //      backup mancanti (async, una volta per processo). Disinstallare
-        //      un gioco cancella i manifest e Steam non li serve più senza
-        //      autenticazione — il backup è l'unica copia rimasta. No-op
-        //      quando [manifest_cache] restore_on_startup è false.
-        //      Dipende da: aethercore dir (desk_path.cfg) + steamInstallPath.
+        // 10b. Manifest restore: recopies missing backup .manifests into
+        //      Steam\depotcache (async, once per process). Uninstalling a game
+        //      deletes manifests and Steam no longer serves them without
+        //      authentication — the backup is the only copy left. No-op when
+        //      [manifest_cache] restore_on_startup is false.
+        //      Depends on: aethercore dir (desk_path.cfg) + steamInstallPath.
         ac::hooks::ManifestRestore::RestoreMissingManifestsAtStartup();
 
         // 10. DirWatch: starts the Lua hot-reload watcher so games can be
@@ -331,13 +331,13 @@ namespace {
 
         status::Stop();
         ac::dirwatch::Stop();
-        // Task queue + named workers: stop, drain e join mentre gli hook sono
-        // ancora installati (alcuni job one-shot inviano frame via hook).
+        // Task queue + named workers: stop, drain and join while hooks are still
+        // installed (some one-shot jobs send frames via hook).
         ac::workers::Shutdown();
         ac::pipewatch::Reset();
-        // I retry hook (steamui redirect + pattern tardivi) sono worker: lo
-        // stop richiesto qui e il join dentro workers::Shutdown() sono già
-        // avvenuti sopra, quindi nessun re-arm è possibile durante lo shutdown.
+        // Retry hooks (steamui redirect + late patterns) are workers: the stop
+        // requested here and the join inside workers::Shutdown() already
+        // happened above, so no re-arm is possible during shutdown.
         ac::bootstrap::RequestRetryStop();
         ac::hooks::LicenseManager::Shutdown();
         ac::hooks::ShutdownOwnershipHooks();

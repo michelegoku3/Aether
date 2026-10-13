@@ -1,26 +1,26 @@
-//! Persistenza dello stato UCOnline2 per gioco.
+//! Per-game UCOnline2 state persistence.
 //!
-//! File: `<AetherData>/state/uc_online2.json` — mappa `app_id → OnlineRecord`.
-//! Scrittura atomica (tmp + rename). Il record è un INDICE: la verità sono
-//! i file sul disco (la riconciliazione vive in `OnlineEngine::status`).
+//! File: `<AetherData>/state/uc_online2.json` — `app_id → OnlineRecord` map.
+//! Atomic writes (tmp + rename). The record is an INDEX: the truth is the
+//! files on disk (reconciliation lives in `OnlineEngine::status`).
 
 use crate::online::types::OnlineRecord;
 use crate::external_tools::fs::write_atomic;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-/// Nome del file di stato UCOnline2 (usato da comandi e store — fonte unica).
+/// UCOnline2 state file name (used by commands and store — single source).
 pub const STATE_FILE: &str = "uc_online2.json";
 
-/// Store dello stato UCOnline2.
+/// UCOnline2 state store.
 #[derive(Debug, Clone, Default)]
 pub struct OnlineStateStore {
     records: HashMap<u32, OnlineRecord>,
 }
 
 impl OnlineStateStore {
-    /// Carica lo store dal file. File assente o corrotto → store vuoto
-    /// (mai errore: lo stato è ricostruibile dai file sul disco).
+    /// Loads the store from file. Missing or corrupt file → empty store
+    /// (never an error: the state is rebuildable from the files on disk).
     pub fn load(path: &Path) -> Self {
         let Ok(content) = std::fs::read_to_string(path) else {
             return Self::default();
@@ -28,7 +28,7 @@ impl OnlineStateStore {
         serde_json::from_str(&content).unwrap_or_default()
     }
 
-    /// Path del file di stato sotto una data root AetherDesk.
+    /// State file path under a given AetherDesk data root.
     pub fn state_path(data_root: &Path) -> PathBuf {
         data_root.join("state").join(STATE_FILE)
     }

@@ -1,26 +1,26 @@
 fn main() {
     #[cfg(target_os = "windows")]
     {
-        // AetherDesk scrive dentro la cartella di Steam (localconfig.vdf,
-        // depotcache, stplug-in) e installa una DLL: l'exe di release chiede
+        // AetherDesk writes inside the Steam folder (localconfig.vdf,
+        // depotcache, stplug-in) and installs a DLL: the release exe requests
         // requireAdministrator.
         //
-        // Quel manifest viene però embeddato in OGNI artefatto prodotto da
-        // questo build script — incluso l'harness che `cargo test` compila ed
-        // ESEGUE. Risultato: su Windows ogni `cargo test` apriva un prompt UAC
-        // (o falliva con ERROR_ELEVATION_REQUIRED in un contesto non
-        // interattivo), quindi i test non venivano lanciati né in dev né in CI.
+        // That manifest, however, gets embedded in EVERY artifact produced by
+        // this build script — including the harness that `cargo test` compiles
+        // and RUNS. Result: on Windows every `cargo test` popped a UAC prompt
+        // (or failed with ERROR_ELEVATION_REQUIRED in a non-interactive
+        // context), so tests ran neither in dev nor in CI.
         //
-        // Via d'uscita: `AETHERDESK_NO_ADMIN_MANIFEST=1` produce un exe
-        // asInvoker. Lo impostano `build.cmd` (step di test) e la CI. Il build
-        // di release NON lo imposta, quindi l'exe pubblicato resta identico a
-        // prima — l'elevazione è una proprietà del prodotto, non dei test.
+        // Way out: `AETHERDESK_NO_ADMIN_MANIFEST=1` produces an asInvoker exe.
+        // `build.cmd` (test step) and CI set it. Release builds do NOT set it,
+        // so the published exe stays identical to before — elevation is a
+        // product property, not a test property.
         //
-        // Nota: la variabile è letta qui e non tramite un feature flag perché
-        // `cargo test` non può disattivare una feature di default del package
-        // senza `--no-default-features`, che a sua volta disattiverebbe tutto
-        // il resto. L'env var è il canale che Cargo già propaga ai build
-        // script (`rerun-if-env-changed` sotto).
+        // Note: the variable is read here and not through a feature flag because
+        // `cargo test` cannot disable a default package feature without
+        // `--no-default-features`, which would in turn disable everything
+        // else. The env var is the channel Cargo already propagates to build
+        // scripts (`rerun-if-env-changed` below).
         let no_admin_manifest = std::env::var("AETHERDESK_NO_ADMIN_MANIFEST")
             .map(|value| {
                 let normalized = value.trim().to_ascii_lowercase();

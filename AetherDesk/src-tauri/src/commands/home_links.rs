@@ -22,8 +22,8 @@ pub fn open_home_resource(site: String, game_name: String) -> Result<(), String>
     open_external_url(&url)
 }
 
-// Ofme = online-fix.me (la crack). Il nome funzione evita "onlinefix", che
-    // nelle AI si confonde con la modalità AetherOnline (il payload Aether).
+// Ofme = online-fix.me (the crack). The function name avoids "onlinefix", which
+    // reads like the AetherOnline mode (the Aether payload) in AI assistants.
     pub(crate) fn build_ofme_url(game_name: &str) -> String {
     format!(
         "https://online-fix.me/index.php?do=search&subaction=search&story={}",

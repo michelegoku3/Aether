@@ -56,7 +56,7 @@ pub async fn clear_session_log(
         .map_err(|e| format!("Log clear task failed: {e}"))?
 }
 
-/// Lettura sincrona usata dentro `spawn_blocking` (non blocca il runtime).
+/// Synchronous read used inside `spawn_blocking` (never blocks the runtime).
 fn read_log_lines(
     app: &tauri::AppHandle,
     limit: usize,
@@ -81,8 +81,8 @@ fn read_log_lines(
     Ok(merge_tagged(desk_lines, dll_lines, uco2_lines, limit))
 }
 
-/// Unisce le righe delle tre sorgenti con tag [DESK]/[DLL ]/[UCO2],
-/// ordinate cronologicamente, troncate alle ultime `limit` righe.
+/// Merges the three sources' lines with [DESK]/[DLL ]/[UCO2] tags, ordered
+/// chronologically, truncated to the last `limit` lines.
 fn merge_tagged(
     desk_lines: Vec<String>,
     dll_lines: Vec<String>,
@@ -124,7 +124,7 @@ fn merge_tagged(
     }
 }
 
-/// Cancellazione sincrona usata dentro `spawn_blocking`.
+/// Synchronous clear used inside `spawn_blocking`.
 fn clear_log_lines(app: &tauri::AppHandle, mode: &str) -> Result<String, String> {
     if mode == "desk" || mode == "both" {
         crate::core::logger::clear_current_log();
@@ -162,58 +162,41 @@ fn read_uco2_tail_lines(limit: usize) -> Vec<String> {
     if !path.is_file() {
         return Vec::new();
     }
-    if let Ok(content) = std::fs::read_to_string(&path) {
-        let lines: Vec<String> = normalize_uco2_content(&content)
-            .lines()
-            .map(|s| s.to_string())
-            .collect();
-        if lines.len() <= limit {
-            return lines;
-        }
-        return lines[lines.len() - limit..].to_vec();
+    // Bounded from-the-end read (see `tail_file_lines`); never fails the UI.
+    // Tag normalization stays in one place (`normalize_uco2_content`).
+    let lines = crate::core::logger::tail_file_lines(&path, limit).unwrap_or_default();
+    if lines.is_empty() {
+        return lines;
     }
-    Vec::new()
+    normalize_uco2_content(&lines.join("\n"))
+        .lines()
+        .map(str::to_string)
+        .collect()
 }
 
-/// Normalizza il contenuto del log UCO2 lato AetherDesk (senza ricompilare
-/// la DLL): timestamp ridotti a sola ora ("[2026-08-17 12:45:40.924]" ->
-/// "[12:45:40.924]") e prefisso messaggi "[UCOnline2]" -> "[UCO2]".
+/// Normalizes the UCO2 log content on the AetherDesk side (without rebuilding
+/// the DLL): message prefix "[UCOnline2]" -> "[UCO2]". The full timestamp
+/// ("[YYYY-MM-DD HH:MM:SS.mmm]") is kept on purpose: the "both" view sorts
+/// Desk and UCO2 lines together, and without the date cross-day ordering
+/// would be wrong (see `sort_key`).
 fn normalize_uco2_content(content: &str) -> String {
     content
         .lines()
-        .map(strip_date_from_timestamp)
         .map(|line| line.replace("[UCOnline2]", "[UCO2]"))
         .collect::<Vec<_>>()
         .join("\n")
 }
 
-/// "[YYYY-MM-DD HH:MM:SS.mmm] ..." -> "[HH:MM:SS.mmm] ..." (no-op se non matcha).
-fn strip_date_from_timestamp(line: &str) -> String {
-    let bytes = line.as_bytes();
-    if line.len() > 24
-        && bytes[0] == b'['
-        && bytes[5] == b'-'
-        && bytes[8] == b'-'
-        && bytes[11] == b' '
-        && bytes[24] == b']'
-    {
-        // La ']' originale (indice 24) viene saltata: la reinseriamo noi.
-        return format!("[{}]{}", &line[12..24], &line[25..]);
-    }
-    line.to_string()
-}
-
-/// Chiave di ordinamento cronologico: toglie l'eventuale data "[YYYY-MM-DD "
-/// dal prefisso timestamp, così righe con formati diversi (Desk full, UCO2
-/// ridotto) si ordinano correttamente per orario.
+/// Chronological sort key: the first bracket content, as-is. Every timestamp
+/// is fixed-width ISO (`YYYY-MM-DD HH:MM:SS.mmm`), so lexicographic order
+/// matches chronological order — across days and across sources alike.
 fn sort_key(line: &str) -> String {
-    let inside = line.split(']').next().unwrap_or("").trim_start_matches('[').trim();
-    let b = inside.as_bytes();
-    if inside.len() >= 11 && b[4] == b'-' && b[7] == b'-' && b[10] == b' ' {
-        inside[11..].to_string()
-    } else {
-        inside.to_string()
-    }
+    line.split(']')
+        .next()
+        .unwrap_or("")
+        .trim_start_matches('[')
+        .trim()
+        .to_string()
 }
 
 fn read_dll_tail_lines(app: &tauri::AppHandle, limit: usize) -> Vec<String> {
@@ -236,16 +219,10 @@ fn read_dll_tail_lines(app: &tauri::AppHandle, limit: usize) -> Vec<String> {
     ] {
         let path = dir.join("main.log");
         if path.is_file() {
-            if let Ok(mut file) = std::fs::File::open(&path) {
-                let mut content = String::new();
-                if std::io::Read::read_to_string(&mut file, &mut content).is_ok() {
-                    let lines: Vec<String> = content.lines().map(|s| s.to_string()).collect();
-                    if lines.len() <= limit {
-                        return lines;
-                    } else {
-                        return lines[lines.len() - limit..].to_vec();
-                    }
-                }
+            // Bounded read; on failure keep looking in the next candidate dir,
+            // exactly like before (a locked/huge file must not hide the others).
+            if let Ok(lines) = crate::core::logger::tail_file_lines(&path, limit) {
+                return lines;
             }
         }
     }
@@ -314,8 +291,8 @@ pub async fn export_logs_bundle(app: tauri::AppHandle) -> Result<String, String>
         .map_err(|e| format!("Log export task failed: {e}"))?
 }
 
-/// Esportazione sincrona (dentro `spawn_blocking`): la creazione dello zip
-/// e la copia dei file non devono bloccare il runtime async.
+/// Synchronous export (inside `spawn_blocking`): zip creation and file copies
+/// must not block the async runtime.
 fn export_logs_bundle_sync(app: &tauri::AppHandle) -> Result<String, String> {
     crate::desk_log_info!("logs", "Starting export of AetherDesk, AetherDLL and UCOnline2 session logs bundle");
     let stage_dir = std::env::temp_dir().join(format!("aether_logs_export_{}", std::process::id()));
@@ -417,10 +394,11 @@ fn export_logs_bundle_sync(app: &tauri::AppHandle) -> Result<String, String> {
     Ok(format!("Exported {} log file(s) to {}", copied, zip_path.display()))
 }
 
-/// Scarica un singolo documento di log (la sorgente selezionata nella vista)
-/// nella cartella Downloads, con lo stesso nome temporizzato dello zip
-/// (es. `desk.log_14-32-05.txt`). Per "both"/"all" crea il documento unico
-/// `all.log_<ora>.txt` con le righe taggate, stessa procedura degli altri.
+/// Downloads a single log document (the view's selected source) into the
+/// Downloads folder, with the same timestamped name as the zip
+/// (e.g. `desk.log_14-32-05.txt`). For "both"/"all" it creates the single
+/// `all.log_<time>.txt` document with the tagged lines, same procedure as
+/// the others.
 #[tauri::command]
 pub async fn export_log_source(
     app: tauri::AppHandle,
@@ -481,5 +459,26 @@ mod tests {
         assert_eq!(clamp_tail_lines(Some(0)), 1);
         assert_eq!(clamp_tail_lines(Some(usize::MAX)), MAX_TAIL_LINES);
         assert_eq!(clamp_tail_lines(Some(1_000_000)), MAX_TAIL_LINES);
+    }
+
+    #[test]
+    fn uco2_normalize_keeps_the_date_and_shortens_the_tag() {
+        let out = normalize_uco2_content("[2026-08-17 12:45:40.924] [UCOnline2] hello");
+        assert_eq!(out, "[2026-08-17 12:45:40.924] [UCO2] hello");
+    }
+
+    #[test]
+    fn merged_logs_sort_across_days_and_sources() {
+        let desk = vec![
+            "[2026-08-18 00:00:01.000] [PID:00001] [TID:00001] [INFO ] [Desk] second day".to_string(),
+        ];
+        let dll = vec![];
+        let uco2 = vec![
+            "[2026-08-17 23:59:59.999] [UCO2] first day".to_string(),
+        ];
+        let merged = merge_tagged(desk, dll, uco2, 100);
+        assert_eq!(merged.len(), 2);
+        assert!(merged[0].contains("first day"), "unexpected order: {merged:?}");
+        assert!(merged[1].contains("second day"), "unexpected order: {merged:?}");
     }
 }

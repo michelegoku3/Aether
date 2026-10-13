@@ -32,9 +32,9 @@ pub async fn get_installed_library_games(
 
     crate::desk_log_info!("library", "Scanning Steam library for Lua games (steam_path='{}')", steam_root.display());
     let store_currency = settings.store_currency.clone();
-    // La scansione (appmanifest + stplug-in) è I/O sincrono: fuori dal
-    // runtime tokio, altrimenti ogni rescan (anche quelli del watcher)
-    // bloccherebbe i task async dell'app.
+    // Scanning (appmanifest + stplug-in) is synchronous I/O: keep it off the
+    // tokio runtime, otherwise every rescan (watcher ones included) would
+    // block the app's async tasks.
     let scanner = SteamLibraryScanner::new(steam_root);
     let mut games = tauri::async_runtime::spawn_blocking(move || scanner.scan_installed_games())
         .await

@@ -1,21 +1,21 @@
-//! Deploy transazionale di UCOnline2 su un gioco.
+//! Transactional UCOnline2 deploy onto a game.
 //!
-//! Ogni fase del deploy è idempotente e registra la propria azione inversa
-//! in un JOURNAL (`<backup>/<app_id>/uc_online2/journal.json`): `disable()`
-//! replaya il journal in ordine inverso e ripristina l'albero originale
-//! byte-per-byte (inclusi i file Neutralized dei journal 1.19.3).
+//! Every deploy phase is idempotent and records its inverse action in a
+//! JOURNAL (`<backup>/<app_id>/uc_online2/journal.json`): `disable()`
+//! replays the journal in reverse order and restores the original tree
+//! byte-for-byte (including the Neutralized files of 1.19.3 journals).
 //!
-//! Fasi:
-//!   0. pre-flight (bundle, arch, directory scrivibili)
-//!   1. backup originali (dll Steamworks, ini, plugins/) → backup dir
-//!   2. quarantena conflitti (spostati in backup/, niente `*.uco-disabled`
-//!      visibili nel game tree — i journal vecchi con Neutralized restano
-//!      supportati in revert)
-//!   3. copia DLL UCOnline2 (per architettura; anche in refresh/upgrade)
+//! Phases:
+//!   0. pre-flight (bundle, arch, writable directories)
+//!   1. original backups (Steamworks dll, ini, plugins/) → backup dir
+//!   2. conflict quarantine (moved to backup/, no `*.uco-disabled`
+//!      visible in the game tree — old journals with Neutralized stay
+//!      supported in revert)
+//!   3. UCOnline2 DLL copy (per architecture; also on refresh/upgrade)
 //!   4. early overlay proxy (version.dll / XINPUT1_3.dll)
-//!   5. scrittura union-crax.ini (atomica)
-//!   6. deploy plugin richiesti dai backend rilevati
-//!   7. persistenza del record di stato
+//!   5. union-crax.ini write (atomic)
+//!   6. deploy of plugins required by detected backends
+//!   7. state record persistence
 
 use crate::online::bundle::Uco2Bundle;
 use crate::online::config::{build_ini, harvest_dlc};
@@ -43,13 +43,13 @@ pub fn backup_dir_for(backup_root: &Path, app_id: u32) -> PathBuf {
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(tag = "op", rename_all = "camelCase")]
 pub enum JournalEntry {
-    /// File di gioco spostato nella backup dir. `original` = dove stava,
-    /// `backup` = dove è ora (va ripristinato in disable).
+    /// Game file moved to the backup dir. `original` = where it was,
+    /// `backup` = where it is now (restore it on disable).
     BackedUp { original: PathBuf, backup: PathBuf },
-    /// File neutralizzato rinominato in `<path>.uco-disabled` (legacy 1.19.3:
-    /// i deploy nuovi usano `BackedUp` e spostano il file nel backup dir).
+    /// Neutralized file renamed to `<path>.uco-disabled` (legacy 1.19.3:
+    /// new deploys use `BackedUp` and move the file to the backup dir).
     Neutralized { path: PathBuf },
-    /// File UCO2 copiato nel gioco (va RIMOSSO in disable).
+    /// UCO2 file copied into the game (must be REMOVED on disable).
     Deployed { path: PathBuf },
 }
 
@@ -103,12 +103,12 @@ pub fn deploy(
     fs::create_dir_all(backup_dir.join(ORIGINAL_SUBDIR)).map_err(|e| e.to_string())?;
     let mut journal = Journal::load(&backup_dir);
 
-    // File UCO2 già sul disco NON sono originali del gioco: backuparli
-    // farebbe ripristinarli al Disable (ini che "non se ne va").
+    // UCO2 files already on disk are NOT game originals: backing them up
+    // would restore them on Disable (an ini that "never goes away").
     let preexisting_uco2 = ini_path.is_file();
 
     if !already_enabled {
-        // ---- Fase 1: backup originali ----
+        // ---- Phase 1: original backups ----
         if steam_api_path.is_file() && !preexisting_uco2 {
             let target = unique_backup_path(&backup_dir, "steam_api");
             fs::rename(&steam_api_path, &target).map_err(|e| e.to_string())?;
@@ -118,7 +118,7 @@ pub fn deploy(
             });
         }
         if ini_path.is_file() {
-            // Già UCO2: butta l'ini, non lo salvare come originale.
+            // Already UCO2: throw the ini away, don't save it as an original.
             let _ = fs::remove_file(&ini_path);
         }
         if plugins_dir.is_dir() && !preexisting_uco2 {
@@ -130,7 +130,7 @@ pub fn deploy(
             });
         }
 
-        // ---- Fase 2: quarantena conflitti (fuori dal game tree) ----
+        // ---- Phase 2: conflict quarantine (outside the game tree) ----
         for conflict in &detection.conflicts {
             let path = conflict_path(conflict);
             if !path.is_file() {
@@ -152,7 +152,7 @@ pub fn deploy(
         journal.save(&backup_dir)?;
     }
 
-    // ---- Fase 3: copia DLL UCOnline2 (anche in refresh: bump bundle) ----
+    // ---- Phase 3: UCOnline2 DLL copy (also on refresh: bundle bump) ----
     fs::create_dir_all(steam_api_dir).map_err(|e| e.to_string())?;
     let bundle_dll = bundle.steam_api_dll(detection.arch);
     fs::copy(&bundle_dll, &steam_api_path).map_err(|e| {
@@ -171,7 +171,7 @@ pub fn deploy(
         deploy_overlay_proxy(detection, bundle, request, &backup_dir, &mut journal)?;
     journal.save(&backup_dir)?;
 
-    // ---- Fase 5: ini (sempre, anche per refresh) ----
+    // ---- Phase 5: ini (always, even for refresh) ----
     let dlc_entries = harvest_dlc(&detection.game_root, ini_dir);
     let ini_content = build_ini(detection, request, &dlc_entries);
     write_atomic(&ini_path, ini_content.as_bytes())?;
@@ -213,7 +213,7 @@ pub fn deploy(
     Ok(record)
 }
 
-/// Aggiunge `Deployed` solo se il path non è già nel journal (refresh).
+/// Adds `Deployed` only when the path is not already in the journal (refresh).
 fn journal_deployed(journal: &mut Journal, path: &Path) {
     let already = journal.entries.iter().any(|entry| {
         matches!(entry, JournalEntry::Deployed { path: existing } if existing == path)
@@ -225,7 +225,7 @@ fn journal_deployed(journal: &mut Journal, path: &Path) {
     }
 }
 
-/// Installa l'early overlay proxy. Restituisce il path deployato, se c'è.
+/// Installs the early overlay proxy. Returns the deployed path, if any.
 fn deploy_overlay_proxy(
     detection: &DetectionReport,
     bundle: &Uco2Bundle,
@@ -284,8 +284,8 @@ fn deploy_overlay_proxy(
     Ok(Some(target.path))
 }
 
-/// Plugin richiesti dai backend rilevati (ordine stabile per test/UI).
-/// `overlay_proxy` NON è un plugin ABI e non va in questa lista.
+/// Plugins required by the detected backends (stable order for tests/UI).
+/// `overlay_proxy` is NOT an ABI plugin and does not belong in this list.
 pub fn required_plugins(
     detection: &DetectionReport,
     request: &OnlineEnableRequest,
@@ -316,7 +316,7 @@ fn conflict_path(conflict: &Conflict) -> PathBuf {
     }
 }
 
-/// Path di backup univoco dentro `backup_dir/original/` (mai sovrascrivere).
+/// Unique backup path inside `backup_dir/original/` (never overwrite).
 fn unique_backup_path(backup_dir: &Path, base: &str) -> PathBuf {
     let original_dir = backup_dir.join(ORIGINAL_SUBDIR);
     let candidate = original_dir.join(base);

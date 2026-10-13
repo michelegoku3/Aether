@@ -169,18 +169,17 @@ const GameCardInner = <T extends GameCardModel>({ game, actionLabel, onAction, a
 };
 
 /**
- * Card di un gioco, memoizzata.
+ * A game card, memoized.
  *
- * `memo` + cast: `memo()` su un componente generico collassa `T` al vincolo
- * (`GameCardModel`) e rompe l'inferenza nei call site — le callback delle
- * action perderebbero il tipo concreto del gioco (`InstalledGame`,
- * `StoreGame`, …). Il cast a `typeof GameCardInner` restituisce a TypeScript
- * la firma generica; a runtime il componente resta memoizzato. È l'idioma
- * standard per i componenti React generici.
+ * `memo` + cast: `memo()` on a generic component collapses `T` to the constraint
+ * (`GameCardModel`) and breaks inference at call sites — action callbacks would
+ * lose the game's concrete type (`InstalledGame`, `StoreGame`, …). Casting to
+ * `typeof GameCardInner` gives TypeScript back the generic signature; at runtime
+ * the component stays memoized. The standard idiom for generic React components.
  *
- * Perché serve: la griglia Library ri-renderizza a ogni keystroke della ricerca,
- * a ogni toast e a ogni apertura/chiusura di popup. Con props stabili
- * (`game` dallo snapshot del provider, `actions` e `onFixPins` memoizzati in
- * LibraryView) le N card non ri-renderizzano: solo la toolbar.
+ * Why it matters: the Library grid re-renders on every search keystroke, every
+ * toast and every popup open/close. With stable props (`game` from the provider
+ * snapshot, `actions` and `onFixPins` memoized in LibraryView) the N cards do
+ * not re-render: only the toolbar does.
  */
 export const GameCard = memo(GameCardInner) as typeof GameCardInner;

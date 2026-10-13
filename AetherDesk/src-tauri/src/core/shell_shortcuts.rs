@@ -167,10 +167,10 @@ mod windows_impl {
             .creation_flags(CREATE_NO_WINDOW)
             .status();
 
-        // SAFETY: SHChangeNotify è invocata con SHCNF_IDLIST e due puntatori
-        // null: la combinazione documentata per una notifica globale di cambio
-        // associazioni. Nessun buffer viene passato, quindi non ci sono
-        // requisiti di aliasing o di tempo di vita.
+        // SAFETY: SHChangeNotify is invoked with SHCNF_IDLIST and two null
+        // pointers: the documented combination for a global association-change
+        // notification. No buffer is passed, so there are no aliasing or
+        // lifetime requirements.
         unsafe {
             windows_sys::Win32::UI::Shell::SHChangeNotify(
                 // windows-sys 0.59: SHCNE_* is u32, SHChangeNotify.wEventId is i32

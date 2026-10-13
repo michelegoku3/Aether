@@ -2,40 +2,40 @@
 // Mirror types of the Rust background-synchronizer status snapshot
 // (`core/hubcap_update_monitor.rs`, `#[serde(rename_all = "camelCase")]`).
 //
-// Estratti dal modale nello stesso modo in cui `types/online.ts` ha assorbito
-// i tipi del pannello online: il contratto IPC vive in `types/`, il componente
-// vive in `modals/`.
+// Extracted from the modal the same way `types/online.ts` absorbed
+// the online panel types: the IPC contract lives in `types/`, the component
+// lives in `modals/`.
 // ---------------------------------------------------------------------------
 
-/** Stato live di una corsia del sincronizzatore. */
+/** Live state of one synchronizer lane. */
 export interface LaneStatus {
-  /** Task in coda con il prossimo tentativo programmato. */
+  /** Queued tasks with the next scheduled attempt. */
   pending: PendingTaskInfo[];
   /**
-   * Task abbandonati dopo la retry ladder limitata (`MAX_TASK_ATTEMPTS`): non
-   * vengono più ritentati a timer. Il prossimo cambiamento lato Steam (o un
-   * riavvio dell'app) li rimette in coda. È l'informazione che prima non era
-   * visibile da nessuna parte: un pin non sincronizzato restava silenzioso.
+   * Tasks abandoned after the bounded retry ladder (`MAX_TASK_ATTEMPTS`): no
+   * longer retried on a timer. The next Steam-side change (or an app restart)
+   * re-queues them. This used to be invisible everywhere: an unsynced pin
+   * stayed silent.
    */
   unresolved?: PendingTaskInfo[];
-  /** Task completati con successo dall'avvio del monitor. */
+  /** Tasks successfully completed since the monitor started. */
   processedCount: number;
-  /** Epoch unix (secondi) dell'ultimo task completato. */
+  /** Unix epoch (seconds) of the last completed task. */
   lastRunEpoch: number | null;
-  /** Ultimo messaggio di errore, conservato fino al prossimo successo. */
+  /** Last error message, kept until the next success. */
   lastError: string | null;
 }
 
-/** Un task in coda (o abbandonato) in una corsia. */
+/** A queued (or abandoned) task in a lane. */
 export interface PendingTaskInfo {
-  /** `null` per i task non per-app (il sync Workshop non lo è). */
+  /** `null` for non-per-app tasks (the Workshop sync isn't one). */
   appId: number | null;
   attempts: number;
-  /** Epoch unix (secondi) del prossimo tentativo, quando noto. */
+  /** Unix epoch (seconds) of the next attempt, when known. */
   nextRetryEpoch: number | null;
 }
 
-/** Snapshot completo esposto da `get_hubcap_monitor_status`. */
+/** Full snapshot exposed by `get_hubcap_monitor_status`. */
 export interface MonitorStatus {
   running: boolean;
   startedEpoch: number | null;
@@ -50,12 +50,12 @@ export interface MonitorStatus {
 }
 
 /**
- * Le quattro corsie, nell'ordine in cui il popup le elenca. Tenerle in una
- * tabella (invece di quattro blocchi JSX quasi identici) è ciò che permette di
- * aggiungere una corsia senza toccare il componente.
+ * The four lanes, in popup listing order. Keeping them in a table (instead of
+ * four near-identical JSX blocks) is what allows adding a lane without
+ * touching the component.
  */
 export interface SyncLaneDescriptor {
-  /** Chiave dello snapshot + titolo mostrato. */
+  /** Snapshot key + shown title. */
   lane: 'pinSync' | 'pinRefresh' | 'repair' | 'workshop';
   title: string;
   hint: string;

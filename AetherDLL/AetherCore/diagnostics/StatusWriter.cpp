@@ -53,10 +53,10 @@ bool SaveAtomic(const std::string& path, const std::string& content) {
 }  // namespace
 
 static void WriteSnapshot(std::uint64_t requests) {
-    // I-C: emissione dichiarativa via jsonw::Writer. La punteggiatura JSON
-    // (virgole/indent/newline) vive nel writer, qui c'è solo la lista dei
-    // campi. Il formato resta byte-compatibile con schema_version 9: il
-    // golden test della suite "jsonwriter" lo fissa carattere per carattere.
+    // I-C: declarative emission via jsonw::Writer. JSON punctuation
+    // (commas/indent/newlines) lives in the writer; only the field list is
+    // here. The format stays byte-compatible with schema_version 9: the
+    // "jsonwriter" suite golden test pins it character by character.
     const auto settings = Settings::Snapshot();
     const auto diagnostics = diag::Snapshot();
     const auto hooks = g_state.hookManager.Snapshot();

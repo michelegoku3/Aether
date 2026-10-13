@@ -3,20 +3,20 @@
 #include "framework.h"
 
 // ---------------------------------------------------------------------------
-// SteamUIHook — SOLO il redirect del caricamento di steamclient64.dll (P8).
+// SteamUIHook — ONLY the steamclient64.dll load redirect (P8).
 //
-// L'orchestrazione (batch steamclient, retry differito, retry dei pattern
-// tardivi) vive in core/HookBootstrap. Questo modulo fa una sola cosa: in copy
-// mode, quando steamui.dll carica steamclient64.dll, la chiamata viene
-// deviata su acoverlay.dll; in live mode è un no-op.
+// Orchestration (steamclient batch, deferred retry, late-pattern retries)
+// lives in core/HookBootstrap. This module does exactly one thing: in copy
+// mode, when steamui.dll loads steamclient64.dll, the call is diverted to
+// acoverlay.dll; in live mode it is a no-op.
 // ---------------------------------------------------------------------------
 namespace ac::hooks::steamui {
 
-// Installa l'hook su steamui!LoadModuleWithPath. Ritorna true solo quando il
-// redirect è effettivamente attivo oppure non serve (live mode): una DLL
-// steamui mappata NON basta (pattern mancante o MinHook fallito tengono vivo
-// il retry del bootstrap). Thread-safe: prende il mutex di batch del
-// bootstrap perché può correre in parallelo alla riesecuzione del batch.
+// Installs the hook on steamui!LoadModuleWithPath. Returns true only when the
+// redirect is actually armed or unneeded (live mode): a mapped steamui DLL is
+// NOT enough (missing pattern or failed MinHook keep the bootstrap retry
+// alive). Thread-safe: takes the bootstrap batch mutex because it may race the
+// batch re-run.
 bool InstallSteamUiRedirect();
 
 }  // namespace ac::hooks::steamui

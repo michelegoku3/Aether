@@ -126,10 +126,10 @@ export const LibraryGameActionsModal = ({
   const [aetherExcluded, setAetherExcluded] = useState(false);
   const [presenceDefaultShowOnline, setPresenceDefaultShowOnline] = useState(true);
   const disabled = isProcessing || isBusy || onlineBusy;
-  // Un popup figlio (scelta online / pannello UCO2) aperto disattiva il
-  // dismiss di QUESTO popup: ESC e click fuori chiudono solo il figlio in
-  // cima alla catena Modify → Online → UCO2, che scende di un livello alla
-  // volta senza mai chiudere tutto.
+  // An open child popup (online choice / UCO2 panel) disables THIS popup's
+  // dismiss: ESC and outside clicks close only the topmost child in the
+  // Modify → Online → UCO2 chain, which steps down one level at a time
+  // without ever closing everything.
   const childPopupOpen = showOnlineChoice || showOnlinePanel;
 
   const refreshUpdateState = async () => {
@@ -218,12 +218,12 @@ export const LibraryGameActionsModal = ({
 
   const refreshOnlineStates = async () => {
     try {
-      // Parallel checks. UCO2 viene letto da get_online_status — il record di
-      // stato scritto dal pannello (Engine::status: record presente + ini/dll
-      // effettivamente sul disco). NON is_uco2_active: quel probe legge
-      // union-crax.ini, un file di RUNTIME che UCO2 lascia sul disco anche
-      // dopo il Disable → falso "sempre attivo" che bloccava Online Aether.
-      // 'broken' (record senza file) conta come non attivo ai fini del gate.
+      // Parallel checks. UCO2 is read from get_online_status — the state record
+      // written by the panel (Engine::status: record present + ini/dll
+      // actually on disk). NOT is_uco2_active: that probe reads union-crax.ini,
+      // a RUNTIME file UCO2 leaves on disk even after Disable → a false
+      // "always active" that blocked Online Aether.
+      // 'broken' (record without files) counts as inactive for the gate.
       const [aetherOnRaw, uco2Status, showOnRaw, excludedOnRaw, defaultShowOnline, foreign] = await Promise.all([
         invoke<boolean>('get_aetheronline', { appId: Number(game.appId) }),
         invoke<OnlineStatus>('get_online_status', { appId: Number(game.appId) }),
@@ -286,9 +286,9 @@ export const LibraryGameActionsModal = ({
           : next === 'showonline'
             ? 'set_aether_showonline'
             : 'set_aether_excluded';
-      // Un solo contratto di argomenti per i tre comandi: la shape resta
-      // tipizzata anche se il nome del comando è scelto a runtime, così un
-      // rename lato Rust rompe la compilazione invece del comportamento.
+      // A single argument contract for the three commands: the shape stays
+      // typed even though the command name is picked at runtime, so a Rust-side
+      // rename breaks compilation instead of behavior.
       const args: PresenceToggleArgs = { appId: Number(game.appId), enabled: true };
       const result: string = await invoke<string>(command, args);
       onStatus(result, 'success');
@@ -318,9 +318,9 @@ export const LibraryGameActionsModal = ({
     setShowOnlinePanel(true);
   };
 
-  // Chiudere il pannello UCO2 NON chiude la catena: si torna al popup di
-  // scelta online (con stati ricaricati, così il badge ACTIVE di UCO2 è
-  // aggiornato), non al popup Modify e tantomeno alla libreria.
+  // Closing the UCO2 panel does NOT close the chain: we return to the online
+  // choice popup (with reloaded states, so the UCO2 ACTIVE badge is fresh),
+  // not to the Modify popup and least of all to the library.
   const handleCloseUco2Panel = async () => {
     setShowOnlinePanel(false);
     await refreshOnlineStates();
@@ -328,8 +328,8 @@ export const LibraryGameActionsModal = ({
   };
 
   return (
-    // Il click fuori è ignorato mentre un popup figlio è aperto: il click
-    // appartiene a quel popup, che si chiude da solo e riporta qui.
+    // Outside clicks are ignored while a child popup is open: the click
+    // belongs to that popup, which closes itself and returns here.
     <div
       className="modal-overlay"
       onClick={disabled || childPopupOpen ? undefined : onClose}

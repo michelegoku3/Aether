@@ -10,7 +10,7 @@ struct WIN32_FIND_DATAA { char cFileName[260]{}; };
 namespace backup_test { inline bool scanFile = false; }
 inline HANDLE FindFirstFileA(const char*, WIN32_FIND_DATAA* data) {
     if (!backup_test::scanFile) return INVALID_HANDLE_VALUE;
-    // Copia a lunghezza fissa: niente strcpy (C4996 sotto /W4 /WX).
+    // Fixed-length copy: no strcpy (C4996 under /W4 /WX).
     constexpr char kName[] = "UserGameStats_1234567890_1234567890.bin";
     static_assert(sizeof(kName) <= sizeof(data->cFileName));
     std::memcpy(data->cFileName, kName, sizeof(kName));

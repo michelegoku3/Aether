@@ -205,7 +205,7 @@ void Workers() {
     while (counter.load() < 101 && std::chrono::steady_clock::now() < deadline)
         std::this_thread::sleep_for(1ms);
     CHECK(counter.load() == 101);
-    // Worker nominato con stop flag: parte, osserva lo stop, viene joinato.
+    // Named worker with stop flag: starts, observes the stop, gets joined.
     std::atomic<bool> ran{false}, sawStop{false};
     CHECK(w::StartWorker("test_worker", [&](std::atomic<bool>& stop) {
         ran.store(true);
@@ -228,7 +228,7 @@ void Workers() {
     CHECK(failure.wait_for(5s) == std::future_status::ready);
     failure.get(); // exceptions are logged by the registry, not rethrown here
     w::Shutdown();
-    CHECK(sawStop.load());              // lo stop flag è arrivato
+    CHECK(sawStop.load());              // the stop flag arrived
     w::Shutdown();                      // idempotente
     CHECK(!w::Submit([&] { counter.fetch_add(1); }));   // rifiuto post-shutdown
     CHECK(!w::StartWorker("late", [](std::atomic<bool>&) {}));
@@ -1132,8 +1132,8 @@ void IpcReplyTest() {
     CHECK(!ir::WriteU32(&buf, 62, 1u));                     // overflow refused
     CHECK(ir::WriteAt(&buf, 10, storage, 0));               // zero-byte write ok
     // Tiny buffer: nothing may be written.
-    // NB: non chiamarla "small": l'SDK Windows (rpcndr.h) definisce
-    // #define small char e MSVC espanderebbe il nome della variabile.
+    // NB: do not call it "small": the Windows SDK (rpcndr.h) defines
+    // #define small char and MSVC would expand the variable name.
     std::uint8_t tiny[1] = {0};
     ac::steam::CUtlBuffer tinyBuf{}; tinyBuf.memory.memory = tiny; tinyBuf.put = 0;
     CHECK(!ir::CanWrite(&tinyBuf, 1));
@@ -1172,7 +1172,7 @@ void SnapshotMergeTest() {
 }
 
 
-// --- QW1: TtlCache (cattura anche la regressione del Get sotto lock) ---
+// --- QW1: TtlCache (also captures the Get-under-lock regression) ---
 void TtlCacheTest() {
     using ac::utils::TtlCache;
     {
@@ -1181,9 +1181,9 @@ void TtlCacheTest() {
         CHECK(c.Get("a") == 1);
         CHECK(!c.Get("missing").has_value());
         c.Put("b", 2);
-        c.Put("c", 3);                       // sfora il cap di 2: LRU ("a") evicta
+        c.Put("c", 3);                       // overflows the cap of 2: LRU ("a") evicts
         CHECK(c.Size() == 2);
-        CHECK(!c.Get("a").has_value());      // la più vecchia è uscita
+        CHECK(!c.Get("a").has_value());      // the oldest is out
         CHECK(c.Get("b") == 2);
         CHECK(c.Get("c") == 3);
     }
@@ -1192,8 +1192,8 @@ void TtlCacheTest() {
         c.Put("short", 42);
         CHECK(c.Get("short") == 42);
         std::this_thread::sleep_for(std::chrono::milliseconds(1050));
-        CHECK(!c.Get("short").has_value());  // scaduta
-        CHECK(c.EvictionCount() >= 1);       // la scadenza conta come eviction
+        CHECK(!c.Get("short").has_value());  // expired
+        CHECK(c.EvictionCount() >= 1);       // expiry counts as eviction
         c.Put("fresh", 7);
         CHECK(c.Get("fresh") == 7);          // una entry nuova torna valida
     }
@@ -1210,15 +1210,15 @@ void HexCodecTest() {
     using namespace ac::hex;
     const std::vector<std::uint8_t> blob = {0x48, 0x8B, 0x05, 0x00, 0xFF};
     const std::string hex = Encode(blob);
-    CHECK(hex == "488B0500FF");              // Encode è uppercase
+    CHECK(hex == "488B0500FF");              // Encode is uppercase
     CHECK(Decode(hex) == blob);
     CHECK(Decode("488b05") == std::vector<std::uint8_t>({0x48, 0x8B, 0x05})); // lowercase ok
     const auto empty = Decode("");
     CHECK(empty.has_value() && empty->empty());
-    CHECK(!Decode("abc").has_value());       // lunghezza dispari
-    CHECK(!Decode("zz").has_value());        // carattere non hex
-    CHECK(!Decode(" 48").has_value());       // lo spazio non è hex
-    CHECK(!Decode("0x48").has_value());      // niente prefissi
+    CHECK(!Decode("abc").has_value());       // odd length
+    CHECK(!Decode("zz").has_value());        // non-hex character
+    CHECK(!Decode(" 48").has_value());       // space is not hex
+    CHECK(!Decode("0x48").has_value());      // no prefixes
 }
 
 // --- QW8: SignatureCodec (parser signature estratto da PatternEngine) ---
@@ -1230,14 +1230,14 @@ void SignatureTest() {
     CHECK(bytes.size() == 4 && mask.size() == 4);
     CHECK(mask == "xx?x");
     CHECK(bytes[0] == 0x48 && bytes[1] == 0x8B && bytes[3] == 0xC3);
-    CHECK(ParseSignature("00", bytes, mask));          // 0x00 è un byte valido
+    CHECK(ParseSignature("00", bytes, mask));          // 0x00 is a valid byte
     CHECK(bytes.size() == 1 && mask == "x" && bytes[0] == 0x00);
-    CHECK(ParseSignature("a1", bytes, mask));          // lowercase accettato
+    CHECK(ParseSignature("a1", bytes, mask));          // lowercase accepted
     CHECK(bytes.size() == 1 && bytes[0] == 0xA1);
-    CHECK(!ParseSignature("", bytes, mask));           // vuoto
-    CHECK(!ParseSignature("???", bytes, mask));        // wildcard malformata
-    CHECK(!ParseSignature("4Z", bytes, mask));         // cifra non hex
-    CHECK(!ParseSignature("1FF", bytes, mask));        // token troppo lungo
+    CHECK(!ParseSignature("", bytes, mask));           // empty
+    CHECK(!ParseSignature("???", bytes, mask));        // malformed wildcard
+    CHECK(!ParseSignature("4Z", bytes, mask));         // non-hex digit
+    CHECK(!ParseSignature("1FF", bytes, mask));        // overlong token
 }
 
 // --- QW8: IpcSpecParse (parser TOML puro estratto da IpcSpec) ---
@@ -1263,7 +1263,7 @@ void IpcSpecParseTest() {
     CHECK(it->second.fencepost == 0x1Cu);
     CHECK(it->second.argc == 3u);
 
-    // interface_id fuori range: l'intera interfaccia (metodi inclusi) è scartata.
+    // Out-of-range interface_id: the whole interface (methods included) is dropped.
     ifaces.clear(); methods.clear();
     CHECK(!ParseSpecToml(
         "[IClientFriends]\ninterface_id = 999\n"
@@ -1281,12 +1281,12 @@ void IpcSpecParseTest() {
     CHECK(!ParseSpecToml("", ifaces, methods));
     CHECK(!ParseSpecToml("[broken\nkey = 1", ifaces, methods));
 
-    // funcHash senza prefisso 0x e valore minimo accettato (1).
+    // funcHash without 0x prefix and minimum accepted value (1).
     ifaces.clear(); methods.clear();
     CHECK(ParseSpecToml("[I]\n[I.M]\nfuncHash = \"1\"\n", ifaces, methods));
     CHECK(methods.at("I::M").hash == 1u);
 
-    // funcHash zero rifiutato (hash 0 = metodo assente, per contratto).
+    // Zero funcHash rejected (hash 0 = absent method, by contract).
     ifaces.clear(); methods.clear();
     CHECK(!ParseSpecToml("[I]\n[I.M]\nfuncHash = \"0\"\n", ifaces, methods));
 
@@ -1323,8 +1323,8 @@ void JsonWriterTest() {
     w.ArrayEnd();
     const std::string out = w.Finish();
 
-    // Golden: ESATTAMENTE il formato pubblicato dallo schema_version 9
-    // (indent 2 spazi, array su righe proprie, ultimo campo senza virgola).
+    // Golden: EXACTLY the format published by schema_version 9
+    // (2-space indent, arrays on their own lines, last field without comma).
     const std::string golden =
         "{\n"
         "  \"schema_version\": 9,\n"
@@ -1347,10 +1347,10 @@ void JsonWriterTest() {
 }
 
 
-// --- I-E: contract fixture DLL<->Desk per l'identità manifest (D4) ---
-// Gli STESSI blob in Tools/contract_fixtures/manifest sono asseriti qui e in
-// AetherDesk/src-tauri/src/tests/manifest_contract_tests.rs: se un lato
-// cambia verdetto, uno dei due test si rompe.
+// --- I-E: DLL<->Desk contract fixture for manifest identity (D4) ---
+// The SAME blobs in Tools/contract_fixtures/manifest are asserted here and in
+// AetherDesk/src-tauri/src/tests/manifest_contract_tests.rs: when either side
+// changes its verdict, one of the two tests breaks.
 void ManifestContractTest() {
     namespace mi = ac::manifestidentity;
     constexpr std::uint32_t kDepot = 489831;
@@ -1364,7 +1364,7 @@ void ManifestContractTest() {
         return body;
     };
 
-    // Validi: identità letta dal metadata, match solo con gli attesi esatti.
+    // Valid: identity read from metadata, match only against exact expectations.
     const std::string valid = Read("valid_basic.bin");
     CHECK(mi::ManifestIdentityMatches(valid, kDepot, kGid));
     CHECK(!mi::ManifestIdentityMatches(valid, kDepot + 1, kGid));
@@ -1373,7 +1373,7 @@ void ManifestContractTest() {
     const std::string extra = Read("valid_extra_wiretypes.bin");
     CHECK(mi::ManifestIdentityMatches(extra, kDepot, kGid));
 
-    // Malformati: tutti rifiutati (anche con attesi zero).
+    // Malformed: all rejected (even against zero expectations).
     for (const char* bad : {"bad_magic_payload.bin", "bad_magic_metadata.bin",
                             "truncated_payload.bin", "truncated_metadata_varint.bin",
                             "bad_wire_type.bin", "empty.bin", "garbage_short.bin"}) {

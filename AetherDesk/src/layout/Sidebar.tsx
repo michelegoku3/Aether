@@ -6,12 +6,12 @@ interface SidebarProps {
   activeTab: TabType;
   onTabChange: (tab: TabType) => void;
   onSteamAction: () => void;
-  // Stato Steam dal monitor condiviso (core::steam_monitor): null = in attesa
-  // della prima lettura. Guida l'etichetta Start/Restart.
+  // Steam state from the shared monitor (core::steam_monitor): null = waiting
+  // for the first read. Drives the Start/Restart label.
   steamRunning: boolean | null;
-  // True mentre un'azione Start/Restart è in volo (il restart include
-  // l'attesa dell'uscita del processo): il button è inibito per evitare
-  // doppi spawn in race con lo shutdown.
+  // True while a Start/Restart action is in flight (restart includes waiting
+  // for the process to exit): the button is inhibited to avoid double spawns
+  // racing shutdown.
   steamBusy?: boolean;
   dllUpdateAvailable: boolean; // Received from parent (App.tsx)
   updateIsTest: boolean;        // Whether the shown update is a test build (red)
@@ -107,10 +107,10 @@ export const Sidebar = memo(function Sidebar({ activeTab, onTabChange, onSteamAc
         {/* Separator Line */}
         <div className="separator"></div>
 
-        {/* Start/Restart Steam Button (Action, not a tab): START = solo spawn
-            (mai kill), RESTART = kill + attesa uscita + spawn; l'etichetta
-            segue lo stato del monitor condiviso (evento runtime-state +
-            heartbeat AetherDLL via status.json). */}
+        {/* Start/Restart Steam Button (Action, not a tab): START = spawn only
+            (never kill), RESTART = kill + wait-for-exit + spawn; the label
+            follows the shared monitor state (runtime-state event +
+            AetherDLL heartbeat via status.json). */}
         <button
           onClick={onSteamAction}
           className="nav-item restart-steam-btn"

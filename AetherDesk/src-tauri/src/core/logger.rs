@@ -17,8 +17,8 @@
 
 use std::collections::HashSet;
 use std::fs::{File, OpenOptions};
-use std::io::{Read, Write};
-use std::path::PathBuf;
+use std::io::{Read, Seek, Write};
+use std::path::{Path, PathBuf};
 use std::sync::{Mutex, OnceLock};
 
 const STARTUP_LOG_TOKEN: &str = "Z8L2Q5N6";
@@ -252,6 +252,10 @@ pub fn reset_session_dedup() {
 }
 
 /// Reads trailing log lines from `desk.log` for UI presentation.
+///
+/// Reads only a bounded window from the end of the file instead of loading
+/// it whole: enough bytes for `tail_lines` typical lines, capped so a
+/// multi-GB log can never OOM the backend on a 2.5s poll.
 pub fn read_tail_lines(tail_lines: usize) -> Result<Vec<String>, String> {
     let log_path = crate::core::paths::LocalAppPaths::data_root()
         .join("logs")
@@ -259,18 +263,49 @@ pub fn read_tail_lines(tail_lines: usize) -> Result<Vec<String>, String> {
     if !log_path.exists() {
         return Ok(Vec::new());
     }
+    tail_file_lines(&log_path, tail_lines)
+}
 
+/// Last `limit` lines of the file at `path`, read from the end.
+///
+/// Missing file → empty vec (first run). The byte window scales with `limit`
+/// (`limit` × 1 KiB, min 64 KiB, max 8 MiB) and conversion is lossy from the
+/// first newline, so a huge file or invalid UTF-8 can never blow up memory
+/// or fail the read.
+pub fn tail_file_lines(path: &Path, limit: usize) -> Result<Vec<String>, String> {
+    if limit == 0 {
+        return Ok(Vec::new());
+    }
     let mut file =
-        File::open(&log_path).map_err(|e| format!("Failed to open log file: {e}"))?;
-    let mut content = String::new();
-    file.read_to_string(&mut content)
-        .map_err(|e| format!("Failed to read log file: {e}"))?;
-
-    let lines: Vec<String> = content.lines().map(|l| l.to_string()).collect();
-    if lines.len() <= tail_lines {
+        File::open(path).map_err(|e| format!("Failed to open log file {}: {e}", path.display()))?;
+    let length = file
+        .metadata()
+        .map_err(|e| format!("Failed to stat log file {}: {e}", path.display()))?
+        .len();
+    if length == 0 {
+        return Ok(Vec::new());
+    }
+    let window = (limit as u64).saturating_mul(1024).clamp(64 * 1024, 8 * 1024 * 1024).min(length);
+    let skipped = length - window;
+    file.seek(std::io::SeekFrom::End(-(window as i64)))
+        .map_err(|e| format!("Failed to seek log file {}: {e}", path.display()))?;
+    let mut buf = Vec::with_capacity(window as usize);
+    file.read_to_end(&mut buf)
+        .map_err(|e| format!("Failed to read log file {}: {e}", path.display()))?;
+    // When the window cut the file, it may start mid-line (or mid-UTF-8
+    // sequence): resume from the first newline so only whole lines return.
+    // A fully-read file starts at offset 0 and keeps its first line.
+    let start = if skipped == 0 {
+        0
+    } else {
+        buf.iter().position(|&b| b == b'\n').map(|pos| pos + 1).unwrap_or(0)
+    };
+    let text = String::from_utf8_lossy(&buf[start..]);
+    let lines: Vec<String> = text.lines().map(|l| l.to_string()).collect();
+    if lines.len() <= limit {
         Ok(lines)
     } else {
-        Ok(lines[lines.len() - tail_lines..].to_vec())
+        Ok(lines[lines.len() - limit..].to_vec())
     }
 }
 
@@ -344,4 +379,53 @@ macro_rules! desk_log_warn_once {
     ($mod:expr, $($arg:tt)*) => {
         $crate::core::logger::write_once($crate::core::logger::LogLevel::Warn, $mod, &format!($($arg)*))
     };
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Write;
+
+    fn write_lines(path: &Path, count: usize) {
+        let mut file = File::create(path).unwrap();
+        for i in 0..count {
+            writeln!(file, "[2026-01-01 00:00:00.000] line {i:06}").unwrap();
+        }
+    }
+
+    #[test]
+    fn tail_returns_exactly_the_last_lines_of_a_large_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("big.log");
+        write_lines(&path, 5_000);
+        let lines = tail_file_lines(&path, 100).unwrap();
+        assert_eq!(lines.len(), 100);
+        assert!(lines[0].ends_with("line 004900"), "got: {}", lines[0]);
+        assert!(lines[99].ends_with("line 004999"), "got: {}", lines[99]);
+    }
+
+    #[test]
+    fn tail_caps_memory_on_files_bigger_than_the_window() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("huge.log");
+        write_lines(&path, 200_000); // ~10 MB, over the 8 MiB window
+        let lines = tail_file_lines(&path, 100).unwrap();
+        assert_eq!(lines.len(), 100);
+        assert!(lines[99].ends_with("line 199999"), "got: {}", lines[99]);
+    }
+
+    #[test]
+    fn tail_handles_empty_limit_and_invalid_utf8() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("bin.log");
+        let mut file = File::create(&path).unwrap();
+        file.write_all(b"ok line\n\xff\xfe broken \x80 bytes\nlast\n").unwrap();
+        drop(file);
+        assert!(tail_file_lines(&path, 0).unwrap().is_empty());
+        let lines = tail_file_lines(&path, 10).unwrap();
+        assert_eq!(lines.len(), 3);
+        assert_eq!(lines[0], "ok line");
+        assert_eq!(lines[2], "last");
+        assert!(tail_file_lines(&dir.path().join("missing.log"), 10).is_err());
+    }
 }

@@ -8,77 +8,77 @@
 #include "core/SteamTypes.h"
 
 // ============================================================================
-// AchievementBackup — persistenza anti-perdita degli sblocchi achievement.
+// AchievementBackup — loss-prevention persistence for achievement unlocks.
 //
-// Perché esiste: il server Steam non conferma mai gli StoreUserStats2 di un
-// gioco che l'account non possiede, quindi l'unica copia dei progressi è la
-// cache locale del client (appcache\stats\UserGameStats_<account>_<appid>.bin,
-// riconoscibile da PendingChanges > 0). Qualunque invalidazione client-side di
-// quella cache è una perdita definitiva. Questo modulo ne mantiene una copia
-// indipendente, con lo stesso naming per-(account, app) di Steam:
+// Why it exists: the Steam server never confirms StoreUserStats2 for a game
+// the account does not own, so the only copy of progress is the client's
+// local cache (appcache\stats\UserGameStats_<account>_<appid>.bin,
+// recognizable by PendingChanges > 0). Any client-side invalidation of that
+// cache is a permanent loss. This module keeps an independent copy of it,
+// with Steam's same per-(account, app) naming:
 //
 //   <AetherData>\backup\<appid>\achievements\            [via desk_path.cfg;
-//                                               unica destinazione: senza
-//                                               AetherDesk niente backup]
-//       UserGameStats_<account>_<appid>.json   snapshot sblocchi (leggibile;
-//                                               rigenera il .bin con
+//                                               single destination: no
+//                                               AetherDesk means no backup]
+//       UserGameStats_<account>_<appid>.json   unlock snapshot (readable;
+//                                               regenerates the .bin with
 //                                               Tools\achievement_decoder.py)
-//       UserGameStats_<account>_<appid>.bin    copia della cache Steam
-//       UserGameStatsSchema_<appid>.bin        copia dello schema del gioco
+//       UserGameStats_<account>_<appid>.bin    copy of the Steam cache
+//       UserGameStatsSchema_<appid>.bin        copy of the game schema
 //
-// Contratto (facciata minima, accoppiamento minimo con AchievementModule):
-//   * RecordUnlock() è ASINCRONA: nessuna I/O su disco nel thread di rete di
-//     Steam — il lavoro viene accodato a un worker dedicato (avviato al primo
-//     sblocco). Lo snapshot viene riscritto in modo atomico (.tmp + move) con
-//     merge (id duplicato -> vince il tempo più antico).
-//   * FlushOnShutdown() blocca, scarica la coda (inclusi i job ritardati),
-//     copia i .bin e attende il completamento (join nel registry Workers).
-//     Solo nel percorso esplicito fuori dal loader
-//     lock, NON in DllMain. Alla terminazione normale la protezione è data
-//     dal checkpoint periodico + dalla copia finale di SessionEnded.
-//   * Tutto è best-effort: un errore di I/O viene solo loggato (WARN) e non
-//     interferisce mai con il traffico di rete.
+// Contract (minimal facade, minimal coupling with AchievementModule):
+//   * RecordUnlock() is ASYNC: no disk I/O on Steam's network thread — work is
+//     queued to a dedicated worker (started on the first unlock). The snapshot
+//     is rewritten atomically (.tmp + move) with merge (duplicate id -> oldest
+//     time wins).
+//   * FlushOnShutdown() blocks, drains the queue (including delayed jobs),
+//     copies the .bins and awaits completion (join in the Workers registry).
+//     Only on the explicit path outside the loader lock, NEVER in DllMain.
+//     On normal termination protection comes from the periodic checkpoint +
+//     the SessionEnded final copy.
+//   * Everything is best-effort: an I/O error is only logged (WARN) and never
+//     interferes with network traffic.
 // ============================================================================
 
 namespace ac::hooks::AchievementBackup {
 
-// "1787052569" -> "18/08/2026 13:29:29" (ora locale). Condivisa con
-// AchievementModule per le righe di log; qui perché descrive sblocchi.
+// "1787052569" -> "18/08/2026 13:29:29" (local time). Shared with
+// AchievementModule for log lines; here because it describes unlocks.
 std::string FormatUnixTime(std::uint64_t unixTime);
 
-// Accoda il backup di uno sblocco (vedi contratto sopra). Thread-safe.
+// Enqueues one unlock's backup (see contract above). Thread-safe.
 void RecordUnlock(steam::AppId appId, std::uint64_t steamId64,
                   std::uint32_t achievementId, std::uint32_t unlockTime);
 
-// Backup "di sessione": al primo utilizzo stats di un app (818, 151 o 5466)
-// copia i .bin esistenti della cache Steam, così i progressi accumulati
-// vengono protetti anche se la sessione non produce nuovi sblocchi.
-// Una sola volta per app per processo di Steam. Thread-safe.
+// "Session" backup: on an app's first stats use (818, 151 or 5466), copy the
+// existing Steam cache .bins so accumulated progress is protected even when
+// the session produces no new unlocks.
+// Once per app per Steam process. Thread-safe.
 void TouchSession(steam::AppId appId, std::uint64_t steamId64);
 
-// Persistenza GUIDATA DAGLI EVENTI (anti-perdita anche senza shutdown):
-//   * il worker esegue un CHECKPOINT PERIODICO (5 min): ricopia forzata dei
-//     .bin di ogni (app, account) toccato + refresh playtime;
-//   * SessionEnded() schedula una COPIA FINALE ritardata (~15 s) quando il
-//     gioco esce, perché Steam scrive la cache stats dopo il frame vuoto.
-// Con questi due eventi la finestra di perdita massima scende da "intera
-// sessione" a "5 minuti" anche se Steam viene chiuso/terminato normalmente.
+// EVENT-DRIVEN persistence (loss prevention even without shutdown):
+//   * the worker runs a PERIODIC CHECKPOINT (5 min): forced re-copy of the
+//     .bins of every touched (app, account) + playtime refresh;
+//   * SessionEnded() schedules a DELAYED (~15 s) FINAL COPY when the game
+//     exits, because Steam writes the stats cache after the empty frame.
+// With these two events the maximum loss window drops from "whole session"
+// to "5 minutes" even when Steam is closed/terminated normally.
 void SessionEnded(steam::AppId appId, std::uint64_t steamId64);
 
-// Snapshot iniziale (una volta per processo): copia i .bin di TUTTI gli app
-// gestiti presenti in appcache\stats, subito dopo l'avvio di Steam e prima
-// che il login-reconcile del client possa scartare i cambi pendenti (è la
-// finestra in cui si è verificata la perdita del 21/08). Async.
+// Startup snapshot (once per process): copies the .bins of ALL managed apps
+// present in appcache\stats, right after Steam starts and before the client's
+// login-reconcile can discard pending changes (the window where the 21/08
+// loss happened). Async.
 void BackupAllKnownStatsAtStartup();
 
-// Registra le stat numeriche di un commit (incluse le bitfield achievement:
-// molti giochi — es. Spider-Man — committano gli achievement come
-// stat_id=<bucket>, value=<bitfield>) nello snapshot JSON. Async.
+// Records one commit's numeric stats (including achievement bitfields: many
+// games — e.g. Spider-Man — commit achievements as stat_id=<bucket>,
+// value=<bitfield>) into the JSON snapshot. Async.
 void RecordStats(steam::AppId appId, std::uint64_t steamId64,
                  const std::vector<std::pair<std::uint32_t, std::uint32_t>>& stats);
 
-// Scarica la coda, copia i .bin un'ultima volta e spegne il worker. Blocca
-// finché tutto il lavoro pendente è completato (solo shutdown esplicito, mai in DllMain).
+// Drains the queue, copies the .bins one last time and stops the worker. Blocks
+// until all pending work is complete (explicit shutdown only, never in DllMain).
 void FlushOnShutdown();
 
 }  // namespace ac::hooks::AchievementBackup

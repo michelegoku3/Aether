@@ -3,16 +3,16 @@ use tauri::Manager;
 
 const LOCAL_DATA_DIR_NAME: &str = "AetherData";
 
-/// Resolver centralizzato per i path di AetherDesk.
+/// Centralized path resolver for AetherDesk.
 ///
-/// ## Distribuzione portabile (ZIP)
-/// AetherDesk è una cartella portabile auto-contenuta: eseguibile, tool e dati
-/// vivono tutti insieme. L'intera cartella di Aether ha tutto dentro di lei —
-/// nessun pezzo in `AppData\Local` o `AppData\Roaming`. Soluzione: sia
-/// l'eseguibile che `AetherData` vivono dentro la stessa cartella di
-/// installazione (`install_root/`). Struttura:
+/// ## Portable distribution (ZIP)
+/// AetherDesk is a self-contained portable folder: executable, tools and data
+/// all live together. The whole Aether folder holds everything inside itself —
+/// nothing in `AppData\Local` or `AppData\Roaming`. Solution: both the
+/// executable and `AetherData` live inside the same installation folder
+/// (`install_root/`). Layout:
 ///
-///   <dove-l'utente-la-sballa>/AetherDesk\
+///   <where-the-user-unpacks-it>/AetherDesk\
 ///     ├─ AetherDesk.exe
 ///     ├─ ExternalTools\Steamless\...
 ///     └─ AetherData\
@@ -21,10 +21,11 @@ const LOCAL_DATA_DIR_NAME: &str = "AetherData";
 ///         ├─ config\settings.json
 ///         └─ backup\...
 ///
-/// Vecchie location (da migrare solo per chi arriva da una vecchia install):
-/// Vecchia posizione Program Files: `<exe_parent>\AetherData`, quando l'app era in `C:\Program Files`.
-/// Vecchia posizione Roaming: `%APPDATA%\com.aether.desk` (Roaming).
-/// Entrambe vengono migrate automaticamente al primo avvio verso `install_root/AetherData`.
+/// Old locations (migrated only for users coming from an old install):
+/// Old Program Files location: `<exe_parent>\AetherData`, from when the app
+/// lived in `C:\Program Files`.
+/// Old Roaming location: `%APPDATA%\com.aether.desk` (Roaming).
+/// Both are automatically migrated on first launch to `install_root/AetherData`.
 pub struct LocalAppPaths;
 
 impl LocalAppPaths {
@@ -38,20 +39,20 @@ impl LocalAppPaths {
             .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")))
     }
 
-    /// Path primario e unico: `<install_root>/AetherData`.
-    /// È l'unica location usata da ora in poi.
+    /// Primary and only path: `<install_root>/AetherData`.
+    /// It is the only location used from now on.
     pub fn data_root() -> PathBuf {
         Self::install_root().join(LOCAL_DATA_DIR_NAME)
     }
 
-    /// Alias per compatibilità con codice che passava `&AppHandle`.
-    /// Ora ignora `app` e ritorna sempre `install_root/AetherData` (unificato).
+    /// Compatibility alias for code that used to take `&AppHandle`.
+    /// Now ignores `app` and always returns `install_root/AetherData` (unified).
     pub fn data_root_for_app(_app: &tauri::AppHandle) -> PathBuf {
         Self::data_root()
     }
 
-    /// Legacy Roaming del fix v2: `%APPDATA%\com.aether.desk`
-    /// Mantenuto solo per migrazione di ritorno verso l'install unificata.
+    /// Legacy Roaming from the v2 fix: `%APPDATA%\com.aether.desk`
+    /// Kept only for back-migration to the unified install.
     pub fn legacy_roaming_data_root() -> PathBuf {
         if let Some(base) = dirs::data_dir() {
             return base.join("com.aether.desk");
@@ -77,12 +78,12 @@ impl LocalAppPaths {
         Self::data_root().join("config")
     }
 
-    /// Directory di stato (uc_online2.json e altri stati applicativi).
+    /// State directory (uc_online2.json and other application states).
     pub fn state_dir() -> PathBuf {
         Self::data_root().join("state")
     }
 
-    /// Root dei backup per-gioco (`<AetherData>/backup`).
+    /// Per-game backup root (`<AetherData>/backup`).
     pub fn backup_root() -> PathBuf {
         Self::data_root().join("backup")
     }

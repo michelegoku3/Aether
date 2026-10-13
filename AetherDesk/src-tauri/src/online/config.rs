@@ -1,14 +1,14 @@
-//! Generazione di `union-crax.ini` (configurazione UCOnline2).
+//! `union-crax.ini` generation (UCOnline2 configuration).
 //!
-//! Builder tipizzato, specchio fedele delle sezioni che scrive `patch.bat`
-//! (v1.19.8 + PlayFab SHARED da HEAD). Regole di progetto:
-//!   * l'ini si scrive SEMPRE accanto all'exe in esecuzione (`ini_dir`
-//!     calcolato dalla detection) — un ini nella root dei giochi Unreal
-//!     verrebbe ignorato in silenzio;
-//!   * le credenziali backend vanno nell'ini SOLO se l'utente le ha
-//!     fornite (sezioni stub altrimenti);
-//!   * `UnlockAll=true` sempre + harvest DLC da `configs.app.ini`
-//!     (Goldberg) o dalle cartelle numeriche nella dir di gioco.
+//! Typed builder, faithfully mirroring the sections written by `patch.bat`
+//! (v1.19.8 + PlayFab SHARED from HEAD). Project rules:
+//!   * the ini is ALWAYS written next to the running exe (`ini_dir`
+//!     computed by detection) — an ini in Unreal game roots would be
+//!     silently ignored;
+//!   * backend credentials go in the ini ONLY when the user provided them
+//!     (stub sections otherwise);
+//!   * `UnlockAll=true` always + DLC harvest from `configs.app.ini`
+//!     (Goldberg) or from the numbered folders in the game dir.
 
 use crate::online::types::{
     CoherenceOptions, DetectionReport, OnlineEnableRequest, PhotonFlavor, PlayfabOptions,
@@ -16,11 +16,11 @@ use crate::online::types::{
 use crate::external_tools::fs::walk_files;
 use std::path::Path;
 
-/// Runtime key del progetto coherence community condiviso (patch.bat):
-/// client-side identifier, pubblicabile; disponibilità non garantita.
+/// Runtime key of the shared community coherence project (patch.bat):
+/// client-side identifier, publishable; availability not guaranteed.
 pub const COHERENCE_SHARED_KEY: &str = "fce1ea692a854b50b9f945ef6aa17758";
 
-/// TitleId PlayFab community condiviso (patch.bat `SHARED`, NMS e altri).
+/// Shared community PlayFab TitleId (patch.bat `SHARED`, NMS and others).
 pub const PLAYFAB_SHARED_TITLE: &str = "1D861F";
 
 /// Entry DLC harvestata: (appid, nome).
@@ -77,8 +77,8 @@ pub fn build_ini(
         push_line(&mut out, &format!("{id}={name}"));
     }
 
-    // Photon — solo se il plugin è stato richiesto (deploy_photon).
-    // Realtime o Fusion (mai entrambi — patch.bat sceglie il flavor).
+    // Photon — only when the plugin was requested (deploy_photon).
+    // Realtime or Fusion (never both — patch.bat picks the flavor).
     if request.deploy_photon {
         match detection.backends.photon {
             PhotonFlavor::None => {}
@@ -109,7 +109,7 @@ pub fn build_ini(
         }
     }
 
-    // EOS — solo se il plugin è stato richiesto (deploy_eos_custom).
+    // EOS — only when the plugin was requested (deploy_eos_custom).
     if detection.backends.eos && request.deploy_eos_custom {
         push_line(&mut out, "");
         push_line(&mut out, "[EOS]");
@@ -153,8 +153,8 @@ pub fn build_ini(
     out
 }
 
-/// Runtime key coherence finale: la chiave propria, oppure quella del
-/// progetto community condiviso quando `use_shared` è attivo.
+/// Final coherence runtime key: the user's own key, or the shared community
+/// project's key when `use_shared` is on.
 pub fn coherence_key(options: &CoherenceOptions) -> String {
     if options.use_shared {
         COHERENCE_SHARED_KEY.to_string()

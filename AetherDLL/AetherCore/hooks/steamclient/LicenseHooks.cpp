@@ -98,8 +98,8 @@ namespace ac::hooks {
         }
 
         void StopCdKeySummary() {
-            // I-A: stop+join avvengono dentro workers::Shutdown() (chiamato
-            // prima di ShutdownLicenseHooks in dllmain).
+            // I-A: stop+join happen inside workers::Shutdown() (called before
+            // ShutdownLicenseHooks in dllmain).
             AC_LOG_DEBUG(kModule, "CD-key summary stop requested; join handled by workers::Shutdown.");
         }
 

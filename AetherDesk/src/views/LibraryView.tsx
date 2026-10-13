@@ -57,8 +57,8 @@ export const LibraryView = memo(function LibraryView({
   const [infoGame, setInfoGame] = useState<InstalledGame | null>(null);
   const [versionGame, setVersionGame] = useState<InstalledGame | null>(null);
   const [manifestRows, setManifestRows] = useState<LuaManifestRow[]>([]);
-  // Gate del bulk editor degli aggiornamenti; false = popup chiuso. Il
-  // percorso Steam non è più un dato della UI: lo risolvono i comandi.
+  // Update bulk-editor gate; false = popup closed. The Steam path is no
+  // longer UI data: the commands resolve it.
   const [showUpdatesModal, setShowUpdatesModal] = useState(false);
   // Workshop manifest repair (scan appworkshop ACF + stage missing manifests).
   const [showWorkshopRepair, setShowWorkshopRepair] = useState(false);
@@ -93,9 +93,9 @@ export const LibraryView = memo(function LibraryView({
 
   const handleOpenUpdatesModal = async () => {
     try {
-      // Pre-volo volutamente mantenuto: senza percorso configurato il popup si
-      // aprirebbe per fallire su OGNI gioco (un errore per riga). Costa una
-      // sola lettura impostazioni per click, non una per gioco come prima.
+      // Deliberately kept pre-flight: with no configured path the popup would
+      // open only to fail on EVERY game (one error per row). Costs a single
+      // settings read per click, not one per game like before.
       await requireSteamPath();
       setShowUpdatesModal(true);
     } catch (err: unknown) {
@@ -103,11 +103,11 @@ export const LibraryView = memo(function LibraryView({
     }
   };
 
-  // useCallback: è la prop `onFixPins` di OGNI card della griglia. Ricrearla a
-  // ogni render annullerebbe `memo(GameCard)`, che è proprio ciò che evita di
-  // ri-renderizzare N card a ogni keystroke della ricerca o a ogni toast.
-  // I setter di stato sono stabili per garanzia React, quindi l'unica
-  // dipendenza reale è `queryGameState` (già useCallback nel provider).
+  // useCallback: this is the `onFixPins` prop of EVERY grid card. Recreating
+  // it on each render would undo `memo(GameCard)`, which is exactly what
+  // avoids re-rendering N cards on every search keystroke or toast.
+  // State setters are stable by React guarantee, so the only real dependency
+  // is `queryGameState` (already useCallback in the provider).
   const handleOpenVersionEditor = useCallback(async (game: InstalledGame) => {
     setStatus({ text: '', type: 'info' });
     const appId = Number(game.appId);
@@ -127,10 +127,10 @@ export const LibraryView = memo(function LibraryView({
     }
   }, [queryGameState]);
 
-  // Le azioni della card non dipendono dal singolo gioco (ricevono `game` dal
-  // click) e usano solo setter stabili: l'array si costruisce UNA volta.
-  // Ricrearlo per ogni card a ogni render è ciò che rendeva inutile
-  // `memo(GameCard)`.
+  // Card actions do not depend on the individual game (they receive `game`
+  // from the click) and use only stable setters: the array is built ONCE.
+  // Rebuilding it for every card on every render is what made `memo(GameCard)`
+  // pointless.
   const cardActions = useMemo<Array<GameCardAction<InstalledGame>>>(() => [
     { label: 'Modify', variant: 'primary', onClick: setActionGame },
     { label: 'Info', variant: 'secondary', onClick: setInfoGame },
