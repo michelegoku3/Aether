@@ -79,8 +79,10 @@ export function useSettingsController(params: Params) {
       .catch((err) => console.warn('[settings] failed to load OST source state:', err));
     void invoke<boolean>('get_manifest_restore_enabled').then(setManifestRestoreOnStartup)
       .catch((err) => console.warn('[settings] failed to load manifest restore state:', err));
-    void luaTools.refresh();
-    void params.onRefreshUsage();
+    void luaTools.refresh()
+      .catch((err) => console.warn('[settings] failed to refresh LuaTools auth:', err));
+    void params.onRefreshUsage()
+      .catch((err) => console.warn('[settings] failed to refresh Hubcap usage:', err));
     // The Settings view stays mounted; bootstrap exactly once.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);

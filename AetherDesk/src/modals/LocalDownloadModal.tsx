@@ -4,6 +4,7 @@ import { emptyStatus, StatusMessage } from '../types/ui';
 import { AntivirusExclusionModal } from './AntivirusExclusionModal';
 import { useModalDismiss } from '../hooks/useModalDismiss';
 import { useLibraryGames } from '../hooks/useLibraryGames';
+import { toErrorMessage } from '../util/errors';
 
 // Optional target game for backwards compatibility. When omitted, the modal
 // operates in Bulk Mode (recursive search for any .lua and .manifest).
@@ -55,8 +56,8 @@ export const LocalDownloadModal = ({ game, onClose, onInstalled }: LocalDownload
         appId: game ? Number(game.appId) : undefined,
       });
       if (paths && paths.length > 0) addFiles(paths);
-    } catch (err: any) {
-      showStatus(`Failed to open file picker: ${err}`, 'error');
+    } catch (err: unknown) {
+      showStatus(`Failed to open file picker: ${toErrorMessage(err)}`, 'error');
     }
   };
 
@@ -111,8 +112,8 @@ export const LocalDownloadModal = ({ game, onClose, onInstalled }: LocalDownload
           onInstalled?.();
         }, 3000);
       }
-    } catch (err: any) {
-      showStatus(`${err}`, 'error');
+    } catch (err: unknown) {
+      showStatus(`${toErrorMessage(err)}`, 'error');
     } finally {
       setIsInstalling(false);
     }

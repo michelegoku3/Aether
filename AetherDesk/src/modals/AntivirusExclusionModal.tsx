@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { emptyStatus, StatusMessage } from '../types/ui';
 import { useModalDismiss } from '../hooks/useModalDismiss';
+import { toErrorMessage } from '../util/errors';
 
 interface AntivirusExclusionModalProps {
   /**
@@ -42,8 +43,8 @@ export const AntivirusExclusionModal = ({ onDone }: AntivirusExclusionModalProps
       const message: string = await invoke('apply_antivirus_exclusion');
       setStatus({ text: message, type: 'success' });
       onDone(true);
-    } catch (err: any) {
-      setStatus({ text: `Could not add the exclusion automatically: ${err}`, type: 'error' });
+    } catch (err: unknown) {
+      setStatus({ text: `Could not add the exclusion automatically: ${toErrorMessage(err)}`, type: 'error' });
     } finally {
       setIsApplying(false);
     }

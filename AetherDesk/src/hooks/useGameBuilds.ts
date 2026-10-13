@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { useLibraryGames } from './useLibraryGames';
+import { toErrorMessage } from '../util/errors';
 
 export interface BuildInfo {
   buildId: number;
@@ -41,8 +42,8 @@ export const useGameBuilds = (appId: number) => {
       ]);
       setBuilds(all || []);
       setSavedIds(new Set((saved || []).map((s) => s.buildId)));
-    } catch (err: any) {
-      setError(String(err));
+    } catch (err: unknown) {
+      setError(toErrorMessage(err));
     } finally {
       setLoading(false);
     }

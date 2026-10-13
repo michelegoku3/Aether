@@ -7,6 +7,7 @@ import { SavedCrackModal } from '../modals/SavedCrackModal';
 import { AntivirusExclusionModal } from '../modals/AntivirusExclusionModal';
 import { SearchSuggest, moveSuggestIndex } from '../ui/SearchSuggest';
 import { filterAndSortGames } from '../util/search';
+import { toErrorMessage } from '../util/errors';
 
 const MAX_VISIBLE_RESULTS = 5;
 
@@ -135,8 +136,8 @@ export const HomeView = memo(function HomeView() {
         gameName: selectedGame.name,
       });
       setStatus({ text: '', type: 'info' });
-    } catch (err: any) {
-      setStatus({ text: `Failed to open external resource: ${err}`, type: 'error' });
+    } catch (err: unknown) {
+      setStatus({ text: `Failed to open external resource: ${toErrorMessage(err)}`, type: 'error' });
     }
   };
 
@@ -169,8 +170,8 @@ export const HomeView = memo(function HomeView() {
         text: result.message,
         type: result.success ? 'success' : 'error',
       });
-    } catch (err: any) {
-      setStatus({ text: `Steamless failed: ${err}`, type: 'error' });
+    } catch (err: unknown) {
+      setStatus({ text: `Steamless failed: ${toErrorMessage(err)}`, type: 'error' });
     } finally {
       setIsSteamlessRunning(false);
     }

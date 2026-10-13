@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { useModalDismiss } from '../hooks/useModalDismiss';
+import { toErrorMessage } from '../util/errors';
 import { useGameBuilds, BuildInfo } from '../hooks/useGameBuilds';
 import { useWatchdog } from '../hooks/useWatchdog';
 import { useLibraryGames } from '../hooks/useLibraryGames';
@@ -174,9 +175,9 @@ const AutoBuildsTab = ({ appId, onClose }: AutoBuildsTabProps) => {
       loadInstalledGames();
       setReport(result);
       setAppliedBuildId(buildId);
-    } catch (err: any) {
+    } catch (err: unknown) {
       clearWatchdog();
-      setStatus({ text: String(err), type: 'error' });
+      setStatus({ text: toErrorMessage(err), type: 'error' });
     } finally {
       clearWatchdog();
       setIsApplying(false);
@@ -189,8 +190,8 @@ const AutoBuildsTab = ({ appId, onClose }: AutoBuildsTabProps) => {
       // published build is documented), not the per-depot page used by the
       // Manual editor.
       await invoke('open_steamdb_patchnotes', { appId });
-    } catch (err: any) {
-      setStatus({ text: `Failed to open SteamDB: ${err}`, type: 'error' });
+    } catch (err: unknown) {
+      setStatus({ text: `Failed to open SteamDB: ${toErrorMessage(err)}`, type: 'error' });
     }
   };
 

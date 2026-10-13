@@ -8,6 +8,7 @@ import { OnlinePanel, type OnlineStatus } from './OnlinePanel';
 import { OnlineChoiceModal, type AppPresenceMode } from './OnlineChoiceModal';
 import { resolveEffectivePresenceMode } from './onlineChoiceState';
 import type { PresenceToggleArgs } from '../types/online';
+import { toErrorMessage } from '../util/errors';
 
 export interface LibraryActionGame {
   id: number;
@@ -167,8 +168,8 @@ export const LibraryGameActionsModal = ({
       // directly for immediate feedback if the WebView event transport lags.
       onRefresh();
       onStatus(result, 'success');
-    } catch (err: any) {
-      onStatus(describeUpdateToggleFailure(String(err), nextEnabled), 'error');
+    } catch (err: unknown) {
+      onStatus(describeUpdateToggleFailure(toErrorMessage(err), nextEnabled), 'error');
     } finally {
       setIsBusy(false);
     }
@@ -186,8 +187,8 @@ export const LibraryGameActionsModal = ({
       invalidateGameState(Number(game.appId));
       const summary = summarizeManifestRepair(report);
       onStatus(summary.text, summary.type);
-    } catch (err: any) {
-      onStatus(`Failed to repair manifests: ${err}`, 'error');
+    } catch (err: unknown) {
+      onStatus(`Failed to repair manifests: ${toErrorMessage(err)}`, 'error');
     } finally {
       setIsBusy(false);
     }
@@ -208,8 +209,8 @@ export const LibraryGameActionsModal = ({
       onStatus(result, 'success');
       onClose();
       onRefresh();
-    } catch (err: any) {
-      onStatus(`Failed to remove game from library: ${err}`, 'error');
+    } catch (err: unknown) {
+      onStatus(`Failed to remove game from library: ${toErrorMessage(err)}`, 'error');
     } finally {
       setIsBusy(false);
     }
@@ -292,8 +293,8 @@ export const LibraryGameActionsModal = ({
       const result: string = await invoke<string>(command, args);
       onStatus(result, 'success');
       await refreshOnlineStates();
-    } catch (err: any) {
-      onStatus(`Failed to set online mode: ${err}`, 'error');
+    } catch (err: unknown) {
+      onStatus(`Failed to set online mode: ${toErrorMessage(err)}`, 'error');
     } finally {
       setOnlineBusy(false);
     }
@@ -307,7 +308,7 @@ export const LibraryGameActionsModal = ({
         await invoke<string>('set_aether_excluded', { appId: Number(game.appId), enabled: true } satisfies PresenceToggleArgs);
         await refreshOnlineStates();
       } catch (err: unknown) {
-        onStatus(`Failed to switch to None for UCO2: ${err}`, 'error');
+        onStatus(`Failed to switch to None for UCO2: ${toErrorMessage(err)}`, 'error');
         setOnlineBusy(false);
         return;
       }

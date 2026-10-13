@@ -166,11 +166,77 @@ pub fn apply_antivirus_exclusion(app: tauri::AppHandle) -> Result<String, String
         ))
     } else {
         let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
-        crate::desk_log_error!("antivirus", "Failed to apply Windows Defender exclusions via PowerShell: {}", stderr);
+        crate::desk_log_error!(
+            "antivirus",
+            "Failed to apply Windows Defender exclusions via PowerShell: {}",
+            first_log_line(&stderr)
+        );
         Err(format!(
             "Windows Defender refused the exclusion ({}). You can add the folders manually in Windows Security.",
-            if stderr.is_empty() { "unknown error".to_string() } else { stderr }
+            refusal_summary(&stderr)
         ))
+    }
+}
+
+/// One-line, redacted summary for the UI: never forwards raw PowerShell
+/// output (paths, policy text) to toasts. Known patterns map to fixed
+/// messages; anything else becomes a generic failure.
+fn refusal_summary(stderr: &str) -> String {
+    if stderr.is_empty() {
+        return "unknown error".to_string();
+    }
+    let lower = stderr.to_lowercase();
+    if lower.contains("access is denied") || lower.contains("unauthorizedaccess") {
+        return "access denied — run AetherDesk elevated".to_string();
+    }
+    if lower.contains("not recognized") || lower.contains("add-mppreference") && lower.contains("not found") {
+        return "Defender PowerShell module unavailable".to_string();
+    }
+    "rejected by Windows Defender".to_string()
+}
+
+/// First line, capped, for the session log (single-line discipline).
+fn first_log_line(stderr: &str) -> String {
+    const MAX_CHARS: usize = 300;
+    let first = stderr.lines().next().unwrap_or("").trim();
+    if first.len() <= MAX_CHARS {
+        return first.to_string();
+    }
+    // Cut on a char boundary, never mid-UTF-8.
+    let mut end = MAX_CHARS;
+    while !first.is_char_boundary(end) {
+        end -= 1;
+    }
+    format!("{}…", &first[..end])
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn refusal_summary_never_forwards_raw_stderr() {
+        let raw = "Add-MpPreference : Access is denied. At C:\\secret\\admin\\script.ps1:1 char:1";
+        let summary = refusal_summary(raw);
+        assert!(!summary.contains("C:\\secret"), "raw path leaked: {summary}");
+        assert!(summary.contains("elevated"));
+        assert_eq!(refusal_summary(""), "unknown error");
+        assert_eq!(
+            refusal_summary("weird new failure mode xyz"),
+            "rejected by Windows Defender"
+        );
+    }
+
+    #[test]
+    fn first_log_line_is_single_capped_line() {
+        assert_eq!(first_log_line("a\nb\nc"), "a");
+        let long = "x".repeat(500);
+        assert!(first_log_line(&long).len() <= 303);
+        // Multibyte-safe truncation.
+        let emoji = "é".repeat(400);
+        let cut = first_log_line(&emoji);
+        assert!(cut.len() <= 303);
+        assert!(cut.ends_with('…'));
     }
 }
 

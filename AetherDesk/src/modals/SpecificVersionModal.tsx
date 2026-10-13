@@ -6,6 +6,7 @@ import { useWatchdog } from '../hooks/useWatchdog';
 import { useLibraryGames } from '../hooks/useLibraryGames';
 import { StatusAlert } from '../ui/StatusAlert';
 import { StatusMessage } from '../types/ui';
+import { toErrorMessage } from '../util/errors';
 
 export interface LuaManifestRow {
   rowId: number;
@@ -151,8 +152,8 @@ export const ManualVersionEditor = ({ game, initialRows, onClose }: ManualVersio
   const handleOpenSteamDb = async () => {
     try {
       await invoke('open_steamdb_depots', { appId: Number(game.appId) });
-    } catch (err: any) {
-      setStatus({ text: `Failed to open SteamDB: ${err}`, type: 'error' });
+    } catch (err: unknown) {
+      setStatus({ text: `Failed to open SteamDB: ${toErrorMessage(err)}`, type: 'error' });
     }
   };
 
@@ -195,9 +196,9 @@ export const ManualVersionEditor = ({ game, initialRows, onClose }: ManualVersio
       // forcing a second click on X. If opened from Library, the parent Modify
       // popup remains mounted and becomes visible again.
       onClose();
-    } catch (err: any) {
+    } catch (err: unknown) {
       clearWatchdog();
-      setStatus({ text: `Failed to apply specific version edits: ${err}`, type: 'error' });
+      setStatus({ text: `Failed to apply specific version edits: ${toErrorMessage(err)}`, type: 'error' });
     } finally {
       clearWatchdog();
       setIsApplying(false);

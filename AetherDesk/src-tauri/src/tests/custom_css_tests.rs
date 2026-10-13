@@ -143,3 +143,36 @@ fn empty_dirs_yield_no_theme_and_no_wallpaper() {
 
     cleanup_appearance_dirs();
 }
+
+#[test]
+fn traversal_selections_fall_back_to_first_detected() {
+    let _guard = lock();
+    cleanup_appearance_dirs();
+    ensure_default_assets().expect("seeding should succeed");
+
+    // Tampered settings must never escape the themes folder: each of these
+    // resolves to None inside `resolve_selected`, so `theme_path` falls back
+    // to the first detected file instead of an outside path.
+    for evil in [
+        "../settings.json",
+        "..\\settings.json",
+        "..",
+        "sub/dir.css",
+        "sub\\dir.css",
+        "/etc/hostname",
+        "C:\\Windows\\win.ini",
+    ] {
+        let path = theme_path(evil).expect("theme_path should succeed");
+        let name = path
+            .as_ref()
+            .and_then(|p| p.file_name())
+            .map(|n| n.to_string_lossy().to_string());
+        assert_eq!(name.as_deref(), Some("cyberpunk.css"), "evil selection: {evil}");
+        // Belt and braces: no resolved path may leave the themes dir.
+        if let Some(p) = &path {
+            assert!(p.starts_with(themes_dir()), "escaped themes dir: {}", p.display());
+        }
+    }
+
+    cleanup_appearance_dirs();
+}

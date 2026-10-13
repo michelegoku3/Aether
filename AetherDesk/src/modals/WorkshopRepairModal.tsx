@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { ModalShell } from '../ui/ModalShell';
 import { StatusType } from '../types/ui';
+import { toErrorMessage } from '../util/errors';
 
 /** Report returned by the backend `sync_hubcap_workshop_manifests` command. */
 export interface WorkshopSyncReport {
@@ -70,8 +71,8 @@ export const WorkshopRepairModal = ({ onStatus, onClose }: WorkshopRepairModalPr
       const summary = formatReport(report);
       setResult(summary);
       onStatus(summary, report.failed > 0 ? 'error' : 'success');
-    } catch (err: any) {
-      const message = `Workshop repair failed: ${err}`;
+    } catch (err: unknown) {
+      const message = `Workshop repair failed: ${toErrorMessage(err)}`;
       setResult(message);
       onStatus(message, 'error');
     } finally {

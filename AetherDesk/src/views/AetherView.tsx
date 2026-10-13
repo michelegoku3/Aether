@@ -8,6 +8,7 @@ import { SyncStatusModal } from '../modals/SyncStatusModal';
 import { ActivityIcon } from '../ui/icons';
 import { getSettings } from '../hooks/useSettings';
 import { DllStatusInfo } from '../types/ui';
+import { toErrorMessage } from '../util/errors';
 
 interface AetherViewProps {
   isUpdateAvailable: boolean;
@@ -95,8 +96,8 @@ export const AetherView = memo(function AetherView({
       const result: string = await invoke('install_aether_desk_update');
       showStatus(result, 'success');
       setIsProcessing(false);
-    } catch (err: any) {
-      showStatus(`AetherDesk update failed: ${err}`, 'error');
+    } catch (err: unknown) {
+      showStatus(`AetherDesk update failed: ${toErrorMessage(err)}`, 'error');
       await onDllStatusChange();
       onUpdateComplete();
       setIsProcessing(false);
@@ -151,8 +152,8 @@ export const AetherView = memo(function AetherView({
     try {
       const result: string = await invoke('restore_stable_desk');
       showStatus(result, 'success');
-    } catch (err: any) {
-      showStatus(`Restore failed: ${err}`, 'error');
+    } catch (err: unknown) {
+      showStatus(`Restore failed: ${toErrorMessage(err)}`, 'error');
       setIsProcessing(false);
     }
   };
@@ -173,8 +174,8 @@ export const AetherView = memo(function AetherView({
 
       setUninstallStep(null);
       await finishUninstall(deleteUserData);
-    } catch (err: any) {
-      showStatus(`AetherDesk uninstall failed: ${err}`, 'error');
+    } catch (err: unknown) {
+      showStatus(`AetherDesk uninstall failed: ${toErrorMessage(err)}`, 'error');
       setIsProcessing(false);
       setUninstallStep(null);
     }
@@ -188,8 +189,8 @@ export const AetherView = memo(function AetherView({
     try {
       setUninstallStep(null);
       await cleanSteamThenUninstall(deleteUserData);
-    } catch (err: any) {
-      showStatus(`Steam clean before uninstall failed: ${err}`, 'error');
+    } catch (err: unknown) {
+      showStatus(`Steam clean before uninstall failed: ${toErrorMessage(err)}`, 'error');
       setIsProcessing(false);
     }
   };
@@ -201,8 +202,8 @@ export const AetherView = memo(function AetherView({
     try {
       setUninstallStep(null);
       await finishUninstall(deleteUserData);
-    } catch (err: any) {
-      showStatus(`AetherDesk uninstall failed: ${err}`, 'error');
+    } catch (err: unknown) {
+      showStatus(`AetherDesk uninstall failed: ${toErrorMessage(err)}`, 'error');
       setIsProcessing(false);
     }
   };
@@ -222,8 +223,8 @@ export const AetherView = memo(function AetherView({
       const result = await invoke<string>('install_aether_dll');
       showStatus(result, 'success');
       await refreshAfterDllChange();
-    } catch (err: any) {
-      showStatus(`Installation failed: ${err}`, 'error');
+    } catch (err: unknown) {
+      showStatus(`Installation failed: ${toErrorMessage(err)}`, 'error');
     } finally {
       setIsProcessing(false);
     }
@@ -237,8 +238,8 @@ export const AetherView = memo(function AetherView({
       const result = await invoke<string>('uninstall_aether_dll');
       showStatus(result, 'success');
       await refreshAfterDllChange();
-    } catch (err: any) {
-      showStatus(`Uninstall failed: ${err}`, 'error');
+    } catch (err: unknown) {
+      showStatus(`Uninstall failed: ${toErrorMessage(err)}`, 'error');
     } finally {
       setIsProcessing(false);
     }
@@ -251,8 +252,8 @@ export const AetherView = memo(function AetherView({
         : await invoke<string>('block_steam_updates');
       await onDllStatusChange();
       showStatus(msg, 'success');
-    } catch (err: any) {
-      showStatus(`Operation failed: ${err}`, 'error');
+    } catch (err: unknown) {
+      showStatus(`Operation failed: ${toErrorMessage(err)}`, 'error');
     }
   };
 
@@ -266,8 +267,8 @@ export const AetherView = memo(function AetherView({
       })();
       await refreshAfterDllChange();
       showStatus(result, 'success');
-    } catch (err: any) {
-      showStatus(`Reset operation failed: ${err}`, 'error');
+    } catch (err: unknown) {
+      showStatus(`Reset operation failed: ${toErrorMessage(err)}`, 'error');
     }
   };
 

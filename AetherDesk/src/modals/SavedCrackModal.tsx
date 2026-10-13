@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { ModalShell } from '../ui/ModalShell';
 import type { CrackTargetGame } from './CrackModal';
+import { toErrorMessage } from '../util/errors';
 
 export interface SavedCrackModalProps {
   game: CrackTargetGame;
@@ -40,8 +41,8 @@ export const SavedCrackModal = ({
         appId: Number(game.appId),
       });
       onReapplied(message);
-    } catch (err: any) {
-      setError(String(err));
+    } catch (err: unknown) {
+      setError(toErrorMessage(err));
       setIsBusy(false);
     }
   };
@@ -54,9 +55,9 @@ export const SavedCrackModal = ({
         appId: Number(game.appId),
       });
       onDeclined(message);
-    } catch (err: any) {
+    } catch (err: unknown) {
       // Still open the drop modal — cleanup failure should not trap the user.
-      onDeclined(`Could not fully remove the previous crack: ${err}`);
+      onDeclined(`Could not fully remove the previous crack: ${toErrorMessage(err)}`);
     }
   };
 

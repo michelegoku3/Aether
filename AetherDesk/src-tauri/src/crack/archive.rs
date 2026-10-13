@@ -211,16 +211,17 @@ fn extract_rar(source: &Path, dest: &Path, default_password: &str) -> Result<(),
     Ok(())
 }
 
-/// Wrap a RAR error into a readable message that hints at the tried password.
+/// Wrap a RAR error into a readable message.
+ /// The tried password is deliberately NOT included: error strings reach the
+ /// UI and the session log, and the default password is often reused.
 fn rar_password_hint(
     source: &Path,
-    default_password: &str,
+    _default_password: &str,
     error: impl std::fmt::Display,
 ) -> String {
     format!(
-        "Failed to extract RAR {} (password '{}' tried): {}",
+        "Failed to extract RAR {} (stored password tried): {}",
         source.display(),
-        default_password,
         error
     )
 }
@@ -238,9 +239,8 @@ fn extract_7z(source: &Path, dest: &Path, default_password: &str) -> Result<(), 
     sevenz_rust2::decompress_file_with_password(source, dest, default_password.into())
         .map_err(|error| {
             format!(
-                "Failed to extract 7z {} (tried plain and password '{}'): {}",
+                "Failed to extract 7z {} (tried plain and stored password): {}",
                 source.display(),
-                default_password,
                 error
             )
         })
@@ -492,5 +492,16 @@ mod tests {
             vec!["payload.dll"]
         );
         assert!(!staging.exists());
+    }
+
+    #[test]
+    fn archive_error_messages_never_contain_the_password() {
+        let secret = "s3cr3t-reused-password";
+        let missing = std::path::Path::new("definitely-missing-archive.bin");
+        let rar_err = rar_password_hint(missing, secret, "boom");
+        assert!(!rar_err.contains(secret), "RAR error leaked password: {rar_err}");
+        let dest = tempfile::tempdir().unwrap();
+        let err = extract_7z(missing, dest.path(), secret).unwrap_err();
+        assert!(!err.contains(secret), "7z error leaked password: {err}");
     }
 }

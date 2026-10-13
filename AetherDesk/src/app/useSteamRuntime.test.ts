@@ -1,9 +1,10 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { STEAM_RUNTIME_EVENT } from '../constants/library';
 import {
   emitTauriEvent,
   invokeMock,
+  listenMock,
   mockInvokeCommands,
 } from '../test/tauriMocks';
 import { useSteamRuntime } from './useSteamRuntime';
@@ -77,5 +78,31 @@ describe('useSteamRuntime', () => {
 
     expect(result.current.running).toBe(false);
     expect(result.current.busy).toBe(false);
+  });
+
+  it('warns instead of rejecting when the event subscription fails', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    mockInvokeCommands({ is_steam_running: false });
+    listenMock.mockRejectedValueOnce(new Error('events unavailable'));
+    renderHook(() => useSteamRuntime());
+
+    await waitFor(() => expect(warn).toHaveBeenCalledWith(
+      'steam runtime subscription failed:',
+      expect.any(Error),
+    ));
+    warn.mockRestore();
+  });
+
+  it('unsubscribes a late subscription resolve after unmount', async () => {
+    mockInvokeCommands({ is_steam_running: false });
+    let resolveListen: ((off: () => void) => void) | undefined;
+    listenMock.mockImplementationOnce(() => new Promise((resolve) => { resolveListen = resolve; }));
+    const off = vi.fn();
+    const { unmount } = renderHook(() => useSteamRuntime());
+
+    unmount();
+    await act(async () => resolveListen?.(off));
+
+    expect(off).toHaveBeenCalledTimes(1);
   });
 });

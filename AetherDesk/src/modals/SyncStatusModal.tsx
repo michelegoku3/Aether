@@ -5,6 +5,7 @@ import { ModalShell } from '../ui/ModalShell';
 import { useVisiblePolling } from '../hooks/useVisiblePolling';
 import { SYNC_STATUS_EVENT } from '../constants/library';
 import { SYNC_LANES, type LaneStatus, type MonitorStatus } from '../types/sync';
+import { toErrorMessage } from '../util/errors';
 
 // I tipi vivono in `types/sync.ts` (contratto IPC); riesportati qui perché i
 // consumatori storici li importavano dal modale.
@@ -96,8 +97,8 @@ export const SyncStatusModal = ({ onClose }: SyncStatusModalProps) => {
     try {
       setStatus(await invoke<MonitorStatus>('get_hubcap_monitor_status'));
       setError(null);
-    } catch (err: any) {
-      setError(String(err));
+    } catch (err: unknown) {
+      setError(toErrorMessage(err));
     }
   }, []);
 

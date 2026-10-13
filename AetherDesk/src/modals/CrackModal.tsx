@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { emptyStatus, StatusMessage } from '../types/ui';
 import { useModalDismiss } from '../hooks/useModalDismiss';
+import { toErrorMessage } from '../util/errors';
 
 // The game a crack is being applied to. `name` and `appId` are enough for the
 // popup; all heavy work happens in the Rust backend.
@@ -42,8 +43,8 @@ export const CrackModal = ({ game, onClose }: CrackModalProps) => {
         appId: Number(game.appId),
       });
       if (paths.length > 0) addFiles(paths);
-    } catch (err: any) {
-      showStatus(`Failed to open file picker: ${err}`, 'error');
+    } catch (err: unknown) {
+      showStatus(`Failed to open file picker: ${toErrorMessage(err)}`, 'error');
     }
   };
 
@@ -68,8 +69,8 @@ export const CrackModal = ({ game, onClose }: CrackModalProps) => {
         vnPatchMode: vnPatchMode,
       });
       showStatus(message, 'success');
-    } catch (err: any) {
-      showStatus(`${err}`, 'error');
+    } catch (err: unknown) {
+      showStatus(`${toErrorMessage(err)}`, 'error');
     } finally {
       setIsApplying(false);
     }

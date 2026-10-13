@@ -15,6 +15,7 @@ pnpm-debug.log*
 AetherDesk/dist/
 AetherDesk/build/
 AetherDesk/out/
+AetherDesk/coverage/
 .svelte-kit/
 .next/
 

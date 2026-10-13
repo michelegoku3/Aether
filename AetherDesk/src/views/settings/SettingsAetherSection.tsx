@@ -2,6 +2,7 @@ import React from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import type { SteamCheckStatus } from './types';
 import type { SetPresenceDefaultModeArgs } from '../../types/online';
+import { toErrorMessage } from '../../util/errors';
 
 interface SettingsAetherSectionProps {
   enableWebviewDevtools: boolean;
@@ -110,9 +111,9 @@ export const SettingsAetherSection: React.FC<SettingsAetherSectionProps> = ({
               setUseOstSource(next);
               try {
                 await invoke('set_ost_source_enabled', { enabled: next });
-              } catch (err: any) {
+              } catch (err: unknown) {
                 setUseOstSource(previous);
-                showStatus(`Failed to set OST pattern source: ${err}`, 'error');
+                showStatus(`Failed to set OST pattern source: ${toErrorMessage(err)}`, 'error');
               }
             }}
           />
@@ -135,9 +136,9 @@ export const SettingsAetherSection: React.FC<SettingsAetherSectionProps> = ({
               setManifestRestoreOnStartup(next);
               try {
                 await invoke('set_manifest_restore_enabled', { enabled: next });
-              } catch (err: any) {
+              } catch (err: unknown) {
                 setManifestRestoreOnStartup(previous);
-                showStatus(`Failed to set manifest restore: ${err}`, 'error');
+                showStatus(`Failed to set manifest restore: ${toErrorMessage(err)}`, 'error');
               }
             }}
           />
@@ -164,9 +165,9 @@ export const SettingsAetherSection: React.FC<SettingsAetherSectionProps> = ({
                 // resta "showonline": vedi docs/shared_contracts.md §7.
                 const args: SetPresenceDefaultModeArgs = { showOnline: next };
                 await invoke<string>('set_presence_default_mode', args);
-              } catch (err: any) {
+              } catch (err: unknown) {
                 setPresenceDefaultShowOnline(previous);
-                showStatus(`Failed to set presence default mode: ${err}`, 'error');
+                showStatus(`Failed to set presence default mode: ${toErrorMessage(err)}`, 'error');
               }
             }}
           />
@@ -278,8 +279,8 @@ export const SettingsAetherSection: React.FC<SettingsAetherSectionProps> = ({
                   .forEach((key) => localStorage.removeItem(key));
               } catch { /* localStorage non disponibile: la parte backend è già andata a buon fine */ }
               showStatus(result, 'success');
-            } catch (err: any) {
-              showStatus(`Failed to clear caches: ${err}`, 'error');
+            } catch (err: unknown) {
+              showStatus(`Failed to clear caches: ${toErrorMessage(err)}`, 'error');
             }
           }}
         >

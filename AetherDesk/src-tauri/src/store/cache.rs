@@ -9,6 +9,9 @@ const CACHE_FILE_NAME: &str = "store_search_cache.json";
 const CACHE_SCHEMA_VERSION: &str = "store-cache-v3";
 const FRESH_TTL_SECONDS: u64 = 4 * 60 * 60;
 const STALE_RETENTION_SECONDS: u64 = 14 * 24 * 60 * 60;
+/// Hard cap on cached queries: keeps the JSON file (rewritten on every `put`)
+/// bounded no matter how much the user searches.
+const MAX_CACHE_ENTRIES: usize = 200;
 
 #[derive(Debug, Default, Serialize, Deserialize)]
 struct StoreSearchCacheFile {
@@ -85,13 +88,15 @@ impl StoreSearchCache {
 
         let mut cache = self.load_cache();
         cache.app_version = self.app_version.clone();
+        let now = Self::now_unix();
         cache.entries.insert(
             key,
             StoreSearchCacheEntry {
-                updated_at_unix: Self::now_unix(),
+                updated_at_unix: now,
                 results,
             },
         );
+        prune_entries(&mut cache.entries, now);
 
         self.save_cache(&cache)
     }
@@ -152,5 +157,48 @@ impl StoreSearchCache {
             .duration_since(UNIX_EPOCH)
             .map(|duration| duration.as_secs())
             .unwrap_or_default()
+    }
+}
+
+/// Drops entries older than the stale retention and, if still over the cap,
+/// evicts the least-recently-written ones. Keeps the cache file bounded.
+fn prune_entries(entries: &mut HashMap<String, StoreSearchCacheEntry>, now: u64) {
+    entries.retain(|_, entry| now.saturating_sub(entry.updated_at_unix) <= STALE_RETENTION_SECONDS);
+    if entries.len() > MAX_CACHE_ENTRIES {
+        let mut keys: Vec<(String, u64)> = entries
+            .iter()
+            .map(|(k, e)| (k.clone(), e.updated_at_unix))
+            .collect();
+        keys.sort_by_key(|(_, ts)| *ts);
+        for (oldest, _) in keys.iter().take(entries.len() - MAX_CACHE_ENTRIES) {
+            entries.remove(oldest);
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn entry(ts: u64) -> StoreSearchCacheEntry {
+        StoreSearchCacheEntry { updated_at_unix: ts, results: Vec::new() }
+    }
+
+    #[test]
+    fn prune_drops_stale_and_caps_at_max_entries() {
+        let now = 10_000_000;
+        let mut entries: HashMap<String, StoreSearchCacheEntry> = HashMap::new();
+        // One stale entry (older than retention).
+        entries.insert("stale".to_string(), entry(now - STALE_RETENTION_SECONDS - 1));
+        // MAX + 10 fresh entries with increasing timestamps.
+        for i in 0..(MAX_CACHE_ENTRIES + 10) {
+            entries.insert(format!("q{i}"), entry(now - i as u64));
+        }
+        prune_entries(&mut entries, now);
+        assert!(!entries.contains_key("stale"));
+        assert_eq!(entries.len(), MAX_CACHE_ENTRIES);
+        // The oldest fresh filler ("q209") was evicted, the newest kept.
+        assert!(!entries.contains_key(&format!("q{}", MAX_CACHE_ENTRIES + 9)));
+        assert!(entries.contains_key("q0"));
     }
 }

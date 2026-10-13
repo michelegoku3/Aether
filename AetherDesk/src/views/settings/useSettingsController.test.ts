@@ -100,8 +100,7 @@ describe('useSettingsController', () => {
     expect(invokeMock.mock.calls.some(([command]) => command === 'save_settings')).toBe(false);
   });
 
-  it('discard restores baseline values and runtime previews', async () => {
-    mockInvokeCommands(commandDefaults());
+  it('discard restores baseline values and runtime previews', async () => {    mockInvokeCommands(commandDefaults());
     const params = createParams();
     const { result } = renderHook(() => useSettingsController(params));
     await waitFor(() => expect(result.current.form.steamPath).toBe('C:/Steam'));
@@ -113,5 +112,21 @@ describe('useSettingsController', () => {
     expect(params.onCustomCssChange).toHaveBeenCalledWith(false);
     expect(params.onPreviewPersonalWallpaper).toHaveBeenCalledWith(false, 20);
     expect(params.onPreviewAlternativeCards).toHaveBeenCalledWith(100, 50);
+  });
+
+  it('warns instead of rejecting when mount-time refreshes fail', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    mockInvokeCommands(commandDefaults());
+    const params = createParams();
+    params.onRefreshUsage.mockRejectedValueOnce(new Error('usage offline'));
+
+    const { result } = renderHook(() => useSettingsController(params));
+    await waitFor(() => expect(result.current.form.steamPath).toBe('C:/Steam'));
+    await waitFor(() => expect(warn).toHaveBeenCalledWith(
+      '[settings] failed to refresh Hubcap usage:',
+      expect.any(Error),
+    ));
+
+    warn.mockRestore();
   });
 });

@@ -25,11 +25,13 @@ export const pathFromGameRoot = (gameRoot: string, absolutePath: string): string
 /**
  * Shortens a path to at most `maxLength` characters total. When the path is
  * longer, it keeps `maxLength - 3` characters and appends "..." (the 3 dots
- * are included in the 80-character budget).
+ * are included in the 80-character budget). Counts in code points (not UTF-16
+ * units) so emoji / astral characters are never split into lone surrogates.
  */
 export const shortenPath = (path: string, maxLength: number = MAX_PATH_CHARS): string => {
-  if (path.length <= maxLength) return path;
-  return `${path.slice(0, maxLength - 3)}...`;
+  const points = Array.from(path);
+  if (points.length <= maxLength) return path;
+  return `${points.slice(0, maxLength - 3).join('')}...`;
 };
 
 /** Folder containing a file path (used to open it in the file manager). */

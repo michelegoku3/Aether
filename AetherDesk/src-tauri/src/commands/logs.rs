@@ -6,6 +6,15 @@ use std::path::PathBuf;
 /// Lines returned when the caller does not specify a window size.
 const DEFAULT_TAIL_LINES: usize = 1_000;
 
+/// Hard ceiling for `get_recent_log_lines`: bounds the merged Vec so a single
+/// IPC call cannot OOM the backend. Full-file reads stay available to the
+/// export commands, which intentionally pass `usize::MAX` to the readers.
+const MAX_TAIL_LINES: usize = 10_000;
+
+fn clamp_tail_lines(requested: Option<usize>) -> usize {
+    requested.unwrap_or(DEFAULT_TAIL_LINES).clamp(1, MAX_TAIL_LINES)
+}
+
 /// UCOnline2 writes its log to `%TEMP%\uc_online2.log` (single file, appended
 /// while any UCO2 game runs).
 fn uco2_log_path() -> PathBuf {
@@ -26,8 +35,10 @@ pub async fn get_recent_log_lines(
 ) -> Result<Vec<String>, String> {
     // Default window when the caller does not ask for a size. The Logs view
     // asks explicitly (LogView::TAIL_LINES), so this is the ceiling for any
-    // other caller and the safety net for a missing argument.
-    let limit = tail_lines.unwrap_or(DEFAULT_TAIL_LINES);
+    // other caller and the safety net for a missing argument. Clamped so no
+    // IPC caller (including a DevTools console) can request an unbounded
+    // vector and OOM the backend: merge_tagged allocates desk+dll+uco2.
+    let limit = clamp_tail_lines(tail_lines);
     let mode = source.unwrap_or_else(|| "desk".to_string()).to_lowercase();
     tauri::async_runtime::spawn_blocking(move || read_log_lines(&app, limit, &mode))
         .await
@@ -457,4 +468,18 @@ fn export_log_source_sync(app: &tauri::AppHandle, mode: &str) -> Result<String, 
 
     crate::desk_log_info!("logs", "Exported log source '{}' to {}", mode, dest.display());
     Ok(format!("Exported {} to {}", file_name, dest.display()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn tail_limit_is_bounded_for_ipc_callers() {
+        assert_eq!(clamp_tail_lines(None), DEFAULT_TAIL_LINES);
+        assert_eq!(clamp_tail_lines(Some(500)), 500);
+        assert_eq!(clamp_tail_lines(Some(0)), 1);
+        assert_eq!(clamp_tail_lines(Some(usize::MAX)), MAX_TAIL_LINES);
+        assert_eq!(clamp_tail_lines(Some(1_000_000)), MAX_TAIL_LINES);
+    }
 }

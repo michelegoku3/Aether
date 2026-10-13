@@ -1,6 +1,7 @@
 import { useEffect, useState, useRef, useMemo, memo } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { useVisiblePolling } from '../hooks/useVisiblePolling';
+import { toErrorMessage } from '../util/errors';
 
 const LEVEL_RANK: Record<string, number> = {
   trace: 0,
@@ -114,8 +115,8 @@ export const LogView = memo(function LogView() {
       const msg: string = await invoke('export_logs_bundle');
       setExportStatus(msg);
       setTimeout(() => setExportStatus(''), 5000);
-    } catch (err: any) {
-      setExportStatus(`Export failed: ${err}`);
+    } catch (err: unknown) {
+      setExportStatus(`Export failed: ${toErrorMessage(err)}`);
       setTimeout(() => setExportStatus(''), 6000);
     }
   };
@@ -147,8 +148,8 @@ export const LogView = memo(function LogView() {
       const msg: string = await invoke('export_log_source', { source: logSource });
       setExportStatus(msg);
       setTimeout(() => setExportStatus(''), 5000);
-    } catch (err: any) {
-      setExportStatus(`Export failed: ${err}`);
+    } catch (err: unknown) {
+      setExportStatus(`Export failed: ${toErrorMessage(err)}`);
       setTimeout(() => setExportStatus(''), 6000);
     }
   };

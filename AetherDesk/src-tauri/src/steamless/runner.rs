@@ -446,7 +446,12 @@ mod tests {
         let request = SteamlessRunRequest {
             exe_path,
             game_root: game,
-            timeout_seconds: 1,
+            // Only the hang test exercises the 1s enforcement. Success-path
+            // tests get headroom: on Windows a cold process spawn (Defender /
+            // AMSI scan of a fresh script in a fresh temp dir, amplified by
+            // parallel test threads) can exceed 1s, which used to surface as
+            // a generic "timed out" failure instead of the real outcome.
+            timeout_seconds: if hang { 1 } else { 30 },
         };
         (temp, runner, request)
     }
@@ -490,6 +495,11 @@ mod tests {
         let (_temp, runner, request) = fixture(&pe(0x014c, 0x90), 0, false);
         let result = runner.run(&request).unwrap();
         assert!(!result.success);
+        assert!(
+            !result.message.contains("timed out"),
+            "slow spawn masked the real outcome: {}",
+            result.message
+        );
         assert!(result.message.contains("architecture"));
         assert_eq!(fs::read(&request.exe_path).unwrap(), pe(0x8664, 0xcc));
         assert!(result.backup_path.is_none());
@@ -499,6 +509,11 @@ mod tests {
     fn valid_successful_output_replaces_live_file_and_preserves_exact_original() {
         let (_temp, runner, request) = fixture(&pe(0x8664, 0x90), 0, false);
         let result = runner.run(&request).unwrap();
+        assert!(
+            !result.message.contains("timed out"),
+            "slow spawn masked the real outcome: {}",
+            result.message
+        );
         assert!(result.success);
         assert!(unpacked_output_candidates(&request.exe_path)
             .iter()

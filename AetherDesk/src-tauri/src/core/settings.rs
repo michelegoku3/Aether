@@ -136,14 +136,24 @@ pub struct AppSettings {
     pub custom_game_name: String,
 }
 
+/// Single source of truth for plain defaults: serde providers below and
+/// `impl Default` both read these, so fresh installs and old settings.json
+/// files can never disagree (see ARC-002).
+const DEFAULT_ALT_CARDS_OPACITY: u8 = 100;
+const DEFAULT_ALT_CARDS_FADE: u8 = 20;
+const DEFAULT_STORE_CURRENCY: &str = "eur";
+const DEFAULT_STORE_FRONT_FILTER: &str = "upcoming";
+const DEFAULT_WALLPAPER_OPACITY: u8 = 20;
+const DEFAULT_LIBRARY_INSTALL_FILTER: &str = "all";
+
 /// Serde default provider for the alt-cards backdrop opacity.
 fn default_alt_cards_opacity() -> u8 {
-    100
+    DEFAULT_ALT_CARDS_OPACITY
 }
 
 /// Serde default provider for the alt-cards bottom fade.
 fn default_alt_cards_fade() -> u8 {
-    20
+    DEFAULT_ALT_CARDS_FADE
 }
 
 /// Serde default provider for boolean settings that ship enabled.
@@ -162,19 +172,19 @@ fn default_steam_path() -> String {
 }
 
 fn default_store_currency() -> String {
-    "eur".to_string()
+    DEFAULT_STORE_CURRENCY.to_string()
 }
 
 fn default_store_front_filter() -> String {
-    "upcoming".to_string()
+    DEFAULT_STORE_FRONT_FILTER.to_string()
 }
 
 fn default_wallpaper_opacity() -> u8 {
-    20
+    DEFAULT_WALLPAPER_OPACITY
 }
 
 fn default_library_install_filter() -> String {
-    "all".to_string()
+    DEFAULT_LIBRARY_INSTALL_FILTER.to_string()
 }
 
 pub fn normalize_library_install_filter(value: &str) -> String {
@@ -581,6 +591,16 @@ pub(crate) fn merge_settings(
 #[cfg(test)]
 mod repository_tests {
     use super::*;
+    #[test]
+    fn empty_json_matches_default() {
+        // Guards ARC-002: every field's serde default must agree with
+        // `impl Default`, or upgraders would see different values than
+        // fresh installs. `default_steam_path` is detection-based but
+        // deterministic within one machine, so the comparison holds here.
+        let from_empty: AppSettings =
+            serde_json::from_str("{}").expect("empty object must parse");
+        assert_eq!(from_empty, AppSettings::default());
+    }
     #[test]
     fn disjoint_patches_preserve_concurrent_changes() {
         let base = AppSettings::default();

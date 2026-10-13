@@ -1,5 +1,6 @@
 use std::fs;
 use std::path::{Path, PathBuf};
+use base64::Engine;
 use crate::core::paths::LocalAppPaths;
 
 /// Custom themes live in `AetherData/config/themes/`.
@@ -23,13 +24,13 @@ pub fn icons_dir() -> PathBuf {
     LocalAppPaths::config_dir().join("icons")
 }
 
-/// Default Goldmine theme shipped with AetherDesk (embedded in the binary so
+/// Default Cyberpunk theme shipped with AetherDesk (embedded in the binary so
 /// no bundle/resource path resolution is needed in dev or in production).
 /// NOTE: `include_str!` paths are relative to THIS source file, so two `..`
 /// levels are required to reach `src-tauri/assets/...` from `src/core/`.
 const DEFAULT_CYBERPUNK_THEME: &str = include_str!("../../assets/defaults/themes/cyberpunk.css");
 
-/// Goldmine theme (gold/ivory/dark — originally shipped as "frieren").
+/// Goldmine theme (gold/ivory/dark).
 const DEFAULT_GOLDMINE_THEME: &str = include_str!("../../assets/defaults/themes/goldmine.css");
 
 /// Frieren theme (Frieren • Fern • Stark palette).
@@ -242,7 +243,8 @@ pub fn read_personal_wallpaper_data_uri(selected_file: &str) -> Result<Option<St
     let bytes = fs::read(&path)
         .map_err(|e| format!("Failed to read wallpaper {}: {}", path.display(), e))?;
     let mime = wallpaper_mime(&path);
-    Ok(Some(format!("data:{};base64,{}", mime, base64_encode(&bytes))))
+    let encoded = base64::engine::general_purpose::STANDARD.encode(&bytes);
+    Ok(Some(format!("data:{mime};base64,{encoded}")))
 }
 
 /// Name of the file currently applied (selected or first detected), for UI
@@ -376,19 +378,32 @@ pub fn import_selected_file(folder: &Path, picked_path: &Path) -> Result<String,
     Ok(file_name.to_string())
 }
 
-/// Resolves a stored selection: only when the folder exists, the file name is
-/// non-empty and the file still exists. Otherwise `None` (fall back to first).
+/// Resolves a stored selection: only a single bare file name inside `folder`.
+/// Rejects `..`, `/`, `\`, absolute paths and drive prefixes so a tampered
+/// `settings.json` cannot escape `AetherData/config/...`. Otherwise `None`
+/// (fall back to first detected file, as before).
 fn resolve_selected(folder: &Path, selected_file: &str) -> Option<PathBuf> {
     let selected_file = selected_file.trim();
     if selected_file.is_empty() {
         return None;
     }
-    let candidate = folder.join(selected_file);
-    if candidate.is_file() {
-        Some(candidate)
-    } else {
-        None
+    if selected_file.contains(['/', '\\'])
+        || Path::new(selected_file).is_absolute()
+        || Path::new(selected_file)
+            .components()
+            .any(|c| !matches!(c, std::path::Component::Normal(_)))
+    {
+        return None;
     }
+    let file_name = Path::new(selected_file).file_name()?.to_str()?;
+    if file_name != selected_file {
+        return None;
+    }
+    let candidate = folder.join(file_name);
+    if !candidate.starts_with(folder) || !candidate.is_file() {
+        return None;
+    }
+    Some(candidate)
 }
 
 /// Lists files inside `dir` filtered by `kind` ("css" or "img"), sorted by
@@ -444,37 +459,26 @@ fn wallpaper_mime(path: &Path) -> &'static str {
         Some("webp") => "image/webp",
         Some("gif") => "image/gif",
         Some("bmp") => "image/bmp",
-        Some("svg") => "image/svg+xml",
+        // NOTE: no `svg` arm on purpose. `WALLPAPER_EXTENSIONS` does not accept
+        // SVG (script-capable XML in the WebView is not worth the risk), so an
+        // SVG extension falls through to `application/octet-stream` and is
+        // never served as an image.
         Some("avif") => "image/avif",
         Some("ico") => "image/x-icon",
         _ => "application/octet-stream",
     }
 }
 
-fn base64_encode(bytes: &[u8]) -> String {
-    const TABLE: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-    let mut out = String::with_capacity(bytes.len().div_ceil(3) * 4);
-
-    for chunk in bytes.chunks(3) {
-        let b0 = chunk[0];
-        let b1 = *chunk.get(1).unwrap_or(&0);
-        let b2 = *chunk.get(2).unwrap_or(&0);
-
-        out.push(TABLE[(b0 >> 2) as usize] as char);
-        out.push(TABLE[(((b0 & 0b0000_0011) << 4) | (b1 >> 4)) as usize] as char);
-
-        if chunk.len() > 1 {
-            out.push(TABLE[(((b1 & 0b0000_1111) << 2) | (b2 >> 6)) as usize] as char);
-        } else {
-            out.push('=');
-        }
-
-        if chunk.len() > 2 {
-            out.push(TABLE[(b2 & 0b0011_1111) as usize] as char);
-        } else {
-            out.push('=');
-        }
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn standard_base64_vectors_match_rfc_4648() {
+        use base64::Engine;
+        let encode = |b: &[u8]| base64::engine::general_purpose::STANDARD.encode(b);
+        assert_eq!(encode(b"f"), "Zg==");
+        assert_eq!(encode(b"fo"), "Zm8=");
+        assert_eq!(encode(b"foo"), "Zm9v");
+        assert_eq!(encode(b"foobar"), "Zm9vYmFy");
+        assert_eq!(encode(&[0xff]), "/w==");
     }
-
-    out
 }

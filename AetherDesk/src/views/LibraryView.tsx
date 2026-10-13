@@ -6,6 +6,7 @@ import { GameInfoModal } from '../modals/GameInfoModal';
 import { GameUpdatesModal } from '../modals/GameUpdatesModal';
 import { WorkshopRepairModal } from '../modals/WorkshopRepairModal';
 import { preloadGameCovers } from '../ui/GameCover';
+import { toErrorMessage } from '../util/errors';
 import { GameCard, type GameCardAction } from '../ui/GameCard';
 import { StatusAlert } from '../ui/StatusAlert';
 import {
@@ -82,9 +83,9 @@ export const LibraryView = memo(function LibraryView({
   const handleCycleFilter = async () => {
     try {
       await cycleFilter();
-    } catch (err: any) {
+    } catch (err: unknown) {
       setStatus({
-        text: `Unable to save library filter: ${err}`,
+        text: `Unable to save library filter: ${toErrorMessage(err)}`,
         type: 'error',
       });
     }
@@ -97,8 +98,8 @@ export const LibraryView = memo(function LibraryView({
       // sola lettura impostazioni per click, non una per gioco come prima.
       await requireSteamPath();
       setShowUpdatesModal(true);
-    } catch (err: any) {
-      showStatus(`Unable to manage game updates: ${err}`, 'error');
+    } catch (err: unknown) {
+      showStatus(`Unable to manage game updates: ${toErrorMessage(err)}`, 'error');
     }
   };
 
@@ -118,9 +119,9 @@ export const LibraryView = memo(function LibraryView({
       const rows = await queryGameState<LuaManifestRow[]>(appId, 'get_installed_lua_manifest_rows');
       setManifestRows(prepareManifestRows(rows));
       setVersionGame(game);
-    } catch (err: any) {
+    } catch (err: unknown) {
       setStatus({
-        text: `Unable to open version editor for ${game.name}: ${err}`,
+        text: `Unable to open version editor for ${game.name}: ${toErrorMessage(err)}`,
         type: 'error',
       });
     }

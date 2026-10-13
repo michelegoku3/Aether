@@ -33,14 +33,24 @@ export function useSteamRuntime() {
   useEffect(() => {
     let active = true;
     let unlisten: (() => void) | undefined;
+    // Set when the effect cleans up before `listen` resolves: the late
+    // `.then` must unsubscribe immediately instead of leaking the handler.
+    let cancelled = false;
     void invoke<boolean>('is_steam_running')
       .then((isRunning) => { if (active) setRunning(isRunning); })
       .catch((error) => console.warn('is_steam_running failed:', error));
     void listen<boolean>(STEAM_RUNTIME_EVENT, (event) => {
       setRunning(event.payload);
-    }).then((off) => { unlisten = off; });
+    }).then((off) => {
+      if (cancelled) {
+        off();
+      } else {
+        unlisten = off;
+      }
+    }).catch((error) => console.warn('steam runtime subscription failed:', error));
     return () => {
       active = false;
+      cancelled = true;
       unlisten?.();
     };
   }, []);
