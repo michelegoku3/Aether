@@ -41,6 +41,23 @@ barrier before publishing.
   (crates used only via macros) are declared in
   `[package.metadata.cargo-machete] ignored = ["..."]`.
 
+### Running Rust tests without elevation
+
+The shipped exe requires administrator (Steam-folder writes), and that manifest
+is embedded in every build artifact — including the `cargo test` harness, which
+then fails with `ERROR_ELEVATION_REQUIRED` (os error 740) outside an elevated
+shell. `src-tauri/build.rs` reads `AETHERDESK_NO_ADMIN_MANIFEST=1` to embed an
+`asInvoker` manifest instead; `build.cmd` (step 7) and CI set it for tests only.
+Release builds never set it, so the published exe is unchanged. Run locally with:
+
+```powershell
+cd AetherDesk/src-tauri
+$env:AETHERDESK_NO_ADMIN_MANIFEST='1'; cargo test --locked
+```
+
+If a test genuinely needs privileges, mark it `#[ignore]` with a reason instead
+of forcing elevation on the whole suite.
+
 ## AetherDLL — CMake (Visual Studio "Build All" and the `release-dll` job)
 
 Everything lives in `AetherDLL/cmake/Quality.cmake` and applies to every target

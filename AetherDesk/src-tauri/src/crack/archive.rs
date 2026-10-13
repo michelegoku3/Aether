@@ -564,7 +564,7 @@ mod tests {
         fs::create_dir_all(&staging).unwrap();
         let secret = "s3cr3t-pw-zzz";
         let err = stage_source(&source, &staging, secret).unwrap_err();
-        for marker in ["ZIP (", "7Z (", "RAR ("] {
+        for marker in ["ZIP (", "7Z (", "RAR archive ("] {
             assert!(err.contains(marker), "missing {marker} in: {err}");
         }
         assert!(!err.contains(secret), "password leaked: {err}");

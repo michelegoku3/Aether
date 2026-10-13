@@ -74,7 +74,9 @@ pub(super) fn platforms_from_store_meta(meta: &store_items::StoreItemMeta) -> Ga
     }
 }
 
-pub(super) fn categories_from_store_meta(meta: &store_items::StoreItemMeta) -> GameInfoStoreCategories {
+pub(super) fn categories_from_store_meta(
+    meta: &store_items::StoreItemMeta,
+) -> GameInfoStoreCategories {
     GameInfoStoreCategories {
         supported_player_category_ids: meta.categories.supported_player_category_ids.clone(),
         feature_category_ids: meta.categories.feature_category_ids.clone(),

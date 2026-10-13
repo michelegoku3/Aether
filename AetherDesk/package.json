@@ -9,6 +9,7 @@
     "check:wiring": "node scripts/check_frontend_wiring.mjs",
     "check:tauri-versions": "node scripts/check_tauri_versions.mjs",
     "check:unused": "node scripts/check_unused.mjs",
+    "check:unused:selftest": "node scripts/check_knip_selftest.mjs",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "lint:ci": "eslint . --quiet",

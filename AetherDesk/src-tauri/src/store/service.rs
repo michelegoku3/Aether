@@ -17,15 +17,15 @@ const MAX_CLASSIFIED_RESULTS: usize = 80;
 /// probes run in parallel with each other and with the GetItems batch, so
 /// this only bounds how long a hanging Hubcap can hold a search back.
 const EXACT_PROBE_TIMEOUT_MS: u64 = 2500;
-use crate::providers::hubcap::HubcapClient;
-use crate::steam::store::SteamStore;
-use crate::steam::store_items;
-use crate::store::{aliases, normalize};
 use super::mapping::{
     categories_from_store_meta, metascore_from_store_item, platforms_from_store_item,
     platforms_from_store_meta, price_from_store_item, price_from_store_meta,
 };
 pub use super::model::UnifiedStoreGame;
+use crate::providers::hubcap::HubcapClient;
+use crate::steam::store::SteamStore;
+use crate::steam::store_items;
+use crate::store::{aliases, normalize};
 
 pub struct StoreService {
     steam_store: SteamStore,

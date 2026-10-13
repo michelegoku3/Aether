@@ -105,6 +105,10 @@ semicolon_if_nothing_returned = "warn"
 # --- known noise, disabled with reason ---
 too_many_arguments = "allow"         # Tauri commands with many params
 module_name_repetitions = "allow"
-too_many_lines = "allow"             # legacy orchestrators: a hard limit would push artificial splits
+# Re-evaluated after the Fase 3 splits (store/service, crack/apply, settings):
+# 124/203 files still exceed the 100-line default (orchestrators, command
+# modules, contract tests). A hard limit would push artificial splits or ~20
+# scattered attributes for zero behavior gain, so the global allow stays.
+too_many_lines = "allow"
 missing_errors_doc = "allow"
 missing_panics_doc = "allow"
