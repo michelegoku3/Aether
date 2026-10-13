@@ -106,13 +106,10 @@ pub struct SteamStore {
 /// search builds a fresh `StoreService`; constructing a `reqwest::Client` per
 /// call meant a new TCP + TLS handshake to store.steampowered.com /
 /// steamcommunity.com every time (a few hundred ms each from Europe) and no
-/// connection reuse at all. `Client` is an `Arc` inside, so sharing one keeps
-/// the pool warm and makes cloning free.
+/// connection reuse at all. The process-wide registry in `providers::http`
+/// keeps the pool warm and makes cloning free.
 fn shared_client() -> reqwest::Client {
-    static CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
-    CLIENT
-        .get_or_init(|| http::build_client(STEAM_SEARCH_TIMEOUT_SECONDS))
-        .clone()
+    http::shared_client(STEAM_SEARCH_TIMEOUT_SECONDS)
 }
 
 impl SteamStore {

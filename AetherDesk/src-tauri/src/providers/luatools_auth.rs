@@ -91,7 +91,7 @@ impl LuaToolsAuth {
             path: LocalAppPaths::data_root()
                 .join("config")
                 .join(AUTH_FILE_NAME),
-            client: http::build_client(30),
+            client: http::shared_client(30),
         }
     }
 

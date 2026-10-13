@@ -1,4 +1,3 @@
-use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::time::Duration;
 
@@ -18,56 +17,15 @@ const MAX_CLASSIFIED_RESULTS: usize = 80;
 /// probes run in parallel with each other and with the GetItems batch, so
 /// this only bounds how long a hanging Hubcap can hold a search back.
 const EXACT_PROBE_TIMEOUT_MS: u64 = 2500;
-use crate::game_info::model::{GameInfoPlatforms, GameInfoPrice, GameInfoStoreCategories};
 use crate::providers::hubcap::HubcapClient;
-use crate::steam::store::{SteamStore, SteamStoreItem};
+use crate::steam::store::SteamStore;
 use crate::steam::store_items;
 use crate::store::{aliases, normalize};
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct UnifiedStoreGame {
-    pub id: u32,
-    pub name: String,
-    #[serde(rename = "appId")]
-    pub app_id: String,
-    pub has_manifest: bool,
-    pub has_denuvo: bool,
-    /// True when Steam content descriptors (or the name heuristic) mark the
-    /// title as sexually explicit. The UI uses it for the pink card border;
-    /// it stays `false` on rows Steam cannot classify (unknown metadata).
-    /// `#[serde(default)]` keeps pre-NSFW search-cache entries deserializable.
-    #[serde(default)]
-    pub has_nsfw: bool,
-    /// True when Steam flags the item as `unlisted` (delisted). The UI uses
-    /// it for the white card border. `#[serde(default)]` keeps older
-    /// search-cache entries deserializable.
-    #[serde(default)]
-    pub has_delisted: bool,
-    #[serde(rename = "imageUrl")]
-    pub image_url: String,
-    #[serde(default, rename = "heroImageUrl")]
-    pub hero_image_url: String,
-    #[serde(default)]
-    pub store_kind: String,
-    #[serde(default)]
-    pub release_date_unix: Option<i64>,
-    #[serde(default)]
-    pub original_release_date_unix: Option<i64>,
-    #[serde(default)]
-    pub store_url_path: Option<String>,
-    #[serde(default)]
-    pub price: Option<GameInfoPrice>,
-    #[serde(default)]
-    pub metascore: Option<String>,
-    #[serde(default)]
-    pub controller_support: Option<String>,
-    #[serde(default)]
-    pub platforms: Option<GameInfoPlatforms>,
-    #[serde(default)]
-    pub store_categories: Option<GameInfoStoreCategories>,
-    #[serde(default)]
-    pub content_descriptor_ids: Vec<u32>,
-}
+use super::mapping::{
+    categories_from_store_meta, metascore_from_store_item, platforms_from_store_item,
+    platforms_from_store_meta, price_from_store_item, price_from_store_meta,
+};
+pub use super::model::UnifiedStoreGame;
 
 pub struct StoreService {
     steam_store: SteamStore,
@@ -761,81 +719,5 @@ impl StoreService {
             // If it is an App ID, exact or substring matches on digits are kept, no string sorting needed
             Ok(unified_list)
         }
-    }
-}
-
-fn price_from_store_item(item: &SteamStoreItem) -> Option<GameInfoPrice> {
-    item.price.as_ref().map(|price| GameInfoPrice {
-        currency: price.currency.clone(),
-        initial_cents: price.initial,
-        final_cents: price.final_price,
-        formatted_final: price
-            .final_price
-            .map(|final_price| format_price_fallback(final_price, price.currency.as_deref())),
-        discount_percent: price.discount_percent,
-    })
-}
-
-fn price_from_store_meta(meta: &store_items::StoreItemMeta) -> Option<GameInfoPrice> {
-    meta.best_purchase_option
-        .as_ref()
-        .map(|price| GameInfoPrice {
-            currency: None,
-            initial_cents: None,
-            final_cents: price
-                .final_price_in_cents
-                .as_ref()
-                .and_then(|value| value.parse::<i64>().ok()),
-            formatted_final: price.formatted_final_price.clone(),
-            discount_percent: None,
-        })
-}
-
-fn format_price_fallback(amount_minor: i64, currency: Option<&str>) -> String {
-    match currency.unwrap_or("EUR").to_uppercase().as_str() {
-        "USD" => format!("${:.2}", amount_minor as f64 / 100.0),
-        "JPY" => format!("¥{}", amount_minor),
-        "EUR" => format!("€{:.2}", amount_minor as f64 / 100.0),
-        other => format!("{} {:.2}", other, amount_minor as f64 / 100.0),
-    }
-}
-
-fn metascore_from_store_item(item: &SteamStoreItem) -> Option<String> {
-    item.metascore.as_ref().and_then(|value| match value {
-        serde_json::Value::String(s) if !s.trim().is_empty() => Some(s.trim().to_string()),
-        serde_json::Value::Number(n) => Some(n.to_string()),
-        _ => None,
-    })
-}
-
-fn platforms_from_store_item(item: &SteamStoreItem) -> Option<GameInfoPlatforms> {
-    item.platforms.as_ref().map(|platforms| GameInfoPlatforms {
-        windows: platforms.windows,
-        mac: platforms.mac,
-        linux: platforms.linux,
-        steam_deck_compat_category: None,
-        steam_os_compat_category: None,
-        steam_machine_compat_category: None,
-        has_vr_support: None,
-    })
-}
-
-fn platforms_from_store_meta(meta: &store_items::StoreItemMeta) -> GameInfoPlatforms {
-    GameInfoPlatforms {
-        windows: meta.platforms.windows,
-        mac: meta.platforms.mac,
-        linux: meta.platforms.linux,
-        steam_deck_compat_category: meta.platforms.steam_deck_compat_category,
-        steam_os_compat_category: meta.platforms.steam_os_compat_category,
-        steam_machine_compat_category: meta.platforms.steam_machine_compat_category,
-        has_vr_support: meta.platforms.has_vr_support,
-    }
-}
-
-fn categories_from_store_meta(meta: &store_items::StoreItemMeta) -> GameInfoStoreCategories {
-    GameInfoStoreCategories {
-        supported_player_category_ids: meta.categories.supported_player_category_ids.clone(),
-        feature_category_ids: meta.categories.feature_category_ids.clone(),
-        controller_category_ids: meta.categories.controller_category_ids.clone(),
     }
 }

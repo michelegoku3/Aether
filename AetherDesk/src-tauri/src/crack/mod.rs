@@ -10,7 +10,11 @@
 // The thin Tauri command in `commands/crack.rs` is just a wrapper around it.
 pub mod apply;
 pub mod archive;
+pub mod hashing;
+pub mod io;
 pub mod locate;
+pub mod paths;
+pub mod recovery;
 
 use crate::core::backup::GameBackup;
 use std::path::{Path, PathBuf};

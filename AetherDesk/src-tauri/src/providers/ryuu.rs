@@ -26,7 +26,7 @@ impl RyuuClient {
         }
         Self {
             api_key,
-            client: http::build_client_with_headers(RYUU_TIMEOUT_SECONDS, headers),
+            client: http::shared_client_with_headers(RYUU_TIMEOUT_SECONDS, headers),
         }
     }
 

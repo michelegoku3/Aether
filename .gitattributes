@@ -1,7 +1,12 @@
-# Gli script eseguiti da cmd.exe richiedono line ending CRLF: con LF il parser
-# di cmd perde il primo carattere dei comandi dopo i salti di etichetta/goto.
-# `text eol=crlf` = nel repository restano normalizzati LF, nel working tree
-# vengono SEMPRE estratti CRLF (indipendente da core.autocrlf).
+# Every text file checks out as LF in the working tree (as Prettier wants with
+# `endOfLine: lf`): without this line, core.autocrlf converts them to CRLF on
+# Windows and `npm run format:check` fails on every file. The exceptions below
+# still win because they are more specific and declared later.
+* text=auto eol=lf
+# Scripts executed by cmd.exe require CRLF line endings: with LF only, the cmd
+# parser drops the first character of commands after label jumps/goto.
+# `text eol=crlf` = LF stays normalized in the repository, while the working
+# tree ALWAYS extracts CRLF (regardless of core.autocrlf).
 *.cmd text eol=crlf
 *.bat text eol=crlf
 *.ps1 text eol=crlf

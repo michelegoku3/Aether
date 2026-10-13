@@ -19,7 +19,7 @@ pub struct OureverydayClient {
 impl OureverydayClient {
     pub fn new() -> Self {
         Self {
-            client: http::build_client(LUA_GEN_TIMEOUT_SECONDS),
+            client: http::shared_client(LUA_GEN_TIMEOUT_SECONDS),
         }
     }
 
@@ -160,7 +160,7 @@ impl OureverydayClient {
             let depot_id = row.app_id; // in LuaManifestRow, app_id holds the depot ID
             let manifest_id = row.manifest_id.clone();
 
-            let client_clone = http::build_client(MANIFEST_MIRROR_TIMEOUT_SECONDS);
+            let client_clone = http::shared_client(MANIFEST_MIRROR_TIMEOUT_SECONDS);
 
             // Spawn parallel tasks to download from the mirrors
             manifest_futures.push(tokio::spawn(async move {

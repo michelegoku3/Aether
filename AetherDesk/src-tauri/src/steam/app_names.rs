@@ -43,7 +43,7 @@ impl SteamAppNameResolver {
     pub fn new(cache_dir: &Path) -> Self {
         Self {
             cache_path: cache_dir.join(CACHE_FILE_NAME),
-            client: http::build_client(NAME_RESOLVE_TIMEOUT_SECONDS),
+            client: http::shared_client(NAME_RESOLVE_TIMEOUT_SECONDS),
         }
     }
 

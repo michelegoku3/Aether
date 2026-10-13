@@ -27,7 +27,7 @@ impl DepotboxSource {
             headers.insert("x-api-key", value);
         }
         Self {
-            client: http::build_client_with_headers(DEPOTBOX_TIMEOUT_SECONDS, headers),
+            client: http::shared_client_with_headers(DEPOTBOX_TIMEOUT_SECONDS, headers),
         }
     }
 }

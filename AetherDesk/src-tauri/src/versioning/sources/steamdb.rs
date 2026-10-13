@@ -45,7 +45,7 @@ pub struct SteamDbPatchnotesSource {
 impl SteamDbPatchnotesSource {
     pub fn new() -> Self {
         Self {
-            client: http::build_client(RSS_TIMEOUT_SECONDS),
+            client: http::shared_client(RSS_TIMEOUT_SECONDS),
         }
     }
 }

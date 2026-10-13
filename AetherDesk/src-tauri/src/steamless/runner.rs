@@ -147,22 +147,21 @@ impl SteamlessRunner {
 
         // Drain stdout and stderr in background reader threads to avoid OS pipe
         // buffer deadlock when Steamless outputs large unpacker diagnostics.
+        // Each stream keeps only its tail (64 KiB): the result reports
+        // `tail()` windows far below that, so truncating here only discards
+        // bytes no consumer ever sees, instead of buffering gigabytes.
         let stdout_reader = std::thread::spawn(move || {
-            let mut buf = Vec::new();
             if let Some(mut out) = stdout_pipe.take() {
-                use std::io::Read;
-                let _ = out.read_to_end(&mut buf);
+                return read_tail_bytes(&mut out, MAX_STREAM_TAIL_BYTES);
             }
-            buf
+            Vec::new()
         });
 
         let stderr_reader = std::thread::spawn(move || {
-            let mut buf = Vec::new();
             if let Some(mut err) = stderr_pipe.take() {
-                use std::io::Read;
-                let _ = err.read_to_end(&mut buf);
+                return read_tail_bytes(&mut err, MAX_STREAM_TAIL_BYTES);
             }
-            buf
+            Vec::new()
         });
 
         let timeout = Duration::from_secs(request.timeout_seconds.max(1));
@@ -375,6 +374,32 @@ fn tail(value: &str, max_chars: usize) -> String {
     chars[start..].iter().collect::<String>().trim().to_string()
 }
 
+/// Bytes retained per child stream. Well above the `tail()` windows reported
+/// in results (1500/500 chars), small enough to bound memory on verbose tools.
+const MAX_STREAM_TAIL_BYTES: usize = 64 * 1024;
+
+/// Drain `reader` keeping only its last `cap` bytes (ring buffer). Reading
+/// errors end the drain early with what was captured: process output is
+/// diagnostics, never authoritative.
+fn read_tail_bytes(reader: &mut dyn std::io::Read, cap: usize) -> Vec<u8> {
+    let mut buf = Vec::new();
+    let mut chunk = [0_u8; 8192];
+    loop {
+        match reader.read(&mut chunk) {
+            Ok(0) => break,
+            Ok(n) => {
+                buf.extend_from_slice(&chunk[..n]);
+                let excess = buf.len().saturating_sub(cap);
+                if excess > 0 {
+                    buf.drain(..excess);
+                }
+            }
+            Err(_) => break,
+        }
+    }
+    buf
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -503,6 +528,21 @@ mod tests {
         assert!(result.message.contains("architecture"));
         assert_eq!(fs::read(&request.exe_path).unwrap(), pe(0x8664, 0xcc));
         assert!(result.backup_path.is_none());
+    }
+
+    #[test]
+    fn stream_reader_keeps_only_the_tail() {
+        let mut big = vec![0_u8; 200_000];
+        for (i, byte) in big.iter_mut().enumerate() {
+            *byte = u8::try_from(i % 251).expect("i % 251 always fits in u8");
+        }
+        let mut cursor: &[u8] = &big;
+        let tail = read_tail_bytes(&mut cursor, 1024);
+        assert_eq!(tail.len(), 1024);
+        assert_eq!(tail, big[big.len() - 1024..]);
+
+        let mut small: &[u8] = b"hello";
+        assert_eq!(read_tail_bytes(&mut small, 1024), b"hello");
     }
 
     #[test]

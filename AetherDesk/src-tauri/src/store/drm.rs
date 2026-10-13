@@ -58,7 +58,7 @@ pub struct DrmDetector {
 impl DrmDetector {
     pub fn new(cache_dir: &Path, app_version: String) -> Self {
         Self {
-            client: http::build_client(DRM_TIMEOUT_SECONDS),
+            client: http::shared_client(DRM_TIMEOUT_SECONDS),
             cache_path: cache_dir.join(CACHE_FILE_NAME),
             app_version,
         }

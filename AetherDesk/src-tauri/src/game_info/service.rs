@@ -186,7 +186,7 @@ impl GameInfoService {
     async fn fetch_appdetails_data(&self, app_id: u32) -> Option<serde_json::Value> {
         let settings = load_settings(&self.app);
         let country_code = steam_country_code_for_currency(&settings.store_currency);
-        let client = http::build_client(APPDETAILS_TIMEOUT_SECONDS);
+        let client = http::shared_client(APPDETAILS_TIMEOUT_SECONDS);
         api::fetch_app_details_for_country(&client, app_id, Some(country_code))
             .await
             .ok()

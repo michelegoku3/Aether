@@ -44,7 +44,7 @@ impl LuaToolsClient {
     pub fn new() -> Self {
         Self {
             auth: Arc::new(LuaToolsAuth::new()),
-            client: http::build_client(DOWNLOAD_TIMEOUT_SECONDS),
+            client: http::shared_client(DOWNLOAD_TIMEOUT_SECONDS),
         }
     }
 

@@ -24,15 +24,19 @@ pub fn stage_source(source: &Path, staging: &Path, default_password: &str) -> Re
         .to_ascii_lowercase();
 
     match extension.as_str() {
-        "zip" => extract_zip(source, staging, default_password)
-            .or_else(|_| extract_7z(source, staging, default_password))
-            .or_else(|_| extract_rar(source, staging, default_password))
-            .map_err(|_| {
-                format!(
-                    "Failed to extract archive {}: not a valid ZIP, 7Z, or RAR archive",
-                    source.display()
-                )
-            }),
+        // A `.zip` that is actually 7z/RAR-packed still gets a chance, but
+        // every attempt reports its own cause: a wrong password used to
+        // surface as "not a valid archive", hiding the real problem.
+        "zip" => extract_zip(source, staging, default_password).or_else(|zip_err| {
+            extract_7z(source, staging, default_password).or_else(|sevenz_err| {
+                extract_rar(source, staging, default_password).map_err(|rar_err| {
+                    format!(
+                        "Failed to extract archive {}: not a valid ZIP ({zip_err}), 7Z ({sevenz_err}), or RAR archive ({rar_err})",
+                        source.display()
+                    )
+                })
+            })
+        }),
         "rar" => extract_rar(source, staging, default_password),
         "7z" => extract_7z(source, staging, default_password),
         _ => copy_loose_file(source, staging),
@@ -239,15 +243,15 @@ fn rar_password_hint(
 /// the library's direct-to-`dest` extraction, which performs no validation.
 /// A clear error is reported if both passes fail (never including the password).
 fn extract_7z(source: &Path, dest: &Path, default_password: &str) -> Result<(), String> {
-    extract_7z_with(source, dest, None)
-        .or_else(|_| extract_7z_with(source, dest, Some(default_password)))
-        .map_err(|error| {
+    match extract_7z_with(source, dest, None) {
+        Ok(()) => Ok(()),
+        Err(plain_err) => extract_7z_with(source, dest, Some(default_password)).map_err(|error| {
             format!(
-                "Failed to extract 7z {} (tried plain and stored password): {}",
+                "Failed to extract 7z {} (tried plain [{plain_err}] and stored password [{error}])",
                 source.display(),
-                error
             )
-        })
+        }),
+    }
 }
 
 fn extract_7z_with(source: &Path, dest: &Path, password: Option<&str>) -> Result<(), String> {
@@ -549,6 +553,21 @@ mod tests {
             vec!["payload.dll"]
         );
         assert!(!staging.exists());
+    }
+
+    #[test]
+    fn zip_fallback_reports_every_attempt_cause() {
+        let temp = tempfile::tempdir().unwrap();
+        let source = temp.path().join("bogus.zip");
+        fs::write(&source, b"definitely not an archive").unwrap();
+        let staging = temp.path().join("staging");
+        fs::create_dir_all(&staging).unwrap();
+        let secret = "s3cr3t-pw-zzz";
+        let err = stage_source(&source, &staging, secret).unwrap_err();
+        for marker in ["ZIP (", "7Z (", "RAR ("] {
+            assert!(err.contains(marker), "missing {marker} in: {err}");
+        }
+        assert!(!err.contains(secret), "password leaked: {err}");
     }
 
     #[test]

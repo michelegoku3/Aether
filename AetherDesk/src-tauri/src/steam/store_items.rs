@@ -272,15 +272,12 @@ fn resolve_hero_image_url(assets: &GetItemAssets) -> Option<String> {
     resolve_asset_url(assets, filename)
 }
 
-/// Process-lifetime HTTP client: building a reqwest client per call means a
-/// fresh TCP+TLS handshake to api.steampowered.com on every search, which was
-/// the main latency source of the metadata batch. `Client` is an Arc inside,
-/// so cloning the shared one is free and keeps connection pooling alive.
+/// Process-lifetime HTTP client via the shared registry in
+/// `providers::http`: building a reqwest client per call means a fresh
+/// TCP+TLS handshake to api.steampowered.com on every search, which was the
+/// main latency source of the metadata batch.
 fn get_items_client() -> reqwest::Client {
-    static CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
-    CLIENT
-        .get_or_init(|| http::build_client(GET_ITEMS_TIMEOUT_SECONDS))
-        .clone()
+    http::shared_client(GET_ITEMS_TIMEOUT_SECONDS)
 }
 
 /// Process-lifetime cache: repeat searches for the same ids cost zero network
