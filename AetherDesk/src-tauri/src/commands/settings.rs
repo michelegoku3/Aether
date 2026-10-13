@@ -1,3 +1,4 @@
+use crate::core::error::{codes, DeskError};
 use crate::core::paths::LocalAppPaths;
 use crate::core::settings::{load_settings, AppSettings, SettingsManager};
 use crate::providers::hubcap::HubcapClient;
@@ -11,6 +12,15 @@ pub fn get_settings(app: tauri::AppHandle) -> Result<AppSettings, String> {
     SettingsManager::new(&app).try_load()
 }
 
+/// Read-only health of the stored settings (fresh install vs. corrupt
+/// fallback to safe defaults). The Settings view banners the corrupt case.
+#[tauri::command]
+pub fn get_settings_health(
+    app: tauri::AppHandle,
+) -> Result<crate::core::settings::SettingsLoadFlags, String> {
+    Ok(SettingsManager::new(&app).load_reported().1)
+}
+
 #[tauri::command]
 pub async fn save_settings(
     app: tauri::AppHandle,
@@ -22,14 +32,14 @@ pub async fn save_settings(
     let candidate = crate::core::settings::merge_settings(&base, &settings, &previous)?;
     if candidate.download_games_with_updates_on {
         if candidate.hubcap_api_key.trim().is_empty() {
-            return Err("HUBCAP_KEY_REQUIRED_FOR_UPDATES: enable updates only with a valid active Hubcap key".into());
+            return Err(DeskError::coded(codes::HUBCAP_KEY_REQUIRED_FOR_UPDATES, "enable updates only with a valid active Hubcap key"));
         }
         let active = HubcapClient::new(&candidate.hubcap_api_key)
             .validate_api_key()
             .await
-            .map_err(|e| format!("HUBCAP_KEY_REQUIRED_FOR_UPDATES: {e}"))?;
+            .map_err(|e| DeskError::coded(codes::HUBCAP_KEY_REQUIRED_FOR_UPDATES, e))?;
         if !active {
-            return Err("HUBCAP_KEY_REQUIRED_FOR_UPDATES: the Hubcap key is not active".into());
+            return Err(DeskError::coded(codes::HUBCAP_KEY_REQUIRED_FOR_UPDATES, "the Hubcap key is not active"));
         }
     }
     manager.update("ui-patch", |current| {
@@ -39,7 +49,7 @@ pub async fn save_settings(
                 || next.hubcap_api_key != candidate.hubcap_api_key)
         {
             return Err(
-                "SETTINGS_CONFLICT: update policy/key changed during validation; retry".into(),
+                DeskError::coded(codes::SETTINGS_CONFLICT, "update policy/key changed during validation; retry"),
             );
         }
         *current = next;

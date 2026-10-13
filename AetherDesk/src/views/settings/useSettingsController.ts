@@ -4,6 +4,7 @@ import { checkSteamPath, getSettings, type AppSettings } from '../../hooks/useSe
 import type { SettingsGuard } from './types';
 import type { SettingsPatch } from './settingsModel';
 import { useSettingsForm } from './useSettingsForm';
+import { isSettingsConflict, needsHubcapKey, toErrorMessage } from '../../util/errors';
 import { useAppearanceSettings } from './useAppearanceSettings';
 import { useLuaToolsAuth } from './useLuaToolsAuth';
 import { useSteamPath } from './useSteamPath';
@@ -27,6 +28,7 @@ export function useSettingsController(params: Params) {
   const [showRyuuKey, setShowRyuuKey] = useState(false);
   const [status, setStatus] = useState<{ text: string; type: StatusKind }>({ text: '', type: 'info' });
   const [settingsConflict, setSettingsConflict] = useState(false);
+  const [settingsCorrupt, setSettingsCorrupt] = useState(false);
   const [showHubcapWarning, setShowHubcapWarning] = useState(false);
   const [showOstWarning, setShowOstWarning] = useState(false);
   const [useOstSource, setUseOstSource] = useState(false);
@@ -35,7 +37,7 @@ export function useSettingsController(params: Params) {
 
   const showStatus = useCallback((text: string, type: StatusKind) => {
     setStatus({ text, type });
-    if (text.includes('SETTINGS_CONFLICT')) setSettingsConflict(true);
+    if (isSettingsConflict(text)) setSettingsConflict(true);
     window.setTimeout(() => setStatus({ text: '', type: 'info' }), 6000);
   }, []);
 
@@ -43,7 +45,6 @@ export function useSettingsController(params: Params) {
     model.applySettings(settings);
     setSettingsConflict(false);
   }, [model]);
-
   const persistAppearance = useCallback(async (patch: SettingsPatch) => {
     const settings = model.getLocalSettings(patch);
     const saved = await invoke<AppSettings>('save_settings', { settings, base: model.rawSettings });
@@ -87,6 +88,9 @@ export function useSettingsController(params: Params) {
       .catch((err) => console.warn('[settings] failed to load OST source state:', err));
     void invoke<boolean>('get_manifest_restore_enabled').then(setManifestRestoreOnStartup)
       .catch((err) => console.warn('[settings] failed to load manifest restore state:', err));
+    void invoke<{ fresh: boolean; corruptFallback: boolean }>('get_settings_health')
+      .then((health) => { if (health.corruptFallback) setSettingsCorrupt(true); })
+      .catch((err) => console.warn('[settings] failed to read settings health:', err));
     void luaTools.refresh()
       .catch((err) => console.warn('[settings] failed to refresh LuaTools auth:', err));
     void params.onRefreshUsage()
@@ -125,6 +129,7 @@ export function useSettingsController(params: Params) {
       const settings = model.getLocalSettings(invalidApiKey ? { hubcap_api_key: '' } : {});
       const saved = await invoke<AppSettings>('save_settings', { settings, base: model.rawSettings });
       applySettings(saved);
+      setSettingsCorrupt(false);
       if (invalidApiKey) setField('apiKey', '');
       showStatus(apiKeyWarning || 'Settings saved successfully!', apiKeyWarning ? 'error' : 'success');
       await params.onRefreshUsage(invalidApiKey ? '' : form.apiKey);
@@ -132,11 +137,13 @@ export function useSettingsController(params: Params) {
       await appearance.reload();
       return true;
     } catch (err) {
-      const message = String(err);
-      if (message.includes('HUBCAP_KEY_REQUIRED_FOR_UPDATES')) {
+      if (needsHubcapKey(err)) {
         setField('downloadGamesWithUpdatesOn', false); setShowHubcapWarning(true);
       }
-      showStatus(`Error during save: ${message}`, 'error'); return false;
+      // The wrapped status text below no longer starts with the code, so the
+      // conflict flag is raised here on the raw error instead of in showStatus.
+      if (isSettingsConflict(err)) setSettingsConflict(true);
+      showStatus(`Error during save: ${toErrorMessage(err)}`, 'error'); return false;
     }
   }, [appearance, applySettings, form, model, params, setField, showStatus]);
 
@@ -148,8 +155,16 @@ export function useSettingsController(params: Params) {
     params.onPreviewAlternativeCards(Number(baseline.alternative_cards_opacity ?? 100), Number(baseline.alternative_cards_fade ?? 50));
   }, [applySettings, model.rawSettings, params]);
 
-  params.guardRef.current = { isDirty: () => model.dirty, save, discard };
-  useEffect(() => () => { params.guardRef.current = null; }, [params.guardRef]);
+  // Installed in an effect, not during render: concurrent rendering may
+  // discard a render, which would leave a stale guard behind. The cleanup
+  // only clears its own installation.
+  useEffect(() => {
+    const guard: SettingsGuard = { isDirty: () => model.dirty, save, discard };
+    params.guardRef.current = guard;
+    return () => {
+      if (params.guardRef.current === guard) params.guardRef.current = null;
+    };
+  }, [discard, model.dirty, params.guardRef, save]);
 
   const changeDownloadUpdates = useCallback(async (enabled: boolean) => {
     if (!enabled) { setField('downloadGamesWithUpdatesOn', false); return; }
@@ -189,7 +204,7 @@ export function useSettingsController(params: Params) {
   return {
     form, setField, showApiKey, setShowApiKey, showRyuuKey, setShowRyuuKey,
     steamCheck: steamPath.checkStatus,
-    status, settingsConflict, showHubcapWarning, setShowHubcapWarning, showOstWarning, setShowOstWarning,
+    status, settingsConflict, settingsCorrupt, showHubcapWarning, setShowHubcapWarning, showOstWarning, setShowOstWarning,
     useOstSource, setUseOstSource, manifestRestoreOnStartup, setManifestRestoreOnStartup,
     presenceDefaultShowOnline, setPresenceDefaultShowOnline, appearance, luaTools,
     showStatus, save, reset, browseSteam: steamPath.browse, detectSteam: steamPath.detect,

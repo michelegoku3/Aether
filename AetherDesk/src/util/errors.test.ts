@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { isUserCancellation, toErrorMessage } from './errors';
+import {
+  getErrorCode,
+  isSettingsConflict,
+  isUserCancellation,
+  needsHubcapKey,
+  toErrorMessage,
+} from './errors';
 
 describe('toErrorMessage', () => {
   it('returns Error messages verbatim', () => {
@@ -31,5 +37,36 @@ describe('isUserCancellation', () => {
   it('rejects real failures', () => {
     expect(isUserCancellation('Failed to read theme')).toBe(false);
     expect(isUserCancellation(new Error('boom'))).toBe(false);
+  });
+});
+
+describe('getErrorCode', () => {
+  it('parses every control-flow code with its body intact', () => {
+    expect(getErrorCode('SETTINGS_CONFLICT: k changed; retry')).toBe('SETTINGS_CONFLICT');
+    expect(getErrorCode(new Error('GAME_STATE_CONFLICT: f changed; retry'))).toBe(
+      'GAME_STATE_CONFLICT',
+    );
+    expect(getErrorCode('HUBCAP_KEY_REQUIRED_FOR_UPDATES: need key')).toBe(
+      'HUBCAP_KEY_REQUIRED_FOR_UPDATES',
+    );
+  });
+
+  it('never misfires on ordinary text', () => {
+    for (const plain of [
+      'Steam installation path is required',
+      'C:\\Games\\Foo',
+      '12:45:40.924 something happened',
+      'ERR: too short',
+      '',
+    ]) {
+      expect(getErrorCode(plain)).toBeNull();
+    }
+  });
+
+  it('drives the typed predicates', () => {
+    expect(isSettingsConflict('SETTINGS_CONFLICT: retry')).toBe(true);
+    expect(isSettingsConflict('something else failed')).toBe(false);
+    expect(needsHubcapKey('HUBCAP_KEY_REQUIRED_FOR_UPDATES: need key')).toBe(true);
+    expect(needsHubcapKey('SETTINGS_CONFLICT: retry')).toBe(false);
   });
 });

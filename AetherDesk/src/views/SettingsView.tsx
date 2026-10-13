@@ -46,6 +46,12 @@ export const SettingsView = memo(function SettingsView(props: SettingsViewProps)
           </button>
         </div>
       )}
+      {c.settingsCorrupt && (
+        <div className="settings-alert error">
+          Saved settings were unreadable, so safe defaults are in use. Nothing was deleted —
+          saving will write a fresh copy.
+        </div>
+      )}
 
       <form className="settings-form" onSubmit={(event: FormEvent) => { event.preventDefault(); void c.save(); }}>
         <SettingsAetherSection

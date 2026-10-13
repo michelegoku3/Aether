@@ -1,5 +1,6 @@
 //! One owner for read/modify/publish of DLL TOML. Lock covers the whole edit,
 //! not just rename. No values (custom names, credentials) enter diagnostics.
+use crate::core::error::{codes, DeskError};
 use std::{fs, path::Path, sync::Mutex};
 use toml_edit::{DocumentMut, Item, Value};
 static EDIT: Mutex<()> = Mutex::new(());
@@ -61,7 +62,7 @@ pub fn edit(
             Err(e) => return Err(format!("Cannot recheck configuration: {e}")),
         };
         if current != original {
-            return Err("CONFIG_CONFLICT: configuration changed externally; retry".into());
+            return Err(DeskError::coded(codes::CONFIG_CONFLICT, "configuration changed externally; retry"));
         }
         super::state_io::write_atomic(path, next.as_bytes())?;
         Ok(true)

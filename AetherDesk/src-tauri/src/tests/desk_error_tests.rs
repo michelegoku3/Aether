@@ -1,4 +1,4 @@
-use crate::core::error::{DeskError, DeskResult};
+use crate::core::error::{codes, DeskError, DeskResult};
 
 #[test]
 fn test_desk_error_display_and_conversion() {
@@ -44,4 +44,64 @@ fn test_desk_result_propagation() {
 
     assert_eq!(command_wrapper(true), Ok(42));
     assert_eq!(command_wrapper(false), Err("failed operation".to_string()));
+}
+
+#[test]
+fn test_code_registry_roundtrip() {
+    // Every control-flow code parses back to itself with its body intact.
+    for (produced, code) in [
+        (
+            DeskError::coded(codes::SETTINGS_CONFLICT, "k changed; retry"),
+            codes::SETTINGS_CONFLICT,
+        ),
+        (
+            DeskError::coded(codes::GAME_STATE_CONFLICT, "f changed; retry"),
+            codes::GAME_STATE_CONFLICT,
+        ),
+        (
+            DeskError::coded(codes::HUBCAP_KEY_REQUIRED_FOR_UPDATES, "need key"),
+            codes::HUBCAP_KEY_REQUIRED_FOR_UPDATES,
+        ),
+        (
+            DeskError::coded(codes::CONFIG_CONFLICT, "changed; retry"),
+            codes::CONFIG_CONFLICT,
+        ),
+        (DeskError::coded(codes::GAME_BUSY, "retry later"), codes::GAME_BUSY),
+    ] {
+        let (parsed, body) = codes::split_code(&produced);
+        assert_eq!(parsed, Some(code));
+        assert!(!body.is_empty());
+    }
+    // Ordinary text is never mistaken for a code.
+    for plain in [
+        "Steam installation path is required",
+        "C:\\Games\\Foo",
+        "12:45:40.924 something happened",
+        "ERR: too short",
+        "",
+    ] {
+        assert_eq!(codes::split_code(plain), (None, plain));
+    }
+}
+
+#[test]
+fn test_desk_error_codes_cover_every_variant() {
+    let cases = [
+        (DeskError::invalid_input("x"), codes::INVALID_INPUT),
+        (DeskError::not_found("x"), codes::NOT_FOUND),
+        (
+            DeskError::io("ctx", std::io::Error::other("x")),
+            codes::IO_ERROR,
+        ),
+        (DeskError::parse("ctx", "x"), codes::PARSE_ERROR),
+        (DeskError::network("ep", "x"), codes::NETWORK_ERROR),
+        (DeskError::steam("x"), codes::STEAM_ERROR),
+        (DeskError::settings("x"), codes::SETTINGS_ERROR),
+        (DeskError::provider("p", "x"), codes::PROVIDER_ERROR),
+        (DeskError::execution("t", "x"), codes::EXECUTION_ERROR),
+        (DeskError::internal("x"), codes::INTERNAL_ERROR),
+    ];
+    for (error, code) in cases {
+        assert_eq!(error.code(), code);
+    }
 }

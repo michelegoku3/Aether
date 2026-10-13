@@ -1,4 +1,5 @@
 //! Durable same-directory publication. No shared `.tmp`, no delete-before-rename.
+use crate::core::error::{codes, DeskError};
 use std::{
     fs::{self, OpenOptions},
     io::Write,
@@ -68,9 +69,9 @@ pub fn write_if_unchanged(path: &Path, expected: &[u8], bytes: &[u8]) -> Result<
             "External file conflict at {}; publication refused",
             path.display()
         );
-        return Err(format!(
-            "GAME_STATE_CONFLICT: {} changed externally; retry",
-            path.display()
+        return Err(DeskError::coded(
+            codes::GAME_STATE_CONFLICT,
+            format_args!("{} changed externally; retry", path.display()),
         ));
     }
     write_atomic(path, bytes)

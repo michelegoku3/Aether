@@ -5,6 +5,7 @@
 // Every migration is idempotent, best-effort and logs without blocking startup.
 
 use crate::core::backup::GameBackup;
+use crate::core::error::{codes, DeskError};
 use crate::core::paths::LocalAppPaths;
 use crate::manifest::pins::LuaManifestPins;
 use std::collections::HashSet;
@@ -454,7 +455,7 @@ pub fn adopt_detected_steam_path_if_unconfigured(app: &tauri::AppHandle) {
             );
             if let Err(error) = manager.update("detect-steam-path", |current_settings| {
                 if current_settings.steam_path != settings.steam_path {
-                    return Err("SETTINGS_CONFLICT: Steam path changed during detection".into());
+                    return Err(DeskError::coded(codes::SETTINGS_CONFLICT, "Steam path changed during detection"));
                 }
                 current_settings.steam_path = path.display().to_string();
                 Ok(())

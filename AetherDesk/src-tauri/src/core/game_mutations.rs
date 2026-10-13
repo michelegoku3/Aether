@@ -3,6 +3,7 @@
 //! is optimistic: any intervening Desk mutation or external Lua/ACF edit
 //! invalidates the plan. Never hold a synchronous mutex across an await.
 //! Lock order: game -> depotcache/config. Nested game acquisition is forbidden.
+use crate::core::error::{codes, DeskError};
 use sha2::{Digest, Sha256};
 use std::{
     collections::HashMap,
@@ -140,8 +141,9 @@ pub fn try_acquire(
             operation,
             app_id
         );
-        format!(
-            "GAME_BUSY: another mutation is committing for app {app_id}; retry when it finishes"
+        DeskError::coded(
+            codes::GAME_BUSY,
+            format_args!("another mutation is committing for app {app_id}; retry when it finishes"),
         )
     })?;
     Ok(MutationGuard::new(lock, slot, key, operation))
@@ -215,7 +217,7 @@ impl MutationPlan {
                 self.operation,
                 self.key.app_id
             );
-            return Err(format!("GAME_STATE_CONFLICT: app {} changed during preparation; retry on the current state", self.key.app_id));
+            return Err(DeskError::coded(codes::GAME_STATE_CONFLICT, format_args!("app {} changed during preparation; retry on the current state", self.key.app_id)));
         }
         Ok(guard)
     }
@@ -236,7 +238,7 @@ pub fn ensure_current_root(app: &tauri::AppHandle, root: &Path) -> Result<(), St
             "mutations",
             "Steam root changed during preparation; commit cancelled"
         );
-        return Err("GAME_STATE_CONFLICT: Steam root changed during preparation; retry".into());
+        return Err(DeskError::coded(codes::GAME_STATE_CONFLICT, "Steam root changed during preparation; retry"));
     }
     Ok(())
 }

@@ -1,3 +1,4 @@
+use crate::core::error::{codes, DeskError};
 use crate::core::paths::LocalAppPaths;
 use serde::{Deserialize, Serialize};
 use std::fs;
@@ -134,6 +135,17 @@ pub struct AppSettings {
     /// Custom game name displayed to friends on Steam (game_extra_info).
     #[serde(default)]
     pub custom_game_name: String,
+}
+
+/// Health of a settings load, for UI banners. Serialized camelCase for IPC.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SettingsLoadFlags {
+    /// Nothing on disk yet (first run): defaults are expected, not alarming.
+    pub fresh: bool,
+    /// A stored state existed but could not be read: safe defaults are in
+    /// use and the UI should say so instead of silently masking it.
+    pub corrupt_fallback: bool,
 }
 
 /// Single source of truth for plain defaults: serde providers below and
@@ -439,6 +451,30 @@ impl SettingsManager {
         self.try_load().unwrap_or_default()
     }
 
+    /// Load with a health report: distinguishes a fresh install (nothing on
+    /// disk yet) from a corrupt state that fell back to safe defaults, so
+    /// the UI can banner the latter instead of silently masking it.
+    pub fn load_reported(&self) -> (AppSettings, SettingsLoadFlags) {
+        let outcome = self.try_load();
+        let any_file = self.get_file_path().exists() || self.credentials_path().exists();
+        match outcome {
+            Ok(settings) => (
+                settings,
+                SettingsLoadFlags {
+                    fresh: !any_file,
+                    corrupt_fallback: false,
+                },
+            ),
+            Err(_) => (
+                AppSettings::default(),
+                SettingsLoadFlags {
+                    fresh: false,
+                    corrupt_fallback: true,
+                },
+            ),
+        }
+    }
+
     /// Typed mutation under the repository lock. The closure must be pure:
     /// no network, no nested settings calls and no side effects.
     pub fn update(
@@ -581,7 +617,7 @@ pub(crate) fn merge_settings(
             continue;
         }
         if merged.get(key) != base.get(key) && merged.get(key) != Some(value) {
-            return Err(format!("SETTINGS_CONFLICT: {key} changed since this form was loaded; reload settings before retrying"));
+            return Err(DeskError::coded(codes::SETTINGS_CONFLICT, format_args!("{key} changed since this form was loaded; reload settings before retrying")));
         }
         merged[key] = value.clone();
     }
@@ -592,8 +628,40 @@ pub(crate) fn merge_settings(
 mod repository_tests {
     use super::*;
     #[test]
-    fn empty_json_matches_default() {
-        // Guards ARC-002: every field's serde default must agree with
+    fn load_reported_distinguishes_fresh_loaded_and_corrupt() {
+        // Fresh install: nothing on disk.
+        let dir = tempfile::tempdir().unwrap();
+        let manager = SettingsManager {
+            config_dir: dir.path().into(),
+            legacy_config_dir: None,
+        };
+        let (settings, flags) = manager.load_reported();
+        assert_eq!(settings, AppSettings::default());
+        assert!(flags.fresh && !flags.corrupt_fallback);
+
+        // Healthy stored state.
+        manager
+            .update("test", |s| {
+                s.custom_game_name = "kept".into();
+                Ok(())
+            })
+            .unwrap();
+        let (settings, flags) = manager.load_reported();
+        assert_eq!(settings.custom_game_name, "kept");
+        assert!(!flags.fresh && !flags.corrupt_fallback);
+
+        // Corrupt JSON: safe defaults + banner flag, files untouched.
+        fs::write(dir.path().join("settings.json"), b"bad-json").unwrap();
+        let (settings, flags) = manager.load_reported();
+        assert_eq!(settings, AppSettings::default());
+        assert!(!flags.fresh && flags.corrupt_fallback);
+        assert_eq!(
+            fs::read(dir.path().join("settings.json")).unwrap(),
+            b"bad-json"
+        );
+    }
+    #[test]
+    fn empty_json_matches_default() {        // Guards ARC-002: every field's serde default must agree with
         // `impl Default`, or upgraders would see different values than
         // fresh installs. `default_steam_path` is detection-based but
         // deterministic within one machine, so the comparison holds here.
