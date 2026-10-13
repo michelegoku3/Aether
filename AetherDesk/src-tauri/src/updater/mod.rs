@@ -1,6 +1,6 @@
-pub mod github;
+pub mod desk;
 pub mod dll;
 pub mod dll_version;
-pub mod desk;
+pub mod github;
 
 mod desk_uninstall;

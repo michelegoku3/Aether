@@ -89,7 +89,9 @@ export const SettingsAppearanceSection: React.FC<SettingsAppearanceSectionProps>
               if (next) {
                 try {
                   await invoke('ensure_custom_css');
-                } catch { /* best-effort: prepara la cartella del tema, il toggle prosegue comunque */ }
+                } catch {
+                  /* best-effort: prepares the theme folder, the toggle carries on regardless */
+                }
               }
             }}
           />
@@ -108,11 +110,8 @@ export const SettingsAppearanceSection: React.FC<SettingsAppearanceSectionProps>
           <div className="settings-appearance-row">
             <p className="settings-desc">
               The first .css file in{' '}
-              <ClickablePath
-                path={appearanceAssets.themesDir}
-                onError={(msg) => showStatus(msg, 'error')}
-              />{' '}
-              is applied automatically.{' '}
+              <ClickablePath path={appearanceAssets.themesDir} onError={(msg) => showStatus(msg, 'error')} /> is applied
+              automatically.{' '}
               {appearanceAssets.themeName ? (
                 <>
                   Currently active: <strong>{appearanceAssets.themeName}</strong>.{' '}
@@ -150,7 +149,9 @@ export const SettingsAppearanceSection: React.FC<SettingsAppearanceSectionProps>
               if (next) {
                 try {
                   await invoke('ensure_custom_css');
-                } catch { /* best-effort: prepara la cartella del tema, il toggle prosegue comunque */ }
+                } catch {
+                  /* best-effort: prepares the theme folder, the toggle carries on regardless */
+                }
               }
             }}
           />
@@ -169,11 +170,8 @@ export const SettingsAppearanceSection: React.FC<SettingsAppearanceSectionProps>
           <div className="settings-appearance-row">
             <p className="settings-desc">
               The first image in{' '}
-              <ClickablePath
-                path={appearanceAssets.wallpapersDir}
-                onError={(msg) => showStatus(msg, 'error')}
-              />{' '}
-              is used as the app background.{' '}
+              <ClickablePath path={appearanceAssets.wallpapersDir} onError={(msg) => showStatus(msg, 'error')} /> is
+              used as the app background.{' '}
               {appearanceAssets.wallpaperName ? (
                 <>
                   Currently active: <strong>{appearanceAssets.wallpaperName}</strong>.{' '}
@@ -190,10 +188,7 @@ export const SettingsAppearanceSection: React.FC<SettingsAppearanceSectionProps>
               isPicking === 'wallpaper'
             )}
           </div>
-          <div
-            className="settings-toggle-row"
-            title="Adjust the personal wallpaper opacity from 0 to 100"
-          >
+          <div className="settings-toggle-row" title="Adjust the personal wallpaper opacity from 0 to 100">
             <span className="settings-toggle-text">Wallpaper opacity</span>
             <input
               type="text"
@@ -213,10 +208,7 @@ export const SettingsAppearanceSection: React.FC<SettingsAppearanceSectionProps>
       )}
 
       {/* Enable custom icon */}
-      <div
-        className="settings-toggle-row"
-        title="Use a custom window icon from AetherData/config/icons"
-      >
+      <div className="settings-toggle-row" title="Use a custom window icon from AetherData/config/icons">
         <span className="settings-toggle-text">Enable custom icon</span>
         <label className="version-switch">
           <input
@@ -228,11 +220,11 @@ export const SettingsAppearanceSection: React.FC<SettingsAppearanceSectionProps>
               setCustomIconEnabled(next);
               try {
                 await invoke('ensure_custom_css');
-              } catch { /* best-effort: prepara la cartella del tema, il toggle prosegue comunque */ }
+              } catch {
+                /* best-effort: prepares the folder, the toggle carries on regardless */
+              }
               await persistAppearanceSelection(
-                next
-                  ? { custom_icon_enabled: true }
-                  : { custom_icon_enabled: false, icon_selected_file: '' }
+                next ? { custom_icon_enabled: true } : { custom_icon_enabled: false, icon_selected_file: '' }
               );
               if (!next) setIconSelectedFile('');
               try {
@@ -257,11 +249,8 @@ export const SettingsAppearanceSection: React.FC<SettingsAppearanceSectionProps>
           <div className="settings-appearance-row">
             <p className="settings-desc">
               The first icon in{' '}
-              <ClickablePath
-                path={appearanceAssets.iconsDir}
-                onError={(msg) => showStatus(msg, 'error')}
-              />{' '}
-              is used as the window icon.{' '}
+              <ClickablePath path={appearanceAssets.iconsDir} onError={(msg) => showStatus(msg, 'error')} /> is used as
+              the window icon.{' '}
               {appearanceAssets.iconName ? (
                 <>
                   Currently active: <strong>{appearanceAssets.iconName}</strong>.{' '}

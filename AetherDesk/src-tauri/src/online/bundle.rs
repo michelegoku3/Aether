@@ -27,14 +27,14 @@ const VERSION_FILE: &str = "VERSION";
 const STEAM_API64_DLL: &str = "steam_api64.dll";
 const STEAM_API_DLL: &str = "steam_api.dll";
 
-/// Handle su un bundle UCOnline2 valido.
+/// Handle to a valid UCOnline2 bundle.
 #[derive(Debug, Clone)]
 pub struct Uco2Bundle {
     dir: PathBuf,
 }
 
 impl Uco2Bundle {
-    /// Apre un bundle dalla sua directory radice. `Err` se non valido.
+    /// Open a bundle from its root directory. `Err` if invalid.
     pub fn open(dir: PathBuf) -> Result<Self, String> {
         if !Self::is_valid_dir(&dir) {
             return Err(format!(
@@ -53,7 +53,7 @@ impl Uco2Bundle {
             && plugins_dir_has_dlls(&dir.join(PLUGINS_SUBDIR))
     }
 
-    /// Versione del bundle (dal file VERSION, es. "v1.19.3"), se presente.
+    /// Bundle version (from the VERSION file, e.g. "v1.19.3"), if present.
     pub fn version(&self) -> Option<String> {
         let path = self.dir.join(VERSION_FILE);
         let content = std::fs::read_to_string(path).ok()?;

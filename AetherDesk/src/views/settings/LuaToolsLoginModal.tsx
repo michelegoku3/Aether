@@ -33,13 +33,10 @@ export function LuaToolsLoginModal({
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal-container" onClick={(event) => event.stopPropagation()}>
         <div className="modal-header">
-          <span className="modal-title">Login to <strong>LuaTools</strong></span>
-          <button
-            type="button"
-            className="modal-close-btn"
-            disabled={busy}
-            onClick={onClose}
-          >
+          <span className="modal-title">
+            Login to <strong>LuaTools</strong>
+          </span>
+          <button type="button" className="modal-close-btn" disabled={busy} onClick={onClose}>
             &times;
           </button>
         </div>
@@ -52,15 +49,12 @@ export function LuaToolsLoginModal({
                 Choose how to authenticate. Both methods create the same LuaTools session for downloads.
               </p>
               <div style={{ display: 'grid', gap: '10px' }}>
-                <button
-                  type="button"
-                  className="big-action-btn luatools-login-choice"
-                  onClick={onOAuthSignIn}
-                >
+                <button type="button" className="big-action-btn luatools-login-choice" onClick={onOAuthSignIn}>
                   <div>
                     <strong>Discord OAuth</strong>
                     <p className="settings-desc" style={{ margin: '5px 0 0' }}>
-                      Easiest option. Opens Discord in your browser, but Discord/Supabase may share the email linked to your account.
+                      Easiest option. Opens Discord in your browser, but Discord/Supabase may share the email linked to
+                      your account.
                     </p>
                   </div>
                 </button>
@@ -72,7 +66,8 @@ export function LuaToolsLoginModal({
                   <div>
                     <strong>/login code</strong>
                     <p className="settings-desc" style={{ margin: '5px 0 0' }}>
-                      More private: generate a one-time code with @Luie. LuaTools states that only your Discord username is collected, not your Discord email.
+                      More private: generate a one-time code with @Luie. LuaTools states that only your Discord username
+                      is collected, not your Discord email.
                     </p>
                   </div>
                 </button>
@@ -81,7 +76,8 @@ export function LuaToolsLoginModal({
           ) : (
             <>
               <p className="settings-desc">
-                Send <strong>/login</strong> to <strong>@Luie</strong> in Discord, then enter the 6-character code below. Codes are single-use and expire after about 5 minutes.
+                Send <strong>/login</strong> to <strong>@Luie</strong> in Discord, then enter the 6-character code
+                below. Codes are single-use and expire after about 5 minutes.
               </p>
               <input
                 className="settings-input"
@@ -107,20 +103,10 @@ export function LuaToolsLoginModal({
                 </div>
               )}
               <div className="version-actions" style={{ marginTop: '14px' }}>
-                <button
-                  type="button"
-                  className="panel-btn"
-                  disabled={busy || code.length !== 6}
-                  onClick={onCodeSignIn}
-                >
+                <button type="button" className="panel-btn" disabled={busy || code.length !== 6} onClick={onCodeSignIn}>
                   {busy ? 'Connecting...' : 'Connect'}
                 </button>
-                <button
-                  type="button"
-                  className="panel-btn"
-                  disabled={busy}
-                  onClick={() => onSetMode('choice')}
-                >
+                <button type="button" className="panel-btn" disabled={busy} onClick={() => onSetMode('choice')}>
                   Back
                 </button>
               </div>

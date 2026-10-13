@@ -5,8 +5,8 @@ use tokio::sync::Mutex as AsyncMutex;
 
 use super::client::HubcapClient;
 use super::types::{
-    http_failure_class, is_retryable_status, retry_delay, BASE_URL,
-    GENERATION_RETRY_ATTEMPTS, HubcapGenerationUsage, HubcapUserStats, KEY_VALIDATION_TTL,
+    http_failure_class, is_retryable_status, retry_delay, HubcapGenerationUsage, HubcapUserStats,
+    BASE_URL, GENERATION_RETRY_ATTEMPTS, KEY_VALIDATION_TTL,
 };
 
 /// (SHA-256 fingerprint of the key, verification instant, outcome).
@@ -28,7 +28,10 @@ impl HubcapClient {
             let cached = validation_cache().lock().await;
             if let Some((cached_fingerprint, checked_at, valid)) = cached.as_ref() {
                 if *cached_fingerprint == fingerprint && checked_at.elapsed() < KEY_VALIDATION_TTL {
-                    crate::desk_log_debug!("hubcap", "API key validation served from session cache");
+                    crate::desk_log_debug!(
+                        "hubcap",
+                        "API key validation served from session cache"
+                    );
                     return Ok(*valid);
                 }
             }
@@ -86,12 +89,18 @@ impl HubcapClient {
                 if active {
                     crate::desk_log_info!("hubcap", "API key validation complete active=true");
                 } else {
-                    crate::desk_log_warn!("hubcap", "API key authenticated but account cannot make requests");
+                    crate::desk_log_warn!(
+                        "hubcap",
+                        "API key authenticated but account cannot make requests"
+                    );
                 }
                 return Ok(active);
             }
             if response.status().as_u16() == 401 {
-                crate::desk_log_warn!("hubcap", "API key validation complete active=false reason=unauthorized");
+                crate::desk_log_warn!(
+                    "hubcap",
+                    "API key validation complete active=false reason=unauthorized"
+                );
                 return Ok(false);
             }
             crate::desk_log_error!(

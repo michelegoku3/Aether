@@ -40,8 +40,8 @@ namespace ac::downloader {
 // timeoutSec caps each individual HTTP attempt (default 12 s); boot-time
 // provenance probes pass a shorter value so an unresponsive network cannot
 // stall pattern resolution for long.
-bool Download(Kind kind, const std::string& sha, const std::string& outPath,
-              std::string* outSource = nullptr, int timeoutSec = 12);
+bool Download(Kind kind, const std::string& sha, const std::string& outPath, std::string* outSource = nullptr,
+              int timeoutSec = 12);
 
 // Convenience overload: accepts the raw module/dir name ("steamclient",
 // "steamui", "steamclientipc") and forwards to the Kind-based entry point.
@@ -49,4 +49,4 @@ bool Download(Kind kind, const std::string& sha, const std::string& outPath,
 bool Download(std::string_view kindName, const std::string& sha, const std::string& outPath,
               std::string* outSource = nullptr, int timeoutSec = 12);
 
-}  // namespace ac::downloader
+} // namespace ac::downloader

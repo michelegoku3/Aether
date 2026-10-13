@@ -35,12 +35,18 @@ std::unordered_set<std::string> s_dedupSeen;
 
 const char* LevelTag(LogLevel level) {
     switch (level) {
-        case LogLevel::Trace: return "TRACE";
-        case LogLevel::Debug: return "DEBUG";
-        case LogLevel::Info:  return "INFO ";
-        case LogLevel::Warn:  return "WARN ";
-        case LogLevel::Error: return "ERROR";
-        default:              return "?????";
+    case LogLevel::Trace:
+        return "TRACE";
+    case LogLevel::Debug:
+        return "DEBUG";
+    case LogLevel::Info:
+        return "INFO ";
+    case LogLevel::Warn:
+        return "WARN ";
+    case LogLevel::Error:
+        return "ERROR";
+    default:
+        return "?????";
     }
 }
 
@@ -49,11 +55,11 @@ void FormatTimeAndThread(char (&out)[32]) {
     SYSTEMTIME st{};
     GetLocalTime(&st);
     const DWORD tid = GetCurrentThreadId();
-    std::snprintf(out, sizeof(out), "%02d:%02d:%02d.%03d] [TID:%04lu",
-                  st.wHour, st.wMinute, st.wSecond, st.wMilliseconds, static_cast<unsigned long>(tid));
+    std::snprintf(out, sizeof(out), "%02d:%02d:%02d.%03d] [TID:%04lu", st.wHour, st.wMinute, st.wSecond,
+                  st.wMilliseconds, static_cast<unsigned long>(tid));
 }
 
-}  // namespace
+} // namespace
 
 void Init(const std::string& filePath, bool keepLastSession) {
     std::lock_guard<std::mutex> lock(s_mutex);
@@ -80,21 +86,26 @@ bool IsEnabled(LogLevel level) {
     return static_cast<int>(level) >= static_cast<int>(s_minLevel.load(std::memory_order_relaxed));
 }
 
-void SetLevel(LogLevel level) {
-    s_minLevel.store(level, std::memory_order_relaxed);
-}
+void SetLevel(LogLevel level) { s_minLevel.store(level, std::memory_order_relaxed); }
 
 LogLevel ParseLevel(const std::string& text, LogLevel fallback) {
     std::string lower;
     lower.reserve(text.size());
-    for (char c : text) lower.push_back(static_cast<char>(std::tolower(static_cast<unsigned char>(c))));
+    for (char c : text)
+        lower.push_back(static_cast<char>(std::tolower(static_cast<unsigned char>(c))));
 
-    if (lower == "trace") return LogLevel::Trace;
-    if (lower == "debug") return LogLevel::Debug;
-    if (lower == "info")  return LogLevel::Info;
-    if (lower == "warn")  return LogLevel::Warn;
-    if (lower == "error") return LogLevel::Error;
-    if (lower == "off")   return LogLevel::Off;
+    if (lower == "trace")
+        return LogLevel::Trace;
+    if (lower == "debug")
+        return LogLevel::Debug;
+    if (lower == "info")
+        return LogLevel::Info;
+    if (lower == "warn")
+        return LogLevel::Warn;
+    if (lower == "error")
+        return LogLevel::Error;
+    if (lower == "off")
+        return LogLevel::Off;
     return fallback;
 }
 
@@ -134,8 +145,8 @@ void Write(LogLevel level, const char* module, const char* format, ...) {
         s_file.open(s_logPath, std::ios::out | std::ios::app);
     }
     if (s_file.is_open()) {
-        s_file << '[' << timeAndThread << "] [" << LevelTag(level) << "] ["
-               << (module ? module : "-") << "] " << body << '\n';
+        s_file << '[' << timeAndThread << "] [" << LevelTag(level) << "] [" << (module ? module : "-") << "] " << body
+               << '\n';
         s_file.flush();
     }
 
@@ -176,7 +187,7 @@ void WriteOnce(LogLevel level, const char* module, const char* format, ...) {
     {
         std::lock_guard<std::mutex> dlock(s_dedupMutex);
         if (!s_dedupSeen.insert(key).second) {
-            return;  // Already emitted this session.
+            return; // Already emitted this session.
         }
     }
 
@@ -194,8 +205,8 @@ void WriteOnce(LogLevel level, const char* module, const char* format, ...) {
         s_file.open(s_logPath, std::ios::out | std::ios::app);
     }
     if (s_file.is_open()) {
-        s_file << '[' << timeAndThread << "] [" << LevelTag(level) << "] ["
-               << (module ? module : "-") << "] " << body << '\n';
+        s_file << '[' << timeAndThread << "] [" << LevelTag(level) << "] [" << (module ? module : "-") << "] " << body
+               << '\n';
         s_file.flush();
     }
 
@@ -212,15 +223,17 @@ void ResetDedup() {
 
 void Shutdown() {
     std::lock_guard<std::mutex> lock(s_mutex);
-    if (s_file.is_open()) s_file.close();
+    if (s_file.is_open())
+        s_file.close();
 }
 
 void Flush() {
     std::lock_guard<std::mutex> lock(s_mutex);
-    if (s_file.is_open()) s_file.flush();
+    if (s_file.is_open())
+        s_file.flush();
 }
 
-}  // namespace ac::log
+} // namespace ac::log
 
 namespace ac::diag {
 namespace {
@@ -233,7 +246,7 @@ std::size_t s_next = 0;
 std::size_t s_count = 0;
 std::mutex s_diagMutex;
 
-}  // namespace
+} // namespace
 
 void Record(const std::string& category, const std::string& detail) {
     std::lock_guard<std::mutex> lock(s_diagMutex);
@@ -249,7 +262,8 @@ void Record(const std::string& category, const std::string& detail) {
     e.category = category;
     e.detail = detail;
     s_next = (s_next + 1) % kRingSize;
-    if (s_count < kRingSize) ++s_count;
+    if (s_count < kRingSize)
+        ++s_count;
 }
 
 std::vector<Entry> Snapshot() {
@@ -263,4 +277,4 @@ std::vector<Entry> Snapshot() {
     return out;
 }
 
-}  // namespace ac::diag
+} // namespace ac::diag

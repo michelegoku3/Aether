@@ -1,6 +1,6 @@
 #include "pch.h"
-#include "utils/Strings.h"
 #include "network/RuntimeHttp.h"
+#include "utils/Strings.h"
 
 #include <winhttp.h>
 
@@ -19,7 +19,7 @@ namespace ac::http {
 namespace {
 
 constexpr const char* kModule = "Http";
-constexpr std::size_t kLuaMaxBodyBytes = 8u * 1024u * 1024u;  // 8 MiB
+constexpr std::size_t kLuaMaxBodyBytes = 8u * 1024u * 1024u; // 8 MiB
 constexpr DWORD kTimeoutMs = 12000;
 
 // Baseline hosts always reachable (manifest sources used by manifest scripts).
@@ -32,7 +32,10 @@ constexpr std::array<std::string_view, 3> kBaselineHosts = {
 struct Handle {
     HINTERNET h = nullptr;
     explicit Handle(HINTERNET handle = nullptr) : h(handle) {}
-    ~Handle() { if (h) WinHttpCloseHandle(h); }
+    ~Handle() {
+        if (h)
+            WinHttpCloseHandle(h);
+    }
     Handle(const Handle&) = delete;
     Handle& operator=(const Handle&) = delete;
     explicit operator bool() const { return h != nullptr; }
@@ -40,19 +43,20 @@ struct Handle {
 
 using strings::EqualsIgnoreCase;
 
-
 // Extracts the host portion of an http(s) URL (no scheme, port, or path).
 using strings::ExtractHost;
 
-
 bool IsHostAllowed(std::string_view host) {
     const auto settings = Settings::Snapshot();
-    if (host.empty()) return false;
+    if (host.empty())
+        return false;
     for (auto h : kBaselineHosts) {
-        if (EqualsIgnoreCase(host, h)) return true;
+        if (EqualsIgnoreCase(host, h))
+            return true;
     }
     for (const auto& h : settings->httpAllowlistExtra) {
-        if (EqualsIgnoreCase(host, h)) return true;
+        if (EqualsIgnoreCase(host, h))
+            return true;
     }
     return false;
 }
@@ -63,12 +67,13 @@ bool IsHostAllowed(std::string_view host) {
 // as a separate wchar_t, producing bogus host/path strings for WinHTTP.
 using strings::Widen;
 
-
 std::wstring JoinHeaders(const std::vector<std::string>& headers) {
-    if (headers.empty()) return {};
+    if (headers.empty())
+        return {};
     std::string joined;
     for (const auto& h : headers) {
-        if (h.empty()) continue;
+        if (h.empty())
+            continue;
         joined += h;
         joined += "\r\n";
     }
@@ -77,10 +82,8 @@ std::wstring JoinHeaders(const std::vector<std::string>& headers) {
 
 // Performs the actual request with the given total timeout. No allowlist check
 // — callers that need the gate apply it first.
-Response Request(std::wstring_view method, std::string_view url, DWORD timeoutMs,
-                 std::wstring_view userAgent, std::string_view requestBody,
-                 const std::vector<std::string>& headers,
-                 std::size_t maxBodyBytes) {
+Response Request(std::wstring_view method, std::string_view url, DWORD timeoutMs, std::wstring_view userAgent,
+                 std::string_view requestBody, const std::vector<std::string>& headers, std::size_t maxBodyBytes) {
     Response out;
 
     std::string_view host = ExtractHost(url);
@@ -91,8 +94,13 @@ Response Request(std::wstring_view method, std::string_view url, DWORD timeoutMs
 
     std::string_view rest = url;
     bool https = true;
-    if (EqualsIgnoreCase(rest.substr(0, 8), "https://")) { rest.remove_prefix(8); https = true; }
-    else if (EqualsIgnoreCase(rest.substr(0, 7), "http://")) { rest.remove_prefix(7); https = false; }
+    if (EqualsIgnoreCase(rest.substr(0, 8), "https://")) {
+        rest.remove_prefix(8);
+        https = true;
+    } else if (EqualsIgnoreCase(rest.substr(0, 7), "http://")) {
+        rest.remove_prefix(7);
+        https = false;
+    }
     std::size_t slash = rest.find('/');
     std::string_view path = (slash == std::string_view::npos) ? "/" : rest.substr(slash);
 
@@ -100,22 +108,23 @@ Response Request(std::wstring_view method, std::string_view url, DWORD timeoutMs
     std::wstring wPath = Widen(path);
     INTERNET_PORT port = https ? INTERNET_DEFAULT_HTTPS_PORT : INTERNET_DEFAULT_HTTP_PORT;
 
-    std::wstring ua = userAgent.empty() ? std::wstring(L"AetherCore/1.0")
-                                        : std::wstring(userAgent);
+    std::wstring ua = userAgent.empty() ? std::wstring(L"AetherCore/1.0") : std::wstring(userAgent);
     std::wstring wHeaders = JoinHeaders(headers);
     std::wstring wMethod = method.empty() ? std::wstring(L"GET") : std::wstring(method);
-    Handle session(WinHttpOpen(ua.c_str(), WINHTTP_ACCESS_TYPE_DEFAULT_PROXY,
-                               WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0));
-    if (!session) return out;
+    Handle session(
+        WinHttpOpen(ua.c_str(), WINHTTP_ACCESS_TYPE_DEFAULT_PROXY, WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0));
+    if (!session)
+        return out;
     WinHttpSetTimeouts(session.h, timeoutMs, timeoutMs, timeoutMs, timeoutMs);
 
     Handle connect(WinHttpConnect(session.h, wHost.c_str(), port, 0));
-    if (!connect) return out;
+    if (!connect)
+        return out;
 
-    Handle request(WinHttpOpenRequest(connect.h, wMethod.c_str(), wPath.c_str(), nullptr,
-                                      WINHTTP_NO_REFERER, WINHTTP_DEFAULT_ACCEPT_TYPES,
-                                      https ? WINHTTP_FLAG_SECURE : 0));
-    if (!request) return out;
+    Handle request(WinHttpOpenRequest(connect.h, wMethod.c_str(), wPath.c_str(), nullptr, WINHTTP_NO_REFERER,
+                                      WINHTTP_DEFAULT_ACCEPT_TYPES, https ? WINHTTP_FLAG_SECURE : 0));
+    if (!request)
+        return out;
 
     const wchar_t* hdrPtr = wHeaders.empty() ? WINHTTP_NO_ADDITIONAL_HEADERS : wHeaders.c_str();
     DWORD hdrLen = wHeaders.empty() ? 0 : static_cast<DWORD>(wHeaders.size());
@@ -128,21 +137,23 @@ Response Request(std::wstring_view method, std::string_view url, DWORD timeoutMs
     }
 
     DWORD status = 0, statusSize = sizeof(status);
-    WinHttpQueryHeaders(request.h, WINHTTP_QUERY_STATUS_CODE | WINHTTP_QUERY_FLAG_NUMBER,
-                        WINHTTP_HEADER_NAME_BY_INDEX, &status, &statusSize, WINHTTP_NO_HEADER_INDEX);
+    WinHttpQueryHeaders(request.h, WINHTTP_QUERY_STATUS_CODE | WINHTTP_QUERY_FLAG_NUMBER, WINHTTP_HEADER_NAME_BY_INDEX,
+                        &status, &statusSize, WINHTTP_NO_HEADER_INDEX);
 
     std::string body;
     while (true) {
         DWORD avail = 0;
-        if (!WinHttpQueryDataAvailable(request.h, &avail) || avail == 0) break;
+        if (!WinHttpQueryDataAvailable(request.h, &avail) || avail == 0)
+            break;
         if (body.size() + avail > maxBodyBytes) {
             AC_LOG_WARN(kModule, "Body exceeds configured cap (%llu bytes); aborting.",
                         static_cast<unsigned long long>(maxBodyBytes));
-            return out;  // networkError stays true: caller sees a failed fetch
+            return out; // networkError stays true: caller sees a failed fetch
         }
         std::vector<char> chunk(avail);
         DWORD read = 0;
-        if (!WinHttpReadData(request.h, chunk.data(), avail, &read) || read == 0) break;
+        if (!WinHttpReadData(request.h, chunk.data(), avail, &read) || read == 0)
+            break;
         body.append(chunk.data(), read);
     }
 
@@ -152,7 +163,7 @@ Response Request(std::wstring_view method, std::string_view url, DWORD timeoutMs
     return out;
 }
 
-}  // namespace
+} // namespace
 
 Response Get(std::string_view url) {
     std::string_view host = ExtractHost(url);
@@ -167,8 +178,7 @@ Response Get(std::string_view url) {
     return Request(L"GET", url, kTimeoutMs, L"AetherCore/1.0", {}, {}, kLuaMaxBodyBytes);
 }
 
-Response Post(std::string_view url, std::string_view body,
-              const std::vector<std::string>& extraHeaders) {
+Response Post(std::string_view url, std::string_view body, const std::vector<std::string>& extraHeaders) {
     std::string_view host = ExtractHost(url);
     if (!IsHostAllowed(host)) {
         AC_LOG_WARN(kModule, "Blocked host '%.*s'.", static_cast<int>(host.size()), host.data());
@@ -185,12 +195,10 @@ Response GetUnchecked(std::string_view url, int timeoutSec, std::wstring_view us
     return Request(L"GET", url, ms, userAgent, {}, {}, kLuaMaxBodyBytes);
 }
 
-Response GetUncheckedWithHeaders(std::string_view url, int timeoutSec,
-                                 const std::vector<std::string>& headers,
-                                 std::wstring_view userAgent,
-                                 std::size_t maxBodyBytes) {
+Response GetUncheckedWithHeaders(std::string_view url, int timeoutSec, const std::vector<std::string>& headers,
+                                 std::wstring_view userAgent, std::size_t maxBodyBytes) {
     DWORD ms = timeoutSec > 0 ? static_cast<DWORD>(timeoutSec) * 1000u : kTimeoutMs;
     return Request(L"GET", url, ms, userAgent, {}, headers, maxBodyBytes);
 }
 
-}  // namespace ac::http
+} // namespace ac::http

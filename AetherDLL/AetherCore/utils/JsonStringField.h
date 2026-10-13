@@ -17,13 +17,17 @@ namespace ac::jsonutil {
 inline bool PullStringField(std::string_view json, std::string_view key, std::string& out) {
     const std::string pattern = "\"" + std::string(key) + "\"";
     const std::size_t pos = json.find(pattern);
-    if (pos == std::string_view::npos) return false;
+    if (pos == std::string_view::npos)
+        return false;
     const std::size_t colon = json.find(':', pos + pattern.size());
-    if (colon == std::string_view::npos) return false;
+    if (colon == std::string_view::npos)
+        return false;
     const std::size_t q1 = json.find('"', colon + 1);
-    if (q1 == std::string_view::npos) return false;
+    if (q1 == std::string_view::npos)
+        return false;
     const std::size_t q2 = json.find('"', q1 + 1);
-    if (q2 == std::string_view::npos) return false;
+    if (q2 == std::string_view::npos)
+        return false;
     out.assign(json.data() + q1 + 1, q2 - q1 - 1);
     return !out.empty();
 }
@@ -31,7 +35,8 @@ inline bool PullStringField(std::string_view json, std::string_view key, std::st
 inline void SkipSpaces(std::string_view json, std::size_t& cursor) {
     while (cursor < json.size()) {
         const char c = json[cursor];
-        if (c != ' ' && c != '\t' && c != '\r' && c != '\n') break;
+        if (c != ' ' && c != '\t' && c != '\r' && c != '\n')
+            break;
         ++cursor;
     }
 }
@@ -41,12 +46,15 @@ inline void SkipSpaces(std::string_view json, std::size_t& cursor) {
 inline bool PullUIntField(std::string_view json, std::string_view key, std::uint64_t& out) {
     const std::string pattern = "\"" + std::string(key) + "\"";
     const std::size_t pos = json.find(pattern);
-    if (pos == std::string_view::npos) return false;
+    if (pos == std::string_view::npos)
+        return false;
     const std::size_t colon = json.find(':', pos + pattern.size());
-    if (colon == std::string_view::npos) return false;
+    if (colon == std::string_view::npos)
+        return false;
     std::size_t cursor = colon + 1;
     SkipSpaces(json, cursor);
-    if (cursor >= json.size() || json[cursor] < '0' || json[cursor] > '9') return false;
+    if (cursor >= json.size() || json[cursor] < '0' || json[cursor] > '9')
+        return false;
     std::uint64_t value = 0;
     while (cursor < json.size() && json[cursor] >= '0' && json[cursor] <= '9') {
         value = value * 10 + static_cast<std::uint64_t>(json[cursor] - '0');
@@ -60,9 +68,11 @@ inline bool PullUIntField(std::string_view json, std::string_view key, std::uint
 inline bool PullBoolField(std::string_view json, std::string_view key, bool& out) {
     const std::string pattern = "\"" + std::string(key) + "\"";
     const std::size_t pos = json.find(pattern);
-    if (pos == std::string_view::npos) return false;
+    if (pos == std::string_view::npos)
+        return false;
     const std::size_t colon = json.find(':', pos + pattern.size());
-    if (colon == std::string_view::npos) return false;
+    if (colon == std::string_view::npos)
+        return false;
     std::size_t cursor = colon + 1;
     SkipSpaces(json, cursor);
     const std::size_t remaining = json.size() - cursor;
@@ -87,14 +97,19 @@ inline bool PullBoolField(std::string_view json, std::string_view key, bool& out
 inline bool PullEscapedStringField(std::string_view json, std::string_view key, std::string& out) {
     const std::string needle = "\"" + std::string(key) + "\"";
     const std::size_t k = json.find(needle);
-    if (k == std::string_view::npos) return false;
+    if (k == std::string_view::npos)
+        return false;
 
     std::size_t cursor = k + needle.size();
-    while (cursor < json.size() && std::isspace(static_cast<unsigned char>(json[cursor]))) ++cursor;
-    if (cursor >= json.size() || json[cursor] != ':') return false;
+    while (cursor < json.size() && std::isspace(static_cast<unsigned char>(json[cursor])))
+        ++cursor;
+    if (cursor >= json.size() || json[cursor] != ':')
+        return false;
     ++cursor;
-    while (cursor < json.size() && std::isspace(static_cast<unsigned char>(json[cursor]))) ++cursor;
-    if (cursor >= json.size() || json[cursor] != '"') return false;
+    while (cursor < json.size() && std::isspace(static_cast<unsigned char>(json[cursor])))
+        ++cursor;
+    if (cursor >= json.size() || json[cursor] != '"')
+        return false;
     ++cursor;
 
     std::string value;
@@ -104,23 +119,46 @@ inline bool PullEscapedStringField(std::string_view json, std::string_view key, 
         if (escaped) {
             escaped = false;
             switch (c) {
-            case '"': value.push_back('"'); break;
-            case '\\': value.push_back('\\'); break;
-            case '/': value.push_back('/'); break;
-            case 'b': value.push_back('\b'); break;
-            case 'f': value.push_back('\f'); break;
-            case 'n': value.push_back('\n'); break;
-            case 'r': value.push_back('\r'); break;
-            case 't': value.push_back('\t'); break;
-            default: return false;   // \u or unknown: reject, never guess
+            case '"':
+                value.push_back('"');
+                break;
+            case '\\':
+                value.push_back('\\');
+                break;
+            case '/':
+                value.push_back('/');
+                break;
+            case 'b':
+                value.push_back('\b');
+                break;
+            case 'f':
+                value.push_back('\f');
+                break;
+            case 'n':
+                value.push_back('\n');
+                break;
+            case 'r':
+                value.push_back('\r');
+                break;
+            case 't':
+                value.push_back('\t');
+                break;
+            default:
+                return false; // \u or unknown: reject, never guess
             }
             continue;
         }
-        if (c == '\\') { escaped = true; continue; }
-        if (c == '"') { out = std::move(value); return true; }
+        if (c == '\\') {
+            escaped = true;
+            continue;
+        }
+        if (c == '"') {
+            out = std::move(value);
+            return true;
+        }
         value.push_back(c);
     }
-    return false;   // unterminated string
+    return false; // unterminated string
 }
 
-}  // namespace ac::jsonutil
+} // namespace ac::jsonutil

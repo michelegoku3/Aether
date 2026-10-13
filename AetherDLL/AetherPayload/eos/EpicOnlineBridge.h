@@ -6,4 +6,4 @@ namespace ac::eosbridge {
 
 void InstallOn(HMODULE eosModule);
 
-}  // namespace ac::eosbridge
+} // namespace ac::eosbridge

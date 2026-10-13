@@ -8,10 +8,10 @@
 //! queries (verified: HTTP 400). GetItems batches ~50 appids per request with
 //! no visible rate limit, so one call covers a whole search result page.
 
+use crate::providers::http;
 use serde::Deserialize;
 use std::collections::HashMap;
 use std::sync::{Mutex, OnceLock};
-use crate::providers::http;
 
 const GET_ITEMS_URL: &str = "https://api.steampowered.com/IStoreBrowseService/GetItems/v1";
 const GET_ITEMS_TIMEOUT_SECONDS: u64 = 8;
@@ -116,8 +116,7 @@ pub fn is_dlc_like(meta: &StoreItemMeta) -> bool {
     if meta.parent_appid.is_some() && meta.kind != "rerelease" {
         return true;
     }
-    if !meta.kind.is_empty()
-        && !matches!(meta.kind.as_str(), "game" | "demo" | "mod" | "rerelease")
+    if !meta.kind.is_empty() && !matches!(meta.kind.as_str(), "game" | "demo" | "mod" | "rerelease")
     {
         return true;
     }
@@ -130,7 +129,12 @@ pub fn is_dlc_like(meta: &StoreItemMeta) -> bool {
 pub fn looks_nsfw_by_name(name: &str) -> bool {
     name.to_lowercase()
         .split(|c: char| !c.is_alphanumeric())
-        .any(|token| matches!(token, "hentai" | "futanari" | "furry" | "sex" | "sexy" | "porn"))
+        .any(|token| {
+            matches!(
+                token,
+                "hentai" | "futanari" | "furry" | "sex" | "sexy" | "porn"
+            )
+        })
 }
 
 /// The single NSFW classification entry point: descriptor first, name as
@@ -234,7 +238,6 @@ struct GetItemPurchaseOption {
     final_price_in_cents: Option<String>,
 }
 
-
 fn resolve_asset_url(assets: &GetItemAssets, filename: &str) -> Option<String> {
     let format = assets.asset_url_format.as_deref()?;
     Some(format!(
@@ -295,7 +298,10 @@ fn meta_cache_key(country_code: &str, app_id: u32) -> String {
 ///
 /// Ids with no metadata available map to `StoreItemMeta::default()` ("unknown"
 /// = keep), so the caller never loses rows because Steam refused to answer.
-pub async fn fetch_store_items_for_country(app_ids: Vec<u32>, country_code: &str) -> HashMap<u32, StoreItemMeta> {
+pub async fn fetch_store_items_for_country(
+    app_ids: Vec<u32>,
+    country_code: &str,
+) -> HashMap<u32, StoreItemMeta> {
     let mut out: HashMap<u32, StoreItemMeta> = HashMap::new();
     let mut pending: Vec<u32> = Vec::new();
 
@@ -472,32 +478,42 @@ async fn fetch_chunk(
             .and_then(|release| release.original_release_date)
             .filter(|date| *date > 0);
 
-        let platforms = item.platforms.map(|platforms| StoreItemPlatforms {
-            windows: platforms.windows,
-            mac: platforms.mac,
-            linux: platforms.linux,
-            steam_deck_compat_category: platforms.steam_deck_compat_category,
-            steam_os_compat_category: platforms.steam_os_compat_category,
-            steam_machine_compat_category: platforms.steam_machine_compat_category,
-            has_vr_support: platforms.vr_support.map(|value| {
-                if let Some(object) = value.as_object() {
-                    !object.is_empty()
-                } else {
-                    !value.is_null()
-                }
-            }),
-        }).unwrap_or_default();
+        let platforms = item
+            .platforms
+            .map(|platforms| StoreItemPlatforms {
+                windows: platforms.windows,
+                mac: platforms.mac,
+                linux: platforms.linux,
+                steam_deck_compat_category: platforms.steam_deck_compat_category,
+                steam_os_compat_category: platforms.steam_os_compat_category,
+                steam_machine_compat_category: platforms.steam_machine_compat_category,
+                has_vr_support: platforms.vr_support.map(|value| {
+                    if let Some(object) = value.as_object() {
+                        !object.is_empty()
+                    } else {
+                        !value.is_null()
+                    }
+                }),
+            })
+            .unwrap_or_default();
 
-        let categories = item.categories.map(|categories| StoreItemCategories {
-            supported_player_category_ids: categories.supported_player_categoryids.unwrap_or_default(),
-            feature_category_ids: categories.feature_categoryids.unwrap_or_default(),
-            controller_category_ids: categories.controller_categoryids.unwrap_or_default(),
-        }).unwrap_or_default();
+        let categories = item
+            .categories
+            .map(|categories| StoreItemCategories {
+                supported_player_category_ids: categories
+                    .supported_player_categoryids
+                    .unwrap_or_default(),
+                feature_category_ids: categories.feature_categoryids.unwrap_or_default(),
+                controller_category_ids: categories.controller_categoryids.unwrap_or_default(),
+            })
+            .unwrap_or_default();
 
-        let best_purchase_option = item.best_purchase_option.map(|option| StoreItemPurchaseOption {
-            formatted_final_price: option.formatted_final_price,
-            final_price_in_cents: option.final_price_in_cents,
-        });
+        let best_purchase_option =
+            item.best_purchase_option
+                .map(|option| StoreItemPurchaseOption {
+                    formatted_final_price: option.formatted_final_price,
+                    final_price_in_cents: option.final_price_in_cents,
+                });
         let library_capsule_url = item.assets.as_ref().and_then(resolve_library_capsule_url);
         let hero_image_url = item.assets.as_ref().and_then(resolve_hero_image_url);
 

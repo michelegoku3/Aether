@@ -1,12 +1,21 @@
-use crate::store::service::StoreService;
 use crate::store::normalize::{normalize_string, sanitize_query_for_hubcap};
+use crate::store::service::StoreService;
 
 #[test]
 fn take_me_scoring_is_exact_after_normalize() {
     let svc = StoreService::new();
-    assert_eq!(svc.calculate_relevance_score("Take Me To The Dungeon!!", "Take Me To The Dungeon!!"), 0);
-    assert_eq!(svc.calculate_relevance_score("Take Me To The Dungeon", "Take Me To The Dungeon!!"), 0);
-    assert_eq!(svc.calculate_relevance_score("take me to the dungeon!!", "TAKE ME TO THE DUNGEON"), 0);
+    assert_eq!(
+        svc.calculate_relevance_score("Take Me To The Dungeon!!", "Take Me To The Dungeon!!"),
+        0
+    );
+    assert_eq!(
+        svc.calculate_relevance_score("Take Me To The Dungeon", "Take Me To The Dungeon!!"),
+        0
+    );
+    assert_eq!(
+        svc.calculate_relevance_score("take me to the dungeon!!", "TAKE ME TO THE DUNGEON"),
+        0
+    );
 }
 
 #[test]
@@ -19,7 +28,10 @@ fn scoring_is_exact_prefix_or_substring_only() {
     assert!((100..1000).contains(&substring));
     // Typos are Steam/suggest's job, not local Levenshtein.
     assert_eq!(svc.calculate_relevance_score("stray", "Stary"), 10000);
-    assert_eq!(svc.calculate_relevance_score("witchr 3", "The Witcher 3: Wild Hunt"), 10000);
+    assert_eq!(
+        svc.calculate_relevance_score("witchr 3", "The Witcher 3: Wild Hunt"),
+        10000
+    );
 }
 
 #[test]

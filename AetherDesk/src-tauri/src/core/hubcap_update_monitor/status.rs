@@ -85,7 +85,9 @@ fn last_signature() -> &'static Mutex<Option<String>> {
 fn task_key(task: &PendingTaskInfo) -> String {
     format!(
         "{}:{}",
-        task.app_id.map(|id| id.to_string()).unwrap_or_else(|| "-".to_string()),
+        task.app_id
+            .map(|id| id.to_string())
+            .unwrap_or_else(|| "-".to_string()),
         task.attempts
     )
 }
@@ -172,4 +174,3 @@ pub(super) fn with_status(update: impl FnOnce(&mut MonitorStatusSnapshot)) {
         publish_status(payload);
     }
 }
-

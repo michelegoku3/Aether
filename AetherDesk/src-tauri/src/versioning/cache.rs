@@ -125,16 +125,13 @@ impl VersionCache {
 
     fn save(&self, cache: &CacheFile) -> Result<(), String> {
         if let Some(parent) = self.path.parent() {
-            fs::create_dir_all(parent)
-                .map_err(|e| format!("Failed to create cache dir: {e}"))?;
+            fs::create_dir_all(parent).map_err(|e| format!("Failed to create cache dir: {e}"))?;
         }
         let json = serde_json::to_string_pretty(cache)
             .map_err(|e| format!("Failed to serialize version cache: {e}"))?;
         let tmp = self.path.with_extension("json.tmp");
-        fs::write(&tmp, json)
-            .map_err(|e| format!("Failed to write version cache: {e}"))?;
-        fs::rename(&tmp, &self.path)
-            .map_err(|e| format!("Failed to commit version cache: {e}"))
+        fs::write(&tmp, json).map_err(|e| format!("Failed to write version cache: {e}"))?;
+        fs::rename(&tmp, &self.path).map_err(|e| format!("Failed to commit version cache: {e}"))
     }
 }
 

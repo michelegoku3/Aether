@@ -1,8 +1,8 @@
-use crate::updater::dll_version::{version_from_fixed_header, read_installed_dll_version};
 use crate::updater::dll::AETHER_DLL_FILES;
+use crate::updater::dll_version::{read_installed_dll_version, version_from_fixed_header};
 
 #[test]
-fn fixed_header_layout_reads_file_version_not_struc_version() {
+fn fixed_header_layout_reads_file_version_not_struct_version() {
     let header: [u32; 4] = [0xFEEF04BD, 0x00010000, 9, 7 << 16];
     assert_eq!(version_from_fixed_header(&header), Some((0, 9, 7)));
 

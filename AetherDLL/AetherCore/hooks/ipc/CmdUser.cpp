@@ -10,16 +10,16 @@
 
 #include "core/AetherCoreState.h"
 #include "core/Constants.h"
-#include "credentials/CredentialStore.h"
-#include "network/EticketFetcher.h"
-#include "hooks/ipc/IPCBus.h"
-#include "hooks/ipc/IpcReply.h"
 #include "core/Logger.h"
-#include "scripting/LuaData.h"
-#include "hooks/ipc/PipeWatch.h"
-#include "hooks/ipc/SteamCapture.h"
+#include "credentials/CredentialStore.h"
 #include "credentials/SteamId.h"
 #include "credentials/Ticket.h"
+#include "hooks/ipc/IPCBus.h"
+#include "hooks/ipc/IpcReply.h"
+#include "hooks/ipc/PipeWatch.h"
+#include "hooks/ipc/SteamCapture.h"
+#include "network/EticketFetcher.h"
+#include "scripting/LuaData.h"
 
 namespace ac::hooks::CmdUser {
 namespace {
@@ -28,8 +28,7 @@ constexpr const char* kModule = "IPC.User";
 using namespace ac::constants;
 
 void LogGetSteamIdOnce(steam::AppId appId, std::uint64_t spoofed) {
-    AC_LOG_DEBUG_ONCE(kModule, "GetSteamID: app %u -> %llu", appId,
-                static_cast<unsigned long long>(spoofed));
+    AC_LOG_DEBUG_ONCE(kModule, "GetSteamID: app %u -> %llu", appId, static_cast<unsigned long long>(spoofed));
 }
 
 // IClientUser::GetSteamID
@@ -42,7 +41,8 @@ void GetSteamID(steam::CSteamPipeClient* pipe, steam::CUtlBuffer*, steam::CUtlBu
         AC_LOG_WARN_ONCE(kModule, "GetSteamID: no SteamID for app %u; leaving reply untouched.", appId);
         return;
     }
-    if (!ipcreply::Begin(pWrite)) return;
+    if (!ipcreply::Begin(pWrite))
+        return;
     ipcreply::WriteU64(pWrite, 1, spoofed);
     LogGetSteamIdOnce(appId, spoofed);
 }
@@ -50,9 +50,9 @@ void GetSteamID(steam::CSteamPipeClient* pipe, steam::CUtlBuffer*, steam::CUtlBu
 // IClientUser::GetAppOwnershipTicketExtendedData
 //   Request args: [uint32 appId][int32 bufSize]
 //   Response: [tag][uint32 ticketSize][ticket bytes ...][offsets block (16 b)]
-void GetAppOwnershipTicketExtendedData(steam::CSteamPipeClient*, steam::CUtlBuffer* pRead,
-                                       steam::CUtlBuffer* pWrite) {
-    if (!pRead || !pRead->Base() || pRead->TellPut() < kIpcArgsOffset + 8) return;
+void GetAppOwnershipTicketExtendedData(steam::CSteamPipeClient*, steam::CUtlBuffer* pRead, steam::CUtlBuffer* pWrite) {
+    if (!pRead || !pRead->Base() || pRead->TellPut() < kIpcArgsOffset + 8)
+        return;
     const std::uint8_t* args = pRead->Base() + kIpcArgsOffset;
 
     std::uint32_t reqAppId = 0;
@@ -65,7 +65,7 @@ void GetAppOwnershipTicketExtendedData(steam::CSteamPipeClient*, steam::CUtlBuff
     }
     if (!luadata::HasDepot(reqAppId)) {
         AC_LOG_WARN_ONCE(kModule, "TicketExtendedData: requested app %u is not configured; leaving reply untouched.",
-                    reqAppId);
+                         reqAppId);
         return;
     }
 
@@ -80,25 +80,23 @@ void GetAppOwnershipTicketExtendedData(steam::CSteamPipeClient*, steam::CUtlBuff
 
     // Reply must fit: tag + size + caller buffer + 16-byte offset block.
     const std::uint32_t total = 1 + 4 + static_cast<std::uint32_t>(reqBufSize) + 16;
-    if (!pWrite || !pWrite->Base() || pWrite->TellPut() < 0 ||
-        static_cast<std::uint32_t>(pWrite->TellPut()) < total) {
+    if (!pWrite || !pWrite->Base() || pWrite->TellPut() < 0 || static_cast<std::uint32_t>(pWrite->TellPut()) < total) {
         AC_LOG_WARN_ONCE(kModule, "TicketExtendedData: reply buffer too small for app %u.", reqAppId);
         return;
     }
 
     const std::uint32_t returnSize = ownership.totalSize ? ownership.totalSize : ticketSize;
 
-    if (!ipcreply::Begin(pWrite)) return;
+    if (!ipcreply::Begin(pWrite))
+        return;
     ipcreply::WriteU32(pWrite, 1, returnSize);
 
     const std::uint32_t copySize =
-        ticketSize < static_cast<std::uint32_t>(reqBufSize) ? ticketSize
-                                                            : static_cast<std::uint32_t>(reqBufSize);
+        ticketSize < static_cast<std::uint32_t>(reqBufSize) ? ticketSize : static_cast<std::uint32_t>(reqBufSize);
     ipcreply::WriteAt(pWrite, 5, ticket.data(), copySize);
     if (copySize < static_cast<std::uint32_t>(reqBufSize)) {
         const std::uint8_t zero = 0;
-        for (std::size_t off = 5 + copySize;
-             off < 5 + static_cast<std::size_t>(reqBufSize); ++off) {
+        for (std::size_t off = 5 + copySize; off < 5 + static_cast<std::size_t>(reqBufSize); ++off) {
             ipcreply::WriteAt(pWrite, off, &zero, 1);
         }
     }
@@ -114,17 +112,17 @@ void GetAppOwnershipTicketExtendedData(steam::CSteamPipeClient*, steam::CUtlBuff
     ipcreply::WriteU32(pWrite, tail + 8, piSignature);
     ipcreply::WriteU32(pWrite, tail + 12, pcbSignature);
 
-    AC_LOG_DEBUG_ONCE(kModule, "TicketExtendedData: app %u -> %u bytes (return=%u, appOff=%u).",
-                reqAppId, ticketSize, returnSize, piAppId);
+    AC_LOG_DEBUG_ONCE(kModule, "TicketExtendedData: app %u -> %u bytes (return=%u, appOff=%u).", reqAppId, ticketSize,
+                      returnSize, piAppId);
 }
 
 // IClientUser::RequestEncryptedAppTicket
 //   The reply buffer carries [tag][uint64 hAsyncCall]; we record the mapping so
 //   the later GetAPICallResult(EncryptedAppTicketResponse) can answer OK.
-void RequestEncryptedAppTicket(steam::CSteamPipeClient* pipe, steam::CUtlBuffer* pRead,
-                               steam::CUtlBuffer* pWrite) {
+void RequestEncryptedAppTicket(steam::CSteamPipeClient* pipe, steam::CUtlBuffer* pRead, steam::CUtlBuffer* pWrite) {
     const steam::AppId appId = pipewatch::AppIdForPipe(pipe);
-    if (!pWrite || !pWrite->Base() || pWrite->TellPut() < 9) return;
+    if (!pWrite || !pWrite->Base() || pWrite->TellPut() < 9)
+        return;
 
     // Request layout after the IPC header: [u32 nonceLen][nonce bytes...].
     // If a Lua-configured backend exists, try to mint a fresh ETicket/AppTicket
@@ -148,7 +146,8 @@ void RequestEncryptedAppTicket(steam::CSteamPipeClient* pipe, steam::CUtlBuffer*
     }
 
     std::uint64_t asyncCall = 0;
-    if (!ipcreply::CanWrite(pWrite, 9)) return;
+    if (!ipcreply::CanWrite(pWrite, 9))
+        return;
     std::memcpy(&asyncCall, pWrite->Base() + 1, sizeof(asyncCall));
     if (!RememberETicketAsyncCall(asyncCall, appId)) {
         AC_LOG_WARN_ONCE(kModule, "RequestEncryptedAppTicket: rejected async=0x%llx app=%u.",
@@ -156,13 +155,12 @@ void RequestEncryptedAppTicket(steam::CSteamPipeClient* pipe, steam::CUtlBuffer*
         return;
     }
     AC_LOG_DEBUG_ONCE(kModule, "RequestEncryptedAppTicket: app %u async=0x%llx recorded.", appId,
-                static_cast<unsigned long long>(asyncCall));
+                      static_cast<unsigned long long>(asyncCall));
 }
 
 // IClientUser::GetEncryptedAppTicket
 //   Response: [tag][1][uint32 size][ticket bytes ...]
-void GetEncryptedAppTicket(steam::CSteamPipeClient* pipe, steam::CUtlBuffer*,
-                           steam::CUtlBuffer* pWrite) {
+void GetEncryptedAppTicket(steam::CSteamPipeClient* pipe, steam::CUtlBuffer*, steam::CUtlBuffer* pWrite) {
     const steam::AppId appId = pipewatch::AppIdForPipe(pipe);
     std::vector<std::uint8_t> ticket = credential::ReadEncryptedTicket(appId);
     if (ticket.empty()) {
@@ -186,21 +184,18 @@ void GetEncryptedAppTicket(steam::CSteamPipeClient* pipe, steam::CUtlBuffer*,
 }
 
 const IpcHandlerEntry kEntries[] = {
-    {ipc_iface::kClientUser, ipc_hash::kClientUser_GetSteamID,
-     "IClientUser::GetSteamID", GetSteamID},
+    {ipc_iface::kClientUser, ipc_hash::kClientUser_GetSteamID, "IClientUser::GetSteamID", GetSteamID},
     {ipc_iface::kClientUser, ipc_hash::kClientUser_GetAppOwnershipTicketExtendedData,
      "IClientUser::GetAppOwnershipTicketExtendedData", GetAppOwnershipTicketExtendedData},
-    {ipc_iface::kClientUser, ipc_hash::kClientUser_RequestEncryptedAppTicket,
-     "IClientUser::RequestEncryptedAppTicket", RequestEncryptedAppTicket},
-    {ipc_iface::kClientUser, ipc_hash::kClientUser_GetEncryptedAppTicket,
-     "IClientUser::GetEncryptedAppTicket", GetEncryptedAppTicket},
+    {ipc_iface::kClientUser, ipc_hash::kClientUser_RequestEncryptedAppTicket, "IClientUser::RequestEncryptedAppTicket",
+     RequestEncryptedAppTicket},
+    {ipc_iface::kClientUser, ipc_hash::kClientUser_GetEncryptedAppTicket, "IClientUser::GetEncryptedAppTicket",
+     GetEncryptedAppTicket},
 };
 
-}  // namespace
+} // namespace
 
-void Register() {
-    RegisterIpcHandlers(kEntries, std::size(kEntries));
-}
+void Register() { RegisterIpcHandlers(kEntries, std::size(kEntries)); }
 
 namespace {
 
@@ -219,7 +214,7 @@ void PruneExpiredLocked(const std::chrono::steady_clock::time_point now) {
     }
 }
 
-}  // namespace
+} // namespace
 
 bool RememberETicketAsyncCall(std::uint64_t asyncCall, steam::AppId appId) {
     if (asyncCall == 0 || appId == 0) {
@@ -244,7 +239,8 @@ bool RememberETicketAsyncCall(std::uint64_t asyncCall, steam::AppId appId) {
     if (state.entries.size() >= kMaxPendingETickets) {
         auto oldest = state.entries.begin();
         for (auto it = std::next(state.entries.begin()); it != state.entries.end(); ++it) {
-            if (it->second.createdAt < oldest->second.createdAt) oldest = it;
+            if (it->second.createdAt < oldest->second.createdAt)
+                oldest = it;
         }
         state.entries.erase(oldest);
         ++state.evictedCount;
@@ -256,7 +252,8 @@ bool RememberETicketAsyncCall(std::uint64_t asyncCall, steam::AppId appId) {
 }
 
 std::optional<steam::AppId> ClaimETicketAsyncCall(std::uint64_t asyncCall) {
-    if (asyncCall == 0) return std::nullopt;
+    if (asyncCall == 0)
+        return std::nullopt;
 
     const auto now = std::chrono::steady_clock::now();
     std::lock_guard<std::mutex> lock(g_state.pendingETickets.mutex);
@@ -264,7 +261,8 @@ std::optional<steam::AppId> ClaimETicketAsyncCall(std::uint64_t asyncCall) {
     PruneExpiredLocked(now);
 
     const auto it = state.entries.find(asyncCall);
-    if (it == state.entries.end()) return std::nullopt;
+    if (it == state.entries.end())
+        return std::nullopt;
 
     const steam::AppId appId = it->second.appId;
     state.entries.erase(it);
@@ -273,7 +271,8 @@ std::optional<steam::AppId> ClaimETicketAsyncCall(std::uint64_t asyncCall) {
 }
 
 void ForgetETicketAsyncCall(std::uint64_t asyncCall) {
-    if (asyncCall == 0) return;
+    if (asyncCall == 0)
+        return;
     std::lock_guard<std::mutex> lock(g_state.pendingETickets.mutex);
     g_state.pendingETickets.entries.erase(asyncCall);
 }
@@ -290,4 +289,4 @@ std::size_t PendingETicketAsyncCallCount() {
     return g_state.pendingETickets.entries.size();
 }
 
-}  // namespace ac::hooks::CmdUser
+} // namespace ac::hooks::CmdUser

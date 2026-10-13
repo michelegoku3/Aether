@@ -32,8 +32,7 @@ bool Submit(std::function<void()> job);
 // does not own/join the thread: the registry alone retains thread ownership.
 // On refusal the output is invalid. Do not wait while holding a body-used lock.
 using WorkerCompletion = std::shared_future<void>;
-bool StartWorker(const std::string& name,
-                 std::function<void(std::atomic<bool>& stop)> body,
+bool StartWorker(const std::string& name, std::function<void(std::atomic<bool>& stop)> body,
                  WorkerCompletion* completion = nullptr);
 
 // Stops everything: sets stop flags, drains and joins the task queue, joins
@@ -44,4 +43,4 @@ void Shutdown();
 // One-line registry summary for diagnostics/log lines.
 std::string SummaryText();
 
-}  // namespace ac::workers
+} // namespace ac::workers

@@ -7,11 +7,7 @@ use crate::providers::hubcap_generation::{
 
 /// Isolated quota file (and sibling lock) in a temp directory.
 fn temp_quota_path(tag: &str) -> std::path::PathBuf {
-    std::env::temp_dir().join(format!(
-        "aether_quota_tests_{}_{}",
-        std::process::id(),
-        tag
-    ))
+    std::env::temp_dir().join(format!("aether_quota_tests_{}_{}", std::process::id(), tag))
 }
 
 fn write_quota_fixture(path: &std::path::Path, body: &str) {
@@ -32,7 +28,11 @@ fn reserve_increments_and_enforces_the_shared_limit() {
     let _ = std::fs::remove_file(&lock);
 
     reserve_quota_at(&path, GenerationKind::Game).expect("first reserve succeeds");
-    assert_eq!(read_game_used(&path), 1, "reserve must persist the increment");
+    assert_eq!(
+        read_game_used(&path),
+        1,
+        "reserve must persist the increment"
+    );
 
     // Pre-fill the budget to the limit: the next reserve is rejected and the
     // counter must stay pinned at the limit.
@@ -46,7 +46,10 @@ fn reserve_increments_and_enforces_the_shared_limit() {
     );
     let denied = reserve_quota_at(&path, GenerationKind::Game)
         .expect_err("budget at the limit must be rejected");
-    assert!(denied.contains("limit reached"), "unexpected error: {denied}");
+    assert!(
+        denied.contains("limit reached"),
+        "unexpected error: {denied}"
+    );
     assert_eq!(
         read_game_used(&path),
         u64::from(MAX_GAME_GENERATIONS_PER_DAY),
@@ -90,8 +93,7 @@ fn day_rollover_resets_the_counters() {
             MAX_GAME_GENERATIONS_PER_DAY, MAX_WORKSHOP_GENERATIONS_PER_DAY
         ),
     );
-    reserve_quota_at(&path, GenerationKind::Game)
-        .expect("a new fixed-EST day resets the budget");
+    reserve_quota_at(&path, GenerationKind::Game).expect("a new fixed-EST day resets the budget");
     reserve_quota_at(&path, GenerationKind::Workshop)
         .expect("the Workshop budget resets with the same day");
     assert_eq!(read_game_used(&path), 1);
@@ -133,8 +135,7 @@ fn stale_lock_is_broken_and_cleaned_up() {
         .expect("lock fixture mtime");
     drop(file);
 
-    reserve_quota_at(&path, GenerationKind::Game)
-        .expect("a stale lock must be broken, not obeyed");
+    reserve_quota_at(&path, GenerationKind::Game).expect("a stale lock must be broken, not obeyed");
     assert_eq!(read_game_used(&path), 1);
 
     let _ = std::fs::remove_file(&path);
@@ -157,9 +158,11 @@ fn budgets_are_independent_per_kind() {
         ),
     );
     let denied = reserve_quota_at(&path, GenerationKind::Game).expect_err("game budget is spent");
-    assert!(denied.contains("game-manifest"), "unexpected error: {denied}");
-    reserve_quota_at(&path, GenerationKind::Workshop)
-        .expect("the Workshop budget is independent");
+    assert!(
+        denied.contains("game-manifest"),
+        "unexpected error: {denied}"
+    );
+    reserve_quota_at(&path, GenerationKind::Workshop).expect("the Workshop budget is independent");
 
     let _ = std::fs::remove_file(&path);
     let _ = std::fs::remove_file(&lock);

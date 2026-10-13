@@ -31,7 +31,10 @@ export const FindCrackModal: React.FC<FindCrackModalProps> = ({ onClose, onSelec
             Choose a crack source to open in your browser.
           </p>
 
-          <div className="home-action-grid" style={{ gridTemplateColumns: 'repeat(2, 172px)', justifyContent: 'center' }}>
+          <div
+            className="home-action-grid"
+            style={{ gridTemplateColumns: 'repeat(2, 172px)', justifyContent: 'center' }}
+          >
             <button className="game-action-btn" onClick={() => onSelect('ofme')} title="online-fix.me (OFME)">
               OFME
             </button>

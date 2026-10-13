@@ -184,12 +184,21 @@ pub fn write(level: LogLevel, module: &str, msg: &str) {
         // Fallback before init()
         let ts = format_timestamp_ms();
         let mod_cap = capitalize_first(module);
-        eprintln!("[{}] [PID:{:05}] [TID:{:05}] [{}] [{:<10}] {}",
-            ts, std::process::id(), current_thread_id(), level.tag(), mod_cap, msg);
+        eprintln!(
+            "[{}] [PID:{:05}] [TID:{:05}] [{}] [{:<10}] {}",
+            ts,
+            std::process::id(),
+            current_thread_id(),
+            level.tag(),
+            mod_cap,
+            msg
+        );
         return;
     };
 
-    let Ok(mut logger) = mutex.lock() else { return; };
+    let Ok(mut logger) = mutex.lock() else {
+        return;
+    };
     if level < logger.min_level {
         return;
     }
@@ -232,7 +241,9 @@ pub fn write_once(level: LogLevel, module: &str, msg: &str) {
 
     let key = format!("{}|{}", module, msg);
     {
-        let Ok(mut logger) = mutex.lock() else { return; };
+        let Ok(mut logger) = mutex.lock() else {
+            return;
+        };
         if logger.dedup_set.contains(&key) {
             return;
         }
@@ -285,7 +296,10 @@ pub fn tail_file_lines(path: &Path, limit: usize) -> Result<Vec<String>, String>
     if length == 0 {
         return Ok(Vec::new());
     }
-    let window = (limit as u64).saturating_mul(1024).clamp(64 * 1024, 8 * 1024 * 1024).min(length);
+    let window = (limit as u64)
+        .saturating_mul(1024)
+        .clamp(64 * 1024, 8 * 1024 * 1024)
+        .min(length);
     let skipped = length - window;
     file.seek(std::io::SeekFrom::End(-(window as i64)))
         .map_err(|e| format!("Failed to seek log file {}: {e}", path.display()))?;
@@ -298,7 +312,10 @@ pub fn tail_file_lines(path: &Path, limit: usize) -> Result<Vec<String>, String>
     let start = if skipped == 0 {
         0
     } else {
-        buf.iter().position(|&b| b == b'\n').map(|pos| pos + 1).unwrap_or(0)
+        buf.iter()
+            .position(|&b| b == b'\n')
+            .map(|pos| pos + 1)
+            .unwrap_or(0)
     };
     let text = String::from_utf8_lossy(&buf[start..]);
     let lines: Vec<String> = text.lines().map(|l| l.to_string()).collect();
@@ -325,7 +342,11 @@ pub fn clear_current_log() {
         }
     }
 
-    write(LogLevel::Info, "lifecycle", "Session log cleared by user command.");
+    write(
+        LogLevel::Info,
+        "lifecycle",
+        "Session log cleared by user command.",
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -419,7 +440,8 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("bin.log");
         let mut file = File::create(&path).unwrap();
-        file.write_all(b"ok line\n\xff\xfe broken \x80 bytes\nlast\n").unwrap();
+        file.write_all(b"ok line\n\xff\xfe broken \x80 bytes\nlast\n")
+            .unwrap();
         drop(file);
         assert!(tail_file_lines(&path, 0).unwrap().is_empty());
         let lines = tail_file_lines(&path, 10).unwrap();

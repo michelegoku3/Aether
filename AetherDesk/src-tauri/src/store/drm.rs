@@ -1,3 +1,5 @@
+use crate::providers::http;
+use crate::steam::api::{self, AppDetailsEnvelope};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
@@ -5,8 +7,6 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
-use crate::providers::http;
-use crate::steam::api::{self, AppDetailsEnvelope};
 
 const DRM_TIMEOUT_SECONDS: u64 = 4;
 /// Kept deliberately low: appdetails is rate-limited per IP (~200 req/5 min),
@@ -91,41 +91,40 @@ impl DrmDetector {
         // the join (an Arc moved into a `move` closure is gone for the caller).
         let rate_limited = Arc::new(AtomicBool::new(false));
         let client = self.client.clone();
-        let fetched = api::concurrent_app_tasks(
-            missing,
-            DRM_CONCURRENCY_LIMIT,
-            {
-                let rate_limited = Arc::clone(&rate_limited);
-                move |app_id| {
-                    let client = client.clone();
-                    let breaker = Arc::clone(&rate_limited);
-                    async move {
-                        // Breaker already tripped: skip silently instead of queueing
-                        // behind the semaphore just to be refused by Steam.
-                        if breaker.load(Ordering::Relaxed) {
-                            return None;
-                        }
-                        match Self::fetch_has_denuvo(&client, app_id).await {
-                            Ok(has_denuvo) => Some((app_id, has_denuvo)),
-                            Err(e) => {
-                                if e.starts_with(api::RATE_LIMIT_ERROR_PREFIX) {
-                                    breaker.store(true, Ordering::Relaxed);
-                                    eprintln!(
-                                        "[DRM] Steam rate limit hit; aborting remaining Denuvo checks"
-                                    );
-                                } else {
-                                    eprintln!("[DRM] Denuvo check failed for {}: {}", app_id, e);
-                                }
-                                None // transient failures are not cached
+        let fetched = api::concurrent_app_tasks(missing, DRM_CONCURRENCY_LIMIT, {
+            let rate_limited = Arc::clone(&rate_limited);
+            move |app_id| {
+                let client = client.clone();
+                let breaker = Arc::clone(&rate_limited);
+                async move {
+                    // Breaker already tripped: skip silently instead of queueing
+                    // behind the semaphore just to be refused by Steam.
+                    if breaker.load(Ordering::Relaxed) {
+                        return None;
+                    }
+                    match Self::fetch_has_denuvo(&client, app_id).await {
+                        Ok(has_denuvo) => Some((app_id, has_denuvo)),
+                        Err(e) => {
+                            if e.starts_with(api::RATE_LIMIT_ERROR_PREFIX) {
+                                breaker.store(true, Ordering::Relaxed);
+                                eprintln!(
+                                    "[DRM] Steam rate limit hit; aborting remaining Denuvo checks"
+                                );
+                            } else {
+                                eprintln!("[DRM] Denuvo check failed for {}: {}", app_id, e);
                             }
+                            None // transient failures are not cached
                         }
                     }
                 }
-            },
-        )
+            }
+        })
         .await;
         if rate_limited.load(Ordering::Relaxed) {
-            eprintln!("[DRM] Denuvo enrichment partially served from cache ({} fresh hits)", results.len());
+            eprintln!(
+                "[DRM] Denuvo enrichment partially served from cache ({} fresh hits)",
+                results.len()
+            );
         }
 
         // 3. Persist only what Steam actually answered.

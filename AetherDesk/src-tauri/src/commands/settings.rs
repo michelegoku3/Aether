@@ -32,14 +32,20 @@ pub async fn save_settings(
     let candidate = crate::core::settings::merge_settings(&base, &settings, &previous)?;
     if candidate.download_games_with_updates_on {
         if candidate.hubcap_api_key.trim().is_empty() {
-            return Err(DeskError::coded(codes::HUBCAP_KEY_REQUIRED_FOR_UPDATES, "enable updates only with a valid active Hubcap key"));
+            return Err(DeskError::coded(
+                codes::HUBCAP_KEY_REQUIRED_FOR_UPDATES,
+                "enable updates only with a valid active Hubcap key",
+            ));
         }
         let active = HubcapClient::new(&candidate.hubcap_api_key)
             .validate_api_key()
             .await
             .map_err(|e| DeskError::coded(codes::HUBCAP_KEY_REQUIRED_FOR_UPDATES, e))?;
         if !active {
-            return Err(DeskError::coded(codes::HUBCAP_KEY_REQUIRED_FOR_UPDATES, "the Hubcap key is not active"));
+            return Err(DeskError::coded(
+                codes::HUBCAP_KEY_REQUIRED_FOR_UPDATES,
+                "the Hubcap key is not active",
+            ));
         }
     }
     manager.update("ui-patch", |current| {
@@ -48,9 +54,10 @@ pub async fn save_settings(
             && (!candidate.download_games_with_updates_on
                 || next.hubcap_api_key != candidate.hubcap_api_key)
         {
-            return Err(
-                DeskError::coded(codes::SETTINGS_CONFLICT, "update policy/key changed during validation; retry"),
-            );
+            return Err(DeskError::coded(
+                codes::SETTINGS_CONFLICT,
+                "update policy/key changed during validation; retry",
+            ));
         }
         *current = next;
         Ok(())

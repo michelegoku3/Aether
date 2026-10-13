@@ -62,7 +62,10 @@ pub fn edit(
             Err(e) => return Err(format!("Cannot recheck configuration: {e}")),
         };
         if current != original {
-            return Err(DeskError::coded(codes::CONFIG_CONFLICT, "configuration changed externally; retry"));
+            return Err(DeskError::coded(
+                codes::CONFIG_CONFLICT,
+                "configuration changed externally; retry",
+            ));
         }
         super::state_io::write_atomic(path, next.as_bytes())?;
         Ok(true)

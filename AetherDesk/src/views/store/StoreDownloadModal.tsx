@@ -79,7 +79,8 @@ export function StoreDownloadModal({
             <div className="action-info">
               <span className="action-title">Download Latest Version</span>
               <span className="action-desc">
-                Downloads the most recent manifest files and decryption keys directly into Steam. This allows Steam to download and install the latest official release.
+                Downloads the most recent manifest files and decryption keys directly into Steam. This allows Steam to
+                download and install the latest official release.
               </span>
             </div>
           </button>
@@ -89,7 +90,8 @@ export function StoreDownloadModal({
             <div className="action-info">
               <span className="action-title">Download Specific Version</span>
               <span className="action-desc">
-                Allows you to pick and download a specific historical version or downgrade release of the game by pinning custom Steam manifest IDs.
+                Allows you to pick and download a specific historical version or downgrade release of the game by
+                pinning custom Steam manifest IDs.
               </span>
             </div>
           </button>

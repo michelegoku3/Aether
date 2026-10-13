@@ -53,9 +53,8 @@ struct OwnershipTicket {
 };
 
 // Validates a raw ticket blob against the expected appId and SteamID.
-AppTicketInspection InspectAppOwnershipTicket(const std::vector<std::uint8_t>& data,
-                                             steam::AppId appId,
-                                             std::uint64_t expectedSteamId);
+AppTicketInspection InspectAppOwnershipTicket(const std::vector<std::uint8_t>& data, steam::AppId appId,
+                                              std::uint64_t expectedSteamId);
 
 // Best-effort ownership ticket for appId: reads from CredentialStore, forges
 // from a valid source (AppID 7 or any other owned app) when no direct ticket
@@ -66,7 +65,6 @@ bool GetAppOwnershipTicket(steam::AppId appId, OwnershipTicket& ticket);
 // Forges a ticket for targetAppId by inserting the target app id just before
 // the signature of a valid sourceAppId ticket. Returns an empty vector on
 // failure (source missing, incompatible, or SteamID mismatch).
-std::vector<std::uint8_t> ForgeAppOwnershipTicket(steam::AppId sourceAppId,
-                                                  steam::AppId targetAppId);
+std::vector<std::uint8_t> ForgeAppOwnershipTicket(steam::AppId sourceAppId, steam::AppId targetAppId);
 
-}  // namespace ac::ticket
+} // namespace ac::ticket

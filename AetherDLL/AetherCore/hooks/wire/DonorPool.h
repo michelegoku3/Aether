@@ -60,4 +60,4 @@ Correl ResolveAttempt(bool hasJobIdTarget, std::uint64_t jobIdTarget, StatAttemp
 void RecordPendingClientStats(steam::AppId appId, StatAttempt attempt);
 bool TakePendingClientStats(steam::AppId appId, StatAttempt& out);
 
-}  // namespace ac::hooks::DonorPool
+} // namespace ac::hooks::DonorPool

@@ -1,7 +1,7 @@
-use crate::util::game_resolver::resolve_installed_game;
 use crate::steamless::{
     SteamlessRunRequest, SteamlessRunResult, SteamlessRunner, SteamlessToolLocator,
 };
+use crate::util::game_resolver::resolve_installed_game;
 use std::path::PathBuf;
 use tauri_plugin_dialog::{DialogExt, FilePath};
 
@@ -37,10 +37,20 @@ pub async fn pick_and_run_steamless(
     };
 
     let exe_path = file_path_to_path_buf(file_path)?;
-    crate::desk_log_info!("steamless", "Running Steamless on executable: {} (game: '{}')", exe_path.display(), game.name);
+    crate::desk_log_info!(
+        "steamless",
+        "Running Steamless on executable: {} (game: '{}')",
+        exe_path.display(),
+        game.name
+    );
     let tool = SteamlessToolLocator::new(app.clone()).locate()?;
 
-    let mutation = crate::core::game_mutations::acquire(std::path::Path::new(&steam_root), app_id, "external-tool").await?;
+    let mutation = crate::core::game_mutations::acquire(
+        std::path::Path::new(&steam_root),
+        app_id,
+        "external-tool",
+    )
+    .await?;
     crate::core::game_mutations::ensure_current_root(&app, std::path::Path::new(&steam_root))?;
     let res = tauri::async_runtime::spawn_blocking(move || {
         let _mutation = mutation;
@@ -53,7 +63,12 @@ pub async fn pick_and_run_steamless(
     .await
     .map_err(|e| format!("Steamless worker failed: {}", e))??;
 
-    crate::desk_log_info!("steamless", "Steamless run finished: success={}, message='{}'", res.success, res.message);
+    crate::desk_log_info!(
+        "steamless",
+        "Steamless run finished: success={}, message='{}'",
+        res.success,
+        res.message
+    );
     Ok(res)
 }
 

@@ -28,8 +28,7 @@ export const CrackModal = ({ game, onClose }: CrackModalProps) => {
   const [vnPatchMode, setVnPatchMode] = useState(false);
   const [status, setStatus] = useState<StatusMessage>(emptyStatus());
 
-  const showStatus = (text: string, type: StatusMessage['type']) =>
-    setStatus({ text, type });
+  const showStatus = (text: string, type: StatusMessage['type']) => setStatus({ text, type });
 
   const addFiles = (paths: string[]) => {
     setSelectedFiles((prev) => [...prev, ...paths]);
@@ -78,7 +77,6 @@ export const CrackModal = ({ game, onClose }: CrackModalProps) => {
 
   const fileNames = selectedFiles.map(basename);
 
-
   return (
     <div className="modal-overlay" onClick={isApplying ? undefined : onClose}>
       <div className="modal-container crack-modal-container" onClick={(e) => e.stopPropagation()}>
@@ -101,16 +99,10 @@ export const CrackModal = ({ game, onClose }: CrackModalProps) => {
         <div className="modal-separator"></div>
 
         <div className="modal-body">
-          {status.text && (
-            <div className={`settings-alert ${status.type} settings-alert--compact`}>
-              {status.text}
-            </div>
-          )}
+          {status.text && <div className={`settings-alert ${status.type} settings-alert--compact`}>{status.text}</div>}
 
           <div
-            className={`crack-drop-zone ${
-              fileNames.length > 0 ? 'has-file' : ''
-            }`}
+            className={`crack-drop-zone ${fileNames.length > 0 ? 'has-file' : ''}`}
             role="button"
             tabIndex={0}
             aria-label="Select crack file(s)"
@@ -140,12 +132,7 @@ export const CrackModal = ({ game, onClose }: CrackModalProps) => {
                 Make the crack achievement compatible (it could break the crack)
               </span>
               <span className="crack-checkbox-label">
-                <input
-                  type="checkbox"
-                  className="crack-checkbox-input"
-                  checked={false}
-                  disabled={true}
-                />
+                <input type="checkbox" className="crack-checkbox-input" checked={false} disabled={true} />
                 <span className="crack-checkbox-box"></span>
               </span>
             </label>
@@ -154,9 +141,7 @@ export const CrackModal = ({ game, onClose }: CrackModalProps) => {
               className="crack-achievement-row"
               title="When ON, Visual Novel self-extracting .exe patches are staged and extracted as archives (.exe.zip) so their contents can be applied automatically"
             >
-              <span className="crack-achievement-text">
-                Make Apply Crack work for VNs .exe patches
-              </span>
+              <span className="crack-achievement-text">Make Apply Crack work for VNs .exe patches</span>
               <span className="crack-checkbox-label">
                 <input
                   type="checkbox"

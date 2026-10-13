@@ -118,16 +118,21 @@ export const emptyRequest = (ogAppId: number): OnlineEnableRequest => ({
 
 export const engineLabel = (engine: EngineKind): string => {
   switch (engine) {
-    case 'unity': return 'Unity';
-    case 'unreal': return 'Unreal';
-    default: return 'Generic';
+    case 'unity':
+      return 'Unity';
+    case 'unreal':
+      return 'Unreal';
+    default:
+      return 'Generic';
   }
 };
 
 const photonFlavorLabel = (flavor: PhotonFlavorKind): string => {
   switch (flavor) {
-    case 'fusion': return 'Fusion';
-    default: return 'Realtime';
+    case 'fusion':
+      return 'Fusion';
+    default:
+      return 'Realtime';
   }
 };
 
@@ -145,12 +150,18 @@ export const backendChips = (backends: OnlineBackendReport): string[] => {
 
 export const conflictLabel = (kind: string): string => {
   switch (kind) {
-    case 'coldClientLoader': return 'ColdClientLoader';
-    case 'steamFix': return 'SteamFix';
-    case 'ofme': return 'OFME (online-fix.me)';
-    case 'namedFixFile': return 'Fix file (winmm/...)';
-    case 'proxyDll': return 'Proxy DLL';
-    default: return kind;
+    case 'coldClientLoader':
+      return 'ColdClientLoader';
+    case 'steamFix':
+      return 'SteamFix';
+    case 'ofme':
+      return 'OFME (online-fix.me)';
+    case 'namedFixFile':
+      return 'Fix file (winmm/...)';
+    case 'proxyDll':
+      return 'Proxy DLL';
+    default:
+      return kind;
   }
 };
 

@@ -1,9 +1,9 @@
+use crate::manifest::package::ManifestPackageFile;
+use crate::manifest::resolver::depotcache_commit_gate;
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
-use crate::manifest::package::ManifestPackageFile;
-use crate::manifest::resolver::depotcache_commit_gate;
 
 #[derive(Clone)]
 pub struct SteamCompat {
@@ -23,8 +23,7 @@ impl SteamCompat {
     /// scattering `config/stplug-in` or `depotcache` folders at wrong locations.
     fn validated_root(&self) -> Result<PathBuf, String> {
         let raw = self.steam_path.to_string_lossy();
-        crate::steam::resolve::resolve_steam_path(&raw)
-            .map_err(|error| error.message(&raw))
+        crate::steam::resolve::resolve_steam_path(&raw).map_err(|error| error.message(&raw))
     }
 
     /// Returns the path to Steam's main plugin directory
@@ -48,7 +47,10 @@ impl SteamCompat {
     }
 
     /// Safely writes Steam depot .manifest files to Steam/depotcache.
-    pub fn install_manifest_files(&self, manifests: &[ManifestPackageFile]) -> Result<usize, String> {
+    pub fn install_manifest_files(
+        &self,
+        manifests: &[ManifestPackageFile],
+    ) -> Result<usize, String> {
         if manifests.is_empty() {
             return Ok(0);
         }
@@ -62,7 +64,10 @@ impl SteamCompat {
 
         let mut installed = 0usize;
         for manifest in manifests {
-            let Some(file_name) = Path::new(&manifest.file_name).file_name().and_then(|name| name.to_str()) else {
+            let Some(file_name) = Path::new(&manifest.file_name)
+                .file_name()
+                .and_then(|name| name.to_str())
+            else {
                 continue;
             };
             if !file_name.to_ascii_lowercase().ends_with(".manifest") {
@@ -92,7 +97,12 @@ impl SteamCompat {
             installed += 1;
         }
 
-        crate::desk_log_info!("steam", "Installed {} manifest file(s) into Steam depotcache ({})", installed, depotcache_dir.display());
+        crate::desk_log_info!(
+            "steam",
+            "Installed {} manifest file(s) into Steam depotcache ({})",
+            installed,
+            depotcache_dir.display()
+        );
         Ok(installed)
     }
 
@@ -131,14 +141,18 @@ impl SteamCompat {
                 return Err("Hubcap package contains an invalid manifest filename".to_string());
             };
             if !name.to_ascii_lowercase().ends_with(".manifest") {
-                return Err(format!("Hubcap package contains a non-manifest file: {name}"));
+                return Err(format!(
+                    "Hubcap package contains a non-manifest file: {name}"
+                ));
             }
             if manifest.bytes.is_empty() {
                 return Err(format!("Refusing to install empty manifest {name}"));
             }
             if let Some(previous) = files.insert(name.to_string(), manifest.bytes.clone()) {
                 if previous != manifest.bytes {
-                    return Err(format!("Hubcap package contains conflicting copies of {name}"));
+                    return Err(format!(
+                        "Hubcap package contains conflicting copies of {name}"
+                    ));
                 }
             }
         }
@@ -200,30 +214,49 @@ impl SteamCompat {
         for (target, _) in &staged {
             if target.exists() {
                 if let Err(error) = fs::remove_file(target) {
-                    rollback!(format!("Could not replace existing {}: {error}", target.display()));
+                    rollback!(format!(
+                        "Could not replace existing {}: {error}",
+                        target.display()
+                    ));
                 }
             }
         }
         for (target, temporary) in &staged {
             if let Err(error) = fs::rename(temporary, target) {
-                rollback!(format!("Failed to commit manifest {}: {error}", target.display()));
+                rollback!(format!(
+                    "Failed to commit manifest {}: {error}",
+                    target.display()
+                ));
             }
             committed.push(target.clone());
         }
         for (target, _) in &staged {
             let expected = files
-                .get(target.file_name().and_then(|name| name.to_str()).unwrap_or_default())
+                .get(
+                    target
+                        .file_name()
+                        .and_then(|name| name.to_str())
+                        .unwrap_or_default(),
+                )
                 .map(Vec::len)
                 .unwrap_or(0);
-            let actual = fs::metadata(target).map(|metadata| metadata.len()).unwrap_or(0);
+            let actual = fs::metadata(target)
+                .map(|metadata| metadata.len())
+                .unwrap_or(0);
             if expected == 0 || actual != expected as u64 {
-                rollback!(format!("Committed manifest {} failed verification", target.display()));
+                rollback!(format!(
+                    "Committed manifest {} failed verification",
+                    target.display()
+                ));
             }
         }
 
         if lua_target.exists() {
             if let Err(error) = fs::remove_file(&lua_target) {
-                rollback!(format!("Could not replace existing {}: {error}", lua_target.display()));
+                rollback!(format!(
+                    "Could not replace existing {}: {error}",
+                    lua_target.display()
+                ));
             }
         }
         if let Err(error) = fs::rename(&lua_temp, &lua_target) {
@@ -240,7 +273,8 @@ impl SteamCompat {
 
         if old_files[0].1.is_some() {
             if let Ok(backup) = crate::core::backup::GameBackup::for_app(app_id) {
-                let _ = backup.store_history_version(app_id, &old_files[0].1.clone().unwrap_or_default());
+                let _ = backup
+                    .store_history_version(app_id, &old_files[0].1.clone().unwrap_or_default());
             }
         }
         crate::desk_log_info!(

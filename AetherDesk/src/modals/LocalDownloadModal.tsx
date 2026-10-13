@@ -35,8 +35,7 @@ export const LocalDownloadModal = ({ game, onClose, onInstalled }: LocalDownload
   const [status, setStatus] = useState<StatusMessage>(emptyStatus());
   const { loadInstalledGames } = useLibraryGames();
 
-  const showStatus = (text: string, type: StatusMessage['type']) =>
-    setStatus({ text, type });
+  const showStatus = (text: string, type: StatusMessage['type']) => setStatus({ text, type });
 
   const addFiles = (paths: string[]) => {
     setSelectedFiles((prev) => {
@@ -123,9 +122,7 @@ export const LocalDownloadModal = ({ game, onClose, onInstalled }: LocalDownload
   const visibleFileNames = fileNames.slice(0, MAX_VISIBLE_FILES);
   const hiddenFileCount = fileNames.length - visibleFileNames.length;
 
-  const modalTitle = game
-    ? `Local Install for: ${game.name} (${game.appId})`
-    : 'Local Import (Bulk Lua & Manifests)';
+  const modalTitle = game ? `Local Install for: ${game.name} (${game.appId})` : 'Local Import (Bulk Lua & Manifests)';
 
   return (
     <div className="modal-overlay" onClick={isInstalling ? undefined : onClose}>
@@ -155,16 +152,10 @@ export const LocalDownloadModal = ({ game, onClose, onInstalled }: LocalDownload
         <div className="modal-separator"></div>
 
         <div className="modal-body">
-          {status.text && (
-            <div className={`settings-alert ${status.type} settings-alert--compact`}>
-              {status.text}
-            </div>
-          )}
+          {status.text && <div className={`settings-alert ${status.type} settings-alert--compact`}>{status.text}</div>}
 
           <div
-            className={`crack-drop-zone ${
-              fileNames.length > 0 ? 'has-file' : ''
-            }`}
+            className={`crack-drop-zone ${fileNames.length > 0 ? 'has-file' : ''}`}
             role="button"
             tabIndex={0}
             aria-label="Select files, folders, or archives"
@@ -183,10 +174,7 @@ export const LocalDownloadModal = ({ game, onClose, onInstalled }: LocalDownload
                   </span>
                 ))}
                 {hiddenFileCount > 0 && (
-                  <span
-                    className="crack-drop-filename"
-                    title={selectedFiles.slice(MAX_VISIBLE_FILES).join('\n')}
-                  >
+                  <span className="crack-drop-filename" title={selectedFiles.slice(MAX_VISIBLE_FILES).join('\n')}>
                     … (+{hiddenFileCount} more item{hiddenFileCount === 1 ? '' : 's'})
                   </span>
                 )}

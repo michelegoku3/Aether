@@ -80,12 +80,14 @@ const isCoverAssetUrl = (url: string): boolean => {
   if (lower.includes('hero_capsule') || lower.includes('library_hero') || lower.includes('/header')) {
     return false;
   }
-  return lower.includes('library_capsule')
-    || lower.includes('main_capsule')
-    || lower.includes('small_capsule')
-    || lower.includes('capsule_231x87')
-    || lower.includes('capsule_616x353')
-    || lower.includes('library_600x900');
+  return (
+    lower.includes('library_capsule') ||
+    lower.includes('main_capsule') ||
+    lower.includes('small_capsule') ||
+    lower.includes('capsule_231x87') ||
+    lower.includes('capsule_616x353') ||
+    lower.includes('library_600x900')
+  );
 };
 
 /** Bounded LRU map for in-memory cover resolution. `get` promotes the key to
@@ -138,11 +140,18 @@ const sweepLegacyAndStaleEntries = () => {
       // Keep v4 entries whose TTL is still valid; drop anything expired.
       try {
         const raw = localStorage.getItem(key);
-        if (!raw) { toRemove.push(key); continue; }
+        if (!raw) {
+          toRemove.push(key);
+          continue;
+        }
         const env = JSON.parse(raw) as Partial<PersistedCoverEnvelope>;
-        if (env.v !== 4 || typeof env.cachedAt !== 'number' || !env.url
-            || !isCoverAssetUrl(env.url)
-            || now - env.cachedAt > COVER_CACHE_TTL_MS) {
+        if (
+          env.v !== 4 ||
+          typeof env.cachedAt !== 'number' ||
+          !env.url ||
+          !isCoverAssetUrl(env.url) ||
+          now - env.cachedAt > COVER_CACHE_TTL_MS
+        ) {
           toRemove.push(key);
           continue;
         }
@@ -151,12 +160,22 @@ const sweepLegacyAndStaleEntries = () => {
         toRemove.push(key);
       }
     }
-    toRemove.forEach((k) => { try { localStorage.removeItem(k); } catch { /* ignore */ } });
+    toRemove.forEach((k) => {
+      try {
+        localStorage.removeItem(k);
+      } catch {
+        /* ignore */
+      }
+    });
     // If we're still over the persisted cap, evict the oldest entries.
     if (kept.length > MAX_PERSISTED_ENTRIES) {
       kept.sort((a, b) => a.cachedAt - b.cachedAt);
       kept.slice(MAX_PERSISTED_ENTRIES).forEach(({ key }) => {
-        try { localStorage.removeItem(key); } catch { /* ignore */ }
+        try {
+          localStorage.removeItem(key);
+        } catch {
+          /* ignore */
+        }
       });
     }
   } catch {
@@ -168,12 +187,14 @@ const parseCachedCover = (raw: string | null): ResolvedCover | null => {
   if (!raw) return null;
   try {
     const env = JSON.parse(raw) as Partial<PersistedCoverEnvelope>;
-    if (env.v === 4
-        && typeof env.url === 'string'
-        && (env.fit === 'portrait' || env.fit === 'landscape')
-        && typeof env.cachedAt === 'number'
-        && Date.now() - env.cachedAt <= COVER_CACHE_TTL_MS
-        && isCoverAssetUrl(env.url)) {
+    if (
+      env.v === 4 &&
+      typeof env.url === 'string' &&
+      (env.fit === 'portrait' || env.fit === 'landscape') &&
+      typeof env.cachedAt === 'number' &&
+      Date.now() - env.cachedAt <= COVER_CACHE_TTL_MS &&
+      isCoverAssetUrl(env.url)
+    ) {
       return { url: env.url, fit: env.fit };
     }
   } catch {
@@ -255,10 +276,7 @@ const classifyLoadedImage = (image: HTMLImageElement): CoverFit | null => {
   return ratio <= PORTRAIT_RATIO_THRESHOLD ? 'portrait' : 'landscape';
 };
 
-const preloadCoverChain = (
-  urls: string[],
-  onResolved: (cover: ResolvedCover | null) => void,
-): (() => void) => {
+const preloadCoverChain = (urls: string[], onResolved: (cover: ResolvedCover | null) => void): (() => void) => {
   let cancelled = false;
   let index = 0;
   let currentImage: HTMLImageElement | null = null;
@@ -341,11 +359,7 @@ const releaseCoverChain = (appId: string, listener: CoverListener) => {
 
 /** Starts the chain for `appId` or hooks onto the one already running.
  *  Returns the release function (to use as an effect cleanup). */
-const subscribeToCoverChain = (
-  appId: string,
-  urls: string[],
-  listener: CoverListener,
-): (() => void) => {
+const subscribeToCoverChain = (appId: string, urls: string[], listener: CoverListener): (() => void) => {
   const existing = coverChains.get(appId);
   if (existing) {
     existing.listeners.add(listener);
@@ -396,16 +410,13 @@ export const preloadGameCovers = (games: GameCoverPreloadInput[], maxCount = 40)
   });
 };
 
-/** Distanza dal viewport a cui la risoluzione lazy si mette in moto: abbastanza
- *  da non mostrare il placeholder durante uno scroll normale. */
+/** Distance from the viewport at which lazy resolution kicks in: enough
+ *  to avoid showing the placeholder during a normal scroll. */
 const LAZY_ROOT_MARGIN = '256px';
 
 export const GameCover = ({ appId, name, canonicalUrl }: GameCoverProps) => {
   const appIdString = String(appId);
-  const urls = useMemo(
-    () => buildCoverUrls(appIdString, canonicalUrl),
-    [appIdString, canonicalUrl],
-  );
+  const urls = useMemo(() => buildCoverUrls(appIdString, canonicalUrl), [appIdString, canonicalUrl]);
 
   // ONE cache read per mount. Two state initializers used to call
   // `initialCachedCover` (localStorage.getItem + JSON.parse) each, and the
@@ -439,7 +450,7 @@ export const GameCover = ({ appId, name, canonicalUrl }: GameCoverProps) => {
           observer.disconnect();
         }
       },
-      { rootMargin: LAZY_ROOT_MARGIN },
+      { rootMargin: LAZY_ROOT_MARGIN }
     );
     observer.observe(node);
     return () => observer.disconnect();
@@ -462,9 +473,7 @@ export const GameCover = ({ appId, name, canonicalUrl }: GameCoverProps) => {
     const cachedCover = getCachedCover(appIdString);
     if (cacheIsFinal(cachedCover, urls)) {
       setLookup((current) =>
-        current.cover?.url === cachedCover?.url && current.finished
-          ? current
-          : { cover: cachedCover, finished: true },
+        current.cover?.url === cachedCover?.url && current.finished ? current : { cover: cachedCover, finished: true }
       );
       return;
     }
@@ -474,21 +483,13 @@ export const GameCover = ({ appId, name, canonicalUrl }: GameCoverProps) => {
   }, [appIdString, urls, isNearViewport]);
 
   return (
-    <div
-      ref={wrapperRef}
-      className={`game-cover-wrapper ${resolvedCover?.fit === 'landscape' ? 'landscape' : ''}`}
-    >
+    <div ref={wrapperRef} className={`game-cover-wrapper ${resolvedCover?.fit === 'landscape' ? 'landscape' : ''}`}>
       {resolvedCover?.fit === 'landscape' ? (
         <img src={resolvedCover.url} alt="" className="game-cover-backdrop" aria-hidden="true" loading="lazy" />
       ) : null}
 
       {resolvedCover ? (
-        <img
-          src={resolvedCover.url}
-          alt={name}
-          className={`game-cover-image ${resolvedCover.fit}`}
-          loading="lazy"
-        />
+        <img src={resolvedCover.url} alt={name} className={`game-cover-image ${resolvedCover.fit}`} loading="lazy" />
       ) : null}
 
       {!resolvedCover ? (

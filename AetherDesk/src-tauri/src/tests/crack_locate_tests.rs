@@ -76,7 +76,11 @@ fn tempfile_tempdir() -> TempDirGuard {
     use std::sync::atomic::{AtomicUsize, Ordering};
     static COUNTER: AtomicUsize = AtomicUsize::new(0);
     let id = COUNTER.fetch_add(1, Ordering::SeqCst);
-    let path = std::env::temp_dir().join(format!("aetherdesk_crack_locate_test_{}_{}", std::process::id(), id));
+    let path = std::env::temp_dir().join(format!(
+        "aetherdesk_crack_locate_test_{}_{}",
+        std::process::id(),
+        id
+    ));
     let _ = fs::remove_dir_all(&path);
     fs::create_dir_all(&path).unwrap();
     TempDirGuard(path)

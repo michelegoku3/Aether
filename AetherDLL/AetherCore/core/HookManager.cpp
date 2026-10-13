@@ -15,24 +15,29 @@ constexpr const char* kModule = "HookManager";
 
 const char* MissReasonText(MissReason reason) {
     switch (reason) {
-        case MissReason::PatternUnresolved: return "pattern not resolved";
-        case MissReason::AddressCollision: return "address collision with another hook";
-        case MissReason::KnownAlias: return "same function as another hook (known alias)";
-        case MissReason::MetadataUnavailable: return "required metadata unavailable";
-        case MissReason::HandlerCollision: return "handler collision (duplicate IPC target)";
-        case MissReason::RuntimeNotApplicable: return "not applicable in this process";
-        case MissReason::InstallFailed: return "MinHook could not create the hook";
-        case MissReason::SentinelRejected: return "rejected by the ABI sentinel (not a function start)";
+    case MissReason::PatternUnresolved:
+        return "pattern not resolved";
+    case MissReason::AddressCollision:
+        return "address collision with another hook";
+    case MissReason::KnownAlias:
+        return "same function as another hook (known alias)";
+    case MissReason::MetadataUnavailable:
+        return "required metadata unavailable";
+    case MissReason::HandlerCollision:
+        return "handler collision (duplicate IPC target)";
+    case MissReason::RuntimeNotApplicable:
+        return "not applicable in this process";
+    case MissReason::InstallFailed:
+        return "MinHook could not create the hook";
+    case MissReason::SentinelRejected:
+        return "rejected by the ABI sentinel (not a function start)";
     }
     return "unknown reason";
 }
 
-bool IsBenignMiss(MissReason reason) {
-    return reason == MissReason::KnownAlias;
-}
+bool IsBenignMiss(MissReason reason) { return reason == MissReason::KnownAlias; }
 
-std::string MissedHookText(const std::string& name, MissReason reason,
-                           const std::string& detail) {
+std::string MissedHookText(const std::string& name, MissReason reason, const std::string& detail) {
     std::string text = name + " (" + MissReasonText(reason);
     if (!detail.empty()) {
         text += ": " + detail;
@@ -47,7 +52,8 @@ void HookManager::RegisterHook(const std::string& name, void* target, void** ori
     // queued under the same name must not be queued twice (its target/detour
     // never change for a given feature module).
     for (const HookInfo& h : hooks_) {
-        if (h.name == name) return;
+        if (h.name == name)
+            return;
     }
     hooks_.push_back(HookInfo{name, target, original, detour, false});
     // The name may have been reported missed by an earlier attempt (pattern
@@ -60,8 +66,7 @@ void HookManager::RegisterHook(const std::string& name, void* target, void** ori
     }
 }
 
-void HookManager::RecordMissed(const std::string& name, MissReason reason,
-                               const std::string& detail) {
+void HookManager::RecordMissed(const std::string& name, MissReason reason, const std::string& detail) {
     std::lock_guard lock(mutex_);
     // Report each name once per session; re-runs of a registration batch must
     // not grow the missed list with duplicates. A re-report with a MORE
@@ -77,9 +82,8 @@ void HookManager::RecordMissed(const std::string& name, MissReason reason,
                 existing.detail = detail;
             }
             if (existing.reason != reason && reason != MissReason::PatternUnresolved) {
-                AC_LOG_WARN(kModule, "Hook '%s' missed: %s (was reported as: %s).",
-                            name.c_str(), MissReasonText(reason),
-                            MissReasonText(existing.reason));
+                AC_LOG_WARN(kModule, "Hook '%s' missed: %s (was reported as: %s).", name.c_str(),
+                            MissReasonText(reason), MissReasonText(existing.reason));
                 diag::Record("hook_miss", MissedHookText(name, reason, existing.detail));
                 existing.reason = reason;
             }
@@ -87,8 +91,8 @@ void HookManager::RecordMissed(const std::string& name, MissReason reason,
         }
     }
     if (IsBenignMiss(reason)) {
-        AC_LOG_INFO(kModule, "Hook '%s' not installed: %s%s%s.", name.c_str(),
-                    MissReasonText(reason), detail.empty() ? "" : " — ", detail.c_str());
+        AC_LOG_INFO(kModule, "Hook '%s' not installed: %s%s%s.", name.c_str(), MissReasonText(reason),
+                    detail.empty() ? "" : " — ", detail.c_str());
     } else {
         AC_LOG_WARN(kModule, "Hook '%s' missed: %s%s%s.", name.c_str(), MissReasonText(reason),
                     detail.empty() ? "" : " — ", detail.c_str());
@@ -106,7 +110,8 @@ bool HookManager::InstallAll() {
     }
 
     for (auto& hook : hooks_) {
-        if (hook.created) continue;
+        if (hook.created)
+            continue;
         MH_STATUS status = MH_CreateHook(hook.target, hook.detour, hook.original);
         if (status == MH_OK || status == MH_ERROR_ALREADY_CREATED) {
             hook.created = true;
@@ -118,11 +123,10 @@ bool HookManager::InstallAll() {
         } else {
             // A missing redirect can be retried every 500 ms. Record one miss
             // per hook, not one for each attempt; clear it on later success.
-            auto missed = std::find_if(missed_.begin(), missed_.end(),
-                [&](const MissedHook& m) { return m.name == hook.name; });
+            auto missed =
+                std::find_if(missed_.begin(), missed_.end(), [&](const MissedHook& m) { return m.name == hook.name; });
             if (missed == missed_.end()) {
-                AC_LOG_ERROR(kModule, "Hook '%s' creation failed: %s",
-                             hook.name.c_str(), MH_StatusToString(status));
+                AC_LOG_ERROR(kModule, "Hook '%s' creation failed: %s", hook.name.c_str(), MH_StatusToString(status));
                 diag::Record("hook_create_failed", hook.name);
                 missed_.push_back(MissedHook{hook.name, MissReason::InstallFailed, {}});
             } else {
@@ -138,7 +142,8 @@ bool HookManager::InstallAll() {
     }
     std::ostringstream installed;
     for (std::size_t i = 0; i < installed_.size(); ++i) {
-        if (i) installed << ", ";
+        if (i)
+            installed << ", ";
         installed << installed_[i];
     }
 
@@ -148,16 +153,17 @@ bool HookManager::InstallAll() {
     std::size_t realMisses = 0;
     std::ostringstream missed;
     for (std::size_t i = 0; i < missed_.size(); ++i) {
-        if (i) missed << ", ";
+        if (i)
+            missed << ", ";
         missed << missed_[i].name << " (" << MissReasonText(missed_[i].reason) << ")";
-        if (!IsBenignMiss(missed_[i].reason)) ++realMisses;
+        if (!IsBenignMiss(missed_[i].reason))
+            ++realMisses;
     }
     const std::size_t benign = missed_.size() - realMisses;
 
     if (realMisses == 0) {
         if (benign == 0) {
-            AC_LOG_INFO(kModule, "Enabled %d hooks (0 missed): [%s].", installedCount_,
-                        installed.str().c_str());
+            AC_LOG_INFO(kModule, "Enabled %d hooks (0 missed): [%s].", installedCount_, installed.str().c_str());
         } else {
             AC_LOG_INFO(kModule,
                         "Enabled %d hooks (0 missed, %zu known alias): installed=[%s] "
@@ -165,10 +171,10 @@ bool HookManager::InstallAll() {
                         installedCount_, benign, installed.str().c_str(), missed.str().c_str());
         }
     } else {
-        AC_LOG_WARN(kModule, "Enabled %d hooks (%zu missed, %zu known alias): "
+        AC_LOG_WARN(kModule,
+                    "Enabled %d hooks (%zu missed, %zu known alias): "
                     "installed=[%s] missed=[%s].",
-                    installedCount_, realMisses, benign, installed.str().c_str(),
-                    missed.str().c_str());
+                    installedCount_, realMisses, benign, installed.str().c_str(), missed.str().c_str());
     }
     return true;
 }
@@ -177,7 +183,8 @@ bool HookManager::UninstallAll() {
     std::lock_guard lock(mutex_);
     MH_DisableHook(MH_ALL_HOOKS);
     MH_Uninitialize();
-    for (auto& hook : hooks_) hook.created = false;
+    for (auto& hook : hooks_)
+        hook.created = false;
     installed_.clear();
     installedCount_ = 0;
     return true;
@@ -188,4 +195,4 @@ HookManager::StatusSnapshot HookManager::Snapshot() const {
     return {installed_, missed_};
 }
 
-}  // namespace ac
+} // namespace ac

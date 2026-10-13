@@ -35,8 +35,10 @@ struct SessionSnapshot {
 
     // "aetheronline" | "showonline" | "none" (diagnostics only).
     const char* ModeText() const {
-        if (realAppId != 0) return "aetheronline";
-        if (showOnlineAppId != 0) return "showonline";
+        if (realAppId != 0)
+            return "aetheronline";
+        if (showOnlineAppId != 0)
+            return "showonline";
         return "none";
     }
 };
@@ -61,4 +63,4 @@ steam::AppId RealAppId();
 steam::AppId ShowOnlineAppId();
 bool SpacewarSpoofExpected();
 
-}  // namespace ac::presence
+} // namespace ac::presence

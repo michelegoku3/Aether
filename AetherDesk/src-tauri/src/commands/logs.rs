@@ -12,7 +12,9 @@ const DEFAULT_TAIL_LINES: usize = 1_000;
 const MAX_TAIL_LINES: usize = 10_000;
 
 fn clamp_tail_lines(requested: Option<usize>) -> usize {
-    requested.unwrap_or(DEFAULT_TAIL_LINES).clamp(1, MAX_TAIL_LINES)
+    requested
+        .unwrap_or(DEFAULT_TAIL_LINES)
+        .clamp(1, MAX_TAIL_LINES)
 }
 
 /// UCOnline2 writes its log to `%TEMP%\uc_online2.log` (single file, appended
@@ -57,11 +59,7 @@ pub async fn clear_session_log(
 }
 
 /// Synchronous read used inside `spawn_blocking` (never blocks the runtime).
-fn read_log_lines(
-    app: &tauri::AppHandle,
-    limit: usize,
-    mode: &str,
-) -> Result<Vec<String>, String> {
+fn read_log_lines(app: &tauri::AppHandle, limit: usize, mode: &str) -> Result<Vec<String>, String> {
     if mode == "dll" {
         return Ok(read_dll_tail_lines(app, limit));
     }
@@ -139,22 +137,34 @@ fn clear_log_lines(app: &tauri::AppHandle, mode: &str) -> Result<String, String>
 }
 
 #[tauri::command]
-pub fn set_session_log_level(
-    app: tauri::AppHandle,
-    level: String,
-) -> Result<String, String> {
+pub fn set_session_log_level(app: tauri::AppHandle, level: String) -> Result<String, String> {
     let lower = level.trim().to_lowercase();
-    if !matches!(lower.as_str(), "trace" | "debug" | "info" | "warn" | "error" | "off") {
+    if !matches!(
+        lower.as_str(),
+        "trace" | "debug" | "info" | "warn" | "error" | "off"
+    ) {
         return Err("Unsupported log level".into());
     }
     crate::core::migration::ensure_aethercore_bridge(&app);
     for path in crate::core::presence_config::aethercore_toml_paths(&app) {
-        crate::core::config_document::set_value(&path, "log", "level", toml_edit::Value::from(lower.as_str()))?;
+        crate::core::config_document::set_value(
+            &path,
+            "log",
+            "level",
+            toml_edit::Value::from(lower.as_str()),
+        )?;
     }
     crate::core::logger::set_level_from_str(&lower);
 
-    crate::desk_log_info!("logs", "Set logging level to '{}' for Desk and DLL (aethercore.toml)", lower);
-    Ok(format!("Logging level set to '{}' for Desk and DLL.", lower))
+    crate::desk_log_info!(
+        "logs",
+        "Set logging level to '{}' for Desk and DLL (aethercore.toml)",
+        lower
+    );
+    Ok(format!(
+        "Logging level set to '{}' for Desk and DLL.",
+        lower
+    ))
 }
 
 fn read_uco2_tail_lines(limit: usize) -> Vec<String> {
@@ -203,8 +213,7 @@ fn read_dll_tail_lines(app: &tauri::AppHandle, limit: usize) -> Vec<String> {
     // `require_steam_path` gives us a validated, normalised path (or an empty
     // string if none is configured); in the empty case the candidate-dir
     // loop below simply finds no main.log and returns an empty vector.
-    let steam_path = crate::core::settings::require_steam_path(app)
-        .unwrap_or_default();
+    let steam_path = crate::core::settings::require_steam_path(app).unwrap_or_default();
     let steam_path_buf = PathBuf::from(&steam_path);
     let desk_log_dir = crate::core::paths::LocalAppPaths::data_root().join("logs");
     let install_root = crate::core::paths::LocalAppPaths::install_root();
@@ -230,8 +239,7 @@ fn read_dll_tail_lines(app: &tauri::AppHandle, limit: usize) -> Vec<String> {
 }
 
 fn clear_dll_log(app: &tauri::AppHandle) {
-    let steam_path = crate::core::settings::require_steam_path(app)
-        .unwrap_or_default();
+    let steam_path = crate::core::settings::require_steam_path(app).unwrap_or_default();
     let steam_path_buf = PathBuf::from(&steam_path);
     let desk_log_dir = crate::core::paths::LocalAppPaths::data_root().join("logs");
     let install_root = crate::core::paths::LocalAppPaths::install_root();
@@ -294,7 +302,10 @@ pub async fn export_logs_bundle(app: tauri::AppHandle) -> Result<String, String>
 /// Synchronous export (inside `spawn_blocking`): zip creation and file copies
 /// must not block the async runtime.
 fn export_logs_bundle_sync(app: &tauri::AppHandle) -> Result<String, String> {
-    crate::desk_log_info!("logs", "Starting export of AetherDesk, AetherDLL and UCOnline2 session logs bundle");
+    crate::desk_log_info!(
+        "logs",
+        "Starting export of AetherDesk, AetherDLL and UCOnline2 session logs bundle"
+    );
     let stage_dir = std::env::temp_dir().join(format!("aether_logs_export_{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&stage_dir);
     std::fs::create_dir_all(&stage_dir)
@@ -305,8 +316,7 @@ fn export_logs_bundle_sync(app: &tauri::AppHandle) -> Result<String, String> {
 
     let desk_log_dir = crate::core::paths::LocalAppPaths::data_root().join("logs");
     let install_root = crate::core::paths::LocalAppPaths::install_root();
-    let steam_path = crate::core::settings::require_steam_path(app)
-        .unwrap_or_default();
+    let steam_path = crate::core::settings::require_steam_path(app).unwrap_or_default();
     let steam_path_buf = PathBuf::from(&steam_path);
 
     let mut copied = 0;
@@ -317,10 +327,9 @@ fn export_logs_bundle_sync(app: &tauri::AppHandle) -> Result<String, String> {
         (desk_log_dir.join("desk.log.last"), "desk.log.last.txt"),
         (desk_log_dir.join("status.json"), "desk_status.json.txt"),
     ] {
-        if src.is_file()
-            && std::fs::copy(&src, stage_dir.join(timed(dest_name))).is_ok() {
-                copied += 1;
-            }
+        if src.is_file() && std::fs::copy(&src, stage_dir.join(timed(dest_name))).is_ok() {
+            copied += 1;
+        }
     }
 
     // 2. AetherDLL logs across all candidate directories
@@ -359,9 +368,8 @@ fn export_logs_bundle_sync(app: &tauri::AppHandle) -> Result<String, String> {
         }
     }
 
-    let downloads_dir = dirs::download_dir().unwrap_or_else(|| {
-        std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."))
-    });
+    let downloads_dir = dirs::download_dir()
+        .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
     let zip_name = format!("AetherLogs_{}.zip", time);
     let zip_path = downloads_dir.join(&zip_name);
     if zip_path.exists() {
@@ -390,8 +398,17 @@ fn export_logs_bundle_sync(app: &tauri::AppHandle) -> Result<String, String> {
     let _ = zip.finish();
     let _ = std::fs::remove_dir_all(&stage_dir);
 
-    crate::desk_log_info!("logs", "Successfully exported {} log file(s) into {}", copied, zip_path.display());
-    Ok(format!("Exported {} log file(s) to {}", copied, zip_path.display()))
+    crate::desk_log_info!(
+        "logs",
+        "Successfully exported {} log file(s) into {}",
+        copied,
+        zip_path.display()
+    );
+    Ok(format!(
+        "Exported {} log file(s) to {}",
+        copied,
+        zip_path.display()
+    ))
 }
 
 /// Downloads a single log document (the view's selected source) into the
@@ -430,13 +447,15 @@ fn export_log_source_sync(app: &tauri::AppHandle, mode: &str) -> Result<String, 
                 merge_tagged(desk, dll, uco2, usize::MAX).join("\n"),
             )
         }
-        _ => ("desk.log.txt", crate::core::logger::read_tail_lines(usize::MAX)?.join("\n")),
+        _ => (
+            "desk.log.txt",
+            crate::core::logger::read_tail_lines(usize::MAX)?.join("\n"),
+        ),
     };
 
     let file_name = with_time_suffix(base_name, &time);
-    let downloads_dir = dirs::download_dir().unwrap_or_else(|| {
-        std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."))
-    });
+    let downloads_dir = dirs::download_dir()
+        .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
     let dest = downloads_dir.join(&file_name);
     if dest.exists() {
         let _ = std::fs::remove_file(&dest);
@@ -444,7 +463,12 @@ fn export_log_source_sync(app: &tauri::AppHandle, mode: &str) -> Result<String, 
     std::fs::write(&dest, content)
         .map_err(|e| format!("Failed to write {}: {}", dest.display(), e))?;
 
-    crate::desk_log_info!("logs", "Exported log source '{}' to {}", mode, dest.display());
+    crate::desk_log_info!(
+        "logs",
+        "Exported log source '{}' to {}",
+        mode,
+        dest.display()
+    );
     Ok(format!("Exported {} to {}", file_name, dest.display()))
 }
 
@@ -470,15 +494,20 @@ mod tests {
     #[test]
     fn merged_logs_sort_across_days_and_sources() {
         let desk = vec![
-            "[2026-08-18 00:00:01.000] [PID:00001] [TID:00001] [INFO ] [Desk] second day".to_string(),
+            "[2026-08-18 00:00:01.000] [PID:00001] [TID:00001] [INFO ] [Desk] second day"
+                .to_string(),
         ];
         let dll = vec![];
-        let uco2 = vec![
-            "[2026-08-17 23:59:59.999] [UCO2] first day".to_string(),
-        ];
+        let uco2 = vec!["[2026-08-17 23:59:59.999] [UCO2] first day".to_string()];
         let merged = merge_tagged(desk, dll, uco2, 100);
         assert_eq!(merged.len(), 2);
-        assert!(merged[0].contains("first day"), "unexpected order: {merged:?}");
-        assert!(merged[1].contains("second day"), "unexpected order: {merged:?}");
+        assert!(
+            merged[0].contains("first day"),
+            "unexpected order: {merged:?}"
+        );
+        assert!(
+            merged[1].contains("second day"),
+            "unexpected order: {merged:?}"
+        );
     }
 }

@@ -3,28 +3,28 @@
 
 #include <algorithm>
 #include <atomic>
-#include <charconv>
 #include <cctype>
+#include <charconv>
 #include <cstdint>
 #include <filesystem>
-#include <string_view>
-#include <system_error>
 #include <optional>
 #include <string>
+#include <string_view>
+#include <system_error>
 #include <thread>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
 
-#include "core/Logger.h"
 #include "core/AetherCoreState.h"
-#include "scripting/ScriptEngine.h"
+#include "core/Logger.h"
 #include "diagnostics/StatusWriter.h"
 #include "hooks/ipc/PipeWatch.h"
 #include "hooks/license/LicenseManager.h"
 #include "hooks/wire/ManifestRestore.h"
-#include "utils/SmartIdLog.h"
+#include "scripting/ScriptEngine.h"
 #include "utils/Paths.h"
+#include "utils/SmartIdLog.h"
 
 namespace fs = std::filesystem;
 
@@ -47,50 +47,52 @@ struct WatcherService {
 WatcherService s_watch;
 
 std::string WideToUtf8(std::wstring_view w) {
-    if (w.empty()) return {};
-    int needed = WideCharToMultiByte(CP_UTF8, 0, w.data(), static_cast<int>(w.size()),
-                                     nullptr, 0, nullptr, nullptr);
-    if (needed <= 0) return {};
+    if (w.empty())
+        return {};
+    int needed = WideCharToMultiByte(CP_UTF8, 0, w.data(), static_cast<int>(w.size()), nullptr, 0, nullptr, nullptr);
+    if (needed <= 0)
+        return {};
     std::string out(static_cast<std::size_t>(needed), '\0');
-    WideCharToMultiByte(CP_UTF8, 0, w.data(), static_cast<int>(w.size()), out.data(),
-                        needed, nullptr, nullptr);
+    WideCharToMultiByte(CP_UTF8, 0, w.data(), static_cast<int>(w.size()), out.data(), needed, nullptr, nullptr);
     return out;
 }
 
-bool IsLuaPath(const fs::path& path) {
-    return paths::HasExtension(path, ".lua");
-}
+bool IsLuaPath(const fs::path& path) { return paths::HasExtension(path, ".lua"); }
 
 bool IsAppManifestPath(const fs::path& path) {
-    if (!paths::HasExtension(path, ".acf")) return false;
+    if (!paths::HasExtension(path, ".acf"))
+        return false;
     std::string stem = path.stem().string();
     constexpr std::string_view prefix = "appmanifest_";
-    if (stem.size() <= prefix.size()) return false;
+    if (stem.size() <= prefix.size())
+        return false;
     for (std::size_t i = 0; i < prefix.size(); ++i) {
         const char actual = static_cast<char>(std::tolower(static_cast<unsigned char>(stem[i])));
-        if (actual != prefix[i]) return false;
+        if (actual != prefix[i])
+            return false;
     }
     for (std::size_t i = prefix.size(); i < stem.size(); ++i) {
-        if (stem[i] < '0' || stem[i] > '9') return false;
+        if (stem[i] < '0' || stem[i] > '9')
+            return false;
     }
     return true;
 }
 
 std::optional<std::uint32_t> AppIdFromManifestPath(const fs::path& path) {
-    if (!IsAppManifestPath(path)) return std::nullopt;
+    if (!IsAppManifestPath(path))
+        return std::nullopt;
     const std::string stem = path.stem().string();
     constexpr std::size_t prefixLength = sizeof("appmanifest_") - 1;
     std::uint32_t appId = 0;
     const char* begin = stem.data() + prefixLength;
     const char* end = stem.data() + stem.size();
     const auto result = std::from_chars(begin, end, appId);
-    if (result.ec != std::errc{} || result.ptr != end || appId == 0) return std::nullopt;
+    if (result.ec != std::errc{} || result.ptr != end || appId == 0)
+        return std::nullopt;
     return appId;
 }
 
-std::string NormalizedPath(const fs::path& path) {
-    return path.lexically_normal().make_preferred().string();
-}
+std::string NormalizedPath(const fs::path& path) { return path.lexically_normal().make_preferred().string(); }
 
 struct Slot {
     std::string path;
@@ -103,12 +105,12 @@ struct Slot {
 
     bool Open() {
         event = CreateEventA(nullptr, FALSE, FALSE, nullptr);
-        if (!event) return false;
+        if (!event)
+            return false;
         ov = {};
         ov.hEvent = event;
-        dir = CreateFileA(path.c_str(), FILE_LIST_DIRECTORY,
-                          FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
-                          OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OVERLAPPED, nullptr);
+        dir = CreateFileA(path.c_str(), FILE_LIST_DIRECTORY, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                          nullptr, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OVERLAPPED, nullptr);
         if (dir == INVALID_HANDLE_VALUE) {
             CloseHandle(event);
             event = nullptr;
@@ -120,17 +122,13 @@ struct Slot {
     bool Arm() {
         DWORD n = 0;
         BOOL ok = ReadDirectoryChangesW(dir, buffer.data(), kBufferBytes, FALSE,
-                                        FILE_NOTIFY_CHANGE_FILE_NAME | FILE_NOTIFY_CHANGE_LAST_WRITE,
-                                        &n, &ov, nullptr);
+                                        FILE_NOTIFY_CHANGE_FILE_NAME | FILE_NOTIFY_CHANGE_LAST_WRITE, &n, &ov, nullptr);
         return ok || GetLastError() == ERROR_IO_PENDING;
     }
 
-    bool AcceptName(const fs::path& name) const {
-        return acfOnly ? IsAppManifestPath(name) : IsLuaPath(name);
-    }
+    bool AcceptName(const fs::path& name) const { return acfOnly ? IsAppManifestPath(name) : IsLuaPath(name); }
 
-    bool Harvest(std::unordered_map<std::string, DWORD>& acc, std::vector<std::string>& order,
-                 bool& overflowed) {
+    bool Harvest(std::unordered_map<std::string, DWORD>& acc, std::vector<std::string>& order, bool& overflowed) {
         overflowed = false;
         DWORD n = 0;
         if (!GetOverlappedResult(dir, &ov, &n, FALSE) || n == 0) {
@@ -141,8 +139,7 @@ struct Slot {
         const auto* rec = reinterpret_cast<const FILE_NOTIFY_INFORMATION*>(buffer.data());
         while (rec) {
             if (rec->Action == FILE_ACTION_ADDED || rec->Action == FILE_ACTION_MODIFIED ||
-                rec->Action == FILE_ACTION_REMOVED ||
-                rec->Action == FILE_ACTION_RENAMED_NEW_NAME ||
+                rec->Action == FILE_ACTION_REMOVED || rec->Action == FILE_ACTION_RENAMED_NEW_NAME ||
                 rec->Action == FILE_ACTION_RENAMED_OLD_NAME) {
                 std::wstring_view wname(rec->FileName, rec->FileNameLength / sizeof(wchar_t));
                 const fs::path relativeName(WideToUtf8(wname));
@@ -152,10 +149,10 @@ struct Slot {
                         AC_LOG_WARN(kModule, "Could not convert changed filename to UTF-8.");
                     } else {
                         const std::string full = NormalizedPath(fs::path(path) / fs::path(name));
-                        if (!acc.count(full)) order.push_back(full);
+                        if (!acc.count(full))
+                            order.push_back(full);
                         acc[full] = rec->Action;
-                        if (rec->Action == FILE_ACTION_REMOVED ||
-                            rec->Action == FILE_ACTION_RENAMED_OLD_NAME) {
+                        if (rec->Action == FILE_ACTION_REMOVED || rec->Action == FILE_ACTION_RENAMED_OLD_NAME) {
                             knownFiles.erase(full);
                         } else {
                             knownFiles.insert(full);
@@ -163,16 +160,23 @@ struct Slot {
                     }
                 }
             }
-            if (!rec->NextEntryOffset) break;
-            rec = reinterpret_cast<const FILE_NOTIFY_INFORMATION*>(
-                reinterpret_cast<const std::uint8_t*>(rec) + rec->NextEntryOffset);
+            if (!rec->NextEntryOffset)
+                break;
+            rec = reinterpret_cast<const FILE_NOTIFY_INFORMATION*>(reinterpret_cast<const std::uint8_t*>(rec) +
+                                                                   rec->NextEntryOffset);
         }
         return Arm();
     }
 
     void Close() {
-        if (dir != INVALID_HANDLE_VALUE) { CloseHandle(dir); dir = INVALID_HANDLE_VALUE; }
-        if (event) { CloseHandle(event); event = nullptr; }
+        if (dir != INVALID_HANDLE_VALUE) {
+            CloseHandle(dir);
+            dir = INVALID_HANDLE_VALUE;
+        }
+        if (event) {
+            CloseHandle(event);
+            event = nullptr;
+        }
     }
 };
 
@@ -181,14 +185,16 @@ std::unordered_set<std::string> EnumerateWatchedFiles(const Slot& slot) {
     std::error_code ec;
     if (slot.acfOnly) {
         for (const auto& entry : fs::directory_iterator(slot.path, ec)) {
-            if (ec) break;
+            if (ec)
+                break;
             if (entry.is_regular_file(ec) && !ec && IsAppManifestPath(entry.path())) {
                 out.insert(NormalizedPath(entry.path()));
             }
         }
     } else {
         for (const auto& entry : fs::recursive_directory_iterator(slot.path, ec)) {
-            if (ec) break;
+            if (ec)
+                break;
             if (entry.is_regular_file(ec) && !ec && IsLuaPath(entry.path())) {
                 out.insert(NormalizedPath(entry.path()));
             }
@@ -197,28 +203,29 @@ std::unordered_set<std::string> EnumerateWatchedFiles(const Slot& slot) {
     return out;
 }
 
-void FullRescan(Slot& slot, std::unordered_map<std::string, DWORD>& acc,
-                std::vector<std::string>& order) {
+void FullRescan(Slot& slot, std::unordered_map<std::string, DWORD>& acc, std::vector<std::string>& order) {
     AC_LOG_WARN(kModule, "Buffer overflow in '%s'; performing full rescan.", slot.path.c_str());
     diag::Record("dirwatch_overflow", slot.path);
 
     const std::unordered_set<std::string> current = EnumerateWatchedFiles(slot);
     for (const std::string& path : current) {
-        if (!acc.count(path)) order.push_back(path);
+        if (!acc.count(path))
+            order.push_back(path);
         acc[path] = FILE_ACTION_ADDED;
     }
     for (const std::string& oldPath : slot.knownFiles) {
         if (!current.count(oldPath)) {
-            if (!acc.count(oldPath)) order.push_back(oldPath);
+            if (!acc.count(oldPath))
+                order.push_back(oldPath);
             acc[oldPath] = FILE_ACTION_REMOVED;
         }
     }
     slot.knownFiles = current;
 }
 
-void ApplyChanges(const std::unordered_map<std::string, DWORD>& acc,
-                  const std::vector<std::string>& order) {
-    if (order.empty()) return;
+void ApplyChanges(const std::unordered_map<std::string, DWORD>& acc, const std::vector<std::string>& order) {
+    if (order.empty())
+        return;
     AC_LOG_INFO(kModule, "Processing %zu watched change(s).", order.size());
 
     bool luaChanged = false;
@@ -255,9 +262,7 @@ void ApplyChanges(const std::unordered_map<std::string, DWORD>& acc,
     std::sort(removedApps.begin(), removedApps.end());
     removedApps.erase(std::unique(removedApps.begin(), removedApps.end()), removedApps.end());
     for (const std::uint32_t appId : removedApps) {
-        AC_LOG_INFO(kModule,
-                    "Detected removal of Steam appmanifest_%u.acf; restoring backed-up manifests.",
-                    appId);
+        AC_LOG_INFO(kModule, "Detected removal of Steam appmanifest_%u.acf; restoring backed-up manifests.", appId);
         hooks::ManifestRestore::RestoreMissingManifestsForApp(appId);
     }
 }
@@ -266,8 +271,10 @@ void Run() {
     AC_LOG_INFO(kModule, "Configuration polling active (1 s); invalid edits retain last good settings.");
     std::vector<Slot> slots;
     slots.reserve(s_watch.luaDirs.size() + s_watch.acfDirs.size());
-    for (const std::string& dir : s_watch.luaDirs) slots.push_back(Slot{dir, false});
-    for (const std::string& dir : s_watch.acfDirs) slots.push_back(Slot{dir, true});
+    for (const std::string& dir : s_watch.luaDirs)
+        slots.push_back(Slot{dir, false});
+    for (const std::string& dir : s_watch.acfDirs)
+        slots.push_back(Slot{dir, true});
 
     std::vector<HANDLE> events;
     std::vector<std::size_t> eventSlots;
@@ -290,34 +297,43 @@ void Run() {
     while (s_watch.running.load() && !g_state.shuttingDown.load()) {
         const auto previousSettings = Settings::Snapshot();
         Settings::ReloadIfModified(g_state.configPath);
-        if (Settings::Snapshot() != previousSettings) status::Write();
-        if (count == 0) { Sleep(1000); continue; }
+        if (Settings::Snapshot() != previousSettings)
+            status::Write();
+        if (count == 0) {
+            Sleep(1000);
+            continue;
+        }
         const DWORD wr = WaitForMultipleObjects(count, events.data(), FALSE, 1000);
-        if (!s_watch.running.load()) break;
-        if (wr < WAIT_OBJECT_0 || wr >= WAIT_OBJECT_0 + count) continue;
+        if (!s_watch.running.load())
+            break;
+        if (wr < WAIT_OBJECT_0 || wr >= WAIT_OBJECT_0 + count)
+            continue;
 
         std::unordered_map<std::string, DWORD> acc;
         std::vector<std::string> order;
         bool overflowed = false;
         Slot& first = slots[eventSlots[wr - WAIT_OBJECT_0]];
         first.Harvest(acc, order, overflowed);
-        if (overflowed) FullRescan(first, acc, order);
+        if (overflowed)
+            FullRescan(first, acc, order);
 
         // Debounce: keep draining until a quiet window elapses.
         const auto debounceDeadline = GetTickCount64() + 1000;
-        while (s_watch.running.load() && !g_state.shuttingDown.load() &&
-               GetTickCount64() < debounceDeadline) {
+        while (s_watch.running.load() && !g_state.shuttingDown.load() && GetTickCount64() < debounceDeadline) {
             const DWORD dr = WaitForMultipleObjects(count, events.data(), FALSE, kDebounceMs);
-            if (!s_watch.running.load() || dr < WAIT_OBJECT_0 || dr >= WAIT_OBJECT_0 + count) break;
+            if (!s_watch.running.load() || dr < WAIT_OBJECT_0 || dr >= WAIT_OBJECT_0 + count)
+                break;
             bool ovf = false;
             Slot& next = slots[eventSlots[dr - WAIT_OBJECT_0]];
             next.Harvest(acc, order, ovf);
-            if (ovf) FullRescan(next, acc, order);
+            if (ovf)
+                FullRescan(next, acc, order);
         }
         ApplyChanges(acc, order);
     }
 
-    for (auto& slot : slots) slot.Close();
+    for (auto& slot : slots)
+        slot.Close();
     AC_LOG_INFO(kModule, "Stopped.");
 }
 
@@ -329,14 +345,11 @@ std::string NormalizeDirectory(const std::string& directory) {
     }
 }
 
-}  // namespace
+} // namespace
 
-void Start(const std::vector<std::string>& directories) {
-    Start(directories, {});
-}
+void Start(const std::vector<std::string>& directories) { Start(directories, {}); }
 
-void Start(const std::vector<std::string>& directories,
-           const std::vector<std::string>& acfDirectories) {
+void Start(const std::vector<std::string>& directories, const std::vector<std::string>& acfDirectories) {
     if (s_watch.running.exchange(true)) {
         AC_LOG_WARN(kModule, "Already running.");
         return;
@@ -353,8 +366,10 @@ void Start(const std::vector<std::string>& directories,
 }
 
 void Stop() {
-    if (!s_watch.running.exchange(false)) return;
-    if (s_watch.thread.joinable()) s_watch.thread.join();
+    if (!s_watch.running.exchange(false))
+        return;
+    if (s_watch.thread.joinable())
+        s_watch.thread.join();
 }
 
-}  // namespace ac::dirwatch
+} // namespace ac::dirwatch

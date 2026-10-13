@@ -1,9 +1,9 @@
+use crate::providers::http;
+use crate::steam::api::{self, AppDetailsEnvelope};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
-use crate::providers::http;
-use crate::steam::api::{self, AppDetailsEnvelope};
 
 const NAME_RESOLVE_TIMEOUT_SECONDS: u64 = 4;
 const NAME_RESOLVE_CONCURRENCY: usize = 8;
@@ -91,19 +91,35 @@ impl SteamAppNameResolver {
 
             for (app_id, details) in fetched {
                 let trimmed = details.name.trim();
-                if !trimmed.is_empty() && cache.names.get(&app_id).map(String::as_str) != Some(trimmed) {
+                if !trimmed.is_empty()
+                    && cache.names.get(&app_id).map(String::as_str) != Some(trimmed)
+                {
                     cache.names.insert(app_id, trimmed.to_string());
                     changed = true;
                 }
-                if let Some(image_url) = details.image_url.as_deref().map(str::trim).filter(|url| !url.is_empty()) {
+                if let Some(image_url) = details
+                    .image_url
+                    .as_deref()
+                    .map(str::trim)
+                    .filter(|url| !url.is_empty())
+                {
                     if cache.image_urls.get(&app_id).map(String::as_str) != Some(image_url) {
                         cache.image_urls.insert(app_id, image_url.to_string());
                         changed = true;
                     }
                 }
-                if let Some(hero_image_url) = details.hero_image_url.as_deref().map(str::trim).filter(|url| !url.is_empty()) {
-                    if cache.hero_image_urls.get(&app_id).map(String::as_str) != Some(hero_image_url) {
-                        cache.hero_image_urls.insert(app_id, hero_image_url.to_string());
+                if let Some(hero_image_url) = details
+                    .hero_image_url
+                    .as_deref()
+                    .map(str::trim)
+                    .filter(|url| !url.is_empty())
+                {
+                    if cache.hero_image_urls.get(&app_id).map(String::as_str)
+                        != Some(hero_image_url)
+                    {
+                        cache
+                            .hero_image_urls
+                            .insert(app_id, hero_image_url.to_string());
                         changed = true;
                     }
                 }
@@ -267,21 +283,20 @@ impl SteamAppNameResolver {
 
     async fn fetch_missing_details(&self, app_ids: Vec<u32>) -> HashMap<u32, AppNameDetails> {
         let client = self.client.clone();
-        api::concurrent_app_tasks(
-            app_ids,
-            NAME_RESOLVE_CONCURRENCY,
-            move |app_id| {
-                let client = client.clone();
-                async move {
-                    let details = Self::fetch_details(&client, app_id).await.ok();
-                    details.map(|details| (app_id, details))
-                }
-            },
-        )
+        api::concurrent_app_tasks(app_ids, NAME_RESOLVE_CONCURRENCY, move |app_id| {
+            let client = client.clone();
+            async move {
+                let details = Self::fetch_details(&client, app_id).await.ok();
+                details.map(|details| (app_id, details))
+            }
+        })
         .await
     }
 
-    async fn fetch_details(client: &reqwest::Client, app_id: u32) -> Result<AppNameDetails, String> {
+    async fn fetch_details(
+        client: &reqwest::Client,
+        app_id: u32,
+    ) -> Result<AppNameDetails, String> {
         let envelope: AppDetailsEnvelope = api::fetch_app_details(client, app_id).await?;
         let data = envelope
             .data
@@ -297,15 +312,13 @@ impl SteamAppNameResolver {
         // Cover URL must be a capsule, never a header. `header_image` is a wide
         // landscape "hero" banner and was leaking into the capsule slot after a
         // cache clean (reported as "hero but in the capsule slot").
-        let image_url = ["capsule_image", "capsule_imagev5"]
-            .iter()
-            .find_map(|key| {
-                data.get(*key)
-                    .and_then(|value| value.as_str())
-                    .map(str::trim)
-                    .filter(|value| !value.is_empty())
-                    .map(str::to_string)
-            });
+        let image_url = ["capsule_image", "capsule_imagev5"].iter().find_map(|key| {
+            data.get(*key)
+                .and_then(|value| value.as_str())
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .map(str::to_string)
+        });
         let hero_image_url = ["header_image", "background_raw", "background"]
             .iter()
             .find_map(|key| {
@@ -316,7 +329,11 @@ impl SteamAppNameResolver {
                     .map(str::to_string)
             });
 
-        Ok(AppNameDetails { name, image_url, hero_image_url })
+        Ok(AppNameDetails {
+            name,
+            image_url,
+            hero_image_url,
+        })
     }
 }
 

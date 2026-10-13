@@ -6,7 +6,8 @@ use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 use tokio::sync::Notify;
 
-const RELEASES_API_URL: &str = "https://api.github.com/repos/michelegoku3/Aether/releases?per_page=100";
+const RELEASES_API_URL: &str =
+    "https://api.github.com/repos/michelegoku3/Aether/releases?per_page=100";
 const RELEASES_ATOM_URL: &str = "https://github.com/michelegoku3/Aether/releases.atom";
 const REPO_OWNER: &str = "michelegoku3";
 const REPO_NAME: &str = "Aether";
@@ -285,7 +286,8 @@ impl GithubReleaseManager {
     }
 
     pub fn is_test_tag(tag: &str) -> bool {
-        Self::tag_has_prefix(tag, TDESK_TAG_PREFIXES) || Self::tag_has_prefix(tag, TDLL_TAG_PREFIXES)
+        Self::tag_has_prefix(tag, TDESK_TAG_PREFIXES)
+            || Self::tag_has_prefix(tag, TDLL_TAG_PREFIXES)
     }
 
     pub fn display_version_from_tag(tag_or_version: &str) -> String {
@@ -545,14 +547,16 @@ impl GithubReleaseManager {
             releases.len(),
             prefixes
         );
-        let allow_prerelease = prefixes
-            .iter()
-            .any(|prefix| prefix.starts_with('t'));
+        let allow_prerelease = prefixes.iter().any(|prefix| prefix.starts_with('t'));
         releases
             .into_iter()
             .filter(|release| {
                 if release.draft {
-                    crate::desk_log_debug!("updater", "Skipping draft release {}", release.tag_name);
+                    crate::desk_log_debug!(
+                        "updater",
+                        "Skipping draft release {}",
+                        release.tag_name
+                    );
                     return false;
                 }
                 if release.prerelease && !allow_prerelease {
@@ -680,7 +684,11 @@ impl GithubReleaseManager {
         &self,
         prefixes: &[&str],
     ) -> Result<GithubRelease, String> {
-        crate::desk_log_info!("updater", "GET {} (public fallback, no API)", RELEASES_ATOM_URL);
+        crate::desk_log_info!(
+            "updater",
+            "GET {} (public fallback, no API)",
+            RELEASES_ATOM_URL
+        );
         let atom = self
             .client
             .get(RELEASES_ATOM_URL)
@@ -692,7 +700,10 @@ impl GithubReleaseManager {
         let status = atom.status();
         crate::desk_log_info!("updater", "releases.atom HTTP {}", status);
         if !status.is_success() {
-            return Err(format!("GitHub releases.atom returned HTTP error: {}", status));
+            return Err(format!(
+                "GitHub releases.atom returned HTTP error: {}",
+                status
+            ));
         }
 
         let atom_text = atom
@@ -783,21 +794,33 @@ impl GithubReleaseManager {
     }
 
     pub async fn fetch_latest_dll_release(&self, origin: &str) -> Result<(String, String), String> {
-        let release = self.fetch_latest_by_prefix_tagged(DLL_TAG_PREFIXES, origin).await?;
+        let release = self
+            .fetch_latest_by_prefix_tagged(DLL_TAG_PREFIXES, origin)
+            .await?;
         let url = Self::dll_zip_url(&release)?;
         Ok((release.tag_name, url))
     }
 
     pub async fn fetch_latest_desk_release(&self, origin: &str) -> Result<GithubRelease, String> {
-        self.fetch_latest_by_prefix_tagged(DESK_TAG_PREFIXES, origin).await
+        self.fetch_latest_by_prefix_tagged(DESK_TAG_PREFIXES, origin)
+            .await
     }
 
-    pub async fn fetch_latest_desk_test_release(&self, origin: &str) -> Result<GithubRelease, String> {
-        self.fetch_latest_by_prefix_tagged(TDESK_TAG_PREFIXES, origin).await
+    pub async fn fetch_latest_desk_test_release(
+        &self,
+        origin: &str,
+    ) -> Result<GithubRelease, String> {
+        self.fetch_latest_by_prefix_tagged(TDESK_TAG_PREFIXES, origin)
+            .await
     }
 
-    pub async fn fetch_latest_dll_test_release(&self, origin: &str) -> Result<(String, String), String> {
-        let release = self.fetch_latest_by_prefix_tagged(TDLL_TAG_PREFIXES, origin).await?;
+    pub async fn fetch_latest_dll_test_release(
+        &self,
+        origin: &str,
+    ) -> Result<(String, String), String> {
+        let release = self
+            .fetch_latest_by_prefix_tagged(TDLL_TAG_PREFIXES, origin)
+            .await?;
         let url = Self::dll_zip_url(&release)?;
         Ok((release.tag_name, url))
     }
@@ -848,7 +871,10 @@ impl GithubReleaseManager {
             })
     }
 
-    pub fn build_desk_update_info(current_version: String, release: &GithubRelease) -> ComponentUpdateInfo {
+    pub fn build_desk_update_info(
+        current_version: String,
+        release: &GithubRelease,
+    ) -> ComponentUpdateInfo {
         let latest_version = Self::component_version_from_tag(&release.tag_name);
         let update_available = Self::latest_is_newer_than(&current_version, &release.tag_name);
 
@@ -863,7 +889,10 @@ impl GithubReleaseManager {
         }
     }
 
-    pub fn build_desk_test_update_info(current_version: String, release: &GithubRelease) -> ComponentUpdateInfo {
+    pub fn build_desk_test_update_info(
+        current_version: String,
+        release: &GithubRelease,
+    ) -> ComponentUpdateInfo {
         let latest_version = Self::component_version_from_tag(&release.tag_name);
         let update_available = Self::latest_is_newer_than(&current_version, &release.tag_name);
         ComponentUpdateInfo {

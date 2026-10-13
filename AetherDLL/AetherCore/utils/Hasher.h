@@ -25,4 +25,4 @@ inline std::uint64_t Fnv1a64(const void* data, std::size_t len) {
     return h;
 }
 
-}  // namespace ac::hasher
+} // namespace ac::hasher

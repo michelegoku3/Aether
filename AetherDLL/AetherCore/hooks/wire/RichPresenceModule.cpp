@@ -9,4 +9,4 @@ std::int32_t HandleRecv(const WireFrame& frame, std::uint8_t* out, std::uint32_t
     return PersonaInject::OnPersonaStateRecv(frame, out, outCap);
 }
 
-}  // namespace ac::hooks::RichPresence
+} // namespace ac::hooks::RichPresence

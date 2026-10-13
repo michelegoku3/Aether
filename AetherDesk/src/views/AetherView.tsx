@@ -1,9 +1,6 @@
 import { useCallback, useEffect, useState, memo } from 'react';
 import { invoke } from '@tauri-apps/api/core';
-import {
-  UninstallDeskConfirmModal,
-  UninstallSteamCleanModal,
-} from '../modals/UninstallDeskModal';
+import { UninstallDeskConfirmModal, UninstallSteamCleanModal } from '../modals/UninstallDeskModal';
 import { SyncStatusModal } from '../modals/SyncStatusModal';
 import { ActivityIcon } from '../ui/icons';
 import { getSettings } from '../hooks/useSettings';
@@ -25,9 +22,7 @@ interface AetherViewProps {
 
 type StatusTone = 'info' | 'success' | 'error';
 
-type UninstallStep =
-  | { kind: 'confirm' }
-  | { kind: 'steamClean'; residualCount: number; deleteUserData: boolean };
+type UninstallStep = { kind: 'confirm' } | { kind: 'steamClean'; residualCount: number; deleteUserData: boolean };
 
 /**
  * AETHER panel: AetherDesk and AetherDLL lifecycle (install/update/
@@ -113,7 +108,7 @@ export const AetherView = memo(function AetherView({
       deleteUserData
         ? 'Removing AetherDesk and user data...'
         : 'Removing verified AetherDesk files (keeping AetherData in place)...',
-      'info',
+      'info'
     );
     await invoke('uninstall_aether_desk', { deleteUserData });
   };
@@ -301,11 +296,7 @@ export const AetherView = memo(function AetherView({
             {isDeskUpdateAvailable && (
               <span
                 className={`btn-update-dot${isDeskUpdateTest ? ' test' : ''}`}
-                title={
-                  isDeskUpdateTest
-                    ? 'AetherDesk TEST update is ready!'
-                    : 'AetherDesk update is ready!'
-                }
+                title={isDeskUpdateTest ? 'AetherDesk TEST update is ready!' : 'AetherDesk update is ready!'}
               ></span>
             )}
           </button>
@@ -335,28 +326,16 @@ export const AetherView = memo(function AetherView({
             className="panel-btn"
             disabled={isProcessing || (dllStatus.isInstalled && !isUpdateAvailable)}
           >
-            {dllStatus.isInstalled && isUpdateAvailable
-              ? 'Update'
-              : dllStatus.isInstalled
-                ? 'Updated'
-                : 'Install'}
+            {dllStatus.isInstalled && isUpdateAvailable ? 'Update' : dllStatus.isInstalled ? 'Updated' : 'Install'}
             {dllStatus.isInstalled && isUpdateAvailable && (
               <span
                 className={`btn-update-dot${isDllUpdateTest ? ' test' : ''}`}
-                title={
-                  isDllUpdateTest
-                    ? 'AetherDLL TEST update is ready!'
-                    : 'AetherDLL update is ready!'
-                }
+                title={isDllUpdateTest ? 'AetherDLL TEST update is ready!' : 'AetherDLL update is ready!'}
               ></span>
             )}
           </button>
 
-          <button
-            onClick={handleUninstallDll}
-            className="panel-btn"
-            disabled={isProcessing || !dllStatus.isInstalled}
-          >
+          <button onClick={handleUninstallDll} className="panel-btn" disabled={isProcessing || !dllStatus.isInstalled}>
             Uninstall
           </button>
         </div>
@@ -384,11 +363,7 @@ export const AetherView = memo(function AetherView({
           <span className="panel-title">Synchronizer</span>
         </div>
         <div className="panel-actions">
-          <button
-            disabled
-            className="panel-btn panel-btn--icon"
-            title="Not available yet"
-          >
+          <button disabled className="panel-btn panel-btn--icon" title="Not available yet">
             <ActivityIcon />
             Background Sync
           </button>

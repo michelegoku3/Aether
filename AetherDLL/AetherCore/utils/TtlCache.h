@@ -32,9 +32,8 @@
 // ---------------------------------------------------------------------------
 namespace ac::utils {
 
-template <typename K, typename V>
-class TtlCache {
-public:
+template <typename K, typename V> class TtlCache {
+  public:
     using Clock = std::chrono::steady_clock;
     using TimePoint = Clock::time_point;
     using Duration = std::chrono::seconds;
@@ -46,8 +45,7 @@ public:
     };
 
     // Constructs a cache with the given capacity (max entries) and TTL (time-to-live).
-    TtlCache(std::size_t maxEntries, Duration ttl)
-        : maxEntries_(maxEntries), ttl_(ttl) {}
+    TtlCache(std::size_t maxEntries, Duration ttl) : maxEntries_(maxEntries), ttl_(ttl) {}
 
     // Retrieves a value from the cache. Returns nullopt on miss.
     // Updates lastAccess timestamp for LRU tracking.
@@ -110,9 +108,7 @@ public:
     }
 
     // Inserts a "negative" cache entry (empty value) to avoid repeated lookups.
-    void PutNegative(const K& key) {
-        Put(key, V{});
-    }
+    void PutNegative(const K& key) { Put(key, V{}); }
 
     // Removes all expired entries. Can be called periodically or on-demand.
     void EvictExpired() {
@@ -131,7 +127,8 @@ public:
         std::shared_lock<std::shared_mutex> lock(mutex_);
         std::size_t count = 0;
         for (const auto& [key, entry] : entries_) {
-            if (entry.value == V{}) ++count;
+            if (entry.value == V{})
+                ++count;
         }
         return count;
     }
@@ -151,7 +148,7 @@ public:
     // Returns the configured TTL.
     Duration Ttl() const { return ttl_; }
 
-private:
+  private:
     std::unordered_map<K, Entry> entries_;
     std::size_t maxEntries_;
     Duration ttl_;
@@ -178,7 +175,8 @@ private:
 
     // Removes the least-recently-used entry. Caller must hold unique lock.
     void EvictLruLocked() {
-        if (entries_.empty()) return;
+        if (entries_.empty())
+            return;
 
         auto lruIt = entries_.begin();
         for (auto it = entries_.begin(); it != entries_.end(); ++it) {
@@ -191,4 +189,4 @@ private:
     }
 };
 
-}  // namespace ac::utils
+} // namespace ac::utils

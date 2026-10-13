@@ -212,7 +212,15 @@ const normalizeScreenshots = (...groups: Array<GameInfoScreenshot[] | undefined>
     });
 };
 
-const InfoRow = ({ label, value, clamp = false }: { label: string; value?: string | number | null; clamp?: boolean }) => (
+const InfoRow = ({
+  label,
+  value,
+  clamp = false,
+}: {
+  label: string;
+  value?: string | number | null;
+  clamp?: boolean;
+}) => (
   <div className="info-row">
     <span className="info-label">{label}</span>
     <span className={`info-value${clamp ? ' info-value-clamp' : ''}`}>
@@ -221,7 +229,15 @@ const InfoRow = ({ label, value, clamp = false }: { label: string; value?: strin
   </div>
 );
 
-const InfoSection = ({ title, children, className = '' }: { title: string; children: ReactNode; className?: string }) => (
+const InfoSection = ({
+  title,
+  children,
+  className = '',
+}: {
+  title: string;
+  children: ReactNode;
+  className?: string;
+}) => (
   <section className={`info-section ${className}`.trim()}>
     <h3 className="info-section-title">{title}</h3>
     <div className="info-section-body">{children}</div>
@@ -276,7 +292,7 @@ export const GameInfoModal = ({ appId, fallbackName, fallbackImageUrl, onClose }
   const local = info?.local;
   const screenshots = useMemo(
     () => normalizeScreenshots(info?.screenshots, details?.screenshots),
-    [info?.screenshots, details?.screenshots],
+    [info?.screenshots, details?.screenshots]
   );
   const screenshotCount = screenshots.length;
   const shortDescription = decodeHtmlEntities(details?.shortDescription);
@@ -302,21 +318,23 @@ export const GameInfoModal = ({ appId, fallbackName, fallbackImageUrl, onClose }
     });
   }, []);
 
-  const handlePrevScreenshot = useCallback((e?: React.MouseEvent) => {
-    e?.stopPropagation();
-    if (screenshotCount === 0) return;
-    setSelectedScreenshotIndex((prev) =>
-      prev !== null ? (prev - 1 + screenshotCount) % screenshotCount : 0,
-    );
-  }, [screenshotCount]);
+  const handlePrevScreenshot = useCallback(
+    (e?: React.MouseEvent) => {
+      e?.stopPropagation();
+      if (screenshotCount === 0) return;
+      setSelectedScreenshotIndex((prev) => (prev !== null ? (prev - 1 + screenshotCount) % screenshotCount : 0));
+    },
+    [screenshotCount]
+  );
 
-  const handleNextScreenshot = useCallback((e?: React.MouseEvent) => {
-    e?.stopPropagation();
-    if (screenshotCount === 0) return;
-    setSelectedScreenshotIndex((prev) =>
-      prev !== null ? (prev + 1) % screenshotCount : 0,
-    );
-  }, [screenshotCount]);
+  const handleNextScreenshot = useCallback(
+    (e?: React.MouseEvent) => {
+      e?.stopPropagation();
+      if (screenshotCount === 0) return;
+      setSelectedScreenshotIndex((prev) => (prev !== null ? (prev + 1) % screenshotCount : 0));
+    },
+    [screenshotCount]
+  );
 
   useEffect(() => {
     if (selectedScreenshotIndex === null) return;
@@ -525,7 +543,17 @@ export const GameInfoModal = ({ appId, fallbackName, fallbackImageUrl, onClose }
                 aria-label="Previous screenshot"
                 title="Previous screenshot"
               >
-                <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <svg
+                  width="48"
+                  height="48"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2.5"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  aria-hidden="true"
+                >
                   <polyline points="15 18 9 12 15 6" />
                 </svg>
               </button>
@@ -537,7 +565,17 @@ export const GameInfoModal = ({ appId, fallbackName, fallbackImageUrl, onClose }
                 aria-label="Next screenshot"
                 title="Next screenshot"
               >
-                <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <svg
+                  width="48"
+                  height="48"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2.5"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  aria-hidden="true"
+                >
                   <polyline points="9 18 15 12 9 6" />
                 </svg>
               </button>

@@ -4,11 +4,11 @@
 #include <cstring>
 #include <iterator>
 
-#include "hooks/ipc/CmdUser.h"
 #include "core/Constants.h"
+#include "core/Logger.h"
+#include "hooks/ipc/CmdUser.h"
 #include "hooks/ipc/IPCBus.h"
 #include "hooks/ipc/IpcReply.h"
-#include "core/Logger.h"
 #include "hooks/ipc/PipeWatch.h"
 #include "hooks/ipc/SteamCapture.h"
 
@@ -30,11 +30,13 @@ struct GetAPICallResultRequest {
 //   returns 480 here. Restore the real app id in the reply.
 void GetAppID(steam::CSteamPipeClient* pipe, steam::CUtlBuffer*, steam::CUtlBuffer* pWrite) {
     const steam::AppId realAppId = pipewatch::AppIdForPipe(pipe);
-    if (!realAppId || !ipcreply::CanWrite(pWrite, 5)) return;
+    if (!realAppId || !ipcreply::CanWrite(pWrite, 5))
+        return;
 
     steam::AppId current = 0;
     std::memcpy(&current, pWrite->Base() + 1, sizeof(current));
-    if (current == realAppId) return;
+    if (current == realAppId)
+        return;
 
     ipcreply::WriteU32(pWrite, 1, realAppId);
     AC_LOG_DEBUG_ONCE(kModule, "GetAppID: %u -> %u", current, realAppId);
@@ -45,13 +47,15 @@ void GetAppID(steam::CSteamPipeClient* pipe, steam::CUtlBuffer*, steam::CUtlBuff
 bool InjectEncryptedAppTicketResult(steam::CUtlBuffer* pWrite, std::uint64_t asyncCall) {
     constexpr std::int32_t kEResultBytes = 4;
     constexpr std::int32_t total = 1 + 1 + kEResultBytes + 1;
-    if (!pWrite || !pWrite->Base() || pWrite->TellPut() < total) return false;
+    if (!pWrite || !pWrite->Base() || pWrite->TellPut() < total)
+        return false;
 
     // Validate capacity before claiming. Once the fixed-size response passes
     // this check, writing it cannot fail; a short-buffer retry therefore keeps
     // the pending correlation intact.
     const auto appId = CmdUser::ClaimETicketAsyncCall(asyncCall);
-    if (!appId) return false;
+    if (!appId)
+        return false;
 
     ipcreply::Begin(pWrite);
     pWrite->Base()[1] = 1;
@@ -65,8 +69,7 @@ bool InjectEncryptedAppTicketResult(steam::CUtlBuffer* pWrite, std::uint64_t asy
 // IClientUtils::GetAPICallResult
 //   Only the encrypted-app-ticket response is handled. Achievement/user-stats
 //   callbacks are intentionally NOT processed (achievement code is excluded).
-void GetAPICallResult(steam::CSteamPipeClient*, steam::CUtlBuffer* pRead,
-                      steam::CUtlBuffer* pWrite) {
+void GetAPICallResult(steam::CSteamPipeClient*, steam::CUtlBuffer* pRead, steam::CUtlBuffer* pWrite) {
     if (!pRead || !pRead->Base() ||
         pRead->TellPut() < static_cast<std::int32_t>(kIpcArgsOffset + sizeof(GetAPICallResultRequest))) {
         return;
@@ -80,16 +83,13 @@ void GetAPICallResult(steam::CSteamPipeClient*, steam::CUtlBuffer* pRead,
 }
 
 const IpcHandlerEntry kEntries[] = {
-    {ipc_iface::kClientUtils, ipc_hash::kClientUtils_GetAppID,
-     "IClientUtils::GetAppID", GetAppID},
-    {ipc_iface::kClientUtils, ipc_hash::kClientUtils_GetAPICallResult,
-     "IClientUtils::GetAPICallResult", GetAPICallResult},
+    {ipc_iface::kClientUtils, ipc_hash::kClientUtils_GetAppID, "IClientUtils::GetAppID", GetAppID},
+    {ipc_iface::kClientUtils, ipc_hash::kClientUtils_GetAPICallResult, "IClientUtils::GetAPICallResult",
+     GetAPICallResult},
 };
 
-}  // namespace
+} // namespace
 
-void Register() {
-    RegisterIpcHandlers(kEntries, std::size(kEntries));
-}
+void Register() { RegisterIpcHandlers(kEntries, std::size(kEntries)); }
 
-}  // namespace ac::hooks::CmdUtils
+} // namespace ac::hooks::CmdUtils

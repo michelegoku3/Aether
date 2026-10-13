@@ -9,7 +9,7 @@
 
 use crate::online::types::{
     BackendReport, CoherenceOptions, DetectionReport, Engine, EosOptions, GameArch,
-    OnlineEnableRequest, OnlinePlan, OnlineRecord, OnlineStatus, OnlineStateKind, PhotonFlavor,
+    OnlineEnableRequest, OnlinePlan, OnlineRecord, OnlineStateKind, OnlineStatus, PhotonFlavor,
     PhotonOptions, PlayfabOptions, Prerequisites,
 };
 use std::path::PathBuf;
@@ -21,7 +21,9 @@ fn detection_sample() -> DetectionReport {
         arch: GameArch::X64,
         game_exe: Some(PathBuf::from("C:\\Games\\MyGame\\MyGame.exe")),
         unity_data_dir: Some(PathBuf::from("C:\\Games\\MyGame\\MyGame_Data")),
-        steam_api_dir: Some(PathBuf::from("C:\\Games\\MyGame\\MyGame_Data\\Plugins\\x86_64")),
+        steam_api_dir: Some(PathBuf::from(
+            "C:\\Games\\MyGame\\MyGame_Data\\Plugins\\x86_64",
+        )),
         ini_dir: PathBuf::from("C:\\Games\\MyGame"),
         backends: BackendReport {
             photon: PhotonFlavor::Realtime,
@@ -50,17 +52,34 @@ fn prerequisites_serializes_camel_case() {
     assert!(json.get("bundleVersion").is_some());
     assert!(json.get("steamApiDirWritable").is_some());
     assert!(json.get("errors").is_some());
-    assert!(json.get("bundle_ok").is_none(), "snake_case non deve esistere: {json}");
+    assert!(
+        json.get("bundle_ok").is_none(),
+        "snake_case non deve esistere: {json}"
+    );
 }
 
 #[test]
 fn detection_report_serializes_camel_case() {
     let json = serde_json::to_value(detection_sample()).unwrap();
-    for key in ["gameRoot", "engine", "arch", "gameExe", "unityDataDir", "steamApiDir", "iniDir", "steamlessApplied", "steamstubDetected", "warnings"] {
+    for key in [
+        "gameRoot",
+        "engine",
+        "arch",
+        "gameExe",
+        "unityDataDir",
+        "steamApiDir",
+        "iniDir",
+        "steamlessApplied",
+        "steamstubDetected",
+        "warnings",
+    ] {
         assert!(json.get(key).is_some(), "key '{key}' missing: {json}");
     }
     let backends = json.get("backends").unwrap();
-    assert!(backends.get("photonVoice").is_some(), "photonVoice missing: {backends}");
+    assert!(
+        backends.get("photonVoice").is_some(),
+        "photonVoice missing: {backends}"
+    );
     assert!(backends.get("photon_voice").is_none());
 }
 
@@ -126,9 +145,10 @@ fn enable_request_deserializes_from_camel_case() {
 
 #[test]
 fn options_deserialize_from_camel_case() {
-    let photon: PhotonOptions =
-        serde_json::from_value(serde_json::json!({"realtimeGuid": "a", "voiceGuid": "b", "fusionGuid": "c"}))
-            .unwrap();
+    let photon: PhotonOptions = serde_json::from_value(
+        serde_json::json!({"realtimeGuid": "a", "voiceGuid": "b", "fusionGuid": "c"}),
+    )
+    .unwrap();
     assert_eq!(photon.realtime_guid, "a");
     assert_eq!(photon.fusion_guid, "c");
 
@@ -166,7 +186,19 @@ fn record_and_status_serialize_camel_case() {
         overlay_proxy_path: None,
     };
     let json = serde_json::to_value(&record).unwrap();
-    for key in ["appId", "enabledAt", "bundleVersion", "ogAppId", "spoofAppId", "iniPath", "steamApiPath", "arch", "backendsDeployed", "backupDir", "overlayProxyPath"] {
+    for key in [
+        "appId",
+        "enabledAt",
+        "bundleVersion",
+        "ogAppId",
+        "spoofAppId",
+        "iniPath",
+        "steamApiPath",
+        "arch",
+        "backendsDeployed",
+        "backupDir",
+        "overlayProxyPath",
+    ] {
         assert!(json.get(key).is_some(), "key '{key}' missing: {json}");
     }
 

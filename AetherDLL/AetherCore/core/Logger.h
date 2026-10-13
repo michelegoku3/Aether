@@ -1,7 +1,7 @@
 #pragma once
 
-#include <cstddef>
 #include <atomic>
+#include <cstddef>
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -24,7 +24,7 @@ enum class LogLevel : int {
     Info = 2,
     Warn = 3,
     Error = 4,
-    Off = 5,  // Disables all output; useful for tests.
+    Off = 5, // Disables all output; useful for tests.
 };
 
 namespace log {
@@ -68,7 +68,7 @@ void Shutdown();
 // Write/WriteOnce already flush each emitted line.
 void Flush();
 
-}  // namespace log
+} // namespace log
 
 namespace diag {
 
@@ -83,14 +83,14 @@ struct Entry {
 void Record(const std::string& category, const std::string& detail);
 std::vector<Entry> Snapshot();
 
-}  // namespace diag
-}  // namespace ac
+} // namespace diag
+} // namespace ac
 
 // Convenience macros.
 #define AC_LOG_TRACE(mod, ...) ::ac::log::Write(::ac::LogLevel::Trace, (mod), __VA_ARGS__)
 #define AC_LOG_DEBUG(mod, ...) ::ac::log::Write(::ac::LogLevel::Debug, (mod), __VA_ARGS__)
-#define AC_LOG_INFO(mod, ...)  ::ac::log::Write(::ac::LogLevel::Info,  (mod), __VA_ARGS__)
-#define AC_LOG_WARN(mod, ...)  ::ac::log::Write(::ac::LogLevel::Warn,  (mod), __VA_ARGS__)
+#define AC_LOG_INFO(mod, ...) ::ac::log::Write(::ac::LogLevel::Info, (mod), __VA_ARGS__)
+#define AC_LOG_WARN(mod, ...) ::ac::log::Write(::ac::LogLevel::Warn, (mod), __VA_ARGS__)
 #define AC_LOG_ERROR(mod, ...) ::ac::log::Write(::ac::LogLevel::Error, (mod), __VA_ARGS__)
 
 // Per-session deduplication macros. Each unique (module + formatted message)
@@ -98,5 +98,5 @@ std::vector<Entry> Snapshot();
 // cleared when a new game process starts (see log::ResetDedup()).
 #define AC_LOG_TRACE_ONCE(mod, ...) ::ac::log::WriteOnce(::ac::LogLevel::Trace, (mod), __VA_ARGS__)
 #define AC_LOG_DEBUG_ONCE(mod, ...) ::ac::log::WriteOnce(::ac::LogLevel::Debug, (mod), __VA_ARGS__)
-#define AC_LOG_INFO_ONCE(mod, ...)  ::ac::log::WriteOnce(::ac::LogLevel::Info,  (mod), __VA_ARGS__)
-#define AC_LOG_WARN_ONCE(mod, ...)  ::ac::log::WriteOnce(::ac::LogLevel::Warn,  (mod), __VA_ARGS__)
+#define AC_LOG_INFO_ONCE(mod, ...) ::ac::log::WriteOnce(::ac::LogLevel::Info, (mod), __VA_ARGS__)
+#define AC_LOG_WARN_ONCE(mod, ...) ::ac::log::WriteOnce(::ac::LogLevel::Warn, (mod), __VA_ARGS__)

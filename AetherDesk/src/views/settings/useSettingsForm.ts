@@ -15,10 +15,7 @@ export function useSettingsForm() {
   const [form, setForm] = useState<SettingsFormState>(() => settingsToForm(EMPTY_SETTINGS));
   const baselineRef = useRef<AppSettings>(EMPTY_SETTINGS);
 
-  const setField = useCallback(<K extends keyof SettingsFormState>(
-    key: K,
-    value: SettingsFormState[K],
-  ) => {
+  const setField = useCallback(<K extends keyof SettingsFormState>(key: K, value: SettingsFormState[K]) => {
     setForm((current) => ({ ...current, [key]: value }));
   }, []);
 
@@ -30,7 +27,7 @@ export function useSettingsForm() {
 
   const getLocalSettings = useCallback(
     (overrides: SettingsPatch = {}) => buildSettings(form, rawSettings, overrides),
-    [form, rawSettings],
+    [form, rawSettings]
   );
 
   const acceptPersistedSettings = useCallback((settings: AppSettings) => {

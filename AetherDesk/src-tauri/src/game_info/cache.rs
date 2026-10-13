@@ -78,13 +78,24 @@ impl GameInfoCache {
 
             merge_non_empty(&mut entry.kind, &game.store_kind);
             entry.release_date_unix = game.release_date_unix.or(entry.release_date_unix);
-            entry.original_release_date_unix = game.original_release_date_unix.or(entry.original_release_date_unix);
-            entry.store_url_path = game.store_url_path.clone().or_else(|| entry.store_url_path.clone());
+            entry.original_release_date_unix = game
+                .original_release_date_unix
+                .or(entry.original_release_date_unix);
+            entry.store_url_path = game
+                .store_url_path
+                .clone()
+                .or_else(|| entry.store_url_path.clone());
             entry.price = game.price.clone().or_else(|| entry.price.clone());
             entry.metascore = game.metascore.clone().or_else(|| entry.metascore.clone());
-            entry.controller_support = game.controller_support.clone().or_else(|| entry.controller_support.clone());
+            entry.controller_support = game
+                .controller_support
+                .clone()
+                .or_else(|| entry.controller_support.clone());
             entry.platforms = game.platforms.clone().or_else(|| entry.platforms.clone());
-            entry.store_categories = game.store_categories.clone().or_else(|| entry.store_categories.clone());
+            entry.store_categories = game
+                .store_categories
+                .clone()
+                .or_else(|| entry.store_categories.clone());
             if !game.content_descriptor_ids.is_empty() {
                 entry.content_descriptor_ids = game.content_descriptor_ids.clone();
             }
@@ -131,7 +142,8 @@ impl GameInfoCache {
                 .as_ref()
                 .map(|local| local.manifest_pin_count)
                 .unwrap_or(0);
-            let previous_updates_enabled = entry.local.as_ref().and_then(|local| local.updates_enabled);
+            let previous_updates_enabled =
+                entry.local.as_ref().and_then(|local| local.updates_enabled);
             entry.local = Some(GameInfoLocal {
                 installed: game.installed,
                 install_dir: non_empty_string(&game.install_dir),

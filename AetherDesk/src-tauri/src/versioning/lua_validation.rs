@@ -22,8 +22,12 @@ pub async fn validate_claimed_build(
     lua_path: &Path,
     token: String,
 ) -> Result<Option<String>, String> {
-    let content = std::fs::read_to_string(lua_path)
-        .map_err(|error| format!("Could not read {} for build validation: {error}", lua_path.display()))?;
+    let content = std::fs::read_to_string(lua_path).map_err(|error| {
+        format!(
+            "Could not read {} for build validation: {error}",
+            lua_path.display()
+        )
+    })?;
     let Some(captures) = BUILD_CLAIM_RE.captures(&content) else {
         return Ok(None);
     };

@@ -21,8 +21,7 @@ namespace ac::ipcspec {
 // the document is not valid TOML or yields not even one valid method (same
 // semantics as before: an empty/unparsable file must NOT overwrite the
 // existing state — the caller publishes only on true).
-bool ParseSpecToml(const std::string& body,
-                   std::unordered_map<std::string, std::uint8_t>& outInterfaceIds,
+bool ParseSpecToml(const std::string& body, std::unordered_map<std::string, std::uint8_t>& outInterfaceIds,
                    std::unordered_map<std::string, MethodSpec>& outMethods);
 
-}  // namespace ac::ipcspec
+} // namespace ac::ipcspec

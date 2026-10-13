@@ -2,8 +2,8 @@
 #include "hooks/ipc/SteamCapture.h"
 
 #include "core/AetherCoreState.h"
-#include "hooks/aetheronline/PresenceSession.h"
 #include "core/Logger.h"
+#include "hooks/aetheronline/PresenceSession.h"
 #include "hooks/steamclient/AetherOnlineHooks.h"
 #include "utils/PatternEngine.h"
 
@@ -21,11 +21,9 @@ EnsureCapacity_t o_EnsureCapacity = nullptr;
 // and the depth must never bleed across threads (see SteamCapture.h).
 thread_local std::uint32_t t_statsScopeDepth = 0;
 
-}  // namespace
+} // namespace
 
-void EnterStatsScope() {
-    ++t_statsScopeDepth;
-}
+void EnterStatsScope() { ++t_statsScopeDepth; }
 
 void LeaveStatsScope() {
     if (t_statsScopeDepth > 0) {
@@ -35,9 +33,7 @@ void LeaveStatsScope() {
     }
 }
 
-bool IsStatsScopeActive() {
-    return t_statsScopeDepth > 0;
-}
+bool IsStatsScopeActive() { return t_statsScopeDepth > 0; }
 
 void Init(HMODULE diversion) {
     if (void* addr = pattern::ResolveAddress("CUtlBufferEnsureCapacity", "steamclient", diversion)) {
@@ -48,17 +44,17 @@ void Init(HMODULE diversion) {
     }
 }
 
-steam::AppId GetAppIdForCurrentPipe() {
-    return hooks::CallOriginalGetAppIdForCurrentPipe();
-}
+steam::AppId GetAppIdForCurrentPipe() { return hooks::CallOriginalGetAppIdForCurrentPipe(); }
 
 steam::AppId CurrentRouteAppId() {
-    if (steam::AppId real = presence::RealAppId()) return real;
+    if (steam::AppId real = presence::RealAppId())
+        return real;
     return GetAppIdForCurrentPipe();
 }
 
 void EnsureBufferSize(steam::CUtlBuffer* pWrite, std::int32_t size) {
-    if (!pWrite || size <= 0) return;
+    if (!pWrite || size <= 0)
+        return;
     // Guard: if EnsureCapacity wasn't resolved, we cannot grow the buffer.
     // Setting pWrite->put without growing would make callers believe the
     // buffer has 'size' bytes available, leading to out-of-bounds writes.
@@ -70,4 +66,4 @@ void EnsureBufferSize(steam::CUtlBuffer* pWrite, std::int32_t size) {
     pWrite->put = size;
 }
 
-}  // namespace ac::capture
+} // namespace ac::capture

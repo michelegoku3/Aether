@@ -6,9 +6,9 @@
 #include <string>
 
 #include "core/AetherCoreState.h"
-#include "hooks/aetheronline/PresenceSession.h"
 #include "core/HookManager.h"
 #include "core/Logger.h"
+#include "hooks/aetheronline/PresenceSession.h"
 #include "utils/RemoteInject.h"
 
 namespace ac::hooks {
@@ -17,17 +17,12 @@ namespace {
 constexpr const char* kModule = "CreateProcess";
 
 // kernel32.dll trampolines
-using CreateProcessW_t = BOOL(WINAPI*)(LPCWSTR, LPWSTR, LPSECURITY_ATTRIBUTES,
-                                       LPSECURITY_ATTRIBUTES, BOOL, DWORD,
-                                       LPVOID, LPCWSTR, LPSTARTUPINFOW,
-                                       LPPROCESS_INFORMATION);
-using CreateProcessAsUserW_t = BOOL(WINAPI*)(HANDLE, LPCWSTR, LPWSTR,
-                                             LPSECURITY_ATTRIBUTES,
-                                             LPSECURITY_ATTRIBUTES, BOOL, DWORD,
-                                             LPVOID, LPCWSTR, LPSTARTUPINFOW,
-                                             LPPROCESS_INFORMATION);
+using CreateProcessW_t = BOOL(WINAPI*)(LPCWSTR, LPWSTR, LPSECURITY_ATTRIBUTES, LPSECURITY_ATTRIBUTES, BOOL, DWORD,
+                                       LPVOID, LPCWSTR, LPSTARTUPINFOW, LPPROCESS_INFORMATION);
+using CreateProcessAsUserW_t = BOOL(WINAPI*)(HANDLE, LPCWSTR, LPWSTR, LPSECURITY_ATTRIBUTES, LPSECURITY_ATTRIBUTES,
+                                             BOOL, DWORD, LPVOID, LPCWSTR, LPSTARTUPINFOW, LPPROCESS_INFORMATION);
 
-CreateProcessW_t       o_CreateProcessW       = nullptr;
+CreateProcessW_t o_CreateProcessW = nullptr;
 CreateProcessAsUserW_t o_CreateProcessAsUserW = nullptr;
 
 // ---------------------------------------------------------------------------
@@ -44,7 +39,8 @@ void InjectIntoChild(HANDLE hProcess, DWORD pid) {
     // defensive), skip.
     {
         std::lock_guard<std::mutex> lock(g_state.onlinePayload.mutex);
-        if (g_state.onlinePayload.injectedPids.count(pid)) return;
+        if (g_state.onlinePayload.injectedPids.count(pid))
+            return;
         g_state.onlinePayload.injectedPids.insert(pid);
     }
 
@@ -75,25 +71,22 @@ void InjectIntoChild(HANDLE hProcess, DWORD pid) {
 // Hook bodies
 // ---------------------------------------------------------------------------
 
-BOOL WINAPI h_CreateProcessW(LPCWSTR appName, LPWSTR cmdLine,
-                             LPSECURITY_ATTRIBUTES processAttrs,
-                             LPSECURITY_ATTRIBUTES threadAttrs,
-                             BOOL inheritHandles, DWORD creationFlags,
-                             LPVOID environment, LPCWSTR currentDir,
-                             LPSTARTUPINFOW startupInfo,
+BOOL WINAPI h_CreateProcessW(LPCWSTR appName, LPWSTR cmdLine, LPSECURITY_ATTRIBUTES processAttrs,
+                             LPSECURITY_ATTRIBUTES threadAttrs, BOOL inheritHandles, DWORD creationFlags,
+                             LPVOID environment, LPCWSTR currentDir, LPSTARTUPINFOW startupInfo,
                              LPPROCESS_INFORMATION processInfo) {
     steam::AppId appId = presence::RealAppId();
     if (appId == 0) {
-        return o_CreateProcessW(appName, cmdLine, processAttrs, threadAttrs,
-                                inheritHandles, creationFlags, environment,
+        return o_CreateProcessW(appName, cmdLine, processAttrs, threadAttrs, inheritHandles, creationFlags, environment,
                                 currentDir, startupInfo, processInfo);
     }
 
     const DWORD originalFlags = creationFlags;
-    const BOOL result = o_CreateProcessW(appName, cmdLine, processAttrs, threadAttrs,
-                                         inheritHandles, creationFlags | CREATE_SUSPENDED,
-                                         environment, currentDir, startupInfo, processInfo);
-    if (!result) return result;
+    const BOOL result =
+        o_CreateProcessW(appName, cmdLine, processAttrs, threadAttrs, inheritHandles, creationFlags | CREATE_SUSPENDED,
+                         environment, currentDir, startupInfo, processInfo);
+    if (!result)
+        return result;
 
     InjectIntoChild(processInfo->hProcess, processInfo->dwProcessId);
 
@@ -103,27 +96,22 @@ BOOL WINAPI h_CreateProcessW(LPCWSTR appName, LPWSTR cmdLine,
     return result;
 }
 
-BOOL WINAPI h_CreateProcessAsUserW(HANDLE token, LPCWSTR appName, LPWSTR cmdLine,
-                                   LPSECURITY_ATTRIBUTES processAttrs,
-                                   LPSECURITY_ATTRIBUTES threadAttrs,
-                                   BOOL inheritHandles, DWORD creationFlags,
-                                   LPVOID environment, LPCWSTR currentDir,
-                                   LPSTARTUPINFOW startupInfo,
+BOOL WINAPI h_CreateProcessAsUserW(HANDLE token, LPCWSTR appName, LPWSTR cmdLine, LPSECURITY_ATTRIBUTES processAttrs,
+                                   LPSECURITY_ATTRIBUTES threadAttrs, BOOL inheritHandles, DWORD creationFlags,
+                                   LPVOID environment, LPCWSTR currentDir, LPSTARTUPINFOW startupInfo,
                                    LPPROCESS_INFORMATION processInfo) {
     steam::AppId appId = presence::RealAppId();
     if (appId == 0) {
-        return o_CreateProcessAsUserW(token, appName, cmdLine, processAttrs, threadAttrs,
-                                      inheritHandles, creationFlags, environment,
-                                      currentDir, startupInfo, processInfo);
+        return o_CreateProcessAsUserW(token, appName, cmdLine, processAttrs, threadAttrs, inheritHandles, creationFlags,
+                                      environment, currentDir, startupInfo, processInfo);
     }
 
     const DWORD originalFlags = creationFlags;
-    const BOOL result = o_CreateProcessAsUserW(token, appName, cmdLine, processAttrs,
-                                               threadAttrs, inheritHandles,
-                                               creationFlags | CREATE_SUSPENDED,
-                                               environment, currentDir,
-                                               startupInfo, processInfo);
-    if (!result) return result;
+    const BOOL result =
+        o_CreateProcessAsUserW(token, appName, cmdLine, processAttrs, threadAttrs, inheritHandles,
+                               creationFlags | CREATE_SUSPENDED, environment, currentDir, startupInfo, processInfo);
+    if (!result)
+        return result;
 
     InjectIntoChild(processInfo->hProcess, processInfo->dwProcessId);
 
@@ -133,7 +121,7 @@ BOOL WINAPI h_CreateProcessAsUserW(HANDLE token, LPCWSTR appName, LPWSTR cmdLine
     return result;
 }
 
-}  // namespace
+} // namespace
 
 void RegisterCreateProcessHooks() {
     HMODULE k32 = GetModuleHandleW(L"kernel32.dll");
@@ -147,8 +135,7 @@ void RegisterCreateProcessHooks() {
     // sit outside cross-compiler syntax-check coverage).
     void* cpw = reinterpret_cast<void*>(GetProcAddress(k32, "CreateProcessW"));
     if (cpw) {
-        g_state.hookManager.RegisterHook("CreateProcessW", cpw,
-                                         reinterpret_cast<void**>(&o_CreateProcessW),
+        g_state.hookManager.RegisterHook("CreateProcessW", cpw, reinterpret_cast<void**>(&o_CreateProcessW),
                                          reinterpret_cast<void*>(h_CreateProcessW));
     } else {
         // kernel32 is always loaded; a missing export means the pattern/address
@@ -170,4 +157,4 @@ void RegisterCreateProcessHooks() {
     AC_LOG_INFO(kModule, "CreateProcess hooks registered.");
 }
 
-}  // namespace ac::hooks
+} // namespace ac::hooks

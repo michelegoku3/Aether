@@ -24,10 +24,6 @@ mod validation;
 pub use latest_download::{
     trigger_hubcap_download, trigger_luatools_download, trigger_ryuu_download,
 };
-pub use specific_version::{
-    prepare_luatools_specific_version_download, prepare_ryuu_specific_version_download,
-    prepare_specific_version_download,
-};
 pub use model::{
     AuthenticatedDownloadRequest, CachedStoreSearchResponse, DownloadRequest,
     LuaToolsDownloadRequest, StoreSuggestItem,
@@ -35,4 +31,8 @@ pub use model::{
 pub use search::{
     check_denuvo_bulk, get_cached_store_search, get_trending_store_games, search_store,
     suggest_store_games,
+};
+pub use specific_version::{
+    prepare_luatools_specific_version_download, prepare_ryuu_specific_version_download,
+    prepare_specific_version_download,
 };

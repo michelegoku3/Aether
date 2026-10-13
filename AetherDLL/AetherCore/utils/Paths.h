@@ -18,9 +18,8 @@ namespace ac::paths {
 // ASCII lowercase copy (locale-independent: Steam identifiers are ASCII).
 inline std::string LowerAscii(std::string_view text) {
     std::string out(text);
-    std::transform(out.begin(), out.end(), out.begin(), [](unsigned char ch) {
-        return static_cast<char>(std::tolower(ch));
-    });
+    std::transform(out.begin(), out.end(), out.begin(),
+                   [](unsigned char ch) { return static_cast<char>(std::tolower(ch)); });
     return out;
 }
 
@@ -28,7 +27,8 @@ inline std::string LowerAscii(std::string_view text) {
 // when there is none.
 inline std::string BaseName(std::string_view path) {
     const std::size_t slash = path.find_last_of("\\/");
-    if (slash == std::string_view::npos) return std::string(path);
+    if (slash == std::string_view::npos)
+        return std::string(path);
     return std::string(path.substr(slash + 1));
 }
 
@@ -36,10 +36,13 @@ inline std::string BaseName(std::string_view path) {
 inline bool HasExtension(const std::filesystem::path& path, const char* wanted) {
     std::string ext = path.extension().string();
     std::string expected = wanted;
-    if (ext.size() != expected.size()) return false;
-    for (char& c : ext) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-    for (char& c : expected) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    if (ext.size() != expected.size())
+        return false;
+    for (char& c : ext)
+        c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    for (char& c : expected)
+        c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
     return ext == expected;
 }
 
-}  // namespace ac::paths
+} // namespace ac::paths

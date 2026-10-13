@@ -1,6 +1,6 @@
-use reqwest::header::{HeaderMap, HeaderValue};
 use crate::manifest::package::{ManifestPackage, ManifestPackageExtractor};
 use crate::providers::http;
+use reqwest::header::{HeaderMap, HeaderValue};
 
 const BASE_URL: &str = "https://generator.ryuu.lol";
 const RYUU_TIMEOUT_SECONDS: u64 = 15;
@@ -48,7 +48,12 @@ impl RyuuClient {
     }
 
     async fn download_zip(&self, app_id: u32) -> Result<Vec<u8>, String> {
-        crate::desk_log_info!("ryuu", "Requesting Ryuu manifest ZIP for {} from {}", crate::core::logger::format_appid(app_id), BASE_URL);
+        crate::desk_log_info!(
+            "ryuu",
+            "Requesting Ryuu manifest ZIP for {} from {}",
+            crate::core::logger::format_appid(app_id),
+            BASE_URL
+        );
         let url = format!("{}/api/download/{}", BASE_URL, app_id);
         // Ryuu also supports `?auth_key=` query as fallback, but header is enough.
         // We keep the request minimal: just the path, auth via header.
@@ -59,12 +64,22 @@ impl RyuuClient {
             .send()
             .await
             .map_err(|e| {
-                crate::desk_log_error!("ryuu", "Network error requesting Ryuu manifest ZIP for {}: {}", crate::core::logger::format_appid(app_id), e);
+                crate::desk_log_error!(
+                    "ryuu",
+                    "Network error requesting Ryuu manifest ZIP for {}: {}",
+                    crate::core::logger::format_appid(app_id),
+                    e
+                );
                 format!("Ryuu network error: {}", e)
             })?;
 
         if !resp.status().is_success() {
-            crate::desk_log_error!("ryuu", "Ryuu manifest ZIP request for {} failed with HTTP status {}", crate::core::logger::format_appid(app_id), resp.status());
+            crate::desk_log_error!(
+                "ryuu",
+                "Ryuu manifest ZIP request for {} failed with HTTP status {}",
+                crate::core::logger::format_appid(app_id),
+                resp.status()
+            );
             return Err(format!(
                 "Ryuu returned HTTP {} for App ID {}",
                 resp.status(),
@@ -72,15 +87,21 @@ impl RyuuClient {
             ));
         }
 
-        let bytes = resp
-            .bytes()
-            .await
-            .map(|b| b.to_vec())
-            .map_err(|e| {
-                crate::desk_log_error!("ryuu", "Failed to read Ryuu manifest ZIP bytes for {}: {}", crate::core::logger::format_appid(app_id), e);
-                format!("Failed to read Ryuu ZIP: {}", e)
-            })?;
-        crate::desk_log_info!("ryuu", "Downloaded Ryuu manifest ZIP for {} successfully ({} bytes)", crate::core::logger::format_appid(app_id), bytes.len());
+        let bytes = resp.bytes().await.map(|b| b.to_vec()).map_err(|e| {
+            crate::desk_log_error!(
+                "ryuu",
+                "Failed to read Ryuu manifest ZIP bytes for {}: {}",
+                crate::core::logger::format_appid(app_id),
+                e
+            );
+            format!("Failed to read Ryuu ZIP: {}", e)
+        })?;
+        crate::desk_log_info!(
+            "ryuu",
+            "Downloaded Ryuu manifest ZIP for {} successfully ({} bytes)",
+            crate::core::logger::format_appid(app_id),
+            bytes.len()
+        );
         Ok(bytes)
     }
 }

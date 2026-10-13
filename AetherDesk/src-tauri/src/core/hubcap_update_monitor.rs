@@ -39,8 +39,7 @@ pub(crate) use candidates::pin_refresh_candidates;
 pub(crate) use installed_state::{acf_installed_gid, installed_gid_for_depot};
 #[cfg(test)]
 pub(crate) use scheduler::{
-    reschedule, retry_delay, PendingTask, INITIAL_RETRY_DELAY, MAX_RETRY_DELAY,
-    MAX_TASK_ATTEMPTS,
+    reschedule, retry_delay, PendingTask, INITIAL_RETRY_DELAY, MAX_RETRY_DELAY, MAX_TASK_ATTEMPTS,
 };
 
 use status::status_handle;

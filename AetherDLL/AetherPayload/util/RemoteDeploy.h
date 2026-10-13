@@ -13,4 +13,4 @@ namespace ac::remoteinject {
  */
 bool LoadDll(HANDLE process, LPCWSTR dllPath);
 
-}  // namespace ac::remoteinject
+} // namespace ac::remoteinject

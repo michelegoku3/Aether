@@ -14,10 +14,12 @@ namespace ac::keypath {
 
 // From "...\\<depotId>\\DecryptionKey" → depotId. nullopt on malformation.
 inline std::optional<steam::AppId> DepotIdFromDecryptionKeyName(const char* keyName) {
-    if (!keyName) return std::nullopt;
+    if (!keyName)
+        return std::nullopt;
     std::string key(keyName);
     const std::size_t marker = key.find("\\DecryptionKey");
-    if (marker == std::string::npos || marker == 0) return std::nullopt;
+    if (marker == std::string::npos || marker == 0)
+        return std::nullopt;
 
     const std::size_t slash = key.find_last_of("\\/", marker - 1);
     const std::size_t start = (slash == std::string::npos) ? 0 : slash + 1;
@@ -30,7 +32,8 @@ inline std::optional<steam::AppId> DepotIdFromDecryptionKeyName(const char* keyN
 
 // From "apptickets\\<appId>" → appId. nullopt on malformation.
 inline std::optional<steam::AppId> AppIdFromAppTicketKeyName(const char* keyName) {
-    if (!keyName) return std::nullopt;
+    if (!keyName)
+        return std::nullopt;
     std::string_view key(keyName);
     constexpr std::string_view prefix = "apptickets\\";
     if (key.size() <= prefix.size() || key.substr(0, prefix.size()) != prefix) {
@@ -44,4 +47,4 @@ inline std::optional<steam::AppId> AppIdFromAppTicketKeyName(const char* keyName
     }
 }
 
-}  // namespace ac::keypath
+} // namespace ac::keypath

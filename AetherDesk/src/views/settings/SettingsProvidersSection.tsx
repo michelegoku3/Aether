@@ -86,9 +86,7 @@ export const SettingsProvidersSection: React.FC<SettingsProvidersSectionProps> =
       <div className="settings-group">
         <label className="settings-label">Ryuu API Key</label>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
-          <p className="settings-desc">
-            Enter your generator.ryuu.lol API key to unlock downloads via Ryuu.
-          </p>
+          <p className="settings-desc">Enter your generator.ryuu.lol API key to unlock downloads via Ryuu.</p>
           {ryuuKey.trim() !== '' && (
             <span
               style={{
@@ -153,8 +151,8 @@ export const SettingsProvidersSection: React.FC<SettingsProvidersSectionProps> =
                   luaToolsAuth.displayName
                     ? ` as ${luaToolsAuth.displayName}`
                     : luaToolsAuth.email
-                    ? ` as ${luaToolsAuth.email}`
-                    : ''
+                      ? ` as ${luaToolsAuth.email}`
+                      : ''
                 }`
               : 'Not connected'}
           </span>
@@ -177,17 +175,11 @@ export const SettingsProvidersSection: React.FC<SettingsProvidersSectionProps> =
               void (isLuaToolsOAuthBusy
                 ? onCancelLuaToolsOAuth()
                 : luaToolsAuth.signedIn
-                ? onLuaToolsSignOut()
-                : onOpenLuaToolsLogin())
+                  ? onLuaToolsSignOut()
+                  : onOpenLuaToolsLogin())
             }
           >
-            {isLuaToolsOAuthBusy
-              ? 'Cancel'
-              : isLuaToolsAuthBusy
-              ? '...'
-              : luaToolsAuth.signedIn
-              ? 'Logout'
-              : 'Login'}
+            {isLuaToolsOAuthBusy ? 'Cancel' : isLuaToolsAuthBusy ? '...' : luaToolsAuth.signedIn ? 'Logout' : 'Login'}
           </button>
         </div>
       </div>

@@ -26,7 +26,7 @@ const fuzzyScore = (query: string, candidate: string): number => {
   if (!q) return 0;
   if (c === q) return 0;
   if (c.startsWith(q)) return 1 + c.length - q.length;
-  if (c.includes(q)) return 100 + (c.indexOf(q) * 2) + c.length - q.length;
+  if (c.includes(q)) return 100 + c.indexOf(q) * 2 + c.length - q.length;
 
   let lastIndex = -1;
   let score = 500;
@@ -66,7 +66,7 @@ const matchGameScore = (query: string, name: string, appId?: string): number => 
  */
 export const filterAndSortGames = <T extends { name: string; appId?: string }>(
   items: readonly T[],
-  query: string,
+  query: string
 ): T[] => {
   const trimmed = query.trim();
   if (!trimmed) {

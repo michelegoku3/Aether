@@ -12,7 +12,7 @@ using EOS_ContinuanceToken = void*;
 
 constexpr EOS_EResult EOS_Success = 0;
 constexpr EOS_EResult EOS_DuplicateNotAllowed = 24;
-constexpr std::int32_t EOS_ECT_DEVICEID_ACCESS_TOKEN = 10;
+constexpr std::int32_t EOS_ETC_DEVICEID_ACCESS_TOKEN = 10;
 
 #pragma pack(push, 8)
 struct EOS_Connect_Credentials {
@@ -64,9 +64,10 @@ struct EOS_Lobby_JoinLobbyByIdOptions_Partial {
 };
 #pragma pack(pop)
 
-using EOS_Connect_OnLoginCb = void(*)(const EOS_Connect_LoginCallbackInfo*);
-using EOS_Connect_OnCreateDeviceIdCb = void(*)(const EOS_Connect_CreateDeviceIdCallbackInfo*);
-using EOS_Connect_Login_t = void(*)(EOS_HConnect, const EOS_Connect_LoginOptions*, void*, EOS_Connect_OnLoginCb);
-using EOS_Connect_CreateDeviceId_t = void(*)(EOS_HConnect, const EOS_Connect_CreateDeviceIdOptions*, void*, EOS_Connect_OnCreateDeviceIdCb);
-using EOS_IPOContainer_Add_t = EOS_EResult(*)(EOS_HIntegratedPlatformOptionsContainer, const void*);
-using EOS_Lobby_OpFn_t = void(*)(EOS_HLobby, const void*, void*, void*);
+using EOS_Connect_OnLoginCb = void (*)(const EOS_Connect_LoginCallbackInfo*);
+using EOS_Connect_OnCreateDeviceIdCb = void (*)(const EOS_Connect_CreateDeviceIdCallbackInfo*);
+using EOS_Connect_Login_t = void (*)(EOS_HConnect, const EOS_Connect_LoginOptions*, void*, EOS_Connect_OnLoginCb);
+using EOS_Connect_CreateDeviceId_t = void (*)(EOS_HConnect, const EOS_Connect_CreateDeviceIdOptions*, void*,
+                                              EOS_Connect_OnCreateDeviceIdCb);
+using EOS_IPOContainer_Add_t = EOS_EResult (*)(EOS_HIntegratedPlatformOptionsContainer, const void*);
+using EOS_Lobby_OpFn_t = void (*)(EOS_HLobby, const void*, void*, void*);

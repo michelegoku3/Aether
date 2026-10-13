@@ -1,27 +1,27 @@
 #include "pch.h"
 #include "diagnostics/StatusWriter.h"
 
-#include <ctime>
 #include "utils/CoalescingWorker.h"
+#include <ctime>
 #include <fstream>
 #include <string>
 #include <vector>
 
-#include "core/AetherCoreState.h"
-#include "hooks/aetheronline/PresenceSession.h"
-#include "credentials/CredentialStore.h"
-#include "network/EticketFetcher.h"
-#include "core/HookManager.h"
-#include "utils/IpcSpec.h"
-#include "core/Logger.h"
-#include "utils/JsonWriter.h"
 #include "core/AbiSentinel.h"
+#include "core/AetherCoreState.h"
+#include "core/HookManager.h"
+#include "core/Logger.h"
 #include "core/NetPacketAbi.h"
 #include "core/StructGuard.h"
-#include "scripting/LuaData.h"
+#include "credentials/CredentialStore.h"
 #include "hooks/aetheronline/OnlinePayload.h"
+#include "hooks/aetheronline/PresenceSession.h"
 #include "hooks/ipc/PipeWatch.h"
 #include "hooks/wire/AchievementModule.h"
+#include "network/EticketFetcher.h"
+#include "scripting/LuaData.h"
+#include "utils/IpcSpec.h"
+#include "utils/JsonWriter.h"
 
 namespace ac::status {
 namespace {
@@ -31,17 +31,20 @@ constexpr const char* kModule = "StatusWriter";
 // invokes a joining std::thread destructor. Stop is only called explicitly.
 utils::CoalescingWorker* s_worker = nullptr;
 
-
 bool SaveAtomic(const std::string& path, const std::string& content) {
     const std::string tmp = path + ".tmp";
     {
         std::ofstream out(tmp, std::ios::binary | std::ios::trunc);
-        if (!out.is_open()) return false;
+        if (!out.is_open())
+            return false;
         out.write(content.data(), static_cast<std::streamsize>(content.size()));
         out.flush();
         const bool written = out.good();
         out.close();
-        if (!written || out.fail()) { DeleteFileA(tmp.c_str()); return false; }
+        if (!written || out.fail()) {
+            DeleteFileA(tmp.c_str());
+            return false;
+        }
     }
     if (!MoveFileExA(tmp.c_str(), path.c_str(), MOVEFILE_REPLACE_EXISTING)) {
         DeleteFileA(tmp.c_str());
@@ -50,7 +53,7 @@ bool SaveAtomic(const std::string& path, const std::string& content) {
     return true;
 }
 
-}  // namespace
+} // namespace
 
 static void WriteSnapshot(std::uint64_t requests) {
     // I-C: declarative emission via jsonw::Writer. JSON punctuation
@@ -124,7 +127,8 @@ static void WriteSnapshot(std::uint64_t requests) {
     w.Bool("abi_layout_contradicted", abi::guard::LayoutContradicted());
     std::size_t benignMisses = 0;
     for (const auto& m : missed) {
-        if (IsBenignMiss(m.reason)) ++benignMisses;
+        if (IsBenignMiss(m.reason))
+            ++benignMisses;
     }
     w.SizeT("hooks_installed_count", installed.size());
     w.SizeT("hooks_missed_count", missed.size() - benignMisses);
@@ -149,8 +153,7 @@ static void WriteSnapshot(std::uint64_t requests) {
     w.UInt64("ticket_forge_successes", g_state.ticketForgeSuccessCount.load());
     w.UInt64("ticket_forge_failures", g_state.ticketForgeFailureCount.load());
     w.Str("manifest_fetch_production_route", "authenticated_hubcap_standalone");
-    w.Bool("online_payload_present",
-           GetFileAttributesA(g_state.payloadDllPath.c_str()) != INVALID_FILE_ATTRIBUTES);
+    w.Bool("online_payload_present", GetFileAttributesA(g_state.payloadDllPath.c_str()) != INVALID_FILE_ATTRIBUTES);
     w.SizeT("online_payload_injected_pids", hooks::onlinepayload::InjectedPidCount());
     w.UInt64("online_payload_inject_successes", g_state.onlinePayload.injectSuccessCount.load());
     w.UInt64("online_payload_inject_failures", g_state.onlinePayload.injectFailureCount.load());
@@ -162,8 +165,10 @@ static void WriteSnapshot(std::uint64_t requests) {
     if (ipcLoaded) {
         ipcEntries = g_state.ipcSpec.methods.size();
         for (const auto& [_, spec] : g_state.ipcSpec.methods) {
-            if (spec.fencepost != 0) ++withFencepost;
-            if (spec.argc != 0) ++withArgc;
+            if (spec.fencepost != 0)
+                ++withFencepost;
+            if (spec.argc != 0)
+                ++withArgc;
         }
     }
     w.Bool("ipc_spec_loaded", ipcLoaded);
@@ -210,40 +215,45 @@ static void WriteSnapshot(std::uint64_t requests) {
 
     w.ObjectArray("diagnostics");
     for (const auto& d : diagnostics) {
-        w.RawObject("{\"ts_ms\": " + std::to_string(d.timestampMs) +
-                    ", \"category\": \"" + jsonw::Escape(d.category) +
+        w.RawObject("{\"ts_ms\": " + std::to_string(d.timestampMs) + ", \"category\": \"" + jsonw::Escape(d.category) +
                     "\", \"detail\": \"" + jsonw::Escape(d.detail) + "\"}");
     }
     w.ArrayEnd();
 
     const std::string path = g_state.aetherCoreDir + "\\status.json";
     if (SaveAtomic(path, w.Finish())) {
-        AC_LOG_DEBUG(kModule, "Wrote %s (installed=%zu, missed=%zu, coalesced_requests=%llu).",
-                    path.c_str(), installed.size(), missed.size(),
-                    static_cast<unsigned long long>(requests));
+        AC_LOG_DEBUG(kModule, "Wrote %s (installed=%zu, missed=%zu, coalesced_requests=%llu).", path.c_str(),
+                     installed.size(), missed.size(), static_cast<unsigned long long>(requests));
     } else {
         AC_LOG_WARN(kModule, "Failed to write %s.", path.c_str());
     }
 }
 
 void Start() {
-    if (s_worker) return;
+    if (s_worker)
+        return;
     s_worker = new utils::CoalescingWorker;
     s_worker->Start([](std::uint64_t requests) {
-        try { WriteSnapshot(requests); }
-        catch (const std::exception& e) { AC_LOG_WARN(kModule, "Snapshot failed: %s", e.what()); }
-        catch (...) { AC_LOG_WARN(kModule, "Snapshot failed: unknown exception."); }
+        try {
+            WriteSnapshot(requests);
+        } catch (const std::exception& e) {
+            AC_LOG_WARN(kModule, "Snapshot failed: %s", e.what());
+        } catch (...) {
+            AC_LOG_WARN(kModule, "Snapshot failed: unknown exception.");
+        }
     });
     AC_LOG_INFO(kModule, "Async writer started (100 ms coalescing). Success details at DEBUG.");
 }
 
 void Write() {
-    if (s_worker && !g_state.shuttingDown.load()) s_worker->Request();
+    if (s_worker && !g_state.shuttingDown.load())
+        s_worker->Request();
 }
 
 void Stop() {
-    if (s_worker) s_worker->Stop();
+    if (s_worker)
+        s_worker->Stop();
     AC_LOG_INFO(kModule, "Async writer stopped.");
 }
 
-}  // namespace ac::status
+} // namespace ac::status

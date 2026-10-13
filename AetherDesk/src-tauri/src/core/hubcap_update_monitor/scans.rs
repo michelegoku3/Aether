@@ -241,4 +241,3 @@ pub(super) fn managed_update_candidates(
     candidates.dedup();
     candidates
 }
-

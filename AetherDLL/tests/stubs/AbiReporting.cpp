@@ -16,4 +16,4 @@ void ReportRejection(const char*, Reason) {}
 void ReportTableMismatch(const char*, std::uint32_t, std::size_t, const std::string&) {}
 void ReportTableAgrees(std::size_t, const std::string&) {}
 
-}  // namespace ac::abi::guard
+} // namespace ac::abi::guard

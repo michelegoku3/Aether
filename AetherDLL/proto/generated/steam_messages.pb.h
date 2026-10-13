@@ -1781,7 +1781,7 @@ class CMsgClientPICSProductInfoRequest_PackageInfo final :
 
   enum : int {
     kAccessTokenFieldNumber = 2,
-    kPackageidFieldNumber = 1,
+    kPackagedFieldNumber = 1,
   };
   // optional uint64 access_token = 2;
   bool has_access_token() const;
@@ -1794,15 +1794,15 @@ class CMsgClientPICSProductInfoRequest_PackageInfo final :
   void _internal_set_access_token(::uint64_t value);
 
   public:
-  // optional uint32 packageid = 1;
-  bool has_packageid() const;
-  void clear_packageid() ;
-  ::uint32_t packageid() const;
-  void set_packageid(::uint32_t value);
+  // optional uint32 packaged = 1;
+  bool has_packaged() const;
+  void clear_packaged() ;
+  ::uint32_t packaged() const;
+  void set_packaged(::uint32_t value);
 
   private:
-  ::uint32_t _internal_packageid() const;
-  void _internal_set_packageid(::uint32_t value);
+  ::uint32_t _internal_packaged() const;
+  void _internal_set_packaged(::uint32_t value);
 
   public:
   // @@protoc_insertion_point(class_scope:CMsgClientPICSProductInfoRequest.PackageInfo)
@@ -1831,7 +1831,7 @@ class CMsgClientPICSProductInfoRequest_PackageInfo final :
     ::google::protobuf::internal::HasBits<1> _has_bits_;
     mutable ::google::protobuf::internal::CachedSize _cached_size_;
     ::uint64_t access_token_;
-    ::uint32_t packageid_;
+    ::uint32_t packaged_;
     PROTOBUF_TSAN_DECLARE_MEMBER
   };
   union { Impl_ _impl_; };
@@ -3515,7 +3515,7 @@ class CMsgClientStoreUserStats2 final :
     kStatsFieldNumber = 6,
     kAchievementBlocksFieldNumber = 7,
     kGameIdFieldNumber = 1,
-    kSettorSteamIdFieldNumber = 2,
+    kSetterSteamIdFieldNumber = 2,
     kSetteeSteamIdFieldNumber = 3,
     kCrcStatsFieldNumber = 4,
     kSchemaLocalVersionFieldNumber = 5,
@@ -3567,15 +3567,15 @@ class CMsgClientStoreUserStats2 final :
   void _internal_set_game_id(::uint64_t value);
 
   public:
-  // optional fixed64 settor_steam_id = 2;
-  bool has_settor_steam_id() const;
-  void clear_settor_steam_id() ;
-  ::uint64_t settor_steam_id() const;
-  void set_settor_steam_id(::uint64_t value);
+  // optional fixed64 setter_steam_id = 2;
+  bool has_setter_steam_id() const;
+  void clear_setter_steam_id() ;
+  ::uint64_t setter_steam_id() const;
+  void set_setter_steam_id(::uint64_t value);
 
   private:
-  ::uint64_t _internal_settor_steam_id() const;
-  void _internal_set_settor_steam_id(::uint64_t value);
+  ::uint64_t _internal_setter_steam_id() const;
+  void _internal_set_setter_steam_id(::uint64_t value);
 
   public:
   // optional fixed64 settee_steam_id = 3;
@@ -3639,7 +3639,7 @@ class CMsgClientStoreUserStats2 final :
     ::google::protobuf::RepeatedPtrField< ::CMsgClientStoreUserStats2_Stats > stats_;
     ::google::protobuf::RepeatedPtrField< ::CMsgClientStoreUserStats2_Achievement > achievement_blocks_;
     ::uint64_t game_id_;
-    ::uint64_t settor_steam_id_;
+    ::uint64_t setter_steam_id_;
     ::uint64_t settee_steam_id_;
     ::uint64_t crc_stats_;
     ::int32_t schema_local_version_;
@@ -5842,32 +5842,32 @@ inline void CMsgClientPICSProductInfoRequest_AppInfo::_internal_set_only_public_
 
 // CMsgClientPICSProductInfoRequest_PackageInfo
 
-// optional uint32 packageid = 1;
-inline bool CMsgClientPICSProductInfoRequest_PackageInfo::has_packageid() const {
+// optional uint32 packaged = 1;
+inline bool CMsgClientPICSProductInfoRequest_PackageInfo::has_packaged() const {
   bool value = (_impl_._has_bits_[0] & 0x00000002u) != 0;
   return value;
 }
-inline void CMsgClientPICSProductInfoRequest_PackageInfo::clear_packageid() {
+inline void CMsgClientPICSProductInfoRequest_PackageInfo::clear_packaged() {
   PROTOBUF_TSAN_WRITE(&_impl_._tsan_detect_race);
-  _impl_.packageid_ = 0u;
+  _impl_.packaged_ = 0u;
   _impl_._has_bits_[0] &= ~0x00000002u;
 }
-inline ::uint32_t CMsgClientPICSProductInfoRequest_PackageInfo::packageid() const {
-  // @@protoc_insertion_point(field_get:CMsgClientPICSProductInfoRequest.PackageInfo.packageid)
-  return _internal_packageid();
+inline ::uint32_t CMsgClientPICSProductInfoRequest_PackageInfo::packaged() const {
+  // @@protoc_insertion_point(field_get:CMsgClientPICSProductInfoRequest.PackageInfo.packaged)
+  return _internal_packaged();
 }
-inline void CMsgClientPICSProductInfoRequest_PackageInfo::set_packageid(::uint32_t value) {
-  _internal_set_packageid(value);
-  // @@protoc_insertion_point(field_set:CMsgClientPICSProductInfoRequest.PackageInfo.packageid)
+inline void CMsgClientPICSProductInfoRequest_PackageInfo::set_packaged(::uint32_t value) {
+  _internal_set_packaged(value);
+  // @@protoc_insertion_point(field_set:CMsgClientPICSProductInfoRequest.PackageInfo.packaged)
 }
-inline ::uint32_t CMsgClientPICSProductInfoRequest_PackageInfo::_internal_packageid() const {
+inline ::uint32_t CMsgClientPICSProductInfoRequest_PackageInfo::_internal_packaged() const {
   PROTOBUF_TSAN_READ(&_impl_._tsan_detect_race);
-  return _impl_.packageid_;
+  return _impl_.packaged_;
 }
-inline void CMsgClientPICSProductInfoRequest_PackageInfo::_internal_set_packageid(::uint32_t value) {
+inline void CMsgClientPICSProductInfoRequest_PackageInfo::_internal_set_packaged(::uint32_t value) {
   PROTOBUF_TSAN_WRITE(&_impl_._tsan_detect_race);
   _impl_._has_bits_[0] |= 0x00000002u;
-  _impl_.packageid_ = value;
+  _impl_.packaged_ = value;
 }
 
 // optional uint64 access_token = 2;
@@ -8535,32 +8535,32 @@ inline void CMsgClientStoreUserStats2::_internal_set_game_id(::uint64_t value) {
   _impl_.game_id_ = value;
 }
 
-// optional fixed64 settor_steam_id = 2;
-inline bool CMsgClientStoreUserStats2::has_settor_steam_id() const {
+// optional fixed64 setter_steam_id = 2;
+inline bool CMsgClientStoreUserStats2::has_setter_steam_id() const {
   bool value = (_impl_._has_bits_[0] & 0x00000002u) != 0;
   return value;
 }
-inline void CMsgClientStoreUserStats2::clear_settor_steam_id() {
+inline void CMsgClientStoreUserStats2::clear_setter_steam_id() {
   PROTOBUF_TSAN_WRITE(&_impl_._tsan_detect_race);
-  _impl_.settor_steam_id_ = ::uint64_t{0u};
+  _impl_.setter_steam_id_ = ::uint64_t{0u};
   _impl_._has_bits_[0] &= ~0x00000002u;
 }
-inline ::uint64_t CMsgClientStoreUserStats2::settor_steam_id() const {
-  // @@protoc_insertion_point(field_get:CMsgClientStoreUserStats2.settor_steam_id)
-  return _internal_settor_steam_id();
+inline ::uint64_t CMsgClientStoreUserStats2::setter_steam_id() const {
+  // @@protoc_insertion_point(field_get:CMsgClientStoreUserStats2.setter_steam_id)
+  return _internal_setter_steam_id();
 }
-inline void CMsgClientStoreUserStats2::set_settor_steam_id(::uint64_t value) {
-  _internal_set_settor_steam_id(value);
-  // @@protoc_insertion_point(field_set:CMsgClientStoreUserStats2.settor_steam_id)
+inline void CMsgClientStoreUserStats2::set_setter_steam_id(::uint64_t value) {
+  _internal_set_setter_steam_id(value);
+  // @@protoc_insertion_point(field_set:CMsgClientStoreUserStats2.setter_steam_id)
 }
-inline ::uint64_t CMsgClientStoreUserStats2::_internal_settor_steam_id() const {
+inline ::uint64_t CMsgClientStoreUserStats2::_internal_setter_steam_id() const {
   PROTOBUF_TSAN_READ(&_impl_._tsan_detect_race);
-  return _impl_.settor_steam_id_;
+  return _impl_.setter_steam_id_;
 }
-inline void CMsgClientStoreUserStats2::_internal_set_settor_steam_id(::uint64_t value) {
+inline void CMsgClientStoreUserStats2::_internal_set_setter_steam_id(::uint64_t value) {
   PROTOBUF_TSAN_WRITE(&_impl_._tsan_detect_race);
   _impl_._has_bits_[0] |= 0x00000002u;
-  _impl_.settor_steam_id_ = value;
+  _impl_.setter_steam_id_ = value;
 }
 
 // optional fixed64 settee_steam_id = 3;

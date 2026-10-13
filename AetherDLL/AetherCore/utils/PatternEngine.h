@@ -30,4 +30,4 @@ void* ResolveAddress(const std::string& funcName, const std::string& module, HMO
 
 bool HasModule(const std::string& module);
 
-}  // namespace ac::pattern
+} // namespace ac::pattern

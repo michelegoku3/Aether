@@ -1,7 +1,7 @@
+use crate::core::paths::LocalAppPaths;
+use base64::Engine;
 use std::fs;
 use std::path::{Path, PathBuf};
-use base64::Engine;
-use crate::core::paths::LocalAppPaths;
 
 /// Custom themes live in `AetherData/config/themes/`.
 /// The *first* `.css` file found (sorted by file name) is the active theme.
@@ -40,13 +40,16 @@ const DEFAULT_FRIEREN_THEME: &str = include_str!("../../assets/defaults/themes/f
 const DEFAULT_HALO_THEME: &str = include_str!("../../assets/defaults/themes/halo.css");
 
 /// Default wallpaper shipped with AetherDesk (4K Cyberpunk 2077 art, embedded).
-const DEFAULT_CYBERPUNK_WALLPAPER: &[u8] = include_bytes!("../../assets/defaults/wallpapers/cyberpunk.jpg");
+const DEFAULT_CYBERPUNK_WALLPAPER: &[u8] =
+    include_bytes!("../../assets/defaults/wallpapers/cyberpunk.jpg");
 
 /// Default Frieren wallpaper shipped with AetherDesk.
-const DEFAULT_FRIEREN_WALLPAPER: &[u8] = include_bytes!("../../assets/defaults/wallpapers/frieren.jpg");
+const DEFAULT_FRIEREN_WALLPAPER: &[u8] =
+    include_bytes!("../../assets/defaults/wallpapers/frieren.jpg");
 
 /// Default Goldmine wallpaper shipped with AetherDesk.
-const DEFAULT_GOLDMINE_WALLPAPER: &[u8] = include_bytes!("../../assets/defaults/wallpapers/goldmine.jpg");
+const DEFAULT_GOLDMINE_WALLPAPER: &[u8] =
+    include_bytes!("../../assets/defaults/wallpapers/goldmine.jpg");
 
 /// Default Halo wallpaper shipped with AetherDesk.
 const DEFAULT_HALO_WALLPAPER: &[u8] = include_bytes!("../../assets/defaults/wallpapers/halo.jpg");
@@ -109,7 +112,10 @@ pub fn ensure_default_assets() -> Result<(), String> {
         let file = themes_dir.join(file_name);
         if !file.exists() {
             if let Err(e) = fs::write(&file, content) {
-                eprintln!("[AetherDesk] failed to write default theme {}: {}", file_name, e);
+                eprintln!(
+                    "[AetherDesk] failed to write default theme {}: {}",
+                    file_name, e
+                );
             }
         }
     }
@@ -118,7 +124,10 @@ pub fn ensure_default_assets() -> Result<(), String> {
         let file = wallpapers_dir.join(file_name);
         if !file.exists() {
             if let Err(e) = fs::write(&file, content) {
-                eprintln!("[AetherDesk] failed to write default wallpaper {}: {}", file_name, e);
+                eprintln!(
+                    "[AetherDesk] failed to write default wallpaper {}: {}",
+                    file_name, e
+                );
             }
         }
     }
@@ -141,7 +150,10 @@ pub fn ensure_default_assets() -> Result<(), String> {
         let file = icons_dir.join(file_name);
         if !file.exists() {
             if let Err(e) = fs::write(&file, content) {
-                eprintln!("[AetherDesk] failed to write default icon {}: {}", file_name, e);
+                eprintln!(
+                    "[AetherDesk] failed to write default icon {}: {}",
+                    file_name, e
+                );
             }
         }
     }
@@ -267,16 +279,19 @@ pub fn active_wallpaper_name(selected_file: &str) -> Option<String> {
     personal_wallpaper_path(selected_file)
         .ok()
         .flatten()
-        .and_then(|path| path.file_name().map(|name| name.to_string_lossy().to_string()))
+        .and_then(|path| {
+            path.file_name()
+                .map(|name| name.to_string_lossy().to_string())
+        })
 }
 
 /// Name of the theme currently applied (selected or first detected), for UI
 /// feedback. `None` when nothing is available.
 pub fn active_theme_name(selected_file: &str) -> Option<String> {
-    theme_path(selected_file)
-        .ok()
-        .flatten()
-        .and_then(|path| path.file_name().map(|name| name.to_string_lossy().to_string()))
+    theme_path(selected_file).ok().flatten().and_then(|path| {
+        path.file_name()
+            .map(|name| name.to_string_lossy().to_string())
+    })
 }
 
 pub fn icon_path(selected_file: &str) -> Result<Option<PathBuf>, String> {
@@ -292,25 +307,30 @@ fn icon_candidates() -> Result<Vec<PathBuf>, String> {
 }
 
 pub fn active_icon_name(selected_file: &str) -> Option<String> {
-    icon_path(selected_file)
-        .ok()
-        .flatten()
-        .and_then(|path| path.file_name().map(|name| name.to_string_lossy().to_string()))
+    icon_path(selected_file).ok().flatten().and_then(|path| {
+        path.file_name()
+            .map(|name| name.to_string_lossy().to_string())
+    })
 }
 
 fn icon_from_bytes(bytes: &[u8]) -> Result<tauri::image::Image<'static>, String> {
-    let decoded = image::load_from_memory(bytes)
-        .map_err(|e| format!("Unsupported icon format: {}", e))?;
+    let decoded =
+        image::load_from_memory(bytes).map_err(|e| format!("Unsupported icon format: {}", e))?;
     let rgba = decoded.to_rgba8();
     let (width, height) = rgba.dimensions();
     if width == 0 || height == 0 {
         return Err("Icon image is empty".to_string());
     }
-    Ok(tauri::image::Image::new_owned(rgba.into_raw(), width, height))
+    Ok(tauri::image::Image::new_owned(
+        rgba.into_raw(),
+        width,
+        height,
+    ))
 }
 
 pub fn load_window_icon(path: &Path) -> Result<tauri::image::Image<'static>, String> {
-    let bytes = fs::read(path).map_err(|e| format!("Failed to read icon {}: {}", path.display(), e))?;
+    let bytes =
+        fs::read(path).map_err(|e| format!("Failed to read icon {}: {}", path.display(), e))?;
     icon_from_bytes(&bytes)
 }
 
@@ -385,8 +405,14 @@ pub fn import_selected_file(folder: &Path, picked_path: &Path) -> Result<String,
                 folder.display()
             ));
         }
-        fs::copy(&picked_path, &destination)
-            .map_err(|e| format!("Failed to copy {} into {}: {}", picked_path.display(), folder.display(), e))?;
+        fs::copy(&picked_path, &destination).map_err(|e| {
+            format!(
+                "Failed to copy {} into {}: {}",
+                picked_path.display(),
+                folder.display(),
+                e
+            )
+        })?;
     }
 
     Ok(file_name.to_string())
@@ -426,7 +452,8 @@ fn list_files_with_extension(dir: &Path, kind: &str) -> Result<Vec<PathBuf>, Str
     if !dir.is_dir() {
         return Ok(Vec::new());
     }
-    let entries = fs::read_dir(dir).map_err(|e| format!("Failed to read folder {}: {}", dir.display(), e))?;
+    let entries =
+        fs::read_dir(dir).map_err(|e| format!("Failed to read folder {}: {}", dir.display(), e))?;
     let mut files: Vec<PathBuf> = entries
         .flatten()
         .map(|entry| entry.path())

@@ -35,4 +35,4 @@ std::string BackupPlaytimeDir();
 // Atomic replacement: tmp -> dst with MOVEFILE_REPLACE_EXISTING.
 bool AtomicReplace(const std::string& tmp, const std::string& dst);
 
-}  // namespace ac::backup::io
+} // namespace ac::backup::io

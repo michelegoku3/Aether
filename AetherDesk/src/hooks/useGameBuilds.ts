@@ -53,28 +53,31 @@ export const useGameBuilds = (appId: number) => {
     load();
   }, [load]);
 
-  const toggleSaved = useCallback(async (build: BuildInfo) => {
-    const isSaved = savedIds.has(build.buildId);
-    // The bookmark list is cached with everything else: drop it as soon as the
-    // user changes it, then keep the local state authoritative for this render.
-    invalidateGameState(appId);
-    if (isSaved) {
-      await invoke('remove_saved_build', { appId, buildId: build.buildId });
-      setSavedIds((prev) => {
-        const next = new Set(prev);
-        next.delete(build.buildId);
-        return next;
-      });
-    } else {
-      await invoke('save_build', {
-        appId,
-        buildId: build.buildId,
-        date: build.date,
-        title: build.title,
-      });
-      setSavedIds((prev) => new Set(prev).add(build.buildId));
-    }
-  }, [appId, savedIds, invalidateGameState]);
+  const toggleSaved = useCallback(
+    async (build: BuildInfo) => {
+      const isSaved = savedIds.has(build.buildId);
+      // The bookmark list is cached with everything else: drop it as soon as the
+      // user changes it, then keep the local state authoritative for this render.
+      invalidateGameState(appId);
+      if (isSaved) {
+        await invoke('remove_saved_build', { appId, buildId: build.buildId });
+        setSavedIds((prev) => {
+          const next = new Set(prev);
+          next.delete(build.buildId);
+          return next;
+        });
+      } else {
+        await invoke('save_build', {
+          appId,
+          buildId: build.buildId,
+          date: build.date,
+          title: build.title,
+        });
+        setSavedIds((prev) => new Set(prev).add(build.buildId));
+      }
+    },
+    [appId, savedIds, invalidateGameState]
+  );
 
   return { builds, savedIds, loading, error, reload: load, toggleSaved };
 };

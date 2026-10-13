@@ -1,8 +1,8 @@
-use crate::providers::manifest_source::ManifestSource;
 use crate::providers::hubcap::HubcapClient;
-use crate::providers::ryuu::RyuuClient;
 use crate::providers::luatools::LuaToolsClient;
+use crate::providers::manifest_source::ManifestSource;
 use crate::providers::oureveryday::OureverydayClient;
+use crate::providers::ryuu::RyuuClient;
 
 #[test]
 fn test_manifest_source_metadata() {

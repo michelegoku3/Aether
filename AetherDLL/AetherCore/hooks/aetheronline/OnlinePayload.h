@@ -10,4 +10,4 @@ namespace ac::hooks::onlinepayload {
 void MaybeInject(const pipewatch::ProcessSnapshot& snapshot);
 std::size_t InjectedPidCount();
 
-}  // namespace ac::hooks::onlinepayload
+} // namespace ac::hooks::onlinepayload

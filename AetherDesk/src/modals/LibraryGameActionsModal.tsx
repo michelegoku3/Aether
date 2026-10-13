@@ -44,7 +44,7 @@ interface GameManifestSyncReport {
  * action that fixes it (Modify) instead of leaving the user at a dead end.
  */
 const summarizeManifestRepair = (
-  report: GameManifestSyncReport,
+  report: GameManifestSyncReport
 ): { text: string; type: 'info' | 'success' | 'error' } => {
   if (report.invalidPinLine) {
     return {
@@ -110,9 +110,9 @@ export const LibraryGameActionsModal = ({
    * falling back to that snapshot. Commented-out bad calls do not count: they
    * only come back when updates are enabled, and the button is disabled then.
    */
-  const hasPinsToFix = (
-    games.find((entry) => entry.appId === game.appId)?.luaIssues ?? game.luaIssues ?? []
-  ).some((issue) => issue.active !== false);
+  const hasPinsToFix = (games.find((entry) => entry.appId === game.appId)?.luaIssues ?? game.luaIssues ?? []).some(
+    (issue) => issue.active !== false
+  );
   const [updatesEnabled, setUpdatesEnabled] = useState(false);
   const [isBusy, setIsBusy] = useState(false);
   const [showOnlineChoice, setShowOnlineChoice] = useState(false);
@@ -243,7 +243,10 @@ export const LibraryGameActionsModal = ({
 
       if (spoof && !aetherOn && !excludedOn && (showOn || defaultOn)) {
         try {
-          await invoke<string>('set_aether_excluded', { appId: Number(game.appId), enabled: true } satisfies PresenceToggleArgs);
+          await invoke<string>('set_aether_excluded', {
+            appId: Number(game.appId),
+            enabled: true,
+          } satisfies PresenceToggleArgs);
           excludedOn = true;
           showOn = false;
         } catch {
@@ -273,7 +276,7 @@ export const LibraryGameActionsModal = ({
     showOnline,
     aetherExcluded,
     presenceDefaultShowOnline,
-    ofmePresent || uco2Online || uco2FilesPresent,
+    ofmePresent || uco2Online || uco2FilesPresent
   );
 
   const handleSelectPresenceMode = async (next: AppPresenceMode) => {
@@ -305,7 +308,10 @@ export const LibraryGameActionsModal = ({
     if (currentPresenceMode !== 'none') {
       setOnlineBusy(true);
       try {
-        await invoke<string>('set_aether_excluded', { appId: Number(game.appId), enabled: true } satisfies PresenceToggleArgs);
+        await invoke<string>('set_aether_excluded', {
+          appId: Number(game.appId),
+          enabled: true,
+        } satisfies PresenceToggleArgs);
         await refreshOnlineStates();
       } catch (err: unknown) {
         onStatus(`Failed to switch to None for UCO2: ${toErrorMessage(err)}`, 'error');
@@ -330,10 +336,7 @@ export const LibraryGameActionsModal = ({
   return (
     // Outside clicks are ignored while a child popup is open: the click
     // belongs to that popup, which closes itself and returns here.
-    <div
-      className="modal-overlay"
-      onClick={disabled || childPopupOpen ? undefined : onClose}
-    >
+    <div className="modal-overlay" onClick={disabled || childPopupOpen ? undefined : onClose}>
       <div className="modal-container game-action-modal" onClick={(e) => e.stopPropagation()}>
         <div className="game-action-hero-wrap">
           <GameHeroImage appId={game.appId} name={game.name} canonicalUrl={game.heroImageUrl || game.imageUrl} />
@@ -345,13 +348,7 @@ export const LibraryGameActionsModal = ({
             aria-label="Close"
             title="Close"
           >
-            <svg
-              viewBox="0 0 24 24"
-              width="16"
-              height="16"
-              aria-hidden="true"
-              focusable="false"
-            >
+            <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" focusable="false">
               <path
                 d="M5 5 L19 19 M19 5 L5 19"
                 stroke="currentColor"
@@ -390,23 +387,19 @@ export const LibraryGameActionsModal = ({
                 className="game-action-btn-wrap"
                 title={!game.installed ? 'Online requires the game to be installed in Steam first' : undefined}
               >
-                <button
-                  className="game-action-btn"
-                  onClick={handleOpenOnline}
-                  disabled={disabled || !game.installed}
-                >
+                <button className="game-action-btn" onClick={handleOpenOnline} disabled={disabled || !game.installed}>
                   ONLINE
                 </button>
               </span>
               <span
                 className="game-action-btn-wrap"
-                title={game.installed ? 'Installed games cannot be removed from Aether Library' : 'Remove Lua from Aether Library'}
+                title={
+                  game.installed
+                    ? 'Installed games cannot be removed from Aether Library'
+                    : 'Remove Lua from Aether Library'
+                }
               >
-                <button
-                  className="game-action-btn danger"
-                  onClick={handleRemove}
-                  disabled={disabled || game.installed}
-                >
+                <button className="game-action-btn danger" onClick={handleRemove} disabled={disabled || game.installed}>
                   Remove
                 </button>
               </span>

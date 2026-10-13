@@ -28,5 +28,6 @@ pub fn is_steamless_backup_name(name: &str) -> bool {
 
 /// True when a file name is a not-yet-applied Steamless output.
 pub fn is_steamless_unpacked_name(name: &str) -> bool {
-    name.to_ascii_lowercase().ends_with(STEAMLESS_UNPACKED_SUFFIX)
+    name.to_ascii_lowercase()
+        .ends_with(STEAMLESS_UNPACKED_SUFFIX)
 }

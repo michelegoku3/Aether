@@ -85,33 +85,25 @@ inline constexpr std::size_t kOwnershipBoolCount = 18;
 // corruption into a visible, diagnosable degradation — which is the whole
 // point of the exercise.
 struct ExpectedLayout {
-    const char* key;       // "Struct.field" as published
-    std::size_t compiled;  // what this binary was built with
+    const char* key;      // "Struct.field" as published
+    std::size_t compiled; // what this binary was built with
 };
 
 //: Checked against the table at startup. Every entry is proven by
 //: disassembly of both shipped builds (round 3/5).
 inline constexpr ExpectedLayout kExpectedLayout[] = {
-    {"AppOwnership.bool_block_start", 0x24},
-    {"AppOwnership.size_bytes", 0x36},
-    {"AppOwnership.timeStamp", 0x1C},
-    {"AppOwnership.timeExpire", 0x20},
-    {"AppOwnership.borrowed", 0x2F},
-    {"DepotEntry.manifestGid", 0x08},
-    {"DepotEntry.manifestSize", 0x10},
-    {"PackageInfo.status", 0x18},
-    {"PackageInfo.appIdVec", 0x40},
-    {"PackageInfo.depotIdVec", 0x58},
-    {"CUtlVector.allocationCount", 0x08},
-    {"CUtlVector.count", 0x10},
+    {"AppOwnership.bool_block_start", 0x24}, {"AppOwnership.size_bytes", 0x36},    {"AppOwnership.timeStamp", 0x1C},
+    {"AppOwnership.timeExpire", 0x20},       {"AppOwnership.borrowed", 0x2F},      {"DepotEntry.manifestGid", 0x08},
+    {"DepotEntry.manifestSize", 0x10},       {"PackageInfo.status", 0x18},         {"PackageInfo.appIdVec", 0x40},
+    {"PackageInfo.depotIdVec", 0x58},        {"CUtlVector.allocationCount", 0x08}, {"CUtlVector.count", 0x10},
 };
 
 // ---- results --------------------------------------------------------------
 enum class Reason {
     Ok,
-    TableMismatch,  // the build's ABI table contradicts the compiled layout
+    TableMismatch, // the build's ABI table contradicts the compiled layout
     NullObject,
-    BoolBlockNotBoolean,   // a "bool" byte holds something other than 0/1
+    BoolBlockNotBoolean, // a "bool" byte holds something other than 0/1
     ReleaseStateOutOfRange,
     PackageCountAbsurd,
     VectorSizeExceedsAlloc,
@@ -126,17 +118,26 @@ enum class Reason {
 //: print a message.
 inline const char* ReasonText(Reason r) {
     switch (r) {
-    case Reason::Ok: return "ok";
+    case Reason::Ok:
+        return "ok";
     case Reason::TableMismatch:
         return "the build's ABI table contradicts the layout this DLL was compiled with";
-    case Reason::NullObject: return "null object";
-    case Reason::BoolBlockNotBoolean: return "bool block holds non-boolean bytes (layout shifted?)";
-    case Reason::ReleaseStateOutOfRange: return "releaseState out of range";
-    case Reason::PackageCountAbsurd: return "existInPackageNums absurd";
-    case Reason::VectorSizeExceedsAlloc: return "vector size exceeds allocationCount";
-    case Reason::VectorMemoryNull: return "vector has elements but null storage";
-    case Reason::VectorMemoryMisaligned: return "vector storage is misaligned";
-    case Reason::VectorAllocAbsurd: return "vector allocationCount absurd";
+    case Reason::NullObject:
+        return "null object";
+    case Reason::BoolBlockNotBoolean:
+        return "bool block holds non-boolean bytes (layout shifted?)";
+    case Reason::ReleaseStateOutOfRange:
+        return "releaseState out of range";
+    case Reason::PackageCountAbsurd:
+        return "existInPackageNums absurd";
+    case Reason::VectorSizeExceedsAlloc:
+        return "vector size exceeds allocationCount";
+    case Reason::VectorMemoryNull:
+        return "vector has elements but null storage";
+    case Reason::VectorMemoryMisaligned:
+        return "vector storage is misaligned";
+    case Reason::VectorAllocAbsurd:
+        return "vector allocationCount absurd";
     case Reason::DepotEntryImplausible:
         return "depot record does not look like a DepotEntry (layout shifted?)";
     }
@@ -169,45 +170,47 @@ inline constexpr std::uint64_t kMaxDepotBytes = 4ull * 1024 * 1024 * 1024 * 1024
 // platform layer, because a test binary has no logger and should not need
 // one. Three hooks, implemented in StructGuard.cpp and stubbed in tests.
 void ReportRejection(const char* what, Reason reason);
-void ReportTableMismatch(const char* field, std::uint32_t published, std::size_t compiled,
-                         const std::string& source);
+void ReportTableMismatch(const char* field, std::uint32_t published, std::size_t compiled, const std::string& source);
 void ReportTableAgrees(std::size_t matched, const std::string& source);
 
 namespace detail {
 inline std::atomic<bool> g_contradicted{false};
 inline std::atomic<std::uint32_t> g_rejections{0};
 inline std::atomic<std::size_t> g_tableFields{0};
-}  // namespace detail
+} // namespace detail
 
 // Set when the published table disagrees with the compiled layout: every
 // guarded write is refused from that point on.
-inline bool LayoutContradicted() {
-    return detail::g_contradicted.load(std::memory_order_relaxed);
-}
+inline bool LayoutContradicted() { return detail::g_contradicted.load(std::memory_order_relaxed); }
 
 inline Reason CheckOwnership(const steam::AppOwnership* o) {
-    if (!o) return Reason::NullObject;
-    if (LayoutContradicted()) return Reason::TableMismatch;
+    if (!o)
+        return Reason::NullObject;
+    if (LayoutContradicted())
+        return Reason::TableMismatch;
 
     const auto* bytes = reinterpret_cast<const std::uint8_t*>(o);
     for (std::size_t i = 0; i < kOwnershipBoolCount; ++i) {
-        if (bytes[kOwnershipBoolFirst + i] > 1) return Reason::BoolBlockNotBoolean;
+        if (bytes[kOwnershipBoolFirst + i] > 1)
+            return Reason::BoolBlockNotBoolean;
     }
     if (static_cast<std::uint32_t>(o->releaseState) > kMaxReleaseState) {
         return Reason::ReleaseStateOutOfRange;
     }
-    if (o->existInPackageNums > kMaxExistInPackageNums) return Reason::PackageCountAbsurd;
+    if (o->existInPackageNums > kMaxExistInPackageNums)
+        return Reason::PackageCountAbsurd;
     return Reason::Ok;
 }
 
 // ---- CUtlVector / PackageInfo --------------------------------------------
-template <typename T>
-inline Reason CheckVector(const steam::CUtlVector<T>& v) {
-    if (v.mem.allocationCount > kMaxVectorElements) return Reason::VectorAllocAbsurd;
-    if (v.size > v.mem.allocationCount) return Reason::VectorSizeExceedsAlloc;
-    if (v.size > 0 && v.mem.memory == nullptr) return Reason::VectorMemoryNull;
-    if (v.mem.memory != nullptr &&
-        (reinterpret_cast<std::uintptr_t>(v.mem.memory) & (alignof(T) - 1)) != 0) {
+template <typename T> inline Reason CheckVector(const steam::CUtlVector<T>& v) {
+    if (v.mem.allocationCount > kMaxVectorElements)
+        return Reason::VectorAllocAbsurd;
+    if (v.size > v.mem.allocationCount)
+        return Reason::VectorSizeExceedsAlloc;
+    if (v.size > 0 && v.mem.memory == nullptr)
+        return Reason::VectorMemoryNull;
+    if (v.mem.memory != nullptr && (reinterpret_cast<std::uintptr_t>(v.mem.memory) & (alignof(T) - 1)) != 0) {
         return Reason::VectorMemoryMisaligned;
     }
     return Reason::Ok;
@@ -223,11 +226,15 @@ inline Reason CheckVector(const steam::CUtlVector<T>& v) {
 // (two ids, two 64-bit quantities, three booleans), so a shifted layout is
 // easy to spot before touching anything.
 inline Reason CheckDepotEntry(const steam::DepotEntry& e) {
-    if (LayoutContradicted()) return Reason::TableMismatch;
+    if (LayoutContradicted())
+        return Reason::TableMismatch;
     // A real row always identifies a depot; a zeroed tail row is not a defect.
-    if (e.depotId == 0 && e.manifestGid == 0 && e.manifestSize == 0) return Reason::Ok;
-    if (e.depotId == 0) return Reason::DepotEntryImplausible;
-    if (e.manifestSize > kMaxDepotBytes) return Reason::DepotEntryImplausible;
+    if (e.depotId == 0 && e.manifestGid == 0 && e.manifestSize == 0)
+        return Reason::Ok;
+    if (e.depotId == 0)
+        return Reason::DepotEntryImplausible;
+    if (e.manifestSize > kMaxDepotBytes)
+        return Reason::DepotEntryImplausible;
     // The three flags are booleans in the binary: anything else means the
     // record does not start where we think it does.
     if (e.lcsRequired > 1 || e.notNewTarget > 1 || e.sharedInstall > 1) {
@@ -240,22 +247,29 @@ inline Reason CheckDepotEntry(const steam::DepotEntry& e) {
 // first problem found, so one bad row stops the pass instead of being skipped
 // silently.
 inline Reason CheckDepotVector(const steam::CUtlVector<steam::DepotEntry>* vec) {
-    if (!vec) return Reason::NullObject;
+    if (!vec)
+        return Reason::NullObject;
     const Reason shape = CheckVector(*vec);
-    if (!Passed(shape)) return shape;
-    if (!vec->mem.memory) return Reason::Ok;  // empty table: nothing to check
+    if (!Passed(shape))
+        return shape;
+    if (!vec->mem.memory)
+        return Reason::Ok; // empty table: nothing to check
     for (std::uint32_t i = 0; i < vec->size; ++i) {
         const Reason row = CheckDepotEntry(vec->mem.memory[i]);
-        if (!Passed(row)) return row;
+        if (!Passed(row))
+            return row;
     }
     return Reason::Ok;
 }
 
 inline Reason CheckPackage(const steam::PackageInfo* p) {
-    if (!p) return Reason::NullObject;
-    if (LayoutContradicted()) return Reason::TableMismatch;
+    if (!p)
+        return Reason::NullObject;
+    if (LayoutContradicted())
+        return Reason::TableMismatch;
     const Reason apps = CheckVector(p->appIdVec);
-    if (!Passed(apps)) return apps;
+    if (!Passed(apps))
+        return apps;
     return CheckVector(p->depotIdVec);
 }
 
@@ -277,7 +291,8 @@ inline std::size_t ApplyTable(const std::unordered_map<std::string, std::uint32_
     std::size_t mismatched = 0;
     for (const auto& expected : kExpectedLayout) {
         const auto it = published.find(expected.key);
-        if (it == published.end()) continue;  // older table: not an opinion
+        if (it == published.end())
+            continue; // older table: not an opinion
         if (it->second == expected.compiled) {
             ++matched;
             continue;
@@ -295,12 +310,8 @@ inline std::size_t ApplyTable(const std::unordered_map<std::string, std::uint32_
     return matched;
 }
 
-inline std::size_t TableFieldsChecked() {
-    return detail::g_tableFields.load(std::memory_order_relaxed);
-}
-inline std::uint32_t RejectionCount() {
-    return detail::g_rejections.load(std::memory_order_relaxed);
-}
+inline std::size_t TableFieldsChecked() { return detail::g_tableFields.load(std::memory_order_relaxed); }
+inline std::uint32_t RejectionCount() { return detail::g_rejections.load(std::memory_order_relaxed); }
 
 inline void ResetCounters() {
     detail::g_rejections.store(0, std::memory_order_relaxed);
@@ -308,4 +319,4 @@ inline void ResetCounters() {
     detail::g_tableFields.store(0, std::memory_order_relaxed);
 }
 
-}  // namespace ac::abi::guard
+} // namespace ac::abi::guard

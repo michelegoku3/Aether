@@ -27,13 +27,30 @@ fn test_component_update_info_contract() {
     assert!(serialized.is_object());
 
     // Frontend App.tsx DeskUpdateInfo expects snake_case properties:
-    assert_eq!(serialized.get("installed_version"), Some(&Value::String("1.4.0".to_string())));
-    assert_eq!(serialized.get("latest_version"), Some(&Value::String("1.4.1".to_string())));
-    assert_eq!(serialized.get("latest_tag"), Some(&Value::String("desk-1.4.1".to_string())));
+    assert_eq!(
+        serialized.get("installed_version"),
+        Some(&Value::String("1.4.0".to_string()))
+    );
+    assert_eq!(
+        serialized.get("latest_version"),
+        Some(&Value::String("1.4.1".to_string()))
+    );
+    assert_eq!(
+        serialized.get("latest_tag"),
+        Some(&Value::String("desk-1.4.1".to_string()))
+    );
     assert_eq!(serialized.get("update_available"), Some(&Value::Bool(true)));
     assert_eq!(serialized.get("is_test"), Some(&Value::Bool(false)));
-    assert_eq!(serialized.get("release_url"), Some(&Value::String("https://github.com/example/release".to_string())));
-    assert_eq!(serialized.get("notes"), Some(&Value::String("Release notes".to_string())));
+    assert_eq!(
+        serialized.get("release_url"),
+        Some(&Value::String(
+            "https://github.com/example/release".to_string()
+        ))
+    );
+    assert_eq!(
+        serialized.get("notes"),
+        Some(&Value::String("Release notes".to_string()))
+    );
 }
 
 #[test]
@@ -82,7 +99,10 @@ fn test_hubcap_generation_usage_serialization() {
     assert!(serialized.get("single").is_some());
     assert!(serialized.get("bundle").is_some());
     assert!(serialized.get("workshop").is_some());
-    assert_eq!(serialized.get("steam_service_ready"), Some(&Value::Bool(true)));
+    assert_eq!(
+        serialized.get("steam_service_ready"),
+        Some(&Value::Bool(true))
+    );
 }
 
 #[test]
@@ -136,7 +156,7 @@ use std::collections::BTreeSet;
 
 use crate::core::hubcap_update_monitor::{LaneStatus, MonitorStatusSnapshot, PendingTaskInfo};
 
-/// Chiavi di primo livello di un oggetto JSON.
+/// Top-level keys of a JSON object.
 fn json_object_keys(value: &Value) -> BTreeSet<String> {
     value
         .as_object()
@@ -176,19 +196,29 @@ fn ts_interface_keys(source: &str, name: &str) -> BTreeSet<String> {
     let mut keys = BTreeSet::new();
     for line in source[body_start..end].lines() {
         let line = line.trim();
-        if line.is_empty() || line.starts_with("/*") || line.starts_with('*') || line.starts_with("//") {
+        if line.is_empty()
+            || line.starts_with("/*")
+            || line.starts_with('*')
+            || line.starts_with("//")
+        {
             continue;
         }
-        let Some(colon) = line.find(':') else { continue };
+        let Some(colon) = line.find(':') else {
+            continue;
+        };
         let key = line[..colon].trim().trim_end_matches('?').trim();
-        if key.is_empty() || !key.chars().all(|ch| ch.is_ascii_alphanumeric() || ch == '_') {
+        if key.is_empty()
+            || !key
+                .chars()
+                .all(|ch| ch.is_ascii_alphanumeric() || ch == '_')
+        {
             continue;
         }
         keys.insert(key.to_string());
     }
     assert!(
         !keys.is_empty(),
-        "nessuna chiave estratta dall'interfaccia TS `{name}`: il parser del test va aggiornato"
+        "no keys extracted from the TS interface `{name}`: the test parser needs updating"
     );
     keys
 }
@@ -201,7 +231,7 @@ fn types_sync_source() -> String {
         .join("types")
         .join("sync.ts");
     std::fs::read_to_string(&path)
-        .unwrap_or_else(|error| panic!("impossibile leggere {}: {error}", path.display()))
+        .unwrap_or_else(|error| panic!("impossible leggere {}: {error}", path.display()))
 }
 
 fn sample_snapshot() -> MonitorStatusSnapshot {
@@ -252,7 +282,8 @@ fn monitor_status_snapshot_matches_the_typescript_mirror() {
     let rust_lane = json_object_keys(lane);
     let ts_lane = ts_interface_keys(&source, "LaneStatus");
     assert_eq!(
-        rust_lane, ts_lane,
+        rust_lane,
+        ts_lane,
         "\nLaneStatus keys diverged.\n  Rust only: {:?}\n  TS only:   {:?}\n",
         rust_lane.difference(&ts_lane).collect::<Vec<_>>(),
         ts_lane.difference(&rust_lane).collect::<Vec<_>>(),
@@ -266,7 +297,8 @@ fn monitor_status_snapshot_matches_the_typescript_mirror() {
     let rust_task = json_object_keys(task);
     let ts_task = ts_interface_keys(&source, "PendingTaskInfo");
     assert_eq!(
-        rust_task, ts_task,
+        rust_task,
+        ts_task,
         "\nPendingTaskInfo keys diverged.\n  Rust only: {:?}\n  TS only:   {:?}\n",
         rust_task.difference(&ts_task).collect::<Vec<_>>(),
         ts_task.difference(&rust_task).collect::<Vec<_>>(),
@@ -294,14 +326,20 @@ fn monitor_status_snapshot_serializes_every_field_even_when_empty() {
     ] {
         assert!(
             keys.contains(expected),
-            "lo snapshot vuoto deve comunque esporre `{expected}` (chiavi: {keys:?})"
+            "the empty snapshot must still expose `{expected}` (keys: {keys:?})"
         );
     }
-    let lane = json.get("workshop").expect("corsia workshop");
-    for expected in ["pending", "unresolved", "processedCount", "lastRunEpoch", "lastError"] {
+    let lane = json.get("workshop").expect("workshop lane");
+    for expected in [
+        "pending",
+        "unresolved",
+        "processedCount",
+        "lastRunEpoch",
+        "lastError",
+    ] {
         assert!(
             json_object_keys(lane).contains(expected),
-            "la corsia vuota deve comunque esporre `{expected}`"
+            "the empty lane must still expose `{expected}`"
         );
     }
 }

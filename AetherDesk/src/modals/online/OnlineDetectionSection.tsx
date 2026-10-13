@@ -8,17 +8,16 @@ interface OnlineDetectionSectionProps {
   onOpenFolder: (folder: string) => void;
 }
 
-export const OnlineDetectionSection: React.FC<OnlineDetectionSectionProps> = ({
-  plan,
-  onOpenFolder,
-}) => {
+export const OnlineDetectionSection: React.FC<OnlineDetectionSectionProps> = ({ plan, onOpenFolder }) => {
   return (
     <>
       {/* Prerequisites errors */}
       {plan.prerequisites.errors.length > 0 && (
         <div className="op-box">
           {plan.prerequisites.errors.map((error, index) => (
-            <div key={index} className="op-error">⚠ {error}</div>
+            <div key={index} className="op-error">
+              ⚠ {error}
+            </div>
           ))}
         </div>
       )}
@@ -28,9 +27,7 @@ export const OnlineDetectionSection: React.FC<OnlineDetectionSectionProps> = ({
         <div className="op-row">
           <span className="op-label">UCO2</span>
           <span className={plan.prerequisites.bundleOk ? 'op-ok' : 'op-error'}>
-            {plan.prerequisites.bundleOk
-              ? `${plan.prerequisites.bundleVersion ?? 'Available'} ✓`
-              : 'N/A ✗'}
+            {plan.prerequisites.bundleOk ? `${plan.prerequisites.bundleVersion ?? 'Available'} ✓` : 'N/A ✗'}
           </span>
         </div>
         <div className="op-row">
@@ -73,7 +70,9 @@ export const OnlineDetectionSection: React.FC<OnlineDetectionSectionProps> = ({
           <span className="op-label">Backend</span>
           <span>
             {backendChips(plan.detection.backends).map((chip) => (
-              <span key={chip} className="op-chip op-chip--off">{chip}</span>
+              <span key={chip} className="op-chip op-chip--off">
+                {chip}
+              </span>
             ))}
           </span>
         </div>
@@ -89,7 +88,9 @@ export const OnlineDetectionSection: React.FC<OnlineDetectionSectionProps> = ({
         {plan.notices.length > 0 && (
           <div className="op-notices">
             {plan.notices.map((notice, index) => (
-              <div key={index} className="op-warn">⚠ {notice}</div>
+              <div key={index} className="op-warn">
+                ⚠ {notice}
+              </div>
             ))}
           </div>
         )}

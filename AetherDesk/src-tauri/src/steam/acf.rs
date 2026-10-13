@@ -7,15 +7,13 @@ use crate::manifest::pins::DepotManifestPin;
 
 /// Parses a VDF key line: `\t"buildid"\t\t"1234567"` → value "1234567".
 /// VDF values are always double-quoted, so the regex is unambiguous.
-static KEY_VALUE_RE: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(r#"^\s*"([^"]+)"\s+"([^"]*)""#).expect("static regex")
-});
+static KEY_VALUE_RE: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r#"^\s*"([^"]+)"\s+"([^"]*)""#).expect("static regex"));
 
 /// Rewrites only the value of a VDF key line, preserving indentation,
 /// key casing and any trailing content.
-static VALUE_REWRITE_RE: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(r#"^(\s*"[^"]+"\s*)"[^"]*"(.*)$"#).expect("static regex")
-});
+static VALUE_REWRITE_RE: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r#"^(\s*"[^"]+"\s*)"[^"]*"(.*)$"#).expect("static regex"));
 
 /// Owns minimal, safe edits of an existing `appmanifest_*.acf` file.
 ///
@@ -66,9 +64,9 @@ impl SteamAcfEditor {
     fn installed_depot_manifest_in(lines: &[String], depot_id: u32) -> Option<String> {
         // Scope the lookup to the InstalledDepots block: a bare `"<depot>"`
         // line is also how other blocks (e.g. SharedDepots) open sub-blocks.
-        let block_start = lines.iter().position(|line| {
-            line.trim().eq_ignore_ascii_case("\"InstalledDepots\"")
-        })?;
+        let block_start = lines
+            .iter()
+            .position(|line| line.trim().eq_ignore_ascii_case("\"InstalledDepots\""))?;
         let mut depth = 0i32;
         let mut opened = false;
         let mut block_end = lines.len();
@@ -129,7 +127,9 @@ impl SteamAcfEditor {
         }
 
         let write_result = crate::core::state_io::write_if_unchanged(
-            &self.path, content.as_bytes(), new_content.as_bytes(),
+            &self.path,
+            content.as_bytes(),
+            new_content.as_bytes(),
         );
 
         if was_readonly {
@@ -154,8 +154,13 @@ impl SteamAcfEditor {
             .map_err(|e| format!("Failed to stat {}: {}", self.path.display(), e))?
             .permissions();
         permissions.set_readonly(readonly);
-        fs::set_permissions(&self.path, permissions)
-            .map_err(|e| format!("Failed to update permissions on {}: {}", self.path.display(), e))
+        fs::set_permissions(&self.path, permissions).map_err(|e| {
+            format!(
+                "Failed to update permissions on {}: {}",
+                self.path.display(),
+                e
+            )
+        })
     }
 
     /// Line-based rewrite: only the touched lines change, everything else is
@@ -172,7 +177,10 @@ impl SteamAcfEditor {
         if let Some(index) = Self::find_key_line(&out, "buildid") {
             out[index] = Self::rewrite_value(&out[index], "buildid", &build_id_str)?;
         } else if let Some(appid_line) = Self::find_key_line(&out, "appid") {
-            out.insert(appid_line + 1, format!("\t\"buildid\"\t\t\"{}\"", build_id_str));
+            out.insert(
+                appid_line + 1,
+                format!("\t\"buildid\"\t\t\"{}\"", build_id_str),
+            );
         }
 
         // 2. AppState.TargetBuildID — replace, or insert after "buildid".
@@ -231,7 +239,10 @@ impl SteamAcfEditor {
             .ok_or_else(|| format!("Line is not a valid VDF entry: {line:?}"))?;
         // Guard: never rewrite a different key than requested.
         let key_start = line.trim_start().trim_start_matches('"');
-        if !key_start.to_ascii_lowercase().starts_with(&key.to_ascii_lowercase()) {
+        if !key_start
+            .to_ascii_lowercase()
+            .starts_with(&key.to_ascii_lowercase())
+        {
             return Err(format!(
                 "VDF key mismatch: expected '{key}' in line {line:?}"
             ));
@@ -299,14 +310,23 @@ mod tests {
             Some("8124921270987929782")
         );
         // Unknown depot → None; a "0" manifest never counts as installed.
-        assert_eq!(SteamAcfEditor::installed_depot_manifest_in(&lines, 42), None);
+        assert_eq!(
+            SteamAcfEditor::installed_depot_manifest_in(&lines, 42),
+            None
+        );
         let zero = ACF.replace("\"8124921270987929782\"", "\"0\"");
         let lines: Vec<String> = zero.lines().map(str::to_string).collect();
-        assert_eq!(SteamAcfEditor::installed_depot_manifest_in(&lines, 2347771), None);
+        assert_eq!(
+            SteamAcfEditor::installed_depot_manifest_in(&lines, 2347771),
+            None
+        );
         // No InstalledDepots block at all → None.
         let minimal = "\"AppState\"\n{\n\t\"appid\"\t\t\"730\"\n}\n";
         let lines: Vec<String> = minimal.lines().map(str::to_string).collect();
-        assert_eq!(SteamAcfEditor::installed_depot_manifest_in(&lines, 2347770), None);
+        assert_eq!(
+            SteamAcfEditor::installed_depot_manifest_in(&lines, 2347770),
+            None
+        );
     }
 
     #[test]
@@ -344,7 +364,10 @@ mod tests {
             "\t\"manifest\"\t\t\"1\"".to_string(),
             "\t\"size\"\t\t\"0\"".to_string(),
         ];
-        assert_eq!(SteamAcfEditor::find_depot_block_start(&lines, 2347770), Some(0));
+        assert_eq!(
+            SteamAcfEditor::find_depot_block_start(&lines, 2347770),
+            Some(0)
+        );
         // A key-value line with the same digits is not a depot block start.
         let kv = vec!["\t\"2347770\"\t\t\"123\"".to_string()];
         assert_eq!(SteamAcfEditor::find_depot_block_start(&kv, 2347770), None);

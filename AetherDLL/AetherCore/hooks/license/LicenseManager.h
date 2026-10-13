@@ -42,4 +42,4 @@ void DoStartupInjection();
 // LumaCore and is out of scope here).
 void NotifyLicenseChanged();
 
-}  // namespace ac::hooks::LicenseManager
+} // namespace ac::hooks::LicenseManager

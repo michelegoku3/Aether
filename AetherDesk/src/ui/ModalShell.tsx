@@ -44,11 +44,7 @@ export const ModalShell = ({
   };
 
   return (
-    <div
-      className="modal-overlay"
-      onClick={requestClose}
-      role="presentation"
-    >
+    <div className="modal-overlay" onClick={requestClose} role="presentation">
       <div
         className={`modal-container ${containerClassName}`.trim()}
         onClick={(event) => event.stopPropagation()}
@@ -71,9 +67,7 @@ export const ModalShell = ({
 
         <div className="modal-separator" />
 
-        <div className={`modal-body ${bodyClassName}`.trim()}>
-          {children}
-        </div>
+        <div className={`modal-body ${bodyClassName}`.trim()}>{children}</div>
       </div>
     </div>
   );

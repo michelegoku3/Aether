@@ -25,4 +25,4 @@ bool TryReserveGameGeneration();
 // Returns one reserved unit after a failed generation (best effort).
 void ReleaseGameGeneration();
 
-}  // namespace ac::hubcapquota
+} // namespace ac::hubcapquota

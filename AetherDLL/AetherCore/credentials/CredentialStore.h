@@ -36,8 +36,7 @@ std::vector<std::uint8_t> ReadEncryptedTicket(steam::AppId appId);
 
 // Passively caches a ticket Steam read from its user-local config store.
 // Invalid / mismatched tickets are silently rejected.
-bool CacheConfigStoreAppOwnershipTicket(steam::AppId appId,
-                                        const std::vector<std::uint8_t>& data);
+bool CacheConfigStoreAppOwnershipTicket(steam::AppId appId, const std::vector<std::uint8_t>& data);
 
 // Diagnostics for status.json.
 std::size_t CachedConfigStoreTicketCount();
@@ -59,4 +58,4 @@ bool WriteAppSteamIdValue(steam::AppId appId, std::uint64_t steamId);
 // Reads the Steam installation path from the registry. Returns "" on failure.
 std::string ReadSteamPath();
 
-}  // namespace ac::credential
+} // namespace ac::credential

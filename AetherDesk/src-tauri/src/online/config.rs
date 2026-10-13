@@ -10,10 +10,10 @@
 //!   * `UnlockAll=true` always + DLC harvest from `configs.app.ini`
 //!     (Goldberg) or from the numbered folders in the game dir.
 
+use crate::external_tools::fs::walk_files;
 use crate::online::types::{
     CoherenceOptions, DetectionReport, OnlineEnableRequest, PhotonFlavor, PlayfabOptions,
 };
-use crate::external_tools::fs::walk_files;
 use std::path::Path;
 
 /// Runtime key of the shared community coherence project (patch.bat):
@@ -23,10 +23,10 @@ pub const COHERENCE_SHARED_KEY: &str = "fce1ea692a854b50b9f945ef6aa17758";
 /// Shared community PlayFab TitleId (patch.bat `SHARED`, NMS and others).
 pub const PLAYFAB_SHARED_TITLE: &str = "1D861F";
 
-/// Entry DLC harvestata: (appid, nome).
+/// Harvested DLC entry: (appid, name).
 pub type DlcEntry = (String, String);
 
-/// Costruisce il contenuto di `union-crax.ini` per un gioco rilevato.
+/// Build the `union-crax.ini` content for a detected game.
 pub fn build_ini(
     detection: &DetectionReport,
     request: &OnlineEnableRequest,
@@ -37,15 +37,30 @@ pub fn build_ini(
     push_line(&mut out, &format!("AppId={}", request.spoof_app_id));
     push_line(&mut out, &format!("ogAppId={}", request.og_app_id));
     push_line(&mut out, "PluginsFolder=plugins");
-    push_line(&mut out, &format!("VerboseLog={}", bool_str(request.verbose_log)));
-    push_line(&mut out, &format!("EmulateTicket={}", bool_str(request.emulate_ticket)));
     push_line(
         &mut out,
-        &format!("WarnOverlayDisabled={}", bool_str(request.warn_overlay_disabled)),
+        &format!("VerboseLog={}", bool_str(request.verbose_log)),
+    );
+    push_line(
+        &mut out,
+        &format!("EmulateTicket={}", bool_str(request.emulate_ticket)),
+    );
+    push_line(
+        &mut out,
+        &format!(
+            "WarnOverlayDisabled={}",
+            bool_str(request.warn_overlay_disabled)
+        ),
     );
     push_line(&mut out, &format!("SDR={}", bool_str(request.sdr)));
-    push_line(&mut out, &format!("LoadOverlay={}", bool_str(request.load_overlay)));
-    push_line(&mut out, &format!("LogOverlay={}", bool_str(request.log_overlay)));
+    push_line(
+        &mut out,
+        &format!("LoadOverlay={}", bool_str(request.load_overlay)),
+    );
+    push_line(
+        &mut out,
+        &format!("LogOverlay={}", bool_str(request.log_overlay)),
+    );
     push_line(
         &mut out,
         &format!("GetStubbedLol={}", bool_str(request.get_stubbed_lol)),
@@ -55,8 +70,8 @@ pub fn build_ini(
         push_line(&mut out, &format!("Client={client}"));
     }
 
-    // [DLC] — UnlockAll (toggle UI) + entry harvestate per i giochi
-    // che ENUMERANO i DLC via GetDLCCount/BGetDLCDataByIndex.
+    // [DLC] — UnlockAll (UI toggle) + harvested entries for games
+    // that ENUMERATE DLC via GetDLCCount/BGetDLCDataByIndex.
     push_line(&mut out, "");
     push_line(&mut out, "[DLC]");
     push_line(
@@ -72,7 +87,10 @@ pub fn build_ini(
         &mut out,
         "; its DLC to build a menu. Both work together - UnlockAll is the fallback.",
     );
-    push_line(&mut out, &format!("UnlockAll={}", bool_str(request.unlock_all_dlc)));
+    push_line(
+        &mut out,
+        &format!("UnlockAll={}", bool_str(request.unlock_all_dlc)),
+    );
     for (id, name) in dlc_entries {
         push_line(&mut out, &format!("{id}={name}"));
     }
@@ -113,10 +131,7 @@ pub fn build_ini(
     if detection.backends.eos && request.deploy_eos_custom {
         push_line(&mut out, "");
         push_line(&mut out, "[EOS]");
-        push_line(
-            &mut out,
-            &format!("ProductId={}", request.eos.product_id),
-        );
+        push_line(&mut out, &format!("ProductId={}", request.eos.product_id));
         push_line(&mut out, &format!("SandboxId={}", request.eos.sandbox_id));
         push_line(
             &mut out,
@@ -172,8 +187,8 @@ pub fn playfab_title(options: &PlayfabOptions) -> String {
     }
 }
 
-/// Accetta "017" o "SteamClient017"; restituisce la forma corta da scrivere
-/// nell'ini (UCO2 accetta entrambe). Vuoto se l'utente non ha pinato nulla.
+/// Accept "017" or "SteamClient017"; return the short form to write
+/// in the ini (UCO2 accepts both). Empty when the user pinned nothing.
 pub fn normalize_client(raw: &str) -> String {
     let trimmed = raw.trim();
     if trimmed.is_empty() {
@@ -187,9 +202,9 @@ pub fn normalize_client(raw: &str) -> String {
     stripped.to_string()
 }
 
-/// Harvest DLC dal gioco, con le stesse due sorgenti di patch.bat:
-///   1. primo `configs.app.ini` trovato (Goldberg) — righe `appid=name`;
-///   2. altrimenti le cartelle con nome numerico in `ini_dir` — `id=DLC id`.
+/// Harvest DLC from the game, from the same two patch.bat sources:
+///   1. first `configs.app.ini` found (Goldberg) — `appid=name` lines;
+///   2. otherwise the numerically-named folders in `ini_dir` — `id=DLC id`.
 pub fn harvest_dlc(game_root: &Path, ini_dir: &Path) -> Vec<DlcEntry> {
     if let Some(entries) = harvest_from_configs_app_ini(game_root) {
         return entries;
@@ -198,14 +213,12 @@ pub fn harvest_dlc(game_root: &Path, ini_dir: &Path) -> Vec<DlcEntry> {
 }
 
 fn harvest_from_configs_app_ini(game_root: &Path) -> Option<Vec<DlcEntry>> {
-    let configs = walk_files(game_root)
-        .into_iter()
-        .find(|path| {
-            path.file_name()
-                .and_then(|name| name.to_str())
-                .map(|name| name.eq_ignore_ascii_case("configs.app.ini"))
-                .unwrap_or(false)
-        })?;
+    let configs = walk_files(game_root).into_iter().find(|path| {
+        path.file_name()
+            .and_then(|name| name.to_str())
+            .map(|name| name.eq_ignore_ascii_case("configs.app.ini"))
+            .unwrap_or(false)
+    })?;
 
     let content = std::fs::read_to_string(&configs).ok()?;
     let entries: Vec<DlcEntry> = content

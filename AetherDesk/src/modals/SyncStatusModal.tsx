@@ -35,8 +35,7 @@ const formatRetry = (epoch: number | null): string => {
   return `in ~${Math.round(seconds / 60)} min`;
 };
 
-const describeApp = (appId: number | null): string =>
-  appId === null ? 'Workshop set' : `App ${appId}`;
+const describeApp = (appId: number | null): string => (appId === null ? 'Workshop set' : `App ${appId}`);
 
 const plural = (count: number, singular: string) => `${count} ${singular}${count === 1 ? '' : 's'}`;
 
@@ -48,14 +47,12 @@ const LaneSection = ({ title, hint, lane }: { title: string; hint: string; lane:
       Completed: {lane.processedCount} · Last run: {formatEpoch(lane.lastRunEpoch)}
     </span>
     {lane.lastError && (
-      <span style={{ display: 'block', color: '#e06c75', marginBottom: 4 }}>
-        Last error: {lane.lastError}
-      </span>
+      <span style={{ display: 'block', color: '#e06c75', marginBottom: 4 }}>Last error: {lane.lastError}</span>
     )}
     {(lane.unresolved?.length ?? 0) > 0 && (
       <span style={{ display: 'block', color: '#e5c07b', marginBottom: 4 }}>
-        Gave up on {plural(lane.unresolved!.length, 'task')} — no longer retried; the next
-        Steam-side change queues {lane.unresolved!.length === 1 ? 'it' : 'them'} again:
+        Gave up on {plural(lane.unresolved!.length, 'task')} — no longer retried; the next Steam-side change queues{' '}
+        {lane.unresolved!.length === 1 ? 'it' : 'them'} again:
         {lane.unresolved!.map((task, index) => (
           <span key={`${task.appId ?? 'lane'}-unresolved-${index}`} style={{ display: 'block', paddingLeft: 12 }}>
             {describeApp(task.appId)} — after {plural(task.attempts, 'attempt')}
@@ -68,8 +65,7 @@ const LaneSection = ({ title, hint, lane }: { title: string; hint: string; lane:
         Queued ({lane.pending.length}):
         {lane.pending.map((task, index) => (
           <span key={`${task.appId ?? 'lane'}-${index}`} style={{ display: 'block', paddingLeft: 12 }}>
-            {describeApp(task.appId)} — attempt {task.attempts + 1}, retry{' '}
-            {formatRetry(task.nextRetryEpoch)}
+            {describeApp(task.appId)} — attempt {task.attempts + 1}, retry {formatRetry(task.nextRetryEpoch)}
           </span>
         ))}
       </span>
@@ -128,7 +124,7 @@ export const SyncStatusModal = ({ onClose }: SyncStatusModalProps) => {
     };
   }, []);
 
-  // Recovery: tick immediato all'apertura, poi cadenza lenta.
+  // Recovery: immediate tick on open, then slow cadence.
   useVisiblePolling(refresh, {
     intervalMs: SYNC_POLL_INTERVAL_MS,
     backoffMs: SYNC_POLL_BACKOFF_MS,
@@ -146,17 +142,14 @@ export const SyncStatusModal = ({ onClose }: SyncStatusModalProps) => {
       {status && (
         <>
           <p className="uninstall-modal-copy">
-            The synchronizer watches Steam (game updates, Lua changes, Workshop
-            items) and reacts with local work only: pinned Lua rows are
-            realigned to the manifests Steam installed, missing manifests are
-            repaired from local backups first, and Workshop manifests are
-            staged. Manifest generation on demand stays with AetherDLL — this
+            The synchronizer watches Steam (game updates, Lua changes, Workshop items) and reacts with local work only:
+            pinned Lua rows are realigned to the manifests Steam installed, missing manifests are repaired from local
+            backups first, and Workshop manifests are staged. Manifest generation on demand stays with AetherDLL — this
             monitor never downloads game packages.
           </p>
           <p className="uninstall-modal-copy">
-            State: {status.running ? 'running' : 'stopped'} · Last scan:{' '}
-            {formatEpoch(status.lastScanEpoch)} · Steam path:{' '}
-            {status.steamPathConfigured ? 'configured' : 'missing'} · Hubcap key:{' '}
+            State: {status.running ? 'running' : 'stopped'} · Last scan: {formatEpoch(status.lastScanEpoch)} · Steam
+            path: {status.steamPathConfigured ? 'configured' : 'missing'} · Hubcap key:{' '}
             {status.hubcapKeyConfigured ? 'configured' : 'missing'}
           </p>
           {SYNC_LANES.map((descriptor) => (
@@ -170,11 +163,7 @@ export const SyncStatusModal = ({ onClose }: SyncStatusModalProps) => {
         </>
       )}
       <div className="uninstall-modal-actions">
-        <button
-          type="button"
-          className="uninstall-btn uninstall-btn-secondary"
-          onClick={() => void refresh()}
-        >
+        <button type="button" className="uninstall-btn uninstall-btn-secondary" onClick={() => void refresh()}>
           Refresh now
         </button>
       </div>

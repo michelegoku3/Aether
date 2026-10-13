@@ -1,27 +1,27 @@
 #!/usr/bin/env node
 /**
- * Guardia di cablaggio del frontend.
+ * Frontend wiring guard.
  *
- * Perché esiste
+ * Why it exists
  * -------------
- * `SyncStatusModal.tsx` è rimasto per mesi nel repo senza che nessun file lo
- * importasse: componente scritto, tipizzato, mai raggiungibile dalla UI. Né
- * `tsc` né Vite lo segnalano, perché un modulo non importato non è un errore —
- * è solo codice morto. Questa guardia rende quel caso un fallimento di build.
+ * `SyncStatusModal.tsx` sat in the repo for months without any file
+ * importing it: written, typed, never reachable from the UI. Neither
+ * `tsc` nor Vite flag it, because an unimported module is not an error —
+ * just dead code. This guard turns that case into a build failure.
  *
- * Cosa verifica
+ * What it checks
  * -------------
- * 1. **Raggiungibilità**: partendo da `src/main.tsx`, ogni file in `src/` deve
- *    essere raggiungibile attraverso la catena di import. I non raggiungibili
- *    sono dead code (o un cablaggio dimenticato).
- * 2. **Collegamenti obbligatori** (`REQUIRED_LINKS`): coppie modulo →
- *    importatore che devono esistere perché una funzionalità sia davvero
- *    esposta all'utente. È la regressione puntuale sui casi già accaduti.
+ * 1. **Reachability**: starting from `src/main.tsx`, every file in `src/` must
+ *    be reachable through the import chain. Unreachable ones are dead code
+ *    (or forgotten wiring).
+ * 2. **Required links** (`REQUIRED_LINKS`): module → importer pairs that must
+ *    exist for a feature to be genuinely exposed to the user. Punctual
+ *    regression coverage for cases that already happened.
  *
- * Non è un type checker: risolve solo gli import relativi (`./`, `../`).
- * Alias, import dinamici con template string e moduli esterni sono ignorati.
+ * Not a type checker: it only resolves relative imports (`./`, `../`).
+ * Aliases, dynamic imports with template strings and external modules are ignored.
  *
- * Uso: `npm run check:wiring` (eseguito da build.cmd prima dei test Rust).
+ * Usage: `npm run check:wiring` (run by build.cmd before the Rust tests).
  */
 
 import { readFileSync, readdirSync, statSync, existsSync } from 'node:fs';
@@ -32,14 +32,14 @@ const here = dirname(fileURLToPath(import.meta.url));
 const srcDir = resolve(here, '..', 'src');
 const ENTRY = 'main.tsx';
 
-/** Collegamenti che devono esistere: [modulo, importatore atteso]. */
+/** Links that must exist: [module, expected importer]. */
 const REQUIRED_LINKS = [
-  // Issue #3: il popup di stato del sincronizzatore era dead code.
+  // Issue #3: the synchronizer status popup was dead code.
   ['src/modals/SyncStatusModal.tsx', 'src/views/AetherView.tsx'],
-  // Il popup vive in AetherView, montata da MainContent (App tiene le viste
-  // sempre montate e le nasconde con display:none).
+  // The popup lives in AetherView, mounted by MainContent (App keeps views
+  // always mounted and hides them with display:none).
   ['src/views/AetherView.tsx', 'src/layout/MainContent.tsx'],
-  // Hook di polling condiviso: usato dal popup e dal Log.
+  // Shared polling hook: used by the popup and by the Log view.
   ['src/hooks/useVisiblePolling.ts', 'src/modals/SyncStatusModal.tsx'],
   ['src/hooks/useVisiblePolling.ts', 'src/views/LogView.tsx'],
 ];
@@ -57,14 +57,14 @@ function walk(dir, out = []) {
       continue;
     }
     if (!extensions.some((ext) => path.endsWith(ext))) continue;
-    if (path.endsWith('.d.ts')) continue; // moduli ambient: nessuno li importa
+    if (path.endsWith('.d.ts')) continue; // ambient modules: nobody imports them
     if (/\.(?:test|spec)\.[^.]+$/.test(path)) continue;
     out.push(path);
   }
   return out;
 }
 
-/** Risolve uno specifier relativo a un file sorgente esistente, o null. */
+/** Resolve a relative specifier to an existing source file, or null. */
 function resolveSpecifier(fromFile, specifier) {
   if (!specifier.startsWith('.')) return null;
   const base = resolve(dirname(fromFile), specifier);
@@ -75,9 +75,9 @@ function resolveSpecifier(fromFile, specifier) {
   ];
   for (const candidate of candidates) {
     if (!existsSync(candidate) || !statSync(candidate).isFile()) continue;
-    // Solo sorgenti TS: `import './style.css'` e le altre risorse non fanno
-    // parte del grafo dei moduli (altrimenti entrerebbero nel conteggio dei
-    // raggiungibili senza essere file scansionati).
+    // TS sources only: `import './style.css'` and other assets are not part
+    // of the module graph (otherwise they would enter the reachable count
+    // without being scanned files).
     if (!extensions.some((ext) => candidate.endsWith(ext))) continue;
     return candidate;
   }
@@ -85,9 +85,9 @@ function resolveSpecifier(fromFile, specifier) {
 }
 
 /**
- * Estrae gli specifier di import/export da un file sorgente.
+ * Extract import/export specifiers from a source file.
  *
- * Copre: `import … from 'x'`, `import 'x'`, `export … from 'x'`,
+ * Covers: `import … from 'x'`, `import 'x'`, `export … from 'x'`,
  * `import type … from 'x'`, `export type … from 'x'`, `import('x')`.
  */
 function specifiersOf(source) {
@@ -127,7 +127,7 @@ function toRepoStyle(path) {
 const files = walk(srcDir);
 const sources = new Map(files.map((file) => [file, readFileSync(file, 'utf8')]));
 
-/** importatore -> [file importati] */
+/** importer -> [imported files] */
 const graph = new Map();
 for (const file of files) {
   const targets = [];
@@ -140,11 +140,11 @@ for (const file of files) {
 
 const entry = join(srcDir, ENTRY);
 if (!sources.has(entry)) {
-  console.error(`[wiring] entry point mancante: ${toRepoStyle(entry)}`);
+  console.error(`[wiring] missing entry point: ${toRepoStyle(entry)}`);
   process.exit(1);
 }
 
-/** Raggiungibilità dall'entry point (BFS). */
+/** Reachability from the entry point (BFS). */
 const reachable = new Set([entry]);
 const queue = [entry];
 while (queue.length > 0) {
@@ -156,47 +156,47 @@ while (queue.length > 0) {
   }
 }
 
-/** Chi importa un dato file. */
+/** Who imports a given file. */
 const importersOf = (target) =>
   files.filter((file) => file !== target && (graph.get(file) ?? []).includes(target));
 
 const problems = [];
 
-// 1. File non raggiungibili dall'entry point.
+// 1. Files unreachable from the entry point.
 const unreachable = files.filter((file) => !reachable.has(file)).sort();
 for (const file of unreachable) {
   const names = exportedNames(sources.get(file));
   problems.push(
-    `${toRepoStyle(file)} non è raggiungibile da ${ENTRY}` +
-      (names.length > 0 ? ` (esporta: ${names.join(', ')})` : ' (nessuna export)')
+    `${toRepoStyle(file)} is unreachable from ${ENTRY}` +
+      (names.length > 0 ? ` (exports: ${names.join(', ')})` : ' (no exports)')
   );
 }
 
-// 2. Collegamenti obbligatori.
+// 2. Required links.
 for (const [modulePath, importerPath] of REQUIRED_LINKS) {
   const target = resolve(here, '..', modulePath);
   const importer = resolve(here, '..', importerPath);
   if (!existsSync(target)) {
-    problems.push(`${modulePath} (collegamento obbligatorio) non esiste`);
+    problems.push(`${modulePath} (required link) does not exist`);
     continue;
   }
   if (!existsSync(importer)) {
-    problems.push(`${importerPath} (importatore obbligatorio di ${modulePath}) non esiste`);
+    problems.push(`${importerPath} (required importer of ${modulePath}) does not exist`);
     continue;
   }
   const direct = (graph.get(importer) ?? []).includes(target);
   const transitive = reachable.has(target);
   if (!direct && !transitive) {
     problems.push(
-      `${modulePath} non è collegato: né importato da ${importerPath}, né raggiungibile da ${ENTRY}`
+      `${modulePath} is not wired: neither imported by ${importerPath}, nor reachable from ${ENTRY}`
     );
   } else if (!direct) {
-    // Ammesso (il modulo è comunque esposto), ma il collegamento dichiarato è
-    // cambiato: va aggiornato REQUIRED_LINKS perché resti significativo.
+    // Tolerated (the module is still exposed), but the declared link has
+    // changed: REQUIRED_LINKS must be updated to stay meaningful.
     problems.push(
-      `${modulePath} è raggiungibile ma non più importato da ${importerPath} ` +
-        `(importatori attuali: ${importersOf(target).map(toRepoStyle).join(', ') || 'nessuno'}) ` +
-        `— aggiornare REQUIRED_LINKS in scripts/check_frontend_wiring.mjs`
+      `${modulePath} is reachable but no longer imported by ${importerPath} ` +
+        `(current importers: ${importersOf(target).map(toRepoStyle).join(', ') || 'none'}) ` +
+        `— update REQUIRED_LINKS in scripts/check_frontend_wiring.mjs`
     );
   }
 }
@@ -204,8 +204,8 @@ for (const [modulePath, importerPath] of REQUIRED_LINKS) {
 // ---------------------------------------------------------------------------
 
 const summary =
-  `${files.length} moduli in src/, ${reachable.size} raggiungibili da ${ENTRY}, ` +
-  `${REQUIRED_LINKS.length} collegamenti obbligatori verificati.`;
+  `${files.length} modules in src/, ${reachable.size} reachable from ${ENTRY}, ` +
+  `${REQUIRED_LINKS.length} required links verified.`;
 
 if (problems.length > 0) {
   console.error('[wiring] FAIL');
@@ -213,8 +213,8 @@ if (problems.length > 0) {
   console.error('');
   console.error(`[wiring] ${summary}`);
   console.error(
-    'Un modulo non raggiungibile è dead code: collegalo alla UI o eliminalo. ' +
-      'Se un collegamento obbligatorio è cambiato di proposito, aggiorna REQUIRED_LINKS.'
+    'An unreachable module is dead code: wire it into the UI or delete it. ' +
+      'If a required link changed on purpose, update REQUIRED_LINKS.'
   );
   process.exit(1);
 }

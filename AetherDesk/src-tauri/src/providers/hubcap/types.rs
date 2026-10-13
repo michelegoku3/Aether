@@ -28,7 +28,11 @@ pub const CATALOG_SEARCH_LIMIT: u32 = 50;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct HubcapGameItem {
-    #[serde(alias = "game_id", alias = "appid", deserialize_with = "deserialize_app_id")]
+    #[serde(
+        alias = "game_id",
+        alias = "appid",
+        deserialize_with = "deserialize_app_id"
+    )]
     pub app_id: u32,
     #[serde(alias = "game_name", alias = "name")]
     pub name: String,
@@ -94,7 +98,9 @@ where
 {
     let value = serde_json::Value::deserialize(deserializer)?;
     match value {
-        serde_json::Value::Number(num) => u32::try_from(num.as_u64().unwrap_or(0)).map_err(serde::de::Error::custom),
+        serde_json::Value::Number(num) => {
+            u32::try_from(num.as_u64().unwrap_or(0)).map_err(serde::de::Error::custom)
+        }
         serde_json::Value::String(s) => s.parse::<u32>().map_err(serde::de::Error::custom),
         _ => Err(serde::de::Error::custom("Invalid App ID type")),
     }

@@ -22,7 +22,7 @@
     {
       "name": "x64-Release-Baseline",
       "displayName": "x64 Release (warnings visible, not fatal) — one-time cleanup",
-      "description": "Stesso build di x64-Release ma con AETHER_WARNINGS_AS_ERRORS=OFF: usalo UNA volta per vedere l'intero arretrato /W4 in un solo passaggio, poi torna a x64-Release.",
+      "description": "Same build as x64-Release but with AETHER_WARNINGS_AS_ERRORS=OFF: use it ONCE to see the whole /W4 backlog in a single pass, then go back to x64-Release.",
       "inherits": "x64-Release",
       "binaryDir": "${sourceDir}/out/build/x64-Release",
       "cacheVariables": {

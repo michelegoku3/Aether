@@ -79,8 +79,8 @@ impl BuildHistorySource for SteamDbPatchnotesSource {
 /// Parses the RSS payload into a newest-first build list (one entry per
 /// published build; duplicates collapsed by build id).
 pub fn parse_patchnotes_rss(xml_text: &str) -> Result<Vec<BuildInfo>, VersionError> {
-    let doc = Document::parse(xml_text)
-        .map_err(|e| VersionError::parse("SteamDB build feed", e))?;
+    let doc =
+        Document::parse(xml_text).map_err(|e| VersionError::parse("SteamDB build feed", e))?;
 
     let mut builds: Vec<BuildInfo> = Vec::new();
     let mut seen: HashSet<u64> = HashSet::new();
@@ -133,7 +133,9 @@ fn parse_pub_date(pub_date: &str) -> String {
     let day = &caps[1];
     let month = &caps[2];
     let year = &caps[3];
-    let Some((_, month_num)) = MONTHS.iter().find(|(abbr, _)| abbr.eq_ignore_ascii_case(month))
+    let Some((_, month_num)) = MONTHS
+        .iter()
+        .find(|(abbr, _)| abbr.eq_ignore_ascii_case(month))
     else {
         return String::new();
     };
@@ -194,6 +196,8 @@ mod tests {
 
     #[test]
     fn rejects_html_challenge() {
-        assert!(parse_patchnotes_rss("<!doctype html><html><body>cf challenge</body></html>").is_err());
+        assert!(
+            parse_patchnotes_rss("<!doctype html><html><body>cf challenge</body></html>").is_err()
+        );
     }
 }

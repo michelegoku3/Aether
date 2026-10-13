@@ -65,10 +65,42 @@ export interface AppSettings {
 /** Steam store currencies offered by the Settings selector (ISO 4217). The
  *  backend re-validates (unknown -> EUR), so this list only drives the UI. */
 export type StoreCurrency =
-  | 'eur' | 'usd' | 'gbp' | 'jpy' | 'ars' | 'brl' | 'cad' | 'aud' | 'chf'
-  | 'cny' | 'krw' | 'inr' | 'mxn' | 'rub' | 'try' | 'pln' | 'sek' | 'nok'
-  | 'dkk' | 'nzd' | 'sgd' | 'hkd' | 'twd' | 'thb' | 'myr' | 'idr' | 'php'
-  | 'ils' | 'aed' | 'sar' | 'clp' | 'cop' | 'pen' | 'uah' | 'kzt' | 'vnd'
+  | 'eur'
+  | 'usd'
+  | 'gbp'
+  | 'jpy'
+  | 'ars'
+  | 'brl'
+  | 'cad'
+  | 'aud'
+  | 'chf'
+  | 'cny'
+  | 'krw'
+  | 'inr'
+  | 'mxn'
+  | 'rub'
+  | 'try'
+  | 'pln'
+  | 'sek'
+  | 'nok'
+  | 'dkk'
+  | 'nzd'
+  | 'sgd'
+  | 'hkd'
+  | 'twd'
+  | 'thb'
+  | 'myr'
+  | 'idr'
+  | 'php'
+  | 'ils'
+  | 'aed'
+  | 'sar'
+  | 'clp'
+  | 'cop'
+  | 'pen'
+  | 'uah'
+  | 'kzt'
+  | 'vnd'
   | 'zar';
 
 export const STORE_CURRENCIES: { code: StoreCurrency; label: string }[] = [
@@ -112,8 +144,7 @@ export const STORE_CURRENCIES: { code: StoreCurrency; label: string }[] = [
 ];
 
 export const isStoreCurrency = (value: unknown): value is StoreCurrency =>
-  typeof value === 'string' &&
-  STORE_CURRENCIES.some((c) => c.code === value);
+  typeof value === 'string' && STORE_CURRENCIES.some((c) => c.code === value);
 
 export const getSettings = async (): Promise<AppSettings> => {
   return invoke('get_settings');

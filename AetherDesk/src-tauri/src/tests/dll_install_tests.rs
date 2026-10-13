@@ -33,17 +33,22 @@ impl SteamFixture {
         writer.finish().unwrap();
         path
     }
-    fn root(&self) -> &Path { &self.0 }
+    fn root(&self) -> &Path {
+        &self.0
+    }
 }
 impl Drop for SteamFixture {
-    fn drop(&mut self) { let _ = fs::remove_dir_all(&self.0); }
+    fn drop(&mut self) {
+        let _ = fs::remove_dir_all(&self.0);
+    }
 }
 
 #[test]
 fn release_installs_only_three_dlls_beside_steam_exe() {
     let f = SteamFixture::new();
     let zip = f.zip(&[
-        "out/Release/AetherCore.dll", "out/Release/AetherPayload.dll",
+        "out/Release/AetherCore.dll",
+        "out/Release/AetherPayload.dll",
         "out/Release/xinput1_4.dll",
     ]);
     let installer = f.installer();
@@ -72,7 +77,10 @@ fn startup_proxy_migration_is_deferred_while_steam_runs_then_idempotent() {
     assert_eq!(fs::read(&legacy).unwrap(), b"old proxy");
     assert!(migrate_legacy_steam_proxy_with_check(path, || false).unwrap());
     assert!(!legacy.exists());
-    assert!(!migrate_legacy_steam_proxy_with_check(path, || panic!("no file: no process scan needed")).unwrap());
+    assert!(!migrate_legacy_steam_proxy_with_check(path, || panic!(
+        "no file: no process scan needed"
+    ))
+    .unwrap());
 }
 
 #[test]
@@ -81,10 +89,12 @@ fn startup_proxy_migration_requires_a_validated_steam_root() {
     let legacy = f.root().join("dwmapi.dll");
     fs::write(&legacy, b"leave this file alone").unwrap();
     fs::remove_file(f.root().join("steam.exe")).unwrap();
-    assert!(!migrate_legacy_steam_proxy_with_check(
-        f.root().to_str().unwrap(),
-        || panic!("invalid root: no process scan needed"),
-    ).unwrap());
+    assert!(
+        !migrate_legacy_steam_proxy_with_check(f.root().to_str().unwrap(), || panic!(
+            "invalid root: no process scan needed"
+        ),)
+        .unwrap()
+    );
     assert!(f.installer().migrate_legacy_proxy().is_err());
     assert!(legacy.exists());
 }
@@ -100,7 +110,10 @@ fn install_migrates_proxy_only_after_validating_release() {
     let invalid_zip = f.zip(&["AetherCore.dll", "AetherPayload.dll"]);
     assert!(installer.install_from_zip(&invalid_zip).is_err());
     assert!(legacy.exists());
-    assert_eq!(fs::read(f.root().join("AetherCore.dll")).unwrap(), b"previous Core");
+    assert_eq!(
+        fs::read(f.root().join("AetherCore.dll")).unwrap(),
+        b"previous Core"
+    );
 
     let valid_zip = f.zip(&AETHER_DLL_FILES);
     installer.install_from_zip(&valid_zip).unwrap();
@@ -155,14 +168,20 @@ fn release_missing_xinput_never_overwrites_the_existing_core() {
     let zip = f.zip(&["AetherCore.dll", "AetherPayload.dll"]);
     let error = f.installer().install_from_zip(&zip).unwrap_err();
     assert!(error.contains("xinput1_4.dll"), "{error}");
-    assert_eq!(fs::read(f.root().join("AetherCore.dll")).unwrap(), b"previous good version");
+    assert_eq!(
+        fs::read(f.root().join("AetherCore.dll")).unwrap(),
+        b"previous good version"
+    );
 }
 
 #[test]
 fn release_with_extra_dll_is_rejected_before_replacing_any_file() {
     let f = SteamFixture::new();
     let zip = f.zip(&[
-        "AetherCore.dll", "AetherPayload.dll", "xinput1_4.dll", "extra/unsupported.dll",
+        "AetherCore.dll",
+        "AetherPayload.dll",
+        "xinput1_4.dll",
+        "extra/unsupported.dll",
     ]);
     let error = f.installer().install_from_zip(&zip).unwrap_err();
     assert!(error.contains("Unsupported DLL"), "{error}");
@@ -192,8 +211,10 @@ fn locked_or_invalid_last_proxy_rolls_back_all_previous_files() {
 fn duplicate_proxy_entry_is_rejected_before_replacing_any_dll() {
     let f = SteamFixture::new();
     let zip = f.zip(&[
-        "AetherCore.dll", "AetherPayload.dll",
-        "xinput1_4.dll", "second/xinput1_4.dll",
+        "AetherCore.dll",
+        "AetherPayload.dll",
+        "xinput1_4.dll",
+        "second/xinput1_4.dll",
     ]);
     let error = f.installer().install_from_zip(&zip).unwrap_err();
     assert!(error.contains("Duplicate"), "{error}");

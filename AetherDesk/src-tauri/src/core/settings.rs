@@ -617,7 +617,12 @@ pub(crate) fn merge_settings(
             continue;
         }
         if merged.get(key) != base.get(key) && merged.get(key) != Some(value) {
-            return Err(DeskError::coded(codes::SETTINGS_CONFLICT, format_args!("{key} changed since this form was loaded; reload settings before retrying")));
+            return Err(DeskError::coded(
+                codes::SETTINGS_CONFLICT,
+                format_args!(
+                    "{key} changed since this form was loaded; reload settings before retrying"
+                ),
+            ));
         }
         merged[key] = value.clone();
     }
@@ -661,12 +666,12 @@ mod repository_tests {
         );
     }
     #[test]
-    fn empty_json_matches_default() {        // Guards ARC-002: every field's serde default must agree with
+    fn empty_json_matches_default() {
+        // Guards ARC-002: every field's serde default must agree with
         // `impl Default`, or upgraders would see different values than
         // fresh installs. `default_steam_path` is detection-based but
         // deterministic within one machine, so the comparison holds here.
-        let from_empty: AppSettings =
-            serde_json::from_str("{}").expect("empty object must parse");
+        let from_empty: AppSettings = serde_json::from_str("{}").expect("empty object must parse");
         assert_eq!(from_empty, AppSettings::default());
     }
     #[test]

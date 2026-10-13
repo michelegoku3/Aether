@@ -38,7 +38,11 @@ impl GameBackup {
 
         for sub in [LUA_SUBDIR, ORIGINAL_SUBDIR, CRACK_SUBDIR] {
             fs::create_dir_all(root.join(sub)).map_err(|error| {
-                format!("Failed to create backup folder {}: {}", root.join(sub).display(), error)
+                format!(
+                    "Failed to create backup folder {}: {}",
+                    root.join(sub).display(),
+                    error
+                )
             })?;
         }
 
@@ -105,7 +109,11 @@ impl GameBackup {
             return Ok(Vec::new());
         }
         let content = fs::read_to_string(&path).map_err(|error| {
-            format!("Failed to read crack inventory {}: {}", path.display(), error)
+            format!(
+                "Failed to read crack inventory {}: {}",
+                path.display(),
+                error
+            )
         })?;
         Ok(content
             .lines()
@@ -120,7 +128,11 @@ impl GameBackup {
         let path = self.crack_inventory_path(app_id);
         if path.exists() {
             fs::remove_file(&path).map_err(|error| {
-                format!("Failed to remove crack inventory {}: {}", path.display(), error)
+                format!(
+                    "Failed to remove crack inventory {}: {}",
+                    path.display(),
+                    error
+                )
             })?;
         }
         Ok(())
@@ -395,7 +407,11 @@ pub struct LuaSyncReport {
 fn sha256_hex(bytes: &[u8]) -> String {
     let mut hasher = Sha256::new();
     hasher.update(bytes);
-    hasher.finalize().iter().map(|b| format!("{b:02x}")).collect()
+    hasher
+        .finalize()
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect()
 }
 
 /// Millisecond-precision timestamp: two archives on the same day never
@@ -421,7 +437,7 @@ impl GameBackup {
             Ok(current) if current == lua_bytes => Ok(StoreLuaAction::Unchanged),
             Ok(old_bytes) => {
                 if let Err(e) = self.archive_lua_history(app_id, &old_bytes) {
-                    // L'archivio fallito non deve bloccare l'aggiornamento.
+                    // A failed archive must not block the update.
                     crate::desk_log_warn!(
                         "backup",
                         "Could not archive previous original Lua for {}: {}",
@@ -558,8 +574,7 @@ pub fn sync_lua_backups_from_stplug_in(steam_path: &Path) -> LuaSyncReport {
         // the last one downloaded from the sources); any differing content
         // found in stplug-in is a modified version -> history/ (deduplicated
         // by content, so restarts create no copies).
-        let backup = GameBackup::open_existing(app_id)
-            .or_else(|| GameBackup::for_app(app_id).ok());
+        let backup = GameBackup::open_existing(app_id).or_else(|| GameBackup::for_app(app_id).ok());
         let Some(backup) = backup else {
             report.skipped += 1;
             continue;
@@ -630,7 +645,7 @@ pub fn list_lua_history(app_id: u32) -> Result<Vec<LuaHistoryEntry>, String> {
             .map(|e| e.path())
             .filter(|p| p.extension().and_then(|e| e.to_str()) == Some("lua"))
             .collect();
-        entries.sort();   // nome = <app_id>-<millis>: ordine cronologico
+        entries.sort(); // name = <app_id>-<millis>: chronological order
         for path in entries {
             if let Ok(bytes) = fs::read(&path) {
                 out.push(LuaHistoryEntry {
@@ -703,10 +718,19 @@ mod tests {
     #[test]
     fn store_original_archives_previous_and_history_dedupes() {
         let (_dir, backup) = setup();
-        assert_eq!(backup.store_original(42, b"v1").unwrap(), StoreLuaAction::Created);
+        assert_eq!(
+            backup.store_original(42, b"v1").unwrap(),
+            StoreLuaAction::Created
+        );
         // Replacing the original archives the previous bytes in history/.
-        assert_eq!(backup.store_original(42, b"v2").unwrap(), StoreLuaAction::Updated);
-        assert_eq!(backup.store_original(42, b"v2").unwrap(), StoreLuaAction::Unchanged);
+        assert_eq!(
+            backup.store_original(42, b"v2").unwrap(),
+            StoreLuaAction::Updated
+        );
+        assert_eq!(
+            backup.store_original(42, b"v2").unwrap(),
+            StoreLuaAction::Unchanged
+        );
         assert!(backup.has_lua_version(42, b"v1"));
         // Dedup: v2 is already the original, archiving writes nothing.
         assert!(!backup.store_history_version(42, b"v2").unwrap());

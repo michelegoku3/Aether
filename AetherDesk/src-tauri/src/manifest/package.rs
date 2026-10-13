@@ -40,7 +40,13 @@ impl ManifestPackageExtractor {
             let preview: String = content
                 .chars()
                 .take(160)
-                .map(|character| if character.is_control() { ' ' } else { character })
+                .map(|character| {
+                    if character.is_control() {
+                        ' '
+                    } else {
+                        character
+                    }
+                })
                 .collect();
             return Err(format!(
                 "Provider returned neither a manifest ZIP nor a pinned Lua file. Response starts with: {:?}",
@@ -57,8 +63,8 @@ impl ManifestPackageExtractor {
 
     pub fn from_zip(app_id: u32, bytes: &[u8]) -> Result<ManifestPackage, String> {
         let cursor = Cursor::new(bytes);
-        let mut archive = ZipArchive::new(cursor)
-            .map_err(|e| format!("Failed to open manifest ZIP: {}", e))?;
+        let mut archive =
+            ZipArchive::new(cursor).map_err(|e| format!("Failed to open manifest ZIP: {}", e))?;
 
         let preferred_lua_name = format!("{}.lua", app_id);
         let mut preferred_lua: Option<String> = None;
@@ -90,19 +96,23 @@ impl ManifestPackageExtractor {
                 }
             } else if lower_path.ends_with(".manifest") {
                 let mut bytes = Vec::new();
-                file.read_to_end(&mut bytes)
-                    .map_err(|e| format!("Failed to read manifest file from ZIP ({}): {}", path, e))?;
+                file.read_to_end(&mut bytes).map_err(|e| {
+                    format!("Failed to read manifest file from ZIP ({}): {}", path, e)
+                })?;
 
                 manifest_files.push(ManifestPackageFile { file_name, bytes });
             }
         }
 
-        let lua_content = preferred_lua
-            .or(first_pinned_lua)
-            .ok_or_else(|| "Manifest ZIP did not contain a Lua file with setManifestid pins".to_string())?;
+        let lua_content = preferred_lua.or(first_pinned_lua).ok_or_else(|| {
+            "Manifest ZIP did not contain a Lua file with setManifestid pins".to_string()
+        })?;
         LuaManifestPins::validate_content(&lua_content)?;
 
-        Ok(ManifestPackage { lua_content, manifest_files })
+        Ok(ManifestPackage {
+            lua_content,
+            manifest_files,
+        })
     }
 
     fn has_zip_signature(bytes: &[u8]) -> bool {

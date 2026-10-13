@@ -1,11 +1,11 @@
 #include "pch.h"
 #include "core/Settings.h"
 
+#include "core/AetherCoreState.h"
 #include <atomic>
 #include <chrono>
 #include <filesystem>
 #include <toml++/toml.hpp>
-#include "core/AetherCoreState.h"
 
 namespace ac {
 
@@ -17,14 +17,13 @@ std::atomic<long long> s_lastConfigWriteTicks{0};
 long long FileWriteTicks(const std::string& configPath) {
     std::error_code ec;
     const auto t = std::filesystem::last_write_time(configPath, ec);
-    if (ec) return 0;
+    if (ec)
+        return 0;
     return t.time_since_epoch().count();
 }
-}  // namespace
+} // namespace
 
-std::shared_ptr<const Settings> Settings::Snapshot() {
-    return g_state.settings.load();
-}
+std::shared_ptr<const Settings> Settings::Snapshot() { return g_state.settings.load(); }
 
 bool Settings::Initialize(const std::string& configPath) {
     const auto ticks = FileWriteTicks(configPath);
@@ -36,25 +35,26 @@ bool Settings::Initialize(const std::string& configPath) {
 }
 
 void Settings::ReloadIfModified(const std::string& configPath) {
-    if (configPath.empty()) return;
+    if (configPath.empty())
+        return;
     const auto ticks = FileWriteTicks(configPath);
-    if (ticks == 0 || ticks == s_lastConfigWriteTicks.load()) return;
+    if (ticks == 0 || ticks == s_lastConfigWriteTicks.load())
+        return;
     // Remember attempted revision too: malformed edits produce one warning,
     // not one warning every second. A subsequent edit is retried normally.
     s_lastConfigWriteTicks.store(ticks);
     bool valid = false;
     auto candidate = std::make_shared<const Settings>(Load(configPath, &valid));
     if (!valid) {
-        AC_LOG_WARN("Settings", "Reload rejected; keeping last good configuration (%s).",
-                    configPath.c_str());
+        AC_LOG_WARN("Settings", "Reload rejected; keeping last good configuration (%s).", configPath.c_str());
         return;
     }
     const auto previous = Snapshot();
     g_state.settings.store(candidate);
     log::SetLevel(candidate->logLevel);
     diag::Record("settings_reloaded", configPath);
-    AC_LOG_INFO("Settings", "Published immutable configuration snapshot (%s, log_level=%d).",
-                configPath.c_str(), static_cast<int>(candidate->logLevel));
+    AC_LOG_INFO("Settings", "Published immutable configuration snapshot (%s, log_level=%d).", configPath.c_str(),
+                static_cast<int>(candidate->logLevel));
     if (candidate->luaExtraPaths != previous->luaExtraPaths) {
         AC_LOG_WARN("Settings", "lua.extra_paths changed: restart Steam to rebuild Lua directory watches.");
     }
@@ -65,7 +65,8 @@ void Settings::ReloadIfModified(const std::string& configPath) {
 
 Settings Settings::Load(const std::string& configPath, bool* valid) {
     Settings s;
-    if (valid) *valid = false;
+    if (valid)
+        *valid = false;
 
     toml::table tbl;
     try {
@@ -73,21 +74,22 @@ Settings Settings::Load(const std::string& configPath, bool* valid) {
     } catch (const toml::parse_error& e) {
         // Startup falls back to defaults; runtime reload rejects this candidate.
         // The init caller also reports failure AFTER logger initialization.
-        AC_LOG_WARN("Settings",
-                    "Cannot parse config %s (%s); defaults only apply during startup.",
-                    configPath.c_str(), e.what());
+        AC_LOG_WARN("Settings", "Cannot parse config %s (%s); defaults only apply during startup.", configPath.c_str(),
+                    e.what());
         return s;
     }
 
     // [injection] Parsed at startup, before the module target is selected.
     if (auto mode = tbl["injection"]["diversion_mode"].value<std::string>()) {
-        if (*mode == "auto") s.diversionMode = DiversionMode::Auto;
-        else if (*mode == "copy") s.diversionMode = DiversionMode::Copy;
-        else if (*mode == "live") s.diversionMode = DiversionMode::Live;
+        if (*mode == "auto")
+            s.diversionMode = DiversionMode::Auto;
+        else if (*mode == "copy")
+            s.diversionMode = DiversionMode::Copy;
+        else if (*mode == "live")
+            s.diversionMode = DiversionMode::Live;
         else {
-            AC_LOG_WARN("Settings", "Invalid injection.diversion_mode '%s' (auto/copy/live).",
-                        mode->c_str());
-            return s;  // mark invalid, do not publish a partially parsed hot reload
+            AC_LOG_WARN("Settings", "Invalid injection.diversion_mode '%s' (auto/copy/live).", mode->c_str());
+            return s; // mark invalid, do not publish a partially parsed hot reload
         }
     }
 
@@ -126,10 +128,9 @@ Settings Settings::Load(const std::string& configPath, bool* valid) {
     // wire-bridge was removed: manifests only come from the local index and
     // authenticated Hubcap generation.
     if (tbl["manifest_fetch"].as_table()) {
-        AC_LOG_WARN_ONCE("Settings",
-                         "[manifest_fetch] keys are deprecated and ignored: the "
-                         "legacy request-code bridge was removed; manifests use "
-                         "the local index + authenticated Hubcap only.");
+        AC_LOG_WARN_ONCE("Settings", "[manifest_fetch] keys are deprecated and ignored: the "
+                                     "legacy request-code bridge was removed; manifests use "
+                                     "the local index + authenticated Hubcap only.");
     }
 
     // [manifest_cache]
@@ -200,28 +201,27 @@ Settings Settings::Load(const std::string& configPath, bool* valid) {
         }
     }
 
-    AC_LOG_INFO("Settings",
-                "Loaded %s (level=%s, keep_last_session=%d, lua extra paths: %zu, "
-                "mirror: %s, ost=%d, diversion=%s, manifest_restore=%d, presence: default=%s show=%zu of=%zu excl=%zu).",
-                configPath.c_str(),
-                s.logLevel == LogLevel::Trace ? "trace"
-                    : s.logLevel == LogLevel::Debug ? "debug"
-                    : s.logLevel == LogLevel::Info ? "info"
-                    : s.logLevel == LogLevel::Warn ? "warn"
-                    : s.logLevel == LogLevel::Error ? "error" : "off",
-                s.logKeepLastSession ? 1 : 0,
-                s.luaExtraPaths.size(),
-                s.patternMirror.empty() ? "default" : "custom",
-                s.patternUseOstSource ? 1 : 0,
-                s.diversionMode == DiversionMode::Auto ? "auto"
-                    : s.diversionMode == DiversionMode::Copy ? "copy" : "live",
-                s.manifestRestoreOnStartup ? 1 : 0,
-                s.presenceDefaultShowOnline ? "showonline" : "none",
-                s.presenceShowOnlineApps.size(),
-                s.presenceAetherOnlineApps.size(),
-                s.presenceExcludeApps.size());
-    if (valid) *valid = true;
+    AC_LOG_INFO(
+        "Settings",
+        "Loaded %s (level=%s, keep_last_session=%d, lua extra paths: %zu, "
+        "mirror: %s, ost=%d, diversion=%s, manifest_restore=%d, presence: default=%s show=%zu of=%zu excl=%zu).",
+        configPath.c_str(),
+        s.logLevel == LogLevel::Trace   ? "trace"
+        : s.logLevel == LogLevel::Debug ? "debug"
+        : s.logLevel == LogLevel::Info  ? "info"
+        : s.logLevel == LogLevel::Warn  ? "warn"
+        : s.logLevel == LogLevel::Error ? "error"
+                                        : "off",
+        s.logKeepLastSession ? 1 : 0, s.luaExtraPaths.size(), s.patternMirror.empty() ? "default" : "custom",
+        s.patternUseOstSource ? 1 : 0,
+        s.diversionMode == DiversionMode::Auto   ? "auto"
+        : s.diversionMode == DiversionMode::Copy ? "copy"
+                                                 : "live",
+        s.manifestRestoreOnStartup ? 1 : 0, s.presenceDefaultShowOnline ? "showonline" : "none",
+        s.presenceShowOnlineApps.size(), s.presenceAetherOnlineApps.size(), s.presenceExcludeApps.size());
+    if (valid)
+        *valid = true;
     return s;
 }
 
-}  // namespace ac
+} // namespace ac

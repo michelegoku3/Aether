@@ -27,7 +27,7 @@ export const resolveEffectivePresenceMode = (
   showOnlineListed: boolean,
   excluded: boolean,
   defaultShowOnline: boolean,
-  spacewarSpoofPresent: boolean,
+  spacewarSpoofPresent: boolean
 ): AppPresenceMode => {
   if (spacewarSpoofPresent) return 'none';
   if (aetherOnline) return 'aetheronline';
@@ -41,10 +41,7 @@ export const resolveEffectivePresenceMode = (
  * OFME blocks both plus Show Online; the two Aether pipelines (Online Aether
  * / UCO2) stay mutually exclusive.
  */
-export const resolveOptionState = (
-  key: OnlineOptionKey,
-  ctx: OnlineChoiceContext,
-): OnlineOptionState => {
+export const resolveOptionState = (key: OnlineOptionKey, ctx: OnlineChoiceContext): OnlineOptionState => {
   const isActive = key === 'uco2' ? ctx.uco2Enabled : ctx.mode === key;
 
   if (ctx.busy) {
@@ -62,7 +59,8 @@ export const resolveOptionState = (
     return {
       isActive,
       isBlocked: true,
-      tooltip: 'online-fix.me files are in this folder. Online Aether is a different stack — keep None to use the crack.',
+      tooltip:
+        'online-fix.me files are in this folder. Online Aether is a different stack — keep None to use the crack.',
     };
   }
   if (key === 'showonline' && ctx.ofmePresent && !isActive) {

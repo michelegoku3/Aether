@@ -15,10 +15,7 @@ import { useAppearanceRuntime } from './app/useAppearanceRuntime';
 import { useDllRuntime } from './app/useDllRuntime';
 import { useHubcapUsage } from './app/useHubcapUsage';
 import { useSteamRuntime } from './app/useSteamRuntime';
-import {
-  useUnsavedNavigationGuard,
-  useWindowCloseGuard,
-} from './app/useUnsavedNavigationGuard';
+import { useUnsavedNavigationGuard, useWindowCloseGuard } from './app/useUnsavedNavigationGuard';
 import { useUpdateCoordinator } from './app/useUpdateCoordinator';
 
 /** Application composition root. Domain workflows live in focused app hooks. */
@@ -37,68 +34,77 @@ export default function App() {
     checkDllUpdates: updates.checkDllUpdates,
     warnIfSteamPathMissing: navigation.warnIfSteamPathMissing,
   });
-  useWindowCloseGuard(
-    navigation.settingsGuardRef,
-    navigation.beginPendingClose,
-  );
+  useWindowCloseGuard(navigation.settingsGuardRef, navigation.beginPendingClose);
   const steam = useSteamRuntime();
 
   // MainContent is memoized: these projections preserve object identity when
   // unrelated App state (for example Steam runtime state) changes.
-  const updatesGroup = useMemo<MainContentUpdates>(() => ({
-    dllAvailable: updates.dllUpdateAvailable,
-    deskAvailable: updates.deskUpdateAvailable,
-    deskVersion: updates.deskVersion,
-    dllIsTest: updates.dllUpdateIsTest,
-    deskIsTest: updates.deskUpdateIsTest,
-    onComplete: updates.checkAllUpdates,
-  }), [
-    updates.dllUpdateAvailable,
-    updates.deskUpdateAvailable,
-    updates.deskVersion,
-    updates.dllUpdateIsTest,
-    updates.deskUpdateIsTest,
-    updates.checkAllUpdates,
-  ]);
+  const updatesGroup = useMemo<MainContentUpdates>(
+    () => ({
+      dllAvailable: updates.dllUpdateAvailable,
+      deskAvailable: updates.deskUpdateAvailable,
+      deskVersion: updates.deskVersion,
+      dllIsTest: updates.dllUpdateIsTest,
+      deskIsTest: updates.deskUpdateIsTest,
+      onComplete: updates.checkAllUpdates,
+    }),
+    [
+      updates.dllUpdateAvailable,
+      updates.deskUpdateAvailable,
+      updates.deskVersion,
+      updates.dllUpdateIsTest,
+      updates.deskUpdateIsTest,
+      updates.checkAllUpdates,
+    ]
+  );
 
-  const appearanceGroup = useMemo<MainContentAppearance>(() => ({
-    useAlternativeGameCards: appearance.useAlternativeGameCards,
-    alternativeCardsOpacity: appearance.alternativeCardsOpacity,
-    alternativeCardsFade: appearance.alternativeCardsFade,
-    onRefreshCustomCss: appearance.refresh,
-    onCustomCssChange: appearance.changeCustomCss,
-    onPreviewPersonalWallpaper: appearance.previewPersonalWallpaper,
-    onPreviewAlternativeCards: appearance.previewAlternativeCards,
-  }), [
-    appearance.useAlternativeGameCards,
-    appearance.alternativeCardsOpacity,
-    appearance.alternativeCardsFade,
-    appearance.refresh,
-    appearance.changeCustomCss,
-    appearance.previewPersonalWallpaper,
-    appearance.previewAlternativeCards,
-  ]);
+  const appearanceGroup = useMemo<MainContentAppearance>(
+    () => ({
+      useAlternativeGameCards: appearance.useAlternativeGameCards,
+      alternativeCardsOpacity: appearance.alternativeCardsOpacity,
+      alternativeCardsFade: appearance.alternativeCardsFade,
+      onRefreshCustomCss: appearance.refresh,
+      onCustomCssChange: appearance.changeCustomCss,
+      onPreviewPersonalWallpaper: appearance.previewPersonalWallpaper,
+      onPreviewAlternativeCards: appearance.previewAlternativeCards,
+    }),
+    [
+      appearance.useAlternativeGameCards,
+      appearance.alternativeCardsOpacity,
+      appearance.alternativeCardsFade,
+      appearance.refresh,
+      appearance.changeCustomCss,
+      appearance.previewPersonalWallpaper,
+      appearance.previewAlternativeCards,
+    ]
+  );
 
-  const settingsGroup = useMemo<MainContentSettings>(() => ({
-    ready: appearance.settingsReady,
-    revision: appearance.settingsRevision,
-    guardRef: navigation.settingsGuardRef,
-    onMissingSteamPath: navigation.openSteamPathWarning,
-    hubcapUsage: hubcap.usage,
-    onRefreshUsage: hubcap.refresh,
-  }), [
-    appearance.settingsReady,
-    appearance.settingsRevision,
-    navigation.settingsGuardRef,
-    navigation.openSteamPathWarning,
-    hubcap.usage,
-    hubcap.refresh,
-  ]);
+  const settingsGroup = useMemo<MainContentSettings>(
+    () => ({
+      ready: appearance.settingsReady,
+      revision: appearance.settingsRevision,
+      guardRef: navigation.settingsGuardRef,
+      onMissingSteamPath: navigation.openSteamPathWarning,
+      hubcapUsage: hubcap.usage,
+      onRefreshUsage: hubcap.refresh,
+    }),
+    [
+      appearance.settingsReady,
+      appearance.settingsRevision,
+      navigation.settingsGuardRef,
+      navigation.openSteamPathWarning,
+      hubcap.usage,
+      hubcap.refresh,
+    ]
+  );
 
-  const dllGroup = useMemo<MainContentDll>(() => ({
-    status: dll.status,
-    onChange: dll.checkStatus,
-  }), [dll.status, dll.checkStatus]);
+  const dllGroup = useMemo<MainContentDll>(
+    () => ({
+      status: dll.status,
+      onChange: dll.checkStatus,
+    }),
+    [dll.status, dll.checkStatus]
+  );
 
   return (
     <LibraryGamesProvider>
@@ -131,10 +137,7 @@ export default function App() {
         )}
 
         {navigation.showSteamPathWarning && (
-          <SteamPathWarningModal
-            onGoToSettings={navigation.goToSettings}
-            onClose={navigation.closeSteamPathWarning}
-          />
+          <SteamPathWarningModal onGoToSettings={navigation.goToSettings} onClose={navigation.closeSteamPathWarning} />
         )}
       </div>
     </LibraryGamesProvider>

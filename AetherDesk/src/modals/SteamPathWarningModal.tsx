@@ -23,27 +23,18 @@ export const SteamPathWarningModal = ({ onGoToSettings, onClose }: SteamPathWarn
     bodyClassName="uninstall-modal-body"
   >
     <p className="uninstall-modal-copy">
-      No valid Steam installation path was found. AetherDesk needs to know
-      where Steam is installed.
+      No valid Steam installation path was found. AetherDesk needs to know where Steam is installed.
     </p>
     <p className="uninstall-modal-copy">
-      Go to Settings and set your Steam installation path (or use Auto Detect),
-      then restart AetherDesk and Steam to be safe.
+      Go to Settings and set your Steam installation path (or use Auto Detect), then restart AetherDesk and Steam to be
+      safe.
     </p>
 
     <div className="uninstall-modal-actions">
-      <button
-        type="button"
-        className="uninstall-btn uninstall-btn-primary"
-        onClick={onGoToSettings}
-      >
+      <button type="button" className="uninstall-btn uninstall-btn-primary" onClick={onGoToSettings}>
         Go to Settings
       </button>
-      <button
-        type="button"
-        className="uninstall-btn uninstall-btn-secondary"
-        onClick={onClose}
-      >
+      <button type="button" className="uninstall-btn uninstall-btn-secondary" onClick={onClose}>
         Later
       </button>
     </div>

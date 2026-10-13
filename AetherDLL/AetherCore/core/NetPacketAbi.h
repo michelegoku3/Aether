@@ -54,7 +54,7 @@
 // tests can drive it with synthetic packets (see tests, case "netpacket").
 // ---------------------------------------------------------------------------
 namespace ac::steam {
-struct CNetPacket;  // opaque by design — never define it
+struct CNetPacket; // opaque by design — never define it
 }
 
 namespace ac::abi::netpkt {
@@ -87,8 +87,8 @@ inline constexpr std::uint32_t SizeOffFor(std::uint32_t dataOff) { return dataOf
 inline constexpr std::uint32_t RefOffFor(std::uint32_t dataOff) { return dataOff + 0x0C; }
 
 // ---- probe tunables (public so tests can reason about them) ---------------
-inline constexpr std::uint32_t kMsgHdrBytes = 8;             // eMsg + headerLength
-inline constexpr std::uint32_t kProtoFlag = 0x80000000u;     // high bit of eMsg
+inline constexpr std::uint32_t kMsgHdrBytes = 8;         // eMsg + headerLength
+inline constexpr std::uint32_t kProtoFlag = 0x80000000u; // high bit of eMsg
 inline constexpr std::uint32_t kMaxFrameBytes = 64u * 1024u * 1024u;
 inline constexpr std::uint32_t kMaxHeaderBytes = 8192;
 inline constexpr std::uint32_t kMinHeaderBytes = 2;
@@ -111,36 +111,43 @@ using ReadableFn = bool (*)(const void* addr, std::size_t bytes, void* ctx);
 // proved readable. This is Valve's predicate from GetMsgNetPacket, plus the
 // object-level sanity checks (pointer range, refcount) that the client can
 // skip because it owns the object and we cannot.
-inline bool CandidateMatches(const void* packet, std::uint32_t dataOff,
-                             ReadableFn readable, void* ctx) {
-    if (!packet || !readable) return false;
+inline bool CandidateMatches(const void* packet, std::uint32_t dataOff, ReadableFn readable, void* ctx) {
+    if (!packet || !readable)
+        return false;
     const auto* base = static_cast<const std::uint8_t*>(packet);
 
     // data (8) + size (4) + refcount (4)
-    if (!readable(base + dataOff, 0x10, ctx)) return false;
+    if (!readable(base + dataOff, 0x10, ctx))
+        return false;
 
     const auto* data = *reinterpret_cast<const std::uint8_t* const*>(base + dataOff);
-    const std::uint32_t len =
-        *reinterpret_cast<const std::uint32_t*>(base + SizeOffFor(dataOff));
-    const std::int32_t ref =
-        *reinterpret_cast<const std::int32_t*>(base + RefOffFor(dataOff));
+    const std::uint32_t len = *reinterpret_cast<const std::uint32_t*>(base + SizeOffFor(dataOff));
+    const std::int32_t ref = *reinterpret_cast<const std::int32_t*>(base + RefOffFor(dataOff));
 
     const auto addr = reinterpret_cast<std::uintptr_t>(data);
-    if (addr < kMinPtr || addr >= kMaxPtr) return false;
-    if (len < kMsgHdrBytes || len > kMaxFrameBytes) return false;
-    if (ref < kMinRefCount || ref > kMaxRefCount) return false;
+    if (addr < kMinPtr || addr >= kMaxPtr)
+        return false;
+    if (len < kMsgHdrBytes || len > kMaxFrameBytes)
+        return false;
+    if (ref < kMinRefCount || ref > kMaxRefCount)
+        return false;
 
-    if (!readable(data, kMsgHdrBytes, ctx)) return false;
+    if (!readable(data, kMsgHdrBytes, ctx))
+        return false;
 
     // Valve: cmp r8d,8 / cmp dword[data],0 / jge -> not proto
     //        mov edx,[data+4] / cmp rdx, len-8 / jg -> malformed
     const std::uint32_t rawEMsg = *reinterpret_cast<const std::uint32_t*>(data);
     const std::uint32_t headerLen = *reinterpret_cast<const std::uint32_t*>(data + 4);
-    if ((rawEMsg & kProtoFlag) == 0) return false;  // non-proto frame: no evidence
+    if ((rawEMsg & kProtoFlag) == 0)
+        return false; // non-proto frame: no evidence
     const std::uint32_t eMsg = rawEMsg & ~kProtoFlag;
-    if (eMsg == 0 || eMsg >= 0x10000) return false;
-    if (headerLen < kMinHeaderBytes || headerLen > kMaxHeaderBytes) return false;
-    if (headerLen > len - kMsgHdrBytes) return false;
+    if (eMsg == 0 || eMsg >= 0x10000)
+        return false;
+    if (headerLen < kMinHeaderBytes || headerLen > kMaxHeaderBytes)
+        return false;
+    if (headerLen > len - kMsgHdrBytes)
+        return false;
 
     return readable(data, kMsgHdrBytes + headerLen, ctx);
 }
@@ -157,22 +164,24 @@ inline bool CandidateMatches(const void* packet, std::uint32_t dataOff,
 // them was over-caution: the layout is already known at that point, so the
 // gate only has to answer "is this still a CNetPacket?", not "which layout
 // is it?".
-inline bool LayoutPlausible(const void* packet, std::uint32_t dataOff, ReadableFn readable,
-                            void* ctx) {
-    if (!packet || !readable) return false;
+inline bool LayoutPlausible(const void* packet, std::uint32_t dataOff, ReadableFn readable, void* ctx) {
+    if (!packet || !readable)
+        return false;
     const auto* base = static_cast<const std::uint8_t*>(packet);
-    if (!readable(base + dataOff, 0x10, ctx)) return false;
+    if (!readable(base + dataOff, 0x10, ctx))
+        return false;
 
     const auto* data = *reinterpret_cast<const std::uint8_t* const*>(base + dataOff);
-    const std::uint32_t len =
-        *reinterpret_cast<const std::uint32_t*>(base + SizeOffFor(dataOff));
-    const std::int32_t ref =
-        *reinterpret_cast<const std::int32_t*>(base + RefOffFor(dataOff));
+    const std::uint32_t len = *reinterpret_cast<const std::uint32_t*>(base + SizeOffFor(dataOff));
+    const std::int32_t ref = *reinterpret_cast<const std::int32_t*>(base + RefOffFor(dataOff));
 
     const auto addr = reinterpret_cast<std::uintptr_t>(data);
-    if (addr < kMinPtr || addr >= kMaxPtr) return false;
-    if (len < kMsgHdrBytes || len > kMaxFrameBytes) return false;
-    if (ref < kMinRefCount || ref > kMaxRefCount) return false;
+    if (addr < kMinPtr || addr >= kMaxPtr)
+        return false;
+    if (len < kMsgHdrBytes || len > kMaxFrameBytes)
+        return false;
+    if (ref < kMinRefCount || ref > kMaxRefCount)
+        return false;
     return readable(data, kMsgHdrBytes, ctx);
 }
 
@@ -182,13 +191,13 @@ inline bool LayoutPlausible(const void* packet, std::uint32_t dataOff, ReadableF
 // won the previous packet. Ambiguity is the one thing we must never latch on;
 // requiring two agreeing packets costs at most one early proto message.
 class Resolver {
-public:
+  public:
     enum class Step {
-        NoEvidence,       // non-proto frame or nothing matched: carries no information
-        Ambiguous,        // several candidates matched: standing agreement discarded
-        AwaitingConfirm,  // one candidate matched, needs a second agreeing packet
-        Latched,          // layout decided
-        Disabled,         // gave up: no field will ever be touched again
+        NoEvidence,      // non-proto frame or nothing matched: carries no information
+        Ambiguous,       // several candidates matched: standing agreement discarded
+        AwaitingConfirm, // one candidate matched, needs a second agreeing packet
+        Latched,         // layout decided
+        Disabled,        // gave up: no field will ever be touched again
     };
 
     std::uint32_t State() const { return state_.load(std::memory_order_relaxed); }
@@ -196,15 +205,19 @@ public:
     // Adds a layout the compiled table does not know about (from the per-build
     // ABI section). Ignored once resolved, and never trusted without the probe.
     bool AddCandidate(std::uint32_t dataOff) {
-        if (dataOff == kUnresolved || dataOff == kDisabled) return false;
+        if (dataOff == kUnresolved || dataOff == kDisabled)
+            return false;
         for (const auto& known : kLayouts) {
-            if (known.dataOff == dataOff) return true;  // already a candidate
+            if (known.dataOff == dataOff)
+                return true; // already a candidate
         }
         const int count = extraCount_.load(std::memory_order_relaxed);
         for (int i = 0; i < count; ++i) {
-            if (extra_[i].load(std::memory_order_relaxed) == dataOff) return true;
+            if (extra_[i].load(std::memory_order_relaxed) == dataOff)
+                return true;
         }
-        if (count >= kMaxExtraLayouts) return false;
+        if (count >= kMaxExtraLayouts)
+            return false;
         extra_[count].store(dataOff, std::memory_order_relaxed);
         extraCount_.store(count + 1, std::memory_order_relaxed);
         return true;
@@ -223,10 +236,13 @@ public:
 
     const char* LayoutName() const {
         const std::uint32_t v = State();
-        if (v == kUnresolved) return "unresolved";
-        if (v == kDisabled) return "disabled";
+        if (v == kUnresolved)
+            return "unresolved";
+        if (v == kDisabled)
+            return "disabled";
         for (const auto& l : kLayouts) {
-            if (l.dataOff == v) return l.name;
+            if (l.dataOff == v)
+                return l.name;
         }
         return "from-abi-table";
     }
@@ -256,7 +272,8 @@ public:
     // wrong, and the safe move is to stop touching packets, not to keep
     // trying. Returns true when the write may proceed.
     bool BeginWrite(const void* packet, ReadableFn readable, void* ctx) {
-        if (!IsResolved() || !packet) return false;
+        if (!IsResolved() || !packet)
+            return false;
         if (LayoutPlausible(packet, State(), readable, ctx)) {
             mismatches_.store(0, std::memory_order_relaxed);
             return true;
@@ -273,7 +290,8 @@ public:
     // it on a live packet before anything is written. The only effect is that
     // the confirmation arrives one packet earlier.
     void Hint(std::uint32_t dataOff) {
-        if (State() != kUnresolved) return;
+        if (State() != kUnresolved)
+            return;
         agreed_.store(dataOff, std::memory_order_relaxed);
         // The hint stands in for the first agreeing packet, so the next live
         // packet that matches it completes the confirmation.
@@ -284,8 +302,10 @@ public:
 
     // Feeds one live packet to the resolver.
     Step Observe(const void* packet, ReadableFn readable, void* ctx) {
-        if (IsDisabled()) return Step::Disabled;
-        if (IsResolved()) return Step::Latched;
+        if (IsDisabled())
+            return Step::Disabled;
+        if (IsResolved())
+            return Step::Latched;
 
         if (attempts_.fetch_add(1, std::memory_order_relaxed) + 1 > kMaxProbeAttempts) {
             Disable();
@@ -334,7 +354,7 @@ public:
         return Step::Latched;
     }
 
-private:
+  private:
     // constinit-friendly: a hook that fires before dynamic initialization must
     // not read a garbage word.
     std::atomic<std::uint32_t> state_{kUnresolved};
@@ -369,19 +389,20 @@ namespace detail {
 // live Steam object.
 inline std::uint8_t* g_trashData = nullptr;
 inline std::uint32_t g_trashSize = 0;
-}  // namespace detail
+} // namespace detail
 
 inline std::uint8_t*& Data(steam::CNetPacket* p) {
     const std::uint32_t off = Global().State();
-    if (!p || off == kUnresolved || off == kDisabled) return detail::g_trashData;
+    if (!p || off == kUnresolved || off == kDisabled)
+        return detail::g_trashData;
     return *reinterpret_cast<std::uint8_t**>(reinterpret_cast<std::uint8_t*>(p) + off);
 }
 
 inline std::uint32_t& Size(steam::CNetPacket* p) {
     const std::uint32_t off = Global().State();
-    if (!p || off == kUnresolved || off == kDisabled) return detail::g_trashSize;
-    return *reinterpret_cast<std::uint32_t*>(reinterpret_cast<std::uint8_t*>(p) +
-                                             SizeOffFor(off));
+    if (!p || off == kUnresolved || off == kDisabled)
+        return detail::g_trashSize;
+    return *reinterpret_cast<std::uint32_t*>(reinterpret_cast<std::uint8_t*>(p) + SizeOffFor(off));
 }
 
 // ---- Windows glue (implemented in NetPacketAbi.cpp) -----------------------
@@ -401,8 +422,7 @@ bool EnsureResolved(const steam::CNetPacket* packet);
 // accepted as a candidate: a table that disagrees with the shape the
 // accessors assume is a table we must not act on. Returns true when the
 // layout was accepted as a probe candidate.
-bool SeedFromAbiTable(std::uint32_t dataOff, std::uint32_t cubOff, std::uint32_t refOff,
-                      const std::string& source);
+bool SeedFromAbiTable(std::uint32_t dataOff, std::uint32_t cubOff, std::uint32_t refOff, const std::string& source);
 
 // Where the latched layout ultimately came from: "abi-table", "build-hint" or
 // "probe". Diagnostic only — the probe always has the last word.
@@ -428,4 +448,4 @@ bool IsResolved();
 bool IsDisabled();
 int ProbeAttempts();
 
-}  // namespace ac::abi::netpkt
+} // namespace ac::abi::netpkt

@@ -13,18 +13,28 @@ pub fn open_home_resource(site: String, game_name: String) -> Result<(), String>
         "gcw" => build_gcw_url(game_name),
         "csrinru" => build_csrinru_url(game_name),
         _ => {
-            crate::desk_log_warn!("home_links", "Unsupported external resource site requested: '{}'", site);
+            crate::desk_log_warn!(
+                "home_links",
+                "Unsupported external resource site requested: '{}'",
+                site
+            );
             return Err(format!("Unsupported external resource: {}", site));
         }
     };
 
-    crate::desk_log_info!("home_links", "Opening external resource site='{}' for game '{}' (url: {})", site, game_name, url);
+    crate::desk_log_info!(
+        "home_links",
+        "Opening external resource site='{}' for game '{}' (url: {})",
+        site,
+        game_name,
+        url
+    );
     open_external_url(&url)
 }
 
 // Ofme = online-fix.me (the crack). The function name avoids "onlinefix", which
-    // reads like the AetherOnline mode (the Aether payload) in AI assistants.
-    pub(crate) fn build_ofme_url(game_name: &str) -> String {
+// reads like the AetherOnline mode (the Aether payload) in AI assistants.
+pub(crate) fn build_ofme_url(game_name: &str) -> String {
     format!(
         "https://online-fix.me/index.php?do=search&subaction=search&story={}",
         encode_query_value(&build_ofme_query(game_name))
@@ -273,23 +283,8 @@ fn strip_known_edition_suffixes(value: &str) -> String {
 }
 
 const PLATFORM_NOISE_TOKENS: &[&str] = &[
-    "vr",
-    "pc",
-    "optional",
-    "vive",
-    "rift",
-    "oculus",
-    "quest",
-    "index",
-    "psvr",
-    "psvr2",
-    "steamvr",
-    "windows",
-    "linux",
-    "mac",
-    "macos",
-    "mode",
-    "modes",
+    "vr", "pc", "optional", "vive", "rift", "oculus", "quest", "index", "psvr", "psvr2", "steamvr",
+    "windows", "linux", "mac", "macos", "mode", "modes",
 ];
 
 const CONNECTOR_TOKENS: &[&str] = &["vs", "versus", "and", "or", "with", "for"];

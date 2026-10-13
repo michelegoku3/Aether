@@ -8,4 +8,4 @@ namespace ac::hooks {
 // (inject configured keys) and BuildDepotDependency (apply manifest overrides).
 void RegisterDepotHooks(HMODULE diversion);
 
-}  // namespace ac::hooks
+} // namespace ac::hooks

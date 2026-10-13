@@ -23,9 +23,7 @@ impl ManifestGidProblem {
     pub fn reason(self) -> &'static str {
         match self {
             Self::NotDecimalUint64 => "the manifest GID must be a decimal uint64",
-            Self::MalformedCall => {
-                "the call must be setManifestid(<depot id>, \"<decimal gid>\")"
-            }
+            Self::MalformedCall => "the call must be setManifestid(<depot id>, \"<decimal gid>\")",
         }
     }
 }

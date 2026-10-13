@@ -61,10 +61,18 @@ pub async fn refresh_game_pins_from_hubcap(
         return Err("Pin refresh requires a configured Hubcap API key".to_string());
     }
 
-    let plan = crate::core::game_mutations::MutationPlan::prepare(std::path::Path::new(&settings.steam_path), app_id, "pin-refresh")?;
+    let plan = crate::core::game_mutations::MutationPlan::prepare(
+        std::path::Path::new(&settings.steam_path),
+        app_id,
+        "pin-refresh",
+    )?;
     let editor = LuaManifestPins::new(settings.steam_path.clone(), app_id);
     if !editor.path_exists() {
-        return Ok(PinRefreshReport { app_id, skipped: true, ..Default::default() });
+        return Ok(PinRefreshReport {
+            app_id,
+            skipped: true,
+            ..Default::default()
+        });
     }
     let content = editor.read_lua()?;
     // Same policy as the repair lane: a Lua nobody can load is skipped with the
@@ -104,11 +112,19 @@ pub async fn refresh_game_pins_from_hubcap(
             "Pin refresh skipped app_id={}: version-locked Lua (active pins are intentional)",
             app_id
         );
-        return Ok(PinRefreshReport { app_id, skipped: true, ..Default::default() });
+        return Ok(PinRefreshReport {
+            app_id,
+            skipped: true,
+            ..Default::default()
+        });
     }
     let rows = LuaManifestPins::rows_for_manifest_sync(&content);
     if rows.is_empty() {
-        return Ok(PinRefreshReport { app_id, skipped: true, ..Default::default() });
+        return Ok(PinRefreshReport {
+            app_id,
+            skipped: true,
+            ..Default::default()
+        });
     }
 
     let started = Instant::now();
@@ -144,9 +160,11 @@ pub async fn refresh_game_pins_from_hubcap(
     // `realign_pins_to_installed` right before locking.)
     let mut targets: Vec<DepotManifestPin> = Vec::new();
     for row in &rows {
-        let local =
-            crate::core::hubcap_update_monitor::latest_installed_gid(&settings.steam_path, row.app_id)
-                .filter(|gid| *gid != row.manifest_id);
+        let local = crate::core::hubcap_update_monitor::latest_installed_gid(
+            &settings.steam_path,
+            row.app_id,
+        )
+        .filter(|gid| *gid != row.manifest_id);
         let candidate = match local {
             Some(gid) => Some(gid),
             None => contents
@@ -219,9 +237,10 @@ pub async fn refresh_game_pins_from_hubcap(
     // Archive the NEW Lua too (every Lua change must land in AetherData) and
     // copy the freshly staged manifests so a future uninstall can restore
     // this version.
-    if let (Ok(final_lua), Ok(backup)) =
-        (editor.read_lua(), crate::core::backup::GameBackup::for_app(app_id))
-    {
+    if let (Ok(final_lua), Ok(backup)) = (
+        editor.read_lua(),
+        crate::core::backup::GameBackup::for_app(app_id),
+    ) {
         let _ = backup.store_history_version(app_id, final_lua.as_bytes());
         let depotcache = PathBuf::from(&settings.steam_path).join("depotcache");
         let _ = backup.backup_referenced_manifests(&final_lua, &depotcache);

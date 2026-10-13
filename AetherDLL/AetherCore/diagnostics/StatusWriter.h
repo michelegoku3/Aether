@@ -66,4 +66,4 @@ void Stop();
 // 100 ms intervals, takes snapshots and writes atomically. Best-effort.
 void Write();
 
-}  // namespace ac::status
+} // namespace ac::status

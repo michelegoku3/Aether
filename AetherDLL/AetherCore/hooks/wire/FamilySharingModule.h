@@ -15,4 +15,4 @@ bool ShouldSuppress();
 // (the router interprets 0 as "clear body").
 std::int32_t ClearBody();
 
-}  // namespace ac::hooks::FamilySharing
+} // namespace ac::hooks::FamilySharing

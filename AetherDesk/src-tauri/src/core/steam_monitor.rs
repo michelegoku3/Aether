@@ -55,7 +55,10 @@ pub fn start(app: AppHandle) {
     // already reads the right value when Steam is open.
     let mut sys = sysinfo::System::new_all();
     sys.refresh_processes();
-    STEAM_RUNNING.store(crate::core::steam_process::snapshot_has_steam(&sys), Ordering::Relaxed);
+    STEAM_RUNNING.store(
+        crate::core::steam_process::snapshot_has_steam(&sys),
+        Ordering::Relaxed,
+    );
 
     let handle = app;
     std::thread::Builder::new()

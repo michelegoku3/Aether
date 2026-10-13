@@ -15,13 +15,12 @@ export const HubcapUpdateWarningModal = ({ onClose }: HubcapUpdateWarningModalPr
     bodyClassName="uninstall-modal-body"
   >
     <p className="uninstall-modal-copy">
-      Steam has patched the unauthenticated request code. Without authenticated
-      manifest access, automatic updates and Workshop downloads are no longer
-      reliable.
+      Steam has patched the unauthenticated request code. Without authenticated manifest access, automatic updates and
+      Workshop downloads are no longer reliable.
     </p>
     <p className="uninstall-modal-copy">
-      Enable “Download games with updates on” only after entering and saving a
-      valid active Hubcap key. The option has been left OFF.
+      Enable “Download games with updates on” only after entering and saving a valid active Hubcap key. The option has
+      been left OFF.
     </p>
     <div className="uninstall-modal-actions">
       <button type="button" className="uninstall-btn uninstall-btn-primary" onClick={onClose}>

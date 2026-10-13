@@ -1,9 +1,9 @@
 use serde::Serialize;
-use tauri::{AppHandle, Emitter};
 use std::time::Instant;
+use tauri::{AppHandle, Emitter};
 
-use crate::manifest::pins::LuaManifestPins;
 use super::command_steam_path;
+use crate::manifest::pins::LuaManifestPins;
 use crate::versioning::model::{ApplyVersionReport, BuildInfo, SavedBuild};
 use crate::versioning::service::VersionService;
 
@@ -69,7 +69,11 @@ pub async fn apply_game_version(
     // one different from the configured value.
     let steam_path = command_steam_path(&app)?;
     validate_app_build(app_id, build_id)?;
-    let plan = crate::core::game_mutations::MutationPlan::prepare(std::path::Path::new(&steam_path), app_id, "apply-version")?;
+    let plan = crate::core::game_mutations::MutationPlan::prepare(
+        std::path::Path::new(&steam_path),
+        app_id,
+        "apply-version",
+    )?;
     let started = Instant::now();
     crate::desk_log_info!(
         "versioning",
@@ -141,15 +145,14 @@ pub async fn apply_game_version(
     // Exact local lookup is deliberately first. Backup hits are restored into
     // Steam/depotcache without spending Hubcap quota; only the remaining pins
     // enter the authenticated generation scheduler.
-    let local_resolution = crate::manifest::resolver::resolve(
-        crate::manifest::resolver::ManifestRequest {
+    let local_resolution =
+        crate::manifest::resolver::resolve(crate::manifest::resolver::ManifestRequest {
             steam_path: steam_path.clone(),
             app_id,
             pins: pins.clone(),
             generation: crate::manifest::resolver::Generation::LocalOnly,
-        },
-    )
-    .await?;
+        })
+        .await?;
     crate::desk_log_info!(
         "versioning",
         "Local manifest preparation complete app_id={} build_id={} pins={} missing={}",
@@ -160,11 +163,13 @@ pub async fn apply_game_version(
     );
 
     let generated_manifests = if local_resolution.missing.is_empty() {
-        crate::desk_log_info!("versioning", "No Hubcap generation required; all pinned manifests are local");
+        crate::desk_log_info!(
+            "versioning",
+            "No Hubcap generation required; all pinned manifests are local"
+        );
         Vec::new()
     } else {
-        let hubcap_key = crate::core::settings::load_settings(&app)
-            .hubcap_api_key;
+        let hubcap_key = crate::core::settings::load_settings(&app).hubcap_api_key;
         crate::desk_log_info!(
             "versioning",
             "Missing manifest recovery required count={} hubcap_key_configured={}",
@@ -172,8 +177,8 @@ pub async fn apply_game_version(
             !hubcap_key.trim().is_empty()
         );
         if hubcap_key.trim().is_empty() {
-            let missing = crate::manifest::resolver::missing_labels(&local_resolution.missing)
-                .join(", ");
+            let missing =
+                crate::manifest::resolver::missing_labels(&local_resolution.missing).join(", ");
             return Err(format!(
                 "This version needs manifest(s) that are not stored locally: {missing}. Configure and validate a Hubcap API key before switching versions; no unauthenticated request-code fallback is used."
             ));
@@ -184,19 +189,21 @@ pub async fn apply_game_version(
                 app_id,
                 build_id,
                 step: 20,
-                message: format!("Generating {} missing manifest(s) with Hubcap...", local_resolution.missing.len()),
+                message: format!(
+                    "Generating {} missing manifest(s) with Hubcap...",
+                    local_resolution.missing.len()
+                ),
             },
         );
-        let recovered = crate::manifest::resolver::resolve(
-            crate::manifest::resolver::ManifestRequest {
+        let recovered =
+            crate::manifest::resolver::resolve(crate::manifest::resolver::ManifestRequest {
                 steam_path: steam_path.clone(),
                 app_id,
                 pins: local_resolution.missing,
                 generation: crate::manifest::resolver::Generation::SettingsKey(hubcap_key),
-            },
-        )
-        .await?
-        .generated;
+            })
+            .await?
+            .generated;
         crate::desk_log_info!(
             "versioning",
             "Missing manifest recovery complete generated={}",
@@ -306,4 +313,3 @@ pub fn remove_saved_build(app: AppHandle, app_id: u32, build_id: u64) -> Result<
         .remove_saved(app_id, build_id)
         .map_err(String::from)
 }
-

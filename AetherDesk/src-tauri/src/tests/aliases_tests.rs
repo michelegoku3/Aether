@@ -53,7 +53,9 @@ fn primary_variants_returns_at_most_two() {
 fn alias_with_punctuation_expands() {
     // Gta con punteggiatura deve comunque espandere via clean_token
     let variants = expanded_queries("GTA: San Andreas");
-    assert!(variants.iter().any(|v| v.to_lowercase().contains("grand theft auto")));
+    assert!(variants
+        .iter()
+        .any(|v| v.to_lowercase().contains("grand theft auto")));
 }
 
 #[test]
@@ -68,7 +70,10 @@ fn civ_alias_expands_to_civilization() {
 #[test]
 fn new_aliases_are_present() {
     // Verify that many newly introduced aliases actually expand
-    assert!(expanded_queries("r6 siege").contains(&"rainbow six siege siege".to_string()) || expanded_queries("r6").contains(&"rainbow six siege".to_string()));
+    assert!(
+        expanded_queries("r6 siege").contains(&"rainbow six siege siege".to_string())
+            || expanded_queries("r6").contains(&"rainbow six siege".to_string())
+    );
     assert!(expanded_queries("ow2").contains(&"overwatch 2".to_string()));
     assert!(expanded_queries("rdr2").contains(&"red dead redemption 2".to_string()));
     assert!(expanded_queries("tlou").contains(&"the last of us".to_string()));

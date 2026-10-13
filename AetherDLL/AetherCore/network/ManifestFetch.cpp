@@ -4,10 +4,10 @@
 #include "network/ManifestIdentity.h"
 
 #include <algorithm>
-#include <chrono>
-#include <cstddef>
 #include <cctype>
+#include <chrono>
 #include <condition_variable>
+#include <cstddef>
 #include <deque>
 #include <exception>
 #include <filesystem>
@@ -45,10 +45,8 @@ struct LookupKey {
 
 struct LookupKeyHash {
     std::size_t operator()(const LookupKey& key) const noexcept {
-        return static_cast<std::size_t>(key.gid) ^
-               (static_cast<std::size_t>(key.gid >> 32) << 1) ^
-               (static_cast<std::size_t>(key.appId) << 2) ^
-               (static_cast<std::size_t>(key.depotId) << 3);
+        return static_cast<std::size_t>(key.gid) ^ (static_cast<std::size_t>(key.gid >> 32) << 1) ^
+               (static_cast<std::size_t>(key.appId) << 2) ^ (static_cast<std::size_t>(key.depotId) << 3);
     }
 };
 
@@ -64,7 +62,7 @@ struct LookupKeyHash {
 // g_proactive* buffers above).
 // ---------------------------------------------------------------------------
 struct LocalManifestCacheEntry {
-    std::filesystem::path path;   // valid for positive entries only
+    std::filesystem::path path; // valid for positive entries only
     bool positive = false;
     std::chrono::steady_clock::time_point expires{};
 };
@@ -77,11 +75,9 @@ constexpr auto kNegativeTtl = std::chrono::seconds(30);
 // dependency without any request-code round-trip. The legacy
 // GetManifestRequestCode wire-bridge was removed (see ManifestFetch.h); this
 // local-first lookup is now the primary acquisition path.
-std::optional<std::filesystem::path> FindLocalManifest(std::uint64_t gid,
-                                                        std::uint32_t depotId) {
+std::optional<std::filesystem::path> FindLocalManifest(std::uint64_t gid, std::uint32_t depotId) {
     namespace fs = std::filesystem;
-    const std::string filename = std::to_string(depotId) + "_" +
-                                  std::to_string(gid) + ".manifest";
+    const std::string filename = std::to_string(depotId) + "_" + std::to_string(gid) + ".manifest";
     const fs::path steamRoot(g_state.steamInstallPath);
     const std::vector<fs::path> directCandidates = {
         steamRoot / "depotcache" / filename,
@@ -90,13 +86,15 @@ std::optional<std::filesystem::path> FindLocalManifest(std::uint64_t gid,
 
     auto usable = [](const fs::path& path) -> bool {
         std::error_code ec;
-        if (!fs::is_regular_file(path, ec) || ec) return false;
+        if (!fs::is_regular_file(path, ec) || ec)
+            return false;
         const auto size = fs::file_size(path, ec);
         return !ec && size > 0;
     };
 
     for (const fs::path& candidate : directCandidates) {
-        if (usable(candidate)) return candidate;
+        if (usable(candidate))
+            return candidate;
     }
 
     // Index: positive hit (re-verified), negative hit inside the TTL = no walk.
@@ -106,10 +104,11 @@ std::optional<std::filesystem::path> FindLocalManifest(std::uint64_t gid,
         auto it = g_localManifestCache.find(filename);
         if (it != g_localManifestCache.end()) {
             if (it->second.positive) {
-                if (usable(it->second.path)) return it->second.path;
-                g_localManifestCache.erase(it);   // file sparito: ricalcola
+                if (usable(it->second.path))
+                    return it->second.path;
+                g_localManifestCache.erase(it); // file sparito: ricalcola
             } else if (now < it->second.expires) {
-                return std::nullopt;              // miss recente: salta il walk
+                return std::nullopt; // miss recente: salta il walk
             } else {
                 g_localManifestCache.erase(it);
             }
@@ -125,40 +124,35 @@ std::optional<std::filesystem::path> FindLocalManifest(std::uint64_t gid,
         const fs::path backupRoot = fs::path(deskData) / "backup";
         std::error_code ec;
         for (fs::directory_iterator it(backupRoot, ec), end; !ec && it != end; it.increment(ec)) {
-            if (!it->is_directory(ec) || ec) continue;
+            if (!it->is_directory(ec) || ec)
+                continue;
             const fs::path candidate = it->path() / "lua" / filename;
-            if (!usable(candidate)) continue;
+            if (!usable(candidate))
+                continue;
 
             const fs::path destination = steamRoot / "depotcache" / filename;
             fs::create_directories(destination.parent_path(), ec);
-            if (ec) continue;
-            fs::copy_file(candidate, destination,
-                          fs::copy_options::overwrite_existing, ec);
+            if (ec)
+                continue;
+            fs::copy_file(candidate, destination, fs::copy_options::overwrite_existing, ec);
             if (!ec && usable(destination)) {
                 std::lock_guard<std::mutex> lock(g_localManifestMutex);
-                g_localManifestCache[filename] =
-                    LocalManifestCacheEntry{destination, true, {}};
-                AC_LOG_DEBUG(kModule,
-                             "Local manifest index: cached positive entry for %s.",
-                             filename.c_str());
+                g_localManifestCache[filename] = LocalManifestCacheEntry{destination, true, {}};
+                AC_LOG_DEBUG(kModule, "Local manifest index: cached positive entry for %s.", filename.c_str());
                 return destination;
             }
-            AC_LOG_WARN(kModule,
-                        "Local backup manifest found but could not be published to %s (%s).",
+            AC_LOG_WARN(kModule, "Local backup manifest found but could not be published to %s (%s).",
                         destination.string().c_str(), ec.message().c_str());
         }
     }
     {
         std::lock_guard<std::mutex> lock(g_localManifestMutex);
-        g_localManifestCache[filename] =
-            LocalManifestCacheEntry{{}, false, now + kNegativeTtl};
+        g_localManifestCache[filename] = LocalManifestCacheEntry{{}, false, now + kNegativeTtl};
     }
-    AC_LOG_DEBUG(kModule,
-                 "Local manifest index: %s not on disk; skipping backup walk for %lld s.",
-                 filename.c_str(), static_cast<long long>(kNegativeTtl.count()));
+    AC_LOG_DEBUG(kModule, "Local manifest index: %s not on disk; skipping backup walk for %lld s.", filename.c_str(),
+                 static_cast<long long>(kNegativeTtl.count()));
     return std::nullopt;
 }
-
 
 // Mirrors AetherDesk's ensure_generation_available: asks the provider whether
 // the authenticated account may generate right now. A definitive "no" fails
@@ -169,17 +163,16 @@ bool HubcapGenerationAllowed(const std::string& apiKey) {
     // Tight budget: the probe precedes the generation on the serialized
     // worker, so a hung connection must not stall the queue.
     constexpr int kUsageProbeTimeoutSec = 2;
-    const http::Response response = http::GetUncheckedWithHeaders(
-        "https://hubcapmanifest.com/api/v1/generate/usage", kUsageProbeTimeoutSec,
-        {"Authorization: Bearer " + apiKey}, L"AetherCore/HubcapManifest/1.0");
+    const http::Response response =
+        http::GetUncheckedWithHeaders("https://hubcapmanifest.com/api/v1/generate/usage", kUsageProbeTimeoutSec,
+                                      {"Authorization: Bearer " + apiKey}, L"AetherCore/HubcapManifest/1.0");
     if (response.networkError || response.status != 200) {
         AC_LOG_DEBUG(kModule, "Generation usage probe unavailable (network=%d HTTP=%d); proceeding.",
                      response.networkError ? 1 : 0, response.status);
         return true;
     }
     bool serviceReady = true;
-    if (ac::jsonutil::PullBoolField(response.body, "steam_service_ready", serviceReady) &&
-        !serviceReady) {
+    if (ac::jsonutil::PullBoolField(response.body, "steam_service_ready", serviceReady) && !serviceReady) {
         AC_LOG_WARN(kModule, "Hubcap reports the Steam generation service is not ready.");
         return false;
     }
@@ -207,21 +200,20 @@ bool HubcapGenerationAllowed(const std::string& apiKey) {
 // live generations complete in ~1 s — so a hung connection cannot monopolize
 // the serialized queue. Persistence across failures comes from the proactive
 // backoff schedule, not from long in-pass retries.
-bool FetchAndInstallManifest(const std::string& url,
-                             const std::vector<std::string>& headers,
-                             std::uint64_t gid, std::uint32_t depotId) {
+bool FetchAndInstallManifest(const std::string& url, const std::vector<std::string>& headers, std::uint64_t gid,
+                             std::uint32_t depotId) {
     constexpr int kGenerationAttempts = 2;
     constexpr int kGenerationAttemptTimeoutSec = 6;
     for (int attempt = 0; attempt < kGenerationAttempts; ++attempt) {
-        const http::Response response = http::GetUncheckedWithHeaders(
-            url, kGenerationAttemptTimeoutSec, headers, L"AetherCore/HubcapManifest/1.0");
+        const http::Response response =
+            http::GetUncheckedWithHeaders(url, kGenerationAttemptTimeoutSec, headers, L"AetherCore/HubcapManifest/1.0");
         if (response.networkError) {
-            AC_LOG_WARN(kModule, "Hubcap manifest request failed for depot=%u gid=%llu (network).",
-                        depotId, static_cast<unsigned long long>(gid));
+            AC_LOG_WARN(kModule, "Hubcap manifest request failed for depot=%u gid=%llu (network).", depotId,
+                        static_cast<unsigned long long>(gid));
         } else if (response.status == 200 && !response.body.empty()) {
             if (!manifestidentity::ManifestIdentityMatches(response.body, depotId, gid)) {
-                AC_LOG_WARN(kModule, "Hubcap manifest identity mismatch for depot=%u gid=%llu.",
-                            depotId, static_cast<unsigned long long>(gid));
+                AC_LOG_WARN(kModule, "Hubcap manifest identity mismatch for depot=%u gid=%llu.", depotId,
+                            static_cast<unsigned long long>(gid));
                 return false;
             }
 
@@ -229,8 +221,7 @@ bool FetchAndInstallManifest(const std::string& url,
             // the commit reuses the shared atomic replace helper.
             namespace fs = std::filesystem;
             const fs::path destination = fs::path(g_state.steamInstallPath) / "depotcache" /
-                                         (std::to_string(depotId) + "_" +
-                                          std::to_string(gid) + ".manifest");
+                                         (std::to_string(depotId) + "_" + std::to_string(gid) + ".manifest");
             const fs::path temporary = destination.string() + ".aether-tmp";
             std::error_code dirEc;
             if (!fs::create_directories(destination.parent_path(), dirEc) && dirEc) {
@@ -240,12 +231,11 @@ bool FetchAndInstallManifest(const std::string& url,
             std::ofstream output(temporary, std::ios::binary | std::ios::trunc);
             output.write(response.body.data(), static_cast<std::streamsize>(response.body.size()));
             output.close();
-            if (!output ||
-                !backup::io::AtomicReplace(temporary.string(), destination.string())) {
+            if (!output || !backup::io::AtomicReplace(temporary.string(), destination.string())) {
                 std::error_code cleanupEc;
                 fs::remove(temporary, cleanupEc);
-                AC_LOG_WARN(kModule, "Could not atomically install Hubcap manifest depot=%u gid=%llu.",
-                            depotId, static_cast<unsigned long long>(gid));
+                AC_LOG_WARN(kModule, "Could not atomically install Hubcap manifest depot=%u gid=%llu.", depotId,
+                            static_cast<unsigned long long>(gid));
                 return false;
             }
             std::error_code sizeEc;
@@ -254,9 +244,8 @@ bool FetchAndInstallManifest(const std::string& url,
                 AC_LOG_WARN(kModule, "Hubcap manifest post-install verification failed.");
                 return false;
             }
-            AC_LOG_INFO(kModule, "Hubcap manifest installed depot=%u gid=%llu bytes=%llu.",
-                        depotId, static_cast<unsigned long long>(gid),
-                        static_cast<unsigned long long>(response.body.size()));
+            AC_LOG_INFO(kModule, "Hubcap manifest installed depot=%u gid=%llu bytes=%llu.", depotId,
+                        static_cast<unsigned long long>(gid), static_cast<unsigned long long>(response.body.size()));
             // Immediately archive the generated manifest into the AetherData
             // backups of referencing apps: deterministically, even with
             // AetherDesk closed (the startup backup would only run at the next
@@ -264,12 +253,13 @@ bool FetchAndInstallManifest(const std::string& url,
             ac::hooks::ManifestRestore::BackupManifestAfterGeneration(depotId, gid);
             return true;
         } else if (!response.networkError) {
-            AC_LOG_WARN(kModule, "Hubcap manifest request HTTP=%d for depot=%u gid=%llu.",
-                        response.status, depotId, static_cast<unsigned long long>(gid));
-            if (response.status != 408 && response.status != 425 && response.status != 429 &&
-                response.status < 500) return false;
+            AC_LOG_WARN(kModule, "Hubcap manifest request HTTP=%d for depot=%u gid=%llu.", response.status, depotId,
+                        static_cast<unsigned long long>(gid));
+            if (response.status != 408 && response.status != 425 && response.status != 429 && response.status < 500)
+                return false;
         }
-        if (attempt + 1 < kGenerationAttempts) std::this_thread::sleep_for(std::chrono::milliseconds(750));
+        if (attempt + 1 < kGenerationAttempts)
+            std::this_thread::sleep_for(std::chrono::milliseconds(750));
     }
     return false;
 }
@@ -280,14 +270,16 @@ bool InstallHubcapManifest(std::uint64_t gid, std::uint32_t depotId) {
         AC_LOG_DEBUG(kModule, "Hubcap skipped: encrypted provider credentials unavailable.");
         return false;
     }
-    if (!HubcapGenerationAllowed(*apiKey)) return false;
+    if (!HubcapGenerationAllowed(*apiKey))
+        return false;
     // The daily generation budget is shared with AetherDesk through
     // <AetherData>\state\hubcap_generation_quota.json; a failed request gives
     // the reserved unit back so a transient failure never burns it.
-    if (!hubcapquota::TryReserveGameGeneration()) return false;
+    if (!hubcapquota::TryReserveGameGeneration())
+        return false;
 
-    const std::string url = "https://hubcapmanifest.com/api/v1/generate/manifest?depot_id=" +
-                            std::to_string(depotId) + "&manifest_id=" + std::to_string(gid);
+    const std::string url = "https://hubcapmanifest.com/api/v1/generate/manifest?depot_id=" + std::to_string(depotId) +
+                            "&manifest_id=" + std::to_string(gid);
     const std::vector<std::string> headers = {"Authorization: Bearer " + *apiKey};
     const bool installed = FetchAndInstallManifest(url, headers, gid, depotId);
     if (!installed) {
@@ -329,7 +321,8 @@ void ProactiveWorkerLoop(std::atomic<bool>& stop) {
         {
             std::unique_lock<std::mutex> lock(g_proactiveMutex);
             g_proactiveCv.wait(lock, [&] { return stop.load() || !g_proactiveQueue.empty(); });
-            if (stop.load()) return;
+            if (stop.load())
+                return;
             key = g_proactiveQueue.front();
             g_proactiveQueue.pop_front();
         }
@@ -342,8 +335,8 @@ void ProactiveWorkerLoop(std::atomic<bool>& stop) {
                 continue;
             }
             if (InstallHubcapManifest(key.gid, key.depotId)) {
-                AC_LOG_INFO(kModule, "Proactive manifest ready: depot=%u gid=%llu.",
-                            key.depotId, static_cast<unsigned long long>(key.gid));
+                AC_LOG_INFO(kModule, "Proactive manifest ready: depot=%u gid=%llu.", key.depotId,
+                            static_cast<unsigned long long>(key.gid));
                 std::lock_guard<std::mutex> lock(g_proactiveMutex);
                 g_proactiveStates.erase(key);
             } else {
@@ -358,8 +351,7 @@ void ProactiveWorkerLoop(std::atomic<bool>& stop) {
                             "Proactive manifest fetch failed: depot=%u gid=%llu "
                             "(no API key, quota exhausted or provider error); "
                             "attempt %d/%d, next retry follows the backoff schedule.",
-                            key.depotId, static_cast<unsigned long long>(key.gid),
-                            attempts, kMaxProactiveRetries);
+                            key.depotId, static_cast<unsigned long long>(key.gid), attempts, kMaxProactiveRetries);
             }
         } catch (const std::exception& e) {
             AC_LOG_ERROR(kModule, "Proactive manifest worker failed: %s", e.what());
@@ -377,25 +369,26 @@ bool EnqueueProactive(const LookupKey& key) {
     std::lock_guard<std::mutex> lock(g_proactiveMutex);
     auto it = g_proactiveStates.find(key);
     if (it == g_proactiveStates.end()) {
-        if (g_proactiveStates.size() >= kMaxTrackedProactiveKeys) return false;
+        if (g_proactiveStates.size() >= kMaxTrackedProactiveKeys)
+            return false;
         it = g_proactiveStates.emplace(key, ProactiveState{}).first;
     }
     ProactiveState& state = it->second;
     if (state.attempts >= kMaxProactiveRetries) {
-        AC_LOG_DEBUG_ONCE(kModule,
-                          "Proactive retries exhausted for depot=%u gid=%llu this session.",
-                          key.depotId, static_cast<unsigned long long>(key.gid));
+        AC_LOG_DEBUG_ONCE(kModule, "Proactive retries exhausted for depot=%u gid=%llu this session.", key.depotId,
+                          static_cast<unsigned long long>(key.gid));
         return false;
     }
     const auto now = std::chrono::steady_clock::now();
-    if (now < state.nextEligible) return false;  // inside the backoff window
+    if (now < state.nextEligible)
+        return false; // inside the backoff window
     state.nextEligible = now + std::chrono::seconds(kProactiveBackoffSec[state.attempts]);
     ++state.attempts;
     g_proactiveQueue.push_back(key);
     if (!g_proactiveWorkerStarted) {
         g_proactiveWorkerStarted = true;
         if (!workers::StartWorker("manifest_proactive", ProactiveWorkerLoop)) {
-            g_proactiveWorkerStarted = false;   // riprova al prossimo enqueue
+            g_proactiveWorkerStarted = false; // riprova al prossimo enqueue
             AC_LOG_WARN(kModule, "Proactive manifest worker rejected (workers shut down).");
         }
     }
@@ -403,15 +396,15 @@ bool EnqueueProactive(const LookupKey& key) {
     return true;
 }
 
-}  // namespace
+} // namespace
 
 bool HasLocalManifest(std::uint64_t manifestGid, std::uint32_t depotId) {
     return FindLocalManifest(manifestGid, depotId).has_value();
 }
 
-void EnsureManifestAvailable(std::uint32_t appId, std::uint32_t depotId,
-                             std::uint64_t manifestGid) {
-    if (depotId == 0 || manifestGid == 0) return;
+void EnsureManifestAvailable(std::uint32_t appId, std::uint32_t depotId, std::uint64_t manifestGid) {
+    if (depotId == 0 || manifestGid == 0)
+        return;
 
     const LookupKey key{manifestGid, appId, depotId};
 
@@ -429,9 +422,9 @@ void EnsureManifestAvailable(std::uint32_t appId, std::uint32_t depotId,
     // a failed fetch is retried automatically (bounded per session) without
     // request storms.
     if (EnqueueProactive(key)) {
-        AC_LOG_INFO(kModule, "Proactive manifest fetch queued: app=%u depot=%u gid=%llu.",
-                    appId, depotId, static_cast<unsigned long long>(manifestGid));
+        AC_LOG_INFO(kModule, "Proactive manifest fetch queued: app=%u depot=%u gid=%llu.", appId, depotId,
+                    static_cast<unsigned long long>(manifestGid));
     }
 }
 
-}  // namespace ac::manifestfetch
+} // namespace ac::manifestfetch

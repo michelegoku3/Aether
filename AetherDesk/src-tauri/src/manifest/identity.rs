@@ -37,7 +37,8 @@ pub fn unwrap_manifest_payload(bytes: &[u8]) -> Result<Vec<u8>, String> {
             if file.is_dir() || file.size() == 0 {
                 continue;
             }
-            let payload_capacity = usize::try_from(file.size()).map_err(|_| "Manifest ZIP entry is too large for this platform".to_string())?;
+            let payload_capacity = usize::try_from(file.size())
+                .map_err(|_| "Manifest ZIP entry is too large for this platform".to_string())?;
             let mut payload = Vec::with_capacity(payload_capacity);
             file.read_to_end(&mut payload)
                 .map_err(|e| format!("Could not decompress manifest ZIP entry: {e}"))?;
@@ -52,7 +53,8 @@ pub fn unwrap_manifest_payload(bytes: &[u8]) -> Result<Vec<u8>, String> {
 /// (`D0 17 F6 71` on disk). Cheap pre-check; use [`manifest_identity`] for
 /// the authoritative depot/GID verification.
 pub fn has_manifest_magic(bytes: &[u8]) -> bool {
-    bytes.len() >= 4 && u32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]) == PAYLOAD_MAGIC
+    bytes.len() >= 4
+        && u32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]) == PAYLOAD_MAGIC
 }
 
 fn read_u32_le(bytes: &[u8], offset: &mut usize) -> Result<u32, String> {
@@ -93,8 +95,9 @@ pub fn manifest_identity(bytes: &[u8]) -> Result<(u32, u64), String> {
     }
     offset += payload_len;
     let metadata_magic = read_u32_le(&payload, &mut offset)?;
-    let metadata_len = usize::try_from(read_u32_le(&payload, &mut offset)?)
-        .map_err(|_| "Manifest metadata length is not representable on this platform".to_string())?;
+    let metadata_len = usize::try_from(read_u32_le(&payload, &mut offset)?).map_err(|_| {
+        "Manifest metadata length is not representable on this platform".to_string()
+    })?;
     if metadata_magic != METADATA_MAGIC || payload.len().saturating_sub(offset) < metadata_len {
         return Err("Manifest metadata section has an unexpected format".to_string());
     }
@@ -109,7 +112,8 @@ pub fn manifest_identity(bytes: &[u8]) -> Result<(u32, u64), String> {
             0 => {
                 let value = read_varint(metadata, &mut cursor)?;
                 if field == 1 {
-                    depot_id = u32::try_from(value).map_err(|_| "Manifest depot ID exceeds u32".to_string())?;
+                    depot_id = u32::try_from(value)
+                        .map_err(|_| "Manifest depot ID exceeds u32".to_string())?;
                 }
                 if field == 2 {
                     manifest_gid = value;
@@ -117,8 +121,10 @@ pub fn manifest_identity(bytes: &[u8]) -> Result<(u32, u64), String> {
             }
             1 => cursor = cursor.saturating_add(8),
             2 => {
-                let length = usize::try_from(read_varint(metadata, &mut cursor)?)
-                    .map_err(|_| "Manifest field length is not representable on this platform".to_string())?;
+                let length =
+                    usize::try_from(read_varint(metadata, &mut cursor)?).map_err(|_| {
+                        "Manifest field length is not representable on this platform".to_string()
+                    })?;
                 cursor = cursor.saturating_add(length);
             }
             5 => cursor = cursor.saturating_add(4),
@@ -146,7 +152,13 @@ pub fn verify_manifest_bytes(
     if !has_manifest_magic(&payload) {
         let preview: String = String::from_utf8_lossy(&payload[..payload.len().min(96)])
             .chars()
-            .map(|character| if character.is_control() { ' ' } else { character })
+            .map(|character| {
+                if character.is_control() {
+                    ' '
+                } else {
+                    character
+                }
+            })
             .collect();
         return Err(format!(
             "Response is not a Steam manifest ({} bytes, starts with {:?})",

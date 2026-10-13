@@ -3,8 +3,7 @@ import { useCustomCss } from '../hooks/useCustomCss';
 import { usePersonalWallpaper } from '../hooks/usePersonalWallpaper';
 import { getSettings, type AppSettings } from '../hooks/useSettings';
 
-const clampPercentage = (value: number) =>
-  Math.max(0, Math.min(100, value));
+const clampPercentage = (value: number) => Math.max(0, Math.min(100, value));
 
 interface Params {
   onSettingsApplied: (settings: AppSettings) => void | Promise<void>;
@@ -32,25 +31,28 @@ export function useAppearanceRuntime({ onSettingsApplied }: Params) {
     setAlternativeCardsFade(clampPercentage(Number(settings.alternative_cards_fade ?? 50)));
   }, []);
 
-  const refresh = useCallback(async (preloadedSettings?: AppSettings) => {
-    try {
-      const settings = preloadedSettings ?? await getSettings();
-      applySettingsSnapshot(settings);
-      setSettingsRevision((value) => value + 1);
-      setWallpaperRevision((value) => value + 1);
-      setThemeRevision((value) => value + 1);
-      void onSettingsApplied(settings);
-    } catch {
-      setUseAlternativeGameCards(false);
-      setCustomCssEnabled(false);
-      setPersonalWallpaperEnabled(false);
-      setPersonalWallpaperOpacity(20);
-      setAlternativeCardsOpacity(100);
-      setAlternativeCardsFade(50);
-    } finally {
-      setSettingsReady(true);
-    }
-  }, [applySettingsSnapshot, onSettingsApplied]);
+  const refresh = useCallback(
+    async (preloadedSettings?: AppSettings) => {
+      try {
+        const settings = preloadedSettings ?? (await getSettings());
+        applySettingsSnapshot(settings);
+        setSettingsRevision((value) => value + 1);
+        setWallpaperRevision((value) => value + 1);
+        setThemeRevision((value) => value + 1);
+        void onSettingsApplied(settings);
+      } catch {
+        setUseAlternativeGameCards(false);
+        setCustomCssEnabled(false);
+        setPersonalWallpaperEnabled(false);
+        setPersonalWallpaperOpacity(20);
+        setAlternativeCardsOpacity(100);
+        setAlternativeCardsFade(50);
+      } finally {
+        setSettingsReady(true);
+      }
+    },
+    [applySettingsSnapshot, onSettingsApplied]
+  );
 
   const changeCustomCss = useCallback((enabled: boolean) => {
     setCustomCssEnabled(enabled);

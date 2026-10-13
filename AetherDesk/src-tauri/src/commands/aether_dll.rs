@@ -1,9 +1,9 @@
+use super::{command_steam_path, configured_steam_path};
 use crate::core::settings::load_settings;
 use crate::steam::resolve::resolve_steam_path;
 use crate::updater::dll::DllInstaller;
 use crate::updater::dll_version::read_installed_dll_version;
 use crate::updater::github::{self, GithubReleaseManager, TestChannel};
-use super::{command_steam_path, configured_steam_path};
 
 #[tauri::command]
 pub fn get_installed_dll_version(app: tauri::AppHandle) -> String {
@@ -68,7 +68,8 @@ pub async fn check_aether_dll_update(app: tauri::AppHandle) -> Result<serde_json
         }
     };
     let latest_version = GithubReleaseManager::component_version_from_tag(&latest_tag);
-    let update_available = GithubReleaseManager::latest_is_newer_than(&installed_version, &latest_tag);
+    let update_available =
+        GithubReleaseManager::latest_is_newer_than(&installed_version, &latest_tag);
     crate::desk_log_info!(
         "updater",
         "AetherDLL check: installed={} latest={} tag={} url={} update_available={}",
@@ -174,7 +175,11 @@ pub async fn install_aether_dll(
     );
 
     ensure_steam_is_closed()?;
-    crate::desk_log_info!("updater", "Starting installation of AetherDLL into steam_path='{}'", steam_path);
+    crate::desk_log_info!(
+        "updater",
+        "Starting installation of AetherDLL into steam_path='{}'",
+        steam_path
+    );
 
     let manager = GithubReleaseManager::new();
 
@@ -206,7 +211,12 @@ pub async fn install_aether_dll(
         manager.fetch_latest_dll_release("dll-install").await?
     };
 
-    crate::desk_log_info!("updater", "Downloading AetherDLL release tag {} from {}", tag_name, download_url);
+    crate::desk_log_info!(
+        "updater",
+        "Downloading AetherDLL release tag {} from {}",
+        tag_name,
+        download_url
+    );
 
     let response = reqwest::Client::new()
         .get(&download_url)
@@ -226,14 +236,16 @@ pub async fn install_aether_dll(
             response.status(),
             download_url
         );
-        return Err(format!("Download server returned HTTP error: {}", response.status()));
+        return Err(format!(
+            "Download server returned HTTP error: {}",
+            response.status()
+        ));
     }
 
-    let bytes = response.bytes().await
-        .map_err(|e| {
-            crate::desk_log_error!("updater", "AetherDLL download body error: {}", e);
-            format!("Failed to read downloaded bytes: {}", e)
-        })?;
+    let bytes = response.bytes().await.map_err(|e| {
+        crate::desk_log_error!("updater", "AetherDLL download body error: {}", e);
+        format!("Failed to read downloaded bytes: {}", e)
+    })?;
     crate::desk_log_info!("updater", "AetherDLL zip size={} bytes", bytes.len());
 
     let temp_zip_path = std::env::temp_dir().join("aether_dll_latest.zip");
@@ -246,7 +258,8 @@ pub async fn install_aether_dll(
 
     match install_result {
         Ok(()) => {
-            let legacy_version_path = std::path::PathBuf::from(&steam_path).join("AetherDLL_version.txt");
+            let legacy_version_path =
+                std::path::PathBuf::from(&steam_path).join("AetherDLL_version.txt");
             let _ = std::fs::remove_file(legacy_version_path);
             crate::desk_log_info!(
                 "updater",
@@ -254,7 +267,10 @@ pub async fn install_aether_dll(
                 tag_name,
                 steam_path
             );
-            Ok(format!("AetherDLL {} successfully installed into Steam!", tag_name))
+            Ok(format!(
+                "AetherDLL {} successfully installed into Steam!",
+                tag_name
+            ))
         }
         Err(error) => {
             crate::desk_log_error!(
@@ -274,7 +290,11 @@ pub fn uninstall_aether_dll(app: tauri::AppHandle) -> Result<String, String> {
     let steam_path = command_steam_path(&app)?;
 
     ensure_steam_is_closed()?;
-    crate::desk_log_info!("updater", "Uninstalling AetherDLL from Steam directory '{}'", steam_path);
+    crate::desk_log_info!(
+        "updater",
+        "Uninstalling AetherDLL from Steam directory '{}'",
+        steam_path
+    );
 
     // The uninstaller also removes the obsolete Steam-root proxy.
     DllInstaller::new(&steam_path).uninstall()?;
@@ -287,11 +307,20 @@ pub fn uninstall_aether_dll(app: tauri::AppHandle) -> Result<String, String> {
 pub fn reset_aether_steam_path(app: tauri::AppHandle) -> Result<String, String> {
     let steam_path = command_steam_path(&app)?;
     ensure_steam_is_closed()?;
-    crate::desk_log_info!("updater", "Resetting Aether files in Steam directory '{}'", steam_path);
+    crate::desk_log_info!(
+        "updater",
+        "Resetting Aether files in Steam directory '{}'",
+        steam_path
+    );
 
     // Reset removes the obsolete proxy and version bookmark too.
     let removed = DllInstaller::new(&steam_path).reset_aether_files()?;
-    crate::desk_log_info!("updater", "Steam path reset completed: removed {} item(s) from '{}'", removed, steam_path);
+    crate::desk_log_info!(
+        "updater",
+        "Steam path reset completed: removed {} item(s) from '{}'",
+        removed,
+        steam_path
+    );
     Ok(format!(
         "Steam path reset completed. Removed {} Aether-created item(s).",
         removed

@@ -255,7 +255,10 @@ fn apply_edits_can_comment_out_a_malformed_line() {
     let commented = content
         .lines()
         .any(|line| line.trim_start().starts_with("--") && line.contains("3558402"));
-    assert!(commented, "the malformed call must be commented out:\n{content}");
+    assert!(
+        commented,
+        "the malformed call must be commented out:\n{content}"
+    );
 
     // Turning the row off resolves the *runtime* problem: the script engine no
     // longer executes the broken call, so the file loads with all its other
@@ -274,7 +277,10 @@ fn apply_edits_can_comment_out_a_malformed_line() {
         .into_iter()
         .find_map(|row| row.issue)
         .expect("the commented line is still reported, as inactive");
-    assert!(!inactive.active, "a commented call cannot break the current load");
+    assert!(
+        !inactive.active,
+        "a commented call cannot break the current load"
+    );
 }
 
 #[test]
@@ -327,15 +333,17 @@ fn unquoted_gid_is_reported_as_a_value_problem_not_a_shape_problem() {
     // "must be a decimal uint64" message, so the diagnosis must carry it
     // instead of falling back to "malformed call".
     let editor = LuaManifestPins::new(std::env::temp_dir(), 1);
-    let rows = LuaManifestPins::editor_rows_from_content(
-        "setManifestid(3558402, 0x1234567890ABCDEF)\n",
-    );
+    let rows =
+        LuaManifestPins::editor_rows_from_content("setManifestid(3558402, 0x1234567890ABCDEF)\n");
     let issue = rows[0].issue.as_ref().expect("one issue");
     assert_eq!(issue.raw_value, "0x1234567890ABCDEF");
     assert!(issue.active);
 
     let quoted = LuaManifestPins::editor_rows_from_content("setManifestid(3558402, \"abc\")\n");
-    assert_eq!(quoted[0].issue.as_ref().expect("one issue").raw_value, "abc");
+    assert_eq!(
+        quoted[0].issue.as_ref().expect("one issue").raw_value,
+        "abc"
+    );
 
     // Nothing to repair in place: no argument at all.
     let shapeless = LuaManifestPins::editor_rows_from_content("setManifestid(3558402)\n");

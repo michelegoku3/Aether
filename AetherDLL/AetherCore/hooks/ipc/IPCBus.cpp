@@ -5,16 +5,16 @@
 #include <string>
 #include <unordered_map>
 
-#include "utils/IpcSpec.h"
-#include "scripting/LuaData.h"
-#include "hooks/ipc/CmdUser.h"
-#include "hooks/ipc/CmdUtils.h"
 #include "core/Constants.h"
 #include "core/HookManager.h"
 #include "core/Logger.h"
-#include "utils/PatternEngine.h"
+#include "hooks/ipc/CmdUser.h"
+#include "hooks/ipc/CmdUtils.h"
 #include "hooks/ipc/PipeWatch.h"
 #include "hooks/ipc/SteamCapture.h"
+#include "scripting/LuaData.h"
+#include "utils/IpcSpec.h"
+#include "utils/PatternEngine.h"
 
 namespace ac::hooks {
 namespace {
@@ -60,18 +60,20 @@ void LogDispatchOnce(const char* handlerName, steam::AppId appId) {
 // for stats interface calls; no-ops otherwise.
 struct StatsScopeGuard {
     explicit StatsScopeGuard(bool active) : m_active(active) {
-        if (m_active) capture::EnterStatsScope();
+        if (m_active)
+            capture::EnterStatsScope();
     }
     ~StatsScopeGuard() {
-        if (m_active) capture::LeaveStatsScope();
+        if (m_active)
+            capture::LeaveStatsScope();
     }
 
-private:
+  private:
     bool m_active;
 };
 
-bool h_IPCProcessMessage(void* server, steam::HSteamPipe hSteamPipe,
-                         steam::CUtlBuffer* pRead, steam::CUtlBuffer* pWrite) {
+bool h_IPCProcessMessage(void* server, steam::HSteamPipe hSteamPipe, steam::CUtlBuffer* pRead,
+                         steam::CUtlBuffer* pWrite) {
     const IpcHandlerEntry* entry = nullptr;
     steam::CSteamPipeClient* pipe = GetPipe(server, hSteamPipe);
     bool statsScope = false;
@@ -105,7 +107,8 @@ bool h_IPCProcessMessage(void* server, steam::HSteamPipe hSteamPipe,
     // Always run Steam's original processing first.
     const StatsScopeGuard statsGuard(statsScope);
     const bool ok = o_IPCProcessMessage(server, hSteamPipe, pRead, pWrite);
-    if (!ok || !entry || !pipe) return ok;
+    if (!ok || !entry || !pipe)
+        return ok;
 
     // Only spoof for apps we are configured to handle.
     const steam::AppId appId = pipewatch::AppIdForPipe(pipe);
@@ -119,10 +122,9 @@ bool h_IPCProcessMessage(void* server, steam::HSteamPipe hSteamPipe,
     // unchanged so the handler's own bounds checks stay the single gate.
     if (entry->name) {
         if (auto spec = ipcspec::ResolveMethodSpec(entry->name)) {
-            if (spec->argc > 0 &&
-                pRead->TellPut() < kIpcArgsOffset + static_cast<std::int32_t>(spec->argc) * 4) {
-                AC_LOG_WARN_ONCE(kModule, "%s: spec argc=%u but message is short (%d bytes).",
-                                 entry->name, spec->argc, pRead->TellPut());
+            if (spec->argc > 0 && pRead->TellPut() < kIpcArgsOffset + static_cast<std::int32_t>(spec->argc) * 4) {
+                AC_LOG_WARN_ONCE(kModule, "%s: spec argc=%u but message is short (%d bytes).", entry->name, spec->argc,
+                                 pRead->TellPut());
             }
         }
     }
@@ -132,10 +134,11 @@ bool h_IPCProcessMessage(void* server, steam::HSteamPipe hSteamPipe,
     return ok;
 }
 
-}  // namespace
+} // namespace
 
 void RegisterIpcHandlers(const IpcHandlerEntry* entries, std::size_t count) {
-    if (!entries || count == 0) return;
+    if (!entries || count == 0)
+        return;
     s_handlers.reserve(s_handlers.size() + count);
 
     const bool dynamicSpec = ipcspec::IsLoaded();
@@ -158,26 +161,22 @@ void RegisterIpcHandlers(const IpcHandlerEntry* entries, std::size_t count) {
             const std::string name(source.name);
             const std::size_t separator = name.find("::");
             if (separator == std::string::npos || separator == 0) {
-                AC_LOG_WARN(kModule, "IPC handler '%s' has invalid qualified name; disabled.",
-                            source.name);
+                AC_LOG_WARN(kModule, "IPC handler '%s' has invalid qualified name; disabled.", source.name);
                 continue;
             }
             const std::string interfaceName = name.substr(0, separator);
             const auto specInterface = ipcspec::ResolveInterfaceId(interfaceName.c_str());
             const auto specHash = ipcspec::ResolveHash(source.name);
             if (!specInterface || !specHash) {
-                AC_LOG_WARN(kModule, "IPC handler '%s' disabled: spec metadata missing.",
-                            source.name);
-                g_state.hookManager.RecordMissed(std::string("IPC:") + source.name,
-                                                 MissReason::MetadataUnavailable);
+                AC_LOG_WARN(kModule, "IPC handler '%s' disabled: spec metadata missing.", source.name);
+                g_state.hookManager.RecordMissed(std::string("IPC:") + source.name, MissReason::MetadataUnavailable);
                 continue;
             }
             interfaceId = *specInterface;
             hash = *specHash;
             if (interfaceId != source.interfaceId || hash != source.funcHash) {
-                AC_LOG_INFO(kModule, "Spec override: %s iface %u->%u hash 0x%08X->0x%08X",
-                            source.name, source.interfaceId, interfaceId,
-                            source.funcHash, hash);
+                AC_LOG_INFO(kModule, "Spec override: %s iface %u->%u hash 0x%08X->0x%08X", source.name,
+                            source.interfaceId, interfaceId, source.funcHash, hash);
             }
         }
 
@@ -185,10 +184,9 @@ void RegisterIpcHandlers(const IpcHandlerEntry* entries, std::size_t count) {
         resolved.funcHash = hash;
         const auto [it, inserted] = s_handlers.emplace(HandlerKey(interfaceId, hash), resolved);
         if (!inserted) {
-            AC_LOG_WARN(kModule, "IPC handler collision: '%s' conflicts with '%s'; second disabled.",
-                        source.name, it->second.name ? it->second.name : "<unnamed>");
-            g_state.hookManager.RecordMissed(std::string("IPC collision:") + source.name,
-                                             MissReason::HandlerCollision,
+            AC_LOG_WARN(kModule, "IPC handler collision: '%s' conflicts with '%s'; second disabled.", source.name,
+                        it->second.name ? it->second.name : "<unnamed>");
+            g_state.hookManager.RecordMissed(std::string("IPC collision:") + source.name, MissReason::HandlerCollision,
                                              it->second.name ? it->second.name : "<unnamed>");
         }
     }
@@ -222,8 +220,8 @@ void RegisterIpcBus(HMODULE diversion) {
     CmdUser::Register();
     CmdUtils::Register();
 
-    g_state.hookManager.TryHook("IPCProcessMessage", "steamclient", diversion,
-                          o_IPCProcessMessage, h_IPCProcessMessage);
+    g_state.hookManager.TryHook("IPCProcessMessage", "steamclient", diversion, o_IPCProcessMessage,
+                                h_IPCProcessMessage);
 }
 
-}  // namespace ac::hooks
+} // namespace ac::hooks

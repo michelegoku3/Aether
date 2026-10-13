@@ -34,10 +34,13 @@ export const StoreView = memo(function StoreView({
   const [infoGame, setInfoGame] = useState<StoreGameResult | null>(null);
   const [showBulkLocalImport, setShowBulkLocalImport] = useState(false);
 
-  const cardActions = useMemo<Array<GameCardAction<StoreGameResult>>>(() => [
-    { label: 'Download', variant: 'primary', onClick: download.openDownload },
-    { label: 'Info', variant: 'secondary', onClick: setInfoGame },
-  ], [download.openDownload]);
+  const cardActions = useMemo<Array<GameCardAction<StoreGameResult>>>(
+    () => [
+      { label: 'Download', variant: 'primary', onClick: download.openDownload },
+      { label: 'Info', variant: 'secondary', onClick: setInfoGame },
+    ],
+    [download.openDownload]
+  );
 
   return (
     <div className="store-view" ref={catalog.scrollRef}>
@@ -47,11 +50,7 @@ export const StoreView = memo(function StoreView({
       </div>
       <div className="store-separator"></div>
 
-      <StoreSearchBar
-        isLoading={catalog.isLoading}
-        onSearch={catalog.runSearch}
-        onClear={catalog.clearSearch}
-      />
+      <StoreSearchBar isLoading={catalog.isLoading} onSearch={catalog.runSearch} onClear={catalog.clearSearch} />
       <div className="store-separator"></div>
 
       <StoreGameGrid
@@ -112,7 +111,9 @@ export const StoreView = memo(function StoreView({
       {showBulkLocalImport && (
         <LocalDownloadModal
           onClose={() => setShowBulkLocalImport(false)}
-          onInstalled={() => { onRefreshUsage?.(); }}
+          onInstalled={() => {
+            onRefreshUsage?.();
+          }}
         />
       )}
     </div>

@@ -100,18 +100,22 @@ describe('useStoreDownload', () => {
     expect(onRefreshUsage).toHaveBeenCalledOnce();
     expect(result.current.status).toEqual({ text: 'Installed successfully', type: 'success' });
 
-    await act(async () => { await vi.advanceTimersByTimeAsync(3000); });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(3000);
+    });
     expect(result.current.selectedGame).toBeNull();
   });
 
   it('uses LuaTools gameName payload and opens the version editor', async () => {
-    const rows = [{
-      rowId: 1,
-      appId: 20,
-      manifestId: '30',
-      enabled: true,
-      manifestInput: 'old',
-    }];
+    const rows = [
+      {
+        rowId: 1,
+        appId: 20,
+        manifestId: '30',
+        enabled: true,
+        manifestInput: 'old',
+      },
+    ];
     mockInvokeCommands({
       get_settings: { ...configuredSettings, hubcap_api_key: '' },
       get_luatools_auth_status: { signedIn: true },
@@ -123,10 +127,10 @@ describe('useStoreDownload', () => {
 
     await act(() => result.current.downloadSpecific());
 
-    expect(invokeMock).toHaveBeenCalledWith(
-      'prepare_luatools_specific_version_download',
-      { appId: 10, gameName: 'Test Game' },
-    );
+    expect(invokeMock).toHaveBeenCalledWith('prepare_luatools_specific_version_download', {
+      appId: 10,
+      gameName: 'Test Game',
+    });
     expect(result.current.selectedGame).toBeNull();
     expect(result.current.versionGame).toEqual(game);
     expect(result.current.manifestRows[0].manifestInput).toBe('');

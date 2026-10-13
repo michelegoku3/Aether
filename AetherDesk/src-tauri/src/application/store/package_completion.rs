@@ -25,7 +25,10 @@ pub(super) async fn download_complete_luatools_package(
     let mut previous_failure: Option<(String, String)> = None;
 
     for (index, source) in sources.iter().take(attempts).enumerate() {
-        let mut package = match client.download_lua_package_from(app_id, source, game_name).await {
+        let mut package = match client
+            .download_lua_package_from(app_id, source, game_name)
+            .await
+        {
             Ok(package) => package,
             Err(error) => {
                 return Err(match previous_failure {
@@ -64,7 +67,9 @@ pub(super) async fn download_complete_luatools_package(
             }
         }
     }
-    Err(format!("LuaTools has no available source for App ID {app_id}"))
+    Err(format!(
+        "LuaTools has no available source for App ID {app_id}"
+    ))
 }
 
 async fn complete_luatools_package(
@@ -108,7 +113,9 @@ async fn complete_luatools_package(
         completeness.verified
     );
 
-    let completion = client.complete_manifests(app_id, &completeness.missing).await;
+    let completion = client
+        .complete_manifests(app_id, &completeness.missing)
+        .await;
     let fetched_count = completion.fetched.len();
     package.manifest_files.extend(completion.fetched);
     if completion.failed.is_empty() {

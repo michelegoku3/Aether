@@ -64,7 +64,12 @@ pub async fn search_store(
     );
 
     if let Some(results) = cache.get_fresh(&cache_key) {
-        crate::desk_log_debug!("store", "Store search cache hit state=fresh query_len={} results={}", query.len(), results.len());
+        crate::desk_log_debug!(
+            "store",
+            "Store search cache hit state=fresh query_len={} results={}",
+            query.len(),
+            results.len()
+        );
         GameInfoCache::new(&cache_dir, info_cache_version.clone())
             .merge_store_results_with_manifest_context(&results, hubcap_checked);
         return Ok(results);
@@ -87,10 +92,25 @@ pub async fn search_store(
             GameInfoCache::new(&cache_dir, info_cache_version)
                 .merge_store_results_with_manifest_context(&results, hubcap_checked);
             match cache.put(&cache_key, results.clone()) {
-                Ok(()) => crate::desk_log_debug!("store", "Store search cache write complete query_len={} results={}", query.len(), results.len()),
-                Err(error) => crate::desk_log_warn!("store", "Store search cache write failed query_len={}: {}", query.len(), error),
+                Ok(()) => crate::desk_log_debug!(
+                    "store",
+                    "Store search cache write complete query_len={} results={}",
+                    query.len(),
+                    results.len()
+                ),
+                Err(error) => crate::desk_log_warn!(
+                    "store",
+                    "Store search cache write failed query_len={}: {}",
+                    query.len(),
+                    error
+                ),
             }
-            crate::desk_log_info!("store", "Store search query_len={} completed results={}", query.len(), results.len());
+            crate::desk_log_info!(
+                "store",
+                "Store search query_len={} completed results={}",
+                query.len(),
+                results.len()
+            );
             Ok(results)
         }
         Err(error) => {
@@ -167,10 +187,7 @@ pub async fn get_trending_store_games(
     }
 }
 
-pub fn get_cached_store_search(
-    app: &tauri::AppHandle,
-    query: &str,
-) -> CachedStoreSearchResponse {
+pub fn get_cached_store_search(app: &tauri::AppHandle, query: &str) -> CachedStoreSearchResponse {
     if query.trim().is_empty() {
         return CachedStoreSearchResponse {
             results: Vec::new(),
@@ -270,7 +287,10 @@ mod tests {
     #[test]
     fn search_cache_key_includes_every_result_shaping_setting() {
         let key = build_store_cache_key(true, "EUR", true, false, true, "portal");
-        assert_eq!(key, "hubcap|currency=EUR|dlcs=true|nsfw=false|delisted=true portal");
+        assert_eq!(
+            key,
+            "hubcap|currency=EUR|dlcs=true|nsfw=false|delisted=true portal"
+        );
     }
 
     #[test]

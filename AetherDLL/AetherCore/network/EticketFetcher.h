@@ -51,4 +51,4 @@ std::size_t CacheCount();
 // Stops and joins the worker thread. Safe to call when never started.
 void Shutdown();
 
-}  // namespace ac::eticketfetch
+} // namespace ac::eticketfetch

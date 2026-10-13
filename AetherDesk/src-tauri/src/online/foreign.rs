@@ -102,7 +102,8 @@ impl ForeignOnlineReport {
     }
 
     pub fn refuse_online_aether_uco2(&self) -> String {
-        "UCO2 files are already in this folder. Online Aether and UCO2 cannot share a process.".to_string()
+        "UCO2 files are already in this folder. Online Aether and UCO2 cannot share a process."
+            .to_string()
     }
 }
 
@@ -140,7 +141,9 @@ pub fn scan(root: &Path) -> ForeignOnlineReport {
 pub fn conflict_for_ofme_file(path: &Path) -> Conflict {
     let lower = file_name_lower(path).unwrap_or_default();
     match lower.as_str() {
-        "steamfix64.dll" | "steamfix.dll" | "steamfix.ini" => Conflict::SteamFix(path.to_path_buf()),
+        "steamfix64.dll" | "steamfix.dll" | "steamfix.ini" => {
+            Conflict::SteamFix(path.to_path_buf())
+        }
         "onlinefix64.dll" | "onlinefix.dll" => Conflict::Ofme(path.to_path_buf()),
         _ => Conflict::NamedFixFile(path.to_path_buf()),
     }

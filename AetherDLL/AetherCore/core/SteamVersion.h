@@ -9,4 +9,4 @@ namespace ac {
 // the function. Diagnostic only — never fatal.
 std::string DetectSteamBuildId();
 
-}  // namespace ac
+} // namespace ac

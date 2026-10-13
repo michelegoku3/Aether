@@ -23,7 +23,9 @@ fn is_steam_process_name(name: &str) -> bool {
 
 /// True when a `System` snapshot contains a Steam main process.
 pub fn snapshot_has_steam(sys: &sysinfo::System) -> bool {
-    sys.processes().values().any(|p| is_steam_process_name(p.name()))
+    sys.processes()
+        .values()
+        .any(|p| is_steam_process_name(p.name()))
 }
 
 /// Fresh process snapshot for destructive migrations and DLL changes.
@@ -70,8 +72,8 @@ pub fn wait_steam_gone() -> bool {
 /// Spawn `steam.exe` from the given Steam root in a new console (detached).
 pub fn spawn_steam(steam_dir: &Path) -> Result<PathBuf, String> {
     let raw = steam_dir.to_string_lossy();
-    let root = crate::steam::resolve::resolve_steam_path(&raw)
-        .map_err(|error| error.message(&raw))?;
+    let root =
+        crate::steam::resolve::resolve_steam_path(&raw).map_err(|error| error.message(&raw))?;
     let steam_exe = root.join("steam.exe");
 
     let mut cmd = std::process::Command::new(&steam_exe);

@@ -19,4 +19,4 @@ namespace ac::hooks::steamui {
 // batch re-run.
 bool InstallSteamUiRedirect();
 
-}  // namespace ac::hooks::steamui
+} // namespace ac::hooks::steamui

@@ -33,7 +33,10 @@ impl DepotboxSource {
 }
 
 impl BuildDetailsSource for DepotboxSource {
-    fn pins_for_build(&self, build_id: u64) -> BoxFuture<'_, Result<Vec<DepotManifestPin>, VersionError>> {
+    fn pins_for_build(
+        &self,
+        build_id: u64,
+    ) -> BoxFuture<'_, Result<Vec<DepotManifestPin>, VersionError>> {
         Box::pin(async move {
             let url = format!("{}/build-details?build_id={}", BASE_URL, build_id);
             let resp = self
@@ -107,8 +110,7 @@ pub fn parse_build_details(json: &Value) -> Result<Vec<DepotManifestPin>, Versio
     for entry in depots {
         let depot = value_to_string(entry.get("depot_id")).unwrap_or_default();
         let manifest = value_to_string(entry.get("manifest_id")).unwrap_or_default();
-        let all_digits =
-            |s: &str| !s.is_empty() && s.chars().all(|c| c.is_ascii_digit());
+        let all_digits = |s: &str| !s.is_empty() && s.chars().all(|c| c.is_ascii_digit());
         if !all_digits(&depot) || !all_digits(&manifest) {
             continue;
         }
@@ -207,10 +209,19 @@ mod tests {
             Err(VersionError::TokenInvalid)
         ));
         assert!(matches!(
-            parse_build_details(&json!({ "success": false, "error": "vpn_blocked", "message": "Turn off your VPN" })),
-            Err(VersionError::SourceUnavailable { source: "Depotbox", .. })
+            parse_build_details(
+                &json!({ "success": false, "error": "vpn_blocked", "message": "Turn off your VPN" })
+            ),
+            Err(VersionError::SourceUnavailable {
+                source: "Depotbox",
+                ..
+            })
         ));
-        assert!(parse_build_details(&json!({ "success": true, "depots": [] })).unwrap().is_empty());
+        assert!(
+            parse_build_details(&json!({ "success": true, "depots": [] }))
+                .unwrap()
+                .is_empty()
+        );
     }
     #[test]
     fn all_malformed_rows_are_parse_failure_not_a_valid_empty_diff() {

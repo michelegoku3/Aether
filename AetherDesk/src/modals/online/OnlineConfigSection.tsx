@@ -8,29 +8,17 @@ interface OnlineConfigSectionProps {
   setRequest: React.Dispatch<React.SetStateAction<OnlineEnableRequest>>;
 }
 
-export const OnlineConfigSection: React.FC<OnlineConfigSectionProps> = ({
-  plan,
-  request,
-  enabled,
-  setRequest,
-}) => {
+export const OnlineConfigSection: React.FC<OnlineConfigSectionProps> = ({ plan, request, enabled, setRequest }) => {
   const set = <K extends keyof OnlineEnableRequest>(key: K, value: OnlineEnableRequest[K]) =>
     setRequest((prev) => ({ ...prev, [key]: value }));
 
   const setPhoton = (key: 'realtimeGuid' | 'voiceGuid' | 'fusionGuid', value: string) =>
     setRequest((prev) => ({ ...prev, photon: { ...prev.photon, [key]: value } }));
 
-  const setEos = (
-    key: 'productId' | 'sandboxId' | 'deploymentId' | 'clientId' | 'clientSecret',
-    value: string
-  ) => setRequest((prev) => ({ ...prev, eos: { ...prev.eos, [key]: value } }));
+  const setEos = (key: 'productId' | 'sandboxId' | 'deploymentId' | 'clientId' | 'clientSecret', value: string) =>
+    setRequest((prev) => ({ ...prev, eos: { ...prev.eos, [key]: value } }));
 
-  const checkboxRow = (
-    checked: boolean,
-    disabled: boolean,
-    onChange: (v: boolean) => void,
-    description: string
-  ) => (
+  const checkboxRow = (checked: boolean, disabled: boolean, onChange: (v: boolean) => void, description: string) => (
     <div className="op-checkbox-row">
       <span className="op-checkbox-desc">{description}</span>
       <label className="crack-checkbox-label op-checkbox-label">
@@ -86,21 +74,14 @@ export const OnlineConfigSection: React.FC<OnlineConfigSectionProps> = ({
             placeholder="017"
           />
         </div>
-        <div className="op-note-warn">
-          ⚠ Write 017 for old-SDK games that crash on startup (e.g. SpeedRunners).
-        </div>
+        <div className="op-note-warn">⚠ Write 017 for old-SDK games that crash on startup (e.g. SpeedRunners).</div>
       </div>
 
       {/* Photon */}
       {plan.detection.backends.photon !== 'none' && (
         <div className="op-box">
           <div className="op-section-title">Photon</div>
-          {checkboxRow(
-            request.deployPhoton,
-            enabled,
-            (v) => set('deployPhoton', v),
-            'Deploy Photon plugin'
-          )}
+          {checkboxRow(request.deployPhoton, enabled, (v) => set('deployPhoton', v), 'Deploy Photon plugin')}
           {request.deployPhoton && (
             <div className="op-sub">
               {plan.detection.backends.photon === 'fusion' ? (
@@ -149,17 +130,10 @@ export const OnlineConfigSection: React.FC<OnlineConfigSectionProps> = ({
       {plan.detection.backends.eos && (
         <div className="op-box">
           <div className="op-section-title">Epic Online Services</div>
-          {checkboxRow(
-            request.deployEosCustom,
-            enabled,
-            (v) => set('deployEosCustom', v),
-            'Deploy EOS_custom'
-          )}
+          {checkboxRow(request.deployEosCustom, enabled, (v) => set('deployEosCustom', v), 'Deploy EOS_custom')}
           {request.deployEosCustom && (
             <div className="op-sub">
-              {(
-                ['productId', 'sandboxId', 'deploymentId', 'clientId', 'clientSecret'] as const
-              ).map((key) => (
+              {(['productId', 'sandboxId', 'deploymentId', 'clientId', 'clientSecret'] as const).map((key) => (
                 <div className="op-row" key={key}>
                   <span className="op-label">{key}</span>
                   <input
@@ -207,9 +181,7 @@ export const OnlineConfigSection: React.FC<OnlineConfigSectionProps> = ({
             <input
               className="op-input"
               value={request.coherence.runtimeKey}
-              onChange={(e) =>
-                set('coherence', { ...request.coherence, runtimeKey: e.target.value })
-              }
+              onChange={(e) => set('coherence', { ...request.coherence, runtimeKey: e.target.value })}
               disabled={enabled || request.coherence.useShared}
               placeholder="your project (schema uploaded)"
             />
@@ -240,12 +212,7 @@ export const OnlineConfigSection: React.FC<OnlineConfigSectionProps> = ({
           (v) => set('loadOverlay', v),
           'Load Steam overlay renderer (LoadOverlay)'
         )}
-        {checkboxRow(
-          request.logOverlay,
-          enabled,
-          (v) => set('logOverlay', v),
-          'Write steam_overlay.log (LogOverlay)'
-        )}
+        {checkboxRow(request.logOverlay, enabled, (v) => set('logOverlay', v), 'Write steam_overlay.log (LogOverlay)')}
         {checkboxRow(
           request.getStubbedLol,
           enabled,
@@ -254,7 +221,8 @@ export const OnlineConfigSection: React.FC<OnlineConfigSectionProps> = ({
         )}
         {checkboxRow(request.unlockAllDlc, enabled, (v) => set('unlockAllDlc', v), 'Unlock all DLC')}
         {checkboxRow(request.sdr, enabled, (v) => set('sdr', v), 'Steam Datagram Relay')}
-        {plan.detection.engine !== 'generic' && plan.detection.arch === 'x64' &&
+        {plan.detection.engine !== 'generic' &&
+          plan.detection.arch === 'x64' &&
           checkboxRow(
             request.deployOverlayProxy,
             enabled,

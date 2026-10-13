@@ -3,12 +3,7 @@ import { invoke } from '@tauri-apps/api/core';
 import type { LibraryActionGame } from './LibraryGameActionsModal';
 import { openInFileManager } from '../util/paths';
 import { useModalDismiss, useOverlayDismiss } from '../hooks/useModalDismiss';
-import type {
-  OnlineActionResult,
-  OnlineEnableRequest,
-  OnlinePlan,
-  OnlineStatus,
-} from '../types/online';
+import type { OnlineActionResult, OnlineEnableRequest, OnlinePlan, OnlineStatus } from '../types/online';
 import { emptyRequest } from '../types/online';
 import { OnlineDetectionSection } from './online/OnlineDetectionSection';
 import { OnlineConfigSection } from './online/OnlineConfigSection';
@@ -24,9 +19,7 @@ interface OnlinePanelProps {
 export const OnlinePanel = ({ game, onClose }: OnlinePanelProps) => {
   const [plan, setPlan] = useState<OnlinePlan | null>(null);
   const [status, setStatus] = useState<OnlineStatus | null>(null);
-  const [request, setRequest] = useState<OnlineEnableRequest>(() =>
-    emptyRequest(Number(game.appId) || 0)
-  );
+  const [request, setRequest] = useState<OnlineEnableRequest>(() => emptyRequest(Number(game.appId) || 0));
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<{
@@ -49,11 +42,7 @@ export const OnlinePanel = ({ game, onClose }: OnlinePanelProps) => {
           ...previous,
           ogAppId: previous.ogAppId || appId || 0,
         };
-        if (
-          !savedRequest &&
-          planResult.detection.steamstubDetected &&
-          !planResult.detection.steamlessApplied
-        ) {
+        if (!savedRequest && planResult.detection.steamstubDetected && !planResult.detection.steamlessApplied) {
           return { ...next, getStubbedLol: true };
         }
         return next;
@@ -140,13 +129,7 @@ export const OnlinePanel = ({ game, onClose }: OnlinePanelProps) => {
           <h3 className="op-header-title">
             Enable Online: {game.name} ({game.appId})
           </h3>
-          <button
-            type="button"
-            className="op-close"
-            onClick={onClose}
-            disabled={busy}
-            aria-label="Close"
-          >
+          <button type="button" className="op-close" onClick={onClose} disabled={busy} aria-label="Close">
             ×
           </button>
         </div>
@@ -156,25 +139,12 @@ export const OnlinePanel = ({ game, onClose }: OnlinePanelProps) => {
             <div className="op-muted">Analyzing the game...</div>
           ) : (
             <>
-              {plan && (
-                <OnlineDetectionSection plan={plan} onOpenFolder={openFolder} />
-              )}
+              {plan && <OnlineDetectionSection plan={plan} onOpenFolder={openFolder} />}
 
-              {plan && (
-                <OnlineConfigSection
-                  plan={plan}
-                  request={request}
-                  enabled={enabled}
-                  setRequest={setRequest}
-                />
-              )}
+              {plan && <OnlineConfigSection plan={plan} request={request} enabled={enabled} setRequest={setRequest} />}
 
               {/* Result message */}
-              {message && (
-                <div className={`op-box op-message op-message--${message.kind}`}>
-                  {message.text}
-                </div>
-              )}
+              {message && <div className={`op-box op-message op-message--${message.kind}`}>{message.text}</div>}
             </>
           )}
         </div>
@@ -198,25 +168,13 @@ export const OnlinePanel = ({ game, onClose }: OnlinePanelProps) => {
             }`}
             onClick={enabled || broken ? handleDisable : handleEnable}
             disabled={enabled || broken ? busy : blocked || busy}
-            title={
-              !enabled && !broken && blocked
-                ? 'Resolve the missing prerequisites first'
-                : undefined
-            }
+            title={!enabled && !broken && blocked ? 'Resolve the missing prerequisites first' : undefined}
           >
-            {busy
-              ? enabled || broken
-                ? 'Disabling...'
-                : 'Enabling...'
-              : enabled || broken
-              ? 'Disable'
-              : 'Enable'}
+            {busy ? (enabled || broken ? 'Disabling...' : 'Enabling...') : enabled || broken ? 'Disable' : 'Enable'}
           </button>
           <button
             type="button"
-            className={`modal-btn op-footer-btn op-btn--ghost${
-              enabled || broken || busy ? ' op-btn--disabled' : ''
-            }`}
+            className={`modal-btn op-footer-btn op-btn--ghost${enabled || broken || busy ? ' op-btn--disabled' : ''}`}
             onClick={handleReset}
             disabled={enabled || broken || busy}
           >

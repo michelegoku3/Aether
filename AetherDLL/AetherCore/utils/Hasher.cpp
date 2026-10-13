@@ -27,14 +27,19 @@ struct Sha256Context {
     BCRYPT_HASH_HANDLE hash = nullptr;
 
     ~Sha256Context() {
-        if (hash) BCryptDestroyHash(hash);
-        if (alg) BCryptCloseAlgorithmProvider(alg, 0);
+        if (hash)
+            BCryptDestroyHash(hash);
+        if (alg)
+            BCryptCloseAlgorithmProvider(alg, 0);
     }
 };
 
 // RAII wrapper for a C FILE*.
 struct FileCloser {
-    void operator()(std::FILE* f) const { if (f) std::fclose(f); }
+    void operator()(std::FILE* f) const {
+        if (f)
+            std::fclose(f);
+    }
 };
 using FilePtr = std::unique_ptr<std::FILE, FileCloser>;
 
@@ -49,7 +54,7 @@ std::string ToHex(const std::array<std::uint8_t, kSha256DigestBytes>& digest) {
     return out;
 }
 
-}  // namespace
+} // namespace
 
 std::string ComputeFileSha256(const std::string& filePath) {
     std::FILE* raw = nullptr;
@@ -74,7 +79,8 @@ std::string ComputeFileSha256(const std::string& filePath) {
     std::size_t total = 0;
     while (true) {
         std::size_t read = std::fread(buffer.data(), 1, buffer.size(), file.get());
-        if (read == 0) break;
+        if (read == 0)
+            break;
         if (!NtOk(BCryptHashData(ctx.hash, buffer.data(), static_cast<ULONG>(read), 0))) {
             AC_LOG_ERROR(kModule, "BCryptHashData failed for %s", filePath.c_str());
             return {};
@@ -92,4 +98,4 @@ std::string ComputeFileSha256(const std::string& filePath) {
     return ToHex(digest);
 }
 
-}  // namespace ac::hasher
+} // namespace ac::hasher

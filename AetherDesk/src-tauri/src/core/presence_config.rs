@@ -136,8 +136,8 @@ fn section_header_name(s: &str) -> Option<&str> {
     }
 }
 
-/// Nome chiave di una riga `key = value`; None per commenti, header e righe
-/// non-assegnazione.
+/// Key name of a `key = value` line; None for comments, headers and
+/// non-assignment lines.
 fn toml_key_of(s: &str) -> Option<String> {
     let t = s.trim_start();
     if t.starts_with('#') || section_header_name(t).is_some() {

@@ -1,6 +1,6 @@
 #include "pch.h"
-#include "credentials/HexCodec.h"
 #include "core/Logger.h"
+#include "credentials/HexCodec.h"
 
 namespace ac::hex {
 namespace {
@@ -9,13 +9,16 @@ constexpr const char* kModule = "HexCodec";
 
 // Returns the value 0-15 for a hex digit, or -1 if the character is not hex.
 int NibbleValue(char c) {
-    if (c >= '0' && c <= '9') return c - '0';
-    if (c >= 'a' && c <= 'f') return c - 'a' + 10;
-    if (c >= 'A' && c <= 'F') return c - 'A' + 10;
+    if (c >= '0' && c <= '9')
+        return c - '0';
+    if (c >= 'a' && c <= 'f')
+        return c - 'a' + 10;
+    if (c >= 'A' && c <= 'F')
+        return c - 'A' + 10;
     return -1;
 }
 
-}  // namespace
+} // namespace
 
 std::optional<std::vector<std::uint8_t>> Decode(std::string_view hex) {
     // Odd-length input cannot represent whole bytes; reject it outright rather
@@ -50,4 +53,4 @@ std::string Encode(std::span<const std::uint8_t> data) {
     return out;
 }
 
-}  // namespace ac::hex
+} // namespace ac::hex

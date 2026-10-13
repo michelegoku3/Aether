@@ -17,6 +17,7 @@
 //!   6. deploy of plugins required by detected backends
 //!   7. state record persistence
 
+use crate::external_tools::fs::write_atomic;
 use crate::online::bundle::Uco2Bundle;
 use crate::online::config::{build_ini, harvest_dlc};
 use crate::online::detect::overlay_target;
@@ -24,7 +25,6 @@ use crate::online::state::{now_epoch_secs, OnlineStateStore};
 use crate::online::types::{
     Conflict, DetectionReport, OnlineEnableRequest, OnlineRecord, PhotonFlavor,
 };
-use crate::external_tools::fs::write_atomic;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -32,14 +32,14 @@ const UCO2_BACKUP_SUBDIR: &str = "uc_online2";
 const JOURNAL_FILE: &str = "journal.json";
 const ORIGINAL_SUBDIR: &str = "original";
 
-/// Backup dir di un gioco: `<backup_root>/<app_id>/uc_online2/`.
+/// Backup dir of a game: `<backup_root>/<app_id>/uc_online2/`.
 pub fn backup_dir_for(backup_root: &Path, app_id: u32) -> PathBuf {
     backup_root
         .join(app_id.to_string())
         .join(UCO2_BACKUP_SUBDIR)
 }
 
-/// Azione journalizzata (serializzata in `journal.json`).
+/// Journaled action (serialized into `journal.json`).
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(tag = "op", rename_all = "camelCase")]
 pub enum JournalEntry {
@@ -73,9 +73,9 @@ impl Journal {
     }
 }
 
-/// Esegue il deploy completo. Idempotente: al primo enable journalizza
-/// backup/quarantena; ai refresh successivi ricopia DLL/plugin/overlay dal
-/// bundle corrente (upgrade di versione) e riscrive l'ini.
+/// Run the full deploy. Idempotent: the first enable journals
+/// backup/quarantine; later refreshes recopy DLL/plugin/overlay from the
+/// current bundle (version upgrade) and rewrite the ini.
 pub fn deploy(
     app_id: u32,
     detection: &DetectionReport,
@@ -138,9 +138,7 @@ pub fn deploy(
             }
             let backup_name = format!(
                 "conflict_{}",
-                path.file_name()
-                    .and_then(|n| n.to_str())
-                    .unwrap_or("file")
+                path.file_name().and_then(|n| n.to_str()).unwrap_or("file")
             );
             let target = unique_backup_path(&backup_dir, &backup_name);
             fs::rename(&path, &target).map_err(|e| e.to_string())?;
@@ -215,13 +213,13 @@ pub fn deploy(
 
 /// Adds `Deployed` only when the path is not already in the journal (refresh).
 fn journal_deployed(journal: &mut Journal, path: &Path) {
-    let already = journal.entries.iter().any(|entry| {
-        matches!(entry, JournalEntry::Deployed { path: existing } if existing == path)
-    });
+    let already = journal.entries.iter().any(
+        |entry| matches!(entry, JournalEntry::Deployed { path: existing } if existing == path),
+    );
     if !already {
-        journal
-            .entries
-            .push(JournalEntry::Deployed { path: path.to_path_buf() });
+        journal.entries.push(JournalEntry::Deployed {
+            path: path.to_path_buf(),
+        });
     }
 }
 

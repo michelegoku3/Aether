@@ -6,8 +6,8 @@ use crate::providers::hubcap_generation::{
 
 use super::client::HubcapClient;
 use super::types::{
-    http_failure_class, is_retryable_status, retry_delay, BASE_URL,
-    GENERATION_RETRY_ATTEMPTS, GENERATION_TIMEOUT_SECONDS, HubcapGenerationUsage,
+    http_failure_class, is_retryable_status, retry_delay, HubcapGenerationUsage, BASE_URL,
+    GENERATION_RETRY_ATTEMPTS, GENERATION_TIMEOUT_SECONDS,
 };
 
 impl HubcapClient {
@@ -18,15 +18,23 @@ impl HubcapClient {
         usage: &HubcapGenerationUsage,
     ) -> Result<(), String> {
         if usage.steam_service_ready == Some(false) {
-            return Err("Hubcap reports that the Steam service is not ready for generation.".to_string());
+            return Err(
+                "Hubcap reports that the Steam service is not ready for generation.".to_string(),
+            );
         }
         if remaining == Some(0) {
-            return Err(format!("Hubcap {bucket_name} generation quota is exhausted."));
+            return Err(format!(
+                "Hubcap {bucket_name} generation quota is exhausted."
+            ));
         }
         Ok(())
     }
 
-    pub(crate) async fn get_generated_bytes(&self, url: String, description: &str) -> Result<Vec<u8>, String> {
+    pub(crate) async fn get_generated_bytes(
+        &self,
+        url: String,
+        description: &str,
+    ) -> Result<Vec<u8>, String> {
         let started = Instant::now();
         for attempt in 0..GENERATION_RETRY_ATTEMPTS {
             crate::desk_log_debug!(
@@ -162,7 +170,10 @@ impl HubcapClient {
                     content_type,
                     detail.len()
                 );
-                return Err(format!("Hubcap returned a non-binary {description}: {}", detail.chars().take(240).collect::<String>()));
+                return Err(format!(
+                    "Hubcap returned a non-binary {description}: {}",
+                    detail.chars().take(240).collect::<String>()
+                ));
             }
             crate::desk_log_info!(
                 "hubcap",
@@ -189,20 +200,35 @@ impl HubcapClient {
     }
 
     /// Generate one exact `<depot_id>_<manifest_id>.manifest` payload.
-    pub async fn generate_manifest(&self, depot_id: u32, manifest_id: u64) -> Result<Vec<u8>, String> {
+    pub async fn generate_manifest(
+        &self,
+        depot_id: u32,
+        manifest_id: u64,
+    ) -> Result<Vec<u8>, String> {
         if depot_id == 0 || manifest_id == 0 {
             return Err("Hubcap generation requires a valid depot ID and manifest ID.".to_string());
         }
-        let key = GenerationKey::Single { depot_id, manifest_id };
-        deduplicated_generation(key, QuotaPolicy::Generate(GenerationKind::Game), || async move {
-            let usage = self.get_generation_usage().await?;
-            self.ensure_generation_available("single-manifest", usage.single.remaining, &usage)?;
-            let url = format!(
-                "{}/generate/manifest?depot_id={depot_id}&manifest_id={manifest_id}",
-                BASE_URL
-            );
-            self.get_generated_bytes(url, "single manifest").await
-        })
+        let key = GenerationKey::Single {
+            depot_id,
+            manifest_id,
+        };
+        deduplicated_generation(
+            key,
+            QuotaPolicy::Generate(GenerationKind::Game),
+            || async move {
+                let usage = self.get_generation_usage().await?;
+                self.ensure_generation_available(
+                    "single-manifest",
+                    usage.single.remaining,
+                    &usage,
+                )?;
+                let url = format!(
+                    "{}/generate/manifest?depot_id={depot_id}&manifest_id={manifest_id}",
+                    BASE_URL
+                );
+                self.get_generated_bytes(url, "single manifest").await
+            },
+        )
         .await
     }
 
@@ -212,12 +238,16 @@ impl HubcapClient {
             return Err("Hubcap Workshop generation requires a valid Workshop ID.".to_string());
         }
         let key = GenerationKey::Workshop { workshop_id };
-        deduplicated_generation(key, QuotaPolicy::Generate(GenerationKind::Workshop), || async move {
-            let usage = self.get_generation_usage().await?;
-            self.ensure_generation_available("Workshop", usage.workshop.remaining, &usage)?;
-            let url = format!("{}/generate/workshopmanifest/{workshop_id}", BASE_URL);
-            self.get_generated_bytes(url, "Workshop manifest").await
-        })
+        deduplicated_generation(
+            key,
+            QuotaPolicy::Generate(GenerationKind::Workshop),
+            || async move {
+                let usage = self.get_generation_usage().await?;
+                self.ensure_generation_available("Workshop", usage.workshop.remaining, &usage)?;
+                let url = format!("{}/generate/workshopmanifest/{workshop_id}", BASE_URL);
+                self.get_generated_bytes(url, "Workshop manifest").await
+            },
+        )
         .await
     }
 }

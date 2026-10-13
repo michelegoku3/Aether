@@ -6,13 +6,15 @@
 namespace ac::remoteinject {
 
 bool LoadDll(HANDLE process, LPCWSTR dllPath) {
-    auto loadLib = reinterpret_cast<LPTHREAD_START_ROUTINE>(
-        GetProcAddress(GetModuleHandleW(L"kernel32.dll"), "LoadLibraryW"));
-    if (!loadLib) return false;
+    auto loadLib =
+        reinterpret_cast<LPTHREAD_START_ROUTINE>(GetProcAddress(GetModuleHandleW(L"kernel32.dll"), "LoadLibraryW"));
+    if (!loadLib)
+        return false;
 
     const SIZE_T bytes = (wcslen(dllPath) + 1) * sizeof(wchar_t);
     void* mem = VirtualAllocEx(process, nullptr, bytes, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
-    if (!mem) return false;
+    if (!mem)
+        return false;
 
     bool ok = false;
     if (WriteProcessMemory(process, mem, dllPath, bytes, nullptr)) {
@@ -25,4 +27,4 @@ bool LoadDll(HANDLE process, LPCWSTR dllPath) {
     return ok;
 }
 
-}  // namespace ac::remoteinject
+} // namespace ac::remoteinject

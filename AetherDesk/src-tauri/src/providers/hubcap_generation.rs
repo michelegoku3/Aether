@@ -394,11 +394,10 @@ pub(crate) fn release_quota_at(quota_path: &Path, kind: GenerationKind) {
 /// AetherDLL.
 async fn reserve(kind: GenerationKind) -> Result<QuotaReservation, String> {
     let quota_path = quota_path();
-    let reserved = tauri::async_runtime::spawn_blocking(move || {
-        reserve_quota_at(&quota_path, kind)
-    })
-    .await
-    .map_err(|error| format!("Hubcap quota reservation task failed: {error}"))?;
+    let reserved =
+        tauri::async_runtime::spawn_blocking(move || reserve_quota_at(&quota_path, kind))
+            .await
+            .map_err(|error| format!("Hubcap quota reservation task failed: {error}"))?;
     reserved.map(|_| QuotaReservation { kind })
 }
 
@@ -570,7 +569,10 @@ mod tests {
     #[test]
     fn key_shapes_are_distinct() {
         assert_ne!(
-            GenerationKey::Single { depot_id: 1, manifest_id: 2 },
+            GenerationKey::Single {
+                depot_id: 1,
+                manifest_id: 2
+            },
             GenerationKey::Workshop { workshop_id: 2 }
         );
     }

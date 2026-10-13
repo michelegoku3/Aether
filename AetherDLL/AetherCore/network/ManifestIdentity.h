@@ -22,7 +22,6 @@ bool ReadVarint(std::string_view bytes, std::size_t& offset, std::uint64_t& out)
 
 // Returns false on any structural problem (truncation, wrong magic, malformed
 // protobuf framing) — the blob must then be treated as unusable.
-bool ManifestIdentityMatches(std::string_view bytes, std::uint32_t expectedDepot,
-                             std::uint64_t expectedGid);
+bool ManifestIdentityMatches(std::string_view bytes, std::uint32_t expectedDepot, std::uint64_t expectedGid);
 
-}  // namespace ac::manifestidentity
+} // namespace ac::manifestidentity

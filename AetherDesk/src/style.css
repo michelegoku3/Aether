@@ -330,7 +330,10 @@ body {
 /* 10 rows x 2 columns Grid Layout */
 .store-grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr)); /* Crucial: minmax(0, 1fr) lets columns shrink below text width, preventing overflow! */
+  grid-template-columns: repeat(
+    2,
+    minmax(0, 1fr)
+  ); /* Crucial: minmax(0, 1fr) lets columns shrink below text width, preventing overflow! */
   grid-auto-rows: 130px; /* Increased card height */
   gap: 16px;
   margin-top: 4px; /* Reduced grid top margin */
@@ -340,14 +343,14 @@ body {
 
 /* Game Card Component (Horizontal Layout) */
 .store-game-card {
-  /* NON usare `content-visibility: auto` su questa card: per specifica
-     (CSS Containment L2) attiva SEMPRE la containment `layout`/`style`/`paint`
-     sull'elemento, anche quando è dentro il viewport — solo lo skip del
-     rendering è condizionato alla visibilità. La paint containment clippa
-     l'`overflow: visible` e i badge AVAILABLE / INSTALLED / FIX PINS
-     (posizionati a -8px oltre il bordo) risultano tagliati.
-     Le cover sono già lazy (`GameCover`) e la griglia impone l'altezza, quindi
-     il costo di paint delle card fuori viewport è già trascurabile. */
+  /* Do NOT use `content-visibility: auto` on this card: per the spec
+     (CSS Containment L2) it ALWAYS enables `layout`/`style`/`paint`
+     containment on the element, even inside the viewport — only skipping
+     rendering is conditioned on visibility. Paint containment clips
+     `overflow: visible` and the AVAILABLE / INSTALLED / FIX PINS badges
+     (positioned -8px past the border) end up cut off.
+     Covers are already lazy (`GameCover`) and the grid sets the height, so
+     the paint cost of off-viewport cards is already negligible. */
   background-color: #131316;
   border: 1px solid var(--border-color);
   border-radius: var(--radius-card);
@@ -356,7 +359,9 @@ body {
   position: relative; /* Added relative positioning context for the absolute badge */
   min-width: 0; /* Crucial: allows the card to shrink below text width, preventing overflow! */
   width: 100%;
-  transition: transform 0.2s ease, border-color 0.2s ease;
+  transition:
+    transform 0.2s ease,
+    border-color 0.2s ease;
 }
 
 /* Marker borders (NSFW pink, delisted white): the cover sits flush against
@@ -410,7 +415,9 @@ body {
   z-index: 10;
   cursor: pointer;
   animation: badgePopIn 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275);
-  transition: background-color 0.15s, transform 0.15s;
+  transition:
+    background-color 0.15s,
+    transform 0.15s;
 }
 
 /* Installed game with pins to fix: one badge, wearing Installed's green as its
@@ -419,7 +426,9 @@ body {
 .badge-fix-pins--installed {
   border: 2px solid var(--color-installed-green);
   padding: 3px 9px;
-  box-shadow: 0 4px 10px rgba(255, 59, 59, 0.4), 0 0 0 1px rgba(16, 185, 129, 0.35);
+  box-shadow:
+    0 4px 10px rgba(255, 59, 59, 0.4),
+    0 0 0 1px rgba(16, 185, 129, 0.35);
 }
 
 .badge-fix-pins:hover {
@@ -514,7 +523,9 @@ body {
   font-size: 13px;
   outline: none;
   box-sizing: border-box;
-  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+  transition:
+    border-color 0.2s ease,
+    box-shadow 0.2s ease;
 }
 
 .library-search-input:focus {
@@ -917,7 +928,9 @@ body {
   padding: 0;
   cursor: pointer;
   z-index: 5;
-  transition: background-color 0.2s ease, color 0.2s ease;
+  transition:
+    background-color 0.2s ease,
+    color 0.2s ease;
 }
 
 .game-action-hero-close svg {
@@ -1063,7 +1076,10 @@ body {
   text-align: center;
   padding: 10px 14px;
   cursor: pointer;
-  transition: border-color 0.2s ease, background-color 0.2s ease, color 0.2s ease;
+  transition:
+    border-color 0.2s ease,
+    background-color 0.2s ease,
+    color 0.2s ease;
 }
 
 .game-action-btn:hover:not(:disabled) {
@@ -1418,7 +1434,6 @@ body {
   line-height: 1.45;
 }
 
-
 /* ==========================================
    SETTINGS VIEW STYLING
    ========================================== */
@@ -1475,8 +1490,14 @@ body {
 }
 
 @keyframes fadeIn {
-  from { opacity: 0; transform: translateY(-4px); }
-  to { opacity: 1; transform: translateY(0); }
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .settings-alert.info {
@@ -1593,7 +1614,9 @@ body {
   border-radius: 6px;
   color: var(--color-muted);
   cursor: pointer;
-  transition: color 0.2s ease, background-color 0.2s ease;
+  transition:
+    color 0.2s ease,
+    background-color 0.2s ease;
 }
 
 .settings-input-eye:hover {
@@ -1662,7 +1685,6 @@ body {
 .save-settings-btn:hover {
   opacity: 0.9;
 }
-
 
 /* ==========================================
    AETHER VIEW STYLING (Centered Box Panels)
@@ -1791,9 +1813,18 @@ body {
 }
 
 @keyframes sidebarPulseGlow {
-  0% { transform: scale(0.85); opacity: 0.8; }
-  50% { transform: scale(1.25); opacity: 1; }
-  100% { transform: scale(0.85); opacity: 0.8; }
+  0% {
+    transform: scale(0.85);
+    opacity: 0.8;
+  }
+  50% {
+    transform: scale(1.25);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(0.85);
+    opacity: 0.8;
+  }
 }
 
 /* Glowing, superimposed Cyan Notification Dot in top-right corner of Update button */
@@ -1812,9 +1843,18 @@ body {
 }
 
 @keyframes btnPulseGlow {
-  0% { transform: scale(0.9); box-shadow: 0 0 4px var(--color-cyan); }
-  50% { transform: scale(1.3); box-shadow: 0 0 12px var(--color-cyan); }
-  100% { transform: scale(0.9); box-shadow: 0 0 4px var(--color-cyan); }
+  0% {
+    transform: scale(0.9);
+    box-shadow: 0 0 4px var(--color-cyan);
+  }
+  50% {
+    transform: scale(1.3);
+    box-shadow: 0 0 12px var(--color-cyan);
+  }
+  100% {
+    transform: scale(0.9);
+    box-shadow: 0 0 4px var(--color-cyan);
+  }
 }
 
 /* Testing-build update dots are red (cyan is reserved for stable updates). */
@@ -1832,9 +1872,18 @@ body {
 }
 
 @keyframes testPulseGlow {
-  0% { transform: scale(0.9); box-shadow: 0 0 4px var(--color-denuvo); }
-  50% { transform: scale(1.3); box-shadow: 0 0 12px var(--color-denuvo); }
-  100% { transform: scale(0.9); box-shadow: 0 0 4px var(--color-denuvo); }
+  0% {
+    transform: scale(0.9);
+    box-shadow: 0 0 4px var(--color-denuvo);
+  }
+  50% {
+    transform: scale(1.3);
+    box-shadow: 0 0 12px var(--color-denuvo);
+  }
+  100% {
+    transform: scale(0.9);
+    box-shadow: 0 0 4px var(--color-denuvo);
+  }
 }
 
 /* ==========================================
@@ -1883,7 +1932,9 @@ body {
   color: #ffffff;
   font-size: 14px;
   outline: none;
-  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+  transition:
+    border-color 0.2s ease,
+    box-shadow 0.2s ease;
 }
 
 .home-search-input:focus {
@@ -1924,7 +1975,9 @@ body {
   cursor: pointer;
   font-family: inherit;
   text-align: left;
-  transition: background-color 0.2s ease, color 0.2s ease;
+  transition:
+    background-color 0.2s ease,
+    color 0.2s ease;
 }
 
 .home-search-result:last-child {
@@ -2020,7 +2073,9 @@ body {
   padding: 24px;
   cursor: pointer;
   text-align: center;
-  transition: border-color 0.2s ease, background-color 0.2s ease;
+  transition:
+    border-color 0.2s ease,
+    background-color 0.2s ease;
 }
 
 .crack-drop-zone:hover,
@@ -2174,7 +2229,9 @@ body {
   font-size: 16px;
   line-height: 1;
   cursor: pointer;
-  transition: color 0.2s ease, background-color 0.2s ease;
+  transition:
+    color 0.2s ease,
+    background-color 0.2s ease;
 }
 
 .home-search-wrapper .home-search-clear:hover {
@@ -2335,7 +2392,11 @@ body {
   font-family: inherit;
   cursor: pointer;
   padding: 10px 14px;
-  transition: border-color 0.2s ease, background-color 0.2s ease, color 0.2s ease, opacity 0.2s ease;
+  transition:
+    border-color 0.2s ease,
+    background-color 0.2s ease,
+    color 0.2s ease,
+    opacity 0.2s ease;
 }
 
 .uninstall-btn:hover:not(:disabled) {
@@ -2532,7 +2593,9 @@ body {
   overflow: hidden;
   border: 1px solid var(--border-color);
   background-color: #111116;
-  transition: border-color 0.2s ease, transform 0.2s ease;
+  transition:
+    border-color 0.2s ease,
+    transform 0.2s ease;
 }
 
 .info-screenshot-link:hover {
@@ -2617,7 +2680,6 @@ body {
 }
 
 /* Settings dropdown used for Store currency. */
-
 
 /* Final Info modal layout: fixed-to-viewport container, body scrolls. */
 .info-modal-container {
@@ -2808,7 +2870,11 @@ body {
   opacity: 0;
   pointer-events: none;
   filter: drop-shadow(0 2px 10px rgba(0, 0, 0, 0.9));
-  transition: opacity 0.25s ease, color 0.2s ease, transform 0.2s ease, filter 0.2s ease;
+  transition:
+    opacity 0.25s ease,
+    color 0.2s ease,
+    transform 0.2s ease,
+    filter 0.2s ease;
 }
 
 .info-lightbox-nav.visible,
@@ -2924,8 +2990,6 @@ body {
   gap: 16px;
   padding: 2px 0;
 }
-
-
 
 /* Specific version modal: height is derived from the depot row count.
    The component sets `--version-table-max-height` inline from `rows.length`,
@@ -3082,7 +3146,9 @@ body {
   color: #ffffff;
   font-size: 12px;
   cursor: pointer;
-  transition: border-color 0.2s ease, background-color 0.2s ease;
+  transition:
+    border-color 0.2s ease,
+    background-color 0.2s ease;
 }
 
 .appearance-pick-btn:hover:not(:disabled) {
@@ -3094,8 +3160,6 @@ body {
   opacity: 0.45;
   cursor: not-allowed;
 }
-
-
 
 /* Store front filter dropdown: identical footprint to the currency selector
    (both are 150px wide so "Top sellers" and "Dollar ($)" are fully readable). */
@@ -3251,9 +3315,18 @@ body {
 }
 
 @keyframes logPulse {
-  0% { transform: scale(0.85); opacity: 0.7; }
-  50% { transform: scale(1.25); opacity: 1; }
-  100% { transform: scale(0.85); opacity: 0.7; }
+  0% {
+    transform: scale(0.85);
+    opacity: 0.7;
+  }
+  50% {
+    transform: scale(1.25);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(0.85);
+    opacity: 0.7;
+  }
 }
 
 .log-header-controls {
@@ -3329,7 +3402,11 @@ body {
   cursor: pointer;
   opacity: 0;
   pointer-events: none;
-  transition: color 0.2s ease, border-color 0.2s ease, background-color 0.2s ease, opacity 0.15s ease;
+  transition:
+    color 0.2s ease,
+    border-color 0.2s ease,
+    background-color 0.2s ease,
+    opacity 0.15s ease;
 }
 
 .log-view-terminal-wrap:hover .log-copy-btn {
@@ -3400,11 +3477,16 @@ body {
 /* Shared button hover (Online panel footer and any .modal-btn usage):
    lights up and outlines with the primary color, like the other buttons. */
 .modal-btn {
-  transition: filter 0.15s ease, transform 0.05s ease, box-shadow 0.15s ease;
+  transition:
+    filter 0.15s ease,
+    transform 0.05s ease,
+    box-shadow 0.15s ease;
 }
 .modal-btn:hover:not(:disabled) {
   filter: brightness(1.15);
-  box-shadow: 0 0 0 1px var(--color-cyan), 0 0 12px rgba(0, 180, 216, 0.35);
+  box-shadow:
+    0 0 0 1px var(--color-cyan),
+    0 0 12px rgba(0, 180, 216, 0.35);
 }
 .modal-btn:active:not(:disabled) {
   transform: translateY(1px);
@@ -3440,12 +3522,15 @@ body {
   font-weight: 700;
   cursor: pointer;
   text-align: left;
-  transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+  transition:
+    background-color 0.15s ease,
+    border-color 0.15s ease,
+    color 0.15s ease;
 }
 
-/* Hover: solo su righe NON ancora selezionate — una riga selezionata non è
-   cliccabile (no-op), quindi niente feedback hover e cursore default.
-   La riga UCO2 selezionata fa eccezione: il click apre il suo pannello. */
+/* Hover: only on NOT-yet-selected rows — a selected row is not
+   clickable (no-op), so no hover feedback and default cursor.
+   The selected UCO2 row is the exception: clicking reopens its panel. */
 .online-choice-option:hover:not(:disabled):not(.online-choice-option--selected) {
   background-color: var(--bg-item-hover);
   border-color: #3a3a44;
@@ -3456,11 +3541,11 @@ body {
   cursor: not-allowed;
 }
 
-/* Selected: bordo 1px UNIFORME su tutti i lati (niente barra interna che
-   ispessisce il lato sinistro) + tinta leggera dell'accento. La tinta è
-   derivata dal token via color-mix, come .settings-alert: cambia il token,
-   cambia anche la tinta. `--selected` è il marker comune (esclude l'hover);
-   `--selected-uco2` è solo il refinement dell'accento (stack BEM). */
+/* Selected: UNIFORM 1px border on all sides (no inner bar thickening
+   the left side) + light accent tint. The tint derives from the token via
+   color-mix, like .settings-alert: change the token, the tint follows.
+   `--selected` is the common marker (excludes hover);
+   `--selected-uco2` is only the accent refinement (BEM stack). */
 .online-choice-option--selected {
   border-color: var(--color-cyan);
   background-color: color-mix(in srgb, var(--color-cyan) 8%, transparent);
@@ -3472,8 +3557,8 @@ body {
   border-color: var(--color-uco2);
   background-color: color-mix(in srgb, var(--color-uco2) 8%, transparent);
   color: #ffffff;
-  /* UCO2 attivo resta interattivo (il click riapre il pannello): cursore
-     pointer e hover che intensifica la PROPRIA tinta, mai il grigio neutro. */
+  /* Active UCO2 stays interactive (clicking reopens the panel): pointer
+     cursor and hover that intensifies its OWN tint, never neutral gray. */
   cursor: pointer;
 }
 
@@ -3618,7 +3703,9 @@ body {
   font-size: 16px;
   line-height: 1;
   cursor: pointer;
-  transition: color 0.2s ease, background-color 0.2s ease;
+  transition:
+    color 0.2s ease,
+    background-color 0.2s ease;
 }
 
 .version-build-clear:hover {
@@ -3738,7 +3825,9 @@ body {
   font-size: 18px;
   cursor: pointer;
   padding: 2px 4px;
-  transition: color 0.15s ease, transform 0.15s ease;
+  transition:
+    color 0.15s ease,
+    transform 0.15s ease;
 }
 
 .version-build-star:hover {

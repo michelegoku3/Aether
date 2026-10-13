@@ -7,4 +7,4 @@ namespace ac::hooks::CmdUtils {
 
 void Register();
 
-}  // namespace ac::hooks::CmdUtils
+} // namespace ac::hooks::CmdUtils

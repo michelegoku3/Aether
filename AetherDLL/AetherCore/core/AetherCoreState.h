@@ -11,11 +11,11 @@
 #include <unordered_set>
 #include <vector>
 
-#include "network/EticketFetcher.h"
 #include "core/HookManager.h"
 #include "core/Settings.h"
 #include "core/SteamTypes.h"
 #include "hooks/ipc/PipeWatch.h"
+#include "network/EticketFetcher.h"
 #include "utils/IpcSpec.h"
 #include "utils/TtlCache.h"
 
@@ -75,12 +75,12 @@ struct AetherCoreState {
     // watcher). LumaCore left this unsynchronised — a latent data race we fix.
     struct LuaStore {
         mutable std::shared_mutex mutex;
-        std::unordered_map<steam::AppId, std::string> depotKeys;        // depot -> hex key
-        std::unordered_map<steam::AppId, std::uint64_t> accessTokens;   // app -> token
-        std::unordered_map<std::uint64_t, ManifestOverride> manifestOverrides;  // depot -> override
+        std::unordered_map<steam::AppId, std::string> depotKeys;               // depot -> hex key
+        std::unordered_map<steam::AppId, std::uint64_t> accessTokens;          // app -> token
+        std::unordered_map<std::uint64_t, ManifestOverride> manifestOverrides; // depot -> override
         std::unordered_set<steam::AppId> ownedAppIds;
         std::unordered_set<steam::AppId> familySharedAppIds;
-        std::unordered_set<steam::AppId> libraryAppIds;  // numeric .lua filename roots shown in Library
+        std::unordered_set<steam::AppId> libraryAppIds; // numeric .lua filename roots shown in Library
         // Auth tickets are persisted to the registry (see Ticket.{h,cpp}), not held
         // in process memory, so there are no ticket maps here.
 
@@ -111,9 +111,7 @@ struct AetherCoreState {
     // ---- E-ticket runtime --------------------------------------------------
     struct EticketFetchState {
         mutable std::mutex mutex;
-        std::unordered_map<eticketfetch::MintKey,
-                           eticketfetch::TicketPair,
-                           eticketfetch::MintKeyHash> cache;
+        std::unordered_map<eticketfetch::MintKey, eticketfetch::TicketPair, eticketfetch::MintKeyHash> cache;
         std::atomic<std::uint64_t> mintSuccessCount{0};
         std::atomic<std::uint64_t> mintFailureCount{0};
     };
@@ -170,7 +168,7 @@ struct AetherCoreState {
         std::mutex mutex;
         // "Struct.field" -> offset, exactly as published.
         std::unordered_map<std::string, std::uint32_t> offsets;
-        std::string source;  // sha of the table the offsets came from
+        std::string source; // sha of the table the offsets came from
     };
     AbiTableState abiTable;
 
@@ -185,7 +183,7 @@ struct AetherCoreState {
     // block dispatch. MethodSpec is the single definition from utils/IpcSpec.h.
     struct IpcSpecState {
         std::atomic<bool> loaded{false};
-        std::unordered_map<std::string, std::uint8_t> interfaceIds; // "IFace" -> interface id
+        std::unordered_map<std::string, std::uint8_t> interfaceIds;   // "IFace" -> interface id
         std::unordered_map<std::string, ipcspec::MethodSpec> methods; // "IFace::Method" -> spec
     };
     IpcSpecState ipcSpec;
@@ -200,7 +198,7 @@ struct AetherCoreState {
         std::unordered_set<steam::AppId> blockedLogged;
         std::unordered_set<steam::AppId> familyLogged;
         std::unordered_set<std::uint64_t> syncBlockedLogged;
-        std::uint64_t totalBlocks = 0;  // guarded by logMutex
+        std::uint64_t totalBlocks = 0; // guarded by logMutex
     };
     CloudGateState cloudGate;
 
@@ -224,17 +222,17 @@ struct AetherCoreState {
     // ================================================================
 
     // ---- Resolved runtime paths -------------------------------------------
-    std::string steamInstallPath;   // Folder containing steam.exe
-    std::string deskDataDir;       // Startup bridge snapshot shared by config and backups
-    std::string aetherCoreDir;      // <steam>\\aethercore
-    std::string steamclientPath;    // <steam>\\steamclient64.dll
-    std::string steamuiPath;        // <steam>\\steamui.dll
-    std::string diversionPath;      // Copy: bin\\acoverlay.dll; live: steamclient64.dll
-    std::string logFilePath;        // <steam>\\aethercore\\main.log
-    std::string configPath;         // <steam>\\aethercore\\aethercore.toml
-    std::string patternDir;         // <steam>\\aethercore\\pattern
-    std::string luaDir;             // <steam>\\config\\stplug-in
-    std::string payloadDllPath;     // <steam>\\AetherPayload.dll
+    std::string steamInstallPath; // Folder containing steam.exe
+    std::string deskDataDir;      // Startup bridge snapshot shared by config and backups
+    std::string aetherCoreDir;    // <steam>\\aethercore
+    std::string steamclientPath;  // <steam>\\steamclient64.dll
+    std::string steamuiPath;      // <steam>\\steamui.dll
+    std::string diversionPath;    // Copy: bin\\acoverlay.dll; live: steamclient64.dll
+    std::string logFilePath;      // <steam>\\aethercore\\main.log
+    std::string configPath;       // <steam>\\aethercore\\aethercore.toml
+    std::string patternDir;       // <steam>\\aethercore\\pattern
+    std::string luaDir;           // <steam>\\config\\stplug-in
+    std::string payloadDllPath;   // <steam>\\AetherPayload.dll
 
     // ---- Pattern diagnostics ---------------------------------------------
     // Guard mutable status strings/flags during startup and late retry.
@@ -243,14 +241,14 @@ struct AetherCoreState {
     std::string steamuiSha;
     bool steamclientTomlFound = false;
     bool steamuiTomlFound = false;
-    std::string steamclientPatternSource;  // "<src>:<mirror>" (fresh fetch) |
-                                           // "<src>:<mirror> (cache)" (provenance
-                                           // sidecar) | cache | missing | invalid
+    std::string steamclientPatternSource; // "<src>:<mirror>" (fresh fetch) |
+                                          // "<src>:<mirror> (cache)" (provenance
+                                          // sidecar) | cache | missing | invalid
     std::string steamuiPatternSource;
 
     // ---- Loaded modules ---------------------------------------------------
     HMODULE selfModule = nullptr;
-    HMODULE diversionModule = nullptr;  // Copy OR live steamclient hook target
+    HMODULE diversionModule = nullptr; // Copy OR live steamclient hook target
     HMODULE steamuiModule = nullptr;
     std::atomic<bool> diversionUsesLive{false};
     std::atomic<bool> steamUiRedirectInstalled{false};
@@ -262,10 +260,10 @@ struct AetherCoreState {
     std::atomic<bool> hooksInstalled{false};
 
     // ---- Diversion diagnostics --------------------------------------------
-    std::string diversionOutcome;  // copy-loaded | auto-live | live-loaded | *-failed
+    std::string diversionOutcome; // copy-loaded | auto-live | live-loaded | *-failed
 
     // ---- Steam diagnostics ------------------------------------------------
-    std::string buildId;  // steam.exe!GetBootstrapperVersion (diagnostic only)
+    std::string buildId; // steam.exe!GetBootstrapperVersion (diagnostic only)
 
     // ---- Captured Steam object pointers -----------------------------------
     // std::atomic<void*> ensures writes made by one thread (e.g. hook callbacks
@@ -275,7 +273,7 @@ struct AetherCoreState {
     std::atomic<void*> pCPackageInfo{nullptr};
     std::atomic<void*> steamEngine{nullptr};
     std::atomic<void*> pConfigStoreUserLocal{nullptr};
-    std::atomic<void*> pPackage0{nullptr};  // Cached package-0 PackageInfo*
+    std::atomic<void*> pPackage0{nullptr}; // Cached package-0 PackageInfo*
     std::atomic<bool> package0Seeded{false};
 
     // ---- AetherOnline --------------------------------------------------------
@@ -296,7 +294,7 @@ struct AetherCoreState {
     // docs/03-presence-identity-plan.md and commit 9aa4a76). Guarded by mutex.
     struct PresenceRuntime {
         mutable std::mutex mutex;
-        steam::AppId playingAppId = 0;      // I_presence driver (0 = none)
+        steam::AppId playingAppId = 0; // I_presence driver (0 = none)
         std::uint64_t selfSteamId = 0;
 
         std::vector<std::uint8_t> selfHdr;
@@ -306,8 +304,7 @@ struct AetherCoreState {
         std::vector<std::uint8_t> stagedPacket;
         bool injectPending = false;
 
-        std::unordered_map<steam::AppId,
-                           std::vector<std::pair<std::string, std::string>>> rpKvs;
+        std::unordered_map<steam::AppId, std::vector<std::pair<std::string, std::string>>> rpKvs;
 
         std::uint64_t injectDeliverCount = 0;
         std::uint64_t injectBuildFailCount = 0;
@@ -365,4 +362,4 @@ struct AetherCoreState {
 // The single shared instance.
 extern AetherCoreState g_state;
 
-}  // namespace ac
+} // namespace ac

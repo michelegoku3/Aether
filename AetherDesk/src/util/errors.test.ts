@@ -1,11 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import {
-  getErrorCode,
-  isSettingsConflict,
-  isUserCancellation,
-  needsHubcapKey,
-  toErrorMessage,
-} from './errors';
+import { getErrorCode, isSettingsConflict, isUserCancellation, needsHubcapKey, toErrorMessage } from './errors';
 
 describe('toErrorMessage', () => {
   it('returns Error messages verbatim', () => {
@@ -23,7 +17,11 @@ describe('toErrorMessage', () => {
   });
 
   it('never throws, even on hostile values', () => {
-    const hostile = { toString() { throw new Error('nope'); } };
+    const hostile = {
+      toString() {
+        throw new Error('nope');
+      },
+    };
     expect(toErrorMessage(hostile)).toBe('Unknown error');
   });
 });
@@ -43,12 +41,8 @@ describe('isUserCancellation', () => {
 describe('getErrorCode', () => {
   it('parses every control-flow code with its body intact', () => {
     expect(getErrorCode('SETTINGS_CONFLICT: k changed; retry')).toBe('SETTINGS_CONFLICT');
-    expect(getErrorCode(new Error('GAME_STATE_CONFLICT: f changed; retry'))).toBe(
-      'GAME_STATE_CONFLICT',
-    );
-    expect(getErrorCode('HUBCAP_KEY_REQUIRED_FOR_UPDATES: need key')).toBe(
-      'HUBCAP_KEY_REQUIRED_FOR_UPDATES',
-    );
+    expect(getErrorCode(new Error('GAME_STATE_CONFLICT: f changed; retry'))).toBe('GAME_STATE_CONFLICT');
+    expect(getErrorCode('HUBCAP_KEY_REQUIRED_FOR_UPDATES: need key')).toBe('HUBCAP_KEY_REQUIRED_FOR_UPDATES');
   });
 
   it('never misfires on ordinary text', () => {

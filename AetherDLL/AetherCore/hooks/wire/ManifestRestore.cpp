@@ -19,8 +19,8 @@
 #include "core/Logger.h"
 #include "hooks/license/LicenseManager.h"
 #include "hooks/wire/BackupIo.h"
-#include "utils/Paths.h"
 #include "scripting/ScriptEngine.h"
+#include "utils/Paths.h"
 
 namespace ac::hooks::ManifestRestore {
 namespace {
@@ -33,29 +33,26 @@ constexpr const char* kModule = "ManifestRestore";
 // RestoreMissingManifestsForApp() instead, which may run multiple times.
 std::atomic<bool> s_started{false};
 
-bool HasManifestExtension(const fs::path& path) {
-    return paths::HasExtension(path, ".manifest");
-}
+bool HasManifestExtension(const fs::path& path) { return paths::HasExtension(path, ".manifest"); }
 
-bool IsLuaPath(const fs::path& path) {
-    return paths::HasExtension(path, ".lua");
-}
+bool IsLuaPath(const fs::path& path) { return paths::HasExtension(path, ".lua"); }
 
 // A destination counts as "missing": absent or empty (0 bytes). An empty
 // manifest is never valid, so it is restored as if missing. Everything else
 // is left untouched: never overwrite an existing file.
 bool IsMissingOrEmpty(const fs::path& dest) {
     std::error_code ec;
-    if (!fs::exists(dest, ec) || ec) return true;
+    if (!fs::exists(dest, ec) || ec)
+        return true;
     const auto size = fs::file_size(dest, ec);
     return ec ? true : (size == 0);
 }
 
 // Outcome of one shared-contract backup copy.
 enum class BackupCopyOutcome {
-    Present,  // destination already non-empty (or completed by the other writer)
-    Copied,   // copied and verified by this call
-    Failed,   // destination is still missing/empty
+    Present, // destination already non-empty (or completed by the other writer)
+    Copied,  // copied and verified by this call
+    Failed,  // destination is still missing/empty
 };
 
 // The AetherDLL twin of AetherDesk's `backup_referenced_manifests`
@@ -69,7 +66,8 @@ enum class BackupCopyOutcome {
 // 5. a failed copy re-checks the destination: if AetherDesk completed the
 //    same copy in the race window, the file counts as present.
 BackupCopyOutcome CopyAtomicallyIfMissing(const fs::path& source, const fs::path& destination) {
-    if (!IsMissingOrEmpty(destination)) return BackupCopyOutcome::Present;  // rule 2
+    if (!IsMissingOrEmpty(destination))
+        return BackupCopyOutcome::Present; // rule 2
 
     const fs::path temporary = destination.string() + ".aether-tmp";
     std::error_code copyEc;
@@ -79,7 +77,7 @@ BackupCopyOutcome CopyAtomicallyIfMissing(const fs::path& source, const fs::path
     if (copyEc || !backup::io::AtomicReplace(temporary.string(), destination.string())) {
         std::error_code cleanupEc;
         fs::remove(temporary, cleanupEc);
-        return IsMissingOrEmpty(destination) ? BackupCopyOutcome::Failed  // rule 5
+        return IsMissingOrEmpty(destination) ? BackupCopyOutcome::Failed // rule 5
                                              : BackupCopyOutcome::Present;
     }
     // Rule 4: the committed copy must match the source size.
@@ -87,8 +85,7 @@ BackupCopyOutcome CopyAtomicallyIfMissing(const fs::path& source, const fs::path
     const auto sourceSize = fs::file_size(source, sizeEc);
     const auto destinationSize = sizeEc ? std::uintmax_t{0} : fs::file_size(destination, sizeEc);
     if (sizeEc || destinationSize != sourceSize) {
-        AC_LOG_WARN(kModule, "Backup copy failed size verification: %s.",
-                    destination.string().c_str());
+        AC_LOG_WARN(kModule, "Backup copy failed size verification: %s.", destination.string().c_str());
         return BackupCopyOutcome::Failed;
     }
     return BackupCopyOutcome::Copied;
@@ -115,15 +112,19 @@ struct RestoreStats {
 RestoreStats RestoreLuaDirectory(const fs::path& luaDir, const fs::path& depotcache) {
     RestoreStats stats;
     std::error_code ec;
-    if (!fs::is_directory(luaDir, ec) || ec) return stats;
+    if (!fs::is_directory(luaDir, ec) || ec)
+        return stats;
 
     fs::directory_iterator it(luaDir, ec);
-    if (ec) return stats;
+    if (ec)
+        return stats;
     for (const auto& entry : it) {
         std::error_code fileEc;
-        if (!entry.is_regular_file(fileEc) || fileEc) continue;
+        if (!entry.is_regular_file(fileEc) || fileEc)
+            continue;
         const fs::path src = entry.path();
-        if (!HasManifestExtension(src)) continue;
+        if (!HasManifestExtension(src))
+            continue;
         ++stats.scanned;
 
         const fs::path dest = depotcache / src.filename();
@@ -149,8 +150,7 @@ RestoreStats RestoreLuaDirectory(const fs::path& luaDir, const fs::path& depotca
                 ++stats.present;
             } else {
                 ++stats.errors;
-                AC_LOG_DEBUG(kModule, "Cannot restore %s (%s).",
-                             dest.string().c_str(), fileEc.message().c_str());
+                AC_LOG_DEBUG(kModule, "Cannot restore %s (%s).", dest.string().c_str(), fileEc.message().c_str());
             }
         } else {
             ++stats.restored;
@@ -160,14 +160,18 @@ RestoreStats RestoreLuaDirectory(const fs::path& luaDir, const fs::path& depotca
 }
 
 bool ParseNumericAppId(const std::string& stem, std::uint32_t& out) {
-    if (stem.empty()) return false;
+    if (stem.empty())
+        return false;
     unsigned long long value = 0;
     for (char c : stem) {
-        if (c < '0' || c > '9') return false;
+        if (c < '0' || c > '9')
+            return false;
         value = value * 10u + static_cast<unsigned long long>(c - '0');
-        if (value > UINT32_MAX) return false;
+        if (value > UINT32_MAX)
+            return false;
     }
-    if (value == 0) return false;
+    if (value == 0)
+        return false;
     out = static_cast<std::uint32_t>(value);
     return true;
 }
@@ -187,9 +191,7 @@ void BackupReferencedManifestsAtStartup() {
 
     const fs::path depotcache = fs::path(g_state.steamInstallPath) / "depotcache";
     const fs::path backupRoot = fs::path(deskData) / "backup";
-    const std::regex pinRegex(
-        R"(setManifestid\s*\(\s*([0-9]+)\s*,\s*["']([0-9]+)["'])",
-        std::regex_constants::icase);
+    const std::regex pinRegex(R"(setManifestid\s*\(\s*([0-9]+)\s*,\s*["']([0-9]+)["'])", std::regex_constants::icase);
 
     std::vector<fs::path> luaRoots{fs::path(g_state.luaDir)};
     for (const std::string& extra : settings->luaExtraPaths) {
@@ -210,44 +212,47 @@ void BackupReferencedManifestsAtStartup() {
     std::size_t missing = 0;
 
     for (const fs::path& luaRoot : luaRoots) {
-        if (!fs::is_directory(luaRoot, ec) || ec) continue;
+        if (!fs::is_directory(luaRoot, ec) || ec)
+            continue;
         fs::directory_iterator luaIt(luaRoot, ec);
-        if (ec) continue;
+        if (ec)
+            continue;
 
         for (const auto& luaEntry : luaIt) {
             std::error_code fileEc;
-            if (!luaEntry.is_regular_file(fileEc) || fileEc || !IsLuaPath(luaEntry.path())) continue;
+            if (!luaEntry.is_regular_file(fileEc) || fileEc || !IsLuaPath(luaEntry.path()))
+                continue;
             std::uint32_t appId = 0;
-            if (!ParseNumericAppId(luaEntry.path().stem().string(), appId)) continue;
+            if (!ParseNumericAppId(luaEntry.path().stem().string(), appId))
+                continue;
             ++luaScanned;
 
             std::ifstream input(luaEntry.path(), std::ios::binary);
-            if (!input.is_open()) continue;
-            const std::string content((std::istreambuf_iterator<char>(input)),
-                                      std::istreambuf_iterator<char>());
+            if (!input.is_open())
+                continue;
+            const std::string content((std::istreambuf_iterator<char>(input)), std::istreambuf_iterator<char>());
             const fs::path appLuaBackup = backupRoot / std::to_string(appId) / "lua";
             fs::create_directories(appLuaBackup, ec);
-            if (ec) continue;
+            if (ec)
+                continue;
 
             // Steam can be started without AetherDesk. Preserve a newly seen
             // Lua through the shared-contract copier; AetherDesk's richer
             // startup sync owns history/version decisions.
             const fs::path luaDestination = appLuaBackup / (std::to_string(appId) + ".lua");
             switch (CopyAtomicallyIfMissing(luaEntry.path(), luaDestination)) {
-                case BackupCopyOutcome::Copied:
-                    ++luaCopied;
-                    break;
-                case BackupCopyOutcome::Present:
-                    break;
-                case BackupCopyOutcome::Failed:
-                    AC_LOG_DEBUG(kModule, "Cannot backup Lua %s.",
-                                 luaDestination.string().c_str());
-                    break;
+            case BackupCopyOutcome::Copied:
+                ++luaCopied;
+                break;
+            case BackupCopyOutcome::Present:
+                break;
+            case BackupCopyOutcome::Failed:
+                AC_LOG_DEBUG(kModule, "Cannot backup Lua %s.", luaDestination.string().c_str());
+                break;
             }
 
             std::set<std::string> filenames;
-            for (std::sregex_iterator match(content.begin(), content.end(), pinRegex), end;
-                 match != end; ++match) {
+            for (std::sregex_iterator match(content.begin(), content.end(), pinRegex), end; match != end; ++match) {
                 const std::string depot = (*match)[1].str();
                 const std::string gid = (*match)[2].str();
                 filenames.insert(depot + "_" + gid + ".manifest");
@@ -261,15 +266,15 @@ void BackupReferencedManifestsAtStartup() {
                     continue;
                 }
                 switch (CopyAtomicallyIfMissing(source, appLuaBackup / filename)) {
-                    case BackupCopyOutcome::Copied:
-                        ++copied;
-                        break;
-                    case BackupCopyOutcome::Present:
-                        ++alreadyPresent;
-                        break;
-                    case BackupCopyOutcome::Failed:
-                        AC_LOG_DEBUG(kModule, "Cannot backup %s.", source.string().c_str());
-                        break;
+                case BackupCopyOutcome::Copied:
+                    ++copied;
+                    break;
+                case BackupCopyOutcome::Present:
+                    ++alreadyPresent;
+                    break;
+                case BackupCopyOutcome::Failed:
+                    AC_LOG_DEBUG(kModule, "Cannot backup %s.", source.string().c_str());
+                    break;
                 }
             }
         }
@@ -299,34 +304,33 @@ void RestoreAllOnce() {
     std::error_code ec;
     fs::create_directories(depotcache, ec);
     if (ec) {
-        AC_LOG_WARN(kModule, "Restore skipped: cannot create %s (%s).",
-                    depotcache.string().c_str(), ec.message().c_str());
+        AC_LOG_WARN(kModule, "Restore skipped: cannot create %s (%s).", depotcache.string().c_str(),
+                    ec.message().c_str());
         return;
     }
     if (!fs::is_directory(backupRoot, ec) || ec) {
-        AC_LOG_INFO(kModule, "No backup root at %s; nothing to restore.",
-                    backupRoot.string().c_str());
+        AC_LOG_INFO(kModule, "No backup root at %s; nothing to restore.", backupRoot.string().c_str());
         return;
     }
 
     RestoreStats total;
     fs::directory_iterator appIt(backupRoot, ec);
     if (ec) {
-        AC_LOG_WARN(kModule, "Cannot list %s (%s).", backupRoot.string().c_str(),
-                    ec.message().c_str());
+        AC_LOG_WARN(kModule, "Cannot list %s (%s).", backupRoot.string().c_str(), ec.message().c_str());
         return;
     }
     for (const auto& appEntry : appIt) {
         std::error_code entryEc;
-        if (!appEntry.is_directory(entryEc) || entryEc) continue;
+        if (!appEntry.is_directory(entryEc) || entryEc)
+            continue;
         total += RestoreLuaDirectory(appEntry.path() / "lua", depotcache);
     }
 
     AC_LOG_INFO(kModule,
                 "Restore complete: scanned=%zu restored=%zu already_present=%zu errors=%zu "
                 "(%s -> %s).",
-                total.scanned, total.restored, total.present, total.errors,
-                backupRoot.string().c_str(), depotcache.string().c_str());
+                total.scanned, total.restored, total.present, total.errors, backupRoot.string().c_str(),
+                depotcache.string().c_str());
 }
 
 void RestoreAppOnce(std::uint32_t appId) {
@@ -337,21 +341,23 @@ void RestoreAppOnce(std::uint32_t appId) {
     }
 
     const std::string deskData = backup::io::CachedDeskDataDir();
-    if (deskData.empty()) return;
+    if (deskData.empty())
+        return;
     const fs::path backupRoot = fs::path(deskData) / "backup";
     const fs::path depotcache = fs::path(g_state.steamInstallPath) / "depotcache";
     std::error_code ec;
     fs::create_directories(depotcache, ec);
-    if (ec) return;
+    if (ec)
+        return;
 
-    const RestoreStats stats = RestoreLuaDirectory(
-        backupRoot / std::to_string(appId) / "lua", depotcache);
+    const RestoreStats stats = RestoreLuaDirectory(backupRoot / std::to_string(appId) / "lua", depotcache);
     AC_LOG_INFO(kModule,
                 "Restore after appmanifest_%u.acf removal: scanned=%zu restored=%zu "
                 "already_present=%zu errors=%zu.",
                 appId, stats.scanned, stats.restored, stats.present, stats.errors);
 
-    if (stats.restored == 0) return;
+    if (stats.restored == 0)
+        return;
 
     // Reinstalling the same Lua and manifest package works because Steam sees a
     // Lua file change: the script is parsed again, package-0 licenses are
@@ -359,8 +365,7 @@ void RestoreAppOnce(std::uint32_t appId) {
     // depot manager. ACF removal previously restored only bytes on disk, leaving
     // the in-memory Lua/license state stale. Re-run that same refresh sequence
     // after the targeted restore, without downloading anything.
-    const fs::path luaPath = fs::path(g_state.luaDir) /
-                             (std::to_string(appId) + ".lua");
+    const fs::path luaPath = fs::path(g_state.luaDir) / (std::to_string(appId) + ".lua");
     std::error_code luaEc;
     if (!fs::is_regular_file(luaPath, luaEc) || luaEc) {
         AC_LOG_WARN(kModule,
@@ -372,15 +377,14 @@ void RestoreAppOnce(std::uint32_t appId) {
 
     ac::script::ParseFile(luaPath.string());
     ac::hooks::LicenseManager::NotifyLicenseChanged();
-    AC_LOG_INFO(kModule,
-                "Refreshed Lua/license state after restoring manifests for AppID %u.",
-                appId);
+    AC_LOG_INFO(kModule, "Refreshed Lua/license state after restoring manifests for AppID %u.", appId);
 }
 
-}  // namespace
+} // namespace
 
 void RestoreMissingManifestsAtStartup() {
-    if (s_started.exchange(true)) return;  // once per process
+    if (s_started.exchange(true))
+        return; // once per process
     try {
         // Backup runs before restore: when AetherDesk was never started, Steam
         // can still capture the manifests still present in depotcache and keep
@@ -407,7 +411,8 @@ void RestoreMissingManifestsAtStartup() {
 }
 
 void RestoreMissingManifestsForApp(std::uint32_t appId) {
-    if (appId == 0) return;
+    if (appId == 0)
+        return;
     try {
         // Called from the DirWatch thread after the ACF event debounce; keeping
         // it synchronous stops Steam from exiting mid-transfer.
@@ -421,25 +426,26 @@ void RestoreMissingManifestsForApp(std::uint32_t appId) {
 
 void BackupManifestAfterGeneration(std::uint32_t depotId, std::uint64_t gid) {
     const auto settings = Settings::Snapshot();
-    if (depotId == 0 || gid == 0) return;
+    if (depotId == 0 || gid == 0)
+        return;
     try {
         const std::string deskData = backup::io::CachedDeskDataDir();
-        if (deskData.empty()) return;
+        if (deskData.empty())
+            return;
 
         std::error_code ec;
         const fs::path source = fs::path(g_state.steamInstallPath) / "depotcache" /
-                                (std::to_string(depotId) + "_" + std::to_string(gid) +
-                                 ".manifest");
-        if (!fs::is_regular_file(source, ec) || ec) return;
+                                (std::to_string(depotId) + "_" + std::to_string(gid) + ".manifest");
+        if (!fs::is_regular_file(source, ec) || ec)
+            return;
 
         const fs::path backupRoot = fs::path(deskData) / "backup";
         const std::string depotText = std::to_string(depotId);
         const std::string gidText = std::to_string(gid);
         // Same regex as the startup backup: also catches commented pins
         // (disabled setManifestid = game in update mode).
-        const std::regex pinRegex(
-            R"(setManifestid\s*\(\s*([0-9]+)\s*,\s*["']([0-9]+)["'])",
-            std::regex_constants::icase);
+        const std::regex pinRegex(R"(setManifestid\s*\(\s*([0-9]+)\s*,\s*["']([0-9]+)["'])",
+                                  std::regex_constants::icase);
 
         std::vector<fs::path> luaRoots{fs::path(g_state.luaDir)};
         for (const std::string& extra : settings->luaExtraPaths) {
@@ -448,52 +454,52 @@ void BackupManifestAfterGeneration(std::uint32_t depotId, std::uint64_t gid) {
 
         std::size_t copied = 0;
         for (const fs::path& luaRoot : luaRoots) {
-            if (!fs::is_directory(luaRoot, ec) || ec) continue;
+            if (!fs::is_directory(luaRoot, ec) || ec)
+                continue;
             fs::directory_iterator luaIt(luaRoot, ec);
-            if (ec) continue;
+            if (ec)
+                continue;
             for (const auto& luaEntry : luaIt) {
                 std::error_code fileEc;
-                if (!luaEntry.is_regular_file(fileEc) || fileEc ||
-                    !IsLuaPath(luaEntry.path())) {
+                if (!luaEntry.is_regular_file(fileEc) || fileEc || !IsLuaPath(luaEntry.path())) {
                     continue;
                 }
                 std::uint32_t appId = 0;
-                if (!ParseNumericAppId(luaEntry.path().stem().string(), appId)) continue;
+                if (!ParseNumericAppId(luaEntry.path().stem().string(), appId))
+                    continue;
 
                 std::ifstream input(luaEntry.path(), std::ios::binary);
-                if (!input.is_open()) continue;
-                const std::string content((std::istreambuf_iterator<char>(input)),
-                                          std::istreambuf_iterator<char>());
+                if (!input.is_open())
+                    continue;
+                const std::string content((std::istreambuf_iterator<char>(input)), std::istreambuf_iterator<char>());
                 bool referenced = false;
-                for (std::sregex_iterator match(content.begin(), content.end(), pinRegex), end;
-                     match != end; ++match) {
+                for (std::sregex_iterator match(content.begin(), content.end(), pinRegex), end; match != end; ++match) {
                     if ((*match)[1].str() == depotText && (*match)[2].str() == gidText) {
                         referenced = true;
                         break;
                     }
                 }
-                if (!referenced) continue;
+                if (!referenced)
+                    continue;
 
                 const fs::path appLuaBackup = backupRoot / std::to_string(appId) / "lua";
                 fs::create_directories(appLuaBackup, ec);
-                if (ec) continue;
-                if (CopyAtomicallyIfMissing(source, appLuaBackup / source.filename()) ==
-                    BackupCopyOutcome::Copied) {
+                if (ec)
+                    continue;
+                if (CopyAtomicallyIfMissing(source, appLuaBackup / source.filename()) == BackupCopyOutcome::Copied) {
                     ++copied;
                 }
             }
         }
         if (copied > 0) {
-            AC_LOG_INFO(kModule,
-                        "Generated manifest depot=%u gid=%llu archived into %zu app backup(s).",
-                        depotId, static_cast<unsigned long long>(gid), copied);
+            AC_LOG_INFO(kModule, "Generated manifest depot=%u gid=%llu archived into %zu app backup(s).", depotId,
+                        static_cast<unsigned long long>(gid), copied);
         }
     } catch (const std::exception& e) {
-        AC_LOG_DEBUG(kModule, "Post-generation manifest backup failed depot=%u: %s.", depotId,
-                     e.what());
+        AC_LOG_DEBUG(kModule, "Post-generation manifest backup failed depot=%u: %s.", depotId, e.what());
     } catch (...) {
         AC_LOG_DEBUG(kModule, "Post-generation manifest backup failed depot=%u.", depotId);
     }
 }
 
-}  // namespace ac::hooks::ManifestRestore
+} // namespace ac::hooks::ManifestRestore

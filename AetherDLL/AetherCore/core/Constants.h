@@ -30,7 +30,7 @@ inline constexpr int kSteamUiDeferredTimeoutMs = 30000;
 // startup, late login, package 0 not ready yet). The retry thread wakes every
 // 10 ms (granular stop) but only re-attempts at most once per interval.
 inline constexpr int kPackageRetryIntervalMs = 1000;
-inline constexpr int kPackageRetryMaxAttempts = 60;  // ~60 s budget
+inline constexpr int kPackageRetryMaxAttempts = 60; // ~60 s budget
 
 // Late pattern availability: cadence and budget for re-probing the pattern
 // sources when a module table was missing at init (patterns not published
@@ -38,7 +38,7 @@ inline constexpr int kPackageRetryMaxAttempts = 60;  // ~60 s budget
 // the previously-missed hooks are registered+installed in-session (no Steam
 // restart) and the package-0 startup retry is re-armed.
 inline constexpr int kPatternLateRetryIntervalMs = 10000;
-inline constexpr int kPatternLateRetryMaxAttempts = 60;  // ~10 min budget
+inline constexpr int kPatternLateRetryMaxAttempts = 60; // ~10 min budget
 
 // Ownership unlock summary: debounce before emitting the per-file
 // "Unlocked all / Not unlocked" summary after a burst of CheckAppOwnership
@@ -90,8 +90,8 @@ inline constexpr char kExtraInfoAppIdSep[] = " | ";
 // one 24-bit nibble each, big-endian. Both are Default-Ignorable format
 // characters: every compliant renderer (CEF friends UI included) draws
 // NOTHING. Aether decodes the 6 nibbles back to the exact appid.
-inline constexpr char kExtraInfoInvisibleMark[] = "\xE2\x80\x8B";  // U+200B
-inline constexpr std::size_t kExtraInfoInvisibleDigits = 6;        // 24-bit / 4
+inline constexpr char kExtraInfoInvisibleMark[] = "\xE2\x80\x8B"; // U+200B
+inline constexpr std::size_t kExtraInfoInvisibleDigits = 6;       // 24-bit / 4
 
 // Preferred appid channel (docs/05-showonline-suffix-plan.md §10): hide the
 // appid in CMsgClientGamesPlayed.GamePlayed.game_data_blob (field 8) — a
@@ -103,7 +103,7 @@ inline constexpr std::size_t kExtraInfoInvisibleDigits = 6;        // 24-bit / 4
 // Format: magic "AETR", version byte (=1), appid little-endian (4 bytes).
 inline constexpr char kAppIdBlobMagic[] = "AETR";
 inline constexpr std::uint8_t kAppIdBlobVersion = 1;
-inline constexpr std::size_t kAppIdBlobLen = 9;  // 4 + 1 + 4
+inline constexpr std::size_t kAppIdBlobLen = 9; // 4 + 1 + 4
 
 // GameID layout: the low 24 bits of a Steam GameID carry the AppId.
 inline constexpr std::uint64_t kGameIdAppIdMask = 0xFFFFFFull;
@@ -117,16 +117,16 @@ inline constexpr int kCallbackAppLicensesChanged = 1020094;
 // The dual-dispatch rewrites m_nGameID (low 24 bits) from real → 480 and
 // re-emits so the game's 480-registered handlers also fire.
 namespace achievement_cb {
-inline constexpr int kUserStatsReceived      = 1101;
-inline constexpr int kUserStatsStored        = 1102;
-inline constexpr int kUserAchievementStored  = 1103;
+inline constexpr int kUserStatsReceived = 1101;
+inline constexpr int kUserStatsStored = 1102;
+inline constexpr int kUserAchievementStored = 1103;
 inline constexpr int kUserAchievementIconFetched = 1109;
 
 inline bool IsAchievementCallback(int cb) {
-    return cb == kUserStatsReceived || cb == kUserStatsStored ||
-           cb == kUserAchievementStored || cb == kUserAchievementIconFetched;
+    return cb == kUserStatsReceived || cb == kUserStatsStored || cb == kUserAchievementStored ||
+           cb == kUserAchievementIconFetched;
 }
-}  // namespace achievement_cb
+} // namespace achievement_cb
 
 // ---------------------------------------------------------------------------
 // IPC bus wire format (game <-> Steam).
@@ -156,7 +156,7 @@ inline constexpr std::uint32_t kIpcInternalPipeMax = 2;
 namespace ipc_cmd {
 inline constexpr std::uint8_t kInterfaceCall = 1;
 inline constexpr std::uint8_t kHandshake = 9;
-}  // namespace ipc_cmd
+} // namespace ipc_cmd
 
 // IPC interface ids (EIPCInterface).
 namespace ipc_iface {
@@ -167,7 +167,7 @@ inline constexpr std::uint8_t kClientUtils = 4;
 // AetherOnline stats-scope (see capture::EnterStatsScope) so the client's stats
 // subsystem resolves the real app id instead of the Spacewar/480 mask.
 inline constexpr std::uint8_t kClientUserStats = 11;
-}  // namespace ipc_iface
+} // namespace ipc_iface
 
 // Pre-computed method-name hashes Steam uses for InterfaceCall dispatch.
 namespace ipc_hash {
@@ -177,10 +177,10 @@ inline constexpr std::uint32_t kClientUser_RequestEncryptedAppTicket = 0x25D6BB1
 inline constexpr std::uint32_t kClientUser_GetEncryptedAppTicket = 0xE0468CB4;
 inline constexpr std::uint32_t kClientUtils_GetAppID = 0x09607EC4;
 inline constexpr std::uint32_t kClientUtils_GetAPICallResult = 0x2D3D3947;
-}  // namespace ipc_hash
+} // namespace ipc_hash
 
 // Callback ids relevant to the (non-achievement) IPC reply path.
-inline constexpr std::uint32_t kCallbackEncryptedAppTicketResponse = 154;  // 100 + 54
+inline constexpr std::uint32_t kCallbackEncryptedAppTicketResponse = 154; // 100 + 54
 
 // EResult::k_EResultOK.
 inline constexpr std::uint32_t kEResultOk = 1;
@@ -199,8 +199,8 @@ inline constexpr std::uint32_t kServiceMethodCallFromClient = 151; // send servi
 inline constexpr std::uint32_t kServiceMethodCallFromClientAlt = 146;
 inline constexpr std::uint32_t kClientGetUserStats = 818;
 inline constexpr std::uint32_t kClientGetUserStatsResponse = 819;
-inline constexpr std::uint32_t kClientGamesPlayed = 742;           // presence stack
-inline constexpr std::uint32_t kClientPersonaState = 766;          // rich presence
+inline constexpr std::uint32_t kClientGamesPlayed = 742;  // presence stack
+inline constexpr std::uint32_t kClientPersonaState = 766; // rich presence
 inline constexpr std::uint32_t kClientGamesPlayedWithDataBlob = 5410;
 inline constexpr std::uint32_t kClientStoreUserStats2 = 5466;
 inline constexpr std::uint32_t kClientRequestEncryptedAppTicketResponse = 5527; // eticket fallback
@@ -208,7 +208,7 @@ inline constexpr std::uint32_t kClientRichPresenceUpload = 7501;
 inline constexpr std::uint32_t kClientPICSProductInfoRequest = 8903;  // access token
 inline constexpr std::uint32_t kClientSharedLibraryLockStatus = 9405; // family sharing
 inline constexpr std::uint32_t kClientSharedLibraryStopPlaying = 9406;
-}  // namespace emsg
+} // namespace emsg
 
 // EClientPersonaStateFlag::k_EClientPersonaStateFlagRichPresence — when set on
 // an inbound PersonaState, the UI rebuilds m_mapRichPresence from the message's
@@ -227,11 +227,9 @@ inline constexpr std::uint32_t FnvHash(const char* s) {
 }
 
 namespace job_hash {
-inline constexpr std::uint32_t kNotifyRunningApps =
-    FnvHash("FamilyGroupsClient.NotifyRunningApps#1");
-inline constexpr std::uint32_t kGetUserStats =
-    FnvHash("Player.GetUserStats#1");
-}  // namespace job_hash
+inline constexpr std::uint32_t kNotifyRunningApps = FnvHash("FamilyGroupsClient.NotifyRunningApps#1");
+inline constexpr std::uint32_t kGetUserStats = FnvHash("Player.GetUserStats#1");
+} // namespace job_hash
 
 // PacketRouter ring-buffer pool sizing. 256 KiB body covers large messages
 // (e.g. big persona-state batches); 1 KiB header is ample for CMsgProtoBufHeader.
@@ -239,5 +237,4 @@ inline constexpr std::uint32_t kWireMaxBodyBytes = 262144;
 inline constexpr std::uint32_t kWireMaxHeaderBytes = 1024;
 inline constexpr int kWirePoolSlots = 8;
 
-
-}  // namespace ac::constants
+} // namespace ac::constants

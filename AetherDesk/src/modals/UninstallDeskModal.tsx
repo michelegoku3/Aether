@@ -14,11 +14,7 @@ export interface UninstallDeskConfirmModalProps {
  * AetherData. YES advances to the Steam-clean step (if residuals exist) or
  * starts removal of verified application files.
  */
-export const UninstallDeskConfirmModal = ({
-  isProcessing,
-  onConfirm,
-  onCancel,
-}: UninstallDeskConfirmModalProps) => {
+export const UninstallDeskConfirmModal = ({ isProcessing, onConfirm, onCancel }: UninstallDeskConfirmModalProps) => {
   const [deleteUserData, setDeleteUserData] = useState(false);
 
   return (
@@ -29,12 +25,9 @@ export const UninstallDeskConfirmModal = ({
       containerClassName="uninstall-modal"
       bodyClassName="uninstall-modal-body"
     >
-      <p className="uninstall-modal-lead">
-        Are you sure you want to uninstall AetherDesk?
-      </p>
+      <p className="uninstall-modal-lead">Are you sure you want to uninstall AetherDesk?</p>
       <p className="uninstall-modal-copy">
-        Only verified AetherDesk application files will be removed. Unrelated
-        or modified files will be kept.
+        Only verified AetherDesk application files will be removed. Unrelated or modified files will be kept.
         {deleteUserData
           ? ' User data (settings, themes, wallpapers, backups) will be deleted too.'
           : ' User data will stay in AetherData at its current location.'}
@@ -101,8 +94,7 @@ export const UninstallSteamCleanModal = ({
   onSkipClean,
   onCancel,
 }: UninstallSteamCleanModalProps) => {
-  const itemLabel =
-    residualCount === 1 ? '1 residual item' : `${residualCount} residual items`;
+  const itemLabel = residualCount === 1 ? '1 residual item' : `${residualCount} residual items`;
 
   return (
     <ModalShell
@@ -112,13 +104,10 @@ export const UninstallSteamCleanModal = ({
       containerClassName="uninstall-modal"
       bodyClassName="uninstall-modal-body"
     >
-      <p className="uninstall-modal-lead">
-        Aether still left {itemLabel} under your Steam path.
-      </p>
+      <p className="uninstall-modal-lead">Aether still left {itemLabel} under your Steam path.</p>
       <p className="uninstall-modal-copy">
-        These are the same targets Reset Path removes (DLLs,{' '}
-        <code>aethercore</code> / <code>desk_path.cfg</code>, stplug-in,
-        depotcache, and related files). Clean them before uninstalling?
+        These are the same targets Reset Path removes (DLLs, <code>aethercore</code> / <code>desk_path.cfg</code>,
+        stplug-in, depotcache, and related files). Clean them before uninstalling?
       </p>
 
       <div className="uninstall-modal-actions">

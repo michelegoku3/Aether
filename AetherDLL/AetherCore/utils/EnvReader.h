@@ -32,8 +32,8 @@ struct EnvAppIds {
     steam::AppId steamAppId = 0;
     steam::AppId steamGameId = 0;
     steam::AppId steamOverlayGameId = 0;
-    steam::AppId selected = 0;        // Best resolution: OverlayGameId > SteamGameId > SteamAppId
-    const char* source = "fallback";  // Which variable produced "selected"
+    steam::AppId selected = 0;       // Best resolution: OverlayGameId > SteamGameId > SteamAppId
+    const char* source = "fallback"; // Which variable produced "selected"
 };
 
 // Reads the full environment block from a remote process.
@@ -58,4 +58,4 @@ std::optional<std::vector<wchar_t>> ReadEnvironmentBlock(HANDLE process);
 // variables is present.
 std::optional<EnvAppIds> ReadSteamEnvAppIds(HANDLE process);
 
-}  // namespace ac::env
+} // namespace ac::env

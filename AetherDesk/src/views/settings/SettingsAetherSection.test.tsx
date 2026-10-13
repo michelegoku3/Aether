@@ -31,8 +31,13 @@ describe('SettingsAetherSection devtools gate', () => {
   it('persists the opt-in before opening devtools', async () => {
     const order: string[] = [];
     const props = baseProps();
-    props.persistDevtools.mockImplementation(async () => { order.push('persist'); });
-    invokeMock.mockImplementation(async () => { order.push('open'); return undefined; });
+    props.persistDevtools.mockImplementation(async () => {
+      order.push('persist');
+    });
+    invokeMock.mockImplementation(async () => {
+      order.push('open');
+      return undefined;
+    });
     const { container } = render(<SettingsAetherSection {...props} />);
 
     fireEvent.click(container.querySelectorAll('input[type="checkbox"]')[0]);
@@ -48,9 +53,8 @@ describe('SettingsAetherSection devtools gate', () => {
 
     fireEvent.click(container.querySelectorAll('input[type="checkbox"]')[0]);
 
-    await waitFor(() => expect(props.showStatus).toHaveBeenCalledWith(
-      expect.stringContaining('Unable to open WebView devtools'),
-      'error',
-    ));
+    await waitFor(() =>
+      expect(props.showStatus).toHaveBeenCalledWith(expect.stringContaining('Unable to open WebView devtools'), 'error')
+    );
   });
 });

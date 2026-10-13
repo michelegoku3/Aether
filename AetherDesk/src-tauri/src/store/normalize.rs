@@ -109,10 +109,7 @@ pub fn sanitize_query_for_hubcap(query: &str) -> Option<String> {
             spaced.push(' ');
         }
     }
-    let collapsed = spaced
-        .split_whitespace()
-        .collect::<Vec<_>>()
-        .join(" ");
+    let collapsed = spaced.split_whitespace().collect::<Vec<_>>().join(" ");
 
     if collapsed.is_empty() {
         return None;

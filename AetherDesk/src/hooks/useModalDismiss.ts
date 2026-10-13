@@ -47,5 +47,5 @@ export const useOverlayDismiss = (onClose: () => void, disabled = false) =>
       event.stopPropagation();
       onClose();
     },
-    [onClose, disabled],
+    [onClose, disabled]
   );

@@ -5,4 +5,4 @@ namespace ac {
 
 AetherCoreState g_state;
 
-}  // namespace ac
+} // namespace ac

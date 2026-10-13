@@ -18,7 +18,9 @@ const LOCAL_FILTER_KEY = 'aether.library_install_filter';
 const LEGACY_FILTER_KEY: keyof import('./useSettings').AppSettings = 'library_install_filter';
 
 const normalizeLibraryInstallFilter = (value: unknown): LibraryInstallFilter => {
-  const raw = String(value ?? '').trim().toLowerCase();
+  const raw = String(value ?? '')
+    .trim()
+    .toLowerCase();
   if (raw === 'installed') return 'installed';
   if (raw === 'not_installed' || raw === 'not-installed' || raw === 'uninstalled') {
     return 'not_installed';
@@ -37,7 +39,11 @@ const readLocalFilter = (): LibraryInstallFilter | null => {
 };
 
 const writeLocalFilter = (value: LibraryInstallFilter) => {
-  try { localStorage.setItem(LOCAL_FILTER_KEY, value); } catch { /* ignore */ }
+  try {
+    localStorage.setItem(LOCAL_FILTER_KEY, value);
+  } catch {
+    /* ignore */
+  }
 };
 
 const filterTitleFor = (filter: LibraryInstallFilter): string => {
@@ -57,7 +63,7 @@ const countLabelFor = (
   shown: number,
   isLoading: boolean,
   ready: boolean,
-  searchQuery: string = '',
+  searchQuery: string = ''
 ): string => {
   if (isLoading || !ready) return 'Scanning Lua library...';
   if (searchQuery.trim()) {
@@ -72,11 +78,7 @@ const countLabelFor = (
   return `${shown} non-installed`;
 };
 
-const emptyMessageFor = (
-  filter: LibraryInstallFilter,
-  total: number,
-  searchQuery: string = '',
-): string => {
+const emptyMessageFor = (filter: LibraryInstallFilter, total: number, searchQuery: string = ''): string => {
   if (total === 0) {
     return 'No installed Steam games were found. Check your Steam path in Settings and press Refresh.';
   }
@@ -100,11 +102,7 @@ const emptyMessageFor = (
  * When `searchQuery` is provided, search searches across ALL games (ignoring
  * the active install filter) in real time.
  */
-export const useLibraryInstallFilter = (
-  games: InstalledGame[],
-  isLoading: boolean,
-  searchQuery: string = '',
-) => {
+export const useLibraryInstallFilter = (games: InstalledGame[], isLoading: boolean, searchQuery: string = '') => {
   const [filter, setFilter] = useState<LibraryInstallFilter>('all');
   const [ready, setReady] = useState(false);
 
@@ -131,7 +129,9 @@ export const useLibraryInstallFilter = (
       if (!cancelled) setReady(true);
     };
     void load();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const hasSearch = Boolean(searchQuery.trim());
@@ -172,10 +172,6 @@ export const useLibraryInstallFilter = (
     emptyMessage: emptyMessageFor(filter, games.length, searchQuery),
     /** CSS modifiers for the active filter button. */
     filterButtonClass:
-      filter === 'installed'
-        ? 'active filter-installed'
-        : filter === 'not_installed'
-          ? 'active filter-missing'
-          : '',
+      filter === 'installed' ? 'active filter-installed' : filter === 'not_installed' ? 'active filter-missing' : '',
   };
 };

@@ -19,4 +19,4 @@ void UnloadFile(const std::string& path);
 
 void Shutdown();
 
-}  // namespace ac::script
+} // namespace ac::script

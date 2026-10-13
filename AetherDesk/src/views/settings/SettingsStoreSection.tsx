@@ -47,11 +47,7 @@ export const SettingsStoreSection: React.FC<SettingsStoreSectionProps> = ({
       >
         <span className="settings-toggle-text">Show DLCs in the store</span>
         <label className="version-switch">
-          <input
-            type="checkbox"
-            checked={showStoreDlcs}
-            onChange={(e) => setShowStoreDlcs(e.target.checked)}
-          />
+          <input type="checkbox" checked={showStoreDlcs} onChange={(e) => setShowStoreDlcs(e.target.checked)} />
           <span></span>
         </label>
       </div>
@@ -62,11 +58,7 @@ export const SettingsStoreSection: React.FC<SettingsStoreSectionProps> = ({
       >
         <span className="settings-toggle-text">Show delisted games in the store</span>
         <label className="version-switch">
-          <input
-            type="checkbox"
-            checked={showStoreDelisted}
-            onChange={(e) => setShowStoreDelisted(e.target.checked)}
-          />
+          <input type="checkbox" checked={showStoreDelisted} onChange={(e) => setShowStoreDelisted(e.target.checked)} />
           <span></span>
         </label>
       </div>
@@ -77,19 +69,12 @@ export const SettingsStoreSection: React.FC<SettingsStoreSectionProps> = ({
       >
         <span className="settings-toggle-text">Show NSFW games in the store</span>
         <label className="version-switch">
-          <input
-            type="checkbox"
-            checked={showStoreNsfw}
-            onChange={(e) => setShowStoreNsfw(e.target.checked)}
-          />
+          <input type="checkbox" checked={showStoreNsfw} onChange={(e) => setShowStoreNsfw(e.target.checked)} />
           <span></span>
         </label>
       </div>
 
-      <div
-        className="settings-toggle-row"
-        title="Show a Steam Store front page when no search query is active"
-      >
+      <div className="settings-toggle-row" title="Show a Steam Store front page when no search query is active">
         <span className="settings-toggle-text">Show store front games</span>
         <label className="version-switch">
           <input
@@ -102,10 +87,7 @@ export const SettingsStoreSection: React.FC<SettingsStoreSectionProps> = ({
       </div>
 
       {showStoreFrontGames && (
-        <div
-          className="settings-toggle-row"
-          title="Choose which Steam Store front criterion is shown by default"
-        >
+        <div className="settings-toggle-row" title="Choose which Steam Store front criterion is shown by default">
           <span className="settings-toggle-text">Store front criterion</span>
           <select
             className="settings-front-filter-select"
@@ -121,10 +103,7 @@ export const SettingsStoreSection: React.FC<SettingsStoreSectionProps> = ({
         </div>
       )}
 
-      <div
-        className="settings-toggle-row"
-        title="Preferred currency for Steam prices shown in Store and Info"
-      >
+      <div className="settings-toggle-row" title="Preferred currency for Steam prices shown in Store and Info">
         <span className="settings-toggle-text">Store price currency</span>
         <select
           className="settings-select"

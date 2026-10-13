@@ -34,7 +34,9 @@ export const SettingsView = memo(function SettingsView(props: SettingsViewProps)
     <div className="settings-view">
       <div className="settings-header">
         <h1 className="settings-title">Settings</h1>
-        <p className="settings-subtitle">Manage system configurations, API keys, Steam injection paths, and other settings.</p>
+        <p className="settings-subtitle">
+          Manage system configurations, API keys, Steam injection paths, and other settings.
+        </p>
       </div>
       <div className="settings-separator"></div>
       {c.status.text && <div className={`settings-alert ${c.status.type}`}>{c.status.text}</div>}
@@ -48,12 +50,18 @@ export const SettingsView = memo(function SettingsView(props: SettingsViewProps)
       )}
       {c.settingsCorrupt && (
         <div className="settings-alert error">
-          Saved settings were unreadable, so safe defaults are in use. Nothing was deleted —
-          saving will write a fresh copy.
+          Saved settings were unreadable, so safe defaults are in use. Nothing was deleted — saving will write a fresh
+          copy.
         </div>
       )}
 
-      <form className="settings-form" onSubmit={(event: FormEvent) => { event.preventDefault(); void c.save(); }}>
+      <form
+        className="settings-form"
+        onSubmit={(event: FormEvent) => {
+          event.preventDefault();
+          void c.save();
+        }}
+      >
         <SettingsAetherSection
           enableWebviewDevtools={form.enableWebviewDevtools}
           setEnableWebviewDevtools={(value) => c.setField('enableWebviewDevtools', value)}
@@ -149,15 +157,29 @@ export const SettingsView = memo(function SettingsView(props: SettingsViewProps)
         <div className="settings-separator"></div>
 
         <div className="form-actions" style={{ justifyContent: 'center', gap: '12px' }}>
-          <button type="submit" className="save-settings-btn" style={{ flex: '1 1 0', maxWidth: '200px' }}>Save Settings</button>
-          <button type="button" className="save-settings-btn" style={{ flex: '1 1 0', maxWidth: '200px', backgroundColor: '#1c1c21', border: '1px solid var(--border-color)' }} onClick={() => void c.reset()}>
+          <button type="submit" className="save-settings-btn" style={{ flex: '1 1 0', maxWidth: '200px' }}>
+            Save Settings
+          </button>
+          <button
+            type="button"
+            className="save-settings-btn"
+            style={{
+              flex: '1 1 0',
+              maxWidth: '200px',
+              backgroundColor: '#1c1c21',
+              border: '1px solid var(--border-color)',
+            }}
+            onClick={() => void c.reset()}
+          >
             Reset Settings
           </button>
         </div>
       </form>
 
       {c.showHubcapWarning && <HubcapUpdateWarningModal onClose={() => c.setShowHubcapWarning(false)} />}
-      {c.showOstWarning && <OstWarningModal onConfirm={() => void c.confirmOst()} onCancel={() => c.setShowOstWarning(false)} />}
+      {c.showOstWarning && (
+        <OstWarningModal onConfirm={() => void c.confirmOst()} onCancel={() => c.setShowOstWarning(false)} />
+      )}
       <LuaToolsLoginModal
         open={lua.modalOpen}
         busy={lua.busy}

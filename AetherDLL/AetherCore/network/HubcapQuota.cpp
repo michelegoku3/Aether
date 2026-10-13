@@ -22,13 +22,13 @@ constexpr std::uint64_t kMaxGamePerDay = 1500;
 constexpr int kLockStaleAfterSec = 5;
 constexpr int kLockTimeoutSec = 10;
 constexpr auto kLockRetryInterval = std::chrono::milliseconds(20);
-constexpr DWORD kDeleteOnClose = 0x04000000;  // FILE_FLAG_DELETE_ON_CLOSE
+constexpr DWORD kDeleteOnClose = 0x04000000; // FILE_FLAG_DELETE_ON_CLOSE
 
 std::string QuotaPath() {
     const std::string dataDir = backup::io::CachedDeskDataDir();
-    if (dataDir.empty()) return std::string();
-    return (std::filesystem::path(dataDir) / "state" / "hubcap_generation_quota.json")
-        .string();
+    if (dataDir.empty())
+        return std::string();
+    return (std::filesystem::path(dataDir) / "state" / "hubcap_generation_quota.json").string();
 }
 
 std::string LockPathFor(const std::string& quotaPath) {
@@ -56,8 +56,7 @@ std::string CurrentEstDay() {
     const std::int64_t m = mp + (mp < 10 ? 3 : -9);
     const std::int64_t year = y + (m <= 2 ? 1 : 0);
     char day[16] = {};
-    std::snprintf(day, sizeof(day), "%04lld-%02lld-%02lld",
-                  static_cast<long long>(year), static_cast<long long>(m),
+    std::snprintf(day, sizeof(day), "%04lld-%02lld-%02lld", static_cast<long long>(year), static_cast<long long>(m),
                   static_cast<long long>(d));
     return day;
 }
@@ -78,13 +77,15 @@ QuotaState ReadQuota(const std::string& path) {
 
     std::ifstream input(path, std::ios::binary);
     if (input) {
-        const std::string body((std::istreambuf_iterator<char>(input)),
-                               std::istreambuf_iterator<char>());
+        const std::string body((std::istreambuf_iterator<char>(input)), std::istreambuf_iterator<char>());
         std::string day;
-        if (ac::jsonutil::PullStringField(body, "day", day)) state.day = day;
+        if (ac::jsonutil::PullStringField(body, "day", day))
+            state.day = day;
         std::uint64_t value = 0;
-        if (ac::jsonutil::PullUIntField(body, "game_used", value)) state.gameUsed = value;
-        if (ac::jsonutil::PullUIntField(body, "workshop_used", value)) state.workshopUsed = value;
+        if (ac::jsonutil::PullUIntField(body, "game_used", value))
+            state.gameUsed = value;
+        if (ac::jsonutil::PullUIntField(body, "workshop_used", value))
+            state.workshopUsed = value;
     }
     if (state.day != today) {
         state = QuotaState{};
@@ -96,22 +97,23 @@ QuotaState ReadQuota(const std::string& path) {
 bool WriteQuota(const std::string& path, const QuotaState& state) {
     const std::filesystem::path target(path);
     const std::string directory = target.parent_path().string();
-    if (!directory.empty() && !CreateDirectoryA(directory.c_str(), nullptr) &&
-        GetLastError() != ERROR_ALREADY_EXISTS) {
+    if (!directory.empty() && !CreateDirectoryA(directory.c_str(), nullptr) && GetLastError() != ERROR_ALREADY_EXISTS) {
         return false;
     }
     char body[96] = {};
-    const int written = std::snprintf(
-        body, sizeof(body), "{\"day\":\"%s\",\"game_used\":%llu,\"workshop_used\":%llu}",
-        state.day.c_str(), static_cast<unsigned long long>(state.gameUsed),
-        static_cast<unsigned long long>(state.workshopUsed));
-    if (written <= 0 || written >= static_cast<int>(sizeof(body))) return false;
+    const int written = std::snprintf(body, sizeof(body), "{\"day\":\"%s\",\"game_used\":%llu,\"workshop_used\":%llu}",
+                                      state.day.c_str(), static_cast<unsigned long long>(state.gameUsed),
+                                      static_cast<unsigned long long>(state.workshopUsed));
+    if (written <= 0 || written >= static_cast<int>(sizeof(body)))
+        return false;
     const std::string temporary = path + ".tmp";
     {
         std::ofstream output(temporary, std::ios::binary | std::ios::trunc);
-        if (!output) return false;
+        if (!output)
+            return false;
         output.write(body, static_cast<std::streamsize>(std::strlen(body)));
-        if (!output) return false;
+        if (!output)
+            return false;
     }
     return backup::io::AtomicReplace(temporary, path);
 }
@@ -122,13 +124,14 @@ bool WriteQuota(const std::string& path, const QuotaState& state) {
 // kLockStaleAfterSec. The critical section it protects is a tiny
 // read-modify-write, so staleness can only mean a dead holder.
 class ScopedQuotaLock {
-public:
+  public:
     ScopedQuotaLock() = default;
     ScopedQuotaLock(const ScopedQuotaLock&) = delete;
     ScopedQuotaLock& operator=(const ScopedQuotaLock&) = delete;
 
     ~ScopedQuotaLock() {
-        if (handle_ != INVALID_HANDLE_VALUE) CloseHandle(handle_);  // OS deletes the file
+        if (handle_ != INVALID_HANDLE_VALUE)
+            CloseHandle(handle_); // OS deletes the file
     }
 
     bool Acquire(const std::string& path) {
@@ -137,8 +140,7 @@ public:
             // The state directory may not exist on a fresh install yet.
             CreateDirectoryA(directory.c_str(), nullptr);
         }
-        const auto deadline =
-            std::chrono::steady_clock::now() + std::chrono::seconds(kLockTimeoutSec);
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(kLockTimeoutSec);
         for (;;) {
             HANDLE handle = CreateFileA(path.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_NEW,
                                         FILE_ATTRIBUTE_NORMAL | kDeleteOnClose, nullptr);
@@ -161,19 +163,18 @@ public:
                 }
             }
             if (std::chrono::steady_clock::now() >= deadline) {
-                AC_LOG_ERROR(kModule, "Hubcap quota lock stayed busy for %d s: %s.",
-                             kLockTimeoutSec, path.c_str());
+                AC_LOG_ERROR(kModule, "Hubcap quota lock stayed busy for %d s: %s.", kLockTimeoutSec, path.c_str());
                 return false;
             }
             std::this_thread::sleep_for(kLockRetryInterval);
         }
     }
 
-private:
+  private:
     HANDLE handle_ = INVALID_HANDLE_VALUE;
 };
 
-}  // namespace
+} // namespace
 
 bool TryReserveGameGeneration() {
     const std::string quotaPath = QuotaPath();
@@ -185,14 +186,13 @@ bool TryReserveGameGeneration() {
     }
 
     ScopedQuotaLock lock;
-    if (!lock.Acquire(LockPathFor(quotaPath))) return false;
+    if (!lock.Acquire(LockPathFor(quotaPath)))
+        return false;
 
     QuotaState quota = ReadQuota(quotaPath);
     if (quota.gameUsed >= kMaxGamePerDay) {
-        AC_LOG_WARN(kModule,
-                    "Shared game-manifest budget exhausted (%llu/%llu; resets at midnight EST).",
-                    static_cast<unsigned long long>(quota.gameUsed),
-                    static_cast<unsigned long long>(kMaxGamePerDay));
+        AC_LOG_WARN(kModule, "Shared game-manifest budget exhausted (%llu/%llu; resets at midnight EST).",
+                    static_cast<unsigned long long>(quota.gameUsed), static_cast<unsigned long long>(kMaxGamePerDay));
         return false;
     }
     quota.gameUsed += 1;
@@ -201,20 +201,22 @@ bool TryReserveGameGeneration() {
         return false;
     }
     AC_LOG_INFO(kModule, "Shared game-manifest budget reserved (%llu/%llu used today).",
-                static_cast<unsigned long long>(quota.gameUsed),
-                static_cast<unsigned long long>(kMaxGamePerDay));
+                static_cast<unsigned long long>(quota.gameUsed), static_cast<unsigned long long>(kMaxGamePerDay));
     return true;
 }
 
 void ReleaseGameGeneration() {
     const std::string quotaPath = QuotaPath();
-    if (quotaPath.empty()) return;
+    if (quotaPath.empty())
+        return;
 
     ScopedQuotaLock lock;
-    if (!lock.Acquire(LockPathFor(quotaPath))) return;  // already logged
+    if (!lock.Acquire(LockPathFor(quotaPath)))
+        return; // already logged
 
     QuotaState quota = ReadQuota(quotaPath);
-    if (quota.gameUsed > 0) quota.gameUsed -= 1;
+    if (quota.gameUsed > 0)
+        quota.gameUsed -= 1;
     if (!WriteQuota(quotaPath, quota)) {
         AC_LOG_WARN(kModule, "Could not persist the shared quota release.");
     } else {
@@ -223,4 +225,4 @@ void ReleaseGameGeneration() {
     }
 }
 
-}  // namespace ac::hubcapquota
+} // namespace ac::hubcapquota

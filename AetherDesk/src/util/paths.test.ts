@@ -33,12 +33,12 @@ describe('folderOf', () => {
 
 describe('pathFromGameRoot', () => {
   it('shows paths relative to the common folder', () => {
-    expect(pathFromGameRoot('C:\\Steam\\steamapps\\common\\Foo', 'C:\\Steam\\steamapps\\common\\Foo\\game.exe'))
-      .toBe('Foo\\game.exe');
+    expect(pathFromGameRoot('C:\\Steam\\steamapps\\common\\Foo', 'C:\\Steam\\steamapps\\common\\Foo\\game.exe')).toBe(
+      'Foo\\game.exe'
+    );
   });
 
   it('falls back to the absolute path outside the game root', () => {
-    expect(pathFromGameRoot('C:\\Steam\\steamapps\\common\\Foo', 'D:\\Other\\game.exe'))
-      .toBe('D:\\Other\\game.exe');
+    expect(pathFromGameRoot('C:\\Steam\\steamapps\\common\\Foo', 'D:\\Other\\game.exe')).toBe('D:\\Other\\game.exe');
   });
 });

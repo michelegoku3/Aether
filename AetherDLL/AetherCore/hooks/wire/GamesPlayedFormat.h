@@ -32,8 +32,7 @@ bool NameIsUsable(const std::string& name);
 // "<name>" + hidden appid carrier. Invisible channel by default
 // (U+200B mark + 6 VS nibbles); ASCII "<name> | <appid>" when the setting
 // says so (legacy receivers).
-std::string WithAppIdSuffix(const std::string& name, steam::AppId appId,
-                            const Settings& settings);
+std::string WithAppIdSuffix(const std::string& name, steam::AppId appId, const Settings& settings);
 
 // Preferred appid carrier: magic+version+LE appid packed into
 // game_data_blob (never rendered by client UIs).
@@ -44,4 +43,4 @@ std::string MakeAppIdBlob(steam::AppId appId);
 void ExtractStringKVs(const std::uint8_t* data, std::uint32_t size,
                       std::vector<std::pair<std::string, std::string>>& out);
 
-}  // namespace ac::hooks::GamesPlayedFormat
+} // namespace ac::hooks::GamesPlayedFormat

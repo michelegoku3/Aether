@@ -25,14 +25,18 @@ pub fn find_localconfig(steam_path: &Path) -> Option<PathBuf> {
         let modified = fs::metadata(&cfg)
             .and_then(|meta| meta.modified())
             .unwrap_or(UNIX_EPOCH);
-        if best.as_ref().map(|(best_time, _)| modified > *best_time).unwrap_or(true) {
+        if best
+            .as_ref()
+            .map(|(best_time, _)| modified > *best_time)
+            .unwrap_or(true)
+        {
             best = Some((modified, cfg));
         }
     }
     best.map(|(_, path)| path)
 }
 
-/// Legge le LaunchOptions attuali del gioco (stringa vuota se assenti).
+/// Read the game's current LaunchOptions (empty string when absent).
 pub fn get_launch_options(steam_path: &Path, app_id: u32) -> Result<String, String> {
     let path = find_localconfig(steam_path)
         .ok_or_else(|| "localconfig.vdf not found in Steam userdata.".to_string())?;
@@ -41,7 +45,7 @@ pub fn get_launch_options(steam_path: &Path, app_id: u32) -> Result<String, Stri
     Ok(read_app_launch_options(&content, app_id))
 }
 
-/// Imposta le LaunchOptions del gioco (sostituisce l'intero valore).
+/// Set the game's LaunchOptions (replaces the whole value).
 pub fn set_launch_options(steam_path: &Path, app_id: u32, options: &str) -> Result<(), String> {
     let path = find_localconfig(steam_path)
         .ok_or_else(|| "localconfig.vdf not found in Steam userdata.".to_string())?;
@@ -54,14 +58,15 @@ pub fn set_launch_options(steam_path: &Path, app_id: u32, options: &str) -> Resu
     // Back up before writing.
     let backup = path.with_extension("vdf.bak");
     let _ = fs::copy(&path, &backup);
-    fs::write(&path, updated)
-        .map_err(|e| format!("Failed to write {}: {}", path.display(), e))?;
+    fs::write(&path, updated).map_err(|e| format!("Failed to write {}: {}", path.display(), e))?;
     Ok(())
 }
 
 /// True when the LaunchOptions contain the token (e.g. "-aetheronline").
 pub fn has_launch_token(options: &str, token: &str) -> bool {
-    options.split_whitespace().any(|arg| arg.eq_ignore_ascii_case(token))
+    options
+        .split_whitespace()
+        .any(|arg| arg.eq_ignore_ascii_case(token))
 }
 
 /// Adds or removes a token from the LaunchOptions while preserving the other
@@ -142,7 +147,7 @@ fn find_matching_brace(s: &str, open_idx: usize) -> Option<usize> {
     None
 }
 
-/// Legge le LaunchOptions del gioco dal testo VDF.
+/// Read the game's LaunchOptions from the VDF text.
 fn read_app_launch_options(content: &str, app_id: u32) -> String {
     let app_key = format!("\"{app_id}\"");
     let Some((_, apps_after)) = find_key(content, "\"Apps\"") else {
@@ -183,7 +188,7 @@ fn read_app_launch_options(content: &str, app_id: u32) -> String {
     String::new()
 }
 
-/// Imposta le LaunchOptions del gioco nel testo VDF. Ritorna il nuovo testo.
+/// Set the game's LaunchOptions in the VDF text. Returns the new text.
 fn set_app_launch_options(content: &str, app_id: u32, options: &str) -> Option<String> {
     let app_key = format!("\"{app_id}\"");
     let (_, apps_after) = find_key(content, "\"Apps\"")?;
@@ -195,7 +200,7 @@ fn set_app_launch_options(content: &str, app_id: u32, options: &str) -> Option<S
 
     if let Some((app_start, app_after)) = find_key(&content[apps_open + 1..apps_close], &app_key) {
         let abs_app_start = apps_open + 1 + app_start;
-        // Trova il blocco `{...}` dell'app.
+        // Find the app's `{...}` block.
         let block = &content[abs_app_start..apps_close];
         let open_rel = block[app_after - app_start..].find('{')?;
         let open = app_after - app_start + open_rel;
@@ -205,11 +210,12 @@ fn set_app_launch_options(content: &str, app_id: u32, options: &str) -> Option<S
 
         let app_block = &content[abs_open + 1..abs_close];
         if let Some((lo_start, lo_after)) = find_key(app_block, "\"LaunchOptions\"") {
-            // Sostituisce il valore esistente.
+            // Replace the existing value.
             let abs_lo_start = abs_open + 1 + lo_start;
             let value_rel = app_block[lo_after..].find('"')?;
             let value_start = abs_lo_start + lo_after - lo_start + value_rel + 1;
-            let value_end_abs = value_start + find_unescaped_quote(&content[value_start..abs_close], 0)?;
+            let value_end_abs =
+                value_start + find_unescaped_quote(&content[value_start..abs_close], 0)?;
             let mut updated = String::with_capacity(content.len() + escaped.len());
             updated.push_str(&content[..value_start]);
             updated.push_str(&escaped);
@@ -228,9 +234,7 @@ fn set_app_launch_options(content: &str, app_id: u32, options: &str) -> Option<S
     }
 
     // No app block: create it inside `Apps`, before the closing `}`.
-    let insert = format!(
-        "\n\t\"{app_id}\"\n\t{{\n\t\t\"LaunchOptions\"\t\t\"{escaped}\"\n\t}}\n"
-    );
+    let insert = format!("\n\t\"{app_id}\"\n\t{{\n\t\t\"LaunchOptions\"\t\t\"{escaped}\"\n\t}}\n");
     let mut updated = String::with_capacity(content.len() + insert.len());
     updated.push_str(&content[..apps_close]);
     updated.push_str(&insert);
@@ -279,7 +283,10 @@ mod tests {
     #[test]
     fn replaces_existing_value() {
         let updated = set_app_launch_options(&sample_vdf(), 730, "-novid -aetheronline").unwrap();
-        assert_eq!(read_app_launch_options(&updated, 730), "-novid -aetheronline");
+        assert_eq!(
+            read_app_launch_options(&updated, 730),
+            "-novid -aetheronline"
+        );
         // The rest of the file is intact.
         assert!(updated.contains("\"UserLocalConfigStore\""));
         assert!(updated.contains("\"Steam\""));
@@ -301,7 +308,10 @@ mod tests {
 
     #[test]
     fn toggles_token() {
-        assert_eq!(toggle_launch_token("-novid", "-aetheronline", true), "-novid -aetheronline");
+        assert_eq!(
+            toggle_launch_token("-novid", "-aetheronline", true),
+            "-novid -aetheronline"
+        );
         assert_eq!(
             toggle_launch_token("-novid -aetheronline", "-aetheronline", false),
             "-novid"
@@ -312,7 +322,11 @@ mod tests {
 
     #[test]
     fn escapes_special_characters() {
-        let updated = set_app_launch_options(&sample_vdf(), 730, r#"C:\path "with quotes""#).unwrap();
-        assert_eq!(read_app_launch_options(&updated, 730), r#"C:\path "with quotes""#);
+        let updated =
+            set_app_launch_options(&sample_vdf(), 730, r#"C:\path "with quotes""#).unwrap();
+        assert_eq!(
+            read_app_launch_options(&updated, 730),
+            r#"C:\path "with quotes""#
+        );
     }
 }

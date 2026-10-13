@@ -18,18 +18,20 @@ use crate::external_tools::constants::{
 };
 use crate::external_tools::fs::{contains_bytes, read_for_scan, walk_dirs, walk_files};
 use crate::online::steamstub::detect_steamstub;
-use crate::online::types::{BackendReport, Conflict, DetectionReport, Engine, GameArch, PhotonFlavor};
+use crate::online::types::{
+    BackendReport, Conflict, DetectionReport, Engine, GameArch, PhotonFlavor,
+};
 use std::fs;
 use std::path::{Path, PathBuf};
 
-/// Nome file dell'early overlay proxy in base all'engine (x64 only).
+/// File name of the early overlay proxy by engine (x64 only).
 #[derive(Debug)]
 pub struct OverlayTarget {
     pub file_name: &'static str,
     pub path: PathBuf,
 }
 
-    /// Why the game inspection failed.
+/// Why the game inspection failed.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DetectionError {
     /// Nessun marcatore noto (Unity / Unreal / steam_api64.dll).
@@ -76,8 +78,8 @@ const STR_EOS_SUBSYSTEM: &[u8] = b"OnlineSubsystemEOS";
 const STR_PLAYFAB_SUBSYSTEM: &[u8] = b"OnlineSubsystemPlayFab";
 const STR_PHOTON_UNITY_NETWORKING: &[u8] = b"PhotonUnityNetworking";
 
-/// Ispeziona l'installazione di gioco in `root` e produce il report
-/// completo dei fatti necessari al deploy di UCOnline2.
+/// Inspect the game installation in `root` and produce the full
+/// fact report needed to deploy UCOnline2.
 pub struct GameInspector;
 
 impl GameInspector {
@@ -146,8 +148,7 @@ impl GameInspector {
         if dirs.is_empty() {
             return None;
         }
-        dirs.into_iter()
-            .max_by_key(|dir| max_exe_bytes_in(dir))
+        dirs.into_iter().max_by_key(|dir| max_exe_bytes_in(dir))
     }
 
     // ------------------------------------------------------------------
@@ -179,10 +180,7 @@ impl GameInspector {
         // Unity convention: `<Game>_Data` sits next to `<Game>.exe`.
         let game_name = unity_game_name(data_dir);
         let game_exe = Self::pick_game_exe(&ini_dir, &game_name);
-        let steamstub_detected = game_exe
-            .as_deref()
-            .map(detect_steamstub)
-            .unwrap_or(false);
+        let steamstub_detected = game_exe.as_deref().map(detect_steamstub).unwrap_or(false);
 
         DetectionReport {
             game_root: root.to_path_buf(),
@@ -260,10 +258,7 @@ impl GameInspector {
             .and_then(|n| n.to_str())
             .unwrap_or_default();
         let game_exe = Self::pick_game_exe(steam_api_dir, game_name);
-        let steamstub_detected = game_exe
-            .as_deref()
-            .map(detect_steamstub)
-            .unwrap_or(false);
+        let steamstub_detected = game_exe.as_deref().map(detect_steamstub).unwrap_or(false);
 
         DetectionReport {
             game_root: root.to_path_buf(),
@@ -317,7 +312,10 @@ impl GameInspector {
     fn detect_backends_unity(data_dir: &Path) -> BackendReport {
         let mut backends = BackendReport::default();
         let managed = data_dir.join("Managed");
-        let metadata = data_dir.join("il2cpp_data").join("Metadata").join("global-metadata.dat");
+        let metadata = data_dir
+            .join("il2cpp_data")
+            .join("Metadata")
+            .join("global-metadata.dat");
 
         if managed.is_dir() {
             // ---- Mono: presenza file negli assembly gestiti ----
@@ -368,8 +366,8 @@ impl GameInspector {
         // PlayFab nativo accanto alla DLL Steamworks (No Man's Sky e simili).
         if !backends.playfab {
             if let Some(dir) = steam_api_dir {
-                backends.playfab = dir.join("PartyWin.dll").is_file()
-                    || has_glob(dir, "PlayFab", ".dll");
+                backends.playfab =
+                    dir.join("PartyWin.dll").is_file() || has_glob(dir, "PlayFab", ".dll");
             }
         }
 
@@ -413,7 +411,9 @@ impl GameInspector {
         for name in ["winmm.dll", "winmm.ini", "winmm.txt"] {
             let path = dir.join(name);
             if path.is_file()
-                && !conflicts.iter().any(|c| matches!(c, Conflict::NamedFixFile(p) if p == &path))
+                && !conflicts
+                    .iter()
+                    .any(|c| matches!(c, Conflict::NamedFixFile(p) if p == &path))
             {
                 conflicts.push(Conflict::NamedFixFile(path));
             }
@@ -463,10 +463,8 @@ impl GameInspector {
         }
 
         if arch == GameArch::X86 {
-            warnings.push(
-                "32-bit game: the x86 build (steam_api.dll) will be installed."
-                    .to_string(),
-            );
+            warnings
+                .push("32-bit game: the x86 build (steam_api.dll) will be installed.".to_string());
         }
 
         if !backends.has_any() {
@@ -490,7 +488,11 @@ impl GameInspector {
     ///   4. fallback: the biggest overall (never None when an .exe exists).
     fn pick_game_exe(dir: &Path, expected_name: &str) -> Option<PathBuf> {
         let all = list_exes(dir);
-        let playable: Vec<PathBuf> = all.iter().filter(|p| !is_non_game_exe(p)).cloned().collect();
+        let playable: Vec<PathBuf> = all
+            .iter()
+            .filter(|p| !is_non_game_exe(p))
+            .cloned()
+            .collect();
         let pool = if playable.is_empty() { &all } else { &playable };
 
         if let Some(exact) = pool.iter().find(|p| exe_stem_eq(p, expected_name)) {
@@ -605,7 +607,7 @@ fn biggest_exe(candidates: &[PathBuf]) -> Option<PathBuf> {
         .cloned()
 }
 
-/// Stem dell'exe uguale (case-insensitive) al nome atteso.
+/// Exe stem equal (case-insensitive) to the expected name.
 fn exe_stem_eq(path: &Path, expected: &str) -> bool {
     path.file_stem()
         .and_then(|s| s.to_str())
@@ -613,7 +615,7 @@ fn exe_stem_eq(path: &Path, expected: &str) -> bool {
         .unwrap_or(false)
 }
 
-/// Stem dell'exe che contiene il nome atteso, o viceversa (case-insensitive).
+/// Stem of the exe containing the expected name, or vice versa (case-insensitive).
 fn exe_stem_contains(path: &Path, expected: &str) -> bool {
     let Some(stem) = path.file_stem().and_then(|s| s.to_str()) else {
         return false;
@@ -628,14 +630,22 @@ fn unity_game_name(data_dir: &Path) -> String {
     data_dir
         .file_stem()
         .and_then(|s| s.to_str())
-        .map(|stem| stem.strip_suffix(UNITY_DATA_SUFFIX).unwrap_or(stem).to_string())
+        .map(|stem| {
+            stem.strip_suffix(UNITY_DATA_SUFFIX)
+                .unwrap_or(stem)
+                .to_string()
+        })
         .unwrap_or_default()
 }
 
 fn is_overlay_proxy_name(path: &Path) -> bool {
     path.file_name()
         .and_then(|n| n.to_str())
-        .map(|n| OVERLAY_PROXY_NAMES.iter().any(|wanted| n.eq_ignore_ascii_case(wanted)))
+        .map(|n| {
+            OVERLAY_PROXY_NAMES
+                .iter()
+                .any(|wanted| n.eq_ignore_ascii_case(wanted))
+        })
         .unwrap_or(false)
 }
 

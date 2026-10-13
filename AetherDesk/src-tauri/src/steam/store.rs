@@ -128,7 +128,11 @@ impl SteamStore {
     /// with `SearchApps` (longer list) so the UI can scroll past the first five
     /// without losing Steam's ranking on top. Identical queries are served from
     /// a process-lifetime LRU and never hit Steam twice.
-    pub async fn suggest_for_country(&self, query: &str, country_code: &str) -> Result<Vec<SteamStoreItem>, String> {
+    pub async fn suggest_for_country(
+        &self,
+        query: &str,
+        country_code: &str,
+    ) -> Result<Vec<SteamStoreItem>, String> {
         let trimmed = query.trim();
         if trimmed.len() < 2 {
             return Ok(Vec::new());
@@ -186,7 +190,11 @@ impl SteamStore {
         Ok(suggest_cache_merge(&cache_key, suggest_items, apps_items))
     }
 
-    async fn fetch_suggest_html(&self, query: &str, country_code: &str) -> Result<Vec<SteamStoreItem>, String> {
+    async fn fetch_suggest_html(
+        &self,
+        query: &str,
+        country_code: &str,
+    ) -> Result<Vec<SteamStoreItem>, String> {
         let response = self
             .client
             .get(STEAM_SUGGEST_URL)
@@ -213,15 +221,20 @@ impl SteamStore {
         Ok(parse_suggest_html(&html))
     }
 
-
-    pub async fn search_catalog_for_country(&self, query: &str, country_code: &str) -> Result<Vec<SteamStoreItem>, String> {
+    pub async fn search_catalog_for_country(
+        &self,
+        query: &str,
+        country_code: &str,
+    ) -> Result<Vec<SteamStoreItem>, String> {
         if query.trim().is_empty() {
             return Ok(Vec::new());
         }
 
         let url = "https://store.steampowered.com/api/storesearch/";
-        
-        let response = self.client.get(url)
+
+        let response = self
+            .client
+            .get(url)
             .query(&[("term", query), ("l", "italian"), ("cc", country_code)])
             .send()
             .await
@@ -231,7 +244,9 @@ impl SteamStore {
             return Err(format!("Steam returned HTTP error: {}", response.status()));
         }
 
-        let data = response.json::<SteamSearchResponse>().await
+        let data = response
+            .json::<SteamSearchResponse>()
+            .await
             .map_err(|e| format!("Failed to parse Steam response: {}", e))?;
 
         Ok(data.items)
@@ -258,7 +273,10 @@ impl SteamStore {
             .map_err(|e| format!("Steam trending request failed: {}", e))?;
 
         if !response.status().is_success() {
-            return Err(format!("Steam trending returned HTTP {}", response.status()));
+            return Err(format!(
+                "Steam trending returned HTTP {}",
+                response.status()
+            ));
         }
 
         let data = response
@@ -277,11 +295,9 @@ impl SteamStore {
     }
 }
 
-
 pub fn parse_suggest_html(html: &str) -> Vec<SteamStoreItem> {
-    let Ok(row_re) = Regex::new(
-        r#"(?s)data-ds-appid="(?P<appid>\d+)"(?P<body>.*?)(?:</a>|$)"#,
-    ) else {
+    let Ok(row_re) = Regex::new(r#"(?s)data-ds-appid="(?P<appid>\d+)"(?P<body>.*?)(?:</a>|$)"#)
+    else {
         return Vec::new();
     };
     let name_re = Regex::new(r#"(?s)class="match_name"[^>]*>(?P<name>.*?)</div>"#).ok();
@@ -290,7 +306,10 @@ pub fn parse_suggest_html(html: &str) -> Vec<SteamStoreItem> {
     let mut items = Vec::new();
 
     for captures in row_re.captures_iter(html) {
-        let Some(id) = captures.name("appid").and_then(|m| m.as_str().parse::<u32>().ok()) else {
+        let Some(id) = captures
+            .name("appid")
+            .and_then(|m| m.as_str().parse::<u32>().ok())
+        else {
             continue;
         };
         if !seen.insert(id) {
@@ -446,7 +465,10 @@ fn currency_for_country(country_code: &str) -> &'static str {
 /// `steamcommunity.com/actions/SearchApps/<query>`: the long, unranked
 /// autocomplete list. Free function (not a method) so the typeahead can run it
 /// on a detached task that outlives the caller's grace window.
-async fn fetch_search_apps_with(client: &reqwest::Client, query: &str) -> Result<Vec<SteamStoreItem>, String> {
+async fn fetch_search_apps_with(
+    client: &reqwest::Client,
+    query: &str,
+) -> Result<Vec<SteamStoreItem>, String> {
     let encoded = urlencoding_path(query);
     let url = format!("{}/{}", STEAM_SEARCH_APPS_URL, encoded);
     let response = client
@@ -488,7 +510,11 @@ fn suggest_cache_key(country_code: &str, query: &str) -> String {
     format!(
         "{}:{}",
         country_code.trim().to_uppercase(),
-        query.split_whitespace().collect::<Vec<_>>().join(" ").to_lowercase()
+        query
+            .split_whitespace()
+            .collect::<Vec<_>>()
+            .join(" ")
+            .to_lowercase()
     )
 }
 

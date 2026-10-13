@@ -62,7 +62,10 @@ fn first_theme_is_cyberpunk_alphabetically() {
         .unwrap()
         .to_string_lossy()
         .to_string();
-    assert_eq!(name, "cyberpunk.css", "first detected theme should be cyberpunk.css");
+    assert_eq!(
+        name, "cyberpunk.css",
+        "first detected theme should be cyberpunk.css"
+    );
 
     assert_eq!(active_theme_name("").as_deref(), Some("cyberpunk.css"));
 
@@ -96,7 +99,10 @@ fn first_wallpaper_is_cyberpunk_alphabetically() {
         .unwrap()
         .to_string_lossy()
         .to_string();
-    assert_eq!(name, "cyberpunk.jpg", "first detected wallpaper should be cyberpunk.jpg");
+    assert_eq!(
+        name, "cyberpunk.jpg",
+        "first detected wallpaper should be cyberpunk.jpg"
+    );
 
     assert_eq!(active_wallpaper_name("").as_deref(), Some("cyberpunk.jpg"));
 
@@ -167,10 +173,18 @@ fn traversal_selections_fall_back_to_first_detected() {
             .as_ref()
             .and_then(|p| p.file_name())
             .map(|n| n.to_string_lossy().to_string());
-        assert_eq!(name.as_deref(), Some("cyberpunk.css"), "evil selection: {evil}");
+        assert_eq!(
+            name.as_deref(),
+            Some("cyberpunk.css"),
+            "evil selection: {evil}"
+        );
         // Belt and braces: no resolved path may leave the themes dir.
         if let Some(p) = &path {
-            assert!(p.starts_with(themes_dir()), "escaped themes dir: {}", p.display());
+            assert!(
+                p.starts_with(themes_dir()),
+                "escaped themes dir: {}",
+                p.display()
+            );
         }
     }
 

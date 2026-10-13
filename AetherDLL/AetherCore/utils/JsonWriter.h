@@ -28,43 +28,46 @@ inline std::string Escape(const std::string& in) {
     out.reserve(in.size() + 2);
     for (char c : in) {
         switch (c) {
-            case '"':  out += "\\\""; break;
-            case '\\': out += "\\\\"; break;
-            case '\n': out += "\\n";  break;
-            case '\r': out += "\\r";  break;
-            case '\t': out += "\\t";  break;
-            default:
-                if (static_cast<unsigned char>(c) < 0x20) {
-                    constexpr char hex[] = "0123456789abcdef";
-                    out += "\\u00";
-                    out += hex[(static_cast<unsigned char>(c) >> 4) & 15];
-                    out += hex[static_cast<unsigned char>(c) & 15];
-                } else out += c;
-                break;
+        case '"':
+            out += "\\\"";
+            break;
+        case '\\':
+            out += "\\\\";
+            break;
+        case '\n':
+            out += "\\n";
+            break;
+        case '\r':
+            out += "\\r";
+            break;
+        case '\t':
+            out += "\\t";
+            break;
+        default:
+            if (static_cast<unsigned char>(c) < 0x20) {
+                constexpr char hex[] = "0123456789abcdef";
+                out += "\\u00";
+                out += hex[(static_cast<unsigned char>(c) >> 4) & 15];
+                out += hex[static_cast<unsigned char>(c) & 15];
+            } else
+                out += c;
+            break;
         }
     }
     return out;
 }
 
 class Writer {
-public:
+  public:
     Writer() { out_ += "{\n"; }
 
-    void Int64(const char* key, long long value) {
-        Field(key, std::to_string(value));
-    }
-    void UInt64(const char* key, unsigned long long value) {
-        Field(key, std::to_string(value));
-    }
+    void Int64(const char* key, long long value) { Field(key, std::to_string(value)); }
+    void UInt64(const char* key, unsigned long long value) { Field(key, std::to_string(value)); }
     void SizeT(const char* key, std::size_t value) {
         Field(key, std::to_string(static_cast<unsigned long long>(value)));
     }
-    void Bool(const char* key, bool value) {
-        Field(key, value ? "true" : "false");
-    }
-    void Str(const char* key, const std::string& value) {
-        Field(key, "\"" + Escape(value) + "\"");
-    }
+    void Bool(const char* key, bool value) { Field(key, value ? "true" : "false"); }
+    void Str(const char* key, const std::string& value) { Field(key, "\"" + Escape(value) + "\""); }
 
     // String array: empty [] inline, otherwise one element per line (4 spaces),
     // "\n  ]" close — like the schema 9 hooks_*_list.
@@ -76,7 +79,8 @@ public:
             body += Escape(items[i]);
             body += "\"";
         }
-        if (!items.empty()) body += "\n  ";
+        if (!items.empty())
+            body += "\n  ";
         body += "]";
         Field(key, body);
     }
@@ -96,7 +100,8 @@ public:
         ++arrayItems_;
     }
     void ArrayEnd() {
-        if (arrayItems_ != 0) out_ += "\n  ";
+        if (arrayItems_ != 0)
+            out_ += "\n  ";
         out_ += "]";
     }
 
@@ -107,9 +112,10 @@ public:
         return std::move(out_);
     }
 
-private:
+  private:
     void Separator() {
-        if (!first_) out_ += ",\n";
+        if (!first_)
+            out_ += ",\n";
         first_ = false;
     }
     void Field(const char* key, const std::string& renderedValue) {
@@ -125,4 +131,4 @@ private:
     std::size_t arrayItems_ = 0;
 };
 
-}  // namespace ac::jsonw
+} // namespace ac::jsonw

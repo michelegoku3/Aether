@@ -1,13 +1,17 @@
 use std::collections::HashMap;
 
 use crate::core::hubcap_update_monitor::{
-    acf_installed_gid, installed_gid_for_depot, latest_installed_gid, retry_delay, INITIAL_RETRY_DELAY,
-    MAX_RETRY_DELAY,
+    acf_installed_gid, installed_gid_for_depot, latest_installed_gid, retry_delay,
+    INITIAL_RETRY_DELAY, MAX_RETRY_DELAY,
 };
 use crate::manifest::pins::{DepotManifestPin, LuaManifestPins};
 
 fn temp_dir(tag: &str) -> std::path::PathBuf {
-    let dir = std::env::temp_dir().join(format!("aether_monitor_tests_{}_{}", std::process::id(), tag));
+    let dir = std::env::temp_dir().join(format!(
+        "aether_monitor_tests_{}_{}",
+        std::process::id(),
+        tag
+    ));
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).expect("temp dir");
     dir
@@ -37,12 +41,20 @@ fn latest_installed_gid_picks_the_most_recent_non_empty_manifest() {
         .append(true)
         .open(&new)
         .expect("open new");
-    later.set_modified(std::time::SystemTime::now() + std::time::Duration::from_secs(3600)).expect("mtime future");
+    later
+        .set_modified(std::time::SystemTime::now() + std::time::Duration::from_secs(3600))
+        .expect("mtime future");
     drop(later);
 
-    assert_eq!(latest_installed_gid(&steam.display().to_string(), 700), Some("222".to_string()));
+    assert_eq!(
+        latest_installed_gid(&steam.display().to_string(), 700),
+        Some("222".to_string())
+    );
     // Empty manifests and other depots never qualify.
-    assert_eq!(latest_installed_gid(&steam.display().to_string(), 701), None);
+    assert_eq!(
+        latest_installed_gid(&steam.display().to_string(), 701),
+        None
+    );
 
     let _ = std::fs::remove_dir_all(&steam);
 }
@@ -69,9 +81,18 @@ fn realign_updates_only_commented_pins_of_active_depots() {
     let editor = LuaManifestPins::new(steam.display().to_string(), app_id);
     let realigned = editor
         .realign_commented_pins(&[
-            DepotManifestPin { depot_id: app_id, manifest_id: "999".to_string() },
-            DepotManifestPin { depot_id: 200, manifest_id: "888".to_string() },
-            DepotManifestPin { depot_id: 300, manifest_id: "777".to_string() },
+            DepotManifestPin {
+                depot_id: app_id,
+                manifest_id: "999".to_string(),
+            },
+            DepotManifestPin {
+                depot_id: 200,
+                manifest_id: "888".to_string(),
+            },
+            DepotManifestPin {
+                depot_id: 300,
+                manifest_id: "777".to_string(),
+            },
         ])
         .expect("realign");
 
@@ -110,7 +131,10 @@ fn realign_is_a_noop_when_the_gid_is_already_current() {
 
     let editor = LuaManifestPins::new(steam.display().to_string(), app_id);
     let realigned = editor
-        .realign_commented_pins(&[DepotManifestPin { depot_id: app_id, manifest_id: "111".to_string() }])
+        .realign_commented_pins(&[DepotManifestPin {
+            depot_id: app_id,
+            manifest_id: "111".to_string(),
+        }])
         .expect("realign");
     assert_eq!(realigned, 0, "same GID must not rewrite the Lua");
 
@@ -204,8 +228,10 @@ fn contents_cadence_prefers_changed_games_and_skips_idle_ones() {
     // the fast 15-minute cadence; 800002 is version-locked and must never be
     // diffed; 800003 has no ACF at all.
     let contents_checked = HashMap::from([(800001u32, now - 5 * 60), (800002u32, now - 5 * 60)]);
-    let contents_fingerprint =
-        HashMap::from([(800001u32, "acf-a-old".to_string()), (800002u32, "acf-b".to_string())]);
+    let contents_fingerprint = HashMap::from([
+        (800001u32, "acf-a-old".to_string()),
+        (800002u32, "acf-b".to_string()),
+    ]);
 
     let due = pin_refresh_candidates(
         &contents_checked,
@@ -253,7 +279,11 @@ fn contents_cadence_prefers_changed_games_and_skips_idle_ones() {
         &current_luas,
         &steam.display().to_string(),
     );
-    assert_eq!(due, vec![800001], "after an hour the idle game is re-checked");
+    assert_eq!(
+        due,
+        vec![800001],
+        "after an hour the idle game is re-checked"
+    );
 
     let _ = std::fs::remove_dir_all(&steam);
 }
@@ -270,17 +300,27 @@ fn installed_gid_prefers_steam_acf_over_depotcache_mtimes() {
     let depot = 570941u32;
     let depotcache = steam.join("depotcache");
     std::fs::create_dir_all(&depotcache).expect("depotcache");
-    std::fs::write(depotcache.join(format!("{depot}_111.manifest")), b"installed").expect("write");
+    std::fs::write(
+        depotcache.join(format!("{depot}_111.manifest")),
+        b"installed",
+    )
+    .expect("write");
     let stray = depotcache.join(format!("{depot}_999.manifest"));
     std::fs::write(&stray, b"stray").expect("write stray");
-    let later = std::fs::OpenOptions::new().append(true).open(&stray).expect("open stray");
+    let later = std::fs::OpenOptions::new()
+        .append(true)
+        .open(&stray)
+        .expect("open stray");
     later
         .set_modified(std::time::SystemTime::now() + std::time::Duration::from_secs(3600))
         .expect("mtime future");
     drop(later);
 
     // Without an ACF (game not installed yet) the mtime heuristic is all there is.
-    assert_eq!(acf_installed_gid(&steam.display().to_string(), app_id, depot), None);
+    assert_eq!(
+        acf_installed_gid(&steam.display().to_string(), app_id, depot),
+        None
+    );
     assert_eq!(
         installed_gid_for_depot(&steam.display().to_string(), app_id, depot).as_deref(),
         Some("999")
@@ -296,14 +336,20 @@ fn installed_gid_prefers_steam_acf_over_depotcache_mtimes() {
     )
     .expect("acf write");
 
-    assert_eq!(acf_installed_gid(&steam.display().to_string(), app_id, depot).as_deref(), Some("111"));
+    assert_eq!(
+        acf_installed_gid(&steam.display().to_string(), app_id, depot).as_deref(),
+        Some("111")
+    );
     assert_eq!(
         installed_gid_for_depot(&steam.display().to_string(), app_id, depot).as_deref(),
         Some("111"),
         "Steam's InstalledDepots must win over a newer stray file in depotcache"
     );
     // A depot the ACF does not list still falls back to depotcache evidence.
-    assert_eq!(installed_gid_for_depot(&steam.display().to_string(), app_id, 42), None);
+    assert_eq!(
+        installed_gid_for_depot(&steam.display().to_string(), app_id, 42),
+        None
+    );
 
     let _ = std::fs::remove_dir_all(&steam);
 }

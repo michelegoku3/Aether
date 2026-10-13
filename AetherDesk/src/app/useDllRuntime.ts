@@ -16,7 +16,7 @@ export function useDllRuntime() {
 
   const checkStatus = useCallback(async (preloadedSettings?: AppSettings) => {
     try {
-      const settings = preloadedSettings ?? await getSettings();
+      const settings = preloadedSettings ?? (await getSettings());
       if (!settings.steam_path?.trim()) return;
 
       const [isInstalled, isBlocked, updateInfo] = await Promise.all([

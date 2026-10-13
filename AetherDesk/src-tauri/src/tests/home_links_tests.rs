@@ -6,10 +6,22 @@ fn extract_ofme_query(url: &str) -> String {
     url.split("story=").nth(1).unwrap_or("").to_string()
 }
 fn extract_gcw_query(url: &str) -> String {
-    url.split("q=").nth(1).unwrap_or("").split('&').next().unwrap_or("").to_string()
+    url.split("q=")
+        .nth(1)
+        .unwrap_or("")
+        .split('&')
+        .next()
+        .unwrap_or("")
+        .to_string()
 }
 fn extract_csrinru_keywords(url: &str) -> String {
-    url.split("keywords=").nth(1).unwrap_or("").split('&').next().unwrap_or("").to_string()
+    url.split("keywords=")
+        .nth(1)
+        .unwrap_or("")
+        .split('&')
+        .next()
+        .unwrap_or("")
+        .to_string()
 }
 
 #[test]
@@ -91,7 +103,10 @@ fn csrinru_sekiro_strips_tm_and_goty_but_keeps_real_subtitle() {
 #[test]
 fn csrinru_stray_titleonly_topics_in_game_forum() {
     let url = build_csrinru_url("Stray");
-    assert!(url.contains("fid%5B%5D=10"), "should restrict to the main game forum");
+    assert!(
+        url.contains("fid%5B%5D=10"),
+        "should restrict to the main game forum"
+    );
     assert!(url.contains("sf=titleonly"), "should be titleonly");
     assert!(url.contains("sr=topics"), "should be topics");
     let kw = extract_csrinru_keywords(&url);

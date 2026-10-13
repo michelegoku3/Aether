@@ -9,13 +9,7 @@ import { preloadGameCovers } from '../ui/GameCover';
 import { toErrorMessage } from '../util/errors';
 import { GameCard, type GameCardAction } from '../ui/GameCard';
 import { StatusAlert } from '../ui/StatusAlert';
-import {
-  ArrowUpThickIcon,
-  CloseIcon,
-  PlayIcon,
-  RefreshIcon,
-  WrenchIcon,
-} from '../ui/icons';
+import { ArrowUpThickIcon, CloseIcon, PlayIcon, RefreshIcon, WrenchIcon } from '../ui/icons';
 import { useLibraryGames, InstalledGame } from '../hooks/useLibraryGames';
 import { useLibraryInstallFilter } from '../hooks/useLibraryInstallFilter';
 import { StatusType } from '../types/ui';
@@ -38,8 +32,7 @@ export const LibraryView = memo(function LibraryView({
   alternativeCardsOpacity,
   alternativeCardsFade,
 }: LibraryViewProps) {
-  const { games, isLoading, isRefreshing, status, setStatus, loadInstalledGames, queryGameState } =
-    useLibraryGames();
+  const { games, isLoading, isRefreshing, status, setStatus, loadInstalledGames, queryGameState } = useLibraryGames();
   const [searchQuery, setSearchQuery] = useState('');
 
   const {
@@ -63,7 +56,6 @@ export const LibraryView = memo(function LibraryView({
   // Workshop manifest repair (scan appworkshop ACF + stage missing manifests).
   const [showWorkshopRepair, setShowWorkshopRepair] = useState(false);
 
-
   const showStatus = (text: string, type: StatusType) => {
     setStatus({ text, type });
   };
@@ -76,7 +68,7 @@ export const LibraryView = memo(function LibraryView({
     if (document.visibilityState !== 'visible') return;
     preloadGameCovers(
       filteredGames.slice(0, COVER_PRELOAD_WINDOW).map((game) => ({ appId: game.appId, imageUrl: game.imageUrl })),
-      COVER_PRELOAD_WINDOW,
+      COVER_PRELOAD_WINDOW
     );
   }, [filteredGames]);
 
@@ -108,41 +100,47 @@ export const LibraryView = memo(function LibraryView({
   // avoids re-rendering N cards on every search keystroke or toast.
   // State setters are stable by React guarantee, so the only real dependency
   // is `queryGameState` (already useCallback in the provider).
-  const handleOpenVersionEditor = useCallback(async (game: InstalledGame) => {
-    setStatus({ text: '', type: 'info' });
-    const appId = Number(game.appId);
+  const handleOpenVersionEditor = useCallback(
+    async (game: InstalledGame) => {
+      setStatus({ text: '', type: 'info' });
+      const appId = Number(game.appId);
 
-    // The shared provider cache covers the "close and re-open the editor"
-    // case (and the StrictMode double mount) without a second, shorter-lived
-    // snapshot to keep coherent: every completed library scan invalidates it.
-    try {
-      const rows = await queryGameState<LuaManifestRow[]>(appId, 'get_installed_lua_manifest_rows');
-      setManifestRows(prepareManifestRows(rows));
-      setVersionGame(game);
-    } catch (err: unknown) {
-      setStatus({
-        text: `Unable to open version editor for ${game.name}: ${toErrorMessage(err)}`,
-        type: 'error',
-      });
-    }
-  }, [queryGameState]);
+      // The shared provider cache covers the "close and re-open the editor"
+      // case (and the StrictMode double mount) without a second, shorter-lived
+      // snapshot to keep coherent: every completed library scan invalidates it.
+      try {
+        const rows = await queryGameState<LuaManifestRow[]>(appId, 'get_installed_lua_manifest_rows');
+        setManifestRows(prepareManifestRows(rows));
+        setVersionGame(game);
+      } catch (err: unknown) {
+        setStatus({
+          text: `Unable to open version editor for ${game.name}: ${toErrorMessage(err)}`,
+          type: 'error',
+        });
+      }
+    },
+    [queryGameState]
+  );
 
   // Card actions do not depend on the individual game (they receive `game`
   // from the click) and use only stable setters: the array is built ONCE.
   // Rebuilding it for every card on every render is what made `memo(GameCard)`
   // pointless.
-  const cardActions = useMemo<Array<GameCardAction<InstalledGame>>>(() => [
-    { label: 'Modify', variant: 'primary', onClick: setActionGame },
-    { label: 'Info', variant: 'secondary', onClick: setInfoGame },
-  ], []);
+  const cardActions = useMemo<Array<GameCardAction<InstalledGame>>>(
+    () => [
+      { label: 'Modify', variant: 'primary', onClick: setActionGame },
+      { label: 'Info', variant: 'secondary', onClick: setInfoGame },
+    ],
+    []
+  );
 
   return (
     <div className="store-view">
       <div className="store-header">
         <h1 className="store-title">Library</h1>
         <p className="store-subtitle">
-          Manage every game Lua installed in Steam's stplug-in folder, with install status detected
-          from Steam appmanifest ACF files.
+          Manage every game Lua installed in Steam's stplug-in folder, with install status detected from Steam
+          appmanifest ACF files.
         </p>
       </div>
 
@@ -299,12 +297,7 @@ export const LibraryView = memo(function LibraryView({
         />
       )}
 
-      {showWorkshopRepair && (
-        <WorkshopRepairModal
-          onStatus={showStatus}
-          onClose={() => setShowWorkshopRepair(false)}
-        />
-      )}
+      {showWorkshopRepair && <WorkshopRepairModal onStatus={showStatus} onClose={() => setShowWorkshopRepair(false)} />}
     </div>
   );
 });

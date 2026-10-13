@@ -12,4 +12,4 @@ namespace ac::hooks::AccessToken {
 // no app in the request needs a token (frame left unchanged).
 std::int32_t HandleSend(const WireFrame& frame, std::uint8_t* out, std::uint32_t outCap);
 
-}  // namespace ac::hooks::AccessToken
+} // namespace ac::hooks::AccessToken

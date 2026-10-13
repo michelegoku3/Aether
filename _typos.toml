@@ -1,0 +1,12 @@
+# Dictionary for this repo: Italian in comments is intentional (bilingual repo),
+# and these technical tokens are not typos. Verified one by one via `typos`.
+[default.extend-words]
+BA = "BA"                   # x86 opcode in byte-pattern signatures
+SEH = "SEH"                 # Structured Exception Handling (Windows); never "SHE"
+seh = "seh"                 # lowercase form, same as above
+Fase = "Fase"               # Italian for "phase", used in step comments
+classe = "classe"           # Italian for "class"
+copie = "copie"             # Italian for "copies"
+dominante = "dominante"     # Italian for "dominant"
+fo = "fo"                   # Fallout aliases (fo4/fo76), RFC 4648 test vectors
+generatore = "generatore"   # Italian for "generator"

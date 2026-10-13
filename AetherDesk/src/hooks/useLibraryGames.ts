@@ -90,11 +90,7 @@ interface LibraryGamesContextValue {
    * cache, and `library://lua-changed` triggers that scan), so nothing can go
    * stale behind the user's back.
    */
-  queryGameState: <T>(
-    appId: number,
-    command: string,
-    args?: Record<string, unknown>
-  ) => Promise<T>;
+  queryGameState: <T>(appId: number, command: string, args?: Record<string, unknown>) => Promise<T>;
   /** Drops cached answers for one app (or all, when omitted). */
   invalidateGameState: (appId?: number) => void;
 }
@@ -140,7 +136,7 @@ export const LibraryGamesProvider = ({ children }: { children: ReactNode }) => {
   }, []);
 
   const queryGameState = useCallback(
-    <T,>(appId: number, command: string, args: Record<string, unknown> = {}): Promise<T> => {
+    <T>(appId: number, command: string, args: Record<string, unknown> = {}): Promise<T> => {
       const key = `${command}:${appId}`;
       const cache = gameStateCacheRef.current;
       const cached = cache.get(key);

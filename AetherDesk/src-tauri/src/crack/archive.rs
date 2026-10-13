@@ -24,17 +24,15 @@ pub fn stage_source(source: &Path, staging: &Path, default_password: &str) -> Re
         .to_ascii_lowercase();
 
     match extension.as_str() {
-        "zip" => {
-            extract_zip(source, staging, default_password)
-                .or_else(|_| extract_7z(source, staging, default_password))
-                .or_else(|_| extract_rar(source, staging, default_password))
-                .map_err(|_| {
-                    format!(
-                        "Failed to extract archive {}: not a valid ZIP, 7Z, or RAR archive",
-                        source.display()
-                    )
-                })
-        }
+        "zip" => extract_zip(source, staging, default_password)
+            .or_else(|_| extract_7z(source, staging, default_password))
+            .or_else(|_| extract_rar(source, staging, default_password))
+            .map_err(|_| {
+                format!(
+                    "Failed to extract archive {}: not a valid ZIP, 7Z, or RAR archive",
+                    source.display()
+                )
+            }),
         "rar" => extract_rar(source, staging, default_password),
         "7z" => extract_7z(source, staging, default_password),
         _ => copy_loose_file(source, staging),
@@ -61,11 +59,13 @@ pub fn clear_staging_contents(staging: &Path) -> Result<(), String> {
         let entry = entry.map_err(|error| format!("Failed to read staging entry: {}", error))?;
         let path = entry.path();
         if path.is_dir() {
-            fs::remove_dir_all(&path)
-                .map_err(|error| format!("Failed to clear staging dir {}: {}", path.display(), error))?;
+            fs::remove_dir_all(&path).map_err(|error| {
+                format!("Failed to clear staging dir {}: {}", path.display(), error)
+            })?;
         } else {
-            fs::remove_file(&path)
-                .map_err(|error| format!("Failed to clear staging file {}: {}", path.display(), error))?;
+            fs::remove_file(&path).map_err(|error| {
+                format!("Failed to clear staging file {}: {}", path.display(), error)
+            })?;
         }
     }
     Ok(())
@@ -74,8 +74,9 @@ pub fn clear_staging_contents(staging: &Path) -> Result<(), String> {
 /// Remove the staging directory entirely.
 pub fn remove_staging(staging: &Path) -> Result<(), String> {
     if staging.exists() {
-        fs::remove_dir_all(staging)
-            .map_err(|error| format!("Failed to remove staging {}: {}", staging.display(), error))?;
+        fs::remove_dir_all(staging).map_err(|error| {
+            format!("Failed to remove staging {}: {}", staging.display(), error)
+        })?;
     }
     Ok(())
 }
@@ -86,9 +87,8 @@ fn copy_loose_file(source: &Path, staging: &Path) -> Result<(), String> {
         .file_name()
         .ok_or_else(|| format!("Crack file has no valid name: {}", source.display()))?;
     let dest = staging.join(name);
-    fs::copy(source, &dest).map_err(|error| {
-        format!("Failed to stage crack file {}: {}", dest.display(), error)
-    })?;
+    fs::copy(source, &dest)
+        .map_err(|error| format!("Failed to stage crack file {}: {}", dest.display(), error))?;
     Ok(())
 }
 
@@ -202,7 +202,11 @@ fn extract_rar(source: &Path, dest: &Path, default_password: &str) -> Result<(),
             })?;
         }
         fs::write(&out_path, &data).map_err(|error| {
-            format!("Failed to write extracted file {}: {}", out_path.display(), error)
+            format!(
+                "Failed to write extracted file {}: {}",
+                out_path.display(),
+                error
+            )
         })?;
 
         archive = rest;
@@ -212,8 +216,8 @@ fn extract_rar(source: &Path, dest: &Path, default_password: &str) -> Result<(),
 }
 
 /// Wrap a RAR error into a readable message.
- /// The tried password is deliberately NOT included: error strings reach the
- /// UI and the session log, and the default password is often reused.
+/// The tried password is deliberately NOT included: error strings reach the
+/// UI and the session log, and the default password is often reused.
 fn rar_password_hint(
     source: &Path,
     _default_password: &str,
@@ -552,7 +556,10 @@ mod tests {
         let secret = "s3cr3t-reused-password";
         let missing = std::path::Path::new("definitely-missing-archive.bin");
         let rar_err = rar_password_hint(missing, secret, "boom");
-        assert!(!rar_err.contains(secret), "RAR error leaked password: {rar_err}");
+        assert!(
+            !rar_err.contains(secret),
+            "RAR error leaked password: {rar_err}"
+        );
         let dest = tempfile::tempdir().unwrap();
         let err = extract_7z(missing, dest.path(), secret).unwrap_err();
         assert!(!err.contains(secret), "7z error leaked password: {err}");
@@ -580,7 +587,10 @@ mod tests {
             writer.finish().unwrap();
         }
         extract_7z(&source, &staging, "").unwrap();
-        assert_eq!(fs::read(staging.join("safe/ok.txt")).unwrap(), b"safe payload");
+        assert_eq!(
+            fs::read(staging.join("safe/ok.txt")).unwrap(),
+            b"safe payload"
+        );
         assert!(!staging.join("outside.txt").exists());
         assert!(!temp.path().join("outside.txt").exists());
         assert_eq!(fs::read(&sentinel).unwrap(), b"protected");

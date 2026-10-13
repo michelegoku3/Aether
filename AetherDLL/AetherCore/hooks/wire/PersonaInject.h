@@ -28,14 +28,12 @@ steam::AppId PlayingApp();
 // PersonaState recv handler. Updates the self template; if we are tracking a
 // playing app (or AetherOnline persona patch is on), rewrites the body.
 // Returns new body length, or -1 for no change.
-std::int32_t OnPersonaStateRecv(const WireFrame& frame, std::uint8_t* out,
-                                std::uint32_t outCap);
+std::int32_t OnPersonaStateRecv(const WireFrame& frame, std::uint8_t* out, std::uint32_t outCap);
 
 // If a staged packet is pending, temporarily replace carrier data, call
 // oRecvPkt once, then restore. Safe no-op when nothing is pending.
-void TryDeliver(void* recvThis, steam::CNetPacket* carrier,
-                void* (*oRecvPkt)(void*, steam::CNetPacket*));
+void TryDeliver(void* recvThis, steam::CNetPacket* carrier, void* (*oRecvPkt)(void*, steam::CNetPacket*));
 
 void Reset();
 
-}  // namespace ac::hooks::PersonaInject
+} // namespace ac::hooks::PersonaInject

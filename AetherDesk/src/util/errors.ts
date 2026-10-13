@@ -19,8 +19,7 @@ export const toErrorMessage = (err: unknown): string => {
 };
 
 /** True when the user cancelled a native dialog (not a real failure). */
-export const isUserCancellation = (err: unknown): boolean =>
-  toErrorMessage(err).includes('No file selected');
+export const isUserCancellation = (err: unknown): boolean => toErrorMessage(err).includes('No file selected');
 
 /**
  * Machine-readable error code from a backend `CODE: message` string.
@@ -47,8 +46,7 @@ const ErrorCodes = {
 } as const;
 
 /** True when the backend reports a concurrent settings change. */
-export const isSettingsConflict = (err: unknown): boolean =>
-  getErrorCode(err) === ErrorCodes.SETTINGS_CONFLICT;
+export const isSettingsConflict = (err: unknown): boolean => getErrorCode(err) === ErrorCodes.SETTINGS_CONFLICT;
 
 /** True when an update needs a valid Hubcap key first. */
 export const needsHubcapKey = (err: unknown): boolean =>

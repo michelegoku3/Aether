@@ -1,6 +1,6 @@
-use reqwest::header::{HeaderMap, HeaderValue, AUTHORIZATION};
-use crate::providers::http;
 use super::types::HUBCAP_TIMEOUT_SECONDS;
+use crate::providers::http;
+use reqwest::header::{HeaderMap, HeaderValue, AUTHORIZATION};
 
 #[derive(Clone)]
 pub struct HubcapClient {

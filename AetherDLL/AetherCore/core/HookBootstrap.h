@@ -43,4 +43,4 @@ void StartPatternLateRetry();
 // workers::Shutdown). Safe to call multiple times.
 void RequestRetryStop();
 
-}  // namespace ac::bootstrap
+} // namespace ac::bootstrap

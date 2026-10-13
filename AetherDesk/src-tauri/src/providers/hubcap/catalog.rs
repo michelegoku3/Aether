@@ -2,8 +2,8 @@ use std::collections::HashSet;
 
 use super::client::HubcapClient;
 use super::types::{
-    HubcapGameItem, HubcapLibraryResponse, HubcapSearchResponse, BASE_URL,
-    CATALOG_SEARCH_LIMIT, LIBRARY_SEARCH_LIMIT,
+    HubcapGameItem, HubcapLibraryResponse, HubcapSearchResponse, BASE_URL, CATALOG_SEARCH_LIMIT,
+    LIBRARY_SEARCH_LIMIT,
 };
 
 impl HubcapClient {
@@ -90,10 +90,8 @@ impl HubcapClient {
     /// One logical search against Hubcap, backed by two requests with different
     /// endpoints issued in parallel (`/library` + `/search`).
     pub async fn search_all(&self, query: &str) -> Vec<HubcapGameItem> {
-        let (library_result, games_result) = tokio::join!(
-            self.search_library(query),
-            self.search_games(query),
-        );
+        let (library_result, games_result) =
+            tokio::join!(self.search_library(query), self.search_games(query),);
 
         let mut merged: Vec<HubcapGameItem> = Vec::new();
         let mut seen_ids: HashSet<u32> = HashSet::new();

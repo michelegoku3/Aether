@@ -12,8 +12,8 @@
 
 #include "core/AetherCoreState.h"
 #include "core/Logger.h"
-#include "hooks/wire/BackupIo.h"
 #include "core/SteamTypes.h"
+#include "hooks/wire/BackupIo.h"
 #include "utils/VdfText.h"
 
 namespace ac::backup::playtime {
@@ -21,216 +21,236 @@ namespace {
 
 constexpr const char* kModule = "Wire.Achievement";
 
-    // ---------------------------------------------------------------------------
-    // Backup del TEMPO DI GIOCO per account.
-    //
-    // Steam keeps playtime in `userdata\<account>\config\localconfig.vdf`
-    // (textual VDF, Software/Valve/Steam/apps section): MINUTE values
-    // ("Playtime", "Playtime2wks", "PlaytimeDisconnected"), unix "LastPlayed"
-    // and session timestamps in "autocloud" {lastlaunch,lastexit}. For Aether-
-    // managed (unowned) games and non-Steam ones this data exists ONLY
-    // client-side: same fragility as achievements, same remedy.
-    //
-    // Output: <AetherData>\backup\playtime\UserPlaytime_<account>.json
-    // (one file per account, every game with recorded playtime; max-value
-    // merge per key: the backup cannot regress).
-    // ---------------------------------------------------------------------------
-    struct PlaytimeEntry {
-        std::uint32_t appId = 0;
-        std::uint32_t playtimeMin = 0;
-        std::uint32_t playtime2wksMin = 0;
-        std::uint32_t playtimeDisconnectedMin = 0;
-        std::uint32_t lastPlayed = 0;
-        std::uint32_t lastLaunch = 0;
-        std::uint32_t lastExit = 0;
-    };
+// ---------------------------------------------------------------------------
+// Per-account PLAYTIME backup.
+//
+// Steam keeps playtime in `userdata\<account>\config\localconfig.vdf`
+// (textual VDF, Software/Valve/Steam/apps section): MINUTE values
+// ("Playtime", "Playtime2wks", "PlaytimeDisconnected"), unix "LastPlayed"
+// and session timestamps in "autocloud" {lastlaunch,lastexit}. For Aether-
+// managed (unowned) games and non-Steam ones this data exists ONLY
+// client-side: same fragility as achievements, same remedy.
+//
+// Output: <AetherData>\backup\playtime\UserPlaytime_<account>.json
+// (one file per account, every game with recorded playtime; max-value
+// merge per key: the backup cannot regress).
+// ---------------------------------------------------------------------------
+struct PlaytimeEntry {
+    std::uint32_t appId = 0;
+    std::uint32_t playtimeMin = 0;
+    std::uint32_t playtime2wksMin = 0;
+    std::uint32_t playtimeDisconnectedMin = 0;
+    std::uint32_t lastPlayed = 0;
+    std::uint32_t lastLaunch = 0;
+    std::uint32_t lastExit = 0;
+};
 
-    // Parsing riga/graffe nel codec condiviso utils/VdfText.h (P11).
+// Line/brace parsing in the shared codec utils/VdfText.h (P11).
 
-    std::string AsciiLower(std::string s) {
-        for (char& c : s) {
-            if (c >= 'A' && c <= 'Z') c = static_cast<char>(c - 'A' + 'a');
-        }
-        return s;
+std::string AsciiLower(std::string s) {
+    for (char& c : s) {
+        if (c >= 'A' && c <= 'Z')
+            c = static_cast<char>(c - 'A' + 'a');
     }
-
-    std::unordered_map<std::uint32_t, PlaytimeEntry> ParseLocalConfigPlaytime(const std::string& path) {
-        std::unordered_map<std::uint32_t, PlaytimeEntry> out;
-        std::ifstream ifs(path);
-        if (!ifs.is_open()) return out;
-
-        std::vector<std::string> stack;   // percorso di sezioni corrente
-        std::string pendingSection;
-        std::string line;
-        while (std::getline(ifs, line)) {
-            // Strip comments/CR
-            if (!line.empty() && line.back() == '\r') line.pop_back();
-            // First unquoted brace (shared codec).
-            std::size_t brace = 0;
-            char braceChar = 0;
-            const bool hasBrace = vdf::FindUnquotedBrace(line, brace, braceChar);
-
-            if (hasBrace && braceChar == '{') {
-                // Opening brace: the section is the pending key (previous line)
-                // or unnamed.
-                stack.push_back(pendingSection);
-                pendingSection.clear();
-                continue;
-            }
-            if (hasBrace && braceChar == '}') {
-                if (!stack.empty()) stack.pop_back();
-                continue;
-            }
-
-            std::string key, value;
-            const vdf::LineKind kind = vdf::ParseLine(line, key, value);
-            if (kind == vdf::LineKind::SectionKey) {
-                pendingSection = key;   // attende la graffa sulla riga successiva
-                continue;
-            }
-            if (kind != vdf::LineKind::KeyValue) continue;
-
-            // Look for .../Apps/<appid>[/<sub>] in the stack (in real localconfigs
-            // the section is "Apps" capitalized: case-insensitive compare).
-            int appsIdx = -1;
-            for (std::size_t i = 0; i + 1 < stack.size(); ++i) {
-                if (AsciiLower(stack[i]) == "apps") { appsIdx = static_cast<int>(i); break; }
-            }
-            if (appsIdx < 0) continue;
-            if (stack.size() < static_cast<std::size_t>(appsIdx) + 2) continue;
-            const std::string& appIdStr = stack[appsIdx + 1];
-            char* end = nullptr;
-            unsigned long appId = std::strtoul(appIdStr.c_str(), &end, 10);
-            if (!end || *end != '\0') continue;   // id non numerico (es. non-Steam hash): skip
-            const bool inAutocloud = stack.size() == static_cast<std::size_t>(appsIdx) + 3 &&
-                stack[appsIdx + 2] == "autocloud";
-
-            PlaytimeEntry& e = out[static_cast<std::uint32_t>(appId)];
-            e.appId = static_cast<std::uint32_t>(appId);
-            unsigned long v = std::strtoul(value.c_str(), nullptr, 10);
-            if (inAutocloud) {
-                if (key == "lastlaunch") e.lastLaunch = static_cast<std::uint32_t>(v);
-                else if (key == "lastexit") e.lastExit = static_cast<std::uint32_t>(v);
-            }
-            else {
-                if (key == "Playtime") e.playtimeMin = static_cast<std::uint32_t>(v);
-                else if (key == "Playtime2wks") e.playtime2wksMin = static_cast<std::uint32_t>(v);
-                else if (key == "PlaytimeDisconnected") e.playtimeDisconnectedMin = static_cast<std::uint32_t>(v);
-                else if (key == "LastPlayed") e.lastPlayed = static_cast<std::uint32_t>(v);
-            }
-        }
-        return out;
-    }
-
-    // Monotone merge: per field keep the max of existing backup and new data.
-    std::unordered_map<std::uint32_t, PlaytimeEntry> LoadPlaytimeSnapshot(const std::string& path) {
-        std::unordered_map<std::uint32_t, PlaytimeEntry> out;
-        std::ifstream ifs(path);
-        if (!ifs.is_open()) return out;
-        std::string line;
-        while (std::getline(ifs, line)) {
-            const std::size_t p = line.find("{\"appid\":");
-            if (p == std::string::npos) continue;
-            PlaytimeEntry e{};
-            if (sscanf_s(line.c_str() + p,
-                "{\"appid\": %u, \"playtime_min\": %u, \"playtime_2wks_min\": %u, "
-                "\"playtime_disconnected_min\": %u, \"last_played\": %u, "
-                "\"last_launch\": %u, \"last_exit\": %u}",
-                &e.appId, &e.playtimeMin, &e.playtime2wksMin,
-                &e.playtimeDisconnectedMin, &e.lastPlayed, &e.lastLaunch,
-                &e.lastExit) == 7) {
-                out[e.appId] = e;
-            }
-        }
-        return out;
-    }
-
-    void BackupPlaytimeForAccountDir(const std::string& accountDir, std::uint32_t accountId) {
-        const std::string vdf = accountDir + "\\config\\localconfig.vdf";
-        auto fresh = ParseLocalConfigPlaytime(vdf);
-        if (fresh.empty()) return;
-
-        const std::string deskData = io::CachedDeskDataDir();
-        if (deskData.empty()) return;
-        const std::string dir = deskData + "\\backup\\playtime";
-        CreateDirectoryA(dir.c_str(), nullptr);
-        const std::string path = dir + "\\UserPlaytime_" + std::to_string(accountId) + ".json";
-
-        auto merged = LoadPlaytimeSnapshot(path);
-        for (auto& [appId, e] : fresh) {
-            auto it = merged.find(appId);
-            if (it == merged.end()) { merged.emplace(appId, e); continue; }
-            auto& m = it->second;
-            m.playtimeMin = std::max(m.playtimeMin, e.playtimeMin);
-            m.playtime2wksMin = std::max(m.playtime2wksMin, e.playtime2wksMin);
-            m.playtimeDisconnectedMin = std::max(m.playtimeDisconnectedMin, e.playtimeDisconnectedMin);
-            m.lastPlayed = std::max(m.lastPlayed, e.lastPlayed);
-            m.lastLaunch = std::max(m.lastLaunch, e.lastLaunch);
-            m.lastExit = std::max(m.lastExit, e.lastExit);
-        }
-
-        std::vector<const PlaytimeEntry*> sorted;
-        sorted.reserve(merged.size());
-        for (const auto& [appId, e] : merged) sorted.push_back(&e);
-        std::sort(sorted.begin(), sorted.end(),
-            [](const PlaytimeEntry* a, const PlaytimeEntry* b) { return a->appId < b->appId; });
-
-        const std::string tmp = path + ".tmp";
-        {
-            std::ofstream out(tmp, std::ios::trunc);
-            if (!out.is_open()) return;
-            out << "{\n";
-            out << "  \"_format\": \"aether-playtime-mirror-v1\",\n";
-            out << "  \"_note\": \"minutes; source userdata/<account>/config/localconfig.vdf\",\n";
-            out << "  \"account_id\": " << accountId << ",\n";
-            out << "  \"steamid64\": " << steam::MakeSteamId64(accountId) << ",\n";
-            out << "  \"updated\": \"" << io::FormatWallClockNow() << "\",\n";
-            out << "  \"updated_unix\": " << static_cast<long long>(std::time(nullptr)) << ",\n";
-            out << "  \"apps\": [\n";
-            for (std::size_t i = 0; i < sorted.size(); ++i) {
-                const PlaytimeEntry& e = *sorted[i];
-                out << "    {\"appid\": " << e.appId
-                    << ", \"playtime_min\": " << e.playtimeMin
-                    << ", \"playtime_2wks_min\": " << e.playtime2wksMin
-                    << ", \"playtime_disconnected_min\": " << e.playtimeDisconnectedMin
-                    << ", \"last_played\": " << e.lastPlayed
-                    << ", \"last_launch\": " << e.lastLaunch
-                    << ", \"last_exit\": " << e.lastExit << "}"
-                    << (i + 1 < sorted.size() ? "," : "") << "\n";
-            }
-            out << "  ]\n}\n";
-            out.flush();
-        }
-        if (io::AtomicReplace(tmp, path)) {
-            AC_LOG_INFO(kModule, "Backup: playtime for account %u -> %zu app(s) in %s.",
-                accountId, merged.size(), path.c_str());
-        }
-        else {
-            AC_LOG_WARN(kModule, "Backup: cannot replace playtime snapshot %s.", path.c_str());
-        }
-    }
-
-    void ProcessPlaytimeBackup() {
-        const std::string userdata = g_state.steamInstallPath + "\\userdata";
-        const std::string pattern = userdata + "\\*";
-        WIN32_FIND_DATAA fd{};
-        HANDLE find = FindFirstFileA(pattern.c_str(), &fd);
-        if (find == INVALID_HANDLE_VALUE) return;
-        do {
-            if (!(fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) || fd.cFileName[0] == '.') continue;
-            char* end = nullptr;
-            const unsigned long account = std::strtoul(fd.cFileName, &end, 10);
-            if (!end || *end != '\0' || account == 0) continue;
-            BackupPlaytimeForAccountDir(userdata + "\\" + fd.cFileName,
-                static_cast<std::uint32_t>(account));
-        } while (FindNextFileA(find, &fd));
-        FindClose(find);
-    }
-
-}  // namespace
-
-void RefreshAllAccounts() {
-    ProcessPlaytimeBackup();
+    return s;
 }
 
-}  // namespace ac::backup::playtime
+std::unordered_map<std::uint32_t, PlaytimeEntry> ParseLocalConfigPlaytime(const std::string& path) {
+    std::unordered_map<std::uint32_t, PlaytimeEntry> out;
+    std::ifstream ifs(path);
+    if (!ifs.is_open())
+        return out;
+
+    std::vector<std::string> stack; // current section path
+    std::string pendingSection;
+    std::string line;
+    while (std::getline(ifs, line)) {
+        // Strip comments/CR
+        if (!line.empty() && line.back() == '\r')
+            line.pop_back();
+        // First unquoted brace (shared codec).
+        std::size_t brace = 0;
+        char braceChar = 0;
+        const bool hasBrace = vdf::FindUnquotedBrace(line, brace, braceChar);
+
+        if (hasBrace && braceChar == '{') {
+            // Opening brace: the section is the pending key (previous line)
+            // or unnamed.
+            stack.push_back(pendingSection);
+            pendingSection.clear();
+            continue;
+        }
+        if (hasBrace && braceChar == '}') {
+            if (!stack.empty())
+                stack.pop_back();
+            continue;
+        }
+
+        std::string key, value;
+        const vdf::LineKind kind = vdf::ParseLine(line, key, value);
+        if (kind == vdf::LineKind::SectionKey) {
+            pendingSection = key; // waiting for the brace on the next line
+            continue;
+        }
+        if (kind != vdf::LineKind::KeyValue)
+            continue;
+
+        // Look for .../Apps/<appid>[/<sub>] in the stack (in real localconfigs
+        // the section is "Apps" capitalized: case-insensitive compare).
+        int appsIdx = -1;
+        for (std::size_t i = 0; i + 1 < stack.size(); ++i) {
+            if (AsciiLower(stack[i]) == "apps") {
+                appsIdx = static_cast<int>(i);
+                break;
+            }
+        }
+        if (appsIdx < 0)
+            continue;
+        if (stack.size() < static_cast<std::size_t>(appsIdx) + 2)
+            continue;
+        const std::string& appIdStr = stack[appsIdx + 1];
+        char* end = nullptr;
+        unsigned long appId = std::strtoul(appIdStr.c_str(), &end, 10);
+        if (!end || *end != '\0')
+            continue; // id non numerico (es. non-Steam hash): skip
+        const bool inAutocloud =
+            stack.size() == static_cast<std::size_t>(appsIdx) + 3 && stack[appsIdx + 2] == "autocloud";
+
+        PlaytimeEntry& e = out[static_cast<std::uint32_t>(appId)];
+        e.appId = static_cast<std::uint32_t>(appId);
+        unsigned long v = std::strtoul(value.c_str(), nullptr, 10);
+        if (inAutocloud) {
+            if (key == "lastlaunch")
+                e.lastLaunch = static_cast<std::uint32_t>(v);
+            else if (key == "lastexit")
+                e.lastExit = static_cast<std::uint32_t>(v);
+        } else {
+            if (key == "Playtime")
+                e.playtimeMin = static_cast<std::uint32_t>(v);
+            else if (key == "Playtime2wks")
+                e.playtime2wksMin = static_cast<std::uint32_t>(v);
+            else if (key == "PlaytimeDisconnected")
+                e.playtimeDisconnectedMin = static_cast<std::uint32_t>(v);
+            else if (key == "LastPlayed")
+                e.lastPlayed = static_cast<std::uint32_t>(v);
+        }
+    }
+    return out;
+}
+
+// Monotone merge: per field keep the max of existing backup and new data.
+std::unordered_map<std::uint32_t, PlaytimeEntry> LoadPlaytimeSnapshot(const std::string& path) {
+    std::unordered_map<std::uint32_t, PlaytimeEntry> out;
+    std::ifstream ifs(path);
+    if (!ifs.is_open())
+        return out;
+    std::string line;
+    while (std::getline(ifs, line)) {
+        const std::size_t p = line.find("{\"appid\":");
+        if (p == std::string::npos)
+            continue;
+        PlaytimeEntry e{};
+        if (sscanf_s(line.c_str() + p,
+                     "{\"appid\": %u, \"playtime_min\": %u, \"playtime_2wks_min\": %u, "
+                     "\"playtime_disconnected_min\": %u, \"last_played\": %u, "
+                     "\"last_launch\": %u, \"last_exit\": %u}",
+                     &e.appId, &e.playtimeMin, &e.playtime2wksMin, &e.playtimeDisconnectedMin, &e.lastPlayed,
+                     &e.lastLaunch, &e.lastExit) == 7) {
+            out[e.appId] = e;
+        }
+    }
+    return out;
+}
+
+void BackupPlaytimeForAccountDir(const std::string& accountDir, std::uint32_t accountId) {
+    const std::string vdf = accountDir + "\\config\\localconfig.vdf";
+    auto fresh = ParseLocalConfigPlaytime(vdf);
+    if (fresh.empty())
+        return;
+
+    const std::string deskData = io::CachedDeskDataDir();
+    if (deskData.empty())
+        return;
+    const std::string dir = deskData + "\\backup\\playtime";
+    CreateDirectoryA(dir.c_str(), nullptr);
+    const std::string path = dir + "\\UserPlaytime_" + std::to_string(accountId) + ".json";
+
+    auto merged = LoadPlaytimeSnapshot(path);
+    for (auto& [appId, e] : fresh) {
+        auto it = merged.find(appId);
+        if (it == merged.end()) {
+            merged.emplace(appId, e);
+            continue;
+        }
+        auto& m = it->second;
+        m.playtimeMin = std::max(m.playtimeMin, e.playtimeMin);
+        m.playtime2wksMin = std::max(m.playtime2wksMin, e.playtime2wksMin);
+        m.playtimeDisconnectedMin = std::max(m.playtimeDisconnectedMin, e.playtimeDisconnectedMin);
+        m.lastPlayed = std::max(m.lastPlayed, e.lastPlayed);
+        m.lastLaunch = std::max(m.lastLaunch, e.lastLaunch);
+        m.lastExit = std::max(m.lastExit, e.lastExit);
+    }
+
+    std::vector<const PlaytimeEntry*> sorted;
+    sorted.reserve(merged.size());
+    for (const auto& [appId, e] : merged)
+        sorted.push_back(&e);
+    std::sort(sorted.begin(), sorted.end(),
+              [](const PlaytimeEntry* a, const PlaytimeEntry* b) { return a->appId < b->appId; });
+
+    const std::string tmp = path + ".tmp";
+    {
+        std::ofstream out(tmp, std::ios::trunc);
+        if (!out.is_open())
+            return;
+        out << "{\n";
+        out << "  \"_format\": \"aether-playtime-mirror-v1\",\n";
+        out << "  \"_note\": \"minutes; source userdata/<account>/config/localconfig.vdf\",\n";
+        out << "  \"account_id\": " << accountId << ",\n";
+        out << "  \"steamid64\": " << steam::MakeSteamId64(accountId) << ",\n";
+        out << "  \"updated\": \"" << io::FormatWallClockNow() << "\",\n";
+        out << "  \"updated_unix\": " << static_cast<long long>(std::time(nullptr)) << ",\n";
+        out << "  \"apps\": [\n";
+        for (std::size_t i = 0; i < sorted.size(); ++i) {
+            const PlaytimeEntry& e = *sorted[i];
+            out << "    {\"appid\": " << e.appId << ", \"playtime_min\": " << e.playtimeMin
+                << ", \"playtime_2wks_min\": " << e.playtime2wksMin
+                << ", \"playtime_disconnected_min\": " << e.playtimeDisconnectedMin
+                << ", \"last_played\": " << e.lastPlayed << ", \"last_launch\": " << e.lastLaunch
+                << ", \"last_exit\": " << e.lastExit << "}" << (i + 1 < sorted.size() ? "," : "") << "\n";
+        }
+        out << "  ]\n}\n";
+        out.flush();
+    }
+    if (io::AtomicReplace(tmp, path)) {
+        AC_LOG_INFO(kModule, "Backup: playtime for account %u -> %zu app(s) in %s.", accountId, merged.size(),
+                    path.c_str());
+    } else {
+        AC_LOG_WARN(kModule, "Backup: cannot replace playtime snapshot %s.", path.c_str());
+    }
+}
+
+void ProcessPlaytimeBackup() {
+    const std::string userdata = g_state.steamInstallPath + "\\userdata";
+    const std::string pattern = userdata + "\\*";
+    WIN32_FIND_DATAA fd{};
+    HANDLE find = FindFirstFileA(pattern.c_str(), &fd);
+    if (find == INVALID_HANDLE_VALUE)
+        return;
+    do {
+        if (!(fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) || fd.cFileName[0] == '.')
+            continue;
+        char* end = nullptr;
+        const unsigned long account = std::strtoul(fd.cFileName, &end, 10);
+        if (!end || *end != '\0' || account == 0)
+            continue;
+        BackupPlaytimeForAccountDir(userdata + "\\" + fd.cFileName, static_cast<std::uint32_t>(account));
+    } while (FindNextFileA(find, &fd));
+    FindClose(find);
+}
+
+} // namespace
+
+void RefreshAllAccounts() { ProcessPlaytimeBackup(); }
+
+} // namespace ac::backup::playtime

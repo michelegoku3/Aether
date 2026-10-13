@@ -19,7 +19,10 @@ pub trait BuildHistorySource: Send + Sync {
 
 /// Resolves a BuildID into the (depot, manifest) pins of that build.
 pub trait BuildDetailsSource: Send + Sync {
-    fn pins_for_build(&self, build_id: u64) -> BoxFuture<'_, Result<Vec<DepotManifestPin>, VersionError>>;
+    fn pins_for_build(
+        &self,
+        build_id: u64,
+    ) -> BoxFuture<'_, Result<Vec<DepotManifestPin>, VersionError>>;
 }
 
 // ── Build-details access token ───────────────────────────────────────────
@@ -31,7 +34,8 @@ pub trait BuildDetailsSource: Send + Sync {
 // It is NOT a documented public API and may be rotated or revoked at any
 // time, so it can always be overridden with the `AETHERDESK_BUILD_TOKEN`
 // environment variable or the `build_details_token` setting.
-pub const DEFAULT_BUILD_DETAILS_TOKEN: &str = "dbxpriv_7785b0eca2c32385830332832ed8443539ab4f5b084779f7";
+pub const DEFAULT_BUILD_DETAILS_TOKEN: &str =
+    "dbxpriv_7785b0eca2c32385830332832ed8443539ab4f5b084779f7";
 
 /// Resolution order: env override → user setting → built-in default.
 pub fn resolve_build_details_token(settings_token: Option<&str>) -> String {

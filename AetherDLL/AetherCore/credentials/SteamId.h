@@ -34,4 +34,4 @@ std::uint64_t GetActiveSteamId64();
 // Only configured apps (present in depotKeys) are spoofed; others return 0.
 std::uint64_t GetSpoofSteamId(steam::AppId appId);
 
-}  // namespace ac::steamid
+} // namespace ac::steamid

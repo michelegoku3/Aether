@@ -17,16 +17,10 @@ export function useAppBootstrap(params: Params) {
     const hydrate = async () => {
       const deskVersionPromise = params.loadDeskVersion();
       const warmPromise = invoke<number>('warm_library_game_cache')
-        .then((count) => console.log(
-          `[AetherDesk library cache warm-up] ${count} cached names available`,
-        ))
+        .then((count) => console.log(`[AetherDesk library cache warm-up] ${count} cached names available`))
         .catch((error) => console.warn('Library cache warm-up failed:', error));
       const settingsPromise = getSettings();
-      const [settings] = await Promise.all([
-        settingsPromise,
-        deskVersionPromise,
-        warmPromise,
-      ]);
+      const [settings] = await Promise.all([settingsPromise, deskVersionPromise, warmPromise]);
       await Promise.all([
         params.refreshAppearance(settings),
         params.refreshHubcapUsage(undefined, settings),

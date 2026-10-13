@@ -63,9 +63,7 @@ export const AntivirusExclusionModal = ({ onDone }: AntivirusExclusionModalProps
     <div className="modal-overlay" onClick={isApplying ? undefined : dismiss}>
       <div className="modal-container av-modal-container" onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
-          <span className="modal-title">
-            Windows Defender Exclusion
-          </span>
+          <span className="modal-title">Windows Defender Exclusion</span>
           <button
             className="modal-close-btn"
             disabled={isApplying}
@@ -81,33 +79,19 @@ export const AntivirusExclusionModal = ({ onDone }: AntivirusExclusionModalProps
 
         <div className="modal-body">
           <p className="av-modal-text">
-            Crack files applied by AetherDesk are placed inside your Steam library
-            folders and can be flagged by Windows Defender as false positives —
-            which may silently delete them or break your games. To prevent this,
-            AetherDesk and all your Steam library folders should be added to
-            Defender's exclusion list.
+            Crack files applied by AetherDesk are placed inside your Steam library folders and can be flagged by Windows
+            Defender as false positives — which may silently delete them or break your games. To prevent this,
+            AetherDesk and all your Steam library folders should be added to Defender's exclusion list.
           </p>
 
-          {status.text && (
-            <div className={`settings-alert ${status.type} settings-alert--compact`}>
-              {status.text}
-            </div>
-          )}
+          {status.text && <div className={`settings-alert ${status.type} settings-alert--compact`}>{status.text}</div>}
 
           <div className="av-modal-actions">
-            <button
-              className="panel-btn"
-              onClick={handleApply}
-              disabled={isApplying}
-            >
+            <button className="panel-btn" onClick={handleApply} disabled={isApplying}>
               {isApplying ? 'Adding...' : 'Add exclusion'}
             </button>
 
-            <button
-              className="av-link-btn"
-              onClick={handleDoneManually}
-              disabled={isApplying}
-            >
+            <button className="av-link-btn" onClick={handleDoneManually} disabled={isApplying}>
               I added it manually
             </button>
           </div>

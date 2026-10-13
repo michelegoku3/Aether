@@ -20,9 +20,7 @@ const useHarness = () => {
 
 describe('useTrendingStore', () => {
   it('loads successive offsets and deduplicates game ids', async () => {
-    invokeMock
-      .mockResolvedValueOnce([game(1), game(2)])
-      .mockResolvedValueOnce([game(2), game(3)]);
+    invokeMock.mockResolvedValueOnce([game(1), game(2)]).mockResolvedValueOnce([game(2), game(3)]);
     const { result } = renderHook(useHarness);
 
     await act(() => result.current.trending.loadNext(2));
@@ -35,7 +33,12 @@ describe('useTrendingStore', () => {
 
   it('reserves unique offsets for concurrent top-ups', async () => {
     const resolvers: Array<(games: StoreGameResult[]) => void> = [];
-    invokeMock.mockImplementation(() => new Promise((done) => { resolvers.push(done); }));
+    invokeMock.mockImplementation(
+      () =>
+        new Promise((done) => {
+          resolvers.push(done);
+        })
+    );
     const { result } = renderHook(useHarness);
 
     act(() => {
@@ -54,10 +57,16 @@ describe('useTrendingStore', () => {
 
   it('ignores a late response from a reset generation', async () => {
     let resolveOld: ((games: StoreGameResult[]) => void) | undefined;
-    invokeMock.mockReturnValueOnce(new Promise((done) => { resolveOld = done; }));
+    invokeMock.mockReturnValueOnce(
+      new Promise((done) => {
+        resolveOld = done;
+      })
+    );
     const { result } = renderHook(useHarness);
 
-    act(() => { void result.current.trending.loadNext(20); });
+    act(() => {
+      void result.current.trending.loadNext(20);
+    });
     act(() => result.current.trending.reset());
     await act(async () => resolveOld?.([game(99)]));
 
@@ -66,9 +75,7 @@ describe('useTrendingStore', () => {
   });
 
   it('makes a failed offset retryable', async () => {
-    invokeMock
-      .mockRejectedValueOnce(new Error('network'))
-      .mockResolvedValueOnce([game(1)]);
+    invokeMock.mockRejectedValueOnce(new Error('network')).mockResolvedValueOnce([game(1)]);
     const { result } = renderHook(useHarness);
 
     await act(() => result.current.trending.loadNext(20));

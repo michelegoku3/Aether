@@ -25,7 +25,6 @@ bool HasLocalManifest(std::uint64_t manifestGid, std::uint32_t depotId);
 // picks the file up once it has landed in depotcache. Failed fetches are
 // retried in the background with a bounded backoff schedule (max 6 attempts
 // per depot/GID per session) instead of the old one-shot-per-session.
-void EnsureManifestAvailable(std::uint32_t appId, std::uint32_t depotId,
-                             std::uint64_t manifestGid);
+void EnsureManifestAvailable(std::uint32_t appId, std::uint32_t depotId, std::uint64_t manifestGid);
 
-}  // namespace ac::manifestfetch
+} // namespace ac::manifestfetch

@@ -87,11 +87,7 @@ export const SettingsAetherSection: React.FC<SettingsAetherSectionProps> = ({
       >
         <span className="settings-toggle-text">Enable test updates</span>
         <label className="version-switch">
-          <input
-            type="checkbox"
-            checked={enableTestUpdates}
-            onChange={(e) => setEnableTestUpdates(e.target.checked)}
-          />
+          <input type="checkbox" checked={enableTestUpdates} onChange={(e) => setEnableTestUpdates(e.target.checked)} />
           <span></span>
         </label>
       </div>
@@ -206,9 +202,7 @@ export const SettingsAetherSection: React.FC<SettingsAetherSectionProps> = ({
           className="settings-input"
         />
         {steamCheck.state !== 'idle' && (
-          <p className={`settings-desc steam-path-status steam-path-${steamCheck.state}`}>
-            {steamCheck.message}
-          </p>
+          <p className={`settings-desc steam-path-status steam-path-${steamCheck.state}`}>{steamCheck.message}</p>
         )}
       </div>
 
@@ -232,10 +226,7 @@ export const SettingsAetherSection: React.FC<SettingsAetherSectionProps> = ({
         </button>
       </div>
 
-      <div
-        className="settings-toggle-row"
-        title="Auto Detect the Steam installation (registry / running Steam)"
-      >
+      <div className="settings-toggle-row" title="Auto Detect the Steam installation (registry / running Steam)">
         <span className="settings-toggle-text">Detect Steam automatically</span>
         <button
           type="button"
@@ -281,7 +272,9 @@ export const SettingsAetherSection: React.FC<SettingsAetherSectionProps> = ({
                 Object.keys(localStorage)
                   .filter((key) => key.startsWith('aether_cover_') || key.startsWith('aether_hero_'))
                   .forEach((key) => localStorage.removeItem(key));
-              } catch { /* localStorage unavailable: the backend part already succeeded */ }
+              } catch {
+                /* localStorage unavailable: the backend part already succeeded */
+              }
               showStatus(result, 'success');
             } catch (err: unknown) {
               showStatus(`Failed to clear caches: ${toErrorMessage(err)}`, 'error');

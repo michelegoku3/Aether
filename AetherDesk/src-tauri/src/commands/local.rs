@@ -38,9 +38,7 @@ pub async fn pick_local_files(
 
 /// Open the native folder picker and return the chosen directory path.
 #[tauri::command]
-pub async fn pick_local_folder(
-    app: tauri::AppHandle,
-) -> Result<Option<String>, String> {
+pub async fn pick_local_folder(app: tauri::AppHandle) -> Result<Option<String>, String> {
     let start_dir = dirs::download_dir()
         .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
 
@@ -75,7 +73,11 @@ pub async fn install_bulk_local(
     let report = {
         let (steam_path_b, local_files_b) = (steam_path.clone(), local_files.clone());
         tauri::async_runtime::spawn_blocking(move || {
-            local::install_bulk_local_pipeline(&steam_path_b, &local_files_b, settings.download_games_with_updates_on)
+            local::install_bulk_local_pipeline(
+                &steam_path_b,
+                &local_files_b,
+                settings.download_games_with_updates_on,
+            )
         })
         .await
         .map_err(|e| format!("Bulk import task failed: {e}"))??
@@ -134,14 +136,20 @@ pub async fn install_local_game(
     let steam_path = crate::steam::resolve::resolve_steam_path(&settings.steam_path)
         .map_err(|error| error.message(&settings.steam_path))?;
 
-    crate::desk_log_info!("local", "Local install for AppID {} ({}) with {} source file(s)",
-        app_id, app_name, local_files.len());
+    crate::desk_log_info!(
+        "local",
+        "Local install for AppID {} ({}) with {} source file(s)",
+        app_id,
+        app_name,
+        local_files.len()
+    );
 
     // Validate build-labelled loose Lua files concurrently. This is advisory:
     // providers may offer only the closest historical snapshot, which is still
     // useful, so mismatches become visible warnings and never reject a file.
-    let token =
-        crate::versioning::sources::resolve_build_details_token(Some(&settings.build_details_token));
+    let token = crate::versioning::sources::resolve_build_details_token(Some(
+        &settings.build_details_token,
+    ));
     let mut validation_tasks = tokio::task::JoinSet::new();
     for file in &local_files {
         let path = PathBuf::from(file);
@@ -185,7 +193,13 @@ pub async fn install_local_game(
         let (app_name_b, steam_path_b, local_files_b) =
             (app_name.clone(), steam_path.clone(), local_files.clone());
         tauri::async_runtime::spawn_blocking(move || {
-            local::install_local_pipeline(app_id, &app_name_b, &steam_path_b, &local_files_b, settings.download_games_with_updates_on)
+            local::install_local_pipeline(
+                app_id,
+                &app_name_b,
+                &steam_path_b,
+                &local_files_b,
+                settings.download_games_with_updates_on,
+            )
         })
         .await
         .map_err(|e| format!("Local install task failed: {e}"))??

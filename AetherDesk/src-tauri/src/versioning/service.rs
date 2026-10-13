@@ -192,10 +192,7 @@ impl VersionService {
         let mut cache_entries = Vec::new();
         while let Some(joined) = requests.join_next().await {
             let (build_id, result) = joined.map_err(|err| {
-                VersionError::source(
-                    "build details source",
-                    format!("lookup task failed: {err}"),
-                )
+                VersionError::source("build details source", format!("lookup task failed: {err}"))
             })?;
             if let Ok(pins) = &result {
                 cache_entries.push((build_id, pins.clone()));

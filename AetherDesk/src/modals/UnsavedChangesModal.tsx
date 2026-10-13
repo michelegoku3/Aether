@@ -22,30 +22,20 @@ export interface UnsavedChangesModalProps {
 export const UnsavedChangesModal = ({ busy, onSave, onDiscard, onCancel }: UnsavedChangesModalProps) => (
   <ModalShell
     title="Unsaved changes"
-    onClose={() => { if (!busy) onCancel(); }}
+    onClose={() => {
+      if (!busy) onCancel();
+    }}
     closeDisabled={busy}
     containerClassName="uninstall-modal"
     bodyClassName="uninstall-modal-body"
   >
-    <p className="uninstall-modal-copy">
-      You have unsaved changes in Settings. Save them before leaving?
-    </p>
+    <p className="uninstall-modal-copy">You have unsaved changes in Settings. Save them before leaving?</p>
 
     <div className="uninstall-modal-actions">
-      <button
-        type="button"
-        className="uninstall-btn uninstall-btn-primary"
-        onClick={onSave}
-        disabled={busy}
-      >
+      <button type="button" className="uninstall-btn uninstall-btn-primary" onClick={onSave} disabled={busy}>
         {busy ? 'Saving…' : 'Save'}
       </button>
-      <button
-        type="button"
-        className="uninstall-btn uninstall-btn-danger"
-        onClick={onDiscard}
-        disabled={busy}
-      >
+      <button type="button" className="uninstall-btn uninstall-btn-danger" onClick={onDiscard} disabled={busy}>
         Don't Save
       </button>
     </div>

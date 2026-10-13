@@ -24,8 +24,7 @@ pub fn shell_ico_path() -> PathBuf {
 pub fn materialize_shell_ico(source: Option<&Path>) -> Result<PathBuf, String> {
     let dest = shell_ico_path();
     if let Some(parent) = dest.parent() {
-        fs::create_dir_all(parent)
-            .map_err(|e| format!("Failed to create icons folder: {}", e))?;
+        fs::create_dir_all(parent).map_err(|e| format!("Failed to create icons folder: {}", e))?;
     }
 
     // Always rewrite shell.ico so a previous custom icon cannot stick around
@@ -36,16 +35,17 @@ pub fn materialize_shell_ico(source: Option<&Path>) -> Result<PathBuf, String> {
                 .map_err(|e| format!("Failed to copy icon to {}: {}", dest.display(), e))?;
         }
         Some(src) => {
-            let bytes = fs::read(src)
-                .map_err(|e| format!("Failed to read {}: {}", src.display(), e))?;
+            let bytes =
+                fs::read(src).map_err(|e| format!("Failed to read {}: {}", src.display(), e))?;
             write_decoded_ico(&bytes, &dest)?;
         }
         None => {
-            write_decoded_ico(crate::core::custom_css::DEFAULT_AETHER_ICON, &dest)
-                .or_else(|_| {
+            write_decoded_ico(crate::core::custom_css::DEFAULT_AETHER_ICON, &dest).or_else(
+                |_| {
                     fs::write(&dest, crate::core::custom_css::DEFAULT_AETHER_ICON)
                         .map_err(|e| format!("Failed to write default shell.ico: {}", e))
-                })?;
+                },
+            )?;
         }
     }
 
@@ -60,8 +60,8 @@ fn is_ico(path: &Path) -> bool {
 }
 
 fn write_decoded_ico(bytes: &[u8], dest: &Path) -> Result<(), String> {
-    let decoded = image::load_from_memory(bytes)
-        .map_err(|e| format!("Unsupported icon format: {}", e))?;
+    let decoded =
+        image::load_from_memory(bytes).map_err(|e| format!("Unsupported icon format: {}", e))?;
     let mut out = Vec::new();
     decoded
         .write_to(&mut Cursor::new(&mut out), image::ImageFormat::Ico)
@@ -86,7 +86,9 @@ mod windows_impl {
     const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
     pub fn sync(icon_ico: &Path) {
-        let Ok(exe_path) = std::env::current_exe() else { return };
+        let Ok(exe_path) = std::env::current_exe() else {
+            return;
+        };
         if exe_path
             .file_name()
             .and_then(|n| n.to_str())
@@ -95,7 +97,9 @@ mod windows_impl {
         {
             return;
         }
-        let Some(work_dir) = exe_path.parent() else { return };
+        let Some(work_dir) = exe_path.parent() else {
+            return;
+        };
 
         let mut targets = Vec::new();
         if let Ok(appdata) = std::env::var("APPDATA") {
@@ -108,7 +112,9 @@ mod windows_impl {
             targets.push(programs.join("AetherDesk.lnk"));
         }
         if let Ok(userprofile) = std::env::var("USERPROFILE") {
-            let desktop = Path::new(&userprofile).join("Desktop").join("AetherDesk.lnk");
+            let desktop = Path::new(&userprofile)
+                .join("Desktop")
+                .join("AetherDesk.lnk");
             if desktop.exists() {
                 targets.push(desktop);
             }
@@ -148,7 +154,13 @@ mod windows_impl {
                 icon = icon,
             );
             let _ = Command::new("powershell.exe")
-                .args(["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", &script])
+                .args([
+                    "-NoProfile",
+                    "-ExecutionPolicy",
+                    "Bypass",
+                    "-Command",
+                    &script,
+                ])
                 .creation_flags(CREATE_NO_WINDOW)
                 .status();
         }

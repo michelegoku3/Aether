@@ -31,4 +31,4 @@ int CountAchievementsInBinFile(const std::string& path);
 // "bits" are NOT achievement buckets.
 const std::unordered_set<std::uint32_t>& SchemaBucketsFor(steam::AppId appId);
 
-}  // namespace ac::backup::statscache
+} // namespace ac::backup::statscache

@@ -62,7 +62,9 @@ describe('useLuaToolsAuth', () => {
     let resolveSignIn: ((value: typeof signedIn) => void) | undefined;
     invokeMock.mockImplementation((command: string) => {
       if (command === 'sign_in_luatools') {
-        return new Promise<typeof signedIn>((resolve) => { resolveSignIn = resolve; });
+        return new Promise<typeof signedIn>((resolve) => {
+          resolveSignIn = resolve;
+        });
       }
       if (command === 'cancel_luatools_sign_in') return Promise.resolve();
       return Promise.reject(new Error(`Unexpected command ${command}`));
@@ -70,7 +72,9 @@ describe('useLuaToolsAuth', () => {
     const showStatus = vi.fn();
     const { result } = renderHook(() => useLuaToolsAuth(showStatus));
 
-    act(() => { void result.current.signIn(); });
+    act(() => {
+      void result.current.signIn();
+    });
     await waitFor(() => expect(result.current.oauthBusy).toBe(true));
     await act(() => result.current.cancelOAuth());
 

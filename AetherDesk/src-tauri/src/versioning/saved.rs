@@ -88,14 +88,12 @@ impl SavedBuildsStore {
 
     fn save(&self, file: &SavedBuildsFile) -> Result<(), String> {
         if let Some(parent) = self.path.parent() {
-            fs::create_dir_all(parent)
-                .map_err(|e| format!("Failed to create data dir: {e}"))?;
+            fs::create_dir_all(parent).map_err(|e| format!("Failed to create data dir: {e}"))?;
         }
         let json = serde_json::to_string_pretty(file)
             .map_err(|e| format!("Failed to serialize saved builds: {e}"))?;
         let tmp = self.path.with_extension("json.tmp");
         fs::write(&tmp, json).map_err(|e| format!("Failed to write saved builds: {e}"))?;
-        fs::rename(&tmp, &self.path)
-            .map_err(|e| format!("Failed to commit saved builds: {e}"))
+        fs::rename(&tmp, &self.path).map_err(|e| format!("Failed to commit saved builds: {e}"))
     }
 }

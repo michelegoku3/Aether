@@ -19,9 +19,7 @@ interface ProviderRequest {
 }
 
 const apiKeyFor = (source: StoreDownloadSource, settings: AppSettings) =>
-  source === 'hubcap' ? settings.hubcap_api_key
-    : source === 'ryuu' ? settings.ryuu_api_key
-      : 'oureveryday_public';
+  source === 'hubcap' ? settings.hubcap_api_key : source === 'ryuu' ? settings.ryuu_api_key : 'oureveryday_public';
 
 export function useStoreDownload({ onRefreshUsage }: Params) {
   const { loadInstalledGames } = useLibraryGames();
@@ -64,7 +62,7 @@ export function useStoreDownload({ onRefreshUsage }: Params) {
 
   const providerRequest = async (
     game: StoreGameResult,
-    mode: 'latest' | 'specific',
+    mode: 'latest' | 'specific'
   ): Promise<ProviderRequest | null> => {
     setStatus({ text: 'Loading local configurations...', type: 'info' });
     const settings = await getSettings();
@@ -82,14 +80,22 @@ export function useStoreDownload({ onRefreshUsage }: Params) {
       return null;
     }
 
-    const command = mode === 'latest'
-      ? source === 'luatools' ? 'trigger_luatools_download'
-        : source === 'ryuu' ? 'trigger_ryuu_download' : 'trigger_hubcap_download'
-      : source === 'luatools' ? 'prepare_luatools_specific_version_download'
-        : source === 'ryuu' ? 'prepare_ryuu_specific_version_download' : 'prepare_specific_version_download';
-    const args = source === 'luatools'
-      ? { appId: Number(game.appId), gameName: game.name || null }
-      : { appId: Number(game.appId), apiKey };
+    const command =
+      mode === 'latest'
+        ? source === 'luatools'
+          ? 'trigger_luatools_download'
+          : source === 'ryuu'
+            ? 'trigger_ryuu_download'
+            : 'trigger_hubcap_download'
+        : source === 'luatools'
+          ? 'prepare_luatools_specific_version_download'
+          : source === 'ryuu'
+            ? 'prepare_ryuu_specific_version_download'
+            : 'prepare_specific_version_download';
+    const args =
+      source === 'luatools'
+        ? { appId: Number(game.appId), gameName: game.name || null }
+        : { appId: Number(game.appId), apiKey };
     return { command, args };
   };
 
@@ -99,7 +105,10 @@ export function useStoreDownload({ onRefreshUsage }: Params) {
     setStatus({ text: 'Initializing pipeline...', type: 'info' });
     try {
       const request = await providerRequest(selectedGame, 'latest');
-      if (!request) { setIsDownloading(false); return; }
+      if (!request) {
+        setIsDownloading(false);
+        return;
+      }
       setStatus({ text: `Connecting to source ${source.toUpperCase()}...`, type: 'info' });
       const result = await invoke<string>(request.command, request.args);
       loadInstalledGames();
@@ -122,7 +131,10 @@ export function useStoreDownload({ onRefreshUsage }: Params) {
     setStatus({ text: 'Downloading Lua and preparing version table...', type: 'info' });
     try {
       const request = await providerRequest(selectedGame, 'specific');
-      if (!request) { setIsDownloading(false); return; }
+      if (!request) {
+        setIsDownloading(false);
+        return;
+      }
       const rows = await invoke<LuaManifestRow[]>(request.command, request.args);
       loadInstalledGames();
       setManifestRows((rows || []).map((row) => ({ ...row, manifestInput: '' })));

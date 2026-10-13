@@ -31,8 +31,7 @@ inline bool ParseSignature(const std::string& sig, std::vector<std::uint8_t>& by
         if (token == "??") {
             bytes.push_back(0);
             mask.push_back('?');
-        }
-        else {
+        } else {
             try {
                 if (token.size() != 2) {
                     AC_LOG_WARN(kSigModule, "Bad signature token '%s'.", token.c_str());
@@ -40,14 +39,13 @@ inline bool ParseSignature(const std::string& sig, std::vector<std::uint8_t>& by
                 }
                 std::size_t consumed = 0;
                 unsigned long value = std::stoul(token, &consumed, 16);
-                if (consumed != token.size() || value > 0xFFul) {
+                if (consumed != token.size() || value > 0xFFull) {
                     AC_LOG_WARN(kSigModule, "Bad signature token '%s'.", token.c_str());
                     return false;
                 }
                 bytes.push_back(static_cast<std::uint8_t>(value));
                 mask.push_back('x');
-            }
-            catch (...) {
+            } catch (...) {
                 AC_LOG_WARN(kSigModule, "Bad signature token '%s'.", token.c_str());
                 return false;
             }
@@ -56,4 +54,4 @@ inline bool ParseSignature(const std::string& sig, std::vector<std::uint8_t>& by
     return !bytes.empty();
 }
 
-}  // namespace ac::pattern
+} // namespace ac::pattern

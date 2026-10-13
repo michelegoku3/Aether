@@ -1,7 +1,7 @@
 #pragma once
 
-#include <cstdint>
 #include "hooks/wire/PacketRouter.h"
+#include <cstdint>
 
 namespace ac::hooks::AchievementModule {
 
@@ -9,7 +9,7 @@ namespace ac::hooks::AchievementModule {
 std::int32_t HandleSendGetUserStats(const WireFrame& frame, std::uint8_t* out, std::uint32_t outCap);
 std::int32_t HandleSendClientGetUserStats(const WireFrame& frame, std::uint8_t* out, std::uint32_t outCap);
 
-// Gestione dei messaggi in entrata (pulizia dati donatore e iniezione dati locali dell'utente)
+// Handling of inbound messages (donor data cleanup and local user data injection)
 std::int32_t HandleRecvGetUserStatsResponse(const WireFrame& frame, std::uint8_t* out, std::uint32_t outCap,
                                             std::uint8_t* outHdr, std::uint32_t outHdrCap, std::int32_t* outNewHdrLen);
 std::int32_t HandleRecvClientGetUserStatsResponse(const WireFrame& frame, std::uint8_t* out, std::uint32_t outCap);

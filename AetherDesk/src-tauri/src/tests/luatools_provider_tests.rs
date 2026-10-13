@@ -11,14 +11,24 @@ fn chooses_available_source_by_stable_preference() {
         ("Luie".to_string(), "unavailable".to_string()),
     ]);
 
-    assert_eq!(rank_available_sources(&statuses).first().map(String::as_str), Some("Ryuu"));
+    assert_eq!(
+        rank_available_sources(&statuses)
+            .first()
+            .map(String::as_str),
+        Some("Ryuu")
+    );
 }
 
 #[test]
 fn source_status_matching_is_case_insensitive() {
     let statuses = HashMap::from([("rYuU".to_string(), "AVAILABLE".to_string())]);
 
-    assert_eq!(rank_available_sources(&statuses).first().map(String::as_str), Some("rYuU"));
+    assert_eq!(
+        rank_available_sources(&statuses)
+            .first()
+            .map(String::as_str),
+        Some("rYuU")
+    );
 }
 
 #[test]
@@ -28,7 +38,12 @@ fn falls_back_deterministically_for_future_source_names() {
         ("Alpha".to_string(), "available".to_string()),
     ]);
 
-    assert_eq!(rank_available_sources(&statuses).first().map(String::as_str), Some("Alpha"));
+    assert_eq!(
+        rank_available_sources(&statuses)
+            .first()
+            .map(String::as_str),
+        Some("Alpha")
+    );
 }
 
 #[test]
@@ -46,7 +61,10 @@ fn api_errors_are_described_like_the_official_client() {
     assert!(describe_api_error(StatusCode::UNAUTHORIZED, "").contains("login required"));
     assert!(describe_api_error(StatusCode::TOO_MANY_REQUESTS, "").contains("25/day"));
     assert_eq!(
-        describe_api_error(StatusCode::TOO_MANY_REQUESTS, r#"{"error":"Rate limit exceeded"}"#),
+        describe_api_error(
+            StatusCode::TOO_MANY_REQUESTS,
+            r#"{"error":"Rate limit exceeded"}"#
+        ),
         "Rate limit exceeded"
     );
     assert_eq!(
@@ -73,9 +91,19 @@ fn ranking_prefers_sources_that_ship_manifests_and_keeps_luie_as_fallback() {
     // last in alphabetical order; unavailable ones never appear.
     assert_eq!(
         rank_available_sources(&statuses),
-        vec!["Ryuu".to_string(), "Luie".to_string(), "Alpha".to_string(), "Zulu".to_string()]
+        vec![
+            "Ryuu".to_string(),
+            "Luie".to_string(),
+            "Alpha".to_string(),
+            "Zulu".to_string()
+        ]
     );
-    assert_eq!(rank_available_sources(&statuses).first().map(String::as_str), Some("Ryuu"));
+    assert_eq!(
+        rank_available_sources(&statuses)
+            .first()
+            .map(String::as_str),
+        Some("Ryuu")
+    );
 
     let luie_only = HashMap::from([
         ("Luie".to_string(), "available".to_string()),

@@ -25,9 +25,7 @@ describe('useStoreSearch', () => {
   });
 
   it('searches the backend after a cache miss', async () => {
-    invokeMock
-      .mockResolvedValueOnce({ cacheState: 'miss', results: [] })
-      .mockResolvedValueOnce([game(2)]);
+    invokeMock.mockResolvedValueOnce({ cacheState: 'miss', results: [] }).mockResolvedValueOnce([game(2)]);
     const { result } = renderHook(useStoreSearch);
 
     await act(() => result.current.search('half-life'));
@@ -38,9 +36,11 @@ describe('useStoreSearch', () => {
 
   it('shows stale cache immediately and refreshes it in the background', async () => {
     let resolveRefresh: ((games: StoreGameResult[]) => void) | undefined;
-    invokeMock
-      .mockResolvedValueOnce({ cacheState: 'stale', results: [game(1)] })
-      .mockReturnValueOnce(new Promise((resolve) => { resolveRefresh = resolve; }));
+    invokeMock.mockResolvedValueOnce({ cacheState: 'stale', results: [game(1)] }).mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveRefresh = resolve;
+      })
+    );
     const { result } = renderHook(useStoreSearch);
 
     await act(() => result.current.search('query'));
@@ -54,11 +54,17 @@ describe('useStoreSearch', () => {
   it('does not let an older search overwrite a newer one', async () => {
     let resolveOldCache: ((value: unknown) => void) | undefined;
     invokeMock
-      .mockReturnValueOnce(new Promise((resolve) => { resolveOldCache = resolve; }))
+      .mockReturnValueOnce(
+        new Promise((resolve) => {
+          resolveOldCache = resolve;
+        })
+      )
       .mockResolvedValueOnce({ cacheState: 'fresh', results: [game(2)] });
     const { result } = renderHook(useStoreSearch);
 
-    act(() => { void result.current.search('old'); });
+    act(() => {
+      void result.current.search('old');
+    });
     await act(() => result.current.search('new'));
     await act(async () => resolveOldCache?.({ cacheState: 'fresh', results: [game(1)] }));
 
@@ -68,10 +74,16 @@ describe('useStoreSearch', () => {
 
   it('invalidates an in-flight request when cleared', async () => {
     let resolveCache: ((value: unknown) => void) | undefined;
-    invokeMock.mockReturnValue(new Promise((resolve) => { resolveCache = resolve; }));
+    invokeMock.mockReturnValue(
+      new Promise((resolve) => {
+        resolveCache = resolve;
+      })
+    );
     const { result } = renderHook(useStoreSearch);
 
-    act(() => { void result.current.search('query'); });
+    act(() => {
+      void result.current.search('query');
+    });
     act(() => result.current.clear());
     await act(async () => resolveCache?.({ cacheState: 'fresh', results: [game(1)] }));
 

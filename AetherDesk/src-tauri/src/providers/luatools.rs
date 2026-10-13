@@ -55,7 +55,9 @@ impl LuaToolsClient {
         let statuses = self.source_statuses(app_id, &access_token).await?;
         let ranked = rank_available_sources(&statuses);
         if ranked.is_empty() {
-            return Err(format!("LuaTools has no available source for App ID {app_id}"));
+            return Err(format!(
+                "LuaTools has no available source for App ID {app_id}"
+            ));
         }
         Ok(ranked)
     }
@@ -68,7 +70,8 @@ impl LuaToolsClient {
         game_name: Option<&str>,
     ) -> Result<ManifestPackage, String> {
         let sources = self.available_sources(app_id).await?;
-        self.download_lua_package_from(app_id, &sources[0], game_name).await
+        self.download_lua_package_from(app_id, &sources[0], game_name)
+            .await
     }
 
     /// `GET /api/manifest/download?appid=…&source=…[&game_name=…]`
@@ -151,13 +154,16 @@ impl LuaToolsClient {
         pin: &DepotManifestPin,
         access_token: &str,
     ) -> Result<Vec<u8>, String> {
-        let manifest_gid: u64 = pin
-            .manifest_id
-            .trim()
-            .parse()
-            .map_err(|_| format!("Invalid manifest id '{}' for depot {}", pin.manifest_id, pin.depot_id))?;
+        let manifest_gid: u64 = pin.manifest_id.trim().parse().map_err(|_| {
+            format!(
+                "Invalid manifest id '{}' for depot {}",
+                pin.manifest_id, pin.depot_id
+            )
+        })?;
         if pin.depot_id == 0 || manifest_gid == 0 {
-            return Err("Depot manifest fetch requires a valid depot ID and manifest ID.".to_string());
+            return Err(
+                "Depot manifest fetch requires a valid depot ID and manifest ID.".to_string(),
+            );
         }
         let response = self
             .client
@@ -180,18 +186,24 @@ impl LuaToolsClient {
                 describe_api_error(status, &detail)
             ));
         }
-        let bytes = response
-            .bytes()
-            .await
-            .map_err(|e| format!("Could not read LuaTools manifest {}_{}: {e}", pin.depot_id, manifest_gid))?;
+        let bytes = response.bytes().await.map_err(|e| {
+            format!(
+                "Could not read LuaTools manifest {}_{}: {e}",
+                pin.depot_id, manifest_gid
+            )
+        })?;
         if bytes.is_empty() {
             return Err(format!(
                 "LuaTools returned an empty body for manifest {}_{}",
                 pin.depot_id, manifest_gid
             ));
         }
-        verify_manifest_bytes(bytes.as_ref(), pin.depot_id, manifest_gid)
-            .map_err(|error| format!("LuaTools manifest {}_{}: {error}", pin.depot_id, manifest_gid))
+        verify_manifest_bytes(bytes.as_ref(), pin.depot_id, manifest_gid).map_err(|error| {
+            format!(
+                "LuaTools manifest {}_{}: {error}",
+                pin.depot_id, manifest_gid
+            )
+        })
     }
 
     /// Fetches the given pins one by one through the per-depot endpoint
@@ -218,7 +230,11 @@ impl LuaToolsClient {
         let access_token = match self.auth.valid_access_token().await {
             Ok(token) => Arc::new(token),
             Err(error) => {
-                completion.failed = pins.iter().cloned().map(|pin| (pin, error.clone())).collect();
+                completion.failed = pins
+                    .iter()
+                    .cloned()
+                    .map(|pin| (pin, error.clone()))
+                    .collect();
                 return completion;
             }
         };
@@ -281,9 +297,9 @@ impl LuaToolsClient {
         completion
             .fetched
             .sort_by(|a, b| a.file_name.cmp(&b.file_name));
-        completion
-            .failed
-            .sort_by(|(a, _), (b, _)| (a.depot_id, &a.manifest_id).cmp(&(b.depot_id, &b.manifest_id)));
+        completion.failed.sort_by(|(a, _), (b, _)| {
+            (a.depot_id, &a.manifest_id).cmp(&(b.depot_id, &b.manifest_id))
+        });
         completion
     }
 
@@ -320,17 +336,27 @@ impl LuaToolsClient {
 pub(crate) fn describe_api_error(status: reqwest::StatusCode, body: &str) -> String {
     let server_message = serde_json::from_str::<serde_json::Value>(body)
         .ok()
-        .and_then(|value| value.get("error").and_then(|e| e.as_str()).map(str::to_string))
+        .and_then(|value| {
+            value
+                .get("error")
+                .and_then(|e| e.as_str())
+                .map(str::to_string)
+        })
         .filter(|message| !message.trim().is_empty());
     match status.as_u16() {
         401 => "login required — sign in to LuaTools again from Settings".to_string(),
-        429 => server_message.unwrap_or_else(|| {
-            "rate limit or daily download limit reached (25/day)".to_string()
-        }),
+        429 => server_message
+            .unwrap_or_else(|| "rate limit or daily download limit reached (25/day)".to_string()),
         _ => server_message.unwrap_or_else(|| {
             body.chars()
                 .take(160)
-                .map(|character| if character.is_control() { ' ' } else { character })
+                .map(|character| {
+                    if character.is_control() {
+                        ' '
+                    } else {
+                        character
+                    }
+                })
                 .collect::<String>()
                 .trim()
                 .to_string()
@@ -365,7 +391,10 @@ pub(crate) fn rank_available_sources(statuses: &HashMap<String, String>) -> Vec<
     let mut others: Vec<String> = statuses
         .iter()
         .filter(|(name, status)| {
-            is_available(status) && !PREFERENCE.iter().any(|known| name.eq_ignore_ascii_case(known))
+            is_available(status)
+                && !PREFERENCE
+                    .iter()
+                    .any(|known| name.eq_ignore_ascii_case(known))
         })
         .map(|(name, _)| name.clone())
         .collect();

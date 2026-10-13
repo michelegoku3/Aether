@@ -135,10 +135,7 @@ fn luatools_request(
     })
 }
 
-fn download_request(
-    app: &tauri::AppHandle,
-    app_id: u32,
-) -> Result<store::DownloadRequest, String> {
+fn download_request(app: &tauri::AppHandle, app_id: u32) -> Result<store::DownloadRequest, String> {
     Ok(store::DownloadRequest {
         app_id,
         steam_path: command_steam_path(app)?,

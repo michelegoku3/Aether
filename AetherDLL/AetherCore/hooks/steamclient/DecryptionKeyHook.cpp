@@ -5,10 +5,10 @@
 #include <vector>
 
 #include "core/AetherCoreState.h"
-#include "credentials/CredentialStore.h"
-#include "credentials/HexCodec.h"
 #include "core/HookManager.h"
 #include "core/Logger.h"
+#include "credentials/CredentialStore.h"
+#include "credentials/HexCodec.h"
 #include "scripting/LuaData.h"
 #include "utils/PatternEngine.h"
 #include "utils/SteamKeyPaths.h"
@@ -23,15 +23,16 @@ using ConfigStoreGetBinary_t = std::int32_t (*)(void*, std::int32_t, const char*
 ConfigStoreGetBinary_t o_ConfigStoreGetBinary = nullptr;
 
 void CaptureStoreObj(void* self, std::int32_t storeType) {
-    if (!self || storeType != kUserLocalConfigStore) return;
+    if (!self || storeType != kUserLocalConfigStore)
+        return;
     void* prev = nullptr;
     if (g_state.pConfigStoreUserLocal.compare_exchange_strong(prev, self)) {
         AC_LOG_INFO(kModule, "Captured user-local ConfigStore object 0x%p.", self);
     }
 }
 
-std::int32_t h_ConfigStoreGetBinary(void* self, std::int32_t storeType,
-                                    const char* keyName, char* keyOut, std::uint32_t keySize) {
+std::int32_t h_ConfigStoreGetBinary(void* self, std::int32_t storeType, const char* keyName, char* keyOut,
+                                    std::uint32_t keySize) {
     CaptureStoreObj(self, storeType);
 
     // First path: feed depot decryption keys directly when Steam asks through
@@ -41,8 +42,8 @@ std::int32_t h_ConfigStoreGetBinary(void* self, std::int32_t storeType,
             if (auto hexKey = luadata::DepotKeyHex(*depot)) {
                 if (auto bytes = ac::hex::Decode(*hexKey); bytes && bytes->size() <= keySize) {
                     std::memcpy(keyOut, bytes->data(), bytes->size());
-                    AC_LOG_INFO(kModule, "Fed ConfigStore decryption key for depot %u (%zu bytes).",
-                                *depot, bytes->size());
+                    AC_LOG_INFO(kModule, "Fed ConfigStore decryption key for depot %u (%zu bytes).", *depot,
+                                bytes->size());
                     return static_cast<std::int32_t>(bytes->size());
                 }
             }
@@ -64,7 +65,7 @@ std::int32_t h_ConfigStoreGetBinary(void* self, std::int32_t storeType,
     return got;
 }
 
-}  // namespace
+} // namespace
 
 void RegisterDecryptionKeyHook(HMODULE diversion) {
     if (!diversion) {
@@ -89,15 +90,13 @@ void RegisterDecryptionKeyHook(HMODULE diversion) {
             // Reported as a known alias so it stays visible — the day the two
             // names split again, the entry disappears and we notice — without
             // inflating the missed-hook count.
-            g_state.hookManager.RecordMissed("ConfigStoreGetBinary", MissReason::KnownAlias,
-                                             "LoadDepotDecryptionKey");
+            g_state.hookManager.RecordMissed("ConfigStoreGetBinary", MissReason::KnownAlias, "LoadDepotDecryptionKey");
             return;
         }
     }
 
-    g_state.hookManager.RegisterHook("ConfigStoreGetBinary", cfg,
-                               reinterpret_cast<void**>(&o_ConfigStoreGetBinary),
-                               reinterpret_cast<void*>(h_ConfigStoreGetBinary));
+    g_state.hookManager.RegisterHook("ConfigStoreGetBinary", cfg, reinterpret_cast<void**>(&o_ConfigStoreGetBinary),
+                                     reinterpret_cast<void*>(h_ConfigStoreGetBinary));
 }
 
-}  // namespace ac::hooks
+} // namespace ac::hooks

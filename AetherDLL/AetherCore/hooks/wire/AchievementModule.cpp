@@ -10,10 +10,10 @@
 #include <unordered_map>
 
 #include "core/AetherCoreState.h"
-#include "hooks/aetheronline/PresenceSession.h"
 #include "core/Constants.h"
 #include "core/Logger.h"
 #include "credentials/SteamId.h"
+#include "hooks/aetheronline/PresenceSession.h"
 #include "hooks/wire/AchievementBackup.h"
 #include "hooks/wire/DonorPool.h"
 #include "scripting/LuaData.h"
@@ -113,13 +113,11 @@ std::uint64_t CachedActiveSteamId64() {
 // identical "ByteSizeLong + cap + SerializeToArray" blocks. Non-null warnTag
 // = log the failure (send paths); null = silence (recv).
 template <class TMsg>
-std::int32_t SerializeTo(const TMsg& msg, std::uint8_t* out, std::uint32_t outCap,
-                         const char* warnTag) {
+std::int32_t SerializeTo(const TMsg& msg, std::uint8_t* out, std::uint32_t outCap, const char* warnTag) {
     const std::uint32_t size = static_cast<std::uint32_t>(msg.ByteSizeLong());
     if (size > outCap || !msg.SerializeToArray(out, static_cast<int>(outCap))) {
         if (warnTag) {
-            AC_LOG_WARN(kModule, "%s serialization failed (size=%u, cap=%u): frame unchanged.",
-                        warnTag, size, outCap);
+            AC_LOG_WARN(kModule, "%s serialization failed (size=%u, cap=%u): frame unchanged.", warnTag, size, outCap);
         }
         return kNoChange;
     }
@@ -133,9 +131,7 @@ bool HasStatsPayload(const CPlayer_GetUserStats_Response& resp) {
 }
 
 bool HasStatsPayload(const CMsgClientGetUserStatsResponse& resp) {
-    return (resp.has_schema() && !resp.schema().empty())
-        || resp.stats_size() > 0
-        || resp.achievement_blocks_size() > 0;
+    return (resp.has_schema() && !resp.schema().empty()) || resp.stats_size() > 0 || resp.achievement_blocks_size() > 0;
 }
 
 // ---------------------------------------------------------------------------
@@ -192,18 +188,16 @@ std::int32_t HandleSendGetUserStats(const WireFrame& frame, std::uint8_t* out, s
 
     const std::uint64_t originalSteamId = req.steamid();
 
-    AC_LOG_DEBUG(kModule,
-                "[151 GetUserStats] Outgoing request for AppID %u: requested steamid=%llu, crc_stats=%u, "
-                "sha_schema present=%s (%u byte, fnv1a %016llx).",
-                appId,
-                static_cast<unsigned long long>(originalSteamId),
-                req.crc_stats(),
-                req.has_sha_schema() && !req.sha_schema().empty() ? "yes" : "no",
-                req.has_sha_schema() ? static_cast<std::uint32_t>(req.sha_schema().size()) : 0u,
-                (ac::log::Enabled(LogLevel::Debug) && req.has_sha_schema())
-                    ? static_cast<unsigned long long>(
-                          ac::hasher::Fnv1a64(req.sha_schema().data(), req.sha_schema().size()))
-                    : 0ull);
+    AC_LOG_DEBUG(
+        kModule,
+        "[151 GetUserStats] Outgoing request for AppID %u: requested steamid=%llu, crc_stats=%u, "
+        "sha_schema present=%s (%u byte, fnv1a %016llx).",
+        appId, static_cast<unsigned long long>(originalSteamId), req.crc_stats(),
+        req.has_sha_schema() && !req.sha_schema().empty() ? "yes" : "no",
+        req.has_sha_schema() ? static_cast<std::uint32_t>(req.sha_schema().size()) : 0u,
+        (ac::log::Enabled(LogLevel::Debug) && req.has_sha_schema())
+            ? static_cast<unsigned long long>(ac::hasher::Fnv1a64(req.sha_schema().data(), req.sha_schema().size()))
+            : 0ull);
 
     // LumaCore behaviour: clear any local schema and spoof anyway. The old
     // code bailed out here when the request already carried a sha_schema,
@@ -230,10 +224,12 @@ std::int32_t HandleSendGetUserStats(const WireFrame& frame, std::uint8_t* out, s
     req.set_steamid(donorId);
 
     const std::int32_t serialized = SerializeTo(req, out, outCap, "[151 GetUserStats]");
-    if (serialized == kNoChange) return kNoChange;
+    if (serialized == kNoChange)
+        return kNoChange;
 
     AC_LOG_INFO_ONCE(kModule, "[151 GetUserStats] Spoofing AppID %u: steamid %llu -> donor %llu (pool %zu, jobid %s).",
-                appId, static_cast<unsigned long long>(originalSteamId), donorId, poolIndex, hasJobId ? "yes" : "no");
+                     appId, static_cast<unsigned long long>(originalSteamId), donorId, poolIndex,
+                     hasJobId ? "yes" : "no");
     return serialized;
 }
 
@@ -253,7 +249,8 @@ std::int32_t HandleSendClientGetUserStats(const WireFrame& frame, std::uint8_t* 
     }
 
     if (!ac::luadata::HasDepot(appId)) {
-        AC_LOG_DEBUG(kModule, "[818 ClientGetUserStats] AppID %u not configured (HasDepot=false): frame unchanged.", appId);
+        AC_LOG_DEBUG(kModule, "[818 ClientGetUserStats] AppID %u not configured (HasDepot=false): frame unchanged.",
+                     appId);
         return kNoChange;
     }
 
@@ -266,11 +263,11 @@ std::int32_t HandleSendClientGetUserStats(const WireFrame& frame, std::uint8_t* 
     AchievementBackup::TouchSession(appId, originalUserId);
 
     AC_LOG_DEBUG(kModule,
-                "[818 ClientGetUserStats] Outgoing request for AppID %u: steam_id_for_user=%llu, "
-                "crc_stats=%u, schema_local_version=%d -> spoofing with donor %llu (pool %zu), "
-                "crc_stats cleared and schema_local_version=-1.",
-                appId, static_cast<unsigned long long>(originalUserId), req.crc_stats(),
-                req.schema_local_version(), donorId, poolIndex);
+                 "[818 ClientGetUserStats] Outgoing request for AppID %u: steam_id_for_user=%llu, "
+                 "crc_stats=%u, schema_local_version=%d -> spoofing with donor %llu (pool %zu), "
+                 "crc_stats cleared and schema_local_version=-1.",
+                 appId, static_cast<unsigned long long>(originalUserId), req.crc_stats(), req.schema_local_version(),
+                 donorId, poolIndex);
 
     // Force the schema request by zeroing the local version (fetches the
     // updated schema) and the local crc (like LumaCore).
@@ -282,18 +279,20 @@ std::int32_t HandleSendClientGetUserStats(const WireFrame& frame, std::uint8_t* 
     StatAttempt attempt;
     attempt.appId = appId;
     attempt.poolIndex = poolIndex;
-    attempt.seen = Clock::now();   // FIX (21/08 log): without this the default
-                                   // is epoch → TakePendingClientStats' prune
-                                   // treated the entry as already expired and
-                                   // deleted it: EVERY 819 came out
-                                   // "uncorrelated" (and with a data-carrying
-                                   // donor, a leak).
+    attempt.seen = Clock::now(); // FIX (21/08 log): without this the default
+                                 // is epoch → TakePendingClientStats' prune
+                                 // treated the entry as already expired and
+                                 // deleted it: EVERY 819 came out
+                                 // "uncorrelated" (and with a data-carrying
+                                 // donor, a leak).
     DonorPool::RecordPendingClientStats(appId, attempt);
 
     const std::int32_t serialized = SerializeTo(req, out, outCap, "[818 ClientGetUserStats]");
-    if (serialized == kNoChange) return kNoChange;
+    if (serialized == kNoChange)
+        return kNoChange;
 
-    AC_LOG_DEBUG(kModule, "[818 ClientGetUserStats] Spoofing AppID %u with DonorID %llu (pool %zu): rewritten and forwarded.",
+    AC_LOG_DEBUG(kModule,
+                 "[818 ClientGetUserStats] Spoofing AppID %u with DonorID %llu (pool %zu): rewritten and forwarded.",
                  appId, donorId, poolIndex);
     return serialized;
 }
@@ -313,9 +312,9 @@ std::int32_t HandleRecvGetUserStatsResponse(const WireFrame& frame, std::uint8_t
     const Correl correl = DonorPool::ResolveAttempt(hdrMsg.has_jobid_target(), hdrMsg.jobid_target(), attempt);
     if (correl == Correl::NoMatch) {
         AC_LOG_DEBUG(kModule,
-                    "[152 GetUserStats Response] No correlated attempt: response passed through unchanged "
-                    "(eresult original=%d).",
-                    hdrMsg.has_eresult() ? hdrMsg.eresult() : -1);
+                     "[152 GetUserStats Response] No correlated attempt: response passed through unchanged "
+                     "(eresult original=%d).",
+                     hdrMsg.has_eresult() ? hdrMsg.eresult() : -1);
         return kNoChange;
     }
 
@@ -339,7 +338,8 @@ std::int32_t HandleRecvGetUserStatsResponse(const WireFrame& frame, std::uint8_t
         resp.clear_stats();
         resp.clear_crc_stats();
         const std::int32_t serialized = SerializeTo(resp, out, outCap, nullptr);
-        if (serialized == kNoChange) return kNoChange;
+        if (serialized == kNoChange)
+            return kNoChange;
         AC_LOG_WARN(kModule,
                     "[152 GetUserStats Response] Donor response %s: %d stats removed for safety, "
                     "schema preserved (%u byte). No leak to the game.",
@@ -354,33 +354,34 @@ std::int32_t HandleRecvGetUserStatsResponse(const WireFrame& frame, std::uint8_t
     const std::uint32_t schemaSize = resp.has_schema() ? static_cast<std::uint32_t>(resp.schema().size()) : 0u;
 
     AC_LOG_DEBUG(kModule,
-                "[152 GetUserStats Response] AppID %u donor %llu (pool %zu): eresult=%d, schema=%u byte "
-                "(fnv1a %016llx, sha_schema %s), stats=%d, crc_stats=%u -> donor %s.",
-                attempt.appId, DonorPool::DonorSteamId(attempt.poolIndex), attempt.poolIndex, originalResult,
-                resp.has_schema() ? static_cast<std::uint32_t>(resp.schema().size()) : 0u,
-                (ac::log::Enabled(LogLevel::Debug) && resp.has_schema())
-                    ? static_cast<unsigned long long>(ac::hasher::Fnv1a64(resp.schema().data(), resp.schema().size()))
-                    : 0ull,
-                (resp.has_sha_schema() && !resp.sha_schema().empty()) ? "present" : "absent",
-                resp.stats_size(), resp.crc_stats(), okWithData ? "WITH data" : "WITHOUT data");
+                 "[152 GetUserStats Response] AppID %u donor %llu (pool %zu): eresult=%d, schema=%u byte "
+                 "(fnv1a %016llx, sha_schema %s), stats=%d, crc_stats=%u -> donor %s.",
+                 attempt.appId, DonorPool::DonorSteamId(attempt.poolIndex), attempt.poolIndex, originalResult,
+                 resp.has_schema() ? static_cast<std::uint32_t>(resp.schema().size()) : 0u,
+                 (ac::log::Enabled(LogLevel::Debug) && resp.has_schema())
+                     ? static_cast<unsigned long long>(ac::hasher::Fnv1a64(resp.schema().data(), resp.schema().size()))
+                     : 0ull,
+                 (resp.has_sha_schema() && !resp.sha_schema().empty()) ? "present" : "absent", resp.stats_size(),
+                 resp.crc_stats(), okWithData ? "WITH data" : "WITHOUT data");
 
     // Detail of the donor data about to be dropped (debug).
     // The loop is skipped entirely when Debug is off: the donor can carry
     // dozens of stats and log-time parsing is not free.
-    if (ac::log::Enabled(LogLevel::Debug)) for (const auto& st : resp.stats()) {
-        if (st.unlock_times_size() > 0) {
-            for (const auto& ut : st.unlock_times()) {
-                AC_LOG_DEBUG(kModule,
-                            "[152 GetUserStats Response] Discarded donor data: stat_id=%u achievement_bit=%u "
-                            "unlock_time=%u (%s local).",
-                            st.stat_id(), ut.achievement_bit(), ut.unlock_time(),
-                            AchievementBackup::FormatUnixTime(ut.unlock_time()).c_str());
+    if (ac::log::Enabled(LogLevel::Debug))
+        for (const auto& st : resp.stats()) {
+            if (st.unlock_times_size() > 0) {
+                for (const auto& ut : st.unlock_times()) {
+                    AC_LOG_DEBUG(kModule,
+                                 "[152 GetUserStats Response] Discarded donor data: stat_id=%u achievement_bit=%u "
+                                 "unlock_time=%u (%s local).",
+                                 st.stat_id(), ut.achievement_bit(), ut.unlock_time(),
+                                 AchievementBackup::FormatUnixTime(ut.unlock_time()).c_str());
+                }
+            } else {
+                AC_LOG_DEBUG(kModule, "[152 GetUserStats Response] Discarded donor data: stat_id=%u value=%u.",
+                             st.stat_id(), st.stat_value());
             }
-        } else {
-            AC_LOG_DEBUG(kModule, "[152 GetUserStats Response] Discarded donor data: stat_id=%u value=%u.",
-                         st.stat_id(), st.stat_value());
         }
-    }
 
     DonorPool::NoteAttemptResult(attempt.appId, attempt.poolIndex, okWithData);
 
@@ -396,12 +397,13 @@ std::int32_t HandleRecvGetUserStatsResponse(const WireFrame& frame, std::uint8_t
     resp.clear_stats();
 
     const std::int32_t serialized = SerializeTo(resp, out, outCap, nullptr);
-    if (serialized == kNoChange) return kNoChange;
+    if (serialized == kNoChange)
+        return kNoChange;
 
     AC_LOG_INFO_ONCE(kModule,
-                "[152 GetUserStats Response] Rewritten for the game: eresult=OK, %d donor stats removed, "
-                "schema preserved (%u byte).",
-                donorStatsCount, schemaSize);
+                     "[152 GetUserStats Response] Rewritten for the game: eresult=OK, %d donor stats removed, "
+                     "schema preserved (%u byte).",
+                     donorStatsCount, schemaSize);
     return serialized;
 }
 
@@ -424,9 +426,9 @@ std::int32_t HandleRecvClientGetUserStatsResponse(const WireFrame& frame, std::u
 
     if (!ac::luadata::HasDepot(appId)) {
         AC_LOG_DEBUG(kModule,
-                    "[819 ClientGetUserStatsResponse] AppID %u not configured (HasDepot=false): "
-                    "response passed through unchanged (eresult=%d).",
-                    appId, resp.eresult());
+                     "[819 ClientGetUserStatsResponse] AppID %u not configured (HasDepot=false): "
+                     "response passed through unchanged (eresult=%d).",
+                     appId, resp.eresult());
         return kNoChange;
     }
 
@@ -443,28 +445,30 @@ std::int32_t HandleRecvClientGetUserStatsResponse(const WireFrame& frame, std::u
         // (two close 818s, expired 30s window, ...): full pass-through would
         // deliver the donor's achievements to the game — e.g. Cyberpunk's
         // "The Fool" unlocked on first launch (21/08/2026).
-        AC_LOG_WARN(kModule,
-                    "[819 ClientGetUserStatsResponse] AppID %u: response NOT correlated to one of our spoofs "
-                    "(eresult=%d, stats=%d, achievement_blocks=%d, schema=%u byte fnv1a %016llx, crc_stats=%u). "
-                    "Possible causes: request sent before injection, Lua config missing/reloading, "
-                    "30s window expired.",
-                    appId, resp.eresult(), resp.stats_size(), resp.achievement_blocks_size(),
-                    resp.has_schema() ? static_cast<std::uint32_t>(resp.schema().size()) : 0u,
-                    (ac::log::Enabled(LogLevel::Warn) && resp.has_schema())
-                        ? static_cast<unsigned long long>(ac::hasher::Fnv1a64(resp.schema().data(), resp.schema().size()))
-                        : 0ull,
-                    resp.crc_stats());
+        AC_LOG_WARN(
+            kModule,
+            "[819 ClientGetUserStatsResponse] AppID %u: response NOT correlated to one of our spoofs "
+            "(eresult=%d, stats=%d, achievement_blocks=%d, schema=%u byte fnv1a %016llx, crc_stats=%u). "
+            "Possible causes: request sent before injection, Lua config missing/reloading, "
+            "30s window expired.",
+            appId, resp.eresult(), resp.stats_size(), resp.achievement_blocks_size(),
+            resp.has_schema() ? static_cast<std::uint32_t>(resp.schema().size()) : 0u,
+            (ac::log::Enabled(LogLevel::Warn) && resp.has_schema())
+                ? static_cast<unsigned long long>(ac::hasher::Fnv1a64(resp.schema().data(), resp.schema().size()))
+                : 0ull,
+            resp.crc_stats());
 
         // Detail of the achievement blocks present in the response.
-        if (ac::log::Enabled(LogLevel::Debug)) for (const auto& blk : resp.achievement_blocks()) {
-            for (int i = 0; i < blk.unlock_time_size(); ++i) {
-                AC_LOG_DEBUG(kModule,
-                            "[819 ClientGetUserStatsResponse] Achievement block achievement_id=%u "
-                            "unlock_time[%d]=%u (%s local).",
-                            blk.achievement_id(), i, blk.unlock_time(i),
-                            AchievementBackup::FormatUnixTime(blk.unlock_time(i)).c_str());
+        if (ac::log::Enabled(LogLevel::Debug))
+            for (const auto& blk : resp.achievement_blocks()) {
+                for (int i = 0; i < blk.unlock_time_size(); ++i) {
+                    AC_LOG_DEBUG(kModule,
+                                 "[819 ClientGetUserStatsResponse] Achievement block achievement_id=%u "
+                                 "unlock_time[%d]=%u (%s local).",
+                                 blk.achievement_id(), i, blk.unlock_time(i),
+                                 AchievementBackup::FormatUnixTime(blk.unlock_time(i)).c_str());
+                }
             }
-        }
 
         // OK response WITHOUT payload: harmless (e.g. real user with no stats),
         // passes through untouched. OK response WITH payload (possible donor
@@ -479,43 +483,43 @@ std::int32_t HandleRecvClientGetUserStatsResponse(const WireFrame& frame, std::u
         resp.clear_crc_stats();
         resp.set_eresult(1);
         const std::int32_t serialized = SerializeTo(resp, out, outCap, nullptr);
-        if (serialized == kNoChange) return kNoChange;
+        if (serialized == kNoChange)
+            return kNoChange;
         AC_LOG_INFO(kModule,
                     "[819 ClientGetUserStatsResponse] AppID %u: uncorrelated response %s -> normalized "
                     "with payload removed (eresult=OK, schema preserved).",
-                    appId,
-                    hasPayload ? "WITH payload (possible donor leak blocked)"
-                               : "but eresult not OK");
+                    appId, hasPayload ? "WITH payload (possible donor leak blocked)" : "but eresult not OK");
         return serialized;
     }
 
     const bool okWithData = IsOK(resp.eresult()) && HasStatsPayload(resp);
 
     AC_LOG_DEBUG(kModule,
-                "[819 ClientGetUserStatsResponse] AppID %u donor %llu (pool %zu): eresult=%d, schema=%u byte "
-                "(fnv1a %016llx), stats=%d, achievement_blocks=%d, crc_stats=%u -> %s.",
-                appId, DonorPool::DonorSteamId(attempt.poolIndex), attempt.poolIndex, resp.eresult(),
-                resp.has_schema() ? static_cast<std::uint32_t>(resp.schema().size()) : 0u,
-                (ac::log::Enabled(LogLevel::Debug) && resp.has_schema())
-                    ? static_cast<unsigned long long>(ac::hasher::Fnv1a64(resp.schema().data(), resp.schema().size()))
-                    : 0ull,
-                resp.stats_size(), resp.achievement_blocks_size(), resp.crc_stats(),
-                okWithData ? "donor WITH data" : "donor WITHOUT data");
+                 "[819 ClientGetUserStatsResponse] AppID %u donor %llu (pool %zu): eresult=%d, schema=%u byte "
+                 "(fnv1a %016llx), stats=%d, achievement_blocks=%d, crc_stats=%u -> %s.",
+                 appId, DonorPool::DonorSteamId(attempt.poolIndex), attempt.poolIndex, resp.eresult(),
+                 resp.has_schema() ? static_cast<std::uint32_t>(resp.schema().size()) : 0u,
+                 (ac::log::Enabled(LogLevel::Debug) && resp.has_schema())
+                     ? static_cast<unsigned long long>(ac::hasher::Fnv1a64(resp.schema().data(), resp.schema().size()))
+                     : 0ull,
+                 resp.stats_size(), resp.achievement_blocks_size(), resp.crc_stats(),
+                 okWithData ? "donor WITH data" : "donor WITHOUT data");
 
     // Detail of the donor's achievement blocks about to be dropped.
     for (const auto& blk : resp.achievement_blocks()) {
         for (int i = 0; i < blk.unlock_time_size(); ++i) {
             AC_LOG_DEBUG(kModule,
-                        "[819 ClientGetUserStatsResponse] Discarded donor block: achievement_id=%u "
-                        "unlock_time[%d]=%u (%s local).",
-                        blk.achievement_id(), i, blk.unlock_time(i),
-                        AchievementBackup::FormatUnixTime(blk.unlock_time(i)).c_str());
+                         "[819 ClientGetUserStatsResponse] Discarded donor block: achievement_id=%u "
+                         "unlock_time[%d]=%u (%s local).",
+                         blk.achievement_id(), i, blk.unlock_time(i),
+                         AchievementBackup::FormatUnixTime(blk.unlock_time(i)).c_str());
         }
     }
-    if (ac::log::Enabled(LogLevel::Debug)) for (const auto& st : resp.stats()) {
-        AC_LOG_DEBUG(kModule, "[819 ClientGetUserStatsResponse] Discarded donor stat: stat_id=%u value=%u.",
-                     st.stat_id(), st.stat_value());
-    }
+    if (ac::log::Enabled(LogLevel::Debug))
+        for (const auto& st : resp.stats()) {
+            AC_LOG_DEBUG(kModule, "[819 ClientGetUserStatsResponse] Discarded donor stat: stat_id=%u value=%u.",
+                         st.stat_id(), st.stat_value());
+        }
 
     DonorPool::NoteAttemptResult(appId, attempt.poolIndex, okWithData);
 
@@ -526,13 +530,14 @@ std::int32_t HandleRecvClientGetUserStatsResponse(const WireFrame& frame, std::u
     resp.set_eresult(1); // k_EResultOK
 
     const std::int32_t serialized = SerializeTo(resp, out, outCap, nullptr);
-    if (serialized == kNoChange) return kNoChange;
+    if (serialized == kNoChange)
+        return kNoChange;
 
     AC_LOG_INFO_ONCE(kModule,
-                "[819 ClientGetUserStatsResponse] AppID %u rewritten for the game: eresult=OK, stats and "
-                "donor achievement_blocks removed, schema preserved (%u byte). The game starts from its "
-                "local cache (UserGameStats).",
-                appId, resp.has_schema() ? static_cast<std::uint32_t>(resp.schema().size()) : 0u);
+                     "[819 ClientGetUserStatsResponse] AppID %u rewritten for the game: eresult=OK, stats and "
+                     "donor achievement_blocks removed, schema preserved (%u byte). The game starts from its "
+                     "local cache (UserGameStats).",
+                     appId, resp.has_schema() ? static_cast<std::uint32_t>(resp.schema().size()) : 0u);
     return serialized;
 }
 
@@ -543,8 +548,7 @@ std::int32_t HandleRecvClientGetUserStatsResponse(const WireFrame& frame, std::u
 std::int32_t HandleSendStoreUserStats2(const WireFrame& frame, std::uint8_t* out, std::uint32_t outCap) {
     CMsgClientStoreUserStats2 req;
     if (!req.ParseFromArray(frame.body, static_cast<int>(frame.bodyLen))) {
-        AC_LOG_WARN(kModule, "[5466 StoreUserStats2] Body parse failed (bodyLen=%u): frame unchanged.",
-                    frame.bodyLen);
+        AC_LOG_WARN(kModule, "[5466 StoreUserStats2] Body parse failed (bodyLen=%u): frame unchanged.", frame.bodyLen);
         return kNoChange;
     }
 
@@ -559,37 +563,36 @@ std::int32_t HandleSendStoreUserStats2(const WireFrame& frame, std::uint8_t* out
     }
 
     if (!ac::luadata::HasDepot(appId)) {
-        AC_LOG_DEBUG(kModule, "[5466 StoreUserStats2] AppID %u not configured (HasDepot=false): frame unchanged.", appId);
+        AC_LOG_DEBUG(kModule, "[5466 StoreUserStats2] AppID %u not configured (HasDepot=false): frame unchanged.",
+                     appId);
         return kNoChange;
     }
 
-    const std::uint64_t originalSettor = req.settor_steam_id();
+    const std::uint64_t originalSetter = req.setter_steam_id();
     const std::uint64_t originalSettee = req.settee_steam_id();
     std::uint64_t realSteamId = CachedActiveSteamId64();
 
     AC_LOG_DEBUG(kModule,
-                "[5466 StoreUserStats2] AppID %u: outgoing commit with %d achievements, %d stats, "
-                "crc_stats=%llu, schema_local_version=%d, settor=%llu, settee=%llu, active account=%llu.",
-                appId, req.achievement_blocks_size(), req.stats_size(),
-                static_cast<unsigned long long>(req.crc_stats()), req.schema_local_version(),
-                static_cast<unsigned long long>(originalSettor),
-                static_cast<unsigned long long>(originalSettee),
-                static_cast<unsigned long long>(realSteamId));
+                 "[5466 StoreUserStats2] AppID %u: outgoing commit with %d achievements, %d stats, "
+                 "crc_stats=%llu, schema_local_version=%d, setter=%llu, settee=%llu, active account=%llu.",
+                 appId, req.achievement_blocks_size(), req.stats_size(),
+                 static_cast<unsigned long long>(req.crc_stats()), req.schema_local_version(),
+                 static_cast<unsigned long long>(originalSetter), static_cast<unsigned long long>(originalSettee),
+                 static_cast<unsigned long long>(realSteamId));
 
     // Empty commit: the game sent a Store with neither achievements nor stats.
     // Not an error per se, but telling it apart in the logs helps understand
     // whether a missed save is the game's or the pipeline's fault.
     if (req.achievement_blocks_size() == 0 && req.stats_size() == 0) {
-        AC_LOG_DEBUG(kModule, "[5466 StoreUserStats2] AppID %u: empty packet (0 achievements, 0 stats).",
-                     appId);
+        AC_LOG_DEBUG(kModule, "[5466 StoreUserStats2] AppID %u: empty packet (0 achievements, 0 stats).", appId);
     }
 
     // Interception of game-committed achievements.
     // Every unlock is: (1) logged with a readable timestamp, (2) saved to the
     // per-(account, appid) backup — JSON snapshot + copy of Steam's .bins —
     // so a later cache loss stays recoverable.
-    const std::uint64_t mirrorAccount = realSteamId != 0 ? realSteamId
-                                                         : (originalSettee != 0 ? originalSettee : originalSettor);
+    const std::uint64_t mirrorAccount =
+        realSteamId != 0 ? realSteamId : (originalSettee != 0 ? originalSettee : originalSetter);
     AchievementBackup::TouchSession(appId, mirrorAccount);
 
     // Many games (e.g. Spider-Man Remastered) commit achievements NOT as
@@ -609,8 +612,9 @@ std::int32_t HandleSendStoreUserStats2(const WireFrame& frame, std::uint8_t* out
             const std::uint32_t value = st.stat_value();
             const bool firstSighting = known.find(st.stat_id()) == known.end();
             std::uint32_t old = 0;
-            if (!firstSighting) old = known[st.stat_id()];
-            const std::uint32_t newBits = (value & ~old) & 0xFFFFFF00u;   // bits >= 8 only
+            if (!firstSighting)
+                old = known[st.stat_id()];
+            const std::uint32_t newBits = (value & ~old) & 0xFFFFFF00u; // bits >= 8 only
             if (newBits != 0) {
                 // Baseline heuristic: the FIRST sighting of a stat with many new
                 // bits is almost always accumulated state the game recommits at
@@ -657,27 +661,27 @@ std::int32_t HandleSendStoreUserStats2(const WireFrame& frame, std::uint8_t* out
 
     // Detail of the numeric stats sent by the game (for fine-grained debug:
     // counters, times, etc.). Loop skipped when Debug is filtered.
-    if (ac::log::Enabled(LogLevel::Debug)) for (const auto& st : req.stats()) {
-        AC_LOG_DEBUG(kModule, "[5466 StoreUserStats2] AppID %u: stat_id=%u value=%u.",
-                     appId, st.stat_id(), st.stat_value());
-    }
+    if (ac::log::Enabled(LogLevel::Debug))
+        for (const auto& st : req.stats()) {
+            AC_LOG_DEBUG(kModule, "[5466 StoreUserStats2] AppID %u: stat_id=%u value=%u.", appId, st.stat_id(),
+                         st.stat_value());
+        }
 
     // STEAMID MISMATCH BUG RESOLUTION:
     // If the game believes the user is the spoofed spoofing SteamID, it will try
     // to save stats for that ID, but Steam's Connection Manager will refuse the
     // write because the logged-in session belongs to the real user. We rewrite
-    // settor_steam_id and settee_steam_id with the user's real active SteamID.
+    // setter_steam_id and settee_steam_id with the user's real active SteamID.
     if (realSteamId != 0) {
-        if (originalSettor != realSteamId || originalSettee != realSteamId) {
+        if (originalSetter != realSteamId || originalSettee != realSteamId) {
             AC_LOG_INFO(kModule,
-                        "[5466 StoreUserStats2] AppID %u: rewriting SteamID -> settor %llu -> %llu, "
+                        "[5466 StoreUserStats2] AppID %u: rewriting SteamID -> setter %llu -> %llu, "
                         "settee %llu -> %llu (active account).",
-                        appId, static_cast<unsigned long long>(originalSettor),
-                        static_cast<unsigned long long>(realSteamId),
-                        static_cast<unsigned long long>(originalSettee),
+                        appId, static_cast<unsigned long long>(originalSetter),
+                        static_cast<unsigned long long>(realSteamId), static_cast<unsigned long long>(originalSettee),
                         static_cast<unsigned long long>(realSteamId));
         }
-        req.set_settor_steam_id(realSteamId);
+        req.set_setter_steam_id(realSteamId);
         req.set_settee_steam_id(realSteamId);
 
         // The module's single serialization queue (P9): same path as every
@@ -685,17 +689,17 @@ std::int32_t HandleSendStoreUserStats2(const WireFrame& frame, std::uint8_t* out
         const std::int32_t serialized = SerializeTo(req, out, outCap, "[5466 StoreUserStats2]");
         if (serialized != kNoChange) {
             AC_LOG_INFO_ONCE(kModule,
-                        "[5466 StoreUserStats2] AppID %u forwarded to the server with real SteamID %llu: "
-                        "NOTE: if the server rejects it (game not owned), the achievement remains valid only "
-                        "in the Steam local cache (PendingChanges) and in our backup.",
-                        appId, static_cast<unsigned long long>(realSteamId));
+                             "[5466 StoreUserStats2] AppID %u forwarded to the server with real SteamID %llu: "
+                             "NOTE: if the server rejects it (game not owned), the achievement remains valid only "
+                             "in the Steam local cache (PendingChanges) and in our backup.",
+                             appId, static_cast<unsigned long long>(realSteamId));
             return serialized;
         }
     } else {
         AC_LOG_WARN(kModule,
                     "[5466 StoreUserStats2] AppID %u: active SteamID unresolvable, frame unchanged "
-                    "(settor=%llu, settee=%llu).",
-                    appId, static_cast<unsigned long long>(originalSettor),
+                    "(setter=%llu, settee=%llu).",
+                    appId, static_cast<unsigned long long>(originalSetter),
                     static_cast<unsigned long long>(originalSettee));
     }
 

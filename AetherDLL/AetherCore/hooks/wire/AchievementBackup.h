@@ -47,8 +47,7 @@ namespace ac::hooks::AchievementBackup {
 std::string FormatUnixTime(std::uint64_t unixTime);
 
 // Enqueues one unlock's backup (see contract above). Thread-safe.
-void RecordUnlock(steam::AppId appId, std::uint64_t steamId64,
-                  std::uint32_t achievementId, std::uint32_t unlockTime);
+void RecordUnlock(steam::AppId appId, std::uint64_t steamId64, std::uint32_t achievementId, std::uint32_t unlockTime);
 
 // "Session" backup: on an app's first stats use (818, 151 or 5466), copy the
 // existing Steam cache .bins so accumulated progress is protected even when
@@ -81,4 +80,4 @@ void RecordStats(steam::AppId appId, std::uint64_t steamId64,
 // until all pending work is complete (explicit shutdown only, never in DllMain).
 void FlushOnShutdown();
 
-}  // namespace ac::hooks::AchievementBackup
+} // namespace ac::hooks::AchievementBackup

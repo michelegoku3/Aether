@@ -18,11 +18,7 @@ pub fn write_atomic(path: &Path, bytes: &[u8]) -> Result<(), String> {
 
     if let Some(parent) = temp_path.parent() {
         fs::create_dir_all(parent).map_err(|error| {
-            format!(
-                "Failed to create directory {}: {}",
-                parent.display(),
-                error
-            )
+            format!("Failed to create directory {}: {}", parent.display(), error)
         })?;
     }
 
@@ -33,9 +29,8 @@ pub fn write_atomic(path: &Path, bytes: &[u8]) -> Result<(), String> {
             error
         )
     })?;
-    fs::rename(&temp_path, path).map_err(|error| {
-        format!("Failed to finalize file {}: {}", path.display(), error)
-    })
+    fs::rename(&temp_path, path)
+        .map_err(|error| format!("Failed to finalize file {}: {}", path.display(), error))
 }
 
 /// Every file under `root` (recursive, deterministic: each level is
@@ -106,7 +101,9 @@ pub fn contains_bytes(haystack: &[u8], needle: &[u8]) -> bool {
     if needle.is_empty() || haystack.len() < needle.len() {
         return false;
     }
-    haystack.windows(needle.len()).any(|window| window == needle)
+    haystack
+        .windows(needle.len())
+        .any(|window| window == needle)
 }
 
 /// Reads a file for string scanning: whole when reasonably sized, otherwise
@@ -114,8 +111,8 @@ pub fn contains_bytes(haystack: &[u8], needle: &[u8]) -> bool {
 /// than `HEAD_LIMIT + TAIL_LIMIT` bytes in memory per file.
 pub fn read_for_scan(path: &Path) -> Result<Vec<u8>, String> {
     const FULL_LIMIT: u64 = 256 * 1024 * 1024; // 256 MiB
-    const HEAD_LIMIT: u64 = 64 * 1024 * 1024;  // 64 MiB
-    const TAIL_LIMIT: u64 = 16 * 1024 * 1024;  // 16 MiB
+    const HEAD_LIMIT: u64 = 64 * 1024 * 1024; // 64 MiB
+    const TAIL_LIMIT: u64 = 16 * 1024 * 1024; // 16 MiB
 
     let size = fs::metadata(path)
         .map_err(|error| format!("Failed to stat {}: {}", path.display(), error))?

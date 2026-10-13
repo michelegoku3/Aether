@@ -16,7 +16,7 @@
 //! - Off Windows the read is a stub that always returns `None` (the AetherDLL
 //!   domain is Windows-only, but the crate must compile everywhere).
 
-use crate::updater::dll::{AETHER_DLL_FILES, DllInstaller};
+use crate::updater::dll::{DllInstaller, AETHER_DLL_FILES};
 use std::path::Path;
 
 /// Minimum size of a VS_FIXEDFILEINFO (13 DWORDs = 52 bytes), per Microsoft's
@@ -29,7 +29,7 @@ const FIXED_FILE_INFO_SIGNATURE: u32 = 0xFEEF04BD;
 
 /// Extracts `(major, minor, patch)` from the first 4 DWORDs of a VS_FIXEDFILEINFO.
 /// Pure, unit-testable function: the layout is the historically most fragile part
-/// (dwStrucVersion is fixed 0x00010000 and must NOT be confused with the file version).
+/// (dwStructVersion is fixed 0x00010000 and must NOT be confused with the file version).
 ///
 /// It lives exactly where it is used: on Windows [`read_file_version`] calls it,
 /// in every test build the pure tests in `tests::dll_version_tests` call it. On
@@ -50,8 +50,8 @@ pub(crate) fn version_from_fixed_header(header: &[u32; 4]) -> Option<(u16, u16, 
     ))
 }
 
-/// Versione `(major, minor, patch)` letta dalla `VS_FIXEDFILEINFO` di un file PE.
-/// `None` se il file non esiste, non ha version resource o la lettura fallisce.
+/// `(major, minor, patch)` version read from the `VS_FIXEDFILEINFO` of a PE file.
+/// `None` if the file does not exist, has no version resource, or reading fails.
 #[cfg(windows)]
 pub fn read_file_version(path: &Path) -> Option<(u16, u16, u16)> {
     use std::os::windows::ffi::OsStrExt;
@@ -79,7 +79,12 @@ pub fn read_file_version(path: &Path) -> Option<(u16, u16, u16)> {
 
         let mut data: *mut std::ffi::c_void = std::ptr::null_mut();
         let mut data_len: u32 = 0;
-        if VerQueryValueW(buffer.as_ptr().cast(), root_block.as_ptr(), &mut data, &mut data_len) == 0
+        if VerQueryValueW(
+            buffer.as_ptr().cast(),
+            root_block.as_ptr(),
+            &mut data,
+            &mut data_len,
+        ) == 0
             || data.is_null()
             || data_len < FIXED_FILE_INFO_SIZE
         {
@@ -90,7 +95,7 @@ pub fn read_file_version(path: &Path) -> Option<(u16, u16, u16)> {
     }
 }
 
-/// Stub non-Windows: nessuna versione PE leggibile.
+/// Non-Windows stub: no readable PE version.
 #[cfg(not(windows))]
 pub fn read_file_version(_path: &Path) -> Option<(u16, u16, u16)> {
     None

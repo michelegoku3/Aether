@@ -26,7 +26,7 @@ const renderModal = (isDownloading = false) => {
       status={{ text: '', type: 'info' }}
       isDownloading={isDownloading}
       {...callbacks}
-    />,
+    />
   );
   return { ...view, ...callbacks };
 };
@@ -59,9 +59,7 @@ describe('StoreDownloadModal', () => {
     const buttons = screen.getAllByRole('button');
 
     expect(buttons.every((button) => button.hasAttribute('disabled'))).toBe(true);
-    view.container.querySelector('.modal-overlay')?.dispatchEvent(
-      new MouseEvent('click', { bubbles: true }),
-    );
+    view.container.querySelector('.modal-overlay')?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
     expect(view.onClose).not.toHaveBeenCalled();
   });
 

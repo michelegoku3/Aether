@@ -69,12 +69,23 @@ pub fn install_bulk_local_pipeline(
     let plugin_dir = steam.get_plugin_dir();
     let depotcache_dir = steam.get_depotcache_dir();
 
-    fs::create_dir_all(&plugin_dir)
-        .map_err(|e| format!("Failed to create plugin dir {}: {}", plugin_dir.display(), e))?;
-    fs::create_dir_all(&depotcache_dir)
-        .map_err(|e| format!("Failed to create depotcache dir {}: {}", depotcache_dir.display(), e))?;
+    fs::create_dir_all(&plugin_dir).map_err(|e| {
+        format!(
+            "Failed to create plugin dir {}: {}",
+            plugin_dir.display(),
+            e
+        )
+    })?;
+    fs::create_dir_all(&depotcache_dir).map_err(|e| {
+        format!(
+            "Failed to create depotcache dir {}: {}",
+            depotcache_dir.display(),
+            e
+        )
+    })?;
 
-    let root_staging = crate::core::state_io::create_staging(&LocalAppPaths::temp_dir(), "bulk_local")?;
+    let root_staging =
+        crate::core::state_io::create_staging(&LocalAppPaths::temp_dir(), "bulk_local")?;
 
     let mut discovered_lua: Vec<PathBuf> = Vec::new();
     let mut discovered_manifests: Vec<PathBuf> = Vec::new();
@@ -124,20 +135,28 @@ pub fn install_bulk_local_pipeline(
                 lua_path.display()
             ));
         }
-        let content = fs::read_to_string(lua_path)
-            .map_err(|error| format!("Failed to read Lua file {}: {}", lua_path.display(), error))?;
+        let content = fs::read_to_string(lua_path).map_err(|error| {
+            format!("Failed to read Lua file {}: {}", lua_path.display(), error)
+        })?;
         LuaManifestPins::validate_content(&content)
             .map_err(|error| format!("Lua file {} is malformed: {}", lua_path.display(), error))?;
     }
 
-    let mut app_ids: Vec<u32> = discovered_lua.iter().filter_map(|p| p.file_stem())
-        .filter_map(|stem| app_id_from_lua_stem(&stem.to_string_lossy())).collect();
-    app_ids.sort_unstable(); app_ids.dedup();
+    let mut app_ids: Vec<u32> = discovered_lua
+        .iter()
+        .filter_map(|p| p.file_stem())
+        .filter_map(|stem| app_id_from_lua_stem(&stem.to_string_lossy()))
+        .collect();
+    app_ids.sort_unstable();
+    app_ids.dedup();
     let mut _mutations = Vec::new();
     for id in app_ids {
         match crate::core::game_mutations::try_acquire(steam_path, id, "bulk-local") {
             Ok(guard) => _mutations.push(guard),
-            Err(e) => { let _ = fs::remove_dir_all(&root_staging); return Err(e); }
+            Err(e) => {
+                let _ = fs::remove_dir_all(&root_staging);
+                return Err(e);
+            }
         }
     }
 
@@ -151,7 +170,12 @@ pub fn install_bulk_local_pipeline(
             if is_valid_manifest_filename(&name_str) {
                 let dest = depotcache_dir.join(file_name);
                 if let Err(e) = fs::copy(manifest_path, &dest) {
-                    crate::desk_log_error!("local", "Failed to copy manifest {}: {}", manifest_path.display(), e);
+                    crate::desk_log_error!(
+                        "local",
+                        "Failed to copy manifest {}: {}",
+                        manifest_path.display(),
+                        e
+                    );
                 } else {
                     report.manifest_files += 1;
                 }
@@ -178,7 +202,12 @@ pub fn install_bulk_local_pipeline(
                 let live_name = format!("{}.lua", app_id);
                 let dest = plugin_dir.join(&live_name);
                 if let Err(e) = fs::copy(lua_path, &dest) {
-                    crate::desk_log_error!("local", "Failed to copy lua {}: {}", lua_path.display(), e);
+                    crate::desk_log_error!(
+                        "local",
+                        "Failed to copy lua {}: {}",
+                        lua_path.display(),
+                        e
+                    );
                 } else {
                     report.lua_files += 1;
                     if download_games_with_updates_on {
@@ -328,19 +357,31 @@ pub fn install_local_pipeline(
     download_games_with_updates_on: bool,
 ) -> Result<LocalInstallReport, String> {
     if sources.is_empty() {
-        crate::desk_log_info!("local", "Local install aborted for AppID {}: no source files selected", app_id);
+        crate::desk_log_info!(
+            "local",
+            "Local install aborted for AppID {}: no source files selected",
+            app_id
+        );
         return Err("No local files selected.".to_string());
     }
 
-    crate::desk_log_info!("local", "Local install pipeline started for AppID {} ({}): {} source(s), steam root {}",
+    crate::desk_log_info!(
+        "local",
+        "Local install pipeline started for AppID {} ({}): {} source(s), steam root {}",
         app_id,
         game_name,
         sources.len(),
-        steam_path.display());
+        steam_path.display()
+    );
 
     let _mutation = crate::core::game_mutations::try_acquire(steam_path, app_id, "local-install")?;
     let game_dir = resolve_target_dir(app_id, game_name, steam_path);
-    crate::desk_log_info!("local", "Resolved game folder for AppID {}: {}", app_id, game_dir.display());
+    crate::desk_log_info!(
+        "local",
+        "Resolved game folder for AppID {}: {}",
+        app_id,
+        game_dir.display()
+    );
     // Note: the game folder is created lazily by `install_staged_tree` only
     // when a real game file is written, so a sourceset containing only
     // lua/manifest files does not leave an empty folder behind.
@@ -350,12 +391,22 @@ pub fn install_local_pipeline(
     let steam = SteamCompat::new(&steam_path.display().to_string());
     let plugin_dir = steam.get_plugin_dir();
     let depotcache_dir = steam.get_depotcache_dir();
-    crate::desk_log_info!("local", "Routing folders: lua → {}, manifest → {}", plugin_dir.display(), depotcache_dir.display());
+    crate::desk_log_info!(
+        "local",
+        "Routing folders: lua → {}, manifest → {}",
+        plugin_dir.display(),
+        depotcache_dir.display()
+    );
 
     let backup = GameBackup::for_app(app_id)?;
     let lua_backup_dir = backup.lua_dir();
     let staging = create_local_staging(app_id)?;
-    crate::desk_log_info!("local", "Staging folder created: {} (lua backup: {})", staging.display(), lua_backup_dir.display());
+    crate::desk_log_info!(
+        "local",
+        "Staging folder created: {} (lua backup: {})",
+        staging.display(),
+        lua_backup_dir.display()
+    );
 
     let mut report = LocalInstallReport {
         target: game_dir.display().to_string(),
@@ -367,16 +418,30 @@ pub fn install_local_pipeline(
         for source in sources {
             report.sources += 1;
             let source_path = PathBuf::from(source.as_str());
-            crate::desk_log_info!("local", "Processing source {}/{}: {}", report.sources, sources.len(), source_path.display());
+            crate::desk_log_info!(
+                "local",
+                "Processing source {}/{}: {}",
+                report.sources,
+                sources.len(),
+                source_path.display()
+            );
 
             if !source_path.exists() {
-                crate::desk_log_error!("local", "Local source not found: {}", source_path.display());
+                crate::desk_log_error!(
+                    "local",
+                    "Local source not found: {}",
+                    source_path.display()
+                );
                 return Err(format!("Local file not found: {}", source_path.display()));
             }
 
             if source_path.is_dir() {
                 // A dropped folder is staged as-is, preserving its structure.
-                crate::desk_log_info!("local", "Source is a folder, staging its contents as-is: {}", source_path.display());
+                crate::desk_log_info!(
+                    "local",
+                    "Source is a folder, staging its contents as-is: {}",
+                    source_path.display()
+                );
                 copy_dir_contents(&source_path, &staging)?;
             } else {
                 // Archives (.zip/.rar/.7z) are extracted; anything else is
@@ -387,10 +452,21 @@ pub fn install_local_pipeline(
                     .unwrap_or("")
                     .to_ascii_lowercase();
                 if matches!(extension.as_str(), "zip" | "rar" | "7z") {
-                    crate::desk_log_info!("local", "Source is a .{} archive, extracting into staging", extension);
+                    crate::desk_log_info!(
+                        "local",
+                        "Source is a .{} archive, extracting into staging",
+                        extension
+                    );
                 } else {
-                    crate::desk_log_info!("local", "Source is a loose file, staging it as-is (extension: {})",
-                        if extension.is_empty() { "<none>" } else { extension.as_str() });
+                    crate::desk_log_info!(
+                        "local",
+                        "Source is a loose file, staging it as-is (extension: {})",
+                        if extension.is_empty() {
+                            "<none>"
+                        } else {
+                            extension.as_str()
+                        }
+                    );
                 }
                 archive::stage_source(&source_path, &staging, DEFAULT_ARCHIVE_PASSWORD)?;
             }
@@ -411,8 +487,14 @@ pub fn install_local_pipeline(
                 &lua_backup_dir,
                 &mut report,
             )?;
-            crate::desk_log_info!("local", "Source {} routed into Steam (running totals: {} file(s), {} lua, {} manifest)",
-                source_path.display(), report.applied, report.lua_files, report.manifest_files);
+            crate::desk_log_info!(
+                "local",
+                "Source {} routed into Steam (running totals: {} file(s), {} lua, {} manifest)",
+                source_path.display(),
+                report.applied,
+                report.lua_files,
+                report.manifest_files
+            );
 
             // Clear staged files before processing the next source.
             archive::clear_staging_contents(&staging)?;
@@ -425,7 +507,12 @@ pub fn install_local_pipeline(
     crate::desk_log_info!("local", "Staging folder cleaned up: {}", staging.display());
 
     if let Err(error) = &result {
-        crate::desk_log_error!("local", "Local install pipeline failed for AppID {}: {}", app_id, error);
+        crate::desk_log_error!(
+            "local",
+            "Local install pipeline failed for AppID {}: {}",
+            app_id,
+            error
+        );
     }
 
     result?;
@@ -486,11 +573,13 @@ fn validate_staged_lua_files(current: &Path, app_id: u32) -> Result<(), String> 
         match app_id_from_lua_stem(&stem) {
             Some(lua_app_id) if lua_app_id == app_id => {
                 let content = fs::read_to_string(&path).map_err(|error| {
-                    format!("Failed to read Lua file {} for validation: {}", file_name, error)
+                    format!(
+                        "Failed to read Lua file {} for validation: {}",
+                        file_name, error
+                    )
                 })?;
-                LuaManifestPins::validate_content(&content).map_err(|error| {
-                    format!("Lua file {} is malformed: {}", file_name, error)
-                })?;
+                LuaManifestPins::validate_content(&content)
+                    .map_err(|error| format!("Lua file {} is malformed: {}", file_name, error))?;
                 crate::desk_log_info!(
                     "local",
                     "Lua file {} validated: leading App ID and decimal manifest GIDs match the selected game ({})",
@@ -506,7 +595,11 @@ fn validate_staged_lua_files(current: &Path, app_id: u32) -> Result<(), String> 
                 ));
             }
             None => {
-                crate::desk_log_error!("local", "Lua file {} has no leading numeric App ID: refusing to install", file_name);
+                crate::desk_log_error!(
+                    "local",
+                    "Lua file {} has no leading numeric App ID: refusing to install",
+                    file_name
+                );
                 return Err(format!(
                     "The Lua file {} does not start with a Steam App ID, so it cannot be verified against the selected game. Accepted names include <appid>.lua and <appid>_<buildid>.lua.",
                     file_name
@@ -580,7 +673,11 @@ fn install_staged_tree(
             }
             LocalFileKind::Manifest => {
                 report.manifest_files += 1;
-                crate::desk_log_info!("local", "Routing manifest file {} → depotcache", file_name.to_string_lossy());
+                crate::desk_log_info!(
+                    "local",
+                    "Routing manifest file {} → depotcache",
+                    file_name.to_string_lossy()
+                );
                 (
                     depotcache_dir.join(&file_name),
                     format!("depotcache/{}", file_name.to_string_lossy()),
@@ -592,7 +689,12 @@ fn install_staged_tree(
                     .strip_prefix(root)
                     .map(|rel| rel.to_path_buf())
                     .unwrap_or_else(|_| PathBuf::from(&file_name));
-                crate::desk_log_info!("local", "Routing game file {} → {}", relative.display(), game_dir.display());
+                crate::desk_log_info!(
+                    "local",
+                    "Routing game file {} → {}",
+                    relative.display(),
+                    game_dir.display()
+                );
                 (
                     game_dir.join(&relative),
                     format!("game/{}", relative.display()),
@@ -627,7 +729,11 @@ fn install_staged_tree(
                     error
                 )
             })?;
-            crate::desk_log_info!("local", "Mirrored {} into AetherData lua backup", file_name.to_string_lossy());
+            crate::desk_log_info!(
+                "local",
+                "Mirrored {} into AetherData lua backup",
+                file_name.to_string_lossy()
+            );
         }
 
         report.applied += 1;
@@ -640,11 +746,7 @@ fn install_staged_tree(
 }
 
 /// Resolve the Steam folder the local game content must be installed into.
-fn resolve_target_dir(
-    app_id: u32,
-    game_name: &str,
-    steam_path: &Path,
-) -> PathBuf {
+fn resolve_target_dir(app_id: u32, game_name: &str, steam_path: &Path) -> PathBuf {
     // If the game already has an appmanifest, install into its current folder
     // (whichever library it lives in).
     let scanner = SteamLibraryScanner::new(steam_path.to_path_buf());
@@ -656,10 +758,20 @@ fn resolve_target_dir(
         if game.installed && !game.game_path.trim().is_empty() {
             let existing = PathBuf::from(&game.game_path);
             if existing.is_dir() {
-                crate::desk_log_info!("local", "AppID {} is already installed, reusing its folder: {}", app_id, existing.display());
+                crate::desk_log_info!(
+                    "local",
+                    "AppID {} is already installed, reusing its folder: {}",
+                    app_id,
+                    existing.display()
+                );
                 return existing;
             }
-            crate::desk_log_info!("local", "AppID {} has an appmanifest but its folder is missing: {}", app_id, existing.display());
+            crate::desk_log_info!(
+                "local",
+                "AppID {} has an appmanifest but its folder is missing: {}",
+                app_id,
+                existing.display()
+            );
         }
     }
 
@@ -670,8 +782,13 @@ fn resolve_target_dir(
         .join("common")
         .join(sanitize_folder_name(game_name, app_id));
 
-    crate::desk_log_info!("local", "AppID {} is not installed, target folder will be {} (library: {})",
-        app_id, resolved.display(), steam_path.display());
+    crate::desk_log_info!(
+        "local",
+        "AppID {} is not installed, target folder will be {} (library: {})",
+        app_id,
+        resolved.display(),
+        steam_path.display()
+    );
 
     resolved
 }
@@ -682,9 +799,17 @@ fn sanitize_folder_name(game_name: &str, app_id: u32) -> String {
         .chars()
         .filter(|ch| !matches!(ch, '<' | '>' | ':' | '"' | '/' | '\\' | '|' | '?' | '*'))
         .collect();
-    let sanitized = sanitized.trim().trim_end_matches(['.', ' ']).trim().to_string();
+    let sanitized = sanitized
+        .trim()
+        .trim_end_matches(['.', ' '])
+        .trim()
+        .to_string();
     if sanitized.is_empty() {
-        crate::desk_log_info!("local", "Game name sanitizes to an empty folder name, falling back to app_{}", app_id);
+        crate::desk_log_info!(
+            "local",
+            "Game name sanitizes to an empty folder name, falling back to app_{}",
+            app_id
+        );
         format!("app_{}", app_id)
     } else {
         sanitized
@@ -702,13 +827,8 @@ fn create_local_staging(app_id: u32) -> Result<PathBuf, String> {
 /// Recursively copy the contents of `src` into `dest`, overwriting existing
 /// files.
 fn copy_dir_contents(src: &Path, dest: &Path) -> Result<(), String> {
-    fs::create_dir_all(dest).map_err(|error| {
-        format!(
-            "Failed to create folder {}: {}",
-            dest.display(),
-            error
-        )
-    })?;
+    fs::create_dir_all(dest)
+        .map_err(|error| format!("Failed to create folder {}: {}", dest.display(), error))?;
 
     for entry in fs::read_dir(src)
         .map_err(|error| format!("Failed to read folder {}: {}", src.display(), error))?

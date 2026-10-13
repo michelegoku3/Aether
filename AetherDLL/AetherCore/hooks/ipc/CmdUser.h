@@ -22,4 +22,4 @@ void ForgetETicketAsyncCall(std::uint64_t asyncCall);
 void ResetETicketAsyncCalls();
 std::size_t PendingETicketAsyncCallCount();
 
-}  // namespace ac::hooks::CmdUser
+} // namespace ac::hooks::CmdUser

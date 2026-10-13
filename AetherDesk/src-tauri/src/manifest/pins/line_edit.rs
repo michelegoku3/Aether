@@ -11,8 +11,7 @@ static SETMANIFEST_REWRITE_RE: Lazy<Regex> = Lazy::new(|| {
 });
 
 static SETMANIFEST_DEPOT_RE: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(r"(?i)^\s*(?:--\s*)?setmanifestid\s*\(\s*(?P<appid>\d+)")
-        .expect("valid regex")
+    Regex::new(r"(?i)^\s*(?:--\s*)?setmanifestid\s*\(\s*(?P<appid>\d+)").expect("valid regex")
 });
 
 pub(super) fn rewrite_setmanifest_line(
@@ -22,15 +21,27 @@ pub(super) fn rewrite_setmanifest_line(
     if let Some(captures) = SETMANIFEST_REWRITE_RE.captures(line) {
         return Ok(format!(
             "{}{}{}({}, \"{}\"){}",
-            captures.name("indent").map(|value| value.as_str()).unwrap_or(""),
-            captures.name("comment").map(|value| value.as_str()).unwrap_or(""),
+            captures
+                .name("indent")
+                .map(|value| value.as_str())
+                .unwrap_or(""),
+            captures
+                .name("comment")
+                .map(|value| value.as_str())
+                .unwrap_or(""),
             captures
                 .name("func")
                 .map(|value| value.as_str())
                 .unwrap_or("setManifestid"),
-            captures.name("appid").map(|value| value.as_str()).unwrap_or("0"),
+            captures
+                .name("appid")
+                .map(|value| value.as_str())
+                .unwrap_or("0"),
             next_manifest_id,
-            captures.name("suffix").map(|value| value.as_str()).unwrap_or(""),
+            captures
+                .name("suffix")
+                .map(|value| value.as_str())
+                .unwrap_or(""),
         ));
     }
 

@@ -23,27 +23,21 @@ export const OstWarningModal = ({ onConfirm, onCancel }: OstWarningModalProps) =
     bodyClassName="uninstall-modal-body"
   >
     <p className="uninstall-modal-copy">
-      Aether needs up-to-date patterns for every new Steam version. If Steam
-      updates while updates are unlocked and no fresh patterns are available,
-      games added with Aether will show Buy instead of Play or Install.
+      Aether needs up-to-date patterns for every new Steam version. If Steam updates while updates are unlocked and no
+      fresh patterns are available, games added with Aether will show Buy instead of Play or Install.
     </p>
     <p className="uninstall-modal-copy">
-      There are two pattern sources: Aether dev own (updated within 
-      1 hour of a Steam update) and OST (usually available within
-      minutes). With OST enabled, OST patterns are used right after a Steam
-      update, then replaced by the developer feed as soon as it is ready.
+      There are two pattern sources: Aether dev own (updated within 1 hour of a Steam update) and OST (usually available
+      within minutes). With OST enabled, OST patterns are used right after a Steam update, then replaced by the
+      developer feed as soon as it is ready.
     </p>
     <p className="uninstall-modal-copy">
-      OST patterns lack cloud patterns, which can lead to save-game loss (not
-      tested with Aether). Enable at your own risk.
+      OST patterns lack cloud patterns, which can lead to save-game loss (not tested with Aether). Enable at your own
+      risk.
     </p>
 
     <div className="uninstall-modal-actions">
-      <button
-        type="button"
-        className="uninstall-btn uninstall-btn-primary"
-        onClick={onConfirm}
-      >
+      <button type="button" className="uninstall-btn uninstall-btn-primary" onClick={onConfirm}>
         I understand
       </button>
     </div>

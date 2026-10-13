@@ -3,20 +3,20 @@
 
 #include <algorithm>
 #include <cstring>
-#include <fstream>
 #include <filesystem>
+#include <fstream>
 #include <sstream>
 #include <string>
 
 #include "core/AetherCoreState.h"
-#include "hooks/aetheronline/PresenceSession.h"
 #include "core/Constants.h"
 #include "core/HookManager.h"
 #include "core/Logger.h"
-#include "scripting/LuaData.h"
 #include "core/SteamTypes.h"
+#include "hooks/aetheronline/PresenceSession.h"
 #include "hooks/ipc/SteamCapture.h"
 #include "hooks/wire/BackupIo.h"
+#include "scripting/LuaData.h"
 #include "utils/VdfText.h"
 
 // ---------------------------------------------------------------------------
@@ -34,8 +34,8 @@ constexpr const char* kModule = "AetherOnline";
 using namespace ac::steam;
 
 // pGameID points at a uint64 GameID whose low 24 bits hold the AppId.
-using SpawnProcess_t = bool (*)(void*, const char*, const char*, const char*, std::uint64_t*,
-                               const void*, std::uint32_t, std::int32_t);
+using SpawnProcess_t = bool (*)(void*, const char*, const char*, const char*, std::uint64_t*, const void*,
+                                std::uint32_t, std::int32_t);
 using GetAppIDForCurrentPipe_t = AppId (*)(void*);
 
 SpawnProcess_t o_SpawnProcess = nullptr;
@@ -46,15 +46,20 @@ GetAppIDForCurrentPipe_t o_GetAppIDForCurrentPipe = nullptr;
 // or "--aetheronline" which is incorrect — only the exact argument triggers
 // the special session modes.
 static bool HasFlagArg(const char* cmdLine, const char* flag) {
-    if (!cmdLine) return false;
+    if (!cmdLine)
+        return false;
     std::string cl(cmdLine);
     std::size_t pos = 0;
     while (pos < cl.size()) {
-        while (pos < cl.size() && (cl[pos] == ' ' || cl[pos] == '\t')) ++pos;
-        if (pos >= cl.size()) break;
-        std::size_t end = cl.find_first_of(" \t", pos);  // whitespace-consistent with StripAetherFlagArgs
-        if (end == std::string::npos) end = cl.size();
-        if (cl.substr(pos, end - pos) == flag) return true;
+        while (pos < cl.size() && (cl[pos] == ' ' || cl[pos] == '\t'))
+            ++pos;
+        if (pos >= cl.size())
+            break;
+        std::size_t end = cl.find_first_of(" \t", pos); // whitespace-consistent with StripAetherFlagArgs
+        if (end == std::string::npos)
+            end = cl.size();
+        if (cl.substr(pos, end - pos) == flag)
+            return true;
         pos = end;
     }
     return false;
@@ -62,13 +67,9 @@ static bool HasFlagArg(const char* cmdLine, const char* flag) {
 
 // AetherOnline token: "-aetheronline" — Aether's own masked-online mode,
 // never confused with the online-fix.me (OFME) crack files.
-static bool HasAetherOnlineFlag(const char* cmdLine) {
-    return HasFlagArg(cmdLine, constants::kAetherOnlineFlag);
-}
+static bool HasAetherOnlineFlag(const char* cmdLine) { return HasFlagArg(cmdLine, constants::kAetherOnlineFlag); }
 
-static bool HasShowOnlineFlag(const char* cmdLine) {
-    return HasFlagArg(cmdLine, constants::kShowOnlineFlag);
-}
+static bool HasShowOnlineFlag(const char* cmdLine) { return HasFlagArg(cmdLine, constants::kShowOnlineFlag); }
 
 static bool FileExists(const std::string& path) {
     std::ifstream f(path);
@@ -76,11 +77,13 @@ static bool FileExists(const std::string& path) {
 }
 
 static std::string DirectoryOf(const char* path) {
-    if (!path || !*path) return {};
+    if (!path || !*path)
+        return {};
     std::string s(path);
     if (!s.empty() && s.front() == '"') {
         s.erase(s.begin());
-        if (!s.empty() && s.back() == '"') s.pop_back();
+        if (!s.empty() && s.back() == '"')
+            s.pop_back();
     }
     const auto slash = s.find_last_of("\\/");
     return (slash == std::string::npos) ? std::string{} : s.substr(0, slash);
@@ -95,14 +98,15 @@ static bool HasSpacewarSpoofOnDisk(const char* exe, const char* workDir) {
     if (!exeDir.empty()) {
         dirs[n++] = exeDir;
         const std::string parent = DirectoryOf(exeDir.c_str());
-        if (!parent.empty()) dirs[n++] = parent;
+        if (!parent.empty())
+            dirs[n++] = parent;
     }
-    if (workDir && *workDir) dirs[n++] = workDir;
+    if (workDir && *workDir)
+        dirs[n++] = workDir;
 
     static constexpr const char* kMarkers[] = {
-        "union-crax.ini",
-        "OnlineFix64.dll", "OnlineFix.dll", "OnlineFix.ini", "OnlineFix.json",
-        "SteamFix64.dll", "SteamFix.dll", "SteamFix.ini",
+        "union-crax.ini", "OnlineFix64.dll", "OnlineFix.dll", "OnlineFix.ini",
+        "OnlineFix.json", "SteamFix64.dll",  "SteamFix.dll",  "SteamFix.ini",
     };
     for (int i = 0; i < n; ++i) {
         for (const char* marker : kMarkers) {
@@ -127,9 +131,8 @@ static bool InAppList(const std::vector<std::uint32_t>& list, AppId app) {
 
 // Precedence (documented): exclude > aetheronline > showonline > default_mode.
 // exclude is a HARD opt-out: it beats even a forgotten legacy argv token.
-static LaunchMode ResolveLaunchMode(AppId app, bool aetherOnlineToken, bool showOnlineToken,
-                                    const char** sourceOut) {
-                                        const auto settings = Settings::Snapshot();
+static LaunchMode ResolveLaunchMode(AppId app, bool aetherOnlineToken, bool showOnlineToken, const char** sourceOut) {
+    const auto settings = Settings::Snapshot();
     const auto& s = *settings;
     *sourceOut = "none";
     if (InAppList(s.presenceExcludeApps, app)) {
@@ -179,23 +182,30 @@ static LaunchMode ResolveLaunchMode(AppId app, bool aetherOnlineToken, bool show
 // Table and Stanley Parable tolerate it; strict argv parsers do not.
 static std::string StripAetherFlagArgs(const char* cmdLine, bool* outStripped) {
     std::string out;
-    if (outStripped) *outStripped = false;
-    if (!cmdLine) return out;
+    if (outStripped)
+        *outStripped = false;
+    if (!cmdLine)
+        return out;
     const std::string cl(cmdLine);
     out.reserve(cl.size());
     std::size_t pos = 0;
     while (pos < cl.size()) {
-        while (pos < cl.size() && (cl[pos] == ' ' || cl[pos] == '\t')) ++pos;
-        if (pos >= cl.size()) break;
+        while (pos < cl.size() && (cl[pos] == ' ' || cl[pos] == '\t'))
+            ++pos;
+        if (pos >= cl.size())
+            break;
         std::size_t end = cl.find_first_of(" \t", pos);
-        if (end == std::string::npos) end = cl.size();
+        if (end == std::string::npos)
+            end = cl.size();
         const std::string tok = cl.substr(pos, end - pos);
         pos = end;
         if (tok == constants::kAetherOnlineFlag || tok == constants::kShowOnlineFlag) {
-            if (outStripped) *outStripped = true;
+            if (outStripped)
+                *outStripped = true;
             continue;
         }
-        if (!out.empty()) out.push_back(' ');
+        if (!out.empty())
+            out.push_back(' ');
         out += tok;
     }
     return out;
@@ -221,15 +231,16 @@ static std::string StripAetherFlagArgs(const char* cmdLine, bool* outStripped) {
 //   }
 // ---------------------------------------------------------------------------
 void SyncLanguageToSpacewar(AppId realAppId) {
-    if (realAppId == 0 || realAppId == constants::kSpacewarAppId) return;
+    if (realAppId == 0 || realAppId == constants::kSpacewarAppId)
+        return;
 
     const std::string steamPath = g_state.steamInstallPath;
-    if (steamPath.empty()) return;
+    if (steamPath.empty())
+        return;
 
-    const std::string realAcf = steamPath + "\\steamapps\\appmanifest_" +
-                                std::to_string(realAppId) + ".acf";
-    const std::string swAcf   = steamPath + "\\steamapps\\appmanifest_" +
-                                std::to_string(constants::kSpacewarAppId) + ".acf";
+    const std::string realAcf = steamPath + "\\steamapps\\appmanifest_" + std::to_string(realAppId) + ".acf";
+    const std::string swAcf =
+        steamPath + "\\steamapps\\appmanifest_" + std::to_string(constants::kSpacewarAppId) + ".acf";
 
     // Language is read with the shared VDF codec (utils/VdfText.h): the ACF
     // files are VDF text, and this closes the last regex-based VDF parser
@@ -241,8 +252,7 @@ void SyncLanguageToSpacewar(AppId realAppId) {
             AC_LOG_DEBUG(kModule, "SyncLanguage: cannot open %s.", realAcf.c_str());
             return;
         }
-        realContent.assign((std::istreambuf_iterator<char>(realFile)),
-                            std::istreambuf_iterator<char>());
+        realContent.assign((std::istreambuf_iterator<char>(realFile)), std::istreambuf_iterator<char>());
     }
     const auto languages = vdf::ExtractQuotedValues(realContent, "language");
     if (languages.empty()) {
@@ -250,12 +260,15 @@ void SyncLanguageToSpacewar(AppId realAppId) {
         return;
     }
     const std::string language = languages.front();
-    if (language.empty()) return;
+    if (language.empty())
+        return;
     // A value containing quotes/backslashes cannot round-trip through the
     // hand-written insert below: refuse instead of risking a malformed ACF.
     if (language.find_first_of("\"\\") != std::string::npos) {
-        AC_LOG_WARN(kModule, "SyncLanguage: language '%s' contains unsupported "
-                             "characters; 480 ACF left untouched.", language.c_str());
+        AC_LOG_WARN(kModule,
+                    "SyncLanguage: language '%s' contains unsupported "
+                    "characters; 480 ACF left untouched.",
+                    language.c_str());
         return;
     }
 
@@ -265,8 +278,7 @@ void SyncLanguageToSpacewar(AppId realAppId) {
     {
         std::ifstream swFile(swAcf);
         if (swFile.is_open()) {
-            swContent.assign((std::istreambuf_iterator<char>(swFile)),
-                              std::istreambuf_iterator<char>());
+            swContent.assign((std::istreambuf_iterator<char>(swFile)), std::istreambuf_iterator<char>());
         }
     }
 
@@ -289,17 +301,17 @@ void SyncLanguageToSpacewar(AppId realAppId) {
             bool same = true;
             for (std::size_t i = 0; same && i < needle.size(); ++i) {
                 const char a = swContent[pos + i], b = needle[i];
-                same = (a == b) ||
-                       (a >= 'A' && a <= 'Z' && static_cast<char>(a - 'A' + 'a') == b);
+                same = (a == b) || (a >= 'A' && a <= 'Z' && static_cast<char>(a - 'A' + 'a') == b);
             }
-            if (same) { keyPos = pos; break; }
+            if (same) {
+                keyPos = pos;
+                break;
+            }
         }
-        const std::size_t vOpen = keyPos == std::string::npos ? std::string::npos
-                                  : swContent.find('"', keyPos + needle.size());
-        const std::size_t vStart = vOpen == std::string::npos ? std::string::npos
-                                   : swContent.find('"', vOpen + 1);
-        const std::size_t vEnd = vStart == std::string::npos ? std::string::npos
-                                 : swContent.find('"', vStart + 1);
+        const std::size_t vOpen =
+            keyPos == std::string::npos ? std::string::npos : swContent.find('"', keyPos + needle.size());
+        const std::size_t vStart = vOpen == std::string::npos ? std::string::npos : swContent.find('"', vOpen + 1);
+        const std::size_t vEnd = vStart == std::string::npos ? std::string::npos : swContent.find('"', vStart + 1);
         if (vStart != std::string::npos && vEnd != std::string::npos) {
             swContent.replace(vStart + 1, vEnd - vStart - 1, language);
         } else {
@@ -352,8 +364,7 @@ void SyncLanguageToSpacewar(AppId realAppId) {
         AC_LOG_WARN(kModule, "SyncLanguage: cannot atomically replace appmanifest_480.acf.");
         return;
     }
-    AC_LOG_INFO(kModule, "SyncLanguage: wrote language='%s' to appmanifest_480.acf (atomic).",
-                language.c_str());
+    AC_LOG_INFO(kModule, "SyncLanguage: wrote language='%s' to appmanifest_480.acf (atomic).", language.c_str());
 }
 
 // ---------------------------------------------------------------------------
@@ -375,14 +386,13 @@ struct LaunchDecision {
     bool hasShowOnlineToken = false;
 };
 
-static LaunchDecision ResolveLaunchDecision(std::uint64_t gameId, const char* cmdLine,
-                                            const char* exe, const char* workDir) {
+static LaunchDecision ResolveLaunchDecision(std::uint64_t gameId, const char* cmdLine, const char* exe,
+                                            const char* workDir) {
     LaunchDecision d;
     d.realApp = static_cast<AppId>(gameId & constants::kGameIdAppIdMask);
     d.hasAetherOnlineToken = HasAetherOnlineFlag(cmdLine);
     d.hasShowOnlineToken = HasShowOnlineFlag(cmdLine);
-    d.mode = ResolveLaunchMode(d.realApp, d.hasAetherOnlineToken, d.hasShowOnlineToken,
-                               &d.modeSource);
+    d.mode = ResolveLaunchMode(d.realApp, d.hasAetherOnlineToken, d.hasShowOnlineToken, &d.modeSource);
     d.spoofOnDisk = HasSpacewarSpoofOnDisk(exe, workDir);
     if (d.mode == LaunchMode::ShowOnline && d.spoofOnDisk) {
         d.mode = LaunchMode::None;
@@ -399,17 +409,17 @@ static LaunchDecision ResolveLaunchDecision(std::uint64_t gameId, const char* cm
     // networking (UCO2's AppId=480 ini matches the mask; ogAppId keeps
     // DLC/tickets/stats on the real app), Aether only supplies the Spacewar
     // identity.
-    d.spacewarMask = d.spoofOnDisk && d.mode != LaunchMode::AetherOnline &&
-                     d.realApp != 0 && d.realApp != constants::kSpacewarAppId;
-    if (d.spacewarMask) d.modeSource = "UCO2/OFME on disk; Spacewar mask";
+    d.spacewarMask =
+        d.spoofOnDisk && d.mode != LaunchMode::AetherOnline && d.realApp != 0 && d.realApp != constants::kSpacewarAppId;
+    if (d.spacewarMask)
+        d.modeSource = "UCO2/OFME on disk; Spacewar mask";
     return d;
 }
 
 // Hands the child process a clean argv whenever an Aether token was present
 // (see StripAetherFlagArgs). Returns the command line the child must receive
 // (never null; may point into outStorage).
-static const char* PrepareChildCommandLine(const char* cmdLine, const LaunchDecision& d,
-                                           std::string& outStorage) {
+static const char* PrepareChildCommandLine(const char* cmdLine, const LaunchDecision& d, std::string& outStorage) {
     if (d.hasAetherOnlineToken || d.hasShowOnlineToken) {
         bool stripped = false;
         outStorage = StripAetherFlagArgs(cmdLine, &stripped);
@@ -427,8 +437,7 @@ static const char* PrepareChildCommandLine(const char* cmdLine, const LaunchDeci
 // Applies the launch decision: 480 process mask (AetherOnline / UCO2-OFME) or
 // ShowOnline session, plus the 480 ACF language sync. `session` is expected
 // freshly constructed by the caller; spacewarSpoofExpected is always set.
-static void ApplyLaunchMask(const LaunchDecision& d, std::uint64_t* gameId,
-                            presence::SessionSnapshot& session) {
+static void ApplyLaunchMask(const LaunchDecision& d, std::uint64_t* gameId, presence::SessionSnapshot& session) {
     session.spacewarSpoofExpected = d.spoofOnDisk;
     if (d.mode == LaunchMode::AetherOnline && luadata::HasDepot(d.realApp)) {
         // AetherOnline: full 480 process mask — a strict superset of what
@@ -436,9 +445,8 @@ static void ApplyLaunchMask(const LaunchDecision& d, std::uint64_t* gameId,
         // mask is what real multiplayer through a crack requires.
         session.realAppId = d.realApp;
         *gameId = (*gameId & ~constants::kGameIdAppIdMask) | constants::kSpacewarAppId;
-        AC_LOG_INFO(kModule,
-                    "Masked AppId %u as Spacewar (%u) for AetherOnline (source: %s).",
-                    d.realApp, constants::kSpacewarAppId, d.modeSource);
+        AC_LOG_INFO(kModule, "Masked AppId %u as Spacewar (%u) for AetherOnline (source: %s).", d.realApp,
+                    constants::kSpacewarAppId, d.modeSource);
         // Synchronise the game's language to the 480 ACF so the game starts
         // in the correct language instead of defaulting to English.
         SyncLanguageToSpacewar(d.realApp);
@@ -470,10 +478,9 @@ static void ApplyLaunchMask(const LaunchDecision& d, std::uint64_t* gameId,
     }
 }
 
-bool h_SpawnProcess(void* user, const char* exe, const char* cmdLine, const char* workDir,
-                    std::uint64_t* gameId, const void* blob, std::uint32_t blobSize,
-                    std::int32_t launchOption) {
-    // I-D: orchestratore sottile; la logica vive negli helper sopra
+bool h_SpawnProcess(void* user, const char* exe, const char* cmdLine, const char* workDir, std::uint64_t* gameId,
+                    const void* blob, std::uint32_t blobSize, std::int32_t launchOption) {
+    // I-D: thin orchestrator; the logic lives in the helpers above
     // (ResolveLaunchDecision / PrepareChildCommandLine / ApplyLaunchMask).
     std::string childCmdStorage;
     const char* childCmd = cmdLine;
@@ -500,10 +507,10 @@ bool h_SpawnProcess(void* user, const char* exe, const char* cmdLine, const char
                     "Presence resolve: app %u -> %s (source: %s; argv aetheronline=%d showonline=%d; depot=%d).",
                     d.realApp,
                     d.mode == LaunchMode::AetherOnline ? "aetheronline"
-                        : d.mode == LaunchMode::ShowOnline ? "showonline" : "none",
-                    d.modeSource ? d.modeSource : "unknown",
-                    d.hasAetherOnlineToken ? 1 : 0, d.hasShowOnlineToken ? 1 : 0,
-                    luadata::HasDepot(d.realApp) ? 1 : 0);
+                    : d.mode == LaunchMode::ShowOnline ? "showonline"
+                                                       : "none",
+                    d.modeSource ? d.modeSource : "unknown", d.hasAetherOnlineToken ? 1 : 0,
+                    d.hasShowOnlineToken ? 1 : 0, luadata::HasDepot(d.realApp) ? 1 : 0);
 
         // Clean argv for the child whenever an Aether token was present.
         // Never null; empty string only when the token was the whole line.
@@ -548,12 +555,10 @@ AppId h_GetAppIDForCurrentPipe(void* engine) {
     // IClientUserStats dispatches.
     if (capture::IsStatsScopeActive()) {
         const AppId realAppId = presence::RealAppId();
-        if (realAppId != 0 && realAppId != constants::kSpacewarAppId &&
-            appId == constants::kSpacewarAppId) {
-            // Hot path: il gioco chiama GetAppIDForCurrentPipe di continuo;
-            // una riga per sessione di gioco basta (DEBUG_ONCE).
-            AC_LOG_DEBUG_ONCE(kModule, "GetAppIDForCurrentPipe: stats-scope override %u -> %u.",
-                              appId, realAppId);
+        if (realAppId != 0 && realAppId != constants::kSpacewarAppId && appId == constants::kSpacewarAppId) {
+            // Hot path: the game calls GetAppIDForCurrentPipe constantly;
+            // one line per game session is enough (DEBUG_ONCE).
+            AC_LOG_DEBUG_ONCE(kModule, "GetAppIDForCurrentPipe: stats-scope override %u -> %u.", appId, realAppId);
             return realAppId;
         }
     }
@@ -570,37 +575,29 @@ AppId h_GetAppIDForCurrentPipe(void* engine) {
 // This is the mechanism LumaCore uses to make both DLC and online
 // multiplayer work simultaneously. Without it, one breaks the other.
 // -----------------------------------------------------------------------
-using BuildSpawnEnvBlock_t = std::int64_t (*)(
-    void*, std::uint64_t*, void*, void*,
-    std::uint64_t*, void*, std::int32_t,
-    void*, void*, std::uint32_t, char);
+using BuildSpawnEnvBlock_t = std::int64_t (*)(void*, std::uint64_t*, void*, void*, std::uint64_t*, void*, std::int32_t,
+                                              void*, void*, std::uint32_t, char);
 
 BuildSpawnEnvBlock_t o_BuildSpawnEnvBlock = nullptr;
 
-std::int64_t h_BuildSpawnEnvBlock(
-    void* pThis, std::uint64_t* pCGameID, void* a3, void* env,
-    std::uint64_t* pOverlayCGameID, void* a6, std::int32_t a7,
-    void* a8, void* a9, std::uint32_t a10, char a11)
-{
+std::int64_t h_BuildSpawnEnvBlock(void* pThis, std::uint64_t* pCGameID, void* a3, void* env,
+                                  std::uint64_t* pOverlayCGameID, void* a6, std::int32_t a7, void* a8, void* a9,
+                                  std::uint32_t a10, char a11) {
     AppId realAppId = presence::RealAppId();
 
     if (realAppId && pOverlayCGameID) {
-        AppId overlayAppId = static_cast<AppId>(
-            *pOverlayCGameID & constants::kGameIdAppIdMask);
+        AppId overlayAppId = static_cast<AppId>(*pOverlayCGameID & constants::kGameIdAppIdMask);
         if (overlayAppId == constants::kSpacewarAppId) {
-            *pOverlayCGameID =
-                (*pOverlayCGameID & ~static_cast<std::uint64_t>(constants::kGameIdAppIdMask))
-                | static_cast<std::uint64_t>(realAppId);
-            AC_LOG_INFO(kModule, "BuildSpawnEnvBlock: overlay %u -> %u.",
-                        overlayAppId, realAppId);
+            *pOverlayCGameID = (*pOverlayCGameID & ~static_cast<std::uint64_t>(constants::kGameIdAppIdMask)) |
+                               static_cast<std::uint64_t>(realAppId);
+            AC_LOG_INFO(kModule, "BuildSpawnEnvBlock: overlay %u -> %u.", overlayAppId, realAppId);
         }
     }
 
-    return o_BuildSpawnEnvBlock(pThis, pCGameID, a3, env, pOverlayCGameID,
-                                a6, a7, a8, a9, a10, a11);
+    return o_BuildSpawnEnvBlock(pThis, pCGameID, a3, env, pOverlayCGameID, a6, a7, a8, a9, a10, a11);
 }
 
-}  // namespace (anonymous)
+} // namespace
 
 // -----------------------------------------------------------------------
 // Public API — defined in namespace ac::hooks (NOT anonymous) so the
@@ -609,7 +606,8 @@ std::int64_t h_BuildSpawnEnvBlock(
 
 steam::AppId CallOriginalGetAppIdForCurrentPipe() {
     void* engine = g_state.steamEngine.load();
-    if (!o_GetAppIDForCurrentPipe || !engine) return 0;
+    if (!o_GetAppIDForCurrentPipe || !engine)
+        return 0;
     return o_GetAppIDForCurrentPipe(engine);
 }
 
@@ -619,12 +617,11 @@ void RegisterAetherOnlineHooks(HMODULE diversion) {
         return;
     }
     AC_LOG_INFO(kModule, "Registering AetherOnline hooks.");
-    g_state.hookManager.TryHook("SpawnProcess", "steamclient", diversion,
-                          o_SpawnProcess, h_SpawnProcess);
-    g_state.hookManager.TryHook("GetAppIDForCurrentPipe", "steamclient", diversion,
-                          o_GetAppIDForCurrentPipe, h_GetAppIDForCurrentPipe);
-    g_state.hookManager.TryHook("BuildSpawnEnvBlock", "steamclient", diversion,
-                          o_BuildSpawnEnvBlock, h_BuildSpawnEnvBlock);
+    g_state.hookManager.TryHook("SpawnProcess", "steamclient", diversion, o_SpawnProcess, h_SpawnProcess);
+    g_state.hookManager.TryHook("GetAppIDForCurrentPipe", "steamclient", diversion, o_GetAppIDForCurrentPipe,
+                                h_GetAppIDForCurrentPipe);
+    g_state.hookManager.TryHook("BuildSpawnEnvBlock", "steamclient", diversion, o_BuildSpawnEnvBlock,
+                                h_BuildSpawnEnvBlock);
 }
 
-}  // namespace ac::hooks
+} // namespace ac::hooks

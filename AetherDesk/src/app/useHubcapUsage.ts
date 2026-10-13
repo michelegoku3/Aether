@@ -11,7 +11,7 @@ export function useHubcapUsage() {
 
   const refresh = useCallback(async (forcedKey?: string, preloadedSettings?: AppSettings) => {
     try {
-      const key = forcedKey ?? (preloadedSettings ?? await getSettings()).hubcap_api_key;
+      const key = forcedKey ?? (preloadedSettings ?? (await getSettings())).hubcap_api_key;
       if (!key?.trim()) {
         setUsage(EMPTY_USAGE);
         return;

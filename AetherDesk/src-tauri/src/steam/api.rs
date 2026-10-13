@@ -50,7 +50,10 @@ pub async fn fetch_app_details_for_country(
 
     if !response.status().is_success() {
         if response.status().as_u16() == 429 {
-            return Err(format!("{}: HTTP 429 for {}", RATE_LIMIT_ERROR_PREFIX, app_id));
+            return Err(format!(
+                "{}: HTTP 429 for {}",
+                RATE_LIMIT_ERROR_PREFIX, app_id
+            ));
         }
         return Err(format!(
             "Steam appdetails returned HTTP {} for {}",
@@ -69,7 +72,10 @@ pub async fn fetch_app_details_for_country(
         .ok_or_else(|| format!("Steam appdetails did not include data for {}", app_id))?;
 
     if !envelope.success {
-        return Err(format!("Steam appdetails returned success=false for {}", app_id));
+        return Err(format!(
+            "Steam appdetails returned success=false for {}",
+            app_id
+        ));
     }
 
     Ok(envelope)

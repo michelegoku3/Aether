@@ -10,4 +10,4 @@ namespace ac::security {
 // AetherCore and the returned value must never be logged.
 std::optional<std::string> ReadHubcapApiKey();
 
-}  // namespace ac::security
+} // namespace ac::security

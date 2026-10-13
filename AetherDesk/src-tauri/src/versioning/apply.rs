@@ -53,7 +53,9 @@ pub fn apply_build_version(
     // in the AetherData backup tree (history/ unless already known).
     let history_dir = crate::core::backup::GameBackup::for_app(app_id)
         .map(|backup| {
-            let dir = backup.lua_dir().join(crate::core::backup::LUA_HISTORY_SUBDIR);
+            let dir = backup
+                .lua_dir()
+                .join(crate::core::backup::LUA_HISTORY_SUBDIR);
             if let Ok(pre_lua) = std::fs::read(lua.lua_path()) {
                 if let Err(e) = backup.store_history_version(app_id, &pre_lua) {
                     crate::desk_log_warn!(

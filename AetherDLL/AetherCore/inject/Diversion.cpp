@@ -10,10 +10,10 @@ namespace ac {
 namespace {
 constexpr const char* kModule = "Diversion";
 
-template <typename Op>
-bool RetryWithBackoff(Op&& op) {
+template <typename Op> bool RetryWithBackoff(Op&& op) {
     for (int i = 0; i < constants::kDiversionMaxRetries; ++i) {
-        if (op()) return true;
+        if (op())
+            return true;
         Sleep(constants::kDiversionRetryDelayMs);
     }
     return false;
@@ -28,7 +28,8 @@ void SetOutcome(const char* outcome) {
 // have been mapped from elsewhere. Auto mode only attaches to Steam's own DLL.
 bool LiveSteamclientMapped() {
     HMODULE live = GetModuleHandleA("steamclient64.dll");
-    if (!live) return false;
+    if (!live)
+        return false;
     char path[MAX_PATH] = {};
     const DWORD length = GetModuleFileNameA(live, path, MAX_PATH);
     if (!length || length >= MAX_PATH || _stricmp(path, g_state.steamclientPath.c_str()) != 0) {
@@ -53,7 +54,7 @@ bool AttachLive(const char* outcome) {
     AC_LOG_INFO(kModule, "Hook target: live steamclient64.dll (handle 0x%p, %s).", live, outcome);
     return true;
 }
-}  // namespace
+} // namespace
 
 bool LoadDiversion() {
     g_state.steamclientPath = g_state.steamInstallPath + "\\steamclient64.dll";
@@ -76,9 +77,8 @@ bool LoadDiversion() {
         SetOutcome("copy-failed");
         return settings->diversionMode == DiversionMode::Auto && AttachLive("auto-live-copy-failed");
     }
-    if (!RetryWithBackoff([&] {
-            return CopyFileA(g_state.steamclientPath.c_str(), g_state.diversionPath.c_str(), FALSE) != 0;
-        })) {
+    if (!RetryWithBackoff(
+            [&] { return CopyFileA(g_state.steamclientPath.c_str(), g_state.diversionPath.c_str(), FALSE) != 0; })) {
         AC_LOG_ERROR(kModule, "Failed to copy steamclient64.dll after retries.");
         SetOutcome("copy-failed");
         return settings->diversionMode == DiversionMode::Auto && AttachLive("auto-live-copy-failed");
@@ -92,14 +92,14 @@ bool LoadDiversion() {
         return settings->diversionMode == DiversionMode::Auto && AttachLive("auto-live-copy-load-failed");
     }
     SetOutcome(settings->diversionMode == DiversionMode::Auto ? "auto-copy-prepared" : "copy-loaded");
-    AC_LOG_INFO(kModule, "Hook target prepared: acoverlay.dll (handle 0x%p).",
-                g_state.diversionModule);
+    AC_LOG_INFO(kModule, "Hook target prepared: acoverlay.dll (handle 0x%p).", g_state.diversionModule);
     return true;
 }
 
 void SelectHookTargetBeforeRedirect() {
     if (Settings::Snapshot()->diversionMode != DiversionMode::Auto ||
-        g_state.diversionUsesLive.load(std::memory_order_acquire)) return;
+        g_state.diversionUsesLive.load(std::memory_order_acquire))
+        return;
 
     // Called after pattern fetching but BEFORE redirect installation. If Steam
     // loaded the real client in the meantime, the copy would receive hooks yet
@@ -115,4 +115,4 @@ void SelectHookTargetBeforeRedirect() {
     }
 }
 
-}  // namespace ac
+} // namespace ac

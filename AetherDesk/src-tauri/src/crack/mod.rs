@@ -79,21 +79,16 @@ fn apply_sources_in_staging(
                     .unwrap_or(false);
 
             if is_vn_exe {
-                let temp_zip = staging
-                    .parent()
-                    .unwrap_or(staging)
-                    .join(format!(
-                        "temp_vn_{}.exe.zip",
-                        source_path
-                            .file_name()
-                            .map(|n| n.to_string_lossy())
-                            .unwrap_or_default()
-                    ));
-                std::fs::copy(&source_path, &temp_zip).map_err(|e| {
-                    format!("Failed to stage VN patch .exe as .exe.zip: {e}")
-                })?;
-                let stage_res =
-                    archive::stage_source(&temp_zip, staging, DEFAULT_ARCHIVE_PASSWORD);
+                let temp_zip = staging.parent().unwrap_or(staging).join(format!(
+                    "temp_vn_{}.exe.zip",
+                    source_path
+                        .file_name()
+                        .map(|n| n.to_string_lossy())
+                        .unwrap_or_default()
+                ));
+                std::fs::copy(&source_path, &temp_zip)
+                    .map_err(|e| format!("Failed to stage VN patch .exe as .exe.zip: {e}"))?;
+                let stage_res = archive::stage_source(&temp_zip, staging, DEFAULT_ARCHIVE_PASSWORD);
                 let _ = std::fs::remove_file(&temp_zip);
 
                 if stage_res.is_err() {

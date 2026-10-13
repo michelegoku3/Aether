@@ -22,4 +22,4 @@ bool TryAcquirePackage0();
 // hooks were never installed. Called from dllmain::Shutdown.
 void ShutdownOwnershipHooks();
 
-}  // namespace ac::hooks
+} // namespace ac::hooks

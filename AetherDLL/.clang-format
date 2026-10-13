@@ -1,0 +1,31 @@
+# clang-format for AetherDLL — formatting only (checks live in .clang-tidy).
+# Style measured from the existing code (not eyeballed): braces on the SAME
+# line for namespaces/enums/structs/functions/ifs (LLVM-like Attach style, NOT
+# Allman), 4-space indent, lines within 120.
+# `pch.h`/`framework.h` ALWAYS stay first: they provide windows.h to headers
+# that use it without including it (sorting them alphabetically breaks the build).
+# Generated files (proto/generated, FetchContent _deps) and build folders
+# (out/, build*/) are EXCLUDED: never pass them to clang-format.
+BasedOnStyle: LLVM
+IndentWidth: 4
+ColumnLimit: 120
+TabWidth: 4
+UseTab: Never
+BreakBeforeBraces: Attach
+SortIncludes: CaseSensitive
+IncludeBlocks: Preserve
+IncludeCategories:
+  # NOTE: clang-format sorts by LOWEST priority first (0 = very first).
+  - Regex: '^"(pch|framework)\.h"$'
+    Priority: 0
+  - Regex: '.*'
+    Priority: 1
+AllowShortFunctionsOnASingleLine: All
+AllowShortIfStatementsOnASingleLine: Never
+AllowShortLoopsOnASingleLine: false
+AlignEscapedNewlines: Left
+ReflowComments: false
+PointerAlignment: Left
+ReferenceAlignment: Left
+DerivePointerAlignment: false
+SpaceBeforeParens: ControlStatements

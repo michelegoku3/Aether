@@ -10,11 +10,7 @@ import { RefreshIcon } from '../ui/icons';
 import { StatusAlert } from '../ui/StatusAlert';
 import { emptyStatus, StatusMessage } from '../types/ui';
 import { formatDateDDMMYYYY } from '../util/dates';
-import {
-  ManualVersionEditor,
-  LuaManifestRow,
-  SpecificVersionGame,
-} from './SpecificVersionModal';
+import { ManualVersionEditor, LuaManifestRow, SpecificVersionGame } from './SpecificVersionModal';
 
 export type VersionTab = 'manual' | 'auto';
 
@@ -49,15 +45,14 @@ const ChangeVersionModal = ({ game, initialRows, initialTab = 'manual', onClose 
 
   return (
     <div className="modal-overlay" onClick={onClose}>
-      <div
-        className="modal-container version-modal-container"
-        onClick={(e) => e.stopPropagation()}
-      >
+      <div className="modal-container version-modal-container" onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
           <span className="modal-title">
             Change Version: <strong style={{ color: '#ffffff' }}>{game.name}</strong> ({game.appId})
           </span>
-          <button onClick={onClose} className="modal-close-btn">&times;</button>
+          <button onClick={onClose} className="modal-close-btn">
+            &times;
+          </button>
         </div>
 
         <div className="modal-separator"></div>
@@ -77,16 +72,9 @@ const ChangeVersionModal = ({ game, initialRows, initialTab = 'manual', onClose 
         </div>
 
         <div className="modal-body version-modal-body">
-          {activeTab === 'manual' && (
-            <ManualVersionEditor game={game} initialRows={initialRows} onClose={onClose} />
-          )}
+          {activeTab === 'manual' && <ManualVersionEditor game={game} initialRows={initialRows} onClose={onClose} />}
 
-          {activeTab === 'auto' && (
-            <AutoBuildsTab
-              appId={appId}
-              onClose={onClose}
-            />
-          )}
+          {activeTab === 'auto' && <AutoBuildsTab appId={appId} onClose={onClose} />}
         </div>
       </div>
     </div>
@@ -273,9 +261,7 @@ const AutoBuildsTab = ({ appId, onClose }: AutoBuildsTabProps) => {
       {/* Builds list */}
       {loading && <div className="version-builds-empty">Loading builds…</div>}
 
-      {!loading && error && (
-        <StatusAlert status={{ text: error, type: 'error' }} className="settings-alert--compact" />
-      )}
+      {!loading && error && <StatusAlert status={{ text: error, type: 'error' }} className="settings-alert--compact" />}
 
       {!loading && !error && visibleBuilds.length === 0 && (
         <div className="version-builds-empty">
@@ -330,11 +316,7 @@ const AutoBuildsTab = ({ appId, onClose }: AutoBuildsTabProps) => {
 
       {/* Action buttons */}
       <div className="version-actions">
-        <button
-          className="panel-btn"
-          onClick={handleOpenSteamDb}
-          disabled={isApplying}
-        >
+        <button className="panel-btn" onClick={handleOpenSteamDb} disabled={isApplying}>
           Open SteamDB
         </button>
         <button

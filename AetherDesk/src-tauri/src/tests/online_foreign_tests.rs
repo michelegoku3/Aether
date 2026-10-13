@@ -1,4 +1,4 @@
-use crate::online::foreign::{ForeignOnlineReport, has_ofme, scan};
+use crate::online::foreign::{has_ofme, scan, ForeignOnlineReport};
 use crate::online::types::Conflict;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -32,7 +32,9 @@ fn proxy_dll_alone_is_not_ofme() {
 
 #[test]
 fn winmm_without_sibling_is_not_ofme() {
-    let conflicts = vec![Conflict::NamedFixFile(PathBuf::from("/tmp/no-such-game/winmm.dll"))];
+    let conflicts = vec![Conflict::NamedFixFile(PathBuf::from(
+        "/tmp/no-such-game/winmm.dll",
+    ))];
     assert!(!has_ofme(&conflicts));
 }
 
@@ -56,11 +58,7 @@ fn nested_ofme_pack_next_to_shipping_exe_is_detected() {
         "Engine/Binaries/ThirdParty/Steamworks/Win64/steam_api64.dll",
         b"dll",
     );
-    write(
-        tmp.path(),
-        "Engine/Binaries/Win64/OnlineFix64.dll",
-        b"ofme",
-    );
+    write(tmp.path(), "Engine/Binaries/Win64/OnlineFix64.dll", b"ofme");
     write(tmp.path(), "Engine/Binaries/Win64/OnlineFix.ini", b"[fix]");
 
     let report = scan(tmp.path());
@@ -113,7 +111,10 @@ fn uco2_marker_scan_preserves_every_file_including_original_plugins() {
             "Binaries/Win64/plugins/Photon_Universal.dll",
             b"photon sentinel",
         ),
-        ("Binaries/Win64/plugins/EOS_custom.dll", b"original EOS plugin"),
+        (
+            "Binaries/Win64/plugins/EOS_custom.dll",
+            b"original EOS plugin",
+        ),
         (
             "Binaries/Win64/plugins/coherence_universal.dll",
             b"coherence sentinel",
@@ -128,7 +129,10 @@ fn uco2_marker_scan_preserves_every_file_including_original_plugins() {
     let report = scan(tmp.path());
     assert!(report.uco2);
     assert!(!report.ofme);
-    assert!(report.files.is_empty(), "only OFME paths belong in this list");
+    assert!(
+        report.files.is_empty(),
+        "only OFME paths belong in this list"
+    );
     for (relative, bytes) in files {
         assert_eq!(fs::read(tmp.path().join(relative)).unwrap(), bytes);
     }

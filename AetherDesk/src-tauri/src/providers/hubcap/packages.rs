@@ -1,14 +1,12 @@
 use std::time::{Duration, Instant};
 
 use crate::manifest::package::{ManifestPackage, ManifestPackageExtractor};
-use crate::providers::hubcap_generation::{
-    deduplicated_generation, GenerationKey, QuotaPolicy,
-};
+use crate::providers::hubcap_generation::{deduplicated_generation, GenerationKey, QuotaPolicy};
 
 use super::client::HubcapClient;
 use super::types::{
-    http_failure_class, is_retryable_status, retry_delay, BASE_URL,
-    GENERATION_RETRY_ATTEMPTS, HUBCAP_PACKAGE_TIMEOUT_SECONDS, HubcapAppContents,
+    http_failure_class, is_retryable_status, retry_delay, HubcapAppContents, BASE_URL,
+    GENERATION_RETRY_ATTEMPTS, HUBCAP_PACKAGE_TIMEOUT_SECONDS,
 };
 
 impl HubcapClient {
@@ -44,7 +42,9 @@ impl HubcapClient {
         let limit = stats.role_daily_limit.or(stats.daily_limit);
         if let (Some(usage), Some(limit)) = (stats.daily_usage, limit) {
             if usage >= limit {
-                return Err(format!("Hubcap account daily manifest quota is exhausted ({usage}/{limit})."));
+                return Err(format!(
+                    "Hubcap account daily manifest quota is exhausted ({usage}/{limit})."
+                ));
             }
         }
         let url = format!("{}/manifest/{}", BASE_URL, app_id);
@@ -117,18 +117,24 @@ impl HubcapClient {
                     response.status()
                 ));
             }
-            let bytes = response.bytes().await.map_err(|error| {
-                crate::desk_log_error!(
-                    "hubcap",
-                    "Manifest ZIP body read failed app_id={} after {} attempt(s): {}",
-                    app_id,
-                    attempt + 1,
-                    error
-                );
-                format!("Failed to read manifest ZIP bytes: {error}")
-            })?.to_vec();
+            let bytes = response
+                .bytes()
+                .await
+                .map_err(|error| {
+                    crate::desk_log_error!(
+                        "hubcap",
+                        "Manifest ZIP body read failed app_id={} after {} attempt(s): {}",
+                        app_id,
+                        attempt + 1,
+                        error
+                    );
+                    format!("Failed to read manifest ZIP bytes: {error}")
+                })?
+                .to_vec();
             if bytes.is_empty() {
-                return Err(format!("Hubcap returned an empty manifest ZIP for AppID {app_id}."));
+                return Err(format!(
+                    "Hubcap returned an empty manifest ZIP for AppID {app_id}."
+                ));
             }
             crate::desk_log_info!(
                 "hubcap",
@@ -150,13 +156,21 @@ impl HubcapClient {
                 match resp.json::<serde_json::Value>().await {
                     Ok(v) => {
                         if let Some(b) = v.get("manifest_file_exists").and_then(|x| x.as_bool()) {
-                            if b { return true; }
+                            if b {
+                                return true;
+                            }
                         }
                         if let Some(s) = v.get("status").and_then(|x| x.as_str()) {
-                            if s.eq_ignore_ascii_case("available") { return true; }
+                            if s.eq_ignore_ascii_case("available") {
+                                return true;
+                            }
                         }
-                        if let Some(b) = v.get("available").and_then(|x| x.as_bool()) { return b; }
-                        if let Some(b) = v.get("exists").and_then(|x| x.as_bool()) { return b; }
+                        if let Some(b) = v.get("available").and_then(|x| x.as_bool()) {
+                            return b;
+                        }
+                        if let Some(b) = v.get("exists").and_then(|x| x.as_bool()) {
+                            return b;
+                        }
                         false
                     }
                     Err(error) => {
@@ -180,7 +194,12 @@ impl HubcapClient {
                 false
             }
             Err(error) => {
-                crate::desk_log_warn!("hubcap", "Manifest status network check failed app_id={}: {}", app_id, error);
+                crate::desk_log_warn!(
+                    "hubcap",
+                    "Manifest status network check failed app_id={}: {}",
+                    app_id,
+                    error
+                );
                 false
             }
         }
@@ -218,7 +237,10 @@ impl HubcapClient {
         })?;
 
         let mut contents = HubcapAppContents {
-            zip_exists: body.get("zip_exists").and_then(|value| value.as_bool()).unwrap_or(false),
+            zip_exists: body
+                .get("zip_exists")
+                .and_then(|value| value.as_bool())
+                .unwrap_or(false),
             last_modified: body
                 .get("last_modified")
                 .and_then(|value| value.as_str())
@@ -248,7 +270,10 @@ impl HubcapClient {
             app_id,
             contents.zip_exists,
             contents.manifests.len(),
-            contents.last_modified.clone().unwrap_or_else(|| "-".to_string())
+            contents
+                .last_modified
+                .clone()
+                .unwrap_or_else(|| "-".to_string())
         );
         Ok(contents)
     }

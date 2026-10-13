@@ -66,13 +66,14 @@ export const OnlineChoiceModal = ({
 
   return (
     <div className="modal-overlay" onClick={handleOverlayClick}>
-      <div
-        className="modal-container oc-container"
-        onClick={(e) => e.stopPropagation()}
-      >
+      <div className="modal-container oc-container" onClick={(e) => e.stopPropagation()}>
         <div className="oc-header">
-          <h3 className="oc-header-title">Online: {game.name} ({game.appId})</h3>
-          <button type="button" className="oc-close" onClick={onClose} disabled={busy} aria-label="Close">×</button>
+          <h3 className="oc-header-title">
+            Online: {game.name} ({game.appId})
+          </h3>
+          <button type="button" className="oc-close" onClick={onClose} disabled={busy} aria-label="Close">
+            ×
+          </button>
         </div>
 
         <div className="oc-body">
@@ -114,7 +115,13 @@ export const OnlineChoiceModal = ({
                   <span className="online-choice-option__title">{option.title}</span>
                   <span className="online-choice-option__badge-col">
                     {isActive && (
-                      <span className={option.accent === 'uco2' ? 'online-choice-badge online-choice-badge--uco2' : 'online-choice-badge'}>
+                      <span
+                        className={
+                          option.accent === 'uco2'
+                            ? 'online-choice-badge online-choice-badge--uco2'
+                            : 'online-choice-badge'
+                        }
+                      >
                         ACTIVE
                       </span>
                     )}

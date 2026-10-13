@@ -1,10 +1,4 @@
-import {
-  useCallback,
-  useEffect,
-  useRef,
-  useState,
-  type MutableRefObject,
-} from 'react';
+import { useCallback, useEffect, useRef, useState, type MutableRefObject } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { hasValidSteamPath } from '../hooks/useSettings';
@@ -26,31 +20,37 @@ export function useUnsavedNavigationGuard() {
     if (!(await hasValidSteamPath())) setShowSteamPathWarning(true);
   }, []);
 
-  const changeTab = useCallback((tab: TabType) => {
-    if (showUnsavedModal) return;
-    if (activeTab === 'settings' && tab !== 'settings') {
-      if (settingsGuardRef.current?.isDirty()) {
-        pendingActionRef.current = { type: 'tab', tab };
-        setShowUnsavedModal(true);
+  const changeTab = useCallback(
+    (tab: TabType) => {
+      if (showUnsavedModal) return;
+      if (activeTab === 'settings' && tab !== 'settings') {
+        if (settingsGuardRef.current?.isDirty()) {
+          pendingActionRef.current = { type: 'tab', tab };
+          setShowUnsavedModal(true);
+          return;
+        }
+        void warnIfSteamPathMissing();
+      }
+      setActiveTab(tab);
+    },
+    [activeTab, showUnsavedModal, warnIfSteamPathMissing]
+  );
+
+  const completePendingAction = useCallback(
+    async (pending: PendingAction) => {
+      if (pending.type === 'tab') {
+        setActiveTab(pending.tab);
+        void warnIfSteamPathMissing();
         return;
       }
-      void warnIfSteamPathMissing();
-    }
-    setActiveTab(tab);
-  }, [activeTab, showUnsavedModal, warnIfSteamPathMissing]);
-
-  const completePendingAction = useCallback(async (pending: PendingAction) => {
-    if (pending.type === 'tab') {
-      setActiveTab(pending.tab);
-      void warnIfSteamPathMissing();
-      return;
-    }
-    try {
-      await invoke('force_close_window');
-    } catch (error) {
-      console.error('Failed to close window:', error);
-    }
-  }, [warnIfSteamPathMissing]);
+      try {
+        await invoke('force_close_window');
+      } catch (error) {
+        console.error('Failed to close window:', error);
+      }
+    },
+    [warnIfSteamPathMissing]
+  );
 
   const saveUnsaved = useCallback(async () => {
     if (unsavedBusy) return;
@@ -115,16 +115,20 @@ export function useUnsavedNavigationGuard() {
 /** Registers the native close interception after startup hydration is wired. */
 export function useWindowCloseGuard(
   settingsGuardRef: MutableRefObject<SettingsGuard | null>,
-  beginPendingClose: () => void,
+  beginPendingClose: () => void
 ) {
   useEffect(() => {
     let unlisten: (() => void) | undefined;
-    void getCurrentWindow().onCloseRequested((event) => {
-      if (settingsGuardRef.current?.isDirty()) {
-        event.preventDefault();
-        beginPendingClose();
-      }
-    }).then((off) => { unlisten = off; });
+    void getCurrentWindow()
+      .onCloseRequested((event) => {
+        if (settingsGuardRef.current?.isDirty()) {
+          event.preventDefault();
+          beginPendingClose();
+        }
+      })
+      .then((off) => {
+        unlisten = off;
+      });
     return () => unlisten?.();
   }, [beginPendingClose, settingsGuardRef]);
 }

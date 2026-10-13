@@ -1,5 +1,7 @@
 use crate::core::paths::LocalAppPaths;
-use crate::core::settings::{cache_version_with_currency, load_settings, steam_country_code_for_currency};
+use crate::core::settings::{
+    cache_version_with_currency, load_settings, steam_country_code_for_currency,
+};
 use crate::game_info::cache::{GameInfoCache, GAME_INFO_TTL_SECONDS};
 use crate::game_info::model::{
     GameInfo, GameInfoAppDetails, GameInfoLocal, GameInfoPlatforms, GameInfoPrice,
@@ -33,24 +35,21 @@ impl GameInfoService {
             return Err("A valid Steam App ID is required.".to_string());
         }
 
-        let mut info = self.cache.get(app_id).unwrap_or_else(|| GameInfo::new(app_id));
+        let mut info = self
+            .cache
+            .get(app_id)
+            .unwrap_or_else(|| GameInfo::new(app_id));
 
         // Local filesystem data is cheap and deterministic; merge it first so
         // network-derived metadata can use the best available name for heuristics.
         self.merge_local_info(&mut info);
 
-        let needs_store_items = !GameInfoCache::is_fresh(
-            info.store_items_updated_at_unix,
-            GAME_INFO_TTL_SECONDS,
-        );
-        let needs_appdetails = !GameInfoCache::is_fresh(
-            info.appdetails_updated_at_unix,
-            GAME_INFO_TTL_SECONDS,
-        );
-        let needs_hubcap = !GameInfoCache::is_fresh(
-            info.hubcap_updated_at_unix,
-            HUBCAP_INFO_TTL_SECONDS,
-        );
+        let needs_store_items =
+            !GameInfoCache::is_fresh(info.store_items_updated_at_unix, GAME_INFO_TTL_SECONDS);
+        let needs_appdetails =
+            !GameInfoCache::is_fresh(info.appdetails_updated_at_unix, GAME_INFO_TTL_SECONDS);
+        let needs_hubcap =
+            !GameInfoCache::is_fresh(info.hubcap_updated_at_unix, HUBCAP_INFO_TTL_SECONDS);
 
         let store_items_lookup = async {
             if needs_store_items {
@@ -78,11 +77,8 @@ impl GameInfoService {
         // sources. Fetch them concurrently and merge deterministically after
         // all completed; this keeps the Info modal responsive without mixing
         // side effects across async branches.
-        let (store_meta, appdetails_data, hubcap_manifest) = tokio::join!(
-            store_items_lookup,
-            appdetails_lookup,
-            hubcap_lookup,
-        );
+        let (store_meta, appdetails_data, hubcap_manifest) =
+            tokio::join!(store_items_lookup, appdetails_lookup, hubcap_lookup,);
 
         if let Some(meta) = store_meta {
             apply_store_items_meta(&mut info, &meta);
@@ -123,13 +119,26 @@ impl GameInfoService {
             return;
         };
 
-        if info.name.as_ref().map(|name| name.trim().is_empty()).unwrap_or(true) {
+        if info
+            .name
+            .as_ref()
+            .map(|name| name.trim().is_empty())
+            .unwrap_or(true)
+        {
             info.name = Some(game.name.clone());
         }
-        if info.image_url.as_ref().map(|url| url.trim().is_empty()).unwrap_or(true) {
+        if info
+            .image_url
+            .as_ref()
+            .map(|url| url.trim().is_empty())
+            .unwrap_or(true)
+        {
             info.image_url = Some(game.image_url.clone());
         }
-        info.store_url = Some(format!("https://store.steampowered.com/app/{}/", info.app_id));
+        info.store_url = Some(format!(
+            "https://store.steampowered.com/app/{}/",
+            info.app_id
+        ));
 
         let rows = LuaManifestPins::new(settings.steam_path.clone(), info.app_id)
             .rows_from_file()
@@ -167,7 +176,11 @@ impl GameInfoService {
             return None;
         }
 
-        Some(HubcapClient::new(&settings.hubcap_api_key).has_manifest(app_id).await)
+        Some(
+            HubcapClient::new(&settings.hubcap_api_key)
+                .has_manifest(app_id)
+                .await,
+        )
     }
 
     async fn fetch_appdetails_data(&self, app_id: u32) -> Option<serde_json::Value> {
@@ -185,11 +198,19 @@ fn apply_store_items_meta(info: &mut GameInfo, meta: &store_items::StoreItemMeta
     if !meta.kind.is_empty() {
         info.kind = Some(meta.kind.clone());
     }
-    info.has_nsfw = Some(store_items::is_nsfw(meta, info.name.as_deref().unwrap_or_default()));
+    info.has_nsfw = Some(store_items::is_nsfw(
+        meta,
+        info.name.as_deref().unwrap_or_default(),
+    ));
     info.has_delisted = Some(meta.is_delisted);
     info.release_date_unix = meta.release_date_unix.or(info.release_date_unix);
-    info.original_release_date_unix = meta.original_release_date_unix.or(info.original_release_date_unix);
-    info.store_url_path = meta.store_url_path.clone().or_else(|| info.store_url_path.clone());
+    info.original_release_date_unix = meta
+        .original_release_date_unix
+        .or(info.original_release_date_unix);
+    info.store_url_path = meta
+        .store_url_path
+        .clone()
+        .or_else(|| info.store_url_path.clone());
     info.platforms = Some(platforms_from_store_meta(meta, info.platforms.clone()));
     info.store_categories = Some(GameInfoStoreCategories {
         supported_player_category_ids: meta.categories.supported_player_category_ids.clone(),
@@ -198,16 +219,19 @@ fn apply_store_items_meta(info: &mut GameInfo, meta: &store_items::StoreItemMeta
     });
     info.content_descriptor_ids = meta.content_descriptor_ids.clone();
     if info.price.is_none() {
-        info.price = meta.best_purchase_option.as_ref().map(|price| GameInfoPrice {
-            currency: None,
-            initial_cents: None,
-            final_cents: price
-                .final_price_in_cents
-                .as_ref()
-                .and_then(|value| value.parse::<i64>().ok()),
-            formatted_final: price.formatted_final_price.clone(),
-            discount_percent: None,
-        });
+        info.price = meta
+            .best_purchase_option
+            .as_ref()
+            .map(|price| GameInfoPrice {
+                currency: None,
+                initial_cents: None,
+                final_cents: price
+                    .final_price_in_cents
+                    .as_ref()
+                    .and_then(|value| value.parse::<i64>().ok()),
+                formatted_final: price.formatted_final_price.clone(),
+                discount_percent: None,
+            });
     }
 
     let now = GameInfoCache::now_unix();
@@ -216,12 +240,25 @@ fn apply_store_items_meta(info: &mut GameInfo, meta: &store_items::StoreItemMeta
 }
 
 fn merge_appdetails_value(info: &mut GameInfo, data: &serde_json::Value) {
-    if info.name.as_ref().map(|name| name.trim().is_empty()).unwrap_or(true) {
+    if info
+        .name
+        .as_ref()
+        .map(|name| name.trim().is_empty())
+        .unwrap_or(true)
+    {
         info.name = string_field(data, "name");
     }
-    info.store_url = Some(format!("https://store.steampowered.com/app/{}/", info.app_id));
+    info.store_url = Some(format!(
+        "https://store.steampowered.com/app/{}/",
+        info.app_id
+    ));
 
-    if info.image_url.as_ref().map(|url| url.trim().is_empty()).unwrap_or(true) {
+    if info
+        .image_url
+        .as_ref()
+        .map(|url| url.trim().is_empty())
+        .unwrap_or(true)
+    {
         info.image_url = string_field(data, "capsule_imagev5")
             .or_else(|| string_field(data, "capsule_image"))
             .or_else(|| string_field(data, "header_image"));
@@ -246,7 +283,9 @@ fn merge_appdetails_value(info: &mut GameInfo, data: &serde_json::Value) {
     }
 
     if let Some(metacritic) = data.get("metacritic") {
-        info.metascore = u64_field(metacritic, "score").map(|score| score.to_string()).or_else(|| info.metascore.clone());
+        info.metascore = u64_field(metacritic, "score")
+            .map(|score| score.to_string())
+            .or_else(|| info.metascore.clone());
     }
 
     let drm_notice = string_field(data, "drm_notice");
@@ -273,11 +312,17 @@ fn merge_appdetails_value(info: &mut GameInfo, data: &serde_json::Value) {
         publishers: string_array_field(data, "publishers"),
         genres: description_array_field(data, "genres"),
         categories: description_array_field(data, "categories"),
-        recommendations_total: data.get("recommendations").and_then(|v| u64_field(v, "total")),
+        recommendations_total: data
+            .get("recommendations")
+            .and_then(|v| u64_field(v, "total")),
         achievements_total: data.get("achievements").and_then(|v| u64_field(v, "total")),
         metacritic_score: data.get("metacritic").and_then(|v| u64_field(v, "score")),
-        release_date_text: data.get("release_date").and_then(|v| string_field(v, "date")),
-        coming_soon: data.get("release_date").and_then(|v| bool_field(v, "coming_soon")),
+        release_date_text: data
+            .get("release_date")
+            .and_then(|v| string_field(v, "date")),
+        coming_soon: data
+            .get("release_date")
+            .and_then(|v| bool_field(v, "coming_soon")),
         drm_notice,
         screenshots,
     };

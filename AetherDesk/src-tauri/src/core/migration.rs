@@ -42,7 +42,12 @@ mod fs_utils {
             } else if s.is_file() && !d.exists() {
                 match fs::copy(&s, &d) {
                     Ok(_) => count += 1,
-                    Err(e) => eprintln!("[AetherDesk] copy failed {} -> {}: {}", s.display(), d.display(), e),
+                    Err(e) => eprintln!(
+                        "[AetherDesk] copy failed {} -> {}: {}",
+                        s.display(),
+                        d.display(),
+                        e
+                    ),
                 }
             }
         }
@@ -50,7 +55,9 @@ mod fs_utils {
     }
 
     pub fn is_fully_copied(src: &Path, dst: &Path) -> bool {
-        let Ok(entries) = fs::read_dir(src) else { return true };
+        let Ok(entries) = fs::read_dir(src) else {
+            return true;
+        };
         for e in entries.flatten() {
             let s = e.path();
             let d = dst.join(e.file_name());
@@ -74,7 +81,11 @@ mod fs_utils {
         }
         let n = copy_missing_only(src, dst)?;
         if n > 0 {
-            eprintln!("[AetherDesk] migrated {n} file(s) {label} {} -> {}", src.display(), dst.display());
+            eprintln!(
+                "[AetherDesk] migrated {n} file(s) {label} {} -> {}",
+                src.display(),
+                dst.display()
+            );
         }
         if is_fully_copied(src, dst) {
             match fs::remove_dir_all(src) {
@@ -100,7 +111,10 @@ mod legacy_install {
         let new_bin = current.join("AetherDesk.exe");
         if legacy_bin.exists() && new_bin.exists() {
             let _ = std::fs::remove_file(&legacy_bin);
-            eprintln!("[AetherDesk] removed legacy binary {}", legacy_bin.display());
+            eprintln!(
+                "[AetherDesk] removed legacy binary {}",
+                legacy_bin.display()
+            );
         }
         let legacy_uninst = current.join("uninstall.exe");
         if legacy_uninst.exists() && current.join("Uninstall AetherDesk.exe").exists() {
@@ -146,25 +160,42 @@ pub fn migrate_legacy_lua_backups(steam_path: &Path) -> Result<MigrationReport, 
         LocalAppPaths::data_root().join(LEGACY_LUA_BACKUPS_DIR),
         LocalAppPaths::legacy_roaming_data_root().join(LEGACY_LUA_BACKUPS_DIR),
     ];
-    let legacy_dir = candidates.iter().find(|p| p.is_dir()).cloned().unwrap_or(candidates[0].clone());
+    let legacy_dir = candidates
+        .iter()
+        .find(|p| p.is_dir())
+        .cloned()
+        .unwrap_or(candidates[0].clone());
     if !legacy_dir.is_dir() {
         return Ok(MigrationReport::default());
     }
     let depotcache_dir = steam_path.join("depotcache");
     let mut report = MigrationReport::default();
     let mut lua_files = Vec::new();
-    for entry in fs::read_dir(&legacy_dir).map_err(|e| format!("read {}: {}", legacy_dir.display(), e))? {
+    for entry in
+        fs::read_dir(&legacy_dir).map_err(|e| format!("read {}: {}", legacy_dir.display(), e))?
+    {
         let e = entry.map_err(|e| format!("entry: {}", e))?;
         let p = e.path();
-        if p.extension().is_some_and(|ext| ext.eq_ignore_ascii_case("lua")) {
+        if p.extension()
+            .is_some_and(|ext| ext.eq_ignore_ascii_case("lua"))
+        {
             lua_files.push(p);
         }
     }
     for lua_path in &lua_files {
-        let Some(app_id) = lua_path.file_stem().and_then(|s| s.to_string_lossy().parse::<u32>().ok()) else { continue };
-        let content = fs::read_to_string(lua_path).map_err(|e| format!("read {}: {}", lua_path.display(), e))?;
+        let Some(app_id) = lua_path
+            .file_stem()
+            .and_then(|s| s.to_string_lossy().parse::<u32>().ok())
+        else {
+            continue;
+        };
+        let content = fs::read_to_string(lua_path)
+            .map_err(|e| format!("read {}: {}", lua_path.display(), e))?;
         let rows = LuaManifestPins::rows_from_content(&content);
-        let names: HashSet<String> = rows.iter().map(|r| format!("{}_{}.manifest", r.app_id, r.manifest_id)).collect();
+        let names: HashSet<String> = rows
+            .iter()
+            .map(|r| format!("{}_{}.manifest", r.app_id, r.manifest_id))
+            .collect();
         let backup = GameBackup::for_app(app_id)?;
         backup.backup_lua_artifacts(app_id, &content, &[])?;
         report.lua_files += 1;
@@ -186,12 +217,19 @@ pub fn migrate_legacy_lua_backups(steam_path: &Path) -> Result<MigrationReport, 
     Ok(report)
 }
 
-pub fn migrate_legacy_settings_if_needed(local_config_dir: &Path, legacy_config_dir: Option<&Path>) {
+pub fn migrate_legacy_settings_if_needed(
+    local_config_dir: &Path,
+    legacy_config_dir: Option<&Path>,
+) {
     let result = (|| -> Result<(), String> {
         let _lock = crate::core::state_io::lock(&local_config_dir.join("settings.lock"))?;
         let local_path = local_config_dir.join("settings.json");
-        if local_path.exists() || local_config_dir.join("settings.pending.json").exists() { return Ok(()); }
-        let Some(legacy_dir) = legacy_config_dir else { return Ok(()); };
+        if local_path.exists() || local_config_dir.join("settings.pending.json").exists() {
+            return Ok(());
+        }
+        let Some(legacy_dir) = legacy_config_dir else {
+            return Ok(());
+        };
         let legacy_path = legacy_dir.join("settings.json");
         let content = match fs::read(&legacy_path) {
             Ok(content) => content,
@@ -201,10 +239,15 @@ pub fn migrate_legacy_settings_if_needed(local_config_dir: &Path, legacy_config_
         serde_json::from_slice::<crate::core::settings::AppSettings>(&content)
             .map_err(|_| "Invalid legacy settings; source preserved".to_string())?;
         crate::core::state_io::write_atomic(&local_path, &content)?;
-        crate::desk_log_info!("settings", "Legacy settings copied atomically; original retained for recovery");
+        crate::desk_log_info!(
+            "settings",
+            "Legacy settings copied atomically; original retained for recovery"
+        );
         Ok(())
     })();
-    if let Err(e) = result { crate::desk_log_error!("settings", "Legacy migration failed: {}", e); }
+    if let Err(e) = result {
+        crate::desk_log_error!("settings", "Legacy migration failed: {}", e);
+    }
 }
 
 pub fn remove_obsolete_component_version_dirs(app: &tauri::AppHandle) {
@@ -248,7 +291,9 @@ pub(crate) fn migrate_legacy_steam_proxy_with_check(
         return Ok(false);
     }
     if is_steam_running() {
-        return Err("Steam is running; obsolete proxy removal deferred until Steam is closed".into());
+        return Err(
+            "Steam is running; obsolete proxy removal deferred until Steam is closed".into(),
+        );
     }
     installer.migrate_legacy_proxy()
 }
@@ -312,8 +357,12 @@ pub fn migrate_download_update_default_off(app: &tauri::AppHandle) {
 
 pub fn run_startup_migrations(app: &tauri::AppHandle) {
     crate::desk_log_info!("migration", "Running AetherDesk startup migrations...");
-    if let Err(e) = migrate_roaming_to_local_install() { eprintln!("[AetherDesk] Roaming->Local failed: {e}"); }
-    if let Err(e) = migrate_programfiles_to_local_install() { eprintln!("[AetherDesk] PF->Local failed: {e}"); }
+    if let Err(e) = migrate_roaming_to_local_install() {
+        eprintln!("[AetherDesk] Roaming->Local failed: {e}");
+    }
+    if let Err(e) = migrate_programfiles_to_local_install() {
+        eprintln!("[AetherDesk] PF->Local failed: {e}");
+    }
     remove_legacy_install_folders();
     reset_antivirus_exclusion_flag(app);
     // One-time cleanup: the desk-1.0.1 release (commit d4ccbb1) wrote a
@@ -333,10 +382,14 @@ pub fn run_startup_migrations(app: &tauri::AppHandle) {
     // never configured (empty or stale legacy default). Runs before the
     // bridge below so the pointer targets the effective installation.
     adopt_detected_steam_path_if_unconfigured(app);
-    let steam_path = crate::core::settings::SettingsManager::new(app).load().steam_path;
+    let steam_path = crate::core::settings::SettingsManager::new(app)
+        .load()
+        .steam_path;
     match migrate_legacy_steam_proxy(&steam_path) {
         Ok(true) => crate::desk_log_info!("migration", "Removed obsolete Steam-root DLL proxy"),
-        Err(error) => crate::desk_log_warn!("migration", "Steam proxy migration deferred: {}", error),
+        Err(error) => {
+            crate::desk_log_warn!("migration", "Steam proxy migration deferred: {}", error);
+        }
         Ok(false) => {}
     }
     ensure_aethercore_bridge(app);
@@ -358,11 +411,16 @@ pub fn ensure_start_menu_shortcut() {
     use std::os::windows::process::CommandExt;
     use std::process::Command;
 
-    crate::desk_log_info_once!("migration", "Verifying Windows Start Menu shortcut AetherDesk.lnk");
+    crate::desk_log_info_once!(
+        "migration",
+        "Verifying Windows Start Menu shortcut AetherDesk.lnk"
+    );
 
     const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
-    let Ok(exe_path) = std::env::current_exe() else { return; };
+    let Ok(exe_path) = std::env::current_exe() else {
+        return;
+    };
     // Skip if running as temporary updater
     if exe_path
         .file_name()
@@ -373,8 +431,12 @@ pub fn ensure_start_menu_shortcut() {
         return;
     }
 
-    let Some(work_dir) = exe_path.parent() else { return; };
-    let Ok(appdata) = std::env::var("APPDATA") else { return; };
+    let Some(work_dir) = exe_path.parent() else {
+        return;
+    };
+    let Ok(appdata) = std::env::var("APPDATA") else {
+        return;
+    };
 
     let programs_dir = Path::new(&appdata)
         .join("Microsoft")
@@ -402,7 +464,13 @@ pub fn ensure_start_menu_shortcut() {
     );
 
     let _ = Command::new("powershell.exe")
-        .args(["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", &script])
+        .args([
+            "-NoProfile",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-Command",
+            &script,
+        ])
         .creation_flags(CREATE_NO_WINDOW)
         .spawn();
 }
@@ -434,8 +502,7 @@ pub fn adopt_detected_steam_path_if_unconfigured(app: &tauri::AppHandle) {
         return;
     }
 
-    let never_configured =
-        current.is_empty() || steam_resolve::is_legacy_default_path(&current);
+    let never_configured = current.is_empty() || steam_resolve::is_legacy_default_path(&current);
     if !never_configured {
         crate::desk_log_warn!(
             "migration",
@@ -455,12 +522,19 @@ pub fn adopt_detected_steam_path_if_unconfigured(app: &tauri::AppHandle) {
             );
             if let Err(error) = manager.update("detect-steam-path", |current_settings| {
                 if current_settings.steam_path != settings.steam_path {
-                    return Err(DeskError::coded(codes::SETTINGS_CONFLICT, "Steam path changed during detection"));
+                    return Err(DeskError::coded(
+                        codes::SETTINGS_CONFLICT,
+                        "Steam path changed during detection",
+                    ));
                 }
                 current_settings.steam_path = path.display().to_string();
                 Ok(())
             }) {
-                crate::desk_log_warn!("migration", "Could not persist adopted Steam path: {}", error);
+                crate::desk_log_warn!(
+                    "migration",
+                    "Could not persist adopted Steam path: {}",
+                    error
+                );
             }
         }
         None => {
@@ -515,7 +589,9 @@ pub fn ensure_steam_bridge_for_path(steam_path: &str) {
     // Migrate legacy aethercore.toml from steam folder if needed
     let legacy_toml = steam_aethercore_dir.join("aethercore.toml");
     if let Err(error) = crate::core::config_document::initialize(
-        &toml_path, Some(&legacy_toml), include_str!("../../assets/defaults/aethercore.toml"),
+        &toml_path,
+        Some(&legacy_toml),
+        include_str!("../../assets/defaults/aethercore.toml"),
     ) {
         crate::desk_log_error!("migration", "DLL config initialization failed: {}", error);
     }
@@ -540,11 +616,15 @@ pub fn ensure_aethercore_bridge(app: &tauri::AppHandle) {
     let toml_path = config_dir.join("aethercore.toml");
     let _ = fs::create_dir_all(&config_dir);
 
-    let steam_path = crate::core::settings::SettingsManager::new(app).load().steam_path;
+    let steam_path = crate::core::settings::SettingsManager::new(app)
+        .load()
+        .steam_path;
     ensure_steam_bridge_for_path(&steam_path);
 
     if let Err(error) = crate::core::config_document::initialize(
-        &toml_path, None, include_str!("../../assets/defaults/aethercore.toml"),
+        &toml_path,
+        None,
+        include_str!("../../assets/defaults/aethercore.toml"),
     ) {
         crate::desk_log_error!("migration", "DLL config initialization failed: {}", error);
     }
@@ -568,7 +648,9 @@ pub fn ensure_aethercore_bridge(app: &tauri::AppHandle) {
     crate::core::manifest_restore_config::ensure_defaults(&toml_path);
     if let Ok(root) = crate::steam::resolve::resolve_steam_path(&steam_path) {
         let legacy_toml = root.join("aethercore").join("aethercore.toml");
-        if !legacy_toml.exists() { return; }
+        if !legacy_toml.exists() {
+            return;
+        }
         crate::core::presence_config::migrate_legacy_presence_keys(&legacy_toml);
         crate::core::presence_config::ensure_defaults(&legacy_toml);
         crate::core::ost_config::ensure_defaults(&legacy_toml);

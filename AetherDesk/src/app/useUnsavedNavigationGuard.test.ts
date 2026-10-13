@@ -1,15 +1,8 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import type { SettingsGuard } from '../views/SettingsView';
-import {
-  invokeMock,
-  mockInvokeCommands,
-  requestWindowClose,
-} from '../test/tauriMocks';
-import {
-  useUnsavedNavigationGuard,
-  useWindowCloseGuard,
-} from './useUnsavedNavigationGuard';
+import { invokeMock, mockInvokeCommands, requestWindowClose } from '../test/tauriMocks';
+import { useUnsavedNavigationGuard, useWindowCloseGuard } from './useUnsavedNavigationGuard';
 
 const validSteamCommands = {
   get_settings: { hubcap_api_key: '', steam_path: 'C:/Steam' },
@@ -107,7 +100,9 @@ describe('useUnsavedNavigationGuard', () => {
     result.current.settingsGuardRef.current = settingsGuard;
 
     let close!: ReturnType<typeof requestWindowClose>;
-    act(() => { close = requestWindowClose(); });
+    act(() => {
+      close = requestWindowClose();
+    });
     expect(close.preventDefault).toHaveBeenCalledOnce();
     expect(result.current.showUnsavedModal).toBe(true);
 
@@ -120,7 +115,9 @@ describe('useUnsavedNavigationGuard', () => {
     result.current.settingsGuardRef.current = guard({ isDirty: () => false });
 
     let close!: ReturnType<typeof requestWindowClose>;
-    act(() => { close = requestWindowClose(); });
+    act(() => {
+      close = requestWindowClose();
+    });
 
     expect(close.preventDefault).not.toHaveBeenCalled();
     expect(result.current.showUnsavedModal).toBe(false);
@@ -134,7 +131,9 @@ describe('useUnsavedNavigationGuard', () => {
     result.current.settingsGuardRef.current = settingsGuard;
     act(() => result.current.changeTab('store'));
 
-    act(() => { requestWindowClose(); });
+    act(() => {
+      requestWindowClose();
+    });
     act(() => result.current.discardUnsaved());
 
     await waitFor(() => expect(invokeMock).toHaveBeenCalledWith('force_close_window'));

@@ -49,18 +49,14 @@ std::atomic<bool> s_patternRetryStop{false};
 constexpr int kSteamUiTicksPerCheck = 5;
 
 bool PatternsFullyAvailable() {
-    return pattern::HasModule("steamclient") &&
-           pattern::HasModule("steamui") &&
-           g_state.ipcSpec.loaded;
+    return pattern::HasModule("steamclient") && pattern::HasModule("steamui") && g_state.ipcSpec.loaded;
 }
 
 void SteamUiRetryWorker(std::atomic<bool>& stop) {
     int elapsedMs = 0;
-    while (!stop.load(std::memory_order_relaxed) &&
-           elapsedMs < constants::kSteamUiDeferredTimeoutMs) {
+    while (!stop.load(std::memory_order_relaxed) && elapsedMs < constants::kSteamUiDeferredTimeoutMs) {
         if (steamui::InstallSteamUiRedirect()) {
-            AC_LOG_INFO(kModule, "SteamUI redirect installed after %d ms (deferred retry).",
-                        elapsedMs);
+            AC_LOG_INFO(kModule, "SteamUI redirect installed after %d ms (deferred retry).", elapsedMs);
             return;
         }
         for (int i = 0; i < kSteamUiTicksPerCheck && !stop.load(std::memory_order_relaxed); ++i) {
@@ -69,33 +65,36 @@ void SteamUiRetryWorker(std::atomic<bool>& stop) {
         }
     }
     if (!stop.load(std::memory_order_relaxed)) {
-        AC_LOG_WARN(kModule, "SteamUI deferred retry gave up after %d ms; "
-                             "steamclient hooks remain installed, redirect absent.",
+        AC_LOG_WARN(kModule,
+                    "SteamUI deferred retry gave up after %d ms; "
+                    "steamclient hooks remain installed, redirect absent.",
                     constants::kSteamUiDeferredTimeoutMs);
     }
 }
 
 void PatternLateRetryWorker(std::atomic<bool>& stop) {
     for (int attempt = 1; attempt <= constants::kPatternLateRetryMaxAttempts; ++attempt) {
-        if (stop.load(std::memory_order_relaxed) || s_patternRetryStop.load(std::memory_order_relaxed)) return;
-        if (PatternsFullyAvailable()) return;
+        if (stop.load(std::memory_order_relaxed) || s_patternRetryStop.load(std::memory_order_relaxed))
+            return;
+        if (PatternsFullyAvailable())
+            return;
 
         bool anyTableAppeared = false;
         if (!g_state.ipcSpec.loaded) {
-            anyTableAppeared |= ipcspec::Init();  // IPC-only arrival also needs a new batch
+            anyTableAppeared |= ipcspec::Init(); // IPC-only arrival also needs a new batch
         }
         anyTableAppeared |= pattern::ReloadModuleIfMissing("steamclient");
         anyTableAppeared |= pattern::ReloadModuleIfMissing("steamui");
 
         if (anyTableAppeared) {
-            AC_LOG_INFO(kModule,
-                        "Late pattern(s) became available; re-running hook batch.");
-            InstallAllHooks();  // idempotent: only the previously-missed hooks
-                                // register; LicenseManager::Init re-arms A2.
+            AC_LOG_INFO(kModule, "Late pattern(s) became available; re-running hook batch.");
+            InstallAllHooks(); // idempotent: only the previously-missed hooks
+                               // register; LicenseManager::Init re-arms A2.
             status::Write();
         } else if (attempt == 1 || attempt % 6 == 0) {
-            AC_LOG_INFO(kModule, "Late pattern retry #%d: steamclient=%d "
-                                 "steamui=%d ipc=%d.",
+            AC_LOG_INFO(kModule,
+                        "Late pattern retry #%d: steamclient=%d "
+                        "steamui=%d ipc=%d.",
                         attempt, static_cast<int>(pattern::HasModule("steamclient")),
                         static_cast<int>(pattern::HasModule("steamui")),
                         static_cast<int>(g_state.ipcSpec.loaded.load()));
@@ -107,18 +106,18 @@ void PatternLateRetryWorker(std::atomic<bool>& stop) {
         }
 
         // Sleep the interval in small steps so shutdown stays snappy.
-        for (int elapsed = 0; elapsed < constants::kPatternLateRetryIntervalMs &&
-                            !stop.load(std::memory_order_relaxed);
+        for (int elapsed = 0; elapsed < constants::kPatternLateRetryIntervalMs && !stop.load(std::memory_order_relaxed);
              elapsed += constants::kSteamUiPollIntervalMs) {
             Sleep(constants::kSteamUiPollIntervalMs);
         }
     }
-    AC_LOG_WARN(kModule, "Late pattern retry gave up after %d attempt(s); "
-                         "restart Steam once the patterns are published.",
+    AC_LOG_WARN(kModule,
+                "Late pattern retry gave up after %d attempt(s); "
+                "restart Steam once the patterns are published.",
                 constants::kPatternLateRetryMaxAttempts);
 }
 
-}  // namespace
+} // namespace
 
 std::mutex& BatchMutex() { return s_batchMutex; }
 
@@ -162,11 +161,14 @@ void InstallSteamClientBatch() {
 }
 
 void ArmSteamUiRedirect() {
-    if (steamui::InstallSteamUiRedirect()) return;   // already armed (or live mode)
+    if (steamui::InstallSteamUiRedirect())
+        return; // already armed (or live mode)
     bool expected = false;
-    if (!s_steamUiRetryStarted.compare_exchange_strong(expected, true)) return;
-    AC_LOG_INFO(kModule, "SteamUI redirect not ready yet; starting deferred "
-                         "retry worker (timeout %d ms).",
+    if (!s_steamUiRetryStarted.compare_exchange_strong(expected, true))
+        return;
+    AC_LOG_INFO(kModule,
+                "SteamUI redirect not ready yet; starting deferred "
+                "retry worker (timeout %d ms).",
                 constants::kSteamUiDeferredTimeoutMs);
     if (!workers::StartWorker("steamui_redirect_retry", SteamUiRetryWorker)) {
         s_steamUiRetryStarted.store(false);
@@ -182,14 +184,16 @@ void InstallAllHooks() {
 }
 
 void StartPatternLateRetry() {
-    if (PatternsFullyAvailable()) return;  // nothing to retry
+    if (PatternsFullyAvailable())
+        return; // nothing to retry
     bool expected = false;
-    if (!s_patternRetryStarted.compare_exchange_strong(expected, true)) return;
+    if (!s_patternRetryStarted.compare_exchange_strong(expected, true))
+        return;
     s_patternRetryStop.store(false, std::memory_order_relaxed);
-    AC_LOG_INFO(kModule, "Starting late-pattern retry worker (some pattern tables "
-                         "were unavailable at init; %d attempts, %d ms apart).",
-                constants::kPatternLateRetryMaxAttempts,
-                constants::kPatternLateRetryIntervalMs);
+    AC_LOG_INFO(kModule,
+                "Starting late-pattern retry worker (some pattern tables "
+                "were unavailable at init; %d attempts, %d ms apart).",
+                constants::kPatternLateRetryMaxAttempts, constants::kPatternLateRetryIntervalMs);
     if (!workers::StartWorker("pattern_late_retry", PatternLateRetryWorker)) {
         s_patternRetryStarted.store(false);
         AC_LOG_ERROR(kModule, "Could not start the late-pattern retry worker; "
@@ -206,4 +210,4 @@ void RequestRetryStop() {
     AC_LOG_INFO(kModule, "Hook retry stop requested; workers::Shutdown performs the join.");
 }
 
-}  // namespace ac::bootstrap
+} // namespace ac::bootstrap

@@ -47,4 +47,4 @@ void LeaveStatsScope();
 // True when this thread is currently inside an IClientUserStats dispatch.
 bool IsStatsScopeActive();
 
-}  // namespace ac::capture
+} // namespace ac::capture

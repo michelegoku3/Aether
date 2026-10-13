@@ -77,12 +77,7 @@ pub(super) async fn run_pin_refresh(
     };
     runtime.last_pin_refresh_at = Some(Instant::now());
 
-    match crate::manifest::pin_refresh::refresh_game_pins_from_hubcap(
-        app.clone(),
-        app_id,
-    )
-    .await
-    {
+    match crate::manifest::pin_refresh::refresh_game_pins_from_hubcap(app.clone(), app_id).await {
         Ok(report) => {
             checkpoint.contents_checked.insert(app_id, now_epoch());
             if let Some(fingerprint) = current_acf.get(&app_id) {
@@ -188,10 +183,7 @@ pub(super) async fn run_workshop(
     if !ready {
         return;
     }
-    let task = runtime
-        .workshop
-        .take()
-        .expect("readiness checked above");
+    let task = runtime.workshop.take().expect("readiness checked above");
     match crate::commands::workshop::sync_hubcap_workshop_manifests(app.clone()).await {
         Ok(report) if report.failed == 0 && report.deferred == 0 => {
             checkpoint.workshop_processed = current_workshop.clone();

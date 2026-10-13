@@ -35,10 +35,7 @@ pub enum DeskError {
         detail: String,
     },
     /// Process or external tool execution failure (e.g. Steamless).
-    Execution {
-        tool: &'static str,
-        detail: String,
-    },
+    Execution { tool: &'static str, detail: String },
     /// Internal unexpected error.
     Internal(String),
 }
@@ -117,7 +114,9 @@ impl fmt::Display for DeskError {
             Self::NotFound(msg) => write!(f, "Not found: {msg}"),
             Self::Io { context, detail } => write!(f, "{context}: {detail}"),
             Self::Parse { context, detail } => write!(f, "Could not parse {context}: {detail}"),
-            Self::Network { endpoint, detail } => write!(f, "Network error on {endpoint}: {detail}"),
+            Self::Network { endpoint, detail } => {
+                write!(f, "Network error on {endpoint}: {detail}")
+            }
             Self::Steam(msg) => write!(f, "Steam error: {msg}"),
             Self::Settings(msg) => write!(f, "Settings error: {msg}"),
             Self::Provider { provider, detail } => write!(f, "{provider} error: {detail}"),

@@ -1,11 +1,11 @@
 use super::{command_steam_path, configured_steam_path};
-use crate::util::validation::validate_steam_path;
-use crate::updater::dll::DllInstaller;
 use crate::core::settings::load_settings;
 use crate::steam::launch_options;
 use crate::steam::resolve::{normalize_steam_path, resolve_steam_path};
 use crate::steam::update_guard::SteamUpdateGuard;
+use crate::updater::dll::DllInstaller;
 use crate::util::dialog::file_path_to_string;
+use crate::util::validation::validate_steam_path;
 use std::path::{Path, PathBuf};
 use tauri_plugin_dialog::DialogExt;
 
@@ -37,7 +37,11 @@ pub fn start_steam(app: tauri::AppHandle) -> Result<String, String> {
         return Ok("Steam is already running.".to_string());
     }
 
-    crate::desk_log_info!("lifecycle", "start_steam: launching Steam from {}", steam_dir.display());
+    crate::desk_log_info!(
+        "lifecycle",
+        "start_steam: launching Steam from {}",
+        steam_dir.display()
+    );
     let exe = crate::core::steam_process::spawn_steam(&steam_dir)?;
     crate::core::steam_monitor::mark(true);
     crate::desk_log_info!("lifecycle", "start_steam: spawned {}", exe.display());
@@ -47,7 +51,10 @@ pub fn start_steam(app: tauri::AppHandle) -> Result<String, String> {
 #[tauri::command]
 pub fn restart_steam(app: tauri::AppHandle) -> Result<String, String> {
     crate::core::logger::reset_session_dedup();
-    crate::desk_log_info!("lifecycle", "restart_steam: requested. Resetting AetherDesk session deduplication set.");
+    crate::desk_log_info!(
+        "lifecycle",
+        "restart_steam: requested. Resetting AetherDesk session deduplication set."
+    );
 
     let settings = load_settings(&app);
     let steam_dir = std::path::PathBuf::from(&settings.steam_path);
@@ -59,12 +66,18 @@ pub fn restart_steam(app: tauri::AppHandle) -> Result<String, String> {
         // exiting one (the classic "restart that does nothing").
         let gone = crate::core::steam_process::wait_steam_gone();
         if !gone {
-            crate::desk_log_warn!("lifecycle", "restart_steam: Steam still present after kill, proceeding anyway");
+            crate::desk_log_warn!(
+                "lifecycle",
+                "restart_steam: Steam still present after kill, proceeding anyway"
+            );
         } else {
             crate::desk_log_info!("lifecycle", "restart_steam: Steam exited, relaunching");
         }
     } else {
-        crate::desk_log_info!("lifecycle", "restart_steam: Steam was not running, just starting");
+        crate::desk_log_info!(
+            "lifecycle",
+            "restart_steam: Steam was not running, just starting"
+        );
     }
 
     let exe = crate::core::steam_process::spawn_steam(&steam_dir)?;
@@ -108,7 +121,11 @@ pub fn is_steam_blocked(app: tauri::AppHandle) -> Result<bool, String> {
 pub fn block_steam_updates(app: tauri::AppHandle) -> Result<String, String> {
     // Write into the Steam folder: strict validation, readable error.
     let steam_path = command_steam_path(&app)?;
-    crate::desk_log_info!("steam", "Blocking Steam updates in directory '{}'", steam_path);
+    crate::desk_log_info!(
+        "steam",
+        "Blocking Steam updates in directory '{}'",
+        steam_path
+    );
     SteamUpdateGuard::new(steam_path).block_updates()?;
     Ok("Steam updates are now blocked.".to_string())
 }
@@ -116,7 +133,11 @@ pub fn block_steam_updates(app: tauri::AppHandle) -> Result<String, String> {
 #[tauri::command]
 pub fn unblock_steam_updates(app: tauri::AppHandle) -> Result<String, String> {
     let steam_path = command_steam_path(&app)?;
-    crate::desk_log_info!("steam", "Unblocking Steam updates in directory '{}'", steam_path);
+    crate::desk_log_info!(
+        "steam",
+        "Unblocking Steam updates in directory '{}'",
+        steam_path
+    );
     SteamUpdateGuard::new(steam_path).unblock_updates()?;
     Ok("Steam updates are now unblocked.".to_string())
 }
@@ -150,7 +171,10 @@ pub fn get_aetheronline(app: tauri::AppHandle, app_id: u32) -> Result<bool, Stri
         return Ok(false);
     }
     match launch_options::get_launch_options(Path::new(&steam_path), app_id) {
-        Ok(options) => Ok(launch_options::has_launch_token(&options, AETHERONLINE_TOKEN)),
+        Ok(options) => Ok(launch_options::has_launch_token(
+            &options,
+            AETHERONLINE_TOKEN,
+        )),
         // No localconfig yet (Steam never launched): simply not active.
         Err(e) if e.contains("not found") => Ok(false),
         Err(e) => Err(e),
@@ -178,17 +202,22 @@ pub fn set_aetheronline(
             return Err(foreign.refuse_online_aether());
         }
         if crate::commands::online::uco2_enabled(app_id) || foreign.uco2 {
-            return Err(if foreign.uco2 && !crate::commands::online::uco2_enabled(app_id) {
-                foreign.refuse_online_aether_uco2()
-            } else {
-                "Disable UCO2 first — Online Aether and UCO2 cannot share a process.".to_string()
-            });
+            return Err(
+                if foreign.uco2 && !crate::commands::online::uco2_enabled(app_id) {
+                    foreign.refuse_online_aether_uco2()
+                } else {
+                    "Disable UCO2 first — Online Aether and UCO2 cannot share a process."
+                        .to_string()
+                },
+            );
         }
     }
 
-    let marker_active = aethercore_toml_paths(&app)
-        .iter()
-        .any(|p| read_mode_apps(p, PresenceMode::AetherOnline).map(|apps| apps.contains(&app_id)).unwrap_or(false));
+    let marker_active = aethercore_toml_paths(&app).iter().any(|p| {
+        read_mode_apps(p, PresenceMode::AetherOnline)
+            .map(|apps| apps.contains(&app_id))
+            .unwrap_or(false)
+    });
     let current = launch_options::get_launch_options(Path::new(&steam_path), app_id)?;
     let legacy_active = launch_options::has_launch_token(&current, AETHERONLINE_TOKEN)
         || launch_options::has_launch_token(&current, AETHER_SHOWONLINE_TOKEN);
@@ -207,7 +236,11 @@ pub fn set_aetheronline(
         launch_options::set_launch_options(Path::new(&steam_path), app_id, &updated)?;
     }
 
-    let choice = if enabled { Some(PresenceMode::AetherOnline) } else { None };
+    let choice = if enabled {
+        Some(PresenceMode::AetherOnline)
+    } else {
+        None
+    };
     let mut touched = false;
     for path in aethercore_toml_paths(&app) {
         if update_mode_in_toml(&path, app_id, choice)? {
@@ -253,7 +286,10 @@ pub fn get_aether_showonline(app: tauri::AppHandle, app_id: u32) -> Result<bool,
         return Ok(false);
     }
     match launch_options::get_launch_options(Path::new(&steam_path), app_id) {
-        Ok(options) => Ok(launch_options::has_launch_token(&options, AETHER_SHOWONLINE_TOKEN)),
+        Ok(options) => Ok(launch_options::has_launch_token(
+            &options,
+            AETHER_SHOWONLINE_TOKEN,
+        )),
         // No localconfig yet (Steam never launched): simply not active.
         Err(e) if e.contains("not found") => Ok(false),
         Err(e) => Err(e),
@@ -290,14 +326,15 @@ pub fn set_aether_showonline(
         }
     }
 
-    let marker_active = aethercore_toml_paths(&app)
-        .iter()
-        .any(|p| read_mode_apps(p, PresenceMode::ShowOnline).map(|apps| apps.contains(&app_id)).unwrap_or(false));
+    let marker_active = aethercore_toml_paths(&app).iter().any(|p| {
+        read_mode_apps(p, PresenceMode::ShowOnline)
+            .map(|apps| apps.contains(&app_id))
+            .unwrap_or(false)
+    });
     let current = launch_options::get_launch_options(Path::new(&steam_path), app_id)?;
     let legacy_active = launch_options::has_launch_token(&current, AETHER_SHOWONLINE_TOKEN)
         || (enabled && launch_options::has_launch_token(&current, AETHERONLINE_TOKEN));
-    if marker_active == enabled && !legacy_active
-    {
+    if marker_active == enabled && !legacy_active {
         return Ok(if enabled {
             format!("Aether showonline is already enabled for app {app_id}.")
         } else {
@@ -318,7 +355,11 @@ pub fn set_aether_showonline(
 
     // 2) Marker in the [presence] arrays of ALL existing aethercore.toml
     //    copies: the app leaves every list and re-enters only the chosen one.
-    let choice = if enabled { Some(PresenceMode::ShowOnline) } else { None };
+    let choice = if enabled {
+        Some(PresenceMode::ShowOnline)
+    } else {
+        None
+    };
     let mut touched = false;
     for path in aethercore_toml_paths(&app) {
         if update_mode_in_toml(&path, app_id, choice)? {
@@ -342,8 +383,8 @@ pub fn set_aether_showonline(
 }
 
 use crate::core::presence_config::{
-    PresenceMode, aethercore_toml_paths, read_default_mode, read_mode_apps,
-    set_default_mode_in_toml, update_mode_in_toml,
+    aethercore_toml_paths, read_default_mode, read_mode_apps, set_default_mode_in_toml,
+    update_mode_in_toml, PresenceMode,
 };
 
 /// True when the game is in exclude_apps (hard opt-out: the DLL fully
@@ -369,15 +410,21 @@ pub fn set_aether_excluded(
     // Token residui: best-effort. L'exclude deve comunque scriversi.
     if !steam_path.trim().is_empty() {
         if let Ok(current) = launch_options::get_launch_options(Path::new(&steam_path), app_id) {
-            let mut updated = launch_options::toggle_launch_token(&current, AETHERONLINE_TOKEN, false);
+            let mut updated =
+                launch_options::toggle_launch_token(&current, AETHERONLINE_TOKEN, false);
             updated = launch_options::toggle_launch_token(&updated, AETHER_SHOWONLINE_TOKEN, false);
             if updated != current {
-                let _ = launch_options::set_launch_options(Path::new(&steam_path), app_id, &updated);
+                let _ =
+                    launch_options::set_launch_options(Path::new(&steam_path), app_id, &updated);
             }
         }
     }
 
-    let choice = if enabled { Some(PresenceMode::Excluded) } else { None };
+    let choice = if enabled {
+        Some(PresenceMode::Excluded)
+    } else {
+        None
+    };
     for path in aethercore_toml_paths(&app) {
         update_mode_in_toml(&path, app_id, choice)?;
     }
@@ -416,7 +463,10 @@ pub fn get_presence_default_mode(app: tauri::AppHandle) -> Result<bool, String> 
 /// token also read by AetherDLL (`Settings.cpp`): the two levels must neither
 /// be confused nor "aligned".
 #[tauri::command]
-pub fn set_presence_default_mode(app: tauri::AppHandle, show_online: bool) -> Result<String, String> {
+pub fn set_presence_default_mode(
+    app: tauri::AppHandle,
+    show_online: bool,
+) -> Result<String, String> {
     for path in aethercore_toml_paths(&app) {
         set_default_mode_in_toml(&path, show_online)?;
     }
@@ -437,10 +487,12 @@ pub fn set_presence_default_mode(app: tauri::AppHandle, show_online: bool) -> Re
 #[tauri::command]
 pub fn acknowledge_ost_warning(app: tauri::AppHandle) -> Result<(), String> {
     let manager = crate::core::settings::SettingsManager::new(&app);
-    manager.update("acknowledge-ost_warning_acknowledged", |settings| {
-        settings.ost_warning_acknowledged = true;
-        Ok(())
-    }).map(|_| ())
+    manager
+        .update("acknowledge-ost_warning_acknowledged", |settings| {
+            settings.ost_warning_acknowledged = true;
+            Ok(())
+        })
+        .map(|_| ())
 }
 
 /// True when the OST pattern source (OpenSteam001/steam-monitor) is enabled
@@ -469,7 +521,8 @@ pub fn set_ost_source_enabled(app: tauri::AppHandle, enabled: bool) -> Result<St
         if enabled { "enabled" } else { "disabled" }
     );
     Ok(if enabled {
-        "OST pattern source enabled: OpenSteamTool is now used as a last-resort fallback.".to_string()
+        "OST pattern source enabled: OpenSteamTool is now used as a last-resort fallback."
+            .to_string()
     } else {
         "OST pattern source disabled: only MigoReleases and KoriaPolis are used.".to_string()
     })
@@ -483,7 +536,8 @@ pub fn set_ost_source_enabled(app: tauri::AppHandle, enabled: bool) -> Result<St
 #[tauri::command]
 pub fn get_manifest_restore_enabled(app: tauri::AppHandle) -> Result<bool, String> {
     for path in crate::core::manifest_restore_config::aethercore_toml_paths(&app) {
-        if let Some(v) = crate::core::manifest_restore_config::read_manifest_restore_enabled(&path) {
+        if let Some(v) = crate::core::manifest_restore_config::read_manifest_restore_enabled(&path)
+        {
             return Ok(v);
         }
     }
@@ -494,7 +548,10 @@ pub fn get_manifest_restore_enabled(app: tauri::AppHandle) -> Result<bool, Strin
 /// manifest backups. Applies on the next Steam start (the DLL runs the
 /// restore once per Steam process, right after injection).
 #[tauri::command]
-pub fn set_manifest_restore_enabled(app: tauri::AppHandle, enabled: bool) -> Result<String, String> {
+pub fn set_manifest_restore_enabled(
+    app: tauri::AppHandle,
+    enabled: bool,
+) -> Result<String, String> {
     for path in crate::core::manifest_restore_config::aethercore_toml_paths(&app) {
         crate::core::manifest_restore_config::set_manifest_restore_enabled_in_toml(&path, enabled)?;
     }

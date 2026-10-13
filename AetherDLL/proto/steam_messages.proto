@@ -47,7 +47,7 @@ message CMsgClientPICSProductInfoRequest {
         optional bool only_public_obsolete = 3;
     }
     message PackageInfo {
-        optional uint32 packageid = 1;
+        optional uint32 packaged = 1;
         optional uint64 access_token = 2;
     }
     repeated PackageInfo packages = 1;
@@ -195,11 +195,10 @@ message CMsgClientStoreUserStats2 {
     }
 
     optional fixed64 game_id = 1;
-    optional fixed64 settor_steam_id = 2;
+    optional fixed64 setter_steam_id = 2;
     optional fixed64 settee_steam_id = 3;
     optional uint64 crc_stats = 4;
     optional int32 schema_local_version = 5;
     repeated .CMsgClientStoreUserStats2.Stats stats = 6;
     repeated .CMsgClientStoreUserStats2.Achievement achievement_blocks = 7;
 }
-

@@ -18,4 +18,4 @@ void RegisterAetherOnlineHooks(HMODULE diversion);
 // re-resolve a function this module already owns.
 steam::AppId CallOriginalGetAppIdForCurrentPipe();
 
-}  // namespace ac::hooks
+} // namespace ac::hooks

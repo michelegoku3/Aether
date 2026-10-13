@@ -5,9 +5,9 @@
 // This file only resolves the installed game, builds the per-game backup, and
 // calls the engine.
 use crate::core::backup::GameBackup;
+use crate::crack;
 use crate::util::dialog::file_path_to_string;
 use crate::util::game_resolver::resolve_installed_game;
-use crate::crack;
 use std::path::PathBuf;
 use tauri_plugin_dialog::DialogExt;
 
@@ -15,10 +15,7 @@ use tauri_plugin_dialog::DialogExt;
 /// the user cancelled). Multiple files can be selected at once. The dialog
 /// opens in the OS Downloads folder (where crack archives are usually saved).
 #[tauri::command]
-pub async fn pick_crack_files(
-    app: tauri::AppHandle,
-    _app_id: u32,
-) -> Result<Vec<String>, String> {
+pub async fn pick_crack_files(app: tauri::AppHandle, _app_id: u32) -> Result<Vec<String>, String> {
     let start_dir = dirs::download_dir()
         .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
 
@@ -53,21 +50,36 @@ pub async fn apply_crack(
     vn_patch_mode: Option<bool>,
 ) -> Result<String, String> {
     let steam_root = crate::commands::command_steam_path(&app)?;
-    let _mutation = crate::core::game_mutations::acquire(std::path::Path::new(&steam_root), app_id, "apply_crack").await?;
+    let _mutation = crate::core::game_mutations::acquire(
+        std::path::Path::new(&steam_root),
+        app_id,
+        "apply_crack",
+    )
+    .await?;
     crate::core::game_mutations::ensure_current_root(&app, std::path::Path::new(&steam_root))?;
     let game = resolve_installed_game(&app, app_id)?;
     let game_root = PathBuf::from(&game.game_path);
     let backup = GameBackup::for_app(app_id)?;
 
     let vn_patch_mode = vn_patch_mode.unwrap_or(false);
-    crate::desk_log_info!("crack", "Applying crack for AppID {} with {} source file(s) (vn_patch_mode: {})",
-        app_id, crack_files.len(), vn_patch_mode);
+    crate::desk_log_info!(
+        "crack",
+        "Applying crack for AppID {} with {} source file(s) (vn_patch_mode: {})",
+        app_id,
+        crack_files.len(),
+        vn_patch_mode
+    );
 
     let report =
         crack::apply_crack_pipeline(app_id, &game_root, &backup, &crack_files, vn_patch_mode)?;
 
-    crate::desk_log_info!("crack", "Successfully applied crack for AppID {}: {} files applied, {} replaced",
-        app_id, report.applied, report.replaced);
+    crate::desk_log_info!(
+        "crack",
+        "Successfully applied crack for AppID {}: {} files applied, {} replaced",
+        app_id,
+        report.applied,
+        report.replaced
+    );
 
     Ok(format_apply_message(
         "Crack applied",
@@ -87,7 +99,12 @@ pub fn has_saved_crack(app_id: u32) -> bool {
 #[tauri::command]
 pub async fn reapply_saved_crack(app: tauri::AppHandle, app_id: u32) -> Result<String, String> {
     let steam_root = crate::commands::command_steam_path(&app)?;
-    let _mutation = crate::core::game_mutations::acquire(std::path::Path::new(&steam_root), app_id, "reapply_saved_crack").await?;
+    let _mutation = crate::core::game_mutations::acquire(
+        std::path::Path::new(&steam_root),
+        app_id,
+        "reapply_saved_crack",
+    )
+    .await?;
     crate::core::game_mutations::ensure_current_root(&app, std::path::Path::new(&steam_root))?;
     let game = resolve_installed_game(&app, app_id)?;
     let game_root = PathBuf::from(&game.game_path);
@@ -128,7 +145,12 @@ pub async fn reapply_saved_crack(app: tauri::AppHandle, app_id: u32) -> Result<S
 #[tauri::command]
 pub async fn remove_applied_crack(app: tauri::AppHandle, app_id: u32) -> Result<String, String> {
     let steam_root = crate::commands::command_steam_path(&app)?;
-    let _mutation = crate::core::game_mutations::acquire(std::path::Path::new(&steam_root), app_id, "remove_applied_crack").await?;
+    let _mutation = crate::core::game_mutations::acquire(
+        std::path::Path::new(&steam_root),
+        app_id,
+        "remove_applied_crack",
+    )
+    .await?;
     crate::core::game_mutations::ensure_current_root(&app, std::path::Path::new(&steam_root))?;
     let game = resolve_installed_game(&app, app_id)?;
     let game_root = PathBuf::from(&game.game_path);
@@ -174,5 +196,3 @@ fn format_apply_message(prefix: &str, applied: usize, replaced: usize, files: &[
     }
     msg
 }
-
-

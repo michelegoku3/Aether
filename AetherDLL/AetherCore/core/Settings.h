@@ -49,7 +49,6 @@ struct Settings {
     // are consulted unless the user enables OST in AetherDesk settings.
     bool patternUseOstSource = false;
 
-
     // [manifest_cache]
     // Restore *.manifest backups into Steam\depotcache on every Steam start.
     // Default ON: uninstalling a game wipes its manifests from depotcache,
@@ -112,4 +111,4 @@ struct Settings {
     static void ReloadIfModified(const std::string& configPath);
 };
 
-}  // namespace ac
+} // namespace ac

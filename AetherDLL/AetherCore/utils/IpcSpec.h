@@ -56,4 +56,4 @@ std::optional<MethodSpec> ResolveMethodSpec(const char* qualifiedName);
 // Whether a spec TOML was loaded and parsed successfully.
 bool IsLoaded();
 
-}  // namespace ac::ipcspec
+} // namespace ac::ipcspec

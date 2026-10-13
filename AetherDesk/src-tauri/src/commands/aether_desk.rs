@@ -118,13 +118,23 @@ pub async fn check_aether_desk_update(app: tauri::AppHandle) -> Result<serde_jso
 /// apply it. The running instance exits so the swap can take place.
 #[tauri::command]
 pub async fn install_aether_desk_update(app: tauri::AppHandle) -> Result<String, String> {
-    crate::desk_log_info!("updater", "Starting download and installation of AetherDesk portable update...");
+    crate::desk_log_info!(
+        "updater",
+        "Starting download and installation of AetherDesk portable update..."
+    );
     let Some(prepared) = desk::prepare_update(&app).await? else {
-        crate::desk_log_info!("updater", "AetherDesk portable update check: already up to date");
+        crate::desk_log_info!(
+            "updater",
+            "AetherDesk portable update check: already up to date"
+        );
         return Ok("AetherDesk is already up to date.".to_string());
     };
 
-    crate::desk_log_info!("updater", "AetherDesk update staged at {}; scheduling restart and exiting current instance", prepared.app_root.display());
+    crate::desk_log_info!(
+        "updater",
+        "AetherDesk update staged at {}; scheduling restart and exiting current instance",
+        prepared.app_root.display()
+    );
     desk::schedule_restart(&prepared)?;
 
     // Exit so the original exe is unlocked and the staged updater can swap files.
@@ -139,7 +149,10 @@ pub async fn install_aether_desk_update(app: tauri::AppHandle) -> Result<String,
 /// switch and button stay consistent (switch OFF → Uninstall button).
 #[tauri::command]
 pub async fn restore_stable_desk(app: tauri::AppHandle) -> Result<String, String> {
-    crate::desk_log_info!("updater", "Restoring stable AetherDesk build (leaving test channel)...");
+    crate::desk_log_info!(
+        "updater",
+        "Restoring stable AetherDesk build (leaving test channel)..."
+    );
     let Some(prepared) = desk::prepare_stable_restore().await? else {
         return Ok("AetherDesk is already on the latest stable build.".to_string());
     };
@@ -151,7 +164,10 @@ pub async fn restore_stable_desk(app: tauri::AppHandle) -> Result<String, String
             settings.enable_test_updates = false;
             Ok(())
         })?;
-        crate::desk_log_info!("updater", "Disabled test updates while restoring stable build");
+        crate::desk_log_info!(
+            "updater",
+            "Disabled test updates while restoring stable build"
+        );
     }
 
     crate::desk_log_info!(

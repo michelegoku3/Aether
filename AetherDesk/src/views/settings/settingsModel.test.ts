@@ -1,10 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { AppSettings } from '../../hooks/useSettings';
-import {
-  buildSettings,
-  isFormDirty,
-  settingsToForm,
-} from './settingsModel';
+import { buildSettings, isFormDirty, settingsToForm } from './settingsModel';
 
 const settings = (overrides: Partial<AppSettings> = {}): AppSettings => ({
   hubcap_api_key: 'hubcap-key',
@@ -30,12 +26,14 @@ describe('settingsModel', () => {
   });
 
   it('normalizes invalid percentages and unsupported currencies', () => {
-    const form = settingsToForm(settings({
-      personal_wallpaper_opacity: 150,
-      alternative_cards_opacity: -20,
-      alternative_cards_fade: Number.NaN,
-      store_currency: 'unsupported',
-    }));
+    const form = settingsToForm(
+      settings({
+        personal_wallpaper_opacity: 150,
+        alternative_cards_opacity: -20,
+        alternative_cards_fade: Number.NaN,
+        store_currency: 'unsupported',
+      })
+    );
 
     expect(form.personalWallpaperOpacity).toBe(100);
     expect(form.alternativeCardsOpacity).toBe(0);
@@ -48,8 +46,7 @@ describe('settingsModel', () => {
     const form = settingsToForm(base);
 
     expect(form.customGameName).toBe('Aether');
-    expect(buildSettings({ ...form, customGameName: '  Updated  ' }, base).custom_game_name)
-      .toBe('Updated');
+    expect(buildSettings({ ...form, customGameName: '  Updated  ' }, base).custom_game_name).toBe('Updated');
   });
 
   it('preserves backend-owned fields when building settings', () => {

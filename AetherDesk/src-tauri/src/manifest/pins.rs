@@ -18,12 +18,12 @@ mod line_edit;
 mod model;
 mod parser;
 
+#[cfg(test)]
+pub use model::ManifestGidProblem;
 pub use model::{
     pins_from_rows, ApplyBuildResult, DepotManifestPin, LuaManifestEdit, LuaManifestRow,
     LuaManifestRowIssue,
 };
-#[cfg(test)]
-pub use model::ManifestGidProblem;
 
 use std::fs;
 use std::path::PathBuf;

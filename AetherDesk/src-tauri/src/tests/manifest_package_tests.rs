@@ -34,11 +34,9 @@ fn provider_bytes_rejects_non_decimal_manifest_gid() {
 
 #[test]
 fn provider_bytes_rejects_successful_json_or_html_responses() {
-    let error = ManifestPackageExtractor::from_provider_bytes(
-        1,
-        br#"{"error":"daily limit reached"}"#,
-    )
-    .expect_err("JSON must not be installed as Lua");
+    let error =
+        ManifestPackageExtractor::from_provider_bytes(1, br#"{"error":"daily limit reached"}"#)
+            .expect_err("JSON must not be installed as Lua");
 
     assert!(error.contains("neither a manifest ZIP nor a pinned Lua file"));
     assert!(error.contains("daily limit reached"));

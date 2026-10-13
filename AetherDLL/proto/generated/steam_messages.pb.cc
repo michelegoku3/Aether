@@ -203,7 +203,7 @@ inline constexpr CMsgClientPICSProductInfoRequest_PackageInfo::Impl_::Impl_(
     ::_pbi::ConstantInitialized) noexcept
       : _cached_size_{0},
         access_token_{::uint64_t{0u}},
-        packageid_{0u} {}
+        packaged_{0u} {}
 
 template <typename>
 PROTOBUF_CONSTEXPR CMsgClientPICSProductInfoRequest_PackageInfo::CMsgClientPICSProductInfoRequest_PackageInfo(::_pbi::ConstantInitialized)
@@ -404,7 +404,7 @@ inline constexpr CMsgClientStoreUserStats2::Impl_::Impl_(
         stats_{},
         achievement_blocks_{},
         game_id_{::uint64_t{0u}},
-        settor_steam_id_{::uint64_t{0u}},
+        setter_steam_id_{::uint64_t{0u}},
         settee_steam_id_{::uint64_t{0u}},
         crc_stats_{::uint64_t{0u}},
         schema_local_version_{0} {}
@@ -1842,7 +1842,7 @@ class CMsgClientPICSProductInfoRequest_PackageInfo::_Internal {
   using HasBits = decltype(std::declval<CMsgClientPICSProductInfoRequest_PackageInfo>()._impl_._has_bits_);
   static constexpr ::int32_t kHasBitsOffset =
     8 * PROTOBUF_FIELD_OFFSET(CMsgClientPICSProductInfoRequest_PackageInfo, _impl_._has_bits_);
-  static void set_has_packageid(HasBits* has_bits) {
+  static void set_has_packaged(HasBits* has_bits) {
     (*has_bits)[0] |= 2u;
   }
   static void set_has_access_token(HasBits* has_bits) {
@@ -1870,9 +1870,9 @@ inline void CMsgClientPICSProductInfoRequest_PackageInfo::SharedCtor(::_pb::Aren
   ::memset(reinterpret_cast<char *>(&_impl_) +
                offsetof(Impl_, access_token_),
            0,
-           offsetof(Impl_, packageid_) -
+           offsetof(Impl_, packaged_) -
                offsetof(Impl_, access_token_) +
-               sizeof(Impl_::packageid_));
+               sizeof(Impl_::packaged_));
 }
 CMsgClientPICSProductInfoRequest_PackageInfo::~CMsgClientPICSProductInfoRequest_PackageInfo() {
   // @@protoc_insertion_point(destructor:CMsgClientPICSProductInfoRequest.PackageInfo)
@@ -1894,8 +1894,8 @@ PROTOBUF_NOINLINE void CMsgClientPICSProductInfoRequest_PackageInfo::Clear() {
   cached_has_bits = _impl_._has_bits_[0];
   if (cached_has_bits & 0x00000003u) {
     ::memset(&_impl_.access_token_, 0, static_cast<::size_t>(
-        reinterpret_cast<char*>(&_impl_.packageid_) -
-        reinterpret_cast<char*>(&_impl_.access_token_)) + sizeof(_impl_.packageid_));
+        reinterpret_cast<char*>(&_impl_.packaged_) -
+        reinterpret_cast<char*>(&_impl_.access_token_)) + sizeof(_impl_.packaged_));
   }
   _impl_._has_bits_.Clear();
   _internal_metadata_.Clear<std::string>();
@@ -1926,14 +1926,14 @@ const ::_pbi::TcParseTable<1, 2, 0, 0, 2> CMsgClientPICSProductInfoRequest_Packa
     // optional uint64 access_token = 2;
     {::_pbi::TcParser::FastV64S1,
      {16, 0, 0, PROTOBUF_FIELD_OFFSET(CMsgClientPICSProductInfoRequest_PackageInfo, _impl_.access_token_)}},
-    // optional uint32 packageid = 1;
+    // optional uint32 packaged = 1;
     {::_pbi::TcParser::FastV32S1,
-     {8, 1, 0, PROTOBUF_FIELD_OFFSET(CMsgClientPICSProductInfoRequest_PackageInfo, _impl_.packageid_)}},
+     {8, 1, 0, PROTOBUF_FIELD_OFFSET(CMsgClientPICSProductInfoRequest_PackageInfo, _impl_.packaged_)}},
   }}, {{
     65535, 65535
   }}, {{
-    // optional uint32 packageid = 1;
-    {PROTOBUF_FIELD_OFFSET(CMsgClientPICSProductInfoRequest_PackageInfo, _impl_.packageid_), _Internal::kHasBitsOffset + 1, 0,
+    // optional uint32 packaged = 1;
+    {PROTOBUF_FIELD_OFFSET(CMsgClientPICSProductInfoRequest_PackageInfo, _impl_.packaged_), _Internal::kHasBitsOffset + 1, 0,
     (0 | ::_fl::kFcOptional | ::_fl::kUInt32)},
     // optional uint64 access_token = 2;
     {PROTOBUF_FIELD_OFFSET(CMsgClientPICSProductInfoRequest_PackageInfo, _impl_.access_token_), _Internal::kHasBitsOffset + 0, 0,
@@ -1952,11 +1952,11 @@ const ::_pbi::TcParseTable<1, 2, 0, 0, 2> CMsgClientPICSProductInfoRequest_Packa
   (void)cached_has_bits;
 
   cached_has_bits = _impl_._has_bits_[0];
-  // optional uint32 packageid = 1;
+  // optional uint32 packaged = 1;
   if (cached_has_bits & 0x00000002u) {
     target = stream->EnsureSpace(target);
     target = ::_pbi::WireFormatLite::WriteUInt32ToArray(
-        1, this->_internal_packageid(), target);
+        1, this->_internal_packaged(), target);
   }
 
   // optional uint64 access_token = 2;
@@ -1991,10 +1991,10 @@ const ::_pbi::TcParseTable<1, 2, 0, 0, 2> CMsgClientPICSProductInfoRequest_Packa
           this->_internal_access_token());
     }
 
-    // optional uint32 packageid = 1;
+    // optional uint32 packaged = 1;
     if (cached_has_bits & 0x00000002u) {
       total_size += ::_pbi::WireFormatLite::UInt32SizePlusOne(
-          this->_internal_packageid());
+          this->_internal_packaged());
     }
 
   }
@@ -2024,7 +2024,7 @@ void CMsgClientPICSProductInfoRequest_PackageInfo::MergeFrom(const CMsgClientPIC
       _this->_impl_.access_token_ = from._impl_.access_token_;
     }
     if (cached_has_bits & 0x00000002u) {
-      _this->_impl_.packageid_ = from._impl_.packageid_;
+      _this->_impl_.packaged_ = from._impl_.packaged_;
     }
     _this->_impl_._has_bits_[0] |= cached_has_bits;
   }
@@ -2050,8 +2050,8 @@ void CMsgClientPICSProductInfoRequest_PackageInfo::InternalSwap(CMsgClientPICSPr
   _internal_metadata_.InternalSwap(&other->_internal_metadata_);
   swap(_impl_._has_bits_[0], other->_impl_._has_bits_[0]);
   ::google::protobuf::internal::memswap<
-      PROTOBUF_FIELD_OFFSET(CMsgClientPICSProductInfoRequest_PackageInfo, _impl_.packageid_)
-      + sizeof(CMsgClientPICSProductInfoRequest_PackageInfo::_impl_.packageid_)
+      PROTOBUF_FIELD_OFFSET(CMsgClientPICSProductInfoRequest_PackageInfo, _impl_.packaged_)
+      + sizeof(CMsgClientPICSProductInfoRequest_PackageInfo::_impl_.packaged_)
       - PROTOBUF_FIELD_OFFSET(CMsgClientPICSProductInfoRequest_PackageInfo, _impl_.access_token_)>(
           reinterpret_cast<char*>(&_impl_.access_token_),
           reinterpret_cast<char*>(&other->_impl_.access_token_));
@@ -7180,7 +7180,7 @@ class CMsgClientStoreUserStats2::_Internal {
   static void set_has_game_id(HasBits* has_bits) {
     (*has_bits)[0] |= 1u;
   }
-  static void set_has_settor_steam_id(HasBits* has_bits) {
+  static void set_has_setter_steam_id(HasBits* has_bits) {
     (*has_bits)[0] |= 2u;
   }
   static void set_has_settee_steam_id(HasBits* has_bits) {
@@ -7297,9 +7297,9 @@ const ::_pbi::TcParseTable<3, 7, 2, 0, 2> CMsgClientStoreUserStats2::_table_ = {
     // optional fixed64 game_id = 1;
     {::_pbi::TcParser::FastF64S1,
      {9, 0, 0, PROTOBUF_FIELD_OFFSET(CMsgClientStoreUserStats2, _impl_.game_id_)}},
-    // optional fixed64 settor_steam_id = 2;
+    // optional fixed64 setter_steam_id = 2;
     {::_pbi::TcParser::FastF64S1,
-     {17, 1, 0, PROTOBUF_FIELD_OFFSET(CMsgClientStoreUserStats2, _impl_.settor_steam_id_)}},
+     {17, 1, 0, PROTOBUF_FIELD_OFFSET(CMsgClientStoreUserStats2, _impl_.setter_steam_id_)}},
     // optional fixed64 settee_steam_id = 3;
     {::_pbi::TcParser::FastF64S1,
      {25, 2, 0, PROTOBUF_FIELD_OFFSET(CMsgClientStoreUserStats2, _impl_.settee_steam_id_)}},
@@ -7321,8 +7321,8 @@ const ::_pbi::TcParseTable<3, 7, 2, 0, 2> CMsgClientStoreUserStats2::_table_ = {
     // optional fixed64 game_id = 1;
     {PROTOBUF_FIELD_OFFSET(CMsgClientStoreUserStats2, _impl_.game_id_), _Internal::kHasBitsOffset + 0, 0,
     (0 | ::_fl::kFcOptional | ::_fl::kFixed64)},
-    // optional fixed64 settor_steam_id = 2;
-    {PROTOBUF_FIELD_OFFSET(CMsgClientStoreUserStats2, _impl_.settor_steam_id_), _Internal::kHasBitsOffset + 1, 0,
+    // optional fixed64 setter_steam_id = 2;
+    {PROTOBUF_FIELD_OFFSET(CMsgClientStoreUserStats2, _impl_.setter_steam_id_), _Internal::kHasBitsOffset + 1, 0,
     (0 | ::_fl::kFcOptional | ::_fl::kFixed64)},
     // optional fixed64 settee_steam_id = 3;
     {PROTOBUF_FIELD_OFFSET(CMsgClientStoreUserStats2, _impl_.settee_steam_id_), _Internal::kHasBitsOffset + 2, 0,
@@ -7361,11 +7361,11 @@ const ::_pbi::TcParseTable<3, 7, 2, 0, 2> CMsgClientStoreUserStats2::_table_ = {
         1, this->_internal_game_id(), target);
   }
 
-  // optional fixed64 settor_steam_id = 2;
+  // optional fixed64 setter_steam_id = 2;
   if (cached_has_bits & 0x00000002u) {
     target = stream->EnsureSpace(target);
     target = ::_pbi::WireFormatLite::WriteFixed64ToArray(
-        2, this->_internal_settor_steam_id(), target);
+        2, this->_internal_setter_steam_id(), target);
   }
 
   // optional fixed64 settee_steam_id = 3;
@@ -7441,7 +7441,7 @@ const ::_pbi::TcParseTable<3, 7, 2, 0, 2> CMsgClientStoreUserStats2::_table_ = {
       total_size += 9;
     }
 
-    // optional fixed64 settor_steam_id = 2;
+    // optional fixed64 setter_steam_id = 2;
     if (cached_has_bits & 0x00000002u) {
       total_size += 9;
     }
@@ -7494,7 +7494,7 @@ void CMsgClientStoreUserStats2::MergeFrom(const CMsgClientStoreUserStats2& from)
       _this->_impl_.game_id_ = from._impl_.game_id_;
     }
     if (cached_has_bits & 0x00000002u) {
-      _this->_impl_.settor_steam_id_ = from._impl_.settor_steam_id_;
+      _this->_impl_.setter_steam_id_ = from._impl_.setter_steam_id_;
     }
     if (cached_has_bits & 0x00000004u) {
       _this->_impl_.settee_steam_id_ = from._impl_.settee_steam_id_;

@@ -29,9 +29,9 @@ const LOCAL_DATA_DIR_NAME: &str = "AetherData";
 pub struct LocalAppPaths;
 
 impl LocalAppPaths {
-    /// Cartella contenente l'eseguibile.
-    /// Con `currentUser` → `%LOCALAPPDATA%\AetherDesk\`
-    /// Con `Program Files` (vecchie install) → `C:\Program Files\AetherDesk\`
+    /// Folder containing the executable.
+    /// With `currentUser` → `%LOCALAPPDATA%\AetherDesk\`
+    /// With `Program Files` (old installs) → `C:\Program Files\AetherDesk\`
     pub fn install_root() -> PathBuf {
         std::env::current_exe()
             .ok()

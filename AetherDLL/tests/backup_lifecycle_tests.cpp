@@ -1,6 +1,6 @@
 #include "pch.h"
-#include "core/Workers.h"
 #include "core/Logger.h"
+#include "core/Workers.h"
 #include "hooks/wire/AchievementBackup.h"
 #include "hooks/wire/BackupIo.h"
 #include "hooks/wire/PlaytimeMirror.h"
@@ -12,36 +12,41 @@
 #include <stdexcept>
 #include <thread>
 using namespace std::chrono_literals;
-#define CHECK(x) do { if (!(x)) throw std::runtime_error(#x); } while (false)
+#define CHECK(x)                          \
+    do {                                  \
+        if (!(x))                         \
+            throw std::runtime_error(#x); \
+    } while (false)
 namespace {
 std::atomic<int> saves{0}, copies{0}, refreshes{0};
 std::atomic<bool> failNextSave{false};
-}
+} // namespace
 namespace ac::log {
 void Write(LogLevel, const char*, const char*, ...) {}
 void WriteOnce(LogLevel, const char*, const char*, ...) {}
-}
+} // namespace ac::log
 namespace ac::backup::io {
 std::string FormatUnixTime(std::uint64_t n) { return std::to_string(n); }
-}
+} // namespace ac::backup::io
 namespace ac::backup::snapshot {
 std::string SnapshotPath(steam::AppId, std::uint32_t) { return "test-snapshot"; }
 SnapshotData Load(const std::string&) { return {}; }
 void Save(const std::string&, steam::AppId, std::uint32_t, std::uint64_t, const SnapshotData&) {
-    if (failNextSave.exchange(false)) throw std::runtime_error("simulated I/O exception");
+    if (failNextSave.exchange(false))
+        throw std::runtime_error("simulated I/O exception");
     ++saves;
 }
-}
+} // namespace ac::backup::snapshot
 namespace ac::backup::statscache {
 void BackupStatsBins(steam::AppId, std::uint32_t, bool) { ++copies; }
 const std::unordered_set<std::uint32_t>& SchemaBucketsFor(steam::AppId) {
     static const std::unordered_set<std::uint32_t> empty;
     return empty;
 }
-}
+} // namespace ac::backup::statscache
 namespace ac::backup::playtime {
 void RefreshAllAccounts() { ++refreshes; }
-}
+} // namespace ac::backup::playtime
 int main(int argc, char** argv) {
     namespace b = ac::hooks::AchievementBackup;
     namespace w = ac::workers;

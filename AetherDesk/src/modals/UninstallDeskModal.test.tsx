@@ -6,13 +6,7 @@ import { UninstallDeskConfirmModal } from './UninstallDeskModal';
 const renderModal = (isProcessing = false) => {
   const onConfirm = vi.fn();
   const onCancel = vi.fn();
-  render(
-    <UninstallDeskConfirmModal
-      isProcessing={isProcessing}
-      onConfirm={onConfirm}
-      onCancel={onCancel}
-    />,
-  );
+  render(<UninstallDeskConfirmModal isProcessing={isProcessing} onConfirm={onConfirm} onCancel={onCancel} />);
   return { onConfirm, onCancel };
 };
 
@@ -20,10 +14,9 @@ describe('UninstallDeskConfirmModal', () => {
   it('describes owned-file removal and leaves retained data in place', () => {
     renderModal();
     expect(screen.getByText(/Only verified AetherDesk application files/)).toHaveTextContent(
-      'Unrelated or modified files will be kept.',
+      'Unrelated or modified files will be kept.'
     );
-    expect(screen.getByText(/User data will stay in AetherData at its current location/))
-      .toBeInTheDocument();
+    expect(screen.getByText(/User data will stay in AetherData at its current location/)).toBeInTheDocument();
     expect(screen.getByRole('checkbox')).not.toBeChecked();
   });
 

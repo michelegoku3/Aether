@@ -18,4 +18,4 @@ std::int32_t ClearBody() {
     return 0;
 }
 
-}  // namespace ac::hooks::FamilySharing
+} // namespace ac::hooks::FamilySharing

@@ -1,7 +1,7 @@
 #pragma once
 
-#include <string>
 #include <mutex>
+#include <string>
 #include <vector>
 
 // ---------------------------------------------------------------------------
@@ -65,8 +65,7 @@ struct MissedHook {
 
 /// Single definition of how a missed hook is rendered, shared by the log, the
 /// diagnostics ring and status.json so the three can never disagree.
-std::string MissedHookText(const std::string& name, MissReason reason,
-                           const std::string& detail = {});
+std::string MissedHookText(const std::string& name, MissReason reason, const std::string& detail = {});
 
 /// True for reasons that describe an expected, harmless outcome rather than a
 /// lost capability. Benign entries stay visible in the report (so an alias
@@ -77,14 +76,14 @@ bool IsBenignMiss(MissReason reason);
 
 struct HookInfo {
     std::string name;
-    void* target = nullptr;     // Address of the original function in memory
-    void** original = nullptr;  // Out: trampoline to call the original
-    void* detour = nullptr;     // Our replacement function
+    void* target = nullptr;    // Address of the original function in memory
+    void** original = nullptr; // Out: trampoline to call the original
+    void* detour = nullptr;    // Our replacement function
     bool created = false;
 };
 
 class HookManager {
-public:
+  public:
     // Queues a hook for later installation. Prefer TryHook() below.
     void RegisterHook(const std::string& name, void* target, void** original, void* detour);
 
@@ -93,8 +92,7 @@ public:
     // default would silently re-label collisions as pattern misses.
     // `detail` names the counterpart when the reason has one (the hook that
     // already owns the address, the IPC handler that already owns the pair).
-    void RecordMissed(const std::string& name, MissReason reason,
-                      const std::string& detail = {});
+    void RecordMissed(const std::string& name, MissReason reason, const std::string& detail = {});
 
     // Creates and enables every queued hook. Returns true if enabling
     // succeeded. Individual creation failures are logged and counted, not
@@ -115,10 +113,9 @@ public:
     // Returns false (and records a miss) when the pattern cannot be resolved,
     // so callers can branch without repeating the boilerplate.
     template <typename Fn>
-    bool TryHook(const std::string& name, const std::string& module, HMODULE hModule,
-                 Fn& original, Fn detour);
+    bool TryHook(const std::string& name, const std::string& module, HMODULE hModule, Fn& original, Fn detour);
 
-private:
+  private:
     mutable std::mutex mutex_;
     std::vector<HookInfo> hooks_;
     std::vector<std::string> installed_;
@@ -126,7 +123,7 @@ private:
     int installedCount_ = 0;
 };
 
-}  // namespace ac
+} // namespace ac
 
 // Template body needs ResolveAddress; included after the class so the header
 // stays self-contained.

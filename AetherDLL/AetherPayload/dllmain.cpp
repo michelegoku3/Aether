@@ -1,6 +1,6 @@
 #include "pch.h"
-#include <windows.h>
 #include <psapi.h>
+#include <windows.h>
 
 #include <string>
 
@@ -23,13 +23,14 @@ DWORD WINAPI PayloadMain(LPVOID self) {
 
     for (int i = 0; i < 120; ++i) {
         TryInstallIfPresent();
-        if (GetModuleHandleW(L"EOSSDK-Win64-Shipping.dll")) break;
+        if (GetModuleHandleW(L"EOSSDK-Win64-Shipping.dll"))
+            break;
         Sleep(500);
     }
     return 0;
 }
 
-}  // namespace
+} // namespace
 
 BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID) {
     if (reason == DLL_PROCESS_ATTACH) {

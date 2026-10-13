@@ -45,9 +45,7 @@ export const GameUpdatesModal = ({ games, onStatus, onRefresh, onClose }: GameUp
     setBusy({ action, done: 0, total: games.length });
     setResult(null);
     onStatus(
-      enabled
-        ? `Enabling updates for ${games.length} games...`
-        : `Disabling updates for ${games.length} games...`,
+      enabled ? `Enabling updates for ${games.length} games...` : `Disabling updates for ${games.length} games...`,
       'info'
     );
     const failed: string[] = [];
@@ -81,16 +79,17 @@ export const GameUpdatesModal = ({ games, onStatus, onRefresh, onClose }: GameUp
   return (
     <ModalShell
       title="Game updates"
-      onClose={() => { if (!busy) onClose(); }}
+      onClose={() => {
+        if (!busy) onClose();
+      }}
       closeDisabled={busy !== null}
       containerClassName="uninstall-modal"
       bodyClassName="uninstall-modal-body"
     >
       <p className="uninstall-modal-copy">
-        Block or unblock updates for every Lua game in your library, using
-        the same manifest pins as the per-game Enable / Disable Update button
-        in Modify. Blocking restores the pins so Steam keeps each game on its
-        current version; unblocking removes them so games update normally.
+        Block or unblock updates for every Lua game in your library, using the same manifest pins as the per-game Enable
+        / Disable Update button in Modify. Blocking restores the pins so Steam keeps each game on its current version;
+        unblocking removes them so games update normally.
       </p>
       {games.length === 0 ? (
         <p className="uninstall-modal-copy">
@@ -106,9 +105,7 @@ export const GameUpdatesModal = ({ games, onStatus, onRefresh, onClose }: GameUp
           {busy.action === 'block' ? 'Blocking' : 'Unblocking'} updates… {busy.done}/{busy.total}
         </p>
       )}
-      {!busy && result && (
-        <p className="uninstall-modal-copy">{result}</p>
-      )}
+      {!busy && result && <p className="uninstall-modal-copy">{result}</p>}
 
       <div className="uninstall-modal-actions">
         <button

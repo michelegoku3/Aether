@@ -56,11 +56,7 @@ pub(crate) fn latest_installed_gid(steam_path: &str, depot_id: u32) -> Option<St
 }
 
 /// GID declared by Steam in `InstalledDepots` for one installed game.
-pub(crate) fn acf_installed_gid(
-    steam_path: &str,
-    app_id: u32,
-    depot_id: u32,
-) -> Option<String> {
+pub(crate) fn acf_installed_gid(steam_path: &str, app_id: u32, depot_id: u32) -> Option<String> {
     SteamLibraryScanner::new(steam_path)
         .discover_library_paths()
         .into_iter()
@@ -98,9 +94,7 @@ pub(crate) fn realign_pins_to_installed(
         if row.enabled || !active_depots.contains(&row.app_id) {
             continue;
         }
-        if let Some(installed_gid) =
-            installed_gid_for_depot(steam_path, app_id, row.app_id)
-        {
+        if let Some(installed_gid) = installed_gid_for_depot(steam_path, app_id, row.app_id) {
             if installed_gid != row.manifest_id {
                 realignment.push(DepotManifestPin {
                     depot_id: row.app_id,
@@ -150,10 +144,7 @@ pub(super) async fn sync_pins_after_steam_update(
         "monitor-installed-pins",
     )
     .await?;
-    crate::core::game_mutations::ensure_current_root(
-        app,
-        std::path::Path::new(steam_path),
-    )?;
+    crate::core::game_mutations::ensure_current_root(app, std::path::Path::new(steam_path))?;
     let realigned = realign_pins_to_installed(steam_path, app_id, &mutation)?;
     if realigned == 0 {
         crate::desk_log_debug!(

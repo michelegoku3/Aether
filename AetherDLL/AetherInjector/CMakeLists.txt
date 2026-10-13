@@ -20,7 +20,7 @@ target_include_directories(AetherInjector PRIVATE
     ${CMAKE_SOURCE_DIR}/common
 )
 
-# Enable Precompiled Headers (opzionale per progetto piccolo)
+# Enable Precompiled Headers (optional for a small project)
 target_precompile_headers(AetherInjector PRIVATE
     $<$<COMPILE_LANGUAGE:CXX>:${CMAKE_SOURCE_DIR}/common/pch.h>
 )

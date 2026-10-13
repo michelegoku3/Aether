@@ -27,7 +27,9 @@ pub async fn prepare_specific_version_download(
         app_id,
         "prepare_specific_version_download",
     )?;
-    if let Err(error) = validate_authenticated_download(&api_key, &steam_path, "download the Lua file") {
+    if let Err(error) =
+        validate_authenticated_download(&api_key, &steam_path, "download the Lua file")
+    {
         crate::desk_log_error!(
             "store",
             "Specific version download failed for {}: {}",
@@ -119,7 +121,9 @@ pub async fn prepare_ryuu_specific_version_download(
         crate::core::logger::format_appid(app_id)
     );
 
-    let package = RyuuClient::new(api_key).download_lua_package(app_id).await?;
+    let package = RyuuClient::new(api_key)
+        .download_lua_package(app_id)
+        .await?;
     let installed_rows = install_specific_package(
         app,
         app_id,
@@ -156,13 +160,9 @@ pub async fn prepare_luatools_specific_version_download(
         "Preparing LuaTools specific-version download for {}",
         crate::core::logger::format_appid(app_id)
     );
-    let package = download_complete_luatools_package(
-        app,
-        app_id,
-        &steam_path,
-        request.game_name.as_deref(),
-    )
-    .await?;
+    let package =
+        download_complete_luatools_package(app, app_id, &steam_path, request.game_name.as_deref())
+            .await?;
     install_specific_package(
         app,
         app_id,

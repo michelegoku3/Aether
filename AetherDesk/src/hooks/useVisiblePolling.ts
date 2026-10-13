@@ -41,7 +41,7 @@ export interface VisiblePollingOptions {
  */
 export const useVisiblePolling = (
   tick: () => void | Promise<void>,
-  { intervalMs, backoffMs, enabled = true, immediate = true, resetKey }: VisiblePollingOptions,
+  { intervalMs, backoffMs, enabled = true, immediate = true, resetKey }: VisiblePollingOptions
 ): void => {
   const tickRef = useRef(tick);
 

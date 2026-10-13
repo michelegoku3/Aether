@@ -13,15 +13,15 @@
 #include <string_view>
 
 #include "core/AetherCoreState.h"
-#include "core/Workers.h"
 #include "core/Constants.h"
+#include "core/Logger.h"
+#include "core/Workers.h"
+#include "diagnostics/StatusWriter.h"
+#include "hooks/aetheronline/OnlinePayload.h"
+#include "hooks/ipc/SteamCapture.h"
+#include "scripting/LuaData.h"
 #include "utils/EnvReader.h"
 #include "utils/Paths.h"
-#include "core/Logger.h"
-#include "scripting/LuaData.h"
-#include "hooks/aetheronline/OnlinePayload.h"
-#include "diagnostics/StatusWriter.h"
-#include "hooks/ipc/SteamCapture.h"
 #include "utils/SmartIdLog.h"
 
 namespace ac::pipewatch {
@@ -31,26 +31,23 @@ constexpr const char* kModule = "PipeWatch";
 
 bool IsSteamProcessName(std::string_view imageName) {
     static constexpr std::array<std::string_view, 6> kSteamNames = {
-        "steam.exe",
-        "steamwebhelper.exe",
-        "steamservice.exe",
-        "steamerrorreporter.exe",
-        "gameoverlayui.exe",
-        "gameoverlayui64.exe",
+        "steam.exe",         "steamwebhelper.exe",  "steamservice.exe", "steamerrorreporter.exe",
+        "gameoverlayui.exe", "gameoverlayui64.exe",
     };
     const std::string lowered = paths::LowerAscii(imageName);
     return std::find(kSteamNames.begin(), kSteamNames.end(), lowered) != kSteamNames.end();
 }
 
 std::uint64_t EncodePipeKey(const steam::CSteamPipeClient* pipe) {
-    if (!pipe) return 0;
-    return (static_cast<std::uint64_t>(pipe->clientPid) << 32) |
-           static_cast<std::uint32_t>(pipe->hSteamPipe);
+    if (!pipe)
+        return 0;
+    return (static_cast<std::uint64_t>(pipe->clientPid) << 32) | static_cast<std::uint32_t>(pipe->hSteamPipe);
 }
 
 std::uint64_t QueryCreationTime(HANDLE process) {
     FILETIME created{}, exited{}, kernel{}, user{};
-    if (!GetProcessTimes(process, &created, &exited, &kernel, &user)) return 0;
+    if (!GetProcessTimes(process, &created, &exited, &kernel, &user))
+        return 0;
     return (static_cast<std::uint64_t>(created.dwHighDateTime) << 32) |
            static_cast<std::uint64_t>(created.dwLowDateTime);
 }
@@ -58,7 +55,8 @@ std::uint64_t QueryCreationTime(HANDLE process) {
 std::string QueryImagePath(HANDLE process) {
     char path[MAX_PATH] = {};
     DWORD size = MAX_PATH;
-    if (!QueryFullProcessImageNameA(process, 0, path, &size) || size == 0) return {};
+    if (!QueryFullProcessImageNameA(process, 0, path, &size) || size == 0)
+        return {};
     return std::string(path, size);
 }
 
@@ -66,11 +64,11 @@ std::string QueryImagePath(HANDLE process) {
 // threads, so it may run on the task queue.
 ProcessSnapshot InspectProcess(std::uint32_t pid, const std::string& processName) {
     ProcessSnapshot snap{};
-    if (pid == 0) return snap;
+    if (pid == 0)
+        return snap;
 
     snap.pid = pid;
-    HANDLE process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION | PROCESS_VM_READ,
-                                 FALSE, pid);
+    HANDLE process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION | PROCESS_VM_READ, FALSE, pid);
     if (!process) {
         AC_LOG_DEBUG(kModule, "OpenProcess failed for pid %u.", pid);
         snap.appId = capture::CurrentRouteAppId();
@@ -85,7 +83,8 @@ ProcessSnapshot InspectProcess(std::uint32_t pid, const std::string& processName
     snap.creationTime = QueryCreationTime(process);
     snap.imagePath = QueryImagePath(process);
     snap.imageName = paths::BaseName(snap.imagePath);
-    if (snap.imageName.empty()) snap.imageName = processName;
+    if (snap.imageName.empty())
+        snap.imageName = processName;
 
     // Environment-block AppId resolution delegated to EnvReader.
     if (auto ids = env::ReadSteamEnvAppIds(process)) {
@@ -109,7 +108,8 @@ ProcessSnapshot InspectProcess(std::uint32_t pid, const std::string& processName
 }
 
 std::uint32_t ReadHandshakePid(steam::CUtlBuffer* pRead) {
-    if (!pRead || pRead->TellPut() < constants::kIpcHandshakeMinSize) return 0;
+    if (!pRead || pRead->TellPut() < constants::kIpcHandshakeMinSize)
+        return 0;
     const std::uint8_t* raw = pRead->Base();
     std::uint32_t pid = 0;
     std::memcpy(&pid, raw + constants::kIpcHandshakePidOffset, sizeof(pid));
@@ -131,9 +131,11 @@ std::uint32_t ReadHandshakePid(steam::CUtlBuffer* pRead) {
 // ---------------------------------------------------------------------------
 
 bool IsProcessAlive(std::uint32_t pid) {
-    if (pid == 0) return false;
+    if (pid == 0)
+        return false;
     HANDLE h = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, pid);
-    if (!h) return false;
+    if (!h)
+        return false;
     DWORD exitCode = 0;
     const bool alive = GetExitCodeProcess(h, &exitCode) && exitCode == STILL_ACTIVE;
     CloseHandle(h);
@@ -145,8 +147,7 @@ bool IsProcessAlive(std::uint32_t pid) {
 // wasteful). Returns the number of entries removed.
 std::size_t EvictDeadLocked() {
     std::size_t removed = 0;
-    for (auto it = g_state.pipeWatch.snapshots.begin();
-         it != g_state.pipeWatch.snapshots.end();) {
+    for (auto it = g_state.pipeWatch.snapshots.begin(); it != g_state.pipeWatch.snapshots.end();) {
         const auto& snap = it->second;
         // Never evict Steam's own processes: they are always alive and
         // re-probing them on every eviction cycle is pure overhead.
@@ -155,9 +156,8 @@ std::size_t EvictDeadLocked() {
             continue;
         }
         if (!IsProcessAlive(snap.pid)) {
-            AC_LOG_DEBUG(kModule, "Evicting dead snapshot pid=%u image=%s appId=%u.",
-                         snap.pid, snap.imageName.empty() ? "-" : snap.imageName.c_str(),
-                         snap.appId);
+            AC_LOG_DEBUG(kModule, "Evicting dead snapshot pid=%u image=%s appId=%u.", snap.pid,
+                         snap.imageName.empty() ? "-" : snap.imageName.c_str(), snap.appId);
             it = g_state.pipeWatch.snapshots.erase(it);
             ++removed;
         } else {
@@ -173,21 +173,19 @@ bool EvictOldestLocked() {
     using Iter = decltype(g_state.pipeWatch.snapshots)::iterator;
     Iter oldest = g_state.pipeWatch.snapshots.end();
 
-    for (auto it = g_state.pipeWatch.snapshots.begin();
-         it != g_state.pipeWatch.snapshots.end(); ++it) {
-        if (it->second.steamProcess) continue;
-        if (oldest == g_state.pipeWatch.snapshots.end() ||
-            it->second.capturedAt < oldest->second.capturedAt) {
+    for (auto it = g_state.pipeWatch.snapshots.begin(); it != g_state.pipeWatch.snapshots.end(); ++it) {
+        if (it->second.steamProcess)
+            continue;
+        if (oldest == g_state.pipeWatch.snapshots.end() || it->second.capturedAt < oldest->second.capturedAt) {
             oldest = it;
         }
     }
 
-    if (oldest == g_state.pipeWatch.snapshots.end()) return false;
+    if (oldest == g_state.pipeWatch.snapshots.end())
+        return false;
 
-    AC_LOG_DEBUG(kModule, "Evicting oldest snapshot pid=%u image=%s appId=%u (cap=%zu).",
-                 oldest->second.pid,
-                 oldest->second.imageName.empty() ? "-" : oldest->second.imageName.c_str(),
-                 oldest->second.appId,
+    AC_LOG_DEBUG(kModule, "Evicting oldest snapshot pid=%u image=%s appId=%u (cap=%zu).", oldest->second.pid,
+                 oldest->second.imageName.empty() ? "-" : oldest->second.imageName.c_str(), oldest->second.appId,
                  constants::kPipeWatchMaxSnapshots);
     g_state.pipeWatch.snapshots.erase(oldest);
     return true;
@@ -197,19 +195,22 @@ bool EvictOldestLocked() {
 // capacity. First reaps dead processes; if that is not enough, drops the
 // oldest entry one at a time until there is room.
 void EvictIfNeededLocked() {
-    if (g_state.pipeWatch.snapshots.size() < constants::kPipeWatchMaxSnapshots) return;
+    if (g_state.pipeWatch.snapshots.size() < constants::kPipeWatchMaxSnapshots)
+        return;
 
     // Phase 1: reap dead processes (most precise).
     const std::size_t deadRemoved = EvictDeadLocked();
     if (deadRemoved > 0) {
         g_state.pipeWatch.evictionCount.fetch_add(deadRemoved, std::memory_order_relaxed);
     }
-    if (g_state.pipeWatch.snapshots.size() < constants::kPipeWatchMaxSnapshots) return;
+    if (g_state.pipeWatch.snapshots.size() < constants::kPipeWatchMaxSnapshots)
+        return;
 
     // Phase 2: FIFO fallback — drop oldest until under cap.
     std::size_t fifoRemoved = 0;
     while (g_state.pipeWatch.snapshots.size() >= constants::kPipeWatchMaxSnapshots) {
-        if (!EvictOldestLocked()) break;  // nothing left to evict (all Steam)
+        if (!EvictOldestLocked())
+            break; // nothing left to evict (all Steam)
         ++fifoRemoved;
     }
     if (fifoRemoved > 0) {
@@ -218,7 +219,8 @@ void EvictIfNeededLocked() {
 }
 
 void StoreSnapshotByKey(std::uint64_t key, ProcessSnapshot snap) {
-    if (!key) return;
+    if (!key)
+        return;
 
     // Stamp the capture time for FIFO eviction ordering (A5).
     snap.capturedAt = std::chrono::steady_clock::now();
@@ -238,8 +240,7 @@ void StoreSnapshotByKey(std::uint64_t key, ProcessSnapshot snap) {
 // Tracks the last game appId that triggered a log session reset.
 // (State lives in g_state.pipeWatch.lastSessionAppId — centralized state.)
 
-
-}  // namespace
+} // namespace
 
 void Reset() {
     std::lock_guard<std::mutex> lock(g_state.pipeWatch.mutex);
@@ -250,8 +251,7 @@ void Reset() {
 // payload injection with up to 5 s wait) no longer runs on Steam's IPC thread:
 // it executes on the task queue. The IPC thread keeps only the pid read and
 // the enqueue (O(1)).
-void CompleteHandshakeAsync(std::uint64_t key, std::uint32_t hSteamPipe,
-                            std::uint32_t pid, std::string processName) {
+void CompleteHandshakeAsync(std::uint64_t key, std::uint32_t hSteamPipe, std::uint32_t pid, std::string processName) {
     // One copy stays local: the map store is the source of truth for future
     // readers (SnapshotForPipe/AppIdForPipe), but re-reading under lock is
     // unneeded here — avoids an immediate lock+copy.
@@ -264,28 +264,27 @@ void CompleteHandshakeAsync(std::uint64_t key, std::uint32_t hSteamPipe,
         // of the same session (launcher, game exe, overlay) share the same appId
         // and should not trigger redundant re-emission of ownership/license logs.
         steam::AppId prev = g_state.pipeWatch.lastSessionAppId.load();
-        if (stored.appId != prev &&
-            g_state.pipeWatch.lastSessionAppId.compare_exchange_strong(prev, stored.appId)) {
+        if (stored.appId != prev && g_state.pipeWatch.lastSessionAppId.compare_exchange_strong(prev, stored.appId)) {
             logutil::ResetAllIdLogSessions();
             log::ResetDedup();
         }
     }
     status::Write();
-    AC_LOG_INFO(kModule,
-                "Handshake pipe=0x%08X pid=%u image=%s appId=%u source=%s env=%u luaManaged=%d (async).",
-                hSteamPipe, stored.pid,
-                stored.imageName.empty() ? "-" : stored.imageName.c_str(), stored.appId,
+    AC_LOG_INFO(kModule, "Handshake pipe=0x%08X pid=%u image=%s appId=%u source=%s env=%u luaManaged=%d (async).",
+                hSteamPipe, stored.pid, stored.imageName.empty() ? "-" : stored.imageName.c_str(), stored.appId,
                 stored.appIdSource.empty() ? "-" : stored.appIdSource.c_str(), stored.envAppId,
                 stored.luaManaged ? 1 : 0);
 }
 
 void OnHandshake(steam::CSteamPipeClient* pipe, steam::CUtlBuffer* pRead) {
-    if (!pipe) return;
+    if (!pipe)
+        return;
 
     if (std::uint32_t pid = ReadHandshakePid(pRead)) {
         pipe->clientPid = pid;
     }
-    if (pipe->clientPid == 0) return;
+    if (pipe->clientPid == 0)
+        return;
 
     const std::uint64_t key = EncodePipeKey(pipe);
     // Copy by value: Steam's pointer and its processName are not safe past
@@ -301,8 +300,10 @@ void OnHandshake(steam::CSteamPipeClient* pipe, steam::CUtlBuffer* pRead) {
 }
 
 void TouchPipe(steam::CSteamPipeClient* pipe) {
-    if (!pipe || pipe->clientPid == 0) return;
-    if (SnapshotForPipe(pipe)) return;
+    if (!pipe || pipe->clientPid == 0)
+        return;
+    if (SnapshotForPipe(pipe))
+        return;
 
     const std::uint64_t key = EncodePipeKey(pipe);
     std::string processName = pipe->processName ? pipe->processName : "";
@@ -316,13 +317,16 @@ void TouchPipe(steam::CSteamPipeClient* pipe) {
 }
 
 std::optional<ProcessSnapshot> SnapshotForPipe(const steam::CSteamPipeClient* pipe) {
-    if (!pipe || pipe->clientPid == 0) return std::nullopt;
+    if (!pipe || pipe->clientPid == 0)
+        return std::nullopt;
     const std::uint64_t key = EncodePipeKey(pipe);
-    if (!key) return std::nullopt;
+    if (!key)
+        return std::nullopt;
 
     std::lock_guard<std::mutex> lock(g_state.pipeWatch.mutex);
     auto it = g_state.pipeWatch.snapshots.find(key);
-    if (it == g_state.pipeWatch.snapshots.end()) return std::nullopt;
+    if (it == g_state.pipeWatch.snapshots.end())
+        return std::nullopt;
     return it->second;
 }
 
@@ -345,12 +349,8 @@ std::size_t SnapshotCount() {
     return g_state.pipeWatch.snapshots.size();
 }
 
-std::size_t EvictionCount() {
-    return g_state.pipeWatch.evictionCount.load(std::memory_order_relaxed);
-}
+std::size_t EvictionCount() { return g_state.pipeWatch.evictionCount.load(std::memory_order_relaxed); }
 
-void ResetSessionTracking() {
-    g_state.pipeWatch.lastSessionAppId.store(0);
-}
+void ResetSessionTracking() { g_state.pipeWatch.lastSessionAppId.store(0); }
 
-}  // namespace ac::pipewatch
+} // namespace ac::pipewatch

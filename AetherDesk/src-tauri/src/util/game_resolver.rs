@@ -27,7 +27,10 @@ pub fn resolve_installed_game(
         .into_iter()
         .find(|game| game.id == app_id)
     else {
-        return Err(format!("App ID {} was not found in the Lua library.", app_id));
+        return Err(format!(
+            "App ID {} was not found in the Lua library.",
+            app_id
+        ));
     };
 
     if !game.installed || game.game_path.trim().is_empty() {

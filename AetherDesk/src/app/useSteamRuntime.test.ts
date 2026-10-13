@@ -1,12 +1,7 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { STEAM_RUNTIME_EVENT } from '../constants/library';
-import {
-  emitTauriEvent,
-  invokeMock,
-  listenMock,
-  mockInvokeCommands,
-} from '../test/tauriMocks';
+import { emitTauriEvent, invokeMock, listenMock, mockInvokeCommands } from '../test/tauriMocks';
 import { useSteamRuntime } from './useSteamRuntime';
 
 describe('useSteamRuntime', () => {
@@ -37,10 +32,7 @@ describe('useSteamRuntime', () => {
   });
 
   it('restarts Steam when it is already running', async () => {
-    invokeMock
-      .mockResolvedValueOnce(true)
-      .mockResolvedValueOnce('restarted')
-      .mockResolvedValueOnce(true);
+    invokeMock.mockResolvedValueOnce(true).mockResolvedValueOnce('restarted').mockResolvedValueOnce(true);
     const { result } = renderHook(() => useSteamRuntime());
     await waitFor(() => expect(result.current.running).toBe(true));
 
@@ -53,14 +45,22 @@ describe('useSteamRuntime', () => {
     let finishRestart: ((value: string) => void) | undefined;
     invokeMock
       .mockResolvedValueOnce(true)
-      .mockReturnValueOnce(new Promise((resolve) => { finishRestart = resolve; }))
+      .mockReturnValueOnce(
+        new Promise((resolve) => {
+          finishRestart = resolve;
+        })
+      )
       .mockResolvedValueOnce(true);
     const { result } = renderHook(() => useSteamRuntime());
     await waitFor(() => expect(result.current.running).toBe(true));
 
-    act(() => { void result.current.runAction(); });
+    act(() => {
+      void result.current.runAction();
+    });
     await waitFor(() => expect(result.current.busy).toBe(true));
-    act(() => { void result.current.runAction(); });
+    act(() => {
+      void result.current.runAction();
+    });
 
     expect(invokeMock.mock.calls.filter(([command]) => command === 'restart_steam')).toHaveLength(1);
     await act(async () => finishRestart?.('done'));
@@ -86,17 +86,19 @@ describe('useSteamRuntime', () => {
     listenMock.mockRejectedValueOnce(new Error('events unavailable'));
     renderHook(() => useSteamRuntime());
 
-    await waitFor(() => expect(warn).toHaveBeenCalledWith(
-      'steam runtime subscription failed:',
-      expect.any(Error),
-    ));
+    await waitFor(() => expect(warn).toHaveBeenCalledWith('steam runtime subscription failed:', expect.any(Error)));
     warn.mockRestore();
   });
 
   it('unsubscribes a late subscription resolve after unmount', async () => {
     mockInvokeCommands({ is_steam_running: false });
     let resolveListen: ((off: () => void) => void) | undefined;
-    listenMock.mockImplementationOnce(() => new Promise((resolve) => { resolveListen = resolve; }));
+    listenMock.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveListen = resolve;
+        })
+    );
     const off = vi.fn();
     const { unmount } = renderHook(() => useSteamRuntime());
 

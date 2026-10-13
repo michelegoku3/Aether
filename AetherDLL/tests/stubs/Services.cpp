@@ -7,13 +7,16 @@ void Write(LogLevel, const char*, const char*, ...) {}
 void WriteOnce(LogLevel, const char*, const char*, ...) {}
 void SetLevel(LogLevel) {}
 LogLevel ParseLevel(const std::string& text, LogLevel fallback) {
-    if (text == "debug") return LogLevel::Debug;
-    if (text == "info") return LogLevel::Info;
-    if (text == "warn") return LogLevel::Warn;
+    if (text == "debug")
+        return LogLevel::Debug;
+    if (text == "info")
+        return LogLevel::Info;
+    if (text == "warn")
+        return LogLevel::Warn;
     return fallback;
 }
-}
+} // namespace log
 namespace diag {
 void Record(const std::string&, const std::string&) {}
-}
-}
+} // namespace diag
+} // namespace ac

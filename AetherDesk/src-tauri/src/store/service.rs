@@ -19,10 +19,10 @@ const MAX_CLASSIFIED_RESULTS: usize = 80;
 /// this only bounds how long a hanging Hubcap can hold a search back.
 const EXACT_PROBE_TIMEOUT_MS: u64 = 2500;
 use crate::game_info::model::{GameInfoPlatforms, GameInfoPrice, GameInfoStoreCategories};
+use crate::providers::hubcap::HubcapClient;
 use crate::steam::store::{SteamStore, SteamStoreItem};
 use crate::steam::store_items;
 use crate::store::{aliases, normalize};
-use crate::providers::hubcap::HubcapClient;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct UnifiedStoreGame {
@@ -143,55 +143,53 @@ impl StoreService {
             // Parallelize up to 4 `search_all` calls. Match on arity to avoid
             // pulling in `futures` crate; HubcapClient is Clone so we can move
             // a clone into each branch.
-            let batches: Vec<Vec<crate::providers::hubcap::HubcapGameItem>> = match queries_for_lookup.len() {
-                4 => {
-                    let q0 = queries_for_lookup[0].clone();
-                    let q1 = queries_for_lookup[1].clone();
-                    let q2 = queries_for_lookup[2].clone();
-                    let q3 = queries_for_lookup[3].clone();
-                    let c0 = client_for_lookup.clone();
-                    let c1 = client_for_lookup.clone();
-                    let c2 = client_for_lookup.clone();
-                    let c3 = client_for_lookup.clone();
-                    let (a, b, c, d) = tokio::join!(
-                        c0.search_all(&q0),
-                        c1.search_all(&q1),
-                        c2.search_all(&q2),
-                        c3.search_all(&q3),
-                    );
-                    vec![a, b, c, d]
-                }
-                3 => {
-                    let q0 = queries_for_lookup[0].clone();
-                    let q1 = queries_for_lookup[1].clone();
-                    let q2 = queries_for_lookup[2].clone();
-                    let c0 = client_for_lookup.clone();
-                    let c1 = client_for_lookup.clone();
-                    let c2 = client_for_lookup.clone();
-                    let (a, b, c) = tokio::join!(
-                        c0.search_all(&q0),
-                        c1.search_all(&q1),
-                        c2.search_all(&q2),
-                    );
-                    vec![a, b, c]
-                }
-                2 => {
-                    let q0 = queries_for_lookup[0].clone();
-                    let q1 = queries_for_lookup[1].clone();
-                    let c0 = client_for_lookup.clone();
-                    let c1 = client_for_lookup.clone();
-                    let (a, b) = tokio::join!(
-                        c0.search_all(&q0),
-                        c1.search_all(&q1),
-                    );
-                    vec![a, b]
-                }
-                1 => {
-                    let q0 = queries_for_lookup[0].clone();
-                    vec![client_for_lookup.clone().search_all(&q0).await]
-                },
-                _ => Vec::new(),
-            };
+            let batches: Vec<Vec<crate::providers::hubcap::HubcapGameItem>> =
+                match queries_for_lookup.len() {
+                    4 => {
+                        let q0 = queries_for_lookup[0].clone();
+                        let q1 = queries_for_lookup[1].clone();
+                        let q2 = queries_for_lookup[2].clone();
+                        let q3 = queries_for_lookup[3].clone();
+                        let c0 = client_for_lookup.clone();
+                        let c1 = client_for_lookup.clone();
+                        let c2 = client_for_lookup.clone();
+                        let c3 = client_for_lookup.clone();
+                        let (a, b, c, d) = tokio::join!(
+                            c0.search_all(&q0),
+                            c1.search_all(&q1),
+                            c2.search_all(&q2),
+                            c3.search_all(&q3),
+                        );
+                        vec![a, b, c, d]
+                    }
+                    3 => {
+                        let q0 = queries_for_lookup[0].clone();
+                        let q1 = queries_for_lookup[1].clone();
+                        let q2 = queries_for_lookup[2].clone();
+                        let c0 = client_for_lookup.clone();
+                        let c1 = client_for_lookup.clone();
+                        let c2 = client_for_lookup.clone();
+                        let (a, b, c) = tokio::join!(
+                            c0.search_all(&q0),
+                            c1.search_all(&q1),
+                            c2.search_all(&q2),
+                        );
+                        vec![a, b, c]
+                    }
+                    2 => {
+                        let q0 = queries_for_lookup[0].clone();
+                        let q1 = queries_for_lookup[1].clone();
+                        let c0 = client_for_lookup.clone();
+                        let c1 = client_for_lookup.clone();
+                        let (a, b) = tokio::join!(c0.search_all(&q0), c1.search_all(&q1),);
+                        vec![a, b]
+                    }
+                    1 => {
+                        let q0 = queries_for_lookup[0].clone();
+                        vec![client_for_lookup.clone().search_all(&q0).await]
+                    }
+                    _ => Vec::new(),
+                };
 
             let mut merged: Vec<crate::providers::hubcap::HubcapGameItem> = Vec::new();
             let mut seen_ids = HashSet::new();
@@ -217,12 +215,14 @@ impl StoreService {
                 games
             }
             Err(_) => {
-                eprintln!("[Hubcap] Search timeout for '{}' ({}ms)", query, HUBCAP_SEARCH_BUDGET_MS);
+                eprintln!(
+                    "[Hubcap] Search timeout for '{}' ({}ms)",
+                    query, HUBCAP_SEARCH_BUDGET_MS
+                );
                 Vec::new()
             }
         }
     }
-
 
     /// Store front page: **Steam-only by design**.
     ///
@@ -297,12 +297,25 @@ impl StoreService {
                 game.store_kind = meta.kind.clone();
             }
             game.release_date_unix = meta.release_date_unix.or(game.release_date_unix);
-            game.original_release_date_unix = meta.original_release_date_unix.or(game.original_release_date_unix);
-            game.store_url_path = meta.store_url_path.clone().or_else(|| game.store_url_path.clone());
-            if let Some(url) = meta.library_capsule_url.as_ref().filter(|url| !url.trim().is_empty()) {
+            game.original_release_date_unix = meta
+                .original_release_date_unix
+                .or(game.original_release_date_unix);
+            game.store_url_path = meta
+                .store_url_path
+                .clone()
+                .or_else(|| game.store_url_path.clone());
+            if let Some(url) = meta
+                .library_capsule_url
+                .as_ref()
+                .filter(|url| !url.trim().is_empty())
+            {
                 game.image_url = url.clone();
             }
-            if let Some(url) = meta.hero_image_url.as_ref().filter(|url| !url.trim().is_empty()) {
+            if let Some(url) = meta
+                .hero_image_url
+                .as_ref()
+                .filter(|url| !url.trim().is_empty())
+            {
                 game.hero_image_url = url.clone();
             }
             game.platforms = Some(platforms_from_store_meta(&meta));
@@ -339,7 +352,15 @@ impl StoreService {
     ///     are queried in parallel and merged by app id.
     ///     Neither source may take the other down: a Steam outage still yields the
     ///     Hubcap-only list, a Hubcap outage still yields the plain Steam catalog.
-    pub async fn search_store(&self, query: &str, hubcap_client: Option<HubcapClient>, show_store_dlcs: bool, show_store_nsfw: bool, show_store_delisted: bool, steam_country_code: &str) -> Result<Vec<UnifiedStoreGame>, String> {
+    pub async fn search_store(
+        &self,
+        query: &str,
+        hubcap_client: Option<HubcapClient>,
+        show_store_dlcs: bool,
+        show_store_nsfw: bool,
+        show_store_delisted: bool,
+        steam_country_code: &str,
+    ) -> Result<Vec<UnifiedStoreGame>, String> {
         if query.trim().is_empty() {
             return Ok(Vec::new());
         }
@@ -376,38 +397,43 @@ impl StoreService {
             let mut merged: Vec<crate::steam::store::SteamStoreItem> = Vec::new();
             let mut seen: std::collections::HashSet<u32> = std::collections::HashSet::new();
             // Fire up to 2 Steam searches in parallel via JoinSet-style match.
-            let batches: Vec<Result<Vec<crate::steam::store::SteamStoreItem>, String>> = match steam_queries_for_fut.len() {
-                3 => {
-                    let q0 = steam_queries_for_fut[0].clone();
-                    let q1 = steam_queries_for_fut[1].clone();
-                    let q2 = steam_queries_for_fut[2].clone();
-                    let s0 = steam_store_clone.clone();
-                    let s1 = steam_store_clone.clone();
-                    let s2 = steam_store_clone.clone();
-                    let (a, b, c) = tokio::join!(
-                        s0.search_catalog_for_country(&q0, steam_country_code),
-                        s1.search_catalog_for_country(&q1, steam_country_code),
-                        s2.search_catalog_for_country(&q2, steam_country_code)
-                    );
-                    vec![a, b, c]
-                }
-                2 => {
-                    let q0 = steam_queries_for_fut[0].clone();
-                    let q1 = steam_queries_for_fut[1].clone();
-                    let s0 = steam_store_clone.clone();
-                    let s1 = steam_store_clone.clone();
-                    let (a, b) = tokio::join!(
-                        s0.search_catalog_for_country(&q0, steam_country_code),
-                        s1.search_catalog_for_country(&q1, steam_country_code)
-                    );
-                    vec![a, b]
-                }
-                1 => {
-                    let q0 = steam_queries_for_fut[0].clone();
-                    vec![steam_store_clone.search_catalog_for_country(&q0, steam_country_code).await]
-                },
-                _ => Vec::new(),
-            };
+            let batches: Vec<Result<Vec<crate::steam::store::SteamStoreItem>, String>> =
+                match steam_queries_for_fut.len() {
+                    3 => {
+                        let q0 = steam_queries_for_fut[0].clone();
+                        let q1 = steam_queries_for_fut[1].clone();
+                        let q2 = steam_queries_for_fut[2].clone();
+                        let s0 = steam_store_clone.clone();
+                        let s1 = steam_store_clone.clone();
+                        let s2 = steam_store_clone.clone();
+                        let (a, b, c) = tokio::join!(
+                            s0.search_catalog_for_country(&q0, steam_country_code),
+                            s1.search_catalog_for_country(&q1, steam_country_code),
+                            s2.search_catalog_for_country(&q2, steam_country_code)
+                        );
+                        vec![a, b, c]
+                    }
+                    2 => {
+                        let q0 = steam_queries_for_fut[0].clone();
+                        let q1 = steam_queries_for_fut[1].clone();
+                        let s0 = steam_store_clone.clone();
+                        let s1 = steam_store_clone.clone();
+                        let (a, b) = tokio::join!(
+                            s0.search_catalog_for_country(&q0, steam_country_code),
+                            s1.search_catalog_for_country(&q1, steam_country_code)
+                        );
+                        vec![a, b]
+                    }
+                    1 => {
+                        let q0 = steam_queries_for_fut[0].clone();
+                        vec![
+                            steam_store_clone
+                                .search_catalog_for_country(&q0, steam_country_code)
+                                .await,
+                        ]
+                    }
+                    _ => Vec::new(),
+                };
             for res in batches {
                 match res {
                     Ok(items) => {
@@ -417,7 +443,9 @@ impl StoreService {
                             }
                         }
                     }
-                    Err(e) => eprintln!("[Store] Steam catalog chunk failed for '{}': {}", query, e),
+                    Err(e) => {
+                        eprintln!("[Store] Steam catalog chunk failed for '{}': {}", query, e);
+                    }
                 }
             }
             if merged.is_empty() {
@@ -626,7 +654,6 @@ impl StoreService {
             }
         }
         if !unified_list.is_empty() {
-
             // Tag every row first: the NSFW/delisted flags feed the UI's
             // marker borders, so rows that survive the filters must carry
             // them; hidden rows are tagged too (harmless) because tagging and
@@ -639,15 +666,28 @@ impl StoreService {
                     game.store_kind = meta.kind.clone();
                 }
                 game.release_date_unix = meta.release_date_unix.or(game.release_date_unix);
-                game.original_release_date_unix = meta.original_release_date_unix.or(game.original_release_date_unix);
-            game.store_url_path = meta.store_url_path.clone().or_else(|| game.store_url_path.clone());
-            if let Some(url) = meta.library_capsule_url.as_ref().filter(|url| !url.trim().is_empty()) {
-                game.image_url = url.clone();
-            }
-            if let Some(url) = meta.hero_image_url.as_ref().filter(|url| !url.trim().is_empty()) {
-                game.hero_image_url = url.clone();
-            }
-            game.platforms = Some(platforms_from_store_meta(&meta));
+                game.original_release_date_unix = meta
+                    .original_release_date_unix
+                    .or(game.original_release_date_unix);
+                game.store_url_path = meta
+                    .store_url_path
+                    .clone()
+                    .or_else(|| game.store_url_path.clone());
+                if let Some(url) = meta
+                    .library_capsule_url
+                    .as_ref()
+                    .filter(|url| !url.trim().is_empty())
+                {
+                    game.image_url = url.clone();
+                }
+                if let Some(url) = meta
+                    .hero_image_url
+                    .as_ref()
+                    .filter(|url| !url.trim().is_empty())
+                {
+                    game.hero_image_url = url.clone();
+                }
+                game.platforms = Some(platforms_from_store_meta(&meta));
                 game.store_categories = Some(categories_from_store_meta(&meta));
                 game.content_descriptor_ids = meta.content_descriptor_ids.clone();
                 if game.price.is_none() {
@@ -729,22 +769,26 @@ fn price_from_store_item(item: &SteamStoreItem) -> Option<GameInfoPrice> {
         currency: price.currency.clone(),
         initial_cents: price.initial,
         final_cents: price.final_price,
-        formatted_final: price.final_price.map(|final_price| format_price_fallback(final_price, price.currency.as_deref())),
+        formatted_final: price
+            .final_price
+            .map(|final_price| format_price_fallback(final_price, price.currency.as_deref())),
         discount_percent: price.discount_percent,
     })
 }
 
 fn price_from_store_meta(meta: &store_items::StoreItemMeta) -> Option<GameInfoPrice> {
-    meta.best_purchase_option.as_ref().map(|price| GameInfoPrice {
-        currency: None,
-        initial_cents: None,
-        final_cents: price
-            .final_price_in_cents
-            .as_ref()
-            .and_then(|value| value.parse::<i64>().ok()),
-        formatted_final: price.formatted_final_price.clone(),
-        discount_percent: None,
-    })
+    meta.best_purchase_option
+        .as_ref()
+        .map(|price| GameInfoPrice {
+            currency: None,
+            initial_cents: None,
+            final_cents: price
+                .final_price_in_cents
+                .as_ref()
+                .and_then(|value| value.parse::<i64>().ok()),
+            formatted_final: price.formatted_final_price.clone(),
+            discount_percent: None,
+        })
 }
 
 fn format_price_fallback(amount_minor: i64, currency: Option<&str>) -> String {

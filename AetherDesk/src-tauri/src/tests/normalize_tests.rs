@@ -2,11 +2,20 @@ use crate::store::normalize::{normalize_string, sanitize_query_for_hubcap};
 
 #[test]
 fn normalize_strips_punctuation_to_space() {
-    assert_eq!(normalize_string("Take Me To The Dungeon!!"), "take me to the dungeon");
+    assert_eq!(
+        normalize_string("Take Me To The Dungeon!!"),
+        "take me to the dungeon"
+    );
     assert_eq!(normalize_string("GTA: San Andreas"), "gta san andreas");
-    assert_eq!(normalize_string("LEGO® Batman™: Legacy"), "lego batman legacy");
+    assert_eq!(
+        normalize_string("LEGO® Batman™: Legacy"),
+        "lego batman legacy"
+    );
     assert_eq!(normalize_string("Cyberpunk 2077"), "cyberpunk 2077");
-    assert_eq!(normalize_string("BioShock - Remastered"), "bioshock remastered");
+    assert_eq!(
+        normalize_string("BioShock - Remastered"),
+        "bioshock remastered"
+    );
     assert_eq!(normalize_string("It Takes Two"), "it takes two");
     assert_eq!(normalize_string("Dark Souls II"), "dark souls 2");
 }

@@ -20,16 +20,24 @@ fn write(dir: &Path, rel: &str, bytes: &[u8]) {
     fs::write(path, bytes).unwrap();
 }
 
-/// Mini-gioco Unity Mono con Photon Realtime + Voice + PlayFab.
+/// Mini Mono Unity game with Photon Realtime + Voice + PlayFab.
 fn unity_photon_voice_playfab_fixture(root: &Path) {
     write(root, "MyGame.exe", b"MZfake");
     write(root, "MyGame_Data/Managed/Assembly-CSharp.dll", b"asm");
-    write(root, "MyGame_Data/Plugins/x86_64/steam_api64.dll", b"original-dll");
+    write(
+        root,
+        "MyGame_Data/Plugins/x86_64/steam_api64.dll",
+        b"original-dll",
+    );
     write(root, "MyGame_Data/Managed/PhotonRealtime.dll", b"photon");
     write(root, "MyGame_Data/Managed/PhotonVoice.dll", b"voice");
     write(root, "MyGame_Data/Managed/PlayFabAllSDK.dll", b"playfab");
     // DLC harvest sorgente 1: configs.app.ini stile Goldberg.
-    write(root, "configs.app.ini", b"[app::dlcs]\n211=Half-Life 2: Deathmatch\n212=Half-Life 2: Lost Coast\n");
+    write(
+        root,
+        "configs.app.ini",
+        b"[app::dlcs]\n211=Half-Life 2: Deathmatch\n212=Half-Life 2: Lost Coast\n",
+    );
 }
 
 /// Bundle UCO2 fittizio (layout release).
@@ -118,8 +126,16 @@ TitleId=TITLEID\r\n";
 fn ini_fusion_and_stub_and_coherence_shared() {
     let tmp = tempfile::tempdir().unwrap();
     write(tmp.path(), "FGame.exe", b"MZ");
-    write(tmp.path(), "FGame_Data/Managed/Fusion.Realtime.dll", b"fusion");
-    write(tmp.path(), "FGame_Data/StreamingAssets/combined.schema", b"{}");
+    write(
+        tmp.path(),
+        "FGame_Data/Managed/Fusion.Realtime.dll",
+        b"fusion",
+    );
+    write(
+        tmp.path(),
+        "FGame_Data/StreamingAssets/combined.schema",
+        b"{}",
+    );
 
     let detection = GameInspector::inspect(tmp.path()).unwrap();
     let mut request = base_request();
@@ -210,7 +226,11 @@ fn ini_playfab_shared_title() {
 fn ini_photon_section_requires_deploy_photon() {
     let tmp = tempfile::tempdir().unwrap();
     write(tmp.path(), "PGame.exe", b"MZ");
-    write(tmp.path(), "PGame_Data/Managed/PhotonRealtime.dll", b"photon");
+    write(
+        tmp.path(),
+        "PGame_Data/Managed/PhotonRealtime.dll",
+        b"photon",
+    );
     write(tmp.path(), "PGame_Data/Managed/Assembly-CSharp.dll", b"asm");
 
     let detection = GameInspector::inspect(tmp.path()).unwrap();
@@ -296,18 +316,27 @@ fn deploy_then_disable_restores_everything() {
     assert!(ini_content.contains("ogAppId=1144200"));
     assert!(ini_content.contains("PhotonAppIdRealtime=rt-guid"));
     // Plugin deployati.
-    assert!(detection.ini_dir.join("plugins/photon_universal.dll").is_file());
-    assert!(detection.ini_dir.join("plugins/playfab_universal.dll").is_file());
+    assert!(detection
+        .ini_dir
+        .join("plugins/photon_universal.dll")
+        .is_file());
+    assert!(detection
+        .ini_dir
+        .join("plugins/playfab_universal.dll")
+        .is_file());
     // Overlay proxy Unity x64.
     assert!(detection.ini_dir.join("version.dll").is_file());
-    assert_eq!(fs::read(detection.ini_dir.join("version.dll")).unwrap(), b"overlay-proxy");
+    assert_eq!(
+        fs::read(detection.ini_dir.join("version.dll")).unwrap(),
+        b"overlay-proxy"
+    );
     // Journal present.
     assert!(!Journal::load(&backup_dir).entries.is_empty());
     // Persisted state.
     let store = OnlineStateStore::load(&state_path);
     assert!(store.get(1144200).is_some());
 
-    // --- idempotenza: secondo enable non fa doppio backup ---
+    // --- idempotency: second enable performs no double backup ---
     let record2 = deploy(
         1144200,
         &detection,
@@ -318,14 +347,20 @@ fn deploy_then_disable_restores_everything() {
     )
     .expect("second deploy must succeed (config refresh)");
     assert_eq!(record2.backends_deployed, record.backends_deployed);
-    assert!(!backup_dir.join("original/steam_api.1").exists(), "no double backup");
+    assert!(
+        !backup_dir.join("original/steam_api.1").exists(),
+        "no double backup"
+    );
 
     // --- disable: ripristino completo ---
     disable(1144200, &backup_root, &state_path, None).expect("disable must succeed");
 
     assert_eq!(fs::read(&original_dll).unwrap(), b"original-dll");
     assert!(!ini_path.exists(), "ini removed");
-    assert!(!detection.ini_dir.join("plugins").exists(), "plugins dir removed");
+    assert!(
+        !detection.ini_dir.join("plugins").exists(),
+        "plugins dir removed"
+    );
     let store = OnlineStateStore::load(&state_path);
     assert!(store.get(1144200).is_none(), "record removed");
     assert!(!backup_dir.exists(), "backup dir removed");
@@ -350,14 +385,23 @@ fn deploy_neutralizes_conflicts_and_disable_restores_them() {
         .iter()
         .any(|c| matches!(c, crate::online::types::Conflict::SteamFix(_))));
 
-    deploy(1144200, &detection, &bundle, &base_request(), &backup_root, &state_path)
-        .expect("deploy");
+    deploy(
+        1144200,
+        &detection,
+        &bundle,
+        &base_request(),
+        &backup_root,
+        &state_path,
+    )
+    .expect("deploy");
 
     // Quarantined in the backup (no *.uco-disabled in the game tree).
     assert!(!steam_api_dir.join("SteamFix64.dll").exists());
     assert!(!steam_api_dir.join("SteamFix64.dll.uco-disabled").exists());
     let backup_dir = backup_dir_for(&backup_root, 1144200);
-    assert!(backup_dir.join("original/conflict_SteamFix64.dll").is_file());
+    assert!(backup_dir
+        .join("original/conflict_SteamFix64.dll")
+        .is_file());
 
     disable(1144200, &backup_root, &state_path, None).expect("disable must succeed");
 

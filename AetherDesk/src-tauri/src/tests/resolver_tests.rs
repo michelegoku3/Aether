@@ -22,7 +22,11 @@ fn row(depot: u32, gid: &str, enabled: bool) -> LuaManifestRow {
 /// these tests never matches a real AetherData backup folder, so the backup
 /// search dir is guaranteed to be absent.
 fn temp_steam_dir(tag: &str) -> std::path::PathBuf {
-    let dir = std::env::temp_dir().join(format!("aether_resolver_tests_{}_{}", std::process::id(), tag));
+    let dir = std::env::temp_dir().join(format!(
+        "aether_resolver_tests_{}_{}",
+        std::process::id(),
+        tag
+    ));
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(dir.join("depotcache")).expect("temp depotcache");
     dir

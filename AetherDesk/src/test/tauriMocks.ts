@@ -19,7 +19,9 @@ listenMock.mockImplementation(async (eventName: string, handler: EventHandler) =
 
 onCloseRequestedMock.mockImplementation(async (handler: CloseHandler) => {
   closeHandler = handler;
-  return () => { if (closeHandler === handler) closeHandler = null; };
+  return () => {
+    if (closeHandler === handler) closeHandler = null;
+  };
 });
 
 export function emitTauriEvent<T>(eventName: string, payload: T) {
@@ -47,20 +49,20 @@ export function resetTauriMocks() {
   });
   onCloseRequestedMock.mockImplementation(async (handler: CloseHandler) => {
     closeHandler = handler;
-    return () => { if (closeHandler === handler) closeHandler = null; };
+    return () => {
+      if (closeHandler === handler) closeHandler = null;
+    };
   });
 }
 
 export function mockInvokeCommands(
-  handlers: Record<string, unknown | ((args: unknown) => unknown | Promise<unknown>)>,
+  handlers: Record<string, unknown | ((args: unknown) => unknown | Promise<unknown>)>
 ) {
   invokeMock.mockImplementation((command: string, args?: unknown) => {
     if (!(command in handlers)) {
       return Promise.reject(new Error(`Unexpected Tauri command: ${command}`));
     }
     const handler = handlers[command];
-    return Promise.resolve(typeof handler === 'function'
-      ? (handler as (value: unknown) => unknown)(args)
-      : handler);
+    return Promise.resolve(typeof handler === 'function' ? (handler as (value: unknown) => unknown)(args) : handler);
   });
 }

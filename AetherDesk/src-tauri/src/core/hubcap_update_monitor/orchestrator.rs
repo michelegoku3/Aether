@@ -80,13 +80,7 @@ pub(super) async fn run(app: AppHandle) {
         .await;
         run_pin_refresh(&mut runtime, &app, &current_acf, &mut checkpoint).await;
         run_repair(&mut runtime, &app, &current_luas, &mut checkpoint).await;
-        run_workshop(
-            &mut runtime,
-            &app,
-            &current_workshop,
-            &mut checkpoint,
-        )
-        .await;
+        run_workshop(&mut runtime, &app, &current_workshop, &mut checkpoint).await;
 
         runtime.publish_status(steam_ready, key_ready, checkpoint.initialized);
         tokio::time::sleep(POLL_INTERVAL).await;

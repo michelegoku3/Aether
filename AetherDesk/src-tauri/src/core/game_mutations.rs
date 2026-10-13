@@ -70,12 +70,7 @@ pub struct MutationGuard {
     started: Instant,
 }
 impl MutationGuard {
-    fn new(
-        lock: OwnedMutexGuard<()>,
-        slot: Arc<Slot>,
-        key: Key,
-        operation: &'static str,
-    ) -> Self {
+    fn new(lock: OwnedMutexGuard<()>, slot: Arc<Slot>, key: Key, operation: &'static str) -> Self {
         static NEXT: AtomicU64 = AtomicU64::new(1);
         let id = NEXT.fetch_add(1, Ordering::Relaxed);
         crate::desk_log_info!(
@@ -217,7 +212,13 @@ impl MutationPlan {
                 self.operation,
                 self.key.app_id
             );
-            return Err(DeskError::coded(codes::GAME_STATE_CONFLICT, format_args!("app {} changed during preparation; retry on the current state", self.key.app_id)));
+            return Err(DeskError::coded(
+                codes::GAME_STATE_CONFLICT,
+                format_args!(
+                    "app {} changed during preparation; retry on the current state",
+                    self.key.app_id
+                ),
+            ));
         }
         Ok(guard)
     }
@@ -238,7 +239,10 @@ pub fn ensure_current_root(app: &tauri::AppHandle, root: &Path) -> Result<(), St
             "mutations",
             "Steam root changed during preparation; commit cancelled"
         );
-        return Err(DeskError::coded(codes::GAME_STATE_CONFLICT, "Steam root changed during preparation; retry"));
+        return Err(DeskError::coded(
+            codes::GAME_STATE_CONFLICT,
+            "Steam root changed during preparation; retry",
+        ));
     }
     Ok(())
 }

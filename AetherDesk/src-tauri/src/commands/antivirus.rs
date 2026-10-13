@@ -36,10 +36,12 @@ pub fn get_antivirus_exclusion_done(app: tauri::AppHandle) -> Result<bool, Strin
 #[tauri::command]
 pub fn acknowledge_antivirus_exclusion(app: tauri::AppHandle) -> Result<(), String> {
     let manager = SettingsManager::new(&app);
-    manager.update("acknowledge-antivirus_exclusion_done", |settings| {
-        settings.antivirus_exclusion_done = true;
-        Ok(())
-    }).map(|_| ())
+    manager
+        .update("acknowledge-antivirus_exclusion_done", |settings| {
+            settings.antivirus_exclusion_done = true;
+            Ok(())
+        })
+        .map(|_| ())
 }
 
 /// Collect every folder that needs a Windows Defender exclusion.
@@ -83,7 +85,11 @@ fn collect_exclusion_paths(app: &tauri::AppHandle) -> Vec<PathBuf> {
         }
         Err(crate::steam::resolve::SteamPathError::Empty) => {}
         Err(error) => {
-            crate::desk_log_warn!("antivirus", "Skipping Steam path exclusions: {}", error.message(&settings.steam_path));
+            crate::desk_log_warn!(
+                "antivirus",
+                "Skipping Steam path exclusions: {}",
+                error.message(&settings.steam_path)
+            );
         }
     }
 
@@ -101,11 +107,7 @@ fn collect_exclusion_paths(app: &tauri::AppHandle) -> Vec<PathBuf> {
 ///   DLLs written into **any** Steam library (including extra libraries on other
 ///   drives) are not flagged — the exclusion follows Steam regardless of where
 ///   each library lives.
-const APP_PROCESS_EXCLUSIONS: [&str; 3] = [
-    "AetherDesk.exe",
-    "aether_updater.exe",
-    "steam.exe",
-];
+const APP_PROCESS_EXCLUSIONS: [&str; 3] = ["AetherDesk.exe", "aether_updater.exe", "steam.exe"];
 
 /// Try to add the relevant exclusions to Windows Defender via a hidden
 /// PowerShell child. AetherDesk is already elevated, so no second UAC boundary
@@ -145,10 +147,23 @@ pub fn apply_antivirus_exclusion(app: tauri::AppHandle) -> Result<String, String
     }
 
     let script = script.join("; ");
-    crate::desk_log_info!("antivirus", "Applying Windows Defender exclusions for {} folders and {} processes", folders.len(), APP_PROCESS_EXCLUSIONS.len());
+    crate::desk_log_info!(
+        "antivirus",
+        "Applying Windows Defender exclusions for {} folders and {} processes",
+        folders.len(),
+        APP_PROCESS_EXCLUSIONS.len()
+    );
 
     let mut command = Command::new("powershell.exe");
-    command.args(["-NoProfile", "-WindowStyle", "Hidden", "-ExecutionPolicy", "Bypass", "-Command", &script]);
+    command.args([
+        "-NoProfile",
+        "-WindowStyle",
+        "Hidden",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-Command",
+        &script,
+    ]);
     hide_window(&mut command);
 
     let output = command
@@ -157,8 +172,14 @@ pub fn apply_antivirus_exclusion(app: tauri::AppHandle) -> Result<String, String
 
     if output.status.success() {
         acknowledge_antivirus_exclusion(app)?;
-        crate::desk_log_info!("antivirus", "Successfully applied Windows Defender exclusions");
-        let mut summary: Vec<String> = APP_PROCESS_EXCLUSIONS.iter().map(|s| s.to_string()).collect();
+        crate::desk_log_info!(
+            "antivirus",
+            "Successfully applied Windows Defender exclusions"
+        );
+        let mut summary: Vec<String> = APP_PROCESS_EXCLUSIONS
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
         summary.extend(folders.iter().map(|p| p.to_string_lossy().to_string()));
         Ok(format!(
             "Windows Defender exclusions added: {}",
@@ -189,7 +210,9 @@ fn refusal_summary(stderr: &str) -> String {
     if lower.contains("access is denied") || lower.contains("unauthorizedaccess") {
         return "access denied — run AetherDesk elevated".to_string();
     }
-    if lower.contains("not recognized") || lower.contains("add-mppreference") && lower.contains("not found") {
+    if lower.contains("not recognized")
+        || lower.contains("add-mppreference") && lower.contains("not found")
+    {
         return "Defender PowerShell module unavailable".to_string();
     }
     "rejected by Windows Defender".to_string()
@@ -218,7 +241,10 @@ mod tests {
     fn refusal_summary_never_forwards_raw_stderr() {
         let raw = "Add-MpPreference : Access is denied. At C:\\secret\\admin\\script.ps1:1 char:1";
         let summary = refusal_summary(raw);
-        assert!(!summary.contains("C:\\secret"), "raw path leaked: {summary}");
+        assert!(
+            !summary.contains("C:\\secret"),
+            "raw path leaked: {summary}"
+        );
         assert!(summary.contains("elevated"));
         assert_eq!(refusal_summary(""), "unknown error");
         assert_eq!(
@@ -232,9 +258,9 @@ mod tests {
         assert_eq!(first_log_line("a\nb\nc"), "a");
         let long = "x".repeat(500);
         assert!(first_log_line(&long).len() <= 303);
-        // Multibyte-safe truncation.
-        let emoji = "é".repeat(400);
-        let cut = first_log_line(&emoji);
+        // Multibyte-safe truncation (U+20AC spans 3 bytes in UTF-8).
+        let euro = "€".repeat(400);
+        let cut = first_log_line(&euro);
         assert!(cut.len() <= 303);
         assert!(cut.ends_with('…'));
     }
@@ -254,10 +280,12 @@ pub fn open_windows_security() {
 #[tauri::command]
 pub fn open_app_folder() {
     let path = LocalAppPaths::install_root();
-    crate::desk_log_info!("antivirus", "Opening app install folder in Explorer: {}", path.display());
-    let _ = std::process::Command::new("explorer.exe")
-        .arg(path)
-        .spawn();
+    crate::desk_log_info!(
+        "antivirus",
+        "Opening app install folder in Explorer: {}",
+        path.display()
+    );
+    let _ = std::process::Command::new("explorer.exe").arg(path).spawn();
 }
 
 /// Configure a `Command` to hide its console window on Windows.

@@ -48,13 +48,7 @@ fn reports_missing_depots_in_stable_order() {
 
 #[test]
 fn selects_unique_older_builds_nearest_first() {
-    let builds = vec![
-        build(120),
-        build(90),
-        build(110),
-        build(90),
-        build(100),
-    ];
+    let builds = vec![build(120), build(90), build(110), build(90), build(100)];
     assert_eq!(older_build_ids(&builds, 111), vec![110, 100, 90]);
 }
 

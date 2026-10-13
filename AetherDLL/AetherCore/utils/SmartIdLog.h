@@ -33,16 +33,13 @@ void UnregisterSmartIdLogInstance(SmartIdLog* logger);
 void ResetAllIdLogSessions();
 
 class SmartIdLog {
-public:
+  public:
     SmartIdLog(const char* module, const char* label)
-        : module_(module ? module : "Log"),
-          label_(label ? label : "AppIds") {
+        : module_(module ? module : "Log"), label_(label ? label : "AppIds") {
         RegisterSmartIdLogInstance(this);
     }
 
-    ~SmartIdLog() {
-        UnregisterSmartIdLogInstance(this);
-    }
+    ~SmartIdLog() { UnregisterSmartIdLogInstance(this); }
 
     // Non-copyable/non-movable due to self-registration pointer
     SmartIdLog(const SmartIdLog&) = delete;
@@ -51,7 +48,7 @@ public:
     void Record(steam::AppId id) {
         std::lock_guard<std::mutex> lock(mutex_);
         if (!seen_.insert(id).second) {
-            return;  // Already logged this session — suppress silently.
+            return; // Already logged this session — suppress silently.
         }
         AC_LOG_INFO(module_.c_str(), "%s: AppId %u.", label_.c_str(), id);
     }
@@ -61,11 +58,11 @@ public:
         seen_.clear();
     }
 
-private:
+  private:
     std::mutex mutex_;
     std::unordered_set<steam::AppId> seen_;
     std::string module_;
     std::string label_;
 };
 
-}  // namespace ac::logutil
+} // namespace ac::logutil

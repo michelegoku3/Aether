@@ -114,11 +114,12 @@ export const HomeView = memo(function HomeView() {
   };
 
   const selectActiveResult = () => {
-    const game = activeResultIndex !== null
-      ? filteredGames[activeResultIndex]
-      : filteredGames.length === 1
-        ? filteredGames[0]
-        : null;
+    const game =
+      activeResultIndex !== null
+        ? filteredGames[activeResultIndex]
+        : filteredGames.length === 1
+          ? filteredGames[0]
+          : null;
     if (game) {
       selectGame(game);
     }
@@ -140,7 +141,6 @@ export const HomeView = memo(function HomeView() {
       setStatus({ text: `Failed to open external resource: ${toErrorMessage(err)}`, type: 'error' });
     }
   };
-
 
   const runSteamless = async () => {
     if (!selectedGame) {
@@ -251,7 +251,6 @@ export const HomeView = memo(function HomeView() {
             }}
           />
         </div>
-
       </div>
 
       <div className="home-action-grid">
@@ -282,18 +281,10 @@ export const HomeView = memo(function HomeView() {
         >
           Apply Crack
         </button>
-        <button
-          className="game-action-btn"
-          disabled={true}
-          title="Enable DLC is not available yet"
-        >
+        <button className="game-action-btn" disabled={true} title="Enable DLC is not available yet">
           Enable DLC
         </button>
-        <button
-          className="game-action-btn"
-          disabled={!hasSelectedGame || isSteamlessRunning}
-          onClick={runSteamless}
-        >
+        <button className="game-action-btn" disabled={!hasSelectedGame || isSteamlessRunning} onClick={runSteamless}>
           {isSteamlessRunning ? 'Running...' : 'Steamless'}
         </button>
       </div>
@@ -310,9 +301,7 @@ export const HomeView = memo(function HomeView() {
         />
       )}
 
-      {showAntivirus && (
-        <AntivirusExclusionModal onDone={() => setShowAntivirus(false)} />
-      )}
+      {showAntivirus && <AntivirusExclusionModal onDone={() => setShowAntivirus(false)} />}
 
       {savedCrackTarget && (
         <SavedCrackModal
@@ -333,9 +322,7 @@ export const HomeView = memo(function HomeView() {
         />
       )}
 
-      {crackTarget && (
-        <CrackModal game={crackTarget} onClose={() => setCrackTarget(null)} />
-      )}
+      {crackTarget && <CrackModal game={crackTarget} onClose={() => setCrackTarget(null)} />}
     </div>
   );
 });

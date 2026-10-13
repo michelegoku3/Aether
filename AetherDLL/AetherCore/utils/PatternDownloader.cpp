@@ -35,7 +35,7 @@ FetchResult Fetch(const std::string& url, int timeoutSec) {
     http::Response resp = http::GetUnchecked(url, timeoutSec);
     if (resp.networkError) {
         AC_LOG_WARN(kModule, "GET failed (network) for %s.", url.c_str());
-        return result;  // transient: a mirror over another transport may work
+        return result; // transient: a mirror over another transport may work
     }
     if (resp.status == 404) {
         AC_LOG_INFO(kModule, "GET 404 for %s.", url.c_str());
@@ -68,7 +68,8 @@ bool SaveAtomic(const std::string& path, const std::string& content) {
     const std::string tmp = path + ".tmp";
     {
         std::ofstream out(tmp, std::ios::binary | std::ios::trunc);
-        if (!out.is_open()) return false;
+        if (!out.is_open())
+            return false;
         out.write(content.data(), static_cast<std::streamsize>(content.size()));
     }
     if (!MoveFileExA(tmp.c_str(), path.c_str(), MOVEFILE_REPLACE_EXISTING)) {
@@ -116,21 +117,21 @@ std::vector<Level> BuildPlan(Kind kind, const std::string& sha) {
     // Level 0: user-supplied mirror has the highest priority when configured.
     if (!settings->patternMirror.empty()) {
         Level level;
-        level.endpoints.push_back(Candidate{
-            "mirror", ApplyTemplate(settings->patternMirror, KindName(kind), sha)});
+        level.endpoints.push_back(Candidate{"mirror", ApplyTemplate(settings->patternMirror, KindName(kind), sha)});
         plan.push_back(std::move(level));
     }
 
     // Following levels: built-in sources in registry order.
     // OpenSteamTool is opt-in ([network] use_ost_source, default OFF).
     for (const Source& src : DefaultSources()) {
-        if (IsOstSource(src) && !settings->patternUseOstSource) continue;
+        if (IsOstSource(src) && !settings->patternUseOstSource)
+            continue;
         const auto mirrors = src.UrlsFor(kind, sha);
-        if (mirrors.empty()) continue;  // this source does not carry that kind
+        if (mirrors.empty())
+            continue; // this source does not carry that kind
         Level level;
         for (const MirrorUrl& m : mirrors) {
-            level.endpoints.push_back(
-                Candidate{std::string(src.id) + ":" + m.label, m.url});
+            level.endpoints.push_back(Candidate{std::string(src.id) + ":" + m.label, m.url});
         }
         plan.push_back(std::move(level));
     }
@@ -153,21 +154,18 @@ std::string TryLevel(const Level& level, std::string& outBody, int timeoutSec) {
             return ep.label;
         }
         if (res.definitiveMissing) {
-            AC_LOG_INFO(kModule, "Endpoint '%s' has no pattern yet (404); source skipped.",
-                        ep.label.c_str());
+            AC_LOG_INFO(kModule, "Endpoint '%s' has no pattern yet (404); source skipped.", ep.label.c_str());
             return {};
         }
         // transport error: try the next transport (CDN) of this source
-        AC_LOG_INFO(kModule, "Endpoint '%s' unreachable; trying next transport of this source.",
-                    ep.label.c_str());
+        AC_LOG_INFO(kModule, "Endpoint '%s' unreachable; trying next transport of this source.", ep.label.c_str());
     }
     return {};
 }
 
-}  // namespace
+} // namespace
 
-bool Download(Kind kind, const std::string& sha, const std::string& outPath,
-              std::string* outSource, int timeoutSec) {
+bool Download(Kind kind, const std::string& sha, const std::string& outPath, std::string* outSource, int timeoutSec) {
     AC_LOG_INFO(kModule, "Resolving '%s/%s'.", KindName(kind), sha.c_str());
 
     const std::vector<Level> plan = BuildPlan(kind, sha);
@@ -180,15 +178,16 @@ bool Download(Kind kind, const std::string& sha, const std::string& outPath,
         std::string body;
         const std::string label = TryLevel(level, body, timeoutSec);
         if (label.empty()) {
-            AC_LOG_INFO(kModule, "Source level could not serve '%s/%s'; trying next source.",
-                        KindName(kind), sha.c_str());
+            AC_LOG_INFO(kModule, "Source level could not serve '%s/%s'; trying next source.", KindName(kind),
+                        sha.c_str());
             continue;
         }
         if (!SaveAtomic(outPath, body)) {
             AC_LOG_WARN(kModule, "Failed to write %s; trying next source.", outPath.c_str());
             continue;
         }
-        if (outSource) *outSource = label;
+        if (outSource)
+            *outSource = label;
         AC_LOG_INFO(kModule, "Saved pattern from '%s': %s", label.c_str(), outPath.c_str());
         return true;
     }
@@ -204,9 +203,9 @@ bool Download(Kind kind, const std::string& sha, const std::string& outPath,
     return false;
 }
 
-bool Download(std::string_view kindName, const std::string& sha, const std::string& outPath,
-              std::string* outSource, int timeoutSec) {
+bool Download(std::string_view kindName, const std::string& sha, const std::string& outPath, std::string* outSource,
+              int timeoutSec) {
     return Download(KindFromName(kindName), sha, outPath, outSource, timeoutSec);
 }
 
-}  // namespace ac::downloader
+} // namespace ac::downloader

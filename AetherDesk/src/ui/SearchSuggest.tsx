@@ -53,7 +53,9 @@ export const SearchSuggest = ({
           <button
             key={`${item.appId}-${item.id}`}
             type="button"
-            ref={(element) => { resultRefs.current[index] = element; }}
+            ref={(element) => {
+              resultRefs.current[index] = element;
+            }}
             className={`home-search-result ${index === activeIndex ? 'active' : ''}`}
             onMouseEnter={() => onHoverIndex(index)}
             onMouseDown={(event) => event.preventDefault()}
@@ -66,18 +68,12 @@ export const SearchSuggest = ({
       ) : (
         <div className="home-search-empty">{statusText || emptyText}</div>
       )}
-      {items.length > 0 && statusText ? (
-        <div className="home-search-empty">{statusText}</div>
-      ) : null}
+      {items.length > 0 && statusText ? <div className="home-search-empty">{statusText}</div> : null}
     </div>
   );
 };
 
-export const moveSuggestIndex = (
-  current: number | null,
-  itemCount: number,
-  direction: 1 | -1,
-): number | null => {
+export const moveSuggestIndex = (current: number | null, itemCount: number, direction: 1 | -1): number | null => {
   if (itemCount === 0) return null;
   if (current === null) {
     return direction === 1 ? 0 : itemCount - 1;

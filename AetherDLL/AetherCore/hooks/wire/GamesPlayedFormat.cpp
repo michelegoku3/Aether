@@ -15,23 +15,28 @@ steam::AppId AppIdFromGameId(std::uint64_t gameId) {
 
 std::string ImageStem(std::string_view imageName) {
     const auto slash = imageName.find_last_of("\\/");
-    std::string file = (slash == std::string_view::npos)
-                           ? std::string(imageName)
-                           : std::string(imageName.substr(slash + 1));
+    std::string file =
+        (slash == std::string_view::npos) ? std::string(imageName) : std::string(imageName.substr(slash + 1));
     const auto dot = file.find_last_of('.');
-    if (dot != std::string::npos) file.resize(dot);
+    if (dot != std::string::npos)
+        file.resize(dot);
     // Unreal: Bodycam-Win64-Shipping -> Bodycam
     static constexpr const char* kShipping[] = {
-        "-Win64-Shipping", "-Win32-Shipping", "-Win64-Test", "-Win32-Test",
+        "-Win64-Shipping",
+        "-Win32-Shipping",
+        "-Win64-Test",
+        "-Win32-Test",
     };
     for (const char* suf : kShipping) {
         const std::size_t n = std::strlen(suf);
         if (file.size() > n) {
             const std::string tail = file.substr(file.size() - n);
             std::string fold = tail;
-            for (char& c : fold) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+            for (char& c : fold)
+                c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
             std::string want = suf;
-            for (char& c : want) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+            for (char& c : want)
+                c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
             if (fold == want) {
                 file.resize(file.size() - n);
                 break;
@@ -41,25 +46,28 @@ std::string ImageStem(std::string_view imageName) {
     // ReadyOrNotSteam-Win64-Shipping -> ReadyOrNot
     if (file.size() > 5) {
         std::string tail = file.substr(file.size() - 5);
-        for (char& c : tail) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-        if (tail == "steam") file.resize(file.size() - 5);
+        for (char& c : tail)
+            c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+        if (tail == "steam")
+            file.resize(file.size() - 5);
     }
     return file;
 }
 
 bool NameIsUsable(const std::string& name) {
-    if (name.empty()) return false;
+    if (name.empty())
+        return false;
     std::string fold;
     fold.reserve(name.size());
     for (unsigned char c : name) {
-        if (std::isspace(c)) continue;
+        if (std::isspace(c))
+            continue;
         fold.push_back(static_cast<char>(std::tolower(c)));
     }
     return fold != "spacewar";
 }
 
-std::string WithAppIdSuffix(const std::string& name, steam::AppId appId,
-                            const Settings& settings) {
+std::string WithAppIdSuffix(const std::string& name, steam::AppId appId, const Settings& settings) {
     if (!settings.presenceSuffixInvisible) {
         return name + constants::kExtraInfoAppIdSep + std::to_string(appId);
     }
@@ -88,8 +96,7 @@ void ExtractStringKVs(const std::uint8_t* data, std::uint32_t size,
                       std::vector<std::pair<std::string, std::string>>& out) {
     // Unica implementazione condivisa del KV1 binario (utils/KeyValues, P11).
     auto pairs = kv1::ReadStringKVs(data, size);
-    out.insert(out.end(), std::make_move_iterator(pairs.begin()),
-               std::make_move_iterator(pairs.end()));
+    out.insert(out.end(), std::make_move_iterator(pairs.begin()), std::make_move_iterator(pairs.end()));
 }
 
-}  // namespace ac::hooks::GamesPlayedFormat
+} // namespace ac::hooks::GamesPlayedFormat

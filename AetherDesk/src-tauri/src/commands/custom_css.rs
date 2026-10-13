@@ -1,7 +1,7 @@
-use serde::Serialize;
-use tauri_plugin_dialog::{DialogExt, FilePath};
 use crate::core::custom_css;
 use crate::core::settings::load_settings;
+use serde::Serialize;
+use tauri_plugin_dialog::{DialogExt, FilePath};
 
 /// Resolves the file selected by a native dialog into a local `PathBuf`.
 /// Returns `Err("No file selected")` when the dialog was cancelled so the
@@ -36,7 +36,11 @@ pub struct AppearanceAssets {
 #[tauri::command]
 pub fn get_custom_css(app: tauri::AppHandle) -> Result<String, String> {
     let selected = load_settings(&app).theme_selected_file;
-    crate::desk_log_debug!("appearance", "Loading custom CSS theme (selected='{}')", selected);
+    crate::desk_log_debug!(
+        "appearance",
+        "Loading custom CSS theme (selected='{}')",
+        selected
+    );
     custom_css::read_theme_css(&selected)
 }
 
@@ -74,7 +78,11 @@ pub fn get_personal_wallpaper_path(app: tauri::AppHandle) -> Result<String, Stri
 #[tauri::command]
 pub fn get_personal_wallpaper_data_uri(app: tauri::AppHandle) -> Result<String, String> {
     let selected = load_settings(&app).wallpaper_selected_file;
-    crate::desk_log_debug!("appearance", "Loading personal wallpaper image (selected='{}')", selected);
+    crate::desk_log_debug!(
+        "appearance",
+        "Loading personal wallpaper image (selected='{}')",
+        selected
+    );
     Ok(custom_css::read_personal_wallpaper_data_uri(&selected)?.unwrap_or_default())
 }
 
@@ -143,7 +151,10 @@ pub fn pick_wallpaper_file(app: tauri::AppHandle) -> Result<String, String> {
         .dialog()
         .file()
         .set_title("Choose a wallpaper (image)")
-        .add_filter("Images", &["jpg", "jpeg", "png", "webp", "gif", "bmp", "avif"])
+        .add_filter(
+            "Images",
+            &["jpg", "jpeg", "png", "webp", "gif", "bmp", "avif"],
+        )
         .set_directory(folder.clone())
         .blocking_pick_file();
 

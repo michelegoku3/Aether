@@ -74,26 +74,50 @@ pub async fn prepare_update(app: &tauri::AppHandle) -> Result<Option<PreparedUpd
         match manager.fetch_latest_desk_test_release("desk-install").await {
             Ok(release) => {
                 if GithubReleaseManager::latest_is_newer_than(&current_version, &release.tag_name) {
-                    crate::desk_log_info!("updater", "AetherDesk test update available: {} (current: {})", release.tag_name, current_version);
+                    crate::desk_log_info!(
+                        "updater",
+                        "AetherDesk test update available: {} (current: {})",
+                        release.tag_name,
+                        current_version
+                    );
                     return prepare_from_release(&release).await.map(Some);
                 } else {
-                    crate::desk_log_info!("updater", "AetherDesk test release {} is not newer than installed version {}", release.tag_name, current_version);
+                    crate::desk_log_info!(
+                        "updater",
+                        "AetherDesk test release {} is not newer than installed version {}",
+                        release.tag_name,
+                        current_version
+                    );
                     return Ok(None);
                 }
             }
             Err(error) => {
-                crate::desk_log_warn!("updater", "AetherDesk test release lookup failed during install: {}", error);
+                crate::desk_log_warn!(
+                    "updater",
+                    "AetherDesk test release lookup failed during install: {}",
+                    error
+                );
             }
         }
     }
 
     let release = manager.fetch_latest_desk_release("desk-install").await?;
     if !GithubReleaseManager::latest_is_newer_than(&current_version, &release.tag_name) {
-        crate::desk_log_info!("updater", "AetherDesk stable release {} is not newer than installed version {}", release.tag_name, current_version);
+        crate::desk_log_info!(
+            "updater",
+            "AetherDesk stable release {} is not newer than installed version {}",
+            release.tag_name,
+            current_version
+        );
         return Ok(None);
     }
 
-    crate::desk_log_info!("updater", "AetherDesk stable update available: {} (current: {})", release.tag_name, current_version);
+    crate::desk_log_info!(
+        "updater",
+        "AetherDesk stable update available: {} (current: {})",
+        release.tag_name,
+        current_version
+    );
     prepare_from_release(&release).await.map(Some)
 }
 
@@ -102,7 +126,9 @@ pub async fn prepare_update(app: &tauri::AppHandle) -> Result<Option<PreparedUpd
 /// previous stable build. The caller restarts the process afterwards.
 pub async fn prepare_stable_restore() -> Result<Option<PreparedUpdate>, String> {
     let manager = GithubReleaseManager::new();
-    let release = manager.fetch_latest_desk_release("desk-restore-stable").await?;
+    let release = manager
+        .fetch_latest_desk_release("desk-restore-stable")
+        .await?;
     crate::desk_log_info!(
         "updater",
         "Restoring latest stable AetherDesk release: {} (leaving test channel)",
@@ -144,8 +170,8 @@ async fn prepare_from_release(release: &GithubRelease) -> Result<PreparedUpdate,
 /// Spawns a copy of the current exe that will perform the swap, then must be
 /// followed by exiting the running instance.
 pub fn schedule_restart(update: &PreparedUpdate) -> Result<(), String> {
-    let current_exe = std::env::current_exe()
-        .map_err(|e| format!("Failed to resolve current exe: {e}"))?;
+    let current_exe =
+        std::env::current_exe().map_err(|e| format!("Failed to resolve current exe: {e}"))?;
 
     let updater_path = update_workdir().join("aether_updater.exe");
     fs::copy(&current_exe, &updater_path)
@@ -228,10 +254,9 @@ fn uninstall_helper_path() -> PathBuf {
 ///
 /// Unknown/modified files are retained for manual review.
 pub fn schedule_uninstall(delete_user_data: bool) -> Result<(), String> {
-    let current_exe = std::env::current_exe()
-        .map_err(|e| format!("Failed to resolve current exe: {e}"))?;
-    let install_root =
-        super::desk_uninstall::validate_target(&LocalAppPaths::install_root())?;
+    let current_exe =
+        std::env::current_exe().map_err(|e| format!("Failed to resolve current exe: {e}"))?;
+    let install_root = super::desk_uninstall::validate_target(&LocalAppPaths::install_root())?;
     let helper = uninstall_helper_path();
 
     if let Some(parent) = helper.parent() {
@@ -377,16 +402,16 @@ async fn download_zip(url: &str, dest_path: &Path) -> Result<(), String> {
             response.status(),
             url
         );
-        return Err(format!("Download server returned HTTP error: {}", response.status()));
+        return Err(format!(
+            "Download server returned HTTP error: {}",
+            response.status()
+        ));
     }
 
-    let bytes = response
-        .bytes()
-        .await
-        .map_err(|e| {
-            crate::desk_log_error!("updater", "AetherDesk download body error: {e}");
-            format!("Failed to read downloaded bytes: {e}")
-        })?;
+    let bytes = response.bytes().await.map_err(|e| {
+        crate::desk_log_error!("updater", "AetherDesk download body error: {e}");
+        format!("Failed to read downloaded bytes: {e}")
+    })?;
     crate::desk_log_info!("updater", "AetherDesk zip size={} bytes", bytes.len());
 
     let temp_path = dest_path.with_extension("tmp");

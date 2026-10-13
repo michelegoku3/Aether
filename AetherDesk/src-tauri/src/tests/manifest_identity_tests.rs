@@ -33,10 +33,14 @@ fn synthetic_manifest(depot_id: u32, manifest_gid: u64) -> Vec<u8> {
 
     let mut bytes = Vec::new();
     bytes.extend_from_slice(&0x71F6_17D0u32.to_le_bytes());
-    bytes.extend_from_slice(&(u32::try_from(payload.len()).expect("test payload fits in u32")).to_le_bytes());
+    bytes.extend_from_slice(
+        &(u32::try_from(payload.len()).expect("test payload fits in u32")).to_le_bytes(),
+    );
     bytes.extend_from_slice(&payload);
     bytes.extend_from_slice(&0x1F48_12BEu32.to_le_bytes());
-    bytes.extend_from_slice(&(u32::try_from(metadata.len()).expect("test metadata fits in u32")).to_le_bytes());
+    bytes.extend_from_slice(
+        &(u32::try_from(metadata.len()).expect("test metadata fits in u32")).to_le_bytes(),
+    );
     bytes.extend_from_slice(&metadata);
     bytes
 }
@@ -58,7 +62,10 @@ fn zipped(entry_name: &str, content: &[u8]) -> Vec<u8> {
 fn identity_is_read_from_the_metadata_section() {
     let bytes = synthetic_manifest(489831, 4940892828028256588);
     assert!(has_manifest_magic(&bytes));
-    assert_eq!(manifest_identity(&bytes).unwrap(), (489831, 4940892828028256588));
+    assert_eq!(
+        manifest_identity(&bytes).unwrap(),
+        (489831, 4940892828028256588)
+    );
 }
 
 #[test]

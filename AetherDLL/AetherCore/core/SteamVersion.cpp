@@ -19,8 +19,7 @@ std::string DetectSteamBuildId() {
         return {};
     }
 
-    auto fn = reinterpret_cast<GetBootstrapperVersion_t>(
-        GetProcAddress(steam, "GetBootstrapperVersion"));
+    auto fn = reinterpret_cast<GetBootstrapperVersion_t>(GetProcAddress(steam, "GetBootstrapperVersion"));
     if (!fn) {
         AC_LOG_WARN(kModule, "GetBootstrapperVersion not exported; build id unavailable.");
         return {};
@@ -31,4 +30,4 @@ std::string DetectSteamBuildId() {
     return buildId;
 }
 
-}  // namespace ac
+} // namespace ac

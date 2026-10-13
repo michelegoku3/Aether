@@ -31,11 +31,10 @@ bool Begin(steam::CUtlBuffer* pWrite);
 
 // Writes `bytes` from `data` at `offset` (from base). Returns false when the
 // write would exceed the buffer capacity (nothing is written).
-bool WriteAt(steam::CUtlBuffer* pWrite, std::size_t offset,
-             const void* data, std::size_t bytes);
+bool WriteAt(steam::CUtlBuffer* pWrite, std::size_t offset, const void* data, std::size_t bytes);
 
 // Host-endian convenience wrappers over WriteAt.
 bool WriteU32(steam::CUtlBuffer* pWrite, std::size_t offset, std::uint32_t value);
 bool WriteU64(steam::CUtlBuffer* pWrite, std::size_t offset, std::uint64_t value);
 
-}  // namespace ac::hooks::ipcreply
+} // namespace ac::hooks::ipcreply

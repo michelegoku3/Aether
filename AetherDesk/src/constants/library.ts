@@ -4,13 +4,7 @@
  * strings and makes the Rust/WebView boundary explicit.
  */
 
-export type LuaLibraryChangeOrigin =
-  | 'store'
-  | 'local'
-  | 'library-action'
-  | 'versioning'
-  | 'filesystem'
-  | 'settings';
+export type LuaLibraryChangeOrigin = 'store' | 'local' | 'library-action' | 'versioning' | 'filesystem' | 'settings';
 
 /**
  * The backend emits this only when the observable Lua-library state has been
@@ -42,7 +36,7 @@ export const VERSIONING_PROGRESS_EVENT = 'versioning://progress';
 export interface VersioningProgress {
   appId: number;
   buildId: number;
-  step: number;   // 0..100
+  step: number; // 0..100
   message: string;
 }
 

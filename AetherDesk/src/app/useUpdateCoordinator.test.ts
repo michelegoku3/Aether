@@ -29,10 +29,7 @@ describe('useUpdateCoordinator', () => {
     });
     const { result } = renderHook(() => useUpdateCoordinator());
 
-    await act(() => Promise.all([
-      result.current.checkDeskUpdates(),
-      result.current.checkDllUpdates(settings),
-    ]));
+    await act(() => Promise.all([result.current.checkDeskUpdates(), result.current.checkDllUpdates(settings)]));
 
     expect(result.current.deskUpdateAvailable).toBe(true);
     expect(result.current.deskUpdateIsTest).toBe(true);

@@ -21,12 +21,12 @@ namespace ac::hooks::GamesPlayedRewriter {
 
 struct RewriteContext {
     const Settings& settings;
-    steam::AppId soSession = 0;    // 0 = no -showonline session to rewrite
-    bool foreignSpoof = false;     // UCO2/OFME owns the 480 session
-    steam::AppId spoofReal = 0;    // real app behind the foreign 480
+    steam::AppId soSession = 0; // 0 = no -showonline session to rewrite
+    bool foreignSpoof = false;  // UCO2/OFME owns the 480 session
+    steam::AppId spoofReal = 0; // real app behind the foreign 480
 };
 
 // Returns true when the message was modified and must be re-serialized.
 bool Rewrite(CMsgClientGamesPlayed& msg, const RewriteContext& ctx);
 
-}  // namespace ac::hooks::GamesPlayedRewriter
+} // namespace ac::hooks::GamesPlayedRewriter

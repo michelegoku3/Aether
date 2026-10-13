@@ -3,10 +3,12 @@ import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import { StoreSearchBar } from './StoreSearchBar';
 
-const { suggestions } = vi.hoisted(() => ({ suggestions: [
-  { id: 1, appId: '10', name: 'First Game' },
-  { id: 2, appId: '20', name: 'Second Game' },
-] }));
+const { suggestions } = vi.hoisted(() => ({
+  suggestions: [
+    { id: 1, appId: '10', name: 'First Game' },
+    { id: 2, appId: '20', name: 'Second Game' },
+  ],
+}));
 
 vi.mock('../../hooks/useSteamSuggest', () => ({
   useSteamSuggest: () => ({ items: suggestions, isLoading: false }),

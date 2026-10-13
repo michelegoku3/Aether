@@ -160,15 +160,15 @@ void LoadAetherCore(HMODULE self) {
         return;
     }
     path[MAX_PATH - 1] = '\0';
-    PathRemoveFileSpecA(path);  // strip "dwmapi.dll", leaving the Steam folder
+    PathRemoveFileSpecA(path); // strip "dwmapi.dll", leaving the Steam folder
 
     std::string full = std::string(path) + "\\AetherCore.dll";
     if (!LoadLibraryA(full.c_str())) {
-        LoadLibraryA("AetherCore.dll");  // fallback if the absolute load failed
+        LoadLibraryA("AetherCore.dll"); // fallback if the absolute load failed
     }
 }
 
-}  // namespace
+} // namespace
 
 BOOL APIENTRY DllMain(HMODULE instance, DWORD reason, LPVOID /*reserved*/) {
     if (reason == DLL_PROCESS_ATTACH) {

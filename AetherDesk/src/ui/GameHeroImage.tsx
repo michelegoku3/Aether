@@ -28,11 +28,19 @@ interface GameHeroImageProps {
 }
 
 const getCachedHero = (appId: string) => {
-  try { return localStorage.getItem(`${HERO_CACHE_PREFIX}${appId}`) || null; } catch { return null; }
+  try {
+    return localStorage.getItem(`${HERO_CACHE_PREFIX}${appId}`) || null;
+  } catch {
+    return null;
+  }
 };
 
 const saveCachedHero = (appId: string, url: string) => {
-  try { localStorage.setItem(`${HERO_CACHE_PREFIX}${appId}`, url); } catch { /* quota or privacy mode: the hero cache is only an optimization */ }
+  try {
+    localStorage.setItem(`${HERO_CACHE_PREFIX}${appId}`, url);
+  } catch {
+    /* quota or privacy mode: the hero cache is only an optimization */
+  }
 };
 
 // Whether a URL is plausibly a landscape hero asset we can put in the hero
@@ -46,14 +54,16 @@ const saveCachedHero = (appId: string, url: string) => {
 const isLandscapeCandidateUrl = (url?: string | null) => {
   if (!url) return false;
   const lower = url.toLowerCase();
-  return lower.includes('library_hero')
-    || lower.includes('hero_capsule')
-    || lower.includes('library_header')
-    || lower.includes('/header.jpg')
-    || lower.includes('/header.png')
-    || lower.includes('background_raw')
-    || lower.includes('/background')
-    || lower.includes('capsule_616x353');
+  return (
+    lower.includes('library_hero') ||
+    lower.includes('hero_capsule') ||
+    lower.includes('library_header') ||
+    lower.includes('/header.jpg') ||
+    lower.includes('/header.png') ||
+    lower.includes('background_raw') ||
+    lower.includes('/background') ||
+    lower.includes('capsule_616x353')
+  );
 };
 
 const buildHeroUrls = (appId: string, canonicalUrl?: string) => {
@@ -69,7 +79,7 @@ const buildHeroUrls = (appId: string, canonicalUrl?: string) => {
   const cached = getCachedHero(appId);
   if (isLandscapeCandidateUrl(cached)) push(cached);
   if (isLandscapeCandidateUrl(canonicalUrl)) push(canonicalUrl);
-  HERO_TEMPLATES.forEach(template => push(template.replace('{id}', appId)));
+  HERO_TEMPLATES.forEach((template) => push(template.replace('{id}', appId)));
   return urls;
 };
 
@@ -90,11 +100,7 @@ const preloadHeroChain = (urls: string[], onResolved: (url: string | null) => vo
     image.onload = () => {
       if (cancelled) return;
       const ratio = image.naturalWidth / Math.max(1, image.naturalHeight);
-      if (
-        image.naturalWidth < MIN_HERO_WIDTH ||
-        image.naturalHeight < MIN_HERO_HEIGHT ||
-        ratio < MIN_LANDSCAPE_RATIO
-      ) {
+      if (image.naturalWidth < MIN_HERO_WIDTH || image.naturalHeight < MIN_HERO_HEIGHT || ratio < MIN_LANDSCAPE_RATIO) {
         index += 1;
         tryNext();
         return;
@@ -109,7 +115,9 @@ const preloadHeroChain = (urls: string[], onResolved: (url: string | null) => vo
   };
 
   tryNext();
-  return () => { cancelled = true; };
+  return () => {
+    cancelled = true;
+  };
 };
 
 export const GameHeroImage = ({ appId, name, canonicalUrl }: GameHeroImageProps) => {

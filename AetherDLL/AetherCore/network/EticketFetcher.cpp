@@ -12,12 +12,12 @@
 #include <vector>
 
 #include "core/AetherCoreState.h"
-#include "credentials/CredentialStore.h"
-#include "credentials/HexCodec.h"
 #include "core/Logger.h"
 #include "core/Workers.h"
-#include "scripting/LuaData.h"
+#include "credentials/CredentialStore.h"
+#include "credentials/HexCodec.h"
 #include "network/RuntimeHttp.h"
+#include "scripting/LuaData.h"
 #include "utils/JsonStringField.h"
 
 namespace ac::eticketfetch {
@@ -46,32 +46,32 @@ std::atomic<bool> s_started{false};
 // the worker thread. Returns the minted pair, or nullopt on any failure.
 std::optional<TicketPair> MintSync(steam::AppId appId, const std::string& nonceHex) {
     const std::string backendUrl = luadata::EticketUrl();
-    if (backendUrl.empty()) return std::nullopt;
+    if (backendUrl.empty())
+        return std::nullopt;
 
-    const std::string payload =
-        "{\"app_id\":\"" + std::to_string(appId) +
-        "\",\"nonce\":\"" + nonceHex + "\"}";
+    const std::string payload = "{\"app_id\":\"" + std::to_string(appId) + "\",\"nonce\":\"" + nonceHex + "\"}";
     const auto resp = http::Post(backendUrl, payload, {"Content-Type: application/json"});
     if (resp.networkError || resp.status != 200) {
         ++g_state.eticketFetch.mintFailureCount;
-        AC_LOG_WARN(kModule, "Backend fetch failed app=%u status=%d network=%d.",
-                    appId, resp.status, resp.networkError ? 1 : 0);
+        AC_LOG_WARN(kModule, "Backend fetch failed app=%u status=%d network=%d.", appId, resp.status,
+                    resp.networkError ? 1 : 0);
         return std::nullopt;
     }
 
     TicketPair pair;
     std::string hexStr;
     if (jsonutil::PullStringField(resp.body, "eticket", hexStr)) {
-        if (auto bytes = hex::Decode(hexStr)) pair.eticket = std::move(*bytes);
+        if (auto bytes = hex::Decode(hexStr))
+            pair.eticket = std::move(*bytes);
     }
     if (jsonutil::PullStringField(resp.body, "appticket", hexStr)) {
-        if (auto bytes = hex::Decode(hexStr)) pair.ownership = std::move(*bytes);
+        if (auto bytes = hex::Decode(hexStr))
+            pair.ownership = std::move(*bytes);
     }
 
     if (pair.eticket.empty() && pair.ownership.empty()) {
         ++g_state.eticketFetch.mintFailureCount;
-        AC_LOG_WARN(kModule, "Backend response unusable app=%u body_bytes=%zu.",
-                    appId, resp.body.size());
+        AC_LOG_WARN(kModule, "Backend response unusable app=%u body_bytes=%zu.", appId, resp.body.size());
         return std::nullopt;
     }
 
@@ -85,8 +85,8 @@ std::optional<TicketPair> MintSync(steam::AppId appId, const std::string& nonceH
     }
 
     ++g_state.eticketFetch.mintSuccessCount;
-    AC_LOG_INFO(kModule, "Minted tickets app=%u eticket=%zuB ownership=%zuB.",
-                appId, pair.eticket.size(), pair.ownership.size());
+    AC_LOG_INFO(kModule, "Minted tickets app=%u eticket=%zuB ownership=%zuB.", appId, pair.eticket.size(),
+                pair.ownership.size());
     return pair;
 }
 
@@ -98,13 +98,15 @@ void WorkerMain(std::atomic<bool>& stop) {
             // wait_for (not wait): stop arrives via the registry flag with no
             // notify on s_cv; the timeout guarantees wakeup within 100 ms.
             if (!s_cv.wait_for(lock, std::chrono::milliseconds(100),
-                               [&stop] { return stop.load(std::memory_order_relaxed) ||
-                                                !s_queue.empty(); })) {
-                if (stop.load(std::memory_order_relaxed)) return;
-                continue;   // empty timeout: recheck stop/queue
+                               [&stop] { return stop.load(std::memory_order_relaxed) || !s_queue.empty(); })) {
+                if (stop.load(std::memory_order_relaxed))
+                    return;
+                continue; // empty timeout: recheck stop/queue
             }
-            if (stop.load(std::memory_order_relaxed)) return;
-            if (s_queue.empty()) continue;   // sveglia spuria/notifica tardiva
+            if (stop.load(std::memory_order_relaxed))
+                return;
+            if (s_queue.empty())
+                continue; // sveglia spuria/notifica tardiva
             key = std::move(s_queue.front());
             s_queue.pop_front();
         }
@@ -115,8 +117,7 @@ void WorkerMain(std::atomic<bool>& stop) {
             g_state.eticketFetch.cache.emplace(key, std::move(*minted));
             if (g_state.eticketFetch.cache.size() > kMaxCacheEntries) {
                 g_state.eticketFetch.cache.erase(g_state.eticketFetch.cache.begin());
-                AC_LOG_DEBUG(kModule, "Ticket cache over cap (%zu entries); evicted one.",
-                             kMaxCacheEntries);
+                AC_LOG_DEBUG(kModule, "Ticket cache over cap (%zu entries); evicted one.", kMaxCacheEntries);
             }
         }
 
@@ -138,26 +139,30 @@ void EnsureWorkerStarted() {
     }
 }
 
-}  // namespace
+} // namespace
 
 void MintAsync(steam::AppId appId, std::span<const std::uint8_t> nonce) {
-    if (appId == 0 || nonce.empty()) return;
+    if (appId == 0 || nonce.empty())
+        return;
 
     const std::string backendUrl = luadata::EticketUrl();
-    if (backendUrl.empty()) return;
+    if (backendUrl.empty())
+        return;
 
     const MintKey key{appId, hex::Encode(nonce)};
 
     // Fast path: already minted.
     {
         std::lock_guard<std::mutex> lock(g_state.eticketFetch.mutex);
-        if (g_state.eticketFetch.cache.count(key)) return;
+        if (g_state.eticketFetch.cache.count(key))
+            return;
     }
 
     // Single-flight: skip if already queued/in-flight.
     {
         std::lock_guard<std::mutex> lock(s_mutex);
-        if (s_inflight.count(key)) return;
+        if (s_inflight.count(key))
+            return;
         s_inflight.insert(key);
         s_queue.push_back(key);
     }
@@ -187,8 +192,7 @@ void Shutdown() {
         s_inflight.clear();
     }
     s_cv.notify_all();
-    AC_LOG_INFO(kModule, "Shutdown: mint worker already joined by workers; dropped %zu queued request(s).",
-                dropped);
+    AC_LOG_INFO(kModule, "Shutdown: mint worker already joined by workers; dropped %zu queued request(s).", dropped);
 }
 
-}  // namespace ac::eticketfetch
+} // namespace ac::eticketfetch

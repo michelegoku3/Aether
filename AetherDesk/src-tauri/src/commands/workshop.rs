@@ -21,7 +21,9 @@ fn workshop_cache_path(workshop_id: u64) -> PathBuf {
 fn cached_workshop_manifest_matches(workshop_id: u64, expected_gid: u64) -> bool {
     let path = workshop_cache_path(workshop_id);
     path.is_file()
-        && std::fs::metadata(&path).map(|metadata| metadata.len() > 0).unwrap_or(false)
+        && std::fs::metadata(&path)
+            .map(|metadata| metadata.len() > 0)
+            .unwrap_or(false)
         && std::fs::read(path)
             .ok()
             .and_then(|bytes| manifest_identity(&bytes).ok())
@@ -39,7 +41,9 @@ fn workshop_commit_gate() -> &'static Mutex<()> {
 
 fn write_atomic(path: &Path, bytes: &[u8]) -> Result<(), String> {
     if bytes.is_empty() {
-        return Err("Workshop manifest cache cannot be committed because the payload is empty".to_string());
+        return Err(
+            "Workshop manifest cache cannot be committed because the payload is empty".to_string(),
+        );
     }
     let parent = path
         .parent()
@@ -72,14 +76,16 @@ struct WorkshopItem {
 }
 
 fn discover_workshop_items(steam_path: &str) -> Vec<WorkshopItem> {
-    let libraries = crate::steam::library::SteamLibraryScanner::new(steam_path)
-        .discover_library_paths();
+    let libraries =
+        crate::steam::library::SteamLibraryScanner::new(steam_path).discover_library_paths();
     let item_re = Regex::new(r#"(?s)"(\d+)"\s*\{.*?"manifest"\s*"(\d+)""#)
         .expect("static Workshop ACF regex");
     let mut items = Vec::new();
     for library in libraries {
         let workshop_dir = library.join("steamapps").join("workshop");
-        let Ok(entries) = std::fs::read_dir(workshop_dir) else { continue };
+        let Ok(entries) = std::fs::read_dir(workshop_dir) else {
+            continue;
+        };
         for entry in entries.flatten() {
             let path = entry.path();
             let is_workshop_acf = path
@@ -87,20 +93,34 @@ fn discover_workshop_items(steam_path: &str) -> Vec<WorkshopItem> {
                 .and_then(|name| name.to_str())
                 .map(|name| name.starts_with("appworkshop_") && name.ends_with(".acf"))
                 .unwrap_or(false);
-            if !is_workshop_acf { continue; }
+            if !is_workshop_acf {
+                continue;
+            }
             let Some(app_id) = path
                 .file_stem()
                 .and_then(|name| name.to_str())
                 .and_then(|name| name.strip_prefix("appworkshop_"))
                 .and_then(|id| id.parse::<u32>().ok())
                 .filter(|id| *id > 0)
-            else { continue };
-            let Ok(content) = std::fs::read_to_string(path) else { continue };
+            else {
+                continue;
+            };
+            let Ok(content) = std::fs::read_to_string(path) else {
+                continue;
+            };
             for captures in item_re.captures_iter(&content) {
-                let Ok(workshop_id) = captures[1].parse::<u64>() else { continue };
-                let Ok(manifest_gid) = captures[2].parse::<u64>() else { continue };
+                let Ok(workshop_id) = captures[1].parse::<u64>() else {
+                    continue;
+                };
+                let Ok(manifest_gid) = captures[2].parse::<u64>() else {
+                    continue;
+                };
                 if workshop_id != 0 && manifest_gid != 0 {
-                    items.push(WorkshopItem { app_id, workshop_id, manifest_gid });
+                    items.push(WorkshopItem {
+                        app_id,
+                        workshop_id,
+                        manifest_gid,
+                    });
                 }
             }
         }
@@ -121,9 +141,18 @@ fn manifest_identity(bytes: &[u8]) -> Result<(u32, u64), String> {
 
 #[derive(Debug, Clone, Copy)]
 enum SyncOrigin {
-    Generated { content_present: bool, content_deferred: bool },
-    Cached { content_present: bool, content_deferred: bool },
-    AlreadyLocal { content_present: bool, content_deferred: bool },
+    Generated {
+        content_present: bool,
+        content_deferred: bool,
+    },
+    Cached {
+        content_present: bool,
+        content_deferred: bool,
+    },
+    AlreadyLocal {
+        content_present: bool,
+        content_deferred: bool,
+    },
 }
 
 fn has_local_manifest_gid(steam_path: &str, manifest_gid: u64) -> bool {
@@ -143,7 +172,9 @@ fn has_local_manifest_gid(steam_path: &str, manifest_gid: u64) -> bool {
                 .and_then(|name| name.to_str())
                 .map(|name| name.ends_with(&file_name_suffix))
                 .unwrap_or(false)
-            && std::fs::metadata(path).map(|metadata| metadata.len() > 0).unwrap_or(false)
+            && std::fs::metadata(path)
+                .map(|metadata| metadata.len() > 0)
+                .unwrap_or(false)
     })
 }
 
@@ -169,11 +200,7 @@ fn has_workshop_content(steam_path: &str, app_id: u32, workshop_id: u64) -> bool
 /// the running Steam client to perform the actual item download when the
 /// content directory is still absent. This is best-effort and intentionally
 /// does not turn a failed launch into a false "downloaded" result.
-fn request_workshop_content(
-    steam_path: &str,
-    app_id: u32,
-    workshop_id: u64,
-) -> Result<(), String> {
+fn request_workshop_content(steam_path: &str, app_id: u32, workshop_id: u64) -> Result<(), String> {
     let uri = format!("steam://workshop/downloaditem/{app_id}/{workshop_id}");
     let executable = if cfg!(windows) {
         PathBuf::from(steam_path).join("steam.exe")
@@ -259,7 +286,9 @@ async fn sync_one_workshop_item(
         item.manifest_gid
     );
     if steam_path.trim().is_empty() {
-        return Err("Workshop sync cannot install manifests because the Steam path is empty".to_string());
+        return Err(
+            "Workshop sync cannot install manifests because the Steam path is empty".to_string(),
+        );
     }
     let _commit_guard = workshop_commit_gate().lock().await;
     if has_local_manifest_gid(&steam_path, item.manifest_gid) {
@@ -282,7 +311,10 @@ async fn sync_one_workshop_item(
             )
             .await;
         }
-        return Ok(SyncOrigin::AlreadyLocal { content_present, content_deferred });
+        return Ok(SyncOrigin::AlreadyLocal {
+            content_present,
+            content_deferred,
+        });
     }
     let cache_path = workshop_cache_path(item.workshop_id);
     if cache_path.is_file() {
@@ -387,7 +419,10 @@ async fn sync_one_workshop_item(
         content_present,
         started.elapsed().as_millis()
     );
-    Ok(SyncOrigin::Generated { content_present, content_deferred })
+    Ok(SyncOrigin::Generated {
+        content_present,
+        content_deferred,
+    })
 }
 
 /// Mirrors a freshly staged Workshop manifest into the per-game AetherData
@@ -419,14 +454,18 @@ fn install_to_depotcache(
     bytes: &[u8],
 ) -> Result<(), String> {
     if bytes.is_empty() {
-        return Err("Workshop manifest cannot be installed because the payload is empty".to_string());
+        return Err(
+            "Workshop manifest cannot be installed because the payload is empty".to_string(),
+        );
     }
     let directory = PathBuf::from(steam_path).join("depotcache");
     std::fs::create_dir_all(&directory)
         .map_err(|e| format!("Could not create Steam depotcache for Workshop: {e}"))?;
     let path = directory.join(format!("{depot_id}_{manifest_gid}.manifest"));
     if path.is_file() {
-        let existing_len = std::fs::metadata(&path).map(|metadata| metadata.len()).unwrap_or(0);
+        let existing_len = std::fs::metadata(&path)
+            .map(|metadata| metadata.len())
+            .unwrap_or(0);
         if existing_len > 0 && existing_len == bytes.len() as u64 {
             crate::desk_log_debug!(
                 "workshop",
@@ -509,15 +548,28 @@ pub async fn sync_hubcap_workshop_manifests(
         !settings.steam_path.trim().is_empty()
     );
     if settings.steam_path.trim().is_empty() {
-        crate::desk_log_error!("workshop", "Workshop sync cannot run because the Steam path is empty");
+        crate::desk_log_error!(
+            "workshop",
+            "Workshop sync cannot run because the Steam path is empty"
+        );
         return Err("Workshop sync cannot run because the Steam path is empty".to_string());
     }
     let steam_path = settings.steam_path;
     let items = discover_workshop_items(&steam_path);
-    crate::desk_log_info!("workshop", "Workshop discovery complete discovered={}", items.len());
-    let mut report = WorkshopSyncReport { discovered: items.len(), ..Default::default() };
+    crate::desk_log_info!(
+        "workshop",
+        "Workshop discovery complete discovered={}",
+        items.len()
+    );
+    let mut report = WorkshopSyncReport {
+        discovered: items.len(),
+        ..Default::default()
+    };
     if items.is_empty() {
-        crate::desk_log_debug!("workshop", "Workshop sync complete no installed Workshop items");
+        crate::desk_log_debug!(
+            "workshop",
+            "Workshop sync complete no installed Workshop items"
+        );
         return Ok(report);
     }
     let needs_remote_generation = items.iter().any(|item| {
@@ -531,11 +583,17 @@ pub async fn sync_hubcap_workshop_manifests(
         needs_remote_generation
     );
     if needs_remote_generation && settings.hubcap_api_key.trim().is_empty() {
-        return Err("A valid authenticated Hubcap API key is required for missing Workshop manifests.".to_string());
+        return Err(
+            "A valid authenticated Hubcap API key is required for missing Workshop manifests."
+                .to_string(),
+        );
     }
     let client = HubcapClient::new(&settings.hubcap_api_key);
     if needs_remote_generation && !client.validate_api_key().await? {
-        crate::desk_log_error!("workshop", "Workshop sync stopped because the Hubcap API key is not valid or not allowed");
+        crate::desk_log_error!(
+            "workshop",
+            "Workshop sync stopped because the Hubcap API key is not valid or not allowed"
+        );
         return Err("Hubcap API key is not valid or is not allowed to make requests.".to_string());
     }
     // The provider rate-limits generation separately from the daily quota, and
@@ -567,7 +625,10 @@ pub async fn sync_hubcap_workshop_manifests(
         )
         .await
         {
-            Ok(SyncOrigin::Generated { content_present, content_deferred }) => {
+            Ok(SyncOrigin::Generated {
+                content_present,
+                content_deferred,
+            }) => {
                 report.generated += 1;
                 if !content_present {
                     report.content_missing += 1;
@@ -576,7 +637,10 @@ pub async fn sync_hubcap_workshop_manifests(
                     report.deferred += 1;
                 }
             }
-            Ok(SyncOrigin::Cached { content_present, content_deferred }) => {
+            Ok(SyncOrigin::Cached {
+                content_present,
+                content_deferred,
+            }) => {
                 report.restored_from_cache += 1;
                 if !content_present {
                     report.content_missing += 1;
@@ -585,7 +649,10 @@ pub async fn sync_hubcap_workshop_manifests(
                     report.deferred += 1;
                 }
             }
-            Ok(SyncOrigin::AlreadyLocal { content_present, content_deferred }) => {
+            Ok(SyncOrigin::AlreadyLocal {
+                content_present,
+                content_deferred,
+            }) => {
                 if content_present {
                     report.already_local += 1;
                 } else {
@@ -638,7 +705,9 @@ pub async fn generate_hubcap_workshop_manifest(
         !settings.steam_path.trim().is_empty()
     );
     if settings.steam_path.trim().is_empty() {
-        return Err("Workshop generation cannot complete because the Steam path is empty".to_string());
+        return Err(
+            "Workshop generation cannot complete because the Steam path is empty".to_string(),
+        );
     }
     if path.is_file()
         && std::fs::metadata(&path)
@@ -674,7 +743,9 @@ pub async fn generate_hubcap_workshop_manifest(
         }
     }
     if settings.hubcap_api_key.trim().is_empty() {
-        return Err("A valid Hubcap API key is required for Workshop manifest generation.".to_string());
+        return Err(
+            "A valid Hubcap API key is required for Workshop manifest generation.".to_string(),
+        );
     }
     let hubcap = HubcapClient::new(&settings.hubcap_api_key);
     if !hubcap.validate_api_key().await? {

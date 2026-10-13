@@ -131,7 +131,9 @@ impl LibraryWatchController {
     pub fn reconfigure(&self, steam_path: impl AsRef<str>) {
         let _ = self
             .command_tx
-            .send(WatchCommand::Reconfigure(normalize_steam_path(steam_path.as_ref())));
+            .send(WatchCommand::Reconfigure(normalize_steam_path(
+                steam_path.as_ref(),
+            )));
     }
 
     /// Records a successful in-app mutation. The worker refreshes its disk
@@ -195,11 +197,7 @@ pub fn current_library_change_revision(app: &AppHandle) -> u64 {
 // not compile at spawn. Clippy cannot see the consumption because `Receiver::recv`
 // and the atomics take `&self`.
 #[allow(clippy::needless_pass_by_value)]
-fn run_watch_worker(
-    app: AppHandle,
-    command_rx: Receiver<WatchCommand>,
-    revision: Arc<AtomicU64>,
-) {
+fn run_watch_worker(app: AppHandle, command_rx: Receiver<WatchCommand>, revision: Arc<AtomicU64>) {
     let (fs_tx, fs_rx) = mpsc::channel::<notify::Result<Event>>();
     let mut desired_steam_path: Option<PathBuf> = None;
     let mut watcher: Option<RecommendedWatcher> = None;
@@ -264,7 +262,9 @@ fn run_watch_worker(
                             "Library watcher is temporarily unavailable: {}. Retrying later.",
                             error
                         );
-                        rebind_after = desired_steam_path.as_ref().map(|_| Instant::now() + REBIND_DELAY);
+                        rebind_after = desired_steam_path
+                            .as_ref()
+                            .map(|_| Instant::now() + REBIND_DELAY);
                     }
                 }
             }
@@ -330,7 +330,9 @@ fn run_watch_worker(
         if watcher_reported_error {
             watcher = None;
             binding = None;
-            rebind_after = desired_steam_path.as_ref().map(|_| Instant::now() + REBIND_DELAY);
+            rebind_after = desired_steam_path
+                .as_ref()
+                .map(|_| Instant::now() + REBIND_DELAY);
         }
 
         if rebind_after.is_some_and(|deadline| Instant::now() >= deadline) {
@@ -352,7 +354,9 @@ fn run_watch_worker(
                         "Library watcher rebind failed: {}. Retrying later.",
                         error
                     );
-                    rebind_after = desired_steam_path.as_ref().map(|_| Instant::now() + REBIND_DELAY);
+                    rebind_after = desired_steam_path
+                        .as_ref()
+                        .map(|_| Instant::now() + REBIND_DELAY);
                 }
             }
         }
@@ -431,7 +435,10 @@ fn bind_watcher(
     } else if config_dir.is_dir() {
         (config_dir, false)
     } else {
-        return Err(format!("Steam config directory does not exist at {}", config_dir.display()));
+        return Err(format!(
+            "Steam config directory does not exist at {}",
+            config_dir.display()
+        ));
     };
 
     let mut watcher = recommended_watcher(move |event| {
@@ -478,12 +485,7 @@ fn emit_next_change(
     emit_change(app, next_revision, origin, app_ids);
 }
 
-fn emit_change(
-    app: &AppHandle,
-    revision: u64,
-    origin: LibraryChangeOrigin,
-    app_ids: Vec<u32>,
-) {
+fn emit_change(app: &AppHandle, revision: u64, origin: LibraryChangeOrigin, app_ids: Vec<u32>) {
     let payload = LuaLibraryChange {
         revision,
         origin,
@@ -530,7 +532,11 @@ fn capture_snapshot(plugin_dir: &Path) -> Result<LuaSnapshot, String> {
         Ok(entries) => entries,
         Err(error) if error.kind() == ErrorKind::NotFound => return Ok(LuaSnapshot::new()),
         Err(error) => {
-            return Err(format!("could not read {}: {}", plugin_dir.display(), error));
+            return Err(format!(
+                "could not read {}: {}",
+                plugin_dir.display(),
+                error
+            ));
         }
     };
 
@@ -622,7 +628,7 @@ fn changed_app_ids(before: &LuaSnapshot, after: &LuaSnapshot) -> Vec<u32> {
 
 #[cfg(test)]
 mod tests {
-    use super::{capture_snapshot, canonical_lua_app_id, changed_app_ids};
+    use super::{canonical_lua_app_id, capture_snapshot, changed_app_ids};
     use std::fs;
     use std::path::Path;
 

@@ -1,25 +1,25 @@
 /* ==========================================================================
-   AetherDesk — Custom CSS | Tema FRIEREN (Frieren • Fern • Stark)
-   Metti questo file in: <cartella di AetherDesk.exe>/AetherData/config/themes/
-   (il primo file .css presente nella cartella viene applicato automaticamente).
-   Abilita in: Settings → Appearance → Enable theme.
+   AetherDesk — Custom CSS | FRIEREN Theme (Frieren • Fern • Stark)
+   Put this file in: <AetherDesk.exe folder>/AetherData/config/themes/
+   (the first .css file in the folder is applied automatically).
+   Enable in: Settings → Appearance → Enable theme.
 
-   Palette costruita sui tre protagonisti (come da specifica):
-     ❄️ Frieren — blu/turchese/argento  → sfondo e struttura generale
-        blu notte #101923 · blu Frieren #527FA0 · azzurro #8EBBD1
-        turchese pallido #A8D1D0 · bianco capelli #E6EEF0 · argento #AEBBC4
-     💜 Fern    — viola/lavanda/rosa    → selezioni, hover, elementi interattivi
-        viola scuro #332C4A · viola Fern #675A8C · lavanda #9C8FC1
-        lilla #C2B5D5 · bianco caldo #E8E3EC
-     🔥 Stark   — rosso/bordeaux/arancio → accento RARO: badge, notifiche,
-        pulsanti speciali/pericolosi
-        rosso scuro #3A2026 · bordeaux #713B42 · rosso Stark #A4514D
-        rosso caldo #C87862 · arancio tenue #D69A68
+   Palette built on the three protagonists (as specified):
+      ❄️ Frieren — blue/turquoise/silver  → background and general structure
+         night blue #101923 · Frieren blue #527FA0 · light blue #8EBBD1
+         pale turquoise #A8D1D0 · hair white #E6EEF0 · silver #AEBBC4
+      💜 Fern    — purple/lavender/pink   → selections, hovers, interactive elements
+         dark purple #332C4A · Fern purple #675A8C · lavender #9C8FC1
+         lilac #C2B5D5 · warm white #E8E3EC
+      🔥 Stark   — red/burgundy/orange    → RARE accent: badges, notifications,
+         special/dangerous buttons
+         dark red #3A2026 · burgundy #713B42 · Stark red #A4514D
+         warm red #C87862 · soft orange #D69A68
 
-   Niente oro dominante: azzurro Frieren = colore dominante,
-   lavanda Fern = interazioni, rosso Stark = accento raro.
-   Piccolo gradiente desaturato #527FA0 → #675A8C → #A4514D per bordi,
-   glow e separatori decorativi. Font pulito (sans), niente serif.
+   No dominant gold: Frieren light blue = dominant color,
+   Fern lavender = interactions, Stark red = rare accent.
+   Small desaturated gradient #527FA0 → #675A8C → #A4514D for borders,
+   glows and decorative separators. Clean font (sans), no serif.
    ========================================================================== */
 
 /* ---------- 1. Variabili base ---------- */
@@ -30,9 +30,9 @@
   --bg-item-active: #243142;
   --color-text: #e6eef0;
   --color-muted: #91a2ae;
-  --color-cyan: #8ebbd1; /* accento primario = azzurro Frieren */
+  --color-cyan: #8ebbd1; /* primary accent = Frieren light blue */
   --color-cyan-rgb: 142, 187, 209;
-  --color-denuvo: #a4514d; /* rosso Stark */
+  --color-denuvo: #a4514d; /* Stark red */
   --color-nsfw-pink: #c87862;
   --color-nsfw-pink-hover: #d69a68;
   --color-delisted-white: #aebbc4;
@@ -61,19 +61,22 @@
   --stark-warm: #c87862;
   --stark-orange: #d69a68;
 
-  /* Gradiente desaturato dei tre protagonisti (decorazioni). */
+  /* Gradiente desaturato dei tree protagonisti (decorazioni). */
   --tri-gradient: linear-gradient(90deg, #527fa0, #675a8c, #a4514d);
 }
 
-/* ---------- 2. Sfondo app — blu notte con bagliore tri-color appena
-   percettibile in alto ---------- */
+/* ---------- 2. App background - night blue with barely-there tri-color
+   glow on top ---------- */
 body {
   background-color: var(--bg-app) !important;
   background-image:
-    radial-gradient(ellipse at 50% -10%, rgba(82, 127, 160, 0.10), transparent 55%),
+    radial-gradient(ellipse at 50% -10%, rgba(82, 127, 160, 0.1), transparent 55%),
     radial-gradient(ellipse at 15% 110%, rgba(103, 90, 140, 0.06), transparent 50%),
     radial-gradient(ellipse at 90% 115%, rgba(164, 81, 77, 0.05), transparent 50%);
-  background-size: 100% 100%, 100% 100%, 100% 100%;
+  background-size:
+    100% 100%,
+    100% 100%,
+    100% 100%;
 }
 
 .app-container {
@@ -129,7 +132,7 @@ body {
   box-shadow: 0 0 14px rgba(156, 143, 193, 0.25);
 }
 
-/* Pulsante speciale/pericoloso → rosso Stark. */
+/* Special/dangerous button → Stark red. */
 .restart-steam-btn {
   color: var(--stark-warm) !important;
   letter-spacing: 0.5px;
@@ -146,48 +149,63 @@ body {
 
 /* ---------- 4. Main content & Store ---------- */
 .main-content {
-  background: radial-gradient(ellipse at 50% -20%, rgba(142, 187, 209, 0.07), transparent 60%),
-              var(--bg-app) !important;
+  background:
+    radial-gradient(ellipse at 50% -20%, rgba(142, 187, 209, 0.07), transparent 60%), var(--bg-app) !important;
 }
 
-.store-title, .settings-title, .aether-title, .home-title {
+.store-title,
+.settings-title,
+.aether-title,
+.home-title {
   letter-spacing: 2px !important;
   color: var(--frieren-azure) !important;
   text-shadow: 0 0 14px rgba(142, 187, 209, 0.25);
 }
 .store-title::after {
-  content: " // FRIEREN • FERN • STARK";
+  content: ' // FRIEREN • FERN • STARK';
   color: var(--fern-lavender);
   font-size: 11px;
   letter-spacing: 1px;
   opacity: 0.6;
 }
 
-.store-subtitle, .settings-subtitle {
+.store-subtitle,
+.settings-subtitle {
   color: #7d8b97 !important;
   font-size: 11px !important;
   letter-spacing: 0.5px;
 }
 
-.store-separator, .settings-separator, .separator {
+.store-separator,
+.settings-separator,
+.separator {
   background: var(--tri-gradient) !important;
   opacity: 0.22;
   height: 1px !important;
 }
 
 /* ---------- 5. Input & search ---------- */
-.store-search-input, .settings-input, .home-search-input, .settings-number-input {
+.store-search-input,
+.settings-input,
+.home-search-input,
+.settings-number-input {
   background-color: var(--frieren-night) !important;
   border: 1px solid #344452 !important;
   border-radius: 8px !important;
   color: var(--frieren-white) !important;
 }
-.store-search-input:focus, .settings-input:focus, .home-search-input:focus, .settings-number-input:focus {
+.store-search-input:focus,
+.settings-input:focus,
+.home-search-input:focus,
+.settings-number-input:focus {
   border-color: var(--frieren-azure) !important;
-  box-shadow: 0 0 0 1px rgba(142, 187, 209, 0.3), 0 0 14px rgba(142, 187, 209, 0.12) !important;
+  box-shadow:
+    0 0 0 1px rgba(142, 187, 209, 0.3),
+    0 0 14px rgba(142, 187, 209, 0.12) !important;
   background-color: #121a25 !important;
 }
-.store-search-input::placeholder, .settings-input::placeholder {
+.store-search-input::placeholder,
+.settings-input::placeholder {
   color: #5c6b78 !important;
 }
 
@@ -214,10 +232,14 @@ body {
   overflow: visible !important;
   position: relative;
   clip-path: none !important;
-  transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease, background-color 0.2s ease;
+  transition:
+    transform 0.2s ease,
+    border-color 0.2s ease,
+    box-shadow 0.2s ease,
+    background-color 0.2s ease;
 }
 .store-game-card::before {
-  content: "";
+  content: '';
   position: absolute;
   top: 0;
   left: 12px;
@@ -235,7 +257,9 @@ body {
   transform: translateY(-2px) !important;
   background-color: #1b2733 !important;
   border-color: rgba(142, 187, 209, 0.55) !important;
-  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.45), 0 0 0 1px rgba(142, 187, 209, 0.1) !important;
+  box-shadow:
+    0 6px 24px rgba(0, 0, 0, 0.45),
+    0 0 0 1px rgba(142, 187, 209, 0.1) !important;
 }
 .store-game-card.nsfw {
   border-color: rgba(200, 120, 98, 0.8) !important;
@@ -266,7 +290,11 @@ body {
   border-radius: 8px !important;
   font-size: 11px !important;
   background: transparent !important;
-  transition: color 0.2s ease, background-color 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+  transition:
+    color 0.2s ease,
+    background-color 0.2s ease,
+    border-color 0.2s ease,
+    box-shadow 0.2s ease;
 }
 .game-download-btn:hover {
   background-color: rgba(142, 187, 209, 0.12) !important;
@@ -285,7 +313,7 @@ body {
   box-shadow: 0 0 12px rgba(156, 143, 193, 0.25);
 }
 
-/* Backdrop cards — morbide, badge dentro, fade live. */
+/* Backdrop cards — soft, badge inside, live fade. */
 .store-game-card.backdrop-card {
   overflow: hidden !important;
   border: 1px solid #344452 !important;
@@ -298,8 +326,8 @@ body {
   background-color: #1b2733 !important;
 }
 .game-card-backdrop-bg {
-  /* Nessun filtro sull'immagine: opacità 100 = immagine piena.
-     L'unico effetto è il fade in basso, controllato da Settings. */
+  /* No filter on the image: opacity 100 = full image.
+     The only effect is the bottom fade, controlled from Settings. */
 }
 .store-game-card.backdrop-card::after {
   background: linear-gradient(
@@ -327,7 +355,7 @@ body {
 }
 
 /* ---------- 7. Badge ---------- */
-/* Available = accento speciale → rosso Stark; Installed → turchese Frieren. */
+/* Available = special accent → Stark red; Installed → Frieren turquoise. */
 .badge-available {
   background: linear-gradient(135deg, var(--stark-warm), var(--stark-red)) !important;
   color: #0b1017 !important;
@@ -364,7 +392,7 @@ body {
   color: var(--frieren-azure) !important;
 }
 
-/* Dropdown: stessa larghezza dei bottoni picker (115px). */
+/* Dropdown: same width as the picker buttons (115px). */
 .settings-select,
 .settings-front-filter-select {
   width: 115px !important;
@@ -382,7 +410,7 @@ body {
   box-shadow: 0 0 8px rgba(142, 187, 209, 0.25) !important;
 }
 
-/* Sezione Appearance: indentazione, path, riga testo+bottone. */
+/* Appearance section: indentation, path, text+button row. */
 .settings-appearance-sub .settings-toggle-row {
   border-left: 1px solid rgba(142, 187, 209, 0.18) !important;
   padding-left: 14px !important;
@@ -408,8 +436,8 @@ body {
   color: var(--color-muted) !important;
 }
 
-/* Bottone picker: stesso ingombro esatto dei dropdown (115x30), centrato
-   verticalmente rispetto alla descrizione alla sua sinistra. */
+/* Picker button: same exact footprint as the dropdowns (115x30), vertically
+   centered against the description on its left. */
 .appearance-pick-btn {
   width: 115px !important;
   min-width: 115px !important;
@@ -437,7 +465,9 @@ body {
   background-color: var(--frieren-night) !important;
   border: 1px solid #344452 !important;
   border-radius: 12px !important;
-  box-shadow: 0 0 30px rgba(0, 0, 0, 0.5), 0 12px 40px rgba(0, 0, 0, 0.6) !important;
+  box-shadow:
+    0 0 30px rgba(0, 0, 0, 0.5),
+    0 12px 40px rgba(0, 0, 0, 0.6) !important;
 }
 .modal-title {
   letter-spacing: 1px;
@@ -509,7 +539,9 @@ body {
 }
 
 /* ---------- 11. Home / Aether panels ---------- */
-.aether-panel, .home-search-panel .home-search-input, .panel-btn {
+.aether-panel,
+.home-search-panel .home-search-input,
+.panel-btn {
   border-radius: 10px !important;
 }
 .panel-btn {
@@ -553,7 +585,7 @@ body {
   box-shadow: 0 0 12px rgba(156, 143, 193, 0.3);
 }
 
-/* ---------- 14. Wallpaper: visibile anche col tema attivo ---------- */
+/* ---------- 14. Wallpaper: visible even with the theme active ---------- */
 #aether-personal-wallpaper {
   position: fixed !important;
   top: 0 !important;
@@ -568,8 +600,8 @@ body {
   pointer-events: none !important;
 }
 
-/* Sfondo personale visibile anche con il tema attivo: quando la wallpaper
-   è abilitata il body e i contenitori smettono di dipingere sopra di lei. */
+/* Personal wallpaper visible even with the theme active: when the wallpaper
+   is enabled, the body and containers stop painting over it. */
 body.aether-wallpaper-enabled {
   background-image: none !important;
   background-color: var(--bg-app) !important;
@@ -582,7 +614,7 @@ body.aether-wallpaper-enabled .aether-view {
   background: transparent !important;
 }
 
-/* Badge sempre sopra il contenuto delle card */
+/* Badge always above the card content */
 .store-game-card.backdrop-card .badge-available,
 .store-game-card.backdrop-card .badge-installed,
 .store-game-card .badge-available,
@@ -595,74 +627,222 @@ body.aether-wallpaper-enabled .aether-view {
    ========================================================================== */
 
 /* Modal header/close + source buttons */
-.modal-close-btn { color: #91a2ae !important; }
-.modal-close-btn:hover { color: var(--frieren-azure) !important; }
-.source-btn { color: var(--frieren-white) !important; }
-.action-title { color: var(--frieren-azure) !important; }
-.action-desc { color: #91a2ae !important; }
+.modal-close-btn {
+  color: #91a2ae !important;
+}
+.modal-close-btn:hover {
+  color: var(--frieren-azure) !important;
+}
+.source-btn {
+  color: var(--frieren-white) !important;
+}
+.action-title {
+  color: var(--frieren-azure) !important;
+}
+.action-desc {
+  color: #91a2ae !important;
+}
 
 /* Game action modal (Library → Modify) */
-.game-action-modal { background-color: var(--frieren-night) !important; border: 1px solid #344452 !important; border-radius: 12px !important; }
-.game-action-hero-overlay { background: linear-gradient(180deg, transparent 40%, var(--frieren-night) 100%) !important; }
-.game-action-hero-fallback { background-color: #0e151e !important; color: var(--frieren-silver) !important; }
-.game-action-btn { background-color: #141d27 !important; border: 1px solid #344452 !important; border-radius: 8px !important; color: var(--frieren-white) !important; }
-.game-action-btn:hover:not(:disabled) { border-color: var(--fern-lavender) !important; color: var(--fern-lavender) !important; background-color: #1b2733 !important; }
-.game-action-close-btn:hover:not(:disabled) { border-color: var(--stark-warm) !important; color: var(--stark-warm) !important; }
+.game-action-modal {
+  background-color: var(--frieren-night) !important;
+  border: 1px solid #344452 !important;
+  border-radius: 12px !important;
+}
+.game-action-hero-overlay {
+  background: linear-gradient(180deg, transparent 40%, var(--frieren-night) 100%) !important;
+}
+.game-action-hero-fallback {
+  background-color: #0e151e !important;
+  color: var(--frieren-silver) !important;
+}
+.game-action-btn {
+  background-color: #141d27 !important;
+  border: 1px solid #344452 !important;
+  border-radius: 8px !important;
+  color: var(--frieren-white) !important;
+}
+.game-action-btn:hover:not(:disabled) {
+  border-color: var(--fern-lavender) !important;
+  color: var(--fern-lavender) !important;
+  background-color: #1b2733 !important;
+}
+.game-action-close-btn:hover:not(:disabled) {
+  border-color: var(--stark-warm) !important;
+  color: var(--stark-warm) !important;
+}
 
 /* Game info modal */
-.info-modal-container { background-color: var(--frieren-night) !important; border: 1px solid #344452 !important; border-radius: 12px !important; }
-.info-hero-text { background: linear-gradient(180deg, transparent 30%, rgba(16, 25, 35, 0.92) 100%) !important; }
-.info-hero-fallback { background-color: #0e151e !important; }
-.info-label { color: var(--frieren-silver) !important; }
-.info-value { color: var(--frieren-white) !important; }
-.info-section-title { color: var(--frieren-azure) !important; border-bottom: 1px solid #243142 !important; }
-.info-section-body { color: #91a2ae !important; }
-.info-screenshot-link { border: 1px solid #344452 !important; border-radius: 8px !important; }
-.info-screenshot-link:hover { border-color: var(--fern-lavender) !important; }
-.info-lightbox { background-color: rgba(8, 12, 18, 0.92) !important; }
-.info-lightbox-close { color: var(--frieren-azure) !important; }
-.info-loading { color: var(--frieren-silver) !important; }
+.info-modal-container {
+  background-color: var(--frieren-night) !important;
+  border: 1px solid #344452 !important;
+  border-radius: 12px !important;
+}
+.info-hero-text {
+  background: linear-gradient(180deg, transparent 30%, rgba(16, 25, 35, 0.92) 100%) !important;
+}
+.info-hero-fallback {
+  background-color: #0e151e !important;
+}
+.info-label {
+  color: var(--frieren-silver) !important;
+}
+.info-value {
+  color: var(--frieren-white) !important;
+}
+.info-section-title {
+  color: var(--frieren-azure) !important;
+  border-bottom: 1px solid #243142 !important;
+}
+.info-section-body {
+  color: #91a2ae !important;
+}
+.info-screenshot-link {
+  border: 1px solid #344452 !important;
+  border-radius: 8px !important;
+}
+.info-screenshot-link:hover {
+  border-color: var(--fern-lavender) !important;
+}
+.info-lightbox {
+  background-color: rgba(8, 12, 18, 0.92) !important;
+}
+.info-lightbox-close {
+  color: var(--frieren-azure) !important;
+}
+.info-loading {
+  color: var(--frieren-silver) !important;
+}
 
 /* Antivirus modal */
-.av-modal-container { background-color: var(--frieren-night) !important; border: 1px solid #344452 !important; border-radius: 12px !important; }
-.av-modal-text { color: var(--frieren-white) !important; }
-.av-link-btn { color: var(--fern-lavender) !important; }
-.av-link-btn:hover:not(:disabled) { color: var(--frieren-white) !important; }
+.av-modal-container {
+  background-color: var(--frieren-night) !important;
+  border: 1px solid #344452 !important;
+  border-radius: 12px !important;
+}
+.av-modal-text {
+  color: var(--frieren-white) !important;
+}
+.av-link-btn {
+  color: var(--fern-lavender) !important;
+}
+.av-link-btn:hover:not(:disabled) {
+  color: var(--frieren-white) !important;
+}
 
 /* Crack modal */
-.crack-modal-container { background-color: var(--frieren-night) !important; border: 1px solid #344452 !important; border-radius: 12px !important; }
-.crack-drop-files { border: 1px dashed #3a4a5c !important; border-radius: 8px !important; background-color: #0e151e !important; }
-.crack-drop-filename { color: var(--frieren-azure) !important; }
-.crack-drop-hint { color: #5c6b78 !important; }
-.crack-btn { background-color: #141d27 !important; border: 1px solid #344452 !important; border-radius: 8px !important; color: var(--frieren-white) !important; }
-.crack-btn:hover:not(:disabled) { border-color: var(--fern-lavender) !important; color: var(--fern-lavender) !important; background-color: #1b2733 !important; }
-.crack-achievement-row { border-bottom: 1px solid #1c2633 !important; }
-.crack-achievement-text { color: var(--frieren-white) !important; }
+.crack-modal-container {
+  background-color: var(--frieren-night) !important;
+  border: 1px solid #344452 !important;
+  border-radius: 12px !important;
+}
+.crack-drop-files {
+  border: 1px dashed #3a4a5c !important;
+  border-radius: 8px !important;
+  background-color: #0e151e !important;
+}
+.crack-drop-filename {
+  color: var(--frieren-azure) !important;
+}
+.crack-drop-hint {
+  color: #5c6b78 !important;
+}
+.crack-btn {
+  background-color: #141d27 !important;
+  border: 1px solid #344452 !important;
+  border-radius: 8px !important;
+  color: var(--frieren-white) !important;
+}
+.crack-btn:hover:not(:disabled) {
+  border-color: var(--fern-lavender) !important;
+  color: var(--fern-lavender) !important;
+  background-color: #1b2733 !important;
+}
+.crack-achievement-row {
+  border-bottom: 1px solid #1c2633 !important;
+}
+.crack-achievement-text {
+  color: var(--frieren-white) !important;
+}
 
 /* Home view */
-.home-search-panel { background-color: var(--frieren-night) !important; border: 1px solid #344452 !important; border-radius: 12px !important; }
-.home-search-results { background-color: var(--frieren-night) !important; border: 1px solid #344452 !important; border-radius: 8px !important; }
-.home-search-result-name { color: var(--frieren-white) !important; }
-.home-search-result-appid { color: var(--frieren-azure) !important; }
-.home-search-empty { color: #5c6b78 !important; }
-.home-search-clear { color: var(--frieren-silver) !important; }
-.home-search-clear:hover { color: var(--frieren-azure) !important; }
+.home-search-panel {
+  background-color: var(--frieren-night) !important;
+  border: 1px solid #344452 !important;
+  border-radius: 12px !important;
+}
+.home-search-results {
+  background-color: var(--frieren-night) !important;
+  border: 1px solid #344452 !important;
+  border-radius: 8px !important;
+}
+.home-search-result-name {
+  color: var(--frieren-white) !important;
+}
+.home-search-result-appid {
+  color: var(--frieren-azure) !important;
+}
+.home-search-empty {
+  color: #5c6b78 !important;
+}
+.home-search-clear {
+  color: var(--frieren-silver) !important;
+}
+.home-search-clear:hover {
+  color: var(--frieren-azure) !important;
+}
 
 /* Aether view dettagli */
-.panel-title { color: var(--frieren-azure) !important; }
-.panel-meta { color: #5c6b78 !important; }
-.btn-update-dot { background-color: var(--stark-red) !important; box-shadow: 0 0 10px var(--stark-red) !important; }
+.panel-title {
+  color: var(--frieren-azure) !important;
+}
+.panel-meta {
+  color: #5c6b78 !important;
+}
+.btn-update-dot {
+  background-color: var(--stark-red) !important;
+  box-shadow: 0 0 10px var(--stark-red) !important;
+}
 
 /* Pagination & Library */
-.pagination-btn { background-color: #141d27 !important; border: 1px solid #344452 !important; border-radius: 8px !important; color: var(--frieren-white) !important; }
-.pagination-btn:hover:not(:disabled) { border-color: var(--fern-lavender) !important; color: var(--fern-lavender) !important; }
-.pagination-btn:disabled { opacity: 0.4; }
-.pagination-info { color: var(--frieren-silver) !important; }
-.library-count { color: var(--frieren-silver) !important; }
-.store-no-results { color: #5c6b78 !important; }
+.pagination-btn {
+  background-color: #141d27 !important;
+  border: 1px solid #344452 !important;
+  border-radius: 8px !important;
+  color: var(--frieren-white) !important;
+}
+.pagination-btn:hover:not(:disabled) {
+  border-color: var(--fern-lavender) !important;
+  color: var(--fern-lavender) !important;
+}
+.pagination-btn:disabled {
+  opacity: 0.4;
+}
+.pagination-info {
+  color: var(--frieren-silver) !important;
+}
+.library-count {
+  color: var(--frieren-silver) !important;
+}
+.store-no-results {
+  color: #5c6b78 !important;
+}
 
 /* Misc */
-.settings-small-btn { background-color: #141d27 !important; border: 1px solid #344452 !important; color: var(--frieren-white) !important; border-radius: 8px !important; }
-.settings-small-btn:hover { border-color: var(--fern-lavender) !important; color: var(--fern-lavender) !important; }
-.sidebar-update-dot { background-color: var(--stark-red) !important; box-shadow: 0 0 8px var(--stark-red) !important; }
-.blank-canvas { background-color: var(--bg-app) !important; }
+.settings-small-btn {
+  background-color: #141d27 !important;
+  border: 1px solid #344452 !important;
+  color: var(--frieren-white) !important;
+  border-radius: 8px !important;
+}
+.settings-small-btn:hover {
+  border-color: var(--fern-lavender) !important;
+  color: var(--fern-lavender) !important;
+}
+.sidebar-update-dot {
+  background-color: var(--stark-red) !important;
+  box-shadow: 0 0 8px var(--stark-red) !important;
+}
+.blank-canvas {
+  background-color: var(--bg-app) !important;
+}

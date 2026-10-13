@@ -3,11 +3,7 @@ use std::io;
 use std::path::{Path, PathBuf};
 
 /// The entire supported AetherDLL installation beside steam.exe.
-pub const AETHER_DLL_FILES: [&str; 3] = [
-    "AetherCore.dll",
-    "AetherPayload.dll",
-    "xinput1_4.dll",
-];
+pub const AETHER_DLL_FILES: [&str; 3] = ["AetherCore.dll", "AetherPayload.dll", "xinput1_4.dll"];
 // Obsolete Steam-root proxy from older AetherDLL builds; removed by migration.
 const LEGACY_PROXY: &str = "dwmapi.dll";
 
@@ -28,8 +24,7 @@ impl DllInstaller {
     /// stay infallible and keep their own cheap existence checks.
     fn validated_root(&self) -> Result<PathBuf, String> {
         let raw = self.steam_path.to_string_lossy();
-        crate::steam::resolve::resolve_steam_path(&raw)
-            .map_err(|error| error.message(&raw))
+        crate::steam::resolve::resolve_steam_path(&raw).map_err(|error| error.message(&raw))
     }
 
     /// Idempotent migration of the obsolete Steam-root proxy. The caller must
@@ -39,7 +34,11 @@ impl DllInstaller {
         match fs::remove_file(&legacy) {
             Ok(()) => Ok(true),
             Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(false),
-            Err(error) => Err(format_file_operation_error("remove obsolete DLL", &legacy, &error)),
+            Err(error) => Err(format_file_operation_error(
+                "remove obsolete DLL",
+                &legacy,
+                &error,
+            )),
         }
     }
 
@@ -68,19 +67,25 @@ impl DllInstaller {
 
         let file = fs::File::open(zip_file_path)
             .map_err(|e| format!("Failed to open downloaded ZIP: {}", e))?;
-        let mut archive = zip::ZipArchive::new(file)
-            .map_err(|e| format!("Invalid ZIP archive format: {}", e))?;
+        let mut archive =
+            zip::ZipArchive::new(file).map_err(|e| format!("Invalid ZIP archive format: {}", e))?;
 
         let mut entries = [None; AETHER_DLL_FILES.len()];
         for i in 0..archive.len() {
-            let file = archive.by_index(i).map_err(|e| format!("Invalid ZIP entry: {e}"))?;
+            let file = archive
+                .by_index(i)
+                .map_err(|e| format!("Invalid ZIP entry: {e}"))?;
             let Some(enclosed) = file.enclosed_name() else {
                 return Err("Invalid path in AetherDLL release ZIP".to_string());
             };
-            let Some(name) = enclosed.file_name().and_then(|s| s.to_str()) else { continue };
+            let Some(name) = enclosed.file_name().and_then(|s| s.to_str()) else {
+                continue;
+            };
             if let Some(position) = AETHER_DLL_FILES.iter().position(|target| *target == name) {
                 if file.is_dir() || entries[position].replace(i).is_some() {
-                    return Err(format!("Duplicate or invalid DLL entry in release ZIP: {name}"));
+                    return Err(format!(
+                        "Duplicate or invalid DLL entry in release ZIP: {name}"
+                    ));
                 }
             } else if !file.is_dir() && name.to_ascii_lowercase().ends_with(".dll") {
                 return Err(format!("Unsupported DLL in release ZIP: {name}"));
@@ -92,7 +97,10 @@ impl DllInstaller {
             .filter_map(|(i, name)| entries[i].is_none().then_some(*name))
             .collect();
         if !missing.is_empty() {
-            return Err(format!("Incomplete AetherDLL release ZIP: missing {}", missing.join(", ")));
+            return Err(format!(
+                "Incomplete AetherDLL release ZIP: missing {}",
+                missing.join(", ")
+            ));
         }
 
         // Stage every DLL before the first replacement; a corrupt ZIP cannot
@@ -106,18 +114,23 @@ impl DllInstaller {
             for (i, temp_path) in staged.iter().enumerate() {
                 let mut input = archive
                     .by_index(entries[i].expect("validated ZIP index"))
-                    .map_err(|e| format!("Failed to read {name}: {e}", name = AETHER_DLL_FILES[i]))?;
+                    .map_err(|e| {
+                        format!("Failed to read {name}: {e}", name = AETHER_DLL_FILES[i])
+                    })?;
                 let mut output = fs::File::create(temp_path)
                     .map_err(|e| format_file_operation_error("create", temp_path, &e))?;
                 io::copy(&mut input, &mut output)
                     .map_err(|e| format!("Failed to extract {}: {e}", AETHER_DLL_FILES[i]))?;
-                output.sync_all()
+                output
+                    .sync_all()
                     .map_err(|e| format_file_operation_error("write", temp_path, &e))?;
             }
             Ok(())
         })();
         if let Err(error) = extraction {
-            for temp in &staged { let _ = fs::remove_file(temp); }
+            for temp in &staged {
+                let _ = fs::remove_file(temp);
+            }
             return Err(error);
         }
 
@@ -128,7 +141,9 @@ impl DllInstaller {
             .map(|name| self.steam_path.join(format!("{name}.aether.bak")))
             .collect();
         if backups.iter().any(|path| path.exists()) {
-            for temp in &staged { let _ = fs::remove_file(temp); }
+            for temp in &staged {
+                let _ = fs::remove_file(temp);
+            }
             return Err("An earlier AetherDLL backup still exists in the Steam root. Restore or move the *.aether.bak files before retrying.".into());
         }
         let mut backed_up = Vec::new();
@@ -170,15 +185,23 @@ impl DllInstaller {
                     rollback_errors.push(format!("{}: {e}", target.display()));
                 }
             }
-            for temp in &staged { let _ = fs::remove_file(temp); }
-            return if rollback_errors.is_empty() { Err(error) } else {
-                Err(format!("{error}; rollback incomplete: {}", rollback_errors.join(", ")))
+            for temp in &staged {
+                let _ = fs::remove_file(temp);
+            }
+            return if rollback_errors.is_empty() {
+                Err(error)
+            } else {
+                Err(format!(
+                    "{error}; rollback incomplete: {}",
+                    rollback_errors.join(", ")
+                ))
             };
         }
         for backup in &backups {
             if backup.exists() {
-                fs::remove_file(backup)
-                    .map_err(|e| format_file_operation_error("delete obsolete backup", backup, &e))?;
+                fs::remove_file(backup).map_err(|e| {
+                    format_file_operation_error("delete obsolete backup", backup, &e)
+                })?;
             }
         }
         Ok(())
@@ -199,7 +222,9 @@ impl DllInstaller {
         }
 
         if deleted_count == 0 {
-            return Err("AetherDLL files were not found in the target Steam directory.".to_string());
+            return Err(
+                "AetherDLL files were not found in the target Steam directory.".to_string(),
+            );
         }
 
         Ok(())

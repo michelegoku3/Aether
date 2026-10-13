@@ -32,4 +32,4 @@ void RestoreMissingManifestsForApp(std::uint32_t appId);
 // destination, atomic verified copy) and never throws.
 void BackupManifestAfterGeneration(std::uint32_t depotId, std::uint64_t gid);
 
-}  // namespace ac::hooks::ManifestRestore
+} // namespace ac::hooks::ManifestRestore

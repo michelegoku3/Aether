@@ -98,24 +98,24 @@ export const MainContent = memo(function MainContent({
       return null;
     }
 
-    const title = activeTab === 'backup'
-      ? 'Backup View'
-      : 'Blank View';
+    const title = activeTab === 'backup' ? 'Backup View' : 'Blank View';
 
     return (
       <main className="main-content">
         <div className="blank-canvas">
-          <div style={{
-            display: 'flex',
-            width: '100%',
-            height: '100%',
-            alignItems: 'center',
-            justifyContent: 'center',
-            color: '#8f8f9e',
-            fontSize: '24px',
-            fontWeight: 'bold',
-            letterSpacing: '1px'
-          }}>
+          <div
+            style={{
+              display: 'flex',
+              width: '100%',
+              height: '100%',
+              alignItems: 'center',
+              justifyContent: 'center',
+              color: '#8f8f9e',
+              fontSize: '24px',
+              fontWeight: 'bold',
+              letterSpacing: '1px',
+            }}
+          >
             {title}
           </div>
         </div>

@@ -7,4 +7,4 @@ struct TestCoreState {
     std::atomic<std::shared_ptr<const Settings>> settings{std::make_shared<const Settings>()};
 };
 extern TestCoreState g_state;
-}
+} // namespace ac

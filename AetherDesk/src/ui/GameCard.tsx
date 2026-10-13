@@ -53,8 +53,7 @@ interface GameCardProps<T extends GameCardModel> {
  * actually executes: AetherDLL rejects the whole file, so every depot
  * override of the game is inactive until the line is repaired.
  */
-const hasActiveLuaIssue = (game: GameCardModel) =>
-  (game.luaIssues ?? []).some((issue) => issue.active !== false);
+const hasActiveLuaIssue = (game: GameCardModel) => (game.luaIssues ?? []).some((issue) => issue.active !== false);
 
 /**
  * Card border colour. Only the catalog markers live here now — a broken Lua
@@ -77,7 +76,14 @@ const markerTooltip = (game: GameCardModel) => {
   return labels.length > 0 ? labels.join(' • ') : undefined;
 };
 
-const GameCardInner = <T extends GameCardModel>({ game, actionLabel, onAction, actions, onFixPins, cardVariant = 'classic' }: GameCardProps<T>) => {
+const GameCardInner = <T extends GameCardModel>({
+  game,
+  actionLabel,
+  onAction,
+  actions,
+  onFixPins,
+  cardVariant = 'classic',
+}: GameCardProps<T>) => {
   const marker = markerClass(game);
   // Pins can only be broken in a Lua that exists: this is false for a game
   // that is mere `Available` (nothing downloaded yet, so no file to repair).
@@ -87,24 +93,18 @@ const GameCardInner = <T extends GameCardModel>({ game, actionLabel, onAction, a
     // Installed does not get a badge of its own next to this one: the green
     // outline carries that information, so the corner keeps a single badge.
     game.installed ? 'badge-fix-pins--installed' : '',
-  ].filter(Boolean).join(' ');
+  ]
+    .filter(Boolean)
+    .join(' ');
   const isBackdrop = cardVariant === 'backdrop';
-  const resolvedActions = actions ?? (actionLabel && onAction
-    ? [{ label: actionLabel, onClick: onAction, variant: 'primary' as const }]
-    : []);
-  const className = [
-    'store-game-card',
-    marker,
-    isBackdrop ? 'backdrop-card' : '',
-  ].filter(Boolean).join(' ');
+  const resolvedActions =
+    actions ??
+    (actionLabel && onAction ? [{ label: actionLabel, onClick: onAction, variant: 'primary' as const }] : []);
+  const className = ['store-game-card', marker, isBackdrop ? 'backdrop-card' : ''].filter(Boolean).join(' ');
   const backdropUrl = game.heroImageUrl || game.imageUrl;
 
   return (
-    <div
-      key={game.id}
-      className={className}
-      title={markerTooltip(game)}
-    >
+    <div key={game.id} className={className} title={markerTooltip(game)}>
       {isBackdrop && backdropUrl && (
         <div className="game-card-backdrop-bg" style={{ backgroundImage: `url("${backdropUrl}")` }} />
       )}
@@ -114,21 +114,16 @@ const GameCardInner = <T extends GameCardModel>({ game, actionLabel, onAction, a
           signal through its green outline — repairing the Lua is the only
           thing left to do on that game. Without pins to fix the corner is
           what it always was: Installed, else Available. */}
-      {pinsToFix && (onFixPins ? (
-        <button
-          type="button"
-          className={fixPinsClass}
-          onClick={() => onFixPins(game)}
-        >
-          Fix Pins
-        </button>
-      ) : (
-        <span className={fixPinsClass}>Fix Pins</span>
-      ))}
+      {pinsToFix &&
+        (onFixPins ? (
+          <button type="button" className={fixPinsClass} onClick={() => onFixPins(game)}>
+            Fix Pins
+          </button>
+        ) : (
+          <span className={fixPinsClass}>Fix Pins</span>
+        ))}
 
-      {!pinsToFix && game.installed && (
-        <span className="badge-installed">Installed</span>
-      )}
+      {!pinsToFix && game.installed && <span className="badge-installed">Installed</span>}
 
       {!pinsToFix && !game.installed && game.has_manifest && (
         <span
@@ -139,13 +134,13 @@ const GameCardInner = <T extends GameCardModel>({ game, actionLabel, onAction, a
         </span>
       )}
 
-      {!isBackdrop && (
-        <GameCover appId={game.appId} name={game.name} canonicalUrl={game.imageUrl} />
-      )}
+      {!isBackdrop && <GameCover appId={game.appId} name={game.name} canonicalUrl={game.imageUrl} />}
 
       <div className="game-info-wrapper">
         <div className="game-details">
-          <h3 className="game-name" title={game.name}>{game.name}</h3>
+          <h3 className="game-name" title={game.name}>
+            {game.name}
+          </h3>
           <span className="game-appid">App ID: {game.appId}</span>
         </div>
         <div className="game-card-actions">
@@ -153,10 +148,9 @@ const GameCardInner = <T extends GameCardModel>({ game, actionLabel, onAction, a
             <button
               key={action.label}
               onClick={() => action.onClick(game)}
-              className={[
-                'game-download-btn',
-                action.variant === 'secondary' ? 'secondary' : '',
-              ].filter(Boolean).join(' ')}
+              className={['game-download-btn', action.variant === 'secondary' ? 'secondary' : '']
+                .filter(Boolean)
+                .join(' ')}
               title={action.title}
             >
               {action.label}

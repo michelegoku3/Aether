@@ -26,7 +26,9 @@ pub async fn trigger_hubcap_download(
         app_id,
         "trigger_hubcap_download",
     )?;
-    if let Err(error) = validate_authenticated_download(&api_key, &steam_path, "call Hubcap Manifest") {
+    if let Err(error) =
+        validate_authenticated_download(&api_key, &steam_path, "call Hubcap Manifest")
+    {
         crate::desk_log_error!(
             "store",
             "Download failed for {}: {}",
@@ -123,7 +125,9 @@ pub async fn trigger_ryuu_download(
         crate::core::logger::format_appid(app_id)
     );
     let result = async {
-        let package = RyuuClient::new(api_key).download_lua_package(app_id).await?;
+        let package = RyuuClient::new(api_key)
+            .download_lua_package(app_id)
+            .await?;
         install_standard_package(app, app_id, &steam_path, package, "Ryuu", plan).await
     }
     .await;
@@ -161,12 +165,8 @@ pub async fn trigger_luatools_download(
         "Triggering authenticated LuaTools download for {}",
         crate::core::logger::format_appid(app_id)
     );
-    let package = download_complete_luatools_package(
-        app,
-        app_id,
-        &steam_path,
-        request.game_name.as_deref(),
-    )
-    .await?;
+    let package =
+        download_complete_luatools_package(app, app_id, &steam_path, request.game_name.as_deref())
+            .await?;
     install_standard_package(app, app_id, &steam_path, package, "LuaTools", plan).await
 }

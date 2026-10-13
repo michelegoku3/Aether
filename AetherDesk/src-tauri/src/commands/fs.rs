@@ -17,7 +17,11 @@ use std::path::{Component, Path, PathBuf};
 #[tauri::command]
 pub fn reveal_in_file_manager(app: tauri::AppHandle, path: String) -> Result<(), String> {
     let folder = allowed_folder(&app, &path)?;
-    crate::desk_log_info!("fs", "Opening folder in OS file manager: {}", folder.display());
+    crate::desk_log_info!(
+        "fs",
+        "Opening folder in OS file manager: {}",
+        folder.display()
+    );
     open_folder_in_explorer(&folder)
 }
 
@@ -30,7 +34,10 @@ fn allowed_folder(app: &tauri::AppHandle, raw: &str) -> Result<PathBuf, String> 
     let roots = allowed_roots(app);
     let candidate = PathBuf::from(raw.trim());
     if !path_is_allowed(&candidate, &roots) {
-        return Err("Refusing to open a folder outside the app data, install, or Steam library folders.".to_string());
+        return Err(
+            "Refusing to open a folder outside the app data, install, or Steam library folders."
+                .to_string(),
+        );
     }
     Ok(candidate)
 }
@@ -40,10 +47,7 @@ fn allowed_folder(app: &tauri::AppHandle, raw: &str) -> Result<PathBuf, String> 
 /// every extra library from `libraryfolders.vdf`, covering game exe/DLL
 /// folders shown by the Online panel).
 fn allowed_roots(app: &tauri::AppHandle) -> Vec<PathBuf> {
-    let mut roots = vec![
-        LocalAppPaths::data_root(),
-        LocalAppPaths::install_root(),
-    ];
+    let mut roots = vec![LocalAppPaths::data_root(), LocalAppPaths::install_root()];
     let settings = crate::core::settings::load_settings(app);
     if let Ok(steam_root) = crate::steam::resolve::resolve_steam_path(&settings.steam_path) {
         let scanner = crate::steam::library::SteamLibraryScanner::new(steam_root);
@@ -75,7 +79,10 @@ fn path_is_allowed(candidate: &Path, roots: &[PathBuf]) -> bool {
     // The missing tail must be a plain descent: no `..`, no absolute parts.
     for part in tail.iter().rev() {
         let part_path = Path::new(part);
-        if part_path.components().any(|c| !matches!(c, Component::Normal(_))) {
+        if part_path
+            .components()
+            .any(|c| !matches!(c, Component::Normal(_)))
+        {
             return false;
         }
     }
@@ -84,9 +91,7 @@ fn path_is_allowed(candidate: &Path, roots: &[PathBuf]) -> bool {
         reassembled.push(part);
     }
     roots.iter().any(|root| {
-        let canonical_root = root
-            .canonicalize()
-            .unwrap_or_else(|_| root.clone());
+        let canonical_root = root.canonicalize().unwrap_or_else(|_| root.clone());
         reassembled.starts_with(&canonical_root)
     })
 }
@@ -140,7 +145,10 @@ mod tests {
 
         // Inside (existing + missing tail) is allowed.
         assert!(path_is_allowed(&root.join("sub"), &roots));
-        assert!(path_is_allowed(&root.join("sub").join("new").join("dir"), &roots));
+        assert!(path_is_allowed(
+            &root.join("sub").join("new").join("dir"),
+            &roots
+        ));
         // Outside, `..` escapes and prefix-sibling lookalikes are refused.
         assert!(!path_is_allowed(temp.path(), &roots));
         assert!(!path_is_allowed(&root.join("..").join("other"), &roots));

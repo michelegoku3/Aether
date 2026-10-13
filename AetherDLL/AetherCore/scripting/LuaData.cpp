@@ -53,7 +53,7 @@ void DecRefAndCleanup(IdSet& globalSet, RefCountMap& refCounts, const Id& id,
     }
 }
 
-}  // namespace
+} // namespace
 
 // ============================ Reads =========================================
 
@@ -81,7 +81,8 @@ bool IsFamilyShared(steam::AppId appId) {
 std::optional<std::string> DepotKeyHex(steam::AppId depotId) {
     std::shared_lock lock(g_state.lua.mutex);
     auto it = g_state.lua.depotKeys.find(depotId);
-    if (it == g_state.lua.depotKeys.end() || it->second.empty()) return std::nullopt;
+    if (it == g_state.lua.depotKeys.end() || it->second.empty())
+        return std::nullopt;
     return it->second;
 }
 
@@ -94,7 +95,8 @@ std::uint64_t AccessToken(steam::AppId appId) {
 std::optional<ManifestOverride> ManifestOverrideFor(std::uint64_t depotId) {
     std::shared_lock lock(g_state.lua.mutex);
     auto it = g_state.lua.manifestOverrides.find(depotId);
-    if (it == g_state.lua.manifestOverrides.end()) return std::nullopt;
+    if (it == g_state.lua.manifestOverrides.end())
+        return std::nullopt;
     return it->second;
 }
 
@@ -107,7 +109,8 @@ std::vector<steam::AppId> AllDepotIds() {
     std::shared_lock lock(g_state.lua.mutex);
     std::vector<steam::AppId> ids;
     ids.reserve(g_state.lua.depotKeys.size());
-    for (const auto& [id, _] : g_state.lua.depotKeys) ids.push_back(id);
+    for (const auto& [id, _] : g_state.lua.depotKeys)
+        ids.push_back(id);
     return ids;
 }
 
@@ -115,7 +118,8 @@ std::vector<steam::AppId> LibraryAppIds() {
     std::shared_lock lock(g_state.lua.mutex);
     std::vector<steam::AppId> ids;
     ids.reserve(g_state.lua.libraryAppIds.size());
-    for (steam::AppId id : g_state.lua.libraryAppIds) ids.push_back(id);
+    for (steam::AppId id : g_state.lua.libraryAppIds)
+        ids.push_back(id);
     return ids;
 }
 
@@ -128,10 +132,12 @@ std::unordered_map<std::string, std::vector<steam::AppId>> ConfiguredIdsByFile()
         ids.reserve(c.depots.size() + c.libraryApps.size());
         std::unordered_set<steam::AppId> seen;
         for (steam::AppId id : c.depots) {
-            if (seen.insert(id).second) ids.push_back(id);
+            if (seen.insert(id).second)
+                ids.push_back(id);
         }
         for (steam::AppId id : c.libraryApps) {
-            if (seen.insert(id).second) ids.push_back(id);
+            if (seen.insert(id).second)
+                ids.push_back(id);
         }
         out.emplace(path, std::move(ids));
     }
@@ -214,7 +220,8 @@ void RecordDepot(steam::AppId depotId, const std::string& hexKey) {
 void RecordLibraryApp(steam::AppId appId) {
     std::unique_lock lock(g_state.lua.mutex);
     auto& lua = g_state.lua;
-    if (lua.currentFile.empty()) return;
+    if (lua.currentFile.empty())
+        return;
     F& c = lua.fileContributions[lua.currentFile];
     if (c.libraryApps.insert(appId).second) {
         if (++lua.libraryRefCount[appId] == 1) {
@@ -255,7 +262,8 @@ void UnloadFile(const std::string& path) {
     auto& lua = g_state.lua;
 
     auto it = lua.fileContributions.find(path);
-    if (it == lua.fileContributions.end()) return;
+    if (it == lua.fileContributions.end())
+        return;
 
     F& c = it->second;
 
@@ -284,9 +292,9 @@ void UnloadFile(const std::string& path) {
 
     if (depotCount || libCount || tokenCount || manifestCount || eticketUrlChanged) {
         AC_LOG_INFO(kModule,
-                    "Unloaded %zu depot(s), %zu library app(s), %zu token(s), %zu manifest override(s), eticketUrlChanged=%d from %s.",
-                    depotCount, libCount, tokenCount, manifestCount,
-                    eticketUrlChanged ? 1 : 0, path.c_str());
+                    "Unloaded %zu depot(s), %zu library app(s), %zu token(s), %zu manifest override(s), "
+                    "eticketUrlChanged=%d from %s.",
+                    depotCount, libCount, tokenCount, manifestCount, eticketUrlChanged ? 1 : 0, path.c_str());
     }
 }
 
@@ -310,4 +318,4 @@ void ClearPendingChanges() {
     g_state.lua.pendingRemovals.clear();
 }
 
-}  // namespace ac::luadata
+} // namespace ac::luadata

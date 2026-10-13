@@ -28,15 +28,11 @@ void UnregisterLogger(SmartIdLog* logger) {
     reg.erase(std::remove(reg.begin(), reg.end(), logger), reg.end());
 }
 
-}  // namespace
+} // namespace
 
-void RegisterSmartIdLogInstance(SmartIdLog* logger) {
-    RegisterLogger(logger);
-}
+void RegisterSmartIdLogInstance(SmartIdLog* logger) { RegisterLogger(logger); }
 
-void UnregisterSmartIdLogInstance(SmartIdLog* logger) {
-    UnregisterLogger(logger);
-}
+void UnregisterSmartIdLogInstance(SmartIdLog* logger) { UnregisterLogger(logger); }
 
 void ResetAllIdLogSessions() {
     std::lock_guard<std::mutex> lock(s_registryMutex);
@@ -47,4 +43,4 @@ void ResetAllIdLogSessions() {
     }
 }
 
-}  // namespace ac::logutil
+} // namespace ac::logutil

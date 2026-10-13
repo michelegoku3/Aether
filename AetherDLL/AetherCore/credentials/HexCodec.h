@@ -22,4 +22,4 @@ std::optional<std::vector<std::uint8_t>> Decode(std::string_view hex);
 // Encodes bytes to uppercase hex (no 0x prefix). Empty input → empty string.
 std::string Encode(std::span<const std::uint8_t> data);
 
-}  // namespace ac::hex
+} // namespace ac::hex

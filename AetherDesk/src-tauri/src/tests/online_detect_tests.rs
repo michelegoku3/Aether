@@ -36,7 +36,7 @@ fn ends_with_components(path: &Path, comps: &[&str]) -> bool {
             .all(|(a, b)| a.as_str() == *b)
 }
 
-/// Un mini-gioco Unity Mono: `<Game>.exe` + `<Game>_Data/Managed/…`.
+/// A mini Mono Unity game: `<Game>.exe` + `<Game>_Data/Managed/…`.
 fn unity_mono_fixture(root: &Path) {
     write(root, "MyGame.exe", b"MZfakeexe");
     write(root, "MyGame_Data/Managed/Assembly-CSharp.dll", b"assembly");
@@ -66,7 +66,10 @@ fn unity_game_is_detected() {
             .as_deref(),
         Some("MyGame.exe")
     );
-    assert!(ends_with_components(&report.unity_data_dir.unwrap(), &["MyGame_Data"]));
+    assert!(ends_with_components(
+        &report.unity_data_dir.unwrap(),
+        &["MyGame_Data"]
+    ));
 }
 
 #[test]
@@ -80,7 +83,11 @@ fn unity_crash_handler_is_never_picked_as_game_exe() {
         "UnityCrashHandler64.exe",
         b"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
     );
-    write(tmp.path(), "REPO_Data/Managed/Assembly-CSharp.dll", b"assembly");
+    write(
+        tmp.path(),
+        "REPO_Data/Managed/Assembly-CSharp.dll",
+        b"assembly",
+    );
 
     let report = GameInspector::inspect(tmp.path()).expect("Unity game must be detected");
     assert_eq!(
@@ -206,7 +213,10 @@ fn unreal_shipping_exe_found_and_crash_report_skipped() {
         &["Engine", "Binaries", "Win64", "MyGame-Win64-Shipping.exe"]
     ));
     // ini goes next to the running exe, NOT in the root!
-    assert!(ends_with_components(&report.ini_dir, &["Engine", "Binaries", "Win64"]));
+    assert!(ends_with_components(
+        &report.ini_dir,
+        &["Engine", "Binaries", "Win64"]
+    ));
     assert!(ends_with_components(
         &report.steam_api_dir.unwrap(),
         &["ThirdParty", "Steamworks", "Steamv153", "Win64"]
@@ -220,19 +230,30 @@ fn duplicate_steam_api64_picks_dir_next_to_biggest_exe() {
     write(tmp.path(), "MyGame.exe", b"MZsmalllauncher");
     write(tmp.path(), "steam_api64.dll", b"root-copy");
     // ...and copy in x64\ next to the real (bigger) binary.
-    write(tmp.path(), "x64/MyGame.exe", b"MZthis-is-the-big-real-game-binary");
+    write(
+        tmp.path(),
+        "x64/MyGame.exe",
+        b"MZthis-is-the-big-real-game-binary",
+    );
     write(tmp.path(), "x64/steam_api64.dll", b"real-copy");
 
     let report = GameInspector::inspect(tmp.path()).unwrap();
-    assert!(ends_with_components(&report.steam_api_dir.unwrap(), &["x64"]));
+    assert!(ends_with_components(
+        &report.steam_api_dir.unwrap(),
+        &["x64"]
+    ));
 }
 
 #[test]
 fn nested_repack_unity_is_found_recursively() {
-    // Layout ColdClientLoader: loader in root, gioco vero annidato.
+    // ColdClientLoader layout: loader in root, real game nested.
     let tmp = tempfile::tempdir().unwrap();
     write(tmp.path(), "Vampire Survivors.exe", b"MZloader");
-    write(tmp.path(), "Vampire Survivors/VampireSurvivors.exe", b"MZgame");
+    write(
+        tmp.path(),
+        "Vampire Survivors/VampireSurvivors.exe",
+        b"MZgame",
+    );
     write(
         tmp.path(),
         "Vampire Survivors/VampireSurvivors_Data/Managed/Assembly-CSharp.dll",
@@ -242,7 +263,10 @@ fn nested_repack_unity_is_found_recursively() {
     let report = GameInspector::inspect(tmp.path()).unwrap();
     assert_eq!(report.engine, Engine::Unity);
     // ini_dir = parent of the *_Data (the nested game's dir).
-    assert!(ends_with_components(&report.ini_dir, &["Vampire Survivors"]));
+    assert!(ends_with_components(
+        &report.ini_dir,
+        &["Vampire Survivors"]
+    ));
 }
 
 #[test]
@@ -250,7 +274,11 @@ fn x86_game_is_detected() {
     let tmp = tempfile::tempdir().unwrap();
     write(tmp.path(), "OldGame.exe", b"MZ");
     write(tmp.path(), "OldGame_Data/Managed/Assembly-CSharp.dll", b"a");
-    write(tmp.path(), "OldGame_Data/Plugins/x86/steam_api.dll", b"dll32");
+    write(
+        tmp.path(),
+        "OldGame_Data/Plugins/x86/steam_api.dll",
+        b"dll32",
+    );
 
     let report = GameInspector::inspect(tmp.path()).unwrap();
     assert_eq!(report.arch, GameArch::X86);
@@ -267,9 +295,17 @@ fn mono_backends_photon_voice_playfab() {
     let tmp = tempfile::tempdir().unwrap();
     write(tmp.path(), "MyGame.exe", b"MZ");
     write(tmp.path(), "MyGame_Data/Managed/Assembly-CSharp.dll", b"a");
-    write(tmp.path(), "MyGame_Data/Managed/PhotonRealtime.dll", b"photon");
+    write(
+        tmp.path(),
+        "MyGame_Data/Managed/PhotonRealtime.dll",
+        b"photon",
+    );
     write(tmp.path(), "MyGame_Data/Managed/PhotonVoice.dll", b"voice");
-    write(tmp.path(), "MyGame_Data/Managed/PlayFabAllSDK.dll", b"playfab");
+    write(
+        tmp.path(),
+        "MyGame_Data/Managed/PlayFabAllSDK.dll",
+        b"playfab",
+    );
 
     let report = GameInspector::inspect(tmp.path()).unwrap();
     assert_eq!(report.backends.photon, PhotonFlavor::Realtime);
@@ -283,7 +319,11 @@ fn mono_backends_photon_voice_playfab() {
 fn mono_fusion_flavor() {
     let tmp = tempfile::tempdir().unwrap();
     write(tmp.path(), "MyGame.exe", b"MZ");
-    write(tmp.path(), "MyGame_Data/Managed/Fusion.Realtime.dll", b"fusion");
+    write(
+        tmp.path(),
+        "MyGame_Data/Managed/Fusion.Realtime.dll",
+        b"fusion",
+    );
 
     let report = GameInspector::inspect(tmp.path()).unwrap();
     assert_eq!(report.backends.photon, PhotonFlavor::Fusion);
@@ -293,7 +333,11 @@ fn mono_fusion_flavor() {
 fn il2cpp_backends_from_metadata_strings() {
     let tmp = tempfile::tempdir().unwrap();
     write(tmp.path(), "MyGame.exe", b"MZ");
-    write(tmp.path(), "MyGame_Data/il2cpp_data/Metadata/global-metadata.dat", b"garbage LoadBalancingClient garbage PlayFabSettings CoherenceBridge");
+    write(
+        tmp.path(),
+        "MyGame_Data/il2cpp_data/Metadata/global-metadata.dat",
+        b"garbage LoadBalancingClient garbage PlayFabSettings CoherenceBridge",
+    );
 
     let report = GameInspector::inspect(tmp.path()).unwrap();
     assert_eq!(report.backends.photon, PhotonFlavor::Realtime);
@@ -325,7 +369,11 @@ fn coherence_schema_file_is_a_marker() {
     let tmp = tempfile::tempdir().unwrap();
     write(tmp.path(), "MyGame.exe", b"MZ");
     write(tmp.path(), "MyGame_Data/Managed/Assembly-CSharp.dll", b"a");
-    write(tmp.path(), "MyGame_Data/StreamingAssets/combined.schema", b"{}");
+    write(
+        tmp.path(),
+        "MyGame_Data/StreamingAssets/combined.schema",
+        b"{}",
+    );
 
     let report = GameInspector::inspect(tmp.path()).unwrap();
     assert!(report.backends.coherence);
@@ -358,7 +406,10 @@ fn conflicts_are_detected() {
     assert!(kinds.contains(&"coldclient".to_string()));
     assert!(kinds.contains(&"steamfix".to_string()));
     assert!(kinds.contains(&"named".to_string()));
-    assert!(!kinds.contains(&"proxy".to_string()), "big dxgi.dll must not be a proxy conflict");
+    assert!(
+        !kinds.contains(&"proxy".to_string()),
+        "big dxgi.dll must not be a proxy conflict"
+    );
 }
 
 #[test]
@@ -386,7 +437,11 @@ fn x86_game_has_warning() {
     let tmp = tempfile::tempdir().unwrap();
     write(tmp.path(), "OldGame.exe", b"MZ");
     write(tmp.path(), "OldGame_Data/Managed/Assembly-CSharp.dll", b"a");
-    write(tmp.path(), "OldGame_Data/Plugins/x86/steam_api.dll", b"dll32");
+    write(
+        tmp.path(),
+        "OldGame_Data/Plugins/x86/steam_api.dll",
+        b"dll32",
+    );
 
     let report = GameInspector::inspect(tmp.path()).unwrap();
     assert!(report
@@ -408,15 +463,14 @@ fn nested_ofme_pack_is_a_conflict_even_away_from_steam_api() {
         "Engine/Binaries/ThirdParty/Steamworks/Steamv153/Win64/steam_api64.dll",
         b"dll",
     );
-    write(
-        tmp.path(),
-        "Engine/Binaries/Win64/OnlineFix64.dll",
-        b"ofme",
-    );
+    write(tmp.path(), "Engine/Binaries/Win64/OnlineFix64.dll", b"ofme");
 
     let report = GameInspector::inspect(tmp.path()).unwrap();
     assert!(
-        report.conflicts.iter().any(|c| matches!(c, Conflict::Ofme(_))),
+        report
+            .conflicts
+            .iter()
+            .any(|c| matches!(c, Conflict::Ofme(_))),
         "OFME next to the Shipping exe must be a conflict"
     );
 }
@@ -431,7 +485,10 @@ fn overlay_target_names_are_not_conflicts() {
 
     let report = GameInspector::inspect(tmp.path()).unwrap();
     assert!(
-        !report.conflicts.iter().any(|c| matches!(c, Conflict::ProxyDll(_))),
+        !report
+            .conflicts
+            .iter()
+            .any(|c| matches!(c, Conflict::ProxyDll(_))),
         "version.dll / XINPUT1_3.dll belong to the overlay proxy, not conflict quarantine"
     );
 }
@@ -445,9 +502,15 @@ fn named_winmm_skips_generic_proxy_conflicts() {
     write(tmp.path(), "dxgi.dll", b"tiny-dxgi");
 
     let report = GameInspector::inspect(tmp.path()).unwrap();
-    assert!(report.conflicts.iter().any(|c| matches!(c, Conflict::NamedFixFile(_))));
+    assert!(report
+        .conflicts
+        .iter()
+        .any(|c| matches!(c, Conflict::NamedFixFile(_))));
     assert!(
-        !report.conflicts.iter().any(|c| matches!(c, Conflict::ProxyDll(_))),
+        !report
+            .conflicts
+            .iter()
+            .any(|c| matches!(c, Conflict::ProxyDll(_))),
         "generic proxies stay put when a named winmm loader identifies the chain"
     );
 }
@@ -456,8 +519,16 @@ fn named_winmm_skips_generic_proxy_conflicts() {
 fn overlay_target_skipped_for_phasmophobia() {
     let tmp = tempfile::tempdir().unwrap();
     write(tmp.path(), "Phasmophobia.exe", b"MZ");
-    write(tmp.path(), "Phasmophobia_Data/Managed/Assembly-CSharp.dll", b"a");
-    write(tmp.path(), "Phasmophobia_Data/Plugins/x86_64/steam_api64.dll", b"dll");
+    write(
+        tmp.path(),
+        "Phasmophobia_Data/Managed/Assembly-CSharp.dll",
+        b"a",
+    );
+    write(
+        tmp.path(),
+        "Phasmophobia_Data/Plugins/x86_64/steam_api64.dll",
+        b"dll",
+    );
 
     let report = GameInspector::inspect(tmp.path()).unwrap();
     let err = crate::online::detect::overlay_target(&report).unwrap_err();

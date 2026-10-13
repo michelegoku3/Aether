@@ -1,7 +1,7 @@
 #pragma once
 
-#include "core/SteamTypes.h"
 #include "framework.h"
+#include "core/SteamTypes.h"
 
 #include <string>
 
@@ -34,4 +34,4 @@ bool Ready();
 // ever transmitting it. Case-insensitive, results cached both ways.
 steam::AppId ResolveAppIdByName(const std::string& name);
 
-}  // namespace ac::gamename
+} // namespace ac::gamename

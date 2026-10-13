@@ -32,12 +32,12 @@ struct ProcessSnapshot {
     steam::AppId envSteamAppId = 0;
     steam::AppId envSteamGameId = 0;
     steam::AppId envSteamOverlayGameId = 0;
-    std::string appIdSource;  // SteamOverlayGameId | SteamGameId | SteamAppId | fallback
+    std::string appIdSource; // SteamOverlayGameId | SteamGameId | SteamAppId | fallback
     std::string imagePath;
     std::string imageName;
     bool steamProcess = false;
     bool likelyGame = false;
-    bool luaManaged = false;  // script-tracked app, even if genuinely owned
+    bool luaManaged = false; // script-tracked app, even if genuinely owned
     // Timestamp when this snapshot was captured (A5: used for FIFO eviction
     // when the map exceeds the cap and no dead processes can be reaped).
     std::chrono::steady_clock::time_point capturedAt{};
@@ -52,4 +52,4 @@ steam::AppId AppIdForPipe(const steam::CSteamPipeClient* pipe);
 std::size_t SnapshotCount();
 std::size_t EvictionCount();
 
-}  // namespace ac::pipewatch
+} // namespace ac::pipewatch

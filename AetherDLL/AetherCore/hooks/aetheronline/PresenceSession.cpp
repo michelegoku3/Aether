@@ -20,8 +20,7 @@ std::atomic<steam::AppId> s_showOnlineAppId{0};
 std::atomic<bool> s_spacewarSpoofExpected{false};
 
 std::mutex s_mutex;
-std::shared_ptr<const SessionSnapshot> s_snapshot =
-    std::make_shared<const SessionSnapshot>();
+std::shared_ptr<const SessionSnapshot> s_snapshot = std::make_shared<const SessionSnapshot>();
 
 void PublishLocked(SessionSnapshot next) {
     s_realAppId.store(next.realAppId, std::memory_order_release);
@@ -30,7 +29,7 @@ void PublishLocked(SessionSnapshot next) {
     s_snapshot = std::make_shared<const SessionSnapshot>(next);
 }
 
-}  // namespace
+} // namespace
 
 void Publish(SessionSnapshot next) {
     std::lock_guard<std::mutex> lock(s_mutex);
@@ -39,14 +38,14 @@ void Publish(SessionSnapshot next) {
     AC_LOG_INFO(kModule,
                 "Session published: mode=%s real=%u showonline=%u spoof_expected=%d "
                 "(was: mode=%s real=%u showonline=%u).",
-                next.ModeText(), next.realAppId, next.showOnlineAppId,
-                next.spacewarSpoofExpected ? 1 : 0,
+                next.ModeText(), next.realAppId, next.showOnlineAppId, next.spacewarSpoofExpected ? 1 : 0,
                 prev->ModeText(), prev->realAppId, prev->showOnlineAppId);
 }
 
 void ClearShowOnline() {
     std::lock_guard<std::mutex> lock(s_mutex);
-    if (s_snapshot->showOnlineAppId == 0) return;
+    if (s_snapshot->showOnlineAppId == 0)
+        return;
     SessionSnapshot next = *s_snapshot;
     next.showOnlineAppId = 0;
     PublishLocked(next);
@@ -58,11 +57,10 @@ void ClearShowOnline() {
 
 void EndSession() {
     std::lock_guard<std::mutex> lock(s_mutex);
-    if (s_snapshot->realAppId == 0 && s_snapshot->showOnlineAppId == 0 &&
-        !s_snapshot->spacewarSpoofExpected) {
-        return;  // nothing was active; GamesPlayed empties arrive periodically
+    if (s_snapshot->realAppId == 0 && s_snapshot->showOnlineAppId == 0 && !s_snapshot->spacewarSpoofExpected) {
+        return; // nothing was active; GamesPlayed empties arrive periodically
     }
-    SessionSnapshot next;  // all zero/empty
+    SessionSnapshot next; // all zero/empty
     PublishLocked(next);
     AC_LOG_INFO(kModule, "Session ended: no running games reported; presence state reset.");
 }
@@ -76,4 +74,4 @@ steam::AppId RealAppId() { return s_realAppId.load(std::memory_order_acquire); }
 steam::AppId ShowOnlineAppId() { return s_showOnlineAppId.load(std::memory_order_acquire); }
 bool SpacewarSpoofExpected() { return s_spacewarSpoofExpected.load(std::memory_order_acquire); }
 
-}  // namespace ac::presence
+} // namespace ac::presence

@@ -1,0 +1,5 @@
+# Prettier never touches generated code (Tauri schemas) or lockfiles:
+# the former changes on every `tauri dev/build`, the latter are npm-canonical.
+src-tauri/gen/
+src-tauri/target/
+package-lock.json

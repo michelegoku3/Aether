@@ -34,9 +34,7 @@ pub(crate) fn retry_delay(attempts: u32) -> Duration {
 
 /// Removes the first task whose backoff has expired. BTreeMap ordering makes
 /// selection deterministic by AppID while keeping one task per lane per poll.
-pub(super) fn take_ready(
-    pending: &mut BTreeMap<u32, PendingTask>,
-) -> Option<(u32, PendingTask)> {
+pub(super) fn take_ready(pending: &mut BTreeMap<u32, PendingTask>) -> Option<(u32, PendingTask)> {
     let now = Instant::now();
     let ready = pending
         .iter()
@@ -108,9 +106,7 @@ pub(super) fn clear_unresolved(
     });
 }
 
-pub(super) fn pending_infos(
-    pending: &BTreeMap<u32, PendingTask>,
-) -> Vec<PendingTaskInfo> {
+pub(super) fn pending_infos(pending: &BTreeMap<u32, PendingTask>) -> Vec<PendingTaskInfo> {
     pending
         .iter()
         .map(|(app_id, task)| PendingTaskInfo {

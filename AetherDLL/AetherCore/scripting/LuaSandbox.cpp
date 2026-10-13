@@ -25,9 +25,9 @@ struct StdLib {
 //                   tables via package.loaded) and VM tampering;
 //   * coroutine  -> unneeded here, and every extra surface is error surface.
 constexpr StdLib kAllowedLibs[] = {
-    {"_G",            luaopen_base},
-    {LUA_TABLIBNAME,  luaopen_table},
-    {LUA_STRLIBNAME,  luaopen_string},
+    {"_G", luaopen_base},
+    {LUA_TABLIBNAME, luaopen_table},
+    {LUA_STRLIBNAME, luaopen_string},
     {LUA_MATHLIBNAME, luaopen_math},
 };
 
@@ -39,15 +39,10 @@ constexpr StdLib kAllowedLibs[] = {
 // package lib (closed above), so nil-ing it is a no-op today and a guard
 // against anyone reopening package without this knowledge.
 constexpr const char* kRemovedGlobals[] = {
-    "dofile",
-    "loadfile",
-    "load",
-    "loadstring",
-    "require",
-    "collectgarbage",
+    "dofile", "loadfile", "load", "loadstring", "require", "collectgarbage",
 };
 
-}  // namespace
+} // namespace
 
 void Install(lua_State* L) {
     // Whitelist load instead of luaL_openlibs. luaL_requiref registers each
@@ -67,4 +62,4 @@ void Install(lua_State* L) {
     }
 }
 
-}  // namespace ac::script::sandbox
+} // namespace ac::script::sandbox

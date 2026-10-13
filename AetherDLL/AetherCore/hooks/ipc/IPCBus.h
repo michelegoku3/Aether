@@ -19,9 +19,7 @@ namespace ac::hooks {
 
 // A handler runs after Steam's original message processing succeeds. It reads
 // the request from pRead and writes a spoofed reply into pWrite.
-using IpcHandlerFn = void (*)(steam::CSteamPipeClient* pipe,
-                              steam::CUtlBuffer* pRead,
-                              steam::CUtlBuffer* pWrite);
+using IpcHandlerFn = void (*)(steam::CSteamPipeClient* pipe, steam::CUtlBuffer* pRead, steam::CUtlBuffer* pWrite);
 
 struct IpcHandlerEntry {
     std::uint8_t interfaceId;
@@ -49,4 +47,4 @@ void RegisterIpcBus(HMODULE diversion);
 //      so every response keeps the same tag/layout contract with Steam.
 // Handlers run only for pipes whose app is Lua-configured (see h_IPCProcessMessage).
 // ---------------------------------------------------------------------------
-}  // namespace ac::hooks
+} // namespace ac::hooks

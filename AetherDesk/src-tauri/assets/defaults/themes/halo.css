@@ -1,19 +1,19 @@
 /* ==========================================================================
-   AetherDesk — Custom CSS | Tema HALO (UNSC • Master Chief • MJOLNIR)
-   Metti questo file in: <cartella di AetherDesk.exe>/AetherData/config/themes/
-   (il primo file .css presente nella cartella viene applicato automaticamente).
-   Abilita in: Settings → Appearance → Enable theme.
+   AetherDesk — Custom CSS | HALO Theme (UNSC • Master Chief • MJOLNIR)
+   Put this file in: <AetherDesk.exe folder>/AetherData/config/themes/
+   (the first .css file in the folder is applied automatically).
+   Enable in: Settings → Appearance → Enable theme.
 
-   Palette (come da specifica):
-     Base UNSC          : bg #080D0B · sidebar #0C1210 · card #121A16
-                          card hover #19231D · border #34443A · text #D8DED8
-     Master Chief/MJOLNIR: #4F623C · #687A4B (primary) · #89986A · #293729 · #7B8150
-     Halo HUD           : #D6C75A (accento) · #F0E66A · #D99B45 (warning) · #9BB7A0
-     Forerunner         : #4F8C96 · #6BB8C0 · #9AD9D5
-     Danger             : #A84D42
+   Palette (as specified):
+      UNSC Base          : bg #080D0B · sidebar #0C1210 · card #121A16
+                           card hover #19231D · border #34443A · text #D8DED8
+      Master Chief/MJOLNIR: #4F623C · #687A4B (primary) · #89986A · #293729 · #7B8150
+      Halo HUD           : #D6C75A (accent) · #F0E66A · #D99B45 (warning) · #9BB7A0
+      Forerunner         : #4F8C96 · #6BB8C0 · #9AD9D5
+      Danger             : #A84D42
 
-   Gerarchia: 70% neri/verdi scuri · 20% verde MJOLNIR · 7% giallo HUD ·
-   3% blu Forerunner. Console UNSC: squadrata, militare, consumata.
+   Hierarchy: 70% blacks/dark greens · 20% MJOLNIR green · 7% HUD yellow ·
+   3% Forerunner blue. UNSC console: squared, military, worn.
    ========================================================================== */
 
 /* ---------- 1. Variabili base ---------- */
@@ -24,7 +24,7 @@
   --bg-item-active: #1f2b24;
   --color-text: #d8ded8;
   --color-muted: #87948a;
-  --color-cyan: #d6c75a; /* accent HUD giallo (selettori/indicatori) */
+  --color-cyan: #d6c75a; /* yellow HUD accent (selectors/indicators) */
   --color-cyan-rgb: 214, 199, 90;
   --color-denuvo: #a84d42;
   --color-nsfw-pink: #a84d42;
@@ -51,7 +51,7 @@
   --halo-danger: #a84d42;
 }
 
-/* ---------- 2. Sfondo app — scuro militare con leggera vignettatura ---------- */
+/* ---------- 2. App background — dark military with light vignette ---------- */
 body {
   background-color: var(--bg-app) !important;
   background-image: radial-gradient(ellipse at 50% 0%, rgba(104, 122, 75, 0.06), transparent 55%);
@@ -116,7 +116,7 @@ body {
   box-shadow: 0 0 12px rgba(104, 122, 75, 0.3);
 }
 
-/* Restart Steam = azione "pericolosa" → warning HUD/rosso */
+/* Restart Steam = "dangerous" action → HUD/red warning */
 .restart-steam-btn {
   color: var(--halo-warning) !important;
   letter-spacing: 0.5px;
@@ -134,49 +134,63 @@ body {
 
 /* ---------- 4. Main content & Store ---------- */
 .main-content {
-  background: radial-gradient(ellipse at 50% -20%, rgba(104, 122, 75, 0.07), transparent 60%),
-              var(--bg-app) !important;
+  background: radial-gradient(ellipse at 50% -20%, rgba(104, 122, 75, 0.07), transparent 60%), var(--bg-app) !important;
 }
 
-.store-title, .settings-title, .aether-title, .home-title {
+.store-title,
+.settings-title,
+.aether-title,
+.home-title {
   letter-spacing: 2px !important;
   color: var(--halo-armor-light) !important;
   text-transform: uppercase;
   text-shadow: 0 0 12px rgba(104, 122, 75, 0.25);
 }
 .store-title::after {
-  content: " // UNSC REQUISITION";
+  content: ' // UNSC REQUISITION';
   color: var(--halo-hud);
   font-size: 11px;
   letter-spacing: 1px;
   opacity: 0.75;
 }
 
-.store-subtitle, .settings-subtitle {
+.store-subtitle,
+.settings-subtitle {
   color: #6f7c72 !important;
   font-size: 11px !important;
   letter-spacing: 0.5px;
 }
 
-.store-separator, .settings-separator, .separator {
+.store-separator,
+.settings-separator,
+.separator {
   background-color: rgba(104, 122, 75, 0.35) !important;
   height: 1px !important;
 }
 
 /* ---------- 5. Input & search — militare ---------- */
-.store-search-input, .settings-input, .home-search-input, .settings-number-input {
+.store-search-input,
+.settings-input,
+.home-search-input,
+.settings-number-input {
   background-color: #0e1411 !important;
   border: 1px solid #34443a !important;
   border-radius: 4px !important;
   color: var(--halo-hud) !important;
   font-family: 'Consolas', 'Courier New', monospace;
 }
-.store-search-input:focus, .settings-input:focus, .home-search-input:focus, .settings-number-input:focus {
+.store-search-input:focus,
+.settings-input:focus,
+.home-search-input:focus,
+.settings-number-input:focus {
   border-color: var(--halo-hud) !important;
-  box-shadow: 0 0 0 1px rgba(214, 199, 90, 0.3), 0 0 12px rgba(214, 199, 90, 0.12) !important;
+  box-shadow:
+    0 0 0 1px rgba(214, 199, 90, 0.3),
+    0 0 12px rgba(214, 199, 90, 0.12) !important;
   background-color: #111813 !important;
 }
-.store-search-input::placeholder, .settings-input::placeholder {
+.store-search-input::placeholder,
+.settings-input::placeholder {
   color: #5c685f !important;
   text-transform: uppercase;
   letter-spacing: 1px;
@@ -208,10 +222,14 @@ body {
   overflow: visible !important;
   position: relative;
   clip-path: none !important;
-  transition: transform 0.15s ease, border-color 0.15s ease, background-color 0.15s ease, box-shadow 0.15s ease;
+  transition:
+    transform 0.15s ease,
+    border-color 0.15s ease,
+    background-color 0.15s ease,
+    box-shadow 0.15s ease;
 }
 .store-game-card::before {
-  content: "";
+  content: '';
   position: absolute;
   top: 0;
   left: 0;
@@ -229,7 +247,9 @@ body {
   transform: translateY(-2px) !important;
   background-color: #19231d !important;
   border-color: var(--halo-olive) !important;
-  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(104, 122, 75, 0.15) !important;
+  box-shadow:
+    0 4px 18px rgba(0, 0, 0, 0.5),
+    0 0 0 1px rgba(104, 122, 75, 0.15) !important;
 }
 .store-game-card.nsfw {
   border-color: rgba(168, 77, 66, 0.8) !important;
@@ -257,7 +277,7 @@ body {
   font-family: 'Consolas', 'Courier New', monospace;
 }
 
-/* Bottoni card: squadrati, sottili — bordo verde oliva, testo HUD giallo */
+/* Card buttons: squared, thin — olive green border, yellow HUD text */
 .game-download-btn {
   border: 1px solid var(--halo-olive) !important;
   color: var(--halo-hud) !important;
@@ -267,7 +287,11 @@ body {
   letter-spacing: 1px;
   font-size: 11px !important;
   background: transparent !important;
-  transition: color 0.15s ease, background-color 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+  transition:
+    color 0.15s ease,
+    background-color 0.15s ease,
+    border-color 0.15s ease,
+    box-shadow 0.15s ease;
 }
 .game-download-btn:hover {
   background-color: var(--halo-armor) !important;
@@ -285,7 +309,7 @@ body {
   border-color: var(--halo-forerunner) !important;
 }
 
-/* Backdrop cards — squadrate, badge dentro, fade live */
+/* Backdrop cards — squared, badge inside, live fade */
 .store-game-card.backdrop-card {
   overflow: hidden !important;
   border: 1px solid #34443a !important;
@@ -298,8 +322,8 @@ body {
   background-color: #19231d !important;
 }
 .game-card-backdrop-bg {
-  /* Nessun filtro sull'immagine: opacità 100 = immagine piena.
-     L'unico effetto è il fade in basso, controllato da Settings. */
+  /* No filter on the image: opacity 100 = full image.
+     The only effect is the bottom fade, controlled from Settings. */
 }
 .store-game-card.backdrop-card::after {
   background: linear-gradient(
@@ -366,7 +390,7 @@ body {
   color: var(--halo-hud) !important;
 }
 
-/* Dropdown: stessa larghezza dei bottoni picker (115px). */
+/* Dropdown: same width as the picker buttons (115px). */
 .settings-select,
 .settings-front-filter-select {
   width: 115px !important;
@@ -384,7 +408,7 @@ body {
   box-shadow: 0 0 8px rgba(214, 199, 90, 0.25) !important;
 }
 
-/* Sezione Appearance: indentazione, path, riga testo+bottone. */
+/* Appearance section: indentation, path, text+button row. */
 .settings-appearance-sub .settings-toggle-row {
   border-left: 1px solid rgba(104, 122, 75, 0.25) !important;
   padding-left: 14px !important;
@@ -410,7 +434,7 @@ body {
   color: var(--halo-warning) !important;
 }
 
-/* Bottone picker: stesso ingombro esatto dei dropdown (115x30), centrato. */
+/* Picker button: same exact footprint as the dropdowns (115x30), centered. */
 .appearance-pick-btn {
   width: 115px !important;
   min-width: 115px !important;
@@ -439,7 +463,9 @@ body {
   background-color: #0e1411 !important;
   border: 1px solid #34443a !important;
   border-radius: 8px !important;
-  box-shadow: 0 0 30px rgba(0, 0, 0, 0.55), 0 12px 40px rgba(0, 0, 0, 0.65) !important;
+  box-shadow:
+    0 0 30px rgba(0, 0, 0, 0.55),
+    0 12px 40px rgba(0, 0, 0, 0.65) !important;
 }
 .modal-title {
   font-family: 'Consolas', 'Courier New', monospace;
@@ -834,7 +860,7 @@ body {
   background-color: var(--bg-app) !important;
 }
 
-/* ---------- 16. Wallpaper: visibile anche col tema attivo ---------- */
+/* ---------- 16. Wallpaper: visible even with the theme active ---------- */
 #aether-personal-wallpaper {
   position: fixed !important;
   top: 0 !important;
@@ -861,7 +887,7 @@ body.aether-wallpaper-enabled .aether-view {
   background: transparent !important;
 }
 
-/* Badge sempre sopra il contenuto delle card */
+/* Badge always above the card content */
 .store-game-card.backdrop-card .badge-available,
 .store-game-card.backdrop-card .badge-installed,
 .store-game-card .badge-available,

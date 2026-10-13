@@ -25,7 +25,9 @@ describe('useSteamPath', () => {
     const { result } = renderHook(() => useSteamPath(params));
 
     expect(result.current.checkStatus.state).toBe('checking');
-    await act(async () => { await vi.advanceTimersByTimeAsync(400); });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(400);
+    });
 
     expect(invokeMock).toHaveBeenCalledWith('check_steam_path', { path: 'bad' });
     expect(result.current.checkStatus).toEqual({
@@ -39,16 +41,23 @@ describe('useSteamPath', () => {
     let resolveOld: ((value: unknown) => void) | undefined;
     invokeMock.mockImplementation((command: string, args?: { path?: string }) => {
       if (command !== 'check_steam_path') return Promise.reject(new Error('unexpected'));
-      if (args?.path === 'old') return new Promise((resolve) => { resolveOld = resolve; });
+      if (args?.path === 'old')
+        return new Promise((resolve) => {
+          resolveOld = resolve;
+        });
       return Promise.resolve({ valid: true, normalized: 'new', error: null });
     });
     let params = createParams('old');
     const { result, rerender } = renderHook(() => useSteamPath(params));
-    await act(async () => { await vi.advanceTimersByTimeAsync(400); });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(400);
+    });
 
     params = { ...params, steamPath: 'new' };
     rerender();
-    await act(async () => { await vi.advanceTimersByTimeAsync(400); });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(400);
+    });
     expect(result.current.checkStatus.state).toBe('idle');
 
     await act(async () => {
@@ -90,9 +99,6 @@ describe('useSteamPath', () => {
     await act(() => result.current.detect());
 
     expect(invokeMock).not.toHaveBeenCalledWith('save_settings', expect.anything());
-    expect(params.showStatus).toHaveBeenCalledWith(
-      expect.stringContaining('not a valid Steam installation'),
-      'error',
-    );
+    expect(params.showStatus).toHaveBeenCalledWith(expect.stringContaining('not a valid Steam installation'), 'error');
   });
 });

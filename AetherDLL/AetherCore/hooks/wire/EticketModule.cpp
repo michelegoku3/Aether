@@ -4,8 +4,8 @@
 #include <vector>
 
 #include "core/Constants.h"
-#include "credentials/CredentialStore.h"
 #include "core/Logger.h"
+#include "credentials/CredentialStore.h"
 #include "scripting/LuaData.h"
 
 #include "steam_messages.pb.h"
@@ -16,7 +16,7 @@ namespace {
 constexpr const char* kModule = "Wire.ETicket";
 constexpr std::int32_t kNoChange = -1;
 
-}  // namespace
+} // namespace
 
 std::int32_t HandleRecv(const WireFrame& frame, std::uint8_t* out, std::uint32_t outCap) {
     CMsgClientRequestEncryptedAppTicketResponse resp;
@@ -32,7 +32,8 @@ std::int32_t HandleRecv(const WireFrame& frame, std::uint8_t* out, std::uint32_t
     }
 
     std::vector<std::uint8_t> ticket = credential::ReadEncryptedTicket(resp.app_id());
-    if (ticket.empty()) return kNoChange;
+    if (ticket.empty())
+        return kNoChange;
 
     if (!resp.mutable_encrypted_app_ticket()->ParseFromArray(ticket.data(), static_cast<int>(ticket.size()))) {
         AC_LOG_WARN(kModule, "Stored ETicket parse failed for app %u.", resp.app_id());
@@ -46,9 +47,8 @@ std::int32_t HandleRecv(const WireFrame& frame, std::uint8_t* out, std::uint32_t
         return kNoChange;
     }
 
-    AC_LOG_INFO(kModule, "Patched ETicket response for app %u with %zuB stored ticket.",
-                resp.app_id(), ticket.size());
+    AC_LOG_INFO(kModule, "Patched ETicket response for app %u with %zuB stored ticket.", resp.app_id(), ticket.size());
     return static_cast<std::int32_t>(size);
 }
 
-}  // namespace ac::hooks::EticketModule
+} // namespace ac::hooks::EticketModule

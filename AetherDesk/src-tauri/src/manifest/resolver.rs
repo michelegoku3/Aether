@@ -372,7 +372,11 @@ async fn generate_missing_manifests(
 ) -> (Vec<ManifestPackageFile>, Vec<DepotManifestPin>) {
     let started = Instant::now();
     let total = missing.len();
-    crate::desk_log_info!("manifest", "Manifest generation batch start missing={}", total);
+    crate::desk_log_info!(
+        "manifest",
+        "Manifest generation batch start missing={}",
+        total
+    );
     let mut files = Vec::new();
     let mut failed = Vec::new();
     for pin in missing {

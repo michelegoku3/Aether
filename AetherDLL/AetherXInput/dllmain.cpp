@@ -3,8 +3,8 @@
 // Unlike DLL forwarder strings, the explicit System32 path cannot resolve
 // back to this proxy by accident. This module also forwards for non-Steam
 // hosts, but the shared bootstrap will never inject into them.
-#include <windows.h>
 #include <cwchar>
+#include <windows.h>
 
 // XInput is the only Steam bootstrap. Load the core from this DLL's directory
 // on a worker after DllMain returns; never load it from an untrusted PATH.
@@ -24,7 +24,7 @@ DWORD WINAPI LoadCoreOutsideLoaderLock(LPVOID parameter) {
     const wchar_t* exeName = std::wcsrchr(exePath, L'\\');
     wchar_t* proxyName = std::wcsrchr(proxyPath, L'\\');
     if (!exeName || !proxyName || _wcsicmp(exeName + 1, L"steam.exe") != 0) {
-        return 0;  // Forward normally, but never inject into a game or helper.
+        return 0; // Forward normally, but never inject into a game or helper.
     }
 
     const size_t exeDirLen = static_cast<size_t>(exeName - exePath);
@@ -49,11 +49,13 @@ DWORD WINAPI LoadCoreOutsideLoaderLock(LPVOID parameter) {
 void Schedule(HMODULE self) {
     // No waits, I/O or LoadLibrary inside DllMain. The loader owns this proxy.
     HANDLE thread = CreateThread(nullptr, 0, LoadCoreOutsideLoaderLock, self, 0, nullptr);
-    if (thread) CloseHandle(thread);
-    else OutputDebugStringW(L"[Aether] XInput: could not start bootstrap thread.\n");
+    if (thread)
+        CloseHandle(thread);
+    else
+        OutputDebugStringW(L"[Aether] XInput: could not start bootstrap thread.\n");
 }
 
-}  // namespace aether::proxy
+} // namespace aether::proxy
 
 namespace {
 
@@ -66,7 +68,7 @@ BOOL CALLBACK LoadRealXInput(PINIT_ONCE, PVOID, PVOID*) {
     const UINT length = GetSystemDirectoryW(path, MAX_PATH);
     constexpr wchar_t kName[] = L"\\xinput1_4.dll";
     if (!length || length >= MAX_PATH || length + sizeof(kName) / sizeof(wchar_t) > MAX_PATH) {
-        return FALSE;  // InitOnceExecuteOnce can retry on a later call.
+        return FALSE; // InitOnceExecuteOnce can retry on a later call.
     }
     wcscpy_s(path + length, MAX_PATH - length, kName);
     HMODULE real = LoadLibraryExW(path, nullptr, LOAD_LIBRARY_SEARCH_SYSTEM32);
@@ -78,42 +80,46 @@ BOOL CALLBACK LoadRealXInput(PINIT_ONCE, PVOID, PVOID*) {
     return TRUE;
 }
 
-template <typename Fn>
-Fn Resolve(const char* name) {
-    if (!InitOnceExecuteOnce(&s_realOnce, LoadRealXInput, nullptr, nullptr)) return nullptr;
+template <typename Fn> Fn Resolve(const char* name) {
+    if (!InitOnceExecuteOnce(&s_realOnce, LoadRealXInput, nullptr, nullptr))
+        return nullptr;
     return reinterpret_cast<Fn>(GetProcAddress(s_real, name));
 }
 
-template <typename Fn>
-Fn Resolve(WORD ordinal) {
-    if (!InitOnceExecuteOnce(&s_realOnce, LoadRealXInput, nullptr, nullptr)) return nullptr;
+template <typename Fn> Fn Resolve(WORD ordinal) {
+    if (!InitOnceExecuteOnce(&s_realOnce, LoadRealXInput, nullptr, nullptr))
+        return nullptr;
     return reinterpret_cast<Fn>(GetProcAddress(s_real, MAKEINTRESOURCEA(ordinal)));
 }
 
-}  // namespace
+} // namespace
 
 extern "C" {
 DWORD WINAPI XInputGetState(DWORD index, void* state) {
     using Fn = DWORD(WINAPI*)(DWORD, void*);
-    if (auto real = Resolve<Fn>("XInputGetState")) return real(index, state);
+    if (auto real = Resolve<Fn>("XInputGetState"))
+        return real(index, state);
     return ERROR_DEVICE_NOT_CONNECTED;
 }
 DWORD WINAPI XInputSetState(DWORD index, void* vibration) {
     using Fn = DWORD(WINAPI*)(DWORD, void*);
-    if (auto real = Resolve<Fn>("XInputSetState")) return real(index, vibration);
+    if (auto real = Resolve<Fn>("XInputSetState"))
+        return real(index, vibration);
     return ERROR_DEVICE_NOT_CONNECTED;
 }
 DWORD WINAPI XInputGetCapabilities(DWORD index, DWORD flags, void* capabilities) {
     using Fn = DWORD(WINAPI*)(DWORD, DWORD, void*);
-    if (auto real = Resolve<Fn>("XInputGetCapabilities")) return real(index, flags, capabilities);
+    if (auto real = Resolve<Fn>("XInputGetCapabilities"))
+        return real(index, flags, capabilities);
     return ERROR_DEVICE_NOT_CONNECTED;
 }
 void WINAPI XInputEnable(BOOL enabled) {
     using Fn = void(WINAPI*)(BOOL);
-    if (auto real = Resolve<Fn>("XInputEnable")) real(enabled);
+    if (auto real = Resolve<Fn>("XInputEnable"))
+        real(enabled);
 }
-DWORD WINAPI XInputGetAudioDeviceIds(DWORD index, LPWSTR renderId, UINT* renderCount,
-                                    LPWSTR captureId, UINT* captureCount) {
+DWORD WINAPI XInputGetAudioDeviceIds(DWORD index, LPWSTR renderId, UINT* renderCount, LPWSTR captureId,
+                                     UINT* captureCount) {
     using Fn = DWORD(WINAPI*)(DWORD, LPWSTR, UINT*, LPWSTR, UINT*);
     if (auto real = Resolve<Fn>("XInputGetAudioDeviceIds"))
         return real(index, renderId, renderCount, captureId, captureCount);
@@ -121,12 +127,14 @@ DWORD WINAPI XInputGetAudioDeviceIds(DWORD index, LPWSTR renderId, UINT* renderC
 }
 DWORD WINAPI XInputGetBatteryInformation(DWORD index, BYTE type, void* battery) {
     using Fn = DWORD(WINAPI*)(DWORD, BYTE, void*);
-    if (auto real = Resolve<Fn>("XInputGetBatteryInformation")) return real(index, type, battery);
+    if (auto real = Resolve<Fn>("XInputGetBatteryInformation"))
+        return real(index, type, battery);
     return ERROR_DEVICE_NOT_CONNECTED;
 }
 DWORD WINAPI XInputGetKeystroke(DWORD index, DWORD reserved, void* keystroke) {
     using Fn = DWORD(WINAPI*)(DWORD, DWORD, void*);
-    if (auto real = Resolve<Fn>("XInputGetKeystroke")) return real(index, reserved, keystroke);
+    if (auto real = Resolve<Fn>("XInputGetKeystroke"))
+        return real(index, reserved, keystroke);
     return ERROR_DEVICE_NOT_CONNECTED;
 }
 
@@ -134,35 +142,41 @@ DWORD WINAPI XInputGetKeystroke(DWORD index, DWORD reserved, void* keystroke) {
 // Keep each ordinal NONAME in the .def so an ordinal import remains ordinal.
 DWORD WINAPI XInputOrdinal100(DWORD index, void* state) {
     using Fn = DWORD(WINAPI*)(DWORD, void*);
-    if (auto real = Resolve<Fn>(100)) return real(index, state);
+    if (auto real = Resolve<Fn>(100))
+        return real(index, state);
     return ERROR_DEVICE_NOT_CONNECTED;
 }
 DWORD WINAPI XInputOrdinal101(DWORD index, DWORD flags, void* result) {
     using Fn = DWORD(WINAPI*)(DWORD, DWORD, void*);
-    if (auto real = Resolve<Fn>(101)) return real(index, flags, result);
+    if (auto real = Resolve<Fn>(101))
+        return real(index, flags, result);
     return ERROR_DEVICE_NOT_CONNECTED;
 }
 DWORD WINAPI XInputOrdinal102(DWORD index) {
     using Fn = DWORD(WINAPI*)(DWORD);
-    if (auto real = Resolve<Fn>(102)) return real(index);
+    if (auto real = Resolve<Fn>(102))
+        return real(index);
     return ERROR_DEVICE_NOT_CONNECTED;
 }
 DWORD WINAPI XInputOrdinal103(DWORD index) {
     using Fn = DWORD(WINAPI*)(DWORD);
-    if (auto real = Resolve<Fn>(103)) return real(index);
+    if (auto real = Resolve<Fn>(103))
+        return real(index);
     return ERROR_DEVICE_NOT_CONNECTED;
 }
 DWORD WINAPI XInputOrdinal104(DWORD index, void* info) {
     using Fn = DWORD(WINAPI*)(DWORD, void*);
-    if (auto real = Resolve<Fn>(104)) return real(index, info);
+    if (auto real = Resolve<Fn>(104))
+        return real(index, info);
     return ERROR_DEVICE_NOT_CONNECTED;
 }
 DWORD WINAPI XInputOrdinal108(DWORD index, void* a2, void* a3, void* a4, void* a5) {
     using Fn = DWORD(WINAPI*)(DWORD, void*, void*, void*, void*);
-    if (auto real = Resolve<Fn>(108)) return real(index, a2, a3, a4, a5);
+    if (auto real = Resolve<Fn>(108))
+        return real(index, a2, a3, a4, a5);
     return ERROR_DEVICE_NOT_CONNECTED;
 }
-}  // extern "C"
+} // extern "C"
 
 BOOL APIENTRY DllMain(HMODULE instance, DWORD reason, LPVOID /*reserved*/) {
     if (reason == DLL_PROCESS_ATTACH) {
@@ -170,5 +184,5 @@ BOOL APIENTRY DllMain(HMODULE instance, DWORD reason, LPVOID /*reserved*/) {
         DisableThreadLibraryCalls(instance);
         aether::proxy::Schedule(instance);
     }
-    return TRUE;  // A missing AetherCore or XInput does not break Steam's load.
+    return TRUE; // A missing AetherCore or XInput does not break Steam's load.
 }

@@ -12,9 +12,8 @@ const SIG_STUB64: &[u8] = &[
 ];
 /// SteamStub 3.x 32-bit variant.
 const SIG_STUB3: &[u8] = &[
-    0xe8, 0x00, 0x00, 0x00, 0x00, 0x50, 0x53, 0x51, 0x52, 0x56, 0x57, 0x55, 0x8b, 0x44,
-    0x24, 0x1c, 0x2d, 0x05, 0x00, 0x00, 0x00, 0x8b, 0xcc, 0x83, 0xe4, 0xf0, 0x51, 0x51,
-    0x51, 0x50,
+    0xe8, 0x00, 0x00, 0x00, 0x00, 0x50, 0x53, 0x51, 0x52, 0x56, 0x57, 0x55, 0x8b, 0x44, 0x24, 0x1c,
+    0x2d, 0x05, 0x00, 0x00, 0x00, 0x8b, 0xcc, 0x83, 0xe4, 0xf0, 0x51, 0x51, 0x51, 0x50,
 ];
 /// SteamStub 2.x.
 const SIG_STUB2: &[u8] = &[
@@ -77,7 +76,9 @@ fn contains_seq(haystack: &[u8], needle: &[u8]) -> bool {
     if needle.is_empty() || haystack.len() < needle.len() {
         return false;
     }
-    haystack.windows(needle.len()).any(|window| window == needle)
+    haystack
+        .windows(needle.len())
+        .any(|window| window == needle)
 }
 
 #[cfg(test)]
@@ -107,7 +108,8 @@ mod tests {
         // section name ".bind"
         image[0x98..0x9d].copy_from_slice(b".bind");
         // raw size at header+16
-        let raw_size: u32 = u32::try_from(SIG_STUB1.len()).expect("stub signature length fits in u32");
+        let raw_size: u32 =
+            u32::try_from(SIG_STUB1.len()).expect("stub signature length fits in u32");
         image[0x98 + 16..0x98 + 20].copy_from_slice(&raw_size.to_le_bytes());
         // raw ptr at header+20
         let raw_ptr: u32 = 0x180;

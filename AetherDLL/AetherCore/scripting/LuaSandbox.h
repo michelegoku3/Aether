@@ -23,10 +23,10 @@ struct lua_State;
 
 namespace ac::script::sandbox {
 
-    // Opens ONLY the whitelisted stdlib libraries in L and nils out the
-    // code-loading sinks that the base library still provides. Call once,
-    // right after luaL_newstate(), before registering any binding.
-    // Scripts loaded afterwards cannot reach io/os/package/debug/coroutine.
-    void Install(lua_State* L);
+// Opens ONLY the whitelisted stdlib libraries in L and nils out the
+// code-loading sinks that the base library still provides. Call once,
+// right after luaL_newstate(), before registering any binding.
+// Scripts loaded afterwards cannot reach io/os/package/debug/coroutine.
+void Install(lua_State* L);
 
-}  // namespace ac::script::sandbox
+} // namespace ac::script::sandbox

@@ -24,12 +24,7 @@ export interface SavedCrackModalProps {
  * YES reuses that backup; NO strips the crack from the game and continues to
  * the drop-zone modal for a fresh apply.
  */
-export const SavedCrackModal = ({
-  game,
-  onReapplied,
-  onDeclined,
-  onCancel,
-}: SavedCrackModalProps) => {
+export const SavedCrackModal = ({ game, onReapplied, onDeclined, onCancel }: SavedCrackModalProps) => {
   const [isBusy, setIsBusy] = useState(false);
   const [error, setError] = useState('');
 
@@ -70,36 +65,20 @@ export const SavedCrackModal = ({
       bodyClassName="uninstall-modal-body"
     >
       <p className="uninstall-modal-lead">
-        A crack is already saved for{' '}
-        <strong style={{ color: '#ffffff' }}>{game.name}</strong>.
+        A crack is already saved for <strong style={{ color: '#ffffff' }}>{game.name}</strong>.
       </p>
       <p className="uninstall-modal-copy">
-        Do you want to apply the saved crack from your Aether backup?
-        Choosing No removes the crack currently in the game folder and opens
-        the usual file drop dialog.
+        Do you want to apply the saved crack from your Aether backup? Choosing No removes the crack currently in the
+        game folder and opens the usual file drop dialog.
       </p>
 
-      {error && (
-        <div className="settings-alert error settings-alert--compact">
-          {error}
-        </div>
-      )}
+      {error && <div className="settings-alert error settings-alert--compact">{error}</div>}
 
       <div className="uninstall-modal-actions">
-        <button
-          type="button"
-          className="uninstall-btn uninstall-btn-primary"
-          onClick={handleYes}
-          disabled={isBusy}
-        >
+        <button type="button" className="uninstall-btn uninstall-btn-primary" onClick={handleYes} disabled={isBusy}>
           {isBusy ? 'Working…' : 'Yes, use saved'}
         </button>
-        <button
-          type="button"
-          className="uninstall-btn uninstall-btn-secondary"
-          onClick={handleNo}
-          disabled={isBusy}
-        >
+        <button type="button" className="uninstall-btn uninstall-btn-secondary" onClick={handleNo} disabled={isBusy}>
           No, choose new
         </button>
       </div>

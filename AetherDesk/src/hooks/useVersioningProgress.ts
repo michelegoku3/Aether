@@ -24,7 +24,9 @@ export const useVersioningProgress = (appId: number, active: boolean) => {
       const payload = event.payload;
       if (!payload || payload.appId !== appId) return;
       setProgress(payload);
-    }).then((off) => { unlisten = off; });
+    }).then((off) => {
+      unlisten = off;
+    });
 
     return () => {
       cancelled = true;

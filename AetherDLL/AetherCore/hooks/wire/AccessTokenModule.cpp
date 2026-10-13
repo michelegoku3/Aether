@@ -3,8 +3,8 @@
 
 #include <string>
 
-#include "scripting/LuaData.h"
 #include "core/Logger.h"
+#include "scripting/LuaData.h"
 
 #include "steam_messages.pb.h"
 
@@ -12,7 +12,7 @@ namespace ac::hooks::AccessToken {
 namespace {
 constexpr const char* kModule = "Wire.PICS";
 constexpr std::int32_t kNoChange = -1;
-}  // namespace
+} // namespace
 
 std::int32_t HandleSend(const WireFrame& frame, std::uint8_t* out, std::uint32_t outCap) {
     CMsgClientPICSProductInfoRequest req;
@@ -28,7 +28,8 @@ std::int32_t HandleSend(const WireFrame& frame, std::uint8_t* out, std::uint32_t
             break;
         }
     }
-    if (!needsPatch) return kNoChange;
+    if (!needsPatch)
+        return kNoChange;
 
     int injected = 0;
     for (auto& app : *req.mutable_apps()) {
@@ -49,4 +50,4 @@ std::int32_t HandleSend(const WireFrame& frame, std::uint8_t* out, std::uint32_t
     return static_cast<std::int32_t>(size);
 }
 
-}  // namespace ac::hooks::AccessToken
+} // namespace ac::hooks::AccessToken

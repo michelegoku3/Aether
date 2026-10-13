@@ -1,12 +1,12 @@
 /* ==========================================================================
-   AetherDesk — Custom CSS | Tema GOLDMINE
-   Metti questo file in: <cartella di AetherDesk.exe>/AetherData/config/themes/
-   (il primo file .css presente nella cartella viene applicato automaticamente).
-   Abilita in: Settings → Appearance → Enable theme.
+   AetherDesk — Custom CSS | GOLDMINE Theme
+   Put this file in: <AetherDesk.exe folder>/AetherData/config/themes/
+   (the first .css file in the folder is applied automatically).
+   Enable in: Settings → Appearance → Enable theme.
 
-   Palette: oro #D9B36C dominante, argento-lavanda #E6E6F0, azzurro #8FB8D8,
-   verde #7C9A6D, crema #F3EDDF su blu-notte profondo. Atmosfera elegante,
-   morbida: niente glitch, niente skew, tutto pulito.
+   Palette: dominant gold #D9B36C, lavender-silver #E6E6F0, light blue #8FB8D8,
+   green #7C9A6D, cream #F3EDDF on deep night-blue. Elegant atmosphere,
+   soft: no glitch, no skew, all clean.
    ========================================================================== */
 
 /* ---------- 1. Variabili base ---------- */
@@ -17,7 +17,7 @@
   --bg-item-active: #2a3348;
   --color-text: #efece4;
   --color-muted: #9aa3b2;
-  --color-cyan: #d9b36c; /* l'accento principale diventa l'oro GOLDMINE */
+  --color-cyan: #d9b36c; /* the main accent becomes GOLDMINE gold */
   --color-cyan-rgb: 217, 179, 108;
   --color-denuvo: #c96f6f;
   --color-nsfw-pink: #c97b8a;
@@ -38,7 +38,7 @@
   --goldmine-night: #10131a;
 }
 
-/* ---------- 2. Sfondo app — notte stellata ---------- */
+/* ---------- 2. App background — starry night ---------- */
 body {
   background-color: var(--bg-app) !important;
   /* Cielo notturno con stelle sottilissime: gradient blu notte + puntini. */
@@ -50,7 +50,14 @@ body {
     radial-gradient(1.5px 1.5px at 88% 78%, rgba(230, 230, 240, 0.28) 50%, transparent 51%),
     radial-gradient(1px 1px at 22% 84%, rgba(230, 230, 240, 0.2) 50%, transparent 51%),
     linear-gradient(165deg, #141a26 0%, #10131a 55%, #0d1016 100%);
-  background-size: 640px 640px, 720px 720px, 900px 900px, 560px 560px, 780px 780px, 660px 660px, cover;
+  background-size:
+    640px 640px,
+    720px 720px,
+    900px 900px,
+    560px 560px,
+    780px 780px,
+    660px 660px,
+    cover;
 }
 
 .app-container {
@@ -126,31 +133,37 @@ body {
 
 /* ---------- 4. Main content & Store ---------- */
 .main-content {
-  background: radial-gradient(ellipse at 50% -20%, rgba(143, 184, 216, 0.08), transparent 60%),
-              var(--bg-app) !important;
+  background:
+    radial-gradient(ellipse at 50% -20%, rgba(143, 184, 216, 0.08), transparent 60%), var(--bg-app) !important;
 }
 
-.store-title, .settings-title, .aether-title, .home-title {
+.store-title,
+.settings-title,
+.aether-title,
+.home-title {
   font-family: 'Georgia', 'Palatino', serif !important;
   letter-spacing: 2px !important;
   color: var(--goldmine-gold) !important;
   text-shadow: 0 0 14px rgba(217, 179, 108, 0.25);
 }
 .store-title::after {
-  content: " // GOLD STANDARD";
+  content: ' // GOLD STANDARD';
   color: var(--goldmine-sky);
   font-size: 11px;
   letter-spacing: 1px;
   opacity: 0.55;
 }
 
-.store-subtitle, .settings-subtitle {
+.store-subtitle,
+.settings-subtitle {
   color: #7c8598 !important;
   font-size: 11px !important;
   letter-spacing: 0.5px;
 }
 
-.store-separator, .settings-separator, .separator {
+.store-separator,
+.settings-separator,
+.separator {
   background-color: rgba(217, 179, 108, 0.12) !important;
   height: 1px !important;
 }
@@ -159,18 +172,27 @@ body {
 }
 
 /* ---------- 5. Input & search ---------- */
-.store-search-input, .settings-input, .home-search-input, .settings-number-input {
+.store-search-input,
+.settings-input,
+.home-search-input,
+.settings-number-input {
   background-color: #161a26 !important;
   border: 1px solid #2c3447 !important;
   border-radius: 8px !important;
   color: var(--goldmine-cream) !important;
 }
-.store-search-input:focus, .settings-input:focus, .home-search-input:focus, .settings-number-input:focus {
+.store-search-input:focus,
+.settings-input:focus,
+.home-search-input:focus,
+.settings-number-input:focus {
   border-color: var(--goldmine-gold) !important;
-  box-shadow: 0 0 0 1px rgba(217, 179, 108, 0.35), 0 0 14px rgba(217, 179, 108, 0.12) !important;
+  box-shadow:
+    0 0 0 1px rgba(217, 179, 108, 0.35),
+    0 0 14px rgba(217, 179, 108, 0.12) !important;
   background-color: #181d2b !important;
 }
-.store-search-input::placeholder, .settings-input::placeholder {
+.store-search-input::placeholder,
+.settings-input::placeholder {
   color: #5f6880 !important;
 }
 
@@ -198,10 +220,13 @@ body {
   overflow: visible !important;
   position: relative;
   clip-path: none !important;
-  transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+  transition:
+    transform 0.2s ease,
+    border-color 0.2s ease,
+    box-shadow 0.2s ease;
 }
 .store-game-card::before {
-  content: "";
+  content: '';
   position: absolute;
   top: 0;
   left: 12px;
@@ -218,7 +243,9 @@ body {
 .store-game-card:hover {
   transform: translateY(-2px) !important;
   border-color: rgba(217, 179, 108, 0.65) !important;
-  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.45), 0 0 0 1px rgba(217, 179, 108, 0.12) !important;
+  box-shadow:
+    0 6px 24px rgba(0, 0, 0, 0.45),
+    0 0 0 1px rgba(217, 179, 108, 0.12) !important;
 }
 .store-game-card.nsfw {
   border-color: rgba(201, 123, 138, 0.8) !important;
@@ -252,7 +279,10 @@ body {
   background: transparent !important;
   position: relative;
   overflow: hidden;
-  transition: color 0.2s ease, background-color 0.2s ease, box-shadow 0.2s ease;
+  transition:
+    color 0.2s ease,
+    background-color 0.2s ease,
+    box-shadow 0.2s ease;
 }
 .game-download-btn:hover {
   background-color: rgba(217, 179, 108, 0.14) !important;
@@ -261,7 +291,7 @@ body {
   box-shadow: 0 0 12px rgba(217, 179, 108, 0.25);
 }
 
-/* Backdrop cards — morbide, niente angoli tagliati (Goldmine è soft) */
+/* Backdrop cards — soft, no clipped corners (Goldmine is soft) */
 .store-game-card.backdrop-card {
   overflow: hidden !important;
   border: 1px solid #2c3447 !important;
@@ -273,10 +303,10 @@ body {
   border-color: rgba(217, 179, 108, 0.65) !important;
 }
 .game-card-backdrop-bg {
-  /* Nessun filtro sull'immagine: opacità 100 = immagine piena.
-     L'unico effetto è il fade in basso, controllato da Settings. */
+  /* No filter on the image: opacity 100 = full image.
+     The only effect is the bottom fade, controlled from Settings. */
 }
-/* Fade verso il basso: usa la variabile live di Settings (--alt-card-fade 0..100). */
+/* Downward fade: uses the live Settings variable (--alt-card-fade 0..100). */
 .store-game-card.backdrop-card::after {
   background: linear-gradient(
     180deg,
@@ -290,7 +320,7 @@ body {
 .store-game-card.backdrop-card::after {
   border-radius: inherit;
 }
-/* Badge DENTRO la card (con overflow hidden non si croppano). */
+/* Badge INSIDE the card (with overflow hidden they don't get cropped). */
 .store-game-card.backdrop-card .badge-available,
 .store-game-card.backdrop-card .badge-installed {
   top: 10px !important;
@@ -343,7 +373,7 @@ body {
   color: var(--goldmine-gold) !important;
 }
 
-/* Dropdown: stessa larghezza dei bottoni picker (115px). */
+/* Dropdown: same width as the picker buttons (115px). */
 .settings-select,
 .settings-front-filter-select {
   width: 115px !important;
@@ -361,7 +391,7 @@ body {
   box-shadow: 0 0 8px rgba(217, 179, 108, 0.25) !important;
 }
 
-/* Sezione Appearance: indentazione, path, asset mancanti, riga testo+bottone. */
+/* Appearance section: indentation, path, missing assets, text+button row. */
 .settings-appearance-sub .settings-toggle-row {
   border-left: 1px solid rgba(217, 179, 108, 0.18) !important;
   padding-left: 14px !important;
@@ -387,7 +417,7 @@ body {
   color: var(--goldmine-gold-dim) !important;
 }
 
-/* Bottone picker: stesso ingombro esatto dei dropdown (115x30). */
+/* Picker button: same exact footprint as the dropdowns (115x30). */
 .appearance-pick-btn {
   width: 115px !important;
   min-width: 115px !important;
@@ -416,7 +446,9 @@ body {
   background-color: #131722 !important;
   border: 1px solid #2c3447 !important;
   border-radius: 12px !important;
-  box-shadow: 0 0 30px rgba(0, 0, 0, 0.5), 0 12px 40px rgba(0, 0, 0, 0.6) !important;
+  box-shadow:
+    0 0 30px rgba(0, 0, 0, 0.5),
+    0 12px 40px rgba(0, 0, 0, 0.6) !important;
 }
 .modal-title {
   font-family: 'Georgia', 'Palatino', serif;
@@ -488,7 +520,9 @@ body {
 }
 
 /* ---------- 11. Home / Aether panels ---------- */
-.aether-panel, .home-search-panel .home-search-input, .panel-btn {
+.aether-panel,
+.home-search-panel .home-search-input,
+.panel-btn {
   border-radius: 10px !important;
 }
 .panel-btn {
@@ -529,7 +563,7 @@ body {
   box-shadow: 0 0 12px rgba(217, 179, 108, 0.3);
 }
 
-/* ---------- 14. Wallpaper: visibile anche col tema attivo ---------- */
+/* ---------- 14. Wallpaper: visible even with the theme active ---------- */
 #aether-personal-wallpaper {
   position: fixed !important;
   top: 0 !important;
@@ -544,8 +578,8 @@ body {
   pointer-events: none !important;
 }
 
-/* Sfondo personale visibile anche con il tema attivo: quando la wallpaper
-   è abilitata il body e i contenitori smettono di dipingere sopra di lei. */
+/* Personal wallpaper visible even with the theme active: when the wallpaper
+   is enabled, the body and containers stop painting over it. */
 body.aether-wallpaper-enabled {
   background-image: none !important;
   background-color: var(--bg-app) !important;
@@ -558,7 +592,7 @@ body.aether-wallpaper-enabled .aether-view {
   background: transparent !important;
 }
 
-/* Badge sempre sopra il contenuto delle card */
+/* Badge always above the card content */
 .store-game-card.backdrop-card .badge-available,
 .store-game-card.backdrop-card .badge-installed,
 .store-game-card .badge-available,
@@ -571,74 +605,222 @@ body.aether-wallpaper-enabled .aether-view {
    ========================================================================== */
 
 /* Modal header/close + source buttons */
-.modal-close-btn { color: #9aa3b2 !important; }
-.modal-close-btn:hover { color: var(--goldmine-gold) !important; }
-.source-btn { color: var(--goldmine-silver) !important; }
-.action-title { color: var(--goldmine-gold) !important; }
-.action-desc { color: #9aa3b2 !important; }
+.modal-close-btn {
+  color: #9aa3b2 !important;
+}
+.modal-close-btn:hover {
+  color: var(--goldmine-gold) !important;
+}
+.source-btn {
+  color: var(--goldmine-silver) !important;
+}
+.action-title {
+  color: var(--goldmine-gold) !important;
+}
+.action-desc {
+  color: #9aa3b2 !important;
+}
 
 /* Game action modal (Library → Modify) */
-.game-action-modal { background-color: #131722 !important; border: 1px solid #2c3447 !important; border-radius: 12px !important; }
-.game-action-hero-overlay { background: linear-gradient(180deg, transparent 40%, #131722 100%) !important; }
-.game-action-hero-fallback { background-color: #0f1219 !important; color: var(--goldmine-gold-dim) !important; }
-.game-action-btn { background-color: #161a26 !important; border: 1px solid #2c3447 !important; border-radius: 8px !important; color: var(--goldmine-cream) !important; }
-.game-action-btn:hover:not(:disabled) { border-color: var(--goldmine-gold) !important; color: var(--goldmine-gold) !important; background-color: #1a2030 !important; }
-.game-action-close-btn:hover:not(:disabled) { border-color: #c96f6f !important; color: #c96f6f !important; }
+.game-action-modal {
+  background-color: #131722 !important;
+  border: 1px solid #2c3447 !important;
+  border-radius: 12px !important;
+}
+.game-action-hero-overlay {
+  background: linear-gradient(180deg, transparent 40%, #131722 100%) !important;
+}
+.game-action-hero-fallback {
+  background-color: #0f1219 !important;
+  color: var(--goldmine-gold-dim) !important;
+}
+.game-action-btn {
+  background-color: #161a26 !important;
+  border: 1px solid #2c3447 !important;
+  border-radius: 8px !important;
+  color: var(--goldmine-cream) !important;
+}
+.game-action-btn:hover:not(:disabled) {
+  border-color: var(--goldmine-gold) !important;
+  color: var(--goldmine-gold) !important;
+  background-color: #1a2030 !important;
+}
+.game-action-close-btn:hover:not(:disabled) {
+  border-color: #c96f6f !important;
+  color: #c96f6f !important;
+}
 
 /* Game info modal */
-.info-modal-container { background-color: #131722 !important; border: 1px solid #2c3447 !important; border-radius: 12px !important; }
-.info-hero-text { background: linear-gradient(180deg, transparent 30%, rgba(16, 19, 26, 0.92) 100%) !important; }
-.info-hero-fallback { background-color: #0f1219 !important; }
-.info-label { color: var(--goldmine-gold-dim) !important; }
-.info-value { color: var(--goldmine-cream) !important; }
-.info-section-title { color: var(--goldmine-gold) !important; border-bottom: 1px solid #232b3d !important; }
-.info-section-body { color: #9aa3b2 !important; }
-.info-screenshot-link { border: 1px solid #2c3447 !important; border-radius: 8px !important; }
-.info-screenshot-link:hover { border-color: var(--goldmine-sky) !important; }
-.info-lightbox { background-color: rgba(10, 12, 18, 0.92) !important; }
-.info-lightbox-close { color: var(--goldmine-gold) !important; }
-.info-loading { color: var(--goldmine-gold-dim) !important; }
+.info-modal-container {
+  background-color: #131722 !important;
+  border: 1px solid #2c3447 !important;
+  border-radius: 12px !important;
+}
+.info-hero-text {
+  background: linear-gradient(180deg, transparent 30%, rgba(16, 19, 26, 0.92) 100%) !important;
+}
+.info-hero-fallback {
+  background-color: #0f1219 !important;
+}
+.info-label {
+  color: var(--goldmine-gold-dim) !important;
+}
+.info-value {
+  color: var(--goldmine-cream) !important;
+}
+.info-section-title {
+  color: var(--goldmine-gold) !important;
+  border-bottom: 1px solid #232b3d !important;
+}
+.info-section-body {
+  color: #9aa3b2 !important;
+}
+.info-screenshot-link {
+  border: 1px solid #2c3447 !important;
+  border-radius: 8px !important;
+}
+.info-screenshot-link:hover {
+  border-color: var(--goldmine-sky) !important;
+}
+.info-lightbox {
+  background-color: rgba(10, 12, 18, 0.92) !important;
+}
+.info-lightbox-close {
+  color: var(--goldmine-gold) !important;
+}
+.info-loading {
+  color: var(--goldmine-gold-dim) !important;
+}
 
 /* Antivirus modal */
-.av-modal-container { background-color: #131722 !important; border: 1px solid #2c3447 !important; border-radius: 12px !important; }
-.av-modal-text { color: var(--goldmine-cream) !important; }
-.av-link-btn { color: var(--goldmine-sky) !important; }
-.av-link-btn:hover:not(:disabled) { color: var(--goldmine-silver) !important; }
+.av-modal-container {
+  background-color: #131722 !important;
+  border: 1px solid #2c3447 !important;
+  border-radius: 12px !important;
+}
+.av-modal-text {
+  color: var(--goldmine-cream) !important;
+}
+.av-link-btn {
+  color: var(--goldmine-sky) !important;
+}
+.av-link-btn:hover:not(:disabled) {
+  color: var(--goldmine-silver) !important;
+}
 
 /* Crack modal */
-.crack-modal-container { background-color: #131722 !important; border: 1px solid #2c3447 !important; border-radius: 12px !important; }
-.crack-drop-files { border: 1px dashed #3a4358 !important; border-radius: 8px !important; background-color: #0f1219 !important; }
-.crack-drop-filename { color: var(--goldmine-gold) !important; }
-.crack-drop-hint { color: #5f6880 !important; }
-.crack-btn { background-color: #161a26 !important; border: 1px solid #2c3447 !important; border-radius: 8px !important; color: var(--goldmine-cream) !important; }
-.crack-btn:hover:not(:disabled) { border-color: var(--goldmine-gold) !important; color: var(--goldmine-gold) !important; background-color: #1a2030 !important; }
-.crack-achievement-row { border-bottom: 1px solid #1c2130 !important; }
-.crack-achievement-text { color: var(--goldmine-cream) !important; }
+.crack-modal-container {
+  background-color: #131722 !important;
+  border: 1px solid #2c3447 !important;
+  border-radius: 12px !important;
+}
+.crack-drop-files {
+  border: 1px dashed #3a4358 !important;
+  border-radius: 8px !important;
+  background-color: #0f1219 !important;
+}
+.crack-drop-filename {
+  color: var(--goldmine-gold) !important;
+}
+.crack-drop-hint {
+  color: #5f6880 !important;
+}
+.crack-btn {
+  background-color: #161a26 !important;
+  border: 1px solid #2c3447 !important;
+  border-radius: 8px !important;
+  color: var(--goldmine-cream) !important;
+}
+.crack-btn:hover:not(:disabled) {
+  border-color: var(--goldmine-gold) !important;
+  color: var(--goldmine-gold) !important;
+  background-color: #1a2030 !important;
+}
+.crack-achievement-row {
+  border-bottom: 1px solid #1c2130 !important;
+}
+.crack-achievement-text {
+  color: var(--goldmine-cream) !important;
+}
 
 /* Home view */
-.home-search-panel { background-color: #131722 !important; border: 1px solid #2c3447 !important; border-radius: 12px !important; }
-.home-search-results { background-color: #131722 !important; border: 1px solid #2c3447 !important; border-radius: 8px !important; }
-.home-search-result-name { color: var(--goldmine-cream) !important; }
-.home-search-result-appid { color: var(--goldmine-sky) !important; }
-.home-search-empty { color: #5f6880 !important; }
-.home-search-clear { color: var(--goldmine-gold-dim) !important; }
-.home-search-clear:hover { color: var(--goldmine-gold) !important; }
+.home-search-panel {
+  background-color: #131722 !important;
+  border: 1px solid #2c3447 !important;
+  border-radius: 12px !important;
+}
+.home-search-results {
+  background-color: #131722 !important;
+  border: 1px solid #2c3447 !important;
+  border-radius: 8px !important;
+}
+.home-search-result-name {
+  color: var(--goldmine-cream) !important;
+}
+.home-search-result-appid {
+  color: var(--goldmine-sky) !important;
+}
+.home-search-empty {
+  color: #5f6880 !important;
+}
+.home-search-clear {
+  color: var(--goldmine-gold-dim) !important;
+}
+.home-search-clear:hover {
+  color: var(--goldmine-gold) !important;
+}
 
 /* Aether view dettagli */
-.panel-title { color: var(--goldmine-gold) !important; }
-.panel-meta { color: #5f6880 !important; }
-.btn-update-dot { background-color: var(--goldmine-gold) !important; box-shadow: 0 0 10px var(--goldmine-gold) !important; }
+.panel-title {
+  color: var(--goldmine-gold) !important;
+}
+.panel-meta {
+  color: #5f6880 !important;
+}
+.btn-update-dot {
+  background-color: var(--goldmine-gold) !important;
+  box-shadow: 0 0 10px var(--goldmine-gold) !important;
+}
 
 /* Pagination & Library */
-.pagination-btn { background-color: #161a26 !important; border: 1px solid #2c3447 !important; border-radius: 8px !important; color: var(--goldmine-cream) !important; }
-.pagination-btn:hover:not(:disabled) { border-color: var(--goldmine-gold) !important; color: var(--goldmine-gold) !important; }
-.pagination-btn:disabled { opacity: 0.4; }
-.pagination-info { color: var(--goldmine-gold-dim) !important; }
-.library-count { color: var(--goldmine-gold-dim) !important; }
-.store-no-results { color: #5f6880 !important; }
+.pagination-btn {
+  background-color: #161a26 !important;
+  border: 1px solid #2c3447 !important;
+  border-radius: 8px !important;
+  color: var(--goldmine-cream) !important;
+}
+.pagination-btn:hover:not(:disabled) {
+  border-color: var(--goldmine-gold) !important;
+  color: var(--goldmine-gold) !important;
+}
+.pagination-btn:disabled {
+  opacity: 0.4;
+}
+.pagination-info {
+  color: var(--goldmine-gold-dim) !important;
+}
+.library-count {
+  color: var(--goldmine-gold-dim) !important;
+}
+.store-no-results {
+  color: #5f6880 !important;
+}
 
 /* Misc */
-.settings-small-btn { background-color: #161a26 !important; border: 1px solid #2c3447 !important; color: var(--goldmine-cream) !important; border-radius: 8px !important; }
-.settings-small-btn:hover { border-color: var(--goldmine-gold) !important; color: var(--goldmine-gold) !important; }
-.sidebar-update-dot { background-color: var(--goldmine-gold) !important; box-shadow: 0 0 8px var(--goldmine-gold) !important; }
-.blank-canvas { background-color: var(--bg-app) !important; }
+.settings-small-btn {
+  background-color: #161a26 !important;
+  border: 1px solid #2c3447 !important;
+  color: var(--goldmine-cream) !important;
+  border-radius: 8px !important;
+}
+.settings-small-btn:hover {
+  border-color: var(--goldmine-gold) !important;
+  color: var(--goldmine-gold) !important;
+}
+.sidebar-update-dot {
+  background-color: var(--goldmine-gold) !important;
+  box-shadow: 0 0 8px var(--goldmine-gold) !important;
+}
+.blank-canvas {
+  background-color: var(--bg-app) !important;
+}

@@ -104,4 +104,4 @@ std::vector<steam::AppId> TakePendingRemovals();
 // files do not look like hot-reload additions later.
 void ClearPendingChanges();
 
-}  // namespace ac::luadata
+} // namespace ac::luadata

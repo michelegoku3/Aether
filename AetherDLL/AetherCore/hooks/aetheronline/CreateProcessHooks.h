@@ -26,4 +26,4 @@ namespace ac::hooks {
 // kernel32 exports that never move.
 void RegisterCreateProcessHooks();
 
-}  // namespace ac::hooks
+} // namespace ac::hooks

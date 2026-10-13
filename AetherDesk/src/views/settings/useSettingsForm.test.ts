@@ -36,8 +36,7 @@ describe('useSettingsForm', () => {
     const { result } = renderHook(() => useSettingsForm());
     act(() => result.current.applySettings(base));
 
-    expect(result.current.getLocalSettings({ steam_path: 'D:/Steam' }).steam_path)
-      .toBe('D:/Steam');
+    expect(result.current.getLocalSettings({ steam_path: 'D:/Steam' }).steam_path).toBe('D:/Steam');
   });
 
   it('updates the baseline after an immediate persistence without resetting the form', () => {

@@ -39,12 +39,13 @@ std::string BuildCdnUrl(const Source& src, const Loc& loc, const std::string& sh
     return url;
 }
 
-}  // namespace
+} // namespace
 
 std::vector<MirrorUrl> Source::UrlsFor(Kind kind, const std::string& sha) const {
     std::vector<MirrorUrl> out;
     const Loc* loc = LocFor(kind);
-    if (!loc) return out;  // this source does not carry that kind
+    if (!loc)
+        return out; // this source does not carry that kind
 
     out.push_back(MirrorUrl{"raw", BuildRawUrl(*this, *loc, sha)});
     out.push_back(MirrorUrl{"cdn", BuildCdnUrl(*this, *loc, sha)});
@@ -92,4 +93,4 @@ const std::vector<Source>& DefaultSources() {
     return kOrdered;
 }
 
-}  // namespace ac::downloader
+} // namespace ac::downloader

@@ -31,9 +31,9 @@ namespace ac::downloader {
 
 // The logical per-build files AetherCore can ask a source for.
 enum class Kind {
-    SteamClient,     // byte-pattern offsets inside steamclient64.dll
-    SteamUi,         // byte-pattern offsets inside steamui.dll
-    SteamClientIpc,  // IPC method spec for steamclient64.dll
+    SteamClient,    // byte-pattern offsets inside steamclient64.dll
+    SteamUi,        // byte-pattern offsets inside steamui.dll
+    SteamClientIpc, // IPC method spec for steamclient64.dll
 };
 
 // Canonical, human/disk-friendly name for a Kind. Also used as the {subdir}
@@ -41,9 +41,12 @@ enum class Kind {
 // layout, where IPC lives under the "steamclientipc" folder).
 constexpr const char* KindName(Kind kind) {
     switch (kind) {
-        case Kind::SteamClient:    return "steamclient";
-        case Kind::SteamUi:        return "steamui";
-        case Kind::SteamClientIpc: return "steamclientipc";
+    case Kind::SteamClient:
+        return "steamclient";
+    case Kind::SteamUi:
+        return "steamui";
+    case Kind::SteamClientIpc:
+        return "steamclientipc";
     }
     return "unknown";
 }
@@ -53,40 +56,45 @@ constexpr const char* KindName(Kind kind) {
 // Kind::SteamClient so callers that treat "steamclient" as the generic module
 // keep working.
 inline Kind KindFromName(std::string_view name) {
-    if (name == "steamui")        return Kind::SteamUi;
-    if (name == "steamclientipc") return Kind::SteamClientIpc;
-    return Kind::SteamClient;  // "steamclient" (and anything unknown)
+    if (name == "steamui")
+        return Kind::SteamUi;
+    if (name == "steamclientipc")
+        return Kind::SteamClientIpc;
+    return Kind::SteamClient; // "steamclient" (and anything unknown)
 }
 
 // One candidate transport endpoint for a file (e.g. "raw" or "cdn").
 struct MirrorUrl {
-    const char* label;  // stable, shown in logs/status, e.g. "raw" / "cdn"
+    const char* label; // stable, shown in logs/status, e.g. "raw" / "cdn"
     std::string url;
 };
 
 // Location of a given Kind inside a GitHub repo (branch + folder).
 struct Loc {
-    const char* branch;  // e.g. "pattern" or "ipc"
-    const char* folder;  // e.g. "steamclient"
+    const char* branch; // e.g. "pattern" or "ipc"
+    const char* folder; // e.g. "steamclient"
 };
 
 // Immutable description of a remote pattern source.
 struct Source {
-    const char* id;       // stable machine key used in logs/status (e.g. "koriapolis")
-    const char* display;  // human-readable label for logs (e.g. "KoriaPolis / Steam-Auto-PT")
-    const char* owner;    // GitHub owner
-    const char* repo;     // GitHub repo
-    Loc steamClient;      // layout for Kind::SteamClient
-    Loc steamUi;          // layout for Kind::SteamUi
-    Loc steamClientIpc;   // layout for Kind::SteamClientIpc
+    const char* id;      // stable machine key used in logs/status (e.g. "koriapolis")
+    const char* display; // human-readable label for logs (e.g. "KoriaPolis / Steam-Auto-PT")
+    const char* owner;   // GitHub owner
+    const char* repo;    // GitHub repo
+    Loc steamClient;     // layout for Kind::SteamClient
+    Loc steamUi;         // layout for Kind::SteamUi
+    Loc steamClientIpc;  // layout for Kind::SteamClientIpc
 
     // Returns the layout for a Kind, or nullptr if this source does not carry
     // that kind of file.
     const Loc* LocFor(Kind kind) const {
         switch (kind) {
-            case Kind::SteamClient:    return &steamClient;
-            case Kind::SteamUi:        return &steamUi;
-            case Kind::SteamClientIpc: return &steamClientIpc;
+        case Kind::SteamClient:
+            return &steamClient;
+        case Kind::SteamUi:
+            return &steamUi;
+        case Kind::SteamClientIpc:
+            return &steamClientIpc;
         }
         return nullptr;
     }
@@ -111,10 +119,8 @@ struct Source {
 // enabled it in AetherDesk settings.
 constexpr const char* kOstSourceId = "opensteamtool";
 
-inline bool IsOstSource(const Source& src) {
-    return src.id != nullptr && std::string_view(src.id) == kOstSourceId;
-}
+inline bool IsOstSource(const Source& src) { return src.id != nullptr && std::string_view(src.id) == kOstSourceId; }
 
 const std::vector<Source>& DefaultSources();
 
-}  // namespace ac::downloader
+} // namespace ac::downloader

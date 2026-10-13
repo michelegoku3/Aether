@@ -14,10 +14,18 @@ interface SidebarProps {
   // racing shutdown.
   steamBusy?: boolean;
   dllUpdateAvailable: boolean; // Received from parent (App.tsx)
-  updateIsTest: boolean;        // Whether the shown update is a test build (red)
+  updateIsTest: boolean; // Whether the shown update is a test build (red)
 }
 
-export const Sidebar = memo(function Sidebar({ activeTab, onTabChange, onSteamAction, steamRunning, steamBusy, dllUpdateAvailable, updateIsTest }: SidebarProps) {
+export const Sidebar = memo(function Sidebar({
+  activeTab,
+  onTabChange,
+  onSteamAction,
+  steamRunning,
+  steamBusy,
+  dllUpdateAvailable,
+  updateIsTest,
+}: SidebarProps) {
   return (
     <aside className="sidebar">
       {/* TOP NAVIGATION SECTION */}
@@ -32,18 +40,12 @@ export const Sidebar = memo(function Sidebar({ activeTab, onTabChange, onSteamAc
         <div className="separator brand-separator"></div>
 
         {/* Home */}
-        <button
-          onClick={() => onTabChange('home')}
-          className={`nav-item ${activeTab === 'home' ? 'active' : ''}`}
-        >
+        <button onClick={() => onTabChange('home')} className={`nav-item ${activeTab === 'home' ? 'active' : ''}`}>
           Home
         </button>
 
         {/* Store */}
-        <button
-          onClick={() => onTabChange('store')}
-          className={`nav-item ${activeTab === 'store' ? 'active' : ''}`}
-        >
+        <button onClick={() => onTabChange('store')} className={`nav-item ${activeTab === 'store' ? 'active' : ''}`}>
           Store
         </button>
 
@@ -56,11 +58,7 @@ export const Sidebar = memo(function Sidebar({ activeTab, onTabChange, onSteamAc
         </button>
 
         {/* Backup */}
-        <button
-          disabled={true}
-          title="Backup is not available yet"
-          className="nav-item"
-        >
+        <button disabled={true} title="Backup is not available yet" className="nav-item">
           Backup
         </button>
 
@@ -117,13 +115,7 @@ export const Sidebar = memo(function Sidebar({ activeTab, onTabChange, onSteamAc
           title={steamRunning ? 'Restart Steam (currently running)' : 'Start Steam (currently not running)'}
           disabled={Boolean(steamBusy)}
         >
-          {steamBusy
-            ? 'Working…'
-            : steamRunning === null
-              ? 'Steam'
-              : steamRunning
-                ? 'Restart Steam'
-                : 'Start Steam'}
+          {steamBusy ? 'Working…' : steamRunning === null ? 'Steam' : steamRunning ? 'Restart Steam' : 'Start Steam'}
         </button>
       </div>
     </aside>

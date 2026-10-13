@@ -30,7 +30,8 @@ namespace ac::inject {
 // skipped with a log message rather than injected with an incompatible DLL.
 inline bool IsWow64Target(HANDLE process) {
     BOOL wow64 = FALSE;
-    if (!IsWow64Process(process, &wow64)) return false;
+    if (!IsWow64Process(process, &wow64))
+        return false;
     return wow64 == TRUE;
 }
 
@@ -40,13 +41,15 @@ inline bool IsWow64Target(HANDLE process) {
 // The remote thread is waited on for up to 5 seconds before this call
 // returns — a hung loader won't block the caller indefinitely.
 inline bool RemoteLoadDll(HANDLE process, const std::wstring& dllPath) {
-    auto loadLib = reinterpret_cast<LPTHREAD_START_ROUTINE>(
-        GetProcAddress(GetModuleHandleW(L"kernel32.dll"), "LoadLibraryW"));
-    if (!loadLib) return false;
+    auto loadLib =
+        reinterpret_cast<LPTHREAD_START_ROUTINE>(GetProcAddress(GetModuleHandleW(L"kernel32.dll"), "LoadLibraryW"));
+    if (!loadLib)
+        return false;
 
     const SIZE_T bytes = (dllPath.size() + 1) * sizeof(wchar_t);
     void* mem = VirtualAllocEx(process, nullptr, bytes, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
-    if (!mem) return false;
+    if (!mem)
+        return false;
 
     bool ok = false;
     if (WriteProcessMemory(process, mem, dllPath.c_str(), bytes, nullptr)) {
@@ -59,4 +62,4 @@ inline bool RemoteLoadDll(HANDLE process, const std::wstring& dllPath) {
     return ok;
 }
 
-}  // namespace ac::inject
+} // namespace ac::inject

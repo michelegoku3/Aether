@@ -30,8 +30,7 @@ export interface SettingsFormState {
   ostWarningAcknowledged: boolean;
 }
 
-const clamp0to100 = (value: number) =>
-  Math.max(0, Math.min(100, Number.isFinite(value) ? value : 0));
+const clamp0to100 = (value: number) => Math.max(0, Math.min(100, Number.isFinite(value) ? value : 0));
 
 export const settingsToForm = (settings: AppSettings): SettingsFormState => ({
   apiKey: settings.hubcap_api_key || '',
@@ -64,7 +63,7 @@ export const settingsToForm = (settings: AppSettings): SettingsFormState => ({
 export const buildSettings = (
   form: SettingsFormState,
   base: AppSettings,
-  overrides: SettingsPatch = {},
+  overrides: SettingsPatch = {}
 ): AppSettings => ({
   ...base,
   hubcap_api_key: form.apiKey,

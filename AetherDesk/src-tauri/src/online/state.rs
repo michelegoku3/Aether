@@ -4,8 +4,8 @@
 //! Atomic writes (tmp + rename). The record is an INDEX: the truth is the
 //! files on disk (reconciliation lives in `OnlineEngine::status`).
 
-use crate::online::types::OnlineRecord;
 use crate::external_tools::fs::write_atomic;
+use crate::online::types::OnlineRecord;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 

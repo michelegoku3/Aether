@@ -9,4 +9,4 @@ namespace ac::hooks {
 // user-local config-store path and passively caches AppTickets Steam reads.
 void RegisterDecryptionKeyHook(HMODULE diversion);
 
-}  // namespace ac::hooks
+} // namespace ac::hooks

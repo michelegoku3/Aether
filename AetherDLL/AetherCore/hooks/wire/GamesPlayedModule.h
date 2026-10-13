@@ -23,4 +23,4 @@ std::int32_t HandleSend(const WireFrame& frame, std::uint8_t* out, std::uint32_t
 // Always returns -1 (never rewrites the upload).
 std::int32_t HandleRichPresenceUpload(const WireFrame& frame);
 
-}  // namespace ac::hooks::GamesPlayed
+} // namespace ac::hooks::GamesPlayed

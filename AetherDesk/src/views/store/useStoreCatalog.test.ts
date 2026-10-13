@@ -28,13 +28,14 @@ vi.mock('./useTrendingStore', () => ({
 vi.mock('../../hooks/useDenuvoEnrichment', () => ({ enrichDenuvoFlags: enrich }));
 vi.mock('../../ui/GameCover', () => ({ preloadGameCovers: preload }));
 
-const games = (count: number): StoreGameResult[] => Array.from({ length: count }, (_, index) => ({
-  id: index + 1,
-  appId: String(index + 1),
-  name: `Game ${index + 1}`,
-  has_manifest: true,
-  has_denuvo: false,
-}));
+const games = (count: number): StoreGameResult[] =>
+  Array.from({ length: count }, (_, index) => ({
+    id: index + 1,
+    appId: String(index + 1),
+    name: `Game ${index + 1}`,
+    has_manifest: true,
+    has_denuvo: false,
+  }));
 
 describe('useStoreCatalog', () => {
   beforeEach(() => {
@@ -83,7 +84,7 @@ describe('useStoreCatalog', () => {
     state.activeQuery = 'portal';
     const { rerender } = renderHook(
       ({ revision }) => useStoreCatalog({ settingsReady: true, settingsRevision: revision }),
-      { initialProps: { revision: 1 } },
+      { initialProps: { revision: 1 } }
     );
     await waitFor(() => expect(search).toHaveBeenCalledTimes(1));
 

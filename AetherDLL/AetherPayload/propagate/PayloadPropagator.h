@@ -6,4 +6,4 @@ namespace ac::payloadprop {
 
 void Install(HMODULE self);
 
-}  // namespace ac::payloadprop
+} // namespace ac::payloadprop

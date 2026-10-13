@@ -31,7 +31,7 @@ export const useWatchdog = () => {
       clear();
       ref.current = window.setTimeout(callback, ms);
     },
-    [clear],
+    [clear]
   );
 
   return { arm, clear };

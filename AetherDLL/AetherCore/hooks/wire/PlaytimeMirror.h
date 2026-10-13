@@ -17,4 +17,4 @@ namespace ac::backup::playtime {
 // respective snapshots. Best-effort: errors only logged.
 void RefreshAllAccounts();
 
-}  // namespace ac::backup::playtime
+} // namespace ac::backup::playtime

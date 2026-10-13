@@ -42,14 +42,11 @@ impl OnlineEngine {
             errors.push(bundle_error.clone());
         }
         if detection.steam_api_dir.is_none() {
-            errors.push(
-                "No place found for steam_api(64).dll (engine not recognized)."
-                    .to_string(),
-            );
+            errors
+                .push("No place found for steam_api(64).dll (engine not recognized).".to_string());
         } else if !steam_api_dir_writable {
             errors.push(
-                "The game folder is not writable. Run AetherDesk as administrator."
-                    .to_string(),
+                "The game folder is not writable. Run AetherDesk as administrator.".to_string(),
             );
         }
 
@@ -71,7 +68,7 @@ impl OnlineEngine {
         })
     }
 
-    /// Attiva UCOnline2 su un gioco (deploy transazionale, idempotente).
+    /// Enable UCOnline2 on a game (transactional, idempotent deploy).
     pub fn enable(
         app_id: u32,
         game_root: &Path,
@@ -153,9 +150,11 @@ fn build_notices(
              until they are removed — the two Spacewar stacks cannot share a process."
                 .to_string(),
         );
-    } else if detection.conflicts.iter().any(|c| {
-        matches!(c, Conflict::ColdClientLoader(_))
-    }) {
+    } else if detection
+        .conflicts
+        .iter()
+        .any(|c| matches!(c, Conflict::ColdClientLoader(_)))
+    {
         notices.push(
             "A competing Steam client loader (steamclient64.ini) was detected: \
              it will be moved into the AetherDesk backup if you enable UCO2."

@@ -41,7 +41,11 @@ pub async fn sync_hubcap_game_manifest(
         return Err("Manifest repair cannot run because the Steam path is empty".to_string());
     }
 
-    let plan = crate::core::game_mutations::MutationPlan::prepare(std::path::Path::new(&settings.steam_path), app_id, "manifest-repair")?;
+    let plan = crate::core::game_mutations::MutationPlan::prepare(
+        std::path::Path::new(&settings.steam_path),
+        app_id,
+        "manifest-repair",
+    )?;
     let started = Instant::now();
     let lua = LuaManifestPins::new(settings.steam_path.clone(), app_id);
     let content = std::fs::read_to_string(lua.lua_path())
@@ -86,18 +90,19 @@ pub async fn sync_hubcap_game_manifest(
     } else {
         crate::manifest::resolver::Generation::SettingsKey(settings.hubcap_api_key.clone())
     };
-    let resolution = crate::manifest::resolver::resolve(
-        crate::manifest::resolver::ManifestRequest {
+    let resolution =
+        crate::manifest::resolver::resolve(crate::manifest::resolver::ManifestRequest {
             steam_path: settings.steam_path.clone(),
             app_id,
             pins: pins.clone(),
             generation,
-        },
-    )
-    .await?;
+        })
+        .await?;
     report.missing = resolution.generated.len() + resolution.missing.len();
     if !resolution.is_complete() {
-        return Err("A valid authenticated Hubcap API key is required for missing manifests".to_string());
+        return Err(
+            "A valid authenticated Hubcap API key is required for missing manifests".to_string(),
+        );
     }
     if resolution.generated.is_empty() {
         crate::desk_log_debug!(
@@ -114,8 +119,7 @@ pub async fn sync_hubcap_game_manifest(
     report.generated = resolution.generated.len();
     let expected = resolution.generated.len();
     let generated = resolution.generated;
-    report.installed = SteamCompat::new(&settings.steam_path)
-        .install_manifest_files(&generated)?;
+    report.installed = SteamCompat::new(&settings.steam_path).install_manifest_files(&generated)?;
     if report.installed != expected {
         return Err(format!(
             "Manifest completion gate failed for app {app_id}: expected {expected} files, installed {}",

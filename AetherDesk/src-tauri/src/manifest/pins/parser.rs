@@ -40,9 +40,7 @@ pub(super) fn parse_pins(content: &str) -> Vec<ParsedPin> {
         };
         let addappid_line = find_nearest_addappid(&lines, line_index, app_id);
         let addappid_enabled = addappid_line
-            .and_then(|index| {
-                parse_addappid_line(lines[index]).map(|(_, commented)| !commented)
-            })
+            .and_then(|index| parse_addappid_line(lines[index]).map(|(_, commented)| !commented))
             .unwrap_or(!setmanifest_commented);
 
         pins.push(ParsedPin {
@@ -118,11 +116,7 @@ fn parse_addappid_line(line: &str) -> Option<(u32, bool)> {
     ))
 }
 
-fn find_nearest_addappid(
-    lines: &[&str],
-    setmanifest_line: usize,
-    app_id: u32,
-) -> Option<usize> {
+fn find_nearest_addappid(lines: &[&str], setmanifest_line: usize, app_id: u32) -> Option<usize> {
     lines
         .iter()
         .enumerate()

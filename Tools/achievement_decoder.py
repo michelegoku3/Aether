@@ -1,49 +1,49 @@
 #!/usr/bin/env python3
 # ============================================================================
-# achievement_decoder.py — decoder/encoder dei file cache achievement di Steam
-# + gestione dei backup snapshot JSON creati da AetherDLL.
+# achievement_decoder.py — decoder/encoder for Steam achievement cache files
+# + handling of the JSON snapshot backups created by AetherDLL.
 #
-# COMANDI
+# COMMANDS
 #
-#   1) Decodifica (default) — passagli uno o piu' file:
+#   1) Decode (default) — pass it one or more files:
 #
 #        python achievement_decoder.py UserGameStatsSchema_1817070.bin \
 #                                     UserGameStats_1916127674_1817070.bin
 #
-#      Decodifica .bin di schema/stats (e anche gli snapshot .json del backup
-#      AetherDLL) e stampa la timeline degli sblocchi con i nomi. Lo schema e'
-#      necessario solo per tradurre i bit in nomi.
+#      Decodes schema/stats .bin files (as well as AetherDLL backup .json
+#      snapshots) and prints the unlock timeline with names. The schema is
+#      only needed to translate bits into names.
 #
-#   2) snapshot — converte un .bin di Steam nello stesso formato JSON usato dal
-#      backup di AetherDLL (utile per "seminare" il backup con gli achievement
-#      gia' sbloccati PRIMA di installare la nuova build):
+#   2) snapshot — converts a Steam .bin into the same JSON format used by the
+#      AetherDLL backup (useful to "seed" the backup with achievements
+#      already unlocked BEFORE installing the new build):
 #
 #        python achievement_decoder.py snapshot UserGameStats_1916127674_1817070.bin \
 #                --schema UserGameStatsSchema_1817070.bin \
 #                -o UserGameStats_1916127674_1817070.json
 #
-#   3) rebuild — ricostruisce un .bin valido per Steam a partire dallo snapshot
-#      JSON del backup (da rimettere in <steam>\appcache\stats\ con Steam
-#      chiuso per far riapparire gli achievement):
+#   3) rebuild — rebuilds a valid .bin for Steam from a backup
+#      snapshot JSON (to put back into <steam>\appcache\stats\ with Steam
+#      closed so achievements reappear):
 #
 #        python achievement_decoder.py rebuild UserGameStats_1916127674_1817070.json \
 #                --schema UserGameStatsSchema_1817070.bin \
 #                -o UserGameStats_1916127674_1817070.bin
 #
-# FORMATO INTERNO (binary VDF di Valve)
-#   0x00 = apertura dizionario (seguita da chiave\0)
-#   0x01 = stringa  (chiave\0 valore\0)
-#   0x02 = int32    (chiave\0 + 4 byte little-endian)
-#   0x03 = float32  (chiave\0 + 4 byte)
-#   0x08 = chiusura dizionario
+# INTERNAL FORMAT (Valve binary VDF)
+#   0x00 = dictionary open (followed by key\0)
+#   0x01 = string  (key\0 value\0)
+#   0x02 = int32    (key\0 + 4 little-endian bytes)
+#   0x03 = float32  (key\0 + 4 bytes)
+#   0x08 = dictionary close
 #
-# Struttura di UserGameStats_<account>_<appid>.bin:
-#   cache { crc=0, PendingChanges>0 se ci sono cambi non confermati dal server,
+# Layout of UserGameStats_<account>_<appid>.bin:
+#   cache { crc=0, PendingChanges>0 if there are changes not confirmed by the server,
 #           <bucket> { data=bitfield32, state, AchievementTimes { <bit>: unix } } }
 #
-# CONVENZIONE ID <-> BUCKET/BIT:  achievement_id (protocollo eMsg 5466) =
-# bucket*32 + bit. Il comando snapshot deriva gli id cosi'; il rebuild ricontrola
-# i bucket/bit contro lo schema quando fornito (warn se un bucket non esiste).
+# ID <-> BUCKET/BIT CONVENTION:  achievement_id (protocol eMsg 5466) =
+# bucket*32 + bit. The snapshot command derives ids this way; rebuild rechecks
+# bucket/bit against the schema when provided (warns if a bucket is missing).
 # ============================================================================
 
 import struct
@@ -52,7 +52,7 @@ import json
 import argparse
 from datetime import datetime, timezone, timedelta
 
-# Ora locale italiana (CEST) per la visualizzazione; cambia se ti serve.
+# Italian local time (CEST) for display; change if needed.
 LOCAL_TZ = timezone(timedelta(hours=2))
 
 MIRROR_FORMAT = 'aether-achievement-mirror-v1'
@@ -63,7 +63,7 @@ MIRROR_FORMAT = 'aether-achievement-mirror-v1'
 # ---------------------------------------------------------------------------
 
 def parse_bin_vdf(buf, pos=0):
-    """Parser binary VDF. Ritorna (lista di (chiave, valore), nuova_pos)."""
+    """Parse binary VDF. Returns (list of (key, value), new_pos)."""
     out = []
     while pos < len(buf):
         t = buf[pos]
@@ -89,7 +89,7 @@ def parse_bin_vdf(buf, pos=0):
             out.append((key, ('flt', val)))
             pos += 4
         else:
-            raise ValueError(f'tipo sconosciuto 0x{t:02x} alla posizione {pos - 1}')
+            raise ValueError(f'unknown type 0x{t:02x} at position {pos - 1}')
     return out, pos
 
 
@@ -101,11 +101,11 @@ def fmt_time(unix_ts):
 
 
 # ---------------------------------------------------------------------------
-# Lettura: schema / stats bin / snapshot json
+# Reading: schema / stats bin / snapshot json
 # ---------------------------------------------------------------------------
 
 def parse_schema(data):
-    """Ritorna ({bucket: {bit: (api, english)}}, meta)."""
+    """Returns ({bucket: {bit: (api, english)}}, meta)."""
     root = dict(parse_bin_vdf(data)[0])
     appid_key = next(iter(root))
     app = root[appid_key]
@@ -136,7 +136,7 @@ def parse_schema(data):
 
 
 def parse_stats(data):
-    """Ritorna (crc, pending, {bucket: {'data': int, 'times': {bit: unix}}})."""
+    """Returns (crc, pending, {bucket: {'data': int, 'times': {bit: unix}}})."""
     root = dict(parse_bin_vdf(data)[0])
     cache = root.get('cache', {})
     crc = cache.get('crc', ('int', 0))[1]
@@ -155,14 +155,14 @@ def parse_stats(data):
 
 
 def parse_snapshot(data):
-    """Ritorna (meta, [(id, unlock_time, bucket, bit), ...]) da uno snapshot JSON."""
+    """Returns (meta, [(id, unlock_time, bucket, bit), ...]) from a snapshot JSON."""
     obj = json.loads(data.decode('utf-8'))
     if str(obj.get('_format', '')).startswith('aether-achievement-mirror'):
         entries = obj.get('achievements', [])
     elif 'achievements' in obj:
         entries = obj['achievements']
     else:
-        raise ValueError('JSON senza chiave "achievements"')
+        raise ValueError('JSON without "achievements" key')
     rows = []
     for e in entries:
         eid = int(e['id'])
@@ -176,7 +176,7 @@ def parse_snapshot(data):
 
 
 # ---------------------------------------------------------------------------
-# Scrittura: snapshot json / bin
+# Writing: snapshot json / bin
 # ---------------------------------------------------------------------------
 
 def now_iso():
@@ -184,10 +184,10 @@ def now_iso():
 
 
 def snapshot_json(appid, account_id, steamid64, entries):
-    """entries: [(id, unlock_time)] ordinato per id."""
+    """entries: [(id, unlock_time)] sorted by id."""
     out = ['{',
            f'  "_format": "{MIRROR_FORMAT}",',
-           '  "_note": "snapshot generato da AetherDLL; ricostruisci il .bin con Tools/achievement_decoder.py rebuild",',
+           '  "_note": "snapshot generated by AetherDLL; rebuild the .bin with Tools/achievement_decoder.py rebuild",',
            f'  "appid": {appid},',
            f'  "account_id": {account_id},',
            f'  "steamid64": {steamid64},',
@@ -202,7 +202,7 @@ def snapshot_json(appid, account_id, steamid64, entries):
 
 
 def build_bin(buckets, pending=1):
-    """buckets: {bucket: {bit: unix_time}} -> byte del file UserGameStats."""
+    """buckets: {bucket: {bit: unix_time}} -> bytes of the UserGameStats file."""
     out = bytearray()
     out += b'\x00cache\x00'
     out += b'\x02crc\x00' + struct.pack('<i', 0)
@@ -219,15 +219,15 @@ def build_bin(buckets, pending=1):
         out += b'\x00AchievementTimes\x00'
         for bit in sorted(times):
             out += b'\x02' + str(bit).encode() + b'\x00' + struct.pack('<i', times[bit])
-        out += b'\x08'   # chiude AchievementTimes
-        out += b'\x08'   # chiude il bucket
-    out += b'\x08'       # chiude cache
-    out += b'\x08'       # chiude il dizionario radice (scritto da Steam stesso)
+        out += b'\x08'   # closes AchievementTimes
+        out += b'\x08'   # closes the bucket
+    out += b'\x08'       # closes cache
+    out += b'\x08'       # closes the root dictionary (written by Steam itself)
     return bytes(out)
 
 
 # ---------------------------------------------------------------------------
-# Comandi
+# Commands
 # ---------------------------------------------------------------------------
 
 def cmd_decode(paths):
@@ -302,7 +302,7 @@ def cmd_snapshot(args):
     data = open(args.bin, 'rb').read()
     crc, pending, buckets = parse_stats(data)
 
-    # account/appid dal nome file UserGameStats_<account>_<appid>.bin
+    # account/appid from the UserGameStats_<account>_<appid>.bin filename
     import os
     base = os.path.basename(args.bin)
     account_id, appid = '?', '?'
@@ -335,7 +335,7 @@ def cmd_rebuild(args):
     buckets = {}
     for eid, t, bucket, bit in rows:
         if schema and bucket not in schema:
-            print(f'[!] WARN: bucket {bucket} (da id {eid}) non esiste nello schema — lo scrivo comunque.')
+            print(f'[!] WARN: bucket {bucket} (from id {eid}) not in schema — writing anyway.')
         buckets.setdefault(bucket, {})[bit] = t
 
     blob = build_bin(buckets, pending=args.pending)
@@ -365,7 +365,7 @@ def main(argv):
     p_reb.add_argument('--pending', type=int, default=1, help='PendingChanges value written into the .bin (default 1)')
     p_reb.add_argument('-o', '--output')
 
-    # Modalita' default: senza sottocomando, tutti gli argomenti sono file da decodificare.
+    # Default mode: without a subcommand, every argument is a file to decode.
     args = ap.parse_args(argv[1:] if argv[1:2] and argv[1] in ('decode', 'snapshot', 'rebuild')
                          else ['decode'] + argv[1:])
 

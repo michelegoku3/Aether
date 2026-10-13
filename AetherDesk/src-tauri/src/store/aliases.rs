@@ -33,7 +33,13 @@ static ALIAS_EXPANSIONS: &[(&str, &[&str])] = &[
     ("bfv", &["battlefield v"]),
     ("bl2", &["borderlands 2"]),
     ("bl3", &["borderlands 3"]),
-    ("botw", &["the legend of zelda breath of the wild", "breath of the wild"]),
+    (
+        "botw",
+        &[
+            "the legend of zelda breath of the wild",
+            "breath of the wild",
+        ],
+    ),
     ("btd", &["bloons td"]),
     ("civ", &["civilization"]),
     ("ck3", &["crusader kings 3"]),
@@ -42,14 +48,20 @@ static ALIAS_EXPANSIONS: &[(&str, &[&str])] = &[
     ("cp2077", &["cyberpunk 2077"]),
     ("cs", &["counter strike", "counter-strike"]),
     ("cs2", &["counter strike 2", "counter-strike 2"]),
-    ("csgo", &["counter strike global offensive", "counter-strike global offensive"]),
+    (
+        "csgo",
+        &[
+            "counter strike global offensive",
+            "counter-strike global offensive",
+        ],
+    ),
     ("css", &["counter strike source", "counter-strike source"]),
     ("d2", &["diablo 2", "diablo ii", "destiny 2"]),
     ("d3", &["diablo 3", "diablo iii"]),
     ("d4", &["diablo 4", "diablo iv"]),
     ("dbd", &["dead by daylight"]),
-    ("dota", &["dota 2"]),
-    ("dota2", &["dota 2"]),
+    ("data", &["data 2"]),
+    ("data2", &["data 2"]),
     ("ds", &["dark souls"]),
     ("ds1", &["dark souls"]),
     ("ds2", &["dark souls 2", "dark souls ii"]),
@@ -68,7 +80,10 @@ static ALIAS_EXPANSIONS: &[(&str, &[&str])] = &[
     ("fh5", &["forza horizon 5"]),
     ("fm", &["forza motorsport"]),
     ("fn", &["fortnite"]),
-    ("fnaf", &["five nights at freddy", "five nights at freddy's"]),
+    (
+        "fnaf",
+        &["five nights at freddy", "five nights at freddy's"],
+    ),
     ("fo4", &["fallout 4"]),
     ("fo76", &["fallout 76"]),
     ("fonv", &["fallout new vegas"]),
@@ -103,7 +118,13 @@ static ALIAS_EXPANSIONS: &[(&str, &[&str])] = &[
     ("p5", &["persona 5"]),
     ("poe", &["path of exile"]),
     ("poe2", &["path of exile 2"]),
-    ("pubg", &["playerunknown s battlegrounds", "playerunknowns battlegrounds"]),
+    (
+        "pubg",
+        &[
+            "playerunknown s battlegrounds",
+            "playerunknowns battlegrounds",
+        ],
+    ),
     ("r6", &["rainbow six siege", "rainbow 6 siege"]),
     ("r6s", &["rainbow six siege", "rainbow 6 siege"]),
     ("rdr", &["red dead redemption"]),
@@ -119,8 +140,17 @@ static ALIAS_EXPANSIONS: &[(&str, &[&str])] = &[
     ("tes5", &["the elder scrolls v skyrim", "skyrim"]),
     ("tk", &["tekken"]),
     ("tlou", &["the last of us"]),
-    ("tlou2", &["the last of us part 2", "the last of us part ii"]),
-    ("totk", &["the legend of zelda tears of the kingdom", "tears of the kingdom"]),
+    (
+        "tlou2",
+        &["the last of us part 2", "the last of us part ii"],
+    ),
+    (
+        "totk",
+        &[
+            "the legend of zelda tears of the kingdom",
+            "tears of the kingdom",
+        ],
+    ),
     ("tw", &["total war"]),
     ("tw3", &["the witcher 3", "witcher 3"]),
     ("val", &["valorant"]),
@@ -130,8 +160,6 @@ static ALIAS_EXPANSIONS: &[(&str, &[&str])] = &[
     ("wukong", &["black myth wukong"]),
     ("zelda", &["the legend of zelda"]),
 ];
-
-
 
 fn lookup(token: &str) -> Option<&'static [&'static str]> {
     ALIAS_EXPANSIONS

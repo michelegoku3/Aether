@@ -196,10 +196,7 @@ pub fn default_steam_path() -> String {
 /// (machine-wide installs).
 #[cfg(target_os = "windows")]
 fn steam_path_from_registry() -> Option<PathBuf> {
-    const SUBKEYS: [&str; 2] = [
-        r"SOFTWARE\Valve\Steam",
-        r"SOFTWARE\Wow6432Node\Valve\Steam",
-    ];
+    const SUBKEYS: [&str; 2] = [r"SOFTWARE\Valve\Steam", r"SOFTWARE\Wow6432Node\Valve\Steam"];
     for hive in [
         winreg::enums::HKEY_CURRENT_USER,
         winreg::enums::HKEY_LOCAL_MACHINE,
@@ -281,9 +278,15 @@ mod tests {
 
     #[test]
     fn normalize_strips_surrounding_quotes_but_keeps_inner_spaces() {
-        assert_eq!(normalize_steam_path("\"D:\\My Games\\Steam\""), r"D:\My Games\Steam");
+        assert_eq!(
+            normalize_steam_path("\"D:\\My Games\\Steam\""),
+            r"D:\My Games\Steam"
+        );
         assert_eq!(normalize_steam_path("'D:\\Steam' "), r"D:\Steam");
-        assert_eq!(normalize_steam_path("D:\\My Games\\Steam"), r"D:\My Games\Steam");
+        assert_eq!(
+            normalize_steam_path("D:\\My Games\\Steam"),
+            r"D:\My Games\Steam"
+        );
     }
 
     #[test]

@@ -10,4 +10,4 @@ bool LoadDiversion();
 // steamui redirect is installed. Must run only once, before hook registration.
 void SelectHookTargetBeforeRedirect();
 
-}  // namespace ac
+} // namespace ac

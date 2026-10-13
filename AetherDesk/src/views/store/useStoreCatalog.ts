@@ -17,9 +17,7 @@ export function useStoreCatalog({ settingsRevision, settingsReady }: Params) {
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const storeSearch = useStoreSearch();
   const trending = useTrendingStore(storeSearch.setResults);
-  const {
-    results, setResults, isLoading, hasSearched, activeQuery, search, clear,
-  } = storeSearch;
+  const { results, setResults, isLoading, hasSearched, activeQuery, search, clear } = storeSearch;
 
   useEffect(() => {
     if (!settingsReady || observedSettingsRevision.current === settingsRevision) return;
@@ -27,8 +25,7 @@ export function useStoreCatalog({ settingsRevision, settingsReady }: Params) {
     setPage(1);
     trending.reset();
     if (activeQuery.trim()) {
-      search(activeQuery).catch((error) =>
-        console.warn('Store search refresh after settings save failed:', error));
+      search(activeQuery).catch((error) => console.warn('Store search refresh after settings save failed:', error));
       return;
     }
     clear();
@@ -46,7 +43,7 @@ export function useStoreCatalog({ settingsRevision, settingsReady }: Params) {
     if (pageGames.length === 0 || document.visibilityState !== 'visible') return;
     preloadGameCovers(
       pageGames.map((game) => ({ appId: game.appId, imageUrl: game.imageUrl })),
-      pageGames.length,
+      pageGames.length
     );
     // pageKey represents the visible page identity.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -72,13 +69,17 @@ export function useStoreCatalog({ settingsRevision, settingsReady }: Params) {
       .then((enriched) => {
         if (cancelled) return;
         const flags = new Map(enriched.map((game) => [String(game.appId), game.has_denuvo]));
-        setResults((current) => current.map((game) => {
-          const flag = flags.get(String(game.appId));
-          return flag === undefined ? game : { ...game, has_denuvo: flag };
-        }));
+        setResults((current) =>
+          current.map((game) => {
+            const flag = flags.get(String(game.appId));
+            return flag === undefined ? game : { ...game, has_denuvo: flag };
+          })
+        );
       })
       .catch((error) => console.warn('Denuvo enrichment failed:', error));
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
     // pageKey is the complete enrichment request identity.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pageKey]);

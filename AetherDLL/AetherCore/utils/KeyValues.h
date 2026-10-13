@@ -24,13 +24,21 @@ namespace ac::kv1 {
 // entries inside the first dict = 1, ...). Default callbacks do nothing.
 struct Visitor {
     virtual ~Visitor() = default;
-    virtual void OnDictBegin(const std::string& name, int depth) { (void)name; (void)depth; }
+    virtual void OnDictBegin(const std::string& name, int depth) {
+        (void)name;
+        (void)depth;
+    }
     virtual void OnDictEnd(int depth) { (void)depth; }
     virtual void OnString(const std::string& key, const std::string& value, int depth) {
-        (void)key; (void)value; (void)depth;
+        (void)key;
+        (void)value;
+        (void)depth;
     }
     virtual void OnInt32(const std::string& key, std::uint8_t type, std::int32_t value, int depth) {
-        (void)key; (void)type; (void)value; (void)depth;
+        (void)key;
+        (void)type;
+        (void)value;
+        (void)depth;
     }
 };
 
@@ -40,12 +48,11 @@ struct Visitor {
 bool WalkBinary(const std::uint8_t* data, std::size_t size, Visitor& visitor);
 
 // Flat string pairs at any depth (the historical rich-presence use case).
-std::vector<std::pair<std::string, std::string>> ReadStringKVs(const std::uint8_t* data,
-                                                               std::size_t size);
+std::vector<std::pair<std::string, std::string>> ReadStringKVs(const std::uint8_t* data, std::size_t size);
 
 // Writer for a single flat dict of string pairs:
 //   0x00 "root" { 0x01 k1 v1 ... } 0x08 0x08
 // Exists for round-trip tests and future emit paths; pairs keep their order.
 std::string WriteStringKVs(const std::vector<std::pair<std::string, std::string>>& pairs);
 
-}  // namespace ac::kv1
+} // namespace ac::kv1

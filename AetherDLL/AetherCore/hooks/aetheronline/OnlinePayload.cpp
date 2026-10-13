@@ -4,9 +4,9 @@
 #include <string>
 
 #include "core/AetherCoreState.h"
-#include "hooks/aetheronline/PresenceSession.h"
 #include "core/Constants.h"
 #include "core/Logger.h"
+#include "hooks/aetheronline/PresenceSession.h"
 #include "utils/RemoteInject.h"
 
 namespace ac::hooks::onlinepayload {
@@ -14,17 +14,19 @@ namespace {
 
 constexpr const char* kModule = "Online.Payload";
 
-}  // namespace
+} // namespace
 
 void MaybeInject(const pipewatch::ProcessSnapshot& snapshot) {
-    if (!snapshot.likelyGame || snapshot.steamProcess) return;
+    if (!snapshot.likelyGame || snapshot.steamProcess)
+        return;
 
     const auto active = presence::RealAppId();
-    if (active == 0) return;
+    if (active == 0)
+        return;
 
-    const auto effectiveAppId =
-        snapshot.appId == constants::kSpacewarAppId ? active : snapshot.appId;
-    if (effectiveAppId != active) return;
+    const auto effectiveAppId = snapshot.appId == constants::kSpacewarAppId ? active : snapshot.appId;
+    if (effectiveAppId != active)
+        return;
 
     if (GetFileAttributesA(g_state.payloadDllPath.c_str()) == INVALID_FILE_ATTRIBUTES) {
         // Once per game session (logger dedup) instead of a module-local atomic.
@@ -34,24 +36,24 @@ void MaybeInject(const pipewatch::ProcessSnapshot& snapshot) {
 
     {
         std::lock_guard<std::mutex> lock(g_state.onlinePayload.mutex);
-        if (g_state.onlinePayload.injectedPids.count(snapshot.pid)) return;
+        if (g_state.onlinePayload.injectedPids.count(snapshot.pid))
+            return;
         g_state.onlinePayload.injectedPids.insert(snapshot.pid);
     }
 
-    HANDLE process = OpenProcess(PROCESS_CREATE_THREAD | PROCESS_QUERY_INFORMATION |
-                                 PROCESS_VM_OPERATION | PROCESS_VM_WRITE | PROCESS_VM_READ,
+    HANDLE process = OpenProcess(PROCESS_CREATE_THREAD | PROCESS_QUERY_INFORMATION | PROCESS_VM_OPERATION |
+                                     PROCESS_VM_WRITE | PROCESS_VM_READ,
                                  FALSE, snapshot.pid);
     if (!process) {
         ++g_state.onlinePayload.injectFailureCount;
-        AC_LOG_WARN(kModule, "OpenProcess failed for pid=%u image=%s.",
-                    snapshot.pid, snapshot.imageName.c_str());
+        AC_LOG_WARN(kModule, "OpenProcess failed for pid=%u image=%s.", snapshot.pid, snapshot.imageName.c_str());
         return;
     }
 
     if (inject::IsWow64Target(process)) {
         ++g_state.onlinePayload.injectFailureCount;
-        AC_LOG_WARN(kModule, "Skipping x86 target pid=%u image=%s (payload is x64 only).",
-                    snapshot.pid, snapshot.imageName.c_str());
+        AC_LOG_WARN(kModule, "Skipping x86 target pid=%u image=%s (payload is x64 only).", snapshot.pid,
+                    snapshot.imageName.c_str());
         CloseHandle(process);
         return;
     }
@@ -62,12 +64,12 @@ void MaybeInject(const pipewatch::ProcessSnapshot& snapshot) {
 
     if (ok) {
         ++g_state.onlinePayload.injectSuccessCount;
-        AC_LOG_INFO(kModule, "Injected payload into pid=%u image=%s appId=%u.",
-                    snapshot.pid, snapshot.imageName.c_str(), snapshot.appId);
+        AC_LOG_INFO(kModule, "Injected payload into pid=%u image=%s appId=%u.", snapshot.pid,
+                    snapshot.imageName.c_str(), snapshot.appId);
     } else {
         ++g_state.onlinePayload.injectFailureCount;
-        AC_LOG_WARN(kModule, "Payload injection failed pid=%u image=%s appId=%u.",
-                    snapshot.pid, snapshot.imageName.c_str(), snapshot.appId);
+        AC_LOG_WARN(kModule, "Payload injection failed pid=%u image=%s appId=%u.", snapshot.pid,
+                    snapshot.imageName.c_str(), snapshot.appId);
     }
 }
 
@@ -76,4 +78,4 @@ std::size_t InjectedPidCount() {
     return g_state.onlinePayload.injectedPids.size();
 }
 
-}  // namespace ac::hooks::onlinepayload
+} // namespace ac::hooks::onlinepayload

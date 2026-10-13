@@ -167,25 +167,30 @@ export const LogView = memo(function LogView() {
       {/* Upper header section */}
       <div className="store-header">
         <h1 className="store-title">Logs</h1>
-        <p className="store-subtitle">
-          Real-time console monitoring for Desk, DLL and UCO2 logs.
-        </p>
+        <p className="store-subtitle">Real-time console monitoring for Desk, DLL and UCO2 logs.</p>
       </div>
 
       {/* Separator line */}
       <div className="store-separator"></div>
 
       {exportStatus && (
-        <div
-          className="settings-alert info"
-          style={{ padding: '8px 14px', fontSize: '12px' }}
-        >
+        <div className="settings-alert info" style={{ padding: '8px 14px', fontSize: '12px' }}>
           {exportStatus}
         </div>
       )}
 
       {/* Control bar */}
-      <div className="log-header-controls" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '16px', width: '100%' }}>
+      <div
+        className="log-header-controls"
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          flexWrap: 'wrap',
+          gap: '16px',
+          width: '100%',
+        }}
+      >
         <div className="home-search-wrapper" style={{ position: 'relative', width: '260px' }}>
           <input
             type="text"
@@ -196,11 +201,7 @@ export const LogView = memo(function LogView() {
             style={{ width: '100%', paddingRight: '36px' }}
           />
           {filterQuery && (
-            <button
-              type="button"
-              className="home-search-clear"
-              onClick={() => setFilterQuery('')}
-            >
+            <button type="button" className="home-search-clear" onClick={() => setFilterQuery('')}>
               &times;
             </button>
           )}
@@ -238,7 +239,15 @@ export const LogView = memo(function LogView() {
           <button
             type="button"
             className="settings-small-btn"
-            style={{ width: '80px', height: '33px', padding: '0', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', boxSizing: 'border-box' }}
+            style={{
+              width: '80px',
+              height: '33px',
+              padding: '0',
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              boxSizing: 'border-box',
+            }}
             onClick={handleSaveBundle}
             title="Export AetherDesk, AetherDLL and UCO2 logs as .zip in Downloads folder"
           >
@@ -248,7 +257,17 @@ export const LogView = memo(function LogView() {
           <button
             type="button"
             className="settings-small-btn"
-            style={{ width: '80px', height: '33px', padding: '0', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', boxSizing: 'border-box', borderColor: 'var(--color-denuvo, #e63946)', color: 'var(--color-denuvo, #e63946)' }}
+            style={{
+              width: '80px',
+              height: '33px',
+              padding: '0',
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              boxSizing: 'border-box',
+              borderColor: 'var(--color-denuvo, #e63946)',
+              color: 'var(--color-denuvo, #e63946)',
+            }}
             onClick={handleClearLogs}
             title="Clear current log session file(s)"
           >
@@ -265,17 +284,20 @@ export const LogView = memo(function LogView() {
           title="Download the current log document (same naming as the .zip)"
         >
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-            <path d="M12 3v12m0 0l-4-4m4 4l4-4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+            <path
+              d="M12 3v12m0 0l-4-4m4 4l4-4"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
             <path d="M4 21h16" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
           </svg>
         </button>
         <div className="log-view-terminal" ref={containerRef} onScroll={handleScroll}>
           {filteredLines.length > 0 ? (
             filteredLines.map((line, idx) => (
-              <div
-                key={lineKey(line, idx, snapshotRef.current)}
-                className={getLineClass(line)}
-              >
+              <div key={lineKey(line, idx, snapshotRef.current)} className={getLineClass(line)}>
                 {line}
               </div>
             ))

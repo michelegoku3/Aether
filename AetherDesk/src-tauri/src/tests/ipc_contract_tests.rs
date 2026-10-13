@@ -218,7 +218,11 @@ fn command_signatures() -> BTreeMap<String, CommandSig> {
         if path.extension().and_then(|ext| ext.to_str()) != Some("rs") {
             continue;
         }
-        let module = path.file_stem().unwrap_or_default().to_string_lossy().to_string();
+        let module = path
+            .file_stem()
+            .unwrap_or_default()
+            .to_string_lossy()
+            .to_string();
         let source = read(&path);
         for marker in source.match_indices("#[tauri::command") {
             // From the marker to the first public `fn`: other attributes
@@ -241,7 +245,9 @@ fn command_signatures() -> BTreeMap<String, CommandSig> {
                 .into_iter()
                 .filter(|(name, ty)| {
                     !INJECTED_PARAM_NAMES.contains(&name.as_str())
-                        && !INJECTED_TYPE_MARKERS.iter().any(|marker| ty.contains(marker))
+                        && !INJECTED_TYPE_MARKERS
+                            .iter()
+                            .any(|marker| ty.contains(marker))
                 })
                 .map(|(rust_name, rust_type)| WireParam {
                     wire_key: wire_key(rust_name.trim_start_matches('_')),
@@ -261,7 +267,10 @@ fn command_signatures() -> BTreeMap<String, CommandSig> {
                 .as_ref()
                 .map(|signature| signature.module.clone())
                 .unwrap_or_else(|| "?".to_string());
-            let previous_line = previous.as_ref().map(|signature| signature.line).unwrap_or(0);
+            let previous_line = previous
+                .as_ref()
+                .map(|signature| signature.line)
+                .unwrap_or(0);
             assert!(
                 previous.is_none(),
                 "duplicate command `{name}`: commands/{module}.rs:{line} and                  commands/{previous_module}.rs:{previous_line}. Two #[tauri::command] with the                  same name make the generate_handler! registration ambiguous!"
@@ -454,7 +463,10 @@ fn string_literal(raw: &str) -> Option<String> {
     let inner = raw
         .strip_prefix('\'')
         .and_then(|inner| inner.strip_suffix('\''))
-        .or_else(|| raw.strip_prefix('"').and_then(|inner| inner.strip_suffix('"')))?;
+        .or_else(|| {
+            raw.strip_prefix('"')
+                .and_then(|inner| inner.strip_suffix('"'))
+        })?;
     Some(inner.to_string())
 }
 
@@ -559,9 +571,9 @@ fn referenced_command_names() -> BTreeSet<String> {
         .into_iter()
         .map(|(_, name)| name)
         .filter(|name| {
-            sources
-                .iter()
-                .any(|source| source.contains(&format!("'{name}'")) || source.contains(&format!("\"{name}\"")))
+            sources.iter().any(|source| {
+                source.contains(&format!("'{name}'")) || source.contains(&format!("\"{name}\""))
+            })
         })
         .collect()
 }
@@ -734,26 +746,8 @@ fn no_wire_key_is_an_unseparated_compound_word() {
 /// Vocabulary of single-word wire keys accepted by the code.
 const COMMON_SINGLE_WORDS: &[&str] = &[
     "base", // expected settings snapshot for conflict-aware three-way patch
-    "code",
-    "content",
-    "count",
-    "date",
-    "edits",
-    "enabled",
-    "folder",
-    "level",
-    "name",
-    "origin",
-    "path",
-    "query",
-    "request",
-    "settings",
-    "site",
-    "source",
-    "start",
-    "text",
-    "title",
-    "url",
+    "code", "content", "count", "date", "edits", "enabled", "folder", "level", "name", "origin",
+    "path", "query", "request", "settings", "site", "source", "start", "text", "title", "url",
 ];
 
 #[test]
@@ -866,11 +860,17 @@ fn documented_command_contracts_have_the_expected_keys() {
         ("trigger_hubcap_download", &["appId", "apiKey"]),
         ("prepare_specific_version_download", &["appId", "apiKey"]),
         ("trigger_ryuu_download", &["appId", "apiKey"]),
-        ("prepare_ryuu_specific_version_download", &["appId", "apiKey"]),
+        (
+            "prepare_ryuu_specific_version_download",
+            &["appId", "apiKey"],
+        ),
         // `gameName` is optional (Option<String>): the client sends it when it
         // knows the name (labels the download history on the lua.tools side).
         ("trigger_luatools_download", &["appId", "gameName"]),
-        ("prepare_luatools_specific_version_download", &["appId", "gameName"]),
+        (
+            "prepare_luatools_specific_version_download",
+            &["appId", "gameName"],
+        ),
         ("install_aether_dll", &["origin"]),
         ("uninstall_aether_dll", &[]),
         ("reset_aether_steam_path", &[]),

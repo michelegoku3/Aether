@@ -81,10 +81,7 @@ export const ManualVersionEditor = ({ game, initialRows, onClose }: ManualVersio
     let cancelled = false;
     (async () => {
       try {
-        const fresh = await queryGameState<LuaManifestRow[]>(
-          Number(game.appId),
-          'get_installed_lua_manifest_rows',
-        );
+        const fresh = await queryGameState<LuaManifestRow[]>(Number(game.appId), 'get_installed_lua_manifest_rows');
         if (cancelled) return;
         const normalized = prepareManifestRows(fresh);
         setRows(normalized);
@@ -94,12 +91,12 @@ export const ManualVersionEditor = ({ game, initialRows, onClose }: ManualVersio
             text: 'Lua ready, but no editable setManifestid entries were found.',
             type: 'error',
           });
-        } else if (normalized.some(row => row.issue && row.issue.active)) {
+        } else if (normalized.some((row) => row.issue && row.issue.active)) {
           setStatus({
             text: 'This Lua contains a malformed pin (marked in red): AetherDLL ignores the whole file until it is repaired. Type a valid decimal manifest GID and press Apply Edits, or turn the row off to comment it out.',
             type: 'error',
           });
-        } else if (normalized.some(row => row.issue)) {
+        } else if (normalized.some((row) => row.issue)) {
           setStatus({
             text: 'This Lua contains a commented-out malformed pin (marked in amber). The file loads now, but that call would break it as soon as updates are enabled for this game.',
             type: 'info',
@@ -115,7 +112,7 @@ export const ManualVersionEditor = ({ game, initialRows, onClose }: ManualVersio
   }, [game.appId]);
 
   const updateRow = (rowId: number, patch: Partial<LuaManifestRow>) => {
-    setRows(prev => prev.map(row => row.rowId === rowId ? { ...row, ...patch } : row));
+    setRows((prev) => prev.map((row) => (row.rowId === rowId ? { ...row, ...patch } : row)));
   };
 
   // Apply Edits must stay disabled while nothing differs from the Lua file:
@@ -127,8 +124,7 @@ export const ManualVersionEditor = ({ game, initialRows, onClose }: ManualVersio
       const original = baseline.find((r) => r.rowId === row.rowId);
       const enabledChanged = row.enabled !== (original ? original.enabled : row.enabled);
       const typed = row.manifestInput?.trim() ?? '';
-      const manifestChanged =
-        typed.length > 0 && typed !== (original?.manifestId ?? row.manifestId);
+      const manifestChanged = typed.length > 0 && typed !== (original?.manifestId ?? row.manifestId);
       return enabledChanged || manifestChanged;
     });
   }, [rows, baseline]);
@@ -144,7 +140,6 @@ export const ManualVersionEditor = ({ game, initialRows, onClose }: ManualVersio
       }),
     [rows]
   );
-
 
   // ESC + outside clicks close the popup (honoring an in-flight operation).
   useModalDismiss(onClose, isApplying);
@@ -176,7 +171,7 @@ export const ManualVersionEditor = ({ game, initialRows, onClose }: ManualVersio
         setIsApplying(false);
       }, 30_000);
 
-      const edits = rows.map(row => ({ 
+      const edits = rows.map((row) => ({
         rowId: row.rowId,
         manifestId: row.manifestInput?.trim() ? row.manifestInput.trim() : null,
         enabled: row.enabled,
@@ -219,7 +214,7 @@ export const ManualVersionEditor = ({ game, initialRows, onClose }: ManualVersio
             </tr>
           </thead>
           <tbody>
-            {rows.map(row => {
+            {rows.map((row) => {
               const typed = (row.manifestInput ?? '').trim();
               const typedInvalid = typed.length > 0 && !isValidManifestGid(typed);
               // Red = the file does not load (active malformed call, or a value
@@ -227,47 +222,47 @@ export const ManualVersionEditor = ({ game, initialRows, onClose }: ManualVersio
               // Amber = a commented malformed call: a trap for "enable updates",
               // not a broken load today.
               const severity: 'ok' | 'warn' | 'invalid' =
-                typedInvalid || row.issue?.active
-                  ? 'invalid'
-                  : row.issue
-                    ? 'warn'
-                    : 'ok';
+                typedInvalid || row.issue?.active ? 'invalid' : row.issue ? 'warn' : 'ok';
               return (
-              <tr
-                key={row.rowId}
-                className={[
-                  !row.enabled ? 'disabled' : '',
-                  severity === 'invalid' ? 'version-row-invalid' : '',
-                  severity === 'warn' ? 'version-row-warn' : '',
-                ].filter(Boolean).join(' ')}
-              >
-                <td className="version-appid">{row.appId}</td>
-                <td>
-                  <input
-                    className={[
-                      'version-manifest-input',
-                      severity === 'invalid' ? 'version-manifest-input--invalid' : '',
-                      severity === 'warn' ? 'version-manifest-input--warn' : '',
-                    ].filter(Boolean).join(' ')}
-                    value={row.manifestInput || ''}
-                    placeholder={row.manifestId}
-                    disabled={isApplying || (!row.enabled && !row.issue)}
-                    aria-invalid={severity === 'invalid'}
-                    onChange={(e) => updateRow(row.rowId, { manifestInput: e.target.value })}
-                  />
-                </td>
-                <td className="version-switch-cell">
-                  <label className="version-switch">
+                <tr
+                  key={row.rowId}
+                  className={[
+                    !row.enabled ? 'disabled' : '',
+                    severity === 'invalid' ? 'version-row-invalid' : '',
+                    severity === 'warn' ? 'version-row-warn' : '',
+                  ]
+                    .filter(Boolean)
+                    .join(' ')}
+                >
+                  <td className="version-appid">{row.appId}</td>
+                  <td>
                     <input
-                      type="checkbox"
-                      checked={row.enabled}
-                      disabled={isApplying}
-                      onChange={(e) => updateRow(row.rowId, { enabled: e.target.checked })}
+                      className={[
+                        'version-manifest-input',
+                        severity === 'invalid' ? 'version-manifest-input--invalid' : '',
+                        severity === 'warn' ? 'version-manifest-input--warn' : '',
+                      ]
+                        .filter(Boolean)
+                        .join(' ')}
+                      value={row.manifestInput || ''}
+                      placeholder={row.manifestId}
+                      disabled={isApplying || (!row.enabled && !row.issue)}
+                      aria-invalid={severity === 'invalid'}
+                      onChange={(e) => updateRow(row.rowId, { manifestInput: e.target.value })}
                     />
-                    <span></span>
-                  </label>
-                </td>
-              </tr>
+                  </td>
+                  <td className="version-switch-cell">
+                    <label className="version-switch">
+                      <input
+                        type="checkbox"
+                        checked={row.enabled}
+                        disabled={isApplying}
+                        onChange={(e) => updateRow(row.rowId, { enabled: e.target.checked })}
+                      />
+                      <span></span>
+                    </label>
+                  </td>
+                </tr>
               );
             })}
           </tbody>
@@ -275,19 +270,13 @@ export const ManualVersionEditor = ({ game, initialRows, onClose }: ManualVersio
       </div>
 
       <div className="version-actions">
-        <button
-          className="panel-btn"
-          onClick={handleOpenSteamDb}
-          disabled={isApplying}
-        >
+        <button className="panel-btn" onClick={handleOpenSteamDb} disabled={isApplying}>
           Open SteamDB
         </button>
         <button
           className="panel-btn"
           onClick={handleApply}
-          disabled={
-            isApplying || rows.length === 0 || !hasChanges || invalidInputRows.length > 0
-          }
+          disabled={isApplying || rows.length === 0 || !hasChanges || invalidInputRows.length > 0}
         >
           {isApplying ? 'Applying...' : 'Apply Edits'}
         </button>

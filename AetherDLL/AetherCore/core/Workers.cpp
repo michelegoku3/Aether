@@ -43,8 +43,9 @@ void QueueLoop() {
             std::unique_lock<std::mutex> lock(s_queue.mutex);
             s_queue.cv.wait(lock, [] { return s_queue.stopped || !s_queue.jobs.empty(); });
             if (s_queue.jobs.empty()) {
-                if (s_queue.stopped) return;
-                continue;   // spurious wake
+                if (s_queue.stopped)
+                    return;
+                continue; // spurious wake
             }
             job = std::move(s_queue.jobs.front());
             s_queue.jobs.pop_front();
@@ -84,13 +85,15 @@ void ReapCompletedLocked() {
     }
 }
 
-}  // namespace
+} // namespace
 
 bool Submit(std::function<void()> job) {
-    if (!job || s_shutDown.load()) return false;
+    if (!job || s_shutDown.load())
+        return false;
     {
         std::lock_guard<std::mutex> lock(s_queue.mutex);
-        if (s_queue.stopped) return false;
+        if (s_queue.stopped)
+            return false;
         EnsureQueueLocked();
         s_queue.jobs.push_back(std::move(job));
     }
@@ -98,11 +101,11 @@ bool Submit(std::function<void()> job) {
     return true;
 }
 
-bool StartWorker(const std::string& name,
-                 std::function<void(std::atomic<bool>&)> body,
-                 WorkerCompletion* completion) {
-    if (completion) *completion = {};
-    if (!body || s_shutDown.load()) return false;
+bool StartWorker(const std::string& name, std::function<void(std::atomic<bool>&)> body, WorkerCompletion* completion) {
+    if (completion)
+        *completion = {};
+    if (!body || s_shutDown.load())
+        return false;
     auto stop = std::make_shared<std::atomic<bool>>(false);
     auto done = std::make_shared<std::atomic<bool>>(false);
     auto finished = std::make_shared<std::promise<void>>();
@@ -110,7 +113,8 @@ bool StartWorker(const std::string& name,
     {
         std::lock_guard<std::mutex> lock(s_registryMutex);
         // Shutdown may have won after the optimistic check above.
-        if (s_shutDown.load()) return false;
+        if (s_shutDown.load())
+            return false;
         ReapCompletedLocked();
         s_workers.push_back(WorkerEntry{name, stop, done, {}});
         WorkerEntry& entry = s_workers.back();
@@ -137,7 +141,8 @@ bool StartWorker(const std::string& name,
             s_workers.pop_back(); // no phantom entry on thread-creation failure
             throw;
         }
-        if (completion) *completion = std::move(future);
+        if (completion)
+            *completion = std::move(future);
     }
     s_startedCount.fetch_add(1);
     AC_LOG_DEBUG(kModule, "Worker '%s' registered.", name.c_str());
@@ -151,7 +156,8 @@ std::string SummaryText() {
         std::lock_guard<std::mutex> lock(s_registryMutex);
         registered = s_workers.size();
         for (const auto& w : s_workers) {
-            if (w.done && !w.done->load()) ++running;
+            if (w.done && !w.done->load())
+                ++running;
         }
     }
     std::size_t queued = 0;
@@ -159,20 +165,20 @@ std::string SummaryText() {
         std::lock_guard<std::mutex> lock(s_queue.mutex);
         queued = s_queue.jobs.size();
     }
-    return "workers_registered=" + std::to_string(registered) +
-           " running=" + std::to_string(running) +
-           " queued_jobs=" + std::to_string(queued) +
-           " total_started=" + std::to_string(s_startedCount.load());
+    return "workers_registered=" + std::to_string(registered) + " running=" + std::to_string(running) +
+           " queued_jobs=" + std::to_string(queued) + " total_started=" + std::to_string(s_startedCount.load());
 }
 
 void Shutdown() {
-    if (s_shutDown.exchange(true)) return;
+    if (s_shutDown.exchange(true))
+        return;
     AC_LOG_INFO(kModule, "Shutdown requested (%s).", SummaryText().c_str());
 
     // 1. Signal every long-lived worker.
     {
         std::lock_guard<std::mutex> lock(s_registryMutex);
-        for (auto& w : s_workers) w.stop->store(true);
+        for (auto& w : s_workers)
+            w.stop->store(true);
     }
 
     // 2. Stop accepting queue jobs, then drain the remaining ones so nothing
@@ -187,14 +193,17 @@ void Shutdown() {
     if (!remaining.empty()) {
         AC_LOG_INFO(kModule, "Draining %zu pending task-queue job(s).", remaining.size());
     }
-    for (const auto& job : remaining) RunJob(job, "TaskQueue(drain)");
+    for (const auto& job : remaining)
+        RunJob(job, "TaskQueue(drain)");
     {
         std::thread worker;
         {
             std::lock_guard<std::mutex> lock(s_queue.mutex);
-            if (s_queue.worker.joinable()) worker = std::move(s_queue.worker);
+            if (s_queue.worker.joinable())
+                worker = std::move(s_queue.worker);
         }
-        if (worker.joinable()) worker.join();
+        if (worker.joinable())
+            worker.join();
     }
     AC_LOG_INFO(kModule, "Task queue stopped.");
 
@@ -204,16 +213,18 @@ void Shutdown() {
         std::string name;
         {
             std::lock_guard<std::mutex> lock(s_registryMutex);
-            if (s_workers.empty()) break;
+            if (s_workers.empty())
+                break;
             WorkerEntry entry = std::move(s_workers.back());
             s_workers.pop_back();
             thread = std::move(entry.thread);
             name = std::move(entry.name);
         }
-        if (thread.joinable()) thread.join();
+        if (thread.joinable())
+            thread.join();
         AC_LOG_INFO(kModule, "Worker '%s' joined.", name.c_str());
     }
     AC_LOG_INFO(kModule, "All background workers stopped.");
 }
 
-}  // namespace ac::workers
+} // namespace ac::workers

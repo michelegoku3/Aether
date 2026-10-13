@@ -69,7 +69,10 @@ fn scan_flags_a_game_whose_lua_cannot_be_loaded() {
     let issue = &broken.lua_issues[0];
     assert_eq!(issue.line, 3);
     assert_eq!(issue.depot_id, Some(3558401));
-    assert!(issue.active, "the call is executed, so the file is rejected");
+    assert!(
+        issue.active,
+        "the call is executed, so the file is rejected"
+    );
 
     let healthy = games
         .iter()

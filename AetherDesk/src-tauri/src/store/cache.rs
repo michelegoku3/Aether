@@ -181,7 +181,10 @@ mod tests {
     use super::*;
 
     fn entry(ts: u64) -> StoreSearchCacheEntry {
-        StoreSearchCacheEntry { updated_at_unix: ts, results: Vec::new() }
+        StoreSearchCacheEntry {
+            updated_at_unix: ts,
+            results: Vec::new(),
+        }
     }
 
     #[test]
@@ -189,7 +192,10 @@ mod tests {
         let now = 10_000_000;
         let mut entries: HashMap<String, StoreSearchCacheEntry> = HashMap::new();
         // One stale entry (older than retention).
-        entries.insert("stale".to_string(), entry(now - STALE_RETENTION_SECONDS - 1));
+        entries.insert(
+            "stale".to_string(),
+            entry(now - STALE_RETENTION_SECONDS - 1),
+        );
         // MAX + 10 fresh entries with increasing timestamps.
         for i in 0..(MAX_CACHE_ENTRIES + 10) {
             entries.insert(format!("q{i}"), entry(now - i as u64));

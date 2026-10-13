@@ -1,12 +1,14 @@
 use super::command_steam_path;
 use crate::core::paths::LocalAppPaths;
+use crate::core::settings::{
+    cache_version_with_currency, load_settings, steam_country_code_for_currency,
+};
 use crate::game_info::cache::GameInfoCache;
 use crate::manifest::pins::{
     pins_from_rows, DepotManifestPin, LuaManifestEdit, LuaManifestPins, LuaManifestRow,
 };
-use crate::steam::compat::SteamCompat;
-use crate::core::settings::{cache_version_with_currency, load_settings, steam_country_code_for_currency};
 use crate::steam::app_names::SteamAppNameResolver;
+use crate::steam::compat::SteamCompat;
 use crate::steam::library::{InstalledSteamGame, SteamLibraryScanner};
 use crate::steam::store_items;
 use crate::util::browser::open_external_url;
@@ -30,7 +32,11 @@ pub async fn get_installed_library_games(
         Err(error) => return Err(error.message(&settings.steam_path)),
     };
 
-    crate::desk_log_info!("library", "Scanning Steam library for Lua games (steam_path='{}')", steam_root.display());
+    crate::desk_log_info!(
+        "library",
+        "Scanning Steam library for Lua games (steam_path='{}')",
+        steam_root.display()
+    );
     let store_currency = settings.store_currency.clone();
     // Scanning (appmanifest + stplug-in) is synchronous I/O: keep it off the
     // tokio runtime, otherwise every rescan (watcher ones included) would
@@ -77,11 +83,9 @@ pub async fn get_installed_library_games(
             country
         );
         let metas = store_items::fetch_store_items_for_country(missing_covers, country).await;
-        resolver.merge_image_urls(
-            metas
-                .iter()
-                .filter_map(|(app_id, meta)| meta.library_capsule_url.clone().map(|url| (*app_id, url))),
-        );
+        resolver.merge_image_urls(metas.iter().filter_map(|(app_id, meta)| {
+            meta.library_capsule_url.clone().map(|url| (*app_id, url))
+        }));
         resolver.merge_hero_image_urls(
             metas
                 .into_iter()
@@ -95,7 +99,10 @@ pub async fn get_installed_library_games(
         if let Some(name) = names.get(&game.id) {
             game.name = name.clone();
         }
-        if let Some(image_url) = image_urls.get(&game.id).filter(|url| is_library_capsule_url(url)) {
+        if let Some(image_url) = image_urls
+            .get(&game.id)
+            .filter(|url| is_library_capsule_url(url))
+        {
             game.image_url = image_url.clone();
         } else {
             game.image_url.clear();
@@ -108,13 +115,14 @@ pub async fn get_installed_library_games(
     }
 
     games.sort_by_key(|a| a.name.to_lowercase());
-    let info_cache_version = cache_version_with_currency(
-        &app.package_info().version.to_string(),
-        &store_currency,
+    let info_cache_version =
+        cache_version_with_currency(&app.package_info().version.to_string(), &store_currency);
+    GameInfoCache::new(&cache_dir, info_cache_version).merge_library_games(&games);
+    crate::desk_log_info!(
+        "library",
+        "Library scan completed: returned {} installed Lua game(s)",
+        games.len()
     );
-    GameInfoCache::new(&cache_dir, info_cache_version)
-        .merge_library_games(&games);
-    crate::desk_log_info!("library", "Library scan completed: returned {} installed Lua game(s)", games.len());
     Ok(games)
 }
 
@@ -127,7 +135,11 @@ pub async fn warm_library_game_cache(app: tauri::AppHandle) -> Result<usize, Str
         Ok(root) => root,
         Err(crate::steam::resolve::SteamPathError::Empty) => return Ok(0),
         Err(error) => {
-            crate::desk_log_warn!("library", "Cache warm-up skipped: {}", error.message(&settings.steam_path));
+            crate::desk_log_warn!(
+                "library",
+                "Cache warm-up skipped: {}",
+                error.message(&settings.steam_path)
+            );
             return Ok(0);
         }
     };
@@ -140,7 +152,11 @@ pub async fn warm_library_game_cache(app: tauri::AppHandle) -> Result<usize, Str
         return Ok(0);
     }
 
-    crate::desk_log_info!("library", "Starting background metadata cache warm-up for {} installed game App ID(s)", app_ids.len());
+    crate::desk_log_info!(
+        "library",
+        "Starting background metadata cache warm-up for {} installed game App ID(s)",
+        app_ids.len()
+    );
     let cache_dir = LocalAppPaths::data_root().join("cache");
     let resolver = SteamAppNameResolver::new(&cache_dir);
     let names = resolver.resolve_names(app_ids.clone()).await;
@@ -148,9 +164,9 @@ pub async fn warm_library_game_cache(app: tauri::AppHandle) -> Result<usize, Str
     let metas = store_items::fetch_store_items_for_country(app_ids, country).await;
     let meta_values: Vec<(u32, store_items::StoreItemMeta)> = metas.into_iter().collect();
     resolver.merge_image_urls(
-        meta_values
-            .iter()
-            .filter_map(|(app_id, meta)| meta.library_capsule_url.clone().map(|url| (*app_id, url))),
+        meta_values.iter().filter_map(|(app_id, meta)| {
+            meta.library_capsule_url.clone().map(|url| (*app_id, url))
+        }),
     );
     resolver.merge_hero_image_urls(
         meta_values
@@ -158,7 +174,11 @@ pub async fn warm_library_game_cache(app: tauri::AppHandle) -> Result<usize, Str
             .filter_map(|(app_id, meta)| meta.hero_image_url.map(|url| (app_id, url))),
     );
 
-    crate::desk_log_info!("library", "Background metadata cache warm-up complete: {} name(s) cached", names.len());
+    crate::desk_log_info!(
+        "library",
+        "Background metadata cache warm-up complete: {} name(s) cached",
+        names.len()
+    );
     Ok(names.len())
 }
 
@@ -168,7 +188,11 @@ pub fn open_steamdb_depots(app_id: u32) -> Result<(), String> {
         return Err("A valid Steam App ID is required".to_string());
     }
 
-    crate::desk_log_info!("library", "Opening SteamDB depots page for {}", crate::core::logger::format_appid(app_id));
+    crate::desk_log_info!(
+        "library",
+        "Opening SteamDB depots page for {}",
+        crate::core::logger::format_appid(app_id)
+    );
     let url = format!("https://steamdb.info/app/{}/depots/", app_id);
     open_external_url(&url)
 }
@@ -182,12 +206,14 @@ pub fn open_steamdb_patchnotes(app_id: u32) -> Result<(), String> {
         return Err("A valid Steam App ID is required".to_string());
     }
 
-    crate::desk_log_info!("library", "Opening SteamDB patchnotes page for {}", crate::core::logger::format_appid(app_id));
+    crate::desk_log_info!(
+        "library",
+        "Opening SteamDB patchnotes page for {}",
+        crate::core::logger::format_appid(app_id)
+    );
     let url = format!("https://steamdb.info/app/{}/patchnotes/", app_id);
     open_external_url(&url)
 }
-
-
 
 #[tauri::command]
 pub fn get_installed_lua_manifest_rows(
@@ -195,7 +221,12 @@ pub fn get_installed_lua_manifest_rows(
     app_id: u32,
 ) -> Result<Vec<LuaManifestRow>, String> {
     let steam_path = command_steam_path(&app)?;
-    crate::desk_log_debug!("library", "Reading installed Lua manifest rows for {} from '{}'", crate::core::logger::format_appid(app_id), steam_path);
+    crate::desk_log_debug!(
+        "library",
+        "Reading installed Lua manifest rows for {} from '{}'",
+        crate::core::logger::format_appid(app_id),
+        steam_path
+    );
     // Tolerant read: this feeds the version editor, which must open even when
     // the Lua contains a malformed setManifestid line — that line is exactly
     // what the user may be there to fix. Malformed lines come back as rows
@@ -229,7 +260,12 @@ pub fn get_library_change_revision(app: tauri::AppHandle) -> u64 {
 #[tauri::command]
 pub fn get_lua_game_update_state(app: tauri::AppHandle, app_id: u32) -> Result<bool, String> {
     let steam_path = command_steam_path(&app)?;
-    crate::desk_log_debug!("library", "Checking update state for {} in '{}'", crate::core::logger::format_appid(app_id), steam_path);
+    crate::desk_log_debug!(
+        "library",
+        "Checking update state for {} in '{}'",
+        crate::core::logger::format_appid(app_id),
+        steam_path
+    );
     LuaManifestPins::new(steam_path, app_id).updates_are_enabled()
 }
 
@@ -240,8 +276,18 @@ pub fn set_lua_game_updates_enabled(
     enabled: bool,
 ) -> Result<String, String> {
     let steam_path = command_steam_path(&app)?;
-    let _mutation = crate::core::game_mutations::try_acquire(std::path::Path::new(&steam_path), app_id, "set_lua_game_updates_enabled")?;
-    crate::desk_log_info!("library", "Setting updates_enabled={} for {} in steam_path='{}'", enabled, crate::core::logger::format_appid(app_id), steam_path);
+    let _mutation = crate::core::game_mutations::try_acquire(
+        std::path::Path::new(&steam_path),
+        app_id,
+        "set_lua_game_updates_enabled",
+    )?;
+    crate::desk_log_info!(
+        "library",
+        "Setting updates_enabled={} for {} in steam_path='{}'",
+        enabled,
+        crate::core::logger::format_appid(app_id),
+        steam_path
+    );
     // Safety net before locking a game to a fixed version: realign the
     // informational pins to the manifests Steam ACTUALLY installed, so
     // "Disable updates" reactivates the CURRENT version's GIDs. Without this,
@@ -250,7 +296,11 @@ pub fn set_lua_game_updates_enabled(
     // stale pin and trigger a downgrade. Local-only and best-effort: a
     // failure here must not block the user's explicit toggle.
     if !enabled {
-        match crate::core::hubcap_update_monitor::realign_pins_to_installed(&steam_path, app_id, &_mutation) {
+        match crate::core::hubcap_update_monitor::realign_pins_to_installed(
+            &steam_path,
+            app_id,
+            &_mutation,
+        ) {
             Ok(0) => {}
             Ok(realigned) => crate::desk_log_info!(
                 "library",
@@ -266,14 +316,27 @@ pub fn set_lua_game_updates_enabled(
             ),
         }
     }
-    let changed = match LuaManifestPins::new(steam_path.clone(), app_id).set_updates_enabled(enabled) {
-        Ok(c) => c,
-        Err(e) => {
-            crate::desk_log_error!("library", "Failed to set updates_enabled={} for {}: {}", enabled, crate::core::logger::format_appid(app_id), e);
-            return Err(e);
-        }
-    };
-    crate::desk_log_info!("library", "Updates {} for {}: {} manifest pin(s) modified", if enabled { "enabled" } else { "disabled" }, crate::core::logger::format_appid(app_id), changed);
+    let changed =
+        match LuaManifestPins::new(steam_path.clone(), app_id).set_updates_enabled(enabled) {
+            Ok(c) => c,
+            Err(e) => {
+                crate::desk_log_error!(
+                    "library",
+                    "Failed to set updates_enabled={} for {}: {}",
+                    enabled,
+                    crate::core::logger::format_appid(app_id),
+                    e
+                );
+                return Err(e);
+            }
+        };
+    crate::desk_log_info!(
+        "library",
+        "Updates {} for {}: {} manifest pin(s) modified",
+        if enabled { "enabled" } else { "disabled" },
+        crate::core::logger::format_appid(app_id),
+        changed
+    );
     // Every Lua change must land in AetherData: the toggle rewrote the pins
     // (comment/uncomment), so archive the resulting Lua version. Deduplicated
     // by content — repeated toggles never create duplicate copies. For the
@@ -308,19 +371,29 @@ pub fn set_lua_game_updates_enabled(
 }
 
 #[tauri::command]
-pub fn remove_lua_game_from_library(
-    app: tauri::AppHandle,
-    app_id: u32,
-) -> Result<String, String> {
+pub fn remove_lua_game_from_library(app: tauri::AppHandle, app_id: u32) -> Result<String, String> {
     let steam_path = command_steam_path(&app)?;
-    let _mutation = crate::core::game_mutations::try_acquire(std::path::Path::new(&steam_path), app_id, "remove_lua_game_from_library")?;
-    crate::desk_log_info!("library", "Removing Lua game {} from library (steam_path='{}')", crate::core::logger::format_appid(app_id), steam_path);
+    let _mutation = crate::core::game_mutations::try_acquire(
+        std::path::Path::new(&steam_path),
+        app_id,
+        "remove_lua_game_from_library",
+    )?;
+    crate::desk_log_info!(
+        "library",
+        "Removing Lua game {} from library (steam_path='{}')",
+        crate::core::logger::format_appid(app_id),
+        steam_path
+    );
 
     // `command_steam_path` above already strict-validated and normalized the
     // path; the scanner normalizes again, so the value is safe to pass.
     let scanner = SteamLibraryScanner::new(steam_path.clone());
     if scanner.is_app_installed(app_id) {
-        crate::desk_log_warn!("library", "Cannot remove {}: game is currently installed in Steam", crate::core::logger::format_appid(app_id));
+        crate::desk_log_warn!(
+            "library",
+            "Cannot remove {}: game is currently installed in Steam",
+            crate::core::logger::format_appid(app_id)
+        );
         return Err("This game is installed in Steam. Remove is allowed only for Lua-only games that are not installed.".to_string());
     }
 
@@ -341,7 +414,11 @@ pub fn remove_lua_game_from_library(
     }
 
     if removed {
-        crate::desk_log_info!("library", "Successfully removed Lua files for {} from stplug-in", crate::core::logger::format_appid(app_id));
+        crate::desk_log_info!(
+            "library",
+            "Successfully removed Lua files for {} from stplug-in",
+            crate::core::logger::format_appid(app_id)
+        );
         crate::core::library_events::notify_lua_changed(
             &app,
             crate::core::library_events::LibraryChangeOrigin::LibraryAction,
@@ -349,7 +426,11 @@ pub fn remove_lua_game_from_library(
         );
         Ok(format!("App ID {} removed from Aether library.", app_id))
     } else {
-        crate::desk_log_warn!("library", "No Lua file found for {} in stplug-in", crate::core::logger::format_appid(app_id));
+        crate::desk_log_warn!(
+            "library",
+            "No Lua file found for {} in stplug-in",
+            crate::core::logger::format_appid(app_id)
+        );
         Ok(format!("No Lua file found for App ID {}.", app_id))
     }
 }
@@ -361,7 +442,11 @@ pub async fn apply_specific_version_edits(
     edits: Vec<LuaManifestEdit>,
 ) -> Result<Vec<LuaManifestRow>, String> {
     let steam_path = command_steam_path(&app)?;
-    let plan = crate::core::game_mutations::MutationPlan::prepare(std::path::Path::new(&steam_path), app_id, "specific-edits")?;
+    let plan = crate::core::game_mutations::MutationPlan::prepare(
+        std::path::Path::new(&steam_path),
+        app_id,
+        "specific-edits",
+    )?;
     crate::desk_log_info!(
         "library",
         "Applying {} specific version edit(s) for {} in steam_path='{}'",
@@ -372,9 +457,8 @@ pub async fn apply_specific_version_edits(
 
     let pins_editor = LuaManifestPins::new(steam_path.clone(), app_id);
     let (next_lua, rows) = pins_editor.preview_edits(&edits)?;
-    let pins: Vec<DepotManifestPin> = pins_from_rows(LuaManifestPins::rows_for_manifest_sync(
-        &next_lua,
-    ));
+    let pins: Vec<DepotManifestPin> =
+        pins_from_rows(LuaManifestPins::rows_for_manifest_sync(&next_lua));
 
     // Local-first resolution (shared with every other pipeline): backup and
     // secondary-cache hits are restored into depotcache first; only genuinely
@@ -385,15 +469,14 @@ pub async fn apply_specific_version_edits(
     } else {
         crate::manifest::resolver::Generation::SettingsKey(settings.hubcap_api_key.clone())
     };
-    let resolution = crate::manifest::resolver::resolve(
-        crate::manifest::resolver::ManifestRequest {
+    let resolution =
+        crate::manifest::resolver::resolve(crate::manifest::resolver::ManifestRequest {
             steam_path: steam_path.clone(),
             app_id,
             pins: pins.clone(),
             generation,
-        },
-    )
-    .await?;
+        })
+        .await?;
     if !resolution.is_complete() {
         return Err(
             "The selected version references manifest files that are not local. Configure a valid authenticated Hubcap API key before applying it.".to_string(),
@@ -405,8 +488,7 @@ pub async fn apply_specific_version_edits(
 
     // Publish the Lua and any newly generated exact manifests together. The
     // old Lua remains untouched if staging/generation fails.
-    SteamCompat::new(&steam_path)
-        .install_lua_and_manifest_files(app_id, &next_lua, &generated)?;
+    SteamCompat::new(&steam_path).install_lua_and_manifest_files(app_id, &next_lua, &generated)?;
 
     // Shared completeness gate: the same "present" definition the resolution
     // used, so a resolved pin can never fail here.
@@ -437,5 +519,3 @@ pub async fn apply_specific_version_edits(
     );
     Ok(rows)
 }
-
-

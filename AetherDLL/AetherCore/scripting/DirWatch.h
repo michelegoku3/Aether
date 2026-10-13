@@ -17,10 +17,9 @@ namespace ac::dirwatch {
 void Start(const std::vector<std::string>& directories);
 
 // Starts the Lua watcher plus a non-recursive watcher for Steam app manifests.
-void Start(const std::vector<std::string>& directories,
-           const std::vector<std::string>& acfDirectories);
+void Start(const std::vector<std::string>& directories, const std::vector<std::string>& acfDirectories);
 
 // Signals the thread to stop and joins it. Safe to call if never started.
 void Stop();
 
-}  // namespace ac::dirwatch
+} // namespace ac::dirwatch

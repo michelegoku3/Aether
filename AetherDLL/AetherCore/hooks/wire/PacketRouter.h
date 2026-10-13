@@ -24,7 +24,7 @@ namespace ac::hooks {
 
 // A decoded, immutable view of one frame passed to subsystem handlers.
 struct WireFrame {
-    std::uint32_t eMsg = 0;            // EMsg with the proto flag stripped
+    std::uint32_t eMsg = 0; // EMsg with the proto flag stripped
     const std::uint8_t* header = nullptr;
     std::uint32_t headerLen = 0;
     const std::uint8_t* body = nullptr;
@@ -51,4 +51,4 @@ void RegisterPacketRouter(HMODULE diversion);
 // ---------------------------------------------------------------------------
 bool SendClientFrame(std::uint32_t eMsg, const std::uint8_t* body, std::uint32_t bodyLen);
 
-}  // namespace ac::hooks
+} // namespace ac::hooks

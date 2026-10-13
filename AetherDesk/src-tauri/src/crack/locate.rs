@@ -85,7 +85,9 @@ pub fn resolve_file_targets(
 /// Recursively searches `dir` for any existing file whose name matches `target_name`
 /// (case-insensitive).
 fn find_matching_files_recursive(dir: &Path, target_name: &str, matches: &mut Vec<PathBuf>) {
-    let Ok(entries) = std::fs::read_dir(dir) else { return; };
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
     for entry in entries.flatten() {
         let path = entry.path();
         if path.is_dir() {

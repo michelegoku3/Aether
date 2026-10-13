@@ -44,8 +44,7 @@ impl SteamUpdateGuard {
                 return false;
             };
 
-            key.eq_ignore_ascii_case(UPDATE_BLOCK_KEY)
-                && value.eq_ignore_ascii_case(BLOCKED_VALUE)
+            key.eq_ignore_ascii_case(UPDATE_BLOCK_KEY) && value.eq_ignore_ascii_case(BLOCKED_VALUE)
         }))
     }
 
@@ -72,8 +71,7 @@ impl SteamUpdateGuard {
         };
         let next_content = self.upsert_update_directive(&content, blocked);
 
-        fs::write(cfg_path, next_content)
-            .map_err(|e| format!("Failed to update steam.cfg: {}", e))
+        fs::write(cfg_path, next_content).map_err(|e| format!("Failed to update steam.cfg: {}", e))
     }
 
     fn validate_steam_dir(&self) -> Result<(), String> {
@@ -123,7 +121,11 @@ impl SteamUpdateGuard {
     }
 
     fn render_directive(&self, blocked: bool) -> String {
-        let value = if blocked { BLOCKED_VALUE } else { UNBLOCKED_VALUE };
+        let value = if blocked {
+            BLOCKED_VALUE
+        } else {
+            UNBLOCKED_VALUE
+        };
         format!("{}={}\n", UPDATE_BLOCK_KEY, value)
     }
 

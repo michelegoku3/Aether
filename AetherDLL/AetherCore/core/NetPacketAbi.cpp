@@ -38,14 +38,17 @@ std::atomic<bool> g_disableLogged{false};
 //: proposed. Never how it was *decided*: that is always the probe.
 std::atomic<const char*> g_hintSource{"probe"};
 
-}  // namespace
+} // namespace
 
 bool DefaultReadable(const void* addr, std::size_t bytes, void* /*ctx*/) {
-    if (!addr || bytes == 0) return false;
+    if (!addr || bytes == 0)
+        return false;
 
     const auto start = reinterpret_cast<std::uintptr_t>(addr);
-    if (start < kMinPtr || start >= kMaxPtr) return false;
-    if (kMaxPtr - start < bytes) return false;  // wrap
+    if (start < kMinPtr || start >= kMaxPtr)
+        return false;
+    if (kMaxPtr - start < bytes)
+        return false; // wrap
 
     const std::uintptr_t end = start + bytes;
     std::uintptr_t cursor = start;
@@ -57,13 +60,15 @@ bool DefaultReadable(const void* addr, std::size_t bytes, void* /*ctx*/) {
         if (::VirtualQuery(reinterpret_cast<LPCVOID>(cursor), &mbi, sizeof(mbi)) != sizeof(mbi)) {
             return false;
         }
-        if (mbi.State != MEM_COMMIT) return false;
+        if (mbi.State != MEM_COMMIT)
+            return false;
         constexpr DWORD kNoRead = PAGE_NOACCESS | PAGE_GUARD;
-        if ((mbi.Protect & kNoRead) != 0 || mbi.Protect == 0) return false;
+        if ((mbi.Protect & kNoRead) != 0 || mbi.Protect == 0)
+            return false;
 
-        const auto regionEnd =
-            reinterpret_cast<std::uintptr_t>(mbi.BaseAddress) + mbi.RegionSize;
-        if (regionEnd <= cursor) return false;  // defensive: no progress
+        const auto regionEnd = reinterpret_cast<std::uintptr_t>(mbi.BaseAddress) + mbi.RegionSize;
+        if (regionEnd <= cursor)
+            return false; // defensive: no progress
         cursor = regionEnd;
     }
     return true;
@@ -71,9 +76,12 @@ bool DefaultReadable(const void* addr, std::size_t bytes, void* /*ctx*/) {
 
 bool EnsureResolved(const steam::CNetPacket* packet) {
     Resolver& r = Global();
-    if (r.IsResolved()) return true;
-    if (r.IsDisabled()) return false;
-    if (!packet) return false;
+    if (r.IsResolved())
+        return true;
+    if (r.IsDisabled())
+        return false;
+    if (!packet)
+        return false;
 
     const Resolver::Step step = r.Observe(packet, &DefaultReadable, nullptr);
 
@@ -85,19 +93,16 @@ bool EnsureResolved(const steam::CNetPacket* packet) {
             // agreeing packets. Reporting "two consecutive packets" after a
             // single attempt reads like a contradiction in the log and hides
             // whether the hint was in play.
-            const char* how = r.Confirmations() >= 2
-                                  ? "confirmed by 2 consecutive packets"
-                                  : "confirmed by the build hint + 1 live packet";
+            const char* how = r.Confirmations() >= 2 ? "confirmed by 2 consecutive packets"
+                                                     : "confirmed by the build hint + 1 live packet";
             AC_LOG_INFO(kModule,
                         "CNetPacket layout = %s (m_pubData +0x%X, m_cubData +0x%X, "
                         "m_cRef +0x%X), %s after %d attempt(s).",
-                        r.LayoutName(), r.DataOffset(), SizeOffFor(r.DataOffset()),
-                        RefOffFor(r.DataOffset()), how, r.Attempts());
+                        r.LayoutName(), r.DataOffset(), SizeOffFor(r.DataOffset()), RefOffFor(r.DataOffset()), how,
+                        r.Attempts());
             diag::Record("netpacket_layout",
-                         std::string(r.LayoutName()) + " dataOff=" +
-                             std::to_string(r.DataOffset()) + " attempts=" +
-                             std::to_string(r.Attempts()) + " confirmations=" +
-                             std::to_string(r.Confirmations()));
+                         std::string(r.LayoutName()) + " dataOff=" + std::to_string(r.DataOffset()) + " attempts=" +
+                             std::to_string(r.Attempts()) + " confirmations=" + std::to_string(r.Confirmations()));
         }
         return true;
 
@@ -114,13 +119,12 @@ bool EnsureResolved(const steam::CNetPacket* packet) {
         return false;
 
     case Resolver::Step::Ambiguous:
-        AC_LOG_TRACE(kModule, "probe: several candidates matched, ambiguous (attempt %d).",
-                     r.Attempts());
+        AC_LOG_TRACE(kModule, "probe: several candidates matched, ambiguous (attempt %d).", r.Attempts());
         return false;
 
     case Resolver::Step::AwaitingConfirm:
-        AC_LOG_TRACE(kModule, "probe: candidate +0x%X matched, awaiting confirmation (attempt %d).",
-                     r.Hinted(), r.Attempts());
+        AC_LOG_TRACE(kModule, "probe: candidate +0x%X matched, awaiting confirmation (attempt %d).", r.Hinted(),
+                     r.Attempts());
         return false;
 
     case Resolver::Step::NoEvidence:
@@ -129,8 +133,7 @@ bool EnsureResolved(const steam::CNetPacket* packet) {
     }
 }
 
-bool SeedFromAbiTable(std::uint32_t dataOff, std::uint32_t cubOff, std::uint32_t refOff,
-                      const std::string& source) {
+bool SeedFromAbiTable(std::uint32_t dataOff, std::uint32_t cubOff, std::uint32_t refOff, const std::string& source) {
     // The accessors assume one shape: size eight bytes after the pointer,
     // refcount four after that. Every build disassembled so far agrees. If a
     // published table ever disagrees, the honest answer is not to "adapt" —
@@ -141,8 +144,7 @@ bool SeedFromAbiTable(std::uint32_t dataOff, std::uint32_t cubOff, std::uint32_t
                      "ABI table from %s describes m_pubData +0x%X / m_cubData +0x%X / "
                      "m_cRef +0x%X, which is not the shape this build of AetherCore knows "
                      "(+0x%X / +0x%X). Ignoring the table: the accessors would be wrong.",
-                     source.c_str(), dataOff, cubOff, refOff, SizeOffFor(dataOff),
-                     RefOffFor(dataOff));
+                     source.c_str(), dataOff, cubOff, refOff, SizeOffFor(dataOff), RefOffFor(dataOff));
         diag::Record("netpacket_layout", "abi table rejected: inconsistent shape");
         return false;
     }
@@ -158,15 +160,15 @@ bool SeedFromAbiTable(std::uint32_t dataOff, std::uint32_t cubOff, std::uint32_t
                 "ABI table (%s): CNetPacket m_pubData +0x%X — registered as a probe "
                 "candidate; the live packet still decides.",
                 source.c_str(), dataOff);
-    diag::Record("netpacket_layout",
-                 "abi table dataOff=" + std::to_string(dataOff) + " from " + source);
+    diag::Record("netpacket_layout", "abi table dataOff=" + std::to_string(dataOff) + " from " + source);
     return true;
 }
 
 const char* HintSource() { return g_hintSource.load(std::memory_order_relaxed); }
 
 void SeedFromBuild(const std::string& steamclientSha256) {
-    if (steamclientSha256.empty()) return;
+    if (steamclientSha256.empty())
+        return;
 
     if (Global().Hinted() != kUnresolved) {
         // The per-build table already proposed a layout; the compiled list is
@@ -178,9 +180,8 @@ void SeedFromBuild(const std::string& steamclientSha256) {
         if (strings::EqualsIgnoreCase(steamclientSha256, hint.sha256)) {
             Global().Hint(hint.dataOff);
             g_hintSource.store("build-hint", std::memory_order_relaxed);
-            AC_LOG_INFO(kModule,
-                        "Known build %s: CNetPacket hint m_pubData +0x%X (still probe-verified).",
-                        hint.build, hint.dataOff);
+            AC_LOG_INFO(kModule, "Known build %s: CNetPacket hint m_pubData +0x%X (still probe-verified).", hint.build,
+                        hint.dataOff);
             return;
         }
     }
@@ -194,7 +195,8 @@ void SeedFromBuild(const std::string& steamclientSha256) {
 
 bool BeginWrite(const steam::CNetPacket* packet) {
     Resolver& r = Global();
-    if (r.BeginWrite(packet, &DefaultReadable, nullptr)) return true;
+    if (r.BeginWrite(packet, &DefaultReadable, nullptr))
+        return true;
 
     if (r.IsDisabled() && !g_disableLogged.exchange(true)) {
         AC_LOG_ERROR(kModule,
@@ -217,4 +219,4 @@ int ProbeAttempts() { return Global().Attempts(); }
 int ProbeConfirmations() { return Global().Confirmations(); }
 int WriteRejects() { return Global().WriteRejects(); }
 
-}  // namespace ac::abi::netpkt
+} // namespace ac::abi::netpkt
