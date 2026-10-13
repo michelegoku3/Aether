@@ -69,7 +69,7 @@ pub async fn install_bulk_local(
         local_files.len()
     );
 
-    // Estrazione archivi + copie file: I/O sincrono pesante -> spawn_blocking.
+    // Archive extraction + file copies: heavy synchronous I/O -> spawn_blocking.
     let report = {
         let (steam_path_b, local_files_b) = (steam_path.clone(), local_files.clone());
         tauri::async_runtime::spawn_blocking(move || {
@@ -188,7 +188,7 @@ pub async fn install_local_game(
 
     crate::core::game_mutations::ensure_current_root(&app, &steam_path)?;
 
-    // Estrazione archivi + copie file: I/O sincrono pesante -> spawn_blocking.
+    // Archive extraction + file copies: heavy synchronous I/O -> spawn_blocking.
     let report = {
         let (app_name_b, steam_path_b, local_files_b) =
             (app_name.clone(), steam_path.clone(), local_files.clone());

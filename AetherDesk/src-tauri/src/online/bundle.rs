@@ -23,7 +23,7 @@ const X86_SUBDIR: &str = "x86";
 const PLUGINS_SUBDIR: &str = "plugins";
 const VERSION_FILE: &str = "VERSION";
 
-/// Nomi file attesi (case-insensitive sul filesystem Windows).
+/// Expected file names (case-insensitive on the Windows filesystem).
 const STEAM_API64_DLL: &str = "steam_api64.dll";
 const STEAM_API_DLL: &str = "steam_api.dll";
 

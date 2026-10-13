@@ -86,7 +86,7 @@ pub fn deploy(
 ) -> Result<OnlineRecord, String> {
     let backup_dir = backup_dir_for(backup_root, app_id);
 
-    // ---- Fase 0: pre-flight ----
+    // ---- Phase 0: pre-flight ----
     let steam_api_dir = detection
         .steam_api_dir
         .as_deref()
@@ -164,7 +164,7 @@ pub fn deploy(
     journal_deployed(&mut journal, &steam_api_path);
     journal.save(&backup_dir)?;
 
-    // ---- Fase 4: early overlay proxy ----
+    // ---- Phase 4: early overlay proxy ----
     let overlay_proxy_path =
         deploy_overlay_proxy(detection, bundle, request, &backup_dir, &mut journal)?;
     journal.save(&backup_dir)?;
@@ -176,7 +176,7 @@ pub fn deploy(
     journal_deployed(&mut journal, &ini_path);
     journal.save(&backup_dir)?;
 
-    // ---- Fase 6: plugin ----
+    // ---- Phase 6: plugin ----
     let mut backends_deployed = Vec::new();
     for plugin in required_plugins(detection, request) {
         if let Some(source) = bundle.plugin_dll(plugin) {
@@ -192,7 +192,7 @@ pub fn deploy(
     }
     journal.save(&backup_dir)?;
 
-    // ---- Fase 7: record ----
+    // ---- Phase 7: record ----
     let record = OnlineRecord {
         app_id,
         enabled_at: now_epoch_secs(),
