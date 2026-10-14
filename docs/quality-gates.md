@@ -1,11 +1,11 @@
 # Quality gates — what the build checks and where
 
 Single rule: **every check runs identically locally and on GitHub**. The
-release workflow (`.github/workflows/build.yml`) adds nothing that `build.cmd`
+release workflow (`.github/workflows/build.yml`) adds nothing that `build_desk.cmd`
 or "Build All" in Visual Studio don't already do; it only serves as the final
 barrier before publishing.
 
-## AetherDesk — `build.cmd` (and the `release-desk` job)
+## AetherDesk — `build_desk.cmd` (and the `release-desk` job)
 
 | Step | Command | What it blocks | Where it is configured |
 |---|---|---|---|
@@ -36,7 +36,7 @@ barrier before publishing.
   imports it → drop `export` (when used only there) or delete it.
 - **knip – unused dependency**: remove it from `package.json`.
 - **cargo audit**: update the crate (`cargo update -p <crate>`); when no fix
-  exists, `cargo audit --ignore RUSTSEC-XXXX` with a reason in `build.cmd`.
+  exists, `cargo audit --ignore RUSTSEC-XXXX` with a reason in `build_desk.cmd`.
 - **cargo machete**: remove the line from `Cargo.toml`. False positives
   (crates used only via macros) are declared in
   `[package.metadata.cargo-machete] ignored = ["..."]`.
@@ -47,7 +47,7 @@ The shipped exe requires administrator (Steam-folder writes), and that manifest
 is embedded in every build artifact — including the `cargo test` harness, which
 then fails with `ERROR_ELEVATION_REQUIRED` (os error 740) outside an elevated
 shell. `src-tauri/build.rs` reads `AETHERDESK_NO_ADMIN_MANIFEST=1` to embed an
-`asInvoker` manifest instead; `build.cmd` (step 7) and CI set it for tests only.
+`asInvoker` manifest instead; `build_desk.cmd` (step 7) and CI set it for tests only.
 Release builds never set it, so the published exe is unchanged. Run locally with:
 
 ```powershell
@@ -87,9 +87,9 @@ Recommended procedure, one component at a time:
 AetherDLL : cmake --preset x64-Release -DAETHER_WARNINGS_AS_ERRORS=OFF
             → read the warnings, fix them, then drop the flag (back to ON)
 AetherDesk: cd AetherDesk/src-tauri && cargo clippy --all-targets --fix --allow-dirty
-            → hand-fix what remains, then build.cmd
+            → hand-fix what remains, then build_desk.cmd
 Frontend  : cd AetherDesk && npm install && npx knip
-            → remove flagged exports/dependencies, then build.cmd
+            → remove flagged exports/dependencies, then build_desk.cmd
 ```
 
 After this cleanup the baseline is zero and every new warning is attributable to

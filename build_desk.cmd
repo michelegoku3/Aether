@@ -1,6 +1,6 @@
 @echo off
 REM ============================================================
-REM  build.cmd - Single build script for portable AetherDesk.
+REM  build_desk.cmd - Single build script for portable AetherDesk.
 REM
 REM  Lives at the repository root and works from there: every
 REM  path below is resolved relative to this file, so you can
@@ -11,7 +11,7 @@ REM    1. approve the esbuild install script (npm 11+)
 REM    2. npm ci                -> install dependencies
 REM    3. npm audit             -> block high/critical vulnerabilities
 REM    4. npm run verify         -> tsc/vite, ESLint, test/coverage,
-REM       wiring frontend, export/dipendenze npm inutilizzati
+REM       frontend wiring, unused npm exports/dependencies
 REM    5. cargo clippy          -> Rust lint (warnings = errors, policy in Cargo.toml)
 REM    6. cargo audit + machete -> crate CVEs + unused Cargo dependencies
 REM    7. cargo test            -> unit tests + IPC contract tests
@@ -24,10 +24,10 @@ REM
 REM  Output: AetherDesk\build\portable\AetherDesk-<version>.zip
 REM
 REM  Usage:
-REM    build.cmd                        -> full build (tests included)
-REM    build.cmd /skipaudit             -> skip npm audit + cargo audit/machete
-REM    build.cmd /skiptests             -> skip cargo test (clippy and lint stay)
-REM    build.cmd /skipaudit /skiptests  -> build only (flag order is free)
+REM    build_desk.cmd                        -> full build (tests included)
+REM    build_desk.cmd /skipaudit             -> skip npm audit + cargo audit/machete
+REM    build_desk.cmd /skiptests             -> skip cargo test (clippy and lint stay)
+REM    build_desk.cmd /skipaudit /skiptests  -> build only (flag order is free)
 REM
 REM  Build output is streamed live through PowerShell Tee-Object (UTF-8 +
 REM  forced ANSI colors) while also being captured for the final diagnostic

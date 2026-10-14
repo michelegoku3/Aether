@@ -52,7 +52,7 @@ jobs:
         run: npm ci
         working-directory: AetherDesk
 
-      # ---- Quality gates: same commands as build.cmd, same order ----------
+      # ---- Quality gates: same commands as build_desk.cmd, same order ----------
       - name: Frontend dependency audit
         working-directory: AetherDesk
         run: npm audit --audit-level=high
@@ -81,7 +81,7 @@ jobs:
         working-directory: AetherDesk/src-tauri
         # AetherDesk is Windows-only: the GTK/webkit stack advisories are ignored
         # (Linux-only tauri target, never compiled into the exe): unsound glib and
-        # unmaintained proc-macro-error. See the comment in build.cmd.
+        # unmaintained proc-macro-error. See the comment in build_desk.cmd.
         run: cargo audit --ignore RUSTSEC-2024-0429 --ignore RUSTSEC-2024-0370
 
       - name: Rust unused dependencies (cargo machete)

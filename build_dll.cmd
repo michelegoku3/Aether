@@ -1,8 +1,8 @@
 @echo off
 REM ============================================================
-REM  build.bat - Single build script for AetherDLL (C++ / CMake).
+REM  build_dll.cmd - Single build script for AetherDLL (C++ / CMake).
 REM
-REM  Twin of build.cmd (AetherDesk): same conventions, because cmd.exe
+REM  Twin of build_desk.cmd (AetherDesk): same conventions, because cmd.exe
 REM  loses the first character after label jumps in LF files:
 REM  no multi-line if() blocks, control flow with goto labels only.
 REM
@@ -19,9 +19,9 @@ REM  Output: AetherDLL\build\portable\AetherDLL-<version>.zip
 REM  Version is read from CMakeLists.txt project(... VERSION x.y.z).
 REM
 REM  Usage:
-REM    build.bat                        -> full build (format check + tests)
-REM    build.bat /skipformat            -> skip the clang-format gate
-REM    build.bat /skiptests             -> skip ctest (build still runs tests via ALL)
+REM    build_dll.cmd                        -> full build (format check + tests)
+REM    build_dll.cmd /skipformat            -> skip the clang-format gate
+REM    build_dll.cmd /skiptests             -> skip ctest (build still runs tests via ALL)
 REM
 REM  Notes:
 REM    - Needs Visual Studio 2025 (v18) with "Desktop C++" workload.
@@ -98,9 +98,10 @@ if not exist "%VS_CLANG_FORMAT%" goto :no_clang_format
 powershell.exe -NoProfile -ExecutionPolicy Bypass -Command ^
   "$c='%VS_CLANG_FORMAT%';" ^
   "$bad=@(Get-ChildItem -Path '.' -Include *.cpp,*.h -Recurse | Where-Object { $_.FullName -notmatch '\\out\\' -and $_.FullName -notmatch '\\build' -and $_.FullName -notmatch '\\generated\\' -and $_.FullName -notmatch '\\_deps\\' } | Where-Object { & $c --dry-run --Werror --style=file $_.FullName 2>$null; $LASTEXITCODE -ne 0 });" ^
-  "if ($bad.Count -gt 0) { $bad | ForEach-Object { Write-Output ('  unformatted: ' + $_.FullName) }; exit 1 }" ^
-  "2>&1" | Tee-Object -FilePath '%BUILD_LOG%' -Append; set "FMT_EXIT=%ERRORLEVEL%"
-if not "%FMT_EXIT%"=="0" goto :fail
+  "if ($bad.Count -gt 0) { $bad | ForEach-Object { Write-Output ('  unformatted: ' + $_.FullName) } | Tee-Object -FilePath '%BUILD_LOG%' -Append; exit 1 }" ^
+  "Write-Output 'clang-format clean.' | Tee-Object -FilePath '%BUILD_LOG%' -Append" ^
+  "2>&1"
+if errorlevel 1 goto :fail
 goto :after_format
 
 :no_clang_format
@@ -118,7 +119,7 @@ echo.
 echo [3/6] Configuring (cmake --preset x64-Release: /W4 /WX, clang-tidy, orphan headers)...
 powershell.exe -NoProfile -ExecutionPolicy Bypass -Command ^
   "$utf8=New-Object System.Text.UTF8Encoding($false); [Console]::OutputEncoding=$utf8; $OutputEncoding=$utf8;" ^
-  "& cmd.exe /d /s /c '%CMAKE_EXE% --preset x64-Release 2>&1' | Tee-Object -FilePath '%BUILD_LOG%' -Append; $code=$LASTEXITCODE; exit $code"
+  "& '%CMAKE_EXE%' -Wno-deprecated --preset x64-Release 2>&1 | Tee-Object -FilePath '%BUILD_LOG%' -Append; $code=$LASTEXITCODE; exit $code"
 if errorlevel 1 goto :fail
 
 REM --- Step 4: build (unit tests compile as part of ALL) --------------------
@@ -126,7 +127,7 @@ echo.
 echo [4/6] Building (cmake --build --preset x64-Release)...
 powershell.exe -NoProfile -ExecutionPolicy Bypass -Command ^
   "$utf8=New-Object System.Text.UTF8Encoding($false); [Console]::OutputEncoding=$utf8; $OutputEncoding=$utf8;" ^
-  "& cmd.exe /d /s /c '%CMAKE_EXE% --build --preset x64-Release 2>&1' | Tee-Object -FilePath '%BUILD_LOG%' -Append; $code=$LASTEXITCODE; exit $code"
+  "& '%CMAKE_EXE%' --build --preset x64-Release 2>&1 | Tee-Object -FilePath '%BUILD_LOG%' -Append; $code=$LASTEXITCODE; exit $code"
 if errorlevel 1 goto :fail
 
 REM --- Step 5: unit tests (optional, explicit report) -----------------------
@@ -160,9 +161,9 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -Command ^
   "$zip=\"build/portable/AetherDLL-$ver.zip\";" ^
   "if(Test-Path $zip){Remove-Item $zip -Force};" ^
   "Compress-Archive -Path \"$staging/*\" -DestinationPath $zip -Force;" ^
-  "Write-Output \"Packaged $zip (version $ver)\"" ^
-  "2>&1" | Tee-Object -FilePath '%BUILD_LOG%' -Append; set "PKG_EXIT=%ERRORLEVEL%"
-if not "%PKG_EXIT%"=="0" goto :fail
+  "Write-Output \"Packaged $zip (version $ver)\" | Tee-Object -FilePath '%BUILD_LOG%' -Append" ^
+  "2>&1"
+if errorlevel 1 goto :fail
 
 echo.
 echo [OK] AetherDLL build complete.

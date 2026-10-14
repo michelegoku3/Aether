@@ -1,6 +1,6 @@
 {
   "$schema": "https://unpkg.com/knip@6/schema.json",
-  "entry": ["scripts/*.mjs", "src/main.tsx", "src/**/*.test.{ts,tsx}"],
+  "entry": ["scripts/*.mjs", "src/**/*.test.{ts,tsx}"],
   "project": ["src/**/*.{ts,tsx}", "scripts/**/*.mjs"],
   "ignoreExportsUsedInFile": {
     "interface": true,
