@@ -18,9 +18,11 @@ constexpr const char* kModule = "Wire.Achievement";
 std::tm LocalTime(std::time_t tt) {
     std::tm tmBuf{};
 #if defined(_WIN32)
-    localtime_s(&tmBuf, &tt);
+    if (localtime_s(&tmBuf, &tt) != 0)
+        return std::tm{}; // already zero-initialized: deterministic fallback
 #else
-    localtime_r(&tt, &tmBuf);
+    if (localtime_r(&tt, &tmBuf) == nullptr)
+        return std::tm{};
 #endif
     return tmBuf;
 }
@@ -30,16 +32,18 @@ std::tm LocalTime(std::time_t tt) {
 std::string FormatUnixTime(std::uint64_t unixTime) {
     const std::tm tmBuf = LocalTime(static_cast<std::time_t>(unixTime));
     char buf[40];
-    std::snprintf(buf, sizeof(buf), "%02d/%02d/%04d %02d:%02d:%02d", tmBuf.tm_mday, tmBuf.tm_mon + 1,
-                  tmBuf.tm_year + 1900, tmBuf.tm_hour, tmBuf.tm_min, tmBuf.tm_sec);
+    // Fixed-width date format (~19 chars into 40): truncation cannot occur.
+    (void)std::snprintf(buf, sizeof(buf), "%02d/%02d/%04d %02d:%02d:%02d", tmBuf.tm_mday, tmBuf.tm_mon + 1,
+                        tmBuf.tm_year + 1900, tmBuf.tm_hour, tmBuf.tm_min, tmBuf.tm_sec);
     return buf;
 }
 
 std::string FormatWallClockNow() {
     const std::tm tmBuf = LocalTime(std::time(nullptr));
     char buf[32];
-    std::snprintf(buf, sizeof(buf), "%04d-%02d-%02dT%02d:%02d:%02d", tmBuf.tm_year + 1900, tmBuf.tm_mon + 1,
-                  tmBuf.tm_mday, tmBuf.tm_hour, tmBuf.tm_min, tmBuf.tm_sec);
+    // Fixed-width ISO format (~19 chars into 32): truncation cannot occur.
+    (void)std::snprintf(buf, sizeof(buf), "%04d-%02d-%02dT%02d:%02d:%02d", tmBuf.tm_year + 1900, tmBuf.tm_mon + 1,
+                        tmBuf.tm_mday, tmBuf.tm_hour, tmBuf.tm_min, tmBuf.tm_sec);
     return buf;
 }
 

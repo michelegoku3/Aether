@@ -33,7 +33,9 @@ void LogDecision(DWORD pid, const std::wstring& image, const char* outcome, cons
                                 nullptr);
         payloadlog::Write("propagation pid=" + std::to_string(pid) + " exe=\"" + utf8 + "\" outcome=" + outcome +
                           " reason=" + reason + " last_error_hint=" + std::to_string(error));
-    } catch (...) { /* best-effort diagnostics, never affect child lifetime */
+        // Best-effort diagnostics must never prevent a child from being resumed.
+        // NOLINTNEXTLINE(bugprone-empty-catch)
+    } catch (...) {
     }
 }
 

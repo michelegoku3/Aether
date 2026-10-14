@@ -38,7 +38,7 @@ struct Sha256Context {
 struct FileCloser {
     void operator()(std::FILE* f) const {
         if (f)
-            std::fclose(f);
+            (void)std::fclose(f); // read-only handle: close errors are inconsequential
     }
 };
 using FilePtr = std::unique_ptr<std::FILE, FileCloser>;
@@ -46,7 +46,7 @@ using FilePtr = std::unique_ptr<std::FILE, FileCloser>;
 std::string ToHex(const std::array<std::uint8_t, kSha256DigestBytes>& digest) {
     static constexpr char kHex[] = "0123456789abcdef";
     std::string out;
-    out.reserve(kSha256DigestBytes * 2);
+    out.reserve(static_cast<std::size_t>(kSha256DigestBytes) * 2);
     for (std::uint8_t b : digest) {
         out.push_back(kHex[b >> 4]);
         out.push_back(kHex[b & 0x0F]);
@@ -58,9 +58,9 @@ std::string ToHex(const std::array<std::uint8_t, kSha256DigestBytes>& digest) {
 
 std::string ComputeFileSha256(const std::string& filePath) {
     std::FILE* raw = nullptr;
-    fopen_s(&raw, filePath.c_str(), "rb");
+    const errno_t openErr = fopen_s(&raw, filePath.c_str(), "rb");
     FilePtr file(raw);
-    if (!file) {
+    if (openErr != 0 || !file) {
         AC_LOG_ERROR(kModule, "Cannot open file: %s", filePath.c_str());
         return {};
     }

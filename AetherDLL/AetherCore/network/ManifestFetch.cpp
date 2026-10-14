@@ -106,9 +106,9 @@ std::optional<std::filesystem::path> FindLocalManifest(std::uint64_t gid, std::u
             if (it->second.positive) {
                 if (usable(it->second.path))
                     return it->second.path;
-                g_localManifestCache.erase(it); // file sparito: ricalcola
+                g_localManifestCache.erase(it); // file gone: recompute
             } else if (now < it->second.expires) {
-                return std::nullopt; // miss recente: salta il walk
+                return std::nullopt; // recent miss: skip the walk
             } else {
                 g_localManifestCache.erase(it);
             }
@@ -130,7 +130,7 @@ std::optional<std::filesystem::path> FindLocalManifest(std::uint64_t gid, std::u
             if (!usable(candidate))
                 continue;
 
-            const fs::path destination = steamRoot / "depotcache" / filename;
+            fs::path destination = steamRoot / "depotcache" / filename;
             fs::create_directories(destination.parent_path(), ec);
             if (ec)
                 continue;

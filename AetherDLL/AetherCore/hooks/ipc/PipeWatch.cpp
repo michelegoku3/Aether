@@ -251,7 +251,8 @@ void Reset() {
 // payload injection with up to 5 s wait) no longer runs on Steam's IPC thread:
 // it executes on the task queue. The IPC thread keeps only the pid read and
 // the enqueue (O(1)).
-void CompleteHandshakeAsync(std::uint64_t key, std::uint32_t hSteamPipe, std::uint32_t pid, std::string processName) {
+void CompleteHandshakeAsync(std::uint64_t key, std::uint32_t hSteamPipe, std::uint32_t pid,
+                            const std::string& processName) {
     // One copy stays local: the map store is the source of truth for future
     // readers (SnapshotForPipe/AppIdForPipe), but re-reading under lock is
     // unneeded here — avoids an immediate lock+copy.

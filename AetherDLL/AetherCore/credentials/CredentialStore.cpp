@@ -1,6 +1,7 @@
 #include "pch.h"
 #include "credentials/CredentialStore.h"
 
+#include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -97,10 +98,18 @@ std::vector<std::uint8_t> ReadBinary(steam::AppId appId, const char* valueName) 
 std::uint64_t ParseDecimal(std::string_view s) {
     if (s.empty())
         return 0;
-    for (char c : s)
+    // Manual accumulation: string_view data is not guaranteed NUL-terminated,
+    // and strtoull would silently clamp on overflow. Fail closed instead.
+    std::uint64_t value = 0;
+    for (char c : s) {
         if (c < '0' || c > '9')
             return 0;
-    return std::strtoull(s.data(), nullptr, 10);
+        const std::uint64_t digit = static_cast<std::uint64_t>(c - '0');
+        if (value > (UINT64_MAX - digit) / 10)
+            return 0;
+        value = value * 10 + digit;
+    }
+    return value;
 }
 
 } // namespace

@@ -97,7 +97,7 @@ echo [2/6] Checking C++ formatting (clang-format, .clang-format at AetherDLL roo
 if not exist "%VS_CLANG_FORMAT%" goto :no_clang_format
 powershell.exe -NoProfile -ExecutionPolicy Bypass -Command ^
   "$c='%VS_CLANG_FORMAT%';" ^
-  "$bad=@(Get-ChildItem -Path '.' -Include *.cpp,*.h -Recurse | Where-Object { $_.FullName -notmatch '\\out\\' -and $_.FullName -notmatch '\\build' -and $_.FullName -notmatch '\\generated\\' -and $_.FullName -notmatch '\\_deps\\' } | Where-Object { & $c --dry-run --Werror --style=file $_.FullName 2>$null; $LASTEXITCODE -ne 0 });" ^
+  "$bad=@(Get-ChildItem -Path '.' -Include *.cpp,*.h,*.hpp,*.inl,*.c,*.cc -Recurse | Where-Object { $_.FullName -notmatch '\\out\\' -and $_.FullName -notmatch '\\build' -and $_.FullName -notmatch '\\generated\\' -and $_.FullName -notmatch '\\_deps\\' } | Where-Object { & $c --dry-run --Werror --style=file $_.FullName 2>$null; $LASTEXITCODE -ne 0 });" ^
   "if ($bad.Count -gt 0) { $bad | ForEach-Object { Write-Output ('  unformatted: ' + $_.FullName) } | Tee-Object -FilePath '%BUILD_LOG%' -Append; exit 1 }" ^
   "Write-Output 'clang-format clean.' | Tee-Object -FilePath '%BUILD_LOG%' -Append" ^
   "2>&1"
@@ -115,6 +115,10 @@ echo [2/6] Format check skipped.
 :after_format
 
 REM --- Step 3: configure ---------------------------------------------------
+REM -Wno-deprecated below is a CMake CLI flag (silences CMake deprecation
+REM warnings from old FetchContent dependencies). Third-party compiler noise
+REM (minhook, protobuf) is silenced separately via /external:W0 and /w
+REM in cmake/Quality.cmake and CMakeLists.txt, not here.
 echo.
 echo [3/6] Configuring (cmake --preset x64-Release: /W4 /WX, clang-tidy, orphan headers)...
 powershell.exe -NoProfile -ExecutionPolicy Bypass -Command ^

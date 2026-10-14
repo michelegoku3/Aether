@@ -19,7 +19,7 @@ namespace ac::http {
 namespace {
 
 constexpr const char* kModule = "Http";
-constexpr std::size_t kLuaMaxBodyBytes = 8u * 1024u * 1024u; // 8 MiB
+constexpr std::size_t kLuaMaxBodyBytes = 8ULL * 1024ULL * 1024ULL; // 8 MiB
 constexpr DWORD kTimeoutMs = 12000;
 
 // Baseline hosts always reachable (manifest sources used by manifest scripts).
@@ -115,7 +115,9 @@ Response Request(std::wstring_view method, std::string_view url, DWORD timeoutMs
         WinHttpOpen(ua.c_str(), WINHTTP_ACCESS_TYPE_DEFAULT_PROXY, WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0));
     if (!session)
         return out;
-    WinHttpSetTimeouts(session.h, timeoutMs, timeoutMs, timeoutMs, timeoutMs);
+    // WinHttpSetTimeouts takes int ms; configured values are small (< 2^31).
+    const int timeoutInt = static_cast<int>(timeoutMs);
+    WinHttpSetTimeouts(session.h, timeoutInt, timeoutInt, timeoutInt, timeoutInt);
 
     Handle connect(WinHttpConnect(session.h, wHost.c_str(), port, 0));
     if (!connect)

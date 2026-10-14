@@ -10,14 +10,25 @@
 #   cert-*          CERT C++ rules (security, UB)
 #   concurrency-*   mt-unsafe, missing locks
 #   performance-*   avoidable copies, by-value parameters, missing moves
+#                   (except performance-no-int-to-ptr below: Win32 APIs such as
+#                   VirtualQuery take LPCVOID, so integer-address to pointer
+#                   casts are unavoidable interop, not pessimizations)
 #   misc-*          dead code / unused includes (selection)
 #   modernize-*     only the ones that prevent bugs (nullptr, override, use-after-move)
 #
 # Excluded with reason:
 #   bugprone-easily-swappable-parameters   too noisy on Win32/Steam APIs
 #   bugprone-reserved-identifier           Win32 macros and __try
+#   bugprone-throwing-static-initialization  service state is intentionally static
+#                                          (ARCHITECTURE.md: s_* lifecycle, pinned
+#                                          DLL; a throwing init fails fast at load)
+#   cert-dcl50-cpp                         printf-style logger (Write/WriteOnce) is the
+#                                          intentional Win32 idiom; macros forward __VA_ARGS__
 #   cert-err58-cpp                         static init with mutex/string is intentional
 #   performance-avoid-endl                 no iostream in hot paths
+#   performance-enum-size                  enum storage size is irrelevant here; forcing
+#                                          uint8_t bases would churn headers for no gain
+#   performance-no-int-to-ptr              Win32 interop (VirtualQuery etc.) needs int->ptr casts
 #   misc-non-private-member-variables-in-classes  AetherCoreState is a data struct
 #   misc-no-recursion                      VDF/KeyValues parsers are recursive by design
 #   modernize-use-trailing-return-type     style, not correctness
@@ -28,13 +39,17 @@ Checks: >
   -bugprone-easily-swappable-parameters,
   -bugprone-reserved-identifier,
   -bugprone-exception-escape,
+  -bugprone-throwing-static-initialization,
   cert-*,
+  -cert-dcl50-cpp,
   -cert-err58-cpp,
   -cert-dcl37-c,
   -cert-dcl51-cpp,
   concurrency-*,
   performance-*,
   -performance-avoid-endl,
+  -performance-no-int-to-ptr,
+  -performance-enum-size,
   misc-unused-using-decls,
   misc-unused-alias-decls,
   misc-redundant-expression,

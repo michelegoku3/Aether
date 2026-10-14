@@ -259,7 +259,7 @@ void SyncLanguageToSpacewar(AppId realAppId) {
         AC_LOG_DEBUG(kModule, "SyncLanguage: no language field in appmanifest_%u.acf.", realAppId);
         return;
     }
-    const std::string language = languages.front();
+    const std::string& language = languages.front();
     if (language.empty())
         return;
     // A value containing quotes/backslashes cannot round-trip through the

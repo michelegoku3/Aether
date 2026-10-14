@@ -363,16 +363,17 @@ void* h_RecvPkt(void* self, CNetPacket* packet) {
         WireFrame f;
         if (DecodeFrame(pktData, pktLen, f)) {
             if (f.eMsg == emsg::kMulti) {
-                // [DIAG] flight-recorder: i frame Multi non entrano nel
-                // dispatch, ma devono restare visibili nel trace (con la
-                // firma dei primi byte del body, per riconoscere lo zlib
-                // di un payload compresso se servira' decodificarli).
+                // [DIAG] flight-recorder: Multi frames never enter the
+                // dispatch, but they must stay visible in the trace (with
+                // the signature of the first body bytes, to recognize
+                // a compressed payload's zlib header if decoding is needed).
                 static constexpr char kHex[] = "0123456789ABCDEF";
                 char head[8 * 2 + 1] = {};
                 const std::uint32_t n = f.bodyLen < 8 ? f.bodyLen : 8;
                 for (std::uint32_t i = 0; i < n; ++i) {
-                    head[i * 2] = kHex[(f.body[i] >> 4) & 0xF];
-                    head[i * 2 + 1] = kHex[f.body[i] & 0xF];
+                    const std::size_t o = static_cast<std::size_t>(i) * 2;
+                    head[o] = kHex[(f.body[i] >> 4) & 0xF];
+                    head[o + 1] = kHex[f.body[i] & 0xF];
                 }
                 AC_LOG_TRACE(kModule, "recv eMsg=1 (Multi) bLen=%u head8=%s", f.bodyLen, head);
             } else {

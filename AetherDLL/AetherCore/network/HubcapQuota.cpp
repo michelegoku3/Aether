@@ -42,7 +42,7 @@ std::string LockPathFor(const std::string& quotaPath) {
 // the host's local midnight, so DST must never shift the boundary.
 std::string CurrentEstDay() {
     const std::int64_t now = static_cast<std::int64_t>(std::time(nullptr));
-    const std::int64_t days = (now - 5 * 3600) / 86'400;
+    const std::int64_t days = (now - 5LL * 3600) / 86'400;
     // Howard Hinnant's civil_from_days, with a Unix epoch offset (twin of the
     // Rust helper — keep the two in sync).
     const std::int64_t z = days + 719'468;
@@ -56,8 +56,9 @@ std::string CurrentEstDay() {
     const std::int64_t m = mp + (mp < 10 ? 3 : -9);
     const std::int64_t year = y + (m <= 2 ? 1 : 0);
     char day[16] = {};
-    std::snprintf(day, sizeof(day), "%04lld-%02lld-%02lld", static_cast<long long>(year), static_cast<long long>(m),
-                  static_cast<long long>(d));
+    // Fixed-width date (10 chars into 16): truncation cannot occur.
+    (void)std::snprintf(day, sizeof(day), "%04lld-%02lld-%02lld", static_cast<long long>(year),
+                        static_cast<long long>(m), static_cast<long long>(d));
     return day;
 }
 

@@ -30,7 +30,7 @@ add_executable(quickwin_tests quickwin_tests.cpp stubs/Services.cpp
 # stubs/AbiReporting.cpp supplies the three reporting hooks those headers
 # call; everything else they need is inline.
 target_include_directories(quickwin_tests PRIVATE stubs ../AetherCore ../AetherPayload)
-# I-E: fixture binarie condivise con i test Rust di AetherDesk (D4).
+# Shared binary fixtures with the AetherDesk Rust tests (D4).
 target_compile_definitions(quickwin_tests PRIVATE
     CONTRACT_FIXTURES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../../Tools/contract_fixtures/manifest")
 target_link_libraries(quickwin_tests PRIVATE Threads::Threads tomlplusplus::tomlplusplus)

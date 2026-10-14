@@ -30,10 +30,12 @@ set(AETHER_CLANG_TIDY "AUTO" CACHE STRING "clang-tidy: AUTO | OFF | <path to cla
 # Resolves the clang-tidy binary once per configure.
 if(NOT AETHER_CLANG_TIDY STREQUAL "OFF")
     if(AETHER_CLANG_TIDY STREQUAL "AUTO")
-        # Typical Visual Studio 2022 paths beyond PATH.
+        # Typical Visual Studio 2022/2025 paths beyond PATH.
         file(GLOB _aether_vs_llvm
             "C:/Program Files/Microsoft Visual Studio/2022/*/VC/Tools/Llvm/x64/bin"
             "C:/Program Files/Microsoft Visual Studio/2022/*/VC/Tools/Llvm/bin"
+            "C:/Program Files/Microsoft Visual Studio/18/*/VC/Tools/Llvm/x64/bin"
+            "C:/Program Files/Microsoft Visual Studio/18/*/VC/Tools/Llvm/bin"
             "C:/Program Files/LLVM/bin")
         find_program(AETHER_CLANG_TIDY_EXE NAMES clang-tidy HINTS ${_aether_vs_llvm})
     else()
@@ -88,9 +90,12 @@ function(aether_apply_quality target)
 
     if(AETHER_CLANG_TIDY_EXE)
         # CMake adds --driver-mode=cl on its own when the compiler is MSVC.
+        # /EHsc must be forwarded explicitly: without it clang-tidy parses
+        # with exceptions disabled and flags every try/throw (clang-diagnostic-error)
+        # even though the build itself compiles with /EHsc.
         # The .clang-tidy file at the AetherDLL root governs the checks.
         set_target_properties(${target} PROPERTIES
-            CXX_CLANG_TIDY "${AETHER_CLANG_TIDY_EXE};--warnings-as-errors=*;--quiet")
+            CXX_CLANG_TIDY "${AETHER_CLANG_TIDY_EXE};--warnings-as-errors=*;--quiet;--extra-arg=/EHsc")
     endif()
 endfunction()
 

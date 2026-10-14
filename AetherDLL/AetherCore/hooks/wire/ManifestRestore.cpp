@@ -122,7 +122,7 @@ RestoreStats RestoreLuaDirectory(const fs::path& luaDir, const fs::path& depotca
         std::error_code fileEc;
         if (!entry.is_regular_file(fileEc) || fileEc)
             continue;
-        const fs::path src = entry.path();
+        const fs::path& src = entry.path();
         if (!HasManifestExtension(src))
             continue;
         ++stats.scanned;
@@ -255,7 +255,13 @@ void BackupReferencedManifestsAtStartup() {
             for (std::sregex_iterator match(content.begin(), content.end(), pinRegex), end; match != end; ++match) {
                 const std::string depot = (*match)[1].str();
                 const std::string gid = (*match)[2].str();
-                filenames.insert(depot + "_" + gid + ".manifest");
+                std::string key;
+                key.reserve(depot.size() + gid.size() + 10);
+                key += depot;
+                key += '_';
+                key += gid;
+                key += ".manifest";
+                filenames.insert(std::move(key));
             }
             referenced += filenames.size();
 

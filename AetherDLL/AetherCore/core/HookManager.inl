@@ -5,8 +5,8 @@
 namespace ac {
 
 template <typename Fn>
-bool HookManager::TryHook(const std::string& name, const std::string& module, HMODULE hModule,
-                          Fn& original, Fn detour) {
+bool HookManager::TryHook(const std::string& name, const std::string& module, HMODULE hModule, Fn& original,
+                          Fn detour) {
     void* target = pattern::ResolveAddress(name, module, hModule);
     if (!target) {
         RecordMissed(name, MissReason::PatternUnresolved);
@@ -16,4 +16,4 @@ bool HookManager::TryHook(const std::string& name, const std::string& module, HM
     return true;
 }
 
-}  // namespace ac
+} // namespace ac

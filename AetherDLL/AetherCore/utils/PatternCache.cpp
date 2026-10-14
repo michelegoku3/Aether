@@ -43,7 +43,12 @@ bool BuildIndex(const toml::table& table, const std::string& moduleName, Pattern
         if (!inserted) {
             AC_LOG_WARN(kModule, "Duplicate pattern name '%s' in %s; keeping first entry.", name.c_str(),
                         moduleName.c_str());
-            diag::Record("pattern_duplicate", moduleName + ":" + name);
+            std::string tag;
+            tag.reserve(moduleName.size() + name.size() + 1);
+            tag += moduleName;
+            tag += ':';
+            tag += name;
+            diag::Record("pattern_duplicate", tag);
         }
     }
     return !outIndex.empty();

@@ -37,7 +37,7 @@ using NtQueryInformationProcess_t = LONG(NTAPI*)(HANDLE, ULONG, PVOID, ULONG, PU
 
 constexpr ULONG kProcessBasicInformation = 0;
 constexpr ULONG kProcessWow64Information = 26;
-constexpr std::size_t kMaxEnvironmentBytes = 64u * 1024u;
+constexpr std::size_t kMaxEnvironmentBytes = 64ULL * 1024ULL;
 
 // ---------------------------------------------------------------------------
 // Remote memory helpers
@@ -46,7 +46,8 @@ constexpr std::size_t kMaxEnvironmentBytes = 64u * 1024u;
 template <typename T> std::optional<T> ReadRemoteValue(HANDLE process, const void* address) {
     T value{};
     SIZE_T bytesRead = 0;
-    if (!ReadProcessMemory(process, address, &value, sizeof(value), &bytesRead) || bytesRead != sizeof(value)) {
+    if (!ReadProcessMemory(process, address, static_cast<void*>(&value), sizeof(value), &bytesRead) ||
+        bytesRead != sizeof(value)) {
         return std::nullopt;
     }
     return value;

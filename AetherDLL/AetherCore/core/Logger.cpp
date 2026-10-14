@@ -55,8 +55,9 @@ void FormatTimeAndThread(char (&out)[32]) {
     SYSTEMTIME st{};
     GetLocalTime(&st);
     const DWORD tid = GetCurrentThreadId();
-    std::snprintf(out, sizeof(out), "%02d:%02d:%02d.%03d] [TID:%04lu", st.wHour, st.wMinute, st.wSecond,
-                  st.wMilliseconds, static_cast<unsigned long>(tid));
+    // Format is provably bounded (~28 chars into 32): truncation cannot occur.
+    (void)std::snprintf(out, sizeof(out), "%02d:%02d:%02d.%03d] [TID:%04lu", st.wHour, st.wMinute, st.wSecond,
+                        st.wMilliseconds, static_cast<unsigned long>(tid));
 }
 
 } // namespace

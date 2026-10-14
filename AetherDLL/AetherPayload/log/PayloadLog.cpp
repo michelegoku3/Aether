@@ -37,8 +37,9 @@ void FormatTimeAndThread(char (&out)[32]) {
     SYSTEMTIME st{};
     GetLocalTime(&st);
     const DWORD tid = GetCurrentThreadId();
-    std::snprintf(out, sizeof(out), "%02d:%02d:%02d.%03d] [TID:%04lu", st.wHour, st.wMinute, st.wSecond,
-                  st.wMilliseconds, static_cast<unsigned long>(tid));
+    // Format is provably bounded (~28 chars into 32): truncation cannot occur.
+    (void)std::snprintf(out, sizeof(out), "%02d:%02d:%02d.%03d] [TID:%04lu", st.wHour, st.wMinute, st.wSecond,
+                        st.wMilliseconds, static_cast<unsigned long>(tid));
 }
 
 void CaptureProcessIdentity() {
@@ -52,22 +53,23 @@ void CaptureProcessIdentity() {
             if (fullPath[i] == '\\' || fullPath[i] == '/')
                 name = fullPath + i + 1;
         }
-        std::snprintf(s_exeName, sizeof(s_exeName), "%s", name);
+        // Truncation-safe: snprintf always NUL-terminates fixed buffers.
+        (void)std::snprintf(s_exeName, sizeof(s_exeName), "%s", name);
     } else {
-        std::snprintf(s_exeName, sizeof(s_exeName), "?");
+        (void)std::snprintf(s_exeName, sizeof(s_exeName), "?");
     }
 
     char buf[64] = {};
     if (GetEnvironmentVariableA("SteamAppId", buf, sizeof(buf))) {
         DWORD appId = static_cast<DWORD>(std::strtoul(buf, nullptr, 10));
-        std::snprintf(s_steamAppId, sizeof(s_steamAppId), "%u", appId);
+        (void)std::snprintf(s_steamAppId, sizeof(s_steamAppId), "%u", appId);
     } else {
-        std::snprintf(s_steamAppId, sizeof(s_steamAppId), "-");
+        (void)std::snprintf(s_steamAppId, sizeof(s_steamAppId), "-");
     }
     if (GetEnvironmentVariableA("SteamOverlayGameId", buf, sizeof(buf))) {
-        std::snprintf(s_steamOverlayGameId, sizeof(s_steamOverlayGameId), "%s", buf);
+        (void)std::snprintf(s_steamOverlayGameId, sizeof(s_steamOverlayGameId), "%s", buf);
     } else {
-        std::snprintf(s_steamOverlayGameId, sizeof(s_steamOverlayGameId), "-");
+        (void)std::snprintf(s_steamOverlayGameId, sizeof(s_steamOverlayGameId), "-");
     }
 }
 

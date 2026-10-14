@@ -396,9 +396,11 @@ void DiagServerTruth(const CMsgClientPersonaState& msg, std::uint64_t selfId, co
                 continue;
             const std::uint64_t fid = f.friendid();
             char state[256];
-            std::snprintf(state, sizeof(state), "app=%u gid=%llu name='%s' kvs=%d", app,
-                          static_cast<unsigned long long>(gid), f.has_game_name() ? f.game_name().c_str() : "",
-                          f.rich_presence_size());
+            // Truncation-safe: snprintf always NUL-terminates; overlong names
+            // only merge dedup keys, never overflow.
+            (void)std::snprintf(state, sizeof(state), "app=%u gid=%llu name='%s' kvs=%d", app,
+                                static_cast<unsigned long long>(gid), f.has_game_name() ? f.game_name().c_str() : "",
+                                f.rich_presence_size());
             const bool isSelf = selfId != 0 && fid == selfId;
             auto it = s_friendState.find(fid);
             if (it == s_friendState.end() || it->second != state) {
@@ -488,8 +490,9 @@ bool RecoverMaskedFriends(CMsgClientPersonaState& msg, std::uint64_t selfId, boo
                     const std::string& blob = f->game_data_blob();
                     blobLen = blob.size();
                     for (std::size_t b = 0; b < blob.size() && b < 4; ++b) {
-                        std::snprintf(hex + (b == 0 ? 0 : std::strlen(hex)), 4, "%s%02X", b == 0 ? "" : " ",
-                                      static_cast<unsigned char>(blob[b]));
+                        // Bounded: each step appends at most 3 chars (" XX").
+                        (void)std::snprintf(hex + (b == 0 ? 0 : std::strlen(hex)), 4, "%s%02X", b == 0 ? "" : " ",
+                                            static_cast<unsigned char>(blob[b]));
                     }
                 }
                 AC_LOG_INFO(kModule,

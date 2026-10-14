@@ -68,8 +68,8 @@ void Save(const std::string& path, steam::AppId appId, std::uint32_t accountId, 
         out << "  \"updated_unix\": " << static_cast<long long>(std::time(nullptr)) << ",\n";
         out << "  \"achievements\": [\n";
         for (std::size_t i = 0; i < snap.unlocks.size(); ++i) {
-            // unlock_time 0 = baseline (data reale sconosciuta): mostrata come
-            // "unknown"; il rebuild del .bin usa updated_unix come fallback.
+            // unlock_time 0 = baseline (real date unknown): shown as
+            // "unknown"; the .bin rebuild uses updated_unix as fallback.
             const UnlockEntry& e = snap.unlocks[i];
             out << "    {\"id\": " << e.id << ", \"unlock_time\": " << e.unlockTime << ", \"unlocked_at\": \""
                 << (e.unlockTime != 0 ? io::FormatUnixTime(e.unlockTime) : std::string("unknown")) << "\""

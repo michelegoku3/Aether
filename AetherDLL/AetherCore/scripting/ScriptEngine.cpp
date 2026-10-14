@@ -57,6 +57,8 @@ void AutoRegisterFromFilename(const fs::path& file) {
             luadata::RecordLibraryApp(appId);
             // Auto-apps are counted via the stats pointer set by ParseFileLocked.
         }
+        // Non-numeric filename stems are the expected path (digit loop above); nothing to do.
+        // NOLINTNEXTLINE(bugprone-empty-catch)
     } catch (...) {
     }
 }
