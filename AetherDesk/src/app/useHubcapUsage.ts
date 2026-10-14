@@ -3,7 +3,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { getSettings, type AppSettings } from '../hooks/useSettings';
 import type { HubcapUsage, HubcapUsageStats } from './types';
 
-const EMPTY_USAGE: HubcapUsage = { usage: 0, limit: 1500, hasKey: false };
+const EMPTY_USAGE: HubcapUsage = { usage: 0, limit: 25, hasKey: false };
 
 /** Loads the Hubcap quota for the active or explicitly supplied API key. */
 export function useHubcapUsage() {

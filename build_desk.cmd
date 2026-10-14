@@ -134,13 +134,15 @@ REM  so rust-analyzer in the IDE, this script and GitHub all show the same thing
 REM  -D warnings: every warning (even rustc dead_code/unused) blocks the build.
 REM  --all-targets includes tests, so test code stays clean too.
 REM  cargo fmt --check runs first: formatting is a gate, the fix is `cargo fmt`.
+REM  cargo fmt runs first (write): the build normalizes formatting, the check
+REM  right after proves it. CI keeps check-only (it cannot commit back fixes).
 echo.
-echo [5/9] Linting Rust (cargo fmt check + clippy, warnings are errors)...
+echo [5/9] Linting Rust (cargo fmt + clippy, warnings are errors)...
 cd /d "%DESK_DIR%\src-tauri"
 powershell.exe -NoProfile -ExecutionPolicy Bypass -Command ^
   "$utf8=New-Object System.Text.UTF8Encoding($false); [Console]::OutputEncoding=$utf8; $OutputEncoding=$utf8;" ^
   "$env:AETHERDESK_NO_ADMIN_MANIFEST='1';" ^
-  "& cmd.exe /d /s /c 'cargo fmt --all -- --check 2>&1 && cargo clippy --locked --all-targets --color always -- -D warnings 2>&1' | Tee-Object -FilePath '%BUILD_LOG%' -Append; $code=$LASTEXITCODE; exit $code"
+  "& cmd.exe /d /s /c 'cargo fmt --all 2>&1 && cargo fmt --all -- --check 2>&1 && cargo clippy --locked --all-targets --color always -- -D warnings 2>&1' | Tee-Object -FilePath '%BUILD_LOG%' -Append; $code=$LASTEXITCODE; exit $code"
 set "CLIPPY_EXIT=%ERRORLEVEL%"
 cd /d "%DESK_DIR%"
 if not "%CLIPPY_EXIT%"=="0" goto :fail

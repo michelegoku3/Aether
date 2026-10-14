@@ -12,7 +12,7 @@
 
 use std::time::{Duration, Instant};
 
-use crate::commands::settings::{usage_snapshot_is_fresh, UsageSnapshot};
+use crate::providers::hubcap_generation::{usage_snapshot_is_fresh, UsageSnapshot};
 
 const TTL: Duration = Duration::from_secs(60);
 
@@ -20,7 +20,7 @@ fn snapshot(api_key: &str, age: Duration, now: Instant) -> UsageSnapshot {
     UsageSnapshot {
         api_key: api_key.to_string(),
         fetched: now - age,
-        payload: serde_json::json!({ "usage": 7, "limit": 1500 }),
+        payload: serde_json::json!({ "usage": 7, "limit": 25 }),
     }
 }
 

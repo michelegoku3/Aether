@@ -19,11 +19,11 @@ describe('application runtime services', () => {
   it('resets Hubcap usage for an empty key or backend failure', async () => {
     const { result } = renderHook(() => useHubcapUsage());
     await act(() => result.current.refresh(''));
-    expect(result.current.usage).toEqual({ usage: 0, limit: 1500, hasKey: false });
+    expect(result.current.usage).toEqual({ usage: 0, limit: 25, hasKey: false });
 
     invokeMock.mockRejectedValue(new Error('quota unavailable'));
     await act(() => result.current.refresh('key'));
-    expect(result.current.usage).toEqual({ usage: 0, limit: 1500, hasKey: false });
+    expect(result.current.usage).toEqual({ usage: 0, limit: 25, hasKey: false });
   });
 
   it('loads DLL install, block and version state in parallel', async () => {

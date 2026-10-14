@@ -3,7 +3,7 @@ use crate::core::paths::LocalAppPaths;
 use crate::core::settings::{load_settings, AppSettings, SettingsManager};
 use crate::providers::hubcap::HubcapClient;
 use crate::providers::hubcap_generation::{
-    MAX_GAME_GENERATIONS_PER_DAY, MAX_WORKSHOP_GENERATIONS_PER_DAY,
+    usage_snapshot_is_fresh, usage_snapshot_slot, UsageSnapshot, MAX_WORKSHOP_GENERATIONS_PER_DAY,
 };
 use crate::providers::luatools_auth::{LuaToolsAuth, LuaToolsAuthStatus};
 
@@ -165,36 +165,14 @@ pub async fn validate_hubcap_key(api_key: String) -> Result<bool, String> {
 /// Desk issued the same request twice within 64 ms — the startup badge and the
 /// Settings mount — and the provider answered `429 Too Many Requests`. The
 /// number only moves when a generation runs, so a minute of reuse is free.
+/// (Successful generations invalidate the slot outright; the TTL only covers
+/// the quiet periods between them.)
 const USAGE_SNAPSHOT_TTL: std::time::Duration = std::time::Duration::from_secs(60);
-
-/// Last successful usage answer, keyed by the credential it was fetched with
-/// (a different key means a different account: never reuse across keys).
-pub(crate) struct UsageSnapshot {
-    pub api_key: String,
-    pub fetched: std::time::Instant,
-    pub payload: serde_json::Value,
-}
-
-/// Cache decision, kept pure so it can be tested without a network.
-pub(crate) fn usage_snapshot_is_fresh(
-    snapshot: &UsageSnapshot,
-    api_key: &str,
-    now: std::time::Instant,
-    ttl: std::time::Duration,
-) -> bool {
-    snapshot.api_key == api_key && now.saturating_duration_since(snapshot.fetched) < ttl
-}
-
-fn usage_snapshot_slot() -> &'static tokio::sync::Mutex<Option<UsageSnapshot>> {
-    static SLOT: std::sync::OnceLock<tokio::sync::Mutex<Option<UsageSnapshot>>> =
-        std::sync::OnceLock::new();
-    SLOT.get_or_init(|| tokio::sync::Mutex::new(None))
-}
 
 fn usage_defaults() -> serde_json::Value {
     serde_json::json!({
         "usage": 0,
-        "limit": MAX_GAME_GENERATIONS_PER_DAY,
+        "limit": 25,
         "workshopLimit": MAX_WORKSHOP_GENERATIONS_PER_DAY,
         "reset": "midnight EST"
     })
@@ -232,10 +210,7 @@ pub async fn get_hubcap_usage(api_key: String) -> Result<serde_json::Value, Stri
 
     match HubcapClient::new(&api_key).get_usage_stats().await {
         Ok(stats) => {
-            let limit = stats
-                .role_daily_limit
-                .or(stats.daily_limit)
-                .unwrap_or(MAX_GAME_GENERATIONS_PER_DAY);
+            let limit = stats.role_daily_limit.or(stats.daily_limit).unwrap_or(25);
             let usage = stats.daily_usage.unwrap_or(0);
             let payload = serde_json::json!({
                 "usage": usage,
@@ -252,7 +227,7 @@ pub async fn get_hubcap_usage(api_key: String) -> Result<serde_json::Value, Stri
         }
         Err(error) => {
             // A stale number beats a fabricated zero: the badge would otherwise
-            // claim "0/1500 used" precisely when the provider is unreachable
+            // claim "0/25 used" precisely when the provider is unreachable
             // (rate-limited, offline), which reads as "nothing was used".
             if same_key_as_previous {
                 if let Some(payload) = previous {

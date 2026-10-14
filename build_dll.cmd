@@ -8,7 +8,7 @@ REM  no multi-line if() blocks, control flow with goto labels only.
 REM
 REM  Steps, all inside AetherDLL\:
 REM    1. locate VS (vswhere), load the x64 native environment (vcvars)
-REM    2. clang-format --dry-run --Werror on all sources (style gate)
+REM    2. clang-format -i on all sources, then --dry-run --Werror (style gate)
 REM    3. cmake --preset x64-Release (Quality.cmake: /W4 /WX, clang-tidy
 REM       when present, orphan-header check, unit tests in ALL)
 REM    4. cmake --build --preset x64-Release
@@ -91,13 +91,17 @@ if not defined CMAKE_EXE set "CMAKE_EXE=cmake"
 if exist "%VS_NINJA_DIR%\ninja.exe" set "PATH=%VS_NINJA_DIR%;%PATH%"
 
 REM --- Step 2: clang-format gate (optional) ------------------------------
+REM  The build normalizes formatting first (-i in place), the --dry-run check
+REM  right after proves it. CI keeps check-only (it cannot commit back fixes).
 if "%SKIP_FORMAT%"=="1" goto :skip_format
 echo.
-echo [2/6] Checking C++ formatting (clang-format, .clang-format at AetherDLL root)...
+echo [2/6] Formatting + checking C++ (clang-format, .clang-format at AetherDLL root)...
 if not exist "%VS_CLANG_FORMAT%" goto :no_clang_format
 powershell.exe -NoProfile -ExecutionPolicy Bypass -Command ^
   "$c='%VS_CLANG_FORMAT%';" ^
-  "$bad=@(Get-ChildItem -Path '.' -Include *.cpp,*.h,*.hpp,*.inl,*.c,*.cc -Recurse | Where-Object { $_.FullName -notmatch '\\out\\' -and $_.FullName -notmatch '\\build' -and $_.FullName -notmatch '\\generated\\' -and $_.FullName -notmatch '\\_deps\\' } | Where-Object { & $c --dry-run --Werror --style=file $_.FullName 2>$null; $LASTEXITCODE -ne 0 });" ^
+  "$files=@(Get-ChildItem -Path '.' -Include *.cpp,*.h -Recurse | Where-Object { $_.FullName -notmatch '\\out\\' -and $_.FullName -notmatch '\\build' -and $_.FullName -notmatch '\\generated\\' -and $_.FullName -notmatch '\\_deps\\' });" ^
+  "foreach ($f in $files) { & $c -i --style=file $f.FullName 2>$null };" ^
+  "$bad=@($files | Where-Object { & $c --dry-run --Werror --style=file $_.FullName 2>$null; $LASTEXITCODE -ne 0 });" ^
   "if ($bad.Count -gt 0) { $bad | ForEach-Object { Write-Output ('  unformatted: ' + $_.FullName) } | Tee-Object -FilePath '%BUILD_LOG%' -Append; exit 1 }" ^
   "Write-Output 'clang-format clean.' | Tee-Object -FilePath '%BUILD_LOG%' -Append" ^
   "2>&1"

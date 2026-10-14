@@ -22,6 +22,40 @@ use std::sync::{Arc, OnceLock};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tokio::sync::{Mutex, Notify, Semaphore};
 
+/// Cached `/user/stats` answer keyed by credential (different key, different
+/// account: never reuse across keys). Lives here — next to the quota it
+/// shadows — instead of the command layer, so successful generations can
+/// invalidate it without a layer inversion (providers never call commands).
+#[derive(Debug, Clone)]
+pub(crate) struct UsageSnapshot {
+    pub api_key: String,
+    pub fetched: Instant,
+    pub payload: serde_json::Value,
+}
+
+/// Cache decision, kept pure so it can be tested without a network.
+pub(crate) fn usage_snapshot_is_fresh(
+    snapshot: &UsageSnapshot,
+    api_key: &str,
+    now: Instant,
+    ttl: Duration,
+) -> bool {
+    snapshot.api_key == api_key && now.saturating_duration_since(snapshot.fetched) < ttl
+}
+
+pub(crate) fn usage_snapshot_slot() -> &'static Mutex<Option<UsageSnapshot>> {
+    static SLOT: OnceLock<Mutex<Option<UsageSnapshot>>> = OnceLock::new();
+    SLOT.get_or_init(|| Mutex::new(None))
+}
+
+/// Drop the cached usage answer. Called after any successful provider
+/// operation below: the provider-side counter moved, so the next
+/// `get_hubcap_usage` must refetch instead of serving the up-to-60s-old
+/// snapshot (which is why the badge used to move only on app start).
+pub(crate) async fn invalidate_usage_snapshot() {
+    *usage_snapshot_slot().lock().await = None;
+}
+
 /// Minimum spacing between logical generation operations. The generation
 /// endpoint and its usage check are both provider traffic; serializing them
 /// without a cadence still produces bursts when a DLC-heavy package finishes.
@@ -542,6 +576,9 @@ where
                 key,
                 result.is_ok()
             );
+            if result.is_ok() {
+                invalidate_usage_snapshot().await;
+            }
             result
         }
     };
@@ -575,5 +612,23 @@ mod tests {
             },
             GenerationKey::Workshop { workshop_id: 2 }
         );
+    }
+
+    #[test]
+    fn usage_snapshot_invalidation_forces_refetch() {
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        rt.block_on(async {
+            *usage_snapshot_slot().lock().await = Some(UsageSnapshot {
+                api_key: "key-a".to_string(),
+                fetched: Instant::now(),
+                payload: serde_json::json!({ "usage": 7, "limit": 25 }),
+            });
+            assert!(usage_snapshot_slot().lock().await.is_some());
+            invalidate_usage_snapshot().await;
+            assert!(usage_snapshot_slot().lock().await.is_none());
+        });
     }
 }
