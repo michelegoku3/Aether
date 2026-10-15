@@ -1,0 +1,976 @@
+#include "cases.h"
+
+#include "core/AbiSentinel.h"
+
+#include "core/NetPacketAbi.h"
+
+#include "core/StructGuard.h"
+
+// ---------------------------------------------------------------------------
+
+// CNetPacket ABI resolver (core/NetPacketAbi.h).
+
+//
+
+// Regression fence for the beta-1790380355 crash: the layout must be
+
+// identified from live packets, must NEVER latch on garbage, and must
+
+// disable itself instead of falling back to a compiled default.
+
+// ---------------------------------------------------------------------------
+
+namespace netpkt_test {
+
+using namespace ac::abi::netpkt;
+
+// A synthetic CNetPacket: 0x40 bytes of object plus a frame buffer. `dataOff`
+
+// selects which layout the fake object is built in, so the same code models
+
+// both the stable (0x08) and the beta (0x10) client.
+
+struct FakePacket {
+
+    alignas(16) std::uint8_t obj[0x40]{};
+
+    std::uint8_t frame[256]{};
+
+    void Build(std::uint32_t dataOff, std::uint32_t headerLen, std::int32_t ref = 1,
+
+               std::uint32_t protoFlag = ac::abi::netpkt::kProtoFlag, std::uint32_t frameLen = 0) {
+
+        std::memset(obj, 0, sizeof(obj));
+
+        std::memset(frame, 0, sizeof(frame));
+
+        const std::uint32_t len = frameLen ? frameLen : (8 + headerLen);
+
+        const std::uint32_t rawEMsg = protoFlag | 0x2BFu; // a real Steam EMsg
+
+        std::memcpy(frame, &rawEMsg, 4);
+
+        std::memcpy(frame + 4, &headerLen, 4);
+
+        std::uint8_t* ptr = frame;
+
+        std::memcpy(obj + dataOff, &ptr, sizeof(ptr));
+
+        std::memcpy(obj + SizeOffFor(dataOff), &len, 4);
+
+        std::memcpy(obj + RefOffFor(dataOff), &ref, 4);
+    }
+
+    const void* Packet() const { return obj; }
+};
+
+// Readability oracle for the tests: only the fake object and its frame are
+
+// readable, everything else is "unmapped". Stricter than Windows, which is
+
+// exactly what we want — a probe that needs real memory to be wrong fails here.
+
+struct Arena {
+
+    const FakePacket* p;
+};
+
+bool ArenaReadable(const void* addr, std::size_t bytes, void* ctx) {
+
+    const auto* a = static_cast<const Arena*>(ctx);
+
+    const auto start = reinterpret_cast<std::uintptr_t>(addr);
+
+    const auto objLo = reinterpret_cast<std::uintptr_t>(a->p->obj);
+
+    const auto frameLo = reinterpret_cast<std::uintptr_t>(a->p->frame);
+
+    const bool inObj = start >= objLo && start + bytes <= objLo + sizeof(a->p->obj);
+
+    const bool inFrame = start >= frameLo && start + bytes <= frameLo + sizeof(a->p->frame);
+
+    return inObj || inFrame;
+}
+
+// Drives `r` with the same packet until it latches or gives up.
+
+Resolver::Step Feed(Resolver& r, const FakePacket& pkt, int times) {
+
+    Arena arena{&pkt};
+
+    Resolver::Step last = Resolver::Step::NoEvidence;
+
+    for (int i = 0; i < times; ++i)
+
+        last = r.Observe(pkt.Packet(), &ArenaReadable, &arena);
+
+    return last;
+}
+
+} // namespace netpkt_test
+
+void NetPacket() {
+
+    using namespace ac::abi::netpkt;
+
+    using netpkt_test::FakePacket;
+
+    using netpkt_test::Feed;
+
+    // 1. Golden values: the layouts proven by disassembly must not drift.
+
+    CHECK(kLayouts[0].dataOff == 0x08 && SizeOffFor(0x08) == 0x10 && RefOffFor(0x08) == 0x14);
+
+    CHECK(kLayouts[1].dataOff == 0x10 && SizeOffFor(0x10) == 0x18 && RefOffFor(0x10) == 0x1C);
+
+    // 2. A stable-layout packet latches on the SECOND agreeing packet, never
+
+    //    the first (one packet is not proof).
+
+    {
+
+        FakePacket pkt;
+
+        pkt.Build(0x08, 32);
+
+        Resolver r;
+
+        CHECK(Feed(r, pkt, 1) == Resolver::Step::AwaitingConfirm);
+
+        CHECK(!r.IsResolved());
+
+        CHECK(Feed(r, pkt, 1) == Resolver::Step::Latched);
+
+        CHECK(r.IsResolved() && r.DataOffset() == 0x08);
+
+        CHECK(std::string(r.LayoutName()) == "stable");
+
+        CHECK(r.Confirmations() == 2); // no hint: two packets had to agree
+    }
+
+    // 3. Same code, beta layout -> the OTHER offset. This is the case that
+
+    //    crashed Steam when it was compiled in.
+
+    {
+
+        FakePacket pkt;
+
+        pkt.Build(0x10, 64);
+
+        Resolver r;
+
+        Feed(r, pkt, 2);
+
+        CHECK(r.IsResolved() && r.DataOffset() == 0x10);
+
+        CHECK(std::string(r.LayoutName()) == "beta");
+    }
+
+    // 4. A layout we do not know (future Valve shift) must DISABLE, never
+
+    //    guess: no field is touched for the rest of the session.
+
+    {
+
+        FakePacket pkt;
+
+        pkt.Build(0x18, 32); // hypothetical +0x18
+
+        Resolver r;
+
+        Feed(r, pkt, kMaxProbeAttempts + 2);
+
+        CHECK(r.IsDisabled());
+
+        CHECK(!r.IsResolved() && r.DataOffset() == 0);
+
+        CHECK(std::string(r.LayoutName()) == "disabled");
+    }
+
+    // 5. Hostile / random memory must never latch anything.
+
+    {
+
+        FakePacket pkt;
+
+        std::mt19937 rng(1234);
+
+        Resolver r;
+
+        netpkt_test::Arena arena{&pkt};
+
+        for (int i = 0; i < 400; ++i) {
+
+            for (auto& b : pkt.obj)
+
+                b = static_cast<std::uint8_t>(rng() & 0xFF);
+
+            for (auto& b : pkt.frame)
+
+                b = static_cast<std::uint8_t>(rng() & 0xFF);
+
+            r.Observe(pkt.Packet(), &netpkt_test::ArenaReadable, &arena);
+
+            CHECK(!r.IsResolved());
+        }
+    }
+
+    // 6. Valve's own predicate is enforced: a non-proto frame, a bogus
+
+    //    refcount and an out-of-range headerLength are all rejected.
+
+    {
+
+        netpkt_test::Arena a{nullptr};
+
+        FakePacket nonProto;
+
+        nonProto.Build(0x08, 32, 1, /*protoFlag=*/0);
+
+        a.p = &nonProto;
+
+        CHECK(!CandidateMatches(nonProto.Packet(), 0x08, &netpkt_test::ArenaReadable, &a));
+
+        FakePacket freed;
+
+        freed.Build(0x08, 32, /*ref=*/0);
+
+        a.p = &freed;
+
+        CHECK(!CandidateMatches(freed.Packet(), 0x08, &netpkt_test::ArenaReadable, &a));
+
+        FakePacket liar;
+
+        liar.Build(0x08, /*headerLen=*/900, 1, ac::abi::netpkt::kProtoFlag, /*frameLen=*/64);
+
+        a.p = &liar; // headerLen > len - 8
+
+        CHECK(!CandidateMatches(liar.Packet(), 0x08, &netpkt_test::ArenaReadable, &a));
+
+        FakePacket good;
+
+        good.Build(0x08, 32);
+
+        a.p = &good;
+
+        CHECK(CandidateMatches(good.Packet(), 0x08, &netpkt_test::ArenaReadable, &a));
+    }
+
+    // 7. A poisoned hint (what a wrong ABI table would provide) does not
+
+    //    override the probe: the true layout still wins.
+
+    {
+
+        FakePacket pkt;
+
+        pkt.Build(0x10, 32);
+
+        Resolver r;
+
+        r.Hint(0x08); // table says stable, packet says beta
+
+        Feed(r, pkt, 3);
+
+        CHECK(r.IsResolved() && r.DataOffset() == 0x10);
+
+        CHECK(r.Confirmations() == 2); // the wrong hint bought nothing
+    }
+
+    // 9b. Write barrier: once latched, a matching packet may be written, a
+
+    //     packet that no longer matches may not, and eight consecutive
+
+    //     rejections shut the feature down for good.
+
+    {
+
+        FakePacket good;
+
+        good.Build(0x10, 32);
+
+        netpkt_test::Arena arena{&good};
+
+        Resolver r;
+
+        r.Hint(0x10);
+
+        Feed(r, good, 1);
+
+        CHECK(r.IsResolved());
+
+        CHECK(r.BeginWrite(good.Packet(), &netpkt_test::ArenaReadable, &arena));
+
+        CHECK(r.WriteRejects() == 0);
+
+        // A legacy (non-protobuf) packet is now WRITABLE: identification
+
+        // needs the protobuf flag, the write gate does not.
+
+        FakePacket legacy;
+
+        legacy.Build(0x10, 32, 1, /*protoFlag=*/0);
+
+        netpkt_test::Arena legacyArena{&legacy};
+
+        CHECK(!CandidateMatches(legacy.Packet(), 0x10, &netpkt_test::ArenaReadable, &legacyArena));
+
+        CHECK(r.BeginWrite(legacy.Packet(), &netpkt_test::ArenaReadable, &legacyArena));
+
+        FakePacket bad;
+
+        bad.Build(0x08, 32); // stable-shaped object, beta layout latched
+
+        netpkt_test::Arena badArena{&bad};
+
+        for (int i = 0; i < kMaxWriteMismatches - 1; ++i) {
+
+            CHECK(!r.BeginWrite(bad.Packet(), &netpkt_test::ArenaReadable, &badArena));
+
+            CHECK(!r.IsDisabled()); // one odd packet is not a verdict
+        }
+
+        CHECK(!r.BeginWrite(bad.Packet(), &netpkt_test::ArenaReadable, &badArena));
+
+        CHECK(r.IsDisabled()); // ...eight in a row is
+
+        CHECK(r.WriteRejects() == kMaxWriteMismatches);
+
+        // Terminal: even a good packet is refused afterwards.
+
+        CHECK(!r.BeginWrite(good.Packet(), &netpkt_test::ArenaReadable, &arena));
+    }
+
+    // 9c. A single mismatch does not arm the shutdown: the counter resets as
+
+    //     soon as a matching packet arrives (login traffic is mixed).
+
+    {
+
+        FakePacket good;
+
+        good.Build(0x10, 32);
+
+        FakePacket bad;
+
+        bad.Build(0x08, 32);
+
+        netpkt_test::Arena ga{&good}, ba{&bad};
+
+        Resolver r;
+
+        r.Hint(0x10);
+
+        Feed(r, good, 1);
+
+        for (int i = 0; i < 50; ++i) {
+
+            CHECK(!r.BeginWrite(bad.Packet(), &netpkt_test::ArenaReadable, &ba));
+
+            CHECK(r.BeginWrite(good.Packet(), &netpkt_test::ArenaReadable, &ga));
+        }
+
+        CHECK(!r.IsDisabled());
+    }
+
+    // 9. A correct hint latches on the FIRST live packet, and says so
+
+    //    (Confirmations()==1 is what the log line reports).
+
+    {
+
+        FakePacket pkt;
+
+        pkt.Build(0x10, 32);
+
+        Resolver r;
+
+        r.Hint(0x10);
+
+        CHECK(Feed(r, pkt, 1) == Resolver::Step::Latched);
+
+        CHECK(r.DataOffset() == 0x10 && r.Attempts() == 1 && r.Confirmations() == 1);
+    }
+
+    // 10. Phase 4: a layout this binary was never compiled with, proposed by
+
+    //     the per-build ABI table, is latched only after the probe agrees.
+
+    {
+
+        FakePacket pkt;
+
+        pkt.Build(0x20, 32); // a future Valve shift
+
+        netpkt_test::Arena arena{&pkt};
+
+        Resolver r;
+
+        CHECK(!CandidateMatches(pkt.Packet(), 0x08, &netpkt_test::ArenaReadable, &arena));
+
+        // Without the table the layout is unknown and stays unknown.
+
+        CHECK(Feed(r, pkt, 4) == Resolver::Step::NoEvidence);
+
+        CHECK(!r.IsResolved());
+
+        // The table proposes it; the probe confirms it on a live packet.
+
+        Resolver withTable;
+
+        CHECK(withTable.AddCandidate(0x20));
+
+        withTable.Hint(0x20);
+
+        CHECK(Feed(withTable, pkt, 1) == Resolver::Step::Latched);
+
+        CHECK(withTable.DataOffset() == 0x20);
+
+        CHECK(std::string(withTable.LayoutName()) == "from-abi-table");
+    }
+
+    // 11. A table that proposes the WRONG layout still loses to the packet.
+
+    {
+
+        FakePacket pkt;
+
+        pkt.Build(0x10, 48);
+
+        Resolver r;
+
+        CHECK(r.AddCandidate(0x20));
+
+        r.Hint(0x20);
+
+        Feed(r, pkt, 3);
+
+        CHECK(r.IsResolved() && r.DataOffset() == 0x10);
+    }
+
+    // 12. Candidate registration is idempotent and bounded.
+
+    {
+
+        Resolver r;
+
+        CHECK(r.AddCandidate(0x08)); // already known: accepted, not stored
+
+        CHECK(r.AddCandidate(0x20));
+
+        CHECK(r.AddCandidate(0x20)); // idempotent
+
+        for (int i = 0; i < kMaxExtraLayouts; ++i)
+
+            r.AddCandidate(0x100 + 8 * i);
+
+        CHECK(!r.AddCandidate(0x900)); // full: refused, not silently dropped
+    }
+
+    // 8. Accessors are inert while unresolved: writing through them must not
+
+    //    touch the object (they return the trash sink).
+
+    {
+
+        Global().Reset();
+
+        CHECK(!Global().IsResolved());
+
+        FakePacket pkt;
+
+        pkt.Build(0x10, 32);
+
+        auto* opaque = reinterpret_cast<ac::steam::CNetPacket*>(pkt.obj);
+
+        std::uint8_t sentinel[4]{1, 2, 3, 4};
+
+        std::uint8_t before[sizeof(pkt.obj)];
+
+        std::memcpy(before, pkt.obj, sizeof(before));
+
+        Data(opaque) = sentinel;
+
+        Size(opaque) = 0xDEADBEEF;
+
+        CHECK(std::memcmp(before, pkt.obj, sizeof(before)) == 0);
+
+        Global().Reset();
+    }
+}
+
+// ---------------------------------------------------------------------------
+
+// ABI sentinel (core/AbiSentinel.h).
+
+//
+
+// The byte sequences below are REAL: taken from steamclient64.dll build
+
+// 1790380355 (beta). They are the regression fence for the class of defect
+
+// that a signature check cannot see — a pattern table whose RVA points into
+
+// the middle of a function.
+
+// ---------------------------------------------------------------------------
+
+void Sentinel() {
+
+    using namespace ac::abi::sentinel;
+
+    // A slice of the real .pdata: RecvPkt's first fragment, the fragment that
+
+    // contains the bad 0x5BC460 pin, and CNetPacket::AddRef.
+
+    const PdataEntry pdata[] = {
+
+        {0x5BC0F0, 0x5BC197}, // CCMConnection::RecvPkt
+
+        {0x5BC1A0, 0x5BC1B2}, // CCMInterface::RecvPkt (hot fragment)
+
+        {0x5BC32A, 0x5BD139}, // ...cold fragment: 0x5BC460 lives in here
+
+        {0xE82730, 0xE827DA}, // CNetPacket::AddRef
+
+    };
+
+    const std::size_t n = sizeof(pdata) / sizeof(pdata[0]);
+
+    // 1. Real entry point, listed in .pdata -> accepted.
+
+    //    0x5BC1A0: preceded by int3 padding, starts with `mov rax,rsp`.
+
+    {
+
+        const std::uint8_t first[] = {0x48, 0x8B, 0xC4, 0x55, 0x48, 0x8D, 0xA8, 0xE8};
+
+        const Verdict v = Classify(0x5BC1A0, true, pdata, n, 0xCC, first, sizeof(first));
+
+        CHECK(v == Verdict::Ok);
+
+        CHECK(Accepted(v));
+    }
+
+    // 2. THE regression: 0x5BC460 is inside the cold fragment. Bytes look
+
+    //    like a perfectly normal instruction and the previous byte is live
+
+    //    code (`48 8B D3`). Only .pdata can tell, and it does.
+
+    {
+
+        const std::uint8_t first[] = {0x48, 0x89, 0x44, 0x24, 0x30, 0x48, 0x8D, 0x4C};
+
+        const Verdict v = Classify(0x5BC460, true, pdata, n, 0xD3, first, sizeof(first));
+
+        CHECK(v == Verdict::NotFunctionStart);
+
+        CHECK(!Accepted(v));
+    }
+
+    // 3. Leaf function with no unwind entry (GetPipeClient, 0x89F270, starts
+
+    //    with `test edx,edx`): .pdata cannot help, the int3 padding before it
+
+    //    can. This must NOT be rejected — Aether hooks it.
+
+    {
+
+        const std::uint8_t first[] = {0x85, 0xD2, 0x74, 0x30, 0x44, 0x0F, 0xB7, 0xCA};
+
+        const Verdict v = Classify(0x89F270, true, pdata, n, 0xCC, first, sizeof(first));
+
+        CHECK(v == Verdict::OkLeaf);
+
+        CHECK(Accepted(v));
+    }
+
+    // 4. A function that starts right after a `ret` (no padding) is still a
+
+    //    function: CNetPacket's mini-ctor at 0xE826D0.
+
+    {
+
+        const std::uint8_t first[] = {0x33, 0xC0, 0x89, 0x41, 0x1C, 0x48, 0x89, 0x41};
+
+        CHECK(Classify(0xE826D0, true, pdata, n, 0xC3, first, sizeof(first)) == Verdict::OkLeaf);
+    }
+
+    // 5. An address in a .pdata gap preceded by live code: unprovable, so
+
+    //    refused. Better a skipped hook than a jump into a basic block.
+
+    {
+
+        const std::uint8_t first[] = {0x8B, 0x41, 0x10, 0xC3, 0xCC, 0xCC, 0xCC, 0xCC};
+
+        CHECK(Classify(0x700000, true, pdata, n, 0x48, first, sizeof(first)) == Verdict::NoPredecessorBoundary);
+    }
+
+    // 6. Padding, outside-code and unreadable targets.
+
+    {
+
+        const std::uint8_t pad[] = {0xCC, 0xCC, 0xCC, 0xCC, 0xCC, 0xCC, 0xCC, 0xCC};
+
+        CHECK(Classify(0x5BC198, true, pdata, n, 0xC3, pad, sizeof(pad)) == Verdict::PaddingAtTarget);
+
+        const std::uint8_t zero[8] = {};
+
+        CHECK(Classify(0x5BC198, true, pdata, n, 0xC3, zero, sizeof(zero)) == Verdict::PaddingAtTarget);
+
+        const std::uint8_t first[] = {0x48, 0x8B, 0xC4};
+
+        CHECK(Classify(0x1400000, false, pdata, n, 0xCC, first, sizeof(first)) == Verdict::OutsideCode);
+
+        CHECK(Classify(0x5BC1A0, true, pdata, n, 0xCC, nullptr, 0) == Verdict::NoBytes);
+    }
+
+    // 7. No .pdata at all (stripped module): the classifier still works off
+
+    //    the predecessor byte instead of giving up.
+
+    {
+
+        const std::uint8_t first[] = {0x40, 0x53, 0x48, 0x83, 0xEC, 0x30, 0xFF, 0x41};
+
+        CHECK(Classify(0xE82730, true, nullptr, 0, 0xCC, first, sizeof(first)) == Verdict::OkLeaf);
+
+        CHECK(Classify(0xE82730, true, nullptr, 0, 0x8B, first, sizeof(first)) == Verdict::NoPredecessorBoundary);
+    }
+
+    // 8. Every verdict has text, and only the two positive ones are accepted.
+
+    {
+
+        const Verdict all[] = {Verdict::Ok,
+
+                               Verdict::OkLeaf,
+
+                               Verdict::NotFunctionStart,
+
+                               Verdict::NoPredecessorBoundary,
+
+                               Verdict::PaddingAtTarget,
+
+                               Verdict::OutsideCode,
+
+                               Verdict::NoBytes};
+
+        int accepted = 0;
+
+        for (const Verdict v : all) {
+
+            CHECK(VerdictText(v) != nullptr && VerdictText(v)[0] != '\0');
+
+            if (Accepted(v))
+
+                ++accepted;
+        }
+
+        CHECK(accepted == 2);
+    }
+}
+
+// ---------------------------------------------------------------------------
+
+// Struct guards (core/StructGuard.h) — PackageInfo and AppOwnership.
+
+//
+
+// The layouts are proven by disassembly of both shipped builds; these tests
+
+// fence the invariants that let us refuse a write instead of corrupting Steam.
+
+// ---------------------------------------------------------------------------
+
+void StructGuard() {
+
+    using namespace ac::abi::guard;
+
+    using ac::steam::AppId;
+
+    using ac::steam::AppOwnership;
+
+    using ac::steam::PackageInfo;
+
+    // 1. The offsets ARE the disassembly. (static_assert already fences them
+
+    //    at compile time; this keeps the numbers visible in a test too.)
+
+    CHECK(offsetof(AppOwnership, ownsLicense) == 0x24);
+
+    CHECK(offsetof(AppOwnership, familyShared) == 0x35);
+
+    CHECK(offsetof(PackageInfo, appIdVec) == 0x40);
+
+    CHECK(offsetof(PackageInfo, depotIdVec) == 0x58);
+
+    CHECK(sizeof(ac::steam::CUtlVector<AppId>) == 0x18);
+
+    // 2. A well-formed ownership record passes.
+
+    AppOwnership own{};
+
+    own.releaseState = ac::steam::AppReleaseState::Released;
+
+    own.existInPackageNums = 2;
+
+    own.ownsLicense = true;
+
+    own.familyShared = false;
+
+    CHECK(Passed(CheckOwnership(&own)));
+
+    CHECK(CheckOwnership(nullptr) == Reason::NullObject);
+
+    // 3. The decisive test: ONE byte of the bool block holding something that
+
+    //    is not 0/1 — what a shifted layout looks like — is refused.
+
+    for (std::size_t i = 0; i < kOwnershipBoolCount; ++i) {
+
+        AppOwnership shifted{};
+
+        shifted.releaseState = ac::steam::AppReleaseState::Released;
+
+        reinterpret_cast<std::uint8_t*>(&shifted)[kOwnershipBoolFirst + i] = 0x7F;
+
+        CHECK(CheckOwnership(&shifted) == Reason::BoolBlockNotBoolean);
+    }
+
+    // 4. A whole struct filled with pointer-ish garbage (the +8 shift class of
+
+    //    bug) never passes.
+
+    {
+
+        AppOwnership garbage{};
+
+        std::mt19937 rng(99);
+
+        for (std::size_t i = 0; i < sizeof(garbage); ++i) {
+
+            reinterpret_cast<std::uint8_t*>(&garbage)[i] = static_cast<std::uint8_t>(rng() | 2);
+        }
+
+        CHECK(!Passed(CheckOwnership(&garbage)));
+    }
+
+    // 5. Out-of-range scalars.
+
+    {
+
+        AppOwnership bad{};
+
+        bad.releaseState = static_cast<ac::steam::AppReleaseState>(99);
+
+        CHECK(CheckOwnership(&bad) == Reason::ReleaseStateOutOfRange);
+
+        AppOwnership bad2{};
+
+        bad2.existInPackageNums = 999999;
+
+        CHECK(CheckOwnership(&bad2) == Reason::PackageCountAbsurd);
+    }
+
+    // 6. PackageInfo vectors: the invariant that protects the heap.
+
+    {
+
+        std::vector<AppId> storage(64, 0);
+
+        PackageInfo pkg{};
+
+        pkg.appIdVec.mem.memory = storage.data();
+
+        pkg.appIdVec.mem.allocationCount = 64;
+
+        pkg.appIdVec.size = 10;
+
+        CHECK(Passed(CheckPackage(&pkg)));
+
+        pkg.appIdVec.size = 65; // size > alloc: would write past the end
+
+        CHECK(CheckPackage(&pkg) == Reason::VectorSizeExceedsAlloc);
+
+        pkg.appIdVec.size = 10;
+
+        pkg.appIdVec.mem.memory = nullptr; // elements but no storage
+
+        CHECK(CheckPackage(&pkg) == Reason::VectorMemoryNull);
+
+        pkg.appIdVec.mem.memory = storage.data();
+
+        pkg.appIdVec.mem.allocationCount = 0xFFFFFFF; // absurd capacity
+
+        CHECK(CheckPackage(&pkg) == Reason::VectorAllocAbsurd);
+
+        pkg.appIdVec.mem.allocationCount = 64;
+
+        pkg.appIdVec.mem.memory = reinterpret_cast<AppId*>(reinterpret_cast<std::uint8_t*>(storage.data()) + 1);
+
+        CHECK(CheckPackage(&pkg) == Reason::VectorMemoryMisaligned);
+
+        // An empty, zeroed vector is legitimate (fresh package).
+
+        PackageInfo fresh{};
+
+        CHECK(Passed(CheckPackage(&fresh)));
+
+        // The second vector is checked too, not just the first (the checks
+
+        // fire in order, so size-vs-alloc is reported before the null test).
+
+        PackageInfo second{};
+
+        second.depotIdVec.size = 5;
+
+        CHECK(CheckPackage(&second) == Reason::VectorSizeExceedsAlloc);
+
+        second.depotIdVec.mem.allocationCount = 8; // capacity claimed, storage absent
+
+        CHECK(CheckPackage(&second) == Reason::VectorMemoryNull);
+
+        CHECK(CheckPackage(nullptr) == Reason::NullObject);
+    }
+
+    // 8. Phase 4: the published table is checked against the compiled layout.
+
+    {
+
+        ResetCounters();
+
+        std::unordered_map<std::string, std::uint32_t> table = {
+
+            {"AppOwnership.bool_block_start", 0x24}, {"AppOwnership.size_bytes", 0x36}, {"PackageInfo.appIdVec", 0x40},
+
+            {"PackageInfo.depotIdVec", 0x58},        {"CUtlVector.count", 0x10},
+
+        };
+
+        CHECK(ApplyTable(table, "test") == 5);
+
+        CHECK(!LayoutContradicted());
+
+        AppOwnership fine{};
+
+        fine.releaseState = ac::steam::AppReleaseState::Released;
+
+        CHECK(Passed(CheckOwnership(&fine)));
+
+        // A table describing a layout this binary was not compiled with must
+
+        // stop every guarded write: a C++ struct cannot be re-laid-out at
+
+        // runtime, so "adapting" would mean writing to the wrong offsets.
+
+        table["AppOwnership.bool_block_start"] = 0x2C;
+
+        ApplyTable(table, "test");
+
+        CHECK(LayoutContradicted());
+
+        CHECK(CheckOwnership(&fine) == Reason::TableMismatch);
+
+        PackageInfo pkg{};
+
+        CHECK(CheckPackage(&pkg) == Reason::TableMismatch);
+
+        // Fields the table does not carry are not an opinion (older tables).
+
+        ResetCounters();
+
+        CHECK(ApplyTable({{"Unrelated.field", 1}}, "test") == 0);
+
+        CHECK(!LayoutContradicted());
+    }
+
+    // 9. DepotEntry: the table Aether rewrites manifest ids into.
+
+    {
+
+        ResetCounters();
+
+        using ac::steam::DepotEntry;
+
+        CHECK(sizeof(DepotEntry) == 0x20); // stride proven by the loops
+
+        CHECK(offsetof(DepotEntry, manifestGid) == 0x08);
+
+        CHECK(offsetof(DepotEntry, manifestSize) == 0x10);
+
+        CHECK(offsetof(ac::steam::AppOwnership, borrowed) == 0x2F); // not 0x31
+
+        std::vector<DepotEntry> rows(4);
+
+        rows[0] = DepotEntry{1234, 10, 0xAABBCCDD11223344ull, 50ull * 1024 * 1024, 0, 1, 0, 1, 0};
+
+        ac::steam::CUtlVector<DepotEntry> vec{};
+
+        vec.mem.memory = rows.data();
+
+        vec.mem.allocationCount = 4;
+
+        vec.size = 2; // row 1 is a zeroed tail row
+
+        CHECK(Passed(CheckDepotVector(&vec)));
+
+        rows[1].depotId = 0; // id missing but data present
+
+        rows[1].manifestGid = 0x1234;
+
+        CHECK(CheckDepotVector(&vec) == Reason::DepotEntryImplausible);
+
+        rows[1] = DepotEntry{7, 7, 1, 1, 0, 2, 0, 0, 0}; // a "bool" holding 2
+
+        CHECK(CheckDepotVector(&vec) == Reason::DepotEntryImplausible);
+
+        rows[1] = DepotEntry{7, 7, 1, 1ull << 60, 0, 0, 0, 0, 0}; // absurd size
+
+        CHECK(CheckDepotVector(&vec) == Reason::DepotEntryImplausible);
+
+        rows[1] = DepotEntry{7, 7, 99, 1024, 0, 0, 0, 0, 0};
+
+        CHECK(Passed(CheckDepotVector(&vec)));
+
+        CHECK(CheckDepotVector(nullptr) == Reason::NullObject);
+
+        vec.size = 9; // size beyond capacity
+
+        CHECK(CheckDepotVector(&vec) == Reason::VectorSizeExceedsAlloc);
+    }
+
+    // 7. Every reason has text.
+
+    {
+
+        const Reason all[] = {Reason::Ok,
+
+                              Reason::NullObject,
+
+                              Reason::BoolBlockNotBoolean,
+
+                              Reason::ReleaseStateOutOfRange,
+
+                              Reason::PackageCountAbsurd,
+
+                              Reason::VectorSizeExceedsAlloc,
+
+                              Reason::VectorMemoryNull,
+
+                              Reason::VectorMemoryMisaligned,
+
+                              Reason::VectorAllocAbsurd,
+
+                              Reason::TableMismatch,
+
+                              Reason::DepotEntryImplausible};
+
+        for (const Reason r : all)
+
+            CHECK(ReasonText(r) != nullptr && ReasonText(r)[0] != '\0');
+    }
+}

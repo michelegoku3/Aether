@@ -3,6 +3,7 @@
 #include "utils/DeskPaths.h"
 
 #include <algorithm>
+#include <atomic>
 #include <filesystem>
 #include <fstream>
 #include <iterator>
@@ -46,7 +47,9 @@ constexpr const char* kModule = "Core";
 constexpr const char* kStartupLogToken = "R4M7K1C9";
 
 // Guards against the (theoretical) possibility of init running twice.
-volatile LONG s_initFlag = 0;
+// std::atomic (not volatile LONG): volatile does not order memory in C++;
+// the atomic compare-exchange is the single-execution guarantee.
+std::atomic<long> s_initFlag{0};
 
 // ---------------------------------------------------------------------------
 // Initialisation order — every step lists the steps it depends on, so a
@@ -354,14 +357,16 @@ extern "C" __declspec(dllexport) void WINAPI AetherCoreShutdown() { Shutdown(); 
 
 BOOL APIENTRY DllMain(HMODULE instance, DWORD reason, LPVOID /*reserved*/) {
     switch (reason) {
-    case DLL_PROCESS_ATTACH:
+    case DLL_PROCESS_ATTACH: {
         DisableThreadLibraryCalls(instance);
         // No heavy work in DllMain (architectural principle 5): hand off to
         // a dedicated thread immediately.
-        if (InterlockedCompareExchange(&s_initFlag, 1, 0) == 0) {
+        long expected = 0;
+        if (s_initFlag.compare_exchange_strong(expected, 1, std::memory_order_acq_rel)) {
             g_state.initThread = CreateThread(nullptr, 0, InitThread, instance, 0, nullptr);
         }
         break;
+    }
 
     case DLL_PROCESS_DETACH:
         // Loader lock: no waits, mutexes, I/O or logging here. Logger flushes

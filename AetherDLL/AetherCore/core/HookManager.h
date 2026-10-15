@@ -7,7 +7,7 @@
 // ---------------------------------------------------------------------------
 // Thin wrapper around MinHook.
 //
-// Improvements over LumaCore's macro-based hook system (DOCS_TODO 11 #2):
+// No macros by design (replaces the legacy macro-based hook system):
 //   * No macros: every hook is registered with a plain, debuggable call.
 //   * A TryHook<> template removes the repeated "resolve + cast + register"
 //     boilerplate each module used to duplicate.

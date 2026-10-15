@@ -21,6 +21,19 @@ long long FileWriteTicks(const std::string& configPath) {
         return 0;
     return t.time_since_epoch().count();
 }
+
+// Parses one presence app-id list with identical semantics at every call
+// site: clear-then-fill, keep only positive integers. No range validation:
+// values above UINT32_MAX keep the historical truncating cast on purpose;
+// tightening that is a separate behavior change, not a refactor.
+void ParseAppList(const toml::array& arr, std::vector<std::uint32_t>& out) {
+    out.clear();
+    for (const auto& item : arr) {
+        if (auto v = item.value<std::int64_t>(); v && *v > 0) {
+            out.push_back(static_cast<std::uint32_t>(*v));
+        }
+    }
+}
 } // namespace
 
 std::shared_ptr<const Settings> Settings::Snapshot() { return g_state.settings.load(); }
@@ -167,34 +180,13 @@ Settings Settings::Load(const std::string& configPath, bool* valid) {
             s.presenceAppIdBlob = *v;
         }
         if (auto* arr = (*presence)["showonline_apps"].as_array()) {
-            s.presenceShowOnlineApps.clear();
-            for (const auto& item : *arr) {
-                if (auto v = item.value<std::int64_t>()) {
-                    if (*v > 0) {
-                        s.presenceShowOnlineApps.push_back(static_cast<std::uint32_t>(*v));
-                    }
-                }
-            }
+            ParseAppList(*arr, s.presenceShowOnlineApps);
         }
         if (const auto* aetherOnlineAppsArr = (*presence)["aetheronline_apps"].as_array()) {
-            s.presenceAetherOnlineApps.clear();
-            for (const auto& item : *aetherOnlineAppsArr) {
-                if (auto v = item.value<std::int64_t>()) {
-                    if (*v > 0) {
-                        s.presenceAetherOnlineApps.push_back(static_cast<std::uint32_t>(*v));
-                    }
-                }
-            }
+            ParseAppList(*aetherOnlineAppsArr, s.presenceAetherOnlineApps);
         }
         if (auto* arr = (*presence)["exclude_apps"].as_array()) {
-            s.presenceExcludeApps.clear();
-            for (const auto& item : *arr) {
-                if (auto v = item.value<std::int64_t>()) {
-                    if (*v > 0) {
-                        s.presenceExcludeApps.push_back(static_cast<std::uint32_t>(*v));
-                    }
-                }
-            }
+            ParseAppList(*arr, s.presenceExcludeApps);
         }
         if (auto v = (*presence)["default_mode"].value<std::string>()) {
             s.presenceDefaultShowOnline = (*v == "showonline");

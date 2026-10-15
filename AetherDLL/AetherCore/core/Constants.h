@@ -5,10 +5,9 @@
 // ---------------------------------------------------------------------------
 // Centralised compile-time constants.
 //
-// LumaCore scattered magic numbers across the whole tree (see DOCS_TODO
-// 13-lumacore-technical-debt.md #10). AetherCore keeps every tunable in one
-// place so a Steam update only ever requires editing this file, never hunting
-// through hook bodies.
+// Previous iterations scattered magic numbers across the whole tree.
+// AetherCore keeps every tunable in one place so a Steam update only ever
+// requires editing this file, never hunting through hook bodies.
 // ---------------------------------------------------------------------------
 namespace ac::constants {
 

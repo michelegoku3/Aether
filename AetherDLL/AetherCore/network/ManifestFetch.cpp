@@ -66,8 +66,11 @@ struct LocalManifestCacheEntry {
     bool positive = false;
     std::chrono::steady_clock::time_point expires{};
 };
-std::mutex g_localManifestMutex;
-std::unordered_map<std::string, LocalManifestCacheEntry> g_localManifestCache;
+// Private lookup memo, not domain state (allowed service-local lifecycle per
+// docs/ARCHITECTURE.md: single-module cache with its own mutex). s_* prefix
+// keeps the g_* grep rule reserved for g_state.
+std::mutex s_localManifestMutex;
+std::unordered_map<std::string, LocalManifestCacheEntry> s_localManifestCache;
 constexpr auto kNegativeTtl = std::chrono::seconds(30);
 
 // A manifest already present on disk is authoritative: Steam's depotcache (or
@@ -100,17 +103,17 @@ std::optional<std::filesystem::path> FindLocalManifest(std::uint64_t gid, std::u
     // Index: positive hit (re-verified), negative hit inside the TTL = no walk.
     const auto now = std::chrono::steady_clock::now();
     {
-        std::lock_guard<std::mutex> lock(g_localManifestMutex);
-        auto it = g_localManifestCache.find(filename);
-        if (it != g_localManifestCache.end()) {
+        std::lock_guard<std::mutex> lock(s_localManifestMutex);
+        auto it = s_localManifestCache.find(filename);
+        if (it != s_localManifestCache.end()) {
             if (it->second.positive) {
                 if (usable(it->second.path))
                     return it->second.path;
-                g_localManifestCache.erase(it); // file gone: recompute
+                s_localManifestCache.erase(it); // file gone: recompute
             } else if (now < it->second.expires) {
                 return std::nullopt; // recent miss: skip the walk
             } else {
-                g_localManifestCache.erase(it);
+                s_localManifestCache.erase(it);
             }
         }
     }
@@ -136,8 +139,8 @@ std::optional<std::filesystem::path> FindLocalManifest(std::uint64_t gid, std::u
                 continue;
             fs::copy_file(candidate, destination, fs::copy_options::overwrite_existing, ec);
             if (!ec && usable(destination)) {
-                std::lock_guard<std::mutex> lock(g_localManifestMutex);
-                g_localManifestCache[filename] = LocalManifestCacheEntry{destination, true, {}};
+                std::lock_guard<std::mutex> lock(s_localManifestMutex);
+                s_localManifestCache[filename] = LocalManifestCacheEntry{destination, true, {}};
                 AC_LOG_DEBUG(kModule, "Local manifest index: cached positive entry for %s.", filename.c_str());
                 return destination;
             }
@@ -146,8 +149,8 @@ std::optional<std::filesystem::path> FindLocalManifest(std::uint64_t gid, std::u
         }
     }
     {
-        std::lock_guard<std::mutex> lock(g_localManifestMutex);
-        g_localManifestCache[filename] = LocalManifestCacheEntry{{}, false, now + kNegativeTtl};
+        std::lock_guard<std::mutex> lock(s_localManifestMutex);
+        s_localManifestCache[filename] = LocalManifestCacheEntry{{}, false, now + kNegativeTtl};
     }
     AC_LOG_DEBUG(kModule, "Local manifest index: %s not on disk; skipping backup walk for %lld s.", filename.c_str(),
                  static_cast<long long>(kNegativeTtl.count()));

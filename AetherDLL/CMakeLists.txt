@@ -278,10 +278,10 @@ install(TARGETS AetherCore AetherPayload AetherXInput
 # ============================================================================
 # Unit tests as part of the normal build
 # ----------------------------------------------------------------------------
-# The tests in tests/ (quickwin_tests, backup_lifecycle_tests, source
-# inventory) already run in CI at tag time. From here they also run locally on
-# every "Build All": the aether_run_tests target is in ALL, so a red test
-# fails the build exactly like a compile error.
+# The tests in tests/ (core_unit_tests, backup_lifecycle_tests,
+# wire_contract_tests, source inventory) already run in CI at tag time. From
+# here they also run locally on every "Build All": the aether_run_tests
+# target is in ALL, so a red test fails the build exactly like a compile error.
 #   -DAETHER_BUILD_TESTS=OFF   to skip them (e.g. pure packaging builds)
 # ============================================================================
 option(AETHER_BUILD_TESTS "Build and run the AetherDLL unit tests as part of ALL" ON)
@@ -291,7 +291,7 @@ if(AETHER_BUILD_TESTS)
     add_custom_target(aether_run_tests ALL
         COMMAND ${CMAKE_CTEST_COMMAND} --output-on-failure -C $<CONFIG>
         WORKING_DIRECTORY "${CMAKE_BINARY_DIR}"
-        DEPENDS quickwin_tests backup_lifecycle_tests
+        DEPENDS core_unit_tests backup_lifecycle_tests wire_contract_tests
         COMMENT "[AetherDLL] Running unit tests (ctest)"
         VERBATIM)
     message(STATUS "[AetherDLL] Unit tests enabled: ctest runs on every build (AETHER_BUILD_TESTS=OFF to skip)")

@@ -4,7 +4,7 @@
 // Pure parser for the IPC spec TOML.
 //
 // Extracted from IpcSpec.cpp::ParseToml: the same parsing logic, but without
-// touching g_state or the filesystem, so the "ipcspec" suite in quickwin_tests
+// touching g_state or the filesystem, so the "ipcspec" suite in core_unit_tests
 // can verify it in isolation. IpcSpec.cpp stays the only consumer publishing
 // the result into g_state.ipcSpec.
 // ---------------------------------------------------------------------------

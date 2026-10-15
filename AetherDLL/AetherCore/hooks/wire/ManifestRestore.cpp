@@ -69,7 +69,7 @@ BackupCopyOutcome CopyAtomicallyIfMissing(const fs::path& source, const fs::path
     if (!IsMissingOrEmpty(destination))
         return BackupCopyOutcome::Present; // rule 2
 
-    const fs::path temporary = destination.string() + ".aether-tmp";
+    const fs::path temporary = backup::io::UniqueStagingPath(destination.string());
     std::error_code copyEc;
     fs::copy_file(source, temporary, fs::copy_options::overwrite_existing, copyEc);
     // AtomicReplace uses MOVEFILE_REPLACE_EXISTING, which also covers the
@@ -81,11 +81,13 @@ BackupCopyOutcome CopyAtomicallyIfMissing(const fs::path& source, const fs::path
                                              : BackupCopyOutcome::Present;
     }
     // Rule 4: the committed copy must match the source size.
-    std::error_code sizeEc;
-    const auto sourceSize = fs::file_size(source, sizeEc);
-    const auto destinationSize = sizeEc ? std::uintmax_t{0} : fs::file_size(destination, sizeEc);
-    if (sizeEc || destinationSize != sourceSize) {
-        AC_LOG_WARN(kModule, "Backup copy failed size verification: %s.", destination.string().c_str());
+    // Distinct source/destination errors: a source stat failure must not mask
+    // the destination result, and the log names the failing side.
+    const auto checked = backup::io::VerifySameSize(source.string(), destination.string());
+    if (!checked.ok) {
+        AC_LOG_WARN(kModule, "Backup copy failed size verification: %s (src=%s dst=%s).", destination.string().c_str(),
+                    checked.srcError.empty() ? "ok" : checked.srcError.c_str(),
+                    checked.dstError.empty() ? "ok" : checked.dstError.c_str());
         return BackupCopyOutcome::Failed;
     }
     return BackupCopyOutcome::Copied;
@@ -191,7 +193,11 @@ void BackupReferencedManifestsAtStartup() {
 
     const fs::path depotcache = fs::path(g_state.steamInstallPath) / "depotcache";
     const fs::path backupRoot = fs::path(deskData) / "backup";
-    const std::regex pinRegex(R"(setManifestid\s*\(\s*([0-9]+)\s*,\s*["']([0-9]+)["'])", std::regex_constants::icase);
+    // Compiled once per process: std::regex construction is expensive and can
+    // throw regex_error on pathological patterns; the scan below guards it.
+    // NOLINTNEXTLINE(bugprone-throwing-static-initialization)
+    static const std::regex pinRegex(R"(setManifestid\s*\(\s*([0-9]+)\s*,\s*["']([0-9]+)["'])",
+                                     std::regex_constants::icase | std::regex_constants::optimize);
 
     std::vector<fs::path> luaRoots{fs::path(g_state.luaDir)};
     for (const std::string& extra : settings->luaExtraPaths) {
@@ -252,16 +258,21 @@ void BackupReferencedManifestsAtStartup() {
             }
 
             std::set<std::string> filenames;
-            for (std::sregex_iterator match(content.begin(), content.end(), pinRegex), end; match != end; ++match) {
-                const std::string depot = (*match)[1].str();
-                const std::string gid = (*match)[2].str();
-                std::string key;
-                key.reserve(depot.size() + gid.size() + 10);
-                key += depot;
-                key += '_';
-                key += gid;
-                key += ".manifest";
-                filenames.insert(std::move(key));
+            try {
+                for (std::sregex_iterator match(content.begin(), content.end(), pinRegex), end; match != end; ++match) {
+                    const std::string depot = (*match)[1].str();
+                    const std::string gid = (*match)[2].str();
+                    std::string key;
+                    key.reserve(depot.size() + gid.size() + 10);
+                    key += depot;
+                    key += '_';
+                    key += gid;
+                    key += ".manifest";
+                    filenames.insert(std::move(key));
+                }
+            } catch (const std::regex_error& e) {
+                AC_LOG_WARN(kModule, "Pin scan failed (%s); skipping manifest backup for this file.", e.what());
+                continue;
             }
             referenced += filenames.size();
 
@@ -449,9 +460,11 @@ void BackupManifestAfterGeneration(std::uint32_t depotId, std::uint64_t gid) {
         const std::string depotText = std::to_string(depotId);
         const std::string gidText = std::to_string(gid);
         // Same regex as the startup backup: also catches commented pins
-        // (disabled setManifestid = game in update mode).
-        const std::regex pinRegex(R"(setManifestid\s*\(\s*([0-9]+)\s*,\s*["']([0-9]+)["'])",
-                                  std::regex_constants::icase);
+        // (disabled setManifestid = game in update mode). Compiled once per
+        // process, like the startup path.
+        // NOLINTNEXTLINE(bugprone-throwing-static-initialization)
+        static const std::regex pinRegex(R"(setManifestid\s*\(\s*([0-9]+)\s*,\s*["']([0-9]+)["'])",
+                                         std::regex_constants::icase | std::regex_constants::optimize);
 
         std::vector<fs::path> luaRoots{fs::path(g_state.luaDir)};
         for (const std::string& extra : settings->luaExtraPaths) {

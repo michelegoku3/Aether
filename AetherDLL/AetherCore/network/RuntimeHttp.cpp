@@ -167,7 +167,20 @@ Response Request(std::wstring_view method, std::string_view url, DWORD timeoutMs
 
 } // namespace
 
+// Lua-facing entry points allow HTTPS only. Plaintext HTTP would expose
+// tokens and eticket payloads to passive observers; internal callers that
+// need plain HTTP (pattern mirrors on controlled infrastructure) must use
+// GetUnchecked explicitly. The 403 mimic keeps gate probing indistinguishable
+// from a server refusal; only the host (never path/query, which may carry
+// tokens) is logged.
 Response Get(std::string_view url) {
+    if (!EqualsIgnoreCase(url.substr(0, 8), "https://")) {
+        AC_LOG_WARN(kModule, "Blocked non-HTTPS Lua fetch (scheme must be https).");
+        Response out;
+        out.networkError = false;
+        out.status = 403;
+        return out;
+    }
     std::string_view host = ExtractHost(url);
     if (!IsHostAllowed(host)) {
         // Blocked: mimic a server refusal so scripts can't probe the gate.
@@ -181,6 +194,13 @@ Response Get(std::string_view url) {
 }
 
 Response Post(std::string_view url, std::string_view body, const std::vector<std::string>& extraHeaders) {
+    if (!EqualsIgnoreCase(url.substr(0, 8), "https://")) {
+        AC_LOG_WARN(kModule, "Blocked non-HTTPS Lua backend (scheme must be https).");
+        Response out;
+        out.networkError = false;
+        out.status = 403;
+        return out;
+    }
     std::string_view host = ExtractHost(url);
     if (!IsHostAllowed(host)) {
         AC_LOG_WARN(kModule, "Blocked host '%.*s'.", static_cast<int>(host.size()), host.data());

@@ -5,7 +5,7 @@
 //
 // Extracted from PatternEngine.cpp's anonymous namespace: the logic is pure
 // (no I/O, no global state) and lives here in an inline header so it can be
-// tested in isolation by quickwin_tests' "signature" suite.
+// tested in isolation by core_unit_tests' "signature" suite.
 // ---------------------------------------------------------------------------
 
 #include <cstdint>

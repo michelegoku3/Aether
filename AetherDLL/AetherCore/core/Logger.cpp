@@ -60,6 +60,50 @@ void FormatTimeAndThread(char (&out)[32]) {
                         st.wMilliseconds, static_cast<unsigned long>(tid));
 }
 
+// Formats a body with truncation marker. Shared by Write/WriteOnce so the
+// policy lives in one place.
+void FormatBody(char (&body)[1024], const char* format, va_list args) {
+    const int written = std::vsnprintf(body, sizeof(body), format, args);
+    if (written >= 0 && static_cast<std::size_t>(written) >= sizeof(body)) {
+        const char marker[] = "[...]";
+        const std::size_t mlen = sizeof(marker) - 1;
+        if (sizeof(body) > mlen) {
+            for (std::size_t i = 0; i < mlen; ++i)
+                body[sizeof(body) - mlen - 1 + i] = marker[i];
+        }
+    }
+}
+
+// Single publish path: timestamp + cross-process mutex + lazy reopen +
+// write + flush. Write/WriteOnce differ only in formatting gate and dedup;
+// the emitted bytes are identical for identical inputs.
+void Emit(LogLevel level, const char* module, const char* body) {
+    char timeAndThread[32];
+    FormatTimeAndThread(timeAndThread);
+
+    std::lock_guard<std::mutex> lock(s_mutex);
+
+    // Synchronize across processes (Steam process & Game processes)
+    HANDLE hMutex = CreateMutexA(nullptr, FALSE, "Global\\AetherCore_Log_Mutex");
+    if (hMutex) {
+        WaitForSingleObject(hMutex, INFINITE);
+    }
+
+    if (!s_file.is_open() && !s_logPath.empty()) {
+        s_file.open(s_logPath, std::ios::out | std::ios::app);
+    }
+    if (s_file.is_open()) {
+        s_file << '[' << timeAndThread << "] [" << LevelTag(level) << "] [" << (module ? module : "-") << "] " << body
+               << '\n';
+        s_file.flush();
+    }
+
+    if (hMutex) {
+        ReleaseMutex(hMutex);
+        CloseHandle(hMutex);
+    }
+}
+
 } // namespace
 
 void Init(const std::string& filePath, bool keepLastSession) {
@@ -119,42 +163,10 @@ void Write(LogLevel level, const char* module, const char* format, ...) {
     char body[1024];
     va_list args;
     va_start(args, format);
-    int written = std::vsnprintf(body, sizeof(body), format, args);
+    FormatBody(body, format, args);
     va_end(args);
 
-    if (written >= 0 && static_cast<std::size_t>(written) >= sizeof(body)) {
-        const char marker[] = "[...]";
-        const std::size_t mlen = sizeof(marker) - 1;
-        if (sizeof(body) > mlen) {
-            for (std::size_t i = 0; i < mlen; ++i)
-                body[sizeof(body) - mlen - 1 + i] = marker[i];
-        }
-    }
-
-    char timeAndThread[32];
-    FormatTimeAndThread(timeAndThread);
-
-    std::lock_guard<std::mutex> lock(s_mutex);
-
-    // Synchronize across processes (Steam process & Game processes)
-    HANDLE hMutex = CreateMutexA(nullptr, FALSE, "Global\\AetherCore_Log_Mutex");
-    if (hMutex) {
-        WaitForSingleObject(hMutex, INFINITE);
-    }
-
-    if (!s_file.is_open() && !s_logPath.empty()) {
-        s_file.open(s_logPath, std::ios::out | std::ios::app);
-    }
-    if (s_file.is_open()) {
-        s_file << '[' << timeAndThread << "] [" << LevelTag(level) << "] [" << (module ? module : "-") << "] " << body
-               << '\n';
-        s_file.flush();
-    }
-
-    if (hMutex) {
-        ReleaseMutex(hMutex);
-        CloseHandle(hMutex);
-    }
+    Emit(level, module, body);
 }
 
 void WriteOnce(LogLevel level, const char* module, const char* format, ...) {
@@ -166,17 +178,8 @@ void WriteOnce(LogLevel level, const char* module, const char* format, ...) {
     char body[1024];
     va_list args;
     va_start(args, format);
-    int written = std::vsnprintf(body, sizeof(body), format, args);
+    FormatBody(body, format, args);
     va_end(args);
-
-    if (written >= 0 && static_cast<std::size_t>(written) >= sizeof(body)) {
-        const char marker[] = "[...]";
-        const std::size_t mlen = sizeof(marker) - 1;
-        if (sizeof(body) > mlen) {
-            for (std::size_t i = 0; i < mlen; ++i)
-                body[sizeof(body) - mlen - 1 + i] = marker[i];
-        }
-    }
 
     // Build dedup key: "module|body". If already seen this session, drop.
     std::string key;
@@ -192,29 +195,7 @@ void WriteOnce(LogLevel level, const char* module, const char* format, ...) {
         }
     }
 
-    char timeAndThread[32];
-    FormatTimeAndThread(timeAndThread);
-
-    std::lock_guard<std::mutex> lock(s_mutex);
-
-    HANDLE hMutex = CreateMutexA(nullptr, FALSE, "Global\\AetherCore_Log_Mutex");
-    if (hMutex) {
-        WaitForSingleObject(hMutex, INFINITE);
-    }
-
-    if (!s_file.is_open() && !s_logPath.empty()) {
-        s_file.open(s_logPath, std::ios::out | std::ios::app);
-    }
-    if (s_file.is_open()) {
-        s_file << '[' << timeAndThread << "] [" << LevelTag(level) << "] [" << (module ? module : "-") << "] " << body
-               << '\n';
-        s_file.flush();
-    }
-
-    if (hMutex) {
-        ReleaseMutex(hMutex);
-        CloseHandle(hMutex);
-    }
+    Emit(level, module, body);
 }
 
 void ResetDedup() {

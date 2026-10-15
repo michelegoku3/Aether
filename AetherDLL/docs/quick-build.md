@@ -1,7 +1,27 @@
 # Fast AetherDLL builds
 
+Guide to the fast dev workflow for AetherDLL (replaces the legacy
+`compilazione-veloce.md`, removed: same content, English filename for
+discoverability).
+
 Guide to the AI-agent-in-browser dev workflow: cutting build times from ~576 steps ("Rebuild All")
 to a few seconds.
+
+The recommended entry point is `build_dll.cmd` from the repository root:
+
+```cmd
+build_dll.cmd              :: full build: format gate + configure + build + ctest + package
+build_dll.cmd /skipformat  :: skip the clang-format gate
+build_dll.cmd /skiptests   :: skip the explicit ctest report
+```
+
+Quality gates (all enforced identically locally and on CI, see `docs/quality-gates.md`):
+
+- `clang-format --dry-run --Werror` (style gate, `.clang-format` at `AetherDLL` root)
+- `cmake --preset x64-Release` (`/W4 /WX`, clang-tidy when present, orphan-header check)
+- `cmake --build --preset x64-Release` (unit tests compile as part of `ALL`)
+- `ctest --test-dir out/build/x64-Release` (explicit report)
+- `verify_version.ps1` (every DLL carries the `project(... VERSION x.y.z)` resource)
 
 ## The problem
 
@@ -53,6 +73,10 @@ near-instant on unchanged parts (the standard technique in CI and C++ teams).
 3. Restart Visual Studio: CMake detects ccache automatically
    (`[AetherDLL] Compiler cache enabled: ...` in the configure output).
    To disable it: `AETHER_COMPILER_CACHE=OFF` cache variable.
+
+One-time warning triage: `cmake --preset x64-Release -DAETHER_WARNINGS_AS_ERRORS=OFF`
+shows the whole `/W4` backlog in one pass; fix it, then go back to the default
+`/WX` gate.
 
 ## Expected numbers
 

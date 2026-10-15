@@ -27,6 +27,9 @@ REM  Notes:
 REM    - Needs Visual Studio 2025 (v18) with "Desktop C++" workload.
 REM      cmake, Ninja and clang-format are taken from the VS installation,
 REM      so no extra PATH setup is required.
+REM    - The window stays open at the end (pause on success and on failure)
+REM      so the result can be read when double-clicked. CI never calls this
+REM      script (it runs cmake/ctest directly), so the pause is safe.
 REM    - AETHER_WARNINGS_AS_ERRORS=OFF and -DAETHER_CLANG_TIDY=OFF exist
 REM      for one-time local triage only; this script never sets them.
 REM ============================================================
@@ -175,6 +178,9 @@ if errorlevel 1 goto :fail
 
 echo.
 echo [OK] AetherDLL build complete.
+echo.
+echo Press any key to close this window...
+pause >nul
 exit /b 0
 
 :fail

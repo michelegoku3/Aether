@@ -4,8 +4,8 @@
 // Writes <Steam>\aethercore\status.json so an external GUI can show whether
 // the running Steam build is supported (pattern available + hooks installed).
 //
-// LumaCore shipped two overlapping status systems (DOCS_TODO 13 #11);
-// AetherCore has exactly one. It reads everything it needs from g_state and
+// AetherCore has exactly one status system (replaces two overlapping legacy
+// paths). It reads everything it needs from g_state and
 // HookManager, so there is no separate counter bookkeeping to keep in sync.
 //
 // Schema v9 (top-level keys include):

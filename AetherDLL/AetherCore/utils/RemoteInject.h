@@ -37,15 +37,21 @@ inline bool IsWow64Target(HANDLE process) {
 
 // Injects |dllPath| into the remote process using the classic
 // VirtualAllocEx → WriteProcessMemory → CreateRemoteThread(LoadLibraryW)
-// pattern.  Returns true on success (the remote LoadLibraryW returned).
+// pattern. Returns true only when the remote LoadLibraryW returned a
+// non-null module handle. A thread that merely exited (e.g. LoadLibraryW
+// failed and returned NULL) must not count as success.
 // The remote thread is waited on for up to 5 seconds before this call
 // returns — a hung loader won't block the caller indefinitely.
 inline bool RemoteLoadDll(HANDLE process, const std::wstring& dllPath) {
     auto loadLib =
         reinterpret_cast<LPTHREAD_START_ROUTINE>(GetProcAddress(GetModuleHandleW(L"kernel32.dll"), "LoadLibraryW"));
-    if (!loadLib)
+    if (!loadLib || dllPath.empty())
         return false;
 
+    // Guard against wrap on (size + 1) * sizeof(wchar_t); paths here are
+    // MAX_PATH-bounded, so this is defense in depth, not a hot path.
+    if (dllPath.size() > 32767)
+        return false;
     const SIZE_T bytes = (dllPath.size() + 1) * sizeof(wchar_t);
     void* mem = VirtualAllocEx(process, nullptr, bytes, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
     if (!mem)
@@ -54,7 +60,12 @@ inline bool RemoteLoadDll(HANDLE process, const std::wstring& dllPath) {
     bool ok = false;
     if (WriteProcessMemory(process, mem, dllPath.c_str(), bytes, nullptr)) {
         if (HANDLE t = CreateRemoteThread(process, nullptr, 0, loadLib, mem, 0, nullptr)) {
-            ok = (WaitForSingleObject(t, 5000) == WAIT_OBJECT_0);
+            // Note: STILL_ACTIVE (259) as a real HMODULE is not possible in
+            // practice for a loaded image base, so a plain non-zero check is
+            // the correct success criterion here.
+            const bool waited = (WaitForSingleObject(t, 5000) == WAIT_OBJECT_0);
+            DWORD code = 0;
+            ok = waited && GetExitCodeThread(t, &code) && code != 0;
             CloseHandle(t);
         }
     }

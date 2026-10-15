@@ -11,7 +11,7 @@
 //
 // Byte-for-byte compatibility: the format reproduces exactly the published
 // schema_version 9 (2-space indent, arrays on their own lines, last field
-// without comma, "}\n" close). The "jsonwriter" suite in quickwin_tests pins
+// without comma, "}\n" close). The "jsonwriter" suite in core_unit_tests pins
 // it with a golden test.
 // ---------------------------------------------------------------------------
 

@@ -35,4 +35,25 @@ std::string BackupPlaytimeDir();
 // Atomic replacement: tmp -> dst with MOVEFILE_REPLACE_EXISTING.
 bool AtomicReplace(const std::string& tmp, const std::string& dst);
 
+// Unique per-process staging path for atomic copies sharing one directory.
+// Two writers (e.g. AetherDesk and this DLL backing up the same manifest)
+// must never share a staging name: the loser of a failure cleanup would
+// delete the winner's in-flight file. The counter is process-wide and
+// atomic, hence unique across threads; staying in the destination directory
+// keeps the final rename on the same volume (atomic).
+// Defined in BackupIo.cpp (needs the OS process id; the header stays free
+// of <windows.h> so test doubles with fake Win32 types keep compiling).
+std::string UniqueStagingPath(const std::string& destination);
+
+// Size verification with distinct source/destination errors. A single shared
+// error_code would let a source stat failure mask the destination result;
+// callers log srcError/dstError separately so the failing side is named.
+struct SizeCheck {
+    bool ok = false;
+    std::string srcError;
+    std::string dstError;
+};
+
+SizeCheck VerifySameSize(const std::string& source, const std::string& destination);
+
 } // namespace ac::backup::io

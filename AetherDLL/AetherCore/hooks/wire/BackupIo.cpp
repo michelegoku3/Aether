@@ -1,11 +1,13 @@
 #include "pch.h"
 #include "hooks/wire/BackupIo.h"
 
+#include <atomic>
 #include <cstdio>
 #include <ctime>
 #include <filesystem>
 #include <fstream>
 #include <mutex>
+#include <system_error>
 
 #include "core/AetherCoreState.h"
 #include "core/Logger.h"
@@ -77,6 +79,26 @@ std::string BackupPlaytimeDir() {
 
 bool AtomicReplace(const std::string& tmp, const std::string& dst) {
     return MoveFileExA(tmp.c_str(), dst.c_str(), MOVEFILE_REPLACE_EXISTING) != FALSE;
+}
+
+std::string UniqueStagingPath(const std::string& destination) {
+    // s_* prefix per docs/ARCHITECTURE.md: private service state, not domain data.
+    static std::atomic<unsigned> s_stagingCounter{0};
+    const unsigned n = s_stagingCounter.fetch_add(1, std::memory_order_relaxed);
+    return destination + ".aether-tmp-" + std::to_string(GetCurrentProcessId()) + "-" + std::to_string(n);
+}
+
+SizeCheck VerifySameSize(const std::string& source, const std::string& destination) {
+    SizeCheck out;
+    std::error_code srcEc, dstEc;
+    const auto srcSize = std::filesystem::file_size(source, srcEc);
+    const auto dstSize = std::filesystem::file_size(destination, dstEc);
+    if (srcEc)
+        out.srcError = srcEc.message();
+    if (dstEc)
+        out.dstError = dstEc.message();
+    out.ok = !srcEc && !dstEc && dstSize == srcSize;
+    return out;
 }
 
 } // namespace ac::backup::io
