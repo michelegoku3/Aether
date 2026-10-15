@@ -64,8 +64,11 @@ void ResetDedup();
 
 void Shutdown();
 
-// Best-effort flush; takes the logger mutex. NEVER call from DllMain.
-// Write/WriteOnce already flush each emitted line.
+// Best-effort synchronous drain: after Flush returns, every line enqueued
+// before the call is on disk. NEVER call from DllMain (it waits on the
+// worker). Every line is flushed by the worker right after it is written,
+// so a process crash loses nothing already dequeued; lines still queued are
+// drained by the crash handlers (VEH first, then UEF, then terminate).
 void Flush();
 
 } // namespace log

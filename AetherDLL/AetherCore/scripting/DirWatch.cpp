@@ -6,6 +6,7 @@
 #include <cctype>
 #include <charconv>
 #include <cstdint>
+#include <cstring>
 #include <filesystem>
 #include <optional>
 #include <string>
@@ -131,40 +132,74 @@ struct Slot {
     bool Harvest(std::unordered_map<std::string, DWORD>& acc, std::vector<std::string>& order, bool& overflowed) {
         overflowed = false;
         DWORD n = 0;
-        if (!GetOverlappedResult(dir, &ov, &n, FALSE) || n == 0) {
-            overflowed = (n == 0);
+        if (!GetOverlappedResult(dir, &ov, &n, FALSE)) {
+            // Pending I/O is idle, not overflow: the directory simply had no
+            // changes since Arm. Re-arming here would cancel the in-flight
+            // notification and spin FullRescan on every quiet poll.
+            if (GetLastError() == ERROR_IO_INCOMPLETE)
+                return true;
+            overflowed = true;
             Arm();
             return true;
         }
-        const auto* rec = reinterpret_cast<const FILE_NOTIFY_INFORMATION*>(buffer.data());
-        while (rec) {
-            if (rec->Action == FILE_ACTION_ADDED || rec->Action == FILE_ACTION_MODIFIED ||
-                rec->Action == FILE_ACTION_REMOVED || rec->Action == FILE_ACTION_RENAMED_NEW_NAME ||
-                rec->Action == FILE_ACTION_RENAMED_OLD_NAME) {
-                std::wstring_view wname(rec->FileName, rec->FileNameLength / sizeof(wchar_t));
-                const fs::path relativeName(WideToUtf8(wname));
-                if (!relativeName.empty() && AcceptName(relativeName)) {
-                    const std::string name = WideToUtf8(wname);
-                    if (name.empty()) {
-                        AC_LOG_WARN(kModule, "Could not convert changed filename to UTF-8.");
+        if (n == 0) {
+            overflowed = true;
+            Arm();
+            return true;
+        }
+        // Strict walk: every record must fit in the n bytes returned, offsets
+        // must stay inside the buffer, and the name length must be sane.
+        // Anything else is treated as overflow (FullRescan) rather than
+        // trusting a corrupt notification. memcpy-out avoids unaligned reads:
+        // the vector storage is only 1-byte aligned.
+        const std::uint8_t* const base = buffer.data();
+        const std::uint8_t* const end = base + n;
+        std::uint32_t offset = 0;
+        while (offset < n) {
+            if (n - offset < sizeof(FILE_NOTIFY_INFORMATION)) {
+                overflowed = true;
+                break;
+            }
+            DWORD action = 0, nextOffset = 0, nameLen = 0;
+            std::memcpy(&action, base + offset + offsetof(FILE_NOTIFY_INFORMATION, Action), sizeof(action));
+            std::memcpy(&nextOffset, base + offset + offsetof(FILE_NOTIFY_INFORMATION, NextEntryOffset),
+                        sizeof(nextOffset));
+            std::memcpy(&nameLen, base + offset + offsetof(FILE_NOTIFY_INFORMATION, FileNameLength), sizeof(nameLen));
+            const std::uint8_t* namePtr = base + offset + offsetof(FILE_NOTIFY_INFORMATION, FileName);
+            if (nameLen % sizeof(wchar_t) != 0 || namePtr + nameLen > end) {
+                overflowed = true;
+                break;
+            }
+            // nextOffset is relative to the current record: it must advance
+            // and stay inside the returned bytes (overflow-safe comparison).
+            if (nextOffset != 0 && (nextOffset % sizeof(DWORD) != 0 || nextOffset >= n - offset)) {
+                overflowed = true;
+                break;
+            }
+            if (action == FILE_ACTION_ADDED || action == FILE_ACTION_MODIFIED || action == FILE_ACTION_REMOVED ||
+                action == FILE_ACTION_RENAMED_NEW_NAME || action == FILE_ACTION_RENAMED_OLD_NAME) {
+                std::wstring_view wname(reinterpret_cast<const wchar_t*>(namePtr), nameLen / sizeof(wchar_t));
+                const std::string name = WideToUtf8(wname);
+                if (name.empty()) {
+                    AC_LOG_WARN(kModule, "Could not convert changed filename to UTF-8.");
+                } else if (AcceptName(fs::path(name))) {
+                    const std::string full = NormalizedPath(fs::path(path) / fs::path(name));
+                    if (!acc.count(full))
+                        order.push_back(full);
+                    acc[full] = action;
+                    if (action == FILE_ACTION_REMOVED || action == FILE_ACTION_RENAMED_OLD_NAME) {
+                        knownFiles.erase(full);
                     } else {
-                        const std::string full = NormalizedPath(fs::path(path) / fs::path(name));
-                        if (!acc.count(full))
-                            order.push_back(full);
-                        acc[full] = rec->Action;
-                        if (rec->Action == FILE_ACTION_REMOVED || rec->Action == FILE_ACTION_RENAMED_OLD_NAME) {
-                            knownFiles.erase(full);
-                        } else {
-                            knownFiles.insert(full);
-                        }
+                        knownFiles.insert(full);
                     }
                 }
             }
-            if (!rec->NextEntryOffset)
+            if (nextOffset == 0)
                 break;
-            rec = reinterpret_cast<const FILE_NOTIFY_INFORMATION*>(reinterpret_cast<const std::uint8_t*>(rec) +
-                                                                   rec->NextEntryOffset);
+            offset += nextOffset;
         }
+        if (overflowed)
+            AC_LOG_WARN(kModule, "Notification bounds check failed; falling back to full rescan.");
         return Arm();
     }
 

@@ -44,7 +44,14 @@ std::uint8_t* PoolSlot(std::uint32_t size) {
     // Packet hooks can run concurrently on different Steam threads. Keep the
     // temporary frame ring per-thread so slot selection and vector resize never
     // touch shared mutable state, while preserving buffer lifetime for nested
-    // calls on the same thread.
+    // calls on the same thread. Callers must cap wire-controlled sizes (see
+    // kWireMaxBodyBytes/kWireMaxHeaderBytes) before asking: an oversized
+    // resize here would be retained per-thread for the whole Steam session.
+    // Returns nullptr when the request exceeds the pool budget; the caller
+    // then passes the frame through untouched (fail-open, never corrupt).
+    constexpr std::uint32_t kPoolBudget = sizeof(MsgHdr) + kWireMaxHeaderBytes + kWireMaxBodyBytes;
+    if (size > kPoolBudget)
+        return nullptr;
     thread_local Pool t_pool;
     auto& buf = t_pool.slots[t_pool.next++ % kWirePoolSlots];
     buf.resize(size);
@@ -87,23 +94,53 @@ bool DecodeFrame(const std::uint8_t* data, std::uint32_t len, WireFrame& out) {
     return true;
 }
 
-bool ServiceJobName(const WireFrame& f, std::string& out) {
+// Single-parse extractors: exactly one ParseFromArray per frame on the
+// network thread. The previous helpers parsed the same CMsgProtoBufHeader
+// twice per service frame (name, then id); the structs below carry both
+// fields from a single decode with identical success semantics.
+struct ServiceRequest {
+    std::string name;
+    std::uint64_t source = 0;
+    bool hasName = false;
+    bool hasSource = false;
+};
+
+bool ParseServiceRequest(const WireFrame& f, ServiceRequest& out) {
     CMsgProtoBufHeader hdr;
     if (!hdr.ParseFromArray(f.header, static_cast<int>(f.headerLen)))
         return false;
-    if (!hdr.has_target_job_name())
-        return false;
-    out = hdr.target_job_name();
-    return true;
+    if (hdr.has_target_job_name()) {
+        out.name = hdr.target_job_name();
+        out.hasName = true;
+    }
+    if (hdr.has_jobid_source()) {
+        out.source = hdr.jobid_source();
+        out.hasSource = true;
+    }
+    return out.hasName || out.hasSource;
 }
 
-bool ServiceJobIdSource(const WireFrame& f, std::uint64_t& out) {
+struct ServiceResponse {
+    std::string name;
+    std::uint64_t target = 0;
+    std::int32_t eresult = -1;
+    bool hasName = false;
+    bool hasTarget = false;
+};
+
+bool ParseServiceResponse(const WireFrame& f, ServiceResponse& out) {
     CMsgProtoBufHeader hdr;
     if (!hdr.ParseFromArray(f.header, static_cast<int>(f.headerLen)))
         return false;
-    if (!hdr.has_jobid_source())
-        return false;
-    out = hdr.jobid_source();
+    if (hdr.has_target_job_name()) {
+        out.name = hdr.target_job_name();
+        out.hasName = true;
+    }
+    if (hdr.has_jobid_target()) {
+        out.target = hdr.jobid_target();
+        out.hasTarget = true;
+    }
+    out.eresult = hdr.has_eresult() ? hdr.eresult() : -1;
     return true;
 }
 
@@ -116,13 +153,7 @@ std::unordered_map<std::uint64_t, std::string> s_jobNames;
 // erase(begin()) on unordered_map = arbitrary element).
 std::deque<std::uint64_t> s_jobNameOrder;
 
-void TrackServiceJob(const WireFrame& f) {
-    std::uint64_t id = 0;
-    if (!ServiceJobIdSource(f, id))
-        return;
-    std::string name;
-    if (!ServiceJobName(f, name))
-        return;
+void TrackServiceJob(std::uint64_t id, std::string name) {
     std::lock_guard<std::mutex> lk(s_jobNameMutex);
     if (s_jobNames.emplace(id, std::move(name)).second) {
         s_jobNameOrder.push_back(id);
@@ -145,16 +176,6 @@ std::string ResolveServiceJob(std::uint64_t jobIdTarget) {
     if (oit != s_jobNameOrder.end())
         s_jobNameOrder.erase(oit);
     return out;
-}
-
-// [DIAG] snapshot eresult+jobid_target dell'header di una risposta (147).
-std::int32_t RecvResponseMeta(const WireFrame& f, std::uint64_t* jobIdTarget) {
-    CMsgProtoBufHeader hdr;
-    if (!hdr.ParseFromArray(f.header, static_cast<int>(f.headerLen)))
-        return -1;
-    if (jobIdTarget && hdr.has_jobid_target())
-        *jobIdTarget = hdr.jobid_target();
-    return hdr.has_eresult() ? hdr.eresult() : -1;
 }
 
 const char* EresultName(std::int32_t eresult) {
@@ -218,10 +239,11 @@ std::int32_t DispatchSend(const WireFrame& f) {
     // service calls with eMsg 146: without this case the stats
     // handlers never see them.
     case emsg::kServiceMethodCallFromClientAlt: {
-        std::string job;
-        if (ServiceJobName(f, job)) {
-            TrackServiceJob(f); // [DIAG] flight-recorder jobid->name
-            std::uint32_t h = FnvHash(job.c_str());
+        ServiceRequest req;
+        if (ParseServiceRequest(f, req) && req.hasName) {
+            if (req.hasSource)
+                TrackServiceJob(req.source, req.name); // [DIAG] flight-recorder jobid->name
+            std::uint32_t h = FnvHash(req.name.c_str());
             if (h == job_hash::kGetUserStats) {
                 return AchievementModule::HandleSendGetUserStats(f, t_scratchBody.data(), kWireMaxBodyBytes);
             }
@@ -266,8 +288,14 @@ bool h_BBuildAndAsyncSendFrame(void* obj, steam::EWebSocketOpCode opcode, std::u
             s_originHeader.assign(f.header, f.header + f.headerLen);
         }
         std::int32_t newBodyLen = DispatchSend(f);
-        if (newBodyLen >= 0) {
-            const std::uint32_t newSize = sizeof(MsgHdr) + f.headerLen + newBodyLen;
+        // Defense in depth: handlers must report a length within the scratch
+        // budget they were given. A misbehaving handler must degrade to
+        // passthrough, never to an oversized pool retention or over-read.
+        if (newBodyLen < 0 || static_cast<std::uint32_t>(newBodyLen) > kWireMaxBodyBytes) {
+            if (newBodyLen > 0)
+                AC_LOG_WARN_ONCE(kModule, "Handler over-reported body length (%d); passing frame through.", newBodyLen);
+        } else {
+            const std::uint32_t newSize = sizeof(MsgHdr) + f.headerLen + static_cast<std::uint32_t>(newBodyLen);
             std::uint8_t* buf = PoolSlot(newSize);
             if (!buf)
                 return o_BBuildAndAsyncSendFrame(obj, opcode, data, len);
@@ -296,9 +324,13 @@ std::int32_t DispatchRecv(const WireFrame& f) {
         // those are what StatusWriter aggregates (AccessDenied /
         // transport-candidate), and logging every OK would cost a mutex
         // + allocations per frame on the network path.
+        ServiceResponse rsp;
+        const bool rspParsed = ParseServiceResponse(f, rsp);
         {
-            std::uint64_t jt = 0;
-            const std::int32_t er = RecvResponseMeta(f, &jt);
+            // Unparsable headers keep the historical outcome: eresult -1
+            // (missing_or_unparsed), no job resolution, no dispatch below.
+            const std::uint64_t jt = (rspParsed && rsp.hasTarget) ? rsp.target : 0;
+            const std::int32_t er = rspParsed ? rsp.eresult : -1;
             const std::string jname = jt ? ResolveServiceJob(jt) : std::string();
             if (er != 1) { // 1 = k_EResultOK
                 AC_LOG_TRACE(kModule, "[DIAG] service recv name='%s' jobid=%llu eresult=%d (%s) class=%s bLen=%u",
@@ -309,10 +341,9 @@ std::int32_t DispatchRecv(const WireFrame& f) {
                                                  " label=" + EresultName(er) + " class=" + EresultClass(er));
             }
         }
-        std::string job;
-        if (!ServiceJobName(f, job))
+        if (!rspParsed || !rsp.hasName)
             return kNoChange;
-        std::uint32_t h = FnvHash(job.c_str());
+        std::uint32_t h = FnvHash(rsp.name.c_str());
         if (h == job_hash::kNotifyRunningApps) {
             return FamilySharing::ShouldSuppress() ? FamilySharing::ClearBody() : kNoChange;
         }

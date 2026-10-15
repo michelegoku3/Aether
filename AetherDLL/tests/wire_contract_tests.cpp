@@ -240,6 +240,55 @@ void RemoteInject() {
     CHECK(!ac::inject::RemoteLoadDll(self, L""));
 }
 
+// B1: the async worker preserves every line under concurrent producers.
+// Shutdown drains synchronously, so the file is complete when it returns.
+void LoggerConcurrentBurst() {
+    Fixture f;
+    const fs::path log = f.dir / "burst.log";
+    ac::log::Init(log.string(), false);
+
+    constexpr int kThreads = 4, kPerThread = 250;
+    std::vector<std::thread> threads;
+    for (int t = 0; t < kThreads; ++t) {
+        threads.emplace_back([t] {
+            for (int i = 0; i < kPerThread; ++i)
+                ac::log::Write(ac::LogLevel::Info, "Burst", "t=%d i=%d", t, i);
+        });
+    }
+    for (auto& th : threads)
+        th.join();
+    ac::log::Shutdown();
+
+    const std::string body = f.Read(log);
+    std::size_t lines = 0, pos = 0;
+    while ((pos = body.find("[Burst]", pos)) != std::string::npos) {
+        ++lines;
+        ++pos;
+    }
+    CHECK(lines == static_cast<std::size_t>(kThreads * kPerThread));
+}
+
+// Flush() (the same synchronous drain CrashDrain relies on) makes every
+// line durable without stopping the worker: no Shutdown needed.
+void LoggerFlushDrain() {
+    Fixture f;
+    const fs::path log = f.dir / "drain.log";
+    ac::log::Init(log.string(), false);
+
+    for (int i = 0; i < 100; ++i)
+        ac::log::Write(ac::LogLevel::Info, "Drain", "line %d", i);
+    ac::log::Flush();
+
+    const std::string body = f.Read(log);
+    std::size_t lines = 0, pos = 0;
+    while ((pos = body.find("[Drain]", pos)) != std::string::npos) {
+        ++lines;
+        ++pos;
+    }
+    CHECK(lines == 100);
+    ac::log::Shutdown();
+}
+
 int main(int argc, char** argv) {
     using Case = std::pair<const char*, void (*)()>;
     const Case cases[] = {
@@ -250,6 +299,8 @@ int main(int argc, char** argv) {
         {"pin_scan", PinScan},
         {"http_gate", HttpGate},
         {"logger_golden", LoggerGolden},
+        {"logger_concurrent_burst", LoggerConcurrentBurst},
+        {"logger_flush_drain", LoggerFlushDrain},
         {"remote_inject", RemoteInject},
     };
     try {

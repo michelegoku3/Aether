@@ -6,14 +6,20 @@
 #include <array>
 #include <atomic>
 #include <cctype>
+#include <chrono>
+#include <condition_variable>
 #include <cstdarg>
 #include <cstdio>
 #include <ctime>
+#include <deque>
+#include <exception>
 #include <filesystem>
 #include <fstream>
 #include <mutex>
 #include <string>
+#include <thread>
 #include <unordered_set>
+#include <utility>
 #include <vector>
 
 namespace ac::log {
@@ -74,10 +80,204 @@ void FormatBody(char (&body)[1024], const char* format, va_list args) {
     }
 }
 
-// Single publish path: timestamp + cross-process mutex + lazy reopen +
-// write + flush. Write/WriteOnce differ only in formatting gate and dedup;
-// the emitted bytes are identical for identical inputs.
-void Emit(LogLevel level, const char* module, const char* body) {
+// ---------------------------------------------------------------------------
+// Async publish path.
+//
+// Producers (any Steam thread, including the packet/IPC hot paths) only
+// format the line and push it on a queue: no kernel calls, no disk I/O, no
+// cross-process mutex on the calling thread. A single dedicated worker owns
+// the file handle, the cross-process mutex and the flush policy, so output
+// order is FIFO and identical bytes are emitted for identical inputs.
+//
+// Flush policy: EVERY line is flushed by the worker immediately after it is
+// written. Crash forensics demands it: the last lines before a crash are
+// exactly the ones that explain it, so no batching window is acceptable.
+// This costs the hook threads nothing (they only enqueue); the disk cost
+// lives in the worker, same IOPS as the historical synchronous logger.
+// The only residual window is queue-to-worker latency (sub-millisecond),
+// closed for catchable crashes by CrashDrain() below.
+// ---------------------------------------------------------------------------
+struct LogItem {
+    LogLevel level = LogLevel::Info;
+    std::string text; // fully formatted line, timestamp included
+};
+
+constexpr auto kDrainTimeout = std::chrono::seconds(5);
+
+struct LogWorker {
+    std::mutex mutex;
+    std::condition_variable cv;
+    std::deque<LogItem> queue;
+    std::thread thread;
+    bool running = false;
+    bool stop = false;
+    HANDLE hMutex = nullptr; // cached cross-process mutex (opened once in Init)
+    // Durability accounting: enqueued counts pushed lines, completed counts
+    // lines written AND flushed. Flush() waits for completed >= target, so an
+    // empty queue alone (last item popped but not yet on disk) is never
+    // mistaken for "all durable". Both advance under mutex; loads are atomic.
+    std::atomic<std::uint64_t> enqueued{0};
+    std::atomic<std::uint64_t> completed{0};
+};
+
+// Pinned-leak on purpose (same pattern as StatusWriter's worker): the DLL is
+// pinned via PinSelf, so a joining std::thread destructor at CRT detach must
+// never run. Stop/Join happen only in the explicit off-loader-lock Shutdown.
+LogWorker* s_worker = nullptr;
+std::mutex s_lifeMutex; // guards s_worker pointer only (never held on hot path)
+
+void WriteLineLocked(LogWorker* w, const LogItem& item) {
+    if (!s_file.is_open() && !s_logPath.empty()) {
+        s_file.open(s_logPath, std::ios::out | std::ios::app);
+    }
+    if (!s_file.is_open())
+        return;
+    if (w->hMutex) {
+        WaitForSingleObject(w->hMutex, INFINITE);
+    }
+    s_file << item.text << '\n';
+    // Per-line flush, unconditionally: the worker owns the disk cost, and a
+    // process crash must never lose an already-written line. (level is kept
+    // on the item for future filtering; flushing no longer depends on it.)
+    s_file.flush();
+    if (w->hMutex) {
+        ReleaseMutex(w->hMutex);
+    }
+}
+
+void WorkerLoop(LogWorker* w) {
+    for (;;) {
+        LogItem item;
+        {
+            std::unique_lock<std::mutex> lock(w->mutex);
+            w->cv.wait(lock, [&] { return w->stop || !w->queue.empty(); });
+            if (w->stop && w->queue.empty())
+                break;
+            item = std::move(w->queue.front());
+            w->queue.pop_front();
+        }
+        {
+            std::lock_guard<std::mutex> fileLock(s_mutex);
+            WriteLineLocked(w, item);
+        }
+        w->completed.fetch_add(1, std::memory_order_release);
+    }
+    std::lock_guard<std::mutex> fileLock(s_mutex);
+    if (s_file.is_open())
+        s_file.flush();
+}
+
+// ---------------------------------------------------------------------------
+// Crash drain: zero-loss forensics for catchable process deaths.
+//
+// Even with per-line worker flushes, lines already enqueued but not yet
+// popped by the worker live only in memory. When the process is dying from
+// any catchable exception, CrashDrain() writes them synchronously before
+// the crash flow continues, so the log ends at the faulting instruction.
+//
+// Coverage ("all exceptions", best-effort):
+//   * VEH (first): every hardware fault (AV, div-by-zero, illegal
+//     instruction, stack overflow, breakpoints). VEH also fires for
+//     dispatched-then-caught exceptions; the drain is idempotent and cheap
+//     when the queue is empty, so that is harmless.
+//   * UEF: unhandled SEH and escaped C++ exceptions. NOTE: if the host
+//     installs its own UEF after ours, theirs wins; the VEH still runs, so
+//     hardware faults stay covered either way.
+//   * terminate handler: noexcept violations, throws from destructors,
+//     direct std::terminate. Re-invokes the previous handler afterwards.
+// Not coverable by design: TerminateProcess/kill, power loss (only
+// FILE_FLAG_WRITE_THROUGH would close that; rejected for its 10-100x disk
+// cost), or corruption so deep the queue itself is unreadable.
+//
+// Deadlock discipline: try_lock only, never lock. If the fault hit while a
+// thread held a logger mutex, blocking on it would hang the crash report.
+// An atomic reentrancy guard bails out of nested invocation. Handlers never
+// swallow: they drain, then let the normal crash flow (dumps, WER) proceed.
+// ---------------------------------------------------------------------------
+std::atomic<bool> s_crashDraining{false};
+void* s_vehHandle = nullptr;
+LPTOP_LEVEL_EXCEPTION_FILTER s_prevUef = nullptr;
+std::terminate_handler s_prevTerminate = nullptr;
+bool s_crashHandlersInstalled = false; // under s_lifeMutex, like s_worker
+
+void CrashDrain() {
+    if (s_crashDraining.exchange(true, std::memory_order_acq_rel))
+        return; // nested crash inside the drain: do not hang the report
+    LogWorker* w = nullptr;
+    {
+        std::lock_guard<std::mutex> life(s_lifeMutex);
+        w = s_worker;
+    }
+    if (w) {
+        // Best-effort: pop what we can without blocking.
+        for (;;) {
+            LogItem item;
+            {
+                std::unique_lock<std::mutex> qlock(w->mutex, std::try_to_lock);
+                if (!qlock.owns_lock() || w->queue.empty())
+                    break;
+                item = std::move(w->queue.front());
+                w->queue.pop_front();
+            }
+            std::unique_lock<std::mutex> flock(s_mutex, std::try_to_lock);
+            if (!flock.owns_lock())
+                break; // file busy at fault time; already-written lines were flushed per-line anyway
+            WriteLineLocked(w, item);
+        }
+    }
+    {
+        std::unique_lock<std::mutex> flock(s_mutex, std::try_to_lock);
+        if (flock.owns_lock() && s_file.is_open())
+            s_file.flush();
+    }
+    s_crashDraining.store(false, std::memory_order_release);
+}
+
+LONG WINAPI CrashVectoredHandler(EXCEPTION_POINTERS*) {
+    CrashDrain();
+    return EXCEPTION_CONTINUE_SEARCH; // never swallow: reports/dumps proceed normally
+}
+
+LONG WINAPI CrashUnhandledFilter(EXCEPTION_POINTERS*) {
+    CrashDrain();
+    return EXCEPTION_CONTINUE_SEARCH; // keep default termination semantics
+}
+
+void CrashTerminateHandler() {
+    CrashDrain();
+    const auto prev = s_prevTerminate;
+    if (prev && prev != &CrashTerminateHandler)
+        prev();
+    std::abort();
+}
+
+void InstallCrashHandlers() {
+    if (s_crashHandlersInstalled)
+        return;
+    s_vehHandle = AddVectoredExceptionHandler(1, CrashVectoredHandler);
+    s_prevUef = SetUnhandledExceptionFilter(CrashUnhandledFilter);
+    s_prevTerminate = std::set_terminate(CrashTerminateHandler);
+    s_crashHandlersInstalled = true;
+}
+
+void RemoveCrashHandlers() {
+    if (!s_crashHandlersInstalled)
+        return;
+    if (s_vehHandle) {
+        RemoveVectoredExceptionHandler(s_vehHandle);
+        s_vehHandle = nullptr;
+    }
+    SetUnhandledExceptionFilter(s_prevUef);
+    s_prevUef = nullptr;
+    std::set_terminate(s_prevTerminate != &CrashTerminateHandler ? s_prevTerminate : nullptr);
+    s_prevTerminate = nullptr;
+    s_crashHandlersInstalled = false;
+}
+
+// Synchronous fallback: used before Init and after Shutdown (and when the
+// queue is unavailable). Preserves the historical behavior of emitting
+// directly, including the lazy reopen.
+void EmitSync(LogLevel level, const char* module, const char* body) {
     char timeAndThread[32];
     FormatTimeAndThread(timeAndThread);
 
@@ -104,15 +304,65 @@ void Emit(LogLevel level, const char* module, const char* body) {
     }
 }
 
+// Single publish path. Write/WriteOnce differ only in formatting gate and
+// dedup; the emitted bytes are identical for identical inputs.
+void Emit(LogLevel level, const char* module, const char* body) {
+    char timeAndThread[32];
+    FormatTimeAndThread(timeAndThread);
+
+    std::string line;
+    try {
+        line.reserve(128);
+        line += '[';
+        line += timeAndThread;
+        line += "] [";
+        line += LevelTag(level);
+        line += "] [";
+        line += (module ? module : "-");
+        line += "] ";
+        line += body;
+    } catch (...) {
+        return; // best-effort logger: never throw to hook threads
+    }
+
+    LogWorker* w = nullptr;
+    {
+        std::lock_guard<std::mutex> life(s_lifeMutex);
+        w = s_worker;
+    }
+    if (!w) {
+        EmitSync(level, module, body);
+        return;
+    }
+    bool enqueued = false;
+    try {
+        std::lock_guard<std::mutex> lock(w->mutex);
+        // When the worker is draining, fall back to synchronous emit so
+        // nothing logged during shutdown is silently lost.
+        if (w->running && !w->stop) {
+            w->queue.push_back(LogItem{level, std::move(line)});
+            w->enqueued.fetch_add(1, std::memory_order_release);
+            enqueued = true;
+        }
+    } catch (...) {
+        return;
+    }
+    if (enqueued) {
+        w->cv.notify_one();
+    } else {
+        EmitSync(level, module, body);
+    }
+}
+
 } // namespace
 
 void Init(const std::string& filePath, bool keepLastSession) {
+    // Restart-safe: tests call Init once per fixture, so drain any previous
+    // worker before replacing the session.
+    Shutdown();
+
     std::lock_guard<std::mutex> lock(s_mutex);
     s_logPath = filePath;
-
-    if (s_file.is_open()) {
-        s_file.close();
-    }
 
     if (keepLastSession && !s_logPath.empty()) {
         std::error_code ec;
@@ -125,6 +375,28 @@ void Init(const std::string& filePath, bool keepLastSession) {
     }
 
     s_file.open(filePath, std::ios::out | std::ios::trunc);
+
+    LogWorker* w = nullptr;
+    try {
+        w = new LogWorker();
+        w->hMutex = CreateMutexA(nullptr, FALSE, "Global\\AetherCore_Log_Mutex");
+        w->thread = std::thread(WorkerLoop, w);
+        w->running = true;
+    } catch (...) {
+        if (w) {
+            if (w->hMutex)
+                CloseHandle(w->hMutex);
+            delete w;
+        }
+        return; // producers fall back to EmitSync; no throw to the caller
+    }
+    {
+        std::lock_guard<std::mutex> life(s_lifeMutex);
+        s_worker = w;
+        // Crash forensics (VEH first, then UEF, then terminate): the drain
+        // must be armed before the first hook can fault.
+        InstallCrashHandlers();
+    }
 }
 
 bool IsEnabled(LogLevel level) {
@@ -203,16 +475,63 @@ void ResetDedup() {
     s_dedupSeen.clear();
 }
 
-void Shutdown() {
-    std::lock_guard<std::mutex> lock(s_mutex);
-    if (s_file.is_open())
-        s_file.close();
-}
-
+// Drains the queue synchronously (bounded): after Flush returns, every line
+// enqueued before the call is written AND flushed. NEVER call from DllMain:
+// it waits on the worker thread. An empty queue is NOT sufficient (the last
+// popped item may not be on disk yet); durability is tracked with the
+// completed counter instead.
 void Flush() {
+    LogWorker* w = nullptr;
+    {
+        std::lock_guard<std::mutex> life(s_lifeMutex);
+        w = s_worker;
+    }
+    if (!w)
+        return;
+    const std::uint64_t target = w->enqueued.load(std::memory_order_acquire);
+    const auto deadline = std::chrono::steady_clock::now() + kDrainTimeout;
+    while (w->completed.load(std::memory_order_acquire) < target) {
+        if (std::chrono::steady_clock::now() >= deadline)
+            break;
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
     std::lock_guard<std::mutex> lock(s_mutex);
     if (s_file.is_open())
         s_file.flush();
+}
+
+void Shutdown() {
+    LogWorker* w = nullptr;
+    {
+        std::lock_guard<std::mutex> life(s_lifeMutex);
+        w = s_worker;
+        s_worker = nullptr;
+        RemoveCrashHandlers();
+    }
+    if (w) {
+        // Explicit off-loader-lock shutdown only: joins the worker thread.
+        // Never from DllMain (loader lock); DllMain DETACH only sets the
+        // global shutdown flag and never touches the logger.
+        {
+            std::lock_guard<std::mutex> lock(w->mutex);
+            w->stop = true;
+        }
+        w->cv.notify_all();
+        if (w->thread.joinable())
+            w->thread.join();
+        std::lock_guard<std::mutex> lock(s_mutex);
+        if (s_file.is_open()) {
+            s_file.flush();
+            s_file.close();
+        }
+        if (w->hMutex)
+            CloseHandle(w->hMutex);
+        delete w;
+        return;
+    }
+    std::lock_guard<std::mutex> lock(s_mutex);
+    if (s_file.is_open())
+        s_file.close();
 }
 
 } // namespace ac::log

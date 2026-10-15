@@ -10,6 +10,11 @@
 
 namespace {
 
+// Set on DETACH so the worker wakes immediately instead of sleeping out the
+// full EOS poll budget. Plain event (not atomic): created before the thread,
+// signaled on detach, never waited on under the loader lock.
+HANDLE g_stopEvent = nullptr;
+
 void TryInstallIfPresent() {
     if (HMODULE eos = GetModuleHandleW(L"EOSSDK-Win64-Shipping.dll")) {
         ac::eosbridge::InstallOn(eos);
@@ -21,11 +26,16 @@ DWORD WINAPI PayloadMain(LPVOID self) {
     ac::payloadlog::Write("Payload attached to game process.");
     ac::payloadprop::Install(static_cast<HMODULE>(self));
 
+    // Same 60 s budget as before (120 x 500 ms), but event-driven: detach
+    // wakes the wait at once instead of sleeping out the remainder.
+    // NOTE: this thread intentionally outlives DllMain; it never touches the
+    // loader lock (no LoadLibrary here: only GetModuleHandle polling).
     for (int i = 0; i < 120; ++i) {
         TryInstallIfPresent();
         if (GetModuleHandleW(L"EOSSDK-Win64-Shipping.dll"))
             break;
-        Sleep(500);
+        if (g_stopEvent && WaitForSingleObject(g_stopEvent, 500) != WAIT_TIMEOUT)
+            break;
     }
     return 0;
 }
@@ -35,9 +45,18 @@ DWORD WINAPI PayloadMain(LPVOID self) {
 BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID) {
     if (reason == DLL_PROCESS_ATTACH) {
         DisableThreadLibraryCalls(hModule);
+        // DllMain itself does no I/O and takes no locks: it only records the
+        // stop event and hands off to the worker. The event is manual-reset
+        // and initially non-signaled; PayloadMain is the only waiter.
+        g_stopEvent = CreateEventW(nullptr, TRUE, FALSE, nullptr);
         if (HANDLE h = CreateThread(nullptr, 0, PayloadMain, hModule, 0, nullptr)) {
             CloseHandle(h);
         }
+    } else if (reason == DLL_PROCESS_DETACH) {
+        // Loader lock: signal only, never wait. The worker observes the event
+        // at its next 500 ms quantum and exits on its own.
+        if (g_stopEvent)
+            SetEvent(g_stopEvent);
     }
     return TRUE;
 }
