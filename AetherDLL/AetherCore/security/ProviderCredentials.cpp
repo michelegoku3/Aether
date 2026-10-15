@@ -50,15 +50,21 @@ std::optional<std::string> Unprotect(std::vector<std::uint8_t> encrypted) {
     input.cbData = static_cast<DWORD>(encrypted.size());
     DATA_BLOB output{};
 
-    if (!CryptUnprotectData(&input, nullptr, nullptr, nullptr, nullptr, CRYPTPROTECT_UI_FORBIDDEN, &output)) {
+    const BOOL ok = CryptUnprotectData(&input, nullptr, nullptr, nullptr, nullptr, CRYPTPROTECT_UI_FORBIDDEN, &output);
+    // The ciphertext buffer is key-equivalent material: wipe it on every exit
+    // path, success or failure, so heap scrapes cannot recover it.
+    SecureZeroMemory(encrypted.data(), encrypted.size());
+    if (!ok) {
         AC_LOG_WARN(kModule, "Could not decrypt provider credentials with Windows DPAPI (error=%lu).",
                     static_cast<unsigned long>(GetLastError()));
         return std::nullopt;
     }
 
     std::string plain(reinterpret_cast<const char*>(output.pbData), output.cbData);
-    if (output.pbData)
+    if (output.pbData) {
+        SecureZeroMemory(output.pbData, output.cbData);
         LocalFree(output.pbData);
+    }
     return plain;
 }
 

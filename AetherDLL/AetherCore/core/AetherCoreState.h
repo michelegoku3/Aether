@@ -15,6 +15,7 @@
 #include "core/Settings.h"
 #include "core/SteamTypes.h"
 #include "hooks/ipc/PipeWatch.h"
+#include "hooks/wire/DonorPool.h"
 #include "network/EticketFetcher.h"
 #include "utils/IpcSpec.h"
 #include "utils/TtlCache.h"
@@ -54,12 +55,12 @@ struct ManifestOverride {
     std::uint64_t size = 0;
 };
 
-// Subsystem Achievement/UserStats state.
-// Donor selection and pool-learning state now live as file-local statics in
-// hooks/wire/AchievementModule.cpp (LumaCore-style per-app preferred pool).
+// Subsystem Achievement/UserStats state: donor selection, per-app pool
+// learning and attempt correlation live in DonorPool::SharedState below.
+// Central-state rule: shared domain data belongs here with its own locks,
+// never as module-local globals (see docs/ARCHITECTURE.md).
 struct AchievementStore {
-    // Intentionally empty: the OpenSteamTool donor API was removed and the
-    // per-app pool bookkeeping moved into AchievementModule.cpp.
+    hooks::DonorPool::SharedState donor;
 };
 
 struct AetherCoreState {

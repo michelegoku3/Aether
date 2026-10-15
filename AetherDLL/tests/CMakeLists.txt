@@ -86,6 +86,7 @@ add_executable(wire_contract_tests wire_contract_tests.cpp contract_stubs.cpp
     ../AetherCore/core/Settings.cpp
     ../AetherCore/core/Workers.cpp
     ../AetherCore/core/Logger.cpp
+    ../AetherCore/network/HubcapQuota.cpp
     ../AetherCore/network/RuntimeHttp.cpp)
 target_include_directories(wire_contract_tests PRIVATE stubs ../AetherCore)
 target_link_libraries(wire_contract_tests PRIVATE Threads::Threads tomlplusplus::tomlplusplus)
@@ -94,7 +95,7 @@ if(MSVC)
 else()
     target_compile_options(wire_contract_tests PRIVATE -Wall -Wextra -Wpedantic -Werror)
 endif()
-foreach(case staging_unique size_verify backup_rules backup_concurrent_writers pin_scan http_gate logger_golden logger_concurrent_burst logger_flush_drain remote_inject)
+foreach(case staging_unique size_verify backup_rules backup_concurrent_writers pin_scan http_gate logger_golden logger_concurrent_burst logger_flush_drain quota_corrupt restore_roundtrip remote_inject)
     add_test(NAME wire_${case} COMMAND wire_contract_tests ${case})
     set_tests_properties(wire_${case} PROPERTIES TIMEOUT 30)
 endforeach()

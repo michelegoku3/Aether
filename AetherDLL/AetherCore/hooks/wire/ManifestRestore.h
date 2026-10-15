@@ -11,7 +11,9 @@
 // (uninstall) it re-triggers the app-targeted restore.
 // ============================================================================
 
+#include <cstddef>
 #include <cstdint>
+#include <filesystem>
 
 namespace ac::hooks::ManifestRestore {
 
@@ -31,5 +33,17 @@ void RestoreMissingManifestsForApp(std::uint32_t appId);
 // Best-effort: follows the shared copy contract (never overwrite a non-empty
 // destination, atomic verified copy) and never throws.
 void BackupManifestAfterGeneration(std::uint32_t depotId, std::uint64_t gid);
+
+struct RestoreStats {
+    std::size_t scanned = 0;
+    std::size_t restored = 0;
+    std::size_t present = 0;
+    std::size_t errors = 0;
+};
+
+// Test seam (also used by RestoreMissingManifestsForApp): copies manifests
+// referenced by luaDir into depotcache without overwriting valid files;
+// truncated-but-nonempty results count as errors, never as present hits.
+RestoreStats RestoreLuaDirectory(const std::filesystem::path& luaDir, const std::filesystem::path& depotcache);
 
 } // namespace ac::hooks::ManifestRestore

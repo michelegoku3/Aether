@@ -3,6 +3,9 @@
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
+#include <deque>
+#include <mutex>
+#include <unordered_map>
 
 #include "core/SteamTypes.h"
 
@@ -27,6 +30,10 @@ using Clock = std::chrono::steady_clock;
 
 constexpr std::size_t kPoolCount = 15;
 
+// Starting donor for every new app (matches the legacy default exactly;
+// see DonorPool.cpp for why pool[14] and not pool[0]).
+constexpr std::size_t kDefaultPoolIndex = 14;
+
 // SteamID64 of pool slot `index` (index < kPoolCount).
 std::uint64_t DonorSteamId(std::size_t index);
 
@@ -50,6 +57,29 @@ struct StatAttempt {
 // payload almost certainly belongs to the donor and must be stripped
 // (see the "The Fool" Cyberpunk leak, 2026-08-21).
 enum class Correl { Resolved, Ambiguous, NoMatch };
+
+// Per-app donor learning entry. Stored in central state (AetherCoreState),
+// never as a module-local global.
+struct PoolEntry {
+    std::size_t next = kDefaultPoolIndex;
+    std::size_t preferred = 0;
+    bool hasPreferred = false;
+};
+
+// Central-state home for all DonorPool runtime data: per-app learning,
+// service-path correlation and client-path pending entries, each with its
+// own lock. Both the real AetherCoreState and the test seam embed this
+// exact struct, so tests exercise the real ownership.
+struct SharedState {
+    mutable std::mutex poolMutex;
+    std::unordered_map<steam::AppId, PoolEntry> pool;
+    mutable std::mutex attemptMutex;
+    std::unordered_map<std::uint64_t, StatAttempt> jobIdToAttempt; // jobid_source -> attempt
+    std::deque<StatAttempt> recentAttempts;
+    std::uint64_t nextSequence = 1;
+    mutable std::mutex pendingMutex;
+    std::unordered_map<steam::AppId, StatAttempt> pendingClientStats;
+};
 
 // Service path (151/152): remember the attempt keyed by jobid_source when
 // available, with a bounded recent-attempt fallback otherwise.

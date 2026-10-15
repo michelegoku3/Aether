@@ -1,6 +1,7 @@
 #include "pch.h"
 #include "utils/PatternDownloader.h"
 
+#include <atomic>
 #include <filesystem>
 #include <fstream>
 #include <string>
@@ -115,7 +116,18 @@ std::vector<Level> BuildPlan(Kind kind, const std::string& sha) {
     std::vector<Level> plan;
 
     // Level 0: user-supplied mirror has the highest priority when configured.
+    // Deliberately ungated: mirrors without signatures must stay usable, and
+    // configuring one is the user's informed choice. The risk is made
+    // explicit instead: one WARN plus a diagnostics-ring entry (surfaced in
+    // status.json) naming the template, so a typo or a hostile config never
+    // enters silently.
     if (!settings->patternMirror.empty()) {
+        static std::atomic<bool> s_mirrorWarned{false};
+        if (!s_mirrorWarned.exchange(true)) {
+            AC_LOG_WARN(kModule, "Custom pattern mirror active (%s): tables are unverified, at your own risk.",
+                        settings->patternMirror.c_str());
+            diag::Record("custom_mirror", settings->patternMirror);
+        }
         Level level;
         level.endpoints.push_back(Candidate{"mirror", ApplyTemplate(settings->patternMirror, KindName(kind), sha)});
         plan.push_back(std::move(level));

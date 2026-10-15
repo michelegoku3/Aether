@@ -5,6 +5,7 @@
 #include "core/Settings.h"
 #include "hooks/wire/BackupIo.h"
 #include "hooks/wire/ManifestRestore.h"
+#include "network/HubcapQuota.h"
 #include "network/RuntimeHttp.h"
 #include "utils/RemoteInject.h"
 
@@ -156,6 +157,65 @@ void BackupRules() {
     CHECK(f.StagingResidue().empty());
 }
 
+// B1: a present-but-unreadable quota file refuses generation (fail closed)
+// and preserves a .corrupt copy; a missing file starts fresh (allowed).
+void QuotaCorrupt() {
+    Fixture f;
+    const fs::path stateDir = f.deskData / "state";
+    std::error_code ec;
+    fs::create_directories(stateDir, ec);
+    const fs::path quota = stateDir / "hubcap_generation_quota.json";
+
+    f.Write(quota, "not-json{{{");
+    CHECK(!ac::hubcapquota::TryReserveGameGeneration());
+    bool corruptKept = false;
+    for (auto it = fs::directory_iterator(stateDir, ec); !ec && it != fs::directory_iterator(); it.increment(ec)) {
+        if (it->path().string().find(".corrupt-") != std::string::npos)
+            corruptKept = true;
+    }
+    CHECK(corruptKept);
+
+    fs::remove(quota, ec);
+    for (auto it = fs::directory_iterator(stateDir, ec); !ec && it != fs::directory_iterator(); it.increment(ec)) {
+        if (it->path().string().find(".corrupt-") != std::string::npos)
+            fs::remove(it->path(), ec);
+    }
+    CHECK(ac::hubcapquota::TryReserveGameGeneration());
+    ac::hubcapquota::ReleaseGameGeneration();
+}
+
+// B5: restore publishes byte-identical copies and replaces 0-byte
+// placeholders; a non-empty destination is never touched (present hit).
+// The torn-write mismatch branch itself is covered by SizeVerify (same
+// VerifySameSize helper); a torn copy cannot be staged through this API.
+void RestoreRoundtrip() {
+    Fixture f;
+    const std::string payload = "MANIFEST-PAYLOAD-RESTORE";
+    // RestoreLuaDirectory(luaDir, depotcache): luaDir holds backup manifests.
+    const fs::path luaBackup = f.dir / "luabackup";
+    std::error_code ec;
+    fs::create_directories(luaBackup, ec);
+    f.Write(luaBackup / "100_200.manifest", payload);
+    f.Write(luaBackup / "101_201.manifest", payload);
+
+    // Missing destination -> restored byte-identical.
+    auto stats = ManifestRestore::RestoreLuaDirectory(luaBackup, f.depotcache);
+    CHECK(stats.restored == 2);
+    CHECK(stats.errors == 0);
+    CHECK(f.Read(f.depotcache / "100_200.manifest") == payload);
+
+    // Non-empty destination -> present hit, never overwritten.
+    f.Write(f.depotcache / "100_200.manifest", "DIFFERENT");
+    stats = ManifestRestore::RestoreLuaDirectory(luaBackup, f.depotcache);
+    CHECK(f.Read(f.depotcache / "100_200.manifest") == "DIFFERENT");
+
+    // 0-byte placeholder -> replaced with the real bytes.
+    f.Write(f.depotcache / "101_201.manifest", "");
+    stats = ManifestRestore::RestoreLuaDirectory(luaBackup, f.depotcache);
+    CHECK(f.Read(f.depotcache / "101_201.manifest") == payload);
+    CHECK(stats.errors == 0);
+}
+
 // W2 integration: two threads backing up the same manifest must not collide
 // on the staging file and must leave no residue.
 void BackupConcurrentWriters() {
@@ -301,6 +361,8 @@ int main(int argc, char** argv) {
         {"logger_golden", LoggerGolden},
         {"logger_concurrent_burst", LoggerConcurrentBurst},
         {"logger_flush_drain", LoggerFlushDrain},
+        {"quota_corrupt", QuotaCorrupt},
+        {"restore_roundtrip", RestoreRoundtrip},
         {"remote_inject", RemoteInject},
     };
     try {

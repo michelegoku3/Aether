@@ -7,6 +7,7 @@
 #include <ctime>
 #include <filesystem>
 #include <fstream>
+#include <optional>
 #include <string>
 #include <thread>
 
@@ -69,30 +70,67 @@ struct QuotaState {
 };
 
 // Reads the shared quota, resetting it when the fixed-EST day rolled over.
-// Any read/parse failure yields a fresh zeroed state for today: accounting
-// is best-effort and must never wedge the runtime bridge.
-QuotaState ReadQuota(const std::string& path) {
+//
+// Fail-closed by design: a MISSING file is a fresh install (start at zero,
+// allowed), but a PRESENT file that cannot be parsed is never silently
+// reset to zero — that would restore the full daily budget to whoever
+// corrupts one JSON file. Callers refuse the generation and keep a
+// timestamped .corrupt copy plus a diagnostic for status.json.
+std::optional<QuotaState> ReadQuota(const std::string& path) {
     const std::string today = CurrentEstDay();
-    QuotaState state;
-    state.day = today;
+
+    std::error_code ec;
+    if (!std::filesystem::exists(path, ec) || ec) {
+        QuotaState fresh;
+        fresh.day = today;
+        return fresh;
+    }
 
     std::ifstream input(path, std::ios::binary);
-    if (input) {
-        const std::string body((std::istreambuf_iterator<char>(input)), std::istreambuf_iterator<char>());
-        std::string day;
-        if (ac::jsonutil::PullStringField(body, "day", day))
-            state.day = day;
-        std::uint64_t value = 0;
-        if (ac::jsonutil::PullUIntField(body, "game_used", value))
-            state.gameUsed = value;
-        if (ac::jsonutil::PullUIntField(body, "workshop_used", value))
-            state.workshopUsed = value;
+    if (!input)
+        return std::nullopt;
+
+    const std::string body((std::istreambuf_iterator<char>(input)), std::istreambuf_iterator<char>());
+    QuotaState state;
+    state.day = today;
+    bool parsed = false;
+    std::string day;
+    if (ac::jsonutil::PullStringField(body, "day", day)) {
+        state.day = day;
+        parsed = true;
     }
+    std::uint64_t value = 0;
+    if (ac::jsonutil::PullUIntField(body, "game_used", value)) {
+        state.gameUsed = value;
+        parsed = true;
+    }
+    if (ac::jsonutil::PullUIntField(body, "workshop_used", value)) {
+        state.workshopUsed = value;
+        parsed = true;
+    }
+    if (!parsed)
+        return std::nullopt;
     if (state.day != today) {
         state = QuotaState{};
         state.day = today;
     }
     return state;
+}
+
+// Preserves the unreadable file for forensics before the caller refuses.
+// Best-effort: a failed copy must not change the refusal outcome.
+void PreserveCorruptCopy(const std::string& path) {
+    try {
+        const std::string backup = path + ".corrupt-" + std::to_string(std::time(nullptr));
+        std::error_code ec;
+        std::filesystem::copy_file(path, backup, std::filesystem::copy_options::none, ec);
+        if (!ec)
+            AC_LOG_WARN(kModule, "Preserved unreadable quota file as %s.", backup.c_str());
+        // Forensics copy is best-effort by design; failures must not change
+        // the refusal outcome above.
+        // NOLINTNEXTLINE(bugprone-empty-catch)
+    } catch (...) {
+    }
 }
 
 bool WriteQuota(const std::string& path, const QuotaState& state) {
@@ -190,7 +228,17 @@ bool TryReserveGameGeneration() {
     if (!lock.Acquire(LockPathFor(quotaPath)))
         return false;
 
-    QuotaState quota = ReadQuota(quotaPath);
+    auto quotaOpt = ReadQuota(quotaPath);
+    if (!quotaOpt) {
+        // Present but unreadable: fail closed (never reset the budget) and
+        // keep evidence. Delete or repair the file to resume generating.
+        AC_LOG_WARN(kModule, "Shared quota file unreadable, refusing generation (see %s.corrupt-*).",
+                    quotaPath.c_str());
+        PreserveCorruptCopy(quotaPath);
+        diag::Record("quota_corrupt", quotaPath);
+        return false;
+    }
+    QuotaState quota = *quotaOpt;
     if (quota.gameUsed >= kMaxGamePerDay) {
         AC_LOG_WARN(kModule, "Shared game-manifest budget exhausted (%llu/%llu; resets at midnight EST).",
                     static_cast<unsigned long long>(quota.gameUsed), static_cast<unsigned long long>(kMaxGamePerDay));
@@ -215,7 +263,14 @@ void ReleaseGameGeneration() {
     if (!lock.Acquire(LockPathFor(quotaPath)))
         return; // already logged
 
-    QuotaState quota = ReadQuota(quotaPath);
+    auto quotaOpt = ReadQuota(quotaPath);
+    if (!quotaOpt) {
+        AC_LOG_WARN(kModule, "Shared quota file unreadable, skipping release (see %s.corrupt-*).", quotaPath.c_str());
+        PreserveCorruptCopy(quotaPath);
+        diag::Record("quota_corrupt", quotaPath);
+        return;
+    }
+    QuotaState quota = *quotaOpt;
     if (quota.gameUsed > 0)
         quota.gameUsed -= 1;
     if (!WriteQuota(quotaPath, quota)) {

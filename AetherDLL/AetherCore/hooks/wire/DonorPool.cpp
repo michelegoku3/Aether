@@ -5,6 +5,7 @@
 #include <mutex>
 #include <unordered_map>
 
+#include "core/AetherCoreState.h"
 #include "core/Logger.h"
 
 namespace ac::hooks::DonorPool {
@@ -12,7 +13,7 @@ namespace {
 
 constexpr const char* kModule = "Wire.Achievement";
 
-// 15 SteamID64 ereditati da LumaCore per il pool di fallback (byte-identical).
+// 15 SteamID64 inherited from LumaCore for the fallback pool (byte-identical).
 constexpr std::uint64_t kLumaCoreStatSteamIdPool[kPoolCount] = {
     76561198017975643ULL, 76561198001678750ULL, 76561198355953202ULL, 76561197979911851ULL, 76561198040673812ULL,
     76561198367471798ULL, 76561198028125071ULL, 76561198012616627ULL, 76561197971398453ULL, 76561197977849691ULL,
@@ -26,39 +27,30 @@ constexpr std::uint64_t kLumaCoreStatSteamIdPool[kPoolCount] = {
 // a game owned only by that donor (e.g. Endacopia) it would cycle 0,1,2,... and
 // the game would give up long before ever reaching index 14. We match LumaCore
 // exactly by making pool[14] the starting point for every new app.
-constexpr std::size_t kDefaultPoolIndex = 14;
-
-struct PoolEntry {
-    std::size_t next = kDefaultPoolIndex; // LumaCore starts at the default donor
-    std::size_t preferred = 0;
-    bool hasPreferred = false;
-};
-
-std::mutex g_poolMutex;
-std::unordered_map<steam::AppId, PoolEntry> g_pool;
+// (kDefaultPoolIndex itself lives in DonorPool.h: PoolEntry defaults to it.)
 
 constexpr auto kAttemptWindow = std::chrono::seconds(15);
 constexpr std::size_t kAttemptCap = 24;
 
-std::mutex g_attemptMutex;
-std::unordered_map<std::uint64_t, StatAttempt> g_jobIdToAttempt; // jobid_source -> attempt
-std::deque<StatAttempt> g_recentAttempts;
-std::uint64_t g_nextSequence = 1;
-
 constexpr auto kPendingWindow = std::chrono::seconds(30);
-std::mutex g_pendingMutex;
-std::unordered_map<steam::AppId, StatAttempt> g_pendingClientStats;
+
+// Central-state accessor: all runtime data lives in
+// g_state.achievements.donor (real AetherCoreState, or the test seam's
+// identical struct). Per-group locks from SharedState keep the historical
+// locking discipline unchanged.
+SharedState& S() { return g_state.achievements.donor; }
 
 void PruneAttemptsLocked(Clock::time_point now) {
-    std::erase_if(g_jobIdToAttempt, [&now](const auto& e) { return now - e.second.seen > std::chrono::seconds(30); });
-    for (auto it = g_recentAttempts.begin(); it != g_recentAttempts.end();) {
+    SharedState& s = S();
+    std::erase_if(s.jobIdToAttempt, [&now](const auto& e) { return now - e.second.seen > std::chrono::seconds(30); });
+    for (auto it = s.recentAttempts.begin(); it != s.recentAttempts.end();) {
         if (now - it->seen > kAttemptWindow)
-            it = g_recentAttempts.erase(it);
+            it = s.recentAttempts.erase(it);
         else
             ++it;
     }
-    while (g_recentAttempts.size() > kAttemptCap)
-        g_recentAttempts.pop_front();
+    while (s.recentAttempts.size() > kAttemptCap)
+        s.recentAttempts.pop_front();
 }
 
 } // namespace
@@ -66,14 +58,16 @@ void PruneAttemptsLocked(Clock::time_point now) {
 std::uint64_t DonorSteamId(std::size_t index) { return kLumaCoreStatSteamIdPool[index % kPoolCount]; }
 
 std::size_t PickIndex(steam::AppId appId) {
-    std::lock_guard<std::mutex> lock(g_poolMutex);
-    auto& e = g_pool[appId];
+    SharedState& s = S();
+    std::lock_guard<std::mutex> lock(s.poolMutex);
+    auto& e = s.pool[appId];
     return e.hasPreferred ? e.preferred : e.next;
 }
 
 void NoteAttemptResult(steam::AppId appId, std::size_t index, bool okWithData) {
-    std::lock_guard<std::mutex> lock(g_poolMutex);
-    auto& e = g_pool[appId];
+    SharedState& s = S();
+    std::lock_guard<std::mutex> lock(s.poolMutex);
+    auto& e = s.pool[appId];
     if (okWithData) {
         e.preferred = index;
         e.hasPreferred = true;
@@ -93,32 +87,34 @@ void NoteAttemptResult(steam::AppId appId, std::size_t index, bool okWithData) {
 void RecordAttempt(StatAttempt a, bool hasJobId, std::uint64_t jobId) {
     auto now = Clock::now();
     a.seen = now;
-    std::lock_guard<std::mutex> lock(g_attemptMutex);
+    SharedState& s = S();
+    std::lock_guard<std::mutex> lock(s.attemptMutex);
     PruneAttemptsLocked(now);
-    a.sequence = g_nextSequence++;
+    a.sequence = s.nextSequence++;
     if (hasJobId)
-        g_jobIdToAttempt[jobId] = a;
-    g_recentAttempts.push_back(a);
+        s.jobIdToAttempt[jobId] = a;
+    s.recentAttempts.push_back(a);
 }
 
 Correl ResolveAttempt(bool hasJobIdTarget, std::uint64_t jobIdTarget, StatAttempt& out) {
     auto now = Clock::now();
-    std::lock_guard<std::mutex> lock(g_attemptMutex);
+    SharedState& s = S();
+    std::lock_guard<std::mutex> lock(s.attemptMutex);
     PruneAttemptsLocked(now);
 
     if (hasJobIdTarget) {
-        auto it = g_jobIdToAttempt.find(jobIdTarget);
-        if (it != g_jobIdToAttempt.end()) {
+        auto it = s.jobIdToAttempt.find(jobIdTarget);
+        if (it != s.jobIdToAttempt.end()) {
             out = it->second;
-            g_jobIdToAttempt.erase(it);
+            s.jobIdToAttempt.erase(it);
             // Successful correlation: also drop the attempt from the fallback
             // queue, otherwise it lingers as a "ghost" for kAttemptWindow and
             // makes the next response's fallback ambiguous (n>1), which would
             // then reach the game UNREWRITTEN (with the donor's stats). Flagged
             // by the 21/08/2026 external review.
-            for (auto itDq = g_recentAttempts.begin(); itDq != g_recentAttempts.end();) {
+            for (auto itDq = s.recentAttempts.begin(); itDq != s.recentAttempts.end();) {
                 if (itDq->sequence == out.sequence)
-                    itDq = g_recentAttempts.erase(itDq);
+                    itDq = s.recentAttempts.erase(itDq);
                 else
                     ++itDq;
             }
@@ -130,7 +126,7 @@ Correl ResolveAttempt(bool hasJobIdTarget, std::uint64_t jobIdTarget, StatAttemp
     // Fallback: a single recent in-flight request for this pipe.
     StatAttempt cand;
     std::size_t n = 0;
-    for (const auto& a : g_recentAttempts) {
+    for (const auto& a : s.recentAttempts) {
         if (now - a.seen <= kAttemptWindow) {
             cand = a;
             ++n;
@@ -138,9 +134,9 @@ Correl ResolveAttempt(bool hasJobIdTarget, std::uint64_t jobIdTarget, StatAttemp
     }
     if (n == 1) {
         out = cand;
-        for (auto it = g_recentAttempts.begin(); it != g_recentAttempts.end();) {
+        for (auto it = s.recentAttempts.begin(); it != s.recentAttempts.end();) {
             if (it->sequence == cand.sequence)
-                it = g_recentAttempts.erase(it);
+                it = s.recentAttempts.erase(it);
             else
                 ++it;
         }
@@ -159,21 +155,23 @@ Correl ResolveAttempt(bool hasJobIdTarget, std::uint64_t jobIdTarget, StatAttemp
 }
 
 void RecordPendingClientStats(steam::AppId appId, StatAttempt attempt) {
-    std::lock_guard<std::mutex> lock(g_pendingMutex);
+    SharedState& s = S();
+    std::lock_guard<std::mutex> lock(s.pendingMutex);
     auto now = Clock::now();
-    std::erase_if(g_pendingClientStats, [&now](const auto& e) { return now - e.second.seen > kPendingWindow; });
-    g_pendingClientStats[appId] = attempt;
+    std::erase_if(s.pendingClientStats, [&now](const auto& e) { return now - e.second.seen > kPendingWindow; });
+    s.pendingClientStats[appId] = attempt;
 }
 
 bool TakePendingClientStats(steam::AppId appId, StatAttempt& out) {
     auto now = Clock::now();
-    std::lock_guard<std::mutex> lock(g_pendingMutex);
-    std::erase_if(g_pendingClientStats, [&now](const auto& e) { return now - e.second.seen > kPendingWindow; });
-    auto it = g_pendingClientStats.find(appId);
-    if (it == g_pendingClientStats.end())
+    SharedState& s = S();
+    std::lock_guard<std::mutex> lock(s.pendingMutex);
+    std::erase_if(s.pendingClientStats, [&now](const auto& e) { return now - e.second.seen > kPendingWindow; });
+    auto it = s.pendingClientStats.find(appId);
+    if (it == s.pendingClientStats.end())
         return false;
     out = it->second;
-    g_pendingClientStats.erase(it);
+    s.pendingClientStats.erase(it);
     return true;
 }
 

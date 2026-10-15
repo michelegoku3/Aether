@@ -93,20 +93,18 @@ BackupCopyOutcome CopyAtomicallyIfMissing(const fs::path& source, const fs::path
     return BackupCopyOutcome::Copied;
 }
 
-struct RestoreStats {
-    std::size_t scanned = 0;
-    std::size_t restored = 0;
-    std::size_t present = 0;
-    std::size_t errors = 0;
+// operator+= and RestoreLuaDirectory live outside the anonymous namespace:
+// the latter is a test seam (declared in ManifestRestore.h), so it needs
+// external linkage. Helpers above stay anonymous (internal).
+} // namespace
 
-    RestoreStats& operator+=(const RestoreStats& other) {
-        scanned += other.scanned;
-        restored += other.restored;
-        present += other.present;
-        errors += other.errors;
-        return *this;
-    }
-};
+RestoreStats& operator+=(RestoreStats& self, const RestoreStats& other) {
+    self.scanned += other.scanned;
+    self.restored += other.restored;
+    self.present += other.present;
+    self.errors += other.errors;
+    return self;
+}
 
 // Copies only manifests that are referenced by the selected app's backup.
 // The filename() boundary is intentional: backup entries are flat and can
@@ -155,11 +153,24 @@ RestoreStats RestoreLuaDirectory(const fs::path& luaDir, const fs::path& depotca
                 AC_LOG_DEBUG(kModule, "Cannot restore %s (%s).", dest.string().c_str(), fileEc.message().c_str());
             }
         } else {
-            ++stats.restored;
+            // A torn write (AV quarantine, disk stall) leaves a truncated but
+            // non-empty manifest that IsMissingOrEmpty would accept as
+            // present. Verify against the source like the backup path does.
+            const auto checked = backup::io::VerifySameSize(src.string(), dest.string());
+            if (!checked.ok) {
+                ++stats.errors;
+                AC_LOG_DEBUG(kModule, "Restored size mismatch %s (src=%s dst=%s).", dest.string().c_str(),
+                             checked.srcError.empty() ? "ok" : checked.srcError.c_str(),
+                             checked.dstError.empty() ? "ok" : checked.dstError.c_str());
+            } else {
+                ++stats.restored;
+            }
         }
     }
     return stats;
 }
+
+namespace {
 
 bool ParseNumericAppId(const std::string& stem, std::uint32_t& out) {
     if (stem.empty())

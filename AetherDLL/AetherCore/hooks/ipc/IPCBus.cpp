@@ -1,7 +1,10 @@
 #include "pch.h"
 #include "hooks/ipc/IPCBus.h"
 
+#include <atomic>
 #include <cstring>
+#include <memory>
+#include <mutex>
 #include <string>
 #include <unordered_map>
 
@@ -30,19 +33,28 @@ GetPipeClient_t o_GetPipeClient = nullptr;
 using IPCProcessMessage_t = bool (*)(void*, steam::HSteamPipe, steam::CUtlBuffer*, steam::CUtlBuffer*);
 IPCProcessMessage_t o_IPCProcessMessage = nullptr;
 
-// Dispatch table keyed by (interfaceId << 32) | funcHash.
-// Populated exactly once on the init thread (RegisterIpcBus → CmdXxx::Register)
-// before the IPC hook is armed, and read-only afterwards — treated as code,
-// not runtime state (admitted module-local per the AetherCoreState.h rule (b)).
-std::unordered_map<std::uint64_t, IpcHandlerEntry> s_handlers;
+// Dispatch table keyed by (interfaceId << 32) | funcHash, published via
+// atomic shared_ptr swap: readers on Steam IPC threads load once (acquire)
+// and search without any lock, so a late re-registration can never race
+// dispatch. Writers (init thread / late-pattern retry, already serialized
+// by the bootstrap batch mutex) take the writer mutex as belt and braces.
+// Still module-local code-dispatch metadata, not runtime state (admitted
+// module-local per the AetherCoreState.h rule (b)).
+using HandlerMap = std::unordered_map<std::uint64_t, IpcHandlerEntry>;
+std::atomic<std::shared_ptr<const HandlerMap>> s_handlers{std::make_shared<const HandlerMap>()};
+std::mutex s_handlersMutex; // writers only; readers never touch it
+// Set when a registration batch ran without the spec: those entries keep
+// compile-time hashes. Used only to scope the stale-spec warning below.
+std::atomic<bool> s_registeredWithoutSpec{false};
 
 std::uint64_t HandlerKey(std::uint8_t iface, std::uint32_t hash) {
     return (static_cast<std::uint64_t>(iface) << 32) | hash;
 }
 
 const IpcHandlerEntry* FindHandler(std::uint8_t iface, std::uint32_t hash) {
-    auto it = s_handlers.find(HandlerKey(iface, hash));
-    return it != s_handlers.end() ? &it->second : nullptr;
+    const std::shared_ptr<const HandlerMap> map = s_handlers.load(std::memory_order_acquire);
+    const auto it = map->find(HandlerKey(iface, hash));
+    return it != map->end() ? &it->second : nullptr;
 }
 
 steam::CSteamPipeClient* GetPipe(void* server, steam::HSteamPipe hSteamPipe) {
@@ -139,11 +151,16 @@ bool h_IPCProcessMessage(void* server, steam::HSteamPipe hSteamPipe, steam::CUtl
 void RegisterIpcHandlers(const IpcHandlerEntry* entries, std::size_t count) {
     if (!entries || count == 0)
         return;
-    s_handlers.reserve(s_handlers.size() + count);
+    // Build the merged table locally, then publish with one atomic swap:
+    // in-flight dispatches keep reading the previous immutable snapshot.
+    std::lock_guard<std::mutex> wlock(s_handlersMutex);
+    auto merged = std::make_shared<HandlerMap>(*s_handlers.load(std::memory_order_acquire));
+    merged->reserve(merged->size() + count);
 
     const bool dynamicSpec = ipcspec::IsLoaded();
     if (!dynamicSpec) {
         AC_LOG_INFO_ONCE(kModule, "IPC spec not loaded; using compile-time hashes.");
+        s_registeredWithoutSpec.store(true, std::memory_order_release);
     }
 
     for (std::size_t i = 0; i < count; ++i) {
@@ -182,7 +199,7 @@ void RegisterIpcHandlers(const IpcHandlerEntry* entries, std::size_t count) {
 
         resolved.interfaceId = interfaceId;
         resolved.funcHash = hash;
-        const auto [it, inserted] = s_handlers.emplace(HandlerKey(interfaceId, hash), resolved);
+        const auto [it, inserted] = merged->emplace(HandlerKey(interfaceId, hash), resolved);
         if (!inserted) {
             AC_LOG_WARN(kModule, "IPC handler collision: '%s' conflicts with '%s'; second disabled.", source.name,
                         it->second.name ? it->second.name : "<unnamed>");
@@ -190,6 +207,7 @@ void RegisterIpcHandlers(const IpcHandlerEntry* entries, std::size_t count) {
                                              it->second.name ? it->second.name : "<unnamed>");
         }
     }
+    s_handlers.store(std::move(merged), std::memory_order_release);
 }
 
 void RegisterIpcBus(HMODULE diversion) {
@@ -200,6 +218,12 @@ void RegisterIpcBus(HMODULE diversion) {
     // Idempotent re-run (late-pattern retry re-runs the whole client batch):
     // an armed bus must not re-register its command handler tables.
     if (o_GetPipeClient) {
+        // Visibility for the stale-spec gap: tables registered before the
+        // spec arrived keep compile-time hashes until the next Steam restart.
+        // A late re-registration with new hashes is a follow-up (it needs a
+        // re-resolve of every entry against the loaded spec).
+        if (s_registeredWithoutSpec.load(std::memory_order_acquire) && ipcspec::IsLoaded())
+            AC_LOG_WARN_ONCE(kModule, "IPC spec arrived after arming; compile-time hashes stay active.");
         AC_LOG_DEBUG(kModule, "IPC bus already armed; skipping re-registration.");
         return;
     }
