@@ -18,10 +18,10 @@ describe('StoreSearchBar', () => {
   it('submits the typed query', async () => {
     const user = userEvent.setup();
     const onSearch = vi.fn().mockResolvedValue(undefined);
-    render(<StoreSearchBar isLoading={false} onSearch={onSearch} onClear={vi.fn()} />);
+    const { container } = render(<StoreSearchBar isLoading={false} onSearch={onSearch} onClear={vi.fn()} />);
 
     await user.type(screen.getByPlaceholderText(/search games/i), 'portal');
-    await user.click(screen.getByTitle('Search Catalog'));
+    await user.click(container.querySelector('.store-search-btn')!);
 
     expect(onSearch).toHaveBeenCalledWith('portal');
   });
@@ -64,7 +64,7 @@ describe('StoreSearchBar', () => {
   });
 
   it('disables submit while a search is loading', () => {
-    render(<StoreSearchBar isLoading onSearch={vi.fn()} onClear={vi.fn()} />);
-    expect(screen.getByTitle('Search Catalog')).toBeDisabled();
+    const { container } = render(<StoreSearchBar isLoading onSearch={vi.fn()} onClear={vi.fn()} />);
+    expect(container.querySelector('.store-search-btn')).toBeDisabled();
   });
 });

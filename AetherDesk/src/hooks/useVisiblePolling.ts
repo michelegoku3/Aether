@@ -22,8 +22,7 @@ export interface VisiblePollingOptions {
 /**
  * Shared "visibility-aware" polling.
  *
- * Rules (the same ones `LogView` applied by hand and the audit asked to
- * extend to `SyncStatusModal`):
+ * Rules (the same ones `LogView` applied by hand):
  *
  * 1. **Self-rescheduling setTimeout, never setInterval**: the next tick starts
  *    AFTER the call completes, so a slow IPC call cannot pile up concurrent

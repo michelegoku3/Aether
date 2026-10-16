@@ -102,7 +102,7 @@ export const StoreView = memo(function StoreView({
         type="button"
         className="store-local-fab"
         onClick={() => setShowBulkLocalImport(true)}
-        title="Bulk Local Import (.lua, .manifest, archives)"
+        title="Bulk Local import"
         aria-label="Bulk Local Import"
       >
         <FolderPlusIcon size={20} />

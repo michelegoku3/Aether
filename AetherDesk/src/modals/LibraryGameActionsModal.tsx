@@ -373,7 +373,7 @@ export const LibraryGameActionsModal = ({
               </span>
               <span
                 className="game-action-btn-wrap"
-                title={updatesEnabled ? 'Disable updates for this game' : undefined}
+                title={updatesEnabled ? 'Disable updates to change version' : undefined}
               >
                 <button
                   className={`game-action-btn${hasPinsToFix ? ' fix-pins-outline' : ''}`}

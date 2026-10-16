@@ -101,7 +101,7 @@ export function StoreSearchBar({ isLoading, onSearch, onClear }: StoreSearchBarP
           onSelect={(item) => selectSuggestion(item.name)}
         />
       </div>
-      <button type="submit" className="store-search-btn" disabled={isLoading} title="Search Catalog">
+      <button type="submit" className="store-search-btn" disabled={isLoading}>
         {isLoading ? (
           <span style={{ fontSize: '12px' }}>...</span>
         ) : (

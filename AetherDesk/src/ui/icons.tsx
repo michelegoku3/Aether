@@ -43,23 +43,6 @@ export const WrenchIcon = ({ size = 15 }: { size?: number }) => (
   </svg>
 );
 
-/** Activity pulse icon (e.g. background sync monitor). */
-export const ActivityIcon = ({ size = 15 }: { size?: number }) => (
-  <svg
-    width={size}
-    height={size}
-    viewBox="0 0 24 24"
-    fill="none"
-    stroke="currentColor"
-    strokeWidth="2.2"
-    strokeLinecap="round"
-    strokeLinejoin="round"
-    aria-hidden="true"
-  >
-    <path d="M3 12h4l2.5-6 4 12 2.5-6h5" />
-  </svg>
-);
-
 /** Folder plus / local import icon */
 export const FolderPlusIcon = ({ size = 18 }: { size?: number }) => (
   <svg

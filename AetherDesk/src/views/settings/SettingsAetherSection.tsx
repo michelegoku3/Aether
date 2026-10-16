@@ -52,10 +52,7 @@ export const SettingsAetherSection: React.FC<SettingsAetherSectionProps> = ({
   return (
     <div className="settings-group">
       <label className="settings-label">Aether</label>
-      <div
-        className="settings-toggle-row"
-        title="Open WebView developer tools. They open only when you switch this ON manually."
-      >
+      <div className="settings-toggle-row">
         <span className="settings-toggle-text">Enable WebView devtools</span>
         <label className="version-switch">
           <input
@@ -67,10 +64,7 @@ export const SettingsAetherSection: React.FC<SettingsAetherSectionProps> = ({
         </label>
       </div>
 
-      <div
-        className="settings-toggle-row"
-        title="When ON, AetherDesk also detects testing releases (tdesk-*/tdll-*) and gives them priority. Test updates are shown with a red dot. Keep OFF unless you are testing a build."
-      >
+      <div className="settings-toggle-row" title="For beta testing, keep OFF unless the dev told you to enable it.">
         <span className="settings-toggle-text">Enable test updates</span>
         <label className="version-switch">
           <input type="checkbox" checked={enableTestUpdates} onChange={(e) => setEnableTestUpdates(e.target.checked)} />
@@ -78,10 +72,7 @@ export const SettingsAetherSection: React.FC<SettingsAetherSectionProps> = ({
         </label>
       </div>
 
-      <div
-        className="settings-toggle-row"
-        title="Opt-in fallback to the OpenSteamTool pattern source (OpenSteam001/steam-monitor) for Steam build patterns. OFF by default: only MigoReleases and KoriaPolis are used. Applies immediately (no Save, no Steam restart); takes effect on the next pattern download."
-      >
+      <div className="settings-toggle-row" title="Keep it OFF unless the dev says otherwise.">
         <span className="settings-toggle-text">Use OST pattern source</span>
         <label className="version-switch">
           <input
@@ -109,7 +100,7 @@ export const SettingsAetherSection: React.FC<SettingsAetherSectionProps> = ({
 
       <div
         className="settings-toggle-row"
-        title="When ON (default), AetherCore copies every backed-up .manifest (AetherData\backup\<app_id>\lua) that is missing from Steam\depotcache back into place on each Steam start. Uninstalling a game wipes its manifests, and Steam no longer serves manifests without authentication — this keeps them always available. Applies immediately (no Save); takes effect on the next Steam start."
+        title="AetherDLL copies backed-up .manifest missing from Steam\depotcache back into place on each Steam start, avoiding No Internet Connection Error when installing with its .manifest wiped out."
       >
         <span className="settings-toggle-text">Restore manifests on Steam startup</span>
         <label className="version-switch">
@@ -132,10 +123,7 @@ export const SettingsAetherSection: React.FC<SettingsAetherSectionProps> = ({
         </label>
       </div>
 
-      <div
-        className="settings-toggle-row"
-        title="Controls the [presence] default_mode in aethercore.toml and applies immediately (no Save, no Steam restart). ON: friends see what you play for EVERY game you launch — unless the game has a per-game mode in the ONLINE popup (Show / Online Aether / excluded). OFF: nothing is shown by default; you hand-pick games per-game. With a Custom game display name set, every game is treated as showonline regardless of this policy."
-      >
+      <div className="settings-toggle-row">
         <span className="settings-toggle-text">Show every game to friends by default</span>
         <label className="version-switch">
           <input
@@ -192,7 +180,7 @@ export const SettingsAetherSection: React.FC<SettingsAetherSectionProps> = ({
         )}
       </div>
 
-      <div className="settings-toggle-row" title="Choose the Steam folder with the system file picker">
+      <div className="settings-toggle-row">
         <span className="settings-toggle-text">Browse for the Steam folder</span>
         <button
           type="button"
@@ -212,7 +200,7 @@ export const SettingsAetherSection: React.FC<SettingsAetherSectionProps> = ({
         </button>
       </div>
 
-      <div className="settings-toggle-row" title="Auto Detect the Steam installation (registry / running Steam)">
+      <div className="settings-toggle-row">
         <span className="settings-toggle-text">Detect Steam automatically</span>
         <button
           type="button"
@@ -232,10 +220,7 @@ export const SettingsAetherSection: React.FC<SettingsAetherSectionProps> = ({
         </button>
       </div>
 
-      <div
-        className="settings-toggle-row"
-        title="Clear AetherDesk cache files such as store search, game info, Steam names and Denuvo cache. Settings and backups are preserved."
-      >
+      <div className="settings-toggle-row">
         <span className="settings-toggle-text">Clear AetherDesk caches</span>
         <button
           type="button"

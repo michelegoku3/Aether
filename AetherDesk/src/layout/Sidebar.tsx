@@ -89,11 +89,7 @@ export const Sidebar = memo(function Sidebar({
         </button>
 
         {/* Logs */}
-        <button
-          onClick={() => onTabChange('log')}
-          className={`nav-item ${activeTab === 'log' ? 'active' : ''}`}
-          title="Session Logs & Real-Time Terminal Console"
-        >
+        <button onClick={() => onTabChange('log')} className={`nav-item ${activeTab === 'log' ? 'active' : ''}`}>
           Logs
         </button>
       </div>
@@ -109,12 +105,7 @@ export const Sidebar = memo(function Sidebar({
             (never kill), RESTART = kill + wait-for-exit + spawn; the label
             follows the shared monitor state (runtime-state event +
             AetherDLL heartbeat via status.json). */}
-        <button
-          onClick={onSteamAction}
-          className="nav-item restart-steam-btn"
-          title={steamRunning ? 'Restart Steam (currently running)' : 'Start Steam (currently not running)'}
-          disabled={Boolean(steamBusy)}
-        >
+        <button onClick={onSteamAction} className="nav-item restart-steam-btn" disabled={Boolean(steamBusy)}>
           {steamBusy ? 'Working…' : steamRunning === null ? 'Steam' : steamRunning ? 'Restart Steam' : 'Start Steam'}
         </button>
       </div>

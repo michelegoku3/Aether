@@ -79,7 +79,7 @@ export const OnlineChoiceModal = ({
         <div className="oc-body">
           {ofmePresent && (
             <div className="oc-banner">
-              OFME crack files detected, keep None to use that crack. Other options are now locked.
+              OFME crack files detected, other online options are now locked.
             </div>
           )}
           <div className="oc-grid">

@@ -58,17 +58,38 @@ const ChangeVersionModal = ({ game, initialRows, initialTab = 'manual', onClose 
         <div className="modal-separator"></div>
 
         <div className="version-tabs" role="tablist">
-          {(Object.keys(TAB_LABELS) as VersionTab[]).map((tab) => (
-            <button
-              key={tab}
-              role="tab"
-              aria-selected={activeTab === tab}
-              className={`version-tab${activeTab === tab ? ' active' : ''}`}
-              onClick={() => setActiveTab(tab)}
-            >
-              {TAB_LABELS[tab]}
-            </button>
-          ))}
+          {(Object.keys(TAB_LABELS) as VersionTab[]).map((tab) => {
+            // The Auto tab is broken after a Steam patch: keep it visible but
+            // disabled, with the reason on a wrapper (Chromium/WebView2
+            // suppress hover on disabled controls, so the title must live on
+            // the wrapper — same pattern as LibraryGameActionsModal).
+            if (tab === 'auto') {
+              return (
+                <span key={tab} style={{ flex: '1 1 0%', display: 'flex' }} title="Broken after Steam patch">
+                  <button
+                    role="tab"
+                    aria-selected={activeTab === tab}
+                    className={`version-tab${activeTab === tab ? ' active' : ''}`}
+                    disabled={true}
+                    style={{ flex: '1 1 0%' }}
+                  >
+                    {TAB_LABELS[tab]}
+                  </button>
+                </span>
+              );
+            }
+            return (
+              <button
+                key={tab}
+                role="tab"
+                aria-selected={activeTab === tab}
+                className={`version-tab${activeTab === tab ? ' active' : ''}`}
+                onClick={() => setActiveTab(tab)}
+              >
+                {TAB_LABELS[tab]}
+              </button>
+            );
+          })}
         </div>
 
         <div className="modal-body version-modal-body">

@@ -57,7 +57,6 @@ export function StoreDownloadModal({
                 disabled={isDownloading}
                 onClick={() => onSourceChange('luatools')}
                 className={`source-btn ${source === 'luatools' ? 'active' : ''}`}
-                title="Uses your signed-in lua.tools account and automatically selects an available source"
               >
                 LuaTools
               </button>

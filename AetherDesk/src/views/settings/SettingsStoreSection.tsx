@@ -118,10 +118,7 @@ export const SettingsStoreSection: React.FC<SettingsStoreSectionProps> = ({
         </select>
       </div>
 
-      <div
-        className="settings-toggle-row"
-        title="After latest-version downloads, comment setManifestid pins so Steam can update the game normally. Requires a valid active Hubcap key."
-      >
+      <div className="settings-toggle-row">
         <span className="settings-toggle-text">Download games with updates on</span>
         <label className="version-switch">
           <input
@@ -135,7 +132,7 @@ export const SettingsStoreSection: React.FC<SettingsStoreSectionProps> = ({
 
       <div
         className="settings-toggle-row"
-        title="When Workshop items have a staged manifest but no content, ask Steam to download them one at a time (spaced). Turn off to stage manifests only — content then downloads on demand. Prevents a download storm after a depotcache wipe."
+        title="When Workshop items have a staged manifest but no content, ask Steam to download them one at a time, preventing a download storm after a depotcache wipe."
       >
         <span className="settings-toggle-text">Workshop auto-download content</span>
         <label className="version-switch">

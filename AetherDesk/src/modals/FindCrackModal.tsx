@@ -35,13 +35,13 @@ export const FindCrackModal: React.FC<FindCrackModalProps> = ({ onClose, onSelec
             className="home-action-grid"
             style={{ gridTemplateColumns: 'repeat(2, 172px)', justifyContent: 'center' }}
           >
-            <button className="game-action-btn" onClick={() => onSelect('ofme')} title="online-fix.me (OFME)">
+            <button className="game-action-btn" onClick={() => onSelect('ofme')} title="online-fix.me">
               OFME
             </button>
-            <button className="game-action-btn" onClick={() => onSelect('gcw')}>
+            <button className="game-action-btn" onClick={() => onSelect('gcw')} title="gamecopyworld">
               GCW
             </button>
-            <button className="game-action-btn" onClick={() => onSelect('csrinru')}>
+            <button className="game-action-btn" onClick={() => onSelect('csrinru')} title="cs.rin.ru">
               CSRINRU
             </button>
             <button className="game-action-btn" disabled title="XATAB is not available yet">

@@ -128,7 +128,7 @@ const GameCardInner = <T extends GameCardModel>({
       {!pinsToFix && !game.installed && game.has_manifest && (
         <span
           className={`badge-available ${game.has_denuvo ? 'denuvo' : ''}`}
-          title={game.has_denuvo ? 'Denuvo DRM detected' : 'Manifest available'}
+          title={game.has_denuvo ? 'Available on Hubcap, Denuvo detected' : 'Available on Hubcap'}
         >
           Available
         </span>

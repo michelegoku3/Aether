@@ -72,10 +72,7 @@ export const SettingsAppearanceSection: React.FC<SettingsAppearanceSectionProps>
       <label className="settings-label">Appearance</label>
 
       {/* Enable theme */}
-      <div
-        className="settings-toggle-row"
-        title="Load the first .css file found in AetherData/config/themes after the default theme. Applies immediately."
-      >
+      <div className="settings-toggle-row">
         <span className="settings-toggle-text">Enable custom theme</span>
         <label className="version-switch">
           <input
@@ -132,10 +129,7 @@ export const SettingsAppearanceSection: React.FC<SettingsAppearanceSectionProps>
       )}
 
       {/* Enable personal wallpaper */}
-      <div
-        className="settings-toggle-row"
-        title="Use the first image found in AetherData/config/wallpapers as the app background"
-      >
+      <div className="settings-toggle-row">
         <span className="settings-toggle-text">Enable custom wallpaper</span>
         <label className="version-switch">
           <input
@@ -188,7 +182,7 @@ export const SettingsAppearanceSection: React.FC<SettingsAppearanceSectionProps>
               isPicking === 'wallpaper'
             )}
           </div>
-          <div className="settings-toggle-row" title="Adjust the personal wallpaper opacity from 0 to 100">
+          <div className="settings-toggle-row">
             <span className="settings-toggle-text">Wallpaper opacity</span>
             <input
               type="text"
@@ -208,7 +202,7 @@ export const SettingsAppearanceSection: React.FC<SettingsAppearanceSectionProps>
       )}
 
       {/* Enable custom icon */}
-      <div className="settings-toggle-row" title="Use a custom window icon from AetherData/config/icons">
+      <div className="settings-toggle-row">
         <span className="settings-toggle-text">Enable custom icon</span>
         <label className="version-switch">
           <input
@@ -271,10 +265,7 @@ export const SettingsAppearanceSection: React.FC<SettingsAppearanceSectionProps>
       )}
 
       {/* Alternative game cards */}
-      <div
-        className="settings-toggle-row"
-        title="Use the alternate backdrop-focused game card layout in Store and Library"
-      >
+      <div className="settings-toggle-row">
         <span className="settings-toggle-text">Use alternative game cards</span>
         <label className="version-switch">
           <input
@@ -288,10 +279,7 @@ export const SettingsAppearanceSection: React.FC<SettingsAppearanceSectionProps>
 
       {useAlternativeGameCards && (
         <div className="settings-appearance-sub">
-          <div
-            className="settings-toggle-row"
-            title="Adjust the backdrop image opacity of the alternative game cards from 0 to 100"
-          >
+          <div className="settings-toggle-row">
             <span className="settings-toggle-text">Backdrop opacity</span>
             <input
               type="text"
@@ -307,10 +295,7 @@ export const SettingsAppearanceSection: React.FC<SettingsAppearanceSectionProps>
               }}
             />
           </div>
-          <div
-            className="settings-toggle-row"
-            title="Adjust the fade-out toward the bottom of the alternative game cards from 0 (no fade) to 100 (fully dark)"
-          >
+          <div className="settings-toggle-row">
             <span className="settings-toggle-text">Backdrop fade (bottom)</span>
             <input
               type="text"

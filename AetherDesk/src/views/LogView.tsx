@@ -226,7 +226,7 @@ export const LogView = memo(function LogView() {
             value={logLevel}
             style={{ width: '110px', minWidth: '110px', height: '33px', padding: '0 8px', boxSizing: 'border-box' }}
             onChange={(e) => setLogLevel(e.target.value)}
-            title="Filter visible lines by minimum level. TRACE is the default view; the live log level itself is not changed."
+            title="Select log level to view"
           >
             <option value="trace">TRACE</option>
             <option value="debug">DEBUG</option>
@@ -269,7 +269,7 @@ export const LogView = memo(function LogView() {
               color: 'var(--color-denuvo, #e63946)',
             }}
             onClick={handleClearLogs}
-            title="Clear current log session file(s)"
+            title="Clear current log session from the view"
           >
             Clear
           </button>
@@ -281,7 +281,7 @@ export const LogView = memo(function LogView() {
           type="button"
           className="log-copy-btn"
           onClick={handleDownloadSource}
-          title="Download the current log document (same naming as the .zip)"
+          title="Download only the current log in the view"
         >
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
             <path

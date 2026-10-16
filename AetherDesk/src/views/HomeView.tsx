@@ -281,10 +281,19 @@ export const HomeView = memo(function HomeView() {
         >
           Apply Crack
         </button>
-        <button className="game-action-btn" disabled={true} title="Enable DLC is not available yet">
-          Enable DLC
+        <button
+          className="game-action-btn"
+          disabled={true}
+          title="SmokeAPI is not available yet, add the game in the Store for DLCs. Don't use them online."
+        >
+          ADD DLCs
         </button>
-        <button className="game-action-btn" disabled={!hasSelectedGame || isSteamlessRunning} onClick={runSteamless}>
+        <button
+          className="game-action-btn"
+          disabled={!hasSelectedGame || isSteamlessRunning}
+          onClick={runSteamless}
+          title="Use Steamless for error 54, 86, or 6:0000065432. Search .exe in the top right and select the game .exe, prefer the one with Shipping in it if present."
+        >
           {isSteamlessRunning ? 'Running...' : 'Steamless'}
         </button>
       </div>

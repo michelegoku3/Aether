@@ -45,7 +45,7 @@ export const settingsToForm = (settings: AppSettings): SettingsFormState => ({
   enableWebviewDevtools: Boolean(settings.enable_webview_devtools),
   enableTestUpdates: Boolean(settings.enable_test_updates),
   customGameName: String(settings.custom_game_name || '').trim(),
-  storeFrontFilter: String(settings.store_front_filter || 'upcoming'),
+  storeFrontFilter: String(settings.store_front_filter || 'latest'),
   storeCurrency: isStoreCurrency(settings.store_currency) ? settings.store_currency : 'eur',
   customCssEnabled: Boolean(settings.custom_css_enabled),
   personalWallpaperEnabled: Boolean(settings.personal_wallpaper_enabled),

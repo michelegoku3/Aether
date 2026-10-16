@@ -49,11 +49,11 @@ const writeLocalFilter = (value: LibraryInstallFilter) => {
 const filterTitleFor = (filter: LibraryInstallFilter): string => {
   switch (filter) {
     case 'installed':
-      return 'Showing installed Lua games only — click to show non-installed';
+      return 'Click to show non-installed only';
     case 'not_installed':
-      return 'Showing non-installed Lua games only — click to show all';
+      return 'Click to show all';
     default:
-      return 'Showing all Lua games — click to show installed only';
+      return 'Click to show installed only';
   }
 };
 

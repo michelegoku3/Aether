@@ -186,7 +186,7 @@ export const LibraryView = memo(function LibraryView({
             className="library-icon-btn"
             onClick={() => void handleOpenUpdatesModal()}
             disabled={isLoading}
-            title="Manage game updates (block/unblock all)"
+            title="Manage game updates"
             aria-label="Manage game updates"
           >
             <ArrowUpThickIcon />
@@ -206,7 +206,7 @@ export const LibraryView = memo(function LibraryView({
             className="library-icon-btn"
             onClick={loadInstalledGames}
             disabled={isLoading || isRefreshing}
-            title={isRefreshing ? 'Refreshing library…' : 'Refresh library'}
+            title={isRefreshing ? 'Refreshing Library…' : 'Refresh Library'}
             aria-label="Refresh library"
             aria-busy={isRefreshing}
           >

@@ -1,8 +1,6 @@
 import { useCallback, useEffect, useState, memo } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { UninstallDeskConfirmModal, UninstallSteamCleanModal } from '../modals/UninstallDeskModal';
-import { SyncStatusModal } from '../modals/SyncStatusModal';
-import { ActivityIcon } from '../ui/icons';
 import { getSettings } from '../hooks/useSettings';
 import { DllStatusInfo } from '../types/ui';
 import { toErrorMessage } from '../util/errors';
@@ -26,8 +24,7 @@ type UninstallStep = { kind: 'confirm' } | { kind: 'steamClean'; residualCount: 
 
 /**
  * AETHER panel: AetherDesk and AetherDLL lifecycle (install/update/
- * uninstall), Steam update blocking, Steam path reset and background
- * synchronizer diagnostics.
+ * uninstall), Steam update blocking and Steam path reset.
  *
  * Steam-side operations no longer receive the path from the UI: the backend
  * commands resolve it from settings (`commands::command_steam_path`), so only
@@ -48,10 +45,6 @@ export const AetherView = memo(function AetherView({
   const [isProcessing, setIsProcessing] = useState(false);
   const [uninstallStep, setUninstallStep] = useState<UninstallStep | null>(null);
   const [testUpdatesEnabled, setTestUpdatesEnabled] = useState(false);
-  /** Background-sync popup (pin sync / pin refresh / repair / workshop lanes).
-   *  Lives here, not in Library: it is plant diagnostics about the
-   *  synchronizer, not an action on a single game. */
-  const [showSyncStatus, setShowSyncStatus] = useState(false);
 
   const showStatus = useCallback((text: string, type: StatusTone) => {
     setStatusMsg({ text, type });
@@ -351,21 +344,8 @@ export const AetherView = memo(function AetherView({
             {dllStatus.isSteamBlocked ? 'Unlock Update' : 'Block Update'}
           </button>
 
-          <button onClick={handleResetPath} className="panel-btn" disabled={isProcessing}>
+          <button onClick={handleResetPath} className="panel-btn" disabled={true}>
             Reset Path
-          </button>
-        </div>
-      </div>
-
-      {/* SECTION 4: Background synchronizer */}
-      <div className="aether-panel">
-        <div className="panel-header">
-          <span className="panel-title">Synchronizer</span>
-        </div>
-        <div className="panel-actions">
-          <button disabled className="panel-btn panel-btn--icon" title="Not available yet">
-            <ActivityIcon />
-            Background Sync
           </button>
         </div>
       </div>
@@ -387,8 +367,6 @@ export const AetherView = memo(function AetherView({
           onCancel={cancelUninstall}
         />
       )}
-
-      {showSyncStatus && <SyncStatusModal onClose={() => setShowSyncStatus(false)} />}
     </div>
   );
 });
