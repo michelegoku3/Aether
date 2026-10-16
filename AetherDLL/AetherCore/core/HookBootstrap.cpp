@@ -176,8 +176,13 @@ void PatternLateRetryWorker(std::atomic<bool>& stop) {
         // table wakes the next attempt at once instead of at the next 10 s
         // tick. The 250 ms quantum keeps shutdown snappy (was 100 ms: 2.5x
         // fewer idle wakeups for a bounded 150 ms of extra join latency).
-        HANDLE change = FindFirstChangeNotificationW(ac::strings::Widen(g_state.patternDir).c_str(), FALSE,
-                                                     FILE_NOTIFY_CHANGE_FILE_NAME | FILE_NOTIFY_CHANGE_LAST_WRITE);
+        // UTF-8 in, *W at the boundary (patternDir is UTF-8 narrow).
+        const std::wstring wPatternDir = ac::strings::Widen(g_state.patternDir);
+        HANDLE change =
+            wPatternDir.empty()
+                ? INVALID_HANDLE_VALUE
+                : FindFirstChangeNotificationW(wPatternDir.c_str(), FALSE,
+                                               FILE_NOTIFY_CHANGE_FILE_NAME | FILE_NOTIFY_CHANGE_LAST_WRITE);
         if (change == INVALID_HANDLE_VALUE) {
             for (int elapsed = 0;
                  elapsed < constants::kPatternLateRetryIntervalMs && !stop.load(std::memory_order_relaxed);

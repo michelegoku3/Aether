@@ -2,6 +2,7 @@
 #include "core/Logger.h"
 #include "utils/PatternCache.h"
 #include "utils/PatternEngine.h"
+#include "utils/WinFile.h"
 #include <thread>
 
 namespace ac::pattern {
@@ -22,7 +23,7 @@ PatternIndex* IndexFor(const std::string& module) {
 
 bool Init() {
     AC_LOG_INFO(kModule, "Initialising.");
-    CreateDirectoryA(g_state.patternDir.c_str(), nullptr);
+    winfile::CreateDir(g_state.patternDir);
     SweepTempFiles();
 
     g_state.steamuiPath = g_state.steamInstallPath + "\\steamui.dll";

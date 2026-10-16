@@ -22,6 +22,7 @@
 #include "network/ManifestFetch.h"
 #include "scripting/ScriptEngine.h"
 #include "utils/Paths.h"
+#include "utils/WinFile.h"
 
 namespace ac::hooks::ManifestRestore {
 namespace {
@@ -203,17 +204,17 @@ void BackupReferencedManifestsAtStartup() {
         return;
     }
 
-    const fs::path depotcache = fs::path(g_state.steamInstallPath) / "depotcache";
-    const fs::path backupRoot = fs::path(deskData) / "backup";
+    const fs::path depotcache = winfile::ToPath(g_state.steamInstallPath) / "depotcache";
+    const fs::path backupRoot = winfile::ToPath(deskData) / "backup";
     // Compiled once per process: std::regex construction is expensive and can
     // throw regex_error on pathological patterns; the scan below guards it.
     // NOLINTNEXTLINE(bugprone-throwing-static-initialization)
     static const std::regex pinRegex(R"(setManifestid\s*\(\s*([0-9]+)\s*,\s*["']([0-9]+)["'])",
                                      std::regex_constants::icase | std::regex_constants::optimize);
 
-    std::vector<fs::path> luaRoots{fs::path(g_state.luaDir)};
+    std::vector<fs::path> luaRoots{winfile::ToPath(g_state.luaDir)};
     for (const std::string& extra : settings->luaExtraPaths) {
-        luaRoots.emplace_back(extra);
+        luaRoots.emplace_back(winfile::ToPath(extra));
     }
 
     std::error_code ec;
@@ -329,8 +330,8 @@ void RestoreAllOnce() {
         return;
     }
 
-    const fs::path backupRoot = fs::path(deskData) / "backup";
-    const fs::path depotcache = fs::path(g_state.steamInstallPath) / "depotcache";
+    const fs::path backupRoot = winfile::ToPath(deskData) / "backup";
+    const fs::path depotcache = winfile::ToPath(g_state.steamInstallPath) / "depotcache";
     std::error_code ec;
     fs::create_directories(depotcache, ec);
     if (ec) {
@@ -373,8 +374,8 @@ void RestoreAppOnce(std::uint32_t appId) {
     const std::string deskData = backup::io::CachedDeskDataDir();
     if (deskData.empty())
         return;
-    const fs::path backupRoot = fs::path(deskData) / "backup";
-    const fs::path depotcache = fs::path(g_state.steamInstallPath) / "depotcache";
+    const fs::path backupRoot = winfile::ToPath(deskData) / "backup";
+    const fs::path depotcache = winfile::ToPath(g_state.steamInstallPath) / "depotcache";
     std::error_code ec;
     fs::create_directories(depotcache, ec);
     if (ec)
@@ -395,7 +396,7 @@ void RestoreAppOnce(std::uint32_t appId) {
     // depot manager. ACF removal previously restored only bytes on disk, leaving
     // the in-memory Lua/license state stale. Re-run that same refresh sequence
     // after the targeted restore, without downloading anything.
-    const fs::path luaPath = fs::path(g_state.luaDir) / (std::to_string(appId) + ".lua");
+    const fs::path luaPath = winfile::ToPath(g_state.luaDir) / (std::to_string(appId) + ".lua");
     std::error_code luaEc;
     if (!fs::is_regular_file(luaPath, luaEc) || luaEc) {
         AC_LOG_WARN(kModule,
@@ -464,12 +465,12 @@ void BackupManifestAfterGeneration(std::uint32_t depotId, std::uint64_t gid) {
             return;
 
         std::error_code ec;
-        const fs::path source = fs::path(g_state.steamInstallPath) / "depotcache" /
+        const fs::path source = winfile::ToPath(g_state.steamInstallPath) / "depotcache" /
                                 (std::to_string(depotId) + "_" + std::to_string(gid) + ".manifest");
         if (!fs::is_regular_file(source, ec) || ec)
             return;
 
-        const fs::path backupRoot = fs::path(deskData) / "backup";
+        const fs::path backupRoot = winfile::ToPath(deskData) / "backup";
         const std::string depotText = std::to_string(depotId);
         const std::string gidText = std::to_string(gid);
         // Same regex as the startup backup: also catches commented pins
@@ -479,9 +480,9 @@ void BackupManifestAfterGeneration(std::uint32_t depotId, std::uint64_t gid) {
         static const std::regex pinRegex(R"(setManifestid\s*\(\s*([0-9]+)\s*,\s*["']([0-9]+)["'])",
                                          std::regex_constants::icase | std::regex_constants::optimize);
 
-        std::vector<fs::path> luaRoots{fs::path(g_state.luaDir)};
+        std::vector<fs::path> luaRoots{winfile::ToPath(g_state.luaDir)};
         for (const std::string& extra : settings->luaExtraPaths) {
-            luaRoots.emplace_back(extra);
+            luaRoots.emplace_back(winfile::ToPath(extra));
         }
 
         std::size_t copied = 0;

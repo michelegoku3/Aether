@@ -10,6 +10,7 @@
 #include "core/Logger.h"
 #include "hooks/aetheronline/PresenceSession.h"
 #include "utils/RemoteInject.h"
+#include "utils/WinFile.h"
 
 namespace ac::hooks {
 namespace {
@@ -29,7 +30,7 @@ CreateProcessAsUserW_t o_CreateProcessAsUserW = nullptr;
 // Injection helper — called after the child is created suspended.
 // ---------------------------------------------------------------------------
 void InjectIntoChild(HANDLE hProcess, DWORD pid) {
-    if (GetFileAttributesA(g_state.payloadDllPath.c_str()) == INVALID_FILE_ATTRIBUTES) {
+    if (!winfile::Exists(g_state.payloadDllPath)) {
         // Once per game session (logger dedup) instead of a module-local atomic.
         AC_LOG_WARN_ONCE(kModule, "Payload DLL missing: %s", g_state.payloadDllPath.c_str());
         return;

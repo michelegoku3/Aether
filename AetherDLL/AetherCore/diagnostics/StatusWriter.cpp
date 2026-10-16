@@ -22,6 +22,7 @@
 #include "scripting/LuaData.h"
 #include "utils/IpcSpec.h"
 #include "utils/JsonWriter.h"
+#include "utils/WinFile.h"
 
 namespace ac::status {
 namespace {
@@ -34,7 +35,7 @@ utils::CoalescingWorker* s_worker = nullptr;
 bool SaveAtomic(const std::string& path, const std::string& content) {
     const std::string tmp = path + ".tmp";
     {
-        std::ofstream out(tmp, std::ios::binary | std::ios::trunc);
+        std::ofstream out(winfile::ToPath(tmp), std::ios::binary | std::ios::trunc);
         if (!out.is_open())
             return false;
         out.write(content.data(), static_cast<std::streamsize>(content.size()));
@@ -42,12 +43,12 @@ bool SaveAtomic(const std::string& path, const std::string& content) {
         const bool written = out.good();
         out.close();
         if (!written || out.fail()) {
-            DeleteFileA(tmp.c_str());
+            winfile::Delete(tmp);
             return false;
         }
     }
-    if (!MoveFileExA(tmp.c_str(), path.c_str(), MOVEFILE_REPLACE_EXISTING)) {
-        DeleteFileA(tmp.c_str());
+    if (!winfile::MoveReplace(tmp, path)) {
+        winfile::Delete(tmp);
         return false;
     }
     return true;
@@ -153,7 +154,7 @@ static void WriteSnapshot(std::uint64_t requests) {
     w.UInt64("ticket_forge_successes", g_state.ticketForgeSuccessCount.load());
     w.UInt64("ticket_forge_failures", g_state.ticketForgeFailureCount.load());
     w.Str("manifest_fetch_production_route", "authenticated_hubcap_standalone");
-    w.Bool("online_payload_present", GetFileAttributesA(g_state.payloadDllPath.c_str()) != INVALID_FILE_ATTRIBUTES);
+    w.Bool("online_payload_present", winfile::Exists(g_state.payloadDllPath));
     w.SizeT("online_payload_injected_pids", hooks::onlinepayload::InjectedPidCount());
     w.UInt64("online_payload_inject_successes", g_state.onlinePayload.injectSuccessCount.load());
     w.UInt64("online_payload_inject_failures", g_state.onlinePayload.injectFailureCount.load());

@@ -2,10 +2,13 @@
 #include "core/Settings.h"
 
 #include "core/AetherCoreState.h"
+#include "utils/WinFile.h"
+
 #include <atomic>
 #include <chrono>
 #include <cstdint>
 #include <filesystem>
+#include <fstream>
 #include <toml++/toml.hpp>
 
 namespace ac {
@@ -84,7 +87,16 @@ Settings Settings::Load(const std::string& configPath, bool* valid) {
 
     toml::table tbl;
     try {
-        tbl = toml::parse_file(configPath);
+        // Read via a wide path first: toml::parse_file takes a narrow
+        // filename (ANSI codepage), which fails on non-ASCII installs.
+        // Parsing from an in-memory document keeps one code path.
+        std::ifstream input(winfile::ToPath(configPath), std::ios::binary);
+        if (!input) {
+            AC_LOG_WARN("Settings", "Cannot open config %s; defaults only apply during startup.", configPath.c_str());
+            return s;
+        }
+        const std::string doc((std::istreambuf_iterator<char>(input)), std::istreambuf_iterator<char>());
+        tbl = toml::parse(doc, configPath);
     } catch (const toml::parse_error& e) {
         // Startup falls back to defaults; runtime reload rejects this candidate.
         // The init caller also reports failure AFTER logger initialization.

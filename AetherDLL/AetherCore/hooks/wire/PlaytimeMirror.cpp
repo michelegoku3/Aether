@@ -15,6 +15,7 @@
 #include "core/SteamTypes.h"
 #include "hooks/wire/BackupIo.h"
 #include "utils/VdfText.h"
+#include "utils/WinFile.h"
 
 namespace ac::backup::playtime {
 namespace {
@@ -55,9 +56,9 @@ std::string AsciiLower(std::string s) {
     return s;
 }
 
-std::unordered_map<std::uint32_t, PlaytimeEntry> ParseLocalConfigPlaytime(const std::string& path) {
+std::unordered_map<std::uint32_t, PlaytimeEntry> ParseLocalConfigPlaytime(const std::string& utf8Path) {
     std::unordered_map<std::uint32_t, PlaytimeEntry> out;
-    std::ifstream ifs(path);
+    std::ifstream ifs(winfile::ToPath(utf8Path));
     if (!ifs.is_open())
         return out;
 
@@ -112,7 +113,7 @@ std::unordered_map<std::uint32_t, PlaytimeEntry> ParseLocalConfigPlaytime(const 
         char* end = nullptr;
         unsigned long appId = std::strtoul(appIdStr.c_str(), &end, 10);
         if (!end || *end != '\0')
-            continue; // id non numerico (es. non-Steam hash): skip
+            continue; // non-numeric id (e.g. non-Steam hash): skip
         const bool inAutocloud =
             stack.size() == static_cast<std::size_t>(appsIdx) + 3 && stack[appsIdx + 2] == "autocloud";
 
@@ -139,9 +140,9 @@ std::unordered_map<std::uint32_t, PlaytimeEntry> ParseLocalConfigPlaytime(const 
 }
 
 // Monotone merge: per field keep the max of existing backup and new data.
-std::unordered_map<std::uint32_t, PlaytimeEntry> LoadPlaytimeSnapshot(const std::string& path) {
+std::unordered_map<std::uint32_t, PlaytimeEntry> LoadPlaytimeSnapshot(const std::string& utf8Path) {
     std::unordered_map<std::uint32_t, PlaytimeEntry> out;
-    std::ifstream ifs(path);
+    std::ifstream ifs(winfile::ToPath(utf8Path));
     if (!ifs.is_open())
         return out;
     std::string line;
@@ -172,7 +173,7 @@ void BackupPlaytimeForAccountDir(const std::string& accountDir, std::uint32_t ac
     if (deskData.empty())
         return;
     const std::string dir = deskData + "\\backup\\playtime";
-    CreateDirectoryA(dir.c_str(), nullptr);
+    winfile::CreateDir(dir);
     const std::string path = dir + "\\UserPlaytime_" + std::to_string(accountId) + ".json";
 
     auto merged = LoadPlaytimeSnapshot(path);
@@ -200,7 +201,7 @@ void BackupPlaytimeForAccountDir(const std::string& accountDir, std::uint32_t ac
 
     const std::string tmp = path + ".tmp";
     {
-        std::ofstream out(tmp, std::ios::trunc);
+        std::ofstream out(winfile::ToPath(tmp), std::ios::trunc);
         if (!out.is_open())
             return;
         out << "{\n";

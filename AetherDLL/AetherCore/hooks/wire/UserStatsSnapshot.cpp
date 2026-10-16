@@ -7,6 +7,7 @@
 
 #include "core/Logger.h"
 #include "hooks/wire/BackupIo.h"
+#include "utils/WinFile.h"
 
 namespace ac::backup::snapshot {
 namespace {
@@ -22,9 +23,9 @@ std::string SnapshotPath(steam::AppId appId, std::uint32_t accountId) {
     return dir + "\\UserGameStats_" + std::to_string(accountId) + "_" + std::to_string(appId) + ".json";
 }
 
-SnapshotData Load(const std::string& path) {
+SnapshotData Load(const std::string& utf8Path) {
     SnapshotData out;
-    std::ifstream ifs(path);
+    std::ifstream ifs(winfile::ToPath(utf8Path));
     if (!ifs.is_open())
         return out;
     std::string line;
@@ -52,7 +53,7 @@ void Save(const std::string& path, steam::AppId appId, std::uint32_t accountId, 
         return;
     const std::string tmp = path + ".tmp";
     {
-        std::ofstream out(tmp, std::ios::trunc);
+        std::ofstream out(winfile::ToPath(tmp), std::ios::trunc);
         if (!out.is_open()) {
             AC_LOG_WARN(kModule, "Backup: cannot write %s.", tmp.c_str());
             return;

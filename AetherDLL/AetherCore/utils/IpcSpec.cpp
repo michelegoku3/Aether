@@ -12,6 +12,7 @@
 #include "core/Logger.h"
 #include "utils/IpcSpecParse.h"
 #include "utils/PatternDownloader.h"
+#include "utils/WinFile.h"
 
 namespace ac::ipcspec {
 namespace {
@@ -37,10 +38,10 @@ bool ParseToml(const std::string& body) {
 bool LoadFromCache() {
     const std::string path = CachePath();
     std::error_code ec;
-    if (!std::filesystem::exists(path, ec))
+    if (!std::filesystem::exists(winfile::ToPath(path), ec))
         return false;
 
-    std::ifstream f(path, std::ios::binary);
+    std::ifstream f(winfile::ToPath(path), std::ios::binary);
     if (!f)
         return false;
     std::ostringstream ss;
@@ -74,7 +75,7 @@ bool Init() {
     const std::string outPath = CachePath();
     {
         std::error_code ec;
-        std::filesystem::create_directories(std::filesystem::path(outPath).parent_path(), ec);
+        std::filesystem::create_directories(winfile::ToPath(outPath).parent_path(), ec);
     }
 
     std::string source;

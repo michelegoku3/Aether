@@ -9,6 +9,7 @@
 #include "network/ManifestFetch.h"
 #include "network/RuntimeHttp.h"
 #include "utils/RemoteInject.h"
+#include "utils/WinFile.h"
 
 #include <atomic>
 #include <chrono>
@@ -367,6 +368,37 @@ void LoggerFlushDrain() {
     ac::log::Shutdown();
 }
 
+// U1: strict UTF-8 <-> UTF-16 round-trips plus real filesystem ops inside
+// a non-ASCII directory (the José case): every helper must work where *A
+// APIs would mangle via the system codepage.
+void UnicodePaths() {
+    const std::string uni = "caf\xC3\xA9_\xE2\x98\x83"; // café_☃ in UTF-8
+    CHECK(ac::strings::Narrow(ac::strings::Widen(uni)) == uni);
+    CHECK(ac::strings::Widen("\xFF").empty()); // invalid UTF-8 fails closed
+    // 6 UTF-16 units vs 9 UTF-8 bytes: decoded, not byte-copied.
+    CHECK(ac::winfile::ToPath(uni).wstring().size() == 6);
+
+    Fixture f;
+    const std::string dir = ac::strings::Narrow((f.dir / "x").wstring()) + "_" + uni;
+    CHECK(ac::winfile::CreateDir(dir));
+    CHECK(ac::winfile::Exists(dir));
+    CHECK(ac::winfile::IsDirectory(dir));
+    const std::string file = dir + "\\payload.txt";
+    {
+        std::ofstream out(ac::winfile::ToPath(file), std::ios::binary);
+        CHECK(out.is_open());
+        out << "snowman";
+    }
+    const std::string moved = dir + "\\moved.txt";
+    CHECK(ac::winfile::MoveReplace(file, moved));
+    CHECK(!ac::winfile::Exists(file));
+    const std::string copied = dir + "\\copied.txt";
+    CHECK(ac::winfile::CopyOverwrite(moved, copied));
+    CHECK(f.Read(ac::winfile::ToPath(moved)) == "snowman");
+    CHECK(ac::winfile::Delete(copied));
+    CHECK(!ac::winfile::Exists(copied));
+}
+
 int main(int argc, char** argv) {
     using Case = std::pair<const char*, void (*)()>;
     const Case cases[] = {
@@ -382,6 +414,7 @@ int main(int argc, char** argv) {
         {"quota_corrupt", QuotaCorrupt},
         {"restore_roundtrip", RestoreRoundtrip},
         {"manifest_index_backup_hit", ManifestIndexBackupHit},
+        {"unicode_paths", UnicodePaths},
         {"remote_inject", RemoteInject},
     };
     try {

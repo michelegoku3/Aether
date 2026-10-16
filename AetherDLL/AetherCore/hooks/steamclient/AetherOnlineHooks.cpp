@@ -18,6 +18,7 @@
 #include "hooks/wire/BackupIo.h"
 #include "scripting/LuaData.h"
 #include "utils/VdfText.h"
+#include "utils/WinFile.h"
 
 // ---------------------------------------------------------------------------
 // AetherOnline — Aether's OWN online mode (AetherDLL payload + 480 mask,
@@ -71,8 +72,8 @@ static bool HasAetherOnlineFlag(const char* cmdLine) { return HasFlagArg(cmdLine
 
 static bool HasShowOnlineFlag(const char* cmdLine) { return HasFlagArg(cmdLine, constants::kShowOnlineFlag); }
 
-static bool FileExists(const std::string& path) {
-    std::ifstream f(path);
+static bool FileExists(const std::string& utf8Path) {
+    std::ifstream f(winfile::ToPath(utf8Path));
     return f.good();
 }
 
@@ -247,7 +248,7 @@ void SyncLanguageToSpacewar(AppId realAppId) {
     // (P11). Case-insensitive, unescapes `\\\\` pairs like Steam's own reader.
     std::string realContent;
     {
-        std::ifstream realFile(realAcf);
+        std::ifstream realFile(winfile::ToPath(realAcf));
         if (!realFile.is_open()) {
             AC_LOG_DEBUG(kModule, "SyncLanguage: cannot open %s.", realAcf.c_str());
             return;
@@ -276,7 +277,7 @@ void SyncLanguageToSpacewar(AppId realAppId) {
 
     std::string swContent;
     {
-        std::ifstream swFile(swAcf);
+        std::ifstream swFile(winfile::ToPath(swAcf));
         if (swFile.is_open()) {
             swContent.assign((std::istreambuf_iterator<char>(swFile)), std::istreambuf_iterator<char>());
         }
@@ -341,10 +342,11 @@ void SyncLanguageToSpacewar(AppId realAppId) {
     }
 
     // Atomic write (tmp + rename): a crash mid-write can no longer leave a
-    // corrupted appmanifest_480.acf behind.
-    const std::string tmpPath = swAcf + ".aether-tmp";
+    // corrupted appmanifest_480.acf behind. Per-process tmp name: concurrent
+    // writers must never share staging (see BackupIo::UniqueStagingPath).
+    const std::string tmpPath = backup::io::UniqueStagingPath(swAcf);
     {
-        std::ofstream outFile(tmpPath, std::ios::trunc);
+        std::ofstream outFile(winfile::ToPath(tmpPath), std::ios::trunc);
         if (!outFile.is_open()) {
             AC_LOG_WARN(kModule, "SyncLanguage: cannot write %s.", tmpPath.c_str());
             return;
@@ -353,14 +355,13 @@ void SyncLanguageToSpacewar(AppId realAppId) {
         outFile.flush();
         if (!outFile.good()) {
             outFile.close();
-            DeleteFileA(tmpPath.c_str());
+            winfile::Delete(tmpPath);
             AC_LOG_WARN(kModule, "SyncLanguage: write failed for %s.", tmpPath.c_str());
             return;
         }
     }
     if (!backup::io::AtomicReplace(tmpPath, swAcf)) {
-        std::error_code cleanupEc;
-        std::filesystem::remove(tmpPath, cleanupEc);
+        winfile::Delete(tmpPath);
         AC_LOG_WARN(kModule, "SyncLanguage: cannot atomically replace appmanifest_480.acf.");
         return;
     }

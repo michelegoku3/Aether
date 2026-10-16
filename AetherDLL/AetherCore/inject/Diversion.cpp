@@ -5,6 +5,7 @@
 #include "core/Constants.h"
 #include "core/Logger.h"
 #include "core/Settings.h"
+#include "utils/Strings.h"
 
 namespace ac {
 namespace {
@@ -30,9 +31,12 @@ bool LiveSteamclientMapped() {
     HMODULE live = GetModuleHandleA("steamclient64.dll");
     if (!live)
         return false;
-    char path[MAX_PATH] = {};
-    const DWORD length = GetModuleFileNameA(live, path, MAX_PATH);
-    if (!length || length >= MAX_PATH || _stricmp(path, g_state.steamclientPath.c_str()) != 0) {
+    // Wide at the boundary (UTF-8 inside): *A would mangle non-ASCII Steam
+    // installs via the system codepage. Compare in wide (case-insensitive).
+    std::wstring wide(32768, L'\0');
+    const DWORD length = GetModuleFileNameW(live, wide.data(), static_cast<DWORD>(wide.size()));
+    if (length == 0 || length >= wide.size() ||
+        _wcsicmp(wide.c_str(), ac::strings::Widen(g_state.steamclientPath).c_str()) != 0) {
         AC_LOG_WARN(kModule, "Mapped steamclient64.dll is not at the Steam root; refusing auto-live.");
         return false;
     }
@@ -40,7 +44,7 @@ bool LiveSteamclientMapped() {
 }
 
 bool AttachLive(const char* outcome) {
-    HMODULE live = LoadLibraryA(g_state.steamclientPath.c_str());
+    HMODULE live = LoadLibraryW(ac::strings::Widen(g_state.steamclientPath).c_str());
     if (!live) {
         const DWORD error = GetLastError();
         SetOutcome("live-load-failed");
@@ -72,19 +76,26 @@ bool LoadDiversion() {
 
     const std::string binDir = g_state.steamInstallPath + "\\bin";
     g_state.diversionPath = binDir + "\\acoverlay.dll";
-    if (!CreateDirectoryA(binDir.c_str(), nullptr) && GetLastError() != ERROR_ALREADY_EXISTS) {
+    const std::wstring wBin = ac::strings::Widen(binDir);
+    const std::wstring wClient = ac::strings::Widen(g_state.steamclientPath);
+    const std::wstring wDiversion = ac::strings::Widen(g_state.diversionPath);
+    if (wBin.empty() || wClient.empty() || wDiversion.empty()) {
+        AC_LOG_ERROR(kModule, "Steam paths are not valid UTF-8; aborting diversion.");
+        SetOutcome("copy-failed");
+        return settings->diversionMode == DiversionMode::Auto && AttachLive("auto-live-copy-failed");
+    }
+    if (!CreateDirectoryW(wBin.c_str(), nullptr) && GetLastError() != ERROR_ALREADY_EXISTS) {
         AC_LOG_ERROR(kModule, "Could not create bin directory.");
         SetOutcome("copy-failed");
         return settings->diversionMode == DiversionMode::Auto && AttachLive("auto-live-copy-failed");
     }
-    if (!RetryWithBackoff(
-            [&] { return CopyFileA(g_state.steamclientPath.c_str(), g_state.diversionPath.c_str(), FALSE) != 0; })) {
+    if (!RetryWithBackoff([&] { return CopyFileW(wClient.c_str(), wDiversion.c_str(), FALSE) != 0; })) {
         AC_LOG_ERROR(kModule, "Failed to copy steamclient64.dll after retries.");
         SetOutcome("copy-failed");
         return settings->diversionMode == DiversionMode::Auto && AttachLive("auto-live-copy-failed");
     }
     if (!RetryWithBackoff([&] {
-            g_state.diversionModule = LoadLibraryA(g_state.diversionPath.c_str());
+            g_state.diversionModule = LoadLibraryW(wDiversion.c_str());
             return g_state.diversionModule != nullptr;
         })) {
         AC_LOG_ERROR(kModule, "Failed to load acoverlay.dll after retries.");

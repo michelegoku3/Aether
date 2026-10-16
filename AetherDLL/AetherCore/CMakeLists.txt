@@ -8,6 +8,7 @@ project(AetherCore LANGUAGES CXX)
 add_library(AetherCore SHARED
     # Core
     core/dllmain.cpp
+    core/BootSteps.cpp
     core/AetherCoreState.cpp
     core/Logger.cpp
     core/Settings.cpp
@@ -29,6 +30,8 @@ add_library(AetherCore SHARED
     # Network
     network/RuntimeHttp.cpp
     network/ManifestFetch.cpp
+    network/ManifestIndex.cpp
+    network/DepotCachePublisher.cpp
     network/ManifestIdentity.cpp
     network/HubcapQuota.cpp
     network/EticketFetcher.cpp

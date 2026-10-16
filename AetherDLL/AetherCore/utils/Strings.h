@@ -58,6 +58,21 @@ inline std::string_view ExtractHost(std::string_view url) {
     return authority.substr(0, colon);
 }
 #ifdef _WIN32
+// Strict UTF-16 -> UTF-8. Unpaired surrogates are rejected (empty out):
+// callers must treat empty as failure, never as an empty path.
+inline std::string Narrow(std::wstring_view text) {
+    if (text.empty() || text.size() > static_cast<std::size_t>((std::numeric_limits<int>::max)()))
+        return {};
+    const int count = WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS, text.data(), static_cast<int>(text.size()),
+                                          nullptr, 0, nullptr, nullptr);
+    if (count <= 0)
+        return {};
+    std::string out(static_cast<std::size_t>(count), '\0');
+    if (WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS, text.data(), static_cast<int>(text.size()), out.data(),
+                            count, nullptr, nullptr) != count)
+        return {};
+    return out;
+}
 // Strict UTF-8, not byte-by-byte widening. Invalid input is rejected.
 inline std::wstring Widen(std::string_view text) {
     if (text.empty() || text.size() > static_cast<std::size_t>((std::numeric_limits<int>::max)()))

@@ -12,6 +12,8 @@
 #include "core/AetherCoreState.h"
 #include "core/Constants.h"
 #include "core/Logger.h"
+#include "utils/Strings.h"
+#include "utils/WinFile.h"
 
 namespace ac::backup::io {
 namespace {
@@ -59,28 +61,27 @@ std::string BackupDirForApp(steam::AppId appId) {
     const std::string deskData = CachedDeskDataDir();
     if (deskData.empty())
         return {};
-    const std::filesystem::path dir =
-        std::filesystem::path(deskData) / "backup" / std::to_string(appId) / "achievements";
+    // Native path in, UTF-8 narrow out (path::string would decode via the
+    // ANSI codepage). Callers convert back with winfile::ToPath.
+    const std::filesystem::path dir = winfile::ToPath(deskData) / "backup" / std::to_string(appId) / "achievements";
     std::error_code ec;
     if (!std::filesystem::create_directories(dir, ec) && ec)
         return {};
-    return dir.string();
+    return ac::strings::Narrow(dir.wstring());
 }
 
 std::string BackupPlaytimeDir() {
     const std::string deskData = CachedDeskDataDir();
     if (deskData.empty())
         return {};
-    const std::filesystem::path dir = std::filesystem::path(deskData) / "backup" / "playtime";
+    const std::filesystem::path dir = winfile::ToPath(deskData) / "backup" / "playtime";
     std::error_code ec;
     if (!std::filesystem::create_directories(dir, ec) && ec)
         return {};
-    return dir.string();
+    return ac::strings::Narrow(dir.wstring());
 }
 
-bool AtomicReplace(const std::string& tmp, const std::string& dst) {
-    return MoveFileExA(tmp.c_str(), dst.c_str(), MOVEFILE_REPLACE_EXISTING) != FALSE;
-}
+bool AtomicReplace(const std::string& tmp, const std::string& dst) { return winfile::MoveReplace(tmp, dst); }
 
 std::string UniqueStagingPath(const std::string& destination) {
     // s_* prefix per docs/ARCHITECTURE.md: private service state, not domain data.

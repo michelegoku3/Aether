@@ -15,6 +15,7 @@
 #include "core/Logger.h"
 #include "hooks/wire/BackupIo.h"
 #include "utils/JsonStringField.h"
+#include "utils/WinFile.h"
 
 namespace ac::hubcapquota {
 namespace {
@@ -89,7 +90,7 @@ std::optional<QuotaState> ReadQuota(const std::string& path) {
         return fresh;
     }
 
-    std::ifstream input(path, std::ios::binary);
+    std::ifstream input(winfile::ToPath(path), std::ios::binary);
     if (!input)
         return std::nullopt;
 
@@ -126,7 +127,8 @@ void PreserveCorruptCopy(const std::string& path) {
     try {
         const std::string backup = path + ".corrupt-" + std::to_string(std::time(nullptr));
         std::error_code ec;
-        std::filesystem::copy_file(path, backup, std::filesystem::copy_options::none, ec);
+        std::filesystem::copy_file(winfile::ToPath(path), winfile::ToPath(backup), std::filesystem::copy_options::none,
+                                   ec);
         if (!ec)
             AC_LOG_WARN(kModule, "Preserved unreadable quota file as %s.", backup.c_str());
         // Forensics copy is best-effort by design; failures must not change
@@ -137,9 +139,8 @@ void PreserveCorruptCopy(const std::string& path) {
 }
 
 bool WriteQuota(const std::string& path, const QuotaState& state) {
-    const std::filesystem::path target(path);
-    const std::string directory = target.parent_path().string();
-    if (!directory.empty() && !CreateDirectoryA(directory.c_str(), nullptr) && GetLastError() != ERROR_ALREADY_EXISTS) {
+    const std::filesystem::path target = winfile::ToPath(path);
+    if (!target.parent_path().empty() && !winfile::CreateDirPath(target.parent_path())) {
         return false;
     }
     char body[96] = {};
@@ -150,7 +151,7 @@ bool WriteQuota(const std::string& path, const QuotaState& state) {
         return false;
     const std::string temporary = path + ".tmp";
     {
-        std::ofstream output(temporary, std::ios::binary | std::ios::trunc);
+        std::ofstream output(winfile::ToPath(temporary), std::ios::binary | std::ios::trunc);
         if (!output)
             return false;
         output.write(body, static_cast<std::streamsize>(std::strlen(body)));
@@ -177,14 +178,14 @@ class ScopedQuotaLock {
     }
 
     bool Acquire(const std::string& path) {
-        const std::string directory = std::filesystem::path(path).parent_path().string();
-        if (!directory.empty()) {
+        const std::filesystem::path lockPath = winfile::ToPath(path);
+        if (!lockPath.parent_path().empty()) {
             // The state directory may not exist on a fresh install yet.
-            CreateDirectoryA(directory.c_str(), nullptr);
+            winfile::CreateDirPath(lockPath.parent_path());
         }
         const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(kLockTimeoutSec);
         for (;;) {
-            HANDLE handle = CreateFileA(path.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_NEW,
+            HANDLE handle = CreateFileW(lockPath.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_NEW,
                                         FILE_ATTRIBUTE_NORMAL | kDeleteOnClose, nullptr);
             if (handle != INVALID_HANDLE_VALUE) {
                 handle_ = handle;
@@ -196,10 +197,10 @@ class ScopedQuotaLock {
                 return false;
             }
             std::error_code ec;
-            const auto modified = std::filesystem::last_write_time(path, ec);
+            const auto modified = std::filesystem::last_write_time(lockPath, ec);
             if (!ec) {
                 const auto age = std::filesystem::file_time_type::clock::now() - modified;
-                if (age > std::chrono::seconds(kLockStaleAfterSec) && DeleteFileA(path.c_str())) {
+                if (age > std::chrono::seconds(kLockStaleAfterSec) && winfile::Delete(path)) {
                     AC_LOG_WARN(kModule, "Broke stale Hubcap quota lock %s.", path.c_str());
                     continue;
                 }

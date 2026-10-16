@@ -27,6 +27,8 @@
 #include "scripting/ScriptEngine.h"
 #include "utils/Paths.h"
 #include "utils/SmartIdLog.h"
+#include "utils/Strings.h"
+#include "utils/WinFile.h"
 
 namespace fs = std::filesystem;
 
@@ -96,7 +98,12 @@ std::optional<std::uint32_t> AppIdFromManifestPath(const fs::path& path) {
     return appId;
 }
 
-std::string NormalizedPath(const fs::path& path) { return path.lexically_normal().make_preferred().string(); }
+// Native path in, UTF-8 narrow out (path::string would decode via the ANSI
+// codepage). All watch bookkeeping (knownFiles, change maps) is UTF-8;
+// winfile::ToPath converts back at each filesystem boundary.
+std::string NormalizedPath(const fs::path& path) {
+    return ac::strings::Narrow(path.lexically_normal().make_preferred().wstring());
+}
 
 struct Slot {
     std::string path;
@@ -113,7 +120,11 @@ struct Slot {
             return false;
         ov = {};
         ov.hEvent = event;
-        dir = CreateFileA(path.c_str(), FILE_LIST_DIRECTORY, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+        // UTF-8 in, *W at the boundary (Slot::path is UTF-8 narrow).
+        const std::wstring wide = ac::strings::Widen(path);
+        if (wide.empty())
+            return false;
+        dir = CreateFileW(wide.c_str(), FILE_LIST_DIRECTORY, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
                           nullptr, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OVERLAPPED, nullptr);
         if (dir == INVALID_HANDLE_VALUE) {
             CloseHandle(event);
@@ -185,8 +196,10 @@ struct Slot {
                 const std::string name = WideToUtf8(wname);
                 if (name.empty()) {
                     AC_LOG_WARN(kModule, "Could not convert changed filename to UTF-8.");
-                } else if (AcceptName(fs::path(name))) {
-                    const std::string full = NormalizedPath(fs::path(path) / fs::path(name));
+                } else if (AcceptName(winfile::ToPath(name))) {
+                    // Relative notification names may include subdirectories
+                    // (recursive Lua watch): join, never strip to filename.
+                    const std::string full = NormalizedPath(winfile::ToPath(path) / winfile::ToPath(name));
                     if (!acc.count(full))
                         order.push_back(full);
                     acc[full] = action;
@@ -222,7 +235,7 @@ std::unordered_set<std::string> EnumerateWatchedFiles(const Slot& slot) {
     std::unordered_set<std::string> out;
     std::error_code ec;
     if (slot.acfOnly) {
-        for (const auto& entry : fs::directory_iterator(slot.path, ec)) {
+        for (const auto& entry : fs::directory_iterator(winfile::ToPath(slot.path), ec)) {
             if (ec)
                 break;
             if (entry.is_regular_file(ec) && !ec && IsAppManifestPath(entry.path())) {
@@ -230,7 +243,7 @@ std::unordered_set<std::string> EnumerateWatchedFiles(const Slot& slot) {
             }
         }
     } else {
-        for (const auto& entry : fs::recursive_directory_iterator(slot.path, ec)) {
+        for (const auto& entry : fs::recursive_directory_iterator(winfile::ToPath(slot.path), ec)) {
             if (ec)
                 break;
             if (entry.is_regular_file(ec) && !ec && IsLuaPath(entry.path())) {

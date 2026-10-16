@@ -1,6 +1,7 @@
 #include "pch.h"
 #include "core/Constants.h"
 #include "core/Logger.h"
+#include "utils/WinFile.h"
 
 #include <windows.h>
 
@@ -129,7 +130,7 @@ std::mutex s_lifeMutex; // guards s_worker pointer only (never held on hot path)
 
 void WriteLineLocked(LogWorker* w, const LogItem& item) {
     if (!s_file.is_open() && !s_logPath.empty()) {
-        s_file.open(s_logPath, std::ios::out | std::ios::app);
+        s_file.open(winfile::ToPath(s_logPath), std::ios::out | std::ios::app);
     }
     if (!s_file.is_open())
         return;
@@ -291,7 +292,7 @@ void EmitSync(LogLevel level, const char* module, const char* body) {
     }
 
     if (!s_file.is_open() && !s_logPath.empty()) {
-        s_file.open(s_logPath, std::ios::out | std::ios::app);
+        s_file.open(winfile::ToPath(s_logPath), std::ios::out | std::ios::app);
     }
     if (s_file.is_open()) {
         s_file << '[' << timeAndThread << "] [" << LevelTag(level) << "] [" << (module ? module : "-") << "] " << body
@@ -367,15 +368,15 @@ void Init(const std::string& filePath, bool keepLastSession) {
 
     if (keepLastSession && !s_logPath.empty()) {
         std::error_code ec;
-        if (std::filesystem::exists(s_logPath, ec)) {
+        if (std::filesystem::exists(winfile::ToPath(s_logPath), ec)) {
             const std::string backupPath = s_logPath + ".last";
-            std::filesystem::remove(backupPath, ec);
+            std::filesystem::remove(winfile::ToPath(backupPath), ec);
             ec.clear();
-            std::filesystem::rename(s_logPath, backupPath, ec);
+            std::filesystem::rename(winfile::ToPath(s_logPath), winfile::ToPath(backupPath), ec);
         }
     }
 
-    s_file.open(filePath, std::ios::out | std::ios::trunc);
+    s_file.open(winfile::ToPath(filePath), std::ios::out | std::ios::trunc);
 
     LogWorker* w = nullptr;
     try {

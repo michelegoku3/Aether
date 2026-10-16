@@ -10,6 +10,8 @@
 #include "credentials/CredentialStore.h"
 #include "credentials/Ticket.h"
 #include "scripting/LuaData.h"
+#include "utils/Strings.h"
+#include "utils/WinFile.h"
 
 namespace ac::steamid {
 namespace {
@@ -39,33 +41,38 @@ std::uint64_t FromOwnershipTicket(steam::AppId appId) {
 }
 
 // A userdata\<accountId>\<appId>\ folder means this account has played it.
+// Wide enumeration (UTF-8 Steam roots); account dir names are decimal digits.
 std::uint64_t FromUserdataFolder(steam::AppId appId) {
     const std::string steamPath = credential::ReadSteamPath();
     if (steamPath.empty())
         return 0;
 
-    const std::string pattern = steamPath + "\\userdata\\*";
-    WIN32_FIND_DATAA fd;
-    HANDLE find = FindFirstFileA(pattern.c_str(), &fd);
+    const std::wstring pattern = ac::strings::Widen(steamPath + "\\userdata\\*");
+    if (pattern.empty())
+        return 0;
+    WIN32_FIND_DATAW fd;
+    HANDLE find = FindFirstFileW(pattern.c_str(), &fd);
     if (find == INVALID_HANDLE_VALUE)
         return 0;
 
     std::uint64_t result = 0;
     do {
-        if (!(fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) || fd.cFileName[0] == '.')
+        if (!(fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) || fd.cFileName[0] == L'.')
+            continue;
+        const std::string narrowName = ac::strings::Narrow(fd.cFileName);
+        if (narrowName.empty())
             continue;
         char* end = nullptr;
-        unsigned long accountId = std::strtoul(fd.cFileName, &end, 10);
+        unsigned long accountId = std::strtoul(narrowName.c_str(), &end, 10);
         if (!end || *end != '\0' || accountId == 0)
             continue;
 
-        const std::string gameDir = steamPath + "\\userdata\\" + fd.cFileName + "\\" + std::to_string(appId);
-        if (GetFileAttributesA(gameDir.c_str()) != INVALID_FILE_ATTRIBUTES &&
-            (GetFileAttributesA(gameDir.c_str()) & FILE_ATTRIBUTE_DIRECTORY)) {
+        const std::string gameDir = steamPath + "\\userdata\\" + narrowName + "\\" + std::to_string(appId);
+        if (winfile::IsDirectory(gameDir)) {
             result = steam::MakeSteamId64(static_cast<std::uint32_t>(accountId));
             break;
         }
-    } while (FindNextFileA(find, &fd));
+    } while (FindNextFileW(find, &fd));
     FindClose(find);
     return result;
 }

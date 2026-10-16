@@ -169,7 +169,7 @@ export const SettingsAetherSection: React.FC<SettingsAetherSectionProps> = ({
         <input
           type="text"
           className="settings-input"
-          placeholder="Enter custom game name (e.g. Aether)"
+          placeholder="Enter custom name (e.g. Aether)"
           value={customGameName}
           onChange={(e) => setCustomGameName(e.target.value)}
         />

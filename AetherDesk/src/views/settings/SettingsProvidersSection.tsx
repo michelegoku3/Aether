@@ -63,7 +63,7 @@ export const SettingsProvidersSection: React.FC<SettingsProvidersSectionProps> =
         <div className="settings-input-wrap">
           <input
             type={showApiKey ? 'text' : 'password'}
-            placeholder="Enter API key (e.g. smm_...)"
+            placeholder="Enter Hubcap key (e.g. smm_...)"
             value={apiKey}
             onChange={(e) => setApiKey(e.target.value)}
             className="settings-input"

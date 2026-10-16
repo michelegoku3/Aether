@@ -23,6 +23,7 @@
 #include "utils/EnvReader.h"
 #include "utils/Paths.h"
 #include "utils/SmartIdLog.h"
+#include "utils/Strings.h"
 
 namespace ac::pipewatch {
 namespace {
@@ -52,12 +53,14 @@ std::uint64_t QueryCreationTime(HANDLE process) {
            static_cast<std::uint64_t>(created.dwLowDateTime);
 }
 
+// UTF-8 out (*W at the boundary): image paths with non-ASCII directories
+// must survive intact into snapshot/logs. 32 KiB covers long paths.
 std::string QueryImagePath(HANDLE process) {
-    char path[MAX_PATH] = {};
-    DWORD size = MAX_PATH;
-    if (!QueryFullProcessImageNameA(process, 0, path, &size) || size == 0)
+    std::wstring wide(32768, L'\0');
+    DWORD size = static_cast<DWORD>(wide.size());
+    if (!QueryFullProcessImageNameW(process, 0, wide.data(), &size) || size == 0)
         return {};
-    return std::string(path, size);
+    return ac::strings::Narrow(std::wstring_view(wide.data(), size));
 }
 
 // Per-(pid, process name) inspection: no "live" Steam pointer crosses

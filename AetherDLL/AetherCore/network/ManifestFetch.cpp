@@ -25,10 +25,13 @@
 #include "core/Logger.h"
 #include "hooks/wire/BackupIo.h"
 #include "hooks/wire/ManifestRestore.h"
+#include "network/DepotCachePublisher.h"
 #include "network/HubcapQuota.h"
+#include "network/ManifestIndex.h"
 #include "network/RuntimeHttp.h"
 #include "security/ProviderCredentials.h"
 #include "utils/JsonStringField.h"
+#include "utils/WinFile.h"
 
 namespace ac::manifestfetch {
 namespace {
@@ -51,16 +54,13 @@ struct LookupKeyHash {
 };
 
 // ---------------------------------------------------------------------------
-// Local manifest index (BuildDepotDependency hot path: ~1000+ events per
-// session). Two layers, both under one mutex:
-//   * MEMO: per-filename positive (path, re-verified with a stat on every
-//     hit) and negative entries with a 30 s TTL (recent misses skip work);
-//   * BACKUP INDEX: filename -> backup lua dir, built by ONE full walk per
-//     session and kept fresh by upserts from every backup write. Lookups
-//     never walk: a miss consults the index (O(1)) instead of scanning
-//     every backup/<app>/lua directory.
-// Module-private state (lookup cache, not domain: same standing as the
-// g_proactive* buffers above).
+// Lookup memo for the local-first policy below (BuildDepotDependency hot
+// path: ~1000+ events per session):
+//   * POSITIVE entry: known path, re-verified with a stat on every hit;
+//   * NEGATIVE entry with TTL: recent misses skip the backup consult.
+// The backup TREE index lives in ManifestIndex, publication in
+// DepotCachePublisher; this TU keeps only policy + memo. Module-private
+// lookup cache, not domain (same standing as the g_proactive* buffers).
 // ---------------------------------------------------------------------------
 struct LocalManifestCacheEntry {
     std::filesystem::path path; // valid for positive entries only
@@ -72,29 +72,7 @@ struct LocalManifestCacheEntry {
 // keeps the g_* grep rule reserved for g_state.
 std::mutex s_localManifestMutex;
 std::unordered_map<std::string, LocalManifestCacheEntry> s_localManifestCache;
-std::unordered_map<std::string, std::filesystem::path> s_backupIndex; // filename -> backup lua dir
-bool s_backupIndexBuilt = false;
 constexpr auto kNegativeTtl = std::chrono::seconds(30);
-
-// One full walk per session. Merges (never overwrites): upserts from backup
-// writes that landed before the first lookup are preserved.
-void RebuildBackupIndexLocked(const std::filesystem::path& backupRoot) {
-    std::error_code ec;
-    for (std::filesystem::directory_iterator it(backupRoot, ec), end; !ec && it != end; it.increment(ec)) {
-        if (!it->is_directory(ec) || ec)
-            continue;
-        const std::filesystem::path luaDir = it->path() / "lua";
-        for (std::filesystem::directory_iterator jt(luaDir, ec), jend; !ec && jt != jend; jt.increment(ec)) {
-            std::error_code fileEc;
-            if (!jt->is_regular_file(fileEc) || fileEc)
-                continue;
-            if (jt->path().extension() != ".manifest")
-                continue;
-            s_backupIndex.try_emplace(jt->path().filename().string(), luaDir);
-        }
-    }
-    s_backupIndexBuilt = true;
-}
 
 // A manifest already present on disk is authoritative: Steam's depotcache (or
 // the per-game AetherData backup published into depotcache) satisfies the
@@ -104,37 +82,29 @@ void RebuildBackupIndexLocked(const std::filesystem::path& backupRoot) {
 std::optional<std::filesystem::path> FindLocalManifest(std::uint64_t gid, std::uint32_t depotId) {
     namespace fs = std::filesystem;
     const std::string filename = std::to_string(depotId) + "_" + std::to_string(gid) + ".manifest";
-    const fs::path steamRoot(g_state.steamInstallPath);
+    const fs::path steamRoot = winfile::ToPath(g_state.steamInstallPath);
     const std::vector<fs::path> directCandidates = {
         steamRoot / "depotcache" / filename,
         steamRoot / "config" / "depotcache" / filename,
     };
 
-    auto usable = [](const fs::path& path) -> bool {
-        std::error_code ec;
-        if (!fs::is_regular_file(path, ec) || ec)
-            return false;
-        const auto size = fs::file_size(path, ec);
-        return !ec && size > 0;
-    };
-
     for (const fs::path& candidate : directCandidates) {
-        if (usable(candidate))
+        if (publisher::IsUsableManifestFile(candidate))
             return candidate;
     }
 
-    // Index: positive hit (re-verified), negative hit inside the TTL = no walk.
+    // Memo: positive hit (re-verified), negative hit inside the TTL = skip.
     const auto now = std::chrono::steady_clock::now();
     {
         std::lock_guard<std::mutex> lock(s_localManifestMutex);
         auto it = s_localManifestCache.find(filename);
         if (it != s_localManifestCache.end()) {
             if (it->second.positive) {
-                if (usable(it->second.path))
+                if (publisher::IsUsableManifestFile(it->second.path))
                     return it->second.path;
                 s_localManifestCache.erase(it); // file gone: recompute
             } else if (now < it->second.expires) {
-                return std::nullopt; // recent miss: skip the walk
+                return std::nullopt; // recent miss: skip the backup consult
             } else {
                 s_localManifestCache.erase(it);
             }
@@ -143,42 +113,18 @@ std::optional<std::filesystem::path> FindLocalManifest(std::uint64_t gid, std::u
 
     // The targeted ACF-removal restore may be racing with this request, or the
     // DLL may be running before its restore worker has copied the file back.
-    // Consult the per-game AetherData backup as a second local source and
-    // publish that exact file into Steam/depotcache before claiming a hit.
-    // The backup tree is consulted through the inverted index (one full walk
-    // per session, then O(1) per lookup): never a walk per miss.
+    // Consult the per-game AetherData backup (inverted index: one full walk
+    // per session, then O(1) per lookup) and publish that exact file into
+    // Steam/depotcache before claiming a hit.
     const std::string deskData = backup::io::CachedDeskDataDir();
     if (!deskData.empty()) {
-        const fs::path backupRoot = fs::path(deskData) / "backup";
-        std::optional<fs::path> candidate;
-        {
-            std::lock_guard<std::mutex> lock(s_localManifestMutex);
-            if (!s_backupIndexBuilt)
-                RebuildBackupIndexLocked(backupRoot);
-            const auto it = s_backupIndex.find(filename);
-            if (it != s_backupIndex.end())
-                candidate = it->second / filename;
-        }
-        if (candidate && usable(*candidate)) {
-            std::error_code ec;
-            fs::path destination = steamRoot / "depotcache" / filename;
-            fs::create_directories(destination.parent_path(), ec);
-            if (!ec) {
-                fs::copy_file(*candidate, destination, fs::copy_options::overwrite_existing, ec);
-                if (!ec && usable(destination)) {
-                    std::lock_guard<std::mutex> lock(s_localManifestMutex);
-                    s_localManifestCache[filename] = LocalManifestCacheEntry{destination, true, {}};
-                    AC_LOG_DEBUG(kModule, "Local manifest index: cached positive entry for %s.", filename.c_str());
-                    return destination;
-                }
-                AC_LOG_WARN(kModule, "Local backup manifest found but could not be published to %s (%s).",
-                            destination.string().c_str(), ec.message().c_str());
+        if (const auto candidate = index::FindInBackup(winfile::ToPath(deskData) / "backup", filename)) {
+            if (const auto published = publisher::Publish(*candidate, steamRoot, filename)) {
+                std::lock_guard<std::mutex> lock(s_localManifestMutex);
+                s_localManifestCache[filename] = LocalManifestCacheEntry{*published, true, {}};
+                AC_LOG_DEBUG(kModule, "Local manifest index: cached positive entry for %s.", filename.c_str());
+                return published;
             }
-        } else if (candidate) {
-            // Stale index entry (user cleanup, Desk prune): drop it so the
-            // next lookup for this file rebuilds from a fresh negative.
-            std::lock_guard<std::mutex> lock(s_localManifestMutex);
-            s_backupIndex.erase(filename);
         }
     }
     {
@@ -196,8 +142,8 @@ std::optional<std::filesystem::path> FindLocalManifest(std::uint64_t gid, std::u
 // for backup writers); the anonymous block reopens right below so everything
 // after it stays anonymous-internal exactly as before.
 void NoteLocalManifestAdded(const std::string& filename, const std::filesystem::path& backupLuaDir) {
+    index::NoteFileAdded(filename, backupLuaDir);
     std::lock_guard<std::mutex> lock(s_localManifestMutex);
-    s_backupIndex[filename] = backupLuaDir;
     s_localManifestCache.erase(filename);
 }
 
@@ -266,23 +212,23 @@ bool FetchAndInstallManifest(const std::string& url, const std::vector<std::stri
                 return false;
             }
 
-            // Paths are built with fs::path (no manual separator strings);
-            // the commit reuses the shared atomic replace helper.
+            // Native paths throughout (UTF-8 in, *W at the boundary); the
+            // commit reuses the shared atomic replace helper with a
+            // process-unique staging name (never a fixed ".aether-tmp").
             namespace fs = std::filesystem;
-            const fs::path destination = fs::path(g_state.steamInstallPath) / "depotcache" /
+            const fs::path destination = winfile::ToPath(g_state.steamInstallPath) / "depotcache" /
                                          (std::to_string(depotId) + "_" + std::to_string(gid) + ".manifest");
-            const fs::path temporary = destination.string() + ".aether-tmp";
+            const std::string temporary = backup::io::UniqueStagingPath(destination.string());
             std::error_code dirEc;
             if (!fs::create_directories(destination.parent_path(), dirEc) && dirEc) {
                 AC_LOG_WARN(kModule, "Could not create Steam depotcache for Hubcap manifest.");
                 return false;
             }
-            std::ofstream output(temporary, std::ios::binary | std::ios::trunc);
+            std::ofstream output(winfile::ToPath(temporary), std::ios::binary | std::ios::trunc);
             output.write(response.body.data(), static_cast<std::streamsize>(response.body.size()));
             output.close();
-            if (!output || !backup::io::AtomicReplace(temporary.string(), destination.string())) {
-                std::error_code cleanupEc;
-                fs::remove(temporary, cleanupEc);
+            if (!output || !backup::io::AtomicReplace(temporary, destination.string())) {
+                winfile::Delete(temporary);
                 AC_LOG_WARN(kModule, "Could not atomically install Hubcap manifest depot=%u gid=%llu.", depotId,
                             static_cast<unsigned long long>(gid));
                 return false;

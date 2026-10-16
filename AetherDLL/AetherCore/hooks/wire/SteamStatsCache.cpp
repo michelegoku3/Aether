@@ -14,6 +14,7 @@
 #include "hooks/wire/BackupIo.h"
 #include "hooks/wire/SchemaBuckets.h"
 #include "utils/KeyValues.h"
+#include "utils/WinFile.h"
 
 namespace ac::backup::statscache {
 namespace {
@@ -41,7 +42,7 @@ std::unordered_map<steam::AppId, std::unordered_set<std::uint32_t>> g_schemaBuck
 std::unordered_set<steam::AppId> g_schemaParsed;
 
 std::unordered_set<std::uint32_t> ParseSchemaBuckets(const std::string& path) {
-    std::ifstream f(path, std::ios::binary);
+    std::ifstream f(winfile::ToPath(path), std::ios::binary);
     if (!f.is_open())
         return {};
     std::vector<std::uint8_t> buf((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
@@ -109,7 +110,7 @@ int CountDictAchievements(const std::vector<std::uint8_t>& buf, std::size_t& pos
 }
 
 int CountAchievementsInBinFileImpl(const std::string& path) {
-    std::ifstream f(path, std::ios::binary);
+    std::ifstream f(winfile::ToPath(path), std::ios::binary);
     if (!f.is_open())
         return -1;
     std::vector<std::uint8_t> buf((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
@@ -145,14 +146,14 @@ void BackupStatsBinsImpl(steam::AppId appId, std::uint32_t accountId, bool force
     const std::string userBin = "UserGameStats_" + std::to_string(accountId) + "_" + std::to_string(appId) + ".bin";
     const std::string schemaBin = "UserGameStatsSchema_" + std::to_string(appId) + ".bin";
 
-    if (GetFileAttributesA((statsDir + "\\" + userBin).c_str()) != INVALID_FILE_ATTRIBUTES) {
+    if (winfile::Exists(statsDir + "\\" + userBin)) {
         // MONOTONE GUARD: never overwrite a backup with a poorer cache. When
         // the Steam cache was just wiped (login-reconcile), the source file
         // holds FEWER achievements than the backup: then the backup is kept
         // and a highly visible WARN is logged. Backups can only grow, never
         // regress.
         const std::string dstUserBin = dstDir + "\\" + userBin;
-        if (GetFileAttributesA(dstUserBin.c_str()) != INVALID_FILE_ATTRIBUTES) {
+        if (winfile::Exists(dstUserBin)) {
             const int srcCount = CountAchievementsInBinFile(statsDir + "\\" + userBin);
             const int dstCount = CountAchievementsInBinFile(dstUserBin);
             if (srcCount >= 0 && dstCount >= 0 && srcCount < dstCount) {
@@ -162,14 +163,14 @@ void BackupStatsBinsImpl(steam::AppId appId, std::uint32_t accountId, bool force
                             "probably wiped again; keeping the richer backup. Restore it manually "
                             "to recover (Tools\\achievement_decoder.py decode to verify).",
                             userBin.c_str(), srcCount, dstCount);
-                // Copia comunque lo schema (non rischia nulla) e termina.
-                if (GetFileAttributesA((statsDir + "\\" + schemaBin).c_str()) != INVALID_FILE_ATTRIBUTES) {
-                    CopyFileA((statsDir + "\\" + schemaBin).c_str(), (dstDir + "\\" + schemaBin).c_str(), FALSE);
+                // Still copy the schema (harmless) and stop.
+                if (winfile::Exists(statsDir + "\\" + schemaBin)) {
+                    winfile::CopyOverwrite(statsDir + "\\" + schemaBin, dstDir + "\\" + schemaBin);
                 }
                 return;
             }
         }
-        if (CopyFileA((statsDir + "\\" + userBin).c_str(), dstUserBin.c_str(), FALSE)) {
+        if (winfile::CopyOverwrite(statsDir + "\\" + userBin, dstUserBin)) {
             AC_LOG_INFO(kModule, "Backup: copied %s to %s.", userBin.c_str(), dstDir.c_str());
         } else {
             AC_LOG_WARN(kModule, "Backup: copy of %s failed.", userBin.c_str());
@@ -177,8 +178,8 @@ void BackupStatsBinsImpl(steam::AppId appId, std::uint32_t accountId, bool force
     } else {
         AC_LOG_DEBUG(kModule, "Backup: %s not present yet in appcache\\stats.", userBin.c_str());
     }
-    if (GetFileAttributesA((statsDir + "\\" + schemaBin).c_str()) != INVALID_FILE_ATTRIBUTES) {
-        if (!CopyFileA((statsDir + "\\" + schemaBin).c_str(), (dstDir + "\\" + schemaBin).c_str(), FALSE)) {
+    if (winfile::Exists(statsDir + "\\" + schemaBin)) {
+        if (!winfile::CopyOverwrite(statsDir + "\\" + schemaBin, dstDir + "\\" + schemaBin)) {
             AC_LOG_WARN(kModule, "Backup: copy of %s failed.", schemaBin.c_str());
         }
     }

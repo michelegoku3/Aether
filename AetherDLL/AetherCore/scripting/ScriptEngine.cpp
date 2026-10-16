@@ -25,6 +25,7 @@ extern "C" {
 #include "core/Logger.h"
 #include "scripting/LuaBindings.h"
 #include "scripting/LuaData.h"
+#include "utils/WinFile.h"
 
 namespace fs = std::filesystem;
 
@@ -100,7 +101,10 @@ void ParseFileLocked(const fs::path& file) {
     bindings::SetActiveStats(nullptr);
 }
 
-void ScanDirectory(const std::string& dir) {
+void ScanDirectory(const std::string& utf8Dir) {
+    // UTF-8 in, native path at the boundary (DirWatch enumerates the same
+    // roots recursively; startup and watcher must agree on encoding).
+    const fs::path dir = winfile::ToPath(utf8Dir);
     std::error_code ec;
     if (!fs::is_directory(dir, ec))
         return;
@@ -118,8 +122,8 @@ bool Init() {
     AC_LOG_INFO(kModule, "Initialising script engine.");
 
     g_state.luaDir = g_state.steamInstallPath + "\\config\\stplug-in";
-    CreateDirectoryA((g_state.steamInstallPath + "\\config").c_str(), nullptr);
-    CreateDirectoryA(g_state.luaDir.c_str(), nullptr);
+    winfile::CreateDir(g_state.steamInstallPath + "\\config");
+    winfile::CreateDir(g_state.luaDir);
 
     std::lock_guard<std::mutex> lock(s_luaMutex);
     s_lua = luaL_newstate();

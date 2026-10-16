@@ -12,6 +12,7 @@
 #include "core/Constants.h"
 #include "core/Logger.h"
 #include "network/RuntimeHttp.h"
+#include "utils/WinFile.h"
 
 namespace ac::downloader {
 namespace {
@@ -60,7 +61,7 @@ FetchResult Fetch(const std::string& url, int timeoutSec) {
 // fail just because a per-kind subfolder (e.g. steamclientipc) does not exist.
 void EnsureParentDir(const std::string& path) {
     std::error_code ec;
-    std::filesystem::create_directories(std::filesystem::path(path).parent_path(), ec);
+    std::filesystem::create_directories(winfile::ToPath(path).parent_path(), ec);
 }
 
 // Writes via temp file + atomic rename so a partial write never corrupts cache.
@@ -68,13 +69,13 @@ bool SaveAtomic(const std::string& path, const std::string& content) {
     EnsureParentDir(path);
     const std::string tmp = path + ".tmp";
     {
-        std::ofstream out(tmp, std::ios::binary | std::ios::trunc);
+        std::ofstream out(winfile::ToPath(tmp), std::ios::binary | std::ios::trunc);
         if (!out.is_open())
             return false;
         out.write(content.data(), static_cast<std::streamsize>(content.size()));
     }
-    if (!MoveFileExA(tmp.c_str(), path.c_str(), MOVEFILE_REPLACE_EXISTING)) {
-        DeleteFileA(tmp.c_str());
+    if (!winfile::MoveReplace(tmp, path)) {
+        winfile::Delete(tmp);
         return false;
     }
     return true;

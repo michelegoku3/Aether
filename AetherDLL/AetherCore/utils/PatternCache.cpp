@@ -3,6 +3,7 @@
 #include "utils/Hasher.h"
 #include "utils/PatternCache.h"
 #include "utils/PatternDownloader.h"
+#include "utils/WinFile.h"
 #include <filesystem>
 #include <fstream>
 #include <toml++/toml.hpp>
@@ -93,7 +94,7 @@ void CollectAbiTable(const toml::table& table, const std::string& moduleName, co
 
 bool ParsePatternFile(const std::string& path, const std::string& moduleName, toml::table& outTable,
                       PatternIndex& outIndex) {
-    std::ifstream file(path);
+    std::ifstream file(winfile::ToPath(path));
     if (!file.is_open())
         return false;
     try {
@@ -114,9 +115,9 @@ bool ParsePatternFile(const std::string& path, const std::string& moduleName, to
 void SweepTempFiles() {
     namespace fs = std::filesystem;
     std::error_code ec;
-    if (!fs::is_directory(g_state.patternDir, ec))
+    if (!fs::is_directory(winfile::ToPath(g_state.patternDir), ec))
         return;
-    for (const auto& entry : fs::directory_iterator(g_state.patternDir, ec)) {
+    for (const auto& entry : fs::directory_iterator(winfile::ToPath(g_state.patternDir), ec)) {
         if (ec)
             break;
         if (!entry.is_regular_file(ec))
@@ -138,7 +139,7 @@ namespace {
 // source and needs no refresh.
 
 std::string ReadProvenance(const std::string& srcPath) {
-    std::ifstream in(srcPath);
+    std::ifstream in(winfile::ToPath(srcPath));
     if (!in)
         return {};
     std::string label;
@@ -153,13 +154,13 @@ std::string ReadProvenance(const std::string& srcPath) {
 void WriteProvenance(const std::string& srcPath, const std::string& label) {
     const std::string tmp = srcPath + ".tmp";
     {
-        std::ofstream out(tmp, std::ios::binary | std::ios::trunc);
+        std::ofstream out(winfile::ToPath(tmp), std::ios::binary | std::ios::trunc);
         if (!out.is_open())
             return;
         out << label;
     }
-    if (!MoveFileExA(tmp.c_str(), srcPath.c_str(), MOVEFILE_REPLACE_EXISTING)) {
-        DeleteFileA(tmp.c_str());
+    if (!winfile::MoveReplace(tmp, srcPath)) {
+        winfile::Delete(tmp);
     }
 }
 
@@ -200,7 +201,7 @@ bool ProvenanceIsBest(const std::string& provenance, const std::string& expected
 // that would shrink the table we already have.
 std::size_t CountPatternEntries(const std::string& path) {
     try {
-        std::ifstream file(path);
+        std::ifstream file(winfile::ToPath(path));
         if (!file.is_open())
             return 0;
         const toml::table parsed = toml::parse(file);
@@ -263,12 +264,12 @@ bool LoadModule(const std::string& moduleName, const std::string& dllPath, std::
     // triggers the download path below).
     bool cacheUsable = false;
     std::string refreshedFrom; // set when an upstream table is adopted
-    if (GetFileAttributesA(tomlPath.c_str()) != INVALID_FILE_ATTRIBUTES) {
+    if (winfile::Exists(tomlPath)) {
         cacheUsable = ParsePatternFile(tomlPath, moduleName, table, outIndex);
         if (!cacheUsable) {
             const std::string badPath = tomlPath + ".bad";
-            MoveFileExA(tomlPath.c_str(), badPath.c_str(), MOVEFILE_REPLACE_EXISTING);
-            DeleteFileA(srcPath.c_str()); // stale provenance dies with the file
+            winfile::MoveReplace(tomlPath, badPath);
+            winfile::Delete(srcPath); // stale provenance dies with the file
             AC_LOG_WARN(kModule, "Quarantined corrupt %s pattern cache as %s.", moduleName.c_str(), badPath.c_str());
             diag::Record("pattern_cache_bad", moduleName);
         }
@@ -298,7 +299,7 @@ bool LoadModule(const std::string& moduleName, const std::string& dllPath, std::
             toml::table fresh;
             PatternIndex freshIndex;
             if (ParsePatternFile(candidatePath, moduleName, fresh, freshIndex)) {
-                if (MoveFileExA(candidatePath.c_str(), tomlPath.c_str(), MOVEFILE_REPLACE_EXISTING)) {
+                if (winfile::MoveReplace(candidatePath, tomlPath)) {
                     WriteProvenance(srcPath, fetched);
                     outIndex.swap(freshIndex);
                     table = std::move(fresh);
@@ -306,21 +307,21 @@ bool LoadModule(const std::string& moduleName, const std::string& dllPath, std::
                     AC_LOG_INFO(kModule, "Upgraded %s patterns from '%s' (%zu entries).", moduleName.c_str(),
                                 fetched.c_str(), outIndex.size());
                 } else {
-                    DeleteFileA(candidatePath.c_str());
+                    winfile::Delete(candidatePath);
                     AC_LOG_WARN(kModule,
                                 "Could not adopt upstream %s patterns; "
                                 "keeping the cached table.",
                                 moduleName.c_str());
                 }
             } else {
-                DeleteFileA(candidatePath.c_str());
+                winfile::Delete(candidatePath);
                 AC_LOG_WARN(kModule,
                             "Upstream %s candidate could not be parsed; "
                             "keeping the cached table.",
                             moduleName.c_str());
             }
         } else {
-            DeleteFileA(candidatePath.c_str());
+            winfile::Delete(candidatePath);
             AC_LOG_INFO(kModule,
                         "Upstream '%s' candidate for %s is smaller than the "
                         "cached table; keeping the cache.",
@@ -364,8 +365,8 @@ bool LoadModule(const std::string& moduleName, const std::string& dllPath, std::
         return true;
     }
 
-    DeleteFileA(tomlPath.c_str());
-    DeleteFileA(srcPath.c_str());
+    winfile::Delete(tomlPath);
+    winfile::Delete(srcPath);
     SetPatternStatus(moduleName, false, "invalid");
     diag::Record("pattern_invalid", moduleName);
     AC_LOG_ERROR(kModule, "Downloaded pattern for %s is invalid; cache removed.", moduleName.c_str());

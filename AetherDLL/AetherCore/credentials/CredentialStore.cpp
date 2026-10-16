@@ -1,6 +1,7 @@
 #include "pch.h"
 #include "credentials/CredentialStore.h"
 
+#include <algorithm>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
@@ -9,6 +10,7 @@
 
 #include "core/AetherCoreState.h"
 #include "core/Logger.h"
+#include "utils/Strings.h"
 
 namespace ac::credential {
 namespace {
@@ -18,31 +20,51 @@ constexpr DWORD kInitialReadBytes = 2048;
 
 std::string AppKeyPath(steam::AppId appId) { return "Software\\Valve\\Steam\\Apps\\" + std::to_string(appId); }
 
+// Registry key/value names in this TU are ASCII literals (Valve paths,
+// "SteamID", "AppTicket"); values may be non-ASCII (SteamPath). UTF-8
+// inside, *W at the boundary: Widen is exact on the ASCII names and strict
+// on the values.
+std::wstring WidenKey(const char* narrow) { return ac::strings::Widen(narrow ? narrow : ""); }
+
 std::string ReadRegString(HKEY root, const char* subKey, const char* value) {
-    char buffer[MAX_PATH] = {};
-    DWORD size = sizeof(buffer);
-    LSTATUS status = RegGetValueA(root, subKey, value, RRF_RT_REG_SZ, nullptr, buffer, &size);
-    if (status != ERROR_SUCCESS) {
-        AC_LOG_DEBUG_ONCE(kModule, "RegGetValueA string missing or unreadable: %s\\%s (status=%ld)",
+    // Two-phase wide read: no MAX_PATH truncation, no codepage mangling.
+    const std::wstring wSub = WidenKey(subKey);
+    const std::wstring wValue = WidenKey(value);
+    DWORD sizeBytes = 0;
+    LSTATUS status = RegGetValueW(root, wSub.c_str(), wValue.c_str(), RRF_RT_REG_SZ, nullptr, nullptr, &sizeBytes);
+    if (status != ERROR_SUCCESS || sizeBytes == 0 || sizeBytes > 32768 * sizeof(wchar_t)) {
+        AC_LOG_DEBUG_ONCE(kModule, "RegGetValueW string missing or unreadable: %s\\%s (status=%ld)",
                           subKey ? subKey : "-", value ? value : "-", status);
         return {};
     }
-    return std::string(buffer);
+    std::wstring wide(sizeBytes / sizeof(wchar_t), L'\0');
+    status = RegGetValueW(root, wSub.c_str(), wValue.c_str(), RRF_RT_REG_SZ, nullptr, wide.data(), &sizeBytes);
+    if (status != ERROR_SUCCESS) {
+        AC_LOG_DEBUG_ONCE(kModule, "RegGetValueW string missing or unreadable: %s\\%s (status=%ld)",
+                          subKey ? subKey : "-", value ? value : "-", status);
+        return {};
+    }
+    wide.resize((std::min)(wide.size(), sizeBytes / sizeof(wchar_t)));
+    if (!wide.empty() && wide.back() == L'\0')
+        wide.pop_back();
+    return ac::strings::Narrow(wide);
 }
 
 bool WriteRegString(const char* subKey, const char* valueName, const std::string& data) {
     if (!subKey || !valueName)
         return false;
     HKEY key = nullptr;
-    if (RegCreateKeyExA(HKEY_CURRENT_USER, subKey, 0, nullptr, 0, KEY_WRITE, nullptr, &key, nullptr) != ERROR_SUCCESS) {
+    if (RegCreateKeyExW(HKEY_CURRENT_USER, WidenKey(subKey).c_str(), 0, nullptr, 0, KEY_WRITE, nullptr, &key,
+                        nullptr) != ERROR_SUCCESS) {
         AC_LOG_DEBUG(kModule, "WriteRegString: key create failed for %s\\%s.", subKey, valueName);
         return false;
     }
     // For REG_SZ, the cbData argument must include the trailing NUL
-    // (per Microsoft docs). data.size() counts only the visible chars,
-    // so add 1 for the implicit NUL appended at the end of the string.
-    LSTATUS status = RegSetValueExA(key, valueName, 0, REG_SZ, reinterpret_cast<const BYTE*>(data.data()),
-                                    static_cast<DWORD>(data.size() + 1));
+    // (per Microsoft docs). Widened size counts visible chars, so add 1.
+    const std::wstring wide = ac::strings::Widen(data);
+    LSTATUS status =
+        RegSetValueExW(key, WidenKey(valueName).c_str(), 0, REG_SZ, reinterpret_cast<const BYTE*>(wide.c_str()),
+                       static_cast<DWORD>((wide.size() + 1) * sizeof(wchar_t)));
     RegCloseKey(key);
     if (status != ERROR_SUCCESS) {
         AC_LOG_DEBUG(kModule, "WriteRegString: set failed for %s\\%s (status=%ld).", subKey, valueName, status);
@@ -54,12 +76,13 @@ bool WriteRegString(const char* subKey, const char* valueName, const std::string
 bool WriteBinary(steam::AppId appId, const char* valueName, const std::vector<std::uint8_t>& data) {
     HKEY key = nullptr;
     const std::string path = AppKeyPath(appId);
-    if (RegCreateKeyExA(HKEY_CURRENT_USER, path.c_str(), 0, nullptr, 0, KEY_WRITE, nullptr, &key, nullptr) !=
-        ERROR_SUCCESS) {
+    if (RegCreateKeyExW(HKEY_CURRENT_USER, WidenKey(path.c_str()).c_str(), 0, nullptr, 0, KEY_WRITE, nullptr, &key,
+                        nullptr) != ERROR_SUCCESS) {
         AC_LOG_ERROR(kModule, "Could not open/create key %s.", path.c_str());
         return false;
     }
-    LSTATUS status = RegSetValueExA(key, valueName, 0, REG_BINARY, data.data(), static_cast<DWORD>(data.size()));
+    LSTATUS status =
+        RegSetValueExW(key, WidenKey(valueName).c_str(), 0, REG_BINARY, data.data(), static_cast<DWORD>(data.size()));
     RegCloseKey(key);
     if (status != ERROR_SUCCESS) {
         AC_LOG_ERROR(kModule, "Write %s for app %u failed (status=%ld).", valueName, appId, status);
@@ -72,17 +95,18 @@ bool WriteBinary(steam::AppId appId, const char* valueName, const std::vector<st
 std::vector<std::uint8_t> ReadBinary(steam::AppId appId, const char* valueName) {
     HKEY key = nullptr;
     const std::string path = AppKeyPath(appId);
-    if (RegOpenKeyExA(HKEY_CURRENT_USER, path.c_str(), 0, KEY_READ, &key) != ERROR_SUCCESS) {
+    if (RegOpenKeyExW(HKEY_CURRENT_USER, WidenKey(path.c_str()).c_str(), 0, KEY_READ, &key) != ERROR_SUCCESS) {
         AC_LOG_DEBUG_ONCE(kModule, "Registry key unreadable for app %u path %s.", appId, path.c_str());
         return {};
     }
     std::vector<std::uint8_t> buffer(kInitialReadBytes);
     DWORD size = static_cast<DWORD>(buffer.size());
     DWORD type = 0;
-    LSTATUS status = RegQueryValueExA(key, valueName, nullptr, &type, buffer.data(), &size);
+    const std::wstring wValue = WidenKey(valueName);
+    LSTATUS status = RegQueryValueExW(key, wValue.c_str(), nullptr, &type, buffer.data(), &size);
     for (int retry = 0; retry < 3 && status == ERROR_MORE_DATA; ++retry) {
         buffer.resize(size);
-        status = RegQueryValueExA(key, valueName, nullptr, &type, buffer.data(), &size);
+        status = RegQueryValueExW(key, wValue.c_str(), nullptr, &type, buffer.data(), &size);
     }
     RegCloseKey(key);
     if (status != ERROR_SUCCESS || type != REG_BINARY) {
@@ -139,7 +163,7 @@ std::vector<std::uint8_t> ReadEncryptedTicket(steam::AppId appId) { return ReadB
 
 std::uint32_t ReadActiveUserId() {
     DWORD accountId = 0, size = sizeof(accountId);
-    if (RegGetValueA(HKEY_CURRENT_USER, "Software\\Valve\\Steam\\ActiveProcess", "ActiveUser", RRF_RT_REG_DWORD,
+    if (RegGetValueW(HKEY_CURRENT_USER, L"Software\\Valve\\Steam\\ActiveProcess", L"ActiveUser", RRF_RT_REG_DWORD,
                      nullptr, &accountId, &size) == ERROR_SUCCESS &&
         accountId != 0) {
         return accountId;
