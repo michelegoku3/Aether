@@ -3,6 +3,7 @@
 #include <atomic>
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <string>
 
 // ---------------------------------------------------------------------------
@@ -116,13 +117,18 @@ inline bool CandidateMatches(const void* packet, std::uint32_t dataOff, Readable
         return false;
     const auto* base = static_cast<const std::uint8_t*>(packet);
 
-    // data (8) + size (4) + refcount (4)
+    // data (8) + size (4) + refcount (4). memcpy-out, not
+    // reinterpret_cast dereference: the packet is Steam-owned memory with no
+    // alignment or aliasing guarantees. Same values out.
     if (!readable(base + dataOff, 0x10, ctx))
         return false;
 
-    const auto* data = *reinterpret_cast<const std::uint8_t* const*>(base + dataOff);
-    const std::uint32_t len = *reinterpret_cast<const std::uint32_t*>(base + SizeOffFor(dataOff));
-    const std::int32_t ref = *reinterpret_cast<const std::int32_t*>(base + RefOffFor(dataOff));
+    const std::uint8_t* data = nullptr;
+    std::uint32_t len = 0;
+    std::int32_t ref = 0;
+    std::memcpy(&data, base + dataOff, sizeof(data));
+    std::memcpy(&len, base + SizeOffFor(dataOff), sizeof(len));
+    std::memcpy(&ref, base + RefOffFor(dataOff), sizeof(ref));
 
     const auto addr = reinterpret_cast<std::uintptr_t>(data);
     if (addr < kMinPtr || addr >= kMaxPtr)
@@ -137,8 +143,9 @@ inline bool CandidateMatches(const void* packet, std::uint32_t dataOff, Readable
 
     // Valve: cmp r8d,8 / cmp dword[data],0 / jge -> not proto
     //        mov edx,[data+4] / cmp rdx, len-8 / jg -> malformed
-    const std::uint32_t rawEMsg = *reinterpret_cast<const std::uint32_t*>(data);
-    const std::uint32_t headerLen = *reinterpret_cast<const std::uint32_t*>(data + 4);
+    std::uint32_t rawEMsg = 0, headerLen = 0;
+    std::memcpy(&rawEMsg, data, sizeof(rawEMsg));
+    std::memcpy(&headerLen, data + 4, sizeof(headerLen));
     if ((rawEMsg & kProtoFlag) == 0)
         return false; // non-proto frame: no evidence
     const std::uint32_t eMsg = rawEMsg & ~kProtoFlag;
@@ -171,9 +178,13 @@ inline bool LayoutPlausible(const void* packet, std::uint32_t dataOff, ReadableF
     if (!readable(base + dataOff, 0x10, ctx))
         return false;
 
-    const auto* data = *reinterpret_cast<const std::uint8_t* const*>(base + dataOff);
-    const std::uint32_t len = *reinterpret_cast<const std::uint32_t*>(base + SizeOffFor(dataOff));
-    const std::int32_t ref = *reinterpret_cast<const std::int32_t*>(base + RefOffFor(dataOff));
+    // Same memcpy-out discipline as CandidateMatches above.
+    const std::uint8_t* data = nullptr;
+    std::uint32_t len = 0;
+    std::int32_t ref = 0;
+    std::memcpy(&data, base + dataOff, sizeof(data));
+    std::memcpy(&len, base + SizeOffFor(dataOff), sizeof(len));
+    std::memcpy(&ref, base + RefOffFor(dataOff), sizeof(ref));
 
     const auto addr = reinterpret_cast<std::uintptr_t>(data);
     if (addr < kMinPtr || addr >= kMaxPtr)
@@ -391,6 +402,10 @@ inline std::uint8_t* g_trashData = nullptr;
 inline std::uint32_t g_trashSize = 0;
 } // namespace detail
 
+// Reference accessors keep their reinterpret_cast BY DESIGN: callers rebind
+// through them (pktData = buf), which memcpy-out cannot express. Safety
+// comes from the EnsureResolved + LayoutPlausible write barrier every hook
+// must pass first — never touch these on an unvalidated packet.
 inline std::uint8_t*& Data(steam::CNetPacket* p) {
     const std::uint32_t off = Global().State();
     if (!p || off == kUnresolved || off == kDisabled)

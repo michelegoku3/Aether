@@ -86,14 +86,24 @@ ProcessSnapshot InspectProcess(std::uint32_t pid, const std::string& processName
     if (snap.imageName.empty())
         snap.imageName = processName;
 
-    // Environment-block AppId resolution delegated to EnvReader.
-    if (auto ids = env::ReadSteamEnvAppIds(process)) {
-        snap.envAppId = ids->selected;
-        snap.envSteamAppId = ids->steamAppId;
-        snap.envSteamGameId = ids->steamGameId;
-        snap.envSteamOverlayGameId = ids->steamOverlayGameId;
-        snap.appId = ids->selected;
-        snap.appIdSource = ids->source;
+    // Steam's own processes never need env-block inspection: their identity
+    // is known from the image name, and skipping the remote read keeps Steam
+    // environment contents (tokens, paths) out of our address space entirely.
+    // Invariant: snapshots and log lines carry only numeric AppIds plus the
+    // source tag — never environment values. See env::ReadSteamEnvAppIds.
+    if (!IsSteamProcessName(snap.imageName)) {
+        // Environment-block AppId resolution delegated to EnvReader.
+        if (auto ids = env::ReadSteamEnvAppIds(process)) {
+            snap.envAppId = ids->selected;
+            snap.envSteamAppId = ids->steamAppId;
+            snap.envSteamGameId = ids->steamGameId;
+            snap.envSteamOverlayGameId = ids->steamOverlayGameId;
+            snap.appId = ids->selected;
+            snap.appIdSource = ids->source;
+        } else {
+            snap.appId = capture::CurrentRouteAppId();
+            snap.appIdSource = "fallback";
+        }
     } else {
         snap.appId = capture::CurrentRouteAppId();
         snap.appIdSource = "fallback";

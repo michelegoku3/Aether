@@ -246,6 +246,12 @@ std::optional<EnvAppIds> ReadSteamEnvAppIds(HANDLE process) {
         }
     }
 
+    // Hygiene: the raw block may contain tokens and paths from another
+    // process. Only numeric AppIds (plus the static source tag) ever leave
+    // this function — wipe the block before returning on every path below.
+    // (Heap slack beyond the vector may retain bytes; same residual as any
+    // freed heap. Callers additionally skip Steam-owned processes entirely.)
+    SecureZeroMemory(env->data(), env->size() * sizeof(wchar_t));
     if (!ids.selected) {
         AC_LOG_DEBUG_ONCE(kModule, "Environment block read successfully, but no Steam AppId variables found.");
         return std::nullopt;

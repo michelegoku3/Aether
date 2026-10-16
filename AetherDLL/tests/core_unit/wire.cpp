@@ -221,7 +221,7 @@ void DonorPoolTest() {
 
     const ac::steam::AppId app = 999001u;
 
-    CHECK(dp::PickIndex(app) == 14);
+    CHECK_EQ(dp::PickIndex(app), static_cast<std::size_t>(14));
 
     // A data-less answer advances the round-robin.
 

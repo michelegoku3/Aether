@@ -75,6 +75,9 @@ add_library(AetherCore SHARED
     hooks/ipc/SteamCapture.cpp
     hooks/ipc/PipeWatch.cpp
     hooks/wire/PacketRouter.cpp
+    hooks/wire/ServiceJobTracker.cpp
+    hooks/wire/WireDiag.cpp
+    hooks/wire/FrameOrigin.cpp
     hooks/wire/AchievementModule.cpp
     hooks/wire/AchievementBackup.cpp
     hooks/wire/DonorPool.cpp

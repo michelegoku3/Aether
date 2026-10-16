@@ -12,6 +12,7 @@
 #include <filesystem>
 #include <fstream>
 #include <random>
+#include <sstream>
 #include <stdexcept>
 #include <thread>
 #include <unordered_map>
@@ -23,6 +24,31 @@
         if (!(expr))                                                                                   \
             throw std::runtime_error("Check failed at line " + std::to_string(__LINE__) + ": " #expr); \
     } while (false)
+// CHECK_EQ prints both values when they differ (CHECK shows only the
+// expression text, forcing a debugger re-run on every value mismatch).
+// Non-streamable types still work: values are shown only when printable.
+// No framework dependency: same throw contract as CHECK.
+namespace testdetail {
+template <typename T> void AppendValue(std::ostringstream& oss, const T& v) {
+    if constexpr (requires { std::declval<std::ostringstream&>() << std::declval<const T&>(); }) {
+        oss << v;
+    } else {
+        oss << "<unprintable>";
+    }
+}
+template <typename A, typename B> void CheckEqImpl(const A& a, const B& b, int line, const char* expr) {
+    if (!(a == b)) {
+        std::ostringstream oss;
+        oss << "Check failed at line " << line << ": " << expr << " (actual=";
+        AppendValue(oss, a);
+        oss << " expected=";
+        AppendValue(oss, b);
+        oss << ")";
+        throw std::runtime_error(oss.str());
+    }
+}
+} // namespace testdetail
+#define CHECK_EQ(a, b) ::testdetail::CheckEqImpl((a), (b), __LINE__, #a " == " #b)
 namespace fs = std::filesystem;
 using namespace std::chrono_literals;
 struct Fixture {

@@ -21,8 +21,11 @@
 #include "hooks/wire/AchievementModule.h"
 #include "hooks/wire/EticketModule.h"
 #include "hooks/wire/FamilySharingModule.h"
+#include "hooks/wire/FrameOrigin.h"
 #include "hooks/wire/GamesPlayedModule.h"
 #include "hooks/wire/PersonaInject.h"
+#include "hooks/wire/ServiceJobTracker.h"
+#include "hooks/wire/WireDiag.h"
 
 #include "steam_messages.pb.h"
 
@@ -73,14 +76,17 @@ bool DecodeFrame(const std::uint8_t* data, std::uint32_t len, WireFrame& out) {
         AC_LOG_TRACE_ONCE(kModule, "DecodeFrame failed: buffer null or size %u below MsgHdr size.", len);
         return false;
     }
-    const auto* hdr = reinterpret_cast<const MsgHdr*>(data);
+    // memcpy-out, not reinterpret_cast dereference: Steam owns this buffer,
+    // so alignment and strict-aliasing cannot be assumed. Same bytes out.
+    MsgHdr hdr{};
+    std::memcpy(&hdr, data, sizeof(hdr));
     // Skip non-protobuf packets — the headerLength field overlaps with payload
     // data and contains garbage values. Matches LumaCore's ParsePacket guard.
-    if (!(hdr->eMsg & kMsgHdrProtoFlag)) {
+    if (!(hdr.eMsg & kMsgHdrProtoFlag)) {
         return false;
     }
-    const std::uint32_t eMsg = hdr->eMsg & ~kMsgHdrProtoFlag;
-    const std::uint32_t headerLen = hdr->headerLength;
+    const std::uint32_t eMsg = hdr.eMsg & ~kMsgHdrProtoFlag;
+    const std::uint32_t headerLen = hdr.headerLength;
     if (sizeof(MsgHdr) + headerLen > len) {
         AC_LOG_TRACE_ONCE(kModule, "DecodeFrame failed: header length %u exceeds total frame length %u.", headerLen,
                           len);
@@ -94,130 +100,10 @@ bool DecodeFrame(const std::uint8_t* data, std::uint32_t len, WireFrame& out) {
     return true;
 }
 
-// Single-parse extractors: exactly one ParseFromArray per frame on the
-// network thread. The previous helpers parsed the same CMsgProtoBufHeader
-// twice per service frame (name, then id); the structs below carry both
-// fields from a single decode with identical success semantics.
-struct ServiceRequest {
-    std::string name;
-    std::uint64_t source = 0;
-    bool hasName = false;
-    bool hasSource = false;
-};
-
-bool ParseServiceRequest(const WireFrame& f, ServiceRequest& out) {
-    CMsgProtoBufHeader hdr;
-    if (!hdr.ParseFromArray(f.header, static_cast<int>(f.headerLen)))
-        return false;
-    if (hdr.has_target_job_name()) {
-        out.name = hdr.target_job_name();
-        out.hasName = true;
-    }
-    if (hdr.has_jobid_source()) {
-        out.source = hdr.jobid_source();
-        out.hasSource = true;
-    }
-    return out.hasName || out.hasSource;
-}
-
-struct ServiceResponse {
-    std::string name;
-    std::uint64_t target = 0;
-    std::int32_t eresult = -1;
-    bool hasName = false;
-    bool hasTarget = false;
-};
-
-bool ParseServiceResponse(const WireFrame& f, ServiceResponse& out) {
-    CMsgProtoBufHeader hdr;
-    if (!hdr.ParseFromArray(f.header, static_cast<int>(f.headerLen)))
-        return false;
-    if (hdr.has_target_job_name()) {
-        out.name = hdr.target_job_name();
-        out.hasName = true;
-    }
-    if (hdr.has_jobid_target()) {
-        out.target = hdr.jobid_target();
-        out.hasTarget = true;
-    }
-    out.eresult = hdr.has_eresult() ? hdr.eresult() : -1;
-    return true;
-}
-
-// [DIAG]/flight-recorder: jobid_source -> target_job_name correlation on
-// 151 sends, resolved jobid_target -> name on 147 recvs (responses carry
-// no service name, only the request's job id).
-std::mutex s_jobNameMutex;
-std::unordered_map<std::uint64_t, std::string> s_jobNames;
-// Insertion order: eviction at cap drops the OLDEST entry (before:
-// erase(begin()) on unordered_map = arbitrary element).
-std::deque<std::uint64_t> s_jobNameOrder;
-
-void TrackServiceJob(std::uint64_t id, std::string name) {
-    std::lock_guard<std::mutex> lk(s_jobNameMutex);
-    if (s_jobNames.emplace(id, std::move(name)).second) {
-        s_jobNameOrder.push_back(id);
-    }
-    while (s_jobNameOrder.size() > 512) {
-        const std::uint64_t oldest = s_jobNameOrder.front();
-        s_jobNameOrder.pop_front();
-        s_jobNames.erase(oldest);
-    }
-}
-
-std::string ResolveServiceJob(std::uint64_t jobIdTarget) {
-    std::lock_guard<std::mutex> lk(s_jobNameMutex);
-    auto it = s_jobNames.find(jobIdTarget);
-    if (it == s_jobNames.end())
-        return {};
-    std::string out = std::move(it->second);
-    s_jobNames.erase(it);
-    const auto oit = std::find(s_jobNameOrder.begin(), s_jobNameOrder.end(), jobIdTarget);
-    if (oit != s_jobNameOrder.end())
-        s_jobNameOrder.erase(oit);
-    return out;
-}
-
-const char* EresultName(std::int32_t eresult) {
-    switch (eresult) {
-    case -1:
-        return "missing_or_unparsed";
-    case 1:
-        return "OK";
-    case 3:
-        return "NoConnection";
-    case 15:
-        return "AccessDenied";
-    case 16:
-        return "Timeout";
-    case 20:
-        return "ServiceUnavailable";
-    case 84:
-        return "RateLimitExceeded";
-    default:
-        return "other";
-    }
-}
-
-const char* EresultClass(std::int32_t eresult) {
-    switch (eresult) {
-    case 3:
-    case 16:
-    case 20:
-    case 84:
-        return "transport_or_provider_candidate";
-    case 15:
-        return "auth_or_policy_candidate";
-    default:
-        return "not_classified_as_network";
-    }
-}
-
-// Bidirectional per-frame trace (flight-recorder): one frame = one line,
-// so the log's last line is ALWAYS the last frame before the crash.
-void TraceFrame(const char* dir, const WireFrame& f) {
-    AC_LOG_TRACE(kModule, "%s eMsg=%u hLen=%u bLen=%u", dir, f.eMsg, f.headerLen, f.bodyLen);
-}
+// Thin dispatch core: frame decode + pool live here, feature routing
+// delegates to focused modules. Service-job correlation lives in
+// ServiceJobTracker, diagnostics in WireDiag, connection capture in
+// FrameOrigin (same behavior, split TU for reviewability).
 
 std::int32_t DispatchSend(const WireFrame& f) {
     EnsureScratch();
@@ -261,13 +147,6 @@ using RecvPkt_t = void* (*)(void*, steam::CNetPacket*);
 BBuildAndAsyncSendFrame_t o_BBuildAndAsyncSendFrame = nullptr;
 RecvPkt_t o_RecvPkt = nullptr;
 
-// Connection + proto header captured from real outbound traffic, so
-// SendClientFrame can originate a frame on the same socket/session
-// (used to ask the CM for AppInfo records the local cache lacks).
-std::mutex s_originMutex;
-void* s_originObj = nullptr;
-std::vector<std::uint8_t> s_originHeader;
-
 bool h_BBuildAndAsyncSendFrame(void* obj, steam::EWebSocketOpCode opcode, std::uint8_t* data, std::uint32_t len) {
     if (opcode != steam::k_eWebSocketOpCode_Binary) {
         return o_BBuildAndAsyncSendFrame(obj, opcode, data, len);
@@ -276,17 +155,14 @@ bool h_BBuildAndAsyncSendFrame(void* obj, steam::EWebSocketOpCode opcode, std::u
     WireFrame f;
     if (!DecodeFrame(data, len, f)) {
         if (data && len >= sizeof(MsgHdr)) {
-            const auto* hdr = reinterpret_cast<const MsgHdr*>(data);
-            const std::uint32_t raw = hdr->eMsg;
+            MsgHdr hdr{};
+            std::memcpy(&hdr, data, sizeof(hdr)); // foreign buffer: see DecodeFrame
+            const std::uint32_t raw = hdr.eMsg;
             AC_LOG_TRACE(kModule, "send undecoded eMsg=%u proto=%d len=%u", raw & ~kMsgHdrProtoFlag,
                          (raw & kMsgHdrProtoFlag) ? 1 : 0, len);
         }
     } else {
-        if (f.headerLen > 0 && f.headerLen <= kWireMaxHeaderBytes) {
-            std::lock_guard<std::mutex> lk(s_originMutex);
-            s_originObj = obj;
-            s_originHeader.assign(f.header, f.header + f.headerLen);
-        }
+        CaptureOrigin(obj, f);
         std::int32_t newBodyLen = DispatchSend(f);
         // Defense in depth: handlers must report a length within the scratch
         // budget they were given. A misbehaving handler must degrade to
@@ -458,13 +334,9 @@ bool SendClientFrame(std::uint32_t eMsg, const std::uint8_t* body, std::uint32_t
     if (bodyLen > kWireMaxBodyBytes)
         return false;
 
-    void* obj = nullptr;
-    std::vector<std::uint8_t> hdrBytes;
-    {
-        std::lock_guard<std::mutex> lk(s_originMutex);
-        obj = s_originObj;
-        hdrBytes = s_originHeader;
-    }
+    const FrameOrigin origin = SnapshotOrigin();
+    void* obj = origin.obj;
+    std::vector<std::uint8_t> hdrBytes = origin.header;
     if (!obj || hdrBytes.empty()) {
         AC_LOG_WARN(kModule, "SendClientFrame: no captured connection yet.");
         return false;
