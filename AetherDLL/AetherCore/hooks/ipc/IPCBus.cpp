@@ -51,10 +51,14 @@ std::uint64_t HandlerKey(std::uint8_t iface, std::uint32_t hash) {
     return (static_cast<std::uint64_t>(iface) << 32) | hash;
 }
 
-const IpcHandlerEntry* FindHandler(std::uint8_t iface, std::uint32_t hash) {
-    const std::shared_ptr<const HandlerMap> map = s_handlers.load(std::memory_order_acquire);
-    const auto it = map->find(HandlerKey(iface, hash));
-    return it != map->end() ? &it->second : nullptr;
+// Looks up one entry in an already-held snapshot. The caller must keep the
+// shared_ptr alive while using the returned pointer: a late re-registration
+// swaps s_handlers, and the previous map is destroyed once its last snapshot
+// goes away. Returning a raw pointer without the snapshot would be
+// use-after-free across that swap.
+const IpcHandlerEntry* FindInSnapshot(const HandlerMap& map, std::uint8_t iface, std::uint32_t hash) {
+    const auto it = map.find(HandlerKey(iface, hash));
+    return it != map.end() ? &it->second : nullptr;
 }
 
 steam::CSteamPipeClient* GetPipe(void* server, steam::HSteamPipe hSteamPipe) {
@@ -87,6 +91,9 @@ struct StatsScopeGuard {
 bool h_IPCProcessMessage(void* server, steam::HSteamPipe hSteamPipe, steam::CUtlBuffer* pRead,
                          steam::CUtlBuffer* pWrite) {
     const IpcHandlerEntry* entry = nullptr;
+    // Owns the dispatch-table snapshot entry points into: a concurrent
+    // RegisterIpcHandlers swap must not destroy the map mid-dispatch.
+    std::shared_ptr<const HandlerMap> handlerMap;
     steam::CSteamPipeClient* pipe = GetPipe(server, hSteamPipe);
     bool statsScope = false;
 
@@ -111,7 +118,8 @@ bool h_IPCProcessMessage(void* server, steam::HSteamPipe hSteamPipe, steam::CUtl
                 statsScope = (iface == ipc_iface::kClientUserStats);
                 std::uint32_t funcHash = 0;
                 std::memcpy(&funcHash, data + kIpcOffsetFuncHash, sizeof(funcHash));
-                entry = FindHandler(iface, funcHash);
+                handlerMap = s_handlers.load(std::memory_order_acquire);
+                entry = FindInSnapshot(*handlerMap, iface, funcHash);
             }
         }
     }
