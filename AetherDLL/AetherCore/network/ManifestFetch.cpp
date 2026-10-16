@@ -52,12 +52,13 @@ struct LookupKeyHash {
 
 // ---------------------------------------------------------------------------
 // Local manifest index (BuildDepotDependency hot path: ~1000+ events per
-// session). The backup/<app>/lua folder walk used to repeat on every event;
-// here we memoize it:
-//   * POSITIVE entry: known path, re-verified with a stat on every hit;
-//   * NEGATIVE entry with TTL: no walk for 30 s (new files — restore, Hubcap
-//     generation — are still discovered at expiry, same latency as the
-//     pre-existing backoff).
+// session). Two layers, both under one mutex:
+//   * MEMO: per-filename positive (path, re-verified with a stat on every
+//     hit) and negative entries with a 30 s TTL (recent misses skip work);
+//   * BACKUP INDEX: filename -> backup lua dir, built by ONE full walk per
+//     session and kept fresh by upserts from every backup write. Lookups
+//     never walk: a miss consults the index (O(1)) instead of scanning
+//     every backup/<app>/lua directory.
 // Module-private state (lookup cache, not domain: same standing as the
 // g_proactive* buffers above).
 // ---------------------------------------------------------------------------
@@ -71,7 +72,29 @@ struct LocalManifestCacheEntry {
 // keeps the g_* grep rule reserved for g_state.
 std::mutex s_localManifestMutex;
 std::unordered_map<std::string, LocalManifestCacheEntry> s_localManifestCache;
+std::unordered_map<std::string, std::filesystem::path> s_backupIndex; // filename -> backup lua dir
+bool s_backupIndexBuilt = false;
 constexpr auto kNegativeTtl = std::chrono::seconds(30);
+
+// One full walk per session. Merges (never overwrites): upserts from backup
+// writes that landed before the first lookup are preserved.
+void RebuildBackupIndexLocked(const std::filesystem::path& backupRoot) {
+    std::error_code ec;
+    for (std::filesystem::directory_iterator it(backupRoot, ec), end; !ec && it != end; it.increment(ec)) {
+        if (!it->is_directory(ec) || ec)
+            continue;
+        const std::filesystem::path luaDir = it->path() / "lua";
+        for (std::filesystem::directory_iterator jt(luaDir, ec), jend; !ec && jt != jend; jt.increment(ec)) {
+            std::error_code fileEc;
+            if (!jt->is_regular_file(fileEc) || fileEc)
+                continue;
+            if (jt->path().extension() != ".manifest")
+                continue;
+            s_backupIndex.try_emplace(jt->path().filename().string(), luaDir);
+        }
+    }
+    s_backupIndexBuilt = true;
+}
 
 // A manifest already present on disk is authoritative: Steam's depotcache (or
 // the per-game AetherData backup published into depotcache) satisfies the
@@ -122,40 +145,63 @@ std::optional<std::filesystem::path> FindLocalManifest(std::uint64_t gid, std::u
     // DLL may be running before its restore worker has copied the file back.
     // Consult the per-game AetherData backup as a second local source and
     // publish that exact file into Steam/depotcache before claiming a hit.
+    // The backup tree is consulted through the inverted index (one full walk
+    // per session, then O(1) per lookup): never a walk per miss.
     const std::string deskData = backup::io::CachedDeskDataDir();
     if (!deskData.empty()) {
         const fs::path backupRoot = fs::path(deskData) / "backup";
-        std::error_code ec;
-        for (fs::directory_iterator it(backupRoot, ec), end; !ec && it != end; it.increment(ec)) {
-            if (!it->is_directory(ec) || ec)
-                continue;
-            const fs::path candidate = it->path() / "lua" / filename;
-            if (!usable(candidate))
-                continue;
-
+        std::optional<fs::path> candidate;
+        {
+            std::lock_guard<std::mutex> lock(s_localManifestMutex);
+            if (!s_backupIndexBuilt)
+                RebuildBackupIndexLocked(backupRoot);
+            const auto it = s_backupIndex.find(filename);
+            if (it != s_backupIndex.end())
+                candidate = it->second / filename;
+        }
+        if (candidate && usable(*candidate)) {
+            std::error_code ec;
             fs::path destination = steamRoot / "depotcache" / filename;
             fs::create_directories(destination.parent_path(), ec);
-            if (ec)
-                continue;
-            fs::copy_file(candidate, destination, fs::copy_options::overwrite_existing, ec);
-            if (!ec && usable(destination)) {
-                std::lock_guard<std::mutex> lock(s_localManifestMutex);
-                s_localManifestCache[filename] = LocalManifestCacheEntry{destination, true, {}};
-                AC_LOG_DEBUG(kModule, "Local manifest index: cached positive entry for %s.", filename.c_str());
-                return destination;
+            if (!ec) {
+                fs::copy_file(*candidate, destination, fs::copy_options::overwrite_existing, ec);
+                if (!ec && usable(destination)) {
+                    std::lock_guard<std::mutex> lock(s_localManifestMutex);
+                    s_localManifestCache[filename] = LocalManifestCacheEntry{destination, true, {}};
+                    AC_LOG_DEBUG(kModule, "Local manifest index: cached positive entry for %s.", filename.c_str());
+                    return destination;
+                }
+                AC_LOG_WARN(kModule, "Local backup manifest found but could not be published to %s (%s).",
+                            destination.string().c_str(), ec.message().c_str());
             }
-            AC_LOG_WARN(kModule, "Local backup manifest found but could not be published to %s (%s).",
-                        destination.string().c_str(), ec.message().c_str());
+        } else if (candidate) {
+            // Stale index entry (user cleanup, Desk prune): drop it so the
+            // next lookup for this file rebuilds from a fresh negative.
+            std::lock_guard<std::mutex> lock(s_localManifestMutex);
+            s_backupIndex.erase(filename);
         }
     }
     {
         std::lock_guard<std::mutex> lock(s_localManifestMutex);
         s_localManifestCache[filename] = LocalManifestCacheEntry{{}, false, now + kNegativeTtl};
     }
-    AC_LOG_DEBUG(kModule, "Local manifest index: %s not on disk; skipping backup walk for %lld s.", filename.c_str(),
+    AC_LOG_DEBUG(kModule, "Local manifest index: %s not on disk; skipping backup lookup for %lld s.", filename.c_str(),
                  static_cast<long long>(kNegativeTtl.count()));
     return std::nullopt;
 }
+
+} // namespace
+
+// NoteLocalManifestAdded needs external linkage (declared in ManifestFetch.h
+// for backup writers); the anonymous block reopens right below so everything
+// after it stays anonymous-internal exactly as before.
+void NoteLocalManifestAdded(const std::string& filename, const std::filesystem::path& backupLuaDir) {
+    std::lock_guard<std::mutex> lock(s_localManifestMutex);
+    s_backupIndex[filename] = backupLuaDir;
+    s_localManifestCache.erase(filename);
+}
+
+namespace {
 
 // Mirrors AetherDesk's ensure_generation_available: asks the provider whether
 // the authenticated account may generate right now. A definitive "no" fails

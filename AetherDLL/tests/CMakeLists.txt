@@ -50,7 +50,7 @@ if(MSVC)
 else()
     target_compile_options(core_unit_tests PRIVATE -Wall -Wextra -Wpedantic -Werror)
 endif()
-foreach(case strings paths policy worker budget settings registry workers netpacket sentinel structguard gamesplayed_format donorpool keyvalues vdftext jsonutil_escapes manifest_identity ipcreply snapshot_merge ttlcache hexcodec signature ipcspec jsonwriter manifest_contract schema_buckets workers_race)
+foreach(case strings paths policy worker budget settings registry workers netpacket sentinel structguard gamesplayed_format donorpool keyvalues vdftext jsonutil_escapes manifest_identity ipcreply snapshot_merge ttlcache hexcodec signature ipcspec jsonwriter manifest_contract schema_buckets workers_reap_slow workers_race)
     add_test(NAME ${case} COMMAND core_unit_tests ${case})
 endforeach()
 add_test(NAME cmake_source_inventory COMMAND ${CMAKE_COMMAND}
@@ -73,7 +73,7 @@ foreach(case registry_first flush_first concurrent job_failure registration_refu
     set_tests_properties(backup_${case} PROPERTIES TIMEOUT 10)
 endforeach()
 
-set_tests_properties(workers workers_race PROPERTIES TIMEOUT 15)
+set_tests_properties(workers workers_reap_slow workers_race PROPERTIES TIMEOUT 15)
 
 # Wire-contract tests: real ManifestRestore/BackupIo/Settings/Workers/Logger/
 # RuntimeHttp against temp-dir fixtures, with only out-of-process collaborators
@@ -87,6 +87,9 @@ add_executable(wire_contract_tests wire_contract_tests.cpp contract_stubs.cpp
     ../AetherCore/core/Workers.cpp
     ../AetherCore/core/Logger.cpp
     ../AetherCore/network/HubcapQuota.cpp
+    ../AetherCore/network/ManifestFetch.cpp
+    ../AetherCore/network/ManifestIdentity.cpp
+    ../AetherCore/security/ProviderCredentials.cpp
     ../AetherCore/network/RuntimeHttp.cpp)
 target_include_directories(wire_contract_tests PRIVATE stubs ../AetherCore)
 target_link_libraries(wire_contract_tests PRIVATE Threads::Threads tomlplusplus::tomlplusplus)
@@ -95,7 +98,7 @@ if(MSVC)
 else()
     target_compile_options(wire_contract_tests PRIVATE -Wall -Wextra -Wpedantic -Werror)
 endif()
-foreach(case staging_unique size_verify backup_rules backup_concurrent_writers pin_scan http_gate logger_golden logger_concurrent_burst logger_flush_drain quota_corrupt restore_roundtrip remote_inject)
+foreach(case staging_unique size_verify backup_rules backup_concurrent_writers pin_scan http_gate logger_golden logger_concurrent_burst logger_flush_drain quota_corrupt restore_roundtrip manifest_index_backup_hit remote_inject)
     add_test(NAME wire_${case} COMMAND wire_contract_tests ${case})
     set_tests_properties(wire_${case} PROPERTIES TIMEOUT 30)
 endforeach()

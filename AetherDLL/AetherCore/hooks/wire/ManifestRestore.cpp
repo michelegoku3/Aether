@@ -19,6 +19,7 @@
 #include "core/Logger.h"
 #include "hooks/license/LicenseManager.h"
 #include "hooks/wire/BackupIo.h"
+#include "network/ManifestFetch.h"
 #include "scripting/ScriptEngine.h"
 #include "utils/Paths.h"
 
@@ -296,6 +297,7 @@ void BackupReferencedManifestsAtStartup() {
                 switch (CopyAtomicallyIfMissing(source, appLuaBackup / filename)) {
                 case BackupCopyOutcome::Copied:
                     ++copied;
+                    manifestfetch::NoteLocalManifestAdded(filename, appLuaBackup);
                     break;
                 case BackupCopyOutcome::Present:
                     ++alreadyPresent;
@@ -518,6 +520,7 @@ void BackupManifestAfterGeneration(std::uint32_t depotId, std::uint64_t gid) {
                     continue;
                 if (CopyAtomicallyIfMissing(source, appLuaBackup / source.filename()) == BackupCopyOutcome::Copied) {
                     ++copied;
+                    manifestfetch::NoteLocalManifestAdded(source.filename().string(), appLuaBackup);
                 }
             }
         }

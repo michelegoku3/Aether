@@ -52,6 +52,7 @@ void Worker();
 void Budget();
 void Settings();
 void Workers();
+void WorkersReapSlow();
 void WorkersShutdownRace();
 void SchemaBuckets();
 void Registry();

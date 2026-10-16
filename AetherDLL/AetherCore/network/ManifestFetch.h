@@ -1,6 +1,8 @@
 #pragma once
 
 #include <cstdint>
+#include <filesystem>
+#include <string>
 
 // Manifest acquisition (post legacy wire-bridge removal).
 //
@@ -26,5 +28,10 @@ bool HasLocalManifest(std::uint64_t manifestGid, std::uint32_t depotId);
 // retried in the background with a bounded backoff schedule (max 6 attempts
 // per depot/GID per session) instead of the old one-shot-per-session.
 void EnsureManifestAvailable(std::uint32_t appId, std::uint32_t depotId, std::uint64_t manifestGid);
+
+// Index upkeep for the inverted backup lookup (PRF-003): call after a backup
+// write lands on disk so the next lookup hits without waiting out a stale
+// negative memo. No-op when the index was never built. Never throws.
+void NoteLocalManifestAdded(const std::string& filename, const std::filesystem::path& backupLuaDir);
 
 } // namespace ac::manifestfetch

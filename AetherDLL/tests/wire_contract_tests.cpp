@@ -6,6 +6,7 @@
 #include "hooks/wire/BackupIo.h"
 #include "hooks/wire/ManifestRestore.h"
 #include "network/HubcapQuota.h"
+#include "network/ManifestFetch.h"
 #include "network/RuntimeHttp.h"
 #include "utils/RemoteInject.h"
 
@@ -182,6 +183,23 @@ void QuotaCorrupt() {
     }
     CHECK(ac::hubcapquota::TryReserveGameGeneration());
     ac::hubcapquota::ReleaseGameGeneration();
+}
+
+// F4: the inverted backup index serves lookups without per-miss walks.
+// A manifest present only in backup/<app>/lua is found, published into
+// depotcache, and served from the memo afterwards.
+void ManifestIndexBackupHit() {
+    Fixture f;
+    const std::string payload = "INDEXED-MANIFEST";
+    const fs::path appLua = f.deskData / "backup" / "9" / "lua";
+    std::error_code ec;
+    fs::create_directories(appLua, ec);
+    f.Write(appLua / "100_200.manifest", payload);
+
+    CHECK(ac::manifestfetch::HasLocalManifest(200, 100));
+    CHECK(f.Read(f.depotcache / "100_200.manifest") == payload);
+    CHECK(ac::manifestfetch::HasLocalManifest(200, 100));                // memo positive, re-verified
+    CHECK(ac::manifestfetch::HasLocalManifest(999999, 888888) == false); // negative, no walk storm
 }
 
 // B5: restore publishes byte-identical copies and replaces 0-byte
@@ -363,6 +381,7 @@ int main(int argc, char** argv) {
         {"logger_flush_drain", LoggerFlushDrain},
         {"quota_corrupt", QuotaCorrupt},
         {"restore_roundtrip", RestoreRoundtrip},
+        {"manifest_index_backup_hit", ManifestIndexBackupHit},
         {"remote_inject", RemoteInject},
     };
     try {

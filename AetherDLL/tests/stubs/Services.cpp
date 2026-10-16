@@ -17,6 +17,16 @@ LogLevel ParseLevel(const std::string& text, LogLevel fallback) {
 }
 } // namespace log
 namespace diag {
-void Record(const std::string&, const std::string&) {}
+// Recording fake (not the 64-entry ring): tests assert on emitted
+// categories, e.g. config_deprecated_manifest_fetch. Reset per test
+// binary run is unnecessary: ctest runs one case per process.
+std::vector<Entry> s_records;
+void Record(const std::string& category, const std::string& detail) {
+    Entry e;
+    e.category = category;
+    e.detail = detail;
+    s_records.push_back(std::move(e));
+}
+std::vector<Entry> Snapshot() { return s_records; }
 } // namespace diag
 } // namespace ac

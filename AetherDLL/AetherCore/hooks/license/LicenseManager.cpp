@@ -262,8 +262,10 @@ void StartupRetryWorker(std::atomic<bool>& stop) {
             AC_LOG_INFO(kModule, "Startup retry #%d: waiting for package 0.", attempts + 1);
         }
 
-        // Sleep the interval in 10 ms steps so shutdown stays snappy.
-        constexpr int kTickMs = 10;
+        // Sleep the interval in 100 ms steps: the 1 s re-attempt cadence
+        // above is unaffected (only shutdown latency changes, 10 ms to
+        // 100 ms), with 10x fewer idle wakeups over the ~60 s budget.
+        constexpr int kTickMs = 100;
         for (int elapsed = 0; elapsed < constants::kPackageRetryIntervalMs && !stop.load(std::memory_order_relaxed);
              elapsed += kTickMs) {
             Sleep(kTickMs);

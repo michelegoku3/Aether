@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
 
 // ---------------------------------------------------------------------------
@@ -235,5 +236,43 @@ inline constexpr std::uint32_t kGetUserStats = FnvHash("Player.GetUserStats#1");
 inline constexpr std::uint32_t kWireMaxBodyBytes = 262144;
 inline constexpr std::uint32_t kWireMaxHeaderBytes = 1024;
 inline constexpr int kWirePoolSlots = 8;
+
+// Logger: per-line format buffer. Lines beyond this are truncated with a
+// "[...]" marker (never split mid-session or grown unboundedly on hot paths).
+inline constexpr std::size_t kLogBodyBytes = 1024;
+
+// RuntimeHttp (Lua-facing): response cap and per-attempt timeout. The cap
+// bounds a malicious script's memory use; the timeout bounds boot-time
+// manifest fetches. Internal callers pass their own budgets explicitly.
+inline constexpr std::size_t kHttpMaxBodyBytes = 8ULL * 1024ULL * 1024ULL; // 8 MiB
+inline constexpr unsigned long kHttpTimeoutMs = 12000;
+
+// Remote injection: how long to wait for the remote LoadLibraryW thread,
+// and the longest DLL path accepted (MAX_PATH-bounded in practice; the cap
+// is defense in depth against size arithmetic wrap).
+inline constexpr unsigned long kRemoteInjectWaitMs = 5000;
+inline constexpr std::size_t kMaxDllPathChars = 32767;
+
+// DirWatch: notification buffer and hot-reload debounce. The 64 KiB buffer
+// fits hundreds of rename events; overflow falls back to a full rescan.
+inline constexpr unsigned long kDirWatchBufferBytes = 64u * 1024u;
+inline constexpr unsigned long kDirWatchDebounceMs = 500;
+
+// Payload EOS poll: same 60 s budget as always (attempts x interval), now
+// event-driven (see AetherPayload/dllmain.cpp) instead of blind sleeping.
+inline constexpr int kPayloadEosPollAttempts = 120;
+inline constexpr unsigned long kPayloadEosPollIntervalMs = 500;
+
+// Atomic staging: unique per-process suffix for temp+rename copies sharing
+// one directory (Desk and DLL writers must never share a staging name).
+inline constexpr char kAtomicStagingSuffix[] = ".aether-tmp-";
+
+// Hubcap shared quota (contract twins in docs/shared_contracts.md §4 — keep
+// the values in sync on both sides): daily budget, lock staleness/timeout,
+// and lock retry cadence for the read-modify-write cycle.
+inline constexpr std::uint64_t kHubcapMaxGamePerDay = 1500;
+inline constexpr int kHubcapLockStaleAfterSec = 5;
+inline constexpr int kHubcapLockTimeoutSec = 10;
+inline constexpr int kHubcapLockRetryMs = 20;
 
 } // namespace ac::constants

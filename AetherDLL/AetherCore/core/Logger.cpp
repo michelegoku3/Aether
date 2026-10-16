@@ -1,4 +1,5 @@
 #include "pch.h"
+#include "core/Constants.h"
 #include "core/Logger.h"
 
 #include <windows.h>
@@ -68,7 +69,7 @@ void FormatTimeAndThread(char (&out)[32]) {
 
 // Formats a body with truncation marker. Shared by Write/WriteOnce so the
 // policy lives in one place.
-void FormatBody(char (&body)[1024], const char* format, va_list args) {
+void FormatBody(char (&body)[constants::kLogBodyBytes], const char* format, va_list args) {
     const int written = std::vsnprintf(body, sizeof(body), format, args);
     if (written >= 0 && static_cast<std::size_t>(written) >= sizeof(body)) {
         const char marker[] = "[...]";
@@ -432,7 +433,7 @@ void Write(LogLevel level, const char* module, const char* format, ...) {
         return;
     }
 
-    char body[1024];
+    char body[constants::kLogBodyBytes];
     va_list args;
     va_start(args, format);
     FormatBody(body, format, args);
@@ -447,7 +448,7 @@ void WriteOnce(LogLevel level, const char* module, const char* format, ...) {
         return;
     }
 
-    char body[1024];
+    char body[constants::kLogBodyBytes];
     va_list args;
     va_start(args, format);
     FormatBody(body, format, args);

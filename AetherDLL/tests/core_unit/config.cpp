@@ -1,5 +1,6 @@
 #include "cases.h"
 
+#include "core/Logger.h"
 #include "core/Settings.h"
 
 #include "utils/DeskPaths.h"
@@ -144,4 +145,17 @@ void Settings() {
     ac::Settings::Load(modePath.string(), &valid);
 
     CHECK(!valid);
+
+    // F3: deprecated [manifest_fetch] is loud (ERROR + status record) but not
+    // fatal: the table is ignored, everything else still parses.
+    auto depPath = f.Write("deprecated.toml", "[manifest_fetch]\nurls = []\n[presence]\ncustom_game_name='kept'\n");
+    const auto dep = ac::Settings::Load(depPath.string(), &valid);
+    CHECK(valid);
+    CHECK(dep.presenceCustomGameName == "kept");
+    bool deprecatedSeen = false;
+    for (const auto& e : ac::diag::Snapshot()) {
+        if (e.category == "config_deprecated_manifest_fetch")
+            deprecatedSeen = true;
+    }
+    CHECK(deprecatedSeen);
 }

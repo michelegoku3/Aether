@@ -74,15 +74,20 @@ std::vector<WorkerEntry> s_workers;
 std::atomic<bool> s_shutDown{false};
 std::atomic<std::uint64_t> s_startedCount{0};
 
-void ReapCompletedLocked() {
+// Collects finished worker threads WITHOUT joining: the caller joins them
+// after releasing s_registryMutex. Joining under the lock would stall every
+// other StartWorker/SummaryText while a stuck worker winds down.
+std::vector<std::thread> TakeCompletedLocked() {
+    std::vector<std::thread> joined;
     for (auto it = s_workers.begin(); it != s_workers.end();) {
         if (it->done && it->done->load() && it->thread.joinable()) {
-            it->thread.join();
+            joined.push_back(std::move(it->thread));
             it = s_workers.erase(it);
         } else {
             ++it;
         }
     }
+    return joined;
 }
 
 } // namespace
@@ -110,12 +115,13 @@ bool StartWorker(const std::string& name, std::function<void(std::atomic<bool>&)
     auto done = std::make_shared<std::atomic<bool>>(false);
     auto finished = std::make_shared<std::promise<void>>();
     auto future = finished->get_future().share();
+    std::vector<std::thread> reaped;
     {
         std::lock_guard<std::mutex> lock(s_registryMutex);
         // Shutdown may have won after the optimistic check above.
         if (s_shutDown.load())
             return false;
-        ReapCompletedLocked();
+        reaped = TakeCompletedLocked();
         s_workers.push_back(WorkerEntry{name, stop, done, {}});
         WorkerEntry& entry = s_workers.back();
         // The lambda captures COPIES (name/stop/done): the vector may reallocate
@@ -143,6 +149,12 @@ bool StartWorker(const std::string& name, std::function<void(std::atomic<bool>&)
         }
         if (completion)
             *completion = std::move(future);
+    }
+    // Join outside the registry lock: a stuck worker must not stall other
+    // StartWorker/SummaryText calls (same discipline as Shutdown below).
+    for (auto& t : reaped) {
+        if (t.joinable())
+            t.join();
     }
     s_startedCount.fetch_add(1);
     AC_LOG_DEBUG(kModule, "Worker '%s' registered.", name.c_str());

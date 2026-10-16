@@ -10,6 +10,7 @@
 #include <system_error>
 
 #include "core/AetherCoreState.h"
+#include "core/Constants.h"
 #include "core/Logger.h"
 
 namespace ac::backup::io {
@@ -85,7 +86,8 @@ std::string UniqueStagingPath(const std::string& destination) {
     // s_* prefix per docs/ARCHITECTURE.md: private service state, not domain data.
     static std::atomic<unsigned> s_stagingCounter{0};
     const unsigned n = s_stagingCounter.fetch_add(1, std::memory_order_relaxed);
-    return destination + ".aether-tmp-" + std::to_string(GetCurrentProcessId()) + "-" + std::to_string(n);
+    return destination + constants::kAtomicStagingSuffix + std::to_string(GetCurrentProcessId()) + "-" +
+           std::to_string(n);
 }
 
 SizeCheck VerifySameSize(const std::string& source, const std::string& destination) {

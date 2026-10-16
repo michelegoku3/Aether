@@ -80,8 +80,13 @@ void PinSelf() {
 }
 
 // Resolves all runtime paths from the DLL's own location and creates the
-// aethercore working directory.
-void ResolvePaths(HMODULE self) {
+// aethercore working directory. Returns false when the module path is
+// unavailable or truncated: operating on a truncated Steam prefix would
+// create/use the wrong aethercore dir, payload path and depotcache lookups
+// for the whole session, which is worse than not starting at all.
+// (Long-path follow-up: retry with a 32 KiB buffer + GetModuleFileNameW,
+// tracked with the LNG-002 Unicode migration.)
+bool ResolvePaths(HMODULE self) {
     g_state.selfModule = self;
 
     char dllPath[MAX_PATH] = {};
@@ -89,9 +94,8 @@ void ResolvePaths(HMODULE self) {
     // GetModuleFileNameA may return a non-null-terminated buffer when the path
     // equals MAX_PATH, so std::string(dllPath) could read past the array.
     if (len == 0 || len >= MAX_PATH) {
-        // Path unavailable or truncated. Continue with a best-effort path:
-        // the zero-initialised buffer is at least null-terminated at MAX_PATH-1.
-        AC_LOG_ERROR(kModule, "Module path unavailable or truncated.");
+        AC_LOG_ERROR(kModule, "Module path unavailable or truncated; aborting init (no directory writes attempted).");
+        return false;
     }
     dllPath[MAX_PATH - 1] = '\0';
     std::string path(dllPath);
@@ -110,6 +114,7 @@ void ResolvePaths(HMODULE self) {
     if (!g_state.deskDataDir.empty()) {
         g_state.configPath = deskpaths::ConfigPath(g_state.deskDataDir).string();
     }
+    return true;
 }
 
 // Returns every Steam library's `steamapps` directory. The primary Steam
@@ -140,7 +145,12 @@ std::vector<std::string> CollectAcfWatchDirs() {
 // The real initialisation, run off the loader lock on a dedicated thread.
 // Order matters: every step only depends on those before it.
 void InitThreadLogic(HMODULE self) {
-    ResolvePaths(self);
+    if (!ResolvePaths(self)) {
+        // No paths, no directories, no status: anything else would operate
+        // on a truncated prefix. Logger is not up yet by design (it needs
+        // the log path), so the ERROR above is the whole report.
+        return;
+    }
 
     // 1. Settings: loaded before logger so keep_last_session and log level are known.
     const bool configValid = Settings::Initialize(g_state.configPath);

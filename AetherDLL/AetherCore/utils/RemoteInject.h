@@ -6,6 +6,7 @@
 #include <string>
 #include <string_view>
 
+#include "core/Constants.h"
 #include "utils/Strings.h"
 
 // ---------------------------------------------------------------------------
@@ -50,7 +51,7 @@ inline bool RemoteLoadDll(HANDLE process, const std::wstring& dllPath) {
 
     // Guard against wrap on (size + 1) * sizeof(wchar_t); paths here are
     // MAX_PATH-bounded, so this is defense in depth, not a hot path.
-    if (dllPath.size() > 32767)
+    if (dllPath.size() > constants::kMaxDllPathChars)
         return false;
     const SIZE_T bytes = (dllPath.size() + 1) * sizeof(wchar_t);
     void* mem = VirtualAllocEx(process, nullptr, bytes, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
@@ -63,7 +64,7 @@ inline bool RemoteLoadDll(HANDLE process, const std::wstring& dllPath) {
             // Note: STILL_ACTIVE (259) as a real HMODULE is not possible in
             // practice for a loaded image base, so a plain non-zero check is
             // the correct success criterion here.
-            const bool waited = (WaitForSingleObject(t, 5000) == WAIT_OBJECT_0);
+            const bool waited = (WaitForSingleObject(t, constants::kRemoteInjectWaitMs) == WAIT_OBJECT_0);
             DWORD code = 0;
             ok = waited && GetExitCodeThread(t, &code) && code != 0;
             CloseHandle(t);

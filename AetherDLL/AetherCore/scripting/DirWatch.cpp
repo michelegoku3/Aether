@@ -18,6 +18,7 @@
 #include <vector>
 
 #include "core/AetherCoreState.h"
+#include "core/Constants.h"
 #include "core/Logger.h"
 #include "diagnostics/StatusWriter.h"
 #include "hooks/ipc/PipeWatch.h"
@@ -33,8 +34,10 @@ namespace ac::dirwatch {
 namespace {
 
 constexpr const char* kModule = "DirWatch";
-constexpr DWORD kBufferBytes = 64 * 1024;
-constexpr DWORD kDebounceMs = 500;
+// Sizing lives in core/Constants.h (single tunable file); aliases keep call
+// sites short without re-declaring values.
+constexpr DWORD kBufferBytes = constants::kDirWatchBufferBytes;
+constexpr DWORD kDebounceMs = constants::kDirWatchDebounceMs;
 
 // Module-owned lifecycle service. This is intentionally not in AetherCoreState:
 // it is the private thread/control block for the directory watcher. Lua data

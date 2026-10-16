@@ -249,6 +249,31 @@ void WorkersShutdownRace() {
     CHECK(!w::StartWorker("after_race", [](std::atomic<bool>&) {}));
 }
 
+// F2: reaping completed workers must not stall a concurrent StartWorker.
+// Joining under the registry lock would serialize every registration behind
+// thread teardown; the reap now collects handles and joins outside the lock.
+// Discipline guard (a finished thread joins instantly either way): keeps the
+// StartWorker path bounded with reap work pending. Runs before workers_race
+// (which shuts the registry down).
+void WorkersReapSlow() {
+    namespace w = ac::workers;
+
+    CHECK(w::StartWorker("slow_exit", [](std::atomic<bool>&) { std::this_thread::sleep_for(300ms); }));
+    std::this_thread::sleep_for(500ms); // let it finish: done=true, join pending in the registry
+
+    const auto start = std::chrono::steady_clock::now();
+    CHECK(w::StartWorker("after_slow", [](std::atomic<bool>& stop) {
+        while (!stop.load())
+            std::this_thread::sleep_for(1ms);
+    }));
+    const auto elapsed = std::chrono::steady_clock::now() - start;
+    CHECK(elapsed < std::chrono::milliseconds(250));
+    // Leave no running worker behind: a joinable std::thread at process exit
+    // would terminate. Safe before workers_race (it shuts down itself and
+    // asserts refusal afterwards, which holds either way).
+    w::Shutdown();
+}
+
 void TtlCacheTest() {
 
     using ac::utils::TtlCache;

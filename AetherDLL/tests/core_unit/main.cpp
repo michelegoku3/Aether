@@ -17,6 +17,7 @@ int main(int argc, char** argv) {
         {"registry", Registry},
         {"workers", Workers},
         {"schema_buckets", SchemaBuckets},
+        {"workers_reap_slow", WorkersReapSlow},
         {"workers_race", WorkersShutdownRace},
         {"netpacket", NetPacket},
         {"sentinel", Sentinel},

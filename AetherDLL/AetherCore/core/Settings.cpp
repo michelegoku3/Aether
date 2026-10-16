@@ -4,6 +4,7 @@
 #include "core/AetherCoreState.h"
 #include <atomic>
 #include <chrono>
+#include <cstdint>
 #include <filesystem>
 #include <toml++/toml.hpp>
 
@@ -139,11 +140,19 @@ Settings Settings::Load(const std::string& configPath, bool* valid) {
 
     // [manifest_fetch] — DEPRECATED and ignored. The GetManifestRequestCode
     // wire-bridge was removed: manifests only come from the local index and
-    // authenticated Hubcap generation.
-    if (tbl["manifest_fetch"].as_table()) {
-        AC_LOG_WARN_ONCE("Settings", "[manifest_fetch] keys are deprecated and ignored: the "
-                                     "legacy request-code bridge was removed; manifests use "
-                                     "the local index + authenticated Hubcap only.");
+    // authenticated Hubcap generation. Loud on purpose (ERROR + status):
+    // a silent ignore would let stale guides waste the user's debugging time.
+    if (const auto manifestFetch = tbl["manifest_fetch"]; manifestFetch.as_table()) {
+        // node_view has no source(): go through the underlying node (null-safe:
+        // a view from operator[] on an existing table always has one).
+        // source() is a region; the table's opening line is its begin.
+        const toml::node* node = manifestFetch.node();
+        const std::uint32_t line = node ? node->source().begin.line : 0;
+        AC_LOG_ERROR("Settings",
+                     "[manifest_fetch] at %s:%u is deprecated and ignored: the legacy request-code bridge was "
+                     "removed; manifests use the local index + authenticated Hubcap only. Remove the table.",
+                     configPath.c_str(), line);
+        diag::Record("config_deprecated_manifest_fetch", configPath + ":" + std::to_string(line));
     }
 
     // [manifest_cache]

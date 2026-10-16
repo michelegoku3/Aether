@@ -4,6 +4,7 @@
 
 #include <string>
 
+#include "core/Constants.h"
 #include "eos/EpicOnlineBridge.h"
 #include "log/PayloadLog.h"
 #include "propagate/PayloadPropagator.h"
@@ -26,15 +27,16 @@ DWORD WINAPI PayloadMain(LPVOID self) {
     ac::payloadlog::Write("Payload attached to game process.");
     ac::payloadprop::Install(static_cast<HMODULE>(self));
 
-    // Same 60 s budget as before (120 x 500 ms), but event-driven: detach
-    // wakes the wait at once instead of sleeping out the remainder.
+    // Same 60 s budget as always, but event-driven: detach wakes the wait at
+    // once instead of sleeping out the remainder. Budget lives in
+    // core/Constants.h (single tunable file).
     // NOTE: this thread intentionally outlives DllMain; it never touches the
     // loader lock (no LoadLibrary here: only GetModuleHandle polling).
-    for (int i = 0; i < 120; ++i) {
+    for (int i = 0; i < ac::constants::kPayloadEosPollAttempts; ++i) {
         TryInstallIfPresent();
         if (GetModuleHandleW(L"EOSSDK-Win64-Shipping.dll"))
             break;
-        if (g_stopEvent && WaitForSingleObject(g_stopEvent, 500) != WAIT_TIMEOUT)
+        if (g_stopEvent && WaitForSingleObject(g_stopEvent, ac::constants::kPayloadEosPollIntervalMs) != WAIT_TIMEOUT)
             break;
     }
     return 0;

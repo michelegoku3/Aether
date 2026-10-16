@@ -17,8 +17,11 @@ add_library(AetherPayload SHARED
     util/RemoteDeploy.cpp
 )
 
+# AetherCore dir for core/Constants.h only (single tunable file; the payload
+# links nothing from AetherCore).
 target_include_directories(AetherPayload PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}
+    ${CMAKE_SOURCE_DIR}/AetherCore
     ${CMAKE_SOURCE_DIR}/common
 )
 

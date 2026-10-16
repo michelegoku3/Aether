@@ -11,6 +11,7 @@
 #include <vector>
 
 #include "core/AetherCoreState.h"
+#include "core/Constants.h"
 #include "core/Logger.h"
 
 #pragma comment(lib, "winhttp.lib")
@@ -19,8 +20,10 @@ namespace ac::http {
 namespace {
 
 constexpr const char* kModule = "Http";
-constexpr std::size_t kLuaMaxBodyBytes = 8ULL * 1024ULL * 1024ULL; // 8 MiB
-constexpr DWORD kTimeoutMs = 12000;
+// Budgets live in core/Constants.h (single tunable file); aliases keep call
+// sites short without re-declaring values.
+constexpr std::size_t kLuaMaxBodyBytes = constants::kHttpMaxBodyBytes;
+constexpr DWORD kTimeoutMs = constants::kHttpTimeoutMs;
 
 // Baseline hosts always reachable (manifest sources used by manifest scripts).
 constexpr std::array<std::string_view, 3> kBaselineHosts = {

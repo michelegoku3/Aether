@@ -11,6 +11,7 @@
 #include <string>
 #include <thread>
 
+#include "core/Constants.h"
 #include "core/Logger.h"
 #include "hooks/wire/BackupIo.h"
 #include "utils/JsonStringField.h"
@@ -19,10 +20,12 @@ namespace ac::hubcapquota {
 namespace {
 
 constexpr const char* kModule = "HubcapQuota";
-constexpr std::uint64_t kMaxGamePerDay = 1500;
-constexpr int kLockStaleAfterSec = 5;
-constexpr int kLockTimeoutSec = 10;
-constexpr auto kLockRetryInterval = std::chrono::milliseconds(20);
+// Shared values live in core/Constants.h (contract twins in
+// docs/shared_contracts.md §4); aliases keep call sites short.
+constexpr std::uint64_t kMaxGamePerDay = constants::kHubcapMaxGamePerDay;
+constexpr int kLockStaleAfterSec = constants::kHubcapLockStaleAfterSec;
+constexpr int kLockTimeoutSec = constants::kHubcapLockTimeoutSec;
+constexpr auto kLockRetryInterval = std::chrono::milliseconds(constants::kHubcapLockRetryMs);
 constexpr DWORD kDeleteOnClose = 0x04000000; // FILE_FLAG_DELETE_ON_CLOSE
 
 std::string QuotaPath() {

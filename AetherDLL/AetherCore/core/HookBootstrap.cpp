@@ -22,6 +22,7 @@
 #include "utils/GameNameResolver.h"
 #include "utils/IpcSpec.h"
 #include "utils/PatternEngine.h"
+#include "utils/Strings.h"
 
 namespace ac::bootstrap {
 namespace {
@@ -45,26 +46,92 @@ std::atomic<bool> s_steamUiRetryStarted{false};
 std::atomic<bool> s_patternRetryStarted{false};
 std::atomic<bool> s_patternRetryStop{false};
 
-// Gap between steamui retry attempts (5 × 100 ms = 500 ms).
-constexpr int kSteamUiTicksPerCheck = 5;
+// Gap between steamui retry attempts (500 ms backstop quantum).
+constexpr int kSteamUiCheckIntervalMs = 500;
+
+// Minimal LdrRegisterDllNotification plumbing (ntdll, always present on the
+// Win10+ target): wakes the steamui retry the moment ANY dll loads instead
+// of polling blindly. The callback runs under the loader lock, so it only
+// matches the filename and sets an event: no locks, no allocations, no I/O.
+struct LdrLoadedData {
+    ULONG flags;
+    const wchar_t* fullDllName;
+    const wchar_t* baseDllName;
+    void* dllBase;
+    ULONG sizeOfImage;
+};
+using LdrNotifyFn = void(CALLBACK*)(ULONG reason, LdrLoadedData* data, void* context);
+using LdrRegisterFn = LONG(NTAPI*)(ULONG flags, LdrNotifyFn callback, void* context, void** cookie);
+using LdrUnregisterFn = LONG(NTAPI*)(void* cookie);
+constexpr ULONG kLdrReasonLoaded = 1;
+
+bool EndsWithIgnoreCase(const wchar_t* str, const wchar_t* suffix) {
+    if (!str || !suffix)
+        return false;
+    std::size_t n = 0, m = 0;
+    while (str[n] != L'\0')
+        ++n;
+    while (suffix[m] != L'\0')
+        ++m;
+    if (m > n)
+        return false;
+    for (std::size_t i = 0; i < m; ++i) {
+        wchar_t a = str[n - m + i], b = suffix[i];
+        if (a >= L'A' && a <= L'Z')
+            a = static_cast<wchar_t>(a + (L'a' - L'A'));
+        if (b >= L'A' && b <= L'Z')
+            b = static_cast<wchar_t>(b + (L'a' - L'A'));
+        if (a != b)
+            return false;
+    }
+    return true;
+}
+
+void CALLBACK OnAnyDllLoaded(ULONG reason, LdrLoadedData* data, void* context) {
+    // Loader-lock context: event-set only.
+    if (reason == kLdrReasonLoaded && data && context && EndsWithIgnoreCase(data->baseDllName, L"steamui.dll")) {
+        SetEvent(static_cast<HANDLE>(context));
+    }
+}
 
 bool PatternsFullyAvailable() {
     return pattern::HasModule("steamclient") && pattern::HasModule("steamui") && g_state.ipcSpec.loaded;
 }
 
 void SteamUiRetryWorker(std::atomic<bool>& stop) {
+    // Event-driven wait: a DLL load wakes us early; the 500 ms quantum is
+    // only a backstop (same check cadence as the old 5x100 ms polling).
+    // Falls back to plain polling when the Ldr API is unavailable.
+    HANDLE wake = CreateEventW(nullptr, FALSE, FALSE, nullptr);
+    void* cookie = nullptr;
+    LdrUnregisterFn unregister = nullptr;
+    if (HMODULE ntdll = GetModuleHandleW(L"ntdll.dll")) {
+        if (auto reg = reinterpret_cast<LdrRegisterFn>(GetProcAddress(ntdll, "LdrRegisterDllNotification"))) {
+            unregister = reinterpret_cast<LdrUnregisterFn>(GetProcAddress(ntdll, "LdrUnregisterDllNotification"));
+            if (reg(0, OnAnyDllLoaded, wake, &cookie) != 0)
+                cookie = nullptr;
+        }
+    }
     int elapsedMs = 0;
     while (!stop.load(std::memory_order_relaxed) && elapsedMs < constants::kSteamUiDeferredTimeoutMs) {
         if (steamui::InstallSteamUiRedirect()) {
             AC_LOG_INFO(kModule, "SteamUI redirect installed after %d ms (deferred retry).", elapsedMs);
-            return;
+            break;
         }
-        for (int i = 0; i < kSteamUiTicksPerCheck && !stop.load(std::memory_order_relaxed); ++i) {
-            Sleep(constants::kSteamUiPollIntervalMs);
-            elapsedMs += constants::kSteamUiPollIntervalMs;
+        if (wake && cookie) {
+            WaitForSingleObject(wake, static_cast<DWORD>(kSteamUiCheckIntervalMs));
+        } else {
+            Sleep(static_cast<DWORD>(kSteamUiCheckIntervalMs));
         }
+        if (stop.load(std::memory_order_relaxed))
+            break;
+        elapsedMs += kSteamUiCheckIntervalMs;
     }
-    if (!stop.load(std::memory_order_relaxed)) {
+    if (cookie && unregister)
+        unregister(cookie);
+    if (wake)
+        CloseHandle(wake);
+    if (!stop.load(std::memory_order_relaxed) && elapsedMs >= constants::kSteamUiDeferredTimeoutMs) {
         AC_LOG_WARN(kModule,
                     "SteamUI deferred retry gave up after %d ms; "
                     "steamclient hooks remain installed, redirect absent.",
@@ -105,10 +172,30 @@ void PatternLateRetryWorker(std::atomic<bool>& stop) {
             return;
         }
 
-        // Sleep the interval in small steps so shutdown stays snappy.
-        for (int elapsed = 0; elapsed < constants::kPatternLateRetryIntervalMs && !stop.load(std::memory_order_relaxed);
-             elapsed += constants::kSteamUiPollIntervalMs) {
-            Sleep(constants::kSteamUiPollIntervalMs);
+        // Event-driven wait on the pattern directory: a freshly published
+        // table wakes the next attempt at once instead of at the next 10 s
+        // tick. The 250 ms quantum keeps shutdown snappy (was 100 ms: 2.5x
+        // fewer idle wakeups for a bounded 150 ms of extra join latency).
+        HANDLE change = FindFirstChangeNotificationW(ac::strings::Widen(g_state.patternDir).c_str(), FALSE,
+                                                     FILE_NOTIFY_CHANGE_FILE_NAME | FILE_NOTIFY_CHANGE_LAST_WRITE);
+        if (change == INVALID_HANDLE_VALUE) {
+            for (int elapsed = 0;
+                 elapsed < constants::kPatternLateRetryIntervalMs && !stop.load(std::memory_order_relaxed);
+                 elapsed += 250) {
+                Sleep(250);
+            }
+        } else {
+            int elapsed = 0;
+            while (elapsed < constants::kPatternLateRetryIntervalMs && !stop.load(std::memory_order_relaxed)) {
+                const DWORD w = WaitForSingleObject(change, 250);
+                elapsed += 250;
+                if (w == WAIT_OBJECT_0) {
+                    // A table may have landed: retry now instead of at the tick.
+                    FindNextChangeNotification(change);
+                    break;
+                }
+            }
+            FindCloseChangeNotification(change);
         }
     }
     AC_LOG_WARN(kModule,
