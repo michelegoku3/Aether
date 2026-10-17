@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState, memo } from 'react';
 import { invoke } from '@tauri-apps/api/core';
-import { UninstallDeskConfirmModal, UninstallSteamCleanModal } from '../modals/UninstallDeskModal';
+import { ResetSteamConfirmModal, UninstallDeskConfirmModal } from '../modals/UninstallDeskModal';
 import { getSettings } from '../hooks/useSettings';
 import { DllStatusInfo } from '../types/ui';
 import { toErrorMessage } from '../util/errors';
@@ -20,7 +20,7 @@ interface AetherViewProps {
 
 type StatusTone = 'info' | 'success' | 'error';
 
-type UninstallStep = { kind: 'confirm' } | { kind: 'steamClean'; residualCount: number; deleteUserData: boolean };
+type UninstallStep = { kind: 'confirm' } | { kind: 'resetSteam'; deleteUserData: boolean };
 
 /**
  * AETHER panel: AetherDesk and AetherDLL lifecycle (install/update/
@@ -45,6 +45,9 @@ export const AetherView = memo(function AetherView({
   const [isProcessing, setIsProcessing] = useState(false);
   const [uninstallStep, setUninstallStep] = useState<UninstallStep | null>(null);
   const [testUpdatesEnabled, setTestUpdatesEnabled] = useState(false);
+  /** Reset Path gate: the irreversible-confirm popup. Only mounted while
+   *  open so its 10-second countdown restarts on every open. */
+  const [showResetConfirm, setShowResetConfirm] = useState(false);
 
   const showStatus = useCallback((text: string, type: StatusTone) => {
     setStatusMsg({ text, type });
@@ -119,10 +122,11 @@ export const AetherView = memo(function AetherView({
   // ----- Uninstall flow ----------------------------------------------------
   // 1. Uninstall click → confirm modal (checkbox for user data)
   // 2. YES → probe Steam residuals
-  //    - residuals > 0 → steam-clean modal
+  //    - residuals > 0 → Reset-Steam-path confirm (the same popup as the
+  //      Reset Path button, countdown included)
   //    - else → finishUninstall immediately
-  // 3. Steam YES → Reset Path then finishUninstall
-  //    Steam NO  → finishUninstall only
+  // 3. Reset YES → Reset Path then finishUninstall
+  //    Reset NO  → finishUninstall only
   // Cancel / Esc / overlay at any step aborts without touching disk.
 
   const handleUninstallDesk = () => {
@@ -155,7 +159,7 @@ export const AetherView = memo(function AetherView({
       const residualCount = await invoke<number>('probe_aether_steam_residuals');
 
       if (residualCount > 0) {
-        setUninstallStep({ kind: 'steamClean', residualCount, deleteUserData });
+        setUninstallStep({ kind: 'resetSteam', deleteUserData });
         setIsProcessing(false);
         return;
       }
@@ -169,22 +173,22 @@ export const AetherView = memo(function AetherView({
     }
   };
 
-  const handleSteamCleanYes = async () => {
-    if (!uninstallStep || uninstallStep.kind !== 'steamClean') return;
+  const handleUninstallResetYes = async () => {
+    if (!uninstallStep || uninstallStep.kind !== 'resetSteam') return;
     const { deleteUserData } = uninstallStep;
     setIsProcessing(true);
-    showStatus('Cleaning Steam (Reset Path), then uninstalling AetherDesk...', 'info');
+    showStatus('Resetting the Steam path, then uninstalling AetherDesk...', 'info');
     try {
       setUninstallStep(null);
       await cleanSteamThenUninstall(deleteUserData);
     } catch (err: unknown) {
-      showStatus(`Steam clean before uninstall failed: ${toErrorMessage(err)}`, 'error');
+      showStatus(`Steam reset before uninstall failed: ${toErrorMessage(err)}`, 'error');
       setIsProcessing(false);
     }
   };
 
-  const handleSteamCleanNo = async () => {
-    if (!uninstallStep || uninstallStep.kind !== 'steamClean') return;
+  const handleUninstallResetNo = async () => {
+    if (!uninstallStep || uninstallStep.kind !== 'resetSteam') return;
     const { deleteUserData } = uninstallStep;
     setIsProcessing(true);
     try {
@@ -246,6 +250,7 @@ export const AetherView = memo(function AetherView({
   };
 
   const handleResetPath = async () => {
+    setShowResetConfirm(false);
     showStatus('Resetting configurations... Removing custom plugins and update blocks.', 'info');
     try {
       const result = await (async () => {
@@ -344,11 +349,29 @@ export const AetherView = memo(function AetherView({
             {dllStatus.isSteamBlocked ? 'Unlock Update' : 'Block Update'}
           </button>
 
-          <button onClick={handleResetPath} className="panel-btn" disabled={true}>
+          <button
+            onClick={() => {
+              if (isProcessing) return;
+              setShowResetConfirm(true);
+            }}
+            className="panel-btn"
+            disabled={isProcessing}
+          >
             Reset Path
           </button>
         </div>
       </div>
+
+      {showResetConfirm && (
+        <ResetSteamConfirmModal
+          isProcessing={isProcessing}
+          onConfirm={() => void handleResetPath()}
+          onCancel={() => {
+            if (isProcessing) return;
+            setShowResetConfirm(false);
+          }}
+        />
+      )}
 
       {uninstallStep?.kind === 'confirm' && (
         <UninstallDeskConfirmModal
@@ -358,12 +381,11 @@ export const AetherView = memo(function AetherView({
         />
       )}
 
-      {uninstallStep?.kind === 'steamClean' && (
-        <UninstallSteamCleanModal
-          residualCount={uninstallStep.residualCount}
+      {uninstallStep?.kind === 'resetSteam' && (
+        <ResetSteamConfirmModal
           isProcessing={isProcessing}
-          onConfirmClean={handleSteamCleanYes}
-          onSkipClean={handleSteamCleanNo}
+          onConfirm={handleUninstallResetYes}
+          onReject={handleUninstallResetNo}
           onCancel={cancelUninstall}
         />
       )}

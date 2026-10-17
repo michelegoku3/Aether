@@ -76,7 +76,13 @@ impl ManifestPackageExtractor {
                 .by_index(index)
                 .map_err(|e| format!("Failed to read ZIP entry {}: {}", index, e))?;
 
-            let path = file.name().replace('\\', "/");
+            // zip 9.x reports non-UTF8 entry names as an error instead of
+            // lossy-converting them: skip those entries, they cannot be Lua
+            // or manifest candidates anyway.
+            let Ok(raw_name) = file.name() else {
+                continue;
+            };
+            let path = raw_name.replace('\\', "/");
             let lower_path = path.to_ascii_lowercase();
             let file_name = path.rsplit('/').next().unwrap_or(&path).to_string();
 

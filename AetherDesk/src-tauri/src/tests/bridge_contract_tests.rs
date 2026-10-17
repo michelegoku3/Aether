@@ -139,22 +139,19 @@ fn test_lua_manifest_row_camel_case_contract() {
 // list of unused commands.
 
 // ---------------------------------------------------------------------------
-// RESPONSE contract: synchronizer snapshot <-> src/types/sync.ts
+// RESPONSE contract: synchronizer snapshot shape
 // ---------------------------------------------------------------------------
 //
-// The argument contract test (`ipc_contract_tests.rs`) covers the
-// frontend -> backend direction. Here is the other one: the keys the backend
-// SERIALIZES must match the TypeScript interface reading them.
-//
-// Same bug class with the same silent outcome: `MonitorStatus` declares
-// `pinSync`, Rust serializes `pin_sync`, and the popup shows a perpetually
-// empty lane instead of an error. The case is concrete because the snapshot
-// travels both as the `get_hubcap_monitor_status` response and as the
-// `sync://status-changed` push event payload.
+// The TypeScript mirror (src/types/sync.ts) and its popup were removed: the
+// monitor runs headless. What remains is the serialization guard below —
+// every lane key must still be present even when empty, so a future consumer
+// (or the `sync://status-changed` push event payload) never gets `undefined`
+// where it expects a value. The argument direction is covered in
+// `ipc_contract_tests.rs`.
 
 use std::collections::BTreeSet;
 
-use crate::core::hubcap_update_monitor::{LaneStatus, MonitorStatusSnapshot, PendingTaskInfo};
+use crate::core::hubcap_update_monitor::MonitorStatusSnapshot;
 
 /// Top-level keys of a JSON object.
 fn json_object_keys(value: &Value) -> BTreeSet<String> {
@@ -166,150 +163,12 @@ fn json_object_keys(value: &Value) -> BTreeSet<String> {
         .collect()
 }
 
-/// Keys declared by `export interface <name> { … }` in a TS file.
-///
-/// Deliberately simple reading: one key per line, shaped `name?: type;` —
-/// that is how this project's mirror interfaces are written. When the format
-/// changes, the test says so instead of silently passing (no keys found =
-/// failure).
-fn ts_interface_keys(source: &str, name: &str) -> BTreeSet<String> {
-    let header = format!("export interface {name} {{");
-    let start = source
-        .find(&header)
-        .unwrap_or_else(|| panic!("interface `{name}` not found in the TS file"));
-    let body_start = start + header.len();
-    let mut depth = 1usize;
-    let mut end = body_start;
-    for (offset, ch) in source[body_start..].char_indices() {
-        match ch {
-            '{' => depth += 1,
-            '}' => {
-                depth -= 1;
-                if depth == 0 {
-                    end = body_start + offset;
-                    break;
-                }
-            }
-            _ => {}
-        }
-    }
-    let mut keys = BTreeSet::new();
-    for line in source[body_start..end].lines() {
-        let line = line.trim();
-        if line.is_empty()
-            || line.starts_with("/*")
-            || line.starts_with('*')
-            || line.starts_with("//")
-        {
-            continue;
-        }
-        let Some(colon) = line.find(':') else {
-            continue;
-        };
-        let key = line[..colon].trim().trim_end_matches('?').trim();
-        if key.is_empty()
-            || !key
-                .chars()
-                .all(|ch| ch.is_ascii_alphanumeric() || ch == '_')
-        {
-            continue;
-        }
-        keys.insert(key.to_string());
-    }
-    assert!(
-        !keys.is_empty(),
-        "no keys extracted from the TS interface `{name}`: the test parser needs updating"
-    );
-    keys
-}
-
-fn types_sync_source() -> String {
-    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .expect("AetherDesk/ above src-tauri/")
-        .join("src")
-        .join("types")
-        .join("sync.ts");
-    std::fs::read_to_string(&path)
-        .unwrap_or_else(|error| panic!("impossible leggere {}: {error}", path.display()))
-}
-
-fn sample_snapshot() -> MonitorStatusSnapshot {
-    MonitorStatusSnapshot {
-        running: true,
-        started_epoch: Some(1_700_000_000),
-        last_scan_epoch: Some(1_700_000_020),
-        steam_path_configured: true,
-        hubcap_key_configured: false,
-        checkpoint_initialized: true,
-        pin_sync: LaneStatus {
-            pending: vec![PendingTaskInfo {
-                app_id: Some(480),
-                attempts: 1,
-                next_retry_epoch: Some(1_700_000_080),
-            }],
-            unresolved: vec![PendingTaskInfo {
-                app_id: Some(440),
-                attempts: 5,
-                next_retry_epoch: None,
-            }],
-            processed_count: 3,
-            last_run_epoch: Some(1_700_000_010),
-            last_error: Some("manifest not found".to_string()),
-        },
-        ..MonitorStatusSnapshot::default()
-    }
-}
-
-#[test]
-fn monitor_status_snapshot_matches_the_typescript_mirror() {
-    let source = types_sync_source();
-    let json = serde_json::to_value(sample_snapshot()).expect("serialize MonitorStatusSnapshot");
-
-    let rust_top = json_object_keys(&json);
-    let ts_top = ts_interface_keys(&source, "MonitorStatus");
-    assert_eq!(
-        rust_top, ts_top,
-        "\nSnapshot keys diverged between Rust and TypeScript.\n  Rust only: {:?}\n  TS only:   {:?}\n\
-         Align src/types/sync.ts or #[serde(rename_all)] in core/hubcap_update_monitor.rs.\n",
-        rust_top.difference(&ts_top).collect::<Vec<_>>(),
-        ts_top.difference(&rust_top).collect::<Vec<_>>(),
-    );
-
-    let lane = json
-        .get("pinSync")
-        .expect("the pinSync lane must serialize in camelCase");
-    let rust_lane = json_object_keys(lane);
-    let ts_lane = ts_interface_keys(&source, "LaneStatus");
-    assert_eq!(
-        rust_lane,
-        ts_lane,
-        "\nLaneStatus keys diverged.\n  Rust only: {:?}\n  TS only:   {:?}\n",
-        rust_lane.difference(&ts_lane).collect::<Vec<_>>(),
-        ts_lane.difference(&rust_lane).collect::<Vec<_>>(),
-    );
-
-    let task = lane
-        .get("pending")
-        .and_then(Value::as_array)
-        .and_then(|items| items.first())
-        .expect("pending must hold at least one task in the sample");
-    let rust_task = json_object_keys(task);
-    let ts_task = ts_interface_keys(&source, "PendingTaskInfo");
-    assert_eq!(
-        rust_task,
-        ts_task,
-        "\nPendingTaskInfo keys diverged.\n  Rust only: {:?}\n  TS only:   {:?}\n",
-        rust_task.difference(&ts_task).collect::<Vec<_>>(),
-        ts_task.difference(&rust_task).collect::<Vec<_>>(),
-    );
-}
-
 #[test]
 fn monitor_status_snapshot_serializes_every_field_even_when_empty() {
-    // The popup reads the four lanes with no presence checks: if an `Option`
-    // field were omitted when `None` (skip_serializing_if), the UI would get
-    // `undefined` where it expects a number or an array.
+    // The snapshot still travels as the `get_hubcap_monitor_status` response
+    // and the push event payload: if an `Option` field were omitted when
+    // `None` (skip_serializing_if), a consumer would get `undefined` where it
+    // expects a number or an array.
     let json = serde_json::to_value(MonitorStatusSnapshot::default()).expect("serialize default");
     let keys = json_object_keys(&json);
     for expected in [

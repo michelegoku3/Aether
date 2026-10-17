@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { ModalShell } from '../ui/ModalShell';
 
 export interface UninstallDeskConfirmModalProps {
@@ -11,8 +11,8 @@ export interface UninstallDeskConfirmModalProps {
 
 /**
  * First step of portable Uninstall: "Are you sure?" plus optional wipe of
- * AetherData. YES advances to the Steam-clean step (if residuals exist) or
- * starts removal of verified application files.
+ * AetherData. YES advances to the Reset-Steam-path confirm (if residuals
+ * exist) or starts removal of verified application files.
  */
 export const UninstallDeskConfirmModal = ({ isProcessing, onConfirm, onCancel }: UninstallDeskConfirmModalProps) => {
   const [deleteUserData, setDeleteUserData] = useState(false);
@@ -72,60 +72,80 @@ export const UninstallDeskConfirmModal = ({ isProcessing, onConfirm, onCancel }:
   );
 };
 
-export interface UninstallSteamCleanModalProps {
-  residualCount: number;
+export interface ResetSteamConfirmModalProps {
   isProcessing: boolean;
-  /** YES — run Reset Path, then remove AetherDesk. */
-  onConfirmClean: () => void;
-  /** NO — skip Steam clean, still remove AetherDesk. */
-  onSkipClean: () => void;
-  /** X / Escape / overlay — abort the whole uninstall. */
+  /** User waited out the countdown and confirmed. Runs Reset Path. */
+  onConfirm: () => void;
+  /** X / Escape / overlay — abort, nothing is deleted. Also the NO handler
+   *  when no `onReject` is given (standalone Reset Path gate). */
   onCancel: () => void;
+  /**
+   * Uninstall flow only: NO means "skip the Steam clean, still uninstall".
+   * When set, the NO button switches to "No, just uninstall" and stops being
+   * a dismiss gesture; X / Escape / overlay keep aborting via `onCancel`.
+   */
+  onReject?: () => void;
 }
 
+/** Seconds the destructive YES stays disabled after the popup opens. */
+const RESET_CONFIRM_DELAY_S = 10;
+
 /**
- * Second step: only shown after YES on the confirm modal when Reset Path
- * targets still exist under Steam.
+ * Reset Path gate: resetting the Steam path cannot be undone — it deletes
+ * every Aether-created file and folder under the Steam directory (DLLs, all
+ * .lua in config/stplug-in, all .manifest in depotcache). The YES button
+ * stays disabled for a 10-second countdown so the warning is actually read.
+ * Dismiss gestures (X / Escape / overlay / NO) stay available the whole
+ * time; only a running reset locks the dialog. In the uninstall flow the
+ * dialog doubles as the Steam-clean gate: there NO (`onReject`) skips the
+ * clean and keeps uninstalling.
  */
-export const UninstallSteamCleanModal = ({
-  residualCount,
+export const ResetSteamConfirmModal = ({
   isProcessing,
-  onConfirmClean,
-  onSkipClean,
+  onConfirm,
   onCancel,
-}: UninstallSteamCleanModalProps) => {
-  const itemLabel = residualCount === 1 ? '1 residual item' : `${residualCount} residual items`;
+  onReject,
+}: ResetSteamConfirmModalProps) => {
+  const [remaining, setRemaining] = useState(RESET_CONFIRM_DELAY_S);
+
+  useEffect(() => {
+    if (remaining <= 0) return;
+    const timer = window.setTimeout(() => setRemaining((value) => Math.max(0, value - 1)), 1000);
+    return () => window.clearTimeout(timer);
+  }, [remaining]);
 
   return (
     <ModalShell
-      title="Clean Steam first?"
+      title="Reset Steam path?"
       onClose={onCancel}
       closeDisabled={isProcessing}
       containerClassName="uninstall-modal"
       bodyClassName="uninstall-modal-body"
     >
-      <p className="uninstall-modal-lead">Aether still left {itemLabel} under your Steam path.</p>
+      <p className="uninstall-modal-lead">Resetting the Steam path cannot be undone.</p>
       <p className="uninstall-modal-copy">
-        These are the same targets Reset Path removes (DLLs, <code>aethercore</code> / <code>desk_path.cfg</code>,
-        stplug-in, depotcache, and related files). Clean them before uninstalling?
+        Everything Aether created under your Steam folder will be deleted: the DLLs (<code>AetherCore.dll</code>,{' '}
+        <code>AetherPayload.dll</code>, <code>xinput1_4.dll</code>), the <code>aethercore</code> and{' '}
+        <code>config/stplug-in</code> folders (all your .lua files), and the <code>depotcache</code> contents (all your
+        .manifest files).
       </p>
 
       <div className="uninstall-modal-actions">
         <button
           type="button"
-          className="uninstall-btn uninstall-btn-primary"
-          onClick={onConfirmClean}
-          disabled={isProcessing}
+          className="uninstall-btn uninstall-btn-danger"
+          onClick={onConfirm}
+          disabled={isProcessing || remaining > 0}
         >
-          {isProcessing ? 'Working…' : 'Yes, clean Steam'}
+          {isProcessing ? 'Working…' : remaining > 0 ? `Yes, clean Steam (${remaining})` : 'Yes, clean Steam'}
         </button>
         <button
           type="button"
           className="uninstall-btn uninstall-btn-secondary"
-          onClick={onSkipClean}
+          onClick={onReject ?? onCancel}
           disabled={isProcessing}
         >
-          No, just uninstall
+          {onReject ? 'No, just uninstall' : 'No'}
         </button>
       </div>
     </ModalShell>

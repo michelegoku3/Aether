@@ -152,7 +152,12 @@ fn extract_zip(source: &Path, dest: &Path, default_password: &str) -> Result<(),
                     source.display()
                 )
             })?;
-        let Some(relative) = sanitize_rel_path(entry.name()) else {
+        // zip 9.x reports non-UTF8 entry names as an error instead of
+        // lossy-converting them: skip those entries like unsafe paths.
+        let Ok(entry_name) = entry.name() else {
+            continue;
+        };
+        let Some(relative) = sanitize_rel_path(&entry_name) else {
             continue; // skip unsafe (absolute / `..`) or empty paths
         };
         let out_path = dest.join(&relative);

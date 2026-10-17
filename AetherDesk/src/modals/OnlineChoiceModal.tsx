@@ -78,9 +78,7 @@ export const OnlineChoiceModal = ({
 
         <div className="oc-body">
           {ofmePresent && (
-            <div className="oc-banner">
-              OFME crack files detected, other online options are now locked.
-            </div>
+            <div className="oc-banner">OFME crack files detected, other online options are now locked.</div>
           )}
           <div className="oc-grid">
             {OPTIONS.map((option) => {

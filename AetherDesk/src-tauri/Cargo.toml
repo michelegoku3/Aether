@@ -30,9 +30,10 @@ sysinfo = "0.30"
 # Windows its Debug build links the DLL runtime (/MDd → MSVCRTD), while every
 # other object in a `cargo test` build uses /MD, hence
 # `LNK4098: default library 'MSVCRTD' conflicts`. The pure-Rust
-# `deflate` backend (miniz_oxide) has no C toolchain dependency and reads the
-# same provider archives; zopfli (write-side "deflate-zopfli") was never needed.
-zip = { version = "1.0", default-features = false, features = ["aes-crypto", "bzip2", "deflate", "deflate64", "lzma", "time", "zstd"] }
+# `deflate` backend (zlib-rs; no C toolchain dependency) reads the same
+# provider archives; zopfli (also pulled in by "deflate") is write-side only
+# and never used.
+zip = { version = "9", default-features = false, features = ["aes-crypto", "bzip2", "deflate", "deflate64", "lzma", "time", "zstd"] }
 unrar = "0.5"
 sevenz-rust2 = { version = "0.21", features = ["aes256"] }
 dirs = "6"

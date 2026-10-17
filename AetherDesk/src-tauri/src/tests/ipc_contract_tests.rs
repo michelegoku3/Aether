@@ -924,6 +924,10 @@ const DOCUMENTED_UNUSED_COMMANDS: &[(&str, &str)] = &[
         "the theme is read/written with read_custom_css + write_custom_css; the UI never needs the path",
     ),
     (
+        "get_hubcap_monitor_status",
+        "the sync-status popup was removed and the monitor runs headless; the command stays as the diagnostic surface",
+    ),
+    (
         "get_installed_dll_version",
         "replaced by check_aether_dll_update, which already returns installed_version",
     ),
@@ -978,8 +982,8 @@ fn unused_commands_are_only_the_documented_ones() {
         unexpected.is_empty(),
         "\nCommands registered but never called by the frontend: {unexpected:?}\n\
          Wire them to the UI or remove them; when they stay unused on purpose, \
-         list them in DOCUMENTED_UNUSED_COMMANDS with the reason (this list is \
-         the live inventory of the dead IPC surface: 10 commands out of 119).\n"
+          list them in DOCUMENTED_UNUSED_COMMANDS with the reason (this list is \
+         the live inventory of the dead IPC surface: 11 commands out of 119).\n"
     );
     assert!(
         stale.is_empty(),

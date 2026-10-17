@@ -34,13 +34,10 @@ const ENTRY = 'main.tsx';
 
 /** Links that must exist: [module, expected importer]. */
 const REQUIRED_LINKS = [
-  // Issue #3: the synchronizer status popup was dead code.
-  ['src/modals/SyncStatusModal.tsx', 'src/views/AetherView.tsx'],
-  // The popup lives in AetherView, mounted by MainContent (App keeps views
-  // always mounted and hides them with display:none).
+  // The Aether view lives in MainContent (App keeps views always mounted
+  // and hides them with display:none).
   ['src/views/AetherView.tsx', 'src/layout/MainContent.tsx'],
-  // Shared polling hook: used by the popup and by the Log view.
-  ['src/hooks/useVisiblePolling.ts', 'src/modals/SyncStatusModal.tsx'],
+  // Shared polling hook: used by the Log view.
   ['src/hooks/useVisiblePolling.ts', 'src/views/LogView.tsx'],
 ];
 
