@@ -507,6 +507,33 @@ mod tests {
         );
     }
 
+    /// Steam's `installdir` can be a pure wrapper (`common/<name>/<name>/game.exe`).
+    /// A crack file with no counterpart must land in the wrapped game root and be
+    /// inventoried relative to it, so removal and saved-crack reapply keep working.
+    #[test]
+    fn counterpart_free_flat_file_lands_in_the_wrapped_game_root() {
+        let (_temp, backup, game, staging) = setup();
+        let inner = game.join("How to Fish");
+        fs::create_dir_all(&inner).unwrap();
+        fs::write(inner.join("How to Fish.exe"), b"MZ fake").unwrap();
+        fs::write(staging.join("OnlineFix.ini"), b"[fix]").unwrap();
+
+        let report = apply_staged_files(APP_ID, &staging, &game, &backup).unwrap();
+
+        assert_eq!(report.files, vec!["How to Fish/OnlineFix.ini"]);
+        assert_eq!(fs::read(inner.join("OnlineFix.ini")).unwrap(), b"[fix]");
+        assert!(!game.join("OnlineFix.ini").exists());
+        assert_eq!(
+            backup.read_crack_inventory(APP_ID).unwrap(),
+            vec!["How to Fish/OnlineFix.ini"]
+        );
+        assert_eq!(
+            remove_applied_crack_files(APP_ID, &game, &backup).unwrap(),
+            1
+        );
+        assert!(!inner.join("OnlineFix.ini").exists());
+    }
+
     #[test]
     fn corrupt_or_unsafe_recovery_state_never_authorizes_deletion() {
         let (temp, backup, game, _staging) = setup();

@@ -3,12 +3,32 @@
 //! Pins support for:
 //! - Hierarchical cracks (folders): keep the usual suffix-matching.
 //! - Flat cracks (`is_flat_crack = true`): recursive search and replacement
-//!   of every matching file in any subfolder, or fallback to the root when
-//!   no file matches.
+//!   of every matching file in any subfolder.
+//! - Counterpart-free files: the fallback base is the game's real root, which
+//!   for a wrapper-packaged install (`common/<name>/<name>/game.exe`) is the
+//!   inner folder, not Steam's `installdir` folder.
 
 use crate::crack::locate::{resolve_file_target, resolve_file_targets};
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
+
+/// The reported shape: Steam's `installdir` ("How to Fish") holds nothing but
+/// a folder with the same name, and the game lives inside that folder.
+const WRAPPER: &str = "How to Fish";
+
+/// Creates the real game (Unity layout: exe in the inner folder, the Steam API
+/// DLL under `<Game>_Data\Plugins\x86_64`) and returns the inner folder.
+fn wrapped_game(root: &Path) -> PathBuf {
+    let inner = root.join(WRAPPER);
+    let plugins = inner
+        .join("How to Fish_Data")
+        .join("Plugins")
+        .join("x86_64");
+    fs::create_dir_all(&plugins).unwrap();
+    fs::write(inner.join("How to Fish.exe"), b"MZ fake").unwrap();
+    fs::write(plugins.join("steam_api64.dll"), b"pristine").unwrap();
+    inner
+}
 
 #[test]
 fn test_resolve_file_targets_hierarchical_crack() {
@@ -57,6 +77,67 @@ fn test_resolve_file_targets_flat_crack_matches_subdirs() {
     expected.sort();
 
     assert_eq!(targets, expected);
+}
+
+/// A crack file that exists nowhere in the game belongs next to the game, not
+/// in Steam's wrapper folder: `common/<name>/<name>/game.exe` means the file
+/// lands in the inner `<name>`.
+#[test]
+fn test_counterpart_free_flat_crack_lands_in_the_wrapped_game_root() {
+    let temp_dir = tempfile_tempdir();
+    let game_root = temp_dir.path();
+    let inner = wrapped_game(game_root);
+
+    let rel = Path::new("OnlineFix.ini");
+    let targets = resolve_file_targets(rel, game_root, true);
+
+    assert_eq!(targets, vec![inner.join("OnlineFix.ini")]);
+}
+
+/// Same rule for a crack archive that carries a folder: the folder is resolved
+/// against the real game root, so it merges where the game actually keeps it.
+#[test]
+fn test_counterpart_free_folder_crack_merges_into_the_wrapped_game_root() {
+    let temp_dir = tempfile_tempdir();
+    let game_root = temp_dir.path();
+    let inner = wrapped_game(game_root);
+    fs::create_dir_all(inner.join("Binaries")).unwrap();
+
+    let rel = Path::new("Binaries").join("extra.dll");
+    let targets = resolve_file_targets(&rel, game_root, false);
+
+    assert_eq!(targets, vec![inner.join("Binaries").join("extra.dll")]);
+}
+
+/// Wrapper folders can be nested more than once; the descent follows them.
+#[test]
+fn test_counterpart_free_file_reaches_a_doubly_wrapped_game_root() {
+    let temp_dir = tempfile_tempdir();
+    let game_root = temp_dir.path();
+    let inner = game_root.join("A").join("A");
+    fs::create_dir_all(&inner).unwrap();
+    fs::write(inner.join("Game.exe"), b"MZ fake").unwrap();
+
+    let rel = Path::new("OnlineFix.ini");
+    let targets = resolve_file_targets(rel, game_root, true);
+
+    assert_eq!(targets, vec![inner.join("OnlineFix.ini")]);
+}
+
+/// Guard: when the installdir holds anything besides a single folder, the game
+/// may genuinely live there, so the base must stay the installdir itself.
+#[test]
+fn test_wrapper_descent_stops_when_the_installdir_holds_other_files() {
+    let temp_dir = tempfile_tempdir();
+    let game_root = temp_dir.path();
+    let inner = wrapped_game(game_root);
+    fs::write(game_root.join("readme.txt"), b"shipped with the game").unwrap();
+
+    let rel = Path::new("OnlineFix.ini");
+    let targets = resolve_file_targets(rel, game_root, true);
+
+    assert_eq!(targets, vec![game_root.join("OnlineFix.ini")]);
+    assert_ne!(targets, vec![inner.join("OnlineFix.ini")]);
 }
 
 /// Fallback helper for direct tests with no extra dependencies.

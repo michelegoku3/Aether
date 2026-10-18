@@ -10,16 +10,24 @@
 //   * keep the longest path suffix whose parent directory exists in the game
 //     (this merges into existing folders such as `files/Hk project`), or
 //   * otherwise strip wrapper components until the file fits at the game root.
+//
+// "The game root" here is the folder the game actually lives in. Steam's
+// `installdir` is often a pure wrapper (`common/<name>/<name>/game.exe`): the
+// installdir folder then holds nothing but the real game folder. A crack file
+// the game does not already have belongs next to the game, not next to that
+// wrapper, so `game_content_root` resolves the base once per call and only
+// descends through a folder that is the installdir's only entry.
 use std::ffi::OsString;
 use std::path::{Component, Path, PathBuf};
 
-/// Determine the target location in `game_root` for a staged file whose path
+/// Determine the target location in `base_root` for a staged file whose path
 /// relative to the archive root is `archive_rel`.
 ///
-/// The returned path is always `game_root.join(some_suffix)` and points into
-/// an existing directory chain (or the game root itself) so that applied files
-/// merge into the real game tree.
-pub fn resolve_file_target(archive_rel: &Path, game_root: &Path) -> PathBuf {
+/// The returned path is always `base_root.join(some_suffix)` and points into
+/// an existing directory chain (or `base_root` itself) so that applied files
+/// merge into the real game tree. Callers pass the game's real root (see
+/// `game_content_root`).
+pub fn resolve_file_target(archive_rel: &Path, base_root: &Path) -> PathBuf {
     let components: Vec<OsString> = archive_rel
         .components()
         .filter_map(|component| match component {
@@ -29,15 +37,15 @@ pub fn resolve_file_target(archive_rel: &Path, game_root: &Path) -> PathBuf {
         .collect();
 
     if components.is_empty() {
-        return game_root.to_path_buf();
+        return base_root.to_path_buf();
     }
 
     // Try the longest suffix first (full path), then strip one component at a
-    // time. game_root is a directory, so the final iteration always matches and
+    // time. base_root is a directory, so the final iteration always matches and
     // returns the file at the game root.
     for start in 0..components.len() {
         let suffix: PathBuf = components[start..].iter().collect();
-        let candidate = game_root.join(&suffix);
+        let candidate = base_root.join(&suffix);
         if let Some(parent) = candidate.parent() {
             if parent.is_dir() {
                 return candidate;
@@ -45,12 +53,47 @@ pub fn resolve_file_target(archive_rel: &Path, game_root: &Path) -> PathBuf {
         }
     }
 
-    // Defensive fallback (unreachable in practice because game_root is a dir).
-    game_root.join(archive_rel)
+    // Defensive fallback (unreachable in practice because base_root is a dir).
+    base_root.join(archive_rel)
 }
 
-/// Determine all target locations in `game_root` for a staged file whose path
-/// relative to the archive root is `archive_rel`.
+/// The folder the game's files actually live in.
+///
+/// Steam's `installdir` is often a pure wrapper: `common/<name>/<name>/game.exe`
+/// holds nothing but the folder with the real game (exe, `<name>_Data`, DLLs).
+/// A crack file the game does not already have must land next to the game, not
+/// next to that wrapper.
+///
+/// The descent is deliberately conservative: it follows only a folder that is
+/// the installdir's *only* entry. Anything else (another folder, a file, an
+/// empty folder) means the game may genuinely live at the installdir level, so
+/// the installdir itself stays the base. That also makes the change invisible
+/// for every game that is not wrapper-packaged: the base is the same path.
+fn game_content_root(installdir: &Path) -> PathBuf {
+    let mut current = installdir.to_path_buf();
+    loop {
+        let Ok(entries) = std::fs::read_dir(&current) else {
+            return current;
+        };
+        let mut only_folder: Option<PathBuf> = None;
+        for entry in entries.flatten() {
+            let is_dir = entry.file_type().map(|kind| kind.is_dir()).unwrap_or(false);
+            if !is_dir || only_folder.is_some() {
+                return current;
+            }
+            only_folder = Some(entry.path());
+        }
+        match only_folder {
+            Some(inner) => current = inner,
+            // Empty folder: there is nothing to descend into.
+            None => return current,
+        }
+    }
+}
+
+/// Determine all target locations for a staged file whose path relative to the
+/// archive root is `archive_rel`, inside the game rooted at `game_root` (Steam's
+/// `installdir` folder).
 ///
 /// When `is_flat_crack` is true (meaning every file in the crack source is a plain
 /// normal file without any folder structure, e.g. `steam_api64.dll`), we recursively
@@ -58,15 +101,20 @@ pub fn resolve_file_target(archive_rel: &Path, game_root: &Path) -> PathBuf {
 ///   - If matching files are found in any subdirectory of `game_root`, all their
 ///     paths are returned so every matching file in the game is replaced.
 ///   - If no matching files exist in `game_root`, we fall back to placing the
-///     file at the game root (`[game_root.join(archive_rel)]`), as established.
+///     file in the game's real root (`game_content_root`), as established.
 ///
 /// When `is_flat_crack` is false (the crack archive contains folder structure),
-/// it returns `[resolve_file_target(archive_rel, game_root)]`.
+/// it returns `[resolve_file_target(archive_rel, game_content_root)]`.
 pub fn resolve_file_targets(
     archive_rel: &Path,
     game_root: &Path,
     is_flat_crack: bool,
 ) -> Vec<PathBuf> {
+    // Files the game already has are replaced where they are (the search below
+    // descends into wrapper folders too); files it does not have yet belong in
+    // the folder that holds the game itself.
+    let content_root = game_content_root(game_root);
+
     if is_flat_crack {
         if let Some(file_name) = archive_rel.file_name().and_then(|n| n.to_str()) {
             let mut matches = Vec::new();
@@ -79,7 +127,7 @@ pub fn resolve_file_targets(
         }
     }
 
-    vec![resolve_file_target(archive_rel, game_root)]
+    vec![resolve_file_target(archive_rel, &content_root)]
 }
 
 /// Recursively searches `dir` for any existing file whose name matches `target_name`
