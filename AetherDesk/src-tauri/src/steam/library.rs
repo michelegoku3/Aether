@@ -15,6 +15,10 @@ pub struct InstalledSteamGame {
     pub library_path: String,
     pub game_path: String,
     pub installed: bool,
+    /// Steam is still writing this app's content (`StateFlags` says so).
+    /// Mutually exclusive with `installed`: a game is either complete,
+    /// in flight, or absent from Steam.
+    pub installing: bool,
     pub image_url: String,
     pub hero_image_url: String,
     /// Malformed `setManifestid` lines found in this game's Lua while scanning.
@@ -38,6 +42,30 @@ struct AppManifest {
     install_dir: String,
     library_path: PathBuf,
     game_path: PathBuf,
+    /// Steam's `AppState.StateFlags`, when the key is present and numeric.
+    state_flags: Option<u64>,
+}
+
+/// Steam's own AppState flags that decide whether the content is complete.
+/// `Fully Installed` (0x4) is cleared by Steam when it starts writing an
+/// install/update; `Update Required` (0x2) marks that same unfinished state.
+/// Every other bit (sizes, update scheduling) is irrelevant here.
+const STATE_FLAG_UPDATE_REQUIRED: u64 = 0x2;
+const STATE_FLAG_FULLY_INSTALLED: u64 = 0x4;
+
+/// True while Steam is still writing this app's content.
+///
+/// Only the combination "Fully Installed clear + Update Required set" counts:
+/// a missing or unexpected value (absent key, `0`) keeps the game as installed.
+/// That is the pre-existing behaviour and it can never hide a playable game —
+/// while the reversed guess would mark every Aether-pinned version as missing.
+fn steam_is_installing(state_flags: Option<u64>) -> bool {
+    matches!(
+        state_flags,
+        Some(flags)
+            if (flags & STATE_FLAG_FULLY_INSTALLED) == 0
+                && (flags & STATE_FLAG_UPDATE_REQUIRED) != 0
+    )
 }
 
 #[derive(Debug, Clone)]
@@ -64,8 +92,11 @@ impl SteamLibraryScanner {
     /// Returns every game represented by a Lua file in Steam/config/stplug-in.
     ///
     /// ACF files are used only as installation metadata. This means a game appears in
-    /// Library as soon as Aether/LumaCore has a Lua for it, and the Installed badge is
-    /// driven independently by Steam's appmanifest_*.acf files.
+    /// Library as soon as Aether/LumaCore has a Lua for it, and the install state is
+    /// driven independently by Steam's `appmanifest_*.acf` files: `installed` when
+    /// Steam reports the content complete, `installing` while it is still writing it.
+    /// The game folder is never inspected: Steam leaves it behind (empty, or holding
+    /// leftover crack files) after an uninstall.
     pub fn scan_installed_games(&self) -> Vec<InstalledSteamGame> {
         let libraries = self.discover_libraries();
         let installed_manifests = self.scan_appmanifests(&libraries);
@@ -79,7 +110,13 @@ impl SteamLibraryScanner {
             }
 
             let manifest = installed_manifests.get(&lua.app_id);
-            let installed = manifest.is_some();
+            // Steam's StateFlags is the only reliable "content complete" signal:
+            // the install folder survives an uninstall and a fresh install
+            // populates it only at the end.
+            let installing = manifest
+                .map(|manifest| steam_is_installing(manifest.state_flags))
+                .unwrap_or(false);
+            let installed = manifest.is_some() && !installing;
             let name = manifest
                 .and_then(|manifest| Self::safe_display_name(&manifest.name))
                 .or(lua.name)
@@ -97,6 +134,7 @@ impl SteamLibraryScanner {
                     .map(|m| m.game_path.display().to_string())
                     .unwrap_or_default(),
                 installed,
+                installing,
                 // Never guess a CDN filename. Modern Steam assets are hashed;
                 // unhashed library_600x900 / header.jpg either 404 or the UI
                 // treats a landscape fallback as a "hero" in the capsule slot.
@@ -367,6 +405,10 @@ impl SteamLibraryScanner {
             .ok()?;
         let name = Self::capture_vdf_value(&content, "name").unwrap_or_default();
         let install_dir = Self::capture_vdf_value(&content, "installdir")?;
+        // Optional by design: an ACF without a parseable StateFlags keeps the
+        // game as installed instead of inventing an "installing" state.
+        let state_flags = Self::capture_vdf_value(&content, "StateFlags")
+            .and_then(|raw| raw.trim().parse::<u64>().ok());
 
         if install_dir.trim().is_empty() {
             return None;
@@ -383,6 +425,7 @@ impl SteamLibraryScanner {
             install_dir,
             library_path: library_path.to_path_buf(),
             game_path,
+            state_flags,
         })
     }
 

@@ -53,6 +53,7 @@ pub mod online_serde_tests;
 pub mod resolver_tests;
 pub mod service_tests;
 pub mod settings_usage_cache_tests;
+pub mod steam_library_install_state_tests;
 pub mod steam_library_issue_tests;
 pub mod store_items_tests;
 pub mod store_suggest_tests;
