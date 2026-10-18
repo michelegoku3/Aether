@@ -6,20 +6,25 @@
 //!   of every matching file in any subfolder.
 //! - Counterpart-free files: the fallback base is the game's real root, which
 //!   for a wrapper-packaged install (`common/<name>/<name>/game.exe`) is the
-//!   inner folder, not Steam's `installdir` folder.
+//!   inner folder, not Steam's `installdir` folder. The descent needs a signal
+//!   (the only entry, a name equal to the installdir, or the game's own
+//!   executable inside) and stops when the installdir itself holds one.
 
 use crate::crack::locate::{resolve_file_target, resolve_file_targets};
 use std::fs;
 use std::path::{Path, PathBuf};
 
-/// The reported shape: Steam's `installdir` ("How to Fish") holds nothing but
-/// a folder with the same name, and the game lives inside that folder.
+/// The reported shape: Steam creates `steamapps/common/<name>/` (`<name>` is the
+/// ACF `installdir`, here "How to Fish") and the real game lives in a folder
+/// with the same name inside it.
 const WRAPPER: &str = "How to Fish";
 
-/// Creates the real game (Unity layout: exe in the inner folder, the Steam API
-/// DLL under `<Game>_Data\Plugins\x86_64`) and returns the inner folder.
-fn wrapped_game(root: &Path) -> PathBuf {
-    let inner = root.join(WRAPPER);
+/// Builds that install under `common` and returns `(installdir, real game
+/// folder)`. The game is a Unity x64 layout: the exe sits in the inner folder
+/// and the Steam API DLL under `<Game>_Data\Plugins\x86_64`.
+fn wrapped_game(common: &Path) -> (PathBuf, PathBuf) {
+    let installdir = common.join(WRAPPER);
+    let inner = installdir.join(WRAPPER);
     let plugins = inner
         .join("How to Fish_Data")
         .join("Plugins")
@@ -27,7 +32,7 @@ fn wrapped_game(root: &Path) -> PathBuf {
     fs::create_dir_all(&plugins).unwrap();
     fs::write(inner.join("How to Fish.exe"), b"MZ fake").unwrap();
     fs::write(plugins.join("steam_api64.dll"), b"pristine").unwrap();
-    inner
+    (installdir, inner)
 }
 
 #[test]
@@ -85,11 +90,10 @@ fn test_resolve_file_targets_flat_crack_matches_subdirs() {
 #[test]
 fn test_counterpart_free_flat_crack_lands_in_the_wrapped_game_root() {
     let temp_dir = tempfile_tempdir();
-    let game_root = temp_dir.path();
-    let inner = wrapped_game(game_root);
+    let (game_root, inner) = wrapped_game(temp_dir.path());
 
     let rel = Path::new("OnlineFix.ini");
-    let targets = resolve_file_targets(rel, game_root, true);
+    let targets = resolve_file_targets(rel, &game_root, true);
 
     assert_eq!(targets, vec![inner.join("OnlineFix.ini")]);
 }
@@ -99,12 +103,11 @@ fn test_counterpart_free_flat_crack_lands_in_the_wrapped_game_root() {
 #[test]
 fn test_counterpart_free_folder_crack_merges_into_the_wrapped_game_root() {
     let temp_dir = tempfile_tempdir();
-    let game_root = temp_dir.path();
-    let inner = wrapped_game(game_root);
+    let (game_root, inner) = wrapped_game(temp_dir.path());
     fs::create_dir_all(inner.join("Binaries")).unwrap();
 
     let rel = Path::new("Binaries").join("extra.dll");
-    let targets = resolve_file_targets(&rel, game_root, false);
+    let targets = resolve_file_targets(&rel, &game_root, false);
 
     assert_eq!(targets, vec![inner.join("Binaries").join("extra.dll")]);
 }
@@ -113,58 +116,92 @@ fn test_counterpart_free_folder_crack_merges_into_the_wrapped_game_root() {
 #[test]
 fn test_counterpart_free_file_reaches_a_doubly_wrapped_game_root() {
     let temp_dir = tempfile_tempdir();
-    let game_root = temp_dir.path();
-    let inner = game_root.join("A").join("A");
+    let game_root = temp_dir.path().join("A");
+    let inner = game_root.join("A");
     fs::create_dir_all(&inner).unwrap();
     fs::write(inner.join("Game.exe"), b"MZ fake").unwrap();
 
     let rel = Path::new("OnlineFix.ini");
-    let targets = resolve_file_targets(rel, game_root, true);
+    let targets = resolve_file_targets(rel, &game_root, true);
 
     assert_eq!(targets, vec![inner.join("OnlineFix.ini")]);
 }
 
-/// Guard: when the installdir holds anything besides a single folder, the game
-/// may genuinely live there, so the base must stay the installdir itself.
+/// A stray file next to the wrapper (a repack note, or a crack file left by an
+/// older build) is not enough to give up: the folder is named like the
+/// installdir, the double-folder packaging convention, so the game is inside.
 #[test]
-fn test_wrapper_descent_stops_when_the_installdir_holds_other_files() {
+fn test_stray_file_next_to_a_like_named_wrapper_still_descends() {
     let temp_dir = tempfile_tempdir();
-    let game_root = temp_dir.path();
-    let inner = wrapped_game(game_root);
-    fs::write(game_root.join("readme.txt"), b"shipped with the game").unwrap();
-
-    let rel = Path::new("OnlineFix.ini");
-    let targets = resolve_file_targets(rel, game_root, true);
-
-    assert_eq!(targets, vec![game_root.join("OnlineFix.ini")]);
-    assert_ne!(targets, vec![inner.join("OnlineFix.ini")]);
-}
-
-/// Characterisation of the one shape the wrapper rule deliberately does not
-/// cover, plus the documented recovery: a file next to the wrapper folder keeps
-/// the base at the installdir (nothing can tell a crack file left by an older
-/// build apart from a file the game owns), and removing that file restores the
-/// rule - which is exactly what "remove applied crack" and then applying again
-/// does for a game cracked by an older AetherDesk.
-#[test]
-fn test_stray_file_at_the_installdir_keeps_the_base_until_it_is_removed() {
-    let temp_dir = tempfile_tempdir();
-    let game_root = temp_dir.path();
-    let inner = wrapped_game(game_root);
-    let stray = game_root.join("OnlineFix.ini");
-    fs::write(&stray, b"[crack left by an older build]").unwrap();
+    let (game_root, inner) = wrapped_game(temp_dir.path());
+    fs::write(
+        game_root.join("OnlineFix.ini"),
+        b"[crack left by an older build]",
+    )
+    .unwrap();
 
     let rel = Path::new("steam_appid.txt");
-    assert_eq!(
-        resolve_file_targets(rel, game_root, true),
-        vec![game_root.join("steam_appid.txt")]
-    );
+    let targets = resolve_file_targets(rel, &game_root, true);
 
-    fs::remove_file(&stray).unwrap();
-    assert_eq!(
-        resolve_file_targets(rel, game_root, true),
-        vec![inner.join("steam_appid.txt")]
-    );
+    assert_eq!(targets, vec![inner.join("steam_appid.txt")]);
+}
+
+/// The folder name is not the only signal: a folder holding the game's own
+/// executable is the game root even when the folder is named differently.
+#[test]
+fn test_wrapper_folder_holding_the_game_exe_descends_when_named_differently() {
+    let temp_dir = tempfile_tempdir();
+    let game_root = temp_dir.path().join(WRAPPER);
+    let inner = game_root.join("ActualGame");
+    fs::create_dir_all(&inner).unwrap();
+    fs::write(inner.join("How to Fish.exe"), b"MZ fake").unwrap();
+    fs::write(game_root.join("readme.txt"), b"repack notes").unwrap();
+
+    let rel = Path::new("steam_appid.txt");
+    let targets = resolve_file_targets(rel, &game_root, true);
+
+    assert_eq!(targets, vec![inner.join("steam_appid.txt")]);
+}
+
+/// Guard: an executable at the installdir level means the game may live there,
+/// so a folder named like the installdir that also holds the game's executable
+/// must not steal the files.
+#[test]
+fn test_installdir_with_its_own_exe_never_descends() {
+    let temp_dir = tempfile_tempdir();
+    let (game_root, _inner) = wrapped_game(temp_dir.path());
+    fs::write(game_root.join("How to Fish.exe"), b"MZ shipping exe").unwrap();
+
+    let rel = Path::new("steam_appid.txt");
+    let targets = resolve_file_targets(rel, &game_root, true);
+
+    assert_eq!(targets, vec![game_root.join("steam_appid.txt")]);
+}
+
+/// Guard: without a signal that the folder holds the game - it is not named
+/// like the installdir and holds no executable of the game - the base stays the
+/// installdir. This is the residual gap, and no removal can close it, because
+/// the folder itself carries no signal.
+#[test]
+fn test_folder_without_a_game_signal_keeps_the_installdir_as_base() {
+    let temp_dir = tempfile_tempdir();
+    let game_root = temp_dir.path().join(WRAPPER);
+    fs::create_dir_all(game_root.join("Redist")).unwrap();
+    fs::write(
+        game_root.join("Redist").join("vc_redist.x64.exe"),
+        b"MZ redist",
+    )
+    .unwrap();
+    fs::write(
+        game_root.join("OnlineFix.ini"),
+        b"[crack left by an older build]",
+    )
+    .unwrap();
+
+    let rel = Path::new("steam_appid.txt");
+    let targets = resolve_file_targets(rel, &game_root, true);
+
+    assert_eq!(targets, vec![game_root.join("steam_appid.txt")]);
 }
 
 /// Fallback helper for direct tests with no extra dependencies.

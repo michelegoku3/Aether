@@ -532,6 +532,9 @@ mod tests {
             1
         );
         assert!(!inner.join("OnlineFix.ini").exists());
+        // Removing the applied file must never touch the game itself.
+        assert!(inner.join("How to Fish.exe").exists());
+        assert!(game.exists());
     }
 
     #[test]

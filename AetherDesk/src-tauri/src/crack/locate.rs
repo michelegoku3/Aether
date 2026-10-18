@@ -12,12 +12,14 @@
 //   * otherwise strip wrapper components until the file fits at the game root.
 //
 // "The game root" here is the folder the game actually lives in. Steam's
-// `installdir` is often a pure wrapper (`common/<name>/<name>/game.exe`): the
+// `installdir` is often a wrapper (`common/<name>/<name>/game.exe`): the
 // installdir folder then holds nothing but the real game folder. A crack file
 // the game does not already have belongs next to the game, not next to that
-// wrapper, so `game_content_root` resolves the base once per call and only
-// descends through a folder that is the installdir's only entry.
-use std::ffi::OsString;
+// wrapper, so `game_content_root` resolves the base once per call: it descends
+// while the installdir looks like a wrapper, that is while it holds a single
+// folder, no executable of its own, and either no other entry at all or a
+// folder named like the installdir (or holding its executable).
+use std::ffi::{OsStr, OsString};
 use std::path::{Component, Path, PathBuf};
 
 /// Determine the target location in `base_root` for a staged file whose path
@@ -59,44 +61,115 @@ pub fn resolve_file_target(archive_rel: &Path, base_root: &Path) -> PathBuf {
 
 /// The folder the game's files actually live in.
 ///
-/// Steam's `installdir` is often a pure wrapper: `common/<name>/<name>/game.exe`
+/// Steam's `installdir` is often a wrapper: `common/<name>/<name>/game.exe`
 /// holds nothing but the folder with the real game (exe, `<name>_Data`, DLLs).
 /// A crack file the game does not already have must land next to the game, not
 /// next to that wrapper.
 ///
-/// The descent is deliberately conservative: it follows only a folder that is
-/// the installdir's *only* entry. Anything else (another folder, a file, an
-/// empty folder) means the game may genuinely live at the installdir level, so
-/// the installdir itself stays the base. That also makes the change invisible
-/// for every game that is not wrapper-packaged: the base is the same path.
+/// The descent follows a folder only while the installdir does not look like the
+/// game itself (no executable at its level) and the folder does:
 ///
-/// One consequence is intentional: a file sitting next to the wrapper folder
-/// keeps the base at the installdir, and that includes the crack files a build
-/// older than this rule left there. Relocating them automatically would need a
-/// way to tell a crack file from a file the game owns, which is a bigger
-/// decision than resolving the content root; the recovery path is removing the
-/// previous crack (the "remove applied crack" flow, or answering "choose a new
-/// crack" in the saved-crack prompt) and applying again.
+///   * it is the installdir's only entry (a pure wrapper, whatever its name), or
+///   * it is the installdir's only folder and is named like the installdir (the
+///     double-folder packaging convention) or holds an executable named like the
+///     installdir.
+///
+/// Anything else - several folders, no folder, an executable at the installdir
+/// level, or a folder carrying none of those signals - keeps the installdir as
+/// the base. That also makes the change invisible for every game that is not
+/// wrapper-packaged: the base is then the same path.
+///
+/// The residual gap is a stray file (a repack note, or a crack file left by a
+/// build older than this rule) next to a folder with no signal at all. That shape
+/// keeps the base at the installdir; the recovery is removing the previous crack
+/// (the "remove applied crack" flow, or answering "choose a new crack" in the
+/// saved-crack prompt) and applying again.
 fn game_content_root(installdir: &Path) -> PathBuf {
+    let expected_name = installdir
+        .file_name()
+        .and_then(OsStr::to_str)
+        .unwrap_or_default();
     let mut current = installdir.to_path_buf();
     loop {
         let Ok(entries) = std::fs::read_dir(&current) else {
             return current;
         };
-        let mut only_folder: Option<PathBuf> = None;
+        let mut entries_seen = 0usize;
+        let mut folders: Vec<PathBuf> = Vec::new();
+        let mut holds_own_executable = false;
         for entry in entries.flatten() {
-            let is_dir = entry.file_type().map(|kind| kind.is_dir()).unwrap_or(false);
-            if !is_dir || only_folder.is_some() {
-                return current;
+            entries_seen += 1;
+            if entry.file_type().map(|kind| kind.is_dir()).unwrap_or(false) {
+                folders.push(entry.path());
+            } else if is_executable(&entry.path()) {
+                holds_own_executable = true;
             }
-            only_folder = Some(entry.path());
         }
-        match only_folder {
-            Some(inner) => current = inner,
-            // Empty folder: there is nothing to descend into.
-            None => return current,
+
+        // A pure wrapper: nothing but one folder, whatever it is called.
+        if entries_seen == 1 && folders.len() == 1 {
+            if let Some(folder) = folders.pop() {
+                current = folder;
+                continue;
+            }
         }
+
+        // The only folder, next to files the game does not own: it is the game
+        // root when it carries one of the two signals. A symlink or junction
+        // never reaches here: `file_type` does not follow reparse points, so it
+        // is neither a folder nor an executable and the descent stops - which is
+        // what we want, because the canonicalized target could leave the game
+        // root and break every recorded path.
+        if !holds_own_executable && folders.len() == 1 {
+            if let Some(folder) = folders.pop() {
+                let named_like_game = folder
+                    .file_name()
+                    .and_then(OsStr::to_str)
+                    .map(|name| name.eq_ignore_ascii_case(expected_name))
+                    .unwrap_or(false);
+                if !expected_name.is_empty()
+                    && (named_like_game || holds_executable_named(&folder, expected_name))
+                {
+                    current = folder;
+                    continue;
+                }
+            }
+        }
+
+        return current;
     }
+}
+
+fn is_executable(path: &Path) -> bool {
+    path.extension()
+        .and_then(OsStr::to_str)
+        .map(|extension| extension.eq_ignore_ascii_case("exe"))
+        .unwrap_or(false)
+}
+
+/// True when `folder` directly holds an executable file whose stem is
+/// `expected_name` (case-insensitive). Links count as neither: `file_type` does
+/// not follow reparse points.
+fn holds_executable_named(folder: &Path, expected_name: &str) -> bool {
+    let Ok(entries) = std::fs::read_dir(folder) else {
+        return false;
+    };
+    entries.flatten().any(|entry| {
+        if !entry
+            .file_type()
+            .map(|kind| kind.is_file())
+            .unwrap_or(false)
+        {
+            return false;
+        }
+        let path = entry.path();
+        is_executable(&path)
+            && path
+                .file_stem()
+                .and_then(OsStr::to_str)
+                .map(|stem| stem.eq_ignore_ascii_case(expected_name))
+                .unwrap_or(false)
+    })
 }
 
 /// Determine all target locations for a staged file whose path relative to the
