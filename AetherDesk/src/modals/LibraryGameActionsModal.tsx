@@ -9,6 +9,7 @@ import { OnlineChoiceModal, type AppPresenceMode } from './OnlineChoiceModal';
 import { resolveEffectivePresenceMode } from './onlineChoiceState';
 import type { PresenceToggleArgs } from '../types/online';
 import { toErrorMessage } from '../util/errors';
+import { resolveLiveGame } from '../util/library';
 
 export interface LibraryActionGame {
   id: number;
@@ -115,6 +116,14 @@ export const LibraryGameActionsModal = ({
   const hasPinsToFix = (games.find((entry) => entry.appId === game.appId)?.luaIssues ?? game.luaIssues ?? []).some(
     (issue) => issue.active !== false
   );
+  /**
+   * The card hands over a snapshot taken when it was clicked, and the Library
+   * keeps scanning behind this popup: a game Steam finished installing while it
+   * was open must become actionable without reopening the card.
+   */
+  const liveGame = resolveLiveGame(games, game) ?? game;
+  const liveInstalled = liveGame.installed;
+  const liveInstalling = liveGame.installing;
   const [updatesEnabled, setUpdatesEnabled] = useState(false);
   const [isBusy, setIsBusy] = useState(false);
   const [showOnlineChoice, setShowOnlineChoice] = useState(false);
@@ -197,7 +206,7 @@ export const LibraryGameActionsModal = ({
   };
 
   const handleRemove = async () => {
-    if (game.installed) {
+    if (liveInstalled || liveInstalling) {
       onStatus('Remove is available only for games that are not installed in Steam.', 'error');
       return;
     }
@@ -387,21 +396,25 @@ export const LibraryGameActionsModal = ({
               </span>
               <span
                 className="game-action-btn-wrap"
-                title={!game.installed ? 'Online requires the game to be installed in Steam first' : undefined}
+                title={!liveInstalled ? 'Online requires the game to be installed in Steam first' : undefined}
               >
-                <button className="game-action-btn" onClick={handleOpenOnline} disabled={disabled || !game.installed}>
+                <button className="game-action-btn" onClick={handleOpenOnline} disabled={disabled || !liveInstalled}>
                   ONLINE
                 </button>
               </span>
               <span
                 className="game-action-btn-wrap"
                 title={
-                  game.installed
+                  liveInstalled || liveInstalling
                     ? 'Installed games cannot be removed from Aether Library'
                     : 'Remove Lua from Aether Library'
                 }
               >
-                <button className="game-action-btn danger" onClick={handleRemove} disabled={disabled || game.installed}>
+                <button
+                  className="game-action-btn danger"
+                  onClick={handleRemove}
+                  disabled={disabled || liveInstalled || liveInstalling}
+                >
                   Remove
                 </button>
               </span>

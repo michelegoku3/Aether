@@ -8,6 +8,7 @@ import { AntivirusExclusionModal } from '../modals/AntivirusExclusionModal';
 import { SearchSuggest, moveSuggestIndex } from '../ui/SearchSuggest';
 import { filterAndSortGames } from '../util/search';
 import { toErrorMessage } from '../util/errors';
+import { resolveLiveGame } from '../util/library';
 
 const MAX_VISIBLE_RESULTS = 5;
 
@@ -29,6 +30,12 @@ export const HomeView = memo(function HomeView() {
   const { games, isLoading } = useLibraryGames();
   const [query, setQuery] = useState('');
   const [selectedGame, setSelectedGame] = useState<InstalledGame | null>(null);
+  /**
+   * Install state, read live: the search result is a snapshot taken when it was
+   * picked, and the Library keeps scanning behind this view. A game Steam
+   * finishes installing must become actionable without re-searching it.
+   */
+  const liveGame = resolveLiveGame(games, selectedGame);
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [activeResultIndex, setActiveResultIndex] = useState<number | null>(null);
   const [status, setStatus] = useState<HomeStatus>({ text: '', type: 'info' });
@@ -46,6 +53,14 @@ export const HomeView = memo(function HomeView() {
    * either prompt to reuse it or open the normal drop-zone modal.
    */
   const beginCrackFlow = async (target: CrackTargetGame) => {
+    // Mirror of the Steamless guard (and of the backend's own
+    // `resolve_installed_game`): Apply Crack needs the game files on disk, so
+    // the message names the requirement instead of failing deep in the
+    // pipeline. A game Steam is still writing is not ready yet either.
+    if (!liveGame?.installed) {
+      setStatus({ text: 'Apply Crack requires the selected game to be installed locally.', type: 'error' });
+      return;
+    }
     try {
       const hasSaved: boolean = await invoke('has_saved_crack', {
         appId: Number(target.appId),
@@ -143,12 +158,12 @@ export const HomeView = memo(function HomeView() {
   };
 
   const runSteamless = async () => {
-    if (!selectedGame) {
+    if (!liveGame) {
       setStatus({ text: 'Select a Lua game first.', type: 'error' });
       return;
     }
 
-    if (!selectedGame.installed || !selectedGame.gamePath) {
+    if (!liveGame.installed || !liveGame.gamePath) {
       setStatus({ text: 'Steamless requires the selected game to be installed locally.', type: 'error' });
       return;
     }
@@ -158,7 +173,7 @@ export const HomeView = memo(function HomeView() {
 
     try {
       const result: SteamlessRunResult = await invoke('pick_and_run_steamless', {
-        appId: selectedGame.id,
+        appId: liveGame.id,
       });
 
       if (result.cancelled) {
@@ -270,6 +285,7 @@ export const HomeView = memo(function HomeView() {
         <button
           className="game-action-btn"
           disabled={!hasSelectedGame}
+          title="The game must be installed first"
           onClick={async () => {
             if (!selectedGame) return;
             const target: CrackTargetGame = {
