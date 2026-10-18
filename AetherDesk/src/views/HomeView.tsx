@@ -285,7 +285,6 @@ export const HomeView = memo(function HomeView() {
         <button
           className="game-action-btn"
           disabled={!hasSelectedGame}
-          title="The game must be installed first"
           onClick={async () => {
             if (!selectedGame) return;
             const target: CrackTargetGame = {
