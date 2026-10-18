@@ -106,10 +106,22 @@ enum WatchCommand {
 #[derive(Debug)]
 struct WatchBinding {
     steam_path: PathBuf,
-    /// Directories currently handed to `notify`, in the order they were bound.
-    /// Compared on every settle: a new Steam library, a removed one, or
-    /// stplug-in appearing/disappearing all change what must be observed.
+    /// Directories `notify` accepted.
     watched: Vec<PathBuf>,
+    /// Directories the Steam root needs but `notify` refused. They are retried
+    /// after `REBIND_DELAY` and must never be recorded as observed: a library
+    /// that silently stops being watched is exactly the bug this watcher
+    /// exists to prevent.
+    unbound: Vec<PathBuf>,
+}
+
+impl WatchBinding {
+    /// Every directory this binding accounts for, bound or pending retry.
+    fn observed(&self) -> Vec<PathBuf> {
+        let mut paths: Vec<PathBuf> = self.watched.iter().chain(&self.unbound).cloned().collect();
+        paths.sort();
+        paths
+    }
 }
 
 /// Single owner for filesystem observation. The callback supplied to `notify`
@@ -253,18 +265,14 @@ fn run_watch_worker(app: AppHandle, command_rx: Receiver<WatchCommand>, revision
                 match desired_steam_path.as_deref() {
                     Some(steam_path) => match bind_library_watcher(steam_path, fs_tx.clone()) {
                         Ok((next_watcher, next_binding)) => {
-                            crate::desk_log_info!(
-                                "library-watch",
-                                "Library watcher bound to {} director{}",
-                                next_binding.watched.len(),
-                                if next_binding.watched.len() == 1 {
-                                    "y"
-                                } else {
-                                    "ies"
-                                }
+                            adopt_binding(
+                                "Library watcher",
+                                next_watcher,
+                                next_binding,
+                                &mut watcher,
+                                &mut binding,
+                                &mut rebind_after,
                             );
-                            watcher = Some(next_watcher);
-                            binding = Some(next_binding);
                         }
                         Err(error) => {
                             crate::desk_log_warn!(
@@ -362,18 +370,14 @@ fn run_watch_worker(app: AppHandle, command_rx: Receiver<WatchCommand>, revision
             if let Some(steam_path) = desired_steam_path.as_deref() {
                 match bind_library_watcher(steam_path, fs_tx.clone()) {
                     Ok((next_watcher, next_binding)) => {
-                        crate::desk_log_info!(
-                            "library-watch",
-                            "Library watcher rebound to {} director{}",
-                            next_binding.watched.len(),
-                            if next_binding.watched.len() == 1 {
-                                "y"
-                            } else {
-                                "ies"
-                            }
+                        adopt_binding(
+                            "Library watcher rebound",
+                            next_watcher,
+                            next_binding,
+                            &mut watcher,
+                            &mut binding,
+                            &mut rebind_after,
                         );
-                        watcher = Some(next_watcher);
-                        binding = Some(next_binding);
                     }
                     Err(error) => {
                         crate::desk_log_warn!(
@@ -468,12 +472,14 @@ fn desired_watch_paths(steam_path: &Path) -> Vec<PathBuf> {
 
 /// True when the bound directories no longer match what the root needs: a new
 /// or removed Steam library, stplug-in appearing/disappearing, a new root.
+/// A directory still waiting for its retry counts as accounted for, so the
+/// retry timer — not every settle — drives the next attempt.
 fn watch_list_changed(steam_path: &Path, binding: Option<&WatchBinding>) -> bool {
     match binding {
         None => true,
         Some(current) => {
             current.steam_path.as_path() != steam_path
-                || current.watched != desired_watch_paths(steam_path)
+                || current.observed() != desired_watch_paths(steam_path)
         }
     }
 }
@@ -484,6 +490,100 @@ fn watch_list_changed(steam_path: &Path, binding: Option<&WatchBinding>) -> bool
 /// is logged and skipped: it must not switch off observation of the others.
 /// Only a watcher that could not be created, or that observed nothing at all,
 /// is an error — the caller then retries after `REBIND_DELAY`.
+/// Installs a successful bind into the worker state.
+///
+/// A directory `notify` refused stays in `binding.unbound` and arms the retry
+/// timer, so the observation gap heals on its own instead of lasting until an
+/// unrelated rebind.
+fn adopt_binding(
+    label: &str,
+    watcher: RecommendedWatcher,
+    binding: WatchBinding,
+    watcher_slot: &mut Option<RecommendedWatcher>,
+    binding_slot: &mut Option<WatchBinding>,
+    rebind_after: &mut Option<Instant>,
+) {
+    crate::desk_log_info!(
+        "library-watch",
+        "{}: {} director{} watched{}",
+        label,
+        binding.watched.len(),
+        if binding.watched.len() == 1 {
+            "y"
+        } else {
+            "ies"
+        },
+        if binding.unbound.is_empty() {
+            String::new()
+        } else {
+            format!(
+                ", {} pending retry: {:?}",
+                binding.unbound.len(),
+                binding.unbound
+            )
+        }
+    );
+    if !binding.unbound.is_empty() {
+        *rebind_after = Some(Instant::now() + REBIND_DELAY);
+    }
+    *watcher_slot = Some(watcher);
+    *binding_slot = Some(binding);
+}
+
+/// Result of binding the native watcher: what `notify` accepted and what it
+/// refused.
+struct BoundWatcher {
+    watcher: RecommendedWatcher,
+    watched: Vec<PathBuf>,
+    unbound: Vec<PathBuf>,
+}
+
+fn bind_watcher(
+    paths: &[PathBuf],
+    fs_tx: Sender<notify::Result<Event>>,
+) -> Result<BoundWatcher, String> {
+    if paths.is_empty() {
+        return Err("no Steam directory to watch".to_string());
+    }
+
+    let mut watcher = recommended_watcher(move |event| {
+        let _ = fs_tx.send(event);
+    })
+    .map_err(|error| format!("could not create native directory watcher: {error}"))?;
+
+    let mut watched = Vec::new();
+    let mut unbound = Vec::new();
+    for path in paths {
+        match watcher.watch(path, RecursiveMode::NonRecursive) {
+            Ok(()) => {
+                crate::desk_log_info!("library-watch", "Watching {}", path.display());
+                watched.push(path.clone());
+            }
+            Err(error) => {
+                crate::desk_log_warn!(
+                    "library-watch",
+                    "Could not watch {}: {} (retrying; the other directories stay observed)",
+                    path.display(),
+                    error
+                );
+                unbound.push(path.clone());
+            }
+        }
+    }
+    if watched.is_empty() {
+        return Err(format!(
+            "no directory could be watched ({} refused)",
+            paths.len()
+        ));
+    }
+
+    Ok(BoundWatcher {
+        watcher,
+        watched,
+        unbound,
+    })
+}
+
 fn bind_library_watcher(
     steam_path: &Path,
     fs_tx: Sender<notify::Result<Event>>,
@@ -496,38 +596,13 @@ fn bind_library_watcher(
         ));
     }
 
-    let mut watcher = recommended_watcher(move |event| {
-        let _ = fs_tx.send(event);
-    })
-    .map_err(|error| format!("could not create native directory watcher: {error}"))?;
-
-    let mut bound = 0usize;
-    for path in &paths {
-        match watcher.watch(path, RecursiveMode::NonRecursive) {
-            Ok(()) => {
-                bound += 1;
-                crate::desk_log_info!("library-watch", "Watching {}", path.display());
-            }
-            Err(error) => crate::desk_log_warn!(
-                "library-watch",
-                "Could not watch {}: {} (the other directories stay observed)",
-                path.display(),
-                error
-            ),
-        }
-    }
-    if bound == 0 {
-        return Err(format!(
-            "no Steam directory could be watched under {}",
-            steam_path.display()
-        ));
-    }
-
+    let bound = bind_watcher(&paths, fs_tx)?;
     Ok((
-        watcher,
+        bound.watcher,
         WatchBinding {
             steam_path: steam_path.to_path_buf(),
-            watched: paths,
+            watched: bound.watched,
+            unbound: bound.unbound,
         },
     ))
 }
@@ -721,7 +796,7 @@ fn changed_app_ids(before: &LibrarySnapshot, after: &LibrarySnapshot) -> Vec<u32
 
 #[cfg(test)]
 mod tests {
-    use super::{canonical_lua_app_id, capture_snapshot, changed_app_ids};
+    use super::{bind_watcher, canonical_lua_app_id, capture_snapshot, changed_app_ids};
     use std::fs;
     use std::path::Path;
 
@@ -752,6 +827,22 @@ mod tests {
             "\"AppState\"\n{{\n\t\"appid\"\t\t\"{app_id}\"\n\t\"name\"\t\t\"Game {app_id}\"\n\t\"StateFlags\"\t\t\"{state_flags}\"\n\t\"installdir\"\t\t\"Game {app_id}\"\n\t\"BytesDownloaded\"\t\t\"{bytes_downloaded}\"\n}}\n"
         );
         fs::write(acf_path(root, app_id), body).expect("write ACF");
+    }
+
+    /// A directory `notify` refuses must be reported as pending, never as
+    /// observed: recording it as watched would make `watch_list_changed`
+    /// permanently blind to it and that library would never be retried.
+    #[test]
+    fn a_directory_that_cannot_be_watched_is_reported_unbound() {
+        let root = steam_root();
+        let missing = root.path().join("not-a-directory");
+        let paths = vec![lua_dir(root.path()), missing.clone()];
+        let (fs_tx, _fs_rx) = std::sync::mpsc::channel();
+
+        let bound = bind_watcher(&paths, fs_tx).expect("the first directory binds");
+
+        assert_eq!(bound.watched, vec![lua_dir(root.path())]);
+        assert_eq!(bound.unbound, vec![missing]);
     }
 
     #[test]

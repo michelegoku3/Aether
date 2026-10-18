@@ -748,14 +748,18 @@ fn install_staged_tree(
 /// Resolve the Steam folder the local game content must be installed into.
 fn resolve_target_dir(app_id: u32, game_name: &str, steam_path: &Path) -> PathBuf {
     // If the game already has an appmanifest, install into its current folder
-    // (whichever library it lives in).
+    // (whichever library it lives in, whatever Steam calls it).
     let scanner = SteamLibraryScanner::new(steam_path.to_path_buf());
     if let Some(game) = scanner
         .scan_installed_games()
         .into_iter()
         .find(|game| game.id == app_id)
     {
-        if game.installed && !game.game_path.trim().is_empty() {
+        // "Steam holds an appmanifest" is the condition, not "content is
+        // complete": a game Steam is still writing already has its REAL
+        // `installdir`, and falling back to a sanitized display name would
+        // create a second folder next to the one Steam is filling.
+        if game.has_appmanifest() && !game.game_path.trim().is_empty() {
             let existing = PathBuf::from(&game.game_path);
             if existing.is_dir() {
                 crate::desk_log_info!(
@@ -852,4 +856,54 @@ fn copy_dir_contents(src: &Path, dest: &Path) -> Result<(), String> {
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::resolve_target_dir;
+    use std::fs;
+
+    /// Steam root with a Lua entry and an appmanifest whose `StateFlags` says
+    /// Steam is still writing the content (1026 = Update Required + Started).
+    fn steam_root_with_installing_game(app_id: u32) -> tempfile::TempDir {
+        let dir = tempfile::tempdir().expect("temp steam root");
+        fs::create_dir_all(dir.path().join("config").join("stplug-in")).expect("stplug-in");
+        fs::create_dir_all(dir.path().join("steamapps").join("common")).expect("steamapps");
+        fs::write(
+            dir.path()
+                .join("config")
+                .join("stplug-in")
+                .join(format!("{app_id}.lua")),
+            format!("-- Game {app_id}\naddappid({app_id}, 1, \"key\")\n"),
+        )
+        .expect("lua");
+        fs::write(
+            dir.path()
+                .join("steamapps")
+                .join(format!("appmanifest_{app_id}.acf")),
+            format!(
+                "\"AppState\"\n{{\n\t\"appid\"\t\t\"{app_id}\"\n\t\"StateFlags\"\t\t\"1026\"\n\t\"installdir\"\t\t\"Steam Folder Name\"\n}}\n"
+            ),
+        )
+        .expect("acf");
+        dir
+    }
+
+    #[test]
+    fn a_game_steam_is_still_writing_keeps_steams_own_folder() {
+        // Steam's `installdir` and the display name differ on purpose: falling
+        // back to the sanitized display name would create a second folder next
+        // to the one Steam is filling.
+        let root = steam_root_with_installing_game(1600);
+        let steam_folder = root
+            .path()
+            .join("steamapps")
+            .join("common")
+            .join("Steam Folder Name");
+        fs::create_dir_all(&steam_folder).expect("steam game folder");
+
+        let target = resolve_target_dir(1600, "Totally Different Display Name", root.path());
+
+        assert_eq!(target, steam_folder);
+    }
 }

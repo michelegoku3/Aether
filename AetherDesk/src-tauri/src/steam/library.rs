@@ -30,6 +30,18 @@ pub struct InstalledSteamGame {
     pub lua_issues: Vec<LuaManifestRowIssue>,
 }
 
+impl InstalledSteamGame {
+    /// True when Steam holds an `appmanifest` for this App ID: the content is
+    /// either complete (`installed`) or still being written (`installing`).
+    ///
+    /// This is "Steam knows this app and its real install folder" — the same
+    /// meaning as [`SteamLibraryScanner::is_app_installed`] — and it is what
+    /// callers that only need the folder need, never `installed` alone.
+    pub fn has_appmanifest(&self) -> bool {
+        self.installed || self.installing
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct SteamLibraryScanner {
     steam_path: PathBuf,
