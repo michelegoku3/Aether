@@ -1,7 +1,7 @@
 use crate::manifest::pins::LuaManifestRowIssue;
 use regex::Regex;
 use serde::Serialize;
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -33,6 +33,19 @@ pub struct InstalledSteamGame {
 #[derive(Debug, Clone)]
 pub struct SteamLibraryScanner {
     steam_path: PathBuf,
+}
+
+/// Install-state projection of one Steam `appmanifest_*.acf`, without the
+/// Library scan's Lua reads.
+///
+/// It carries exactly what `scan_installed_games` derives from an ACF, so the
+/// filesystem watcher can invalidate the Library when — and only when — the
+/// install state a user can see actually changed.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SteamInstallEntry {
+    pub install_dir: String,
+    pub library_path: String,
+    pub installed: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -152,6 +165,30 @@ impl SteamLibraryScanner {
     pub fn is_app_installed(&self, app_id: u32) -> bool {
         let libraries = self.discover_libraries();
         self.scan_appmanifests(&libraries).contains_key(&app_id)
+    }
+
+    /// App ID -> install projection for every ACF the scanner accepts.
+    ///
+    /// Reads only appmanifests (one small file each): the caller is the
+    /// filesystem watcher, which compares successive projections on every
+    /// event and must not pay for Lua parsing. Download progress never changes
+    /// the result — the fields kept here are exactly the ones the Library
+    /// exposes, and `installed` is Steam's own "content complete" flag.
+    pub fn install_projection(&self) -> BTreeMap<u32, SteamInstallEntry> {
+        let libraries = self.discover_libraries();
+        self.scan_appmanifests(&libraries)
+            .into_iter()
+            .map(|(app_id, manifest)| {
+                (
+                    app_id,
+                    SteamInstallEntry {
+                        install_dir: manifest.install_dir,
+                        library_path: manifest.library_path.display().to_string(),
+                        installed: !steam_is_installing(manifest.state_flags),
+                    },
+                )
+            })
+            .collect()
     }
 
     /// Returns every Steam library folder discovered from the configured Steam
