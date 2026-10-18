@@ -9,9 +9,9 @@ import { filterAndSortGames } from '../util/search';
  *  with it the encrypted credential blob — on every filter click was a
  *  coupling bug flagged in the audit. On first run we migrate the legacy
  *  value from settings.json (if set) so users don't lose their preference. */
-export type LibraryInstallFilter = 'all' | 'installed' | 'not_installed';
+export type LibraryInstallFilter = 'all' | 'installed' | 'installing' | 'not_installed';
 
-const FILTER_CYCLE: readonly LibraryInstallFilter[] = ['all', 'installed', 'not_installed'] as const;
+const FILTER_CYCLE: readonly LibraryInstallFilter[] = ['all', 'installed', 'installing', 'not_installed'] as const;
 const LOCAL_FILTER_KEY = 'aether.library_install_filter';
 /** Legacy storage location: read once and then stop touching settings.json
  *  for this preference. */
@@ -22,6 +22,9 @@ const normalizeLibraryInstallFilter = (value: unknown): LibraryInstallFilter => 
     .trim()
     .toLowerCase();
   if (raw === 'installed') return 'installed';
+  if (raw === 'installing' || raw === 'downloading' || raw === 'in-progress') {
+    return 'installing';
+  }
   if (raw === 'not_installed' || raw === 'not-installed' || raw === 'uninstalled') {
     return 'not_installed';
   }
@@ -49,6 +52,8 @@ const writeLocalFilter = (value: LibraryInstallFilter) => {
 const filterTitleFor = (filter: LibraryInstallFilter): string => {
   switch (filter) {
     case 'installed':
+      return 'Click to show installing only';
+    case 'installing':
       return 'Click to show non-installed only';
     case 'not_installed':
       return 'Click to show all';
@@ -75,6 +80,9 @@ const countLabelFor = (
   if (filter === 'installed') {
     return `${shown} installed`;
   }
+  if (filter === 'installing') {
+    return `${shown} installing`;
+  }
   return `${shown} non-installed`;
 };
 
@@ -87,6 +95,9 @@ const emptyMessageFor = (filter: LibraryInstallFilter, total: number, searchQuer
   }
   if (filter === 'installed') {
     return 'No installed Lua games match this filter. Click the filter button or Refresh.';
+  }
+  if (filter === 'installing') {
+    return 'No game is installing right now. Click the filter button or Refresh.';
   }
   if (filter === 'not_installed') {
     return 'No non-installed Lua games match this filter. Click the filter button or Refresh.';
@@ -142,7 +153,8 @@ export const useLibraryInstallFilter = (games: InstalledGame[], isLoading: boole
       return filterAndSortGames(games, searchQuery);
     }
     if (filter === 'installed') return games.filter((game) => game.installed);
-    if (filter === 'not_installed') return games.filter((game) => !game.installed);
+    if (filter === 'installing') return games.filter((game) => game.installing);
+    if (filter === 'not_installed') return games.filter((game) => !game.installed && !game.installing);
     return [...games].sort((a, b) => a.name.localeCompare(b.name));
   }, [games, filter, searchQuery, hasSearch]);
 
@@ -172,6 +184,12 @@ export const useLibraryInstallFilter = (games: InstalledGame[], isLoading: boole
     emptyMessage: emptyMessageFor(filter, games.length, searchQuery),
     /** CSS modifiers for the active filter button. */
     filterButtonClass:
-      filter === 'installed' ? 'active filter-installed' : filter === 'not_installed' ? 'active filter-missing' : '',
+      filter === 'installed'
+        ? 'active filter-installed'
+        : filter === 'installing'
+          ? 'active filter-installing'
+          : filter === 'not_installed'
+            ? 'active filter-missing'
+            : '',
   };
 };

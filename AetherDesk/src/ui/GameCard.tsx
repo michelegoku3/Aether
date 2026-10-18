@@ -13,6 +13,11 @@ export interface GameCardModel {
   has_delisted?: boolean;
   installed?: boolean;
   /**
+   * Steam has an appmanifest for this game but is still writing its content:
+   * the card shows `Installing` instead of `Installed`/`Available`.
+   */
+  installing?: boolean;
+  /**
    * Malformed `setManifestid` lines found in this game's Lua. A single bad
    * line makes AetherDLL reject the whole file, so the card is marked red:
    * the game is installed and looks fine, but every depot override of it is
@@ -113,7 +118,8 @@ const GameCardInner = <T extends GameCardModel>({
           pins to fix shows that single badge and hands over the `Installed`
           signal through its green outline — repairing the Lua is the only
           thing left to do on that game. Without pins to fix the corner is
-          what it always was: Installed, else Available. */}
+          what it always was: Installed, otherwise Installing while Steam is
+          still writing the content, otherwise Available. */}
       {pinsToFix &&
         (onFixPins ? (
           <button type="button" className={fixPinsClass} onClick={() => onFixPins(game)}>
@@ -125,7 +131,13 @@ const GameCardInner = <T extends GameCardModel>({
 
       {!pinsToFix && game.installed && <span className="badge-installed">Installed</span>}
 
-      {!pinsToFix && !game.installed && game.has_manifest && (
+      {!pinsToFix && !game.installed && game.installing && (
+        <span className="badge-installing" title="Steam is still downloading this game">
+          Installing
+        </span>
+      )}
+
+      {!pinsToFix && !game.installed && !game.installing && game.has_manifest && (
         <span
           className={`badge-available ${game.has_denuvo ? 'denuvo' : ''}`}
           title={game.has_denuvo ? 'Available on Hubcap, Denuvo detected' : 'Available on Hubcap'}

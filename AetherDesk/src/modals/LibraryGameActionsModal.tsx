@@ -18,6 +18,8 @@ export interface LibraryActionGame {
   libraryPath: string;
   gamePath: string;
   installed: boolean;
+  /** Steam is still writing this game's content (`StateFlags`). */
+  installing: boolean;
   imageUrl?: string;
   heroImageUrl?: string;
   /** Malformed pins of this game's Lua, as reported by the Library scan. */

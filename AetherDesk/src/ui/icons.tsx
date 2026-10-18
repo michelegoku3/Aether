@@ -62,6 +62,25 @@ export const FolderPlusIcon = ({ size = 18 }: { size?: number }) => (
   </svg>
 );
 
+/** Hourglass icon (the Installing filter mode). */
+export const HourglassIcon = ({ size = 14 }: { size?: number }) => (
+  <svg
+    width={size}
+    height={size}
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2.2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    aria-hidden="true"
+  >
+    <path d="M6.5 3h11M6.5 21h11" />
+    <path d="M7.5 3v3.3c0 1.6 1.1 2.9 4.5 4.7 3.4-1.8 4.5-3.1 4.5-4.7V3" />
+    <path d="M7.5 21v-3.3c0-1.6 1.1-2.9 4.5-4.7 3.4 1.8 4.5 3.1 4.5 4.7V21" />
+  </svg>
+);
+
 /** Show-password eye (toggles a secret input into plain text). */
 export const EyeIcon = ({ size = 16 }: { size?: number }) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true">

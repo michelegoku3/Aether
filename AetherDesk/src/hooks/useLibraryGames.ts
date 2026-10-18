@@ -47,6 +47,12 @@ export interface InstalledGame {
   libraryPath: string;
   gamePath: string;
   installed: boolean;
+  /**
+   * Steam is still writing this game's content (`StateFlags` without "Fully
+   * Installed"). Mutually exclusive with `installed`: the game is either
+   * complete, in flight, or absent from Steam.
+   */
+  installing: boolean;
   imageUrl?: string;
   heroImageUrl?: string;
   /** Malformed pins of this game's Lua (empty/absent for a healthy file). */

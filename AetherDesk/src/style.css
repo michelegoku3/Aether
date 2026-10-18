@@ -10,6 +10,8 @@
   /* Installed (green badge, and the outline the Fix Pins badge wears when the
      game is installed). One accent, two carriers. */
   --color-installed-green: #10b981;
+  /* Steam is still writing the game (Installing badge and filter). */
+  --color-installing-amber: #f59e0b;
   /* Semantic accents: one accent per MEANING, never per decoration.
      --color-uco2 identifies the UCO2 pipeline everywhere (option state,
      badges, panel accents) — the online choice popup and the UCO2 panel
@@ -479,6 +481,27 @@ body {
   animation: badgePopIn 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275);
 }
 
+/* Steam is writing this game right now: it has an appmanifest, no complete
+   content yet. Same shape as the other two badges, amber instead of green, so
+   the state reads at a glance without competing with the Installed colour. */
+.badge-installing {
+  position: absolute;
+  top: -8px;
+  right: -8px;
+  background-color: var(--color-installing-amber);
+  color: #1b1204;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  padding: 4px 10px;
+  border-radius: 6px;
+  box-shadow: 0 4px 10px rgba(245, 158, 11, 0.4);
+  z-index: 10;
+  letter-spacing: 0.5px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  animation: badgePopIn 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
 .library-toolbar {
   display: flex;
   align-items: center;
@@ -607,6 +630,18 @@ body {
 .library-icon-btn.active.filter-missing:hover:not(:disabled) {
   color: #ff6b8a;
   border-color: var(--color-denuvo);
+}
+
+/* Installing: the amber the badge uses, so the filter and the cards agree. */
+.library-icon-btn.active.filter-installing {
+  color: var(--color-installing-amber);
+  border-color: rgba(245, 158, 11, 0.55);
+  background-color: rgba(245, 158, 11, 0.1);
+}
+
+.library-icon-btn.active.filter-installing:hover:not(:disabled) {
+  color: #fbbf24;
+  border-color: var(--color-installing-amber);
 }
 
 @keyframes badgePopIn {
@@ -3241,6 +3276,7 @@ body {
 
 .store-game-card.backdrop-card .badge-available,
 .store-game-card.backdrop-card .badge-installed,
+.store-game-card.backdrop-card .badge-installing,
 .store-game-card.backdrop-card .badge-fix-pins {
   z-index: 3;
 }

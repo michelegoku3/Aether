@@ -9,7 +9,7 @@ import { preloadGameCovers } from '../ui/GameCover';
 import { toErrorMessage } from '../util/errors';
 import { GameCard, type GameCardAction } from '../ui/GameCard';
 import { StatusAlert } from '../ui/StatusAlert';
-import { ArrowUpThickIcon, CloseIcon, PlayIcon, RefreshIcon, WrenchIcon } from '../ui/icons';
+import { ArrowUpThickIcon, CloseIcon, HourglassIcon, PlayIcon, RefreshIcon, WrenchIcon } from '../ui/icons';
 import { useLibraryGames, InstalledGame } from '../hooks/useLibraryGames';
 import { useLibraryInstallFilter } from '../hooks/useLibraryInstallFilter';
 import { StatusType } from '../types/ui';
@@ -220,7 +220,7 @@ export const LibraryView = memo(function LibraryView({
             title={filterTitle}
             aria-label={filterTitle}
           >
-            {filter === 'not_installed' ? <CloseIcon /> : <PlayIcon />}
+            {filter === 'not_installed' ? <CloseIcon /> : filter === 'installing' ? <HourglassIcon /> : <PlayIcon />}
           </button>
         </div>
       </div>
