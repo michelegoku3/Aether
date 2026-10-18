@@ -153,6 +153,9 @@ pub fn has_saved_crack(app_id: u32) -> bool {
 ///
 /// Layout under `crack/` mirrors game-relative paths, so no archive extraction
 /// or locate heuristics are needed — each file is copied straight to its path.
+/// A crack saved before the wrapped-game-root rule existed therefore keeps the
+/// location it was saved with; removing it (which clears the recorded paths)
+/// and applying the crack again is what moves those files next to the game.
 pub fn reapply_saved_crack(
     app_id: u32,
     game_root: &Path,

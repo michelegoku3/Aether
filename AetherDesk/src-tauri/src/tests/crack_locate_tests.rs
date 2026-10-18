@@ -140,6 +140,33 @@ fn test_wrapper_descent_stops_when_the_installdir_holds_other_files() {
     assert_ne!(targets, vec![inner.join("OnlineFix.ini")]);
 }
 
+/// Characterisation of the one shape the wrapper rule deliberately does not
+/// cover, plus the documented recovery: a file next to the wrapper folder keeps
+/// the base at the installdir (nothing can tell a crack file left by an older
+/// build apart from a file the game owns), and removing that file restores the
+/// rule - which is exactly what "remove applied crack" and then applying again
+/// does for a game cracked by an older AetherDesk.
+#[test]
+fn test_stray_file_at_the_installdir_keeps_the_base_until_it_is_removed() {
+    let temp_dir = tempfile_tempdir();
+    let game_root = temp_dir.path();
+    let inner = wrapped_game(game_root);
+    let stray = game_root.join("OnlineFix.ini");
+    fs::write(&stray, b"[crack left by an older build]").unwrap();
+
+    let rel = Path::new("steam_appid.txt");
+    assert_eq!(
+        resolve_file_targets(rel, game_root, true),
+        vec![game_root.join("steam_appid.txt")]
+    );
+
+    fs::remove_file(&stray).unwrap();
+    assert_eq!(
+        resolve_file_targets(rel, game_root, true),
+        vec![inner.join("steam_appid.txt")]
+    );
+}
+
 /// Fallback helper for direct tests with no extra dependencies.
 struct TempDirGuard(std::path::PathBuf);
 impl TempDirGuard {

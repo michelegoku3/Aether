@@ -69,6 +69,14 @@ pub fn resolve_file_target(archive_rel: &Path, base_root: &Path) -> PathBuf {
 /// empty folder) means the game may genuinely live at the installdir level, so
 /// the installdir itself stays the base. That also makes the change invisible
 /// for every game that is not wrapper-packaged: the base is the same path.
+///
+/// One consequence is intentional: a file sitting next to the wrapper folder
+/// keeps the base at the installdir, and that includes the crack files a build
+/// older than this rule left there. Relocating them automatically would need a
+/// way to tell a crack file from a file the game owns, which is a bigger
+/// decision than resolving the content root; the recovery path is removing the
+/// previous crack (the "remove applied crack" flow, or answering "choose a new
+/// crack" in the saved-crack prompt) and applying again.
 fn game_content_root(installdir: &Path) -> PathBuf {
     let mut current = installdir.to_path_buf();
     loop {
