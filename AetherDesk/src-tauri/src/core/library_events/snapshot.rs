@@ -290,4 +290,34 @@ mod tests {
         let finished = capture_snapshot(root.path()).expect("finished snapshot");
         assert_eq!(changed_app_ids(&downloaded, &finished), vec![100]);
     }
+
+    /// Cancelling/uninstalling an in-flight download leaves the ACF at Update
+    /// Paused + Update Required. The content was never written, but the
+    /// observable state changed from "Steam is writing" to "not writing": the
+    /// Installing badge must go without a manual Refresh.
+    #[test]
+    fn cancelling_a_download_invalidates_the_library() {
+        let root = steam_root();
+        write_acf(root.path(), 100, "1026", 0);
+        let downloading = capture_snapshot(root.path()).expect("downloading snapshot");
+
+        write_acf(root.path(), 100, "530", 519_217_008);
+        let paused = capture_snapshot(root.path()).expect("paused snapshot");
+
+        assert_eq!(
+            downloading
+                .install
+                .get(&100)
+                .map(|entry| (entry.installed, entry.installing)),
+            Some((false, true))
+        );
+        assert_eq!(
+            paused
+                .install
+                .get(&100)
+                .map(|entry| (entry.installed, entry.installing)),
+            Some((false, false))
+        );
+        assert_eq!(changed_app_ids(&downloading, &paused), vec![100]);
+    }
 }

@@ -866,6 +866,11 @@ mod tests {
     /// Steam root with a Lua entry and an appmanifest whose `StateFlags` says
     /// Steam is still writing the content (1026 = Update Required + Started).
     fn steam_root_with_installing_game(app_id: u32) -> tempfile::TempDir {
+        steam_root_with_state(app_id, "1026")
+    }
+
+    /// Steam root with a Lua entry and an arbitrary ACF `StateFlags`.
+    fn steam_root_with_state(app_id: u32, state_flags: &str) -> tempfile::TempDir {
         let dir = tempfile::tempdir().expect("temp steam root");
         fs::create_dir_all(dir.path().join("config").join("stplug-in")).expect("stplug-in");
         fs::create_dir_all(dir.path().join("steamapps").join("common")).expect("steamapps");
@@ -882,7 +887,7 @@ mod tests {
                 .join("steamapps")
                 .join(format!("appmanifest_{app_id}.acf")),
             format!(
-                "\"AppState\"\n{{\n\t\"appid\"\t\t\"{app_id}\"\n\t\"StateFlags\"\t\t\"1026\"\n\t\"installdir\"\t\t\"Steam Folder Name\"\n}}\n"
+                "\"AppState\"\n{{\n\t\"appid\"\t\t\"{app_id}\"\n\t\"StateFlags\"\t\t\"{state_flags}\"\n\t\"installdir\"\t\t\"Steam Folder Name\"\n}}\n"
             ),
         )
         .expect("acf");
@@ -903,6 +908,24 @@ mod tests {
         fs::create_dir_all(&steam_folder).expect("steam game folder");
 
         let target = resolve_target_dir(1600, "Totally Different Display Name", root.path());
+
+        assert_eq!(target, steam_folder);
+    }
+
+    #[test]
+    fn a_paused_download_also_keeps_steams_own_folder() {
+        // Update Paused + Locked + Update Required: the download was cancelled
+        // before Steam wrote the content. The ACF still names the real folder,
+        // so a local import must not create a second one next to it.
+        let root = steam_root_with_state(1601, "530");
+        let steam_folder = root
+            .path()
+            .join("steamapps")
+            .join("common")
+            .join("Steam Folder Name");
+        fs::create_dir_all(&steam_folder).expect("steam game folder");
+
+        let target = resolve_target_dir(1601, "Totally Different Display Name", root.path());
 
         assert_eq!(target, steam_folder);
     }

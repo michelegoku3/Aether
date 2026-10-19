@@ -17,8 +17,13 @@ pub struct InstalledSteamGame {
     pub installed: bool,
     /// Steam is still writing this app's content (`StateFlags` says so).
     /// Mutually exclusive with `installed`: a game is either complete,
-    /// in flight, or absent from Steam.
+    /// in flight, or absent/incomplete from Steam.
     pub installing: bool,
+    /// Steam holds an `appmanifest` for this App ID, regardless of whether the
+    /// content is complete, being written, or neither (a cancelled or paused
+    /// first download). Local imports reuse Steam's own folder from it.
+    #[serde(skip)]
+    pub manifest_present: bool,
     pub image_url: String,
     pub hero_image_url: String,
     /// Malformed `setManifestid` lines found in this game's Lua while scanning.
@@ -32,13 +37,13 @@ pub struct InstalledSteamGame {
 
 impl InstalledSteamGame {
     /// True when Steam holds an `appmanifest` for this App ID: the content is
-    /// either complete (`installed`) or still being written (`installing`).
+    /// complete, still being written, or neither (a cancelled first download).
     ///
     /// This is "Steam knows this app and its real install folder" — the same
     /// meaning as [`SteamLibraryScanner::is_app_installed`] — and it is what
     /// callers that only need the folder need, never `installed` alone.
     pub fn has_appmanifest(&self) -> bool {
-        self.installed || self.installing
+        self.manifest_present
     }
 }
 
@@ -58,6 +63,10 @@ pub struct SteamInstallEntry {
     pub install_dir: String,
     pub library_path: String,
     pub installed: bool,
+    /// Steam is actively writing the content. Kept beside `installed` because
+    /// "installing" and "neither" both have `installed == false`: the watcher
+    /// must still see the transition so the badge disappears without Refresh.
+    pub installing: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -71,26 +80,52 @@ struct AppManifest {
     state_flags: Option<u64>,
 }
 
-/// Steam's own AppState flags that decide whether the content is complete.
-/// `Fully Installed` (0x4) is cleared by Steam when it starts writing an
-/// install/update; `Update Required` (0x2) marks that same unfinished state.
-/// Every other bit (sizes, update scheduling) is irrelevant here.
+/// Steam's own AppState flags that decide whether the content is complete or
+/// Steam is actively writing/removing it.
+///
+/// `Fully Installed` (0x4) is set only once Steam has written the content.
+/// `Update Required` (0x2) marks a queued/in-flight install or update.
+/// `Update Paused` (0x200) means Steam is **not** writing right now: a
+/// cancelled first download and a deliberately paused one both leave it set,
+/// while a paused update keeps `Fully Installed`, so the game stays playable.
+/// `Uninstalling`/`Uninstalled` mean the content is going away, whatever the
+/// other bits say.
+const STATE_FLAG_UNINSTALLED: u64 = 0x1;
 const STATE_FLAG_UPDATE_REQUIRED: u64 = 0x2;
 const STATE_FLAG_FULLY_INSTALLED: u64 = 0x4;
+const STATE_FLAG_UPDATE_PAUSED: u64 = 0x200;
+const STATE_FLAG_UNINSTALLING: u64 = 0x800;
+const STATE_FLAG_UPDATE_STOPPING: u64 = 0x80_0000;
 
-/// True while Steam is still writing this app's content.
+/// Steam's install state for one `appmanifest`, as `(installed, installing)`.
 ///
-/// Only the combination "Fully Installed clear + Update Required set" counts:
-/// a missing or unexpected value (absent key, `0`) keeps the game as installed.
-/// That is the pre-existing behaviour and it can never hide a playable game —
+/// Both false is a real third state: the manifest exists (Steam knows the
+/// folder) but the content is neither complete nor being written — a cancelled
+/// or paused first download. Treating it as installed would enable Apply Crack
+/// on missing files; treating it as installing left the "Installing" badge on
+/// forever after the user cancelled/uninstalled the download.
+///
+/// A missing or unexpected value (absent key, `0`) keeps the game as installed:
+/// that is the pre-existing behaviour and it can never hide a playable game,
 /// while the reversed guess would mark every Aether-pinned version as missing.
-fn steam_is_installing(state_flags: Option<u64>) -> bool {
-    matches!(
-        state_flags,
-        Some(flags)
-            if (flags & STATE_FLAG_FULLY_INSTALLED) == 0
-                && (flags & STATE_FLAG_UPDATE_REQUIRED) != 0
-    )
+fn steam_install_state(state_flags: Option<u64>) -> (bool, bool) {
+    match state_flags {
+        None | Some(0) => (true, false),
+        Some(flags) => {
+            if flags & (STATE_FLAG_UNINSTALLED | STATE_FLAG_UNINSTALLING) != 0 {
+                (false, false)
+            } else if flags & STATE_FLAG_FULLY_INSTALLED != 0 {
+                (true, false)
+            } else if flags & STATE_FLAG_UPDATE_REQUIRED != 0 {
+                let writing = flags & (STATE_FLAG_UPDATE_PAUSED | STATE_FLAG_UPDATE_STOPPING) == 0;
+                (false, writing)
+            } else {
+                // Fully Installed clear but nothing says Steam is writing:
+                // keep the pre-existing "manifest present = installed" rule.
+                (true, false)
+            }
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -138,10 +173,9 @@ impl SteamLibraryScanner {
             // Steam's StateFlags is the only reliable "content complete" signal:
             // the install folder survives an uninstall and a fresh install
             // populates it only at the end.
-            let installing = manifest
-                .map(|manifest| steam_is_installing(manifest.state_flags))
-                .unwrap_or(false);
-            let installed = manifest.is_some() && !installing;
+            let (installed, installing) = manifest
+                .map(|manifest| steam_install_state(manifest.state_flags))
+                .unwrap_or((false, false));
             let name = manifest
                 .and_then(|manifest| Self::safe_display_name(&manifest.name))
                 .or(lua.name)
@@ -160,6 +194,7 @@ impl SteamLibraryScanner {
                     .unwrap_or_default(),
                 installed,
                 installing,
+                manifest_present: manifest.is_some(),
                 // Never guess a CDN filename. Modern Steam assets are hashed;
                 // unhashed library_600x900 / header.jpg either 404 or the UI
                 // treats a landscape fallback as a "hero" in the capsule slot.
@@ -191,12 +226,14 @@ impl SteamLibraryScanner {
         self.scan_appmanifests(&libraries)
             .into_iter()
             .map(|(app_id, manifest)| {
+                let (installed, installing) = steam_install_state(manifest.state_flags);
                 (
                     app_id,
                     SteamInstallEntry {
                         install_dir: manifest.install_dir,
                         library_path: manifest.library_path.display().to_string(),
-                        installed: !steam_is_installing(manifest.state_flags),
+                        installed,
+                        installing,
                     },
                 )
             })

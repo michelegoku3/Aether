@@ -60,6 +60,39 @@ fn a_queued_install_is_installing_not_installed() {
 }
 
 #[test]
+fn a_cancelled_or_paused_download_is_neither_installed_nor_installing() {
+    let root = steam_root();
+    write_lua(root.path(), 705);
+    // Update Paused + Locked + Update Required: the download was cancelled or
+    // paused before Steam wrote the content (SizeOnDisk 0). Steam is not
+    // writing, so this is neither "installing" nor "installed".
+    write_acf(root.path(), 705, "530");
+
+    assert_eq!(install_state(root.path(), 705), (false, false));
+}
+
+#[test]
+fn a_paused_update_keeps_an_installed_game_installed() {
+    let root = steam_root();
+    write_lua(root.path(), 706);
+    // Fully Installed + Update Paused: the game files are there, only the
+    // pending update is paused. The game must stay playable/actionable.
+    write_acf(root.path(), 706, "516");
+
+    assert_eq!(install_state(root.path(), 706), (true, false));
+}
+
+#[test]
+fn an_uninstalling_app_is_not_installed() {
+    let root = steam_root();
+    write_lua(root.path(), 707);
+    // Uninstalling (0x800) + Update Required (0x2): Steam is removing it.
+    write_acf(root.path(), 707, "2050");
+
+    assert_eq!(install_state(root.path(), 707), (false, false));
+}
+
+#[test]
 fn a_completed_install_is_installed_and_not_installing() {
     let root = steam_root();
     write_lua(root.path(), 701);
