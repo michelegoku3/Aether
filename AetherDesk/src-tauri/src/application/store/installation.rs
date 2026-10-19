@@ -15,8 +15,8 @@ use crate::steam::compat::SteamCompat;
 
 #[derive(Debug, Clone, Copy)]
 pub(super) struct SpecificInstallPolicy {
-    /// Retains the historical Hubcap-specific behavior while allowing Ryuu and
-    /// LuaTools switches to clear partial Steam downloads before publication.
+    /// When false, partial Steam downloads are left in place (Hubcap behavior);
+    /// when true, they are cleared before publication (Ryuu and LuaTools).
     pub clear_residual_download: bool,
 }
 

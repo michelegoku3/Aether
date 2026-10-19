@@ -55,8 +55,8 @@ pub fn get_custom_css_path(app: tauri::AppHandle) -> Result<String, String> {
 
 /// Ensures `AetherData/config/themes/` and `AetherData/config/wallpapers/`
 /// exist, seeding the embedded defaults (Cyberpunk + Frieren) on first run.
-/// Returns the themes directory path. The legacy `custom.css` template is no
-/// longer created: themes live exclusively in the `themes` folder.
+/// Returns the themes directory path. Themes live exclusively in the `themes`
+/// folder.
 #[tauri::command]
 pub fn ensure_custom_css() -> Result<String, String> {
     custom_css::ensure_default_assets()?;

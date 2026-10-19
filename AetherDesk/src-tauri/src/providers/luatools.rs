@@ -372,10 +372,10 @@ pub(crate) fn describe_api_error(status: reqwest::StatusCode, body: &str) -> Str
 /// TwentyTwo Cloud answer with `<appid>.zip` (Lua + `.manifest` files), so the
 /// package is complete on arrival. Luie — lua.tools' own Discord-bot source —
 /// answers with a bare Lua, which is only as good as what the per-depot
-/// completion can fetch afterwards; since September 2026 Steam no longer hands
-/// out manifests for apps the account does not own, so a package that already
-/// contains them is the more reliable install. Unknown names follow the known
-/// ones, alphabetically.
+/// completion can fetch afterwards; Steam no longer hands out manifests for
+/// apps the account does not own, so a package that already contains them is
+/// the more reliable install. Unknown names follow the known ones,
+/// alphabetically.
 pub(crate) fn rank_available_sources(statuses: &HashMap<String, String>) -> Vec<String> {
     const PREFERENCE: &[&str] = &["Ryuu", "Sushi", "Skyflare", "TwentyTwo Cloud", "Luie"];
     let is_available = |status: &String| status.eq_ignore_ascii_case("available");

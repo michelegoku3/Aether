@@ -29,7 +29,7 @@ pub trait BuildDetailsSource: Send + Sync {
 //
 // The Depotbox build-details endpoint requires an `x-api-key` header. The key
 // below is the one SFF ships inside its public, GPL-licensed source
-// (github.com/Midrags/SFF, `lua/endpoints.py`); it is embedded as a default so
+// (github.com/Midrags/SFF, `sff/lua/endpoints.py`); it is embedded as a default so
 // Build lookups work out of the box exactly like they do for every SFF user.
 // It is NOT a documented public API and may be rotated or revoked at any
 // time, so it can always be overridden with the `AETHERDESK_BUILD_TOKEN`

@@ -237,7 +237,6 @@ pub async fn install_local_game(
 }
 
 /// List every archived Lua version for a game (current backup + history/).
-/// Data source for the future "all builds" tab in Change Version.
 #[tauri::command]
 pub async fn list_lua_history(
     app_id: u32,

@@ -15,8 +15,8 @@ pub type ProgressFn<'a> = dyn Fn(u8, &str) + Send + Sync + 'a;
 ///
 ///  1. validate the game has a stplug-in Lua
 ///  2. preserve the pre-change Lua into the AetherData backup tree
-///     (`backup/<appid>/lua/history/`, deduplicated by content — no more
-///     `.lua.bak` files in stplug-in)
+///     (`backup/<appid>/lua/history/`, deduplicated by content; no `.lua.bak`
+///     files are written to stplug-in)
 ///  3. pin every manifest resolved at or before the target into the Lua;
 ///     depots outside the available history remain byte-for-byte unchanged —
 ///     LumaCore picks the resolved changes up live
@@ -49,8 +49,8 @@ pub fn apply_build_version(
     );
 
     progress(10, "Backing up the game Lua");
-    // No more .lua.bak in stplug-in: the PRE-change content is preserved
-    // in the AetherData backup tree (history/ unless already known).
+    // The pre-change Lua is preserved in the AetherData backup tree
+    // (history/ unless already known); no .lua.bak is written to stplug-in.
     let history_dir = crate::core::backup::GameBackup::for_app(app_id)
         .map(|backup| {
             let dir = backup
@@ -132,9 +132,8 @@ pub fn apply_build_version(
         }
     };
 
-    // The version with pins applied is a MODIFIED VERSION: it goes to
-    // history/ (the pristine original in the backup is untouched). Immediate
-    // update, no longer at Desk restart. Best-effort.
+    // The pinned Lua is a modified version: archive it to history/ right away
+    // (the pristine original in the backup is untouched). Best-effort.
     if let Ok(final_lua) = std::fs::read_to_string(lua.lua_path()) {
         match crate::core::backup::GameBackup::for_app(app_id)
             .and_then(|backup| backup.store_history_version(app_id, final_lua.as_bytes()))
@@ -203,9 +202,8 @@ pub fn apply_build_version(
     }
 
     progress(75, "Syncing the Steam ACF");
-    // Best-effort: when the ACF is missing or locked, log a WARN and carry on
-    // (the "pending ACF" queue was removed: the pins in the .lua do the real
-    // work, the ACF is only metadata).
+    // Best-effort: a missing or locked ACF logs a WARN and is skipped; the
+    // pins in the .lua do the real work and the ACF is only metadata.
     let acf = SteamAcfEditor::for_app(library_path, app_id);
     let acf_synced_now = match acf.apply_build(build_id, pins) {
         Ok(()) => true,

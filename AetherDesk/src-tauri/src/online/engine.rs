@@ -99,7 +99,7 @@ impl OnlineEngine {
         })
     }
 
-    /// Disattiva UCOnline2 (rollback dal journal, idempotente).
+    /// Disable UCOnline2 (journal rollback, idempotent).
     ///
     /// `confirm_cleanup` authorizes removing known UCO2 files when the recovery
     /// journal is gone; without it the call reports `confirmation_required`.
@@ -150,9 +150,8 @@ fn inspect(game_root: &Path) -> Result<DetectionReport, String> {
     GameInspector::inspect(game_root).map_err(|error| error.to_string())
 }
 
-/// Notices shown in the UI as a single ⚠ group (no more separate 💡 hints:
-/// suggestions duplicating warnings were merged here).
-/// Merges detection warnings with operational notes, deduplicated.
+/// Merges detection warnings with operational notes into the single ⚠ group
+/// the UI shows, deduplicated.
 fn build_notices(
     detection: &DetectionReport,
     bundle: Option<&Uco2Bundle>,

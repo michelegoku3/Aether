@@ -91,9 +91,10 @@ pub const ICON_EXTENSIONS: &[&str] = &[
 // First-run provisioning
 // ---------------------------------------------------------------------------
 
-/// Creates `config/themes/` and `config/wallpapers/` (if missing) and seeds
-/// them with the embedded defaults (Cyberpunk + Frieren themes and wallpapers)
-/// when the folders are empty.
+/// Creates `config/themes/`, `config/wallpapers/` and `config/icons/` (if
+/// missing) and seeds the theme, wallpaper and icon folders with the embedded
+/// defaults when empty (Cyberpunk, Goldmine, Frieren and Halo themes and
+/// wallpapers, plus the alternate icon).
 /// Idempotent: existing files are never overwritten, so user files survive
 /// upgrades. Failures are logged, never fatal.
 pub fn ensure_default_assets() -> Result<(), String> {

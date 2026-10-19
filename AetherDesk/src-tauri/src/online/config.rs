@@ -1,7 +1,7 @@
 //! `union-crax.ini` generation (UCOnline2 configuration).
 //!
 //! Typed builder, faithfully mirroring the sections written by `patch.bat`
-//! (v1.19.8 + PlayFab SHARED from HEAD). Project rules:
+//! (v1.19.8). Project rules:
 //!   * the ini is ALWAYS written next to the running exe (`ini_dir`
 //!     computed by detection) — an ini in Unreal game roots would be
 //!     silently ignored;

@@ -22,11 +22,11 @@
 ///    Using a single space keeps token boundaries (so `GTA:San` → `gta san`,
 ///    not `gtasan`).
 /// 3. Collapse whitespace.
-/// 4. Per-token Roman → digit synonym pass (`ix`→`9` …) — `civ`→`civilization` is now a dedicated alias.
+/// 4. Per-token Roman → digit synonym pass (`ix`→`9` …) — `civ`→`civilization` is a dedicated alias.
 ///
-/// This replaces the former narrow replace-chain (`.`, `'`, `:`, `®`, `™`, `-`, `_`)
-/// which left `!` etc untouched and broke exact/prefix checks for titles with
-/// trailing `!!`.
+/// Treating every non-alphanumeric as a separator also covers `!` and other
+/// punctuation a narrow replace-chain would miss, which otherwise breaks
+/// exact/prefix checks for titles with trailing `!!`.
 ///
 /// Ranking helper for Hubcap-only tail rows. Steam hits are never dropped
 /// by this score. No typo/Levenshtein: that cannot beat Steam's own search.
@@ -68,8 +68,8 @@ pub fn normalize_string(s: &str) -> String {
         }
     }
 
-    // Collapse + Roman pass (civ -> civilization is now an alias, not a roman numeral,
-    // so that "Civ 6" expands via the alias table consistently with other franchises).
+    // Collapse + Roman pass (civ -> civilization lives in the alias table, not this
+    // map, so "Civ 6" expands consistently with other franchises).
     let words: Vec<String> = spaced
         .split_whitespace()
         .map(|w| match w {
@@ -118,8 +118,7 @@ pub fn sanitize_query_for_hubcap(query: &str) -> Option<String> {
     if collapsed.to_lowercase() == raw_trimmed.to_lowercase() {
         return None;
     }
-    // Also deduplicate against lowercased normalized form collapsing already done;
-    // if only case changed, not useful.
+    // If only casing changed there is nothing new to query.
     if collapsed.eq_ignore_ascii_case(raw_trimmed) {
         return None;
     }

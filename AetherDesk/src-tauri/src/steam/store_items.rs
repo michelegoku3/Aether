@@ -16,7 +16,7 @@ use std::sync::{Mutex, OnceLock};
 const GET_ITEMS_URL: &str = "https://api.steampowered.com/IStoreBrowseService/GetItems/v1";
 const GET_ITEMS_TIMEOUT_SECONDS: u64 = 8;
 
-/// 50 per call is the conservative SFF default: Steam accepts more but the URL
+/// 48 per call is a conservative default: Steam accepts more but the URL
 /// grows fast (payload is JSON, URL-encoded as a query parameter).
 const CHUNK_SIZE: usize = 48;
 
@@ -105,7 +105,7 @@ pub struct StoreItemPurchaseOption {
 ///
 /// 1. `parent_appid` set → DLC of another app. Re-releases hang off the base
 ///    appid the same way but ship as standalone games; Steam tags them
-///    `type: 14` → we keep "rerelease" rows and drop everything else.
+///    `type: 14` → "rerelease" rows are kept and everything else is dropped.
 /// 2. `delisted_blank` → removed-from-store DLC content (see field docs).
 /// 3. Belt-and-suspenders type drop: tool/video/music/advertising/dlc kinds
 ///    without a parent (edge cases GetItems reports with no parent set).
@@ -247,10 +247,9 @@ fn resolve_asset_url(assets: &GetItemAssets, filename: &str) -> Option<String> {
 }
 
 fn resolve_library_capsule_url(assets: &GetItemAssets) -> Option<String> {
-    // Capsule slot must show capsule artwork only. We deliberately do NOT fall
-    // back to `assets.header` here: header is a wide landscape "hero" banner and
-    // would leak into the capsule slot (reported after cache clean). If the game
-    // has no capsule asset we return None and let the UI show a placeholder.
+    // Capsule slot must show capsule artwork only: `assets.header` is a wide
+    // landscape "hero" banner, so it is deliberately not a fallback here. If the
+    // game has no capsule asset, return None and let the UI show a placeholder.
     let filename = assets
         .library_capsule
         .as_deref()

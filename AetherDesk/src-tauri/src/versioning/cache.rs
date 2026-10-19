@@ -32,9 +32,9 @@ struct CacheFile {
     build_pins: HashMap<String, TimedEntry<Vec<DepotManifestPin>>>,
 }
 
-/// On-disk TTL cache for remote version data. Same shape/strategy as
-/// `game_info::cache::GameInfoCache` (schema version + app version + TTLs),
-/// so behaviour stays consistent across domains.
+/// On-disk TTL cache for remote version data. Same schema-versioning and TTL
+/// strategy as `game_info::cache::GameInfoCache`, so behaviour stays consistent
+/// across domains.
 pub struct VersionCache {
     path: PathBuf,
 }

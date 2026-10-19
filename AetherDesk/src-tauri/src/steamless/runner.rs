@@ -474,7 +474,7 @@ mod tests {
             // Only the hang test exercises the 1s enforcement. Success-path
             // tests get headroom: on Windows a cold process spawn (Defender /
             // AMSI scan of a fresh script in a fresh temp dir, amplified by
-            // parallel test threads) can exceed 1s, which used to surface as
+            // parallel test threads) can exceed 1s, which would surface as
             // a generic "timed out" failure instead of the real outcome.
             timeout_seconds: if hang { 1 } else { 30 },
         };

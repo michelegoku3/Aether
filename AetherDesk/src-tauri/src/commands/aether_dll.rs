@@ -39,8 +39,8 @@ pub async fn check_aether_dll_update(app: tauri::AppHandle) -> Result<serde_json
         .unwrap_or_else(|| "N/A".to_string());
 
     // Origin label: the update check is reachable from the startup pass, the
-    // DLL-change path and the manual Check button; without it a duplicated
-    // check was untraceable in the logs (F7).
+    // DLL-change path and the manual Check button, so the log line identifies
+    // which one ran.
     let origin = "dll-check";
     // Testing releases (`tdll-*`) take priority when enabled. Their version is
     // gated by `latest_is_newer_than`, exactly like stable releases: if the test
@@ -100,10 +100,11 @@ async fn test_channel_update_response(
     installed_version: &str,
     origin: &str,
 ) -> Option<serde_json::Value> {
-    // A session-level memo skips a probe that cannot answer yet: on an install
-    // with no test build published, every check used to spend two GitHub API
-    // requests to learn the same "not published" (F7). A published release
-    // clears the memo immediately, so this never delays a real test build.
+    // A session-level memo skips a probe that cannot answer yet: without it,
+    // every check on an install with no test build published would spend two
+    // GitHub API requests to learn the same "not published". A published
+    // release clears the memo immediately, so this never delays a real test
+    // build.
     if github::test_channel_recently_empty(TestChannel::Dll) {
         crate::desk_log_info!(
             "updater",

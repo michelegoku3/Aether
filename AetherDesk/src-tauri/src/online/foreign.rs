@@ -5,7 +5,6 @@
 //! place that decides "these files are OFME / UCO2": detection, enable_online,
 //! set_aether_* and the UI all read from here. Scanning is recursive: Bodycam and
 //! Unreal titles keep markers in `Binaries/Win64`, not next to `steam_api`.
-//! Full vocabulary: AGENTS.md at the root.
 
 use crate::online::types::Conflict;
 use serde::{Deserialize, Serialize};

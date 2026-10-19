@@ -122,8 +122,8 @@ pub async fn prepare_update(app: &tauri::AppHandle) -> Result<Option<PreparedUpd
 }
 
 /// Downloads and stages the latest STABLE AetherDesk release with no version
-/// gate: used to leave the test channel ("Restore" in the UI) back to the
-/// previous stable build. The caller restarts the process afterwards.
+/// gate: used by "Restore" in the UI to leave the test channel for the stable
+/// one. The caller restarts the process afterwards.
 pub async fn prepare_stable_restore() -> Result<Option<PreparedUpdate>, String> {
     let manager = GithubReleaseManager::new();
     let release = manager

@@ -11,7 +11,7 @@ pub enum VersionError {
     BuildNotFound,
     /// The build history feed returned no builds for this app.
     BuildHistoryEmpty,
-    /// The Depotbox token was rejected (401).
+    /// The Depotbox token was rejected.
     TokenInvalid,
     /// A remote source failed or refused the request (network, HTTP, VPN block, ...).
     SourceUnavailable {

@@ -163,7 +163,7 @@ pub struct SettingsLoadFlags {
 
 /// Single source of truth for plain defaults: serde providers below and
 /// `impl Default` both read these, so fresh installs and old settings.json
-/// files can never disagree (see ARC-002).
+/// files can never disagree.
 const DEFAULT_ALT_CARDS_OPACITY: u8 = 100;
 const DEFAULT_ALT_CARDS_FADE: u8 = 20;
 const DEFAULT_STORE_CURRENCY: &str = "eur";

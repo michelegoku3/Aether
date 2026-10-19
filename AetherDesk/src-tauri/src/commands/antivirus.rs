@@ -129,7 +129,8 @@ pub fn apply_antivirus_exclusion(app: tauri::AppHandle) -> Result<String, String
     // invocation instead of spawning one child process per exclusion.
     let mut script = Vec::new();
 
-    // 1. Process exclusions — location-independent, cover the app + updater.
+    // 1. Process exclusions — location-independent, cover the app, updater and
+    //    Steam.
     for process in &APP_PROCESS_EXCLUSIONS {
         script.push(format!(
             "Add-MpPreference -ExclusionProcess '{}' -ErrorAction Stop",

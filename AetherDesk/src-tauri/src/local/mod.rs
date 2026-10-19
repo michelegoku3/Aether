@@ -12,9 +12,9 @@
 // step of the online download pipeline.
 //
 // Like the crack engine, this module is deliberately Tauri-agnostic: it only
-// needs the App ID, the game name, the Steam root, the optional active library
-// and the list of source paths. The thin Tauri command in
-// `commands/local.rs` is just a wrapper around it.
+// needs the App ID, the game name, the Steam root and the list of source
+// paths. The thin Tauri command in `commands/local.rs` is just a wrapper
+// around it.
 use crate::core::backup::GameBackup;
 use crate::core::paths::LocalAppPaths;
 use crate::crack::archive;
@@ -120,9 +120,8 @@ pub fn install_bulk_local_pipeline(
     }
 
     // Validate every discovered Lua before touching Steam, including commented
-    // pins that could be enabled later. This prevents a package such as the
-    // logged 3558400.lua from being copied and then failing only inside the
-    // DLL interpreter.
+    // pins that could be enabled later, so a malformed file is rejected here
+    // rather than failing later inside the DLL interpreter.
     for lua_path in &discovered_lua {
         let stem = lua_path
             .file_stem()

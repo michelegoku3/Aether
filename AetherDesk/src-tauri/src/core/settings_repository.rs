@@ -312,19 +312,15 @@ impl SettingsManager {
     }
 }
 
-/// Convenience: load settings in one call. Replaces the repetitive
-/// `SettingsManager::new(app).load()` idiom that was copy-pasted across every
-/// command and made review harder; a single call-site also makes it trivial
-/// to add caching/memoisation later.
+/// Convenience: load settings in one call. The single call-site also makes
+/// adding caching or memoisation straightforward.
 #[inline]
 pub fn load_settings(app: &tauri::AppHandle) -> AppSettings {
     SettingsManager::new(app).load()
 }
 
 /// Convenience: return a non-empty `steam_path` or a descriptive error ready
-/// for `?` propagation. Centralises the "steam path required" guard that
-/// dozens of commands reimplemented individually with subtly different
-/// phrasing.
+/// for `?` propagation. Centralises the "steam path required" guard.
 #[inline]
 pub fn require_steam_path(app: &tauri::AppHandle) -> Result<String, String> {
     let path = SettingsManager::new(app).try_load()?.steam_path;
@@ -435,10 +431,10 @@ mod repository_tests {
     }
     #[test]
     fn empty_json_matches_default() {
-        // Guards ARC-002: every field's serde default must agree with
-        // `impl Default`, or upgraders would see different values than
-        // fresh installs. `default_steam_path` is detection-based but
-        // deterministic within one machine, so the comparison holds here.
+        // Every field's serde default must agree with `impl Default`, or
+        // upgraders would see different values than fresh installs.
+        // `default_steam_path` is detection-based but deterministic within one
+        // machine, so the comparison holds here.
         let from_empty: AppSettings = serde_json::from_str("{}").expect("empty object must parse");
         assert_eq!(from_empty, AppSettings::default());
     }

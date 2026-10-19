@@ -87,7 +87,7 @@ impl ToolBundleLocator {
 
     /// Copies the vendored bundle into the installed directory. Idempotent but
     /// destructive: an incomplete/invalid installed directory is removed and
-    /// recreated from source (same behavior as the old Steamless locator).
+    /// recreated from source.
     fn copy_bundle(&self, source: &Path, destination: &Path) -> Result<(), String> {
         if destination.exists() {
             let _ = fs::remove_dir_all(destination);

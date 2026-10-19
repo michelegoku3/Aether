@@ -4,8 +4,8 @@
 //! `<Steam>/userdata/<user>/config/localconfig.vdf`, section
 //! `"Apps"` -> `"<appid>"` -> `"LaunchOptions"`.
 //!
-//! The file is textual VDF; Steam rewrites it on exit, so our edits survive
-//! while Steam is closed or until it rewrites them itself.
+//! The file is textual VDF; Steam rewrites it on exit, so edits survive while
+//! Steam is closed or until it rewrites them itself.
 //! The functions here work on the text, preserving everything else in the file.
 
 use std::fs;

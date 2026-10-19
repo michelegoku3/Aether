@@ -65,7 +65,7 @@ pub async fn apply_game_version(
     build_id: u64,
 ) -> Result<ApplyVersionReport, String> {
     // Steam path resolved by the backend (settings → normalization →
-    // filesystem validation): the client no longer passes it and cannot pass
+    // filesystem validation): the client does not pass it and cannot pass
     // one different from the configured value.
     let steam_path = command_steam_path(&app)?;
     validate_app_build(app_id, build_id)?;

@@ -55,8 +55,8 @@ impl RyuuClient {
             BASE_URL
         );
         let url = format!("{}/api/download/{}", BASE_URL, app_id);
-        // Ryuu also supports `?auth_key=` query as fallback, but header is enough.
-        // We keep the request minimal: just the path, auth via header.
+        // Ryuu also supports `?auth_key=` as a query fallback, but the header is
+        // enough. Keep the request minimal: just the path, auth via header.
         let resp = self
             .client
             .get(&url)

@@ -40,19 +40,18 @@ impl LocalAppPaths {
     }
 
     /// Primary and only path: `<install_root>/AetherData`.
-    /// It is the only location used from now on.
     pub fn data_root() -> PathBuf {
         Self::install_root().join(LOCAL_DATA_DIR_NAME)
     }
 
-    /// Compatibility alias for code that used to take `&AppHandle`.
-    /// Now ignores `app` and always returns `install_root/AetherData` (unified).
+    /// Compatibility alias that ignores `app` and always returns
+    /// `install_root/AetherData` (unified).
     pub fn data_root_for_app(_app: &tauri::AppHandle) -> PathBuf {
         Self::data_root()
     }
 
-    /// Legacy Roaming from the v2 fix: `%APPDATA%\com.aether.desk`
-    /// Kept only for back-migration to the unified install.
+    /// Legacy Roaming location `%APPDATA%\com.aether.desk`, kept only for
+    /// migration to the unified install.
     pub fn legacy_roaming_data_root() -> PathBuf {
         if let Some(base) = dirs::data_dir() {
             return base.join("com.aether.desk");

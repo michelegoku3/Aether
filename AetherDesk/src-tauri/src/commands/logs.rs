@@ -228,8 +228,8 @@ fn read_dll_tail_lines(app: &tauri::AppHandle, limit: usize) -> Vec<String> {
     ] {
         let path = dir.join("main.log");
         if path.is_file() {
-            // Bounded read; on failure keep looking in the next candidate dir,
-            // exactly like before (a locked/huge file must not hide the others).
+            // Bounded read; on failure keep looking in the next candidate dir
+            // (a locked/huge file must not hide the others).
             if let Ok(lines) = crate::core::logger::tail_file_lines(&path, limit) {
                 return lines;
             }

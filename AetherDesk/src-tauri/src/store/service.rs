@@ -38,8 +38,8 @@ impl StoreService {
         }
     }
 
-    /// Exact / prefix / substring, then **per-token** Damerau-Levenshtein.
-    /// Whole-title edit distance cannot match `witchr 3` to a long official name.
+    /// Scored match of `query` against `name` on normalized text: exact (0),
+    /// prefix (<100), substring (<1000), no match (10000).
     pub fn calculate_relevance_score(&self, query: &str, name: &str) -> usize {
         normalize::relevance_score(query, name)
     }
@@ -354,7 +354,7 @@ impl StoreService {
         let steam_future = async move {
             let mut merged: Vec<crate::steam::store::SteamStoreItem> = Vec::new();
             let mut seen: std::collections::HashSet<u32> = std::collections::HashSet::new();
-            // Fire up to 2 Steam searches in parallel via JoinSet-style match.
+            // Fire up to 3 Steam searches in parallel (arity-matched join).
             let batches: Vec<Result<Vec<crate::steam::store::SteamStoreItem>, String>> =
                 match steam_queries_for_fut.len() {
                     3 => {
@@ -461,8 +461,8 @@ impl StoreService {
             if exact_missing.is_empty() {
                 return verified;
             }
-            // All probes in parallel, each with its own short timeout: the
-            // old sequential loop could add up to 3 × 4 s to a search.
+            // All probes run in parallel, each with its own short timeout, so a
+            // slow Hubcap cannot add each probe's full timeout to the search.
             let mut probes = tokio::task::JoinSet::new();
             for app_id in exact_missing.iter().copied() {
                 let client = client.clone();

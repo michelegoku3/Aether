@@ -152,9 +152,9 @@ impl VersionService {
         } else {
             // The SteamDB RSS feed is intentionally short. Not finding a depot
             // in that window does not prove that it did not exist at the target
-            // build. Apply every manifest we could resolve and preserve the
-            // existing Lua rows for the rest, matching the safe policy from
-            // commit 0a778fb (absence from available diffs is not removal).
+            // build: absence from the available diffs is not removal. Apply
+            // every manifest that could be resolved and preserve the existing
+            // Lua rows for the rest.
             crate::desk_log_warn!(
                 "versioning",
                 "Build {} for app {} resolved {} depot(s); {} depot(s) were outside the available history and will remain unchanged: {:?}",

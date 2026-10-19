@@ -64,12 +64,11 @@ fn no_atom_release_error(prefixes: &[&str]) -> String {
 /// True when a lookup failed because the channel simply has **no release**,
 /// rather than because GitHub was unreachable or refused the call.
 ///
-/// The distinction drives log severity (F6): probing an empty test channel is a
-/// normal state — it is how every install without a `tdll-*` release behaves —
+/// The distinction drives log severity: an empty test channel is a normal state
 /// and reporting it as ERROR on every check trains users to ignore the log.
 /// Real transport/HTTP failures stay errors. The recognised messages are the
 /// ones produced by `no_api_release_error`/`no_atom_release_error` above, so
-/// there is one definition of the text and one of its meaning.
+/// text and meaning have one definition.
 pub fn channel_has_no_release(error: &str) -> bool {
     error.contains("No published GitHub release found for prefixes")
         || error.contains("No release atom entry found for prefixes")
@@ -131,15 +130,15 @@ fn note_test_channel_published(channel: TestChannel) {
 }
 
 // ============================================================================
-// Update-lookup single flight (F7)
+// Update-lookup single flight
 // ============================================================================
 
 /// How long a completed lookup is reused before another network request.
 ///
-/// The double IPC (React StrictMode, plus the DLL-change path running the check
-/// alongside the settings save) issued 2 full checks per settings save, each
-/// costing up to 6 GitHub requests against a 60/hour unauthenticated budget.
-/// A minute of reuse collapses those into one.
+/// Duplicate checks (React StrictMode, plus the DLL-change path running
+/// alongside the settings save) issue two full lookups per settings save, each
+/// costing up to 6 GitHub requests against a 60/hour unauthenticated budget;
+/// a minute of reuse collapses them into one.
 const LOOKUP_TTL: Duration = Duration::from_secs(60);
 /// Same, for an *empty channel* (e.g. no `tdll-*` published). Absence changes
 /// on release day, so it is cached longer but not forever.
@@ -359,10 +358,8 @@ impl GithubReleaseManager {
     /// channel set, a short reuse window, and an origin label in every log line.
     ///
     /// `origin` names the caller (`settings-save`, `manual-check`, `startup`,
-    /// `install`, …). It exists because the duplicated checks in the logs were
-    /// indistinguishable: two identical pairs per settings save, with no way to
-    /// tell which path issued which. Now the duplicate is served from the
-    /// cache and the log says so.
+    /// `install`, ...) so duplicate checks from different paths stay
+    /// distinguishable in the logs; a duplicate is served from the cache.
     pub async fn fetch_latest_by_prefix_tagged(
         &self,
         prefixes: &[&str],
@@ -423,7 +420,7 @@ impl GithubReleaseManager {
         );
         let result = self.lookup_with_fallback(prefixes, origin).await;
         // Keep the session memo of "this test channel is empty" in sync, so a
-        // probe nobody can answer stops costing API requests (F7).
+        // probe nobody can answer stops costing API requests.
         if let Some(channel) = TestChannel::from_prefixes(prefixes) {
             match &result {
                 Ok(_) => note_test_channel_published(channel),

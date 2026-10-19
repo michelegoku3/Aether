@@ -1,8 +1,8 @@
 /// Open a URL in the system default browser.
 ///
-/// Centralised here so both `commands/library.rs` (SteamDB links) and
-/// `commands/home_links.rs` (OnlineFix, GCW, CSRINRU) share the same
-/// cross-platform implementation.
+/// Centralised here so callers such as `commands/library.rs` (SteamDB links),
+/// `commands/home_links.rs` (OnlineFix, GCW, CSRINRU) and the LuaTools OAuth
+/// flow share the same cross-platform implementation.
 #[cfg(target_os = "windows")]
 pub fn open_external_url(url: &str) -> Result<(), String> {
     // Do NOT route URLs through `cmd /C start`: `&` is a command separator in

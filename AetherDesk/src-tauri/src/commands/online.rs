@@ -247,7 +247,7 @@ pub async fn enable_online(
     Ok(result)
 }
 
-/// Disattiva UCOnline2 (rollback dal journal).
+/// Disables UCOnline2 (rollback from the journal).
 #[tauri::command]
 pub async fn disable_online(
     app: tauri::AppHandle,

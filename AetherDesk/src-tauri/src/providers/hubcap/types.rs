@@ -64,9 +64,8 @@ pub struct HubcapGenerationUsage {
     pub steam_service_ready: Option<bool>,
 }
 
-/// Envelope of `GET /library`. Every field is optional: Hubcap's payload shape
-/// has shifted over time, and a single missing key must never turn the whole
-/// search into "no results".
+/// Envelope of `GET /library`. Every field is optional: a single missing key
+/// must never turn the whole search into "no results".
 #[derive(Debug, Deserialize)]
 pub(crate) struct HubcapLibraryResponse {
     #[serde(default)]

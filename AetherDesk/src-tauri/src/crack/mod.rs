@@ -72,7 +72,7 @@ fn apply_sources_in_staging(
             }
 
             // When `vn_patch_mode` is ON and the source file is an executable (.exe),
-            // we stage it as an archive by copying it to a temporary `.exe.zip`
+            // it is staged as an archive by copying it to a temporary `.exe.zip`
             // file in the staging directory's parent folder, so archive extractors
             // (zip / 7z / rar) open and extract its contents automatically.
             let is_vn_exe = vn_patch_mode
@@ -98,9 +98,9 @@ fn apply_sources_in_staging(
                 if stage_res.is_err() {
                     crate::desk_log_info!("crack", "Opening VN .exe patch as archive failed (not a self-extracting archive). Launching installer executable: {}", source_path.display());
                     // If opening the `.exe` as an archive fails (it is not a self-extracting
-                    // archive), we do NOT copy the `.exe` into the game folder. Instead,
-                    // as requested, we simply launch the executable patcher with current
-                    // directory set to `game_root`.
+                    // archive), the `.exe` is NOT copied into the game folder. Instead the
+                    // executable patcher is launched with the current directory set to
+                    // `game_root`.
                     #[cfg(target_os = "windows")]
                     {
                         let _ = std::process::Command::new(&source_path)

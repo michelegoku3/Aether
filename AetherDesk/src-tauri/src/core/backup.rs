@@ -66,7 +66,7 @@ impl GameBackup {
         self.original_dir().join(format!("crack_{}.txt", app_id))
     }
 
-    /// Private recovery metadata; the legacy text inventory stays unchanged.
+    /// Private recovery metadata; the existing text inventory stays unchanged.
     pub(crate) fn crack_recovery_path(&self, app_id: u32) -> PathBuf {
         self.root.join(format!("crack_{app_id}.state.json"))
     }
@@ -364,10 +364,9 @@ fn collect_relative_files(root: &Path, dir: &Path, out: &mut Vec<String>) -> Res
 //
 //   * .lua with no backup        -> backup created
 //   * backup differing from .lua -> the previous version is archived in
-//                                 `lua\history\<app_id>-<unix_secs>.lua` and the
-//                                 backup updated (no "build" lost: this is the
-//                                 base for the future "all versions" tab in
-//                                 Change Version)
+//                                 `lua\history\<app_id>-<unix_millis>.lua` and the
+//                                 backup updated (no "build" is lost; this feeds
+//                                 the "all builds" view in Change Version)
 //   * identical backup           -> no write (byte comparison; .lua files
 //                                 are small, reading is cheaper and more exact
 //                                 than hash + disk signature)
@@ -414,8 +413,8 @@ fn sha256_hex(bytes: &[u8]) -> String {
         .collect()
 }
 
-/// Millisecond-precision timestamp: two archives on the same day never
-/// overwrite each other (bug of the seconds-precision version).
+/// Millisecond-precision timestamp so two archives within the same second
+/// never collide.
 fn unix_millis() -> u128 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -620,9 +619,9 @@ pub fn sync_lua_backups_from_stplug_in(steam_path: &Path) -> LuaSyncReport {
     report
 }
 
-/// Lists the archived lua version history for an app (for the future "all
-/// builds" tab in Change Version). Also includes the current backup as the
-/// first entry when present.
+/// Lists the archived lua version history for an app (the "all builds" view in
+/// Change Version). Also includes the current backup as the first entry when
+/// present.
 pub fn list_lua_history(app_id: u32) -> Result<Vec<LuaHistoryEntry>, String> {
     let backup = GameBackup::for_app(app_id)?;
     let mut out = Vec::new();

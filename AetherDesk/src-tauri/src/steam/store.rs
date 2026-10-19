@@ -103,11 +103,10 @@ pub struct SteamStore {
 /// Process-lifetime HTTP client for the Steam storefront endpoints.
 ///
 /// The typeahead fires one request per debounced keystroke and every store
-/// search builds a fresh `StoreService`; constructing a `reqwest::Client` per
-/// call meant a new TCP + TLS handshake to store.steampowered.com /
-/// steamcommunity.com every time (a few hundred ms each from Europe) and no
-/// connection reuse at all. The process-wide registry in `providers::http`
-/// keeps the pool warm and makes cloning free.
+/// search builds a fresh `StoreService`, so a per-call `reqwest::Client`
+/// would open a new TCP + TLS handshake to store.steampowered.com /
+/// steamcommunity.com every time. The process-wide registry in
+/// `providers::http` keeps the pool warm and makes cloning free.
 fn shared_client() -> reqwest::Client {
     http::shared_client(STEAM_SEARCH_TIMEOUT_SECONDS)
 }

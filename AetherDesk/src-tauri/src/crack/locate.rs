@@ -4,7 +4,7 @@
 // others nest them under wrapper folders that may or may not already exist in
 // the game. Instead of guessing a single "crack root" (which fails when a
 // folder like `Hk project` already exists in the game and must be merged, not
-// descended into), we resolve each file **individually** by matching its path
+// descended into), each file is resolved **individually** by matching its path
 // against the game's existing structure:
 //
 //   * keep the longest path suffix whose parent directory exists in the game
@@ -79,8 +79,8 @@ pub fn resolve_file_target(archive_rel: &Path, base_root: &Path) -> PathBuf {
 /// the base. That also makes the change invisible for every game that is not
 /// wrapper-packaged: the base is then the same path.
 ///
-/// The residual gap is a stray file (a repack note, or a crack file left by a
-/// build older than this rule) next to a folder with no signal at all. That shape
+/// The residual gap is a stray file (a repack note, or a crack file left by an
+/// earlier apply) next to a folder with no signal at all. That shape
 /// keeps the base at the installdir; the recovery is removing the previous crack
 /// (the "remove applied crack" flow, or answering "choose a new crack" in the
 /// saved-crack prompt) and applying again.
@@ -118,8 +118,8 @@ fn game_content_root(installdir: &Path) -> PathBuf {
         // root when it carries one of the two signals. A symlink or junction
         // never reaches here: `file_type` does not follow reparse points, so it
         // is neither a folder nor an executable and the descent stops - which is
-        // what we want, because the canonicalized target could leave the game
-        // root and break every recorded path.
+        // the intended outcome, because the canonicalized target could leave the
+        // game root and break every recorded path.
         if !holds_own_executable && folders.len() == 1 {
             if let Some(folder) = folders.pop() {
                 let named_like_game = folder
@@ -177,12 +177,13 @@ fn holds_executable_named(folder: &Path, expected_name: &str) -> bool {
 /// `installdir` folder).
 ///
 /// When `is_flat_crack` is true (meaning every file in the crack source is a plain
-/// normal file without any folder structure, e.g. `steam_api64.dll`), we recursively
-/// search `game_root` for any existing files whose name matches `archive_rel.file_name()`.
+/// normal file without any folder structure, e.g. `steam_api64.dll`), `game_root`
+/// is searched recursively for any existing files whose name matches
+/// `archive_rel.file_name()`.
 ///   - If matching files are found in any subdirectory of `game_root`, all their
 ///     paths are returned so every matching file in the game is replaced.
-///   - If no matching files exist in `game_root`, we fall back to placing the
-///     file in the game's real root (`game_content_root`), as established.
+///   - If no matching files exist in `game_root`, the file falls back to the
+///     game's real root (`game_content_root`).
 ///
 /// When `is_flat_crack` is false (the crack archive contains folder structure),
 /// it returns `[resolve_file_target(archive_rel, game_content_root)]`.

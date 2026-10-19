@@ -3,8 +3,7 @@
 //! manual per-depot edits, and the explicit per-game repair).
 //!
 //! The resolution order is fixed and is the SAME definition of "present" used
-//! by planning and by the completeness gate, so the two can never disagree
-//! (the original B1 bug):
+//! by planning and by the completeness gate, so the two can never disagree:
 //!
 //!   1. `<Steam>\depotcache`               (primary — where Steam reads)
 //!   2. `<Steam>\config\depotcache`        (Steam's secondary cache)
@@ -240,12 +239,11 @@ impl ManifestResolution {
 
 /// Consecutive provider failures after which a pin is quarantined.
 ///
-/// The batch used to abort at the first failure, so a single poisoned pin made
-/// every pin of that game ungeneratable: the caller retried the whole batch on
-/// the next poll, the provider answered the same way, and the game never
-/// progressed. Failing per pin already unblocks the healthy ones; this cap
-/// additionally stops asking (and burning quota) for a pin that keeps failing,
-/// while leaving it visible as `missing` so the pipeline reports it honestly.
+/// Failing per pin keeps one poisoned manifest from blocking the rest of the
+/// game, which would otherwise stall forever as the caller retried the same
+/// batch on every poll. This cap additionally stops asking (and burning quota)
+/// for a pin that keeps failing, while leaving it visible as `missing` so the
+/// pipeline reports it honestly.
 pub(crate) const MAX_CONSECUTIVE_FAILURES: u32 = 3;
 
 /// How long a quarantined pin is skipped before it is offered to the provider
@@ -358,12 +356,12 @@ pub async fn resolve(request: ManifestRequest) -> Result<ManifestResolution, Str
 /// game, Workshop, and store flows — a second concurrent request would only
 /// add avoidable 429 pressure.
 ///
-/// Failure policy (F2): **per pin**, never per batch. One pin the provider
-/// cannot satisfy must not abort the other 29 — that turned a single poisoned
-/// manifest into a permanent stall for the whole game, because the caller
-/// retried the identical batch (same order, same pins) on every poll. Failures
-/// are returned in the second element so the caller's `missing` list stays
-/// truthful instead of reporting an exception that names no pin.
+/// Failure policy: **per pin**, never per batch. One pin the provider cannot
+/// satisfy must not abort the other 29 — a single poisoned manifest would
+/// otherwise stall the whole game, because the caller retries the identical
+/// batch (same order, same pins) on every poll. Failures are returned in the
+/// second element so the caller's `missing` list stays truthful instead of
+/// reporting an exception that names no pin.
 ///
 /// Returns `(generated_files, failed_pins)`.
 async fn generate_missing_manifests(

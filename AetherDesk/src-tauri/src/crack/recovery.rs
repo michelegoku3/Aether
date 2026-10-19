@@ -18,7 +18,7 @@ use super::paths::{normalized_relative, reserved_relative};
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct RecoveryFile {
-    // None means the target was absent before the first tracked application.
+    // True when the target existed before the first tracked application.
     pub(crate) had_original: bool,
     pub(crate) original_sha256: Option<String>,
     pub(crate) applied_sha256: Option<String>,

@@ -1,14 +1,14 @@
 //! Centralised per-app launch policy persistence in `aethercore.toml` (docs/05
 //! §11-§13 — shared by the tauri commands and the Desk migration layer.
 //!
-//! Layout gestito dal modulo:
+//! Layout managed by this module:
 //!
 //! ```toml
 //! [presence]
 //! default_mode    = "none"      # "none" | "showonline" (policy + overrides)
 //! showonline_apps = [...]
 //! aetheronline_apps  = [...]
-//! exclude_apps    = [...]       # hard opt-out: vince su token e array
+//! exclude_apps    = [...]       # hard opt-out: wins over tokens and arrays
 //! ```
 //!
 //! The DLL resolves ONE mode per app inside SpawnProcess by re-reading this

@@ -1,6 +1,6 @@
 //! Game installation inspection.
 //!
-//! Rust port of the UCOnline2 `patch.bat` detection rules (commit 797d550).
+//! Rust port of the UCOnline2 `patch.bat` detection rules.
 //! Every function is pure (input: path; output: data) and does not depend on
 //! Tauri: readable, testable with `tempdir` fixtures, reusable from any front-end.
 //!
@@ -60,8 +60,8 @@ const EOS_DLL_SHIPPING: &str = "EOSSDK-Win64-Shipping.dll";
 const EOS_DLL: &str = "EOSSDK.dll";
 
 /// Generic proxy DLLs that a fix may hide behind (only when small).
-/// `version.dll` and `XINPUT1_3.dll` are NOT here: since 1.19.5 they are the
-/// UCO2 overlay proxy names and the deployer owns them, not the quarantine.
+/// `version.dll` and `XINPUT1_3.dll` are NOT here: they are the UCO2 overlay
+/// proxy names and the deployer owns them, not the quarantine.
 const PROXY_DLLS: &[&str] = &["dxgi.dll", "dsound.dll", "winhttp.dll"];
 
 /// Names reserved for the early overlay proxy (never treated as conflicts).
@@ -121,7 +121,7 @@ impl GameInspector {
         })
     }
 
-    /// Primo eseguibile `*-Win64-Shipping.exe`, escludendo CrashReport*.
+    /// First `*-Win64-Shipping.exe` executable, excluding CrashReport*.
     fn find_unreal_shipping_exe(root: &Path) -> Option<PathBuf> {
         walk_files(root).into_iter().find(|file| {
             let name = file.file_name().and_then(|n| n.to_str()).unwrap_or("");
@@ -159,7 +159,7 @@ impl GameInspector {
         let arch = Self::arch_for(root);
         let steam_api_dir = Self::steam_api_dir_for(
             root,
-            // Fallback convenzione Unity: <Data>\Plugins\x86_64\
+            // Unity convention fallback: <Data>\Plugins\x86_64\
             Some(data_dir.join("Plugins").join("x86_64")),
         );
 
@@ -308,7 +308,7 @@ impl GameInspector {
     // Backend detection
     // ------------------------------------------------------------------
 
-    /// Backend dai contenuti Unity (Mono Managed\ o metadata IL2CPP).
+    /// Backends from the Unity contents (Mono `Managed\` or IL2CPP metadata).
     fn detect_backends_unity(data_dir: &Path) -> BackendReport {
         let mut backends = BackendReport::default();
         let managed = data_dir.join("Managed");
@@ -580,7 +580,7 @@ fn is_non_game_exe(path: &Path) -> bool {
     NON_GAME_SUBSTR.iter().any(|marker| name.contains(marker))
 }
 
-/// `.exe` presenti direttamente in `dir`.
+/// `.exe` files directly inside `dir`.
 fn list_exes(dir: &Path) -> Vec<PathBuf> {
     let Ok(entries) = fs::read_dir(dir) else {
         return Vec::new();

@@ -51,7 +51,7 @@ pub(crate) fn usage_snapshot_slot() -> &'static Mutex<Option<UsageSnapshot>> {
 /// Drop the cached usage answer. Called after any successful provider
 /// operation below: the provider-side counter moved, so the next
 /// `get_hubcap_usage` must refetch instead of serving the up-to-60s-old
-/// snapshot (which is why the badge used to move only on app start).
+/// snapshot.
 pub(crate) async fn invalidate_usage_snapshot() {
     *usage_snapshot_slot().lock().await = None;
 }

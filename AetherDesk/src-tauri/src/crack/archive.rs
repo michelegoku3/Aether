@@ -202,9 +202,9 @@ fn extract_zip(source: &Path, dest: &Path, default_password: &str) -> Result<(),
 /// Extract a `.rar` archive into `dest` using the `unrar` crate with
 /// `default_password`. Reports a clear error if the password is rejected.
 ///
-/// The `unrar` crate drives archives through a typestate cursor: we read each
-/// header, and for every file entry we read its bytes and write them ourselves
-/// (applying the same path sanitization as ZIP) to prevent path traversal.
+/// The `unrar` crate drives archives through a typestate cursor: each header is
+/// read, and every file entry's bytes are read and written here (applying the
+/// same path sanitization as ZIP) to prevent path traversal.
 fn extract_rar(source: &Path, dest: &Path, default_password: &str) -> Result<(), String> {
     use unrar::Archive;
 

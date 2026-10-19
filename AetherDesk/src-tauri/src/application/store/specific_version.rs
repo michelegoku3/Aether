@@ -1,8 +1,8 @@
 //! Specific-version provider download use cases.
 //!
 //! Packages are completed before publication and then flow through one shared
-//! installer. Hubcap retains its historical residual-download policy; this
-//! refactor intentionally does not change observable behavior.
+//! installer. Hubcap keeps its residual-download policy: unlike Ryuu and
+//! LuaTools, it does not clear partial Steam downloads before publishing.
 
 use super::installation::{install_specific_package, SpecificInstallPolicy};
 use super::model::{AuthenticatedDownloadRequest, LuaToolsDownloadRequest};

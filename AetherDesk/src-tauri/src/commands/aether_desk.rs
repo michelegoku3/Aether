@@ -15,12 +15,6 @@ pub fn get_desk_version(app: tauri::AppHandle) -> Result<String, String> {
     Ok(app.package_info().version.to_string())
 }
 
-/// Reports the installed version and whether an update is available.
-///
-/// When testing releases are enabled, a `tdesk-*` release takes priority **only
-/// if its version is newer** than the installed one. Otherwise it falls back to
-/// the latest stable `desk-*` release (version-gated). `is_test` tells the UI
-/// how to color the update dot.
 /// Result of probing the `tdesk-*` test channel.
 ///
 /// `Some(info)` = a test build is published and it is the answer; `None` = fall
@@ -30,8 +24,8 @@ async fn test_channel_desk_update_info(
     current_version: String,
     origin: &str,
 ) -> Option<crate::updater::github::ComponentUpdateInfo> {
-    // Same session-level memo as the DLL check (F7): an unpublished test channel
-    // is not worth two API requests on every startup.
+    // Same session-level memo as the DLL check: an unpublished test channel is
+    // not worth two API requests on every startup.
     if crate::updater::github::test_channel_recently_empty(TestChannel::Desk) {
         crate::desk_log_info!(
             "updater",
@@ -74,6 +68,12 @@ async fn test_channel_desk_update_info(
     }
 }
 
+/// Reports the installed version and whether an update is available.
+///
+/// When testing releases are enabled, a `tdesk-*` release takes priority **only
+/// if its version is newer** than the installed one. Otherwise it falls back to
+/// the latest stable `desk-*` release (version-gated). `is_test` tells the UI
+/// how to color the update dot.
 #[tauri::command]
 pub async fn check_aether_desk_update(app: tauri::AppHandle) -> Result<serde_json::Value, String> {
     let current_version = app.package_info().version.to_string();
@@ -85,7 +85,8 @@ pub async fn check_aether_desk_update(app: tauri::AppHandle) -> Result<serde_jso
     let manager = GithubReleaseManager::new();
 
     // Origin label: this same check is reachable from the startup pass, the
-    // DLL/Desk-change path and the manual Check button (F7).
+    // DLL/Desk-change path and the manual Check button, so the log line
+    // identifies which one ran.
     let origin = "desk-check";
     if load_settings(&app).enable_test_updates {
         if let Some(info) = test_channel_desk_update_info(current_version.clone(), origin).await {
@@ -144,9 +145,9 @@ pub async fn install_aether_desk_update(app: tauri::AppHandle) -> Result<String,
 
 /// Restores AetherDesk to the stable build (leaves the test channel): downloads
 /// the latest `desk-*` release, stages it and restarts the app to apply it.
-/// Also switches `enable_test_updates` off in settings: after the restore we
-/// are on a stable build (which may even be older than the current UI), so
-/// switch and button stay consistent (switch OFF → Uninstall button).
+/// Also switches `enable_test_updates` off in settings: after the restore the
+/// app runs a stable build (which may even be older than the current UI), so
+/// the switch and button stay consistent (switch OFF → Uninstall button).
 #[tauri::command]
 pub async fn restore_stable_desk(app: tauri::AppHandle) -> Result<String, String> {
     crate::desk_log_info!(

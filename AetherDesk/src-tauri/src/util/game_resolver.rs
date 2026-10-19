@@ -1,10 +1,10 @@
 // Shared game-resolution helper for Tauri commands.
 //
-// Several commands (Steamless, Apply Crack) need to turn an App ID into the
-// on-disk folder of an installed Lua game. Keeping that logic here (in the
-// command layer, where SettingsManager/AppHandle live) avoids duplicating it
-// in every command while keeping the domain scanner (`steam_library`) free of
-// Tauri dependencies.
+// Several commands (Steamless, Apply Crack, Enable Online) need to turn an
+// App ID into the on-disk folder of an installed Lua game. Keeping that logic
+// here (in the command layer, where SettingsManager/AppHandle live) avoids
+// duplicating it in every command while keeping the domain scanner
+// (`steam_library`) free of Tauri dependencies.
 use crate::core::settings::SettingsManager;
 use crate::steam::library::{InstalledSteamGame, SteamLibraryScanner};
 use std::path::PathBuf;

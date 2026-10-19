@@ -2,20 +2,15 @@
 //!
 //! ## The Steam path is not a client parameter
 //!
-//! Up to here 22 commands received `steam_path: String` from the frontend. Real
-//! costs of that contract:
+//! The Steam path is resolved by the backend (single source of truth: the
+//! settings), not passed by the frontend. That keeps the config read and the
+//! **DPAPI keystore decryption** out of every call, prevents a client from
+//! passing a path different from the configured one, and avoids re-validating
+//! it in every command.
 //!
-//! 1. **Latency**: to get it the UI called `get_settings`, which re-reads the
-//!    config file and **decrypts the DPAPI keystore** on every hit —
-//!    one decryption per popup, not per session.
-//! 2. **Attack/bug surface**: a client could pass a path different from the
-//!    configured one, and every command had to re-validate it.
-//! 3. **Drift**: 22 signatures to keep hand-aligned with 30+ TS call sites.
-//!
-//! Now the path is resolved by the backend (single source of truth: the
-//! settings). Commands use [`command_steam_path`] (fails with a readable user
-//! message) or [`configured_steam_path`] (degrades gracefully when the path
-//! is missing or Steam is unreachable).
+//! Commands use [`command_steam_path`] (fails with a readable user message)
+//! or [`configured_steam_path`] (degrades gracefully when the path is missing
+//! or Steam is unreachable).
 
 // ---------------------------------------------------------------------------
 // IPC boundary lint policy (deliberate, motivated exceptions).
@@ -65,10 +60,9 @@ use crate::util::validation::validate_steam_path;
 
 /// Configured Steam path, normalized and filesystem-validated.
 ///
-/// Replaces the old `steam_path` command parameter: same readable error as
-/// before when the path is missing (`require_steam_path`) and same strict
-/// validation when present (`validate_steam_path`), but without the client
-/// having to read it or being able to alter it.
+/// Fails with a readable error when the path is missing (`require_steam_path`)
+/// and enforces strict validation when present (`validate_steam_path`). The
+/// client neither reads nor supplies the path.
 ///
 /// Use this when the command **cannot** work without a valid Steam path
 /// (install/uninstall, manifest writes, downloads).
@@ -83,8 +77,7 @@ pub fn command_steam_path(app: &tauri::AppHandle) -> Result<String, String> {
 /// For commands that must degrade gracefully instead of returning an error:
 /// DLL version reads, update checks, residue probes. With `None`
 /// (unconfigured) or an unreachable path the caller answers "N/A" / 0 / no
-/// updates, exactly like before when the client passed an empty or stale
-/// string.
+/// updates.
 pub fn configured_steam_path(app: &tauri::AppHandle) -> Option<String> {
     require_steam_path(app).ok()
 }

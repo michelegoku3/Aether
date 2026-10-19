@@ -342,9 +342,9 @@ pub fn clear_app_caches() -> Result<String, String> {
 #[tauri::command]
 pub fn open_webview_devtools(app: tauri::AppHandle) -> Result<(), String> {
     use tauri::Manager;
-    // Gate on the persisted opt-in: the Settings UI persists the flag before
-    // invoking (see `persistDevtools`), so the legitimate flow is unaffected
-    // while programmatic callers without the user's explicit toggle are refused.
+    // Gate on the persisted opt-in: the Settings UI saves the flag before
+    // invoking, so the legitimate flow is unaffected while programmatic callers
+    // without the user's explicit toggle are refused.
     if !load_settings(&app).enable_webview_devtools {
         return Err(
             "WebView devtools are disabled. Enable them in Settings → Aether first.".to_string(),

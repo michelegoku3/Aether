@@ -1,7 +1,7 @@
 //! Shared filesystem utilities (atomic writes, recursive walks, scanning).
 //!
-//! Extracted from `core/backup.rs` because several domains need them (crack
-//! backup, online deploy, journal): a single implementation, tested once.
+//! Several domains need them (crack backup, online deploy, journal): a single
+//! implementation, tested once.
 
 use std::fs;
 use std::io::{Read, Seek, SeekFrom};
@@ -278,8 +278,8 @@ mod tests {
         let target = dir
             .path()
             .join(std::ffi::OsString::from_wide(&[0xD800, b'a' as u16]));
-        // `target.display()` renders the lone surrogate as U+FFFD, so the old
-        // `format!("{}.tmp", path.display())` temp name is exactly this sibling.
+        // `target.display()` renders the lone surrogate as U+FFFD, so a
+        // `format!("{}.tmp", path.display())` temp name would be exactly this sibling.
         let sibling = dir.path().join("\u{FFFD}a.tmp");
         fs::write(&sibling, b"sentinel").unwrap();
 

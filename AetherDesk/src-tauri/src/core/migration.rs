@@ -1,7 +1,5 @@
-// One-time migration from old layouts to the unified one
-// `%LOCALAPPDATA%\AetherDesk\AetherData` (fix v3 - 09/08/2026).
+// One-time migration from old layouts to the unified `<install_root>/AetherData`.
 //
-// Principles: DRY, high cohesion, low coupling, single responsibility.
 // Every migration is idempotent, best-effort and logs without blocking startup.
 
 use crate::core::backup::GameBackup;
@@ -23,7 +21,7 @@ pub struct MigrationReport {
 }
 
 // ---------------------------------------------------------------------------
-// Helpers riusabili (DRY) — filesystem
+// Reusable helpers (DRY) — filesystem
 // ---------------------------------------------------------------------------
 mod fs_utils {
     use super::*;
@@ -124,7 +122,7 @@ mod legacy_install {
 }
 
 // ---------------------------------------------------------------------------
-// Migrazioni specifiche
+// Specific migrations
 // ---------------------------------------------------------------------------
 
 pub fn migrate_roaming_to_local_install() -> Result<bool, String> {
@@ -304,12 +302,11 @@ pub fn ensure_appearance_dirs() {
     }
 }
 
-// FIX antivirus: back to stock behavior (fresh install = false).
-// No longer forces the reset on every boot — the popup-on-every-"Apply crack"
-// bug came from the unconditional reset. The flag now stays as settings.json says.
+// Antivirus exclusion flag: the value is owned by settings.json, so this
+// startup step is a no-op (see the body).
 pub fn reset_antivirus_exclusion_flag(_app: &tauri::AppHandle) {
     // Intentionally no-op: fresh installs default to false (popup shows once),
-    // updates keep the previous value. Removes the recurring-popup bug.
+    // updates keep the previous value.
 }
 
 /// One-time policy migration: latest-version downloads no longer enable
@@ -365,10 +362,8 @@ pub fn run_startup_migrations(app: &tauri::AppHandle) {
     }
     remove_legacy_install_folders();
     reset_antivirus_exclusion_flag(app);
-    // One-time cleanup: the desk-1.0.1 release (commit d4ccbb1) wrote a
-    // `.v3_antivirus_reset_done` sentinel into AetherData to force the reset of
-    // the antivirus flag. Now reset_antivirus_exclusion_flag is a no-op, but the
-    // file stays on disk for anyone who installed that build: remove it.
+    // One-time cleanup: older builds wrote a `.v3_antivirus_reset_done` sentinel
+    // into AetherData to force the antivirus-flag reset. Remove it.
     let _ = fs::remove_file(LocalAppPaths::data_root().join(".v3_antivirus_reset_done"));
     let config_dir = LocalAppPaths::config_dir();
     let legacy_config_dir = LocalAppPaths::legacy_app_config_dir(app);
@@ -550,10 +545,10 @@ pub fn adopt_detected_steam_path_if_unconfigured(app: &tauri::AppHandle) {
 /// `<AetherData>`'s path) so AetherDLL can discover configuration and logs,
 /// migrating a legacy Steam-side `aethercore.toml` when needed.
 ///
-/// Best-effort and idempotent. Unlike the historical behavior, this validates
-/// the path first: an unconfigured/invalid path logs a warning and writes
-/// nothing, instead of creating phantom `aethercore` folders at wrong
-/// locations. Shared by startup migrations and the settings-save flow (DRY).
+/// Best-effort and idempotent. Validates the path first: an unconfigured or
+/// invalid path logs a warning and writes nothing, instead of creating phantom
+/// `aethercore` folders at wrong locations. Shared by startup migrations and the
+/// settings-save flow (DRY).
 pub fn ensure_steam_bridge_for_path(steam_path: &str) {
     let root = match crate::steam::resolve::resolve_steam_path(steam_path) {
         Ok(root) => root,
