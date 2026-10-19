@@ -8,6 +8,7 @@
 #include <thread>
 
 #include "core/AetherCoreState.h"
+#include "core/AppManifestOwner.h"
 #include "core/Constants.h"
 #include "core/HookBootstrap.h"
 #include "core/HookManager.h"
@@ -28,6 +29,7 @@
 #include "utils/IpcSpec.h"
 #include "utils/PatternEngine.h"
 #include "utils/Strings.h"
+#include "utils/SteamLibraryPaths.h"
 #include "utils/VdfText.h"
 #include "utils/WinFile.h"
 
@@ -52,30 +54,10 @@ void PinSelf() {
 // Returns every Steam library's `steamapps` directory. The primary Steam
 // root is always included; secondary libraries are read from
 // steamapps/libraryfolders.vdf so uninstall detection also works when a
-// game lives on another drive.
+// game lives on another drive. Shared with the appmanifest owner maintenance
+// (utils/SteamLibraryPaths.h) so both see exactly the same library set.
 std::vector<std::string> CollectAcfWatchDirs() {
-    // UTF-8 end to end: native paths in, Narrow wide->UTF-8 out (path::string
-    // would decode via the ANSI codepage). Downstream converts back with
-    // winfile::ToPath at each filesystem boundary.
-    std::vector<std::string> dirs;
-    const std::filesystem::path primary = winfile::ToPath(g_state.steamInstallPath) / "steamapps";
-    dirs.push_back(ac::strings::Narrow(primary.wstring()));
-
-    const std::filesystem::path libraryFile = primary / "libraryfolders.vdf";
-    std::ifstream input(libraryFile);
-    if (!input.is_open())
-        return dirs;
-    const std::string content((std::istreambuf_iterator<char>(input)), std::istreambuf_iterator<char>());
-    // Shared textual VDF parser (utils/VdfText.h, P11): a single place for
-    // quoted lines/unescaping, no dedicated regexes.
-    for (const std::string& library : vdf::ExtractQuotedValues(content, "path")) {
-        const std::filesystem::path steamapps = winfile::ToPath(library) / "steamapps";
-        const std::string narrow = ac::strings::Narrow(steamapps.wstring());
-        if (std::find(dirs.begin(), dirs.end(), narrow) == dirs.end()) {
-            dirs.push_back(narrow);
-        }
-    }
-    return dirs;
+    return steamlibrary::SteamAppsDirs(g_state.steamInstallPath);
 }
 
 } // namespace
@@ -296,6 +278,18 @@ void StartSafetyNetsStage() {
     //      [manifest_cache] restore_on_startup is false.
     //      Depends on: aethercore dir (desk_path.cfg) + steamInstallPath.
     ac::hooks::ManifestRestore::RestoreMissingManifestsAtStartup();
+
+    // 10c. Owner strip: Steam derives the "From the library of <account>"
+    //      banner from AppState.LastOwner, the account that last
+    //      installed/updated the app. Lua apps are installed by whichever
+    //      account was active at the time, so a later login shows a bogus
+    //      shared-library banner. The entry is dropped (never stamped: the
+    //      incoming account is unknown before login), which leaves Steam with
+    //      nobody to attribute the app to. Runs before Steam builds this
+    //      session's app list (async, once per process); MarkLicenseAsChanged
+    //      and DirWatch repeat it on login and on every manifest rewrite.
+    //      Depends on: lua data (HasDepot) + steamInstallPath.
+    ac::appmanifest::StripAtStartup();
 }
 
 void StartWatchersStage(const BootContext& ctx) {

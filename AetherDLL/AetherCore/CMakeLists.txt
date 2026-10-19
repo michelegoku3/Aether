@@ -19,6 +19,7 @@ add_library(AetherCore SHARED
     core/NetPacketAbi.cpp
     core/StructGuard.cpp
     core/SteamVersion.cpp
+    core/AppManifestOwner.cpp
 
     # Scripting
     scripting/ScriptEngine.cpp

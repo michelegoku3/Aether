@@ -11,6 +11,7 @@
 #include <vector>
 
 #include "core/AetherCoreState.h"
+#include "core/AppManifestOwner.h"
 #include "core/Constants.h"
 #include "core/HookManager.h"
 #include "core/Logger.h"
@@ -338,6 +339,11 @@ bool h_CheckAppOwnership(void* self, AppId app, AppOwnership* out) {
     out->releaseState = AppReleaseState::Released;
     out->freeLicense = false;
     out->ownsLicense = true;
+    // We are claiming this app as owned: a borrow/share bit left by Steam's
+    // own answer must not survive the spoof, or downstream consumers still
+    // render family/borrowed state for an app the account "owns".
+    out->borrowed = false;
+    out->familyShared = false;
     RecordOwnershipOutcome(app, OwnershipOutcome::Unlocked);
     return true;
 }
@@ -351,6 +357,10 @@ std::int64_t h_MarkLicenseAsChanged(void* self, std::uint32_t packageId, bool re
         // First fire is post-login: top up package 0 with anything parsed after
         // LoadPackage ran.
         LicenseManager::DoStartupInjection();
+        // Same moment: Steam may have logged into a different account since
+        // startup, so drop any owner record a manifest rewrite left behind (the
+        // "From the library of <account>" banner reads it).
+        ac::appmanifest::RequestStrip();
     }
     return o_MarkLicenseAsChanged(self, packageId, reloadAll);
 }

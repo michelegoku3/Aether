@@ -36,6 +36,7 @@ int main(int argc, char** argv) {
         {"ipcspec", IpcSpecParseTest},
         {"jsonwriter", JsonWriterTest},
         {"manifest_contract", ManifestContractTest},
+        {"acfowner", AcfOwnerTest},
     };
     try {
         if (argc == 1) {

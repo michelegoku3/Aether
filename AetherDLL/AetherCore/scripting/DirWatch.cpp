@@ -18,6 +18,7 @@
 #include <vector>
 
 #include "core/AetherCoreState.h"
+#include "core/AppManifestOwner.h"
 #include "core/Constants.h"
 #include "core/Logger.h"
 #include "diagnostics/StatusWriter.h"
@@ -280,6 +281,7 @@ void ApplyChanges(const std::unordered_map<std::string, DWORD>& acc, const std::
     AC_LOG_INFO(kModule, "Processing %zu watched change(s).", order.size());
 
     bool luaChanged = false;
+    bool manifestChanged = false;
     std::vector<std::uint32_t> removedApps;
     for (const std::string& path : order) {
         const DWORD action = acc.at(path);
@@ -288,6 +290,8 @@ void ApplyChanges(const std::unordered_map<std::string, DWORD>& acc, const std::
                 if (const auto appId = AppIdFromManifestPath(fs::path(path))) {
                     removedApps.push_back(*appId);
                 }
+            } else {
+                manifestChanged = true;
             }
             continue;
         }
@@ -316,6 +320,14 @@ void ApplyChanges(const std::unordered_map<std::string, DWORD>& acc, const std::
         AC_LOG_INFO(kModule, "Detected removal of Steam appmanifest_%u.acf; restoring backed-up manifests.", appId);
         hooks::ManifestRestore::RestoreMissingManifestsForApp(appId);
     }
+
+    // Steam rewrites AppState.LastOwner whenever it writes app state (install,
+    // update, validate) with the account that is active at that moment. Drop it
+    // again after any manifest write so another account's session cannot leave
+    // the "From the library of <account>" banner behind. Idempotent: when the
+    // entry is already absent, the pass writes nothing and this does not loop.
+    if (manifestChanged)
+        ac::appmanifest::RequestStrip();
 }
 
 void Run() {
