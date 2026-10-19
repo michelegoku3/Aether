@@ -6,8 +6,9 @@ import { useLibraryGames, type LuaManifestIssue } from '../hooks/useLibraryGames
 import { useModalDismiss } from '../hooks/useModalDismiss';
 import { OnlinePanel, type OnlineStatus } from './OnlinePanel';
 import { OnlineChoiceModal, type AppPresenceMode } from './OnlineChoiceModal';
+import { CleanupModal } from './CleanupModal';
 import { resolveEffectivePresenceMode } from './onlineChoiceState';
-import type { PresenceToggleArgs } from '../types/online';
+import type { OnlineActionResult, PresenceToggleArgs } from '../types/online';
 import { toErrorMessage } from '../util/errors';
 import { resolveLiveGame } from '../util/library';
 
@@ -136,12 +137,16 @@ export const LibraryGameActionsModal = ({
   const [showOnline, setShowOnline] = useState(false);
   const [aetherExcluded, setAetherExcluded] = useState(false);
   const [presenceDefaultShowOnline, setPresenceDefaultShowOnline] = useState(true);
+  // OFME "Clean" (removes the online-fix.me files AND the UCOnline2 files).
+  const [cleanConfirm, setCleanConfirm] = useState<string | null>(null);
+  const [cleanWarning, setCleanWarning] = useState<string | null>(null);
+  const [cleanBusy, setCleanBusy] = useState(false);
   const disabled = isProcessing || isBusy || onlineBusy;
-  // An open child popup (online choice / UCO2 panel) disables THIS popup's
-  // dismiss: ESC and outside clicks close only the topmost child in the
+  // An open child popup (online choice / UCO2 panel / cleanup) disables THIS
+  // popup's dismiss: ESC and outside clicks close only the topmost child in the
   // Modify → Online → UCO2 chain, which steps down one level at a time
   // without ever closing everything.
-  const childPopupOpen = showOnlineChoice || showOnlinePanel;
+  const childPopupOpen = showOnlineChoice || showOnlinePanel || cleanConfirm !== null || cleanWarning !== null;
 
   const refreshUpdateState = async () => {
     try {
@@ -344,6 +349,31 @@ export const LibraryGameActionsModal = ({
     setShowOnlineChoice(true);
   };
 
+  // "Clean" in the OFME banner: one action removes the online-fix.me files and
+  // the UCOnline2 files (an OFME drop overwrites UCO2). The backend owns the
+  // confirmation text; the first call only asks, the second one (confirm) acts.
+  const runClean = async (confirm: boolean) => {
+    setCleanBusy(true);
+    if (confirm) setCleanConfirm(null);
+    try {
+      const result = await invoke<OnlineActionResult>('clean_online_conflicts', {
+        appId: Number(game.appId),
+        confirm,
+      });
+      if (result.confirmationRequired) {
+        setCleanConfirm(result.message);
+        return;
+      }
+      if (result.warning) setCleanWarning(result.warning);
+      onStatus(result.message, result.success ? 'success' : 'error');
+      await refreshOnlineStates();
+    } catch (err: unknown) {
+      onStatus(`Clean failed: ${toErrorMessage(err)}`, 'error');
+    } finally {
+      setCleanBusy(false);
+    }
+  };
+
   return (
     // Outside clicks are ignored while a child popup is open: the click
     // belongs to that popup, which closes itself and returns here.
@@ -444,13 +474,28 @@ export const LibraryGameActionsModal = ({
           uco2Enabled={uco2Online}
           ofmePresent={ofmePresent}
           uco2FilesPresent={uco2FilesPresent}
-          busy={onlineBusy}
+          busy={onlineBusy || cleanConfirm !== null || cleanWarning !== null}
           onSelectMode={handleSelectPresenceMode}
           onOpenUco2Panel={handleOpenUco2Panel}
+          onClean={() => void runClean(false)}
           onClose={() => setShowOnlineChoice(false)}
         />
       )}
       {showOnlinePanel && <OnlinePanel game={game} onClose={handleCloseUco2Panel} />}
+
+      {cleanConfirm && (
+        <CleanupModal
+          mode="confirm"
+          title="Remove crack and UCOnline2 files?"
+          text={cleanConfirm}
+          busy={cleanBusy}
+          onConfirm={() => void runClean(true)}
+          onClose={() => setCleanConfirm(null)}
+        />
+      )}
+      {cleanWarning && (
+        <CleanupModal mode="warning" title="Files removed" text={cleanWarning} onClose={() => setCleanWarning(null)} />
+      )}
     </div>
   );
 };

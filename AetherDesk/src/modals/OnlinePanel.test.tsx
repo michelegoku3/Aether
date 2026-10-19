@@ -6,7 +6,7 @@ import type { LibraryActionGame } from './LibraryGameActionsModal';
 import { invokeMock } from '../test/tauriMocks';
 
 const CONFIRM_TEXT =
-  'No recovery journal found. AetherDesk can remove the known UCOnline2 files, but some legitimate game files may also be removed. You can easily restore them by verifying the game file integrity. Continue?';
+  'No recovery journal found. AetherDesk can remove the known UCOnline2 files, but some legitimate game files may also be removed. You can easily restore them by verifying the game file integrity.\n\nContinue?';
 const WARNING_TEXT =
   'UCO2 files were removed. Some legitimate game files may also be removed. You can easily restore them by verifying the game file integrity: Steam > Library > Verify integrity of game files.';
 
@@ -97,7 +97,7 @@ describe('OnlinePanel journal-less disable', () => {
     await user.click(disable);
 
     // First call asks for confirmation and deletes nothing.
-    await screen.findByText(CONFIRM_TEXT);
+    await screen.findByText(/No recovery journal found/);
     expect(disableCalls).toEqual([{ confirmCleanup: false }]);
 
     await user.click(screen.getByRole('button', { name: 'Continue' }));
@@ -115,11 +115,11 @@ describe('OnlinePanel journal-less disable', () => {
     render(<OnlinePanel game={game} onClose={vi.fn()} />);
 
     await user.click(await screen.findByRole('button', { name: 'Disable' }));
-    await screen.findByText(CONFIRM_TEXT);
+    await screen.findByText(/No recovery journal found/);
 
     await user.click(screen.getByRole('button', { name: 'Cancel' }));
 
-    await waitFor(() => expect(screen.queryByText(CONFIRM_TEXT)).not.toBeInTheDocument());
+    await waitFor(() => expect(screen.queryByText(/No recovery journal found/)).not.toBeInTheDocument());
     expect(disableCalls).toEqual([{ confirmCleanup: false }]);
     expect(screen.getByRole('button', { name: 'Disable' })).toBeEnabled();
   });

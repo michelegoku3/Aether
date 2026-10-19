@@ -2355,6 +2355,8 @@ body {
   color: var(--color-muted);
   font-size: 13px;
   line-height: 1.5;
+  /* Cleanup dialogs put a blank line before the final "Continue?": keep it. */
+  white-space: pre-line;
 }
 
 .uninstall-modal-copy code {
@@ -3982,12 +3984,41 @@ body {
 }
 
 .oc-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
   margin-bottom: 12px;
   padding: 10px 12px;
   background: #2a2418;
   color: #e0b06a;
   font-size: 12px;
   border-radius: 8px;
+}
+
+.oc-banner-text {
+  flex: 1;
+}
+
+.oc-banner-clean {
+  flex: none;
+  padding: 4px 12px;
+  background: #e0b06a;
+  color: #2a2418;
+  font-size: 12px;
+  font-weight: 600;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.oc-banner-clean:hover:not(:disabled) {
+  background: #f0c079;
+}
+
+.oc-banner-clean:disabled {
+  opacity: 0.5;
+  cursor: default;
 }
 
 .oc-grid {

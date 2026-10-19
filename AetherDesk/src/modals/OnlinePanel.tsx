@@ -7,7 +7,7 @@ import type { OnlineActionResult, OnlineEnableRequest, OnlinePlan, OnlineStatus 
 import { emptyRequest } from '../types/online';
 import { OnlineDetectionSection } from './online/OnlineDetectionSection';
 import { OnlineConfigSection } from './online/OnlineConfigSection';
-import { Uco2CleanupModal } from './Uco2CleanupModal';
+import { CleanupModal } from './CleanupModal';
 
 // Re-export all online domain types for backwards compatibility with any callers
 export * from '../types/online';
@@ -211,8 +211,9 @@ export const OnlinePanel = ({ game, onClose }: OnlinePanelProps) => {
       </div>
 
       {cleanupConfirm && (
-        <Uco2CleanupModal
+        <CleanupModal
           mode="confirm"
+          title="Remove UCOnline2 files?"
           text={cleanupConfirm}
           busy={cleanupBusy}
           onConfirm={() => void confirmCleanup()}
@@ -220,7 +221,12 @@ export const OnlinePanel = ({ game, onClose }: OnlinePanelProps) => {
         />
       )}
       {cleanupWarning && (
-        <Uco2CleanupModal mode="warning" text={cleanupWarning} onClose={() => setCleanupWarning(null)} />
+        <CleanupModal
+          mode="warning"
+          title="UCOnline2 files removed"
+          text={cleanupWarning}
+          onClose={() => setCleanupWarning(null)}
+        />
       )}
     </>
   );

@@ -1,30 +1,30 @@
 import { ModalShell } from '../ui/ModalShell';
 
-export interface Uco2CleanupModalProps {
+export interface CleanupModalProps {
   /** `confirm` asks before the destructive cleanup; `warning` reports it after. */
   mode: 'confirm' | 'warning';
-  /** Backend-provided text (confirmation question or verify-integrity warning). */
+  /** Dialog title (e.g. "Remove UCOnline2 files?"). */
+  title: string;
+  /** Body text: the confirmation question or the verify-integrity warning. */
   text: string;
   /** Cleanup in flight: dismiss gestures and buttons are disabled. */
   busy?: boolean;
-  /** `confirm` mode: proceed with removing the known UCO2 files. */
+  /** `confirm` mode: proceed with removing the detected files. */
   onConfirm?: () => void;
   /** Cancel (confirm) or acknowledge (warning). */
   onClose: () => void;
 }
 
 /**
- * Journal-less UCOnline2 cleanup dialogs.
+ * Generic destructive-cleanup dialogs: confirm, then report the result.
  *
- * Disable normally rolls back from the recovery journal. When the whole
- * AetherData folder is gone the journal is lost, so AetherDesk can only remove
- * the *known* UCO2 files — some may be legitimate game files. The confirm step
- * makes that explicit; the warning step tells the user how to restore them by
- * verifying the game file integrity.
+ * Shared by the UCOnline2 journal-less disable and the OFME "Clean" button so
+ * both use the same wording, layout and two-step flow. The text is provided by
+ * the caller (the backend owns the exact wording).
  */
-export const Uco2CleanupModal = ({ mode, text, busy = false, onConfirm, onClose }: Uco2CleanupModalProps) => (
+export const CleanupModal = ({ mode, title, text, busy = false, onConfirm, onClose }: CleanupModalProps) => (
   <ModalShell
-    title={mode === 'confirm' ? 'Remove UCOnline2 files?' : 'UCOnline2 files removed'}
+    title={title}
     onClose={() => {
       if (!busy) onClose();
     }}

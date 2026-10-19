@@ -47,6 +47,8 @@ interface OnlineChoiceModalProps {
   busy: boolean;
   onSelectMode: (mode: AppPresenceMode) => void;
   onOpenUco2Panel: () => void;
+  /** "Clean" in the OFME banner: remove the crack AND the UCOnline2 files. */
+  onClean: () => void;
   onClose: () => void;
 }
 
@@ -59,6 +61,7 @@ export const OnlineChoiceModal = ({
   busy,
   onSelectMode,
   onOpenUco2Panel,
+  onClean,
   onClose,
 }: OnlineChoiceModalProps) => {
   useModalDismiss(onClose, busy);
@@ -78,7 +81,12 @@ export const OnlineChoiceModal = ({
 
         <div className="oc-body">
           {ofmePresent && (
-            <div className="oc-banner">OFME crack files detected, other online options are now locked.</div>
+            <div className="oc-banner">
+              <span className="oc-banner-text">OFME crack files detected, other online options are now locked.</span>
+              <button type="button" className="oc-banner-clean" onClick={onClean} disabled={busy}>
+                Clean
+              </button>
+            </div>
           )}
           <div className="oc-grid">
             {OPTIONS.map((option) => {

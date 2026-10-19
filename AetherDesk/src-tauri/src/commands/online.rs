@@ -298,6 +298,71 @@ pub async fn disable_online(
     Ok(result)
 }
 
+/// Removes the online-fix.me crack files AND the UCOnline2 files in one go.
+///
+/// Triggered by the "Clean" button in the OFME banner: an online-fix.me drop
+/// overwrites the UCO2 files, so both stacks are wiped and the folder is left
+/// ready for a fresh Online choice. Without `confirm` the call only asks.
+#[tauri::command]
+pub async fn clean_online_conflicts(
+    app: tauri::AppHandle,
+    app_id: u32,
+    confirm: Option<bool>,
+) -> Result<OnlineActionResult, String> {
+    if !confirm.unwrap_or(false) {
+        return Ok(OnlineActionResult {
+            success: false,
+            message: crate::online::revert::CONFIRM_CLEAN_MESSAGE.into(),
+            record: None,
+            confirmation_required: true,
+            warning: None,
+        });
+    }
+
+    let steam_root = crate::commands::command_steam_path(&app)?;
+    let mutation = crate::core::game_mutations::acquire(
+        Path::new(&steam_root),
+        app_id,
+        "clean_online_conflicts",
+    )
+    .await?;
+    crate::core::game_mutations::ensure_current_root(&app, Path::new(&steam_root))?;
+    let backup_root = LocalAppPaths::backup_root();
+    let state_path = state_path();
+    let game = resolve_installed_game(&app, app_id)?;
+    let game_root = PathBuf::from(&game.game_path);
+
+    crate::desk_log_info!("online", "clean_online_conflicts: app={}", app_id);
+
+    let (_mutation, result) = tauri::async_runtime::spawn_blocking(move || {
+        let result = crate::online::revert::clean_online_conflicts(
+            app_id,
+            &backup_root,
+            &state_path,
+            &game_root,
+        );
+        (mutation, result)
+    })
+    .await
+    .map_err(|e| format!("Online worker failed: {e}"))?;
+    let (message, warning) = result?;
+
+    // UCO2 is gone: return the game to the default presence behavior.
+    for path in aethercore_toml_paths(&app) {
+        update_mode_in_toml(&path, app_id, None)
+            .map_err(|e| format!("Files removed, presence configuration incomplete: {e}"))?;
+    }
+
+    crate::desk_log_info!("online", "clean_online_conflicts done: app={}", app_id);
+    Ok(OnlineActionResult {
+        success: true,
+        message,
+        record: None,
+        confirmation_required: false,
+        warning,
+    })
+}
+
 /// Locates the UCOnline2 bundle (installed or vendored).
 ///
 /// Returns a short, user-facing error when the bundle is missing.

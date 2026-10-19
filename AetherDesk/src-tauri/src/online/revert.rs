@@ -19,7 +19,7 @@ const RESTORE_CHECKPOINT: &str = "rollback_pending.json";
 const CONFIRM_CLEANUP_MESSAGE: &str =
     "No recovery journal found. AetherDesk can remove the known UCOnline2 files, but some \
      legitimate game files may also be removed. You can easily restore them by verifying the \
-     game file integrity. Continue?";
+     game file integrity.\n\nContinue?";
 
 const VERIFY_INTEGRITY_STEPS: &str =
     "Steam > Library > right-click the game > Properties > Installed Files > Verify integrity of \
@@ -126,7 +126,11 @@ fn handle_missing_journal(
         }
         // Never delete originals: without the journal they cannot be mapped
         // back, so they stay available for manual recovery.
-        let warning = cleanup_warning(&removed, backup_has_content.then_some(backup_dir));
+        let warning = cleanup_warning(
+            "UCO2 files were removed.",
+            &removed,
+            backup_has_content.then_some(backup_dir),
+        );
         return Ok(DisableOutcome::Done {
             message: "Online disabled: UCOnline2 files removed without a recovery journal.".into(),
             warning: Some(warning),
@@ -162,7 +166,26 @@ fn handle_missing_journal(
 /// Removes the files UCOnline2 can put in a game, using detection for the
 /// exact destinations and the marker scan for non-standard layouts.
 fn cleanup_orphaned_uco2(root: &Path) -> Result<Vec<PathBuf>, String> {
-    let mut targets = crate::online::foreign::scan(root).uco2_files;
+    let report = crate::online::foreign::scan(root);
+    remove_targets(uco2_targets(root, &report))
+}
+
+/// Removes BOTH the online-fix.me crack files and the UCOnline2 files.
+///
+/// An online-fix.me drop overwrites the UCO2 steam_api/plugins, so the two are
+/// never cleanly separable on disk: the journal-less "Clean" from the OFME
+/// banner wipes both stacks and leaves the folder ready for a fresh choice.
+pub(crate) fn cleanup_online_files(root: &Path) -> Result<Vec<PathBuf>, String> {
+    let report = crate::online::foreign::scan(root);
+    let mut targets = uco2_targets(root, &report);
+    targets.extend(report.files);
+    remove_targets(targets)
+}
+
+/// Files the UCOnline2 deployment owns: marker scan + the detected steam_api
+/// destination + the overlay proxy target.
+fn uco2_targets(root: &Path, report: &crate::online::foreign::ForeignOnlineReport) -> Vec<PathBuf> {
+    let mut targets = report.uco2_files.clone();
 
     if let Ok(detection) = crate::online::detect::GameInspector::inspect(root) {
         if let Some(dir) = detection.steam_api_dir.as_deref() {
@@ -173,6 +196,10 @@ fn cleanup_orphaned_uco2(root: &Path) -> Result<Vec<PathBuf>, String> {
         }
     }
 
+    targets
+}
+
+fn remove_targets(mut targets: Vec<PathBuf>) -> Result<Vec<PathBuf>, String> {
     targets.sort();
     targets.dedup();
 
@@ -206,10 +233,10 @@ fn cleanup_orphaned_uco2(root: &Path) -> Result<Vec<PathBuf>, String> {
     Ok(removed)
 }
 
-fn cleanup_warning(removed: &[PathBuf], backup_dir: Option<&Path>) -> String {
+fn cleanup_warning(prefix: &str, removed: &[PathBuf], backup_dir: Option<&Path>) -> String {
     let mut message = format!(
-        "UCO2 files were removed. Some legitimate game files may also be removed. You can easily \
-         restore them by verifying the game file integrity: {VERIFY_INTEGRITY_STEPS}."
+        "{prefix} Some legitimate game files may also be removed. You can easily restore them by \
+         verifying the game file integrity: {VERIFY_INTEGRITY_STEPS}."
     );
     if let Some(dir) = backup_dir {
         message.push_str(&format!(
@@ -226,6 +253,60 @@ fn cleanup_warning(removed: &[PathBuf], backup_dir: Option<&Path>) -> String {
         message.push_str(&format!(" Removed: {names}."));
     }
     message
+}
+
+/// Confirmation shown before the destructive "Clean" (OFME banner).
+pub(crate) const CONFIRM_CLEAN_MESSAGE: &str =
+    "Remove online-fix.me crack files? AetherDesk will delete the online-fix.me / SteamFix files \
+     and any UCOnline2 files it detects in the game folder. Some legitimate game files may also be \
+     removed: you can restore them by verifying the game file integrity.\n\nContinue?";
+
+/// Journal-less cleanup from the OFME banner: remove the online-fix.me files
+/// AND the UCOnline2 files, clear the UCO2 state, keep the backup originals and
+/// report a verify-integrity warning. The saved crack is never touched.
+///
+/// Returns `(message, warning)`.
+pub(crate) fn clean_online_conflicts(
+    app_id: u32,
+    backup_root: &Path,
+    state_path: &Path,
+    game_root: &Path,
+) -> Result<(String, Option<String>), String> {
+    let backup_dir = backup_dir_for(backup_root, app_id);
+    let removed = cleanup_online_files(game_root)?;
+
+    // UCO2 is gone: drop the record so the UI reports NotConfigured.
+    if let Ok(content) = fs::read_to_string(state_path) {
+        if let Ok(mut store) = serde_json::from_str::<OnlineStateStore>(&content) {
+            if store.get(app_id).is_some() {
+                store.remove(app_id, state_path)?;
+            }
+        }
+    }
+    // The journal can no longer be replayed (its files are gone); the original
+    // backups stay on disk for manual recovery.
+    remove_file_if_present(&backup_dir.join("journal.json"))?;
+    remove_file_if_present(&backup_dir.join(RESTORE_CHECKPOINT))?;
+
+    if removed.is_empty() {
+        return Ok((
+            "No online-fix.me or UCOnline2 files were found in the game folder.".into(),
+            None,
+        ));
+    }
+
+    let warning = cleanup_warning(
+        "Crack and UCOnline2 files were removed.",
+        &removed,
+        backup_dir.exists().then_some(backup_dir.as_path()),
+    );
+    Ok((
+        format!(
+            "Removed {} online-fix.me / UCOnline2 file(s) from the game folder.",
+            removed.len()
+        ),
+        Some(warning),
+    ))
 }
 
 /// True when the backup dir holds anything worth retaining (originals,
@@ -623,5 +704,74 @@ mod tests {
         assert!(error.contains("collision"), "got: {error}");
         assert_eq!(fs::read(&original).unwrap(), b"user file");
         assert!(backup.is_file());
+    }
+
+    /// Game with both an online-fix.me crack and a UCOnline2 deploy on disk.
+    fn mixed_online_fixture(root: &Path) {
+        fs::create_dir_all(root.join("MyGame_Data/Managed")).unwrap();
+        fs::create_dir_all(root.join("MyGame_Data/Plugins/x86_64")).unwrap();
+        fs::create_dir_all(root.join("plugins")).unwrap();
+        fs::write(root.join("MyGame.exe"), b"MZfake").unwrap();
+        fs::write(root.join("MyGame_Data/Managed/Assembly-CSharp.dll"), b"asm").unwrap();
+        fs::write(
+            root.join("MyGame_Data/Plugins/x86_64/steam_api64.dll"),
+            b"uco2-x64",
+        )
+        .unwrap();
+        fs::write(root.join("union-crax.ini"), b"[Settings]").unwrap();
+        fs::write(root.join("plugins/photon_universal.dll"), b"photon").unwrap();
+        fs::write(root.join("version.dll"), b"overlay").unwrap();
+        fs::write(root.join("OnlineFix.ini"), b"[fix]").unwrap();
+        fs::write(root.join("OnlineFix64.dll"), b"ofme").unwrap();
+        fs::write(root.join("dlllist.txt"), b"list").unwrap();
+        fs::write(root.join("plugins/original.dll"), b"original").unwrap();
+    }
+
+    #[test]
+    fn clean_online_conflicts_removes_uco2_and_ofme_but_keeps_legit_and_backups() {
+        let temp = tempfile::tempdir().unwrap();
+        let game_root = temp.path().join("game");
+        mixed_online_fixture(&game_root);
+        let backup_root = temp.path().join("backup");
+        let backup_dir = backup_dir_for(&backup_root, 4242);
+        fs::create_dir_all(backup_dir.join("original")).unwrap();
+        fs::write(backup_dir.join("original/steam_api64.dll"), b"original-dll").unwrap();
+        let state_path = temp.path().join("state.json");
+
+        let (message, warning) =
+            clean_online_conflicts(4242, &backup_root, &state_path, &game_root).unwrap();
+
+        assert!(message.contains("Removed"), "got: {message}");
+        assert!(warning.is_some(), "verify-integrity warning expected");
+        // Both stacks are gone.
+        assert!(!game_root.join("union-crax.ini").exists());
+        assert!(!game_root.join("plugins/photon_universal.dll").exists());
+        assert!(!game_root.join("version.dll").exists());
+        assert!(!game_root
+            .join("MyGame_Data/Plugins/x86_64/steam_api64.dll")
+            .exists());
+        assert!(!game_root.join("OnlineFix.ini").exists());
+        assert!(!game_root.join("OnlineFix64.dll").exists());
+        assert!(!game_root.join("dlllist.txt").exists());
+        // Legit files and the backup originals survive.
+        assert!(game_root.join("MyGame.exe").is_file());
+        assert!(game_root.join("plugins/original.dll").is_file());
+        assert!(backup_dir.join("original/steam_api64.dll").is_file());
+    }
+
+    #[test]
+    fn clean_online_conflicts_reports_a_noop_when_nothing_is_detected() {
+        let temp = tempfile::tempdir().unwrap();
+        let game_root = temp.path().join("game");
+        fs::create_dir_all(&game_root).unwrap();
+        fs::write(game_root.join("Game.exe"), b"MZ").unwrap();
+        let backup_root = temp.path().join("backup");
+        let state_path = temp.path().join("state.json");
+
+        let (message, warning) =
+            clean_online_conflicts(4242, &backup_root, &state_path, &game_root).unwrap();
+
+        assert!(message.contains("No "), "got: {message}");
+        assert!(warning.is_none());
     }
 }

@@ -59,6 +59,9 @@ pub async fn apply_crack(
     crate::core::game_mutations::ensure_current_root(&app, std::path::Path::new(&steam_root))?;
     let game = resolve_installed_game(&app, app_id)?;
     let game_root = PathBuf::from(&game.game_path);
+    if crack::has_active_uco2(&game_root) {
+        return Err(crack::UCO2_ACTIVE_ERROR.to_string());
+    }
     let backup = GameBackup::for_app(app_id)?;
 
     let vn_patch_mode = vn_patch_mode.unwrap_or(false);
@@ -108,6 +111,9 @@ pub async fn reapply_saved_crack(app: tauri::AppHandle, app_id: u32) -> Result<S
     crate::core::game_mutations::ensure_current_root(&app, std::path::Path::new(&steam_root))?;
     let game = resolve_installed_game(&app, app_id)?;
     let game_root = PathBuf::from(&game.game_path);
+    if crack::has_active_uco2(&game_root) {
+        return Err(crack::UCO2_ACTIVE_ERROR.to_string());
+    }
     let backup = GameBackup::for_app(app_id)?;
 
     if !backup.has_saved_crack() {

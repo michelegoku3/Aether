@@ -180,6 +180,17 @@ pub fn remove_applied_crack_from_game(
     apply::remove_applied_crack_files(app_id, game_root, backup)
 }
 
+/// Error shown when a crack is applied while UCOnline2 is active: the two
+/// Spacewar stacks overwrite each other, so UCO2 must be turned off first.
+pub const UCO2_ACTIVE_ERROR: &str =
+    "UCOnline2 is active in this game folder. Disable UCOnline2 first, apply the crack, then \
+     enable UCOnline2 again only if the crack is not online-fix.me.";
+
+/// True when UCOnline2 files are present in the game folder.
+pub fn has_active_uco2(game_root: &Path) -> bool {
+    crate::online::foreign::scan(game_root).uco2
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -276,5 +287,17 @@ mod tests {
             fs::read(backup.original_dir().join("a.dll")).unwrap(),
             b"original a"
         );
+    }
+
+    #[test]
+    fn uco2_files_are_reported_as_active() {
+        let temp = tempfile::tempdir().unwrap();
+        let game = temp.path().join("game");
+        fs::create_dir_all(&game).unwrap();
+
+        assert!(!has_active_uco2(&game));
+
+        fs::write(game.join("union-crax.ini"), b"[Settings]").unwrap();
+        assert!(has_active_uco2(&game));
     }
 }

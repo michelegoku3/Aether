@@ -1,19 +1,27 @@
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
-import { Uco2CleanupModal } from './Uco2CleanupModal';
+import { CleanupModal } from './CleanupModal';
 
 const CONFIRM_TEXT =
-  'No recovery journal found. AetherDesk can remove the known UCOnline2 files, but some legitimate game files may also be removed. You can easily restore them by verifying the game file integrity. Continue?';
+  'No recovery journal found. AetherDesk can remove the known UCOnline2 files, but some legitimate game files may also be removed. You can easily restore them by verifying the game file integrity.\n\nContinue?';
 
-describe('Uco2CleanupModal', () => {
-  it('asks before the destructive journal-less cleanup and can be cancelled', async () => {
+describe('CleanupModal', () => {
+  it('asks before the destructive cleanup and can be cancelled', async () => {
     const user = userEvent.setup();
     const onConfirm = vi.fn();
     const onClose = vi.fn();
-    render(<Uco2CleanupModal mode="confirm" text={CONFIRM_TEXT} onConfirm={onConfirm} onClose={onClose} />);
+    render(
+      <CleanupModal
+        mode="confirm"
+        title="Remove UCOnline2 files?"
+        text={CONFIRM_TEXT}
+        onConfirm={onConfirm}
+        onClose={onClose}
+      />
+    );
 
-    expect(screen.getByText(CONFIRM_TEXT)).toBeInTheDocument();
+    expect(screen.getByText(/No recovery journal found/)).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: 'Cancel' }));
     expect(onClose).toHaveBeenCalledOnce();
@@ -24,7 +32,16 @@ describe('Uco2CleanupModal', () => {
   });
 
   it('locks every action while the cleanup runs', () => {
-    render(<Uco2CleanupModal mode="confirm" text={CONFIRM_TEXT} busy onConfirm={vi.fn()} onClose={vi.fn()} />);
+    render(
+      <CleanupModal
+        mode="confirm"
+        title="Remove UCOnline2 files?"
+        text={CONFIRM_TEXT}
+        busy
+        onConfirm={vi.fn()}
+        onClose={vi.fn()}
+      />
+    );
 
     expect(screen.getByRole('button', { name: 'Removing…' })).toBeDisabled();
     for (const button of screen.getAllByRole('button')) {
@@ -36,8 +53,9 @@ describe('Uco2CleanupModal', () => {
     const user = userEvent.setup();
     const onClose = vi.fn();
     render(
-      <Uco2CleanupModal
+      <CleanupModal
         mode="warning"
+        title="UCOnline2 files removed"
         text="UCO2 files were removed. Verify integrity of game files."
         onClose={onClose}
       />

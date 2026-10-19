@@ -746,8 +746,9 @@ fn no_wire_key_is_an_unseparated_compound_word() {
 /// Vocabulary of single-word wire keys accepted by the code.
 const COMMON_SINGLE_WORDS: &[&str] = &[
     "base", // expected settings snapshot for conflict-aware three-way patch
-    "code", "content", "count", "date", "edits", "enabled", "folder", "level", "name", "origin",
-    "path", "query", "request", "settings", "site", "source", "start", "text", "title", "url",
+    "code", "confirm", "content", "count", "date", "edits", "enabled", "folder", "level", "name",
+    "origin", "path", "query", "request", "settings", "site", "source", "start", "text", "title",
+    "url",
 ];
 
 #[test]
@@ -887,6 +888,7 @@ fn documented_command_contracts_have_the_expected_keys() {
         ("enable_online", &["appId", "request"]),
         ("plan_online", &["appId"]),
         ("disable_online", &["appId", "confirmCleanup"]),
+        ("clean_online_conflicts", &["appId", "confirm"]),
     ];
 
     for (command, expected) in contracts {
