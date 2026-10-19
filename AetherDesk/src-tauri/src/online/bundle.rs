@@ -37,11 +37,7 @@ impl Uco2Bundle {
     /// Open a bundle from its root directory. `Err` if invalid.
     pub fn open(dir: PathBuf) -> Result<Self, String> {
         if !Self::is_valid_dir(&dir) {
-            return Err(format!(
-                "UCOnline2 bundle not valid at {}: expected x64/steam_api64.dll, \
-                 x86/steam_api.dll and a plugins/ folder with at least one .dll.",
-                dir.display()
-            ));
+            return Err("UCOnline2 bundle not valid.".to_string());
         }
         Ok(Self { dir })
     }

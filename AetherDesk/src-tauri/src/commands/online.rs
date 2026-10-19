@@ -107,7 +107,7 @@ pub async fn inspect_foreign_online(
     .map_err(|e| format!("Foreign-online inspect task failed: {e}"))?
 }
 
-/// Piano di attivazione (dry-run: nessun effetto sul disco).
+/// Activation plan (dry-run: no effect on disk).
 #[tauri::command]
 pub async fn plan_online(app: tauri::AppHandle, app_id: u32) -> Result<OnlinePlan, String> {
     let game = resolve_installed_game(&app, app_id)?;
@@ -292,8 +292,7 @@ pub async fn disable_online(
 
 /// Locates the UCOnline2 bundle (installed or vendored).
 ///
-/// On error returns a message with the EXACT paths checked, so the user
-/// knows where to put the folder (portable build and repo).
+/// Returns a short, user-facing error when the bundle is missing.
 fn locate_bundle(app: &tauri::AppHandle) -> Result<Uco2Bundle, String> {
     let locator = ToolBundleLocator::new(
         app.clone(),
@@ -303,11 +302,7 @@ fn locate_bundle(app: &tauri::AppHandle) -> Result<Uco2Bundle, String> {
     );
     match locator.locate() {
         Ok(bundle) => Uco2Bundle::open(bundle.dir),
-        Err(_) => Err(format!(
-            "UCOnline2 bundle not found. Looked in:\n  - {} (installed)\n  - {} (bundled in the repo)\nCopy the 'UCOnline2' folder (with x86/, x64/ and plugins/) there, or download the latest release from https://github.com/LukeWarmSodas/uc-online2/releases and extract it as ExternalTools\\UCOnline2.",
-            LocalAppPaths::uco2_dir().display(),
-            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(UCO2_RESOURCE_DIR).display()
-        )),
+        Err(_) => Err("UCOnline2 bundle not found.".to_string()),
     }
 }
 
