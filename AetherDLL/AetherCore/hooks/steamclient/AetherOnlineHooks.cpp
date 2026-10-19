@@ -118,7 +118,7 @@ static bool HasSpacewarSpoofOnDisk(const char* exe, const char* workDir) {
     return false;
 }
 
-// Centralised per-app launch policy (docs/05 §12): is the launch a normal
+// Centralised per-app launch policy: is the launch a normal
 // one, a -showonline presence session, or a -aetheronline masked session?
 // The TOML arrays in [presence] are the source of truth; the legacy argv
 // tokens keep working for unmigrated configs but are always stripped from
@@ -147,7 +147,7 @@ static LaunchMode ResolveLaunchMode(AppId app, bool aetherOnlineToken, bool show
         *sourceOut = "showonline_apps";
         return LaunchMode::ShowOnline;
     }
-    // Global custom presence name (docs/05 §13): when set, EVERY app without
+    // Global custom presence name: when set, EVERY app without
     // an explicit entry behaves like a -showonline session — presence-only,
     // never the AetherOnline mask. The name itself already overrides the display
     // in BOTH pipelines via DisplayName() (GamesPlayedModule), so -aetheronline

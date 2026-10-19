@@ -74,7 +74,7 @@ custom_game_name = ""
 
 # showonline_broadcast: for masked sessions (-showonline / -aetheronline), rewrite
 # the outbound presence so the server announces Spacewar/480 with the REAL
-# the real appid hidden in game_data_blob (default, docs/05 §10) — raw bytes
+# the real appid hidden in game_data_blob (default) - raw bytes
 # the CM recycles into Friend.game_data_blob, never rendered by any client UI:
 # vanilla friends see only the plain name from game_extra_info/game_name.
 # When appid_blob=false the appid rides instead as a suffix in game_extra_info
@@ -82,7 +82,7 @@ custom_game_name = ""
 showonline_broadcast = true
 
 # showonline_apps: appids that activate a -showonline presence session WITHOUT
-# touching the game's command line (docs/05 §11). Preferred over the legacy
+# touching the game's command line. Preferred over the legacy
 # "-showonline" Steam launch option: some games hard-crash when ANY unknown
 # argument reaches their argv/launch-option surface (measured: Selene
 # ~Apoptosis~, Z.A.T.O. app 4122860 — both exit seconds after launch with a
@@ -92,7 +92,7 @@ showonline_apps = []
 
 # aetheronline_apps: appids that activate the FULL AetherOnline integration (process
 # masked as Spacewar/480 + friend presence), again with a clean command line
-# (docs/05 §12). AetherOnline is a superset of showonline; an app belongs to ONE
+# AetherOnline is a superset of showonline; an app belongs to ONE
 # of the three lists at a time.
 aetheronline_apps = []
 

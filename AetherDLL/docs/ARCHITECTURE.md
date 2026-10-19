@@ -226,3 +226,37 @@ with `main.log` when investigating achievement issues.
   publication; `PatternCache` owns TOML/cache/provenance/download policy;
   `PatternResolver` owns lookup, bounds/signature verification and the existing
   ABI sentinel call. Public entry points and safety gates are unchanged.
+
+## Presence channels (`-showonline` / `-aetheronline`)
+
+The `[presence]` section of `aethercore.toml` is the single source of truth for
+per-app launch policy. AetherDesk writes it; the hooks read it through
+`Settings::ReloadIfModified` (mtime check, no Steam restart). Keys:
+
+- `default_mode = "none" | "showonline"` — policy for apps in none of the lists.
+- `showonline_apps`, `aetheronline_apps`, `exclude_apps` — per-app overrides.
+- Fixed precedence: `exclude > aetheronline > showonline > default_mode`.
+  `exclude_apps` is a hard opt-out.
+- AetherDesk keeps every app in at most one list (write-side mutual exclusion);
+  hand-written configs still resolve deterministically by precedence.
+- Legacy `-showonline` / `-aetheronline` launch-option tokens are still honoured
+  for unmigrated configs, and are always stripped from the child command line
+  (`h_SpawnProcess`) because rigid argv parsers crash on unknown arguments.
+
+`showonline` rewrites only the outbound presence frames (the process is not
+masked); `aetheronline` additionally masks the process as Spacewar/480. On the
+wire the server validates the low 24 bits of `game_id`, never broadcasts an
+appid the sender has no license for, and recycles `game_extra_info` into
+`Friend.game_name`. For masked sessions Aether hides the real appid and recovers
+it on the viewer's machine from, in order:
+
+1. the `game_extra_info` suffix `"<name> | <appid>"` (ASCII; the invisible
+   format-character variant was retired — the friends font renders tofu);
+2. the same appid in `game_id` bits 32-63 (the server does not forward
+   `game_data_blob`);
+3. a title reverse lookup against the local library;
+4. the legacy lobby-corroborated local-session fallback.
+
+The self entry is never rewritten: doing so tears down the Spacewar session that
+backs `aetheronline`. Unknown appids need a `ClientPICSProductInfoRequest`
+(8903) to fill the local AppInfo cache, and the name probe is SEH-guarded.

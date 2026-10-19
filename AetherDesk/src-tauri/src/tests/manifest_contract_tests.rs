@@ -18,7 +18,7 @@ fn fixture(name: &str) -> Vec<u8> {
         "/../../Tools/contract_fixtures/manifest/"
     );
     let full = format!("{path}{name}");
-    std::fs::read(&full).unwrap_or_else(|e| panic!("Fixture mancante {full}: {e}"))
+    std::fs::read(&full).unwrap_or_else(|e| panic!("Missing fixture {full}: {e}"))
 }
 
 #[test]

@@ -124,8 +124,9 @@ sentence, drop the narrative.
 - [x] `README.md`: from 5 lines to an orientation (what Aether is, components,
       quick start, pointers).
 - [x] `docs/INDEX.md` (new): every doc, one line each, and when to read it.
-- [x] Move `AetherDLL/docs/04-showonline-plan.md` and
-      `05-showonline-suffix-plan.md` to `docs/archive/`; remove from active index.
+- [x] Extract the durable design out of `AetherDLL/docs/04-showonline-plan.md`
+      and `05-showonline-suffix-plan.md` into `AetherDLL/docs/ARCHITECTURE.md`,
+      then delete both plan files (and drop the `docs/05 §N` pointers from code).
 - [x] Cross-link `shared_contracts.md`, `quality-gates.md`, `ARCHITECTURE.md`
       as reference; fix broken references (e.g. the missing
       `docs/03-presence-identity-plan.md`).

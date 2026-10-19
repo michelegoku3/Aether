@@ -81,14 +81,14 @@ struct Settings {
     bool presenceSuffixInvisible = false;
 
     // Appids that activate a -showonline session WITHOUT any launch argument
-    // (docs/05-showonline-suffix-plan.md §11). AetherDesk maintains this list;
+    // AetherDesk maintains this list;
     // via SpawnProcess the session resolves purely from config, so the
     // game-visible launch surface stays byte-identical to a normal launch.
     // That designs out the whole class of games that hard-crash parsing
     // argv / launch options strictly (Selene ~Apoptosis~, Z.A.T.O.).
     std::vector<std::uint32_t> presenceShowOnlineApps;
 
-    // Centralised per-app launch policy (docs/05 §12). The DLL resolves ONE
+    // Centralised per-app launch policy. The DLL resolves ONE
     // mode per app at SpawnProcess — no launch arguments involved:
     //   aetheronline_apps  -> full Spacewar/480 process mask (superset of presence)
     //   exclude_apps    -> hard opt-out, beats tokens and every other array

@@ -1,5 +1,5 @@
-//! Centralised per-app launch policy persistence in `aethercore.toml` (docs/05
-//! §11-§13 — shared by the tauri commands and the Desk migration layer.
+//! Centralised per-app launch policy persistence in `aethercore.toml`,
+//! shared by the tauri commands and the Desk migration layer.
 //!
 //! Layout managed by this module:
 //!

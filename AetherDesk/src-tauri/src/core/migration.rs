@@ -624,7 +624,7 @@ pub fn ensure_aethercore_bridge(app: &tauri::AppHandle) {
         crate::desk_log_error!("migration", "DLL config initialization failed: {}", error);
     }
 
-    // Schema evolution of the [presence] section (docs/05 §11-§13): existing
+    // Schema evolution of the [presence] section: existing
     // installs predate showonline_apps/aetheronline_apps/exclude_apps and
     // default_mode. Insert ONLY the missing canonical keys (never overriding
     // user choices) so the DLL resolver and the Desk commands always find a

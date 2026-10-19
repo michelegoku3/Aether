@@ -133,7 +133,7 @@ steam::AppId AppIdFromSuffix(const std::string& text, std::string& nameOut) {
     return AppIdFromInvisibleSuffix(text, nameOut);
 }
 
-// Preferred channel (docs/05 §10): build fix5+ senders hide the appid in
+// Preferred channel: build fix5+ senders hide the appid in
 // games_played.game_data_blob; the CM recycles it into
 // Friend.game_data_blob for masked sessions. Raw bytes — no client UI ever
 // renders them, vanilla friends see only the plain name from game_name.
@@ -424,7 +424,7 @@ void DiagServerTruth(const CMsgClientPersonaState& msg, std::uint64_t selfId, co
 
 // Friend entry recovery (480 -> real appid) + PICS prime.
 // The CM never broadcasts an appid the sender has no license for (measured,
-// docs/04-showonline-plan.md); it DOES relay game_extra_info. Aether senders
+// measured); it DOES relay game_extra_info. Aether senders
 // hide the exact appid in that text / in the blob / in gid-hi: recover it
 // here, on the viewer's machine. Returns true when at least one friend entry
 // was patched.
@@ -442,7 +442,7 @@ bool RecoverMaskedFriends(CMsgClientPersonaState& msg, std::uint64_t selfId, boo
         // Never touch our own entry: the local self-view belongs to
         // presenceInjectLocal, and rewriting the appid the server believes WE
         // are running can tear down the Spacewar session that backs
-        // -aetheronline (measured regression, docs/04-showonline-plan.md).
+        // -aetheronline (measured regression).
         if (selfId != 0 && f->has_friendid() && f->friendid() == selfId) {
             AC_LOG_INFO_ONCE(kModule, "[DIAG] self entry arrived as 480; left untouched "
                                       "(session bookkeeping).");
@@ -458,7 +458,7 @@ bool RecoverMaskedFriends(CMsgClientPersonaState& msg, std::uint64_t selfId, boo
         if (extra.empty() && f->has_game_name())
             extra = f->game_name();
         real = AppIdFromSuffix(extra, displayName);
-        // fix5 channels (docs/05 §10): raw-bytes blob + plan B appid packed in
+        // fix5 channels: raw-bytes blob + plan B appid packed in
         // gid bits 32-63. One shot of per-friend DIAG proves WHAT the CM
         // actually relayed.
         if (real == 0 && f->has_game_data_blob()) {

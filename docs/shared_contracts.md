@@ -60,7 +60,7 @@ restore-then-gate. An empty file is NEVER a local hit.
 downloaded from the sources); every differing content goes to `history/`,
 byte-deduplicated. Archives within the same millisecond take an `-n` suffix
 (pin pipelines archive pre+post back-to-back). Anyone rewriting a Lua must
-archive **pre AND post** (see §5, matrix in report §12).
+archive **pre AND post** (see §5).
 
 ## 3. "Manifest first, Lua last" commit contract
 
@@ -131,8 +131,8 @@ e.g. the bridge window (2.5 s) ≥ live-generation p95 (~1 s); the DLL backoff
   (`latest_installed_gid`, mtime on depotcache) over the Hubcap view
   (`/manifest/{appid}/contents`, free endpoint).
 - Every Lua rewrite (realign, toggle, policy, version, edits) must archive
-  pre+post to `history/` and back up the referenced manifests (full matrix:
-  report §12).
+  pre+post to `history/` and back up the referenced manifests (full matrix in
+  §5).
 
 ## 6. Contract tests
 

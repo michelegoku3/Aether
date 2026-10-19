@@ -82,7 +82,7 @@ aetheronline_persona_patch = true
 # Leave empty ("") to show the real title resolved from Steam.
 custom_game_name = ""
 
-# Aether friends-presence policy (docs/05 §11-§13). The DLL hot-reloads these
+# Aether friends-presence policy (see AetherDLL/docs/ARCHITECTURE.md). The DLL hot-reloads these
 # values on every game launch (mtime check): no Steam restart needed.
 #
 # default_mode: policy for apps in NONE of the lists below (policy + overrides,

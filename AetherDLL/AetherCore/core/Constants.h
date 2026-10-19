@@ -81,7 +81,7 @@ inline constexpr char kShowOnlineFlag[] = "-showonline";
 // Format: "<display name> | <appid decimal>" — see GamesPlayedModule.
 inline constexpr char kExtraInfoAppIdSep[] = " | ";
 
-// Invisible suffix channel (docs/05-showonline-suffix-plan.md §9), the
+// Invisible suffix channel, the
 // vanilla-clean alternative to the ASCII suffix above: the appid is appended
 // as one U+200B ZERO WIDTH SPACE (UTF-8 E2 80 8B — also detaches the VS chain
 // from the last visible base char, so FE0F can't restyle a trailing ®© or
@@ -92,7 +92,7 @@ inline constexpr char kExtraInfoAppIdSep[] = " | ";
 inline constexpr char kExtraInfoInvisibleMark[] = "\xE2\x80\x8B"; // U+200B
 inline constexpr std::size_t kExtraInfoInvisibleDigits = 6;       // 24-bit / 4
 
-// Preferred appid channel (docs/05-showonline-suffix-plan.md §10): hide the
+// Preferred appid channel: hide the
 // appid in CMsgClientGamesPlayed.GamePlayed.game_data_blob (field 8) — a
 // raw-bytes slot the CM recycles into Friend.game_data_blob (field 60) for
 // masked sessions exactly like it recycles game_extra_info into game_name.

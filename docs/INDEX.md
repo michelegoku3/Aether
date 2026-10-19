@@ -14,17 +14,6 @@ Start with `AGENTS.md` (repository map and conventions) and `README.md`
 | `Tools/contract_fixtures/manifest/TABLE.md` | The synthetic manifest-identity fixtures shared by the C++ and Rust tests. | You touch manifest identity parsing or its tests. |
 | `Licenses/CREDITS.md` | Third-party projects Aether builds on and their licenses. | You add, remove or redistribute a bundled dependency. |
 
-## Historical — kept for traceability, not for new work
-
-These describe features already implemented. Code comments reference their
-section numbers (e.g. `docs/05 §10`), so they stay in place; treat them as the
-record of past measurements, not as a live specification.
-
-| Document | What it records |
-|---|---|
-| `AetherDLL/docs/04-showonline-plan.md` | Phase 0/1 measurements of the `-showonline` friend-list behaviour. |
-| `AetherDLL/docs/05-showonline-suffix-plan.md` | The definitive appid-carrying channels (suffix / `game_extra_info`) and the presence policy (`[presence]`). |
-
 ## Process
 
 | Document | What it is |

@@ -60,7 +60,7 @@ bool Rewrite(CMsgClientGamesPlayed& msg, const RewriteContext& ctx) {
     // the server announces the session exactly like an -aetheronline mask: appid
     // bits -> 480, and the real appid hidden via AnnotateMaskedEntry
     // (game_data_blob by default — invisible to vanilla friends; suffix
-    // fallback otherwise, see docs/05 §9-§10). PersonaInject decodes both.
+    // fallback otherwise). PersonaInject decodes both.
     // Gated by presenceShowOnlineBroadcast, independent of always_extra_info.
     if (ctx.soSession != 0 && ctx.soSession != constants::kSpacewarAppId && settings.presenceShowOnlineBroadcast) {
         const std::string soName = DisplayName(ctx.soSession, settings);
