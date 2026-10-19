@@ -56,7 +56,7 @@ const BUNDLED_FILES: &[(&str, &str)] = &[
     ),
     (
         "ExternalTools/Steamless/Steamless.CLI.exe.config",
-        "e1f0a5831b4473374dbcca2c9a23e053162c10d20791c91e2d79633e1ae79059",
+        "27bc6422c238e69933f5a986518e3a0077c748bd9420c98530403b8f5b2dcacb",
     ),
     (
         "ExternalTools/Steamless/Steamless.exe",
@@ -64,7 +64,7 @@ const BUNDLED_FILES: &[(&str, &str)] = &[
     ),
     (
         "ExternalTools/Steamless/Steamless.exe.config",
-        "e1f0a5831b4473374dbcca2c9a23e053162c10d20791c91e2d79633e1ae79059",
+        "27bc6422c238e69933f5a986518e3a0077c748bd9420c98530403b8f5b2dcacb",
     ),
     (
         "ExternalTools/UCOnline2/VERSION",
