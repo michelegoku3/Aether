@@ -13,6 +13,4 @@
 
 #include "framework.h"
 
-// Add other stable heavy headers here if needed in the future
-// (e.g. <vector>, <string>, <memory>)
-// For now we keep it minimal.
+// Add other stable heavy headers here as needed (e.g. <vector>, <string>, <memory>).

@@ -167,7 +167,7 @@ void AcfOwnerTest() {
         CHECK(!plan.dropRecord);
     }
     {
-        // The app left the managed set but the value is still ours: clean it.
+        // The app left the managed set but the value is still Aether's: clean it.
         const OwnerPlan plan = PlanOwnerAction(true, false, false, 42ull, 42ull, 42ull);
         CHECK(plan.action == OwnerAction::Remove);
     }

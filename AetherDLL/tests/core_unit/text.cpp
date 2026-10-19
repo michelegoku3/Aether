@@ -230,6 +230,7 @@ void JsonEscapesTest() {
     CHECK(ju::PullEscapedStringField("{\"key\" :\n\"v\"}", "key", out) && out == "v");
 }
 
+// HexCodec: roundtrip + deterministic rejects.
 void HexCodecTest() {
 
     using namespace ac::hex;
@@ -257,7 +258,7 @@ void HexCodecTest() {
     CHECK(!Decode("0x48").has_value()); // no prefixes
 }
 
-// --- QW8: SignatureCodec (parser signature estratto da PatternEngine) ---
+// --- SignatureCodec: signature parser extracted from PatternEngine. ---
 
 void SignatureTest() {
 
@@ -292,13 +293,13 @@ void SignatureTest() {
     CHECK(!ParseSignature("1FF", bytes, mask)); // overlong token
 }
 
-// --- QW8: IpcSpecParse (parser TOML puro estratto da IpcSpec) ---
+// --- I-C: JsonWriter (byte-per-byte golden test of the schema 9 format) ---
 
 void JsonWriterTest() {
 
     using ac::jsonw::Writer;
 
-    // Copertura escape carattere-per-carattere.
+    // Character-by-character escape coverage.
 
     CHECK(ac::jsonw::Escape(std::string("\"\\\n\r\t\x01") + "A") == "\\\"\\\\\\n\\r\\t\\u0001A");
 
@@ -379,10 +380,3 @@ void JsonWriterTest() {
     CHECK(out == golden);
 }
 
-// --- I-E: DLL<->Desk contract fixture for manifest identity (D4) ---
-
-// The SAME blobs in Tools/contract_fixtures/manifest are asserted here and in
-
-// AetherDesk/src-tauri/src/tests/manifest_contract_tests.rs: when either side
-
-// changes its verdict, one of the two tests breaks.

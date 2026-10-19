@@ -27,8 +27,8 @@ DWORD WINAPI PayloadMain(LPVOID self) {
     ac::payloadlog::Write("Payload attached to game process.");
     ac::payloadprop::Install(static_cast<HMODULE>(self));
 
-    // Same 60 s budget as always, but event-driven: detach wakes the wait at
-    // once instead of sleeping out the remainder. Budget lives in
+    // 60 s budget (attempts x interval), event-driven: detach wakes the wait
+    // immediately instead of sleeping out the remainder. Budget lives in
     // core/Constants.h (single tunable file).
     // NOTE: this thread intentionally outlives DllMain; it never touches the
     // loader lock (no LoadLibrary here: only GetModuleHandle polling).

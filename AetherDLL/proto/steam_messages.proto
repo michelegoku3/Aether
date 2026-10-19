@@ -1,8 +1,7 @@
 // AetherCore — minimal Steam protobuf definitions.
 //
-// Only the messages the wire-level subsystems actually touch are declared here.
-// Achievement/user-stats messages are intentionally absent (that subsystem is
-// excluded from this project), keeping the generated code small.
+// Only the messages the wire-level subsystems actually touch are declared here,
+// keeping the generated code small.
 
 syntax = "proto2";
 
@@ -95,9 +94,9 @@ message CMsgClientGamesPlayed {
         optional bytes game_data_blob = 8;
 
         // Field numbers verified against SteamKit / SteamDatabase Protobufs.
-        // Read-only for now: the ShowOnline diagnostics print them to see what
-        // identity the client really advertises; owner_id is kept for the
-        // Family-Sharing fallback if we ever go that route.
+        // Read-only: the ShowOnline diagnostics print them to show what identity
+        // the client advertises; owner_id is reserved for the Family-Sharing
+        // fallback.
         optional uint32 process_id = 9;
         optional uint32 game_flags = 11;
         optional uint32 owner_id = 12;
@@ -129,7 +128,7 @@ message CContentServerDirectory_GetManifestRequestCode_Response {
 }
 
 // ---------------------------------------------------------------------------
-// Sottosistema Achievement / UserStats (eMsg 151, 818, 819, 5466)
+// Achievement / UserStats subsystem (eMsg 151, 818, 819, 5466)
 // ---------------------------------------------------------------------------
 
 message CPlayer_GetUserStats_Request {

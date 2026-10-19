@@ -66,9 +66,9 @@ struct FakePacket {
 
 // Readability oracle for the tests: only the fake object and its frame are
 
-// readable, everything else is "unmapped". Stricter than Windows, which is
+// readable, everything else is "unmapped". Stricter than Windows on purpose:
 
-// exactly what we want — a probe that needs real memory to be wrong fails here.
+// a probe that needs real memory to be wrong fails here.
 
 struct Arena {
 
@@ -167,7 +167,7 @@ void NetPacket() {
         CHECK(std::string(r.LayoutName()) == "beta");
     }
 
-    // 4. A layout we do not know (future Valve shift) must DISABLE, never
+    // 4. An unknown layout (future Valve shift) must DISABLE, never
 
     //    guess: no field is touched for the rest of the session.
 
@@ -682,7 +682,7 @@ void Sentinel() {
 
 // The layouts are proven by disassembly of both shipped builds; these tests
 
-// fence the invariants that let us refuse a write instead of corrupting Steam.
+// fence the invariants that let the guard refuse a write instead of corrupting Steam.
 
 // ---------------------------------------------------------------------------
 

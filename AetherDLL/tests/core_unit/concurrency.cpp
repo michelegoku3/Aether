@@ -180,9 +180,9 @@ void Workers() {
 
     CHECK(sawStop.load()); // the stop flag arrived
 
-    w::Shutdown(); // idempotente
+    w::Shutdown(); // idempotent
 
-    CHECK(!w::Submit([&] { counter.fetch_add(1); })); // rifiuto post-shutdown
+    CHECK(!w::Submit([&] { counter.fetch_add(1); })); // post-shutdown refusal
 
     CHECK(!w::StartWorker("late", [](std::atomic<bool>&) {}));
 
@@ -274,6 +274,7 @@ void WorkersReapSlow() {
     w::Shutdown();
 }
 
+// TtlCache: LRU eviction, TTL expiry, negative caching; pins the Get-under-lock regression.
 void TtlCacheTest() {
 
     using ac::utils::TtlCache;
@@ -332,4 +333,3 @@ void TtlCacheTest() {
     }
 }
 
-// --- QW8: HexCodec (roundtrip + reject deterministici) ---

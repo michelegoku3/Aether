@@ -276,7 +276,7 @@ void DonorPoolTest() {
 
 // ---------------------------------------------------------------------------
 
-// Batch 7-9 cases
+// Manifest identity, IPC reply and snapshot merge.
 
 // ---------------------------------------------------------------------------
 
@@ -518,7 +518,7 @@ void SnapshotMergeTest() {
     CHECK(d.stats[0].id == 5 && d.stats[1].id == 6);
 }
 
-// --- QW1: TtlCache (also captures the Get-under-lock regression) ---
+// --- IpcSpecParse: pure TOML parser extracted from IpcSpec. ---
 
 void IpcSpecParseTest() {
 
@@ -617,7 +617,7 @@ void IpcSpecParseTest() {
     CHECK(methods.at("I::M2").argc == 0u);
 }
 
-// --- I-C: JsonWriter (byte-per-byte golden test of the schema 9 format) ---
+// --- I-E: DLL<->Desk manifest fixtures (D4/T2): the SAME blobs in Tools/contract_fixtures/manifest are asserted here and in manifest_contract_tests.rs; a verdict change on either side breaks one test. ---
 
 void ManifestContractTest() {
 

@@ -135,8 +135,7 @@ void InstallOn(HMODULE eosModule) {
     }
 
     // Explicit function-pointer -> LPVOID casts: the implicit conversion is
-    // rejected by non-MSVC compilers (conditionally-supported), and these were
-    // the permanent MinGW syntax-check FAILs.
+    // conditionally-supported and rejected by non-MSVC compilers.
     if (MH_CreateHook(reinterpret_cast<void*>(oLogin), reinterpret_cast<void*>(hkLogin),
                       reinterpret_cast<void**>(&oLogin)) != MH_OK ||
         MH_CreateHook(reinterpret_cast<void*>(oIPOAdd), reinterpret_cast<void*>(hkIPOAdd),

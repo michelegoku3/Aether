@@ -13,8 +13,8 @@ if(NOT TARGET tomlplusplus::tomlplusplus)
 endif()
 find_package(Threads REQUIRED)
 enable_testing()
-# Core unit suites, one translation unit per area (see core_unit/): the old
-# single quickwin_tests.cpp outgrew its name once it covered half the core.
+# Core unit suites, one translation unit per area (see core_unit/): each suite
+# pulls only its own production headers.
 add_executable(core_unit_tests
     core_unit/main.cpp
     core_unit/text.cpp

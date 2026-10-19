@@ -112,7 +112,7 @@ void SteamUiCssTest() {
         CHECK(css == kFragment);
     }
     {
-        // Duplicated tokens: not the rule we understand, leave it alone.
+        // Duplicated tokens: not the expected rule, leave it alone.
         std::string css = ".X{display:flex;display:flex;color:orange}";
         const std::string before = css;
         CHECK(ApplyWarningPatch(css, "X", true) == WarningPatch::NotApplicable);

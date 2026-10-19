@@ -9,7 +9,7 @@ TestCoreState g_state;
 } // namespace ac
 
 // Out-of-process collaborators: never exercised by the contract tests, only
-// linked. Any call reaching them is a test bug, hence the trap.
+// linked. Any call reaching them is a test bug.
 namespace ac::hooks::LicenseManager {
 void NotifyLicenseChanged() {}
 } // namespace ac::hooks::LicenseManager
