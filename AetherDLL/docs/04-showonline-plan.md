@@ -1,5 +1,8 @@
 # `-showonline` plan — showing the real game to friends (without online)
 
+> **Status: implemented — historical record.** Not a live specification; kept
+> because code comments reference its section numbers. See `docs/INDEX.md`.
+
 > Repo `michelegoku3/Aether` @ `5dc0f2f`. Updated after Phase 0 (log `all.log_14-15-54.txt`)
 > and SyntaxCode15's friend-list photo.
 > **Status: constraint measured, memory mechanism identified, Phase 1 experiment ready in tree.**

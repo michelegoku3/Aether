@@ -1,5 +1,8 @@
 # Definitive `-showonline` plan — exact appid via `game_extra_info` ("suffix" version)
 
+> **Status: implemented — historical record.** Not a live specification; kept
+> because code comments reference its section numbers. See `docs/INDEX.md`.
+
 > Merges the work of the two previous phases (measurements in `04-showonline-plan.md`)
 > with the transport decided after the 24/08 live test. Replaces and obsoletes
 > the `aether_appid` rich-presence channel (never relayed back by the server).
