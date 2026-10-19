@@ -101,7 +101,7 @@ bool RewriteAetherOnlineCallbackGameId(int cb, void* data, int size) {
 bool NeedsRewrittenGameCopy(int cb) { return cb != constants::achievement_cb::kUserAchievementStored; }
 
 // ---------------------------------------------------------------------------
-// Unlock summary (replaces the old per-appid "Unlocked AppIds" spam).
+// Unlock summary.
 //
 // Every spoofed ownership outcome is recorded into a session set. A debounce
 // thread then emits ONE line per .lua file once the burst settles:
@@ -116,7 +116,7 @@ bool NeedsRewrittenGameCopy(int cb) { return cb != constants::achievement_cb::kU
 // ---------------------------------------------------------------------------
 std::mutex s_unlockMutex;
 std::unordered_set<AppId> s_unlockedAppIds;
-// I-A: the thread runs in workers::StartWorker; stop+join are centralized.
+// The thread runs in workers::StartWorker; stop+join are centralized.
 std::atomic<bool> s_summaryStarted{false};
 std::atomic<std::int64_t> s_summaryDeadline{0};
 // Last emitted outcome fingerprint: "per-file missing list" as a stable string.
@@ -160,8 +160,8 @@ void LogUnlockedSummary() {
                 expected.push_back(id);
         }
         if (expected.empty()) {
-            // Preserve the historical per-file OK line even when the
-            // file contributes no currently eligible IDs.
+            // Emit the per-file OK line even when the file contributes no
+            // currently eligible IDs.
             rows.push_back({paths::BaseName(path), {}});
             continue;
         }
@@ -251,7 +251,7 @@ void ArmUnlockSummary() {
 }
 
 void StopUnlockSummary() {
-    // I-A: stop+join happen inside workers::Shutdown() (called before
+    // stop+join happen inside workers::Shutdown() (called before
     // ShutdownOwnershipHooks in dllmain).
     AC_LOG_DEBUG(kModule, "Unlock summary stop requested; join handled by workers::Shutdown.");
 }

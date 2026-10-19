@@ -13,9 +13,8 @@
 // closed, no ActiveUser, empty userdata). Preferring cache first is wrong:
 // switching Steam accounts would keep spoofing the previous owner's id.
 //
-// LumaCore scattered this logic across Ticket.cpp and CmdUser.cpp; AetherCore
-// keeps it in one cohesive module. It is consumed by the ownership/IPC layer,
-// NOT by any achievement code (which is excluded from this project).
+// Consumed by the ownership/IPC layer, NOT by any achievement code (which is
+// excluded from this project).
 // ---------------------------------------------------------------------------
 namespace ac::steamid {
 

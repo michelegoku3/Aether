@@ -8,7 +8,7 @@
 
 // ---------------------------------------------------------------------------
 // Parse Steam config-store / registry-style key path fragments.
-// Shared by DepotHooks and DecryptionKeyHook (was duplicated verbatim).
+// Shared by DepotHooks and DecryptionKeyHook.
 // ---------------------------------------------------------------------------
 namespace ac::keypath {
 

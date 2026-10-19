@@ -144,7 +144,7 @@ bool h_BuildDepotDependency(void* mgr, AppId app, void* cfg, CUtlVector<DepotEnt
     ApplyManifestOverrides(shared, patches);
     if (!patches.empty()) {
         // Once per unique line (app + patch set) per game session — the
-        // logger's dedup replaces the old hidden function-local static set.
+        // logger's dedup handles the suppression.
         AC_LOG_INFO_ONCE(kModule, "Manifest overrides for app %u: %s.", app, ManifestPatchArray(patches).c_str());
     }
 

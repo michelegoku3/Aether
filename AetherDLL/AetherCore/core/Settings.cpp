@@ -30,9 +30,9 @@ long long FileWriteTicks(const std::string& configPath) {
 
 // Parses one app-id list (presence lists and [library] owner_banner_apps) with
 // identical semantics at every call site: clear-then-fill, keep only positive
-// integers. No range validation: values above UINT32_MAX keep the historical
-// truncating cast on purpose; tightening that is a separate behavior change,
-// not a refactor.
+// integers. No range validation: values above UINT32_MAX keep the truncating
+// cast on purpose; tightening that is a separate behavior change, not a
+// refactor.
 void ParseAppList(const toml::array& arr, std::vector<std::uint32_t>& out) {
     out.clear();
     for (const auto& item : arr) {

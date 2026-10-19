@@ -106,8 +106,8 @@ void MaybeInject(const pipewatch::ProcessSnapshot& snapshot) {
     }
     const std::string payloadSha = hasher::ComputeFileSha256(g_state.payloadDllPath);
 
-    // Least privilege: VM_READ was never used and QUERY_INFORMATION is more
-    // than IsWow64Process needs (QUERY_LIMITED_INFORMATION suffices).
+    // Least privilege: QUERY_LIMITED_INFORMATION suffices for IsWow64Process;
+    // VM_READ is not needed.
     HANDLE process =
         OpenProcess(PROCESS_CREATE_THREAD | PROCESS_QUERY_LIMITED_INFORMATION | PROCESS_VM_OPERATION | PROCESS_VM_WRITE,
                     FALSE, snapshot.pid);

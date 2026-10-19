@@ -23,9 +23,8 @@
 // ---------------------------------------------------------------------------
 // Central application state.
 //
-// Architectural principle 2: ALL shared state lives here. LumaCore spread
-// inline globals across many headers; AetherCore keeps a
-// single struct so ownership and lifetime are obvious and testable.
+// Architectural principle 2: ALL shared state lives here. Keeping it in one
+// struct makes ownership and lifetime obvious and testable.
 //
 // Fields that are read/written from multiple threads use std::atomic. Lua data
 // is also mutated by the hot-reload watcher, so all Lua maps are accessed only
@@ -73,7 +72,7 @@ struct AetherCoreState {
     // Populated during single-threaded init AND mutated later by the hot-reload
     // watcher thread, while Steam threads read them from hooks.
     // lua.mutex guards every access (shared lock for readers, unique for the
-    // watcher). LumaCore left this unsynchronised — a latent data race we fix.
+    // watcher).
     struct LuaStore {
         mutable std::shared_mutex mutex;
         std::unordered_map<steam::AppId, std::string> depotKeys;               // depot -> hex key
@@ -146,9 +145,8 @@ struct AetherCoreState {
     OnlinePayloadState onlinePayload;
 
     // ---- Pattern engine runtime index --------------------------------------
-    // Populated during Init() from per-build TOML files. After init, these
-    // late retry may publish missing maps. All runtime access takes mutex.
-    // Moved from file-scope globals in PatternEngine.cpp (audit 10.2).
+    // Populated during Init() from per-build TOML files. After init, the
+    // late-pattern retry may publish missing maps. All runtime access takes mutex.
     struct PatternEntry {
         std::string rva;
         std::string sig;
@@ -162,9 +160,9 @@ struct AetherCoreState {
     PatternState patterns;
 
     // ---- ABI table (per-build struct offsets published with the patterns) --
-    // Phase 4: the generator extracts these from the build's own code, so the
-    // DLL stops carrying compiled offsets. Consumed by core/NetPacketAbi.h,
-    // which treats them as a candidate to verify, never as a fact.
+    // The generator extracts these from the build's own code, so the DLL stops
+    // carrying compiled offsets. Consumed by core/NetPacketAbi.h, which treats
+    // them as a candidate to verify, never as a fact.
     struct AbiTableState {
         std::mutex mutex;
         // "Struct.field" -> offset, exactly as published.
@@ -192,8 +190,7 @@ struct AetherCoreState {
     // ---- Cloud gate (LicenseHooks) ------------------------------------------
     // Per-process log dedup sets for the cloud-sync gating hooks, plus the
     // total-blocks counter shown in the blocked log lines. Written by hook
-    // threads at runtime; logMutex guards every access. Moved from module-local
-    // globals (centralized-state audit).
+    // threads at runtime; logMutex guards every access.
     struct CloudGateState {
         mutable std::mutex logMutex;
         std::unordered_set<steam::AppId> blockedLogged;
@@ -291,8 +288,7 @@ struct AetherCoreState {
 
     // ---- Presence runtime -------------------------------------------------
     // Wire-level friends/UI presence (GamesPlayed track + PersonaState inject).
-    // Decoupled from GetAppIDForCurrentPipe / session identity (see plan
-    // docs/03-presence-identity-plan.md and commit 9aa4a76). Guarded by mutex.
+    // Decoupled from GetAppIDForCurrentPipe / session identity. Guarded by mutex.
     struct PresenceRuntime {
         mutable std::mutex mutex;
         steam::AppId playingAppId = 0; // I_presence driver (0 = none)
@@ -355,8 +351,7 @@ struct AetherCoreState {
     std::atomic<std::shared_ptr<const Settings>> settings{std::make_shared<const Settings>()};
 
     // ---- Hook manager ------------------------------------------------------
-    // Centralised hook registry — was extern HookManager g_hookManager.
-    // Moved here from HookManager.{h,cpp} (audit 10.3).
+    // Centralised hook registry (single process-wide instance).
     HookManager hookManager;
 };
 

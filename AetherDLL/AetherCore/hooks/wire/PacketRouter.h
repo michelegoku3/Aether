@@ -16,9 +16,9 @@
 // rewrite the body (and, for recv, the header). To avoid heap churn on Steam's
 // network thread, rewrites are assembled in static ring buffers.
 //
-// LumaCore packed every subsystem into one ~1000-line file. AetherCore keeps a
-// thin core here and delegates to focused modules (AccessToken, FamilySharing,
-// RichPresence), each exposing plain Handle* functions.
+// This file keeps the thin dispatch core; focused modules (AccessToken,
+// GamesPlayed, Achievement, Eticket, FamilySharing, PersonaInject) expose plain
+// Handle* functions.
 // ---------------------------------------------------------------------------
 namespace ac::hooks {
 

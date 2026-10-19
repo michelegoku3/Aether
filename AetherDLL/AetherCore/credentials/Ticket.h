@@ -9,7 +9,7 @@
 // ---------------------------------------------------------------------------
 // Ticket inspection and forge — binary-level operations on AppOwnershipTicket
 // blobs.  Registry I/O lives in CredentialStore so this module has zero
-// registry code.  (Audit §3.2, 2026-07-12.)
+// registry code.
 //
 // Steam caches per-app tickets under:
 //   HKCU\Software\Valve\Steam\Apps\<appId>\AppTicket   (REG_BINARY)

@@ -39,7 +39,7 @@ void EnsureBufferSize(steam::CUtlBuffer* pWrite, std::int32_t size);
 // only — every other path keeps the 480 identity (see AetherOnlineHooks).
 //
 // Depth-based so nested IClientUserStats dispatches on the same thread stay
-// correctly bracketed (mirrors LumaCore's SetUserStatsContext).
+// correctly bracketed.
 // ---------------------------------------------------------------------------
 void EnterStatsScope();
 void LeaveStatsScope();

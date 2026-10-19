@@ -55,9 +55,9 @@ bool BuildIndex(const toml::table& table, const std::string& moduleName, Pattern
     return !outIndex.empty();
 }
 
-// Reads the `[abi.<Struct>.<field>]` sections a phase-4 table carries.
-// Absent on older tables, which is why nothing here is fatal: a build
-// without an ABI section simply falls back to the probe.
+// Reads the optional `[abi.<Struct>.<field>]` sections a table may carry.
+// Absence is not fatal: a build without an ABI section simply falls back
+// to the probe.
 void CollectAbiTable(const toml::table& table, const std::string& moduleName, const std::string& sha) {
     if (moduleName != "steamclient")
         return;
@@ -131,7 +131,7 @@ void SweepTempFiles() {
 
 namespace {
 
-// ---- Provenance sidecar -------------------------------------------
+// Provenance sidecar.
 // Every cache TOML is paired with a "<sha>.toml.src" sidecar holding the
 // exact source label that produced the file (e.g. "migo:raw"). On a
 // later launch the sidecar lets the loader decide, without any network

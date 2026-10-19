@@ -37,14 +37,13 @@
 namespace ac::boot {
 namespace {
 
-// Same log tag as the historical InitThreadLogic ("Core"): log bytes must
-// not change with this move.
+// Log tag for all boot stages; kept as "Core" so log output stays stable.
 constexpr const char* kModule = "Core";
 
 constexpr const char* kStartupLogToken = "R4M7K1C9";
 
-// Pin our module by its own load address rather than by file name; this is
-// robust even if the DLL is renamed (improvement over the original).
+// Pin our module by its own load address rather than by file name, so the
+// pin survives a renamed DLL.
 void PinSelf() {
     HMODULE pinned = nullptr;
     GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_PIN,
@@ -61,8 +60,7 @@ std::vector<std::string> CollectAcfWatchDirs() { return steamlibrary::SteamAppsD
 
 } // namespace
 
-// Initialisation order (moved verbatim from InitThreadLogic; every step
-// lists the steps it depends on):
+// Initialisation order (every step lists what it depends on):
 //    Resolve  paths           (depends on: DLL handle)
 //    1. Settings               (depends on: logger — config errors are logged)
 //       PinSelf                (depends on: nothing; module handle already valid)
@@ -183,8 +181,8 @@ bool InitPatternsStage(BootContext& ctx) {
     // steamclient hooks: never hook a copy that Steam no longer uses.
     SelectHookTargetBeforeRedirect();
     // In copy mode, arm LoadModuleWithPath immediately, while the IPC
-    // lookup and Lua scan are still in progress. This closes the old
-    // step-9 window where Steam loaded the live client first.
+    // lookup and Lua scan are still in progress. This closes the window
+    // where Steam could load the live client first.
     ac::bootstrap::ArmSteamUiRedirect();
     ipcThread.join();
     if (!patternsOk) {
@@ -194,10 +192,10 @@ bool InitPatternsStage(BootContext& ctx) {
 }
 
 void SeedAbiStage() {
-    // Phase 4: the build's own ABI table proposes the CNetPacket layout.
-    // It runs BEFORE SeedFromBuild so a published table always wins over
-    // the two layouts compiled into this DLL, and before any hook is
-    // installed so the first packet can already be interpreted.
+    // The build's own ABI table proposes the CNetPacket layout. It runs BEFORE
+    // SeedFromBuild so a published table always wins over the two layouts
+    // compiled into this DLL, and before any hook is installed so the first
+    // packet can already be interpreted.
     {
         std::uint32_t dataOff = 0, cubOff = 0, refOff = 0;
         std::string abiSource;
@@ -265,8 +263,8 @@ void InstallHooksStage() {
 void StartSafetyNetsStage() {
     // 10. Achievement safety net: snapshot of ALL managed apps' stats .bins
     //     (async, once per process). As early as possible: the client's
-    //     login-reconcile may discard pending changes (the 21/08 loss) and
-    //     this copy must beat it to it.
+    //     login-reconcile may discard pending changes, and this copy must be
+    //     taken before it does.
     //     Depends on: lua data (HasDepot) + aethercore dir (desk_path.cfg).
     ac::hooks::AchievementBackup::BackupAllKnownStatsAtStartup();
 

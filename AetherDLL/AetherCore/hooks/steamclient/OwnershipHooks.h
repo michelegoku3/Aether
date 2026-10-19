@@ -5,8 +5,9 @@
 namespace ac::hooks {
 
 // Registers the ownership-related hooks on the diverted steamclient
-// (CheckAppOwnership, LoadPackage, GetPackageInfo, MarkLicenseAsChanged,
-// SendCallbackToPipe) and resolves the CUtlMemory grow helper.
+// (CheckAppOwnership, LoadPackage, GetPackageInfo, GetSubscribedApps,
+// MarkLicenseAsChanged, SendCallbackToPipe) and resolves the CUtlMemory grow
+// helper.
 void RegisterOwnershipHooks(HMODULE diversion);
 
 // Actively queries package 0 through the (already hooked) GetPackageInfo entry

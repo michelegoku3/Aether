@@ -31,11 +31,11 @@
 //   * snapshot::   achievement/stat JSON store (monotone merge rules)
 //   * statscache:: .bin copy with monotone guard + schema interpretation
 //   * playtime::   playtime mirror from localconfig.vdf
-// Public contract unchanged (see AchievementBackup.h): RecordUnlock /
+// Public contract (see AchievementBackup.h): RecordUnlock /
 // RecordStats / TouchSession / BackupAllKnownStatsAtStartup /
 // FlushOnShutdown. Enqueue calls are non-blocking (no I/O on the network
 // thread). FlushOnShutdown drains and awaits completion; the registry joins.
-// Only outside the loader lock.
+// Call it only outside the loader lock.
 // ============================================================================
 
 namespace ac::hooks::AchievementBackup {
@@ -95,9 +95,7 @@ std::unordered_map<steam::AppId, std::unordered_set<std::uint32_t>> g_touched;
 std::mutex g_touchMutex;
 std::unordered_set<steam::AppId> g_sessionTouched;
 
-// ---------------------------------------------------------------------------
 // Job execution (worker thread only: owns g_touched and the disk).
-// ---------------------------------------------------------------------------
 
 void ProcessUnlock(const BackupJob& job) {
     const std::string path = snapshot::SnapshotPath(job.appId, job.accountId);
@@ -140,8 +138,8 @@ void ProcessStatsUpdate(const BackupJob& job) {
         const bool knownStat = snapshot::HasStat(snap, id);
 
         // Schema-driven reconciliation: when a stat IS an achievement bucket,
-        // every set bit must exist in the snapshot. Date: 'now' when the stat
-        // stat was already tracked, 0 on first sighting (baseline).
+        // every set bit must exist in the snapshot. Date is 'now' when the stat
+        // was already tracked, 0 on first sighting (baseline).
         if (schemaBuckets.count(id) != 0 && value != 0) {
             for (std::uint32_t bit = 0; bit < 32; ++bit) {
                 if ((value & (1u << bit)) == 0)

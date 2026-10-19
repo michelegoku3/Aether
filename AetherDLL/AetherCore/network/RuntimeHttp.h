@@ -34,7 +34,7 @@ Response Get(std::string_view url);
 Response Post(std::string_view url, std::string_view body, const std::vector<std::string>& extraHeaders = {});
 
 // Performs a GET WITHOUT the host allowlist, for internal callers that build the
-// URL themselves from trusted config (e.g. the manifest bridge). timeoutSec <= 0
+// URL themselves from trusted config (e.g. the pattern downloader). timeoutSec <= 0
 // falls back to the default budget. Optional userAgent overrides the default.
 // Never throws.
 Response GetUnchecked(std::string_view url, int timeoutSec, std::wstring_view userAgent = L"AetherCore/1.0");

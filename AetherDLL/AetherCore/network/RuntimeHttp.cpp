@@ -65,9 +65,9 @@ bool IsHostAllowed(std::string_view host) {
 }
 
 // Converts a UTF-8 narrow string to a wide string using the Windows API.
-// The previous byte-by-byte copy (std::wstring(s.begin(), s.end())) would
-// mangle any non-ASCII character by treating each UTF-8 continuation byte
-// as a separate wchar_t, producing bogus host/path strings for WinHTTP.
+// A byte-by-byte copy (std::wstring(s.begin(), s.end())) would mangle any
+// non-ASCII character by treating each UTF-8 continuation byte as a separate
+// wchar_t, producing bogus host/path strings for WinHTTP.
 using strings::Widen;
 
 std::wstring JoinHeaders(const std::vector<std::string>& headers) {

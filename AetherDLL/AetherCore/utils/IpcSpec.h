@@ -17,10 +17,6 @@
 // specs yet), the IPCBus keeps using the hardcoded constants. When a TOML is
 // active but omits a method/interface, that handler is disabled rather than
 // using a hash from a different Steam build.
-//
-// This replaces LumaCore's IpcSpecLoader + IpcMethodLoader + IpcDispatch
-// (~900 lines, own HTTP client, own SHA computation, own cache logic) with a
-// single module (~120 lines) that reuses AetherCore's existing infrastructure.
 // ---------------------------------------------------------------------------
 namespace ac::ipcspec {
 

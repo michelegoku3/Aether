@@ -393,9 +393,10 @@ void RestoreAppOnce(std::uint32_t appId) {
     // Reinstalling the same Lua and manifest package works because Steam sees a
     // Lua file change: the script is parsed again, package-0 licenses are
     // refreshed, and the newly restored depotcache files become visible to the
-    // depot manager. ACF removal previously restored only bytes on disk, leaving
-    // the in-memory Lua/license state stale. Re-run that same refresh sequence
-    // after the targeted restore, without downloading anything.
+    // depot manager. Without this refresh an ACF-removal restore would leave
+    // only bytes on disk, with stale in-memory Lua/license state. Re-run that
+    // same refresh sequence after the targeted restore, without downloading
+    // anything.
     const fs::path luaPath = winfile::ToPath(g_state.luaDir) / (std::to_string(appId) + ".lua");
     std::error_code luaEc;
     if (!fs::is_regular_file(luaPath, luaEc) || luaEc) {

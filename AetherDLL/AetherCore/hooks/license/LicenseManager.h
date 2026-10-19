@@ -13,8 +13,7 @@
 //   * MarkLicenseAsChanged hook -> DoStartupInjection (post-login top-up)
 //   * DirWatch          -> NotifyLicenseChanged (add/remove without restart)
 //
-// LumaCore spread this across PackagePatch + RuntimeCapture; here it is one
-// module. The captured Steam pointers (CUser, CPackageInfo, package 0) live in
+// The captured Steam pointers (CUser, CPackageInfo, package 0) live in
 // AetherCoreState as write-once atomics — single source of truth, no copies;
 // only the package-vector mutations are serialised by a module-local mutex.
 // ---------------------------------------------------------------------------
@@ -38,8 +37,7 @@ void SeedPackage0(steam::PackageInfo* package0);
 void DoStartupInjection();
 
 // Hot-reload: applies pending additions/removals to package 0 and asks Steam to
-// re-evaluate licenses. No UI card eviction (that path crashed Steam in
-// LumaCore and is out of scope here).
+// re-evaluate licenses. No UI card eviction (crash-prone; out of scope here).
 void NotifyLicenseChanged();
 
 } // namespace ac::hooks::LicenseManager

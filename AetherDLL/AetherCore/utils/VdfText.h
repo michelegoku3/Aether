@@ -5,13 +5,11 @@
 #include <vector>
 
 // ---------------------------------------------------------------------------
-// Steam text VDF — shared line-level helpers (P11 unification).
+// Steam text VDF — shared line-level helpers.
 //
 // Steam's text KeyValues ("VDF": localconfig.vdf, libraryfolders.vdf, ...)
 // are line-oriented: "key" ["value"], braces on their own (or trailing) line,
-// backslashes escaped as `\\\\`. These helpers used to live in duplicate
-// inside PlaytimeMirror and dllmain; this header is the single copy.
-// Header-only and pure: no logging, no filesystem, no g_state.
+// backslashes escaped as `\\\\`. Header-only and pure: no logging, no filesystem, no g_state.
 // ---------------------------------------------------------------------------
 namespace ac::vdf {
 
@@ -77,7 +75,7 @@ inline void UnescapeBackslashes(std::string& s) {
 }
 
 // Every `"value"` bound to `key` (case-insensitive) anywhere in the content,
-// unescaped. Replaces ad-hoc regex scans (libraryfolders.vdf "path").
+// unescaped. Used to read libraryfolders.vdf "path" entries.
 inline std::vector<std::string> ExtractQuotedValues(const std::string& content, const std::string& key) {
     std::vector<std::string> out;
     std::size_t lineStart = 0;

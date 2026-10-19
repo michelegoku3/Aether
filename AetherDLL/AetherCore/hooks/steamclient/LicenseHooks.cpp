@@ -35,8 +35,9 @@ GetRemoteStorageSyncState_t o_GetRemoteStorageSyncState = nullptr;
 using CloseAppCloud_t = bool (*)(void*, AppId);
 CloseAppCloud_t o_CloseAppCloud = nullptr;
 
-// Only keep these, we deliberately NOT hook Evaluate/RunLaunch/RunExit in v3
-// to avoid re-introducing shutdown window. See analysis.
+// Only these hooks: EvaluateRemoteStorageSyncState, RunAutoCloudOnAppLaunch and
+// RunAutoCloudOnAppExit are deliberately NOT hooked, to avoid re-introducing the
+// shutdown window.
 
 // -------------------------------------------------------------------
 // Legacy-CD-key suppression summary (aggregated, debounced).
@@ -51,7 +52,7 @@ CloseAppCloud_t o_CloseAppCloud = nullptr;
 std::mutex s_cdKeyMutex;
 std::unordered_set<AppId> s_cdKeySuppressed;
 std::size_t s_cdKeyLastLoggedSize = 0;
-// I-A: the thread runs in workers::StartWorker; stop+join are centralized.
+// The thread runs in workers::StartWorker; stop+join are centralized.
 std::atomic<bool> s_cdKeyStarted{false};
 std::atomic<std::int64_t> s_cdKeyDeadline{0};
 
@@ -98,7 +99,7 @@ void ArmCdKeySummary() {
 }
 
 void StopCdKeySummary() {
-    // I-A: stop+join happen inside workers::Shutdown() (called before
+    // stop+join happen inside workers::Shutdown() (called before
     // ShutdownLicenseHooks in dllmain).
     AC_LOG_DEBUG(kModule, "CD-key summary stop requested; join handled by workers::Shutdown.");
 }
@@ -234,12 +235,9 @@ bool h_IsCloudEnabledForApp(void* rs, AppId appId) {
 }
 std::int32_t h_GetRemoteStorageSyncState(void* rs, AppId appId) {
     if (ShouldBlock(appId, "state")) {
-        // Try both Disabled and Synchronized – Disabled is semantically correct,
-        // but some Steam builds treat Disabled as "needs check" and show window.
-        // We try Synchronized=2 which definitively says "up to date, no wait"
+        // Synchronized=2 ("up to date, no wait") avoids the wait dialog: some
+        // Steam builds treat Disabled=0 as "needs check" and still show it.
         auto res = (int32_t)ERemoteSyncState::Synchronized;
-        // If you still see window, try Disabled=0
-        // auto res=(int32_t)ERemoteSyncState::Disabled;
         AC_LOG_INFO(kModule, "GetSyncState appid=%u -> %d Synchronized BLOCKED", appId, res);
         diag::Record("cloud_state_blocked", "appid=" + std::to_string(appId) + " result=" + std::to_string(res));
         return res;
@@ -267,11 +265,10 @@ void RegisterLicenseHooks(HMODULE diversion) {
     }
     AC_LOG_INFO(kModule, "Registering FIXED v3 - minimal gates to avoid shutdown window");
 
-    // Address data is owned entirely by PatternEngine, which resolves every
-    // hook address from the per-build TOML pattern tables (cache or remote
-    // download). This feature module contains no scanner or address data of
-    // its own; entries missing from the TOML are simply skipped and reported
-    // in status/log diagnostics.
+    // Address data is owned entirely by PatternEngine (see HookPattern): it
+    // resolves every hook address from the per-build TOML pattern tables.
+    // Entries missing from the TOML are skipped and reported in status/log
+    // diagnostics.
     HookPattern("OptedInMask", "steamclient", diversion, o_OptedInMask, h_OptedInMask);
     HookPattern("RequiresLegacyCDKey", "steamclient", diversion, o_RequiresLegacyCDKey, h_RequiresLegacyCDKey);
     HookPattern("IsCloudEnabledForApp", "steamclient", diversion, o_IsCloudEnabledForApp, h_IsCloudEnabledForApp);

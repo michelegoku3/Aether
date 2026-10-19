@@ -17,7 +17,7 @@
 // connecting process (pid, creation time, image, env-derived app id), and lets
 // handlers resolve an app id for *that pipe* with graceful fallback.
 //
-// Scope is intentionally small compared to LumaCore:
+// Scope is intentionally small:
 //   - no module enumeration
 //   - no EOS/Denuvo/child-process side effects
 //   - no global hidden state outside AetherCoreState

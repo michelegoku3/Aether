@@ -17,12 +17,10 @@
 //   * ResetSession() clears the seen-set so the next game session re-emits
 //     every AppId once. Called automatically when a new game process starts.
 //
-// Rationale (replaces the previous time-windowed debounce):
-//   The old 10-second debounce still produced periodic bursts of identical
-//   "Unlocked AppIds" / "RequiresLegacyCDKey suppressed" lines that cluttered
-//   debug and trace logs without adding diagnostic value. A game session is a
-//   natural dedup boundary: ownership and license outcomes are stable within a
-//   session, so logging them once is sufficient.
+// Rationale:
+//   Ownership and license outcomes are stable within a game session, so a
+//   session is a natural dedup boundary: logging each AppId once is sufficient
+//   and avoids repeated identical lines with no diagnostic value.
 // ---------------------------------------------------------------------------
 namespace ac::logutil {
 

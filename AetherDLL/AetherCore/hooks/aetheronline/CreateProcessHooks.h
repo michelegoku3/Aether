@@ -7,20 +7,19 @@
 // Steam spawns a game process under -aetheronline, the EOS bridge payload is
 // injected BEFORE the child's entry point runs (via CREATE_SUSPENDED).
 //
-// This fixes the late-injection problem described in the architectural audit
-// §3.4: PipeWatch-triggered injection arrives after EOS SDK may have already
-// initialised, so the EOS hooks have no effect.  Pre-entry injection ensures
-// the payload is loaded before any game code executes.
+// Pre-entry injection fixes late injection: PipeWatch-triggered injection can
+// arrive after the EOS SDK has already initialised, so the EOS hooks have no
+// effect.  Loading the payload before any game code runs avoids that.
 //
-// The existing PipeWatch MaybeInject path remains as a safety net for any
-// process that slips past the CreateProcess hooks; PID deduplication in
-// AetherCoreState::onlinePayloadInjectedPids prevents double injection.
+// The PipeWatch MaybeInject path remains as a safety net for any process that
+// slips past the CreateProcess hooks; PID deduplication in
+// g_state.onlinePayload.injectedPids prevents double injection.
 // ---------------------------------------------------------------------------
 namespace ac::hooks {
 
 // Registers detours on kernel32.dll!CreateProcessW and CreateProcessAsUserW.
 // Safe to call during InstallAllHooks() — the hooks are passive until an
-// An AetherOnline session publishes the real app via presence::Publish.
+// AetherOnline session publishes the real app via presence::Publish().
 //
 // Uses GetProcAddress directly (not PatternEngine) because these are stable
 // kernel32 exports that never move.

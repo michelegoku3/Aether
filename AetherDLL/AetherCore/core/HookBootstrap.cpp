@@ -100,8 +100,8 @@ bool PatternsFullyAvailable() {
 
 void SteamUiRetryWorker(std::atomic<bool>& stop) {
     // Event-driven wait: a DLL load wakes us early; the 500 ms quantum is
-    // only a backstop (same check cadence as the old 5x100 ms polling).
-    // Falls back to plain polling when the Ldr API is unavailable.
+    // only a backstop. Falls back to plain polling when the Ldr API is
+    // unavailable.
     HANDLE wake = CreateEventW(nullptr, FALSE, FALSE, nullptr);
     void* cookie = nullptr;
     LdrUnregisterFn unregister = nullptr;
@@ -174,8 +174,7 @@ void PatternLateRetryWorker(std::atomic<bool>& stop) {
 
         // Event-driven wait on the pattern directory: a freshly published
         // table wakes the next attempt at once instead of at the next 10 s
-        // tick. The 250 ms quantum keeps shutdown snappy (was 100 ms: 2.5x
-        // fewer idle wakeups for a bounded 150 ms of extra join latency).
+        // tick. The 250 ms quantum keeps shutdown snappy.
         // UTF-8 in, *W at the boundary (patternDir is UTF-8 narrow).
         const std::wstring wPatternDir = ac::strings::Widen(g_state.patternDir);
         HANDLE change =
@@ -269,8 +268,8 @@ void ArmSteamUiRedirect() {
 }
 
 void InstallAllHooks() {
-    // Phase 2 first: the redirect must arm ASAP (old step-9 window), then the
-    // steamclient batch. Idempotent re-run.
+    // Phase 2 first: the redirect must arm ASAP, then the steamclient batch.
+    // Idempotent re-run.
     ArmSteamUiRedirect();
     InstallSteamClientBatch();
 }

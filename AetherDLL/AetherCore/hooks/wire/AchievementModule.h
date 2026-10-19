@@ -9,7 +9,7 @@ namespace ac::hooks::AchievementModule {
 std::int32_t HandleSendGetUserStats(const WireFrame& frame, std::uint8_t* out, std::uint32_t outCap);
 std::int32_t HandleSendClientGetUserStats(const WireFrame& frame, std::uint8_t* out, std::uint32_t outCap);
 
-// Handling of inbound messages (donor data cleanup and local user data injection)
+// Handling of inbound messages (donor data cleanup)
 std::int32_t HandleRecvGetUserStatsResponse(const WireFrame& frame, std::uint8_t* out, std::uint32_t outCap,
                                             std::uint8_t* outHdr, std::uint32_t outHdrCap, std::int32_t* outNewHdrLen);
 std::int32_t HandleRecvClientGetUserStatsResponse(const WireFrame& frame, std::uint8_t* out, std::uint32_t outCap);

@@ -16,8 +16,8 @@ namespace {
 // no service name, only the request's job id).
 std::mutex s_jobNameMutex;
 std::unordered_map<std::uint64_t, std::string> s_jobNames;
-// Insertion order: eviction at cap drops the OLDEST entry (before:
-// erase(begin()) on unordered_map = arbitrary element).
+// Insertion order: eviction at cap drops the OLDEST entry (an unordered_map
+// alone would evict an arbitrary element).
 std::deque<std::uint64_t> s_jobNameOrder;
 
 } // namespace

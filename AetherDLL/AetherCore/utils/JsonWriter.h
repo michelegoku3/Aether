@@ -3,11 +3,9 @@
 // ---------------------------------------------------------------------------
 // JsonWriter — declarative JSON emitter for StatusWriter (I-C).
 //
-// Before, WriteSnapshot concatenated ~150 hand-written lines of
-// `json << "  \"key\": ...,\n"`: adding, removing or moving a field risked
-// breaking TWO commas (the neighboring field's). Here punctuation (commas,
-// indent, newlines) is handled ONCE by the writer; every field is a
-// self-contained call.
+// Punctuation (commas, indent, newlines) is handled once by the writer; every
+// field is a self-contained call, so adding, removing or moving a field cannot
+// break a neighbor's comma.
 //
 // Byte-for-byte compatibility: the format reproduces exactly the published
 // schema_version 9 (2-space indent, arrays on their own lines, last field
@@ -21,8 +19,8 @@
 
 namespace ac::jsonw {
 
-// Identical escape to StatusWriter's old EscapeJson (ASCII expected;
-// quote/backslash/newline and <0x20 controls -> \u00XX).
+// JSON string escape (ASCII expected; quote/backslash/newline and <0x20
+// controls -> \u00XX).
 inline std::string Escape(const std::string& in) {
     std::string out;
     out.reserve(in.size() + 2);
@@ -106,7 +104,7 @@ class Writer {
     }
 
     // Closes the object: the last field stays WITHOUT comma; the final line is
-    // "\n}\n" (newline before the brace, like the old emitter).
+    // "\n}\n" (newline before the brace).
     std::string Finish() {
         out_ += "\n}\n";
         return std::move(out_);

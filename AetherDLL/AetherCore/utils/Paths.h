@@ -7,11 +7,10 @@
 #include <string_view>
 
 // ---------------------------------------------------------------------------
-// Shared path/string micro-helpers (quick-win batch 2026-10-03).
+// Shared path/string micro-helpers.
 //
-// These five little helpers used to be copy-pasted across PipeWatch,
-// OwnershipHooks, DirWatch, ManifestRestore and LuaBindings. One copy lives
-// here; header-only, no state, no logging.
+// Single copy used by PipeWatch, OwnershipHooks, DirWatch, ManifestRestore
+// and LuaBindings. Header-only: no state, no logging.
 // ---------------------------------------------------------------------------
 namespace ac::paths {
 

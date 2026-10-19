@@ -7,14 +7,13 @@
 #include "core/Settings.h"
 
 // ---------------------------------------------------------------------------
-// BootSteps — one function per bootstrap stage (TNG-001 extraction).
+// BootSteps — one function per bootstrap stage.
 //
-// InitThreadLogic used to own all ten stages inline (~170 lines): paths,
-// logging, diversion, patterns, ABI, Lua, hooks, safety nets and watchers.
-// Each stage below does exactly one thing and returns success/failure, so
-// InitThreadLogic is a straight-line orchestrator with early returns and a
-// future maintainer can reorder or insert stages by moving lines, not by
-// re-reading the whole pipeline. No threads, ordering or log bytes change.
+// Stages: paths, logging, diversion, patterns, ABI, Lua, hooks, safety nets
+// and watchers. Each stage does exactly one thing and returns success/failure,
+// so InitThreadLogic is a straight-line orchestrator with early returns and a
+// maintainer can reorder or insert stages by moving lines, not by re-reading
+// the whole pipeline. Step order and log output must not change.
 // ---------------------------------------------------------------------------
 namespace ac::boot {
 
@@ -53,7 +52,8 @@ bool InitLuaStage();
 // Steamclient hook batch + late-pattern retry. Always true.
 void InstallHooksStage();
 
-// Achievement backup + manifest restore sweep. Always true (best-effort).
+// Achievement backup, manifest restore, owner policy and stylesheet pass.
+// Always true (best-effort).
 void StartSafetyNetsStage();
 
 // Lua + ACF watchers. Always true.

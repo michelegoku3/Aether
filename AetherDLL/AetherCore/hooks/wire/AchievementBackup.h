@@ -66,8 +66,7 @@ void SessionEnded(steam::AppId appId, std::uint64_t steamId64);
 
 // Startup snapshot (once per process): copies the .bins of ALL managed apps
 // present in appcache\stats, right after Steam starts and before the client's
-// login-reconcile can discard pending changes (the window where the 21/08
-// loss happened). Async.
+// login-reconcile can discard pending changes. Async.
 void BackupAllKnownStatsAtStartup();
 
 // Records one commit's numeric stats (including achievement bitfields: many

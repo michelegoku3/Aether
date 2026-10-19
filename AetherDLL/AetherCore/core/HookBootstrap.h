@@ -3,11 +3,9 @@
 #include <mutex>
 
 // ---------------------------------------------------------------------------
-// core/HookBootstrap — explicit hook-installation orchestration (P8).
+// core/HookBootstrap — hook-installation orchestration.
 //
-// Everything used to live inside hooks/steamui/SteamUIHook.cpp: steamclient
-// batch, UI redirect retry and late-pattern retries mixed with the redirect
-// itself. Here phases have clear names and responsibilities:
+// Phases have clear names and responsibilities:
 //
 //   phase 1  InstallSteamClientBatch  — kernel32 + steamclient + IPC + wire
 //   phase 2  ArmSteamUiRedirect       — redirect LoadModuleWithPath (+ retry)

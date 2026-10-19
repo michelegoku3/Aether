@@ -14,9 +14,8 @@
 //
 // Steam worker threads READ this data from hooks while the hot-reload watcher
 // thread WRITES it. Every accessor here takes the appropriate lock on
-// g_state.lua.mutex, so callers never touch the raw maps. LumaCore left
-// these maps unsynchronised; centralising access fixes that latent race and
-// keeps the locking discipline in one place.
+// g_state.lua.mutex, so callers never touch the raw maps and the locking
+// discipline lives in one place.
 //
 // Read accessors take a shared lock; mutators take a unique lock. Reads return
 // copies (small: ids, tokens, short hex strings) so no reference can outlive

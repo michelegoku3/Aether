@@ -103,7 +103,7 @@ int CountDictAchievements(const std::vector<std::uint8_t>& buf, std::size_t& pos
         } else if (type == 0x03) {
             pos += 4;
         } else {
-            return total; // tipo sconosciuto: fermati (formato inatteso)
+            return total; // unknown type: stop (unexpected format)
         }
     }
     return total;

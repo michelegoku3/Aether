@@ -12,9 +12,8 @@
 // ---------------------------------------------------------------------------
 // Pure formatting/parsing helpers for games_played wire frames.
 //
-// Extracted from GamesPlayedModule (P9): NO protobuf, NO g_state, NO logging
-// — every function is total and unit-testable on synthetic data (see tests,
-// case "gamesplayed_format").
+// NO protobuf, NO g_state, NO logging — every function is total and
+// unit-testable on synthetic data (see tests, case "gamesplayed_format").
 // ---------------------------------------------------------------------------
 namespace ac::hooks::GamesPlayedFormat {
 
@@ -29,9 +28,9 @@ std::string ImageStem(std::string_view imageName);
 // "spacewar" — the bare mask name leaks nothing about the real game.
 bool NameIsUsable(const std::string& name);
 
-// "<name>" + hidden appid carrier. Invisible channel by default
-// (U+200B mark + 6 VS nibbles); ASCII "<name> | <appid>" when the setting
-// says so (legacy receivers).
+// "<name>" + hidden appid carrier: the invisible channel (U+200B mark + 6 VS
+// nibbles) when presenceSuffixInvisible is set, otherwise ASCII
+// "<name> | <appid>" (legacy receivers).
 std::string WithAppIdSuffix(const std::string& name, steam::AppId appId, const Settings& settings);
 
 // Preferred appid carrier: magic+version+LE appid packed into

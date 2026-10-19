@@ -132,8 +132,7 @@ void RegisterCreateProcessHooks() {
     }
 
     // Explicit cast: FARPROC -> void* is conditionally-supported; without the
-    // cast GCC/MinHook-w64 rejects the implicit conversion (the file used to
-    // sit outside cross-compiler syntax-check coverage).
+    // cast GCC/MinHook-w64 rejects the implicit conversion.
     void* cpw = reinterpret_cast<void*>(GetProcAddress(k32, "CreateProcessW"));
     if (cpw) {
         g_state.hookManager.RegisterHook("CreateProcessW", cpw, reinterpret_cast<void**>(&o_CreateProcessW),

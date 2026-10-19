@@ -30,9 +30,9 @@
 //     mov r8d, [rcx + 0x18]    ; m_cubData (beta)
 //     mov r12, [rcx + 0x10]    ; m_pubData (beta)
 //
-// The old code hard-coded the stable offsets and WROTE through them, so on
-// beta it stored a pointer over a version stamp and dereferenced a small
-// integer as a buffer -> access violation before Steam finished booting.
+// Hard-coding the stable offsets and writing through them stored a pointer
+// over a version stamp on beta and dereferenced a small integer as a buffer:
+// an access violation before Steam finished booting.
 //
 // DESIGN RULES (do not weaken them)
 // ---------------------------------
@@ -74,10 +74,9 @@ inline constexpr Layout kLayouts[] = {
 };
 
 //: Layouts learned at runtime from the build's own ABI table, on top of the
-//: two we know. This is the point of phase 4: the table PROPOSES a layout we
-//: have never compiled in, the probe DISPOSES by checking it against a live
-//: packet. A build that shifts the struct again therefore needs a new table,
-//: not a new AetherCore.
+//: two compiled in. The table PROPOSES a layout we have never seen, the probe
+//: DISPOSES by checking it against a live packet. A build that shifts the
+//: struct again therefore needs a new table, not a new AetherCore.
 inline constexpr int kMaxExtraLayouts = 4;
 
 inline constexpr std::uint32_t kUnresolved = 0u;
@@ -162,14 +161,12 @@ inline bool CandidateMatches(const void* packet, std::uint32_t dataOff, Readable
 // Structural check used by the WRITE barrier, as opposed to CandidateMatches
 // which identifies the layout.
 //
-// The difference matters and cost us six skipped rewrites in the first
-// production session: identification demands a protobuf frame, because a
+// The difference matters: identification demands a protobuf frame, because a
 // protobuf header is the only thing that lets us tell two candidate layouts
-// apart with certainty. But Steam also carries legacy struct packets (see
-// CStructNetPacket / netpacket_legacy_struct.h), and those are perfectly
-// legitimate objects that simply have no protobuf flag. Refusing to write
-// them was over-caution: the layout is already known at that point, so the
-// gate only has to answer "is this still a CNetPacket?", not "which layout
+// apart with certainty. But Steam also carries legacy struct packets, which
+// are perfectly legitimate objects that simply have no protobuf flag. Refusing
+// to write them is over-caution: the layout is already known at that point, so
+// the gate only has to answer "is this still a CNetPacket?", not "which layout
 // is it?".
 inline bool LayoutPlausible(const void* packet, std::uint32_t dataOff, ReadableFn readable, void* ctx) {
     if (!packet || !readable)
@@ -432,7 +429,7 @@ bool DefaultReadable(const void* addr, std::size_t bytes, void* ctx);
 bool EnsureResolved(const steam::CNetPacket* packet);
 
 // Seeds the resolver from the per-build ABI table published alongside the
-// patterns (phase 4). Offsets are checked for internal consistency
+// patterns. Offsets are checked for internal consistency
 // (m_cubData == m_pubData + 8, m_cRef == m_pubData + 0xC) before being
 // accepted as a candidate: a table that disagrees with the shape the
 // accessors assume is a table we must not act on. Returns true when the

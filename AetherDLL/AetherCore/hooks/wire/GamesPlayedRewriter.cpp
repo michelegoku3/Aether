@@ -30,7 +30,7 @@ std::string DisplayName(steam::AppId appId, const Settings& settings) {
 
 // Annotates a MASKED (wire 480) games_played entry. Layers:
 //   1) game_data_blob when enabled (raw bytes; CM recycling UNVERIFIED — one
-//      field test 16:38 2026-08-24 suggests the CM strips it from Friend relay)
+//      field test suggests the CM strips it from Friend relay)
 //   2) plan B (always for -showonline): the real appid packed into game_id
 //      bits 32-63. Vanilla UIs key on low-24 appid bits (480) and the
 //      extra_info text only; mod bits are not rendered. Does not apply to
@@ -92,8 +92,8 @@ bool Rewrite(CMsgClientGamesPlayed& msg, const RewriteContext& ctx) {
     // Unified path: with and without -aetheronline.
     //   OF/masked entry (480):  AnnotateMaskedEntry (blob default + plain name)
     //   normal entry:           extra_info = name(that appid) if we care
-    // Entries just rewritten by the -showonline block above (480 without an OF
-    // session) are untouched here: their extra_info is already set.
+    // Entries already rewritten by the -showonline block above are 480 and are
+    // skipped by the normal path below.
     if (settings.presenceAlwaysExtraInfo) {
         for (int i = 0; i < msg.games_played_size(); ++i) {
             auto* game = msg.mutable_games_played(i);

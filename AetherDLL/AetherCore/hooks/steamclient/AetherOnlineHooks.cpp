@@ -25,7 +25,6 @@
 // "-aetheronline" token). It is NOT the online-fix.me crack (OFME): OFME files
 // on disk are DETECTED by AetherDesk (online/foreign.rs), never launched or
 // managed by this module. The two stacks never coexist in one process.
-// Full vocabulary: AGENTS.md at the root.
 // ---------------------------------------------------------------------------
 
 namespace ac::hooks {
@@ -176,11 +175,8 @@ static LaunchMode ResolveLaunchMode(AppId app, bool aetherOnlineToken, bool show
 // Same whitespace-tokenisation as HasFlagArg; outStripped tells whether at
 // least one token was removed. Aether consumes those flags here, in
 // SpawnProcess — the child process must NEVER see them in argv: Steam itself
-// ignores unknown launch arguments, but some games hard-crash on them.
-// MEASURED, 2026-08-24 log: "Selene ~Apoptosis~" exits 3-4 s after every
-// launch with -showonline left in the command line (three runs in a row,
-// 4.6 s / 4.2 s lifetimes) and runs ~28 s on the flag-less launch. Gamblers
-// Table and Stanley Parable tolerate it; strict argv parsers do not.
+// ignores unknown launch arguments, but some games (strict argv parsers)
+// hard-crash on them.
 static std::string StripAetherFlagArgs(const char* cmdLine, bool* outStripped) {
     std::string out;
     if (outStripped)
@@ -214,22 +210,9 @@ static std::string StripAetherFlagArgs(const char* cmdLine, bool* outStripped) {
 
 // ---------------------------------------------------------------------------
 // SyncLanguageToSpacewar — copies the "language" field from the real game's
-// appmanifest ACF to the Spacewar (480) appmanifest ACF.
-//
-// When a game is masked as 480, Steam reads the language from appmanifest_480.acf.
-// If the real game uses Italian but the 480 ACF says "english", the game launches
-// in English. This function synchronises them so the game starts in the correct
-// language.
-//
-// ACF format (Valve Data Format):
-//   "AppState"
-//   {
-//       "appid"  "1703340"
-//       "UserConfig"
-//       {
-//           "language"  "italian"
-//       }
-//   }
+// appmanifest ACF to the Spacewar (480) appmanifest ACF. When a game is masked
+// as 480, Steam reads the language from appmanifest_480.acf, so without this
+// sync a non-English game launches in the 480 ACF's language (usually English).
 // ---------------------------------------------------------------------------
 void SyncLanguageToSpacewar(AppId realAppId) {
     if (realAppId == 0 || realAppId == constants::kSpacewarAppId)
@@ -243,9 +226,8 @@ void SyncLanguageToSpacewar(AppId realAppId) {
     const std::string swAcf =
         steamPath + "\\steamapps\\appmanifest_" + std::to_string(constants::kSpacewarAppId) + ".acf";
 
-    // Language is read with the shared VDF codec (utils/VdfText.h): the ACF
-    // files are VDF text, and this closes the last regex-based VDF parser
-    // (P11). Case-insensitive, unescapes `\\\\` pairs like Steam's own reader.
+    // Language is read with the shared VDF codec (utils/VdfText.h): ACF files
+    // are VDF text. Case-insensitive, unescapes `\\\\` pairs like Steam's own reader.
     std::string realContent;
     {
         std::ifstream realFile(winfile::ToPath(realAcf));
@@ -341,7 +323,7 @@ void SyncLanguageToSpacewar(AppId realAppId) {
         }
     }
 
-    // Atomic write (tmp + rename): a crash mid-write can no longer leave a
+    // Atomic write (tmp + rename): a crash mid-write cannot leave a
     // corrupted appmanifest_480.acf behind. Per-process tmp name: concurrent
     // writers must never share staging (see BackupIo::UniqueStagingPath).
     const std::string tmpPath = backup::io::UniqueStagingPath(swAcf);
@@ -369,9 +351,9 @@ void SyncLanguageToSpacewar(AppId realAppId) {
 }
 
 // ---------------------------------------------------------------------------
-// I-D: h_SpawnProcess is orchestrated by three dedicated helpers. Semantics are
-// IDENTICAL to the old inline function (same operation order, same logs):
-// ResolveLaunchDecision does NOT log, logs live where they used to.
+// h_SpawnProcess delegates to three helpers: ResolveLaunchDecision (chooses the
+// launch mode, does not log), PrepareChildCommandLine (strips Aether tokens) and
+// ApplyLaunchMask (mask/session + language sync).
 // ---------------------------------------------------------------------------
 
 // Everything the spawn hook must know BEFORE touching gameId/session: real
@@ -465,7 +447,7 @@ static void ApplyLaunchMask(const LaunchDecision& d, std::uint64_t* gameId, pres
                     d.realApp, d.modeSource);
     } else if (d.spacewarMask) {
         // UCO2/OFME library launch: same 480 registration as AetherOnline, but
-        // NO aetherOnlineRealAppId — that would arm the Online Aether payload
+        // NO realAppId — that would arm the Online Aether payload
         // injection (OnlinePayload::MaybeInject, CreateProcess hooks) and the
         // AetherOnline-only IPC translations inside a process the foreign crack
         // already owns.
@@ -481,7 +463,7 @@ static void ApplyLaunchMask(const LaunchDecision& d, std::uint64_t* gameId, pres
 
 bool h_SpawnProcess(void* user, const char* exe, const char* cmdLine, const char* workDir, std::uint64_t* gameId,
                     const void* blob, std::uint32_t blobSize, std::int32_t launchOption) {
-    // I-D: thin orchestrator; the logic lives in the helpers above
+    // Thin orchestrator; the logic lives in the helpers above
     // (ResolveLaunchDecision / PrepareChildCommandLine / ApplyLaunchMask).
     std::string childCmdStorage;
     const char* childCmd = cmdLine;
@@ -520,7 +502,7 @@ bool h_SpawnProcess(void* user, const char* exe, const char* cmdLine, const char
         presence::SessionSnapshot session;
         ApplyLaunchMask(d, gameId, session);
         // Single atomic publication of every field: readers can never observe
-        // intermediate states between the old separate stores.
+        // intermediate states.
         presence::Publish(session);
     }
     return o_SpawnProcess(user, exe, childCmd, workDir, gameId, blob, blobSize, launchOption);
@@ -547,13 +529,11 @@ AppId h_GetAppIDForCurrentPipe(void* engine) {
     // the "current game" through GetAppIDForCurrentPipe to store/read stats.
     // Without the override it would write under app 480, so the overlay and
     // library would never see unlocks and nothing would persist for the real
-    // game. Within the scope only, we translate 480 → real.
-    //
-    // This mirrors LumaCore's g_userStatsAppIdOverrideDepth override. Every
-    // other call path keeps the engine's value untouched, so the pre-9aa4a76
-    // "Meccha" regression (leaking real identity into multiplayer routing /
-    // friends presence) cannot reappear: the scope is active exclusively on
-    // IClientUserStats dispatches.
+    // game. Within the scope only, translate 480 → real (mirrors LumaCore's
+    // g_userStatsAppIdOverrideDepth). Every other call path keeps the engine's
+    // value untouched, so the scope stays active exclusively on IClientUserStats
+    // dispatches and the real identity never leaks into multiplayer routing or
+    // friends presence.
     if (capture::IsStatsScopeActive()) {
         const AppId realAppId = presence::RealAppId();
         if (realAppId != 0 && realAppId != constants::kSpacewarAppId && appId == constants::kSpacewarAppId) {

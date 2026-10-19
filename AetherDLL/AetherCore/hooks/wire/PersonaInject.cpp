@@ -279,8 +279,7 @@ bool BuildInjectLocked(steam::AppId appId) {
 //                              touched only in DiagServerTruth and only with
 //                              LogLevel::Info active.
 //   * s_diagFriendsMutex ..... guards s_diagFriends (per-friend one-shot DIAG
-//                              when masked). It USED to be a mutex-less
-//                              function-local static: this split closes the hole.
+//                              when masked).
 //   * g_selfLobby ............ relaxed atomic; written by DiagServerTruth and
 //                              read by RecoverMaskedFriends (the order between
 //                              the two is binding: diag BEFORE recovery).
@@ -358,8 +357,7 @@ void FillSelfGameName(CMsgClientPersonaState& msg, std::uint64_t selfId, steam::
 void DiagServerTruth(const CMsgClientPersonaState& msg, std::uint64_t selfId, const WireFrame& frame) {
     // The PersonaState the CM returns for OUR own SteamID is exactly what gets
     // broadcast to friends. NOTE: it runs AFTER the self-patch, so for the SELF
-    // entry the fields read are the post-patch ones when inject is active
-    // (pre-existing behavior before the split, preserved byte-for-byte).
+    // entry the fields read are the post-patch ones when inject is active.
     if (auto* srv = FindSelf(const_cast<CMsgClientPersonaState&>(msg), selfId)) {
         const std::uint32_t app = srv->game_played_app_id();
         // Track our own lobby membership every push: it is the corroboration
@@ -381,8 +379,7 @@ void DiagServerTruth(const CMsgClientPersonaState& msg, std::uint64_t selfId, co
 
     // [DIAG] flight-recorder: for EVERY persona frame, log every friend who
     // is playing (real appid or 480), deduplicated on state change only.
-    // Level gate: the map diff ran on every frame even at Warn/Error/Off log
-    // levels — now only with Info active, otherwise zero cost.
+    // Level gate: run only with Info active, otherwise zero cost.
     if (ac::log::Enabled(LogLevel::Info)) {
         std::lock_guard<std::mutex> lk(s_friendDumpMutex);
         AC_LOG_TRACE(kModule, "[DIAG] PERSONA frame: friends=%d bLen=%u", msg.friends_size(), frame.bodyLen);
@@ -425,7 +422,7 @@ void DiagServerTruth(const CMsgClientPersonaState& msg, std::uint64_t selfId, co
     }
 }
 
-// ---- Friend entry recovery (480 -> real appid) + PICS prime ---------------
+// Friend entry recovery (480 -> real appid) + PICS prime.
 // The CM never broadcasts an appid the sender has no license for (measured,
 // docs/04-showonline-plan.md); it DOES relay game_extra_info. Aether senders
 // hide the exact appid in that text / in the blob / in gid-hi: recover it
@@ -480,7 +477,7 @@ bool RecoverMaskedFriends(CMsgClientPersonaState& msg, std::uint64_t selfId, boo
             displayName = extra;
         }
         {
-            // One-shot DIAG per masked friend (now with a mutex, see the contract).
+            // One-shot DIAG per masked friend (mutex-guarded, see the contract).
             std::lock_guard<std::mutex> lk(s_diagFriendsMutex);
             const std::uint64_t fid = f->has_friendid() ? f->friendid() : 0ull;
             if (s_diagFriends.insert(fid).second) {
@@ -536,7 +533,7 @@ bool RecoverMaskedFriends(CMsgClientPersonaState& msg, std::uint64_t selfId, boo
         // (minted by the sender from ITS fresh local cache). The legacy
         // "local session" source keeps the live cache lookup: that app is
         // installed HERE. Probing for an appid this machine never had faults
-        // inside steamclient (measured crash, 12:57 log) — never on this path.
+        // inside steamclient (measured crash) — never on this path.
         std::string name = displayName;
         if (name.empty() && fromLocalSession) {
             name = gamename::ForApp(real);
@@ -598,7 +595,7 @@ steam::AppId PlayingApp() {
 
 std::int32_t OnPersonaStateRecv(const WireFrame& frame, std::uint8_t* out, std::uint32_t outCap) {
     // I-B: thin orchestrator; the logic lives in the helpers above
-    // (contratto threading documentation in testa al blocco).
+    // (threading contract documented at the top of this block).
     const auto settings = Settings::Snapshot();
     CMsgClientPersonaState msg;
     if (!msg.ParseFromArray(frame.body, static_cast<int>(frame.bodyLen)))

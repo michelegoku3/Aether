@@ -15,15 +15,8 @@
 // parameters, and parsing the double-null-terminated environment block.
 //
 // Stateless and thread-safe: operates solely on the caller-provided HANDLE.
-// No globals, no mutex, no persistent state.  Every failure path returns
-// nullopt cleanly — callers fall back to their own logic (architectural
-// principle 3: graceful degradation).
-//
-// Why this module exists (architectural audit 2026-07-12):
-//   PipeWatch originally carried this logic inline (~156 lines out of 400).
-//   Extracting it keeps PipeWatch focused on IPC handshake orchestration and
-//   makes environment reading reusable by future modules (e.g. Denuvo auth,
-//   ProcessExtension) without duplication — a problem LumaCore suffered from.
+// No globals, no mutex, no persistent state. Every failure path returns
+// nullopt cleanly — callers fall back to their own logic.
 // ---------------------------------------------------------------------------
 namespace ac::env {
 

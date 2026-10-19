@@ -7,8 +7,8 @@
 // ---------------------------------------------------------------------------
 // Steam content manifest identity validation (P17 testability).
 //
-// Extracted verbatim from ManifestFetch.cpp so the byte-level checks can be
-// unit-tested with synthetic blobs. A Steam depot manifest starts with two
+// Split from ManifestFetch.cpp so the byte-level checks can be unit-tested
+// with synthetic blobs. A Steam depot manifest starts with two
 // fixed-size sections:
 //   [0x71F617D0][u32 length][payload]   "ManifestInfo" header
 //   [0x1F4812BE][u32 length][metadata]  protobuf-ish depot/GID descriptor

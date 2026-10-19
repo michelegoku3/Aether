@@ -31,7 +31,7 @@ bool Init() {
     // Resolve both modules concurrently. On a fresh Steam build every cache
     // miss costs network round-trips; running them in parallel cuts the
     // critical path before hook installation in half (steamui's resolution
-    // no longer waits behind steamclient's), so the hooks are in place
+    // does not wait behind steamclient's), so the hooks are in place
     // before Steam fires the one-shot LoadPackage(package 0) at startup.
     //
     // The two threads touch disjoint pattern indexes. They compute their

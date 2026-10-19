@@ -7,8 +7,8 @@
 #include "core/SteamTypes.h"
 
 // IClientUser IPC handlers: SteamID spoofing and ownership/encrypted ticket
-// replies. Tickets and SteamIDs come from the registry-backed Ticket/SteamId
-// modules, never fabricated.
+// replies. Tickets and SteamIDs are resolved by the registry-backed
+// Ticket/SteamId modules.
 namespace ac::hooks::CmdUser {
 
 // Registers this module's handlers with the IPC bus.

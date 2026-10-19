@@ -6,10 +6,9 @@
 #include <string>
 
 // ---------------------------------------------------------------------------
-// core/Workers — background-work infrastructure (audit P3).
+// core/Workers — background-work infrastructure.
 //
-// Replaces every `std::thread(...).detach()` in AetherCore with work owned by
-// a single registry, so that:
+// All background work is owned by a single registry, so that:
 //   * one-shot async jobs go through the task queue (Submit);
 //   * long-lived loops are named, stop-flag-aware workers (StartWorker);
 //   * the explicit shutdown path can stop + join everything and LOG it.

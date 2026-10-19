@@ -3,22 +3,22 @@
 // ---------------------------------------------------------------------------
 // PatternSource.h — ordered, data-driven model of remote pattern sources.
 //
-// AetherCore no longer hard-codes a single upstream repo for per-build TOML
-// files. Instead, each "source" is described by a small, immutable record:
+// AetherCore resolves per-build TOML files through a small, ordered,
+// data-driven source registry. Each "source" is a small, immutable record:
 //
 //   * the GitHub owner/repo that hosts the files, and
 //   * a per-resource layout telling the downloader where inside that repo a
 //     given logical file lives (branch + folder).
 //
-// Sources are evaluated strictly in the order they appear in the registry
-// (kBuiltInSources): position = priority. The first source that can serve the
+// Sources are evaluated strictly in the order returned by DefaultSources():
+// position = priority. The first source that can serve the
 // requested build wins; later sources are only consulted as fallbacks.
 //
 // This file is intentionally free of I/O. Its single responsibility is to model
 // sources and translate a (kind, sha) request into candidate mirror URLs.
 // Fetching and persistence live in PatternDownloader.
 //
-// To add/remove/reorder an upstream, edit kBuiltInSources. Each entry is
+// To add/remove/reorder an upstream, edit DefaultSources(). Each entry is
 // self-contained, so a new repo (or a repo whose IPC files sit on a different
 // branch, as OpenSteamTool's do) requires no changes to the downloader logic.
 // ---------------------------------------------------------------------------
@@ -109,8 +109,8 @@ struct Source {
 //
 // Current policy: the project's own release repo (michelegoku3/MigoReleases)
 // first — the primary author publishes there before anyone else, so when it
-// carries the current build it should win; then KoriaPolis (historical
-// reference layout), then OpenSteamTool — so if MigoReleases has not yet
+// carries the current build it should win; then KoriaPolis (reference
+// layout), then OpenSteamTool — so if MigoReleases has not yet
 // published the pattern for the current Steam build, the downloader
 // automatically falls back to KoriaPolis and then OpenSteamTool.
 //

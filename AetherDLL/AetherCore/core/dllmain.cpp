@@ -81,7 +81,7 @@ void Shutdown() {
 } // namespace
 
 // Terminal service shutdown only. Host must first quiesce game/Steam activity;
-// this does NOT establish safe dynamic unloading of detached legacy workers.
+// this does NOT establish safe dynamic unloading of detached background workers.
 extern "C" __declspec(dllexport) void WINAPI AetherCoreShutdown() { Shutdown(); }
 
 BOOL APIENTRY DllMain(HMODULE instance, DWORD reason, LPVOID /*reserved*/) {

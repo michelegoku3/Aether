@@ -10,13 +10,7 @@
 // module (hooks/steamclient/AetherOnlineHooks.cpp) and read by everyone
 // else through an immutable snapshot.
 //
-// Replaces the three scattered atomics that used to live in AetherCoreState
-// (aetherOnlineRealAppId / showOnlineAppId / spacewarSpoofExpected). The old
-// design was a distributed state machine: 5 modules communicated through
-// globals, stores happened one field at a time (torn reads possible) and the
-// state stayed stale between game exit and the next SpawnProcess.
-//
-// Invariants now:
+// Invariants:
 //   * Publish() is the ONLY writer (called from h_SpawnProcess) and stores
 //     all fields together — readers can never observe a half-updated state.
 //   * ClearShowOnline() is the single narrow exception (foreign-crack 480

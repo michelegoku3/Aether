@@ -11,8 +11,7 @@
 
 // ---------------------------------------------------------------------------
 // DonorPool — the LumaCore-style self-learning donor pool and the
-// send->recv correlation state for the UserStats spoofing pipeline
-// (P9 extraction from AchievementModule).
+// send->recv correlation state for the UserStats spoofing pipeline.
 //
 // Responsibilities:
 //   * the 15-donor SteamID pool + per-app learning (PickIndex remembers the
@@ -30,8 +29,8 @@ using Clock = std::chrono::steady_clock;
 
 constexpr std::size_t kPoolCount = 15;
 
-// Starting donor for every new app (matches the legacy default exactly;
-// see DonorPool.cpp for why pool[14] and not pool[0]).
+// Starting donor for every new app (pool[14]; see DonorPool.cpp for why not
+// pool[0]).
 constexpr std::size_t kDefaultPoolIndex = 14;
 
 // SteamID64 of pool slot `index` (index < kPoolCount).
@@ -55,7 +54,7 @@ struct StatAttempt {
 // NoMatch = response to a request we did NOT spoof (pass through untouched).
 // Ambiguous = multiple spoofed requests in flight, cannot attribute: the
 // payload almost certainly belongs to the donor and must be stripped
-// (see the "The Fool" Cyberpunk leak, 2026-08-21).
+// (see the "The Fool" Cyberpunk leak).
 enum class Correl { Resolved, Ambiguous, NoMatch };
 
 // Per-app donor learning entry. Stored in central state (AetherCoreState),

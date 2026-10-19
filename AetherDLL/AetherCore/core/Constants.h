@@ -6,9 +6,8 @@
 // ---------------------------------------------------------------------------
 // Centralised compile-time constants.
 //
-// Previous iterations scattered magic numbers across the whole tree.
-// AetherCore keeps every tunable in one place so a Steam update only ever
-// requires editing this file, never hunting through hook bodies.
+// Every tunable lives in one place so a Steam update only ever requires
+// editing this file, never hunting through hook bodies.
 // ---------------------------------------------------------------------------
 namespace ac::constants {
 
@@ -162,10 +161,10 @@ inline constexpr std::uint8_t kHandshake = 9;
 namespace ipc_iface {
 inline constexpr std::uint8_t kClientUser = 1;
 inline constexpr std::uint8_t kClientUtils = 4;
-// Steam's protocol constant for IClientUserStats (matches LumaCore's
-// EIPCInterface). Used by IPCBus to bracket IClientUserStats dispatches in the
-// AetherOnline stats-scope (see capture::EnterStatsScope) so the client's stats
-// subsystem resolves the real app id instead of the Spacewar/480 mask.
+// Steam's protocol constant for IClientUserStats. Used by IPCBus to bracket
+// IClientUserStats dispatches in the AetherOnline stats-scope (see
+// capture::EnterStatsScope) so the client's stats subsystem resolves the real
+// app id instead of the Spacewar/480 mask.
 inline constexpr std::uint8_t kClientUserStats = 11;
 } // namespace ipc_iface
 
@@ -213,7 +212,7 @@ inline constexpr std::uint32_t kClientSharedLibraryStopPlaying = 9406;
 // EClientPersonaStateFlag::k_EClientPersonaStateFlagRichPresence — when set on
 // an inbound PersonaState, the UI rebuilds m_mapRichPresence from the message's
 // rich_presence() list. Clearing the bit on an inject with empty KVs avoids
-// wiping an already-populated map (OpenSteamTool / LumaCore policy).
+// wiping an already-populated map.
 inline constexpr std::uint32_t kStatusFlagRichPresence = 0x1000;
 
 // Compile-time FNV-1a (32-bit) used to dispatch service jobs by target_job_name.
@@ -258,8 +257,8 @@ inline constexpr std::size_t kMaxDllPathChars = 32767;
 inline constexpr unsigned long kDirWatchBufferBytes = 64u * 1024u;
 inline constexpr unsigned long kDirWatchDebounceMs = 500;
 
-// Payload EOS poll: same 60 s budget as always (attempts x interval), now
-// event-driven (see AetherPayload/dllmain.cpp) instead of blind sleeping.
+// Payload EOS poll: 60 s budget (attempts x interval), event-driven (see
+// AetherPayload/dllmain.cpp) instead of blind sleeping.
 inline constexpr int kPayloadEosPollAttempts = 120;
 inline constexpr unsigned long kPayloadEosPollIntervalMs = 500;
 

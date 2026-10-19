@@ -41,9 +41,9 @@ inline constexpr std::string_view kOriginalDisplay = "display:flex";
 inline constexpr std::string_view kHiddenDisplay = "display:none";
 inline constexpr std::string_view kOriginalColor = "color:orange";
 
-// Marker block written by the first revision of the patch (before the
-// size-preserving rewrite). It changed the file size, so it is stripped on
-// sight even when the rule itself can no longer be patched.
+// Marker block written by an older revision of the patch; it changed the file
+// size, so it is stripped on sight even when the rule itself can no longer be
+// patched.
 inline constexpr std::string_view kLegacyBegin = "/* aether:hide-old-sharing:begin */";
 inline constexpr std::string_view kLegacyEnd = "/* aether:hide-old-sharing:end */";
 

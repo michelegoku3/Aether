@@ -9,7 +9,7 @@
 // ---------------------------------------------------------------------------
 // Lightweight, session-oriented levelled logger.
 //
-// Replaced size-based mid-execution file rotation with clean session management:
+// Clean session management:
 //   * On startup, backs up the previous main.log to main.log.last and opens a clean log.
 //   * Output lines include high-precision timestamps (ms) and Thread IDs (TID):
 //     [HH:MM:SS.mmm] [TID:1234] [INFO ] [Module] message

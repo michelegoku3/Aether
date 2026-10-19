@@ -11,10 +11,10 @@ namespace {
 
 constexpr const char* kModule = "Presence";
 
-// One atomic word per field keeps the historical hot-path cost (a bare load)
-// while Publish() guarantees the fields are stored as a group in a fixed
-// order; the snapshot is the authoritative source for readers that need a
-// consistent view of MORE than one field.
+// One atomic word per field keeps the hot path to a bare load, while Publish()
+// stores the fields as a group in a fixed order; the snapshot is the
+// authoritative source for readers that need a consistent view of more than
+// one field.
 std::atomic<steam::AppId> s_realAppId{0};
 std::atomic<steam::AppId> s_showOnlineAppId{0};
 std::atomic<bool> s_spacewarSpoofExpected{false};

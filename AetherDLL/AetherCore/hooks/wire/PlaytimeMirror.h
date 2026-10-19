@@ -9,7 +9,7 @@
 // Client-side data for managed games: same fragility as achievements.
 //
 // Output: <AetherData>\backup\playtime\UserPlaytime_<account>.json with
-// MONOTONE merge (per field, the historic max wins).
+// MONOTONE merge (per field, the highest value wins).
 // ============================================================================
 namespace ac::backup::playtime {
 

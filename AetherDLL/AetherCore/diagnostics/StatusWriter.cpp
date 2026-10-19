@@ -86,9 +86,9 @@ static void WriteSnapshot(std::uint64_t requests) {
     }
 
     jsonw::Writer w;
-    // v4: hooks_missed_list entries carry their reason ("Name (reason)").
-    // The field is still a string list, but its CONTENT changed shape, so a
-    // consumer that parses hook names has to know (v3 readers keep working).
+    // hooks_missed_list entries carry their reason ("Name (reason)"): the
+    // field is a string list, but consumers that parse hook names must expect
+    // this shape, not a bare name.
     w.Int64("schema_version", 9);
     w.Int64("ts", static_cast<long long>(std::time(nullptr)));
 

@@ -13,7 +13,7 @@
 // ---------------------------------------------------------------------------
 namespace ac::dirwatch {
 
-// Starts the Lua watcher. No-op if already running or both lists are empty.
+// Starts the Lua watcher. No-op if already running.
 void Start(const std::vector<std::string>& directories);
 
 // Starts the Lua watcher plus a non-recursive watcher for Steam app manifests.

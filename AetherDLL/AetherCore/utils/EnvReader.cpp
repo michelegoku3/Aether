@@ -19,10 +19,7 @@ namespace {
 
 constexpr const char* kModule = "EnvReader";
 
-// ---------------------------------------------------------------------------
-// NT API plumbing — just enough to walk the remote PEB without pulling in
-// <winternl.h> or the full NTDDK.
-// ---------------------------------------------------------------------------
+// Minimal NT API plumbing to walk the remote PEB without <winternl.h> or NTDDK.
 
 struct ProcessBasicInformation {
     LONG exitStatus;
@@ -39,9 +36,7 @@ constexpr ULONG kProcessBasicInformation = 0;
 constexpr ULONG kProcessWow64Information = 26;
 constexpr std::size_t kMaxEnvironmentBytes = 64ULL * 1024ULL;
 
-// ---------------------------------------------------------------------------
 // Remote memory helpers
-// ---------------------------------------------------------------------------
 
 template <typename T> std::optional<T> ReadRemoteValue(HANDLE process, const void* address) {
     T value{};
@@ -53,10 +48,8 @@ template <typename T> std::optional<T> ReadRemoteValue(HANDLE process, const voi
     return value;
 }
 
-// ---------------------------------------------------------------------------
-// PEB traversal: resolve the environment-block address in the remote process,
-// first trying WOW64 (32-bit PEB) then native (64-bit PEB).
-// ---------------------------------------------------------------------------
+// Resolve the environment-block address in the remote process, first trying
+// WOW64 (32-bit PEB) then native (64-bit PEB).
 
 std::optional<void*> ReadNativeEnvironmentAddress(HANDLE process) {
     HMODULE ntdll = GetModuleHandleW(L"ntdll.dll");

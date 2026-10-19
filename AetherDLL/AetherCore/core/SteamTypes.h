@@ -43,9 +43,9 @@ enum class AppReleaseState : std::uint32_t {
 // block are proven by disassembly of both shipped builds (rounds 3-6); the
 // NAMES of several fields are deductions from the branch that writes them,
 // and the ones that are not certain say so. Getting a name wrong here does
-// not crash: it makes Steam believe something false. That already happened —
-// `borrowed` was declared at +0x31, which is a byte of unknown meaning, and
-// Steam started showing the family-sharing banner on .lua apps.
+// not crash: it makes Steam believe something false. Declaring `borrowed` at
+// +0x31, a byte of unknown meaning, made Steam show the family-sharing banner
+// on .lua apps.
 //
 // Aether READS:  releaseState, existInPackageNums, borrowed, familyShared
 // Aether WRITES: packageId, releaseState, freeLicense, ownsLicense
@@ -210,10 +210,10 @@ inline constexpr std::uint32_t kMsgHdrProtoFlag = 0x80000000u;
 // DELIBERATELY OPAQUE — do not declare its fields here again.
 //
 // Steam beta 1790380355 inserted two uint32 after m_hConnection and shifted
-// m_pubData/m_cubData/m_cRef by +8. The old flat definition (data @ +8,
-// dataLen @ +16) was WRITTEN through by the wire hooks, so on that build it
-// stored a pointer over a version stamp and dereferenced an integer as a
-// buffer: Steam died before finishing boot.
+// m_pubData/m_cubData/m_cRef by +8. A flat definition (data @ +8, dataLen @
+// +16) written through by the wire hooks stored a pointer over a version stamp
+// on that build and dereferenced an integer as a buffer: Steam died before
+// finishing boot.
 //
 // The two fields we use are reached through ac::abi::netpkt::Data()/Size(),
 // which apply an offset identified at runtime from a live packet (and never

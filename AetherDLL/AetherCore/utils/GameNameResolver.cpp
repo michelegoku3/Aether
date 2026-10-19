@@ -59,9 +59,9 @@ constexpr std::int64_t kProbeFault = std::numeric_limits<std::int64_t>::min();
 
 // Dtor-free by contract: MSVC forbids __try/__except in functions that require
 // C++ object unwinding (C2712), so the guard lives in this small helper.
-// MEASURED (12:57 flightrec log): probing GetAppDataFromAppInfo for an appid
-// with NO local AppInfo record faults inside steamclient and kills the process
-// before any flush; a guarded probe degrades that to "name unknown".
+// Probing GetAppDataFromAppInfo for an appid with NO local AppInfo record
+// faults inside steamclient and would kill the process; a guarded probe
+// degrades that to "name unknown".
 std::int64_t ProbeAppInfoGuarded(void* cache, steam::AppId appId, std::uint8_t* buf, std::int32_t bufSize) {
     __try {
         return o_GetAppDataFromAppInfo(cache, appId, "common/name", buf, bufSize);
@@ -148,7 +148,7 @@ std::string ForApp(steam::AppId appId) {
         }
     }
 
-    // 3. Memorizza (positive o negative)
+    // 3. Memoize (positive or negative)
     if (name.empty()) {
         g_state.gameName.nameCache.PutNegative(appId);
     } else {

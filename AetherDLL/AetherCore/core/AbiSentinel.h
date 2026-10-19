@@ -11,12 +11,12 @@
 // WHY THIS FILE EXISTS
 // --------------------
 // A pattern table can be wrong in a way the signature check cannot catch:
-// the published RVA may point INTO a function instead of at its entry. It has
-// already happened in this project — an override pinned `RecvPkt` to
-// 0x5BC460, which on beta 1790380355 is not a function start at all (it sits
-// inside the fragment 0x5BC32A-0x5BD139). MinHook happily writes a jump
-// there, overwriting live instructions in the middle of a basic block; Steam
-// then crashes somewhere unrelated, hours later, with no usable evidence.
+// the published RVA may point INTO a function instead of at its entry. An
+// override pinned `RecvPkt` to 0x5BC460, which on beta 1790380355 is not a
+// function start at all (it sits inside the fragment 0x5BC32A-0x5BD139).
+// MinHook happily writes a jump there, overwriting live instructions in the
+// middle of a basic block; Steam then crashes somewhere unrelated, hours
+// later, with no usable evidence.
 //
 // The sentinel runs BEFORE any hook is installed and answers one question
 // with two independent sources of truth:

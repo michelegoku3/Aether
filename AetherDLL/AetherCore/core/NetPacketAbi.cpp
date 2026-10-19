@@ -15,10 +15,10 @@ constexpr const char* kModule = "Abi.NetPacket";
 // never reaches Data()/Size() without the live probe agreeing first, so a
 // wrong or stale row costs one packet of latency, never a wild write.
 //
-//   caba4826... = steamclient64.dll build 1788652215 (stable, Sep 3-6 2026)
+//   caba4826... = steamclient64.dll build 1788652215 (stable)
 //                 CNetPacket::AddRef 0xE64B90  -> m_cRef @ +0x14
 //                 CNetPacket::GetMsgNetPacket 0xD11C50
-//   44715171... = steamclient64.dll build 1790380355 (beta, Sep 25 2026)
+//   44715171... = steamclient64.dll build 1790380355 (beta)
 //                 CNetPacket::AddRef 0xE82730  -> m_cRef @ +0x1C
 //                 GetMsgNetPacket 0xD243F0: mov r8d,[rcx+0x18] / mov r12,[rcx+0x10]
 struct BuildHint {

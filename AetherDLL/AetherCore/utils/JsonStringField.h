@@ -8,9 +8,10 @@
 // ---------------------------------------------------------------------------
 // Minimal scalar field pulls from a JSON object body.
 //
-// Not a JSON parser: no escapes, no nested objects, no floats. Good enough
-// for the controlled payloads we read (eticket mint, shared quota state,
-// generation usage). Prefer this over a full JSON dependency (zero bloat).
+// Not a full parser: no nested objects, no floats, and only
+// PullEscapedStringField decodes escapes. Good enough for the controlled
+// payloads we read (eticket mint, shared quota state, generation usage).
+// Prefer this over a full JSON dependency (zero bloat).
 // ---------------------------------------------------------------------------
 namespace ac::jsonutil {
 

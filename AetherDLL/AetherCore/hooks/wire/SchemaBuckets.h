@@ -37,12 +37,11 @@ struct SchemaBucketWalker final : kv1::Visitor {
         if (depth == 1 && name == "stats")
             inStats = true;
         if (inStats && depth == 2) {
-            currentBucket = name; // potenziale bucket
+            currentBucket = name; // candidate bucket
             bucketDepth = 2;
             bitsEntries = 0;
         }
-        // Same semantics as the historic parser: only DICTIONARY entries
-        // inside "bits" count (depth 4).
+        // Only DICTIONARY entries inside "bits" count (depth 4).
         if (bucketDepth == 2 && depth == 3 && name == "bits")
             inBits = true;
         if (inBits && depth == 4)

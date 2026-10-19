@@ -14,9 +14,7 @@
 //   0x01 string value
 //   0x02/0x03 int32 value
 //   0x08 end of the current dict (top-level 0x08 ends the stream)
-// Callers used to carry private copies of this walk (rich-presence frames,
-// achievement schema buckets); every new consumer goes through here so a
-// malformed-input fix lands in ONE place.
+// Every consumer goes through here so a malformed-input fix lands in one place.
 // ---------------------------------------------------------------------------
 namespace ac::kv1 {
 

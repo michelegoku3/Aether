@@ -106,7 +106,7 @@ void WorkerMain(std::atomic<bool>& stop) {
             if (stop.load(std::memory_order_relaxed))
                 return;
             if (s_queue.empty())
-                continue; // sveglia spuria/notifica tardiva
+                continue; // spurious wakeup / late notification
             key = std::move(s_queue.front());
             s_queue.pop_front();
         }

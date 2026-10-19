@@ -81,7 +81,7 @@ bool DecodeFrame(const std::uint8_t* data, std::uint32_t len, WireFrame& out) {
     MsgHdr hdr{};
     std::memcpy(&hdr, data, sizeof(hdr));
     // Skip non-protobuf packets — the headerLength field overlaps with payload
-    // data and contains garbage values. Matches LumaCore's ParsePacket guard.
+    // data and contains garbage values.
     if (!(hdr.eMsg & kMsgHdrProtoFlag)) {
         return false;
     }
@@ -103,7 +103,7 @@ bool DecodeFrame(const std::uint8_t* data, std::uint32_t len, WireFrame& out) {
 // Thin dispatch core: frame decode + pool live here, feature routing
 // delegates to focused modules. Service-job correlation lives in
 // ServiceJobTracker, diagnostics in WireDiag, connection capture in
-// FrameOrigin (same behavior, split TU for reviewability).
+// FrameOrigin.
 
 std::int32_t DispatchSend(const WireFrame& f) {
     EnsureScratch();
@@ -203,8 +203,8 @@ std::int32_t DispatchRecv(const WireFrame& f) {
         ServiceResponse rsp;
         const bool rspParsed = ParseServiceResponse(f, rsp);
         {
-            // Unparsable headers keep the historical outcome: eresult -1
-            // (missing_or_unparsed), no job resolution, no dispatch below.
+        // Unparsable headers yield eresult -1 (missing_or_unparsed), no job
+        // resolution and no dispatch below.
             const std::uint64_t jt = (rspParsed && rsp.hasTarget) ? rsp.target : 0;
             const std::int32_t er = rspParsed ? rsp.eresult : -1;
             const std::string jname = jt ? ResolveServiceJob(jt) : std::string();
@@ -223,8 +223,8 @@ std::int32_t DispatchRecv(const WireFrame& f) {
         if (h == job_hash::kNotifyRunningApps) {
             return FamilySharing::ShouldSuppress() ? FamilySharing::ClearBody() : kNoChange;
         }
-        // Request-code responses pass through unchanged: acquisition is
-        // local/Hubcap (the bridge was removed).
+        // Request-code responses pass through unchanged: acquisition is local
+        // (Hubcap), with no remote bridge.
         if (h == job_hash::kGetUserStats) {
             return AchievementModule::HandleRecvGetUserStatsResponse(f, t_scratchBody.data(), kWireMaxBodyBytes,
                                                                      t_scratchHeader.data(), kWireMaxHeaderBytes,

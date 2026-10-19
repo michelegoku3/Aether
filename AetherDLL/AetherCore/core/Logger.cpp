@@ -95,7 +95,7 @@ void FormatBody(char (&body)[constants::kLogBodyBytes], const char* format, va_l
 // written. Crash forensics demands it: the last lines before a crash are
 // exactly the ones that explain it, so no batching window is acceptable.
 // This costs the hook threads nothing (they only enqueue); the disk cost
-// lives in the worker, same IOPS as the historical synchronous logger.
+// lives in the worker, same IOPS as a synchronous logger.
 // The only residual window is queue-to-worker latency (sub-millisecond),
 // closed for catchable crashes by CrashDrain() below.
 // ---------------------------------------------------------------------------
@@ -140,7 +140,7 @@ void WriteLineLocked(LogWorker* w, const LogItem& item) {
     s_file << item.text << '\n';
     // Per-line flush, unconditionally: the worker owns the disk cost, and a
     // process crash must never lose an already-written line. (level is kept
-    // on the item for future filtering; flushing no longer depends on it.)
+    // on the item for future filtering; flushing does not depend on it.)
     s_file.flush();
     if (w->hMutex) {
         ReleaseMutex(w->hMutex);
@@ -277,8 +277,7 @@ void RemoveCrashHandlers() {
 }
 
 // Synchronous fallback: used before Init and after Shutdown (and when the
-// queue is unavailable). Preserves the historical behavior of emitting
-// directly, including the lazy reopen.
+// queue is unavailable). Emits directly, reopening the file if needed.
 void EmitSync(LogLevel level, const char* module, const char* body) {
     char timeAndThread[32];
     FormatTimeAndThread(timeAndThread);

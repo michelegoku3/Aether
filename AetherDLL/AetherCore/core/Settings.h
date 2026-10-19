@@ -75,9 +75,9 @@ struct Settings {
     // name traveling in game_extra_info is the ONLY thing vanilla friends see.
     bool presenceAppIdBlob = true;
     // Sender side, fallback only (used when appid_blob=false): suffix form.
-    // MEASURED (2026-08-24): Steam's friends UI rasterises the U+200B +
-    // Variation Selectors channel as tofu rectangles — its font lacks those
-    // glyphs. Kept as a compatibility knob for legacy interop; default off.
+    // MEASURED: Steam's friends UI rasterises the U+200B + Variation Selectors
+    // channel as tofu rectangles — its font lacks those glyphs. Kept as a
+    // compatibility knob for legacy interop; default off.
     bool presenceSuffixInvisible = false;
 
     // Appids that activate a -showonline session WITHOUT any launch argument

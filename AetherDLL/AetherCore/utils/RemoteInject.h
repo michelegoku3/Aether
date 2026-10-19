@@ -12,18 +12,16 @@
 // ---------------------------------------------------------------------------
 // RemoteInject — shared helpers for DLL injection into remote processes.
 //
-// Extracted from OnlinePayload.cpp during the CreateProcessHooks refactor
-// (audit §3.4, 2026-07-12) so the pre-entry CreateProcess hook and the
-// PipeWatch-triggered fallback both use the same injection primitives without
-// duplication.
+// Used by both the pre-entry CreateProcess hook and the PipeWatch-triggered
+// fallback, so the injection primitives are not duplicated.
 //
-// Stateless.  No globals, no mutex.  Callers own the process HANDLE.
+// Stateless: no globals, no mutex. Callers own the process HANDLE.
 // ---------------------------------------------------------------------------
 namespace ac::inject {
 
-// Strict UTF-8 -> UTF-16 (shared implementation, utils/Strings.h).
-// Invalid input produces an empty wstring: callers must check before passing
-// the result to a path-consuming API.
+// Paths cross this boundary as UTF-16 (std::wstring); callers convert UTF-8
+// input with ac::strings::Widen (utils/Strings.h) and must treat an empty
+// result as failure before calling a path-consuming API.
 
 // Returns true when the process identified by |process| is running under
 // WOW64 (i.e. is a 32-bit process on a 64-bit OS).

@@ -76,9 +76,8 @@ constexpr auto kNegativeTtl = std::chrono::seconds(30);
 
 // A manifest already present on disk is authoritative: Steam's depotcache (or
 // the per-game AetherData backup published into depotcache) satisfies the
-// dependency without any request-code round-trip. The legacy
-// GetManifestRequestCode wire-bridge was removed (see ManifestFetch.h); this
-// local-first lookup is now the primary acquisition path.
+// dependency without any request-code round-trip, so this local-first lookup
+// is the primary acquisition path.
 std::optional<std::filesystem::path> FindLocalManifest(std::uint64_t gid, std::uint32_t depotId) {
     namespace fs = std::filesystem;
     const std::string filename = std::to_string(depotId) + "_" + std::to_string(gid) + ".manifest";
@@ -140,7 +139,7 @@ std::optional<std::filesystem::path> FindLocalManifest(std::uint64_t gid, std::u
 
 // NoteLocalManifestAdded needs external linkage (declared in ManifestFetch.h
 // for backup writers); the anonymous block reopens right below so everything
-// after it stays anonymous-internal exactly as before.
+// after it stays anonymous-internal.
 void NoteLocalManifestAdded(const std::string& filename, const std::filesystem::path& backupLuaDir) {
     index::NoteFileAdded(filename, backupLuaDir);
     std::lock_guard<std::mutex> lock(s_localManifestMutex);
@@ -291,11 +290,10 @@ bool InstallHubcapManifest(std::uint64_t gid, std::uint32_t depotId) {
 // generation at a time (mirrors the Desk-side scheduler philosophy and
 // protects the shared daily quota from parallel request storms).
 constexpr std::size_t kMaxTrackedProactiveKeys = 4096;
-// Failed fetches are retried in the background with this backoff schedule
-// instead of the old one-shot-per-session: the dependency hook refires while
-// Steam downloads/retries and every requeue is gated by nextEligible, so a
-// transiently unavailable manifest (Hubcap lag/down/quota) is reattempted
-// automatically without request storms.
+// Failed fetches are retried in the background with this backoff schedule:
+// the dependency hook refires while Steam downloads/retries and every
+// requeue is gated by nextEligible, so a transiently unavailable manifest
+// (Hubcap lag/down/quota) is reattempted automatically without request storms.
 constexpr int kMaxProactiveRetries = 6;
 constexpr int kProactiveBackoffSec[kMaxProactiveRetries] = {30, 60, 120, 300, 600, 900};
 

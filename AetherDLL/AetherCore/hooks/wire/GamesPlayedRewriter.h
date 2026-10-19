@@ -8,10 +8,10 @@
 class CMsgClientGamesPlayed;
 
 // ---------------------------------------------------------------------------
-// Wire-level games_played rewriter (P9 extraction from GamesPlayedModule).
+// Wire-level games_played rewriter (P9).
 //
-// Rewrite() runs BOTH presence passes over the message, in the historical
-// order, with identical gating and logging:
+// Rewrite() runs BOTH presence passes over the message, in order, with
+// matching gating and logging:
 //   1. -showonline presence rewrite (real appid entry -> masked 480 entry);
 //   2. game_extra_info annotation (foreign 480 spoof / managed apps).
 // It is deterministic in (msg, ctx): no global state besides logging

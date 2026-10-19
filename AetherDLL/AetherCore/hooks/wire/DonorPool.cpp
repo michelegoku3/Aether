@@ -22,11 +22,9 @@ constexpr std::uint64_t kLumaCoreStatSteamIdPool[kPoolCount] = {
 
 // LumaCore's default/primary stat SteamID (kDefaultStatSteamId) is the LAST
 // entry of the pool: 76561198028121353 == pool[14]. LumaCore's
-// DefaultPoolIndex() searches the pool for this ID and tries it FIRST on the
-// very first request for an app. Aether previously started at pool[0], so for
-// a game owned only by that donor (e.g. Endacopia) it would cycle 0,1,2,... and
-// the game would give up long before ever reaching index 14. We match LumaCore
-// exactly by making pool[14] the starting point for every new app.
+// DefaultPoolIndex() tries this ID FIRST for a new app. Starting at pool[14]
+// matches that: a game owned only by that donor responds on the first attempt
+// instead of cycling indices 0,1,2,... and giving up before reaching 14.
 // (kDefaultPoolIndex itself lives in DonorPool.h: PoolEntry defaults to it.)
 
 constexpr auto kAttemptWindow = std::chrono::seconds(15);
@@ -36,8 +34,8 @@ constexpr auto kPendingWindow = std::chrono::seconds(30);
 
 // Central-state accessor: all runtime data lives in
 // g_state.achievements.donor (real AetherCoreState, or the test seam's
-// identical struct). Per-group locks from SharedState keep the historical
-// locking discipline unchanged.
+// identical struct). Per-group locks in SharedState preserve the existing
+// locking discipline.
 SharedState& S() { return g_state.achievements.donor; }
 
 void PruneAttemptsLocked(Clock::time_point now) {
@@ -110,8 +108,7 @@ Correl ResolveAttempt(bool hasJobIdTarget, std::uint64_t jobIdTarget, StatAttemp
             // Successful correlation: also drop the attempt from the fallback
             // queue, otherwise it lingers as a "ghost" for kAttemptWindow and
             // makes the next response's fallback ambiguous (n>1), which would
-            // then reach the game UNREWRITTEN (with the donor's stats). Flagged
-            // by the 21/08/2026 external review.
+            // then reach the game UNREWRITTEN (with the donor's stats).
             for (auto itDq = s.recentAttempts.begin(); itDq != s.recentAttempts.end();) {
                 if (itDq->sequence == out.sequence)
                     itDq = s.recentAttempts.erase(itDq);

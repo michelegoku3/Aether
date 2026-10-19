@@ -12,8 +12,8 @@
 // opening everything and blacklisting known-dangerous names. A blacklist
 // decays with time: it depends on the author remembering every escape hatch,
 // and future Lua upgrades can add new ones silently. The whitelist fails
-// closed by construction and mirrors the policy LumaCore already validated
-// against this same script ecosystem.
+// closed by construction and mirrors the policy validated against this same
+// script ecosystem.
 //
 // This module deliberately depends on nothing but the Lua C API so the
 // security boundary stays inspectable and unit-testable in isolation.

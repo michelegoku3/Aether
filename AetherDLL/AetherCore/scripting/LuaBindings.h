@@ -3,9 +3,9 @@
 // ---------------------------------------------------------------------------
 // Lua binding registration.
 //
-// Extracted from ScriptEngine.cpp so that domain-specific bindings
-// (addappid, addtoken, etc.) live separately from the interpreter lifecycle
-// (init, sandbox, file parsing). Each axis of change has its own file.
+// Domain-specific bindings (addappid, addtoken, etc.) live separately from
+// the interpreter lifecycle (init, sandbox, file parsing). Each axis of change
+// has its own file.
 // ---------------------------------------------------------------------------
 
 #include <cstddef>

@@ -7,21 +7,18 @@
 // ---------------------------------------------------------------------------
 // Thin wrapper around MinHook.
 //
-// No macros by design (replaces the legacy macro-based hook system):
-//   * No macros: every hook is registered with a plain, debuggable call.
+// No macros by design:
+//   * Every hook is registered with a plain, debuggable call.
 //   * A TryHook<> template removes the repeated "resolve + cast + register"
-//     boilerplate each module used to duplicate.
-//   * Install/miss bookkeeping is built in, feeding StatusWriter (Phase 1.4)
-//     without a second tracking system.
+//     boilerplate each module would otherwise duplicate.
+//   * Install/miss bookkeeping is built in, feeding StatusWriter without a
+//     second tracking system.
 // ---------------------------------------------------------------------------
 namespace ac {
 
-// Why a hook is not installed. The one diagnostic line a hook miss produces
-// used to claim "pattern not resolved" for every cause — address collisions,
-// missing spec metadata, MinHook failures — which made the message useless
-// exactly when it mattered (a hook silently not applied). Each reason is now
-// distinct so the log, the diagnostics ring and aetherdll_status.json all say
-// what actually happened.
+// Why a hook is not installed. Each reason is distinct, so the log, the
+// diagnostics ring and aetherdll_status.json all say what actually happened
+// instead of blaming every miss on an unresolved pattern.
 enum class MissReason {
     /// The per-build pattern table had no match for this hook.
     PatternUnresolved,

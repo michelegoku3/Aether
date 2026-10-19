@@ -4,15 +4,13 @@
 #include <filesystem>
 #include <string>
 
-// Manifest acquisition (post legacy wire-bridge removal).
+// Manifest acquisition.
 //
 // The ONLY production paths are:
 //   * local:   FindLocalManifest/HasLocalManifest — Steam depotcache or the
 //              per-game AetherData backup (indexed, negative entries cached);
 //   * Hubcap:  authenticated generation serialized on a worker, triggered by
 //              EnsureManifestAvailable from the dependency-build hook.
-// The old GetManifestRequestCode wire-bridge (Submit/Resolve + provider URL
-// templates) was unreachable on current Steam builds and has been removed.
 namespace ac::manifestfetch {
 
 // Returns true when the exact depot/GID manifest is already available in
@@ -26,7 +24,7 @@ bool HasLocalManifest(std::uint64_t manifestGid, std::uint32_t depotId);
 // quota file, atomic install). Never blocks the caller: Steam's own retry
 // picks the file up once it has landed in depotcache. Failed fetches are
 // retried in the background with a bounded backoff schedule (max 6 attempts
-// per depot/GID per session) instead of the old one-shot-per-session.
+// per depot/GID per session).
 void EnsureManifestAvailable(std::uint32_t appId, std::uint32_t depotId, std::uint64_t manifestGid);
 
 // Index upkeep for the inverted backup lookup (PRF-003): call after a backup

@@ -11,8 +11,8 @@
 // ---------------------------------------------------------------------------
 // Struct guards — "does this object actually look like the struct we think?"
 //
-// Phase 3 of the ABI work. NetPacketAbi solved the packet path; these are the
-// other two places where Aether writes into Valve's memory:
+// NetPacketAbi covers the packet path; these are the other two places where
+// Aether writes into Valve's memory:
 //
 //   * PackageInfo (package 0 injection) — writes into a CUtlVector. Getting
 //     size/allocationCount wrong means writing past the allocation: heap
@@ -75,9 +75,9 @@ inline constexpr std::size_t kOwnershipBoolCount = 18;
 
 // ---- the published table --------------------------------------------------
 //
-// Phase 4, second half. The generator now extracts these offsets from the
-// build's own code, so we can finally CHECK the layout this DLL was compiled
-// against instead of merely asserting it at build time.
+// The generator extracts these offsets from the build's own code, so the
+// layout this DLL was compiled against can be CHECKED instead of merely
+// asserted at build time.
 //
 // What we deliberately do NOT do: adapt. A C++ struct cannot be re-laid-out at
 // runtime, so if the published table disagrees with the compiled layout the

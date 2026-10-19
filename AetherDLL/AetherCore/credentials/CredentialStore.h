@@ -10,12 +10,9 @@
 // CredentialStore — centralised registry I/O for everything under
 // HKCU\Software\Valve\Steam.
 //
-// Created during the 2026-07-12 audit refactor (§3.2). Before this module
-// existed, Ticket.cpp and SteamId.cpp each had their own registry helpers
-// (WriteBinary/ReadBinary in Ticket, ReadRegString in SteamId).  Now all
-// reads and writes go through one place, and the two consumers focus on
-// their actual job: Ticket inspects/forges binary ticket blobs, SteamId
-// resolves SteamID64 identities from local sources.
+// All reads and writes go through this one place, so the two consumers keep
+// their own job: Ticket inspects/forges binary ticket blobs, SteamId resolves
+// SteamID64 identities from local sources.
 //
 // Thread-safe: every function that touches g_state locks the appropriate
 // mutex (configStoreTicketMutex for the config-store cache).

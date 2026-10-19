@@ -131,8 +131,8 @@ std::int32_t HandleSend(const WireFrame& frame, std::uint8_t* out, std::uint32_t
     }
 
     // Presence session reset when Steam no longer reports any running game:
-    // drops the "dirty" state that used to survive until the next SpawnProcess
-    // (P6).
+    // drops the "dirty" state that would otherwise survive until the next
+    // SpawnProcess (P6).
     if (topmost == 0) {
         presence::EndSession();
     }
@@ -185,9 +185,9 @@ std::int32_t HandleSend(const WireFrame& frame, std::uint8_t* out, std::uint32_t
     }
 
     // ---- presence rewrite (P9: a single pure rewriter) -----------------
-    // The two historic passes (-showonline mask + game_extra_info) now live in
-    // GamesPlayedRewriter::Rewrite, deterministic in (msg, ctx): only the
-    // context construction from the presence snapshot + settings remains here.
+    // Both passes (-showonline mask + game_extra_info) live in
+    // GamesPlayedRewriter::Rewrite, deterministic in (msg, ctx); only context
+    // construction from presence state + settings remains here.
     GamesPlayedRewriter::RewriteContext rwCtx{
         .settings = *settings,
         .soSession = foreignSpoof ? 0 : presence::ShowOnlineAppId(),
