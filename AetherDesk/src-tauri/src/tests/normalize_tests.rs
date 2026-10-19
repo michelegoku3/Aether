@@ -24,7 +24,7 @@ fn normalize_strips_punctuation_to_space() {
 fn normalize_roman_conversion() {
     assert_eq!(normalize_string("Dark Souls II"), "dark souls 2");
     assert_eq!(normalize_string("ix"), "9");
-    // civ is now an alias, not a roman numeral — must stay civ
+    // civ is an alias, not a roman numeral — it must stay civ
     assert_eq!(normalize_string("Civ VI"), "civ 6");
 }
 

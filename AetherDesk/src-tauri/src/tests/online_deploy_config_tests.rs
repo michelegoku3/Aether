@@ -32,7 +32,7 @@ fn unity_photon_voice_playfab_fixture(root: &Path) {
     write(root, "MyGame_Data/Managed/PhotonRealtime.dll", b"photon");
     write(root, "MyGame_Data/Managed/PhotonVoice.dll", b"voice");
     write(root, "MyGame_Data/Managed/PlayFabAllSDK.dll", b"playfab");
-    // DLC harvest sorgente 1: configs.app.ini stile Goldberg.
+    // DLC harvest source 1: Goldberg-style configs.app.ini.
     write(
         root,
         "configs.app.ini",
@@ -68,9 +68,7 @@ fn base_request() -> OnlineEnableRequest {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Golden test dell'ini
-// ---------------------------------------------------------------------------
+// ini golden test
 
 #[test]
 fn ini_golden_unity_photon_voice_playfab() {
@@ -267,9 +265,7 @@ fn dlc_harvest_falls_back_to_numeric_dirs() {
     );
 }
 
-// ---------------------------------------------------------------------------
 // Deploy / revert roundtrip
-// ---------------------------------------------------------------------------
 
 #[test]
 fn deploy_then_disable_restores_everything() {
@@ -311,11 +307,11 @@ fn deploy_then_disable_restores_everything() {
     // The original is in backup.
     let backup_dir = backup_dir_for(&backup_root, 1144200);
     assert!(backup_dir.join("original/steam_api").is_file());
-    // Ini scritto.
+    // Ini written.
     let ini_content = fs::read_to_string(&ini_path).unwrap();
     assert!(ini_content.contains("ogAppId=1144200"));
     assert!(ini_content.contains("PhotonAppIdRealtime=rt-guid"));
-    // Plugin deployati.
+    // Plugins deployed.
     assert!(detection
         .ini_dir
         .join("plugins/photon_universal.dll")
@@ -324,7 +320,7 @@ fn deploy_then_disable_restores_everything() {
         .ini_dir
         .join("plugins/playfab_universal.dll")
         .is_file());
-    // Overlay proxy Unity x64.
+    // Unity x64 overlay proxy.
     assert!(detection.ini_dir.join("version.dll").is_file());
     assert_eq!(
         fs::read(detection.ini_dir.join("version.dll")).unwrap(),
@@ -352,7 +348,7 @@ fn deploy_then_disable_restores_everything() {
         "no double backup"
     );
 
-    // --- disable: ripristino completo ---
+    // --- disable: full restore ---
     disable(1144200, &backup_root, &state_path, None, false).expect("disable must succeed");
 
     assert_eq!(fs::read(&original_dll).unwrap(), b"original-dll");
@@ -405,7 +401,7 @@ fn deploy_neutralizes_conflicts_and_disable_restores_them() {
 
     disable(1144200, &backup_root, &state_path, None, false).expect("disable must succeed");
 
-    // Ripristinato.
+    // Restored.
     assert!(steam_api_dir.join("SteamFix64.dll").is_file());
     assert!(!steam_api_dir.join("SteamFix64.dll.uco-disabled").exists());
 }

@@ -26,7 +26,7 @@ fn test_component_update_info_contract() {
     let serialized = serde_json::to_value(&info).expect("serialize ComponentUpdateInfo");
     assert!(serialized.is_object());
 
-    // Frontend App.tsx DeskUpdateInfo expects snake_case properties:
+    // The frontend DeskUpdateInfo (src/app/types.ts) expects snake_case properties:
     assert_eq!(
         serialized.get("installed_version"),
         Some(&Value::String("1.4.0".to_string()))
@@ -127,12 +127,7 @@ fn test_lua_manifest_row_camel_case_contract() {
     assert!(serialized.get("issue").is_none());
 }
 
-// The old `test_core_commands_inventory_check` was removed: it listed command
-// names and asserted they were not empty strings — true by construction, hence
-// unable to flag any drift (it even contained `save_installed_lua_manifest_rows`,
-// a command that never existed).
-//
-// The FE <-> BE contract is now verified against the real sources in
+// The FE <-> BE contract is verified against the real sources in
 // `src/tests/ipc_contract_tests.rs`: registered vs defined commands, frontend-
 // invoked names vs registered ones, argument keys vs Rust signatures, wire key
 // shape (the `showonline` case), no `steam_path` in payloads, and an explicit
@@ -142,12 +137,10 @@ fn test_lua_manifest_row_camel_case_contract() {
 // RESPONSE contract: synchronizer snapshot shape
 // ---------------------------------------------------------------------------
 //
-// The TypeScript mirror (src/types/sync.ts) and its popup were removed: the
-// monitor runs headless. What remains is the serialization guard below —
-// every lane key must still be present even when empty, so a future consumer
-// (or the `sync://status-changed` push event payload) never gets `undefined`
-// where it expects a value. The argument direction is covered in
-// `ipc_contract_tests.rs`.
+// The serialization guard below: every lane key must be present even when
+// empty, so a consumer (or the `sync://status-changed` push event payload)
+// never gets `undefined` where it expects a value. The argument direction is
+// covered in `ipc_contract_tests.rs`.
 
 use std::collections::BTreeSet;
 

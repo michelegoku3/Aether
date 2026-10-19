@@ -1,6 +1,6 @@
 //! Test suite dedicated to application modules.
 //!
-//! ## Real convention (updated: this comment used to describe it wrongly)
+//! ## Conventions
 //!
 //! Two styles coexist in the crate, both legitimate:
 //!
@@ -9,19 +9,15 @@
 //!    tests spanning several modules or verifying a contract toward the outside
 //!    (frontend, AetherDLL, on-disk format). They import via `crate::`.
 //! 2. **Inline unit tests** → `#[cfg(test)] mod tests` at the bottom of the file
-//!    implementing the logic. 13 files / 46 tests (e.g. `steam/resolve.rs`,
+//!    implementing the logic. 38 files / 183 tests (e.g. `steam/resolve.rs`,
 //!    `core/backup.rs`, `versioning/sources/*`): they live next to the code they
 //!    cover because they test private functions or local details.
 //!
-//! Total: 389 tests (`cargo test`, counting `#[test]` attributes). The rule of thumb for placing a new test:
+//! Total: 433 tests (`cargo test`, counting `#[test]` attributes). The rule of thumb for placing a new test:
 //!
 //! - touches **more than one module**, or verifies something another part of the
 //!   system (frontend, DLL, files on disk) must honor → `src/tests/`;
 //! - tests a **private** function or a local invariant → inline in the file.
-//!
-//! Historical note: this file used to claim "no `#[cfg(test)]` in source
-//! files", disproved by the code. Moving the 46 inline tests here would be churn
-//! without benefit; the dual convention is now documented as it really is.
 
 pub mod aliases_tests;
 pub mod bridge_contract_tests;

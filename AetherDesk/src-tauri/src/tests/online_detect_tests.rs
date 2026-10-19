@@ -137,8 +137,8 @@ fn unity_game_exe_inside_subfolder_is_found() {
 
 #[test]
 fn generic_game_with_only_32bit_steam_api_is_detected() {
-    // SpeedRunners and the like: only steam_api.dll (32-bit), no _Data and no
-    // Shipping exe. Detection used to fail before the fix.
+    // SpeedRunners and the like: only a 32-bit steam_api.dll, no _Data and no
+    // Shipping exe; detection must not require them.
     let tmp = tempfile::tempdir().unwrap();
     write(tmp.path(), "SpeedRunners.exe", b"MZ");
     write(tmp.path(), "steam_api.dll", b"dll32");
@@ -178,7 +178,7 @@ fn unity_without_any_dll_uses_plugins_convention() {
 
     let report = GameInspector::inspect(tmp.path()).unwrap();
     assert_eq!(report.engine, Engine::Unity);
-    // Fallback convenzione: <Data>\Plugins\x86_64\
+    // Fallback convention: <Data>\Plugins\x86_64\
     assert!(ends_with_components(
         &report.steam_api_dir.unwrap(),
         &["MyGame_Data", "Plugins", "x86_64"]

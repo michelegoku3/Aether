@@ -69,7 +69,7 @@ fn civ_alias_expands_to_civilization() {
 
 #[test]
 fn new_aliases_are_present() {
-    // Verify that many newly introduced aliases actually expand
+    // Many aliases must expand to their full titles
     assert!(
         expanded_queries("r6 siege").contains(&"rainbow six siege siege".to_string())
             || expanded_queries("r6").contains(&"rainbow six siege".to_string())

@@ -57,8 +57,8 @@ fn ofme_rv_there_yet_uses_the_095_cleanup() {
     let url = build_ofme_url("RV There Yet?");
     let q = extract_ofme_query(&url);
 
-    // 0.9.5-style cleanup strips punctuation from the search text and uses
-    // form-urlencoded spaces. This test documents the restored behavior.
+    // The cleanup strips punctuation from the search text and uses
+    // form-urlencoded spaces.
     assert_eq!(q, "rv+there+yet");
 }
 

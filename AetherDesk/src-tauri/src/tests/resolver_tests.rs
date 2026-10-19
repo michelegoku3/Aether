@@ -127,14 +127,11 @@ fn restore_blocking_is_idempotent_for_valid_files() {
     let _ = std::fs::remove_dir_all(&steam);
 }
 
-// ============================================================================
 // F2 — a failing pin must not stall the batch forever
-// ============================================================================
 
-/// The provider batch used to abort at the first failure, so one poisoned pin
-/// made every pin of that game ungeneratable and the caller retried the same
-/// batch on every poll. Failures are now per pin and, after a few consecutive
-/// ones, that pin is quarantined instead of burning quota in a loop.
+/// Failures are per pin, so one poisoned pin must not make every pin of that
+/// game ungeneratable; after a few consecutive failures the pin is quarantined
+/// instead of burning quota in a retry loop.
 #[test]
 fn quarantine_engages_only_after_consecutive_failures() {
     use crate::manifest::resolver::{

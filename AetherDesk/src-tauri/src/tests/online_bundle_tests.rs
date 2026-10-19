@@ -35,7 +35,7 @@ fn valid_bundle_is_accepted() {
 #[test]
 fn incomplete_bundle_is_rejected() {
     let tmp = tempfile::tempdir().unwrap();
-    // Manca x86/ e plugins/ → invalido.
+    // Missing x86/ and plugins/ → invalid.
     write(tmp.path(), "x64/steam_api64.dll", b"dll64");
 
     assert!(!Uco2Bundle::is_valid_dir(tmp.path()));

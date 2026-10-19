@@ -95,7 +95,7 @@ fn online_plan_serializes_camel_case() {
     for key in ["detection", "prerequisites", "current", "notices"] {
         assert!(json.get(key).is_some(), "key '{key}' missing: {json}");
     }
-    // The historic bug: bundleOk must be reachable via prerequisites.bundleOk.
+    // bundleOk must be reachable via prerequisites.bundleOk.
     assert!(json["prerequisites"].get("bundleOk").is_some());
 }
 

@@ -317,8 +317,8 @@ fn updates_are_enabled_still_answers_for_a_file_with_a_malformed_line() {
     let editor = write_lua_content(&tmp, 3558400, LUA_WITH_HEX_GID);
 
     // The predicate must not turn an unrelated malformed line into a hard
-    // error: that is what blocked the update toggle, the manifest repair and
-    // the background synchronizer for this game (which then retried forever).
+    // error: a hard error would block the update toggle, the manifest repair
+    // and the background synchronizer (which then retries forever).
     // This Lua is version-locked (every pin is uncommented), so the honest
     // answer is `false` — what matters is that it ANSWERS.
     let enabled = editor

@@ -46,7 +46,7 @@ fn dlllist_named_file_is_ofme() {
 
 #[test]
 fn nested_ofme_pack_next_to_shipping_exe_is_detected() {
-    // Bodycam-style: steam_api in ThirdParty, OFME accanto al Shipping exe.
+    // Bodycam-style: steam_api in ThirdParty, OFME next to the Shipping exe.
     let tmp = tempfile::tempdir().unwrap();
     write(
         tmp.path(),

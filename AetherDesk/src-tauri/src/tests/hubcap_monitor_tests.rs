@@ -36,7 +36,7 @@ fn latest_installed_gid_picks_the_most_recent_non_empty_manifest() {
     std::fs::write(&old, b"old").expect("old write");
     std::fs::write(&new, b"new").expect("new write");
     std::fs::write(&empty, b"").expect("empty write");
-    // The newest file must win even against files with a larger GID.
+    // The most recently modified non-empty file wins.
     let later = std::fs::OpenOptions::new()
         .append(true)
         .open(&new)

@@ -133,8 +133,7 @@ fn test_build_desk_test_update_info_respects_version_gate() {
 fn channel_absence_is_classified_separately_from_a_failed_lookup() {
     use crate::updater::github::channel_has_no_release;
 
-    // Probing an unpublished test channel is a normal state, not a fault: this
-    // is what turned every update check into two log ERRORRs.
+    // Probing an unpublished test channel is a normal state, not a fault.
     assert!(channel_has_no_release(
         "No published GitHub release found for prefixes [\"tdll-\", \"tdll-v\"]"
     ));

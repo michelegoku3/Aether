@@ -882,7 +882,7 @@ fn documented_command_contracts_have_the_expected_keys() {
         ("is_steam_blocked", &[]),
         ("block_steam_updates", &[]),
         ("unblock_steam_updates", &[]),
-        // Stable contracts quoted in docs/shared_contracts.md.
+        // Stable contracts (see docs/shared_contracts.md §7 for the wire-key table).
         ("save_settings", &["settings", "base"]),
         ("get_recent_log_lines", &["tailLines", "source"]),
         ("enable_online", &["appId", "request"]),
