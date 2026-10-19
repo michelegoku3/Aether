@@ -2,6 +2,18 @@ import { useCallback, useEffect, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { STEAM_RUNTIME_EVENT } from '../constants/library';
+import { useVisiblePolling } from '../hooks/useVisiblePolling';
+
+/**
+ * Safety net for the push channel, mirroring the Library's revision
+ * reconciliation (`useLibraryGames`): `steam://runtime-state` is the primary
+ * signal, but a single missed push (throttled/suspended webview, subscribe
+ * race) used to leave the Sidebar label stuck on "Restart Steam" until the
+ * next Steam transition or a manual action. Re-reading the O(1) backend state
+ * while the window is visible makes the label self-healing.
+ */
+export const STEAM_RECONCILE_INTERVAL_MS = 2_000;
+const STEAM_RECONCILE_BACKOFF_MS = 15_000;
 
 /** Tracks Steam process state and serializes Start/Restart button actions. */
 export function useSteamRuntime() {
@@ -28,6 +40,9 @@ export function useSteamRuntime() {
     }
   }, [busy, running]);
 
+  // Primary channel: real-time transition push from the shared monitor
+  // (core::steam_monitor) + one-shot hydration for the first paint. A missed
+  // push is recovered by the reconcile tick below.
   useEffect(() => {
     let active = true;
     let unlisten: (() => void) | undefined;
@@ -56,6 +71,27 @@ export function useSteamRuntime() {
       unlisten?.();
     };
   }, []);
+
+  // Safety net: every `intervalMs` while the document is visible (with a
+  // backoff when it is hidden, plus an immediate catch-up on becoming visible
+  // again) the O(1) backend state is read once more, so a lost push cannot
+  // leave the label stale.
+  const reconcile = useCallback(async () => {
+    try {
+      setRunning(await invoke<boolean>('is_steam_running'));
+    } catch {
+      // Keep the last known state: the backend monitor keeps polling and the
+      // next reconcile tick reads it again.
+    }
+  }, []);
+
+  useVisiblePolling(reconcile, {
+    intervalMs: STEAM_RECONCILE_INTERVAL_MS,
+    backoffMs: STEAM_RECONCILE_BACKOFF_MS,
+    // Hydration is owned by the effect above: the first reconcile waits for
+    // the interval instead of duplicating the mount read.
+    immediate: false,
+  });
 
   return { running, busy, runAction };
 }

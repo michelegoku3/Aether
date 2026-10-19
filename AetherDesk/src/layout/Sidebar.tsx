@@ -103,8 +103,8 @@ export const Sidebar = memo(function Sidebar({
 
         {/* Start/Restart Steam Button (Action, not a tab): START = spawn only
             (never kill), RESTART = kill + wait-for-exit + spawn; the label
-            follows the shared monitor state (runtime-state event +
-            AetherDLL heartbeat via status.json). */}
+            follows the shared monitor state (runtime-state push, reconciled
+            by useSteamRuntime so a missed event cannot leave it stale). */}
         <button onClick={onSteamAction} className="nav-item restart-steam-btn" disabled={Boolean(steamBusy)}>
           {steamBusy ? 'Working…' : steamRunning === null ? 'Steam' : steamRunning ? 'Restart Steam' : 'Start Steam'}
         </button>

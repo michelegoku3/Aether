@@ -2,7 +2,7 @@ import { act, renderHook, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { STEAM_RUNTIME_EVENT } from '../constants/library';
 import { emitTauriEvent, invokeMock, listenMock, mockInvokeCommands } from '../test/tauriMocks';
-import { useSteamRuntime } from './useSteamRuntime';
+import { STEAM_RECONCILE_INTERVAL_MS, useSteamRuntime } from './useSteamRuntime';
 
 describe('useSteamRuntime', () => {
   it('hydrates from the monitor and reacts to push events', async () => {
@@ -13,6 +13,29 @@ describe('useSteamRuntime', () => {
     act(() => emitTauriEvent(STEAM_RUNTIME_EVENT, true));
 
     expect(result.current.running).toBe(true);
+  });
+
+  it('recovers a missed runtime-state event by reconciling the backend state', async () => {
+    vi.useFakeTimers();
+    let backendRunning = true;
+    mockInvokeCommands({ is_steam_running: () => backendRunning });
+    const { result } = renderHook(() => useSteamRuntime());
+
+    // Mount hydration (one-shot read in the subscription effect).
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(result.current.running).toBe(true);
+
+    // Steam is closed behind the app: the shared monitor flips the backend
+    // state, but the `steam://runtime-state` push never reaches the webview
+    // (no emitTauriEvent here). The label must still come back to "Start".
+    backendRunning = false;
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(STEAM_RECONCILE_INTERVAL_MS);
+    });
+
+    expect(result.current.running).toBe(false);
   });
 
   it('starts Steam when it is stopped', async () => {
