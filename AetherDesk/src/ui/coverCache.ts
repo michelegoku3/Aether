@@ -15,8 +15,7 @@ const MAX_PERSISTED_ENTRIES = 200;
 
 /** Bounded LRU map for in-memory cover resolution. `get` promotes the key to
  *  most-recent so eviction drops the least-recently-used; `set` inserts and
- *  trims to MAX_MEMORY_ENTRIES. This replaces the previous unbounded `Map`
- *  (which grew without limit across long sessions). */
+ *  trims to MAX_MEMORY_ENTRIES. */
 class BoundedCoverCache {
   private readonly map = new Map<string, ResolvedCover>();
 
@@ -121,8 +120,8 @@ const parseCachedCover = (raw: string | null): ResolvedCover | null => {
       return { url: env.url, fit: env.fit };
     }
   } catch {
-    // Fall through: v3 entries or plain strings are rejected by the legacy
-    // sweep on first read. We return null instead of guessing to stay safe.
+    // Malformed JSON (legacy plain-string or v3 payloads): return null rather
+    // than guessing; the caller clears the unparseable entry.
   }
   return null;
 };

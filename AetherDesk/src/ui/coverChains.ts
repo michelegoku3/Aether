@@ -52,9 +52,9 @@ const preloadCoverChain = (urls: string[], onResolved: (cover: ResolvedCover | n
 
   return () => {
     cancelled = true;
-    // Also aborts the in-flight request. Cancel used to stop only the
-    // callbacks: the download kept going anyway, and with 9 URLs per card on
-    // 20+ card grids the bandwidth cost was not negligible.
+    // Also aborts the in-flight request: clearing `onload`/`onerror` alone
+    // leaves the download running, and with 9 URLs per card on 20+ card grids
+    // that bandwidth cost is not negligible.
     if (currentImage) {
       currentImage.onload = null;
       currentImage.onerror = null;
@@ -64,19 +64,14 @@ const preloadCoverChain = (urls: string[], onResolved: (cover: ResolvedCover | n
   };
 };
 
-// ---------------------------------------------------------------------------
-// Single-flight: ONE resolution chain per appId
-// ---------------------------------------------------------------------------
+// Single-flight: ONE resolution chain per appId.
 //
-// Without this registry the same cover was resolved several times in parallel:
-// the grid preload started one chain and every mounted `GameCover` started
-// another (React StrictMode mounts twice; Store and Library can show the same
-// game). Each chain tries up to 9 URLs with `new Image()`, so N duplicated
-// chains meant N×9 requests to the Steam CDNs for the very same image.
-//
-// Now subscribers hook onto the existing chain. The last one to detach really
-// cancels it — aborting the in-flight request too — so a filter change or a
-// fast scroll leaves no queues of orphaned chains.
+// The grid preload and every mounted `GameCover` subscribe to the same chain
+// (React StrictMode mounts twice; Store and Library can show the same game); a
+// duplicate chain would re-try up to 9 URLs with `new Image()` for the very
+// same image. Subscribers hook onto the running chain, and the last one to
+// detach cancels it — aborting the in-flight request too — so a filter change
+// or a fast scroll leaves no queues of orphaned chains.
 
 export type CoverListener = (cover: ResolvedCover | null) => void;
 

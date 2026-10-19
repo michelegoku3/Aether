@@ -61,8 +61,8 @@ interface GameCardProps<T extends GameCardModel> {
 const hasActiveLuaIssue = (game: GameCardModel) => (game.luaIssues ?? []).some((issue) => issue.active !== false);
 
 /**
- * Card border colour. Only the catalog markers live here now — a broken Lua
- * is signalled by its own red `Fix Pins` badge, so a broken NSFW game keeps
+ * Card border colour. Only the catalog markers live here — a broken Lua is
+ * signalled by its own red `Fix Pins` badge, so a broken NSFW game keeps
  * showing its content-safety border instead of one marker hiding the other.
  * Priority between the two catalog markers: NSFW over delisted, because a
  * content-safety signal must never be masked by a catalog one.

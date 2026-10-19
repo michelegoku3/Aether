@@ -1,6 +1,4 @@
-// ---------------------------------------------------------------------------
-// Mirror types of the Rust online commands (serde rename_all = camelCase)
-// ---------------------------------------------------------------------------
+// Mirror types of the Rust online commands (serde rename_all = camelCase).
 
 export type EngineKind = 'unity' | 'unreal' | 'generic';
 export type ArchKind = 'x64' | 'x86';
@@ -169,18 +167,15 @@ export const conflictLabel = (kind: string): string => {
   }
 };
 
-// ---------------------------------------------------------------------------
-// Presence (aethercore.toml [presence]) — Desk <-> DLL contract
-// ---------------------------------------------------------------------------
+// Presence (aethercore.toml [presence]) — Desk <-> DLL contract.
 
 /**
  * Domain token written in `aethercore.toml` as `[presence] default_mode`
- * and as array names (`showonline_apps`, `aetheronline_apps`,
- * `exclude_apps`).
+ * and as array names (`showonline_apps`, `aetheronline_apps`, `exclude_apps`).
  *
- * It is ALSO read by AetherDLL (`AetherCore/core/Settings.cpp`): the
- * all-lowercase spelling is not a casing oversight and must NOT be
- * "normalized" to `showOnline`. See `docs/shared_contracts.md` §7.
+ * AetherDLL also reads it (`AetherCore/core/Settings.cpp`): the all-lowercase
+ * spelling is deliberate and must NOT be normalized to `showOnline`.
+ * See `docs/shared_contracts.md` §7.
  */
 
 /**
@@ -198,15 +193,14 @@ export type OnlineOptionKey = AppPresenceMode | 'uco2';
  * IPC argument types for the presence commands.
  *
  * Keys are exactly what Tauri 2 accepts: the proc-macro converts the Rust
- * parameter to lowerCamelCase and the payload lookup uses THAT key, with no
- * snake_case fallback (`tauri 2.11.5`, `ipc/command.rs`). Keeping the shapes
- * here — instead of inline in the `invoke` calls — is what makes it impossible
- * to write `{ showonline }` when the backend expects `{ showOnline }`.
+ * parameter to lowerCamelCase, and the payload lookup uses that key with no
+ * snake_case fallback (`tauri 2.11.5`, `ipc/command.rs`). Declaring the shapes
+ * here, instead of inline in the `invoke` calls, prevents writing
+ * `{ showonline }` when the backend expects `{ showOnline }`.
  *
- * **`type`, not `interface`**: `invoke()` takes `InvokeArgs =
- * Record<string, unknown> | ...`, and an `interface` has no implicit index
- * signature → not assignable (TS2345). An object-literal type alias is.
- * General rule for every IPC argument contract in this project.
+ * **`type`, not `interface`**: `invoke()` takes `InvokeArgs = Record<string,
+ * unknown> | ...`, and an `interface` has no implicit index signature → not
+ * assignable (TS2345). General rule for every IPC argument contract here.
  */
 export type PresenceToggleArgs = {
   appId: number;

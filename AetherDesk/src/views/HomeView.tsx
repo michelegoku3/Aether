@@ -45,7 +45,6 @@ export const HomeView = memo(function HomeView() {
   // Saved-crack reuse prompt (backup/<appId>/crack already populated).
   const [savedCrackTarget, setSavedCrackTarget] = useState<CrackTargetGame | null>(null);
   const [showFindCrack, setShowFindCrack] = useState(false);
-  // Waiting for antivirus exclusion prompt; after dismiss we continue the crack flow.
   const searchPanelRef = useRef<HTMLDivElement | null>(null);
 
   /**

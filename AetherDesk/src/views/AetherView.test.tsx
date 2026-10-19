@@ -47,7 +47,8 @@ describe('AetherView uninstall flow', () => {
       uninstall_aether_desk: 'ok',
     });
 
-    // The old Steam-clean prompt is gone: its title must not be reachable.
+    // The Steam-clean prompt is not used by this flow: its title must not be
+    // reachable.
     expect(screen.queryByText('Clean Steam first?')).not.toBeInTheDocument();
 
     // The same gate used by the Reset Path button takes over, countdown included.

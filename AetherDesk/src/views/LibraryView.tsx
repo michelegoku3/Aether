@@ -22,10 +22,9 @@ interface LibraryViewProps {
 }
 
 /** How many covers to eagerly preload when the visible list changes. One
- *  screenful of cards (≈ 12) plus one page over-scroll; enough to make
+ *  screenful of cards (≈ 12) plus one page of over-scroll: enough to make
  *  scrolling feel instant without kicking off dozens of parallel image
- *  requests the user may never see (the previous value of 60 on every
- *  filtered-games change was flagged in the audit). */
+ *  requests the user may never see. */
 const COVER_PRELOAD_WINDOW = 24;
 export const LibraryView = memo(function LibraryView({
   useAlternativeGameCards,
@@ -50,8 +49,8 @@ export const LibraryView = memo(function LibraryView({
   const [infoGame, setInfoGame] = useState<InstalledGame | null>(null);
   const [versionGame, setVersionGame] = useState<InstalledGame | null>(null);
   const [manifestRows, setManifestRows] = useState<LuaManifestRow[]>([]);
-  // Update bulk-editor gate; false = popup closed. The Steam path is no
-  // longer UI data: the commands resolve it.
+  // Update bulk-editor gate; false = popup closed. The commands resolve the
+  // Steam path themselves.
   const [showUpdatesModal, setShowUpdatesModal] = useState(false);
   // Workshop manifest repair (scan appworkshop ACF + stage missing manifests).
   const [showWorkshopRepair, setShowWorkshopRepair] = useState(false);
@@ -85,9 +84,9 @@ export const LibraryView = memo(function LibraryView({
 
   const handleOpenUpdatesModal = async () => {
     try {
-      // Deliberately kept pre-flight: with no configured path the popup would
-      // open only to fail on EVERY game (one error per row). Costs a single
-      // settings read per click, not one per game like before.
+      // Kept as a pre-flight: with no configured path the popup would open
+      // only to fail on EVERY game (one error per row). Costs a single
+      // settings read per click, not one per game.
       await requireSteamPath();
       setShowUpdatesModal(true);
     } catch (err: unknown) {
@@ -124,8 +123,7 @@ export const LibraryView = memo(function LibraryView({
 
   // Card actions do not depend on the individual game (they receive `game`
   // from the click) and use only stable setters: the array is built ONCE.
-  // Rebuilding it for every card on every render is what made `memo(GameCard)`
-  // pointless.
+  // Rebuilding it per render would defeat `memo(GameCard)`.
   const cardActions = useMemo<Array<GameCardAction<InstalledGame>>>(
     () => [
       { label: 'Modify', variant: 'primary', onClick: setActionGame },

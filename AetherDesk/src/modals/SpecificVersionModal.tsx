@@ -53,10 +53,7 @@ interface ManualVersionEditorProps {
   onClose: () => void;
 }
 
-/**
- * The classic per-depot manifest editor (the former "Specific Version" UI).
- * Extracted so the Change Version modal can host it as its "Manual" tab.
- */
+/** The per-depot manifest editor, hosted by the Change Version modal as its "Manual" tab. */
 export const ManualVersionEditor = ({ game, initialRows, onClose }: ManualVersionEditorProps) => {
   const [rows, setRows] = useState<LuaManifestRow[]>(prepareManifestRows(initialRows));
   // Baseline = the state we consider "unchanged". Starts as the rows passed by

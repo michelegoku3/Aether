@@ -1,6 +1,6 @@
-// I-F: LuaTools login modal extracted from SettingsView.tsx. The flow
-// (OAuth/code choice, code input, errors) lives here; state and actions stay
-// in the view because they interact with showStatus and the Tauri commands.
+// Presentational LuaTools login modal: renders the OAuth/code-choice flow
+// (mode switch, code input, errors). State and actions live in useLuaToolsAuth
+// because they call the Tauri commands and report through showStatus.
 
 export interface LuaToolsLoginModalProps {
   open: boolean;

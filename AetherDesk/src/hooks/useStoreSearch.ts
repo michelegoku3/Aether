@@ -35,7 +35,7 @@ export const useStoreSearch = () => {
   const applyResults = (query: string, games: StoreGameResult[]) => {
     // Denuvo enrichment is intentionally NOT done here: it runs per visible
     // page in StoreView, so a search costs at most ~20 rate-limited Steam
-    // calls instead of one call per result (which used to trip the limit).
+    // calls instead of one call per result.
     setResults(games || []);
     setActiveQuery(query);
   };

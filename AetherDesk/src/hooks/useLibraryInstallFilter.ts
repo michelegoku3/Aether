@@ -5,10 +5,10 @@ import { filterAndSortGames } from '../util/search';
 
 /** Persisted install-status filter for the Library toolbar. The active filter
  *  is UI-only state (it does not affect any backend behaviour), so it lives
- *  in localStorage instead of `save_settings`. Rewriting settings.json — and
- *  with it the encrypted credential blob — on every filter click was a
- *  coupling bug flagged in the audit. On first run we migrate the legacy
- *  value from settings.json (if set) so users don't lose their preference. */
+ *  in localStorage instead of `save_settings`: rewriting settings.json — and
+ *  with it the encrypted credential blob — on every filter click must be
+ *  avoided. On first run the legacy value from settings.json (if set) is
+ *  migrated so users don't lose their preference. */
 export type LibraryInstallFilter = 'all' | 'installed' | 'installing' | 'not_installed';
 
 const FILTER_CYCLE: readonly LibraryInstallFilter[] = ['all', 'installed', 'installing', 'not_installed'] as const;
@@ -106,9 +106,10 @@ const emptyMessageFor = (filter: LibraryInstallFilter, total: number, searchQuer
 };
 
 /**
- * Owns Library install-filter state: load/persist from settings.json, cycle
- * through modes, and derive the filtered list + UI copy. Keeps LibraryView
- * focused on layout and game actions (SRP / high cohesion).
+ * Owns Library install-filter state: load/persist from localStorage (with a
+ * one-time migration from settings.json), cycle through modes, and derive the
+ * filtered list + UI copy. Keeps LibraryView focused on layout and game
+ * actions (SRP / high cohesion).
  *
  * When `searchQuery` is provided, search searches across ALL games (ignoring
  * the active install filter) in real time.
@@ -120,7 +121,7 @@ export const useLibraryInstallFilter = (games: InstalledGame[], isLoading: boole
   useEffect(() => {
     let cancelled = false;
     const load = async () => {
-      // 1) localStorage wins (we migrated here on first run of the phase-1 fix).
+      // 1) localStorage wins once migrated.
       let initial: LibraryInstallFilter | null = readLocalFilter();
       // 2) First-run migration: pull the legacy value out of settings.json and
       //    re-home it in localStorage. After that, Settings saves no longer

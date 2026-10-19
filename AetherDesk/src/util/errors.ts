@@ -2,9 +2,8 @@
  * Shared error-message helpers for Tauri IPC failure paths.
  *
  * Every `invoke()` rejection arrives as an untyped value (usually the
- * backend's `String` error, sometimes an `Error`). Catching it as `unknown`
- * and routing through `toErrorMessage` keeps the message identical to the
- * old `String(err)` behaviour while letting TypeScript narrow the type.
+ * backend's `String` error, sometimes an `Error`). `toErrorMessage` accepts
+ * `unknown` and returns the same message `String(err)` would.
  */
 
 /** Best-effort message for any thrown value. Never throws itself. */

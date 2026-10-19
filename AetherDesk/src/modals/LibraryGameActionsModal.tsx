@@ -150,9 +150,8 @@ export const LibraryGameActionsModal = ({
 
   const refreshUpdateState = async () => {
     try {
-      // Served through the shared provider cache: opening one game used to ask
-      // the backend for this state several times over (StrictMode double mount,
-      // the actions popup and the version editor each asking on their own).
+      // Served through the shared provider cache: the StrictMode double mount,
+      // the actions popup and the version editor all share one backend read.
       const state = await queryGameState<boolean>(Number(game.appId), 'get_lua_game_update_state');
       setUpdatesEnabled(Boolean(state));
     } catch {

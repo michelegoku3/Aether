@@ -144,7 +144,7 @@ export const SettingsAppearanceSection: React.FC<SettingsAppearanceSectionProps>
                 try {
                   await invoke('ensure_custom_css');
                 } catch {
-                  /* best-effort: prepares the theme folder, the toggle carries on regardless */
+                  /* best-effort: prepares the appearance folders, the toggle carries on regardless */
                 }
               }
             }}

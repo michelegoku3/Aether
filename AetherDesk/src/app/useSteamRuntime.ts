@@ -8,7 +8,7 @@ import { useVisiblePolling } from '../hooks/useVisiblePolling';
  * Safety net for the push channel, mirroring the Library's revision
  * reconciliation (`useLibraryGames`): `steam://runtime-state` is the primary
  * signal, but a single missed push (throttled/suspended webview, subscribe
- * race) used to leave the Sidebar label stuck on "Restart Steam" until the
+ * race) would leave the Sidebar label stuck on "Restart Steam" until the
  * next Steam transition or a manual action. Re-reading the O(1) backend state
  * while the window is visible makes the label self-healing.
  */

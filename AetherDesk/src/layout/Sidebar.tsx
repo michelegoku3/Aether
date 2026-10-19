@@ -65,7 +65,7 @@ export const Sidebar = memo(function Sidebar({
         {/* Separator Line */}
         <div className="separator"></div>
 
-        {/* Aether (Moved here: above settings, below the separator line) */}
+        {/* Aether */}
         <button
           onClick={() => onTabChange('aether')}
           className={`nav-item ${activeTab === 'aether' ? 'active' : ''}`}

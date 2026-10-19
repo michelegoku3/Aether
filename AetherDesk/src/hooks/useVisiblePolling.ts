@@ -22,7 +22,7 @@ export interface VisiblePollingOptions {
 /**
  * Shared "visibility-aware" polling.
  *
- * Rules (the same ones `LogView` applied by hand):
+ * Rules:
  *
  * 1. **Self-rescheduling setTimeout, never setInterval**: the next tick starts
  *    AFTER the call completes, so a slow IPC call cannot pile up concurrent

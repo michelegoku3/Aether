@@ -79,10 +79,9 @@ export const LogView = memo(function LogView() {
 
   /** Visibility-aware polling: fast cadence while the Logs tab is visible,
    *  slow cadence when the document is hidden (window minimised / another
-   *  tab focused in the OS / another Aether view active). Shared hook: the
-   *  same policy now drives the background-sync popup too, so there is one
-   *  place where "how often do we poll" is decided. `resetKey: logSource`
-   *  reloads immediately when the user switches Desk/DLL/UCO2/All. */
+   *  tab focused in the OS / another Aether view active). The shared hook
+   *  centralises the polling policy. `resetKey: logSource` reloads
+   *  immediately when the user switches Desk/DLL/UCO2/All. */
   useVisiblePolling(fetchLogs, {
     intervalMs: LOG_POLL_INTERVAL_MS,
     backoffMs: LOG_POLL_BACKOFF_MS,

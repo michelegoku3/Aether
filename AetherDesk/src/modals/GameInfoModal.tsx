@@ -304,9 +304,9 @@ export const GameInfoModal = ({ appId, fallbackName, fallbackImageUrl, onClose }
           }}
         >
           {/* Arrows live on the overlay (viewport edges), not inside the image
-              box: a square/portrait screenshot makes that box narrow and the
-              arrows used to land outside the 25% hover zones that reveal
-              them, so they looked broken. */}
+              box: a square/portrait screenshot makes that box narrow, which
+              would place the arrows outside the 25% hover zones that reveal
+              them. */}
           {screenshotCount > 1 && (
             <>
               <button

@@ -104,10 +104,7 @@ const ChangeVersionModal = ({ game, initialRows, initialTab = 'manual', onClose 
 
 export default ChangeVersionModal;
 
-/* ────────────────────────────────────────────────────────────────────────
- * Auto+Builds tab: text input + star filter + refresh + builds list
- * + Open SteamDB / Apply Build buttons
- * ──────────────────────────────────────────────────────────────────────── */
+// Auto builds tab: Build ID input, saved-build filter, builds list, Open SteamDB / Apply Build.
 
 interface AutoBuildsTabProps {
   appId: number;

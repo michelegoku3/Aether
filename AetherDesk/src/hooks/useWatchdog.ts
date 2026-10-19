@@ -3,10 +3,10 @@ import { useCallback, useEffect, useRef } from 'react';
 /**
  * Single watchdog timer for long-running async operations.
  *
- * Both version editors (Auto apply and Manual edits) used to duplicate the
- * same ref + clear + unmount-cleanup + arm logic; this hook centralizes it
- * (DRY). The armed callback fires once after `ms`; arming again cancels the
- * previous timer, and the timer is always cleared on unmount.
+ * Centralizes the arm/clear + unmount-cleanup logic shared by both version
+ * editors (Auto apply and Manual edits). The armed callback fires once after
+ * `ms`; arming again cancels the previous timer, and the timer is always
+ * cleared on unmount.
  *
  * @example
  *   const { arm, clear } = useWatchdog();

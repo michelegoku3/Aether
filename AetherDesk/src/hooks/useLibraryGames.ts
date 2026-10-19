@@ -87,14 +87,10 @@ interface LibraryGamesContextValue {
    * modals issue (`get_lua_game_update_state`, `get_installed_lua_manifest_rows`,
    * `get_game_builds`, `get_saved_builds`, …).
    *
-   * Opening one game used to fire 8 update-state + 6 manifest-rows + 2
-   * build-history IPC calls, each re-reading the same Lua from disk: React
-   * StrictMode mounts twice, and the actions modal, the version editor and the
-   * builds tab each ask independently. Concurrent callers now share one
-   * in-flight Promise, and a completed answer is reused until the library data
-   * is refreshed (every successful scan bumps the revision and clears the
-   * cache, and `library://lua-changed` triggers that scan), so nothing can go
-   * stale behind the user's back.
+   * Concurrent callers share one in-flight Promise, and a completed answer is
+   * reused until the library data is refreshed (every successful scan bumps
+   * the revision and clears the cache, and `library://lua-changed` triggers
+   * that scan), so nothing can go stale behind the user's back.
    */
   queryGameState: <T>(appId: number, command: string, args?: Record<string, unknown>) => Promise<T>;
   /** Drops cached answers for one app (or all, when omitted). */

@@ -47,7 +47,7 @@ export function useSettingsController(params: Params) {
     // Progress messages (`persist: true`) outlive the 6s expiry on purpose:
     // a 10s key validation must stay on screen the whole time instead of
     // going silent mid-operation. They are still replaced by the next
-    // showStatus call, and final messages keep expiring as before.
+    // showStatus call, and final messages still expire after 6s.
     if (options?.persist) return;
     window.setTimeout(() => {
       if (showStatusSeq.current === seq) setStatus({ text: '', type: 'info' });

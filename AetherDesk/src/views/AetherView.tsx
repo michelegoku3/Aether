@@ -26,10 +26,9 @@ type UninstallStep = { kind: 'confirm' } | { kind: 'resetSteam'; deleteUserData:
  * AETHER panel: AetherDesk and AetherDLL lifecycle (install/update/
  * uninstall), Steam update blocking and Steam path reset.
  *
- * Steam-side operations no longer receive the path from the UI: the backend
- * commands resolve it from settings (`commands::command_steam_path`), so only
- * orchestration remains here — no `withSteamPath`, which existed solely to
- * pass that parameter (docs/shared_contracts.md §8).
+ * Steam-side operations take no path from the UI: the backend commands
+ * resolve it from settings (`commands::command_steam_path`), so only
+ * orchestration remains here (docs/shared_contracts.md §8).
  */
 export const AetherView = memo(function AetherView({
   isUpdateAvailable,
@@ -71,8 +70,6 @@ export const AetherView = memo(function AetherView({
   };
 
   useEffect(() => {
-    // The desk version comes from App.tsx (resolved at startup via a local IPC,
-    // no network), so the panel shows the correct value from its first render.
     // "Restore" replaces "Uninstall" while test updates are enabled.
     getSettings()
       .then((settings) => setTestUpdatesEnabled(Boolean(settings.enable_test_updates)))
@@ -111,8 +108,8 @@ export const AetherView = memo(function AetherView({
 
   /** Optional Reset Path + unblock, then real folder uninstall. */
   const cleanSteamThenUninstall = async (deleteUserData: boolean) => {
-    // The backend commands resolve the Steam path (backend-side settings):
-    // only the two calls remain here, in the previous order.
+    // The backend commands resolve the Steam path from settings: only the two
+    // Steam calls remain here, in this order.
     await invoke('reset_aether_steam_path');
     await invoke('unblock_steam_updates').catch(() => {});
     await refreshAfterDllChange().catch(() => {});

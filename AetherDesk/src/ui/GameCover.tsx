@@ -4,30 +4,24 @@ import { buildCoverUrls } from './coverUrls';
 import { getCachedCover } from './coverCache';
 import type { ResolvedCover } from './coverTypes';
 
-// ────────────────────────────────────────────────────────────────────────────
 // GameCover — resolves a capsule/cover image for a game card.
 //
 // Design rules:
-//   • The capsule slot ONLY shows a real Steam cover/capsule asset. Hero/
-//     header/background banners belong to the Modify popup, never here.
-//   • An ALLOWLIST of capsule-shaped URLs is applied both when candidates are
-//     built AND when cached entries are read, so stale caches (pre-fix writes
-//     and evicted TTL entries alike) can never leak a hero into the slot.
+//   • The capsule slot shows only a real Steam cover/capsule asset; hero and
+//     header banners belong to the Modify popup.
+//   • A capsule-shaped URL allowlist is applied both when candidates are built
+//     and when cached entries are read, so a stale cache cannot leak a hero.
 //   • The in-memory cache is a bounded LRU; localStorage entries carry a TTL
-//     and are swept to keep persisted data well under quota.
-//   • If no cover resolves, we render the placeholder (Æ) instead of a wrong
-//     hero image.
-//   • ONE resolution chain per appId (single-flight registry): mounted card
-//     and grid preload share the same work, and the last unsubscribing
-//     subscriber really cancels the chain, request included.
-//   • Lazy resolution (IntersectionObserver): no probes for off-viewport cards
-//     or cards inside a hidden tab with `display:none`.
-//   • A single cache read per mount (used to be three).
+//     and are swept to stay under quota.
+//   • With no cover, render the placeholder (Æ) instead of a wrong image.
+//   • One resolution chain per appId (single-flight): a mounted card and the
+//     grid preload share it, and the last unsubscriber cancels it.
+//   • Lazy resolution via IntersectionObserver: no probes for off-viewport
+//     cards or cards inside a hidden tab.
 //
-// Implementation lives in focused modules: `coverCache` (LRU + TTL + sweep),
-// `coverUrls` (allowlist + candidates), `coverChains` (single-flight). This
-// file owns only the component, its lazy lifecycle, and the grid preload.
-// ────────────────────────────────────────────────────────────────────────────
+// Implementation lives in `coverCache` (LRU + TTL + sweep), `coverUrls`
+// (allowlist + candidates) and `coverChains` (single-flight); this file owns
+// the component, its lazy lifecycle and the grid preload.
 
 interface GameCoverProps {
   appId: string | number;
@@ -69,10 +63,10 @@ export const GameCover = ({ appId, name, canonicalUrl }: GameCoverProps) => {
     [appIdString, canonicalUrl]
   );
 
-  // ONE cache read per mount. Two state initializers used to call
-  // `initialCachedCover` (localStorage.getItem + JSON.parse) each, and the
-  // effect re-read it a third time: synchronous I/O in the first paint,
-  // multiplied by every grid card.
+  // ONE cache read per mount: the initializer reads once, and the effect
+  // below reuses the in-memory LRU hit it populated instead of touching
+  // localStorage again (that I/O would run in the first paint, multiplied by
+  // every grid card).
   const [lookup, setLookup] = useState<{ cover: ResolvedCover | null; finished: boolean }>(() => {
     const cover = getCachedCover(appIdString);
     return { cover, finished: Boolean(cover) };
@@ -108,7 +102,7 @@ export const GameCover = ({ appId, name, canonicalUrl }: GameCoverProps) => {
   }, [isNearViewport]);
 
   // Cache re-read only when appId changes: the initializer already handled
-  // the mount (and this is where the triple read used to happen).
+  // the mount.
   const loadedAppIdRef = useRef(appIdString);
   useEffect(() => {
     if (loadedAppIdRef.current === appIdString) return;

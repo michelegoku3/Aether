@@ -43,14 +43,10 @@ const saveCachedHero = (appId: string, url: string) => {
   }
 };
 
-// Whether a URL is plausibly a landscape hero asset we can put in the hero
-// slot. This must match the actual asset names the backend resolves
-// (store_items `library_hero`/`hero_capsule`, appdetails `header_image`/
-// `background`/`background_raw`), not just the predictable CDN templates
-// below. Previously this only matched `library_header`/`header.jpg`/
-// `capsule_616x353`, so the working hashed `library_hero` URL supplied by the
-// backend was discarded and the hero fell through to template URLs that 404 on
-// modern (hashed) assets — the hero never downloaded and never cached.
+// Whether a URL is plausibly a landscape hero asset for the hero slot. Must
+// cover the asset names the backend resolves (store_items `library_hero`/
+// `hero_capsule`, appdetails `header_image`/`background`/`background_raw`),
+// not just the predictable CDN templates below.
 const isLandscapeCandidateUrl = (url?: string | null) => {
   if (!url) return false;
   const lower = url.toLowerCase();

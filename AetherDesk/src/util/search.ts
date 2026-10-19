@@ -1,7 +1,4 @@
-/**
- * Reusable fuzzy search and text normalization utilities.
- * Shared across Home, Library, and other views to uphold DRY and consistency.
- */
+/** Fuzzy search and text normalization shared across views. */
 
 /**
  * Normalizes input text by lowercasing, stripping diacritics / accents,

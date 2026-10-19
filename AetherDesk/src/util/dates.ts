@@ -7,7 +7,7 @@
 export const formatDateDDMMYYYY = (dateStr: string): string => {
   if (!dateStr) return '';
   const date = new Date(dateStr);
-  if (isNaN(date.getTime())) return dateStr; // fallback: return as-is
+  if (isNaN(date.getTime())) return dateStr;
   const dd = String(date.getDate()).padStart(2, '0');
   const mm = String(date.getMonth() + 1).padStart(2, '0');
   const yyyy = date.getFullYear();

@@ -23,9 +23,8 @@ export interface SavedBuild {
  * called for the Builds tab.
  */
 export const useGameBuilds = (appId: number) => {
-  // Both queries are read through the shared per-game cache: the Builds tab
-  // and the actions popup asked for the same data independently, and each
-  // StrictMode mount doubled every request.
+  // Both queries go through the shared per-game cache, so the Builds tab and
+  // the actions popup share one in-flight request instead of duplicating it.
   const { queryGameState, invalidateGameState } = useLibraryGames();
   const [builds, setBuilds] = useState<BuildInfo[]>([]);
   const [savedIds, setSavedIds] = useState<Set<number>>(new Set());
