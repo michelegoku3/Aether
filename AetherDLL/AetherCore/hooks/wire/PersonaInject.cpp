@@ -480,7 +480,7 @@ bool RecoverMaskedFriends(CMsgClientPersonaState& msg, std::uint64_t selfId, boo
             displayName = extra;
         }
         {
-            // One-shot DIAG per masked friend (ora con mutex, vedi contratto).
+            // One-shot DIAG per masked friend (now with a mutex, see the contract).
             std::lock_guard<std::mutex> lk(s_diagFriendsMutex);
             const std::uint64_t fid = f->has_friendid() ? f->friendid() : 0ull;
             if (s_diagFriends.insert(fid).second) {

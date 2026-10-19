@@ -60,7 +60,7 @@ impl LocalAppPaths {
         Self::install_root().join(LOCAL_DATA_DIR_NAME)
     }
 
-    /// Directory dei tool esterni — resta accanto all'exe (read-only bundled).
+    /// External tools directory — lives next to the exe (read-only, bundled).
     pub fn external_tools_dir() -> PathBuf {
         Self::install_root().join("ExternalTools")
     }
@@ -69,7 +69,7 @@ impl LocalAppPaths {
         Self::external_tools_dir().join("Steamless")
     }
 
-    /// Directory del bundle UCOnline2 (emulatore Steamworks + plugin).
+    /// UCOnline2 bundle directory (Steamworks emulator + plugins).
     pub fn uco2_dir() -> PathBuf {
         Self::external_tools_dir().join("UCOnline2")
     }

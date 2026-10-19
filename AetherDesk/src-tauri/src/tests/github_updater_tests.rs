@@ -8,7 +8,7 @@ use crate::updater::github::GithubReleaseManager;
 
 #[test]
 fn test_release_never_older_or_equal_than_installed() {
-    // Su 1.0.3, una release test 1.0.1 NON e' un update.
+    // On 1.0.3, a test release 1.0.1 is NOT an update.
     assert!(!GithubReleaseManager::latest_is_newer_than(
         "1.0.3",
         "tdesk-1.0.1"
@@ -21,7 +21,7 @@ fn test_release_never_older_or_equal_than_installed() {
 
 #[test]
 fn test_test_release_newer_is_update() {
-    // Su 1.0.3, una release test 1.0.4 E' un update (pallino rosso corretto).
+    // On 1.0.3, a test release 1.0.4 IS an update (correct red dot).
     assert!(GithubReleaseManager::latest_is_newer_than(
         "1.0.3",
         "tdesk-1.0.4"

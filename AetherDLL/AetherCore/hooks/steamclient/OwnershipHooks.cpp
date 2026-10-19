@@ -115,7 +115,7 @@ bool NeedsRewrittenGameCopy(int cb) { return cb != constants::achievement_cb::kU
 // ---------------------------------------------------------------------------
 std::mutex s_unlockMutex;
 std::unordered_set<AppId> s_unlockedAppIds;
-// I-A: il thread gira in workers::StartWorker; stop+join centralizzati.
+// I-A: the thread runs in workers::StartWorker; stop+join are centralized.
 std::atomic<bool> s_summaryStarted{false};
 std::atomic<std::int64_t> s_summaryDeadline{0};
 // Last emitted outcome fingerprint: "per-file missing list" as a stable string.

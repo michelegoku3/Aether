@@ -37,13 +37,13 @@ impl OnlineStateStore {
         self.records.get(&app_id)
     }
 
-    /// Inserisce/aggiorna il record e salva atomicamente.
+    /// Inserts/updates the record and saves atomically.
     pub fn upsert(&mut self, record: OnlineRecord, path: &Path) -> Result<(), String> {
         self.records.insert(record.app_id, record);
         self.save(path)
     }
 
-    /// Rimuove il record (se presente) e salva atomicamente.
+    /// Removes the record (if present) and saves atomically.
     pub fn remove(&mut self, app_id: u32, path: &Path) -> Result<(), String> {
         self.records.remove(&app_id);
         self.save(path)

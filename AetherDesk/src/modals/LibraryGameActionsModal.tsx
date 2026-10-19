@@ -315,7 +315,7 @@ export const LibraryGameActionsModal = ({
   };
 
   const handleOpenUco2Panel = async () => {
-    // UCO2 richiede None: Show Online sul wire 480 rompe gli inviti.
+    // UCO2 requires None: Show Online on wire 480 breaks invites.
     if (currentPresenceMode !== 'none') {
       setOnlineBusy(true);
       try {

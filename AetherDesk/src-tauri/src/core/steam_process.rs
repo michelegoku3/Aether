@@ -7,7 +7,7 @@
 //!   * `restart_steam`-> kill, WAIT for the process to actually exit, then
 //!     spawn. Waiting is what prevents the double-spawn race (a second
 //!     `steam.exe` launched while the first is still shutting down races the
-//!     single-instance attach and is the "restart non funziona bene" case).
+//!     single-instance attach and is the "restart does not work well" case).
 
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};

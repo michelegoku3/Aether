@@ -69,7 +69,7 @@ pub fn read_file_version(path: &Path) -> Option<(u16, u16, u16)> {
     unsafe {
         let size = GetFileVersionInfoSizeW(wide_path.as_ptr(), std::ptr::null_mut());
         if size == 0 {
-            return None; // nessuna version resource nel file
+            return None; // no version resource in the file
         }
 
         let mut buffer = vec![0u8; size as usize];

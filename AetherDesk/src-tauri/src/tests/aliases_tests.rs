@@ -51,7 +51,7 @@ fn primary_variants_returns_at_most_two() {
 
 #[test]
 fn alias_with_punctuation_expands() {
-    // Gta con punteggiatura deve comunque espandere via clean_token
+    // GTA with punctuation must still expand via clean_token
     let variants = expanded_queries("GTA: San Andreas");
     assert!(variants
         .iter()

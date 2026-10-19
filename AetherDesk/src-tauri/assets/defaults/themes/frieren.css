@@ -61,7 +61,7 @@
   --stark-warm: #c87862;
   --stark-orange: #d69a68;
 
-  /* Gradiente desaturato dei tree protagonisti (decorazioni). */
+  /* Desaturated gradient of the three protagonists (decorations). */
   --tri-gradient: linear-gradient(90deg, #527fa0, #675a8c, #a4514d);
 }
 

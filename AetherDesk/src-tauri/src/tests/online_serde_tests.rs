@@ -54,7 +54,7 @@ fn prerequisites_serializes_camel_case() {
     assert!(json.get("errors").is_some());
     assert!(
         json.get("bundle_ok").is_none(),
-        "snake_case non deve esistere: {json}"
+        "snake_case must not exist: {json}"
     );
 }
 
@@ -117,8 +117,11 @@ fn enable_request_deserializes_from_camel_case() {
         "coherence": { "runtimeKey": "key", "useShared": true },
         "deployEosCustom": true
     });
-    let request: OnlineEnableRequest = serde_json::from_value(json).expect("deve deserializzare");
-    assert!(request.load_overlay, "LoadOverlay default true se assente");
+    let request: OnlineEnableRequest = serde_json::from_value(json).expect("must deserialize");
+    assert!(
+        request.load_overlay,
+        "LoadOverlay defaults to true when absent"
+    );
     assert!(!request.log_overlay);
     assert!(!request.get_stubbed_lol);
     assert!(request.client.is_empty());

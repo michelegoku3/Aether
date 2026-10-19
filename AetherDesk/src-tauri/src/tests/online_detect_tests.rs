@@ -193,7 +193,7 @@ fn unreal_shipping_exe_found_and_crash_report_skipped() {
         "Engine/Binaries/Win64/MyGame-Win64-Shipping.exe",
         b"MZshipping",
     );
-    // CrashReportClient NON deve vincere.
+    // CrashReportClient must NOT win.
     write(
         tmp.path(),
         "Engine/Binaries/Win64/CrashReportClient-Win64-Shipping.exe",

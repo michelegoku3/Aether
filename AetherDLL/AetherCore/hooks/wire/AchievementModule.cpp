@@ -63,7 +63,7 @@
 // either by putting the .bins back in place (Steam closed), or by rebuilding the
 // .bin from JSON with Tools/achievement_decoder.py (the `rebuild` command).
 //
-// Flusso tracciato (con eMsg):
+// Traced flow (with eMsg):
 //   151  Send  Player.GetUserStats (service)          -> donor spoofing
 //   152  Recv  Player.GetUserStats response (147)      -> donor data cleanup
 //   818  Send  ClientGetUserStats                      -> donor spoofing

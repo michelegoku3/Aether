@@ -383,7 +383,7 @@ bool EnqueueProactive(const LookupKey& key) {
     if (!g_proactiveWorkerStarted) {
         g_proactiveWorkerStarted = true;
         if (!workers::StartWorker("manifest_proactive", ProactiveWorkerLoop)) {
-            g_proactiveWorkerStarted = false; // riprova al prossimo enqueue
+            g_proactiveWorkerStarted = false; // retry on the next enqueue
             AC_LOG_WARN(kModule, "Proactive manifest worker rejected (workers shut down).");
         }
     }

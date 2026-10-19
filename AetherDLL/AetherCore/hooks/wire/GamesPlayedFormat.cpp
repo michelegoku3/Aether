@@ -94,7 +94,7 @@ std::string MakeAppIdBlob(steam::AppId appId) {
 
 void ExtractStringKVs(const std::uint8_t* data, std::uint32_t size,
                       std::vector<std::pair<std::string, std::string>>& out) {
-    // Unica implementazione condivisa del KV1 binario (utils/KeyValues, P11).
+    // Single shared implementation of the binary KV1 (utils/KeyValues, P11).
     auto pairs = kv1::ReadStringKVs(data, size);
     out.insert(out.end(), std::make_move_iterator(pairs.begin()), std::make_move_iterator(pairs.end()));
 }

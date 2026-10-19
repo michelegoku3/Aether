@@ -606,7 +606,7 @@ void IpcSpecParseTest() {
 
     CHECK(!ParseSpecToml("[I]\n[I.M]\nfuncHash = \"0\"\n", ifaces, methods));
 
-    // argc negativo ignorato, il metodo resta valido.
+    // negative argc is ignored, the method stays valid.
 
     ifaces.clear();
 
@@ -617,7 +617,7 @@ void IpcSpecParseTest() {
     CHECK(methods.at("I::M2").argc == 0u);
 }
 
-// --- I-C: JsonWriter (golden test byte-per-byte del formato schema 9) ---
+// --- I-C: JsonWriter (byte-per-byte golden test of the schema 9 format) ---
 
 void ManifestContractTest() {
 

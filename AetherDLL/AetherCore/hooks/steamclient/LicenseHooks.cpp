@@ -51,7 +51,7 @@ CloseAppCloud_t o_CloseAppCloud = nullptr;
 std::mutex s_cdKeyMutex;
 std::unordered_set<AppId> s_cdKeySuppressed;
 std::size_t s_cdKeyLastLoggedSize = 0;
-// I-A: il thread gira in workers::StartWorker; stop+join centralizzati.
+// I-A: the thread runs in workers::StartWorker; stop+join are centralized.
 std::atomic<bool> s_cdKeyStarted{false};
 std::atomic<std::int64_t> s_cdKeyDeadline{0};
 

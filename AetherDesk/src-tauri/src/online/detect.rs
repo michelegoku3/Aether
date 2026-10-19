@@ -34,7 +34,7 @@ pub struct OverlayTarget {
 /// Why the game inspection failed.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DetectionError {
-    /// Nessun marcatore noto (Unity / Unreal / steam_api64.dll).
+    /// No known marker (Unity / Unreal / steam_api64.dll).
     UnrecognizedGame(String),
 }
 
@@ -67,7 +67,7 @@ const PROXY_DLLS: &[&str] = &["dxgi.dll", "dsound.dll", "winhttp.dll"];
 /// Names reserved for the early overlay proxy (never treated as conflicts).
 const OVERLAY_PROXY_NAMES: &[&str] = &["version.dll", "xinput1_3.dll"];
 
-/// Stringhe ANSI nei metadati IL2CPP / negli exe Unreal.
+/// ANSI strings in IL2CPP metadata / in Unreal exes.
 const STR_FUSION: &[u8] = b"NetworkRunner";
 const STR_LOAD_BALANCING: &[u8] = b"LoadBalancingClient";
 const STR_PHOTON_NETWORK: &[u8] = b"PhotonNetwork";
@@ -318,7 +318,7 @@ impl GameInspector {
             .join("global-metadata.dat");
 
         if managed.is_dir() {
-            // ---- Mono: presenza file negli assembly gestiti ----
+            // ---- Mono: file presence in the managed assemblies ----
             if managed.join("Fusion.Realtime.dll").is_file() {
                 backends.photon = PhotonFlavor::Fusion;
             } else if managed.join("PhotonUnityNetworking.dll").is_file()
@@ -332,7 +332,7 @@ impl GameInspector {
                 || has_glob(&managed, "PlayFab", ".dll");
             backends.coherence = managed.join("Coherence.Toolkit.dll").is_file();
         } else if metadata.is_file() {
-            // ---- IL2CPP: stringhe nel global-metadata.dat ----
+            // ---- IL2CPP: strings in global-metadata.dat ----
             let scan = read_for_scan(&metadata).unwrap_or_default();
             if contains_bytes(&scan, STR_FUSION) {
                 backends.photon = PhotonFlavor::Fusion;
@@ -363,7 +363,7 @@ impl GameInspector {
             });
         }
 
-        // PlayFab nativo accanto alla DLL Steamworks (No Man's Sky e simili).
+        // Native PlayFab next to the Steamworks DLL (No Man's Sky and similar).
         if !backends.playfab {
             if let Some(dir) = steam_api_dir {
                 backends.playfab =
@@ -506,7 +506,7 @@ impl GameInspector {
 }
 
 // ----------------------------------------------------------------------
-// Helper di modulo (private)
+// Module helpers (private)
 // ----------------------------------------------------------------------
 
 fn dll_dirs(root: &Path, dll_name: &str) -> Vec<PathBuf> {

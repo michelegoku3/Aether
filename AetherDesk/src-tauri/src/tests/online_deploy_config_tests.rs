@@ -40,7 +40,7 @@ fn unity_photon_voice_playfab_fixture(root: &Path) {
     );
 }
 
-/// Bundle UCO2 fittizio (layout release).
+/// Fake UCO2 bundle (release layout).
 fn bundle_fixture(dir: &Path) -> Uco2Bundle {
     write(dir, "x64/steam_api64.dll", b"uco2-x64");
     write(dir, "x86/steam_api.dll", b"uco2-x86");
@@ -81,7 +81,7 @@ fn ini_golden_unity_photon_voice_playfab() {
     let request = base_request();
     let dlc = harvest_dlc(&detection.game_root, &detection.ini_dir);
 
-    // Harvest: deve trovare configs.app.ini con 2 entry.
+    // Harvest: must find configs.app.ini with 2 entries.
     assert_eq!(
         dlc,
         vec![
@@ -370,7 +370,7 @@ fn deploy_then_disable_restores_everything() {
 fn deploy_neutralizes_conflicts_and_disable_restores_them() {
     let game = tempfile::tempdir().unwrap();
     unity_photon_voice_playfab_fixture(game.path());
-    // Conflitto: SteamFix64.dll accanto alla DLL Steamworks.
+    // Conflict: SteamFix64.dll next to the Steamworks DLL.
     let steam_api_dir = game.path().join("MyGame_Data/Plugins/x86_64");
     write(&steam_api_dir, "SteamFix64.dll", b"fix");
     let bundle_dir = tempfile::tempdir().unwrap();

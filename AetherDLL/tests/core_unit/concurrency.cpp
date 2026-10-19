@@ -190,7 +190,7 @@ void Workers() {
 
     CHECK(!success.valid());
 
-    CHECK(counter.load() == 101); // nessun job fantasma
+    CHECK(counter.load() == 101); // no ghost jobs
 }
 
 void WorkersShutdownRace() {

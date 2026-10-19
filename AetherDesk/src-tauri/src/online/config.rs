@@ -145,7 +145,7 @@ pub fn build_ini(
         push_line(&mut out, "DisplayName=Player");
     }
 
-    // coherence — ForceGuestLogin + runtime key (propria o SHARED).
+    // coherence — ForceGuestLogin + runtime key (own or SHARED).
     if detection.backends.coherence {
         push_line(&mut out, "");
         push_line(&mut out, "[Coherence]");
@@ -178,7 +178,7 @@ pub fn coherence_key(options: &CoherenceOptions) -> String {
     }
 }
 
-/// TitleId PlayFab finale: propria, `SHARED` digitato, oppure il title community.
+/// Final PlayFab TitleId: the user's own, a typed `SHARED`, or the community title.
 pub fn playfab_title(options: &PlayfabOptions) -> String {
     if options.use_shared || options.title_id.trim().eq_ignore_ascii_case("SHARED") {
         PLAYFAB_SHARED_TITLE.to_string()

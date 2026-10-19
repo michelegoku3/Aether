@@ -1,12 +1,12 @@
-; Fix v3.2 — Unificato + pulizia robusta scorciatoie + antivirus stock
-; Best practices: DRY con macro/funzioni, singola responsabilità, idempotenza
+; Fix v3.2 - Unified + robust shortcut cleanup + stock antivirus
+; Best practices: DRY with macros/functions, single responsibility, idempotency
 
 !include "LogicLib.nsh"
 !include "StrFunc.nsh"
 ${StrStr}
 ${StrLoc}
 
-; Macro DRY per creare scorciatoie corrette (icona embedded, niente indice manuale)
+; DRY macro to create correct shortcuts (embedded icon, no manual index)
 !macro _AETHER_CREATE_SHORTCUTS
   SetShellVarContext current
   CreateShortCut "$DESKTOP\AetherDesk.lnk" "$INSTDIR\AetherDesk.exe"
@@ -16,7 +16,7 @@ ${StrLoc}
   System::Call 'shell32::SHChangeNotify(i 0x8000000, i 0, i 0, i 0)'
 !macroend
 
-; Rimuove scorciatoie note (fisse) — veloce, copre 99% dei casi
+; Removes known (fixed) shortcuts - fast, covers 99% of cases
 !macro _AETHER_REMOVE_KNOWN_SHORTCUTS
   SetShellVarContext current
   Delete "$DESKTOP\AetherDesk.lnk"
@@ -39,9 +39,9 @@ ${StrLoc}
   RMDir "$COMMON_SMPROGRAMS\Aether"
 !macroend
 
-; Funzione robusta: scansiona Desktop e Start Menu e cancella qualsiasi .lnk
-; il cui target punta a vecchio Aether (rinominata/spostata/copiata dall'utente).
-; Usa ShellLink::GetShortCutTarget + FindFirst. Copre il caso "ho rinominato l'icona".
+; Robust function: scans Desktop and Start Menu and deletes any .lnk
+; whose target points to an old Aether (renamed/moved/copied by the user).
+; Uses ShellLink::GetShortCutTarget + FindFirst. Covers the "I renamed the icon" case.
 Function un.CleanStaleAetherShortcuts
   Push $R0
   Push $R1
@@ -49,8 +49,8 @@ Function un.CleanStaleAetherShortcuts
   Push $R3
   Push $R4
 
-  ; Helper interno: pulisce una cartella (DESKTOP o SMPROGRAMS) per un contesto
-  ; Viene chiamato 4 volte: current/desktop, all/desktop, current/start, all/start
+  ; Internal helper: cleans one folder (DESKTOP or SMPROGRAMS) for one context
+  ; Called 4 times: current/desktop, all/desktop, current/start, all/start
 
   ; --- Desktop current ---
   SetShellVarContext current
@@ -118,8 +118,8 @@ Function un.CleanStaleAetherShortcuts
   done_sm_cur:
     FindClose $R0
 
-  ; Pulizia ricorsiva cartella AetherDesk in Start Menu (anche se utente l'ha rinominata)
-  ; Scansione semplice delle sottocartelle note
+  ; Recursive cleanup of the AetherDesk Start Menu folder (even if the user renamed it)
+  ; Simple scan of the known subfolders
   FindFirst $R0 $R1 "$SMPROGRAMS\AetherDesk\*.lnk"
   loop_sm_sub_cur:
     StrCmp $R1 "" done_sm_sub_cur
@@ -171,7 +171,7 @@ FunctionEnd
   !insertmacro _AETHER_CREATE_SHORTCUTS
 !macroend
 
-; Uninstall: rispetta checkbox originale DeleteAppDataCheckboxState (1=elimina, 0=conserva)
+; Uninstall: honors the original DeleteAppDataCheckboxState checkbox (1=delete, 0=keep)
 Var AETHER_KEEP_DATA
 
 !macro NSIS_HOOK_PREUNINSTALL

@@ -407,7 +407,7 @@ pub fn set_aether_excluded(
     enabled: bool,
 ) -> Result<String, String> {
     let steam_path = load_settings(&app).steam_path;
-    // Token residui: best-effort. L'exclude deve comunque scriversi.
+    // Leftover tokens: best-effort. The exclude still has to be written.
     if !steam_path.trim().is_empty() {
         if let Ok(current) = launch_options::get_launch_options(Path::new(&steam_path), app_id) {
             let mut updated =

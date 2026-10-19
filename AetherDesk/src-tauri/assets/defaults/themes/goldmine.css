@@ -41,7 +41,7 @@
 /* ---------- 2. App background — starry night ---------- */
 body {
   background-color: var(--bg-app) !important;
-  /* Cielo notturno con stelle sottilissime: gradient blu notte + puntini. */
+  /* Night sky with very faint stars: midnight-blue gradient + dots. */
   background-image:
     radial-gradient(1px 1px at 12% 22%, rgba(230, 230, 240, 0.35) 50%, transparent 51%),
     radial-gradient(1px 1px at 34% 64%, rgba(230, 230, 240, 0.25) 50%, transparent 51%),
