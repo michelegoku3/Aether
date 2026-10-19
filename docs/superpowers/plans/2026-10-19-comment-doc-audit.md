@@ -75,11 +75,11 @@ The failure modes most likely to bite (each handled by the rule it names):
 **Files:** ~133 `.ts`/`.tsx` under `AetherDesk/src` (views, modals, hooks, ui,
 util, app, layout, types, test, constants).
 
-- [ ] Inventory every frontend file and its comments.
-- [ ] Apply the Rules; verify each questionable claim against the code.
-- [ ] Lightweight check: `npx tsc --noEmit` + `npm run lint:ci`.
-- [ ] Inspect the diff: changes only on comment lines.
-- [ ] Commit: `docs(frontend): audit and normalize comments`.
+- [x] Inventory every frontend file and its comments.
+- [x] Apply the Rules; verify each questionable claim against the code.
+- [x] Lightweight check: `npx tsc --noEmit` + `npm run lint:ci`.
+- [x] Inspect the diff: changes only on comment lines.
+- [x] Commit: `docs(frontend): audit and normalize comments`.
 
 ## Wave 2: Rust backend `AetherDesk/src-tauri/src` (excluding `tests/`)
 
@@ -87,18 +87,18 @@ util, app, layout, types, test, constants).
 steam, versioning, crack, updater, store, application, external_tools,
 game_info, steamless, util, local).
 
-- [ ] Inventory and apply the Rules; verify claims.
-- [ ] Lightweight check: `cargo clippy --all-targets -- -D warnings` (with the
+- [x] Inventory and apply the Rules; verify claims.
+- [x] Lightweight check: `cargo clippy --all-targets -- -D warnings` (with the
       test env from `docs/quality-gates.md` when running tests later).
-- [ ] Inspect the diff; commit: `docs(backend): audit and normalize comments`.
+- [x] Inspect the diff; commit: `docs(backend): audit and normalize comments`.
 
 ## Wave 3: Rust tests `AetherDesk/src-tauri/src/tests`
 
 **Files:** 37 files. Test comments often narrate intent; keep the intent
 sentence, drop the narrative.
 
-- [ ] Apply the Rules.
-- [ ] Lightweight check: `cargo clippy`; commit:
+- [x] Apply the Rules.
+- [x] Lightweight check: `cargo clippy`; commit:
       `docs(backend-tests): audit and normalize comments`.
 
 ## Wave 4: `AetherDLL/AetherCore` (C++)
@@ -108,32 +108,32 @@ sentence, drop the narrative.
 (`credentials`, `diagnostics`, `hooks/ipc`, `hooks/license`, `hooks/steamui`,
 `hooks/aetheronline`, `inject`, `security`).
 
-- [ ] Per sub-block: apply the Rules, verify ABI/wire claims carefully.
-- [ ] Lightweight check: configure + build (`cmake --preset x64-Release`),
+- [x] Per sub-block: apply the Rules, verify ABI/wire claims carefully.
+- [x] Lightweight check: configure + build (`cmake --preset x64-Release`),
       then `ctest` if available.
-- [ ] Commit per sub-block (or one wave commit if diffs stay small).
+- [x] Commit per sub-block (or one wave commit if diffs stay small).
 
 ## Wave 5: `AetherDLL/AetherPayload`, `AetherXInput`, `tests`, `common`
 
-- [ ] Apply the Rules; lightweight build check; commit.
+- [x] Apply the Rules; lightweight build check; commit.
 
 ## Wave 6: Documentation
 
-- [ ] `AGENTS.md` (new): repository map per module, conventions, build/test/lint
+- [x] `AGENTS.md` (new): repository map per module, conventions, build/test/lint
       commands, guardrails (comments in English, no edits to generated files).
-- [ ] `README.md`: from 5 lines to an orientation (what Aether is, components,
+- [x] `README.md`: from 5 lines to an orientation (what Aether is, components,
       quick start, pointers).
-- [ ] `docs/INDEX.md` (new): every doc, one line each, and when to read it.
-- [ ] Move `AetherDLL/docs/04-showonline-plan.md` and
+- [x] `docs/INDEX.md` (new): every doc, one line each, and when to read it.
+- [x] Move `AetherDLL/docs/04-showonline-plan.md` and
       `05-showonline-suffix-plan.md` to `docs/archive/`; remove from active index.
-- [ ] Cross-link `shared_contracts.md`, `quality-gates.md`, `ARCHITECTURE.md`
+- [x] Cross-link `shared_contracts.md`, `quality-gates.md`, `ARCHITECTURE.md`
       as reference; fix broken references (e.g. the missing
       `docs/03-presence-identity-plan.md`).
-- [ ] Commit: `docs(repo): add entry map, index and archive stale plans`.
+- [x] Commit: `docs(repo): add entry map, index and archive stale plans`.
 
 ## Final verification
 
-- [ ] `build_desk.cmd` / `npm run verify`, `cargo test`, `ctest` — report real
+- [x] `build_desk.cmd` / `npm run verify`, `cargo test`, `ctest` — report real
       output.
-- [ ] Whole-branch diff review: confirm no code changed.
-- [ ] Report results and leave the branch for review/merge.
+- [x] Whole-branch diff review: confirm no code changed.
+- [x] Report results and leave the branch for review/merge.
