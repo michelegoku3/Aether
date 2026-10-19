@@ -58,6 +58,39 @@ $env:AETHERDESK_NO_ADMIN_MANIFEST='1'; cargo test --locked
 If a test genuinely needs privileges, mark it `#[ignore]` with a reason instead
 of forcing elevation on the whole suite.
 
+### Defender-sensitive tests (os error 225)
+
+Some tests build a fake unpacker and copy executable bytes (the Steamless
+runner: `valid_successful_output_replaces_live_file_and_preserves_exact_original`,
+`wrong_architecture_is_rejected_before_creating_backup`,
+`output_with_an_open_writer_is_not_accepted_as_stable`). Windows Defender's
+real-time scan detects the test-produced PE files in `%TEMP%` and refuses to read
+them with `os error 225` (`ERROR_VIRUS_INFECTED`), failing the tests and blocking
+the build even though nothing is wrong.
+
+A process exclusion is not enough: the detection is on the file itself. Point the
+test harness at a dedicated temp directory and exclude that directory once, in an
+**admin** shell:
+
+```powershell
+New-Item -ItemType Directory -Force "$env:LOCALAPPDATA\Temp\AetherDesk-tests" | Out-Null
+Add-MpPreference -ExclusionPath "$env:LOCALAPPDATA\Temp\AetherDesk-tests"
+```
+
+`build_desk.cmd` (step 7) sets `TEMP`/`TMP` to that directory for `cargo test`;
+do the same when running the tests by hand:
+
+```powershell
+cd AetherDesk/src-tauri
+$env:AETHERDESK_NO_ADMIN_MANIFEST='1'
+$env:TEMP="$env:LOCALAPPDATA\Temp\AetherDesk-tests"; $env:TMP=$env:TEMP
+cargo test --locked
+```
+
+This keeps the runner tests enabled locally and in CI, instead of `#[ignore]`-ing
+them (which would also disable them where they pass). Undo the exclusion with
+`Remove-MpPreference -ExclusionPath "$env:LOCALAPPDATA\Temp\AetherDesk-tests"`.
+
 ## AetherDLL — CMake (Visual Studio "Build All" and the `release-dll` job)
 
 Everything lives in `AetherDLL/cmake/Quality.cmake` and applies to every target

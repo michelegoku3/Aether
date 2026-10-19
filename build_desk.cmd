@@ -185,8 +185,12 @@ if "%SKIP_TESTS%"=="1" goto :skip_tests
 echo.
 echo [7/9] Running Rust tests (cargo test, non-elevated harness)...
 cd /d "%DESK_DIR%\src-tauri"
+REM  TEMP/TMP point at the Defender-excluded test dir (see docs/quality-gates.md):
+REM  Defender detects the fake Steamless PE files in %TEMP% and returns
+REM  os error 225, which would fail these tests on a developer machine.
 powershell.exe -NoProfile -ExecutionPolicy Bypass -Command ^
   "$utf8=New-Object System.Text.UTF8Encoding($false); [Console]::OutputEncoding=$utf8; $OutputEncoding=$utf8;" ^
+  "$testTemp=Join-Path $env:LOCALAPPDATA 'Temp\AetherDesk-tests'; New-Item -ItemType Directory -Force -Path $testTemp | Out-Null; $env:TEMP=$testTemp; $env:TMP=$testTemp;" ^
   "$env:AETHERDESK_NO_ADMIN_MANIFEST='1';" ^
   "& cmd.exe /d /s /c 'cargo test --locked --color always 2>&1' | Tee-Object -FilePath '%BUILD_LOG%' -Append; $code=$LASTEXITCODE; exit $code"
 set "TEST_EXIT=%ERRORLEVEL%"
