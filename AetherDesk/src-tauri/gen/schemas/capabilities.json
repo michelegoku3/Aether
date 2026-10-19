@@ -1,1 +1,1 @@
-{}
+{"default":{"identifier":"default","description":"Main window: core IPC. Includes core:event, which the frontend needs to receive library, Steam runtime and versioning push events.","local":true,"windows":["main"],"permissions":["core:default"]}}
