@@ -29,11 +29,13 @@ pub async fn pick_local_files(
     // `blocking_pick_files()` returns `Option<Vec<FilePath>>`. `.into_iter()`
     // over the Option yields the inner `Vec<FilePath>` (0 or 1 items), so we
     // must `.flatten()` it before mapping each `FilePath` to a string.
-    Ok(selected
-        .into_iter()
-        .flatten()
-        .filter_map(file_path_to_string)
-        .collect())
+    let mut paths = Vec::new();
+    for file_path in selected.into_iter().flatten() {
+        if let Some(path) = file_path_to_string(file_path)? {
+            paths.push(path);
+        }
+    }
+    Ok(paths)
 }
 
 /// Open the native folder picker and return the chosen directory path.
@@ -48,8 +50,10 @@ pub async fn pick_local_folder(app: tauri::AppHandle) -> Result<Option<String>, 
         .set_title("Select folder containing Lua or Manifest files")
         .set_directory(&start_dir);
 
-    let selected = picker.blocking_pick_folder();
-    Ok(selected.and_then(file_path_to_string))
+    match picker.blocking_pick_folder() {
+        Some(file_path) => file_path_to_string(file_path),
+        None => Ok(None),
+    }
 }
 
 /// Bulk import any files, folders, and archives (.zip/.rar/.7z), recursively

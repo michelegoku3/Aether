@@ -29,11 +29,13 @@ pub async fn pick_crack_files(app: tauri::AppHandle, _app_id: u32) -> Result<Vec
     // `blocking_pick_files()` returns `Option<Vec<FilePath>>`. `.into_iter()`
     // over the Option yields the inner `Vec<FilePath>` (0 or 1 items), so we
     // must `.flatten()` it before mapping each `FilePath` to a string.
-    Ok(selected
-        .into_iter()
-        .flatten()
-        .filter_map(file_path_to_string)
-        .collect())
+    let mut paths = Vec::new();
+    for file_path in selected.into_iter().flatten() {
+        if let Some(path) = file_path_to_string(file_path)? {
+            paths.push(path);
+        }
+    }
+    Ok(paths)
 }
 
 /// Apply the selected crack sources to the installed game.

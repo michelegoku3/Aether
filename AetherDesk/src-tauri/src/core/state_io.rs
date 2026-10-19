@@ -10,16 +10,18 @@ static NEXT: AtomicU64 = AtomicU64::new(1);
 pub fn write_atomic(path: &Path, bytes: &[u8]) -> Result<(), String> {
     let parent = path.parent().ok_or("State path has no parent")?;
     fs::create_dir_all(parent).map_err(|e| format!("State directory: {e}"))?;
-    let name = path
-        .file_name()
-        .ok_or("State path has no filename")?
-        .to_string_lossy();
+    let file_name = path.file_name().ok_or("State path has no filename")?;
     let (temp, mut file) = loop {
-        let temp = parent.join(format!(
-            ".{name}.{}-{}.tmp",
+        // Build the temp name from the OS string: a lossy name (U+FFFD) could
+        // equal another target's temp name and, worse, a real sibling file.
+        let mut name = std::ffi::OsString::from(".");
+        name.push(file_name);
+        name.push(format!(
+            ".{}-{}.tmp",
             std::process::id(),
             NEXT.fetch_add(1, Ordering::Relaxed)
         ));
+        let temp = parent.join(&name);
         match OpenOptions::new().write(true).create_new(true).open(&temp) {
             Ok(file) => break (temp, file),
             Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => continue,

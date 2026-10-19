@@ -197,9 +197,9 @@ pub fn resolve_file_targets(
     let content_root = game_content_root(game_root);
 
     if is_flat_crack {
-        if let Some(file_name) = archive_rel.file_name().and_then(|n| n.to_str()) {
+        if let Some(file_name) = archive_rel.file_name() {
             let mut matches = Vec::new();
-            find_matching_files_recursive(game_root, file_name, &mut matches);
+            find_matching_files(game_root, file_name, &mut matches);
             if !matches.is_empty() {
                 matches.sort();
                 matches.dedup();
@@ -211,22 +211,73 @@ pub fn resolve_file_targets(
     vec![resolve_file_target(archive_rel, &content_root)]
 }
 
-/// Recursively searches `dir` for any existing file whose name matches `target_name`
-/// (case-insensitive).
-fn find_matching_files_recursive(dir: &Path, target_name: &str, matches: &mut Vec<PathBuf>) {
+/// Recursively finds every existing file named `file_name` under `dir`.
+///
+/// Delegates the name comparison to the filesystem (`dir.join(name).is_file()`)
+/// instead of folding names in Rust: Windows matches case-insensitively with
+/// Unicode (not ASCII) rules, so a file differing only by the case of a
+/// non-ASCII letter — which ASCII folding missed — is now found.
+fn find_matching_files(dir: &Path, file_name: &OsStr, matches: &mut Vec<PathBuf>) {
+    let candidate = dir.join(file_name);
+    if candidate.is_file() {
+        matches.push(candidate);
+    }
     let Ok(entries) = std::fs::read_dir(dir) else {
         return;
     };
     for entry in entries.flatten() {
-        let path = entry.path();
-        if path.is_dir() {
-            find_matching_files_recursive(&path, target_name, matches);
-        } else if path.is_file() {
-            if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
-                if name.eq_ignore_ascii_case(target_name) {
-                    matches.push(path);
-                }
-            }
+        if entry.file_type().map(|kind| kind.is_dir()).unwrap_or(false) {
+            find_matching_files(&entry.path(), file_name, matches);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+
+    #[test]
+    fn flat_crack_without_a_match_falls_back_to_the_content_root() {
+        let temp = tempfile::tempdir().unwrap();
+        let game = temp.path().join("game");
+        fs::create_dir_all(&game).unwrap();
+        fs::write(game.join("game.exe"), b"MZ").unwrap();
+
+        let targets = resolve_file_targets(Path::new("newfile.dll"), &game, true);
+
+        assert_eq!(targets, vec![game.join("newfile.dll")]);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn flat_crack_replaces_an_existing_file_that_differs_only_by_non_ascii_case() {
+        let temp = tempfile::tempdir().unwrap();
+        let game = temp.path().join("game");
+        fs::create_dir_all(game.join("Binaries")).unwrap();
+        fs::write(game.join("game.exe"), b"MZ").unwrap();
+        fs::write(game.join("Binaries/Файл.dll"), b"original").unwrap();
+
+        // Windows treats these two names as the same file: the flat crack must
+        // replace the existing one instead of dropping a copy at the root.
+        let targets = resolve_file_targets(Path::new("файл.dll"), &game, true);
+
+        assert_eq!(
+            targets,
+            vec![game.join("Binaries/файл.dll")],
+            "the existing file must be matched case-insensitively"
+        );
+    }
+
+    #[test]
+    fn structured_crack_still_resolves_into_existing_folders() {
+        let temp = tempfile::tempdir().unwrap();
+        let game = temp.path().join("game");
+        fs::create_dir_all(game.join("Binaries")).unwrap();
+        fs::write(game.join("game.exe"), b"MZ").unwrap();
+
+        let targets = resolve_file_targets(Path::new("Binaries/extra.dll"), &game, false);
+
+        assert_eq!(targets, vec![game.join("Binaries/extra.dll")]);
     }
 }

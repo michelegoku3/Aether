@@ -592,11 +592,12 @@ pub async fn pick_steam_folder(app: tauri::AppHandle) -> Result<Option<String>, 
         .set_directory(&start_dir)
         .blocking_pick_folder();
 
-    let selected = picked.and_then(file_path_to_string).map(|path| {
+    let selected = match picked {
         // Persist the canonical form immediately at the source: the frontend
         // saves this value verbatim, and normalization is idempotent.
-        normalize_steam_path(&path)
-    });
+        Some(file_path) => file_path_to_string(file_path)?.map(|path| normalize_steam_path(&path)),
+        None => None,
+    };
     if let Some(path) = &selected {
         crate::desk_log_info!("steam", "Steam folder picked: '{}'", path);
     }

@@ -14,7 +14,11 @@ use std::path::{Path, PathBuf};
 /// REPLACE_EXISTING), so the write stays "all or nothing" even
 /// when the target file already exists.
 pub fn write_atomic(path: &Path, bytes: &[u8]) -> Result<(), String> {
-    let temp_path = PathBuf::from(format!("{}.tmp", path.display()));
+    // Build the temp name from the OS string, never from `display()`: a lossy
+    // name (U+FFFD) can equal a real sibling file and overwrite it.
+    let mut temp_name = path.as_os_str().to_os_string();
+    temp_name.push(".tmp");
+    let temp_path = PathBuf::from(temp_name);
 
     if let Some(parent) = temp_path.parent() {
         fs::create_dir_all(parent).map_err(|error| {
@@ -261,5 +265,31 @@ mod tests {
         assert!(!from.exists());
         assert_eq!(fs::read(to.join("file")).unwrap(), b"data");
         assert_eq!(fs::read(to.join("sub/nested")).unwrap(), b"nested");
+    }
+
+    /// The temp name must come from the OS string, not `display()`: a lossy
+    /// name (U+FFFD) can equal a real sibling file and overwrite it.
+    #[cfg(windows)]
+    #[test]
+    fn write_atomic_does_not_clobber_a_sibling_matching_the_lossy_temp_name() {
+        use std::os::windows::ffi::OsStringExt;
+
+        let dir = tempfile::tempdir().unwrap();
+        let target = dir
+            .path()
+            .join(std::ffi::OsString::from_wide(&[0xD800, b'a' as u16]));
+        // `target.display()` renders the lone surrogate as U+FFFD, so the old
+        // `format!("{}.tmp", path.display())` temp name is exactly this sibling.
+        let sibling = dir.path().join("\u{FFFD}a.tmp");
+        fs::write(&sibling, b"sentinel").unwrap();
+
+        write_atomic(&target, b"payload").unwrap();
+
+        assert_eq!(
+            fs::read(&sibling).unwrap(),
+            b"sentinel",
+            "a real sibling file was overwritten by the lossy temp name"
+        );
+        assert_eq!(fs::read(&target).unwrap(), b"payload");
     }
 }
