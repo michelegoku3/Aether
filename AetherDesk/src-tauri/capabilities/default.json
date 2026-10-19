@@ -3,5 +3,5 @@
   "identifier": "default",
   "description": "Main window: core IPC. Includes core:event, which the frontend needs to receive library, Steam runtime and versioning push events.",
   "windows": ["main"],
-  "permissions": ["core:default"]
+  "permissions": ["core:default", "core:window:allow-destroy"]
 }
