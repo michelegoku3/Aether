@@ -72,6 +72,10 @@ export interface OnlineActionResult {
   success: boolean;
   message: string;
   record: OnlineRecord | null;
+  /** Journal-less Disable needs an explicit confirmation before cleanup. */
+  confirmationRequired?: boolean;
+  /** Post-action notice (e.g. verify game file integrity after a cleanup). */
+  warning?: string | null;
 }
 
 export interface OnlineEnableRequest {

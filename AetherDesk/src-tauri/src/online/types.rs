@@ -322,4 +322,11 @@ pub struct OnlineActionResult {
     pub success: bool,
     pub message: String,
     pub record: Option<OnlineRecord>,
+    /// Journal-less Disable: the user must confirm before known UCO2 files are
+    /// removed. Not an error, so the UI can show a dedicated confirmation.
+    #[serde(default)]
+    pub confirmation_required: bool,
+    /// Post-action notice (e.g. verify game file integrity after a cleanup).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub warning: Option<String>,
 }

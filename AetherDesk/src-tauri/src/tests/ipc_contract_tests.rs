@@ -886,7 +886,7 @@ fn documented_command_contracts_have_the_expected_keys() {
         ("get_recent_log_lines", &["tailLines", "source"]),
         ("enable_online", &["appId", "request"]),
         ("plan_online", &["appId"]),
-        ("disable_online", &["appId"]),
+        ("disable_online", &["appId", "confirmCleanup"]),
     ];
 
     for (command, expected) in contracts {

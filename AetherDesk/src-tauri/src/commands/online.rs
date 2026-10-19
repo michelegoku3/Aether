@@ -252,7 +252,9 @@ pub async fn enable_online(
 pub async fn disable_online(
     app: tauri::AppHandle,
     app_id: u32,
+    confirm_cleanup: Option<bool>,
 ) -> Result<OnlineActionResult, String> {
+    let confirm_cleanup = confirm_cleanup.unwrap_or(false);
     let steam_root = crate::commands::command_steam_path(&app)?;
     let mutation =
         crate::core::game_mutations::acquire(Path::new(&steam_root), app_id, "disable_online")
@@ -267,7 +269,13 @@ pub async fn disable_online(
     crate::desk_log_info!("online", "disable_online: app={}", app_id);
 
     let (_mutation, result) = tauri::async_runtime::spawn_blocking(move || {
-        let result = OnlineEngine::disable(app_id, &backup_root, &state_path, game_root.as_deref());
+        let result = OnlineEngine::disable(
+            app_id,
+            &backup_root,
+            &state_path,
+            game_root.as_deref(),
+            confirm_cleanup,
+        );
         (mutation, result)
     })
     .await

@@ -94,22 +94,38 @@ impl OnlineEngine {
                 }
             ),
             record: Some(record),
+            confirmation_required: false,
+            warning: None,
         })
     }
 
     /// Disattiva UCOnline2 (rollback dal journal, idempotente).
+    ///
+    /// `confirm_cleanup` authorizes removing known UCO2 files when the recovery
+    /// journal is gone; without it the call reports `confirmation_required`.
     pub fn disable(
         app_id: u32,
         backup_root: &Path,
         state_path: &Path,
         game_root: Option<&Path>,
+        confirm_cleanup: bool,
     ) -> Result<OnlineActionResult, String> {
-        let message = revert::disable(app_id, backup_root, state_path, game_root)?;
-        Ok(OnlineActionResult {
-            success: true,
-            message,
-            record: None,
-        })
+        match revert::disable(app_id, backup_root, state_path, game_root, confirm_cleanup)? {
+            revert::DisableOutcome::ConfirmationRequired { message } => Ok(OnlineActionResult {
+                success: false,
+                message,
+                record: None,
+                confirmation_required: true,
+                warning: None,
+            }),
+            revert::DisableOutcome::Done { message, warning } => Ok(OnlineActionResult {
+                success: true,
+                message,
+                record: None,
+                confirmation_required: false,
+                warning,
+            }),
+        }
     }
 
     /// Reconciled state (record + files on disk).

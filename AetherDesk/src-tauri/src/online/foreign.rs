@@ -38,6 +38,7 @@ const UCO2_MARKERS: &[&str] = &[
     "overlay_proxy.dll",
     "photon_universal.dll",
     "eos_custom.dll",
+    "playfab_universal.dll",
     "coherence_universal.dll",
 ];
 
@@ -64,6 +65,9 @@ pub struct ForeignOnlineReport {
     pub uco2: bool,
     /// OFME paths that triggered the verdict (for messages).
     pub files: Vec<PathBuf>,
+    /// Detected UCO2 file paths (for the journal-less cleanup path).
+    #[serde(default)]
+    pub uco2_files: Vec<PathBuf>,
 }
 
 impl ForeignOnlineReport {
@@ -73,6 +77,7 @@ impl ForeignOnlineReport {
             ofme: !files.is_empty(),
             uco2: false,
             files,
+            uco2_files: Vec::new(),
         }
     }
 
@@ -145,6 +150,7 @@ pub fn scan(root: &Path) -> ForeignOnlineReport {
         ofme: !ofme.is_empty(),
         uco2: !uco2.is_empty(),
         files: ofme,
+        uco2_files: uco2,
     }
 }
 

@@ -17,7 +17,7 @@
 //!   6. deploy of plugins required by detected backends
 //!   7. state record persistence
 
-use crate::external_tools::fs::write_atomic;
+use crate::external_tools::fs::{move_path, write_atomic};
 use crate::online::bundle::Uco2Bundle;
 use crate::online::config::{build_ini, harvest_dlc};
 use crate::online::detect::overlay_target;
@@ -111,11 +111,14 @@ pub fn deploy(
         // ---- Phase 1: original backups ----
         if steam_api_path.is_file() && !preexisting_uco2 {
             let target = unique_backup_path(&backup_dir, "steam_api");
-            fs::rename(&steam_api_path, &target).map_err(|e| e.to_string())?;
+            move_path(&steam_api_path, &target)?;
             journal.entries.push(JournalEntry::BackedUp {
                 original: steam_api_path.clone(),
                 backup: target,
             });
+            // Persist each move: a cross-volume fallback is not atomic, so a
+            // crash must leave a journal entry that Disable can reconcile.
+            journal.save(&backup_dir)?;
         }
         if ini_path.is_file() {
             // Already UCO2: throw the ini away, don't save it as an original.
@@ -123,11 +126,12 @@ pub fn deploy(
         }
         if plugins_dir.is_dir() && !preexisting_uco2 {
             let target = unique_backup_path(&backup_dir, "plugins");
-            fs::rename(&plugins_dir, &target).map_err(|e| e.to_string())?;
+            move_path(&plugins_dir, &target)?;
             journal.entries.push(JournalEntry::BackedUp {
                 original: plugins_dir.clone(),
                 backup: target,
             });
+            journal.save(&backup_dir)?;
         }
 
         // ---- Phase 2: conflict quarantine (outside the game tree) ----
@@ -141,11 +145,12 @@ pub fn deploy(
                 path.file_name().and_then(|n| n.to_str()).unwrap_or("file")
             );
             let target = unique_backup_path(&backup_dir, &backup_name);
-            fs::rename(&path, &target).map_err(|e| e.to_string())?;
+            move_path(&path, &target)?;
             journal.entries.push(JournalEntry::BackedUp {
                 original: path,
                 backup: target,
             });
+            journal.save(&backup_dir)?;
         }
         journal.save(&backup_dir)?;
     }

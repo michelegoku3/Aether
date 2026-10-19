@@ -5,7 +5,7 @@
 //! journal save, so a retry never deletes an original already restored.
 
 use crate::external_tools::constants::UCO_DISABLED_SUFFIX;
-use crate::external_tools::fs::write_atomic;
+use crate::external_tools::fs::{move_path, write_atomic};
 use crate::online::deploy::{backup_dir_for, Journal, JournalEntry};
 use crate::online::state::OnlineStateStore;
 use sha2::{Digest, Sha256};
@@ -15,12 +15,36 @@ use std::path::{Path, PathBuf};
 
 const RESTORE_CHECKPOINT: &str = "rollback_pending.json";
 
+/// Text shown before the destructive, journal-less cleanup.
+const CONFIRM_CLEANUP_MESSAGE: &str =
+    "No recovery journal found. AetherDesk can remove the known UCOnline2 files, but some \
+     legitimate game files may also be removed. You can easily restore them by verifying the \
+     game file integrity. Continue?";
+
+const VERIFY_INTEGRITY_STEPS: &str =
+    "Steam > Library > right-click the game > Properties > Installed Files > Verify integrity of \
+     game files";
+
+/// Result of `disable`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum DisableOutcome {
+    /// The journal is gone and the cleanup is destructive: ask the user, then
+    /// call again with `confirm_cleanup = true`.
+    ConfirmationRequired { message: String },
+    /// Files were restored (journal) or removed (confirmed cleanup).
+    Done {
+        message: String,
+        warning: Option<String>,
+    },
+}
+
 pub fn disable(
     app_id: u32,
     backup_root: &Path,
     state_path: &Path,
     game_root: Option<&Path>,
-) -> Result<String, String> {
+    confirm_cleanup: bool,
+) -> Result<DisableOutcome, String> {
     let backup_dir = backup_dir_for(backup_root, app_id);
     // Do not turn a corrupt/unreadable recovery index into an empty store.
     let mut store: OnlineStateStore = match fs::read_to_string(state_path) {
@@ -39,28 +63,14 @@ pub fn disable(
         Ok(content) => serde_json::from_str(&content)
             .map_err(|e| format!("Invalid recovery journal {}: {e}", journal_path.display()))?,
         Err(error) if error.kind() == io::ErrorKind::NotFound => {
-            if store.get(app_id).is_some() {
-                // A state record without its journal: originals may be orphaned
-                // in the backup dir — never guess, manual recovery it is.
-                return Err(format!(
-                    "Recovery journal is missing at {}; state and backups retained for manual recovery",
-                    journal_path.display()
-                ));
-            }
-            if game_root.is_some_and(|root| crate::online::foreign::scan(root).uco2) {
-                return Err("External UCOnline2 files have no recovery journal; automatic restoration is unsafe".into());
-            }
-            // An empty leftover backup dir (e.g. from a failed enable) is not
-            // "state": clean it and report the no-op instead of erroring.
-            if backup_dir.exists() && !backup_dir_has_content(&backup_dir)? {
-                let _ = fs::remove_dir(&backup_dir);
-            } else if backup_dir.exists() {
-                return Err(format!(
-                    "Recovery journal is missing at {}; backups retained for manual recovery",
-                    journal_path.display()
-                ));
-            }
-            return Ok("No tracked UCOnline2 deployment to restore; no files changed.".into());
+            return handle_missing_journal(
+                app_id,
+                &backup_dir,
+                state_path,
+                &mut store,
+                game_root,
+                confirm_cleanup,
+            );
         }
         Err(error) => {
             return Err(format!(
@@ -77,7 +87,145 @@ pub fn disable(
     }
     remove_file_if_present(&journal_path)?;
     remove_empty_dir(&backup_dir)?;
-    Ok("Online disabled: journaled files restored and state cleared.".into())
+    Ok(DisableOutcome::Done {
+        message: "Online disabled: journaled files restored and state cleared.".into(),
+        warning: None,
+    })
+}
+
+/// Journal-less path: either confirm the destructive cleanup or run it.
+///
+/// When the whole AetherDesk folder was deleted, journal, state and originals
+/// are gone together. The only safe action left is removing the known UCO2
+/// files, which may also hit legitimate files -> explicit confirmation and a
+/// verify-integrity warning afterwards.
+fn handle_missing_journal(
+    app_id: u32,
+    backup_dir: &Path,
+    state_path: &Path,
+    store: &mut OnlineStateStore,
+    game_root: Option<&Path>,
+    confirm_cleanup: bool,
+) -> Result<DisableOutcome, String> {
+    let uco2_present = game_root.is_some_and(|root| crate::online::foreign::scan(root).uco2);
+    let backup_has_content = backup_dir.exists() && backup_dir_has_content(backup_dir)?;
+    let record_exists = store.get(app_id).is_some();
+
+    if uco2_present {
+        if !confirm_cleanup {
+            return Ok(DisableOutcome::ConfirmationRequired {
+                message: CONFIRM_CLEANUP_MESSAGE.into(),
+            });
+        }
+        let root = game_root.ok_or_else(|| {
+            "The game folder is unknown; cannot remove UCOnline2 files safely.".to_string()
+        })?;
+        let removed = cleanup_orphaned_uco2(root)?;
+        if record_exists {
+            store.remove(app_id, state_path)?;
+        }
+        // Never delete originals: without the journal they cannot be mapped
+        // back, so they stay available for manual recovery.
+        let warning = cleanup_warning(&removed, backup_has_content.then_some(backup_dir));
+        return Ok(DisableOutcome::Done {
+            message: "Online disabled: UCOnline2 files removed without a recovery journal.".into(),
+            warning: Some(warning),
+        });
+    }
+
+    if backup_has_content {
+        return Err(format!(
+            "Recovery journal is missing at {}; backups retained for manual recovery",
+            backup_dir.join("journal.json").display()
+        ));
+    }
+
+    if record_exists {
+        store.remove(app_id, state_path)?;
+        return Ok(DisableOutcome::Done {
+            message: "No tracked UCOnline2 deployment to restore; stale state cleared.".into(),
+            warning: None,
+        });
+    }
+
+    // An empty leftover backup dir (e.g. from a failed enable) is not "state":
+    // clean it and report the no-op instead of erroring.
+    if backup_dir.exists() {
+        let _ = fs::remove_dir(backup_dir);
+    }
+    Ok(DisableOutcome::Done {
+        message: "No tracked UCOnline2 deployment to restore; no files changed.".into(),
+        warning: None,
+    })
+}
+
+/// Removes the files UCOnline2 can put in a game, using detection for the
+/// exact destinations and the marker scan for non-standard layouts.
+fn cleanup_orphaned_uco2(root: &Path) -> Result<Vec<PathBuf>, String> {
+    let mut targets = crate::online::foreign::scan(root).uco2_files;
+
+    if let Ok(detection) = crate::online::detect::GameInspector::inspect(root) {
+        if let Some(dir) = detection.steam_api_dir.as_deref() {
+            targets.push(dir.join(detection.arch.steam_api_file_name()));
+        }
+        if let Ok(target) = crate::online::detect::overlay_target(&detection) {
+            targets.push(target.path);
+        }
+    }
+
+    targets.sort();
+    targets.dedup();
+
+    let mut removed = Vec::new();
+    let mut parents = Vec::new();
+    for path in targets {
+        if !path.is_file() {
+            continue;
+        }
+        fs::remove_file(&path).map_err(|e| format!("Remove {}: {e}", path.display()))?;
+        if let Some(parent) = path.parent() {
+            parents.push(parent.to_path_buf());
+        }
+        removed.push(path);
+    }
+
+    // Only the deployment's own `plugins/` dir: never a user data dir that
+    // happens to share the name. `remove_dir` is a no-op unless it is empty.
+    parents.sort();
+    parents.dedup();
+    for parent in parents {
+        let is_plugins = parent
+            .file_name()
+            .and_then(|name| name.to_str())
+            .is_some_and(|name| name.eq_ignore_ascii_case("plugins"));
+        if is_plugins {
+            let _ = fs::remove_dir(&parent);
+        }
+    }
+
+    Ok(removed)
+}
+
+fn cleanup_warning(removed: &[PathBuf], backup_dir: Option<&Path>) -> String {
+    let mut message = format!(
+        "UCO2 files were removed. Some legitimate game files may also be removed. You can easily \
+         restore them by verifying the game file integrity: {VERIFY_INTEGRITY_STEPS}."
+    );
+    if let Some(dir) = backup_dir {
+        message.push_str(&format!(
+            " Original backups were kept at {}.",
+            dir.display()
+        ));
+    }
+    if !removed.is_empty() {
+        let names = removed
+            .iter()
+            .filter_map(|path| path.file_name().and_then(|name| name.to_str()))
+            .collect::<Vec<_>>()
+            .join(", ");
+        message.push_str(&format!(" Removed: {names}."));
+    }
+    message
 }
 
 /// True when the backup dir holds anything worth retaining (originals,
@@ -188,7 +336,15 @@ fn restore_backup(original: &Path, backup: &Path, backup_dir: &Path) -> Result<(
             backup.display()
         ));
     }
+    let expected = fingerprint(backup)?;
     if original.try_exists().map_err(|e| e.to_string())? {
+        // A cross-volume move copies first and deletes second: if removal
+        // crashed, the original already holds the restored bytes and only the
+        // leftover backup must go. Idempotent retry instead of a false collision.
+        if fingerprint(original)? == expected {
+            remove_backup(backup)?;
+            return Ok(());
+        }
         // A deployed plugins directory may exist even when a plugin copy failed.
         // Only an EMPTY directory can be removed; never overwrite user collisions.
         let metadata = fs::symlink_metadata(original).map_err(|e| e.to_string())?;
@@ -213,14 +369,13 @@ fn restore_backup(original: &Path, backup: &Path, backup_dir: &Path) -> Result<(
             ));
         }
     }
-    let expected = fingerprint(backup)?;
     let checkpoint =
         serde_json::to_vec(&(original, backup, &expected)).map_err(|e| e.to_string())?;
     write_atomic(&checkpoint_path, &checkpoint)?;
     if let Some(parent) = original.parent() {
         fs::create_dir_all(parent).map_err(|e| e.to_string())?;
     }
-    fs::rename(backup, original).map_err(|e| {
+    move_path(backup, original).map_err(|e| {
         format!(
             "Restore {} from {}: {e}",
             original.display(),
@@ -234,6 +389,15 @@ fn restore_backup(original: &Path, backup: &Path, backup_dir: &Path) -> Result<(
         ));
     }
     Ok(())
+}
+
+fn remove_backup(backup: &Path) -> Result<(), String> {
+    let metadata = fs::symlink_metadata(backup).map_err(|e| e.to_string())?;
+    if metadata.is_dir() {
+        fs::remove_dir_all(backup).map_err(|e| format!("Remove backup {}: {e}", backup.display()))
+    } else {
+        remove_file_if_present(backup)
+    }
 }
 
 fn fingerprint(path: &Path) -> Result<String, String> {
@@ -311,7 +475,10 @@ mod tests {
     #[test]
     fn disable_without_any_state_is_a_noop_not_an_error() {
         let (_temp, backup_root, state_path, game_root) = empty_ctx();
-        let message = disable(4242, &backup_root, &state_path, Some(&game_root)).unwrap();
+        let outcome = disable(4242, &backup_root, &state_path, Some(&game_root), false).unwrap();
+        let DisableOutcome::Done { message, .. } = outcome else {
+            panic!("expected Done");
+        };
         assert!(message.contains("No tracked"), "got: {message}");
     }
 
@@ -319,7 +486,10 @@ mod tests {
     fn disable_cleans_an_empty_leftover_backup_dir() {
         let (_temp, backup_root, state_path, game_root) = empty_ctx();
         fs::create_dir_all(backup_dir_for(&backup_root, 4242)).unwrap();
-        let message = disable(4242, &backup_root, &state_path, Some(&game_root)).unwrap();
+        let outcome = disable(4242, &backup_root, &state_path, Some(&game_root), false).unwrap();
+        let DisableOutcome::Done { message, .. } = outcome else {
+            panic!("expected Done");
+        };
         assert!(message.contains("No tracked"), "got: {message}");
         assert!(!backup_dir_for(&backup_root, 4242).exists());
     }
@@ -330,7 +500,7 @@ mod tests {
         let backup_dir = backup_dir_for(&backup_root, 4242);
         fs::create_dir_all(backup_dir.join("original")).unwrap();
         fs::write(backup_dir.join("original/game.dll"), b"original").unwrap();
-        let error = disable(4242, &backup_root, &state_path, Some(&game_root)).unwrap_err();
+        let error = disable(4242, &backup_root, &state_path, Some(&game_root), false).unwrap_err();
         assert!(error.contains("manual recovery"), "got: {error}");
         // Nothing was touched: the orphan is still there for manual recovery.
         assert!(backup_dir.join("original/game.dll").is_file());
@@ -349,5 +519,109 @@ mod tests {
         fs::write(second.join("a/c"), b"c sentinel").unwrap();
         assert_ne!(fingerprint(&first).unwrap(), fingerprint(&second).unwrap());
         assert_eq!(fs::read(first.join("c")).unwrap(), b"c sentinel");
+    }
+
+    /// Mini Unity game already carrying a UCOnline2 deployment.
+    fn uco2_game_fixture(root: &Path) {
+        fs::create_dir_all(root.join("MyGame_Data/Managed")).unwrap();
+        fs::create_dir_all(root.join("MyGame_Data/Plugins/x86_64")).unwrap();
+        fs::create_dir_all(root.join("plugins")).unwrap();
+        fs::write(root.join("MyGame.exe"), b"MZfake").unwrap();
+        fs::write(root.join("MyGame_Data/Managed/Assembly-CSharp.dll"), b"asm").unwrap();
+        fs::write(
+            root.join("MyGame_Data/Plugins/x86_64/steam_api64.dll"),
+            b"uco2-x64",
+        )
+        .unwrap();
+        fs::write(root.join("union-crax.ini"), b"[Settings]").unwrap();
+        fs::write(root.join("plugins/photon_universal.dll"), b"photon").unwrap();
+        fs::write(root.join("plugins/playfab_universal.dll"), b"playfab").unwrap();
+        fs::write(root.join("plugins/original.dll"), b"original").unwrap();
+        fs::write(root.join("version.dll"), b"overlay").unwrap();
+    }
+
+    #[test]
+    fn missing_journal_requires_confirmation_before_cleaning() {
+        let temp = tempfile::tempdir().unwrap();
+        let game_root = temp.path().join("game");
+        uco2_game_fixture(&game_root);
+        let backup_root = temp.path().join("backup");
+        let state_path = temp.path().join("state.json");
+
+        let first = disable(4242, &backup_root, &state_path, Some(&game_root), false).unwrap();
+
+        assert!(matches!(first, DisableOutcome::ConfirmationRequired { .. }));
+        assert!(
+            game_root.join("union-crax.ini").is_file(),
+            "nothing may be deleted before the user confirms"
+        );
+    }
+
+    #[test]
+    fn confirmed_cleanup_removes_only_known_uco2_files() {
+        let temp = tempfile::tempdir().unwrap();
+        let game_root = temp.path().join("game");
+        uco2_game_fixture(&game_root);
+        let backup_root = temp.path().join("backup");
+        let state_path = temp.path().join("state.json");
+
+        let outcome = disable(4242, &backup_root, &state_path, Some(&game_root), true).unwrap();
+
+        let DisableOutcome::Done { warning, .. } = outcome else {
+            panic!("expected Done, got ConfirmationRequired");
+        };
+        assert!(
+            warning.is_some(),
+            "verify-integrity warning must be returned"
+        );
+        assert!(!game_root.join("union-crax.ini").exists());
+        assert!(!game_root.join("plugins/photon_universal.dll").exists());
+        assert!(!game_root.join("plugins/playfab_universal.dll").exists());
+        assert!(!game_root
+            .join("MyGame_Data/Plugins/x86_64/steam_api64.dll")
+            .exists());
+        assert!(!game_root.join("version.dll").exists());
+        assert!(
+            game_root.join("plugins/original.dll").is_file(),
+            "unrelated files must survive"
+        );
+        assert!(
+            game_root.join("plugins").is_dir(),
+            "the plugins dir must stay when it is not empty"
+        );
+        assert!(!crate::online::foreign::scan(&game_root).uco2);
+    }
+
+    #[test]
+    fn restore_backup_finishes_when_original_already_matches() {
+        let temp = tempfile::tempdir().unwrap();
+        let backup_dir = temp.path().join("backup");
+        fs::create_dir_all(&backup_dir).unwrap();
+        let original = temp.path().join("game.dll");
+        let backup = backup_dir.join("game.dll");
+        fs::write(&original, b"same bytes").unwrap();
+        fs::write(&backup, b"same bytes").unwrap();
+
+        restore_backup(&original, &backup, &backup_dir).unwrap();
+
+        assert!(!backup.exists());
+        assert_eq!(fs::read(&original).unwrap(), b"same bytes");
+    }
+
+    #[test]
+    fn restore_backup_keeps_a_real_collision() {
+        let temp = tempfile::tempdir().unwrap();
+        let backup_dir = temp.path().join("backup");
+        fs::create_dir_all(&backup_dir).unwrap();
+        let original = temp.path().join("game.dll");
+        let backup = backup_dir.join("game.dll");
+        fs::write(&original, b"user file").unwrap();
+        fs::write(&backup, b"original").unwrap();
+
+        let error = restore_backup(&original, &backup, &backup_dir).unwrap_err();
+
+        assert!(error.contains("collision"), "got: {error}");
+        assert_eq!(fs::read(&original).unwrap(), b"user file");
+        assert!(backup.is_file());
     }
 }

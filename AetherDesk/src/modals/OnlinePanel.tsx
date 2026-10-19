@@ -7,6 +7,7 @@ import type { OnlineActionResult, OnlineEnableRequest, OnlinePlan, OnlineStatus 
 import { emptyRequest } from '../types/online';
 import { OnlineDetectionSection } from './online/OnlineDetectionSection';
 import { OnlineConfigSection } from './online/OnlineConfigSection';
+import { Uco2CleanupModal } from './Uco2CleanupModal';
 
 // Re-export all online domain types for backwards compatibility with any callers
 export * from '../types/online';
@@ -26,6 +27,10 @@ export const OnlinePanel = ({ game, onClose }: OnlinePanelProps) => {
     text: string;
     kind: 'info' | 'success' | 'error';
   } | null>(null);
+  // Journal-less Disable: confirmation text, then the verify-integrity warning.
+  const [cleanupConfirm, setCleanupConfirm] = useState<string | null>(null);
+  const [cleanupWarning, setCleanupWarning] = useState<string | null>(null);
+  const [cleanupBusy, setCleanupBusy] = useState(false);
 
   const refresh = useCallback(async () => {
     try {
@@ -58,8 +63,8 @@ export const OnlinePanel = ({ game, onClose }: OnlinePanelProps) => {
     refresh();
   }, [refresh]);
 
-  useModalDismiss(onClose, busy);
-  const handleOverlayClick = useOverlayDismiss(onClose, busy);
+  useModalDismiss(onClose, busy || cleanupConfirm !== null || cleanupWarning !== null);
+  const handleOverlayClick = useOverlayDismiss(onClose, busy || cleanupConfirm !== null || cleanupWarning !== null);
 
   const handleEnable = async () => {
     setBusy(true);
@@ -78,19 +83,37 @@ export const OnlinePanel = ({ game, onClose }: OnlinePanelProps) => {
     }
   };
 
-  const handleDisable = async () => {
+  const runDisable = async (confirmCleanup: boolean) => {
     setBusy(true);
-    setMessage({ text: 'Disabling...', kind: 'info' });
+    if (!confirmCleanup) setMessage({ text: 'Disabling...', kind: 'info' });
     try {
       const result = await invoke<OnlineActionResult>('disable_online', {
         appId: Number(game.appId),
+        confirmCleanup,
       });
+      if (result.confirmationRequired) {
+        // Not an error: the journal is gone, so ask before deleting anything.
+        setCleanupConfirm(result.message);
+        setMessage(null);
+        return;
+      }
+      if (result.warning) setCleanupWarning(result.warning);
       setMessage({ text: result.message, kind: result.success ? 'success' : 'error' });
       await refresh();
     } catch (err) {
       setMessage({ text: `Disable failed: ${err}`, kind: 'error' });
     } finally {
       setBusy(false);
+    }
+  };
+
+  const confirmCleanup = async () => {
+    setCleanupBusy(true);
+    try {
+      await runDisable(true);
+      setCleanupConfirm(null);
+    } finally {
+      setCleanupBusy(false);
     }
   };
 
@@ -123,65 +146,82 @@ export const OnlinePanel = ({ game, onClose }: OnlinePanelProps) => {
     plan.prerequisites.bundleVersion !== status.record.bundleVersion;
 
   return (
-    <div className="modal-overlay" onClick={handleOverlayClick}>
-      <div className="modal-container op-container" onClick={(e) => e.stopPropagation()}>
-        <div className="op-header">
-          <h3 className="op-header-title">
-            Enable Online: {game.name} ({game.appId})
-          </h3>
-          <button type="button" className="op-close" onClick={onClose} disabled={busy} aria-label="Close">
-            ×
-          </button>
-        </div>
+    <>
+      <div className="modal-overlay" onClick={handleOverlayClick}>
+        <div className="modal-container op-container" onClick={(e) => e.stopPropagation()}>
+          <div className="op-header">
+            <h3 className="op-header-title">
+              Enable Online: {game.name} ({game.appId})
+            </h3>
+            <button type="button" className="op-close" onClick={onClose} disabled={busy} aria-label="Close">
+              ×
+            </button>
+          </div>
 
-        <div className="op-body">
-          {loading ? (
-            <div className="op-muted">Analyzing the game...</div>
-          ) : (
-            <>
-              {plan && <OnlineDetectionSection plan={plan} onOpenFolder={openFolder} />}
+          <div className="op-body">
+            {loading ? (
+              <div className="op-muted">Analyzing the game...</div>
+            ) : (
+              <>
+                {plan && <OnlineDetectionSection plan={plan} onOpenFolder={openFolder} />}
 
-              {plan && <OnlineConfigSection plan={plan} request={request} enabled={enabled} setRequest={setRequest} />}
+                {plan && (
+                  <OnlineConfigSection plan={plan} request={request} enabled={enabled} setRequest={setRequest} />
+                )}
 
-              {/* Result message */}
-              {message && <div className={`op-box op-message op-message--${message.kind}`}>{message.text}</div>}
-            </>
-          )}
-        </div>
+                {/* Result message */}
+                {message && <div className={`op-box op-message op-message--${message.kind}`}>{message.text}</div>}
+              </>
+            )}
+          </div>
 
-        <div className="op-footer">
-          {bundleUpdate && (
+          <div className="op-footer">
+            {bundleUpdate && (
+              <button
+                type="button"
+                className={`modal-btn op-footer-btn op-btn${blocked || busy ? ' op-btn--disabled' : ''}`}
+                onClick={handleEnable}
+                disabled={blocked || busy}
+                title={`Update deployed files to ${plan?.prerequisites.bundleVersion ?? 'the current bundle'}`}
+              >
+                {busy ? 'Updating...' : `Update ${plan?.prerequisites.bundleVersion ?? ''}`.trim()}
+              </button>
+            )}
             <button
               type="button"
-              className={`modal-btn op-footer-btn op-btn${blocked || busy ? ' op-btn--disabled' : ''}`}
-              onClick={handleEnable}
-              disabled={blocked || busy}
-              title={`Update deployed files to ${plan?.prerequisites.bundleVersion ?? 'the current bundle'}`}
+              className={`modal-btn op-footer-btn ${enabled || broken ? 'op-btn--ghost' : 'op-btn'}${
+                blocked || busy ? ' op-btn--disabled' : ''
+              }`}
+              onClick={enabled || broken ? () => runDisable(false) : handleEnable}
+              disabled={enabled || broken ? busy : blocked || busy}
+              title={!enabled && !broken && blocked ? 'Resolve the missing prerequisites first' : undefined}
             >
-              {busy ? 'Updating...' : `Update ${plan?.prerequisites.bundleVersion ?? ''}`.trim()}
+              {busy ? (enabled || broken ? 'Disabling...' : 'Enabling...') : enabled || broken ? 'Disable' : 'Enable'}
             </button>
-          )}
-          <button
-            type="button"
-            className={`modal-btn op-footer-btn ${enabled || broken ? 'op-btn--ghost' : 'op-btn'}${
-              blocked || busy ? ' op-btn--disabled' : ''
-            }`}
-            onClick={enabled || broken ? handleDisable : handleEnable}
-            disabled={enabled || broken ? busy : blocked || busy}
-            title={!enabled && !broken && blocked ? 'Resolve the missing prerequisites first' : undefined}
-          >
-            {busy ? (enabled || broken ? 'Disabling...' : 'Enabling...') : enabled || broken ? 'Disable' : 'Enable'}
-          </button>
-          <button
-            type="button"
-            className={`modal-btn op-footer-btn op-btn--ghost${enabled || broken || busy ? ' op-btn--disabled' : ''}`}
-            onClick={handleReset}
-            disabled={enabled || broken || busy}
-          >
-            Reset
-          </button>
+            <button
+              type="button"
+              className={`modal-btn op-footer-btn op-btn--ghost${enabled || broken || busy ? ' op-btn--disabled' : ''}`}
+              onClick={handleReset}
+              disabled={enabled || broken || busy}
+            >
+              Reset
+            </button>
+          </div>
         </div>
       </div>
-    </div>
+
+      {cleanupConfirm && (
+        <Uco2CleanupModal
+          mode="confirm"
+          text={cleanupConfirm}
+          busy={cleanupBusy}
+          onConfirm={() => void confirmCleanup()}
+          onClose={() => setCleanupConfirm(null)}
+        />
+      )}
+      {cleanupWarning && (
+        <Uco2CleanupModal mode="warning" text={cleanupWarning} onClose={() => setCleanupWarning(null)} />
+      )}
+    </>
   );
 };
