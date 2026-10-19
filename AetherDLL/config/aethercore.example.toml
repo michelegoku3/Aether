@@ -124,3 +124,26 @@ suffix_invisible = false
 # then from the title via the configured-library reverse lookup. Purely local
 # rewrite on THIS pc: it restores the real game icon in your friends list.
 friend_appid_from_name = true
+
+[library]
+# Cosmetic "From the library of <account>" banner on the app-details page.
+# Purely visual: no licenses, ownership, launching or updates change.
+#
+# owner_banner: OFF by default. When enabled, the DLL writes
+#   AppState.LastOwner = owner_banner_steamid into the appmanifest of the
+#   listed installed apps Aether spoofs, so Steam renders the real banner
+#   with that account's persona. All other apps keep the entry removed.
+owner_banner = false
+
+# Installed app ids that show the banner (edited from AetherDesk Settings).
+# A game with no appmanifest (not installed) cannot be stamped and is skipped.
+owner_banner_apps = []
+
+# SteamID64 of a real local account (the "Library owner" picker in Settings).
+# Empty disables the banner policy.
+owner_banner_steamid = ""
+
+# While the banner is enabled the legacy orange library-sharing notice is also
+# hidden through a size-preserving patch of <Steam>\steamui\css\sp.css. Steam
+# maps one content-hashed class per build, so that hide is global (every app);
+# turning the banner off restores the notice and the original file size.

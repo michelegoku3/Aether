@@ -11,6 +11,8 @@ interface Params {
   setSteamPath: (path: string) => void;
   acceptPersistedSettings: (settings: AppSettings) => void;
   refreshCustomCss: () => Promise<void>;
+  /** Called after a new Steam path was persisted (e.g. to refresh dependent data). */
+  onSteamPathSaved?: () => void;
   showStatus: (text: string, kind: StatusKind) => void;
 }
 
@@ -63,6 +65,7 @@ export function useSteamPath(params: Params) {
         params.acceptPersistedSettings({ ...params.rawSettings, steam_path: saved.steam_path });
         params.setSteamPath(check.normalized);
         setCheckStatus({ state: 'idle', message: '' });
+        params.onSteamPathSaved?.();
         params.showStatus(`${actionLabel}: ${check.normalized}`, 'success');
         await params.refreshCustomCss();
       } catch (error) {

@@ -1606,6 +1606,23 @@ body {
   line-height: 1.4;
 }
 
+/* Inline validation message under a settings input (e.g. a malformed App ID).
+   Mirrors the `.settings-alert.error` accent without the alert chrome. */
+.settings-error {
+  font-size: 11.5px;
+  color: #ef4444;
+  line-height: 1.4;
+}
+
+/* Standalone note under a settings control, set apart from the description
+   that sits directly above it. */
+.settings-note {
+  font-size: 11.5px;
+  color: var(--color-muted);
+  line-height: 1.4;
+  margin-top: 6px;
+}
+
 .settings-input {
   background-color: #141417;
   border: 1px solid var(--border-color);
@@ -1620,6 +1637,11 @@ body {
 
 .settings-input:focus {
   border-color: var(--color-cyan);
+}
+
+/* `<select>` sharing the text-input look: only the cursor differs. */
+.settings-input--select {
+  cursor: pointer;
 }
 
 /* Wrapper for inputs with an inline reveal button (API keys): the button

@@ -21,6 +21,19 @@ pub fn get_settings_health(
     Ok(SettingsManager::new(&app).load_reported().1)
 }
 
+/// Local Steam accounts remembered in `loginusers.vdf`, for the cosmetic
+/// library-owner picker (persona shown in "From the library of ...").
+/// A missing or unreadable file returns an empty list, never an error.
+#[tauri::command]
+pub fn get_steam_accounts(
+    app: tauri::AppHandle,
+) -> Result<Vec<crate::steam::loginusers::SteamAccount>, String> {
+    let settings = SettingsManager::new(&app).try_load()?;
+    Ok(crate::steam::loginusers::read_configured_accounts(
+        &settings.steam_path,
+    ))
+}
+
 #[tauri::command]
 pub async fn save_settings(
     app: tauri::AppHandle,
@@ -128,6 +141,8 @@ fn apply_post_save_effects(app: &tauri::AppHandle, previous_root: &str) -> Resul
             toml_edit::Value::from(settings.custom_game_name.as_str()),
         )
         .map_err(|e| format!("Settings committed, DLL configuration sync incomplete: {e}"))?;
+        crate::core::library_banner_config::sync_library_config(&path, &settings)
+            .map_err(|e| format!("Settings committed, DLL configuration sync incomplete: {e}"))?;
     }
     Ok(())
 }

@@ -10,19 +10,14 @@ const baseProps = () => ({
   setEnableTestUpdates: vi.fn(),
   useOstSource: false,
   setUseOstSource: vi.fn(),
-  ostWarningAcknowledged: false,
-  setShowOstWarning: vi.fn(),
   manifestRestoreOnStartup: true,
   setManifestRestoreOnStartup: vi.fn(),
-  presenceDefaultShowOnline: true,
-  setPresenceDefaultShowOnline: vi.fn(),
-  customGameName: '',
-  setCustomGameName: vi.fn(),
-  steamPath: '',
-  setSteamPath: vi.fn(),
-  steamCheck: { state: 'idle' as const, message: '' },
-  onBrowseSteamFolder: vi.fn().mockResolvedValue(undefined),
-  onDetectSteamPath: vi.fn().mockResolvedValue(undefined),
+  downloadGamesWithUpdatesOn: false,
+  onDownloadGamesWithUpdatesChange: vi.fn(),
+  workshopAutoDownloadContent: true,
+  setWorkshopAutoDownloadContent: vi.fn(),
+  ostWarningAcknowledged: false,
+  setShowOstWarning: vi.fn(),
   showStatus: vi.fn(),
 });
 
@@ -45,5 +40,18 @@ describe('SettingsAetherSection devtools toggle', () => {
 
     expect(props.setEnableWebviewDevtools).toHaveBeenCalledWith(false);
     expect(invokeMock).not.toHaveBeenCalled();
+  });
+
+  it('keeps the Aether group to the Aether-only switches', () => {
+    const { container } = render(<SettingsAetherSection {...baseProps()} />);
+
+    expect(container.querySelectorAll('input[type="checkbox"]')).toHaveLength(6);
+    expect(container.textContent).toContain('Restore manifests on Steam startup');
+    expect(container.textContent).toContain('Download games with updates on');
+    expect(container.textContent).toContain('Workshop auto-download content');
+    expect(container.textContent).toContain('Clear AetherDesk caches');
+    expect(container.textContent).not.toContain('Steam Installation Path');
+    expect(container.textContent).not.toContain('Custom game display name');
+    expect(container.textContent).not.toContain('From the library of');
   });
 });

@@ -19,6 +19,7 @@
 #include "core/StructGuard.h"
 #include "diagnostics/StatusWriter.h"
 #include "hooks/license/LicenseManager.h"
+#include "hooks/steamui/SteamUIStylePatch.h"
 #include "hooks/wire/AchievementBackup.h"
 #include "hooks/wire/ManifestRestore.h"
 #include "inject/Diversion.h"
@@ -28,8 +29,8 @@
 #include "utils/Hasher.h"
 #include "utils/IpcSpec.h"
 #include "utils/PatternEngine.h"
-#include "utils/Strings.h"
 #include "utils/SteamLibraryPaths.h"
+#include "utils/Strings.h"
 #include "utils/VdfText.h"
 #include "utils/WinFile.h"
 
@@ -56,9 +57,7 @@ void PinSelf() {
 // steamapps/libraryfolders.vdf so uninstall detection also works when a
 // game lives on another drive. Shared with the appmanifest owner maintenance
 // (utils/SteamLibraryPaths.h) so both see exactly the same library set.
-std::vector<std::string> CollectAcfWatchDirs() {
-    return steamlibrary::SteamAppsDirs(g_state.steamInstallPath);
-}
+std::vector<std::string> CollectAcfWatchDirs() { return steamlibrary::SteamAppsDirs(g_state.steamInstallPath); }
 
 } // namespace
 
@@ -279,17 +278,29 @@ void StartSafetyNetsStage() {
     //      Depends on: aethercore dir (desk_path.cfg) + steamInstallPath.
     ac::hooks::ManifestRestore::RestoreMissingManifestsAtStartup();
 
-    // 10c. Owner strip: Steam derives the "From the library of <account>"
+    // 10c. Owner policy: Steam derives the "From the library of <account>"
     //      banner from AppState.LastOwner, the account that last
     //      installed/updated the app. Lua apps are installed by whichever
     //      account was active at the time, so a later login shows a bogus
-    //      shared-library banner. The entry is dropped (never stamped: the
-    //      incoming account is unknown before login), which leaves Steam with
-    //      nobody to attribute the app to. Runs before Steam builds this
-    //      session's app list (async, once per process); MarkLicenseAsChanged
-    //      and DirWatch repeat it on login and on every manifest rewrite.
-    //      Depends on: lua data (HasDepot) + steamInstallPath.
-    ac::appmanifest::StripAtStartup();
+    //      shared-library banner. By default the entry is dropped; opt-in
+    //      appids get it set to the configured owner account.
+    //      Runs before Steam builds this session's app list (async, once per
+    //      process); MarkLicenseAsChanged and DirWatch repeat it on login and
+    //      on every manifest rewrite.
+    //      Depends on: lua data (HasDepot) + steamInstallPath + [library].
+    ac::appmanifest::ApplyOwnersAtStartup();
+
+    // 10d. Stylesheet tweak: hide Steam's orange "legacy library sharing"
+    //      notice next to the banner. Rewrites the rule in place with
+    //      same-length swaps, so sp.css keeps its exact size: Steam's
+    //      bootstrapper verifies client file sizes before every start and
+    //      re-applies the whole client package on a mismatch (a bogus
+    //      "Updating Steam" screen). Follows [library] owner_banner, so
+    //      turning the feature off restores the original rule. No JS or
+    //      state changes.
+    const auto uiSettings = Settings::Snapshot();
+    ac::steamui::ApplyLegacySharingWarningPolicy(g_state.steamInstallPath,
+                                                 uiSettings && uiSettings->libraryOwnerBanner);
 }
 
 void StartWatchersStage(const BootContext& ctx) {

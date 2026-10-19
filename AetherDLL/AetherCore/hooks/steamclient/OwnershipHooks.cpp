@@ -358,9 +358,9 @@ std::int64_t h_MarkLicenseAsChanged(void* self, std::uint32_t packageId, bool re
         // LoadPackage ran.
         LicenseManager::DoStartupInjection();
         // Same moment: Steam may have logged into a different account since
-        // startup, so drop any owner record a manifest rewrite left behind (the
-        // "From the library of <account>" banner reads it).
-        ac::appmanifest::RequestStrip();
+        // startup, so re-apply the owner policy (the "From the library of
+        // <account>" banner reads it).
+        ac::appmanifest::RequestOwnerApply();
     }
     return o_MarkLicenseAsChanged(self, packageId, reloadAll);
 }

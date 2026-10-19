@@ -4,11 +4,13 @@
 #include "core/AetherCoreState.h"
 #include "utils/WinFile.h"
 
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <cstdint>
 #include <filesystem>
 #include <fstream>
+#include <limits>
 #include <toml++/toml.hpp>
 
 namespace ac {
@@ -26,10 +28,11 @@ long long FileWriteTicks(const std::string& configPath) {
     return t.time_since_epoch().count();
 }
 
-// Parses one presence app-id list with identical semantics at every call
-// site: clear-then-fill, keep only positive integers. No range validation:
-// values above UINT32_MAX keep the historical truncating cast on purpose;
-// tightening that is a separate behavior change, not a refactor.
+// Parses one app-id list (presence lists and [library] owner_banner_apps) with
+// identical semantics at every call site: clear-then-fill, keep only positive
+// integers. No range validation: values above UINT32_MAX keep the historical
+// truncating cast on purpose; tightening that is a separate behavior change,
+// not a refactor.
 void ParseAppList(const toml::array& arr, std::vector<std::uint32_t>& out) {
     out.clear();
     for (const auto& item : arr) {
@@ -37,6 +40,23 @@ void ParseAppList(const toml::array& arr, std::vector<std::uint32_t>& out) {
             out.push_back(static_cast<std::uint32_t>(*v));
         }
     }
+}
+
+// Decimal SteamID64. Returns 0 for anything non-numeric or out of range, which
+// disables the banner policy while leaving the strip policy intact.
+std::uint64_t ParseSteamId64(const std::string& text) {
+    if (text.empty())
+        return 0;
+    std::uint64_t value = 0;
+    for (const char c : text) {
+        if (c < '0' || c > '9')
+            return 0;
+        const std::uint64_t digit = static_cast<std::uint64_t>(c - '0');
+        if (value > (std::numeric_limits<std::uint64_t>::max() - digit) / 10)
+            return 0;
+        value = value * 10 + digit;
+    }
+    return value;
 }
 } // namespace
 
@@ -214,24 +234,47 @@ Settings Settings::Load(const std::string& configPath, bool* valid) {
         }
     }
 
-    AC_LOG_INFO(
-        "Settings",
-        "Loaded %s (level=%s, keep_last_session=%d, lua extra paths: %zu, "
-        "mirror: %s, ost=%d, diversion=%s, manifest_restore=%d, presence: default=%s show=%zu of=%zu excl=%zu).",
-        configPath.c_str(),
-        s.logLevel == LogLevel::Trace   ? "trace"
-        : s.logLevel == LogLevel::Debug ? "debug"
-        : s.logLevel == LogLevel::Info  ? "info"
-        : s.logLevel == LogLevel::Warn  ? "warn"
-        : s.logLevel == LogLevel::Error ? "error"
-                                        : "off",
-        s.logKeepLastSession ? 1 : 0, s.luaExtraPaths.size(), s.patternMirror.empty() ? "default" : "custom",
-        s.patternUseOstSource ? 1 : 0,
-        s.diversionMode == DiversionMode::Auto   ? "auto"
-        : s.diversionMode == DiversionMode::Copy ? "copy"
-                                                 : "live",
-        s.manifestRestoreOnStartup ? 1 : 0, s.presenceDefaultShowOnline ? "showonline" : "none",
-        s.presenceShowOnlineApps.size(), s.presenceAetherOnlineApps.size(), s.presenceExcludeApps.size());
+    // [library]
+    if (auto* library = tbl["library"].as_table()) {
+        if (auto v = (*library)["owner_banner"].value<bool>()) {
+            s.libraryOwnerBanner = *v;
+        }
+        if (auto* arr = (*library)["owner_banner_apps"].as_array()) {
+            ParseAppList(*arr, s.libraryOwnerBannerApps);
+            std::sort(s.libraryOwnerBannerApps.begin(), s.libraryOwnerBannerApps.end());
+            s.libraryOwnerBannerApps.erase(
+                std::unique(s.libraryOwnerBannerApps.begin(), s.libraryOwnerBannerApps.end()),
+                s.libraryOwnerBannerApps.end());
+        }
+        if (auto v = (*library)["owner_banner_steamid"].value<std::string>()) {
+            s.libraryOwnerBannerSteamId = ParseSteamId64(*v);
+            if (s.libraryOwnerBannerSteamId == 0 && !v->empty()) {
+                AC_LOG_WARN("Settings", "Invalid library.owner_banner_steamid '%s' (decimal SteamID64 expected).",
+                            v->c_str());
+            }
+        }
+    }
+
+    AC_LOG_INFO("Settings",
+                "Loaded %s (level=%s, keep_last_session=%d, lua extra paths: %zu, "
+                "mirror: %s, ost=%d, diversion=%s, manifest_restore=%d, presence: default=%s show=%zu of=%zu excl=%zu, "
+                "library: banner=%d apps=%zu owner=%llu).",
+                configPath.c_str(),
+                s.logLevel == LogLevel::Trace   ? "trace"
+                : s.logLevel == LogLevel::Debug ? "debug"
+                : s.logLevel == LogLevel::Info  ? "info"
+                : s.logLevel == LogLevel::Warn  ? "warn"
+                : s.logLevel == LogLevel::Error ? "error"
+                                                : "off",
+                s.logKeepLastSession ? 1 : 0, s.luaExtraPaths.size(), s.patternMirror.empty() ? "default" : "custom",
+                s.patternUseOstSource ? 1 : 0,
+                s.diversionMode == DiversionMode::Auto   ? "auto"
+                : s.diversionMode == DiversionMode::Copy ? "copy"
+                                                         : "live",
+                s.manifestRestoreOnStartup ? 1 : 0, s.presenceDefaultShowOnline ? "showonline" : "none",
+                s.presenceShowOnlineApps.size(), s.presenceAetherOnlineApps.size(), s.presenceExcludeApps.size(),
+                s.libraryOwnerBanner ? 1 : 0, s.libraryOwnerBannerApps.size(),
+                static_cast<unsigned long long>(s.libraryOwnerBannerSteamId));
     if (valid)
         *valid = true;
     return s;

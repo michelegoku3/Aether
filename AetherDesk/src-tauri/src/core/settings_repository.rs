@@ -356,6 +356,20 @@ fn normalize_settings(settings: &mut AppSettings) {
     settings.personal_wallpaper_opacity = settings.personal_wallpaper_opacity.min(100);
     settings.alternative_cards_opacity = settings.alternative_cards_opacity.min(100);
     settings.alternative_cards_fade = settings.alternative_cards_fade.min(100);
+    settings.library_banner_appids.sort_unstable();
+    settings.library_banner_appids.dedup();
+    // A SteamID64 is a decimal unsigned 64-bit id. Parsing (not only checking
+    // the digits) also rejects values above 2^64-1, so a hand-edited settings
+    // file cannot carry one: the banner policy requires a valid account.
+    let steamid_valid = settings.library_banner_steamid.is_empty()
+        || (settings
+            .library_banner_steamid
+            .bytes()
+            .all(|b| b.is_ascii_digit())
+            && settings.library_banner_steamid.parse::<u64>().is_ok());
+    if !steamid_valid {
+        settings.library_banner_steamid.clear();
+    }
 }
 
 pub(crate) fn merge_settings(
@@ -450,6 +464,23 @@ mod repository_tests {
         assert!(error.contains("SETTINGS_CONFLICT"));
         assert!(!error.contains("secret"));
         assert!(merge_settings(&base, &requested, &requested).is_ok());
+    }
+    #[test]
+    fn normalize_settings_bounds_the_library_owner_id() {
+        let mut settings = AppSettings {
+            library_banner_steamid: "18446744073709551615".into(), // 2^64 - 1
+            ..AppSettings::default()
+        };
+        normalize_settings(&mut settings);
+        assert_eq!(settings.library_banner_steamid, "18446744073709551615");
+
+        settings.library_banner_steamid = "18446744073709551616".into(); // 2^64
+        normalize_settings(&mut settings);
+        assert!(settings.library_banner_steamid.is_empty());
+
+        settings.library_banner_steamid = "76561199876393402x".into();
+        normalize_settings(&mut settings);
+        assert!(settings.library_banner_steamid.is_empty());
     }
     #[test]
     fn update_or_reset_quarantines_garbage_and_starts_from_defaults() {

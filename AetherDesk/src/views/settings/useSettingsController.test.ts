@@ -28,6 +28,7 @@ const commandDefaults = (saved: AppSettings = settings) => ({
   get_presence_default_mode: true,
   get_ost_source_enabled: false,
   get_manifest_restore_enabled: true,
+  get_steam_accounts: [{ steamId: '76561199523209859', accountName: 'michelegoku3', personaName: 'michelegoku3' }],
   get_luatools_auth_status: { signedIn: false },
   get_settings_health: { fresh: false, corruptFallback: false },
   acknowledge_ost_warning: undefined,
@@ -471,6 +472,135 @@ describe('useSettingsController', () => {
       'save_settings',
       expect.objectContaining({
         settings: expect.objectContaining({ custom_css_enabled: true }),
+      })
+    );
+  });
+
+  it('hydrates the Steam account list for the owner picker', async () => {
+    mockInvokeCommands(commandDefaults());
+    const params = createParams();
+    const { result } = renderHook(() => useSettingsController(params));
+
+    await waitFor(() => expect(result.current.steamAccountsLoaded).toBe(true));
+    expect(result.current.steamAccounts).toHaveLength(1);
+    expect(invokeMock).toHaveBeenCalledWith('get_steam_accounts');
+  });
+
+  it('refreshes the account list when the window regains focus', async () => {
+    // Steam rewrites loginusers.vdf when an account signs in or out; the picker
+    // must not keep offering the list read at mount time.
+    const first = { steamId: '76561199523209859', accountName: 'a', personaName: 'A' };
+    const second = { steamId: '76561199876393402', accountName: 'b', personaName: 'B' };
+    let reads = 0;
+    mockInvokeCommands({
+      ...commandDefaults(),
+      get_steam_accounts: () => {
+        reads += 1;
+        return reads === 1 ? [first] : [first, second];
+      },
+    });
+    const { result } = renderHook(() => useSettingsController(createParams()));
+    await waitFor(() => expect(result.current.steamAccounts).toHaveLength(1));
+
+    act(() => {
+      window.dispatchEvent(new Event('focus'));
+    });
+
+    await waitFor(() => expect(result.current.steamAccounts).toHaveLength(2));
+  });
+
+  it('distinguishes an unreadable account list from an empty one', async () => {
+    mockInvokeCommands({
+      ...commandDefaults(),
+      get_steam_accounts: () => Promise.reject(new Error('loginusers.vdf unreadable')),
+    });
+    const { result } = renderHook(() => useSettingsController(createParams()));
+
+    await waitFor(() => expect(result.current.steamAccountsLoaded).toBe(true));
+    expect(result.current.steamAccountsError).toBe(true);
+    expect(result.current.steamAccounts).toEqual([]);
+  });
+
+  it('blocks saving the banner without an owner account', async () => {
+    mockInvokeCommands(commandDefaults());
+    const params = createParams();
+    const { result } = renderHook(() => useSettingsController(params));
+    await waitFor(() => expect(result.current.form.steamPath).toBe('C:/Steam'));
+
+    act(() => {
+      result.current.setField('libraryBannerEnabled', true);
+      result.current.setField('libraryBannerAppIds', '4656000');
+    });
+    await act(async () => {
+      await result.current.save();
+    });
+
+    expect(result.current.status.type).toBe('error');
+    expect(invokeMock.mock.calls.some(([command]) => command === 'save_settings')).toBe(false);
+  });
+
+  it('blocks saving a SteamID64 above the unsigned 64-bit range', async () => {
+    mockInvokeCommands(commandDefaults());
+    const { result } = renderHook(() => useSettingsController(createParams()));
+    await waitFor(() => expect(result.current.form.steamPath).toBe('C:/Steam'));
+
+    act(() => {
+      result.current.setField('libraryBannerEnabled', true);
+      result.current.setField('libraryBannerSteamId', '18446744073709551616');
+      result.current.setField('libraryBannerAppIds', '4656000');
+    });
+    await act(async () => {
+      await result.current.save();
+    });
+
+    expect(result.current.status.type).toBe('error');
+    expect(invokeMock.mock.calls.some(([command]) => command === 'save_settings')).toBe(false);
+  });
+
+  it('blocks saving the banner with an invalid App ID', async () => {
+    mockInvokeCommands(commandDefaults());
+    const params = createParams();
+    const { result } = renderHook(() => useSettingsController(params));
+    await waitFor(() => expect(result.current.form.steamPath).toBe('C:/Steam'));
+
+    act(() => {
+      result.current.setField('libraryBannerEnabled', true);
+      result.current.setField('libraryBannerSteamId', '76561199523209859');
+      result.current.setField('libraryBannerAppIds', '4656000 nope');
+    });
+    await act(async () => {
+      await result.current.save();
+    });
+
+    expect(result.current.status.text).toContain('Invalid App ID');
+    expect(invokeMock.mock.calls.some(([command]) => command === 'save_settings')).toBe(false);
+  });
+
+  it('persists a valid library banner configuration', async () => {
+    mockInvokeCommands(commandDefaults());
+    const params = createParams();
+    const { result } = renderHook(() => useSettingsController(params));
+    await waitFor(() => expect(result.current.form.steamPath).toBe('C:/Steam'));
+
+    act(() => {
+      result.current.setField('libraryBannerEnabled', true);
+      result.current.setField('libraryBannerSteamId', '76561199523209859');
+      result.current.setField('libraryBannerAppIds', '4656000, 4108000');
+    });
+    let success = false;
+    await act(async () => {
+      success = await result.current.save();
+    });
+
+    expect(success).toBe(true);
+    expect(invokeMock).toHaveBeenCalledWith(
+      'save_settings',
+      expect.objectContaining({
+        settings: expect.objectContaining({
+          library_banner_enabled: true,
+          library_banner_appids: [4108000, 4656000],
+          library_banner_steamid: '76561199523209859',
+        }),
       })
     );
   });

@@ -4,6 +4,7 @@ import { checkSteamPath, getSettings, type AppSettings } from '../../hooks/useSe
 import type { SettingsGuard } from './types';
 import type { SettingsPatch } from './settingsModel';
 import { useSettingsForm } from './useSettingsForm';
+import { getSteamAccounts, isValidSteamId64, parseAppIdList, type SteamAccount } from './libraryBanner';
 import { isSettingsConflict, needsHubcapKey, toErrorMessage } from '../../util/errors';
 import { useAppearanceSettings } from './useAppearanceSettings';
 import { useLuaToolsAuth } from './useLuaToolsAuth';
@@ -34,6 +35,9 @@ export function useSettingsController(params: Params) {
   const [useOstSource, setUseOstSource] = useState(false);
   const [manifestRestoreOnStartup, setManifestRestoreOnStartup] = useState(true);
   const [presenceDefaultShowOnline, setPresenceDefaultShowOnline] = useState(true);
+  const [steamAccounts, setSteamAccounts] = useState<SteamAccount[]>([]);
+  const [steamAccountsLoaded, setSteamAccountsLoaded] = useState(false);
+  const [steamAccountsError, setSteamAccountsError] = useState(false);
 
   const showStatusSeq = useRef(0);
   const showStatus = useCallback((text: string, type: StatusKind, options?: { persist?: boolean }) => {
@@ -48,6 +52,28 @@ export function useSettingsController(params: Params) {
     window.setTimeout(() => {
       if (showStatusSeq.current === seq) setStatus({ text: '', type: 'info' });
     }, 6000);
+  }, []);
+
+  // The account list is read from loginusers.vdf, which Steam rewrites when a
+  // user signs in, signs out or adds an account. It is therefore refreshed on
+  // mount, whenever the window regains focus, after a save and after a Steam
+  // path change. The sequence guard keeps a slow, older read from overwriting a
+  // newer one (and from resurrecting an error the newer read already cleared).
+  const steamAccountsRequest = useRef(0);
+  const reloadSteamAccounts = useCallback(async () => {
+    const request = (steamAccountsRequest.current += 1);
+    try {
+      const accounts = await getSteamAccounts();
+      if (request !== steamAccountsRequest.current) return;
+      setSteamAccounts(accounts);
+      setSteamAccountsError(false);
+    } catch (err) {
+      if (request !== steamAccountsRequest.current) return;
+      setSteamAccountsError(true);
+      console.warn('[settings] failed to load Steam accounts:', err);
+    } finally {
+      if (request === steamAccountsRequest.current) setSteamAccountsLoaded(true);
+    }
   }, []);
 
   const applySettings = useCallback(
@@ -82,6 +108,9 @@ export function useSettingsController(params: Params) {
     setSteamPath: (value) => setField('steamPath', value),
     acceptPersistedSettings: model.acceptPersistedSettings,
     refreshCustomCss: params.onRefreshCustomCss,
+    // loginusers.vdf lives under the Steam install: a new path means a new
+    // account list, so the picker must not keep offering the old one.
+    onSteamPathSaved: () => void reloadSteamAccounts(),
     showStatus,
   });
 
@@ -99,6 +128,7 @@ export function useSettingsController(params: Params) {
     void invoke<boolean>('get_manifest_restore_enabled')
       .then(setManifestRestoreOnStartup)
       .catch((err) => console.warn('[settings] failed to load manifest restore state:', err));
+    void reloadSteamAccounts();
     void invoke<{ fresh: boolean; corruptFallback: boolean }>('get_settings_health')
       .then((health) => {
         if (health.corruptFallback) setSettingsCorrupt(true);
@@ -110,7 +140,30 @@ export function useSettingsController(params: Params) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // A Steam sign-in/sign-out happens in another window: refresh the picker on
+  // focus instead of polling loginusers.vdf in the background.
+  useEffect(() => {
+    const onWindowFocus = () => void reloadSteamAccounts();
+    window.addEventListener('focus', onWindowFocus);
+    return () => window.removeEventListener('focus', onWindowFocus);
+  }, [reloadSteamAccounts]);
+
   const save = useCallback(async (): Promise<boolean> => {
+    if (form.libraryBannerEnabled) {
+      const { ids, invalid } = parseAppIdList(form.libraryBannerAppIds);
+      if (invalid.length > 0) {
+        showStatus(`Invalid App ID: ${invalid.map((token) => `"${token}"`).join(', ')}`, 'error');
+        return false;
+      }
+      if (ids.length === 0) {
+        showStatus('Add at least one App ID for the library banner.', 'error');
+        return false;
+      }
+      if (!isValidSteamId64(form.libraryBannerSteamId)) {
+        showStatus('Select the owner account for the library banner.', 'error');
+        return false;
+      }
+    }
     let invalidApiKey = false;
     let apiKeyWarning = '';
     let hubcapKeyValid = false;
@@ -181,6 +234,8 @@ export function useSettingsController(params: Params) {
       await params.onRefreshUsage(invalidApiKey ? '' : form.apiKey);
       await params.onRefreshCustomCss();
       await appearance.reload();
+      // The Steam path may have changed: the picker must not keep stale names.
+      void reloadSteamAccounts();
       return true;
     } catch (err) {
       if (needsHubcapKey(err)) {
@@ -193,7 +248,7 @@ export function useSettingsController(params: Params) {
       showStatus(`Error during save: ${toErrorMessage(err)}`, 'error');
       return false;
     }
-  }, [appearance, applySettings, form, model, params, setField, settingsCorrupt, showStatus]);
+  }, [appearance, applySettings, form, model, params, reloadSteamAccounts, setField, settingsCorrupt, showStatus]);
 
   const discard = useCallback(() => {
     const baseline = model.rawSettings;
@@ -314,6 +369,9 @@ export function useSettingsController(params: Params) {
     setManifestRestoreOnStartup,
     presenceDefaultShowOnline,
     setPresenceDefaultShowOnline,
+    steamAccounts,
+    steamAccountsLoaded,
+    steamAccountsError,
     appearance,
     luaTools,
     showStatus,

@@ -7,12 +7,17 @@
 #include <fstream>
 #include <iterator>
 #include <mutex>
+#include <sstream>
 #include <string>
 #include <system_error>
+#include <unordered_map>
+#include <unordered_set>
 
 #include "core/AetherCoreState.h"
 #include "core/AppManifestText.h"
 #include "core/Logger.h"
+#include "core/OwnerRecordPolicy.h"
+#include "core/Settings.h"
 #include "core/Workers.h"
 #include "scripting/LuaData.h"
 #include "utils/SteamLibraryPaths.h"
@@ -26,9 +31,15 @@ constexpr const char* kModule = "OwnerStamp";
 
 constexpr const char* kManifestPrefix = "appmanifest_";
 constexpr const char* kManifestSuffix = ".acf";
+constexpr const char* kRecordFileName = "owner_state.txt";
 
 std::mutex s_passMutex; // one pass at a time (boot job vs post-login job)
 std::atomic<bool> s_pending{false};
+
+// appId -> LastOwner Aether wrote. Persisted so a later pass can undo the stamp
+// after the app leaves the managed set (its .lua was removed), which the
+// manifest itself cannot tell us apart from a record Steam wrote.
+using OwnerRecords = std::unordered_map<steam::AppId, std::uint64_t>;
 
 bool ReadTextFile(const std::string& path, std::string& out) {
     std::ifstream input(winfile::ToPath(path), std::ios::binary);
@@ -89,32 +100,107 @@ steam::AppId AppIdFromManifestName(const std::string& name) {
     return static_cast<steam::AppId>(value);
 }
 
-void ApplyToManifest(const std::string& path, steam::AppId appId, StripStats& stats) {
-    std::string content;
-    if (!ReadTextFile(path, content)) {
-        ++stats.errors;
-        AC_LOG_DEBUG(kModule, "Cannot read appmanifest_%u.acf; leaving it untouched.", appId);
-        return;
+// Records live next to the log/config: <steam>\aethercore\owner_state.txt.
+std::string RecordPath() {
+    if (g_state.configPath.empty())
+        return {};
+    const std::filesystem::path config(winfile::ToPath(g_state.configPath));
+    return ac::strings::Narrow((config.parent_path() / kRecordFileName).wstring());
+}
+
+OwnerRecords LoadRecords() {
+    OwnerRecords records;
+    const std::string path = RecordPath();
+    if (path.empty())
+        return records;
+    std::string text;
+    if (!ReadTextFile(path, text))
+        return records;
+    std::istringstream input(text);
+    unsigned long long appId = 0;
+    unsigned long long owner = 0;
+    while (input >> appId >> owner) {
+        if (appId != 0 && appId <= 0xFFFFFFFFull && owner != 0)
+            records[static_cast<steam::AppId>(appId)] = owner;
     }
-    if (!RemoveLastOwner(content)) {
+    return records;
+}
+
+void SaveRecords(const OwnerRecords& records) {
+    const std::string path = RecordPath();
+    if (path.empty())
+        return;
+    std::string text;
+    for (const auto& [appId, owner] : records) {
+        text += std::to_string(appId);
+        text += '\t';
+        text += std::to_string(owner);
+        text += '\n';
+    }
+    if (!WriteTextAtomically(path, text))
+        AC_LOG_DEBUG(kModule, "Cannot persist owner records to %s.", path.c_str());
+}
+
+// Applies one decision to an already-read manifest. `content` is updated in
+// place; the record follows a successful write (and a write failure leaves the
+// previous record valid).
+void ApplyToManifest(const std::string& path, steam::AppId appId, const OwnerPlan& plan, std::string& content,
+                     OwnerRecords& records, bool& recordsDirty, OwnerPolicyStats& stats) {
+    const bool changed = plan.action == OwnerAction::Set ? SetLastOwner(content, plan.owner) : RemoveLastOwner(content);
+    if (!changed) {
         ++stats.unchanged;
+        // The manifest is already in the requested state. Claim it so a later
+        // pass can still clean up when the app leaves the list/managed set.
+        if (plan.action == OwnerAction::Set) {
+            const auto record = records.find(appId);
+            if (record == records.end() || record->second != plan.owner) {
+                records[appId] = plan.owner;
+                recordsDirty = true;
+            }
+        } else if (records.erase(appId) != 0) {
+            recordsDirty = true;
+        }
         return;
     }
+
     if (!WriteTextAtomically(path, content)) {
         ++stats.errors;
-        AC_LOG_WARN(kModule, "Cannot drop LastOwner from appmanifest_%u.acf (locked or read-only).", appId);
+        AC_LOG_WARN(kModule, "Cannot rewrite appmanifest_%u.acf (locked or read-only).", appId);
         return;
     }
-    ++stats.removed;
-    AC_LOG_INFO(kModule, "App %u: LastOwner dropped.", appId);
+
+    if (plan.action == OwnerAction::Set) {
+        records[appId] = plan.owner;
+        recordsDirty = true;
+        ++stats.applied;
+        AC_LOG_INFO(kModule, "App %u: LastOwner set to %llu.", appId, static_cast<unsigned long long>(plan.owner));
+    } else {
+        records.erase(appId);
+        recordsDirty = true;
+        ++stats.removed;
+        AC_LOG_INFO(kModule, "App %u: LastOwner dropped.", appId);
+    }
 }
 
 } // namespace
 
-StripStats StripInstalledAppOwners() {
-    StripStats stats;
+OwnerPolicyStats ApplyInstalledAppOwners() {
+    OwnerPolicyStats stats;
+
+    const auto settings = Settings::Snapshot();
+    const bool bannerEnabled = settings && settings->libraryOwnerBanner;
+    const std::uint64_t bannerSteamId = bannerEnabled ? settings->libraryOwnerBannerSteamId : 0;
+    std::unordered_set<steam::AppId> bannerApps;
+    if (bannerEnabled) {
+        bannerApps.reserve(settings->libraryOwnerBannerApps.size());
+        for (const steam::AppId appId : settings->libraryOwnerBannerApps)
+            bannerApps.insert(appId);
+    }
 
     std::lock_guard<std::mutex> passLock(s_passMutex);
+    OwnerRecords records = LoadRecords();
+    bool recordsDirty = false;
+
     for (const std::string& dir : steamlibrary::SteamAppsDirs(g_state.steamInstallPath)) {
         std::error_code ec;
         std::filesystem::directory_iterator it(winfile::ToPath(dir), ec);
@@ -135,41 +221,65 @@ StripStats StripInstalledAppOwners() {
             const steam::AppId appId = AppIdFromManifestName(name);
             if (appId == 0)
                 continue;
-            // Only apps Aether actually spoofs: a genuinely owned or
-            // family-shared game must keep Steam's real owner record.
-            if (!luadata::HasDepot(appId))
+
+            // Apps Aether spoofs now, plus apps Aether stamped earlier (their
+            // .lua may since have been removed). A manifest with no record and
+            // no spoof is a real Steam record: skip it before reading anything.
+            const bool managed = luadata::HasDepot(appId);
+            const auto record = records.find(appId);
+            const std::uint64_t recorded = record == records.end() ? 0 : record->second;
+            if (!managed && recorded == 0)
                 continue;
 
             ++stats.scanned;
             const std::string path = ac::strings::Narrow(it->path().wstring());
-            ApplyToManifest(path, appId, stats);
+            std::string content;
+            if (!ReadTextFile(path, content)) {
+                ++stats.errors;
+                AC_LOG_DEBUG(kModule, "Cannot read appmanifest_%u.acf; leaving it untouched.", appId);
+                continue;
+            }
+
+            const bool listed = bannerApps.count(appId) != 0;
+            const OwnerPlan plan =
+                PlanOwnerAction(bannerEnabled, managed, listed, bannerSteamId, recorded, ReadLastOwner(content));
+            if (plan.action == OwnerAction::Skip) {
+                ++stats.unchanged;
+                if (plan.dropRecord && records.erase(appId) != 0)
+                    recordsDirty = true;
+                continue;
+            }
+            ApplyToManifest(path, appId, plan, content, records, recordsDirty, stats);
         }
     }
 
-    if (stats.removed != 0 || stats.errors != 0) {
-        AC_LOG_INFO(kModule, "Owner strip: scanned=%zu removed=%zu unchanged=%zu errors=%zu.", stats.scanned,
-                    stats.removed, stats.unchanged, stats.errors);
+    if (recordsDirty)
+        SaveRecords(records);
+
+    if (stats.applied != 0 || stats.removed != 0 || stats.errors != 0) {
+        AC_LOG_INFO(kModule, "Owner policy: scanned=%zu set=%zu removed=%zu unchanged=%zu errors=%zu.", stats.scanned,
+                    stats.applied, stats.removed, stats.unchanged, stats.errors);
     } else {
-        AC_LOG_DEBUG(kModule, "Owner strip: scanned=%zu, nothing to change.", stats.scanned);
+        AC_LOG_DEBUG(kModule, "Owner policy: scanned=%zu, nothing to change.", stats.scanned);
     }
     return stats;
 }
 
-void RequestStrip() {
+void RequestOwnerApply() {
     bool expected = false;
     if (!s_pending.compare_exchange_strong(expected, true, std::memory_order_acq_rel))
         return;
     if (!workers::Submit([] {
             s_pending.store(false, std::memory_order_release);
-            StripInstalledAppOwners();
+            ApplyInstalledAppOwners();
         })) {
         s_pending.store(false, std::memory_order_release);
     }
 }
 
-void StripAtStartup() {
-    if (!workers::Submit([] { StripInstalledAppOwners(); })) {
-        AC_LOG_DEBUG(kModule, "Startup owner strip skipped: worker queue unavailable.");
+void ApplyOwnersAtStartup() {
+    if (!workers::Submit([] { ApplyInstalledAppOwners(); })) {
+        AC_LOG_DEBUG(kModule, "Startup owner pass skipped: worker queue unavailable.");
     }
 }
 

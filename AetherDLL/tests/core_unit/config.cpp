@@ -120,6 +120,31 @@ void Settings() {
 
     CHECK(ac::Settings::Snapshot()->presenceCustomGameName == "revision99");
 
+    // [library]: the cosmetic owner banner is opt-in, ids are positive and
+    // deduplicated, and the SteamID is a decimal uint64 (overflow disables it).
+    f.Write("settings.toml", "[library]\nowner_banner = true\n"
+                             "owner_banner_apps = [4656000, 0, -1, 4108000, 4656000]\n"
+                             "owner_banner_steamid = \"76561199523209859\"\n");
+    ac::Settings::ReloadIfModified(path.string());
+    {
+        const auto library = ac::Settings::Snapshot();
+        const std::vector<std::uint32_t> expected{4108000, 4656000};
+        CHECK(library->libraryOwnerBanner);
+        CHECK(library->libraryOwnerBannerApps == expected);
+        CHECK(library->libraryOwnerBannerSteamId == 76561199523209859ull);
+    }
+
+    f.Write("settings.toml", "[library]\nowner_banner = true\nowner_banner_apps = [1]\n"
+                             "owner_banner_steamid = \"18446744073709551616\"\n");
+    ac::Settings::ReloadIfModified(path.string());
+    {
+        // 2^64 does not fit a SteamID64: the value is dropped, not wrapped.
+        const auto library = ac::Settings::Snapshot();
+        const std::vector<std::uint32_t> expected{1};
+        CHECK(library->libraryOwnerBannerSteamId == 0);
+        CHECK(library->libraryOwnerBannerApps == expected);
+    }
+
     // Startup-only injection selection is strict, with auto as the default.
 
     bool valid = false;

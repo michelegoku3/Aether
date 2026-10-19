@@ -83,4 +83,44 @@ describe('settingsModel', () => {
     const form = { ...settingsToForm(base), ostWarningAcknowledged: true };
     expect(isFormDirty(form, base)).toBe(false);
   });
+
+  it('formats the library banner fields for the single-line input', () => {
+    const form = settingsToForm(
+      settings({
+        library_banner_enabled: true,
+        library_banner_appids: [4108000, 4656000],
+        library_banner_steamid: '76561199876393402',
+      })
+    );
+
+    expect(form.libraryBannerEnabled).toBe(true);
+    expect(form.libraryBannerAppIds).toBe('4108000, 4656000');
+    expect(form.libraryBannerSteamId).toBe('76561199876393402');
+  });
+
+  it('parses and normalizes the App ID list when saving', () => {
+    const base = settings();
+    const built = buildSettings(
+      {
+        ...settingsToForm(base),
+        libraryBannerEnabled: true,
+        libraryBannerAppIds: ' 4656000 ,4108000,4656000 ',
+        libraryBannerSteamId: ' 76561199876393402 ',
+      },
+      base
+    );
+
+    expect(built.library_banner_enabled).toBe(true);
+    expect(built.library_banner_appids).toEqual([4108000, 4656000]);
+    expect(built.library_banner_steamid).toBe('76561199876393402');
+  });
+
+  it('defaults the library banner to off and clean', () => {
+    const base = settings();
+    const form = settingsToForm(base);
+
+    expect(form.libraryBannerEnabled).toBe(false);
+    expect(form.libraryBannerAppIds).toBe('');
+    expect(isFormDirty(form, base)).toBe(false);
+  });
 });

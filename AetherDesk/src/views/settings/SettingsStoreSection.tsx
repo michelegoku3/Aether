@@ -14,10 +14,6 @@ interface SettingsStoreSectionProps {
   setStoreFrontFilter: (v: string) => void;
   storeCurrency: StoreCurrency;
   setStoreCurrency: (v: StoreCurrency) => void;
-  downloadGamesWithUpdatesOn: boolean;
-  onDownloadGamesWithUpdatesChange: (checked: boolean) => void;
-  workshopAutoDownloadContent: boolean;
-  setWorkshopAutoDownloadContent: (v: boolean) => void;
 }
 
 export const SettingsStoreSection: React.FC<SettingsStoreSectionProps> = ({
@@ -33,10 +29,6 @@ export const SettingsStoreSection: React.FC<SettingsStoreSectionProps> = ({
   setStoreFrontFilter,
   storeCurrency,
   setStoreCurrency,
-  downloadGamesWithUpdatesOn,
-  onDownloadGamesWithUpdatesChange,
-  workshopAutoDownloadContent,
-  setWorkshopAutoDownloadContent,
 }) => {
   return (
     <div className="settings-group">
@@ -116,33 +108,6 @@ export const SettingsStoreSection: React.FC<SettingsStoreSectionProps> = ({
             </option>
           ))}
         </select>
-      </div>
-
-      <div className="settings-toggle-row">
-        <span className="settings-toggle-text">Download games with updates on</span>
-        <label className="version-switch">
-          <input
-            type="checkbox"
-            checked={downloadGamesWithUpdatesOn}
-            onChange={(e) => void onDownloadGamesWithUpdatesChange(e.target.checked)}
-          />
-          <span></span>
-        </label>
-      </div>
-
-      <div
-        className="settings-toggle-row"
-        title="When Workshop items have a staged manifest but no content, ask Steam to download them one at a time, preventing a download storm after a depotcache wipe."
-      >
-        <span className="settings-toggle-text">Workshop auto-download content</span>
-        <label className="version-switch">
-          <input
-            type="checkbox"
-            checked={workshopAutoDownloadContent}
-            onChange={(e) => setWorkshopAutoDownloadContent(e.target.checked)}
-          />
-          <span></span>
-        </label>
       </div>
     </div>
   );

@@ -25,10 +25,13 @@ add_executable(core_unit_tests
     core_unit/wire.cpp
     core_unit/policy.cpp
     core_unit/acfowner.cpp
+    core_unit/steamuicss.cpp
+    core_unit/steamuipatch.cpp
     stubs/Services.cpp
     stubs/AbiReporting.cpp
     ../AetherCore/core/Settings.cpp ../AetherCore/core/HookManager.cpp
     ../AetherCore/core/Workers.cpp
+    ../AetherCore/hooks/steamui/SteamUIStylePatch.cpp
     ../AetherCore/hooks/wire/GamesPlayedFormat.cpp
     ../AetherCore/hooks/wire/DonorPool.cpp
     ../AetherCore/utils/KeyValues.cpp
@@ -51,7 +54,7 @@ if(MSVC)
 else()
     target_compile_options(core_unit_tests PRIVATE -Wall -Wextra -Wpedantic -Werror)
 endif()
-foreach(case strings paths policy worker budget settings registry workers netpacket sentinel structguard gamesplayed_format donorpool keyvalues vdftext jsonutil_escapes manifest_identity ipcreply snapshot_merge ttlcache hexcodec signature ipcspec jsonwriter manifest_contract schema_buckets workers_reap_slow workers_race acfowner)
+foreach(case strings paths policy worker budget settings registry workers netpacket sentinel structguard gamesplayed_format donorpool keyvalues vdftext jsonutil_escapes manifest_identity ipcreply snapshot_merge ttlcache hexcodec signature ipcspec jsonwriter manifest_contract schema_buckets workers_reap_slow workers_race acfowner steamuicss steamuipatch)
     add_test(NAME ${case} COMMAND core_unit_tests ${case})
 endforeach()
 add_test(NAME cmake_source_inventory COMMAND ${CMAKE_COMMAND}

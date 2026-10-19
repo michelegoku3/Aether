@@ -1,7 +1,5 @@
 import React from 'react';
 import { invoke } from '@tauri-apps/api/core';
-import type { SteamCheckStatus } from './types';
-import type { SetPresenceDefaultModeArgs } from '../../types/online';
 import { toErrorMessage } from '../../util/errors';
 
 interface SettingsAetherSectionProps {
@@ -11,19 +9,14 @@ interface SettingsAetherSectionProps {
   setEnableTestUpdates: (v: boolean) => void;
   useOstSource: boolean;
   setUseOstSource: (v: boolean) => void;
-  ostWarningAcknowledged: boolean;
-  setShowOstWarning: (v: boolean) => void;
   manifestRestoreOnStartup: boolean;
   setManifestRestoreOnStartup: (v: boolean) => void;
-  presenceDefaultShowOnline: boolean;
-  setPresenceDefaultShowOnline: (v: boolean) => void;
-  customGameName: string;
-  setCustomGameName: (v: string) => void;
-  steamPath: string;
-  setSteamPath: (v: string) => void;
-  steamCheck: SteamCheckStatus;
-  onBrowseSteamFolder: () => Promise<void>;
-  onDetectSteamPath: () => Promise<void>;
+  downloadGamesWithUpdatesOn: boolean;
+  onDownloadGamesWithUpdatesChange: (checked: boolean) => void;
+  workshopAutoDownloadContent: boolean;
+  setWorkshopAutoDownloadContent: (v: boolean) => void;
+  ostWarningAcknowledged: boolean;
+  setShowOstWarning: (v: boolean) => void;
   showStatus: (message: string, kind: 'success' | 'error') => void;
 }
 
@@ -34,19 +27,14 @@ export const SettingsAetherSection: React.FC<SettingsAetherSectionProps> = ({
   setEnableTestUpdates,
   useOstSource,
   setUseOstSource,
-  ostWarningAcknowledged,
-  setShowOstWarning,
   manifestRestoreOnStartup,
   setManifestRestoreOnStartup,
-  presenceDefaultShowOnline,
-  setPresenceDefaultShowOnline,
-  customGameName,
-  setCustomGameName,
-  steamPath,
-  setSteamPath,
-  steamCheck,
-  onBrowseSteamFolder,
-  onDetectSteamPath,
+  downloadGamesWithUpdatesOn,
+  onDownloadGamesWithUpdatesChange,
+  workshopAutoDownloadContent,
+  setWorkshopAutoDownloadContent,
+  ostWarningAcknowledged,
+  setShowOstWarning,
   showStatus,
 }) => {
   return (
@@ -124,100 +112,30 @@ export const SettingsAetherSection: React.FC<SettingsAetherSectionProps> = ({
       </div>
 
       <div className="settings-toggle-row">
-        <span className="settings-toggle-text">Show every game to friends by default</span>
+        <span className="settings-toggle-text">Download games with updates on</span>
         <label className="version-switch">
           <input
             type="checkbox"
-            checked={presenceDefaultShowOnline}
-            onChange={async (e) => {
-              const next = e.target.checked;
-              const previous = !next;
-              setPresenceDefaultShowOnline(next);
-              try {
-                // IPC key `showOnline` (Rust `show_online` → lowerCamelCase),
-                // typed in `types/online.ts`. NOT the TOML value, which
-                // stays "showonline": see docs/shared_contracts.md §7.
-                const args: SetPresenceDefaultModeArgs = { showOnline: next };
-                await invoke<string>('set_presence_default_mode', args);
-              } catch (err: unknown) {
-                setPresenceDefaultShowOnline(previous);
-                showStatus(`Failed to set presence default mode: ${toErrorMessage(err)}`, 'error');
-              }
-            }}
+            checked={downloadGamesWithUpdatesOn}
+            onChange={(e) => void onDownloadGamesWithUpdatesChange(e.target.checked)}
           />
           <span></span>
         </label>
       </div>
 
-      <div className="settings-toggle-row settings-field-column">
-        <span className="settings-toggle-text">Custom game display name</span>
-        <p className="settings-desc">
-          Overrides the game name shown to friends on Steam, leave empty to show the real title.
-        </p>
-        <input
-          type="text"
-          className="settings-input"
-          placeholder="Enter custom name (e.g. Aether)"
-          value={customGameName}
-          onChange={(e) => setCustomGameName(e.target.value)}
-        />
-      </div>
-
-      <div className="settings-toggle-row settings-field-column">
-        <span className="settings-toggle-text">Steam Installation Path</span>
-        <p className="settings-desc">
-          The main directory path where Steam is installed on your PC, required for configuration.
-        </p>
-        <input
-          type="text"
-          placeholder="C:\Program Files (x86)\Steam"
-          value={steamPath}
-          onChange={(e) => setSteamPath(e.target.value)}
-          className="settings-input"
-        />
-        {steamCheck.state !== 'idle' && (
-          <p className={`settings-desc steam-path-status steam-path-${steamCheck.state}`}>{steamCheck.message}</p>
-        )}
-      </div>
-
-      <div className="settings-toggle-row">
-        <span className="settings-toggle-text">Browse for the Steam folder</span>
-        <button
-          type="button"
-          className="settings-small-btn"
-          style={{
-            minWidth: '96px',
-            height: '33px',
-            padding: '0 12px',
-            display: 'inline-flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            boxSizing: 'border-box',
-          }}
-          onClick={() => void onBrowseSteamFolder()}
-        >
-          Browse
-        </button>
-      </div>
-
-      <div className="settings-toggle-row">
-        <span className="settings-toggle-text">Detect Steam automatically</span>
-        <button
-          type="button"
-          className="settings-small-btn"
-          style={{
-            minWidth: '96px',
-            height: '33px',
-            padding: '0 12px',
-            display: 'inline-flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            boxSizing: 'border-box',
-          }}
-          onClick={() => void onDetectSteamPath()}
-        >
-          Auto Detect
-        </button>
+      <div
+        className="settings-toggle-row"
+        title="When Workshop items have a staged manifest but no content, ask Steam to download them one at a time, preventing a download storm after a depotcache wipe."
+      >
+        <span className="settings-toggle-text">Workshop auto-download content</span>
+        <label className="version-switch">
+          <input
+            type="checkbox"
+            checked={workshopAutoDownloadContent}
+            onChange={(e) => setWorkshopAutoDownloadContent(e.target.checked)}
+          />
+          <span></span>
+        </label>
       </div>
 
       <div className="settings-toggle-row">

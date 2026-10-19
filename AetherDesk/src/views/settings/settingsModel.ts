@@ -1,4 +1,5 @@
 import { isStoreCurrency, type AppSettings, type StoreCurrency } from '../../hooks/useSettings';
+import { formatAppIdList, parseAppIdList } from './libraryBanner';
 
 export type SettingsPatch = Partial<AppSettings>;
 
@@ -28,6 +29,9 @@ export interface SettingsFormState {
   iconSelectedFile: string;
   ryuuKey: string;
   ostWarningAcknowledged: boolean;
+  libraryBannerEnabled: boolean;
+  libraryBannerAppIds: string;
+  libraryBannerSteamId: string;
 }
 
 const clamp0to100 = (value: number) => Math.max(0, Math.min(100, Number.isFinite(value) ? value : 0));
@@ -58,6 +62,9 @@ export const settingsToForm = (settings: AppSettings): SettingsFormState => ({
   iconSelectedFile: String(settings.icon_selected_file || ''),
   ryuuKey: String(settings.ryuu_api_key || ''),
   ostWarningAcknowledged: Boolean(settings.ost_warning_acknowledged),
+  libraryBannerEnabled: Boolean(settings.library_banner_enabled),
+  libraryBannerAppIds: formatAppIdList(settings.library_banner_appids),
+  libraryBannerSteamId: String(settings.library_banner_steamid || ''),
 });
 
 export const buildSettings = (
@@ -90,6 +97,9 @@ export const buildSettings = (
   custom_game_name: form.customGameName.trim(),
   store_front_filter: form.storeFrontFilter,
   store_currency: form.storeCurrency,
+  library_banner_enabled: form.libraryBannerEnabled,
+  library_banner_appids: parseAppIdList(form.libraryBannerAppIds).ids,
+  library_banner_steamid: form.libraryBannerSteamId.trim(),
   ...overrides,
 });
 

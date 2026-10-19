@@ -5,6 +5,7 @@ pub use error::{DeskError, DeskResult};
 pub mod backup;
 pub mod custom_css;
 pub mod hubcap_update_monitor;
+pub mod library_banner_config;
 pub mod library_events;
 pub mod logger;
 pub mod manifest_restore_config;

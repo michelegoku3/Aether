@@ -66,6 +66,7 @@ add_library(AetherCore SHARED
 
     # Hooks
     hooks/steamui/SteamUIHook.cpp
+    hooks/steamui/SteamUIStylePatch.cpp
     hooks/steamclient/AetherOnlineHooks.cpp
     hooks/steamclient/OwnershipHooks.cpp
     hooks/steamclient/DepotHooks.cpp

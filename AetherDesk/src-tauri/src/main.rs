@@ -115,6 +115,7 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             commands::settings::get_settings,
             commands::settings::get_settings_health,
+            commands::settings::get_steam_accounts,
             commands::settings::save_settings,
             commands::settings::reset_settings_to_defaults,
             commands::settings::validate_hubcap_key,

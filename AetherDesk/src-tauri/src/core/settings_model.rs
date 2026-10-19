@@ -135,6 +135,19 @@ pub struct AppSettings {
     /// Custom game name displayed to friends on Steam (game_extra_info).
     #[serde(default)]
     pub custom_game_name: String,
+    /// Cosmetic Steam library banner: write `AppState.LastOwner` for the
+    /// appids in `library_banner_appids`, so the app details page shows
+    /// "From the library of <library_banner_steamid>". Purely visual; the DLL
+    /// applies it on the next Steam start. All other managed apps keep the
+    /// owner entry removed.
+    #[serde(default)]
+    pub library_banner_enabled: bool,
+    /// Appids that opt into the banner (unique, ascending).
+    #[serde(default)]
+    pub library_banner_appids: Vec<u32>,
+    /// Decimal SteamID64 shown as the library owner. Empty = disabled.
+    #[serde(default)]
+    pub library_banner_steamid: String,
 }
 
 /// Health of a settings load, for UI banners. Serialized camelCase for IPC.
@@ -324,6 +337,9 @@ impl Default for AppSettings {
             alternative_cards_fade: default_alt_cards_fade(),
             library_install_filter: default_library_install_filter(),
             custom_game_name: String::new(),
+            library_banner_enabled: false,
+            library_banner_appids: Vec::new(),
+            library_banner_steamid: String::new(),
         }
     }
 }

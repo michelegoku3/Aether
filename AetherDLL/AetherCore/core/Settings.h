@@ -100,6 +100,16 @@ struct Settings {
     //   default_mode = "showonline" -> presence broadcast for every launch.
     bool presenceDefaultShowOnline = false;
 
+    // [library] Cosmetic Steam library owner banner.
+    //   owner_banner = true             -> listed appids get
+    //                                      LastOwner = owner_banner_steamid;
+    //   all other managed apps keep LastOwner removed.
+    // owner_banner_apps accepts decimal appids; owner_banner_steamid is a
+    // decimal SteamID64 string (parsed to 0 when malformed).
+    bool libraryOwnerBanner = false;
+    std::vector<std::uint32_t> libraryOwnerBannerApps;
+    std::uint64_t libraryOwnerBannerSteamId = 0;
+
     // Parses the TOML at configPath.
     static Settings Load(const std::string& configPath, bool* valid = nullptr);
 

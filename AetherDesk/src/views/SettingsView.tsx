@@ -2,6 +2,7 @@ import { memo, type FormEvent } from 'react';
 import { OstWarningModal } from '../modals/OstWarningModal';
 import { HubcapUpdateWarningModal } from '../modals/HubcapUpdateWarningModal';
 import { SettingsAetherSection } from './settings/SettingsAetherSection';
+import { SettingsSteamSection } from './settings/SettingsSteamSection';
 import { SettingsProvidersSection } from './settings/SettingsProvidersSection';
 import { SettingsStoreSection } from './settings/SettingsStoreSection';
 import { SettingsAppearanceSection } from './settings/SettingsAppearanceSection';
@@ -73,15 +74,33 @@ export const SettingsView = memo(function SettingsView(props: SettingsViewProps)
           setShowOstWarning={c.setShowOstWarning}
           manifestRestoreOnStartup={c.manifestRestoreOnStartup}
           setManifestRestoreOnStartup={c.setManifestRestoreOnStartup}
-          presenceDefaultShowOnline={c.presenceDefaultShowOnline}
-          setPresenceDefaultShowOnline={c.setPresenceDefaultShowOnline}
-          customGameName={form.customGameName}
-          setCustomGameName={(value) => c.setField('customGameName', value)}
+          downloadGamesWithUpdatesOn={form.downloadGamesWithUpdatesOn}
+          onDownloadGamesWithUpdatesChange={c.changeDownloadUpdates}
+          workshopAutoDownloadContent={form.workshopAutoDownloadContent}
+          setWorkshopAutoDownloadContent={(value) => c.setField('workshopAutoDownloadContent', value)}
+          showStatus={c.showStatus}
+        />
+        <div className="settings-separator"></div>
+
+        <SettingsSteamSection
           steamPath={form.steamPath}
           setSteamPath={(value) => c.setField('steamPath', value)}
           steamCheck={c.steamCheck}
           onBrowseSteamFolder={c.browseSteam}
           onDetectSteamPath={c.detectSteam}
+          presenceDefaultShowOnline={c.presenceDefaultShowOnline}
+          setPresenceDefaultShowOnline={c.setPresenceDefaultShowOnline}
+          customGameName={form.customGameName}
+          setCustomGameName={(value) => c.setField('customGameName', value)}
+          libraryEnabled={form.libraryBannerEnabled}
+          setLibraryEnabled={(value) => c.setField('libraryBannerEnabled', value)}
+          libraryAppIds={form.libraryBannerAppIds}
+          setLibraryAppIds={(value) => c.setField('libraryBannerAppIds', value)}
+          librarySteamId={form.libraryBannerSteamId}
+          setLibrarySteamId={(value) => c.setField('libraryBannerSteamId', value)}
+          steamAccounts={c.steamAccounts}
+          steamAccountsLoaded={c.steamAccountsLoaded}
+          steamAccountsError={c.steamAccountsError}
           showStatus={c.showStatus}
         />
         <div className="settings-separator"></div>
@@ -118,10 +137,6 @@ export const SettingsView = memo(function SettingsView(props: SettingsViewProps)
           setStoreFrontFilter={(value) => c.setField('storeFrontFilter', value)}
           storeCurrency={form.storeCurrency}
           setStoreCurrency={(value) => c.setField('storeCurrency', value)}
-          downloadGamesWithUpdatesOn={form.downloadGamesWithUpdatesOn}
-          onDownloadGamesWithUpdatesChange={c.changeDownloadUpdates}
-          workshopAutoDownloadContent={form.workshopAutoDownloadContent}
-          setWorkshopAutoDownloadContent={(value) => c.setField('workshopAutoDownloadContent', value)}
         />
         <div className="settings-separator"></div>
 

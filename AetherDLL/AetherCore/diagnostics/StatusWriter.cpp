@@ -191,6 +191,9 @@ static void WriteSnapshot(std::uint64_t requests) {
     w.Bool("presence_always_extra_info", settings->presenceAlwaysExtraInfo);
     w.Bool("presence_showonline_broadcast", settings->presenceShowOnlineBroadcast);
     w.Bool("presence_friend_appid_from_name", settings->presenceFriendAppIdFromName);
+    w.Bool("library_owner_banner", settings->libraryOwnerBanner);
+    w.SizeT("library_owner_banner_apps", settings->libraryOwnerBannerApps.size());
+    w.UInt64("library_owner_banner_steamid", settings->libraryOwnerBannerSteamId);
     w.UInt64("aetheronline_real_appid", presence::RealAppId());
     w.UInt64("showonline_appid", presence::ShowOnlineAppId());
     w.UInt64("license_reload_forced_count", g_state.licenseReloadForcedCount.load());

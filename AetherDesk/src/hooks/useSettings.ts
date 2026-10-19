@@ -60,6 +60,16 @@ export interface AppSettings {
   enable_test_updates?: boolean;
   /** Custom game name displayed to friends on Steam (game_extra_info). */
   custom_game_name?: string;
+  /**
+   * Cosmetic library banner: registered .lua games in `library_banner_appids`
+   * show "From the library of <library_banner_steamid>" on the app details
+   * page. Purely visual; applied by AetherCore on the next Steam start.
+   */
+  library_banner_enabled?: boolean;
+  /** App IDs that opt into the banner (unique, ascending). */
+  library_banner_appids?: number[];
+  /** Decimal SteamID64 shown as the owner. Empty = disabled. */
+  library_banner_steamid?: string;
 }
 
 /** Steam store currencies offered by the Settings selector (ISO 4217). The

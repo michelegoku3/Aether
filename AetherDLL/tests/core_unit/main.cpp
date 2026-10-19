@@ -37,6 +37,8 @@ int main(int argc, char** argv) {
         {"jsonwriter", JsonWriterTest},
         {"manifest_contract", ManifestContractTest},
         {"acfowner", AcfOwnerTest},
+        {"steamuicss", SteamUiCssTest},
+        {"steamuipatch", SteamUiPatchTest},
     };
     try {
         if (argc == 1) {
