@@ -17,6 +17,7 @@ pub mod settings;
 pub mod shell_shortcuts;
 pub mod steam_monitor;
 pub mod steam_process;
+pub mod workshop_failures;
 
 pub mod config_document;
 pub mod game_mutations;
