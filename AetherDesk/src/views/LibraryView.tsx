@@ -4,7 +4,8 @@ import ChangeVersionModal from '../modals/ChangeVersionModal';
 import { LibraryGameActionsModal } from '../modals/LibraryGameActionsModal';
 import { GameInfoModal } from '../modals/GameInfoModal';
 import { GameUpdatesModal } from '../modals/GameUpdatesModal';
-import { WorkshopRepairModal } from '../modals/WorkshopRepairModal';
+import { WorkshopRepairModal, type WorkshopSyncReport } from '../modals/WorkshopRepairModal';
+import { WorkshopReportModal } from '../modals/WorkshopReportModal';
 import { preloadGameCovers } from '../ui/GameCover';
 import { toErrorMessage } from '../util/errors';
 import { GameCard, type GameCardAction } from '../ui/GameCard';
@@ -54,6 +55,12 @@ export const LibraryView = memo(function LibraryView({
   const [showUpdatesModal, setShowUpdatesModal] = useState(false);
   // Workshop manifest repair (scan appworkshop ACF + stage missing manifests).
   const [showWorkshopRepair, setShowWorkshopRepair] = useState(false);
+  // A repair result that needs attention opens this dedicated popup instead of
+  // leaving the outcome inside the repair dialog.
+  const [workshopReport, setWorkshopReport] = useState<{
+    report: WorkshopSyncReport | null;
+    error: string | null;
+  } | null>(null);
 
   const showStatus = (text: string, type: StatusType) => {
     setStatus({ text, type });
@@ -295,7 +302,24 @@ export const LibraryView = memo(function LibraryView({
         />
       )}
 
-      {showWorkshopRepair && <WorkshopRepairModal onStatus={showStatus} onClose={() => setShowWorkshopRepair(false)} />}
+      {showWorkshopRepair && (
+        <WorkshopRepairModal
+          onStatus={showStatus}
+          onClose={() => setShowWorkshopRepair(false)}
+          onReport={(report, error) => {
+            setShowWorkshopRepair(false);
+            setWorkshopReport({ report, error });
+          }}
+        />
+      )}
+
+      {workshopReport && (
+        <WorkshopReportModal
+          report={workshopReport.report}
+          error={workshopReport.error}
+          onClose={() => setWorkshopReport(null)}
+        />
+      )}
     </div>
   );
 });

@@ -42,6 +42,7 @@ must agree on, or you add/rename an IPC command.
 | `<AetherData>\backup\<app_id>\lua\<depot>_<gid>.manifest` | referenced manifests (active AND commented pins) + Workshop manifests | Desk and DLL (contract §2) |
 | `<AetherData>\state\hubcap_generation_quota.json` (+ `.lock` sibling) | shared daily budget | Desk and DLL (contract §4) |
 | `<AetherData>\temp\hubcap\workshop\<item>.manifest` | per-item keyed Workshop cache (Desk only) | Desk |
+| `<AetherData>\state\workshop_unavailable.json` | terminal Workshop `404`s, keyed by item + manifest, 24 h lifetime | Desk only |
 | `<AetherData>\state\hubcap_game_updates.json` | monitor checkpoint (fingerprint, `contents_checked`, …) | Desk only |
 
 The `<depot>_<gid>.manifest` file name is the manifest's **complete identity**:
@@ -119,6 +120,12 @@ Twins: `AetherDesk/src-tauri/src/providers/hubcap_generation.rs` ↔
 - Game generation endpoint: `GET /generate/manifest?depot_id=&manifest_id=`;
   the response must be identity-validated (depot+gid in the protobuf) before
   install.
+- Workshop repair targets only direct children of `WorkshopItemsInstalled` with
+  a positive decimal manifest. Per-branch `manifest_history` indices are not
+  items, and `WorkshopItemDetails`-only subscriptions are never sent to Hubcap.
+- A terminal Workshop `404` is remembered per `(item, manifest)` for **24 h**;
+  a changed manifest retries immediately, and a skipped item does not consume
+  the 5-per-pass generation cap.
 
 Traffic policy (current values — align here when they change):
 

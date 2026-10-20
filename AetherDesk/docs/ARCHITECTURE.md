@@ -150,6 +150,16 @@ invariants
   backs up the manifests it references.
 - Lua is parsed as text and never executed. Malformed pins are a user-fixable
   state, reported with their line, not a retryable error.
+- Workshop repair targets only direct children of `WorkshopItemsInstalled` with
+  a positive decimal manifest. Nested `manifest_history` indices and `-1`
+  legacy entries are not items; `WorkshopItemDetails` only lists pending
+  subscriptions and is never sent to Hubcap.
+- A Hubcap `404` is a data-availability answer, not proof that a mod is gone.
+  The report calls it "not in Hubcap or unknown error", and the 24 h cache is
+  keyed by `(item, manifest)` so a changed manifest retries immediately.
+- Never delete or edit `appworkshop_*.acf` to unsubscribe. The file is per
+  game, Steam rebuilds it, and only the Steam Workshop page unsubscribes. An
+  empty Workshop content directory is not content.
 
 ### Diagnostics
 
