@@ -123,11 +123,16 @@ fn select_workshop_targets(
         0
     };
     let installed_count = installed.len();
-    if include_subscriptions {
-        installed.extend(subscriptions);
-    }
+    // The explicit repair prioritizes new subscriptions: the background
+    // monitor already retries installed updates, while a subscription waits
+    // for the next manual click. Both still share the per-run generation cap.
+    let targets = if include_subscriptions {
+        subscriptions.into_iter().chain(installed).collect()
+    } else {
+        installed
+    };
     WorkshopSelection {
-        targets: installed,
+        targets,
         installed: installed_count,
         subscriptions: selected_subscriptions,
     }
@@ -1358,6 +1363,47 @@ mod tests {
     }
 
     #[test]
+    fn content_request_needed_requests_an_update_with_existing_content() {
+        let target = WorkshopTarget {
+            item: WorkshopItem {
+                manifest_gid: 900,
+                ..workshop_target().item
+            },
+            ..workshop_target()
+        };
+
+        assert!(content_request_needed(
+            ContentState {
+                present: true,
+                empty: false,
+            },
+            target,
+        ));
+    }
+
+    #[test]
+    fn content_request_needed_skips_unchanged_existing_content() {
+        assert!(!content_request_needed(
+            ContentState {
+                present: true,
+                empty: false,
+            },
+            workshop_target(),
+        ));
+    }
+
+    #[test]
+    fn content_request_needed_requests_missing_content() {
+        assert!(content_request_needed(
+            ContentState {
+                present: false,
+                empty: true,
+            },
+            workshop_target(),
+        ));
+    }
+
+    #[test]
     fn report_classifies_404_as_hubcap_not_found() {
         let (status, reason) =
             failure_reason("Hubcap Workshop manifest request http_error (HTTP 404)");
@@ -1501,7 +1547,8 @@ mod review_fix_tests {
         assert_eq!(selection.installed, 1);
         assert_eq!(selection.subscriptions, 1);
         assert_eq!(selection.targets.len(), 2);
-        assert!(selection.targets.iter().any(|target| target.subscription));
+        assert!(selection.targets[0].subscription);
+        assert!(!selection.targets[1].subscription);
     }
 
     #[test]

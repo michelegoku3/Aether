@@ -24,9 +24,9 @@ const reasonLabel = (item: WorkshopItemReport): string | null => {
     case 'unknownError':
       return 'Unknown error.';
     case 'generationCap':
-      return 'Deferred by the generation limit; retried on the next pass.';
+      return 'Deferred by the per-run limit; run Repair again to retry.';
     case 'downloadCap':
-      return 'Manifest is ready; the download request was deferred to the next pass.';
+      return 'Manifest is ready; run Repair again to request the remaining Steam downloads.';
     default:
       return null;
   }

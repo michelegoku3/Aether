@@ -160,6 +160,9 @@ invariants
   manifest. An update asks Steam for the payload even when the old content
   directory exists, and the report marks it as an update rather than "already
   local".
+- The explicit repair processes subscriptions before installed updates. The
+  monitor retries installed updates; subscriptions beyond the 5-per-run
+  generation cap need another manual Repair.
 - A Hubcap `404` is a data-availability answer, not proof that a mod is gone.
   The report calls it "not in Hubcap or unknown error", and the 24 h cache is
   keyed by `(item, manifest)` so a changed manifest retries immediately.

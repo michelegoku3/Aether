@@ -266,6 +266,55 @@ fn needs_download_selects_latest_when_timestamps_are_missing() {
 }
 
 #[test]
+fn older_latest_is_ignored_even_when_needs_download_is_set() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+
+    let installed = installed_item_at(555, 100, 20);
+    let details = details_item_with_latest(555, 100, 200, 5, 10);
+    write_workshop_acf(root, 1, &installed_acf(&installed, &details, true));
+
+    let targets = discover_workshop_items(root.to_str().unwrap());
+
+    assert_eq!(targets.len(), 1);
+    assert_eq!(targets[0].item.manifest_gid, 100);
+    assert!(!targets[0].is_update());
+}
+
+#[test]
+fn missing_timestamps_without_needs_download_keep_installed() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+
+    let installed = installed_item(555, 100);
+    let details = "\t\t\"555\"\n\t\t{\n\t\t\t\"manifest\"\t\t\"100\"\n\t\t\t\"latest_manifest\"\t\t\"200\"\n\t\t}\n"
+        .to_string();
+    write_workshop_acf(root, 1, &installed_acf(&installed, &details, false));
+
+    let targets = discover_workshop_items(root.to_str().unwrap());
+
+    assert_eq!(targets.len(), 1);
+    assert_eq!(targets[0].item.manifest_gid, 100);
+    assert!(!targets[0].is_update());
+}
+
+#[test]
+fn equal_timestamps_keep_installed() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+
+    let installed = installed_item_at(555, 100, 10);
+    let details = details_item_with_latest(555, 100, 200, 10, 10);
+    write_workshop_acf(root, 1, &installed_acf(&installed, &details, true));
+
+    let targets = discover_workshop_items(root.to_str().unwrap());
+
+    assert_eq!(targets.len(), 1);
+    assert_eq!(targets[0].item.manifest_gid, 100);
+    assert!(!targets[0].is_update());
+}
+
+#[test]
 fn subscriptions_without_a_manifest_are_ignored() {
     let tmp = tempfile::tempdir().unwrap();
     let root = tmp.path();

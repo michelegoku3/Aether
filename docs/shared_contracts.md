@@ -134,6 +134,10 @@ Twins: `AetherDesk/src-tauri/src/providers/hubcap_generation.rs` ↔
 - A terminal Workshop `404` is remembered per `(item, manifest)` for **24 h**;
   a changed manifest retries immediately, and a skipped item does not consume
   the 5-per-pass generation cap.
+- The explicit repair processes subscription targets before installed updates.
+  The monitor retries installed updates after **90 s**, but it never processes
+  subscriptions: a manual run that exceeds the 5-generation cap must be run
+  again to drain the remaining subscriptions.
 
 Traffic policy (current values — align here when they change):
 
