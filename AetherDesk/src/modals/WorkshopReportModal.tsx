@@ -41,11 +41,7 @@ const badgeText = (item: WorkshopItemReport): string => {
 
 const ReportRow = ({ item }: { item: WorkshopItemReport }) => {
   const reason = reasonLabel(item);
-  const meta = [
-    `#${item.workshopId}`,
-    item.contentEmpty ? 'empty content folder' : null,
-    item.needsDownload ? 'Steam is retrying' : null,
-  ]
+  const extras = [item.contentEmpty ? 'empty content folder' : null, item.needsDownload ? 'Steam is retrying' : null]
     .filter(Boolean)
     .join(' · ');
 
@@ -53,7 +49,12 @@ const ReportRow = ({ item }: { item: WorkshopItemReport }) => {
     <div className="workshop-report-row">
       <div className="workshop-report-row-main">
         <div className="workshop-report-row-name">{itemName(item)}</div>
-        <div className="workshop-report-row-meta">{meta}</div>
+        <div className="workshop-report-row-meta">
+          <span>#{item.workshopId}</span>
+          <span> · manifest </span>
+          <span className="workshop-report-row-manifest">{item.manifestGid}</span>
+          {extras ? <span>{` · ${extras}`}</span> : null}
+        </div>
         {reason && <div className="workshop-report-row-reason">{reason}</div>}
       </div>
       <span
@@ -90,8 +91,9 @@ export const WorkshopReportModal = ({ report, error, onClose }: WorkshopReportMo
   const ready = report?.items.filter((item) => item.status === 'ready' || item.status === 'pending') ?? [];
   const deferred = report?.items.filter((item) => item.status === 'deferred') ?? [];
   const errors = report?.items.filter((item) => item.status === 'failed' || item.status === 'unavailable') ?? [];
+  const errorLabel = errors.length === 1 ? 'error' : 'errors';
   const summary = report
-    ? `${report.discovered} installed · ${report.alreadyLocal} already local · ${ready.length} to download · ${deferred.length} deferred · ${errors.length} errors`
+    ? `${report.discovered} installed · ${report.alreadyLocal} already local · ${ready.length} to download · ${deferred.length} deferred · ${errors.length} ${errorLabel}`
     : null;
 
   return (

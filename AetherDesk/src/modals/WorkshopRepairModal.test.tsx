@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react';
+﻿import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import { mockInvokeCommands } from '../test/tauriMocks';
@@ -46,7 +46,7 @@ describe('WorkshopRepairModal', () => {
           appId: 3328490,
           appName: 'Airport Control 27',
           workshopId: 3806068832,
-          manifestGid: 1,
+          manifestGid: '1',
           status: 'failed',
           reason: 'hubcapNotFound',
           httpStatus: 404,

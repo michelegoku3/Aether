@@ -54,8 +54,8 @@ fn ignores_branch_history_indices() {
     for index in 1..=25u64 {
         installed.push_str(&installed_item(900_000 + index, 800_000 + index));
     }
-    // The first real item carries the branch history that the old regex read
-    // as Workshop IDs 0...19.
+    // The first real item carries a branch history one level below the item,
+    // so a depth-aware parser must not treat its indices as Workshop IDs.
     let history = {
         let mut block = String::from("\t\t\t\"manifest_history\"\n\t\t\t{\n");
         for index in 0..=19u64 {
@@ -172,4 +172,19 @@ fn deduplicates_by_item_id() {
             manifest_gid: 111,
         }]
     );
+}
+
+#[test]
+fn installed_items_are_not_pending() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+
+    let installed = installed_item(3_747_222_633, 634_883_037_376_787_724);
+    let details = details_item(3_747_222_633, 634_883_037_376_787_724);
+    write_workshop_acf(root, 431960, &installed_acf(&installed, &details, false));
+
+    let (items, pending) = discover_workshop_items(root.to_str().unwrap());
+
+    assert_eq!(items.len(), 1);
+    assert!(pending.is_empty());
 }

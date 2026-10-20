@@ -17,7 +17,8 @@ export interface WorkshopItemReport {
   appId: number;
   appName: string | null;
   workshopId: number;
-  manifestGid: number;
+  /** Steam manifest GIDs exceed JavaScript's safe integer; serialize as text. */
+  manifestGid: string;
   status: WorkshopItemStatus;
   /** Null for a ready item: being ready is not a failure. */
   reason: WorkshopItemReason | null;

@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+﻿import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import { WorkshopReportModal } from './WorkshopReportModal';
@@ -19,7 +19,7 @@ const REPORT: WorkshopSyncReport = {
       appId: 3328490,
       appName: 'Airport Control 27',
       workshopId: 3806068832,
-      manifestGid: 1,
+      manifestGid: '3748992252827399921',
       status: 'ready',
       reason: null,
       httpStatus: null,
@@ -30,7 +30,7 @@ const REPORT: WorkshopSyncReport = {
       appId: 431960,
       appName: 'Wallpaper Engine',
       workshopId: 111,
-      manifestGid: 2,
+      manifestGid: '2',
       status: 'pending',
       reason: 'pendingSubscription',
       httpStatus: null,
@@ -41,7 +41,7 @@ const REPORT: WorkshopSyncReport = {
       appId: 3328490,
       appName: 'Airport Control 27',
       workshopId: 222,
-      manifestGid: 3,
+      manifestGid: '3',
       status: 'deferred',
       reason: 'downloadCap',
       httpStatus: null,
@@ -52,7 +52,7 @@ const REPORT: WorkshopSyncReport = {
       appId: 3328490,
       appName: 'Airport Control 27',
       workshopId: 333,
-      manifestGid: 4,
+      manifestGid: '4',
       status: 'failed',
       reason: 'hubcapNotFound',
       httpStatus: 404,
@@ -71,6 +71,8 @@ describe('WorkshopReportModal', () => {
     expect(screen.getByText('Errors')).toBeInTheDocument();
     expect(screen.getAllByText('Airport Control 27').length).toBeGreaterThan(0);
     expect(screen.getByText('#3806068832')).toBeInTheDocument();
+    expect(screen.getByText('3748992252827399921')).toBeInTheDocument();
+    expect(screen.getByText(/1 error$/)).toBeInTheDocument();
     expect(screen.getByText('404')).toBeInTheDocument();
     expect(screen.getByText(/Probably not in Hubcap's database/)).toBeInTheDocument();
   });

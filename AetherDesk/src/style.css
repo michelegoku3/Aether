@@ -4327,6 +4327,12 @@ body {
   margin-top: 2px;
 }
 
+.workshop-report-row-manifest {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 10.5px;
+  color: #777;
+}
+
 .workshop-report-row-reason {
   color: var(--color-muted);
   font-size: 11.5px;

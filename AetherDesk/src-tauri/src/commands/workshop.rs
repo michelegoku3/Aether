@@ -331,6 +331,36 @@ fn remove_empty_workshop_content_dir(steam_path: &str, app_id: u32, workshop_id:
     removed
 }
 
+/// True when neither depotcache nor the validated Workshop cache has the
+/// expected manifest, so only Hubcap can supply it.
+fn needs_remote_manifest(steam_path: &str, item: WorkshopItem) -> bool {
+    !has_local_manifest_gid(steam_path, item.manifest_gid)
+        && !cached_workshop_manifest_matches(item.workshop_id, item.manifest_gid)
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum WorkshopItemAction {
+    Run { needs_remote: bool },
+    SkipUnavailable,
+    DeferGeneration,
+}
+
+/// The per-item decision, kept pure so the interaction between local/cache
+/// hits, the terminal-404 cache and the per-run generation cap is testable.
+fn decide_item_action(
+    needs_remote: bool,
+    unavailable: bool,
+    remote_attempts: usize,
+) -> WorkshopItemAction {
+    if needs_remote && unavailable {
+        return WorkshopItemAction::SkipUnavailable;
+    }
+    if needs_remote && remote_attempts >= WORKSHOP_MAX_GENERATIONS_PER_RUN {
+        return WorkshopItemAction::DeferGeneration;
+    }
+    WorkshopItemAction::Run { needs_remote }
+}
+
 fn failure_reason(error: &str) -> (Option<u16>, WorkshopItemReason) {
     let http_status = crate::core::workshop_failures::http_status_from_error(error);
     let reason = if crate::core::workshop_failures::is_hubcap_not_found(error) {
@@ -354,7 +384,7 @@ fn make_report_item(
         app_id: item.app_id,
         app_name: app_name.cloned(),
         workshop_id: item.workshop_id,
-        manifest_gid: item.manifest_gid,
+        manifest_gid: item.manifest_gid.to_string(),
         status,
         reason,
         http_status,
@@ -388,6 +418,32 @@ fn report_item_for_outcome(
         outcome.content_empty,
         false,
     ))
+}
+
+fn record_sync_outcome(
+    report: &mut WorkshopSyncReport,
+    item: WorkshopItem,
+    app_name: Option<&String>,
+    outcome: SyncOutcome,
+) {
+    match outcome.origin {
+        SyncOrigin::Generated => report.generated += 1,
+        SyncOrigin::Cached => report.restored_from_cache += 1,
+        SyncOrigin::AlreadyLocal => {
+            if outcome.content_present {
+                report.already_local += 1;
+            }
+        }
+    }
+    if !outcome.content_present {
+        report.content_missing += 1;
+    }
+    if outcome.content_deferred {
+        report.deferred += 1;
+    }
+    if let Some(report_item) = report_item_for_outcome(item, app_name, outcome) {
+        report.items.push(report_item);
+    }
 }
 
 /// A manifest stages the CDN metadata, not the Workshop payload itself. Ask
@@ -755,7 +811,8 @@ pub struct WorkshopItemReport {
     pub app_id: u32,
     pub app_name: Option<String>,
     pub workshop_id: u64,
-    pub manifest_gid: u64,
+    /// String on purpose: Steam manifest GIDs exceed JavaScript's safe integer.
+    pub manifest_gid: String,
     pub status: WorkshopItemStatus,
     /// `None` for a ready item: being ready is not a failure.
     pub reason: Option<WorkshopItemReason>,
@@ -850,7 +907,11 @@ pub async fn sync_hubcap_workshop_manifests(
 
     let mut runnable = Vec::with_capacity(items.len());
     for item in items {
-        if failures.is_unavailable(item.workshop_id, item.manifest_gid, now) {
+        // A local or cached manifest wins over a remembered 404: the cache only
+        // suppresses a provider request, it never hides a payload Steam can
+        // already use.
+        let needs_remote = needs_remote_manifest(&steam_path, item);
+        if needs_remote && failures.is_unavailable(item.workshop_id, item.manifest_gid, now) {
             report.unavailable += 1;
             report.items.push(make_report_item(
                 item,
@@ -866,10 +927,9 @@ pub async fn sync_hubcap_workshop_manifests(
         }
     }
 
-    let needs_remote_generation = runnable.iter().any(|item| {
-        !has_local_manifest_gid(&steam_path, item.manifest_gid)
-            && !cached_workshop_manifest_matches(item.workshop_id, item.manifest_gid)
-    });
+    let needs_remote_generation = runnable
+        .iter()
+        .any(|item| needs_remote_manifest(&steam_path, *item));
     crate::desk_log_debug!(
         "workshop",
         "Workshop sync local/cache gate runnable={} unavailable={} needs_remote_generation={}",
@@ -902,10 +962,25 @@ pub async fn sync_hubcap_workshop_manifests(
     let mut remote_attempts = 0usize;
 
     for item in runnable {
-        let needs_remote = !has_local_manifest_gid(&steam_path, item.manifest_gid)
-            && !cached_workshop_manifest_matches(item.workshop_id, item.manifest_gid);
-        if needs_remote {
-            if remote_attempts >= WORKSHOP_MAX_GENERATIONS_PER_RUN {
+        match decide_item_action(
+            needs_remote_manifest(&steam_path, item),
+            failures.is_unavailable(item.workshop_id, item.manifest_gid, now),
+            remote_attempts,
+        ) {
+            WorkshopItemAction::SkipUnavailable => {
+                report.unavailable += 1;
+                report.items.push(make_report_item(
+                    item,
+                    app_names.get(&item.app_id),
+                    WorkshopItemStatus::Unavailable,
+                    Some(WorkshopItemReason::HubcapNotFound),
+                    Some(404),
+                    false,
+                    false,
+                ));
+                continue;
+            }
+            WorkshopItemAction::DeferGeneration => {
                 report.deferred += 1;
                 report.items.push(make_report_item(
                     item,
@@ -918,7 +993,11 @@ pub async fn sync_hubcap_workshop_manifests(
                 ));
                 continue;
             }
-            remote_attempts += 1;
+            WorkshopItemAction::Run { needs_remote } => {
+                if needs_remote {
+                    remote_attempts += 1;
+                }
+            }
         }
         match sync_one_workshop_item(
             client.clone(),
@@ -931,26 +1010,7 @@ pub async fn sync_hubcap_workshop_manifests(
         .await
         {
             Ok(outcome) => {
-                match outcome.origin {
-                    SyncOrigin::Generated => report.generated += 1,
-                    SyncOrigin::Cached => report.restored_from_cache += 1,
-                    SyncOrigin::AlreadyLocal => {
-                        if outcome.content_present {
-                            report.already_local += 1;
-                        }
-                    }
-                }
-                if !outcome.content_present {
-                    report.content_missing += 1;
-                }
-                if outcome.content_deferred {
-                    report.deferred += 1;
-                }
-                if let Some(report_item) =
-                    report_item_for_outcome(item, app_names.get(&item.app_id), outcome)
-                {
-                    report.items.push(report_item);
-                }
+                record_sync_outcome(&mut report, item, app_names.get(&item.app_id), outcome);
             }
             Err(error) => {
                 report.failed += 1;
@@ -993,7 +1053,7 @@ pub async fn sync_hubcap_workshop_manifests(
             app_id: pending.app_id,
             app_name: app_names.get(&pending.app_id).cloned(),
             workshop_id: pending.workshop_id,
-            manifest_gid: pending.manifest_gid,
+            manifest_gid: pending.manifest_gid.to_string(),
             status: WorkshopItemStatus::Pending,
             reason: Some(WorkshopItemReason::PendingSubscription),
             http_status: None,
@@ -1260,5 +1320,122 @@ mod tests {
             4
         ));
         assert!(non_empty.exists());
+    }
+}
+
+#[cfg(test)]
+mod review_fix_tests {
+    use super::*;
+    use std::fs;
+
+    const ITEM: WorkshopItem = WorkshopItem {
+        app_id: 3328490,
+        workshop_id: 3806068832,
+        manifest_gid: 3748992252827399921,
+    };
+
+    fn outcome(content_present: bool, content_deferred: bool) -> SyncOutcome {
+        SyncOutcome {
+            origin: SyncOrigin::Generated,
+            content_present,
+            content_deferred,
+            content_empty: false,
+        }
+    }
+
+    #[test]
+    fn decide_item_action_runs_local_items_even_when_a_404_is_cached() {
+        assert_eq!(
+            decide_item_action(false, true, 0),
+            WorkshopItemAction::Run {
+                needs_remote: false
+            }
+        );
+    }
+
+    #[test]
+    fn decide_item_action_skips_remote_items_with_a_cached_404() {
+        assert_eq!(
+            decide_item_action(true, true, 0),
+            WorkshopItemAction::SkipUnavailable
+        );
+    }
+
+    #[test]
+    fn decide_item_action_defers_only_remote_items_at_the_cap() {
+        assert_eq!(
+            decide_item_action(true, false, WORKSHOP_MAX_GENERATIONS_PER_RUN),
+            WorkshopItemAction::DeferGeneration
+        );
+        assert_eq!(
+            decide_item_action(false, false, WORKSHOP_MAX_GENERATIONS_PER_RUN),
+            WorkshopItemAction::Run {
+                needs_remote: false
+            }
+        );
+    }
+
+    #[test]
+    fn needs_remote_manifest_sees_a_local_depotcache_file() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        let depotcache = root.join("depotcache");
+        fs::create_dir_all(&depotcache).unwrap();
+        fs::write(depotcache.join("123_456.manifest"), b"manifest").unwrap();
+
+        let local = WorkshopItem {
+            app_id: 1,
+            workshop_id: 2,
+            manifest_gid: 456,
+        };
+        assert!(!needs_remote_manifest(root.to_str().unwrap(), local));
+    }
+
+    #[test]
+    fn record_sync_outcome_lists_a_deferred_item_once() {
+        let mut report = WorkshopSyncReport::default();
+        record_sync_outcome(&mut report, ITEM, None, outcome(false, true));
+
+        assert_eq!(report.content_missing, 1);
+        assert_eq!(report.deferred, 1);
+        assert_eq!(report.items.len(), 1);
+        assert_eq!(report.items[0].status, WorkshopItemStatus::Deferred);
+        assert_eq!(
+            report.items[0].reason,
+            Some(WorkshopItemReason::DownloadCap)
+        );
+    }
+
+    #[test]
+    fn record_sync_outcome_does_not_list_already_local_items() {
+        let mut report = WorkshopSyncReport::default();
+        let local = SyncOutcome {
+            origin: SyncOrigin::AlreadyLocal,
+            content_present: true,
+            content_deferred: false,
+            content_empty: false,
+        };
+        record_sync_outcome(&mut report, ITEM, None, local);
+
+        assert_eq!(report.already_local, 1);
+        assert!(report.items.is_empty());
+    }
+
+    #[test]
+    fn report_serializes_manifest_gid_as_a_string() {
+        let report = make_report_item(
+            ITEM,
+            None,
+            WorkshopItemStatus::Ready,
+            None,
+            None,
+            false,
+            false,
+        );
+        let value = serde_json::to_value(&report).unwrap();
+
+        assert_eq!(value["manifestGid"], "3748992252827399921");
+        assert_eq!(value["status"], "ready");
+        assert_eq!(value["reason"], serde_json::Value::Null);
     }
 }
