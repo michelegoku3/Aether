@@ -168,6 +168,7 @@ fn main() {
             commands::workshop::generate_hubcap_workshop_manifest,
             commands::workshop::sync_hubcap_workshop_manifests,
             commands::manifests::sync_hubcap_game_manifest,
+            commands::manifests::export_game_bundle,
             commands::monitor::get_hubcap_monitor_status,
             commands::library::get_installed_library_games,
             commands::library::get_library_change_revision,

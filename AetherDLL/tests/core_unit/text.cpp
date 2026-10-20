@@ -379,4 +379,3 @@ void JsonWriterTest() {
 
     CHECK(out == golden);
 }
-

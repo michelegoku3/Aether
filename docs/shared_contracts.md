@@ -7,9 +7,27 @@ yet must produce **the same backup tree, the same cache and the same quota
 consumption**. This page is the source of truth for the *policy*; the code
 implements it twice, the contract tests (§6) protect it.
 
+**Read it when:** you change a value, a rule or a file name that both halves
+must agree on, or you add/rename an IPC command.
+
+**Not here:** the internal architecture of one half — see
+[`AetherDesk/docs/ARCHITECTURE.md`](../AetherDesk/docs/ARCHITECTURE.md) and
+[`AetherDLL/docs/ARCHITECTURE.md`](../AetherDLL/docs/ARCHITECTURE.md).
+
 > **Maintenance rule**: when you change a value or a rule here, you must align
 > BOTH implementations and update this table in the same commit. Every section
 > lists the two "twins" with precise paths.
+
+## Contents
+
+- [1. On-disk layout (single source of truth)](#1-on-disk-layout-single-source-of-truth)
+- [2. Manifest backup/restore contract](#2-manifest-backuprestore-contract)
+- [3. "Manifest first, Lua last" commit contract](#3-manifest-first-lua-last-commit-contract)
+- [4. Hubcap quota and generation contract](#4-hubcap-quota-and-generation-contract)
+- [5. Lua pin contract](#5-lua-pin-contract)
+- [6. Contract tests](#6-contract-tests)
+- [7. Desk → frontend IPC contract (argument keys)](#7-desk--frontend-ipc-contract-argument-keys)
+- [8. The Steam path is not a client parameter](#8-the-steam-path-is-not-a-client-parameter)
 
 ---
 
@@ -131,8 +149,8 @@ e.g. the bridge window (2.5 s) ≥ live-generation p95 (~1 s); the DLL backoff
   (`latest_installed_gid`, mtime on depotcache) over the Hubcap view
   (`/manifest/{appid}/contents`, free endpoint).
 - Every Lua rewrite (realign, toggle, policy, version, edits) must archive
-  pre+post to `history/` and back up the referenced manifests (full matrix in
-  §5).
+  pre+post to `history/` and back up the referenced manifests (backup rules in
+  §2).
 
 ## 6. Contract tests
 
@@ -230,27 +248,14 @@ not the configured path, so the client must pass it.
 the client could send a path different from the configured one. The rule is
 guarded by `tests/ipc_contract_tests.rs::no_command_takes_a_steam_path_from_the_client`.
 
-## 9. Desk mutation ownership (settings batch/coordinator, 2026-10-05)
+---
 
-### Settings and DLL configuration
+## Related
 
-- `SettingsManager::update` runs **strict load → typed patch → normalization → commit** under mutex and advisory `settings.lock`. The closure must be pure: no remote I/O, no recursive repository calls.
-- IPC `save_settings` takes `settings` **and `base`** (the form-seen snapshot) and returns the effective snapshot. Fields unchanged vs `base` keep the current value. A same-field conflict returns `SETTINGS_CONFLICT`, with no sensitive values in the message.
-- `settings.json` and `provider_credentials.dat` keep their existing formats. `settings.pending.json` holds a journal version, sanitized JSON and DPAPI ciphertext: published before both files and replayed idempotently before every repository read/mutation. `settings.last-good.json` keeps an older pair in the **same journal format**, not the plain settings JSON format.
-- Do not confuse a present journal with an abandoned lock: the journal is recovered, while `.lock` files may legitimately linger after stop; lock ownership belongs to the OS.
-- `load()` stays a read-only adapter with logged fallback; write commands and `get_settings` use strict loading. A parse/DPAPI error never authorizes saving the defaults.
-- Every Desk editor of `aethercore.toml` goes through `core/config_document.rs`: lossless parser, section-aware keys, per-document lock and unique temps. The legacy copy is updated only when present. The two TOML copies are not a multi-file transaction: a sync error is reported, not declared success.
-- Rust 1.89 minimum for `std::fs::File` advisory locks; no new locking library. `toml_edit` becomes a direct dependency, reusing the version already in the lockfile.
-
-### Per-game mutations
-
-- `core/game_mutations.rs` identifies the resource with **canonicalized Steam root + AppID**. Equivalent aliases converge; on Windows the key is case-insensitive. The map keeps weak references to avoid growing forever.
-- Remote operations: `MutationPlan::prepare` BEFORE reading inputs/preparing the download; `commit_for` immediately before publication. Meanwhile no game lock is held for networking. The commit checks Desk generation, Lua/ACF/libraryfolders fingerprint and current root. A concurrent change returns `GAME_STATE_CONFLICT` without publishing the Lua/ACF prepared on the old state. Already-restored immutable manifests from the resolver may stay cached.
-- Synchronous operations: `try_acquire` returns `GAME_BUSY` instead of blocking the runtime. Async lanes may await the same game's mutex. Coordination is in-memory only and creates no `desk-locks` files. Distinct Desk processes are not coordinated by this mechanism.
-- **Lock order:** game → depotcache/config-editor gate. Never re-acquire the same game from a helper: the post-install Store refresh starts AFTER the main transaction releases. The shared realignment receives the guard from the caller.
-- When delegating to `spawn_blocking`, the worker receives the guard by value: cancelling the waiter must not free a lock while the worker is still writing. This also holds for the external-tool and online-deploy wrappers.
-- Local imports keep ownership during writes, policy update and final backup. Bulk acquires discovered AppIDs in order before touching files. Manifest Workshop writers, which never rewrite the game's Lua/ACF, keep their own gate/cache identity contract.
-- **Deliberate limit:** Steam, the DLL, manual editors and old Desk builds do not obey the new locks. Fingerprint and pre-replacement recheck detect observable changes but offer no atomic CAS against uncooperative external writers. Do not block the Steam process to fake this guarantee.
-- The coordinator is not a multi-file rollback journal and does not solve the read-modify-write of global JSON cache/online state across different AppIDs: those are distinct domains.
-
-Diagnostics logs: `settings` (prepared/applying/finalized/conflict), `config` (operation/path/changed/error, never values), `mutations` (begin/release with ID, operation, AppID/root, duration; busy/conflict). **Release means freed resource, not successful operation**: the outcome stays in the caller's log.
+- [`AetherDesk/docs/ARCHITECTURE.md`](../AetherDesk/docs/ARCHITECTURE.md) —
+  Desk module map, mutation ownership and settings repository.
+- [`AetherDLL/docs/ARCHITECTURE.md`](../AetherDLL/docs/ARCHITECTURE.md) —
+  AetherCore invariants.
+- [`docs/glossary.md`](glossary.md) — shared vocabulary.
+- [`docs/quality-gates.md`](quality-gates.md) — the gates that run the
+  contract tests.

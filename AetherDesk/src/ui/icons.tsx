@@ -43,6 +43,25 @@ export const WrenchIcon = ({ size = 15 }: { size?: number }) => (
   </svg>
 );
 
+/** Download-into-tray icon (e.g. exporting a game's files). */
+export const DownloadIcon = ({ size = 15 }: { size?: number }) => (
+  <svg
+    width={size}
+    height={size}
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2.2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    aria-hidden="true"
+  >
+    <path d="M12 3.5v11" />
+    <path d="M7.5 10.5 12 15l4.5-4.5" />
+    <path d="M4.5 17.5v1.5a1.5 1.5 0 0 0 1.5 1.5h12a1.5 1.5 0 0 0 1.5-1.5v-1.5" />
+  </svg>
+);
+
 /** Folder plus / local import icon */
 export const FolderPlusIcon = ({ size = 18 }: { size?: number }) => (
   <svg

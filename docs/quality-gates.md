@@ -1,9 +1,20 @@
 # Quality gates — what the build checks and where
 
+**What it is:** every check the build and CI run, what each one blocks and
+where it is configured.
+
+**Read it when:** a gate fails, you add or change a check, or a local run
+disagrees with CI.
+
+**Not here:** the commands for day-to-day work (see
+[`AGENTS.md`](../AGENTS.md#build-test-lint)) or the fast iteration loop (see
+[`AetherDLL/docs/quick-build.md`](../AetherDLL/docs/quick-build.md)).
+
 Single rule: **every check runs identically locally and on GitHub**. The
 release workflow (`.github/workflows/build.yml`) adds nothing that `build_desk.cmd`
 or "Build All" in Visual Studio don't already do; it only serves as the final
 barrier before publishing.
+
 
 ## AetherDesk — `build_desk.cmd` (and the `release-desk` job)
 
@@ -15,6 +26,7 @@ barrier before publishing.
 | 4 | `npm run verify` → `lint:ci` | `error`-level ESLint rules (hooks, unused imports, fallthrough) | `eslint.config.js` |
 | 4 | `npm run verify` → `test:ci` | React/TypeScript regressions and coverage thresholds | `vitest.config.ts` |
 | 4 | `npm run verify` → `check:wiring` | `.tsx/.ts` files never imported from `main.tsx` | `scripts/check_frontend_wiring.mjs` |
+| 4 | `npm run verify` → `check:docs` | a Markdown file no one links from `docs/INDEX.md`, a dangling relative link or heading anchor, a cited repository path that no longer exists | `Tools/check_docs.mjs` |
 | 4 | `npm run verify` → `check:unused` (**knip**) | never-imported exports/types, unused or undeclared npm dependencies | `knip.json`, `scripts/check_unused.mjs` |
 | 5 | `cargo clippy --all-targets -- -D warnings` | every rustc/clippy warning: dead code, unused imports, `unsafe` without `// SAFETY:`, locks held across `.await`, redundant clones, cast truncations | `Cargo.toml` → `[lints.rust]`, `[lints.clippy]` |
 | 6 | `cargo audit` | known CVEs in crates (RustSec database) | — (`/skipaudit`) |
@@ -32,6 +44,8 @@ barrier before publishing.
 - **npm audit**: explicitly update the direct dependency and regenerate the
   lockfile; the build never runs `npm audit fix`, because a quality gate must
   not mutate dependencies or sources while verifying them.
+- **docs**: the message names the document and the dangling reference. Link the
+  new document from `docs/INDEX.md`, or fix the path/anchor in the document.
 - **knip – unused export**: the function/type is exported but no other file
   imports it → drop `export` (when used only there) or delete it.
 - **knip – unused dependency**: remove it from `package.json`.
@@ -98,7 +112,7 @@ via `aether_apply_quality(<target>)`.
 
 | Check | What it blocks | Escape hatch |
 |---|---|---|
-| `/W4 /permissive- /Zc:preprocessor` | compiles at high warning level and conforming C++ (before: W1 default) | — |
+| `/W4 /permissive- /Zc:preprocessor` | compiles at high warning level and conforming C++ | — |
 | `/WX` | every MSVC warning is an error | `-DAETHER_WARNINGS_AS_ERRORS=OFF` (prints a WARNING at configure) |
 | `/external:W0` | zero noise from protobuf/abseil/lua/MinHook | — |
 | **clang-tidy** | static C++ bugs: use-after-move, narrowing, avoidable copies, missing locks, UB (CERT) | `-DAETHER_CLANG_TIDY=OFF`; checks in `AetherDLL/.clang-tidy` |
@@ -111,10 +125,10 @@ clang-tidy activates on its own when it finds the binary (Visual Studio Installe
 *Individual components* → **"C++ Clang tools for Windows"**). When missing, the
 configure says so clearly and carries on.
 
-### First activation (one time only)
+### Turning a warning backlog into a list
 
-`/W4 /WX` and clippy applied to ~60k pre-existing lines will surface a backlog.
-Recommended procedure, one component at a time:
+When one change adds many warnings at once, the `-D` escape hatch above shows
+the whole set in a single pass: fix it, then return to the default `/WX`.
 
 ```text
 AetherDLL : cmake --preset x64-Release -DAETHER_WARNINGS_AS_ERRORS=OFF
@@ -127,3 +141,10 @@ Frontend  : cd AetherDesk && npm install && npx knip
 
 After this cleanup the baseline is zero and every new warning is attributable to
 the commit introducing it.
+
+## Related
+
+- [`docs/INDEX.md`](INDEX.md) — every document, with "read it when".
+- [`AGENTS.md`](../AGENTS.md#build-test-lint) — build commands and conventions.
+- [`AetherDLL/docs/quick-build.md`](../AetherDLL/docs/quick-build.md) — the fast
+  iteration loop.

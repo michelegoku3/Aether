@@ -13,7 +13,7 @@
 //!    `core/backup.rs`, `versioning/sources/*`): they live next to the code they
 //!    cover because they test private functions or local details.
 //!
-//! Total: 433 tests (`cargo test`, counting `#[test]` attributes). The rule of thumb for placing a new test:
+//! Total: 438 tests (`cargo test`, counting `#[test]` attributes). The rule of thumb for placing a new test:
 //!
 //! - touches **more than one module**, or verifies something another part of the
 //!   system (frontend, DLL, files on disk) must honor → `src/tests/`;
@@ -26,6 +26,7 @@ pub mod custom_css_tests;
 pub mod desk_error_tests;
 pub mod dll_install_tests;
 pub mod dll_version_tests;
+pub mod game_bundle_tests;
 pub mod github_updater_tests;
 pub mod home_links_tests;
 pub mod hubcap_monitor_tests;

@@ -203,8 +203,8 @@ std::int32_t DispatchRecv(const WireFrame& f) {
         ServiceResponse rsp;
         const bool rspParsed = ParseServiceResponse(f, rsp);
         {
-        // Unparsable headers yield eresult -1 (missing_or_unparsed), no job
-        // resolution and no dispatch below.
+            // Unparsable headers yield eresult -1 (missing_or_unparsed), no job
+            // resolution and no dispatch below.
             const std::uint64_t jt = (rspParsed && rsp.hasTarget) ? rsp.target : 0;
             const std::int32_t er = rspParsed ? rsp.eresult : -1;
             const std::string jname = jt ? ResolveServiceJob(jt) : std::string();

@@ -1,11 +1,14 @@
 # Fast AetherDLL builds
 
-Guide to the fast dev workflow for AetherDLL (replaces the legacy
-`compilazione-veloce.md`, removed: same content, English filename for
-discoverability).
+**What it is:** the fast dev loop for AetherDLL, cutting a full rebuild from
+~576 steps ("Rebuild All") to a few seconds.
 
-Guide to the AI-agent-in-browser dev workflow: cutting build times from ~576 steps ("Rebuild All")
-to a few seconds.
+**Read it when:** builds feel slow, you replaced files inside `AetherDLL/`, or
+you changed `proto/`.
+
+**Not here:** the gates themselves
+([`docs/quality-gates.md`](../../docs/quality-gates.md)) and the DLL invariants
+([`ARCHITECTURE.md`](ARCHITECTURE.md)).
 
 The recommended entry point is `build_dll.cmd` from the repository root:
 
@@ -44,7 +47,7 @@ Quality gates (all enforced identically locally and on CI, see `docs/quality-gat
 ## Pre-generated protobuf (default ON)
 
 `proto/generated/steam_messages.pb.{h,cc}` are **generated once with protoc 25.3
-and committed in the repo**. So the build no longer compiles `protoc` +
+and committed in the repo**. The build therefore compiles neither `protoc` +
 `libprotoc` (~120 steps) nor full `libprotobuf` (~70 steps): AetherCore links
 only `libprotobuf-lite`, and with `EXCLUDE_FROM_ALL` ninja builds just the
 libraries actually linked.
@@ -87,7 +90,7 @@ shows the whole `/W4` backlog in one pass; fix it, then go back to the default
 | Full rebuild **with ccache** (warm cache) | ~330-390 but almost all cached |
 | **Normal workflow: sync + Build All** | **only changed files + link** |
 
-## Note for AetherDesk (Tauri/Rust)
+## AetherDesk (Tauri/Rust) build tips
 
 - The UI: use `npm run build:fast` (just `vite build`) during development;
   `tsc` (full typecheck, ever slower as code grows) stays in `npm run build`
@@ -100,3 +103,11 @@ shows the whole `/W4` backlog in one pass; fix it, then go back to the default
   replace, otherwise every replacement restarts from zero (10-20 minutes).
 - Add a Windows Defender exclusion for the project folder and for `target\`:
   on Windows it is one of the most common slowdowns.
+
+## Related
+
+- [`docs/quality-gates.md`](../../docs/quality-gates.md) — what each gate
+  blocks.
+- [`ARCHITECTURE.md`](ARCHITECTURE.md) — AetherCore invariants.
+- [`../../docs/INDEX.md`](../../docs/INDEX.md) — every document, with "read it
+  when".

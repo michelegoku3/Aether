@@ -11,7 +11,7 @@ REM    1. approve the esbuild install script (npm 11+)
 REM    2. npm ci                -> install dependencies
 REM    3. npm audit             -> block high/critical vulnerabilities
 REM    4. npm run verify         -> tsc/vite, ESLint, test/coverage,
-REM       frontend wiring, unused npm exports/dependencies
+REM       frontend wiring, docs links/index, unused npm exports/dependencies
 REM    5. cargo clippy          -> Rust lint (warnings = errors, policy in Cargo.toml)
 REM    6. cargo audit + machete -> crate CVEs + unused Cargo dependencies
 REM    7. cargo test            -> unit tests + IPC contract tests
@@ -119,7 +119,7 @@ echo [3/9] Audit skipped.
 
 REM --- Step 4: frontend build + wiring guard ----------------------
 echo.
-echo [4/9] Verifying Tauri versions + frontend (build, lint, tests, wiring, unused)...
+echo [4/9] Verifying Tauri versions + frontend (build, lint, tests, wiring, docs, unused)...
 REM  lint:ci runs with --quiet: only ESLint errors show in the build, not the
 REM  warnings (still visible via `npm run lint`). Without --quiet every build
 REM  would close with "SUCCEEDED WITH WARNINGS" over unactionable noise.

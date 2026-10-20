@@ -1,6 +1,29 @@
 # AetherCore Architecture Notes
 
-This document records the invariants that keep AetherCore simpler and more maintainable than the LumaCore/OpenSteamTool code it replaces.
+**What it is:** the invariants that keep AetherCore simple and maintainable.
+
+**Read it when:** you add state, a hook, a worker, a persistence path or a
+subsystem to the DLL.
+
+**Not here:** the rules both halves must honor
+([`docs/shared_contracts.md`](../../docs/shared_contracts.md)), the Desk
+architecture ([`AetherDesk/docs/ARCHITECTURE.md`](../../AetherDesk/docs/ARCHITECTURE.md)),
+the fast build loop ([`quick-build.md`](quick-build.md)).
+
+## Contents
+
+- [Core rule: shared runtime state lives in `AetherCoreState`](#core-rule-shared-runtime-state-lives-in-aethercorestate)
+- [Allowed module-local exceptions](#allowed-module-local-exceptions)
+- [Disallowed patterns](#disallowed-patterns)
+- [Naming guidance](#naming-guidance)
+- [Review checklist for new state](#review-checklist-for-new-state)
+- [Achievement diagnostics (logging + backup)](#achievement-diagnostics-logging--backup)
+- [Runtime publication and lifecycle](#runtime-publication-and-lifecycle)
+- [Event-driven persistence, workers and hot paths](#event-driven-persistence-workers-and-hot-paths)
+- [Manifest acquisition, presence session and module splits](#manifest-acquisition-presence-session-and-module-splits)
+- [Backup lifecycle and pattern boundaries](#backup-lifecycle-and-pattern-boundaries)
+- [Presence channels (`-showonline` / `-aetheronline`)](#presence-channels--showonline---aetheronline)
+
 
 ## Core rule: shared runtime state lives in `AetherCoreState`
 
@@ -134,8 +157,7 @@ All disk I/O runs on the lazy-started `achievement_backup` worker owned by
 Steam's network thread). `FlushOnShutdown()` is BLOCKING: it drains the queue,
 copies the `.bin` files and waits for worker completion (the registry owns the join). It is only called in the explicit
 off-loader-lock shutdown path, NOT automatically on normal Steam termination.
-Even when called, it cannot guarantee Steam has flushed its cache. Event-driven
-checkpoints/game-exit persistence remain a separate follow-up. The JSON is rewritten atomically on each
+Even when called, it cannot guarantee Steam has flushed its cache. The JSON is rewritten atomically on each
 unlock (merge keeps the earliest unlock time). If the Steam cache is ever
 wiped again, restore by copying the `.bin` back into `appcache\stats` (Steam
 closed) or rebuild it from the JSON with `Tools/achievement_decoder.py rebuild`.
@@ -145,7 +167,7 @@ mirror JSON files (`decode`, `snapshot`, `rebuild` commands) — use it together
 with `main.log` when investigating achievement issues.
 
 
-## Runtime publication and lifecycle (quick-win batch)
+## Runtime publication and lifecycle
 
 * Settings are immutable `shared_ptr<const Settings>` snapshots, atomically
   published. Each reader retains its owner for the duration of access. Only
@@ -153,8 +175,8 @@ with `main.log` when investigating achievement issues.
   Invalid edits retain the last good snapshot. Lua watch-directory changes need
   a restart; changing settings does not rebuild every initialized service.
 * HookManager serializes registry operations; `Snapshot()` returns owned copies.
-  Bootstrap still serializes whole batches. Status requests only increment an
-  atomic counter; one writer coalesces them at 100 ms intervals. Metadata uses
+  Bootstrap serializes whole batches. Status requests only increment an atomic
+  counter; one writer coalesces them at 100 ms intervals. Metadata uses
   `statusMetadataMutex`; runtime counters keep their existing locks/atomics.
 * IPC maps are published ONCE before setting atomic `loaded`; no reader may
   touch the maps before acquiring that flag. Init attempts are serialized.
@@ -163,22 +185,21 @@ with `main.log` when investigating achievement issues.
 * DllMain detach only sets the shutdown flag: no joins, logging, mutex-taking
   flush, hook teardown or persistence. Logger already flushes each written line.
   `AetherCoreShutdown` is an explicit terminal shutdown API for a host that has
-  quiesced activity, called off loader lock; no production caller is installed
-  by this batch. PinSelf prevents normal FreeLibrary unloading. This does not
-  replace a full worker registry/quiescence protocol and does not make arbitrary
-  live unloading safe. Detached legacy jobs remain follow-up work.
+  quiesced activity, called off loader lock; no production caller uses it.
+  PinSelf prevents normal FreeLibrary unloading. It is not a worker
+  registry/quiescence protocol and does not make arbitrary live unloading safe.
 
-## Invasive batch (event-driven persistence, workers, hot paths)
+## Event-driven persistence, workers and hot paths
 
 * Achievement persistence is EVENT-DRIVEN, not shutdown-driven: the backup
   worker runs a periodic checkpoint (5 min: forced .bin re-copy of every
   touched (app, account) + playtime refresh) and `SessionEnded()` schedules a
   delayed final copy (~15 s) when a game session ends. Worst-case loss on a
   hard exit is one checkpoint interval; `FlushOnShutdown()` remains for the
-  explicit shutdown path and now also drains delayed jobs immediately.
+  explicit shutdown path and also drains delayed jobs immediately.
 * Background work lives in `core/Workers`: one task queue (one-shot jobs,
   drained and joined at explicit shutdown) plus a named worker registry with
-  stop flags. There are NO `std::thread(...).detach()` calls left in
+  stop flags. There are NO `std::thread(...).detach()` calls in
   AetherCore. Workers stop only in the explicit off-loader-lock shutdown;
   DllMain detach still only sets the global shutdown flag.
 * PipeWatch handshake inspection (OpenProcess, remote env read, image query,
@@ -191,28 +212,26 @@ with `main.log` when investigating achievement issues.
   walk for 30 s (matches the existing proactive backoff, so newly generated or
   restored manifests are still discovered on the next window).
 
-## Invasive batch 2 (legacy bridge removal, PresenceSession, module splits)
+## Manifest acquisition, presence session and module splits
 
-* The legacy GetManifestRequestCode wire-bridge (ManifestBridge +
-  ManifestFetch Submit/Resolve/provider URL templates) is REMOVED: it was
-  unreachable on current Steam builds (zero dispatches across 8+ h of real
-  logs). Manifest acquisition is only local-index + authenticated Hubcap
-  generation. `[manifest_fetch]` TOML keys are deprecated: Settings logs a
+* Manifest acquisition is local-index + authenticated Hubcap generation only;
+  there is no GetManifestRequestCode wire bridge (unreachable on current Steam
+  builds). `[manifest_fetch]` TOML keys are deprecated: Settings logs a
   one-shot WARN and ignores them.
 * Presence state (real app behind the 480 mask, showonline, UCO2/OFME spoof
   flag) lives in `hooks/aetheronline/PresenceSession` — owned by
   AetherOnlineHooks::h_SpawnProcess through `Publish()` (single atomic
   publication of all fields), read by everyone via immutable snapshot or
   hot-path atomic accessors. `EndSession()` resets the state when Steam
-  reports zero running games, closing the old stale window between game exit
+  reports zero running games, closing the stale window between game exit
   and the next SpawnProcess.
-* Module splits (P9): `GamesPlayedFormat` (pure wire-format helpers, unit
+* Module boundaries: `GamesPlayedFormat` (pure wire-format helpers, unit
   tested), `GamesPlayedRewriter` (the two presence rewrite passes as one
   deterministic function), `DonorPool` (donor learning + send/recv
   correlation for the UserStats spoof). AchievementModule keeps a single
   `SerializeTo` tail instead of eight duplicated blocks.
 
-### Backup lifecycle and pattern boundaries (2026-10-05)
+### Backup lifecycle and pattern boundaries
 
 - `AchievementBackup` keeps queue scheduling and persistence ordering. The
   named worker registry owns its thread. Either `FlushOnShutdown` or the

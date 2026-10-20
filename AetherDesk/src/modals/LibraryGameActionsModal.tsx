@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { GameHeroImage } from '../ui/GameHeroImage';
-import { WrenchIcon } from '../ui/icons';
+import { DownloadIcon, WrenchIcon } from '../ui/icons';
 import { useLibraryGames, type LuaManifestIssue } from '../hooks/useLibraryGames';
 import { useModalDismiss } from '../hooks/useModalDismiss';
 import { OnlinePanel, type OnlineStatus } from './OnlinePanel';
@@ -68,6 +68,45 @@ const summarizeManifestRepair = (
   return {
     text: `Repaired ${report.generated} of ${report.pins} pinned manifest(s) via Hubcap and installed ${report.installed} into depotcache.`,
     type: 'success',
+  };
+};
+
+/** Report returned by the backend `export_game_bundle` command. */
+interface GameBundleExportReport {
+  /** Absolute path of the ZIP written into Downloads. */
+  path: string;
+  pins: number;
+  manifestsIncluded: number;
+  manifestsGenerated: number;
+  /** Pins with no manifest anywhere, as `depot:gid`. */
+  manifestsMissing: string[];
+  generationError?: string | null;
+}
+
+/**
+ * One-liner for the bundle export, with its severity.
+ *
+ * Missing pins are not a failure — the ZIP still holds the Lua and every
+ * manifest that exists — but they must be named: the user asked for a copy of
+ * the game's pinned files and would otherwise believe it is complete.
+ */
+const summarizeBundleExport = (report: GameBundleExportReport): { text: string; type: 'info' | 'success' } => {
+  const contents =
+    report.manifestsIncluded === 0
+      ? 'the Lua only'
+      : `${report.manifestsIncluded} of ${report.pins} pinned manifest(s)` +
+        (report.manifestsGenerated > 0 ? `, ${report.manifestsGenerated} generated via Hubcap` : '');
+  const parts = [`Saved ${report.path} (${contents}).`];
+  if (report.manifestsMissing.length > 0) {
+    parts.push(
+      `${report.manifestsMissing.length} pinned manifest(s) are missing` +
+        (report.generationError ? ` and could not be generated: ${report.generationError}` : ' and were not included') +
+        '.'
+    );
+  }
+  return {
+    text: parts.join(' '),
+    type: report.manifestsMissing.length > 0 ? 'info' : 'success',
   };
 };
 
@@ -204,6 +243,25 @@ export const LibraryGameActionsModal = ({
       onStatus(summary.text, summary.type);
     } catch (err: unknown) {
       onStatus(`Failed to repair manifests: ${toErrorMessage(err)}`, 'error');
+    } finally {
+      setIsBusy(false);
+    }
+  };
+
+  const handleDownloadBundle = async () => {
+    setIsBusy(true);
+    try {
+      onStatus("Collecting this game's Lua and pinned manifests...", 'info');
+      // The backend resolves the game's Lua and each pin locally first and,
+      // for anything absent, through the same Hubcap path as Repair manifests.
+      const report = await invoke<GameBundleExportReport>('export_game_bundle', {
+        appId: Number(game.appId),
+        gameName: game.name,
+      });
+      const summary = summarizeBundleExport(report);
+      onStatus(summary.text, summary.type);
+    } catch (err: unknown) {
+      onStatus(`Export failed: ${toErrorMessage(err)}`, 'error');
     } finally {
       setIsBusy(false);
     }
@@ -448,19 +506,38 @@ export const LibraryGameActionsModal = ({
                 </button>
               </span>
             </div>
-            <span
-              className="game-action-repair-wrap"
-              title="Restore from backup or regenerate via Hubcap every manifest referenced by this game's Lua"
-            >
-              <button
-                className="game-action-btn game-action-repair-btn"
-                onClick={handleRepairManifests}
-                disabled={disabled}
-                aria-label="Repair manifests"
-                title="Repair manifests"
+            <span className="game-action-icon-col">
+              {/* The `title` lives on the wrapper too: WebView2 suppresses
+                  hover on disabled controls, so the hint must survive the
+                  button being disabled. */}
+              <span
+                className="game-action-icon-wrap"
+                title="Restore from backup or regenerate via Hubcap every manifest referenced by this game's Lua"
               >
-                <WrenchIcon size={18} />
-              </button>
+                <button
+                  className="game-action-btn game-action-icon-btn"
+                  onClick={handleRepairManifests}
+                  disabled={disabled}
+                  aria-label="Repair manifests"
+                  title="Repair manifests"
+                >
+                  <WrenchIcon size={18} />
+                </button>
+              </span>
+              <span
+                className="game-action-icon-wrap"
+                title="Save this game's Lua and pinned manifests as a .zip in Downloads"
+              >
+                <button
+                  className="game-action-btn game-action-icon-btn"
+                  onClick={handleDownloadBundle}
+                  disabled={disabled}
+                  aria-label="Export Lua and manifests"
+                  title="Export Lua and manifests"
+                >
+                  <DownloadIcon size={18} />
+                </button>
+              </span>
             </span>
           </div>
         </div>

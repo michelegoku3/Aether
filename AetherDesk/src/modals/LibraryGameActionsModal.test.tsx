@@ -25,7 +25,7 @@ const game = (id: number, state: Partial<InstalledGame> = {}): InstalledGame => 
   ...state,
 });
 
-const renderModal = (snapshot: InstalledGame, live: InstalledGame[]) => {
+const renderModal = (snapshot: InstalledGame, live: InstalledGame[], onStatus = vi.fn()) => {
   useLibraryGamesMock.mockReturnValue({
     games: live,
     isLoading: false,
@@ -41,11 +41,12 @@ const renderModal = (snapshot: InstalledGame, live: InstalledGame[]) => {
       game={snapshot}
       isProcessing={false}
       onClose={vi.fn()}
-      onStatus={vi.fn()}
+      onStatus={onStatus}
       onRefresh={vi.fn()}
       onOpenVersionEditor={vi.fn()}
     />
   );
+  return onStatus;
 };
 
 const onlineButton = () => screen.getByRole('button', { name: 'ONLINE' });
@@ -76,6 +77,62 @@ describe('LibraryGameActionsModal install state', () => {
 
     expect(onlineButton()).toBeDisabled();
     expect(removeButton()).toBeEnabled();
+  });
+});
+
+describe('bundle export', () => {
+  const downloadButton = () => screen.getByRole('button', { name: 'Export Lua and manifests' });
+
+  const report = (overrides: Record<string, unknown> = {}) => ({
+    path: 'C:\\Users\\me\\Downloads\\Game 100.zip',
+    pins: 2,
+    manifestsIncluded: 2,
+    manifestsGenerated: 1,
+    manifestsMissing: [] as string[],
+    ...overrides,
+  });
+
+  const mockExport = (value: unknown) => {
+    invokeMock.mockImplementation(async (command: string) => {
+      if (command === 'export_game_bundle') return value;
+      return undefined;
+    });
+  };
+
+  beforeEach(() => {
+    queryGameStateMock.mockResolvedValue(false);
+  });
+
+  it('saves the Lua and the pinned manifests under the game name', async () => {
+    mockExport(report());
+    const onStatus = renderModal(game(100), [game(100)]);
+    const user = userEvent.setup();
+
+    await user.click(downloadButton());
+
+    await waitFor(() =>
+      expect(invokeMock).toHaveBeenCalledWith('export_game_bundle', { appId: 100, gameName: 'Game 100' })
+    );
+    await waitFor(() => expect(onStatus).toHaveBeenCalledWith(expect.stringContaining('Game 100.zip'), 'success'));
+  });
+
+  it('says which pinned manifests stayed missing instead of claiming a full bundle', async () => {
+    mockExport(
+      report({
+        manifestsIncluded: 1,
+        manifestsGenerated: 0,
+        manifestsMissing: ['111:1001'],
+        generationError: 'no Hubcap API key is configured',
+      })
+    );
+    const onStatus = renderModal(game(100), [game(100)]);
+    const user = userEvent.setup();
+
+    await user.click(downloadButton());
+
+    await waitFor(() =>
+      expect(onStatus).toHaveBeenCalledWith(expect.stringContaining('1 pinned manifest(s) are missing'), 'info')
+    );
   });
 });
 

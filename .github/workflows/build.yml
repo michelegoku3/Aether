@@ -57,7 +57,7 @@ jobs:
         working-directory: AetherDesk
         run: npm audit --audit-level=high
 
-      - name: Frontend verification (build, lint, tests, wiring, unused)
+      - name: Frontend verification (build, lint, tests, wiring, docs, unused)
         working-directory: AetherDesk
         run: npm run verify
 

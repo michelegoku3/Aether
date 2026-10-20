@@ -332,4 +332,3 @@ void TtlCacheTest() {
         CHECK(c.Get("nope") == 0); // negative hit: default value
     }
 }
-
