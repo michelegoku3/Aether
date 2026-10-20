@@ -3,7 +3,6 @@ use std::process::Command;
 use std::sync::OnceLock;
 use std::time::{Duration, Instant};
 
-use regex::Regex;
 use serde::Serialize;
 use tokio::sync::Mutex;
 
@@ -68,20 +67,41 @@ fn write_atomic(path: &Path, bytes: &[u8]) -> Result<(), String> {
     Ok(())
 }
 
-#[derive(Debug, Clone, Copy)]
-struct WorkshopItem {
-    app_id: u32,
-    workshop_id: u64,
-    manifest_gid: u64,
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct WorkshopItem {
+    pub(crate) app_id: u32,
+    pub(crate) workshop_id: u64,
+    pub(crate) manifest_gid: u64,
 }
 
-fn discover_workshop_items(steam_path: &str) -> Vec<WorkshopItem> {
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct PendingWorkshopItem {
+    pub(crate) app_id: u32,
+    pub(crate) workshop_id: u64,
+    pub(crate) manifest_gid: u64,
+    /// `appworkshop_<app_id>.acf` has `NeedsDownload "1"`.
+    pub(crate) needs_download: bool,
+    /// The content directory exists but has no entries.
+    pub(crate) content_empty: bool,
+}
+
+/// Scans every library's `appworkshop_*.acf` and returns the installed repair
+/// targets plus the subscriptions Steam has not installed.
+///
+/// Only direct children of `WorkshopItemsInstalled` are repair targets. The
+/// per-branch `manifest_history` blocks use small numeric keys that look like
+/// Workshop IDs; the scoped parser ignores them. `WorkshopItemDetails` is
+/// consulted only to list pending subscriptions.
+pub(crate) fn discover_workshop_items(
+    steam_path: &str,
+) -> (Vec<WorkshopItem>, Vec<PendingWorkshopItem>) {
     let libraries =
         crate::steam::library::SteamLibraryScanner::new(steam_path).discover_library_paths();
-    let item_re = Regex::new(r#"(?s)"(\d+)"\s*\{.*?"manifest"\s*"(\d+)""#)
-        .expect("static Workshop ACF regex");
-    let mut items = Vec::new();
-    for library in libraries {
+    let mut installed = Vec::new();
+    let mut pending = Vec::new();
+    let mut legacy_total = 0usize;
+
+    for library in &libraries {
         let workshop_dir = library.join("steamapps").join("workshop");
         let Ok(entries) = std::fs::read_dir(workshop_dir) else {
             continue;
@@ -105,29 +125,94 @@ fn discover_workshop_items(steam_path: &str) -> Vec<WorkshopItem> {
             else {
                 continue;
             };
-            let Ok(content) = std::fs::read_to_string(path) else {
-                continue;
-            };
-            for captures in item_re.captures_iter(&content) {
-                let Ok(workshop_id) = captures[1].parse::<u64>() else {
+            let content = match std::fs::read_to_string(&path) {
+                Ok(content) => content,
+                Err(error) => {
+                    crate::desk_log_warn!(
+                        "workshop",
+                        "Skipping unreadable Workshop ACF {}: {}",
+                        path.display(),
+                        error
+                    );
                     continue;
-                };
-                let Ok(manifest_gid) = captures[2].parse::<u64>() else {
-                    continue;
-                };
-                if workshop_id != 0 && manifest_gid != 0 {
-                    items.push(WorkshopItem {
-                        app_id,
-                        workshop_id,
-                        manifest_gid,
-                    });
                 }
+            };
+            let parsed = match crate::steam::appworkshop::parse_workshop_acf(&content) {
+                Ok(parsed) => parsed,
+                Err(error) => {
+                    crate::desk_log_warn!(
+                        "workshop",
+                        "Skipping malformed Workshop ACF {}: {}",
+                        path.display(),
+                        error
+                    );
+                    continue;
+                }
+            };
+            legacy_total += parsed.legacy_installed;
+            for item in parsed.installed {
+                installed.push(WorkshopItem {
+                    app_id,
+                    workshop_id: item.workshop_id,
+                    manifest_gid: item.manifest_gid,
+                });
+            }
+            for item in parsed.subscribed {
+                pending.push(PendingWorkshopItem {
+                    app_id,
+                    workshop_id: item.workshop_id,
+                    manifest_gid: item.manifest_gid,
+                    needs_download: parsed.needs_download,
+                    content_empty: content_dir_is_empty(&libraries, app_id, item.workshop_id),
+                });
             }
         }
     }
-    items.sort_by_key(|item| (item.workshop_id, item.manifest_gid));
-    items.dedup_by_key(|item| item.workshop_id);
-    items
+
+    installed.sort_by_key(|item| (item.workshop_id, item.app_id));
+    installed.dedup_by_key(|item| item.workshop_id);
+
+    let installed_ids: std::collections::HashSet<u64> =
+        installed.iter().map(|item| item.workshop_id).collect();
+    pending.sort_by_key(|item| (item.workshop_id, item.app_id));
+    pending.dedup_by_key(|item| item.workshop_id);
+    pending.retain(|item| !installed_ids.contains(&item.workshop_id));
+
+    crate::desk_log_debug!(
+        "workshop",
+        "Workshop discovery installed={} pending={} legacy_skipped={}",
+        installed.len(),
+        pending.len(),
+        legacy_total
+    );
+    (installed, pending)
+}
+
+/// True only when a content directory exists in at least one library and none
+/// of them has an entry. A missing directory is not an empty one.
+fn content_dir_is_empty(libraries: &[PathBuf], app_id: u32, workshop_id: u64) -> bool {
+    let mut found_empty = false;
+    for library in libraries {
+        let dir = library
+            .join("steamapps")
+            .join("workshop")
+            .join("content")
+            .join(app_id.to_string())
+            .join(workshop_id.to_string());
+        if !dir.is_dir() {
+            continue;
+        }
+        match std::fs::read_dir(&dir) {
+            Ok(mut entries) => {
+                if entries.next().is_some() {
+                    return false;
+                }
+                found_empty = true;
+            }
+            Err(_) => continue,
+        }
+    }
+    found_empty
 }
 
 /// Steam manifests are four little-endian framed protobuf sections; the
@@ -555,7 +640,7 @@ pub async fn sync_hubcap_workshop_manifests(
         return Err("Workshop sync cannot run because the Steam path is empty".to_string());
     }
     let steam_path = settings.steam_path;
-    let items = discover_workshop_items(&steam_path);
+    let (items, _pending_items) = discover_workshop_items(&steam_path);
     crate::desk_log_info!(
         "workshop",
         "Workshop discovery complete discovered={}",
