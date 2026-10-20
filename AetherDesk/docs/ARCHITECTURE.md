@@ -150,10 +150,16 @@ invariants
   backs up the manifests it references.
 - Lua is parsed as text and never executed. Malformed pins are a user-fixable
   state, reported with their line, not a retryable error.
-- Workshop repair targets only direct children of `WorkshopItemsInstalled` with
-  a positive decimal manifest. Nested `manifest_history` indices and `-1`
-  legacy entries are not items; `WorkshopItemDetails` only lists pending
-  subscriptions and is never sent to Hubcap.
+- Workshop repair targets are direct children of `WorkshopItemsInstalled` with
+  a positive decimal manifest, plus `WorkshopItemDetails`-only subscriptions
+  with a positive `manifest` in the explicit repair. The background monitor
+  processes only installed items. Nested `manifest_history` indices and `-1`
+  legacy entries are not items; a details entry without a positive `manifest`
+  is not a subscription target.
+- Installed items use `latest_manifest` when it is newer than the installed
+  manifest. An update asks Steam for the payload even when the old content
+  directory exists, and the report marks it as an update rather than "already
+  local".
 - A Hubcap `404` is a data-availability answer, not proof that a mod is gone.
   The report calls it "not in Hubcap or unknown error", and the 24 h cache is
   keyed by `(item, manifest)` so a changed manifest retries immediately.

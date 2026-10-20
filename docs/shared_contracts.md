@@ -120,9 +120,17 @@ Twins: `AetherDesk/src-tauri/src/providers/hubcap_generation.rs` ↔
 - Game generation endpoint: `GET /generate/manifest?depot_id=&manifest_id=`;
   the response must be identity-validated (depot+gid in the protobuf) before
   install.
-- Workshop repair targets only direct children of `WorkshopItemsInstalled` with
-  a positive decimal manifest. Per-branch `manifest_history` indices are not
-  items, and `WorkshopItemDetails`-only subscriptions are never sent to Hubcap.
+- Workshop repair targets are direct children of `WorkshopItemsInstalled` with
+  a positive decimal manifest. The explicit repair also targets
+  `WorkshopItemDetails`-only subscriptions with a positive `manifest`; the
+  background monitor never spends Hubcap quota on those subscriptions.
+  Per-branch `manifest_history` indices are not items, and an entry without a
+  positive `manifest` is not a subscription target even when it has a
+  `latest_manifest`.
+- Installed items target `latest_manifest` when it is newer than the installed
+  manifest (or when timestamps are absent and `NeedsDownload` is set). An
+  update asks Steam for the payload even when the old content directory still
+  exists; an empty content directory is removed first.
 - A terminal Workshop `404` is remembered per `(item, manifest)` for **24 h**;
   a changed manifest retries immediately, and a skipped item does not consume
   the 5-per-pass generation cap.
@@ -195,6 +203,7 @@ Promise rejected at runtime with `command X missing required key Y`.
 | `app_id: u32` | `appId` | general rule |
 | `tail_lines: Option<usize>` | `tailLines` | `Option` → omittable key |
 | `game_name: Option<String>` | `gameName` | `trigger_luatools_download` / `prepare_luatools_specific_version_download`: optional hint forwarded to lua.tools (`&game_name=`), labels only the account's download history |
+| `include_subscriptions: bool` | `includeSubscriptions` | `sync_hubcap_workshop_manifests`: `true` only from the explicit Repair action; the background monitor calls the Rust function with `false` |
 | `show_online: bool` | `showOnline` | §7.1 |
 
 ### 7.1 `showonline` is a value, not a key

@@ -184,7 +184,7 @@ pub(super) async fn run_workshop(
         return;
     }
     let task = runtime.workshop.take().expect("readiness checked above");
-    match crate::commands::workshop::sync_hubcap_workshop_manifests(app.clone()).await {
+    match crate::commands::workshop::sync_hubcap_workshop_manifests(app.clone(), false).await {
         Ok(report) if report.failed == 0 && report.deferred == 0 => {
             checkpoint.workshop_processed = current_workshop.clone();
             let _ = save_state(checkpoint);

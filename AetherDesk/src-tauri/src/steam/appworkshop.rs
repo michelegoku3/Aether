@@ -4,12 +4,18 @@
 //! blocks whose keys are small indices. Treating every quoted numeric key as a
 //! Workshop ID turns those indices into phantom subscriptions, so this parser
 //! reads only direct children of `WorkshopItemsInstalled` and
-//! `WorkshopItemDetails`.
+//! `WorkshopItemDetails`. It keeps the installed manifest and the newer
+//! `latest_manifest` separate so update repair can choose deliberately.
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct WorkshopAcfItem {
     pub workshop_id: u64,
     pub manifest_gid: u64,
+    /// Latest manifest Steam knows for the item. It is newer than `manifest_gid`
+    /// only when `latest_time_updated` is greater than `time_updated`.
+    pub latest_manifest_gid: Option<u64>,
+    pub time_updated: Option<u64>,
+    pub latest_time_updated: Option<u64>,
 }
 
 #[derive(Debug, Default, PartialEq, Eq)]
@@ -34,25 +40,43 @@ pub fn parse_workshop_acf(content: &str) -> Result<WorkshopAcf, String> {
     }
 
     let mut result = WorkshopAcf::default();
+    let details = match detail_lines {
+        Some(lines) => parse_item_blocks(&lines)?,
+        None => Vec::new(),
+    };
+    let details_by_id: std::collections::HashMap<u64, &RawItem> = details
+        .iter()
+        .map(|detail| (detail.workshop_id, detail))
+        .collect();
+
     if let Some(lines) = installed_lines {
         for raw in parse_item_blocks(&lines)? {
             match raw.manifest {
-                Some(manifest_gid) => result.installed.push(WorkshopAcfItem {
-                    workshop_id: raw.workshop_id,
-                    manifest_gid,
-                }),
+                Some(manifest_gid) => {
+                    let detail = details_by_id.get(&raw.workshop_id).copied();
+                    result.installed.push(WorkshopAcfItem {
+                        workshop_id: raw.workshop_id,
+                        manifest_gid,
+                        latest_manifest_gid: detail.and_then(|item| item.latest_manifest),
+                        time_updated: raw
+                            .time_updated
+                            .or_else(|| detail.and_then(|item| item.time_updated)),
+                        latest_time_updated: detail.and_then(|item| item.latest_time_updated),
+                    });
+                }
                 None => result.legacy_installed += 1,
             }
         }
     }
-    if let Some(lines) = detail_lines {
-        for raw in parse_item_blocks(&lines)? {
-            if let Some(manifest_gid) = raw.manifest {
-                result.subscribed.push(WorkshopAcfItem {
-                    workshop_id: raw.workshop_id,
-                    manifest_gid,
-                });
-            }
+    for raw in details {
+        if let Some(manifest_gid) = raw.manifest {
+            result.subscribed.push(WorkshopAcfItem {
+                workshop_id: raw.workshop_id,
+                manifest_gid,
+                latest_manifest_gid: raw.latest_manifest,
+                time_updated: raw.time_updated,
+                latest_time_updated: raw.latest_time_updated,
+            });
         }
     }
 
@@ -126,6 +150,9 @@ fn top_level_value(content: &str, key: &str) -> Option<String> {
 struct RawItem {
     workshop_id: u64,
     manifest: Option<u64>,
+    latest_manifest: Option<u64>,
+    time_updated: Option<u64>,
+    latest_time_updated: Option<u64>,
 }
 
 /// Direct children of a Workshop section. Nested blocks are traversed for brace
@@ -152,6 +179,9 @@ fn parse_item_blocks(lines: &[&str]) -> Result<Vec<RawItem>, String> {
 
         let mut depth = 1i32;
         let mut manifest = None;
+        let mut latest_manifest = None;
+        let mut time_updated = None;
+        let mut latest_time_updated = None;
         while cursor < lines.len() {
             let trimmed = lines[cursor].trim();
             if trimmed == "{" {
@@ -165,6 +195,12 @@ fn parse_item_blocks(lines: &[&str]) -> Result<Vec<RawItem>, String> {
                 if let Some((key, value)) = parse_key_value(trimmed) {
                     if key.eq_ignore_ascii_case("manifest") {
                         manifest = value.parse::<u64>().ok().filter(|gid| *gid > 0);
+                    } else if key.eq_ignore_ascii_case("latest_manifest") {
+                        latest_manifest = value.parse::<u64>().ok().filter(|gid| *gid > 0);
+                    } else if key.eq_ignore_ascii_case("timeupdated") {
+                        time_updated = value.parse::<u64>().ok().filter(|time| *time > 0);
+                    } else if key.eq_ignore_ascii_case("latest_timeupdated") {
+                        latest_time_updated = value.parse::<u64>().ok().filter(|time| *time > 0);
                     }
                 }
             }
@@ -177,6 +213,9 @@ fn parse_item_blocks(lines: &[&str]) -> Result<Vec<RawItem>, String> {
         items.push(RawItem {
             workshop_id,
             manifest,
+            latest_manifest,
+            time_updated,
+            latest_time_updated,
         });
         index = cursor + 1;
     }
@@ -266,6 +305,22 @@ mod tests {
 }
 "#;
 
+    fn acf_item(
+        workshop_id: u64,
+        manifest_gid: u64,
+        latest_manifest_gid: Option<u64>,
+        time_updated: Option<u64>,
+        latest_time_updated: Option<u64>,
+    ) -> WorkshopAcfItem {
+        WorkshopAcfItem {
+            workshop_id,
+            manifest_gid,
+            latest_manifest_gid,
+            time_updated,
+            latest_time_updated,
+        }
+    }
+
     #[test]
     fn read_only_installed_direct_children() {
         let parsed = parse_workshop_acf(NESTED_HISTORY).unwrap();
@@ -273,14 +328,8 @@ mod tests {
         assert_eq!(
             parsed.installed,
             vec![
-                WorkshopAcfItem {
-                    workshop_id: 111,
-                    manifest_gid: 1001,
-                },
-                WorkshopAcfItem {
-                    workshop_id: 222,
-                    manifest_gid: 1002,
-                },
+                acf_item(111, 1001, None, None, None),
+                acf_item(222, 1002, None, None, None),
             ]
         );
         assert_eq!(parsed.legacy_installed, 1);
@@ -291,7 +340,7 @@ mod tests {
     }
 
     #[test]
-    fn ignores_latest_manifest() {
+    fn keeps_installed_and_latest_manifest_separate() {
         let content = r#""AppWorkshop"
 {
 	"WorkshopItemsInstalled"
@@ -315,7 +364,75 @@ mod tests {
         let parsed = parse_workshop_acf(content).unwrap();
 
         assert_eq!(parsed.installed[0].manifest_gid, 634883037376787724);
+        assert_eq!(
+            parsed.installed[0].latest_manifest_gid,
+            Some(9999999999999999999)
+        );
         assert_eq!(parsed.subscribed[0].manifest_gid, 4458352795112025122);
+        assert_eq!(
+            parsed.subscribed[0].latest_manifest_gid,
+            Some(9999999999999999999)
+        );
+    }
+
+    #[test]
+    fn reads_latest_manifest_and_timestamps() {
+        let content = r#""AppWorkshop"
+{
+	"WorkshopItemsInstalled"
+	{
+		"111"
+		{
+			"manifest"		"1001"
+			"timeupdated"		"10"
+		}
+	}
+	"WorkshopItemDetails"
+	{
+		"111"
+		{
+			"manifest"		"1001"
+			"timeupdated"		"10"
+			"latest_manifest"		"2002"
+			"latest_timeupdated"		"20"
+		}
+	}
+}
+"#;
+
+        let parsed = parse_workshop_acf(content).unwrap();
+
+        assert_eq!(
+            parsed.installed[0],
+            acf_item(111, 1001, Some(2002), Some(10), Some(20))
+        );
+        assert_eq!(
+            parsed.subscribed[0],
+            acf_item(111, 1001, Some(2002), Some(10), Some(20))
+        );
+    }
+
+    #[test]
+    fn details_without_manifest_are_not_subscription_targets() {
+        let content = r#""AppWorkshop"
+{
+	"WorkshopItemsInstalled"
+	{
+	}
+	"WorkshopItemDetails"
+	{
+		"111"
+		{
+			"latest_manifest"		"2002"
+			"latest_timeupdated"		"20"
+		}
+	}
+}
+"#;
+
+        let parsed = parse_workshop_acf(content).unwrap();
+
+        assert!(parsed.subscribed.is_empty());
     }
 
     #[test]
@@ -341,10 +458,13 @@ mod tests {
         assert!(parsed.installed.is_empty());
         assert_eq!(
             parsed.subscribed,
-            vec![WorkshopAcfItem {
-                workshop_id: 3806068832,
-                manifest_gid: 3748992252827399921,
-            }]
+            vec![acf_item(
+                3806068832,
+                3748992252827399921,
+                Some(3748992252827399921),
+                None,
+                None,
+            )]
         );
     }
 

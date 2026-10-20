@@ -125,7 +125,7 @@ export const SettingsAetherSection: React.FC<SettingsAetherSectionProps> = ({
 
       <div
         className="settings-toggle-row"
-        title="When Workshop items have a staged manifest but no content, ask Steam to download them one at a time, preventing a download storm after a depotcache wipe."
+        title="When Workshop items have a staged manifest but missing or outdated content, ask Steam to download them one at a time, preventing a download storm after a depotcache wipe."
       >
         <span className="settings-toggle-text">Workshop auto-download content</span>
         <label className="version-switch">

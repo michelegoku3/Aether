@@ -21,7 +21,7 @@ export interface AppSettings {
   ryuu_api_key?: string;
   /** Latest-version downloads comment setManifestid pins so Steam can update the game; OFF by default and requires an active Hubcap key. */
   download_games_with_updates_on?: boolean;
-  /** Workshop sync asks Steam to download missing item payloads (spaced one at a time). Default true; false = stage manifests only, content on demand. */
+  /** Workshop sync asks Steam to download missing or outdated item payloads (spaced one at a time). Default true; false = stage manifests only, content on demand. */
   workshop_auto_download_content?: boolean;
   /** Backend-owned one-time safe-default migration marker persisted in settings.json. */
   download_updates_default_off_migrated?: boolean;

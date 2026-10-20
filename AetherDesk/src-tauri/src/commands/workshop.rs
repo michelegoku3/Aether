@@ -75,30 +75,77 @@ pub(crate) struct WorkshopItem {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct PendingWorkshopItem {
-    pub(crate) app_id: u32,
-    pub(crate) workshop_id: u64,
-    pub(crate) manifest_gid: u64,
+pub(crate) struct WorkshopTarget {
+    /// The manifest Aether must stage. For an installed item this may be a
+    /// newer `latest_manifest`; for a subscription it is the details manifest.
+    pub(crate) item: WorkshopItem,
+    /// The manifest Steam currently has installed, when this target came from
+    /// `WorkshopItemsInstalled`. A different target means an update.
+    pub(crate) installed_manifest_gid: Option<u64>,
+    /// The target came only from `WorkshopItemDetails`, so Steam has not
+    /// installed it yet. The background monitor never processes these.
+    pub(crate) subscription: bool,
     /// `appworkshop_<app_id>.acf` has `NeedsDownload "1"`.
     pub(crate) needs_download: bool,
-    /// The content directory exists but has no entries.
-    pub(crate) content_empty: bool,
 }
 
-/// Scans every library's `appworkshop_*.acf` and returns the installed repair
-/// targets plus the subscriptions Steam has not installed.
+impl WorkshopTarget {
+    pub(crate) fn is_update(&self) -> bool {
+        self.installed_manifest_gid
+            .is_some_and(|gid| gid != self.item.manifest_gid)
+    }
+}
+
+struct WorkshopSelection {
+    targets: Vec<WorkshopTarget>,
+    installed: usize,
+    subscriptions: usize,
+}
+
+/// The background monitor passes `false` and never spends Workshop quota on
+/// subscriptions; the explicit Repair action passes `true`.
+fn select_workshop_targets(
+    discovered: Vec<WorkshopTarget>,
+    include_subscriptions: bool,
+) -> WorkshopSelection {
+    let mut installed = Vec::new();
+    let mut subscriptions = Vec::new();
+    for target in discovered {
+        if target.subscription {
+            subscriptions.push(target);
+        } else {
+            installed.push(target);
+        }
+    }
+    let selected_subscriptions = if include_subscriptions {
+        subscriptions.len()
+    } else {
+        0
+    };
+    let installed_count = installed.len();
+    if include_subscriptions {
+        installed.extend(subscriptions);
+    }
+    WorkshopSelection {
+        targets: installed,
+        installed: installed_count,
+        subscriptions: selected_subscriptions,
+    }
+}
+
+/// Scans every library's `appworkshop_*.acf` and returns every repair target:
+/// installed items (including updates) and `WorkshopItemDetails` subscriptions.
 ///
-/// Only direct children of `WorkshopItemsInstalled` are repair targets. The
-/// per-branch `manifest_history` blocks use small numeric keys that look like
-/// Workshop IDs; the scoped parser ignores them. `WorkshopItemDetails` is
-/// consulted only to list pending subscriptions.
-pub(crate) fn discover_workshop_items(
-    steam_path: &str,
-) -> (Vec<WorkshopItem>, Vec<PendingWorkshopItem>) {
+/// The per-branch `manifest_history` blocks use small numeric keys that look
+/// like Workshop IDs; the scoped parser ignores them. A subscription without a
+/// positive `manifest` is not a target: `latest_manifest` alone is not enough
+/// to stage a manifest Steam will accept. The caller decides whether to include
+/// subscription targets; the background monitor does not.
+pub(crate) fn discover_workshop_items(steam_path: &str) -> Vec<WorkshopTarget> {
     let libraries =
         crate::steam::library::SteamLibraryScanner::new(steam_path).discover_library_paths();
     let mut installed = Vec::new();
-    let mut pending = Vec::new();
+    let mut subscriptions = Vec::new();
     let mut legacy_total = 0usize;
 
     for library in &libraries {
@@ -151,68 +198,76 @@ pub(crate) fn discover_workshop_items(
             };
             legacy_total += parsed.legacy_installed;
             for item in parsed.installed {
-                installed.push(WorkshopItem {
-                    app_id,
-                    workshop_id: item.workshop_id,
-                    manifest_gid: item.manifest_gid,
+                let target_gid = if should_use_latest(&item, parsed.needs_download) {
+                    item.latest_manifest_gid.unwrap_or(item.manifest_gid)
+                } else {
+                    item.manifest_gid
+                };
+                installed.push(WorkshopTarget {
+                    item: WorkshopItem {
+                        app_id,
+                        workshop_id: item.workshop_id,
+                        manifest_gid: target_gid,
+                    },
+                    installed_manifest_gid: Some(item.manifest_gid),
+                    subscription: false,
+                    needs_download: parsed.needs_download,
                 });
             }
             for item in parsed.subscribed {
-                pending.push(PendingWorkshopItem {
-                    app_id,
-                    workshop_id: item.workshop_id,
-                    manifest_gid: item.manifest_gid,
+                subscriptions.push(WorkshopTarget {
+                    item: WorkshopItem {
+                        app_id,
+                        workshop_id: item.workshop_id,
+                        manifest_gid: item.manifest_gid,
+                    },
+                    installed_manifest_gid: None,
+                    subscription: true,
                     needs_download: parsed.needs_download,
-                    content_empty: content_dir_is_empty(&libraries, app_id, item.workshop_id),
                 });
             }
         }
     }
 
-    installed.sort_by_key(|item| (item.workshop_id, item.app_id));
-    installed.dedup_by_key(|item| item.workshop_id);
+    installed.sort_by_key(|target| (target.item.workshop_id, target.item.app_id));
+    installed.dedup_by_key(|target| target.item.workshop_id);
 
-    let installed_ids: std::collections::HashSet<u64> =
-        installed.iter().map(|item| item.workshop_id).collect();
-    pending.sort_by_key(|item| (item.workshop_id, item.app_id));
-    pending.dedup_by_key(|item| item.workshop_id);
-    pending.retain(|item| !installed_ids.contains(&item.workshop_id));
+    let installed_ids: std::collections::HashSet<u64> = installed
+        .iter()
+        .map(|target| target.item.workshop_id)
+        .collect();
+    subscriptions.sort_by_key(|target| (target.item.workshop_id, target.item.app_id));
+    subscriptions.dedup_by_key(|target| target.item.workshop_id);
+    subscriptions.retain(|target| !installed_ids.contains(&target.item.workshop_id));
 
     crate::desk_log_debug!(
         "workshop",
-        "Workshop discovery installed={} pending={} legacy_skipped={}",
+        "Workshop discovery installed={} subscriptions={} legacy_skipped={}",
         installed.len(),
-        pending.len(),
+        subscriptions.len(),
         legacy_total
     );
-    (installed, pending)
+    installed.extend(subscriptions);
+    installed
 }
 
-/// True only when a content directory exists in at least one library and none
-/// of them has an entry. A missing directory is not an empty one.
-fn content_dir_is_empty(libraries: &[PathBuf], app_id: u32, workshop_id: u64) -> bool {
-    let mut found_empty = false;
-    for library in libraries {
-        let dir = library
-            .join("steamapps")
-            .join("workshop")
-            .join("content")
-            .join(app_id.to_string())
-            .join(workshop_id.to_string());
-        if !dir.is_dir() {
-            continue;
-        }
-        match std::fs::read_dir(&dir) {
-            Ok(mut entries) => {
-                if entries.next().is_some() {
-                    return false;
-                }
-                found_empty = true;
-            }
-            Err(_) => continue,
-        }
+/// `latest_manifest` wins only when Steam says it is newer than the installed
+/// manifest. Some ACFs omit the timestamps; in that case `NeedsDownload` is the
+/// only signal that Steam is waiting for a new manifest.
+fn should_use_latest(
+    item: &crate::steam::appworkshop::WorkshopAcfItem,
+    needs_download: bool,
+) -> bool {
+    let Some(latest) = item.latest_manifest_gid else {
+        return false;
+    };
+    if latest == item.manifest_gid {
+        return false;
     }
-    found_empty
+    match (item.time_updated, item.latest_time_updated) {
+        (Some(installed), Some(latest_time)) => latest_time > installed,
+        _ => needs_download,
+    }
 }
 
 /// Steam manifests are four little-endian framed protobuf sections; the
@@ -237,6 +292,14 @@ struct SyncOutcome {
     content_present: bool,
     content_deferred: bool,
     content_empty: bool,
+    update: bool,
+    download_requested: bool,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+struct ContentRequestOutcome {
+    deferred: bool,
+    requested: bool,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -372,33 +435,34 @@ fn failure_reason(error: &str) -> (Option<u16>, WorkshopItemReason) {
 }
 
 fn make_report_item(
-    item: WorkshopItem,
+    target: WorkshopTarget,
     app_name: Option<&String>,
     status: WorkshopItemStatus,
     reason: Option<WorkshopItemReason>,
     http_status: Option<u16>,
-    content_empty: bool,
-    needs_download: bool,
 ) -> WorkshopItemReport {
     WorkshopItemReport {
-        app_id: item.app_id,
+        app_id: target.item.app_id,
         app_name: app_name.cloned(),
-        workshop_id: item.workshop_id,
-        manifest_gid: item.manifest_gid.to_string(),
+        workshop_id: target.item.workshop_id,
+        manifest_gid: target.item.manifest_gid.to_string(),
         status,
         reason,
         http_status,
-        content_empty,
-        needs_download,
+        content_empty: false,
+        needs_download: target.needs_download,
+        subscription: target.subscription,
+        update: target.is_update(),
+        download_requested: false,
     }
 }
 
 fn report_item_for_outcome(
-    item: WorkshopItem,
+    target: WorkshopTarget,
     app_name: Option<&String>,
     outcome: SyncOutcome,
 ) -> Option<WorkshopItemReport> {
-    if outcome.content_present {
+    if outcome.content_present && !outcome.update {
         return None;
     }
     let (status, reason) = if outcome.content_deferred {
@@ -409,20 +473,15 @@ fn report_item_for_outcome(
     } else {
         (WorkshopItemStatus::Ready, None)
     };
-    Some(make_report_item(
-        item,
-        app_name,
-        status,
-        reason,
-        None,
-        outcome.content_empty,
-        false,
-    ))
+    let mut report_item = make_report_item(target, app_name, status, reason, None);
+    report_item.content_empty = outcome.content_empty;
+    report_item.download_requested = outcome.download_requested;
+    Some(report_item)
 }
 
 fn record_sync_outcome(
     report: &mut WorkshopSyncReport,
-    item: WorkshopItem,
+    target: WorkshopTarget,
     app_name: Option<&String>,
     outcome: SyncOutcome,
 ) {
@@ -430,10 +489,16 @@ fn record_sync_outcome(
         SyncOrigin::Generated => report.generated += 1,
         SyncOrigin::Cached => report.restored_from_cache += 1,
         SyncOrigin::AlreadyLocal => {
-            if outcome.content_present {
+            if outcome.content_present && !outcome.update {
                 report.already_local += 1;
             }
         }
+    }
+    if outcome.update {
+        report.updates += 1;
+    }
+    if outcome.download_requested {
+        report.download_requested += 1;
     }
     if !outcome.content_present {
         report.content_missing += 1;
@@ -441,7 +506,7 @@ fn record_sync_outcome(
     if outcome.content_deferred {
         report.deferred += 1;
     }
-    if let Some(report_item) = report_item_for_outcome(item, app_name, outcome) {
+    if let Some(report_item) = report_item_for_outcome(target, app_name, outcome) {
         report.items.push(report_item);
     }
 }
@@ -496,12 +561,15 @@ async fn maybe_request_workshop_content(
     auto_content: bool,
     spawn_budget: &mut usize,
     last_spawn: &mut Option<Instant>,
-) -> bool {
+) -> ContentRequestOutcome {
     if !auto_content {
-        return false; // manifest-only mode by user choice: nothing is deferred
+        return ContentRequestOutcome::default(); // manifest-only mode by user choice
     }
     if *spawn_budget == 0 {
-        return true;
+        return ContentRequestOutcome {
+            deferred: true,
+            requested: false,
+        };
     }
     if let Some(last) = *last_spawn {
         let elapsed = last.elapsed();
@@ -522,23 +590,55 @@ async fn maybe_request_workshop_content(
         );
     }
     *last_spawn = Some(Instant::now());
-    false
+    ContentRequestOutcome {
+        deferred: false,
+        requested: true,
+    }
+}
+
+fn content_request_needed(content: ContentState, target: WorkshopTarget) -> bool {
+    !content.present || target.is_update()
+}
+
+async fn request_content_if_needed(
+    steam_path: &str,
+    target: WorkshopTarget,
+    content: ContentState,
+    auto_content: bool,
+    spawn_budget: &mut usize,
+    last_spawn: &mut Option<Instant>,
+) -> ContentRequestOutcome {
+    if !content_request_needed(content, target) {
+        return ContentRequestOutcome::default();
+    }
+    maybe_request_workshop_content(
+        steam_path,
+        target.item.app_id,
+        target.item.workshop_id,
+        content.empty,
+        auto_content,
+        spawn_budget,
+        last_spawn,
+    )
+    .await
 }
 
 async fn sync_one_workshop_item(
     client: HubcapClient,
     steam_path: String,
-    item: WorkshopItem,
+    target: WorkshopTarget,
     auto_content: bool,
     spawn_budget: &mut usize,
     last_spawn: &mut Option<Instant>,
 ) -> Result<SyncOutcome, String> {
+    let item = target.item;
     let started = Instant::now();
     crate::desk_log_info!(
         "workshop",
-        "Sync start workshop_id={} expected_manifest_gid={}",
+        "Sync start workshop_id={} expected_manifest_gid={} update={}",
         item.workshop_id,
-        item.manifest_gid
+        item.manifest_gid,
+        target.is_update()
     );
     if steam_path.trim().is_empty() {
         return Err(
@@ -556,24 +656,22 @@ async fn sync_one_workshop_item(
             content.present,
             content.empty
         );
-        let mut content_deferred = false;
-        if !content.present {
-            content_deferred = maybe_request_workshop_content(
-                &steam_path,
-                item.app_id,
-                item.workshop_id,
-                content.empty,
-                auto_content,
-                spawn_budget,
-                last_spawn,
-            )
-            .await;
-        }
+        let request = request_content_if_needed(
+            &steam_path,
+            target,
+            content,
+            auto_content,
+            spawn_budget,
+            last_spawn,
+        )
+        .await;
         return Ok(SyncOutcome {
             origin: SyncOrigin::AlreadyLocal,
             content_present: content.present,
-            content_deferred,
+            content_deferred: request.deferred,
             content_empty: content.empty,
+            update: target.is_update(),
+            download_requested: request.requested,
         });
     }
     let cache_path = workshop_cache_path(item.workshop_id);
@@ -593,19 +691,15 @@ async fn sync_one_workshop_item(
                     backup_workshop_manifest(item.app_id, depot_id, gid, &bytes);
                     let content =
                         workshop_content_state(&steam_path, item.app_id, item.workshop_id);
-                    let mut content_deferred = false;
-                    if !content.present {
-                        content_deferred = maybe_request_workshop_content(
-                            &steam_path,
-                            item.app_id,
-                            item.workshop_id,
-                            content.empty,
-                            auto_content,
-                            spawn_budget,
-                            last_spawn,
-                        )
-                        .await;
-                    }
+                    let request = request_content_if_needed(
+                        &steam_path,
+                        target,
+                        content,
+                        auto_content,
+                        spawn_budget,
+                        last_spawn,
+                    )
+                    .await;
                     crate::desk_log_info!(
                         "workshop",
                         "Sync complete origin=cache workshop_id={} content_present={} content_empty={} elapsed_ms={}",
@@ -617,8 +711,10 @@ async fn sync_one_workshop_item(
                     return Ok(SyncOutcome {
                         origin: SyncOrigin::Cached,
                         content_present: content.present,
-                        content_deferred,
+                        content_deferred: request.deferred,
                         content_empty: content.empty,
+                        update: target.is_update(),
+                        download_requested: request.requested,
                     });
                 }
                 Ok((_depot_id, gid)) => crate::desk_log_warn!(
@@ -669,19 +765,15 @@ async fn sync_one_workshop_item(
     install_to_depotcache(&steam_path, depot_id, gid, &bytes)?;
     backup_workshop_manifest(item.app_id, depot_id, gid, &bytes);
     let content = workshop_content_state(&steam_path, item.app_id, item.workshop_id);
-    let mut content_deferred = false;
-    if !content.present {
-        content_deferred = maybe_request_workshop_content(
-            &steam_path,
-            item.app_id,
-            item.workshop_id,
-            content.empty,
-            auto_content,
-            spawn_budget,
-            last_spawn,
-        )
-        .await;
-    }
+    let request = request_content_if_needed(
+        &steam_path,
+        target,
+        content,
+        auto_content,
+        spawn_budget,
+        last_spawn,
+    )
+    .await;
     crate::desk_log_info!(
         "workshop",
         "Sync complete origin=generated workshop_id={} bytes={} content_present={} content_empty={} elapsed_ms={}",
@@ -694,8 +786,10 @@ async fn sync_one_workshop_item(
     Ok(SyncOutcome {
         origin: SyncOrigin::Generated,
         content_present: content.present,
-        content_deferred,
+        content_deferred: request.deferred,
         content_empty: content.empty,
+        update: target.is_update(),
+        download_requested: request.requested,
     })
 }
 
@@ -789,7 +883,6 @@ fn install_to_depotcache(
 #[serde(rename_all = "camelCase")]
 pub enum WorkshopItemStatus {
     Ready,
-    Pending,
     Deferred,
     Failed,
     Unavailable,
@@ -800,7 +893,6 @@ pub enum WorkshopItemStatus {
 pub enum WorkshopItemReason {
     HubcapNotFound,
     UnknownError,
-    PendingSubscription,
     GenerationCap,
     DownloadCap,
 }
@@ -821,18 +913,31 @@ pub struct WorkshopItemReport {
     pub content_empty: bool,
     /// Steam's ACF says it has a pending Workshop download.
     pub needs_download: bool,
+    /// The item came only from `WorkshopItemDetails`.
+    pub subscription: bool,
+    /// The target is a newer manifest than `WorkshopItemsInstalled.manifest`.
+    pub update: bool,
+    /// Aether asked Steam to download the payload in this run.
+    pub download_requested: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct WorkshopSyncReport {
+    /// Installed Workshop items considered in this run.
     pub discovered: usize,
+    /// `WorkshopItemDetails` subscriptions considered in this run.
+    pub subscriptions: usize,
     pub generated: usize,
     pub restored_from_cache: usize,
     pub already_local: usize,
     /// Items with a valid staged manifest but without Steam's actual Workshop
     /// content directory. They are intentionally not counted as complete.
     pub content_missing: usize,
+    /// Installed items whose target manifest is newer than the installed one.
+    pub updates: usize,
+    /// Items for which Aether asked Steam to download the payload.
+    pub download_requested: usize,
     pub failed: usize,
     /// Items pushed to the next lane pass by a per-run cap: either their
     /// manifest needed a remote Hubcap generation beyond
@@ -841,8 +946,6 @@ pub struct WorkshopSyncReport {
     /// monitor re-runs the lane shortly, so a depotcache wipe can never burn
     /// the whole daily quota (or stall the poll loop) in one storm.
     pub deferred: usize,
-    /// Subscriptions in `WorkshopItemDetails` that Steam has not installed.
-    pub pending: usize,
     /// Items skipped by the 24 h terminal-404 cache.
     pub unavailable: usize,
     pub items: Vec<WorkshopItemReport>,
@@ -852,17 +955,24 @@ pub struct WorkshopSyncReport {
 /// Workshop manifests through authenticated Hubcap. The coordinator invokes it
 /// only after an ACF fingerprint change; exact local files and validated caches
 /// are skipped before any provider validation or generation request.
+///
+/// Installed items include updates whose `latest_manifest` is newer than the
+/// installed one. `include_subscriptions` is true only for the explicit Repair
+/// action: the background monitor must not spend Workshop quota on
+/// `WorkshopItemDetails`-only subscriptions.
 #[tauri::command]
 pub async fn sync_hubcap_workshop_manifests(
     app: tauri::AppHandle,
+    include_subscriptions: bool,
 ) -> Result<WorkshopSyncReport, String> {
     let started = Instant::now();
     let settings = load_settings(&app);
     crate::desk_log_info!(
         "workshop",
-        "Workshop sync start key_configured={} steam_path_configured={}",
+        "Workshop sync start key_configured={} steam_path_configured={} include_subscriptions={}",
         !settings.hubcap_api_key.trim().is_empty(),
-        !settings.steam_path.trim().is_empty()
+        !settings.steam_path.trim().is_empty(),
+        include_subscriptions
     );
     if settings.steam_path.trim().is_empty() {
         crate::desk_log_error!(
@@ -872,32 +982,30 @@ pub async fn sync_hubcap_workshop_manifests(
         return Err("Workshop sync cannot run because the Steam path is empty".to_string());
     }
     let steam_path = settings.steam_path;
-    let (items, pending_items) = discover_workshop_items(&steam_path);
+    let selection =
+        select_workshop_targets(discover_workshop_items(&steam_path), include_subscriptions);
     crate::desk_log_info!(
         "workshop",
-        "Workshop discovery complete installed={} pending={}",
-        items.len(),
-        pending_items.len()
+        "Workshop discovery complete installed={} subscriptions={}",
+        selection.installed,
+        selection.subscriptions
     );
     let mut report = WorkshopSyncReport {
-        discovered: items.len(),
-        pending: pending_items.len(),
+        discovered: selection.installed,
+        subscriptions: selection.subscriptions,
         ..Default::default()
     };
-    if items.is_empty() && pending_items.is_empty() {
+    let targets = selection.targets;
+    if targets.is_empty() {
         crate::desk_log_debug!(
             "workshop",
-            "Workshop sync complete no installed or pending Workshop items"
+            "Workshop sync complete no installed or included subscription Workshop items"
         );
         return Ok(report);
     }
 
     let app_cache_dir = LocalAppPaths::data_root().join("cache");
-    let app_ids: Vec<u32> = items
-        .iter()
-        .map(|item| item.app_id)
-        .chain(pending_items.iter().map(|item| item.app_id))
-        .collect();
+    let app_ids: Vec<u32> = targets.iter().map(|target| target.item.app_id).collect();
     let app_names =
         crate::steam::app_names::SteamAppNameResolver::new(&app_cache_dir).cached_names(app_ids);
 
@@ -905,31 +1013,31 @@ pub async fn sync_hubcap_workshop_manifests(
     let mut failures = crate::core::workshop_failures::WorkshopFailureCache::load();
     failures.prune(now);
 
-    let mut runnable = Vec::with_capacity(items.len());
-    for item in items {
+    let mut runnable = Vec::with_capacity(targets.len());
+    for target in targets {
         // A local or cached manifest wins over a remembered 404: the cache only
         // suppresses a provider request, it never hides a payload Steam can
         // already use.
-        let needs_remote = needs_remote_manifest(&steam_path, item);
-        if needs_remote && failures.is_unavailable(item.workshop_id, item.manifest_gid, now) {
+        let needs_remote = needs_remote_manifest(&steam_path, target.item);
+        if needs_remote
+            && failures.is_unavailable(target.item.workshop_id, target.item.manifest_gid, now)
+        {
             report.unavailable += 1;
             report.items.push(make_report_item(
-                item,
-                app_names.get(&item.app_id),
+                target,
+                app_names.get(&target.item.app_id),
                 WorkshopItemStatus::Unavailable,
                 Some(WorkshopItemReason::HubcapNotFound),
                 Some(404),
-                false,
-                false,
             ));
         } else {
-            runnable.push(item);
+            runnable.push(target);
         }
     }
 
     let needs_remote_generation = runnable
         .iter()
-        .any(|item| needs_remote_manifest(&steam_path, *item));
+        .any(|target| needs_remote_manifest(&steam_path, target.item));
     crate::desk_log_debug!(
         "workshop",
         "Workshop sync local/cache gate runnable={} unavailable={} needs_remote_generation={}",
@@ -961,35 +1069,31 @@ pub async fn sync_hubcap_workshop_manifests(
     let mut spawn_budget = WORKSHOP_MAX_CONTENT_REQUESTS_PER_RUN;
     let mut remote_attempts = 0usize;
 
-    for item in runnable {
+    for target in runnable {
         match decide_item_action(
-            needs_remote_manifest(&steam_path, item),
-            failures.is_unavailable(item.workshop_id, item.manifest_gid, now),
+            needs_remote_manifest(&steam_path, target.item),
+            failures.is_unavailable(target.item.workshop_id, target.item.manifest_gid, now),
             remote_attempts,
         ) {
             WorkshopItemAction::SkipUnavailable => {
                 report.unavailable += 1;
                 report.items.push(make_report_item(
-                    item,
-                    app_names.get(&item.app_id),
+                    target,
+                    app_names.get(&target.item.app_id),
                     WorkshopItemStatus::Unavailable,
                     Some(WorkshopItemReason::HubcapNotFound),
                     Some(404),
-                    false,
-                    false,
                 ));
                 continue;
             }
             WorkshopItemAction::DeferGeneration => {
                 report.deferred += 1;
                 report.items.push(make_report_item(
-                    item,
-                    app_names.get(&item.app_id),
+                    target,
+                    app_names.get(&target.item.app_id),
                     WorkshopItemStatus::Deferred,
                     Some(WorkshopItemReason::GenerationCap),
                     None,
-                    false,
-                    false,
                 ));
                 continue;
             }
@@ -1002,7 +1106,7 @@ pub async fn sync_hubcap_workshop_manifests(
         match sync_one_workshop_item(
             client.clone(),
             steam_path.clone(),
-            item,
+            target,
             auto_content,
             &mut spawn_budget,
             &mut last_spawn,
@@ -1010,56 +1114,29 @@ pub async fn sync_hubcap_workshop_manifests(
         .await
         {
             Ok(outcome) => {
-                record_sync_outcome(&mut report, item, app_names.get(&item.app_id), outcome);
+                record_sync_outcome(
+                    &mut report,
+                    target,
+                    app_names.get(&target.item.app_id),
+                    outcome,
+                );
             }
             Err(error) => {
                 report.failed += 1;
                 let (http_status, reason) = failure_reason(&error);
                 if http_status == Some(404) {
-                    failures.record(item.workshop_id, item.manifest_gid, now);
+                    failures.record(target.item.workshop_id, target.item.manifest_gid, now);
                 }
                 report.items.push(make_report_item(
-                    item,
-                    app_names.get(&item.app_id),
+                    target,
+                    app_names.get(&target.item.app_id),
                     WorkshopItemStatus::Failed,
                     Some(reason),
                     http_status,
-                    false,
-                    false,
                 ));
                 crate::desk_log_warn!("hubcap", "Workshop manifest preparation failed: {}", error);
             }
         }
-    }
-
-    // Pending subscriptions are never sent to Hubcap. Aether only asks Steam to
-    // download them; the report tells the user when Steam has not installed
-    // them yet.
-    for pending in pending_items {
-        let content = workshop_content_state(&steam_path, pending.app_id, pending.workshop_id);
-        if !content.present {
-            let _ = maybe_request_workshop_content(
-                &steam_path,
-                pending.app_id,
-                pending.workshop_id,
-                content.empty,
-                auto_content,
-                &mut spawn_budget,
-                &mut last_spawn,
-            )
-            .await;
-        }
-        report.items.push(WorkshopItemReport {
-            app_id: pending.app_id,
-            app_name: app_names.get(&pending.app_id).cloned(),
-            workshop_id: pending.workshop_id,
-            manifest_gid: pending.manifest_gid.to_string(),
-            status: WorkshopItemStatus::Pending,
-            reason: Some(WorkshopItemReason::PendingSubscription),
-            http_status: None,
-            content_empty: pending.content_empty || content.empty,
-            needs_download: pending.needs_download,
-        });
     }
 
     if let Err(error) = failures.save() {
@@ -1072,15 +1149,17 @@ pub async fn sync_hubcap_workshop_manifests(
 
     crate::desk_log_info!(
         "workshop",
-        "Workshop sync complete discovered={} generated={} cached={} already_local={} content_missing={} failed={} deferred={} pending={} unavailable={} elapsed_ms={}",
+        "Workshop sync complete discovered={} subscriptions={} generated={} cached={} already_local={} content_missing={} updates={} download_requested={} failed={} deferred={} unavailable={} elapsed_ms={}",
         report.discovered,
+        report.subscriptions,
         report.generated,
         report.restored_from_cache,
         report.already_local,
         report.content_missing,
+        report.updates,
+        report.download_requested,
         report.failed,
         report.deferred,
-        report.pending,
         report.unavailable,
         started.elapsed().as_millis()
     );
@@ -1179,11 +1258,24 @@ mod tests {
     use super::*;
     use std::fs;
 
-    fn workshop_item() -> WorkshopItem {
-        WorkshopItem {
-            app_id: 3328490,
-            workshop_id: 3806068832,
-            manifest_gid: 3748992252827399921,
+    fn workshop_target() -> WorkshopTarget {
+        WorkshopTarget {
+            item: WorkshopItem {
+                app_id: 3328490,
+                workshop_id: 3806068832,
+                manifest_gid: 3748992252827399921,
+            },
+            installed_manifest_gid: Some(3748992252827399921),
+            subscription: false,
+            needs_download: false,
+        }
+    }
+
+    fn subscription_target() -> WorkshopTarget {
+        WorkshopTarget {
+            installed_manifest_gid: None,
+            subscription: true,
+            ..workshop_target()
         }
     }
 
@@ -1193,12 +1285,15 @@ mod tests {
             content_present,
             content_deferred,
             content_empty: false,
+            update: false,
+            download_requested: false,
         }
     }
 
     #[test]
     fn report_marks_content_missing_as_ready() {
-        let report = report_item_for_outcome(workshop_item(), None, outcome(false, false)).unwrap();
+        let report =
+            report_item_for_outcome(workshop_target(), None, outcome(false, false)).unwrap();
 
         assert_eq!(report.status, WorkshopItemStatus::Ready);
         assert_eq!(report.reason, None);
@@ -1207,7 +1302,8 @@ mod tests {
 
     #[test]
     fn report_marks_download_cap_as_deferred() {
-        let report = report_item_for_outcome(workshop_item(), None, outcome(false, true)).unwrap();
+        let report =
+            report_item_for_outcome(workshop_target(), None, outcome(false, true)).unwrap();
 
         assert_eq!(report.status, WorkshopItemStatus::Deferred);
         assert_eq!(report.reason, Some(WorkshopItemReason::DownloadCap));
@@ -1216,17 +1312,49 @@ mod tests {
     #[test]
     fn report_marks_generation_cap_as_deferred() {
         let report = make_report_item(
-            workshop_item(),
+            workshop_target(),
             None,
             WorkshopItemStatus::Deferred,
             Some(WorkshopItemReason::GenerationCap),
             None,
-            false,
-            false,
         );
 
         assert_eq!(report.status, WorkshopItemStatus::Deferred);
         assert_eq!(report.reason, Some(WorkshopItemReason::GenerationCap));
+    }
+
+    #[test]
+    fn report_lists_an_update_even_when_content_is_present() {
+        let target = WorkshopTarget {
+            item: WorkshopItem {
+                manifest_gid: 900,
+                ..workshop_target().item
+            },
+            installed_manifest_gid: Some(3748992252827399921),
+            ..workshop_target()
+        };
+        let update = SyncOutcome {
+            content_present: true,
+            update: true,
+            download_requested: true,
+            ..outcome(true, false)
+        };
+
+        let report = report_item_for_outcome(target, None, update).unwrap();
+
+        assert_eq!(report.status, WorkshopItemStatus::Ready);
+        assert!(report.update);
+        assert!(report.download_requested);
+        assert!(!report.content_empty);
+    }
+
+    #[test]
+    fn report_marks_subscription_targets() {
+        let report =
+            report_item_for_outcome(subscription_target(), None, outcome(false, false)).unwrap();
+
+        assert!(report.subscription);
+        assert!(!report.update);
     }
 
     #[test]
@@ -1253,7 +1381,7 @@ mod tests {
 
     #[test]
     fn report_does_not_list_already_local_items() {
-        assert!(report_item_for_outcome(workshop_item(), None, outcome(true, false)).is_none());
+        assert!(report_item_for_outcome(workshop_target(), None, outcome(true, false)).is_none());
     }
 
     #[test]
@@ -1328,10 +1456,21 @@ mod review_fix_tests {
     use super::*;
     use std::fs;
 
-    const ITEM: WorkshopItem = WorkshopItem {
-        app_id: 3328490,
-        workshop_id: 3806068832,
-        manifest_gid: 3748992252827399921,
+    const TARGET: WorkshopTarget = WorkshopTarget {
+        item: WorkshopItem {
+            app_id: 3328490,
+            workshop_id: 3806068832,
+            manifest_gid: 3748992252827399921,
+        },
+        installed_manifest_gid: Some(3748992252827399921),
+        subscription: false,
+        needs_download: false,
+    };
+
+    const SUBSCRIPTION_TARGET: WorkshopTarget = WorkshopTarget {
+        installed_manifest_gid: None,
+        subscription: true,
+        ..TARGET
     };
 
     fn outcome(content_present: bool, content_deferred: bool) -> SyncOutcome {
@@ -1340,7 +1479,29 @@ mod review_fix_tests {
             content_present,
             content_deferred,
             content_empty: false,
+            update: false,
+            download_requested: false,
         }
+    }
+
+    #[test]
+    fn monitor_selection_excludes_subscription_targets() {
+        let selection = select_workshop_targets(vec![TARGET, SUBSCRIPTION_TARGET], false);
+
+        assert_eq!(selection.installed, 1);
+        assert_eq!(selection.subscriptions, 0);
+        assert_eq!(selection.targets.len(), 1);
+        assert!(!selection.targets[0].subscription);
+    }
+
+    #[test]
+    fn manual_repair_selection_includes_subscription_targets() {
+        let selection = select_workshop_targets(vec![TARGET, SUBSCRIPTION_TARGET], true);
+
+        assert_eq!(selection.installed, 1);
+        assert_eq!(selection.subscriptions, 1);
+        assert_eq!(selection.targets.len(), 2);
+        assert!(selection.targets.iter().any(|target| target.subscription));
     }
 
     #[test]
@@ -1394,7 +1555,7 @@ mod review_fix_tests {
     #[test]
     fn record_sync_outcome_lists_a_deferred_item_once() {
         let mut report = WorkshopSyncReport::default();
-        record_sync_outcome(&mut report, ITEM, None, outcome(false, true));
+        record_sync_outcome(&mut report, TARGET, None, outcome(false, true));
 
         assert_eq!(report.content_missing, 1);
         assert_eq!(report.deferred, 1);
@@ -1407,6 +1568,33 @@ mod review_fix_tests {
     }
 
     #[test]
+    fn record_sync_outcome_counts_updates_and_download_requests() {
+        let mut report = WorkshopSyncReport::default();
+        let target = WorkshopTarget {
+            item: WorkshopItem {
+                manifest_gid: 900,
+                ..TARGET.item
+            },
+            ..TARGET
+        };
+        let update = SyncOutcome {
+            content_present: true,
+            update: true,
+            download_requested: true,
+            ..outcome(true, false)
+        };
+        record_sync_outcome(&mut report, target, None, update);
+
+        assert_eq!(report.already_local, 0);
+        assert_eq!(report.content_missing, 0);
+        assert_eq!(report.updates, 1);
+        assert_eq!(report.download_requested, 1);
+        assert_eq!(report.items.len(), 1);
+        assert!(report.items[0].update);
+        assert!(report.items[0].download_requested);
+    }
+
+    #[test]
     fn record_sync_outcome_does_not_list_already_local_items() {
         let mut report = WorkshopSyncReport::default();
         let local = SyncOutcome {
@@ -1414,8 +1602,10 @@ mod review_fix_tests {
             content_present: true,
             content_deferred: false,
             content_empty: false,
+            update: false,
+            download_requested: false,
         };
-        record_sync_outcome(&mut report, ITEM, None, local);
+        record_sync_outcome(&mut report, TARGET, None, local);
 
         assert_eq!(report.already_local, 1);
         assert!(report.items.is_empty());
@@ -1423,15 +1613,7 @@ mod review_fix_tests {
 
     #[test]
     fn report_serializes_manifest_gid_as_a_string() {
-        let report = make_report_item(
-            ITEM,
-            None,
-            WorkshopItemStatus::Ready,
-            None,
-            None,
-            false,
-            false,
-        );
+        let report = make_report_item(TARGET, None, WorkshopItemStatus::Ready, None, None);
         let value = serde_json::to_value(&report).unwrap();
 
         assert_eq!(value["manifestGid"], "3748992252827399921");

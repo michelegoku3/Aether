@@ -13,13 +13,16 @@ export interface WorkshopReportModalProps {
 const itemName = (item: WorkshopItemReport): string => item.appName ?? `App ${item.appId}`;
 
 const reasonLabel = (item: WorkshopItemReport): string | null => {
+  if (item.status === 'ready' && item.update) {
+    return item.downloadRequested
+      ? 'New manifest staged; Steam download requested.'
+      : 'New manifest staged; start the download in Steam.';
+  }
   switch (item.reason) {
     case 'hubcapNotFound':
       return "Probably not in Hubcap's database.";
     case 'unknownError':
       return 'Unknown error.';
-    case 'pendingSubscription':
-      return 'Steam has the subscription but has not installed it yet.';
     case 'generationCap':
       return 'Deferred by the generation limit; retried on the next pass.';
     case 'downloadCap':
@@ -30,18 +33,22 @@ const reasonLabel = (item: WorkshopItemReport): string | null => {
 };
 
 const badgeText = (item: WorkshopItemReport): string => {
-  if (item.status === 'pending') return 'subscription pending';
   if (item.status === 'deferred') {
     return item.reason === 'generationCap' ? 'generation cap' : 'download cap';
   }
   if (item.status === 'unavailable' || item.reason === 'hubcapNotFound') return '404';
   if (item.status === 'failed') return 'error';
-  return 'ready';
+  return item.update ? 'update' : 'ready';
 };
 
 const ReportRow = ({ item }: { item: WorkshopItemReport }) => {
   const reason = reasonLabel(item);
-  const extras = [item.contentEmpty ? 'empty content folder' : null, item.needsDownload ? 'Steam is retrying' : null]
+  const extras = [
+    item.subscription ? 'subscription' : null,
+    item.update ? 'update' : null,
+    item.contentEmpty ? 'empty content folder' : null,
+    item.needsDownload ? 'Steam is retrying' : null,
+  ]
     .filter(Boolean)
     .join(' · ');
 
@@ -81,19 +88,20 @@ const ReportSection = ({ title, items }: { title: string; items: WorkshopItemRep
 /**
  * Dedicated result popup for Workshop repair.
  *
- * It opens instead of the repair dialog whenever a run has failures, pending
- * subscriptions or deferred items. The list is the actionable part: what can
- * download now, what waits for the next pass, and what Hubcap did not answer
- * for. The footer note asks the user to unsubscribe from the failed mods; no
- * action edits Steam's ACF or subscription state.
+ * It opens instead of the repair dialog whenever a run has failures or deferred
+ * items. The list is the actionable part: what can download now, what waits for
+ * the next pass, and what Hubcap did not answer for. The footer note asks the
+ * user to unsubscribe from the failed mods; no action edits Steam's ACF or
+ * subscription state.
  */
 export const WorkshopReportModal = ({ report, error, onClose }: WorkshopReportModalProps) => {
-  const ready = report?.items.filter((item) => item.status === 'ready' || item.status === 'pending') ?? [];
+  const ready = report?.items.filter((item) => item.status === 'ready') ?? [];
   const deferred = report?.items.filter((item) => item.status === 'deferred') ?? [];
   const errors = report?.items.filter((item) => item.status === 'failed' || item.status === 'unavailable') ?? [];
   const errorLabel = errors.length === 1 ? 'error' : 'errors';
+  const subscriptionLabel = (report?.subscriptions ?? 0) === 1 ? 'subscription' : 'subscriptions';
   const summary = report
-    ? `${report.discovered} installed · ${report.alreadyLocal} already local · ${ready.length} to download · ${deferred.length} deferred · ${errors.length} ${errorLabel}`
+    ? `${report.discovered} installed · ${report.subscriptions} ${subscriptionLabel} · ${report.alreadyLocal} already local · ${ready.length} ready · ${deferred.length} deferred · ${errors.length} ${errorLabel}`
     : null;
 
   return (
