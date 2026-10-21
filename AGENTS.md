@@ -110,6 +110,8 @@ Outside an elevated shell the test harness needs
 
 ## Conventions and guardrails
 
+- **Commit messages are a single line.** Never add a body, bullet list or
+  trailer below the subject.
 - **Comments are English**, present tense, and explain *why*: invariants,
   contracts, ordering constraints, platform quirks.
 - **Code and documents describe the current state only.** Never write change
