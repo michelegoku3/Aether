@@ -68,7 +68,7 @@ the code that implements it and the check that proves it.
 | Touch Lua pins, versions or the manifest resolver | `docs/shared_contracts.md` §2, §3, §5 | `manifest/pins/`, `manifest/resolver.rs`, `versioning/` | `cargo test manifest` |
 | Change install/publish order | `docs/shared_contracts.md` §3 | `steam/compat.rs`, `core/game_mutations.rs` | `cargo test` |
 | Change backups or restore | `docs/shared_contracts.md` §2 | `core/backup.rs`, `AetherCore/hooks/wire/ManifestRestore.cpp` | `cargo test backup` + `build_dll.cmd` |
-| Add a store provider or source | `AetherDesk/docs/ARCHITECTURE.md` | `providers/`, `application/store/source.rs` | `npm run verify` + `cargo test` |
+| Add a store provider or source | `AetherDesk/docs/ARCHITECTURE.md` | `providers/`, `application/store/` | `npm run verify` + `cargo test` |
 | Add or change a UI view, modal or hook | `AetherDesk/docs/ARCHITECTURE.md` | `src/views/`, `src/modals/`, `src/hooks/`, `src/style.css` | `npm run verify` |
 | Change a setting | `AetherDesk/docs/ARCHITECTURE.md` (settings) | `core/settings*.rs`, `core/config_document.rs`, Settings UI | `cargo test` + `npm run verify` |
 | Add shared mutable state to the DLL | `AetherDLL/docs/ARCHITECTURE.md` (core rule) | `AetherCore/core/AetherCoreState.h` | `build_dll.cmd` |

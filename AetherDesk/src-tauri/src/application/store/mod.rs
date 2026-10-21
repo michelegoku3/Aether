@@ -17,7 +17,6 @@ mod latest_download;
 mod model;
 mod package_completion;
 mod search;
-mod source;
 mod specific_version;
 mod validation;
 

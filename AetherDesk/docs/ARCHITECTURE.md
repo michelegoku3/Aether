@@ -36,7 +36,7 @@ invariants
 | `core/` | Cross-cutting infrastructure: settings and their repository/journal, `AetherData` paths, `GameBackup`, per-game mutations, state IO, logger, migrations, library events, Steam process/monitor, secure storage (DPAPI). |
 | `manifest/` | Lua pin model, parser, editor (`pins/`), local-first resolver, provider package extraction, manifest identity check, pin-refresh lane. |
 | `steam/` | Steam installation: path resolution, ACF/library scan, compat install (`install_lua_and_manifest_files`), launch options, update guard, app names and store metadata. |
-| `providers/` | Remote sources: Hubcap (auth, catalog, generation, packages), LuaTools (+ auth), Ryuu, oureveryday, the shared HTTP client and the `ManifestSource` trait. |
+| `providers/` | Remote sources: Hubcap (auth, catalog, generation, packages), LuaTools (+ auth), Ryuu, the shared HTTP client and the `ManifestSource` trait. |
 | `application/` | Store use cases: latest and specific version download, package completion, installation, source ranking, concurrency. Must not depend on `commands`. |
 | `store/` | Store catalog model: search cache, aliases, mapping, normalization, DRM flags. |
 | `versioning/` | Version switching: snapshots, saved builds, apply, Lua validation, remote sources (`steamdb`, `depotbox`). |
@@ -194,7 +194,7 @@ outcome belongs to the caller's log line.
 | An IPC command | `commands/<area>.rs` + register in `main.rs` + payload `type` in `src/types/` + `cargo test ipc_contract`. |
 | A setting the DLL also reads | `core/settings_model.rs` + repository validation/default + the Settings UI + `docs/shared_contracts.md` + both readers. |
 | A Desk-only setting | `core/settings_model.rs` + repository + Settings UI. |
-| A store provider | `providers/<name>.rs` implementing `ManifestSource` + ranking in `application/store/source.rs` + tests. |
+| A store provider | `providers/<name>.rs` implementing `ManifestSource` + its dispatch from `application/store/` + tests. |
 | A manifest consumer | `manifest/resolver.rs` (never a private lookup) + the completeness gate. |
 | A modal or view | `src/modals/` or `src/views/` + a section in `style.css` + a Vitest test next to it. |
 | A field shown in the Library | `steam/` (source of truth) → `commands/library.rs` → `src/types/` and the hook. |

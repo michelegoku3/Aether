@@ -135,7 +135,7 @@ async fn complete_luatools_package(
         .collect();
     let hubcap_key = load_settings(app).hubcap_api_key.trim().to_string();
     let mut unresolved = still_missing.clone();
-    if !hubcap_key.is_empty() && hubcap_key != "oureveryday_public" {
+    if !hubcap_key.is_empty() {
         crate::desk_log_info!(
             "store",
             "LuaTools completion for {}: {} manifest(s) not served by LuaTools, trying Hubcap generation",
@@ -211,7 +211,7 @@ pub(super) async fn complete_hubcap_package(
         .into_iter()
         .filter(|pin| !bundled.contains(&resolver::manifest_file_name(pin)))
         .collect();
-    let generation = if api_key.trim().is_empty() || api_key == "oureveryday_public" {
+    let generation = if api_key.trim().is_empty() {
         resolver::Generation::LocalOnly
     } else {
         resolver::Generation::PreValidatedKey(api_key.to_string())
@@ -241,7 +241,7 @@ pub(super) async fn complete_specific_package(
         .into_iter()
         .filter(|pin| !bundled.contains(&resolver::manifest_file_name(pin)))
         .collect();
-    let generation = if api_key == "oureveryday_public" {
+    let generation = if api_key.trim().is_empty() {
         resolver::Generation::LocalOnly
     } else {
         resolver::Generation::PreValidatedKey(api_key.to_string())

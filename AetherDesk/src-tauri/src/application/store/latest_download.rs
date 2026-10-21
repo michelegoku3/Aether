@@ -7,7 +7,6 @@ use super::concurrency::acquire_latest_package;
 use super::installation::install_standard_package;
 use super::model::{AuthenticatedDownloadRequest, LuaToolsDownloadRequest};
 use super::package_completion::{complete_hubcap_package, download_complete_luatools_package};
-use super::source::HubcapSource;
 use super::validation::{validate_authenticated_download, validate_steam_download_path};
 use crate::core::game_mutations::MutationPlan;
 use crate::providers::hubcap::HubcapClient;
@@ -20,7 +19,6 @@ pub async fn trigger_hubcap_download(
     let app_id = request.download.app_id;
     let steam_path = request.download.steam_path;
     let api_key = request.api_key;
-    let source = HubcapSource::from_api_key(&api_key);
     let plan = MutationPlan::prepare(
         std::path::Path::new(&steam_path),
         app_id,
@@ -41,41 +39,20 @@ pub async fn trigger_hubcap_download(
     let _package_guard = acquire_latest_package(app_id).await?;
     crate::desk_log_info!(
         "store",
-        "Triggering download for {} (source: {})",
-        crate::core::logger::format_appid(app_id),
-        source.log_name()
+        "Triggering download for {} (source: hubcap)",
+        crate::core::logger::format_appid(app_id)
     );
 
     let result = async {
-        let mut package = match source {
-            HubcapSource::Oureveryday => {
-                crate::providers::oureveryday::OureverydayClient::new()
-                    .download_lua_package(app_id)
-                    .await?
-            }
-            HubcapSource::Hubcap => {
-                let hubcap = HubcapClient::new(&api_key);
-                if !hubcap.validate_api_key().await? {
-                    return Err(
-                        "Hubcap API key is not valid or is not allowed to make requests."
-                            .to_string(),
-                    );
-                }
-                hubcap.download_lua_package(app_id).await?
-            }
-        };
-        if source == HubcapSource::Hubcap {
-            complete_hubcap_package(app_id, &steam_path, &mut package, &api_key).await?;
+        let hubcap = HubcapClient::new(&api_key);
+        if !hubcap.validate_api_key().await? {
+            return Err(
+                "Hubcap API key is not valid or is not allowed to make requests.".to_string(),
+            );
         }
-        install_standard_package(
-            app,
-            app_id,
-            &steam_path,
-            package,
-            source.display_name(),
-            plan,
-        )
-        .await
+        let mut package = hubcap.download_lua_package(app_id).await?;
+        complete_hubcap_package(app_id, &steam_path, &mut package, &api_key).await?;
+        install_standard_package(app, app_id, &steam_path, package, "Hubcap", plan).await
     }
     .await;
 
@@ -88,9 +65,8 @@ pub async fn trigger_hubcap_download(
         ),
         Err(error) => crate::desk_log_error!(
             "store",
-            "Download failed for {} (source: {}): {}",
+            "Download failed for {} (source: hubcap): {}",
             crate::core::logger::format_appid(app_id),
-            source.log_name(),
             error
         ),
     }
