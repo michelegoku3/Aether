@@ -519,7 +519,9 @@ pub fn install_local_pipeline(
         let lua = LuaManifestPins::new(steam_path.to_path_buf(), app_id);
         lua.set_updates_enabled(true)?;
         let installed = lua.read_lua()?;
-        GameBackup::for_app(app_id)?.backup_lua_artifacts(app_id, &installed, &[])?;
+        // The toggle rewrote the pins, so this Lua is a variant: it is
+        // archived in the history, the original keeps the pristine version.
+        GameBackup::for_app(app_id)?.backup_lua_variant(app_id, &installed, &[])?;
     }
     Ok(report)
 }

@@ -144,6 +144,11 @@ impl GameBackup {
     /// downloaded/installed, so the game's Lua manifest source is always kept.
     /// Writes are atomic (temp file + rename) to avoid a partially-written file
     /// if the app is interrupted.
+    ///
+    /// Only downloaded/provider content is pristine: this method replaces the
+    /// original (`lua/<app_id>.lua`) and archives the replaced one in
+    /// `history/`. A Desk-modified Lua (hand edit, update toggle) is a variant
+    /// and belongs to `backup_lua_variant`.
     pub fn backup_lua_artifacts(
         &self,
         app_id: u32,
@@ -154,6 +159,29 @@ impl GameBackup {
         // the original in the backup (the previous one goes to history/).
         self.store_original(app_id, lua_content.as_bytes())?;
 
+        self.write_manifest_files(manifest_files)
+    }
+
+    /// Persist a Desk-modified Lua version and any bundled Steam `.manifest`
+    /// files for a game.
+    ///
+    /// The original (`lua/<app_id>.lua`) keeps the pristine source version: the
+    /// modified one is archived in `history/` only. Replacing the original here
+    /// would put the modified file back where a restore or an uninstall
+    /// expects the pristine one.
+    pub fn backup_lua_variant(
+        &self,
+        app_id: u32,
+        lua_content: &str,
+        manifest_files: &[ManifestPackageFile],
+    ) -> Result<(), String> {
+        self.store_history_version(app_id, lua_content.as_bytes())?;
+
+        self.write_manifest_files(manifest_files)
+    }
+
+    /// Writes the bundled `.manifest` files into the game's lua backup.
+    fn write_manifest_files(&self, manifest_files: &[ManifestPackageFile]) -> Result<(), String> {
         for manifest in manifest_files {
             let manifest_path = self.lua_dir().join(&manifest.file_name);
             write_atomic(&manifest_path, &manifest.bytes)?;

@@ -510,7 +510,9 @@ pub async fn apply_specific_version_edits(
 
     if let Ok(backup) = crate::core::backup::GameBackup::for_app(app_id) {
         let depotcache = std::path::PathBuf::from(&steam_path).join("depotcache");
-        let _ = backup.backup_lua_artifacts(app_id, &next_lua, &generated);
+        // The edited Lua is a variant: it belongs to the history, the
+        // original keeps the pristine source version.
+        let _ = backup.backup_lua_variant(app_id, &next_lua, &generated);
         let _ = backup.backup_referenced_manifests(&next_lua, &depotcache);
     }
     crate::core::library_events::notify_lua_changed(
