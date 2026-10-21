@@ -139,6 +139,17 @@ const AutoBuildsTab = ({ appId, onClose }: AutoBuildsTabProps) => {
     return () => window.clearTimeout(timer);
   }, [report]);
 
+  // A refused bookmark comes back from the hook in `error`: report it in the
+  // modal's own status line, the channel every other action of this tab uses.
+  React.useEffect(() => {
+    if (error) {
+      setStatus({ text: error, type: 'error' });
+      return;
+    }
+    // The failure is over (a reload or a new attempt): drop its message.
+    setStatus((current) => (current.type === 'error' ? emptyStatus() : current));
+  }, [error]);
+
   const visibleBuilds = useMemo(() => {
     if (!onlySaved) return builds;
     return builds.filter((build) => savedIds.has(build.buildId));
@@ -203,11 +214,12 @@ const AutoBuildsTab = ({ appId, onClose }: AutoBuildsTabProps) => {
 
   const handleToggleSaved = async (build: BuildInfo) => {
     setSavingId(build.buildId);
-    try {
-      await toggleSaved(build);
-    } finally {
-      setSavingId(null);
-    }
+    // A new attempt starts clean: the refusal of the previous one is reported
+    // again by the effect above when the backend refuses again.
+    setStatus(emptyStatus());
+    // `toggleSaved` never rejects: a refusal comes back in the hook's `error`.
+    await toggleSaved(build);
+    setSavingId(null);
   };
 
   return (
@@ -279,15 +291,15 @@ const AutoBuildsTab = ({ appId, onClose }: AutoBuildsTabProps) => {
       {/* Builds list */}
       {loading && <div className="version-builds-empty">Loading builds…</div>}
 
-      {!loading && error && <StatusAlert status={{ text: error, type: 'error' }} className="settings-alert--compact" />}
-
       {!loading && !error && visibleBuilds.length === 0 && (
         <div className="version-builds-empty">
           {onlySaved ? 'No saved builds yet — star one from the All list.' : 'No builds found.'}
         </div>
       )}
 
-      {!loading && !error && visibleBuilds.length > 0 && (
+      {/* The list survives an error: a refused bookmark leaves the star on
+          screen, so the user can try again without reopening the modal. */}
+      {!loading && visibleBuilds.length > 0 && (
         <div className="version-build-list">
           {visibleBuilds.map((build) => (
             <div className="version-build-row" key={build.buildId}>

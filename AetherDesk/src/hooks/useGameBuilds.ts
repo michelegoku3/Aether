@@ -21,6 +21,9 @@ export interface SavedBuild {
  * Loads a game's build history and the user's saved-build bookmarks, and
  * exposes the save/unsave toggle. Single place where the versioning IPC is
  * called for the Builds tab.
+ *
+ * `toggleSaved` never rejects: a backend refusal keeps the bookmarks as they
+ * were and is reported through `error`.
  */
 export const useGameBuilds = (appId: number) => {
   // Both queries go through the shared per-game cache, so the Builds tab and
@@ -55,24 +58,40 @@ export const useGameBuilds = (appId: number) => {
   const toggleSaved = useCallback(
     async (build: BuildInfo) => {
       const isSaved = savedIds.has(build.buildId);
-      // The bookmark list is cached with everything else: drop it as soon as the
-      // user changes it, then keep the local state authoritative for this render.
-      invalidateGameState(appId);
-      if (isSaved) {
-        await invoke('remove_saved_build', { appId, buildId: build.buildId });
+      // A new attempt starts from a clean slate: the message of the previous
+      // failure must not stay on screen once the user tries again.
+      setError('');
+      try {
+        if (isSaved) {
+          await invoke('remove_saved_build', { appId, buildId: build.buildId });
+          setSavedIds((prev) => {
+            const next = new Set(prev);
+            next.delete(build.buildId);
+            return next;
+          });
+        } else {
+          await invoke('save_build', {
+            appId,
+            buildId: build.buildId,
+            date: build.date,
+            title: build.title,
+          });
+          setSavedIds((prev) => new Set(prev).add(build.buildId));
+        }
+        // The bookmark list is cached with everything else: drop it now that
+        // the backend accepted the change, so the next read sees the new file.
+        invalidateGameState(appId);
+      } catch (err: unknown) {
+        // The backend refused the change: put the bookmark back the way it
+        // was, so the star never claims a save the file does not hold. Only
+        // the toggled build is restored, so a bookmark saved meanwhile stays.
         setSavedIds((prev) => {
           const next = new Set(prev);
-          next.delete(build.buildId);
+          if (isSaved) next.add(build.buildId);
+          else next.delete(build.buildId);
           return next;
         });
-      } else {
-        await invoke('save_build', {
-          appId,
-          buildId: build.buildId,
-          date: build.date,
-          title: build.title,
-        });
-        setSavedIds((prev) => new Set(prev).add(build.buildId));
+        setError(toErrorMessage(err));
       }
     },
     [appId, savedIds, invalidateGameState]
