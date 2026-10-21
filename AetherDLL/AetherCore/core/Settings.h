@@ -44,10 +44,6 @@ struct Settings {
 
     // [network]
     std::string patternMirror;
-    // Opt-in fallback to the OpenSteamTool pattern source
-    // (OpenSteam001/steam-monitor). Default OFF: only migo + koriapolis
-    // are consulted unless the user enables OST in AetherDesk settings.
-    bool patternUseOstSource = false;
 
     // [manifest_cache]
     // Restore *.manifest backups into Steam\depotcache on every Steam start.

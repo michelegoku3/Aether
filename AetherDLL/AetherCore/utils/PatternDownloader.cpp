@@ -135,10 +135,7 @@ std::vector<Level> BuildPlan(Kind kind, const std::string& sha) {
     }
 
     // Following levels: built-in sources in registry order.
-    // OpenSteamTool is opt-in ([network] use_ost_source, default OFF).
     for (const Source& src : DefaultSources()) {
-        if (IsOstSource(src) && !settings->patternUseOstSource)
-            continue;
         const auto mirrors = src.UrlsFor(kind, sha);
         if (mirrors.empty())
             continue; // this source does not carry that kind

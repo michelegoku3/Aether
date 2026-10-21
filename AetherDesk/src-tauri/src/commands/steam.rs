@@ -482,52 +482,6 @@ pub fn set_presence_default_mode(
     })
 }
 
-/// Persist that the user has pressed "I understand" on the OST pattern-source
-/// warning, so the popup shows only on first enable.
-#[tauri::command]
-pub fn acknowledge_ost_warning(app: tauri::AppHandle) -> Result<(), String> {
-    let manager = crate::core::settings::SettingsManager::new(&app);
-    manager
-        .update("acknowledge-ost_warning_acknowledged", |settings| {
-            settings.ost_warning_acknowledged = true;
-            Ok(())
-        })
-        .map(|_| ())
-}
-
-/// True when the OST pattern source (OpenSteam001/steam-monitor) is enabled
-/// via `[network] use_ost_source`. Missing key => false (opt-in OFF).
-#[tauri::command]
-pub fn get_ost_source_enabled(app: tauri::AppHandle) -> Result<bool, String> {
-    for path in crate::core::ost_config::aethercore_toml_paths(&app) {
-        if let Some(v) = crate::core::ost_config::read_ost_enabled(&path) {
-            return Ok(v);
-        }
-    }
-    Ok(false)
-}
-
-/// Enables/disables the OST pattern source fallback. Applies to the next
-/// pattern download (the DLL hot-reloads `aethercore.toml` on every game
-/// launch): no Steam restart needed.
-#[tauri::command]
-pub fn set_ost_source_enabled(app: tauri::AppHandle, enabled: bool) -> Result<String, String> {
-    for path in crate::core::ost_config::aethercore_toml_paths(&app) {
-        crate::core::ost_config::set_ost_enabled_in_toml(&path, enabled)?;
-    }
-    crate::desk_log_info!(
-        "steam",
-        "Pattern OST source {}",
-        if enabled { "enabled" } else { "disabled" }
-    );
-    Ok(if enabled {
-        "OST pattern source enabled: OpenSteamTool is now used as a last-resort fallback."
-            .to_string()
-    } else {
-        "OST pattern source disabled: only MigoReleases and KoriaPolis are used.".to_string()
-    })
-}
-
 /// True when the missing `*.manifest` backups are recopied from
 /// `AetherData\backup\<app_id>\lua` into `Steam\depotcache` on every Steam
 /// start via `[manifest_cache] restore_on_startup`.

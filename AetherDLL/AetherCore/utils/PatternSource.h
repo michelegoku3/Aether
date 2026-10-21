@@ -20,7 +20,7 @@
 //
 // To add/remove/reorder an upstream, edit DefaultSources(). Each entry is
 // self-contained, so a new repo (or a repo whose IPC files sit on a different
-// branch, as OpenSteamTool's do) requires no changes to the downloader logic.
+// branch) requires no changes to the downloader logic.
 // ---------------------------------------------------------------------------
 
 #include <string>
@@ -37,8 +37,8 @@ enum class Kind {
 };
 
 // Canonical, human/disk-friendly name for a Kind. Also used as the {subdir}
-// placeholder when expanding a user-supplied mirror template (KoriaPolis-style
-// layout, where IPC lives under the "steamclientipc" folder).
+// placeholder when expanding a user-supplied mirror template, where IPC lives
+// under the "steamclientipc" folder.
 constexpr const char* KindName(Kind kind) {
     switch (kind) {
     case Kind::SteamClient:
@@ -77,8 +77,8 @@ struct Loc {
 
 // Immutable description of a remote pattern source.
 struct Source {
-    const char* id;      // stable machine key used in logs/status (e.g. "koriapolis")
-    const char* display; // human-readable label for logs (e.g. "KoriaPolis / Steam-Auto-PT")
+    const char* id;      // stable machine key used in logs/status (e.g. "migo")
+    const char* display; // human-readable label for logs (e.g. "michelegoku3 / MigoReleases")
     const char* owner;   // GitHub owner
     const char* repo;    // GitHub repo
     Loc steamClient;     // layout for Kind::SteamClient
@@ -107,20 +107,9 @@ struct Source {
 
 // Default ordered source chain. Ordering == priority: index 0 is tried first.
 //
-// Current policy: the project's own release repo (michelegoku3/MigoReleases)
-// first — the primary author publishes there before anyone else, so when it
-// carries the current build it should win; then KoriaPolis (reference
-// layout), then OpenSteamTool — so if MigoReleases has not yet
-// published the pattern for the current Steam build, the downloader
-// automatically falls back to KoriaPolis and then OpenSteamTool.
-//
-// OpenSteamTool is OPT-IN (Settings::patternUseOstSource, [network]
-// use_ost_source, default false): callers must skip it unless the user
-// enabled it in AetherDesk settings.
-constexpr const char* kOstSourceId = "opensteamtool";
-
-inline bool IsOstSource(const Source& src) { return src.id != nullptr && std::string_view(src.id) == kOstSourceId; }
-
+// MigoReleases is the only built-in source: the primary author publishes a
+// table for every supported Steam build there. Add entries only for a vetted
+// fallback upstream; the downloader needs no other change.
 const std::vector<Source>& DefaultSources();
 
 } // namespace ac::downloader

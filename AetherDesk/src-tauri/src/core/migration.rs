@@ -634,9 +634,6 @@ pub fn ensure_aethercore_bridge(app: &tauri::AppHandle) {
     // defaults, so pre-rename installs migrate to the aetheronline naming.
     crate::core::presence_config::migrate_legacy_presence_keys(&toml_path);
     crate::core::presence_config::ensure_defaults(&toml_path);
-    // OST pattern source opt-in ([network] use_ost_source, default OFF):
-    // insert only when missing, never overriding an explicit user choice.
-    crate::core::ost_config::ensure_defaults(&toml_path);
     // Manifest restore on Steam startup ([manifest_cache] restore_on_startup,
     // default ON): insert only when missing, never overriding an explicit
     // user choice.
@@ -648,7 +645,6 @@ pub fn ensure_aethercore_bridge(app: &tauri::AppHandle) {
         }
         crate::core::presence_config::migrate_legacy_presence_keys(&legacy_toml);
         crate::core::presence_config::ensure_defaults(&legacy_toml);
-        crate::core::ost_config::ensure_defaults(&legacy_toml);
         crate::core::manifest_restore_config::ensure_defaults(&legacy_toml);
     }
 }

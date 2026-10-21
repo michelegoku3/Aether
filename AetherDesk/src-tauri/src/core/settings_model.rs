@@ -20,11 +20,6 @@ pub struct AppSettings {
     /// `#[serde(default)]` keeps old settings.json files parseable.
     #[serde(default)]
     pub antivirus_exclusion_done: bool,
-    /// Set to true once the user has pressed "I understand" on the OST
-    /// pattern-source warning, so the popup shows only on first enable.
-    /// `#[serde(default)]` keeps old settings.json files parseable.
-    #[serde(default)]
-    pub ost_warning_acknowledged: bool,
     /// When false (default), DLC-like rows are filtered out of store search
     /// results (SFF structural rule set via batched Steam GetItems). When true,
     /// the Hubcap-only tail is shown unfiltered. `#[serde(default)]` keeps old
@@ -303,7 +298,6 @@ impl Default for AppSettings {
             hubcap_api_key: String::new(),
             steam_path: default_steam_path(),
             antivirus_exclusion_done: false,
-            ost_warning_acknowledged: false,
             show_store_dlcs: false,
             show_store_nsfw: true,
             show_store_delisted: true,

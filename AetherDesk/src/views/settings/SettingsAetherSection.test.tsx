@@ -8,14 +8,10 @@ const baseProps = () => ({
   setEnableWebviewDevtools: vi.fn(),
   enableTestUpdates: false,
   setEnableTestUpdates: vi.fn(),
-  useOstSource: false,
-  setUseOstSource: vi.fn(),
   manifestRestoreOnStartup: true,
   setManifestRestoreOnStartup: vi.fn(),
   downloadGamesWithUpdatesOn: false,
   onDownloadGamesWithUpdatesChange: vi.fn(),
-  ostWarningAcknowledged: false,
-  setShowOstWarning: vi.fn(),
   showStatus: vi.fn(),
 });
 
@@ -43,10 +39,11 @@ describe('SettingsAetherSection devtools toggle', () => {
   it('keeps the Aether group to the Aether-only switches', () => {
     const { container } = render(<SettingsAetherSection {...baseProps()} />);
 
-    expect(container.querySelectorAll('input[type="checkbox"]')).toHaveLength(5);
+    expect(container.querySelectorAll('input[type="checkbox"]')).toHaveLength(4);
     expect(container.textContent).toContain('Restore manifests on Steam startup');
     expect(container.textContent).toContain('Download games with updates on');
     expect(container.textContent).toContain('Clear AetherDesk caches');
+    expect(container.textContent).not.toContain('Use OST pattern source');
     expect(container.textContent).not.toContain('Steam Installation Path');
     expect(container.textContent).not.toContain('Custom game display name');
     expect(container.textContent).not.toContain('From the library of');

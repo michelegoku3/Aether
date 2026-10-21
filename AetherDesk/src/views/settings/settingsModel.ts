@@ -27,7 +27,6 @@ export interface SettingsFormState {
   customIconEnabled: boolean;
   iconSelectedFile: string;
   ryuuKey: string;
-  ostWarningAcknowledged: boolean;
   libraryBannerEnabled: boolean;
   libraryBannerAppIds: string;
   libraryBannerSteamId: string;
@@ -59,7 +58,6 @@ export const settingsToForm = (settings: AppSettings): SettingsFormState => ({
   customIconEnabled: Boolean(settings.custom_icon_enabled),
   iconSelectedFile: String(settings.icon_selected_file || ''),
   ryuuKey: String(settings.ryuu_api_key || ''),
-  ostWarningAcknowledged: Boolean(settings.ost_warning_acknowledged),
   libraryBannerEnabled: Boolean(settings.library_banner_enabled),
   libraryBannerAppIds: formatAppIdList(settings.library_banner_appids),
   libraryBannerSteamId: String(settings.library_banner_steamid || ''),
@@ -102,7 +100,5 @@ export const buildSettings = (
 
 export const isFormDirty = (form: SettingsFormState, base: AppSettings): boolean => {
   const normalized = settingsToForm(base);
-  return (Object.keys(form) as Array<keyof SettingsFormState>)
-    .filter((key) => key !== 'ostWarningAcknowledged')
-    .some((key) => form[key] !== normalized[key]);
+  return (Object.keys(form) as Array<keyof SettingsFormState>).some((key) => form[key] !== normalized[key]);
 };

@@ -40,12 +40,6 @@ http_allowlist = []
 # substituted at runtime. Leave empty to use the built-in mirror chain.
 pattern_mirror = ""
 
-# Opt-in fallback to the OpenSteamTool pattern source
-# (OpenSteam001/steam-monitor). OFF by default: only MigoReleases and
-# KoriaPolis are consulted. Toggle "Use OST pattern source" in AetherDesk
-# Settings to enable it as a last-resort fallback.
-use_ost_source = false
-
 [manifest_fetch]
 # DEPRECATED — ignored by the DLL (logged once at load). The legacy
 # request-code wire-bridge was removed; manifests come from the local

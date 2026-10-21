@@ -8,12 +8,11 @@ export interface SteamPathWarningModalProps {
 }
 
 /**
- * No-Steam-path warning, in the same style as the OST first-enable popup.
+ * No-Steam-path warning.
  *
  * Shown on startup and whenever the user leaves the Settings tab (or tries to
- * save) without a valid stored Steam path. Unlike the OST warning this is NOT
- * a one-time ack: it reappears until a valid path is configured, because every
- * Steam-dependent feature needs it.
+ * save) without a valid stored Steam path. It reappears until a valid path is
+ * configured, because every Steam-dependent feature needs it.
  */
 export const SteamPathWarningModal = ({ onGoToSettings, onClose }: SteamPathWarningModalProps) => (
   <ModalShell

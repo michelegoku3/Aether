@@ -173,8 +173,6 @@ std::string BestExpectedSource(const std::string& moduleName) {
         return "mirror";
     const downloader::Kind kind = downloader::KindFromName(moduleName);
     for (const downloader::Source& src : downloader::DefaultSources()) {
-        if (downloader::IsOstSource(src) && !settings->patternUseOstSource)
-            continue;
         if (src.LocFor(kind) != nullptr)
             return std::string(src.id);
     }
@@ -232,8 +230,8 @@ std::size_t CountPatternEntries(const std::string& path) {
 //   * a valid local cache is always usable immediately;
 //   * if its provenance sidecar says the table already came from the
 //     highest-priority source, the cache is served as-is, no network;
-//   * otherwise (missing/older sidecar, or a lower-priority source such
-//     as OpenSteamTool while MigoReleases has now published the build)
+//   * otherwise (missing/older sidecar, or a lower-priority source while
+//     the primary source has now published the build)
 //     the upstream chain is consulted in priority order. The winner
 //     replaces the cache ONLY when it is not smaller than the cached
 //     table -- coverage is never downgraded. The sidecar is rewritten so

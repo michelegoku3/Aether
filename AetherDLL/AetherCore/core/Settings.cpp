@@ -166,9 +166,6 @@ Settings Settings::Load(const std::string& configPath, bool* valid) {
     if (auto mirror = tbl["network"]["pattern_mirror"].value<std::string>()) {
         s.patternMirror = *mirror;
     }
-    if (auto useOst = tbl["network"]["use_ost_source"].value<bool>()) {
-        s.patternUseOstSource = *useOst;
-    }
 
     // [manifest_fetch] — DEPRECATED and ignored. The GetManifestRequestCode
     // wire-bridge was removed: manifests only come from the local index and
@@ -257,7 +254,7 @@ Settings Settings::Load(const std::string& configPath, bool* valid) {
 
     AC_LOG_INFO("Settings",
                 "Loaded %s (level=%s, keep_last_session=%d, lua extra paths: %zu, "
-                "mirror: %s, ost=%d, diversion=%s, manifest_restore=%d, presence: default=%s show=%zu of=%zu excl=%zu, "
+                "mirror: %s, diversion=%s, manifest_restore=%d, presence: default=%s show=%zu of=%zu excl=%zu, "
                 "library: banner=%d apps=%zu owner=%llu).",
                 configPath.c_str(),
                 s.logLevel == LogLevel::Trace   ? "trace"
@@ -267,7 +264,6 @@ Settings Settings::Load(const std::string& configPath, bool* valid) {
                 : s.logLevel == LogLevel::Error ? "error"
                                                 : "off",
                 s.logKeepLastSession ? 1 : 0, s.luaExtraPaths.size(), s.patternMirror.empty() ? "default" : "custom",
-                s.patternUseOstSource ? 1 : 0,
                 s.diversionMode == DiversionMode::Auto   ? "auto"
                 : s.diversionMode == DiversionMode::Copy ? "copy"
                                                          : "live",

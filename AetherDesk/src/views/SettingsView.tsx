@@ -1,5 +1,4 @@
 import { memo, type FormEvent } from 'react';
-import { OstWarningModal } from '../modals/OstWarningModal';
 import { HubcapUpdateWarningModal } from '../modals/HubcapUpdateWarningModal';
 import { SettingsAetherSection } from './settings/SettingsAetherSection';
 import { SettingsSteamSection } from './settings/SettingsSteamSection';
@@ -68,10 +67,6 @@ export const SettingsView = memo(function SettingsView(props: SettingsViewProps)
           setEnableWebviewDevtools={(value) => c.setField('enableWebviewDevtools', value)}
           enableTestUpdates={form.enableTestUpdates}
           setEnableTestUpdates={(value) => c.setField('enableTestUpdates', value)}
-          useOstSource={c.useOstSource}
-          setUseOstSource={c.setUseOstSource}
-          ostWarningAcknowledged={form.ostWarningAcknowledged}
-          setShowOstWarning={c.setShowOstWarning}
           manifestRestoreOnStartup={c.manifestRestoreOnStartup}
           setManifestRestoreOnStartup={c.setManifestRestoreOnStartup}
           downloadGamesWithUpdatesOn={form.downloadGamesWithUpdatesOn}
@@ -189,9 +184,6 @@ export const SettingsView = memo(function SettingsView(props: SettingsViewProps)
       </form>
 
       {c.showHubcapWarning && <HubcapUpdateWarningModal onClose={() => c.setShowHubcapWarning(false)} />}
-      {c.showOstWarning && (
-        <OstWarningModal onConfirm={() => void c.confirmOst()} onCancel={() => c.setShowOstWarning(false)} />
-      )}
       <LuaToolsLoginModal
         open={lua.modalOpen}
         busy={lua.busy}

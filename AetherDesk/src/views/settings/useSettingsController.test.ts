@@ -26,13 +26,10 @@ const commandDefaults = (saved: AppSettings = settings) => ({
     iconsDir: '',
   },
   get_presence_default_mode: true,
-  get_ost_source_enabled: false,
   get_manifest_restore_enabled: true,
   get_steam_accounts: [{ steamId: '76561199523209859', accountName: 'michelegoku3', personaName: 'michelegoku3' }],
   get_luatools_auth_status: { signedIn: false },
   get_settings_health: { fresh: false, corruptFallback: false },
-  acknowledge_ost_warning: undefined,
-  set_ost_source_enabled: undefined,
   reset_settings_to_defaults: settings,
   apply_window_icon: undefined,
   check_steam_path: { valid: true, normalized: 'C:/Steam', error: null },
@@ -383,38 +380,6 @@ describe('useSettingsController', () => {
     expect(result.current.showHubcapWarning).toBe(true);
   });
 
-  it('confirmOst enables the source and resets it on failure', async () => {
-    mockInvokeCommands(commandDefaults());
-    const params = createParams();
-    const { result } = renderHook(() => useSettingsController(params));
-    await waitFor(() => expect(result.current.form.steamPath).toBe('C:/Steam'));
-
-    await act(async () => {
-      await result.current.confirmOst();
-    });
-
-    expect(result.current.useOstSource).toBe(true);
-    expect(invokeMock).toHaveBeenCalledWith('set_ost_source_enabled', { enabled: true });
-  });
-
-  it('confirmOst closes the warning and reports backend failures', async () => {
-    mockInvokeCommands({
-      ...commandDefaults(),
-      set_ost_source_enabled: () => Promise.reject(new Error('desync')),
-    });
-    const params = createParams();
-    const { result } = renderHook(() => useSettingsController(params));
-    await waitFor(() => expect(result.current.form.steamPath).toBe('C:/Steam'));
-    act(() => result.current.setShowOstWarning(true));
-
-    await act(async () => {
-      await result.current.confirmOst();
-    });
-
-    expect(result.current.showOstWarning).toBe(false);
-    expect(result.current.status.type).toBe('error');
-  });
-
   it('reset restores defaults and reports failures', async () => {
     mockInvokeCommands(commandDefaults());
     const params = createParams();
@@ -610,7 +575,6 @@ describe('useSettingsController', () => {
     mockInvokeCommands({
       ...commandDefaults(),
       get_presence_default_mode: () => Promise.reject(new Error('down')),
-      get_ost_source_enabled: () => Promise.reject(new Error('down')),
       get_manifest_restore_enabled: () => Promise.reject(new Error('down')),
       get_settings_health: () => Promise.reject(new Error('down')),
     });
@@ -618,8 +582,8 @@ describe('useSettingsController', () => {
     params.onRefreshUsage.mockRejectedValueOnce(new Error('down'));
     renderHook(() => useSettingsController(params));
 
-    // presence, ost, manifest, health and usage catch-handlers.
-    await waitFor(() => expect(warn.mock.calls.length).toBeGreaterThanOrEqual(5));
+    // presence, manifest, health and usage catch-handlers.
+    await waitFor(() => expect(warn.mock.calls.length).toBeGreaterThanOrEqual(4));
     warn.mockRestore();
   });
 

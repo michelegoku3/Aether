@@ -10,7 +10,6 @@ pub mod library_events;
 pub mod logger;
 pub mod manifest_restore_config;
 pub mod migration;
-pub mod ost_config;
 pub mod presence_config;
 pub mod secure_storage;
 pub mod settings;

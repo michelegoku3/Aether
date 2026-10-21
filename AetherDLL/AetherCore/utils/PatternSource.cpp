@@ -55,12 +55,10 @@ std::vector<MirrorUrl> Source::UrlsFor(Kind kind, const std::string& sha) const 
 const std::vector<Source>& DefaultSources() {
     // Priority is defined by array order (index 0 = tried first). Keep the
     // comment above each entry in sync with the layout it publishes.
-    // Index 0 is the user's own release repo (MigoReleases): the primary
-    // author publishes there first, so it must be consulted before the
-    // other upstreams; koriapolis is the fallback, while opensteamtool is
-    // OPT-IN only ([network] use_ost_source, default OFF) and must be
-    // skipped by callers unless explicitly enabled.
-    static const std::array<Source, 3> kSources = {{
+    // MigoReleases is the only built-in source: the primary author publishes
+    // a table for every supported build there, so no fallback upstream is
+    // needed.
+    static const std::array<Source, 1> kSources = {{
         {
             /* id        */ "migo",
             /* display   */ "michelegoku3 / MigoReleases",
@@ -69,24 +67,6 @@ const std::vector<Source>& DefaultSources() {
             /* steamClient    */ {"pattern", "steamclient"},
             /* steamUi        */ {"pattern", "steamui"},
             /* steamClientIpc */ {"pattern", "steamclientipc"},
-        },
-        {
-            /* id        */ "koriapolis",
-            /* display   */ "KoriaPolis / Steam-Auto-PT",
-            /* owner     */ "KoriaPolis",
-            /* repo      */ "Steam-Auto-PT",
-            /* steamClient    */ {"pattern", "steamclient"},
-            /* steamUi        */ {"pattern", "steamui"},
-            /* steamClientIpc */ {"pattern", "steamclientipc"},
-        },
-        {
-            /* id        */ "opensteamtool",
-            /* display   */ "OpenSteam001 / steam-monitor",
-            /* owner     */ "OpenSteam001",
-            /* repo      */ "steam-monitor",
-            /* steamClient    */ {"pattern", "steamclient"},
-            /* steamUi        */ {"pattern", "steamui"},
-            /* steamClientIpc */ {"ipc", "steamclient"},
         },
     }};
     static const std::vector<Source> kOrdered(kSources.begin(), kSources.end());

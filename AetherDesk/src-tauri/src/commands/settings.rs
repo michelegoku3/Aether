@@ -101,7 +101,6 @@ pub fn reset_settings_to_defaults(app: tauri::AppHandle) -> Result<AppSettings, 
             let defaults = AppSettings {
                 library_install_filter: current.library_install_filter.clone(),
                 antivirus_exclusion_done: current.antivirus_exclusion_done,
-                ost_warning_acknowledged: current.ost_warning_acknowledged,
                 download_updates_default_off_migrated: current
                     .download_updates_default_off_migrated,
                 ..AppSettings::default()

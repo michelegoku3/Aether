@@ -77,12 +77,6 @@ describe('settingsModel', () => {
     expect(isFormDirty(form, base)).toBe(true);
   });
 
-  it('excludes the immediately persisted OST acknowledgement from dirty state', () => {
-    const base = settings({ ost_warning_acknowledged: false });
-    const form = { ...settingsToForm(base), ostWarningAcknowledged: true };
-    expect(isFormDirty(form, base)).toBe(false);
-  });
-
   it('formats the library banner fields for the single-line input', () => {
     const form = settingsToForm(
       settings({

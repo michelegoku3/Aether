@@ -31,8 +31,6 @@ export function useSettingsController(params: Params) {
   const [settingsConflict, setSettingsConflict] = useState(false);
   const [settingsCorrupt, setSettingsCorrupt] = useState(false);
   const [showHubcapWarning, setShowHubcapWarning] = useState(false);
-  const [showOstWarning, setShowOstWarning] = useState(false);
-  const [useOstSource, setUseOstSource] = useState(false);
   const [manifestRestoreOnStartup, setManifestRestoreOnStartup] = useState(true);
   const [presenceDefaultShowOnline, setPresenceDefaultShowOnline] = useState(true);
   const [steamAccounts, setSteamAccounts] = useState<SteamAccount[]>([]);
@@ -122,9 +120,6 @@ export function useSettingsController(params: Params) {
     void invoke<boolean>('get_presence_default_mode')
       .then(setPresenceDefaultShowOnline)
       .catch((err) => console.warn('[settings] failed to load presence default mode:', err));
-    void invoke<boolean>('get_ost_source_enabled')
-      .then(setUseOstSource)
-      .catch((err) => console.warn('[settings] failed to load OST source state:', err));
     void invoke<boolean>('get_manifest_restore_enabled')
       .then(setManifestRestoreOnStartup)
       .catch((err) => console.warn('[settings] failed to load manifest restore state:', err));
@@ -300,24 +295,6 @@ export function useSettingsController(params: Params) {
     [form.apiKey, setField, showStatus]
   );
 
-  const confirmOst = useCallback(async () => {
-    try {
-      try {
-        await invoke('acknowledge_ost_warning');
-      } catch {
-        /* best effort */
-      }
-      await invoke('set_ost_source_enabled', { enabled: true });
-      setField('ostWarningAcknowledged', true);
-      setUseOstSource(true);
-      setShowOstWarning(false);
-      model.acceptPersistedSettings({ ...model.rawSettings, ost_warning_acknowledged: true });
-    } catch (err) {
-      setShowOstWarning(false);
-      showStatus(`Failed to set OST pattern source: ${err}`, 'error');
-    }
-  }, [model, setField, showStatus]);
-
   const reloadSaved = useCallback(async () => {
     try {
       applySettings(await getSettings());
@@ -361,10 +338,6 @@ export function useSettingsController(params: Params) {
     settingsCorrupt,
     showHubcapWarning,
     setShowHubcapWarning,
-    showOstWarning,
-    setShowOstWarning,
-    useOstSource,
-    setUseOstSource,
     manifestRestoreOnStartup,
     setManifestRestoreOnStartup,
     presenceDefaultShowOnline,
@@ -380,7 +353,6 @@ export function useSettingsController(params: Params) {
     browseSteam: steamPath.browse,
     detectSteam: steamPath.detect,
     changeDownloadUpdates,
-    confirmOst,
     reloadSaved,
     persistAppearance,
   };
