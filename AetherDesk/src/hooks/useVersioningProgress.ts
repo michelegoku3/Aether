@@ -24,9 +24,17 @@ export const useVersioningProgress = (appId: number, active: boolean) => {
       const payload = event.payload;
       if (!payload || payload.appId !== appId) return;
       setProgress(payload);
-    }).then((off) => {
-      unlisten = off;
-    });
+    })
+      .then((off) => {
+        // A cleanup that ran before `listen` resolved cannot see `off`; release
+        // the handler here so it does not outlive the component.
+        if (cancelled) {
+          off();
+          return;
+        }
+        unlisten = off;
+      })
+      .catch((error) => console.warn('Versioning listener failed:', error));
 
     return () => {
       cancelled = true;
