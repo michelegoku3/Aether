@@ -1,26 +1,14 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
+import { invokeMock } from '../test/tauriMocks';
 import { StoreView } from './StoreView';
 
-const { catalog, download } = vi.hoisted(() => ({
-  catalog: {
-    scrollRef: { current: null },
-    page: 1,
-    setPage: vi.fn(),
-    pageGames: [],
-    totalPages: 1,
-    isLoading: false,
-    isTrendingLoading: false,
-    hasSearched: false,
-    activeQuery: '',
-    searchError: null as string | null,
-    runSearch: vi.fn().mockResolvedValue(undefined),
-    clearSearch: vi.fn(),
-  },
-  download: {
+vi.mock('./store/useStoreDownload', () => ({
+  useStoreDownload: () => ({
     selectedGame: null,
     source: 'hubcap',
-    status: { text: '', type: 'info' as const },
+    status: { text: '', type: 'info' },
     isDownloading: false,
     versionGame: null,
     manifestRows: [],
@@ -30,15 +18,25 @@ const { catalog, download } = vi.hoisted(() => ({
     downloadLatest: vi.fn(),
     downloadSpecific: vi.fn(),
     closeVersion: vi.fn(),
-  },
+  }),
 }));
-
-vi.mock('./store/useStoreCatalog', () => ({ useStoreCatalog: () => catalog }));
-vi.mock('./store/useStoreDownload', () => ({ useStoreDownload: () => download }));
 vi.mock('./store/StoreDownloadModal', () => ({ StoreDownloadModal: () => null }));
 vi.mock('../modals/ChangeVersionModal', () => ({ default: () => null }));
 vi.mock('../modals/GameInfoModal', () => ({ GameInfoModal: () => null }));
 vi.mock('../modals/LocalDownloadModal', () => ({ default: () => null }));
+// The trending catalog and the suggestion list would add unrelated content.
+vi.mock('./store/useTrendingStore', () => ({
+  useTrendingStore: () => ({ loadNext: vi.fn(), reset: vi.fn(), isLoading: false }),
+}));
+vi.mock('../hooks/useSteamSuggest', () => ({ useSteamSuggest: () => ({ items: [], isLoading: false }) }));
+
+const witcher = {
+  id: 1,
+  appId: '1',
+  name: 'The Witcher',
+  has_manifest: true,
+  has_denuvo: false,
+};
 
 const renderView = () =>
   render(
@@ -51,25 +49,49 @@ const renderView = () =>
     />
   );
 
+const search = async (user: ReturnType<typeof userEvent.setup>, query: string) => {
+  const input = screen.getByPlaceholderText(/Search games by name/);
+  await user.clear(input);
+  await user.type(input, `${query}{Enter}`);
+};
+
 describe('StoreView', () => {
-  it('reports a failed search and does not claim an empty catalog', () => {
-    catalog.searchError = 'provider timeout';
-    catalog.hasSearched = true;
-    catalog.activeQuery = 'doom';
+  it('reports a failed search and drops the cards of the previous query', async () => {
+    const user = userEvent.setup();
+    invokeMock.mockImplementation(async (command: string) => {
+      if (command === 'get_cached_store_search') {
+        if (invokeMock.mock.calls.filter(([name]) => name === command).length === 1) {
+          return { cacheState: 'fresh', results: [witcher] };
+        }
+        throw new Error('provider timeout');
+      }
+      if (command === 'check_denuvo_bulk') return {};
+      return [];
+    });
     renderView();
 
-    expect(screen.getByText(/provider timeout/)).toBeInTheDocument();
+    await search(user, 'witcher');
+    expect(await screen.findByText('The Witcher')).toBeInTheDocument();
+
+    await search(user, 'doom');
+
+    await waitFor(() => expect(screen.getByText(/Search failed: provider timeout/)).toBeInTheDocument());
+    expect(screen.queryByText('The Witcher')).not.toBeInTheDocument();
     expect(screen.queryByText(/No games found/)).not.toBeInTheDocument();
-    expect(screen.queryByText(/Enter a query above/)).not.toBeInTheDocument();
   });
 
-  it('shows the empty state when no search failed', () => {
-    catalog.searchError = null;
-    catalog.hasSearched = true;
-    catalog.activeQuery = 'doom';
+  it('shows the empty state when the search finds nothing', async () => {
+    const user = userEvent.setup();
+    invokeMock.mockImplementation(async (command: string) => {
+      if (command === 'get_cached_store_search') return { cacheState: 'fresh', results: [] };
+      if (command === 'check_denuvo_bulk') return {};
+      return [];
+    });
     renderView();
 
-    expect(screen.getByText(/No games found for "doom"/)).toBeInTheDocument();
+    await search(user, 'doom');
+
+    expect(await screen.findByText(/No games found for "doom"/)).toBeInTheDocument();
     expect(screen.queryByText(/Search failed/)).not.toBeInTheDocument();
   });
 });

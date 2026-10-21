@@ -92,9 +92,10 @@ export const useStoreSearch = () => {
     } catch (err) {
       if (requestId.current !== currentRequest) return;
       setIsLoading(false);
-      // The failure is reported by the view. Rethrowing would let callers
-      // claim an empty catalog instead of showing the cause.
-      setHasSearched(false);
+      // The failed query leaves nothing behind: the cards of the previous
+      // query would contradict the failure reported for this one. The error
+      // is set after the reset, which clears it.
+      clear();
       setError(toErrorMessage(err));
       return;
     }

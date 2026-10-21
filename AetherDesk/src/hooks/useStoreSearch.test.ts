@@ -110,6 +110,25 @@ describe('useStoreSearch', () => {
     expect(result.current.error).toContain('provider timeout');
     expect(result.current.hasSearched).toBe(false);
     expect(result.current.isLoading).toBe(false);
+    expect(result.current.results).toEqual([]);
+    expect(result.current.activeQuery).toBe('');
+  });
+
+  it('drops the results of the previous query when the next search fails', async () => {
+    invokeMock
+      .mockResolvedValueOnce({ cacheState: 'fresh', results: [game(1)] })
+      .mockRejectedValueOnce(new Error('provider timeout'));
+    const { result } = renderHook(useStoreSearch);
+
+    await act(() => result.current.search('witcher'));
+    expect(result.current.results).toEqual([game(1)]);
+    expect(result.current.activeQuery).toBe('witcher');
+
+    await act(() => result.current.search('doom'));
+
+    expect(result.current.results).toEqual([]);
+    expect(result.current.activeQuery).toBe('');
+    expect(result.current.error).toContain('provider timeout');
   });
 
   it('resolves the search promise when the backend fails', async () => {
