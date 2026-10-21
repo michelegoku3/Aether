@@ -35,6 +35,40 @@ pub struct CrackReport {
     pub files: Vec<String>,
 }
 
+/// Launch the VN patch installer with `game_root` as its working directory and
+/// report how it ended.
+///
+/// The caller counts the patch as applied only on `Ok(())`, so a failure to
+/// start the installer or a non-zero exit code stays an error instead of being
+/// swallowed.
+pub(crate) fn launch_patch_installer(source: &Path, game_root: &Path) -> Result<(), String> {
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = (source, game_root);
+        Err("unsupported platform".to_string())
+    }
+    #[cfg(target_os = "windows")]
+    {
+        let status = std::process::Command::new(source)
+            .current_dir(game_root)
+            .spawn()
+            .map_err(|e| format!("failed to launch {}: {e}", source.display()))?
+            .wait()
+            .map_err(|e| format!("failed to wait for {}: {e}", source.display()))?;
+        installer_exit_result(status)
+    }
+}
+
+/// Translate an installer's process status into the pipeline outcome.
+#[cfg(target_os = "windows")]
+pub(crate) fn installer_exit_result(status: std::process::ExitStatus) -> Result<(), String> {
+    if status.success() {
+        Ok(())
+    } else {
+        Err(format!("patch installer exited with {status}"))
+    }
+}
+
 /// Run the crack pipeline for the given sources against `game_root`.
 pub fn apply_crack_pipeline(
     app_id: u32,
@@ -100,21 +134,31 @@ fn apply_sources_in_staging(
                     // If opening the `.exe` as an archive fails (it is not a self-extracting
                     // archive), the `.exe` is NOT copied into the game folder. Instead the
                     // executable patcher is launched with the current directory set to
-                    // `game_root`.
-                    #[cfg(target_os = "windows")]
-                    {
-                        let _ = std::process::Command::new(&source_path)
-                            .current_dir(game_root)
-                            .spawn();
+                    // `game_root`. Only a successful exit counts as applied; a failed
+                    // launch is reported and the remaining sources still run.
+                    let name = source_path
+                        .file_name()
+                        .map(|n| n.to_string_lossy())
+                        .unwrap_or_default();
+                    match launch_patch_installer(&source_path, game_root) {
+                        Ok(()) => {
+                            report.applied += 1;
+                            report
+                                .files
+                                .push(format!("(Launched patch installer: {name})"));
+                        }
+                        Err(err) => {
+                            crate::desk_log_error!(
+                                "crack",
+                                "Launching VN patch installer {} failed: {}",
+                                source_path.display(),
+                                err
+                            );
+                            report
+                                .files
+                                .push(format!("(Patch installer failed: {name}: {err})"));
+                        }
                     }
-                    report.applied += 1;
-                    report.files.push(format!(
-                        "(Launched patch installer: {})",
-                        source_path
-                            .file_name()
-                            .map(|n| n.to_string_lossy())
-                            .unwrap_or_default()
-                    ));
                     continue;
                 }
             } else {
