@@ -12,7 +12,7 @@
 //! - command names and IPC payloads are owned by the command adapter.
 
 mod concurrency;
-mod installation;
+pub(crate) mod installation;
 mod latest_download;
 mod model;
 mod package_completion;

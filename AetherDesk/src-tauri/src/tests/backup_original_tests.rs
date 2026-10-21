@@ -7,8 +7,10 @@
 //! land in the history only: replacing the original would put the modified
 //! file back where a restore or an uninstall expects the pristine one.
 
+use crate::application::store::installation::apply_update_policy_and_backup_with;
 use crate::core::backup::{GameBackup, LUA_HISTORY_SUBDIR};
 use crate::manifest::package::ManifestPackageFile;
+use std::path::Path;
 
 fn setup() -> (tempfile::TempDir, GameBackup) {
     let dir = tempfile::tempdir().expect("tempdir");
@@ -36,6 +38,21 @@ fn history_contains(backup: &GameBackup, content: &str) -> bool {
                 })
         })
         .unwrap_or(false)
+}
+
+/// Number of archived versions in the history.
+fn history_entries(backup: &GameBackup) -> usize {
+    let history_dir = backup.lua_dir().join(LUA_HISTORY_SUBDIR);
+    std::fs::read_dir(history_dir)
+        .map(|entries| {
+            entries
+                .flatten()
+                .filter(|entry| {
+                    entry.path().extension().and_then(|ext| ext.to_str()) == Some("lua")
+                })
+                .count()
+        })
+        .unwrap_or(0)
 }
 
 #[test]
@@ -80,7 +97,8 @@ fn a_variant_keeps_the_referenced_manifests_in_the_backup() {
     assert_eq!(copied, b"manifest-bytes");
 }
 
-/// The Lua a store install publishes: one active pin and one disabled pin.
+/// The Lua a store install publishes: one locked depot (an active
+/// `setManifestid`) and one depot Steam may update (a commented one).
 const PACKAGE_LUA: &str = r#"-- MAIN APPLICATION
 addappid(3618390, 1, "basekey") -- Game
 
@@ -91,9 +109,9 @@ addappid(3618392, 1, "key2") -- Linux
 -- setManifestid(3618392, "2222222222222222222")
 "#;
 
-/// The content the update policy produces: enabling updates uncomments the
-/// disabled pin. The real editor drives it, so the rewrite is the one the
-/// store install performs.
+/// The content the update policy produces: enabling updates comments the
+/// locked depot, so Steam may update it. The real editor drives it, so the
+/// rewrite is the one the store install performs.
 fn policy_rewritten_lua() -> String {
     let dir = tempfile::tempdir().expect("tempdir");
     let stplug = dir.path().join("config").join("stplug-in");
@@ -133,4 +151,48 @@ fn an_install_without_a_policy_rewrite_archives_no_variant() {
 
     assert_eq!(original_lua(&backup, 480).as_deref(), Some(PACKAGE_LUA));
     assert!(!history_contains(&backup, PACKAGE_LUA));
+}
+
+/// A Steam root whose `config/stplug-in/<app_id>.lua` holds the Lua an
+/// install published. `steam.exe` makes the root pass the validation the
+/// production read applies.
+fn steam_root_with_installed_lua(app_id: u32, lua: &str) -> (tempfile::TempDir, String) {
+    let dir = tempfile::tempdir().expect("tempdir");
+    std::fs::write(dir.path().join("steam.exe"), b"").expect("steam.exe");
+    let stplug = dir.path().join("config").join("stplug-in");
+    std::fs::create_dir_all(&stplug).expect("stplug-in dir");
+    std::fs::write(stplug.join(format!("{app_id}.lua")), lua).expect("write lua");
+    let steam_path = dir.path().to_string_lossy().to_string();
+    (dir, steam_path)
+}
+
+/// The install-time backup reads the installed Lua before the update policy
+/// rewrites it. Reading it only afterwards would put the rewritten content in
+/// the pristine slot, and the history would stay empty.
+#[test]
+fn the_install_backup_reads_the_lua_before_the_update_policy() {
+    let (_steam, steam_path) = steam_root_with_installed_lua(480, PACKAGE_LUA);
+    let stplug = Path::new(&steam_path).join("config").join("stplug-in");
+    let (_dir, backup) = setup();
+
+    apply_update_policy_and_backup_with(&backup, true, 480, &steam_path, PACKAGE_LUA, &[]).unwrap();
+
+    // The pristine slot holds the content the install published.
+    assert_eq!(original_lua(&backup, 480).as_deref(), Some(PACKAGE_LUA));
+    // The policy rewrite is a variant and is archived in the history.
+    let rewritten = std::fs::read_to_string(stplug.join("480.lua")).expect("read lua");
+    assert_ne!(rewritten, PACKAGE_LUA);
+    assert!(history_contains(&backup, &rewritten));
+
+    // The next install publishes the package Lua again; with the policy off
+    // nothing is rewritten, so the pristine content stays and the history
+    // does not grow.
+    std::fs::write(stplug.join("480.lua"), PACKAGE_LUA).expect("write lua");
+    let history_before = history_entries(&backup);
+
+    apply_update_policy_and_backup_with(&backup, false, 480, &steam_path, PACKAGE_LUA, &[])
+        .unwrap();
+
+    assert_eq!(original_lua(&backup, 480).as_deref(), Some(PACKAGE_LUA));
+    assert_eq!(history_entries(&backup), history_before);
 }
