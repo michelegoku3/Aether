@@ -79,3 +79,58 @@ fn a_variant_keeps_the_referenced_manifests_in_the_backup() {
     let copied = std::fs::read(backup.lua_dir().join("1_2.manifest")).unwrap();
     assert_eq!(copied, b"manifest-bytes");
 }
+
+/// The Lua a store install publishes: one active pin and one disabled pin.
+const PACKAGE_LUA: &str = r#"-- MAIN APPLICATION
+addappid(3618390, 1, "basekey") -- Game
+
+-- MAIN APP DEPOTS
+addappid(3618391, 1, "key1") -- Windows
+setManifestid(3618391, "1111111111111111111")
+addappid(3618392, 1, "key2") -- Linux
+-- setManifestid(3618392, "2222222222222222222")
+"#;
+
+/// The content the update policy produces: enabling updates uncomments the
+/// disabled pin. The real editor drives it, so the rewrite is the one the
+/// store install performs.
+fn policy_rewritten_lua() -> String {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let stplug = dir.path().join("config").join("stplug-in");
+    std::fs::create_dir_all(&stplug).expect("stplug-in dir");
+    std::fs::write(stplug.join("3618390.lua"), PACKAGE_LUA).expect("write lua");
+    let pins = crate::manifest::pins::LuaManifestPins::new(dir.path(), 3618390);
+    pins.set_updates_enabled(true).expect("enable updates");
+    std::fs::read_to_string(pins.lua_path()).expect("read lua")
+}
+
+/// A store install applies the update policy after publishing the package.
+/// The policy rewrite is Desk-modified: the package content stays the
+/// pristine one and the rewritten content is archived in the history.
+#[test]
+fn an_install_policy_rewrite_keeps_the_package_content_in_the_original_slot() {
+    let (_dir, backup) = setup();
+    let policy_lua = policy_rewritten_lua();
+    assert_ne!(policy_lua, PACKAGE_LUA);
+
+    backup
+        .backup_installed_lua(480, PACKAGE_LUA, &policy_lua, &[])
+        .unwrap();
+
+    assert_eq!(original_lua(&backup, 480).as_deref(), Some(PACKAGE_LUA));
+    assert!(history_contains(&backup, &policy_lua));
+}
+
+/// An install whose policy changes nothing has no variant to archive: the
+/// history stays empty and the original holds the published content.
+#[test]
+fn an_install_without_a_policy_rewrite_archives_no_variant() {
+    let (_dir, backup) = setup();
+
+    backup
+        .backup_installed_lua(480, PACKAGE_LUA, PACKAGE_LUA, &[])
+        .unwrap();
+
+    assert_eq!(original_lua(&backup, 480).as_deref(), Some(PACKAGE_LUA));
+    assert!(!history_contains(&backup, PACKAGE_LUA));
+}

@@ -179,12 +179,16 @@ fn apply_update_policy_and_backup(
     lua_fallback: &str,
     manifests: &[ManifestPackageFile],
 ) -> Result<(), String> {
-    apply_default_update_policy(app, app_id, steam_path)?;
-    let installed_lua = SteamCompat::new(steam_path)
+    // The pristine content is the one the install published: read it before
+    // the policy rewrites the pins.
+    let before = SteamCompat::new(steam_path)
         .read_lua_config(app_id)
         .unwrap_or_else(|_| lua_fallback.to_string());
-    GameBackup::for_app(app_id)?.backup_lua_artifacts(app_id, &installed_lua, manifests)?;
-    Ok(())
+    apply_default_update_policy(app, app_id, steam_path)?;
+    let after = SteamCompat::new(steam_path)
+        .read_lua_config(app_id)
+        .unwrap_or_else(|_| lua_fallback.to_string());
+    GameBackup::for_app(app_id)?.backup_installed_lua(app_id, &before, &after, manifests)
 }
 
 fn apply_default_update_policy(

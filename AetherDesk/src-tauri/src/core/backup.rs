@@ -190,6 +190,28 @@ impl GameBackup {
         Ok(())
     }
 
+    /// Persists the Lua of an install: `pristine_lua` is the content the
+    /// install published, `variant_lua` the content the caller rewrote
+    /// afterwards (the update policy flipping the updates flag).
+    ///
+    /// The original keeps the pristine content and the manifests belong to it;
+    /// the rewritten content is a variant and is archived in `history/`.
+    pub fn backup_installed_lua(
+        &self,
+        app_id: u32,
+        pristine_lua: &str,
+        variant_lua: &str,
+        manifest_files: &[ManifestPackageFile],
+    ) -> Result<(), String> {
+        self.backup_lua_artifacts(app_id, pristine_lua, manifest_files)?;
+
+        if variant_lua != pristine_lua {
+            self.backup_lua_variant(app_id, variant_lua, &[])?;
+        }
+
+        Ok(())
+    }
+
     /// Copies every manifest referenced by the Lua from Steam/depotcache into
     /// this game's backup. Provider ZIPs already call `backup_lua_artifacts`,
     /// but a Lua imported from disk may reference manifests that only exist in
