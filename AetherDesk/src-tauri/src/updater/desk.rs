@@ -187,6 +187,12 @@ async fn prepare_from_release(release: &GithubRelease) -> Result<PreparedUpdate,
 /// Spawns a copy of the current exe that will perform the swap, then must be
 /// followed by exiting the running instance.
 pub fn schedule_restart(update: &PreparedUpdate) -> Result<(), String> {
+    // Refuse an invalid install root here, in the parent: the apply process
+    // would only report the refusal on its stderr, after this instance has
+    // already exited, so the user would see the app close without an
+    // explanation.
+    validate_install_root(&update.install_root)?;
+
     let current_exe =
         std::env::current_exe().map_err(|e| format!("Failed to resolve current exe: {e}"))?;
 

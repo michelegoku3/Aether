@@ -1,4 +1,7 @@
-//! `--apply-update` must validate the install root before it writes anything.
+//! The install root must be validated before the update writes anything: in
+//! the parent, so the refusal reaches the user instead of the app silently
+//! closing, and in the `--apply-update` process, as the safety net for a
+//! manually invoked apply.
 
 use std::fs;
 use std::path::PathBuf;
@@ -31,6 +34,22 @@ fn apply_update_refuses_protected_root() {
     // The protected-folder guard answers before the exe-hash guard, so the
     // message names the protected root and not a mismatching executable.
     assert!(err.contains("Refusing protected uninstall root"), "{err}");
+}
+
+/// The parent refuses an invalid install root before it stages an updater or
+/// spawns anything, so the user sees the reason instead of a closing app.
+#[test]
+fn schedule_restart_refuses_an_install_root_without_a_matching_exe() {
+    let root = temp_dir("restart-refuse");
+    fs::write(root.join("AetherDesk.exe"), b"not the running binary").unwrap();
+    let prepared = crate::updater::desk::PreparedUpdate {
+        app_root: root.clone(),
+        install_root: root,
+    };
+
+    let err = crate::updater::desk::schedule_restart(&prepared).unwrap_err();
+
+    assert!(err.contains("AetherDesk.exe"), "{err}");
 }
 
 #[test]
