@@ -73,9 +73,6 @@ const sortItems = (items: WorkshopItemReport[], group: ReportGroup): WorkshopIte
 
 const ReportRow = ({ item }: { item: WorkshopItemReport }) => {
   const reason = reasonLabel(item);
-  const extras = [item.update ? 'update' : null, item.contentEmpty ? 'empty content folder' : null]
-    .filter(Boolean)
-    .join(' - ');
 
   return (
     <div className="workshop-report-row">
@@ -87,7 +84,6 @@ const ReportRow = ({ item }: { item: WorkshopItemReport }) => {
           <span>{`Game: ${gameName(item)} - Mod ID: #${item.workshopId} - Manifest: `}</span>
           <span className="workshop-report-row-manifest">{item.manifestGid}</span>
         </div>
-        {extras ? <div className="workshop-report-row-extras">{extras}</div> : null}
         {reason && <div className="workshop-report-row-reason">{reason}</div>}
       </div>
       <span

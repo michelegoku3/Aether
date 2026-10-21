@@ -4335,12 +4335,6 @@ body {
   color: #777;
 }
 
-.workshop-report-row-extras {
-  color: #777;
-  font-size: 11px;
-  margin-top: 3px;
-}
-
 .workshop-report-row-reason {
   color: var(--color-muted);
   font-size: 11.5px;

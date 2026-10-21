@@ -80,12 +80,13 @@ describe('WorkshopReportModal', () => {
     expect(screen.queryByText(/subscription/)).not.toBeInTheDocument();
   });
 
-  it('shows update and empty-content extras without subscription or retry wording', () => {
+  it('shows the update badge and the staged-manifest reason without an extras line', () => {
     render(<WorkshopReportModal report={REPORT} error={null} onClose={vi.fn()} />);
 
     expect(screen.getByText('Wallpaper Engine')).toBeInTheDocument();
-    expect(screen.getAllByText('update').length).toBeGreaterThan(0);
-    expect(screen.getByText('empty content folder')).toBeInTheDocument();
+    expect(screen.getAllByText('update')).toHaveLength(1);
+    expect(screen.queryByText('empty content folder')).not.toBeInTheDocument();
+    expect(document.querySelector('.workshop-report-row-extras')).toBeNull();
     expect(screen.getByText(/New manifest staged; start the download in Steam/)).toBeInTheDocument();
     expect(screen.queryByText(/Steam is retrying/)).not.toBeInTheDocument();
     expect(screen.queryByText(/subscription/)).not.toBeInTheDocument();
