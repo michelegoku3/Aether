@@ -149,6 +149,10 @@ impl GameBackup {
     /// original (`lua/<app_id>.lua`) and archives the replaced one in
     /// `history/`. A Desk-modified Lua (hand edit, update toggle) is a variant
     /// and belongs to `backup_lua_variant`.
+    ///
+    /// A local import does not go through this method: it writes the mirror
+    /// into the lua backup directly, so the file it replaces is not archived
+    /// in `history/`.
     pub fn backup_lua_artifacts(
         &self,
         app_id: u32,

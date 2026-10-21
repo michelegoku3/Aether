@@ -722,7 +722,17 @@ fn install_staged_tree(
         // `GameBackup::backup_lua_artifacts` for online downloads).
         if also_backup {
             let backup_dest = lua_backup_dir.join(&file_name);
-            fs::copy(&path, &backup_dest).map_err(|error| {
+            // The mirror is written atomically: a restore installs this file as
+            // the pristine Lua, so an interrupted import must not leave a
+            // truncated backup behind.
+            let bytes = fs::read(&path).map_err(|error| {
+                format!(
+                    "Failed to read file {} for the backup: {}",
+                    path.display(),
+                    error
+                )
+            })?;
+            crate::core::state_io::write_atomic(&backup_dest, &bytes).map_err(|error| {
                 format!(
                     "Failed to back up file {} to {}: {}",
                     path.display(),
@@ -861,7 +871,7 @@ fn copy_dir_contents(src: &Path, dest: &Path) -> Result<(), String> {
 
 #[cfg(test)]
 mod tests {
-    use super::resolve_target_dir;
+    use super::{install_staged_tree, resolve_target_dir, LocalInstallReport};
     use std::fs;
 
     /// Steam root with a Lua entry and an appmanifest whose `StateFlags` says
@@ -929,5 +939,52 @@ mod tests {
         let target = resolve_target_dir(1601, "Totally Different Display Name", root.path());
 
         assert_eq!(target, steam_folder);
+    }
+
+    /// A local import mirrors the imported Lua into the per-game backup. That
+    /// mirror is the file a restore installs as the pristine Lua, so it must
+    /// hold the imported bytes.
+    #[test]
+    fn an_imported_lua_is_mirrored_into_the_backup_with_identical_bytes() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let staging = temp.path().join("staging");
+        let plugin_dir = temp.path().join("stplug-in");
+        let depotcache_dir = temp.path().join("depotcache");
+        let game_dir = temp.path().join("game");
+        let lua_backup_dir = temp.path().join("backup").join("lua");
+        for directory in [
+            &staging,
+            &plugin_dir,
+            &depotcache_dir,
+            &game_dir,
+            &lua_backup_dir,
+        ] {
+            fs::create_dir_all(directory).expect("dir");
+        }
+        let imported = b"-- imported lua\n";
+        fs::write(staging.join("1600.lua"), imported).expect("lua");
+
+        let mut report = LocalInstallReport::default();
+        install_staged_tree(
+            1600,
+            &staging,
+            &staging,
+            &game_dir,
+            &plugin_dir,
+            &depotcache_dir,
+            &lua_backup_dir,
+            &mut report,
+        )
+        .expect("route the staged tree");
+
+        // The live Lua goes to Steam, the mirror to the per-game backup.
+        assert_eq!(
+            fs::read(plugin_dir.join("1600.lua")).expect("live lua"),
+            imported
+        );
+        assert_eq!(
+            fs::read(lua_backup_dir.join("1600.lua")).expect("mirrored backup"),
+            imported
+        );
     }
 }
