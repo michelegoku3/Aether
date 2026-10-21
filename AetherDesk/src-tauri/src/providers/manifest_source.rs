@@ -4,7 +4,6 @@ use std::pin::Pin;
 use crate::manifest::package::ManifestPackage;
 use crate::providers::hubcap::HubcapClient;
 use crate::providers::luatools::LuaToolsClient;
-use crate::providers::oureveryday::OureverydayClient;
 use crate::providers::ryuu::RyuuClient;
 
 pub type SourceBoxFuture<'a, T> = Pin<Box<dyn Future<Output = Result<T, String>> + Send + 'a>>;
@@ -15,10 +14,10 @@ pub type SourceBoxFuture<'a, T> = Pin<Box<dyn Future<Output = Result<T, String>>
 /// and backup coordination) from concrete provider implementations.
 #[allow(dead_code)]
 pub trait ManifestSource: Send + Sync {
-    /// Machine slug identifying the provider (e.g. "hubcap", "ryuu", "luatools", "oureveryday").
+    /// Machine slug identifying the provider (e.g. "hubcap", "ryuu", "luatools").
     fn source_id(&self) -> &'static str;
 
-    /// Human-friendly display label used in logs and notifications (e.g. "Hubcap", "Ryuu", "LuaTools", "MOED").
+    /// Human-friendly display label used in logs and notifications (e.g. "Hubcap", "Ryuu", "LuaTools").
     fn display_name(&self) -> &'static str;
 
     /// Downloads the package containing the Lua file and any bundled binary manifests.
@@ -75,19 +74,5 @@ impl ManifestSource for LuaToolsClient {
         // The generic source contract carries no display name; lua.tools only
         // uses `game_name` to label the account's download history.
         Box::pin(async move { self.download_lua_package(app_id, None).await })
-    }
-}
-
-impl ManifestSource for OureverydayClient {
-    fn source_id(&self) -> &'static str {
-        "oureveryday"
-    }
-
-    fn display_name(&self) -> &'static str {
-        "MOED"
-    }
-
-    fn download_package<'a>(&'a self, app_id: u32) -> SourceBoxFuture<'a, ManifestPackage> {
-        Box::pin(async move { self.download_lua_package(app_id).await })
     }
 }

@@ -40,7 +40,7 @@ describe('StoreDownloadModal', () => {
     await user.click(screen.getByRole('button', { name: 'Ryuu' }));
 
     expect(view.onSourceChange).toHaveBeenCalledWith('ryuu');
-    expect(screen.getByRole('button', { name: 'MOED' })).toBeDisabled();
+    expect(screen.queryByRole('button', { name: 'MOED' })).not.toBeInTheDocument();
   });
 
   it('dispatches latest and specific actions', async () => {

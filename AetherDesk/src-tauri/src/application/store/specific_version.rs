@@ -7,7 +7,6 @@
 use super::installation::{install_specific_package, SpecificInstallPolicy};
 use super::model::{AuthenticatedDownloadRequest, LuaToolsDownloadRequest};
 use super::package_completion::{complete_specific_package, download_complete_luatools_package};
-use super::source::HubcapSource;
 use super::validation::{validate_authenticated_download, validate_steam_download_path};
 use crate::core::game_mutations::MutationPlan;
 use crate::manifest::pins::{LuaManifestPins, LuaManifestRow};
@@ -21,7 +20,6 @@ pub async fn prepare_specific_version_download(
     let app_id = request.download.app_id;
     let steam_path = request.download.steam_path;
     let api_key = request.api_key;
-    let source = HubcapSource::from_api_key(&api_key);
     let plan = MutationPlan::prepare(
         std::path::Path::new(&steam_path),
         app_id,
@@ -41,29 +39,18 @@ pub async fn prepare_specific_version_download(
 
     crate::desk_log_info!(
         "store",
-        "Preparing specific version download for {} (source key: {})",
-        crate::core::logger::format_appid(app_id),
-        source.log_name()
+        "Preparing specific version download for {} (source: hubcap)",
+        crate::core::logger::format_appid(app_id)
     );
 
     let result = async {
-        let mut package = match source {
-            HubcapSource::Oureveryday => {
-                crate::providers::oureveryday::OureverydayClient::new()
-                    .download_lua_package(app_id)
-                    .await?
-            }
-            HubcapSource::Hubcap => {
-                let hubcap = HubcapClient::new(&api_key);
-                if !hubcap.validate_api_key().await? {
-                    return Err(
-                        "Hubcap API key is not valid or is not allowed to make requests."
-                            .to_string(),
-                    );
-                }
-                hubcap.download_lua_package(app_id).await?
-            }
-        };
+        let hubcap = HubcapClient::new(&api_key);
+        if !hubcap.validate_api_key().await? {
+            return Err(
+                "Hubcap API key is not valid or is not allowed to make requests.".to_string(),
+            );
+        }
+        let mut package = hubcap.download_lua_package(app_id).await?;
         let manifest_rows = LuaManifestPins::rows_from_content(&package.lua_content);
         if manifest_rows.is_empty() {
             return Err("The downloaded Lua does not contain any setManifestid entries, so it was not installed. Try another source or verify the provider returned the full Lua with manifests.".to_string());
@@ -75,7 +62,7 @@ pub async fn prepare_specific_version_download(
             app_id,
             &steam_path,
             package,
-            source.display_name(),
+            "Hubcap",
             plan,
             SpecificInstallPolicy {
                 clear_residual_download: false,

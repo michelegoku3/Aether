@@ -43,7 +43,7 @@ them.
 | **Hubcap** | Manifest generation provider, authenticated with a user API key. |
 | **Quota** | Shared daily generation budget (1500 game + 500 workshop), reset at EST midnight and enforced by a locked state file. |
 | **LuaTools** | Account-based source that returns a package: a Lua plus, when available, its manifests. |
-| **Ryuu / oureveryday** | Additional package sources. |
+| **Ryuu** | Additional package source. |
 | **Package** | A provider response containing a Lua and optionally its `.manifest` files. |
 | **Local import** | Installing a game from local archives or folders instead of a provider. |
 

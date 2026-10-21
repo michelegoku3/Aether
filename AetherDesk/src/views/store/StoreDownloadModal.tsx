@@ -67,9 +67,6 @@ export function StoreDownloadModal({
               >
                 Ryuu
               </button>
-              <button disabled className="source-btn source-btn-disabled" title="MOED source is currently unavailable">
-                MOED
-              </button>
             </div>
           </div>
 

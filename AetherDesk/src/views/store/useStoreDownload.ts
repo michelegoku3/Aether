@@ -7,7 +7,7 @@ import type { StoreGameResult } from '../../hooks/useStoreSearch';
 import type { LuaManifestRow } from '../../modals/SpecificVersionModal';
 import { emptyStatus, type StatusMessage } from '../../types/ui';
 
-export type StoreDownloadSource = 'hubcap' | 'luatools' | 'ryuu' | 'oureveryday';
+export type StoreDownloadSource = 'hubcap' | 'luatools' | 'ryuu';
 
 interface Params {
   onRefreshUsage?: (forcedKey?: string) => Promise<void>;
@@ -19,7 +19,7 @@ interface ProviderRequest {
 }
 
 const apiKeyFor = (source: StoreDownloadSource, settings: AppSettings) =>
-  source === 'hubcap' ? settings.hubcap_api_key : source === 'ryuu' ? settings.ryuu_api_key : 'oureveryday_public';
+  source === 'hubcap' ? settings.hubcap_api_key : source === 'ryuu' ? settings.ryuu_api_key : '';
 
 export function useStoreDownload({ onRefreshUsage }: Params) {
   const { loadInstalledGames } = useLibraryGames();

@@ -5,7 +5,7 @@ use reqwest::header::{HeaderMap, HeaderValue};
 const BASE_URL: &str = "https://generator.ryuu.lol";
 const RYUU_TIMEOUT_SECONDS: u64 = 15;
 
-/// Client for `generator.ryuu.lol` — same shape as Hubcap/Oureveryday
+/// Client for `generator.ryuu.lol` — same shape as Hubcap
 /// but with `X-Auth-Key` header and a single download endpoint.
 ///
 /// All Hubcap `has_manifest` / `search` logic stays Hubcap-only;

@@ -4,7 +4,6 @@ pub mod hubcap_generation;
 pub mod luatools;
 pub mod luatools_auth;
 pub mod manifest_source;
-pub mod oureveryday;
 pub mod ryuu;
 
 #[allow(unused_imports)]

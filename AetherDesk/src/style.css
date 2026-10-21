@@ -867,7 +867,7 @@ body {
   background-color: #131316; /* Clean container background */
   border: 1px solid var(--border-color);
   border-radius: 12px;
-  width: 640px; /* Sized for 5 sources (Hubcap/LuaTools/Ryuu/MOED/Local) */
+  width: 640px; /* Sized for the source row (Hubcap/LuaTools/Ryuu) */
   max-width: 95%;
   display: flex;
   flex-direction: column;
@@ -1388,8 +1388,8 @@ body {
   color: #ffffff;
 }
 
-/* Disabled source (e.g. MOED while unavailable, or any source mid-download):
-   clearly non-clickable, with no hover highlight. */
+/* Disabled source (any source mid-download): clearly non-clickable, with no
+   hover highlight. */
 .source-btn:disabled {
   opacity: 0.45;
   cursor: not-allowed;
