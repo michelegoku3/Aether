@@ -100,4 +100,51 @@ describe('useStoreSearch', () => {
     expect(invokeMock).not.toHaveBeenCalled();
     await waitFor(() => expect(result.current.hasSearched).toBe(false));
   });
+
+  it('reports a failed search as an error and clears hasSearched', async () => {
+    invokeMock.mockRejectedValueOnce(new Error('provider timeout'));
+    const { result } = renderHook(useStoreSearch);
+
+    await act(() => result.current.search('doom'));
+
+    expect(result.current.error).toContain('provider timeout');
+    expect(result.current.hasSearched).toBe(false);
+    expect(result.current.isLoading).toBe(false);
+  });
+
+  it('resolves the search promise when the backend fails', async () => {
+    invokeMock.mockRejectedValueOnce(new Error('provider timeout'));
+    const { result } = renderHook(useStoreSearch);
+
+    await act(async () => {
+      await expect(result.current.search('doom')).resolves.toBeUndefined();
+    });
+
+    expect(result.current.error).toContain('provider timeout');
+  });
+
+  it('drops a previous error when a new search starts', async () => {
+    invokeMock
+      .mockRejectedValueOnce(new Error('provider timeout'))
+      .mockResolvedValueOnce({ cacheState: 'fresh', results: [game(3)] });
+    const { result } = renderHook(useStoreSearch);
+
+    await act(() => result.current.search('doom'));
+    expect(result.current.error).toContain('provider timeout');
+
+    await act(() => result.current.search('quake'));
+    expect(result.current.error).toBeNull();
+    expect(result.current.results).toEqual([game(3)]);
+  });
+
+  it('clears the error when the search session is reset', async () => {
+    invokeMock.mockRejectedValueOnce(new Error('provider timeout'));
+    const { result } = renderHook(useStoreSearch);
+
+    await act(() => result.current.search('doom'));
+    expect(result.current.error).toContain('provider timeout');
+
+    act(() => result.current.clear());
+    expect(result.current.error).toBeNull();
+  });
 });

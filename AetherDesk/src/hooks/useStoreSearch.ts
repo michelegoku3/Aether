@@ -1,5 +1,6 @@
 import { useRef, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
+import { toErrorMessage } from '../util/errors';
 
 export interface StoreGameResult {
   id: number;
@@ -23,6 +24,7 @@ export const useStoreSearch = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [hasSearched, setHasSearched] = useState(false);
   const [activeQuery, setActiveQuery] = useState('');
+  const [error, setError] = useState<string | null>(null);
   const requestId = useRef(0);
 
   const clear = () => {
@@ -30,6 +32,7 @@ export const useStoreSearch = () => {
     setResults([]);
     setHasSearched(false);
     setActiveQuery('');
+    setError(null);
   };
 
   const applyResults = (query: string, games: StoreGameResult[]) => {
@@ -62,6 +65,8 @@ export const useStoreSearch = () => {
     requestId.current = currentRequest;
     setIsLoading(true);
     setHasSearched(true);
+    // A new attempt starts without the failure message of the previous one.
+    setError(null);
 
     try {
       const cached: CachedStoreSearchResponse = await invoke('get_cached_store_search', { query });
@@ -87,7 +92,11 @@ export const useStoreSearch = () => {
     } catch (err) {
       if (requestId.current !== currentRequest) return;
       setIsLoading(false);
-      throw err;
+      // The failure is reported by the view. Rethrowing would let callers
+      // claim an empty catalog instead of showing the cause.
+      setHasSearched(false);
+      setError(toErrorMessage(err));
+      return;
     }
   };
 
@@ -97,6 +106,7 @@ export const useStoreSearch = () => {
     isLoading,
     hasSearched,
     activeQuery,
+    error,
     search,
     clear,
   };

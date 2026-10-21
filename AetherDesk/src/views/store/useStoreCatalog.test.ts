@@ -9,6 +9,7 @@ const { state, search, clear, setResults, trendingLoad, trendingReset, enrich, p
     isLoading: false,
     hasSearched: false,
     activeQuery: '',
+    error: null as string | null,
   },
   search: vi.fn().mockResolvedValue(undefined),
   clear: vi.fn(),
@@ -43,6 +44,7 @@ describe('useStoreCatalog', () => {
     state.isLoading = false;
     state.hasSearched = false;
     state.activeQuery = '';
+    state.error = null;
     for (const mock of [search, clear, setResults, trendingLoad, trendingReset, enrich, preload]) {
       mock.mockClear();
     }
@@ -105,5 +107,30 @@ describe('useStoreCatalog', () => {
     expect(setResults).toHaveBeenCalledWith(expect.any(Function));
     const updater = setResults.mock.calls[0][0] as (items: StoreGameResult[]) => StoreGameResult[];
     expect(updater(state.results)[0].has_denuvo).toBe(true);
+  });
+
+  it('exposes the search error instead of alerting the user', async () => {
+    state.error = 'provider timeout';
+    const alertSpy = vi.spyOn(window, 'alert').mockImplementation(() => {});
+    const { result } = renderHook(() => useStoreCatalog({ settingsReady: false, settingsRevision: 0 }));
+
+    await act(() => result.current.runSearch('portal'));
+
+    expect(result.current.searchError).toBe('provider timeout');
+    expect(alertSpy).not.toHaveBeenCalled();
+    alertSpy.mockRestore();
+  });
+
+  it('never opens a native alert when the search fails', async () => {
+    search.mockRejectedValueOnce(new Error('provider timeout'));
+    const alertSpy = vi.spyOn(window, 'alert').mockImplementation(() => {});
+    const { result } = renderHook(() => useStoreCatalog({ settingsReady: false, settingsRevision: 0 }));
+
+    await act(async () => {
+      await result.current.runSearch('portal').catch(() => undefined);
+    });
+
+    expect(alertSpy).not.toHaveBeenCalled();
+    alertSpy.mockRestore();
   });
 });

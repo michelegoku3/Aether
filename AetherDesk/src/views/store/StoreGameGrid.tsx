@@ -8,6 +8,8 @@ interface StoreGameGridProps {
   isLoading: boolean;
   isTrendingLoading: boolean;
   hasSearched: boolean;
+  /** Failure of the last search; the empty state must not claim "no results". */
+  searchError: string | null;
   activeQuery: string;
   page: number;
   totalPages: number;
@@ -23,6 +25,7 @@ export function StoreGameGrid({
   isLoading,
   isTrendingLoading,
   hasSearched,
+  searchError,
   activeQuery,
   page,
   totalPages,
@@ -54,7 +57,7 @@ export function StoreGameGrid({
               actions={actions}
             />
           ))
-        ) : (
+        ) : searchError ? null : (
           <div className="store-no-results">
             {hasSearched ? `No games found for "${activeQuery}"` : 'Enter a query above to search the Steam catalog.'}
           </div>

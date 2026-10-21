@@ -17,7 +17,7 @@ export function useStoreCatalog({ settingsRevision, settingsReady }: Params) {
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const storeSearch = useStoreSearch();
   const trending = useTrendingStore(storeSearch.setResults);
-  const { results, setResults, isLoading, hasSearched, activeQuery, search, clear } = storeSearch;
+  const { results, setResults, isLoading, hasSearched, activeQuery, error, search, clear } = storeSearch;
 
   useEffect(() => {
     if (!settingsReady || observedSettingsRevision.current === settingsRevision) return;
@@ -25,7 +25,8 @@ export function useStoreCatalog({ settingsRevision, settingsReady }: Params) {
     setPage(1);
     trending.reset();
     if (activeQuery.trim()) {
-      search(activeQuery).catch((error) => console.warn('Store search refresh after settings save failed:', error));
+      // A failed refresh surfaces through the hook's error state.
+      void search(activeQuery);
       return;
     }
     clear();
@@ -86,16 +87,12 @@ export function useStoreCatalog({ settingsRevision, settingsReady }: Params) {
 
   const runSearch = async (query: string) => {
     setPage(1);
-    try {
-      if (!query.trim()) {
-        clear();
-        trending.reset();
-        return;
-      }
-      await search(query);
-    } catch (error) {
-      alert(`Search error: ${error}`);
+    if (!query.trim()) {
+      clear();
+      trending.reset();
+      return;
     }
+    await search(query);
   };
 
   const clearSearch = () => {
@@ -113,6 +110,7 @@ export function useStoreCatalog({ settingsRevision, settingsReady }: Params) {
     isTrendingLoading: trending.isLoading,
     hasSearched,
     activeQuery,
+    searchError: error,
     runSearch,
     clearSearch,
   };
