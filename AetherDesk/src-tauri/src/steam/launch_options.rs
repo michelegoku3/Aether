@@ -7,14 +7,13 @@
 //! The file is textual VDF; Steam rewrites it on exit, so edits survive while
 //! Steam is closed or until it rewrites them itself.
 //! The functions here work on the text, preserving everything else in the file.
-//! A write is committed through a sibling temp file and a rename, because the
-//! file holds every Steam client setting: an interrupted in-place write would
-//! lose all of them, not just the launch options being changed.
+//! A write is committed through the shared atomic writer (a sibling temp file
+//! and a rename), because the file holds every Steam client setting: an
+//! interrupted in-place write would lose all of them, not just the launch
+//! options being changed.
 
-use std::fs::{self, OpenOptions};
-use std::io::Write;
+use std::fs;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::UNIX_EPOCH;
 
 /// Finds `localconfig.vdf` in Steam's userdata: among all user folders,
@@ -63,85 +62,19 @@ pub fn set_launch_options(steam_path: &Path, app_id: u32, options: &str) -> Resu
     commit_localconfig(&path, &updated)
 }
 
-/// Publish `contents` to `path` through a sibling temp file and a rename.
+/// Publish `contents` to `path` through the shared atomic writer.
 ///
 /// Steam rewrites this file on exit, so the copy to `.bak` is informational: a
-/// failed backup must never block the update. The rename is the only step that
-/// replaces the live file, so a reader (Steam included) sees either the old
-/// text or the new one, never a prefix.
+/// failed backup must never block the update. The rename inside
+/// `core::state_io::write_atomic` is the only step that replaces the live
+/// file, so a reader (Steam included) sees either the old text or the new
+/// one, never a prefix.
 pub(crate) fn commit_localconfig(path: &Path, contents: &str) -> Result<(), String> {
     // Back up before the commit, best effort.
     let backup = path.with_extension("vdf.bak");
     let _ = fs::copy(path, &backup);
 
-    let parent = path
-        .parent()
-        .ok_or_else(|| format!("{} has no parent directory.", path.display()))?;
-    let file_name = path
-        .file_name()
-        .ok_or_else(|| format!("{} has no file name.", path.display()))?;
-    let mut temp = unique_temp_path(parent, file_name);
-    // A name can survive from a run whose pid the system recycled. The counter
-    // never repeats within this process, so the next name is free; `create_new`
-    // inside the commit remains the actual reservation.
-    while temp.exists() {
-        temp = unique_temp_path(parent, file_name);
-    }
-    commit_localconfig_with_temp(path, contents, &temp)
-}
-
-/// `commit_localconfig` with the staging path supplied by the caller, so a test
-/// can make the temp write fail and observe the untouched original.
-pub(crate) fn commit_localconfig_with_temp(
-    path: &Path,
-    contents: &str,
-    temp_path: &Path,
-) -> Result<(), String> {
-    // `create_new` is the reservation: an existing name belongs to another
-    // commit and must not be truncated or published by this one.
-    let mut file = OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .open(temp_path)
-        .map_err(|e| format!("Failed to stage {}: {e}", temp_path.display()))?;
-    // Flush before the rename: a rename can reach the disk before the bytes it
-    // publishes, and Steam would then read a short file.
-    let staged = file
-        .write_all(contents.as_bytes())
-        .and_then(|()| file.sync_all());
-    drop(file);
-    let outcome = staged
-        .map_err(|e| format!("Failed to write {}: {e}", temp_path.display()))
-        .and_then(|()| {
-            fs::rename(temp_path, path)
-                .map_err(|e| format!("Failed to write {}: {e}", path.display()))
-        });
-    if outcome.is_err() {
-        // The commit owns `temp_path` from the moment `create_new` succeeded, so
-        // a failed write or rename must not leave staging files in Steam's
-        // userdata.
-        let _ = fs::remove_file(temp_path);
-    }
-    outcome
-}
-
-/// A temp name in the target's directory, so the rename stays on one volume.
-///
-/// The name carries the pid and a per-process counter, like `state_io`: a `.tmp`
-/// shared by every writer would let one commit rename another commit's
-/// half-written file over `localconfig.vdf`.
-fn unique_temp_path(parent: &Path, file_name: &std::ffi::OsStr) -> PathBuf {
-    static NEXT: AtomicU64 = AtomicU64::new(1);
-    // Build the name from the OS string: a lossy name (U+FFFD) could equal a
-    // real sibling of the target.
-    let mut name = std::ffi::OsString::from(".");
-    name.push(file_name);
-    name.push(format!(
-        ".{}-{}.tmp",
-        std::process::id(),
-        NEXT.fetch_add(1, Ordering::Relaxed)
-    ));
-    parent.join(name)
+    crate::core::state_io::write_atomic(path, contents.as_bytes())
 }
 
 /// True when the LaunchOptions contain the token (e.g. "-aetheronline").

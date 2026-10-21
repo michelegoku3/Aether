@@ -37,22 +37,47 @@ fn temp_dir(tag: &str) -> PathBuf {
     dir
 }
 
+/// Makes the destination impossible to replace while keeping it readable:
+/// Windows refuses to rename over a read-only file. The original permissions
+/// are returned so the file can be made writable again.
+#[cfg(windows)]
+fn block_replacement(path: &std::path::Path) -> std::fs::Permissions {
+    let original = std::fs::metadata(path).unwrap().permissions();
+    let mut blocked = original.clone();
+    blocked.set_readonly(true);
+    std::fs::set_permissions(path, blocked).unwrap();
+    original
+}
+
+#[cfg(windows)]
+fn allow_replacement(path: &std::path::Path, original: std::fs::Permissions) {
+    std::fs::set_permissions(path, original).unwrap();
+}
+
+/// A commit that cannot replace the live file must leave it byte-identical and
+/// must not leave a staging sibling behind.
+#[cfg(windows)]
 #[test]
-fn failure_keeps_the_original_and_leaves_no_tmp() {
+fn a_failed_commit_keeps_the_original_and_leaves_no_tmp() {
     let dir = temp_dir("vdf-atomic");
     let path = dir.join("localconfig.vdf");
     std::fs::write(&path, ORIGINAL).unwrap();
-    // A sibling directory with the temp name cannot be created, so the temp
-    // write fails while the original is still intact.
-    let tmp_dir = dir.join(".localconfig.vdf.blocked");
-    std::fs::create_dir(&tmp_dir).unwrap();
-    let err =
-        crate::steam::launch_options::commit_localconfig_with_temp(&path, "corrupt", &tmp_dir);
-    assert!(err.is_err());
+    // The rename that publishes the new text cannot replace a read-only
+    // destination, so the commit fails while the original is still intact.
+    let original = block_replacement(&path);
+
+    let err = crate::steam::launch_options::commit_localconfig(&path, "corrupt").unwrap_err();
+    assert!(err.contains("localconfig.vdf"), "{err}");
+
+    allow_replacement(&path, original);
     assert_eq!(std::fs::read_to_string(&path).unwrap(), ORIGINAL);
-    // A staging path this commit did not create belongs to someone else and is
-    // never removed on failure.
-    assert!(tmp_dir.is_dir());
+    // The staging file belongs to the failed commit, so it is removed with it.
+    let leftovers: Vec<_> = std::fs::read_dir(&dir)
+        .unwrap()
+        .filter_map(Result::ok)
+        .filter(|entry| entry.file_name().to_string_lossy().ends_with(".tmp"))
+        .collect();
+    assert!(leftovers.is_empty(), "staging file left behind");
 }
 
 #[test]
