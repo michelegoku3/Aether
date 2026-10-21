@@ -52,12 +52,14 @@ jobs:
         run: npm ci
         working-directory: AetherDesk
 
-      # ---- Quality gates: same commands as build_desk.cmd, same order ----------
+      # ---- Quality gates: the same gates as build_desk.cmd; CI runs them in
+      # ---- sequence and adds the coverage thresholds (verify = verify:build
+      # ---- plus test:ci) ------------------------------------------------------
       - name: Frontend dependency audit
         working-directory: AetherDesk
         run: npm audit --audit-level=high
 
-      - name: Frontend verification (build, lint, tests, wiring, docs, unused)
+      - name: Frontend verification (build, lint, tests with coverage, wiring, docs, unused)
         working-directory: AetherDesk
         run: npm run verify
 

@@ -10,10 +10,12 @@ disagrees with CI.
 [`AGENTS.md`](../AGENTS.md#build-test-lint)) or the fast iteration loop (see
 [`AetherDLL/docs/quick-build.md`](../AetherDLL/docs/quick-build.md)).
 
-Single rule: **every check runs identically locally and on GitHub**. The
-release workflow (`.github/workflows/build.yml`) adds nothing that `build_desk.cmd`
-or "Build All" in Visual Studio don't already do; it only serves as the final
-barrier before publishing.
+Single rule: **every check runs identically locally and on GitHub**, with two
+deliberate exceptions in the desk build: it runs the frontend tests without
+coverage (the thresholds stay a CI gate) and reuses the local advisory database
+for up to a week. The release workflow (`.github/workflows/build.yml`) otherwise
+adds nothing that `build_desk.cmd` or "Build All" in Visual Studio don't already
+do; it only serves as the final barrier before publishing.
 
 
 ## AetherDesk — `build_desk.cmd` (and the `release-desk` job)
@@ -21,17 +23,26 @@ barrier before publishing.
 | Step | Command | What it blocks | Where it is configured |
 |---|---|---|---|
 | 3 | `npm audit --audit-level=high` | high/critical CVEs in npm dependencies, without touching lockfile or working tree | — (`/skipaudit` to skip) |
-| 4 | `npm run verify` → `check:tauri-versions` | major/minor mismatch between the Rust runtime, the JS API and the Tauri CLI | `scripts/check_tauri_versions.mjs` |
-| 4 | `npm run verify` → build | TS type errors (`strict`, `noUnusedLocals/Parameters`) | `tsconfig.json` |
-| 4 | `npm run verify` → `lint:ci` | `error`-level ESLint rules (hooks, unused imports, fallthrough) | `eslint.config.js` |
-| 4 | `npm run verify` → `test:ci` | React/TypeScript regressions and coverage thresholds | `vitest.config.ts` |
-| 4 | `npm run verify` → `check:wiring` | `.tsx/.ts` files never imported from `main.tsx` | `scripts/check_frontend_wiring.mjs` |
-| 4 | `npm run verify` → `check:docs` | a Markdown file no one links from `docs/INDEX.md`, a dangling relative link or heading anchor, a cited repository path that no longer exists | `Tools/check_docs.mjs` |
-| 4 | `npm run verify` → `check:unused` (**knip**) | never-imported exports/types, unused or undeclared npm dependencies | `knip.json`, `scripts/check_unused.mjs` |
-| 5 | `cargo clippy --all-targets -- -D warnings` | every rustc/clippy warning: dead code, unused imports, `unsafe` without `// SAFETY:`, locks held across `.await`, redundant clones, cast truncations | `Cargo.toml` → `[lints.rust]`, `[lints.clippy]` |
-| 6 | `cargo audit` | known CVEs in crates (RustSec database) | — (`/skipaudit`) |
-| 6 | `cargo machete` | dependencies in `Cargo.toml` never used | — |
-| 7 | `cargo test` | unit tests + IPC contract tests | `src/tests/` (`/skiptests`) |
+| 4 | `npm run build` | TS type errors (`strict`, `noUnusedLocals/Parameters`) and a frontend bundle that does not compile | `tsconfig.json` |
+| 4 | `npm run verify:build` → `check:tauri-versions` | major/minor mismatch between the Rust runtime, the JS API and the Tauri CLI | `scripts/check_tauri_versions.mjs` |
+| 4 | `npm run verify:build` → `format:check` | Prettier drift in `src/`, `src-tauri/` JSON and the root JSON files | `.prettierrc` |
+| 4 | `npm run verify:build` → `lint:ci` | `error`-level ESLint rules (hooks, unused imports, fallthrough) | `eslint.config.js` |
+| 4 | `npm run verify:build` → `test:run` | React/TypeScript regressions. Coverage thresholds are a CI gate: `npm run verify` runs `test:ci` (`vitest --coverage`) | `vitest.config.ts` |
+| 4 | `npm run verify:build` → `check:wiring` | `.tsx/.ts` files never imported from `main.tsx` | `scripts/check_frontend_wiring.mjs` |
+| 4 | `npm run verify:build` → `check:docs` | a Markdown file no one links from `docs/INDEX.md`, a dangling relative link or heading anchor, a cited repository path that no longer exists | `Tools/check_docs.mjs` |
+| 4 | `npm run verify:build` → `check:unused` (**knip**) | never-imported exports/types, unused or undeclared npm dependencies | `knip.json`, `scripts/check_unused.mjs` |
+| 4 | `cargo clippy --all-targets -- -D warnings` | every rustc/clippy warning: dead code, unused imports, `unsafe` without `// SAFETY:`, locks held across `.await`, redundant clones, cast truncations | `Cargo.toml` → `[lints.rust]`, `[lints.clippy]` |
+| 4 | `cargo test` | unit tests + IPC contract tests | `src/tests/` (`/skiptests`) |
+| 5 | `cargo audit` | known CVEs in crates (RustSec database) | — (`/skipaudit`) |
+| 5 | `cargo machete` | dependencies in `Cargo.toml` never used | — |
+
+`npm run build` writes `dist/` first because `cargo test` compiles
+`generate_context!`, which embeds it; then `verify:build` (everything `verify`
+does, minus the repeated build and minus coverage) runs in parallel with
+`cargo fmt`/`clippy`/`test`. The two halves keep separate logs.
+
+`cargo audit` passes `--no-fetch` while the local advisory database is younger
+than a week, so the network round trip happens weekly instead of on every build.
 
 `cargo-audit` and `cargo-machete` are installed automatically the first time.
 
@@ -61,7 +72,7 @@ The shipped exe requires administrator (Steam-folder writes), and that manifest
 is embedded in every build artifact — including the `cargo test` harness, which
 then fails with `ERROR_ELEVATION_REQUIRED` (os error 740) outside an elevated
 shell. `src-tauri/build.rs` reads `AETHERDESK_NO_ADMIN_MANIFEST=1` to embed an
-`asInvoker` manifest instead; `build_desk.cmd` (step 7) and CI set it for tests only.
+`asInvoker` manifest instead; `build_desk.cmd` (step 4) and CI set it for tests only.
 Release builds never set it, so the published exe is unchanged. Run locally with:
 
 ```powershell
@@ -91,7 +102,7 @@ New-Item -ItemType Directory -Force "$env:LOCALAPPDATA\Temp\AetherDesk-tests" | 
 Add-MpPreference -ExclusionPath "$env:LOCALAPPDATA\Temp\AetherDesk-tests"
 ```
 
-`build_desk.cmd` (step 7) sets `TEMP`/`TMP` to that directory for `cargo test`;
+`build_desk.cmd` (step 4) sets `TEMP`/`TMP` to that directory for `cargo test`;
 do the same when running the tests by hand:
 
 ```powershell
