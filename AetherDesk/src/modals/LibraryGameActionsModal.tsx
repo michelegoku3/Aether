@@ -289,6 +289,10 @@ export const LibraryGameActionsModal = ({
     }
   };
 
+  // Read-only: the ONLINE popup reports the presence settings the game already
+  // has. Opening it must never change them — an on-disk spoof already displays
+  // as None through `currentPresenceMode`, while a change happens only when the
+  // user picks a mode.
   const refreshOnlineStates = async () => {
     try {
       // Parallel checks. UCO2 is read from get_online_status — the state record
@@ -310,22 +314,8 @@ export const LibraryGameActionsModal = ({
       const uco2Files = Boolean(foreign?.uco2);
       const uco2On = uco2Status?.state === 'enabled' || uco2Files;
       const defaultOn = defaultShowOnline !== false;
-      let showOn = Boolean(showOnRaw);
-      let excludedOn = Boolean(excludedOnRaw);
-      const spoof = ofme || uco2On;
-
-      if (spoof && !aetherOn && !excludedOn && (showOn || defaultOn)) {
-        try {
-          await invoke<string>('set_aether_excluded', {
-            appId: Number(game.appId),
-            enabled: true,
-          } satisfies PresenceToggleArgs);
-          excludedOn = true;
-          showOn = false;
-        } catch {
-          // Display still falls back to None via `spoof`.
-        }
-      }
+      const showOn = Boolean(showOnRaw);
+      const excludedOn = Boolean(excludedOnRaw);
 
       setAetherOnline(aetherOn);
       setUco2Online(uco2On);

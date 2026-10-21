@@ -3,7 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { LibraryGameActionsModal } from './LibraryGameActionsModal';
 import type { InstalledGame } from '../hooks/useLibraryGames';
-import { invokeMock } from '../test/tauriMocks';
+import { invokeMock, mockInvokeCommands } from '../test/tauriMocks';
 
 const { useLibraryGamesMock, queryGameStateMock } = vi.hoisted(() => ({
   useLibraryGamesMock: vi.fn(),
@@ -214,5 +214,68 @@ describe('OFME Clean flow', () => {
 
     await waitFor(() => expect(screen.queryByText(/Remove online-fix.me crack files/)).not.toBeInTheDocument());
     expect(cleanCalls).toEqual([{ confirm: false }]);
+  });
+});
+
+describe('online presence reads', () => {
+  const presenceCalls = () => invokeMock.mock.calls.map(([command]) => command as string);
+
+  const basePresence = {
+    get_aetheronline: false,
+    get_online_status: { state: 'not_configured', record: null },
+    get_aether_showonline: false,
+    get_aether_excluded: false,
+    get_presence_default_mode: true,
+    inspect_foreign_online: { ofme: false, uco2: false },
+    set_aether_excluded: 'Aether now ignores this game.',
+  };
+
+  const installedGame = () => game(100, { installed: true });
+
+  const openOnlineChoice = async () => {
+    const user = userEvent.setup();
+    renderModal(installedGame(), [installedGame()]);
+    await user.click(onlineButton());
+    await screen.findByText(/Aether ignores this game/);
+    return user;
+  };
+
+  beforeEach(() => {
+    queryGameStateMock.mockResolvedValue(false);
+  });
+
+  it('opening the online panel never writes presence settings', async () => {
+    // UCO2 already spoofs presence and Show Online is on: the case that used
+    // to be "fixed" by excluding the game the moment the user looked.
+    mockInvokeCommands({
+      ...basePresence,
+      get_online_status: { state: 'enabled', record: null },
+      get_aether_showonline: true,
+    });
+
+    await openOnlineChoice();
+
+    expect(presenceCalls()).not.toContain('set_aether_excluded');
+    expect(presenceCalls()).toEqual(
+      expect.arrayContaining([
+        'get_aetheronline',
+        'get_online_status',
+        'get_aether_showonline',
+        'get_aether_excluded',
+        'get_presence_default_mode',
+        'inspect_foreign_online',
+      ])
+    );
+    // The spoof still shows as None, the mode that keeps invites working.
+    expect(screen.getByRole('button', { name: /^None/ })).toHaveClass('online-choice-option--selected');
+  });
+
+  it('writes only when the user picks a mode', async () => {
+    mockInvokeCommands({ ...basePresence, get_aether_showonline: true });
+
+    const user = await openOnlineChoice();
+    await user.click(screen.getByRole('button', { name: /^None/ }));
+
+    await waitFor(() => expect(invokeMock).toHaveBeenCalledWith('set_aether_excluded', { appId: 100, enabled: true }));
   });
 });
