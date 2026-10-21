@@ -18,6 +18,12 @@ pub mod recovery;
 
 use crate::core::backup::GameBackup;
 use std::path::{Path, PathBuf};
+#[cfg(target_os = "windows")]
+use std::process::{Child, ExitStatus};
+#[cfg(target_os = "windows")]
+use std::thread;
+#[cfg(target_os = "windows")]
+use std::time::{Duration, Instant};
 
 /// Default password tried for password-protected archives.
 const DEFAULT_ARCHIVE_PASSWORD: &str = "online-fix.me";
@@ -40,7 +46,9 @@ pub struct CrackReport {
 ///
 /// The caller counts the patch as applied only on `Ok(())`, so a failure to
 /// start the installer or a non-zero exit code stays an error instead of being
-/// swallowed.
+/// swallowed. The wait is bounded: a graphical installer stays alive until the
+/// user closes it, and the pipeline holds the per-game mutation lock while it
+/// waits.
 pub(crate) fn launch_patch_installer(source: &Path, game_root: &Path) -> Result<(), String> {
     #[cfg(not(target_os = "windows"))]
     {
@@ -49,13 +57,42 @@ pub(crate) fn launch_patch_installer(source: &Path, game_root: &Path) -> Result<
     }
     #[cfg(target_os = "windows")]
     {
-        let status = std::process::Command::new(source)
+        let mut child = std::process::Command::new(source)
             .current_dir(game_root)
             .spawn()
-            .map_err(|e| format!("failed to launch {}: {e}", source.display()))?
-            .wait()
-            .map_err(|e| format!("failed to wait for {}: {e}", source.display()))?;
+            .map_err(|e| format!("failed to launch {}: {e}", source.display()))?;
+        let status = poll_child_exit(&mut child, PATCH_INSTALLER_BUDGET)?;
         installer_exit_result(status)
+    }
+}
+
+/// Maximum time a VN patch installer may run before the pipeline gives up.
+#[cfg(target_os = "windows")]
+const PATCH_INSTALLER_BUDGET: Duration = Duration::from_secs(180);
+
+/// Interval between two liveness probes of the installer process.
+#[cfg(target_os = "windows")]
+const PATCH_INSTALLER_POLL: Duration = Duration::from_millis(50);
+
+/// Waits for `child` to exit, polling until `budget` elapses.
+///
+/// The child keeps running when the budget runs out: the user may still be
+/// working in the installer window, and killing it could leave the game half
+/// patched.
+#[cfg(target_os = "windows")]
+pub(crate) fn poll_child_exit(child: &mut Child, budget: Duration) -> Result<ExitStatus, String> {
+    let deadline = Instant::now() + budget;
+    loop {
+        match child.try_wait() {
+            Ok(Some(status)) => return Ok(status),
+            Ok(None) => {}
+            Err(error) => return Err(format!("failed to wait for the patch installer: {error}")),
+        }
+        let now = Instant::now();
+        if now >= deadline {
+            return Err(format!("patch installer did not exit within {budget:?}"));
+        }
+        thread::sleep(PATCH_INSTALLER_POLL.min(deadline - now));
     }
 }
 
