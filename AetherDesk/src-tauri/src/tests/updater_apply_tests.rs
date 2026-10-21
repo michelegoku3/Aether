@@ -26,8 +26,11 @@ fn apply_update_refuses_root_without_matching_exe() {
 
 #[test]
 fn apply_update_refuses_protected_root() {
-    let err = crate::updater::desk::validate_install_root(&dirs::home_dir().unwrap()).unwrap_err();
-    assert!(!err.is_empty());
+    let home = dirs::home_dir().unwrap();
+    let err = crate::updater::desk::validate_install_root(&home).unwrap_err();
+    // The protected-folder guard answers before the exe-hash guard, so the
+    // message names the protected root and not a mismatching executable.
+    assert!(err.contains("Refusing protected uninstall root"), "{err}");
 }
 
 #[test]

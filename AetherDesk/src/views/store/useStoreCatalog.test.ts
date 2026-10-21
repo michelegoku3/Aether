@@ -48,6 +48,10 @@ describe('useStoreCatalog', () => {
     for (const mock of [search, clear, setResults, trendingLoad, trendingReset, enrich, preload]) {
       mock.mockClear();
     }
+    // A queued rejection belongs to a single case: the next one starts from a
+    // search that resolves.
+    search.mockReset();
+    search.mockResolvedValue(undefined);
   });
 
   it('paginates catalog results and tops up trending content', async () => {
@@ -110,11 +114,19 @@ describe('useStoreCatalog', () => {
   });
 
   it('exposes the search error instead of alerting the user', async () => {
-    state.error = 'provider timeout';
     const alertSpy = vi.spyOn(window, 'alert').mockImplementation(() => {});
-    const { result } = renderHook(() => useStoreCatalog({ settingsReady: false, settingsRevision: 0 }));
+    // The mocked search hook mirrors the real one: a failed search records the
+    // message and drops the previous results.
+    search.mockImplementationOnce(async () => {
+      state.error = 'provider timeout';
+      throw new Error('provider timeout');
+    });
+    const { result, rerender } = renderHook(() => useStoreCatalog({ settingsReady: false, settingsRevision: 0 }));
 
-    await act(() => result.current.runSearch('portal'));
+    await act(async () => {
+      await result.current.runSearch('portal').catch(() => undefined);
+    });
+    rerender();
 
     expect(result.current.searchError).toBe('provider timeout');
     expect(alertSpy).not.toHaveBeenCalled();
