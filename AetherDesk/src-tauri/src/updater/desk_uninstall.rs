@@ -112,7 +112,7 @@ const BUNDLED_FILES: &[(&str, &str)] = &[
     ),
 ];
 
-fn hash_file(path: &Path) -> Result<String, String> {
+pub(crate) fn hash_file(path: &Path) -> Result<String, String> {
     let mut file = fs::File::open(path).map_err(|e| format!("read {}: {e}", path.display()))?;
     let mut digest = Sha256::new();
     let mut buffer = [0_u8; 16 * 1024];

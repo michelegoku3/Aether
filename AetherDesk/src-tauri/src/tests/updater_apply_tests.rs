@@ -29,3 +29,32 @@ fn apply_update_refuses_protected_root() {
     let err = crate::updater::desk::validate_install_root(&dirs::home_dir().unwrap()).unwrap_err();
     assert!(!err.is_empty());
 }
+
+#[test]
+fn staged_updater_lives_in_a_fresh_directory() {
+    let a = crate::updater::desk::stage_updater_for_test().unwrap();
+    let b = crate::updater::desk::stage_updater_for_test().unwrap();
+    let (first_dir, second_dir) = (
+        a.parent().unwrap().to_path_buf(),
+        b.parent().unwrap().to_path_buf(),
+    );
+
+    assert_ne!(first_dir, second_dir);
+    assert!(a.is_file());
+
+    let _ = fs::remove_dir_all(first_dir);
+    let _ = fs::remove_dir_all(second_dir);
+}
+
+#[test]
+fn staged_updater_hash_matches_source() {
+    let staged = crate::updater::desk::stage_updater_for_test().unwrap();
+    let staged_dir = staged.parent().unwrap().to_path_buf();
+
+    assert_eq!(
+        crate::updater::desk::hash_file(&staged).unwrap(),
+        crate::updater::desk::hash_file(&std::env::current_exe().unwrap()).unwrap()
+    );
+
+    let _ = fs::remove_dir_all(staged_dir);
+}
