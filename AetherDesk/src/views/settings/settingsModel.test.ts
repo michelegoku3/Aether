@@ -16,7 +16,6 @@ describe('settingsModel', () => {
       showStoreDlcs: false,
       showStoreNsfw: true,
       showStoreDelisted: true,
-      workshopAutoDownloadContent: true,
       showStoreFrontGames: true,
       storeCurrency: 'eur',
       personalWallpaperOpacity: 20,

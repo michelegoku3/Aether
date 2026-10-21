@@ -13,8 +13,6 @@ interface SettingsAetherSectionProps {
   setManifestRestoreOnStartup: (v: boolean) => void;
   downloadGamesWithUpdatesOn: boolean;
   onDownloadGamesWithUpdatesChange: (checked: boolean) => void;
-  workshopAutoDownloadContent: boolean;
-  setWorkshopAutoDownloadContent: (v: boolean) => void;
   ostWarningAcknowledged: boolean;
   setShowOstWarning: (v: boolean) => void;
   showStatus: (message: string, kind: 'success' | 'error') => void;
@@ -31,8 +29,6 @@ export const SettingsAetherSection: React.FC<SettingsAetherSectionProps> = ({
   setManifestRestoreOnStartup,
   downloadGamesWithUpdatesOn,
   onDownloadGamesWithUpdatesChange,
-  workshopAutoDownloadContent,
-  setWorkshopAutoDownloadContent,
   ostWarningAcknowledged,
   setShowOstWarning,
   showStatus,
@@ -118,21 +114,6 @@ export const SettingsAetherSection: React.FC<SettingsAetherSectionProps> = ({
             type="checkbox"
             checked={downloadGamesWithUpdatesOn}
             onChange={(e) => void onDownloadGamesWithUpdatesChange(e.target.checked)}
-          />
-          <span></span>
-        </label>
-      </div>
-
-      <div
-        className="settings-toggle-row"
-        title="When Workshop items have a staged manifest but missing or outdated content, ask Steam to download them one at a time, preventing a download storm after a depotcache wipe."
-      >
-        <span className="settings-toggle-text">Workshop auto-download content</span>
-        <label className="version-switch">
-          <input
-            type="checkbox"
-            checked={workshopAutoDownloadContent}
-            onChange={(e) => setWorkshopAutoDownloadContent(e.target.checked)}
           />
           <span></span>
         </label>

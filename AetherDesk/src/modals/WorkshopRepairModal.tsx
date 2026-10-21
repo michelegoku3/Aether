@@ -6,12 +6,14 @@ import { toErrorMessage } from '../util/errors';
 
 export type WorkshopItemStatus = 'ready' | 'deferred' | 'failed' | 'unavailable';
 
-export type WorkshopItemReason = 'hubcapNotFound' | 'unknownError' | 'generationCap' | 'downloadCap';
+export type WorkshopItemReason = 'hubcapNotFound' | 'unknownError' | 'generationCap';
 
 export interface WorkshopItemReport {
   appId: number;
   appName: string | null;
   workshopId: number;
+  /** Workshop item title from Steam's public metadata, when available. */
+  title: string | null;
   /** Steam manifest GIDs exceed JavaScript's safe integer; serialize as text. */
   manifestGid: string;
   status: WorkshopItemStatus;
@@ -26,8 +28,6 @@ export interface WorkshopItemReport {
   subscription: boolean;
   /** The target manifest is newer than the installed one. */
   update: boolean;
-  /** Aether asked Steam to download the payload in this run. */
-  downloadRequested: boolean;
 }
 
 /** Report returned by the backend `sync_hubcap_workshop_manifests` command. */
@@ -43,10 +43,8 @@ export interface WorkshopSyncReport {
   contentMissing: number;
   /** Installed items whose target manifest is newer than the installed one. */
   updates: number;
-  /** Items for which Aether asked Steam to download the payload. */
-  downloadRequested: number;
   failed: number;
-  /** Items beyond the per-run generation or download cap. */
+  /** Items beyond the per-run generation cap. */
   deferred: number;
   /** Items skipped by the 24 h terminal-404 cache. */
   unavailable: number;
@@ -77,19 +75,8 @@ const formatReport = (report: WorkshopSyncReport): string => {
     `${report.restoredFromCache} restored from cache`,
     `${report.alreadyLocal} already local`,
   ];
-  if (report.subscriptions > 0) {
-    parts.push(`${report.subscriptions} subscription(s)`);
-  }
   if (report.updates > 0) {
     parts.push(`${report.updates} update(s)`);
-  }
-  if (report.contentMissing > 0) {
-    parts.push(`${report.contentMissing} ready for download`);
-  }
-  if (report.downloadRequested > 0) {
-    parts.push(`${report.downloadRequested} download(s) requested`);
-  } else if (report.updates > 0 || report.contentMissing > 0) {
-    parts.push('start the download in Steam');
   }
   return `Workshop repair complete: ${parts.join(', ')}.`;
 };
@@ -153,7 +140,8 @@ export const WorkshopRepairModal = ({ onStatus, onReport, onClose }: WorkshopRep
       <p className="uninstall-modal-copy">
         Scan installed Steam Workshop items and subscriptions Steam has not installed yet, then stage their manifests:
         files already in depotcache or in the local cache are reused, everything else is generated through your
-        authenticated Hubcap key. Missing content and updates are requested from Steam automatically.
+        authentic Hubcap key. Missing content and updates stay ready for you to download in Steam; Aether does not start
+        them.
       </p>
       {busy && <p className="uninstall-modal-copy">Repairing Workshop manifests…</p>}
 

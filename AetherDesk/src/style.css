@@ -4285,7 +4285,7 @@ body {
 .workshop-report-section {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 8px;
 }
 
 .workshop-report-section-title {
@@ -4299,12 +4299,12 @@ body {
 
 .workshop-report-row {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 10px;
   border: 1px solid var(--border-color);
   border-radius: 8px;
   background-color: #0c0c10;
-  padding: 10px 12px;
+  padding: 12px 14px;
 }
 
 .workshop-report-row-main {
@@ -4314,8 +4314,9 @@ body {
 
 .workshop-report-row-name {
   color: #eee;
-  font-size: 13px;
+  font-size: 13.5px;
   font-weight: 600;
+  line-height: 1.35;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -4324,7 +4325,8 @@ body {
 .workshop-report-row-meta {
   color: #888;
   font-size: 11px;
-  margin-top: 2px;
+  line-height: 1.45;
+  margin-top: 3px;
 }
 
 .workshop-report-row-manifest {
@@ -4333,11 +4335,17 @@ body {
   color: #777;
 }
 
+.workshop-report-row-extras {
+  color: #777;
+  font-size: 11px;
+  margin-top: 3px;
+}
+
 .workshop-report-row-reason {
   color: var(--color-muted);
   font-size: 11.5px;
   line-height: 1.4;
-  margin-top: 3px;
+  margin-top: 4px;
 }
 
 .workshop-report-badge {

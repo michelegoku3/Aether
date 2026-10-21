@@ -10,3 +10,4 @@ pub mod resolve;
 pub mod store;
 pub mod store_items;
 pub mod update_guard;
+pub mod workshop_titles;

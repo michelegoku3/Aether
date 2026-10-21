@@ -157,9 +157,18 @@ invariants
   legacy entries are not items; a details entry without a positive `manifest`
   is not a subscription target.
 - Installed items use `latest_manifest` when it is newer than the installed
-  manifest. An update asks Steam for the payload even when the old content
-  directory exists, and the report marks it as an update rather than "already
-  local".
+  manifest. The report marks it as an update rather than "already local", even
+  when the old content directory exists.
+- Repair and the background monitor only stage manifests. Starting the
+  Workshop payload download stays a manual Steam action.
+- A manual repair resolves Workshop titles through the public
+  `GetPublishedFileDetails` endpoint in batches of up to 100 and falls back to
+  `Mod #<id>` per item when the lookup fails. Titles are display-only and do
+  not consume Hubcap quota.
+- The report orders items by failure type, then game, then Workshop title,
+  so a game's mods stay contiguous. Rows show the game, mod ID and manifest as
+  `Game: … - Mod ID: #… - Manifest: …`; the summary uses the same ` - `
+  separator and does not repeat the subscription count.
 - The explicit repair processes subscriptions before installed updates. The
   monitor retries installed updates; subscriptions beyond the 5-per-run
   generation cap need another manual Repair.

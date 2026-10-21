@@ -12,7 +12,6 @@ const report = (overrides: Partial<WorkshopSyncReport> = {}): WorkshopSyncReport
   alreadyLocal: 4,
   contentMissing: 0,
   updates: 0,
-  downloadRequested: 0,
   failed: 0,
   deferred: 0,
   unavailable: 0,
@@ -26,6 +25,7 @@ const reportItem = (
   appId: 3328490,
   appName: 'Airport Control 27',
   workshopId: 3806068832,
+  title: 'Airport Control 27',
   manifestGid: '1',
   status: 'failed',
   reason: 'hubcapNotFound',
@@ -34,7 +34,6 @@ const reportItem = (
   needsDownload: false,
   subscription: false,
   update: false,
-  downloadRequested: false,
   ...overrides,
 });
 
@@ -57,7 +56,7 @@ describe('WorkshopRepairModal', () => {
     });
   });
 
-  it('reports a repaired subscription and update in the success toast', async () => {
+  it('keeps updates in the success toast and drops subscription and download counts', async () => {
     const user = userEvent.setup();
     const onStatus = vi.fn();
     const onReport = vi.fn();
@@ -69,7 +68,6 @@ describe('WorkshopRepairModal', () => {
         generated: 2,
         contentMissing: 1,
         updates: 1,
-        downloadRequested: 2,
       }),
     });
 
@@ -78,9 +76,10 @@ describe('WorkshopRepairModal', () => {
 
     await waitFor(() => expect(onClose).toHaveBeenCalledOnce());
     const message = onStatus.mock.calls[0][0] as string;
-    expect(message).toContain('1 subscription');
     expect(message).toContain('1 update');
-    expect(message).toContain('2 download(s) requested');
+    expect(message).not.toContain('subscription');
+    expect(message).not.toContain('ready for download');
+    expect(message).not.toContain('download(s) requested');
     expect(onReport).not.toHaveBeenCalled();
   });
 

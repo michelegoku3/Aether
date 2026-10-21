@@ -76,8 +76,6 @@ export const SettingsView = memo(function SettingsView(props: SettingsViewProps)
           setManifestRestoreOnStartup={c.setManifestRestoreOnStartup}
           downloadGamesWithUpdatesOn={form.downloadGamesWithUpdatesOn}
           onDownloadGamesWithUpdatesChange={c.changeDownloadUpdates}
-          workshopAutoDownloadContent={form.workshopAutoDownloadContent}
-          setWorkshopAutoDownloadContent={(value) => c.setField('workshopAutoDownloadContent', value)}
           showStatus={c.showStatus}
         />
         <div className="settings-separator"></div>

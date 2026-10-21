@@ -10,13 +10,17 @@ export interface WorkshopReportModalProps {
   onClose: () => void;
 }
 
-const itemName = (item: WorkshopItemReport): string => item.appName ?? `App ${item.appId}`;
+type ReportGroup = 'ready' | 'deferred' | 'errors';
+
+const gameName = (item: WorkshopItemReport): string => item.appName ?? `App ${item.appId}`;
+
+const modTitle = (item: WorkshopItemReport): string => item.title?.trim() || `Mod #${item.workshopId}`;
 
 const reasonLabel = (item: WorkshopItemReport): string | null => {
-  if (item.status === 'ready' && item.update) {
-    return item.downloadRequested
-      ? 'New manifest staged; Steam download requested.'
-      : 'New manifest staged; start the download in Steam.';
+  if (item.status === 'ready') {
+    return item.update
+      ? 'New manifest staged; start the download in Steam.'
+      : 'Manifest staged; start the download in Steam.';
   }
   switch (item.reason) {
     case 'hubcapNotFound':
@@ -25,43 +29,65 @@ const reasonLabel = (item: WorkshopItemReport): string | null => {
       return 'Unknown error.';
     case 'generationCap':
       return 'Deferred by the per-run limit; run Repair again to retry.';
-    case 'downloadCap':
-      return 'Manifest is ready; run Repair again to request the remaining Steam downloads.';
     default:
       return null;
   }
 };
 
 const badgeText = (item: WorkshopItemReport): string => {
-  if (item.status === 'deferred') {
-    return item.reason === 'generationCap' ? 'generation cap' : 'download cap';
-  }
+  if (item.status === 'deferred') return 'generation cap';
   if (item.status === 'unavailable' || item.reason === 'hubcapNotFound') return '404';
   if (item.status === 'failed') return 'error';
   return item.update ? 'update' : 'ready';
 };
 
+const compareText = (left: string, right: string): number =>
+  left.localeCompare(right, undefined, { sensitivity: 'base' });
+
+/**
+ * The order inside a section is the grouping the report promises: error type
+ * first, then game, then mod title. Games stay contiguous because the title is
+ * only compared after the game.
+ */
+const reasonRank = (item: WorkshopItemReport, group: ReportGroup): number => {
+  if (group === 'errors') {
+    if (item.reason === 'hubcapNotFound') return 0;
+    if (item.reason === 'unknownError') return 1;
+    return 2;
+  }
+  if (group === 'deferred') {
+    if (item.reason === 'generationCap') return 0;
+    return 2;
+  }
+  return 0;
+};
+
+const sortItems = (items: WorkshopItemReport[], group: ReportGroup): WorkshopItemReport[] =>
+  [...items].sort((left, right) => {
+    const rank = reasonRank(left, group) - reasonRank(right, group);
+    if (rank !== 0) return rank;
+    const game = compareText(gameName(left), gameName(right));
+    if (game !== 0) return game;
+    return compareText(modTitle(left), modTitle(right));
+  });
+
 const ReportRow = ({ item }: { item: WorkshopItemReport }) => {
   const reason = reasonLabel(item);
-  const extras = [
-    item.subscription ? 'subscription' : null,
-    item.update ? 'update' : null,
-    item.contentEmpty ? 'empty content folder' : null,
-    item.needsDownload ? 'Steam is retrying' : null,
-  ]
+  const extras = [item.update ? 'update' : null, item.contentEmpty ? 'empty content folder' : null]
     .filter(Boolean)
-    .join(' · ');
+    .join(' - ');
 
   return (
     <div className="workshop-report-row">
       <div className="workshop-report-row-main">
-        <div className="workshop-report-row-name">{itemName(item)}</div>
-        <div className="workshop-report-row-meta">
-          <span>#{item.workshopId}</span>
-          <span> · manifest </span>
-          <span className="workshop-report-row-manifest">{item.manifestGid}</span>
-          {extras ? <span>{` · ${extras}`}</span> : null}
+        <div className="workshop-report-row-name" title={modTitle(item)}>
+          {modTitle(item)}
         </div>
+        <div className="workshop-report-row-meta">
+          <span>{`Game: ${gameName(item)} - Mod ID: #${item.workshopId} - Manifest: `}</span>
+          <span className="workshop-report-row-manifest">{item.manifestGid}</span>
+        </div>
+        {extras ? <div className="workshop-report-row-extras">{extras}</div> : null}
         {reason && <div className="workshop-report-row-reason">{reason}</div>}
       </div>
       <span
@@ -95,13 +121,15 @@ const ReportSection = ({ title, items }: { title: string; items: WorkshopItemRep
  * subscription state.
  */
 export const WorkshopReportModal = ({ report, error, onClose }: WorkshopReportModalProps) => {
-  const ready = report?.items.filter((item) => item.status === 'ready') ?? [];
-  const deferred = report?.items.filter((item) => item.status === 'deferred') ?? [];
-  const errors = report?.items.filter((item) => item.status === 'failed' || item.status === 'unavailable') ?? [];
+  const ready = sortItems(report?.items.filter((item) => item.status === 'ready') ?? [], 'ready');
+  const deferred = sortItems(report?.items.filter((item) => item.status === 'deferred') ?? [], 'deferred');
+  const errors = sortItems(
+    report?.items.filter((item) => item.status === 'failed' || item.status === 'unavailable') ?? [],
+    'errors'
+  );
   const errorLabel = errors.length === 1 ? 'error' : 'errors';
-  const subscriptionLabel = (report?.subscriptions ?? 0) === 1 ? 'subscription' : 'subscriptions';
   const summary = report
-    ? `${report.discovered} installed · ${report.subscriptions} ${subscriptionLabel} · ${report.alreadyLocal} already local · ${ready.length} ready · ${deferred.length} deferred · ${errors.length} ${errorLabel}`
+    ? `${report.discovered} installed - ${report.alreadyLocal} already local - ${ready.length} ready - ${deferred.length} deferred - ${errors.length} ${errorLabel}`
     : null;
 
   return (

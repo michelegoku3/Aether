@@ -128,9 +128,10 @@ Twins: `AetherDesk/src-tauri/src/providers/hubcap_generation.rs` ↔
   positive `manifest` is not a subscription target even when it has a
   `latest_manifest`.
 - Installed items target `latest_manifest` when it is newer than the installed
-  manifest (or when timestamps are absent and `NeedsDownload` is set). An
-  update asks Steam for the payload even when the old content directory still
-  exists; an empty content directory is removed first.
+  manifest (or when timestamps are absent and `NeedsDownload` is set). Repair
+  stages the new manifest and reports the update; downloading the payload
+  stays a manual Steam action, even when the old content directory still
+  exists.
 - A terminal Workshop `404` is remembered per `(item, manifest)` for **24 h**;
   a changed manifest retries immediately, and a skipped item does not consume
   the 5-per-pass generation cap.

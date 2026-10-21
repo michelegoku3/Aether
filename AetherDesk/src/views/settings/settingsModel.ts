@@ -10,7 +10,6 @@ export interface SettingsFormState {
   showStoreNsfw: boolean;
   showStoreDelisted: boolean;
   downloadGamesWithUpdatesOn: boolean;
-  workshopAutoDownloadContent: boolean;
   showStoreFrontGames: boolean;
   useAlternativeGameCards: boolean;
   enableWebviewDevtools: boolean;
@@ -43,7 +42,6 @@ export const settingsToForm = (settings: AppSettings): SettingsFormState => ({
   showStoreNsfw: settings.show_store_nsfw !== false,
   showStoreDelisted: settings.show_store_delisted !== false,
   downloadGamesWithUpdatesOn: Boolean(settings.download_games_with_updates_on),
-  workshopAutoDownloadContent: settings.workshop_auto_download_content !== false,
   showStoreFrontGames: settings.show_store_front_games !== false,
   useAlternativeGameCards: Boolean(settings.use_alternative_game_cards),
   enableWebviewDevtools: Boolean(settings.enable_webview_devtools),
@@ -89,7 +87,6 @@ export const buildSettings = (
   alternative_cards_fade: form.alternativeCardsFade,
   ryuu_api_key: form.ryuuKey,
   download_games_with_updates_on: form.downloadGamesWithUpdatesOn,
-  workshop_auto_download_content: form.workshopAutoDownloadContent,
   show_store_front_games: form.showStoreFrontGames,
   use_alternative_game_cards: form.useAlternativeGameCards,
   enable_webview_devtools: form.enableWebviewDevtools,
