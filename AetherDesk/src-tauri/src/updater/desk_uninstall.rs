@@ -176,7 +176,7 @@ fn validate_root(
     Ok(root)
 }
 
-pub(super) fn validate_target(root: &Path) -> Result<PathBuf, String> {
+pub(crate) fn validate_target(root: &Path) -> Result<PathBuf, String> {
     let helper = std::env::current_exe().map_err(|e| e.to_string())?;
     let protected: Vec<_> = [
         dirs::home_dir(),

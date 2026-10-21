@@ -55,5 +55,6 @@ pub mod steam_library_issue_tests;
 pub mod store_items_tests;
 pub mod store_suggest_tests;
 pub mod tauri_config_tests;
+pub mod updater_apply_tests;
 pub mod versioning_snapshot_tests;
 pub mod workshop_discovery_tests;

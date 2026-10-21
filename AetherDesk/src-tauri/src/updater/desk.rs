@@ -187,9 +187,26 @@ pub fn schedule_restart(update: &PreparedUpdate) -> Result<(), String> {
     Ok(())
 }
 
+/// Validates that `install_root` is the live AetherDesk installation before a
+/// staged update is merged into it: absolute, free of links/reparse points, not
+/// a protected user folder, and holding the same `AetherDesk.exe` as this helper.
+pub fn validate_install_root(install_root: &Path) -> Result<PathBuf, String> {
+    super::desk_uninstall::validate_target(install_root)
+        .map_err(|error| format!("{}: {error}", install_root.display()))
+}
+
 /// Applies a staged update. Runs as the `--apply-update` process (a copy of the
 /// binary living in the temp folder), so it can replace the original exe.
 pub fn run_apply_update(staging: &Path, install_root: &Path) -> i32 {
+    // Validate before any side effect: a wrong or protected root must never be
+    // written to, and the check needs the installed exe still in place.
+    let install_root = match validate_install_root(install_root) {
+        Ok(root) => root,
+        Err(error) => {
+            eprintln!("[AetherDesk] refusing update: {error}");
+            return 1;
+        }
+    };
     let exe = install_root.join("AetherDesk.exe");
     let old = install_root.join("AetherDesk.exe.old");
 
@@ -203,7 +220,7 @@ pub fn run_apply_update(staging: &Path, install_root: &Path) -> i32 {
     let _ = fs::rename(&exe, &old);
 
     // Merge staging into the install root, never touching AetherData.
-    if let Err(e) = merge_tree(staging, install_root) {
+    if let Err(e) = merge_tree(staging, &install_root) {
         eprintln!("[AetherDesk] update apply failed: {e}");
         let _ = fs::rename(&old, &exe);
         return 1;
