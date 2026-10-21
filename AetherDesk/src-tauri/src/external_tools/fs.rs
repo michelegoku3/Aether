@@ -2,39 +2,26 @@
 //!
 //! Several domains need them (crack backup, online deploy, journal): a single
 //! implementation, tested once.
+//!
+//! Atomic publication has exactly one implementation, `core::state_io::write_atomic`,
+//! and this module only forwards to it. Staging uses a name unique per process
+//! and call (pid + counter), is opened with `create_new`, is flushed with
+//! `sync_all` before the rename and is removed when any step fails: a concurrent
+//! writer therefore never renames another writer's file away, and a crash never
+//! publishes a partial payload or leaves a staging sibling that a reader could
+//! mistake for state.
 
 use std::fs;
 use std::io::{Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 
-/// Write bytes to `path` atomically via a temp file + rename.
+/// Write bytes to `path` through the single atomic writer.
 ///
-/// Creates missing parent directories. On Windows `std::fs::rename`
-/// replaces the existing destination file (MoveFileExW with
-/// REPLACE_EXISTING), so the write stays "all or nothing" even
-/// when the target file already exists.
+/// This is the filesystem-level entry point for callers outside `core`; the
+/// guarantees (unique staging name, flush before rename, cleanup on failure)
+/// belong to `core::state_io::write_atomic` and must not be reimplemented here.
 pub fn write_atomic(path: &Path, bytes: &[u8]) -> Result<(), String> {
-    // Build the temp name from the OS string, never from `display()`: a lossy
-    // name (U+FFFD) can equal a real sibling file and overwrite it.
-    let mut temp_name = path.as_os_str().to_os_string();
-    temp_name.push(".tmp");
-    let temp_path = PathBuf::from(temp_name);
-
-    if let Some(parent) = temp_path.parent() {
-        fs::create_dir_all(parent).map_err(|error| {
-            format!("Failed to create directory {}: {}", parent.display(), error)
-        })?;
-    }
-
-    fs::write(&temp_path, bytes).map_err(|error| {
-        format!(
-            "Failed to write temporary file {}: {}",
-            temp_path.display(),
-            error
-        )
-    })?;
-    fs::rename(&temp_path, path)
-        .map_err(|error| format!("Failed to finalize file {}: {}", path.display(), error))
+    crate::core::state_io::write_atomic(path, bytes)
 }
 
 /// Every file under `root` (recursive, deterministic: each level is

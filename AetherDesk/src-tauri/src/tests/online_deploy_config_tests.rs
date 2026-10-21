@@ -20,6 +20,16 @@ fn write(dir: &Path, rel: &str, bytes: &[u8]) {
     fs::write(path, bytes).unwrap();
 }
 
+/// Fails the final rename while keeping the file readable: Windows refuses to
+/// replace a read-only destination. The staging name is unique per write, so a
+/// failure injection cannot target it.
+#[cfg(windows)]
+fn block_replacement(path: &Path, blocked: bool) {
+    let mut permissions = fs::metadata(path).unwrap().permissions();
+    permissions.set_readonly(blocked);
+    fs::set_permissions(path, permissions).unwrap();
+}
+
 /// Mini Mono Unity game with Photon Realtime + Voice + PlayFab.
 fn unity_photon_voice_playfab_fixture(root: &Path) {
     write(root, "MyGame.exe", b"MZfake");
@@ -557,11 +567,11 @@ fn failed_deployed_removal_is_reported_and_does_not_discard_recovery() {
     );
 }
 
+#[cfg(windows)]
 #[test]
 fn state_save_failure_keeps_empty_journal_for_a_safe_retry() {
     let (game, _data, record, backup_root, state_path) = deployed_with_original_plugins();
-    let blocked_temp = std::path::PathBuf::from(format!("{}.tmp", state_path.display()));
-    fs::create_dir(&blocked_temp).unwrap();
+    block_replacement(&state_path, true);
     assert!(crate::online::engine::OnlineEngine::disable(
         1144200,
         &backup_root,
@@ -574,7 +584,7 @@ fn state_save_failure_keeps_empty_journal_for_a_safe_retry() {
     assert!(Journal::load(&record.backup_dir).entries.is_empty());
     assert!(OnlineStateStore::load(&state_path).get(1144200).is_some());
     assert_eq!(fs::read(&record.steam_api_path).unwrap(), b"original-dll");
-    fs::remove_dir(blocked_temp).unwrap();
+    block_replacement(&state_path, false);
     assert!(
         crate::online::engine::OnlineEngine::disable(
             1144200,
@@ -657,6 +667,7 @@ fn missing_journal_needs_confirmation_then_removes_uco2_and_keeps_originals() {
     assert!(OnlineStateStore::load(&state_path).get(1144200).is_none());
 }
 
+#[cfg(windows)]
 #[test]
 fn journal_save_failure_after_restore_can_be_retried_without_deleting_original() {
     use crate::online::deploy::JournalEntry;
@@ -676,8 +687,8 @@ fn journal_save_failure_after_restore_can_be_retried_without_deleting_original()
     }
     .save(&backup_dir)
     .unwrap();
-    let blocked = backup_dir.join("journal.json.tmp");
-    fs::create_dir(&blocked).unwrap();
+    let blocked = backup_dir.join("journal.json");
+    block_replacement(&blocked, true);
     assert!(crate::online::engine::OnlineEngine::disable(
         1144200,
         &backup_root,
@@ -690,7 +701,7 @@ fn journal_save_failure_after_restore_can_be_retried_without_deleting_original()
     assert!(!backup.exists());
     assert!(backup_dir.join("rollback_pending.json").is_file());
     assert_eq!(Journal::load(&backup_dir).entries.len(), 1);
-    fs::remove_dir(blocked).unwrap();
+    block_replacement(&blocked, false);
     assert!(
         crate::online::engine::OnlineEngine::disable(
             1144200,

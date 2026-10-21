@@ -37,21 +37,17 @@ fn workshop_commit_gate() -> &'static Mutex<()> {
     GATE.get_or_init(|| Mutex::new(()))
 }
 
+/// Publishes the Workshop manifest cache through the single atomic writer.
+///
+/// The empty-payload guard and the size check after the rename stay here: they
+/// describe what a valid cache looks like, not how bytes reach the disk.
 fn write_atomic(path: &Path, bytes: &[u8]) -> Result<(), String> {
     if bytes.is_empty() {
         return Err(
             "Workshop manifest cache cannot be committed because the payload is empty".to_string(),
         );
     }
-    let parent = path
-        .parent()
-        .ok_or_else(|| "Workshop manifest cache has no parent directory".to_string())?;
-    std::fs::create_dir_all(parent)
-        .map_err(|e| format!("Could not create Workshop manifest cache: {e}"))?;
-    let temporary = path.with_extension("manifest.tmp");
-    std::fs::write(&temporary, bytes)
-        .map_err(|e| format!("Could not write Workshop manifest cache: {e}"))?;
-    std::fs::rename(&temporary, path)
+    crate::core::state_io::write_atomic(path, bytes)
         .map_err(|e| format!("Could not commit Workshop manifest cache: {e}"))?;
     let cached_len = std::fs::metadata(path)
         .map_err(|e| format!("Could not verify Workshop manifest cache: {e}"))?

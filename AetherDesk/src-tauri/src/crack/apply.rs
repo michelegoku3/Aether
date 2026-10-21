@@ -263,6 +263,16 @@ mod tests {
         (temp, GameBackup::for_tests(root), game, staging)
     }
 
+    /// Fails the final rename while keeping the file readable: Windows refuses
+    /// to replace a read-only destination. The staging name is unique per
+    /// write, so a failure injection cannot target it.
+    #[cfg(windows)]
+    fn block_replacement(path: &Path, blocked: bool) {
+        let mut permissions = fs::metadata(path).unwrap().permissions();
+        permissions.set_readonly(blocked);
+        fs::set_permissions(path, permissions).unwrap();
+    }
+
     #[test]
     fn repeated_import_and_saved_reapply_keep_the_first_original() {
         let (_temp, backup, game, staging) = setup();
@@ -393,6 +403,7 @@ mod tests {
         assert_eq!(fs::read(game.join("api.dll")).unwrap(), b"patch");
     }
 
+    #[cfg(windows)]
     #[test]
     fn inventory_save_failure_keeps_previous_prefix_and_does_not_delete_untouched_original() {
         let (_temp, backup, game, staging) = setup();
@@ -402,16 +413,13 @@ mod tests {
         fs::remove_file(staging.join("a.dll")).unwrap();
         fs::write(game.join("b.dll"), b"original b").unwrap();
         fs::write(staging.join("b.dll"), b"patch b").unwrap();
-        let blocked = PathBuf::from(format!(
-            "{}.tmp",
-            backup.crack_inventory_path(APP_ID).display()
-        ));
-        fs::create_dir(&blocked).unwrap();
+        let blocked = backup.crack_inventory_path(APP_ID);
+        block_replacement(&blocked, true);
         assert!(apply_staged_files(APP_ID, &staging, &game, &backup).is_err());
         assert_eq!(fs::read(game.join("a.dll")).unwrap(), b"patch a");
         assert_eq!(fs::read(game.join("b.dll")).unwrap(), b"original b");
         assert_eq!(load_recovery(&backup, APP_ID).unwrap().files.len(), 2);
-        fs::remove_dir(blocked).unwrap();
+        block_replacement(&blocked, false);
         assert_eq!(
             remove_applied_crack_files(APP_ID, &game, &backup).unwrap(),
             1
@@ -604,16 +612,18 @@ mod tests {
         }
     }
 
+    #[cfg(windows)]
     #[test]
     fn recovery_state_save_failure_occurs_before_any_live_change() {
         let (_temp, backup, game, staging) = setup();
         fs::write(game.join("api.dll"), b"pristine sentinel").unwrap();
         fs::write(staging.join("api.dll"), b"patch").unwrap();
-        let blocked = PathBuf::from(format!(
-            "{}.tmp",
-            backup.crack_recovery_path(APP_ID).display()
-        ));
-        fs::create_dir(&blocked).unwrap();
+        // The recovery state is written before any live file changes; a
+        // read-only destination fails that rename while keeping the previous
+        // state readable.
+        let blocked = backup.crack_recovery_path(APP_ID);
+        fs::write(&blocked, br#"{"version":1,"files":{}}"#).unwrap();
+        block_replacement(&blocked, true);
         assert!(apply_staged_files(APP_ID, &staging, &game, &backup).is_err());
         assert_eq!(
             fs::read(game.join("api.dll")).unwrap(),
@@ -624,7 +634,7 @@ mod tests {
             b"pristine sentinel"
         );
         assert!(!backup.crack_dir().join("api.dll").exists());
-        fs::remove_dir(blocked).unwrap();
+        block_replacement(&blocked, false);
         apply_staged_files(APP_ID, &staging, &game, &backup).unwrap();
         assert_eq!(
             fs::read(backup.original_dir().join("api.dll")).unwrap(),
