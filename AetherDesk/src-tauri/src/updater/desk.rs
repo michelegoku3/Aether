@@ -28,9 +28,10 @@
 //!   the release ZIP does not contain it, and the swap skips it explicitly.
 //! - Extraction uses `enclosed_name()` to prevent path-traversal from a malicious
 //!   ZIP (defense in depth, even though releases come only from the private repo).
-//! - The updater copy gets a directory name nobody can predict, and its SHA-256
-//!   is compared against the running exe right before it is spawned, so a file
-//!   swapped into the workdir between staging and spawn is never executed.
+//! - The updater copy lives in a directory claimed with an exclusive
+//!   `create_dir`, and its SHA-256 is compared against the running exe right
+//!   before it is spawned, so a file swapped into the workdir between staging
+//!   and spawn is never executed.
 
 use crate::core::paths::LocalAppPaths;
 use crate::updater::github::{GithubRelease, GithubReleaseManager};

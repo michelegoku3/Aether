@@ -245,8 +245,8 @@ describe('online presence reads', () => {
   });
 
   it('opening the online panel never writes presence settings', async () => {
-    // UCO2 already spoofs presence and Show Online is on: the case that used
-    // to be "fixed" by excluding the game the moment the user looked.
+    // The fixture has UCO2 spoofing presence and Show Online on: the panel
+    // must read that state and leave the game's presence untouched.
     mockInvokeCommands({
       ...basePresence,
       get_online_status: { state: 'enabled', record: null },
