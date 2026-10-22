@@ -1,3 +1,4 @@
+pub mod health;
 pub mod http;
 pub mod hubcap;
 pub mod hubcap_generation;

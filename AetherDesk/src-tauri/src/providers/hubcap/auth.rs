@@ -4,10 +4,12 @@ use std::time::{Duration, Instant};
 use tokio::sync::Mutex as AsyncMutex;
 
 use super::client::HubcapClient;
+use super::network;
 use super::types::{
     http_failure_class, is_retryable_status, retry_delay, HubcapGenerationUsage, HubcapUserStats,
     BASE_URL, GENERATION_RETRY_ATTEMPTS, KEY_VALIDATION_TTL,
 };
+use crate::providers::health::{self, StoreSource};
 
 /// (SHA-256 fingerprint of the key, verification instant, outcome).
 type CachedValidation = Option<(Vec<u8>, Instant, bool)>;
@@ -65,9 +67,12 @@ impl HubcapClient {
                         GENERATION_RETRY_ATTEMPTS,
                         error
                     );
-                    return Err(format!("Network error: {error}"));
+                    health::record(StoreSource::Hubcap, false);
+                    return Err(network::request_failed_message(&error));
                 }
             };
+            // Any HTTP response, whatever its status, proves the host answered.
+            health::record(StoreSource::Hubcap, true);
             if is_retryable_status(response.status()) && attempt + 1 < GENERATION_RETRY_ATTEMPTS {
                 let status = response.status();
                 crate::desk_log_warn!(
@@ -130,8 +135,19 @@ impl HubcapClient {
                     tokio::time::sleep(Duration::from_millis(500 * (1u64 << attempt))).await;
                     continue;
                 }
-                Err(error) => return Err(format!("Network error: {error}")),
+                Err(error) => {
+                    crate::desk_log_error!(
+                        "hubcap",
+                        "Usage stats network failure after {} attempt(s): {}",
+                        GENERATION_RETRY_ATTEMPTS,
+                        error
+                    );
+                    health::record(StoreSource::Hubcap, false);
+                    return Err(network::request_failed_message(&error));
+                }
             };
+            // Any HTTP response, whatever its status, proves the host answered.
+            health::record(StoreSource::Hubcap, true);
             if is_retryable_status(response.status()) && attempt + 1 < GENERATION_RETRY_ATTEMPTS {
                 let status = response.status();
                 crate::desk_log_warn!(

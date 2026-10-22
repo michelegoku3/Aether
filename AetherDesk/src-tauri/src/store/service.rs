@@ -22,6 +22,7 @@ use super::mapping::{
     platforms_from_store_meta, price_from_store_item, price_from_store_meta,
 };
 pub use super::model::UnifiedStoreGame;
+use crate::providers::health::{self, StoreSource};
 use crate::providers::hubcap::HubcapClient;
 use crate::steam::store::SteamStore;
 use crate::steam::store_items;
@@ -57,13 +58,15 @@ impl StoreService {
     /// Deduplicated case-insensitively, capped to 4 parallel `search_all` calls
     /// (each itself fans out to `/library` + `/search`). Bounded by
     /// `HUBCAP_SEARCH_BUDGET_MS`; any failure degrades to empty so Steam still renders.
+    /// The boolean reports whether at least one endpoint answered, so callers
+    /// can distinguish "no matches" from "nobody answered".
     async fn collect_hubcap_hits(
         &self,
         query: &str,
         hubcap_client: Option<&HubcapClient>,
-    ) -> Vec<crate::providers::hubcap::HubcapGameItem> {
+    ) -> (Vec<crate::providers::hubcap::HubcapGameItem>, bool) {
         let Some(client) = hubcap_client else {
-            return Vec::new();
+            return (Vec::new(), false);
         };
 
         // Build deduplicated Hubcap query set: alias expansions + sanitized punctuation.
@@ -90,7 +93,7 @@ impl StoreService {
         }
 
         if all_queries.is_empty() {
-            return Vec::new();
+            return (Vec::new(), false);
         }
 
         // Clone client + owned query strings so each async branch owns its data
@@ -101,7 +104,7 @@ impl StoreService {
             // Parallelize up to 4 `search_all` calls. Match on arity to avoid
             // pulling in `futures` crate; HubcapClient is Clone so we can move
             // a clone into each branch.
-            let batches: Vec<Vec<crate::providers::hubcap::HubcapGameItem>> =
+            let batches: Vec<(Vec<crate::providers::hubcap::HubcapGameItem>, bool)> =
                 match queries_for_lookup.len() {
                     4 => {
                         let q0 = queries_for_lookup[0].clone();
@@ -113,10 +116,10 @@ impl StoreService {
                         let c2 = client_for_lookup.clone();
                         let c3 = client_for_lookup.clone();
                         let (a, b, c, d) = tokio::join!(
-                            c0.search_all(&q0),
-                            c1.search_all(&q1),
-                            c2.search_all(&q2),
-                            c3.search_all(&q3),
+                            c0.search_all_reported(&q0),
+                            c1.search_all_reported(&q1),
+                            c2.search_all_reported(&q2),
+                            c3.search_all_reported(&q3),
                         );
                         vec![a, b, c, d]
                     }
@@ -128,9 +131,9 @@ impl StoreService {
                         let c1 = client_for_lookup.clone();
                         let c2 = client_for_lookup.clone();
                         let (a, b, c) = tokio::join!(
-                            c0.search_all(&q0),
-                            c1.search_all(&q1),
-                            c2.search_all(&q2),
+                            c0.search_all_reported(&q0),
+                            c1.search_all_reported(&q1),
+                            c2.search_all_reported(&q2),
                         );
                         vec![a, b, c]
                     }
@@ -139,30 +142,33 @@ impl StoreService {
                         let q1 = queries_for_lookup[1].clone();
                         let c0 = client_for_lookup.clone();
                         let c1 = client_for_lookup.clone();
-                        let (a, b) = tokio::join!(c0.search_all(&q0), c1.search_all(&q1),);
+                        let (a, b) =
+                            tokio::join!(c0.search_all_reported(&q0), c1.search_all_reported(&q1),);
                         vec![a, b]
                     }
                     1 => {
                         let q0 = queries_for_lookup[0].clone();
-                        vec![client_for_lookup.clone().search_all(&q0).await]
+                        vec![client_for_lookup.clone().search_all_reported(&q0).await]
                     }
                     _ => Vec::new(),
                 };
 
             let mut merged: Vec<crate::providers::hubcap::HubcapGameItem> = Vec::new();
             let mut seen_ids = HashSet::new();
-            for batch in batches {
+            let mut answered = false;
+            for (batch, batch_answered) in batches {
+                answered |= batch_answered;
                 for item in batch {
                     if seen_ids.insert(item.app_id) {
                         merged.push(item);
                     }
                 }
             }
-            merged
+            (merged, answered)
         };
 
         match tokio::time::timeout(Duration::from_millis(HUBCAP_SEARCH_BUDGET_MS), lookup).await {
-            Ok(games) => {
+            Ok((games, answered)) => {
                 eprintln!(
                     "[Hubcap] Search for '{}' ({} variant(s), {} queries) returned {} games",
                     query,
@@ -170,14 +176,16 @@ impl StoreService {
                     all_queries.len(),
                     games.len()
                 );
-                games
+                (games, answered)
             }
             Err(_) => {
                 eprintln!(
                     "[Hubcap] Search timeout for '{}' ({}ms)",
                     query, HUBCAP_SEARCH_BUDGET_MS
                 );
-                Vec::new()
+                // A timed-out search produced no usable answer, so this counts
+                // as "nobody answered" for the diagnosis.
+                (Vec::new(), false)
             }
         }
     }
@@ -354,6 +362,8 @@ impl StoreService {
         let steam_future = async move {
             let mut merged: Vec<crate::steam::store::SteamStoreItem> = Vec::new();
             let mut seen: std::collections::HashSet<u32> = std::collections::HashSet::new();
+            let mut answered = false;
+            let mut first_error: Option<String> = None;
             // Fire up to 3 Steam searches in parallel (arity-matched join).
             let batches: Vec<Result<Vec<crate::steam::store::SteamStoreItem>, String>> =
                 match steam_queries_for_fut.len() {
@@ -395,6 +405,9 @@ impl StoreService {
             for res in batches {
                 match res {
                     Ok(items) => {
+                        // Any Ok, even an empty one, proves Steam answered; an
+                        // empty merged list then means "no matches".
+                        answered = true;
                         for it in items {
                             if seen.insert(it.id) {
                                 merged.push(it);
@@ -403,20 +416,34 @@ impl StoreService {
                     }
                     Err(e) => {
                         eprintln!("[Store] Steam catalog chunk failed for '{}': {}", query, e);
+                        if first_error.is_none() {
+                            first_error = Some(e);
+                        }
                     }
                 }
             }
-            if merged.is_empty() {
-                // Preserve the "empty means no results, not error" contract.
-                Ok::<Vec<crate::steam::store::SteamStoreItem>, String>(Vec::new())
+            if answered {
+                Ok(merged)
+            } else if let Some(error) = first_error {
+                Err(error)
             } else {
+                // No variant was attempted, so nothing failed: this is an empty
+                // answer, not a transport error.
                 Ok(merged)
             }
         };
 
         let hubcap_future = self.collect_hubcap_hits(query, hubcap_client.as_ref());
 
-        let (steam_res, hubcap_res) = tokio::join!(steam_future, hubcap_future);
+        let (steam_res, (hubcap_res, hubcap_answered)) = tokio::join!(steam_future, hubcap_future);
+        let steam_answered = steam_res.is_ok();
+        // Record what the parallel requests already observed; no extra probe.
+        // Hubcap is only recorded when it took part: a search without an API
+        // key says nothing about Hubcap's reachability.
+        health::record(StoreSource::Steam, steam_answered);
+        if hubcap_client.is_some() {
+            health::record(StoreSource::Hubcap, hubcap_answered);
+        }
         // Graceful degradation: if the Steam catalog request fails, do not
         // discard the Hubcap results — return the Hubcap-only list instead.
         let steam_items = match steam_res {
@@ -426,6 +453,18 @@ impl StoreService {
                 Vec::new()
             }
         };
+
+        // An empty merged list is only an error when every consulted source
+        // failed. A source that answered with zero matches keeps "No games
+        // found" truthful, and one surviving source keeps the list usable.
+        let hubcap_attempted = hubcap_client.is_some();
+        if steam_items.is_empty() && hubcap_res.is_empty() {
+            if let Some(message) =
+                offline_failure_message(steam_answered, hubcap_attempted, hubcap_answered)
+            {
+                return Err(message.to_string());
+            }
+        }
 
         // 2. Create a fast O(1) lookup set of available app IDs on Hubcap.
         // Exact-match fallback: if the textual Hubcap search missed a game that
@@ -719,5 +758,54 @@ impl StoreService {
             // If it is an App ID, exact or substring matches on digits are kept, no string sorting needed
             Ok(unified_list)
         }
+    }
+}
+
+/// Diagnosis for a search whose merged result list stayed empty.
+///
+/// Returns `None` whenever a consulted source answered: an empty list is then
+/// a genuine "no matches", which the UI must keep reporting as such. The
+/// message differs only by whether Hubcap was part of this search at all.
+fn offline_failure_message(
+    steam_answered: bool,
+    hubcap_attempted: bool,
+    hubcap_answered: bool,
+) -> Option<&'static str> {
+    if steam_answered || hubcap_answered {
+        return None;
+    }
+    if hubcap_attempted {
+        Some("Steam and Hubcap are unreachable. Check the internet connection and try again.")
+    } else {
+        Some("Steam is unreachable. Check the internet connection and try again.")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::offline_failure_message;
+
+    const BOTH_UNREACHABLE: &str =
+        "Steam and Hubcap are unreachable. Check the internet connection and try again.";
+    const STEAM_UNREACHABLE: &str =
+        "Steam is unreachable. Check the internet connection and try again.";
+
+    #[test]
+    fn offline_when_no_source_answered() {
+        assert_eq!(
+            offline_failure_message(false, true, false),
+            Some(BOTH_UNREACHABLE)
+        );
+        assert_eq!(
+            offline_failure_message(false, false, false),
+            Some(STEAM_UNREACHABLE)
+        );
+    }
+
+    #[test]
+    fn answered_sources_keep_empty_results_truthful() {
+        assert_eq!(offline_failure_message(true, true, false), None);
+        assert_eq!(offline_failure_message(false, true, true), None);
+        assert_eq!(offline_failure_message(true, false, false), None);
     }
 }

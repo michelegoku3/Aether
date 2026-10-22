@@ -4,10 +4,12 @@ use crate::manifest::package::{ManifestPackage, ManifestPackageExtractor};
 use crate::providers::hubcap_generation::{deduplicated_generation, GenerationKey, QuotaPolicy};
 
 use super::client::HubcapClient;
+use super::network;
 use super::types::{
     http_failure_class, is_retryable_status, retry_delay, HubcapAppContents, BASE_URL,
     GENERATION_RETRY_ATTEMPTS, HUBCAP_PACKAGE_TIMEOUT_SECONDS,
 };
+use crate::providers::health::{self, StoreSource};
 
 impl HubcapClient {
     /// Downloads Hubcap's manifest ZIP after an authenticated quota check and
@@ -65,7 +67,12 @@ impl HubcapClient {
                 .send()
                 .await
             {
-                Ok(response) => response,
+                Ok(response) => {
+                    // Any HTTP response, whatever its status, proves the host
+                    // answered; the message layer uses that contrast with Steam.
+                    health::record(StoreSource::Hubcap, true);
+                    response
+                }
                 Err(error) if attempt + 1 < GENERATION_RETRY_ATTEMPTS => {
                     crate::desk_log_warn!(
                         "hubcap",
@@ -86,6 +93,7 @@ impl HubcapClient {
                         GENERATION_RETRY_ATTEMPTS,
                         error
                     );
+                    health::record(StoreSource::Hubcap, false);
                     return Err(format!("Failed to send manifest ZIP request: {error}"));
                 }
             };
@@ -117,10 +125,14 @@ impl HubcapClient {
                     response.status()
                 ));
             }
-            let bytes = response
-                .bytes()
-                .await
-                .map_err(|error| {
+            let content_type = response
+                .headers()
+                .get(reqwest::header::CONTENT_TYPE)
+                .and_then(|value| value.to_str().ok())
+                .map(str::to_string);
+            let bytes = match response.bytes().await {
+                Ok(bytes) => bytes.to_vec(),
+                Err(error) => {
                     crate::desk_log_error!(
                         "hubcap",
                         "Manifest ZIP body read failed app_id={} after {} attempt(s): {}",
@@ -128,9 +140,26 @@ impl HubcapClient {
                         attempt + 1,
                         error
                     );
-                    format!("Failed to read manifest ZIP bytes: {error}")
-                })?
-                .to_vec();
+                    return Err(if network::looks_like_html(content_type.as_deref(), &[]) {
+                        network::HTML_INSTEAD_OF_ZIP.to_string()
+                    } else {
+                        // The raw error stays in the log: the user gets what
+                        // to do about a body that stopped mid-transfer.
+                        network::BODY_CUT_MESSAGE.to_string()
+                    });
+                }
+            };
+            // Never hand a block page to the ZIP parser: its archive error
+            // would hide the interception that actually happened.
+            if network::looks_like_html(content_type.as_deref(), &bytes) {
+                crate::desk_log_error!(
+                    "hubcap",
+                    "Manifest ZIP body is an HTML page app_id={} content_type={}",
+                    app_id,
+                    content_type.as_deref().unwrap_or("-")
+                );
+                return Err(network::HTML_INSTEAD_OF_ZIP.to_string());
+            }
             if bytes.is_empty() {
                 return Err(format!(
                     "Hubcap returned an empty manifest ZIP for AppID {app_id}."
