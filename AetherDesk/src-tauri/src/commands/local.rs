@@ -104,6 +104,20 @@ pub async fn install_bulk_local(
         );
     }
 
+    let applied = report.lua_files + report.manifest_files;
+    if !report.failures.is_empty() {
+        if applied == 0 {
+            return Err(format!("Import failed: {}", report.failures.join("; ")));
+        }
+        return Ok(format!(
+            "Warning: imported {} Lua file(s) and {} manifest file(s); {} item(s) failed: {}",
+            report.lua_files,
+            report.manifest_files,
+            report.failures.len(),
+            report.failures.join("; ")
+        ));
+    }
+
     let msg = if report.unique_apps > 0 {
         format!(
             "Bulk import completed: {} Lua unlock file(s) and {} manifest file(s) installed into Steam across {} game(s).",

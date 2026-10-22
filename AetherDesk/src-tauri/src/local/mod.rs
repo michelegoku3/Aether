@@ -33,6 +33,9 @@ pub struct BulkInstallReport {
     pub lua_files: usize,
     pub manifest_files: usize,
     pub unique_apps: usize,
+    /// Files that could not be published, with the reason. A bulk import keeps
+    /// going, but the UI must not present a partial run as a complete one.
+    pub failures: Vec<String>,
 }
 
 /// Validates Steam depot manifest naming: `<depot_id>_<manifest_id>.manifest`.
@@ -161,57 +164,86 @@ pub fn install_bulk_local_pipeline(
 
     let mut report = BulkInstallReport::default();
     let mut unique_apps = std::collections::HashSet::new();
+    let mut failures: Vec<String> = Vec::new();
 
-    // Route .manifest files (must strictly match <depotid>_<manifestid>.manifest)
+    // Route .manifest files first. A Lua whose manifests are missing is a broken
+    // entry for Steam, so any manifest failure aborts the Lua phase entirely.
     for manifest_path in &discovered_manifests {
         if let Some(file_name) = manifest_path.file_name() {
             let name_str = file_name.to_string_lossy();
             if is_valid_manifest_filename(&name_str) {
                 let dest = depotcache_dir.join(file_name);
-                if let Err(e) = fs::copy(manifest_path, &dest) {
-                    crate::desk_log_error!(
-                        "local",
-                        "Failed to copy manifest {}: {}",
-                        manifest_path.display(),
-                        e
-                    );
-                } else {
-                    report.manifest_files += 1;
+                match crate::core::state_io::copy_atomic(manifest_path, &dest) {
+                    Ok(()) => report.manifest_files += 1,
+                    Err(error) => {
+                        crate::desk_log_error!(
+                            "local",
+                            "Failed to copy manifest {}: {}",
+                            manifest_path.display(),
+                            error
+                        );
+                        failures.push(format!("{}: {error}", name_str));
+                    }
                 }
             }
         }
     }
 
-    // Route .lua files (must have a leading numeric App ID in filename stem)
-    for lua_path in &discovered_lua {
-        if let Some(file_name) = lua_path.file_name() {
-            let stem = lua_path
-                .file_stem()
-                .map(|s| s.to_string_lossy().to_string())
-                .unwrap_or_default();
+    if failures.is_empty() {
+        // Route .lua files last, each one only after its pristine copy is in the
+        // per-game backup: restore and uninstall read `lua/<app_id>.lua`.
+        for lua_path in &discovered_lua {
+            if let Some(_file_name) = lua_path.file_name() {
+                let stem = lua_path
+                    .file_stem()
+                    .map(|s| s.to_string_lossy().to_string())
+                    .unwrap_or_default();
 
-            if let Some(app_id) = app_id_from_lua_stem(&stem) {
-                unique_apps.insert(app_id);
-                if let Ok(backup) = GameBackup::for_app(app_id) {
-                    let backup_dir = backup.lua_dir();
-                    let _ = fs::create_dir_all(&backup_dir);
-                    let backup_dest = backup_dir.join(file_name);
-                    let _ = fs::copy(lua_path, &backup_dest);
-                }
-                let live_name = format!("{}.lua", app_id);
-                let dest = plugin_dir.join(&live_name);
-                if let Err(e) = fs::copy(lua_path, &dest) {
-                    crate::desk_log_error!(
-                        "local",
-                        "Failed to copy lua {}: {}",
-                        lua_path.display(),
-                        e
-                    );
-                } else {
-                    report.lua_files += 1;
-                    if download_games_with_updates_on {
-                        let lua = LuaManifestPins::new(steam_path.to_path_buf(), app_id);
-                        let _ = lua.set_updates_enabled(true);
+                if let Some(app_id) = app_id_from_lua_stem(&stem) {
+                    unique_apps.insert(app_id);
+                    let bytes = match fs::read(lua_path) {
+                        Ok(bytes) => bytes,
+                        Err(error) => {
+                            failures.push(format!("{}: {error}", lua_path.display()));
+                            continue;
+                        }
+                    };
+                    match GameBackup::for_app(app_id) {
+                        Ok(backup) => {
+                            if let Err(error) = backup.store_original(app_id, &bytes) {
+                                failures.push(format!(
+                                    "{}: pristine backup failed: {error}",
+                                    lua_path.display()
+                                ));
+                                continue;
+                            }
+                        }
+                        Err(error) => {
+                            failures.push(format!(
+                                "{}: backup unavailable: {error}",
+                                lua_path.display()
+                            ));
+                            continue;
+                        }
+                    }
+                    let live_name = format!("{}.lua", app_id);
+                    let dest = plugin_dir.join(&live_name);
+                    match crate::core::state_io::copy_atomic(lua_path, &dest) {
+                        Ok(()) => {
+                            report.lua_files += 1;
+                            if download_games_with_updates_on {
+                                let lua = LuaManifestPins::new(steam_path.to_path_buf(), app_id);
+                                if let Err(error) = lua.set_updates_enabled(true) {
+                                    failures.push(format!(
+                                        "{}: update toggle failed: {error}",
+                                        lua_path.display()
+                                    ));
+                                }
+                            }
+                        }
+                        Err(error) => {
+                            failures.push(format!("{}: {error}", lua_path.display()));
+                        }
                     }
                 }
             }
@@ -219,6 +251,7 @@ pub fn install_bulk_local_pipeline(
     }
 
     report.unique_apps = unique_apps.len();
+    report.failures = failures;
     let _ = fs::remove_dir_all(&root_staging);
 
     Ok(report)
@@ -475,7 +508,8 @@ pub fn install_local_pipeline(
             // nothing is copied (no partial installs).
             validate_staged_lua_files(&staging, app_id)?;
 
-            // Route the staged tree into the right Steam locations.
+            // Route the staged tree into the right Steam locations. The helper
+            // publishes manifests and game files before any Lua.
             install_staged_tree(
                 app_id,
                 &staging,
@@ -483,7 +517,7 @@ pub fn install_local_pipeline(
                 &game_dir,
                 &plugin_dir,
                 &depotcache_dir,
-                &lua_backup_dir,
+                &backup,
                 &mut report,
             )?;
             crate::desk_log_info!(
@@ -619,6 +653,15 @@ fn validate_staged_lua_files(current: &Path, app_id: u32) -> Result<(), String> 
 /// mirrored into the per-game `lua` backup folder in AetherData, matching the
 /// central Lua-backup step of the online download pipeline. Existing files are
 /// overwritten.
+/// Publish order for a staged tree. Steam reads a Lua as soon as it appears,
+/// so every file it references must be in place before the Lua phase runs.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum PublishPhase {
+    BeforeLua,
+    Lua,
+}
+
+/// Routes every staged file, manifests and game files first and Lua last.
 fn install_staged_tree(
     app_id: u32,
     root: &Path,
@@ -626,8 +669,43 @@ fn install_staged_tree(
     game_dir: &Path,
     plugin_dir: &Path,
     depotcache_dir: &Path,
-    lua_backup_dir: &Path,
+    backup: &GameBackup,
     report: &mut LocalInstallReport,
+) -> Result<(), String> {
+    install_staged_tree_phase(
+        app_id,
+        root,
+        current,
+        game_dir,
+        plugin_dir,
+        depotcache_dir,
+        backup,
+        report,
+        PublishPhase::BeforeLua,
+    )?;
+    install_staged_tree_phase(
+        app_id,
+        root,
+        current,
+        game_dir,
+        plugin_dir,
+        depotcache_dir,
+        backup,
+        report,
+        PublishPhase::Lua,
+    )
+}
+
+fn install_staged_tree_phase(
+    app_id: u32,
+    root: &Path,
+    current: &Path,
+    game_dir: &Path,
+    plugin_dir: &Path,
+    depotcache_dir: &Path,
+    backup: &GameBackup,
+    report: &mut LocalInstallReport,
+    phase: PublishPhase,
 ) -> Result<(), String> {
     for entry in fs::read_dir(current)
         .map_err(|error| format!("Failed to read folder {}: {}", current.display(), error))?
@@ -636,16 +714,24 @@ fn install_staged_tree(
         let path = entry.path();
 
         if path.is_dir() {
-            install_staged_tree(
+            install_staged_tree_phase(
                 app_id,
                 root,
                 &path,
                 game_dir,
                 plugin_dir,
                 depotcache_dir,
-                lua_backup_dir,
+                backup,
                 report,
+                phase,
             )?;
+            continue;
+        }
+
+        let file_kind_now = classify_local_file(&path);
+        if (phase == PublishPhase::BeforeLua && file_kind_now == LocalFileKind::Lua)
+            || (phase == PublishPhase::Lua && file_kind_now != LocalFileKind::Lua)
+        {
             continue;
         }
 
@@ -709,7 +795,7 @@ fn install_staged_tree(
                 format!("Failed to create folder {}: {}", parent.display(), error)
             })?;
         }
-        fs::copy(&path, &dest).map_err(|error| {
+        crate::core::state_io::copy_atomic(&path, &dest).map_err(|error| {
             format!(
                 "Failed to copy file {} to {}: {}",
                 path.display(),
@@ -718,10 +804,9 @@ fn install_staged_tree(
             )
         })?;
 
-        // Keep the per-game lua backup in sync (same role as
+        // Keep the per-game Lua backup in sync (same role as
         // `GameBackup::backup_lua_artifacts` for online downloads).
         if also_backup {
-            let backup_dest = lua_backup_dir.join(&file_name);
             // The mirror is written atomically: a restore installs this file as
             // the pristine Lua, so an interrupted import must not leave a
             // truncated backup behind.
@@ -732,14 +817,21 @@ fn install_staged_tree(
                     error
                 )
             })?;
-            crate::core::state_io::write_atomic(&backup_dest, &bytes).map_err(|error| {
-                format!(
-                    "Failed to back up file {} to {}: {}",
-                    path.display(),
-                    backup_dest.display(),
-                    error
-                )
-            })?;
+            if file_kind == LocalFileKind::Lua {
+                // Canonical name, atomic write, and the replaced pristine is
+                // archived in history/: the same contract as a downloaded Lua.
+                backup.store_original(app_id, &bytes)?;
+            } else {
+                crate::core::state_io::write_atomic(&backup.lua_dir().join(&file_name), &bytes)
+                    .map_err(|error| {
+                        format!(
+                            "Failed to back up file {} to {}: {}",
+                            path.display(),
+                            backup.lua_dir().join(&file_name).display(),
+                            error
+                        )
+                    })?;
+            }
             crate::desk_log_info!(
                 "local",
                 "Mirrored {} into AetherData lua backup",
@@ -871,7 +963,10 @@ fn copy_dir_contents(src: &Path, dest: &Path) -> Result<(), String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{install_staged_tree, resolve_target_dir, LocalInstallReport};
+    use super::{
+        install_bulk_local_pipeline, install_staged_tree, resolve_target_dir, LocalInstallReport,
+    };
+    use crate::core::backup::GameBackup;
     use std::fs;
 
     /// Steam root with a Lua entry and an appmanifest whose `StateFlags` says
@@ -941,28 +1036,22 @@ mod tests {
         assert_eq!(target, steam_folder);
     }
 
-    /// A local import mirrors the imported Lua into the per-game backup. That
-    /// mirror is the file a restore installs as the pristine Lua, so it must
-    /// hold the imported bytes.
+    /// A local import mirrors the imported Lua into the per-game backup under
+    /// the canonical name, so a restore installs the imported bytes even when
+    /// the source kept a build suffix.
     #[test]
-    fn an_imported_lua_is_mirrored_into_the_backup_with_identical_bytes() {
+    fn an_imported_lua_is_mirrored_into_the_backup_under_the_canonical_name() {
         let temp = tempfile::tempdir().expect("tempdir");
         let staging = temp.path().join("staging");
         let plugin_dir = temp.path().join("stplug-in");
         let depotcache_dir = temp.path().join("depotcache");
         let game_dir = temp.path().join("game");
-        let lua_backup_dir = temp.path().join("backup").join("lua");
-        for directory in [
-            &staging,
-            &plugin_dir,
-            &depotcache_dir,
-            &game_dir,
-            &lua_backup_dir,
-        ] {
+        let backup = GameBackup::for_tests(temp.path().join("backup"));
+        for directory in [&staging, &plugin_dir, &depotcache_dir, &game_dir] {
             fs::create_dir_all(directory).expect("dir");
         }
         let imported = b"-- imported lua\n";
-        fs::write(staging.join("1600.lua"), imported).expect("lua");
+        fs::write(staging.join("1600_123456.lua"), imported).expect("lua");
 
         let mut report = LocalInstallReport::default();
         install_staged_tree(
@@ -972,7 +1061,7 @@ mod tests {
             &game_dir,
             &plugin_dir,
             &depotcache_dir,
-            &lua_backup_dir,
+            &backup,
             &mut report,
         )
         .expect("route the staged tree");
@@ -983,8 +1072,73 @@ mod tests {
             imported
         );
         assert_eq!(
-            fs::read(lua_backup_dir.join("1600.lua")).expect("mirrored backup"),
+            fs::read(backup.lua_dir().join("1600.lua")).expect("mirrored backup"),
             imported
         );
+        assert!(
+            !backup.lua_dir().join("1600_123456.lua").exists(),
+            "the backup keeps the canonical name"
+        );
+    }
+
+    /// A Lua is published only after the files it references: a failed manifest
+    /// copy must leave `stplug-in` without the new entry.
+    #[test]
+    fn a_failed_manifest_copy_keeps_the_lua_unpublished() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let staging = temp.path().join("staging");
+        let plugin_dir = temp.path().join("stplug-in");
+        let depotcache_dir = temp.path().join("depotcache");
+        let game_dir = temp.path().join("game");
+        let backup = GameBackup::for_tests(temp.path().join("backup"));
+        for directory in [&staging, &plugin_dir, &depotcache_dir, &game_dir] {
+            fs::create_dir_all(directory).expect("dir");
+        }
+        fs::write(staging.join("1600.lua"), b"-- imported lua\n").expect("lua");
+        fs::write(staging.join("1_2.manifest"), b"manifest").expect("manifest");
+        // A directory at the destination makes the atomic rename fail.
+        fs::create_dir_all(depotcache_dir.join("1_2.manifest")).expect("blocker");
+
+        let mut report = LocalInstallReport::default();
+        let error = install_staged_tree(
+            1600,
+            &staging,
+            &staging,
+            &game_dir,
+            &plugin_dir,
+            &depotcache_dir,
+            &backup,
+            &mut report,
+        )
+        .unwrap_err();
+
+        assert!(error.contains("1_2.manifest"), "{error}");
+        assert!(
+            !plugin_dir.join("1600.lua").exists(),
+            "the lua must wait for its manifests"
+        );
+    }
+
+    /// The bulk importer publishes manifests before Lua and reports a failed
+    /// manifest instead of claiming a complete import.
+    #[test]
+    fn a_failed_manifest_keeps_the_bulk_lua_out_and_is_reported() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let steam = temp.path().join("steam");
+        let source = temp.path().join("source");
+        fs::create_dir_all(&steam).expect("steam");
+        fs::create_dir_all(&source).expect("source");
+        fs::write(source.join("480.lua"), b"-- lua\n").expect("lua");
+        fs::write(source.join("1_2.manifest"), b"manifest").expect("manifest");
+        fs::create_dir_all(steam.join("depotcache").join("1_2.manifest")).expect("blocker");
+
+        let report =
+            install_bulk_local_pipeline(&steam, &[source.display().to_string()], false).unwrap();
+
+        assert_eq!(report.manifest_files, 0);
+        assert_eq!(report.lua_files, 0);
+        assert_eq!(report.failures.len(), 1);
+        assert!(report.failures[0].contains("1_2.manifest"));
+        assert!(!steam.join("config/stplug-in/480.lua").exists());
     }
 }
