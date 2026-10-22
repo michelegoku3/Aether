@@ -86,12 +86,13 @@ pub async fn apply_crack(
         report.replaced
     );
 
-    Ok(format_apply_message(
+    apply_outcome(
         "Crack applied",
         report.applied,
         report.replaced,
         &report.files,
-    ))
+        &report.failures,
+    )
 }
 
 /// Whether `AetherData/backup/<app_id>/crack/` already holds saved crack files.
@@ -139,12 +140,13 @@ pub async fn reapply_saved_crack(app: tauri::AppHandle, app_id: u32) -> Result<S
         report.replaced
     );
 
-    Ok(format_apply_message(
+    apply_outcome(
         "Saved crack re-applied",
         report.applied,
         report.replaced,
         &report.files,
-    ))
+        &report.failures,
+    )
 }
 
 /// Remove the crack currently present in the game install (inventory / saved
@@ -189,13 +191,46 @@ pub async fn remove_applied_crack(app: tauri::AppHandle, app_id: u32) -> Result<
     }
 }
 
-fn format_apply_message(prefix: &str, applied: usize, replaced: usize, files: &[String]) -> String {
+/// Turn one crack run into the value the UI shows, or into an error.
+///
+/// A run that applied nothing is an error even when the engine itself
+/// returned `Ok`: the VN patch installer reports its launch failure through
+/// the report instead of aborting the pipeline, and presenting that as a
+/// success would paint a failed crack green. A run that applied some files
+/// keeps the success message and appends the failures so nothing is lost.
+fn apply_outcome(
+    prefix: &str,
+    applied: usize,
+    replaced: usize,
+    files: &[String],
+    failures: &[String],
+) -> Result<String, String> {
+    if applied == 0 {
+        if !failures.is_empty() {
+            return Err(cap_message(failures.join("; ")));
+        }
+        if files.is_empty() {
+            return Err("No files were applied.".to_string());
+        }
+    }
+
     let mut msg = format!(
         "{prefix}: {applied} file(s) ({replaced} replaced). Files: {}",
         files.join(", ")
     );
-    if msg.len() > 500 {
-        let mut cutoff = 497;
+    if !failures.is_empty() {
+        msg.push_str(" Failed: ");
+        msg.push_str(&failures.join("; "));
+    }
+    Ok(cap_message(msg))
+}
+
+/// Bound the message length: a crack with hundreds of files must not produce a
+/// payload the UI has to render in full.
+fn cap_message(mut msg: String) -> String {
+    const MAX: usize = 500;
+    if msg.len() > MAX {
+        let mut cutoff = MAX - 3;
         while !msg.is_char_boundary(cutoff) && cutoff > 0 {
             cutoff -= 1;
         }
@@ -203,4 +238,42 @@ fn format_apply_message(prefix: &str, applied: usize, replaced: usize, files: &[
         msg.push_str("...");
     }
     msg
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn only_failures_is_an_error_with_just_the_failure_text() {
+        let files: Vec<String> = Vec::new();
+        let failures =
+            vec!["Patch installer failed: ciao.exe: failed to launch ciao.exe".to_string()];
+
+        let outcome = apply_outcome("Crack applied", 0, 0, &files, &failures);
+
+        assert_eq!(
+            outcome,
+            Err("Patch installer failed: ciao.exe: failed to launch ciao.exe".to_string())
+        );
+        assert!(!outcome.unwrap_err().contains("Crack applied"));
+    }
+
+    #[test]
+    fn partial_success_keeps_the_message_and_appends_the_failure() {
+        let files = vec!["a.dll".to_string(), "b.dll".to_string()];
+        let failures = vec!["Patch installer failed: ciao.exe: boom".to_string()];
+
+        let outcome = apply_outcome("Crack applied", 2, 1, &files, &failures).unwrap();
+
+        assert!(outcome.starts_with("Crack applied: 2 file(s) (1 replaced). Files: a.dll, b.dll"));
+        assert!(outcome.contains("Failed: Patch installer failed: ciao.exe: boom"));
+    }
+
+    #[test]
+    fn nothing_applied_at_all_is_an_error() {
+        let outcome = apply_outcome("Crack applied", 0, 0, &[], &[]);
+
+        assert_eq!(outcome, Err("No files were applied.".to_string()));
+    }
 }

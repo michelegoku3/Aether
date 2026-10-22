@@ -39,6 +39,12 @@ pub struct CrackReport {
     pub replaced: usize,
     /// Relative paths of all applied files.
     pub files: Vec<String>,
+    /// Sources that produced no applied file, in the order they were tried.
+    ///
+    /// Kept apart from `files` because a failure is not an applied path: the
+    /// command layer turns a run with only failures into an error instead of a
+    /// success message listing nothing.
+    pub failures: Vec<String>,
 }
 
 /// Launch the VN patch installer with `game_root` as its working directory and
@@ -192,8 +198,8 @@ fn apply_sources_in_staging(
                                 err
                             );
                             report
-                                .files
-                                .push(format!("(Patch installer failed: {name}: {err})"));
+                                .failures
+                                .push(format!("Patch installer failed: {name}: {err}"));
                         }
                     }
                     continue;
@@ -247,6 +253,9 @@ pub fn reapply_saved_crack(
         applied: sub.applied,
         replaced: sub.replaced,
         files: sub.files,
+        // A re-apply copies stored files straight to their paths, so it has no
+        // source that can fail without applying anything.
+        failures: Vec::new(),
     })
 }
 
