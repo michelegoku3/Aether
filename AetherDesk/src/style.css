@@ -3725,28 +3725,31 @@ body {
 }
 
 /* Wrapper of the disabled Auto tab: anchors the tooltip that explains why the
-   tab is broken and the maintenance badge on the tab's top-right corner. */
+   tab is broken and the maintenance badge that protrudes from its corner. */
 .version-tab-wrap {
   position: relative;
 }
 
-/* The badge sits over the tab's free top-right corner: the label stays centred
-   in the full tab area, so no extra padding is taken from it. */
+/* Same shape, weight and pop-in as the Installed/Installing/Available badges on
+   the game cards, amber because maintenance is a temporary state rather than a
+   fault. It sits past the corner of the tab: the strip keeps 12px of top
+   padding and never clips, which is what the overhang needs. */
 .version-tab-badge {
   position: absolute;
-  top: 4px;
-  right: 8px;
-  border: 1px solid var(--border-color);
-  border-radius: 999px;
-  padding: 1px 5px;
-  font-size: 8.5px;
+  top: -8px;
+  right: -8px;
+  background-color: var(--color-installing-amber);
+  color: #1b1204;
+  font-size: 10px;
   font-weight: 700;
-  letter-spacing: 0.4px;
-  line-height: 1.35;
   text-transform: uppercase;
-  white-space: nowrap;
-  color: var(--color-muted);
-  background: rgba(255, 255, 255, 0.03);
+  padding: 4px 10px;
+  border-radius: 6px;
+  box-shadow: 0 4px 10px rgba(245, 158, 11, 0.4);
+  z-index: 10;
+  letter-spacing: 0.5px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  animation: badgePopIn 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275);
   /* Decorative only: the hover that shows the reason belongs to the wrapper. */
   pointer-events: none;
 }
