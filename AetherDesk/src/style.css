@@ -3724,6 +3724,33 @@ body {
   box-shadow: inset 0 -2px 0 #00b3ff;
 }
 
+/* Wrapper of the disabled Auto tab: anchors the tooltip that explains why the
+   tab is broken and the maintenance badge on the tab's top-right corner. */
+.version-tab-wrap {
+  position: relative;
+}
+
+/* The badge sits over the tab's free top-right corner: the label stays centred
+   in the full tab area, so no extra padding is taken from it. */
+.version-tab-badge {
+  position: absolute;
+  top: 4px;
+  right: 8px;
+  border: 1px solid var(--border-color);
+  border-radius: 999px;
+  padding: 1px 5px;
+  font-size: 8.5px;
+  font-weight: 700;
+  letter-spacing: 0.4px;
+  line-height: 1.35;
+  text-transform: uppercase;
+  white-space: nowrap;
+  color: var(--color-muted);
+  background: rgba(255, 255, 255, 0.03);
+  /* Decorative only: the hover that shows the reason belongs to the wrapper. */
+  pointer-events: none;
+}
+
 .version-tab-body {
   display: flex;
   flex-direction: column;

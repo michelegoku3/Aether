@@ -78,3 +78,16 @@ describe('ChangeVersionModal bookmarks', () => {
     await waitFor(() => expect(screen.queryByText('saved_builds.json is locked')).not.toBeInTheDocument());
   });
 });
+
+describe('ChangeVersionModal tabs', () => {
+  it('keeps the Auto tab disabled and marks it as under maintenance', async () => {
+    renderModal();
+    // Wait for the build list so the tab's queries settle inside the test.
+    await screen.findByText('Build #24701871');
+
+    expect(screen.getByRole('tab', { name: 'Auto' })).toBeDisabled();
+    // The badge is decorative: the disabled tab and its tooltip carry the
+    // state, so it stays out of the accessibility tree.
+    expect(screen.getByText('MAINTENANCE')).toHaveAttribute('aria-hidden', 'true');
+  });
+});

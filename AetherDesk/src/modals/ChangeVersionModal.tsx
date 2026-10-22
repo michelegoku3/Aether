@@ -65,7 +65,12 @@ const ChangeVersionModal = ({ game, initialRows, initialTab = 'manual', onClose 
             // the wrapper — same pattern as LibraryGameActionsModal).
             if (tab === 'auto') {
               return (
-                <span key={tab} style={{ flex: '1 1 0%', display: 'flex' }} title="Broken after Steam patch">
+                <span
+                  key={tab}
+                  className="version-tab-wrap"
+                  style={{ flex: '1 1 0%', display: 'flex' }}
+                  title="Broken after Steam patch"
+                >
                   <button
                     role="tab"
                     aria-selected={activeTab === tab}
@@ -75,6 +80,11 @@ const ChangeVersionModal = ({ game, initialRows, initialTab = 'manual', onClose 
                   >
                     {TAB_LABELS[tab]}
                   </button>
+                  {/* Decorative: the disabled tab and the wrapper tooltip
+                      already tell assistive tech why the tab is unavailable. */}
+                  <span className="version-tab-badge" aria-hidden="true">
+                    MAINTENANCE
+                  </span>
                 </span>
               );
             }
