@@ -37,6 +37,18 @@ fn main() {
     }
 
     tauri::Builder::default()
+        // One Desk per session: every mutation lock in `core::game_mutations`
+        // is process-local, so a second instance would bypass them and race
+        // on staging, backups and the same Steam tree. The helper entry points
+        // above already returned, so `--apply-update` and the uninstaller are
+        // never blocked by this guard.
+        .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.unminimize();
+                let _ = window.show();
+                let _ = window.set_focus();
+            }
+        }))
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             // Initialize the session logger (rotates desk.log -> desk.log.last on startup).

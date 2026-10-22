@@ -51,6 +51,7 @@ sha2 = "0.10"
 # only queues work; debounce and all application logic remain in core code.
 notify = "8.2"
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "bmp", "ico", "tiff", "webp"] }
+tauri-plugin-single-instance = "2"
 
 # DLL version is read directly from the PE version resource inside the .dll files
 # (Windows-only API; the DLL domain is Windows-only by design).

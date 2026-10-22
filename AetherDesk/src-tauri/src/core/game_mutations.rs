@@ -1,7 +1,10 @@
 //! In-process-only per-(canonical Steam root, AppID) commit ownership.
-//! No lock files: separate Desk processes are NOT coordinated here. Preparation (network)
-//! is optimistic: any intervening Desk mutation or external Lua/ACF edit
-//! invalidates the plan. Never hold a synchronous mutex across an await.
+//! No lock files: coordination between Desk processes relies on the
+//! single-instance guard in `main`, which refuses a second UI process. The
+//! `--apply-update` and uninstall helpers run before that guard and never take
+//! a game mutation. Preparation (network) is optimistic: any intervening Desk
+//! mutation or external Lua/ACF edit invalidates the plan. Never hold a
+//! synchronous mutex across an await.
 //! Lock order: game -> depotcache/config. Nested game acquisition is forbidden.
 use crate::core::error::{codes, DeskError};
 use sha2::{Digest, Sha256};
