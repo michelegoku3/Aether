@@ -74,7 +74,12 @@ export const OnlinePanel = ({ game, onClose }: OnlinePanelProps) => {
         appId: Number(game.appId),
         request,
       });
-      setMessage({ text: result.message, kind: result.success ? 'success' : 'error' });
+      // A presence-config failure happens after the files are deployed: it is
+      // a warning on a successful enable, not an error that invites a retry.
+      setMessage({
+        text: result.warning ? `${result.message} ${result.warning}` : result.message,
+        kind: result.success ? (result.warning ? 'info' : 'success') : 'error',
+      });
       await refresh();
     } catch (err) {
       setMessage({ text: `Enable failed: ${err}`, kind: 'error' });
