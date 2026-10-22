@@ -36,6 +36,67 @@ fn apply_update_refuses_protected_root() {
     assert!(err.contains("Refusing protected uninstall root"), "{err}");
 }
 
+/// Creates a directory junction without requiring administrator rights.
+/// Returns false when the platform refuses (the test then has nothing to prove).
+#[cfg(windows)]
+fn make_junction(link: &std::path::Path, target: &std::path::Path) -> bool {
+    std::process::Command::new("cmd")
+        .args(["/c", "mklink", "/J"])
+        .arg(link)
+        .arg(target)
+        .status()
+        .map(|status| status.success())
+        .unwrap_or(false)
+}
+
+/// A redirected Desktop/Documents (OneDrive Known Folder Move) puts a reparse
+/// point above a perfectly valid portable install. Only the install root and
+/// the exe it replaces are the updater's business.
+#[cfg(windows)]
+#[test]
+fn an_ancestor_reparse_point_does_not_block_a_valid_install_root() {
+    let base = temp_dir("ancestor-junction");
+    let real = base.join("real");
+    let install = real.join("install");
+    fs::create_dir_all(&install).unwrap();
+    fs::copy(
+        std::env::current_exe().unwrap(),
+        install.join("AetherDesk.exe"),
+    )
+    .unwrap();
+    let link = base.join("link");
+    if !make_junction(&link, &real) {
+        return;
+    }
+
+    let root = crate::updater::desk::validate_install_root(&link.join("install")).unwrap();
+
+    assert_eq!(root, fs::canonicalize(&install).unwrap());
+}
+
+/// The guard still refuses an install root that is itself a link: writing
+/// through it would replace files outside the real installation.
+#[cfg(windows)]
+#[test]
+fn a_reparse_point_at_the_install_root_is_refused() {
+    let base = temp_dir("root-junction");
+    let real = base.join("real");
+    fs::create_dir_all(&real).unwrap();
+    fs::copy(
+        std::env::current_exe().unwrap(),
+        real.join("AetherDesk.exe"),
+    )
+    .unwrap();
+    let link = base.join("link");
+    if !make_junction(&link, &real) {
+        return;
+    }
+
+    let err = crate::updater::desk::validate_install_root(&link).unwrap_err();
+
+    assert!(err.contains("linked/reparse"), "{err}");
+}
+
 /// The parent refuses an invalid install root before it stages an updater or
 /// spawns anything, so the user sees the reason instead of a closing app.
 #[test]

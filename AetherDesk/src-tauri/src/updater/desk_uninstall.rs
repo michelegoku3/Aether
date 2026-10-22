@@ -126,25 +126,24 @@ pub(crate) fn hash_file(path: &Path) -> Result<String, String> {
     Ok(format!("{:x}", digest.finalize()))
 }
 
+/// Refuses a path that is itself a link/reparse point. Ancestors are NOT
+/// checked: a redirected Desktop or Documents folder (OneDrive Known Folder
+/// Move) is a normal junction above a valid install, and the caller writes to
+/// the canonical path it resolves to.
 fn check_no_links(path: &Path) -> Result<(), String> {
-    for ancestor in path.ancestors().filter(|p| !p.as_os_str().is_empty()) {
-        let metadata = match fs::symlink_metadata(ancestor) {
-            Ok(metadata) => metadata,
-            Err(error) if error.kind() == io::ErrorKind::NotFound => continue,
-            Err(error) => return Err(format!("inspect {}: {error}", ancestor.display())),
-        };
-        let linked = metadata.file_type().is_symlink();
-        #[cfg(windows)]
-        let linked = {
-            use std::os::windows::fs::MetadataExt;
-            linked || metadata.file_attributes() & 0x400 != 0
-        };
-        if linked {
-            return Err(format!(
-                "Refusing linked/reparse path {}",
-                ancestor.display()
-            ));
-        }
+    let metadata = match fs::symlink_metadata(path) {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(()),
+        Err(error) => return Err(format!("inspect {}: {error}", path.display())),
+    };
+    let linked = metadata.file_type().is_symlink();
+    #[cfg(windows)]
+    let linked = {
+        use std::os::windows::fs::MetadataExt;
+        linked || metadata.file_attributes() & 0x400 != 0
+    };
+    if linked {
+        return Err(format!("Refusing linked/reparse path {}", path.display()));
     }
     Ok(())
 }
