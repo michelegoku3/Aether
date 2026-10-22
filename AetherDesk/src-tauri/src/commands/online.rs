@@ -229,7 +229,7 @@ pub async fn enable_online(
     })
     .await
     .map_err(|e| format!("Online worker failed: {e}"))?;
-    let result = result?;
+    let mut result = result?;
 
     crate::desk_log_info!(
         "online",
@@ -238,10 +238,16 @@ pub async fn enable_online(
         result.message
     );
     if result.success {
+        // The files are deployed: a presence-config failure is a warning, not a
+        // failed enable. Reporting it as an error would invite a retry that
+        // republishes working files and hides the real state.
         for path in aethercore_toml_paths(&app) {
-            update_mode_in_toml(&path, app_id, Some(PresenceMode::Excluded)).map_err(|e| {
-                format!("Online files deployed, presence configuration incomplete: {e}")
-            })?;
+            if let Err(error) = update_mode_in_toml(&path, app_id, Some(PresenceMode::Excluded)) {
+                result.warning = Some(format!(
+                    "Online files deployed, presence configuration incomplete: {error}"
+                ));
+                break;
+            }
         }
     }
     Ok(result)

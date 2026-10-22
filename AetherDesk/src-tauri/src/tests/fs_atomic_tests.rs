@@ -84,3 +84,24 @@ fn no_tmp_sibling_is_left_behind() {
         .collect();
     assert!(leftovers.is_empty());
 }
+
+/// A binary payload is copied through a staging file and renamed: the live
+/// path is never truncated, and a failed copy leaves no sibling behind.
+#[test]
+fn copy_atomic_replaces_the_target_and_leaves_no_temp() {
+    let dir = temp_dir("copy-atomic");
+    let source = dir.join("source.bin");
+    let target = dir.join("target.bin");
+    std::fs::write(&source, b"new-bytes").unwrap();
+    std::fs::write(&target, b"old-bytes").unwrap();
+
+    crate::core::state_io::copy_atomic(&source, &target).unwrap();
+
+    assert_eq!(std::fs::read(&target).unwrap(), b"new-bytes");
+    let leftovers: Vec<_> = std::fs::read_dir(&dir)
+        .unwrap()
+        .filter_map(Result::ok)
+        .filter(|e| e.file_name().to_string_lossy().ends_with(".tmp"))
+        .collect();
+    assert!(leftovers.is_empty(), "staging file left behind");
+}

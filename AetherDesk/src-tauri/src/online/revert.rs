@@ -348,6 +348,59 @@ fn remove_empty_dir(path: &Path) -> Result<(), String> {
     }
 }
 
+/// Reverts the entries a failed deploy recorded in memory, newest first.
+///
+/// Unlike [`disable`], this does not need the journal on disk: a deploy that
+/// fails while saving the journal still has to put back the original it has
+/// already moved. The caller owns the cleanup of the journal and backup dir.
+pub(crate) fn rollback_partial(journal: &Journal, backup_dir: &Path) -> Result<(), String> {
+    for entry in journal.entries.iter().rev() {
+        match entry {
+            JournalEntry::Deployed { path } => {
+                remove_file_if_present(path)?;
+                if let Some(parent) = path.parent().filter(|parent| {
+                    parent
+                        .file_name()
+                        .is_some_and(|name| name.eq_ignore_ascii_case("plugins"))
+                }) {
+                    remove_empty_dir(parent)?;
+                }
+            }
+            JournalEntry::Neutralized { path } => {
+                let disabled = path.with_file_name(format!(
+                    "{}{}",
+                    path.file_name().and_then(|n| n.to_str()).unwrap_or("file"),
+                    UCO_DISABLED_SUFFIX
+                ));
+                restore_backup(path, &disabled, backup_dir)?;
+            }
+            JournalEntry::BackedUp { original, backup } => {
+                restore_backup(original, backup, backup_dir)?;
+            }
+        }
+    }
+    remove_file_if_present(&backup_dir.join(RESTORE_CHECKPOINT))?;
+    let originals = backup_dir.join("original");
+    match fs::remove_dir(&originals) {
+        Ok(()) => {}
+        Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+        Err(error) => {
+            return Err(format!(
+                "Original backups remain at {}; they were not restored: {error}",
+                originals.display()
+            ))
+        }
+    }
+    Ok(())
+}
+
+/// Drops the journal and the now-empty backup directory left by a successful
+/// automatic rollback, so a later Disable does not replay empty entries.
+pub(crate) fn cleanup_rolled_back_backup(backup_dir: &Path) {
+    let _ = remove_file_if_present(&backup_dir.join("journal.json"));
+    let _ = remove_empty_dir(backup_dir);
+}
+
 fn revert_from_journal(journal: &mut Journal, backup_dir: &Path) -> Result<(), String> {
     while let Some(entry) = journal.entries.last() {
         match entry {

@@ -46,6 +46,55 @@ pub fn write_atomic(path: &Path, bytes: &[u8]) -> Result<(), String> {
     result
 }
 
+/// Copies `from` to `to` through a same-directory staging file and a rename.
+///
+/// `write_atomic` needs the whole payload in memory; deployed game binaries can
+/// be hundreds of megabytes, so this streams them with `fs::copy`. There is no
+/// `sync_all`: the target is a replaceable payload, and the rename is what makes
+/// the new file visible whole. A failed copy removes its staging file.
+pub fn copy_atomic(from: &Path, to: &Path) -> Result<(), String> {
+    let parent = to.parent().ok_or("Copy target has no parent")?;
+    fs::create_dir_all(parent).map_err(|e| format!("Copy directory: {e}"))?;
+    let file_name = to.file_name().ok_or("Copy target has no filename")?;
+
+    let mut temp = parent.join(format!(
+        ".{}.{}-{}.tmp",
+        file_name.to_string_lossy(),
+        std::process::id(),
+        NEXT.fetch_add(1, Ordering::Relaxed)
+    ));
+    // Reserve the name exclusively, then let the copy fill our own file: a
+    // concurrent writer can neither take nor publish this staging path.
+    loop {
+        match OpenOptions::new().write(true).create_new(true).open(&temp) {
+            Ok(file) => {
+                drop(file);
+                break;
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
+                temp = parent.join(format!(
+                    ".{}.{}-{}.tmp",
+                    file_name.to_string_lossy(),
+                    std::process::id(),
+                    NEXT.fetch_add(1, Ordering::Relaxed)
+                ));
+            }
+            Err(e) => return Err(format!("Copy staging: {e}")),
+        }
+    }
+
+    let result = (|| {
+        fs::copy(from, &temp)
+            .map_err(|e| format!("Copy {} -> {}: {e}", from.display(), to.display()))?;
+        fs::rename(&temp, to).map_err(|e| format!("Copy commit {}: {e}", to.display()))?;
+        Ok(())
+    })();
+    if result.is_err() {
+        let _ = fs::remove_file(&temp);
+    }
+    result
+}
+
 /// Advisory lock shared by cooperating Desk processes. The OS releases it
 /// on crash; the small sidecar may remain and is NOT a stale-lock sentinel.
 pub fn lock(path: &Path) -> Result<std::fs::File, String> {

@@ -8,6 +8,7 @@ use crate::online::bundle::Uco2Bundle;
 use crate::online::config::{build_ini, harvest_dlc, COHERENCE_SHARED_KEY};
 use crate::online::deploy::{backup_dir_for, deploy, Journal};
 use crate::online::detect::GameInspector;
+use crate::online::engine::OnlineEngine;
 use crate::online::revert::disable;
 use crate::online::state::OnlineStateStore;
 use crate::online::types::{OnlineEnableRequest, PhotonOptions, PlayfabOptions};
@@ -565,6 +566,88 @@ fn failed_deployed_removal_is_reported_and_does_not_discard_recovery() {
         fs::read(game.path().join("kept-blocker/sentinel.txt")).unwrap(),
         b"do not delete"
     );
+}
+
+/// A first enable that fails after moving the original DLL must put it back:
+/// leaving the game without `steam_api64.dll` makes it unlaunchable until the
+/// user finds Disable online. A directory at the ini path fails the phase-5
+/// atomic rename, after the original DLL was moved and the UCO2 DLL copied.
+#[test]
+fn a_failed_first_enable_rolls_back_the_partial_deployment() {
+    let game = tempfile::tempdir().unwrap();
+    unity_photon_voice_playfab_fixture(game.path());
+    let bundle_dir = tempfile::tempdir().unwrap();
+    let bundle = bundle_fixture(bundle_dir.path());
+    let data = tempfile::tempdir().unwrap();
+    let backup_root = data.path().join("backup");
+    let state_path = data.path().join("state/uc_online2.json");
+
+    let detection = GameInspector::inspect(game.path()).unwrap();
+    let steam_api_dir = detection.steam_api_dir.clone().unwrap();
+    let original_dll = steam_api_dir.join("steam_api64.dll");
+    let ini_path = detection.ini_dir.join("union-crax.ini");
+    fs::create_dir_all(&ini_path).unwrap();
+
+    let err = OnlineEngine::enable(
+        1144200,
+        game.path(),
+        &bundle,
+        &base_request(),
+        &backup_root,
+        &state_path,
+    )
+    .unwrap_err();
+
+    assert!(err.contains("rolled back"), "{err}");
+    assert_eq!(fs::read(&original_dll).unwrap(), b"original-dll");
+    assert!(!backup_dir_for(&backup_root, 1144200).exists());
+    assert!(OnlineStateStore::load(&state_path).get(1144200).is_none());
+    assert!(ini_path.is_dir(), "the fixture blocker is left alone");
+}
+
+/// A refresh of an already enabled game must not be rolled back: the previous
+/// deployment still works, and disabling it would cost the user a working
+/// online setup. The failure is reported with the deployment left in place.
+#[test]
+fn a_failed_refresh_keeps_the_previous_deployment() {
+    let game = tempfile::tempdir().unwrap();
+    unity_photon_voice_playfab_fixture(game.path());
+    let bundle_dir = tempfile::tempdir().unwrap();
+    let bundle = bundle_fixture(bundle_dir.path());
+    let data = tempfile::tempdir().unwrap();
+    let backup_root = data.path().join("backup");
+    let state_path = data.path().join("state/uc_online2.json");
+
+    let detection = GameInspector::inspect(game.path()).unwrap();
+    let steam_api_dir = detection.steam_api_dir.clone().unwrap();
+    let steam_api_path = steam_api_dir.join("steam_api64.dll");
+    let ini_path = detection.ini_dir.join("union-crax.ini");
+
+    OnlineEngine::enable(
+        1144200,
+        game.path(),
+        &bundle,
+        &base_request(),
+        &backup_root,
+        &state_path,
+    )
+    .expect("first enable");
+    fs::remove_file(&ini_path).unwrap();
+    fs::create_dir_all(&ini_path).unwrap();
+
+    let err = OnlineEngine::enable(
+        1144200,
+        game.path(),
+        &bundle,
+        &base_request(),
+        &backup_root,
+        &state_path,
+    )
+    .unwrap_err();
+
+    assert!(!err.contains("rolled back"), "{err}");
+    assert_eq!(fs::read(&steam_api_path).unwrap(), b"uco2-x64");
+    assert!(OnlineStateStore::load(&state_path).get(1144200).is_some());
 }
 
 #[cfg(windows)]

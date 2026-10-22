@@ -17,10 +17,12 @@
 //!   6. deploy of plugins required by detected backends
 //!   7. state record persistence
 
+use crate::core::state_io::copy_atomic;
 use crate::external_tools::fs::{move_path, write_atomic};
 use crate::online::bundle::Uco2Bundle;
 use crate::online::config::{build_ini, harvest_dlc};
 use crate::online::detect::overlay_target;
+use crate::online::revert;
 use crate::online::state::{now_epoch_secs, OnlineStateStore};
 use crate::online::types::{
     Conflict, DetectionReport, OnlineEnableRequest, OnlineRecord, PhotonFlavor,
@@ -107,113 +109,138 @@ pub fn deploy(
     // would restore them on Disable (an ini that "never goes away").
     let preexisting_uco2 = ini_path.is_file();
 
-    if !already_enabled {
-        // ---- Phase 1: original backups ----
-        if steam_api_path.is_file() && !preexisting_uco2 {
-            let target = unique_backup_path(&backup_dir, "steam_api");
-            move_path(&steam_api_path, &target)?;
-            journal.entries.push(JournalEntry::BackedUp {
-                original: steam_api_path.clone(),
-                backup: target,
-            });
-            // Persist each move: a cross-volume fallback is not atomic, so a
-            // crash must leave a journal entry that Disable can reconcile.
-            journal.save(&backup_dir)?;
-        }
-        if ini_path.is_file() {
-            // Already UCO2: throw the ini away, don't save it as an original.
-            let _ = fs::remove_file(&ini_path);
-        }
-        if plugins_dir.is_dir() && !preexisting_uco2 {
-            let target = unique_backup_path(&backup_dir, "plugins");
-            move_path(&plugins_dir, &target)?;
-            journal.entries.push(JournalEntry::BackedUp {
-                original: plugins_dir.clone(),
-                backup: target,
-            });
+    // The phases run in a closure so a failure can be rolled back with the
+    // journal still in memory: a journal save that fails must not strand a
+    // moved original behind a journal that never recorded the move.
+    let outcome = (|| -> Result<OnlineRecord, String> {
+        if !already_enabled {
+            // ---- Phase 1: original backups ----
+            if steam_api_path.is_file() && !preexisting_uco2 {
+                let target = unique_backup_path(&backup_dir, "steam_api");
+                move_path(&steam_api_path, &target)?;
+                journal.entries.push(JournalEntry::BackedUp {
+                    original: steam_api_path.clone(),
+                    backup: target,
+                });
+                // Persist each move: a cross-volume fallback is not atomic, so a
+                // crash must leave a journal entry that Disable can reconcile.
+                journal.save(&backup_dir)?;
+            }
+            if ini_path.is_file() {
+                // Already UCO2: throw the ini away, don't save it as an original.
+                let _ = fs::remove_file(&ini_path);
+            }
+            if plugins_dir.is_dir() && !preexisting_uco2 {
+                let target = unique_backup_path(&backup_dir, "plugins");
+                move_path(&plugins_dir, &target)?;
+                journal.entries.push(JournalEntry::BackedUp {
+                    original: plugins_dir.clone(),
+                    backup: target,
+                });
+                journal.save(&backup_dir)?;
+            }
+
+            // ---- Phase 2: conflict quarantine (outside the game tree) ----
+            for conflict in &detection.conflicts {
+                let path = conflict_path(conflict);
+                if !path.is_file() {
+                    continue;
+                }
+                let backup_name = format!(
+                    "conflict_{}",
+                    path.file_name().and_then(|n| n.to_str()).unwrap_or("file")
+                );
+                let target = unique_backup_path(&backup_dir, &backup_name);
+                move_path(&path, &target)?;
+                journal.entries.push(JournalEntry::BackedUp {
+                    original: path,
+                    backup: target,
+                });
+                journal.save(&backup_dir)?;
+            }
             journal.save(&backup_dir)?;
         }
 
-        // ---- Phase 2: conflict quarantine (outside the game tree) ----
-        for conflict in &detection.conflicts {
-            let path = conflict_path(conflict);
-            if !path.is_file() {
-                continue;
+        // ---- Phase 3: UCOnline2 DLL copy (also on refresh: bundle bump) ----
+        fs::create_dir_all(steam_api_dir).map_err(|e| e.to_string())?;
+        let bundle_dll = bundle.steam_api_dll(detection.arch);
+        copy_atomic(&bundle_dll, &steam_api_path).map_err(|e| {
+            format!(
+                "Failed to copy {} -> {}: {}",
+                bundle_dll.display(),
+                steam_api_path.display(),
+                e
+            )
+        })?;
+        journal_deployed(&mut journal, &steam_api_path);
+        journal.save(&backup_dir)?;
+
+        // ---- Phase 4: early overlay proxy ----
+        let overlay_proxy_path =
+            deploy_overlay_proxy(detection, bundle, request, &backup_dir, &mut journal)?;
+        journal.save(&backup_dir)?;
+
+        // ---- Phase 5: ini (always, even for refresh) ----
+        let dlc_entries = harvest_dlc(&detection.game_root, ini_dir);
+        let ini_content = build_ini(detection, request, &dlc_entries);
+        write_atomic(&ini_path, ini_content.as_bytes())?;
+        journal_deployed(&mut journal, &ini_path);
+        journal.save(&backup_dir)?;
+
+        // ---- Phase 6: plugin ----
+        let mut backends_deployed = Vec::new();
+        for plugin in required_plugins(detection, request) {
+            if let Some(source) = bundle.plugin_dll(plugin) {
+                fs::create_dir_all(&plugins_dir).map_err(|e| e.to_string())?;
+                let dest = plugins_dir.join(format!("{plugin}.dll"));
+                copy_atomic(&source, &dest)?;
+                backends_deployed.push(plugin.to_string());
+                journal_deployed(&mut journal, &dest);
             }
-            let backup_name = format!(
-                "conflict_{}",
-                path.file_name().and_then(|n| n.to_str()).unwrap_or("file")
-            );
-            let target = unique_backup_path(&backup_dir, &backup_name);
-            move_path(&path, &target)?;
-            journal.entries.push(JournalEntry::BackedUp {
-                original: path,
-                backup: target,
-            });
-            journal.save(&backup_dir)?;
+        }
+        if backends_deployed.is_empty() && already_enabled {
+            backends_deployed = list_plugins_in(&plugins_dir);
         }
         journal.save(&backup_dir)?;
-    }
 
-    // ---- Phase 3: UCOnline2 DLL copy (also on refresh: bundle bump) ----
-    fs::create_dir_all(steam_api_dir).map_err(|e| e.to_string())?;
-    let bundle_dll = bundle.steam_api_dll(detection.arch);
-    fs::copy(&bundle_dll, &steam_api_path).map_err(|e| {
-        format!(
-            "Failed to copy {} -> {}: {}",
-            bundle_dll.display(),
-            steam_api_path.display(),
-            e
-        )
-    })?;
-    journal_deployed(&mut journal, &steam_api_path);
-    journal.save(&backup_dir)?;
+        // ---- Phase 7: record ----
+        let record = OnlineRecord {
+            app_id,
+            enabled_at: now_epoch_secs(),
+            bundle_version: bundle.version(),
+            og_app_id: request.og_app_id,
+            spoof_app_id: request.spoof_app_id,
+            ini_path: ini_path.clone(),
+            steam_api_path: steam_api_path.clone(),
+            arch: detection.arch,
+            backends_deployed,
+            backup_dir: backup_dir.clone(),
+            overlay_proxy_path,
+        };
+        store.upsert(record.clone(), state_path)?;
 
-    // ---- Phase 4: early overlay proxy ----
-    let overlay_proxy_path =
-        deploy_overlay_proxy(detection, bundle, request, &backup_dir, &mut journal)?;
-    journal.save(&backup_dir)?;
+        Ok(record)
+    })();
 
-    // ---- Phase 5: ini (always, even for refresh) ----
-    let dlc_entries = harvest_dlc(&detection.game_root, ini_dir);
-    let ini_content = build_ini(detection, request, &dlc_entries);
-    write_atomic(&ini_path, ini_content.as_bytes())?;
-    journal_deployed(&mut journal, &ini_path);
-    journal.save(&backup_dir)?;
-
-    // ---- Phase 6: plugin ----
-    let mut backends_deployed = Vec::new();
-    for plugin in required_plugins(detection, request) {
-        if let Some(source) = bundle.plugin_dll(plugin) {
-            fs::create_dir_all(&plugins_dir).map_err(|e| e.to_string())?;
-            let dest = plugins_dir.join(format!("{plugin}.dll"));
-            fs::copy(&source, &dest).map_err(|e| e.to_string())?;
-            backends_deployed.push(plugin.to_string());
-            journal_deployed(&mut journal, &dest);
+    match outcome {
+        Ok(record) => Ok(record),
+        // A first enable from a clean tree is rolled back: the game must not be
+        // left without its original steam_api.dll. A refresh keeps the previous
+        // deployment, and a tree that already had a manual UCO2 install keeps
+        // its files: disabling either would cost a working setup.
+        Err(error) if !already_enabled && !preexisting_uco2 => {
+            match revert::rollback_partial(&journal, &backup_dir) {
+                Ok(()) => {
+                    revert::cleanup_rolled_back_backup(&backup_dir);
+                    Err(format!("{error}. The partial deployment was rolled back."))
+                }
+                Err(rollback) => Err(format!(
+                    "{error}. Automatic rollback failed: {rollback}. Use Disable online."
+                )),
+            }
         }
+        Err(error) => Err(error),
     }
-    if backends_deployed.is_empty() && already_enabled {
-        backends_deployed = list_plugins_in(&plugins_dir);
-    }
-    journal.save(&backup_dir)?;
-
-    // ---- Phase 7: record ----
-    let record = OnlineRecord {
-        app_id,
-        enabled_at: now_epoch_secs(),
-        bundle_version: bundle.version(),
-        og_app_id: request.og_app_id,
-        spoof_app_id: request.spoof_app_id,
-        ini_path: ini_path.clone(),
-        steam_api_path: steam_api_path.clone(),
-        arch: detection.arch,
-        backends_deployed,
-        backup_dir: backup_dir.clone(),
-        overlay_proxy_path,
-    };
-    store.upsert(record.clone(), state_path)?;
-
-    Ok(record)
 }
 
 /// Adds `Deployed` only when the path is not already in the journal (refresh).
@@ -261,7 +288,7 @@ fn deploy_overlay_proxy(
         });
         if !already_backed {
             let backup = unique_backup_path(backup_dir, target.file_name);
-            fs::copy(&target.path, &backup).map_err(|e| e.to_string())?;
+            copy_atomic(&target.path, &backup)?;
             fs::remove_file(&target.path).map_err(|e| e.to_string())?;
             journal.entries.push(JournalEntry::BackedUp {
                 original: target.path.clone(),
@@ -275,7 +302,7 @@ fn deploy_overlay_proxy(
     if let Some(parent) = target.path.parent() {
         fs::create_dir_all(parent).map_err(|e| e.to_string())?;
     }
-    fs::copy(&source, &target.path).map_err(|e| {
+    copy_atomic(&source, &target.path).map_err(|e| {
         format!(
             "Failed to install overlay proxy {} -> {}: {}",
             source.display(),
