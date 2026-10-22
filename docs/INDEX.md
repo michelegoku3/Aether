@@ -13,6 +13,7 @@ governs the change you are about to make.
 |---|---|---|
 | [`docs/shared_contracts.md`](shared_contracts.md) | The AetherDesk ↔ AetherDLL contract: on-disk layout, backup/restore, quota, IPC keys, Steam-path rule. | You change a value or rule that both sides must agree on, or add/rename an IPC command. |
 | [`docs/quality-gates.md`](quality-gates.md) | What every build check blocks and where it is configured, locally and on CI. | A gate fails, or you add one. |
+| [`docs/updater-testing.md`](updater-testing.md) | How to exercise the portable Desk self-updater: the file swap alone, and a full update through a test-channel release, without shipping one. | You change the updater or its release discovery, or you verify the update path before publishing. |
 | [`docs/glossary.md`](glossary.md) | Shared vocabulary: depot, GID, pin, depotcache, AetherData, presence. | A term in a document or a log line is unclear. |
 | [`AetherDesk/docs/ARCHITECTURE.md`](../AetherDesk/docs/ARCHITECTURE.md) | Desk process model, module map, IPC/mutation/settings invariants, "where to add X". | You add or move a backend module, an IPC command, a pipeline or a view. |
 | [`AetherDLL/docs/ARCHITECTURE.md`](../AetherDLL/docs/ARCHITECTURE.md) | AetherCore invariants: shared state, hook lifecycle, workers, persistence, presence. | You add state, a hook, a worker or a subsystem to the DLL. |
