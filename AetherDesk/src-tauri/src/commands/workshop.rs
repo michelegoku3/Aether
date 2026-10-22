@@ -484,6 +484,136 @@ async fn enrich_report_titles(report: &mut WorkshopSyncReport) {
 /// in bounded batches instead of one startup storm.
 const WORKSHOP_MAX_GENERATIONS_PER_RUN: usize = 5;
 
+/// Manifest bytes prepared off the commit gate: a validated cache hit or a
+/// fresh Hubcap generation, already checked against the expected identity.
+struct PreparedWorkshopManifest {
+    bytes: Vec<u8>,
+    depot_id: u32,
+    manifest_gid: u64,
+    from_cache: bool,
+}
+
+/// Acquires and validates a manifest without the global commit gate. The
+/// Hubcap round-trip can take seconds; holding the gate across it serializes
+/// every unrelated Workshop item. `generate` runs only on a cache miss.
+async fn prepare_workshop_manifest<F>(
+    item: &WorkshopItem,
+    cache_path: &Path,
+    generate: F,
+) -> Result<PreparedWorkshopManifest, String>
+where
+    F: std::future::Future<Output = Result<Vec<u8>, String>>,
+{
+    if cache_path.is_file() {
+        match std::fs::read(cache_path) {
+            Ok(bytes) => match manifest_identity(&bytes) {
+                Ok((depot_id, manifest_gid)) if manifest_gid == item.manifest_gid => {
+                    return Ok(PreparedWorkshopManifest {
+                        bytes,
+                        depot_id,
+                        manifest_gid,
+                        from_cache: true,
+                    });
+                }
+                Ok((_depot_id, manifest_gid)) => crate::desk_log_warn!(
+                    "workshop",
+                    "Ignoring stale Workshop cache workshop_id={} expected_manifest_gid={} cached_manifest_gid={}",
+                    item.workshop_id,
+                    item.manifest_gid,
+                    manifest_gid
+                ),
+                Err(error) => crate::desk_log_warn!(
+                    "workshop",
+                    "Ignoring invalid Workshop cache workshop_id={}: {}",
+                    item.workshop_id,
+                    error
+                ),
+            },
+            Err(error) => crate::desk_log_warn!(
+                "workshop",
+                "Workshop cache read failed workshop_id={} path={}: {}",
+                item.workshop_id,
+                cache_path.display(),
+                error
+            ),
+        }
+    }
+
+    crate::desk_log_info!(
+        "workshop",
+        "Sync requesting authenticated Hubcap Workshop manifest workshop_id={}",
+        item.workshop_id
+    );
+    let bytes = generate.await?;
+    let (depot_id, manifest_gid) = manifest_identity(&bytes)?;
+    crate::desk_log_debug!(
+        "workshop",
+        "Hubcap Workshop manifest validated workshop_id={} bytes={} depot_id={} manifest_gid={}",
+        item.workshop_id,
+        bytes.len(),
+        depot_id,
+        manifest_gid
+    );
+    if manifest_gid != item.manifest_gid {
+        return Err(format!(
+            "Hubcap Workshop manifest mismatch for item {} (expected {}, received {})",
+            item.workshop_id, item.manifest_gid, manifest_gid
+        ));
+    }
+    Ok(PreparedWorkshopManifest {
+        bytes,
+        depot_id,
+        manifest_gid,
+        from_cache: false,
+    })
+}
+
+/// Publishes a prepared manifest under the single commit gate. The local check
+/// is repeated here because another caller may have installed the same gid
+/// while this one was fetching it off the gate.
+async fn commit_workshop_manifest(
+    steam_path: &str,
+    item: &WorkshopItem,
+    cache_path: &Path,
+    prepared: PreparedWorkshopManifest,
+    update: bool,
+) -> Result<SyncOutcome, String> {
+    let _commit_guard = workshop_commit_gate().lock().await;
+    if has_local_manifest_gid(steam_path, item.manifest_gid) {
+        let content = workshop_content_state(steam_path, item.app_id, item.workshop_id);
+        return Ok(SyncOutcome {
+            origin: SyncOrigin::AlreadyLocal,
+            content_present: content.present,
+            content_empty: content.empty,
+            update,
+        });
+    }
+    write_atomic(cache_path, &prepared.bytes)?;
+    install_to_depotcache(
+        steam_path,
+        prepared.depot_id,
+        prepared.manifest_gid,
+        &prepared.bytes,
+    )?;
+    backup_workshop_manifest(
+        item.app_id,
+        prepared.depot_id,
+        prepared.manifest_gid,
+        &prepared.bytes,
+    );
+    let content = workshop_content_state(steam_path, item.app_id, item.workshop_id);
+    Ok(SyncOutcome {
+        origin: if prepared.from_cache {
+            SyncOrigin::Cached
+        } else {
+            SyncOrigin::Generated
+        },
+        content_present: content.present,
+        content_empty: content.empty,
+        update,
+    })
+}
+
 async fn sync_one_workshop_item(
     client: HubcapClient,
     steam_path: String,
@@ -503,7 +633,7 @@ async fn sync_one_workshop_item(
             "Workshop sync cannot install manifests because the Steam path is empty".to_string(),
         );
     }
-    let _commit_guard = workshop_commit_gate().lock().await;
+    // Read-only fast path: no gate, no network.
     if has_local_manifest_gid(&steam_path, item.manifest_gid) {
         let content = workshop_content_state(&steam_path, item.app_id, item.workshop_id);
         crate::desk_log_debug!(
@@ -521,101 +651,34 @@ async fn sync_one_workshop_item(
             update: target.is_update(),
         });
     }
+
+    // The cache read and the Hubcap round-trip run off the commit gate: a slow
+    // provider must not serialize every other Workshop item.
     let cache_path = workshop_cache_path(item.workshop_id);
-    if cache_path.is_file() {
-        match std::fs::read(&cache_path) {
-            Ok(bytes) => match manifest_identity(&bytes) {
-                Ok((depot_id, gid)) if gid == item.manifest_gid => {
-                    crate::desk_log_info!(
-                        "workshop",
-                        "Sync using validated cache workshop_id={} bytes={} depot_id={} manifest_gid={}",
-                        item.workshop_id,
-                        bytes.len(),
-                        depot_id,
-                        gid
-                    );
-                    install_to_depotcache(&steam_path, depot_id, gid, &bytes)?;
-                    backup_workshop_manifest(item.app_id, depot_id, gid, &bytes);
-                    let content =
-                        workshop_content_state(&steam_path, item.app_id, item.workshop_id);
-                    crate::desk_log_info!(
-                        "workshop",
-                        "Sync complete origin=cache workshop_id={} content_present={} content_empty={} elapsed_ms={}",
-                        item.workshop_id,
-                        content.present,
-                        content.empty,
-                        started.elapsed().as_millis()
-                    );
-                    return Ok(SyncOutcome {
-                        origin: SyncOrigin::Cached,
-                        content_present: content.present,
-                        content_empty: content.empty,
-                        update: target.is_update(),
-                    });
-                }
-                Ok((_depot_id, gid)) => crate::desk_log_warn!(
-                    "workshop",
-                    "Ignoring stale Workshop cache workshop_id={} expected_manifest_gid={} cached_manifest_gid={}",
-                    item.workshop_id,
-                    item.manifest_gid,
-                    gid
-                ),
-                Err(error) => crate::desk_log_warn!(
-                    "workshop",
-                    "Ignoring invalid Workshop cache workshop_id={}: {}",
-                    item.workshop_id,
-                    error
-                ),
-            },
-            Err(error) => crate::desk_log_warn!(
-                "workshop",
-                "Workshop cache read failed workshop_id={} path={}: {}",
-                item.workshop_id,
-                cache_path.display(),
-                error
-            ),
-        }
-    }
+    let prepared = prepare_workshop_manifest(
+        &item,
+        &cache_path,
+        client.generate_workshop_manifest(item.workshop_id),
+    )
+    .await?;
+    let outcome = commit_workshop_manifest(
+        &steam_path,
+        &item,
+        &cache_path,
+        prepared,
+        target.is_update(),
+    )
+    .await?;
     crate::desk_log_info!(
         "workshop",
-        "Sync requesting authenticated Hubcap Workshop manifest workshop_id={}",
-        item.workshop_id
-    );
-    let bytes = client.generate_workshop_manifest(item.workshop_id).await?;
-    let (depot_id, gid) = manifest_identity(&bytes)?;
-    crate::desk_log_debug!(
-        "workshop",
-        "Hubcap Workshop manifest validated workshop_id={} bytes={} depot_id={} manifest_gid={}",
+        "Sync complete origin={:?} workshop_id={} content_present={} content_empty={} elapsed_ms={}",
+        outcome.origin,
         item.workshop_id,
-        bytes.len(),
-        depot_id,
-        gid
-    );
-    if gid != item.manifest_gid {
-        return Err(format!(
-            "Hubcap Workshop manifest mismatch for item {} (expected {}, received {})",
-            item.workshop_id, item.manifest_gid, gid
-        ));
-    }
-    write_atomic(&cache_path, &bytes)?;
-    install_to_depotcache(&steam_path, depot_id, gid, &bytes)?;
-    backup_workshop_manifest(item.app_id, depot_id, gid, &bytes);
-    let content = workshop_content_state(&steam_path, item.app_id, item.workshop_id);
-    crate::desk_log_info!(
-        "workshop",
-        "Sync complete origin=generated workshop_id={} bytes={} content_present={} content_empty={} elapsed_ms={}",
-        item.workshop_id,
-        bytes.len(),
-        content.present,
-        content.empty,
+        outcome.content_present,
+        outcome.content_empty,
         started.elapsed().as_millis()
     );
-    Ok(SyncOutcome {
-        origin: SyncOrigin::Generated,
-        content_present: content.present,
-        content_empty: content.empty,
-        update: target.is_update(),
-    })
+    Ok(outcome)
 }
 
 /// Mirrors a freshly staged Workshop manifest into the per-game AetherData
@@ -989,7 +1052,6 @@ pub async fn generate_hubcap_workshop_manifest(
     workshop_id: u64,
 ) -> Result<String, String> {
     let started = Instant::now();
-    let _commit_guard = workshop_commit_gate().lock().await;
     if workshop_id == 0 {
         return Err("A valid Workshop item ID is required".to_string());
     }
@@ -1015,6 +1077,10 @@ pub async fn generate_hubcap_workshop_manifest(
         match std::fs::read(&path) {
             Ok(bytes) => match manifest_identity(&bytes) {
                 Ok((depot_id, manifest_gid)) => {
+                    // Only the local publish takes the gate: write_atomic
+                    // renames whole files, so the read above is complete even
+                    // while another caller commits.
+                    let _commit_guard = workshop_commit_gate().lock().await;
                     install_to_depotcache(&settings.steam_path, depot_id, manifest_gid, &bytes)?;
                     crate::desk_log_info!(
                         "workshop",
@@ -1053,8 +1119,13 @@ pub async fn generate_hubcap_workshop_manifest(
     // Validate before caching so a provider error or wrong content type can
     // never become a persistent fake Workshop manifest.
     let (depot_id, manifest_gid) = manifest_identity(&bytes)?;
-    write_atomic(&path, &bytes)?;
-    install_to_depotcache(&settings.steam_path, depot_id, manifest_gid, &bytes)?;
+    // The Hubcap round-trip above is off the gate: one slow request must not
+    // serialize every other Workshop publish.
+    {
+        let _commit_guard = workshop_commit_gate().lock().await;
+        write_atomic(&path, &bytes)?;
+        install_to_depotcache(&settings.steam_path, depot_id, manifest_gid, &bytes)?;
+    }
     crate::desk_log_info!(
         "workshop",
         "Explicit Workshop generation complete workshop_id={} bytes={} depot_id={} manifest_gid={} path={} elapsed_ms={}",
@@ -1101,6 +1172,53 @@ mod tests {
             content_empty: false,
             update: false,
         }
+    }
+
+    /// A slow Hubcap generation must not hold the commit gate: unrelated
+    /// Workshop items and explicit actions have to make progress meanwhile.
+    #[tokio::test]
+    async fn preparing_a_manifest_does_not_wait_for_the_commit_gate() {
+        let item = workshop_target().item;
+        let dir = tempfile::tempdir().unwrap();
+        let cache_path = dir.path().join("missing.manifest");
+        let guard = workshop_commit_gate().lock().await;
+
+        let prepared = tokio::time::timeout(
+            std::time::Duration::from_secs(1),
+            prepare_workshop_manifest(&item, &cache_path, async {
+                Err::<Vec<u8>, String>("network down".to_string())
+            }),
+        )
+        .await;
+        drop(guard);
+
+        let prepared = prepared.expect("preparation must not wait for the gate");
+        assert!(prepared.is_err());
+    }
+
+    /// The publish itself stays serialized: two commits must not interleave
+    /// the cache write and the depotcache install.
+    #[tokio::test]
+    async fn committing_a_manifest_waits_for_the_commit_gate() {
+        let item = workshop_target().item;
+        let dir = tempfile::tempdir().unwrap();
+        let cache_path = dir.path().join("item.manifest");
+        let prepared = PreparedWorkshopManifest {
+            bytes: vec![1, 2, 3],
+            depot_id: 1,
+            manifest_gid: item.manifest_gid,
+            from_cache: true,
+        };
+        let guard = workshop_commit_gate().lock().await;
+
+        let blocked = tokio::time::timeout(
+            std::time::Duration::from_millis(100),
+            commit_workshop_manifest("", &item, &cache_path, prepared, false),
+        )
+        .await;
+        drop(guard);
+
+        assert!(blocked.is_err(), "the commit must wait for the gate");
     }
 
     #[test]
