@@ -10,11 +10,89 @@ use crate::core::error::{codes, DeskError};
 use crate::core::paths::LocalAppPaths;
 use serde::{Deserialize, Serialize};
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 pub struct SettingsManager {
     config_dir: PathBuf,
     legacy_config_dir: Option<PathBuf>,
+}
+
+/// On-disk identity of one settings file. A hand edit is detected by a change
+/// in size or modification time; the single-instance guard removes the other
+/// writer (a second Desk process), so mtime granularity is the only residual
+/// risk and only for same-size writes inside one timestamp tick.
+#[derive(Clone, Copy, PartialEq, Eq)]
+struct FileStamp {
+    exists: bool,
+    modified: Option<std::time::SystemTime>,
+    len: u64,
+}
+
+fn file_stamp(path: &Path) -> FileStamp {
+    match fs::metadata(path) {
+        Ok(metadata) => FileStamp {
+            exists: true,
+            modified: metadata.modified().ok(),
+            len: metadata.len(),
+        },
+        Err(_) => FileStamp {
+            exists: false,
+            modified: None,
+            len: 0,
+        },
+    }
+}
+
+fn cache_key(config_dir: &Path) -> (FileStamp, FileStamp) {
+    (
+        file_stamp(&config_dir.join("settings.json")),
+        file_stamp(&config_dir.join("provider_credentials.dat")),
+    )
+}
+
+struct CachedSettings {
+    settings: AppSettings,
+    settings_stamp: FileStamp,
+    credentials_stamp: FileStamp,
+}
+
+fn settings_cache() -> &'static std::sync::RwLock<std::collections::HashMap<PathBuf, CachedSettings>>
+{
+    static CACHE: std::sync::OnceLock<
+        std::sync::RwLock<std::collections::HashMap<PathBuf, CachedSettings>>,
+    > = std::sync::OnceLock::new();
+    CACHE.get_or_init(|| std::sync::RwLock::new(std::collections::HashMap::new()))
+}
+
+/// Returns the cached snapshot when the files still match it. A pending
+/// recovery record disables the cache: a commit was interrupted and the next
+/// read must replay it instead of serving the pre-commit bytes.
+fn cached_settings(config_dir: &Path) -> Option<AppSettings> {
+    if config_dir.join("settings.pending.json").exists() {
+        return None;
+    }
+    let (settings_stamp, credentials_stamp) = cache_key(config_dir);
+    let cache = settings_cache().read().ok()?;
+    let cached = cache.get(config_dir)?;
+    if cached.settings_stamp == settings_stamp && cached.credentials_stamp == credentials_stamp {
+        Some(cached.settings.clone())
+    } else {
+        None
+    }
+}
+
+fn store_cached_settings(config_dir: &Path, settings: &AppSettings) {
+    let (settings_stamp, credentials_stamp) = cache_key(config_dir);
+    if let Ok(mut cache) = settings_cache().write() {
+        cache.insert(
+            config_dir.to_path_buf(),
+            CachedSettings {
+                settings: settings.clone(),
+                settings_stamp,
+                credentials_stamp,
+            },
+        );
+    }
 }
 
 #[derive(Debug, Default, Serialize, Deserialize)]
@@ -86,6 +164,10 @@ impl SettingsManager {
     }
 
     fn load_locked(&self) -> Result<AppSettings, String> {
+        #[cfg(test)]
+        if let Ok(mut counts) = load_counts().lock() {
+            *counts.entry(self.config_dir.clone()).or_insert(0) += 1;
+        }
         self.recover_locked()?;
         let content = match fs::read_to_string(self.get_file_path()) {
             Ok(c) => c,
@@ -114,11 +196,19 @@ impl SettingsManager {
     }
 
     pub fn try_load(&self) -> Result<AppSettings, String> {
+        // Hit path: no global lock, no file lock, no DPAPI decrypt. Every Desk
+        // command reads settings; serializing those reads was the contention.
+        if let Some(settings) = cached_settings(&self.config_dir) {
+            return Ok(settings);
+        }
         let _guard = SETTINGS_LOCK
             .lock()
             .map_err(|_| "Settings repository unavailable")?;
         let _file_lock = crate::core::state_io::lock(&self.config_dir.join("settings.lock"))?;
         let result = self.load_locked();
+        if let Ok(settings) = &result {
+            store_cached_settings(&self.config_dir, settings);
+        }
         if let Err(e) = &result {
             crate::desk_log_error!(
                 "settings",
@@ -187,6 +277,9 @@ impl SettingsManager {
             );
             Ok(next)
         })();
+        if let Ok(settings) = &result {
+            store_cached_settings(&self.config_dir, settings);
+        }
         if let Err(e) = &result {
             crate::desk_log_error!("settings", "Mutation failed operation={}: {}", operation, e);
         }
@@ -237,6 +330,7 @@ impl SettingsManager {
             operation,
             recovered
         );
+        store_cached_settings(&self.config_dir, &next);
         Ok((next, recovered))
     }
 
@@ -312,10 +406,14 @@ impl SettingsManager {
     }
 }
 
-/// Convenience: load settings in one call. The single call-site also makes
-/// adding caching or memoisation straightforward.
+/// Convenience: load settings in one call. The cache check comes before the
+/// manager so a hit skips the migration probe, the file lock and DPAPI.
 #[inline]
 pub fn load_settings(app: &tauri::AppHandle) -> AppSettings {
+    let config_dir = LocalAppPaths::data_root_for_app(app).join("config");
+    if let Some(settings) = cached_settings(&config_dir) {
+        return settings;
+    }
     SettingsManager::new(app).load()
 }
 
@@ -335,6 +433,25 @@ pub fn require_steam_path(app: &tauri::AppHandle) -> Result<String, String> {
 }
 
 static SETTINGS_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+/// Test-only observation of how many times a config dir's files were actually
+/// read. Keyed by directory so parallel tests in other temp dirs cannot skew
+/// the count.
+#[cfg(test)]
+fn load_counts() -> &'static std::sync::Mutex<std::collections::HashMap<PathBuf, usize>> {
+    static COUNTS: std::sync::OnceLock<
+        std::sync::Mutex<std::collections::HashMap<PathBuf, usize>>,
+    > = std::sync::OnceLock::new();
+    COUNTS.get_or_init(|| std::sync::Mutex::new(std::collections::HashMap::new()))
+}
+
+#[cfg(test)]
+fn load_count(dir: &Path) -> usize {
+    load_counts()
+        .lock()
+        .map(|counts| counts.get(dir).copied().unwrap_or(0))
+        .unwrap_or(0)
+}
 #[derive(Serialize, Deserialize)]
 struct PendingSettings {
     format_version: u32,
@@ -428,6 +545,102 @@ mod repository_tests {
             fs::read(dir.path().join("settings.json")).unwrap(),
             b"bad-json"
         );
+    }
+
+    #[test]
+    fn repeated_loads_reuse_the_cached_snapshot() {
+        let dir = tempfile::tempdir().unwrap();
+        let stored = AppSettings {
+            custom_game_name: "cold".into(),
+            ..AppSettings::default()
+        };
+        fs::write(
+            dir.path().join("settings.json"),
+            serde_json::to_vec(&stored).unwrap(),
+        )
+        .unwrap();
+        let manager = SettingsManager {
+            config_dir: dir.path().into(),
+            legacy_config_dir: None,
+        };
+
+        let before = load_count(dir.path());
+        assert_eq!(manager.try_load().unwrap().custom_game_name, "cold");
+        assert_eq!(manager.try_load().unwrap().custom_game_name, "cold");
+
+        assert_eq!(
+            load_count(dir.path()) - before,
+            1,
+            "the second load must be served from the cache"
+        );
+    }
+
+    #[test]
+    fn an_external_file_change_invalidates_the_cache() {
+        let dir = tempfile::tempdir().unwrap();
+        let manager = SettingsManager {
+            config_dir: dir.path().into(),
+            legacy_config_dir: None,
+        };
+        let path = dir.path().join("settings.json");
+        let stored = AppSettings {
+            custom_game_name: "before".into(),
+            ..AppSettings::default()
+        };
+        fs::write(&path, serde_json::to_vec(&stored).unwrap()).unwrap();
+        assert_eq!(manager.try_load().unwrap().custom_game_name, "before");
+
+        // Different size, so the stamp changes even if the mtime tick is the
+        // same: a hand edit must never be hidden by the cache.
+        let mut edited = stored;
+        edited.custom_game_name = "an external edit with a different size".into();
+        fs::write(&path, serde_json::to_vec(&edited).unwrap()).unwrap();
+
+        assert_eq!(
+            manager.try_load().unwrap().custom_game_name,
+            "an external edit with a different size"
+        );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn a_pending_transaction_is_not_masked_by_the_cache() {
+        let dir = tempfile::tempdir().unwrap();
+        let manager = SettingsManager {
+            config_dir: dir.path().into(),
+            legacy_config_dir: None,
+        };
+        let stored = AppSettings {
+            custom_game_name: "before".into(),
+            ..AppSettings::default()
+        };
+        fs::write(
+            manager.get_file_path(),
+            serde_json::to_vec(&stored).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(manager.try_load().unwrap().custom_game_name, "before");
+
+        let recovered = AppSettings {
+            custom_game_name: "recovered".into(),
+            ..AppSettings::default()
+        };
+        let pending = PendingSettings {
+            format_version: 1,
+            settings: serde_json::to_string(&recovered).unwrap(),
+            credentials: crate::core::secure_storage::protect(
+                br#"{"hubcap_api_key":"","ryuu_api_key":""}"#,
+            )
+            .unwrap(),
+        };
+        fs::write(
+            manager.pending_path(),
+            serde_json::to_vec(&pending).unwrap(),
+        )
+        .unwrap();
+
+        assert_eq!(manager.try_load().unwrap().custom_game_name, "recovered");
+        assert!(!manager.pending_path().exists());
     }
     #[test]
     fn empty_json_matches_default() {
