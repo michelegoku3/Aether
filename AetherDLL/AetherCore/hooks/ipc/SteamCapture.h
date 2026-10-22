@@ -24,7 +24,9 @@ steam::AppId GetAppIdForCurrentPipe();
 steam::AppId CurrentRouteAppId();
 
 // Grows pWrite to at least 'size' bytes and sets its put cursor to 'size'.
-void EnsureBufferSize(steam::CUtlBuffer* pWrite, std::int32_t size);
+// Returns true only when the whole range is committed and writable; callers
+// must stop when it returns false.
+bool EnsureBufferSize(steam::CUtlBuffer* pWrite, std::int32_t size);
 
 // ---------------------------------------------------------------------------
 // AetherOnline stats-scope.

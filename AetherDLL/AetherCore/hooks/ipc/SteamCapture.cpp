@@ -5,6 +5,7 @@
 #include "core/Logger.h"
 #include "hooks/aetheronline/PresenceSession.h"
 #include "hooks/steamclient/AetherOnlineHooks.h"
+#include "utils/Memory.h"
 #include "utils/PatternEngine.h"
 
 namespace ac::capture {
@@ -52,18 +53,27 @@ steam::AppId CurrentRouteAppId() {
     return GetAppIdForCurrentPipe();
 }
 
-void EnsureBufferSize(steam::CUtlBuffer* pWrite, std::int32_t size) {
+bool EnsureBufferSize(steam::CUtlBuffer* pWrite, std::int32_t size) {
     if (!pWrite || size <= 0)
-        return;
+        return false;
     // Guard: if EnsureCapacity wasn't resolved, we cannot grow the buffer.
     // Setting pWrite->put without growing would make callers believe the
     // buffer has 'size' bytes available, leading to out-of-bounds writes.
     if (!o_EnsureCapacity) {
         AC_LOG_WARN(kModule, "EnsureCapacity unresolved; cannot grow reply buffer.");
-        return;
+        return false;
     }
     o_EnsureCapacity(pWrite, size);
+    // The resolved helper is a signature match on a packed Steam build: it may
+    // refuse the grow (allocation failure, a smaller cap) and return normally.
+    // Publishing `put` without this check makes the next write land outside the
+    // allocation.
+    if (!utils::memory::IsWritableRange(pWrite->Base(), static_cast<std::size_t>(size))) {
+        AC_LOG_WARN(kModule, "EnsureCapacity did not make %d reply bytes writable.", size);
+        return false;
+    }
     pWrite->put = size;
+    return true;
 }
 
 } // namespace ac::capture

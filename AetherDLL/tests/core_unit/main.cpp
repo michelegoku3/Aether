@@ -39,6 +39,9 @@ int main(int argc, char** argv) {
         {"acfowner", AcfOwnerTest},
         {"steamuicss", SteamUiCssTest},
         {"steamuipatch", SteamUiPatchTest},
+        {"callbackcopy", CallbackCopyTest},
+        {"memory", MemoryRangeTest},
+        {"payloadattest", PayloadAttestTest},
     };
     try {
         if (argc == 1) {

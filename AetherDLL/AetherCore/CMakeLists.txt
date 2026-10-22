@@ -46,6 +46,7 @@ add_library(AetherCore SHARED
 
     # Utils
     utils/Hasher.cpp
+    utils/Memory.cpp
     utils/EnvReader.cpp
     utils/KeyValues.cpp
     utils/PatternEngine.cpp
@@ -69,6 +70,7 @@ add_library(AetherCore SHARED
     hooks/steamui/SteamUIStylePatch.cpp
     hooks/steamclient/AetherOnlineHooks.cpp
     hooks/steamclient/OwnershipHooks.cpp
+    hooks/steamclient/CallbackCopy.cpp
     hooks/steamclient/DepotHooks.cpp
     hooks/steamclient/DecryptionKeyHook.cpp
     hooks/steamclient/LicenseHooks.cpp
@@ -100,6 +102,7 @@ add_library(AetherCore SHARED
     hooks/wire/ManifestRestore.cpp
     hooks/wire/RichPresenceModule.cpp
     hooks/aetheronline/OnlinePayload.cpp
+    hooks/aetheronline/PayloadAttest.cpp
     hooks/aetheronline/PresenceSession.cpp
     hooks/aetheronline/CreateProcessHooks.cpp
 

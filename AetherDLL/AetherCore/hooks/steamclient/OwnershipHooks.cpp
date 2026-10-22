@@ -20,6 +20,7 @@
 #include "core/Workers.h"
 #include "hooks/aetheronline/PresenceSession.h"
 #include "hooks/license/LicenseManager.h"
+#include "hooks/steamclient/CallbackCopy.h"
 #include "scripting/LuaData.h"
 #include "utils/Paths.h"
 #include "utils/SmartIdLog.h"
@@ -49,56 +50,6 @@ LoadPackage_t o_LoadPackage = nullptr;
 // the "unlocked" outcome is aggregated per-file instead of per-appid).
 logutil::SmartIdLog s_logLegit(kModule, "Legit-owned AppIds");
 logutil::SmartIdLog s_logFamily(kModule, "Family-shared AppIds");
-
-// ---------------------------------------------------------------------------
-// AetherOnline achievement callback rewrite (single source of truth).
-//
-// Steam delivers user-stats callbacks (UserStatsReceived 1101, UserStatsStored
-// 1102, UserAchievementStored 1103, UserAchievementIconFetched 1109) with the
-// REAL app id in m_nGameID when the stats store was processed for the real
-// game (see the wire-layer 480→real rewrites and the IClientUserStats
-// stats-scope). Under an AetherOnline session the game process is masked as
-// Spacewar/480 and its Steamworks handlers expect m_nGameID == 480, so the
-// payload must be rewritten to 480 before dispatch or the game ignores the
-// callback.
-//
-// Returns true when the payload was rewritten; leaves it untouched when no
-// session is active, the callback is not achievement-related, or the payload
-// does not carry the real app id.
-// ---------------------------------------------------------------------------
-bool RewriteAetherOnlineCallbackGameId(int cb, void* data, int size) {
-    const AppId realApp = presence::RealAppId();
-    if (realApp == 0 || realApp == constants::kSpacewarAppId)
-        return false;
-    if (!constants::achievement_cb::IsAchievementCallback(cb))
-        return false;
-    if (data == nullptr || size < static_cast<int>(sizeof(std::uint64_t)))
-        return false;
-
-    auto* pGameId = static_cast<std::uint64_t*>(data);
-    const AppId currentApp = static_cast<AppId>(*pGameId & constants::kGameIdAppIdMask);
-    if (currentApp != realApp)
-        return false;
-
-    *pGameId = (*pGameId & ~static_cast<std::uint64_t>(constants::kGameIdAppIdMask)) |
-               static_cast<std::uint64_t>(constants::kSpacewarAppId);
-    AC_LOG_DEBUG_ONCE(kModule, "AetherOnline: callback cb=%d m_nGameID %u -> %u.", cb, realApp,
-                      constants::kSpacewarAppId);
-    return true;
-}
-
-// ---------------------------------------------------------------------------
-// AetherOnline callback delivery policy — whether an achievement callback needs a
-// second copy with m_nGameID rewritten to the Spacewar/480 mask for the game's
-// own Steamworks handlers.
-//
-// UserAchievementStored (1103) is the exception: it is the event that drives
-// the Steam overlay unlock toast, which is keyed to the REAL app id. Delivering
-// a second (480) copy would make the overlay show the same toast twice — the
-// duplicate notification. The game's achievement state is updated through the
-// stats store, not via 1103, so the game needs no 480 copy of it.
-// ---------------------------------------------------------------------------
-bool NeedsRewrittenGameCopy(int cb) { return cb != constants::achievement_cb::kUserAchievementStored; }
 
 // ---------------------------------------------------------------------------
 // Unlock summary.
@@ -445,7 +396,7 @@ bool h_SendCallbackToPipe(void* engine, HSteamPipe pipe, HSteamUser user, int cb
     //     (RequestCurrentStats / StoreStats completion, icon fetch) — it needs
     //     the 480 copies.
     //
-    // Delivery policy (single source of truth in NeedsRewrittenGameCopy):
+    // Delivery policy (single source of truth in CallbackCopy):
     //   * every callback is first dispatched with the real app id — this is
     //     what the overlay consumes (unlock toast + panel refresh);
     //   * UserStatsReceived (1101), UserStatsStored (1102) and
@@ -470,11 +421,11 @@ bool h_SendCallbackToPipe(void* engine, HSteamPipe pipe, HSteamUser user, int cb
             // First delivery: real app id (overlay toast/panel consumer).
             const bool firstOk = o_SendCallbackToPipe(engine, pipe, user, cb, data, size);
 
-            // Second delivery: 480 copy for the game's own handlers, except
-            // for UserAchievementStored (1103) whose 480 copy would duplicate
-            // the overlay unlock toast (see NeedsRewrittenGameCopy).
-            if (NeedsRewrittenGameCopy(cb) && RewriteAetherOnlineCallbackGameId(cb, data, size)) {
-                return o_SendCallbackToPipe(engine, pipe, user, cb, data, size);
+            // Second delivery: a PRIVATE 480 copy. Steam may keep the pointer
+            // it was given and deliver it later on another thread, so the
+            // caller's bytes must stay the real-app-id payload.
+            if (auto masked = callbackcopy::ForMaskedGame(cb, data, size, realApp)) {
+                return o_SendCallbackToPipe(engine, pipe, user, cb, masked->data(), size);
             }
             return firstOk;
         }

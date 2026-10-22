@@ -102,3 +102,6 @@ void ManifestContractTest();
 void AcfOwnerTest();
 void SteamUiCssTest();
 void SteamUiPatchTest();
+void CallbackCopyTest();
+void MemoryRangeTest();
+void PayloadAttestTest();

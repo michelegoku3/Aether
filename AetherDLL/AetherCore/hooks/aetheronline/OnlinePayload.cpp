@@ -3,70 +3,21 @@
 
 #include <cstdint>
 #include <string>
-#include <vector>
 
 #include "core/AetherCoreState.h"
 #include "core/Constants.h"
 #include "core/Logger.h"
+#include "hooks/aetheronline/PayloadAttest.h"
 #include "hooks/aetheronline/PresenceSession.h"
 #include "utils/Hasher.h"
 #include "utils/RemoteInject.h"
 #include "utils/Strings.h"
 #include "utils/WinFile.h"
 
-#pragma comment(lib, "version.lib")
-
 namespace ac::hooks::onlinepayload {
 namespace {
 
 constexpr const char* kModule = "Online.Payload";
-
-// Reads the VS_FIXEDFILEINFO version of a DLL. False when the file has no
-// version resource (never in real builds: verify_version.ps1 hard-gates it).
-bool GetFileVersion(const std::string& utf8Path, DWORD& ms, DWORD& ls) {
-    // UTF-8 in, *W at the boundary: version APIs have no UTF-8 entry point.
-    const std::wstring wide = ac::strings::Widen(utf8Path);
-    if (wide.empty())
-        return false;
-    DWORD handle = 0;
-    const DWORD size = GetFileVersionInfoSizeW(wide.c_str(), &handle);
-    if (size == 0)
-        return false;
-    std::vector<std::uint8_t> data(size);
-    if (!GetFileVersionInfoW(wide.c_str(), 0, size, data.data()))
-        return false;
-    void* block = nullptr;
-    UINT len = 0;
-    if (!VerQueryValueW(data.data(), L"\\", &block, &len) || !block || len < sizeof(VS_FIXEDFILEINFO))
-        return false;
-    const auto* info = static_cast<const VS_FIXEDFILEINFO*>(block);
-    if (info->dwSignature != 0xFEEF04BD)
-        return false;
-    ms = info->dwFileVersionMS;
-    ls = info->dwFileVersionLS;
-    return true;
-}
-
-// The payload and this core are built from the same PROJECT_VERSION (single
-// source of truth in the root CMakeLists). A payload whose version differs
-// is foreign: stale, planted, or from another release. Refuse it instead of
-// loading untrusted code into the game.
-bool PayloadVersionMatches() {
-    // Wide at the boundary (see Diversion.cpp): *A would mangle non-ASCII
-    // Steam installs via the system codepage.
-    DWORD selfMs = 0, selfLs = 0;
-    std::wstring selfPath(32768, L'\0');
-    if (g_state.selfModule &&
-        GetModuleFileNameW(g_state.selfModule, selfPath.data(), static_cast<DWORD>(selfPath.size())) != 0) {
-        const std::string narrowSelf = ac::strings::Narrow(selfPath);
-        if (!narrowSelf.empty() && GetFileVersion(narrowSelf, selfMs, selfLs)) {
-            DWORD payMs = 0, payLs = 0;
-            if (GetFileVersion(g_state.payloadDllPath, payMs, payLs))
-                return payMs == selfMs && payLs == selfLs;
-        }
-    }
-    return false;
-}
 } // namespace
 
 void MaybeInject(const pipewatch::ProcessSnapshot& snapshot) {
@@ -98,7 +49,7 @@ void MaybeInject(const pipewatch::ProcessSnapshot& snapshot) {
     // a SHA-256 line for forensics. Residual TOCTOU (replace between hash
     // and remote LoadLibraryW) is documented; full mitigation would need
     // Authenticode signature verification, out of scope for this batch.
-    if (!PayloadVersionMatches()) {
+    if (!payloadattest::PayloadVersionMatches(g_state.selfModule, g_state.payloadDllPath)) {
         ++g_state.onlinePayload.injectFailureCount;
         AC_LOG_WARN(kModule, "Payload version mismatch for pid=%u image=%s; refusing injection.", snapshot.pid,
                     snapshot.imageName.c_str());

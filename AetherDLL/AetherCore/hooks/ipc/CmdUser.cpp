@@ -170,7 +170,10 @@ void GetEncryptedAppTicket(steam::CSteamPipeClient* pipe, steam::CUtlBuffer*, st
 
     const std::uint32_t ticketSize = static_cast<std::uint32_t>(ticket.size());
     const std::int32_t total = 1 + 1 + 4 + static_cast<std::int32_t>(ticketSize);
-    capture::EnsureBufferSize(pWrite, total);
+    if (!capture::EnsureBufferSize(pWrite, total)) {
+        AC_LOG_WARN_ONCE(kModule, "GetEncryptedAppTicket: response buffer unavailable for app %u.", appId);
+        return;
+    }
     if (!ipcreply::CanWrite(pWrite, static_cast<std::size_t>(total))) {
         AC_LOG_WARN_ONCE(kModule, "GetEncryptedAppTicket: response buffer unavailable for app %u.", appId);
         return;

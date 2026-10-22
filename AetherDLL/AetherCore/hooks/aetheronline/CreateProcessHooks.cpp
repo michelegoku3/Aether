@@ -8,6 +8,7 @@
 #include "core/AetherCoreState.h"
 #include "core/HookManager.h"
 #include "core/Logger.h"
+#include "hooks/aetheronline/PayloadAttest.h"
 #include "hooks/aetheronline/PresenceSession.h"
 #include "utils/RemoteInject.h"
 #include "utils/WinFile.h"
@@ -43,6 +44,14 @@ void InjectIntoChild(HANDLE hProcess, DWORD pid) {
         if (g_state.onlinePayload.injectedPids.count(pid))
             return;
         g_state.onlinePayload.injectedPids.insert(pid);
+    }
+
+    // Same release requirement as MaybeInject: the payload is loaded into the
+    // child as code, so a stale or planted file must never be injected.
+    if (!payloadattest::PayloadVersionMatches(g_state.selfModule, g_state.payloadDllPath)) {
+        ++g_state.onlinePayload.injectFailureCount;
+        AC_LOG_WARN_ONCE(kModule, "Payload version mismatch for pid=%u; refusing child injection.", pid);
+        return;
     }
 
     // x86 targets are skipped because the payload is x64-only for now.

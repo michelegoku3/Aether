@@ -27,6 +27,9 @@ add_executable(core_unit_tests
     core_unit/acfowner.cpp
     core_unit/steamuicss.cpp
     core_unit/steamuipatch.cpp
+    core_unit/callbackcopy.cpp
+    core_unit/memory.cpp
+    core_unit/payloadattest.cpp
     stubs/Services.cpp
     stubs/AbiReporting.cpp
     ../AetherCore/core/Settings.cpp ../AetherCore/core/HookManager.cpp
@@ -38,7 +41,9 @@ add_executable(core_unit_tests
     ../AetherCore/network/ManifestIdentity.cpp
     ../AetherCore/hooks/ipc/IpcReply.cpp
     ../AetherCore/credentials/HexCodec.cpp
-    ../AetherCore/utils/IpcSpecParse.cpp)
+    ../AetherCore/utils/IpcSpecParse.cpp
+    ../AetherCore/hooks/steamclient/CallbackCopy.cpp
+    ../AetherCore/utils/Memory.cpp)
 # The ABI modules keep their decision logic inline in the headers, so the
 # cases "netpacket", "sentinel" and "structguard" test the real policy
 # without linking the Windows glue (VirtualQuery, the PE walk, the logger).
@@ -54,7 +59,7 @@ if(MSVC)
 else()
     target_compile_options(core_unit_tests PRIVATE -Wall -Wextra -Wpedantic -Werror)
 endif()
-foreach(case strings paths policy worker budget settings registry workers netpacket sentinel structguard gamesplayed_format donorpool keyvalues vdftext jsonutil_escapes manifest_identity ipcreply snapshot_merge ttlcache hexcodec signature ipcspec jsonwriter manifest_contract schema_buckets workers_reap_slow workers_race acfowner steamuicss steamuipatch)
+foreach(case strings paths policy worker budget settings registry workers netpacket sentinel structguard gamesplayed_format donorpool keyvalues vdftext jsonutil_escapes manifest_identity ipcreply snapshot_merge ttlcache hexcodec signature ipcspec jsonwriter manifest_contract schema_buckets workers_reap_slow workers_race acfowner steamuicss steamuipatch callbackcopy memory payloadattest)
     add_test(NAME ${case} COMMAND core_unit_tests ${case})
 endforeach()
 add_test(NAME cmake_source_inventory COMMAND ${CMAKE_COMMAND}
