@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
-import { SearchSuggest, moveSuggestIndex } from '../../ui/SearchSuggest';
+import { SearchSuggest, limitSuggestItems, moveSuggestIndex } from '../../ui/SearchSuggest';
 import { useSteamSuggest } from '../../hooks/useSteamSuggest';
 
 interface StoreSearchBarProps {
@@ -14,6 +14,9 @@ export function StoreSearchBar({ isLoading, onSearch, onClear }: StoreSearchBarP
   const [activeSuggestIndex, setActiveSuggestIndex] = useState<number | null>(null);
   const panelRef = useRef<HTMLDivElement | null>(null);
   const { items, isLoading: isSuggestLoading } = useSteamSuggest(query, isSuggestOpen);
+  // Rendered, navigable and selectable list: one bounded list for all three so
+  // an index can never point past what the user can see.
+  const suggestions = limitSuggestItems(items);
 
   useEffect(() => {
     const handlePointerDown = (event: MouseEvent) => {
@@ -28,8 +31,8 @@ export function StoreSearchBar({ isLoading, onSearch, onClear }: StoreSearchBarP
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
-    if (isSuggestOpen && activeSuggestIndex !== null && items[activeSuggestIndex]) {
-      const selected = items[activeSuggestIndex].name;
+    if (isSuggestOpen && activeSuggestIndex !== null && suggestions[activeSuggestIndex]) {
+      const selected = suggestions[activeSuggestIndex].name;
       setQuery(selected);
       setIsSuggestOpen(false);
       setActiveSuggestIndex(null);
@@ -65,11 +68,11 @@ export function StoreSearchBar({ isLoading, onSearch, onClear }: StoreSearchBarP
             if (event.key === 'ArrowDown') {
               event.preventDefault();
               setIsSuggestOpen(true);
-              setActiveSuggestIndex((current) => moveSuggestIndex(current, items.length, 1));
+              setActiveSuggestIndex((current) => moveSuggestIndex(current, suggestions.length, 1));
             } else if (event.key === 'ArrowUp') {
               event.preventDefault();
               setIsSuggestOpen(true);
-              setActiveSuggestIndex((current) => moveSuggestIndex(current, items.length, -1));
+              setActiveSuggestIndex((current) => moveSuggestIndex(current, suggestions.length, -1));
             } else if (event.key === 'Escape') {
               setIsSuggestOpen(false);
             }
@@ -93,7 +96,7 @@ export function StoreSearchBar({ isLoading, onSearch, onClear }: StoreSearchBarP
         )}
         <SearchSuggest
           open={isSuggestOpen && query.trim().length >= 2}
-          items={items}
+          items={suggestions}
           emptyText="No Steam suggestions."
           statusText={isSuggestLoading ? 'Searching Steam…' : undefined}
           activeIndex={activeSuggestIndex}

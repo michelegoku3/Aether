@@ -19,6 +19,17 @@ interface SearchSuggestProps {
 
 const ROW_HEIGHT = 42;
 
+/**
+ * Upper bound on rendered suggestions. The container scrolls past `maxVisible`,
+ * so extra rows only cost render work: a whole library matches an empty query
+ * on focus, and arrow-key browsing never needs more than this many candidates.
+ */
+export const MAX_SUGGEST_ITEMS = 20;
+
+/** Keeps the head of an already ranked list; never reorders or mutates it. */
+export const limitSuggestItems = <T,>(items: readonly T[], max = MAX_SUGGEST_ITEMS): T[] =>
+  items.slice(0, Math.max(0, max));
+
 /** Shared typeahead list (Home library + Store Steam suggest). */
 export const SearchSuggest = ({
   open,
