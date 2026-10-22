@@ -157,13 +157,14 @@ export const MainContent = memo(function MainContent({
       </main>
 
       {/* Logs stay mounted so active source selection (Desk/DLL/UCO2/All),
-          log level filter, search keyword and terminal scroll position persist. */}
+          log level filter, search keyword and terminal scroll position persist.
+          `active` pauses polling while another tab is in front. */}
       <main
         className="main-content"
         style={{ display: activeTab === 'log' ? 'flex' : 'none' }}
         aria-hidden={activeTab !== 'log'}
       >
-        <LogView />
+        <LogView active={activeTab === 'log'} />
       </main>
 
       {/* Settings stay mounted so unsaved edits (e.g. the Steam path field)

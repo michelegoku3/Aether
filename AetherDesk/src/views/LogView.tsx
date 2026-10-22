@@ -2,6 +2,7 @@ import { useEffect, useState, useRef, useMemo, memo } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { useVisiblePolling } from '../hooks/useVisiblePolling';
 import { toErrorMessage } from '../util/errors';
+import { stableLineKeys } from './logKeys';
 
 const LEVEL_RANK: Record<string, number> = {
   trace: 0,
@@ -14,9 +15,9 @@ const LEVEL_RANK: Record<string, number> = {
 
 /** How often to poll when the Logs tab is visible and focused. */
 const LOG_POLL_INTERVAL_MS = 2500;
-/** Back-off interval when the tab is hidden (document.hidden) or the view
- *  is not the active tab — we still refresh occasionally so coming back to
- *  logs after a while doesn't show a stale dump, but we don't hammer IPC. */
+/** Back-off interval when the document is hidden (window minimised or another
+ *  application focused). Inactive Aether tabs stop polling instead of backing
+ *  off, because the view stays mounted behind `display: none`. */
 const LOG_POLL_BACKOFF_MS = 10_000;
 /** Debounce for the free-text filter so typing doesn't re-filter the whole
  *  window on every keystroke. */
@@ -37,14 +38,14 @@ const lineRank = (line: string) => {
   return 2;
 };
 
-/** Cheap deterministic key for a line that stays stable across re-renders.
- *  Lines don't carry a server-assigned id, so we use the line content plus
- *  its index within the current snapshot. When a new line is appended the
- *  existing rendered nodes keep their keys and React doesn't remount them. */
-const lineKey = (line: string, idx: number, snapshot: number) =>
-  `${snapshot}:${idx}:${line.slice(0, 40)}:${line.length}`;
+export interface LogViewProps {
+  /** Whether the Logs tab is the one in front. MainContent keeps this view
+   *  mounted and hides it with `display: none` when another tab is active, so
+   *  the component cannot infer visibility from the DOM. */
+  active: boolean;
+}
 
-export const LogView = memo(function LogView() {
+export const LogView = memo(function LogView({ active }: LogViewProps) {
   const [lines, setLines] = useState<string[]>([]);
   const [filterQuery, setFilterQuery] = useState('');
   const [debouncedFilter, setDebouncedFilter] = useState('');
@@ -53,10 +54,6 @@ export const LogView = memo(function LogView() {
   const [exportStatus, setExportStatus] = useState('');
   const containerRef = useRef<HTMLDivElement | null>(null);
   const isAtBottomRef = useRef(true);
-  /** Bumped every time we replace the `lines` array so the React keys are
-   *  re-namespaced to the snapshot and a line appended at the tail doesn't
-   *  collide with a previous index. */
-  const snapshotRef = useRef(0);
 
   // Debounce the text filter.
   useEffect(() => {
@@ -71,7 +68,6 @@ export const LogView = memo(function LogView() {
         source: logSource,
       });
       setLines(recent || []);
-      snapshotRef.current += 1;
     } catch (err) {
       console.warn('Failed to fetch logs:', err);
     }
@@ -79,12 +75,15 @@ export const LogView = memo(function LogView() {
 
   /** Visibility-aware polling: fast cadence while the Logs tab is visible,
    *  slow cadence when the document is hidden (window minimised / another
-   *  tab focused in the OS / another Aether view active). The shared hook
+   *  application active). `enabled: active` stops the loop entirely while
+   *  another Aether view is in front: this component stays mounted behind
+   *  `display: none`, so nothing else would pause it. The shared hook
    *  centralises the polling policy. `resetKey: logSource` reloads
    *  immediately when the user switches Desk/DLL/UCO2/All. */
   useVisiblePolling(fetchLogs, {
     intervalMs: LOG_POLL_INTERVAL_MS,
     backoffMs: LOG_POLL_BACKOFF_MS,
+    enabled: active,
     resetKey: logSource,
   });
 
@@ -139,6 +138,11 @@ export const LogView = memo(function LogView() {
     }
     return out.reverse();
   }, [lines, logLevel, debouncedFilter]);
+
+  // Keys are derived once per filtered snapshot: deriving them inline would
+  // rebuild the whole key list on every render, and the occurrence counter
+  // must walk the array in display order to stay deterministic.
+  const keyedLines = useMemo(() => stableLineKeys(filteredLines), [filteredLines]);
 
   // Downloads the single log document for the selected source (desk/dll/uco2),
   // or the merged "all" document, with the same time-stamped naming as the .zip.
@@ -294,9 +298,9 @@ export const LogView = memo(function LogView() {
           </svg>
         </button>
         <div className="log-view-terminal" ref={containerRef} onScroll={handleScroll}>
-          {filteredLines.length > 0 ? (
-            filteredLines.map((line, idx) => (
-              <div key={lineKey(line, idx, snapshotRef.current)} className={getLineClass(line)}>
+          {keyedLines.length > 0 ? (
+            keyedLines.map(({ key, line }) => (
+              <div key={key} className={getLineClass(line)}>
                 {line}
               </div>
             ))
