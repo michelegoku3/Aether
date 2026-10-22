@@ -78,9 +78,11 @@ portable build from `build_desk.cmd` and the release exe that build left in the
 Cargo target folder; the variables below point at both.
 
 ```powershell
-$src   = "C:\Users\Roberto\Desktop\Generale\Codice\Aether\AetherDesk\build\portable\AetherDesk"
-$built = "C:\Users\Roberto\Desktop\Generale\Codice\Aether\AetherDesk\src-tauri\target\release\AetherDesk.exe"
-$test  = "C:\Users\Roberto\Desktop\updater-test"
+# Run from the repository root.
+$repo  = (Get-Location).Path
+$src   = Join-Path $repo 'AetherDesk\build\portable\AetherDesk'
+$built = Join-Path $repo 'AetherDesk\src-tauri\target\release\AetherDesk.exe'
+$test  = Join-Path $env:USERPROFILE 'Desktop\updater-test'
 
 # 1. A throwaway install: the portable folder plus user data.
 Remove-Item -Recurse -Force "$test\install" -ErrorAction SilentlyContinue
@@ -158,9 +160,9 @@ the ZIP download, extraction (which locates the app root inside the archive),
    name the build gave it:
 
    ```powershell
-   $v = "1.4.4"
-   gh release create "tdesk-$v" `
-     "C:\Users\Roberto\Desktop\Generale\Codice\Aether\AetherDesk\build\portable\AetherDesk-$v.zip" `
+   $v   = "1.4.4"
+   $zip = Join-Path (Get-Location).Path "AetherDesk\build\portable\AetherDesk-$v.zip"
+   gh release create "tdesk-$v" $zip `
      --prerelease --title "AetherDesk test $v" --notes "Updater test build"
    ```
 
