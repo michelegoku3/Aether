@@ -766,6 +766,11 @@ impl StoreService {
 /// Returns `None` whenever a consulted source answered: an empty list is then
 /// a genuine "no matches", which the UI must keep reporting as such. The
 /// message differs only by whether Hubcap was part of this search at all.
+///
+/// A source that answered with zero matches is a genuine empty catalog even
+/// when the other source failed. Hubcap answering empty while Steam is down
+/// therefore still shows "No games found": the list is truthful for the source
+/// that replied, and inventing an outage for it would be wrong.
 fn offline_failure_message(
     steam_answered: bool,
     hubcap_attempted: bool,
