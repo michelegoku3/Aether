@@ -141,16 +141,14 @@ the ZIP download, extraction (which locates the app root inside the archive),
 
 ## Test the whole flow on the test channel
 
-1. Bump the version in all three files, to the same number:
-   - `AetherDesk/src-tauri/tauri.conf.json`, field `version`;
-   - `AetherDesk/package.json`, field `version`;
-   - `AetherDesk/src-tauri/Cargo.toml`, `[package] version`.
+1. Run `Tools\bump_version.cmd`, choose `1` (AetherDesk) and enter the new
+   version. The script updates the five files that carry it: `package.json`,
+   `package-lock.json`, `tauri.conf.json`, `Cargo.toml` and `Cargo.lock`.
+   Option `2` does the same for AetherDLL (`CMakeLists.txt`).
 
    The installed version the updater compares against is the one Tauri reads
-   from `AetherDesk/src-tauri/tauri.conf.json`. `check:tauri-versions`
-   (`AetherDesk/scripts/check_tauri_versions.mjs`, part of the verify chain)
-   compares the Tauri runtime, JS API and CLI lines, not this app version, so a
-   bump that misses a file still builds.
+   from `AetherDesk/src-tauri/tauri.conf.json`; the script keeps the other
+   copies in sync.
 
 2. Build from the repository root with `build_desk.cmd`. It writes the portable
    folder and the ZIP beside it, named after `tauri.conf.json`:
