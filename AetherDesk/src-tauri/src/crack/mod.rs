@@ -25,9 +25,6 @@ use std::thread;
 #[cfg(target_os = "windows")]
 use std::time::{Duration, Instant};
 
-/// Default password tried for password-protected archives.
-const DEFAULT_ARCHIVE_PASSWORD: &str = "online-fix.me";
-
 /// Human-readable summary of one crack application run.
 #[derive(Debug, Default)]
 pub struct CrackReport {
@@ -169,7 +166,8 @@ fn apply_sources_in_staging(
                 ));
                 std::fs::copy(&source_path, &temp_zip)
                     .map_err(|e| format!("Failed to stage VN patch .exe as .exe.zip: {e}"))?;
-                let stage_res = archive::stage_source(&temp_zip, staging, DEFAULT_ARCHIVE_PASSWORD);
+                let stage_res =
+                    archive::stage_source(&temp_zip, staging, archive::DEFAULT_ARCHIVE_PASSWORDS);
                 let _ = std::fs::remove_file(&temp_zip);
 
                 if stage_res.is_err() {
@@ -205,7 +203,7 @@ fn apply_sources_in_staging(
                     continue;
                 }
             } else {
-                archive::stage_source(&source_path, staging, DEFAULT_ARCHIVE_PASSWORD)?;
+                archive::stage_source(&source_path, staging, archive::DEFAULT_ARCHIVE_PASSWORDS)?;
             }
 
             // Locate each staged file's destination inside the game and apply

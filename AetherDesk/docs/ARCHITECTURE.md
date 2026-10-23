@@ -164,6 +164,17 @@ invariants
   read-modify-write of global JSON cache or online state across AppIDs: those
   are distinct domains.
 
+### Archive extraction
+
+- `crack/archive.rs` owns `DEFAULT_ARCHIVE_PASSWORDS`, the ordered list of
+  built-in passwords (`online-fix.me`, `cs.rin.ru`, `csrin.org`) tried for
+  protected ZIP, 7Z and RAR crack archives.
+- The Apply Crack pipeline and the Local import pipeline both call
+  `stage_source` with that one list: an archive must open from either entry
+  point. Adding a candidate edits the list, never the call sites.
+- The first password that opens the archive wins; the log names only the
+  candidate position, never the password value.
+
 ### Manifest and Lua writes
 
 - Every consumer resolves manifests through `manifest/resolver.rs`; a private

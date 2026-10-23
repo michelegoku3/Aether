@@ -41,8 +41,8 @@ pub async fn pick_crack_files(app: tauri::AppHandle, _app_id: u32) -> Result<Vec
 /// Apply the selected crack sources to the installed game.
 ///
 /// Each source may be a `.zip`, `.rar`, `.7z` or a loose crack file. The engine
-/// extracts (trying the default password `online-fix.me` for protected
-/// archives), resolves each file to its real destination in the game, backs up
+/// extracts (trying the built-in password candidates for protected archives),
+/// resolves each file to its real destination in the game, backs up
 /// originals & crack files, writes an inventory and applies the crack.
 #[tauri::command]
 pub async fn apply_crack(

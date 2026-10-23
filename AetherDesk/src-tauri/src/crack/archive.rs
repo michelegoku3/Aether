@@ -15,8 +15,16 @@ use crate::core::paths::LocalAppPaths;
 use std::fs;
 use std::path::{Component, Path, PathBuf};
 
-/// Default password tried for protected archives (passed down from the caller).
-pub fn stage_source(source: &Path, staging: &Path, default_password: &str) -> Result<(), String> {
+/// Passwords AetherDesk tries for protected archives, in order.
+///
+/// These are public community defaults, not secrets. Apply Crack and Local
+/// Download share the list so the same archive opens from either entry point.
+pub const DEFAULT_ARCHIVE_PASSWORDS: &[&str] = &["online-fix.me", "cs.rin.ru", "csrin.org"];
+
+/// Stage one crack source into `staging`, trying each password candidate for
+/// protected archives. The first successful extraction wins; the caller gets
+/// one error if every format and every candidate fails.
+pub fn stage_source(source: &Path, staging: &Path, passwords: &[&str]) -> Result<(), String> {
     let extension = source
         .extension()
         .and_then(|ext| ext.to_str())
@@ -28,22 +36,27 @@ pub fn stage_source(source: &Path, staging: &Path, default_password: &str) -> Re
         // gets ONE short message (password hint vs. invalid file); the full
         // per-attempt causes go to the session log, never the popup.
         "zip" => {
-            let zip_err = match extract_zip(source, staging, default_password) {
+            let zip_err = match try_passwords(source, passwords, |password| {
+                extract_zip(source, staging, password)
+            }) {
                 Ok(()) => return Ok(()),
                 Err(error) => error,
             };
-            let sevenz_err = match extract_7z(source, staging, default_password) {
+            let sevenz_err = match extract_7z(source, staging, passwords) {
                 Ok(()) => return Ok(()),
                 Err(error) => error,
             };
-            let rar_err = match extract_rar(source, staging, default_password) {
+            let rar_err = match try_passwords(source, passwords, |password| {
+                extract_rar(source, staging, password)
+            }) {
                 Ok(()) => return Ok(()),
                 Err(error) => error,
             };
             crate::desk_log_warn!(
                 "crack",
-                "Archive extraction failed for {}: ZIP ({}); 7Z ({}); RAR ({})",
+                "Archive extraction failed for {} after {} password candidate(s): ZIP ({}); 7Z ({}); RAR ({})",
                 source.display(),
+                passwords.len(),
                 zip_err,
                 sevenz_err,
                 rar_err
@@ -53,10 +66,55 @@ pub fn stage_source(source: &Path, staging: &Path, default_password: &str) -> Re
                 &[zip_err, sevenz_err, rar_err],
             ))
         }
-        "rar" => extract_rar(source, staging, default_password),
-        "7z" => extract_7z(source, staging, default_password),
+        "rar" => try_passwords(source, passwords, |password| {
+            extract_rar(source, staging, password)
+        }),
+        "7z" => extract_7z(source, staging, passwords),
         _ => copy_loose_file(source, staging),
     }
+}
+
+/// Run `attempt` for each password candidate until one succeeds.
+///
+/// The log names the candidate position, never the password itself: these are
+/// public defaults, but a future caller may pass a user-entered secret.
+fn try_passwords(
+    source: &Path,
+    passwords: &[&str],
+    mut attempt: impl FnMut(&str) -> Result<(), String>,
+) -> Result<(), String> {
+    let mut last_error = None;
+    for (index, password) in passwords.iter().enumerate() {
+        match attempt(password) {
+            Ok(()) => {
+                crate::desk_log_debug!(
+                    "crack",
+                    "Archive password candidate {}/{} accepted for {}",
+                    index + 1,
+                    passwords.len(),
+                    source.display()
+                );
+                return Ok(());
+            }
+            Err(error) => {
+                crate::desk_log_debug!(
+                    "crack",
+                    "Archive password candidate {}/{} failed for {}: {}",
+                    index + 1,
+                    passwords.len(),
+                    source.display(),
+                    error
+                );
+                last_error = Some(error);
+            }
+        }
+    }
+    Err(last_error.unwrap_or_else(|| {
+        format!(
+            "No archive password candidates configured for {}",
+            source.display()
+        )
+    }))
 }
 
 /// One-line UI message for a failed multi-format extraction. Names the
@@ -70,7 +128,7 @@ fn concise_archive_error(source: &Path, causes: &[String]) -> String {
         lower.contains("password") || lower.contains("encrypted")
     }) {
         return format!(
-            "Failed to extract archive {}: the stored password was rejected (tried ZIP, 7Z and RAR).",
+            "Failed to extract archive {}: none of the known passwords matched (tried ZIP, 7Z and RAR).",
             source.display()
         );
     }
@@ -148,7 +206,7 @@ fn extract_zip(source: &Path, dest: &Path, default_password: &str) -> Result<(),
             .by_index_decrypt(index, default_password.as_bytes())
             .map_err(|error| {
                 format!(
-                    "Failed to open ZIP entry {index} in {} (default password tried): {error}",
+                    "Failed to open ZIP entry {index} in {} (a password candidate was tried): {error}",
                     source.display()
                 )
             })?;
@@ -210,36 +268,30 @@ fn extract_rar(source: &Path, dest: &Path, default_password: &str) -> Result<(),
 
     let mut archive = Archive::with_password(source, default_password)
         .open_for_processing()
-        .map_err(|error| rar_password_hint(source, default_password, error))?;
+        .map_err(|error| rar_error(source, error))?;
 
     loop {
         // `read_header()` returns None once the archive is exhausted.
         let Some(opened) = archive
             .read_header()
-            .map_err(|error| rar_password_hint(source, default_password, error))?
+            .map_err(|error| rar_error(source, error))?
         else {
             break;
         };
 
         // `opened` is in "before file" state; `entry()` gives its metadata.
         if opened.entry().is_directory() {
-            archive = opened
-                .skip()
-                .map_err(|error| rar_password_hint(source, default_password, error))?;
+            archive = opened.skip().map_err(|error| rar_error(source, error))?;
             continue;
         }
 
         let filename = opened.entry().filename.to_string_lossy().to_string();
         let Some(relative) = sanitize_rel_path(&filename) else {
-            archive = opened
-                .skip()
-                .map_err(|error| rar_password_hint(source, default_password, error))?;
+            archive = opened.skip().map_err(|error| rar_error(source, error))?;
             continue;
         };
 
-        let (data, rest) = opened
-            .read()
-            .map_err(|error| rar_password_hint(source, default_password, error))?;
+        let (data, rest) = opened.read().map_err(|error| rar_error(source, error))?;
 
         let out_path = dest.join(&relative);
         if let Some(parent) = out_path.parent() {
@@ -266,26 +318,25 @@ fn extract_rar(source: &Path, dest: &Path, default_password: &str) -> Result<(),
 /// when that is the case, and claiming a password attempt on every failure
 /// would misclassify corrupt archives as password rejections downstream.
 /// Never includes the password itself.
-fn rar_password_hint(
-    source: &Path,
-    _default_password: &str,
-    error: impl std::fmt::Display,
-) -> String {
+fn rar_error(source: &Path, error: impl std::fmt::Display) -> String {
     format!("Failed to extract RAR {}: {}", source.display(), error)
 }
 
 /// Extract a `.7z` archive into `dest` using the pure-Rust `sevenz-rust2` crate.
 ///
-/// Tries an unencrypted pass first, then retries with `default_password` for
+/// Tries an unencrypted pass first, then each built-in password candidate for
 /// protected archives. Every entry goes through the same `sanitize_rel_path`
 /// gate as ZIP/RAR (absolute / `..` paths are skipped), and files are
 /// published atomically (temp + rename) like the ZIP path — never through
 /// the library's direct-to-`dest` extraction, which performs no validation.
-/// A clear error is reported if both passes fail (never including the password).
-fn extract_7z(source: &Path, dest: &Path, default_password: &str) -> Result<(), String> {
+/// A clear error is reported if every pass fails (never including a password).
+fn extract_7z(source: &Path, dest: &Path, passwords: &[&str]) -> Result<(), String> {
     match extract_7z_with(source, dest, None) {
         Ok(()) => Ok(()),
-        Err(plain_err) => extract_7z_with(source, dest, Some(default_password)).map_err(|error| {
+        Err(plain_err) => try_passwords(source, passwords, |password| {
+            extract_7z_with(source, dest, Some(password))
+        })
+        .map_err(|error| {
             // Note: deliberately no word "password" here — `concise_archive_error`
             // classifies on that word, and this wrapper fires for corrupt files too.
             format!(
@@ -511,6 +562,19 @@ mod tests {
         (temp, source, staging)
     }
 
+    fn write_encrypted_7z(path: &Path, password: &str) {
+        use sevenz_rust2::encoder_options::AesEncoderOptions;
+        use sevenz_rust2::{ArchiveEntry, ArchiveWriter, Password};
+
+        let mut writer = ArchiveWriter::create(path).expect("create 7z");
+        writer.set_content_methods(vec![AesEncoderOptions::new(Password::from(password)).into()]);
+        let mut payload: &[u8] = b"encrypted 7z payload";
+        writer
+            .push_archive_entry(ArchiveEntry::new_file("payload.dll"), Some(&mut payload))
+            .expect("push entry");
+        writer.finish().expect("finish 7z");
+    }
+
     #[test]
     fn genuinely_encrypted_zip_extracts_with_the_correct_password() {
         let (_temp, source, staging) = fixture(ENCRYPTED_ZIP);
@@ -536,7 +600,7 @@ mod tests {
     #[test]
     fn mixed_encrypted_plain_and_directory_entries_use_the_same_reader() {
         let (_temp, source, staging) = fixture(MIXED_ZIP);
-        stage_source(&source, &staging, "online-fix.me").unwrap();
+        stage_source(&source, &staging, &["online-fix.me"]).unwrap();
         assert_eq!(
             fs::read(staging.join("plain.txt")).unwrap(),
             b"plain payload"
@@ -634,7 +698,7 @@ mod tests {
         let staging = temp.path().join("staging");
         fs::create_dir_all(&staging).unwrap();
         let secret = "s3cr3t-pw-zzz";
-        let err = stage_source(&source, &staging, secret).unwrap_err();
+        let err = stage_source(&source, &staging, &[secret]).unwrap_err();
         assert_eq!(
             err,
             format!(
@@ -649,11 +713,11 @@ mod tests {
     fn wrong_password_reports_rejection_not_invalid_format() {
         let (_temp, source, staging) = fixture(ENCRYPTED_ZIP);
         let secret = "definitely-wrong-password";
-        let err = stage_source(&source, &staging, secret).unwrap_err();
+        let err = stage_source(&source, &staging, &[secret]).unwrap_err();
         assert_eq!(
             err,
             format!(
-                "Failed to extract archive {}: the stored password was rejected (tried ZIP, 7Z and RAR).",
+                "Failed to extract archive {}: none of the known passwords matched (tried ZIP, 7Z and RAR).",
                 source.display()
             )
         );
@@ -661,16 +725,77 @@ mod tests {
     }
 
     #[test]
+    fn builtin_password_list_keeps_online_fix_first_and_adds_the_two_new_passwords() {
+        assert_eq!(
+            DEFAULT_ARCHIVE_PASSWORDS,
+            &["online-fix.me", "cs.rin.ru", "csrin.org"]
+        );
+    }
+
+    #[test]
+    fn each_builtin_password_opens_an_encrypted_7z() {
+        for password in DEFAULT_ARCHIVE_PASSWORDS {
+            let temp = tempfile::tempdir().unwrap();
+            let source = temp.path().join("encrypted.7z");
+            let staging = temp.path().join("staging");
+            fs::create_dir_all(&staging).unwrap();
+            write_encrypted_7z(&source, password);
+
+            stage_source(&source, &staging, DEFAULT_ARCHIVE_PASSWORDS)
+                .unwrap_or_else(|error| panic!("{password} should open the archive: {error}"));
+
+            assert_eq!(
+                fs::read(staging.join("payload.dll")).unwrap(),
+                b"encrypted 7z payload",
+                "{password} should open the archive"
+            );
+        }
+    }
+
+    #[test]
+    fn try_passwords_stops_at_the_first_success() {
+        let mut attempts = Vec::new();
+        let result = try_passwords(
+            Path::new("fixture"),
+            &["first", "second", "third"],
+            |password| {
+                attempts.push(password.to_string());
+                if password == "second" {
+                    Ok(())
+                } else {
+                    Err(format!("{password} failed"))
+                }
+            },
+        );
+
+        assert!(result.is_ok());
+        assert_eq!(attempts, ["first", "second"]);
+    }
+
+    #[test]
+    fn try_passwords_returns_the_last_error_and_handles_an_empty_list() {
+        let result = try_passwords(Path::new("fixture"), &["first", "second"], |password| {
+            Err(format!("{password} failed"))
+        });
+        assert_eq!(result.unwrap_err(), "second failed");
+
+        let empty = try_passwords(Path::new("fixture"), &[], |_| Ok(()));
+        assert!(empty
+            .unwrap_err()
+            .contains("No archive password candidates"));
+    }
+
+    #[test]
     fn archive_error_messages_never_contain_the_password() {
         let secret = "s3cr3t-reused-password";
         let missing = std::path::Path::new("definitely-missing-archive.bin");
-        let rar_err = rar_password_hint(missing, secret, "boom");
+        let rar_err = rar_error(missing, "boom");
         assert!(
             !rar_err.contains(secret),
             "RAR error leaked password: {rar_err}"
         );
         let dest = tempfile::tempdir().unwrap();
-        let err = extract_7z(missing, dest.path(), secret).unwrap_err();
+        let err = extract_7z(missing, dest.path(), &[secret]).unwrap_err();
         assert!(!err.contains(secret), "7z error leaked password: {err}");
     }
 
@@ -695,7 +820,7 @@ mod tests {
                 .unwrap();
             writer.finish().unwrap();
         }
-        extract_7z(&source, &staging, "").unwrap();
+        extract_7z(&source, &staging, &[]).unwrap();
         assert_eq!(
             fs::read(staging.join("safe/ok.txt")).unwrap(),
             b"safe payload"

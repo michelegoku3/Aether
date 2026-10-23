@@ -24,9 +24,6 @@ use crate::steam::library::SteamLibraryScanner;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-/// Default password tried for password-protected archives (same as cracks).
-const DEFAULT_ARCHIVE_PASSWORD: &str = "online-fix.me";
-
 /// Human-readable report of a bulk local import run.
 #[derive(Debug, Default)]
 pub struct BulkInstallReport {
@@ -315,7 +312,9 @@ fn explore_and_extract_recursive(
             let sub_staging = staging_root.join(format!("extract_{}", *counter));
             *counter += 1;
             let _ = fs::create_dir_all(&sub_staging);
-            if archive::stage_source(current, &sub_staging, DEFAULT_ARCHIVE_PASSWORD).is_ok() {
+            if archive::stage_source(current, &sub_staging, archive::DEFAULT_ARCHIVE_PASSWORDS)
+                .is_ok()
+            {
                 explore_and_extract_recursive(
                     &sub_staging,
                     staging_root,
@@ -500,7 +499,7 @@ pub fn install_local_pipeline(
                         }
                     );
                 }
-                archive::stage_source(&source_path, &staging, DEFAULT_ARCHIVE_PASSWORD)?;
+                archive::stage_source(&source_path, &staging, archive::DEFAULT_ARCHIVE_PASSWORDS)?;
             }
 
             // Validate before touching Steam: every staged .lua must belong to
