@@ -51,40 +51,47 @@ fn main() {
         }))
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
+            // The setup thread runs before the event loop accepts commands, so
+            // everything measured here delays the first interactive frame.
+            let setup_started = std::time::Instant::now();
             // Initialize the session logger (rotates desk.log -> desk.log.last on startup).
             crate::core::logger::init(app.handle());
+            let logger_ms = setup_started.elapsed().as_millis();
             // UCOnline2 appends to %TEMP%\uc_online2.log while games run; remove it
             // at startup so the log shown/exported by AetherDesk is always clean
             // (UCO2 recreates it automatically on the next game launch).
             crate::commands::logs::clear_uco2_log_file();
             // Clear any leftover artifacts from an interrupted portable self-update.
             crate::updater::desk::cleanup_stale_artifacts();
-            // Startup migrations include legacy settings/data, obsolete Steam
-            // proxy cleanup (only while Steam is closed), and Lua backups.
-            // Each step is idempotent and failure-tolerant.
-            crate::core::migration::run_startup_migrations(app.handle());
+            let cleanup_ms = setup_started.elapsed().as_millis();
+            // Only the migrations that a command can depend on stay here. The
+            // rest (legacy backups, shell integration, cleanup) runs after the
+            // window is interactive, in `run_deferred_startup_tasks`.
+            crate::core::migration::run_critical_startup_migrations(app.handle());
+            let migrations_ms = setup_started.elapsed().as_millis();
+            // One snapshot feeds every startup consumer: constructing a second
+            // SettingsManager would repeat the migration probe and file lock.
+            let settings = crate::core::settings::SettingsManager::new(app.handle()).load();
+            let settings_ms = setup_started.elapsed().as_millis();
             // Steam process monitor (single shared poller): keeps is_steam_running
             // O(1) and pushes `steam://runtime-state` to the UI only on changes
             // (Sidebar Start/Restart label, per-game guards, ...).
             crate::core::steam_monitor::start(app.handle().clone());
+            let steam_monitor_ms = setup_started.elapsed().as_millis();
             // One native watcher owns external stplug-in changes for the entire
             // process. In-app operations use the same coordinator so the React
             // Library always performs the canonical full Refresh scan.
-            let initial_steam_path = crate::core::settings::SettingsManager::new(app.handle())
-                .load()
-                .steam_path;
             app.manage(crate::core::library_events::LibraryWatchController::start(
                 app.handle().clone(),
-                initial_steam_path,
+                settings.steam_path.clone(),
             ));
+            let watcher_ms = setup_started.elapsed().as_millis();
             // Lua/manifest backup sync (background, non-blocking): mirror every .lua in
             // stplug-in into backup/<app_id>/lua, then copy every referenced
             // depotcache manifest that is not already in that backup. Missing
             // Lua backups are created and changed ones are archived in history/.
             {
-                let app_handle = app.handle().clone();
-                let steam_path =
-                    crate::core::settings::SettingsManager::new(&app_handle).load().steam_path;
+                let steam_path = settings.steam_path;
                 tauri::async_runtime::spawn(async move {
                     let report = tauri::async_runtime::spawn_blocking(move || {
                         crate::core::backup::sync_lua_backups_from_stplug_in(
@@ -119,8 +126,49 @@ fn main() {
             // on-demand manifest generation stay with AetherDLL; this monitor
             // never downloads game packages.
             crate::core::hubcap_update_monitor::start(app.handle().clone());
-            if let Err(e) = crate::core::custom_css::apply_window_icon(app.handle()) {
+            let hubcap_monitor_ms = setup_started.elapsed().as_millis();
+            // Icon only: the shell-shortcut sync spawns PowerShell and belongs
+            // to the deferred pass. Saving a new icon still syncs synchronously
+            // through the command path.
+            if let Err(e) = crate::core::custom_css::apply_window_icon_only(app.handle()) {
                 eprintln!("[AetherDesk] window icon apply failed: {e}");
+            }
+            let icon_ms = setup_started.elapsed().as_millis();
+            crate::desk_log_info!(
+                "startup",
+                "Critical setup finished in {} ms (logger {}, cleanup {}, migrations {}, settings {}, steam-monitor {}, watcher {}, hubcap-monitor {}, icon {}); deferred startup work queued",
+                setup_started.elapsed().as_millis(),
+                logger_ms,
+                cleanup_ms,
+                migrations_ms,
+                settings_ms,
+                steam_monitor_ms,
+                watcher_ms,
+                hubcap_monitor_ms,
+                icon_ms
+            );
+            {
+                let deferred_app = app.handle().clone();
+                tauri::async_runtime::spawn(async move {
+                    let started = std::time::Instant::now();
+                    let joined = tauri::async_runtime::spawn_blocking(move || {
+                        crate::core::migration::run_deferred_startup_tasks(&deferred_app);
+                    })
+                    .await;
+                    match joined {
+                        Ok(()) => crate::desk_log_info!(
+                            "startup",
+                            "Deferred startup work finished in {} ms",
+                            started.elapsed().as_millis()
+                        ),
+                        Err(error) => crate::desk_log_warn!(
+                            "startup",
+                            "Deferred startup work aborted after {} ms: {}",
+                            started.elapsed().as_millis(),
+                            error
+                        ),
+                    }
+                });
             }
             Ok(())
         })

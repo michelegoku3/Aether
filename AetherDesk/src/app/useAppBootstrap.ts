@@ -1,5 +1,4 @@
 import { useEffect } from 'react';
-import { invoke } from '@tauri-apps/api/core';
 import { getSettings, type AppSettings } from '../hooks/useSettings';
 
 interface Params {
@@ -17,10 +16,9 @@ export function useAppBootstrap(params: Params) {
     const hydrate = async () => {
       // Startup consumers that do not depend on settings run regardless of the
       // settings outcome, so a failed read never delays the version checks.
+      // The library warm-up is NOT here: it used to rescan the whole library
+      // before the provider's own scan. It now runs once after that scan.
       const deskVersionPromise = params.loadDeskVersion();
-      const warmPromise = invoke<number>('warm_library_game_cache')
-        .then((count) => console.log(`[AetherDesk library cache warm-up] ${count} cached names available`))
-        .catch((error) => console.warn('Library cache warm-up failed:', error));
 
       let settings: AppSettings | null = null;
       try {
@@ -42,7 +40,7 @@ export function useAppBootstrap(params: Params) {
         await params.refreshAppearance();
       }
 
-      await Promise.all([params.checkDeskUpdates(), params.warnIfSteamPathMissing(), deskVersionPromise, warmPromise]);
+      await Promise.all([params.checkDeskUpdates(), params.warnIfSteamPathMissing(), deskVersionPromise]);
     };
     void hydrate();
     // App remains mounted for its lifetime; every callback is a stable hook API.

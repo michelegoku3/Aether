@@ -13,6 +13,8 @@ import { useStoreCatalog } from './store/useStoreCatalog';
 import { useStoreDownload } from './store/useStoreDownload';
 
 interface StoreViewProps {
+  /** Hidden views stay mounted; only the visible tab may start network work. */
+  active: boolean;
   onRefreshUsage?: (forcedKey?: string) => Promise<void>;
   settingsRevision: number;
   /** Initial settings hydration completed in App; safe to start background preload. */
@@ -23,6 +25,7 @@ interface StoreViewProps {
 }
 
 export const StoreView = memo(function StoreView({
+  active,
   onRefreshUsage,
   settingsRevision,
   settingsReady,
@@ -30,7 +33,7 @@ export const StoreView = memo(function StoreView({
   alternativeCardsOpacity,
   alternativeCardsFade,
 }: StoreViewProps) {
-  const catalog = useStoreCatalog({ settingsRevision, settingsReady });
+  const catalog = useStoreCatalog({ active, settingsRevision, settingsReady });
   const download = useStoreDownload({ onRefreshUsage });
   const [infoGame, setInfoGame] = useState<StoreGameResult | null>(null);
   const [showBulkLocalImport, setShowBulkLocalImport] = useState(false);

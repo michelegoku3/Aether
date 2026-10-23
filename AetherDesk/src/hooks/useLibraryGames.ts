@@ -115,6 +115,7 @@ export const LibraryGamesProvider = ({ children }: { children: ReactNode }) => {
 
   const mountedRef = useRef(true);
   const hasCompletedInitialScanRef = useRef(false);
+  const warmedLibraryRef = useRef(false);
   const loadingRef = useRef(false);
   const pendingRef = useRef<RefreshOrigin | null>(null);
   const requestRevisionRef = useRef(0);
@@ -185,11 +186,26 @@ export const LibraryGamesProvider = ({ children }: { children: ReactNode }) => {
     void invoke<InstalledGame[]>('get_installed_library_games')
       .then((result) => {
         if (!mountedRef.current || requestRevision !== requestRevisionRef.current) return;
-        setGames(result || []);
+        const nextGames = result || [];
+        setGames(nextGames);
         // New library data invalidates every cached per-game answer.
         gameStateRevisionRef.current += 1;
         gameStateCacheRef.current.clear();
         hasCompletedInitialScanRef.current = true;
+        // Warm names and store metadata once, after the scan that already
+        // enumerates the library: the command receives those App IDs instead
+        // of walking every ACF again at startup.
+        if (!warmedLibraryRef.current && nextGames.length > 0) {
+          warmedLibraryRef.current = true;
+          const appIds = nextGames
+            .map((game) => Number(game.appId))
+            .filter((appId) => Number.isFinite(appId) && appId > 0);
+          if (appIds.length > 0) {
+            void invoke<number>('warm_library_game_cache', { appIds }).catch((error: unknown) => {
+              console.warn('Library cache warm-up failed:', error);
+            });
+          }
+        }
       })
       .catch((error: unknown) => {
         if (!mountedRef.current || requestRevision !== requestRevisionRef.current) return;

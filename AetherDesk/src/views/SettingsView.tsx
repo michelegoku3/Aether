@@ -11,6 +11,8 @@ import { useSettingsController } from './settings/useSettingsController';
 export type { SettingsGuard } from './settings/types';
 
 interface SettingsViewProps {
+  /** Hidden views stay mounted; the editor hydrates on first activation. */
+  active: boolean;
   hubcapUsage: { usage: number; limit: number; hasKey: boolean };
   onRefreshUsage: (forcedKey?: string) => Promise<void>;
   onRefreshCustomCss: () => Promise<void>;

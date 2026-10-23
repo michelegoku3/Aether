@@ -339,7 +339,9 @@ pub fn default_window_icon() -> Result<tauri::image::Image<'static>, String> {
     icon_from_bytes(DEFAULT_AETHER_ICON)
 }
 
-pub fn apply_window_icon(app: &tauri::AppHandle) -> Result<(), String> {
+/// Applies the window icon only. Startup uses this variant because the shell
+/// shortcut sync below spawns PowerShell and must not delay first paint.
+pub fn apply_window_icon_only(app: &tauri::AppHandle) -> Result<(), String> {
     use tauri::Manager;
 
     let settings = crate::core::settings::load_settings(app);
@@ -360,18 +362,28 @@ pub fn apply_window_icon(app: &tauri::AppHandle) -> Result<(), String> {
     window
         .set_icon(image)
         .map_err(|e| format!("Failed to set window icon: {}", e))?;
+    Ok(())
+}
 
-    // Shortcuts / shell cache: custom source when enabled, official default otherwise.
+/// Syncs the shell shortcut icon and cache. Costly (PowerShell + shell cache),
+/// so startup runs it on the deferred worker; saving an icon runs it inline.
+pub fn sync_shell_shortcuts(app: &tauri::AppHandle) -> Result<(), String> {
+    let settings = crate::core::settings::load_settings(app);
     let source = if settings.custom_icon_enabled {
         icon_path(&settings.icon_selected_file).ok().flatten()
     } else {
         None
     };
-    match crate::core::shell_shortcuts::materialize_shell_ico(source.as_deref()) {
-        Ok(shell_ico) => crate::core::shell_shortcuts::sync_windows_shortcuts(&shell_ico),
-        Err(e) => eprintln!("[AetherDesk] shell icon materialize failed: {e}"),
-    }
+    let shell_ico = crate::core::shell_shortcuts::materialize_shell_ico(source.as_deref())?;
+    crate::core::shell_shortcuts::sync_windows_shortcuts(&shell_ico);
     Ok(())
+}
+
+/// User-visible icon change: set the window icon and sync the shell now,
+/// because the user expects the Start Menu entry to match immediately.
+pub fn apply_window_icon(app: &tauri::AppHandle) -> Result<(), String> {
+    apply_window_icon_only(app)?;
+    sync_shell_shortcuts(app)
 }
 
 // ---------------------------------------------------------------------------

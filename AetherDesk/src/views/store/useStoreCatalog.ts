@@ -7,11 +7,13 @@ import { useTrendingStore } from './useTrendingStore';
 const ITEMS_PER_PAGE = 20;
 
 interface Params {
+  /** Hidden views stay mounted; only the visible tab may start network work. */
+  active: boolean;
   settingsRevision: number;
   settingsReady: boolean;
 }
 
-export function useStoreCatalog({ settingsRevision, settingsReady }: Params) {
+export function useStoreCatalog({ active, settingsRevision, settingsReady }: Params) {
   const [page, setPage] = useState(1);
   const observedSettingsRevision = useRef<number | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
@@ -20,7 +22,7 @@ export function useStoreCatalog({ settingsRevision, settingsReady }: Params) {
   const { results, setResults, isLoading, hasSearched, activeQuery, error, search, clear } = storeSearch;
 
   useEffect(() => {
-    if (!settingsReady || observedSettingsRevision.current === settingsRevision) return;
+    if (!active || !settingsReady || observedSettingsRevision.current === settingsRevision) return;
     observedSettingsRevision.current = settingsRevision;
     setPage(1);
     trending.reset();
@@ -33,7 +35,7 @@ export function useStoreCatalog({ settingsRevision, settingsReady }: Params) {
     // Refresh once per settings generation; search helpers intentionally keep
     // request ownership internally and need not retrigger this effect.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [settingsRevision, settingsReady]);
+  }, [active, settingsRevision, settingsReady]);
 
   const totalPages = Math.ceil(results.length / ITEMS_PER_PAGE) || 1;
   const startIndex = (page - 1) * ITEMS_PER_PAGE;
@@ -41,30 +43,30 @@ export function useStoreCatalog({ settingsRevision, settingsReady }: Params) {
   const pageKey = pageGames.map((game) => game.appId).join(',');
 
   useEffect(() => {
-    if (pageGames.length === 0 || document.visibilityState !== 'visible') return;
+    if (!active || pageGames.length === 0 || document.visibilityState !== 'visible') return;
     preloadGameCovers(
       pageGames.map((game) => ({ appId: game.appId, imageUrl: game.imageUrl })),
       pageGames.length
     );
     // pageKey represents the visible page identity.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pageKey]);
+  }, [active, pageKey]);
 
   useEffect(() => {
-    if (!settingsReady || activeQuery.trim()) return;
+    if (!active || !settingsReady || activeQuery.trim()) return;
     if (results.length < (page + 1) * ITEMS_PER_PAGE) {
       void trending.loadNext(ITEMS_PER_PAGE * 2);
     }
     // Session refs own offsets/in-flight requests; length/page are the top-up trigger.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [page, results.length, activeQuery, settingsReady]);
+  }, [active, page, results.length, activeQuery, settingsReady]);
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: 0 });
   }, [page, activeQuery]);
 
   useEffect(() => {
-    if (pageGames.length === 0 || !activeQuery.trim()) return;
+    if (!active || pageGames.length === 0 || !activeQuery.trim()) return;
     let cancelled = false;
     enrichDenuvoFlags(pageGames)
       .then((enriched) => {
@@ -83,7 +85,7 @@ export function useStoreCatalog({ settingsRevision, settingsReady }: Params) {
     };
     // pageKey is the complete enrichment request identity.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pageKey]);
+  }, [active, pageKey]);
 
   const runSearch = async (query: string) => {
     setPage(1);

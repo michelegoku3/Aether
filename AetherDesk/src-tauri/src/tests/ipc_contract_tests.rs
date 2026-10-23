@@ -930,10 +930,6 @@ const DOCUMENTED_UNUSED_COMMANDS: &[(&str, &str)] = &[
         "the sync-status popup was removed and the monitor runs headless; the command stays as the diagnostic surface",
     ),
     (
-        "get_installed_dll_version",
-        "replaced by check_aether_dll_update, which already returns installed_version",
-    ),
-    (
         "get_personal_wallpaper_path",
         "the UI uses pick_wallpaper_file + usePersonalWallpaper (converted asset), not the raw path",
     ),
@@ -985,7 +981,7 @@ fn unused_commands_are_only_the_documented_ones() {
         "\nCommands registered but never called by the frontend: {unexpected:?}\n\
          Wire them to the UI or remove them; when they stay unused on purpose, \
           list them in DOCUMENTED_UNUSED_COMMANDS with the reason (this list is \
-         the live inventory of the dead IPC surface: 11 commands out of 119).\n"
+         the live inventory of the dead IPC surface: 10 commands out of 119).\n"
     );
     assert!(
         stale.is_empty(),

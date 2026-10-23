@@ -65,6 +65,30 @@ invariants
 
 ## Invariants
 
+### Startup and view hydration
+
+- The Tauri setup thread runs only work a command can depend on:
+  `run_critical_startup_migrations` (path/settings migrations, Steam path
+  adoption, the DLL bridge) plus logger, settings, the Steam monitor and the
+  library watcher. Everything else goes through
+  `run_deferred_startup_tasks` on `spawn_blocking` after the window is
+  interactive: legacy Lua backups, legacy Steam proxy removal, obsolete
+  directories, Start Menu shortcut and shell icon sync.
+- Each deferred step is isolated (`run_isolated`): a failure is logged and the
+  remaining steps still run. A deferred step must never make startup fail.
+- `main.rs` logs one `startup` line with the critical-path phase durations and
+  the deferred total. Use it to measure a change instead of guessing.
+- Store, Library, Log and Settings stay mounted (state, scroll, filters and
+  unsaved edits must survive tab switches). Hidden views do no background
+  work: Store gates trending, cover preload and Denuvo enrichment on `active`;
+  Settings hydrates its form on first activation; Library gates only its
+  eager cover preload.
+- The library metadata warm-up runs once, after the first successful scan,
+  and receives the App IDs that scan already resolved. It must not walk the
+  library again.
+- The DLL network update check belongs to `useUpdateCoordinator` only. The
+  status panel reads the local `get_installed_dll_version`.
+
 ### IPC
 
 - Commands are declared in `commands/<area>.rs` and registered in

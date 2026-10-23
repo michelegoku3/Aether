@@ -352,8 +352,13 @@ pub fn migrate_download_update_default_off(app: &tauri::AppHandle) {
     }
 }
 
-pub fn run_startup_migrations(app: &tauri::AppHandle) {
-    crate::desk_log_info!("migration", "Running AetherDesk startup migrations...");
+/// Migrations a command may depend on. These must finish before the UI
+/// accepts IPC; everything else is deferred to `run_deferred_startup_tasks`.
+pub fn run_critical_startup_migrations(app: &tauri::AppHandle) {
+    crate::desk_log_info!(
+        "migration",
+        "Running critical AetherDesk startup migrations..."
+    );
     if let Err(e) = migrate_roaming_to_local_install() {
         eprintln!("[AetherDesk] Roaming->Local failed: {e}");
     }
@@ -371,29 +376,83 @@ pub fn run_startup_migrations(app: &tauri::AppHandle) {
     let roaming_config = LocalAppPaths::legacy_roaming_data_root().join("config");
     migrate_legacy_settings_if_needed(&config_dir, Some(&roaming_config));
     migrate_download_update_default_off(app);
-    remove_obsolete_component_version_dirs(app);
     ensure_appearance_dirs();
     // Adopt an auto-detected Steam installation when the stored value was
     // never configured (empty or stale legacy default). Runs before the
     // bridge below so the pointer targets the effective installation.
     adopt_detected_steam_path_if_unconfigured(app);
+    ensure_aethercore_bridge(app);
+}
+
+/// Startup work that no command depends on. It runs on a blocking worker
+/// after the window is interactive; each step is idempotent and isolated so
+/// one failure cannot skip the rest.
+pub fn run_deferred_startup_tasks(app: &tauri::AppHandle) {
+    crate::desk_log_info!("migration", "Running deferred startup tasks...");
+    // One settings snapshot for the steps that need the Steam root.
     let steam_path = crate::core::settings::SettingsManager::new(app)
         .load()
         .steam_path;
-    match migrate_legacy_steam_proxy(&steam_path) {
-        Ok(true) => crate::desk_log_info!("migration", "Removed obsolete Steam-root DLL proxy"),
-        Err(error) => {
-            crate::desk_log_warn!("migration", "Steam proxy migration deferred: {}", error);
+
+    run_isolated("remove obsolete component version directories", || {
+        remove_obsolete_component_version_dirs(app);
+        Ok(())
+    });
+    run_isolated(
+        "legacy Steam proxy removal",
+        || match migrate_legacy_steam_proxy(&steam_path) {
+            Ok(true) => {
+                crate::desk_log_info!("migration", "Removed obsolete Steam-root DLL proxy");
+                Ok(())
+            }
+            Ok(false) => Ok(()),
+            Err(error) => Err(error),
+        },
+    );
+    run_isolated("legacy Lua backup migration", || {
+        let report = migrate_legacy_lua_backups(Path::new(&steam_path))?;
+        if report.games > 0 {
+            crate::desk_log_info!(
+                "migration",
+                "Migrated {} legacy Lua games ({} files, {} manifests)",
+                report.games,
+                report.lua_files,
+                report.manifest_files
+            );
         }
-        Ok(false) => {}
+        Ok(())
+    });
+    run_isolated("shell shortcut icon sync", || {
+        crate::core::custom_css::sync_shell_shortcuts(app)
+    });
+    run_isolated("Start Menu shortcut verification", || {
+        ensure_start_menu_shortcut();
+        Ok(())
+    });
+}
+
+/// Runs one deferred step and turns any outcome into a log line. The
+/// deferred pass is best-effort: a failing step must never abort later ones.
+pub(crate) fn run_isolated<F>(label: &'static str, task: F)
+where
+    F: FnOnce() -> Result<(), String>,
+{
+    let started = std::time::Instant::now();
+    match task() {
+        Ok(()) => crate::desk_log_debug!(
+            "migration",
+            "Deferred startup step '{}' finished in {} ms",
+            label,
+            started.elapsed().as_millis()
+        ),
+        Err(error) => crate::desk_log_warn!(
+            "migration",
+            "Deferred startup step '{}' failed after {} ms: {}",
+            label,
+            started.elapsed().as_millis(),
+            error
+        ),
     }
-    ensure_aethercore_bridge(app);
-    match migrate_legacy_lua_backups(Path::new(&steam_path)) {
-        Ok(r) if r.games > 0 => eprintln!("[AetherDesk] migrated {} lua games", r.games),
-        Err(e) => eprintln!("[AetherDesk] lua migration failed: {e}"),
-        _ => {}
-    }
-    ensure_start_menu_shortcut();
 }
 
 /// Ensures that Windows Start Menu search finds this portable application by

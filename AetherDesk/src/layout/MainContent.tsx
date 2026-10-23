@@ -133,6 +133,7 @@ export const MainContent = memo(function MainContent({
         aria-hidden={activeTab !== 'store'}
       >
         <StoreView
+          active={activeTab === 'store'}
           onRefreshUsage={settings.onRefreshUsage}
           settingsRevision={settings.revision}
           settingsReady={settings.ready}
@@ -150,6 +151,7 @@ export const MainContent = memo(function MainContent({
         aria-hidden={activeTab !== 'library'}
       >
         <LibraryView
+          active={activeTab === 'library'}
           useAlternativeGameCards={appearance.useAlternativeGameCards}
           alternativeCardsOpacity={appearance.alternativeCardsOpacity}
           alternativeCardsFade={appearance.alternativeCardsFade}
@@ -176,6 +178,7 @@ export const MainContent = memo(function MainContent({
         aria-hidden={activeTab !== 'settings'}
       >
         <SettingsView
+          active={activeTab === 'settings'}
           hubcapUsage={settings.hubcapUsage}
           onRefreshUsage={settings.onRefreshUsage}
           onRefreshCustomCss={appearance.onRefreshCustomCss}

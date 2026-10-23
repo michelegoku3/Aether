@@ -37,6 +37,7 @@ const commandDefaults = (saved: AppSettings = settings) => ({
 });
 
 const createParams = () => ({
+  active: true,
   onRefreshUsage: vi.fn().mockResolvedValue(undefined),
   onRefreshCustomCss: vi.fn().mockResolvedValue(undefined),
   onCustomCssChange: vi.fn(),
@@ -661,6 +662,26 @@ describe('useSettingsController', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it('hydrates only on the first activation of the Settings tab', async () => {
+    mockInvokeCommands(commandDefaults());
+    const params = createParams();
+    const settingsReads = () => invokeMock.mock.calls.filter(([command]) => command === 'get_settings').length;
+    const { result, rerender } = renderHook(({ active }) => useSettingsController({ ...params, active }), {
+      initialProps: { active: false },
+    });
+
+    await act(async () => {});
+    expect(settingsReads()).toBe(0);
+
+    rerender({ active: true });
+    await waitFor(() => expect(result.current.form.steamPath).toBe('C:/Steam'));
+    expect(settingsReads()).toBe(1);
+
+    rerender({ active: false });
+    rerender({ active: true });
+    expect(settingsReads()).toBe(1);
   });
 
   it('a persistent progress message outlives its own expiry', async () => {

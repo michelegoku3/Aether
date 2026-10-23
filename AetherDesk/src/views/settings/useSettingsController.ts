@@ -13,6 +13,8 @@ import { useSteamPath } from './useSteamPath';
 type StatusKind = 'info' | 'success' | 'error';
 
 interface Params {
+  /** The Settings tab is the only consumer of this bootstrap. */
+  active: boolean;
   onRefreshUsage: (forcedKey?: string) => Promise<void>;
   onRefreshCustomCss: () => Promise<void>;
   onCustomCssChange: (enabled: boolean) => void;
@@ -23,6 +25,7 @@ interface Params {
 }
 
 export function useSettingsController(params: Params) {
+  const { active } = params;
   const model = useSettingsForm();
   const { form, setField } = model;
   const [showApiKey, setShowApiKey] = useState(false);
@@ -38,6 +41,7 @@ export function useSettingsController(params: Params) {
   const [steamAccountsError, setSteamAccountsError] = useState(false);
 
   const showStatusSeq = useRef(0);
+  const hasBootstrappedRef = useRef(false);
   const showStatus = useCallback((text: string, type: StatusKind, options?: { persist?: boolean }) => {
     const seq = (showStatusSeq.current += 1);
     setStatus({ text, type });
@@ -113,6 +117,10 @@ export function useSettingsController(params: Params) {
   });
 
   useEffect(() => {
+    // The view stays mounted for the whole session; hydrate it the first time
+    // the user opens Settings, not at startup and not on every tab return.
+    if (!active || hasBootstrappedRef.current) return;
+    hasBootstrappedRef.current = true;
     void invoke<AppSettings>('get_settings')
       .then(applySettings)
       .catch((err) => showStatus(`Error loading settings: ${err}`, 'error'));
@@ -131,9 +139,9 @@ export function useSettingsController(params: Params) {
       .catch((err) => console.warn('[settings] failed to read settings health:', err));
     void luaTools.refresh().catch((err) => console.warn('[settings] failed to refresh LuaTools auth:', err));
     void params.onRefreshUsage().catch((err) => console.warn('[settings] failed to refresh Hubcap usage:', err));
-    // The Settings view stays mounted; bootstrap exactly once.
+    // The Settings view stays mounted; bootstrap exactly once, on first activation.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [active]);
 
   // A Steam sign-in/sign-out happens in another window: refresh the picker on
   // focus instead of polling loginusers.vdf in the background.

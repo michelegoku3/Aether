@@ -17,6 +17,8 @@ import { StatusType } from '../types/ui';
 import { requireSteamPath } from '../hooks/useSettings';
 
 interface LibraryViewProps {
+  /** Hidden views stay mounted; only the visible tab may preload covers. */
+  active: boolean;
   useAlternativeGameCards: boolean;
   alternativeCardsOpacity: number;
   alternativeCardsFade: number;
@@ -28,6 +30,7 @@ interface LibraryViewProps {
  *  requests the user may never see. */
 const COVER_PRELOAD_WINDOW = 24;
 export const LibraryView = memo(function LibraryView({
+  active,
   useAlternativeGameCards,
   alternativeCardsOpacity,
   alternativeCardsFade,
@@ -67,7 +70,7 @@ export const LibraryView = memo(function LibraryView({
   };
 
   useEffect(() => {
-    if (filteredGames.length === 0) return;
+    if (!active || filteredGames.length === 0) return;
     // When the tab/document is hidden we skip eager preloading: the GameCard
     // component itself will resolve its own cover when mounted, so preloading
     // unseen cards off-screen is wasted work.
@@ -76,7 +79,7 @@ export const LibraryView = memo(function LibraryView({
       filteredGames.slice(0, COVER_PRELOAD_WINDOW).map((game) => ({ appId: game.appId, imageUrl: game.imageUrl })),
       COVER_PRELOAD_WINDOW
     );
-  }, [filteredGames]);
+  }, [active, filteredGames]);
 
   const handleCycleFilter = async () => {
     try {

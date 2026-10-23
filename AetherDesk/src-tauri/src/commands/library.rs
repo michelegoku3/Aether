@@ -127,31 +127,17 @@ pub async fn get_installed_library_games(
 }
 
 #[tauri::command]
-pub async fn warm_library_game_cache(app: tauri::AppHandle) -> Result<usize, String> {
-    let settings = load_settings(&app);
-    // Fire-and-forget background warm-up: never fail, but log a misconfigured
-    // path instead of silently warming nothing.
-    let steam_root = match crate::steam::resolve::resolve_steam_path(&settings.steam_path) {
-        Ok(root) => root,
-        Err(crate::steam::resolve::SteamPathError::Empty) => return Ok(0),
-        Err(error) => {
-            crate::desk_log_warn!(
-                "library",
-                "Cache warm-up skipped: {}",
-                error.message(&settings.steam_path)
-            );
-            return Ok(0);
-        }
-    };
-
-    let scanner = SteamLibraryScanner::new(steam_root);
-    let games = scanner.scan_installed_games();
-    let app_ids: Vec<u32> = games.iter().map(|game| game.id).collect();
-
+pub async fn warm_library_game_cache(
+    app: tauri::AppHandle,
+    app_ids: Vec<u32>,
+) -> Result<usize, String> {
+    // The caller already scanned the library; this command must not walk every
+    // ACF again just to discover the same App IDs.
     if app_ids.is_empty() {
         return Ok(0);
     }
 
+    let settings = load_settings(&app);
     crate::desk_log_info!(
         "library",
         "Starting background metadata cache warm-up for {} installed game App ID(s)",

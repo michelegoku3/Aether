@@ -2,7 +2,6 @@ import { useCallback, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { getSettings, type AppSettings } from '../hooks/useSettings';
 import type { DllStatusInfo } from '../types/ui';
-import type { DllUpdateInfo } from './types';
 
 const NOT_INSTALLED: DllStatusInfo = {
   isInstalled: false,
@@ -19,14 +18,16 @@ export function useDllRuntime() {
       const settings = preloadedSettings ?? (await getSettings());
       if (!settings.steam_path?.trim()) return;
 
-      const [isInstalled, isBlocked, updateInfo] = await Promise.all([
+      // Status is a local read. The network update check belongs to
+      // `useUpdateCoordinator` alone, so startup does not ask GitHub twice.
+      const [isInstalled, isBlocked, installedVersion] = await Promise.all([
         invoke<boolean>('is_dll_installed'),
         invoke<boolean>('is_steam_blocked'),
-        invoke<DllUpdateInfo>('check_aether_dll_update'),
+        invoke<string>('get_installed_dll_version'),
       ]);
       setStatus({
         isInstalled,
-        installedVersion: updateInfo.installed_version || 'N/A',
+        installedVersion: installedVersion || 'N/A',
         isSteamBlocked: isBlocked,
       });
     } catch (error) {

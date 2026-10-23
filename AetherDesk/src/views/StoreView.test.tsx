@@ -41,6 +41,7 @@ const witcher = {
 const renderView = () =>
   render(
     <StoreView
+      active
       settingsRevision={1}
       settingsReady
       useAlternativeGameCards={false}

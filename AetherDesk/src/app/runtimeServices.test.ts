@@ -30,7 +30,7 @@ describe('application runtime services', () => {
     mockInvokeCommands({
       is_dll_installed: true,
       is_steam_blocked: true,
-      check_aether_dll_update: { installed_version: '0.11.3' },
+      get_installed_dll_version: '0.11.3',
     });
     const { result } = renderHook(() => useDllRuntime());
 
