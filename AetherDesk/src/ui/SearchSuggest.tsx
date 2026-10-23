@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState, type UIEvent } from 'react';
 
 export interface SearchSuggestItem {
   id: string | number;
@@ -13,6 +13,8 @@ interface SearchSuggestProps {
   statusText?: string;
   activeIndex: number | null;
   maxVisible?: number;
+  /** Resets the rendered window when the query changes. */
+  resetKey?: string | number;
   onHoverIndex: (index: number) => void;
   onSelect: (item: SearchSuggestItem) => void;
 }
@@ -20,15 +22,12 @@ interface SearchSuggestProps {
 const ROW_HEIGHT = 42;
 
 /**
- * Upper bound on rendered suggestions. The container scrolls past `maxVisible`,
- * so extra rows only cost render work: a whole library matches an empty query
- * on focus, and arrow-key browsing never needs more than this many candidates.
+ * The first window is small so opening the dropdown on an empty query (the
+ * whole library) stays cheap. All items remain reachable: the window grows by
+ * one step near the bottom, and keyboard selection pulls its row into view.
  */
-export const MAX_SUGGEST_ITEMS = 20;
-
-/** Keeps the head of an already ranked list; never reorders or mutates it. */
-export const limitSuggestItems = <T,>(items: readonly T[], max = MAX_SUGGEST_ITEMS): T[] =>
-  items.slice(0, Math.max(0, max));
+export const INITIAL_SUGGEST_ITEMS = 20;
+export const SUGGEST_ITEMS_STEP = 20;
 
 /** Shared typeahead list (Home library + Store Steam suggest). */
 export const SearchSuggest = ({
@@ -38,29 +37,52 @@ export const SearchSuggest = ({
   statusText,
   activeIndex,
   maxVisible = 5,
+  resetKey,
   onHoverIndex,
   onSelect,
 }: SearchSuggestProps) => {
   const resultRefs = useRef<Array<HTMLButtonElement | null>>([]);
+  const [renderedCount, setRenderedCount] = useState(INITIAL_SUGGEST_ITEMS);
+
+  useEffect(() => {
+    setRenderedCount(INITIAL_SUGGEST_ITEMS);
+  }, [resetKey]);
+
+  // Keyboard selection can move past the rendered window; mount the row before
+  // the scroll effect below asks the DOM to bring it into view.
+  useEffect(() => {
+    if (!open || activeIndex === null || activeIndex < renderedCount) return;
+    const next = Math.ceil((activeIndex + 1) / SUGGEST_ITEMS_STEP) * SUGGEST_ITEMS_STEP;
+    setRenderedCount(Math.min(items.length, next));
+  }, [activeIndex, items.length, open, renderedCount]);
 
   useEffect(() => {
     if (!open || activeIndex === null) return;
     resultRefs.current[activeIndex]?.scrollIntoView({ block: 'nearest' });
-  }, [activeIndex, open]);
+  }, [activeIndex, open, renderedCount]);
 
   if (!open) return null;
 
+  const visibleCount = Math.min(renderedCount, items.length);
+  const renderedItems = items.slice(0, visibleCount);
   const extraStatus = statusText ? 1 : 0;
   const visibleRowCount = Math.min(maxVisible, Math.max(items.length + extraStatus, 1));
+
+  const handleScroll = (event: UIEvent<HTMLDivElement>) => {
+    const list = event.currentTarget;
+    if (list.scrollTop + list.clientHeight < list.scrollHeight - ROW_HEIGHT * 2) return;
+    setRenderedCount((count) => Math.min(items.length, count + SUGGEST_ITEMS_STEP));
+  };
 
   return (
     <div
       className="home-search-results"
       style={{ maxHeight: `${visibleRowCount * ROW_HEIGHT}px` }}
       onWheel={(event) => event.stopPropagation()}
+      onScroll={handleScroll}
     >
       {items.length > 0 ? (
-        items.map((item, index) => (
+        renderedItems.map((item, index) => (
           <button
             key={`${item.appId}-${item.id}`}
             type="button"

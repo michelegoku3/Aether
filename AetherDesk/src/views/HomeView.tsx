@@ -5,7 +5,7 @@ import { CrackModal, CrackTargetGame } from '../modals/CrackModal';
 import { FindCrackModal } from '../modals/FindCrackModal';
 import { SavedCrackModal } from '../modals/SavedCrackModal';
 import { AntivirusExclusionModal } from '../modals/AntivirusExclusionModal';
-import { SearchSuggest, limitSuggestItems, moveSuggestIndex } from '../ui/SearchSuggest';
+import { SearchSuggest, moveSuggestIndex } from '../ui/SearchSuggest';
 import { filterAndSortGames } from '../util/search';
 import { toErrorMessage } from '../util/errors';
 import { resolveLiveGame } from '../util/library';
@@ -107,20 +107,15 @@ export const HomeView = memo(function HomeView() {
     return filterAndSortGames(games, query);
   }, [games, query]);
 
-  // Rendered, navigable and selectable list: one bounded list for all three so
-  // an index can never point past what the user can see. An empty query offers
-  // the whole library, which is exactly the case the cap exists for.
-  const suggestions = useMemo(() => limitSuggestItems(filteredGames), [filteredGames]);
-
   useEffect(() => {
     setActiveResultIndex(null);
   }, [query]);
 
   useEffect(() => {
-    if (activeResultIndex !== null && activeResultIndex >= suggestions.length) {
-      setActiveResultIndex(suggestions.length > 0 ? suggestions.length - 1 : null);
+    if (activeResultIndex !== null && activeResultIndex >= filteredGames.length) {
+      setActiveResultIndex(filteredGames.length > 0 ? filteredGames.length - 1 : null);
     }
-  }, [activeResultIndex, suggestions.length]);
+  }, [activeResultIndex, filteredGames.length]);
 
   const hasSelectedGame = Boolean(selectedGame);
 
@@ -134,7 +129,11 @@ export const HomeView = memo(function HomeView() {
 
   const selectActiveResult = () => {
     const game =
-      activeResultIndex !== null ? suggestions[activeResultIndex] : suggestions.length === 1 ? suggestions[0] : null;
+      activeResultIndex !== null
+        ? filteredGames[activeResultIndex]
+        : filteredGames.length === 1
+          ? filteredGames[0]
+          : null;
     if (game) {
       selectGame(game);
     }
@@ -215,18 +214,18 @@ export const HomeView = memo(function HomeView() {
               if (event.key === 'ArrowDown') {
                 event.preventDefault();
                 setIsSearchOpen(true);
-                setActiveResultIndex((prev) => moveSuggestIndex(prev, suggestions.length, 1));
+                setActiveResultIndex((prev) => moveSuggestIndex(prev, filteredGames.length, 1));
               } else if (event.key === 'ArrowUp') {
                 event.preventDefault();
                 setIsSearchOpen(true);
-                setActiveResultIndex((prev) => moveSuggestIndex(prev, suggestions.length, -1));
+                setActiveResultIndex((prev) => moveSuggestIndex(prev, filteredGames.length, -1));
               } else if (event.key === 'Enter' || event.key === 'Delete') {
                 // Empty search (no text typed, no game selected): dismiss the
                 // whole suggestion list instead of selecting a game.
                 if (!query.trim() && !selectedGame) {
                   event.preventDefault();
                   setIsSearchOpen(false);
-                } else if (event.key === 'Enter' && isSearchOpen && suggestions.length > 0) {
+                } else if (event.key === 'Enter' && isSearchOpen && filteredGames.length > 0) {
                   event.preventDefault();
                   selectActiveResult();
                 }
@@ -255,13 +254,14 @@ export const HomeView = memo(function HomeView() {
 
           <SearchSuggest
             open={isSearchOpen && !isLoading}
-            items={suggestions}
+            items={filteredGames}
             emptyText="No Lua games found."
             activeIndex={activeResultIndex}
             maxVisible={MAX_VISIBLE_RESULTS}
+            resetKey={query}
             onHoverIndex={setActiveResultIndex}
             onSelect={(item) => {
-              const game = suggestions.find((candidate) => candidate.id === item.id);
+              const game = filteredGames.find((candidate) => candidate.id === item.id);
               if (game) selectGame(game);
             }}
           />
