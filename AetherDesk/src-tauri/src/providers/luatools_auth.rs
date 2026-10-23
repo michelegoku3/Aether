@@ -20,7 +20,10 @@ use crate::providers::http;
 const SUPABASE_URL: &str = "https://db.lua.tools";
 const SUPABASE_ANON_KEY: &str = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpYXQiOjE3NzYwMzkzNzYsImV4cCI6MTg5MzQ1NjAwMCwicm9sZSI6ImFub24iLCJpc3MiOiJzdXBhYmFzZSJ9.f_-K38u3odjltP-g_67FVmG32Vg-_-k-lNBvIaVUVBM";
 const CALLBACK_PORT: u16 = 53789;
-const CALLBACK_URL: &str = "http://localhost:53789/callback";
+// GoTrue accepts a loopback IP literal without consulting the redirect
+// allowlist (RFC 8252), so the state can ride in the redirect query even when
+// the Supabase project lists only the bare callback URL.
+const CALLBACK_URL: &str = "http://127.0.0.1:53789/callback";
 const AUTH_TIMEOUT_SECONDS: u64 = 5 * 60;
 const AUTH_FILE_NAME: &str = "luatools_auth.dat";
 
@@ -78,6 +81,61 @@ struct CustomClaims {
     global_name: Option<String>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum CallbackOutcome {
+    /// The callback carries our state and an authorization code.
+    Code(String),
+    /// The callback carries our state and a provider denial.
+    Denied(String),
+    /// Missing or foreign state: never trust the payload.
+    WrongState,
+    /// Unrelated request (favicon, health probe, missing code).
+    Ignored,
+}
+
+/// The state travels inside `redirect_to` because GoTrue owns the top-level
+/// `state` parameter for the provider leg and strips client values. GoTrue
+/// preserves the redirect query when it appends `code`, so this nonce comes
+/// back unchanged.
+fn build_authorize_url(challenge: &str, state: &str) -> String {
+    let redirect_to = format!("{CALLBACK_URL}?state={state}");
+    let encoded_redirect =
+        url::form_urlencoded::byte_serialize(redirect_to.as_bytes()).collect::<String>();
+    format!(
+        "{SUPABASE_URL}/auth/v1/authorize?provider=discord&redirect_to={encoded_redirect}&code_challenge={challenge}&code_challenge_method=s256"
+    )
+}
+
+fn parse_callback(target: &str, expected_state: &str) -> CallbackOutcome {
+    let Ok(url) = url::Url::parse(&format!("http://127.0.0.1{target}")) else {
+        return CallbackOutcome::Ignored;
+    };
+    if url.path() != "/callback" {
+        return CallbackOutcome::Ignored;
+    }
+    let mut state = None;
+    let mut code = None;
+    let mut error = None;
+    for (key, value) in url.query_pairs() {
+        match key.as_ref() {
+            "state" => state = Some(value.into_owned()),
+            "code" => code = Some(value.into_owned()),
+            "error_description" => error = Some(value.into_owned()),
+            _ => {}
+        }
+    }
+    if state.as_deref() != Some(expected_state) {
+        return CallbackOutcome::WrongState;
+    }
+    if let Some(error) = error {
+        return CallbackOutcome::Denied(error);
+    }
+    match code {
+        Some(code) if !code.is_empty() => CallbackOutcome::Code(code),
+        _ => CallbackOutcome::Ignored,
+    }
+}
+
 /// Owns the LuaTools Supabase session lifecycle. Tokens are persisted outside
 /// settings.json and protected with Windows DPAPI for the current OS user.
 pub struct LuaToolsAuth {
@@ -119,10 +177,11 @@ impl LuaToolsAuth {
         rand::thread_rng().fill_bytes(&mut verifier_bytes);
         let verifier = URL_SAFE_NO_PAD.encode(verifier_bytes);
         let challenge = URL_SAFE_NO_PAD.encode(Sha256::digest(verifier.as_bytes()));
-        let authorize_url = format!(
-            "{SUPABASE_URL}/auth/v1/authorize?provider=discord&redirect_to={}&code_challenge={challenge}&code_challenge_method=s256",
-            url::form_urlencoded::byte_serialize(CALLBACK_URL.as_bytes()).collect::<String>()
-        );
+        // Fresh per flow: a callback that does not echo it is not ours.
+        let mut state_bytes = [0u8; 32];
+        rand::thread_rng().fill_bytes(&mut state_bytes);
+        let state = URL_SAFE_NO_PAD.encode(state_bytes);
+        let authorize_url = build_authorize_url(&challenge, &state);
 
         crate::util::browser::open_external_url(&authorize_url)?;
 
@@ -141,7 +200,7 @@ impl LuaToolsAuth {
         }
         let callback = tokio::time::timeout(
             Duration::from_secs(AUTH_TIMEOUT_SECONDS),
-            wait_for_callback(listener),
+            wait_for_callback(listener, &state),
         );
         let code_result = tokio::select! {
             result = callback => result
@@ -356,7 +415,7 @@ fn stored_from_session(session: SupabaseSession) -> StoredSession {
     }
 }
 
-async fn wait_for_callback(listener: TcpListener) -> Result<String, String> {
+async fn wait_for_callback(listener: TcpListener, expected_state: &str) -> Result<String, String> {
     loop {
         let (mut stream, _) = listener
             .accept()
@@ -386,48 +445,55 @@ async fn wait_for_callback(listener: TcpListener) -> Result<String, String> {
             .unwrap_or("")
             .to_string();
         let target = first_line.split_whitespace().nth(1).unwrap_or("");
-        let parsed = url::Url::parse(&format!("http://localhost{target}"));
-        let (code, error) = match parsed {
-            Ok(url) => {
-                let mut code = None;
-                let mut error = None;
-                for (key, value) in url.query_pairs() {
-                    match key.as_ref() {
-                        "code" => code = Some(value.into_owned()),
-                        "error_description" => error = Some(value.into_owned()),
-                        _ => {}
-                    }
-                }
-                (code, error)
+        match parse_callback(target, expected_state) {
+            CallbackOutcome::Ignored => {
+                let _ = write_callback_response(&mut stream, 404, false, "Not found").await;
             }
-            Err(_) => (None, None),
-        };
-
-        if code.is_none() && error.is_none() {
-            let _ = write_callback_response(&mut stream, false, "Not found").await;
-            continue;
+            CallbackOutcome::WrongState => {
+                let _ = write_callback_response(
+                    &mut stream,
+                    400,
+                    false,
+                    "Invalid sign-in state. Close this tab and start again from AetherDesk.",
+                )
+                .await;
+            }
+            CallbackOutcome::Denied(error) => {
+                let _ = write_callback_response(
+                    &mut stream,
+                    400,
+                    false,
+                    "LuaTools sign-in was denied.",
+                )
+                .await;
+                return Err(format!("LuaTools sign-in failed: {error}"));
+            }
+            CallbackOutcome::Code(code) => {
+                let _ = write_callback_response(
+                    &mut stream,
+                    200,
+                    true,
+                    "Signed in. You can close this tab and return to AetherDesk.",
+                )
+                .await;
+                return Ok(code);
+            }
         }
-        let ok = code.is_some();
-        let message = error.as_deref().unwrap_or(if ok {
-            "Signed in. You can close this tab and return to AetherDesk."
-        } else {
-            "LuaTools sign-in was denied."
-        });
-        let _ = write_callback_response(&mut stream, ok, message).await;
-        if let Some(error) = error {
-            return Err(format!("LuaTools sign-in failed: {error}"));
-        }
-        return code
-            .ok_or_else(|| "LuaTools callback did not contain an authorization code".to_string());
     }
 }
 
 async fn write_callback_response(
     stream: &mut tokio::net::TcpStream,
+    status: u16,
     ok: bool,
     message: &str,
 ) -> Result<(), String> {
     let color = if ok { "#a78bfa" } else { "#f87171" };
+    let reason = match status {
+        200 => "OK",
+        404 => "Not Found",
+        _ => "Bad Request",
+    };
     let escaped = message
         .replace('&', "&amp;")
         .replace('<', "&lt;")
@@ -437,7 +503,7 @@ async fn write_callback_response(
         "<!doctype html><meta charset=\"utf-8\"><title>AetherDesk</title><style>body{{background:#0b0b12;color:#e5e7eb;font-family:Segoe UI,sans-serif;display:grid;place-items:center;height:100vh;margin:0}}div{{padding:40px;background:#14141c;border:1px solid #ffffff14;border-radius:14px}}h1{{color:{color}}}</style><div><h1>LuaTools</h1><p>{escaped}</p></div>"
     );
     let response = format!(
-        "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+        "HTTP/1.1 {status} {reason}\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
         body.len(),
         body
     );
@@ -452,4 +518,80 @@ fn now_unix() -> u64 {
         .duration_since(UNIX_EPOCH)
         .map(|duration| duration.as_secs())
         .unwrap_or(0)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn authorize_url_carries_the_state_inside_redirect_to() {
+        let url = build_authorize_url("challenge", "state-value");
+        let parsed = url::Url::parse(&url).expect("authorize url");
+        let redirect = parsed
+            .query_pairs()
+            .find(|(key, _)| key == "redirect_to")
+            .map(|(_, value)| value.into_owned())
+            .expect("redirect_to");
+        assert_eq!(
+            redirect,
+            "http://127.0.0.1:53789/callback?state=state-value"
+        );
+        assert!(parsed.query_pairs().all(|(key, _)| key.as_ref() != "state"));
+        assert_eq!(
+            parsed
+                .query_pairs()
+                .find(|(key, _)| key == "code_challenge")
+                .map(|(_, value)| value.into_owned()),
+            Some("challenge".to_string())
+        );
+    }
+
+    #[test]
+    fn callback_accepts_a_matching_state_with_a_code() {
+        assert_eq!(
+            parse_callback("/callback?state=abc&code=xyz", "abc"),
+            CallbackOutcome::Code("xyz".to_string())
+        );
+    }
+
+    #[test]
+    fn callback_rejects_a_missing_or_mismatched_state() {
+        assert_eq!(
+            parse_callback("/callback?code=xyz", "abc"),
+            CallbackOutcome::WrongState
+        );
+        assert_eq!(
+            parse_callback("/callback?state=other&code=xyz", "abc"),
+            CallbackOutcome::WrongState
+        );
+        assert_eq!(
+            parse_callback("/callback?state=other&error_description=denied", "abc"),
+            CallbackOutcome::WrongState
+        );
+    }
+
+    #[test]
+    fn callback_reports_the_provider_error_only_with_the_right_state() {
+        assert_eq!(
+            parse_callback("/callback?state=abc&error_description=access_denied", "abc"),
+            CallbackOutcome::Denied("access_denied".to_string())
+        );
+    }
+
+    #[test]
+    fn callback_ignores_unrelated_requests() {
+        assert_eq!(
+            parse_callback("/favicon.ico", "abc"),
+            CallbackOutcome::Ignored
+        );
+        assert_eq!(
+            parse_callback("/other?state=abc&code=xyz", "abc"),
+            CallbackOutcome::Ignored
+        );
+        assert_eq!(
+            parse_callback("/callback?state=abc", "abc"),
+            CallbackOutcome::Ignored
+        );
+    }
 }
