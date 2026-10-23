@@ -202,7 +202,7 @@ jobs:
         uses: seanmiddleditch/gha-setup-ninja@master
 
       # Il configure applica i gate di cmake/Quality.cmake: /W4 /WX,
-      # clang-tidy (se presente nell'immagine), header/sorgenti orfani,
+      # clang-tidy (required), header/sorgenti orfani,
       # e i test unitari come parte di ALL. Identico a "Compila tutto" in VS.
       - name: Configure AetherDLL
         run: cmake --preset x64-Release

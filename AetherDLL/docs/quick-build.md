@@ -21,7 +21,7 @@ build_dll.cmd /skiptests   :: skip the explicit ctest report
 Quality gates (all enforced identically locally and on CI, see `docs/quality-gates.md`):
 
 - `clang-format --dry-run --Werror` (style gate, `.clang-format` at `AetherDLL` root)
-- `cmake --preset x64-Release` (`/W4 /WX`, clang-tidy when present, orphan-header check)
+- `cmake --preset x64-Release` (`/W4 /WX`, clang-tidy required, orphan-header check)
 - `cmake --build --preset x64-Release` (unit tests compile as part of `ALL`)
 - `ctest --test-dir out/build/x64-Release` (explicit report)
 - `verify_version.ps1` (every DLL carries the `project(... VERSION x.y.z)` resource)

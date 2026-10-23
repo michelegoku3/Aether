@@ -8,9 +8,9 @@
 #   aether_apply_quality(<target>)
 #       - /W4 /permissive- /Zc:preprocessor on MSVC (before: default level W1)
 #       - /WX (warning = error) when AETHER_WARNINGS_AS_ERRORS=ON (default ON)
-#       - clang-tidy on the target's sources when AETHER_CLANG_TIDY != OFF and
-#         the binary exists (Visual Studio: "C++ Clang tools for Windows"
-#         component); configuration in AetherDLL/.clang-tidy
+#       - clang-tidy on the target's sources. REQUIRED (the preset default)
+#         fails the configure when the binary is missing; AUTO only warns and
+#         skips during local setup. Configuration in AetherDLL/.clang-tidy
 #       - generated sources (protobuf) are excluded from lint and /WX
 #
 #   aether_check_headers(<target>)
@@ -20,16 +20,21 @@
 #
 # Escape hatch (never silent: printed at configure time):
 #   cmake -DAETHER_WARNINGS_AS_ERRORS=OFF   -> visible but non-blocking warnings
-#   cmake -DAETHER_CLANG_TIDY=OFF           -> skips clang-tidy
+#   cmake -DAETHER_CLANG_TIDY=OFF           -> skips clang-tidy (explicit opt-out)
 #   cmake -DAETHER_CLANG_TIDY=C:/path/clang-tidy.exe
 # ============================================================================
 
 option(AETHER_WARNINGS_AS_ERRORS "Treat compiler warnings as errors (/WX)" ON)
-set(AETHER_CLANG_TIDY "AUTO" CACHE STRING "clang-tidy: AUTO | OFF | <path to clang-tidy>")
+set(AETHER_CLANG_TIDY "AUTO" CACHE STRING "clang-tidy: AUTO | REQUIRED | OFF | <path to clang-tidy>")
+
+set(_aether_clang_tidy_required FALSE)
+if(AETHER_CLANG_TIDY STREQUAL "REQUIRED")
+    set(_aether_clang_tidy_required TRUE)
+endif()
 
 # Resolves the clang-tidy binary once per configure.
 if(NOT AETHER_CLANG_TIDY STREQUAL "OFF")
-    if(AETHER_CLANG_TIDY STREQUAL "AUTO")
+    if(AETHER_CLANG_TIDY STREQUAL "AUTO" OR _aether_clang_tidy_required)
         # Typical Visual Studio 2022/2025 paths beyond PATH.
         file(GLOB _aether_vs_llvm
             "C:/Program Files/Microsoft Visual Studio/2022/*/VC/Tools/Llvm/x64/bin"
@@ -39,10 +44,18 @@ if(NOT AETHER_CLANG_TIDY STREQUAL "OFF")
             "C:/Program Files/LLVM/bin")
         find_program(AETHER_CLANG_TIDY_EXE NAMES clang-tidy HINTS ${_aether_vs_llvm})
     else()
+        if(NOT EXISTS "${AETHER_CLANG_TIDY}")
+            message(FATAL_ERROR "[AetherDLL] AETHER_CLANG_TIDY path does not exist: ${AETHER_CLANG_TIDY}")
+        endif()
         set(AETHER_CLANG_TIDY_EXE "${AETHER_CLANG_TIDY}" CACHE FILEPATH "" FORCE)
     endif()
     if(AETHER_CLANG_TIDY_EXE)
         message(STATUS "[AetherDLL] clang-tidy enabled: ${AETHER_CLANG_TIDY_EXE}")
+    elseif(_aether_clang_tidy_required)
+        message(FATAL_ERROR "[AetherDLL] clang-tidy is REQUIRED but was not found. "
+                            "Install 'C++ Clang tools for Windows' in the Visual Studio Installer "
+                            "or LLVM, pass -DAETHER_CLANG_TIDY=<path>, or opt out explicitly "
+                            "with -DAETHER_CLANG_TIDY=OFF.")
     else()
         message(STATUS "[AetherDLL] clang-tidy NOT found: static analysis skipped "
                        "(install 'C++ Clang tools for Windows' in the VS Installer, "

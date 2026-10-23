@@ -126,15 +126,18 @@ via `aether_apply_quality(<target>)`.
 | `/W4 /permissive- /Zc:preprocessor` | compiles at high warning level and conforming C++ | — |
 | `/WX` | every MSVC warning is an error | `-DAETHER_WARNINGS_AS_ERRORS=OFF` (prints a WARNING at configure) |
 | `/external:W0` | zero noise from protobuf/abseil/lua/MinHook | — |
-| **clang-tidy** | static C++ bugs: use-after-move, narrowing, avoidable copies, missing locks, UB (CERT) | `-DAETHER_CLANG_TIDY=OFF`; checks in `AetherDLL/.clang-tidy` |
+| **clang-tidy** | static C++ bugs: use-after-move, narrowing, avoidable copies, missing locks, UB (CERT) | `-DAETHER_CLANG_TIDY=OFF` (prints a STATUS at configure); checks in `AetherDLL/.clang-tidy` |
 | `aether_check_sources` | `.cpp` in the target folder but not in the target | — |
 | `aether_check_headers` | `.h/.inl` no project file includes | — |
 | `aether_run_tests` (ALL) | `ctest` runs on every build; a red test = red build | `-DAETHER_BUILD_TESTS=OFF` |
 | `verify_version.ps1` | DLL without version resource | — |
 
-clang-tidy activates on its own when it finds the binary (Visual Studio Installer →
-*Individual components* → **"C++ Clang tools for Windows"**). When missing, the
-configure says so clearly and carries on.
+clang-tidy is **required** by the `x64-Release` preset: the configure fails when
+the binary is missing, so CI cannot silently ship without static analysis.
+Install it from the Visual Studio Installer (*Individual components* ->
+**"C++ Clang tools for Windows"**) or LLVM. `-DAETHER_CLANG_TIDY=OFF` is the
+explicit opt-out; `-DAETHER_CLANG_TIDY=AUTO` skips it with a visible message
+during one-off local setup.
 
 ### Turning a warning backlog into a list
 
