@@ -117,7 +117,9 @@ describe('OnlinePanel enable warnings', () => {
 
     await user.click(await screen.findByRole('button', { name: 'Enable' }));
 
-    await screen.findByText(/presence configuration incomplete/);
+    const warning = await screen.findByText(/presence configuration incomplete/);
+    // The result sits above the scrollable body so it is always visible.
+    expect(warning.closest('.op-body')).toBeNull();
     // The deployment succeeded: the panel reports it and adds the warning.
     expect(screen.getByText(/Online enabled\./)).toBeInTheDocument();
   });

@@ -163,6 +163,17 @@ export const OnlinePanel = ({ game, onClose }: OnlinePanelProps) => {
             </button>
           </div>
 
+          {/* Result message: above the scrollable body so an action taken from
+              the footer is always visible, even when the body is scrolled. */}
+          {message && (
+            <div
+              className={`op-box op-message op-message--top op-message--${message.kind}`}
+              role={message.kind === 'error' ? 'alert' : 'status'}
+            >
+              {message.text}
+            </div>
+          )}
+
           <div className="op-body">
             {loading ? (
               <div className="op-muted">Analyzing the game...</div>
@@ -173,9 +184,6 @@ export const OnlinePanel = ({ game, onClose }: OnlinePanelProps) => {
                 {plan && (
                   <OnlineConfigSection plan={plan} request={request} enabled={enabled} setRequest={setRequest} />
                 )}
-
-                {/* Result message */}
-                {message && <div className={`op-box op-message op-message--${message.kind}`}>{message.text}</div>}
               </>
             )}
           </div>

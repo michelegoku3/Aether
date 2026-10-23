@@ -4216,6 +4216,12 @@ body {
   color: #d0d0d0;
 }
 
+/* The result notice sits between the header and the scrollable body, so it
+   keeps the body's horizontal inset without being scrolled away. */
+.op-message--top {
+  margin: 12px 20px 0;
+}
+
 .op-message--success {
   color: #6fdb8c;
 }
