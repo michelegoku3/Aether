@@ -116,8 +116,10 @@ add a PR workflow unless that working model changes.
 
 ## Conventions and guardrails
 
-- **Commit messages are a single line.** Never add a body, bullet list or
-  trailer below the subject.
+- **Commit messages are a single line in `action(where): what changed` form.**
+  Use a lowercase action (`feat`, `fix`, `perf`, `refactor`, `docs`, `test`,
+  `build`, `chore`, `style`, `revert`), a lowercase scope, and a lowercase
+  subject. Never add a body, bullet list or trailer below the subject.
 - **Comments are English**, present tense, and explain *why*: invariants,
   contracts, ordering constraints, platform quirks.
 - **Code and documents describe the current state only.** Never write change
