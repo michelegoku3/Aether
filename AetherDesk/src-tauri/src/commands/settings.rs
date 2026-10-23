@@ -100,7 +100,6 @@ pub fn reset_settings_to_defaults(app: tauri::AppHandle) -> Result<AppSettings, 
         .update_or_reset("reset-defaults", |current| {
             previous_root = current.steam_path.clone();
             let defaults = AppSettings {
-                library_install_filter: current.library_install_filter.clone(),
                 antivirus_exclusion_done: current.antivirus_exclusion_done,
                 download_updates_default_off_migrated: current
                     .download_updates_default_off_migrated,

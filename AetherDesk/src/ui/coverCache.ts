@@ -2,7 +2,6 @@ import { isCoverAssetUrl } from './coverUrls';
 import type { PersistedCoverEnvelope, ResolvedCover } from './coverTypes';
 
 const COVER_CACHE_PREFIX = 'aether_cover_v4_';
-const LEGACY_COVER_CACHE_PREFIX = 'aether_cover_v3_';
 
 /** Cover-cache policy. Entries older than TTL are transparently discarded on
  *  read so we never re-render a months-old Steam capsule that may have been
@@ -44,13 +43,13 @@ class BoundedCoverCache {
 
 const memoryCoverCache = new BoundedCoverCache();
 
-let haveSweptLegacyKeys = false;
+let haveSweptKeys = false;
 
-/** One-time sweep: remove v3 (no TTL, raw URL/JSON) entries so they don't
- *  waste localStorage after the bump to v4. Lazy — runs on the first read. */
-const sweepLegacyAndStaleEntries = () => {
-  if (haveSweptLegacyKeys) return;
-  haveSweptLegacyKeys = true;
+/** One-time sweep: drop expired/malformed v4 entries so they don't waste
+ *  localStorage. Lazy — runs on the first read. */
+const sweepStaleEntries = () => {
+  if (haveSweptKeys) return;
+  haveSweptKeys = true;
   try {
     const toRemove: string[] = [];
     const kept: { key: string; cachedAt: number }[] = [];
@@ -58,10 +57,6 @@ const sweepLegacyAndStaleEntries = () => {
     for (let i = 0; i < localStorage.length; i++) {
       const key = localStorage.key(i);
       if (!key) continue;
-      if (key.startsWith(LEGACY_COVER_CACHE_PREFIX)) {
-        toRemove.push(key);
-        continue;
-      }
       if (!key.startsWith(COVER_CACHE_PREFIX)) continue;
       // Keep v4 entries whose TTL is still valid; drop anything expired.
       try {
@@ -131,7 +126,7 @@ const parseCachedCover = (raw: string | null): ResolvedCover | null => {
 };
 
 export const getCachedCover = (appId: string): ResolvedCover | null => {
-  sweepLegacyAndStaleEntries();
+  sweepStaleEntries();
   const memoryHit = memoryCoverCache.get(appId);
   if (memoryHit) return memoryHit;
 
@@ -172,7 +167,7 @@ export const clearCachedCovers = () => {
   memoryCoverCache.clear();
   try {
     for (const key of Object.keys(localStorage)) {
-      if (key.startsWith(COVER_CACHE_PREFIX) || key.startsWith(LEGACY_COVER_CACHE_PREFIX)) {
+      if (key.startsWith(COVER_CACHE_PREFIX)) {
         localStorage.removeItem(key);
       }
     }

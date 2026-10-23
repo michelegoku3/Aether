@@ -64,9 +64,10 @@ fn main() {
             // Clear any leftover artifacts from an interrupted portable self-update.
             crate::updater::desk::cleanup_stale_artifacts();
             let cleanup_ms = setup_started.elapsed().as_millis();
-            // Only the migrations that a command can depend on stay here. The
-            // rest (legacy backups, shell integration, cleanup) runs after the
-            // window is interactive, in `run_deferred_startup_tasks`.
+            // Only the migrations a command can depend on stay here (settings
+            // policy, appearance seeding, Steam path adoption, the DLL bridge).
+            // Shell integration runs after the window is interactive, in
+            // `run_deferred_startup_tasks`.
             crate::core::migration::run_critical_startup_migrations(app.handle());
             let migrations_ms = setup_started.elapsed().as_millis();
             // One snapshot feeds every startup consumer: constructing a second

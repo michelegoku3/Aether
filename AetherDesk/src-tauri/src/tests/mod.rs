@@ -34,7 +34,6 @@ pub mod home_links_tests;
 pub mod hubcap_monitor_tests;
 pub mod hubcap_quota_tests;
 pub mod ipc_contract_tests;
-pub mod launch_options_tests;
 pub mod local_file_classification_tests;
 pub mod local_lua_name_tests;
 pub mod lua_build_validation_tests;

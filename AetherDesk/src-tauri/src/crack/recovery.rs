@@ -1,7 +1,7 @@
 //! Crack recovery inventory: which files were applied, what the originals
 //! were, and what is pending. Guards every mutation (`known_content`,
 //! `verify_original`) and persists the journal (`load_recovery`,
-//! `save_recovery`, including legacy-inventory repair).
+//! `save_recovery`).
 use std::collections::BTreeMap;
 use std::fs;
 use std::io;
@@ -13,7 +13,7 @@ use crate::core::backup::GameBackup;
 use crate::external_tools::fs::write_atomic;
 
 use super::hashing::optional_hash;
-use super::paths::{normalized_relative, reserved_relative};
+use super::paths::normalized_relative;
 
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -65,29 +65,15 @@ pub(crate) fn load_recovery(backup: &GameBackup, app_id: u32) -> Result<Recovery
             state
         }
         Err(error) if error.kind() == io::ErrorKind::NotFound => {
-            let inventory_path = backup.crack_inventory_path(app_id);
-            if inventory_path.try_exists().map_err(|e| e.to_string())? && !inventory_path.is_file()
-            {
-                return Err(format!(
-                    "Invalid crack inventory at {}",
-                    inventory_path.display()
-                ));
-            }
-            // Repair earlier multi-source inventories from the saved tree as well.
-            let mut paths = backup.read_crack_inventory(app_id)?;
-            paths.extend(backup.list_saved_crack_files()?);
+            // No recovery journal yet: rebuild it from the saved crack tree so
+            // an import interrupted before the first save stays recoverable.
             let mut files = BTreeMap::new();
-            for path in paths {
+            for path in backup.list_saved_crack_files()? {
                 let path = normalized_relative(&path)?;
-                if reserved_relative(&path, app_id) {
-                    return Err("Legacy crack path collides with inventory metadata".into());
-                }
                 let original_sha256 = optional_hash(&backup.original_dir().join(&path))?;
                 let applied_sha256 = optional_hash(&backup.crack_dir().join(&path))?;
                 if applied_sha256.is_none() {
-                    return Err(format!(
-                        "Saved crack bytes missing for legacy inventory path {path}"
-                    ));
+                    return Err(format!("Saved crack bytes missing for {path}"));
                 }
                 files.insert(
                     path,
@@ -112,7 +98,7 @@ pub(crate) fn load_recovery(backup: &GameBackup, app_id: u32) -> Result<Recovery
         if record.had_original != record.original_sha256.is_some() {
             return Err("Incomplete original ownership in crack recovery state".into());
         }
-        if reserved_relative(path, app_id) || normalized_relative(path)? != *path {
+        if normalized_relative(path)? != *path {
             return Err("Non-normalized crack recovery path".into());
         }
         for hash in [
@@ -137,19 +123,17 @@ pub(crate) fn save_recovery(
     state: &RecoveryInventory,
 ) -> Result<(), String> {
     let bytes = serde_json::to_vec_pretty(state).map_err(|e| e.to_string())?;
-    write_atomic(&backup.crack_recovery_path(app_id), &bytes)?;
-    let paths: Vec<_> = state
+    write_atomic(&backup.crack_recovery_path(app_id), &bytes)
+}
+
+/// Game-relative paths currently applied or pending, in stable order.
+#[cfg(test)]
+pub(crate) fn applied_paths(backup: &GameBackup, app_id: u32) -> Result<Vec<String>, String> {
+    let state = load_recovery(backup, app_id)?;
+    Ok(state
         .files
         .iter()
         .filter(|(_, record)| record.applied_sha256.is_some() || record.pending_sha256.is_some())
-        .map(|(path, _)| path.as_str())
-        .collect();
-    if paths.is_empty() {
-        backup.clear_crack_inventory(app_id)
-    } else {
-        write_atomic(
-            &backup.crack_inventory_path(app_id),
-            format!("{}\n", paths.join("\n")).as_bytes(),
-        )
-    }
+        .map(|(path, _)| path.clone())
+        .collect())
 }

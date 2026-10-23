@@ -70,8 +70,8 @@ impl BackendReport {
     }
 }
 
-/// Competing emulators/proxies to neutralize (reversible `*.uco-disabled`
-/// rename) before deploy, otherwise they fight UCOnline2.
+/// Competing emulators/proxies to quarantine (moved into the backup dir)
+/// before deploy, otherwise they fight UCOnline2.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", content = "path", rename_all = "camelCase")]
 pub enum Conflict {

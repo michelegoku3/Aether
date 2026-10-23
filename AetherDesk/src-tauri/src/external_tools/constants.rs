@@ -12,10 +12,6 @@ pub const STEAMLESS_BACKUP_SUFFIX: &str = ".steamstub.bak";
 /// (e.g. `game.exe.unpacked.exe`).
 pub const STEAMLESS_UNPACKED_SUFFIX: &str = ".unpacked.exe";
 
-/// Suffix with which UCOnline2 (patch.bat) reversibly neutralizes competing
-/// emulators (SteamFix/OFME from online-fix.me and their proxies).
-pub const UCO_DISABLED_SUFFIX: &str = ".uco-disabled";
-
 /// Threshold (bytes) below which a generic proxy DLL (`version.dll`, `dxgi.dll`,
 /// ...) counts as part of a competing emulator rather than a legitimate game
 /// file. Mirrors the UCOnline2 patch.bat threshold (300 KiB).

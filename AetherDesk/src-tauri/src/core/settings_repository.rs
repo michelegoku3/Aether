@@ -3,8 +3,7 @@
 //! `require_steam_path` conveniences. The data model lives in the sibling
 //! `settings_model` module.
 use super::settings_model::{
-    normalize_icon_selected_file, normalize_library_install_filter, normalize_store_currency,
-    normalize_store_front_filter, AppSettings, SettingsLoadFlags,
+    normalize_store_currency, normalize_store_front_filter, AppSettings, SettingsLoadFlags,
 };
 use crate::core::error::{codes, DeskError};
 use crate::core::paths::LocalAppPaths;
@@ -14,7 +13,6 @@ use std::path::{Path, PathBuf};
 
 pub struct SettingsManager {
     config_dir: PathBuf,
-    legacy_config_dir: Option<PathBuf>,
 }
 
 /// On-disk identity of one settings file. A hand edit is detected by a change
@@ -105,19 +103,9 @@ struct ProviderCredentials {
 
 impl SettingsManager {
     pub fn new(app_handle: &tauri::AppHandle) -> Self {
-        let manager = Self {
+        Self {
             config_dir: LocalAppPaths::data_root_for_app(app_handle).join("config"),
-            legacy_config_dir: LocalAppPaths::legacy_app_config_dir(app_handle),
-        };
-        // The migration logic itself lives in `core::migration` (single home
-        // for all migration helpers); calling it here keeps SettingsManager
-        // self-sufficient even when used before the startup hub runs.
-        let _guard = SETTINGS_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-        crate::core::migration::migrate_legacy_settings_if_needed(
-            &manager.config_dir,
-            manager.legacy_config_dir.as_deref(),
-        );
-        manager
+        }
     }
 
     fn get_file_path(&self) -> PathBuf {
@@ -463,9 +451,6 @@ fn normalize_settings(settings: &mut AppSettings) {
     settings.steam_path = crate::steam::resolve::normalize_steam_path(&settings.steam_path);
     settings.store_currency = normalize_store_currency(&settings.store_currency);
     settings.store_front_filter = normalize_store_front_filter(&settings.store_front_filter);
-    settings.library_install_filter =
-        normalize_library_install_filter(&settings.library_install_filter);
-    settings.icon_selected_file = normalize_icon_selected_file(&settings.icon_selected_file);
     settings.personal_wallpaper_opacity = settings.personal_wallpaper_opacity.min(100);
     settings.alternative_cards_opacity = settings.alternative_cards_opacity.min(100);
     settings.alternative_cards_fade = settings.alternative_cards_fade.min(100);
@@ -519,7 +504,6 @@ mod repository_tests {
         let dir = tempfile::tempdir().unwrap();
         let manager = SettingsManager {
             config_dir: dir.path().into(),
-            legacy_config_dir: None,
         };
         let (settings, flags) = manager.load_reported();
         assert_eq!(settings, AppSettings::default());
@@ -561,7 +545,6 @@ mod repository_tests {
         .unwrap();
         let manager = SettingsManager {
             config_dir: dir.path().into(),
-            legacy_config_dir: None,
         };
 
         let before = load_count(dir.path());
@@ -580,7 +563,6 @@ mod repository_tests {
         let dir = tempfile::tempdir().unwrap();
         let manager = SettingsManager {
             config_dir: dir.path().into(),
-            legacy_config_dir: None,
         };
         let path = dir.path().join("settings.json");
         let stored = AppSettings {
@@ -608,7 +590,6 @@ mod repository_tests {
         let dir = tempfile::tempdir().unwrap();
         let manager = SettingsManager {
             config_dir: dir.path().into(),
-            legacy_config_dir: None,
         };
         let stored = AppSettings {
             custom_game_name: "before".into(),
@@ -697,7 +678,6 @@ mod repository_tests {
         fs::write(dir.path().join("settings.json"), b"bad-json").unwrap();
         let manager = SettingsManager {
             config_dir: dir.path().into(),
-            legacy_config_dir: None,
         };
         let (saved, recovered) = manager
             .update_or_reset("test", |s| {
@@ -722,7 +702,6 @@ mod repository_tests {
         let dir = tempfile::tempdir().unwrap();
         let manager = SettingsManager {
             config_dir: dir.path().into(),
-            legacy_config_dir: None,
         };
         manager
             .update("test", |s| {
@@ -752,7 +731,6 @@ mod repository_tests {
         fs::write(dir.path().join("settings.json"), b"bad-json").unwrap();
         let manager = SettingsManager {
             config_dir: dir.path().into(),
-            legacy_config_dir: None,
         };
         assert!(manager
             .update("test", |s| {
@@ -770,7 +748,6 @@ mod repository_tests {
         let dir = tempfile::tempdir().unwrap();
         let manager = SettingsManager {
             config_dir: dir.path().into(),
-            legacy_config_dir: None,
         };
         // Recovery concerns opaque ciphertext; DPAPI is tested separately on Windows.
         let pending = PendingSettings {
@@ -797,7 +774,6 @@ mod repository_tests {
         let dir = tempfile::tempdir().unwrap();
         let manager = SettingsManager {
             config_dir: dir.path().into(),
-            legacy_config_dir: None,
         };
         let pending = PendingSettings {
             format_version: 1,
@@ -826,7 +802,6 @@ mod repository_tests {
         let dir = tempfile::tempdir().unwrap();
         let manager = SettingsManager {
             config_dir: dir.path().into(),
-            legacy_config_dir: None,
         };
         fs::write(manager.pending_path(), b"bad").unwrap();
         fs::write(manager.get_file_path(), b"original").unwrap();
@@ -840,7 +815,6 @@ mod repository_tests {
         let dir = tempfile::tempdir().unwrap();
         let manager = SettingsManager {
             config_dir: dir.path().into(),
-            legacy_config_dir: None,
         };
         std::thread::scope(|scope| {
             let m = &manager;

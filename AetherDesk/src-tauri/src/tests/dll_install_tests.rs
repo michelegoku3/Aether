@@ -1,4 +1,3 @@
-use crate::core::migration::migrate_legacy_steam_proxy_with_check;
 use crate::updater::dll::{DllInstaller, AETHER_DLL_FILES};
 use std::fs;
 use std::io::Write;
@@ -66,50 +65,13 @@ fn release_installs_only_three_dlls_beside_steam_exe() {
 }
 
 #[test]
-fn startup_proxy_migration_is_deferred_while_steam_runs_then_idempotent() {
+fn invalid_release_never_overwrites_the_existing_core() {
     let f = SteamFixture::new();
-    let legacy = f.root().join("dwmapi.dll");
-    fs::write(&legacy, b"old proxy").unwrap();
-    let path = f.root().to_str().unwrap();
-
-    let error = migrate_legacy_steam_proxy_with_check(path, || true).unwrap_err();
-    assert!(error.contains("deferred"), "{error}");
-    assert_eq!(fs::read(&legacy).unwrap(), b"old proxy");
-    assert!(migrate_legacy_steam_proxy_with_check(path, || false).unwrap());
-    assert!(!legacy.exists());
-    assert!(!migrate_legacy_steam_proxy_with_check(path, || panic!(
-        "no file: no process scan needed"
-    ))
-    .unwrap());
-}
-
-#[test]
-fn startup_proxy_migration_requires_a_validated_steam_root() {
-    let f = SteamFixture::new();
-    let legacy = f.root().join("dwmapi.dll");
-    fs::write(&legacy, b"leave this file alone").unwrap();
-    fs::remove_file(f.root().join("steam.exe")).unwrap();
-    assert!(
-        !migrate_legacy_steam_proxy_with_check(f.root().to_str().unwrap(), || panic!(
-            "invalid root: no process scan needed"
-        ),)
-        .unwrap()
-    );
-    assert!(f.installer().migrate_legacy_proxy().is_err());
-    assert!(legacy.exists());
-}
-
-#[test]
-fn install_migrates_proxy_only_after_validating_release() {
-    let f = SteamFixture::new();
-    let legacy = f.root().join("dwmapi.dll");
-    fs::write(&legacy, b"old proxy").unwrap();
     fs::write(f.root().join("AetherCore.dll"), b"previous Core").unwrap();
     let installer = f.installer();
-    assert_eq!(installer.count_aether_residuals(), 2);
+    assert_eq!(installer.count_aether_residuals(), 1);
     let invalid_zip = f.zip(&["AetherCore.dll", "AetherPayload.dll"]);
     assert!(installer.install_from_zip(&invalid_zip).is_err());
-    assert!(legacy.exists());
     assert_eq!(
         fs::read(f.root().join("AetherCore.dll")).unwrap(),
         b"previous Core"
@@ -117,48 +79,25 @@ fn install_migrates_proxy_only_after_validating_release() {
 
     let valid_zip = f.zip(&AETHER_DLL_FILES);
     installer.install_from_zip(&valid_zip).unwrap();
-    assert!(!legacy.exists());
     assert!(installer.verify_installation());
-    assert!(!installer.migrate_legacy_proxy().unwrap());
 }
 
 #[test]
-fn uninstall_and_reset_also_remove_proxy_left_after_startup() {
+fn uninstall_and_reset_remove_the_installed_dlls() {
     let f = SteamFixture::new();
-    let legacy = f.root().join("dwmapi.dll");
     let installer = f.installer();
-    let path = f.root().to_str().unwrap();
-    fs::write(&legacy, b"old proxy").unwrap();
-    assert!(migrate_legacy_steam_proxy_with_check(path, || true).is_err());
-    installer.uninstall().unwrap();
-    assert!(!legacy.exists());
-    fs::write(&legacy, b"old proxy").unwrap();
-    assert!(migrate_legacy_steam_proxy_with_check(path, || true).is_err());
-    assert_eq!(installer.reset_aether_files().unwrap(), 1);
-    assert!(!legacy.exists());
-    assert_eq!(installer.count_aether_residuals(), 0);
-}
-
-#[test]
-fn legacy_proxy_removal_failure_rolls_back_supported_dlls() {
-    let f = SteamFixture::new();
-    // A directory at the old filename simulates an undeletable file on all OSes.
-    let legacy = f.root().join("dwmapi.dll");
-    fs::create_dir(&legacy).unwrap();
     for name in AETHER_DLL_FILES {
         fs::write(f.root().join(name), b"old").unwrap();
     }
-    let zip = f.zip(&AETHER_DLL_FILES);
-    let installer = f.installer();
-    assert!(installer.install_from_zip(&zip).is_err());
+    installer.uninstall().unwrap();
     for name in AETHER_DLL_FILES {
-        assert_eq!(fs::read(f.root().join(name)).unwrap(), b"old");
-        assert!(!f.root().join(format!("{name}.aether.bak")).exists());
-        assert!(!f.root().join(format!("{name}.aether.tmp")).exists());
+        assert!(!f.root().join(name).exists());
     }
-    assert!(legacy.is_dir());
-    assert!(installer.uninstall().is_err());
-    assert!(installer.reset_aether_files().is_err());
+    for name in AETHER_DLL_FILES {
+        fs::write(f.root().join(name), b"old").unwrap();
+    }
+    assert_eq!(installer.reset_aether_files().unwrap(), 3);
+    assert_eq!(installer.count_aether_residuals(), 0);
 }
 
 #[test]
@@ -189,7 +128,7 @@ fn release_with_extra_dll_is_rejected_before_replacing_any_file() {
 }
 
 #[test]
-fn locked_or_invalid_last_proxy_rolls_back_all_previous_files() {
+fn locked_or_invalid_last_dll_rolls_back_all_previous_files() {
     let f = SteamFixture::new();
     for name in &AETHER_DLL_FILES[..2] {
         fs::write(f.root().join(name), b"old").unwrap();
@@ -208,7 +147,7 @@ fn locked_or_invalid_last_proxy_rolls_back_all_previous_files() {
 }
 
 #[test]
-fn duplicate_proxy_entry_is_rejected_before_replacing_any_dll() {
+fn duplicate_dll_entry_is_rejected_before_replacing_any_dll() {
     let f = SteamFixture::new();
     let zip = f.zip(&[
         "AetherCore.dll",

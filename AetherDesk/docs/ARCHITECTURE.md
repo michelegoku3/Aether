@@ -68,14 +68,16 @@ invariants
 ### Startup and view hydration
 
 - The Tauri setup thread runs only work a command can depend on:
-  `run_critical_startup_migrations` (path/settings migrations, Steam path
-  adoption, the DLL bridge) plus logger, settings, the Steam monitor and the
-  library watcher. Everything else goes through
+  `run_critical_startup_migrations` (the download-update policy, appearance
+  seeding, Steam path adoption, the DLL bridge) plus logger, settings, the
+  Steam monitor and the library watcher. Everything else goes through
   `run_deferred_startup_tasks` on `spawn_blocking` after the window is
-  interactive: legacy Lua backups, legacy Steam proxy removal, obsolete
-  directories, Start Menu shortcut and shell icon sync.
+  interactive: the Start Menu shortcut and the shell icon sync.
 - Each deferred step is isolated (`run_isolated`): a failure is logged and the
   remaining steps still run. A deferred step must never make startup fail.
+- After the deferred pass, `main.rs` warms the Store front cache once
+  (`warm_store_front`, the Store's first trending page) so the first click on
+  Store reads a fresh entry instead of waiting on the Steam store front.
 - `main.rs` logs one `startup` line with the critical-path phase durations and
   the deferred total. Use it to measure a change instead of guessing.
 - Store, Library, Log and Settings stay mounted (state, scroll, filters and

@@ -13,9 +13,7 @@
 //!
 //! The DLL resolves ONE mode per app inside SpawnProcess by re-reading this
 //! file (mtime → no Steam restart); nothing lands in argv. Documented
-//! precedence: exclude > aetheronline > showonline > default_mode. The
-//! `-aetheronline` / `-showonline` tokens in LaunchOptions are LEGACY: removed
-//! from the sets (migration) yet still honored by the getters until migrated.
+//! precedence: exclude > aetheronline > showonline > default_mode.
 //!
 //! Intentional line-based editing: the file stays hand-editable, foreign
 //! comments and sections are preserved byte-for-line.
@@ -261,24 +259,4 @@ pub fn ensure_defaults(path: &Path) {
         }
         Ok(())
     }); // Startup best-effort; editor logs every failure.
-}
-pub fn migrate_legacy_presence_keys(path: &Path) {
-    if !path.exists() {
-        return;
-    }
-    let _ = super::config_document::edit(path, "presence-legacy-keys", |doc| {
-        if let Some(table) = doc.get_mut("presence").and_then(|s| s.as_table_mut()) {
-            for (old, new) in [
-                ("onlinefix_apps", "aetheronline_apps"),
-                ("onlinefix_persona_patch", "aetheronline_persona_patch"),
-            ] {
-                if !table.contains_key(new) {
-                    if let Some(value) = table.remove(old) {
-                        table.insert(new, value);
-                    }
-                }
-            }
-        }
-        Ok(())
-    });
 }

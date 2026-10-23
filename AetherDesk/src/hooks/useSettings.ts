@@ -47,11 +47,6 @@ export interface AppSettings {
   alternative_cards_opacity?: number;
   /** Alternative-card bottom-fade strength percentage (0..100). */
   alternative_cards_fade?: number;
-  /**
-   * Library install-status filter:
-   * `all` (default) | `installed` | `not_installed`.
-   */
-  library_install_filter?: 'all' | 'installed' | 'not_installed' | string;
   /** When true, AetherDesk also detects testing releases (tdesk, tdll prefixes). */
   enable_test_updates?: boolean;
   /** Custom game name displayed to friends on Steam (game_extra_info). */

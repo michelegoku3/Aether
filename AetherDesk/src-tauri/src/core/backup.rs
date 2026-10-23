@@ -61,12 +61,7 @@ impl GameBackup {
         self.root.join(CRACK_SUBDIR)
     }
 
-    /// Path of the crack inventory file (`original/crack_<app_id>.txt`).
-    pub fn crack_inventory_path(&self, app_id: u32) -> PathBuf {
-        self.original_dir().join(format!("crack_{}.txt", app_id))
-    }
-
-    /// Private recovery metadata; the existing text inventory stays unchanged.
+    /// Private recovery journal (`crack_<app_id>.state.json`).
     pub(crate) fn crack_recovery_path(&self, app_id: u32) -> PathBuf {
         self.root.join(format!("crack_{app_id}.state.json"))
     }
@@ -100,42 +95,6 @@ impl GameBackup {
         collect_relative_files(&crack_dir, &crack_dir, &mut files)?;
         files.sort();
         Ok(files)
-    }
-
-    /// Read the crack inventory (game-relative paths, one per line).
-    pub fn read_crack_inventory(&self, app_id: u32) -> Result<Vec<String>, String> {
-        let path = self.crack_inventory_path(app_id);
-        if !path.is_file() {
-            return Ok(Vec::new());
-        }
-        let content = fs::read_to_string(&path).map_err(|error| {
-            format!(
-                "Failed to read crack inventory {}: {}",
-                path.display(),
-                error
-            )
-        })?;
-        Ok(content
-            .lines()
-            .map(str::trim)
-            .filter(|line| !line.is_empty())
-            .map(|line| line.to_string())
-            .collect())
-    }
-
-    /// Clear the crack inventory after the applied crack has been removed from the game.
-    pub fn clear_crack_inventory(&self, app_id: u32) -> Result<(), String> {
-        let path = self.crack_inventory_path(app_id);
-        if path.exists() {
-            fs::remove_file(&path).map_err(|error| {
-                format!(
-                    "Failed to remove crack inventory {}: {}",
-                    path.display(),
-                    error
-                )
-            })?;
-        }
-        Ok(())
     }
 
     /// Persist the Lua and any bundled Steam `.manifest` files for a game.

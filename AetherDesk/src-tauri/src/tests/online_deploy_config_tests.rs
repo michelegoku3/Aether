@@ -800,41 +800,6 @@ fn journal_save_failure_after_restore_can_be_retried_without_deleting_original()
     assert!(!backup_dir.exists());
 }
 
-#[test]
-fn legacy_neutralized_entry_is_still_restored() {
-    use crate::online::deploy::JournalEntry;
-    let temp = tempfile::tempdir().unwrap();
-    let backup_root = temp.path().join("backup");
-    let backup_dir = backup_dir_for(&backup_root, 1144200);
-    let state_path = temp.path().join("state.json");
-    let original = temp.path().join("legacy.dll");
-    fs::write(
-        temp.path().join("legacy.dll.uco-disabled"),
-        b"legacy original",
-    )
-    .unwrap();
-    Journal {
-        entries: vec![JournalEntry::Neutralized {
-            path: original.clone(),
-        }],
-    }
-    .save(&backup_dir)
-    .unwrap();
-    assert!(
-        crate::online::engine::OnlineEngine::disable(
-            1144200,
-            &backup_root,
-            &state_path,
-            None,
-            false
-        )
-        .unwrap()
-        .success
-    );
-    assert_eq!(fs::read(original).unwrap(), b"legacy original");
-    assert!(!temp.path().join("legacy.dll.uco-disabled").exists());
-}
-
 #[cfg(windows)]
 #[test]
 fn locked_deployed_file_keeps_recovery_and_succeeds_after_unlock() {

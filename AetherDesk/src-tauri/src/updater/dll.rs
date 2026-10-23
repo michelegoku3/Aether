@@ -4,8 +4,6 @@ use std::path::{Path, PathBuf};
 
 /// The entire supported AetherDLL installation beside steam.exe.
 pub const AETHER_DLL_FILES: [&str; 3] = ["AetherCore.dll", "AetherPayload.dll", "xinput1_4.dll"];
-// Obsolete Steam-root proxy from older AetherDLL builds; removed by migration.
-const LEGACY_PROXY: &str = "dwmapi.dll";
 
 pub struct DllInstaller {
     steam_path: PathBuf,
@@ -27,34 +25,9 @@ impl DllInstaller {
         crate::steam::resolve::resolve_steam_path(&raw).map_err(|error| error.message(&raw))
     }
 
-    /// Idempotent migration of the obsolete Steam-root proxy. The caller must
-    /// ensure Steam is closed; a locked file fails without being ignored.
-    pub fn migrate_legacy_proxy(&self) -> Result<bool, String> {
-        let legacy = self.validated_root()?.join(LEGACY_PROXY);
-        match fs::remove_file(&legacy) {
-            Ok(()) => Ok(true),
-            Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(false),
-            Err(error) => Err(format_file_operation_error(
-                "remove obsolete DLL",
-                &legacy,
-                &error,
-            )),
-        }
-    }
-
-    pub fn has_legacy_proxy(&self) -> bool {
-        // Unlike Path::exists(), a dangling link or inaccessible path must not
-        // be mistaken for a completed migration.
-        !matches!(
-            fs::symlink_metadata(self.steam_path.join(LEGACY_PROXY)),
-            Err(error) if error.kind() == io::ErrorKind::NotFound
-        )
-    }
-
-    /// A complete installation has the three supported DLLs, not the old proxy.
+    /// A complete installation has the three supported DLLs.
     pub fn verify_installation(&self) -> bool {
         self.steam_path.is_dir()
-            && !self.has_legacy_proxy()
             && AETHER_DLL_FILES
                 .iter()
                 .all(|file_name| self.steam_path.join(file_name).is_file())
@@ -166,9 +139,6 @@ impl DllInstaller {
                     .map_err(|e| format_file_operation_error("install", &target, &e))?;
                 installed.push(i);
             }
-            // Migrate only after the ZIP and all new binaries are in place.
-            // A deletion failure rolls back the three managed DLLs below.
-            self.migrate_legacy_proxy()?;
             Ok(())
         })();
         if let Err(error) = replacement {
@@ -207,10 +177,10 @@ impl DllInstaller {
         Ok(())
     }
 
-    /// Removes the three supported DLLs and the obsolete Steam-root proxy.
+    /// Removes the three supported DLLs.
     pub fn uninstall(&self) -> Result<(), String> {
         self.validated_root()?;
-        let mut deleted_count = usize::from(self.migrate_legacy_proxy()?);
+        let mut deleted_count = 0usize;
 
         for file_name in AETHER_DLL_FILES {
             let file_path = self.steam_path.join(file_name);
@@ -234,7 +204,7 @@ impl DllInstaller {
     /// Targets are the single source of truth shared with [`Self::count_aether_residuals`].
     pub fn reset_aether_files(&self) -> Result<usize, String> {
         self.validated_root()?;
-        let mut removed = usize::from(self.migrate_legacy_proxy()?);
+        let mut removed = 0usize;
 
         for file_path in self.aether_files() {
             if file_path.exists() {
@@ -257,8 +227,7 @@ impl DllInstaller {
         Ok(removed)
     }
 
-    /// Counts residual Aether artifacts (files, dirs, non-empty depotcache)
-    /// and the obsolete proxy until the migration removes it.
+    /// Counts residual Aether artifacts (files, dirs, non-empty depotcache).
     /// Used by the portable Uninstall flow to decide whether to prompt for a
     /// Steam clean. Does not require Steam to be closed.
     pub fn count_aether_residuals(&self) -> usize {
@@ -278,9 +247,6 @@ impl DllInstaller {
             }
         }
         count += self.depotcache_entry_count();
-        if self.has_legacy_proxy() {
-            count += 1;
-        }
         count
     }
 
@@ -289,7 +255,6 @@ impl DllInstaller {
             .iter()
             .map(|file_name| self.steam_path.join(file_name))
             .collect();
-        files.push(self.steam_path.join("AetherDLL_version.txt"));
         files.push(self.steam_path.join("steam.cfg"));
         files.push(self.steam_path.join("bin").join("acoverlay.dll"));
 

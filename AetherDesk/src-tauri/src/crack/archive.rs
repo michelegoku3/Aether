@@ -453,6 +453,7 @@ fn sanitize_rel_path(entry_name: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::crack::recovery::applied_paths;
     // Genuine stored ZipCrypto ZIPs: fixed encryption header, password online-fix.me.
     // Generated independently and decrypted/CRC-checked with Python zipfile.
     const PLAIN_ZIP: &[u8] = &[
@@ -683,10 +684,7 @@ mod tests {
             fs::read(backup.original_dir().join("payload.dll")).unwrap(),
             b"original sentinel"
         );
-        assert_eq!(
-            backup.read_crack_inventory(424244).unwrap(),
-            vec!["payload.dll"]
-        );
+        assert_eq!(applied_paths(&backup, 424244).unwrap(), vec!["payload.dll"]);
         assert!(!staging.exists());
     }
 

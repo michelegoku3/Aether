@@ -133,20 +133,6 @@ pub fn ensure_default_assets() -> Result<(), String> {
         }
     }
 
-    // Migrate legacy meme icon name from older builds.
-    let legacy_meme = icons_dir.join("aether.ico");
-    let renamed_meme = icons_dir.join("aether_genshin.ico");
-    if legacy_meme.is_file() && !renamed_meme.exists() {
-        if let Err(e) = fs::rename(&legacy_meme, &renamed_meme) {
-            eprintln!(
-                "[AetherDesk] failed to rename legacy icon {} → {}: {}",
-                legacy_meme.display(),
-                renamed_meme.display(),
-                e
-            );
-        }
-    }
-
     for (file_name, content) in DEFAULT_ICON_FILES {
         let file = icons_dir.join(file_name);
         if !file.exists() {
@@ -200,51 +186,19 @@ pub fn read_theme_css(selected_file: &str) -> Result<String, String> {
 /// Active wallpaper path:
 /// 1. explicitly selected file (`wallpaper_selected_file`) when it still exists;
 /// 2. otherwise the first image file in `config/wallpapers/` (sorted by name);
-/// 3. otherwise the legacy `config/wallpaper.<ext>` file when present;
-/// 4. otherwise `None`.
+/// 3. otherwise `None`.
 pub fn personal_wallpaper_path(selected_file: &str) -> Result<Option<PathBuf>, String> {
     let selected = resolve_selected(&wallpapers_dir(), selected_file);
     if let Some(path) = selected {
         return Ok(Some(path));
     }
 
-    let candidates = wallpaper_candidates()?;
-    if let Some(first) = candidates.into_iter().next() {
-        return Ok(Some(first));
-    }
-
-    // Legacy single-file location (`config/wallpaper.<ext>`) still honoured.
-    legacy_wallpaper_path()
+    Ok(wallpaper_candidates()?.into_iter().next())
 }
 
 /// Lists image files inside `config/wallpapers/`, sorted by file name.
 fn wallpaper_candidates() -> Result<Vec<PathBuf>, String> {
     list_files_with_extension(&wallpapers_dir(), "img")
-}
-
-/// `config/wallpaper.<ext>` — the pre-folder layout, kept for compatibility.
-fn legacy_wallpaper_path() -> Result<Option<PathBuf>, String> {
-    let config_dir = LocalAppPaths::config_dir();
-    if !config_dir.is_dir() {
-        return Ok(None);
-    }
-    let entries = fs::read_dir(&config_dir)
-        .map_err(|e| format!("Failed to read config folder for wallpaper: {}", e))?;
-
-    let mut candidates: Vec<PathBuf> = entries
-        .flatten()
-        .map(|entry| entry.path())
-        .filter(|path| path.is_file())
-        .filter(|path| {
-            path.file_stem()
-                .and_then(|stem| stem.to_str())
-                .map(|stem| stem.eq_ignore_ascii_case("wallpaper"))
-                .unwrap_or(false)
-        })
-        .collect();
-
-    candidates.sort_by(|a, b| a.file_name().cmp(&b.file_name()));
-    Ok(candidates.into_iter().next())
 }
 
 /// Read the active wallpaper as a browser-ready data URI. Empty string when no

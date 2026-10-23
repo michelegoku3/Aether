@@ -259,9 +259,6 @@ pub async fn install_aether_dll(
 
     match install_result {
         Ok(()) => {
-            let legacy_version_path =
-                std::path::PathBuf::from(&steam_path).join("AetherDLL_version.txt");
-            let _ = std::fs::remove_file(legacy_version_path);
             crate::desk_log_info!(
                 "updater",
                 "AetherDLL {} successfully installed into Steam directory '{}'",
@@ -297,10 +294,7 @@ pub fn uninstall_aether_dll(app: tauri::AppHandle) -> Result<String, String> {
         steam_path
     );
 
-    // The uninstaller also removes the obsolete Steam-root proxy.
     DllInstaller::new(&steam_path).uninstall()?;
-    let legacy_version_path = std::path::PathBuf::from(&steam_path).join("AetherDLL_version.txt");
-    let _ = std::fs::remove_file(legacy_version_path);
     Ok("AetherDLL files removed successfully from Steam.".to_string())
 }
 
@@ -314,7 +308,6 @@ pub fn reset_aether_steam_path(app: tauri::AppHandle) -> Result<String, String> 
         steam_path
     );
 
-    // Reset removes the obsolete proxy and version bookmark too.
     let removed = DllInstaller::new(&steam_path).reset_aether_files()?;
     crate::desk_log_info!(
         "updater",

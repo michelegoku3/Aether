@@ -1,5 +1,4 @@
 use std::path::PathBuf;
-use tauri::Manager;
 
 const LOCAL_DATA_DIR_NAME: &str = "AetherData";
 
@@ -20,12 +19,6 @@ const LOCAL_DATA_DIR_NAME: &str = "AetherData";
 ///         ├─ config\wallpapers\*.jpg
 ///         ├─ config\settings.json
 ///         └─ backup\...
-///
-/// Old locations (migrated only for users coming from an old install):
-/// Old Program Files location: `<exe_parent>\AetherData`, from when the app
-/// lived in `C:\Program Files`.
-/// Old Roaming location: `%APPDATA%\com.aether.desk` (Roaming).
-/// Both are automatically migrated on first launch to `install_root/AetherData`.
 pub struct LocalAppPaths;
 
 impl LocalAppPaths {
@@ -48,15 +41,6 @@ impl LocalAppPaths {
     /// `install_root/AetherData` (unified).
     pub fn data_root_for_app(_app: &tauri::AppHandle) -> PathBuf {
         Self::data_root()
-    }
-
-    /// Legacy Roaming location `%APPDATA%\com.aether.desk`, kept only for
-    /// migration to the unified install.
-    pub fn legacy_roaming_data_root() -> PathBuf {
-        if let Some(base) = dirs::data_dir() {
-            return base.join("com.aether.desk");
-        }
-        Self::install_root().join(LOCAL_DATA_DIR_NAME)
     }
 
     /// External tools directory — lives next to the exe (read-only, bundled).
@@ -89,13 +73,5 @@ impl LocalAppPaths {
 
     pub fn temp_dir() -> PathBuf {
         Self::data_root().join("temp")
-    }
-
-    pub fn legacy_app_data_dir(app: &tauri::AppHandle) -> Option<PathBuf> {
-        app.path().app_data_dir().ok()
-    }
-
-    pub fn legacy_app_config_dir(app: &tauri::AppHandle) -> Option<PathBuf> {
-        app.path().app_config_dir().ok()
     }
 }

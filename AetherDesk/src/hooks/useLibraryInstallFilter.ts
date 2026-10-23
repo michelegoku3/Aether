@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { getSettings } from './useSettings';
 import type { InstalledGame } from './useLibraryGames';
 import { filterAndSortGames } from '../util/search';
 
@@ -7,15 +6,11 @@ import { filterAndSortGames } from '../util/search';
  *  is UI-only state (it does not affect any backend behaviour), so it lives
  *  in localStorage instead of `save_settings`: rewriting settings.json — and
  *  with it the encrypted credential blob — on every filter click must be
- *  avoided. On first run the legacy value from settings.json (if set) is
- *  migrated so users don't lose their preference. */
+ *  avoided. */
 export type LibraryInstallFilter = 'all' | 'installed' | 'installing' | 'not_installed';
 
 const FILTER_CYCLE: readonly LibraryInstallFilter[] = ['all', 'installed', 'installing', 'not_installed'] as const;
 const LOCAL_FILTER_KEY = 'aether.library_install_filter';
-/** Legacy storage location: read once and then stop touching settings.json
- *  for this preference. */
-const LEGACY_FILTER_KEY: keyof import('./useSettings').AppSettings = 'library_install_filter';
 
 const normalizeLibraryInstallFilter = (value: unknown): LibraryInstallFilter => {
   const raw = String(value ?? '')
@@ -106,10 +101,9 @@ const emptyMessageFor = (filter: LibraryInstallFilter, total: number, searchQuer
 };
 
 /**
- * Owns Library install-filter state: load/persist from localStorage (with a
- * one-time migration from settings.json), cycle through modes, and derive the
- * filtered list + UI copy. Keeps LibraryView focused on layout and game
- * actions (SRP / high cohesion).
+ * Owns Library install-filter state: load/persist from localStorage, cycle
+ * through modes, and derive the filtered list + UI copy. Keeps LibraryView
+ * focused on layout and game actions (SRP / high cohesion).
  *
  * When `searchQuery` is provided, search searches across ALL games (ignoring
  * the active install filter) in real time.
@@ -119,31 +113,8 @@ export const useLibraryInstallFilter = (games: InstalledGame[], isLoading: boole
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
-    let cancelled = false;
-    const load = async () => {
-      // 1) localStorage wins once migrated.
-      let initial: LibraryInstallFilter | null = readLocalFilter();
-      // 2) First-run migration: pull the legacy value out of settings.json and
-      //    re-home it in localStorage. After that, Settings saves no longer
-      //    touch this field, so toggling the filter never triggers a file
-      //    rewrite or re-encrypt of the credential blob.
-      if (initial === null) {
-        try {
-          const settings = await getSettings();
-          const legacy = normalizeLibraryInstallFilter(settings[LEGACY_FILTER_KEY]);
-          initial = legacy;
-          writeLocalFilter(legacy);
-        } catch {
-          initial = 'all';
-        }
-      }
-      if (!cancelled) setFilter(initial ?? 'all');
-      if (!cancelled) setReady(true);
-    };
-    void load();
-    return () => {
-      cancelled = true;
-    };
+    setFilter(readLocalFilter() ?? 'all');
+    setReady(true);
   }, []);
 
   const hasSearch = Boolean(searchQuery.trim());

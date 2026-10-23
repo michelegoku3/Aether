@@ -114,11 +114,6 @@ pub struct AppSettings {
     /// Backdrop fade-out toward the bottom (0..=100) of the alternative game cards.
     #[serde(default = "default_alt_cards_fade")]
     pub alternative_cards_fade: u8,
-    /// Library install-status filter cycle:
-    /// `all` (default) | `installed` | `not_installed`.
-    /// Driven by the square play/x toggle next to Refresh in Library.
-    #[serde(default = "default_library_install_filter")]
-    pub library_install_filter: String,
     /// Custom game name displayed to friends on Steam (game_extra_info).
     #[serde(default)]
     pub custom_game_name: String,
@@ -156,7 +151,6 @@ const DEFAULT_ALT_CARDS_FADE: u8 = 20;
 const DEFAULT_STORE_CURRENCY: &str = "eur";
 const DEFAULT_STORE_FRONT_FILTER: &str = "upcoming";
 const DEFAULT_WALLPAPER_OPACITY: u8 = 20;
-const DEFAULT_LIBRARY_INSTALL_FILTER: &str = "all";
 
 /// Serde default provider for the alt-cards backdrop opacity.
 fn default_alt_cards_opacity() -> u8 {
@@ -193,28 +187,6 @@ fn default_store_front_filter() -> String {
 
 fn default_wallpaper_opacity() -> u8 {
     DEFAULT_WALLPAPER_OPACITY
-}
-
-fn default_library_install_filter() -> String {
-    DEFAULT_LIBRARY_INSTALL_FILTER.to_string()
-}
-
-pub fn normalize_library_install_filter(value: &str) -> String {
-    match value.trim().to_lowercase().as_str() {
-        "installed" => "installed".to_string(),
-        "not_installed" | "not-installed" | "uninstalled" => "not_installed".to_string(),
-        _ => "all".to_string(),
-    }
-}
-
-/// Migrate legacy meme icon file name (`aether.ico` → `aether_genshin.ico`).
-pub fn normalize_icon_selected_file(value: &str) -> String {
-    let trimmed = value.trim();
-    if trimmed.eq_ignore_ascii_case("aether.ico") {
-        "aether_genshin.ico".to_string()
-    } else {
-        trimmed.to_string()
-    }
 }
 
 /// Major Steam store currencies (ISO 4217, lowercase) offered by the UI.
@@ -320,7 +292,6 @@ impl Default for AppSettings {
             icon_selected_file: String::new(),
             alternative_cards_opacity: default_alt_cards_opacity(),
             alternative_cards_fade: default_alt_cards_fade(),
-            library_install_filter: default_library_install_filter(),
             custom_game_name: String::new(),
             library_banner_enabled: false,
             library_banner_appids: Vec::new(),

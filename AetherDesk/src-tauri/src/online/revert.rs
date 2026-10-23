@@ -4,7 +4,6 @@
 //! A private restore checkpoint bridges a successful rename and a failed
 //! journal save, so a retry never deletes an original already restored.
 
-use crate::external_tools::constants::UCO_DISABLED_SUFFIX;
 use crate::external_tools::fs::{move_path, write_atomic};
 use crate::online::deploy::{backup_dir_for, Journal, JournalEntry};
 use crate::online::state::OnlineStateStore;
@@ -366,14 +365,6 @@ pub(crate) fn rollback_partial(journal: &Journal, backup_dir: &Path) -> Result<(
                     remove_empty_dir(parent)?;
                 }
             }
-            JournalEntry::Neutralized { path } => {
-                let disabled = path.with_file_name(format!(
-                    "{}{}",
-                    path.file_name().and_then(|n| n.to_str()).unwrap_or("file"),
-                    UCO_DISABLED_SUFFIX
-                ));
-                restore_backup(path, &disabled, backup_dir)?;
-            }
             JournalEntry::BackedUp { original, backup } => {
                 restore_backup(original, backup, backup_dir)?;
             }
@@ -414,14 +405,6 @@ fn revert_from_journal(journal: &mut Journal, backup_dir: &Path) -> Result<(), S
                     // Remove owned empty deployment directories BEFORE restoring originals.
                     remove_empty_dir(parent)?;
                 }
-            }
-            JournalEntry::Neutralized { path } => {
-                let disabled = path.with_file_name(format!(
-                    "{}{}",
-                    path.file_name().and_then(|n| n.to_str()).unwrap_or("file"),
-                    UCO_DISABLED_SUFFIX
-                ));
-                restore_backup(path, &disabled, backup_dir)?;
             }
             JournalEntry::BackedUp { original, backup } => {
                 restore_backup(original, backup, backup_dir)?;

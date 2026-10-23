@@ -1,22 +1,11 @@
-//! Game-relative path guards: normalization, inventory-filename reservation,
-//! backup-scope checks and link-aware relativization. Every crack target goes
-//! through here before anything is read or written.
+//! Game-relative path guards: normalization, backup-scope checks and
+//! link-aware relativization. Every crack target goes through here before
+//! anything is read or written.
 use std::fs;
 use std::io;
 use std::path::{Component, Path, PathBuf};
 
 use crate::core::backup::GameBackup;
-
-pub(crate) fn reserved_relative(relative: &str, app_id: u32) -> bool {
-    let first = relative
-        .split('/')
-        .next()
-        .unwrap_or("")
-        .trim_end_matches(['.', ' ']);
-    let inventory = format!("crack_{app_id}.txt");
-    first.eq_ignore_ascii_case(&inventory)
-        || first.eq_ignore_ascii_case(&format!("{inventory}.tmp"))
-}
 
 pub(crate) fn normalized_relative(value: &str) -> Result<String, String> {
     let value = value.replace('\\', "/");

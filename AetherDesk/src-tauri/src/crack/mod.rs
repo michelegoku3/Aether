@@ -2,8 +2,8 @@
 //
 // Owns the full "apply crack" pipeline for one game:
 //   extract each source (zip/rar/7z/plain) → resolve each file's destination
-//   in the game → back up originals & crack files → write an inventory →
-//   copy into the game.
+//   in the game → back up originals & crack files → record the recovery
+//   journal → copy into the game.
 //
 // This module is deliberately Tauri- and Steam-agnostic: it only needs the
 // game's install root, the per-game `GameBackup`, and the list of source paths.
@@ -282,6 +282,7 @@ pub fn has_active_uco2(game_root: &Path) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::crack::recovery::applied_paths;
     use std::fs;
     const APP_ID: u32 = 424243;
 
@@ -334,7 +335,7 @@ mod tests {
         assert_eq!(report.sources, 2);
         assert_eq!(report.applied, 2);
         assert_eq!(
-            backup.read_crack_inventory(APP_ID).unwrap(),
+            applied_paths(&backup, APP_ID).unwrap(),
             vec!["a.dll", "b.dll"]
         );
         assert_eq!(
@@ -358,7 +359,7 @@ mod tests {
             fs::read(backup.original_dir().join("a.dll")).unwrap(),
             b"original a"
         );
-        assert_eq!(backup.read_crack_inventory(APP_ID).unwrap(), vec!["a.dll"]);
+        assert_eq!(applied_paths(&backup, APP_ID).unwrap(), vec!["a.dll"]);
     }
 
     #[test]
@@ -366,7 +367,7 @@ mod tests {
         let (_temp, backup, game, result) = run(&[("a.dll", b"patch a")], true);
         assert!(result.is_err());
         assert_eq!(fs::read(game.join("a.dll")).unwrap(), b"patch a");
-        assert_eq!(backup.read_crack_inventory(APP_ID).unwrap(), vec!["a.dll"]);
+        assert_eq!(applied_paths(&backup, APP_ID).unwrap(), vec!["a.dll"]);
         assert_eq!(
             remove_applied_crack_from_game(APP_ID, &game, &backup).unwrap(),
             1

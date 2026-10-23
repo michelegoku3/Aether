@@ -3,7 +3,6 @@ pub mod api;
 pub mod app_names;
 pub mod appworkshop;
 pub mod compat;
-pub mod launch_options;
 pub mod library;
 pub mod loginusers;
 pub mod resolve;

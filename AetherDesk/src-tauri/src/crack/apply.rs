@@ -1,6 +1,6 @@
 // Applying crack files with immutable originals and recoverable per-file commits.
-// The legacy crack_<app_id>.txt inventory remains a line-per-path list. A private
-// sidecar records original absence and applied/pending hashes across all sources.
+// A private sidecar records original absence and applied/pending hashes across
+// all sources.
 
 use crate::core::backup::GameBackup;
 use crate::crack::locate;
@@ -9,9 +9,7 @@ use std::path::Path;
 
 use super::hashing::{hash_file, optional_hash};
 use super::io::{atomic_copy, collect_files, remove_empty_parents};
-use super::paths::{
-    check_backup_scope, game_relative_path, normalized_relative, reserved_relative,
-};
+use super::paths::{check_backup_scope, game_relative_path, normalized_relative};
 use super::recovery::{
     known_content, load_recovery, save_recovery, verify_original, RecoveryFile, RecoveryInventory,
 };
@@ -114,10 +112,6 @@ fn apply_one(
     report: &mut ApplyReport,
 ) -> Result<(), String> {
     let relative = normalized_relative(relative)?;
-    // This legacy filename lives in original/, so it cannot also hold a game original.
-    if reserved_relative(&relative, app_id) {
-        return Err("Crack target conflicts with the recovery inventory filename".into());
-    }
     let incoming = hash_file(source)?;
     let current = optional_hash(target)?;
     let original = backup.original_dir().join(&relative);
@@ -245,6 +239,7 @@ fn recorded_casing(relative: String, game_root: &Path, inventory: &RecoveryInven
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::crack::recovery::applied_paths;
     use std::collections::BTreeMap;
     use std::path::PathBuf;
     const APP_ID: u32 = 424242;
@@ -287,10 +282,7 @@ mod tests {
             b"pristine"
         );
         assert_eq!(fs::read(game.join("api.dll")).unwrap(), b"patch two");
-        assert_eq!(
-            backup.read_crack_inventory(APP_ID).unwrap(),
-            vec!["api.dll"]
-        );
+        assert_eq!(applied_paths(&backup, APP_ID).unwrap(), vec!["api.dll"]);
     }
 
     #[test]
@@ -304,7 +296,7 @@ mod tests {
         fs::write(staging.join("b.dll"), b"patch b").unwrap();
         apply_staged_files(APP_ID, &staging, &game, &backup).unwrap();
         assert_eq!(
-            backup.read_crack_inventory(APP_ID).unwrap(),
+            applied_paths(&backup, APP_ID).unwrap(),
             vec!["a.dll", "b.dll"]
         );
         assert_eq!(
@@ -365,10 +357,7 @@ mod tests {
             fs::read(backup.original_dir().join("api.dll")).unwrap(),
             b"pristine"
         );
-        assert_eq!(
-            backup.read_crack_inventory(APP_ID).unwrap(),
-            vec!["api.dll"]
-        );
+        assert_eq!(applied_paths(&backup, APP_ID).unwrap(), vec!["api.dll"]);
     }
 
     #[test]
@@ -405,7 +394,7 @@ mod tests {
 
     #[cfg(windows)]
     #[test]
-    fn inventory_save_failure_keeps_previous_prefix_and_does_not_delete_untouched_original() {
+    fn recovery_save_failure_keeps_previous_prefix_and_does_not_delete_untouched_original() {
         let (_temp, backup, game, staging) = setup();
         fs::write(game.join("a.dll"), b"original a").unwrap();
         fs::write(staging.join("a.dll"), b"patch a").unwrap();
@@ -413,12 +402,12 @@ mod tests {
         fs::remove_file(staging.join("a.dll")).unwrap();
         fs::write(game.join("b.dll"), b"original b").unwrap();
         fs::write(staging.join("b.dll"), b"patch b").unwrap();
-        let blocked = backup.crack_inventory_path(APP_ID);
+        let blocked = backup.crack_recovery_path(APP_ID);
         block_replacement(&blocked, true);
         assert!(apply_staged_files(APP_ID, &staging, &game, &backup).is_err());
         assert_eq!(fs::read(game.join("a.dll")).unwrap(), b"patch a");
         assert_eq!(fs::read(game.join("b.dll")).unwrap(), b"original b");
-        assert_eq!(load_recovery(&backup, APP_ID).unwrap().files.len(), 2);
+        assert_eq!(load_recovery(&backup, APP_ID).unwrap().files.len(), 1);
         block_replacement(&blocked, false);
         assert_eq!(
             remove_applied_crack_files(APP_ID, &game, &backup).unwrap(),
@@ -467,18 +456,17 @@ mod tests {
     }
 
     #[test]
-    fn legacy_inventory_is_merged_with_saved_files_before_a_new_import() {
+    fn saved_files_without_recovery_state_are_rebuilt_before_a_new_import() {
         let (_temp, backup, game, staging) = setup();
         fs::write(game.join("a.dll"), b"old patch a").unwrap();
         fs::write(game.join("b.dll"), b"old patch b").unwrap();
         fs::write(backup.original_dir().join("a.dll"), b"original a").unwrap();
         fs::write(backup.crack_dir().join("a.dll"), b"old patch a").unwrap();
         fs::write(backup.crack_dir().join("b.dll"), b"old patch b").unwrap();
-        fs::write(backup.crack_inventory_path(APP_ID), "b.dll\nb.dll\n").unwrap();
         fs::write(staging.join("c.dll"), b"new patch c").unwrap();
         apply_staged_files(APP_ID, &staging, &game, &backup).unwrap();
         assert_eq!(
-            backup.read_crack_inventory(APP_ID).unwrap(),
+            applied_paths(&backup, APP_ID).unwrap(),
             vec!["a.dll", "b.dll", "c.dll"]
         );
         assert_eq!(
@@ -532,7 +520,7 @@ mod tests {
         assert_eq!(fs::read(inner.join("OnlineFix.ini")).unwrap(), b"[fix]");
         assert!(!game.join("OnlineFix.ini").exists());
         assert_eq!(
-            backup.read_crack_inventory(APP_ID).unwrap(),
+            applied_paths(&backup, APP_ID).unwrap(),
             vec!["How to Fish/OnlineFix.ini"]
         );
         assert_eq!(
@@ -595,21 +583,29 @@ mod tests {
     }
 
     #[test]
-    fn inventory_and_temporary_names_cannot_overwrite_game_original_backups() {
-        for name in [
-            format!("crack_{APP_ID}.txt"),
-            format!("crack_{APP_ID}.txt.tmp"),
-        ] {
-            let (_temp, backup, game, staging) = setup();
-            fs::write(game.join(&name), b"legitimate original sentinel").unwrap();
-            fs::write(staging.join(&name), b"patch").unwrap();
-            assert!(apply_staged_files(APP_ID, &staging, &game, &backup).is_err());
-            assert_eq!(
-                fs::read(game.join(&name)).unwrap(),
-                b"legitimate original sentinel"
-            );
-            assert!(!backup.crack_recovery_path(APP_ID).exists());
-        }
+    fn game_files_named_like_the_recovery_journal_cannot_corrupt_it() {
+        let (_temp, backup, game, staging) = setup();
+        let name = format!("crack_{APP_ID}.state.json");
+        fs::write(game.join(&name), b"legitimate game file").unwrap();
+        fs::write(staging.join(&name), b"patch").unwrap();
+        apply_staged_files(APP_ID, &staging, &game, &backup).unwrap();
+        // The journal lives at the backup root; the game file is an ordinary
+        // target backed up under original/, so it can never overwrite it.
+        assert!(backup.crack_recovery_path(APP_ID).is_file());
+        assert_eq!(fs::read(game.join(&name)).unwrap(), b"patch");
+        assert_eq!(
+            fs::read(backup.original_dir().join(&name)).unwrap(),
+            b"legitimate game file"
+        );
+        assert_eq!(
+            remove_applied_crack_files(APP_ID, &game, &backup).unwrap(),
+            1
+        );
+        assert!(!game.join(&name).exists());
+        assert_eq!(
+            fs::read(backup.original_dir().join(&name)).unwrap(),
+            b"legitimate game file"
+        );
     }
 
     #[cfg(windows)]
@@ -655,7 +651,7 @@ mod tests {
         apply_staged_files(APP_ID, &staging, &game, &backup).unwrap();
         reapply_saved_crack_files(APP_ID, &game, &backup).unwrap();
         assert!(!backup.original_dir().join("Bin/api.dll").exists());
-        assert_eq!(backup.read_crack_inventory(APP_ID).unwrap().len(), 1);
+        assert_eq!(applied_paths(&backup, APP_ID).unwrap().len(), 1);
         assert_eq!(
             remove_applied_crack_files(APP_ID, &game, &backup).unwrap(),
             1

@@ -3,14 +3,12 @@
 //! Every deploy phase is idempotent and records its inverse action in a
 //! JOURNAL (`<backup>/<app_id>/uc_online2/journal.json`): `disable()`
 //! replays the journal in reverse order and restores the original tree
-//! byte-for-byte (including the Neutralized files of 1.19.3 journals).
+//! byte-for-byte.
 //!
 //! Phases:
 //!   0. pre-flight (bundle, arch, writable directories)
 //!   1. original backups (Steamworks dll, ini, plugins/) → backup dir
-//!   2. conflict quarantine (moved to backup/, no `*.uco-disabled`
-//!      visible in the game tree — old journals with Neutralized stay
-//!      supported in revert)
+//!   2. conflict quarantine (moved to backup/)
 //!   3. UCOnline2 DLL copy (per architecture; also on refresh/upgrade)
 //!   4. early overlay proxy (version.dll / XINPUT1_3.dll)
 //!   5. union-crax.ini write (atomic)
@@ -48,9 +46,6 @@ pub enum JournalEntry {
     /// Game file moved to the backup dir. `original` = where it was,
     /// `backup` = where it is now (restore it on disable).
     BackedUp { original: PathBuf, backup: PathBuf },
-    /// Neutralized file renamed to `<path>.uco-disabled` (legacy 1.19.3:
-    /// new deploys use `BackedUp` and move the file to the backup dir).
-    Neutralized { path: PathBuf },
     /// UCO2 file copied into the game (must be REMOVED on disable).
     Deployed { path: PathBuf },
 }
