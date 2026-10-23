@@ -11,6 +11,9 @@ yarn-error.log*
 pnpm-debug.log*
 .pnpm-debug.log*
 
+# Release staging written by the packaging steps in .github/workflows/build.yml
+release/
+
 # Build Outputs (Frontend)
 AetherDesk/dist/
 AetherDesk/build/
