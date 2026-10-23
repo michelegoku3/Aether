@@ -1,5 +1,6 @@
 import React from 'react';
 import { invoke } from '@tauri-apps/api/core';
+import { clearFrontendCaches } from '../../ui/cacheReset';
 import { toErrorMessage } from '../../util/errors';
 
 interface SettingsAetherSectionProps {
@@ -104,13 +105,7 @@ export const SettingsAetherSection: React.FC<SettingsAetherSectionProps> = ({
           onClick={async () => {
             try {
               const result: string = await invoke('clear_app_caches');
-              try {
-                Object.keys(localStorage)
-                  .filter((key) => key.startsWith('aether_cover_') || key.startsWith('aether_hero_'))
-                  .forEach((key) => localStorage.removeItem(key));
-              } catch {
-                /* localStorage unavailable: the backend part already succeeded */
-              }
+              clearFrontendCaches();
               showStatus(result, 'success');
             } catch (err: unknown) {
               showStatus(`Failed to clear caches: ${toErrorMessage(err)}`, 'error');

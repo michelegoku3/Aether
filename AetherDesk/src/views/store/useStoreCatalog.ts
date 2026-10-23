@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
+import { listen } from '@tauri-apps/api/event';
+import { CACHE_CLEARED_EVENT } from '../../constants/library';
 import { enrichDenuvoFlags } from '../../hooks/useDenuvoEnrichment';
 import { useStoreSearch } from '../../hooks/useStoreSearch';
 import { preloadGameCovers } from '../../ui/GameCover';
@@ -20,6 +22,33 @@ export function useStoreCatalog({ active, settingsRevision, settingsReady }: Par
   const storeSearch = useStoreSearch();
   const trending = useTrendingStore(storeSearch.setResults);
   const { results, setResults, isLoading, hasSearched, activeQuery, error, search, clear } = storeSearch;
+  const clearRef = useRef(clear);
+  clearRef.current = clear;
+  const trendingRef = useRef(trending);
+  trendingRef.current = trending;
+
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    let cancelled = false;
+    void listen(CACHE_CLEARED_EVENT, () => {
+      // "Clear caches" invalidated the backend's store cache. Drop what is on
+      // screen; the active/query effect above decides when the next trending
+      // preload is allowed to start, so a hidden Store tab does no network work.
+      clearRef.current();
+      trendingRef.current.reset();
+    })
+      .then((fn) => {
+        if (cancelled) fn();
+        else unlisten = fn;
+      })
+      .catch((error) => {
+        console.warn('[store] cache-clear bridge unavailable:', error);
+      });
+    return () => {
+      cancelled = true;
+      unlisten?.();
+    };
+  }, []);
 
   useEffect(() => {
     if (!active || !settingsReady || observedSettingsRevision.current === settingsRevision) return;

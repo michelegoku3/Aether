@@ -21,6 +21,12 @@ export interface LuaLibraryChange {
 export const LUA_LIBRARY_EVENT = 'library://lua-changed';
 
 /**
+ * Emitted after "Clear AetherDesk caches" drops the process-lifetime caches.
+ * Consumers re-read their data instead of trusting what is already on screen.
+ */
+export const CACHE_CLEARED_EVENT = 'cache://cleared';
+
+/**
  * Emitted on every Steam runtime-state transition (running <-> stopped),
  * from `core/steam_monitor.rs`. Drives the Sidebar Start/Restart label.
  */

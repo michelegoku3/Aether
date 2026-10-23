@@ -21,6 +21,16 @@ fn validation_cache() -> &'static AsyncMutex<CachedValidation> {
     CACHE.get_or_init(|| AsyncMutex::new(None))
 }
 
+/// Drops the session-wide API-key verdict so the next call revalidates. A
+/// cache clear must not leave a stale "valid" answer for a key the user may
+/// have just replaced.
+pub(crate) async fn clear_validation_cache() -> usize {
+    let mut cache = validation_cache().lock().await;
+    let removed = usize::from(cache.is_some());
+    *cache = None;
+    removed
+}
+
 impl HubcapClient {
     /// Validates the API key against `/user/stats`, deduplicated across the
     /// whole session by a short-lived fingerprint cache.
@@ -238,5 +248,18 @@ impl HubcapClient {
             return Ok(usage);
         }
         unreachable!("generation usage retry loop always returns")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn clear_validation_cache_drops_the_session_verdict() {
+        *validation_cache().lock().await = Some((vec![1, 2, 3], Instant::now(), true));
+
+        assert_eq!(clear_validation_cache().await, 1);
+        assert!(validation_cache().lock().await.is_none());
     }
 }

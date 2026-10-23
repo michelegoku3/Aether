@@ -290,6 +290,22 @@ fn meta_cache_key(country_code: &str, app_id: u32) -> String {
     format!("{}:{}", country_code.trim().to_uppercase(), app_id)
 }
 
+/// Drops every cached `GetItems` answer and reports how many entries were
+/// freed. This cache has no TTL, so "Clear caches" is the only way to make a
+/// delisted/renamed row visible without restarting AetherDesk.
+pub(crate) fn clear_meta_cache() -> usize {
+    match meta_cache().lock() {
+        Ok(mut cache) => {
+            let removed = cache.len();
+            cache.clear();
+            removed
+        }
+        // A poisoned lock still leaves the map readable on the next call; the
+        // clear command must not turn a cache reset into a process abort.
+        Err(_) => 0,
+    }
+}
+
 /// Fetch structural metadata for `app_ids`, batched in chunks.
 ///
 /// Ids with no metadata available map to `StoreItemMeta::default()` ("unknown"
@@ -541,4 +557,20 @@ async fn fetch_chunk(
     }
 
     Ok(out)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn clear_meta_cache_drops_every_entry() {
+        meta_cache()
+            .lock()
+            .expect("meta cache mutex")
+            .insert(meta_cache_key("ZZ", 424242), StoreItemMeta::default());
+
+        assert!(clear_meta_cache() >= 1);
+        assert!(meta_cache().lock().expect("meta cache mutex").is_empty());
+    }
 }

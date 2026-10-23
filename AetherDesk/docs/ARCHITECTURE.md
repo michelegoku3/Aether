@@ -211,6 +211,16 @@ conflict), `config` (operation/path/changed/error, never values), `mutations`
 **Release means the resource was freed, not that the operation succeeded**: the
 outcome belongs to the caller's log line.
 
+### Cache clearing
+
+`Clear AetherDesk caches` has one owner: `core/cache_reset.rs`. It drops the
+process-lifetime caches first (store metadata, typeahead, update lookups,
+Hubcap key validation and usage snapshot), then deletes and recreates
+`<AetherData>/cache`, and emits `cache://cleared` so the UI re-reads what is on
+screen. A new process-lifetime cache must add its clear call there: deleting
+the folder alone is not a cache clear. Failure memory such as the manifest
+quarantine is not a cache and stays untouched.
+
 ## Where to add…
 
 | Change | Touch |
@@ -222,6 +232,7 @@ outcome belongs to the caller's log line.
 | A manifest consumer | `manifest/resolver.rs` (never a private lookup) + the completeness gate. |
 | A modal or view | `src/modals/` or `src/views/` + a section in `style.css` + a Vitest test next to it. |
 | A field shown in the Library | `steam/` (source of truth) → `commands/library.rs` → `src/types/` and the hook. |
+| A process-lifetime cache | the cache module's `clear_*` + `core/cache_reset.rs` + an inline test. |
 | A bundled external tool | `external_tools/` discovery + `src-tauri/ExternalTools/` + `Licenses/CREDITS.md`. |
 
 ## Verification

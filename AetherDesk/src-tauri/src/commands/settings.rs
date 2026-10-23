@@ -1,5 +1,6 @@
+use tauri::Emitter;
+
 use crate::core::error::{codes, DeskError};
-use crate::core::paths::LocalAppPaths;
 use crate::core::settings::{load_settings, AppSettings, SettingsManager};
 use crate::providers::hubcap::HubcapClient;
 use crate::providers::hubcap_generation::{
@@ -315,27 +316,24 @@ pub fn sign_out_luatools() -> Result<(), String> {
 }
 
 #[tauri::command]
-pub fn clear_app_caches() -> Result<String, String> {
-    crate::desk_log_info!("settings", "Clearing AetherDesk cache folder...");
-    let cache_dir = LocalAppPaths::data_root().join("cache");
-    if cache_dir.is_dir() {
-        std::fs::remove_dir_all(&cache_dir).map_err(|error| {
-            format!(
-                "Failed to clear cache folder {}: {}",
-                cache_dir.display(),
-                error
-            )
-        })?;
+pub async fn clear_app_caches(app: tauri::AppHandle) -> Result<String, String> {
+    let report = crate::core::cache_reset::clear_all().await?;
+    crate::desk_log_info!(
+        "settings",
+        "Cleared {} cache files and {} in-memory entries",
+        report.files,
+        report.memory
+    );
+    if let Err(error) = app.emit(
+        "cache://cleared",
+        serde_json::json!({ "files": report.files, "memory": report.memory }),
+    ) {
+        crate::desk_log_warn!("settings", "cache-clear event failed: {}", error);
     }
-    std::fs::create_dir_all(&cache_dir).map_err(|error| {
-        format!(
-            "Failed to recreate cache folder {}: {}",
-            cache_dir.display(),
-            error
-        )
-    })?;
-
-    Ok("AetherDesk caches cleared successfully.".to_string())
+    Ok(format!(
+        "Cleared {} cache files and {} in-memory entries.",
+        report.files, report.memory
+    ))
 }
 
 #[tauri::command]

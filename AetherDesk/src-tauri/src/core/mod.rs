@@ -3,6 +3,7 @@ pub mod paths;
 #[allow(unused_imports)]
 pub use error::{DeskError, DeskResult};
 pub mod backup;
+pub mod cache_reset;
 pub mod custom_css;
 pub mod hubcap_update_monitor;
 pub mod library_banner_config;

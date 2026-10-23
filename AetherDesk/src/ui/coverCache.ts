@@ -36,6 +36,10 @@ class BoundedCoverCache {
       this.map.delete(oldestKey);
     }
   }
+
+  clear() {
+    this.map.clear();
+  }
 }
 
 const memoryCoverCache = new BoundedCoverCache();
@@ -158,5 +162,21 @@ export const saveCachedCover = (appId: string, cover: ResolvedCover) => {
     localStorage.setItem(`${COVER_CACHE_PREFIX}${appId}`, JSON.stringify(env));
   } catch {
     // Cache is an optimization only; ignore storage quota/privacy errors.
+  }
+};
+
+/** Drops both the in-memory LRU and the persisted entries. The Settings button
+ *  owns the user-facing action; this function only forgets what this module
+ *  cached, so the next cover resolution goes back to Steam. */
+export const clearCachedCovers = () => {
+  memoryCoverCache.clear();
+  try {
+    for (const key of Object.keys(localStorage)) {
+      if (key.startsWith(COVER_CACHE_PREFIX) || key.startsWith(LEGACY_COVER_CACHE_PREFIX)) {
+        localStorage.removeItem(key);
+      }
+    }
+  } catch {
+    // localStorage unavailable: the memory cache is already gone.
   }
 };

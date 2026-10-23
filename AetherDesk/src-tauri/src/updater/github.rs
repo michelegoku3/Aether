@@ -168,6 +168,26 @@ fn lookup_registry() -> &'static Mutex<HashMap<String, Arc<LookupSlot>>> {
     REGISTRY.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
+/// Drops the update-check memory: release lookups, test-channel absence and
+/// the ETag of the last releases response. Without this, "Clear caches" would
+/// still answer the next update check from the previous lookup.
+pub(crate) fn clear_release_cache() -> usize {
+    let mut removed = 0;
+    if let Ok(mut map) = test_channel_absence().lock() {
+        removed += map.len();
+        map.clear();
+    }
+    if let Ok(mut map) = lookup_registry().lock() {
+        removed += map.len();
+        map.clear();
+    }
+    if let Ok(mut slot) = releases_api_etag_cache().lock() {
+        removed += usize::from(slot.is_some());
+        *slot = None;
+    }
+    removed
+}
+
 /// Test-only window on the lookup slot: the coalescing itself needs a network
 /// `GithubReleaseManager` call, but the reuse policy (what a second caller is
 /// served, and for how long) is pure state and is worth pinning down.

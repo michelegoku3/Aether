@@ -1,6 +1,8 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { CACHE_CLEARED_EVENT } from '../../constants/library';
 import type { StoreGameResult } from '../../hooks/useStoreSearch';
+import { emitTauriEvent, listenMock } from '../../test/tauriMocks';
 import { useStoreCatalog } from './useStoreCatalog';
 
 const { state, search, clear, setResults, trendingLoad, trendingReset, enrich, preload } = vi.hoisted(() => ({
@@ -178,5 +180,20 @@ describe('useStoreCatalog', () => {
 
     rerender({ active: true });
     await waitFor(() => expect(enrich).toHaveBeenCalled());
+  });
+
+  it('resets the catalog and reloads trending after cache://cleared', async () => {
+    state.results = games(5);
+    renderHook(() => useStoreCatalog({ active: true, settingsReady: true, settingsRevision: 1 }));
+    await waitFor(() => expect(trendingLoad).toHaveBeenCalledWith(40));
+    await waitFor(() => expect(listenMock).toHaveBeenCalledWith(CACHE_CLEARED_EVENT, expect.any(Function)));
+
+    clear.mockClear();
+    trendingReset.mockClear();
+
+    act(() => emitTauriEvent(CACHE_CLEARED_EVENT, { files: 1, memory: 2 }));
+
+    expect(clear).toHaveBeenCalledTimes(1);
+    expect(trendingReset).toHaveBeenCalledTimes(1);
   });
 });

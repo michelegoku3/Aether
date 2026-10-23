@@ -1,5 +1,5 @@
-import { fireEvent, render } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
+import { fireEvent, render, waitFor } from '@testing-library/react';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { invokeMock } from '../../test/tauriMocks';
 import { SettingsAetherSection } from './SettingsAetherSection';
 
@@ -47,5 +47,45 @@ describe('SettingsAetherSection devtools toggle', () => {
     expect(container.textContent).not.toContain('Steam Installation Path');
     expect(container.textContent).not.toContain('Custom game display name');
     expect(container.textContent).not.toContain('From the library of');
+  });
+});
+
+describe('SettingsAetherSection cache clearing', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    invokeMock.mockReset();
+  });
+
+  it('clears the backend and the browser caches, then reports the result', async () => {
+    const props = baseProps();
+    const view = render(<SettingsAetherSection {...props} />);
+    localStorage.setItem('aether_cover_v4_10', '{"v":4}');
+    localStorage.setItem('aether_hero_10', 'hero');
+    localStorage.setItem('unrelated', 'keep');
+    invokeMock.mockResolvedValueOnce('Cleared 2 cache files and 3 in-memory entries.');
+
+    fireEvent.click(view.getByRole('button', { name: 'Clear Cache' }));
+
+    await waitFor(() =>
+      expect(props.showStatus).toHaveBeenCalledWith('Cleared 2 cache files and 3 in-memory entries.', 'success')
+    );
+    expect(invokeMock).toHaveBeenCalledWith('clear_app_caches');
+    expect(localStorage.getItem('aether_cover_v4_10')).toBeNull();
+    expect(localStorage.getItem('aether_hero_10')).toBeNull();
+    expect(localStorage.getItem('unrelated')).toBe('keep');
+  });
+
+  it('does not clear the browser caches when the backend fails', async () => {
+    const props = baseProps();
+    const view = render(<SettingsAetherSection {...props} />);
+    localStorage.setItem('aether_cover_v4_10', '{"v":4}');
+    invokeMock.mockRejectedValueOnce(new Error('cache folder busy'));
+
+    fireEvent.click(view.getByRole('button', { name: 'Clear Cache' }));
+
+    await waitFor(() =>
+      expect(props.showStatus).toHaveBeenCalledWith(expect.stringContaining('Failed to clear caches'), 'error')
+    );
+    expect(localStorage.getItem('aether_cover_v4_10')).toBe('{"v":4}');
   });
 });

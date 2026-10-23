@@ -1,7 +1,8 @@
 import React from 'react';
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
-import { invokeMock, mockInvokeCommands } from '../test/tauriMocks';
+import { CACHE_CLEARED_EVENT } from '../constants/library';
+import { emitTauriEvent, invokeMock, listenMock, mockInvokeCommands } from '../test/tauriMocks';
 import { LibraryGamesProvider, useLibraryGames, type InstalledGame } from './useLibraryGames';
 
 const game = (id: number): InstalledGame => ({
@@ -57,5 +58,23 @@ describe('LibraryGamesProvider', () => {
 
     expect(result.current.status.type).toBe('error');
     expect(warmCalls()).toHaveLength(0);
+  });
+
+  it('rescans after cache://cleared', async () => {
+    mockInvokeCommands({
+      get_library_change_revision: 0,
+      get_installed_library_games: [game(10)],
+      warm_library_game_cache: 1,
+    });
+
+    const { result } = renderProvider();
+    await waitFor(() => expect(result.current.games).toHaveLength(1));
+    await waitFor(() => expect(listenMock).toHaveBeenCalledWith(CACHE_CLEARED_EVENT, expect.any(Function)));
+    const scans = () => invokeMock.mock.calls.filter(([command]) => command === 'get_installed_library_games').length;
+    expect(scans()).toBe(1);
+
+    act(() => emitTauriEvent(CACHE_CLEARED_EVENT, { files: 1, memory: 2 }));
+
+    await waitFor(() => expect(scans()).toBe(2));
   });
 });

@@ -43,6 +43,19 @@ const saveCachedHero = (appId: string, url: string) => {
   }
 };
 
+/** Drops every persisted hero URL so the next modal re-probes the CDN. */
+export const clearCachedHeroes = () => {
+  try {
+    for (const key of Object.keys(localStorage)) {
+      if (key.startsWith(HERO_CACHE_PREFIX)) {
+        localStorage.removeItem(key);
+      }
+    }
+  } catch {
+    /* localStorage unavailable: nothing to clear */
+  }
+};
+
 // Whether a URL is plausibly a landscape hero asset for the hero slot. Must
 // cover the asset names the backend resolves (store_items `library_hero`/
 // `hero_capsule`, appdetails `header_image`/`background`/`background_raw`),

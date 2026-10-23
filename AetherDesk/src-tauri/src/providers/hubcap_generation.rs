@@ -52,8 +52,11 @@ pub(crate) fn usage_snapshot_slot() -> &'static Mutex<Option<UsageSnapshot>> {
 /// operation below: the provider-side counter moved, so the next
 /// `get_hubcap_usage` must refetch instead of serving the up-to-60s-old
 /// snapshot.
-pub(crate) async fn invalidate_usage_snapshot() {
-    *usage_snapshot_slot().lock().await = None;
+pub(crate) async fn invalidate_usage_snapshot() -> bool {
+    let mut slot = usage_snapshot_slot().lock().await;
+    let had_snapshot = slot.is_some();
+    *slot = None;
+    had_snapshot
 }
 
 /// Minimum spacing between logical generation operations. The generation
@@ -627,8 +630,9 @@ mod tests {
                 payload: serde_json::json!({ "usage": 7, "limit": 25 }),
             });
             assert!(usage_snapshot_slot().lock().await.is_some());
-            invalidate_usage_snapshot().await;
+            assert!(invalidate_usage_snapshot().await);
             assert!(usage_snapshot_slot().lock().await.is_none());
+            assert!(!invalidate_usage_snapshot().await);
         });
     }
 }

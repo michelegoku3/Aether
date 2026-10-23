@@ -529,6 +529,21 @@ fn suggest_cache() -> &'static Mutex<SuggestCache> {
     })
 }
 
+/// Drops every typeahead answer. The cache is bounded and short-lived, but a
+/// clear must still make the next keystroke hit Steam instead of reusing a
+/// result the user asked to discard.
+pub(crate) fn clear_suggest_cache() -> usize {
+    match suggest_cache().lock() {
+        Ok(mut cache) => {
+            let removed = cache.entries.len();
+            cache.entries.clear();
+            cache.order.clear();
+            removed
+        }
+        Err(_) => 0,
+    }
+}
+
 fn suggest_cache_get(key: &str) -> Option<Vec<SteamStoreItem>> {
     let mut cache = suggest_cache().lock().ok()?;
     let (stored_at, items) = cache.entries.get(key)?.clone();
@@ -603,4 +618,26 @@ fn decode_html(value: &str) -> String {
         .replace("&gt;", ">")
         .trim()
         .to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn clear_suggest_cache_drops_entries_and_order() {
+        {
+            let mut cache = suggest_cache().lock().expect("suggest cache mutex");
+            cache
+                .entries
+                .insert("ZZ:portal".to_string(), (Instant::now(), Vec::new()));
+            cache.order.push_back("ZZ:portal".to_string());
+        }
+
+        assert!(clear_suggest_cache() >= 1);
+
+        let cache = suggest_cache().lock().expect("suggest cache mutex");
+        assert!(cache.entries.is_empty());
+        assert!(cache.order.is_empty());
+    }
 }

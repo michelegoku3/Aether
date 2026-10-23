@@ -11,7 +11,7 @@ import {
 import { invoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { emptyStatus, type StatusMessage } from '../types/ui';
-import { LUA_LIBRARY_EVENT, type LuaLibraryChange } from '../constants/library';
+import { CACHE_CLEARED_EVENT, LUA_LIBRARY_EVENT, type LuaLibraryChange } from '../constants/library';
 
 /** Why one `setManifestid` line cannot be used (mirrors the Rust enum). */
 export type ManifestGidProblem = 'notDecimalUint64' | 'malformedCall';
@@ -328,6 +328,29 @@ export const LibraryGamesProvider = ({ children }: { children: ReactNode }) => {
       mountedRef.current = false;
     };
   }, []);
+
+  useEffect(() => {
+    let unlisten: UnlistenFn | undefined;
+    let cancelled = false;
+    void listen(CACHE_CLEARED_EVENT, () => {
+      // The backend dropped its caches; the per-game promise cache and the
+      // library snapshot are the two places this hook could still serve stale
+      // data. One full scan re-establishes both.
+      invalidateGameState();
+      scheduleRefresh('manual');
+    })
+      .then((fn) => {
+        if (cancelled) fn();
+        else unlisten = fn;
+      })
+      .catch((error) => {
+        console.warn('[library] cache-clear bridge unavailable:', error);
+      });
+    return () => {
+      cancelled = true;
+      unlisten?.();
+    };
+  }, [invalidateGameState, scheduleRefresh]);
 
   const value: LibraryGamesContextValue = {
     games,
