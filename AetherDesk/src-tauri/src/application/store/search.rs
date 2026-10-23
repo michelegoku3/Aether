@@ -187,6 +187,33 @@ pub async fn get_trending_store_games(
     }
 }
 
+/// Trending items the Store requests on its first preload (2 × the 20-item
+/// page grid). The deferred warm must use the exact page the Store reads on
+/// open, or the cache key would miss and the click would wait on Steam again.
+pub const STORE_FRONT_FIRST_PAGE: usize = 40;
+
+/// Fills the trending cache for the Store's first page once the window is
+/// interactive, so opening the Store reads a fresh entry instead of waiting on
+/// the Steam store front. Best-effort: a failure is logged, never surfaced.
+pub async fn warm_store_front(app: &tauri::AppHandle) {
+    warm_store_front_with(|start, count| get_trending_store_games(app, start, count)).await;
+}
+
+async fn warm_store_front_with<F, Fut>(fetch: F)
+where
+    F: FnOnce(usize, usize) -> Fut,
+    Fut: std::future::Future<Output = Result<Vec<UnifiedStoreGame>, String>>,
+{
+    match fetch(0, STORE_FRONT_FIRST_PAGE).await {
+        Ok(games) => crate::desk_log_debug!(
+            "store",
+            "Store front warm filled {} trending game(s)",
+            games.len()
+        ),
+        Err(error) => crate::desk_log_debug!("store", "Store front warm skipped: {}", error),
+    }
+}
+
 pub fn get_cached_store_search(app: &tauri::AppHandle, query: &str) -> CachedStoreSearchResponse {
     if query.trim().is_empty() {
         return CachedStoreSearchResponse {
@@ -282,7 +309,29 @@ fn build_trending_cache_key(
 
 #[cfg(test)]
 mod tests {
-    use super::{build_store_cache_key, build_trending_cache_key};
+    use super::{
+        build_store_cache_key, build_trending_cache_key, warm_store_front_with,
+        STORE_FRONT_FIRST_PAGE,
+    };
+    use crate::store::service::UnifiedStoreGame;
+    use std::sync::{Arc, Mutex};
+
+    #[tokio::test]
+    async fn warm_store_front_fetches_the_first_page_and_swallows_failures() {
+        let requested = Arc::new(Mutex::new(None::<(usize, usize)>));
+        let requested_by_fetch = Arc::clone(&requested);
+
+        warm_store_front_with(move |start, count| {
+            *requested_by_fetch.lock().unwrap() = Some((start, count));
+            async move { Err::<Vec<UnifiedStoreGame>, String>("offline".to_string()) }
+        })
+        .await;
+
+        assert_eq!(
+            *requested.lock().unwrap(),
+            Some((0, STORE_FRONT_FIRST_PAGE))
+        );
+    }
 
     #[test]
     fn search_cache_key_includes_every_result_shaping_setting() {

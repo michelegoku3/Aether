@@ -29,7 +29,7 @@ pub use model::{
 };
 pub use search::{
     check_denuvo_bulk, get_cached_store_search, get_trending_store_games, search_store,
-    suggest_store_games,
+    suggest_store_games, warm_store_front,
 };
 pub use specific_version::{
     prepare_luatools_specific_version_download, prepare_ryuu_specific_version_download,

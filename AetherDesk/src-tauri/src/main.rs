@@ -151,8 +151,9 @@ fn main() {
                 let deferred_app = app.handle().clone();
                 tauri::async_runtime::spawn(async move {
                     let started = std::time::Instant::now();
+                    let blocking_app = deferred_app.clone();
                     let joined = tauri::async_runtime::spawn_blocking(move || {
-                        crate::core::migration::run_deferred_startup_tasks(&deferred_app);
+                        crate::core::migration::run_deferred_startup_tasks(&blocking_app);
                     })
                     .await;
                     match joined {
@@ -168,6 +169,10 @@ fn main() {
                             error
                         ),
                     }
+                    // After the window is interactive: fill the Store front
+                    // cache once, so the first click on Store reads a fresh
+                    // entry instead of waiting on the Steam store front.
+                    crate::application::store::warm_store_front(&deferred_app).await;
                 });
             }
             Ok(())
