@@ -91,6 +91,12 @@ the code that implements it and the check that proves it.
 Outside an elevated shell the test harness needs
 `AETHERDESK_NO_ADMIN_MANIFEST=1` (see `docs/quality-gates.md`).
 
+CI is tag-only by design. `.github/workflows/build.yml` runs the release jobs
+when a `desk-*` or `dll-*` tag is pushed; there is no pull-request or branch
+CI. Aether has a single maintainer who runs the full gates locally before
+tagging, so the workflow is the publishing barrier, not a review gate. Do not
+add a PR workflow unless that working model changes.
+
 ## Documentation rules
 
 - This file is the entry point; `docs/INDEX.md` lists every document with

@@ -17,6 +17,15 @@ for up to a week. The release workflow (`.github/workflows/build.yml`) otherwise
 adds nothing that `build_desk.cmd` or "Build All" in Visual Studio don't already
 do; it only serves as the final barrier before publishing.
 
+## CI scope
+
+The workflow is tag-only: it runs when a `desk-*`, `dll-*`, `tdesk-*` or
+`tdll-*` tag is pushed. There is no pull-request or branch CI. Aether has a
+single maintainer who runs `build_desk.cmd` and `build_dll.cmd` locally before
+tagging, so the workflow is the publishing barrier, not a review gate. Adding
+PR CI would duplicate checks that already run on every local build; it is a
+deliberate absence, not an oversight.
+
 
 ## AetherDesk — `build_desk.cmd` (and the `release-desk` job)
 
