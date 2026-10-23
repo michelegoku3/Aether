@@ -260,12 +260,6 @@ void* h_RecvPkt(void* self, CNetPacket* packet) {
     if (packet && abi::netpkt::EnsureResolved(packet)) {
         std::uint8_t*& pktData = abi::netpkt::Data(packet);
         std::uint32_t& pktLen = abi::netpkt::Size(packet);
-        // Write barrier: re-checks the latched layout against THIS
-        // object before we are allowed to mutate it. Reading is
-        // already safe (EnsureResolved + DecodeFrame validate the
-        // frame); writing is what corrupts Steam, so it gets its own
-        // gate.
-        const bool mayWrite = abi::netpkt::BeginWrite(packet);
 
         WireFrame f;
         if (DecodeFrame(pktData, pktLen, f)) {
@@ -286,34 +280,41 @@ void* h_RecvPkt(void* self, CNetPacket* packet) {
             } else {
                 const std::int32_t newBodyLen = DispatchRecv(f);
 
-                if (!mayWrite) {
-                    // Dispatch already ran (handlers observe traffic and
-                    // keep their caches warm); only the rewrite is
-                    // dropped.
-                    AC_LOG_TRACE_ONCE(kModule, "Rewrite skipped: packet rejected by the ABI write barrier.");
-                } else if (t_recvHeaderLen >= 0 && newBodyLen >= 0) {
-                    const std::uint32_t newSize = sizeof(MsgHdr) + t_recvHeaderLen + newBodyLen;
-                    std::uint8_t* buf = PoolSlot(newSize);
-                    if (buf) {
-                        std::memcpy(buf, pktData, sizeof(MsgHdr));
-                        reinterpret_cast<MsgHdr*>(buf)->headerLength = t_recvHeaderLen;
-                        std::memcpy(buf + sizeof(MsgHdr), t_scratchHeader.data(), t_recvHeaderLen);
-                        std::memcpy(buf + sizeof(MsgHdr) + t_recvHeaderLen, t_scratchBody.data(), newBodyLen);
-                        pktData = buf;
-                        pktLen = newSize;
-                    }
-                } else if (newBodyLen == 0) {
-                    pktLen = sizeof(MsgHdr) + f.headerLen;
-                } else if (newBodyLen > 0) {
-                    const std::uint32_t newSize = sizeof(MsgHdr) + f.headerLen + newBodyLen;
-                    std::uint8_t* buf = PoolSlot(newSize);
-                    if (buf) {
-                        std::memcpy(buf, pktData, sizeof(MsgHdr));
-                        reinterpret_cast<MsgHdr*>(buf)->headerLength = f.headerLen;
-                        std::memcpy(buf + sizeof(MsgHdr), f.header, f.headerLen);
-                        std::memcpy(buf + sizeof(MsgHdr) + f.headerLen, t_scratchBody.data(), newBodyLen);
-                        pktData = buf;
-                        pktLen = newSize;
+                // Only a handler that produced a new body needs the packet
+                // mutated. The barrier re-checks the latched layout against
+                // THIS object before we may write; running it here instead of
+                // on every inbound frame keeps its syscalls off the common
+                // pass-through path, where nothing is rewritten.
+                if (newBodyLen != kNoChange) {
+                    if (!abi::netpkt::BeginWrite(packet)) {
+                        // Dispatch already ran (handlers observe traffic and
+                        // keep their caches warm); only the rewrite is
+                        // dropped.
+                        AC_LOG_TRACE_ONCE(kModule, "Rewrite skipped: packet rejected by the ABI write barrier.");
+                    } else if (t_recvHeaderLen >= 0 && newBodyLen >= 0) {
+                        const std::uint32_t newSize = sizeof(MsgHdr) + t_recvHeaderLen + newBodyLen;
+                        std::uint8_t* buf = PoolSlot(newSize);
+                        if (buf) {
+                            std::memcpy(buf, pktData, sizeof(MsgHdr));
+                            reinterpret_cast<MsgHdr*>(buf)->headerLength = t_recvHeaderLen;
+                            std::memcpy(buf + sizeof(MsgHdr), t_scratchHeader.data(), t_recvHeaderLen);
+                            std::memcpy(buf + sizeof(MsgHdr) + t_recvHeaderLen, t_scratchBody.data(), newBodyLen);
+                            pktData = buf;
+                            pktLen = newSize;
+                        }
+                    } else if (newBodyLen == 0) {
+                        pktLen = sizeof(MsgHdr) + f.headerLen;
+                    } else if (newBodyLen > 0) {
+                        const std::uint32_t newSize = sizeof(MsgHdr) + f.headerLen + newBodyLen;
+                        std::uint8_t* buf = PoolSlot(newSize);
+                        if (buf) {
+                            std::memcpy(buf, pktData, sizeof(MsgHdr));
+                            reinterpret_cast<MsgHdr*>(buf)->headerLength = f.headerLen;
+                            std::memcpy(buf + sizeof(MsgHdr), f.header, f.headerLen);
+                            std::memcpy(buf + sizeof(MsgHdr) + f.headerLen, t_scratchBody.data(), newBodyLen);
+                            pktData = buf;
+                            pktLen = newSize;
+                        }
                     }
                 }
             }

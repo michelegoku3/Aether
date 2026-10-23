@@ -652,14 +652,25 @@ void TryDeliver(void* recvThis, steam::CNetPacket* carrier, void* (*oRecvPkt)(vo
     // call, but PersonaInject must not depend on its caller for memory safety.
     if (!abi::netpkt::IsResolved())
         return;
+    // Most inbound frames carry no staged PersonaState, so check for one
+    // before paying for the write barrier (a per-object layout check).
+    {
+        std::lock_guard<std::mutex> lock(g_state.presence.mutex);
+        if (!g_state.presence.injectPending || g_state.presence.stagedPacket.empty())
+            return;
+    }
+
     // Same barrier as PacketRouter: we are about to repoint the carrier's
     // data pointer, which is the single most destructive write Aether makes.
+    // Keep the staged packet queued when the barrier refuses it: dropping it
+    // here would lose a presence update the next frame could still deliver.
     if (!abi::netpkt::BeginWrite(carrier))
         return;
 
     std::vector<std::uint8_t> staged;
     {
         std::lock_guard<std::mutex> lock(g_state.presence.mutex);
+        // The state may have been cleared or replaced while the barrier ran.
         if (!g_state.presence.injectPending || g_state.presence.stagedPacket.empty())
             return;
         staged.swap(g_state.presence.stagedPacket);
