@@ -40,7 +40,7 @@ enum class AppReleaseState : std::uint32_t {
 // Out-param of CClientUser::CheckAppOwnership.
 //
 // FIELD ORDER IS EVIDENCE, NOT PREFERENCE. Offsets and the extent of the bool
-// block are proven by disassembly of both shipped builds (rounds 3-6); the
+// block are proven by disassembly of both shipped builds; the
 // NAMES of several fields are deductions from the branch that writes them,
 // and the ones that are not certain say so. Getting a name wrong here does
 // not crash: it makes Steam believe something false. Declaring `borrowed` at
@@ -54,7 +54,7 @@ struct AppOwnership {
     // ---- scalars (offsets proven; names for +0x0C/+0x14 are not) ----------
     std::uint32_t packageId;          // +0x00 proven (echoes the appId)
     AppReleaseState releaseState;     // +0x04 likely (enum from a KV string)
-    std::uint32_t steamId32;          // +0x08 UNKNOWN name (round 3: masterSubscriptionAppId?)
+    std::uint32_t steamId32;          // +0x08 UNKNOWN name (possibly masterSubscriptionAppId)
     std::uint32_t unknown_0x0C;       // +0x0C UNKNOWN
     std::uint32_t trialSeconds;       // +0x10 likely (DevComp / TimedTrialMinutes * 60)
     std::uint32_t existInPackageNums; // +0x14 likely (a counter: incremented per entry)
@@ -76,15 +76,15 @@ struct AppOwnership {
     bool regionRestricted;      // +0x2C likely  (flags & 0x30)
     bool autoGrant;             // +0x2D guess   (license type == 1)
     bool retailLicense;         // +0x2E likely  (license type == 0x40)
-    bool borrowed;              // +0x2F likely  (set on the site/borrower path,
-                                //                round 7: setter 0x4C3000) <- read by Aether
+    bool borrowed;              // +0x2F likely  (set on the site/borrower path by
+                                //                the setter at 0x4C3000) <- read by Aether
     bool allActivationRequired; // +0x30 guess   (defaults 1, ANDead with bit 11)
     bool timedLicense;          // +0x31 likely  (license type 7: timed, ~30.7d grace)
     bool anySiteLicense;        // +0x32 guess   (|= type == 0x50)
     bool allSiteLicenses;       // +0x33 guess   (defaults 1, ANDead with type == 0x50)
     bool guestPass;             // +0x34 guess   (defaults 1, ANDead with bit 12)
     bool familyShared;          // +0x35 likely  (flags & 0x4000 + subscription
-                                //                match, round 7) <- read by Aether
+                                //                match) <- read by Aether
 };
 
 // Valve's CUtlMemory<T>: a growable, relocatable backing buffer.
@@ -128,7 +128,7 @@ struct PackageInfo {
     std::uint32_t licenseType;
     // Usability gate. There is NO "Available" constant: Valve's own code tests
     // `status != 3`, where 3 is what the "status" key lookup returns when the
-    // key is absent (round-6 disassembly: LoadPackage writes it with default 3,
+    // key is absent (disassembly: LoadPackage writes it with default 3,
     // and every consumer — CheckAppOwnership x2, ProcessPendingLicenseUpdates,
     // 0x9E0B00 — discards the package on `== 3`). Offset +0x18, both builds.
     std::uint32_t status;
@@ -144,12 +144,12 @@ struct PackageInfo {
 //
 // Stride 0x20 is proven on both builds (the loops in BuildDepotDependency
 // index with `shl reg,5`), and manifestGid/manifestSize at +0x08/+0x10 come
-// from the filler helper that writes them (round 5). Aether OVERWRITES
+// from the filler helper that writes them. Aether OVERWRITES
 // manifestGid — the id of the exact content snapshot Steam will download — so
 // this struct gets the same treatment as the others: guarded, never trusted.
 struct DepotEntry {
-    std::uint32_t depotId;      // 0x00 proven (round 7, from the producer)
-    std::uint32_t appId;        // 0x04 proven (round 7, from the producer)
+    std::uint32_t depotId;      // 0x00 proven (from the producer)
+    std::uint32_t appId;        // 0x04 proven (from the producer)
     std::uint64_t manifestGid;  // 0x08
     std::uint64_t manifestSize; // 0x10
     std::uint32_t dlcAppId;     // 0x18

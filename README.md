@@ -5,19 +5,21 @@ manifests, manages backups and versions, adds online/presence features, etc.
 
 It is made of two halves:
 
-- **AetherDesk** — The desktop app, this is the user-facing program.
+- **AetherDesk** — the desktop app, the user-facing program.
 - **AetherDLL** — C++ DLLs injected into Steam that apply the changes live.
 
 ## How to install Aether
 
-1. Go into Steam folder
-2. Deleted everything EXCEPT steam.exe and the folders (you WONT lose games, savegames, achievements)
-3. Double click on steam.exe and wait it to finish
-2. Download AetherDesk 1.4.3 from https://github.com/michelegoku3/Aether/releases/tag/desk-1.4.3
-3. Extract AetherDesk folder on the desktop
-4. Open AetherDesk.exe and exclude it from the AV
-5. Go to Aether tab and install AetherDLL
-6. Put your API key in the settings, scroll down to save
+1. Go into the Steam folder.
+2. Delete everything EXCEPT `steam.exe` and the folders (you will not lose
+   games, savegames or achievements).
+3. Double-click `steam.exe` and wait for it to finish.
+4. Download the latest AetherDesk release from
+   https://github.com/michelegoku3/Aether/releases (the `desk-*` tag) and
+   extract the folder on the desktop.
+5. Open `AetherDesk.exe` and exclude it from your antivirus.
+6. Go to the **Aether** tab and install AetherDLL.
+7. Put your API key in the settings, scroll down and save.
 
 ## Discord
 

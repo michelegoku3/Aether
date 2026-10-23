@@ -3,7 +3,7 @@ Copyright (C) 2026 Aether's author
 
 This software is provided under the following terms, inspired by the
 permissive-but-protective spirit of the projects it credits (see the
-`licenses/` folder). It is a CC BY-NC-SA style license: free to use,
+`Licenses/` folder). It is a CC BY-NC-SA style license: free to use,
 free to share, never for profit, and always open.
 
 ========================================================================
@@ -18,10 +18,10 @@ conditions:
 1. CREDIT (BY). Any use, modification or redistribution of this
    software — in whole or in part, in source or binary form — MUST
    retain this license notice and MUST give credit to the original
-   author and to the projects credited in `licenses/CREDITS.md`
+   author and to the projects credited in `Licenses/CREDITS.md`
    (SteaMidra/SFF by Midrag, Steamless by atom0s, UCOnline2 by
    LukeWarmSodas), whose own licenses apply to their respective parts
-   and are included in the `licenses/` folder. Credit may be given in
+   and are included in the `Licenses/` folder. Credit may be given in
    the source code, in a README, in an about dialog, or in any other
    reasonable place.
 
@@ -61,4 +61,4 @@ conditions:
 ========================================================================
 
 Even though this project is personal, the credits to the projects it
-borrows from are still included and respected: see `licenses/`.
+borrows from are still included and respected: see `Licenses/`.

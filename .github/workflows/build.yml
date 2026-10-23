@@ -201,9 +201,9 @@ jobs:
       - name: Setup Ninja
         uses: seanmiddleditch/gha-setup-ninja@master
 
-      # Il configure applica i gate di cmake/Quality.cmake: /W4 /WX,
-      # clang-tidy (required), header/sorgenti orfani,
-      # e i test unitari come parte di ALL. Identico a "Compila tutto" in VS.
+      # The configure step applies the cmake/Quality.cmake gates: /W4 /WX,
+      # required clang-tidy, orphan headers/sources, and the unit tests as
+      # part of ALL. Same gates as "Build All" in Visual Studio.
       - name: Configure AetherDLL
         run: cmake --preset x64-Release
         working-directory: AetherDLL
