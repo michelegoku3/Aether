@@ -15,11 +15,11 @@ It is made of two halves:
    games, savegames or achievements).
 3. Double-click `steam.exe` and wait for it to finish.
 4. Download the latest AetherDesk release from
-   https://github.com/michelegoku3/Aether/releases (the `desk-*` tag) and
-   extract the folder on the desktop.
-5. Open `AetherDesk.exe` and exclude it from your antivirus.
-6. Go to the **Aether** tab and install AetherDLL.
-7. Put your API key in the settings, scroll down and save.
+   https://github.com/michelegoku3/Aether/releases/latest.
+5. Extract the folder on the desktop.
+6. Open `AetherDesk.exe` and exclude it from your antivirus.
+7. Go to the **Aether** tab and install AetherDLL.
+8. Put your API key in the settings, scroll down and save.
 
 ## Discord
 
