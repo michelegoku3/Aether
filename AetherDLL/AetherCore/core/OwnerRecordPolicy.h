@@ -5,16 +5,21 @@
 // ---------------------------------------------------------------------------
 // Pure decision table for the cosmetic library-owner policy.
 //
-// The policy writes `AppState.LastOwner` on installed apps Aether spoofs, and
-// must be able to undo exactly those writes later. It therefore keeps a record
-// of (appId -> value we wrote) and only ever removes a value that is still the
-// one we recorded:
+// Steam stamps `AppState.LastOwner` with whichever account last wrote app state
+// (install, update, validate, account switch). On an app Aether spoofs that
+// value can only produce a bogus "From the library of <account>" banner, so the
+// default policy drops it whether Steam or Aether put it there.
 //
-//   * Steam rewrote the value (real license, family change, reinstall) -> drop
-//     the stale record and leave Steam's data alone;
-//   * the app left the managed set (its .lua was removed) -> remove the value
-//     WE wrote, so the banner does not survive the feature;
-//   * an app Aether never wrote -> never touched.
+// The opt-in banner still records (appId -> value we wrote): that record lets a
+// later pass remove our stamp after the app leaves the managed set (.lua
+// removed), where the value can still be told apart from a real Steam record,
+// which is never touched:
+//
+//   * managed now -> remove the value (banner opt-in still wins);
+//   * no longer managed and still our recorded value -> remove it;
+//   * no longer managed and Steam rewrote it (real license, family change,
+//     reinstall) -> drop the stale record and leave Steam's data alone;
+//   * never managed and never written by Aether -> never touched.
 //
 // Kept header-only and free of globals so the matrix is unit-testable without
 // Steam, Lua state or a filesystem.
@@ -41,6 +46,14 @@ inline OwnerPlan PlanOwnerAction(bool bannerEnabled, bool managed, bool listed, 
     if (bannerEnabled && managed && listed && bannerSteamId != 0) {
         plan.action = OwnerAction::Set;
         plan.owner = bannerSteamId;
+        return plan;
+    }
+
+    // A managed app is spoofed right now: Steam cannot legitimately attribute
+    // it to another account, so any LastOwner left behind is the bogus one that
+    // renders the banner. Drop it even when Aether never wrote it.
+    if (managed) {
+        plan.action = OwnerAction::Remove;
         return plan;
     }
 

@@ -189,10 +189,23 @@ void AcfOwnerTest() {
         CHECK(plan.dropRecord);
     }
     {
-        // Never written by Aether: never touch a real Steam record.
+        // Unmanaged app Aether never wrote: never touch a real Steam record.
         const OwnerPlan plan = PlanOwnerAction(true, false, false, 42ull, 0, 99ull);
         CHECK(plan.action == OwnerAction::Skip);
         CHECK(!plan.dropRecord);
+    }
+    {
+        // Spoofed app whose owner Steam wrote (install, update, account
+        // switch): there is no Aether record, but the banner is bogus for a
+        // Lua app, so the default policy drops the value anyway.
+        const OwnerPlan plan = PlanOwnerAction(false, true, false, 0, 0, 99ull);
+        CHECK(plan.action == OwnerAction::Remove);
+    }
+    {
+        // Banner enabled for other apps: an unlisted spoofed app still drops
+        // Steam's leftover owner instead of keeping the banner.
+        const OwnerPlan plan = PlanOwnerAction(true, true, false, 42ull, 0, 99ull);
+        CHECK(plan.action == OwnerAction::Remove);
     }
     {
         // Enabled but no owner selected: fall back to the remove policy.

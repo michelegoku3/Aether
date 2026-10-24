@@ -21,11 +21,14 @@
 //     renders the real banner with that account's persona. All other apps keep
 //     the entry removed.
 //
-// Values Aether writes are recorded in `<steam>\aethercore\owner_state.txt`.
-// The record is what lets a later pass remove its own stamp after the app
-// leaves the managed set (its .lua was removed) without ever touching a
-// LastOwner Steam wrote itself: a value that no longer matches the record is
-// Steam's and is left alone.
+// While an app is managed (Aether spoofs it now), its LastOwner can only be a
+// leftover Steam stamped for an account that last wrote app state, so the
+// default policy drops it regardless of who wrote it. Values Aether writes on
+// managed apps are also recorded in `<steam>\aethercore\owner_state.txt`: after
+// the app leaves the managed set (its .lua was removed) that record still lets
+// a later pass remove Aether's stamp without touching a LastOwner Steam wrote
+// itself — a value that no longer matches the record is Steam's and is left
+// alone.
 //
 // Runs at boot (before Steam loads app state), after login, and after Steam
 // rewrites a manifest (install/update/validate).
