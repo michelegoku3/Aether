@@ -1,17 +1,5 @@
 # Changelog
 
-**What it is:** what each release changed in AetherDesk and AetherDLL, written for
-the people who use them. AetherDesk comes first, AetherDLL below it.
-
-**Read it when:** you want to know what a release changed, or you are preparing the
-release notes for one.
-
-**Not here:** how any of it works — contracts, architecture and build gates live
-in the pages listed in [`docs/INDEX.md`](INDEX.md).
-
-The maintainer writes this page by hand at release time. It is the only document
-in the repository that records change history.
-
 ## AetherDesk V1.5.0
 
 ### Library and install state
@@ -461,8 +449,3 @@ in the repository that records change history.
   added; `StatusWriter` emits through the new `utils/JsonWriter`.
 - `utils/Paths.h` deduplicated `LowerAscii`/`BaseName`/`HasExtension`; `SchemaBuckets`
   moved to a header.
-
-## Related
-
-- [`docs/INDEX.md`](INDEX.md) - every document, with "read it when".
-- [`AGENTS.md`](../AGENTS.md) - repository map, conventions and build commands.
