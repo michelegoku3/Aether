@@ -40,6 +40,7 @@ describe('SettingsSteamSection', () => {
     expect(text(container)).not.toContain('Restore manifests on Steam startup');
     expect(text(container)).not.toContain('Clear AetherDesk caches');
     expect(text(container)).toContain('Steam Installation Path');
+    expect(text(container)).not.toContain('The main directory path where Steam is installed');
     expect(text(container)).toContain('Detect Steam automatically');
     expect(text(container)).toContain('Show every game you are playing to friends');
     expect(text(container)).toContain('Show "From the library of ..." on selected games');

@@ -59,9 +59,6 @@ export const SettingsSteamSection: React.FC<SettingsSteamSectionProps> = ({
       <label className="settings-label">Steam</label>
       <div className="settings-toggle-row settings-field-column">
         <span className="settings-toggle-text">Steam Installation Path</span>
-        <p className="settings-desc">
-          The main directory path where Steam is installed on your PC, required for configuration.
-        </p>
         <div className="settings-input-wrap">
           <input
             type="text"

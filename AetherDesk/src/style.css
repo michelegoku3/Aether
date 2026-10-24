@@ -1599,10 +1599,10 @@ body {
 }
 
 /* Provider panels (Hubcap, Ryuu, LuaTools) read as separate blocks inside the
-   Providers section: one extra 5px of air keeps their labels from crowding the
+   Providers section: the wider gap keeps their labels from crowding the
    previous panel's input. */
 .settings-providers {
-  gap: 11px;
+  gap: 15px;
 }
 
 /* Settings toggle row: label on the left, switch on the right.
@@ -1710,6 +1710,12 @@ body {
   position: relative;
   display: flex;
   align-items: center;
+}
+
+/* The Steam path row is a flex column aligned to flex-start, which would shrink
+   the wrapper (and its full-width input) to its content. */
+.settings-field-column .settings-input-wrap {
+  width: 100%;
 }
 
 .settings-input-wrap .settings-input {
