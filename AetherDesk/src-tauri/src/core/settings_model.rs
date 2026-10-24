@@ -6,72 +6,7 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 pub struct AppSettings {
-    #[serde(default)]
-    pub hubcap_api_key: String,
-    #[serde(default = "default_steam_path")]
-    pub steam_path: String,
-    // NOTE: no `active_library` field. Library discovery already resolves
-    // every folder transitively from `libraryfolders.vdf`, so a separate
-    // "active library" setting was dead configuration (never exposed in the
-    // UI, always empty). Old settings.json files carrying the key still parse:
-    // serde ignores unknown fields by default.
-    /// Set to true once the user has been asked (and handled) the Windows
-    /// Defender exclusion prompt, so it never shows again (install or update).
-    /// `#[serde(default)]` keeps old settings.json files parseable.
-    #[serde(default)]
-    pub antivirus_exclusion_done: bool,
-    /// When false (default), DLC-like rows are filtered out of store search
-    /// results (SFF structural rule set via batched Steam GetItems). When true,
-    /// the Hubcap-only tail is shown unfiltered. `#[serde(default)]` keeps old
-    /// settings.json files parseable and preserves the "hidden" default.
-    #[serde(default)]
-    pub show_store_dlcs: bool,
-    /// When false, rows tagged NSFW (Steam sexual content descriptors or name
-    /// heuristic) are filtered out of store search results. Default TRUE
-    /// (visible, pink border): the custom serde default is required because
-    /// `#[serde(default)]` alone would read missing fields as `false` when
-    /// parsing older settings.json files.
-    #[serde(default = "default_true")]
-    pub show_store_nsfw: bool,
-    /// When false, rows Steam flags as `unlisted` (delisted games) are
-    /// filtered out of store search results. Default TRUE (visible, white
-    /// border): unlisted classics like GTA SA or Dark Souls PTDE are exactly
-    /// what people search a manifest tool for.
-    #[serde(default = "default_true")]
-    pub show_store_delisted: bool,
-    /// When true, the frontend injects `AetherData/config/custom.css` as a
-    /// `<style id="aether-custom-css">` after the default theme.
-    /// Default `false` — no file I/O unless the user opts in.
-    #[serde(default)]
-    pub custom_css_enabled: bool,
-    /// Ryuu API key for `generator.ryuu.lol`. No validation endpoint,
-    /// so an empty string means "not configured" and any non-empty is saved verbatim.
-    /// Limit is 50 uses per day (enforced server-side).
-    #[serde(default)]
-    pub ryuu_api_key: String,
-    /// Depotbox build-details access token. Empty = use the built-in default
-    /// (the service key shipped by SFF). Override when SFF rotates its key;
-    /// the `AETHERDESK_BUILD_TOKEN` environment variable takes precedence.
-    #[serde(default)]
-    pub build_details_token: String,
-    /// When true, latest-version downloads comment setManifestid pins after
-    /// installing the Lua so Steam can keep the game updated. Specific-version
-    /// downloads intentionally ignore this setting. It is disabled by default
-    /// because unauthenticated Steam request-code access no longer provides
-    /// reliable automatic updates or Workshop behavior.
-    #[serde(default = "default_false")]
-    pub download_games_with_updates_on: bool,
-    /// Records that the one-time safe-default migration for the update policy
-    /// has been applied. This lives in settings.json so the migration does not
-    /// depend on a standalone filesystem sentinel.
-    #[serde(default)]
-    pub download_updates_default_off_migrated: bool,
-    /// Show a Steam Store front page in Store when no search query is active.
-    #[serde(default = "default_true")]
-    pub show_store_front_games: bool,
-    /// Enables the alternate backdrop-focused game card layout.
-    #[serde(default)]
-    pub use_alternative_game_cards: bool,
+    // ---- Aether -----------------------------------------------------------
     /// Enables WebView developer tools when supported by the build/runtime.
     #[serde(default)]
     pub enable_webview_devtools: bool,
@@ -80,40 +15,22 @@ pub struct AppSettings {
     /// users never see testing builds. The UI shows these as red update dots.
     #[serde(default)]
     pub enable_test_updates: bool,
-    /// Criterion used by the Store front page (`trending`, `latest`, ...).
-    #[serde(default = "default_store_front_filter")]
-    pub store_front_filter: String,
-    /// Preferred Steam store currency for prices shown in Store/Info.
-    /// Values are intentionally small and map to Steam country codes:
-    /// `eur` -> IT, `usd` -> US, `jpy` -> JP.
-    #[serde(default = "default_store_currency")]
-    pub store_currency: String,
-    /// Personal wallpaper displayed behind AetherDesk content.
-    #[serde(default)]
-    pub personal_wallpaper_enabled: bool,
-    /// Wallpaper image opacity percentage (0..=100).
-    #[serde(default = "default_wallpaper_opacity")]
-    pub personal_wallpaper_opacity: u8,
-    /// Explicitly chosen wallpaper file name inside `config/wallpapers/`.
-    /// Empty means "use the first detected wallpaper" (sorted by name).
-    #[serde(default)]
-    pub wallpaper_selected_file: String,
-    /// Explicitly chosen theme file name inside `config/themes/`.
-    /// Empty means "use the first detected theme" (sorted by name).
-    #[serde(default)]
-    pub theme_selected_file: String,
-    /// Use a custom window icon from `config/icons/`.
-    #[serde(default)]
-    pub custom_icon_enabled: bool,
-    /// Explicitly chosen icon file name inside `config/icons/`.
-    #[serde(default)]
-    pub icon_selected_file: String,
-    /// Backdrop image opacity (0..=100) of the alternative game cards.
-    #[serde(default = "default_alt_cards_opacity")]
-    pub alternative_cards_opacity: u8,
-    /// Backdrop fade-out toward the bottom (0..=100) of the alternative game cards.
-    #[serde(default = "default_alt_cards_fade")]
-    pub alternative_cards_fade: u8,
+    /// When true, latest-version downloads comment setManifestid pins after
+    /// installing the Lua so Steam can keep the game updated. Specific-version
+    /// downloads intentionally ignore this setting. It is disabled by default
+    /// because unauthenticated Steam request-code access no longer provides
+    /// reliable automatic updates or Workshop behavior.
+    #[serde(default = "default_false")]
+    pub download_games_with_updates_on: bool,
+
+    // ---- Steam ------------------------------------------------------------
+    #[serde(default = "default_steam_path")]
+    pub steam_path: String,
+    // NOTE: no `active_library` field. Library discovery already resolves
+    // every folder transitively from `libraryfolders.vdf`, so a separate
+    // "active library" setting was dead configuration (never exposed in the
+    // UI, always empty). Old settings.json files carrying the key still parse:
+    // serde ignores unknown fields by default.
     /// Custom game name displayed to friends on Steam (game_extra_info).
     #[serde(default)]
     pub custom_game_name: String,
@@ -130,6 +47,100 @@ pub struct AppSettings {
     /// Decimal SteamID64 shown as the library owner. Empty = disabled.
     #[serde(default)]
     pub library_banner_steamid: String,
+
+    // ---- Providers --------------------------------------------------------
+    #[serde(default)]
+    pub hubcap_api_key: String,
+    /// Ryuu API key for `generator.ryuu.lol`. No validation endpoint,
+    /// so an empty string means "not configured" and any non-empty is saved verbatim.
+    /// Limit is 50 uses per day (enforced server-side).
+    #[serde(default)]
+    pub ryuu_api_key: String,
+
+    // ---- Store ------------------------------------------------------------
+    /// When false (default), DLC-like rows are filtered out of store search
+    /// results (SFF structural rule set via batched Steam GetItems). When true,
+    /// the Hubcap-only tail is shown unfiltered. `#[serde(default)]` keeps old
+    /// settings.json files parseable and preserves the "hidden" default.
+    #[serde(default)]
+    pub show_store_dlcs: bool,
+    /// When false, rows Steam flags as `unlisted` (delisted games) are
+    /// filtered out of store search results. Default TRUE (visible, white
+    /// border): unlisted classics like GTA SA or Dark Souls PTDE are exactly
+    /// what people search a manifest tool for.
+    #[serde(default = "default_true")]
+    pub show_store_delisted: bool,
+    /// When false, rows tagged NSFW (Steam sexual content descriptors or name
+    /// heuristic) are filtered out of store search results. Default TRUE
+    /// (visible, pink border): the custom serde default is required because
+    /// `#[serde(default)]` alone would read missing fields as `false` when
+    /// parsing older settings.json files.
+    #[serde(default = "default_true")]
+    pub show_store_nsfw: bool,
+    /// Show a Steam Store front page in Store when no search query is active.
+    #[serde(default = "default_true")]
+    pub show_store_front_games: bool,
+    /// Criterion used by the Store front page (`trending`, `latest`, ...).
+    #[serde(default = "default_store_front_filter")]
+    pub store_front_filter: String,
+    /// Preferred Steam store currency for prices shown in Store/Info.
+    /// Values are intentionally small and map to Steam country codes:
+    /// `eur` -> IT, `usd` -> US, `jpy` -> JP.
+    #[serde(default = "default_store_currency")]
+    pub store_currency: String,
+
+    // ---- Appearance -------------------------------------------------------
+    /// When true, the frontend injects `AetherData/config/custom.css` as a
+    /// `<style id="aether-custom-css">` after the default theme.
+    /// Default `false` — no file I/O unless the user opts in.
+    #[serde(default)]
+    pub custom_css_enabled: bool,
+    /// Explicitly chosen theme file name inside `config/themes/`.
+    /// Empty means "use the first detected theme" (sorted by name).
+    #[serde(default)]
+    pub theme_selected_file: String,
+    /// Personal wallpaper displayed behind AetherDesk content.
+    #[serde(default)]
+    pub personal_wallpaper_enabled: bool,
+    /// Wallpaper image opacity percentage (0..=100).
+    #[serde(default = "default_wallpaper_opacity")]
+    pub personal_wallpaper_opacity: u8,
+    /// Explicitly chosen wallpaper file name inside `config/wallpapers/`.
+    /// Empty means "use the first detected wallpaper" (sorted by name).
+    #[serde(default)]
+    pub wallpaper_selected_file: String,
+    /// Use a custom window icon from `config/icons/`.
+    #[serde(default)]
+    pub custom_icon_enabled: bool,
+    /// Explicitly chosen icon file name inside `config/icons/`.
+    #[serde(default)]
+    pub icon_selected_file: String,
+    /// Enables the alternate backdrop-focused game card layout.
+    #[serde(default)]
+    pub use_alternative_game_cards: bool,
+    /// Backdrop image opacity (0..=100) of the alternative game cards.
+    #[serde(default = "default_alt_cards_opacity")]
+    pub alternative_cards_opacity: u8,
+    /// Backdrop fade-out toward the bottom (0..=100) of the alternative game cards.
+    #[serde(default = "default_alt_cards_fade")]
+    pub alternative_cards_fade: u8,
+
+    // ---- Internal state (not shown in Settings) ---------------------------
+    /// Set to true once the user has been asked (and handled) the Windows
+    /// Defender exclusion prompt, so it never shows again (install or update).
+    /// `#[serde(default)]` keeps old settings.json files parseable.
+    #[serde(default)]
+    pub antivirus_exclusion_done: bool,
+    /// Records that the one-time safe-default migration for the update policy
+    /// has been applied. This lives in settings.json so the migration does not
+    /// depend on a standalone filesystem sentinel.
+    #[serde(default)]
+    pub download_updates_default_off_migrated: bool,
+    /// Depotbox build-details access token. Empty = use the built-in default
+    /// (the service key shipped by SFF). Override when SFF rotates its key;
+    /// the `AETHERDESK_BUILD_TOKEN` environment variable takes precedence.
+    #[serde(default)]
+    pub build_details_token: String,
 }
 
 /// Health of a settings load, for UI banners. Serialized camelCase for IPC.
@@ -267,35 +278,90 @@ pub fn normalize_store_front_filter(value: &str) -> String {
 impl Default for AppSettings {
     fn default() -> Self {
         Self {
-            hubcap_api_key: String::new(),
-            steam_path: default_steam_path(),
-            antivirus_exclusion_done: false,
-            show_store_dlcs: false,
-            show_store_nsfw: true,
-            show_store_delisted: true,
-            custom_css_enabled: false,
-            ryuu_api_key: String::new(),
-            build_details_token: String::new(),
-            download_games_with_updates_on: false,
-            download_updates_default_off_migrated: false,
-            show_store_front_games: true,
-            use_alternative_game_cards: false,
             enable_webview_devtools: false,
             enable_test_updates: false,
-            store_front_filter: default_store_front_filter(),
-            store_currency: default_store_currency(),
-            personal_wallpaper_enabled: false,
-            personal_wallpaper_opacity: default_wallpaper_opacity(),
-            wallpaper_selected_file: String::new(),
-            theme_selected_file: String::new(),
-            custom_icon_enabled: false,
-            icon_selected_file: String::new(),
-            alternative_cards_opacity: default_alt_cards_opacity(),
-            alternative_cards_fade: default_alt_cards_fade(),
+            download_games_with_updates_on: false,
+            steam_path: default_steam_path(),
             custom_game_name: String::new(),
             library_banner_enabled: false,
             library_banner_appids: Vec::new(),
             library_banner_steamid: String::new(),
+            hubcap_api_key: String::new(),
+            ryuu_api_key: String::new(),
+            show_store_dlcs: false,
+            show_store_delisted: true,
+            show_store_nsfw: true,
+            show_store_front_games: true,
+            store_front_filter: default_store_front_filter(),
+            store_currency: default_store_currency(),
+            custom_css_enabled: false,
+            theme_selected_file: String::new(),
+            personal_wallpaper_enabled: false,
+            personal_wallpaper_opacity: default_wallpaper_opacity(),
+            wallpaper_selected_file: String::new(),
+            custom_icon_enabled: false,
+            icon_selected_file: String::new(),
+            use_alternative_game_cards: false,
+            alternative_cards_opacity: default_alt_cards_opacity(),
+            alternative_cards_fade: default_alt_cards_fade(),
+            antivirus_exclusion_done: false,
+            download_updates_default_off_migrated: false,
+            build_details_token: String::new(),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// `settings.json` reads top-to-bottom like the Settings screen: the field
+    /// declaration order is the on-disk key order, so pin it here to keep a
+    /// future field move from silently breaking the UI/JSON alignment.
+    #[test]
+    fn serialized_keys_follow_the_settings_screen() {
+        const EXPECTED: &[&str] = &[
+            "enable_webview_devtools",
+            "enable_test_updates",
+            "download_games_with_updates_on",
+            "steam_path",
+            "custom_game_name",
+            "library_banner_enabled",
+            "library_banner_appids",
+            "library_banner_steamid",
+            "hubcap_api_key",
+            "ryuu_api_key",
+            "show_store_dlcs",
+            "show_store_delisted",
+            "show_store_nsfw",
+            "show_store_front_games",
+            "store_front_filter",
+            "store_currency",
+            "custom_css_enabled",
+            "theme_selected_file",
+            "personal_wallpaper_enabled",
+            "personal_wallpaper_opacity",
+            "wallpaper_selected_file",
+            "custom_icon_enabled",
+            "icon_selected_file",
+            "use_alternative_game_cards",
+            "alternative_cards_opacity",
+            "alternative_cards_fade",
+            "antivirus_exclusion_done",
+            "download_updates_default_off_migrated",
+            "build_details_token",
+        ];
+
+        let json =
+            serde_json::to_string_pretty(&AppSettings::default()).expect("settings serialize");
+        let keys: Vec<&str> = json
+            .lines()
+            .filter_map(|line| {
+                let rest = line.strip_prefix("  \"")?;
+                rest.find('"').map(|end| &rest[..end])
+            })
+            .collect();
+
+        assert_eq!(keys, EXPECTED);
     }
 }
