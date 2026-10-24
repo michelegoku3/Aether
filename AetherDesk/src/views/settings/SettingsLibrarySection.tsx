@@ -91,7 +91,7 @@ export const SettingsLibrarySection: React.FC<SettingsLibrarySectionProps> = ({
               )
             )}
             <p className="settings-note">
-              Selected games will be shown as games from another library. A Steam restart is required.
+              Selected games will be shown as games from another library, a Steam restart is required to make it appear.
             </p>
           </div>
         </>

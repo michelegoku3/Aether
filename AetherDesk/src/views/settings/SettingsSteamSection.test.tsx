@@ -66,7 +66,9 @@ describe('SettingsSteamSection', () => {
     const { container } = render(<SettingsSteamSection {...baseProps()} libraryEnabled />);
 
     expect(text(container)).toContain('Library owner');
-    expect(text(container)).toContain('Selected games will be shown as games from another library.');
+    expect(text(container)).toContain(
+      'Selected games will be shown as games from another library, a Steam restart is required to make it appear.'
+    );
   });
 
   it('shows the custom game name only while the presence toggle is on', () => {
