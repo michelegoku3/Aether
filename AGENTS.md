@@ -126,6 +126,10 @@ add a PR workflow unless that working model changes.
   history: no "batch", "fix 2", "round 3", "step 4", no dates of when something
   changed ("2026-10-05"), no "was removed", "now uses", "legacy migration step".
   If a rule changes, rewrite the rule. Git history is the changelog.
+- **`docs/changelog.md` is the one exception**: it records release history for the
+  people who use AetherDesk and AetherDLL, and the maintainer writes it by hand at
+  release time. Agents ignore it and never edit it unless the maintainer asks for a
+  change to it in that conversation.
 - **Do not hand-edit generated files**: `AetherDLL/proto/generated/**` is produced
   by `Tools/regen_proto.cmd`. Edit `proto/steam_messages.proto` instead.
 - **IPC argument keys** are lowerCamelCase and derived from the Rust parameter

@@ -7,6 +7,12 @@ is listed below.
 **Read it when** is the column that matters: it tells you which document
 governs the change you are about to make.
 
+## Release
+
+| Document | What it is | Read it when |
+|---|---|---|
+| [`docs/changelog.md`](changelog.md) | What each release of AetherDesk and AetherDLL changed, written for the people who use them. | You want to know what a release changed, or you are preparing its release notes. |
+
 ## Reference — read these when you touch the related code
 
 | Document | What it is | Read it when |
@@ -30,8 +36,11 @@ governs the change you are about to make.
   `Licenses/CREDITS.md` keep their own shape.
 - Names are kebab-case, except the long-standing uppercase pages (`README.md`,
   `AGENTS.md`, `docs/INDEX.md`, `ARCHITECTURE.md`, `TABLE.md`).
-- Documents describe the current state only: no changelog, no batch or fix
-  numbers, no dates of when something changed (see
-  [`AGENTS.md`](../AGENTS.md#conventions-and-guardrails)).
+- Documents describe the current state only: no batch or fix numbers, no dates of
+  when something changed (see
+  [`AGENTS.md`](../AGENTS.md#conventions-and-guardrails)). The single exception is
+  [`docs/changelog.md`](changelog.md), which records release history and is written
+  by hand by the maintainer: agents ignore it and never edit it unless the
+  maintainer asks for a change to it in that conversation.
 - `npm run check:docs` (from `AetherDesk/`) verifies that every Markdown file is
   listed here and that every relative link and repository path resolves.
