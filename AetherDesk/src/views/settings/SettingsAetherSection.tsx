@@ -90,18 +90,7 @@ export const SettingsAetherSection: React.FC<SettingsAetherSectionProps> = ({
         <span className="settings-toggle-text">Clear AetherDesk caches</span>
         <button
           type="button"
-          className="settings-small-btn"
-          style={{
-            width: '96px',
-            minWidth: '96px',
-            maxWidth: '96px',
-            height: '33px',
-            padding: '0',
-            display: 'inline-flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            boxSizing: 'border-box',
-          }}
+          className="settings-small-btn settings-action-btn"
           onClick={async () => {
             try {
               const result: string = await invoke('clear_app_caches');

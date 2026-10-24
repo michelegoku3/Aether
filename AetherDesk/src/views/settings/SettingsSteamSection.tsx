@@ -3,6 +3,7 @@ import { invoke } from '@tauri-apps/api/core';
 import type { SteamCheckStatus } from './types';
 import type { SetPresenceDefaultModeArgs } from '../../types/online';
 import { toErrorMessage } from '../../util/errors';
+import { FolderIcon } from '../../ui/icons';
 import { SettingsLibrarySection } from './SettingsLibrarySection';
 import type { SteamAccount } from './libraryBanner';
 
@@ -61,52 +62,34 @@ export const SettingsSteamSection: React.FC<SettingsSteamSectionProps> = ({
         <p className="settings-desc">
           The main directory path where Steam is installed on your PC, required for configuration.
         </p>
-        <input
-          type="text"
-          placeholder="C:\Program Files (x86)\Steam"
-          value={steamPath}
-          onChange={(e) => setSteamPath(e.target.value)}
-          className="settings-input"
-        />
+        <div className="settings-input-wrap">
+          <input
+            type="text"
+            placeholder="C:\Program Files (x86)\Steam"
+            value={steamPath}
+            onChange={(e) => setSteamPath(e.target.value)}
+            className="settings-input"
+          />
+          <button
+            type="button"
+            className="settings-input-eye"
+            title="Browse for the Steam folder"
+            aria-label="Browse for the Steam folder"
+            onClick={() => void onBrowseSteamFolder()}
+          >
+            <FolderIcon size={16} />
+          </button>
+        </div>
         {steamCheck.state !== 'idle' && (
           <p className={`settings-desc steam-path-status steam-path-${steamCheck.state}`}>{steamCheck.message}</p>
         )}
       </div>
 
       <div className="settings-toggle-row">
-        <span className="settings-toggle-text">Browse for the Steam folder</span>
-        <button
-          type="button"
-          className="settings-small-btn"
-          style={{
-            minWidth: '96px',
-            height: '33px',
-            padding: '0 12px',
-            display: 'inline-flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            boxSizing: 'border-box',
-          }}
-          onClick={() => void onBrowseSteamFolder()}
-        >
-          Browse
-        </button>
-      </div>
-
-      <div className="settings-toggle-row">
         <span className="settings-toggle-text">Detect Steam automatically</span>
         <button
           type="button"
-          className="settings-small-btn"
-          style={{
-            minWidth: '96px',
-            height: '33px',
-            padding: '0 12px',
-            display: 'inline-flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            boxSizing: 'border-box',
-          }}
+          className="settings-small-btn settings-action-btn"
           onClick={() => void onDetectSteamPath()}
         >
           Auto Detect
@@ -114,7 +97,7 @@ export const SettingsSteamSection: React.FC<SettingsSteamSectionProps> = ({
       </div>
 
       <div className="settings-toggle-row">
-        <span className="settings-toggle-text">Show every game to friends by default</span>
+        <span className="settings-toggle-text">Show every game you are playing to friends</span>
         <label className="version-switch">
           <input
             type="checkbox"
@@ -142,9 +125,6 @@ export const SettingsSteamSection: React.FC<SettingsSteamSectionProps> = ({
       {presenceDefaultShowOnline && (
         <div className="settings-toggle-row settings-field-column">
           <span className="settings-toggle-text">Custom game display name</span>
-          <p className="settings-desc">
-            Overrides the game name shown to friends on Steam, leave empty to show the real title.
-          </p>
           <input
             type="text"
             className="settings-input"

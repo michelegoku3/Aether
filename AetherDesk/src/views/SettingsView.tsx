@@ -1,5 +1,6 @@
 import { memo, type FormEvent } from 'react';
 import { HubcapUpdateWarningModal } from '../modals/HubcapUpdateWarningModal';
+import { ResetSettingsConfirmModal } from '../modals/ResetSettingsConfirmModal';
 import { SettingsAetherSection } from './settings/SettingsAetherSection';
 import { SettingsSteamSection } from './settings/SettingsSteamSection';
 import { SettingsProvidersSection } from './settings/SettingsProvidersSection';
@@ -165,27 +166,24 @@ export const SettingsView = memo(function SettingsView(props: SettingsViewProps)
         />
         <div className="settings-separator"></div>
 
-        <div className="form-actions" style={{ justifyContent: 'center', gap: '12px' }}>
-          <button type="submit" className="save-settings-btn" style={{ flex: '1 1 0', maxWidth: '200px' }}>
+        <div className="form-actions settings-actions">
+          <button type="submit" className="save-settings-btn">
             Save Settings
           </button>
-          <button
-            type="button"
-            className="save-settings-btn"
-            style={{
-              flex: '1 1 0',
-              maxWidth: '200px',
-              backgroundColor: '#1c1c21',
-              border: '1px solid var(--border-color)',
-            }}
-            onClick={() => void c.reset()}
-          >
+          <button type="button" className="settings-secondary-btn" onClick={() => c.requestReset()}>
             Reset Settings
           </button>
         </div>
       </form>
 
       {c.showHubcapWarning && <HubcapUpdateWarningModal onClose={() => c.setShowHubcapWarning(false)} />}
+      {c.resetConfirmOpen && (
+        <ResetSettingsConfirmModal
+          busy={c.resetBusy}
+          onConfirm={() => void c.confirmReset()}
+          onCancel={c.cancelReset}
+        />
+      )}
       <LuaToolsLoginModal
         open={lua.modalOpen}
         busy={lua.busy}

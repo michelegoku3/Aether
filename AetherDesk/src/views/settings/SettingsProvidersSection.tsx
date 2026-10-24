@@ -40,24 +40,16 @@ export const SettingsProvidersSection: React.FC<SettingsProvidersSectionProps> =
   return (
     // One group so the three provider panels use the sections' internal 6px
     // rhythm instead of the 20px gap that separates top-level sections.
-    <div className="settings-group">
+    <div className="settings-group settings-providers">
       {/* Hubcap API Key Section */}
       <div className="settings-group">
         <label className="settings-label">Hubcap API Key</label>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
+        <div className="settings-provider-head">
           <p className="settings-desc">
             Enter your hubcapmanifest.com API key to unlock database lookups and downloads.
           </p>
           {hubcapUsage.hasKey && (
-            <span
-              style={{
-                fontSize: '12px',
-                color: '#8f8f9e',
-                fontWeight: 'bold',
-                marginLeft: '12px',
-                whiteSpace: 'nowrap',
-              }}
-            >
+            <span className="settings-provider-badge">
               {hubcapUsage.usage}/{hubcapUsage.limit}
             </span>
           )}
@@ -87,21 +79,9 @@ export const SettingsProvidersSection: React.FC<SettingsProvidersSectionProps> =
       {/* Ryuu API Key Section */}
       <div className="settings-group">
         <label className="settings-label">Ryuu API Key</label>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
+        <div className="settings-provider-head">
           <p className="settings-desc">Enter your generator.ryuu.lol API key to unlock downloads via Ryuu.</p>
-          {ryuuKey.trim() !== '' && (
-            <span
-              style={{
-                fontSize: '12px',
-                color: '#8f8f9e',
-                fontWeight: 'bold',
-                marginLeft: '12px',
-                whiteSpace: 'nowrap',
-              }}
-            >
-              50/day
-            </span>
-          )}
+          {ryuuKey.trim() !== '' && <span className="settings-provider-badge">50/day</span>}
         </div>
         <div className="settings-input-wrap">
           <input
@@ -128,25 +108,13 @@ export const SettingsProvidersSection: React.FC<SettingsProvidersSectionProps> =
       {/* LuaTools account */}
       <div className="settings-group">
         <label className="settings-label">LuaTools Account</label>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
+        <div className="settings-provider-head">
           <p className="settings-desc">
             Log in to your lua.tools account to download from its available manifest sources.
           </p>
-          {luaToolsAuth.signedIn && (
-            <span
-              style={{
-                fontSize: '12px',
-                color: '#8f8f9e',
-                fontWeight: 'bold',
-                marginLeft: '12px',
-                whiteSpace: 'nowrap',
-              }}
-            >
-              25/day
-            </span>
-          )}
+          {luaToolsAuth.signedIn && <span className="settings-provider-badge">25/day</span>}
         </div>
-        <div className="settings-toggle-row" style={{ padding: 0 }}>
+        <div className="settings-toggle-row settings-toggle-row--flush">
           <span className="settings-toggle-text">
             {luaToolsAuth.signedIn
               ? `Connected${

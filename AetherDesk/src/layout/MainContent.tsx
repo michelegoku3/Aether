@@ -110,7 +110,7 @@ export const MainContent = memo(function MainContent({
               height: '100%',
               alignItems: 'center',
               justifyContent: 'center',
-              color: '#8f8f9e',
+              color: 'var(--color-muted)',
               fontSize: '24px',
               fontWeight: 'bold',
               letterSpacing: '1px',

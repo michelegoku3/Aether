@@ -395,6 +395,29 @@ describe('useSettingsController', () => {
     expect(invokeMock).toHaveBeenCalledWith('reset_settings_to_defaults');
   });
 
+  it('gates reset behind the confirmation popup', async () => {
+    mockInvokeCommands(commandDefaults());
+    const { result } = renderHook(() => useSettingsController(createParams()));
+    await waitFor(() => expect(result.current.form.steamPath).toBe('C:/Steam'));
+
+    expect(result.current.resetConfirmOpen).toBe(false);
+    act(() => result.current.requestReset());
+    expect(result.current.resetConfirmOpen).toBe(true);
+
+    act(() => result.current.cancelReset());
+    expect(result.current.resetConfirmOpen).toBe(false);
+    expect(invokeMock).not.toHaveBeenCalledWith('reset_settings_to_defaults');
+
+    act(() => result.current.requestReset());
+    await act(async () => {
+      await result.current.confirmReset();
+    });
+
+    expect(invokeMock).toHaveBeenCalledWith('reset_settings_to_defaults');
+    expect(result.current.resetConfirmOpen).toBe(false);
+    expect(result.current.resetBusy).toBe(false);
+  });
+
   it('reloadSaved reloads and reports failures', async () => {
     mockInvokeCommands(commandDefaults());
     const params = createParams();

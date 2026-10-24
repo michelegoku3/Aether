@@ -1,4 +1,4 @@
-import { fireEvent, render } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { SettingsSteamSection } from './SettingsSteamSection';
 
@@ -40,10 +40,20 @@ describe('SettingsSteamSection', () => {
     expect(text(container)).not.toContain('Restore manifests on Steam startup');
     expect(text(container)).not.toContain('Clear AetherDesk caches');
     expect(text(container)).toContain('Steam Installation Path');
-    expect(text(container)).toContain('Browse for the Steam folder');
     expect(text(container)).toContain('Detect Steam automatically');
-    expect(text(container)).toContain('Show every game to friends by default');
+    expect(text(container)).toContain('Show every game you are playing to friends');
     expect(text(container)).toContain('Show "From the library of ..." on selected games');
+  });
+
+  it('browses the Steam folder from the icon inside the path field', () => {
+    const props = baseProps();
+    const { container } = render(<SettingsSteamSection {...props} />);
+
+    const browse = screen.getByRole('button', { name: 'Browse for the Steam folder' });
+    expect(text(container)).not.toContain('Browse for the Steam folder');
+    fireEvent.click(browse);
+
+    expect(props.onBrowseSteamFolder).toHaveBeenCalledTimes(1);
   });
 
   it('flows straight from the title into the Steam settings, with no divider', () => {
@@ -74,6 +84,7 @@ describe('SettingsSteamSection', () => {
   it('shows the custom game name only while the presence toggle is on', () => {
     const on = render(<SettingsSteamSection {...baseProps()} presenceDefaultShowOnline />);
     expect(text(on.container)).toContain('Custom game display name');
+    expect(text(on.container)).not.toContain('Overrides the game name shown to friends on Steam');
 
     const off = render(<SettingsSteamSection {...baseProps()} presenceDefaultShowOnline={false} />);
     expect(text(off.container)).not.toContain('Custom game display name');

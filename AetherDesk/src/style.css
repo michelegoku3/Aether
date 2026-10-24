@@ -4,6 +4,12 @@
   --bg-sidebar: #131316;
   --bg-item-hover: #1e1e24;
   --bg-item-active: #23232a;
+  /* Shared control surfaces: the dark button/pill surface, its hover tint and
+     the deeper field background. One value each, so a control never drifts
+     from the next one. */
+  --bg-control: #1c1c21;
+  --bg-control-hover: #192128;
+  --bg-field: #141417;
   --color-text: #e1e1e6;
   --color-muted: #8f8f9e;
   --color-cyan: #00b4d8;
@@ -192,6 +198,22 @@ body {
   background-color: var(--bg-item-hover);
 }
 
+/* Disabled entries (Backup) keep the tooltip from their wrapper but must not
+   react to hover or advertise a click. */
+.nav-disabled-wrap {
+  display: block;
+  width: 100%;
+}
+
+.nav-item:disabled {
+  cursor: default;
+}
+
+.nav-item:disabled:hover {
+  color: var(--color-muted);
+  background-color: transparent;
+}
+
 .nav-item.active {
   color: var(--color-cyan);
   background-color: var(--bg-item-active);
@@ -218,7 +240,7 @@ body {
 
 .restart-steam-btn:hover {
   color: #ffffff;
-  background-color: #192128;
+  background-color: var(--bg-control-hover);
 }
 
 /* Main Content Area */
@@ -299,7 +321,7 @@ body {
   width: 100%;
   min-height: 42px;
   box-sizing: border-box;
-  background-color: #141417;
+  background-color: var(--bg-field);
   border: 1px solid var(--border-color);
   border-radius: 8px;
   padding: 10px 36px 10px 16px;
@@ -538,7 +560,7 @@ body {
   width: 100%;
   height: 34px;
   min-height: 34px;
-  background-color: #141417;
+  background-color: var(--bg-field);
   border: 1px solid var(--border-color);
   border-radius: 8px;
   padding: 0 34px 0 14px;
@@ -611,14 +633,14 @@ body {
 
 /* Active filter states use a colored glyph so the mode is obvious at a glance. */
 .library-icon-btn.active.filter-installed {
-  color: #10b981;
+  color: var(--color-installed-green);
   border-color: rgba(16, 185, 129, 0.55);
   background-color: rgba(16, 185, 129, 0.1);
 }
 
 .library-icon-btn.active.filter-installed:hover:not(:disabled) {
   color: #34d399;
-  border-color: #10b981;
+  border-color: var(--color-installed-green);
 }
 
 .library-icon-btn.active.filter-missing {
@@ -1105,7 +1127,7 @@ body {
 .game-action-btn {
   width: 172px;
   height: 72px;
-  background-color: #141417;
+  background-color: var(--bg-field);
   border: 2px solid var(--border-color);
   border-radius: 8px;
   color: #ffffff;
@@ -1130,7 +1152,7 @@ body {
 .game-action-btn:hover:not(:disabled) {
   border-color: var(--color-cyan);
   color: var(--color-cyan);
-  background-color: #192128;
+  background-color: var(--bg-control-hover);
 }
 
 /* Change Version of a game whose Lua needs a pin repaired: red outline, the
@@ -1223,7 +1245,7 @@ body {
 
 .version-manifest-input {
   width: 100%;
-  background-color: #141417;
+  background-color: var(--bg-field);
   border: 1px solid var(--border-color);
   border-radius: 6px;
   padding: 8px 10px;
@@ -1365,7 +1387,7 @@ body {
 .source-btn {
   flex: 1 1 0;
   min-width: 0;
-  background-color: #1c1c21;
+  background-color: var(--bg-control);
   border: 1px solid var(--border-color);
   color: var(--color-muted);
   font-size: 13px;
@@ -1419,7 +1441,7 @@ body {
 
 .big-action-btn:not(:disabled):hover {
   border-color: var(--color-cyan);
-  background-color: #192128; /* Subtle blue highlight background tint */
+  background-color: var(--bg-control-hover); /* Subtle blue highlight background tint */
 }
 
 .big-action-btn:disabled {
@@ -1554,7 +1576,7 @@ body {
 .settings-alert.success {
   background-color: rgba(16, 185, 129, 0.08);
   border-color: rgba(16, 185, 129, 0.25);
-  color: #10b981;
+  color: var(--color-installed-green);
 }
 
 .settings-alert.error {
@@ -1576,6 +1598,13 @@ body {
   gap: 6px;
 }
 
+/* Provider panels (Hubcap, Ryuu, LuaTools) read as separate blocks inside the
+   Providers section: one extra 5px of air keeps their labels from crowding the
+   previous panel's input. */
+.settings-providers {
+  gap: 11px;
+}
+
 /* Settings toggle row: label on the left, switch on the right.
    Mirrors the CrackModal achievement row; the switch itself reuses the
    shared `.version-switch` (dark track, cyan when active). */
@@ -1586,6 +1615,12 @@ body {
   gap: 16px;
   padding: 4px 0;
   user-select: none;
+}
+
+/* A row nested directly under a description (Providers account state): the
+   parent already supplies the gap, so the row's own padding would double it. */
+.settings-toggle-row--flush {
+  padding: 0;
 }
 
 .settings-toggle-text {
@@ -1616,6 +1651,22 @@ body {
   line-height: 1.4;
 }
 
+/* Provider key panels: label with a right-aligned badge (usage count, daily
+   limit), so the three panels share one header rhythm. */
+.settings-provider-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+}
+
+.settings-provider-badge {
+  font-size: 12px;
+  color: var(--color-muted);
+  font-weight: 700;
+  margin-left: 12px;
+  white-space: nowrap;
+}
+
 /* Inline validation message under a settings input (e.g. a malformed App ID).
    Mirrors the `.settings-alert.error` accent without the alert chrome. */
 .settings-error {
@@ -1633,7 +1684,7 @@ body {
 }
 
 .settings-input {
-  background-color: #141417;
+  background-color: var(--bg-field);
   border: 1px solid var(--border-color);
   border-radius: 8px;
   padding: 10px 16px;
@@ -1697,7 +1748,7 @@ body {
 }
 
 .validate-btn {
-  background-color: #1c1c21;
+  background-color: var(--bg-control);
   border: 1px solid var(--border-color);
   color: #ffffff;
   font-size: 13px;
@@ -1721,8 +1772,8 @@ body {
 
 .validate-btn.valid {
   background-color: rgba(16, 185, 129, 0.15);
-  border-color: #10b981;
-  color: #10b981;
+  border-color: var(--color-installed-green);
+  color: var(--color-installed-green);
 }
 
 .validate-btn.invalid {
@@ -1750,6 +1801,41 @@ body {
 
 .save-settings-btn:hover {
   opacity: 0.9;
+}
+
+/* Secondary counterpart of .save-settings-btn (Reset): same geometry, control
+   surface instead of the primary accent, hover matching the compact buttons. */
+.settings-secondary-btn {
+  background-color: var(--bg-control);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  color: #ffffff;
+  font-size: 13px;
+  font-weight: 700;
+  padding: 12px 28px;
+  cursor: pointer;
+  transition:
+    border-color 0.2s ease,
+    background-color 0.2s ease,
+    color 0.2s ease;
+}
+
+.settings-secondary-btn:hover {
+  border-color: var(--color-cyan);
+  color: var(--color-cyan);
+  background-color: var(--bg-control-hover);
+}
+
+.settings-actions {
+  display: flex;
+  justify-content: center;
+  gap: 12px;
+}
+
+.settings-actions .save-settings-btn,
+.settings-actions .settings-secondary-btn {
+  flex: 1 1 0;
+  max-width: 200px;
 }
 
 /* ==========================================
@@ -1822,7 +1908,7 @@ body {
 
 .panel-btn {
   flex: 1 1 0%; /* Crucial: forces both buttons to occupy EXACTLY the same width, regardless of text length! */
-  background-color: #1c1c21;
+  background-color: var(--bg-control);
   border: 1px solid var(--border-color);
   color: #ffffff;
   font-size: 14px;
@@ -1837,7 +1923,7 @@ body {
 
 .panel-btn:hover:not(:disabled) {
   border-color: var(--color-cyan);
-  background-color: #192128;
+  background-color: var(--bg-control-hover);
   color: var(--color-cyan);
 }
 
@@ -1991,7 +2077,7 @@ body {
 
 .home-search-input {
   width: 100%;
-  background-color: #141417;
+  background-color: var(--bg-field);
   border: 1px solid var(--border-color);
   border-radius: 8px;
   padding: 12px 40px 12px 16px; /* right padding leaves room for the clear "x" */
@@ -2052,7 +2138,7 @@ body {
 
 .home-search-result:hover,
 .home-search-result.active {
-  background-color: #192128;
+  background-color: var(--bg-control-hover);
   color: var(--color-cyan);
 }
 
@@ -2111,7 +2197,7 @@ body {
 .home-status.success {
   background-color: rgba(16, 185, 129, 0.08);
   border-color: rgba(16, 185, 129, 0.25);
-  color: #10b981;
+  color: var(--color-installed-green);
 }
 
 .home-status.error {
@@ -2453,7 +2539,7 @@ body {
   min-height: 42px;
   border-radius: 8px;
   border: 1px solid var(--border-color);
-  background: #1c1c21;
+  background: var(--bg-control);
   color: #ffffff;
   font-size: 13px;
   font-weight: 700;
@@ -2470,7 +2556,7 @@ body {
 .uninstall-btn:hover:not(:disabled) {
   border-color: var(--color-cyan);
   color: var(--color-cyan);
-  background-color: #192128;
+  background-color: var(--bg-control-hover);
 }
 
 .uninstall-btn:disabled {
@@ -2503,7 +2589,7 @@ body {
 }
 
 .uninstall-btn-secondary {
-  background: #141417;
+  background: var(--bg-field);
   color: var(--color-muted);
 }
 
@@ -2528,7 +2614,7 @@ body {
 
 .game-download-btn.secondary:hover {
   border-color: var(--color-cyan);
-  background-color: #192128;
+  background-color: var(--bg-control-hover);
   color: var(--color-cyan);
 }
 
@@ -2987,7 +3073,7 @@ body {
 
 .store-local-fab:hover {
   border-color: var(--color-cyan);
-  background-color: #192128;
+  background-color: var(--bg-control-hover);
   color: #ffffff;
   transform: translateY(-2px);
   box-shadow: 0 6px 20px rgba(0, 180, 216, 0.3);
@@ -3003,13 +3089,13 @@ body {
 /* Settings compact controls. */
 
 .settings-small-btn {
-  background-color: #1c1c21;
+  background-color: var(--bg-control);
   border: 1px solid var(--border-color);
   color: #ffffff;
   font-size: 12px;
   font-weight: 700;
   padding: 8px 12px;
-  border-radius: 7px;
+  border-radius: 8px;
   cursor: pointer;
   transition: all 0.2s ease;
   white-space: nowrap;
@@ -3018,7 +3104,19 @@ body {
 .settings-small-btn:hover {
   border-color: var(--color-cyan);
   color: var(--color-cyan);
-  background-color: #192128;
+  background-color: var(--bg-control-hover);
+}
+
+/* Fixed-size row action (Browse / Auto Detect / Clear Cache): the surface comes
+   from .settings-small-btn, the geometry lives here once. */
+.settings-action-btn {
+  min-width: 96px;
+  height: 33px;
+  padding: 0 12px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
 }
 
 /* Steam path field: live validation status below the input (palette mirrors
@@ -3032,7 +3130,7 @@ body {
 }
 
 .steam-path-checking {
-  color: #8f8f9e;
+  color: var(--color-muted);
 }
 
 /* Keep long Info values compact; inner scroll handles overflow. */
@@ -3111,7 +3209,7 @@ body {
   width: 115px;
   min-width: 115px;
   height: 30px;
-  background-color: #141417;
+  background-color: var(--bg-field);
   border: 1px solid var(--border-color);
   border-radius: 8px;
   padding: 4px 10px;
@@ -3129,7 +3227,7 @@ body {
   width: 42px;
   min-width: 42px;
   height: 24px;
-  background-color: #141417;
+  background-color: var(--bg-field);
   border: 1px solid var(--border-color);
   border-radius: 8px;
   padding: 2px 6px;
@@ -3208,7 +3306,7 @@ body {
   max-width: 115px;
   height: 30px;
   flex: 0 0 115px;
-  background-color: #141417;
+  background-color: var(--bg-field);
   border: 1px solid var(--border-color);
   border-radius: 8px;
   color: #ffffff;
@@ -3221,7 +3319,7 @@ body {
 
 .appearance-pick-btn:hover:not(:disabled) {
   border-color: var(--color-cyan);
-  background-color: #192128;
+  background-color: var(--bg-control-hover);
 }
 
 .appearance-pick-btn:disabled {
@@ -3236,7 +3334,7 @@ body {
   width: 115px;
   min-width: 115px;
   height: 30px;
-  background-color: #141417;
+  background-color: var(--bg-field);
   border: 1px solid var(--border-color);
   border-radius: 8px;
   padding: 4px 10px;
@@ -3486,12 +3584,12 @@ body {
 .log-copy-btn:hover {
   color: #ffffff;
   border-color: var(--color-cyan);
-  background-color: #192128;
+  background-color: var(--bg-control-hover);
 }
 
 .log-copy-btn.copied {
-  color: #10b981;
-  border-color: #10b981;
+  color: var(--color-installed-green);
+  border-color: var(--color-installed-green);
 }
 
 .log-view-terminal {
@@ -3528,7 +3626,7 @@ body {
 }
 
 .log-line.debug {
-  color: #8f8f9e;
+  color: var(--color-muted);
 }
 
 .log-line.trace {
@@ -3717,7 +3815,7 @@ body {
 }
 
 .version-tab.active {
-  background-color: #1c1c21;
+  background-color: var(--bg-control);
   color: #00b3ff;
   border-color: #00b3ff66;
   box-shadow: inset 0 -2px 0 #00b3ff;

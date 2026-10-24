@@ -34,6 +34,8 @@ export function useSettingsController(params: Params) {
   const [settingsConflict, setSettingsConflict] = useState(false);
   const [settingsCorrupt, setSettingsCorrupt] = useState(false);
   const [showHubcapWarning, setShowHubcapWarning] = useState(false);
+  const [resetConfirmOpen, setResetConfirmOpen] = useState(false);
+  const [resetBusy, setResetBusy] = useState(false);
   const [manifestRestoreOnStartup, setManifestRestoreOnStartup] = useState(true);
   const [presenceDefaultShowOnline, setPresenceDefaultShowOnline] = useState(true);
   const [steamAccounts, setSteamAccounts] = useState<SteamAccount[]>([]);
@@ -333,6 +335,22 @@ export function useSettingsController(params: Params) {
     }
   }, [appearance, applySettings, params, showStatus]);
 
+  // Reset is destructive (saved settings are replaced by defaults), so the
+  // Reset button only opens the confirmation; the actual action stays here.
+  const requestReset = useCallback(() => setResetConfirmOpen(true), []);
+  const cancelReset = useCallback(() => {
+    if (!resetBusy) setResetConfirmOpen(false);
+  }, [resetBusy]);
+  const confirmReset = useCallback(async () => {
+    setResetBusy(true);
+    try {
+      await reset();
+    } finally {
+      setResetBusy(false);
+      setResetConfirmOpen(false);
+    }
+  }, [reset]);
+
   return {
     form,
     setField,
@@ -358,6 +376,11 @@ export function useSettingsController(params: Params) {
     showStatus,
     save,
     reset,
+    resetConfirmOpen,
+    resetBusy,
+    requestReset,
+    cancelReset,
+    confirmReset,
     browseSteam: steamPath.browse,
     detectSteam: steamPath.detect,
     changeDownloadUpdates,

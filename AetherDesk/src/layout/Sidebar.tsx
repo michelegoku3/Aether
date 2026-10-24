@@ -57,10 +57,13 @@ export const Sidebar = memo(function Sidebar({
           Library
         </button>
 
-        {/* Backup */}
-        <button disabled={true} title="Backup is not available yet" className="nav-item">
-          Backup
-        </button>
+        {/* Backup: disabled until the view ships. The hint lives on the wrapper
+            because WebView2 suppresses tooltips on disabled controls. */}
+        <span className="nav-disabled-wrap" title="Backup is not available yet">
+          <button disabled={true} className="nav-item">
+            Backup
+          </button>
+        </span>
 
         {/* Separator Line */}
         <div className="separator"></div>
