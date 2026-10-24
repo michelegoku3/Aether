@@ -271,7 +271,13 @@ bool h_CheckAppOwnership(void* self, AppId app, AppOwnership* out) {
     // they have a non-zero package id.
     if (steamProvided) {
         if (familyShared) {
+            // A boot-time owner pass ran before Steam could classify the app,
+            // so the manifest may carry Aether's stamp. A real family license
+            // needs Steam's own value back to name a local owner.
+            const bool newlyFamilyShared = !luadata::IsFamilyShared(app);
             luadata::MarkFamilyShared(app);
+            if (newlyFamilyShared)
+                ac::appmanifest::RequestOwnerApply();
             RecordOwnershipOutcome(app, OwnershipOutcome::FamilyShared);
         } else {
             luadata::MarkOwned(app);

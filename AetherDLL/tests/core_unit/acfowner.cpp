@@ -157,59 +157,214 @@ void AcfOwnerTest() {
         CHECK(ReadLastOwner(nested) == 0);
     }
 
-    // ---- PlanOwnerAction (cleanup / orphan handling) ----------------------
+    // ---- PlanOwnerAction (owner policy) -----------------------------------
 
+    // A spoofed app must be attributed to the active account, never to the
+    // account Steam recorded: with an owner that is not the signed-in user,
+    // Steam renders "From your Steam Family library" on a Lua game nobody in
+    // the family owns.
     {
-        // Listed, managed and enabled: stamp.
-        const OwnerPlan plan = PlanOwnerAction(true, true, true, 42ull, 0, 0);
+        OwnerContext ctx;
+        ctx.managed = true;
+        ctx.activeSteamId = 222ull;
+        ctx.currentLastOwner = 111ull;
+        const OwnerPlan plan = PlanOwnerAction(ctx);
+        CHECK(plan.action == OwnerAction::Set);
+        CHECK_EQ(plan.owner, 222ull);
+        CHECK(!plan.dropRecord);
+    }
+    {
+        // Active account still unknown (boot before login): drop the leftover,
+        // which is the only safe value when Steam cannot attribute the app.
+        OwnerContext ctx;
+        ctx.managed = true;
+        ctx.activeSteamId = 0;
+        ctx.currentLastOwner = 111ull;
+        const OwnerPlan plan = PlanOwnerAction(ctx);
+        CHECK(plan.action == OwnerAction::Remove);
+    }
+    {
+        // The cosmetic opt-in still wins for a listed spoofed app.
+        OwnerContext ctx;
+        ctx.managed = true;
+        ctx.listed = true;
+        ctx.bannerEnabled = true;
+        ctx.bannerSteamId = 42ull;
+        ctx.activeSteamId = 222ull;
+        const OwnerPlan plan = PlanOwnerAction(ctx);
         CHECK(plan.action == OwnerAction::Set);
         CHECK_EQ(plan.owner, 42ull);
+    }
+    {
+        // Banner enabled but no owner selected: the app still gets the active
+        // account, so the bogus banner cannot render.
+        OwnerContext ctx;
+        ctx.managed = true;
+        ctx.listed = true;
+        ctx.bannerEnabled = true;
+        ctx.bannerSteamId = 0;
+        ctx.activeSteamId = 222ull;
+        const OwnerPlan plan = PlanOwnerAction(ctx);
+        CHECK(plan.action == OwnerAction::Set);
+        CHECK_EQ(plan.owner, 222ull);
+    }
+    {
+        // An app Steam reports as family-shared was stamped at boot, before the
+        // classification was known. Restore the value Steam had so its own
+        // banner can name a local owner again.
+        OwnerContext ctx;
+        ctx.familyShared = true;
+        ctx.activeSteamId = 222ull;
+        ctx.recorded = true;
+        ctx.record.written = 222ull;
+        ctx.record.originalKnown = true;
+        ctx.record.original = 111ull;
+        ctx.currentLastOwner = 222ull;
+        const OwnerPlan plan = PlanOwnerAction(ctx);
+        CHECK(plan.action == OwnerAction::Set);
+        CHECK_EQ(plan.owner, 111ull);
+        CHECK(plan.dropRecord);
+    }
+    {
+        // Family-shared app whose manifest had no owner before Aether touched
+        // it: restoring means removing our stamp.
+        OwnerContext ctx;
+        ctx.familyShared = true;
+        ctx.activeSteamId = 222ull;
+        ctx.recorded = true;
+        ctx.record.written = 222ull;
+        ctx.currentLastOwner = 222ull;
+        const OwnerPlan plan = PlanOwnerAction(ctx);
+        CHECK(plan.action == OwnerAction::Remove);
+        CHECK(plan.dropRecord);
+    }
+    {
+        // Family-shared app Aether never touched: leave Steam's record alone.
+        OwnerContext ctx;
+        ctx.familyShared = true;
+        ctx.activeSteamId = 222ull;
+        ctx.currentLastOwner = 111ull;
+        const OwnerPlan plan = PlanOwnerAction(ctx);
+        CHECK(plan.action == OwnerAction::Skip);
         CHECK(!plan.dropRecord);
     }
     {
-        // The app left the managed set but the value is still Aether's: clean it.
-        const OwnerPlan plan = PlanOwnerAction(true, false, false, 42ull, 42ull, 42ull);
-        CHECK(plan.action == OwnerAction::Remove);
-    }
-    {
-        // The feature is off: clean what Aether wrote earlier.
-        const OwnerPlan plan = PlanOwnerAction(false, true, true, 42ull, 42ull, 42ull);
-        CHECK(plan.action == OwnerAction::Remove);
-    }
-    {
-        // Steam rewrote the value (real license): drop the record, change nothing.
-        const OwnerPlan plan = PlanOwnerAction(true, false, false, 42ull, 42ull, 99ull);
+        // Steam rewrote the manifest after our stamp: our record is obsolete.
+        OwnerContext ctx;
+        ctx.familyShared = true;
+        ctx.recorded = true;
+        ctx.record.written = 222ull;
+        ctx.currentLastOwner = 99ull;
+        const OwnerPlan plan = PlanOwnerAction(ctx);
         CHECK(plan.action == OwnerAction::Skip);
         CHECK(plan.dropRecord);
     }
     {
-        // Already gone: drop the record, nothing to write.
-        const OwnerPlan plan = PlanOwnerAction(true, false, false, 42ull, 42ull, 0);
-        CHECK(plan.action == OwnerAction::Skip);
-        CHECK(plan.dropRecord);
-    }
-    {
-        // Unmanaged app Aether never wrote: never touch a real Steam record.
-        const OwnerPlan plan = PlanOwnerAction(true, false, false, 42ull, 0, 99ull);
+        // No longer spoofed but still ours (Steam reports the app as owned):
+        // the active account is a truthful last owner, so keep it and the
+        // record.
+        OwnerContext ctx;
+        ctx.activeSteamId = 222ull;
+        ctx.recorded = true;
+        ctx.record.written = 222ull;
+        ctx.record.originalKnown = true;
+        ctx.record.original = 111ull;
+        ctx.currentLastOwner = 222ull;
+        const OwnerPlan plan = PlanOwnerAction(ctx);
         CHECK(plan.action == OwnerAction::Skip);
         CHECK(!plan.dropRecord);
     }
     {
-        // Spoofed app whose owner Steam wrote (install, update, account
-        // switch): there is no Aether record, but the banner is bogus for a
-        // Lua app, so the default policy drops the value anyway.
-        const OwnerPlan plan = PlanOwnerAction(false, true, false, 0, 0, 99ull);
-        CHECK(plan.action == OwnerAction::Remove);
+        // No longer spoofed and the stamp belongs to an account that is no
+        // longer signed in: restore the original.
+        OwnerContext ctx;
+        ctx.activeSteamId = 333ull;
+        ctx.recorded = true;
+        ctx.record.written = 222ull;
+        ctx.record.originalKnown = true;
+        ctx.record.original = 111ull;
+        ctx.currentLastOwner = 222ull;
+        const OwnerPlan plan = PlanOwnerAction(ctx);
+        CHECK(plan.action == OwnerAction::Set);
+        CHECK_EQ(plan.owner, 111ull);
+        CHECK(plan.dropRecord);
     }
     {
-        // Banner enabled for other apps: an unlisted spoofed app still drops
-        // Steam's leftover owner instead of keeping the banner.
-        const OwnerPlan plan = PlanOwnerAction(true, true, false, 42ull, 0, 99ull);
+        // No longer spoofed, our removal is still in place, there was no owner
+        // before: nothing to restore.
+        OwnerContext ctx;
+        ctx.recorded = true;
+        ctx.record.written = 0;
+        ctx.currentLastOwner = 0;
+        const OwnerPlan plan = PlanOwnerAction(ctx);
         CHECK(plan.action == OwnerAction::Remove);
+        CHECK(plan.dropRecord);
     }
     {
-        // Enabled but no owner selected: fall back to the remove policy.
-        const OwnerPlan plan = PlanOwnerAction(true, true, true, 0, 42ull, 42ull);
-        CHECK(plan.action == OwnerAction::Remove);
+        // Steam rewrote an app Aether no longer spoofs: drop the stale record.
+        OwnerContext ctx;
+        ctx.recorded = true;
+        ctx.record.written = 222ull;
+        ctx.currentLastOwner = 99ull;
+        const OwnerPlan plan = PlanOwnerAction(ctx);
+        CHECK(plan.action == OwnerAction::Skip);
+        CHECK(plan.dropRecord);
+    }
+    {
+        // Never managed, never written: a real Steam record stays untouched.
+        OwnerContext ctx;
+        ctx.currentLastOwner = 99ull;
+        const OwnerPlan plan = PlanOwnerAction(ctx);
+        CHECK(plan.action == OwnerAction::Skip);
+        CHECK(!plan.dropRecord);
+    }
+
+    // ---- RecordAfterWrite (pre-Aether value capture) ----------------------
+
+    {
+        // First touch: the value Steam had becomes the restorable original.
+        const OwnerRecord next = RecordAfterWrite(OwnerRecord{}, false, 111ull, 222ull);
+        CHECK_EQ(next.written, 222ull);
+        CHECK(next.originalKnown);
+        CHECK_EQ(next.original, 111ull);
+    }
+    {
+        // First touch with no owner: restoring means removing the entry.
+        const OwnerRecord next = RecordAfterWrite(OwnerRecord{}, false, 0, 222ull);
+        CHECK_EQ(next.written, 222ull);
+        CHECK(!next.originalKnown);
+    }
+    {
+        // Later passes over our own stamp keep the original.
+        OwnerRecord previous;
+        previous.written = 222ull;
+        previous.originalKnown = true;
+        previous.original = 111ull;
+        const OwnerRecord next = RecordAfterWrite(previous, true, 222ull, 333ull);
+        CHECK_EQ(next.written, 333ull);
+        CHECK(next.originalKnown);
+        CHECK_EQ(next.original, 111ull);
+    }
+    {
+        // Steam rewrote the manifest: its fresh value is the better original.
+        OwnerRecord previous;
+        previous.written = 222ull;
+        previous.originalKnown = true;
+        previous.original = 111ull;
+        const OwnerRecord next = RecordAfterWrite(previous, true, 99ull, 333ull);
+        CHECK_EQ(next.written, 333ull);
+        CHECK(next.originalKnown);
+        CHECK_EQ(next.original, 99ull);
+    }
+    {
+        // Removing the entry keeps the captured original for a later restore.
+        OwnerRecord previous;
+        previous.written = 222ull;
+        previous.originalKnown = true;
+        previous.original = 111ull;
+        const OwnerRecord next = RecordAfterWrite(previous, true, 222ull, 0);
+        CHECK_EQ(next.written, 0);
+        CHECK(next.originalKnown);
+        CHECK_EQ(next.original, 111ull);
     }
 }

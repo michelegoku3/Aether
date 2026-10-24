@@ -19,6 +19,7 @@
 #include "core/OwnerRecordPolicy.h"
 #include "core/Settings.h"
 #include "core/Workers.h"
+#include "credentials/SteamId.h"
 #include "scripting/LuaData.h"
 #include "utils/SteamLibraryPaths.h"
 #include "utils/Strings.h"
@@ -36,10 +37,10 @@ constexpr const char* kRecordFileName = "owner_state.txt";
 std::mutex s_passMutex; // one pass at a time (boot job vs post-login job)
 std::atomic<bool> s_pending{false};
 
-// appId -> LastOwner Aether wrote. Persisted so a later pass can undo the stamp
-// after the app leaves the managed set (its .lua was removed), which the
-// manifest itself cannot tell us apart from a record Steam wrote.
-using OwnerRecords = std::unordered_map<steam::AppId, std::uint64_t>;
+// appId -> what Aether wrote and the value Steam had before. Persisted so a
+// later pass can restore Steam's own owner after the app leaves the managed set
+// or turns out to be family-shared.
+using OwnerRecords = std::unordered_map<steam::AppId, OwnerRecord>;
 
 bool ReadTextFile(const std::string& path, std::string& out) {
     std::ifstream input(winfile::ToPath(path), std::ios::binary);
@@ -116,12 +117,27 @@ OwnerRecords LoadRecords() {
     std::string text;
     if (!ReadTextFile(path, text))
         return records;
+
+    // One record per line: "<appId> <written> [<original>]". The two-field form
+    // has no captured original (Aether removed the entry); the three-field form
+    // carries the pre-Aether value when it was present.
     std::istringstream input(text);
-    unsigned long long appId = 0;
-    unsigned long long owner = 0;
-    while (input >> appId >> owner) {
-        if (appId != 0 && appId <= 0xFFFFFFFFull && owner != 0)
-            records[static_cast<steam::AppId>(appId)] = owner;
+    std::string line;
+    while (std::getline(input, line)) {
+        std::istringstream fields(line);
+        unsigned long long appId = 0;
+        unsigned long long written = 0;
+        if (!(fields >> appId >> written) || appId == 0 || appId > 0xFFFFFFFFull)
+            continue;
+
+        OwnerRecord record;
+        record.written = written;
+        unsigned long long original = 0;
+        if (fields >> original) {
+            record.originalKnown = original != 0;
+            record.original = original;
+        }
+        records[static_cast<steam::AppId>(appId)] = record;
     }
     return records;
 }
@@ -131,10 +147,12 @@ void SaveRecords(const OwnerRecords& records) {
     if (path.empty())
         return;
     std::string text;
-    for (const auto& [appId, owner] : records) {
+    for (const auto& [appId, record] : records) {
         text += std::to_string(appId);
         text += '\t';
-        text += std::to_string(owner);
+        text += std::to_string(record.written);
+        text += '\t';
+        text += std::to_string(record.originalKnown ? record.original : 0);
         text += '\n';
     }
     if (!WriteTextAtomically(path, text))
@@ -144,42 +162,50 @@ void SaveRecords(const OwnerRecords& records) {
 // Applies one decision to an already-read manifest. `content` is updated in
 // place; the record follows a successful write (and a write failure leaves the
 // previous record valid).
-void ApplyToManifest(const std::string& path, steam::AppId appId, const OwnerPlan& plan, std::string& content,
-                     OwnerRecords& records, bool& recordsDirty, OwnerPolicyStats& stats) {
-    const bool changed = plan.action == OwnerAction::Set ? SetLastOwner(content, plan.owner) : RemoveLastOwner(content);
-    if (!changed) {
+void ApplyToManifest(const std::string& path, steam::AppId appId, const OwnerContext& ctx, const OwnerPlan& plan,
+                     std::string& content, OwnerRecords& records, bool& recordsDirty, OwnerPolicyStats& stats) {
+    const auto existing = records.find(appId);
+    const bool hasRecord = existing != records.end();
+
+    if (plan.action == OwnerAction::Skip) {
         ++stats.unchanged;
-        // The manifest is already in the requested state. Claim it so a later
-        // pass can still clean up when the app leaves the list/managed set.
-        if (plan.action == OwnerAction::Set) {
-            const auto record = records.find(appId);
-            if (record == records.end() || record->second != plan.owner) {
-                records[appId] = plan.owner;
-                recordsDirty = true;
-            }
-        } else if (records.erase(appId) != 0) {
+        if (plan.dropRecord && hasRecord) {
+            records.erase(existing);
             recordsDirty = true;
         }
         return;
     }
 
-    if (!WriteTextAtomically(path, content)) {
-        ++stats.errors;
-        AC_LOG_WARN(kModule, "Cannot rewrite appmanifest_%u.acf (locked or read-only).", appId);
+    const bool changed = plan.action == OwnerAction::Set ? SetLastOwner(content, plan.owner) : RemoveLastOwner(content);
+    if (changed) {
+        if (!WriteTextAtomically(path, content)) {
+            ++stats.errors;
+            AC_LOG_WARN(kModule, "Cannot rewrite appmanifest_%u.acf (locked or read-only).", appId);
+            return;
+        }
+        if (plan.action == OwnerAction::Set) {
+            ++stats.applied;
+            AC_LOG_INFO(kModule, "App %u: LastOwner set to %llu.", appId, static_cast<unsigned long long>(plan.owner));
+        } else {
+            ++stats.removed;
+            AC_LOG_INFO(kModule, "App %u: LastOwner dropped.", appId);
+        }
+    } else {
+        ++stats.unchanged;
+    }
+
+    if (plan.dropRecord) {
+        if (hasRecord) {
+            records.erase(appId);
+            recordsDirty = true;
+        }
         return;
     }
 
-    if (plan.action == OwnerAction::Set) {
-        records[appId] = plan.owner;
-        recordsDirty = true;
-        ++stats.applied;
-        AC_LOG_INFO(kModule, "App %u: LastOwner set to %llu.", appId, static_cast<unsigned long long>(plan.owner));
-    } else {
-        records.erase(appId);
-        recordsDirty = true;
-        ++stats.removed;
-        AC_LOG_INFO(kModule, "App %u: LastOwner dropped.", appId);
-    }
+    const std::uint64_t written = plan.action == OwnerAction::Set ? plan.owner : 0;
+    const OwnerRecord previous = hasRecord ? existing->second : OwnerRecord{};
+    records[appId] = RecordAfterWrite(previous, hasRecord, ctx.currentLastOwner, written);
+    recordsDirty = true;
 }
 
 } // namespace
@@ -200,6 +226,9 @@ OwnerPolicyStats ApplyInstalledAppOwners() {
     std::lock_guard<std::mutex> passLock(s_passMutex);
     OwnerRecords records = LoadRecords();
     bool recordsDirty = false;
+    // One login owns the whole pass; reading it per manifest would hit the
+    // registry once per app for the same answer.
+    const std::uint64_t activeSteamId = steamid::GetActiveSteamId64();
 
     for (const std::string& dir : steamlibrary::SteamAppsDirs(g_state.steamInstallPath)) {
         std::error_code ec;
@@ -222,13 +251,14 @@ OwnerPolicyStats ApplyInstalledAppOwners() {
             if (appId == 0)
                 continue;
 
-            // Apps Aether spoofs now, plus apps Aether stamped earlier (their
-            // .lua may since have been removed). A manifest with no record and
-            // no spoof is a real Steam record: skip it before reading anything.
+            // Apps Aether spoofs now, apps Steam reports as family-shared, plus
+            // apps Aether wrote earlier (their .lua may since have been
+            // removed). A manifest with no record and no classification is a
+            // real Steam record: skip it before reading anything.
             const bool managed = luadata::HasDepot(appId);
+            const bool familyShared = luadata::IsFamilyShared(appId);
             const auto record = records.find(appId);
-            const std::uint64_t recorded = record == records.end() ? 0 : record->second;
-            if (!managed && recorded == 0)
+            if (!managed && !familyShared && record == records.end())
                 continue;
 
             ++stats.scanned;
@@ -240,16 +270,20 @@ OwnerPolicyStats ApplyInstalledAppOwners() {
                 continue;
             }
 
-            const bool listed = bannerApps.count(appId) != 0;
-            const OwnerPlan plan =
-                PlanOwnerAction(bannerEnabled, managed, listed, bannerSteamId, recorded, ReadLastOwner(content));
-            if (plan.action == OwnerAction::Skip) {
-                ++stats.unchanged;
-                if (plan.dropRecord && records.erase(appId) != 0)
-                    recordsDirty = true;
-                continue;
-            }
-            ApplyToManifest(path, appId, plan, content, records, recordsDirty, stats);
+            OwnerContext ctx;
+            ctx.bannerEnabled = bannerEnabled;
+            ctx.managed = managed;
+            ctx.familyShared = familyShared;
+            ctx.listed = bannerApps.count(appId) != 0;
+            ctx.bannerSteamId = bannerSteamId;
+            ctx.activeSteamId = activeSteamId;
+            ctx.recorded = record != records.end();
+            if (ctx.recorded)
+                ctx.record = record->second;
+            ctx.currentLastOwner = ReadLastOwner(content);
+
+            const OwnerPlan plan = PlanOwnerAction(ctx);
+            ApplyToManifest(path, appId, ctx, plan, content, records, recordsDirty, stats);
         }
     }
 
