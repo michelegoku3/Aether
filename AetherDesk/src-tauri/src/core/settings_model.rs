@@ -136,6 +136,11 @@ pub struct AppSettings {
     /// depend on a standalone filesystem sentinel.
     #[serde(default)]
     pub download_updates_default_off_migrated: bool,
+    /// Records that the Store front default moved from `upcoming` to `latest`.
+    /// Without it, a settings file written under the old default would keep
+    /// opening the Store on the previous criterion forever.
+    #[serde(default)]
+    pub store_front_latest_migrated: bool,
     /// Depotbox build-details access token. Empty = use the built-in default
     /// (the service key shipped by SFF). Override when SFF rotates its key;
     /// the `AETHERDESK_BUILD_TOKEN` environment variable takes precedence.
@@ -160,7 +165,7 @@ pub struct SettingsLoadFlags {
 const DEFAULT_ALT_CARDS_OPACITY: u8 = 100;
 const DEFAULT_ALT_CARDS_FADE: u8 = 20;
 const DEFAULT_STORE_CURRENCY: &str = "eur";
-const DEFAULT_STORE_FRONT_FILTER: &str = "upcoming";
+const DEFAULT_STORE_FRONT_FILTER: &str = "latest";
 const DEFAULT_WALLPAPER_OPACITY: u8 = 20;
 
 /// Serde default provider for the alt-cards backdrop opacity.
@@ -306,6 +311,7 @@ impl Default for AppSettings {
             alternative_cards_fade: default_alt_cards_fade(),
             antivirus_exclusion_done: false,
             download_updates_default_off_migrated: false,
+            store_front_latest_migrated: false,
             build_details_token: String::new(),
         }
     }
@@ -349,6 +355,7 @@ mod tests {
             "alternative_cards_fade",
             "antivirus_exclusion_done",
             "download_updates_default_off_migrated",
+            "store_front_latest_migrated",
             "build_details_token",
         ];
 
@@ -363,5 +370,10 @@ mod tests {
             .collect();
 
         assert_eq!(keys, EXPECTED);
+    }
+
+    #[test]
+    fn default_store_front_filter_is_latest() {
+        assert_eq!(AppSettings::default().store_front_filter, "latest");
     }
 }

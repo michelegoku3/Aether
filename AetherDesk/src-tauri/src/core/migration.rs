@@ -57,6 +57,40 @@ pub fn migrate_download_update_default_off(app: &tauri::AppHandle) {
     }
 }
 
+/// One-time Store front default migration: `upcoming` was the default before
+/// it became `latest`. Move only settings still carrying the old default;
+/// explicit criteria survive. Returns true when the stored state changed.
+fn apply_store_front_latest_migration(settings: &mut crate::core::settings::AppSettings) -> bool {
+    if settings.store_front_latest_migrated {
+        return false;
+    }
+    if settings.store_front_filter == "upcoming" {
+        settings.store_front_filter = "latest".to_string();
+    }
+    settings.store_front_latest_migrated = true;
+    true
+}
+
+/// Applies the Store front default migration once, persisting the flag in
+/// settings.json so a later explicit choice is never overridden again.
+pub fn migrate_store_front_default_latest(app: &tauri::AppHandle) {
+    let manager = crate::core::settings::SettingsManager::new(app);
+    let settings = manager.load();
+    if settings.store_front_latest_migrated {
+        return;
+    }
+    if let Err(error) = manager.update("migrate-store-front-latest", |current| {
+        apply_store_front_latest_migration(current);
+        Ok(())
+    }) {
+        crate::desk_log_warn!(
+            "migration",
+            "Could not persist Store front default migration: {}",
+            error
+        );
+    }
+}
+
 /// Migrations a command may depend on. These must finish before the UI
 /// accepts IPC; everything else is deferred to `run_deferred_startup_tasks`.
 pub fn run_critical_startup_migrations(app: &tauri::AppHandle) {
@@ -65,6 +99,7 @@ pub fn run_critical_startup_migrations(app: &tauri::AppHandle) {
         "Running critical AetherDesk startup migrations..."
     );
     migrate_download_update_default_off(app);
+    migrate_store_front_default_latest(app);
     ensure_appearance_dirs();
     // Adopt an auto-detected Steam installation when the stored value was
     // never configured (empty or stale legacy default). Runs before the
@@ -356,5 +391,36 @@ pub fn ensure_aethercore_bridge(app: &tauri::AppHandle) {
         }
         crate::core::presence_config::ensure_defaults(&legacy_toml);
         crate::core::manifest_restore_config::ensure_defaults(&legacy_toml);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::apply_store_front_latest_migration;
+    use crate::core::settings::AppSettings;
+
+    #[test]
+    fn old_upcoming_default_moves_to_latest_once() {
+        let mut settings = AppSettings {
+            store_front_filter: "upcoming".into(),
+            ..AppSettings::default()
+        };
+
+        assert!(apply_store_front_latest_migration(&mut settings));
+        assert_eq!(settings.store_front_filter, "latest");
+        assert!(settings.store_front_latest_migrated);
+        assert!(!apply_store_front_latest_migration(&mut settings));
+    }
+
+    #[test]
+    fn explicit_store_front_filter_survives_the_migration() {
+        let mut settings = AppSettings {
+            store_front_filter: "trending".into(),
+            ..AppSettings::default()
+        };
+
+        assert!(apply_store_front_latest_migration(&mut settings));
+        assert_eq!(settings.store_front_filter, "trending");
+        assert!(settings.store_front_latest_migrated);
     }
 }
