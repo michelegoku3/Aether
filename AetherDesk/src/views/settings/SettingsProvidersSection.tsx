@@ -38,7 +38,9 @@ export const SettingsProvidersSection: React.FC<SettingsProvidersSectionProps> =
   onCancelLuaToolsOAuth,
 }) => {
   return (
-    <>
+    // One group so the three provider panels use the sections' internal 6px
+    // rhythm instead of the 20px gap that separates top-level sections.
+    <div className="settings-group">
       {/* Hubcap API Key Section */}
       <div className="settings-group">
         <label className="settings-label">Hubcap API Key</label>
@@ -183,6 +185,6 @@ export const SettingsProvidersSection: React.FC<SettingsProvidersSectionProps> =
           </button>
         </div>
       </div>
-    </>
+    </div>
   );
 };
