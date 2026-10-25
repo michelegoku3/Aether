@@ -80,6 +80,14 @@ struct AetherCoreState {
         std::unordered_map<std::uint64_t, ManifestOverride> manifestOverrides; // depot -> override
         std::unordered_set<steam::AppId> ownedAppIds;
         std::unordered_set<steam::AppId> familySharedAppIds;
+        // Steam did not provide the app and Aether already answered as owned.
+        // Package 0 makes Steam report owned afterwards; this flag keeps the
+        // spoof from being reclassified as a genuine license.
+        std::unordered_set<steam::AppId> spoofedAppIds;
+        // Real family lender per app, captured before package 0 makes the app
+        // look owned. Kept in package 0 for play, attributed to this account
+        // for the banner.
+        std::unordered_map<steam::AppId, std::uint32_t> familyLenderAppIds;
         std::unordered_set<steam::AppId> libraryAppIds; // numeric .lua filename roots shown in Library
         // Auth tickets are persisted to the registry (see Ticket.{h,cpp}), not held
         // in process memory, so there are no ticket maps here.
@@ -272,7 +280,7 @@ struct AetherCoreState {
     std::atomic<void*> steamEngine{nullptr};
     std::atomic<void*> pConfigStoreUserLocal{nullptr};
     std::atomic<void*> pPackage0{nullptr}; // Cached package-0 PackageInfo*
-    std::atomic<bool> package0Seeded{false};
+    std::atomic<bool> package0Published{false};
 
     // ---- AetherOnline --------------------------------------------------------
     // Session identity (real app behind the 480 mask, showonline, UCO2/OFME

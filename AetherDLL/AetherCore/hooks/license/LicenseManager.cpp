@@ -2,6 +2,8 @@
 #include "hooks/license/LicenseManager.h"
 
 #include <atomic>
+#include <chrono>
+#include <condition_variable>
 #include <limits>
 #include <mutex>
 #include <string>
@@ -18,10 +20,6 @@
 #include "utils/PatternEngine.h"
 
 namespace ac::hooks::LicenseManager {
-// Forward declarations for public functions defined below, so helpers in
-// the anonymous namespace (e.g. the startup retry thread) can call them.
-void DoStartupInjection();
-
 namespace {
 
 constexpr const char* kModule = "License";
@@ -85,7 +83,10 @@ bool RemoveAllFromPackage0(PackageInfo* pkg, const std::vector<AppId>& ids, std:
 
 // Ensures each currently managed AppID occurs exactly once in package 0.
 // Caller holds s_packageMutationMutex. Unmanaged Steam entries are preserved.
-PackageContainmentResult EnsurePackageContains(PackageInfo* pkg, const std::vector<AppId>& ids, const char* reason) {
+// `verbose` forces the INFO summary even when nothing changed; on-demand calls
+// only log an actual append or duplicate removal.
+PackageContainmentResult EnsurePackageContains(PackageInfo* pkg, const std::vector<AppId>& ids, const char* reason,
+                                               bool verbose = true) {
     PackageContainmentResult out{};
     out.total = pkg ? pkg->appIdVec.size : 0;
     if (!pkg || !o_CUtlMemoryGrow) {
@@ -186,11 +187,15 @@ PackageContainmentResult EnsurePackageContains(PackageInfo* pkg, const std::vect
     out.missingAfter = out.expected - out.presentAfter;
     out.total = pkg->appIdVec.size;
     out.complete = out.missingAfter == 0;
-    AC_LOG_INFO(kModule,
-                "Package0Containment reason=%s expected=%zu present_before=%zu missing_before=%zu "
-                "duplicates_removed=%zu appended=%zu present_after=%zu missing_after=%zu total=%u complete=%d.",
-                reason ? reason : "unknown", out.expected, out.presentBefore, out.missingBefore, out.duplicatesRemoved,
-                out.appended, out.presentAfter, out.missingAfter, out.total, out.complete ? 1 : 0);
+    const bool changed = out.appended != 0 || out.duplicatesRemoved != 0;
+    if (verbose || changed) {
+        AC_LOG_INFO(kModule,
+                    "Package0Containment reason=%s expected=%zu present_before=%zu missing_before=%zu "
+                    "duplicates_removed=%zu appended=%zu present_after=%zu missing_after=%zu total=%u complete=%d.",
+                    reason ? reason : "unknown", out.expected, out.presentBefore, out.missingBefore,
+                    out.duplicatesRemoved, out.appended, out.presentAfter, out.missingAfter, out.total,
+                    out.complete ? 1 : 0);
+    }
     return out;
 }
 
@@ -199,20 +204,89 @@ bool Ready() {
            o_ProcessPendingLicenseUpdates && o_MarkLicenseAsChanged;
 }
 
+// Asks Steam to re-evaluate licenses. Must run outside s_packageMutationMutex:
+// these calls can synchronously re-enter hooks. Only the license captures are
+// required; the package pointer is not (the app was already added).
+void RefreshLicenses(const char* reason) {
+    void* cUser = g_state.pCUser.load();
+    auto markLicenseAsChanged = o_MarkLicenseAsChanged;
+    auto processPendingLicenseUpdates = o_ProcessPendingLicenseUpdates;
+    if (!cUser || !markLicenseAsChanged || !processPendingLicenseUpdates) {
+        AC_LOG_DEBUG(kModule, "License refresh (%s) skipped: captures not ready.", reason ? reason : "unknown");
+        return;
+    }
+    markLicenseAsChanged(cUser, 0, true);
+    ++g_state.licenseReloadDirectCount;
+    processPendingLicenseUpdates(cUser);
+    AC_LOG_INFO(kModule, "License refresh (%s).", reason ? reason : "unknown");
+    diag::Record("license_refresh", reason ? reason : "unknown");
+}
+
+// On-demand package-0 additions. A dedicated worker serialises the Steam
+// vector mutation and the license refresh outside CheckAppOwnership, where
+// Steam may be reading package 0 on the same thread.
+std::mutex s_ondemandMutex;
+std::condition_variable s_ondemandCv;
+std::unordered_set<AppId> s_ondemandApps;
+std::atomic<bool> s_ondemandStarted{false};
+std::atomic<bool> s_refreshRequested{false};
+
+void OnDemandWorker(std::atomic<bool>& stop) {
+    for (;;) {
+        std::vector<AppId> apps;
+        bool refreshRequested = false;
+        {
+            std::unique_lock lock(s_ondemandMutex);
+            s_ondemandCv.wait_for(lock, std::chrono::milliseconds(100), [&] {
+                return stop.load(std::memory_order_relaxed) || !s_ondemandApps.empty() ||
+                       s_refreshRequested.load(std::memory_order_relaxed);
+            });
+            if (stop.load(std::memory_order_relaxed))
+                return;
+            apps.assign(s_ondemandApps.begin(), s_ondemandApps.end());
+            s_ondemandApps.clear();
+            refreshRequested = s_refreshRequested.exchange(false);
+        }
+        if (apps.empty() && !refreshRequested)
+            continue;
+        bool changed = refreshRequested;
+        for (AppId app : apps)
+            changed = AddAppToPackage0(app) || changed;
+        if (changed)
+            RefreshLicenses("ondemand");
+    }
+}
+
+void StartOnDemandWorker() {
+    bool expected = false;
+    if (!s_ondemandStarted.compare_exchange_strong(expected, true))
+        return;
+    if (!workers::StartWorker("license_ondemand", OnDemandWorker)) {
+        s_ondemandStarted.store(false, std::memory_order_relaxed);
+        AC_LOG_ERROR(kModule, "Could not start the on-demand package-0 worker; "
+                              "apps will spoof but package 0 will not be topped up.");
+    }
+}
+
+// Drops requests that predate a publish-time top-up: the top-up covers every
+// app classified so far, and a new request after the clear is queued again.
+void ClearPendingApps() {
+    std::lock_guard<std::mutex> lock(s_ondemandMutex);
+    s_ondemandApps.clear();
+}
+
 // -------------------------------------------------------------------
-// Package-0 startup retry (A2)
+// Package-0 acquisition retry
 //
-// DoStartupInjection is normally triggered by LoadPackage (package 0
-// ready) or the first MarkLicenseAsChanged fire (post-login). Both
-// windows can be missed — offline startup, late login, package 0 not
-// usable yet — so a dedicated thread re-attempts the top-up on a
-// throttled cadence until the seed completes or the budget is spent.
+// The one-shot LoadPackage(package 0) can be missed (late hook install,
+// offline startup). A dedicated thread re-acquires the pointer on a
+// throttled cadence until it is published or the budget is spent. It does
+// not seed: apps enter package 0 on demand, after Steam's first ownership
+// answer.
 //
 // The thread runs in the workers::StartWorker infrastructure (I-A): the
 // central registry does stop+join during workers::Shutdown() with
-// explicit logs; only the "already started" guard remains here. The body
-// calls the usual DoStartupInjection() (idempotent, owns
-// s_packageMutationMutex) and watches g_state.package0Seeded.
+// explicit logs; only the "already started" guard remains here.
 // -------------------------------------------------------------------
 std::atomic<bool> s_retryStarted{false};
 
@@ -230,7 +304,7 @@ void StartupRetryWorker(std::atomic<bool>& stop) {
             MarkRetryIdle();
             return;
         }
-        if (g_state.package0Seeded.load(std::memory_order_relaxed)) {
+        if (g_state.package0Published.load(std::memory_order_relaxed)) {
             MarkRetryIdle();
             return;
         }
@@ -244,21 +318,12 @@ void StartupRetryWorker(std::atomic<bool>& stop) {
             ac::hooks::TryAcquirePackage0();
         }
 
-        // DoStartupInjection only needs package 0 + the grow helper;
-        // CUser/license-update resolution is NOT required for the
-        // vector top-up itself (the license refresh happens at login
-        // via the MarkLicenseAsChanged hook).
-        if (g_state.pPackage0.load() && o_CUtlMemoryGrow) {
-            if (attempts == 0 || attempts % 30 == 0) {
-                AC_LOG_INFO(kModule, "Startup retry #%d (package0 ready).", attempts + 1);
-            }
-            DoStartupInjection();
-            if (g_state.package0Seeded.load(std::memory_order_relaxed)) {
-                AC_LOG_INFO(kModule, "Package 0 seeded after %d retry attempt(s).", attempts + 1);
-                MarkRetryIdle();
-                return;
-            }
-        } else if (attempts == 0 || attempts % 30 == 0) {
+        if (g_state.package0Published.load(std::memory_order_relaxed)) {
+            AC_LOG_INFO(kModule, "Package 0 published after %d retry attempt(s).", attempts + 1);
+            MarkRetryIdle();
+            return;
+        }
+        if (attempts == 0 || attempts % 30 == 0) {
             AC_LOG_INFO(kModule, "Startup retry #%d: waiting for package 0.", attempts + 1);
         }
 
@@ -272,8 +337,7 @@ void StartupRetryWorker(std::atomic<bool>& stop) {
         }
     }
     AC_LOG_WARN(kModule,
-                "Package 0 startup retry gave up after %d attempt(s); "
-                "a later MarkLicenseAsChanged/login will still top up.",
+                "Package 0 was not published after %d attempt(s); on-demand additions will retry once it appears.",
                 constants::kPackageRetryMaxAttempts);
     MarkRetryIdle();
 }
@@ -313,56 +377,88 @@ void Init(HMODULE diversion) {
     AC_LOG_INFO(kModule, "Init (grow=%d ppl=%d mlc=%d).", o_CUtlMemoryGrow != nullptr,
                 o_ProcessPendingLicenseUpdates != nullptr, o_MarkLicenseAsChanged != nullptr);
 
-    // Cover the missed-window cases: offline startup, late login, package 0
-    // not usable at LoadPackage time. No-op after the seed completes.
+    // Cover the missed-window cases: offline startup, late hook install.
+    // No-op after package 0 is published.
     StartStartupRetry();
+    // Serialises on-demand package-0 additions and license refreshes away from
+    // the Steam hook threads.
+    StartOnDemandWorker();
 }
 
-void Shutdown() { StopStartupRetry(); }
+void Shutdown() {
+    StopStartupRetry();
+    s_ondemandStarted.store(false, std::memory_order_relaxed);
+}
 
 void SeedPackage0(PackageInfo* package0) {
-    std::lock_guard<std::mutex> lock(s_packageMutationMutex);
-    // Single store point: SeedPackage0 owns the pPackage0 publication so the
-    // pointer and the seeding stay atomic w.r.t. other mutators.
-    g_state.pPackage0.store(package0);
-
-    std::vector<AppId> ids = luadata::AllDepotIds();
-    if (ids.empty()) {
-        // Lua parsing may not have run yet; DoStartupInjection will catch up.
-        g_state.package0Seeded.store(false);
-        AC_LOG_DEBUG(kModule, "SeedPackage0: no configured depots yet; deferring to startup retry.");
-        return;
+    bool changed = false;
+    {
+        std::lock_guard<std::mutex> lock(s_packageMutationMutex);
+        // Single store point: SeedPackage0 owns the pPackage0 publication so
+        // the pointer and the mode flag stay atomic w.r.t. other mutators.
+        g_state.pPackage0.store(package0);
+        g_state.package0Published.store(package0 != nullptr);
+        // If Steam published package 0 after some apps were already
+        // classified, top up only those classified apps. Unclassified apps
+        // stay out, so their first ownership answer is still Steam's real one.
+        // Requests queued before this point are covered by the top-up.
+        if (package0) {
+            ClearPendingApps();
+            const std::vector<AppId> ids = luadata::Package0Ids();
+            if (!ids.empty()) {
+                const PackageContainmentResult result = EnsurePackageContains(package0, ids, "publish");
+                changed = result.appended != 0 || result.duplicatesRemoved != 0;
+            }
+        }
     }
-    const PackageContainmentResult result = EnsurePackageContains(package0, ids, "loadpackage");
-    g_state.package0Seeded.store(result.complete);
-    if (!result.complete) {
-        AC_LOG_WARN(kModule, "Package 0 seed incomplete; startup retry remains enabled.");
-    }
+    // Refresh outside the mutation lock: the callbacks can re-enter hooks.
+    if (changed)
+        RefreshLicenses("publish");
+    AC_LOG_INFO(kModule, "Package 0 published; licenses are added per app after Steam classification.");
 }
 
-void DoStartupInjection() {
-    std::lock_guard<std::mutex> lock(s_packageMutationMutex);
-    // Reads the package-0 pointer from g_state, so the deferred path works too:
-    // when LoadPackage saw package 0 with status != 0 the hook stored the
-    // pointer without seeding, and this top-up can now really run.
-    auto* pkg = static_cast<PackageInfo*>(g_state.pPackage0.load());
-    if (!pkg || !o_CUtlMemoryGrow) {
-        AC_LOG_DEBUG_ONCE(kModule, "DoStartupInjection skipped: package0=%d grow=%d.", pkg != nullptr,
-                          o_CUtlMemoryGrow != nullptr);
-        return;
+bool AddAppToPackage0(AppId appId) {
+    if (appId == 0)
+        return false;
+
+    // Package 0 may not have been published when the app was classified (the
+    // startup retry can finish before login). Acquire it here, before taking
+    // the mutation lock: TryAcquirePackage0 calls SeedPackage0, which locks it.
+    if (!g_state.pPackage0.load(std::memory_order_acquire) && !ac::hooks::TryAcquirePackage0()) {
+        AC_LOG_DEBUG_ONCE(kModule, "AddAppToPackage0 skipped: package 0 is not available yet.");
+        return false;
     }
 
-    std::vector<AppId> ids = luadata::AllDepotIds();
+    std::lock_guard<std::mutex> lock(s_packageMutationMutex);
+    auto* pkg = static_cast<PackageInfo*>(g_state.pPackage0.load());
+    if (!pkg || !o_CUtlMemoryGrow) {
+        AC_LOG_DEBUG_ONCE(kModule, "AddAppToPackage0 skipped: package0=%d grow=%d.", pkg != nullptr,
+                          o_CUtlMemoryGrow != nullptr);
+        return false;
+    }
+
+    const std::vector<AppId> ids = luadata::IdsForApp(appId);
     if (ids.empty()) {
-        g_state.package0Seeded.store(false);
-        AC_LOG_DEBUG_ONCE(kModule, "DoStartupInjection: no configured depots yet.");
+        AC_LOG_DEBUG(kModule, "AddAppToPackage0(%u): no lua ids.", appId);
+        return false;
+    }
+    const PackageContainmentResult result = EnsurePackageContains(pkg, ids, "ondemand", false);
+    return result.appended != 0 || result.duplicatesRemoved != 0;
+}
+
+void RequestAppInPackage0(AppId appId) {
+    if (appId == 0)
         return;
+    {
+        std::lock_guard<std::mutex> lock(s_ondemandMutex);
+        s_ondemandApps.insert(appId);
     }
-    const PackageContainmentResult result = EnsurePackageContains(pkg, ids, "startup");
-    g_state.package0Seeded.store(result.complete);
-    if (!result.complete) {
-        AC_LOG_WARN(kModule, "Package 0 startup containment incomplete; another retry may repair it.");
-    }
+    s_ondemandCv.notify_one();
+}
+
+void RequestLicenseRefresh() {
+    s_refreshRequested.store(true, std::memory_order_relaxed);
+    s_ondemandCv.notify_one();
 }
 
 void NotifyLicenseChanged() {
@@ -394,11 +490,13 @@ void NotifyLicenseChanged() {
             return;
         }
         RemoveAllFromPackage0(pkg, removals, removed);
-        // Reconcile against the complete current Lua set, not only additions.
-        // This repairs duplicates left by an older build and makes reloads
-        // idempotent even when filesystem events are repeated.
-        const PackageContainmentResult result = EnsurePackageContains(pkg, luadata::AllDepotIds(), "hotreload");
-        g_state.package0Seeded.store(result.complete);
+        // Reconcile against the classified set, not every configured id: an
+        // app Steam has not classified yet must stay out of package 0 so its
+        // first CheckAppOwnership sees the real owned/family answer. This also
+        // repairs duplicates and makes reloads idempotent.
+        const PackageContainmentResult result = EnsurePackageContains(pkg, luadata::Package0Ids(), "hotreload");
+        if (!result.complete)
+            AC_LOG_WARN(kModule, "Package 0 hot-reload containment incomplete; the next add repairs it.");
 
         total = pkg->appIdVec.size;
         cUser = g_state.pCUser.load();

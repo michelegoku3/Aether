@@ -21,6 +21,9 @@ add_library(AetherCore SHARED
     core/SteamVersion.cpp
     core/AppManifestOwner.cpp
 
+    # Family
+    family/FamilyLenders.cpp
+
     # Scripting
     scripting/ScriptEngine.cpp
     scripting/LuaSandbox.cpp

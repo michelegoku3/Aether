@@ -8,10 +8,10 @@
 // Package-0 license injection and no-restart hot-reload.
 //
 // Owns the single source of truth for mutating package 0's app-id vector and
-// for asking Steam to re-evaluate licenses. Three entry points feed it:
-//   * LoadPackage hook  -> SeedPackage0 (initial injection at package load)
-//   * MarkLicenseAsChanged hook -> DoStartupInjection (post-login top-up)
-//   * DirWatch          -> NotifyLicenseChanged (add/remove without restart)
+// for asking Steam to re-evaluate licenses. Entry points:
+//   * LoadPackage / GetPackageInfo -> SeedPackage0 (publish the pointer)
+//   * CheckAppOwnership            -> RequestAppInPackage0 (after classification)
+//   * DirWatch                     -> NotifyLicenseChanged (hot-reload)
 //
 // The captured Steam pointers (CUser, CPackageInfo, package 0) live in
 // AetherCoreState as write-once atomics — single source of truth, no copies;
@@ -27,14 +27,26 @@ void Init(HMODULE diversion);
 // the thread never started. Called from dllmain::Shutdown.
 void Shutdown();
 
-// Called from the LoadPackage hook when package 0 becomes available. Publishes
-// the package-0 pointer to g_state and injects every configured depot exactly
-// once (guarded by package0Seeded).
+// Called from the LoadPackage/GetPackageInfo hooks when package 0 becomes
+// available. Publishes the package-0 pointer to g_state. Package 0 is filled
+// per app by AddAppToPackage0, after CheckAppOwnership has seen Steam's first
+// answer.
 void SeedPackage0(steam::PackageInfo* package0);
 
-// Called once post-login (MarkLicenseAsChanged). Tops up package 0 with any
-// depots that were parsed after LoadPackage ran (startup race).
-void DoStartupInjection();
+// Adds the app and its .lua depots to package 0 synchronously. Returns true
+// when the vector changed (an id was appended or a duplicate removed). Used by
+// the publish-time top-up and by the on-demand worker; never call it from a
+// Steam hook thread while Steam may be reading package 0.
+bool AddAppToPackage0(steam::AppId appId);
+
+// Called from CheckAppOwnership after Steam classified appId. Queues the app
+// on the license worker, which adds it to package 0 and refreshes licenses
+// outside the hook thread. Coalesces concurrent requests.
+void RequestAppInPackage0(steam::AppId appId);
+
+// Queues a license refresh without adding an app. Used after the family lender
+// map changes an app's classification, so the UI re-reads its ownership.
+void RequestLicenseRefresh();
 
 // Hot-reload: applies pending additions/removals to package 0 and asks Steam to
 // re-evaluate licenses. No UI card eviction (crash-prone; out of scope here).

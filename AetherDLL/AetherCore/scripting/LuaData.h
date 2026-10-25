@@ -38,6 +38,12 @@ bool IsOwned(steam::AppId appId);
 // True when CheckAppOwnership has observed a Steam Family license for appId.
 bool IsFamilyShared(steam::AppId appId);
 
+// True when Steam did not provide appId and Aether already answered as owned.
+bool IsSpoofed(steam::AppId appId);
+
+// Real family lender captured on the first family answer, or 0.
+std::uint32_t FamilyLender(steam::AppId appId);
+
 // Hex depot key for a depot, or nullopt if none/empty.
 std::optional<std::string> DepotKeyHex(steam::AppId depotId);
 
@@ -51,6 +57,15 @@ bool HasManifestOverrides();
 
 // Snapshot of every configured depot id (for package-0 injection).
 std::vector<steam::AppId> AllDepotIds();
+
+// App id plus every depot contributed by the .lua file(s) that advertise it.
+// Used to add one app to package 0 on demand, after Steam classified it.
+std::vector<steam::AppId> IdsForApp(steam::AppId appId);
+
+// Every id package 0 must contain for the apps Aether already classified:
+// spoofed apps plus family apps with a known lender. Genuinely owned apps and
+// apps Steam has not classified yet are deliberately absent.
+std::vector<steam::AppId> Package0Ids();
 
 // Snapshot of numeric .lua filename roots that should be advertised to Steam's Library.
 std::vector<steam::AppId> LibraryAppIds();
@@ -73,7 +88,12 @@ void MarkOwned(steam::AppId appId);
 
 // Flags appId as family-shared so HasDepot stops spoofing it, while cloud can
 // stay enabled and family-sharing packet suppression can continue independently.
-void MarkFamilyShared(steam::AppId appId);
+// `lenderAccountId` is the real owner from AppOwnership.steamId32; 0 means the
+// answer did not name one.
+void MarkFamilyShared(steam::AppId appId, std::uint32_t lenderAccountId);
+
+// Flags appId as spoofed: Steam did not provide it and Aether owns the answer.
+void MarkSpoofed(steam::AppId appId);
 
 // Parse-session bracket. Depots recorded between Begin/End are attributed to
 // 'path' for ref-counting. Parsing is single-threaded (init thread, then the

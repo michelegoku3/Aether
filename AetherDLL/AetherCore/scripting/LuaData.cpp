@@ -53,6 +53,21 @@ void DecRefAndCleanup(IdSet& globalSet, RefCountMap& refCounts, const Id& id,
     }
 }
 
+// Appends appId and every depot from the .lua file(s) that advertise it.
+// Caller holds lua.mutex (shared or unique).
+void AppendIdsForApp(steam::AppId appId, std::unordered_set<steam::AppId>& out) {
+    auto& lua = g_state.lua;
+    if (lua.depotKeys.count(appId))
+        out.insert(appId);
+    for (const auto& [_, contributions] : lua.fileContributions) {
+        if (!contributions.libraryApps.count(appId))
+            continue;
+        out.insert(appId);
+        for (steam::AppId id : contributions.depots)
+            out.insert(id);
+    }
+}
+
 } // namespace
 
 // ============================ Reads =========================================
@@ -76,6 +91,17 @@ bool IsOwned(steam::AppId appId) {
 bool IsFamilyShared(steam::AppId appId) {
     std::shared_lock lock(g_state.lua.mutex);
     return g_state.lua.familySharedAppIds.count(appId) > 0;
+}
+
+bool IsSpoofed(steam::AppId appId) {
+    std::shared_lock lock(g_state.lua.mutex);
+    return g_state.lua.spoofedAppIds.count(appId) > 0;
+}
+
+std::uint32_t FamilyLender(steam::AppId appId) {
+    std::shared_lock lock(g_state.lua.mutex);
+    auto it = g_state.lua.familyLenderAppIds.find(appId);
+    return it != g_state.lua.familyLenderAppIds.end() ? it->second : 0;
 }
 
 std::optional<std::string> DepotKeyHex(steam::AppId depotId) {
@@ -112,6 +138,25 @@ std::vector<steam::AppId> AllDepotIds() {
     for (const auto& [id, _] : g_state.lua.depotKeys)
         ids.push_back(id);
     return ids;
+}
+
+std::vector<steam::AppId> IdsForApp(steam::AppId appId) {
+    std::shared_lock lock(g_state.lua.mutex);
+    std::unordered_set<steam::AppId> ids;
+    AppendIdsForApp(appId, ids);
+    return std::vector<steam::AppId>(ids.begin(), ids.end());
+}
+
+std::vector<steam::AppId> Package0Ids() {
+    std::shared_lock lock(g_state.lua.mutex);
+    std::unordered_set<steam::AppId> ids;
+    for (steam::AppId appId : g_state.lua.spoofedAppIds)
+        AppendIdsForApp(appId, ids);
+    for (const auto& [appId, lender] : g_state.lua.familyLenderAppIds) {
+        if (lender != 0)
+            AppendIdsForApp(appId, ids);
+    }
+    return std::vector<steam::AppId>(ids.begin(), ids.end());
 }
 
 std::vector<steam::AppId> LibraryAppIds() {
@@ -173,14 +218,32 @@ std::string EticketUrl() {
 
 void MarkOwned(steam::AppId appId) {
     std::unique_lock lock(g_state.lua.mutex);
-    g_state.lua.familySharedAppIds.erase(appId);
-    g_state.lua.ownedAppIds.insert(appId);
+    auto& lua = g_state.lua;
+    lua.familySharedAppIds.erase(appId);
+    lua.spoofedAppIds.erase(appId);
+    lua.familyLenderAppIds.erase(appId);
+    lua.ownedAppIds.insert(appId);
 }
 
-void MarkFamilyShared(steam::AppId appId) {
+void MarkFamilyShared(steam::AppId appId, std::uint32_t lenderAccountId) {
     std::unique_lock lock(g_state.lua.mutex);
-    g_state.lua.ownedAppIds.erase(appId);
-    g_state.lua.familySharedAppIds.insert(appId);
+    auto& lua = g_state.lua;
+    lua.ownedAppIds.erase(appId);
+    lua.spoofedAppIds.erase(appId);
+    lua.familySharedAppIds.insert(appId);
+    if (lenderAccountId != 0)
+        lua.familyLenderAppIds[appId] = lenderAccountId;
+    else
+        lua.familyLenderAppIds.erase(appId);
+}
+
+void MarkSpoofed(steam::AppId appId) {
+    std::unique_lock lock(g_state.lua.mutex);
+    auto& lua = g_state.lua;
+    lua.ownedAppIds.erase(appId);
+    lua.familySharedAppIds.erase(appId);
+    lua.familyLenderAppIds.erase(appId);
+    lua.spoofedAppIds.insert(appId);
 }
 
 void BeginFile(const std::string& path) {
@@ -206,6 +269,8 @@ void RecordDepot(steam::AppId depotId, const std::string& hexKey) {
 
     lua.ownedAppIds.erase(depotId);
     lua.familySharedAppIds.erase(depotId);
+    lua.spoofedAppIds.erase(depotId);
+    lua.familyLenderAppIds.erase(depotId);
 
     if (!lua.currentFile.empty()) {
         F& c = lua.fileContributions[lua.currentFile];
@@ -273,10 +338,12 @@ void UnloadFile(const std::string& path) {
     for (steam::AppId id : c.libraryApps)
         DecRefAndCleanup(lua.libraryAppIds, lua.libraryRefCount, id, lua.pendingRemovals);
 
-    // Also clean owned/shared flags.
+    // Also clean owned/shared/spoofed flags.
     for (steam::AppId id : c.depots) {
         lua.ownedAppIds.erase(id);
         lua.familySharedAppIds.erase(id);
+        lua.spoofedAppIds.erase(id);
+        lua.familyLenderAppIds.erase(id);
     }
 
     std::size_t depotCount = c.depots.size();

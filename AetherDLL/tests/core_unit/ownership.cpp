@@ -85,4 +85,38 @@ void OwnershipDecisionTest() {
         CHECK(d.action == OwnershipAction::Spoof);
         CHECK_EQ(d.ownerAccountId, 0u);
     }
+    {
+        // Sticky spoof: package 0 now makes Steam report owned, but Aether
+        // already classified this app as not provided. Keep spoofing.
+        OwnershipFacts f = facts(true, 2, AppReleaseState::Released);
+        f.spoofed = true;
+        const auto d = DecideOwnership(f);
+        CHECK(d.action == OwnershipAction::Spoof);
+        CHECK_EQ(d.ownerAccountId, 222u);
+        CHECK(!d.steamOwned);
+        CHECK(!d.steamFamilyShared);
+        CHECK(!d.familyBanner);
+    }
+    {
+        // Sticky family lender: the app is kept in package 0 for simultaneous
+        // play, but the banner must name the real lender.
+        OwnershipFacts f = facts(true, 2, AppReleaseState::Released);
+        f.familyLenderAccountId = 333;
+        f.spoofOwnerAccountId = 333; // caller resolves the lender for the banner
+        const auto d = DecideOwnership(f);
+        CHECK(d.action == OwnershipAction::Spoof);
+        CHECK_EQ(d.ownerAccountId, 333u);
+        CHECK(!d.steamOwned);
+        CHECK(!d.steamFamilyShared);
+        CHECK(d.familyBanner);
+    }
+    {
+        // A sticky classification without Aether data is inert.
+        OwnershipFacts f = facts(true, 2, AppReleaseState::Released);
+        f.hasDepot = false;
+        f.spoofed = true;
+        f.familyLenderAccountId = 333;
+        const auto d = DecideOwnership(f);
+        CHECK(d.action == OwnershipAction::PassThrough);
+    }
 }

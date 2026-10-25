@@ -139,7 +139,7 @@ static void WriteSnapshot(std::uint64_t requests) {
     w.SizeT("wire_transport_candidate_events", wireTransportCandidateEvents);
     w.SizeT("cloud_blocked_events", cloudBlockedEvents);
     w.Bool("package0_captured", g_state.pPackage0.load() != nullptr);
-    w.Bool("package0_seeded", g_state.package0Seeded.load());
+    w.Bool("package0_published", g_state.package0Published.load());
     w.Bool("config_store_user_local_captured", g_state.pConfigStoreUserLocal.load() != nullptr);
     w.SizeT("config_store_cached_app_tickets", credential::CachedConfigStoreTicketCount());
     w.SizeT("lua_files_loaded", luadata::LoadedFileCount());

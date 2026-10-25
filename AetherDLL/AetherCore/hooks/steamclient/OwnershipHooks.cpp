@@ -22,6 +22,7 @@
 #include "core/StructGuard.h"
 #include "core/Workers.h"
 #include "credentials/CredentialStore.h"
+#include "family/FamilyLenders.h"
 #include "hooks/aetheronline/PresenceSession.h"
 #include "hooks/license/LicenseManager.h"
 #include "hooks/steamclient/CallbackCopy.h"
@@ -241,25 +242,30 @@ void RecordOwnershipOutcome(AppId app, OwnershipOutcome outcome) {
     }
 }
 
-// Account id the app-details page should name for a spoofed app. The live
-// account is authoritative; the opt-in cosmetic banner replaces it for its
-// listed apps.
-std::uint32_t ResolveSpoofOwnerAccountId(AppId app) {
-    std::uint32_t owner = credential::ReadActiveUserId();
+// Account id the app-details page should name for a spoofed app. A real family
+// lender wins over the live account; the opt-in cosmetic banner replaces both
+// for its listed apps. Reading the live account costs a registry lookup, so
+// the caller only asks when it is about to spoof.
+std::uint32_t ResolveSpoofOwnerAccountId(AppId app, std::uint32_t familyLender) {
     if (const auto settings = Settings::Snapshot();
         settings && settings->libraryOwnerBanner && settings->libraryOwnerBannerSteamId != 0 &&
         std::find(settings->libraryOwnerBannerApps.begin(), settings->libraryOwnerBannerApps.end(), app) !=
             settings->libraryOwnerBannerApps.end()) {
-        owner = static_cast<std::uint32_t>(settings->libraryOwnerBannerSteamId);
+        return static_cast<std::uint32_t>(settings->libraryOwnerBannerSteamId);
     }
-    return owner;
+    if (familyLender != 0)
+        return familyLender;
+    return credential::ReadActiveUserId();
 }
 
 // ---- Hook bodies -----------------------------------------------------------
 
 bool h_CheckAppOwnership(void* self, AppId app, AppOwnership* out) {
     bool result = o_CheckAppOwnership(self, app, out);
-    if (!out || !luadata::HasDepot(app))
+    // A .lua app needs Aether until Steam provides it. Genuinely owned apps
+    // pass through; family-shared apps still need the banner override below,
+    // because package 0 makes later Steam answers look owned.
+    if (!out || !luadata::IsConfigured(app) || luadata::IsOwned(app))
         return result;
 
     // Struct guard. This is the write that does NOT crash when the
@@ -279,14 +285,48 @@ bool h_CheckAppOwnership(void* self, AppId app, AppOwnership* out) {
     // every injected Lua app disappear, and it also avoids treating Steam common
     // redistributables/package-tool entries as user-owned games just because
     // they have a non-zero package id.
+    const bool spoofed = luadata::IsSpoofed(app);
+    std::uint32_t familyLender = luadata::FamilyLender(app);
+    // Steam's CheckAppOwnership is not the family-sharing source: an installed
+    // family game can answer "not provided" while the SteamUI still lists a
+    // real lender. Fill the gap from the client's FamilyGroups data. A real
+    // Steam family answer with a named lender wins; the map only fills a
+    // missing lender or replaces the synthetic owned answer package 0 creates.
+    if (familyLender == 0) {
+        const std::uint32_t mapLender = ac::family::LenderFor(app);
+        if (mapLender != 0 && mapLender != credential::ReadActiveUserId()) {
+            const bool rawFamilyWithLender = result && out->existInPackageNums > 1 &&
+                                             out->releaseState == AppReleaseState::Released &&
+                                             (out->borrowed || out->familyShared) && out->steamId32 != 0;
+            if (!rawFamilyWithLender) {
+                const bool wasFamilyShared = luadata::IsFamilyShared(app);
+                luadata::MarkFamilyShared(app, mapLender);
+                familyLender = mapLender;
+                if (!wasFamilyShared)
+                    ac::appmanifest::RequestOwnerApply();
+                // Package 0 keeps a family app playable alongside the lender;
+                // the real lender in steamId32 keeps the banner visible.
+                LicenseManager::RequestAppInPackage0(app);
+                LicenseManager::RequestLicenseRefresh();
+                RecordOwnershipOutcome(app, OwnershipOutcome::FamilyShared);
+            }
+        }
+    }
     ownership::OwnershipFacts facts{
-        result, out->existInPackageNums, out->releaseState, out->borrowed, out->familyShared,
-        true, // HasDepot was checked above
+        result,
+        out->existInPackageNums,
+        out->releaseState,
+        out->borrowed,
+        out->familyShared,
+        true, // IsConfigured was checked above
         0,
+        spoofed,
+        familyLender,
     };
-    // Resolving the account reads the registry; only a spoof needs it.
-    if (!ownership::IsSteamProvided(facts))
-        facts.spoofOwnerAccountId = ResolveSpoofOwnerAccountId(app);
+    // Resolving the account reads the registry; a family lender already names
+    // the banner owner, and a pass-through needs no owner at all.
+    if (familyLender != 0 || spoofed || !ownership::IsSteamProvided(facts))
+        facts.spoofOwnerAccountId = ResolveSpoofOwnerAccountId(app, familyLender);
     const ownership::OwnershipDecision decision = ownership::DecideOwnership(facts);
 
     if (decision.action == ownership::OwnershipAction::PassThrough) {
@@ -294,10 +334,17 @@ bool h_CheckAppOwnership(void* self, AppId app, AppOwnership* out) {
             // A boot-time owner pass ran before Steam could classify the app,
             // so the manifest may carry Aether's stamp. A real family license
             // needs Steam's own value back to name a local owner.
+            const std::uint32_t lender = out->steamId32;
             const bool newlyFamilyShared = !luadata::IsFamilyShared(app);
-            luadata::MarkFamilyShared(app);
-            if (newlyFamilyShared)
+            luadata::MarkFamilyShared(app, lender);
+            if (newlyFamilyShared) {
                 ac::appmanifest::RequestOwnerApply();
+                // Keep the app playable through package 0, but only when the
+                // lender is known: a synthetic owned license would otherwise
+                // hide the generic family banner for a nameless share.
+                if (lender != 0)
+                    LicenseManager::RequestAppInPackage0(app);
+            }
             RecordOwnershipOutcome(app, OwnershipOutcome::FamilyShared);
         } else {
             luadata::MarkOwned(app);
@@ -311,20 +358,26 @@ bool h_CheckAppOwnership(void* self, AppId app, AppOwnership* out) {
         return result;
     }
 
-    // Otherwise spoof ownership via our synthetic package 0.
+    // Spoof. The first classification marks the app and adds it to package 0;
+    // later calls see Steam report owned because of that entry and keep the
+    // spoof through the sticky flag (or the recorded family lender).
+    if (!spoofed && familyLender == 0) {
+        luadata::MarkSpoofed(app);
+        LicenseManager::RequestAppInPackage0(app);
+    }
     out->packageId = 0;
     out->releaseState = AppReleaseState::Released;
     out->freeLicense = false;
     out->ownsLicense = true;
-    // We are claiming this app as owned: a borrow/share bit left by Steam's
-    // own answer must not survive the spoof, or downstream consumers still
-    // render family/borrowed state for an app the account "owns".
+    // We are claiming this app as owned. A real family app keeps its family
+    // bit so the library banner renders, while ownsLicense/package 0 keeps it
+    // playable; a lua-only spoof clears both bits.
     out->borrowed = false;
-    out->familyShared = false;
+    out->familyShared = decision.familyBanner;
     // The app-details page derives strOwnerSteamID from this account id. Left
     // at 0, a spoofed app looks like a shared app with an unknown owner and
-    // Steam renders the generic family banner. Genuine family licenses return
-    // above and keep Steam's own lender.
+    // Steam renders the generic family banner. A family app carries its real
+    // lender here so the banner survives the synthetic package-0 license.
     if (decision.ownerAccountId != 0)
         out->steamId32 = decision.ownerAccountId;
     RecordOwnershipOutcome(app, OwnershipOutcome::Unlocked);
@@ -337,13 +390,13 @@ std::int64_t h_MarkLicenseAsChanged(void* self, std::uint32_t packageId, bool re
     void* prev = nullptr;
     if (g_state.pCUser.compare_exchange_strong(prev, self)) {
         AC_LOG_INFO(kModule, "Captured CUser pointer 0x%p.", self);
-        // First fire is post-login: top up package 0 with anything parsed after
-        // LoadPackage ran.
-        LicenseManager::DoStartupInjection();
-        // Same moment: Steam may have logged into a different account since
-        // startup, so re-apply the owner policy (the "From the library of
-        // <account>" banner reads it).
+        // First fire is post-login: Steam may have logged into a different
+        // account since startup, so re-apply the owner policy (the "From the
+        // library of <account>" banner reads it). Package 0 is on demand.
         ac::appmanifest::RequestOwnerApply();
+        // The family group and its shared apps are available once the client
+        // is logged in; refresh the lender map before the library classifies.
+        ac::family::RequestRefresh();
     }
     return o_MarkLicenseAsChanged(self, packageId, reloadAll);
 }
@@ -470,18 +523,12 @@ bool h_LoadPackage(PackageInfo* info, std::uint8_t* sha1, std::int32_t cn, void*
     bool result = o_LoadPackage(info, sha1, cn, p4);
 
     if (info && info->packageId == 0) {
-        // PR-style guard: only inject when Steam reports the package usable.
-        // Injecting into a non-available package gets the vector clobbered when
-        // Steam reloads it; defer to DoStartupInjection instead.
-        if (info->status == steam::kPackageStatusUnloaded) {
-            // Publish the pointer here too, so the deferred DoStartupInjection
-            // can actually run post-login (the package is re-read from g_state).
-            g_state.pPackage0.store(info);
-            AC_LOG_WARN(kModule, "Package 0 status=%u (key absent); deferring injection.", info->status);
-        } else {
-            // SeedPackage0 owns the g_state.pPackage0 publication (store + seed).
-            LicenseManager::SeedPackage0(info);
-        }
+        // SeedPackage0 owns the g_state.pPackage0 publication. It no longer
+        // seeds: apps enter package 0 on demand, after their first ownership
+        // answer, so an unavailable package is still a valid publication.
+        if (info->status == steam::kPackageStatusUnloaded)
+            AC_LOG_WARN(kModule, "Package 0 status=%u (key absent); publishing it for on-demand use.", info->status);
+        LicenseManager::SeedPackage0(info);
     }
     return result;
 }
@@ -508,9 +555,14 @@ void RegisterOwnershipHooks(HMODULE diversion) {
 
     // The grow helper and license-update resolver live in LicenseManager.
     LicenseManager::Init(diversion);
+    // Starts the family-lender refresh worker; it waits for login and retries.
+    ac::family::Init();
 }
 
-void ShutdownOwnershipHooks() { StopUnlockSummary(); }
+void ShutdownOwnershipHooks() {
+    StopUnlockSummary();
+    ac::family::Shutdown();
+}
 
 bool TryAcquirePackage0() {
     // Already published (by the LoadPackage hook or a previous recovery):
@@ -535,17 +587,15 @@ bool TryAcquirePackage0() {
         return false;
     }
 
-    // Mirror exactly what the LoadPackage hook does with package 0:
-    // only seed when Steam reports it usable, otherwise just publish the
-    // pointer and defer the injection to the startup retry/login path.
+    // Same publication as the LoadPackage hook: package 0 is filled on demand,
+    // so the status only decides whether we warn about a missing key.
     if (info->status == steam::kPackageStatusUnloaded) {
-        g_state.pPackage0.store(info, std::memory_order_release);
-        AC_LOG_WARN(kModule, "TryAcquirePackage0: package 0 status=%u (key absent); deferring injection.",
+        AC_LOG_WARN(kModule, "TryAcquirePackage0: package 0 status=%u (key absent); publishing it for on-demand use.",
                     info->status);
-        return true;
+    } else {
+        AC_LOG_INFO(kModule,
+                    "TryAcquirePackage0: package 0 acquired via GetPackageInfo (missed one-shot LoadPackage).");
     }
-
-    AC_LOG_INFO(kModule, "TryAcquirePackage0: package 0 acquired via GetPackageInfo (missed one-shot LoadPackage).");
     LicenseManager::SeedPackage0(info);
     return true;
 }
