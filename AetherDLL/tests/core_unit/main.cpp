@@ -37,6 +37,7 @@ int main(int argc, char** argv) {
         {"jsonwriter", JsonWriterTest},
         {"manifest_contract", ManifestContractTest},
         {"acfowner", AcfOwnerTest},
+        {"loginusers", LoginUsersTest},
         {"steamuicss", SteamUiCssTest},
         {"steamuipatch", SteamUiPatchTest},
         {"callbackcopy", CallbackCopyTest},

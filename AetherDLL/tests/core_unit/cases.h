@@ -100,6 +100,7 @@ void IpcSpecParseTest();
 void JsonWriterTest();
 void ManifestContractTest();
 void AcfOwnerTest();
+void LoginUsersTest();
 void SteamUiCssTest();
 void SteamUiPatchTest();
 void CallbackCopyTest();

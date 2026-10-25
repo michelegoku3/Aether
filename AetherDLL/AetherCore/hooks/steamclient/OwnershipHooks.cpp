@@ -1,6 +1,7 @@
 #include "pch.h"
 #include "hooks/steamclient/OwnershipHooks.h"
 
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <limits>
@@ -15,9 +16,11 @@
 #include "core/Constants.h"
 #include "core/HookManager.h"
 #include "core/Logger.h"
+#include "core/Settings.h"
 #include "core/SteamTypes.h"
 #include "core/StructGuard.h"
 #include "core/Workers.h"
+#include "credentials/CredentialStore.h"
 #include "hooks/aetheronline/PresenceSession.h"
 #include "hooks/license/LicenseManager.h"
 #include "hooks/steamclient/CallbackCopy.h"
@@ -301,6 +304,20 @@ bool h_CheckAppOwnership(void* self, AppId app, AppOwnership* out) {
     // render family/borrowed state for an app the account "owns".
     out->borrowed = false;
     out->familyShared = false;
+    // The app-details page derives strOwnerSteamID from this account id. Left
+    // at 0, a spoofed app looks like a shared app with an unknown owner and
+    // Steam renders the generic family banner. Attribute it to this login.
+    // Genuine family licenses return above and keep Steam's own lender. The
+    // opt-in cosmetic banner still names the account configured for its apps.
+    std::uint32_t ownerAccountId = credential::ReadActiveUserId();
+    if (const auto settings = Settings::Snapshot();
+        settings && settings->libraryOwnerBanner && settings->libraryOwnerBannerSteamId != 0 &&
+        std::find(settings->libraryOwnerBannerApps.begin(), settings->libraryOwnerBannerApps.end(), app) !=
+            settings->libraryOwnerBannerApps.end()) {
+        ownerAccountId = static_cast<std::uint32_t>(settings->libraryOwnerBannerSteamId);
+    }
+    if (ownerAccountId != 0)
+        out->steamId32 = ownerAccountId;
     RecordOwnershipOutcome(app, OwnershipOutcome::Unlocked);
     return true;
 }

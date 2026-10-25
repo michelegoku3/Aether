@@ -174,14 +174,15 @@ void AcfOwnerTest() {
         CHECK(!plan.dropRecord);
     }
     {
-        // Active account still unknown (boot before login): drop the leftover,
-        // which is the only safe value when Steam cannot attribute the app.
+        // Active account still unknown (boot before login): leave the manifest
+        // alone. Writing a guessed account stamps a stranger and removing a
+        // real value both lose; the next pass with the signed-in account wins.
         OwnerContext ctx;
         ctx.managed = true;
         ctx.activeSteamId = 0;
         ctx.currentLastOwner = 111ull;
         const OwnerPlan plan = PlanOwnerAction(ctx);
-        CHECK(plan.action == OwnerAction::Remove);
+        CHECK(plan.action == OwnerAction::Skip);
     }
     {
         // The cosmetic opt-in still wins for a listed spoofed app.

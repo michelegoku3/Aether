@@ -5,13 +5,17 @@
 // ---------------------------------------------------------------------------
 // Pure decision table for the library-owner policy.
 //
-// Steam derives `strOwnerSteamID` for an app from `AppState.LastOwner`, the
-// account that last wrote app state (install, update, validate, account
-// switch). Inside a Steam Family the app-details page renders the generic
-// "From your Steam Family library" banner whenever the app looks subscribed,
-// the recorded owner is not the signed-in account and the family holds no
-// different copies. That banner is correct for a real family license, but on a
-// Lua-provided app nobody in the family owns it is a bogus attribution.
+// Steam reports `strOwnerSteamID` from the ownership record's owner account id
+// (`AppOwnership.steamId32`), which Steam's own answer fills from a family
+// license or, for a locally installed app, from `AppState.LastOwner`. Before
+// login that manifest value is what Steam reads, so it must not carry a stale
+// account: the boot pass runs before ActiveUser exists and a wrong guess makes
+// Steam classify a Lua app as another account's family license. Inside a Steam
+// Family the app-details page renders the generic "From your Steam Family
+// library" banner whenever the app looks subscribed, the recorded owner is not
+// the signed-in account and the family holds no different copies. That banner
+// is correct for a real family license, but on a Lua-provided app nobody in the
+// family owns it is a bogus attribution.
 //
 // The policy therefore keeps an owner record per app:
 //
@@ -97,14 +101,14 @@ inline OwnerPlan PlanOwnerAction(const OwnerContext& c) {
         return plan;
     }
 
-    // Spoofed app: Steam must attribute it to this login. Before login the
-    // active account is unknown, so the leftover is dropped instead.
+    // Spoofed app: Steam must attribute it to this login. When the account is
+    // still unknown (no live ActiveUser and no usable loginusers.vdf), leave
+    // the manifest alone: writing a guess attributes the app to a stranger,
+    // and removing a real value loses what the next pass needs.
     if (c.managed) {
         if (c.activeSteamId != 0) {
             plan.action = OwnerAction::Set;
             plan.owner = c.activeSteamId;
-        } else {
-            plan.action = OwnerAction::Remove;
         }
         return plan;
     }

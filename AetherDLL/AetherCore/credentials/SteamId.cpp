@@ -3,11 +3,14 @@
 
 #include <cstdlib>
 #include <cstring>
+#include <fstream>
+#include <iterator>
 #include <string>
 #include <vector>
 
 #include "core/Logger.h"
 #include "credentials/CredentialStore.h"
+#include "credentials/LoginUsers.h"
 #include "credentials/Ticket.h"
 #include "scripting/LuaData.h"
 #include "utils/Strings.h"
@@ -91,42 +94,33 @@ void RefreshAppSteamIdCache(steam::AppId appId, std::uint64_t activeId) {
                       wrote ? 1 : 0);
 }
 
+// The account Steam is configured to sign in as. Used only while ActiveUser is
+// unset (before login): the mtime of a userdata folder is not a login signal,
+// because another local account's cloud/achievement writes touch it.
+std::uint64_t FromLoginUsersFile() {
+    const std::string steamPath = credential::ReadSteamPath();
+    if (steamPath.empty())
+        return 0;
+    std::ifstream input(winfile::ToPath(steamPath + "\\config\\loginusers.vdf"), std::ios::binary);
+    if (!input.is_open())
+        return 0;
+    const std::string content((std::istreambuf_iterator<char>(input)), std::istreambuf_iterator<char>());
+    return SelectLoginAccount(content);
+}
+
 } // namespace
 
 std::uint64_t GetActiveSteamId64() {
-    // 1. Live ActiveUser DWORD while Steam is running.
+    // 1. Live ActiveUser DWORD while Steam is running. The only authoritative
+    //    answer once a login has completed.
     if (std::uint32_t accountId = credential::ReadActiveUserId()) {
         return steam::MakeSteamId64(accountId);
     }
 
-    // 2. Most recently modified userdata folder (Steam closed).
-    const std::string steamPath = credential::ReadSteamPath();
-    if (steamPath.empty())
-        return 0;
-
-    const std::string pattern = steamPath + "\\userdata\\*";
-    WIN32_FIND_DATAA fd;
-    HANDLE find = FindFirstFileA(pattern.c_str(), &fd);
-    if (find == INVALID_HANDLE_VALUE)
-        return 0;
-
-    DWORD bestAccount = 0;
-    FILETIME bestTime{};
-    do {
-        if (!(fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) || fd.cFileName[0] == '.')
-            continue;
-        char* end = nullptr;
-        unsigned long account = std::strtoul(fd.cFileName, &end, 10);
-        if (!end || *end != '\0' || account == 0)
-            continue;
-        if (bestAccount == 0 || CompareFileTime(&fd.ftLastWriteTime, &bestTime) > 0) {
-            bestAccount = static_cast<DWORD>(account);
-            bestTime = fd.ftLastWriteTime;
-        }
-    } while (FindNextFileA(find, &fd));
-    FindClose(find);
-
-    return bestAccount ? steam::MakeSteamId64(bestAccount) : 0;
+    // 2. Before login Steam has not written ActiveUser yet. Resolve the account
+    //    it is configured to sign in as; the boot-time owner pass runs here and
+    //    must stamp that account, not whichever userdata folder changed last.
+    return FromLoginUsersFile();
 }
 
 std::uint64_t GetSpoofSteamId(steam::AppId appId) {

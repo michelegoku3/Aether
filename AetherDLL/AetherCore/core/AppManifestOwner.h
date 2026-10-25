@@ -8,15 +8,20 @@
 // Steam renders "From the library of <owner>" (sp.js
 // `#AppDetails_InSharedLibrary`) and, inside a Steam Family, the generic "From
 // your Steam Family library" banner (`#FamilyGroup_GameAvailable`) from the
-// app's recorded owner: `AppState.LastOwner`, the account that last wrote app
-// state. On a Lua-provided app nobody in the family owns, that attribution is
-// bogus; on a genuinely family-shared app it is Steam's own banner.
+// recorded owner account: the family license holder, or for a locally
+// installed app the `AppState.LastOwner` Steam reads at sign-in. The ownership
+// hook then carries that account in `AppOwnership.steamId32`, which is what the
+// app-details page reports as `strOwnerSteamID`. On a Lua-provided app nobody
+// in the family owns, either attribution is bogus; on a genuinely family-shared
+// app it is Steam's own banner.
 //
 // Three rules, applied to installed apps Aether spoofs (`luadata::HasDepot`),
 // has written before, or Steam reports as family-shared:
-//   * spoofed apps get `AppState.LastOwner = <active account>`, so Steam
-//     attributes the app to this login and cannot render the family banner.
-//     This is account-specific and re-applied after login and account
+//   * spoofed apps get `AppState.LastOwner = <active account>` before sign-in,
+//     so Steam does not classify them as another account's family license;
+//     `OwnershipHooks` also stamps `AppOwnership.steamId32` with the signed-in
+//     account so the app-details page attributes the app to this login and
+//     cannot render the family banner. Re-applied after login and account
 //     switches.
 //   * `[library] owner_banner = true`: for the appids listed in
 //     `owner_banner_apps`, `LastOwner = owner_banner_steamid` shows the banner
@@ -31,8 +36,10 @@
 // Steam's data after the app leaves the managed set (its .lua was removed) or
 // turns out to be family-shared.
 //
-// Runs at boot (before Steam loads app state), after login, and after Steam
-// classifies an app as family-shared (install/update/validate rewrites).
+// Runs at boot (before Steam loads app state; the pre-login account comes from
+// config/loginusers.vdf, never from a userdata folder mtime), after login, and
+// after Steam classifies an app as family-shared (install/update/validate
+// rewrites).
 //
 // Best-effort and idempotent: unwritable/locked manifests are skipped and
 // reported, never retried in a loop.

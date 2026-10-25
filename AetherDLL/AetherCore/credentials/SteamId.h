@@ -20,7 +20,9 @@ namespace ac::steamid {
 
 // SteamID64 of the currently logged-in user, or 0 if none can be resolved.
 // Tries HKCU\...\ActiveProcess\ActiveUser (live while Steam runs), then falls
-// back to the most recently modified userdata\<accountId>\ folder.
+// back to the account Steam is configured to sign in as: config/loginusers.vdf
+// AutoLogin, else the newest timestamp. A userdata folder's mtime is not a
+// login signal and must not become an owner stamp.
 std::uint64_t GetActiveSteamId64();
 
 // Best SteamID64 to present as the owner of appId, or 0 if unknown.

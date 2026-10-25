@@ -48,13 +48,17 @@ enum class AppReleaseState : std::uint32_t {
 // on .lua apps.
 //
 // Aether READS:  releaseState, existInPackageNums, borrowed, familyShared
-// Aether WRITES: packageId, releaseState, freeLicense, ownsLicense
+// Aether WRITES: packageId, releaseState, freeLicense, ownsLicense, steamId32
 // Everything else is layout: declared so the offsets are right, never touched.
 struct AppOwnership {
     // ---- scalars (offsets proven; names for +0x0C/+0x14 are not) ----------
-    std::uint32_t packageId;          // +0x00 proven (echoes the appId)
-    AppReleaseState releaseState;     // +0x04 likely (enum from a KV string)
-    std::uint32_t steamId32;          // +0x08 UNKNOWN name (possibly masterSubscriptionAppId)
+    std::uint32_t packageId;      // +0x00 proven (echoes the appId)
+    AppReleaseState releaseState; // +0x04 likely (enum from a KV string)
+    // +0x08 owner account id: the family lender on a shared license, 0 for a
+    // locally owned app. The app-details page derives strOwnerSteamID from it,
+    // so a spoofed app must carry the signed-in account here or Steam renders
+    // the generic "From your Steam Family library" banner.
+    std::uint32_t steamId32;
     std::uint32_t unknown_0x0C;       // +0x0C UNKNOWN
     std::uint32_t trialSeconds;       // +0x10 likely (DevComp / TimedTrialMinutes * 60)
     std::uint32_t existInPackageNums; // +0x14 likely (a counter: incremented per entry)
