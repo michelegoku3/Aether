@@ -3,43 +3,43 @@
 #include <cstddef>
 
 // ---------------------------------------------------------------------------
-// AppManifestOwner — apply Steam's per-app "last owner" policy.
+// AppManifestOwner — keep `AppState.LastOwner` out of Aether's attribution.
 //
-// Steam renders "From the library of <owner>" (sp.js
-// `#AppDetails_InSharedLibrary`) and, inside a Steam Family, the generic "From
-// your Steam Family library" banner (`#FamilyGroup_GameAvailable`) from the
-// recorded owner account: the family license holder, or for a locally
-// installed app the `AppState.LastOwner` Steam reads at sign-in. The ownership
-// hook then carries that account in `AppOwnership.steamId32`, which is what the
-// app-details page reports as `strOwnerSteamID`. On a Lua-provided app nobody
-// in the family owns, either attribution is bogus; on a genuinely family-shared
-// app it is Steam's own banner.
+// Steam reads `AppState.LastOwner` at sign-in and renders "From the library of
+// <owner>" (sp.js `#AppDetails_InSharedLibrary`) or, inside a Steam Family, the
+// generic "From your Steam Family library" banner
+// (`#FamilyGroup_GameAvailable`) from the account it names. Aether never writes
+// the signed-in account there: an active-account stamp makes a genuine family
+// license look like a local install, so Steam stops reporting the lender and
+// its banner disappears.
 //
-// Three rules, applied to installed apps Aether spoofs (`luadata::HasDepot`),
-// has written before, or Steam reports as family-shared:
-//   * spoofed apps get `AppState.LastOwner = <active account>` before sign-in,
-//     so Steam does not classify them as another account's family license;
-//     `OwnershipHooks` also stamps `AppOwnership.steamId32` with the signed-in
-//     account so the app-details page attributes the app to this login and
-//     cannot render the family banner. Re-applied after login and account
-//     switches.
+// The app-details page gets the owner from `AppOwnership.steamId32` instead.
+// `OwnershipHooks` writes the signed-in account (or the opt-in banner account)
+// for a spoofed app, and leaves a Steam-provided answer untouched.
+//
+// Policy, applied to installed apps Aether spoofs (`luadata::HasDepot`), has
+// written before, or Steam reports as family-shared:
+//   * spoofed app: remove any `LastOwner` entry. The hook carries the
+//     attribution through `AppOwnership.steamId32`.
+//   * family-shared app: restore the `LastOwner` Steam had before Aether
+//     touched the manifest, so Steam's own banner can name a local owner. A
+//     value Steam rewrote in the meantime is Steam's and is left alone.
+//   * app Aether no longer spoofs: restore the original value, never keep an
+//     active-account stamp.
+//   * a restore never writes the signed-in account: an old record may carry it
+//     as the pre-Aether value, and restoring it would hide the banner again.
 //   * `[library] owner_banner = true`: for the appids listed in
 //     `owner_banner_apps`, `LastOwner = owner_banner_steamid` shows the banner
-//     with that account's persona.
-//   * family-shared apps are restored to the `LastOwner` Steam had before
-//     Aether touched the manifest, so Steam's own banner can name a local
-//     owner. A value Steam rewrote in the meantime is Steam's and is left
-//     alone.
+//     with that account's persona. This is the only case Aether writes it.
 //
-// Values Aether writes are recorded in `<steam>\aethercore\owner_state.txt`
-// together with the pre-Aether value: that record lets a later pass restore
-// Steam's data after the app leaves the managed set (its .lua was removed) or
-// turns out to be family-shared.
+// Values Aether writes (including a removal, recorded as 0) are stored in
+// `<steam>\aethercore\owner_state.txt` with the pre-Aether value: that record
+// lets a later pass restore Steam's data after the app leaves the managed set
+// (its .lua was removed) or turns out to be family-shared.
 //
-// Runs at boot (before Steam loads app state; the pre-login account comes from
-// config/loginusers.vdf, never from a userdata folder mtime), after login, and
-// after Steam classifies an app as family-shared (install/update/validate
-// rewrites).
+// Runs at boot (before Steam loads app state; the policy only removes or
+// restores, so it needs no account yet), after login, and after Steam
+// classifies an app as family-shared (install/update/validate rewrites).
 //
 // Best-effort and idempotent: unwritable/locked manifests are skipped and
 // reported, never retried in a loop.
@@ -48,7 +48,7 @@ namespace ac::appmanifest {
 
 struct OwnerPolicyStats {
     std::size_t scanned = 0;
-    std::size_t applied = 0; // LastOwner written (active account or banner opt-in)
+    std::size_t applied = 0; // LastOwner written (banner opt-in)
     std::size_t removed = 0; // LastOwner dropped
     std::size_t unchanged = 0;
     std::size_t errors = 0;

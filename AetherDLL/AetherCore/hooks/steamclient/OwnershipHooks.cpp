@@ -16,6 +16,7 @@
 #include "core/Constants.h"
 #include "core/HookManager.h"
 #include "core/Logger.h"
+#include "core/OwnershipDecision.h"
 #include "core/Settings.h"
 #include "core/SteamTypes.h"
 #include "core/StructGuard.h"
@@ -240,6 +241,20 @@ void RecordOwnershipOutcome(AppId app, OwnershipOutcome outcome) {
     }
 }
 
+// Account id the app-details page should name for a spoofed app. The live
+// account is authoritative; the opt-in cosmetic banner replaces it for its
+// listed apps.
+std::uint32_t ResolveSpoofOwnerAccountId(AppId app) {
+    std::uint32_t owner = credential::ReadActiveUserId();
+    if (const auto settings = Settings::Snapshot();
+        settings && settings->libraryOwnerBanner && settings->libraryOwnerBannerSteamId != 0 &&
+        std::find(settings->libraryOwnerBannerApps.begin(), settings->libraryOwnerBannerApps.end(), app) !=
+            settings->libraryOwnerBannerApps.end()) {
+        owner = static_cast<std::uint32_t>(settings->libraryOwnerBannerSteamId);
+    }
+    return owner;
+}
+
 // ---- Hook bodies -----------------------------------------------------------
 
 bool h_CheckAppOwnership(void* self, AppId app, AppOwnership* out) {
@@ -258,22 +273,24 @@ bool h_CheckAppOwnership(void* self, AppId app, AppOwnership* out) {
         return result; // hand back Steam's own answer, untouched
     }
 
-    const auto originalReleaseState = out->releaseState;
-    const auto originalExistInPackageNums = out->existInPackageNums;
-    const bool originalBorrowed = out->borrowed;
-    const bool originalFamilyShared = out->familyShared;
-    const bool released = originalReleaseState == AppReleaseState::Released;
-    const bool steamProvided = result && originalExistInPackageNums > 1 && released;
-    const bool familyShared = steamProvided && (originalBorrowed || originalFamilyShared);
-
     // Match LumaCore's conservative classification: a Lua app is considered
     // Steam-provided only when Steam reports a released app present in more than
     // one package. This avoids the over-broad "if (result)" path that can make
     // every injected Lua app disappear, and it also avoids treating Steam common
     // redistributables/package-tool entries as user-owned games just because
     // they have a non-zero package id.
-    if (steamProvided) {
-        if (familyShared) {
+    ownership::OwnershipFacts facts{
+        result, out->existInPackageNums, out->releaseState, out->borrowed, out->familyShared,
+        true, // HasDepot was checked above
+        0,
+    };
+    // Resolving the account reads the registry; only a spoof needs it.
+    if (!ownership::IsSteamProvided(facts))
+        facts.spoofOwnerAccountId = ResolveSpoofOwnerAccountId(app);
+    const ownership::OwnershipDecision decision = ownership::DecideOwnership(facts);
+
+    if (decision.action == ownership::OwnershipAction::PassThrough) {
+        if (decision.steamFamilyShared) {
             // A boot-time owner pass ran before Steam could classify the app,
             // so the manifest may carry Aether's stamp. A real family license
             // needs Steam's own value back to name a local owner.
@@ -289,8 +306,8 @@ bool h_CheckAppOwnership(void* self, AppId app, AppOwnership* out) {
         AC_LOG_DEBUG_ONCE(
             kModule,
             "CheckAppOwnership: %u steam-provided class=%s result=%d exist=%u release=%u borrowed=%d familyShared=%d.",
-            app, familyShared ? "family-shared" : "owned", result ? 1 : 0, originalExistInPackageNums,
-            static_cast<unsigned>(originalReleaseState), originalBorrowed ? 1 : 0, originalFamilyShared ? 1 : 0);
+            app, decision.steamFamilyShared ? "family-shared" : "owned", result ? 1 : 0, out->existInPackageNums,
+            static_cast<unsigned>(out->releaseState), out->borrowed ? 1 : 0, out->familyShared ? 1 : 0);
         return result;
     }
 
@@ -306,18 +323,10 @@ bool h_CheckAppOwnership(void* self, AppId app, AppOwnership* out) {
     out->familyShared = false;
     // The app-details page derives strOwnerSteamID from this account id. Left
     // at 0, a spoofed app looks like a shared app with an unknown owner and
-    // Steam renders the generic family banner. Attribute it to this login.
-    // Genuine family licenses return above and keep Steam's own lender. The
-    // opt-in cosmetic banner still names the account configured for its apps.
-    std::uint32_t ownerAccountId = credential::ReadActiveUserId();
-    if (const auto settings = Settings::Snapshot();
-        settings && settings->libraryOwnerBanner && settings->libraryOwnerBannerSteamId != 0 &&
-        std::find(settings->libraryOwnerBannerApps.begin(), settings->libraryOwnerBannerApps.end(), app) !=
-            settings->libraryOwnerBannerApps.end()) {
-        ownerAccountId = static_cast<std::uint32_t>(settings->libraryOwnerBannerSteamId);
-    }
-    if (ownerAccountId != 0)
-        out->steamId32 = ownerAccountId;
+    // Steam renders the generic family banner. Genuine family licenses return
+    // above and keep Steam's own lender.
+    if (decision.ownerAccountId != 0)
+        out->steamId32 = decision.ownerAccountId;
     RecordOwnershipOutcome(app, OwnershipOutcome::Unlocked);
     return true;
 }

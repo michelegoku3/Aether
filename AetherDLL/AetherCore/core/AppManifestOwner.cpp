@@ -204,7 +204,7 @@ void ApplyToManifest(const std::string& path, steam::AppId appId, const OwnerCon
 
     const std::uint64_t written = plan.action == OwnerAction::Set ? plan.owner : 0;
     const OwnerRecord previous = hasRecord ? existing->second : OwnerRecord{};
-    records[appId] = RecordAfterWrite(previous, hasRecord, ctx.currentLastOwner, written);
+    records[appId] = RecordAfterWrite(previous, hasRecord, ctx.currentLastOwner, ctx.activeSteamId, written);
     recordsDirty = true;
 }
 
@@ -285,6 +285,24 @@ OwnerPolicyStats ApplyInstalledAppOwners() {
             const OwnerPlan plan = PlanOwnerAction(ctx);
             ApplyToManifest(path, appId, ctx, plan, content, records, recordsDirty, stats);
         }
+    }
+
+    // Records written before the policy knew the signed-in account may still
+    // carry it as the restorable original. Drop it so a later restore cannot
+    // recreate the stamp that hid the family banner.
+    if (activeSteamId != 0) {
+        std::size_t cleared = 0;
+        for (auto& entry : records) {
+            OwnerRecord& record = entry.second;
+            if (record.originalKnown && record.original == activeSteamId) {
+                record.originalKnown = false;
+                record.original = 0;
+                recordsDirty = true;
+                ++cleared;
+            }
+        }
+        if (cleared != 0)
+            AC_LOG_INFO(kModule, "Owner records: cleared %zu active-account original value(s).", cleared);
     }
 
     if (recordsDirty)

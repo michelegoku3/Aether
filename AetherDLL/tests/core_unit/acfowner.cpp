@@ -159,55 +159,60 @@ void AcfOwnerTest() {
 
     // ---- PlanOwnerAction (owner policy) -----------------------------------
 
-    // A spoofed app must be attributed to the active account, never to the
-    // account Steam recorded: with an owner that is not the signed-in user,
-    // Steam renders "From your Steam Family library" on a Lua game nobody in
-    // the family owns.
+    // A spoofed app never claims LastOwner: Steam reads the manifest at sign-in
+    // and an active-account stamp makes a real family license look like a local
+    // install, hiding Steam's banner. AppOwnership.steamId32 carries the
+    // attribution instead.
     {
         OwnerContext ctx;
         ctx.managed = true;
-        ctx.activeSteamId = 222ull;
         ctx.currentLastOwner = 111ull;
         const OwnerPlan plan = PlanOwnerAction(ctx);
-        CHECK(plan.action == OwnerAction::Set);
-        CHECK_EQ(plan.owner, 222ull);
+        CHECK(plan.action == OwnerAction::Remove);
         CHECK(!plan.dropRecord);
     }
     {
-        // Active account still unknown (boot before login): leave the manifest
-        // alone. Writing a guessed account stamps a stranger and removing a
-        // real value both lose; the next pass with the signed-in account wins.
+        // Nothing to remove.
         OwnerContext ctx;
         ctx.managed = true;
-        ctx.activeSteamId = 0;
-        ctx.currentLastOwner = 111ull;
+        ctx.currentLastOwner = 0;
         const OwnerPlan plan = PlanOwnerAction(ctx);
         CHECK(plan.action == OwnerAction::Skip);
     }
     {
-        // The cosmetic opt-in still wins for a listed spoofed app.
+        // Dave-like: the manifest carries Aether's active stamp from the old
+        // policy. The pass removes it so Steam can report the family license.
+        OwnerContext ctx;
+        ctx.managed = true;
+        ctx.recorded = true;
+        ctx.record.written = 111ull;
+        ctx.currentLastOwner = 111ull;
+        const OwnerPlan plan = PlanOwnerAction(ctx);
+        CHECK(plan.action == OwnerAction::Remove);
+        CHECK(!plan.dropRecord);
+    }
+    {
+        // The cosmetic opt-in still writes its configured owner.
         OwnerContext ctx;
         ctx.managed = true;
         ctx.listed = true;
         ctx.bannerEnabled = true;
         ctx.bannerSteamId = 42ull;
-        ctx.activeSteamId = 222ull;
+        ctx.currentLastOwner = 111ull;
         const OwnerPlan plan = PlanOwnerAction(ctx);
         CHECK(plan.action == OwnerAction::Set);
         CHECK_EQ(plan.owner, 42ull);
     }
     {
-        // Banner enabled but no owner selected: the app still gets the active
-        // account, so the bogus banner cannot render.
+        // Banner enabled but no owner selected: normal spoof handling.
         OwnerContext ctx;
         ctx.managed = true;
         ctx.listed = true;
         ctx.bannerEnabled = true;
         ctx.bannerSteamId = 0;
-        ctx.activeSteamId = 222ull;
+        ctx.currentLastOwner = 111ull;
         const OwnerPlan plan = PlanOwnerAction(ctx);
-        CHECK(plan.action == OwnerAction::Set);
-        CHECK_EQ(plan.owner, 222ull);
+        CHECK(plan.action == OwnerAction::Remove);
     }
     {
         // An app Steam reports as family-shared was stamped at boot, before the
@@ -215,7 +220,6 @@ void AcfOwnerTest() {
         // banner can name a local owner again.
         OwnerContext ctx;
         ctx.familyShared = true;
-        ctx.activeSteamId = 222ull;
         ctx.recorded = true;
         ctx.record.written = 222ull;
         ctx.record.originalKnown = true;
@@ -231,7 +235,6 @@ void AcfOwnerTest() {
         // it: restoring means removing our stamp.
         OwnerContext ctx;
         ctx.familyShared = true;
-        ctx.activeSteamId = 222ull;
         ctx.recorded = true;
         ctx.record.written = 222ull;
         ctx.currentLastOwner = 222ull;
@@ -243,7 +246,6 @@ void AcfOwnerTest() {
         // Family-shared app Aether never touched: leave Steam's record alone.
         OwnerContext ctx;
         ctx.familyShared = true;
-        ctx.activeSteamId = 222ull;
         ctx.currentLastOwner = 111ull;
         const OwnerPlan plan = PlanOwnerAction(ctx);
         CHECK(plan.action == OwnerAction::Skip);
@@ -261,25 +263,19 @@ void AcfOwnerTest() {
         CHECK(plan.dropRecord);
     }
     {
-        // No longer spoofed but still ours (Steam reports the app as owned):
-        // the active account is a truthful last owner, so keep it and the
-        // record.
+        // No longer spoofed but the stamp is ours, original absent: remove it.
         OwnerContext ctx;
-        ctx.activeSteamId = 222ull;
         ctx.recorded = true;
         ctx.record.written = 222ull;
-        ctx.record.originalKnown = true;
-        ctx.record.original = 111ull;
         ctx.currentLastOwner = 222ull;
         const OwnerPlan plan = PlanOwnerAction(ctx);
-        CHECK(plan.action == OwnerAction::Skip);
-        CHECK(!plan.dropRecord);
+        CHECK(plan.action == OwnerAction::Remove);
+        CHECK(plan.dropRecord);
     }
     {
         // No longer spoofed and the stamp belongs to an account that is no
         // longer signed in: restore the original.
         OwnerContext ctx;
-        ctx.activeSteamId = 333ull;
         ctx.recorded = true;
         ctx.record.written = 222ull;
         ctx.record.originalKnown = true;
@@ -319,19 +315,47 @@ void AcfOwnerTest() {
         CHECK(plan.action == OwnerAction::Skip);
         CHECK(!plan.dropRecord);
     }
+    {
+        // A restore must never write the signed-in account: an old record can
+        // carry it as the pre-Aether value.
+        OwnerContext ctx;
+        ctx.familyShared = true;
+        ctx.recorded = true;
+        ctx.record.written = 111ull;
+        ctx.record.originalKnown = true;
+        ctx.record.original = 111ull;
+        ctx.currentLastOwner = 111ull;
+        ctx.activeSteamId = 111ull;
+        const OwnerPlan plan = PlanOwnerAction(ctx);
+        CHECK(plan.action == OwnerAction::Remove);
+        CHECK(plan.dropRecord);
+    }
+    {
+        // Same guard for an app Aether no longer spoofs.
+        OwnerContext ctx;
+        ctx.recorded = true;
+        ctx.record.written = 111ull;
+        ctx.record.originalKnown = true;
+        ctx.record.original = 111ull;
+        ctx.currentLastOwner = 111ull;
+        ctx.activeSteamId = 111ull;
+        const OwnerPlan plan = PlanOwnerAction(ctx);
+        CHECK(plan.action == OwnerAction::Remove);
+        CHECK(plan.dropRecord);
+    }
 
     // ---- RecordAfterWrite (pre-Aether value capture) ----------------------
 
     {
         // First touch: the value Steam had becomes the restorable original.
-        const OwnerRecord next = RecordAfterWrite(OwnerRecord{}, false, 111ull, 222ull);
+        const OwnerRecord next = RecordAfterWrite(OwnerRecord{}, false, 111ull, 0ull, 222ull);
         CHECK_EQ(next.written, 222ull);
         CHECK(next.originalKnown);
         CHECK_EQ(next.original, 111ull);
     }
     {
         // First touch with no owner: restoring means removing the entry.
-        const OwnerRecord next = RecordAfterWrite(OwnerRecord{}, false, 0, 222ull);
+        const OwnerRecord next = RecordAfterWrite(OwnerRecord{}, false, 0, 0ull, 222ull);
         CHECK_EQ(next.written, 222ull);
         CHECK(!next.originalKnown);
     }
@@ -341,7 +365,7 @@ void AcfOwnerTest() {
         previous.written = 222ull;
         previous.originalKnown = true;
         previous.original = 111ull;
-        const OwnerRecord next = RecordAfterWrite(previous, true, 222ull, 333ull);
+        const OwnerRecord next = RecordAfterWrite(previous, true, 222ull, 0ull, 333ull);
         CHECK_EQ(next.written, 333ull);
         CHECK(next.originalKnown);
         CHECK_EQ(next.original, 111ull);
@@ -352,7 +376,7 @@ void AcfOwnerTest() {
         previous.written = 222ull;
         previous.originalKnown = true;
         previous.original = 111ull;
-        const OwnerRecord next = RecordAfterWrite(previous, true, 99ull, 333ull);
+        const OwnerRecord next = RecordAfterWrite(previous, true, 99ull, 0ull, 333ull);
         CHECK_EQ(next.written, 333ull);
         CHECK(next.originalKnown);
         CHECK_EQ(next.original, 99ull);
@@ -363,9 +387,25 @@ void AcfOwnerTest() {
         previous.written = 222ull;
         previous.originalKnown = true;
         previous.original = 111ull;
-        const OwnerRecord next = RecordAfterWrite(previous, true, 222ull, 0);
+        const OwnerRecord next = RecordAfterWrite(previous, true, 222ull, 0ull, 0);
         CHECK_EQ(next.written, 0);
         CHECK(next.originalKnown);
         CHECK_EQ(next.original, 111ull);
+    }
+    {
+        // The signed-in account is never captured as the restorable original.
+        const OwnerRecord next = RecordAfterWrite(OwnerRecord{}, false, 111ull, 111ull, 222ull);
+        CHECK_EQ(next.written, 222ull);
+        CHECK(!next.originalKnown);
+    }
+    {
+        // A stale record that still names it loses it on the next write.
+        OwnerRecord previous;
+        previous.written = 222ull;
+        previous.originalKnown = true;
+        previous.original = 111ull;
+        const OwnerRecord next = RecordAfterWrite(previous, true, 222ull, 111ull, 333ull);
+        CHECK_EQ(next.written, 333ull);
+        CHECK(!next.originalKnown);
     }
 }
