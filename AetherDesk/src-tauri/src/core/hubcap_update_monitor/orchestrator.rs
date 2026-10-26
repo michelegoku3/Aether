@@ -16,10 +16,6 @@ use tauri::AppHandle;
 
 const START_DELAY: Duration = Duration::from_secs(8);
 const POLL_INTERVAL: Duration = Duration::from_secs(20);
-/// `InstalledDepots` integrity sweep cadence, in polls. The check is local and
-/// cheap, but Steam rewrites the ACF while it works, so a slower cadence than
-/// the change lanes is enough and keeps the log quiet.
-const INTEGRITY_INTERVAL_POLLS: u32 = 15;
 
 pub(super) async fn run(app: AppHandle) {
     tokio::time::sleep(START_DELAY).await;
@@ -35,7 +31,6 @@ pub(super) async fn run(app: AppHandle) {
 
     let mut checkpoint = load_state();
     let mut runtime = MonitorRuntime::default();
-    let mut integrity_polls: u32 = 0;
 
     loop {
         let settings = SettingsManager::new(&app).load();
@@ -86,13 +81,6 @@ pub(super) async fn run(app: AppHandle) {
         run_pin_refresh(&mut runtime, &app, &current_acf, &mut checkpoint).await;
         run_repair(&mut runtime, &app, &current_luas, &mut checkpoint).await;
         run_workshop(&mut runtime, &app, &current_workshop, &mut checkpoint).await;
-
-        integrity_polls = integrity_polls.wrapping_add(1);
-        let first_sweep = integrity_polls == 1;
-        if steam_ready && (first_sweep || integrity_polls.is_multiple_of(INTEGRITY_INTERVAL_POLLS))
-        {
-            sweep_installed_depots(&settings.steam_path, &current_luas);
-        }
 
         runtime.publish_status(steam_ready, key_ready, checkpoint.initialized);
         tokio::time::sleep(POLL_INTERVAL).await;
@@ -158,29 +146,5 @@ fn enqueue_changed_work(
     }
     if checkpoint_dirty {
         let _ = save_state(checkpoint);
-    }
-}
-
-/// Local-only integrity pass: every managed game's ACF must name a manifest the
-/// game actually has. `InstalledDepots` is the record Steam computes download
-/// deltas from; a GID with no local file makes every attempt fail with
-/// `Access Denied` ("No connection") until the real manifest is restored.
-fn sweep_installed_depots(steam_path: &str, managed: &HashMap<u32, String>) {
-    if steam_path.trim().is_empty() || managed.is_empty() {
-        return;
-    }
-    let mut app_ids: Vec<u32> = managed.keys().copied().collect();
-    app_ids.sort_unstable();
-    for (app_id, repair) in
-        crate::steam::acf::SteamAcfEditor::repair_installed_depots_sweep(steam_path, &app_ids)
-    {
-        crate::desk_log_info!(
-            "hubcap-updates",
-            "InstalledDepots repair app_id={} depot={} {} -> {} (declared GID has no local manifest)",
-            app_id,
-            repair.depot_id,
-            repair.declared_gid,
-            repair.restored_gid
-        );
     }
 }

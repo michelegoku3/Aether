@@ -30,8 +30,6 @@ namespace {
 
 constexpr const char* kModule = "OwnerStamp";
 
-constexpr const char* kManifestPrefix = "appmanifest_";
-constexpr const char* kManifestSuffix = ".acf";
 constexpr const char* kRecordFileName = "owner_state.txt";
 
 std::mutex s_passMutex; // one pass at a time (boot job vs post-login job)
@@ -81,55 +79,8 @@ bool ReadTextFile(const std::string& path, std::string& out) {
 }
 
 // Atomic replace that preserves a read-only attribute (version pinning marks
-// some appmanifests read-only; Steam and AetherDesk both write them).
-bool WriteTextAtomically(const std::string& path, const std::string& content) {
-    const std::string temp = path + ".aether-owner.tmp";
-    {
-        std::ofstream output(winfile::ToPath(temp), std::ios::binary | std::ios::trunc);
-        if (!output.is_open())
-            return false;
-        output.write(content.data(), static_cast<std::streamsize>(content.size()));
-        output.flush();
-        if (!output.good()) {
-            output.close();
-            winfile::Delete(temp);
-            return false;
-        }
-    }
-
-    const std::wstring wide = winfile::WidenPath(path);
-    const DWORD attributes = GetFileAttributesW(wide.c_str());
-    const bool readOnly = attributes != INVALID_FILE_ATTRIBUTES && (attributes & FILE_ATTRIBUTE_READONLY) != 0;
-    if (readOnly)
-        SetFileAttributesW(wide.c_str(), attributes & ~FILE_ATTRIBUTE_READONLY);
-
-    const bool replaced = winfile::MoveReplace(temp, path);
-
-    if (readOnly && attributes != INVALID_FILE_ATTRIBUTES)
-        SetFileAttributesW(wide.c_str(), attributes);
-    if (!replaced)
-        winfile::Delete(temp);
-    return replaced;
-}
-
-// Parses `appmanifest_<appId>.acf`; returns 0 for anything else.
-steam::AppId AppIdFromManifestName(const std::string& name) {
-    const std::size_t prefixLength = std::char_traits<char>::length(kManifestPrefix);
-    const std::size_t suffixLength = std::char_traits<char>::length(kManifestSuffix);
-    if (name.size() <= prefixLength + suffixLength)
-        return 0;
-    if (name.compare(0, prefixLength, kManifestPrefix) != 0)
-        return 0;
-    if (name.compare(name.size() - suffixLength, suffixLength, kManifestSuffix) != 0)
-        return 0;
-
-    const std::string stem = name.substr(prefixLength, name.size() - prefixLength - suffixLength);
-    char* end = nullptr;
-    const unsigned long value = std::strtoul(stem.c_str(), &end, 10);
-    if (!end || *end != '\0' || value == 0 || value > 0xFFFFFFFFul)
-        return 0;
-    return static_cast<steam::AppId>(value);
-}
+// some appmanifests read-only; Steam and AetherDesk both write them) lives in
+// utils/WinFile.h: the InstalledDepots repair rewrites the same files.
 
 // Records live next to the log/config: <steam>\aethercore\owner_state.txt.
 std::string RecordPath() {
@@ -185,7 +136,7 @@ void SaveRecords(const OwnerRecords& records) {
         text += std::to_string(record.originalKnown ? record.original : 0);
         text += '\n';
     }
-    if (!WriteTextAtomically(path, text))
+    if (!winfile::WriteTextAtomically(path, text))
         AC_LOG_DEBUG(kModule, "Cannot persist owner records to %s.", path.c_str());
 }
 
@@ -208,7 +159,7 @@ bool ApplyToManifest(const std::string& path, steam::AppId appId, const OwnerCon
 
     const bool changed = plan.action == OwnerAction::Set ? SetLastOwner(content, plan.owner) : RemoveLastOwner(content);
     if (changed) {
-        if (!WriteTextAtomically(path, content)) {
+        if (!winfile::WriteTextAtomically(path, content)) {
             ++stats.errors;
             AC_LOG_WARN(kModule, "Cannot rewrite appmanifest_%u.acf (locked or read-only).", appId);
             return false;

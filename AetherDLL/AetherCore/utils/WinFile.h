@@ -1,6 +1,7 @@
 #pragma once
 
 #include <filesystem>
+#include <fstream>
 #include <string>
 #include <windows.h>
 
@@ -76,6 +77,40 @@ inline bool CopyOverwrite(const std::string& fromUtf8, const std::string& toUtf8
     if (from.empty() || to.empty())
         return false;
     return CopyFileW(from.c_str(), to.c_str(), FALSE) != FALSE;
+}
+
+// Atomic text replace through a sibling temp file, preserving a read-only
+// attribute: version pinning marks some appmanifests read-only and Steam,
+// AetherDesk and the DLL all rewrite them. Readers see either the old body or
+// the new one, never a truncated file.
+inline bool WriteTextAtomically(const std::string& utf8Path, const std::string& content) {
+    const std::string temp = utf8Path + ".aether-write.tmp";
+    {
+        std::ofstream output(ToPath(temp), std::ios::binary | std::ios::trunc);
+        if (!output.is_open())
+            return false;
+        output.write(content.data(), static_cast<std::streamsize>(content.size()));
+        output.flush();
+        if (!output.good()) {
+            output.close();
+            Delete(temp);
+            return false;
+        }
+    }
+
+    const std::wstring wide = WidenPath(utf8Path);
+    const DWORD attributes = GetFileAttributesW(wide.c_str());
+    const bool readOnly = attributes != INVALID_FILE_ATTRIBUTES && (attributes & FILE_ATTRIBUTE_READONLY) != 0;
+    if (readOnly)
+        SetFileAttributesW(wide.c_str(), attributes & ~FILE_ATTRIBUTE_READONLY);
+
+    const bool replaced = MoveReplace(temp, utf8Path);
+
+    if (readOnly && attributes != INVALID_FILE_ATTRIBUTES)
+        SetFileAttributesW(wide.c_str(), attributes);
+    if (!replaced)
+        Delete(temp);
+    return replaced;
 }
 
 } // namespace ac::winfile

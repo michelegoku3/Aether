@@ -28,6 +28,7 @@ must agree on, or you add/rename an IPC command.
 - [6. Contract tests](#6-contract-tests)
 - [7. Desk → frontend IPC contract (argument keys)](#7-desk--frontend-ipc-contract-argument-keys)
 - [8. The Steam path is not a client parameter](#8-the-steam-path-is-not-a-client-parameter)
+- [9. ACF ownership: who writes which field](#9-acf-ownership-who-writes-which-field)
 
 ---
 
@@ -268,6 +269,63 @@ not the configured path, so the client must pass it.
 `get_settings` (file read + DPAPI keystore decryption) and 22 signatures where
 the client could send a path different from the configured one. The rule is
 guarded by `tests/ipc_contract_tests.rs::no_command_takes_a_steam_path_from_the_client`.
+
+---
+
+## 9. ACF ownership: who writes which field
+
+`steamapps/appmanifest_<app>.acf` has two writers in Aether, with disjoint
+fields:
+
+| Field | Writer | When |
+|---|---|---|
+| `InstalledDepots.*.manifest`, `InstalledDepots.*.size` | the installed-depot **repair** only (both halves, same rule) | Desk: after the user's install/version/Repair acts on that app. DLL: once per process at Steam startup, managed apps only |
+| `buildid`, `TargetBuildID`, `StateFlags`, `BytesToDownload`, `BytesDownloaded`, `UpdateResult`, `SizeOnDisk` | Desk `steam/acf.rs::apply_build` (version apply), or Steam itself | version apply; Steam on its own updates |
+| `LastOwner` | DLL `core/AppManifestOwner.cpp` (§ family sharing) | after login / boot |
+| everything else | Steam | — |
+
+**Rule 1 — a version apply never writes `InstalledDepots`.** The pinned GID a
+version selects is the target of the next download, not the identity of the
+content already on disk. Writing it into `InstalledDepots` makes Steam ask the
+CM for a manifest the account cannot fetch.
+
+**Rule 2 — the repair only restores a GID that exists locally.** For an entry
+whose declared GID has no non-empty `<depot>_<gid>.manifest` in `depotcache` or
+`config\depotcache`, and only for apps Aether manages (the Lua declares the
+depot):
+1. pick the local file whose own content size (`ManifestContentSize`) equals the
+   ACF's recorded `size` — that is the file the installed content came from;
+2. otherwise pick the newest local file (write time, GID breaks ties);
+3. rewrite `manifest` (and `size`, when it is known) in place, atomically,
+   preserving a read-only attribute. Every other byte of the ACF stays as is.
+
+No local manifest for that depot → no rewrite. Declared GID `0` → nothing to
+repair. An unwritable ACF is logged and left for the next attempt; neither half
+retries in a loop.
+
+**Rule 3 — no background polling.** The DLL does one pass at boot (before Steam
+builds this session's app list) and never again in that process; the Desk does
+it only inside the action that triggered it.
+
+Twins:
+- Desk: `steam/acf.rs` → `apply_build`, `repair_installed_depots`,
+  `repair_installed_depots_for_app`; size semantics in
+  `manifest/identity.rs` → `manifest_content_size`.
+- DLL: `core/InstalledDepotRepair.{h,cpp}` → `PlanInstalledDepotRepairs`,
+  `ApplyInstalledDepotRepairs` (boot step 10d in `core/BootSteps.cpp`); size
+  semantics in `network/ManifestIdentity.cpp` → `ManifestContentSize`.
+
+Decision matrix under test: the Desk cases in `steam/acf.rs::tests`, the DLL
+`installeddepots` and `manifest_identity` ctest cases.
+
+**Why**: `InstalledDepots` is the record Steam computes every download delta
+from (`contentupdatecontext.cpp` / `depotdownloadmgr.cpp`). A GID with no local
+manifest is denied by the CM, the download aborts with `Access Denied` and Steam
+tells the user "No connection", even though the content is on disk and another
+local manifest describes it. Re-downloading the Lua cannot fix it: the Lua
+changes the target, not the installed record. Nothing repairs it either while
+desk and Steam disagree about the same file, so the repair runs where the ACF is
+read: at Steam startup.
 
 ---
 

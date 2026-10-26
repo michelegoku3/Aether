@@ -235,4 +235,25 @@ inline std::uint32_t ReadStateFlags(std::string_view content) {
     return value > std::numeric_limits<std::uint32_t>::max() ? 0 : static_cast<std::uint32_t>(value);
 }
 
+// AppID carried by `appmanifest_<appId>.acf`; 0 for any other name. Shared by
+// every pass that walks one steamapps directory.
+inline std::uint32_t AppIdFromManifestName(std::string_view name) {
+    constexpr std::string_view prefix = "appmanifest_";
+    constexpr std::string_view suffix = ".acf";
+    if (name.size() <= prefix.size() + suffix.size())
+        return 0;
+    if (name.substr(0, prefix.size()) != prefix || name.substr(name.size() - suffix.size()) != suffix)
+        return 0;
+    const std::string_view stem = name.substr(prefix.size(), name.size() - prefix.size() - suffix.size());
+    std::uint64_t value = 0;
+    for (const char c : stem) {
+        if (c < '0' || c > '9')
+            return 0;
+        value = value * 10 + static_cast<std::uint64_t>(c - '0');
+        if (value > std::numeric_limits<std::uint32_t>::max())
+            return 0;
+    }
+    return static_cast<std::uint32_t>(value);
+}
+
 } // namespace ac::appmanifest

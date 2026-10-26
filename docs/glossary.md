@@ -17,6 +17,7 @@ them.
 | **GID / manifest id** | Decimal identifier of one depot build. Together with the depot it forms the manifest's complete identity. |
 | **Manifest** | Encrypted chunk map for one depot at one GID, stored as `<depot>_<gid>.manifest`. |
 | **ACF** | Steam's `steamapps/appmanifest_<appid>.acf`: install dir, state flags, build id. |
+| **`InstalledDepots`** | ACF block recording, per depot, the manifest GID and size of what is installed. Steam computes every download and update delta from it. |
 | **`depotcache`** | `<Steam>/depotcache`, the cache Steam reads manifests from. `<Steam>/config/depotcache` is the secondary cache (read-only for Aether). |
 | **`stplug-in`** | `<Steam>/config/stplug-in`, where managed Lua files live. Writing a Lua there is the DLL's hot-reload trigger. |
 | **Pin** | `setManifestid(depot, "gid")` in a Lua: locks one depot to one build. |

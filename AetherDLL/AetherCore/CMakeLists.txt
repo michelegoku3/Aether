@@ -20,6 +20,7 @@ add_library(AetherCore SHARED
     core/StructGuard.cpp
     core/SteamVersion.cpp
     core/AppManifestOwner.cpp
+    core/InstalledDepotRepair.cpp
 
     # Family
     family/FamilyLenders.cpp

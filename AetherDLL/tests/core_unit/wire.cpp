@@ -402,6 +402,107 @@ void ManifestIdentityTest() {
     CHECK(mi::ReadVarint(std::string_view("\xAC\x02", 2), off, w) && w == 300 && off == 2);
 
     CHECK(!mi::ReadVarint(std::string_view("\x80", 1), off, w)); // truncated varint
+
+    // ---- ManifestContentSize: the size Steam records in the ACF ----------
+
+    auto putEntry = [&putVarint](std::string& out, const std::string& entry) {
+        out.push_back(0x0A); // field 1, length-delimited ContentManifestFile
+        putVarint(out, entry.size());
+        out += entry;
+    };
+
+    auto fileEntry = [&putVarint](std::uint64_t size, bool withName) {
+        std::string entry;
+        if (withName) {
+            entry.push_back(0x0A); // filename
+            putVarint(entry, 3);
+            entry += "abc";
+        }
+        entry.push_back(0x10); // field 2, varint size
+        putVarint(entry, size);
+        return entry;
+    };
+
+    std::string content;
+    putEntry(content, fileEntry(1000, true));
+    putEntry(content, fileEntry(24, false));
+
+    std::string sizeBlob;
+    putU32(sizeBlob, 0x71F617D0u);
+    putU32(sizeBlob, static_cast<std::uint32_t>(content.size()));
+    sizeBlob += content;
+
+    std::uint64_t contentSize = 0;
+    CHECK(mi::ManifestContentSize(sizeBlob, contentSize));
+    CHECK_EQ(contentSize, std::uint64_t{1024});
+
+    // An entry without a size is an empty file, not an error.
+    {
+        std::string emptyEntry;
+        putEntry(emptyEntry, fileEntry(0, true));
+        std::string emptyBlob;
+        putU32(emptyBlob, 0x71F617D0u);
+        putU32(emptyBlob, static_cast<std::uint32_t>(emptyEntry.size()));
+        emptyBlob += emptyEntry;
+        CHECK(mi::ManifestContentSize(emptyBlob, contentSize));
+        CHECK_EQ(contentSize, std::uint64_t{0});
+    }
+
+    // Empty payload: a manifest of empty files.
+    {
+        std::string emptyPayloadBlob;
+        putU32(emptyPayloadBlob, 0x71F617D0u);
+        putU32(emptyPayloadBlob, 0);
+        CHECK(mi::ManifestContentSize(emptyPayloadBlob, contentSize));
+        CHECK_EQ(contentSize, std::uint64_t{0});
+    }
+
+    // Truncated payload body, wrong payload magic, unknown wire type inside an
+    // entry and a length that runs past the body are all unusable.
+    CHECK(!mi::ManifestContentSize(std::string_view(sizeBlob).substr(0, sizeBlob.size() - 1), contentSize));
+    CHECK(!mi::ManifestContentSize(std::string_view(sizeBlob).substr(0, 6), contentSize));
+
+    {
+        std::string badMagicBlob;
+        putU32(badMagicBlob, 0x12345678u);
+        putU32(badMagicBlob, static_cast<std::uint32_t>(content.size()));
+        badMagicBlob += content;
+        CHECK(!mi::ManifestContentSize(badMagicBlob, contentSize));
+    }
+
+    {
+        std::string entry = fileEntry(7, true);
+        entry.push_back(0x0B); // wire type 3: unsupported
+        std::string body;
+        putEntry(body, entry);
+        std::string weirdEntryBlob;
+        putU32(weirdEntryBlob, 0x71F617D0u);
+        putU32(weirdEntryBlob, static_cast<std::uint32_t>(body.size()));
+        weirdEntryBlob += body;
+        CHECK(!mi::ManifestContentSize(weirdEntryBlob, contentSize));
+    }
+
+    {
+        std::string overlongBlob;
+        putU32(overlongBlob, 0x71F617D0u);
+        putU32(overlongBlob, 16); // claims 16 bytes that are not there
+        putU32(overlongBlob, 0x71F617D0u);
+        CHECK(!mi::ManifestContentSize(overlongBlob, contentSize));
+    }
+
+    // Non-file fields are skipped, not summed.
+    {
+        std::string body;
+        body.push_back(0x12); // field 2, length-delimited
+        putVarint(body, 4);
+        body += "\x10\x08\x08\x08";
+        std::string otherFieldBlob;
+        putU32(otherFieldBlob, 0x71F617D0u);
+        putU32(otherFieldBlob, static_cast<std::uint32_t>(body.size()));
+        otherFieldBlob += body;
+        CHECK(mi::ManifestContentSize(otherFieldBlob, contentSize));
+        CHECK_EQ(contentSize, std::uint64_t{0});
+    }
 }
 
 void IpcReplyTest() {

@@ -24,4 +24,10 @@ bool ReadVarint(std::string_view bytes, std::size_t& offset, std::uint64_t& out)
 // protobuf framing) — the blob must then be treated as unusable.
 bool ManifestIdentityMatches(std::string_view bytes, std::uint32_t expectedDepot, std::uint64_t expectedGid);
 
+// Total content size declared by the manifest payload: the sum of every file's
+// `size` field. Steam records the same number in `InstalledDepots[depot].size`,
+// so it ties one depotcache file to the ACF entry it produced. False on any
+// structural problem: a partial sum is never returned.
+bool ManifestContentSize(std::string_view bytes, std::uint64_t& out);
+
 } // namespace ac::manifestidentity

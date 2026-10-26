@@ -226,6 +226,14 @@ with `main.log` when investigating achievement issues.
   does not write into Steam's depot table: it does not own that vector's type
   or its allocator, and growing it through the package-0 helper corrupts it.
   What the plan contains is Steam's answer plus the manifest overrides below.
+* Installed-depot repair: `core/InstalledDepotRepair` runs once per process at
+  boot (BootSteps step 10d, on a worker thread, managed apps only). For an ACF
+  entry whose GID has no non-empty local manifest it restores a file that does
+  exist — same content size first, newest otherwise — because Steam computes
+  every download delta from that GID: an unfetchable one aborts with
+  `Access Denied`, which Steam reports as "No connection". It writes only
+  `InstalledDepots`, atomically, and nothing polls afterwards
+  ([`docs/shared_contracts.md` §9](../../docs/shared_contracts.md#9-acf-ownership-who-writes-which-field)).
 * App info: `hooks/wire/ProductInfoRequest` asks the CM for one app's PICS
   record when a `.lua` is published or a masked friend needs its icon. The
   queue is one-shot per app per process, and the per-app request is what fills

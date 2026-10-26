@@ -368,36 +368,6 @@ impl SteamAcfEditor {
         Ok(repairs)
     }
 
-    /// Repairs `InstalledDepots` for every managed app that has an ACF,
-    /// returning what changed. One library scan and one `depotcache` listing
-    /// per depot, so the background lane can run it on a slow cadence.
-    pub fn repair_installed_depots_sweep(
-        steam_path: &str,
-        app_ids: &[u32],
-    ) -> Vec<(u32, InstalledDepotRepair)> {
-        let directories = Self::depot_cache_dirs(steam_path);
-        let libraries = SteamLibraryScanner::new(steam_path).discover_library_paths();
-        let mut repairs = Vec::new();
-        for app_id in app_ids {
-            for library in &libraries {
-                let editor = Self::for_app(library, *app_id);
-                if !editor.path.exists() {
-                    continue;
-                }
-                match editor.repair_installed_depots(&directories) {
-                    Ok(found) => repairs.extend(found.into_iter().map(|repair| (*app_id, repair))),
-                    Err(error) => crate::desk_log_warn!(
-                        "hubcap-updates",
-                        "InstalledDepots repair skipped app_id={}: {}",
-                        app_id,
-                        error
-                    ),
-                }
-            }
-        }
-        repairs
-    }
-
     fn depot_cache_dirs(steam_path: &str) -> Vec<PathBuf> {
         let root = PathBuf::from(steam_path);
         vec![
