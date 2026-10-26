@@ -1,6 +1,9 @@
 import { fireEvent, render, screen } from '@testing-library/react';
+import { invoke } from '@tauri-apps/api/core';
 import { describe, expect, it, vi } from 'vitest';
 import { SettingsSteamSection } from './SettingsSteamSection';
+
+vi.mock('@tauri-apps/api/core', () => ({ invoke: vi.fn() }));
 
 const accounts = [
   { steamId: '76561199523209859', accountName: 'michelegoku3', personaName: 'michelegoku3' },
@@ -112,5 +115,53 @@ describe('SettingsSteamSection', () => {
     const on = render(<SettingsSteamSection {...baseProps()} libraryEnabled />);
     expect(on.container.querySelector(appIdsInput)).not.toBeNull();
     expect(on.container.querySelector('select')).not.toBeNull();
+  });
+
+  it('repairs the metadata cache only after the confirmation', async () => {
+    const props = baseProps();
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
+    vi.mocked(invoke).mockReset();
+    render(<SettingsSteamSection {...props} />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Repair Cache' }));
+    expect(confirm).toHaveBeenCalled();
+    expect(invoke).not.toHaveBeenCalled();
+    expect(props.showStatus).not.toHaveBeenCalled();
+    confirm.mockRestore();
+  });
+
+  it('reports where the repaired cache was moved', async () => {
+    const props = baseProps();
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    vi.mocked(invoke).mockResolvedValue({
+      backupPath: 'C:/Steam/appcache/appinfo.vdf.bak-20261026-120000',
+      bytes: 4096,
+    });
+    render(<SettingsSteamSection {...props} />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Repair Cache' }));
+
+    await vi.waitFor(() =>
+      expect(props.showStatus).toHaveBeenCalledWith(
+        expect.stringContaining('appinfo.vdf.bak-20261026-120000'),
+        'success'
+      )
+    );
+    expect(invoke).toHaveBeenCalledWith('repair_appinfo_cache');
+    confirm.mockRestore();
+  });
+
+  it('surfaces the backend refusal when Steam is running', async () => {
+    const props = baseProps();
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    vi.mocked(invoke).mockRejectedValue('Close Steam before repairing its metadata cache.');
+    render(<SettingsSteamSection {...props} />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Repair Cache' }));
+
+    await vi.waitFor(() =>
+      expect(props.showStatus).toHaveBeenCalledWith(expect.stringContaining('Close Steam before repairing'), 'error')
+    );
+    confirm.mockRestore();
   });
 });

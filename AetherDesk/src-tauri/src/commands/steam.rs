@@ -6,6 +6,7 @@ use crate::updater::dll::DllInstaller;
 use crate::util::dialog::file_path_to_string;
 use crate::util::validation::validate_steam_path;
 use std::path::PathBuf;
+use std::time::{SystemTime, UNIX_EPOCH};
 use tauri_plugin_dialog::DialogExt;
 
 #[tauri::command]
@@ -124,6 +125,91 @@ pub fn unblock_steam_updates(app: tauri::AppHandle) -> Result<String, String> {
     );
     SteamUpdateGuard::new(steam_path).unblock_updates()?;
     Ok("Steam updates are now unblocked.".to_string())
+}
+
+// UTC `YYYYmmdd-HHmmss`, the only date code this crate needs: backup names sort
+// chronologically and two repairs in the same second cannot silently collide.
+fn backup_timestamp() -> String {
+    let seconds = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs() as i64;
+    let days = seconds.div_euclid(86_400);
+    let of_day = seconds.rem_euclid(86_400);
+    // Howard Hinnant's civil_from_days, offset to the Unix epoch.
+    let z = days + 719_468;
+    let era = if z >= 0 { z } else { z - 146_096 }.div_euclid(146_097);
+    let doe = z - era * 146_097;
+    let yoe = (doe - doe / 1_460 + doe / 36_524 - doe / 146_096).div_euclid(365);
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2).div_euclid(153);
+    let day = doy - (153 * mp + 2).div_euclid(5) + 1;
+    let month = mp + if mp < 10 { 3 } else { -9 };
+    let year = yoe + era * 400 + i64::from(month <= 2);
+    format!(
+        "{year:04}{month:02}{day:02}-{:02}{:02}{:02}",
+        of_day / 3_600,
+        (of_day % 3_600) / 60,
+        of_day % 60
+    )
+}
+
+/// What the appinfo cache repair moved where.
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AppInfoRepair {
+    pub backup_path: String,
+    pub bytes: u64,
+}
+
+/// Moves Steam's `appcache/appinfo.vdf` aside so Steam rebuilds it.
+///
+/// The cache is what makes Steam list an app it has an AppInfo for; when it is
+/// stuck behind a frozen change number, a fresh `.lua` app never appears in the
+/// library. Steam rewrites the file on exit and at startup, so this refuses to
+/// run while Steam is open: the rename must happen with the file quiescent.
+#[tauri::command]
+pub fn repair_appinfo_cache(app: tauri::AppHandle) -> Result<AppInfoRepair, String> {
+    if crate::core::steam_monitor::is_steam_running() {
+        return Err("Close Steam before repairing its metadata cache.".to_string());
+    }
+    let steam_path = command_steam_path(&app)?;
+    let cache = PathBuf::from(&steam_path)
+        .join("appcache")
+        .join("appinfo.vdf");
+    if !cache.is_file() {
+        return Err(format!(
+            "Steam's appinfo cache was not found at {}",
+            cache.display()
+        ));
+    }
+    let bytes = std::fs::metadata(&cache)
+        .map_err(|error| format!("Cannot read {}: {error}", cache.display()))?
+        .len();
+    let backup = cache.with_file_name(format!("appinfo.vdf.bak-{}", backup_timestamp()));
+    if backup.exists() {
+        return Err(format!(
+            "A backup already exists at {}; move it away and retry.",
+            backup.display()
+        ));
+    }
+    std::fs::rename(&cache, &backup).map_err(|error| {
+        format!(
+            "Cannot move {} to {}: {error}",
+            cache.display(),
+            backup.display()
+        )
+    })?;
+    crate::desk_log_info!(
+        "steam",
+        "Moved Steam appinfo cache to '{}' ({} bytes); Steam rebuilds it on the next start.",
+        backup.display(),
+        bytes
+    );
+    Ok(AppInfoRepair {
+        backup_path: backup.to_string_lossy().to_string(),
+        bytes,
+    })
 }
 
 /// True when the game is in AetherOnline mode (480 masking + payload).

@@ -1,6 +1,7 @@
 import React from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import type { SteamCheckStatus } from './types';
+import type { AppInfoRepair } from '../../types/steam';
 import type { SetPresenceDefaultModeArgs } from '../../types/online';
 import { toErrorMessage } from '../../util/errors';
 import { FolderIcon } from '../../ui/icons';
@@ -54,6 +55,24 @@ export const SettingsSteamSection: React.FC<SettingsSteamSectionProps> = ({
   steamAccountsError,
   showStatus,
 }) => {
+  // Steam owns appinfo.vdf while it runs and rewrites it on exit, so the
+  // rename only makes sense with the client closed; the backend refuses
+  // otherwise, and this asks first.
+  const repairAppInfoCache = async () => {
+    if (!window.confirm('Close Steam before repairing its metadata cache. Continue?')) {
+      return;
+    }
+    try {
+      const result = await invoke<AppInfoRepair>('repair_appinfo_cache');
+      showStatus(
+        `Steam metadata cache moved to ${result.backupPath} (${result.bytes} bytes). Steam rebuilds it on the next start.`,
+        'success'
+      );
+    } catch (err: unknown) {
+      showStatus(`Failed to repair the Steam metadata cache: ${toErrorMessage(err)}`, 'error');
+    }
+  };
+
   return (
     <div className="settings-group">
       <label className="settings-label">Steam</label>
@@ -90,6 +109,20 @@ export const SettingsSteamSection: React.FC<SettingsSteamSectionProps> = ({
           onClick={() => void onDetectSteamPath()}
         >
           Auto Detect
+        </button>
+      </div>
+
+      <div className="settings-toggle-row settings-field-column">
+        <span className="settings-toggle-text">Repair Steam metadata cache</span>
+        <p className="settings-desc">
+          Close Steam first. The appinfo cache is rebuilt on the next start; the old file is kept as a backup.
+        </p>
+        <button
+          type="button"
+          className="settings-small-btn settings-action-btn"
+          onClick={() => void repairAppInfoCache()}
+        >
+          Repair Cache
         </button>
       </div>
 
