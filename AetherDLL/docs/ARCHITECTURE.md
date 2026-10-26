@@ -221,13 +221,11 @@ with `main.log` when investigating achievement issues.
   network thread, without waiting and without rewriting the request.
   `[manifest_fetch]` TOML keys are deprecated: Settings logs a one-shot WARN
   and ignores them.
-* Depot plan completion: Steam builds depot rows only for the depots its
-  AppInfo lists, and an app installed from a `.lua` has no AppInfo.
-  `hooks/steamclient/DepotHooks` appends the depots the `.lua` files pin
-  (`luadata::PinnedDepotsForApp`) to the plan Steam just built, growing the
-  table through steamclient's `CUtlMemory::Grow` published in
-  `g_state.pCUtlMemoryGrow`. The decision (`ComputeMissingPins`) is pure and
-  unit tested; the write is guarded before and after.
+* Depot plan: Steam builds depot rows only for the depots its AppInfo lists, so
+  a `.lua` app without AppInfo plans just the shared/dependency rows. Aether
+  does not write into Steam's depot table: it does not own that vector's type
+  or its allocator, and growing it through the package-0 helper corrupts it.
+  What the plan contains is Steam's answer plus the manifest overrides below.
 * App info: `hooks/wire/ProductInfoRequest` asks the CM for one app's PICS
   record when a `.lua` is published or a masked friend needs its icon. The
   queue is one-shot per app per process, and the per-app request is what fills

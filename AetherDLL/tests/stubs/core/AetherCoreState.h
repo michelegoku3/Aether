@@ -52,7 +52,6 @@ struct AetherCoreState {
     };
     LuaStore lua;
     std::atomic<std::shared_ptr<const Settings>> settings{std::make_shared<const Settings>()};
-    std::atomic<void*> pCUtlMemoryGrow{nullptr};
     std::string steamInstallPath;
     std::string luaDir;
     std::string deskDataDir;

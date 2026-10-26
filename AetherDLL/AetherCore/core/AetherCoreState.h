@@ -281,9 +281,6 @@ struct AetherCoreState {
     std::atomic<void*> pConfigStoreUserLocal{nullptr};
     std::atomic<void*> pPackage0{nullptr}; // Cached package-0 PackageInfo*
     std::atomic<bool> package0Published{false};
-    // steamclient!CUtlMemory grow helper, resolved once by the license path and
-    // reused by the depot plan (see core/SteamVector.h).
-    std::atomic<void*> pCUtlMemoryGrow{nullptr};
 
     // ---- AetherOnline --------------------------------------------------------
     // Session identity (real app behind the 480 mask, showonline, UCO2/OFME
