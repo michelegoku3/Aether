@@ -46,7 +46,8 @@ add_executable(core_unit_tests
     ../AetherCore/utils/IpcSpecParse.cpp
     ../AetherCore/hooks/steamclient/CallbackCopy.cpp
     ../AetherCore/scripting/LuaData.cpp
-    ../AetherCore/utils/Memory.cpp)
+    ../AetherCore/utils/Memory.cpp
+    core_unit/depotplan.cpp)
 # The ABI modules keep their decision logic inline in the headers, so the
 # cases "netpacket", "sentinel" and "structguard" test the real policy
 # without linking the Windows glue (VirtualQuery, the PE walk, the logger).
@@ -62,7 +63,7 @@ if(MSVC)
 else()
     target_compile_options(core_unit_tests PRIVATE -Wall -Wextra -Wpedantic -Werror)
 endif()
-foreach(case strings paths policy worker budget settings registry workers netpacket sentinel structguard gamesplayed_format donorpool keyvalues vdftext jsonutil_escapes manifest_identity ipcreply snapshot_merge ttlcache hexcodec signature ipcspec jsonwriter manifest_contract schema_buckets workers_reap_slow workers_race acfowner ownership loginusers steamuicss steamuipatch callbackcopy memory payloadattest)
+foreach(case strings paths policy worker budget settings registry workers netpacket sentinel structguard gamesplayed_format donorpool keyvalues vdftext jsonutil_escapes manifest_identity ipcreply snapshot_merge ttlcache hexcodec signature ipcspec jsonwriter manifest_contract schema_buckets workers_reap_slow workers_race acfowner ownership loginusers steamuicss steamuipatch callbackcopy memory payloadattest depotplan)
     add_test(NAME ${case} COMMAND core_unit_tests ${case})
 endforeach()
 add_test(NAME cmake_source_inventory COMMAND ${CMAKE_COMMAND}

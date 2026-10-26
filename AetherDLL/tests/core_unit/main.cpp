@@ -44,6 +44,7 @@ int main(int argc, char** argv) {
         {"callbackcopy", CallbackCopyTest},
         {"memory", MemoryRangeTest},
         {"payloadattest", PayloadAttestTest},
+        {"depotplan", DepotPlanTest},
     };
     try {
         if (argc == 1) {

@@ -55,6 +55,19 @@ std::optional<ManifestOverride> ManifestOverrideFor(std::uint64_t depotId);
 
 bool HasManifestOverrides();
 
+// One depot a .lua file pins for an app: the exact manifest id and size.
+struct DepotPin {
+    steam::AppId depotId = 0;
+    std::uint64_t gid = 0;
+    std::uint64_t size = 0;
+};
+
+// Depots pinned by the .lua file(s) that advertise this app, sorted by depot
+// id. Steam builds depot rows only for the depots its AppInfo lists, and an
+// app installed from a .lua has no AppInfo, so these pins are the complete
+// plan it can get.
+std::vector<DepotPin> PinnedDepotsForApp(steam::AppId appId);
+
 // Snapshot of every configured depot id.
 std::vector<steam::AppId> AllDepotIds();
 

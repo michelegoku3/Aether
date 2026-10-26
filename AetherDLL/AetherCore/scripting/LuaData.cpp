@@ -1,6 +1,7 @@
 #include "pch.h"
 #include "scripting/LuaData.h"
 
+#include <algorithm>
 #include <mutex>
 #include <shared_mutex>
 #include <string>
@@ -151,6 +152,26 @@ std::vector<steam::AppId> SeedPackage0Ids() {
     // Same set as AllDepotIds today; the named seam is what pins the policy the
     // license path depends on, so callers never reach for a raw depot snapshot.
     return AllDepotIds();
+}
+
+std::vector<DepotPin> PinnedDepotsForApp(steam::AppId appId) {
+    std::shared_lock lock(g_state.lua.mutex);
+    std::vector<DepotPin> pins;
+    std::unordered_set<steam::AppId> seen;
+    for (const auto& [path, contributions] : g_state.lua.fileContributions) {
+        // A .lua file advertises the app in its own name; depots recorded by a
+        // file for another app must not enter this app's plan.
+        if (contributions.libraryApps.find(appId) == contributions.libraryApps.end())
+            continue;
+        for (steam::AppId depotId : contributions.depots) {
+            const auto overrideIt = contributions.manifestOverrides.find(depotId);
+            if (overrideIt == contributions.manifestOverrides.end() || !seen.insert(depotId).second)
+                continue;
+            pins.push_back({depotId, overrideIt->second.gid, overrideIt->second.size});
+        }
+    }
+    std::sort(pins.begin(), pins.end(), [](const DepotPin& a, const DepotPin& b) { return a.depotId < b.depotId; });
+    return pins;
 }
 
 std::vector<steam::AppId> LibraryAppIds() {

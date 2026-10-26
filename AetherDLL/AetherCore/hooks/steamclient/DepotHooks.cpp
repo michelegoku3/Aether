@@ -9,8 +9,10 @@
 #include "core/HookManager.h"
 #include "core/Logger.h"
 #include "core/SteamTypes.h"
+#include "core/SteamVector.h"
 #include "core/StructGuard.h"
 #include "credentials/HexCodec.h"
+#include "hooks/steamclient/DepotPlan.h"
 #include "network/ManifestFetch.h"
 #include "scripting/LuaData.h"
 #include "utils/LogBurstBudget.h"
@@ -135,6 +137,49 @@ void EnsureSelectedManifests(AppId app, const CUtlVector<DepotEntry>* vec) {
     }
 }
 
+// Steam plans depot rows only for the depots its AppInfo lists, and an app
+// installed from a .lua has no AppInfo. Its plan therefore holds just the
+// shared/dependency rows: the 251 MB instead of 118 GB case. The .lua pins are
+// the only complete depot list such an app has, so they are appended to the
+// plan Steam just built.
+void CollectDepotIds(const CUtlVector<DepotEntry>* vec, std::vector<AppId>& out) {
+    if (!vec || !vec->mem.memory)
+        return;
+    for (std::uint32_t i = 0; i < vec->size; ++i)
+        out.push_back(vec->mem.memory[i].depotId);
+}
+
+bool AppendDepotRows(CUtlVector<DepotEntry>* vec, AppId app, const std::vector<luadata::DepotPin>& missing) {
+    if (!vec || missing.empty())
+        return false;
+    if (const auto reason = abi::guard::CheckDepotVector(vec); !abi::guard::Passed(reason)) {
+        abi::guard::CountRejection("DepotEntry table", reason);
+        return false;
+    }
+    const std::uint32_t needed = vec->size + static_cast<std::uint32_t>(missing.size());
+    if (!steamvec::Reserve(*vec, needed))
+        return false;
+    if (!vec->mem.memory || vec->mem.allocationCount < needed) {
+        AC_LOG_WARN(kModule, "Depot plan for app %u: grow left %u slots for %u rows.", app, vec->mem.allocationCount,
+                    needed);
+        return false;
+    }
+    for (const auto& pin : missing) {
+        DepotEntry& entry = vec->mem.memory[vec->size];
+        entry = DepotEntry{};
+        entry.depotId = pin.depotId;
+        entry.appId = app;
+        entry.manifestGid = pin.gid;
+        entry.manifestSize = pin.size;
+        ++vec->size;
+    }
+    if (const auto reason = abi::guard::CheckDepotVector(vec); !abi::guard::Passed(reason)) {
+        abi::guard::CountRejection("DepotEntry table", reason);
+        return false;
+    }
+    return true;
+}
+
 bool h_BuildDepotDependency(void* mgr, AppId app, void* cfg, CUtlVector<DepotEntry>* depots,
                             CUtlVector<DepotEntry>* shared, void* steamApp, std::uint32_t* buildId,
                             bool* betaFallback) {
@@ -142,6 +187,20 @@ bool h_BuildDepotDependency(void* mgr, AppId app, void* cfg, CUtlVector<DepotEnt
     std::vector<ManifestPatchLog> patches;
     ApplyManifestOverrides(depots, patches);
     ApplyManifestOverrides(shared, patches);
+
+    // Only for apps Aether actually configures: a real Steam app keeps the plan
+    // Steam built. Rows are appended before the logging and acquisition passes
+    // so the pinned manifests route through the same pipeline.
+    if (luadata::HasDepot(app)) {
+        std::vector<AppId> present;
+        CollectDepotIds(depots, present);
+        CollectDepotIds(shared, present);
+        const auto missing = ComputeMissingPins(luadata::PinnedDepotsForApp(app), present);
+        if (!missing.empty() && !AppendDepotRows(depots, app, missing)) {
+            AC_LOG_WARN(kModule, "Depot plan for app %u: could not grow Steam's depot table.", app);
+        }
+    }
+
     if (!patches.empty()) {
         // Once per unique line (app + patch set) per game session — the
         // logger's dedup handles the suppression.

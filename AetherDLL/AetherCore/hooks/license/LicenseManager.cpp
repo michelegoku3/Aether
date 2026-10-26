@@ -376,6 +376,9 @@ void Init(HMODULE diversion) {
     }
     AC_LOG_INFO(kModule, "Init (grow=%d ppl=%d mlc=%d).", o_CUtlMemoryGrow != nullptr,
                 o_ProcessPendingLicenseUpdates != nullptr, o_MarkLicenseAsChanged != nullptr);
+    // Published for the depot plan (core/SteamVector.h): the plan grows a
+    // differently typed Steam vector with the same helper, resolved once here.
+    g_state.pCUtlMemoryGrow.store(reinterpret_cast<void*>(o_CUtlMemoryGrow));
 
     // Cover the missed-window cases: offline startup, late hook install.
     // No-op after package 0 is published.
@@ -388,6 +391,9 @@ void Init(HMODULE diversion) {
 void Shutdown() {
     StopStartupRetry();
     s_ondemandStarted.store(false, std::memory_order_relaxed);
+    // The helper belongs to steamclient; drop our reference so a late depot
+    // build cannot call into a module that is going away.
+    g_state.pCUtlMemoryGrow.store(nullptr);
 }
 
 void SeedPackage0(PackageInfo* package0) {
