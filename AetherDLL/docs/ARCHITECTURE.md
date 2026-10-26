@@ -214,10 +214,27 @@ with `main.log` when investigating achievement issues.
 
 ## Manifest acquisition, presence session and module splits
 
-* Manifest acquisition is local-index + authenticated Hubcap generation only;
-  there is no GetManifestRequestCode wire bridge (unreachable on current Steam
-  builds). `[manifest_fetch]` TOML keys are deprecated: Settings logs a
-  one-shot WARN and ignores them.
+* Manifest acquisition is local-index + authenticated Hubcap generation. The
+  request-code bridge (`hooks/wire/ManifestBridge`) only earns Steam a
+  `manifest_request_code = 0`: it answers a correlated job and only when the
+  exact manifest is already in depotcache or the AetherData backup, on Steam's
+  network thread, without waiting and without rewriting the request.
+  `[manifest_fetch]` TOML keys are deprecated: Settings logs a one-shot WARN
+  and ignores them.
+* Depot plan completion: Steam builds depot rows only for the depots its
+  AppInfo lists, and an app installed from a `.lua` has no AppInfo.
+  `hooks/steamclient/DepotHooks` appends the depots the `.lua` files pin
+  (`luadata::PinnedDepotsForApp`) to the plan Steam just built, growing the
+  table through steamclient's `CUtlMemory::Grow` published in
+  `g_state.pCUtlMemoryGrow`. The decision (`ComputeMissingPins`) is pure and
+  unit tested; the write is guarded before and after.
+* App info: `hooks/wire/ProductInfoRequest` asks the CM for one app's PICS
+  record when a `.lua` is published or a masked friend needs its icon. The
+  queue is one-shot per app per process, and the per-app request is what fills
+  the cache when the batch PICS job sits in `Timeout` for the whole session.
+* Owner records: `core/AppManifestOwner` never writes an appmanifest while
+  `AppState.StateFlags` says an update is running, and never rewrites a plan it
+  already settled in this session. A manifest Steam is rewriting is Steam's.
 * Presence state (real app behind the 480 mask, showonline, UCO2/OFME spoof
   flag) lives in `hooks/aetheronline/PresenceSession` — owned by
   AetherOnlineHooks::h_SpawnProcess through `Publish()` (single atomic

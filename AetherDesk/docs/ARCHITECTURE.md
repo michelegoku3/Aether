@@ -187,6 +187,11 @@ invariants
   backs up the manifests it references.
 - Lua is parsed as text and never executed. Malformed pins are a user-fixable
   state, reported with their line, not a retryable error.
+- The publish path rejects a whole Lua body the DLL's VM would refuse
+  (`manifest/pins/syntax.rs`: known calls, one statement per line, balanced
+  parentheses, closed strings) with `line N: ...`, so a malformed Hubcap file
+  never reaches `stplug-in`. Pin-level validation stays the authority for an
+  already-installed file.
 - Workshop repair targets are direct children of `WorkshopItemsInstalled` with
   a positive decimal manifest, plus `WorkshopItemDetails`-only subscriptions
   with a positive `manifest` in the explicit repair. The background monitor
@@ -233,6 +238,12 @@ Hubcap key validation and usage snapshot), then deletes and recreates
 screen. A new process-lifetime cache must add its clear call there: deleting
 the folder alone is not a cache clear. Failure memory such as the manifest
 quarantine is not a cache and stays untouched.
+
+`Repair Cache` in the Steam settings section invokes `repair_appinfo_cache`,
+which refuses while Steam runs, renames `<steam>/appcache/appinfo.vdf` to
+`appinfo.vdf.bak-<YYYYmmdd-HHmmss>` and reports the backup path. Steam rebuilds
+the cache on the next start; the command never edits the file, because Steam
+rewrites it on exit and while an update runs.
 
 ## Where to add…
 
