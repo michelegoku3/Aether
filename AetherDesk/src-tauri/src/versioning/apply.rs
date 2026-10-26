@@ -204,8 +204,11 @@ pub fn apply_build_version(
     progress(75, "Syncing the Steam ACF");
     // Best-effort: a missing or locked ACF logs a WARN and is skipped; the
     // pins in the .lua do the real work and the ACF is only metadata.
+    // `apply_build` rewrites the build fields only: `InstalledDepots` keeps
+    // naming the manifest Steam actually installed, which is what the update
+    // delta is computed against.
     let acf = SteamAcfEditor::for_app(library_path, app_id);
-    let acf_synced_now = match acf.apply_build(build_id, pins) {
+    let acf_synced_now = match acf.apply_build(build_id) {
         Ok(()) => true,
         Err(acf_error) => {
             crate::desk_log_warn!(

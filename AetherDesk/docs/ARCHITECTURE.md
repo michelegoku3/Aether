@@ -185,6 +185,15 @@ invariants
   [`docs/shared_contracts.md` §2, §3 and §5](../../docs/shared_contracts.md#2-manifest-backuprestore-contract).
 - Every Lua rewrite archives pre and post to `backup/<app_id>/lua/history/` and
   backs up the manifests it references.
+- `InstalledDepots[depot].manifest` in the ACF is Steam's record of what the
+  game actually has, so it is never written from a pin: Steam computes every
+  download and update delta from that GID, and a pinned GID whose content was
+  never installed leaves Steam asking the CM for a manifest that exists
+  nowhere (`Access Denied`, reported as "No connection"). A version apply
+  changes the build fields only; the background integrity sweep and the
+  per-game repair restore an entry whose GID has no local `depotcache` file to
+  a manifest that does exist — the same content size first, the newest one
+  otherwise.
 - Lua is parsed as text and never executed. Malformed pins are a user-fixable
   state, reported with their line, not a retryable error.
 - The publish path rejects a whole Lua body the DLL's VM would refuse

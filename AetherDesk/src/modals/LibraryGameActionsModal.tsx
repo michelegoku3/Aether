@@ -36,6 +36,13 @@ interface GameManifestSyncReport {
   generated: number;
   installed: number;
   skipped: boolean;
+  /**
+   * `InstalledDepots` entries restored to the manifest actually on disk.
+   * Steam computes its download/update delta from that GID, so a stale one
+   * blocks every download with a generic connection error even when all
+   * pinned manifests are local.
+   */
+  acfRepaired: number;
   /** Set when the Lua has a malformed pin: the repair cannot run until it is fixed. */
   invalidPinLine?: number | null;
 }
@@ -56,17 +63,24 @@ const summarizeManifestRepair = (
       type: 'error',
     };
   }
+  const acfNote =
+    report.acfRepaired > 0
+      ? `Restored Steam's install record for ${report.acfRepaired} depot(s) pointing at a manifest that no longer exists. `
+      : '';
   if (report.skipped || report.pins === 0) {
-    return { text: 'No manifest pins found for this game.', type: 'info' };
+    return {
+      text: `${acfNote}No manifest pins found for this game.`,
+      type: report.acfRepaired > 0 ? 'success' : 'info',
+    };
   }
   if (report.generated === 0) {
     return {
-      text: `All ${report.pins} pinned manifest(s) are available locally; nothing to repair.`,
+      text: `${acfNote}All ${report.pins} pinned manifest(s) are available locally; nothing to download.`,
       type: 'success',
     };
   }
   return {
-    text: `Repaired ${report.generated} of ${report.pins} pinned manifest(s) via Hubcap and installed ${report.installed} into depotcache.`,
+    text: `${acfNote}Repaired ${report.generated} of ${report.pins} pinned manifest(s) via Hubcap and installed ${report.installed} into depotcache.`,
     type: 'success',
   };
 };

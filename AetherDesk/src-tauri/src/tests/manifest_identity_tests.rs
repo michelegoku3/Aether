@@ -1,7 +1,8 @@
 use std::io::Write;
 
 use crate::manifest::identity::{
-    has_manifest_magic, manifest_identity, unwrap_manifest_payload, verify_manifest_bytes,
+    has_manifest_magic, manifest_content_size, manifest_identity, unwrap_manifest_payload,
+    verify_manifest_bytes,
 };
 
 fn varint(mut value: u64, out: &mut Vec<u8>) {
@@ -16,11 +17,10 @@ fn varint(mut value: u64, out: &mut Vec<u8>) {
     }
 }
 
-/// Minimal Steam manifest container: payload section + metadata section with
-/// `depot_id` (field 1) and `gid_manifest` (field 2), plus an unrelated
-/// length-delimited field the reader must skip.
-fn synthetic_manifest(depot_id: u32, manifest_gid: u64) -> Vec<u8> {
-    let payload = b"payload-bytes".to_vec();
+/// Frames one payload body with a metadata section carrying `depot_id`
+/// (field 1) and `gid_manifest` (field 2), plus an unrelated length-delimited
+/// field the readers must skip.
+fn framed_manifest(payload: &[u8], depot_id: u32, manifest_gid: u64) -> Vec<u8> {
     let mut metadata = Vec::new();
     varint(1 << 3, &mut metadata);
     varint(u64::from(depot_id), &mut metadata);
@@ -36,13 +36,40 @@ fn synthetic_manifest(depot_id: u32, manifest_gid: u64) -> Vec<u8> {
     bytes.extend_from_slice(
         &(u32::try_from(payload.len()).expect("test payload fits in u32")).to_le_bytes(),
     );
-    bytes.extend_from_slice(&payload);
+    bytes.extend_from_slice(payload);
     bytes.extend_from_slice(&0x1F48_12BEu32.to_le_bytes());
     bytes.extend_from_slice(
         &(u32::try_from(metadata.len()).expect("test metadata fits in u32")).to_le_bytes(),
     );
     bytes.extend_from_slice(&metadata);
     bytes
+}
+
+/// Minimal Steam manifest container with an opaque payload body.
+fn synthetic_manifest(depot_id: u32, manifest_gid: u64) -> Vec<u8> {
+    framed_manifest(b"payload-bytes", depot_id, manifest_gid)
+}
+
+/// Payload of `ContentManifestPayload`: one `ContentManifestFile` per size,
+/// each carrying a filename, its size (field 2) and a chunk field to skip.
+fn payload_with_files(file_sizes: &[u64]) -> Vec<u8> {
+    let mut payload = Vec::new();
+    for (index, size) in file_sizes.iter().enumerate() {
+        let name = format!("file{index}.bin");
+        let mut file = Vec::new();
+        varint((1 << 3) | 2, &mut file);
+        varint(name.len() as u64, &mut file);
+        file.extend_from_slice(name.as_bytes());
+        varint(2 << 3, &mut file);
+        varint(*size, &mut file);
+        varint((3 << 3) | 2, &mut file);
+        varint(2, &mut file);
+        file.extend_from_slice(&[0, 0]);
+        varint((1 << 3) | 2, &mut payload);
+        varint(file.len() as u64, &mut payload);
+        payload.extend_from_slice(&file);
+    }
+    payload
 }
 
 fn zipped(entry_name: &str, content: &[u8]) -> Vec<u8> {
@@ -111,4 +138,35 @@ fn truncated_or_foreign_containers_are_rejected() {
     assert!(manifest_identity(&bytes).is_err());
     assert!(manifest_identity(b"PK\x03\x04 not really a zip").is_err());
     assert!(manifest_identity(&[0xD0, 0x17, 0xF6, 0x71]).is_err());
+}
+
+#[test]
+fn content_size_sums_the_file_sizes() {
+    let manifest = framed_manifest(
+        &payload_with_files(&[10, 25, 0, 4_000]),
+        4656002,
+        5722240766019054112,
+    );
+    assert_eq!(manifest_content_size(&manifest).unwrap(), 4_035);
+    // Depot and GID come from the metadata, not from the payload.
+    assert_eq!(
+        manifest_identity(&manifest).unwrap(),
+        (4656002, 5722240766019054112)
+    );
+}
+
+#[test]
+fn content_size_of_an_empty_payload_is_zero() {
+    let manifest = framed_manifest(&payload_with_files(&[]), 1, 2);
+    assert_eq!(manifest_content_size(&manifest).unwrap(), 0);
+}
+
+#[test]
+fn content_size_rejects_bodies_that_are_not_manifests() {
+    assert!(manifest_content_size(b"{\"error\":\"Manifest not found\"}").is_err());
+    assert!(manifest_content_size(&[]).is_err());
+    // A payload whose declared length runs past the buffer is truncated.
+    let mut bytes = synthetic_manifest(1, 2);
+    bytes[4..8].copy_from_slice(&u32::MAX.to_le_bytes());
+    assert!(manifest_content_size(&bytes).is_err());
 }

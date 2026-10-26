@@ -23,6 +23,10 @@ pub struct GameManifestSyncReport {
     pub generated: usize,
     pub installed: usize,
     pub skipped: bool,
+    /// `InstalledDepots` entries restored to the manifest actually on disk.
+    /// Steam computes its download/update delta from that GID, so a stale one
+    /// blocks every attempt even when all pinned manifests are local.
+    pub acf_repaired: usize,
     /// 1-based line of the malformed pin that stops this game's Lua from
     /// loading, when there is one. Set with `skipped`: the UI then tells the
     /// user to repair that line instead of showing a silent no-op.
@@ -53,6 +57,41 @@ pub async fn sync_hubcap_game_manifest(
         "manifest-repair",
     )?;
     let started = Instant::now();
+
+    // Steam computes the download/update delta from the manifest GID recorded in
+    // `InstalledDepots`. When the ACF names a GID whose content was never
+    // installed, Steam asks the CM for a manifest that exists nowhere, gets
+    // `Access Denied` and reports "No connection" forever — even after every
+    // pinned manifest became local. Repair that first so the button fixes the
+    // real blocker instead of answering "already local".
+    let acf_repaired = match crate::steam::acf::SteamAcfEditor::repair_installed_depots_for_app(
+        &settings.steam_path,
+        app_id,
+    ) {
+        Ok(repairs) => {
+            for repair in &repairs {
+                crate::desk_log_info!(
+                    "hubcap",
+                    "InstalledDepots repair app_id={} depot={} {} -> {} (declared GID has no local manifest)",
+                    app_id,
+                    repair.depot_id,
+                    repair.declared_gid,
+                    repair.restored_gid
+                );
+            }
+            repairs.len()
+        }
+        Err(error) => {
+            crate::desk_log_warn!(
+                "hubcap",
+                "InstalledDepots repair skipped app_id={}: {}",
+                app_id,
+                error
+            );
+            0
+        }
+    };
+
     let lua = LuaManifestPins::new(settings.steam_path.clone(), app_id);
     let content = std::fs::read_to_string(lua.lua_path())
         .map_err(|error| format!("Could not read Lua for app {app_id}: {error}"))?;
@@ -71,6 +110,7 @@ pub async fn sync_hubcap_game_manifest(
             app_id,
             skipped: true,
             invalid_pin_line: Some(issue.line),
+            acf_repaired,
             ..Default::default()
         });
     }
@@ -81,6 +121,7 @@ pub async fn sync_hubcap_game_manifest(
     let mut report = GameManifestSyncReport {
         app_id,
         pins: pins.len(),
+        acf_repaired,
         ..Default::default()
     };
     if pins.is_empty() {

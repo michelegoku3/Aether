@@ -8,8 +8,9 @@
 //! Steam manifests are four little-endian framed protobuf sections. Only the
 //! first two matter here: the payload (magic `0x71F617D0`) and the metadata
 //! (magic `0x1F4812BE`) whose fields 1 (`depot_id`) and 2 (`gid_manifest`) give
-//! the identity. A tiny wire reader avoids coupling the codebase to generated
-//! protobufs.
+//! the identity. The payload also carries the per-file sizes, which sum to the
+//! number Steam stores in `InstalledDepots[depot].size`. A tiny wire reader
+//! avoids coupling the codebase to generated protobufs.
 
 use std::io::{Cursor, Read};
 
@@ -138,6 +139,84 @@ pub fn manifest_identity(bytes: &[u8]) -> Result<(u32, u64), String> {
         return Err("Manifest carries no depot/GID metadata".to_string());
     }
     Ok((depot_id, manifest_gid))
+}
+
+/// Total content size declared by the manifest payload: the sum of every
+/// file's `size` field. Steam records the same number in
+/// `InstalledDepots[depot].size` when it installs a depot, so this is the only
+/// local signal that ties one `depotcache` file to the ACF entry it produced.
+pub fn manifest_content_size(bytes: &[u8]) -> Result<u64, String> {
+    let payload = unwrap_manifest_payload(bytes)?;
+    let mut offset = 0usize;
+    let magic = read_u32_le(&payload, &mut offset)?;
+    let length = usize::try_from(read_u32_le(&payload, &mut offset)?)
+        .map_err(|_| "Manifest payload length is not representable on this platform".to_string())?;
+    if magic != PAYLOAD_MAGIC || payload.len().saturating_sub(offset) < length {
+        return Err("Manifest payload section has an unexpected format".to_string());
+    }
+    let body = &payload[offset..offset + length];
+    let mut cursor = 0usize;
+    let mut total = 0u64;
+    while cursor < body.len() {
+        let tag = read_varint(body, &mut cursor)?;
+        match tag & 7 {
+            0 => {
+                read_varint(body, &mut cursor)?;
+            }
+            1 => cursor = cursor.saturating_add(8),
+            2 => {
+                let field_length =
+                    usize::try_from(read_varint(body, &mut cursor)?).map_err(|_| {
+                        "Manifest field length is not representable on this platform".to_string()
+                    })?;
+                let end = cursor.saturating_add(field_length);
+                if end > body.len() {
+                    return Err("Manifest payload is truncated".to_string());
+                }
+                if tag >> 3 == 1 {
+                    total = total.saturating_add(manifest_file_size(&body[cursor..end])?);
+                }
+                cursor = end;
+            }
+            5 => cursor = cursor.saturating_add(4),
+            _ => return Err("Manifest payload has an unsupported protobuf wire type".to_string()),
+        }
+        if cursor > body.len() {
+            return Err("Manifest payload is truncated".to_string());
+        }
+    }
+    Ok(total)
+}
+
+/// One `ContentManifestFile` message: field 2 is the file size. Chunk metadata
+/// and filenames are skipped, and an absent size counts as zero (empty file).
+fn manifest_file_size(file: &[u8]) -> Result<u64, String> {
+    let mut cursor = 0usize;
+    let mut size = 0u64;
+    while cursor < file.len() {
+        let tag = read_varint(file, &mut cursor)?;
+        match tag & 7 {
+            0 => {
+                let value = read_varint(file, &mut cursor)?;
+                if tag >> 3 == 2 {
+                    size = value;
+                }
+            }
+            1 => cursor = cursor.saturating_add(8),
+            2 => {
+                let length = usize::try_from(read_varint(file, &mut cursor)?).map_err(|_| {
+                    "Manifest entry length is not representable on this platform".to_string()
+                })?;
+                cursor = cursor.saturating_add(length);
+            }
+            5 => cursor = cursor.saturating_add(4),
+            _ => return Err("Manifest entry has an unsupported protobuf wire type".to_string()),
+        }
+        if cursor > file.len() {
+            return Err("Manifest entry is truncated".to_string());
+        }
+    }
+    Ok(size)
 }
 
 /// Verifies that `bytes` are a Steam manifest whose own metadata declares
