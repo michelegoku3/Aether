@@ -17,6 +17,7 @@ mod editor;
 mod line_edit;
 mod model;
 mod parser;
+mod syntax;
 
 #[cfg(test)]
 pub use model::ManifestGidProblem;
@@ -102,6 +103,13 @@ impl LuaManifestPins {
 
     pub fn validate_content(content: &str) -> Result<(), String> {
         document::validate_content(content)
+    }
+
+    /// Rejects a Lua body the DLL's VM would refuse to run. Used by the publish
+    /// path before a package reaches Steam; pin-level validation stays in
+    /// `validate_content` so an already-installed file can still be repaired.
+    pub fn validate_syntax(content: &str) -> Result<(), String> {
+        syntax::validate_syntax(content)
     }
 
     /// Test-facing facade for the runtime-only validation policy. Production

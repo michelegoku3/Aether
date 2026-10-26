@@ -120,6 +120,13 @@ impl SteamCompat {
         if lua_content.trim().is_empty() {
             return Err("Refusing to install an empty Lua package".to_string());
         }
+        // Syntax gate only: it is conservative and catches a body the DLL's Lua
+        // VM would reject, which otherwise publishes cleanly and shows up later
+        // as a game with no depots. Pin-level validation stays where it is
+        // (reading an installed file) so a package that installs today keeps
+        // installing.
+        crate::manifest::pins::LuaManifestPins::validate_syntax(lua_content)
+            .map_err(|error| format!("Refusing to install a malformed Lua package: {error}"))?;
         let _install_guard = depotcache_commit_gate()
             .lock()
             .map_err(|_| "Manifest installation scheduler is unavailable".to_string())?;
