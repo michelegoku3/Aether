@@ -23,6 +23,7 @@
 #include "hooks/wire/FamilySharingModule.h"
 #include "hooks/wire/FrameOrigin.h"
 #include "hooks/wire/GamesPlayedModule.h"
+#include "hooks/wire/ManifestBridge.h"
 #include "hooks/wire/PersonaInject.h"
 #include "hooks/wire/ServiceJobTracker.h"
 #include "hooks/wire/WireDiag.h"
@@ -130,6 +131,8 @@ std::int32_t DispatchSend(const WireFrame& f) {
             if (req.hasSource)
                 TrackServiceJob(req.source, req.name); // [DIAG] flight-recorder jobid->name
             std::uint32_t h = FnvHash(req.name.c_str());
+            if (h == job_hash::kGetManifestRequestCode)
+                return ManifestBridge::HandleSend(f);
             if (h == job_hash::kGetUserStats) {
                 return AchievementModule::HandleSendGetUserStats(f, t_scratchBody.data(), kWireMaxBodyBytes);
             }
@@ -223,8 +226,13 @@ std::int32_t DispatchRecv(const WireFrame& f) {
         if (h == job_hash::kNotifyRunningApps) {
             return FamilySharing::ShouldSuppress() ? FamilySharing::ClearBody() : kNoChange;
         }
-        // Request-code responses pass through unchanged: acquisition is local
-        // (Hubcap), with no remote bridge.
+        // Request-code replies: answer with code 0 only when this session saw
+        // the request and the exact manifest is already on disk.
+        if (h == job_hash::kGetManifestRequestCode) {
+            return ManifestBridge::HandleRecv(f, rsp.hasTarget ? rsp.target : 0, t_scratchBody.data(),
+                                              kWireMaxBodyBytes, t_scratchHeader.data(), kWireMaxHeaderBytes,
+                                              &t_recvHeaderLen);
+        }
         if (h == job_hash::kGetUserStats) {
             return AchievementModule::HandleRecvGetUserStatsResponse(f, t_scratchBody.data(), kWireMaxBodyBytes,
                                                                      t_scratchHeader.data(), kWireMaxHeaderBytes,

@@ -4,6 +4,7 @@
 #include "core/Logger.h"
 #include "core/Settings.h"
 #include "hooks/wire/BackupIo.h"
+#include "hooks/wire/ManifestBridgePolicy.h"
 #include "hooks/wire/ManifestRestore.h"
 #include "network/HubcapQuota.h"
 #include "network/ManifestFetch.h"
@@ -92,6 +93,42 @@ struct Fixture {
 };
 
 // W2 mechanism: staging names are unique per call and stay in the target dir.
+void BridgeDecidesFromRequestAndLocalManifest() {
+    using ac::hooks::manifestbridge::BridgeAction;
+    using ac::hooks::manifestbridge::Decide;
+    // Satisfy only when this session saw the request AND the exact manifest is
+    // local: Steam's AccessDenied must survive a miss, and a response nobody
+    // asked for (restored session, other client) must never be rewritten.
+    CHECK(Decide(true, true) == BridgeAction::Satisfy);
+    CHECK(Decide(true, false) == BridgeAction::PassThrough);
+    CHECK(Decide(false, true) == BridgeAction::PassThrough);
+    CHECK(Decide(false, false) == BridgeAction::PassThrough);
+}
+
+void BridgeCorrelatesJobs() {
+    using ac::hooks::manifestbridge::RequestTable;
+    RequestTable table;
+    table.Record(7, {2369390, 2369391, 5783041166523199015ull});
+    const auto request = table.Take(7);
+    CHECK(request.has_value());
+    CHECK(request->appId == 2369390u);
+    CHECK(request->depotId == 2369391u);
+    CHECK(request->gid == 5783041166523199015ull);
+    // Consumed on the response: a duplicate reply cannot reuse the entry.
+    CHECK(!table.Take(7).has_value());
+    CHECK(!table.Take(8).has_value());
+}
+
+void BridgeJobTableIsBounded() {
+    using ac::hooks::manifestbridge::RequestTable;
+    RequestTable table;
+    for (std::uint64_t job = 1; job <= 300; ++job)
+        table.Record(job, {1, 2, job});
+    CHECK(table.Size() == RequestTable::kMaxEntries);
+    CHECK(!table.Take(1).has_value());  // oldest evicted
+    CHECK(table.Take(300).has_value()); // newest kept
+}
+
 void StagingUnique() {
     const std::string dest = "C:\\fakeroot\\backup\\100_200.manifest";
     std::set<std::string> seen;
@@ -416,6 +453,9 @@ int main(int argc, char** argv) {
         {"manifest_index_backup_hit", ManifestIndexBackupHit},
         {"unicode_paths", UnicodePaths},
         {"remote_inject", RemoteInject},
+        {"bridge_decide", BridgeDecidesFromRequestAndLocalManifest},
+        {"bridge_correlate", BridgeCorrelatesJobs},
+        {"bridge_bounded", BridgeJobTableIsBounded},
     };
     try {
         if (argc == 1) { // run-all mode (ctest registers each case separately)

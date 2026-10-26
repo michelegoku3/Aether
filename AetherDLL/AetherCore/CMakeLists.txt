@@ -103,6 +103,7 @@ add_library(AetherCore SHARED
     hooks/wire/GamesPlayedModule.cpp
     hooks/wire/PersonaInject.cpp
     hooks/wire/ManifestRestore.cpp
+    hooks/wire/ManifestBridge.cpp
     hooks/wire/RichPresenceModule.cpp
     hooks/aetheronline/OnlinePayload.cpp
     hooks/aetheronline/PayloadAttest.cpp

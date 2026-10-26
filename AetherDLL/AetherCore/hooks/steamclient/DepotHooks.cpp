@@ -207,11 +207,10 @@ bool h_BuildDepotDependency(void* mgr, AppId app, void* cfg, CUtlVector<DepotEnt
         AC_LOG_INFO_ONCE(kModule, "Manifest overrides for app %u: %s.", app, ManifestPatchArray(patches).c_str());
     }
 
-    // Default acquisition trigger. The GetManifestRequestCode bridge is no
-    // longer reachable on current Steam builds (its service calls bypass the
-    // wire hook), so dependency-build routes every managed depot/GID straight
-    // into the local-first/Hubcap pipeline. The per-depot call is cheap when
-    // the manifest is already on disk and async when it is not.
+    // Proactive trigger: route every managed depot/GID straight into the
+    // local-first/Hubcap pipeline so the exact manifest is already on disk when
+    // Steam asks for a request code (hooks/wire/ManifestBridge.cpp). The
+    // per-depot call is cheap when the manifest exists and async when it not.
     LogSteamSelectedManifests(app, depots);
     LogSteamSelectedManifests(app, shared);
     EnsureSelectedManifests(app, depots);
