@@ -60,7 +60,7 @@ if(MSVC)
 else()
     target_compile_options(core_unit_tests PRIVATE -Wall -Wextra -Wpedantic -Werror)
 endif()
-foreach(case strings paths policy worker budget settings registry workers netpacket sentinel structguard gamesplayed_format donorpool keyvalues vdftext jsonutil_escapes manifest_identity ipcreply snapshot_merge ttlcache hexcodec signature ipcspec jsonwriter manifest_contract schema_buckets workers_reap_slow workers_race acfowner installeddepots steamuicss steamuipatch callbackcopy memory payloadattest)
+foreach(case strings paths policy worker budget settings registry workers netpacket sentinel structguard gamesplayed_format donorpool keyvalues vdftext jsonutil_escapes manifest_identity ipcreply snapshot_merge ttlcache hexcodec signature ipcspec jsonwriter manifest_contract schema_buckets workers_reap_slow workers_race acfowner installeddepots productinfo_queue steamuicss steamuipatch callbackcopy memory payloadattest)
     add_test(NAME ${case} COMMAND core_unit_tests ${case})
 endforeach()
 add_test(NAME cmake_source_inventory COMMAND ${CMAKE_COMMAND}
