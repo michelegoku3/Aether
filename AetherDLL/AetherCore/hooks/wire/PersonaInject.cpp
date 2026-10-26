@@ -1,5 +1,4 @@
 #include "pch.h"
-#include "core/Workers.h"
 #include "hooks/wire/PersonaInject.h"
 
 #include <atomic>
@@ -19,6 +18,7 @@
 #include "core/NetPacketAbi.h"
 #include "hooks/aetheronline/PresenceSession.h"
 #include "hooks/wire/PacketRouter.h"
+#include "hooks/wire/ProductInfoRequest.h"
 #include "scripting/LuaData.h"
 #include "utils/GameNameResolver.h"
 
@@ -152,47 +152,11 @@ steam::AppId AppIdFromBlob(const std::string& blob) {
     return static_cast<steam::AppId>(v);
 }
 
-// The friend-list icon is keyed on the appid inside the LOCAL AppInfo cache:
-// when that cache cannot name the app at all the UI has nothing to draw, so
-// ask the CM for the PICS record (product metadata is public, not
-// license-gated; the response lands on the stock path and fills the cache).
+// The friend-list icon is keyed on the appid inside the LOCAL AppInfo cache.
+// The request itself lives in ProductInfoRequest so the .lua load path and
+// this icon path share one one-shot queue instead of asking the CM twice.
 void EnsureAppInfo(steam::AppId appId) {
-    static std::mutex s_mutex;
-    static std::unordered_set<steam::AppId> s_requested;
-    {
-        std::lock_guard<std::mutex> lk(s_mutex);
-        if (!s_requested.insert(appId).second)
-            return; // one-shot per process
-    }
-
-    CMsgClientPICSProductInfoRequest req;
-    auto* app = req.add_apps();
-    app->set_appid(appId);
-    std::string body;
-    if (!req.SerializeToString(&body)) {
-        AC_LOG_WARN(kModule, "PICS appinfo request serialize failed for app %u.", appId);
-        return;
-    }
-    AC_LOG_INFO(kModule,
-                "[DIAG] app %u missing from local AppInfo cache; requesting PICS "
-                "product info (icon/title fill).",
-                appId);
-
-    // Deferred, off the RecvPkt callstack: SendClientFrame re-enters the raw
-    // BBuildAndAsyncSendFrame; doing that synchronously from inside the RecvPkt
-    // callback is an unproven path on this strict a build. A short detached
-    // worker keeps the wire callback clean; the SendClientFrame INFO line
-    // brackets the attempt exactly if it ever faults.
-    if (!workers::Submit([body = std::move(body), appId]() mutable {
-            Sleep(50);
-            AC_LOG_TRACE(kModule, "[DIAG] PICS appinfo send begin for app %u.", appId);
-            SendClientFrame(constants::emsg::kClientPICSProductInfoRequest,
-                            reinterpret_cast<const std::uint8_t*>(body.data()),
-                            static_cast<std::uint32_t>(body.size()));
-            AC_LOG_TRACE(kModule, "[DIAG] PICS appinfo send done for app %u.", appId);
-        })) {
-        AC_LOG_DEBUG(kModule, "[DIAG] PICS appinfo send for app %u skipped (workers shut down).", appId);
-    }
+    productinfo::Request(appId);
 }
 
 bool BuildInjectLocked(steam::AppId appId) {

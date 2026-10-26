@@ -25,7 +25,9 @@
 #include "hooks/ipc/PipeWatch.h"
 #include "hooks/license/LicenseManager.h"
 #include "hooks/wire/ManifestRestore.h"
+#include "hooks/wire/ProductInfoRequest.h"
 #include "scripting/ScriptEngine.h"
+#include "scripting/LuaData.h"
 #include "utils/Paths.h"
 #include "utils/SmartIdLog.h"
 #include "utils/Strings.h"
@@ -307,6 +309,9 @@ void ApplyChanges(const std::unordered_map<std::string, DWORD>& acc, const std::
     if (luaChanged) {
         diag::Record("lua_hot_reload", std::to_string(order.size()) + " change(s)");
         hooks::LicenseManager::NotifyLicenseChanged();
+        // A new .lua app needs its AppInfo before Steam lists it; the queue is
+        // one-shot per app, so a reload does not repeat the request.
+        hooks::productinfo::RequestAll(luadata::LibraryAppIds());
         logutil::ResetAllIdLogSessions();
         log::ResetDedup();
         pipewatch::ResetSessionTracking();

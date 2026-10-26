@@ -6,7 +6,7 @@
 #include "hooks/wire/DonorPool.h"
 
 #include "hooks/wire/GamesPlayedFormat.h"
-
+#include "hooks/wire/ProductInfoRequest.h"
 #include "hooks/wire/SchemaBuckets.h"
 
 #include "hooks/wire/UserStatsSnapshot.h"
@@ -665,4 +665,28 @@ void ManifestContractTest() {
 
         CHECK(!mi::ManifestIdentityMatches(body, 0, 0));
     }
+}
+
+// A directory watch fires on every write of the same .lua: Steam must not get
+// the same PICS request again for each one, but a failed send must be able to
+// retry past the one-shot rule.
+void ProductInfoQueueTest() {
+    namespace productinfo = ac::hooks::productinfo;
+    productinfo::RequestQueue queue;
+    CHECK(queue.Enqueue(2369390));
+    CHECK(!queue.Enqueue(2369390));
+    CHECK(queue.Enqueue(883710));
+
+    std::vector<ac::steam::AppId> drained;
+    queue.Drain(drained);
+    CHECK(drained.size() == 2);
+    CHECK(drained[0] == 2369390);
+    CHECK(drained[1] == 883710);
+    CHECK(!queue.Enqueue(2369390));
+
+    queue.Requeue(1716751);
+    std::vector<ac::steam::AppId> retried;
+    queue.Drain(retried);
+    CHECK(retried.size() == 1);
+    CHECK(retried[0] == 1716751);
 }

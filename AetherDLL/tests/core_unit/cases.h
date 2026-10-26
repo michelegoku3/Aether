@@ -108,3 +108,4 @@ void CallbackCopyTest();
 void MemoryRangeTest();
 void PayloadAttestTest();
 void DepotPlanTest();
+void ProductInfoQueueTest();
