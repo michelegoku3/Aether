@@ -268,8 +268,8 @@ void StartOnDemandWorker() {
     }
 }
 
-// Drops requests that predate a publish-time top-up: the top-up covers every
-// app classified so far, and a new request after the clear is queued again.
+// Drops requests that predate a publish-time seed: the seed covers every
+// configured app, and a new request after the clear is queued again.
 void ClearPendingApps() {
     std::lock_guard<std::mutex> lock(s_ondemandMutex);
     s_ondemandApps.clear();
@@ -398,13 +398,13 @@ void SeedPackage0(PackageInfo* package0) {
         // the pointer and the mode flag stay atomic w.r.t. other mutators.
         g_state.pPackage0.store(package0);
         g_state.package0Published.store(package0 != nullptr);
-        // If Steam published package 0 after some apps were already
-        // classified, top up only those classified apps. Unclassified apps
-        // stay out, so their first ownership answer is still Steam's real one.
-        // Requests queued before this point are covered by the top-up.
+        // Seed every configured id, classified or not: Steam lists an app only
+        // when a license mentions it, so an id left out here is never asked
+        // about and never classified. Requests queued before this point are
+        // covered by the same seed.
         if (package0) {
             ClearPendingApps();
-            const std::vector<AppId> ids = luadata::Package0Ids();
+            const std::vector<AppId> ids = luadata::SeedPackage0Ids();
             if (!ids.empty()) {
                 const PackageContainmentResult result = EnsurePackageContains(package0, ids, "publish");
                 changed = result.appended != 0 || result.duplicatesRemoved != 0;
@@ -414,7 +414,7 @@ void SeedPackage0(PackageInfo* package0) {
     // Refresh outside the mutation lock: the callbacks can re-enter hooks.
     if (changed)
         RefreshLicenses("publish");
-    AC_LOG_INFO(kModule, "Package 0 published; licenses are added per app after Steam classification.");
+    AC_LOG_INFO(kModule, "Package 0 published with every configured .lua id.");
 }
 
 bool AddAppToPackage0(AppId appId) {
@@ -490,11 +490,11 @@ void NotifyLicenseChanged() {
             return;
         }
         RemoveAllFromPackage0(pkg, removals, removed);
-        // Reconcile against the classified set, not every configured id: an
-        // app Steam has not classified yet must stay out of package 0 so its
-        // first CheckAppOwnership sees the real owned/family answer. This also
-        // repairs duplicates and makes reloads idempotent.
-        const PackageContainmentResult result = EnsurePackageContains(pkg, luadata::Package0Ids(), "hotreload");
+        // Reconcile against the whole configured set, not the classified one:
+        // a .lua app Steam never asked about has to stay in package 0 or the
+        // next library refresh drops it again. This also repairs duplicates
+        // and makes reloads idempotent.
+        const PackageContainmentResult result = EnsurePackageContains(pkg, luadata::SeedPackage0Ids(), "hotreload");
         if (!result.complete)
             AC_LOG_WARN(kModule, "Package 0 hot-reload containment incomplete; the next add repairs it.");
 

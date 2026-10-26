@@ -55,17 +55,21 @@ std::optional<ManifestOverride> ManifestOverrideFor(std::uint64_t depotId);
 
 bool HasManifestOverrides();
 
-// Snapshot of every configured depot id (for package-0 injection).
+// Snapshot of every configured depot id.
 std::vector<steam::AppId> AllDepotIds();
 
 // App id plus every depot contributed by the .lua file(s) that advertise it.
 // Used to add one app to package 0 on demand, after Steam classified it.
 std::vector<steam::AppId> IdsForApp(steam::AppId appId);
 
-// Every id package 0 must contain for the apps Aether already classified:
-// spoofed apps plus family apps with a known lender. Genuinely owned apps and
-// apps Steam has not classified yet are deliberately absent.
-std::vector<steam::AppId> Package0Ids();
+// Every id package 0 must carry for Steam to see a .lua app at all: the
+// configured set, classified or not. Steam lists an app only when a license
+// mentions it and asks for ownership only for apps it lists, so seeding after
+// classification can never reach a freshly published .lua. Classification
+// keys on existInPackageNums > 1 (OwnershipDecision), which the synthetic row
+// alone cannot satisfy, and the family lender is resolved before that
+// decision, so a pre-seeded shared app still keeps its banner.
+std::vector<steam::AppId> SeedPackage0Ids();
 
 // Snapshot of numeric .lua filename roots that should be advertised to Steam's Library.
 std::vector<steam::AppId> LibraryAppIds();

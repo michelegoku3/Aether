@@ -1,6 +1,75 @@
 #include "cases.h"
 
+#include <algorithm>
+
 #include "core/OwnershipDecision.h"
+#include "scripting/LuaData.h"
+
+namespace {
+
+// Package 0 is the only reason Steam lists a .lua app, and the ownership answer
+// is what Aether classifies. These cases pin the seam between the two.
+
+// A freshly published app is unclassified: Steam never asked about it because
+// it does not list it. The seed must carry it anyway, or it stays invisible
+// forever (the 1.0.0 egg-and-chicken).
+void SeedIncludesUnclassifiedLuaApp() {
+    const char* path = "C:/fixtures/2369390.lua";
+    ac::luadata::BeginFile(path);
+    ac::luadata::RecordDepot(2369390, "");
+    ac::luadata::RecordLibraryApp(2369390);
+    ac::luadata::EndFile();
+    CHECK(!ac::luadata::IsOwned(2369390));
+    CHECK(!ac::luadata::IsSpoofed(2369390));
+    const auto ids = ac::luadata::SeedPackage0Ids();
+    CHECK(std::find(ids.begin(), ids.end(), 2369390u) != ids.end());
+    // The Lua store is global to this test binary: unload the fixture so the
+    // recorded depot cannot leak into another suite's assertions.
+    ac::luadata::UnloadFile(path);
+}
+
+// Pre-seeded, Steam's first answer arrives with existInPackageNums == 1: it
+// must stay a spoof, not become "owned".
+void PreSeededLuaAppStaysSpoofed() {
+    ac::ownership::OwnershipFacts f{};
+    f.steamResult = true;
+    f.existInPackageNums = 1;
+    f.releaseState = ac::steam::AppReleaseState::Released;
+    f.hasDepot = true;
+    f.spoofOwnerAccountId = 1234;
+    const auto d = ac::ownership::DecideOwnership(f);
+    CHECK(d.action == ac::ownership::OwnershipAction::Spoof);
+    CHECK_EQ(d.ownerAccountId, 1234u);
+}
+
+// A genuinely owned app stays owned: its real license plus the package-0 row
+// brings the count to 2.
+void PreSeededOwnedAppIsMarkedOwned() {
+    ac::ownership::OwnershipFacts f{};
+    f.steamResult = true;
+    f.existInPackageNums = 2;
+    f.releaseState = ac::steam::AppReleaseState::Released;
+    f.hasDepot = true;
+    const auto d = ac::ownership::DecideOwnership(f);
+    CHECK(d.action == ac::ownership::OwnershipAction::PassThrough);
+    CHECK(d.steamOwned);
+}
+
+// A pre-seeded family app must not lose the lender/banner.
+void PreSeededFamilyAppKeepsBanner() {
+    ac::ownership::OwnershipFacts f{};
+    f.steamResult = true;
+    f.existInPackageNums = 2;
+    f.releaseState = ac::steam::AppReleaseState::Released;
+    f.hasDepot = true;
+    f.familyLenderAccountId = 4242;
+    f.spoofOwnerAccountId = 4242;
+    const auto d = ac::ownership::DecideOwnership(f);
+    CHECK(d.action == ac::ownership::OwnershipAction::Spoof);
+    CHECK(d.familyBanner);
+}
+
+} // namespace
 
 void OwnershipDecisionTest() {
     using ac::ownership::DecideOwnership;
@@ -119,4 +188,9 @@ void OwnershipDecisionTest() {
         const auto d = DecideOwnership(f);
         CHECK(d.action == OwnershipAction::PassThrough);
     }
+
+    SeedIncludesUnclassifiedLuaApp();
+    PreSeededLuaAppStaysSpoofed();
+    PreSeededOwnedAppIsMarkedOwned();
+    PreSeededFamilyAppKeepsBanner();
 }

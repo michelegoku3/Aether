@@ -45,6 +45,7 @@ add_executable(core_unit_tests
     ../AetherCore/credentials/HexCodec.cpp
     ../AetherCore/utils/IpcSpecParse.cpp
     ../AetherCore/hooks/steamclient/CallbackCopy.cpp
+    ../AetherCore/scripting/LuaData.cpp
     ../AetherCore/utils/Memory.cpp)
 # The ABI modules keep their decision logic inline in the headers, so the
 # cases "netpacket", "sentinel" and "structguard" test the real policy

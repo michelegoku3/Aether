@@ -147,16 +147,10 @@ std::vector<steam::AppId> IdsForApp(steam::AppId appId) {
     return std::vector<steam::AppId>(ids.begin(), ids.end());
 }
 
-std::vector<steam::AppId> Package0Ids() {
-    std::shared_lock lock(g_state.lua.mutex);
-    std::unordered_set<steam::AppId> ids;
-    for (steam::AppId appId : g_state.lua.spoofedAppIds)
-        AppendIdsForApp(appId, ids);
-    for (const auto& [appId, lender] : g_state.lua.familyLenderAppIds) {
-        if (lender != 0)
-            AppendIdsForApp(appId, ids);
-    }
-    return std::vector<steam::AppId>(ids.begin(), ids.end());
+std::vector<steam::AppId> SeedPackage0Ids() {
+    // Same set as AllDepotIds today; the named seam is what pins the policy the
+    // license path depends on, so callers never reach for a raw depot snapshot.
+    return AllDepotIds();
 }
 
 std::vector<steam::AppId> LibraryAppIds() {
