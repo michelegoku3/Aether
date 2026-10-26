@@ -408,4 +408,29 @@ void AcfOwnerTest() {
         CHECK_EQ(next.written, 333ull);
         CHECK(!next.originalKnown);
     }
+
+    // Steam rewrites the manifest at the start and the end of an update; a
+    // write of ours in between invalidates the state Steam is working from.
+    {
+        const char* updating = "\"AppState\"\n{\n\t\"StateFlags\"\t\t\"1026\"\n}\n";
+        CHECK_EQ(ReadStateFlags(updating), 1026u);
+        CHECK((ReadStateFlags(updating) & kAppStateUpdatingMask) != 0);
+        const char* settled = "\"AppState\"\n{\n\t\"StateFlags\"\t\t\"4\"\n}\n";
+        CHECK_EQ(ReadStateFlags(settled) & kAppStateUpdatingMask, 0u);
+        CHECK_EQ(ReadStateFlags("garbage"), 0u);
+    }
+    {
+        OwnerContext c{};
+        c.managed = true;
+        c.updateRunning = true;
+        CHECK(PlanOwnerAction(c).action == OwnerAction::Skip);
+    }
+    // One settled write per session and app: the boot pass and the post-login
+    // pass must not rewrite each other's result.
+    {
+        OwnerContext c{};
+        c.managed = true;
+        c.alreadyApplied = true;
+        CHECK(PlanOwnerAction(c).action == OwnerAction::Skip);
+    }
 }

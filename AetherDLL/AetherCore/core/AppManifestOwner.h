@@ -51,6 +51,7 @@ struct OwnerPolicyStats {
     std::size_t applied = 0; // LastOwner written (banner opt-in)
     std::size_t removed = 0; // LastOwner dropped
     std::size_t unchanged = 0;
+    std::size_t deferred = 0; // update in flight or already settled this session
     std::size_t errors = 0;
 };
 

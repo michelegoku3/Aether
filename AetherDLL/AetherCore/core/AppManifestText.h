@@ -169,10 +169,8 @@ inline bool RemoveLastOwner(std::string& content) {
     return false;
 }
 
-// Value of the first top-level `"LastOwner"`, or 0 when absent or not a decimal
-// uint64. Lets the cleanup policy tell the value Aether wrote from one Steam
-// has since rewritten (for example after a real family license changed hands).
-inline std::uint64_t ReadLastOwner(std::string_view content) {
+// First top-level decimal value for `key`, or 0 when absent or not a uint64.
+inline std::uint64_t ReadTopLevelDecimal(std::string_view content, std::string_view key) {
     int depth = 0;
     std::size_t lineStart = 0;
 
@@ -184,10 +182,10 @@ inline std::uint64_t ReadLastOwner(std::string_view content) {
         if (!line.empty() && line.back() == '\r')
             line.pop_back();
 
-        std::string key;
+        std::string parsedKey;
         std::string value;
-        if (vdf::ParseLine(line, key, value) == vdf::LineKind::KeyValue) {
-            if (depth == 1 && ac::strings::EqualsIgnoreCase(key, "LastOwner")) {
+        if (vdf::ParseLine(line, parsedKey, value) == vdf::LineKind::KeyValue) {
+            if (depth == 1 && ac::strings::EqualsIgnoreCase(parsedKey, key)) {
                 std::uint64_t parsed = 0;
                 if (value.empty())
                     return 0;
@@ -218,6 +216,26 @@ inline std::uint64_t ReadLastOwner(std::string_view content) {
         lineStart = newline + 1;
     }
     return 0;
+}
+
+// Value of the first top-level `"LastOwner"`, or 0 when absent or not a decimal
+// uint64. Lets the cleanup policy tell the value Aether wrote from one Steam
+// has since rewritten (for example after a real family license changed hands).
+inline std::uint64_t ReadLastOwner(std::string_view content) {
+    return ReadTopLevelDecimal(content, "LastOwner");
+}
+
+// Steam's EAppState bits set while it is updating an app:
+// UpdateRunning | UpdatePaused | UpdateStarted. Steam rewrites the manifest at
+// the start and at the end of an update, so a write of ours in between
+// invalidates the state Steam is working from (and is overwritten anyway).
+inline constexpr std::uint32_t kAppStateUpdatingMask = 0x100u | 0x200u | 0x400u;
+
+// `AppState.StateFlags`, or 0 when absent or not a decimal uint32.
+inline std::uint32_t ReadStateFlags(std::string_view content) {
+    const std::uint64_t value = ReadTopLevelDecimal(content, "StateFlags");
+    return value > std::numeric_limits<std::uint32_t>::max() ? 0
+                                                            : static_cast<std::uint32_t>(value);
 }
 
 } // namespace ac::appmanifest

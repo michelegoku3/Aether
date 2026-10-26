@@ -60,6 +60,10 @@ struct OwnerContext {
     // Signed-in account, 0 before login. A restore never writes it: an
     // active-account stamp is what hid the family banner in the first place.
     std::uint64_t activeSteamId = 0;
+    // AppState.StateFlags says Steam is updating the app right now.
+    bool updateRunning = false;
+    // This session already settled this app with the same plan.
+    bool alreadyApplied = false;
 };
 
 // A pre-Aether value is restorable only when it is a real owner and not the
@@ -76,6 +80,18 @@ struct OwnerPlan {
 
 inline OwnerPlan PlanOwnerAction(const OwnerContext& c) {
     OwnerPlan plan;
+
+    // Steam rewrites the manifest when an update starts and when it ends. A
+    // write of ours in between invalidates the state Steam is working from,
+    // and Steam overwrites it moments later: defer to a later pass.
+    if (c.updateRunning)
+        return plan;
+
+    // The boot pass and the post-login pass used to write each other's result
+    // back and forth. Once this session settled the app, leave it alone until
+    // the plan changes (settings, .lua reload) or Steam rewrites the manifest.
+    if (c.alreadyApplied)
+        return plan;
 
     // Opt-in cosmetic banner: the only case Aether writes an owner.
     if (c.bannerEnabled && c.managed && c.listed && c.bannerSteamId != 0) {

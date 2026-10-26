@@ -37,6 +37,36 @@ constexpr const char* kRecordFileName = "owner_state.txt";
 std::mutex s_passMutex; // one pass at a time (boot job vs post-login job)
 std::atomic<bool> s_pending{false};
 
+// appId -> the plan this session already settled for it. The boot pass and the
+// post-login pass run minutes apart over the same manifests; without this memo
+// they rewrite each other's LastOwner. Guarded by s_appliedMutex (worker jobs).
+struct AppliedPlan {
+    OwnerAction action = OwnerAction::Skip;
+    std::uint64_t owner = 0;
+};
+std::mutex s_appliedMutex;
+std::unordered_map<steam::AppId, AppliedPlan> s_applied;
+
+bool SamePlan(const AppliedPlan& applied, const OwnerPlan& plan) {
+    return applied.action == plan.action && applied.owner == plan.owner;
+}
+
+void RememberApplied(steam::AppId appId, const OwnerPlan& plan) {
+    std::lock_guard<std::mutex> lock(s_appliedMutex);
+    s_applied[appId] = AppliedPlan{plan.action, plan.owner};
+}
+
+void ForgetApplied() {
+    std::lock_guard<std::mutex> lock(s_appliedMutex);
+    s_applied.clear();
+}
+
+bool AlreadyApplied(steam::AppId appId, const OwnerPlan& plan) {
+    std::lock_guard<std::mutex> lock(s_appliedMutex);
+    const auto it = s_applied.find(appId);
+    return it != s_applied.end() && SamePlan(it->second, plan);
+}
+
 // appId -> what Aether wrote and the value Steam had before. Persisted so a
 // later pass can restore Steam's own owner after the app leaves the managed set
 // or turns out to be family-shared.
@@ -161,8 +191,8 @@ void SaveRecords(const OwnerRecords& records) {
 
 // Applies one decision to an already-read manifest. `content` is updated in
 // place; the record follows a successful write (and a write failure leaves the
-// previous record valid).
-void ApplyToManifest(const std::string& path, steam::AppId appId, const OwnerContext& ctx, const OwnerPlan& plan,
+// previous record valid). Returns false when the manifest could not be written.
+bool ApplyToManifest(const std::string& path, steam::AppId appId, const OwnerContext& ctx, const OwnerPlan& plan,
                      std::string& content, OwnerRecords& records, bool& recordsDirty, OwnerPolicyStats& stats) {
     const auto existing = records.find(appId);
     const bool hasRecord = existing != records.end();
@@ -173,7 +203,7 @@ void ApplyToManifest(const std::string& path, steam::AppId appId, const OwnerCon
             records.erase(existing);
             recordsDirty = true;
         }
-        return;
+        return true;
     }
 
     const bool changed = plan.action == OwnerAction::Set ? SetLastOwner(content, plan.owner) : RemoveLastOwner(content);
@@ -181,7 +211,7 @@ void ApplyToManifest(const std::string& path, steam::AppId appId, const OwnerCon
         if (!WriteTextAtomically(path, content)) {
             ++stats.errors;
             AC_LOG_WARN(kModule, "Cannot rewrite appmanifest_%u.acf (locked or read-only).", appId);
-            return;
+            return false;
         }
         if (plan.action == OwnerAction::Set) {
             ++stats.applied;
@@ -199,13 +229,14 @@ void ApplyToManifest(const std::string& path, steam::AppId appId, const OwnerCon
             records.erase(appId);
             recordsDirty = true;
         }
-        return;
+        return true;
     }
 
     const std::uint64_t written = plan.action == OwnerAction::Set ? plan.owner : 0;
     const OwnerRecord previous = hasRecord ? existing->second : OwnerRecord{};
     records[appId] = RecordAfterWrite(previous, hasRecord, ctx.currentLastOwner, ctx.activeSteamId, written);
     recordsDirty = true;
+    return true;
 }
 
 } // namespace
@@ -281,9 +312,24 @@ OwnerPolicyStats ApplyInstalledAppOwners() {
             if (ctx.recorded)
                 ctx.record = record->second;
             ctx.currentLastOwner = ReadLastOwner(content);
+            ctx.updateRunning = (ReadStateFlags(content) & kAppStateUpdatingMask) != 0;
+
+            // The memo is consulted against what the policy wants now, not
+            // against the raw app id: a settings or .lua change that alters the
+            // plan must still be applied in this session.
+            OwnerContext probe = ctx;
+            probe.updateRunning = false;
+            probe.alreadyApplied = false;
+            const OwnerPlan intended = PlanOwnerAction(probe);
+            ctx.alreadyApplied = AlreadyApplied(appId, intended);
 
             const OwnerPlan plan = PlanOwnerAction(ctx);
-            ApplyToManifest(path, appId, ctx, plan, content, records, recordsDirty, stats);
+            if (intended.action != OwnerAction::Skip && plan.action == OwnerAction::Skip)
+                ++stats.deferred;
+            if (ApplyToManifest(path, appId, ctx, plan, content, records, recordsDirty, stats) &&
+                plan.action != OwnerAction::Skip) {
+                RememberApplied(appId, plan);
+            }
         }
     }
 
@@ -308,9 +354,9 @@ OwnerPolicyStats ApplyInstalledAppOwners() {
     if (recordsDirty)
         SaveRecords(records);
 
-    if (stats.applied != 0 || stats.removed != 0 || stats.errors != 0) {
-        AC_LOG_INFO(kModule, "Owner policy: scanned=%zu set=%zu removed=%zu unchanged=%zu errors=%zu.", stats.scanned,
-                    stats.applied, stats.removed, stats.unchanged, stats.errors);
+    if (stats.applied != 0 || stats.removed != 0 || stats.deferred != 0 || stats.errors != 0) {
+        AC_LOG_INFO(kModule, "Owner policy: scanned=%zu set=%zu removed=%zu unchanged=%zu deferred=%zu errors=%zu.",
+                    stats.scanned, stats.applied, stats.removed, stats.unchanged, stats.deferred, stats.errors);
     } else {
         AC_LOG_DEBUG(kModule, "Owner policy: scanned=%zu, nothing to change.", stats.scanned);
     }
@@ -330,7 +376,12 @@ void RequestOwnerApply() {
 }
 
 void ApplyOwnersAtStartup() {
-    if (!workers::Submit([] { ApplyInstalledAppOwners(); })) {
+    if (!workers::Submit([] {
+            // A new session starts with nothing settled: the boot pass is the
+            // first to read what Steam wrote for this login.
+            ForgetApplied();
+            ApplyInstalledAppOwners();
+        })) {
         AC_LOG_DEBUG(kModule, "Startup owner pass skipped: worker queue unavailable.");
     }
 }
