@@ -21,7 +21,7 @@ inline constexpr std::size_t kMaxAppendedDepots = 512;
 // Steam: sorted by depot id (stable plan), zero-gid pins dropped (a pin without
 // a manifest targets nothing), capped at kMaxAppendedDepots.
 inline std::vector<luadata::DepotPin> ComputeMissingPins(const std::vector<luadata::DepotPin>& pins,
-                                                        const std::vector<steam::AppId>& presentIds) {
+                                                         const std::vector<steam::AppId>& presentIds) {
     const std::unordered_set<steam::AppId> present(presentIds.begin(), presentIds.end());
     std::vector<luadata::DepotPin> missing;
     missing.reserve(pins.size());

@@ -23,8 +23,8 @@ extern "C" {
 
 #include "core/AetherCoreState.h"
 #include "core/Logger.h"
-#include "scripting/LuaBindings.h"
 #include "hooks/wire/ProductInfoRequest.h"
+#include "scripting/LuaBindings.h"
 #include "scripting/LuaData.h"
 #include "utils/WinFile.h"
 

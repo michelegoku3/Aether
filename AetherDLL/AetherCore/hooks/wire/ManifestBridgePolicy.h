@@ -34,7 +34,7 @@ struct PendingRequest {
 // consumed by their response; the cap only bounds abandoned jobs (cancelled
 // downloads, dropped connections) and evicts oldest first.
 class RequestTable {
-public:
+  public:
     static constexpr std::size_t kMaxEntries = 256;
 
     void Record(std::uint64_t jobId, const PendingRequest& request) {
@@ -66,7 +66,7 @@ public:
         order_.clear();
     }
 
-private:
+  private:
     std::unordered_map<std::uint64_t, PendingRequest> entries_;
     std::deque<std::uint64_t> order_;
 };

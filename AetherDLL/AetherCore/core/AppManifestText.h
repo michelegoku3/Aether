@@ -221,9 +221,7 @@ inline std::uint64_t ReadTopLevelDecimal(std::string_view content, std::string_v
 // Value of the first top-level `"LastOwner"`, or 0 when absent or not a decimal
 // uint64. Lets the cleanup policy tell the value Aether wrote from one Steam
 // has since rewritten (for example after a real family license changed hands).
-inline std::uint64_t ReadLastOwner(std::string_view content) {
-    return ReadTopLevelDecimal(content, "LastOwner");
-}
+inline std::uint64_t ReadLastOwner(std::string_view content) { return ReadTopLevelDecimal(content, "LastOwner"); }
 
 // Steam's EAppState bits set while it is updating an app:
 // UpdateRunning | UpdatePaused | UpdateStarted. Steam rewrites the manifest at
@@ -234,8 +232,7 @@ inline constexpr std::uint32_t kAppStateUpdatingMask = 0x100u | 0x200u | 0x400u;
 // `AppState.StateFlags`, or 0 when absent or not a decimal uint32.
 inline std::uint32_t ReadStateFlags(std::string_view content) {
     const std::uint64_t value = ReadTopLevelDecimal(content, "StateFlags");
-    return value > std::numeric_limits<std::uint32_t>::max() ? 0
-                                                            : static_cast<std::uint32_t>(value);
+    return value > std::numeric_limits<std::uint32_t>::max() ? 0 : static_cast<std::uint32_t>(value);
 }
 
 } // namespace ac::appmanifest

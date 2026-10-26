@@ -155,9 +155,7 @@ steam::AppId AppIdFromBlob(const std::string& blob) {
 // The friend-list icon is keyed on the appid inside the LOCAL AppInfo cache.
 // The request itself lives in ProductInfoRequest so the .lua load path and
 // this icon path share one one-shot queue instead of asking the CM twice.
-void EnsureAppInfo(steam::AppId appId) {
-    productinfo::Request(appId);
-}
+void EnsureAppInfo(steam::AppId appId) { productinfo::Request(appId); }
 
 bool BuildInjectLocked(steam::AppId appId) {
     // Caller holds presence.mutex.

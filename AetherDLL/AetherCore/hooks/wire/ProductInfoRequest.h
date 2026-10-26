@@ -25,7 +25,7 @@
 namespace ac::hooks::productinfo {
 
 class RequestQueue {
-public:
+  public:
     /// True when this process has not seen `appId` before.
     bool Enqueue(steam::AppId appId) {
         std::lock_guard<std::mutex> lock(mutex_);
@@ -48,7 +48,7 @@ public:
         pending_.clear();
     }
 
-private:
+  private:
     std::mutex mutex_;
     std::unordered_set<steam::AppId> seen_;
     std::vector<steam::AppId> pending_;
