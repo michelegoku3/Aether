@@ -138,13 +138,26 @@ export const SettingsSteamSection: React.FC<SettingsSteamSectionProps> = ({
       {presenceDefaultShowOnline && (
         <div className="settings-toggle-row settings-field-column">
           <span className="settings-toggle-text">Custom game display name</span>
-          <input
-            type="text"
-            className="settings-input"
-            placeholder="Enter custom name (e.g. Aether)"
-            value={customGameName}
-            onChange={(e) => setCustomGameName(e.target.value)}
-          />
+          <div className="settings-input-wrap">
+            <input
+              type="text"
+              className="settings-input"
+              placeholder="Enter custom name (e.g. Aether)"
+              value={customGameName}
+              onChange={(e) => setCustomGameName(e.target.value)}
+            />
+            {customGameName && (
+              <button
+                type="button"
+                className="settings-input-eye settings-input-clear"
+                title="Clear custom game name"
+                aria-label="Clear custom game name"
+                onClick={() => setCustomGameName('')}
+              >
+                &times;
+              </button>
+            )}
+          </div>
         </div>
       )}
 

@@ -117,6 +117,15 @@ describe('SettingsSteamSection', () => {
     expect(on.container.querySelector('select')).not.toBeNull();
   });
 
+  it('clears the custom game name with the inline x', () => {
+    const props = { ...baseProps(), customGameName: 'Aether' };
+    render(<SettingsSteamSection {...props} />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Clear custom game name' }));
+
+    expect(props.setCustomGameName).toHaveBeenCalledWith('');
+  });
+
   it('moves the cache repair action into a plain row without the old copy', () => {
     const { container } = render(<SettingsSteamSection {...baseProps()} />);
 

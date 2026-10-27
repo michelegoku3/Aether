@@ -51,13 +51,26 @@ export const SettingsLibrarySection: React.FC<SettingsLibrarySectionProps> = ({
         <>
           <div className="settings-toggle-row settings-field-column">
             <span className="settings-toggle-text">App IDs</span>
-            <input
-              type="text"
-              className="settings-input"
-              placeholder="e.g. 4656000, 4108000, 3618390"
-              value={appIds}
-              onChange={(e) => setAppIds(e.target.value)}
-            />
+            <div className="settings-input-wrap">
+              <input
+                type="text"
+                className="settings-input"
+                placeholder="e.g. 4656000, 4108000, 3618390"
+                value={appIds}
+                onChange={(e) => setAppIds(e.target.value)}
+              />
+              {appIds && (
+                <button
+                  type="button"
+                  className="settings-input-eye settings-input-clear"
+                  title="Clear App IDs"
+                  aria-label="Clear App IDs"
+                  onClick={() => setAppIds('')}
+                >
+                  &times;
+                </button>
+              )}
+            </div>
             {invalid.length > 0 && (
               <p className="settings-error">Invalid App ID: {invalid.map((token) => `"${token}"`).join(', ')}</p>
             )}

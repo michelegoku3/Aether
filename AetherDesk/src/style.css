@@ -1747,6 +1747,12 @@ body {
   background-color: rgba(255, 255, 255, 0.08);
 }
 
+/* Clear ("x") inside a settings text field: the eye's hit area, text glyph. */
+.settings-input-clear {
+  font-size: 16px;
+  line-height: 1;
+}
+
 .api-input-row {
   display: flex;
   gap: 12px;
@@ -3116,9 +3122,11 @@ body {
 /* Fixed-size row action (Browse / Auto Detect / Clear Cache): the surface comes
    from .settings-small-btn, the geometry lives here once. */
 .settings-action-btn {
+  width: 96px;
   min-width: 96px;
+  max-width: 96px;
   height: 33px;
-  padding: 0 12px;
+  padding: 0 8px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -3310,7 +3318,7 @@ body {
   width: 96px;
   min-width: 96px;
   max-width: 96px;
-  height: 30px;
+  height: 33px;
   flex: 0 0 96px;
   background-color: var(--bg-field);
   border: 1px solid var(--border-color);

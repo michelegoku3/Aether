@@ -73,6 +73,21 @@ describe('SettingsLibrarySection', () => {
     expect((container.querySelector('select') as HTMLSelectElement).value).toBe('76561199876393402');
   });
 
+  it('clears the App ID field with the inline x', () => {
+    const props = { ...baseProps(), enabled: true, appIds: '4656000, 4108000' };
+    render(<SettingsLibrarySection {...props} />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Clear App IDs' }));
+
+    expect(props.setAppIds).toHaveBeenCalledWith('');
+  });
+
+  it('shows no clear button on an empty App ID field', () => {
+    render(<SettingsLibrarySection {...baseProps()} enabled />);
+
+    expect(screen.queryByRole('button', { name: 'Clear App IDs' })).not.toBeInTheDocument();
+  });
+
   it('distinguishes an unreadable account list from an empty one', () => {
     const failed = render(<SettingsLibrarySection {...baseProps()} enabled accounts={[]} accountsError />);
     expect(failed.container.querySelector('.settings-error')?.textContent).toContain(
