@@ -71,10 +71,15 @@ describe('SettingsAppearanceSection theme buttons', () => {
     expect(screen.queryByRole('button', { name: 'THEME' })).not.toBeInTheDocument();
     expect(theme.compareDocumentPosition(kit) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
 
+    const themeRow = theme.closest('.settings-appearance-row');
+    expect(themeRow?.textContent).toContain('Currently active theme: cyberpunk.css');
+    expect(themeRow?.textContent).not.toContain('is applied automatically');
+    expect(themeRow?.textContent).not.toContain('Use the button');
+
     const kitRow = kit.closest('.settings-appearance-row');
-    expect(kitRow).not.toBe(theme.closest('.settings-appearance-row'));
+    expect(kitRow).not.toBe(themeRow);
     expect(kitRow?.textContent).toContain(
-      'The CSS file named default.css is the stylesheet that AetherDesk uses. Copy it and give it to an AI to build your own theme.'
+      'The file default.css is the stylesheet that AetherDesk uses. Copy it and give it to an AI to build your own theme.'
     );
     expect(screen.queryByText('Theme kit')).not.toBeInTheDocument();
   });

@@ -116,17 +116,13 @@ export const SettingsAppearanceSection: React.FC<SettingsAppearanceSectionProps>
         <div className="settings-appearance-sub">
           <div className="settings-appearance-row">
             <p className="settings-desc">
-              The first .css file in{' '}
-              <ClickablePath path={appearanceAssets.themesDir} onError={(msg) => showStatus(msg, 'error')} /> is applied
-              automatically.{' '}
               {appearanceAssets.themeName ? (
                 <>
-                  Currently active: <strong>{appearanceAssets.themeName}</strong>.{' '}
+                  Currently active theme: <strong>{appearanceAssets.themeName}</strong>
                 </>
               ) : (
                 ''
               )}
-              Use the button to pick a different theme.
             </p>
             {appearancePickBtn(
               'Theme',
@@ -137,8 +133,8 @@ export const SettingsAppearanceSection: React.FC<SettingsAppearanceSectionProps>
           </div>
           <div className="settings-appearance-row">
             <p className="settings-desc">
-              The CSS file named default.css is the stylesheet that AetherDesk uses. Copy it and give it to an AI to
-              build your own theme.
+              The file default.css is the stylesheet that AetherDesk uses. Copy it and give it to an AI to build your
+              own theme.
             </p>
             <button type="button" className="appearance-pick-btn" onClick={() => void handleOpenThemeKit()}>
               Kit
