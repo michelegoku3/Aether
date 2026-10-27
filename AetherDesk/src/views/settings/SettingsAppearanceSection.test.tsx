@@ -61,7 +61,7 @@ describe('SettingsAppearanceSection theme buttons', () => {
     vi.mocked(openInFileManager).mockClear();
   });
 
-  it('labels the pickers in sentence case and places the kit under the theme', () => {
+  it('labels the pickers in sentence case and gives the kit its own row under the theme', () => {
     render(<SettingsAppearanceSection {...baseProps()} />);
 
     const theme = screen.getByRole('button', { name: 'Theme' });
@@ -70,6 +70,17 @@ describe('SettingsAppearanceSection theme buttons', () => {
     expect(screen.getByRole('button', { name: 'Icon' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'THEME' })).not.toBeInTheDocument();
     expect(theme.compareDocumentPosition(kit) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+
+    const kitRow = kit.closest('.settings-appearance-row');
+    expect(kitRow).not.toBe(theme.closest('.settings-appearance-row'));
+    expect(kitRow?.textContent).toContain('Theme kit');
+    expect(kitRow?.textContent).toContain('default.css');
+  });
+
+  it('keeps the kit reachable while the custom theme is off', () => {
+    render(<SettingsAppearanceSection {...baseProps()} customCssEnabled={false} />);
+
+    expect(screen.getByRole('button', { name: 'Kit' })).toBeInTheDocument();
   });
 
   it('opens the theme kit folder after ensuring it exists', async () => {

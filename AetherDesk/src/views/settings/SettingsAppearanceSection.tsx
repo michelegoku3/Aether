@@ -126,22 +126,33 @@ export const SettingsAppearanceSection: React.FC<SettingsAppearanceSectionProps>
               ) : (
                 ''
               )}
-              Use the button to pick a different theme, or open the kit to start from a copy of the default stylesheet.
+              Use the button to pick a different theme.
             </p>
-            <div className="settings-appearance-actions">
-              {appearancePickBtn(
-                'Theme',
-                handlePickTheme,
-                !appearanceAssets.themeExists && !customCssEnabled,
-                isPicking === 'theme'
-              )}
-              <button type="button" className="appearance-pick-btn" onClick={() => void handleOpenThemeKit()}>
-                Kit
-              </button>
-            </div>
+            {appearancePickBtn(
+              'Theme',
+              handlePickTheme,
+              !appearanceAssets.themeExists && !customCssEnabled,
+              isPicking === 'theme'
+            )}
           </div>
         </div>
       )}
+
+      {/* The kit is how a new theme starts, so it stays reachable while the
+          custom theme is off. */}
+      <div className="settings-appearance-sub">
+        <div className="settings-appearance-row">
+          <div className="settings-theme-kit-text">
+            <span className="settings-toggle-text">Theme kit</span>
+            <p className="settings-desc">
+              default.css is the stylesheet AetherDesk uses. Copy it and give it to an AI to build your own theme.
+            </p>
+          </div>
+          <button type="button" className="appearance-pick-btn" onClick={() => void handleOpenThemeKit()}>
+            Kit
+          </button>
+        </div>
+      </div>
 
       {/* Enable personal wallpaper */}
       <div className="settings-toggle-row">

@@ -439,11 +439,6 @@ body {
 /* Picker button: same exact footprint as the dropdowns (115x30), vertically
    centered against the description on its left. */
 .appearance-pick-btn {
-  width: 115px !important;
-  min-width: 115px !important;
-  max-width: 115px !important;
-  height: 30px !important;
-  flex: 0 0 115px !important;
   background-color: var(--frieren-night) !important;
   border: 1px solid rgba(142, 187, 209, 0.55) !important;
   color: var(--frieren-azure) !important;

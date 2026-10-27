@@ -435,11 +435,6 @@ body {
 /* Theme / Wallpaper picker buttons: same class (identical dimensions),
    cyberpunk style. */
 .appearance-pick-btn {
-  width: 115px !important;
-  min-width: 115px !important;
-  max-width: 115px !important;
-  height: 30px !important;
-  flex: 0 0 115px !important;
   background-color: #0f0f0a !important;
   border: 1px solid var(--cyber-yellow) !important;
   color: var(--cyber-yellow) !important;
