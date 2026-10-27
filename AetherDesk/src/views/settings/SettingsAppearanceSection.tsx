@@ -1,6 +1,5 @@
 import React from 'react';
 import { invoke } from '@tauri-apps/api/core';
-import { ClickablePath } from '../../ui/ClickablePath';
 import { openInFileManager } from '../../util/paths';
 import type { AppearanceAssets } from './types';
 
@@ -118,7 +117,7 @@ export const SettingsAppearanceSection: React.FC<SettingsAppearanceSectionProps>
             <p className="settings-desc">
               {appearanceAssets.themeName ? (
                 <>
-                  Currently active theme: <strong>{appearanceAssets.themeName}</strong>
+                  Currently active theme: <strong>{appearanceAssets.themeName}</strong>.
                 </>
               ) : (
                 ''
@@ -133,8 +132,7 @@ export const SettingsAppearanceSection: React.FC<SettingsAppearanceSectionProps>
           </div>
           <div className="settings-appearance-row">
             <p className="settings-desc">
-              The file default.css is the stylesheet that AetherDesk uses. Copy it and give it to an AI to build your
-              own theme.
+              default.css is the stylesheet that AetherDesk uses, copy it and give it to an AI to build your own theme.
             </p>
             <button type="button" className="appearance-pick-btn" onClick={() => void handleOpenThemeKit()}>
               Kit
@@ -178,17 +176,13 @@ export const SettingsAppearanceSection: React.FC<SettingsAppearanceSectionProps>
         <div className="settings-appearance-sub">
           <div className="settings-appearance-row">
             <p className="settings-desc">
-              The first image in{' '}
-              <ClickablePath path={appearanceAssets.wallpapersDir} onError={(msg) => showStatus(msg, 'error')} /> is
-              used as the app background.{' '}
               {appearanceAssets.wallpaperName ? (
                 <>
-                  Currently active: <strong>{appearanceAssets.wallpaperName}</strong>.{' '}
+                  Currently active wallpaper: <strong>{appearanceAssets.wallpaperName}</strong>.
                 </>
               ) : (
                 ''
               )}
-              Use the button to pick a different wallpaper.
             </p>
             {appearancePickBtn(
               'Wallpaper',
@@ -244,17 +238,13 @@ export const SettingsAppearanceSection: React.FC<SettingsAppearanceSectionProps>
         <div className="settings-appearance-sub">
           <div className="settings-appearance-row">
             <p className="settings-desc">
-              The first icon in{' '}
-              <ClickablePath path={appearanceAssets.iconsDir} onError={(msg) => showStatus(msg, 'error')} /> is used as
-              the window icon.{' '}
               {appearanceAssets.iconName ? (
                 <>
-                  Currently active: <strong>{appearanceAssets.iconName}</strong>.{' '}
+                  Currently active icon: <strong>{appearanceAssets.iconName}</strong>.
                 </>
               ) : (
                 ''
               )}
-              Use the button to pick a different icon.
             </p>
             {appearancePickBtn(
               'Icon',

@@ -72,16 +72,28 @@ describe('SettingsAppearanceSection theme buttons', () => {
     expect(theme.compareDocumentPosition(kit) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
 
     const themeRow = theme.closest('.settings-appearance-row');
-    expect(themeRow?.textContent).toContain('Currently active theme: cyberpunk.css');
+    expect(themeRow?.textContent).toContain('Currently active theme: cyberpunk.css.');
     expect(themeRow?.textContent).not.toContain('is applied automatically');
     expect(themeRow?.textContent).not.toContain('Use the button');
 
     const kitRow = kit.closest('.settings-appearance-row');
     expect(kitRow).not.toBe(themeRow);
     expect(kitRow?.textContent).toContain(
-      'The file default.css is the stylesheet that AetherDesk uses. Copy it and give it to an AI to build your own theme.'
+      'default.css is the stylesheet that AetherDesk uses, copy it and give it to an AI to build your own theme.'
     );
     expect(screen.queryByText('Theme kit')).not.toBeInTheDocument();
+  });
+
+  it('leaves only the active wallpaper and icon names in their picker rows', () => {
+    render(<SettingsAppearanceSection {...baseProps()} />);
+
+    const wallpaperRow = screen.getByRole('button', { name: 'Wallpaper' }).closest('.settings-appearance-row');
+    const iconRow = screen.getByRole('button', { name: 'Icon' }).closest('.settings-appearance-row');
+    expect(wallpaperRow?.textContent).toContain('Currently active wallpaper: cyberpunk.jpg.');
+    expect(iconRow?.textContent).toContain('Currently active icon: aether.ico.');
+    expect(screen.queryByText(/The first image in/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/The first icon in/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Use the button to pick/)).not.toBeInTheDocument();
   });
 
   it('hides the kit while the custom theme is off', () => {

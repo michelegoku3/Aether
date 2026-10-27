@@ -3238,9 +3238,10 @@ body {
 }
 
 .settings-number-input {
-  width: 42px;
-  min-width: 42px;
-  height: 24px;
+  width: 45px;
+  min-width: 45px;
+  max-width: 45px;
+  height: 25px;
   background-color: var(--bg-field);
   border: 1px solid var(--border-color);
   border-radius: 8px;
@@ -3286,8 +3287,7 @@ body {
   flex: 1 1 auto;
   min-width: 0;
   margin: 0;
-  /* Description may wrap; only the path (`.settings-path`) is ellipsized,
-     not the surrounding sentence. */
+  /* The description wraps instead of squeezing the 96px button. */
   line-height: 1.4;
 }
 
@@ -3793,9 +3793,8 @@ body {
   color: var(--color-uco2);
 }
 
-/* Clickable folder path (ClickablePath component).
-   Interactivity only: color and background are inherited from `.settings-path`
-   (the component always renders both classes, so they stay DRY). */
+/* Inline path that opens a folder.
+   Interactivity only: color and background come from `.settings-path`. */
 .settings-path-clickable {
   cursor: pointer;
   text-decoration: underline dotted;
