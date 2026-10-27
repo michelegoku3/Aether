@@ -3291,15 +3291,6 @@ body {
   line-height: 1.4;
 }
 
-/* Kit row: title above its explanation, the pair takes the row's free space. */
-.settings-theme-kit-text {
-  display: flex;
-  flex: 1 1 auto;
-  min-width: 0;
-  flex-direction: column;
-  gap: 2px;
-}
-
 .settings-path {
   font-family: monospace;
   font-size: 11px;

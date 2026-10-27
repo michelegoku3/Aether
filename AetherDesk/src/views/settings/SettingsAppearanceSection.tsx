@@ -135,24 +135,17 @@ export const SettingsAppearanceSection: React.FC<SettingsAppearanceSectionProps>
               isPicking === 'theme'
             )}
           </div>
+          <div className="settings-appearance-row">
+            <p className="settings-desc">
+              The CSS file named default.css is the stylesheet that AetherDesk uses. Copy it and give it to an AI to
+              build your own theme.
+            </p>
+            <button type="button" className="appearance-pick-btn" onClick={() => void handleOpenThemeKit()}>
+              Kit
+            </button>
+          </div>
         </div>
       )}
-
-      {/* The kit is how a new theme starts, so it stays reachable while the
-          custom theme is off. */}
-      <div className="settings-appearance-sub">
-        <div className="settings-appearance-row">
-          <div className="settings-theme-kit-text">
-            <span className="settings-toggle-text">Theme kit</span>
-            <p className="settings-desc">
-              default.css is the stylesheet AetherDesk uses. Copy it and give it to an AI to build your own theme.
-            </p>
-          </div>
-          <button type="button" className="appearance-pick-btn" onClick={() => void handleOpenThemeKit()}>
-            Kit
-          </button>
-        </div>
-      </div>
 
       {/* Enable personal wallpaper */}
       <div className="settings-toggle-row">

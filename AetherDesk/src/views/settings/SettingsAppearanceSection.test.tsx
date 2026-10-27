@@ -61,7 +61,7 @@ describe('SettingsAppearanceSection theme buttons', () => {
     vi.mocked(openInFileManager).mockClear();
   });
 
-  it('labels the pickers in sentence case and gives the kit its own row under the theme', () => {
+  it('gives the kit its own row under the theme with the stylesheet explanation', () => {
     render(<SettingsAppearanceSection {...baseProps()} />);
 
     const theme = screen.getByRole('button', { name: 'Theme' });
@@ -73,14 +73,16 @@ describe('SettingsAppearanceSection theme buttons', () => {
 
     const kitRow = kit.closest('.settings-appearance-row');
     expect(kitRow).not.toBe(theme.closest('.settings-appearance-row'));
-    expect(kitRow?.textContent).toContain('Theme kit');
-    expect(kitRow?.textContent).toContain('default.css');
+    expect(kitRow?.textContent).toContain(
+      'The CSS file named default.css is the stylesheet that AetherDesk uses. Copy it and give it to an AI to build your own theme.'
+    );
+    expect(screen.queryByText('Theme kit')).not.toBeInTheDocument();
   });
 
-  it('keeps the kit reachable while the custom theme is off', () => {
+  it('hides the kit while the custom theme is off', () => {
     render(<SettingsAppearanceSection {...baseProps()} customCssEnabled={false} />);
 
-    expect(screen.getByRole('button', { name: 'Kit' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Kit' })).not.toBeInTheDocument();
   });
 
   it('opens the theme kit folder after ensuring it exists', async () => {
