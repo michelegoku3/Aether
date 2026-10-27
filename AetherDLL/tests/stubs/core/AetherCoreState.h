@@ -11,6 +11,7 @@
 #include "core/Settings.h"
 #include "core/SteamTypes.h"
 #include "hooks/wire/DonorPool.h"
+#include "hooks/wire/DonorProbe.h"
 namespace ac {
 // Test seam: compile the REAL Settings.cpp and LuaData.cpp without unrelated
 // Steam/Win32 state. Path fields drive the wire-contract tests (manifest
@@ -57,6 +58,7 @@ struct AetherCoreState {
     std::string deskDataDir;
     struct TestAchievements {
         hooks::DonorPool::SharedState donor;
+        hooks::wire::donorprobe::State probe;
     };
     TestAchievements achievements;
 };

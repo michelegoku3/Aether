@@ -166,6 +166,44 @@ closed) or rebuild it from the JSON with `Tools/achievement_decoder.py rebuild`.
 mirror JSON files (`decode`, `snapshot`, `rebuild` commands) — use it together
 with `main.log` when investigating achievement issues.
 
+### Donor rotation and schema publication
+
+The donor pool is walked to the end in ONE session instead of one slot per
+session. `hooks/wire/DonorProbe` composes the requests the Steam client does not
+send: a donor that answers `WITHOUT data` starts a walk, and the walk asks every
+slot the app has not tried yet (`DonorPool::NextUntried`) over the service path
+(151 with `Player.GetUserStats#1` and a job id of its own; the attempt carries
+`probe = true`, which is what routes the response back instead of forwarding
+it). The first donor carrying a schema pins itself as the app's preferred
+donor, ends the walk, and `hooks/wire/SchemaCache` publishes the blob as
+`appcache\stats\UserGameStatsSchema_<appid>.bin` (byte-identical to the
+response's `schema` field, and only when its root key is that app id) plus the
+AetherData backup copy; the client then serves the game from that file,
+including after a restart. An existing cache file is never replaced and a blob
+without an achievement bucket is never written: a real Steam download always
+wins.
+
+Learning survives restarts in `<steam>\aethercore\donors.txt` (per app:
+preferred donor, tried mask, exhaustion stamp). A pool nobody answered from is
+left alone for seven days (`donorprobe::kRetryWindowSeconds`), so an app no
+donor owns costs one walk per week instead of a full walk per session. Probe
+responses are consumed internally: the body is emptied before the frame
+continues, so donor progress never reaches the game.
+
+The pool is compiled in: `AetherCore/hooks/wire/DonorIds.h` holds the 15 LumaCore
+SteamIDs plus the donors discovered since (today the one that owns The Loopler).
+Adding a donor is one line in that header and a release, so every install ships
+the same list and there is no per-user file to get wrong. The list is
+**append-only**: per-app learning stores donor indices, so an entry is added at
+the end and never inserted or reordered. To find a donor for a game nobody owns,
+append candidates, let the walk try them, and read
+`Donor probe: AppID <app> schema found on donor <steamid> (slot <n>)` from the
+log; then keep only that entry. The learning snapshot carries the pool
+fingerprint, so a release that changes the list discards stale per-app learning
+instead of skipping the new donor as "already tried". Probe requests are paced
+(`kMinProbeGap`) through the worker queue, never slept on the recv thread, and a
+`LimitExceeded`/`RateLimitExceeded` answer stops every walk for the session.
+
 
 ## Runtime publication and lifecycle
 
@@ -251,8 +289,11 @@ with `main.log` when investigating achievement issues.
 * Module boundaries: `GamesPlayedFormat` (pure wire-format helpers, unit
   tested), `GamesPlayedRewriter` (the two presence rewrite passes as one
   deterministic function), `DonorPool` (donor learning + send/recv
-  correlation for the UserStats spoof). AchievementModule keeps a single
-  `SerializeTo` tail instead of eight duplicated blocks.
+  correlation for the UserStats spoof), `DonorProbe` (the donor walk state
+  machine, wired to the wire layer and the schema cache by
+  `AchievementModule::InstallDonorProbe`) and `SchemaCache` (validated
+  publication of a probed schema into Steam's stats cache). AchievementModule
+  keeps a single `SerializeTo` tail instead of eight duplicated blocks.
 
 ### Backup lifecycle and pattern boundaries
 

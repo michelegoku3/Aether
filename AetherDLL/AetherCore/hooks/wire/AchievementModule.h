@@ -17,6 +17,10 @@ std::int32_t HandleRecvClientGetUserStatsResponse(const WireFrame& frame, std::u
 // Save handling (Store)
 std::int32_t HandleSendStoreUserStats2(const WireFrame& frame, std::uint8_t* out, std::uint32_t outCap);
 
+// Loads the persisted donor learning and wires the donor probe to the wire
+// layer (sender) and to Steam's stats cache (sink). One-shot, boot-time.
+void InstallDonorProbe();
+
 // Cleanly tears down any internal state. Safe to call when never started.
 void Shutdown();
 

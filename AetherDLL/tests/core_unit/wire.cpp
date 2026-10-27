@@ -211,9 +211,13 @@ void DonorPoolTest() {
 
     namespace dp = ac::hooks::DonorPool;
 
-    CHECK(dp::kPoolCount == 15);
+    CHECK(dp::PoolCount() == 16);
 
     CHECK(dp::DonorSteamId(14) == 76561198028121353ULL); // LumaCore default donor
+
+    // Compiled in, not read from a file: a fresh install can serve The Loopler
+    // (4150860) without shipping anything next to the DLL.
+    CHECK(dp::DonorSteamId(15) == 76561197997477460ULL);
 
     CHECK(dp::DonorSteamId(0) != dp::DonorSteamId(1));
 
@@ -223,9 +227,14 @@ void DonorPoolTest() {
 
     CHECK_EQ(dp::PickIndex(app), static_cast<std::size_t>(14));
 
-    // A data-less answer advances the round-robin.
+    // A data-less answer advances the round-robin; the donor compiled in for The
+    // Loopler is tried right after the LumaCore default, before wrapping to 0.
 
     dp::NoteAttemptResult(app, 14, /*okWithData=*/false);
+
+    CHECK(dp::PickIndex(app) == 15);
+
+    dp::NoteAttemptResult(app, 15, /*okWithData=*/false);
 
     CHECK(dp::PickIndex(app) == 0);
 
@@ -272,12 +281,192 @@ void DonorPoolTest() {
     CHECK(got.appId == app && got.poolIndex == 7);
 
     CHECK(dp::ResolveAttempt(true, 9999ull, got) == dp::Correl::NoMatch);
+
+    // A probe attempt correlates by jobid ONLY: it must stay out of the
+    // jobid-less fallback, otherwise a client response could be attributed to a
+    // probe (or the probe to the client) and the donor payload could leak.
+    dp::StatAttempt probeAttempt;
+    probeAttempt.appId = app;
+    probeAttempt.poolIndex = 4;
+    probeAttempt.probe = true;
+    dp::RecordAttempt(probeAttempt, /*hasJobId=*/true, 777777ull);
+
+    CHECK(dp::ResolveAttempt(/*hasJobIdTarget=*/false, 0, got) == dp::Correl::NoMatch);
+
+    CHECK(dp::ResolveAttempt(true, 777777ull, got) == dp::Correl::Resolved);
+
+    CHECK(got.probe && got.poolIndex == 4);
+}
+
+void DonorPoolLearningTest() {
+
+    namespace dp = ac::hooks::DonorPool;
+
+    // A fresh app walks the pool by UNTRIED slot: the probe must never ask a
+    // donor that already answered without data.
+    const ac::steam::AppId app = 999010u;
+
+    CHECK_EQ(dp::NextUntried(app), dp::kDefaultPoolIndex);
+
+    dp::NoteAttemptResult(app, 14, /*okWithData=*/false);
+
+    CHECK_EQ(dp::NextUntried(app), static_cast<std::size_t>(15)); // The Loopler donor
+
+    dp::NoteAttemptResult(app, 15, /*okWithData=*/false);
+
+    CHECK_EQ(dp::NextUntried(app), static_cast<std::size_t>(0));
+
+    dp::NoteAttemptResult(app, 0, /*okWithData=*/false);
+
+    CHECK_EQ(dp::NextUntried(app), static_cast<std::size_t>(1));
+
+    // A data-bearing answer ends the walk and pins the donor.
+    dp::NoteAttemptResult(app, 1, /*okWithData=*/true);
+
+    CHECK_EQ(dp::NextUntried(app), dp::PoolCount());
+
+    CHECK_EQ(dp::PickIndex(app), static_cast<std::size_t>(1));
+
+    // A pool walked to the end without data leaves no candidate.
+    const ac::steam::AppId dead = 999011u;
+
+    for (std::size_t i = 0; i < dp::PoolCount(); ++i)
+        dp::NoteAttemptResult(dead, i, /*okWithData=*/false);
+
+    CHECK_EQ(dp::NextUntried(dead), dp::PoolCount());
+
+    // Serialization: the learned donor survives a Steam restart, so the next
+    // session spoofs the working donor on the FIRST request instead of walking
+    // the pool again.
+    const std::string text = dp::SerializeLearning();
+
+    CHECK(text.find("999010") != std::string::npos);
+
+    dp::LoadLearning(text, /*replace=*/true);
+
+    CHECK_EQ(dp::PickIndex(app), static_cast<std::size_t>(1));
+
+    CHECK_EQ(dp::NextUntried(dead), dp::PoolCount()); // tried mask round-trips
+
+    // An empty snapshot is the "no file yet" boot: learning is cleared.
+    dp::LoadLearning("", /*replace=*/true);
+
+    CHECK_EQ(dp::PickIndex(app), dp::kDefaultPoolIndex);
+
+    CHECK_EQ(dp::NextUntried(app), dp::kDefaultPoolIndex);
+
+    // Exhaustion is remembered with a wall-clock stamp: an app nobody owns must
+    // not cost 15 probes on every Steam restart.
+    const ac::steam::AppId hopeless = 999012u;
+
+    for (std::size_t i = 0; i < dp::PoolCount(); ++i)
+        dp::NoteAttemptResult(hopeless, i, /*okWithData=*/false);
+
+    dp::NotePoolExhausted(hopeless, 1793000000u);
+
+    CHECK_EQ(dp::PoolExhaustedAt(hopeless), 1793000000u);
+
+    dp::LoadLearning(dp::SerializeLearning(), /*replace=*/true);
+
+    CHECK_EQ(dp::PoolExhaustedAt(hopeless), 1793000000u); // survives a restart
+
+    // The retry window elapsing restarts the walk from the default slot.
+    dp::ResetWalk(hopeless);
+
+    CHECK_EQ(dp::PoolExhaustedAt(hopeless), 0u);
+
+    CHECK_EQ(dp::NextUntried(hopeless), dp::kDefaultPoolIndex);
+
+    // A donor that finally answers with data clears the exhaustion flag.
+    dp::NotePoolExhausted(hopeless, 1793000000u);
+
+    dp::NoteAttemptResult(hopeless, 7, /*okWithData=*/true);
+
+    CHECK_EQ(dp::PoolExhaustedAt(hopeless), 0u);
+
+    // On-disk round-trip: what a Steam restart actually does.
+    Fixture fx;
+
+    const ac::steam::AppId persisted = 999013u;
+
+    dp::NoteAttemptResult(persisted, 9, /*okWithData=*/true);
+
+    const std::string path = (fx.dir / "donors.txt").string();
+
+    CHECK(dp::SaveLearning(path));
+
+    CHECK(fs::exists(fx.dir / "donors.txt"));
+
+    dp::LoadLearning("", /*replace=*/true); // simulate a fresh process
+
+    CHECK_EQ(dp::PickIndex(persisted), dp::kDefaultPoolIndex);
+
+    dp::LoadLearningFile(path);
+
+    CHECK_EQ(dp::PickIndex(persisted), static_cast<std::size_t>(9));
+
+    // A missing file (first run) and an empty directory are not errors to log.
+    dp::LoadLearningFile((fx.dir / "missing.json").string());
+
+    CHECK_EQ(dp::PickIndex(persisted), static_cast<std::size_t>(9)); // unchanged
+
+    CHECK(!dp::SaveLearning(""));
+
+    // A snapshot saved with Windows line endings (Notepad) still loads: the file
+    // is user-editable, so tolerating CRLF is part of the contract.
+    dp::NoteAttemptResult(999014u, 4, /*okWithData=*/true);
+
+    std::string crlf;
+    for (const char c : dp::SerializeLearning()) {
+        if (c == '\n')
+            crlf += '\r';
+        crlf += c;
+    }
+
+    dp::LoadLearning("", /*replace=*/true);
+
+    CHECK_EQ(dp::PickIndex(999014u), dp::kDefaultPoolIndex);
+
+    dp::LoadLearning(crlf, /*replace=*/true);
+
+    CHECK_EQ(dp::PickIndex(999014u), static_cast<std::size_t>(4));
+}
+
+void DonorPoolSnapshotTest() {
+
+    namespace dp = ac::hooks::DonorPool;
+
+    // The snapshot is written by this build and read by the next one. A tried
+    // mask wider than the current pool must survive load+save unchanged: a
+    // release that ships more donors must keep the bits it already wrote instead
+    // of silently forgetting them and re-probing donors.
+    const std::string header = dp::SerializeLearning(); // "aether-donors 2\npool=<fp>\n"
+
+    std::string mask(32, '0');
+    mask[32 - 1 - 40 / 4] = '1'; // bit 40, bit 0 in the last character
+
+    dp::LoadLearning(header + "999020 donor=- tried=" + mask + "\n", /*replace=*/true);
+
+    CHECK(dp::SerializeLearning().find("tried=" + mask) != std::string::npos);
+
+    // A snapshot taken with a different pool is discarded: an index from another
+    // list points at another account, so keeping it would spoof the wrong donor.
+    const ac::steam::AppId app = 999021u;
+
+    dp::NoteAttemptResult(app, 3, /*okWithData=*/true);
+
+    CHECK_EQ(dp::PickIndex(app), static_cast<std::size_t>(3));
+
+    dp::LoadLearning("aether-donors 2\npool=0000000000000000\n"
+                     "999021 donor=3 tried=00000000000000000000000000000000\n",
+                     /*replace=*/true);
+
+    CHECK_EQ(dp::PickIndex(app), dp::kDefaultPoolIndex);
 }
 
 // ---------------------------------------------------------------------------
 
 // Manifest identity, IPC reply and snapshot merge.
-
 // ---------------------------------------------------------------------------
 
 void ManifestIdentityTest() {

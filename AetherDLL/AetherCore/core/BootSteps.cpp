@@ -22,6 +22,7 @@
 #include "hooks/license/LicenseManager.h"
 #include "hooks/steamui/SteamUIStylePatch.h"
 #include "hooks/wire/AchievementBackup.h"
+#include "hooks/wire/AchievementModule.h"
 #include "hooks/wire/ManifestRestore.h"
 #include "inject/Diversion.h"
 #include "scripting/DirWatch.h"
@@ -298,8 +299,14 @@ void StartSafetyNetsStage() {
     //      Depends on: lua data (HasDepot) + steamInstallPath + depotcache.
     ac::appmanifest::ApplyInstalledDepotRepairsAtStartup();
 
-    // 10e. Stylesheet tweak: hide Steam's orange "legacy library sharing"
-    //      notice next to the banner. Rewrites the rule in place with
+    // 10e. Donor probe: load the donor learning persisted across sessions
+    //      (<aethercore>\donors.json) and wire the probe to the wire layer and
+    //      to Steam's stats cache, so an app whose first donor has no data is
+    //      learned in ONE session instead of one donor per Steam start.
+    //      Depends on: aethercore dir + steamInstallPath + the send hook.
+    ac::hooks::AchievementModule::InstallDonorProbe();
+
+    // 10f. Stylesheet tweak: hide Steam's orange "legacy library sharing"    //      notice next to the banner. Rewrites the rule in place with
     //      same-length swaps, so sp.css keeps its exact size: Steam's
     //      bootstrapper verifies client file sizes before every start and
     //      re-applies the whole client package on a mismatch (a bogus

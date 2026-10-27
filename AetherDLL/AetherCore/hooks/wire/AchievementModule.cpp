@@ -12,10 +12,14 @@
 #include "core/AetherCoreState.h"
 #include "core/Constants.h"
 #include "core/Logger.h"
+#include "core/Workers.h"
 #include "credentials/SteamId.h"
 #include "hooks/aetheronline/PresenceSession.h"
 #include "hooks/wire/AchievementBackup.h"
+#include "hooks/wire/BackupIo.h"
 #include "hooks/wire/DonorPool.h"
+#include "hooks/wire/DonorProbe.h"
+#include "hooks/wire/SchemaCache.h"
 #include "scripting/LuaData.h"
 #include "steam_messages.pb.h"
 #include "utils/Hasher.h"
@@ -26,7 +30,10 @@
 //   1. Donor selection uses a fixed 15-donor SteamID pool with self-learning:
 //      remember which donor returned real schema / stat / achievement data and
 //      reuse it; advance to the next pool entry when a donor stops returning
-//      data.
+//      data. The learning is persisted per app (aethercore\donors.txt) and a
+//      donor that returns nothing starts a probe walk over the rest of the pool
+//      (hooks/wire/DonorProbe), whose schema is published into Steam's cache
+//      (hooks/wire/SchemaCache) so later sessions serve it directly.
 //   2. A GetUserStats request that already carries a local schema has its
 //      `sha_schema` cleared and is spoofed anyway (as LumaCore does), so games
 //      that send a cached schema still get donor data.
@@ -153,6 +160,76 @@ bool ResolveAetherOnlineAppId(steam::AppId& appId, const char* flow) {
         return true;
     }
     return false;
+}
+
+// ---------------------------------------------------------------------------
+// Donor probe wiring.
+//
+// The client asks GetUserStats once or twice per session, and each answer only
+// advances DonorPool by one slot: a game whose donor sits late in the pool can
+// go through whole sessions without ever reaching a donor that owns it (The
+// Loopler, AppID 4150860, was stuck on this). The probe composes the remaining
+// requests itself, publishes the schema it finds into Steam's stats cache and
+// the learning is persisted, so later sessions start from the donor that works.
+// ---------------------------------------------------------------------------
+
+// Probe job ids start in the upper half so they stand out in the log. Routing
+// never relies on the value (Steam's own ids reach the same range): the attempt
+// map carries the `probe` flag.
+std::atomic<std::uint64_t> g_probeJobSeed{0x8000000000000000ull};
+
+std::uint64_t NextProbeJobId() { return g_probeJobSeed.fetch_add(1, std::memory_order_relaxed); }
+
+// <steam>\aethercore\donors.txt — donor learning across Steam restarts.
+std::string LearningPath() {
+    return g_state.aetherCoreDir.empty() ? std::string() : g_state.aetherCoreDir + "\\donors.txt";
+}
+
+// Persist after a learning change. The write runs on the worker queue: the recv
+// hook must not stall the network thread on disk I/O, and learning only changes
+// once per donor answer.
+void ScheduleLearningSave() {
+    const std::string path = LearningPath();
+    if (path.empty())
+        return;
+    workers::Submit([path] { DonorPool::SaveLearning(path); });
+}
+
+// Sends one probe request and tags the attempt so its response comes back here
+// instead of being forwarded to the client. Returns the jobid, 0 on failure.
+std::uint64_t SendProbeRequest(steam::AppId appId, std::size_t donor) {
+    CPlayer_GetUserStats_Request req;
+    req.set_steamid(DonorPool::DonorSteamId(donor));
+    req.set_appid(appId);
+    req.set_crc_stats(0);
+    // No sha_schema, like the client's own first request: the full schema is
+    // what the game needs and what the client caches on disk.
+
+    const std::uint64_t jobId = NextProbeJobId();
+    std::string body;
+    body.resize(static_cast<std::size_t>(req.ByteSizeLong()));
+    if (body.size() > constants::kWireMaxBodyBytes || !req.SerializeToArray(body.data(), static_cast<int>(body.size())))
+        return 0;
+
+    if (!SendClientServiceCall(constants::job_hash::kGetUserStatsName, jobId,
+                               reinterpret_cast<const std::uint8_t*>(body.data()),
+                               static_cast<std::uint32_t>(body.size())))
+        return 0;
+
+    StatAttempt attempt;
+    attempt.appId = appId;
+    attempt.poolIndex = donor;
+    attempt.probe = true;
+    DonorPool::RecordAttempt(attempt, /*hasJobId=*/true, jobId);
+    return jobId;
+}
+
+// Publishes a schema found by the probe into Steam's stats cache and the
+// AetherData backup, which is what the client serves from then on.
+bool StoreProbedSchema(steam::AppId appId, const std::string& schema) {
+    const std::string statsDir =
+        g_state.steamInstallPath.empty() ? std::string() : g_state.steamInstallPath + "\\appcache\\stats";
+    return ac::hooks::wire::schemacache::Store(appId, schema, statsDir, ac::backup::io::BackupDirForApp(appId));
 }
 
 } // namespace
@@ -315,6 +392,22 @@ std::int32_t HandleRecvGetUserStatsResponse(const WireFrame& frame, std::uint8_t
         return kNoChange;
     }
 
+    // Answer to a request we composed (DonorProbe): only the schema is kept and
+    // the body is emptied, so donor progress never travels to the game. The
+    // client ignores the job id it never asked for.
+    if (attempt.probe) {
+        const std::int32_t probeResult = hdrMsg.has_eresult() ? hdrMsg.eresult() : -1;
+        const bool hasSchema = IsOK(probeResult) && resp.has_schema() && !resp.schema().empty();
+        AC_LOG_DEBUG(kModule,
+                     "[152 GetUserStats Response] Probe AppID %u donor %llu (pool %zu): eresult=%d, schema=%u byte.",
+                     attempt.appId, DonorPool::DonorSteamId(attempt.poolIndex), attempt.poolIndex, probeResult,
+                     resp.has_schema() ? static_cast<std::uint32_t>(resp.schema().size()) : 0u);
+        wire::donorprobe::OnProbeResult(attempt.appId, attempt.poolIndex, hasSchema,
+                                        hasSchema ? resp.schema() : std::string(), probeResult);
+        ScheduleLearningSave();
+        return 0; // empty body: no donor payload reaches the client
+    }
+
     // DONOR response not precisely correlatable: Ambiguous (multiple spoofed
     // requests in flight) or Resolved onto an app that became unmanaged after
     // the send (e.g. MarkOwned fired in the meantime). In both cases the
@@ -373,6 +466,13 @@ std::int32_t HandleRecvGetUserStatsResponse(const WireFrame& frame, std::uint8_t
         }
 
     DonorPool::NoteAttemptResult(attempt.appId, attempt.poolIndex, okWithData);
+
+    // This donor has nothing for the app: walk the rest of the pool now instead
+    // of waiting for the client's next request (which may be a whole session
+    // away). A data-bearing donor needs no walk; persist the new preference.
+    ScheduleLearningSave();
+    if (!okWithData)
+        wire::donorprobe::OnDonorWithoutData(attempt.appId);
 
     // 1. Header: force eresult = k_EResultOK.
     hdrMsg.set_eresult(1); // k_EResultOK
@@ -511,6 +611,10 @@ std::int32_t HandleRecvClientGetUserStatsResponse(const WireFrame& frame, std::u
         }
 
     DonorPool::NoteAttemptResult(appId, attempt.poolIndex, okWithData);
+
+    ScheduleLearningSave();
+    if (!okWithData)
+        wire::donorprobe::OnDonorWithoutData(appId);
 
     // Total wipe of foreign unlocks, keeping the schema.
     resp.clear_stats();
@@ -690,6 +794,24 @@ std::int32_t HandleSendStoreUserStats2(const WireFrame& frame, std::uint8_t* out
     }
 
     return kNoChange;
+}
+
+void InstallDonorProbe() {
+    DonorPool::LoadLearningFile(LearningPath());
+    wire::donorprobe::SetSender(SendProbeRequest);
+    wire::donorprobe::SetSink(StoreProbedSchema);
+    // Pacing runs on the worker queue: the recv hook must never sleep on
+    // Steam's network thread. A refused submit falls back to sending now.
+    wire::donorprobe::SetScheduler([](std::chrono::milliseconds delay, std::function<void()> action) {
+        std::function<void()> immediate = action; // fallback when the queue is gone
+        if (!workers::Submit([delay, action = std::move(action)] {
+                std::this_thread::sleep_for(delay);
+                action();
+            }))
+            immediate();
+    });
+    AC_LOG_INFO(kModule, "Donor probe armed (pool: %zu compiled donors, learning: %s).", DonorPool::PoolCount(),
+                LearningPath().c_str());
 }
 
 void Shutdown() {

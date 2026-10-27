@@ -92,6 +92,8 @@ add_library(AetherCore SHARED
     hooks/wire/AchievementModule.cpp
     hooks/wire/AchievementBackup.cpp
     hooks/wire/DonorPool.cpp
+    hooks/wire/DonorProbe.cpp
+    hooks/wire/SchemaCache.cpp
     hooks/wire/GamesPlayedFormat.cpp
     hooks/wire/GamesPlayedRewriter.cpp
     hooks/wire/BackupIo.cpp

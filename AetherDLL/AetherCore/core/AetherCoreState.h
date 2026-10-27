@@ -16,6 +16,7 @@
 #include "core/SteamTypes.h"
 #include "hooks/ipc/PipeWatch.h"
 #include "hooks/wire/DonorPool.h"
+#include "hooks/wire/DonorProbe.h"
 #include "network/EticketFetcher.h"
 #include "utils/IpcSpec.h"
 #include "utils/TtlCache.h"
@@ -60,6 +61,9 @@ struct ManifestOverride {
 // never as module-local globals (see docs/ARCHITECTURE.md).
 struct AchievementStore {
     hooks::DonorPool::SharedState donor;
+    // Donor-probe walk bookkeeping (in-flight apps plus the injected wire
+    // sender/schema sink). Donor learning itself stays in `donor` above.
+    hooks::wire::donorprobe::State probe;
 };
 
 struct AetherCoreState {

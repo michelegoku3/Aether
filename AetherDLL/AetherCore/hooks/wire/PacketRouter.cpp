@@ -335,7 +335,10 @@ void* h_RecvPkt(void* self, CNetPacket* packet) {
 
 } // namespace
 
-bool SendClientFrame(std::uint32_t eMsg, const std::uint8_t* body, std::uint32_t bodyLen) {
+namespace {
+
+bool SendFrameImpl(std::uint32_t eMsg, const std::uint8_t* body, std::uint32_t bodyLen, const char* targetJobName,
+                   std::uint64_t jobId) {
     if (!o_BBuildAndAsyncSendFrame) {
         AC_LOG_WARN(kModule, "SendClientFrame: send hook not installed.");
         return false;
@@ -362,6 +365,10 @@ bool SendClientFrame(std::uint32_t eMsg, const std::uint8_t* body, std::uint32_t
     ph.clear_jobid_target();
     ph.clear_target_job_name();
     ph.clear_eresult();
+    if (targetJobName) {
+        ph.set_target_job_name(targetJobName);
+        ph.set_jobid_source(jobId);
+    }
 
     std::string hdrOut;
     if (!ph.SerializeToString(&hdrOut) || hdrOut.size() > kWireMaxHeaderBytes)
@@ -378,10 +385,23 @@ bool SendClientFrame(std::uint32_t eMsg, const std::uint8_t* body, std::uint32_t
     }
 
     const bool ok = o_BBuildAndAsyncSendFrame(obj, steam::k_eWebSocketOpCode_Binary, frame.data(), total);
-    AC_LOG_INFO(kModule, "[DIAG] SendClientFrame eMsg=%u hdr=%zu body=%u steamid=%llu sess=%d -> %s", eMsg,
+    AC_LOG_INFO(kModule, "[DIAG] SendClientFrame eMsg=%u hdr=%zu body=%u steamid=%llu sess=%d job=%s -> %s", eMsg,
                 hdrOut.size(), bodyLen, static_cast<unsigned long long>(ph.steamid()), ph.client_sessionid(),
-                ok ? "ok" : "FAILED");
+                targetJobName ? targetJobName : "-", ok ? "ok" : "FAILED");
     return ok;
+}
+
+} // namespace
+
+bool SendClientFrame(std::uint32_t eMsg, const std::uint8_t* body, std::uint32_t bodyLen) {
+    return SendFrameImpl(eMsg, body, bodyLen, nullptr, 0);
+}
+
+bool SendClientServiceCall(const char* targetJobName, std::uint64_t jobId, const std::uint8_t* body,
+                           std::uint32_t bodyLen) {
+    if (!targetJobName || !*targetJobName)
+        return false;
+    return SendFrameImpl(emsg::kServiceMethodCallFromClient, body, bodyLen, targetJobName, jobId);
 }
 
 void RegisterPacketRouter(HMODULE diversion) {

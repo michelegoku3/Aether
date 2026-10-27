@@ -51,4 +51,11 @@ void RegisterPacketRouter(HMODULE diversion);
 // ---------------------------------------------------------------------------
 bool SendClientFrame(std::uint32_t eMsg, const std::uint8_t* body, std::uint32_t bodyLen);
 
+// Same as SendClientFrame, but the frame reads as a service call: the header
+// carries `targetJobName` and `jobId` as jobid_source, so the server echoes it
+// back as jobid_target and the response can be correlated. Used by the donor
+// probe to compose GetUserStats requests on the app's behalf.
+bool SendClientServiceCall(const char* targetJobName, std::uint64_t jobId, const std::uint8_t* body,
+                           std::uint32_t bodyLen);
+
 } // namespace ac::hooks
