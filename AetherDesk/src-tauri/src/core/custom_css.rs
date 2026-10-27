@@ -39,6 +39,9 @@ const DEFAULT_FRIEREN_THEME: &str = include_str!("../../assets/defaults/themes/f
 /// Halo theme (UNSC / Master Chief / MJOLNIR palette).
 const DEFAULT_HALO_THEME: &str = include_str!("../../assets/defaults/themes/halo.css");
 
+/// Wonderland theme (TV-world: pixel-art type, CRT scanlines, paper modals).
+const DEFAULT_WONDERLAND_THEME: &str = include_str!("../../assets/defaults/themes/wonderland.css");
+
 /// Default wallpaper shipped with AetherDesk (4K Cyberpunk 2077 art, embedded).
 const DEFAULT_CYBERPUNK_WALLPAPER: &[u8] =
     include_bytes!("../../assets/defaults/wallpapers/cyberpunk.jpg");
@@ -60,6 +63,7 @@ const DEFAULT_THEME_FILES: &[(&str, &str)] = &[
     ("goldmine.css", DEFAULT_GOLDMINE_THEME),
     ("frieren.css", DEFAULT_FRIEREN_THEME),
     ("halo.css", DEFAULT_HALO_THEME),
+    ("wonderland.css", DEFAULT_WONDERLAND_THEME),
 ];
 const DEFAULT_WALLPAPER_FILES: &[(&str, &[u8])] = &[
     ("cyberpunk.jpg", DEFAULT_CYBERPUNK_WALLPAPER),
@@ -93,8 +97,9 @@ pub const ICON_EXTENSIONS: &[&str] = &[
 
 /// Creates `config/themes/`, `config/wallpapers/` and `config/icons/` (if
 /// missing) and seeds the theme, wallpaper and icon folders with the embedded
-/// defaults when empty (Cyberpunk, Goldmine, Frieren and Halo themes and
-/// wallpapers, plus the alternate icon).
+/// defaults when empty (Cyberpunk, Goldmine, Frieren, Halo and Wonderland
+/// themes; Cyberpunk, Goldmine, Frieren and Halo wallpapers; plus the
+/// alternate icon).
 /// Idempotent: existing files are never overwritten, so user files survive
 /// upgrades. Failures are logged, never fatal.
 pub fn ensure_default_assets() -> Result<(), String> {
