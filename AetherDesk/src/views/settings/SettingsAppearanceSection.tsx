@@ -112,12 +112,12 @@ export const SettingsAppearanceSection: React.FC<SettingsAppearanceSectionProps>
       )}
 
       {customCssEnabled && appearanceAssets.themeExists && (
-        <div className="settings-appearance-sub">
+        <div className="settings-sub-options">
           <div className="settings-appearance-row">
             <p className="settings-desc">
               {appearanceAssets.themeName ? (
                 <>
-                  Currently active theme: <strong>{appearanceAssets.themeName}</strong>.
+                  Currently active theme: <strong>{appearanceAssets.themeName}</strong>
                 </>
               ) : (
                 ''
@@ -131,9 +131,7 @@ export const SettingsAppearanceSection: React.FC<SettingsAppearanceSectionProps>
             )}
           </div>
           <div className="settings-appearance-row">
-            <p className="settings-desc">
-              default.css is the stylesheet that AetherDesk uses, copy it and give it to an AI to build your own theme.
-            </p>
+            <p className="settings-desc">Use default.css to make your own theme</p>
             <button type="button" className="appearance-pick-btn" onClick={() => void handleOpenThemeKit()}>
               Kit
             </button>
@@ -173,12 +171,12 @@ export const SettingsAppearanceSection: React.FC<SettingsAppearanceSectionProps>
       )}
 
       {personalWallpaperEnabled && appearanceAssets.wallpaperExists && (
-        <div className="settings-appearance-sub">
+        <div className="settings-sub-options">
           <div className="settings-appearance-row">
             <p className="settings-desc">
               {appearanceAssets.wallpaperName ? (
                 <>
-                  Currently active wallpaper: <strong>{appearanceAssets.wallpaperName}</strong>.
+                  Currently active wallpaper: <strong>{appearanceAssets.wallpaperName}</strong>
                 </>
               ) : (
                 ''
@@ -235,12 +233,12 @@ export const SettingsAppearanceSection: React.FC<SettingsAppearanceSectionProps>
       )}
 
       {customIconEnabled && appearanceAssets.iconExists && (
-        <div className="settings-appearance-sub">
+        <div className="settings-sub-options">
           <div className="settings-appearance-row">
             <p className="settings-desc">
               {appearanceAssets.iconName ? (
                 <>
-                  Currently active icon: <strong>{appearanceAssets.iconName}</strong>.
+                  Currently active icon: <strong>{appearanceAssets.iconName}</strong>
                 </>
               ) : (
                 ''
@@ -270,7 +268,7 @@ export const SettingsAppearanceSection: React.FC<SettingsAppearanceSectionProps>
       </div>
 
       {useAlternativeGameCards && (
-        <div className="settings-appearance-sub">
+        <div className="settings-sub-options">
           <div className="settings-toggle-row">
             <span className="settings-toggle-text">Backdrop opacity</span>
             <input

@@ -73,6 +73,17 @@ describe('SettingsLibrarySection', () => {
     expect((container.querySelector('select') as HTMLSelectElement).value).toBe('76561199876393402');
   });
 
+  it('groups the App ID and account fields under one conditional rail', () => {
+    const on = render(<SettingsLibrarySection {...baseProps()} enabled />);
+    const rails = on.container.querySelectorAll('.settings-sub-options');
+    expect(rails).toHaveLength(1);
+    expect(rails[0].querySelector('input[placeholder*="4656000"]')).not.toBeNull();
+    expect(rails[0].querySelector('select')).not.toBeNull();
+
+    const off = render(<SettingsLibrarySection {...baseProps()} />);
+    expect(off.container.querySelector('.settings-sub-options')).toBeNull();
+  });
+
   it('clears the App ID field with the inline x', () => {
     const props = { ...baseProps(), enabled: true, appIds: '4656000, 4108000' };
     render(<SettingsLibrarySection {...props} />);

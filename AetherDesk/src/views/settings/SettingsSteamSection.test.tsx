@@ -117,6 +117,17 @@ describe('SettingsSteamSection', () => {
     expect(on.container.querySelector('select')).not.toBeNull();
   });
 
+  it('puts the custom game name inside the conditional rail', () => {
+    const on = render(<SettingsSteamSection {...baseProps()} />);
+    const row = Array.from(on.container.querySelectorAll('.settings-toggle-row')).find((r) =>
+      r.textContent?.includes('Custom game display name')
+    );
+    expect(row?.closest('.settings-sub-options')).not.toBeNull();
+
+    const off = render(<SettingsSteamSection {...baseProps()} presenceDefaultShowOnline={false} />);
+    expect(off.container.querySelector('.settings-sub-options')).toBeNull();
+  });
+
   it('clears the custom game name with the inline x', () => {
     const props = { ...baseProps(), customGameName: 'Aether' };
     render(<SettingsSteamSection {...props} />);

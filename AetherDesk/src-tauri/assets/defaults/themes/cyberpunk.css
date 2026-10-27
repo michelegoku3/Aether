@@ -389,11 +389,7 @@ body {
   color: var(--cyber-yellow) !important;
 }
 
-/* New Appearance section classes (indentation, path, missing assets). */
-.settings-appearance-sub .settings-toggle-row {
-  border-left: 1px solid rgba(252, 238, 10, 0.2) !important;
-  padding-left: 14px !important;
-}
+/* Appearance section classes (path, missing assets). */
 .settings-appearance-row {
   display: flex !important;
   align-items: center !important;

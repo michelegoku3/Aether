@@ -3256,21 +3256,37 @@ body {
   border-color: var(--color-cyan);
 }
 
-/* Appearance sub-options (theme/wallpaper picker rows under the switches). */
-.settings-appearance-sub {
+/* Options revealed by a toggle (theme/wallpaper pickers, conditional fields,
+   Store front criterion): one continuous rail on the left keeps the group
+   together while the controls stay on the right edge. */
+.settings-sub-options {
+  position: relative;
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
+  align-items: stretch;
   gap: 8px;
-  /* No indent: sub-options line up with the switches and the group label. */
-  padding: 4px 0 8px;
+  width: 100%;
+  padding: 4px 0 8px 14px;
 }
 
-.settings-appearance-sub .settings-desc {
+/* The rail uses the theme accent, so it is Aether's structural language, not
+   a decoration of one theme; `opacity` keeps it quieter than the controls. */
+.settings-sub-options::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: var(--color-cyan);
+  opacity: 0.25;
+}
+
+.settings-sub-options .settings-desc {
   margin: 0;
 }
 
-.settings-appearance-sub .settings-toggle-row {
+.settings-sub-options .settings-toggle-row {
   width: 100%;
 }
 

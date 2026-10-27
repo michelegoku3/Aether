@@ -79,19 +79,21 @@ export const SettingsStoreSection: React.FC<SettingsStoreSectionProps> = ({
       </div>
 
       {showStoreFrontGames && (
-        <div className="settings-toggle-row" title="Choose which Steam Store front criterion is shown by default">
-          <span className="settings-toggle-text">Store front criterion</span>
-          <select
-            className="settings-front-filter-select"
-            value={storeFrontFilter}
-            onChange={(e) => setStoreFrontFilter(e.target.value)}
-          >
-            <option value="trending">Trending</option>
-            <option value="latest">Latest</option>
-            <option value="top_sellers">Top sellers</option>
-            <option value="upcoming">Upcoming</option>
-            <option value="discounts">Discounts</option>
-          </select>
+        <div className="settings-sub-options">
+          <div className="settings-toggle-row" title="Choose which Steam Store front criterion is shown by default">
+            <span className="settings-toggle-text">Store front criterion</span>
+            <select
+              className="settings-front-filter-select"
+              value={storeFrontFilter}
+              onChange={(e) => setStoreFrontFilter(e.target.value)}
+            >
+              <option value="trending">Trending</option>
+              <option value="latest">Latest</option>
+              <option value="top_sellers">Top sellers</option>
+              <option value="upcoming">Upcoming</option>
+              <option value="discounts">Discounts</option>
+            </select>
+          </div>
         </div>
       )}
 

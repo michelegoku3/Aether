@@ -48,7 +48,7 @@ export const SettingsLibrarySection: React.FC<SettingsLibrarySectionProps> = ({
       </div>
 
       {enabled && (
-        <>
+        <div className="settings-sub-options">
           <div className="settings-toggle-row settings-field-column">
             <span className="settings-toggle-text">App IDs</span>
             <div className="settings-input-wrap">
@@ -107,7 +107,7 @@ export const SettingsLibrarySection: React.FC<SettingsLibrarySectionProps> = ({
               Selected games will be shown as games from another library, a Steam restart is required to make it appear.
             </p>
           </div>
-        </>
+        </div>
       )}
     </>
   );

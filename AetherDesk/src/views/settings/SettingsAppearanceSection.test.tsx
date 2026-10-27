@@ -72,16 +72,19 @@ describe('SettingsAppearanceSection theme buttons', () => {
     expect(theme.compareDocumentPosition(kit) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
 
     const themeRow = theme.closest('.settings-appearance-row');
-    expect(themeRow?.textContent).toContain('Currently active theme: cyberpunk.css.');
+    expect(themeRow?.textContent).toContain('Currently active theme: cyberpunk.css');
+    expect(themeRow?.textContent).not.toContain('Currently active theme: cyberpunk.css.');
     expect(themeRow?.textContent).not.toContain('is applied automatically');
     expect(themeRow?.textContent).not.toContain('Use the button');
 
     const kitRow = kit.closest('.settings-appearance-row');
     expect(kitRow).not.toBe(themeRow);
-    expect(kitRow?.textContent).toContain(
-      'default.css is the stylesheet that AetherDesk uses, copy it and give it to an AI to build your own theme.'
-    );
+    expect(kitRow?.textContent).toContain('Use default.css to make your own theme');
     expect(screen.queryByText('Theme kit')).not.toBeInTheDocument();
+
+    const themeRail = themeRow?.closest('.settings-sub-options');
+    expect(themeRail).not.toBeNull();
+    expect(kitRow?.closest('.settings-sub-options')).toBe(themeRail);
   });
 
   it('leaves only the active wallpaper and icon names in their picker rows', () => {
@@ -89,11 +92,25 @@ describe('SettingsAppearanceSection theme buttons', () => {
 
     const wallpaperRow = screen.getByRole('button', { name: 'Wallpaper' }).closest('.settings-appearance-row');
     const iconRow = screen.getByRole('button', { name: 'Icon' }).closest('.settings-appearance-row');
-    expect(wallpaperRow?.textContent).toContain('Currently active wallpaper: cyberpunk.jpg.');
-    expect(iconRow?.textContent).toContain('Currently active icon: aether.ico.');
+    expect(wallpaperRow?.textContent).toContain('Currently active wallpaper: cyberpunk.jpg');
+    expect(wallpaperRow?.textContent).not.toContain('Currently active wallpaper: cyberpunk.jpg.');
+    expect(iconRow?.textContent).toContain('Currently active icon: aether.ico');
+    expect(iconRow?.textContent).not.toContain('Currently active icon: aether.ico.');
+    expect(wallpaperRow?.closest('.settings-sub-options')).not.toBeNull();
+    expect(iconRow?.closest('.settings-sub-options')).not.toBeNull();
     expect(screen.queryByText(/The first image in/)).not.toBeInTheDocument();
     expect(screen.queryByText(/The first icon in/)).not.toBeInTheDocument();
     expect(screen.queryByText(/Use the button to pick/)).not.toBeInTheDocument();
+  });
+
+  it('groups every toggle-revealed appearance option under one rail each', () => {
+    const { container } = render(<SettingsAppearanceSection {...baseProps()} useAlternativeGameCards />);
+
+    const rails = Array.from(container.querySelectorAll('.settings-sub-options'));
+    expect(rails).toHaveLength(4);
+
+    const cards = rails.find((rail) => rail.textContent?.includes('Backdrop opacity'));
+    expect(cards?.textContent).toContain('Backdrop fade (bottom)');
   });
 
   it('hides the kit while the custom theme is off', () => {

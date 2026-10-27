@@ -391,11 +391,7 @@ body {
   box-shadow: 0 0 8px rgba(217, 179, 108, 0.25) !important;
 }
 
-/* Appearance section: indentation, path, missing assets, text+button row. */
-.settings-appearance-sub .settings-toggle-row {
-  border-left: 1px solid rgba(217, 179, 108, 0.18) !important;
-  padding-left: 14px !important;
-}
+/* Appearance section: path, missing assets, text+button row. */
 .settings-appearance-row {
   display: flex !important;
   align-items: center !important;
