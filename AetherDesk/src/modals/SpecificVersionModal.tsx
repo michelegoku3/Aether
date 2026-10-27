@@ -138,8 +138,9 @@ export const ManualVersionEditor = ({ game, initialRows, onClose }: ManualVersio
     [rows]
   );
 
-  // ESC + outside clicks close the popup (honoring an in-flight operation).
-  useModalDismiss(onClose, isApplying);
+  // Escape closes only when nothing would be lost: a stray key must never
+  // discard pending manifest edits. The header X stays as the explicit exit.
+  useModalDismiss(onClose, isApplying || hasChanges);
 
   const handleOpenSteamDb = async () => {
     try {

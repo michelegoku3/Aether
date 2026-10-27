@@ -2,7 +2,6 @@ import React from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import type { SteamCheckStatus } from './types';
 import type { AppInfoRepair } from '../../types/steam';
-import type { SetPresenceDefaultModeArgs } from '../../types/online';
 import { toErrorMessage } from '../../util/errors';
 import { FolderIcon } from '../../ui/icons';
 import { SettingsLibrarySection } from './SettingsLibrarySection';
@@ -112,14 +111,12 @@ export const SettingsSteamSection: React.FC<SettingsSteamSectionProps> = ({
         </button>
       </div>
 
-      <div className="settings-toggle-row settings-field-column">
+      <div className="settings-toggle-row">
         <span className="settings-toggle-text">Repair Steam metadata cache</span>
-        <p className="settings-desc">
-          Close Steam first. The appinfo cache is rebuilt on the next start; the old file is kept as a backup.
-        </p>
         <button
           type="button"
           className="settings-small-btn settings-action-btn"
+          title="Close Steam first: the cache is rebuilt on the next start and the old file is kept as a backup."
           onClick={() => void repairAppInfoCache()}
         >
           Repair Cache
@@ -132,21 +129,7 @@ export const SettingsSteamSection: React.FC<SettingsSteamSectionProps> = ({
           <input
             type="checkbox"
             checked={presenceDefaultShowOnline}
-            onChange={async (e) => {
-              const next = e.target.checked;
-              const previous = !next;
-              setPresenceDefaultShowOnline(next);
-              try {
-                // IPC key `showOnline` (Rust `show_online` → lowerCamelCase),
-                // typed in `types/online.ts`. NOT the TOML value, which
-                // stays "showonline": see docs/shared_contracts.md §7.
-                const args: SetPresenceDefaultModeArgs = { showOnline: next };
-                await invoke<string>('set_presence_default_mode', args);
-              } catch (err: unknown) {
-                setPresenceDefaultShowOnline(previous);
-                showStatus(`Failed to set presence default mode: ${toErrorMessage(err)}`, 'error');
-              }
-            }}
+            onChange={(e) => setPresenceDefaultShowOnline(e.target.checked)}
           />
           <span></span>
         </label>

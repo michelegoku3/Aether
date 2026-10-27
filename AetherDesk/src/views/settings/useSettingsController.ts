@@ -6,6 +6,7 @@ import type { SettingsPatch } from './settingsModel';
 import { useSettingsForm } from './useSettingsForm';
 import { getSteamAccounts, isValidSteamId64, parseAppIdList, type SteamAccount } from './libraryBanner';
 import { isSettingsConflict, needsHubcapKey, toErrorMessage } from '../../util/errors';
+import type { SetPresenceDefaultModeArgs } from '../../types/online';
 import { useAppearanceSettings } from './useAppearanceSettings';
 import { useLuaToolsAuth } from './useLuaToolsAuth';
 import { useSteamPath } from './useSteamPath';
@@ -38,9 +39,19 @@ export function useSettingsController(params: Params) {
   const [resetBusy, setResetBusy] = useState(false);
   const [manifestRestoreOnStartup, setManifestRestoreOnStartup] = useState(true);
   const [presenceDefaultShowOnline, setPresenceDefaultShowOnline] = useState(true);
+  // Saved counterparts for switches that live outside `settings.json`: edits
+  // stay pending until Save so the unsaved-changes guard covers them too.
+  const manifestRestoreSavedRef = useRef(true);
+  const presenceSavedRef = useRef(true);
   const [steamAccounts, setSteamAccounts] = useState<SteamAccount[]>([]);
   const [steamAccountsLoaded, setSteamAccountsLoaded] = useState(false);
   const [steamAccountsError, setSteamAccountsError] = useState(false);
+
+  // Switches stored outside `settings.json` contribute to the same guard as
+  // form fields: an edit that has not reached its command yet is unsaved.
+  const extraDirty =
+    presenceDefaultShowOnline !== presenceSavedRef.current ||
+    manifestRestoreOnStartup !== manifestRestoreSavedRef.current;
 
   const showStatusSeq = useRef(0);
   const hasBootstrappedRef = useRef(false);
@@ -128,10 +139,16 @@ export function useSettingsController(params: Params) {
       .catch((err) => showStatus(`Error loading settings: ${err}`, 'error'));
     void appearance.reload();
     void invoke<boolean>('get_presence_default_mode')
-      .then(setPresenceDefaultShowOnline)
+      .then((value) => {
+        presenceSavedRef.current = value;
+        setPresenceDefaultShowOnline(value);
+      })
       .catch((err) => console.warn('[settings] failed to load presence default mode:', err));
     void invoke<boolean>('get_manifest_restore_enabled')
-      .then(setManifestRestoreOnStartup)
+      .then((value) => {
+        manifestRestoreSavedRef.current = value;
+        setManifestRestoreOnStartup(value);
+      })
       .catch((err) => console.warn('[settings] failed to load manifest restore state:', err));
     void reloadSteamAccounts();
     void invoke<{ fresh: boolean; corruptFallback: boolean }>('get_settings_health')
@@ -208,8 +225,29 @@ export function useSettingsController(params: Params) {
       }
       const settings = model.getLocalSettings(invalidApiKey ? { hubcap_api_key: '' } : {});
       const hadDevtools = model.rawSettings.enable_webview_devtools;
+      const hadIconEnabled = model.rawSettings.custom_icon_enabled;
       const saved = await invoke<AppSettings>('save_settings', { settings, base: model.rawSettings });
       applySettings(saved);
+      // Switches stored outside `settings.json` only reach their command on
+      // Save: that is what makes them part of the unsaved-changes guard.
+      if (presenceDefaultShowOnline !== presenceSavedRef.current) {
+        // IPC key `showOnline` (Rust `show_online` → lowerCamelCase), NOT the
+        // TOML value, which stays "showonline": see docs/shared_contracts.md §7.
+        const args: SetPresenceDefaultModeArgs = { showOnline: presenceDefaultShowOnline };
+        await invoke('set_presence_default_mode', args);
+        presenceSavedRef.current = presenceDefaultShowOnline;
+      }
+      if (manifestRestoreOnStartup !== manifestRestoreSavedRef.current) {
+        await invoke('set_manifest_restore_enabled', { enabled: manifestRestoreOnStartup });
+        manifestRestoreSavedRef.current = manifestRestoreOnStartup;
+      }
+      if (saved.custom_icon_enabled !== hadIconEnabled) {
+        try {
+          await invoke('apply_window_icon');
+        } catch (err) {
+          console.warn('[settings] failed to apply the window icon:', err);
+        }
+      }
       const wasCorrupt = settingsCorrupt;
       setSettingsCorrupt(false);
       if (invalidApiKey) setField('apiKey', '');
@@ -253,11 +291,25 @@ export function useSettingsController(params: Params) {
       showStatus(`Error during save: ${toErrorMessage(err)}`, 'error');
       return false;
     }
-  }, [appearance, applySettings, form, model, params, reloadSteamAccounts, setField, settingsCorrupt, showStatus]);
+  }, [
+    appearance,
+    applySettings,
+    form,
+    manifestRestoreOnStartup,
+    model,
+    params,
+    presenceDefaultShowOnline,
+    reloadSteamAccounts,
+    setField,
+    settingsCorrupt,
+    showStatus,
+  ]);
 
   const discard = useCallback(() => {
     const baseline = model.rawSettings;
     applySettings(baseline);
+    setPresenceDefaultShowOnline(presenceSavedRef.current);
+    setManifestRestoreOnStartup(manifestRestoreSavedRef.current);
     params.onCustomCssChange(Boolean(baseline.custom_css_enabled));
     params.onPreviewPersonalWallpaper(
       Boolean(baseline.personal_wallpaper_enabled),
@@ -273,12 +325,12 @@ export function useSettingsController(params: Params) {
   // discard a render, which would leave a stale guard behind. The cleanup
   // only clears its own installation.
   useEffect(() => {
-    const guard: SettingsGuard = { isDirty: () => model.dirty, save, discard };
+    const guard: SettingsGuard = { isDirty: () => model.dirty || extraDirty, save, discard };
     params.guardRef.current = guard;
     return () => {
       if (params.guardRef.current === guard) params.guardRef.current = null;
     };
-  }, [discard, model.dirty, params.guardRef, save]);
+  }, [discard, extraDirty, model.dirty, params.guardRef, save]);
 
   const changeDownloadUpdates = useCallback(
     async (enabled: boolean) => {

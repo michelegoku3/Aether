@@ -29,6 +29,7 @@ pub struct AppearanceAssets {
     pub themes_dir: String,
     pub wallpapers_dir: String,
     pub icons_dir: String,
+    pub theme_kit_dir: String,
 }
 
 /// Returns the raw CSS text of the active theme
@@ -54,7 +55,7 @@ pub fn get_custom_css_path(app: tauri::AppHandle) -> Result<String, String> {
 }
 
 /// Ensures `AetherData/config/themes/` and `AetherData/config/wallpapers/`
-/// exist, seeding the embedded defaults (Cyberpunk + Frieren) on first run.
+/// exist, seeding the embedded defaults on first run.
 /// Returns the themes directory path. Themes live exclusively in the `themes`
 /// folder.
 #[tauri::command]
@@ -105,6 +106,7 @@ pub fn get_appearance_assets(app: tauri::AppHandle) -> Result<AppearanceAssets, 
         themes_dir: custom_css::themes_dir().display().to_string(),
         wallpapers_dir: custom_css::wallpapers_dir().display().to_string(),
         icons_dir: custom_css::icons_dir().display().to_string(),
+        theme_kit_dir: custom_css::theme_kit_dir().display().to_string(),
     })
 }
 

@@ -36,6 +36,17 @@ describe('SettingsAetherSection devtools toggle', () => {
     expect(invokeMock).not.toHaveBeenCalled();
   });
 
+  it('leaves the manifest-restore toggle to the form until Save', () => {
+    const props = baseProps();
+    invokeMock.mockReset();
+    const { container } = render(<SettingsAetherSection {...props} />);
+
+    fireEvent.click(container.querySelectorAll('input[type="checkbox"]')[2]);
+
+    expect(props.setManifestRestoreOnStartup).toHaveBeenCalledWith(false);
+    expect(invokeMock).not.toHaveBeenCalled();
+  });
+
   it('keeps the Aether group to the Aether-only switches', () => {
     const { container } = render(<SettingsAetherSection {...baseProps()} />);
 

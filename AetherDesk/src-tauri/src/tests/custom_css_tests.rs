@@ -1,6 +1,7 @@
 use crate::core::custom_css::{
     active_theme_name, active_wallpaper_name, ensure_default_assets, personal_wallpaper_path,
-    read_personal_wallpaper_data_uri, read_theme_css, theme_path, themes_dir, wallpapers_dir,
+    read_personal_wallpaper_data_uri, read_theme_css, theme_kit_dir, theme_path, themes_dir,
+    wallpapers_dir,
 };
 use std::fs;
 use std::sync::{Mutex, OnceLock};
@@ -15,6 +16,7 @@ fn lock() -> std::sync::MutexGuard<'static, ()> {
 fn cleanup_appearance_dirs() {
     let _ = fs::remove_dir_all(themes_dir());
     let _ = fs::remove_dir_all(wallpapers_dir());
+    let _ = fs::remove_dir_all(theme_kit_dir());
 }
 
 #[test]
@@ -41,10 +43,38 @@ fn ensure_default_assets_creates_dirs_and_seeds_defaults() {
     assert!(themes_dir().join("frieren.css").is_file());
     assert!(themes_dir().join("halo.css").is_file());
     assert!(themes_dir().join("wonderland.css").is_file());
+    assert!(theme_kit_dir().join("default.css").is_file());
     assert!(wallpapers_dir().join("cyberpunk.jpg").is_file());
     assert!(wallpapers_dir().join("goldmine.jpg").is_file());
     assert!(wallpapers_dir().join("frieren.jpg").is_file());
     assert!(wallpapers_dir().join("halo.jpg").is_file());
+
+    cleanup_appearance_dirs();
+}
+
+#[test]
+fn theme_kit_is_the_live_stylesheet_and_is_refreshed_on_start() {
+    let _guard = lock();
+    cleanup_appearance_dirs();
+
+    ensure_default_assets().expect("seeding should succeed");
+
+    let kit = theme_kit_dir().join("default.css");
+    let seeded = fs::read_to_string(&kit).expect("the kit stylesheet should be readable");
+    assert_eq!(
+        seeded,
+        include_str!("../../../src/style.css"),
+        "the kit must ship the stylesheet the app itself loads"
+    );
+
+    // A stale or edited copy never survives the next start: the kit is a
+    // reference, and a theme author copies it out before editing.
+    fs::write(&kit, "/* stale */").expect("fixture write should succeed");
+    ensure_default_assets().expect("seeding should succeed");
+    assert_eq!(
+        fs::read_to_string(&kit).expect("the kit stylesheet should be readable"),
+        seeded
+    );
 
     cleanup_appearance_dirs();
 }

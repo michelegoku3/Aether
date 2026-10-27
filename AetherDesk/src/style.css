@@ -3304,14 +3304,14 @@ body {
   color: #c9a227;
 }
 
-/* Both appearance picker buttons (theme + wallpaper) share this class so
-   they always have identical dimensions. */
+/* Appearance picker buttons (Theme / Wallpaper / Icon / Kit) share this class
+   so they always have identical dimensions, matching the row action buttons. */
 .appearance-pick-btn {
-  width: 115px;
-  min-width: 115px;
-  max-width: 115px;
+  width: 96px;
+  min-width: 96px;
+  max-width: 96px;
   height: 30px;
-  flex: 0 0 115px;
+  flex: 0 0 96px;
   background-color: var(--bg-field);
   border: 1px solid var(--border-color);
   border-radius: 8px;
@@ -3321,6 +3321,15 @@ body {
   transition:
     border-color 0.2s ease,
     background-color 0.2s ease;
+}
+
+/* Theme + Kit stack in the button column; the description keeps the row's
+   remaining width. */
+.settings-appearance-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex: 0 0 auto;
 }
 
 .appearance-pick-btn:hover:not(:disabled) {

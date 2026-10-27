@@ -13,6 +13,7 @@ const EMPTY_ASSETS: AppearanceAssets = {
   themesDir: '',
   wallpapersDir: '',
   iconsDir: '',
+  themeKitDir: '',
 };
 type StatusKind = 'info' | 'success' | 'error';
 

@@ -1,4 +1,16 @@
 fn main() {
+    // The theme kit ships the exact stylesheet the app loads: `default.css` is
+    // copied at compile time and embedded, so it can never drift from
+    // `src/style.css`. A theme author (or an AI) starts from that full class
+    // inventory instead of guessing.
+    println!("cargo:rerun-if-changed=../src/style.css");
+    let out = std::path::PathBuf::from(
+        std::env::var("OUT_DIR").expect("OUT_DIR is always set for build scripts"),
+    )
+    .join("default.css");
+    std::fs::copy("../src/style.css", &out)
+        .expect("failed to copy AetherDesk/src/style.css into OUT_DIR");
+
     #[cfg(target_os = "windows")]
     {
         // AetherDesk writes inside the Steam folder (localconfig.vdf,

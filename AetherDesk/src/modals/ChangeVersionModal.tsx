@@ -44,7 +44,7 @@ const ChangeVersionModal = ({ game, initialRows, initialTab = 'manual', onClose 
   const [activeTab, setActiveTab] = useState<VersionTab>(initialTab);
 
   return (
-    <div className="modal-overlay" onClick={onClose}>
+    <div className="modal-overlay">
       <div className="modal-container version-modal-container" onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
           <span className="modal-title">

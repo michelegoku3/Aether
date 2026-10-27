@@ -24,6 +24,7 @@ const commandDefaults = (saved: AppSettings = settings) => ({
     themesDir: '',
     wallpapersDir: '',
     iconsDir: '',
+    themeKitDir: '',
   },
   get_presence_default_mode: true,
   get_manifest_restore_enabled: true,
@@ -63,6 +64,83 @@ describe('useSettingsController', () => {
 
     unmount();
     expect(params.guardRef.current).toBeNull();
+  });
+
+  it('keeps the presence switch pending until Save', async () => {
+    mockInvokeCommands({ ...commandDefaults(), set_presence_default_mode: undefined });
+    const params = createParams();
+    const { result } = renderHook(() => useSettingsController(params));
+    await waitFor(() => expect(result.current.presenceDefaultShowOnline).toBe(true));
+
+    act(() => result.current.setPresenceDefaultShowOnline(false));
+
+    expect(params.guardRef.current?.isDirty()).toBe(true);
+    expect(invokeMock.mock.calls.some(([command]) => command === 'set_presence_default_mode')).toBe(false);
+
+    let success = false;
+    await act(async () => {
+      success = await result.current.save();
+    });
+
+    expect(success).toBe(true);
+    expect(invokeMock).toHaveBeenCalledWith('set_presence_default_mode', { showOnline: false });
+    expect(params.guardRef.current?.isDirty()).toBe(false);
+  });
+
+  it('discards a pending presence change without touching the backend', async () => {
+    mockInvokeCommands({ ...commandDefaults(), set_presence_default_mode: undefined });
+    const params = createParams();
+    const { result } = renderHook(() => useSettingsController(params));
+    await waitFor(() => expect(result.current.presenceDefaultShowOnline).toBe(true));
+
+    act(() => result.current.setPresenceDefaultShowOnline(false));
+    act(() => params.guardRef.current?.discard());
+
+    expect(result.current.presenceDefaultShowOnline).toBe(true);
+    expect(params.guardRef.current?.isDirty()).toBe(false);
+    expect(invokeMock.mock.calls.some(([command]) => command === 'set_presence_default_mode')).toBe(false);
+  });
+
+  it('keeps the manifest-restore switch pending until Save', async () => {
+    mockInvokeCommands({ ...commandDefaults(), set_manifest_restore_enabled: undefined });
+    const params = createParams();
+    const { result } = renderHook(() => useSettingsController(params));
+    await waitFor(() => expect(result.current.manifestRestoreOnStartup).toBe(true));
+
+    act(() => result.current.setManifestRestoreOnStartup(false));
+
+    expect(params.guardRef.current?.isDirty()).toBe(true);
+    expect(invokeMock.mock.calls.some(([command]) => command === 'set_manifest_restore_enabled')).toBe(false);
+
+    let success = false;
+    await act(async () => {
+      success = await result.current.save();
+    });
+
+    expect(success).toBe(true);
+    expect(invokeMock).toHaveBeenCalledWith('set_manifest_restore_enabled', { enabled: false });
+    expect(params.guardRef.current?.isDirty()).toBe(false);
+  });
+
+  it('applies the icon on Save when the custom-icon switch changed', async () => {
+    mockInvokeCommands(commandDefaults({ ...settings, custom_icon_enabled: true }));
+    const params = createParams();
+    const { result } = renderHook(() => useSettingsController(params));
+    await waitFor(() => expect(result.current.form.steamPath).toBe('C:/Steam'));
+
+    act(() => result.current.setField('customIconEnabled', true));
+
+    expect(params.guardRef.current?.isDirty()).toBe(true);
+    expect(invokeMock.mock.calls.some(([command]) => command === 'apply_window_icon')).toBe(false);
+
+    let success = false;
+    await act(async () => {
+      success = await result.current.save();
+    });
+
+    expect(success).toBe(true);
+    expect(invokeMock).toHaveBeenCalledWith('apply_window_icon');
+    expect(params.guardRef.current?.isDirty()).toBe(false);
   });
 
   it('saves through the guard and refreshes dependent runtime state', async () => {

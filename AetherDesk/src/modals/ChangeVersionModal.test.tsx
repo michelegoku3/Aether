@@ -1,7 +1,8 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import ChangeVersionModal from './ChangeVersionModal';
+import type { LuaManifestRow } from './SpecificVersionModal';
 import { invokeMock } from '../test/tauriMocks';
 
 const { useLibraryGamesMock, queryGameStateMock, invalidateGameStateMock } = vi.hoisted(() => ({
@@ -16,7 +17,13 @@ const APP_ID = 480;
 
 const build = { buildId: 24701871, date: '2026-01-15', title: 'Build 24701871' };
 
-const renderModal = () => {
+interface RenderOptions {
+  onClose?: () => void;
+  initialTab?: 'manual' | 'auto';
+  initialRows?: LuaManifestRow[];
+}
+
+const renderModal = ({ onClose = vi.fn(), initialTab = 'auto', initialRows = [] }: RenderOptions = {}) => {
   useLibraryGamesMock.mockReturnValue({
     loadInstalledGames: vi.fn(),
     queryGameState: queryGameStateMock,
@@ -25,14 +32,15 @@ const renderModal = () => {
   queryGameStateMock.mockImplementation(async (_appId: number, command: string) => {
     if (command === 'get_game_builds') return [build];
     if (command === 'get_saved_builds') return [];
+    if (command === 'get_installed_lua_manifest_rows') return initialRows;
     return null;
   });
   render(
     <ChangeVersionModal
       game={{ name: 'Half-Life', appId: String(APP_ID) }}
-      initialRows={[]}
-      initialTab="auto"
-      onClose={vi.fn()}
+      initialRows={initialRows}
+      initialTab={initialTab}
+      onClose={onClose}
     />
   );
 };
@@ -89,5 +97,40 @@ describe('ChangeVersionModal tabs', () => {
     // The badge is decorative: the disabled tab and its tooltip carry the
     // state, so it stays out of the accessibility tree.
     expect(screen.getByText('MAINTENANCE')).toHaveAttribute('aria-hidden', 'true');
+  });
+});
+
+describe('ChangeVersionModal dismissal', () => {
+  const row = { rowId: 1, appId: APP_ID, manifestId: '111111', enabled: true };
+
+  it('stays open when the overlay is clicked', async () => {
+    const onClose = vi.fn();
+    renderModal({ onClose });
+
+    await screen.findByText('Build #24701871');
+    fireEvent.click(document.querySelector('.modal-overlay')!);
+
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it('ignores Escape while the manual edits are unsaved', async () => {
+    const onClose = vi.fn();
+    renderModal({ onClose, initialTab: 'manual', initialRows: [row] });
+
+    await waitFor(() => expect(document.querySelector('.version-manifest-input')).not.toBeNull());
+    fireEvent.change(document.querySelector('.version-manifest-input')!, { target: { value: '222222' } });
+    fireEvent.keyDown(window, { key: 'Escape' });
+
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it('closes on Escape when nothing has changed', async () => {
+    const onClose = vi.fn();
+    renderModal({ onClose, initialTab: 'manual', initialRows: [row] });
+
+    await waitFor(() => expect(document.querySelector('.version-manifest-input')).not.toBeNull());
+    fireEvent.keyDown(window, { key: 'Escape' });
+
+    expect(onClose).toHaveBeenCalledOnce();
   });
 });

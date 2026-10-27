@@ -117,6 +117,32 @@ describe('SettingsSteamSection', () => {
     expect(on.container.querySelector('select')).not.toBeNull();
   });
 
+  it('moves the cache repair action into a plain row without the old copy', () => {
+    const { container } = render(<SettingsSteamSection {...baseProps()} />);
+
+    expect(text(container)).not.toContain('Close Steam first');
+    expect(text(container)).not.toContain('appinfo cache is rebuilt');
+    const row = Array.from(container.querySelectorAll('.settings-toggle-row')).find((r) =>
+      r.textContent?.includes('Repair Steam metadata cache')
+    )!;
+    expect(row.classList.contains('settings-field-column')).toBe(false);
+    expect(row.querySelector('button')?.textContent).toBe('Repair Cache');
+  });
+
+  it('leaves the presence toggle to the form until Save', () => {
+    const props = baseProps();
+    vi.mocked(invoke).mockReset();
+    const { container } = render(<SettingsSteamSection {...props} />);
+
+    const row = Array.from(container.querySelectorAll('.settings-toggle-row')).find((r) =>
+      r.textContent?.includes('Show every game you are playing to friends')
+    );
+    fireEvent.click(row!.querySelector('input[type="checkbox"]')!);
+
+    expect(props.setPresenceDefaultShowOnline).toHaveBeenCalledWith(false);
+    expect(invoke).not.toHaveBeenCalled();
+  });
+
   it('repairs the metadata cache only after the confirmation', async () => {
     const props = baseProps();
     const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);

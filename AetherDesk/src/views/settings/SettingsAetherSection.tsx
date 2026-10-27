@@ -58,17 +58,7 @@ export const SettingsAetherSection: React.FC<SettingsAetherSectionProps> = ({
           <input
             type="checkbox"
             checked={manifestRestoreOnStartup}
-            onChange={async (e) => {
-              const next = e.target.checked;
-              const previous = !next;
-              setManifestRestoreOnStartup(next);
-              try {
-                await invoke('set_manifest_restore_enabled', { enabled: next });
-              } catch (err: unknown) {
-                setManifestRestoreOnStartup(previous);
-                showStatus(`Failed to set manifest restore: ${toErrorMessage(err)}`, 'error');
-              }
-            }}
+            onChange={(e) => setManifestRestoreOnStartup(e.target.checked)}
           />
           <span></span>
         </label>

@@ -1,6 +1,7 @@
 import React from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { ClickablePath } from '../../ui/ClickablePath';
+import { openInFileManager } from '../../util/paths';
 import type { AppearanceAssets } from './types';
 
 interface SettingsAppearanceSectionProps {
@@ -26,7 +27,6 @@ interface SettingsAppearanceSectionProps {
   alternativeCardsFade: number;
   setAlternativeCardsFade: (v: number) => void;
   onPreviewAlternativeCards: (opacity: number, fade: number) => void;
-  persistAppearanceSelection: (patch: Record<string, any>) => Promise<void>;
   setIconSelectedFile: (v: string) => void;
   showStatus: (message: string, kind: 'success' | 'error') => void;
   appearancePickBtn: (
@@ -62,11 +62,21 @@ export const SettingsAppearanceSection: React.FC<SettingsAppearanceSectionProps>
   alternativeCardsFade,
   setAlternativeCardsFade,
   onPreviewAlternativeCards,
-  persistAppearanceSelection,
   setIconSelectedFile,
   showStatus,
   appearancePickBtn,
 }) => {
+  const handleOpenThemeKit = async () => {
+    try {
+      // Rebuild the kit on demand so the folder exists even when a previous
+      // run removed it, then hand it to the file manager.
+      await invoke('ensure_custom_css');
+      await openInFileManager(appearanceAssets.themeKitDir);
+    } catch (err) {
+      showStatus(`Failed to open the theme kit: ${err}`, 'error');
+    }
+  };
+
   return (
     <div className="settings-group">
       <label className="settings-label">Appearance</label>
@@ -116,14 +126,19 @@ export const SettingsAppearanceSection: React.FC<SettingsAppearanceSectionProps>
               ) : (
                 ''
               )}
-              Use the button to pick a different theme.
+              Use the button to pick a different theme, or open the kit to start from a copy of the default stylesheet.
             </p>
-            {appearancePickBtn(
-              'THEME',
-              handlePickTheme,
-              !appearanceAssets.themeExists && !customCssEnabled,
-              isPicking === 'theme'
-            )}
+            <div className="settings-appearance-actions">
+              {appearancePickBtn(
+                'Theme',
+                handlePickTheme,
+                !appearanceAssets.themeExists && !customCssEnabled,
+                isPicking === 'theme'
+              )}
+              <button type="button" className="appearance-pick-btn" onClick={() => void handleOpenThemeKit()}>
+                Kit
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -176,7 +191,7 @@ export const SettingsAppearanceSection: React.FC<SettingsAppearanceSectionProps>
               Use the button to pick a different wallpaper.
             </p>
             {appearancePickBtn(
-              'WALLPAPER',
+              'Wallpaper',
               handlePickWallpaper,
               !appearanceAssets.wallpaperExists && !personalWallpaperEnabled,
               isPicking === 'wallpaper'
@@ -209,23 +224,10 @@ export const SettingsAppearanceSection: React.FC<SettingsAppearanceSectionProps>
             type="checkbox"
             checked={customIconEnabled}
             disabled={!appearanceAssets.iconExists}
-            onChange={async (e) => {
+            onChange={(e) => {
               const next = e.target.checked;
               setCustomIconEnabled(next);
-              try {
-                await invoke('ensure_custom_css');
-              } catch {
-                /* best-effort: prepares the folder, the toggle carries on regardless */
-              }
-              await persistAppearanceSelection(
-                next ? { custom_icon_enabled: true } : { custom_icon_enabled: false, icon_selected_file: '' }
-              );
               if (!next) setIconSelectedFile('');
-              try {
-                await invoke('apply_window_icon');
-              } catch (err) {
-                console.warn('Failed to apply window icon:', err);
-              }
             }}
           />
           <span></span>
@@ -255,7 +257,7 @@ export const SettingsAppearanceSection: React.FC<SettingsAppearanceSectionProps>
               Use the button to pick a different icon.
             </p>
             {appearancePickBtn(
-              'ICON',
+              'Icon',
               handlePickIcon,
               !appearanceAssets.iconExists && !customIconEnabled,
               isPicking === 'icon'

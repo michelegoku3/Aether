@@ -159,7 +159,6 @@ export const SettingsView = memo(function SettingsView(props: SettingsViewProps)
           alternativeCardsFade={form.alternativeCardsFade}
           setAlternativeCardsFade={(value) => c.setField('alternativeCardsFade', value)}
           onPreviewAlternativeCards={props.onPreviewAlternativeCards}
-          persistAppearanceSelection={c.persistAppearance}
           setIconSelectedFile={(value) => c.setField('iconSelectedFile', value)}
           showStatus={c.showStatus}
           appearancePickBtn={pickButton}

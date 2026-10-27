@@ -13,6 +13,7 @@ const assets = {
   themesDir: 'themes',
   wallpapersDir: 'wallpapers',
   iconsDir: 'icons',
+  themeKitDir: 'theme-kit',
 };
 
 const createParams = () => ({

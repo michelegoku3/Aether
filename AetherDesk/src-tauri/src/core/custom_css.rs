@@ -24,6 +24,19 @@ pub fn icons_dir() -> PathBuf {
     LocalAppPaths::config_dir().join("icons")
 }
 
+/// Theme-authoring kit: a read-only reference copy of the stylesheet the app
+/// itself uses, so a theme author (or an AI) starts from the full class
+/// inventory instead of guessing. The stylesheet is rewritten on every start,
+/// so it always matches the running build.
+pub fn theme_kit_dir() -> PathBuf {
+    LocalAppPaths::config_dir().join("theme-kit")
+}
+
+/// The app's own stylesheet, copied into `OUT_DIR` by `build.rs` and embedded
+/// here. The theme kit writes it out as `default.css`, so the reference an
+/// author receives is byte-identical to the CSS the UI loads.
+pub const DEFAULT_STYLESHEET: &str = include_str!(concat!(env!("OUT_DIR"), "/default.css"));
+
 /// Default Cyberpunk theme shipped with AetherDesk (embedded in the binary so
 /// no bundle/resource path resolution is needed in dev or in production).
 /// NOTE: `include_str!` paths are relative to THIS source file, so two `..`
@@ -95,17 +108,19 @@ pub const ICON_EXTENSIONS: &[&str] = &[
 // First-run provisioning
 // ---------------------------------------------------------------------------
 
-/// Creates `config/themes/`, `config/wallpapers/` and `config/icons/` (if
-/// missing) and seeds the theme, wallpaper and icon folders with the embedded
-/// defaults when empty (Cyberpunk, Goldmine, Frieren, Halo and Wonderland
-/// themes; Cyberpunk, Goldmine, Frieren and Halo wallpapers; plus the
-/// alternate icon).
-/// Idempotent: existing files are never overwritten, so user files survive
-/// upgrades. Failures are logged, never fatal.
+/// Creates `config/themes/`, `config/wallpapers/`, `config/icons/` and
+/// `config/theme-kit/` (if missing) and seeds the theme, wallpaper and icon
+/// folders with the embedded defaults when empty (Cyberpunk, Goldmine,
+/// Frieren, Halo and Wonderland themes; Cyberpunk, Goldmine, Frieren and Halo
+/// wallpapers; plus the alternate icon). The theme kit's `default.css` is
+/// rewritten every time so it always matches the running stylesheet.
+/// Idempotent: existing theme, wallpaper and icon files are never overwritten,
+/// so user files survive upgrades. Failures are logged, never fatal.
 pub fn ensure_default_assets() -> Result<(), String> {
     let themes_dir = themes_dir();
     let wallpapers_dir = wallpapers_dir();
     let icons_dir = icons_dir();
+    let theme_kit_dir = theme_kit_dir();
 
     fs::create_dir_all(&themes_dir)
         .map_err(|e| format!("Failed to create themes directory: {}", e))?;
@@ -113,6 +128,19 @@ pub fn ensure_default_assets() -> Result<(), String> {
         .map_err(|e| format!("Failed to create wallpapers directory: {}", e))?;
     fs::create_dir_all(&icons_dir)
         .map_err(|e| format!("Failed to create icons directory: {}", e))?;
+    fs::create_dir_all(&theme_kit_dir)
+        .map_err(|e| format!("Failed to create theme kit directory: {}", e))?;
+
+    // The kit is a reference, not a user file: refreshing it on every start is
+    // what keeps `default.css` identical to the stylesheet in use.
+    let kit_stylesheet = theme_kit_dir.join("default.css");
+    if let Err(e) = fs::write(&kit_stylesheet, DEFAULT_STYLESHEET) {
+        eprintln!(
+            "[AetherDesk] failed to refresh theme kit {}: {}",
+            kit_stylesheet.display(),
+            e
+        );
+    }
 
     for (file_name, content) in DEFAULT_THEME_FILES {
         let file = themes_dir.join(file_name);

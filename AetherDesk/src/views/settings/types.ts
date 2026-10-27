@@ -14,6 +14,7 @@ export interface AppearanceAssets {
   themesDir: string;
   wallpapersDir: string;
   iconsDir: string;
+  themeKitDir: string;
 }
 
 export type SteamCheckState = 'idle' | 'checking' | 'invalid';
