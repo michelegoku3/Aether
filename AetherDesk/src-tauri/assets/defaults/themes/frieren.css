@@ -63,6 +63,53 @@
 
   /* Desaturated gradient of the three protagonists (decorations). */
   --tri-gradient: linear-gradient(90deg, #527fa0, #675a8c, #a4514d);
+
+  /* Shared surface scale: every panel, field and divider in style.css reads
+     these, so the night-blue depth travels to the whole app. */
+  --bg-control: #18222e;
+  --bg-control-hover: #1f2b39;
+  --bg-field: #121c26;
+  --bg-panel: #070b11;
+  --bg-surface: #101923;
+  --bg-surface-alt: #0d151d;
+  --bg-raised: #16212c;
+  --bg-control-alt: #1b2733;
+  --bg-control-strong: #223040;
+  --scrollbar-thumb: #344452;
+  --border-subtle: #223040;
+  --border-strong: #344452;
+  --border-bright: #4a5c6c;
+  --text-strong: #f2f8fa;
+  --text-dim: #91a2ae;
+  --text-faint: #5c6b77;
+  --color-cyan-bright: #a8d1d0;
+  --color-installed-green: #a8d1d0;
+  --color-installed-green-rgb: 168, 209, 208;
+  --color-installing-amber: #d69a68;
+  --color-installing-amber-rgb: 214, 154, 104;
+  --color-uco2: #9c8fc1;
+  --color-nsfw-pink-rgb: 200, 120, 98;
+  --color-delisted-white-rgb: 174, 187, 196;
+  --color-invalid-red: #a4514d;
+  --color-invalid-red-hover: #c87862;
+  --color-invalid-red-soft: rgba(164, 81, 77, 0.12);
+  --color-invalid-red-rgb: 164, 81, 77;
+  --color-warn-amber: #d69a68;
+  --color-warn-amber-soft: rgba(214, 154, 104, 0.12);
+  --color-danger: #a4514d;
+  --color-danger-rgb: 164, 81, 77;
+  --color-denuvo-hover: #c87862;
+  --color-denuvo-rgb: 164, 81, 77;
+  --color-success: #a8d1d0;
+  --color-warning: #d69a68;
+  --color-warning-soft: #3a2026;
+  --color-warning-hover: #e6b487;
+  --color-gold: #c2b5d5;
+  --color-gold-rgb: 194, 181, 213;
+  --color-gold-ink: #332c4a;
+  --overlay-soft: rgba(142, 187, 209, 0.08);
+  --overlay: rgba(142, 187, 209, 0.14);
+  --overlay-strong: rgba(142, 187, 209, 0.18);
 }
 
 /* ---------- 2. App background - night blue with barely-there tri-color
@@ -658,7 +705,7 @@ body.aether-wallpaper-enabled .aether-view {
   color: var(--fern-lavender) !important;
   background-color: #1b2733 !important;
 }
-.game-action-close-btn:hover:not(:disabled) {
+.game-action-hero-close:hover:not(:disabled) {
   border-color: var(--stark-warm) !important;
   color: var(--stark-warm) !important;
 }
@@ -671,9 +718,6 @@ body.aether-wallpaper-enabled .aether-view {
 }
 .info-hero-text {
   background: linear-gradient(180deg, transparent 30%, rgba(16, 25, 35, 0.92) 100%) !important;
-}
-.info-hero-fallback {
-  background-color: #0e151e !important;
 }
 .info-label {
   color: var(--frieren-silver) !important;
@@ -836,4 +880,69 @@ body.aether-wallpaper-enabled .aether-view {
 }
 .blank-canvas {
   background-color: var(--bg-app) !important;
+}
+
+/* ---------- Recent surfaces (online modals, tabs, log) ---------- */
+/* Online modals: soft 12px frame, silver titles, lavender interaction. */
+.oc-container,
+.op-container {
+  border-radius: 12px !important;
+}
+.oc-header,
+.op-header {
+  border-bottom-color: var(--border-strong) !important;
+}
+.oc-header-title,
+.op-header-title {
+  color: var(--frieren-azure) !important;
+  letter-spacing: 0.5px;
+}
+.oc-close,
+.op-close {
+  color: var(--fern-lavender) !important;
+}
+.op-box {
+  background-color: var(--bg-raised) !important;
+  border-color: var(--border-strong) !important;
+  border-radius: 10px !important;
+}
+.op-input {
+  background-color: var(--bg-field) !important;
+  border-color: var(--border-strong) !important;
+  color: var(--frieren-white) !important;
+  border-radius: 8px !important;
+}
+.op-input:focus {
+  border-color: var(--fern-lavender) !important;
+}
+.op-btn {
+  border-radius: 8px !important;
+}
+.op-btn:hover:not(:disabled) {
+  border-color: var(--fern-lavender) !important;
+  color: var(--fern-lavender) !important;
+}
+
+/* Change Version tabs: the rounded frame matches the modal corners. */
+.version-tab {
+  border-radius: 10px 10px 0 0 !important;
+}
+.version-tab.active {
+  background-color: rgba(142, 187, 209, 0.12) !important;
+  color: var(--frieren-azure) !important;
+  border-color: var(--frieren-azure) !important;
+  box-shadow: inset 0 -2px 0 var(--frieren-azure) !important;
+}
+
+/* Log terminal reads as a deeper night panel. */
+.log-view-terminal {
+  background-color: #070b11 !important;
+  border-color: var(--border-strong) !important;
+  border-radius: 10px !important;
+}
+
+/* Workshop report titles carry the Frieren blue. */
+.workshop-report-section-title {
+  color: var(--frieren-azure) !important;
+  letter-spacing: 0.5px;
 }

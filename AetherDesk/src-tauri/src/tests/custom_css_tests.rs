@@ -1,10 +1,13 @@
 use crate::core::custom_css::{
-    active_theme_name, active_wallpaper_name, ensure_default_assets, personal_wallpaper_path,
-    read_personal_wallpaper_data_uri, read_theme_css, theme_kit_dir, theme_path, themes_dir,
-    wallpapers_dir,
+    active_theme_name, active_wallpaper_name, content_hash, ensure_default_assets,
+    personal_wallpaper_path, read_personal_wallpaper_data_uri, read_theme_css, sync_default_theme,
+    theme_kit_dir, theme_path, themes_dir, wallpapers_dir, DefaultThemeOutcome,
 };
+use std::collections::BTreeMap;
 use std::fs;
 use std::sync::{Mutex, OnceLock};
+
+const CYBERPUNK_THEME: &str = include_str!("../../assets/defaults/themes/cyberpunk.css");
 
 static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
 fn lock() -> std::sync::MutexGuard<'static, ()> {
@@ -220,6 +223,211 @@ fn traversal_selections_fall_back_to_first_detected() {
     }
 
     cleanup_appearance_dirs();
+}
+
+#[test]
+fn defaults_manifest_records_every_seeded_theme() {
+    let _guard = lock();
+    cleanup_appearance_dirs();
+
+    ensure_default_assets().expect("seeding should succeed");
+
+    let manifest: serde_json::Value = serde_json::from_str(
+        &fs::read_to_string(themes_dir().join(".aether-defaults.json"))
+            .expect("manifest should be readable"),
+    )
+    .expect("manifest should be valid JSON");
+    let themes = manifest["themes"]
+        .as_object()
+        .expect("manifest should carry theme hashes");
+
+    for name in [
+        "cyberpunk.css",
+        "frieren.css",
+        "goldmine.css",
+        "halo.css",
+        "wonderland.css",
+    ] {
+        let bytes = fs::read(themes_dir().join(name)).expect("theme should be readable");
+        assert_eq!(
+            themes[name].as_str(),
+            Some(content_hash(&bytes).as_str()),
+            "{name} should be tracked with the hash of the copy we wrote"
+        );
+    }
+
+    cleanup_appearance_dirs();
+}
+
+#[test]
+fn untouched_default_theme_is_refreshed_on_upgrade() {
+    let _guard = lock();
+    cleanup_appearance_dirs();
+    ensure_default_assets().expect("seeding should succeed");
+
+    // Stand-in for a theme an older release wrote: the manifest holds its
+    // hash, so the next start may replace it with the current default.
+    let path = themes_dir().join("cyberpunk.css");
+    let previous = "/* previous release */";
+    fs::write(&path, previous).expect("fixture write should succeed");
+    let mut tracked = BTreeMap::from([(
+        "cyberpunk.css".to_string(),
+        content_hash(previous.as_bytes()),
+    )]);
+
+    assert_eq!(
+        sync_default_theme("cyberpunk.css", CYBERPUNK_THEME, &mut tracked, &[]),
+        DefaultThemeOutcome::Refreshed
+    );
+    assert_eq!(
+        fs::read_to_string(&path).expect("theme should be readable"),
+        CYBERPUNK_THEME
+    );
+    assert_eq!(
+        tracked["cyberpunk.css"],
+        content_hash(CYBERPUNK_THEME.as_bytes())
+    );
+
+    cleanup_appearance_dirs();
+}
+
+#[test]
+fn edited_default_theme_is_never_overwritten() {
+    let _guard = lock();
+    cleanup_appearance_dirs();
+    ensure_default_assets().expect("seeding should succeed");
+
+    let path = themes_dir().join("cyberpunk.css");
+    let custom = "/* my own night city */\n:root { --cyber-yellow: #ff0000; }";
+    fs::write(&path, custom).expect("fixture write should succeed");
+
+    ensure_default_assets().expect("reseeding should succeed");
+
+    assert_eq!(
+        fs::read_to_string(&path).expect("theme should be readable"),
+        custom,
+        "a file the user edited must survive every start"
+    );
+
+    cleanup_appearance_dirs();
+}
+
+#[test]
+fn legacy_143_theme_is_adopted_on_first_upgrade() {
+    let _guard = lock();
+    cleanup_appearance_dirs();
+    ensure_default_assets().expect("seeding should succeed");
+
+    // An installation upgrading from 1.4.3 has the old copy but no manifest:
+    // the legacy hash is the only evidence that the file is still a seed.
+    fs::remove_file(themes_dir().join(".aether-defaults.json"))
+        .expect("fixture cleanup should succeed");
+    let path = themes_dir().join("cyberpunk.css");
+    let legacy = "/* 1.4.3 copy */";
+    fs::write(&path, legacy).expect("fixture write should succeed");
+    let hash = content_hash(legacy.as_bytes());
+    let mut tracked = BTreeMap::new();
+
+    assert_eq!(
+        sync_default_theme(
+            "cyberpunk.css",
+            CYBERPUNK_THEME,
+            &mut tracked,
+            &[("cyberpunk.css", hash.as_str())],
+        ),
+        DefaultThemeOutcome::Refreshed
+    );
+    assert_eq!(
+        fs::read_to_string(&path).expect("theme should be readable"),
+        CYBERPUNK_THEME
+    );
+
+    cleanup_appearance_dirs();
+}
+
+/// Removes `/* ... */` blocks so a comment's punctuation cannot split a
+/// declaration in the parsers below.
+fn strip_comments(css: &str) -> String {
+    let mut out = String::with_capacity(css.len());
+    let mut rest = css;
+    while let Some(start) = rest.find("/*") {
+        out.push_str(&rest[..start]);
+        match rest[start + 2..].find("*/") {
+            Some(end) => rest = &rest[start + 2 + end + 2..],
+            None => return out,
+        }
+    }
+    out.push_str(rest);
+    out
+}
+
+/// Token names declared in the first `:root` block of a stylesheet.
+fn root_tokens(css: &str) -> Vec<String> {
+    let css = strip_comments(css);
+    let Some(start) = css.find(":root") else {
+        return Vec::new();
+    };
+    let Some(open) = css[start..].find('{') else {
+        return Vec::new();
+    };
+    let Some(close) = css[start + open..].find('}') else {
+        return Vec::new();
+    };
+    css[start + open + 1..start + open + close]
+        .split(';')
+        .filter_map(|declaration| {
+            let name = declaration.split(':').next()?.trim();
+            name.starts_with("--").then(|| name.to_string())
+        })
+        .collect()
+}
+
+#[test]
+fn default_themes_define_every_shared_token() {
+    const STYLESHEET: &str = include_str!("../../../src/style.css");
+    // Geometry and the live-preview switches are component defaults, not
+    // palette: a theme has no reason to touch them.
+    const RUNTIME_TOKENS: &[&str] = &["--sidebar-width", "--alt-card-opacity", "--alt-card-fade"];
+
+    let base = root_tokens(STYLESHEET);
+    assert!(
+        base.len() > 50,
+        "stylesheet should expose the shared palette"
+    );
+
+    // Wonderland is intentionally absent: it replaces the component look with
+    // its own --tv-* tokens instead of remapping the shared palette.
+    let themes = [
+        (
+            "cyberpunk.css",
+            include_str!("../../assets/defaults/themes/cyberpunk.css"),
+        ),
+        (
+            "frieren.css",
+            include_str!("../../assets/defaults/themes/frieren.css"),
+        ),
+        (
+            "goldmine.css",
+            include_str!("../../assets/defaults/themes/goldmine.css"),
+        ),
+        (
+            "halo.css",
+            include_str!("../../assets/defaults/themes/halo.css"),
+        ),
+    ];
+
+    for (name, css) in themes {
+        let defined = root_tokens(css);
+        let missing: Vec<&String> = base
+            .iter()
+            .filter(|token| !RUNTIME_TOKENS.contains(&token.as_str()))
+            .filter(|token| !defined.contains(token))
+            .collect();
+        assert!(
+            missing.is_empty(),
+            "{name} must remap every shared token; missing: {missing:?}"
+        );
+    }
 }
 
 #[test]

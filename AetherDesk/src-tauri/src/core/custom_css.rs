@@ -1,5 +1,8 @@
 use crate::core::paths::LocalAppPaths;
 use base64::Engine;
+use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
+use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -85,6 +88,60 @@ const DEFAULT_WALLPAPER_FILES: &[(&str, &[u8])] = &[
     ("halo.jpg", DEFAULT_HALO_WALLPAPER),
 ];
 
+/// Bookkeeping for the default themes we wrote: `themes/<file>` -> SHA-256 of
+/// the content we last shipped. A file whose content still hashes to its entry
+/// is untouched, so a later release may refresh it; a file with any other
+/// content belongs to the user and is never overwritten.
+const DEFAULTS_MANIFEST_FILE: &str = ".aether-defaults.json";
+const DEFAULTS_MANIFEST_SCHEMA: u32 = 1;
+
+/// Default themes as shipped through desk-1.4.3 (byte-identical to 1.3.x).
+/// Installs that carry one of these copies predate the manifest, so the hash is
+/// the only evidence that the file is still a seed: a match is refreshed with
+/// the current default, anything else belongs to the user.
+const LEGACY_DEFAULT_THEME_HASHES: &[(&str, &str)] = &[
+    (
+        "cyberpunk.css",
+        "0d19336ac5cc298811d2c8d5ac05b1ef571c78ed66c1d470748ca646d04ca598",
+    ),
+    (
+        "frieren.css",
+        "b25fb43051291a88d0785e2610ced6ab018377fcb81c9058924e2a221bda585f",
+    ),
+    (
+        "goldmine.css",
+        "6cc9a4d4b2bd8771278d730717511fae58af99ede53b5463b240dbb3d38f486b",
+    ),
+    (
+        "halo.css",
+        "6a43d8c4567d253c5be2851466d12bcf5fd1acc99e59bd5358c45fca3f77b219",
+    ),
+    (
+        "wonderland.css",
+        "3db634dca3e39d3d164edbf17895a2f4178174e168c4dbd1554805363101ba58",
+    ),
+];
+
+#[derive(Debug, Default, Serialize, Deserialize)]
+struct DefaultsManifest {
+    #[serde(default)]
+    schema: u32,
+    /// Only themes are managed; wallpapers and icons are seeded once and then
+    /// belong to the user.
+    #[serde(default)]
+    themes: BTreeMap<String, String>,
+}
+
+/// What happened to one default theme during provisioning.
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) enum DefaultThemeOutcome {
+    Created,
+    Refreshed,
+    Unchanged,
+    /// Existing content that is neither a tracked seed nor a legacy one.
+    Kept,
+}
+
 /// Official AetherDesk window icon (bundled Tauri icon resource).
 /// Used whenever custom icons are disabled and as the shell-shortcut default.
 pub const DEFAULT_AETHER_ICON: &[u8] = include_bytes!("../../icons/icon.ico");
@@ -110,12 +167,15 @@ pub const ICON_EXTENSIONS: &[&str] = &[
 
 /// Creates `config/themes/`, `config/wallpapers/`, `config/icons/` and
 /// `config/theme-kit/` (if missing) and seeds the theme, wallpaper and icon
-/// folders with the embedded defaults when empty (Cyberpunk, Goldmine,
-/// Frieren, Halo and Wonderland themes; Cyberpunk, Goldmine, Frieren and Halo
-/// wallpapers; plus the alternate icon). The theme kit's `default.css` is
-/// rewritten every time so it always matches the running stylesheet.
-/// Idempotent: existing theme, wallpaper and icon files are never overwritten,
-/// so user files survive upgrades. Failures are logged, never fatal.
+/// folders with the embedded defaults (Cyberpunk, Goldmine, Frieren, Halo and
+/// Wonderland themes; Cyberpunk, Goldmine, Frieren and Halo wallpapers; plus
+/// the alternate icon). The theme kit's `default.css` is rewritten every time
+/// so it always matches the running stylesheet.
+///
+/// Default themes are **managed**: the manifest records the hash of the copy we
+/// wrote, so a later release refreshes an untouched file while an edited one is
+/// left alone. Wallpapers and icons are seeded only when missing, so user files
+/// always survive upgrades. Failures are logged, never fatal.
 pub fn ensure_default_assets() -> Result<(), String> {
     let themes_dir = themes_dir();
     let wallpapers_dir = wallpapers_dir();
@@ -142,17 +202,27 @@ pub fn ensure_default_assets() -> Result<(), String> {
         );
     }
 
+    // Default themes follow the app across releases when the user never edited
+    // them. The manifest is the evidence of "this content is still ours".
+    let mut manifest = load_defaults_manifest();
+    manifest.schema = DEFAULTS_MANIFEST_SCHEMA;
     for (file_name, content) in DEFAULT_THEME_FILES {
-        let file = themes_dir.join(file_name);
-        if !file.exists() {
-            if let Err(e) = fs::write(&file, content) {
-                eprintln!(
-                    "[AetherDesk] failed to write default theme {}: {}",
-                    file_name, e
-                );
-            }
+        if sync_default_theme(
+            file_name,
+            content,
+            &mut manifest.themes,
+            LEGACY_DEFAULT_THEME_HASHES,
+        ) == DefaultThemeOutcome::Refreshed
+        {
+            eprintln!("[AetherDesk] refreshed untouched default theme {file_name}");
         }
     }
+    // Entries for themes this build no longer ships would keep stale hashes
+    // around; drop them so the manifest describes exactly the current set.
+    manifest
+        .themes
+        .retain(|name, _| DEFAULT_THEME_FILES.iter().any(|(file, _)| file == name));
+    save_defaults_manifest(&manifest);
 
     for (file_name, content) in DEFAULT_WALLPAPER_FILES {
         let file = wallpapers_dir.join(file_name);
@@ -179,6 +249,139 @@ pub fn ensure_default_assets() -> Result<(), String> {
     }
 
     Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// Managed default themes
+// ---------------------------------------------------------------------------
+
+fn defaults_manifest_path() -> PathBuf {
+    themes_dir().join(DEFAULTS_MANIFEST_FILE)
+}
+
+fn load_defaults_manifest() -> DefaultsManifest {
+    let path = defaults_manifest_path();
+    let Ok(content) = fs::read_to_string(&path) else {
+        return DefaultsManifest::default();
+    };
+    match serde_json::from_str(&content) {
+        Ok(manifest) => manifest,
+        Err(error) => {
+            // A corrupted manifest must not block startup: without tracked
+            // hashes every default is treated as a possible user file.
+            eprintln!(
+                "[AetherDesk] ignoring unreadable defaults manifest {}: {}",
+                path.display(),
+                error
+            );
+            DefaultsManifest::default()
+        }
+    }
+}
+
+fn save_defaults_manifest(manifest: &DefaultsManifest) {
+    let path = defaults_manifest_path();
+    let Ok(serialized) = serde_json::to_string_pretty(manifest) else {
+        return;
+    };
+    if fs::read_to_string(&path).is_ok_and(|current| current == serialized) {
+        return;
+    }
+    if let Err(error) = fs::write(&path, serialized) {
+        eprintln!(
+            "[AetherDesk] failed to write defaults manifest {}: {}",
+            path.display(),
+            error
+        );
+    }
+}
+
+/// SHA-256 of a theme file with CRLF folded to LF, so the embedded default and
+/// the copy an older build wrote compare equal whatever the checkout used.
+pub(crate) fn content_hash(bytes: &[u8]) -> String {
+    let normalized: Vec<u8> = bytes
+        .iter()
+        .copied()
+        .filter(|byte| *byte != b'\r')
+        .collect();
+    let mut hasher = Sha256::new();
+    hasher.update(&normalized);
+    format!("{:x}", hasher.finalize())
+}
+
+/// Writes, refreshes or preserves one default theme:
+/// - missing file: write it and record our hash;
+/// - content equal to the embedded default: nothing to do;
+/// - content equal to what we recorded or to a legacy 1.4.3 hash: an untouched
+///   seed, so replace it with the current default;
+/// - anything else: the user edited or replaced it, keep the file forever.
+pub(crate) fn sync_default_theme(
+    file_name: &str,
+    content: &str,
+    tracked: &mut BTreeMap<String, String>,
+    legacy: &[(&str, &str)],
+) -> DefaultThemeOutcome {
+    let path = themes_dir().join(file_name);
+    let embedded_hash = content_hash(content.as_bytes());
+
+    if !path.exists() {
+        return match fs::write(&path, content) {
+            Ok(()) => {
+                tracked.insert(file_name.to_string(), embedded_hash);
+                DefaultThemeOutcome::Created
+            }
+            Err(error) => {
+                eprintln!(
+                    "[AetherDesk] failed to write default theme {}: {}",
+                    path.display(),
+                    error
+                );
+                DefaultThemeOutcome::Kept
+            }
+        };
+    }
+
+    let current_hash = match fs::read(&path) {
+        Ok(bytes) => content_hash(&bytes),
+        Err(error) => {
+            eprintln!(
+                "[AetherDesk] failed to read default theme {}: {}",
+                path.display(),
+                error
+            );
+            return DefaultThemeOutcome::Kept;
+        }
+    };
+
+    if current_hash == embedded_hash {
+        tracked.insert(file_name.to_string(), current_hash);
+        return DefaultThemeOutcome::Unchanged;
+    }
+
+    let is_tracked_seed = tracked
+        .get(file_name)
+        .is_some_and(|hash| *hash == current_hash);
+    let is_legacy_seed = legacy
+        .iter()
+        .any(|(name, hash)| *name == file_name && *hash == current_hash);
+    if !is_tracked_seed && !is_legacy_seed {
+        return DefaultThemeOutcome::Kept;
+    }
+
+    match fs::write(&path, content) {
+        Ok(()) => {
+            tracked.insert(file_name.to_string(), embedded_hash);
+            DefaultThemeOutcome::Refreshed
+        }
+        Err(error) => {
+            eprintln!(
+                "[AetherDesk] failed to refresh default theme {}: {}",
+                path.display(),
+                error
+            );
+            DefaultThemeOutcome::Kept
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------

@@ -49,6 +49,53 @@
   --halo-plasma: #6bb8c0;
   --halo-cyan: #9ad9d5;
   --halo-danger: #a84d42;
+
+  /* Shared surface scale: every panel, field and divider in style.css reads
+     these, so the UNSC depth travels to the whole app. */
+  --bg-control: #1a241e;
+  --bg-control-hover: #22302a;
+  --bg-field: #101813;
+  --bg-panel: #050907;
+  --bg-surface: #121a16;
+  --bg-surface-alt: #0e1512;
+  --bg-raised: #18211c;
+  --bg-control-alt: #19231d;
+  --bg-control-strong: #1f2b24;
+  --scrollbar-thumb: #34443a;
+  --border-subtle: #232f27;
+  --border-strong: #34443a;
+  --border-bright: #475a4d;
+  --text-strong: #e8ede8;
+  --text-dim: #87948a;
+  --text-faint: #55645a;
+  --color-cyan-bright: #f0e66a;
+  --color-installed-green: #9bb7a0;
+  --color-installed-green-rgb: 155, 183, 160;
+  --color-installing-amber: #d99b45;
+  --color-installing-amber-rgb: 217, 155, 69;
+  --color-uco2: #6bb8c0;
+  --color-nsfw-pink-rgb: 168, 77, 66;
+  --color-delisted-white-rgb: 155, 183, 160;
+  --color-invalid-red: #a84d42;
+  --color-invalid-red-hover: #c87862;
+  --color-invalid-red-soft: rgba(168, 77, 66, 0.12);
+  --color-invalid-red-rgb: 168, 77, 66;
+  --color-warn-amber: #d99b45;
+  --color-warn-amber-soft: rgba(217, 155, 69, 0.12);
+  --color-danger: #a84d42;
+  --color-danger-rgb: 168, 77, 66;
+  --color-denuvo-hover: #c87862;
+  --color-denuvo-rgb: 168, 77, 66;
+  --color-success: #9bb7a0;
+  --color-warning: #d99b45;
+  --color-warning-soft: #2a2318;
+  --color-warning-hover: #e8b566;
+  --color-gold: #d6c75a;
+  --color-gold-rgb: 214, 199, 90;
+  --color-gold-ink: #14180c;
+  --overlay-soft: rgba(214, 199, 90, 0.08);
+  --overlay: rgba(214, 199, 90, 0.14);
+  --overlay-strong: rgba(214, 199, 90, 0.18);
 }
 
 /* ---------- 2. App background — dark military with light vignette ---------- */
@@ -577,7 +624,7 @@ body {
   color: var(--halo-hud) !important;
   background-color: #19231d !important;
 }
-.game-action-close-btn:hover:not(:disabled) {
+.game-action-hero-close:hover:not(:disabled) {
   border-color: var(--halo-danger) !important;
   color: var(--halo-danger) !important;
 }
@@ -590,9 +637,6 @@ body {
 }
 .info-hero-text {
   background: linear-gradient(180deg, transparent 30%, rgba(8, 13, 11, 0.92) 100%) !important;
-}
-.info-hero-fallback {
-  background-color: #121a16 !important;
 }
 .info-label {
   color: var(--halo-olive) !important;
@@ -884,4 +928,77 @@ body.aether-wallpaper-enabled .aether-view {
 .store-game-card .badge-available,
 .store-game-card .badge-installed {
   z-index: 20 !important;
+}
+
+/* ---------- Recent surfaces (online modals, tabs, log) ---------- */
+/* Online modals: squared UNSC frame, HUD titles, monospace controls. */
+.oc-container,
+.op-container {
+  border-radius: 6px !important;
+}
+.oc-header,
+.op-header {
+  border-bottom-color: var(--border-strong) !important;
+}
+.oc-header-title,
+.op-header-title {
+  color: var(--halo-hud) !important;
+  font-family: 'Consolas', 'Courier New', monospace !important;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+.oc-close,
+.op-close {
+  color: var(--halo-hud) !important;
+}
+.op-box {
+  background-color: var(--bg-raised) !important;
+  border-color: var(--border-strong) !important;
+  border-radius: 4px !important;
+}
+.op-input {
+  background-color: var(--bg-field) !important;
+  border-color: var(--border-strong) !important;
+  color: var(--halo-energy) !important;
+  border-radius: 4px !important;
+  font-family: 'Consolas', 'Courier New', monospace;
+}
+.op-input:focus {
+  border-color: var(--halo-hud) !important;
+}
+.op-btn {
+  border-radius: 4px !important;
+  font-family: 'Consolas', 'Courier New', monospace;
+  text-transform: uppercase;
+}
+.op-btn:hover:not(:disabled) {
+  border-color: var(--halo-hud) !important;
+  color: var(--halo-hud) !important;
+}
+
+/* Change Version tabs: squared frame, HUD underline. */
+.version-tab {
+  border-radius: 6px 6px 0 0 !important;
+  font-family: 'Consolas', 'Courier New', monospace;
+  text-transform: uppercase;
+}
+.version-tab.active {
+  background-color: rgba(214, 199, 90, 0.1) !important;
+  color: var(--halo-hud) !important;
+  border-color: var(--halo-hud) !important;
+  box-shadow: inset 0 -2px 0 var(--halo-hud) !important;
+}
+
+/* Log terminal reads as a deeper UNSC console. */
+.log-view-terminal {
+  background-color: #050907 !important;
+  border-color: var(--border-strong) !important;
+  border-radius: 6px !important;
+}
+
+/* Workshop report titles carry the HUD yellow. */
+.workshop-report-section-title {
+  color: var(--halo-hud) !important;
+  font-family: 'Consolas', 'Courier New', monospace;
+  text-transform: uppercase;
 }

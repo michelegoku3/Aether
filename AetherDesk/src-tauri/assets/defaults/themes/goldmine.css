@@ -36,6 +36,53 @@
   --goldmine-green: #7c9a6d;
   --goldmine-cream: #f3eddf;
   --goldmine-night: #10131a;
+
+  /* Shared surface scale: every panel, field and divider in style.css reads
+     these, so the starry-night depth travels to the whole app. */
+  --bg-control: #1b2230;
+  --bg-control-hover: #232c3d;
+  --bg-field: #121720;
+  --bg-panel: #0b0e14;
+  --bg-surface: #141824;
+  --bg-surface-alt: #11151f;
+  --bg-raised: #1a202c;
+  --bg-control-alt: #1e2433;
+  --bg-control-strong: #242c3d;
+  --scrollbar-thumb: #2a3142;
+  --border-subtle: #232a39;
+  --border-strong: #2a3142;
+  --border-bright: #3c465c;
+  --text-strong: #f3eddf;
+  --text-dim: #9aa3b2;
+  --text-faint: #66707f;
+  --color-cyan-bright: #e6c78a;
+  --color-installed-green: #7c9a6d;
+  --color-installed-green-rgb: 124, 154, 109;
+  --color-installing-amber: #d9a05c;
+  --color-installing-amber-rgb: 217, 160, 92;
+  --color-uco2: #9c8fd0;
+  --color-nsfw-pink-rgb: 201, 123, 138;
+  --color-delisted-white-rgb: 232, 230, 224;
+  --color-invalid-red: #c96f6f;
+  --color-invalid-red-hover: #d99aa6;
+  --color-invalid-red-soft: rgba(201, 111, 111, 0.12);
+  --color-invalid-red-rgb: 201, 111, 111;
+  --color-warn-amber: #d9b36c;
+  --color-warn-amber-soft: rgba(217, 179, 108, 0.12);
+  --color-danger: #c96f6f;
+  --color-danger-rgb: 201, 111, 111;
+  --color-denuvo-hover: #d99aa6;
+  --color-denuvo-rgb: 201, 111, 111;
+  --color-success: #7c9a6d;
+  --color-warning: #d9b36c;
+  --color-warning-soft: #322a18;
+  --color-warning-hover: #e6c78a;
+  --color-gold: #d9b36c;
+  --color-gold-rgb: 217, 179, 108;
+  --color-gold-ink: #1a1206;
+  --overlay-soft: rgba(217, 179, 108, 0.08);
+  --overlay: rgba(217, 179, 108, 0.14);
+  --overlay-strong: rgba(217, 179, 108, 0.18);
 }
 
 /* ---------- 2. App background — starry night ---------- */
@@ -636,7 +683,7 @@ body.aether-wallpaper-enabled .aether-view {
   color: var(--goldmine-gold) !important;
   background-color: #1a2030 !important;
 }
-.game-action-close-btn:hover:not(:disabled) {
+.game-action-hero-close:hover:not(:disabled) {
   border-color: #c96f6f !important;
   color: #c96f6f !important;
 }
@@ -649,9 +696,6 @@ body.aether-wallpaper-enabled .aether-view {
 }
 .info-hero-text {
   background: linear-gradient(180deg, transparent 30%, rgba(16, 19, 26, 0.92) 100%) !important;
-}
-.info-hero-fallback {
-  background-color: #0f1219 !important;
 }
 .info-label {
   color: var(--goldmine-gold-dim) !important;
@@ -814,4 +858,69 @@ body.aether-wallpaper-enabled .aether-view {
 }
 .blank-canvas {
   background-color: var(--bg-app) !important;
+}
+
+/* ---------- Recent surfaces (online modals, tabs, log) ---------- */
+/* Online modals: soft gold frame, cream titles, gold interaction. */
+.oc-container,
+.op-container {
+  border-radius: 12px !important;
+}
+.oc-header,
+.op-header {
+  border-bottom-color: var(--border-strong) !important;
+}
+.oc-header-title,
+.op-header-title {
+  color: var(--goldmine-gold) !important;
+  letter-spacing: 0.5px;
+}
+.oc-close,
+.op-close {
+  color: var(--goldmine-silver) !important;
+}
+.op-box {
+  background-color: var(--bg-raised) !important;
+  border-color: var(--border-strong) !important;
+  border-radius: 10px !important;
+}
+.op-input {
+  background-color: var(--bg-field) !important;
+  border-color: var(--border-strong) !important;
+  color: var(--goldmine-cream) !important;
+  border-radius: 8px !important;
+}
+.op-input:focus {
+  border-color: var(--goldmine-gold) !important;
+}
+.op-btn {
+  border-radius: 8px !important;
+}
+.op-btn:hover:not(:disabled) {
+  border-color: var(--goldmine-gold) !important;
+  color: var(--goldmine-gold) !important;
+}
+
+/* Change Version tabs: rounded frame, gold underline for the active tab. */
+.version-tab {
+  border-radius: 10px 10px 0 0 !important;
+}
+.version-tab.active {
+  background-color: rgba(217, 179, 108, 0.12) !important;
+  color: var(--goldmine-gold) !important;
+  border-color: var(--goldmine-gold) !important;
+  box-shadow: inset 0 -2px 0 var(--goldmine-gold) !important;
+}
+
+/* Log terminal reads as a deeper night panel. */
+.log-view-terminal {
+  background-color: #0b0e14 !important;
+  border-color: var(--border-strong) !important;
+  border-radius: 10px !important;
+}
+
+/* Workshop report titles carry the gold accent. */
+.workshop-report-section-title {
+  color: var(--goldmine-gold) !important;
+  letter-spacing: 0.5px;
 }

@@ -27,6 +27,57 @@
   --cyber-cyan: #00f0ff;
   --cyber-magenta: #ff003c;
   --cyber-black: #050508;
+
+  /* Shared surface scale: every panel, field and divider in style.css reads
+     these, so the whole app inherits the night-city depth from one place. */
+  --bg-control: #14140c;
+  --bg-control-hover: #1e1e10;
+  --bg-field: #0f0f0a;
+  --bg-panel: #030305;
+  --bg-surface: #0a0a0e;
+  --bg-surface-alt: #08080b;
+  --bg-raised: #11110c;
+  --bg-control-alt: #15150d;
+  --bg-control-strong: #1a1a0a;
+  --scrollbar-thumb: #2a2a1a;
+  --border-subtle: #1e1e14;
+  --border-strong: #3a3a1a;
+  --border-bright: #4a4a24;
+  --text-strong: #ffffff;
+  --text-dim: #9a9a8a;
+  --text-faint: #5a5a4a;
+  --color-cyan-bright: #fff45c;
+  --color-installed-green: #00f0ff;
+  --color-installed-green-rgb: 0, 240, 255;
+  --color-installing-amber: #ff9d00;
+  --color-installing-amber-rgb: 255, 157, 0;
+  --color-uco2: #b967ff;
+  --color-nsfw-pink-hover: #ff5f80;
+  --color-nsfw-pink-rgb: 255, 0, 60;
+  --color-delisted-white: #9a9a8a;
+  --color-delisted-white-hover: #e8e8e0;
+  --color-delisted-white-rgb: 154, 154, 138;
+  --color-invalid-red: #ff003c;
+  --color-invalid-red-hover: #ff5f80;
+  --color-invalid-red-soft: rgba(255, 0, 60, 0.12);
+  --color-invalid-red-rgb: 255, 0, 60;
+  --color-warn-amber: #fcee0a;
+  --color-warn-amber-soft: rgba(252, 238, 10, 0.12);
+  --color-danger: #ff003c;
+  --color-danger-rgb: 255, 0, 60;
+  --color-denuvo-hover: #ff5f80;
+  --color-denuvo-rgb: 255, 0, 60;
+  --color-success: #00f0ff;
+  --color-warning: #fcee0a;
+  --color-warning-soft: #1e1e0a;
+  --color-warning-hover: #fff45c;
+  --color-gold: #fcee0a;
+  --color-gold-rgb: 252, 238, 10;
+  --color-gold-ink: #050508;
+  --overlay-soft: rgba(252, 238, 10, 0.08);
+  --overlay: rgba(252, 238, 10, 0.14);
+  --overlay-strong: rgba(252, 238, 10, 0.18);
+  --radius-card-cover-inset: 2px;
 }
 
 /* ---------- 2. App background ---------- */
@@ -635,4 +686,91 @@ body.aether-wallpaper-enabled .aether-view {
 .store-game-card .badge-available,
 .store-game-card .badge-installed {
   z-index: 20 !important;
+}
+
+/* ---------- 16. Recent surfaces (online modals, tabs, log) ---------- */
+/* Online modals: squared frame, monospace titles, night-city fields. */
+.oc-container,
+.op-container {
+  border-radius: 2px !important;
+}
+.oc-header,
+.op-header {
+  border-bottom-color: var(--border-strong) !important;
+}
+.oc-header-title,
+.op-header-title {
+  font-family: 'Consolas', monospace !important;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: var(--cyber-yellow) !important;
+}
+.oc-close,
+.op-close {
+  color: var(--cyber-yellow) !important;
+  font-family: 'Consolas', monospace;
+}
+.op-box {
+  background-color: #0a0a06 !important;
+  border-color: #2a2a1a !important;
+  border-radius: 2px !important;
+}
+.op-input {
+  background-color: #0f0f0a !important;
+  border-color: #3a3a1a !important;
+  color: var(--cyber-yellow) !important;
+  border-radius: 2px !important;
+  font-family: 'Consolas', monospace;
+}
+.op-input:focus {
+  border-color: var(--cyber-yellow) !important;
+  box-shadow: 0 0 8px rgba(252, 238, 10, 0.3) !important;
+}
+.op-btn {
+  font-family: 'Consolas', monospace;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  border-radius: 2px !important;
+}
+
+/* Change Version tabs share the card chamfer language. */
+.version-tab {
+  font-family: 'Consolas', monospace !important;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  border-radius: 2px 2px 0 0 !important;
+}
+.version-tab.active {
+  background-color: rgba(252, 238, 10, 0.1) !important;
+  color: var(--cyber-yellow) !important;
+  border-color: var(--cyber-yellow) !important;
+  box-shadow: inset 0 -2px 0 var(--cyber-yellow) !important;
+}
+
+/* Library action popup: same interaction language as the panel buttons. */
+.game-action-btn {
+  font-family: 'Consolas', monospace;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  border-radius: 2px !important;
+}
+.game-action-btn:hover:not(:disabled) {
+  border-color: var(--cyber-yellow) !important;
+  color: var(--cyber-yellow) !important;
+  background-color: rgba(252, 238, 10, 0.08) !important;
+}
+
+/* Log terminal: the one surface that stays pure black, like a CRT. */
+.log-view-terminal {
+  background-color: #020203 !important;
+  border-color: #2a2a1a !important;
+  border-radius: 2px !important;
+}
+
+/* Workshop report: only the section titles need the theme voice. */
+.workshop-report-section-title {
+  font-family: 'Consolas', monospace;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: var(--cyber-yellow) !important;
 }
