@@ -119,7 +119,11 @@ add a PR workflow unless that working model changes.
 - **Commit messages are a single line in `action(where): what changed` form.**
   Use a lowercase action (`feat`, `fix`, `perf`, `refactor`, `docs`, `test`,
   `build`, `chore`, `style`, `revert`), a lowercase scope, and a lowercase
-  subject. Never add a body, bullet list or trailer below the subject.
+  subject. Never add a body, bullet list or trailer below the subject. The
+  scope names the area: `settings` for the Settings view and the appearance
+  assets it drives, `desk` only for cross-cutting AetherDesk work, `dll` for
+  AetherDLL; use `store`, `search`, `online`, `workshop`, `docs` or `tools`
+  when the change is confined to one of them.
 - **Comments are English**, present tense, and explain *why*: invariants,
   contracts, ordering constraints, platform quirks.
 - **Code and documents describe the current state only.** Never write change
