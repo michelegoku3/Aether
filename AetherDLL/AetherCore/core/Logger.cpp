@@ -59,13 +59,17 @@ const char* LevelTag(LogLevel level) {
 }
 
 // Formats timestamp with millisecond precision and Thread ID.
-void FormatTimeAndThread(char (&out)[32]) {
+//
+// The date is part of the contract: `main.log` is merged with `desk.log` and the
+// UCO2 log on the first bracket, and the bundle is read next to Windows' own
+// logs, so a bare HH:MM:SS cannot be ordered across midnight.
+void FormatTimeAndThread(char (&out)[64]) {
     SYSTEMTIME st{};
     GetLocalTime(&st);
     const DWORD tid = GetCurrentThreadId();
-    // Format is provably bounded (~28 chars into 32): truncation cannot occur.
-    (void)std::snprintf(out, sizeof(out), "%02d:%02d:%02d.%03d] [TID:%04lu", st.wHour, st.wMinute, st.wSecond,
-                        st.wMilliseconds, static_cast<unsigned long>(tid));
+    // Format is provably bounded (~41 chars into 64): truncation cannot occur.
+    (void)std::snprintf(out, sizeof(out), "%04d-%02d-%02d %02d:%02d:%02d.%03d] [TID:%04lu", st.wYear, st.wMonth,
+                        st.wDay, st.wHour, st.wMinute, st.wSecond, st.wMilliseconds, static_cast<unsigned long>(tid));
 }
 
 // Formats a body with truncation marker. Shared by Write/WriteOnce so the
@@ -279,7 +283,7 @@ void RemoveCrashHandlers() {
 // Synchronous fallback: used before Init and after Shutdown (and when the
 // queue is unavailable). Emits directly, reopening the file if needed.
 void EmitSync(LogLevel level, const char* module, const char* body) {
-    char timeAndThread[32];
+    char timeAndThread[64];
     FormatTimeAndThread(timeAndThread);
 
     std::lock_guard<std::mutex> lock(s_mutex);
@@ -308,7 +312,7 @@ void EmitSync(LogLevel level, const char* module, const char* body) {
 // Single publish path. Write/WriteOnce differ only in formatting gate and
 // dedup; the emitted bytes are identical for identical inputs.
 void Emit(LogLevel level, const char* module, const char* body) {
-    char timeAndThread[32];
+    char timeAndThread[64];
     FormatTimeAndThread(timeAndThread);
 
     std::string line;

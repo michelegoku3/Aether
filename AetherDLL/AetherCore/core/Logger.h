@@ -11,8 +11,11 @@
 //
 // Clean session management:
 //   * On startup, backs up the previous main.log to main.log.last and opens a clean log.
-//   * Output lines include high-precision timestamps (ms) and Thread IDs (TID):
-//     [HH:MM:SS.mmm] [TID:1234] [INFO ] [Module] message
+//   * Output lines include an absolute local date, millisecond precision and
+//     Thread IDs (TID):
+//     [YYYY-MM-DD HH:MM:SS.mmm] [TID:1234] [INFO ] [Module] message
+//     The date is what lets the merged view sort this file with desk.log and
+//     the UCO2 log, and lets a bundle sit alongside Windows' own logs.
 //
 // All public functions are thread-safe and never throw.
 // ---------------------------------------------------------------------------

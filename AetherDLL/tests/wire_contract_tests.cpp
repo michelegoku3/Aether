@@ -13,6 +13,7 @@
 #include "utils/WinFile.h"
 
 #include <atomic>
+#include <cctype>
 #include <chrono>
 #include <cstdio>
 #include <filesystem>
@@ -347,6 +348,31 @@ void LoggerGolden() {
     CHECK(seen == 1);
 }
 
+// Contract: every line starts with an absolute local date. The merged "All"
+// view sorts lines on that bracket and an exported bundle is read next to
+// Windows' own logs, so a bare HH:MM:SS cannot be ordered across midnight.
+void LoggerLineCarriesTheDate() {
+    Fixture f;
+    const fs::path log = f.dir / "dated.log";
+    ac::log::Init(log.string(), false);
+    ac::log::Write(ac::LogLevel::Info, "Mod", "dated");
+    ac::log::Shutdown();
+
+    const std::string body = f.Read(log);
+    CHECK(body.size() > 26);
+    CHECK(body[0] == '[');
+    for (int i = 1; i <= 4; ++i) // YYYY
+        CHECK(std::isdigit(static_cast<unsigned char>(body[static_cast<std::size_t>(i)])) != 0);
+    CHECK(body[5] == '-');
+    CHECK(body[8] == '-');
+    CHECK(body[11] == ' ');
+    CHECK(body[14] == ':');
+    CHECK(body[17] == ':');
+    CHECK(body[20] == '.');
+    CHECK(body[24] == ']');
+    CHECK(body.find("] [INFO ] [Mod] dated") != std::string::npos);
+}
+
 // W3: success requires a non-null remote module handle. Self-injection of an
 // already-loaded system DLL is the real primitive on the current process
 // (harmless: only bumps kernel32's refcount); the empty path is refused.
@@ -446,6 +472,7 @@ int main(int argc, char** argv) {
         {"pin_scan", PinScan},
         {"http_gate", HttpGate},
         {"logger_golden", LoggerGolden},
+        {"logger_line_carries_the_date", LoggerLineCarriesTheDate},
         {"logger_concurrent_burst", LoggerConcurrentBurst},
         {"logger_flush_drain", LoggerFlushDrain},
         {"quota_corrupt", QuotaCorrupt},

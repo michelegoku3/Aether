@@ -29,6 +29,7 @@ must agree on, or you add/rename an IPC command.
 - [7. Desk → frontend IPC contract (argument keys)](#7-desk--frontend-ipc-contract-argument-keys)
 - [8. The Steam path is not a client parameter](#8-the-steam-path-is-not-a-client-parameter)
 - [9. ACF ownership: who writes which field](#9-acf-ownership-who-writes-which-field)
+- [10. Log line contract](#10-log-line-contract)
 
 ---
 
@@ -326,6 +327,45 @@ local manifest describes it. Re-downloading the Lua cannot fix it: the Lua
 changes the target, not the installed record. Nothing repairs it either while
 desk and Steam disagree about the same file, so the repair runs where the ACF is
 read: at Steam startup.
+
+---
+
+## 10. Log line contract
+
+`desk.log` and `main.log` are read as one document: the Logs view merges them
+with each other and with `uc_online2.log`, and `export_logs_bundle` ships them
+together as a support artifact. One shape, both halves:
+
+```
+[YYYY-MM-DD HH:MM:SS.mmm] [PID:12345] [TID:1234] [INFO ] [Module    ] message
+```
+
+- **Absolute local date, always.** It is the merge key: `commands/logs.rs`
+  orders merged lines on the first bracket (`sort_key`, which also feeds the
+  line's position in the export), so a bare `HH:MM:SS` cannot be ordered across
+  midnight and cannot be placed next to Windows' own logs. Fixed width:
+  millisecond precision, zero padded.
+- **`PID` is Desk-only.** `main.log` is written by Steam and by every game
+  process under one cross-process mutex, so a PID there would add bytes without
+  identifying anything the `TID` does not.
+- **Level tags are fixed width** (`TRACE`, `DEBUG`, `INFO `, `WARN `, `ERROR`),
+  because the view derives the line class from the bracketed tag.
+- **Module tag** names the concern (`store`, `library-watch`, `Depot`,
+  `License.Hooks`); Desk capitalizes the first letter, the DLL does not. The
+  merged view prepends its own source tag instead: `[DESK]`, `[DLL ]`, `[UCO2]`.
+- **No ANSI, no multi-line messages.** A stack or a payload is one line.
+
+Twins:
+- Desk: `core/logger.rs` → `format_line` (shape) and `format_timestamp_ms`
+  (date); merged ordering and source tags in `commands/logs.rs` →
+  `merge_tagged`, `sort_key`.
+- DLL: `core/Logger.cpp` → `FormatTimeAndThread` (date, buffer 64) and `Emit` /
+  `EmitSync` (shape).
+
+Decision under test: `core/logger.rs::tests::formatted_line_carries_an_absolute_date_and_the_shared_shape`
+and the `wire_logger_line_carries_the_date` ctest case assert the same shape
+from both halves; `commands/logs.rs::tests::merged_logs_sort_across_days_and_sources`
+covers the ordering the date exists for.
 
 ---
 
