@@ -10,12 +10,14 @@ disagrees with CI.
 [`AGENTS.md`](../AGENTS.md#build-test-lint)) or the fast iteration loop (see
 [`AetherDLL/docs/quick-build.md`](../AetherDLL/docs/quick-build.md)).
 
-Single rule: **every check runs identically locally and on GitHub**, with two
+Single rule: **every check runs identically locally and on GitHub**, with three
 deliberate exceptions in the desk build: it runs the frontend tests without
-coverage (the thresholds stay a CI gate) and reuses the local advisory database
-for up to a week. The release workflow (`.github/workflows/build.yml`) otherwise
-adds nothing that `build_desk.cmd` or "Build All" in Visual Studio don't already
-do; it only serves as the final barrier before publishing.
+coverage (the thresholds stay a CI gate), reuses the local advisory database for
+up to a week, and treats formatting as advisory instead of blocking. The release
+workflow (`.github/workflows/build.yml`) otherwise adds nothing that
+`build_desk.cmd` or "Build All" in Visual Studio don't already do; it builds a
+**draft** release and publishes it only when the maintainer approves the
+`release-desk`/`release-dll` environment.
 
 ## CI scope
 
@@ -26,6 +28,16 @@ tagging, so the workflow is the publishing barrier, not a review gate. Adding
 PR CI would duplicate checks that already run on every local build; it is a
 deliberate absence, not an oversight.
 
+Publishing is a second, manual step. `release-desk` and `release-dll` upload
+their assets to a draft release, and the `publish-desk`/`publish-dll` jobs sit
+behind the `release-desk`/`release-dll` environments with a required reviewer.
+Until that approval the release stays invisible: `AetherDesk`'s updater skips
+`draft` releases (`updater/github.rs`), and a draft's assets — including
+`latest-desk.json`/`latest-dll.json` — are not downloadable. The reviewer rule
+lives in the repository settings (*Settings → Environments*); without it the
+publish jobs would run immediately and the gate would not exist.
+
+
 
 ## AetherDesk — `build_desk.cmd` (and the `release-desk` job)
 
@@ -34,13 +46,14 @@ deliberate absence, not an oversight.
 | 3 | `npm audit --audit-level=high` | high/critical CVEs in npm dependencies, without touching lockfile or working tree | — (`/skipaudit` to skip) |
 | 4 | `npm run build` | TS type errors (`strict`, `noUnusedLocals/Parameters`) and a frontend bundle that does not compile | `tsconfig.json` |
 | 4 | `npm run verify:build` → `check:tauri-versions` | major/minor mismatch between the Rust runtime, the JS API and the Tauri CLI | `scripts/check_tauri_versions.mjs` |
-| 4 | `npm run verify:build` → `format:check` | Prettier drift in `src/`, `src-tauri/` JSON and the root JSON files | `.prettierrc` |
+| 4 | `npm run verify:build` → `format:check` | Prettier drift in `src/`, `src-tauri/` JSON and the root JSON files (advisory in CI: `npm run verify:ci` skips it) | `.prettierrc` |
 | 4 | `npm run verify:build` → `lint:ci` | `error`-level ESLint rules (hooks, unused imports, fallthrough) | `eslint.config.js` |
 | 4 | `npm run verify:build` → `test:run` | React/TypeScript regressions. Coverage thresholds are a CI gate: `npm run verify` runs `test:ci` (`vitest --coverage`) | `vitest.config.ts` |
 | 4 | `npm run verify:build` → `check:wiring` | `.tsx/.ts` files never imported from `main.tsx` | `scripts/check_frontend_wiring.mjs` |
 | 4 | `npm run verify:build` → `check:docs` | a Markdown file no one links from `docs/INDEX.md`, a dangling relative link or heading anchor, a cited repository path that no longer exists | `Tools/check_docs.mjs` |
 | 4 | `npm run verify:build` → `check:unused` (**knip**) | never-imported exports/types, unused or undeclared npm dependencies | `knip.json`, `scripts/check_unused.mjs` |
 | 4 | `cargo clippy --all-targets -- -D warnings` | every rustc/clippy warning: dead code, unused imports, `unsafe` without `// SAFETY:`, locks held across `.await`, redundant clones, cast truncations | `Cargo.toml` → `[lints.rust]`, `[lints.clippy]` |
+| 4 | `cargo fmt --all` then `cargo fmt --all -- --check` | Rust formatting drift. The local build rewrites and then checks the tree it just wrote, so it never fails there; the workflow only checks, as an advisory step | rustfmt defaults, `.githooks/pre-commit` |
 | 4 | `cargo test` | unit tests + IPC contract tests | `src/tests/` (`/skiptests`) |
 | 5 | `cargo audit` | known CVEs in crates (RustSec database) | — (`/skipaudit`) |
 | 5 | `cargo machete` | dependencies in `Cargo.toml` never used | — |
@@ -48,12 +61,32 @@ deliberate absence, not an oversight.
 `npm run build` writes `dist/` first because `cargo test` compiles
 `generate_context!`, which embeds it; then `verify:build` (everything `verify`
 does, minus the repeated build and minus coverage) runs in parallel with
-`cargo fmt`/`clippy`/`test`. The two halves keep separate logs.
+`cargo fmt`/`clippy`/`test`. The two halves keep separate logs. The workflow runs
+`verify:ci` — `verify` without `format:check` — and reports formatting through
+the two advisory steps described in the next section.
 
 `cargo audit` passes `--no-fetch` while the local advisory database is younger
 than a week, so the network round trip happens weekly instead of on every build.
 
 `cargo-audit` and `cargo-machete` are installed automatically the first time.
+
+### Formatting
+
+`build_desk.cmd` runs `cargo fmt --all` (write) and immediately checks the tree it
+just rewrote, so a local build normalizes Rust formatting instead of failing on
+it; the workflow runs only the check. `.githooks/pre-commit` closes the gap: it
+formats the staged `.rs` files (and the Prettier paths) and re-stages them, so
+drift cannot enter a commit. Enable it once per clone:
+
+```powershell
+git config core.hooksPath .githooks
+```
+
+Both format checks in the workflow are `continue-on-error: true`: a tag that has
+already paid for a full build is not failed over whitespace, and the annotation
+is what a clone without the hook needs to see. Prettier is stricter locally —
+`npm run verify` checks it and never rewrites — which is why the hook rewrites
+instead of checking.
 
 ### How to read a failure
 

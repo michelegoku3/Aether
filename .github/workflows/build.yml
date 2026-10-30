@@ -53,18 +53,29 @@ jobs:
         working-directory: AetherDesk
 
       # ---- Quality gates: the same gates as build_desk.cmd; CI runs them in
-      # ---- sequence and adds the coverage thresholds (verify = verify:build
-      # ---- plus test:ci) ------------------------------------------------------
+      # ---- sequence and adds the coverage thresholds (verify:ci = verify:build
+      # ---- minus formatting, plus test:ci) -----------------------------------
+      #
+      # ---- Formatting is reported, never enforced: a tag that already cost a
+      # ---- full build must not die over whitespace. The .githooks/pre-commit
+      # ---- hook is what keeps drift out of history; those two checks only
+      # ---- annotate the run when a clone skipped the hook. -------------------
       - name: Frontend dependency audit
         working-directory: AetherDesk
         run: npm audit --audit-level=high
 
+      - name: Frontend formatting (prettier, advisory)
+        working-directory: AetherDesk
+        continue-on-error: true
+        run: npm run format:check
+
       - name: Frontend verification (build, lint, tests with coverage, wiring, docs, unused)
         working-directory: AetherDesk
-        run: npm run verify
+        run: npm run verify:ci
 
-      - name: Rust formatting (rustfmt check)
+      - name: Rust formatting (rustfmt check, advisory)
         working-directory: AetherDesk/src-tauri
+        continue-on-error: true
         run: cargo fmt --all -- --check
 
       - name: Rust lint (clippy, warnings are errors)
@@ -153,17 +164,46 @@ jobs:
             published_at = (Get-Date).ToUniversalTime().ToString("o")
           } | ConvertTo-Json | Set-Content "release/latest-desk.json"
 
-      - name: Publish AetherDesk Release
+      - name: Prepare AetherDesk Draft Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}
           name: AetherDesk ${{ steps.version.outputs.version }}
           body: Automated AetherDesk portable release compiled on GitHub Actions.
-          draft: false
+          # Draft on purpose: the assets and latest-desk.json stay unreachable
+          # (the updater skips drafts) until publish-desk is approved.
+          draft: true
+          make_latest: false
           prerelease: false
           files: |
             release/AetherDesk-${{ steps.version.outputs.version }}.zip
             release/latest-desk.json
+
+  publish-desk:
+    name: Publish AetherDesk (approval gate)
+    needs: release-desk
+    if: startsWith(github.ref_name, 'desk-') || startsWith(github.ref_name, 'tdesk-')
+    permissions:
+      contents: write
+    runs-on: ubuntu-latest
+    # The environment carries the required-reviewer rule: the run parks here
+    # with the draft already built, and publishing happens only on approval.
+    environment:
+      name: release-desk
+      url: https://github.com/${{ github.repository }}/releases/tag/${{ github.ref_name }}
+    steps:
+      - name: Publish the approved draft
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+          REPO: ${{ github.repository }}
+        run: |
+          # A test channel must never become the repository's "latest" release.
+          if [[ "$TAG" == t* ]]; then
+            gh release edit "$TAG" --draft=false --repo "$REPO"
+          else
+            gh release edit "$TAG" --draft=false --latest --repo "$REPO"
+          fi
 
   release-dll:
     name: Build and Release AetherDLL
@@ -254,7 +294,7 @@ jobs:
             published_at = (Get-Date).ToUniversalTime().ToString("o")
           } | ConvertTo-Json | Set-Content "release/latest-dll.json"
 
-      - name: Publish DLL Release
+      - name: Prepare DLL Draft Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}
@@ -265,8 +305,33 @@ jobs:
             Update AetherDesk first; older versions expect a different proxy.
             Close Steam and move any unsupported proxy from its installation root
             to a backup outside Steam before installing. Do not delete unknown files.
-          draft: false
+          # Draft on purpose: nothing is downloadable until publish-dll is approved.
+          draft: true
+          make_latest: false
           prerelease: false
           files: |
             release/AetherDLL-${{ steps.version.outputs.version }}.zip
             release/latest-dll.json
+
+  publish-dll:
+    name: Publish AetherDLL (approval gate)
+    needs: release-dll
+    if: startsWith(github.ref_name, 'dll-') || startsWith(github.ref_name, 'tdll-')
+    permissions:
+      contents: write
+    runs-on: ubuntu-latest
+    environment:
+      name: release-dll
+      url: https://github.com/${{ github.repository }}/releases/tag/${{ github.ref_name }}
+    steps:
+      - name: Publish the approved draft
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+          REPO: ${{ github.repository }}
+        run: |
+          if [[ "$TAG" == t* ]]; then
+            gh release edit "$TAG" --draft=false --repo "$REPO"
+          else
+            gh release edit "$TAG" --draft=false --latest --repo "$REPO"
+          fi

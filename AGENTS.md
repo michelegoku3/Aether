@@ -94,8 +94,11 @@ Outside an elevated shell the test harness needs
 CI is tag-only by design. `.github/workflows/build.yml` runs the release jobs
 when a `desk-*` or `dll-*` tag is pushed; there is no pull-request or branch
 CI. Aether has a single maintainer who runs the full gates locally before
-tagging, so the workflow is the publishing barrier, not a review gate. Do not
-add a PR workflow unless that working model changes.
+tagging, so the workflow is the publishing barrier, not a review gate. A tag
+produces a **draft** release; the assets become downloadable only after the
+maintainer approves the `release-desk`/`release-dll` environment, and until then
+the updater ignores the release. Do not add a PR workflow unless that working
+model changes.
 
 ## Documentation rules
 
@@ -136,6 +139,10 @@ add a PR workflow unless that working model changes.
   change to it in that conversation.
 - **Do not hand-edit generated files**: `AetherDLL/proto/generated/**` is produced
   by `Tools/regen_proto.cmd`. Edit `proto/steam_messages.proto` instead.
+- **Format before committing**: enable the shared hook once per clone with
+  `git config core.hooksPath .githooks`. It applies `cargo fmt` and Prettier to
+  the staged files, so the formatting rewrite a local build performs never stays
+  uncommitted.
 - **IPC argument keys** are lowerCamelCase and derived from the Rust parameter
   names; no snake_case fallback (`docs/shared_contracts.md` §7).
 - **The Steam path is resolved in the backend**, never passed by the client
