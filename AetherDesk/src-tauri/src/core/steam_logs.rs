@@ -27,7 +27,7 @@ pub fn cutoff_key_12h_before_now() -> String {    use windows_sys::Win32::Founda
         FileTimeToSystemTime, SystemTimeToTzSpecificLocalTime,
     };
 
-    let window_ticks = (STEAM_WINDOW_HOURS as i64) * 3_600 * 10_000_000;
+    let window_ticks = STEAM_WINDOW_HOURS * 3_600 * 10_000_000;
     let mut raw = FILETIME {
         dwLowDateTime: 0,
         dwHighDateTime: 0,
@@ -37,17 +37,22 @@ pub fn cutoff_key_12h_before_now() -> String {    use windows_sys::Win32::Founda
         GetSystemTimeAsFileTime(&mut raw);
     }
     let cutoff = ((raw.dwHighDateTime as i64) << 32 | raw.dwLowDateTime as i64) - window_ticks;
+    // FILETIME is the low/high split of a 64-bit tick count; the `as` casts
+    // below re-assemble exactly the value built above, nothing is truncated.
     let as_file_time = FILETIME {
-        dwLowDateTime: cutoff as u32,
-        dwHighDateTime: (cutoff >> 32) as u32,
+        dwLowDateTime: (cutoff & 0xFFFF_FFFF) as u32,
+        dwHighDateTime: ((cutoff >> 32) & 0xFFFF_FFFF) as u32,
     };
+    // SAFETY: SYSTEMTIME is a plain Windows FFI struct, so zero
+    // initialization is valid before each call fills it.
     let mut utc: SYSTEMTIME = unsafe { std::mem::zeroed() };
+    // SAFETY: same plain FFI struct, ours alone until the conversion.
     let mut local: SYSTEMTIME = unsafe { std::mem::zeroed() };
     // SAFETY: both outputs are ours; the null zone argument asks for the
     // system's own dynamic time zone.
     unsafe {
-        FileTimeToSystemTime(&as_file_time, &mut utc);
-        SystemTimeToTzSpecificLocalTime(std::ptr::null(), &utc, &mut local);
+        let _ = FileTimeToSystemTime(&as_file_time, &mut utc);
+        let _ = SystemTimeToTzSpecificLocalTime(std::ptr::null(), &utc, &mut local);
     }
     format!(
         "{:04}-{:02}-{:02} {:02}:{:02}:{:02}",
@@ -105,16 +110,16 @@ pub fn collect_steam_logs(
             if !fresh {
                 continue;
             }
-            let raw = match std::fs::read(logs_dir.join(&candidate)) {
-                Ok(raw) => raw,
-                Err(_) => continue,
+            let Ok(raw) = std::fs::read(logs_dir.join(&candidate)) else {
+                continue;
             };
             let content = String::from_utf8_lossy(&raw).into_owned();
-            if let Some(bytes) =
+            let Some(bytes) =
                 filter_steam_log_content(&content, cutoff_stamp, STEAM_FALLBACK_MAX_BYTES)
-            {
-                collected.push((candidate, bytes));
-            }
+            else {
+                continue;
+            };
+            collected.push((candidate, bytes));
         }
     }
     collected
@@ -180,14 +185,17 @@ fn filter_steam_log_content(content: &str, cutoff: &str, fallback_max: u64) -> O
     if (content.len() as u64) <= fallback_max {
         return Some(content.as_bytes().to_vec());
     }
-    let cut = content.len() - fallback_max as usize;
+    // The cap is defined on files Steam writes (never near `usize::MAX`), so
+    // a 32-bit-target overflow would only allow a bigger tail.
+    let max = usize::try_from(fallback_max).unwrap_or(usize::MAX);
+    let cut = content.len() - max;
     let start = match content[cut..].find('\n') {
         Some(pos) => cut + pos + 1,
         // A single line longer than the cap: hand over exactly the cap's
         // worth of tail, mid-line. Nothing useful is lost at 4 MiB scale.
         None => cut,
     };
-    Some(content[start..].as_bytes().to_vec())
+    Some(content.as_bytes()[start..].to_vec())
 }
 
 #[cfg(test)]

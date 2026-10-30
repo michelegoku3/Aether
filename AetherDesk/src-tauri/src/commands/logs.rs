@@ -304,11 +304,20 @@ pub async fn export_logs_bundle(app: tauri::AppHandle) -> Result<String, String>
 fn export_logs_bundle_sync(app: &tauri::AppHandle) -> Result<String, String> {
     crate::desk_log_info!(
         "logs",
-        "Starting export of AetherDesk, AetherDLL and UCOnline2 session logs bundle"
+        "Starting export of Desk/DLL/UCO2 session logs plus the last 12 hours of Steam client logs"
     );
     let stage_dir = std::env::temp_dir().join(format!("aether_logs_export_{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&stage_dir);
     std::fs::create_dir_all(&stage_dir)
+        .map_err(|e| format!("Failed to create temporary export directory: {e}"))?;
+
+    // The zip mirrors this staging: one folder per artifact family, so a
+    // support reader can tell Aether's own logs from Steam's client logs.
+    let aether_dir = stage_dir.join("AetherLog");
+    let steam_dir = stage_dir.join("SteamLog");
+    std::fs::create_dir_all(&aether_dir)
+        .map_err(|e| format!("Failed to create temporary export directory: {e}"))?;
+    std::fs::create_dir_all(&steam_dir)
         .map_err(|e| format!("Failed to create temporary export directory: {e}"))?;
 
     let time = current_time_filename_str();
@@ -320,6 +329,7 @@ fn export_logs_bundle_sync(app: &tauri::AppHandle) -> Result<String, String> {
     let steam_path_buf = PathBuf::from(&steam_path);
 
     let mut copied = 0;
+    let mut steam_copied = 0;
 
     // 1. AetherDesk logs
     for (src, dest_name) in [
@@ -327,7 +337,7 @@ fn export_logs_bundle_sync(app: &tauri::AppHandle) -> Result<String, String> {
         (desk_log_dir.join("desk.log.last"), "desk.log.last.txt"),
         (desk_log_dir.join("status.json"), "desk_status.json.txt"),
     ] {
-        if src.is_file() && std::fs::copy(&src, stage_dir.join(timed(dest_name))).is_ok() {
+        if src.is_file() && std::fs::copy(&src, aether_dir.join(timed(dest_name))).is_ok() {
             copied += 1;
         }
     }
@@ -348,7 +358,7 @@ fn export_logs_bundle_sync(app: &tauri::AppHandle) -> Result<String, String> {
             ("status.json", "aetherdll_status.json.txt"),
         ] {
             let src = dir.join(file_name);
-            let dest = stage_dir.join(timed(dest_name));
+            let dest = aether_dir.join(timed(dest_name));
             if src.is_file() && !dest.exists() && std::fs::copy(&src, &dest).is_ok() {
                 copied += 1;
             }
@@ -361,10 +371,33 @@ fn export_logs_bundle_sync(app: &tauri::AppHandle) -> Result<String, String> {
     if uco2_src.is_file() {
         if let Ok(content) = std::fs::read_to_string(&uco2_src) {
             let normalized = normalize_uco2_content(&content);
-            let dest = stage_dir.join(timed("uc_online2.log.txt"));
+            let dest = aether_dir.join(timed("uc_online2.log.txt"));
             if std::fs::write(&dest, normalized).is_ok() {
                 copied += 1;
             }
+        }
+    }
+
+    // 4. Donor pool learning state. Not a session log, so no time suffix.
+    let donors_src = steam_path_buf.join("aethercore").join("donors.txt");
+    if donors_src.is_file() && std::fs::copy(&donors_src, aether_dir.join("donors.txt")).is_ok() {
+        copied += 1;
+    }
+
+    // 5. Steam client logs: the same window by stamps (line cutoff) and by
+    //    file age (mtime gate), both derived from STEAM_WINDOW_HOURS one way.
+    let cutoff_instant = std::time::SystemTime::now()
+        - std::time::Duration::from_secs(
+            crate::core::steam_logs::STEAM_WINDOW_HOURS.unsigned_abs() * 3600,
+        );
+    let collected = crate::core::steam_logs::collect_steam_logs(
+        &steam_path_buf,
+        cutoff_instant,
+        &crate::core::steam_logs::cutoff_key_12h_before_now(),
+    );
+    for (name, bytes) in collected {
+        if std::fs::write(steam_dir.join(name), &bytes).is_ok() {
+            steam_copied += 1;
         }
     }
 
@@ -382,14 +415,16 @@ fn export_logs_bundle_sync(app: &tauri::AppHandle) -> Result<String, String> {
     let options = zip::write::SimpleFileOptions::default()
         .compression_method(zip::CompressionMethod::Deflated);
 
-    if let Ok(entries) = std::fs::read_dir(&stage_dir) {
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if path.is_file() {
-                if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
-                    let _ = zip.start_file(name, options);
-                    if let Ok(content) = std::fs::read(&path) {
-                        let _ = std::io::Write::write_all(&mut zip, &content);
+    for (zip_prefix, folder) in [("AetherLog", &aether_dir), ("SteamLog", &steam_dir)] {
+        if let Ok(entries) = std::fs::read_dir(folder) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.is_file() {
+                    if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+                        let _ = zip.start_file(format!("{zip_prefix}/{name}"), options);
+                        if let Ok(content) = std::fs::read(&path) {
+                            let _ = std::io::Write::write_all(&mut zip, &content);
+                        }
                     }
                 }
             }
@@ -400,13 +435,14 @@ fn export_logs_bundle_sync(app: &tauri::AppHandle) -> Result<String, String> {
 
     crate::desk_log_info!(
         "logs",
-        "Successfully exported {} log file(s) into {}",
-        copied,
+        "Successfully exported {} log file(s) including {} Steam client log file(s) into {}",
+        copied + steam_copied,
+        steam_copied,
         zip_path.display()
     );
     Ok(format!(
         "Exported {} log file(s) to {}",
-        copied,
+        copied + steam_copied,
         zip_path.display()
     ))
 }

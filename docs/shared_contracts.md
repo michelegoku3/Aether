@@ -367,6 +367,32 @@ and the `wire_logger_line_carries_the_date` ctest case assert the same shape
 from both halves; `commands/logs.rs::tests::merged_logs_sort_across_days_and_sources`
 covers the ordering the date exists for.
 
+### 10.1 Export bundle layout (Desk only)
+
+The `Save` button in the Logs view ships
+`Downloads\AetherLogs_HH-MM-SS.zip` (built by
+`AetherDesk/src-tauri/src/commands/logs.rs::export_logs_bundle_sync`) with
+one folder per artifact family:
+
+```
+AetherLog/  desk.log.txt, desk.log.last.txt, desk_status.json.txt
+            aetherdll_main.log.txt, aetherdll_main.log.last.txt, aetherdll_status.json.txt
+            uc_online2.log.txt (normalized to [UCO2]), donors.txt (no time suffix)
+SteamLog/   <original Steam names, already filtered>
+```
+
+- `AetherLog/` keeps a time suffix (`desk.log_14-32-05.txt`) because each
+  export is its own snapshot; files carry the millisecond stamp the §10
+  contract guarantees.
+- `SteamLog/` collects only `<Steam>\logs\` files named in
+  `AetherDesk/src-tauri/src/core/steam_logs.rs::SELECTED_STEAM_LOGS`, plus
+  Steam's own `.previous.txt` session twin of each, and only when the file's
+  mtime is within the last 12 hours. Lines are kept when their
+  `[YYYY-MM-DD HH:MM:SS]` Steam stamp is within the window; a file without
+  any stamp line is included whole, tail-capped at 4 MiB. Steam stamps are
+  second-precision, so Desk's millisecond stamps are what order the two
+  families against each other.
+
 ---
 
 ## Related
