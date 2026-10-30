@@ -1,0 +1,53 @@
+#!/bin/sh
+# Formats what is staged, so the format gates never have drift to report.
+#
+# build_desk.cmd rewrites Rust formatting while it builds and the tag-time
+# workflow only checks it: without this hook the rewrite stays in the working
+# tree, and a release can fail over whitespace. Enable it once per clone:
+#
+#   git config core.hooksPath .githooks
+#
+# A file that already carried unstaged edits before formatting is formatted but
+# left unstaged, so the hook never commits work the author had not staged.
+
+root=$(git rev-parse --show-toplevel) || exit 1
+staged=$(git diff --cached --name-only --diff-filter=ACM)
+[ -z "$staged" ] && exit 0
+
+# Captured before the formatters run: these paths must not be re-staged.
+dirty=$(git diff --name-only)
+
+was_dirty() {
+    printf '%s\n' "$dirty" | grep -qxF "$1"
+}
+
+# Re-stages a path the formatter may have rewritten.
+restage() {
+    while IFS= read -r file; do
+        [ -n "$file" ] || continue
+        [ -f "$root/$file" ] || continue
+        if was_dirty "$file"; then
+            echo "pre-commit: $file formatted but left unstaged (it had unstaged edits)" >&2
+        else
+            git add -- "$file"
+        fi
+    done
+}
+
+# Rust: the same command build_desk.cmd runs before the check.
+rust_files=$(printf '%s\n' "$staged" | grep '\.rs$' || true)
+if [ -n "$rust_files" ] && command -v cargo >/dev/null 2>&1; then
+    (cd "$root/AetherDesk/src-tauri" && cargo fmt --all) || exit 1
+    printf '%s\n' "$rust_files" | restage
+fi
+
+# Frontend: the paths format:check covers, with the project's own Prettier.
+web_files=$(printf '%s\n' "$staged" | grep -E '^AetherDesk/(src/.*\.(ts|tsx|css)|src-tauri/.*\.(json|css)|[^/]*\.json)$' || true)
+prettier="$root/AetherDesk/node_modules/.bin/prettier"
+if [ -n "$web_files" ] && [ -x "$prettier" ]; then
+    (cd "$root/AetherDesk" && printf '%s\n' "$web_files" | sed 's|^AetherDesk/||' | xargs -d '\n' \
+        "$prettier" --write --log-level warn) || exit 1
+    printf '%s\n' "$web_files" | restage
+fi
+
+exit 0
