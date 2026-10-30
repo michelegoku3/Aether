@@ -56,7 +56,7 @@ tauri-plugin-single-instance = "2"
 # DLL version is read directly from the PE version resource inside the .dll files
 # (Windows-only API; the DLL domain is Windows-only by design).
 [target.'cfg(windows)'.dependencies]
-windows-sys = { version = "0.59", features = ["Win32_Storage_FileSystem", "Win32_System_SystemInformation", "Win32_Foundation", "Win32_UI_Shell", "Win32_Security_Cryptography"] }
+windows-sys = { version = "0.59", features = ["Win32_Storage_FileSystem", "Win32_System_SystemInformation", "Win32_System_Time", "Win32_Foundation", "Win32_UI_Shell", "Win32_Security_Cryptography"] }
 # Safe registry access for Steam InstallPath auto-detection (single-purpose,
 # well-maintained crate; keeps resolve.rs free of unsafe Win32 plumbing).
 # 0.55 (not 0.50): unifies with the copy already pulled by embed-resource, so

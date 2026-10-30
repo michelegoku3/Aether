@@ -14,6 +14,7 @@ pub mod migration;
 pub mod presence_config;
 pub mod secure_storage;
 pub mod settings;
+pub mod steam_logs;
 pub mod shell_shortcuts;
 pub mod steam_monitor;
 pub mod steam_process;
