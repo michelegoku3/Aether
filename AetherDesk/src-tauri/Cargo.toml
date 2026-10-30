@@ -66,6 +66,8 @@ winreg = "0.55"
 
 [dev-dependencies]
 tempfile = "3"
+# Only tests touch it: fake stale mtimes for the Steam log freshness gate.
+filetime = "0.2"
 
 # ----------------------------------------------------------------------------
 # Lint policy (enforced by `cargo clippy -- -D warnings` in build.cmd and CI).
