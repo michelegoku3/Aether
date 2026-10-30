@@ -21,11 +21,10 @@ pub const STEAM_FALLBACK_MAX_BYTES: u64 = 4 * 1024 * 1024;
 /// a DST shift skews the cutoff by at most the difference between the two
 /// offsets it crosses.
 #[cfg(target_os = "windows")]
-pub fn cutoff_key_12h_before_now() -> String {    use windows_sys::Win32::Foundation::{FILETIME, SYSTEMTIME};
+pub fn cutoff_key_12h_before_now() -> String {
+    use windows_sys::Win32::Foundation::{FILETIME, SYSTEMTIME};
     use windows_sys::Win32::System::SystemInformation::GetSystemTimeAsFileTime;
-    use windows_sys::Win32::System::Time::{
-        FileTimeToSystemTime, SystemTimeToTzSpecificLocalTime,
-    };
+    use windows_sys::Win32::System::Time::{FileTimeToSystemTime, SystemTimeToTzSpecificLocalTime};
 
     let window_ticks = STEAM_WINDOW_HOURS * 3_600 * 10_000_000;
     let mut raw = FILETIME {
@@ -56,12 +55,7 @@ pub fn cutoff_key_12h_before_now() -> String {    use windows_sys::Win32::Founda
     }
     format!(
         "{:04}-{:02}-{:02} {:02}:{:02}:{:02}",
-        local.wYear,
-        local.wMonth,
-        local.wDay,
-        local.wHour,
-        local.wMinute,
-        local.wSecond
+        local.wYear, local.wMonth, local.wDay, local.wHour, local.wMinute, local.wSecond
     )
 }
 
@@ -189,13 +183,18 @@ fn filter_steam_log_content(content: &str, cutoff: &str, fallback_max: u64) -> O
     // a 32-bit-target overflow would only allow a bigger tail.
     let max = usize::try_from(fallback_max).unwrap_or(usize::MAX);
     let cut = content.len() - max;
-    let start = match content[cut..].find('\n') {
+    // The search and the tail slice are byte-based: `cut` can land inside a
+    // multi-byte character, and `&str` slicing panics there. Slicing after a
+    // found newline is always a char boundary; without one, `from_utf8_lossy`
+    // repairs the seam when the bundle is written.
+    let bytes = content.as_bytes();
+    let start = match bytes[cut..].iter().position(|&b| b == b'\n') {
         Some(pos) => cut + pos + 1,
         // A single line longer than the cap: hand over exactly the cap's
         // worth of tail, mid-line. Nothing useful is lost at 4 MiB scale.
         None => cut,
     };
-    Some(content.as_bytes()[start..].to_vec())
+    Some(bytes[start..].to_vec())
 }
 
 #[cfg(test)]
@@ -236,12 +235,9 @@ mod tests {
 
     #[test]
     fn stamp_lines_older_than_cutoff_are_dropped() {
-        let kept = filter_steam_log_content(
-            &content_with_stamps(),
-            "2026-10-30 12:00:00",
-            u64::MAX,
-        )
-        .expect("file with fresh lines is collected");
+        let kept =
+            filter_steam_log_content(&content_with_stamps(), "2026-10-30 12:00:00", u64::MAX)
+                .expect("file with fresh lines is collected");
         let kept = String::from_utf8_lossy(&kept);
         assert!(kept.contains("cutoff line") && kept.contains("fresh line"));
         assert!(!kept.contains("old line"));
@@ -250,12 +246,8 @@ mod tests {
     #[test]
     fn every_line_old_returns_nothing() {
         assert!(
-            filter_steam_log_content(
-                &content_with_stamps(),
-                "2027-01-01 00:00:00",
-                u64::MAX
-            )
-            .is_none()
+            filter_steam_log_content(&content_with_stamps(), "2027-01-01 00:00:00", u64::MAX)
+                .is_none()
         );
     }
 
@@ -276,12 +268,21 @@ mod tests {
     #[test]
     fn no_stamp_file_is_tail_capped_on_a_line_boundary() {
         let body = "abcdefghij\n".repeat(10); // 110 bytes
-        let kept = filter_steam_log_content(&body, "2026-10-30 12:00:00", 50)
-            .unwrap();
+        let kept = filter_steam_log_content(&body, "2026-10-30 12:00:00", 50).unwrap();
         assert!(kept.len() <= 50);
         let kept = String::from_utf8_lossy(&kept);
         assert_eq!(kept.lines().count(), 4, "only whole lines are kept");
         assert!(kept.ends_with("abcdefghij\n"), "last line stays whole");
+    }
+
+    #[test]
+    fn tail_cap_survives_multibyte_characters() {
+        // The cut offset can land inside a multi-byte char in a stamp-less
+        // file: the byte-level fallback must not panic the export task.
+        let body = format!("{}{}{}", "aaa", "\u{e9}".repeat(10), "é"); // len 23
+        let kept = filter_steam_log_content(&body, "2026-10-30 12:00:00", 19)
+            .expect("no-stamp file is kept");
+        assert_eq!(kept.len(), 19, "byte cap respected, no panic");
     }
 
     #[test]
@@ -300,14 +301,10 @@ mod tests {
         write_fresh(&logs, "content_log.txt", &content_with_stamps());
         write_fresh(&logs, "console_log.txt", "plain no stamps\n");
         write_fresh(&logs, "controller.txt", "not selected\n");
-        set_old_mtime(
-            &logs.join("content_log.previous.txt"),
-            "previous text\n",
-        );
+        set_old_mtime(&logs.join("content_log.previous.txt"), "previous text\n");
         set_old_mtime(&logs.join("bootstrap_log.txt"), &content_with_stamps());
 
-        let collected =
-            collect_steam_logs(root.path(), fresh_cutoff(), "2026-10-30 12:00:00");
+        let collected = collect_steam_logs(root.path(), fresh_cutoff(), "2026-10-30 12:00:00");
         let names: Vec<&str> = collected.iter().map(|(n, _)| n.as_str()).collect();
         assert_eq!(names, ["console_log.txt", "content_log.txt"]);
     }
