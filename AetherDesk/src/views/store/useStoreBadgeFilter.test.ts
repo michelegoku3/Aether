@@ -9,7 +9,7 @@ const game = (overrides: Partial<Parameters<typeof matchesStoreBadgeFilter>[0]> 
     has_manifest: false,
     has_denuvo: false,
     ...overrides,
-  } as Parameters<typeof matchesStoreBadgeFilter>[0]);
+  }) as Parameters<typeof matchesStoreBadgeFilter>[0];
 
 describe('matchesStoreBadgeFilter', () => {
   it('accepts any game when the filter is all', () => {
