@@ -3,7 +3,7 @@ import type { StoreGameResult } from '../../hooks/useStoreSearch';
 
 export type StoreBadgeFilter = 'all' | 'denuvo' | 'uco2' | 'cracked' | 'drm_free';
 
-// knip-ignore: exports — consumed via useStoreCatalog and return value
+/** @public */
 export const STORE_BADGE_FILTERS: { id: StoreBadgeFilter; label: string }[] = [
   { id: 'all', label: 'All' },
   { id: 'denuvo', label: 'Denuvo' },
