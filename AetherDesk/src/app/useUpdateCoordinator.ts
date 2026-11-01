@@ -1,15 +1,46 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
+import { listen } from '@tauri-apps/api/event';
 import { invoke } from '@tauri-apps/api/core';
 import { getSettings, type AppSettings } from '../hooks/useSettings';
 import type { DeskUpdateInfo, DllUpdateInfo } from './types';
 
-/** Owns Desk/DLL update availability and the installed Desk version label. */
+interface AutoUpdateReadyPayload {
+  tag_name: string;
+  install_root: string;
+}
+
+/** Owns Desk/DLL update availability, the installed Desk version label, and
+ * the background auto-update restart prompt. */
 export function useUpdateCoordinator() {
   const [dllUpdateAvailable, setDllUpdateAvailable] = useState(false);
   const [deskVersion, setDeskVersion] = useState('…');
   const [deskUpdateAvailable, setDeskUpdateAvailable] = useState(false);
   const [deskUpdateIsTest, setDeskUpdateIsTest] = useState(false);
   const [dllUpdateIsTest, setDllUpdateIsTest] = useState(false);
+  const [autoUpdateTag, setAutoUpdateTag] = useState<string | null>(null);
+
+  useEffect(() => {
+    // The background checker emits this when it has staged a newer release
+    // and is waiting for the user to restart. Unlisten on unmount.
+    let unlisten: (() => void) | undefined;
+    listen<AutoUpdateReadyPayload>('aetherdesk://auto-update-ready', (event) => {
+      setAutoUpdateTag(event.payload.tag_name ?? null);
+    }).then((fn) => {
+      unlisten = fn;
+    });
+    return () => {
+      unlisten?.();
+    };
+  }, []);
+
+  const dismissAutoUpdate = useCallback(() => {
+    setAutoUpdateTag(null);
+  }, []);
+
+  const restartForAutoUpdate = useCallback(async () => {
+    setAutoUpdateTag(null);
+    await invoke('install_aether_desk_update');
+  }, []);
 
   const loadDeskVersion = useCallback(async () => {
     try {
@@ -63,6 +94,9 @@ export function useUpdateCoordinator() {
     deskUpdateAvailable,
     deskUpdateIsTest,
     dllUpdateIsTest,
+    autoUpdateTag,
+    dismissAutoUpdate,
+    restartForAutoUpdate,
     loadDeskVersion,
     checkDeskUpdates,
     checkDllUpdates,

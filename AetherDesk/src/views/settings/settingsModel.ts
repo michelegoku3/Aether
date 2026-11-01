@@ -15,6 +15,7 @@ export interface SettingsFormState {
   useAlternativeGameCards: boolean;
   enableWebviewDevtools: boolean;
   enableTestUpdates: boolean;
+  autoUpdateEnabled: boolean;
   customGameName: string;
   storeFrontFilter: string;
   storeCurrency: StoreCurrency;
@@ -48,6 +49,7 @@ export const settingsToForm = (settings: AppSettings): SettingsFormState => ({
   useAlternativeGameCards: Boolean(settings.use_alternative_game_cards),
   enableWebviewDevtools: Boolean(settings.enable_webview_devtools),
   enableTestUpdates: Boolean(settings.enable_test_updates),
+  autoUpdateEnabled: Boolean(settings.auto_update_enabled),
   customGameName: String(settings.custom_game_name || '').trim(),
   storeFrontFilter: String(settings.store_front_filter || 'latest'),
   storeCurrency: isStoreCurrency(settings.store_currency) ? settings.store_currency : 'eur',
@@ -94,6 +96,7 @@ export const buildSettings = (
   use_alternative_game_cards: form.useAlternativeGameCards,
   enable_webview_devtools: form.enableWebviewDevtools,
   enable_test_updates: form.enableTestUpdates,
+  auto_update_enabled: form.autoUpdateEnabled,
   custom_game_name: form.customGameName.trim(),
   store_front_filter: form.storeFrontFilter,
   store_currency: form.storeCurrency,

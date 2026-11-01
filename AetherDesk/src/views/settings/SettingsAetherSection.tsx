@@ -7,6 +7,8 @@ interface SettingsAetherSectionProps {
   setEnableWebviewDevtools: (v: boolean) => void;
   enableTestUpdates: boolean;
   setEnableTestUpdates: (v: boolean) => void;
+  autoUpdateEnabled: boolean;
+  setAutoUpdateEnabled: (v: boolean) => void;
   useOstSource: boolean;
   setUseOstSource: (v: boolean) => void;
   manifestRestoreOnStartup: boolean;
@@ -25,6 +27,8 @@ export const SettingsAetherSection: React.FC<SettingsAetherSectionProps> = ({
   setEnableWebviewDevtools,
   enableTestUpdates,
   setEnableTestUpdates,
+  autoUpdateEnabled,
+  setAutoUpdateEnabled,
   useOstSource,
   setUseOstSource,
   manifestRestoreOnStartup,
@@ -56,6 +60,17 @@ export const SettingsAetherSection: React.FC<SettingsAetherSectionProps> = ({
         <span className="settings-toggle-text">Enable test updates</span>
         <label className="version-switch">
           <input type="checkbox" checked={enableTestUpdates} onChange={(e) => setEnableTestUpdates(e.target.checked)} />
+          <span></span>
+        </label>
+      </div>
+
+      <div
+        className="settings-toggle-row"
+        title="When enabled, AetherDesk will automatically download and install updates in the background."
+      >
+        <span className="settings-toggle-text">Auto-update AetherDesk</span>
+        <label className="version-switch">
+          <input type="checkbox" checked={autoUpdateEnabled} onChange={(e) => setAutoUpdateEnabled(e.target.checked)} />
           <span></span>
         </label>
       </div>

@@ -10,6 +10,7 @@ import type {
 import { LibraryGamesProvider } from './hooks/useLibraryGames';
 import { SteamPathWarningModal } from './modals/SteamPathWarningModal';
 import { UnsavedChangesModal } from './modals/UnsavedChangesModal';
+import { AutoUpdateReadyModal } from './modals/AutoUpdateReadyModal';
 import { useAppBootstrap } from './app/useAppBootstrap';
 import { useAppearanceRuntime } from './app/useAppearanceRuntime';
 import { useDllRuntime } from './app/useDllRuntime';
@@ -133,6 +134,13 @@ export default function App() {
             onSave={() => void navigation.saveUnsaved()}
             onDiscard={navigation.discardUnsaved}
             onCancel={navigation.cancelUnsaved}
+          />
+        )}
+        {updates.autoUpdateTag && (
+          <AutoUpdateReadyModal
+            tag={updates.autoUpdateTag}
+            onClose={updates.dismissAutoUpdate}
+            onRestart={updates.restartForAutoUpdate}
           />
         )}
 

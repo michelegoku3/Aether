@@ -8,6 +8,8 @@ const baseProps = () => ({
   setEnableWebviewDevtools: vi.fn(),
   enableTestUpdates: false,
   setEnableTestUpdates: vi.fn(),
+  autoUpdateEnabled: false,
+  setAutoUpdateEnabled: vi.fn(),
   useOstSource: false,
   setUseOstSource: vi.fn(),
   manifestRestoreOnStartup: true,
@@ -45,7 +47,7 @@ describe('SettingsAetherSection devtools toggle', () => {
   it('keeps the Aether group to the Aether-only switches', () => {
     const { container } = render(<SettingsAetherSection {...baseProps()} />);
 
-    expect(container.querySelectorAll('input[type="checkbox"]')).toHaveLength(6);
+    expect(container.querySelectorAll('input[type="checkbox"]')).toHaveLength(7);
     expect(container.textContent).toContain('Restore manifests on Steam startup');
     expect(container.textContent).toContain('Download games with updates on');
     expect(container.textContent).toContain('Workshop auto-download content');

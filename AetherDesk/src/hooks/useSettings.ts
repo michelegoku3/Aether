@@ -58,6 +58,8 @@ export interface AppSettings {
   library_install_filter?: 'all' | 'installed' | 'not_installed' | string;
   /** When true, AetherDesk also detects testing releases (tdesk, tdll prefixes). */
   enable_test_updates?: boolean;
+  /** When true, AetherDesk periodically checks for and stages stable updates in the background. */
+  auto_update_enabled?: boolean;
   /** Custom game name displayed to friends on Steam (game_extra_info). */
   custom_game_name?: string;
   /**

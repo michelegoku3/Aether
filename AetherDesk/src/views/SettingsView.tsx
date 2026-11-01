@@ -70,6 +70,8 @@ export const SettingsView = memo(function SettingsView(props: SettingsViewProps)
           setEnableWebviewDevtools={(value) => c.setField('enableWebviewDevtools', value)}
           enableTestUpdates={form.enableTestUpdates}
           setEnableTestUpdates={(value) => c.setField('enableTestUpdates', value)}
+          autoUpdateEnabled={form.autoUpdateEnabled}
+          setAutoUpdateEnabled={(value) => c.setField('autoUpdateEnabled', value)}
           useOstSource={c.useOstSource}
           setUseOstSource={c.setUseOstSource}
           ostWarningAcknowledged={form.ostWarningAcknowledged}
