@@ -23,6 +23,12 @@ pub(super) fn price_from_store_meta(
     meta: &store_items::StoreItemMeta,
     store_currency: &str,
 ) -> Option<GameInfoPrice> {
+    // If the base game is free, don't return a price — the UI will show
+    // "Free to Play" instead. A paid upgrade (e.g. CS2 Prime Status) is not
+    // the game's price.
+    if meta.is_free {
+        return None;
+    }
     meta.best_purchase_option
         .as_ref()
         .map(|price| GameInfoPrice {

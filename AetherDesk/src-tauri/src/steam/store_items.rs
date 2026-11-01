@@ -75,6 +75,11 @@ pub struct StoreItemMeta {
     pub categories: StoreItemCategories,
     pub best_purchase_option: Option<StoreItemPurchaseOption>,
     pub content_descriptor_ids: Vec<u32>,
+    /// True when Steam reports the base game is free-to-play (from
+    /// `include_basic_info`). When true the best_purchase_option may still carry
+    /// a paid upgrade (e.g. CS2 Prime Status), but the game itself costs nothing
+    /// to install and play.
+    pub is_free: bool,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -187,6 +192,7 @@ struct GetStoreItem {
     platforms: Option<GetItemPlatforms>,
     categories: Option<GetItemCategories>,
     best_purchase_option: Option<GetItemPurchaseOption>,
+    is_free: Option<bool>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -417,7 +423,7 @@ async fn fetch_chunk(
         "data_request": {
             "include_assets": true,
             "include_platforms": true,
-            "include_basic_info": false,
+            "include_basic_info": true,
             "include_release": true,
         }
     });
@@ -533,6 +539,7 @@ async fn fetch_chunk(
                 categories,
                 best_purchase_option,
                 content_descriptor_ids,
+                is_free: item.is_free.unwrap_or(false),
             },
         );
     }
