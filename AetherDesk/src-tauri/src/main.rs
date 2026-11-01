@@ -61,6 +61,9 @@ fn main() {
             // SettingsManager would repeat the migration probe and file lock.
             let settings = crate::core::settings::SettingsManager::new(app.handle()).load();
             let settings_ms = setup_started.elapsed().as_millis();
+            // Background auto-update checker: only polls when the user opts in.
+            crate::core::auto_update::start(app.handle().clone());
+            let auto_update_ms = setup_started.elapsed().as_millis();
             // Steam process monitor (single shared poller): keeps is_steam_running
             // O(1) and pushes `steam://runtime-state` to the UI only on changes
             // (Sidebar Start/Restart label, per-game guards, ...).
@@ -127,12 +130,13 @@ fn main() {
             let icon_ms = setup_started.elapsed().as_millis();
             crate::desk_log_info!(
                 "startup",
-                "Critical setup finished in {} ms (logger {}, cleanup {}, migrations {}, settings {}, steam-monitor {}, watcher {}, hubcap-monitor {}, icon {}); deferred startup work queued",
+                "Critical setup finished in {} ms (logger {}, cleanup {}, migrations {}, settings {}, auto-update {}, steam-monitor {}, watcher {}, hubcap-monitor {}, icon {}); deferred startup work queued",
                 setup_started.elapsed().as_millis(),
                 logger_ms,
                 cleanup_ms,
                 migrations_ms,
                 settings_ms,
+                auto_update_ms,
                 steam_monitor_ms,
                 watcher_ms,
                 hubcap_monitor_ms,

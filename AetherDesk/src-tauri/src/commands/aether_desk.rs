@@ -53,6 +53,21 @@ async fn test_channel_desk_update_info(
                 info.latest_tag,
                 info.update_available
             );
+            // A published tdesk-* release is not an update on its own: it is
+            // only the answer when it is actually newer than what is installed.
+            // When it is equal or older, fall through to the stable desk-* channel
+            // instead of reporting the test build as an available update — that
+            // would otherwise show a phantom "Update" button for a build the user
+            // is already running (or one they would be downgrading to).
+            if !info.update_available {
+                crate::desk_log_info!(
+                    "updater",
+                    "AetherDesk test release {} is not newer than installed {}; using the stable desk-* channel",
+                    info.latest_tag,
+                    info.installed_version
+                );
+                return None;
+            }
             Some(info)
         }
         Err(error) if crate::updater::github::channel_has_no_release(&error) => {

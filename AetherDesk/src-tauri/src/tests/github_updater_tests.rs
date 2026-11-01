@@ -187,6 +187,13 @@ fn test_build_desk_test_update_info_respects_version_gate() {
         GithubReleaseManager::build_desk_test_update_info("1.0.3".to_string(), &release);
     assert!(info_older.update_available);
     assert!(info_older.is_test);
+
+    // When the local version is newer than the test release (1.0.5), the test
+    // build is a downgrade, not an update: update_available must be false.
+    let info_newer =
+        GithubReleaseManager::build_desk_test_update_info("1.0.5".to_string(), &release);
+    assert!(!info_newer.update_available);
+    assert!(info_newer.is_test);
 }
 
 // ============================================================================

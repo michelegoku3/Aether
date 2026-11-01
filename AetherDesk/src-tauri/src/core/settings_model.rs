@@ -93,6 +93,11 @@ pub struct AppSettings {
     /// users never see testing builds. The UI shows these as red update dots.
     #[serde(default)]
     pub enable_test_updates: bool,
+    /// When true, AetherDesk periodically checks for updates in the background
+    /// and downloads the latest stable portable release. The user is then
+    /// prompted to restart the app to apply the update.
+    #[serde(default)]
+    pub auto_update_enabled: bool,
     /// Criterion used by the Store front page (`trending`, `latest`, ...).
     #[serde(default = "default_store_front_filter")]
     pub store_front_filter: String,
@@ -331,6 +336,7 @@ impl Default for AppSettings {
             use_alternative_game_cards: false,
             enable_webview_devtools: false,
             enable_test_updates: false,
+            auto_update_enabled: false,
             store_front_filter: default_store_front_filter(),
             store_currency: default_store_currency(),
             personal_wallpaper_enabled: false,

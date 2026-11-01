@@ -2,6 +2,7 @@ pub mod error;
 pub mod paths;
 #[allow(unused_imports)]
 pub use error::{DeskError, DeskResult};
+pub mod auto_update;
 pub mod backup;
 pub mod custom_css;
 pub mod hubcap_update_monitor;
