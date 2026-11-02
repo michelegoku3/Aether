@@ -212,6 +212,13 @@ instead of skipping the new donor as "already tried". Probe requests are paced
   Steam instance calls. A second mapping of that name is rejected at attach time
   rather than hooked, because a hook on a module Steam never calls would look
   installed and do nothing.
+* The client is never loaded by the DLL. `LoadLibrary` on it from the init thread
+  initializes it out of Steam's boot order and crashes `steam.exe` inside the C++
+  exception machinery (an access violation in `VCRUNTIME140.dll` before the login
+  screen). The attach therefore waits for Steam's own mapping, up to
+  `kSteamclientAttachTimeoutMs`, and hooks are installed only once the handle
+  exists; a timeout logs `steamclient_attach = "live-not-mapped"`, skips the
+  steamclient batch, and leaves the late-pattern retry re-probing the handle.
 * Settings are immutable `shared_ptr<const Settings>` snapshots, atomically
   published. Each reader retains its owner for the duration of access. Only
   DirWatch polls the TOML at runtime (about 1 s, including without Lua watches).
