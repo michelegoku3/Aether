@@ -207,6 +207,11 @@ instead of skipping the new donor as "already tried". Probe requests are paced
 
 ## Runtime publication and lifecycle
 
+* The DLL attaches to the live `steamclient64.dll` only. There is no copy of the
+  client and no `steamui` redirect: every hook must run on the module the running
+  Steam instance calls. A second mapping of that name is rejected at attach time
+  rather than hooked, because a hook on a module Steam never calls would look
+  installed and do nothing.
 * Settings are immutable `shared_ptr<const Settings>` snapshots, atomically
   published. Each reader retains its owner for the duration of access. Only
   DirWatch polls the TOML at runtime (about 1 s, including without Lua watches).
