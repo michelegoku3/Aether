@@ -177,9 +177,14 @@ struct AetherCoreState {
     // them as a candidate to verify, never as a fact.
     struct AbiTableState {
         std::mutex mutex;
-        // "Struct.field" -> offset, exactly as published.
+        // "Struct.field" -> offset, exactly as published. The two modules
+        // publish different structs (steamclient: ownership/package/depot;
+        // steamui: the app-overview prefix), so they are kept apart instead of
+        // overwriting each other when both tables load.
         std::unordered_map<std::string, std::uint32_t> offsets;
         std::string source; // sha of the table the offsets came from
+        std::unordered_map<std::string, std::uint32_t> uiOffsets;
+        std::string uiSource;
     };
     AbiTableState abiTable;
 

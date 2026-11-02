@@ -57,9 +57,12 @@ bool BuildIndex(const toml::table& table, const std::string& moduleName, Pattern
 
 // Reads the optional `[abi.<Struct>.<field>]` sections a table may carry.
 // Absence is not fatal: a build without an ABI section simply falls back
-// to the probe.
+// to the probe. Both shipped tables can publish offsets, so they are stored
+// per module: a steamui table must not replace the steamclient one.
 void CollectAbiTable(const toml::table& table, const std::string& moduleName, const std::string& sha) {
-    if (moduleName != "steamclient")
+    const bool steamclient = moduleName == "steamclient";
+    const bool steamui = moduleName == "steamui";
+    if (!steamclient && !steamui)
         return;
     const auto* abi = table["abi"].as_table();
     if (!abi)
@@ -84,12 +87,18 @@ void CollectAbiTable(const toml::table& table, const std::string& moduleName, co
     if (offsets.empty())
         return;
 
+    const std::size_t count = offsets.size();
     {
         std::lock_guard lock(g_state.abiTable.mutex);
-        g_state.abiTable.offsets = offsets;
-        g_state.abiTable.source = sha;
+        if (steamclient) {
+            g_state.abiTable.offsets = std::move(offsets);
+            g_state.abiTable.source = sha;
+        } else {
+            g_state.abiTable.uiOffsets = std::move(offsets);
+            g_state.abiTable.uiSource = sha;
+        }
     }
-    AC_LOG_INFO(kModule, "ABI table: %zu field offset(s) published with the patterns.", offsets.size());
+    AC_LOG_INFO(kModule, "ABI table: %zu field offset(s) published with the %s patterns.", count, moduleName.c_str());
 }
 
 bool ParsePatternFile(const std::string& path, const std::string& moduleName, toml::table& outTable,

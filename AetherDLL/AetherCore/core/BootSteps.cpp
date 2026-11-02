@@ -211,6 +211,15 @@ void SeedAbiStage() {
                 abi::guard::ApplyTable(g_state.abiTable.offsets, g_state.abiTable.source);
             }
         }
+        // The steamui table publishes the app-overview prefix. It is a
+        // verifier for the same compiled struct, so a contradiction latches
+        // the same guard and skips every overview write for the session.
+        {
+            std::lock_guard lock(g_state.abiTable.mutex);
+            if (!g_state.abiTable.uiOffsets.empty()) {
+                abi::guard::ApplyTable(g_state.abiTable.uiOffsets, g_state.abiTable.uiSource);
+            }
+        }
     }
 
     // Fallback for machines with no table at all: the two builds whose
