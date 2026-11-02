@@ -16,8 +16,8 @@
 namespace ac::gamename {
 
 // Resolve pattern + arm one-shot capture hook. Safe to call once during
-// InstallAllHooks after pattern::Init and diversion load.
-void Init(HMODULE diversion);
+// InstallAllHooks after pattern::Init and steamclient load.
+void Init(HMODULE steamclient);
 
 // Cached localized name for appId, or empty if AppInfo is unavailable.
 std::string ForApp(steam::AppId appId);

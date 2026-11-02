@@ -11,7 +11,7 @@ namespace ac::hooks {
 //   * GetRemoteStorageSyncState — return Synchronized for blocked apps, avoiding the cloud wait dialog.
 //   * CloseAppCloud             — immediately close cloud session for blocked apps, preventing shutdown wait.
 // All are optional: a missing pattern is recorded as a miss, not fatal.
-void RegisterLicenseHooks(HMODULE diversion);
+void RegisterLicenseHooks(HMODULE steamclient);
 
 // Stops and joins the legacy-CD-key summary debounce thread. Safe to call
 // when the hooks were never installed. Called from dllmain::Shutdown.

@@ -364,14 +364,14 @@ void StopStartupRetry() {
 
 } // namespace
 
-void Init(HMODULE diversion) {
-    if (void* a = pattern::ResolveAddress("CUtlMemoryGrow", "steamclient", diversion)) {
+void Init(HMODULE steamclient) {
+    if (void* a = pattern::ResolveAddress("CUtlMemoryGrow", "steamclient", steamclient)) {
         o_CUtlMemoryGrow = reinterpret_cast<CUtlMemoryGrow_t>(a);
     }
-    if (void* a = pattern::ResolveAddress("ProcessPendingLicenseUpdates", "steamclient", diversion)) {
+    if (void* a = pattern::ResolveAddress("ProcessPendingLicenseUpdates", "steamclient", steamclient)) {
         o_ProcessPendingLicenseUpdates = reinterpret_cast<ProcessPendingLicenseUpdates_t>(a);
     }
-    if (void* a = pattern::ResolveAddress("MarkLicenseAsChanged", "steamclient", diversion)) {
+    if (void* a = pattern::ResolveAddress("MarkLicenseAsChanged", "steamclient", steamclient)) {
         o_MarkLicenseAsChanged = reinterpret_cast<MarkLicenseAsChanged_t>(a);
     }
     AC_LOG_INFO(kModule, "Init (grow=%d ppl=%d mlc=%d).", o_CUtlMemoryGrow != nullptr,

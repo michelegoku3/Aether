@@ -535,26 +535,26 @@ bool h_LoadPackage(PackageInfo* info, std::uint8_t* sha1, std::int32_t cn, void*
 
 } // namespace
 
-void RegisterOwnershipHooks(HMODULE diversion) {
-    if (!diversion) {
-        AC_LOG_ERROR(kModule, "Diversion module not loaded.");
+void RegisterOwnershipHooks(HMODULE steamclient) {
+    if (!steamclient) {
+        AC_LOG_ERROR(kModule, "Steamclient module not loaded.");
         return;
     }
     AC_LOG_INFO(kModule, "Registering ownership hooks.");
 
-    g_state.hookManager.TryHook("CheckAppOwnership", "steamclient", diversion, o_CheckAppOwnership,
+    g_state.hookManager.TryHook("CheckAppOwnership", "steamclient", steamclient, o_CheckAppOwnership,
                                 h_CheckAppOwnership);
-    g_state.hookManager.TryHook("MarkLicenseAsChanged", "steamclient", diversion, o_MarkLicenseAsChanged,
+    g_state.hookManager.TryHook("MarkLicenseAsChanged", "steamclient", steamclient, o_MarkLicenseAsChanged,
                                 h_MarkLicenseAsChanged);
-    g_state.hookManager.TryHook("GetPackageInfo", "steamclient", diversion, o_GetPackageInfo, h_GetPackageInfo);
-    g_state.hookManager.TryHook("GetSubscribedApps", "steamclient", diversion, o_GetSubscribedApps,
+    g_state.hookManager.TryHook("GetPackageInfo", "steamclient", steamclient, o_GetPackageInfo, h_GetPackageInfo);
+    g_state.hookManager.TryHook("GetSubscribedApps", "steamclient", steamclient, o_GetSubscribedApps,
                                 h_GetSubscribedApps);
-    g_state.hookManager.TryHook("SendCallbackToPipe", "steamclient", diversion, o_SendCallbackToPipe,
+    g_state.hookManager.TryHook("SendCallbackToPipe", "steamclient", steamclient, o_SendCallbackToPipe,
                                 h_SendCallbackToPipe);
-    g_state.hookManager.TryHook("LoadPackage", "steamclient", diversion, o_LoadPackage, h_LoadPackage);
+    g_state.hookManager.TryHook("LoadPackage", "steamclient", steamclient, o_LoadPackage, h_LoadPackage);
 
     // The grow helper and license-update resolver live in LicenseManager.
-    LicenseManager::Init(diversion);
+    LicenseManager::Init(steamclient);
     // Starts the family-lender refresh worker; it waits for login and retries.
     ac::family::Init();
 }

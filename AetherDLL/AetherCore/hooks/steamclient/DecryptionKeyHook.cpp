@@ -67,20 +67,20 @@ std::int32_t h_ConfigStoreGetBinary(void* self, std::int32_t storeType, const ch
 
 } // namespace
 
-void RegisterDecryptionKeyHook(HMODULE diversion) {
-    if (!diversion) {
-        AC_LOG_ERROR(kModule, "Diversion module not loaded.");
+void RegisterDecryptionKeyHook(HMODULE steamclient) {
+    if (!steamclient) {
+        AC_LOG_ERROR(kModule, "Steamclient module not loaded.");
         return;
     }
     AC_LOG_INFO(kModule, "Registering ConfigStoreGetBinary hook.");
 
-    void* cfg = pattern::ResolveAddress("ConfigStoreGetBinary", "steamclient", diversion);
+    void* cfg = pattern::ResolveAddress("ConfigStoreGetBinary", "steamclient", steamclient);
     if (!cfg) {
         g_state.hookManager.RecordMissed("ConfigStoreGetBinary", MissReason::PatternUnresolved);
         return;
     }
 
-    if (void* depot = pattern::ResolveAddress("LoadDepotDecryptionKey", "steamclient", diversion)) {
+    if (void* depot = pattern::ResolveAddress("LoadDepotDecryptionKey", "steamclient", steamclient)) {
         if (cfg == depot) {
             // Not a defect and not a pattern miss: disassembly of both builds
             // (stable 0x5C5F50 / beta 0x5D9010) shows Valve compiles

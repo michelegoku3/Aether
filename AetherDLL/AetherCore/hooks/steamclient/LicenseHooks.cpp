@@ -258,9 +258,9 @@ bool h_CloseAppCloud(void* rs, AppId appId) {
 }
 
 } // namespace
-void RegisterLicenseHooks(HMODULE diversion) {
-    if (!diversion) {
-        AC_LOG_ERROR(kModule, "diversion null");
+void RegisterLicenseHooks(HMODULE steamclient) {
+    if (!steamclient) {
+        AC_LOG_ERROR(kModule, "steamclient module null");
         return;
     }
     AC_LOG_INFO(kModule, "Registering FIXED v3 - minimal gates to avoid shutdown window");
@@ -269,12 +269,12 @@ void RegisterLicenseHooks(HMODULE diversion) {
     // resolves every hook address from the per-build TOML pattern tables.
     // Entries missing from the TOML are skipped and reported in status/log
     // diagnostics.
-    HookPattern("OptedInMask", "steamclient", diversion, o_OptedInMask, h_OptedInMask);
-    HookPattern("RequiresLegacyCDKey", "steamclient", diversion, o_RequiresLegacyCDKey, h_RequiresLegacyCDKey);
-    HookPattern("IsCloudEnabledForApp", "steamclient", diversion, o_IsCloudEnabledForApp, h_IsCloudEnabledForApp);
-    HookPattern("GetRemoteStorageSyncState", "steamclient", diversion, o_GetRemoteStorageSyncState,
+    HookPattern("OptedInMask", "steamclient", steamclient, o_OptedInMask, h_OptedInMask);
+    HookPattern("RequiresLegacyCDKey", "steamclient", steamclient, o_RequiresLegacyCDKey, h_RequiresLegacyCDKey);
+    HookPattern("IsCloudEnabledForApp", "steamclient", steamclient, o_IsCloudEnabledForApp, h_IsCloudEnabledForApp);
+    HookPattern("GetRemoteStorageSyncState", "steamclient", steamclient, o_GetRemoteStorageSyncState,
                 h_GetRemoteStorageSyncState);
-    HookPattern("CloseAppCloud", "steamclient", diversion, o_CloseAppCloud, h_CloseAppCloud);
+    HookPattern("CloseAppCloud", "steamclient", steamclient, o_CloseAppCloud, h_CloseAppCloud);
 
     // Final per-hook status is reported by HookManager::InstallAll() and
     // StatusWriter reads g_state.hookManager directly — no local summary

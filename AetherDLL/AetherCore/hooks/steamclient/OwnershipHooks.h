@@ -8,7 +8,7 @@ namespace ac::hooks {
 // (CheckAppOwnership, LoadPackage, GetPackageInfo, GetSubscribedApps,
 // MarkLicenseAsChanged, SendCallbackToPipe) and resolves the CUtlMemory grow
 // helper.
-void RegisterOwnershipHooks(HMODULE diversion);
+void RegisterOwnershipHooks(HMODULE steamclient);
 
 // Actively queries package 0 through the (already hooked) GetPackageInfo entry
 // point. LoadPackage(package 0) fires exactly once, very early in the Steam

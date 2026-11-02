@@ -404,10 +404,10 @@ bool SendClientServiceCall(const char* targetJobName, std::uint64_t jobId, const
     return SendFrameImpl(emsg::kServiceMethodCallFromClient, body, bodyLen, targetJobName, jobId);
 }
 
-void RegisterPacketRouter(HMODULE diversion) {
+void RegisterPacketRouter(HMODULE steamclient) {
     const auto settings = Settings::Snapshot();
-    if (!diversion) {
-        AC_LOG_ERROR(kModule, "Diversion module not loaded.");
+    if (!steamclient) {
+        AC_LOG_ERROR(kModule, "Steamclient module not loaded.");
         return;
     }
     AC_LOG_INFO(kModule, "Registering packet router.");
@@ -423,9 +423,9 @@ void RegisterPacketRouter(HMODULE diversion) {
                 settings->presenceShowOnlineBroadcast ? 1 : 0, settings->presenceFriendAppIdFromName ? 1 : 0,
                 settings->presenceAppIdBlob ? 1 : 0, settings->presenceSuffixInvisible ? 1 : 0);
 
-    g_state.hookManager.TryHook("BBuildAndAsyncSendFrame", "steamclient", diversion, o_BBuildAndAsyncSendFrame,
+    g_state.hookManager.TryHook("BBuildAndAsyncSendFrame", "steamclient", steamclient, o_BBuildAndAsyncSendFrame,
                                 h_BBuildAndAsyncSendFrame);
-    g_state.hookManager.TryHook("RecvPkt", "steamclient", diversion, o_RecvPkt, h_RecvPkt);
+    g_state.hookManager.TryHook("RecvPkt", "steamclient", steamclient, o_RecvPkt, h_RecvPkt);
 }
 
 } // namespace ac::hooks

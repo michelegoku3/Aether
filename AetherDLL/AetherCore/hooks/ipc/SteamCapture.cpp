@@ -36,8 +36,8 @@ void LeaveStatsScope() {
 
 bool IsStatsScopeActive() { return t_statsScopeDepth > 0; }
 
-void Init(HMODULE diversion) {
-    if (void* addr = pattern::ResolveAddress("CUtlBufferEnsureCapacity", "steamclient", diversion)) {
+void Init(HMODULE steamclient) {
+    if (void* addr = pattern::ResolveAddress("CUtlBufferEnsureCapacity", "steamclient", steamclient)) {
         o_EnsureCapacity = reinterpret_cast<EnsureCapacity_t>(addr);
         AC_LOG_INFO(kModule, "Resolved CUtlBuffer::EnsureCapacity at 0x%p.", addr);
     } else {

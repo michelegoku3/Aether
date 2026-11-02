@@ -73,15 +73,15 @@ std::int64_t ProbeAppInfoGuarded(void* cache, steam::AppId appId, std::uint8_t* 
 
 } // namespace
 
-void Init(HMODULE diversion) {
-    if (!diversion) {
-        AC_LOG_WARN(kModule, "No diversion module; name resolver disabled.");
+void Init(HMODULE steamclient) {
+    if (!steamclient) {
+        AC_LOG_WARN(kModule, "No steamclient module; name resolver disabled.");
         return;
     }
     if (s_hookCreated)
         return;
 
-    void* target = pattern::ResolveAddress("GetAppDataFromAppInfo", "steamclient", diversion);
+    void* target = pattern::ResolveAddress("GetAppDataFromAppInfo", "steamclient", steamclient);
     if (!target) {
         AC_LOG_WARN_ONCE(kModule, "GetAppDataFromAppInfo unresolved; game titles stay empty "
                                   "(presence still works with app ids only).");

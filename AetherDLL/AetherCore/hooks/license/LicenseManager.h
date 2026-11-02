@@ -20,8 +20,8 @@
 namespace ac::hooks::LicenseManager {
 
 // Resolves CUtlMemoryGrow, ProcessPendingLicenseUpdates and MarkLicenseAsChanged
-// from the diversion, then starts the package-0 startup retry thread.
-void Init(HMODULE diversion);
+// from the steamclient, then starts the package-0 startup retry thread.
+void Init(HMODULE steamclient);
 
 // Stops and joins the startup retry thread. Safe to call when Init never ran or
 // the thread never started. Called from dllmain::Shutdown.
