@@ -145,31 +145,19 @@ void Settings() {
         CHECK(library->libraryOwnerBannerApps == expected);
     }
 
-    // Startup-only injection selection is strict, with auto as the default.
-
+    // The removed [injection] hook-target selector is ignored, never fatal: an
+    // old config still loads and its other keys survive.
     bool valid = false;
 
-    CHECK(ac::Settings::Load("nonexistent.toml", &valid).diversionMode == ac::DiversionMode::Auto);
-
+    ac::Settings::Load("nonexistent.toml", &valid);
     CHECK(!valid);
 
-    auto modePath = f.Write("injection.toml", "[injection]\ndiversion_mode = 'copy'\n");
+    auto modePath =
+        f.Write("injection.toml", "[injection]\ndiversion_mode = 'copy'\n[presence]\ncustom_game_name='kept'\n");
 
-    CHECK(ac::Settings::Load(modePath.string(), &valid).diversionMode == ac::DiversionMode::Copy);
-
+    const auto legacy = ac::Settings::Load(modePath.string(), &valid);
     CHECK(valid);
-
-    f.Write("injection.toml", "[injection]\ndiversion_mode = 'live'\n");
-
-    CHECK(ac::Settings::Load(modePath.string(), &valid).diversionMode == ac::DiversionMode::Live);
-
-    CHECK(valid);
-
-    f.Write("injection.toml", "[injection]\ndiversion_mode = 'invalid'\n");
-
-    ac::Settings::Load(modePath.string(), &valid);
-
-    CHECK(!valid);
+    CHECK(legacy.presenceCustomGameName == "kept");
 
     // F3: deprecated [manifest_fetch] is loud (ERROR + status record) but not
     // fatal: the table is ignored, everything else still parses.
