@@ -265,7 +265,8 @@ struct AetherCoreState {
     std::atomic<bool> hooksInstalled{false};
 
     // ---- Steamclient attach diagnostics -----------------------------------
-    std::string steamclientAttach; // live-loaded | live-already-mapped | *-failed
+    // live-mapped (Steam mapped it) | live-not-mapped (timeout) | path-invalid
+    std::string steamclientAttach;
 
     // ---- Steam diagnostics ------------------------------------------------
     std::string buildId; // steam.exe!GetBootstrapperVersion (diagnostic only)

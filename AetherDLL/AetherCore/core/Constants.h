@@ -11,6 +11,13 @@
 // ---------------------------------------------------------------------------
 namespace ac::constants {
 
+// Steamclient attach: Steam maps its client shortly after boot. AetherCore
+// never loads it (doing so initializes it out of order and crashes steam.exe),
+// so the hook batch waits for Steam's mapping. Poll cadence and budget for that
+// wait; the late-pattern retry re-probes it with a zero budget.
+inline constexpr int kSteamclientAttachPollMs = 100;
+inline constexpr int kSteamclientAttachTimeoutMs = 60000;
+
 // Package-0 startup retry (A2): re-attempt cadence and budget for the top-up
 // when the first LoadPackage/MarkLicenseAsChanged window was missed (offline
 // startup, late login, package 0 not ready yet). The retry thread wakes every

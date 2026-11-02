@@ -141,25 +141,18 @@ bool InitLoggingStage(BootContext& ctx) {
     return true;
 }
 
-bool InitSteamclientStage() {
+void InitSteamclientStage() {
     // 3. Build id detection: diagnostic only, never fatal.
     //    Depends on: nothing (reads a steam.exe export).
     g_state.buildId = DetectSteamBuildId();
 
-    // 4. Attach: map the steamclient Steam itself uses.
-    //    Depends on: steamInstallPath from ResolvePaths.
-    if (!AttachSteamclient()) {
-        AC_LOG_ERROR(kModule, "Steamclient attach failed; publishing status and aborting.");
-        status::Write();
-        return false;
-    }
-
-    // 5. steamclient SHA: computed right after the attach so status.json
-    //    carries it even if later stages fail.
-    //    Depends on: steamclientPath resolved.
+    // 4. steamclient path + SHA: both come from the file, so they work before
+    //    Steam has mapped the module. The attach itself waits for Steam's own
+    //    mapping at hook-install time (step 9); loading the client here would
+    //    initialize it out of order and crash steam.exe.
+    g_state.steamclientPath = g_state.steamInstallPath + "\\steamclient64.dll";
     g_state.steamclientSha = hasher::ComputeFileSha256(g_state.steamclientPath);
     status::Write();
-    return true;
 }
 
 bool InitPatternsStage(BootContext& ctx) {
@@ -238,11 +231,17 @@ bool InitLuaStage() {
 }
 
 void InstallHooksStage() {
-    // 9. Hook install: register the steamclient hooks on the live client.
-    //    Publishes the final status.json.
+    // 9. Hook install: wait for Steam to map its client, then register the
+    //    steamclient hooks on it. A missing client is not fatal: Steam keeps
+    //    running and the late-pattern retry keeps probing.
     //    Depends on: steamclient attach (module handle) + pattern engine
     //                (addresses) + lua data (maps populated).
-    ac::bootstrap::InstallAllHooks();
+    if (!AttachSteamclient(constants::kSteamclientAttachTimeoutMs)) {
+        AC_LOG_ERROR(kModule, "Hook batch skipped: steamclient not attached.");
+        status::Write();
+    } else {
+        ac::bootstrap::InstallAllHooks();
+    }
 
     // 9b. Late-pattern retry: if a module pattern table was unavailable at
     //     init (patterns not published yet on a fresh Steam build, offline
@@ -333,8 +332,7 @@ void InitThreadLogic(HMODULE self) {
         return;
     }
     InitLoggingStage(ctx);
-    if (!InitSteamclientStage())
-        return;
+    InitSteamclientStage();
     // Non-fatal: missing tables only degrade gracefully (some hooks are
     // skipped, the late-pattern retry covers them). Carried for a future
     // strict mode that could abort here instead of limping on.

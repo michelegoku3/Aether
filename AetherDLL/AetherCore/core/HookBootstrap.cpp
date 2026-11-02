@@ -18,6 +18,7 @@
 #include "hooks/steamclient/LicenseHooks.h"
 #include "hooks/steamclient/OwnershipHooks.h"
 #include "hooks/wire/PacketRouter.h"
+#include "inject/SteamclientAttach.h"
 #include "utils/GameNameResolver.h"
 #include "utils/IpcSpec.h"
 #include "utils/PatternEngine.h"
@@ -44,34 +45,44 @@ std::atomic<bool> s_patternRetryStop{false};
 
 // Hooks only need the steamclient table and the IPC spec: the steamui table is
 // still fetched for diagnostics and future UI work, but nothing installs from it.
-bool PatternsFullyAvailable() { return pattern::HasModule("steamclient") && g_state.ipcSpec.loaded; }
+// The module handle is part of readiness: without it there is nothing to hook,
+// and the retry keeps waiting for Steam to map its client.
+bool ReadyToInstallHooks() {
+    return g_state.steamclientModule != nullptr && pattern::HasModule("steamclient") && g_state.ipcSpec.loaded;
+}
 
 void PatternLateRetryWorker(std::atomic<bool>& stop) {
     for (int attempt = 1; attempt <= constants::kPatternLateRetryMaxAttempts; ++attempt) {
         if (stop.load(std::memory_order_relaxed) || s_patternRetryStop.load(std::memory_order_relaxed))
             return;
-        if (PatternsFullyAvailable())
+        if (ReadyToInstallHooks())
             return;
 
         bool anyTableAppeared = false;
+        // Steam may map its client after the hook batch gave up; re-probe before
+        // deciding whether there is anything new to install. An attach that
+        // already happened is not news and must not re-run the batch by itself.
+        if (g_state.steamclientModule == nullptr)
+            anyTableAppeared |= AttachSteamclient(0);
         if (!g_state.ipcSpec.loaded) {
             anyTableAppeared |= ipcspec::Init(); // IPC-only arrival also needs a new batch
         }
         anyTableAppeared |= pattern::ReloadModuleIfMissing("steamclient");
 
-        if (anyTableAppeared) {
+        if (anyTableAppeared && g_state.steamclientModule != nullptr) {
             AC_LOG_INFO(kModule, "Late pattern(s) became available; re-running hook batch.");
             InstallAllHooks(); // idempotent: only the previously-missed hooks
                                // register; LicenseManager::Init re-arms A2.
             status::Write();
         } else if (attempt == 1 || attempt % 6 == 0) {
-            AC_LOG_INFO(kModule, "Late pattern retry #%d: steamclient=%d ipc=%d.", attempt,
+            AC_LOG_INFO(kModule, "Late pattern retry #%d: steamclient=%d ipc=%d attached=%d.", attempt,
                         static_cast<int>(pattern::HasModule("steamclient")),
-                        static_cast<int>(g_state.ipcSpec.loaded.load()));
+                        static_cast<int>(g_state.ipcSpec.loaded.load()),
+                        static_cast<int>(g_state.steamclientModule != nullptr));
         }
-        if (PatternsFullyAvailable()) {
-            AC_LOG_INFO(kModule, "All pattern tables available after retry; "
-                                 "in-session hooks installed.");
+        if (ReadyToInstallHooks()) {
+            AC_LOG_INFO(kModule, "Steamclient attached and pattern tables available after "
+                                 "retry; in-session hooks installed.");
             return;
         }
 
@@ -117,6 +128,12 @@ std::mutex& BatchMutex() { return s_batchMutex; }
 
 void InstallSteamClientBatch() {
     std::lock_guard<std::mutex> batchLock(s_batchMutex);
+    // Every hook in this batch resolves its target from the module handle; a null
+    // handle would register hooks against nothing and report success.
+    if (g_state.steamclientModule == nullptr) {
+        AC_LOG_WARN(kModule, "Hook batch skipped: steamclient is not attached.");
+        return;
+    }
     AC_LOG_INFO(kModule, "Hook batch: registering kernel32 + steamclient hooks.");
     // kernel32.dll hooks (pre-entry payload injection): install before any game
     // can be launched so the first SpawnProcess → CreateProcessW chain is covered.
@@ -158,7 +175,7 @@ void InstallAllHooks() {
 }
 
 void StartPatternLateRetry() {
-    if (PatternsFullyAvailable())
+    if (ReadyToInstallHooks())
         return; // nothing to retry
     bool expected = false;
     if (!s_patternRetryStarted.compare_exchange_strong(expected, true))

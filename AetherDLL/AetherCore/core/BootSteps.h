@@ -35,9 +35,10 @@ bool ResolveStage(HMODULE self, BootContext& ctx);
 // Always true (settings fall back to defaults; failures are logged).
 bool InitLoggingStage(BootContext& ctx);
 
-// Pin + build id + live steamclient attach + steamclient SHA. False = attach
-// failed: caller must publish status and abort.
-bool InitSteamclientStage();
+// Pin + build id + steamclient path/SHA. Attaching to the module happens later,
+// when the hook batch runs (Steam maps the client itself; loading it here would
+// crash steam.exe).
+void InitSteamclientStage();
 
 // Pattern engine + IPC spec concurrently. Always true (missing tables only
 // degrade gracefully).
