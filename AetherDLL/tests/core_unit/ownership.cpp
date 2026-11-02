@@ -69,6 +69,54 @@ void PreSeededFamilyAppKeepsBanner() {
     CHECK(d.familyBanner);
 }
 
+// The status snapshot reports how many managed apps are actually classified.
+// Configured ids, spoofed ids, genuinely owned ids and family-shared ids are
+// four different populations: a single counter would hide the case where an app
+// is configured but Steam never asked about it (so it is not classified yet).
+void MembershipCountsTrackClassification() {
+    const std::size_t owned0 = ac::luadata::OwnedCount();
+    const std::size_t spoofed0 = ac::luadata::SpoofedCount();
+    const std::size_t family0 = ac::luadata::FamilySharedCount();
+    const std::size_t roots0 = ac::luadata::LibraryAppCount();
+
+    const char* path = "C:/fixtures/424242.lua";
+    ac::luadata::BeginFile(path);
+    ac::luadata::RecordDepot(424242, "");
+    ac::luadata::RecordDepot(424243, "");
+    ac::luadata::RecordDepot(424244, "");
+    // 424242 is also the numeric root of the file: only roots are library
+    // entries, so the depot-only ids must not raise the root count.
+    ac::luadata::RecordLibraryApp(424242);
+    ac::luadata::EndFile();
+
+    // Merely being configured classifies nothing.
+    CHECK_EQ(ac::luadata::OwnedCount(), owned0);
+    CHECK_EQ(ac::luadata::SpoofedCount(), spoofed0);
+    CHECK_EQ(ac::luadata::FamilySharedCount(), family0);
+    CHECK_EQ(ac::luadata::LibraryAppCount(), roots0 + 1);
+
+    ac::luadata::MarkOwned(424242);
+    ac::luadata::MarkSpoofed(424243);
+    ac::luadata::MarkFamilyShared(424244, 777);
+    CHECK_EQ(ac::luadata::OwnedCount(), owned0 + 1);
+    CHECK_EQ(ac::luadata::SpoofedCount(), spoofed0 + 1);
+    CHECK_EQ(ac::luadata::FamilySharedCount(), family0 + 1);
+
+    // The flags are mutually exclusive per app: reclassifying moves the app
+    // between populations instead of inflating two counters.
+    ac::luadata::MarkSpoofed(424242);
+    CHECK_EQ(ac::luadata::OwnedCount(), owned0);
+    CHECK_EQ(ac::luadata::SpoofedCount(), spoofed0 + 2);
+
+    // The Lua store is global to this test binary: unload the fixture so the
+    // recorded ids cannot leak into another suite's assertions.
+    ac::luadata::UnloadFile(path);
+    CHECK_EQ(ac::luadata::OwnedCount(), owned0);
+    CHECK_EQ(ac::luadata::SpoofedCount(), spoofed0);
+    CHECK_EQ(ac::luadata::FamilySharedCount(), family0);
+    CHECK_EQ(ac::luadata::LibraryAppCount(), roots0);
+}
+
 } // namespace
 
 void OwnershipDecisionTest() {
@@ -193,4 +241,5 @@ void OwnershipDecisionTest() {
     PreSeededLuaAppStaysSpoofed();
     PreSeededOwnedAppIsMarkedOwned();
     PreSeededFamilyAppKeepsBanner();
+    MembershipCountsTrackClassification();
 }

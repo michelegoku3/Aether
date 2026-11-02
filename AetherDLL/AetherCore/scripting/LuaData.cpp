@@ -193,6 +193,26 @@ std::size_t ConfiguredDepotCount() {
     return g_state.lua.depotKeys.size();
 }
 
+std::size_t OwnedCount() {
+    std::shared_lock lock(g_state.lua.mutex);
+    return g_state.lua.ownedAppIds.size();
+}
+
+std::size_t SpoofedCount() {
+    std::shared_lock lock(g_state.lua.mutex);
+    return g_state.lua.spoofedAppIds.size();
+}
+
+std::size_t FamilySharedCount() {
+    std::shared_lock lock(g_state.lua.mutex);
+    return g_state.lua.familySharedAppIds.size();
+}
+
+std::size_t LibraryAppCount() {
+    std::shared_lock lock(g_state.lua.mutex);
+    return g_state.lua.libraryAppIds.size();
+}
+
 std::size_t AccessTokenCount() {
     std::shared_lock lock(g_state.lua.mutex);
     return g_state.lua.accessTokens.size();

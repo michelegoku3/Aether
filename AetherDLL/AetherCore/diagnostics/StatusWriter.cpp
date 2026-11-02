@@ -141,6 +141,14 @@ static void WriteSnapshot(std::uint64_t requests) {
     w.SizeT("config_store_cached_app_tickets", credential::CachedConfigStoreTicketCount());
     w.SizeT("lua_files_loaded", luadata::LoadedFileCount());
     w.SizeT("configured_depots", luadata::ConfiguredDepotCount());
+    // Library membership populations. `spoofed` is the set Aether actually
+    // manages; `owned` is Steam's own and Aether must leave it alone;
+    // `family_shared` keeps the lender banner. A configured app that is in
+    // none of them has not been classified yet (Steam never asked).
+    w.SizeT("membership_library_roots", luadata::LibraryAppCount());
+    w.SizeT("membership_owned", luadata::OwnedCount());
+    w.SizeT("membership_spoofed", luadata::SpoofedCount());
+    w.SizeT("membership_family_shared", luadata::FamilySharedCount());
     w.SizeT("access_tokens", luadata::AccessTokenCount());
     w.SizeT("manifest_overrides", luadata::ManifestOverrideCount());
     w.Bool("eticket_backend_configured", !luadata::EticketUrl().empty());

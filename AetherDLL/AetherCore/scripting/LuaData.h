@@ -81,6 +81,17 @@ std::unordered_map<std::string, std::vector<steam::AppId>> ConfiguredIdsByFile()
 
 std::size_t LoadedFileCount();
 std::size_t ConfiguredDepotCount();
+// Population sizes for the status snapshot. A configured id is not a managed
+// one: it only becomes managed once CheckAppOwnership classified it, and the
+// three sets below are mutually exclusive (see MarkOwned/MarkSpoofed/
+// MarkFamilyShared). Genuinely owned apps are Steam's own and are counted in
+// OwnedCount only, never as spoofed.
+std::size_t OwnedCount();
+std::size_t SpoofedCount();
+std::size_t FamilySharedCount();
+// Number of numeric-filename roots, i.e. the apps that belong in the library.
+// Depots recorded by addappid are not library entries.
+std::size_t LibraryAppCount();
 std::size_t AccessTokenCount();
 std::size_t ManifestOverrideCount();
 std::string EticketUrl();
