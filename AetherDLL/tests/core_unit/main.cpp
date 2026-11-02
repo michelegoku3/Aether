@@ -50,6 +50,7 @@ int main(int argc, char** argv) {
         {"memory", MemoryRangeTest},
         {"payloadattest", PayloadAttestTest},
         {"productinfo_queue", ProductInfoQueueTest},
+        {"overview", AppOverviewTest},
     };
     try {
         if (argc == 1) {
