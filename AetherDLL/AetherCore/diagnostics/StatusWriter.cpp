@@ -109,6 +109,7 @@ static void WriteSnapshot(std::uint64_t requests) {
         w.Bool("steamclient_toml_found", g_state.steamclientTomlFound);
         w.Str("steamclient_pattern_source", g_state.steamclientPatternSource);
         w.Str("steamui_sha", g_state.steamuiSha);
+        w.Str("steamui_attach", g_state.steamuiAttach);
         w.Bool("steamui_toml_found", g_state.steamuiTomlFound);
         w.Str("steamui_pattern_source", g_state.steamuiPatternSource);
     }

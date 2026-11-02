@@ -64,7 +64,9 @@ add_library(AetherCore SHARED
     utils/GameNameResolver.cpp
 
     # Inject
+    inject/ModuleAttach.cpp
     inject/SteamclientAttach.cpp
+    inject/SteamuiAttach.cpp
 
     # Diagnostics
     diagnostics/StatusWriter.cpp

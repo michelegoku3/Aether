@@ -263,6 +263,7 @@ struct AetherCoreState {
     // ---- Loaded modules ---------------------------------------------------
     HMODULE selfModule = nullptr;
     HMODULE steamclientModule = nullptr; // live steamclient64.dll hook target
+    HMODULE steamuiModule = nullptr;     // live steamui.dll hook target (overview)
 
     // ---- Lifecycle --------------------------------------------------------
     HANDLE initThread = nullptr;
@@ -272,6 +273,8 @@ struct AetherCoreState {
     // ---- Steamclient attach diagnostics -----------------------------------
     // live-mapped (Steam mapped it) | live-not-mapped (timeout) | path-invalid
     std::string steamclientAttach;
+    // mapped | not-mapped | path-invalid
+    std::string steamuiAttach;
 
     // ---- Steam diagnostics ------------------------------------------------
     std::string buildId; // steam.exe!GetBootstrapperVersion (diagnostic only)
