@@ -17,7 +17,6 @@
 #include "hooks/steamclient/DepotHooks.h"
 #include "hooks/steamclient/LicenseHooks.h"
 #include "hooks/steamclient/OwnershipHooks.h"
-#include "hooks/steamui/SteamUIHook.h"
 #include "hooks/wire/PacketRouter.h"
 #include "utils/GameNameResolver.h"
 #include "utils/IpcSpec.h"
@@ -26,8 +25,6 @@
 
 namespace ac::bootstrap {
 namespace {
-
-namespace steamui = ac::hooks::steamui;
 
 using ac::hooks::RegisterAetherOnlineHooks;
 using ac::hooks::RegisterCreateProcessHooks;
@@ -42,102 +39,12 @@ constexpr const char* kModule = "Bootstrap";
 
 std::mutex s_batchMutex;
 
-std::atomic<bool> s_steamUiRetryStarted{false};
 std::atomic<bool> s_patternRetryStarted{false};
 std::atomic<bool> s_patternRetryStop{false};
 
-// Gap between steamui retry attempts (500 ms backstop quantum).
-constexpr int kSteamUiCheckIntervalMs = 500;
-
-// Minimal LdrRegisterDllNotification plumbing (ntdll, always present on the
-// Win10+ target): wakes the steamui retry the moment ANY dll loads instead
-// of polling blindly. The callback runs under the loader lock, so it only
-// matches the filename and sets an event: no locks, no allocations, no I/O.
-struct LdrLoadedData {
-    ULONG flags;
-    const wchar_t* fullDllName;
-    const wchar_t* baseDllName;
-    void* dllBase;
-    ULONG sizeOfImage;
-};
-using LdrNotifyFn = void(CALLBACK*)(ULONG reason, LdrLoadedData* data, void* context);
-using LdrRegisterFn = LONG(NTAPI*)(ULONG flags, LdrNotifyFn callback, void* context, void** cookie);
-using LdrUnregisterFn = LONG(NTAPI*)(void* cookie);
-constexpr ULONG kLdrReasonLoaded = 1;
-
-bool EndsWithIgnoreCase(const wchar_t* str, const wchar_t* suffix) {
-    if (!str || !suffix)
-        return false;
-    std::size_t n = 0, m = 0;
-    while (str[n] != L'\0')
-        ++n;
-    while (suffix[m] != L'\0')
-        ++m;
-    if (m > n)
-        return false;
-    for (std::size_t i = 0; i < m; ++i) {
-        wchar_t a = str[n - m + i], b = suffix[i];
-        if (a >= L'A' && a <= L'Z')
-            a = static_cast<wchar_t>(a + (L'a' - L'A'));
-        if (b >= L'A' && b <= L'Z')
-            b = static_cast<wchar_t>(b + (L'a' - L'A'));
-        if (a != b)
-            return false;
-    }
-    return true;
-}
-
-void CALLBACK OnAnyDllLoaded(ULONG reason, LdrLoadedData* data, void* context) {
-    // Loader-lock context: event-set only.
-    if (reason == kLdrReasonLoaded && data && context && EndsWithIgnoreCase(data->baseDllName, L"steamui.dll")) {
-        SetEvent(static_cast<HANDLE>(context));
-    }
-}
-
-bool PatternsFullyAvailable() {
-    return pattern::HasModule("steamclient") && pattern::HasModule("steamui") && g_state.ipcSpec.loaded;
-}
-
-void SteamUiRetryWorker(std::atomic<bool>& stop) {
-    // Event-driven wait: a DLL load wakes us early; the 500 ms quantum is
-    // only a backstop. Falls back to plain polling when the Ldr API is
-    // unavailable.
-    HANDLE wake = CreateEventW(nullptr, FALSE, FALSE, nullptr);
-    void* cookie = nullptr;
-    LdrUnregisterFn unregister = nullptr;
-    if (HMODULE ntdll = GetModuleHandleW(L"ntdll.dll")) {
-        if (auto reg = reinterpret_cast<LdrRegisterFn>(GetProcAddress(ntdll, "LdrRegisterDllNotification"))) {
-            unregister = reinterpret_cast<LdrUnregisterFn>(GetProcAddress(ntdll, "LdrUnregisterDllNotification"));
-            if (reg(0, OnAnyDllLoaded, wake, &cookie) != 0)
-                cookie = nullptr;
-        }
-    }
-    int elapsedMs = 0;
-    while (!stop.load(std::memory_order_relaxed) && elapsedMs < constants::kSteamUiDeferredTimeoutMs) {
-        if (steamui::InstallSteamUiRedirect()) {
-            AC_LOG_INFO(kModule, "SteamUI redirect installed after %d ms (deferred retry).", elapsedMs);
-            break;
-        }
-        if (wake && cookie) {
-            WaitForSingleObject(wake, static_cast<DWORD>(kSteamUiCheckIntervalMs));
-        } else {
-            Sleep(static_cast<DWORD>(kSteamUiCheckIntervalMs));
-        }
-        if (stop.load(std::memory_order_relaxed))
-            break;
-        elapsedMs += kSteamUiCheckIntervalMs;
-    }
-    if (cookie && unregister)
-        unregister(cookie);
-    if (wake)
-        CloseHandle(wake);
-    if (!stop.load(std::memory_order_relaxed) && elapsedMs >= constants::kSteamUiDeferredTimeoutMs) {
-        AC_LOG_WARN(kModule,
-                    "SteamUI deferred retry gave up after %d ms; "
-                    "steamclient hooks remain installed, redirect absent.",
-                    constants::kSteamUiDeferredTimeoutMs);
-    }
-}
+// Hooks only need the steamclient table and the IPC spec: the steamui table is
+// still fetched for diagnostics and future UI work, but nothing installs from it.
+bool PatternsFullyAvailable() { return pattern::HasModule("steamclient") && g_state.ipcSpec.loaded; }
 
 void PatternLateRetryWorker(std::atomic<bool>& stop) {
     for (int attempt = 1; attempt <= constants::kPatternLateRetryMaxAttempts; ++attempt) {
@@ -151,7 +58,6 @@ void PatternLateRetryWorker(std::atomic<bool>& stop) {
             anyTableAppeared |= ipcspec::Init(); // IPC-only arrival also needs a new batch
         }
         anyTableAppeared |= pattern::ReloadModuleIfMissing("steamclient");
-        anyTableAppeared |= pattern::ReloadModuleIfMissing("steamui");
 
         if (anyTableAppeared) {
             AC_LOG_INFO(kModule, "Late pattern(s) became available; re-running hook batch.");
@@ -159,11 +65,8 @@ void PatternLateRetryWorker(std::atomic<bool>& stop) {
                                // register; LicenseManager::Init re-arms A2.
             status::Write();
         } else if (attempt == 1 || attempt % 6 == 0) {
-            AC_LOG_INFO(kModule,
-                        "Late pattern retry #%d: steamclient=%d "
-                        "steamui=%d ipc=%d.",
-                        attempt, static_cast<int>(pattern::HasModule("steamclient")),
-                        static_cast<int>(pattern::HasModule("steamui")),
+            AC_LOG_INFO(kModule, "Late pattern retry #%d: steamclient=%d ipc=%d.", attempt,
+                        static_cast<int>(pattern::HasModule("steamclient")),
                         static_cast<int>(g_state.ipcSpec.loaded.load()));
         }
         if (PatternsFullyAvailable()) {
@@ -219,58 +122,38 @@ void InstallSteamClientBatch() {
     // can be launched so the first SpawnProcess → CreateProcessW chain is covered.
     RegisterCreateProcessHooks();
 
-    RegisterOwnershipHooks(g_state.diversionModule);
-    RegisterDepotHooks(g_state.diversionModule);
-    RegisterDecryptionKeyHook(g_state.diversionModule);
-    RegisterAetherOnlineHooks(g_state.diversionModule);
+    RegisterOwnershipHooks(g_state.steamclientModule);
+    RegisterDepotHooks(g_state.steamclientModule);
+    RegisterDecryptionKeyHook(g_state.steamclientModule);
+    RegisterAetherOnlineHooks(g_state.steamclientModule);
 
     // IPC layer: capture helpers must resolve before the bus arms, and the bus
     // registers its command handlers internally.
-    capture::Init(g_state.diversionModule);
-    RegisterIpcBus(g_state.diversionModule);
+    capture::Init(g_state.steamclientModule);
+    RegisterIpcBus(g_state.steamclientModule);
 
     // Localized titles for presence (game_extra_info / PersonaState game_name).
     // Arms a one-shot capture on GetAppDataFromAppInfo; soft-fails if missing.
-    gamename::Init(g_state.diversionModule);
+    gamename::Init(g_state.steamclientModule);
 
     // Wire layer: outgoing/incoming packet manipulation (presence included).
-    RegisterPacketRouter(g_state.diversionModule);
+    RegisterPacketRouter(g_state.steamclientModule);
 
     // License/controller compatibility hooks.
-    RegisterLicenseHooks(g_state.diversionModule);
+    RegisterLicenseHooks(g_state.steamclientModule);
 
     if (g_state.hookManager.InstallAll()) {
         g_state.hooksInstalled.store(true);
-        AC_LOG_INFO(kModule, "Steamclient hooks enabled (batch 1).");
+        AC_LOG_INFO(kModule, "Steamclient hooks enabled.");
     } else {
-        AC_LOG_ERROR(kModule, "Steamclient hook enable failed (batch 1).");
+        AC_LOG_ERROR(kModule, "Steamclient hook enable failed.");
     }
 
-    // Publish the state after the main batch; the steamui redirect (batch 2)
-    // will republish when it installs.
     status::Write();
 }
 
-void ArmSteamUiRedirect() {
-    if (steamui::InstallSteamUiRedirect())
-        return; // already armed (or live mode)
-    bool expected = false;
-    if (!s_steamUiRetryStarted.compare_exchange_strong(expected, true))
-        return;
-    AC_LOG_INFO(kModule,
-                "SteamUI redirect not ready yet; starting deferred "
-                "retry worker (timeout %d ms).",
-                constants::kSteamUiDeferredTimeoutMs);
-    if (!workers::StartWorker("steamui_redirect_retry", SteamUiRetryWorker)) {
-        s_steamUiRetryStarted.store(false);
-        AC_LOG_ERROR(kModule, "Could not start the SteamUI redirect retry worker.");
-    }
-}
-
 void InstallAllHooks() {
-    // Phase 2 first: the redirect must arm ASAP, then the steamclient batch.
-    // Idempotent re-run.
-    ArmSteamUiRedirect();
+    // Idempotent re-run: registers only the previously missed hooks.
     InstallSteamClientBatch();
 }
 
@@ -294,10 +177,8 @@ void StartPatternLateRetry() {
 
 void RequestRetryStop() {
     s_patternRetryStop.store(true, std::memory_order_relaxed);
-    // The steamui worker's stop flag is owned by the workers infrastructure
-    // (workers::Shutdown sets every flag and joins); here we only explicitly
-    // stop the pattern retry, which has its own flag because it may also end
-    // "on its own" when the tables become complete.
+    // The pattern retry owns its stop flag because it may also end on its own
+    // once the tables become complete; workers::Shutdown performs the join.
     AC_LOG_INFO(kModule, "Hook retry stop requested; workers::Shutdown performs the join.");
 }
 

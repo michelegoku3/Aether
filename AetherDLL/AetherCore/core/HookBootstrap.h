@@ -7,29 +7,23 @@
 //
 // Phases have clear names and responsibilities:
 //
-//   phase 1  InstallSteamClientBatch  — kernel32 + steamclient + IPC + wire
-//   phase 2  ArmSteamUiRedirect       — redirect LoadModuleWithPath (+ retry)
-//   retry    StartPatternLateRetry    — late-arriving pattern tables
+//   install   InstallSteamClientBatch  — kernel32 + steamclient + IPC + wire
+//   retry     StartPatternLateRetry    — late-arriving pattern tables
 //
 // Retry threads are named workers (workers::StartWorker), so shutdown, join
 // and diagnostics all flow through the workers infrastructure.
 // ---------------------------------------------------------------------------
 namespace ac::bootstrap {
 
-// Serializes hook registration batches (the steamclient batch and the steamui
-// redirect may be re-run in parallel by retry workers).
+// Serializes hook registration batches (the batch may be re-run by the retry
+// worker).
 std::mutex& BatchMutex();
 
-// Phase 1: register and enable the kernel32/steamclient batches. Idempotent: on
-// re-run it registers only the previously missed hooks.
+// Register and enable the kernel32/steamclient batches. Idempotent: on re-run it
+// registers only the previously missed hooks.
 void InstallSteamClientBatch();
 
-// Phase 2: arm the steamui!LoadModuleWithPath redirect ASAP; when steamui.dll
-// is not mapped yet, start the deferred retry worker.
-void ArmSteamUiRedirect();
-
-// Phase 1+2: entry point of dllmain (step 9) and of the late-pattern retry
-// re-run.
+// Entry point of dllmain (step 9) and of the late-pattern retry re-run.
 void InstallAllHooks();
 
 // Start the "pattern_late_retry" worker: when some pattern table was missing

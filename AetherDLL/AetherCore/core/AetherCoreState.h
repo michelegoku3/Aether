@@ -258,19 +258,16 @@ struct AetherCoreState {
 
     // ---- Loaded modules ---------------------------------------------------
     HMODULE selfModule = nullptr;
-    HMODULE diversionModule = nullptr; // Copy OR live steamclient hook target
-    HMODULE steamuiModule = nullptr;
+    HMODULE steamclientModule = nullptr; // live steamclient64.dll hook target
     std::atomic<bool> diversionUsesLive{false};
-    std::atomic<bool> steamUiRedirectInstalled{false};
-    std::atomic<bool> steamUiRedirectUsed{false};
 
     // ---- Lifecycle --------------------------------------------------------
     HANDLE initThread = nullptr;
     std::atomic<bool> shuttingDown{false};
     std::atomic<bool> hooksInstalled{false};
 
-    // ---- Diversion diagnostics --------------------------------------------
-    std::string diversionOutcome; // copy-loaded | auto-live | live-loaded | *-failed
+    // ---- Steamclient attach diagnostics -----------------------------------
+    std::string steamclientAttach; // live-loaded | live-already-mapped | *-failed
 
     // ---- Steam diagnostics ------------------------------------------------
     std::string buildId; // steam.exe!GetBootstrapperVersion (diagnostic only)

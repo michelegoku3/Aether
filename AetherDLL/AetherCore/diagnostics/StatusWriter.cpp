@@ -103,7 +103,7 @@ static void WriteSnapshot(std::uint64_t requests) {
     w.Str("build_time", __DATE__ " " __TIME__);
     {
         std::lock_guard lock(g_state.statusMetadataMutex);
-        w.Str("diversion_outcome", g_state.diversionOutcome);
+        w.Str("steamclient_attach", g_state.steamclientAttach);
         w.Str("steamclient_sha", g_state.steamclientSha);
         w.Bool("steamclient_toml_found", g_state.steamclientTomlFound);
         w.Str("steamclient_pattern_source", g_state.steamclientPatternSource);
@@ -112,8 +112,6 @@ static void WriteSnapshot(std::uint64_t requests) {
         w.Str("steamui_pattern_source", g_state.steamuiPatternSource);
     }
     w.Str("steamclient_hook_target", g_state.diversionUsesLive.load() ? "live" : "copy");
-    w.Bool("steamui_redirect_installed", g_state.steamUiRedirectInstalled.load());
-    w.Bool("steamui_redirect_used", g_state.steamUiRedirectUsed.load());
     w.Str("netpacket_abi_layout", abi::netpkt::LayoutName());
     w.UInt64("netpacket_abi_data_off", abi::netpkt::ResolvedDataOffset());
     w.Bool("netpacket_abi_resolved", abi::netpkt::IsResolved());

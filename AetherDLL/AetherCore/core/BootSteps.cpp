@@ -182,10 +182,6 @@ bool InitPatternsStage(BootContext& ctx) {
     // fetch. Decide the final target BEFORE the UI redirect and any
     // steamclient hooks: never hook a copy that Steam no longer uses.
     SelectHookTargetBeforeRedirect();
-    // In copy mode, arm LoadModuleWithPath immediately, while the IPC
-    // lookup and Lua scan are still in progress. This closes the window
-    // where Steam could load the live client first.
-    ac::bootstrap::ArmSteamUiRedirect();
     ipcThread.join();
     if (!patternsOk) {
         AC_LOG_WARN(kModule, "Pattern engine produced no tables; some hooks will be skipped.");

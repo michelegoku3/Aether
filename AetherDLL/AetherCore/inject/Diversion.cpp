@@ -22,7 +22,7 @@ template <typename Op> bool RetryWithBackoff(Op&& op) {
 
 void SetOutcome(const char* outcome) {
     std::lock_guard lock(g_state.statusMetadataMutex);
-    g_state.diversionOutcome = outcome;
+    g_state.steamclientAttach = outcome;
 }
 
 // GetModuleHandle by basename is insufficient: another file of that name may
@@ -51,7 +51,7 @@ bool AttachLive(const char* outcome) {
         AC_LOG_ERROR(kModule, "Could not load live steamclient64.dll (error %lu).", error);
         return false;
     }
-    g_state.diversionModule = live;
+    g_state.steamclientModule = live;
     g_state.diversionPath = g_state.steamclientPath;
     g_state.diversionUsesLive.store(true, std::memory_order_release);
     SetOutcome(outcome);
@@ -95,15 +95,15 @@ bool LoadDiversion() {
         return settings->diversionMode == DiversionMode::Auto && AttachLive("auto-live-copy-failed");
     }
     if (!RetryWithBackoff([&] {
-            g_state.diversionModule = LoadLibraryW(wDiversion.c_str());
-            return g_state.diversionModule != nullptr;
+            g_state.steamclientModule = LoadLibraryW(wDiversion.c_str());
+            return g_state.steamclientModule != nullptr;
         })) {
         AC_LOG_ERROR(kModule, "Failed to load acoverlay.dll after retries.");
         SetOutcome("copy-load-failed");
         return settings->diversionMode == DiversionMode::Auto && AttachLive("auto-live-copy-load-failed");
     }
     SetOutcome(settings->diversionMode == DiversionMode::Auto ? "auto-copy-prepared" : "copy-loaded");
-    AC_LOG_INFO(kModule, "Hook target prepared: acoverlay.dll (handle 0x%p).", g_state.diversionModule);
+    AC_LOG_INFO(kModule, "Hook target prepared: acoverlay.dll (handle 0x%p).", g_state.steamclientModule);
     return true;
 }
 
