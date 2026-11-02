@@ -10,7 +10,7 @@
 //
 // Schema v9 (top-level keys include):
 //   schema_version, ts
-//   build_id, build_config, build_time, diversion_outcome
+//   build_id, build_config, build_time, steamclient_attach
 //   steamclient_sha, steamclient_toml_found, steamclient_pattern_source
 //   steamui_sha, steamui_toml_found, steamui_pattern_source
 //   netpacket_abi_layout, netpacket_abi_data_off, netpacket_abi_resolved,

@@ -24,7 +24,7 @@
 #include "hooks/wire/AchievementBackup.h"
 #include "hooks/wire/AchievementModule.h"
 #include "hooks/wire/ManifestRestore.h"
-#include "inject/Diversion.h"
+#include "inject/SteamclientAttach.h"
 #include "scripting/DirWatch.h"
 #include "scripting/ScriptEngine.h"
 #include "utils/DeskPaths.h"
@@ -67,12 +67,12 @@ std::vector<std::string> CollectAcfWatchDirs() { return steamlibrary::SteamAppsD
 //    1. Settings               (depends on: logger — config errors are logged)
 //       PinSelf                (depends on: nothing; module handle already valid)
 //    3. BuildId                (depends on: nothing; diagnostic only, never fatal)
-//    4. Diversion              (depends on: steamInstallPath from ResolvePaths)
-//    5. steamclient SHA        (depends on: diversion — path resolved)
-//    6. Pattern engine         (depends on: diversion — module handle for hashing)
+//    4. Steamclient attach     (depends on: steamInstallPath from ResolvePaths)
+//    5. steamclient SHA        (depends on: steamclientPath resolved)
+//    6. Pattern engine         (depends on: nothing; hashes the DLL file)
 //    7. IPC spec               (depends on: pattern engine — patternDir created)
 //    8. Lua scripts            (depends on: nothing; runs standalone sandbox)
-//    9. Hook install           (depends on: diversion + pattern engine + lua maps)
+//    9. Hook install           (depends on: steamclient attach + pattern engine + lua maps)
 //   10. DirWatch               (depends on: lua scripts — startup files already
 //                              scanned, so they don't look like hot-reload adds)
 
@@ -136,28 +136,27 @@ bool InitLoggingStage(BootContext& ctx) {
     AC_LOG_INFO(kModule, "[%s] AetherCore injected. Steam folder: %s", kStartupLogToken,
                 g_state.steamInstallPath.c_str());
 
-    // PinSelf: must run before LoadDiversion so the own module HMODULE is stable.
+    // PinSelf: must run before AttachSteamclient so the own module HMODULE is stable.
     PinSelf();
     return true;
 }
 
-bool InitDiversionStage() {
+bool InitSteamclientStage() {
     // 3. Build id detection: diagnostic only, never fatal.
     //    Depends on: nothing (reads a steam.exe export).
     g_state.buildId = DetectSteamBuildId();
 
-    // 4. Diversion: prepare the copy or attach the live client (see [injection]).
+    // 4. Attach: map the steamclient Steam itself uses.
     //    Depends on: steamInstallPath from ResolvePaths.
-    if (!LoadDiversion()) {
-        AC_LOG_ERROR(kModule, "Diversion failed; publishing status and aborting.");
-        AC_LOG_INFO(kModule, "Init aborted: diversion failed.");
+    if (!AttachSteamclient()) {
+        AC_LOG_ERROR(kModule, "Steamclient attach failed; publishing status and aborting.");
         status::Write();
         return false;
     }
 
-    // 5. steamclient SHA: computed right after diversion so status.json
+    // 5. steamclient SHA: computed right after the attach so status.json
     //    carries it even if later stages fail.
-    //    Depends on: diversion (steamclientPath resolved).
+    //    Depends on: steamclientPath resolved.
     g_state.steamclientSha = hasher::ComputeFileSha256(g_state.steamclientPath);
     status::Write();
     return true;
@@ -178,10 +177,6 @@ bool InitPatternsStage(BootContext& ctx) {
     std::thread patternThread([&] { patternsOk = pattern::Init(); });
     std::thread ipcThread([&] { ipcspec::Init(); });
     patternThread.join();
-    // Steam beta may have mapped the live steamclient during the pattern
-    // fetch. Decide the final target BEFORE the UI redirect and any
-    // steamclient hooks: never hook a copy that Steam no longer uses.
-    SelectHookTargetBeforeRedirect();
     ipcThread.join();
     if (!patternsOk) {
         AC_LOG_WARN(kModule, "Pattern engine produced no tables; some hooks will be skipped.");
@@ -243,11 +238,10 @@ bool InitLuaStage() {
 }
 
 void InstallHooksStage() {
-    // 9. Hook install: the optional UI redirect has already been armed
-    //    (or is retrying); register the steamclient hooks on the chosen target.
+    // 9. Hook install: register the steamclient hooks on the live client.
     //    Publishes the final status.json.
-    //    Depends on: diversion (module handle) + pattern engine (addresses)
-    //                + lua data (maps populated).
+    //    Depends on: steamclient attach (module handle) + pattern engine
+    //                (addresses) + lua data (maps populated).
     ac::bootstrap::InstallAllHooks();
 
     // 9b. Late-pattern retry: if a module pattern table was unavailable at
@@ -339,7 +333,7 @@ void InitThreadLogic(HMODULE self) {
         return;
     }
     InitLoggingStage(ctx);
-    if (!InitDiversionStage())
+    if (!InitSteamclientStage())
         return;
     // Non-fatal: missing tables only degrade gracefully (some hooks are
     // skipped, the late-pattern retry covers them). Carried for a future

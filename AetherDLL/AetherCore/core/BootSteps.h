@@ -9,8 +9,8 @@
 // ---------------------------------------------------------------------------
 // BootSteps — one function per bootstrap stage.
 //
-// Stages: paths, logging, diversion, patterns, ABI, Lua, hooks, safety nets
-// and watchers. Each stage does exactly one thing and returns success/failure,
+// Stages: paths, logging, steamclient attach, patterns, ABI, Lua, hooks, safety
+// nets and watchers. Each stage does exactly one thing and returns success/failure,
 // so InitThreadLogic is a straight-line orchestrator with early returns and a
 // maintainer can reorder or insert stages by moving lines, not by re-reading
 // the whole pipeline. Step order and log output must not change.
@@ -35,12 +35,12 @@ bool ResolveStage(HMODULE self, BootContext& ctx);
 // Always true (settings fall back to defaults; failures are logged).
 bool InitLoggingStage(BootContext& ctx);
 
-// Pin + build id + diversion + steamclient SHA. False = diversion failed:
-// caller must publish status and abort.
-bool InitDiversionStage();
+// Pin + build id + live steamclient attach + steamclient SHA. False = attach
+// failed: caller must publish status and abort.
+bool InitSteamclientStage();
 
-// Pattern engine + IPC spec concurrently, hook-target selection, UI
-// redirect arm. Always true (missing tables only degrade gracefully).
+// Pattern engine + IPC spec concurrently. Always true (missing tables only
+// degrade gracefully).
 bool InitPatternsStage(BootContext& ctx);
 
 // ABI table seed + build fallback. Always true, diagnostic only.

@@ -582,7 +582,7 @@ std::int64_t h_BuildSpawnEnvBlock(void* pThis, std::uint64_t* pCGameID, void* a3
 
 // -----------------------------------------------------------------------
 // Public API — defined in namespace ac::hooks (NOT anonymous) so the
-// linker can resolve cross-TU calls from SteamCapture / SteamUIHook.
+// linker can resolve cross-TU calls from SteamCapture / SteamclientAttach.
 // -----------------------------------------------------------------------
 
 steam::AppId CallOriginalGetAppIdForCurrentPipe() {

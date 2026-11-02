@@ -11,11 +11,6 @@
 // ---------------------------------------------------------------------------
 namespace ac::constants {
 
-// Diversion: how aggressively we retry the steamclient copy/load. Steam may
-// still hold a write lock on the freshly extracted DLL for a short window.
-inline constexpr int kDiversionMaxRetries = 30;
-inline constexpr int kDiversionRetryDelayMs = 100;
-
 // Package-0 startup retry (A2): re-attempt cadence and budget for the top-up
 // when the first LoadPackage/MarkLicenseAsChanged window was missed (offline
 // startup, late login, package 0 not ready yet). The retry thread wakes every

@@ -111,7 +111,6 @@ static void WriteSnapshot(std::uint64_t requests) {
         w.Bool("steamui_toml_found", g_state.steamuiTomlFound);
         w.Str("steamui_pattern_source", g_state.steamuiPatternSource);
     }
-    w.Str("steamclient_hook_target", g_state.diversionUsesLive.load() ? "live" : "copy");
     w.Str("netpacket_abi_layout", abi::netpkt::LayoutName());
     w.UInt64("netpacket_abi_data_off", abi::netpkt::ResolvedDataOffset());
     w.Bool("netpacket_abi_resolved", abi::netpkt::IsResolved());

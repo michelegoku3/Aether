@@ -237,7 +237,6 @@ struct AetherCoreState {
     std::string aetherCoreDir;    // <steam>\\aethercore
     std::string steamclientPath;  // <steam>\\steamclient64.dll
     std::string steamuiPath;      // <steam>\\steamui.dll
-    std::string diversionPath;    // Copy: bin\\acoverlay.dll; live: steamclient64.dll
     std::string logFilePath;      // <steam>\\aethercore\\main.log
     std::string configPath;       // <steam>\\aethercore\\aethercore.toml
     std::string patternDir;       // <steam>\\aethercore\\pattern
@@ -259,7 +258,6 @@ struct AetherCoreState {
     // ---- Loaded modules ---------------------------------------------------
     HMODULE selfModule = nullptr;
     HMODULE steamclientModule = nullptr; // live steamclient64.dll hook target
-    std::atomic<bool> diversionUsesLive{false};
 
     // ---- Lifecycle --------------------------------------------------------
     HANDLE initThread = nullptr;
