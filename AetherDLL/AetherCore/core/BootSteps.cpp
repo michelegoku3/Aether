@@ -25,6 +25,7 @@
 #include "hooks/wire/AchievementModule.h"
 #include "hooks/wire/ManifestRestore.h"
 #include "inject/SteamclientAttach.h"
+#include "inject/SteamuiAttach.h"
 #include "scripting/DirWatch.h"
 #include "scripting/ScriptEngine.h"
 #include "utils/DeskPaths.h"
@@ -254,6 +255,14 @@ void InstallHooksStage() {
     } else {
         ac::bootstrap::InstallAllHooks();
     }
+
+    // 9a. steamui is a separate module and can map after the client. Probe it
+    //     without a budget here (the safety nets below must not wait), install
+    //     the app-overview batch if it is already there, and let a worker wait
+    //     for the rest of the window.
+    AttachSteamui(0);
+    ac::bootstrap::InstallSteamUiBatch();
+    ac::bootstrap::StartSteamUiAttachRetry();
 
     // 9b. Late-pattern retry: if a module pattern table was unavailable at
     //     init (patterns not published yet on a fresh Steam build, offline

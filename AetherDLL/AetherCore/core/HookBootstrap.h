@@ -31,6 +31,15 @@ void InstallAllHooks();
 // hooks in-session (no-op when every table is already present).
 void StartPatternLateRetry();
 
+// Register and enable the steamui batch (app overview). Idempotent; no-op while
+// the module is not mapped or its pattern table is missing.
+void InstallSteamUiBatch();
+
+// Start the "steamui_attach" worker: steamui can map after the client, so the
+// UI batch installs as soon as it appears, within a bounded window. The boot
+// path never blocks on it.
+void StartSteamUiAttachRetry();
+
 // Ask the retry workers to stop without awaiting the join (the join happens in
 // workers::Shutdown). Safe to call multiple times.
 void RequestRetryStop();

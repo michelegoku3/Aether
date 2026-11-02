@@ -24,6 +24,12 @@ namespace ac::constants {
 inline constexpr int kSteamclientAttachPollMs = 100;
 inline constexpr int kSteamclientAttachTimeoutMs = 10000;
 
+// steamui maps later than the client on some builds. The wait is a named
+// worker, never the init thread: the achievement backup must run before the
+// client's login reconcile, so the boot path only probes with a zero budget.
+inline constexpr int kSteamuiAttachPollMs = 500;
+inline constexpr int kSteamuiAttachBudgetMs = 30000;
+
 // Package-0 startup retry (A2): re-attempt cadence and budget for the top-up
 // when the first LoadPackage/MarkLicenseAsChanged window was missed (offline
 // startup, late login, package 0 not ready yet). The retry thread wakes every

@@ -19,6 +19,7 @@
 #include "hooks/steamclient/OwnershipHooks.h"
 #include "hooks/wire/PacketRouter.h"
 #include "inject/SteamclientAttach.h"
+#include "inject/SteamuiAttach.h"
 #include "utils/GameNameResolver.h"
 #include "utils/IpcSpec.h"
 #include "utils/PatternEngine.h"
@@ -42,9 +43,11 @@ std::mutex s_batchMutex;
 
 std::atomic<bool> s_patternRetryStarted{false};
 std::atomic<bool> s_patternRetryStop{false};
+std::atomic<bool> s_uiBatchInstalled{false};
+std::atomic<bool> s_uiAttachRetryStarted{false};
 
-// Hooks only need the steamclient table and the IPC spec: the steamui table is
-// still fetched for diagnostics and future UI work, but nothing installs from it.
+// Hooks only need the steamclient table and the IPC spec; the steamui table
+// feeds the app-overview batch, installed separately when that module maps.
 // The module handle is part of readiness: without it there is nothing to hook,
 // and the retry keeps waiting for Steam to map its client.
 bool ReadyToInstallHooks() {
@@ -170,8 +173,71 @@ void InstallSteamClientBatch() {
 }
 
 void InstallAllHooks() {
-    // Idempotent re-run: registers only the previously missed hooks.
+    // Idempotent re-run: registers only the previously missed hooks. The UI
+    // batch is included because a late-arriving steamui table must install its
+    // hooks in-session, exactly like the steamclient table does.
     InstallSteamClientBatch();
+    InstallSteamUiBatch();
+}
+
+void InstallSteamUiBatch() {
+    if (s_uiBatchInstalled.load(std::memory_order_acquire))
+        return;
+    std::lock_guard<std::mutex> batchLock(s_batchMutex);
+    if (s_uiBatchInstalled.load(std::memory_order_acquire))
+        return;
+    if (g_state.steamuiModule == nullptr)
+        return; // the attach worker keeps waiting; nothing to register yet
+    if (!pattern::HasModule("steamui")) {
+        // The late-pattern retry re-runs this function when the table appears.
+        AC_LOG_WARN(kModule, "SteamUI pattern table unavailable; app-overview hooks skipped.");
+        return;
+    }
+
+    AC_LOG_INFO(kModule, "SteamUI hook batch: registering app-overview hooks.");
+    // The app-overview hooks are registered by the module that owns them.
+    if (g_state.hookManager.InstallAll()) {
+        s_uiBatchInstalled.store(true, std::memory_order_release);
+        AC_LOG_INFO(kModule, "SteamUI hooks enabled.");
+    } else {
+        AC_LOG_ERROR(kModule, "SteamUI hook enable failed.");
+    }
+    status::Write();
+}
+
+void StartSteamUiAttachRetry() {
+    if (s_uiBatchInstalled.load(std::memory_order_acquire))
+        return;
+    bool expected = false;
+    if (!s_uiAttachRetryStarted.compare_exchange_strong(expected, true))
+        return;
+    AC_LOG_INFO(kModule, "Starting steamui attach worker (%d ms poll, %d ms budget).", constants::kSteamuiAttachPollMs,
+                constants::kSteamuiAttachBudgetMs);
+    if (!workers::StartWorker("steamui_attach", [](std::atomic<bool>& stop) {
+            const ULONGLONG start = GetTickCount64();
+            while (!stop.load(std::memory_order_relaxed)) {
+                if (AttachSteamui(0)) {
+                    status::Write();
+                    InstallSteamUiBatch();
+                    if (s_uiBatchInstalled.load(std::memory_order_acquire))
+                        return;
+                }
+                if (GetTickCount64() - start >= static_cast<ULONGLONG>(constants::kSteamuiAttachBudgetMs)) {
+                    AC_LOG_WARN(kModule,
+                                "SteamUI not mapped after %d ms; app-overview hooks stay off for this session.",
+                                constants::kSteamuiAttachBudgetMs);
+                    status::Write();
+                    return;
+                }
+                // Stop-aware sleep: shutdown must not wait for a full poll tick.
+                for (int i = 0; i < 10 && !stop.load(std::memory_order_relaxed); ++i)
+                    Sleep(50);
+            }
+        })) {
+        s_uiAttachRetryStarted.store(false);
+        AC_LOG_ERROR(kModule, "Could not start the steamui attach worker; "
+                              "app-overview hooks need a Steam restart.");
+    }
 }
 
 void StartPatternLateRetry() {
