@@ -117,6 +117,29 @@ void MembershipCountsTrackClassification() {
     CHECK_EQ(ac::luadata::LibraryAppCount(), roots0);
 }
 
+// Two different populations feed two different requests. Package 0 must carry
+// every configured id (a depot id is what gives the app its content), but the
+// PICS request must ask only for library roots: a depot id has no product info
+// and would burn one of the one-shot per-app requests.
+void LibraryRootsExcludeDepots() {
+    const char* path = "C:/fixtures/515151.lua";
+    ac::luadata::BeginFile(path);
+    ac::luadata::RecordDepot(515151, "");
+    ac::luadata::RecordLibraryApp(515151);
+    ac::luadata::RecordDepot(515152, std::string(64, 'a'));
+    ac::luadata::EndFile();
+
+    const auto roots = ac::luadata::LibraryAppIds();
+    CHECK(std::find(roots.begin(), roots.end(), 515151u) != roots.end());
+    CHECK(std::find(roots.begin(), roots.end(), 515152u) == roots.end());
+
+    const auto seed = ac::luadata::SeedPackage0Ids();
+    CHECK(std::find(seed.begin(), seed.end(), 515151u) != seed.end());
+    CHECK(std::find(seed.begin(), seed.end(), 515152u) != seed.end());
+
+    ac::luadata::UnloadFile(path);
+}
+
 } // namespace
 
 void OwnershipDecisionTest() {
@@ -242,4 +265,5 @@ void OwnershipDecisionTest() {
     PreSeededOwnedAppIsMarkedOwned();
     PreSeededFamilyAppKeepsBanner();
     MembershipCountsTrackClassification();
+    LibraryRootsExcludeDepots();
 }
