@@ -190,8 +190,9 @@ void InstallSteamUiBatch() {
     if (g_state.steamuiModule == nullptr)
         return; // the attach worker keeps waiting; nothing to register yet
     if (!pattern::HasModule("steamui")) {
-        // The late-pattern retry re-runs this function when the table appears.
-        AC_LOG_WARN(kModule, "SteamUI pattern table unavailable; app-overview hooks skipped.");
+        // The late-pattern retry re-runs this function when the table appears;
+        // the attach worker calls it again every tick, so log once.
+        AC_LOG_WARN_ONCE(kModule, "SteamUI pattern table unavailable; app-overview hooks skipped.");
         return;
     }
 

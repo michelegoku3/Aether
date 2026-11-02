@@ -46,9 +46,14 @@ HMODULE WaitForMappedModule(const char* baseName, const std::string& expectedPat
 
     outcome = "not-mapped";
     // WARN, not ERROR: a slow mapping is a normal boot, and every caller keeps
-    // probing with a zero budget from a worker or the late retry.
-    AC_LOG_WARN(logModule, "Steam has not mapped %s after %u ms; the batch is deferred.", expectedPath.c_str(),
-                timeoutMs);
+    // probing with a zero budget from a worker or the late retry. A zero-budget
+    // probe is a poll, not an event: logging it at WARN would flood the log.
+    if (timeoutMs == 0) {
+        AC_LOG_DEBUG(logModule, "Steam has not mapped %s yet; polling.", expectedPath.c_str());
+    } else {
+        AC_LOG_WARN(logModule, "Steam has not mapped %s after %u ms; the batch is deferred.", expectedPath.c_str(),
+                    timeoutMs);
+    }
     return nullptr;
 }
 
