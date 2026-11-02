@@ -4,7 +4,6 @@
 #include <algorithm>
 #include <atomic>
 #include <chrono>
-#include <limits>
 #include <mutex>
 #include <sstream>
 #include <string>
@@ -40,14 +39,12 @@ using namespace ac::steam;
 using CheckAppOwnership_t = bool (*)(void*, AppId, AppOwnership*);
 using MarkLicenseAsChanged_t = std::int64_t (*)(void*, std::uint32_t, bool);
 using GetPackageInfo_t = void* (*)(void*, std::uint32_t, std::int64_t);
-using GetSubscribedApps_t = std::uint32_t (*)(void*, AppId*, std::uint32_t, std::uint8_t);
 using SendCallbackToPipe_t = bool (*)(void*, HSteamPipe, HSteamUser, int, void*, int);
 using LoadPackage_t = bool (*)(PackageInfo*, std::uint8_t*, std::int32_t, void*);
 
 CheckAppOwnership_t o_CheckAppOwnership = nullptr;
 MarkLicenseAsChanged_t o_MarkLicenseAsChanged = nullptr;
 GetPackageInfo_t o_GetPackageInfo = nullptr;
-GetSubscribedApps_t o_GetSubscribedApps = nullptr;
 SendCallbackToPipe_t o_SendCallbackToPipe = nullptr;
 LoadPackage_t o_LoadPackage = nullptr;
 
@@ -410,50 +407,6 @@ void* h_GetPackageInfo(void* self, std::uint32_t packageId, std::int64_t p3) {
     return o_GetPackageInfo(self, packageId, p3);
 }
 
-std::uint32_t h_GetSubscribedApps(void* self, AppId* appList, std::uint32_t size, std::uint8_t unknownFlag) {
-    std::uint32_t count = o_GetSubscribedApps(self, appList, size, unknownFlag);
-    std::vector<AppId> roots = luadata::LibraryAppIds();
-    if (roots.empty())
-        return count;
-
-    std::uint32_t written = 0;
-    std::uint32_t advertisedAdds = 0;
-    const bool canScanOriginal = appList && count <= size;
-
-    for (AppId appId : roots) {
-        bool alreadyInList = false;
-        if (canScanOriginal) {
-            for (std::uint32_t i = 0; i < count; ++i) {
-                if (appList[i] == appId) {
-                    alreadyInList = true;
-                    break;
-                }
-            }
-        }
-        if (alreadyInList)
-            continue;
-
-        ++advertisedAdds;
-        if (appList && count + written < size) {
-            appList[count + written] = appId;
-            ++written;
-        }
-    }
-
-    std::uint32_t advertisedTotal = count + advertisedAdds;
-    if (advertisedTotal < count)
-        advertisedTotal = (std::numeric_limits<std::uint32_t>::max)();
-    AC_LOG_INFO_ONCE(kModule, "GetSubscribedApps: original=%u roots=%zu written=%u advertised=%u buffer=%u.", count,
-                     roots.size(), written, advertisedTotal, size);
-    if (written < advertisedAdds && size != 0) {
-        // size==0 is Steam's probe call (it only wants the advertised count),
-        // so a zero-sized write there is expected, not an error.
-        AC_LOG_WARN(kModule, "GetSubscribedApps: caller buffer too small (%u); advertised %u root(s) but wrote %u.",
-                    size, advertisedAdds, written);
-    }
-    return advertisedTotal;
-}
-
 bool h_SendCallbackToPipe(void* engine, HSteamPipe pipe, HSteamUser user, int cb, void* data, int size) {
     // Force the "licenses changed" flag so Steam re-reads ownership.
     if (cb == constants::kCallbackAppLicensesChanged && data) {
@@ -547,8 +500,6 @@ void RegisterOwnershipHooks(HMODULE steamclient) {
     g_state.hookManager.TryHook("MarkLicenseAsChanged", "steamclient", steamclient, o_MarkLicenseAsChanged,
                                 h_MarkLicenseAsChanged);
     g_state.hookManager.TryHook("GetPackageInfo", "steamclient", steamclient, o_GetPackageInfo, h_GetPackageInfo);
-    g_state.hookManager.TryHook("GetSubscribedApps", "steamclient", steamclient, o_GetSubscribedApps,
-                                h_GetSubscribedApps);
     g_state.hookManager.TryHook("SendCallbackToPipe", "steamclient", steamclient, o_SendCallbackToPipe,
                                 h_SendCallbackToPipe);
     g_state.hookManager.TryHook("LoadPackage", "steamclient", steamclient, o_LoadPackage, h_LoadPackage);

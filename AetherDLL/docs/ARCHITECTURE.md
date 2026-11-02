@@ -22,6 +22,7 @@ the fast build loop ([`quick-build.md`](quick-build.md)).
 - [Event-driven persistence, workers and hot paths](#event-driven-persistence-workers-and-hot-paths)
 - [Manifest acquisition, presence session and module splits](#manifest-acquisition-presence-session-and-module-splits)
 - [Backup lifecycle and pattern boundaries](#backup-lifecycle-and-pattern-boundaries)
+- [Library membership](#library-membership)
 - [Presence channels (`-showonline` / `-aetheronline`)](#presence-channels--showonline---aetheronline)
 
 
@@ -321,6 +322,30 @@ instead of skipping the new donor as "already tried". Probe requests are paced
   publication; `PatternCache` owns TOML/cache/provenance/download policy;
   `PatternResolver` owns lookup, bounds/signature verification and the existing
   ABI sentinel call. Public entry points and safety gates are unchanged.
+
+## Library membership
+
+A `.lua` app becomes visible only through the **license path**: package 0 carries
+every configured id (`LicenseManager::SeedPackage0`), and
+`MarkLicenseAsChanged` + `ProcessPendingLicenseUpdates` make Steam re-read it.
+Steam then asks for the app's AppInfo and builds the card, the depot plan and
+the launch config from that. Nothing may add an app to the library by another
+route.
+
+`GetSubscribedApps` used to append the library roots to the client's subscribed
+list. That created overview entries before the AppInfo/release-state bookkeeping
+Steam performs for licensed apps: on the 11.18 client every such app asserted
+and aborted, and on builds that survived the card showed no size and no launch
+config. The hook is gone and must not come back. `luadata::LibraryAppIds()`
+still exists, but only as the population for per-app PICS requests and name
+lookups (`ScriptEngine`, `DirWatch`, `GameNameResolver`), never as membership.
+
+Genuinely owned apps are Steam's own and take the same path untouched; the
+spoof answers only for configured ids Steam did not provide
+(`luadata::HasDepot`). `status.json` reports the populations separately
+(`membership_owned`, `membership_spoofed`, `membership_family_shared`,
+`membership_library_roots`) so a support log can tell "configured but never
+classified" from "managed".
 
 ## Presence channels (`-showonline` / `-aetheronline`)
 
