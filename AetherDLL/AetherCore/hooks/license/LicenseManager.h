@@ -28,10 +28,14 @@ void Init(HMODULE steamclient);
 void Shutdown();
 
 // Called from the LoadPackage/GetPackageInfo hooks when package 0 becomes
-// available. Publishes the package-0 pointer to g_state. Package 0 is filled
-// per app by AddAppToPackage0, after CheckAppOwnership has seen Steam's first
-// answer.
+// available. Publishes the package-0 pointer to g_state and seeds every
+// configured .lua id into it (Steam lists an app only when a license mentions
+// it). On-demand additions after classification are a top-up, not the seed.
 void SeedPackage0(steam::PackageInfo* package0);
+
+// Number of ids currently in package 0, read under the mutation lock so a
+// concurrent grow cannot tear the vector. 0 when the package is not published.
+std::size_t Package0AppCount();
 
 // Adds the app and its .lua depots to package 0 synchronously. Returns true
 // when the vector changed (an id was appended or a duplicate removed). Used by

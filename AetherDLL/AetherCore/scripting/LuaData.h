@@ -71,7 +71,9 @@ std::vector<steam::AppId> IdsForApp(steam::AppId appId);
 // decision, so a pre-seeded shared app still keeps its banner.
 std::vector<steam::AppId> SeedPackage0Ids();
 
-// Snapshot of numeric .lua filename roots that should be advertised to Steam's Library.
+// Snapshot of numeric .lua filename roots: the population for per-app PICS
+// requests and name lookups. Membership does not come from here (it comes from
+// the package-0 license).
 std::vector<steam::AppId> LibraryAppIds();
 
 // Map of lua file path -> the app ids that file contributes (depots from

@@ -25,7 +25,9 @@ bool IsSteamRootModule(HMODULE module) {
 HMODULE FindSteamclient() {
     HMODULE module = GetModuleHandleA("steamclient64.dll");
     if (module && !IsSteamRootModule(module)) {
-        AC_LOG_DEBUG_ONCE(kModule, "A steamclient64.dll is mapped from another directory; waiting for Steam's.");
+        AC_LOG_WARN_ONCE(kModule,
+                         "A steamclient64.dll is mapped from another directory; waiting for Steam's copy at %s.",
+                         g_state.steamclientPath.c_str());
         return nullptr;
     }
     return module;
@@ -37,10 +39,15 @@ bool AttachSteamclient(std::uint32_t timeoutMs) {
     if (g_state.steamclientModule)
         return true;
 
-    g_state.steamclientPath = g_state.steamInstallPath + "\\steamclient64.dll";
-    if (strings::Widen(g_state.steamclientPath).empty()) {
-        g_state.steamclientAttach = "path-invalid";
-        AC_LOG_ERROR(kModule, "Steam client path is not valid UTF-8; aborting attach.");
+    // InitSteamclientStage resolves the path before the first attach attempt;
+    // this function never writes shared state besides the attach outcome, so the
+    // late-pattern retry can call it while other threads read the path.
+    if (g_state.steamclientPath.empty() || strings::Widen(g_state.steamclientPath).empty()) {
+        {
+            std::lock_guard lock(g_state.statusMetadataMutex);
+            g_state.steamclientAttach = "path-invalid";
+        }
+        AC_LOG_ERROR(kModule, "Steam client path is not resolved; aborting attach.");
         return false;
     }
 
@@ -48,7 +55,11 @@ bool AttachSteamclient(std::uint32_t timeoutMs) {
     for (;;) {
         if (HMODULE module = FindSteamclient()) {
             g_state.steamclientModule = module;
-            g_state.steamclientAttach = "live-mapped";
+            {
+                // status.json reads this string under the same lock.
+                std::lock_guard lock(g_state.statusMetadataMutex);
+                g_state.steamclientAttach = "live-mapped";
+            }
             AC_LOG_INFO(kModule, "Steamclient mapped by Steam after %llu ms (handle 0x%p).", GetTickCount64() - start,
                         module);
             return true;
@@ -59,9 +70,15 @@ bool AttachSteamclient(std::uint32_t timeoutMs) {
     }
 
     g_state.steamclientModule = nullptr;
-    g_state.steamclientAttach = "live-not-mapped";
-    AC_LOG_ERROR(kModule, "Steam did not map %s within %u ms; the hook batch stays disabled.",
-                 g_state.steamclientPath.c_str(), timeoutMs);
+    {
+        std::lock_guard lock(g_state.statusMetadataMutex);
+        g_state.steamclientAttach = "live-not-mapped";
+    }
+    // WARN, not ERROR: a slow mapping is a normal boot and the late-pattern
+    // retry re-probes with a zero budget a few seconds later.
+    AC_LOG_WARN(kModule,
+                "Steam has not mapped %s after %u ms; the hook batch is deferred and the late retry keeps probing.",
+                g_state.steamclientPath.c_str(), timeoutMs);
     return false;
 }
 

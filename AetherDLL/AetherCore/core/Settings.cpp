@@ -122,9 +122,9 @@ Settings Settings::Load(const std::string& configPath, bool* valid) {
         return s;
     }
 
-    // [injection] `diversion_mode` chose the copy/live hook target. The DLL now
-    // always hooks the live client; a stale config must not look like it still
-    // selects anything, so the ignore is loud.
+    // [injection] diversion_mode is obsolete: the DLL always hooks the live
+    // client, so a stale config key must be loud about being ignored instead of
+    // looking like it still selects a target.
     if (const auto injection = tbl["injection"]; injection.as_table()) {
         if (const auto mode = injection["diversion_mode"]; mode.node()) {
             const std::uint32_t line = mode.node()->source().begin.line;

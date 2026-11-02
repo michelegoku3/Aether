@@ -92,7 +92,7 @@ struct AetherCoreState {
         // look owned. Kept in package 0 for play, attributed to this account
         // for the banner.
         std::unordered_map<steam::AppId, std::uint32_t> familyLenderAppIds;
-        std::unordered_set<steam::AppId> libraryAppIds; // numeric .lua filename roots shown in Library
+        std::unordered_set<steam::AppId> libraryAppIds; // numeric .lua filename roots (PICS/name lookup)
         // Auth tickets are persisted to the registry (see Ticket.{h,cpp}), not held
         // in process memory, so there are no ticket maps here.
 

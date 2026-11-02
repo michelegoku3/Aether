@@ -17,6 +17,7 @@
 #include "hooks/aetheronline/OnlinePayload.h"
 #include "hooks/aetheronline/PresenceSession.h"
 #include "hooks/ipc/PipeWatch.h"
+#include "hooks/license/LicenseManager.h"
 #include "hooks/wire/AchievementModule.h"
 #include "network/EticketFetcher.h"
 #include "scripting/LuaData.h"
@@ -141,14 +142,20 @@ static void WriteSnapshot(std::uint64_t requests) {
     w.SizeT("config_store_cached_app_tickets", credential::CachedConfigStoreTicketCount());
     w.SizeT("lua_files_loaded", luadata::LoadedFileCount());
     w.SizeT("configured_depots", luadata::ConfiguredDepotCount());
-    // Library membership populations. `spoofed` is the set Aether actually
-    // manages; `owned` is Steam's own and Aether must leave it alone;
-    // `family_shared` keeps the lender banner. A configured app that is in
-    // none of them has not been classified yet (Steam never asked).
+    // Library membership populations. `configured_depots` above is the universe:
+    // every configured id (app roots and depots). The three classification sets
+    // are subsets of it and are mutually exclusive; an id in none of them is
+    // configured but not classified yet (Steam never asked). `spoofed` is the
+    // set Aether actually manages; `owned` is Steam's own and Aether must leave
+    // the answer alone; `family_shared` keeps the lender banner.
+    // `package0_app_ids` is the license itself: when it equals configured_depots
+    // the seed ran, and any card still missing is an AppInfo problem, not a
+    // membership one.
     w.SizeT("membership_library_roots", luadata::LibraryAppCount());
     w.SizeT("membership_owned", luadata::OwnedCount());
     w.SizeT("membership_spoofed", luadata::SpoofedCount());
     w.SizeT("membership_family_shared", luadata::FamilySharedCount());
+    w.SizeT("package0_app_ids", hooks::LicenseManager::Package0AppCount());
     w.SizeT("access_tokens", luadata::AccessTokenCount());
     w.SizeT("manifest_overrides", luadata::ManifestOverrideCount());
     w.Bool("eticket_backend_configured", !luadata::EticketUrl().empty());

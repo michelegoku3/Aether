@@ -476,9 +476,9 @@ bool h_LoadPackage(PackageInfo* info, std::uint8_t* sha1, std::int32_t cn, void*
     bool result = o_LoadPackage(info, sha1, cn, p4);
 
     if (info && info->packageId == 0) {
-        // SeedPackage0 owns the g_state.pPackage0 publication. It no longer
-        // seeds: apps enter package 0 on demand, after their first ownership
-        // answer, so an unavailable package is still a valid publication.
+        // SeedPackage0 owns the g_state.pPackage0 publication and the first
+        // seed of every configured id; a status without a key is still a valid
+        // publication, and later additions are a top-up.
         if (info->status == steam::kPackageStatusUnloaded)
             AC_LOG_WARN(kModule, "Package 0 status=%u (key absent); publishing it for on-demand use.", info->status);
         LicenseManager::SeedPackage0(info);

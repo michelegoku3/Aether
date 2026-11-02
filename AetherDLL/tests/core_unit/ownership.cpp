@@ -26,6 +26,7 @@ void SeedIncludesUnclassifiedLuaApp() {
     // The Lua store is global to this test binary: unload the fixture so the
     // recorded depot cannot leak into another suite's assertions.
     ac::luadata::UnloadFile(path);
+    ac::luadata::ClearPendingChanges();
 }
 
 // Pre-seeded, Steam's first answer arrives with existInPackageNums == 1: it
@@ -115,6 +116,9 @@ void MembershipCountsTrackClassification() {
     CHECK_EQ(ac::luadata::SpoofedCount(), spoofed0);
     CHECK_EQ(ac::luadata::FamilySharedCount(), family0);
     CHECK_EQ(ac::luadata::LibraryAppCount(), roots0);
+    // RecordDepot queues additions and UnloadFile queues removals: drain them so
+    // a no-argument run does not hand a stale queue to the next suite.
+    ac::luadata::ClearPendingChanges();
 }
 
 // Two different populations feed two different requests. Package 0 must carry
@@ -127,6 +131,7 @@ void LibraryRootsExcludeDepots() {
     ac::luadata::RecordDepot(515151, "");
     ac::luadata::RecordLibraryApp(515151);
     ac::luadata::RecordDepot(515152, std::string(64, 'a'));
+    ac::luadata::RecordDepot(515153, "");
     ac::luadata::EndFile();
 
     const auto roots = ac::luadata::LibraryAppIds();
@@ -136,8 +141,13 @@ void LibraryRootsExcludeDepots() {
     const auto seed = ac::luadata::SeedPackage0Ids();
     CHECK(std::find(seed.begin(), seed.end(), 515151u) != seed.end());
     CHECK(std::find(seed.begin(), seed.end(), 515152u) != seed.end());
+    // Unkeyed addappid for an id that is not the numeric root: it must still be
+    // seeded (the license carries it) and must not become a library root.
+    CHECK(std::find(roots.begin(), roots.end(), 515153u) == roots.end());
+    CHECK(std::find(seed.begin(), seed.end(), 515153u) != seed.end());
 
     ac::luadata::UnloadFile(path);
+    ac::luadata::ClearPendingChanges();
 }
 
 } // namespace

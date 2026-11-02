@@ -218,8 +218,10 @@ instead of skipping the new donor as "already tried". Probe requests are paced
   exception machinery (an access violation in `VCRUNTIME140.dll` before the login
   screen). The attach therefore waits for Steam's own mapping, up to
   `kSteamclientAttachTimeoutMs`, and hooks are installed only once the handle
-  exists; a timeout logs `steamclient_attach = "live-not-mapped"`, skips the
-  steamclient batch, and leaves the late-pattern retry re-probing the handle.
+  exists. The budget is short because the wait runs before the safety nets (the
+  achievement backup must precede the client's login reconcile); a timeout logs
+  `steamclient_attach = "live-not-mapped"`, defers the steamclient batch, and
+  leaves the late-pattern retry (10 s cadence) re-probing the handle.
 * Settings are immutable `shared_ptr<const Settings>` snapshots, atomically
   published. Each reader retains its owner for the duration of access. Only
   DirWatch polls the TOML at runtime (about 1 s, including without Lua watches).
@@ -329,23 +331,24 @@ A `.lua` app becomes visible only through the **license path**: package 0 carrie
 every configured id (`LicenseManager::SeedPackage0`), and
 `MarkLicenseAsChanged` + `ProcessPendingLicenseUpdates` make Steam re-read it.
 Steam then asks for the app's AppInfo and builds the card, the depot plan and
-the launch config from that. Nothing may add an app to the library by another
-route.
+the launch config from that. Nothing else may add an app to the library:
+returning ids from the client's subscribed-app list creates an overview entry
+before the AppInfo/release-state bookkeeping Steam performs for licensed apps,
+which the 11.18 client asserts on and which renders a card with no size and no
+launch config.
 
-`GetSubscribedApps` used to append the library roots to the client's subscribed
-list. That created overview entries before the AppInfo/release-state bookkeeping
-Steam performs for licensed apps: on the 11.18 client every such app asserted
-and aborted, and on builds that survived the card showed no size and no launch
-config. The hook is gone and must not come back. `luadata::LibraryAppIds()`
-still exists, but only as the population for per-app PICS requests and name
-lookups (`ScriptEngine`, `DirWatch`, `GameNameResolver`), never as membership.
+`luadata::LibraryAppIds()` is the numeric-filename root population for per-app
+PICS requests and name lookups (`ScriptEngine`, `DirWatch`, `GameNameResolver`,
+`InstalledDepotRepair`); it is not membership and may be empty for a `.lua` with
+a non-numeric name, which still enters the library through its seeded ids.
 
-Genuinely owned apps are Steam's own and take the same path untouched; the
-spoof answers only for configured ids Steam did not provide
-(`luadata::HasDepot`). `status.json` reports the populations separately
+A genuinely owned app gets a package-0 row like every other configured id, but
+its ownership answer passes through untouched: the spoof acts only when Steam
+did not provide the app (`luadata::HasDepot`), and the family/owned flags keep
+the lender banner. `status.json` reports the populations separately
 (`membership_owned`, `membership_spoofed`, `membership_family_shared`,
-`membership_library_roots`) so a support log can tell "configured but never
-classified" from "managed".
+`membership_library_roots`, `package0_app_ids`) so a support log can tell
+"not seeded" from "seeded but not classified".
 
 ## Presence channels (`-showonline` / `-aetheronline`)
 

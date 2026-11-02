@@ -417,6 +417,12 @@ void SeedPackage0(PackageInfo* package0) {
     AC_LOG_INFO(kModule, "Package 0 published with every configured .lua id.");
 }
 
+std::size_t Package0AppCount() {
+    std::lock_guard<std::mutex> lock(s_packageMutationMutex);
+    auto* pkg = static_cast<PackageInfo*>(g_state.pPackage0.load());
+    return pkg ? static_cast<std::size_t>(pkg->appIdVec.size) : 0;
+}
+
 bool AddAppToPackage0(AppId appId) {
     if (appId == 0)
         return false;
