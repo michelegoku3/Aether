@@ -231,9 +231,12 @@ bool InitLuaStage() {
 }
 
 void InstallHooksStage() {
-    // 9. Hook install: wait for Steam to map its client, then register the
-    //    steamclient hooks on it. A missing client is not fatal: Steam keeps
-    //    running and the late-pattern retry keeps probing.
+    // 9. Hook install: wait (short, bounded) for Steam to map its client, then
+    //    register the steamclient hooks on it. A missing client is not fatal:
+    //    Steam keeps running and the late-pattern retry keeps probing.
+    //    This wait is on the init thread and the safety nets below only start
+    //    after it, so its budget stays short on purpose
+    //    (constants::kSteamclientAttachTimeoutMs).
     //    Depends on: steamclient attach (module handle) + pattern engine
     //                (addresses) + lua data (maps populated).
     if (!AttachSteamclient(constants::kSteamclientAttachTimeoutMs)) {

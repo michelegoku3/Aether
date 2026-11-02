@@ -15,8 +15,14 @@ namespace ac::constants {
 // never loads it (doing so initializes it out of order and crashes steam.exe),
 // so the hook batch waits for Steam's mapping. Poll cadence and budget for that
 // wait; the late-pattern retry re-probes it with a zero budget.
+//
+// The budget is deliberately short: this wait runs on the init thread BEFORE the
+// safety nets (achievement backup, manifest restore, owner policy), and the
+// backup must land before the client's login reconcile. A slow mapping is
+// covered by the late retry below (10 s cadence), not by holding the init thread
+// for a minute.
 inline constexpr int kSteamclientAttachPollMs = 100;
-inline constexpr int kSteamclientAttachTimeoutMs = 60000;
+inline constexpr int kSteamclientAttachTimeoutMs = 10000;
 
 // Package-0 startup retry (A2): re-attempt cadence and budget for the top-up
 // when the first LoadPackage/MarkLicenseAsChanged window was missed (offline
