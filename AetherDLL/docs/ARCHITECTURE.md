@@ -23,6 +23,7 @@ the fast build loop ([`quick-build.md`](quick-build.md)).
 - [Manifest acquisition, presence session and module splits](#manifest-acquisition-presence-session-and-module-splits)
 - [Backup lifecycle and pattern boundaries](#backup-lifecycle-and-pattern-boundaries)
 - [Library membership](#library-membership)
+- [SteamUI app overview](#steamui-app-overview)
 - [Presence channels (`-showonline` / `-aetheronline`)](#presence-channels--showonline---aetheronline)
 
 
@@ -349,6 +350,46 @@ the lender banner. `status.json` reports the populations separately
 (`membership_owned`, `membership_spoofed`, `membership_family_shared`,
 `membership_library_roots`, `package0_app_ids`) so a support log can tell
 "not seeded" from "seeded but not classified".
+
+## SteamUI app overview
+
+AetherCore hooks `steamui.dll` only for the app-overview layer. The module is
+waited for like the client and never loaded, so the hooks run on the image Steam
+maps inside `steam.exe`. `BootSteps` probes it without a budget and the
+`steamui_attach` worker waits up to 30 s; a build that maps it later leaves the
+layer off for the session and `status.json` says so.
+
+The only object the layer touches is the `CSteamApp` prefix declared in
+`core/SteamTypes.h`: `gameId`, `appId`, `releaseState`, `ownershipFlags` and
+`appStateFlags`, ending at +0x20. Nothing after that offset is declared, because
+its alignment depends on members Aether never reads; a full struct would guess
+the tail and put a write in the wrong field on the first layout change.
+
+`FillInAppOverview` is a pass-through detour: it forwards the registers it
+received, observes the card, and writes `ownershipFlags` only when all of the
+following hold:
+
+- `InspectOverview` accepts the object (non-zero appId, `gameId & 0xFFFFFF`
+  equals appId, both flag words inside the published masks);
+- the probe latched: two distinct apps matched the same layout this session;
+- the app is configured by a `.lua` and Steam did not provide it as genuinely
+  owned or family-shared;
+- the owned bit is not already set.
+
+The write happens on the client's callback thread; nothing queues work or
+touches the object from a worker, so thread affinity is by construction. A
+steamui table that publishes `[abi.CSteamApp.*]` is checked against the compiled
+offsets before the first hook is armed: a contradiction latches the struct guard
+and disables the write for the session instead of adapting.
+
+`status.json` reports `steamui_attach`, `overview_fills`, `overview_writes`,
+`overview_rejects` and `overview_probe` (`latched`, `unproven` or
+`rejected:<reason>`), so "the card was not repaired" is diagnosable without a
+debugger.
+
+Not this layer: card removal and `MarkAppChange`, size, install/update state,
+achievements and appid translation. Each of those writes more of the client
+model and needs its own validated field.
 
 ## Presence channels (`-showonline` / `-aetheronline`)
 
