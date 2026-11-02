@@ -24,8 +24,9 @@ bool AttachSteamclient(std::uint32_t timeoutMs) {
     {
         // status.json reads this string under the same lock.
         std::lock_guard lock(g_state.statusMetadataMutex);
-        g_state.steamclientAttach =
-            outcome == "mapped" ? "live-mapped" : outcome == "not-mapped" ? "live-not-mapped" : "path-invalid";
+        g_state.steamclientAttach = outcome == "mapped"       ? "live-mapped"
+                                    : outcome == "not-mapped" ? "live-not-mapped"
+                                                              : "path-invalid";
     }
     return module != nullptr;
 }

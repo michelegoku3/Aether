@@ -17,6 +17,7 @@
 #include "hooks/steamclient/DepotHooks.h"
 #include "hooks/steamclient/LicenseHooks.h"
 #include "hooks/steamclient/OwnershipHooks.h"
+#include "hooks/steamui/AppOverviewHooks.h"
 #include "hooks/wire/PacketRouter.h"
 #include "inject/SteamclientAttach.h"
 #include "inject/SteamuiAttach.h"
@@ -195,7 +196,8 @@ void InstallSteamUiBatch() {
     }
 
     AC_LOG_INFO(kModule, "SteamUI hook batch: registering app-overview hooks.");
-    // The app-overview hooks are registered by the module that owns them.
+    // The batch owns its registration; InstallAll below enables what it queued.
+    hooks::steamui::InstallAppOverviewHooks();
     if (g_state.hookManager.InstallAll()) {
         s_uiBatchInstalled.store(true, std::memory_order_release);
         AC_LOG_INFO(kModule, "SteamUI hooks enabled.");

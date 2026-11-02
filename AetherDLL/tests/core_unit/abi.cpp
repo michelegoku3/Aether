@@ -892,10 +892,9 @@ void StructGuard() {
     // a contradiction disables the guarded writes instead of adapting.
     {
         ResetCounters();
-        CHECK(ApplyTable({{"CSteamApp.appId", 0x10},
-                          {"CSteamApp.ownershipFlags", 0x1C},
-                          {"CSteamApp.appStateFlags", 0x20}},
-                         "steamui-test") == 3);
+        CHECK(ApplyTable(
+                  {{"CSteamApp.appId", 0x10}, {"CSteamApp.ownershipFlags", 0x1C}, {"CSteamApp.appStateFlags", 0x20}},
+                  "steamui-test") == 3);
         CHECK(!LayoutContradicted());
 
         ResetCounters();

@@ -99,11 +99,21 @@ struct ExpectedLayout {
 //: Checked against the table at startup. Every entry is proven by
 //: disassembly of both shipped builds.
 inline constexpr ExpectedLayout kExpectedLayout[] = {
-    {"AppOwnership.bool_block_start", 0x24}, {"AppOwnership.size_bytes", 0x36},    {"AppOwnership.timeStamp", 0x1C},
-    {"AppOwnership.timeExpire", 0x20},       {"AppOwnership.borrowed", 0x2F},      {"DepotEntry.manifestGid", 0x08},
-    {"DepotEntry.manifestSize", 0x10},       {"PackageInfo.status", 0x18},         {"PackageInfo.appIdVec", 0x40},
-    {"PackageInfo.depotIdVec", 0x58},        {"CUtlVector.allocationCount", 0x08}, {"CUtlVector.count", 0x10},
-    {"CSteamApp.appId", 0x10},               {"CSteamApp.ownershipFlags", 0x1C},   {"CSteamApp.appStateFlags", 0x20},
+    {"AppOwnership.bool_block_start", 0x24},
+    {"AppOwnership.size_bytes", 0x36},
+    {"AppOwnership.timeStamp", 0x1C},
+    {"AppOwnership.timeExpire", 0x20},
+    {"AppOwnership.borrowed", 0x2F},
+    {"DepotEntry.manifestGid", 0x08},
+    {"DepotEntry.manifestSize", 0x10},
+    {"PackageInfo.status", 0x18},
+    {"PackageInfo.appIdVec", 0x40},
+    {"PackageInfo.depotIdVec", 0x58},
+    {"CUtlVector.allocationCount", 0x08},
+    {"CUtlVector.count", 0x10},
+    {"CSteamApp.appId", 0x10},
+    {"CSteamApp.ownershipFlags", 0x1C},
+    {"CSteamApp.appStateFlags", 0x20},
 };
 
 // ---- results --------------------------------------------------------------

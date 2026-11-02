@@ -15,6 +15,7 @@
 #include "core/Settings.h"
 #include "core/SteamTypes.h"
 #include "hooks/ipc/PipeWatch.h"
+#include "hooks/steamui/AppOverviewPolicy.h"
 #include "hooks/wire/DonorPool.h"
 #include "hooks/wire/DonorProbe.h"
 #include "network/EticketFetcher.h"
@@ -187,6 +188,22 @@ struct AetherCoreState {
         std::string uiSource;
     };
     AbiTableState abiTable;
+
+    // ---- SteamUI app overview (validated write path) ----------------------
+    // The probe is per-session evidence that the compiled CSteamApp prefix is
+    // the live object; the counters make the layer observable when a card is
+    // not repaired. `lastReject` is read by StatusWriter under
+    // statusMetadataMutex, like the other published strings.
+    struct OverviewState {
+        std::mutex mutex; // guards probe only: two client threads can fill cards
+        hooks::steamui::policy::ProbeState probe;
+        std::atomic<std::uint64_t> fills{0};
+        std::atomic<std::uint64_t> writes{0};
+        std::atomic<std::uint64_t> rejects{0};
+        std::atomic<bool> latched{false};
+        std::string lastReject;
+    };
+    OverviewState overview;
 
     // ---- IPC spec (per-build funcHash + optional fencepost/argc overrides) --
     // Loaded from a TOML fetched alongside the pattern tables. When loaded,

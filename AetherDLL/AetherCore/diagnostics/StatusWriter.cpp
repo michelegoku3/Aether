@@ -157,6 +157,21 @@ static void WriteSnapshot(std::uint64_t requests) {
     w.SizeT("membership_spoofed", luadata::SpoofedCount());
     w.SizeT("membership_family_shared", luadata::FamilySharedCount());
     w.SizeT("package0_app_ids", hooks::LicenseManager::Package0AppCount());
+
+    // SteamUI app-overview layer: every card observed, every repair, and why a
+    // write was refused. `unproven` means the layout was never confirmed, so
+    // nothing was written; `rejected:<reason>` means the object did not match
+    // the compiled prefix and the layer is off for this session.
+    w.UInt64("overview_fills", g_state.overview.fills.load(std::memory_order_relaxed));
+    w.UInt64("overview_writes", g_state.overview.writes.load(std::memory_order_relaxed));
+    w.UInt64("overview_rejects", g_state.overview.rejects.load(std::memory_order_relaxed));
+    {
+        std::lock_guard lock(g_state.statusMetadataMutex);
+        const bool latched = g_state.overview.latched.load(std::memory_order_acquire);
+        w.Str("overview_probe", latched                               ? "latched"
+                                : g_state.overview.lastReject.empty() ? "unproven"
+                                                                      : "rejected:" + g_state.overview.lastReject);
+    }
     w.SizeT("access_tokens", luadata::AccessTokenCount());
     w.SizeT("manifest_overrides", luadata::ManifestOverrideCount());
     w.Bool("eticket_backend_configured", !luadata::EticketUrl().empty());

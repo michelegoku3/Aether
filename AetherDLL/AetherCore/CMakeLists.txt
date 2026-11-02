@@ -73,6 +73,7 @@ add_library(AetherCore SHARED
 
     # Hooks
     hooks/steamui/SteamUIStylePatch.cpp
+    hooks/steamui/AppOverviewHooks.cpp
     hooks/steamclient/AetherOnlineHooks.cpp
     hooks/steamclient/OwnershipHooks.cpp
     hooks/steamclient/CallbackCopy.cpp
