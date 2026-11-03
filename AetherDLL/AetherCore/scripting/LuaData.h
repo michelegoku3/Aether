@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <map>
 #include <optional>
 #include <string>
 #include <unordered_map>
@@ -22,6 +23,14 @@
 // the lock.
 // ---------------------------------------------------------------------------
 namespace ac::luadata {
+
+// One manifest pin as a .lua file states it: the depot and the manifest id the
+// script asks Steam to install for it. Declared in this layer's own terms so
+// LuaData never includes the SteamUI headers that consume the same rows.
+struct PinnedDepot {
+    steam::AppId depot;
+    std::uint64_t gid;
+};
 
 // ---- Reads (shared lock) ---------------------------------------------------
 
@@ -80,6 +89,16 @@ std::vector<steam::AppId> LibraryAppIds();
 // addappid lines plus the numeric filename root, deduped). Used by the
 // ownership unlock summary to report per-file "Unlocked all / Not unlocked".
 std::unordered_map<std::string, std::vector<steam::AppId>> ConfiguredIdsByFile();
+
+// Manifest pins one .lua file contributes, keyed by every library root that
+// file advertises: a pin names a depot, not an app, so the same rows belong to
+// each root of the file. A path the store no longer holds (removed, rejected or
+// not yet parsed) answers empty, which is how a diff around a reload observes
+// the pins going away.
+//
+// Ordered map on purpose: the caller compares two snapshots taken at different
+// times and the row order must come from the depot, never from a hash table.
+std::map<steam::AppId, std::vector<PinnedDepot>> PinsByLibraryAppForFile(const std::string& path);
 
 std::size_t LoadedFileCount();
 std::size_t ConfiguredDepotCount();

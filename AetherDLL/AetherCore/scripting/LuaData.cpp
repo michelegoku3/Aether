@@ -1,6 +1,7 @@
 #include "pch.h"
 #include "scripting/LuaData.h"
 
+#include <algorithm>
 #include <mutex>
 #include <shared_mutex>
 #include <string>
@@ -180,6 +181,31 @@ std::unordered_map<std::string, std::vector<steam::AppId>> ConfiguredIdsByFile()
         }
         out.emplace(path, std::move(ids));
     }
+    return out;
+}
+
+std::map<steam::AppId, std::vector<PinnedDepot>> PinsByLibraryAppForFile(const std::string& path) {
+    std::shared_lock lock(g_state.lua.mutex);
+    std::map<steam::AppId, std::vector<PinnedDepot>> out;
+    const auto it = g_state.lua.fileContributions.find(path);
+    if (it == g_state.lua.fileContributions.end())
+        return out;
+    const F& contributions = it->second;
+    if (contributions.libraryApps.empty() || contributions.manifestOverrides.empty())
+        return out;
+
+    std::vector<PinnedDepot> pins;
+    pins.reserve(contributions.manifestOverrides.size());
+    for (const auto& [depot, override] : contributions.manifestOverrides)
+        pins.push_back({static_cast<steam::AppId>(depot), override.gid});
+    // The module's own ordering, not the hash map's: the caller diffs two
+    // snapshots and a reload that only reordered `setmanifestid` lines must
+    // hand back identical rows.
+    std::sort(pins.begin(), pins.end(),
+              [](const PinnedDepot& left, const PinnedDepot& right) { return left.depot < right.depot; });
+
+    for (steam::AppId app : contributions.libraryApps)
+        out.emplace(app, pins);
     return out;
 }
 

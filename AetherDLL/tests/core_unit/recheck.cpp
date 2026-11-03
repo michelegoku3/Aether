@@ -1,12 +1,18 @@
 #include "cases.h"
 
+#include <cstddef>
+#include <string>
+#include <vector>
+
 #include "hooks/steamui/AppRecheckPolicy.h"
+#include "scripting/LuaData.h"
 
 namespace {
 
 // A version apply rewrites the Lua and nothing else, so the client keeps the
 // manifest ids it read at startup until something asks it to look again. These
-// cases pin which apps that request names, and the queue that carries it.
+// cases pin which apps that request names, the queue that carries it, and the
+// snapshot the reload diff is taken from.
 
 using ac::steam::AppId;
 using namespace ac::hooks::steamui::policy;
@@ -24,6 +30,48 @@ void RecheckWhenAPinMoves() {
 void RecheckWhenADepotIsAdded() {
     PinChange c{100, {{200, 1}}, {{200, 1}, {201, 5}}};
     CHECK(SelectRecheck({c}) == std::vector<AppId>{100});
+}
+
+// The shape a removed .lua leaves behind: the file contributes no pins at all,
+// and every app it used to pin still has to be named or its card keeps the build
+// the client read before the removal.
+void RecheckWhenEveryPinGoesAway() {
+    PinChange c{100, {{200, 1}, {201, 2}}, {}};
+    CHECK(SelectRecheck({c}) == std::vector<AppId>{100});
+}
+
+// The snapshot the diff is taken from: pins belong to the file that states them,
+// and each library root that file advertises carries them. Sorted, so a reload
+// that only reordered `setmanifestid` lines compares equal.
+void PinsFollowTheFileAndItsRoots() {
+    const std::string path = "C:/fixtures/recheck_pins.lua";
+    ac::luadata::BeginFile(path);
+    ac::luadata::RecordLibraryApp(100);
+    ac::luadata::RecordLibraryApp(101);
+    ac::luadata::RecordDepot(200, "");
+    ac::luadata::SetManifestOverride(200, {11, 0});
+    ac::luadata::RecordDepot(201, "");
+    ac::luadata::SetManifestOverride(201, {12, 0});
+    ac::luadata::EndFile();
+
+    const auto pins = ac::luadata::PinsByLibraryAppForFile(path);
+    CHECK(pins.size() == 2);
+    const std::vector<ac::luadata::PinnedDepot> expected{{200, 11}, {201, 12}};
+    for (const AppId app : {AppId{100}, AppId{101}}) {
+        CHECK(pins.count(app) == 1);
+        const auto& rows = pins.at(app);
+        CHECK(rows.size() == expected.size());
+        for (std::size_t i = 0; i < expected.size(); ++i) {
+            CHECK_EQ(rows[i].depot, expected[i].depot);
+            CHECK_EQ(rows[i].gid, expected[i].gid);
+        }
+    }
+
+    // A file the store no longer holds answers empty; that absence is how the
+    // reload diff observes the pins going away.
+    ac::luadata::UnloadFile(path);
+    CHECK(ac::luadata::PinsByLibraryAppForFile(path).empty());
+    ac::luadata::ClearPendingChanges();
 }
 
 void RecheckIsDeduplicated() {
@@ -64,6 +112,8 @@ void RecheckTest() {
     NoRecheckWhenPinsUnchanged();
     RecheckWhenAPinMoves();
     RecheckWhenADepotIsAdded();
+    RecheckWhenEveryPinGoesAway();
+    PinsFollowTheFileAndItsRoots();
     RecheckIsDeduplicated();
     QueueIsBounded();
 }
