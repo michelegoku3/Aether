@@ -114,3 +114,4 @@ void MemoryRangeTest();
 void PayloadAttestTest();
 void ProductInfoQueueTest();
 void AppOverviewTest();
+void RecheckTest();

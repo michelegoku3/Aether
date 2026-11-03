@@ -51,6 +51,7 @@ int main(int argc, char** argv) {
         {"payloadattest", PayloadAttestTest},
         {"productinfo_queue", ProductInfoQueueTest},
         {"overview", AppOverviewTest},
+        {"recheck", RecheckTest},
     };
     try {
         if (argc == 1) {
