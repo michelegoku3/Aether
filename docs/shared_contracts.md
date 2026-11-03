@@ -314,16 +314,30 @@ retries in a loop.
 builds this session's app list) and never again in that process; the Desk does
 it only inside the action that triggered it.
 
+**Rule 4 — a pin change reaches Steam as a recheck, never as an ACF write.**
+The pins are the target; the ACF is what Steam installed. A version apply ends
+when the Lua is written (Rule 0): the Desk must not nudge the client by touching
+`buildid` or `TargetBuildID`. Instead, after a Lua reload the DLL diffs the
+pinned `(depot, gid)` rows of each changed file and asks the client to rebuild
+only the apps whose pins moved — `MarkAppChange` on the UI thread, from a queue
+of 64, at most 8 per frame — and Steam decides PLAY, UPDATE or a download from
+the pins against `InstalledDepots`. A missing `MarkAppChange` /
+`CSteamUIAppControllerRunFrame` pattern disables the recheck alone
+(`recheck_state = unsupported` in `status.json`); card repair, ownership and
+membership keep working.
+
 Twins:
 - Desk: `steam/acf.rs` → `repair_installed_depots`,
   `repair_installed_depots_for_app`; size semantics in
-  `manifest/identity.rs` → `manifest_content_size`.
+  `manifest/identity.rs` → `manifest_content_size`. A version apply has no ACF
+  writer, only the readers `build_id`/`read_build_fields` (Rule 0).
 - DLL: `core/InstalledDepotRepair.{h,cpp}` → `PlanInstalledDepotRepairs`,
   `ApplyInstalledDepotRepairs` (boot step 10d in `core/BootSteps.cpp`); size
-  semantics in `network/ManifestIdentity.cpp` → `ManifestContentSize`.
+  semantics in `network/ManifestIdentity.cpp` → `ManifestContentSize`. The
+  recheck side is `scripting/DirWatch.cpp` → `RequestAppRecheck` (Rule 4).
 
 Decision matrix under test: the Desk cases in `steam/acf.rs::tests`, the DLL
-`installeddepots` and `manifest_identity` ctest cases.
+`installeddepots`, `manifest_identity` and `recheck` ctest cases.
 
 **Why**: `InstalledDepots` is the record Steam computes every download delta
 from (`contentupdatecontext.cpp` / `depotdownloadmgr.cpp`). A GID with no local

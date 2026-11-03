@@ -326,6 +326,37 @@ instead of skipping the new donor as "already tried". Probe requests are paced
   `PatternResolver` owns lookup, bounds/signature verification and the existing
   ABI sentinel call. Public entry points and safety gates are unchanged.
 
+### Pending version changes
+
+A pin change states intent; Steam derives the state. The pins in the `.lua`
+record the build the user picked, and the ACF records what Steam installed:
+`buildid`, `TargetBuildID` and `StateFlags` stay Steam's own fields
+([`docs/shared_contracts.md` §9](../../docs/shared_contracts.md#9-acf-ownership-who-writes-which-field)).
+Aether announces a selection by writing the Lua and nothing else, so a card that
+still shows PLAY at the old build is the client's truthful answer until it looks
+again.
+
+The client reads the pin table at startup, so the DLL closes that gap after a
+Lua reload. `scripting/DirWatch.cpp::ApplyChanges` snapshots the pinned
+`(depot, gid)` rows of each changed file before and after its parse, unions the
+two snapshots by app id, and hands the pairs to `SelectRecheck`: only the apps
+whose pins really moved survive, because both sides are normalized first (a
+reordered reload is not a change) and the result is sorted and deduplicated. A
+reload that touched no pin queues nothing and refreshes no card. The survivors
+go to `RequestAppRecheck`, which only fills the bounded queue described under
+[SteamUI app overview](#app-recheck-after-a-pin-change): the drain runs on
+`CSteamUIAppControllerRunFrame`, hands at most 8 ids per frame to
+`MarkAppChange`, and never touches a Steam object from the thread that wrote the
+Lua. The recheck starts no download by itself; Steam compares the pinned GIDs
+with `InstalledDepots` and decides PLAY, UPDATE or a download by its own rules.
+
+A missing `MarkAppChange` or `CSteamUIAppControllerRunFrame` pattern disables
+the recheck and nothing else. Card repair, ownership and membership keep
+working, `status.json` reports `recheck_state = unsupported`, and the reload path
+skips its snapshots entirely (`AppRecheckSupported`). A client that never calls
+`MarkAppChange` leaves the ids waiting in the queue and `recheck_state` says
+`no-source`, because no owner is invented for a call the DLL makes.
+
 ## Library membership
 
 A `.lua` app becomes visible only through the **license path**: package 0 carries
@@ -386,9 +417,11 @@ and disables the write for the session instead of adapting.
 
 A version apply rewrites the Lua and nothing else, so an app whose pins moved
 keeps the build the client read at startup until something asks it to look
-again. `RequestAppRecheck` is that request: it queues the ids a pin comparison
-selected and returns; the caller is the worker that wrote the Lua and never
-touches a Steam object.
+again. Only those apps are ever named: an app whose pins did not change is never
+rebuilt, and the contract behind both halves is under
+[Pending version changes](#pending-version-changes). `RequestAppRecheck` is that
+request: it queues the ids a pin comparison selected and returns; the caller is
+the thread that wrote the Lua and never touches a Steam object.
 
 The queue (`RecheckQueue`, 64 slots) is drained on
 `CSteamUIAppControllerRunFrame`, at most 8 ids per frame, each handed to the

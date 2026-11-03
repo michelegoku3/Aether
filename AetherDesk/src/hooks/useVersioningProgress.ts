@@ -4,9 +4,9 @@ import { VERSIONING_PROGRESS_EVENT, VersioningProgress } from '../constants/libr
 
 /**
  * Subscribes to `versioning://progress` events emitted by the backend while a
- * build is being applied (or retried in the background ACF queue). Only keeps
- * the latest progress event for the requested `appId`; ignores updates for
- * other apps so a background retry can't stomp a foreground modal.
+ * build is being applied. Only keeps the latest progress event for the
+ * requested `appId`; ignores updates for other apps so one apply can't drive
+ * another window's progress.
  *
  * Pass `active:false` to drop events when the UI is not interested (e.g. modal
  * closed) — the subscription is torn down automatically.

@@ -131,8 +131,8 @@ const AutoBuildsTab = ({ appId, onClose }: AutoBuildsTabProps) => {
   const [savingId, setSavingId] = useState<number | null>(null);
   const { arm: armWatchdog, clear: clearWatchdog } = useWatchdog();
   const { loadInstalledGames } = useLibraryGames();
-  // Live progress from the backend (apply_game_version + background ACF
-  // worker). Subscribed only while the modal is applying.
+  // Live progress emitted by apply_game_version. Subscribed only while the
+  // modal is applying.
   const liveProgress = useVersioningProgress(appId, isApplying);
 
   useModalDismiss(onClose, isApplying);

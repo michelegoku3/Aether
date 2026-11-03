@@ -7,8 +7,8 @@ use crate::manifest::pins::LuaManifestPins;
 use crate::versioning::model::{ApplyVersionReport, BuildInfo, SavedBuild};
 use crate::versioning::service::VersionService;
 
-/// Progress event emitted while `apply_game_version` runs (and later by the
-/// background ACF retry worker). Payload mirrors the model types in camelCase.
+/// Progress event emitted while `apply_game_version` runs. Payload mirrors the
+/// model types in camelCase.
 const PROGRESS_EVENT: &str = "versioning://progress";
 
 #[derive(Debug, Clone, Serialize)]
@@ -56,8 +56,8 @@ pub async fn get_game_builds(app: AppHandle, app_id: u32) -> Result<Vec<BuildInf
         .map_err(String::from)
 }
 
-/// Applies a build: pins the Lua, syncs the ACF (or queues the edit) and
-/// reports the real outcome. Emits `versioning://progress` along the way.
+/// Applies a build: pins the Lua and reports the real outcome. Emits
+/// `versioning://progress` along the way.
 #[tauri::command]
 pub async fn apply_game_version(
     app: AppHandle,
