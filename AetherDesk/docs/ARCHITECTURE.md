@@ -190,10 +190,10 @@ invariants
   download and update delta from that GID, and a pinned GID whose content was
   never installed leaves Steam asking the CM for a manifest that exists
   nowhere (`Access Denied`, reported as "No connection"). A version apply
-  changes the build fields only; the per-game repair restores an entry whose
-  GID has no local `depotcache` file to a manifest that does exist — the same
-  content size first, the newest one otherwise. The automatic pass belongs to
-  AetherDLL at Steam startup
+  writes no ACF field: the pins in the Lua are the target (§9 Rule 0). The
+  per-game repair restores an entry whose GID has no local `depotcache` file to
+  a manifest that does exist — the same content size first, the newest one
+  otherwise. The automatic pass belongs to AetherDLL at Steam startup
   ([`docs/shared_contracts.md` §9](../../docs/shared_contracts.md#9-acf-ownership-who-writes-which-field)):
   the monitor lanes never poll for it.
 - Lua is parsed as text and never executed. Malformed pins are a user-fixable

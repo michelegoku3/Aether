@@ -22,8 +22,10 @@ the fast build loop ([`quick-build.md`](quick-build.md)).
 - [Event-driven persistence, workers and hot paths](#event-driven-persistence-workers-and-hot-paths)
 - [Manifest acquisition, presence session and module splits](#manifest-acquisition-presence-session-and-module-splits)
 - [Backup lifecycle and pattern boundaries](#backup-lifecycle-and-pattern-boundaries)
+- [Pending version changes](#pending-version-changes)
 - [Library membership](#library-membership)
 - [SteamUI app overview](#steamui-app-overview)
+- [App recheck after a pin change](#app-recheck-after-a-pin-change)
 - [Presence channels (`-showonline` / `-aetheronline`)](#presence-channels--showonline---aetheronline)
 
 
@@ -336,26 +338,30 @@ Aether announces a selection by writing the Lua and nothing else, so a card that
 still shows PLAY at the old build is the client's truthful answer until it looks
 again.
 
-The client reads the pin table at startup, so the DLL closes that gap after a
-Lua reload. `scripting/DirWatch.cpp::ApplyChanges` snapshots the pinned
-`(depot, gid)` rows of each changed file before and after its parse, unions the
-two snapshots by app id, and hands the pairs to `SelectRecheck`: only the apps
-whose pins really moved survive, because both sides are normalized first (a
-reordered reload is not a change) and the result is sorted and deduplicated. A
-reload that touched no pin queues nothing and refreshes no card. The survivors
-go to `RequestAppRecheck`, which only fills the bounded queue described under
-[SteamUI app overview](#app-recheck-after-a-pin-change): the drain runs on
-`CSteamUIAppControllerRunFrame`, hands at most 8 ids per frame to
-`MarkAppChange`, and never touches a Steam object from the thread that wrote the
-Lua. The recheck starts no download by itself; Steam compares the pinned GIDs
-with `InstalledDepots` and decides PLAY, UPDATE or a download by its own rules.
+The client's depot plan comes from the pins AetherCore reads when it loads the
+`.lua`, so an app whose pins moved keeps the plan the client built at startup
+until something asks it to look again. The DLL closes that gap after a Lua
+reload. `scripting/DirWatch.cpp::ApplyChanges` snapshots the pinned
+`(depot, gid)` rows of each changed file before and after the reload — a
+parse, or an unload that drops every pin the file carried — unions the two
+snapshots by app id, and hands the pairs to `SelectRecheck`: only the apps whose
+pins really moved survive, because both sides are normalized first (a reordered
+reload is not a change) and the result is sorted and deduplicated. A reload that
+touched no pin queues nothing and refreshes no card. The survivors go to
+`RequestAppRecheck`, which only fills the bounded queue that
+[App recheck after a pin change](#app-recheck-after-a-pin-change) drains on the
+client's UI thread through `MarkAppChange`; the frame budget and the
+`status.json` keys live there. The thread that wrote the Lua never touches a
+Steam object. The recheck starts no download by itself; Steam compares the
+pinned GIDs with `InstalledDepots` and decides PLAY, UPDATE or a download by its
+own rules.
 
 A missing `MarkAppChange` or `CSteamUIAppControllerRunFrame` pattern disables
 the recheck and nothing else. Card repair, ownership and membership keep
-working, `status.json` reports `recheck_state = unsupported`, and the reload path
-skips its snapshots entirely (`AppRecheckSupported`). A client that never calls
-`MarkAppChange` leaves the ids waiting in the queue and `recheck_state` says
-`no-source`, because no owner is invented for a call the DLL makes.
+working, the reload path skips its snapshots entirely (`AppRecheckSupported`),
+and `status.json` reports the missing pair rather than a queue that never
+drains. A client that never calls `MarkAppChange` leaves the ids waiting rather
+than inventing an owner for a call the DLL makes.
 
 ## Library membership
 
