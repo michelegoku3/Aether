@@ -3,6 +3,7 @@
 
 #include "core/AetherCoreState.h"
 #include "core/Logger.h"
+#include "core/StructGuard.h"
 #include "hooks/steamui/AppOverviewPolicy.h"
 #include "scripting/LuaData.h"
 
@@ -43,8 +44,9 @@ void* h_FillInAppOverview(void* self, void* appOverview, steam::AppOverviewPrefi
         }
 
         const auto decision = policy::DecideOwnershipWrite(
-            luadata::IsConfigured(app->appId), luadata::IsOwned(app->appId), luadata::IsFamilyShared(app->appId),
-            g_state.overview.latched.load(std::memory_order_acquire), static_cast<std::uint32_t>(app->ownershipFlags));
+            {luadata::HasDepot(app->appId), luadata::IsFamilyShared(app->appId), verdict == policy::OverviewVerdict::Ok,
+             g_state.overview.latched.load(std::memory_order_acquire), !abi::guard::LayoutContradicted(),
+             static_cast<std::uint32_t>(app->ownershipFlags)});
         if (decision.write) {
             app->ownershipFlags = static_cast<steam::AppOwnershipFlags>(
                 policy::ApplyOwned(static_cast<std::uint32_t>(app->ownershipFlags)));

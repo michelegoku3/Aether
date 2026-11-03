@@ -93,19 +93,31 @@ struct OwnershipDecision {
     const char* reason;
 };
 
-// Only a managed app that Aether already answers as owned gets its flag set.
-// Steam-owned and family-shared cards keep whatever the client decided.
-inline OwnershipDecision DecideOwnershipWrite(bool managed, bool genuinelyOwned, bool familyShared, bool probeLatched,
-                                              std::uint32_t currentFlags) noexcept {
-    if (!managed)
+// Everything the decision needs, in one place, so the call site cannot forget
+// one condition. `managed` is luadata::HasDepot: configured by a script AND not
+// genuinely owned by Steam. `sampleOk` is this card's InspectOverview verdict:
+// a rejected card is never written even if the probe latched earlier.
+struct WriteInputs {
+    bool managed = false;
+    bool familyShared = false;
+    bool sampleOk = false;
+    bool probeLatched = false;
+    bool layoutTrusted = false; // the ABI table did not contradict the layout
+    std::uint32_t currentFlags = 0;
+};
+
+inline OwnershipDecision DecideOwnershipWrite(const WriteInputs& in) noexcept {
+    if (!in.managed)
         return {false, "not-managed"};
-    if (genuinelyOwned)
-        return {false, "owned-by-steam"};
-    if (familyShared)
+    if (in.familyShared)
         return {false, "family-shared"};
-    if (!probeLatched)
+    if (!in.sampleOk)
+        return {false, "sample-rejected"};
+    if (!in.probeLatched)
         return {false, "probe-unproven"};
-    if ((currentFlags & static_cast<std::uint32_t>(steam::AppOwnershipFlags::Owned)) != 0)
+    if (!in.layoutTrusted)
+        return {false, "layout-contradicted"};
+    if ((in.currentFlags & static_cast<std::uint32_t>(steam::AppOwnershipFlags::Owned)) != 0)
         return {false, "already-owned"};
     return {true, "owned"};
 }

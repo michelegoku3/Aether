@@ -65,13 +65,25 @@ void LatchNeedsTwoDistinctApps() {
 }
 
 void OwnershipWriteTable() {
-    CHECK(!DecideOwnershipWrite(false, false, false, true, 0).write); // not managed
-    CHECK(!DecideOwnershipWrite(true, true, false, true, 0).write);   // Steam owns it
-    CHECK(!DecideOwnershipWrite(true, false, true, true, 0).write);   // family shared
-    CHECK(!DecideOwnershipWrite(true, false, false, false, 0).write); // probe unproven
-    CHECK(!DecideOwnershipWrite(true, false, false, true, 1).write);  // already owned
+    auto input = [](bool managed, bool familyShared, bool sampleOk, bool latched, bool trusted, std::uint32_t flags) {
+        WriteInputs in{};
+        in.managed = managed;
+        in.familyShared = familyShared;
+        in.sampleOk = sampleOk;
+        in.probeLatched = latched;
+        in.layoutTrusted = trusted;
+        in.currentFlags = flags;
+        return in;
+    };
 
-    const auto decision = DecideOwnershipWrite(true, false, false, true, 0);
+    CHECK(!DecideOwnershipWrite(input(false, false, true, true, true, 0)).write); // not managed
+    CHECK(!DecideOwnershipWrite(input(true, true, true, true, true, 0)).write);   // family shared
+    CHECK(!DecideOwnershipWrite(input(true, false, false, true, true, 0)).write); // card rejected
+    CHECK(!DecideOwnershipWrite(input(true, false, true, false, true, 0)).write); // probe unproven
+    CHECK(!DecideOwnershipWrite(input(true, false, true, true, false, 0)).write); // layout contradicted
+    CHECK(!DecideOwnershipWrite(input(true, false, true, true, true, 1)).write);  // already owned
+
+    const auto decision = DecideOwnershipWrite(input(true, false, true, true, true, 0));
     CHECK(decision.write);
     CHECK(std::string(decision.reason) == "owned");
 

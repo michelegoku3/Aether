@@ -197,8 +197,13 @@ void InstallSteamUiBatch() {
     }
 
     AC_LOG_INFO(kModule, "SteamUI hook batch: registering app-overview hooks.");
-    // The batch owns its registration; InstallAll below enables what it queued.
-    hooks::steamui::InstallAppOverviewHooks();
+    // The batch stays retryable until the hook is really resolved: marking it
+    // installed on an unresolved pattern would leave the layer off for the
+    // session with no second attempt.
+    if (!hooks::steamui::InstallAppOverviewHooks()) {
+        AC_LOG_WARN_ONCE(kModule, "SteamUI app-overview hook unresolved; the batch stays retryable.");
+        return;
+    }
     if (g_state.hookManager.InstallAll()) {
         s_uiBatchInstalled.store(true, std::memory_order_release);
         AC_LOG_INFO(kModule, "SteamUI hooks enabled.");
@@ -218,7 +223,20 @@ void StartSteamUiAttachRetry() {
                 constants::kSteamuiAttachBudgetMs);
     if (!workers::StartWorker("steamui_attach", [](std::atomic<bool>& stop) {
             const ULONGLONG start = GetTickCount64();
+            ULONGLONG lastPatternRetry = 0;
             while (!stop.load(std::memory_order_relaxed)) {
+                // The steamui table can be published after this session started
+                // and no other worker reloads it (the late-pattern retry only
+                // runs while the steamclient batch is incomplete). Retry it on
+                // the same 10 s cadence, not on every 500 ms tick.
+                if (!pattern::HasModule("steamui")) {
+                    const ULONGLONG now = GetTickCount64();
+                    if (lastPatternRetry == 0 ||
+                        now - lastPatternRetry >= static_cast<ULONGLONG>(constants::kPatternLateRetryIntervalMs)) {
+                        lastPatternRetry = now;
+                        pattern::ReloadModuleIfMissing("steamui");
+                    }
+                }
                 if (AttachSteamui(0)) {
                     status::Write();
                     InstallSteamUiBatch();
