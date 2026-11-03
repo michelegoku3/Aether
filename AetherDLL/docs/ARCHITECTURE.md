@@ -382,14 +382,36 @@ steamui table that publishes `[abi.CSteamApp.*]` is checked against the compiled
 offsets before the first hook is armed: a contradiction latches the struct guard
 and disables the write for the session instead of adapting.
 
+### App recheck after a pin change
+
+A version apply rewrites the Lua and nothing else, so an app whose pins moved
+keeps the build the client read at startup until something asks it to look
+again. `RequestAppRecheck` is that request: it queues the ids a pin comparison
+selected and returns; the caller is the worker that wrote the Lua and never
+touches a Steam object.
+
+The queue (`RecheckQueue`, 64 slots) is drained on
+`CSteamUIAppControllerRunFrame`, at most 8 ids per frame, each handed to the
+client's own `MarkAppChange(source, app, AppInfoOrConfig)`. The source is the
+app-list owner, learned from the first `MarkAppChange` the client makes on its
+own: that detour only CASes the first `self` into an atomic and forwards its
+arguments unchanged, so the hook cannot alter what the client records. No id is
+ever submitted without that owner — a queue with work and no owner waits for a
+later frame and reports `no-source` instead of guessing an object. A queue that
+is already full refuses the push, the refusal is logged with its count, and the
+next apply re-offers the ids.
+
 `status.json` reports `steamui_attach`, `overview_fills`, `overview_writes`,
 `overview_rejects` and `overview_probe` (`latched`, `unproven` or
 `rejected:<reason>`), so "the card was not repaired" is diagnosable without a
-debugger.
+debugger, plus `overview_rechecks` (ids handed to the client),
+`overview_recheck_pending` (queue depth) and `recheck_state`: `ready`,
+`no-source` (work queued, owner unknown) or `unsupported` (the module never
+installed the `MarkAppChange`/run-frame pair).
 
-Not this layer: card removal and `MarkAppChange`, size, install/update state,
-achievements and appid translation. Each of those writes more of the client
-model and needs its own validated field.
+Not this layer: card removal, size, install/update state, achievements and appid
+translation. Each of those writes more of the client model and needs its own
+validated field.
 
 ## Presence channels (`-showonline` / `-aetheronline`)
 

@@ -18,6 +18,7 @@
 #include "hooks/aetheronline/PresenceSession.h"
 #include "hooks/ipc/PipeWatch.h"
 #include "hooks/license/LicenseManager.h"
+#include "hooks/steamui/AppOverviewHooks.h"
 #include "hooks/wire/AchievementModule.h"
 #include "network/EticketFetcher.h"
 #include "scripting/LuaData.h"
@@ -172,6 +173,22 @@ static void WriteSnapshot(std::uint64_t requests) {
                                 : g_state.overview.lastReject.empty() ? "unproven"
                                                                       : "rejected:" + g_state.overview.lastReject);
     }
+    // Recheck layer: every id handed to the client, what is still queued, and
+    // whether the pair that asks exists at all. `no-source` is the honest answer
+    // while the queue has work but MarkAppChange never ran, because the drain
+    // will not invent an owner; `unsupported` wins over it, since a missing pair
+    // makes both cases permanent.
+    w.UInt64("overview_rechecks", g_state.overview.recheckCalls.load(std::memory_order_relaxed));
+    std::size_t recheckPending = 0;
+    {
+        std::lock_guard lock(g_state.overview.recheckMutex);
+        recheckPending = g_state.overview.rechecks.Size();
+    }
+    const bool appChangeSourceKnown = g_state.overview.appChangeSource.load(std::memory_order_acquire) != nullptr;
+    w.SizeT("overview_recheck_pending", recheckPending);
+    w.Str("recheck_state", !hooks::steamui::AppRecheckSupported()         ? "unsupported"
+                           : recheckPending != 0 && !appChangeSourceKnown ? "no-source"
+                                                                          : "ready");
     w.SizeT("access_tokens", luadata::AccessTokenCount());
     w.SizeT("manifest_overrides", luadata::ManifestOverrideCount());
     w.Bool("eticket_backend_configured", !luadata::EticketUrl().empty());

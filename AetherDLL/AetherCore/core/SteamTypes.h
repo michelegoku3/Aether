@@ -237,6 +237,12 @@ enum class AppOwnershipFlags : std::uint32_t {
 inline constexpr std::uint32_t kOwnershipKnownMask = 0x003FFFFFu;
 inline constexpr std::uint32_t kAppStateKnownMask = 0x03FFFFFFu;
 
+// Change flag handed to the client's MarkAppChange: the app's AppInfo and depot
+// config are stale. This is the client's own AppInfoOrConfig bit, and it is what
+// a moved manifest pin makes true, so the client rebuilds the app from the pin
+// table it reads now instead of the one it read at startup.
+inline constexpr std::uint32_t kAppChangeAppInfoOrConfig = 0x0002;
+
 // Prefix of the SteamUI app-overview object, NOT the whole CSteamApp.
 //
 // The offsets below 0x24 come from two independent references (an external layout dump and

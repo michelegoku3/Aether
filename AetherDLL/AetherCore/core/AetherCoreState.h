@@ -16,6 +16,7 @@
 #include "core/SteamTypes.h"
 #include "hooks/ipc/PipeWatch.h"
 #include "hooks/steamui/AppOverviewPolicy.h"
+#include "hooks/steamui/AppRecheckPolicy.h"
 #include "hooks/wire/DonorPool.h"
 #include "hooks/wire/DonorProbe.h"
 #include "network/EticketFetcher.h"
@@ -202,6 +203,21 @@ struct AetherCoreState {
         std::atomic<std::uint64_t> rejects{0};
         std::atomic<bool> latched{false};
         std::string lastReject;
+
+        // ---- app recheck (worker writes, SteamUI thread drains) ------------
+        // A version apply rewrites the Lua on a worker, but the client only
+        // re-evaluates an app from its own frame callback, so the ids wait here
+        // in between. RecheckQueue is not thread-safe by design: recheckMutex is
+        // the owner's guard, deliberately not `mutex` above, which latches the
+        // layout probe on the card path — a drain must never wait on that.
+        std::mutex recheckMutex;
+        hooks::steamui::policy::RecheckQueue rechecks;
+        // The app-list owner, learned from the first MarkAppChange call. Read
+        // only through this atomic: the detour runs on the client's threads and
+        // Aether never supplies an object of its own.
+        std::atomic<void*> appChangeSource{nullptr};
+        // Ids handed to the client, one MarkAppChange call each.
+        std::atomic<std::uint64_t> recheckCalls{0};
     };
     OverviewState overview;
 

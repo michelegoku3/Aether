@@ -196,10 +196,12 @@ void InstallSteamUiBatch() {
         return;
     }
 
-    AC_LOG_INFO(kModule, "SteamUI hook batch: registering app-overview hooks.");
-    // The batch stays retryable until the hook is really resolved: marking it
-    // installed on an unresolved pattern would leave the layer off for the
-    // session with no second attempt.
+    AC_LOG_INFO(kModule, "SteamUI hook batch: registering app-overview and app-recheck hooks.");
+    // The batch stays retryable until the card hook is really resolved: marking
+    // it installed on an unresolved pattern would leave the layer off for the
+    // session with no second attempt. The recheck pair is part of the same call
+    // and is optional on its own: a build that lacks its patterns reports
+    // `recheck_state=unsupported` and still repairs cards.
     if (!hooks::steamui::InstallAppOverviewHooks()) {
         AC_LOG_WARN_ONCE(kModule, "SteamUI app-overview hook unresolved; the batch stays retryable.");
         return;
