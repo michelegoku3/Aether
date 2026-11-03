@@ -212,10 +212,6 @@ pub async fn apply_game_version(
         recovered
     };
 
-    // ACF lives in the Steam root library. (`steam_path` was strict-validated
-    // at command entry; normalize the raw value before reuse.)
-    let library_path = crate::steam::resolve::normalize_steam_path(&steam_path);
-
     let mutation = plan.commit_for(&app).await?;
     let pins_for_apply = pins;
     let generated_for_apply = generated_manifests;
@@ -238,7 +234,6 @@ pub async fn apply_game_version(
             app_id,
             build_id,
             &steam_path,
-            &library_path,
             &pins_for_apply,
             &generated_for_apply,
             &progress,
@@ -251,13 +246,12 @@ pub async fn apply_game_version(
         Ok(report) => {
             crate::desk_log_info!(
                 "versioning",
-                "Apply complete app_id={} build_id={} applied_pins={} manifests_found={} manifests_missing={} acf_synced={} elapsed_ms={}",
+                "Apply complete app_id={} build_id={} applied_pins={} manifests_found={} manifests_missing={} elapsed_ms={}",
                 app_id,
                 build_id,
                 report.applied_pins,
                 report.manifests_found,
                 report.manifests_missing.len(),
-                report.acf_synced_now,
                 started.elapsed().as_millis()
             );
             crate::core::library_events::notify_lua_changed(

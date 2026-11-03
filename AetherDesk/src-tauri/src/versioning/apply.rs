@@ -2,7 +2,6 @@ use std::path::PathBuf;
 
 use crate::manifest::package::ManifestPackageFile;
 use crate::manifest::pins::{DepotManifestPin, LuaManifestPins};
-use crate::steam::acf::SteamAcfEditor;
 use crate::steam::compat::SteamCompat;
 use crate::versioning::error::VersionError;
 use crate::versioning::model::ApplyVersionReport;
@@ -26,7 +25,6 @@ pub fn apply_build_version(
     app_id: u32,
     build_id: u64,
     steam_path: &str,
-    library_path: &str,
     pins: &[DepotManifestPin],
     generated_manifests: &[ManifestPackageFile],
     progress: &ProgressFn<'_>,
@@ -201,27 +199,6 @@ pub fn apply_build_version(
         )));
     }
 
-    progress(75, "Syncing the Steam ACF");
-    // Best-effort: a missing or locked ACF logs a WARN and is skipped; the
-    // pins in the .lua do the real work and the ACF is only metadata.
-    // `apply_build` rewrites the build fields only: `InstalledDepots` keeps
-    // naming the manifest Steam actually installed, which is what the update
-    // delta is computed against.
-    let acf = SteamAcfEditor::for_app(library_path, app_id);
-    let acf_synced_now = match acf.apply_build(build_id) {
-        Ok(()) => true,
-        Err(acf_error) => {
-            crate::desk_log_warn!(
-                "versioning",
-                "ACF sync for app {} (build {}) skipped: {}",
-                app_id,
-                build_id,
-                acf_error
-            );
-            false
-        }
-    };
-
     progress(95, "Verifying");
     let after_count = lua.rows_from_file().map_err(VersionError::Lua)?.len();
     if after_count != before_count {
@@ -244,7 +221,6 @@ pub fn apply_build_version(
         applied_pins: apply_result.applied_pins,
         manifests_found,
         manifests_missing,
-        acf_synced_now,
         lua_backup_path: Some(history_dir.display().to_string()),
     })
 }

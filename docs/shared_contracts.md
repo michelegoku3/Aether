@@ -281,9 +281,15 @@ fields:
 | Field | Writer | When |
 |---|---|---|
 | `InstalledDepots.*.manifest`, `InstalledDepots.*.size` | the installed-depot **repair** only (both halves, same rule) | Desk: after the user's install/version/Repair acts on that app. DLL: once per process at Steam startup, managed apps only |
-| `buildid`, `TargetBuildID`, `StateFlags`, `BytesToDownload`, `BytesDownloaded`, `UpdateResult`, `SizeOnDisk` | Desk `steam/acf.rs::apply_build` (version apply), or Steam itself | version apply; Steam on its own updates |
+| `buildid`, `TargetBuildID`, `StateFlags`, `BytesToDownload`, `BytesDownloaded`, `UpdateResult`, `SizeOnDisk` | Steam itself | on its own updates |
 | `LastOwner` | DLL `core/AppManifestOwner.cpp` (§ family sharing) | after login / boot |
 | everything else | Steam | — |
+
+**Rule 0 — a version apply writes only the Lua.** The pins in the `.lua` are
+the single statement of which build the user wants; the ACF describes what
+Steam installed. Writing `buildid`/`TargetBuildID` from a pick claims the
+client already runs a build it never downloaded, so Steam keeps the card on
+PLAY until the game is launched and closed. Aether leaves both fields to Steam.
 
 **Rule 1 — a version apply never writes `InstalledDepots`.** The pinned GID a
 version selects is the target of the next download, not the identity of the
@@ -309,7 +315,7 @@ builds this session's app list) and never again in that process; the Desk does
 it only inside the action that triggered it.
 
 Twins:
-- Desk: `steam/acf.rs` → `apply_build`, `repair_installed_depots`,
+- Desk: `steam/acf.rs` → `repair_installed_depots`,
   `repair_installed_depots_for_app`; size semantics in
   `manifest/identity.rs` → `manifest_content_size`.
 - DLL: `core/InstalledDepotRepair.{h,cpp}` → `PlanInstalledDepotRepairs`,

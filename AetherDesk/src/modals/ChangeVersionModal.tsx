@@ -18,7 +18,6 @@ export interface ApplyVersionReport {
   appliedPins: number;
   manifestsFound: number;
   manifestsMissing: string[];
-  acfSyncedNow: boolean;
   luaBackupPath: string | null;
 }
 
