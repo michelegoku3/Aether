@@ -52,6 +52,10 @@ int main(int argc, char** argv) {
         {"productinfo_queue", ProductInfoQueueTest},
         {"overview", AppOverviewTest},
         {"recheck", RecheckTest},
+        {"achievement_state", AchievementState},
+#ifdef AETHER_HAVE_PROTO
+        {"achievement_service", AchievementServiceWire},
+#endif
     };
     try {
         if (argc == 1) {
