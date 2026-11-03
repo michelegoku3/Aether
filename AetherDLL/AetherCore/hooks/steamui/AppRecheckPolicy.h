@@ -56,12 +56,18 @@ std::vector<steam::AppId> SelectRecheck(const std::vector<PinChange>& changes);
 // the entries already accepted are the reloads that have been reported, so
 // dropping one of them loses that app's update with nothing left to re-offer
 // it. The Lua edit that filled the queue is the only thing that would.
+//
+// Not thread-safe: the owner guards every call. It lives in g_state and is
+// touched under the state lock, because the writer is the apply worker and the
+// reader is the SteamUI thread.
 class RecheckQueue {
   public:
     static constexpr std::size_t kCapacity = 64;
 
-    // False when the app is already queued or the queue is full. Neither is an
-    // error: Steam ends up on the pinned build either way, just later.
+    // False when the app is already queued (it will still be rechecked) or when
+    // the queue is full (it is NOT queued, and nothing re-offers it until the
+    // next apply), so the full case must be reported by the caller rather than
+    // read as "later".
     bool Push(steam::AppId app);
 
     // Oldest first, so an app edited early is not starved by a burst of edits.

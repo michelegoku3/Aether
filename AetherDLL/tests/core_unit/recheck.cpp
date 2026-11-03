@@ -44,12 +44,18 @@ void QueueIsBounded() {
     CHECK(out == 1000);
 
     // Still in flight, so it is not queued a second time.
-    q.Push(1001);
+    CHECK(!q.Push(1001));
     CHECK(q.Size() == RecheckQueue::kCapacity - 1);
 
     // 1000 was popped, so there is room for it again.
     q.Push(1000);
     CHECK(q.Size() == RecheckQueue::kCapacity);
+
+    // Pop on an empty queue reports "nothing to do" instead of touching `out`.
+    RecheckQueue fresh;
+    AppId none = 0;
+    CHECK(!fresh.Pop(none));
+    CHECK(none == 0);
 }
 
 } // namespace
