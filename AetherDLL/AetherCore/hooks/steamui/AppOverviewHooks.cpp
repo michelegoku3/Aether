@@ -4,6 +4,7 @@
 #include "core/AetherCoreState.h"
 #include "core/Logger.h"
 #include "core/StructGuard.h"
+#include "diagnostics/StatusWriter.h"
 #include "hooks/steamui/AppOverviewPolicy.h"
 #include "hooks/steamui/AppRecheckPolicy.h"
 #include "scripting/LuaData.h"
@@ -17,6 +18,10 @@ constexpr const char* kModule = "SteamUI.Overview";
 // queue in one frame would stall the UI: a frame takes a slice and the rest
 // follow on the next ones.
 constexpr std::size_t kMaxRechecksPerFrame = 8;
+
+// `no-source` is an answer the status file has to show, but the frame runs every
+// tick: publishing it once is enough, and repeating the request would be churn.
+std::atomic<bool> g_noSourceStatusWritten{false};
 
 // The real signature is forwarded untouched: the detour reads r8 (the app
 // object) and passes the same three registers on. It never builds a call with
@@ -67,17 +72,17 @@ void* h_FillInAppOverview(void* self, void* appOverview, steam::AppOverviewPrefi
 // Aether never invents an id or a flag: every call carries an id a Lua change
 // selected and the client's AppInfoOrConfig bit.
 
-// This detour exists only to learn the object that owns the app list. The first
-// `self` seen is kept and the arguments are forwarded unchanged: rewriting them
-// would change what the client records, and a hook that edits is no longer a
-// seam that can be trusted with an unknown call shape.
+// This detour exists only to learn the object that owns the app list. The latest
+// `self` seen is stored and the arguments are forwarded unchanged: rewriting
+// them would change what the client records, and a hook that edits is no longer
+// a seam that can be trusted with an unknown call shape. Keeping the latest
+// rather than the first matters because a rebuilt client UI or an account switch
+// replaces the owner, and the old pointer would dangle.
 using MarkAppChange_t = void* (*)(void*, steam::AppId, std::uint32_t);
 MarkAppChange_t o_MarkAppChange = nullptr;
 
 void* h_MarkAppChange(void* self, steam::AppId app, std::uint32_t changeFlags) {
-    void* expected = nullptr;
-    g_state.overview.appChangeSource.compare_exchange_strong(expected, self, std::memory_order_release,
-                                                             std::memory_order_relaxed);
+    g_state.overview.appChangeSource.store(self, std::memory_order_release);
     return o_MarkAppChange(self, app, changeFlags);
 }
 
@@ -93,15 +98,20 @@ void DrainRechecks(void* source) {
             std::lock_guard lock(g_state.overview.recheckMutex);
             pending = g_state.overview.rechecks.Size() != 0;
         }
-        // The ids stay queued: an owner is learned from the first MarkAppChange
+        // The ids stay queued: an owner is learned from the latest MarkAppChange
         // the client makes on its own, and a later frame drains them then.
         if (pending) {
             AC_LOG_WARN_ONCE(kModule,
                              "App recheck is waiting: MarkAppChange has not run, so no app-list owner is known.");
+            // The reload's own write ran before this frame, so the status file
+            // would keep claiming the queue is empty without this one.
+            if (!g_noSourceStatusWritten.exchange(true, std::memory_order_relaxed))
+                status::Write();
         }
         return;
     }
 
+    bool handed = false;
     for (std::size_t i = 0; i < kMaxRechecksPerFrame; ++i) {
         steam::AppId app = 0;
         {
@@ -113,8 +123,14 @@ void DrainRechecks(void* source) {
         }
         o_MarkAppChange(source, app, steam::kAppChangeAppInfoOrConfig);
         g_state.overview.recheckCalls.fetch_add(1, std::memory_order_relaxed);
+        handed = true;
         AC_LOG_INFO(kModule, "Asked the client to re-evaluate app %u after its manifest pins changed.", app);
     }
+    // `overview_rechecks`, `overview_recheck_pending` and `recheck_state` are the
+    // evidence that the card was rebuilt, and every write before this frame
+    // predates the calls above, so the drain publishes its own result.
+    if (handed)
+        status::Write();
 }
 
 void* h_CSteamUIAppControllerRunFrame(void* self) {
@@ -155,8 +171,8 @@ void RequestAppRecheck(const std::vector<steam::AppId>& ids) {
         for (const steam::AppId app : ids) {
             // Push answers false for two different outcomes: a full queue drops
             // the request, an id already queued is still going to be rechecked.
-            // Only the first loses the app, and the capacity check is the only
-            // way to tell them apart.
+            // The capacity check runs first, so an id the queue already holds is
+            // counted here too: the WARN says "not accepted", not "lost".
             if (g_state.overview.rechecks.Size() >= policy::RecheckQueue::kCapacity) {
                 ++refused;
                 continue;
@@ -165,7 +181,9 @@ void RequestAppRecheck(const std::vector<steam::AppId>& ids) {
         }
     }
     if (refused != 0) {
-        AC_LOG_WARN_ONCE(kModule, "App recheck queue full: %zu request(s) dropped; the next apply re-offers them.",
+        AC_LOG_WARN_ONCE(kModule,
+                         "App recheck queue full: %zu request(s) not accepted; a refused id stays unrechecked "
+                         "until that app's Lua changes again.",
                          refused);
     }
 }

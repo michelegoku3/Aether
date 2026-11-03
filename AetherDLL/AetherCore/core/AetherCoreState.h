@@ -212,9 +212,11 @@ struct AetherCoreState {
         // layout probe on the card path — a drain must never wait on that.
         std::mutex recheckMutex;
         hooks::steamui::policy::RecheckQueue rechecks;
-        // The app-list owner, learned from the first MarkAppChange call. Read
-        // only through this atomic: the detour runs on the client's threads and
-        // Aether never supplies an object of its own.
+        // The app-list owner, learned from the last MarkAppChange call: a rebuilt
+        // client UI or an account switch replaces the object, so keeping the
+        // first one would leave a dangling pointer. Read only through this
+        // atomic: the detour runs on the client's threads and Aether never
+        // supplies an object of its own.
         std::atomic<void*> appChangeSource{nullptr};
         // Ids handed to the client, one MarkAppChange call each.
         std::atomic<std::uint64_t> recheckCalls{0};

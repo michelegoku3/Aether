@@ -18,7 +18,8 @@ pub type ProgressFn<'a> = dyn Fn(u8, &str) + Send + Sync + 'a;
 ///     files are written to stplug-in)
 ///  3. pin every manifest resolved at or before the target into the Lua;
 ///     depots outside the available history remain byte-for-byte unchanged —
-///     LumaCore picks the resolved changes up live
+///     the DLL sees the Lua change through its watcher and asks the client to
+///     recheck the affected apps
 ///  4. count which pinned `.manifest` files already exist locally
 ///  5. verify the Lua pin count did not change and report
 pub fn apply_build_version(
@@ -217,6 +218,9 @@ pub fn apply_build_version(
         )));
     }
 
+    // The bar is the only progress the modal shows, so it must reach its end
+    // before the report closes the dialog.
+    progress(100, "Done");
     Ok(ApplyVersionReport {
         applied_pins: apply_result.applied_pins,
         manifests_found,

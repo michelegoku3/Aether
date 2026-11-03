@@ -281,10 +281,11 @@ void FullRescan(Slot& slot, std::unordered_map<std::string, DWORD>& acc, std::ve
 }
 
 // ---- Pin diff around a Lua reload ------------------------------------------
-// A version apply rewrites the Lua and nothing else, and the client read the
-// pin table at startup: an app whose pins moved keeps showing the build it
-// already has until its own thread is asked to look again. These helpers turn
-// the file's two snapshots into the per-app before/after the policy compares.
+// A version apply rewrites the Lua and nothing else, and the client may keep
+// the plan it built before the reload: an app whose pins moved keeps showing the
+// build it already has until its own thread is asked to look again. These
+// helpers turn the file's two snapshots into the per-app before/after the policy
+// compares.
 
 using PinSnapshot = std::map<steam::AppId, std::vector<luadata::PinnedDepot>>;
 

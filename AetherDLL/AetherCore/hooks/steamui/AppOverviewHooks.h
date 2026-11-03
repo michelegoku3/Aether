@@ -37,8 +37,8 @@ bool AppOverviewHooksInstalled();
 // MarkAppChange may be called: the caller (the worker that applied the Lua)
 // never touches a Steam object and never needs the app-change owner. An id
 // already queued is ignored, because it is going to be rechecked anyway; a full
-// queue refuses the request and says so in the log, since nothing re-offers it
-// until the next apply.
+// queue refuses the request and says so in the log, since a refused id stays
+// unrechecked until that app's Lua changes again.
 void RequestAppRecheck(const std::vector<steam::AppId>& ids);
 
 // False when the module never installed the MarkAppChange/frame pair: the ids

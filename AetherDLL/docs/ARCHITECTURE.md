@@ -422,7 +422,7 @@ and disables the write for the session instead of adapting.
 ### App recheck after a pin change
 
 A version apply rewrites the Lua and nothing else, so an app whose pins moved
-keeps the build the client read at startup until something asks it to look
+may keep the build the client already has until something asks it to look
 again. Only those apps are ever named: an app whose pins did not change is never
 rebuilt, and the contract behind both halves is under
 [Pending version changes](#pending-version-changes). `RequestAppRecheck` is that
@@ -432,13 +432,19 @@ the thread that wrote the Lua and never touches a Steam object.
 The queue (`RecheckQueue`, 64 slots) is drained on
 `CSteamUIAppControllerRunFrame`, at most 8 ids per frame, each handed to the
 client's own `MarkAppChange(source, app, AppInfoOrConfig)`. The source is the
-app-list owner, learned from the first `MarkAppChange` the client makes on its
-own: that detour only CASes the first `self` into an atomic and forwards its
-arguments unchanged, so the hook cannot alter what the client records. No id is
-ever submitted without that owner — a queue with work and no owner waits for a
-later frame and reports `no-source` instead of guessing an object. A queue that
-is already full refuses the push, the refusal is logged with its count, and the
-next apply re-offers the ids.
+app-list owner, learned from the latest `MarkAppChange` the client makes on its
+own: that detour stores the latest `self` into an atomic — a rebuilt UI or an
+account switch replaces the owner — and forwards its arguments unchanged, so the
+hook cannot alter what the client records. No id is ever submitted without that
+owner — a queue with work and no owner waits for a later frame and reports
+`no-source` instead of guessing an object. A queue that is already full refuses
+the push, the refusal is logged with its count, and a refused id stays
+unrechecked until that app's Lua changes again.
+
+The drain requests a status write once it has handed at least one id to the
+client, and once more the first time a frame finds work but no owner: every
+write before that frame predates the calls the client made, so without these the
+status file would keep describing the queue from before the reload.
 
 `status.json` reports `steamui_attach`, `overview_fills`, `overview_writes`,
 `overview_rejects` and `overview_probe` (`latched`, `unproven` or

@@ -48,10 +48,12 @@ void PinsFollowTheFileAndItsRoots() {
     ac::luadata::BeginFile(path);
     ac::luadata::RecordLibraryApp(100);
     ac::luadata::RecordLibraryApp(101);
-    ac::luadata::RecordDepot(200, "");
-    ac::luadata::SetManifestOverride(200, {11, 0});
+    // Recorded out of order on purpose: the snapshot is sorted by depot, so
+    // 201 first proves the accessor does the ordering rather than the script.
     ac::luadata::RecordDepot(201, "");
     ac::luadata::SetManifestOverride(201, {12, 0});
+    ac::luadata::RecordDepot(200, "");
+    ac::luadata::SetManifestOverride(200, {11, 0});
     ac::luadata::EndFile();
 
     const auto pins = ac::luadata::PinsByLibraryAppForFile(path);

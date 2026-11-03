@@ -13,10 +13,11 @@
 // with no logger, no shared state and no Windows calls, so the unit suite
 // exercises the real thing.
 //
-// A version apply rewrites the Lua and nothing else. The client read the pin
-// table at startup, so an app whose pins moved keeps showing the build it
-// already has until something asks it to look again. This layer names the apps
-// that request is about, and carries them to the SteamUI thread without repeats.
+// A version apply rewrites the Lua and nothing else. The client may keep the
+// plan it built before the reload, so an app whose pins moved keeps showing the
+// build it already has until something asks it to look again. This layer names
+// the apps that request is about, and carries them to the SteamUI thread without
+// repeats.
 // ---------------------------------------------------------------------------
 namespace ac::hooks::steamui::policy {
 
@@ -65,11 +66,11 @@ class RecheckQueue {
 
     // False for two different reasons, which the caller must tell apart.
     // Already queued: the app will still be rechecked, so nothing is lost.
-    // Rejected: the queue is full, so nothing was added for this call. When the
-    // app was not already queued it is not queued now, and nothing re-offers it
-    // until the next apply — that refusal has to be reported, not read as
-    // "later". A full queue also refuses an app it already holds, which the
-    // capacity check answers before the duplicate check does.
+    // Rejected: the queue is full, so nothing was added for this call. A refused
+    // id stays unrechecked until that app's Lua changes again — that refusal has
+    // to be reported, not read as "later". A full queue also refuses an app it
+    // already holds, which the capacity check answers before the duplicate check
+    // does.
     bool Push(steam::AppId app);
 
     // Oldest first, so an app edited early is not starved by a burst of edits.

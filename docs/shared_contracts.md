@@ -330,7 +330,8 @@ Twins:
 - Desk: `steam/acf.rs` → `repair_installed_depots`,
   `repair_installed_depots_for_app`; size semantics in
   `manifest/identity.rs` → `manifest_content_size`. A version apply has no ACF
-  writer, only the readers `build_id`/`read_build_fields` (Rule 0).
+  writer; the reading half is the private `read_build_fields`, pinned by the
+  tests in `steam/acf.rs` (Rule 0).
 - DLL: `core/InstalledDepotRepair.{h,cpp}` → `PlanInstalledDepotRepairs`,
   `ApplyInstalledDepotRepairs` (boot step 10d in `core/BootSteps.cpp`); size
   semantics in `network/ManifestIdentity.cpp` → `ManifestContentSize`. The

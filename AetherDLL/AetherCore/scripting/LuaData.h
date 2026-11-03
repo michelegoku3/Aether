@@ -19,8 +19,8 @@
 // discipline lives in one place.
 //
 // Read accessors take a shared lock; mutators take a unique lock. Reads return
-// copies (small: ids, tokens, short hex strings) so no reference can outlive
-// the lock.
+// copies (ids, tokens, short hex strings, and the pin snapshots, which are
+// nested maps consumed as a whole) so no reference can outlive the lock.
 // ---------------------------------------------------------------------------
 namespace ac::luadata {
 
