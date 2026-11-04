@@ -1,7 +1,10 @@
 #pragma once
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
+#include <unordered_set>
+#include <vector>
 
 #include "core/SteamTypes.h"
 
@@ -169,6 +172,24 @@ inline std::uint32_t ApplyOwned(std::uint32_t flags) noexcept {
 
 inline std::uint32_t ApplyCleared(std::uint32_t flags) noexcept {
     return flags & ~static_cast<std::uint32_t>(steam::AppOwnershipFlags::Owned);
+}
+
+// A removed file's library roots that no script configures any more.
+//
+// `beforeRoots` is every root the removed file advertised (the keys of its pin
+// snapshot); `configuredAfter` is the global configured set once the whole
+// change batch has been applied, not a per-file answer. That is what makes an
+// atomic replace safe: a save lands as a temporary file plus a rename, so
+// the new file is already parsed when this runs and a root that came back is
+// still in the set.
+inline std::vector<steam::AppId> RetiredRoots(std::vector<steam::AppId> beforeRoots,
+                                              const std::unordered_set<steam::AppId>& configuredAfter) {
+    std::sort(beforeRoots.begin(), beforeRoots.end());
+    beforeRoots.erase(std::unique(beforeRoots.begin(), beforeRoots.end()), beforeRoots.end());
+    beforeRoots.erase(std::remove_if(beforeRoots.begin(), beforeRoots.end(),
+                                     [&configuredAfter](steam::AppId app) { return configuredAfter.count(app) != 0; }),
+                      beforeRoots.end());
+    return beforeRoots;
 }
 
 } // namespace ac::hooks::steamui::policy

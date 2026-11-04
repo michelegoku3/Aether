@@ -4,6 +4,7 @@
 #include <string>
 #include <vector>
 
+#include "hooks/steamui/AppOverviewPolicy.h"
 #include "hooks/steamui/AppRecheckPolicy.h"
 #include "scripting/LuaData.h"
 
@@ -108,6 +109,23 @@ void QueueIsBounded() {
     CHECK(none == 0);
 }
 
+void RemovedRootsFollowTheConfiguredBatch() {
+    // Nothing was advertised: a removal has nothing to retire.
+    CHECK(RetiredRoots({}, {}).empty());
+
+    // A root the batch does not configure any more is retired; one another file
+    // still advertises is not.
+    CHECK(RetiredRoots({100, 101}, {101}) == std::vector<AppId>{100});
+
+    // Duplicates collapse and the answer is ordered, so the log and the queue
+    // do not depend on the order the snapshot happened to hold.
+    CHECK(RetiredRoots({101, 100, 100}, {}) == (std::vector<AppId>{100, 101}));
+
+    // Atomic replace (temp file + rename): the new file was parsed before this
+    // runs, so the root is configured again and nothing is retired.
+    CHECK(RetiredRoots({100}, {100}).empty());
+}
+
 } // namespace
 
 void RecheckTest() {
@@ -118,4 +136,5 @@ void RecheckTest() {
     PinsFollowTheFileAndItsRoots();
     RecheckIsDeduplicated();
     QueueIsBounded();
+    RemovedRootsFollowTheConfiguredBatch();
 }

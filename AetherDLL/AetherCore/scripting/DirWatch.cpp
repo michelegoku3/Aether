@@ -26,6 +26,7 @@
 #include "hooks/ipc/PipeWatch.h"
 #include "hooks/license/LicenseManager.h"
 #include "hooks/steamui/AppOverviewHooks.h"
+#include "hooks/steamui/AppOverviewPolicy.h"
 #include "hooks/steamui/AppRecheckPolicy.h"
 #include "hooks/wire/ManifestRestore.h"
 #include "hooks/wire/ProductInfoRequest.h"
@@ -327,6 +328,10 @@ void ApplyChanges(const std::unordered_map<std::string, DWORD>& acc, const std::
     bool luaChanged = false;
     bool manifestChanged = false;
     std::vector<std::uint32_t> removedApps;
+    // Library roots a removed `.lua` used to advertise. Filtered after the whole
+    // batch, because a rename or an atomic replace re-adds the file in the same
+    // batch and that root must not be retired.
+    std::vector<steam::AppId> removalRoots;
     for (const std::string& path : order) {
         const DWORD action = acc.at(path);
         if (IsAppManifestPath(fs::path(path))) {
@@ -344,10 +349,14 @@ void ApplyChanges(const std::unordered_map<std::string, DWORD>& acc, const std::
         // Snapshots are copies taken under the Lua shared lock: no reference may
         // survive into the parse, which unloads and re-records this file's
         // contributions under the unique lock.
-        PinSnapshot beforePins;
-        if (recheckPins)
-            beforePins = luadata::PinsByLibraryAppForFile(path);
-        if (action == FILE_ACTION_REMOVED || action == FILE_ACTION_RENAMED_OLD_NAME) {
+        //
+        // Taken even without the recheck pair: a retirement needs the roots of a
+        // removed file, and its set survives a late hook install.
+        const PinSnapshot beforePins = luadata::PinsByLibraryAppForFile(path);
+        const bool removed = action == FILE_ACTION_REMOVED || action == FILE_ACTION_RENAMED_OLD_NAME;
+        if (removed) {
+            for (const auto& entry : beforePins)
+                removalRoots.push_back(entry.first);
             script::UnloadFile(path);
         } else {
             script::ParseFile(path);
@@ -362,6 +371,17 @@ void ApplyChanges(const std::unordered_map<std::string, DWORD>& acc, const std::
         // A new .lua app needs its AppInfo before Steam lists it; the queue is
         // one-shot per app, so a reload does not repeat the request.
         hooks::productinfo::RequestAll(luadata::LibraryAppIds());
+        // A root taken away by this batch and named by no script any more is
+        // retired: the next card fill takes back the owned bit Aether wrote, and
+        // the removal is visible without a restart. The configured snapshot is
+        // global and taken now, so a root the same batch re-added survives.
+        if (!removalRoots.empty()) {
+            const std::vector<steam::AppId> configured = luadata::AllDepotIds();
+            const std::unordered_set<steam::AppId> configuredAfter(configured.begin(), configured.end());
+            const std::vector<steam::AppId> retired = hooks::steamui::policy::RetiredRoots(removalRoots, configuredAfter);
+            if (!retired.empty())
+                hooks::steamui::RequestAppRetirement(retired);
+        }
         // After the license pass, so the client sees the new ownership answer
         // together with the new intent. Only apps whose pins really moved are
         // named: a reload that changed nothing must not refresh a card.
