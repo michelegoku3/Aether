@@ -385,6 +385,8 @@ void ReadStateNow(std::uint64_t key, std::uint32_t accountId, std::uint32_t appI
             parsed.size = schemaFile.size;
             parsed.writeTime = schemaFile.writeTime;
             ParseStatsSchema(bytes.data(), bytes.size(), parsed.schema);
+            AC_LOG_DEBUG(kModule, "App %u: game schema read, %zu achievement(s) with a counter.", appId,
+                         parsed.schema.progressStat.size());
             statsSchema = parsed;
             StoreStatsSchema(appId, std::move(parsed));
         } else {
