@@ -186,11 +186,18 @@ for any app and an empty state body for an app the account does not own.
   first, so the state reply of the same page open is rebuilt from a schema that
   was just captured. A cold cache answers pass-through; the pair repeats a few
   tens of milliseconds later.
+- **Only the empty answer is rewritten.** A non-OK `eresult` and a reply that
+  already carries entries or groups are Valve's own state, progress values
+  included, so they pass through instead of being replaced.
 - **Fail open.** No schema, no hash, unparsable `.bin`, an app that is not
-  managed or is family-shared, or a body over `kWireMaxBodyBytes` → return -1
-  and leave Valve's frame untouched, with a `lastReason` for `status.json`.
+  managed or is family-shared, a request that names no account, or a body over
+  `kWireMaxBodyBytes` → return -1 and leave Valve's frame untouched, with a
+  `lastReason` for `status.json` (`eresult`, `steam-state`, `no-account`,
+  `no-schema`, `no-state`, `nothing-unlocked`, `too-large`, ...).
 - **Worker boundary.** The `.bin` read and KV1 walk run on `workers::Submit`;
-  the network path only copies cached values under one short mutex.
+  the network path only copies cached values under one short mutex. The account
+  comes from the request's `steamid`, never from the registry or
+  `loginusers.vdf`: that would be disk I/O on a Steam network thread.
 - **Never fabricated.** Only keys present in the captured schema are emitted;
   the hash is echoed, never derived (it is not computable from the `.bin`).
 - **Diagnostics.** `achievement_service_calls`, `achievement_schemas`,
