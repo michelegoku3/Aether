@@ -315,17 +315,6 @@ void StartSafetyNetsStage() {
     //      learned in ONE session instead of one donor per Steam start.
     //      Depends on: aethercore dir + steamInstallPath + the send hook.
     ac::hooks::AchievementModule::InstallDonorProbe();
-
-    // 10f. Stylesheet tweak: hide Steam's orange "legacy library sharing"    //      notice next to the banner. Rewrites the rule in place with
-    //      same-length swaps, so sp.css keeps its exact size: Steam's
-    //      bootstrapper verifies client file sizes before every start and
-    //      re-applies the whole client package on a mismatch (a bogus
-    //      "Updating Steam" screen). Follows [library] owner_banner, so
-    //      turning the feature off restores the original rule. No JS or
-    //      state changes.
-    const auto uiSettings = Settings::Snapshot();
-    ac::steamui::ApplyLegacySharingWarningPolicy(g_state.steamInstallPath,
-                                                 uiSettings && uiSettings->libraryOwnerBanner);
 }
 
 void StartWatchersStage(const BootContext& ctx) {
@@ -353,6 +342,19 @@ void InitThreadLogic(HMODULE self) {
         return;
     }
     InitLoggingStage(ctx);
+    // 2c. Stylesheet tweak: hide Steam's orange "legacy library sharing" notice
+    //     next to the banner. It runs here, before the client waits for any
+    //     module, because steamwebhelper parses sp.css within the first seconds
+    //     of the start: a write that lands later leaves this start with the
+    //     stock rule (the notice shows once) and only the next start reads the
+    //     patched file. Rewrites the rule in place with same-length swaps, so
+    //     sp.css keeps its exact size - Steam's bootstrapper verifies client
+    //     file sizes before every start and re-applies the whole client package
+    //     on a mismatch (a bogus "Updating Steam" screen). Follows
+    //     [library] owner_banner, so turning the feature off restores the
+    //     original rule. No JS or state changes.
+    ac::steamui::ApplyLegacySharingWarningPolicy(g_state.steamInstallPath,
+                                                 ctx.settings && ctx.settings->libraryOwnerBanner);
     InitSteamclientStage();
     // Non-fatal: missing tables only degrade gracefully (some hooks are
     // skipped, the late-pattern retry covers them). Carried for a future
