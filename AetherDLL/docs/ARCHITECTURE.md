@@ -178,31 +178,41 @@ the CM with `Player.GetGameAchievements#1` (schema) and
 for any app and an empty state body for an app the account does not own.
 
 - **Modules.** `hooks/wire/AchievementUi.cpp` is the wire glue (send/receive,
-  job correlation, cache, logging); `hooks/wire/AchievementUiPolicy.h` is the
-  pure decision table and body model; `hooks/wire/AchievementUserState.cpp`
-  parses `UserGameStats_<account>_<appid>.bin` into `internal_key -> unlock
-  time`. State lives in `AetherCoreState::AchievementStore::ui`.
-- **Ordering.** Both requests leave together and the schema reply arrives
-  first, so the state reply of the same page open is rebuilt from a schema that
-  was just captured. A cold cache answers pass-through; the pair repeats a few
-  tens of milliseconds later.
-- **Only the empty answer is rewritten.** A non-OK `eresult` and a reply that
-  already carries entries or groups are Valve's own state, progress values
-  included, so they pass through instead of being replaced.
-- **Fail open.** No schema, no hash, unparsable `.bin`, an app that is not
-  managed or is family-shared, a request that names no account, or a body over
-  `kWireMaxBodyBytes` → return -1 and leave Valve's frame untouched, with a
-  `lastReason` for `status.json` (`eresult`, `steam-state`, `no-account`,
-  `no-schema`, `no-state`, `nothing-unlocked`, `too-large`, ...).
+  job correlation, schema/state cache, held replies, logging);
+  `hooks/wire/AchievementUiPolicy.h` is the pure decision table and body model;
+  `hooks/wire/AchievementUserState.cpp` parses
+  `UserGameStats_<account>_<appid>.bin` into `internal_key -> unlock time`.
+  State lives in `AetherCoreState::AchievementStore::ui`.
+- **Body shape.** One entry per schema achievement,
+  locked ones included, `progress_float` always present, the unlock pair only
+  when unlocked, and one `is_achievable` group per group the schema reply lists.
+  The page builds its rows from this reply, so a reply with only the unlocked
+  entries (or none) leaves the section blank for an app with no unlocks.
+- **eresult.** Valve's header is rewritten to `k_EResultOK`: the CM marks an
+  unowned app denied, but the page is not denied, it just has no data.
+- **Cold data is held, not skipped.** If the schema or the `.bin` read is not
+  ready when the reply lands, the real header/body are parked and the client is
+  handed a copy whose `jobid_target` is `1` (never allocated by the job manager),
+  so its job stays open. `OnRecvSchema` and the worker queue the rebuilt frame;
+  `AchievementUi::TryDeliver` (called at the top of the RecvPkt hook, before the
+  packet is dispatched) delivers it on the next inbound carrier. An 8 s timeout
+  releases Valve's reply unchanged.
+- **Fail open.** An app that is not managed passes through; unparsable bodies or
+  headers and a rebuilt body over `kWireMaxBodyBytes` also leave Valve's frame
+  untouched, with a `lastReason` for `status.json` (`not-managed`, `no-schema`,
+  `no-state`, `too-large`, `reply-unparsed`, `header-unparsed`, `off`).
 - **Worker boundary.** The `.bin` read and KV1 walk run on `workers::Submit`;
   the network path only copies cached values under one short mutex. The account
   comes from the request's `steamid`, never from the registry or
-  `loginusers.vdf`: that would be disk I/O on a Steam network thread.
+  `loginusers.vdf`: that would be disk I/O on a Steam network thread. A request
+  that names no account answers "nothing unlocked" instead of waiting.
 - **Never fabricated.** Only keys present in the captured schema are emitted;
-  the hash is echoed, never derived (it is not computable from the `.bin`).
+  the hash is never derived (it is not computable from the `.bin`) and Valve's
+  `schema_version`/`schema_hash` are re-emitted untouched.
 - **Diagnostics.** `achievement_service_calls`, `achievement_schemas`,
-  `achievement_rebuilt`, `achievement_passthrough`, `achievement_last_reason`;
-  a `DEBUG` line per capture and per rebuild names the app and the counts.
+  `achievement_rebuilt`, `achievement_passthrough`, `achievement_held`,
+  `achievement_delivered`, `achievement_held_now`, `achievement_last_reason`;
+  a `DEBUG` line per capture, hold and rebuild names the app and the counts.
 
 ### Donor rotation and schema publication
 
