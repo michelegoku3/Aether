@@ -91,7 +91,7 @@ inline constexpr CPlayer_GetUserAchievements_Response_Group::Impl_::Impl_(
     ::_pbi::ConstantInitialized) noexcept
       : _cached_size_{0},
         groupid_{0u},
-        flags_{0u},
+        is_achievable_{false},
         unlocked_{0u},
         complete_{0u},
         completed_at_{0u} {}
@@ -152,6 +152,25 @@ struct CPlayer_GetUserAchievements_RequestDefaultTypeInternal {
 
 PROTOBUF_ATTRIBUTE_NO_DESTROY PROTOBUF_CONSTINIT
     PROTOBUF_ATTRIBUTE_INIT_PRIORITY1 CPlayer_GetUserAchievements_RequestDefaultTypeInternal _CPlayer_GetUserAchievements_Request_default_instance_;
+
+inline constexpr CPlayer_GetGameAchievements_Response_Group::Impl_::Impl_(
+    ::_pbi::ConstantInitialized) noexcept
+      : _cached_size_{0},
+        groupid_{0u} {}
+
+template <typename>
+PROTOBUF_CONSTEXPR CPlayer_GetGameAchievements_Response_Group::CPlayer_GetGameAchievements_Response_Group(::_pbi::ConstantInitialized)
+    : _impl_(::_pbi::ConstantInitialized()) {}
+struct CPlayer_GetGameAchievements_Response_GroupDefaultTypeInternal {
+  PROTOBUF_CONSTEXPR CPlayer_GetGameAchievements_Response_GroupDefaultTypeInternal() : _instance(::_pbi::ConstantInitialized{}) {}
+  ~CPlayer_GetGameAchievements_Response_GroupDefaultTypeInternal() {}
+  union {
+    CPlayer_GetGameAchievements_Response_Group _instance;
+  };
+};
+
+PROTOBUF_ATTRIBUTE_NO_DESTROY PROTOBUF_CONSTINIT
+    PROTOBUF_ATTRIBUTE_INIT_PRIORITY1 CPlayer_GetGameAchievements_Response_GroupDefaultTypeInternal _CPlayer_GetGameAchievements_Response_Group_default_instance_;
 
 inline constexpr CPlayer_GetGameAchievements_Response_Achievement::Impl_::Impl_(
     ::_pbi::ConstantInitialized) noexcept
@@ -552,6 +571,7 @@ inline constexpr CPlayer_GetGameAchievements_Response::Impl_::Impl_(
     ::_pbi::ConstantInitialized) noexcept
       : _cached_size_{0},
         achievements_{},
+        groups_{},
         schema_version_{0},
         schema_hash_{0u} {}
 
@@ -7639,6 +7659,186 @@ std::string CPlayer_GetGameAchievements_Response_Achievement::GetTypeName() cons
 
 // ===================================================================
 
+class CPlayer_GetGameAchievements_Response_Group::_Internal {
+ public:
+  using HasBits = decltype(std::declval<CPlayer_GetGameAchievements_Response_Group>()._impl_._has_bits_);
+  static constexpr ::int32_t kHasBitsOffset =
+    8 * PROTOBUF_FIELD_OFFSET(CPlayer_GetGameAchievements_Response_Group, _impl_._has_bits_);
+  static void set_has_groupid(HasBits* has_bits) {
+    (*has_bits)[0] |= 1u;
+  }
+};
+
+CPlayer_GetGameAchievements_Response_Group::CPlayer_GetGameAchievements_Response_Group(::google::protobuf::Arena* arena)
+    : ::google::protobuf::MessageLite(arena) {
+  SharedCtor(arena);
+  // @@protoc_insertion_point(arena_constructor:CPlayer_GetGameAchievements_Response.Group)
+}
+CPlayer_GetGameAchievements_Response_Group::CPlayer_GetGameAchievements_Response_Group(
+    ::google::protobuf::Arena* arena, const CPlayer_GetGameAchievements_Response_Group& from)
+    : CPlayer_GetGameAchievements_Response_Group(arena) {
+  MergeFrom(from);
+}
+inline PROTOBUF_NDEBUG_INLINE CPlayer_GetGameAchievements_Response_Group::Impl_::Impl_(
+    ::google::protobuf::internal::InternalVisibility visibility,
+    ::google::protobuf::Arena* arena)
+      : _cached_size_{0} {}
+
+inline void CPlayer_GetGameAchievements_Response_Group::SharedCtor(::_pb::Arena* arena) {
+  new (&_impl_) Impl_(internal_visibility(), arena);
+  _impl_.groupid_ = {};
+}
+CPlayer_GetGameAchievements_Response_Group::~CPlayer_GetGameAchievements_Response_Group() {
+  // @@protoc_insertion_point(destructor:CPlayer_GetGameAchievements_Response.Group)
+  _internal_metadata_.Delete<std::string>();
+  SharedDtor();
+}
+inline void CPlayer_GetGameAchievements_Response_Group::SharedDtor() {
+  ABSL_DCHECK(GetArena() == nullptr);
+  _impl_.~Impl_();
+}
+
+PROTOBUF_NOINLINE void CPlayer_GetGameAchievements_Response_Group::Clear() {
+// @@protoc_insertion_point(message_clear_start:CPlayer_GetGameAchievements_Response.Group)
+  PROTOBUF_TSAN_WRITE(&_impl_._tsan_detect_race);
+  ::uint32_t cached_has_bits = 0;
+  // Prevent compiler warnings about cached_has_bits being unused
+  (void) cached_has_bits;
+
+  _impl_.groupid_ = 0u;
+  _impl_._has_bits_.Clear();
+  _internal_metadata_.Clear<std::string>();
+}
+
+const char* CPlayer_GetGameAchievements_Response_Group::_InternalParse(
+    const char* ptr, ::_pbi::ParseContext* ctx) {
+  ptr = ::_pbi::TcParser::ParseLoop(this, ptr, ctx, &_table_.header);
+  return ptr;
+}
+
+
+PROTOBUF_CONSTINIT PROTOBUF_ATTRIBUTE_INIT_PRIORITY1
+const ::_pbi::TcParseTable<0, 1, 0, 0, 2> CPlayer_GetGameAchievements_Response_Group::_table_ = {
+  {
+    PROTOBUF_FIELD_OFFSET(CPlayer_GetGameAchievements_Response_Group, _impl_._has_bits_),
+    0, // no _extensions_
+    1, 0,  // max_field_number, fast_idx_mask
+    offsetof(decltype(_table_), field_lookup_table),
+    4294967294,  // skipmap
+    offsetof(decltype(_table_), field_entries),
+    1,  // num_field_entries
+    0,  // num_aux_entries
+    offsetof(decltype(_table_), field_names),  // no aux_entries
+    &_CPlayer_GetGameAchievements_Response_Group_default_instance_._instance,
+    ::_pbi::TcParser::GenericFallbackLite,  // fallback
+  }, {{
+    // optional uint32 groupid = 1;
+    {::_pbi::TcParser::FastV32S1,
+     {8, 0, 0, PROTOBUF_FIELD_OFFSET(CPlayer_GetGameAchievements_Response_Group, _impl_.groupid_)}},
+  }}, {{
+    65535, 65535
+  }}, {{
+    // optional uint32 groupid = 1;
+    {PROTOBUF_FIELD_OFFSET(CPlayer_GetGameAchievements_Response_Group, _impl_.groupid_), _Internal::kHasBitsOffset + 0, 0,
+    (0 | ::_fl::kFcOptional | ::_fl::kUInt32)},
+  }},
+  // no aux_entries
+  {{
+  }},
+};
+
+::uint8_t* CPlayer_GetGameAchievements_Response_Group::_InternalSerialize(
+    ::uint8_t* target,
+    ::google::protobuf::io::EpsCopyOutputStream* stream) const {
+  // @@protoc_insertion_point(serialize_to_array_start:CPlayer_GetGameAchievements_Response.Group)
+  ::uint32_t cached_has_bits = 0;
+  (void)cached_has_bits;
+
+  cached_has_bits = _impl_._has_bits_[0];
+  // optional uint32 groupid = 1;
+  if (cached_has_bits & 0x00000001u) {
+    target = stream->EnsureSpace(target);
+    target = ::_pbi::WireFormatLite::WriteUInt32ToArray(
+        1, this->_internal_groupid(), target);
+  }
+
+  if (PROTOBUF_PREDICT_FALSE(_internal_metadata_.have_unknown_fields())) {
+    target = stream->WriteRaw(
+        _internal_metadata_.unknown_fields<std::string>(::google::protobuf::internal::GetEmptyString).data(),
+        static_cast<int>(_internal_metadata_.unknown_fields<std::string>(::google::protobuf::internal::GetEmptyString).size()), target);
+  }
+  // @@protoc_insertion_point(serialize_to_array_end:CPlayer_GetGameAchievements_Response.Group)
+  return target;
+}
+
+::size_t CPlayer_GetGameAchievements_Response_Group::ByteSizeLong() const {
+// @@protoc_insertion_point(message_byte_size_start:CPlayer_GetGameAchievements_Response.Group)
+  ::size_t total_size = 0;
+
+  ::uint32_t cached_has_bits = 0;
+  // Prevent compiler warnings about cached_has_bits being unused
+  (void) cached_has_bits;
+
+  // optional uint32 groupid = 1;
+  cached_has_bits = _impl_._has_bits_[0];
+  if (cached_has_bits & 0x00000001u) {
+    total_size += ::_pbi::WireFormatLite::UInt32SizePlusOne(
+        this->_internal_groupid());
+  }
+
+  if (PROTOBUF_PREDICT_FALSE(_internal_metadata_.have_unknown_fields())) {
+    total_size += _internal_metadata_.unknown_fields<std::string>(::google::protobuf::internal::GetEmptyString).size();
+  }
+  _impl_._cached_size_.Set(::_pbi::ToCachedSize(total_size));
+  return total_size;
+}
+
+void CPlayer_GetGameAchievements_Response_Group::CheckTypeAndMergeFrom(
+    const ::google::protobuf::MessageLite& from) {
+  MergeFrom(*::_pbi::DownCast<const CPlayer_GetGameAchievements_Response_Group*>(
+      &from));
+}
+
+void CPlayer_GetGameAchievements_Response_Group::MergeFrom(const CPlayer_GetGameAchievements_Response_Group& from) {
+  CPlayer_GetGameAchievements_Response_Group* const _this = this;
+  // @@protoc_insertion_point(class_specific_merge_from_start:CPlayer_GetGameAchievements_Response.Group)
+  ABSL_DCHECK_NE(&from, _this);
+  ::uint32_t cached_has_bits = 0;
+  (void) cached_has_bits;
+
+  if ((from._impl_._has_bits_[0] & 0x00000001u) != 0) {
+    _this->_internal_set_groupid(from._internal_groupid());
+  }
+  _this->_internal_metadata_.MergeFrom<std::string>(from._internal_metadata_);
+}
+
+void CPlayer_GetGameAchievements_Response_Group::CopyFrom(const CPlayer_GetGameAchievements_Response_Group& from) {
+// @@protoc_insertion_point(class_specific_copy_from_start:CPlayer_GetGameAchievements_Response.Group)
+  if (&from == this) return;
+  Clear();
+  MergeFrom(from);
+}
+
+PROTOBUF_NOINLINE bool CPlayer_GetGameAchievements_Response_Group::IsInitialized() const {
+  return true;
+}
+
+::_pbi::CachedSize* CPlayer_GetGameAchievements_Response_Group::AccessCachedSize() const {
+  return &_impl_._cached_size_;
+}
+void CPlayer_GetGameAchievements_Response_Group::InternalSwap(CPlayer_GetGameAchievements_Response_Group* PROTOBUF_RESTRICT other) {
+  using std::swap;
+  _internal_metadata_.InternalSwap(&other->_internal_metadata_);
+  swap(_impl_._has_bits_[0], other->_impl_._has_bits_[0]);
+        swap(_impl_.groupid_, other->_impl_.groupid_);
+}
+
+std::string CPlayer_GetGameAchievements_Response_Group::GetTypeName() const {
+  return "CPlayer_GetGameAchievements_Response.Group";
+}
+
+// ===================================================================
+
 class CPlayer_GetGameAchievements_Response::_Internal {
  public:
   using HasBits = decltype(std::declval<CPlayer_GetGameAchievements_Response>()._impl_._has_bits_);
@@ -7662,7 +7862,8 @@ inline PROTOBUF_NDEBUG_INLINE CPlayer_GetGameAchievements_Response::Impl_::Impl_
     const Impl_& from)
       : _has_bits_{from._has_bits_},
         _cached_size_{0},
-        achievements_{visibility, arena, from.achievements_} {}
+        achievements_{visibility, arena, from.achievements_},
+        groups_{visibility, arena, from.groups_} {}
 
 CPlayer_GetGameAchievements_Response::CPlayer_GetGameAchievements_Response(
     ::google::protobuf::Arena* arena,
@@ -7687,7 +7888,8 @@ inline PROTOBUF_NDEBUG_INLINE CPlayer_GetGameAchievements_Response::Impl_::Impl_
     ::google::protobuf::internal::InternalVisibility visibility,
     ::google::protobuf::Arena* arena)
       : _cached_size_{0},
-        achievements_{visibility, arena} {}
+        achievements_{visibility, arena},
+        groups_{visibility, arena} {}
 
 inline void CPlayer_GetGameAchievements_Response::SharedCtor(::_pb::Arena* arena) {
   new (&_impl_) Impl_(internal_visibility(), arena);
@@ -7716,6 +7918,7 @@ PROTOBUF_NOINLINE void CPlayer_GetGameAchievements_Response::Clear() {
   (void) cached_has_bits;
 
   _impl_.achievements_.Clear();
+  _impl_.groups_.Clear();
   cached_has_bits = _impl_._has_bits_[0];
   if (cached_has_bits & 0x00000003u) {
     ::memset(&_impl_.schema_version_, 0, static_cast<::size_t>(
@@ -7734,16 +7937,16 @@ const char* CPlayer_GetGameAchievements_Response::_InternalParse(
 
 
 PROTOBUF_CONSTINIT PROTOBUF_ATTRIBUTE_INIT_PRIORITY1
-const ::_pbi::TcParseTable<2, 3, 1, 0, 2> CPlayer_GetGameAchievements_Response::_table_ = {
+const ::_pbi::TcParseTable<2, 4, 2, 0, 2> CPlayer_GetGameAchievements_Response::_table_ = {
   {
     PROTOBUF_FIELD_OFFSET(CPlayer_GetGameAchievements_Response, _impl_._has_bits_),
     0, // no _extensions_
     4, 24,  // max_field_number, fast_idx_mask
     offsetof(decltype(_table_), field_lookup_table),
-    4294967284,  // skipmap
+    4294967280,  // skipmap
     offsetof(decltype(_table_), field_entries),
-    3,  // num_field_entries
-    1,  // num_aux_entries
+    4,  // num_field_entries
+    2,  // num_aux_entries
     offsetof(decltype(_table_), aux_entries),
     &_CPlayer_GetGameAchievements_Response_default_instance_._instance,
     ::_pbi::TcParser::GenericFallbackLite,  // fallback
@@ -7757,7 +7960,9 @@ const ::_pbi::TcParseTable<2, 3, 1, 0, 2> CPlayer_GetGameAchievements_Response::
     // optional int32 schema_version = 2;
     {::_pbi::TcParser::FastV32S1,
      {16, 0, 0, PROTOBUF_FIELD_OFFSET(CPlayer_GetGameAchievements_Response, _impl_.schema_version_)}},
-    {::_pbi::TcParser::MiniParse, {}},
+    // repeated .CPlayer_GetGameAchievements_Response.Group groups = 3;
+    {::_pbi::TcParser::FastMtR1,
+     {26, 63, 1, PROTOBUF_FIELD_OFFSET(CPlayer_GetGameAchievements_Response, _impl_.groups_)}},
   }}, {{
     65535, 65535
   }}, {{
@@ -7767,11 +7972,15 @@ const ::_pbi::TcParseTable<2, 3, 1, 0, 2> CPlayer_GetGameAchievements_Response::
     // optional int32 schema_version = 2;
     {PROTOBUF_FIELD_OFFSET(CPlayer_GetGameAchievements_Response, _impl_.schema_version_), _Internal::kHasBitsOffset + 0, 0,
     (0 | ::_fl::kFcOptional | ::_fl::kInt32)},
+    // repeated .CPlayer_GetGameAchievements_Response.Group groups = 3;
+    {PROTOBUF_FIELD_OFFSET(CPlayer_GetGameAchievements_Response, _impl_.groups_), -1, 1,
+    (0 | ::_fl::kFcRepeated | ::_fl::kMessage | ::_fl::kTvTable)},
     // optional uint32 schema_hash = 4;
     {PROTOBUF_FIELD_OFFSET(CPlayer_GetGameAchievements_Response, _impl_.schema_hash_), _Internal::kHasBitsOffset + 1, 0,
     (0 | ::_fl::kFcOptional | ::_fl::kUInt32)},
   }}, {{
     {::_pbi::TcParser::GetTable<::CPlayer_GetGameAchievements_Response_Achievement>()},
+    {::_pbi::TcParser::GetTable<::CPlayer_GetGameAchievements_Response_Group>()},
   }}, {{
   }},
 };
@@ -7797,6 +8006,14 @@ const ::_pbi::TcParseTable<2, 3, 1, 0, 2> CPlayer_GetGameAchievements_Response::
     target = ::google::protobuf::internal::WireFormatLite::
         WriteInt32ToArrayWithField<2>(
             stream, this->_internal_schema_version(), target);
+  }
+
+  // repeated .CPlayer_GetGameAchievements_Response.Group groups = 3;
+  for (unsigned i = 0,
+      n = static_cast<unsigned>(this->_internal_groups_size()); i < n; i++) {
+    const auto& repfield = this->_internal_groups().Get(i);
+    target = ::google::protobuf::internal::WireFormatLite::
+        InternalWriteMessage(3, repfield, repfield.GetCachedSize(), target, stream);
   }
 
   // optional uint32 schema_hash = 4;
@@ -7826,6 +8043,12 @@ const ::_pbi::TcParseTable<2, 3, 1, 0, 2> CPlayer_GetGameAchievements_Response::
   // repeated .CPlayer_GetGameAchievements_Response.Achievement achievements = 1;
   total_size += 1UL * this->_internal_achievements_size();
   for (const auto& msg : this->_internal_achievements()) {
+    total_size +=
+      ::google::protobuf::internal::WireFormatLite::MessageSize(msg);
+  }
+  // repeated .CPlayer_GetGameAchievements_Response.Group groups = 3;
+  total_size += 1UL * this->_internal_groups_size();
+  for (const auto& msg : this->_internal_groups()) {
     total_size +=
       ::google::protobuf::internal::WireFormatLite::MessageSize(msg);
   }
@@ -7866,6 +8089,8 @@ void CPlayer_GetGameAchievements_Response::MergeFrom(const CPlayer_GetGameAchiev
 
   _this->_internal_mutable_achievements()->MergeFrom(
       from._internal_achievements());
+  _this->_internal_mutable_groups()->MergeFrom(
+      from._internal_groups());
   cached_has_bits = from._impl_._has_bits_[0];
   if (cached_has_bits & 0x00000003u) {
     if (cached_has_bits & 0x00000001u) {
@@ -7898,6 +8123,7 @@ void CPlayer_GetGameAchievements_Response::InternalSwap(CPlayer_GetGameAchieveme
   _internal_metadata_.InternalSwap(&other->_internal_metadata_);
   swap(_impl_._has_bits_[0], other->_impl_._has_bits_[0]);
   _impl_.achievements_.InternalSwap(&other->_impl_.achievements_);
+  _impl_.groups_.InternalSwap(&other->_impl_.groups_);
   ::google::protobuf::internal::memswap<
       PROTOBUF_FIELD_OFFSET(CPlayer_GetGameAchievements_Response, _impl_.schema_hash_)
       + sizeof(CPlayer_GetGameAchievements_Response::_impl_.schema_hash_)
@@ -8447,7 +8673,7 @@ class CPlayer_GetUserAchievements_Response_Group::_Internal {
   static void set_has_groupid(HasBits* has_bits) {
     (*has_bits)[0] |= 1u;
   }
-  static void set_has_flags(HasBits* has_bits) {
+  static void set_has_is_achievable(HasBits* has_bits) {
     (*has_bits)[0] |= 2u;
   }
   static void set_has_unlocked(HasBits* has_bits) {
@@ -8540,9 +8766,9 @@ const ::_pbi::TcParseTable<2, 5, 0, 0, 2> CPlayer_GetUserAchievements_Response_G
     // optional uint32 groupid = 1;
     {::_pbi::TcParser::FastV32S1,
      {8, 0, 0, PROTOBUF_FIELD_OFFSET(CPlayer_GetUserAchievements_Response_Group, _impl_.groupid_)}},
-    // optional uint32 flags = 2;
-    {::_pbi::TcParser::FastV32S1,
-     {16, 1, 0, PROTOBUF_FIELD_OFFSET(CPlayer_GetUserAchievements_Response_Group, _impl_.flags_)}},
+    // optional bool is_achievable = 2;
+    {::_pbi::TcParser::FastV8S1,
+     {16, 1, 0, PROTOBUF_FIELD_OFFSET(CPlayer_GetUserAchievements_Response_Group, _impl_.is_achievable_)}},
     // optional uint32 unlocked = 3;
     {::_pbi::TcParser::FastV32S1,
      {24, 2, 0, PROTOBUF_FIELD_OFFSET(CPlayer_GetUserAchievements_Response_Group, _impl_.unlocked_)}},
@@ -8552,9 +8778,9 @@ const ::_pbi::TcParseTable<2, 5, 0, 0, 2> CPlayer_GetUserAchievements_Response_G
     // optional uint32 groupid = 1;
     {PROTOBUF_FIELD_OFFSET(CPlayer_GetUserAchievements_Response_Group, _impl_.groupid_), _Internal::kHasBitsOffset + 0, 0,
     (0 | ::_fl::kFcOptional | ::_fl::kUInt32)},
-    // optional uint32 flags = 2;
-    {PROTOBUF_FIELD_OFFSET(CPlayer_GetUserAchievements_Response_Group, _impl_.flags_), _Internal::kHasBitsOffset + 1, 0,
-    (0 | ::_fl::kFcOptional | ::_fl::kUInt32)},
+    // optional bool is_achievable = 2;
+    {PROTOBUF_FIELD_OFFSET(CPlayer_GetUserAchievements_Response_Group, _impl_.is_achievable_), _Internal::kHasBitsOffset + 1, 0,
+    (0 | ::_fl::kFcOptional | ::_fl::kBool)},
     // optional uint32 unlocked = 3;
     {PROTOBUF_FIELD_OFFSET(CPlayer_GetUserAchievements_Response_Group, _impl_.unlocked_), _Internal::kHasBitsOffset + 2, 0,
     (0 | ::_fl::kFcOptional | ::_fl::kUInt32)},
@@ -8585,11 +8811,11 @@ const ::_pbi::TcParseTable<2, 5, 0, 0, 2> CPlayer_GetUserAchievements_Response_G
         1, this->_internal_groupid(), target);
   }
 
-  // optional uint32 flags = 2;
+  // optional bool is_achievable = 2;
   if (cached_has_bits & 0x00000002u) {
     target = stream->EnsureSpace(target);
-    target = ::_pbi::WireFormatLite::WriteUInt32ToArray(
-        2, this->_internal_flags(), target);
+    target = ::_pbi::WireFormatLite::WriteBoolToArray(
+        2, this->_internal_is_achievable(), target);
   }
 
   // optional uint32 unlocked = 3;
@@ -8638,10 +8864,9 @@ const ::_pbi::TcParseTable<2, 5, 0, 0, 2> CPlayer_GetUserAchievements_Response_G
           this->_internal_groupid());
     }
 
-    // optional uint32 flags = 2;
+    // optional bool is_achievable = 2;
     if (cached_has_bits & 0x00000002u) {
-      total_size += ::_pbi::WireFormatLite::UInt32SizePlusOne(
-          this->_internal_flags());
+      total_size += 2;
     }
 
     // optional uint32 unlocked = 3;
@@ -8688,7 +8913,7 @@ void CPlayer_GetUserAchievements_Response_Group::MergeFrom(const CPlayer_GetUser
       _this->_impl_.groupid_ = from._impl_.groupid_;
     }
     if (cached_has_bits & 0x00000002u) {
-      _this->_impl_.flags_ = from._impl_.flags_;
+      _this->_impl_.is_achievable_ = from._impl_.is_achievable_;
     }
     if (cached_has_bits & 0x00000004u) {
       _this->_impl_.unlocked_ = from._impl_.unlocked_;

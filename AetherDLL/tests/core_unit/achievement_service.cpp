@@ -14,7 +14,7 @@
 // bytes instead of round-tripping Aether's encoder.
 //
 //   kSchemaReply: Player.GetGameAchievements#1 response for app 730 (owned CS2):
-//                 one achievement, schema version 247, schema hash, counts.
+//                 one achievement, schema version 247, schema hash, group block.
 //   kUserReply:   Player.GetUserAchievements#1 response for the same app: one
 //                 unlocked achievement, the echoed version/hash and the group
 //                 summary.
@@ -62,6 +62,10 @@ void AchievementServiceWire() {
         CHECK(achievement.internal_key() == kKey);
         CHECK(rsp.schema_version() == 247);
         CHECK(rsp.schema_hash() == kHash);
+        // Field 3 is the group list: one entry, group 0 (the counts travel as
+        // unknown fields inside it and survive a re-serialization).
+        CHECK(rsp.groups_size() == 1);
+        CHECK(rsp.groups(0).groupid() == 0);
     }
 
     // --- the user reply: one entry plus the echoed version/hash --------------
@@ -79,48 +83,61 @@ void AchievementServiceWire() {
         CHECK(rsp.groups_size() == 1);
         const auto& group = rsp.groups(0);
         CHECK(group.groupid() == 0);
-        CHECK(group.flags() == 1);
-        CHECK(group.unlocked() == 1);
+        CHECK(group.is_achievable()); // field 2 in Valve's reply
+        CHECK(group.unlocked() == 1); // counts Valve fills in, a rebuild leaves them out
         CHECK(group.complete() == 1);
         CHECK(group.completed_at() == kUnlockTime);
     }
 
-    // --- a rebuilt reply re-serializes to Valve's own bytes -------------------
-    // Every field of this capture is declared, so the encoder must reproduce it
-    // exactly; anything else means a field number or wire type moved.
-    {
-        CPlayer_GetUserAchievements_Response rsp;
-        CHECK(rsp.ParseFromArray(kUserReply, sizeof(kUserReply)));
-        std::string serialized;
-        CHECK(rsp.SerializeToString(&serialized));
-        CHECK(serialized.size() == sizeof(kUserReply));
-        CHECK(std::string(reinterpret_cast<const char*>(kUserReply), sizeof(kUserReply)) == serialized);
-    }
-
-    // --- the rebuild itself reproduces that body from the body model ---------
-    // Covers the fields the glue writes: the entry block, the group summary and
-    // the echoed version/hash (a body without the pair would not match the
-    // schema the client holds).
+    // --- a rebuilt reply carries one entry per schema achievement ------------
+    // Covers what the glue writes: an entry for every key (locked ones too), the
+    // unlock pair only when unlocked, progress_float always, and one achievable
+    // group per schema group. Version/hash stay exactly as Valve sent them.
     {
         ac::achieve::Decision decision;
-        decision.reply.version = 247;
-        decision.reply.hash = kHash;
-        decision.reply.entries = {{kKey, kUnlockTime}};
-        decision.reply.groups = {{0, 1, 1, kUnlockTime}};
+        decision.reply.entries = {{kKey, true, kUnlockTime}, {kKey + 1, false, 0}, {kKey + 2, false, 0}};
+        decision.reply.groups = {{0}};
 
-        // Start from an empty body, as the CM sends for an unowned app.
-        CPlayer_GetUserAchievements_Response empty;
-        empty.set_schema_version(247);
-        empty.set_schema_hash(kHash);
-        std::string emptyBytes;
-        CHECK(empty.SerializeToString(&emptyBytes));
-        CHECK(empty.achievements_size() == 0); // version + hash, nothing else
-        CHECK(empty.groups_size() == 0);
+        CPlayer_GetUserAchievements_Response rsp;
+        CHECK(rsp.ParseFromArray(kUserReply, sizeof(kUserReply)));
+        ac::achieve::FillReply(rsp, decision);
 
-        ac::achieve::FillReply(empty, decision);
-        std::string rebuilt;
-        CHECK(empty.SerializeToString(&rebuilt));
-        CHECK(rebuilt == std::string(reinterpret_cast<const char*>(kUserReply), sizeof(kUserReply)));
+        CHECK(rsp.achievements_size() == 3);
+        CHECK(rsp.achievements(0).internal_key() == kKey);
+        CHECK(rsp.achievements(0).unlocked());
+        CHECK(rsp.achievements(0).unlock_time() == kUnlockTime);
+        CHECK(rsp.achievements(1).internal_key() == kKey + 1);
+        CHECK(!rsp.achievements(1).unlocked());
+        CHECK(!rsp.achievements(1).has_unlock_time());
+        for (int i = 0; i < rsp.achievements_size(); ++i)
+            CHECK(rsp.achievements(i).has_progress_float()); // the page reads it
+        CHECK(rsp.groups_size() == 1);
+        CHECK(rsp.groups(0).groupid() == 0);
+        CHECK(rsp.groups(0).is_achievable());
+        CHECK(!rsp.groups(0).has_unlocked()); // counts are the client's to fill
+        CHECK(!rsp.groups(0).has_complete());
+        CHECK(!rsp.groups(0).has_completed_at());
+        CHECK(rsp.schema_version() == 247);
+        CHECK(rsp.schema_hash() == kHash);
+    }
+
+    // --- an empty Valve body still produces the full page -------------------
+    // The CM sends this for an app the account does not own.
+    {
+        ac::achieve::Decision decision;
+        decision.reply.entries = {{kKey, false, 0}};
+        decision.reply.groups = {{0}};
+
+        CPlayer_GetUserAchievements_Response rsp;
+        ac::achieve::FillReply(rsp, decision);
+        CHECK(rsp.achievements_size() == 1);
+        CHECK(rsp.achievements(0).internal_key() == kKey);
+        CHECK(!rsp.achievements(0).unlocked());
+        CHECK(rsp.achievements(0).has_progress_float());
+        CHECK(rsp.groups_size() == 1);
+        CHECK(rsp.groups(0).is_achievable());
+        CHECK(!rsp.has_schema_version());
+        CHECK(!rsp.has_schema_hash());
     }
 
     // --- an unknown field from a future build survives a re-serialization ----

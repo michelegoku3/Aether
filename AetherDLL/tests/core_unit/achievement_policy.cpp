@@ -7,12 +7,10 @@
 
 namespace {
 
-ac::achieve::SchemaEntry Entry(std::uint32_t key, std::uint32_t groupid, const char* name) {
+ac::achieve::SchemaEntry Entry(std::uint32_t key, std::uint32_t groupid) {
     ac::achieve::SchemaEntry entry;
-    entry.hasKey = true;
     entry.key = key;
     entry.groupid = groupid;
-    entry.name = name;
     return entry;
 }
 
@@ -24,13 +22,12 @@ void AchievementPolicy() {
     Input base;
     base.managed = true;
     base.schemaKnown = true;
-    base.stateKnown = true;
-    base.version = 9;
-    base.hash = 2268056439u;
-    base.entries = {Entry(256, 0, "FIRST_TOOL"), Entry(258, 0, "ALL_TOOLS"), Entry(259, 0, "FIRST_SILK_SKILL")};
+    base.stateLoaded = true;
+    base.entries = {Entry(256, 0), Entry(258, 0), Entry(259, 0)};
+    base.groups = {0};
     base.unlocked = {{258, 1700000000u}};
 
-    // --- guard order: every "pass" leaves Valve's frame alone -----------------
+    // --- guard order ---------------------------------------------------------
     {
         Input in = base;
         in.managed = false;
@@ -38,133 +35,109 @@ void AchievementPolicy() {
         CHECK(d.verdict == Verdict::Passthrough);
         CHECK(std::string(d.reason) == "not-managed");
 
-        in = base;
-        in.familyShared = true;
-        d = Decide(in);
-        CHECK(d.verdict == Verdict::Passthrough);
-        CHECK(std::string(d.reason) == "family-shared");
-
+        // No schema: the caller holds the reply until the schema arrives.
         in = base;
         in.schemaKnown = false;
+        in.entries.clear();
         d = Decide(in);
-        CHECK(d.verdict == Verdict::Passthrough);
+        CHECK(d.verdict == Verdict::Hold);
         CHECK(std::string(d.reason) == "no-schema");
 
+        // A captured schema with no achievements is the same cold case.
         in = base;
-        in.hash = 0;
+        in.entries.clear();
         d = Decide(in);
-        CHECK(d.verdict == Verdict::Passthrough);
-        CHECK(std::string(d.reason) == "no-hash");
+        CHECK(d.verdict == Verdict::Hold);
+        CHECK(std::string(d.reason) == "no-schema");
 
+        // The local .bin read has not finished yet.
         in = base;
-        in.stateKnown = false;
+        in.stateLoaded = false;
         d = Decide(in);
-        CHECK(d.verdict == Verdict::Passthrough);
+        CHECK(d.verdict == Verdict::Hold);
         CHECK(std::string(d.reason) == "no-state");
-
-        in = base;
-        in.unlocked.clear();
-        d = Decide(in);
-        CHECK(d.verdict == Verdict::Passthrough);
-        CHECK(std::string(d.reason) == "nothing-unlocked");
     }
 
-    // --- partial progress: one of three unlocked, group not complete ----------
+    // --- partial progress: every schema achievement is answered --------------
     {
         const auto d = Decide(base);
         CHECK(d.verdict == Verdict::Rebuild);
-        CHECK(d.reply.entries.size() == 1);
-        CHECK(d.reply.entries[0].key == 258);
-        CHECK(d.reply.entries[0].unlockTime == 1700000000u);
-        CHECK(d.reply.version == 9);
-        CHECK(d.reply.hash == base.hash);
+        CHECK(std::string(d.reason) == "rebuilt");
+        CHECK(d.reply.entries.size() == 3);
+        CHECK(d.reply.entries[0].key == 256);
+        CHECK(!d.reply.entries[0].unlocked);
+        CHECK(d.reply.entries[1].key == 258);
+        CHECK(d.reply.entries[1].unlocked);
+        CHECK(d.reply.entries[1].unlockTime == 1700000000u);
+        CHECK(d.reply.entries[2].key == 259);
+        CHECK(!d.reply.entries[2].unlocked);
         CHECK(d.reply.groups.size() == 1);
         CHECK(d.reply.groups[0].groupid == 0);
-        CHECK(d.reply.groups[0].total == 3);
-        CHECK(d.reply.groups[0].unlocked == 1);
-        CHECK(d.reply.groups[0].completedAt == 0); // not complete
     }
 
-    // --- complete group: completion time kept ---------------------------------
+    // --- no unlocks at all: still one entry per achievement ------------------
     {
         Input in = base;
-        in.entries = {Entry(256, 0, "ONLY")};
-        in.unlocked = {{256, 1759087575u}};
+        in.unlocked.clear();
         const auto d = Decide(in);
         CHECK(d.verdict == Verdict::Rebuild);
-        CHECK(d.reply.groups.size() == 1);
-        CHECK(d.reply.groups[0].total == 1);
-        CHECK(d.reply.groups[0].unlocked == 1);
-        CHECK(d.reply.groups[0].completedAt == 1759087575u);
-    }
-
-    // --- two groups: only the one with progress is emitted --------------------
-    {
-        Input in = base;
-        in.entries = {Entry(256, 0, "A"), Entry(257, 0, "B"), Entry(768, 3, "C"), Entry(769, 3, "D")};
-        in.unlocked = {{256, 100u}, {257, 200u}};
-        const auto d = Decide(in);
-        CHECK(d.verdict == Verdict::Rebuild);
+        CHECK(d.reply.entries.size() == 3);
+        CHECK(!d.reply.entries[0].unlocked);
+        CHECK(!d.reply.entries[1].unlocked);
+        CHECK(!d.reply.entries[2].unlocked);
         CHECK(d.reply.groups.size() == 1);
         CHECK(d.reply.groups[0].groupid == 0);
-        CHECK(d.reply.groups[0].total == 2);
-        CHECK(d.reply.groups[0].unlocked == 2);
-        CHECK(d.reply.groups[0].completedAt == 200u);
     }
 
-    // --- order is by internal_key, not input order ----------------------------
+    // --- order is the schema order, not the bit order nor the map order ------
     {
         Input in = base;
-        in.entries = {Entry(768, 3, "C"), Entry(256, 0, "A"), Entry(512, 1, "B")};
+        in.entries = {Entry(768, 3), Entry(256, 0), Entry(512, 1)};
+        in.groups = {3, 0, 1};
         in.unlocked = {{768, 30u}, {256, 10u}, {512, 20u}};
         const auto d = Decide(in);
         CHECK(d.reply.entries.size() == 3);
-        CHECK(d.reply.entries[0].key == 256);
-        CHECK(d.reply.entries[1].key == 512);
-        CHECK(d.reply.entries[2].key == 768);
+        CHECK(d.reply.entries[0].key == 768);
+        CHECK(d.reply.entries[1].key == 256);
+        CHECK(d.reply.entries[2].key == 512);
         CHECK(d.reply.groups.size() == 3);
-        CHECK(d.reply.groups[0].groupid == 0);
-        CHECK(d.reply.groups[1].groupid == 1);
-        CHECK(d.reply.groups[2].groupid == 3);
-    }
-
-    // --- an unlock with no schema entry is never emitted ----------------------
-    {
-        Input in = base;
-        in.entries = {Entry(256, 0, "A")};
-        in.unlocked = {{999, 5u}, {256, 7u}};
-        const auto d = Decide(in);
-        CHECK(d.reply.entries.size() == 1);
-        CHECK(d.reply.entries[0].key == 256);
+        CHECK(d.reply.groups[0].groupid == 3);
+        CHECK(d.reply.groups[1].groupid == 0);
+        CHECK(d.reply.groups[2].groupid == 1);
     }
 
     // --- internal_key 0 is a real key: bucket 0, bit 0 ------------------------
     {
         Input in = base;
-        in.entries = {Entry(0, 0, "FIRST"), Entry(1, 0, "SECOND")};
+        in.entries = {Entry(0, 0), Entry(1, 0)};
+        in.groups = {0};
         in.unlocked = {{0, 1234u}};
         const auto d = Decide(in);
         CHECK(d.verdict == Verdict::Rebuild);
-        CHECK(d.reply.entries.size() == 1);
+        CHECK(d.reply.entries.size() == 2);
         CHECK(d.reply.entries[0].key == 0);
+        CHECK(d.reply.entries[0].unlocked);
         CHECK(d.reply.entries[0].unlockTime == 1234u);
-        CHECK(d.reply.groups[0].total == 2);
-        CHECK(d.reply.groups[0].unlocked == 1);
+        CHECK(!d.reply.entries[1].unlocked);
     }
 
-    // --- a schema entry without internal_key is not keyed and not counted ----
+    // --- an unlock with no schema entry is never emitted ----------------------
     {
         Input in = base;
-        SchemaEntry unkeyed;
-        unkeyed.hasKey = false;
-        unkeyed.groupid = 0;
-        unkeyed.name = "NO_KEY";
-        in.entries = {Entry(256, 0, "A"), unkeyed};
-        in.unlocked = {{256, 5u}};
+        in.entries = {Entry(256, 0)};
+        in.unlocked = {{999, 5u}, {256, 7u}};
+        const auto d = Decide(in);
+        CHECK(d.reply.entries.size() == 1);
+        CHECK(d.reply.entries[0].key == 256);
+        CHECK(d.reply.entries[0].unlocked);
+    }
+
+    // --- a schema without groups emits none (the client reads its own) -------
+    {
+        Input in = base;
+        in.groups.clear();
         const auto d = Decide(in);
         CHECK(d.verdict == Verdict::Rebuild);
-        CHECK(d.reply.groups[0].total == 1); // the unkeyed entry is invisible
-        CHECK(d.reply.groups[0].unlocked == 1);
-        CHECK(d.reply.groups[0].completedAt == 5u);
+        CHECK(d.reply.groups.empty());
     }
 }

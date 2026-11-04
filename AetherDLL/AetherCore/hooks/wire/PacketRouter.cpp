@@ -259,7 +259,8 @@ std::int32_t DispatchRecv(const WireFrame& f) {
             return ac::achieve::OnRecvSchema(rsp.hasTarget ? rsp.target : 0, f.body, f.bodyLen);
         }
         if (h == job_hash::kGetUserAchievements) {
-            return ac::achieve::OnRecvUser(rsp.hasTarget ? rsp.target : 0, rsp.eresult, f.body, f.bodyLen,
+            return ac::achieve::OnRecvUser(rsp.hasTarget ? rsp.target : 0, f.header, f.headerLen, f.body, f.bodyLen,
+                                           t_scratchHeader.data(), kWireMaxHeaderBytes, &t_recvHeaderLen,
                                            t_scratchBody.data(), kWireMaxBodyBytes);
         }
         return kNoChange;
@@ -285,6 +286,10 @@ std::int32_t DispatchRecv(const WireFrame& f) {
 }
 
 void* h_RecvPkt(void* self, CNetPacket* packet) {
+    // Replies the achievement page had to park are delivered on this carrier,
+    // before its own frame is dispatched: a frame queued during a dispatch must
+    // go out on the next packet, not replace the one that produced it.
+    ac::achieve::TryDeliver(self, packet, o_RecvPkt);
     // GATE: nothing below may read or write a packet field until the
     // per-build layout has been identified from live traffic. Before
     // that (and forever, if the probe gives up) the packet travels

@@ -35,9 +35,10 @@
 //   pipewatch_snapshots
 //   ipc_spec_loaded, ipc_spec_entries
 //   achievement_service_calls, achievement_schemas, achievement_rebuilt,
-//     achievement_passthrough, achievement_service_state,
-//     achievement_last_reason, achievement_schemas_cached,
-//     achievement_states_cached
+//     achievement_passthrough, achievement_held, achievement_delivered,
+//     achievement_service_state, achievement_last_reason,
+//     achievement_schemas_cached, achievement_states_cached,
+//     achievement_held_now
 //   hooks_installed_list[], hooks_missed_list[] ("Name (reason)"), diagnostics[]
 //
 // ---------------------------------------------------------------------------
