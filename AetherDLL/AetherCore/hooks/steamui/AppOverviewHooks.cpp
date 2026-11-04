@@ -54,11 +54,19 @@ void* h_FillInAppOverview(void* self, void* appOverview, steam::AppOverviewPrefi
             AC_LOG_WARN_ONCE(kModule, "AppOverview rejected: %s", policy::OverviewVerdictText(verdict));
         }
 
-        const auto decision = policy::DecideOwnershipWrite(
-            {luadata::HasDepot(app->appId), luadata::IsFamilyShared(app->appId), verdict == policy::OverviewVerdict::Ok,
-             g_state.overview.latched.load(std::memory_order_acquire), !abi::guard::LayoutContradicted(),
-             static_cast<std::uint32_t>(app->ownershipFlags)});
-        if (decision.write) {
+        policy::WriteInputs inputs;
+        inputs.managed = luadata::HasDepot(app->appId);
+        inputs.familyShared = luadata::IsFamilyShared(app->appId);
+        inputs.retired = false;
+        inputs.stamped = false;
+        inputs.trackingFull = false;
+        inputs.sampleOk = verdict == policy::OverviewVerdict::Ok;
+        inputs.probeLatched = g_state.overview.latched.load(std::memory_order_acquire);
+        inputs.layoutTrusted = !abi::guard::LayoutContradicted();
+        inputs.currentFlags = static_cast<std::uint32_t>(app->ownershipFlags);
+
+        const auto decision = policy::DecideOwnershipWrite(inputs);
+        if (decision.action == policy::OwnershipAction::Stamp) {
             app->ownershipFlags = static_cast<steam::AppOwnershipFlags>(
                 policy::ApplyOwned(static_cast<std::uint32_t>(app->ownershipFlags)));
             g_state.overview.writes.fetch_add(1, std::memory_order_relaxed);

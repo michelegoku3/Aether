@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
 
 #include "core/SteamTypes.h"
@@ -13,6 +14,12 @@
 // move, never a value to preserve: the caller skips the write and reports it.
 // ---------------------------------------------------------------------------
 namespace ac::hooks::steamui::policy {
+
+// Capacity of the two tracking sets (ids Aether stamped, ids a removal
+// retired). Bounded so a pathological config cannot grow them without limit;
+// a refusal is reported, never silent. 256 is far above the number of cards a
+// library rebuild touches in one session.
+inline constexpr std::size_t kMaxTrackedApps = 256;
 
 enum class OverviewVerdict {
     Ok,
@@ -88,18 +95,38 @@ inline bool RecordProbeSample(ProbeState& state, const steam::AppOverviewPrefix&
     return false;
 }
 
+// What the card needs: nothing, add Aether's owned bit, or take it back.
+//
+// `Clear` exists because the bit is written into the client's own object, which
+// caches it: when the `.lua` that justified it goes away, nothing in Steam
+// recomputes the field, so the card would stay in the library until a restart.
+// The bit is only ever taken back from an id Aether stamped (`stamped`) after an
+// explicit removal retired it (`retired`), never because the app merely stopped
+// being managed: HasDepot is false for a genuine license too.
+enum class OwnershipAction {
+    None,
+    Stamp,
+    Clear,
+};
+
 struct OwnershipDecision {
-    bool write;
-    const char* reason;
+    OwnershipAction action = OwnershipAction::None;
+    const char* reason = "";
 };
 
 // Everything the decision needs, in one place, so the call site cannot forget
 // one condition. `managed` is luadata::HasDepot: configured by a script AND not
 // genuinely owned by Steam. `sampleOk` is this card's InspectOverview verdict:
 // a rejected card is never written even if the probe latched earlier.
+//
+// `trackingFull` is the stamp set at capacity: writing a bit that cannot be
+// remembered would make it unclearable, so the write is refused instead.
 struct WriteInputs {
     bool managed = false;
     bool familyShared = false;
+    bool retired = false;
+    bool stamped = false;
+    bool trackingFull = false;
     bool sampleOk = false;
     bool probeLatched = false;
     bool layoutTrusted = false; // the ABI table did not contradict the layout
@@ -107,23 +134,41 @@ struct WriteInputs {
 };
 
 inline OwnershipDecision DecideOwnershipWrite(const WriteInputs& in) noexcept {
-    if (!in.managed)
-        return {false, "not-managed"};
-    if (in.familyShared)
-        return {false, "family-shared"};
+    // Layout evidence first: a Clear is a write into the same object and needs
+    // the same proof as a Stamp.
     if (!in.sampleOk)
-        return {false, "sample-rejected"};
+        return {OwnershipAction::None, "sample-rejected"};
     if (!in.probeLatched)
-        return {false, "probe-unproven"};
+        return {OwnershipAction::None, "probe-unproven"};
     if (!in.layoutTrusted)
-        return {false, "layout-contradicted"};
-    if ((in.currentFlags & static_cast<std::uint32_t>(steam::AppOwnershipFlags::Owned)) != 0)
-        return {false, "already-owned"};
-    return {true, "owned"};
+        return {OwnershipAction::None, "layout-contradicted"};
+    // A real family share (or the cosmetic banner) is Valve's or display-only;
+    // both keep the bit the client set.
+    if (in.familyShared)
+        return {OwnershipAction::None, "family-shared"};
+
+    const bool owned = (in.currentFlags & static_cast<std::uint32_t>(steam::AppOwnershipFlags::Owned)) != 0;
+    if (in.managed) {
+        if (owned)
+            return {OwnershipAction::None, "already-owned"};
+        if (in.trackingFull)
+            return {OwnershipAction::None, "tracking-full"};
+        return {OwnershipAction::Stamp, "owned"};
+    }
+    if (in.retired && in.stamped) {
+        if (!owned)
+            return {OwnershipAction::None, "already-clear"};
+        return {OwnershipAction::Clear, "retired"};
+    }
+    return {OwnershipAction::None, "not-managed"};
 }
 
 inline std::uint32_t ApplyOwned(std::uint32_t flags) noexcept {
     return flags | static_cast<std::uint32_t>(steam::AppOwnershipFlags::Owned);
+}
+
+inline std::uint32_t ApplyCleared(std::uint32_t flags) noexcept {
+    return flags & ~static_cast<std::uint32_t>(steam::AppOwnershipFlags::Owned);
 }
 
 } // namespace ac::hooks::steamui::policy
