@@ -181,13 +181,22 @@ for any app and an empty state body for an app the account does not own.
   job correlation, schema/state cache, held replies, logging);
   `hooks/wire/AchievementUiPolicy.h` is the pure decision table and body model;
   `hooks/wire/AchievementUserState.cpp` parses
-  `UserGameStats_<account>_<appid>.bin` into `internal_key -> unlock time`.
-  State lives in `AetherCoreState::AchievementStore::ui`.
+  `UserGameStats_<account>_<appid>.bin` into `internal_key -> unlock time` and
+  `stat id -> current value`; `hooks/wire/AchievementStatsSchema.cpp` parses
+  `UserGameStatsSchema_<appid>.bin` into `internal_key -> stat id`, the counter
+  behind each achievement. State lives in `AetherCoreState::AchievementStore::ui`.
 - **Body shape.** One entry per schema achievement,
   locked ones included, `progress_float` always present, the unlock pair only
   when unlocked, and one `is_achievable` group per group the schema reply lists.
   The page builds its rows from this reply, so a reply with only the unlocked
   entries (or none) leaves the section blank for an app with no unlocks.
+- **Progress values.** `progress_float` carries the
+  raw value of the stat the schema's `progress` block names
+  (`operation = "statvalue"`, `operand1` = stat name), read from that stat's
+  `data` entry in the account's stats file; `0.0f` when the schema declares none
+  or the file has no value. It is not a fraction. A bit that only has an
+  `AchievementTimes` entry counts as unlocked, because the date outlives the
+  mask.
 - **eresult.** Valve's header is rewritten to `k_EResultOK`: the CM marks an
   unowned app denied, but the page is not denied, it just has no data.
 - **Cold data is held, not skipped.** If the schema or the `.bin` read is not
@@ -201,18 +210,21 @@ for any app and an empty state body for an app the account does not own.
   headers and a rebuilt body over `kWireMaxBodyBytes` also leave Valve's frame
   untouched, with a `lastReason` for `status.json` (`not-managed`, `no-schema`,
   `no-state`, `too-large`, `reply-unparsed`, `header-unparsed`, `off`).
-- **Worker boundary.** The `.bin` read and KV1 walk run on `workers::Submit`;
-  the network path only copies cached values under one short mutex. The account
-  comes from the request's `steamid`, never from the registry or
-  `loginusers.vdf`: that would be disk I/O on a Steam network thread. A request
-  that names no account answers "nothing unlocked" instead of waiting.
+- **Worker boundary.** The `.bin` reads (account stats and game schema) and the
+  KV1 walks run on `workers::Submit`; the network path only copies cached values
+  under one short mutex. The account comes from the request's `steamid`, never
+  from the registry or `loginusers.vdf`: that would be disk I/O on a Steam
+  network thread. A request that names no account answers "nothing unlocked"
+  instead of waiting. The schema parse is cached per app and re-read only when
+  Steam rewrites the file (size or write time moves).
 - **Never fabricated.** Only keys present in the captured schema are emitted;
   the hash is never derived (it is not computable from the `.bin`) and Valve's
   `schema_version`/`schema_hash` are re-emitted untouched.
 - **Diagnostics.** `achievement_service_calls`, `achievement_schemas`,
   `achievement_rebuilt`, `achievement_passthrough`, `achievement_held`,
-  `achievement_delivered`, `achievement_held_now`, `achievement_last_reason`;
-  a `DEBUG` line per capture, hold and rebuild names the app and the counts.
+  `achievement_delivered`, `achievement_progress_values`, `achievement_held_now`,
+  `achievement_last_reason`; a `DEBUG` line per capture, hold and rebuild names
+  the app and the counts.
 
 ### Donor rotation and schema publication
 

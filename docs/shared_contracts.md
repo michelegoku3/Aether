@@ -449,7 +449,7 @@ leaves every other app alone:
 |---|---|---|
 | not managed (`not-managed`) | DLL `hooks/wire/AchievementUi.cpp` | Valve's reply, byte for byte |
 | schema or local state not ready yet (`no-schema`, `no-state`) | DLL, same file | the reply is held: the client gets a copy aimed at a job nobody waits on (so its real job stays pending) and the rebuilt frame is delivered when the data lands. After 8 s the original is released |
-| data ready (`rebuilt`) | DLL, same file | one entry per achievement in the captured schema, locked ones included, `progress_float` always, unlock pair only when unlocked; one `is_achievable` group per schema group; `schema_version`/`schema_hash` and unknown fields kept from Valve's reply |
+| data ready (`rebuilt`) | DLL, same file | one entry per achievement in the captured schema, locked ones included, `progress_float` always (the counter from the local stats file), unlock pair only when unlocked; one `is_achievable` group per schema group; `schema_version`/`schema_hash` and unknown fields kept from Valve's reply |
 | reply too large, unparsable, header unparsable | DLL, same file | Valve's reply (fail open) |
 
 - **Twins.** The decision table is `hooks/wire/AchievementUiPolicy.h` (pure, no
@@ -464,6 +464,18 @@ leaves every other app alone:
   for an app whose account has no unlocks at all: Steam draws the rows from this
   reply, not from the schema, and an entry without `progress_float` leaves the
   row blank. This is the reference behaviour.
+- **Progress values.** `progress_float` is the raw value of the stat that counts
+  toward the achievement, not a fraction. Which stat that is comes from
+  `appcache\stats\UserGameStatsSchema_<appid>.bin`
+  (`hooks/wire/AchievementStatsSchema.cpp`): the `progress` block of a bit names
+  it in `value.operand1` with `operation = "statvalue"` — the only operation the
+  beta client's schemas use. The value
+  itself is that stat's `data` entry in the account's `UserGameStats` file, read
+  on the same worker job. An achievement without a resolvable counter is written
+  as `0.0f`, never as a guessed value.
+- **Dated bits.** A bit listed in `AchievementTimes` counts as unlocked even when
+  the `data`/`pendingbits` masks do not carry it: the date outlives the mask and
+  it is still counted.
 - **eresult.** The CM marks an unowned app denied; the reply is rewritten to
   `k_EResultOK` (the app is not denied, it simply has no CAuth). The header is
   rebuilt in the router's scratch buffer, body untouched on that path.
@@ -481,10 +493,12 @@ leaves every other app alone:
   the server never acks the bit, so it only ever appears in `pendingbits`.
 - **The schema reply is never rewritten**, and `schema_hash` is never derived
   (it cannot be computed from the `.bin`): the rebuilt body re-emits Valve's.
-- **Tests.** `AetherDLL/tests/core_unit/achievement_state.cpp` (local reader),
-  `achievement_policy.cpp` (decision table: zero unlocks, order, key 0, hold)
-  and `achievement_service.cpp` (golden blobs captured from the client, which
-  pin every field number and the rebuilt body shape).
+- **Tests.** `AetherDLL/tests/core_unit/achievement_state.cpp` (local reader,
+  counters and dated bits), `achievement_schema.cpp` (progress map: the
+  `statvalue` join, other operations, unknown stats, bit bounds),
+  `achievement_policy.cpp` (decision table: zero unlocks, order, key 0, hold,
+  counters) and `achievement_service.cpp` (golden blobs captured from the
+  client, which pin every field number and the rebuilt body shape).
 - **Switch.** `[achievements] ui_service` in `aethercore.toml`, default `true`.
   Off means the reply is Valve's; nothing else changes.
 
