@@ -20,6 +20,7 @@
 #include "hooks/license/LicenseManager.h"
 #include "hooks/steamui/AppOverviewHooks.h"
 #include "hooks/wire/AchievementModule.h"
+#include "hooks/wire/AchievementUi.h"
 #include "network/EticketFetcher.h"
 #include "scripting/LuaData.h"
 #include "utils/IpcSpec.h"
@@ -189,6 +190,22 @@ static void WriteSnapshot(std::uint64_t requests) {
     w.Str("recheck_state", !hooks::steamui::AppRecheckSupported()         ? "unsupported"
                            : recheckPending != 0 && !appChangeSourceKnown ? "no-source"
                                                                           : "ready");
+    // Client achievement page (service path): every request pair seen, every
+    // schema captured, and what happened to the user-state reply. `last_reason`
+    // names the guard that passed the reply through (`no-schema`, `no-state`,
+    // `owned`, `family-shared`, `nothing-unlocked`, `too-large`), so a page that
+    // stays empty is explained without a log dive.
+    w.UInt64("achievement_service_calls", g_state.achievements.ui.calls.load(std::memory_order_relaxed));
+    w.UInt64("achievement_schemas", g_state.achievements.ui.schemasCaptured.load(std::memory_order_relaxed));
+    w.UInt64("achievement_rebuilt", g_state.achievements.ui.rebuilt.load(std::memory_order_relaxed));
+    w.UInt64("achievement_passthrough", g_state.achievements.ui.passthrough.load(std::memory_order_relaxed));
+    w.Str("achievement_service_state", achieve::Enabled() ? "ready" : "off");
+    {
+        std::lock_guard<std::mutex> lock(g_state.achievements.ui.mutex);
+        w.Str("achievement_last_reason", g_state.achievements.ui.lastReason);
+        w.SizeT("achievement_schemas_cached", g_state.achievements.ui.schemas.size());
+        w.SizeT("achievement_states_cached", g_state.achievements.ui.states.size());
+    }
     w.SizeT("access_tokens", luadata::AccessTokenCount());
     w.SizeT("manifest_overrides", luadata::ManifestOverrideCount());
     w.Bool("eticket_backend_configured", !luadata::EticketUrl().empty());
