@@ -11,6 +11,7 @@
 #include "core/AetherCoreState.h"
 #include "core/Logger.h"
 #include "core/Workers.h"
+#include "diagnostics/StatusWriter.h"
 #include "hooks/wire/AchievementUserState.h"
 #include "scripting/LuaData.h"
 #include "steam_messages.pb.h"
@@ -52,8 +53,13 @@ std::uint64_t StateKey(std::uint32_t appId, std::uint32_t accountId) {
 }
 
 void SetReason(const char* reason) {
-    std::lock_guard<std::mutex> lock(S().mutex);
-    S().lastReason = reason;
+    {
+        std::lock_guard<std::mutex> lock(S().mutex);
+        S().lastReason = reason;
+    }
+    // status.json is a snapshot the writer only refreshes on request, and these
+    // counters are the only way to see what the page decided without a log.
+    ac::status::Write();
 }
 
 void RememberPending(std::uint64_t jobId, const Pending& pending) {
@@ -153,6 +159,8 @@ void ReadStateNow(std::uint64_t key, std::uint32_t accountId, std::uint32_t appI
         }
         s.refreshing.erase(key);
     }
+    // The cached-state count is part of status.json; publish the first read.
+    ac::status::Write();
 }
 
 // Schedules a read for (app, account). At most one is in flight per pair, so a
@@ -189,6 +197,7 @@ bool OnSendSchema(std::uint64_t jobId, const std::uint8_t* body, std::uint32_t l
     if (!body || !request.ParseFromArray(body, static_cast<int>(len)))
         return false;
     S().calls.fetch_add(1, std::memory_order_relaxed);
+    ac::status::Write();
     Pending pending;
     pending.userCall = false;
     pending.appId = request.appid();
@@ -203,6 +212,7 @@ bool OnSendUser(std::uint64_t jobId, const std::uint8_t* body, std::uint32_t len
     if (!body || !request.ParseFromArray(body, static_cast<int>(len)))
         return false;
     S().calls.fetch_add(1, std::memory_order_relaxed);
+    ac::status::Write();
 
     Pending pending;
     pending.userCall = true;
@@ -254,6 +264,7 @@ std::int32_t OnRecvSchema(std::uint64_t jobId, const std::uint8_t* body, std::ui
     const std::int32_t version = schema.version;
     StoreSchema(pending.appId, std::move(schema));
     S().schemasCaptured.fetch_add(1, std::memory_order_relaxed);
+    ac::status::Write();
     AC_LOG_DEBUG(kModule, "App %u: captured %zu achievement(s), schema v%d hash %08X.", pending.appId, count, version,
                  hash);
     // The schema reply is never rewritten: the client renders names, icons and
@@ -288,7 +299,11 @@ std::int32_t OnRecvUser(std::uint64_t jobId, std::int32_t eresult, const std::ui
     Input in;
     if (!ac::luadata::HasDepot(pending.appId)) {
         S().passthrough.fetch_add(1, std::memory_order_relaxed);
-        SetReason(ac::luadata::IsOwned(pending.appId) ? "owned" : "not-managed");
+        // Name the reason the page is Valve's: a genuine licence, a family
+        // licence, or an app Aether does not manage at all.
+        SetReason(ac::luadata::IsFamilyShared(pending.appId) ? "family-shared"
+                  : ac::luadata::IsOwned(pending.appId)      ? "owned"
+                                                             : "not-managed");
         return kNoChange;
     }
     in.managed = true;

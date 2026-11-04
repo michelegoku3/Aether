@@ -434,8 +434,7 @@ else passes through:
 
 | Decision | Owners | Result |
 |---|---|---|
-| not managed, or genuinely owned | DLL `hooks/wire/AchievementUi.cpp` | Valve's reply, byte for byte |
-| family-shared | DLL, same file | Valve's reply (`family-shared` reason) |
+| not managed (`not-managed`), genuinely owned (`owned`), or family-shared (`family-shared`) | DLL `hooks/wire/AchievementUi.cpp` | Valve's reply, byte for byte |
 | a non-OK `eresult` | DLL, same file | Valve's reply (`eresult` reason) |
 | the reply already carries entries or groups | DLL, same file | Valve's reply (`steam-state` reason): Valve tracks progress the `.bin` does not hold |
 | the request names no account | DLL, same file | Valve's reply (`no-account` reason): the account is never read from the registry or `loginusers.vdf` on a network thread |
