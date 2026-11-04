@@ -243,13 +243,6 @@ inline constexpr std::uint32_t kAppStateKnownMask = 0x03FFFFFFu;
 // table it reads now instead of the one it read at startup.
 inline constexpr std::uint32_t kAppChangeAppInfoOrConfig = 0x0002;
 
-// Change flag handed to the client's MarkAppChange: the app entered the library.
-// The client only creates an app overview for an app it is being told about, so
-// an app whose card was taken away (its owned bit cleared) needs this flag, not
-// just AppInfoOrConfig: the object itself is gone, and a change to an object
-// that does not exist does nothing.
-inline constexpr std::uint32_t kAppChangeAddedOrCreated = 0x0001;
-
 // Prefix of the SteamUI app-overview object, NOT the whole CSteamApp.
 //
 // The offsets below 0x24 come from two independent references (an external layout dump and

@@ -165,13 +165,15 @@ void OwnershipClearTable() {
     CHECK(ApplyCleared(0) == 0u);
 }
 
-// The client drops a card whose owned bit was taken back, so the app leaves its
-// map: a later `.lua` has to be announced as a new app, not as a config change,
-// or nothing rebuilds the card and the app is invisible until a restart.
-void RecheckFlagsFollowTheCard() {
-    CHECK(RecheckFlags(false) == ac::steam::kAppChangeAppInfoOrConfig);
-    CHECK((RecheckFlags(true) & ac::steam::kAppChangeAddedOrCreated) != 0);
-    CHECK((RecheckFlags(true) & ac::steam::kAppChangeAppInfoOrConfig) != 0);
+// The client keeps an app it stops listing, so its owned bit can be written back
+// when the `.lua` returns. That write goes into the client's object, so it is
+// only ever done for a card Aether itself took away, and only while the `.lua`
+// that brought it back is configured.
+void RestoreOnlyWhatWasHidden() {
+    CHECK(ShouldRestoreCard(true, true));
+    CHECK(!ShouldRestoreCard(true, false)); // the .lua is still gone
+    CHECK(!ShouldRestoreCard(false, true)); // a card Aether never took away
+    CHECK(!ShouldRestoreCard(false, false));
 }
 
 } // namespace
@@ -181,5 +183,5 @@ void AppOverviewTest() {
     LatchNeedsTwoDistinctApps();
     OwnershipWriteTable();
     OwnershipClearTable();
-    RecheckFlagsFollowTheCard();
+    RestoreOnlyWhatWasHidden();
 }

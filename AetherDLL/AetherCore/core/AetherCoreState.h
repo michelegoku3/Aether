@@ -229,6 +229,19 @@ struct AetherCoreState {
         // Ids handed to the client, one MarkAppChange call each.
         std::atomic<std::uint64_t> recheckCalls{0};
 
+        // ---- restoring a card (SteamUI thread only) ------------------------
+        // The client keeps the app object after its owned bit is taken back; it
+        // only drops it from the library. Putting the bit back therefore needs
+        // that object, and the client hands one out only through its own lookup.
+        // `appController` is the owner learned from that lookup's `self`;
+        // `lookupProbe` is the evidence that the compiled prefix really is the
+        // object it returns, latched on two ids Aether already filled.
+        std::atomic<void*> appController{nullptr};
+        std::mutex lookupMutex; // guards lookupProbe only
+        hooks::steamui::policy::ProbeState lookupProbe;
+        std::atomic<bool> lookupLatched{false};
+        std::atomic<std::uint64_t> restores{0};
+
         // ---- library membership (worker retires, SteamUI thread clears) ----
         // A deleted `.lua` must take its card out of the library without a
         // restart. `tracked` records the ids Aether provided on a card fill: the

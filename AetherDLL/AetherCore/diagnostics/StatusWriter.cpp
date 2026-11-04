@@ -170,6 +170,7 @@ static void WriteSnapshot(std::uint64_t requests) {
     w.UInt64("overview_fills", g_state.overview.fills.load(std::memory_order_relaxed));
     w.UInt64("overview_writes", g_state.overview.writes.load(std::memory_order_relaxed));
     w.UInt64("overview_clears", g_state.overview.clears.load(std::memory_order_relaxed));
+    w.UInt64("overview_restores", g_state.overview.restores.load(std::memory_order_relaxed));
     w.UInt64("overview_rejects", g_state.overview.rejects.load(std::memory_order_relaxed));
     {
         // `overview_retired` is how many cards still have to be rebuilt before
@@ -203,6 +204,14 @@ static void WriteSnapshot(std::uint64_t requests) {
     w.Str("recheck_state", !hooks::steamui::AppRecheckSupported()         ? "unsupported"
                            : recheckPending != 0 && !appChangeSourceKnown ? "no-source"
                                                                           : "ready");
+    // Restore layer: whether a card Aether took back can be put back when its
+    // `.lua` returns. `no-controller` means the client never ran the lookup the
+    // owner is learned from; `no-shape` means the returned object never matched
+    // the compiled prefix twice, so nothing is written on a guess.
+    w.Str("restore_state", !hooks::steamui::AppRestoreSupported()                                      ? "unsupported"
+                           : g_state.overview.appController.load(std::memory_order_acquire) == nullptr ? "no-controller"
+                           : !g_state.overview.lookupLatched.load(std::memory_order_acquire)           ? "no-shape"
+                                                                                                       : "ready");
     // Client achievement page (service path): every request pair seen, every
     // schema captured, and what happened to the user-state reply. `last_reason`
     // names the outcome: `rebuilt`, `no-schema`/`no-state` (the reply was held

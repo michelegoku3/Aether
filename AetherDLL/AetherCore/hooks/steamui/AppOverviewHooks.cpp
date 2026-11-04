@@ -159,6 +159,133 @@ void* h_MarkAppChange(void* self, steam::AppId app, std::uint32_t changeFlags) {
     return o_MarkAppChange(self, app, changeFlags);
 }
 
+// ---- Putting a card back ---------------------------------------------------
+// The client keeps the app object when its owned bit is taken back; only the
+// library stops listing it (the object still answers, with the bit clear). The
+// bit can therefore be written back on that object, and the library told to look
+// again, exactly as the removal path does in reverse. Aether never guesses the
+// object: it asks the client for the id it hid, and writes only on an answer
+// that passes the compiled prefix and names that id.
+using GetAppByID_t = void* (*)(void*, steam::AppId, bool);
+GetAppByID_t o_GetAppByID = nullptr;
+
+// See RestoreHiddenCards: one restore attempt per interval while a hidden id
+// waits for its card. Not a timeout — a restore that missed is retried.
+inline constexpr std::uint64_t kRestoreAttemptIntervalMs = 250;
+std::atomic<std::uint64_t> g_lastRestoreAttempt{0};
+
+// One accepted lookup. Two different ids are needed: a single answer could be a
+// coincidence, and the write it would authorise lands in whatever the layout
+// moved to.
+void RecordLookup(steam::AppId requested, void* returned) {
+    if (g_state.overview.lookupLatched.load(std::memory_order_acquire) || returned == nullptr)
+        return;
+    const auto* app = static_cast<const steam::AppOverviewPrefix*>(returned);
+    if (policy::InspectOverview(app) != policy::OverviewVerdict::Ok || app->appId != requested)
+        return;
+    bool latchedNow = false;
+    {
+        std::lock_guard lock(g_state.overview.lookupMutex);
+        latchedNow = policy::RecordProbeSample(g_state.overview.lookupProbe, *app);
+    }
+    if (latchedNow) {
+        g_state.overview.lookupLatched.store(true, std::memory_order_release);
+        AC_LOG_INFO(kModule, "App lookup confirmed by two distinct apps.");
+    }
+}
+
+void* h_GetAppByID(void* self, steam::AppId app, bool create) {
+    // The owner of the app list: a rebuilt client UI or an account switch
+    // replaces it, so the latest one is kept and the call is forwarded unchanged.
+    g_state.overview.appController.store(self, std::memory_order_release);
+    void* result = o_GetAppByID(self, app, create);
+    // A create=true answer is the object Aether asked for, not independent
+    // evidence of the shape; only a lookup the client made for itself is.
+    if (!create)
+        RecordLookup(app, result);
+    return result;
+}
+
+// Confirms the lookup before the first write, using ids Aether already filled:
+// their objects must exist, so a valid answer proves both the call shape and the
+// owner pointer. Returns false while the evidence is missing; the next frame
+// tries again rather than writing on a guess.
+bool EnsureLookupShape(void* controller) {
+    if (g_state.overview.lookupLatched.load(std::memory_order_acquire))
+        return true;
+    std::vector<steam::AppId> controls;
+    {
+        std::lock_guard lock(g_state.overview.stampMutex);
+        for (const steam::AppId app : g_state.overview.tracked) {
+            controls.push_back(app);
+            if (controls.size() == 2)
+                break;
+        }
+    }
+    for (const steam::AppId app : controls)
+        RecordLookup(app, o_GetAppByID(controller, app, false));
+    return g_state.overview.lookupLatched.load(std::memory_order_acquire);
+}
+
+// A card Aether took back whose `.lua` is configured again. Runs on the client's
+// frame thread: the write lands on the object the client itself returned, and
+// the change notification makes the library list it again.
+void RestoreHiddenCards(void* source) {
+    if (source == nullptr || o_GetAppByID == nullptr)
+        return;
+    // The hidden ids are copied out first: `luadata::HasDepot` takes the Lua
+    // lock, and the card path takes it before `stampMutex`, so this side must
+    // never hold `stampMutex` while asking.
+    std::vector<steam::AppId> hidden;
+    {
+        std::lock_guard lock(g_state.overview.stampMutex);
+        if (g_state.overview.hidden.empty())
+            return;
+        hidden.assign(g_state.overview.hidden.begin(), g_state.overview.hidden.end());
+    }
+    std::vector<steam::AppId> due;
+    for (const steam::AppId app : hidden) {
+        if (policy::ShouldRestoreCard(true, luadata::HasDepot(app)))
+            due.push_back(app);
+    }
+    if (due.empty())
+        return;
+    // A frame is far shorter than the work here, and an id whose object never
+    // comes back would otherwise repeat the lookup and the shape probe on every
+    // frame. A quarter second is invisible to the user and keeps a stuck id
+    // cheap.
+    const std::uint64_t now = GetTickCount64();
+    if (now - g_lastRestoreAttempt.load(std::memory_order_relaxed) < kRestoreAttemptIntervalMs)
+        return;
+    g_lastRestoreAttempt.store(now, std::memory_order_relaxed);
+
+    void* controller = g_state.overview.appController.load(std::memory_order_acquire);
+    if (controller == nullptr || !EnsureLookupShape(controller))
+        return;
+
+    std::size_t restored = 0;
+    for (const steam::AppId app : due) {
+        auto* found = static_cast<steam::AppOverviewPrefix*>(o_GetAppByID(controller, app, false));
+        if (policy::InspectOverview(found) != policy::OverviewVerdict::Ok || found->appId != app)
+            continue;
+        found->ownershipFlags = static_cast<steam::AppOwnershipFlags>(
+            policy::ApplyOwned(static_cast<std::uint32_t>(found->ownershipFlags)));
+        {
+            std::lock_guard lock(g_state.overview.stampMutex);
+            g_state.overview.hidden.erase(app);
+        }
+        o_MarkAppChange(source, app, steam::kAppChangeAppInfoOrConfig);
+        g_state.overview.restores.fetch_add(1, std::memory_order_relaxed);
+        ++restored;
+        AC_LOG_INFO(kModule, "Overview: put the owned bit back on app %u after its .lua came back.", app);
+    }
+    // Only a pass that changed something publishes: this runs on the client's
+    // frame thread, and an id whose object never came back must not rewrite the
+    // status file on every frame.
+    if (restored != 0)
+        status::Write();
+}
+
 // The client's per-frame tick: the only thread allowed to touch the app list, so
 // the queued ids are handed over here and nowhere else.
 using CSteamUIAppControllerRunFrame_t = void* (*)(void*);
@@ -194,22 +321,12 @@ void DrainRechecks(void* source) {
             if (!g_state.overview.rechecks.Pop(app))
                 break;
         }
-        // A card Aether took back has no object left in the client: the id needs
-        // the "added" change, not a config change, or the re-added `.lua` never
-        // gets a card again in this session.
-        bool hidden = false;
-        {
-            std::lock_guard lock(g_state.overview.stampMutex);
-            hidden = g_state.overview.hidden.count(app) != 0;
-        }
-        o_MarkAppChange(source, app, policy::RecheckFlags(hidden));
+        // The restore pass writes the bit back; this call only asks the client to
+        // look at the app's config again.
+        o_MarkAppChange(source, app, steam::kAppChangeAppInfoOrConfig);
         g_state.overview.recheckCalls.fetch_add(1, std::memory_order_relaxed);
         handed = true;
-        if (hidden) {
-            AC_LOG_INFO(kModule, "Asked the client to add app %u back to the library.", app);
-        } else {
-            AC_LOG_INFO(kModule, "Asked the client to re-evaluate app %u after its manifest pins changed.", app);
-        }
+        AC_LOG_INFO(kModule, "Asked the client to re-evaluate app %u after its manifest pins changed.", app);
     }
     // `overview_rechecks`, `overview_recheck_pending` and `recheck_state` are the
     // evidence that the card was rebuilt, and every write before this frame
@@ -223,6 +340,7 @@ void* h_CSteamUIAppControllerRunFrame(void* self) {
     // without us, and the drain is extra work on a frame that already ran.
     void* result = o_CSteamUIAppControllerRunFrame(self);
     DrainRechecks(g_state.overview.appChangeSource.load(std::memory_order_acquire));
+    RestoreHiddenCards(g_state.overview.appChangeSource.load(std::memory_order_acquire));
     return result;
 }
 
@@ -244,6 +362,10 @@ bool InstallAppOverviewHooks() {
     g_state.hookManager.TryHook("MarkAppChange", "steamui", g_state.steamuiModule, o_MarkAppChange, h_MarkAppChange);
     g_state.hookManager.TryHook("CSteamUIAppControllerRunFrame", "steamui", g_state.steamuiModule,
                                 o_CSteamUIAppControllerRunFrame, h_CSteamUIAppControllerRunFrame);
+    // The lookup that puts a taken-back card back. Optional like the pair above:
+    // without it, a re-added `.lua` still needs a restart, and `overview_hidden`
+    // in the status file says so.
+    g_state.hookManager.TryHook("GetAppByID", "steamui", g_state.steamuiModule, o_GetAppByID, h_GetAppByID);
     return true;
 }
 
@@ -274,6 +396,8 @@ void RequestAppRecheck(const std::vector<steam::AppId>& ids) {
 }
 
 bool AppRecheckSupported() { return o_MarkAppChange != nullptr && o_CSteamUIAppControllerRunFrame != nullptr; }
+
+bool AppRestoreSupported() { return o_GetAppByID != nullptr; }
 
 void RequestAppRetirement(const std::vector<steam::AppId>& ids) {
     if (ids.empty())

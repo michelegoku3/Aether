@@ -187,16 +187,10 @@ inline std::uint32_t ApplyCleared(std::uint32_t flags) noexcept {
     return flags & ~static_cast<std::uint32_t>(steam::AppOwnershipFlags::Owned);
 }
 
-// The change flags one queued recheck is handed to the client with.
-//
-// A moved pin is a config change: the app is in the library and its object
-// exists. An app whose card Aether took back is not: the client dropped the
-// object, so a config change reaches nothing and the client has to be told the
-// app entered the library before it builds the overview the stamp path fills.
-inline std::uint32_t RecheckFlags(bool hidden) noexcept {
-    return hidden ? (steam::kAppChangeAddedOrCreated | steam::kAppChangeAppInfoOrConfig)
-                  : steam::kAppChangeAppInfoOrConfig;
-}
+// Whether a hidden card is due back. Only a card Aether took back, and only once
+// its `.lua` is configured again: the lookup that restores it writes into the
+// client's object, so it must never run for an app Aether never hid.
+inline bool ShouldRestoreCard(bool hidden, bool managed) noexcept { return hidden && managed; }
 
 // A removed file's library roots that no script configures any more.
 //

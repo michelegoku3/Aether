@@ -378,7 +378,8 @@ void ApplyChanges(const std::unordered_map<std::string, DWORD>& acc, const std::
         if (!removalRoots.empty()) {
             const std::vector<steam::AppId> configured = luadata::AllDepotIds();
             const std::unordered_set<steam::AppId> configuredAfter(configured.begin(), configured.end());
-            const std::vector<steam::AppId> retired = hooks::steamui::policy::RetiredRoots(removalRoots, configuredAfter);
+            const std::vector<steam::AppId> retired =
+                hooks::steamui::policy::RetiredRoots(removalRoots, configuredAfter);
             if (!retired.empty())
                 hooks::steamui::RequestAppRetirement(retired);
         }

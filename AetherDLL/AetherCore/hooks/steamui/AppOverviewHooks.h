@@ -48,6 +48,11 @@ void RequestAppRecheck(const std::vector<steam::AppId>& ids);
 // still queue, but nothing will ask the client to look again.
 bool AppRecheckSupported();
 
+// False when the module never installed the lookup that puts a taken-back card
+// back: a `.lua` removed and re-added in the same session then needs a restart
+// before its card returns.
+bool AppRestoreSupported();
+
 // Records that an explicit file removal took these library roots away, so the
 // next card fill may take back the owned bit the client holds for them.
 //
