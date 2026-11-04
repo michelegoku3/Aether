@@ -264,8 +264,8 @@ bool IsOwnBannerStamp(AppId app, std::uint32_t lender) {
     const auto settings = Settings::Snapshot();
     if (!settings)
         return false;
-    return familyclass::IsOwnBannerStamp(app, lender, settings->libraryOwnerBanner,
-                                         settings->libraryOwnerBannerApps, settings->libraryOwnerBannerSteamId);
+    return familyclass::IsOwnBannerStamp(app, lender, settings->libraryOwnerBanner, settings->libraryOwnerBannerApps,
+                                         settings->libraryOwnerBannerSteamId);
 }
 
 // ---- Hook bodies -----------------------------------------------------------

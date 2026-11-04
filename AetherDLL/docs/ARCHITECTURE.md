@@ -427,10 +427,15 @@ a non-numeric name, which still enters the library through its seeded ids.
 A genuinely owned app gets a package-0 row like every other configured id, but
 its ownership answer passes through untouched: the spoof acts only when Steam
 did not provide the app (`luadata::HasDepot`), and the family/owned flags keep
-the lender banner. `status.json` reports the populations separately
+the lender banner. `[library] owner_banner_apps` is the one case where the
+family flag is Aether's own stamp: `core/FamilyClassification.h` separates that
+`Banner` from a `RealShare`, so the app keeps the shared look while
+`luadata::IsRealFamilyShare` stays false and every `HasDepot` consumer — depot
+keys, manifest overrides, the cloud gate and the achievement page — keeps
+working. `status.json` reports the populations separately
 (`membership_owned`, `membership_spoofed`, `membership_family_shared`,
-`membership_library_roots`, `package0_app_ids`) so a support log can tell
-"not seeded" from "seeded but not classified".
+`membership_banner_family`, `membership_library_roots`, `package0_app_ids`) so a
+support log can tell "not seeded" from "seeded but not classified".
 
 ## SteamUI app overview
 

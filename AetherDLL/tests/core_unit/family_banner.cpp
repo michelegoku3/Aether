@@ -58,9 +58,9 @@ void FamilyBannerTest() {
 
     // Our own banner: still drawn as family, still Aether's app.
     ac::luadata::MarkFamilyShared(kApp, bannerAccount, /*ownBanner=*/true);
-    CHECK(ac::luadata::IsFamilyShared(kApp));      // the card keeps the banner
-    CHECK(!ac::luadata::IsRealFamilyShare(kApp));  // but it is not a licence
-    CHECK(ac::luadata::HasDepot(kApp));            // ...so Aether still provides it
+    CHECK(ac::luadata::IsFamilyShared(kApp));     // the card keeps the banner
+    CHECK(!ac::luadata::IsRealFamilyShare(kApp)); // but it is not a licence
+    CHECK(ac::luadata::HasDepot(kApp));           // ...so Aether still provides it
     CHECK(ac::luadata::FamilySharedCount() == 0);
     CHECK(ac::luadata::BannerFamilyCount() == 1);
 

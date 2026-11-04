@@ -327,6 +327,18 @@ the pins against `InstalledDepots`. A missing `MarkAppChange` /
 (`recheck_state = unsupported` in `status.json`); card repair, ownership and
 membership keep working.
 
+**Rule 5 — the owner banner is display-only.** `[library] owner_banner_apps`
+writes `LastOwner = owner_banner_steamid` for apps Aether spoofs, and
+`family/FamilyLenders.cpp` reads any foreign `LastOwner` as a real Steam Family
+lender. The classification must keep those two apart: the app is drawn as
+shared (`luadata::IsFamilyShared`, `AppOwnership.steamId32`, the overview flag)
+but it is still one Aether provides. `core/FamilyClassification.h` is the single
+rule — a `RealShare` removes the app from `HasDepot`, a `Banner` does not — and
+`luadata::IsRealFamilyShare` is the behavioural read every gate uses (depot
+keys, manifest overrides, the cloud gate's `family-shared`, the achievement
+page). Without it the stamp switches off every `HasDepot` consumer for the
+listed apps, achievements included.
+
 Twins:
 - Desk: `steam/acf.rs` → `repair_installed_depots`,
   `repair_installed_depots_for_app`; size semantics in
