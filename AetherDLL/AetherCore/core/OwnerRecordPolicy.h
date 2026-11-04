@@ -51,7 +51,7 @@ struct OwnerRecord {
 struct OwnerContext {
     bool bannerEnabled = false; // [library] owner_banner
     bool managed = false;       // Aether spoofs this app now (luadata::HasDepot)
-    bool familyShared = false;  // Steam reports a real family license
+    bool familyShared = false;  // drawn as family: a real share or the banner
     bool listed = false;        // appid is in owner_banner_apps
     std::uint64_t bannerSteamId = 0;
     bool recorded = false;

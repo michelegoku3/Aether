@@ -146,11 +146,13 @@ static void WriteSnapshot(std::uint64_t requests) {
     w.SizeT("lua_files_loaded", luadata::LoadedFileCount());
     w.SizeT("configured_depots", luadata::ConfiguredDepotCount());
     // Library membership populations. `configured_depots` above is the universe:
-    // every configured id (app roots and depots). The three classification sets
-    // are subsets of it and are mutually exclusive; an id in none of them is
-    // configured but not classified yet (Steam never asked). `spoofed` is the
-    // set Aether actually manages; `owned` is Steam's own and Aether must leave
-    // the answer alone; `family_shared` keeps the lender banner.
+    // every configured id (app roots and depots). `owned`, `spoofed` and real
+    // `family_shared` are disjoint subsets of it; an id in none of the three is
+    // either configured but not classified yet (Steam never asked) or a listed
+    // banner app, which `banner_family` counts on its own. `spoofed` is the set
+    // Aether actually manages; `owned` is Steam's own and Aether must leave the
+    // answer alone; a real `family_shared` keeps the lender banner and Valve's
+    // state, while `banner_family` keeps the banner and Aether's answer.
     // `package0_app_ids` is the license itself: when it equals configured_depots
     // the seed ran, and any card still missing is an AppInfo problem, not a
     // membership one.

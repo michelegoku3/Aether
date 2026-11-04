@@ -111,10 +111,11 @@ std::map<steam::AppId, std::vector<PinnedDepot>> PinsByLibraryAppForFile(const s
 std::size_t LoadedFileCount();
 std::size_t ConfiguredDepotCount();
 // Population sizes for the status snapshot. A configured id is not a managed
-// one: it only becomes managed once CheckAppOwnership classified it, and the
-// three sets below are mutually exclusive (see MarkOwned/MarkSpoofed/
-// MarkFamilyShared). Genuinely owned apps are Steam's own and are counted in
-// OwnedCount only, never as spoofed.
+// one: it only becomes managed once CheckAppOwnership classified it.
+// `owned`, `spoofed` and `family_shared` (real shares) are mutually exclusive;
+// a listed banner app is in none of them and is counted by BannerFamilyCount
+// alone, so the four counters partition the classified ids. An id in none of
+// them is configured but not classified yet (Steam never asked).
 std::size_t OwnedCount();
 std::size_t SpoofedCount();
 std::size_t FamilySharedCount();
@@ -133,12 +134,12 @@ std::string EticketUrl();
 // Flags appId as genuinely owned so HasDepot stops spoofing it.
 void MarkOwned(steam::AppId appId);
 
-// Flags appId as family-shared so HasDepot stops spoofing it, while cloud can
-// stay enabled and family-sharing packet suppression can continue independently.
+// Flags appId as family-shared. A real licence also stops HasDepot spoofing it
+// and lets cloud stay enabled; the cosmetic banner (`ownBanner`) only changes
+// what the client draws, so HasDepot keeps providing the app.
 // `lenderAccountId` is the real owner from AppOwnership.steamId32; 0 means the
 // answer did not name one. `ownBanner` marks the family bit as Aether's own
-// cosmetic stamp instead of a licence: the app is still drawn as family, but
-// HasDepot keeps providing it.
+// cosmetic stamp instead of a licence.
 void MarkFamilyShared(steam::AppId appId, std::uint32_t lenderAccountId, bool ownBanner);
 
 // Flags appId as spoofed: Steam did not provide it and Aether owns the answer.

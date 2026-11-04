@@ -336,8 +336,9 @@ but it is still one Aether provides. `core/FamilyClassification.h` is the single
 rule — a `RealShare` removes the app from `HasDepot`, a `Banner` does not — and
 `luadata::IsRealFamilyShare` is the behavioural read every gate uses (depot
 keys, manifest overrides, the cloud gate's `family-shared`, the achievement
-page). Without it the stamp switches off every `HasDepot` consumer for the
-listed apps, achievements included.
+page). The stamp always names the banner account, so an answer that names no
+lender is a real share and stays Valve's. Without this the stamp switches off
+every `HasDepot` consumer for the listed apps, achievements included.
 
 Twins:
 - Desk: `steam/acf.rs` → `repair_installed_depots`,
@@ -351,7 +352,8 @@ Twins:
   recheck side is `scripting/DirWatch.cpp` → `RequestAppRecheck` (Rule 4).
 
 Decision matrix under test: the Desk cases in `steam/acf.rs::tests`, the DLL
-`installeddepots`, `manifest_identity` and `recheck` ctest cases.
+`installeddepots`, `manifest_identity`, `recheck` and `family_banner` ctest
+cases.
 
 **Why**: `InstalledDepots` is the record Steam computes every download delta
 from (`contentupdatecontext.cpp` / `depotdownloadmgr.cpp`). A GID with no local

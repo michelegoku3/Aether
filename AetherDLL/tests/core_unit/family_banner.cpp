@@ -24,15 +24,20 @@ void FamilyBannerTest() {
     CHECK(ProvidesApp(true, false, FamilyKind::None));   // plain spoof
     CHECK(!ProvidesApp(true, true, FamilyKind::None));   // genuinely owned
     CHECK(!ProvidesApp(true, false, FamilyKind::RealShare));
+    CHECK(!ProvidesApp(true, true, FamilyKind::RealShare));
     CHECK(ProvidesApp(true, false, FamilyKind::Banner)); // display-only banner
+    CHECK(!ProvidesApp(true, true, FamilyKind::Banner));
 
     // --- is this family bit our own banner stamp? -------------------------
+    // Our stamp always names the banner account (AppManifestOwner writes it,
+    // FamilyLenders resolves it), so an answer that names no lender is a real
+    // share we cannot claim: the app stays Valve's.
     const std::vector<std::uint32_t> listed{1091500, 1868140};
     constexpr std::uint64_t kBannerSteamId = 76561199523209859ull;
     const auto bannerAccount = static_cast<std::uint32_t>(kBannerSteamId);
 
     CHECK(IsOwnBannerStamp(1868140, bannerAccount, true, listed, kBannerSteamId));
-    CHECK(IsOwnBannerStamp(1868140, 0, true, listed, kBannerSteamId)); // answer named no lender
+    CHECK(!IsOwnBannerStamp(1868140, 0, true, listed, kBannerSteamId));
     CHECK(!IsOwnBannerStamp(1868140, bannerAccount, false, listed, kBannerSteamId));
     CHECK(!IsOwnBannerStamp(1868140, bannerAccount, true, listed, 0));
     CHECK(!IsOwnBannerStamp(2000, bannerAccount, true, listed, kBannerSteamId)); // not listed
@@ -64,15 +69,24 @@ void FamilyBannerTest() {
     CHECK(ac::luadata::FamilySharedCount() == 0);
     CHECK(ac::luadata::BannerFamilyCount() == 1);
 
+    // The same app turning into a real share drops the banner bit, even when
+    // the stamp used the same lender.
+    ac::luadata::MarkFamilyShared(kApp, 12345, /*ownBanner=*/false);
+    CHECK(ac::luadata::IsRealFamilyShare(kApp));
+    CHECK(!ac::luadata::HasDepot(kApp));
+    CHECK(ac::luadata::BannerFamilyCount() == 0);
+
     // The banner flag never outlives the family one.
     ac::luadata::MarkSpoofed(kApp);
     CHECK(!ac::luadata::IsFamilyShared(kApp));
+    CHECK(!ac::luadata::IsRealFamilyShare(kApp));
     CHECK(ac::luadata::BannerFamilyCount() == 0);
     CHECK(ac::luadata::HasDepot(kApp));
 
     ac::luadata::MarkFamilyShared(kApp, bannerAccount, /*ownBanner=*/true);
     ac::luadata::MarkOwned(kApp);
     CHECK(!ac::luadata::IsFamilyShared(kApp));
+    CHECK(!ac::luadata::IsRealFamilyShare(kApp));
     CHECK(ac::luadata::BannerFamilyCount() == 0);
     CHECK(!ac::luadata::HasDepot(kApp)); // genuinely owned: Steam answers
 }

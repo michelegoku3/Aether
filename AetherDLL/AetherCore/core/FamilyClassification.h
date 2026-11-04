@@ -45,15 +45,20 @@ inline bool ProvidesApp(bool configured, bool owned, FamilyKind kind) {
 
 // True when the family answer for `appId` is the stamp AppManifestOwner wrote
 // for the cosmetic banner, not a licence: the app is listed, the banner is on,
-// and the lender is either unnamed or the configured banner account. A real
-// lender (someone else) is a real share even for a listed app.
+// and the named lender is the configured banner account. Our stamp always names
+// that account, so an answer that names nobody is a real share Aether cannot
+// claim (a Steam Family answer may arrive without a lender).
+//
+// The comparison uses the account configured now: a stamp left by a previously
+// configured banner account reads as a foreign lender, so the app stays a real
+// share (sticky, like any other observed share) until Steam is restarted.
 inline bool IsOwnBannerStamp(steam::AppId appId, std::uint32_t lenderAccountId, bool bannerEnabled,
                              const std::vector<std::uint32_t>& listedApps, std::uint64_t bannerSteamId) {
-    if (!bannerEnabled || bannerSteamId == 0)
+    if (!bannerEnabled || bannerSteamId == 0 || lenderAccountId == 0)
         return false;
     if (std::find(listedApps.begin(), listedApps.end(), appId) == listedApps.end())
         return false;
-    return lenderAccountId == 0 || lenderAccountId == static_cast<std::uint32_t>(bannerSteamId);
+    return lenderAccountId == static_cast<std::uint32_t>(bannerSteamId);
 }
 
 } // namespace ac::familyclass
