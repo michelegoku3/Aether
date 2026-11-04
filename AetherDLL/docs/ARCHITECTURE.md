@@ -25,6 +25,7 @@ the fast build loop ([`quick-build.md`](quick-build.md)).
 - [Pending version changes](#pending-version-changes)
 - [Library membership](#library-membership)
 - [SteamUI app overview](#steamui-app-overview)
+- [Card removal and restore](#card-removal-and-restore)
 - [App recheck after a pin change](#app-recheck-after-a-pin-change)
 - [Presence channels (`-showonline` / `-aetheronline`)](#presence-channels--showonline---aetheronline)
 
@@ -480,6 +481,33 @@ steamui table that publishes `[abi.CSteamApp.*]` is checked against the compiled
 offsets before the first hook is armed: a contradiction latches the struct guard
 and disables the write for the session instead of adapting.
 
+### Card removal and restore
+
+The owned bit is cached in the client object, so a `.lua` that goes away leaves
+its card in the library until a restart. Two halves keep the library honest
+without one, and both are reverse writes of the same bit:
+
+- **Removal.** The watcher applies a whole change batch, then names the library
+  roots that an explicitly removed file used to advertise and that no script
+  configures any more (`RetiredRoots`). A save that replaces the file in the same
+  batch therefore retires nothing: the temp-and-rename a save performs is parsed
+  before the check runs. A retired id makes the next card fill take the bit back
+  (`OwnershipAction::Clear`), which the client reads as "no longer in the
+  library" and drops the card.
+- **Restore.** The client keeps the object after the bit is taken back — its
+  details still resolve, only the bit is clear — so the card can be put back
+  without a restart. `GetAppByID` is the client's own lookup; the detour forwards
+  it unchanged and remembers the owner. Before the first write, the lookup is
+  confirmed on two ids whose cards Aether already filled, so the compiled prefix
+  is proven on objects that must exist. `RequestAppRetirement` decides what may
+  be taken back, and only a merely-unmanaged app is: `HasDepot` is false for a
+  genuinely owned license and for a real family share, and both keep the bit
+  Valve gave them.
+
+Both sets are bounded (`kMaxTrackedApps`) and every refusal is logged: a bit that
+could not be remembered would be unclearable, which is why a stamp that cannot be
+tracked is refused instead.
+
 ### App recheck after a pin change
 
 A version apply rewrites the Lua and nothing else, so an app whose pins moved
@@ -508,14 +536,20 @@ write before that frame predates the calls the client made, so without these the
 status file would keep describing the queue from before the reload.
 
 `status.json` reports `steamui_attach`, `overview_fills`, `overview_writes`,
-`overview_rejects` and `overview_probe` (`latched`, `unproven` or
-`rejected:<reason>`), so "the card was not repaired" is diagnosable without a
-debugger, plus `overview_rechecks` (ids handed to the client),
-`overview_recheck_pending` (queue depth) and `recheck_state`: `ready`,
-`no-source` (work queued, owner unknown) or `unsupported` (the module never
-installed the `MarkAppChange`/run-frame pair).
+`overview_clears`, `overview_restores`, `overview_retired` (cards still waiting
+to be rebuilt before their bit is taken back), `overview_hidden` (cards taken
+back and waiting for their `.lua` to return), `overview_rejects` and
+`overview_probe` (`latched`, `unproven` or `rejected:<reason>`), so "the card was
+removed or restored and why not" is diagnosable without a debugger, plus
+`overview_rechecks` (ids handed to the client), `overview_recheck_pending` (queue
+depth) and `recheck_state` (`ready`, `no-source` when work is queued but the owner
+is unknown, `unsupported` when the module never installed the
+`MarkAppChange`/run-frame pair). `restore_state` says whether a taken-back card
+can come back: `ready`, `no-controller` (the client never ran the lookup the
+owner is learned from), `no-shape` (no lookup answer has passed the compiled
+prefix twice) or `unsupported` (the lookup pattern is missing).
 
-Not this layer: card removal, size, install/update state, achievements and appid
+Not this layer: card size, install/update state, achievements and appid
 translation. Each of those writes more of the client model and needs its own
 validated field.
 
