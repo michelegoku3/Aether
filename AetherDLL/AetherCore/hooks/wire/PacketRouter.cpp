@@ -19,6 +19,7 @@
 #include "core/NetPacketAbi.h"
 #include "hooks/wire/AccessTokenModule.h"
 #include "hooks/wire/AchievementModule.h"
+#include "hooks/wire/AchievementUi.h"
 #include "hooks/wire/EticketModule.h"
 #include "hooks/wire/FamilySharingModule.h"
 #include "hooks/wire/FrameOrigin.h"
@@ -136,6 +137,19 @@ std::int32_t DispatchSend(const WireFrame& f) {
             if (h == job_hash::kGetUserStats) {
                 return AchievementModule::HandleSendGetUserStats(f, t_scratchBody.data(), kWireMaxBodyBytes);
             }
+            // Client achievement page: remember the job id so the reply can be
+            // attributed, and start the local read before the reply lands. The
+            // requests themselves leave untouched.
+            if (h == job_hash::kGetGameAchievements) {
+                if (req.hasSource)
+                    ac::achieve::OnSendSchema(req.source, f.body, f.bodyLen);
+                return kNoChange;
+            }
+            if (h == job_hash::kGetUserAchievements) {
+                if (req.hasSource)
+                    ac::achieve::OnSendUser(req.source, f.body, f.bodyLen);
+                return kNoChange;
+            }
         }
         return kNoChange;
     }
@@ -237,6 +251,16 @@ std::int32_t DispatchRecv(const WireFrame& f) {
             return AchievementModule::HandleRecvGetUserStatsResponse(f, t_scratchBody.data(), kWireMaxBodyBytes,
                                                                      t_scratchHeader.data(), kWireMaxHeaderBytes,
                                                                      &t_recvHeaderLen);
+        }
+        // Client achievement page: learn the schema from the reply the client
+        // already receives, and rebuild the user-state reply from local data.
+        // Neither handler touches the header.
+        if (h == job_hash::kGetGameAchievements) {
+            return ac::achieve::OnRecvSchema(rsp.hasTarget ? rsp.target : 0, f.body, f.bodyLen);
+        }
+        if (h == job_hash::kGetUserAchievements) {
+            return ac::achieve::OnRecvUser(rsp.hasTarget ? rsp.target : 0, f.body, f.bodyLen, t_scratchBody.data(),
+                                           kWireMaxBodyBytes);
         }
         return kNoChange;
     }

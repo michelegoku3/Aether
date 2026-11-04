@@ -86,6 +86,12 @@ struct Settings {
     //   default_mode = "showonline" -> presence broadcast for every launch.
     bool presenceDefaultShowOnline = false;
 
+    // [achievements] Serve the client's own achievement page (library -> game
+    // page -> Achievements) from the local .bin for managed apps. Default ON:
+    // without it the page is empty for every app Aether advertises. Off means
+    // Aether never rewrites that reply; it changes nothing else.
+    bool achievementsUiService = true;
+
     // [library] Cosmetic Steam library owner banner.
     //   owner_banner = true             -> listed appids get
     //                                      LastOwner = owner_banner_steamid;

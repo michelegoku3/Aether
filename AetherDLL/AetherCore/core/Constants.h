@@ -234,9 +234,15 @@ inline constexpr std::uint32_t FnvHash(const char* s) {
 namespace job_hash {
 inline constexpr const char* kGetUserStatsName = "Player.GetUserStats#1";
 inline constexpr const char* kGetManifestRequestCodeName = "ContentServerDirectory.GetManifestRequestCode#1";
+// Client achievement page (library -> game page -> Achievements). A pair sent
+// together: the schema and the account state.
+inline constexpr const char* kGetGameAchievementsName = "Player.GetGameAchievements#1";
+inline constexpr const char* kGetUserAchievementsName = "Player.GetUserAchievements#1";
 inline constexpr std::uint32_t kNotifyRunningApps = FnvHash("FamilyGroupsClient.NotifyRunningApps#1");
 inline constexpr std::uint32_t kGetUserStats = FnvHash(kGetUserStatsName);
 inline constexpr std::uint32_t kGetManifestRequestCode = FnvHash(kGetManifestRequestCodeName);
+inline constexpr std::uint32_t kGetGameAchievements = FnvHash(kGetGameAchievementsName);
+inline constexpr std::uint32_t kGetUserAchievements = FnvHash(kGetUserAchievementsName);
 } // namespace job_hash
 
 // PacketRouter ring-buffer pool sizing. 256 KiB body covers large messages

@@ -17,6 +17,7 @@
 #include "hooks/ipc/PipeWatch.h"
 #include "hooks/steamui/AppOverviewPolicy.h"
 #include "hooks/steamui/AppRecheckPolicy.h"
+#include "hooks/wire/AchievementUi.h"
 #include "hooks/wire/DonorPool.h"
 #include "hooks/wire/DonorProbe.h"
 #include "network/EticketFetcher.h"
@@ -66,6 +67,9 @@ struct AchievementStore {
     // Donor-probe walk bookkeeping (in-flight apps plus the injected wire
     // sender/schema sink). Donor learning itself stays in `donor` above.
     hooks::wire::donorprobe::State probe;
+    // Client achievement page (service path): captured schemas, the local
+    // .bin state read on workers, job correlation and the rewrite counters.
+    achieve::State ui;
 };
 
 struct AetherCoreState {

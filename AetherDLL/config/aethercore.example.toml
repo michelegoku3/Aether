@@ -109,6 +109,13 @@ suffix_invisible = false
 # rewrite on THIS pc: it restores the real game icon in your friends list.
 friend_appid_from_name = true
 
+[achievements]
+# Serve the client's own achievement page (library -> game page -> Achievements)
+# from the local cache for managed apps. The page otherwise shows nothing for an
+# app this account does not own, even when the overlay has the real unlocks.
+# Purely local: no stats are uploaded and owned games are never touched.
+ui_service = true
+
 [library]
 # Cosmetic "From the library of <account>" banner on the app-details page.
 # Purely visual: no licenses, ownership, launching or updates change.

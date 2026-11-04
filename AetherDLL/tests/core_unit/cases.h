@@ -117,3 +117,4 @@ void AppOverviewTest();
 void RecheckTest();
 void AchievementState();
 void AchievementServiceWire();
+void AchievementPolicy();

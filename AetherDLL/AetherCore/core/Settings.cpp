@@ -187,6 +187,13 @@ Settings Settings::Load(const std::string& configPath, bool* valid) {
         }
     }
 
+    // [achievements]
+    if (auto* achievements = tbl["achievements"].as_table()) {
+        if (auto v = (*achievements)["ui_service"].value<bool>()) {
+            s.achievementsUiService = *v;
+        }
+    }
+
     // [presence]
     if (auto* presence = tbl["presence"].as_table()) {
         if (auto v = (*presence)["inject_local"].value<bool>()) {

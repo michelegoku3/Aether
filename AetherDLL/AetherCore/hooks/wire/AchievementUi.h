@@ -1,0 +1,90 @@
+#pragma once
+
+#include <atomic>
+#include <cstdint>
+#include <deque>
+#include <mutex>
+#include <string>
+#include <unordered_map>
+#include <unordered_set>
+#include <vector>
+
+#include "hooks/wire/AchievementUiPolicy.h"
+
+// ---------------------------------------------------------------------------
+// Client achievement page — service path glue.
+//
+// The Steam client asks the CM for a game's achievement schema
+// (Player.GetGameAchievements#1) and for the account's achievement state
+// (Player.GetUserAchievements#1), then renders the page from both. For an app
+// the account does not own (every app Aether advertises) the CM still answers
+// the schema but sends an empty state body, so the page shows no achievements
+// even though the local .bin holds the real unlocks.
+//
+// This module remembers the schema from the reply the client already receives,
+// reads the local state on a worker, and rebuilds only the state reply. The
+// schema reply and every app that is not managed pass through untouched.
+//
+// All entry points take the job id and a raw body: the wire layer owns frame
+// decoding, this module owns the protobuf payloads. Nothing here touches disk
+// on the caller's thread; per-call and cache state live in
+// AetherCoreState::AchievementStore::ui (core rule, docs/ARCHITECTURE.md).
+// ---------------------------------------------------------------------------
+namespace ac::achieve {
+
+// Schema captured from a GetGameAchievements reply the client received.
+struct CapturedSchema {
+    std::int32_t version = 0;
+    std::uint32_t hash = 0;
+    std::vector<SchemaEntry> entries;
+};
+
+// Local state for one (app, account), read from
+// <steam>\appcache\stats\UserGameStats_<account>_<appid>.bin on a worker.
+// size/writeTime make a change detector: a newer .bin supersedes the cache.
+struct CachedState {
+    bool known = false;      // the file exists and parsed
+    std::uintmax_t size = 0; // bytes read
+    std::int64_t writeTime = 0;
+    std::unordered_map<std::uint32_t, std::uint32_t> unlocked;
+};
+
+// One outstanding service call, remembered from its send so the reply can be
+// attributed (responses carry only jobid_target).
+struct Pending {
+    bool userCall = false; // false: GetGameAchievements
+    std::uint32_t appId = 0;
+    std::uint64_t steamId = 0;
+};
+
+// Shared state: wire threads read and write, workers fill the state cache, the
+// status writer reads the counters. One mutex, held only for map operations
+// and short copies — never across I/O, protobuf parsing or logging.
+struct State {
+    mutable std::mutex mutex;
+    std::unordered_map<std::uint32_t, CapturedSchema> schemas; // bounded by schemaOrder
+    std::deque<std::uint32_t> schemaOrder;
+    std::unordered_map<std::uint64_t, Pending> pending;
+    std::deque<std::uint64_t> pendingOrder;
+    std::unordered_map<std::uint64_t, CachedState> states; // (appId << 32) | accountId
+    std::unordered_set<std::uint64_t> refreshing;
+    std::atomic<std::uint64_t> calls{0};           // send seen (both methods)
+    std::atomic<std::uint64_t> schemasCaptured{0}; // schemas stored
+    std::atomic<std::uint64_t> rebuilt{0};         // user replies replaced
+    std::atomic<std::uint64_t> passthrough{0};     // user replies left alone
+    std::string lastReason = "idle";               // guarded by mutex
+};
+
+// Wire entry points. Send handlers only remember the call and warm the state
+// cache; the reply handlers return a new body length or -1 for pass-through.
+// OnRecvSchema never rewrites the body, it only learns the schema.
+bool OnSendSchema(std::uint64_t jobId, const std::uint8_t* body, std::uint32_t len);
+bool OnSendUser(std::uint64_t jobId, const std::uint8_t* body, std::uint32_t len);
+std::int32_t OnRecvSchema(std::uint64_t jobId, const std::uint8_t* body, std::uint32_t len);
+std::int32_t OnRecvUser(std::uint64_t jobId, const std::uint8_t* body, std::uint32_t len, std::uint8_t* out,
+                        std::uint32_t cap);
+
+// True when the settings snapshot enables the page rewrite.
+bool Enabled();
+
+} // namespace ac::achieve

@@ -53,6 +53,7 @@ int main(int argc, char** argv) {
         {"overview", AppOverviewTest},
         {"recheck", RecheckTest},
         {"achievement_state", AchievementState},
+        {"achievement_policy", AchievementPolicy},
 #ifdef AETHER_HAVE_PROTO
         {"achievement_service", AchievementServiceWire},
 #endif
