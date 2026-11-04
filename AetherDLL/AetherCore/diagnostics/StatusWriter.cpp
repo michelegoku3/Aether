@@ -203,6 +203,7 @@ static void WriteSnapshot(std::uint64_t requests) {
     w.UInt64("achievement_passthrough", g_state.achievements.ui.passthrough.load(std::memory_order_relaxed));
     w.UInt64("achievement_held", g_state.achievements.ui.heldCount.load(std::memory_order_relaxed));
     w.UInt64("achievement_delivered", g_state.achievements.ui.delivered.load(std::memory_order_relaxed));
+    w.UInt64("achievement_progress_values", g_state.achievements.ui.progressValues.load(std::memory_order_relaxed));
     w.Str("achievement_service_state", achieve::Enabled() ? "ready" : "off");
     {
         std::lock_guard<std::mutex> lock(g_state.achievements.ui.mutex);

@@ -89,6 +89,18 @@ void AchievementPolicy() {
         CHECK(d.reply.groups[0].groupid == 0);
     }
 
+    // --- the counter travels with the entry it belongs to --------------------
+    {
+        Input in = base;
+        in.progress = {{258, 17.0f}, {999, 40.0f}};
+        const auto d = Decide(in);
+        CHECK(d.reply.entries.size() == 3);
+        CHECK(d.reply.entries[0].progress == 0.0f); // no counter for this one
+        CHECK(d.reply.entries[1].progress == 17.0f);
+        CHECK(d.reply.entries[1].unlocked); // unlocked entries keep their counter
+        CHECK(d.reply.entries[2].progress == 0.0f);
+    }
+
     // --- order is the schema order, not the bit order nor the map order ------
     {
         Input in = base;

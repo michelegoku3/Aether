@@ -21,7 +21,9 @@
 // entry per schema achievement (locked ones included), `progress_float` always
 // present, and one `is_achievable` group per group the schema lists. The page
 // draws its rows from this reply, so a locked achievement with no entry, or a
-// reply with no entries at all, leaves the section blank.
+// reply with no entries at all, leaves the section blank. `progress_float` is
+// the row's counter: an entry without it, or with a stale 0, draws an empty bar
+// even when the game recorded progress.
 // ---------------------------------------------------------------------------
 namespace ac::achieve {
 
@@ -35,6 +37,7 @@ struct ReplyEntry {
     std::uint32_t key = 0;
     bool unlocked = false;
     std::uint32_t unlockTime = 0; // 0 when the bit is set without a recorded date
+    float progress = 0.0f;        // raw stat value; 0 when the game keeps none
 };
 
 struct ReplyGroup {
@@ -59,6 +62,7 @@ struct Input {
     std::vector<SchemaEntry> entries;
     std::vector<std::uint32_t> groups;
     std::unordered_map<std::uint32_t, std::uint32_t> unlocked; // key -> time
+    std::unordered_map<std::uint32_t, float> progress;         // key -> counter value
 };
 
 struct Decision {
@@ -96,6 +100,9 @@ inline Decision Decide(const Input& in) {
             out.unlocked = true;
             out.unlockTime = it->second;
         }
+        const auto progress = in.progress.find(entry.key);
+        if (progress != in.progress.end())
+            out.progress = progress->second;
         decision.reply.entries.push_back(out);
     }
     decision.reply.groups.reserve(in.groups.size());
@@ -123,7 +130,7 @@ template <typename Response> void FillReply(Response& reply, const Decision& dec
         }
         // Presence matters more than the value: an entry without it leaves the
         // row blank on the page.
-        item->set_progress_float(0.0f);
+        item->set_progress_float(entry.progress);
     }
     for (const ReplyGroup& group : decision.reply.groups) {
         auto* item = reply.add_groups();

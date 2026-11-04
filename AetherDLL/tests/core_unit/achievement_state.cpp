@@ -1,6 +1,7 @@
 #include "cases.h"
 
 #include <cstdint>
+#include <cstring>
 #include <string>
 #include <vector>
 
@@ -50,6 +51,15 @@ struct Bin {
         bytes.push_back(0x01);
         Append(key);
         Append(value);
+        return *this;
+    }
+    Bin& Float(const std::string& key, float value) {
+        std::uint32_t bits = 0;
+        std::memcpy(&bits, &value, sizeof(bits));
+        bytes.push_back(0x03);
+        Append(key);
+        for (int i = 0; i < 4; ++i)
+            bytes.push_back(static_cast<std::uint8_t>((bits >> (8 * i)) & 0xFF));
         return *this;
     }
     Bin& End(std::size_t count = 1) {
@@ -126,4 +136,29 @@ void AchievementState() {
     ac::achieve::UserState otherState;
     CHECK(ac::achieve::ParseUserState(other.bytes.data(), other.bytes.size(), otherState));
     CHECK(otherState.empty());
+
+    // A stat bucket's "data" is its current value: that is the counter the page
+    // shows for an achievement driven by it.
+    Bin value;
+    value.Dict("cache").Dict("8").Int("data", 7).End(2).End();
+    ac::achieve::UserState valueState;
+    CHECK(ac::achieve::ParseUserState(value.bytes.data(), value.bytes.size(), valueState));
+    CHECK(valueState.values.size() == 1);
+    CHECK(valueState.values[8] == 7.0f);
+
+    // The same key can be a float: the KV1 type decides how the four bytes read.
+    Bin floatValue;
+    floatValue.Dict("cache").Dict("8").Float("data", 2.5f).End(2).End();
+    ac::achieve::UserState floatState;
+    CHECK(ac::achieve::ParseUserState(floatValue.bytes.data(), floatValue.bytes.size(), floatState));
+    CHECK(floatState.values[8] == 2.5f);
+
+    // A recorded date is an unlock on its own: the mask can be cleared while the
+    // date stays, and Steam's own page still lists the achievement as unlocked.
+    Bin dated;
+    dated.Dict("cache").Dict("2").Int("data", 0).Dict("AchievementTimes").Int("4", 1234).End(2).End(2);
+    ac::achieve::UserState datedState;
+    CHECK(ac::achieve::ParseUserState(dated.bytes.data(), dated.bytes.size(), datedState));
+    CHECK(datedState.unlocked.size() == 1);
+    CHECK(datedState.unlocked[512u + 4u] == 1234u);
 }

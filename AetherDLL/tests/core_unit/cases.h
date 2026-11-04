@@ -116,6 +116,7 @@ void ProductInfoQueueTest();
 void AppOverviewTest();
 void RecheckTest();
 void AchievementState();
+void AchievementSchema();
 void AchievementServiceWire();
 void AchievementPolicy();
 void FamilyBannerTest();

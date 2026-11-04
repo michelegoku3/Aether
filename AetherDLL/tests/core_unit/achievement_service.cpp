@@ -140,6 +140,25 @@ void AchievementServiceWire() {
         CHECK(!rsp.has_schema_hash());
     }
 
+    // --- the counter reaches the wire as progress_float ---------------------
+    // The page draws the achievement's bar from this value; it is the raw stat
+    // value, not a fraction.
+    {
+        ac::achieve::Decision decision;
+        decision.reply.entries = {{kKey, false, 0, 3.5f}, {kKey + 1, true, kUnlockTime, 12.0f}};
+        decision.reply.groups = {{0}};
+
+        CPlayer_GetUserAchievements_Response rsp;
+        CHECK(rsp.ParseFromArray(kUserReply, sizeof(kUserReply)));
+        ac::achieve::FillReply(rsp, decision);
+        CHECK(rsp.achievements_size() == 2);
+        CHECK(rsp.achievements(0).has_progress_float());
+        CHECK(rsp.achievements(0).progress_float() == 3.5f);
+        CHECK(!rsp.achievements(0).unlocked());
+        CHECK(rsp.achievements(1).progress_float() == 12.0f);
+        CHECK(rsp.achievements(1).unlocked());
+    }
+
     // --- an unknown field from a future build survives a re-serialization ----
     // The client may add fields we do not know; dropping them would make the
     // reply look like a different schema to the page.

@@ -30,6 +30,7 @@ add_executable(core_unit_tests
     core_unit/appoverview.cpp
     core_unit/recheck.cpp
     core_unit/achievement_state.cpp
+    core_unit/achievement_schema.cpp
     core_unit/achievement_policy.cpp
     core_unit/family_banner.cpp
     core_unit/loginusers.cpp
@@ -48,6 +49,7 @@ add_executable(core_unit_tests
     ../AetherCore/hooks/steamui/AppRecheckPolicy.cpp
     ../AetherCore/hooks/wire/GamesPlayedFormat.cpp
     ../AetherCore/hooks/wire/AchievementUserState.cpp
+    ../AetherCore/hooks/wire/AchievementStatsSchema.cpp
     ../AetherCore/hooks/wire/DonorPool.cpp
     ../AetherCore/hooks/wire/DonorProbe.cpp
     ../AetherCore/hooks/wire/SchemaCache.cpp
@@ -74,7 +76,7 @@ if(MSVC)
 else()
     target_compile_options(core_unit_tests PRIVATE -Wall -Wextra -Wpedantic -Werror)
 endif()
-foreach(case strings paths policy worker budget settings registry workers netpacket sentinel structguard gamesplayed_format donorpool donorpool_learning donorpool_snapshot schema_cache donor_probe keyvalues vdftext jsonutil_escapes manifest_identity ipcreply snapshot_merge ttlcache hexcodec signature ipcspec jsonwriter manifest_contract schema_buckets workers_reap_slow workers_race acfowner installeddepots ownership loginusers steamuicss steamuipatch callbackcopy memory payloadattest productinfo_queue overview recheck achievement_state achievement_policy family_banner)
+foreach(case strings paths policy worker budget settings registry workers netpacket sentinel structguard gamesplayed_format donorpool donorpool_learning donorpool_snapshot schema_cache donor_probe keyvalues vdftext jsonutil_escapes manifest_identity ipcreply snapshot_merge ttlcache hexcodec signature ipcspec jsonwriter manifest_contract schema_buckets workers_reap_slow workers_race acfowner installeddepots ownership loginusers steamuicss steamuipatch callbackcopy memory payloadattest productinfo_queue overview recheck achievement_state achievement_schema achievement_policy family_banner)
     add_test(NAME ${case} COMMAND core_unit_tests ${case})
 endforeach()
 # The wire-contract golden blobs assert the field numbers of the generated

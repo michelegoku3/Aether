@@ -11,6 +11,7 @@
 #include <vector>
 
 #include "core/SteamTypes.h"
+#include "hooks/wire/AchievementStatsSchema.h"
 #include "hooks/wire/AchievementUiPolicy.h"
 
 // ---------------------------------------------------------------------------
@@ -31,7 +32,9 @@
 //   * a reply whose schema or local state is not ready yet is held (the client
 //     gets a copy aimed at a job nobody waits on, so its real job stays
 //     pending) and delivered once the data lands, with an 8 s safety net;
-//   * the rebuilt body lists every schema achievement, not only unlocked ones.
+//   * the rebuilt body lists every schema achievement, not only unlocked ones;
+//   * each entry carries the counter from the local stats file, so a page row
+//     shows the same progress the overlay does.
 //
 // All entry points take the job id and raw bodies: the wire layer owns frame
 // decoding, this module owns the protobuf payloads. Nothing here touches disk
@@ -48,16 +51,29 @@ struct CapturedSchema {
     std::vector<std::uint32_t> groups;
 };
 
-// Local state for one (app, account), read from
-// <steam>\appcache\stats\UserGameStats_<account>_<appid>.bin on a worker.
-// `loaded` says a read finished; `known` says the file existed and parsed, so
-// an absent file answers "nothing unlocked" instead of waiting forever.
+// Local state for one (app, account), read on a worker from
+// <steam>\appcache\stats\UserGameStats_<account>_<appid>.bin plus the game
+// schema that names each progress counter (AchievementStatsSchema.h).
+// `loaded` says a read finished; `known` says the stats file existed and parsed,
+// so an absent file answers "nothing unlocked, no progress" instead of waiting
+// forever.
 struct CachedState {
     bool loaded = false;
     bool known = false;
     std::uintmax_t size = 0; // bytes read
     std::int64_t writeTime = 0;
     std::unordered_map<std::uint32_t, std::uint32_t> unlocked;
+    std::unordered_map<std::uint32_t, float> progress; // key -> counter value
+};
+
+// The game schema's progress map, kept per app. Steam rewrites
+// UserGameStatsSchema_<appid>.bin when the game's schema changes, so the cached
+// copy is re-read when its size or write time moves; a missing file is not
+// cached, and the next page open tries again.
+struct CachedStatsSchema {
+    std::uintmax_t size = 0;
+    std::int64_t writeTime = 0;
+    StatsSchema schema;
 };
 
 // One outstanding service call, remembered from its send so the reply can be
@@ -87,7 +103,9 @@ struct State {
     std::deque<std::uint32_t> schemaOrder;
     std::unordered_map<std::uint64_t, Pending> pending;
     std::deque<std::uint64_t> pendingOrder;
-    std::unordered_map<std::uint64_t, CachedState> states; // (appId << 32) | accountId
+    std::unordered_map<std::uint64_t, CachedState> states;             // (appId << 32) | accountId
+    std::unordered_map<std::uint32_t, CachedStatsSchema> statsSchemas; // bounded by statsSchemaOrder
+    std::deque<std::uint32_t> statsSchemaOrder;
     std::unordered_set<std::uint64_t> refreshing;
     std::vector<HeldReply> held;
     std::deque<std::vector<std::uint8_t>> outbox;  // complete 147 frames ready to deliver
@@ -97,6 +115,7 @@ struct State {
     std::atomic<std::uint64_t> passthrough{0};     // user replies left alone
     std::atomic<std::uint64_t> heldCount{0};       // replies parked waiting for data
     std::atomic<std::uint64_t> delivered{0};       // held replies delivered later
+    std::atomic<std::uint64_t> progressValues{0};  // entries with a counter in the last rebuild
     std::string lastReason = "idle";               // guarded by mutex
 };
 

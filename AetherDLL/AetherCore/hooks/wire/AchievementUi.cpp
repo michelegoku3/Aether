@@ -39,6 +39,7 @@ constexpr auto kHoldTimeout = std::chrono::seconds(8);
 constexpr std::size_t kMaxSchemas = 64;
 constexpr std::size_t kMaxPending = 64;
 constexpr std::size_t kMaxStates = 64;
+constexpr std::size_t kMaxStatsSchemas = 64;
 constexpr std::size_t kMaxHeld = 16;
 constexpr std::size_t kMaxOutbox = 16;
 
@@ -58,6 +59,41 @@ std::string StatsDir() {
 
 std::string UserBinPath(std::uint32_t accountId, std::uint32_t appId) {
     return StatsDir() + "\\UserGameStats_" + std::to_string(accountId) + "_" + std::to_string(appId) + ".bin";
+}
+
+std::string StatsSchemaPath(std::uint32_t appId) {
+    return StatsDir() + "\\UserGameStatsSchema_" + std::to_string(appId) + ".bin";
+}
+
+// Size and write time of a stats file. The worker uses them to tell whether the
+// cached parse still matches the file Steam wrote.
+struct FileStamp {
+    bool present = false;
+    std::uintmax_t size = 0;
+    std::int64_t writeTime = 0;
+};
+
+FileStamp StatFile(const std::string& path) {
+    FileStamp stamp;
+    std::error_code ec;
+    const auto fsPath = winfile::ToPath(path);
+    stamp.size = std::filesystem::file_size(fsPath, ec);
+    if (ec)
+        return stamp;
+    const auto time = std::filesystem::last_write_time(fsPath, ec);
+    if (ec)
+        return stamp;
+    stamp.present = true;
+    stamp.writeTime = static_cast<std::int64_t>(time.time_since_epoch().count());
+    return stamp;
+}
+
+bool ReadFileBytes(const std::string& path, std::vector<std::uint8_t>& out) {
+    std::ifstream file(winfile::ToPath(path), std::ios::binary);
+    if (!file.is_open())
+        return false;
+    out.assign(std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>());
+    return true;
 }
 
 std::uint64_t StateKey(std::uint32_t appId, std::uint32_t accountId) {
@@ -132,6 +168,28 @@ bool CopyState(std::uint64_t key, CachedState& out) {
     return true;
 }
 
+bool CopyStatsSchema(std::uint32_t appId, CachedStatsSchema& out) {
+    State& s = S();
+    std::lock_guard<std::mutex> lock(s.mutex);
+    const auto it = s.statsSchemas.find(appId);
+    if (it == s.statsSchemas.end())
+        return false;
+    out = it->second;
+    return true;
+}
+
+void StoreStatsSchema(std::uint32_t appId, CachedStatsSchema schema) {
+    State& s = S();
+    std::lock_guard<std::mutex> lock(s.mutex);
+    if (!s.statsSchemas.contains(appId))
+        s.statsSchemaOrder.push_back(appId);
+    s.statsSchemas[appId] = std::move(schema);
+    while (s.statsSchemaOrder.size() > kMaxStatsSchemas) {
+        s.statsSchemas.erase(s.statsSchemaOrder.front());
+        s.statsSchemaOrder.pop_front();
+    }
+}
+
 // Builds a complete 147 frame and queues it for delivery by TryDeliver.
 bool QueueFrame(const std::string& header, const std::string& body) {
     const std::uint32_t headerLen = static_cast<std::uint32_t>(header.size());
@@ -172,8 +230,10 @@ bool BuildBody(std::uint32_t appId, std::uint32_t accountId, const std::string& 
     in.entries = haveSchema ? schema.entries : std::vector<SchemaEntry>{};
     in.groups = haveSchema ? schema.groups : std::vector<std::uint32_t>{};
     in.stateLoaded = haveState;
-    if (haveState)
+    if (haveState) {
         in.unlocked = state.unlocked;
+        in.progress = state.progress;
+    }
 
     const Decision decision = Decide(in);
     reason = decision.reason;
@@ -196,6 +256,13 @@ bool BuildBody(std::uint32_t appId, std::uint32_t accountId, const std::string& 
         reason = "encode";
         return false;
     }
+
+    std::size_t withProgress = 0;
+    for (const ReplyEntry& entry : decision.reply.entries) {
+        if (entry.progress != 0.0f)
+            ++withProgress;
+    }
+    S().progressValues.store(withProgress, std::memory_order_relaxed);
     return true;
 }
 
@@ -286,28 +353,51 @@ void ExpireHeld() {
     }
 }
 
-// Worker body: read the .bin, publish the parsed result. Disk and KV1 walking
-// run here, never on a Steam thread.
+// Worker body: read the stats file and the schema that names its counters,
+// publish the parsed result. Disk and KV1 walking run here, never on a Steam
+// thread.
 void ReadStateNow(std::uint64_t key, std::uint32_t accountId, std::uint32_t appId) {
     CachedState fresh;
     fresh.loaded = true;
-    const std::string path = UserBinPath(accountId, appId);
-    std::error_code ec;
-    const auto fsPath = winfile::ToPath(path);
-    const std::uintmax_t size = std::filesystem::file_size(fsPath, ec);
-    if (!ec && size > 0) {
-        const auto stamp = std::filesystem::last_write_time(fsPath, ec);
-        if (!ec)
-            fresh.writeTime = static_cast<std::int64_t>(stamp.time_since_epoch().count());
-        std::ifstream file(fsPath, std::ios::binary);
-        if (file.is_open()) {
-            std::vector<std::uint8_t> bytes((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
-            UserState state;
+
+    const std::string userPath = UserBinPath(accountId, appId);
+    const FileStamp userFile = StatFile(userPath);
+    UserState state;
+    if (userFile.present && userFile.size > 0) {
+        std::vector<std::uint8_t> bytes;
+        if (ReadFileBytes(userPath, bytes)) {
             fresh.known = ParseUserState(bytes.data(), bytes.size(), state);
             fresh.size = bytes.size();
-            fresh.unlocked = std::move(state.unlocked);
+            fresh.writeTime = userFile.writeTime;
         }
     }
+
+    // Which stat drives an achievement's counter is the game schema's to say.
+    // The parse is cached per app and re-run only when Steam rewrites the file.
+    CachedStatsSchema statsSchema;
+    const bool cached = CopyStatsSchema(appId, statsSchema);
+    const FileStamp schemaFile = StatFile(StatsSchemaPath(appId));
+    if (schemaFile.present &&
+        (!cached || statsSchema.size != schemaFile.size || statsSchema.writeTime != schemaFile.writeTime)) {
+        std::vector<std::uint8_t> bytes;
+        if (ReadFileBytes(StatsSchemaPath(appId), bytes)) {
+            CachedStatsSchema parsed;
+            parsed.size = schemaFile.size;
+            parsed.writeTime = schemaFile.writeTime;
+            ParseStatsSchema(bytes.data(), bytes.size(), parsed.schema);
+            statsSchema = parsed;
+            StoreStatsSchema(appId, std::move(parsed));
+        } else {
+            statsSchema = CachedStatsSchema{};
+        }
+    }
+
+    for (const auto& [achievementKey, statId] : statsSchema.schema.progressStat) {
+        const auto value = state.values.find(statId);
+        if (value != state.values.end())
+            fresh.progress[achievementKey] = value->second;
+    }
+    fresh.unlocked = std::move(state.unlocked);
 
     {
         State& s = S();
@@ -508,7 +598,9 @@ std::int32_t OnRecvUser(std::uint64_t jobId, const std::uint8_t* header, std::ui
             std::copy(rebuilt.begin(), rebuilt.end(), out);
         S().rebuilt.fetch_add(1, std::memory_order_relaxed);
         SetReason("rebuilt");
-        AC_LOG_DEBUG(kModule, "App %u: page answered from local state (%zu byte).", pending.appId, rebuilt.size());
+        AC_LOG_DEBUG(kModule, "App %u: page answered from local state (%zu byte, %llu entry with progress).",
+                     pending.appId, rebuilt.size(),
+                     static_cast<unsigned long long>(S().progressValues.load(std::memory_order_relaxed)));
         return static_cast<std::int32_t>(rebuilt.size());
     }
     if (!hold) {
