@@ -25,7 +25,7 @@
 //   config_store_user_local_captured, config_store_cached_app_tickets
 //   lua_files_loaded, configured_depots, access_tokens, manifest_overrides
 //   membership_library_roots, membership_owned, membership_spoofed,
-//     membership_family_shared
+//     membership_family_shared, membership_banner_family
 //   eticket_backend_configured, eticket_mint_successes, eticket_mint_failures,
 //     eticket_runtime_cache_entries
 //   ticket_forge_successes, ticket_forge_failures

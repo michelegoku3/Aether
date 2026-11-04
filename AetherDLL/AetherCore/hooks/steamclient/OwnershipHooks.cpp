@@ -13,6 +13,7 @@
 #include "core/AetherCoreState.h"
 #include "core/AppManifestOwner.h"
 #include "core/Constants.h"
+#include "core/FamilyClassification.h"
 #include "core/HookManager.h"
 #include "core/Logger.h"
 #include "core/OwnershipDecision.h"
@@ -255,6 +256,18 @@ std::uint32_t ResolveSpoofOwnerAccountId(AppId app, std::uint32_t familyLender) 
     return credential::ReadActiveUserId();
 }
 
+// True when this app's family answer is the stamp Aether's own owner banner
+// wrote, not a licence. The app keeps the family look, but it is still one
+// Aether provides: without this, the stamp would turn it into a Steam-provided
+// app and switch off every gate keyed on HasDepot.
+bool IsOwnBannerStamp(AppId app, std::uint32_t lender) {
+    const auto settings = Settings::Snapshot();
+    if (!settings)
+        return false;
+    return familyclass::IsOwnBannerStamp(app, lender, settings->libraryOwnerBanner,
+                                         settings->libraryOwnerBannerApps, settings->libraryOwnerBannerSteamId);
+}
+
 // ---- Hook bodies -----------------------------------------------------------
 
 bool h_CheckAppOwnership(void* self, AppId app, AppOwnership* out) {
@@ -296,8 +309,9 @@ bool h_CheckAppOwnership(void* self, AppId app, AppOwnership* out) {
                                              out->releaseState == AppReleaseState::Released &&
                                              (out->borrowed || out->familyShared) && out->steamId32 != 0;
             if (!rawFamilyWithLender) {
+                const bool ownBanner = IsOwnBannerStamp(app, mapLender);
                 const bool wasFamilyShared = luadata::IsFamilyShared(app);
-                luadata::MarkFamilyShared(app, mapLender, /*ownBanner=*/false);
+                luadata::MarkFamilyShared(app, mapLender, ownBanner);
                 familyLender = mapLender;
                 if (!wasFamilyShared)
                     ac::appmanifest::RequestOwnerApply();
@@ -305,7 +319,7 @@ bool h_CheckAppOwnership(void* self, AppId app, AppOwnership* out) {
                 // the real lender in steamId32 keeps the banner visible.
                 LicenseManager::RequestAppInPackage0(app);
                 LicenseManager::RequestLicenseRefresh();
-                RecordOwnershipOutcome(app, OwnershipOutcome::FamilyShared);
+                RecordOwnershipOutcome(app, ownBanner ? OwnershipOutcome::Unlocked : OwnershipOutcome::FamilyShared);
             }
         }
     }
@@ -332,8 +346,9 @@ bool h_CheckAppOwnership(void* self, AppId app, AppOwnership* out) {
             // so the manifest may carry Aether's stamp. A real family license
             // needs Steam's own value back to name a local owner.
             const std::uint32_t lender = out->steamId32;
+            const bool ownBanner = IsOwnBannerStamp(app, lender);
             const bool newlyFamilyShared = !luadata::IsFamilyShared(app);
-            luadata::MarkFamilyShared(app, lender, /*ownBanner=*/false);
+            luadata::MarkFamilyShared(app, lender, ownBanner);
             if (newlyFamilyShared) {
                 ac::appmanifest::RequestOwnerApply();
                 // Keep the app playable through package 0, but only when the
@@ -342,7 +357,7 @@ bool h_CheckAppOwnership(void* self, AppId app, AppOwnership* out) {
                 if (lender != 0)
                     LicenseManager::RequestAppInPackage0(app);
             }
-            RecordOwnershipOutcome(app, OwnershipOutcome::FamilyShared);
+            RecordOwnershipOutcome(app, ownBanner ? OwnershipOutcome::Unlocked : OwnershipOutcome::FamilyShared);
         } else {
             luadata::MarkOwned(app);
             RecordOwnershipOutcome(app, OwnershipOutcome::LegitOwned);

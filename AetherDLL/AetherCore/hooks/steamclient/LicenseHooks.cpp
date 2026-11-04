@@ -141,7 +141,10 @@ CloudPolicy GetPolicy(AppId id) {
     p.managed = luadata::HasDepot(id);
     p.tracked = luadata::IsConfigured(id);
     p.owned = luadata::IsOwned(id);
-    p.familyShared = luadata::IsFamilyShared(id);
+    // The behaviour keys on the licence, never on Aether's cosmetic owner
+    // banner: a banner app is a managed app whose cloud gate is the usual one,
+    // and the class a support log reads must say so.
+    p.familyShared = luadata::IsRealFamilyShare(id);
     p.block = p.managed && !p.owned && !p.familyShared;
     p.cls = OwnershipClass(p.tracked, p.managed, p.owned, p.familyShared);
     return p;

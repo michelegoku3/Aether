@@ -158,6 +158,7 @@ static void WriteSnapshot(std::uint64_t requests) {
     w.SizeT("membership_owned", luadata::OwnedCount());
     w.SizeT("membership_spoofed", luadata::SpoofedCount());
     w.SizeT("membership_family_shared", luadata::FamilySharedCount());
+    w.SizeT("membership_banner_family", luadata::BannerFamilyCount());
     w.SizeT("package0_app_ids", hooks::LicenseManager::Package0AppCount());
 
     // SteamUI app-overview layer: every card observed, every repair, and why a
