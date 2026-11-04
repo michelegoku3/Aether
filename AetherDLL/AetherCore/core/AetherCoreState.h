@@ -90,6 +90,10 @@ struct AetherCoreState {
         std::unordered_map<std::uint64_t, ManifestOverride> manifestOverrides; // depot -> override
         std::unordered_set<steam::AppId> ownedAppIds;
         std::unordered_set<steam::AppId> familySharedAppIds;
+        // Apps whose family bit is Aether's own owner banner, not a licence.
+        // They stay in familySharedAppIds (the client draws them as shared) and
+        // here, so HasDepot keeps providing them: see FamilyClassification.h.
+        std::unordered_set<steam::AppId> bannerFamilyAppIds;
         // Steam did not provide the app and Aether already answered as owned.
         // Package 0 makes Steam report owned afterwards; this flag keeps the
         // spoof from being reclassified as a genuine license.

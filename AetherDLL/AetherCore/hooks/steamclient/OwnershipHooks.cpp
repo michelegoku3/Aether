@@ -297,7 +297,7 @@ bool h_CheckAppOwnership(void* self, AppId app, AppOwnership* out) {
                                              (out->borrowed || out->familyShared) && out->steamId32 != 0;
             if (!rawFamilyWithLender) {
                 const bool wasFamilyShared = luadata::IsFamilyShared(app);
-                luadata::MarkFamilyShared(app, mapLender);
+                luadata::MarkFamilyShared(app, mapLender, /*ownBanner=*/false);
                 familyLender = mapLender;
                 if (!wasFamilyShared)
                     ac::appmanifest::RequestOwnerApply();
@@ -333,7 +333,7 @@ bool h_CheckAppOwnership(void* self, AppId app, AppOwnership* out) {
             // needs Steam's own value back to name a local owner.
             const std::uint32_t lender = out->steamId32;
             const bool newlyFamilyShared = !luadata::IsFamilyShared(app);
-            luadata::MarkFamilyShared(app, lender);
+            luadata::MarkFamilyShared(app, lender, /*ownBanner=*/false);
             if (newlyFamilyShared) {
                 ac::appmanifest::RequestOwnerApply();
                 // Keep the app playable through package 0, but only when the

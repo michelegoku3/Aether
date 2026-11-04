@@ -98,7 +98,7 @@ void MembershipCountsTrackClassification() {
 
     ac::luadata::MarkOwned(424242);
     ac::luadata::MarkSpoofed(424243);
-    ac::luadata::MarkFamilyShared(424244, 777);
+    ac::luadata::MarkFamilyShared(424244, 777, /*ownBanner=*/false);
     CHECK_EQ(ac::luadata::OwnedCount(), owned0 + 1);
     CHECK_EQ(ac::luadata::SpoofedCount(), spoofed0 + 1);
     CHECK_EQ(ac::luadata::FamilySharedCount(), family0 + 1);

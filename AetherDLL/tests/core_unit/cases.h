@@ -118,3 +118,4 @@ void RecheckTest();
 void AchievementState();
 void AchievementServiceWire();
 void AchievementPolicy();
+void FamilyBannerTest();

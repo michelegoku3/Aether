@@ -34,8 +34,10 @@ struct PinnedDepot {
 
 // ---- Reads (shared lock) ---------------------------------------------------
 
-// True when appId is configured by a script AND not flagged as genuinely owned.
-// This is the gate for every spoofing decision.
+// True when appId is configured by a script, not genuinely owned, and not a
+// real Steam Family share. This is the gate for every spoofing decision
+// (licence, depot keys, ownership, the achievement page). A real share is
+// Valve's to answer; the cosmetic owner banner is not a share, so it stays here.
 bool HasDepot(steam::AppId appId);
 
 // True when appId is configured at all (ignores the owned flag).
@@ -44,8 +46,14 @@ bool IsConfigured(steam::AppId appId);
 // True when CheckAppOwnership has observed a genuine non-family-shared license for appId.
 bool IsOwned(steam::AppId appId);
 
-// True when CheckAppOwnership has observed a Steam Family license for appId.
+// True when appId is drawn as a family app: a real Steam Family licence or
+// Aether's own cosmetic owner banner. Display only - see IsRealFamilyShare.
 bool IsFamilyShared(steam::AppId appId);
+
+// True when appId carries a real Steam Family licence (Valve answers for it),
+// false for the cosmetic banner. This is the behavioural read: HasDepot, the
+// cloud gate and the achievement page all key on it.
+bool IsRealFamilyShare(steam::AppId appId);
 
 // True when Steam did not provide appId and Aether already answered as owned.
 bool IsSpoofed(steam::AppId appId);
@@ -110,6 +118,9 @@ std::size_t ConfiguredDepotCount();
 std::size_t OwnedCount();
 std::size_t SpoofedCount();
 std::size_t FamilySharedCount();
+// Listed in [library] owner_banner_apps: the family bit is Aether's stamp, so
+// HasDepot still provides the app. Counted apart from FamilySharedCount.
+std::size_t BannerFamilyCount();
 // Number of numeric-filename roots, i.e. the apps that belong in the library.
 // Depots recorded by addappid are not library entries.
 std::size_t LibraryAppCount();
@@ -125,8 +136,10 @@ void MarkOwned(steam::AppId appId);
 // Flags appId as family-shared so HasDepot stops spoofing it, while cloud can
 // stay enabled and family-sharing packet suppression can continue independently.
 // `lenderAccountId` is the real owner from AppOwnership.steamId32; 0 means the
-// answer did not name one.
-void MarkFamilyShared(steam::AppId appId, std::uint32_t lenderAccountId);
+// answer did not name one. `ownBanner` marks the family bit as Aether's own
+// cosmetic stamp instead of a licence: the app is still drawn as family, but
+// HasDepot keeps providing it.
+void MarkFamilyShared(steam::AppId appId, std::uint32_t lenderAccountId, bool ownBanner);
 
 // Flags appId as spoofed: Steam did not provide it and Aether owns the answer.
 void MarkSpoofed(steam::AppId appId);

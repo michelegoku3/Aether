@@ -54,6 +54,7 @@ int main(int argc, char** argv) {
         {"recheck", RecheckTest},
         {"achievement_state", AchievementState},
         {"achievement_policy", AchievementPolicy},
+        {"family_banner", FamilyBannerTest},
 #ifdef AETHER_HAVE_PROTO
         {"achievement_service", AchievementServiceWire},
 #endif
