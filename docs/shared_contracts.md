@@ -30,6 +30,7 @@ must agree on, or you add/rename an IPC command.
 - [8. The Steam path is not a client parameter](#8-the-steam-path-is-not-a-client-parameter)
 - [9. ACF ownership: who writes which field](#9-acf-ownership-who-writes-which-field)
 - [10. Log line contract](#10-log-line-contract)
+- [11. Client achievement page: local state only](#11-client-achievement-page-local-state-only)
 
 ---
 
@@ -413,6 +414,46 @@ SteamLog/   <original Steam names, already filtered>
   any stamp line is included whole, tail-capped at 4 MiB. Steam stamps are
   second-precision, so Desk's millisecond stamps are what order the two
   families against each other.
+
+---
+
+## 11. Client achievement page: local state only
+
+Steam's own achievement page (library → game page → Achievements) is served by
+two service methods the client sends together: `Player.GetGameAchievements#1`
+(the schema: names, icons, `internal_key`, `schema_hash`) and
+`Player.GetUserAchievements#1` (the account state, keyed by `internal_key`).
+The CM answers the schema for any app but sends an empty state body for an app
+the account does not own, so every app Aether advertises shows an empty page
+while the overlay has the real unlocks.
+
+**Rule — the page reflects the local cache, never a guess.** Aether rebuilds
+only the user-state reply, and only for a managed app (`luadata::HasDepot`).
+Everything else passes through:
+
+| Decision | Owners | Result |
+|---|---|---|
+| not managed, or genuinely owned | DLL `hooks/wire/AchievementUi.cpp` | Valve's reply, byte for byte |
+| family-shared | DLL, same file | Valve's reply (`family-shared` reason) |
+| managed, with schema + local state | DLL, same file | rebuilt: one entry per unlock, the group summary, the echoed `schema_version`/`schema_hash` |
+| no schema, no hash, no state, reply too large, parse failure | DLL, same file | Valve's reply (fail open) |
+
+- **Twins.** The decision table is `hooks/wire/AchievementUiPolicy.h` (pure, no
+  logger, no `g_state`, no Windows) and its consumer is
+  `hooks/wire/AchievementUi.cpp`. Change one, change the other.
+- **Sources.** Unlocks and dates come from
+  `appcache\stats\UserGameStats_<account>_<appid>.bin`, read on a
+  `workers::Submit` job; the schema comes from the `GetGameAchievements` reply
+  the client already received. Nothing is uploaded and no unlock is invented.
+- **Keys.** `internal_key == bucket * 256 + bit` (measured on the beta client). The reply is emitted in `internal_key` order
+  and only for keys present in the captured schema.
+- **The schema reply is never rewritten**, and the `schema_hash` is echoed, not
+  derived: it cannot be computed from the `.bin`.
+- **Tests.** `AetherDLL/tests/core_unit/achievement_state.cpp` (local reader),
+  `achievement_policy.cpp` (decision table) and `achievement_service.cpp`
+  (golden blobs captured from the client, which pin every field number).
+- **Switch.** `[achievements] ui_service` in `aethercore.toml`, default `true`.
+  Off means the reply is Valve's; nothing else changes.
 
 ---
 

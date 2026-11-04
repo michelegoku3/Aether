@@ -170,6 +170,33 @@ closed) or rebuild it from the JSON with `Tools/achievement_decoder.py rebuild`.
 mirror JSON files (`decode`, `snapshot`, `rebuild` commands) — use it together
 with `main.log` when investigating achievement issues.
 
+### Client achievement page (service path)
+
+The library's Achievements tab does not use the 151/818 path: the client asks
+the CM with `Player.GetGameAchievements#1` (schema) and
+`Player.GetUserAchievements#1` (account state). The server answers the schema
+for any app and an empty state body for an app the account does not own.
+
+- **Modules.** `hooks/wire/AchievementUi.cpp` is the wire glue (send/receive,
+  job correlation, cache, logging); `hooks/wire/AchievementUiPolicy.h` is the
+  pure decision table and body model; `hooks/wire/AchievementUserState.cpp`
+  parses `UserGameStats_<account>_<appid>.bin` into `internal_key -> unlock
+  time`. State lives in `AetherCoreState::AchievementStore::ui`.
+- **Ordering.** Both requests leave together and the schema reply arrives
+  first, so the state reply of the same page open is rebuilt from a schema that
+  was just captured. A cold cache answers pass-through; the pair repeats a few
+  tens of milliseconds later.
+- **Fail open.** No schema, no hash, unparsable `.bin`, an app that is not
+  managed or is family-shared, or a body over `kWireMaxBodyBytes` → return -1
+  and leave Valve's frame untouched, with a `lastReason` for `status.json`.
+- **Worker boundary.** The `.bin` read and KV1 walk run on `workers::Submit`;
+  the network path only copies cached values under one short mutex.
+- **Never fabricated.** Only keys present in the captured schema are emitted;
+  the hash is echoed, never derived (it is not computable from the `.bin`).
+- **Diagnostics.** `achievement_service_calls`, `achievement_schemas`,
+  `achievement_rebuilt`, `achievement_passthrough`, `achievement_last_reason`;
+  a `DEBUG` line per capture and per rebuild names the app and the counts.
+
 ### Donor rotation and schema publication
 
 The donor pool is walked to the end in ONE session instead of one slot per
