@@ -103,7 +103,7 @@ inline bool RecordProbeSample(ProbeState& state, const steam::AppOverviewPrefix&
 // `Clear` exists because the bit is written into the client's own object, which
 // caches it: when the `.lua` that justified it goes away, nothing in Steam
 // recomputes the field, so the card would stay in the library until a restart.
-// The bit is only ever taken back from an id Aether stamped (`stamped`) after an
+// The bit is only ever taken back from an id Aether provided (`tracked`) after an
 // explicit removal retired it (`retired`), never because the app merely stopped
 // being managed: HasDepot is false for a genuine license too.
 enum class OwnershipAction {
@@ -122,13 +122,20 @@ struct OwnershipDecision {
 // genuinely owned by Steam. `sampleOk` is this card's InspectOverview verdict:
 // a rejected card is never written even if the probe latched earlier.
 //
-// `trackingFull` is the stamp set at capacity: writing a bit that cannot be
-// remembered would make it unclearable, so the write is refused instead.
+// `tracked` is "Aether provided this app on an earlier card fill in this
+// process". The owned bit is often already set by the client, because package 0
+// makes Steam answer the app as licensed; that bit is still Aether's to take
+// back when the `.lua` goes away, so the set records management, not authorship.
+// `genuinelyOwned` keeps a purchased app's bit.
+//
+// `trackingFull` is the set at capacity: a management this process cannot
+// remember would leave an unclearable bit, so the write is refused instead.
 struct WriteInputs {
     bool managed = false;
+    bool genuinelyOwned = false;
     bool familyShared = false;
     bool retired = false;
-    bool stamped = false;
+    bool tracked = false;
     bool trackingFull = false;
     bool sampleOk = false;
     bool probeLatched = false;
@@ -145,20 +152,26 @@ inline OwnershipDecision DecideOwnershipWrite(const WriteInputs& in) noexcept {
         return {OwnershipAction::None, "probe-unproven"};
     if (!in.layoutTrusted)
         return {OwnershipAction::None, "layout-contradicted"};
-    // A real family share (or the cosmetic banner) is Valve's or display-only;
-    // both keep the bit the client set.
-    if (in.familyShared)
-        return {OwnershipAction::None, "family-shared"};
 
     const bool owned = (in.currentFlags & static_cast<std::uint32_t>(steam::AppOwnershipFlags::Owned)) != 0;
     if (in.managed) {
+        // A real family share (or the cosmetic banner) keeps the bit the client
+        // set: the card is displayed through the family answer, not through us.
+        if (in.familyShared)
+            return {OwnershipAction::None, "family-shared"};
         if (owned)
             return {OwnershipAction::None, "already-owned"};
         if (in.trackingFull)
             return {OwnershipAction::None, "tracking-full"};
         return {OwnershipAction::Stamp, "owned"};
     }
-    if (in.retired && in.stamped) {
+    // A licence Steam granted after we started managing the app is not ours to
+    // take away.
+    if (in.genuinelyOwned)
+        return {OwnershipAction::None, "owned-by-steam"};
+    if (in.familyShared)
+        return {OwnershipAction::None, "family-shared"};
+    if (in.retired && in.tracked) {
         if (!owned)
             return {OwnershipAction::None, "already-clear"};
         return {OwnershipAction::Clear, "retired"};
@@ -172,6 +185,17 @@ inline std::uint32_t ApplyOwned(std::uint32_t flags) noexcept {
 
 inline std::uint32_t ApplyCleared(std::uint32_t flags) noexcept {
     return flags & ~static_cast<std::uint32_t>(steam::AppOwnershipFlags::Owned);
+}
+
+// The change flags one queued recheck is handed to the client with.
+//
+// A moved pin is a config change: the app is in the library and its object
+// exists. An app whose card Aether took back is not: the client dropped the
+// object, so a config change reaches nothing and the client has to be told the
+// app entered the library before it builds the overview the stamp path fills.
+inline std::uint32_t RecheckFlags(bool hidden) noexcept {
+    return hidden ? (steam::kAppChangeAddedOrCreated | steam::kAppChangeAppInfoOrConfig)
+                  : steam::kAppChangeAppInfoOrConfig;
 }
 
 // A removed file's library roots that no script configures any more.

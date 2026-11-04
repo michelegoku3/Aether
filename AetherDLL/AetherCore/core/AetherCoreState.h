@@ -231,16 +231,21 @@ struct AetherCoreState {
 
         // ---- library membership (worker retires, SteamUI thread clears) ----
         // A deleted `.lua` must take its card out of the library without a
-        // restart. `stamped` records the ids whose owned bit Aether wrote into
-        // the client object: that bit outlives the licence, so it has to be
-        // taken back, and only from an id we know we wrote (`HasDepot` is false
-        // for a genuine licence too). `retired` records the ids an explicit
-        // file removal named; it survives a late hook install, so a retirement
-        // decided before the layer exists is still applied by the next card
-        // fill. Both sets are bounded; a refusal is logged and counted.
-        std::mutex stampMutex; // guards both sets, never the probe or the queue
-        std::unordered_set<steam::AppId> stamped;
+        // restart. `tracked` records the ids Aether provided on a card fill: the
+        // owned bit is usually already set by the client (package 0 makes Steam
+        // answer the app as licensed), so authorship is not the question - the
+        // set is what says "this card exists because of Aether, taking it back is
+        // ours to do". `retired` records the ids an explicit file removal named;
+        // it survives a late hook install, so a retirement decided before the
+        // layer exists is still applied by the next card fill. `hidden` records
+        // the ids whose bit was taken back: Steam dropped their overview object,
+        // so a later `.lua` re-add has to be announced as a new app, not as a
+        // config change. All three sets are bounded; a refusal is logged and
+        // counted.
+        std::mutex stampMutex; // guards the sets, never the probe or the queue
+        std::unordered_set<steam::AppId> tracked;
         std::unordered_set<steam::AppId> retired;
+        std::unordered_set<steam::AppId> hidden;
         std::atomic<std::uint64_t> clears{0};
     };
     OverviewState overview;

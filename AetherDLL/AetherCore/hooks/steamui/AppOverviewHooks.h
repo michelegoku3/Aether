@@ -8,8 +8,11 @@
 // SteamUI app-overview hooks.
 //
 // One pass-through hook (`FillInAppOverview`) observes every card the client
-// builds and, once the compiled layout has been confirmed by two distinct apps
-// and Aether already answers the app as owned, sets its ownership flag.
+// builds and, once the compiled layout has been confirmed by two distinct apps,
+// keeps its ownership flag aligned with what Aether provides: it stamps the bit
+// for a managed app and takes it back for a card a removed `.lua` retired. A
+// taken-back card leaves the client's app map, so a later re-added `.lua` is
+// announced to the client as a new app, which is what rebuilds the card.
 //
 // A second pair carries a version change back to the client: `MarkAppChange` is
 // observed only to learn the object that owns the app list, and the frame
@@ -46,13 +49,13 @@ void RequestAppRecheck(const std::vector<steam::AppId>& ids);
 bool AppRecheckSupported();
 
 // Records that an explicit file removal took these library roots away, so the
-// next card fill may take back the owned bit Aether wrote for them.
+// next card fill may take back the owned bit the client holds for them.
 //
 // Called by the watcher after the whole change batch is applied: a rename or an
 // atomic replace re-adds the file in the same batch, and its roots are already
 // configured again, so the caller passes only the ones no script names any more.
 // The ids stay recorded until a card is rebuilt (the clear) or the file comes
-// back (the stamp path drops the retirement). Safe from any thread; the write to
+// back (a managed fill drops the retirement). Safe from any thread; the write to
 // the client object stays in the fill callback.
 void RequestAppRetirement(const std::vector<steam::AppId>& ids);
 

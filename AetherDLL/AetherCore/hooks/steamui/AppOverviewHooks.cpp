@@ -29,41 +29,54 @@ std::atomic<bool> g_noSourceStatusWritten{false};
 using FillInAppOverview_t = void* (*)(void*, void*, steam::AppOverviewPrefix*);
 FillInAppOverview_t o_FillInAppOverview = nullptr;
 
-// The two tracking sets, read in one lock. `full` is the capacity answer for a
-// stamp that is not yet recorded: writing a bit the set cannot remember would
-// make it unclearable, so that write is refused instead.
+// The tracking sets, read in one lock. `full` is the capacity answer for a
+// management that is not yet recorded: a card Aether cannot remember would leave
+// an unclearable bit, so that write is refused instead.
 struct Tracking {
     bool retired = false;
-    bool stamped = false;
+    bool tracked = false;
     bool full = false;
 };
 
 Tracking ReadTracking(steam::AppId app) {
     std::lock_guard lock(g_state.overview.stampMutex);
-    const bool stamped = g_state.overview.stamped.count(app) != 0;
-    return {g_state.overview.retired.count(app) != 0, stamped,
-            !stamped && g_state.overview.stamped.size() >= policy::kMaxTrackedApps};
+    const bool tracked = g_state.overview.tracked.count(app) != 0;
+    return {g_state.overview.retired.count(app) != 0, tracked,
+            !tracked && g_state.overview.tracked.size() >= policy::kMaxTrackedApps};
 }
 
-void MarkStamped(steam::AppId app) {
+// Every managed card is recorded, whether or not this fill had to write the bit:
+// the client often sets it itself from package 0, and that bit becomes Aether's
+// to take back the moment the `.lua` goes away.
+void TrackManaged(steam::AppId app) {
     std::lock_guard lock(g_state.overview.stampMutex);
-    g_state.overview.stamped.insert(app);
+    g_state.overview.tracked.insert(app);
     // A managed card is not retired any more: the file either came back or this
-    // is the first fill after a late hook install.
+    // is the first fill after a late hook install. It is not hidden either: the
+    // client built it again, which is what the hidden set was waiting for.
     g_state.overview.retired.erase(app);
+    g_state.overview.hidden.erase(app);
 }
 
-void MarkCleared(steam::AppId app) {
-    std::lock_guard lock(g_state.overview.stampMutex);
-    g_state.overview.stamped.erase(app);
-    g_state.overview.retired.erase(app);
-}
-
-// The card is managed again but its bit was already set, so nothing is written;
-// the retirement is spent either way.
-void ForgetRetirement(steam::AppId app) {
-    std::lock_guard lock(g_state.overview.stampMutex);
-    g_state.overview.retired.erase(app);
+// The bit was taken back, so the client drops the app. The id is kept: a later
+// `.lua` for the same app has to be announced as a new app, because the client
+// no longer holds an object that a config change could rebuild.
+void ForgetTracking(steam::AppId app) {
+    bool refused = false;
+    {
+        std::lock_guard lock(g_state.overview.stampMutex);
+        g_state.overview.tracked.erase(app);
+        g_state.overview.retired.erase(app);
+        if (g_state.overview.hidden.size() >= policy::kMaxTrackedApps) {
+            refused = g_state.overview.hidden.count(app) == 0;
+        } else {
+            g_state.overview.hidden.insert(app);
+        }
+    }
+    if (refused) {
+        AC_LOG_WARN_ONCE(kModule,
+                         "Hidden set full: app %u not recorded; re-adding its .lua needs a restart to show it.", app);
+    }
 }
 
 void* h_FillInAppOverview(void* self, void* appOverview, steam::AppOverviewPrefix* app) {
@@ -93,34 +106,34 @@ void* h_FillInAppOverview(void* self, void* appOverview, steam::AppOverviewPrefi
 
         policy::WriteInputs inputs;
         inputs.managed = luadata::HasDepot(app->appId);
+        inputs.genuinelyOwned = luadata::IsOwned(app->appId);
         inputs.familyShared = luadata::IsFamilyShared(app->appId);
         const Tracking tracking = ReadTracking(app->appId);
         inputs.retired = tracking.retired;
-        inputs.stamped = tracking.stamped;
+        inputs.tracked = tracking.tracked;
         inputs.trackingFull = tracking.full;
         inputs.sampleOk = verdict == policy::OverviewVerdict::Ok;
         inputs.probeLatched = g_state.overview.latched.load(std::memory_order_acquire);
         inputs.layoutTrusted = !abi::guard::LayoutContradicted();
         inputs.currentFlags = static_cast<std::uint32_t>(app->ownershipFlags);
 
-        // A managed card that is still marked retired has its file back; the
-        // retirement must not survive into a later deletion.
-        if (inputs.managed && inputs.retired)
-            ForgetRetirement(app->appId);
+        // Remember every managed card, not only the ones this fill had to touch:
+        // the owned bit is often the client's own, set because package 0 answers
+        // the app as licensed, and it must still be taken back on removal.
+        if (inputs.managed)
+            TrackManaged(app->appId);
 
         const auto decision = policy::DecideOwnershipWrite(inputs);
         if (decision.action == policy::OwnershipAction::Stamp) {
             app->ownershipFlags = static_cast<steam::AppOwnershipFlags>(
                 policy::ApplyOwned(static_cast<std::uint32_t>(app->ownershipFlags)));
-            MarkStamped(app->appId);
             g_state.overview.writes.fetch_add(1, std::memory_order_relaxed);
         } else if (decision.action == policy::OwnershipAction::Clear) {
             app->ownershipFlags = static_cast<steam::AppOwnershipFlags>(
                 policy::ApplyCleared(static_cast<std::uint32_t>(app->ownershipFlags)));
-            MarkCleared(app->appId);
+            ForgetTracking(app->appId);
             g_state.overview.clears.fetch_add(1, std::memory_order_relaxed);
-            AC_LOG_INFO(kModule, "Overview: cleared the owned bit of app %u after its .lua was removed.",
-                        app->appId);
+            AC_LOG_INFO(kModule, "Overview: cleared the owned bit of app %u after its .lua was removed.", app->appId);
             status::Write();
         }
     }
@@ -181,10 +194,22 @@ void DrainRechecks(void* source) {
             if (!g_state.overview.rechecks.Pop(app))
                 break;
         }
-        o_MarkAppChange(source, app, steam::kAppChangeAppInfoOrConfig);
+        // A card Aether took back has no object left in the client: the id needs
+        // the "added" change, not a config change, or the re-added `.lua` never
+        // gets a card again in this session.
+        bool hidden = false;
+        {
+            std::lock_guard lock(g_state.overview.stampMutex);
+            hidden = g_state.overview.hidden.count(app) != 0;
+        }
+        o_MarkAppChange(source, app, policy::RecheckFlags(hidden));
         g_state.overview.recheckCalls.fetch_add(1, std::memory_order_relaxed);
         handed = true;
-        AC_LOG_INFO(kModule, "Asked the client to re-evaluate app %u after its manifest pins changed.", app);
+        if (hidden) {
+            AC_LOG_INFO(kModule, "Asked the client to add app %u back to the library.", app);
+        } else {
+            AC_LOG_INFO(kModule, "Asked the client to re-evaluate app %u after its manifest pins changed.", app);
+        }
     }
     // `overview_rechecks`, `overview_recheck_pending` and `recheck_state` are the
     // evidence that the card was rebuilt, and every write before this frame

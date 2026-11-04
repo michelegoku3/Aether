@@ -87,12 +87,19 @@ void OwnershipWriteTable() {
     CHECK(decision.action == OwnershipAction::Stamp);
     CHECK(std::string(decision.reason) == "owned");
 
-    // A stamp that cannot be remembered would be unclearable: refuse it.
+    // A management that cannot be remembered would leave an unclearable bit:
+    // refuse the write instead.
     auto full = input(true, false, true, true, true, 0);
     full.trackingFull = true;
     const auto refused = DecideOwnershipWrite(full);
     CHECK(refused.action == OwnershipAction::None);
     CHECK(std::string(refused.reason) == "tracking-full");
+
+    // A licence Steam granted is never written over.
+    auto purchased = input(false, false, true, true, true, 0);
+    purchased.genuinelyOwned = true;
+    CHECK(DecideOwnershipWrite(purchased).action == OwnershipAction::None);
+    CHECK(std::string(DecideOwnershipWrite(purchased).reason) == "owned-by-steam");
 
     // The write is idempotent and preserves every other bit.
     CHECK(ApplyOwned(0) == 1u);
@@ -101,13 +108,13 @@ void OwnershipWriteTable() {
 }
 
 // The reverse write. The owned bit lives in the client's object, so it outlives
-// the licence that justified it; a removal must take it back, but only from an
-// id Aether stamped, and only for a card the probe confirmed.
+// the licence that justified it; a removal must take it back, but only for an id
+// Aether provided and only for a card the probe confirmed.
 void OwnershipClearTable() {
-    auto retired = [](bool stamped, bool stillManaged, bool familyShared, std::uint32_t flags) {
+    auto retired = [](bool tracked, bool stillManaged, bool familyShared, std::uint32_t flags) {
         WriteInputs in{};
         in.retired = true;
-        in.stamped = stamped;
+        in.tracked = tracked;
         in.managed = stillManaged;
         in.familyShared = familyShared;
         in.sampleOk = true;
@@ -117,12 +124,12 @@ void OwnershipClearTable() {
         return in;
     };
 
-    // The card Aether stamped, no longer configured, still showing the bit.
+    // The card Aether provided, no longer configured, still showing the bit.
     const auto decision = DecideOwnershipWrite(retired(true, false, false, 1));
     CHECK(decision.action == OwnershipAction::Clear);
     CHECK(std::string(decision.reason) == "retired");
 
-    // Never clear a bit Aether did not write: a genuine licence also reports
+    // Never touch a card Aether never provided: a genuine licence also reports
     // "not managed", and its bit belongs to Valve.
     CHECK(DecideOwnershipWrite(retired(false, false, false, 1)).action == OwnershipAction::None);
     // Nothing to clear, so nothing to report either.
@@ -133,6 +140,13 @@ void OwnershipClearTable() {
     CHECK(DecideOwnershipWrite(retired(true, true, false, 0)).action == OwnershipAction::Stamp);
     // A family answer keeps the client's bit.
     CHECK(DecideOwnershipWrite(retired(true, false, true, 1)).action == OwnershipAction::None);
+
+    // A licence Steam granted after the card was tracked is not Aether's to take
+    // away, even if the `.lua` is deleted afterwards.
+    auto purchased = retired(true, false, false, 1);
+    purchased.genuinelyOwned = true;
+    CHECK(DecideOwnershipWrite(purchased).action == OwnershipAction::None);
+    CHECK(std::string(DecideOwnershipWrite(purchased).reason) == "owned-by-steam");
 
     // A clear needs the same layout evidence as a stamp.
     auto unproven = retired(true, false, false, 1);
@@ -151,6 +165,15 @@ void OwnershipClearTable() {
     CHECK(ApplyCleared(0) == 0u);
 }
 
+// The client drops a card whose owned bit was taken back, so the app leaves its
+// map: a later `.lua` has to be announced as a new app, not as a config change,
+// or nothing rebuilds the card and the app is invisible until a restart.
+void RecheckFlagsFollowTheCard() {
+    CHECK(RecheckFlags(false) == ac::steam::kAppChangeAppInfoOrConfig);
+    CHECK((RecheckFlags(true) & ac::steam::kAppChangeAddedOrCreated) != 0);
+    CHECK((RecheckFlags(true) & ac::steam::kAppChangeAppInfoOrConfig) != 0);
+}
+
 } // namespace
 
 void AppOverviewTest() {
@@ -158,4 +181,5 @@ void AppOverviewTest() {
     LatchNeedsTwoDistinctApps();
     OwnershipWriteTable();
     OwnershipClearTable();
+    RecheckFlagsFollowTheCard();
 }

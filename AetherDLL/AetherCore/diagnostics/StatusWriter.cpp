@@ -174,9 +174,11 @@ static void WriteSnapshot(std::uint64_t requests) {
     {
         // `overview_retired` is how many cards still have to be rebuilt before
         // their owned bit is taken back; a steady non-zero value means the
-        // client never re-filled them.
+        // client never re-filled them. `overview_hidden` is how many cards were
+        // taken back and are waiting for their `.lua` to come back.
         std::lock_guard lock(g_state.overview.stampMutex);
         w.SizeT("overview_retired", g_state.overview.retired.size());
+        w.SizeT("overview_hidden", g_state.overview.hidden.size());
     }
     {
         std::lock_guard lock(g_state.statusMetadataMutex);
