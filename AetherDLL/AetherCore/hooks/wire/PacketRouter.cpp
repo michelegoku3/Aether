@@ -259,8 +259,8 @@ std::int32_t DispatchRecv(const WireFrame& f) {
             return ac::achieve::OnRecvSchema(rsp.hasTarget ? rsp.target : 0, f.body, f.bodyLen);
         }
         if (h == job_hash::kGetUserAchievements) {
-            return ac::achieve::OnRecvUser(rsp.hasTarget ? rsp.target : 0, f.body, f.bodyLen, t_scratchBody.data(),
-                                           kWireMaxBodyBytes);
+            return ac::achieve::OnRecvUser(rsp.hasTarget ? rsp.target : 0, rsp.eresult, f.body, f.bodyLen,
+                                           t_scratchBody.data(), kWireMaxBodyBytes);
         }
         return kNoChange;
     }

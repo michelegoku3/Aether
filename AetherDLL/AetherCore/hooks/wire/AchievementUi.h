@@ -54,7 +54,7 @@ struct CachedState {
 struct Pending {
     bool userCall = false; // false: GetGameAchievements
     std::uint32_t appId = 0;
-    std::uint64_t steamId = 0;
+    std::uint64_t steamId = 0; // as sent; 0 when the request named no account
 };
 
 // Shared state: wire threads read and write, workers fill the state cache, the
@@ -77,12 +77,14 @@ struct State {
 
 // Wire entry points. Send handlers only remember the call and warm the state
 // cache; the reply handlers return a new body length or -1 for pass-through.
-// OnRecvSchema never rewrites the body, it only learns the schema.
+// OnRecvSchema never rewrites the body, it only learns the schema. OnRecvUser
+// sees the response eresult and refuses to answer anything but an OK, empty
+// body, so an error or a body Valve already filled is passed through as-is.
 bool OnSendSchema(std::uint64_t jobId, const std::uint8_t* body, std::uint32_t len);
 bool OnSendUser(std::uint64_t jobId, const std::uint8_t* body, std::uint32_t len);
 std::int32_t OnRecvSchema(std::uint64_t jobId, const std::uint8_t* body, std::uint32_t len);
-std::int32_t OnRecvUser(std::uint64_t jobId, const std::uint8_t* body, std::uint32_t len, std::uint8_t* out,
-                        std::uint32_t cap);
+std::int32_t OnRecvUser(std::uint64_t jobId, std::int32_t eresult, const std::uint8_t* body, std::uint32_t len,
+                        std::uint8_t* out, std::uint32_t cap);
 
 // True when the settings snapshot enables the page rewrite.
 bool Enabled();

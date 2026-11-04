@@ -9,6 +9,7 @@ namespace {
 
 ac::achieve::SchemaEntry Entry(std::uint32_t key, std::uint32_t groupid, const char* name) {
     ac::achieve::SchemaEntry entry;
+    entry.hasKey = true;
     entry.key = key;
     entry.groupid = groupid;
     entry.name = name;
@@ -135,5 +136,35 @@ void AchievementPolicy() {
         const auto d = Decide(in);
         CHECK(d.reply.entries.size() == 1);
         CHECK(d.reply.entries[0].key == 256);
+    }
+
+    // --- internal_key 0 is a real key: bucket 0, bit 0 ------------------------
+    {
+        Input in = base;
+        in.entries = {Entry(0, 0, "FIRST"), Entry(1, 0, "SECOND")};
+        in.unlocked = {{0, 1234u}};
+        const auto d = Decide(in);
+        CHECK(d.verdict == Verdict::Rebuild);
+        CHECK(d.reply.entries.size() == 1);
+        CHECK(d.reply.entries[0].key == 0);
+        CHECK(d.reply.entries[0].unlockTime == 1234u);
+        CHECK(d.reply.groups[0].total == 2);
+        CHECK(d.reply.groups[0].unlocked == 1);
+    }
+
+    // --- a schema entry without internal_key is not keyed and not counted ----
+    {
+        Input in = base;
+        SchemaEntry unkeyed;
+        unkeyed.hasKey = false;
+        unkeyed.groupid = 0;
+        unkeyed.name = "NO_KEY";
+        in.entries = {Entry(256, 0, "A"), unkeyed};
+        in.unlocked = {{256, 5u}};
+        const auto d = Decide(in);
+        CHECK(d.verdict == Verdict::Rebuild);
+        CHECK(d.reply.groups[0].total == 1); // the unkeyed entry is invisible
+        CHECK(d.reply.groups[0].unlocked == 1);
+        CHECK(d.reply.groups[0].completedAt == 5u);
     }
 }

@@ -96,6 +96,23 @@ void AchievementState() {
     CHECK(highState.unlocked.size() == 1);
     CHECK(highState.unlocked[358u * 256u] == 0u); // 91648
 
+    // An unconfirmed unlock lives in "pendingbits": for an app the account does
+    // not own the server never acks the bit, so it never reaches "data".
+    Bin pendingOnly;
+    pendingOnly.Dict("cache").Dict("2").Int("pendingbits", 0x8).End(2).End();
+    ac::achieve::UserState pendingState;
+    CHECK(ac::achieve::ParseUserState(pendingOnly.bytes.data(), pendingOnly.bytes.size(), pendingState));
+    CHECK(pendingState.unlocked.size() == 1);
+    CHECK(pendingState.unlocked[512u + 3u] == 0u);
+
+    // Both masks in one bucket: the union, each key once.
+    Bin both;
+    both.Dict("cache").Dict("1").Int("data", 0x1).Int("pendingbits", 0x1).End(2).End();
+    ac::achieve::UserState bothState;
+    CHECK(ac::achieve::ParseUserState(both.bytes.data(), both.bytes.size(), bothState));
+    CHECK(bothState.unlocked.size() == 1);
+    CHECK(bothState.unlocked[256u] == 0u);
+
     // A plain stat bucket (name/type, no "data") is not an achievement bucket.
     Bin stats;
     stats.Dict("cache").Dict("24").Str("name", "num_matches").Str("type", "INT").Int("default", 0).End(2).End();

@@ -11,7 +11,6 @@
 #include "core/AetherCoreState.h"
 #include "core/Logger.h"
 #include "core/Workers.h"
-#include "credentials/CredentialStore.h"
 #include "hooks/wire/AchievementUserState.h"
 #include "scripting/LuaData.h"
 #include "steam_messages.pb.h"
@@ -212,11 +211,11 @@ bool OnSendUser(std::uint64_t jobId, const std::uint8_t* body, std::uint32_t len
     RememberPending(jobId, pending);
 
     // The read starts now so it is usually done by the time the reply lands.
-    if (ac::luadata::HasDepot(pending.appId)) {
-        const std::uint32_t accountId =
-            pending.steamId ? AccountIdFromSteamId(pending.steamId) : credential::ReadActiveUserId();
-        RequestStateRead(pending.appId, accountId);
-    }
+    // The account must come from the request: resolving it from the registry or
+    // loginusers.vdf would be disk I/O on a Steam network thread. A request
+    // that names no account is left entirely to Steam.
+    if (ac::luadata::HasDepot(pending.appId))
+        RequestStateRead(pending.appId, AccountIdFromSteamId(pending.steamId));
     return true;
 }
 
@@ -244,6 +243,7 @@ std::int32_t OnRecvSchema(std::uint64_t jobId, const std::uint8_t* body, std::ui
     schema.entries.reserve(static_cast<std::size_t>(reply.achievements_size()));
     for (const auto& achievement : reply.achievements()) {
         SchemaEntry entry;
+        entry.hasKey = achievement.has_internal_key();
         entry.key = achievement.internal_key();
         entry.groupid = achievement.groupid();
         entry.name = achievement.internal_name();
@@ -261,13 +261,20 @@ std::int32_t OnRecvSchema(std::uint64_t jobId, const std::uint8_t* body, std::ui
     return kNoChange;
 }
 
-std::int32_t OnRecvUser(std::uint64_t jobId, const std::uint8_t* body, std::uint32_t len, std::uint8_t* out,
-                        std::uint32_t cap) {
+std::int32_t OnRecvUser(std::uint64_t jobId, std::int32_t eresult, const std::uint8_t* body, std::uint32_t len,
+                        std::uint8_t* out, std::uint32_t cap) {
     Pending pending;
     if (!TakePending(jobId, pending) || !pending.userCall)
         return kNoChange;
     if (!Enabled()) {
         SetReason("off");
+        return kNoChange;
+    }
+    // Only a successful reply is a candidate: an error body carries no state to
+    // complete, and rewriting it would replace the reason the client shows.
+    if (eresult != 1) { // 1 = k_EResultOK
+        S().passthrough.fetch_add(1, std::memory_order_relaxed);
+        SetReason("eresult");
         return kNoChange;
     }
 
@@ -287,6 +294,22 @@ std::int32_t OnRecvUser(std::uint64_t jobId, const std::uint8_t* body, std::uint
     in.managed = true;
     in.familyShared = ac::luadata::IsFamilyShared(pending.appId);
 
+    // The rewrite exists for the empty body the CM sends for an unowned app. A
+    // reply that already carries state is Valve's own answer, progress fields
+    // included, and is worth more than anything rebuilt from the .bin.
+    if (reply.achievements_size() != 0 || reply.groups_size() != 0) {
+        S().passthrough.fetch_add(1, std::memory_order_relaxed);
+        SetReason("steam-state");
+        return kNoChange;
+    }
+
+    const std::uint32_t accountId = AccountIdFromSteamId(pending.steamId);
+    if (accountId == 0) {
+        S().passthrough.fetch_add(1, std::memory_order_relaxed);
+        SetReason("no-account");
+        return kNoChange;
+    }
+
     CapturedSchema schema;
     const bool haveSchema = CopySchema(pending.appId, schema);
     in.schemaKnown = haveSchema && !schema.entries.empty();
@@ -297,8 +320,6 @@ std::int32_t OnRecvUser(std::uint64_t jobId, const std::uint8_t* body, std::uint
     in.version = reply.schema_version() != 0 ? reply.schema_version() : schema.version;
     in.hash = reply.schema_hash() != 0 ? reply.schema_hash() : schema.hash;
 
-    const std::uint32_t accountId =
-        pending.steamId ? AccountIdFromSteamId(pending.steamId) : credential::ReadActiveUserId();
     CachedState state;
     in.stateKnown = CopyState(StateKey(pending.appId, accountId), state) && state.known;
     if (in.stateKnown)
@@ -317,22 +338,7 @@ std::int32_t OnRecvUser(std::uint64_t jobId, const std::uint8_t* body, std::uint
 
     // Invariant: only the two user-owned blocks change. Everything else in
     // Valve's body (including fields a future client adds) is re-emitted.
-    reply.clear_achievements();
-    reply.clear_groups();
-    for (const ReplyEntry& entry : decision.reply.entries) {
-        auto* item = reply.add_achievements();
-        item->set_internal_key(entry.key);
-        item->set_unlocked(true);
-        item->set_unlock_time(entry.unlockTime);
-    }
-    for (const ReplyGroup& group : decision.reply.groups) {
-        auto* item = reply.add_groups();
-        item->set_groupid(group.groupid);
-        item->set_flags(1);
-        item->set_unlocked(group.unlocked);
-        item->set_complete(group.unlocked == group.total ? 1u : 0u);
-        item->set_completed_at(group.completedAt);
-    }
+    FillReply(reply, decision);
 
     const std::size_t size = reply.ByteSizeLong();
     if (size > cap) {

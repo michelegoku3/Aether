@@ -12,12 +12,19 @@ namespace {
 // UserGameStats_<account>_<appid>.bin (KV1):
 //
 //   "cache" {
-//       <bucket> { "data" <bitfield> ... "AchievementTimes" { <bit> <time> } }
+//       <bucket> { "data" <bitfield> "pendingbits" <bitfield>
+//                  "AchievementTimes" { <bit> <time> } }
 //       ...
 //   }
 //
-// Achievements are the bucket's bits; the date of bit N is the int keyed "N"
-// inside "AchievementTimes". Anything else in the file is a plain stat.
+// The date of bit N is the int keyed "N" inside "AchievementTimes". A bucket
+// that carries no bitfield at all is a plain stat and is skipped.
+//
+// `data` holds the bits the server confirmed, `pendingbits` the ones it has not
+// answered for yet; for an app the account does not own nothing is ever
+// confirmed, so the unlock is the union of the two. The schema reply decides
+// which of these bits are achievements, so a stat bucket that happens to hold a
+// bitfield contributes keys that never reach a reply.
 struct Walker final : kv1::Visitor {
     explicit Walker(UserState& state) : out(state) {}
 
@@ -25,7 +32,8 @@ struct Walker final : kv1::Visitor {
     bool inCache = false;
     std::uint32_t bucket = 0;
     bool haveBucket = false;
-    std::uint32_t mask = 0;
+    std::uint32_t dataMask = 0;
+    std::uint32_t pendingMask = 0;
     bool haveMask = false;
     bool inTimes = false;
     std::unordered_map<std::uint32_t, std::uint32_t> times; // bit -> unix time
@@ -39,6 +47,7 @@ struct Walker final : kv1::Visitor {
     // more at end of stream, so a truncated final bucket still counts.
     void FlushBucket() {
         if (haveBucket && haveMask) {
+            const std::uint32_t mask = dataMask | pendingMask;
             for (std::uint32_t bit = 0; bit < 32; ++bit) {
                 if ((mask & (1u << bit)) == 0)
                     continue;
@@ -48,7 +57,8 @@ struct Walker final : kv1::Visitor {
         }
         bucket = 0;
         haveBucket = false;
-        mask = 0;
+        dataMask = 0;
+        pendingMask = 0;
         haveMask = false;
         inTimes = false;
         times.clear();
@@ -83,7 +93,10 @@ struct Walker final : kv1::Visitor {
         if (!inCache)
             return;
         if (depth == 2 && key == "data") {
-            mask = static_cast<std::uint32_t>(value);
+            dataMask = static_cast<std::uint32_t>(value);
+            haveMask = true;
+        } else if (depth == 2 && key == "pendingbits") {
+            pendingMask = static_cast<std::uint32_t>(value);
             haveMask = true;
         } else if (depth == 3 && inTimes) {
             std::uint32_t bit = 0;

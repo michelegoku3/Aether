@@ -14,9 +14,10 @@
 // For a managed app the server answers the state with an empty body, so the
 // page shows nothing even though the local .bin holds the real unlocks.
 //
-// This header decides whether to answer from local state and builds the body
-// model. It is free of logs, g_state, protobuf and Windows so the decision
-// table can be tested directly.
+// This header decides whether to answer from local state, builds the body
+// model, and writes that model into a reply message (`FillReply`, a template so
+// no protobuf type is declared here). It is free of logs, g_state and Windows
+// so the decision table can be tested directly.
 //
 // Reply shape measured on apps the account really owns:
 // only unlocked achievements appear, in schema order; the group block carries
@@ -25,6 +26,8 @@
 namespace ac::achieve {
 
 struct SchemaEntry {
+    // presence, not value: bucket 0 bit 0 is a real key (internal_key == 0)
+    bool hasKey = false;
     std::uint32_t key = 0; // internal_key = bucket * 256 + bit
     std::uint32_t groupid = 0;
     std::string name; // internal_name (diagnostics only)
@@ -98,7 +101,9 @@ inline Decision Decide(const Input& in) {
     std::vector<const SchemaEntry*> ordered;
     ordered.reserve(in.entries.size());
     for (const SchemaEntry& entry : in.entries) {
-        if (entry.key != 0)
+        // An entry without internal_key cannot be keyed by the page, so it
+        // neither unlocks nor counts towards its group.
+        if (entry.hasKey)
             ordered.push_back(&entry);
     }
     std::sort(ordered.begin(), ordered.end(),
@@ -140,6 +145,35 @@ inline Decision Decide(const Input& in) {
     decision.verdict = Verdict::Rebuild;
     decision.reason = "rebuilt";
     return decision;
+}
+
+// Writes the decision's model into a response message: the two blocks Aether
+// owns, and nothing else, so every other field Valve sent is re-emitted. The
+// message type is a template parameter to keep this header protobuf-free; the
+// wire glue and the golden test both instantiate it with the real response.
+template <typename Response> void FillReply(Response& reply, const Decision& decision) {
+    reply.clear_achievements();
+    reply.clear_groups();
+    // The client matches the body against the schema it holds by this pair, so
+    // a fallback taken from the captured schema has to be written, not only
+    // decided on.
+    if (decision.reply.version != 0)
+        reply.set_schema_version(decision.reply.version);
+    reply.set_schema_hash(decision.reply.hash);
+    for (const ReplyEntry& entry : decision.reply.entries) {
+        auto* item = reply.add_achievements();
+        item->set_internal_key(entry.key);
+        item->set_unlocked(true);
+        item->set_unlock_time(entry.unlockTime);
+    }
+    for (const ReplyGroup& group : decision.reply.groups) {
+        auto* item = reply.add_groups();
+        item->set_groupid(group.groupid);
+        item->set_flags(1);
+        item->set_unlocked(group.unlocked);
+        item->set_complete(group.unlocked == group.total ? 1u : 0u);
+        item->set_completed_at(group.completedAt);
+    }
 }
 
 } // namespace ac::achieve

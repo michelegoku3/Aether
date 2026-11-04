@@ -4,6 +4,7 @@
 #include <string>
 #include <vector>
 
+#include "hooks/wire/AchievementUiPolicy.h"
 #include "steam_messages.pb.h"
 
 // Golden blobs captured from the beta client (build 1793740892) while Steam
@@ -94,6 +95,32 @@ void AchievementServiceWire() {
         CHECK(rsp.SerializeToString(&serialized));
         CHECK(serialized.size() == sizeof(kUserReply));
         CHECK(std::string(reinterpret_cast<const char*>(kUserReply), sizeof(kUserReply)) == serialized);
+    }
+
+    // --- the rebuild itself reproduces that body from the body model ---------
+    // Covers the fields the glue writes: the entry block, the group summary and
+    // the echoed version/hash (a body without the pair would not match the
+    // schema the client holds).
+    {
+        ac::achieve::Decision decision;
+        decision.reply.version = 247;
+        decision.reply.hash = kHash;
+        decision.reply.entries = {{kKey, kUnlockTime}};
+        decision.reply.groups = {{0, 1, 1, kUnlockTime}};
+
+        // Start from an empty body, as the CM sends for an unowned app.
+        CPlayer_GetUserAchievements_Response empty;
+        empty.set_schema_version(247);
+        empty.set_schema_hash(kHash);
+        std::string emptyBytes;
+        CHECK(empty.SerializeToString(&emptyBytes));
+        CHECK(empty.achievements_size() == 0); // version + hash, nothing else
+        CHECK(empty.groups_size() == 0);
+
+        ac::achieve::FillReply(empty, decision);
+        std::string rebuilt;
+        CHECK(empty.SerializeToString(&rebuilt));
+        CHECK(rebuilt == std::string(reinterpret_cast<const char*>(kUserReply), sizeof(kUserReply)));
     }
 
     // --- an unknown field from a future build survives a re-serialization ----

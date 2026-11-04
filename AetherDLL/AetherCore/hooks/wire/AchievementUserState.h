@@ -13,8 +13,13 @@ namespace ac::achieve {
 // value is the unlock time in unix seconds, 0 when the bit is set without a
 // recorded date.
 //
-// Buckets holding a "data" int are achievement buckets; the other buckets are
-// plain stats (they carry "name" instead) and are ignored here.
+// Buckets that carry a bitfield (`data`, and/or `pendingbits` for a bit the
+// server has not confirmed yet) contribute one key per set bit. The reader
+// cannot tell an achievement bitfield from a stat that happens to have a `data`
+// int; the schema reply is what decides, because only its `internal_key`s are
+// ever looked up here (AchievementUiPolicy.h). A bit is published when either
+// mask holds it: for an app the account does not own nothing is confirmed, so
+// the unlock only ever appears in `pendingbits`.
 struct UserState {
     std::unordered_map<std::uint32_t, std::uint32_t> unlocked;
 
