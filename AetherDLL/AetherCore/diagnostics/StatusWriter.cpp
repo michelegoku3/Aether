@@ -169,7 +169,15 @@ static void WriteSnapshot(std::uint64_t requests) {
     // the compiled prefix and the layer is off for this session.
     w.UInt64("overview_fills", g_state.overview.fills.load(std::memory_order_relaxed));
     w.UInt64("overview_writes", g_state.overview.writes.load(std::memory_order_relaxed));
+    w.UInt64("overview_clears", g_state.overview.clears.load(std::memory_order_relaxed));
     w.UInt64("overview_rejects", g_state.overview.rejects.load(std::memory_order_relaxed));
+    {
+        // `overview_retired` is how many cards still have to be rebuilt before
+        // their owned bit is taken back; a steady non-zero value means the
+        // client never re-filled them.
+        std::lock_guard lock(g_state.overview.stampMutex);
+        w.SizeT("overview_retired", g_state.overview.retired.size());
+    }
     {
         std::lock_guard lock(g_state.statusMetadataMutex);
         const bool latched = g_state.overview.latched.load(std::memory_order_acquire);

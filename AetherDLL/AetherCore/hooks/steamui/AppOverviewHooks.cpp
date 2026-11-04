@@ -29,6 +29,43 @@ std::atomic<bool> g_noSourceStatusWritten{false};
 using FillInAppOverview_t = void* (*)(void*, void*, steam::AppOverviewPrefix*);
 FillInAppOverview_t o_FillInAppOverview = nullptr;
 
+// The two tracking sets, read in one lock. `full` is the capacity answer for a
+// stamp that is not yet recorded: writing a bit the set cannot remember would
+// make it unclearable, so that write is refused instead.
+struct Tracking {
+    bool retired = false;
+    bool stamped = false;
+    bool full = false;
+};
+
+Tracking ReadTracking(steam::AppId app) {
+    std::lock_guard lock(g_state.overview.stampMutex);
+    const bool stamped = g_state.overview.stamped.count(app) != 0;
+    return {g_state.overview.retired.count(app) != 0, stamped,
+            !stamped && g_state.overview.stamped.size() >= policy::kMaxTrackedApps};
+}
+
+void MarkStamped(steam::AppId app) {
+    std::lock_guard lock(g_state.overview.stampMutex);
+    g_state.overview.stamped.insert(app);
+    // A managed card is not retired any more: the file either came back or this
+    // is the first fill after a late hook install.
+    g_state.overview.retired.erase(app);
+}
+
+void MarkCleared(steam::AppId app) {
+    std::lock_guard lock(g_state.overview.stampMutex);
+    g_state.overview.stamped.erase(app);
+    g_state.overview.retired.erase(app);
+}
+
+// The card is managed again but its bit was already set, so nothing is written;
+// the retirement is spent either way.
+void ForgetRetirement(steam::AppId app) {
+    std::lock_guard lock(g_state.overview.stampMutex);
+    g_state.overview.retired.erase(app);
+}
+
 void* h_FillInAppOverview(void* self, void* appOverview, steam::AppOverviewPrefix* app) {
     if (app) {
         g_state.overview.fills.fetch_add(1, std::memory_order_relaxed);
@@ -57,19 +94,34 @@ void* h_FillInAppOverview(void* self, void* appOverview, steam::AppOverviewPrefi
         policy::WriteInputs inputs;
         inputs.managed = luadata::HasDepot(app->appId);
         inputs.familyShared = luadata::IsFamilyShared(app->appId);
-        inputs.retired = false;
-        inputs.stamped = false;
-        inputs.trackingFull = false;
+        const Tracking tracking = ReadTracking(app->appId);
+        inputs.retired = tracking.retired;
+        inputs.stamped = tracking.stamped;
+        inputs.trackingFull = tracking.full;
         inputs.sampleOk = verdict == policy::OverviewVerdict::Ok;
         inputs.probeLatched = g_state.overview.latched.load(std::memory_order_acquire);
         inputs.layoutTrusted = !abi::guard::LayoutContradicted();
         inputs.currentFlags = static_cast<std::uint32_t>(app->ownershipFlags);
 
+        // A managed card that is still marked retired has its file back; the
+        // retirement must not survive into a later deletion.
+        if (inputs.managed && inputs.retired)
+            ForgetRetirement(app->appId);
+
         const auto decision = policy::DecideOwnershipWrite(inputs);
         if (decision.action == policy::OwnershipAction::Stamp) {
             app->ownershipFlags = static_cast<steam::AppOwnershipFlags>(
                 policy::ApplyOwned(static_cast<std::uint32_t>(app->ownershipFlags)));
+            MarkStamped(app->appId);
             g_state.overview.writes.fetch_add(1, std::memory_order_relaxed);
+        } else if (decision.action == policy::OwnershipAction::Clear) {
+            app->ownershipFlags = static_cast<steam::AppOwnershipFlags>(
+                policy::ApplyCleared(static_cast<std::uint32_t>(app->ownershipFlags)));
+            MarkCleared(app->appId);
+            g_state.overview.clears.fetch_add(1, std::memory_order_relaxed);
+            AC_LOG_INFO(kModule, "Overview: cleared the owned bit of app %u after its .lua was removed.",
+                        app->appId);
+            status::Write();
         }
     }
     return o_FillInAppOverview(self, appOverview, app);
@@ -197,5 +249,37 @@ void RequestAppRecheck(const std::vector<steam::AppId>& ids) {
 }
 
 bool AppRecheckSupported() { return o_MarkAppChange != nullptr && o_CSteamUIAppControllerRunFrame != nullptr; }
+
+void RequestAppRetirement(const std::vector<steam::AppId>& ids) {
+    if (ids.empty())
+        return;
+    std::size_t refused = 0;
+    std::size_t accepted = 0;
+    {
+        std::lock_guard lock(g_state.overview.stampMutex);
+        for (const steam::AppId app : ids) {
+            // Capacity first, then the duplicate test: an id already retired is
+            // still going to be cleared, so it is not a refusal.
+            if (g_state.overview.retired.size() >= policy::kMaxTrackedApps &&
+                g_state.overview.retired.count(app) == 0) {
+                ++refused;
+                continue;
+            }
+            if (g_state.overview.retired.insert(app).second)
+                ++accepted;
+        }
+    }
+    if (refused != 0) {
+        AC_LOG_WARN_ONCE(kModule,
+                         "App retirement set full: %zu id(s) not recorded; those cards stay until the next start.",
+                         refused);
+    }
+    if (accepted != 0) {
+        AC_LOG_INFO(kModule, "Retired %zu app(s) after a .lua removal.", accepted);
+        // `overview_retired` is the evidence the next card fill acted on; the
+        // reload's own status write ran before this call.
+        status::Write();
+    }
+}
 
 } // namespace ac::hooks::steamui

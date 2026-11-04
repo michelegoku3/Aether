@@ -228,6 +228,20 @@ struct AetherCoreState {
         std::atomic<void*> appChangeSource{nullptr};
         // Ids handed to the client, one MarkAppChange call each.
         std::atomic<std::uint64_t> recheckCalls{0};
+
+        // ---- library membership (worker retires, SteamUI thread clears) ----
+        // A deleted `.lua` must take its card out of the library without a
+        // restart. `stamped` records the ids whose owned bit Aether wrote into
+        // the client object: that bit outlives the licence, so it has to be
+        // taken back, and only from an id we know we wrote (`HasDepot` is false
+        // for a genuine licence too). `retired` records the ids an explicit
+        // file removal named; it survives a late hook install, so a retirement
+        // decided before the layer exists is still applied by the next card
+        // fill. Both sets are bounded; a refusal is logged and counted.
+        std::mutex stampMutex; // guards both sets, never the probe or the queue
+        std::unordered_set<steam::AppId> stamped;
+        std::unordered_set<steam::AppId> retired;
+        std::atomic<std::uint64_t> clears{0};
     };
     OverviewState overview;
 

@@ -45,4 +45,15 @@ void RequestAppRecheck(const std::vector<steam::AppId>& ids);
 // still queue, but nothing will ask the client to look again.
 bool AppRecheckSupported();
 
+// Records that an explicit file removal took these library roots away, so the
+// next card fill may take back the owned bit Aether wrote for them.
+//
+// Called by the watcher after the whole change batch is applied: a rename or an
+// atomic replace re-adds the file in the same batch, and its roots are already
+// configured again, so the caller passes only the ones no script names any more.
+// The ids stay recorded until a card is rebuilt (the clear) or the file comes
+// back (the stamp path drops the retirement). Safe from any thread; the write to
+// the client object stays in the fill callback.
+void RequestAppRetirement(const std::vector<steam::AppId>& ids);
+
 } // namespace ac::hooks::steamui
