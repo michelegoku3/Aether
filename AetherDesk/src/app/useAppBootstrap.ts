@@ -19,6 +19,10 @@ export function useAppBootstrap(params: Params) {
       // The library warm-up is NOT here: it used to rescan the whole library
       // before the provider's own scan. It now runs once after that scan.
       const deskVersionPromise = params.loadDeskVersion();
+      // The Steam-path warning only needs the settings file and is the only
+      // route to fixing a missing path: it must not queue behind the network
+      // update checks, which can sit on a slow or silent connection.
+      const steamPathWarning = params.warnIfSteamPathMissing();
 
       let settings: AppSettings | null = null;
       try {
@@ -41,11 +45,10 @@ export function useAppBootstrap(params: Params) {
           params.checkDeskUpdates(),
         ]);
       } else {
-        await params.refreshAppearance();
-        await params.checkDeskUpdates();
+        await Promise.all([params.refreshAppearance(), params.checkDeskUpdates()]);
       }
 
-      await Promise.all([params.warnIfSteamPathMissing(), deskVersionPromise]);
+      await Promise.all([steamPathWarning, deskVersionPromise]);
     };
     void hydrate();
     // App remains mounted for its lifetime; every callback is a stable hook API.
