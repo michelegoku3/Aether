@@ -308,6 +308,9 @@ export const AetherView = memo(function AetherView({
 
       {deskUpdateLine ? (
         <div className="version-progress aether-update-progress">
+          <div className="version-progress-label" id="aether-desk-update-label">
+            {deskUpdateLine}
+          </div>
           <div
             className="version-progress-bar"
             role="progressbar"
@@ -318,9 +321,6 @@ export const AetherView = memo(function AetherView({
             aria-valuenow={deskUpdateProgress ? deskUpdateProgress.progress : undefined}
           >
             <div className="version-progress-fill" style={{ width: `${deskUpdateProgress?.progress ?? 0}%` }} />
-          </div>
-          <div className="version-progress-label" id="aether-desk-update-label">
-            {deskUpdateLine}
           </div>
         </div>
       ) : (

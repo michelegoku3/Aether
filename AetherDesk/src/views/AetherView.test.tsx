@@ -63,6 +63,8 @@ describe('AetherView desk update progress', () => {
     expect(container.querySelector('.version-progress-fill')).toHaveStyle({ width: '21%' });
     // The bar, not the text, is what assistive tech reads for progress.
     expect(screen.getByRole('progressbar', { name: 'AetherDesk update' })).toHaveAttribute('aria-valuenow', '21');
+    // The label sits above the bar; the column order follows the DOM.
+    expect(container.querySelector('.aether-update-progress')?.firstElementChild).toHaveClass('version-progress-label');
   });
 
   it('keeps a preparing line after the status alert expires', async () => {
