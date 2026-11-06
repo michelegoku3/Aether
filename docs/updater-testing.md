@@ -89,6 +89,11 @@ When the swap fails after that validation, the helper puts the previous
 version running instead of an app that closed and never returned. The reason
 lands in the install root's log (see below).
 
+Only the exe is rolled back. Files a failed merge already copied stay in place,
+so a partial merge can leave a newer tree behind the previous exe; reinstalling
+from the ZIP is the recovery. Rolling the whole tree back needs a backup of the
+install root, which this updater does not keep.
+
 Artifacts live under `<install_root>/AetherData/temp/desk_update`: the staged
 ZIP, the `staging/` folder, and one `run-<pid>-<n>/` directory per attempt
 holding the helper copy. The next startup deletes the ZIP and `staging/`; a run
@@ -149,8 +154,8 @@ Get-Process AetherDesk | Select-Object Id, Path                              # t
 
 The relaunched window belongs to the throwaway install. Close it before running
 the test again: while it holds the install exe, the next helper waits 60 seconds
-for the lock, then logs `Giving up on ... after 60s` and relaunches the previous
-build instead of leaving the folder half-swapped.
+for the lock, then logs `Giving up on <path>: still locked after 60s` and
+relaunches the previous build instead of leaving the folder half-swapped.
 
 A refusal is equally cheap to check — point the helper at a protected folder and
 read its exit code:

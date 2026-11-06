@@ -172,7 +172,7 @@ fn a_locked_exe_is_not_reported_replaceable() {
 
     let started = Instant::now();
     assert!(
-        !crate::updater::desk::wait_until_replaceable(&exe, Duration::from_millis(300)),
+        crate::updater::desk::wait_until_replaceable(&exe, Duration::from_millis(300)).is_err(),
         "a locked exe is replaceable only after the lock goes away"
     );
     assert!(
@@ -183,12 +183,30 @@ fn a_locked_exe_is_not_reported_replaceable() {
 
     drop(lock);
 
-    assert!(crate::updater::desk::wait_until_replaceable(
-        &exe,
-        Duration::from_secs(5)
-    ));
+    assert!(crate::updater::desk::wait_until_replaceable(&exe, Duration::from_secs(5)).is_ok());
     assert!(exe.is_file(), "the probe must leave the exe in place");
     let _ = fs::remove_dir_all(root);
+}
+
+/// A refused root must not be relaunched afterwards: the helper would be
+/// starting whatever exe sits in a folder it just refused to update.
+#[test]
+fn a_refused_root_leaves_nothing_to_relaunch() {
+    let root = temp_dir("apply-refuse-relaunch");
+    fs::write(root.join("AetherDesk.exe"), b"not the running binary").unwrap();
+    let staging = temp_dir("apply-refuse-relaunch-staging");
+
+    let error = crate::updater::desk::apply_update(&staging, &root).unwrap_err();
+
+    assert!(
+        error.relaunch.is_none(),
+        "a refused root must not be launched"
+    );
+    assert!(
+        error.message.contains("AetherDesk.exe"),
+        "{}",
+        error.message
+    );
 }
 
 /// A merge that fails halfway must leave the previously installed exe in
@@ -209,7 +227,15 @@ fn a_failed_merge_restores_the_original_exe() {
 
     let error = crate::updater::desk::apply_update(&staging, &root).unwrap_err();
 
-    assert!(error.contains("tools"), "unexpected error: {error}");
+    assert!(
+        error.message.contains("tools"),
+        "unexpected error: {}",
+        error.message
+    );
+    assert!(
+        error.relaunch.is_some(),
+        "a failed merge must leave something to relaunch"
+    );
     assert!(
         root.join("AetherDesk.exe").is_file(),
         "the previous exe must be back in place"

@@ -378,39 +378,77 @@ pub fn validate_install_root(install_root: &Path) -> Result<PathBuf, String> {
 /// to release `AetherDesk.exe` before giving up and relaunching the old build.
 const APPLY_WAIT_BUDGET: Duration = Duration::from_secs(60);
 
+/// A failed apply: the message for the log, plus the exe that may be launched
+/// afterwards. `None` means the root never validated, so nothing was written
+/// and nothing may be started.
+pub(crate) struct ApplyError {
+    pub message: String,
+    pub relaunch: Option<PathBuf>,
+}
+
+impl ApplyError {
+    fn refused(message: String) -> Self {
+        Self {
+            message,
+            relaunch: None,
+        }
+    }
+
+    fn failed(message: String, exe: &Path) -> Self {
+        Self {
+            message,
+            relaunch: Some(exe.to_path_buf()),
+        }
+    }
+}
+
 /// Applies a staged update and returns the exe to launch.
 ///
 /// Runs as the `--apply-update` process (a copy of the binary living in the
 /// temp folder), so it can replace the original exe. On a merge failure the
 /// previously installed exe is put back and the staged tree is removed, so the
-/// caller can relaunch a working build instead of leaving the user with a
-/// half-updated folder.
-pub(crate) fn apply_update(staging: &Path, install_root: &Path) -> Result<PathBuf, String> {
+/// caller can relaunch a working build instead of leaving the user with no exe.
+///
+/// Only `AetherDesk.exe` is rolled back: files that the failed merge already
+/// copied stay in place, so a partial merge can leave a newer tree under the
+/// previous exe. Recovering from that needs a full backup of the install root,
+/// which is a separate design.
+pub(crate) fn apply_update(staging: &Path, install_root: &Path) -> Result<PathBuf, ApplyError> {
     // Validate before any side effect: a wrong or protected root must never be
     // written to, and the check needs the installed exe still in place.
-    let install_root = validate_install_root(install_root)?;
+    let install_root = validate_install_root(install_root).map_err(ApplyError::refused)?;
     let exe = install_root.join("AetherDesk.exe");
     let old = install_root.join("AetherDesk.exe.old");
 
     // Wait until the original exe is no longer locked by the exiting instance.
-    if !wait_until_replaceable(&exe, APPLY_WAIT_BUDGET) {
-        return Err(format!(
-            "Timed out after {}s waiting for the running instance to release {}",
-            APPLY_WAIT_BUDGET.as_secs(),
-            exe.display()
-        ));
-    }
+    wait_until_replaceable(&exe, APPLY_WAIT_BUDGET).map_err(|reason| {
+        ApplyError::failed(format!("Cannot replace {}: {reason}", exe.display()), &exe)
+    })?;
 
     // Rename the old exe so the new one can take its place. Failing here means
     // the folder is locked for good: stop before writing anything else.
-    fs::rename(&exe, &old)
-        .map_err(|e| format!("Failed to move the installed {} aside: {e}", exe.display()))?;
+    fs::rename(&exe, &old).map_err(|e| {
+        ApplyError::failed(
+            format!("Failed to move the installed {} aside: {e}", exe.display()),
+            &exe,
+        )
+    })?;
 
     // Merge staging into the install root, never touching AetherData.
     if let Err(error) = merge_tree(staging, &install_root) {
-        let _ = fs::rename(&old, &exe);
+        // Roll the exe back: the log line that follows names what happened, and
+        // `run_apply_update` relaunches this path.
+        if let Err(restore_error) = fs::rename(&old, &exe) {
+            crate::desk_log_error!(
+                "updater",
+                "Could not put {} back ({}); the previous build is at {}",
+                exe.display(),
+                restore_error,
+                old.display()
+            );
+        }
         let _ = fs::remove_dir_all(staging);
-        return Err(error);
+        return Err(ApplyError::failed(error, &exe));
     }
 
     // Cleanup staging and the downloaded zip. The per-run directory holding the
@@ -432,35 +470,29 @@ pub fn run_apply_update(staging: &Path, install_root: &Path) -> i32 {
             let _ = Command::new(&exe).spawn();
             0
         }
-        Err(error) => {
-            relaunch_after_failure(install_root, &error);
+        Err(failure) => {
+            match failure.relaunch {
+                // A refused root is not ours: never start whatever exe it holds.
+                None => crate::desk_log_error!(
+                    "updater",
+                    "Update failed: {}; nothing was launched",
+                    failure.message
+                ),
+                Some(exe) => relaunch_after_failure(&exe, &failure.message),
+            }
             1
         }
     }
 }
 
-/// Puts a working app back on screen after a failed swap.
+/// Puts the app back on screen after a failed swap.
 ///
-/// The validated root holds the previous build (the rollback restored it), so it
-/// is preferred. When validation fails the rollback did not complete: the exe
-/// may be the half-merged new one, but launching *something* is still better
-/// than the app vanishing, and the log says which path was used.
-fn relaunch_after_failure(install_root: &Path, error: &str) {
-    let exe = match validate_install_root(install_root) {
-        Ok(root) => root.join("AetherDesk.exe"),
-        Err(validation_error) => {
-            crate::desk_log_error!(
-                "updater",
-                "Update failed: {}; the install root no longer validates ({}), \
-                 relaunching whatever is installed",
-                error,
-                validation_error
-            );
-            install_root.join("AetherDesk.exe")
-        }
-    };
-
-    match Command::new(&exe).spawn() {
+/// The exe is the one in the validated install root: the rollback restored the
+/// previous build there, or — when the rollback itself failed — the half-merged
+/// new one. Launching it is better than the app vanishing, and the log says
+/// whether it started.
+fn relaunch_after_failure(exe: &Path, error: &str) {
+    match Command::new(exe).spawn() {
         Ok(_) => crate::desk_log_warn!(
             "updater",
             "Update failed: {}; relaunched {}",
@@ -659,43 +691,39 @@ fn schedule_helper_self_delete() {
     }
 }
 
-/// Polls until `path` can be renamed (i.e. no process holds it open).
 /// Waits until `path` can be renamed, so the swap can start.
 ///
 /// Windows keeps the exe locked until the last handle closes: the previous
 /// instance has just called `exit(0)`, a virus scanner may still be reading it,
 /// and a second instance may be starting. Waiting is right; waiting silently
 /// for an unbounded time is not, hence the budget and the periodic log line.
-pub(crate) fn wait_until_replaceable(path: &Path, budget: Duration) -> bool {
+/// The error names the real cause, so the caller never reports a timeout for a
+/// probe that failed immediately.
+pub(crate) fn wait_until_replaceable(path: &Path, budget: Duration) -> Result<(), String> {
     let probe = path.with_extension("exe.lock");
     let started = Instant::now();
     let mut last_report = Duration::ZERO;
     loop {
         match fs::rename(path, &probe) {
             Ok(()) => match fs::rename(&probe, path) {
-                Ok(()) => return true,
+                Ok(()) => return Ok(()),
                 // The probe could not go back: the path is free but the exe is
-                // not where the caller expects. Treat it as still locked so the
-                // caller fails before moving anything.
+                // not where the caller expects. Failing here leaves the exe at
+                // `probe`, which the log names.
                 Err(error) => {
-                    crate::desk_log_error!(
-                        "updater",
-                        "Could not restore {} after the lock probe: {}",
+                    let reason = format!(
+                        "the lock probe on {} could not be undone ({error}); the exe is at {}",
                         path.display(),
-                        error
+                        probe.display()
                     );
-                    return false;
+                    crate::desk_log_error!("updater", "{}", reason);
+                    return Err(reason);
                 }
             },
             Err(error) if started.elapsed() >= budget => {
-                crate::desk_log_error!(
-                    "updater",
-                    "Giving up on {} after {:?}: {}",
-                    path.display(),
-                    started.elapsed(),
-                    error
-                );
-                return false;
+                let reason = format!("still locked after {}s ({error})", budget.as_secs());
+                crate::desk_log_error!("updater", "Giving up on {}: {}", path.display(), reason);
+                return Err(reason);
             }
             Err(error) => {
                 let elapsed = started.elapsed();
