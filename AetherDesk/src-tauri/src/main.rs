@@ -313,10 +313,13 @@ fn try_run_apply_update() -> Option<i32> {
     let args: Vec<String> = std::env::args().collect();
     let position = args.iter().position(|arg| arg == "--apply-update")?;
     let staging = args.get(position + 1)?;
-    let install_root = args.get(position + 2)?;
+    let install_root = std::path::Path::new(args.get(position + 2)?);
+    // The helper is a copy living in %TEMP%: log into the installation it is
+    // updating, or the apply failures are written where nobody reads them.
+    crate::core::logger::init_at(install_root);
     Some(crate::updater::desk::run_apply_update(
         std::path::Path::new(staging),
-        std::path::Path::new(install_root),
+        install_root,
     ))
 }
 

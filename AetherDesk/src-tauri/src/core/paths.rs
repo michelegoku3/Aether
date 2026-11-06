@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 const LOCAL_DATA_DIR_NAME: &str = "AetherData";
 
@@ -32,9 +32,16 @@ impl LocalAppPaths {
             .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")))
     }
 
+    /// Data root for an explicit install root. The `--apply-update` helper runs
+    /// from a copy in `%TEMP%`, where `install_root()` would resolve to the copy
+    /// beside it instead of the installation being updated.
+    pub fn data_root_for_root(root: &Path) -> PathBuf {
+        root.join(LOCAL_DATA_DIR_NAME)
+    }
+
     /// Primary and only path: `<install_root>/AetherData`.
     pub fn data_root() -> PathBuf {
-        Self::install_root().join(LOCAL_DATA_DIR_NAME)
+        Self::data_root_for_root(&Self::install_root())
     }
 
     /// Compatibility alias that ignores `app` and always returns

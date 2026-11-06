@@ -141,3 +141,12 @@ fn staged_updater_hash_matches_source() {
 
     let _ = fs::remove_dir_all(staged_dir);
 }
+
+#[test]
+fn apply_helper_logs_beside_the_install_root_data() {
+    let root = temp_dir("apply-log-root");
+    assert_eq!(
+        crate::core::logger::log_file_for_root(&root),
+        root.join("AetherData").join("logs").join("desk.log")
+    );
+}

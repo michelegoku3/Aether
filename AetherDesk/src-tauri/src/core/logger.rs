@@ -141,17 +141,24 @@ fn current_thread_id() -> u64 {
     hasher.finish() % 99999
 }
 
-/// Initializes the global session logger, rotating `desk.log` → `desk.log.last`.
-/// Default logging level is always `Trace` (not modifiable by settings).
-pub fn init(_app: &tauri::AppHandle) {
-    let log_dir = crate::core::paths::LocalAppPaths::data_root().join("logs");
-    let log_path = log_dir.join("desk.log");
-    let _ = std::fs::create_dir_all(&log_dir);
+/// Log file for an explicit install root.
+///
+/// The `--apply-update` helper runs from a copy in `%TEMP%`, where
+/// `LocalAppPaths::install_root()` resolves to the copy's folder: the helper has
+/// to name the installation it is updating, or its lines land in a directory
+/// nobody looks at.
+pub fn log_file_for_root(root: &Path) -> PathBuf {
+    crate::core::paths::LocalAppPaths::data_root_for_root(root)
+        .join("logs")
+        .join("desk.log")
+}
 
-    if log_path.exists() {
-        let backup_path = log_dir.join("desk.log.last");
-        let _ = std::fs::remove_file(&backup_path);
-        let _ = std::fs::rename(&log_path, &backup_path);
+/// Opens the log of `root` in append mode without rotating it. The helper
+/// process must not rotate away the lines the running instance just wrote.
+pub fn init_at(root: &Path) {
+    let log_path = log_file_for_root(root);
+    if let Some(log_dir) = log_path.parent() {
+        let _ = std::fs::create_dir_all(log_dir);
     }
 
     let file = OpenOptions::new()
@@ -179,6 +186,26 @@ pub fn init(_app: &tauri::AppHandle) {
             std::process::id()
         ),
     );
+}
+
+/// Initializes the global session logger, rotating `desk.log` → `desk.log.last`.
+/// Default logging level is always `Trace` (not modifiable by settings).
+pub fn init(_app: &tauri::AppHandle) {
+    let install_root = crate::core::paths::LocalAppPaths::install_root();
+    let log_path = log_file_for_root(&install_root);
+    let log_dir = log_path.parent().map(Path::to_path_buf);
+
+    if let Some(log_dir) = log_dir.as_deref() {
+        let _ = std::fs::create_dir_all(log_dir);
+    }
+
+    if log_path.exists() {
+        let backup_path = log_path.with_file_name("desk.log.last");
+        let _ = std::fs::remove_file(&backup_path);
+        let _ = std::fs::rename(&log_path, &backup_path);
+    }
+
+    init_at(&install_root);
 }
 
 /// Builds one log line without the trailing newline.

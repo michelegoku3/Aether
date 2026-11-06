@@ -304,7 +304,7 @@ pub fn run_apply_update(staging: &Path, install_root: &Path) -> i32 {
     let install_root = match validate_install_root(install_root) {
         Ok(root) => root,
         Err(error) => {
-            eprintln!("[AetherDesk] refusing update: {error}");
+            crate::desk_log_error!("updater", "Refusing update: {}", error);
             return 1;
         }
     };
@@ -313,7 +313,11 @@ pub fn run_apply_update(staging: &Path, install_root: &Path) -> i32 {
 
     // Wait until the original exe is no longer locked by the exiting instance.
     if !wait_until_replaceable(&exe) {
-        eprintln!("[AetherDesk] timed out waiting for the old exe to unlock");
+        crate::desk_log_error!(
+            "updater",
+            "Timed out waiting for the old exe to unlock: {}",
+            exe.display()
+        );
         return 1;
     }
 
@@ -322,7 +326,7 @@ pub fn run_apply_update(staging: &Path, install_root: &Path) -> i32 {
 
     // Merge staging into the install root, never touching AetherData.
     if let Err(e) = merge_tree(staging, &install_root) {
-        eprintln!("[AetherDesk] update apply failed: {e}");
+        crate::desk_log_error!("updater", "Update apply failed: {}", e);
         let _ = fs::rename(&old, &exe);
         return 1;
     }
