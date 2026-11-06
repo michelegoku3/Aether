@@ -7,12 +7,11 @@ REM  path below is resolved relative to this file, so you can
 REM  run it from anywhere (double-click or command line).
 REM
 REM  Steps, all inside AetherDesk\:
-REM    1. approve the esbuild install script (npm 11+)
-REM    2. npm ci                -> install dependencies (skipped when
+REM    1. npm ci                -> install dependencies (skipped when
 REM       package-lock.json is unchanged since the last install)
-REM    3. npm audit             -> block high/critical vulnerabilities
-REM    4. npm run build, then the frontend gates (npm run verify:build) in
-REM       parallel with cargo fmt/clippy and (unless /skiptests) cargo test
+REM    2. npm audit             -> block high/critical vulnerabilities
+REM    3. npm run build         -> tsc + vite, writes dist\
+REM    4. npm run verify:build + cargo fmt/clippy/test in parallel
 REM    5. cargo audit + machete -> crate CVEs + unused Cargo dependencies
 REM    6. npm run tauri build   -> compile AetherDesk.exe
 REM    7. assemble the portable folder + create the ZIP
@@ -42,7 +41,7 @@ REM      CI). Step 4 therefore sets AETHERDESK_NO_ADMIN_MANIFEST=1 ONLY inside
 REM      the child process (build.rs produces an asInvoker exe); step 6
 REM      explicitly clears the variable, so the published exe stays elevated
 REM      exactly as it is shipped.
-REM    - Step 4 builds the frontend first because `cargo test` compiles
+REM    - Step 3 builds the frontend first because `cargo test` compiles
 REM      `generate_context!`, which requires dist\ to exist. Only the gates that
 REM      do not touch dist\ then run in parallel with the Rust chain; the
 REM      frontend half buffers its output and replays it into the build log, so
@@ -98,17 +97,12 @@ exit /b 1
 :desk_ok
 cd /d "%DESK_DIR%"
 
-REM --- Step 1: approve the esbuild install script (best-effort) ------
-echo.
-echo [1/7] Approving esbuild install script (npm 11+)...
-call npm install-scripts approve esbuild >nul 2>&1
-
-REM --- Step 2: install dependencies ------------------------------------
+REM --- Step 1: install dependencies ------------------------------------
 REM  npm ci deletes and reinstalls node_modules, which costs more than the
 REM  gates it enables. A stamp holding the SHA-256 of package-lock.json
 REM  inside node_modules lets unchanged lockfiles skip the whole install.
 echo.
-echo [2/7] Installing frontend dependencies (npm ci)...
+echo [1/7] Installing frontend dependencies (npm ci)...
 set "LOCK_HASH="
 for /f "usebackq delims=" %%h in (`powershell.exe -NoProfile -Command "(Get-FileHash -Algorithm SHA256 -LiteralPath '%DESK_DIR%\package-lock.json').Hash"`) do set "LOCK_HASH=%%h"
 set "STAMP_HASH="
@@ -128,10 +122,10 @@ if not "%LOCK_HASH%"=="" powershell.exe -NoProfile -Command "Set-Content -Litera
 
 :npm_ci_done
 
-REM --- Step 3: dependency audit (optional, non-mutating) ----------------
+REM --- Step 2: dependency audit (optional, non-mutating) ----------------
 if "%SKIP_AUDIT%"=="1" goto :skip_audit
 echo.
-echo [3/7] Checking high/critical dependency vulnerabilities (npm audit)...
+echo [2/7] Checking high/critical dependency vulnerabilities (npm audit)...
 powershell.exe -NoProfile -ExecutionPolicy Bypass -Command ^
   "$utf8=New-Object System.Text.UTF8Encoding($false); [Console]::OutputEncoding=$utf8; $OutputEncoding=$utf8;" ^
   "& cmd.exe /d /s /c 'npm audit --audit-level=high 2>&1' | Tee-Object -FilePath '%BUILD_LOG%' -Append; $code=$LASTEXITCODE; exit $code"
@@ -140,11 +134,21 @@ goto :after_audit
 
 :skip_audit
 echo.
-echo [3/7] Audit skipped.
+echo [2/7] Audit skipped.
 
 :after_audit
 
-REM --- Step 4: frontend build, then frontend + Rust gates in parallel ---
+REM --- Step 3: build the frontend ----------------------------------------
+REM  `tsc && vite build` writes dist\ and fails on a type error before any
+REM  slower gate runs.
+echo.
+echo [3/7] Building the frontend (tsc + vite)...
+powershell.exe -NoProfile -ExecutionPolicy Bypass -Command ^
+  "$utf8=New-Object System.Text.UTF8Encoding($false); [Console]::OutputEncoding=$utf8; $OutputEncoding=$utf8;" ^
+  "& cmd.exe /d /s /c 'npm run build 2>&1' | Tee-Object -FilePath '%BUILD_LOG%' -Append; $code=$LASTEXITCODE; exit $code"
+if errorlevel 1 goto :fail
+
+REM --- Step 4: frontend gates and Rust lint/tests in parallel -------------
 REM  lint:ci runs with --quiet: only ESLint errors show in the build, not the
 REM  warnings (still visible via `npm run lint`). Without --quiet every build
 REM  would close with "SUCCEEDED WITH WARNINGS" over unactionable noise.
@@ -161,13 +165,6 @@ REM  [lints.clippy]), so rust-analyzer, this script and GitHub agree.
 REM  -D warnings blocks every warning; --all-targets keeps test code clean too.
 REM  cargo fmt runs first (write) and the check right after proves it: the
 REM  build normalizes formatting, CI keeps check-only.
-echo.
-echo [4/7] Building the frontend (tsc + vite)...
-powershell.exe -NoProfile -ExecutionPolicy Bypass -Command ^
-  "$utf8=New-Object System.Text.UTF8Encoding($false); [Console]::OutputEncoding=$utf8; $OutputEncoding=$utf8;" ^
-  "& cmd.exe /d /s /c 'npm run build 2>&1' | Tee-Object -FilePath '%BUILD_LOG%' -Append; $code=$LASTEXITCODE; exit $code"
-if errorlevel 1 goto :fail
-
 echo.
 echo [4/7] Running frontend gates and Rust lint/tests in parallel...
 REM  TEMP/TMP point at the Defender-excluded test dir (see docs/quality-gates.md):
