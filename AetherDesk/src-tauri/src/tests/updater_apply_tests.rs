@@ -150,3 +150,37 @@ fn apply_helper_logs_beside_the_install_root_data() {
         root.join("AetherData").join("logs").join("desk.log")
     );
 }
+
+/// A merge that fails halfway must leave the previously installed exe in
+/// place: the helper relaunches it, so a broken update is a visible failure
+/// instead of an app that closed and never came back.
+#[test]
+fn a_failed_merge_restores_the_original_exe() {
+    let root = temp_dir("merge-restore");
+    let source = std::env::current_exe().unwrap();
+    fs::copy(&source, root.join("AetherDesk.exe")).unwrap();
+    // The staged tree carries a *file* where the installation has a directory:
+    // `fs::copy` cannot overwrite a directory, so the merge must fail.
+    fs::create_dir_all(root.join("tools")).unwrap();
+
+    let staging = temp_dir("merge-restore-staging");
+    fs::write(staging.join("tools"), b"staged tools file").unwrap();
+    fs::write(staging.join("AetherDesk.exe"), b"new exe").unwrap();
+
+    let error = crate::updater::desk::apply_update(&staging, &root).unwrap_err();
+
+    assert!(error.contains("tools"), "unexpected error: {error}");
+    assert!(
+        root.join("AetherDesk.exe").is_file(),
+        "the previous exe must be back in place"
+    );
+    assert_eq!(
+        fs::read(root.join("AetherDesk.exe")).unwrap(),
+        fs::read(&source).unwrap(),
+        "the restored exe must be the previous build, not the staged one"
+    );
+    assert!(
+        !root.join("AetherDesk.exe.old").exists(),
+        "no leftover backup of the exe"
+    );
+}

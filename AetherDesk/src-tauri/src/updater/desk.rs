@@ -41,7 +41,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::thread;
-use std::time::{Duration, SystemTime};
+use std::time::{Duration, Instant, SystemTime};
 
 /// Reuse the single SHA-256 implementation the uninstaller already relies on.
 pub(crate) use super::desk_uninstall::hash_file;
@@ -365,39 +365,43 @@ pub fn validate_install_root(install_root: &Path) -> Result<PathBuf, String> {
         .map_err(|error| format!("{}: {error}", install_root.display()))
 }
 
-/// Applies a staged update. Runs as the `--apply-update` process (a copy of the
-/// binary living in the temp folder), so it can replace the original exe.
-pub fn run_apply_update(staging: &Path, install_root: &Path) -> i32 {
+/// How long the apply helper waits for the previous instance (or a scanner)
+/// to release `AetherDesk.exe` before giving up and relaunching the old build.
+const APPLY_WAIT_BUDGET: Duration = Duration::from_secs(60);
+
+/// Applies a staged update and returns the exe to launch.
+///
+/// Runs as the `--apply-update` process (a copy of the binary living in the
+/// temp folder), so it can replace the original exe. On a merge failure the
+/// previously installed exe is put back and the staged tree is removed, so the
+/// caller can relaunch a working build instead of leaving the user with a
+/// half-updated folder.
+pub(crate) fn apply_update(staging: &Path, install_root: &Path) -> Result<PathBuf, String> {
     // Validate before any side effect: a wrong or protected root must never be
     // written to, and the check needs the installed exe still in place.
-    let install_root = match validate_install_root(install_root) {
-        Ok(root) => root,
-        Err(error) => {
-            crate::desk_log_error!("updater", "Refusing update: {}", error);
-            return 1;
-        }
-    };
+    let install_root = validate_install_root(install_root)?;
     let exe = install_root.join("AetherDesk.exe");
     let old = install_root.join("AetherDesk.exe.old");
 
     // Wait until the original exe is no longer locked by the exiting instance.
-    if !wait_until_replaceable(&exe) {
-        crate::desk_log_error!(
-            "updater",
-            "Timed out waiting for the old exe to unlock: {}",
+    if !wait_until_replaceable(&exe, APPLY_WAIT_BUDGET) {
+        return Err(format!(
+            "Timed out after {}s waiting for the running instance to release {}",
+            APPLY_WAIT_BUDGET.as_secs(),
             exe.display()
-        );
-        return 1;
+        ));
     }
 
-    // Rename the old exe so the new one can take its place.
-    let _ = fs::rename(&exe, &old);
+    // Rename the old exe so the new one can take its place. Failing here means
+    // the folder is locked for good: stop before writing anything else.
+    fs::rename(&exe, &old)
+        .map_err(|e| format!("Failed to move the installed {} aside: {e}", exe.display()))?;
 
     // Merge staging into the install root, never touching AetherData.
-    if let Err(e) = merge_tree(staging, &install_root) {
-        crate::desk_log_error!("updater", "Update apply failed: {}", e);
+    if let Err(error) = merge_tree(staging, &install_root) {
         let _ = fs::rename(&old, &exe);
-        return 1;
+        let _ = fs::remove_dir_all(staging);
+        return Err(error);
     }
 
     // Cleanup staging and the downloaded zip. The per-run directory holding the
@@ -407,9 +411,32 @@ pub fn run_apply_update(staging: &Path, install_root: &Path) -> i32 {
     let _ = fs::remove_dir_all(staging);
     let _ = fs::remove_file(update_workdir().join("aetherdesk_update.zip"));
 
-    // Relaunch the freshly updated app.
-    let _ = Command::new(&exe).spawn();
-    0
+    Ok(exe)
+}
+
+/// Runs as the `--apply-update` process: applies the update and relaunches
+/// whichever build is now on disk, then exits with the helper's status code.
+pub fn run_apply_update(staging: &Path, install_root: &Path) -> i32 {
+    match apply_update(staging, install_root) {
+        Ok(exe) => {
+            crate::desk_log_info!("updater", "Update applied; relaunching {}", exe.display());
+            let _ = Command::new(&exe).spawn();
+            0
+        }
+        Err(error) => {
+            crate::desk_log_error!(
+                "updater",
+                "Update failed: {}; relaunching the previous build",
+                error
+            );
+            // Only relaunch a root that still validates: a refused folder must
+            // not turn into "run whatever exe happens to be there".
+            if let Ok(root) = validate_install_root(install_root) {
+                let _ = Command::new(root.join("AetherDesk.exe")).spawn();
+            }
+            1
+        }
+    }
 }
 
 /// Removes leftovers from a previous, possibly interrupted self-update: the
@@ -593,18 +620,48 @@ fn schedule_helper_self_delete() {
 }
 
 /// Polls until `path` can be renamed (i.e. no process holds it open).
-fn wait_until_replaceable(path: &Path) -> bool {
+/// Waits until `path` can be renamed, so the swap can start.
+///
+/// Windows keeps the exe locked until the last handle closes: the previous
+/// instance has just called `exit(0)`, a virus scanner may still be reading it,
+/// and a second instance may be starting. Waiting is right; waiting silently
+/// for an unbounded time is not, hence the budget and the periodic log line.
+fn wait_until_replaceable(path: &Path, budget: Duration) -> bool {
     let probe = path.with_extension("exe.lock");
-    for _ in 0..150 {
+    let started = Instant::now();
+    let mut last_report = Duration::ZERO;
+    loop {
         match fs::rename(path, &probe) {
             Ok(()) => {
                 let _ = fs::rename(&probe, path);
                 return true;
             }
-            Err(_) => thread::sleep(Duration::from_millis(200)),
+            Err(error) if started.elapsed() >= budget => {
+                crate::desk_log_error!(
+                    "updater",
+                    "Giving up on {} after {:?}: {}",
+                    path.display(),
+                    started.elapsed(),
+                    error
+                );
+                return false;
+            }
+            Err(error) => {
+                let elapsed = started.elapsed();
+                if elapsed.saturating_sub(last_report) >= Duration::from_secs(5) {
+                    last_report = elapsed;
+                    crate::desk_log_warn!(
+                        "updater",
+                        "Still waiting for {} to unlock after {:?}: {}",
+                        path.display(),
+                        elapsed,
+                        error
+                    );
+                }
+                thread::sleep(Duration::from_millis(200));
+            }
         }
     }
-    false
 }
 
 /// Downloads `url` into `dest_path`, streaming to a temp file beside it and
