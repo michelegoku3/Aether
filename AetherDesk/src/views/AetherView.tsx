@@ -113,16 +113,14 @@ export const AetherView = memo(function AetherView({
     // The first backend event can be a moment away, and the 6 s status alert
     // above expires: without this fallback the panel goes blank mid-update.
     if (!deskUpdateProgress) return 'Preparing AetherDesk portable update...';
-    const { phase, percent, elapsedSeconds } = deskUpdateProgress;
+    const { phase, elapsedSeconds } = deskUpdateProgress;
     const seconds = `${elapsedSeconds}s`;
 
     switch (phase) {
       case 'looking-up':
         return `Looking for a newer AetherDesk build (${seconds})`;
       case 'downloading':
-        return percent === null
-          ? `Downloading AetherDesk (${seconds})`
-          : `Downloading AetherDesk (${percent}%, ${seconds})`;
+        return `Downloading AetherDesk (${seconds})`;
       case 'extracting':
         return `Unpacking the update (${seconds})`;
       case 'staging':
@@ -309,8 +307,11 @@ export const AetherView = memo(function AetherView({
       <h1 className="aether-title">AETHER</h1>
 
       {deskUpdateLine ? (
-        <div className="settings-alert info settings-alert--compact" style={{ width: '460px', textAlign: 'center' }}>
-          {deskUpdateLine}
+        <div className="version-progress aether-update-progress" role="status" aria-live="polite">
+          <div className="version-progress-bar">
+            <div className="version-progress-fill" style={{ width: `${deskUpdateProgress?.progress ?? 0}%` }} />
+          </div>
+          <div className="version-progress-label">{deskUpdateLine}</div>
         </div>
       ) : (
         statusMsg.text && (

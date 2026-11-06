@@ -4193,6 +4193,14 @@ body {
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 }
 
+/* The AETHER panel shows the same bar for a portable AetherDesk update, in the
+   column width the panel alerts use. */
+.aether-update-progress {
+  width: 460px;
+  align-self: center;
+  text-align: center;
+}
+
 /* ------------------------------------------------------------------ */
 /* Online modals — OnlineChoiceModal (oc-*) / OnlinePanel (op-*)      */
 /* ------------------------------------------------------------------ */
