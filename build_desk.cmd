@@ -7,15 +7,14 @@ REM  path below is resolved relative to this file, so you can
 REM  run it from anywhere (double-click or command line).
 REM
 REM  Steps, all inside AetherDesk\:
-REM    1. approve the esbuild install script (npm 11+)
-REM    2. npm ci                -> install dependencies (skipped when
+REM    1. npm ci                -> install dependencies (skipped when
 REM       package-lock.json is unchanged since the last install)
-REM    3. npm audit             -> block high/critical vulnerabilities
-REM    4. npm run build, then the frontend gates (npm run verify:build) in
+REM    2. npm audit             -> block high/critical vulnerabilities
+REM    3. npm run build, then the frontend gates (npm run verify:build) in
 REM       parallel with cargo fmt/clippy and (unless /skiptests) cargo test
-REM    5. cargo audit + machete -> crate CVEs + unused Cargo dependencies
-REM    6. npm run tauri build   -> compile AetherDesk.exe
-REM    7. assemble the portable folder + create the ZIP
+REM    4. cargo audit + machete -> crate CVEs + unused Cargo dependencies
+REM    5. npm run tauri build   -> compile AetherDesk.exe
+REM    6. assemble the portable folder + create the ZIP
 REM
 REM  The extra Rust tools (cargo-audit, cargo-machete) are installed on first
 REM  use with `cargo install` when missing (one time, ~1-2 min).
@@ -38,11 +37,11 @@ REM      spent compiling an exe that would never ship.
 REM    - `cargo test` compiles and runs the same exe as the app, which on Windows
 REM      embeds the requireAdministrator manifest: without precautions every run
 REM      would pop a UAC prompt (or fail in a non-interactive context such as a
-REM      CI). Step 4 therefore sets AETHERDESK_NO_ADMIN_MANIFEST=1 ONLY inside
-REM      the child process (build.rs produces an asInvoker exe); step 6
+REM      CI). Step 3 therefore sets AETHERDESK_NO_ADMIN_MANIFEST=1 ONLY inside
+REM      the child process (build.rs produces an asInvoker exe); step 5
 REM      explicitly clears the variable, so the published exe stays elevated
 REM      exactly as it is shipped.
-REM    - Step 4 builds the frontend first because `cargo test` compiles
+REM    - Step 3 builds the frontend first because `cargo test` compiles
 REM      `generate_context!`, which requires dist\ to exist. Only the gates that
 REM      do not touch dist\ then run in parallel with the Rust chain; the
 REM      frontend half buffers its output and replays it into the build log, so
@@ -98,17 +97,12 @@ exit /b 1
 :desk_ok
 cd /d "%DESK_DIR%"
 
-REM --- Step 1: approve the esbuild install script (best-effort) ------
-echo.
-echo [1/7] Approving esbuild install script (npm 11+)...
-call npm install-scripts approve esbuild >nul 2>&1
-
-REM --- Step 2: install dependencies ------------------------------------
+REM --- Step 1: install dependencies ------------------------------------
 REM  npm ci deletes and reinstalls node_modules, which costs more than the
 REM  gates it enables. A stamp holding the SHA-256 of package-lock.json
 REM  inside node_modules lets unchanged lockfiles skip the whole install.
 echo.
-echo [2/7] Installing frontend dependencies (npm ci)...
+echo [1/6] Installing frontend dependencies (npm ci)...
 set "LOCK_HASH="
 for /f "usebackq delims=" %%h in (`powershell.exe -NoProfile -Command "(Get-FileHash -Algorithm SHA256 -LiteralPath '%DESK_DIR%\package-lock.json').Hash"`) do set "LOCK_HASH=%%h"
 set "STAMP_HASH="
@@ -128,10 +122,10 @@ if not "%LOCK_HASH%"=="" powershell.exe -NoProfile -Command "Set-Content -Litera
 
 :npm_ci_done
 
-REM --- Step 3: dependency audit (optional, non-mutating) ----------------
+REM --- Step 2: dependency audit (optional, non-mutating) ----------------
 if "%SKIP_AUDIT%"=="1" goto :skip_audit
 echo.
-echo [3/7] Checking high/critical dependency vulnerabilities (npm audit)...
+echo [2/6] Checking high/critical dependency vulnerabilities (npm audit)...
 powershell.exe -NoProfile -ExecutionPolicy Bypass -Command ^
   "$utf8=New-Object System.Text.UTF8Encoding($false); [Console]::OutputEncoding=$utf8; $OutputEncoding=$utf8;" ^
   "& cmd.exe /d /s /c 'npm audit --audit-level=high 2>&1' | Tee-Object -FilePath '%BUILD_LOG%' -Append; $code=$LASTEXITCODE; exit $code"
@@ -140,11 +134,11 @@ goto :after_audit
 
 :skip_audit
 echo.
-echo [3/7] Audit skipped.
+echo [2/6] Audit skipped.
 
 :after_audit
 
-REM --- Step 4: frontend build, then frontend + Rust gates in parallel ---
+REM --- Step 3: frontend build, then frontend + Rust gates in parallel ---
 REM  lint:ci runs with --quiet: only ESLint errors show in the build, not the
 REM  warnings (still visible via `npm run lint`). Without --quiet every build
 REM  would close with "SUCCEEDED WITH WARNINGS" over unactionable noise.
@@ -162,14 +156,14 @@ REM  -D warnings blocks every warning; --all-targets keeps test code clean too.
 REM  cargo fmt runs first (write) and the check right after proves it: the
 REM  build normalizes formatting, CI keeps check-only.
 echo.
-echo [4/7] Building the frontend (tsc + vite)...
+echo [3/6] Building the frontend (tsc + vite)...
 powershell.exe -NoProfile -ExecutionPolicy Bypass -Command ^
   "$utf8=New-Object System.Text.UTF8Encoding($false); [Console]::OutputEncoding=$utf8; $OutputEncoding=$utf8;" ^
   "& cmd.exe /d /s /c 'npm run build 2>&1' | Tee-Object -FilePath '%BUILD_LOG%' -Append; $code=$LASTEXITCODE; exit $code"
 if errorlevel 1 goto :fail
 
 echo.
-echo [4/7] Running frontend gates and Rust lint/tests in parallel...
+echo [3/6] Running frontend gates and Rust lint/tests in parallel...
 REM  TEMP/TMP point at the Defender-excluded test dir (see docs/quality-gates.md):
 REM  Defender detects the fake Steamless PE files in %TEMP% and returns
 REM  os error 225, which would fail these tests on a developer machine.
@@ -188,7 +182,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -Command ^
   "if ($verifyCode -ne 0 -or $clippy -ne 0 -or $tests -ne 0) { exit 1 }"
 if errorlevel 1 goto :fail
 
-REM --- Step 5: cargo audit + cargo machete (optional with /skipaudit) ---------
+REM --- Step 4: cargo audit + cargo machete (optional with /skipaudit) ---------
 REM  cargo audit   : compares Cargo.lock against the RustSec database (known CVEs).
 REM                  The `npm audit` equivalent for crates: zip, unrar, sevenz,
 REM                  image, reqwest parse third-party-downloaded input.
@@ -208,7 +202,7 @@ REM    RUSTSEC-2024-0429  glib (unsound, Linux only)
 REM    RUSTSEC-2024-0370  proc-macro-error (unmaintained, glib/gtk macro, Linux only)
 if "%SKIP_AUDIT%"=="1" goto :skip_cargo_audit
 echo.
-echo [5/7] Auditing Rust dependencies (cargo audit + cargo machete)...
+echo [4/6] Auditing Rust dependencies (cargo audit + cargo machete)...
 cd /d "%DESK_DIR%\src-tauri"
 powershell.exe -NoProfile -ExecutionPolicy Bypass -Command ^
   "$utf8=New-Object System.Text.UTF8Encoding($false); [Console]::OutputEncoding=$utf8; $OutputEncoding=$utf8;" ^
@@ -223,24 +217,24 @@ goto :after_cargo_audit
 
 :skip_cargo_audit
 echo.
-echo [5/7] Cargo audit skipped.
+echo [4/6] Cargo audit skipped.
 
 :after_cargo_audit
 
-REM --- Step 6: compile the binary ---------------------------------------
+REM --- Step 5: compile the binary ---------------------------------------
 REM The release build must NOT inherit AETHERDESK_NO_ADMIN_MANIFEST: the
 REM published exe embeds the requireAdministrator manifest.
 set "AETHERDESK_NO_ADMIN_MANIFEST="
 echo.
-echo [6/7] Compiling AetherDesk (npm run tauri build)...
+echo [5/6] Compiling AetherDesk (npm run tauri build)...
 powershell.exe -NoProfile -ExecutionPolicy Bypass -Command ^
   "$utf8=New-Object System.Text.UTF8Encoding($false); [Console]::OutputEncoding=$utf8; $OutputEncoding=$utf8;" ^
   "& cmd.exe /d /s /c 'npm run tauri build 2>&1' | Tee-Object -FilePath '%BUILD_LOG%' -Append; $code=$LASTEXITCODE; exit $code"
 if errorlevel 1 goto :fail
 
-REM --- Step 7: assemble the portable folder + ZIP -----------------------
+REM --- Step 6: assemble the portable folder + ZIP -----------------------
 echo.
-echo [7/7] Assembling portable folder and creating ZIP...
+echo [6/6] Assembling portable folder and creating ZIP...
 powershell.exe -NoProfile -ExecutionPolicy Bypass -Command ^
   "$d='%DESK_DIR%';" ^
   "$s='%PORTABLE_DIR%';" ^
