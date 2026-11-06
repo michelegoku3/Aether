@@ -280,14 +280,33 @@ fn cached_list(cache: &ReleasesApiEtagCache, max_age: Duration) -> Option<Vec<Gi
     (cache.saved_at.elapsed() < max_age).then(|| cache.releases.clone())
 }
 
+/// Serves a revalidated body and marks the cache fresh.
+///
+/// A `304` already confirmed the bytes are unchanged, so the list is as good as
+/// one just downloaded and belongs inside the reuse window; the ETag stays, so
+/// the next request can revalidate with the same value.
+fn revalidated_releases(cache: &mut ReleasesApiEtagCache) -> Vec<GithubRelease> {
+    cache.saved_at = Instant::now();
+    cache.releases.clone()
+}
+
 #[cfg(test)]
-fn seed_recent_releases_for_tests(releases: Vec<GithubRelease>) {
+fn seed_recent_releases_for_tests(releases: Vec<GithubRelease>, age: Duration) {
     if let Ok(mut guard) = releases_api_etag_cache().lock() {
         *guard = Some(ReleasesApiEtagCache {
             etag: None,
             releases,
-            saved_at: Instant::now(),
+            saved_at: Instant::now() - age,
         });
+    }
+}
+
+/// Drops only the release-list cache: the broad `clear_release_cache` also
+/// resets the lookup registry that other tests hold slots in.
+#[cfg(test)]
+fn reset_releases_cache_for_tests() {
+    if let Ok(mut guard) = releases_api_etag_cache().lock() {
+        *guard = None;
     }
 }
 
@@ -680,16 +699,13 @@ impl GithubReleaseManager {
         if status == reqwest::StatusCode::NOT_MODIFIED {
             if let Ok(mut guard) = releases_api_etag_cache().lock() {
                 if let Some(cache) = guard.as_mut() {
-                    // A revalidated list is as fresh as a fetched one: refresh
-                    // the stamp so the next lookup inside the reuse window is
-                    // served without another conditional request.
-                    cache.saved_at = Instant::now();
+                    let releases = revalidated_releases(cache);
                     crate::desk_log_info!(
                         "updater",
                         "GitHub API 304 Not Modified — reused {} cached releases without consuming rate limit",
-                        cache.releases.len()
+                        releases.len()
                     );
-                    return Ok(cache.releases.clone());
+                    return Ok(releases);
                 }
             }
         }
@@ -1033,14 +1049,28 @@ mod list_reuse_tests {
     }
 
     #[test]
+    fn a_revalidated_list_is_fresh_and_keeps_its_etag() {
+        let mut cache = cache_with_age(Duration::from_secs(30));
+        cache.etag = Some("etag-1".to_string());
+
+        let served = revalidated_releases(&mut cache);
+
+        assert_eq!(served[0].tag_name, "desk-1.2.3");
+        assert_eq!(cache.etag.as_deref(), Some("etag-1"));
+        assert!(cache.saved_at.elapsed() < Duration::from_secs(1));
+        assert!(cached_list(&cache, RELEASES_LIST_REUSE).is_some());
+    }
+
+    #[test]
     fn the_global_cache_serves_the_recent_list_with_its_age() {
-        seed_recent_releases_for_tests(vec![release("tdesk-1.2.3")]);
+        seed_recent_releases_for_tests(vec![release("tdesk-1.2.3")], Duration::from_secs(4));
 
         let (served, age) = recently_fetched_releases().expect("seeded list");
 
         assert_eq!(served[0].tag_name, "tdesk-1.2.3");
+        assert!(age >= Duration::from_secs(3));
         assert!(age < RELEASES_LIST_REUSE);
-        clear_release_cache();
+        reset_releases_cache_for_tests();
         assert!(recently_fetched_releases().is_none());
     }
 }
