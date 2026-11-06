@@ -39,7 +39,7 @@ use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::thread;
 use std::time::{Duration, SystemTime};
 
@@ -51,6 +51,23 @@ const STAGED_UPDATER_MAX_AGE: Duration = Duration::from_secs(60 * 60);
 
 /// Distinguishes staging directories created within the same process.
 static STAGE_SEQUENCE: AtomicU64 = AtomicU64::new(0);
+
+/// True while a download/apply is in flight. The button is disabled in the UI,
+/// but a double click before the first render still reaches the command twice,
+/// and two writers on the same temp ZIP corrupt it.
+static UPDATE_IN_FLIGHT: AtomicBool = AtomicBool::new(false);
+
+/// Claims the single update slot. Returns false when another update is running.
+pub(crate) fn claim_update_slot() -> bool {
+    UPDATE_IN_FLIGHT
+        .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+        .is_ok()
+}
+
+/// Releases the slot. Safe to call when it is already free.
+pub(crate) fn release_update_slot() {
+    UPDATE_IN_FLIGHT.store(false, Ordering::SeqCst);
+}
 
 /// Name of the executable copy inside a per-run directory.
 const UPDATER_COPY_NAME: &str = "aether_updater.exe";
@@ -170,7 +187,9 @@ async fn prepare_from_release(release: &GithubRelease) -> Result<PreparedUpdate,
         .map_err(|e| format!("Failed to create update workdir {}: {e}", workdir.display()))?;
 
     let zip_path = workdir.join("aetherdesk_update.zip");
-    download_zip(&asset.browser_download_url, &zip_path).await?;
+    // Progress is wired to the UI in the command layer; the staging path only
+    // needs the file and the bytes.
+    download_zip(&asset.browser_download_url, &zip_path, &mut |_, _| {}).await?;
 
     let staging = workdir.join("staging");
     let _ = fs::remove_dir_all(&staging);
@@ -538,12 +557,20 @@ fn wait_until_replaceable(path: &Path) -> bool {
     false
 }
 
-/// Downloads `url` into `dest_path` (atomic write via temp file).
-async fn download_zip(url: &str, dest_path: &Path) -> Result<(), String> {
+/// Downloads `url` into `dest_path`, streaming to a temp file beside it and
+/// reporting the bytes received so the UI can show progress.
+///
+/// `on_progress(received, total)` runs once per chunk; `total` comes from
+/// Content-Length and is `None` when the server does not send one. Nothing is
+/// published at `dest_path` unless the whole body arrived.
+pub(crate) async fn download_zip(
+    url: &str,
+    dest_path: &Path,
+    on_progress: &mut (dyn FnMut(u64, Option<u64>) + Send),
+) -> Result<(), String> {
     crate::desk_log_info!("updater", "Downloading AetherDesk zip from {}", url);
     let response = crate::updater::http::update_client()
         .get(url)
-        .header("User-Agent", "AetherDesk-Updater")
         .send()
         .await
         .map_err(|e| {
@@ -565,15 +592,68 @@ async fn download_zip(url: &str, dest_path: &Path) -> Result<(), String> {
         ));
     }
 
-    let bytes = response.bytes().await.map_err(|e| {
-        crate::desk_log_error!("updater", "AetherDesk download body error: {e}");
-        format!("Failed to read downloaded bytes: {e}")
-    })?;
-    crate::desk_log_info!("updater", "AetherDesk zip size={} bytes", bytes.len());
+    // A captive portal or a rate-limit page answers 200 with HTML. Writing it as
+    // a ZIP only moves the failure to extraction, with a message nobody can act
+    // on.
+    if let Some(content_type) = response.headers().get(reqwest::header::CONTENT_TYPE) {
+        let value = content_type
+            .to_str()
+            .unwrap_or_default()
+            .to_ascii_lowercase();
+        if value.starts_with("text/html") {
+            crate::desk_log_error!("updater", "AetherDesk download returned HTML from {}", url);
+            return Err(format!(
+                "Download server returned a web page, not an update ZIP ({value}). \
+                 The release asset may be unavailable or behind a captive portal."
+            ));
+        }
+    }
 
+    let total = response.content_length();
     let temp_path = dest_path.with_extension("tmp");
-    fs::write(&temp_path, &bytes).map_err(|e| format!("Failed to write update ZIP: {e}"))?;
-    fs::rename(&temp_path, dest_path).map_err(|e| format!("Failed to finalize update ZIP: {e}"))?;
+    if let Err(error) = stream_body(response, &temp_path, total, on_progress).await {
+        let _ = tokio::fs::remove_file(&temp_path).await;
+        return Err(error);
+    }
+
+    if let Err(error) = tokio::fs::rename(&temp_path, dest_path).await {
+        let _ = tokio::fs::remove_file(&temp_path).await;
+        return Err(format!("Failed to finalize update ZIP: {error}"));
+    }
+    Ok(())
+}
+
+/// Writes the response body to `temp_path` chunk by chunk.
+async fn stream_body(
+    mut response: reqwest::Response,
+    temp_path: &Path,
+    total: Option<u64>,
+    on_progress: &mut (dyn FnMut(u64, Option<u64>) + Send),
+) -> Result<(), String> {
+    use tokio::io::AsyncWriteExt;
+
+    let mut file = tokio::fs::File::create(temp_path)
+        .await
+        .map_err(|e| format!("Failed to write update ZIP {}: {e}", temp_path.display()))?;
+
+    let mut received: u64 = 0;
+    loop {
+        let chunk = response.chunk().await.map_err(|e| {
+            crate::desk_log_error!("updater", "AetherDesk download body error: {e}");
+            format!("Failed to read downloaded bytes: {e}")
+        })?;
+        let Some(chunk) = chunk else { break };
+        file.write_all(&chunk)
+            .await
+            .map_err(|e| format!("Failed to write update ZIP: {e}"))?;
+        received += chunk.len() as u64;
+        on_progress(received, total);
+    }
+
+    file.sync_all()
+        .await
+        .map_err(|e| format!("Failed to flush update ZIP: {e}"))?;
+    crate::desk_log_info!("updater", "AetherDesk zip size={} bytes", received);
     Ok(())
 }
 

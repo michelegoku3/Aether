@@ -279,3 +279,125 @@ async fn a_slow_but_alive_body_is_not_aborted() {
     let body = response.bytes().await.expect("a slow body still completes");
     assert_eq!(body.len(), 300);
 }
+
+/// Serves one fixed body and returns its URL. The request is drained first so
+/// the socket closes with FIN instead of a Windows RST.
+async fn serve_once(body: &'static [u8], content_type: &'static str) -> String {
+    use std::time::Duration;
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("bind");
+    let addr = listener.local_addr().expect("addr");
+    tokio::spawn(async move {
+        let (mut socket, _) = listener.accept().await.expect("accept");
+        let mut request = [0u8; 1024];
+        let _ = socket.read(&mut request).await;
+        let header = format!(
+            "HTTP/1.1 200 OK\r\nContent-Type: {content_type}\r\nContent-Length: {}\r\n\r\n",
+            body.len()
+        );
+        let _ = socket.write_all(header.as_bytes()).await;
+        let _ = socket.write_all(body).await;
+        tokio::time::sleep(Duration::from_millis(300)).await;
+    });
+    format!("http://{addr}/file")
+}
+
+fn updater_temp_dir(tag: &str) -> std::path::PathBuf {
+    let dir = std::env::temp_dir().join(format!("aether_update_dl_{}_{}", std::process::id(), tag));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("temp dir");
+    dir
+}
+
+#[tokio::test]
+async fn download_streams_to_disk_and_reports_monotonic_progress() {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    // 3 chunks of 100 bytes, one per write, so `chunk()` yields several times.
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("bind");
+    let addr = listener.local_addr().expect("addr");
+    tokio::spawn(async move {
+        let (mut socket, _) = listener.accept().await.expect("accept");
+        let mut request = [0u8; 1024];
+        let _ = socket.read(&mut request).await;
+        let _ = socket
+            .write_all(
+                b"HTTP/1.1 200 OK\r\nContent-Type: application/zip\r\nContent-Length: 300\r\n\r\n",
+            )
+            .await;
+        for _ in 0..3 {
+            let _ = socket.write_all(&[7u8; 100]).await;
+            tokio::time::sleep(std::time::Duration::from_millis(60)).await;
+        }
+    });
+
+    let dir = updater_temp_dir("progress");
+    let dest = dir.join("update.zip");
+    let mut seen: Vec<(u64, Option<u64>)> = Vec::new();
+    {
+        let mut on_progress = |received: u64, total: Option<u64>| seen.push((received, total));
+        crate::updater::desk::download_zip(&format!("http://{addr}/file"), &dest, &mut on_progress)
+            .await
+            .expect("download succeeds");
+    }
+
+    assert_eq!(std::fs::read(&dest).expect("file written").len(), 300);
+    assert_eq!(seen.last(), Some(&(300, Some(300))));
+    assert!(
+        seen.windows(2).all(|pair| pair[0].0 <= pair[1].0),
+        "progress must not go backwards: {seen:?}"
+    );
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[tokio::test]
+async fn a_200_that_is_html_is_refused_before_extraction() {
+    let url = serve_once(b"<html>captive portal</html>", "text/html").await;
+    let dir = updater_temp_dir("html");
+    let dest = dir.join("update.zip");
+
+    let error = crate::updater::desk::download_zip(&url, &dest, &mut |_, _| {})
+        .await
+        .expect_err("an html page is not an update");
+
+    assert!(error.contains("not an update ZIP"), "unexpected: {error}");
+    assert!(!dest.exists(), "nothing may be published at the final path");
+    assert!(
+        !dest.with_extension("tmp").exists(),
+        "temp file left behind"
+    );
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[tokio::test]
+async fn a_failed_write_leaves_no_file_at_the_final_path() {
+    let url = serve_once(b"PK\x03\x04payload", "application/zip").await;
+    let dir = updater_temp_dir("writefail");
+    let dest = dir.join("update.zip");
+    // A directory squatting on the temp name makes the write fail.
+    std::fs::create_dir_all(dest.with_extension("tmp")).expect("blocking dir");
+
+    let error = crate::updater::desk::download_zip(&url, &dest, &mut |_, _| {})
+        .await
+        .expect_err("the write must fail");
+
+    assert!(!error.is_empty());
+    assert!(!dest.exists(), "no partial file at the final path");
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
+fn a_second_update_claim_is_refused_until_the_first_releases() {
+    use crate::updater::desk::{claim_update_slot, release_update_slot};
+
+    assert!(claim_update_slot());
+    assert!(!claim_update_slot(), "a second click must be refused");
+    release_update_slot();
+    assert!(claim_update_slot(), "the slot is reusable after release");
+    release_update_slot();
+}

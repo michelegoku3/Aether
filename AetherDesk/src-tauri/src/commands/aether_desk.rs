@@ -119,16 +119,34 @@ pub async fn check_aether_desk_update(app: tauri::AppHandle) -> Result<serde_jso
 /// apply it. The running instance exits so the swap can take place.
 #[tauri::command]
 pub async fn install_aether_desk_update(app: tauri::AppHandle) -> Result<String, String> {
+    // One update at a time: a second click before the UI disables the button
+    // would write the same temp ZIP from two downloads.
+    if !desk::claim_update_slot() {
+        crate::desk_log_warn!(
+            "updater",
+            "AetherDesk update refused: another update is already running"
+        );
+        return Err("AetherDesk update is already running".to_string());
+    }
+
     crate::desk_log_info!(
         "updater",
         "Starting download and installation of AetherDesk portable update..."
     );
-    let Some(prepared) = desk::prepare_update(&app).await? else {
-        crate::desk_log_info!(
-            "updater",
-            "AetherDesk portable update check: already up to date"
-        );
-        return Ok("AetherDesk is already up to date.".to_string());
+    let prepared = match desk::prepare_update(&app).await {
+        Ok(Some(prepared)) => prepared,
+        Ok(None) => {
+            desk::release_update_slot();
+            crate::desk_log_info!(
+                "updater",
+                "AetherDesk portable update check: already up to date"
+            );
+            return Ok("AetherDesk is already up to date.".to_string());
+        }
+        Err(error) => {
+            desk::release_update_slot();
+            return Err(error);
+        }
     };
 
     crate::desk_log_info!(
@@ -136,7 +154,12 @@ pub async fn install_aether_desk_update(app: tauri::AppHandle) -> Result<String,
         "AetherDesk update staged at {}; scheduling restart and exiting current instance",
         prepared.app_root.display()
     );
-    desk::schedule_restart(&prepared)?;
+    if let Err(error) = desk::schedule_restart(&prepared) {
+        desk::release_update_slot();
+        return Err(error);
+    }
+
+    desk::release_update_slot();
 
     // Exit so the original exe is unlocked and the staged updater can swap files.
     app.exit(0);
