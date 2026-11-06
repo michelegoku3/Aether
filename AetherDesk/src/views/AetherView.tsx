@@ -79,7 +79,7 @@ export const AetherView = memo(function AetherView({
     getSettings()
       .then((settings) => setTestUpdatesEnabled(Boolean(settings.enable_test_updates)))
       .catch(() => {});
-  }, [isUpdateAvailable, isDeskUpdateAvailable]);
+  }, [isUpdateAvailable, isDeskUpdateAvailable, isDeskUpdateTest]);
 
   const handleInstallDeskUpdate = async () => {
     setIsProcessing(true);
@@ -312,13 +312,16 @@ export const AetherView = memo(function AetherView({
             className="version-progress-bar"
             role="progressbar"
             aria-label="AetherDesk update"
+            aria-describedby="aether-desk-update-label"
             aria-valuemin={0}
             aria-valuemax={100}
-            aria-valuenow={deskUpdateProgress?.progress ?? 0}
+            aria-valuenow={deskUpdateProgress ? deskUpdateProgress.progress : undefined}
           >
             <div className="version-progress-fill" style={{ width: `${deskUpdateProgress?.progress ?? 0}%` }} />
           </div>
-          <div className="version-progress-label">{deskUpdateLine}</div>
+          <div className="version-progress-label" id="aether-desk-update-label">
+            {deskUpdateLine}
+          </div>
         </div>
       ) : (
         statusMsg.text && (
