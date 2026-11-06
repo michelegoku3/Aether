@@ -22,6 +22,8 @@ interface Params {
   onPreviewPersonalWallpaper: (enabled: boolean, opacity: number) => void;
   onPreviewAlternativeCards: (opacity: number, fade: number) => void;
   onMissingSteamPath: () => void;
+  /** Re-read the update state after the test channel changed. */
+  onTestUpdatesSaved: () => void;
   guardRef: { current: SettingsGuard | null };
 }
 
@@ -226,8 +228,15 @@ export function useSettingsController(params: Params) {
       const settings = model.getLocalSettings(invalidApiKey ? { hubcap_api_key: '' } : {});
       const hadDevtools = model.rawSettings.enable_webview_devtools;
       const hadIconEnabled = model.rawSettings.custom_icon_enabled;
+      const hadTestUpdates = model.rawSettings.enable_test_updates;
       const saved = await invoke<AppSettings>('save_settings', { settings, base: model.rawSettings });
       applySettings(saved);
+      // Flipping the test channel changes which releases count, so the dots in
+      // the AETHER panel are stale until the backend looks again. Only a real
+      // change asks for the network check: otherwise every Save would.
+      if (saved.enable_test_updates !== hadTestUpdates) {
+        params.onTestUpdatesSaved();
+      }
       // Switches stored outside `settings.json` only reach their command on
       // Save: that is what makes them part of the unsaved-changes guard.
       if (presenceDefaultShowOnline !== presenceSavedRef.current) {

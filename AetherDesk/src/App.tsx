@@ -87,6 +87,7 @@ export default function App() {
       onMissingSteamPath: navigation.openSteamPathWarning,
       hubcapUsage: hubcap.usage,
       onRefreshUsage: hubcap.refresh,
+      onTestUpdatesSaved: updates.checkAllUpdates,
     }),
     [
       appearance.settingsReady,
@@ -95,6 +96,7 @@ export default function App() {
       navigation.openSteamPathWarning,
       hubcap.usage,
       hubcap.refresh,
+      updates.checkAllUpdates,
     ]
   );
 

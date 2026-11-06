@@ -45,6 +45,7 @@ const createParams = () => ({
   onPreviewPersonalWallpaper: vi.fn(),
   onPreviewAlternativeCards: vi.fn(),
   onMissingSteamPath: vi.fn(),
+  onTestUpdatesSaved: vi.fn(),
   guardRef: { current: null as SettingsGuard | null },
 });
 
@@ -168,6 +169,46 @@ describe('useSettingsController', () => {
     expect(params.onRefreshCustomCss).toHaveBeenCalled();
     expect(result.current.status.type).toBe('success');
     expect(params.guardRef.current?.isDirty()).toBe(false);
+  });
+
+  it('runs the update check after Save only when the test channel changed', async () => {
+    mockInvokeCommands({
+      ...commandDefaults(),
+      save_settings: (args: unknown) => (args as { settings: AppSettings }).settings,
+    });
+    const params = createParams();
+    const { result } = renderHook(() => useSettingsController(params));
+    await waitFor(() => expect(result.current.form.steamPath).toBe('C:/Steam'));
+
+    act(() => result.current.setField('enableTestUpdates', true));
+    await act(async () => {
+      await result.current.save();
+    });
+    expect(params.onTestUpdatesSaved).toHaveBeenCalledTimes(1);
+
+    // A later Save that leaves the channel alone must not ask GitHub again.
+    act(() => result.current.setField('customGameName', 'Changed'));
+    await act(async () => {
+      await result.current.save();
+    });
+    expect(params.onTestUpdatesSaved).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not check for updates when the save fails', async () => {
+    mockInvokeCommands({
+      ...commandDefaults(),
+      save_settings: () => Promise.reject(new Error('SETTINGS_CONFLICT: changed elsewhere')),
+    });
+    const params = createParams();
+    const { result } = renderHook(() => useSettingsController(params));
+    await waitFor(() => expect(result.current.form.steamPath).toBe('C:/Steam'));
+
+    act(() => result.current.setField('enableTestUpdates', true));
+    await act(async () => {
+      await result.current.save();
+    });
+
+    expect(params.onTestUpdatesSaved).not.toHaveBeenCalled();
   });
 
   it('blocks save and signals the host when Steam path validation fails', async () => {

@@ -34,6 +34,8 @@ export interface MainContentSettings {
   onMissingSteamPath: () => void;
   hubcapUsage: { usage: number; limit: number; hasKey: boolean };
   onRefreshUsage: (forcedKey?: string) => Promise<void>;
+  /** Re-read both update channels after the test-updates switch was saved. */
+  onTestUpdatesSaved: () => void;
 }
 
 export interface MainContentDll {
@@ -186,6 +188,7 @@ export const MainContent = memo(function MainContent({
           onPreviewPersonalWallpaper={appearance.onPreviewPersonalWallpaper}
           onPreviewAlternativeCards={appearance.onPreviewAlternativeCards}
           onMissingSteamPath={settings.onMissingSteamPath}
+          onTestUpdatesSaved={settings.onTestUpdatesSaved}
           guardRef={settings.guardRef}
         />
       </main>
