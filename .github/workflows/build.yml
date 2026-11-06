@@ -299,12 +299,7 @@ jobs:
         with:
           tag_name: ${{ github.ref_name }}
           name: AetherDLL ${{ steps.version.outputs.version }}
-          body: |
-            Steam stable/beta: XInput-only injection. The ZIP contains only
-            AetherCore.dll, AetherPayload.dll, and xinput1_4.dll.
-            Update AetherDesk first; older versions expect a different proxy.
-            Close Steam and move any unsupported proxy from its installation root
-            to a backup outside Steam before installing. Do not delete unknown files.
+          body: Automated AetherDLL portable release compiled on GitHub Actions.
           # Draft on purpose: nothing is downloadable until publish-dll is approved.
           draft: true
           make_latest: false
