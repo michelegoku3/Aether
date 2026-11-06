@@ -53,21 +53,30 @@ The swap cannot run in the process it replaces, because Windows locks a running
    while skipping `AetherData`, deletes staging, removes `.old` and relaunches
    `AetherDesk.exe`.
 
-The AETHER panel follows the update through five phases, pushed by
+The AETHER panel follows the update on one progress bar, pushed by
 `commands/aether_desk.rs` on `desk-update://progress` (payload in
-`AetherDesk/src/constants/updates.ts`):
+`AetherDesk/src/constants/updates.ts`). The bar covers the whole operation, so
+it keeps moving after the download: the download is the only measurable phase
+and owns the 3-75 band, every other phase is an anchor past it.
 
-| Phase | What the panel shows | Emitted when |
-|---|---|---|
-| `looking-up` | `Looking for a newer AetherDesk build (3s)` | before the release lookup |
-| `downloading` | `Downloading AetherDesk (34%, 12s)` | every 200 KB, the last chunk when the server sent a size, and once before the first byte |
-| `extracting` | `Unpacking the update (18s)` | before the archive is unpacked |
-| `staging` | `Preparing the restart (19s)` | before the helper copy is staged and spawned |
-| `restarting` | `Restarting AetherDesk to apply the update...` | immediately before the app exits |
+| Phase | Bar | What the panel shows | Emitted when |
+|---|---|---|---|
+| `looking-up` | 3 % | `Looking for a newer AetherDesk build (3s)` | before the release lookup |
+| `downloading` | 3-75 % by bytes | `Downloading AetherDesk (12s)` | every 200 KB, the last chunk when the server sent a size, and once before the first byte |
+| `extracting` | 78 % | `Unpacking the update (18s)` | before the archive is unpacked |
+| `staging` | 92 % | `Preparing the restart (19s)` | before the helper copy is staged and spawned |
+| `restarting` | 98 % | `Restarting AetherDesk to apply the update...` | immediately before the app exits |
 
-The `(34%, 12s)` pair is the point of the stream: the percentage comes from
-`Content-Length`, the seconds are counted in the UI, so a download that stops
-moving shows the clock climbing instead of an unchanging line.
+The seconds are counted in the UI, so a download that stops moving shows the
+clock climbing instead of a bar frozen mid-way. The size in bytes is what feeds
+the percentage; it belongs to the bar, not to the text.
+
+At startup both channels are checked at once (`AetherDesk/src/app/useAppBootstrap.ts`)
+and the two lookups share one release list: `updater/github.rs` serialises the
+fetch and reuses a list younger than ten seconds, so the AetherDesk dot no
+longer waits for a second GitHub round trip behind the DLL check. Saving
+"Enable test updates" runs the same check again, so the dots follow the channel
+immediately.
 
 The two commands that download — `install_aether_desk_update` and
 `restore_stable_desk` — share a single in-flight slot (`claim_update_slot` in
