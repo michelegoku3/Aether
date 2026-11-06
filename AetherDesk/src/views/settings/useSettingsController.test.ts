@@ -230,6 +230,23 @@ describe('useSettingsController', () => {
     expect(params.onTestUpdatesSaved).toHaveBeenCalledTimes(1);
   });
 
+  it('rechecks updates when an appearance auto-save moves the test channel', async () => {
+    mockInvokeCommands({
+      ...commandDefaults(),
+      save_settings: (args: unknown) => (args as { settings: AppSettings }).settings,
+    });
+    const params = createParams();
+    const { result } = renderHook(() => useSettingsController(params));
+    await waitFor(() => expect(result.current.form.steamPath).toBe('C:/Steam'));
+
+    act(() => result.current.setField('enableTestUpdates', true));
+    await act(async () => {
+      await result.current.persistAppearance({});
+    });
+
+    expect(params.onTestUpdatesSaved).toHaveBeenCalledTimes(1);
+  });
+
   it('leaves the update check alone when a reset keeps the test channel off', async () => {
     mockInvokeCommands(commandDefaults());
     const params = createParams();

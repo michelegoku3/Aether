@@ -100,13 +100,35 @@ export function useSettingsController(params: Params) {
     },
     [model]
   );
+  /**
+   * Runs the update check only when the test channel actually moved.
+   *
+   * The dots in the AETHER panel are keyed to the channel, so a Save, a Reset
+   * or an appearance auto-save that leaves it alone must not spend a GitHub
+   * request; a corrupt-settings recovery starts from an unknown value, which
+   * `Boolean` normalises to off.
+   */
+  const recheckTestChannel = useCallback(
+    (savedValue: boolean | undefined, previousValue: boolean | undefined) => {
+      if (Boolean(savedValue) === Boolean(previousValue)) return;
+      void params.onTestUpdatesSaved().catch((error) => {
+        console.warn('[settings] update recheck failed:', error);
+      });
+    },
+    [params]
+  );
+
   const persistAppearance = useCallback(
     async (patch: SettingsPatch) => {
+      const hadTestUpdates = Boolean(model.rawSettings.enable_test_updates);
       const settings = model.getLocalSettings(patch);
       const saved = await invoke<AppSettings>('save_settings', { settings, base: model.rawSettings });
       applySettings(saved);
+      // An appearance pick auto-saves the whole form, test channel included:
+      // the dots must follow that write even without pressing Save.
+      recheckTestChannel(saved.enable_test_updates, hadTestUpdates);
     },
-    [applySettings, model]
+    [applySettings, model, recheckTestChannel]
   );
 
   const appearance = useAppearanceSettings({
@@ -171,23 +193,6 @@ export function useSettingsController(params: Params) {
     window.addEventListener('focus', onWindowFocus);
     return () => window.removeEventListener('focus', onWindowFocus);
   }, [reloadSteamAccounts]);
-
-  /**
-   * Runs the update check only when the test channel actually moved.
-   *
-   * The dots in the AETHER panel are keyed to the channel, so a Save or a Reset
-   * that leaves it alone must not spend a GitHub request; a corrupt-settings
-   * recovery starts from an unknown value, which `Boolean` normalises to off.
-   */
-  const recheckTestChannel = useCallback(
-    (savedValue: boolean | undefined, previousValue: boolean | undefined) => {
-      if (Boolean(savedValue) === Boolean(previousValue)) return;
-      void params.onTestUpdatesSaved().catch((error) => {
-        console.warn('[settings] update recheck failed:', error);
-      });
-    },
-    [params]
-  );
 
   const save = useCallback(async (): Promise<boolean> => {
     if (form.libraryBannerEnabled) {
