@@ -104,9 +104,9 @@ export const AetherView = memo(function AetherView({
   };
 
   /**
-   * Live line for the portable update: phase, percentage and elapsed seconds.
-   * `null` until the first event, so the static "Preparing..." alert still
-   * covers the gap before the backend answers.
+   * Live line for the portable update: phase and elapsed seconds. The bar above
+   * carries the progress. `null` until the first event, so the static
+   * "Preparing..." text still covers the gap before the backend answers.
    */
   const deskUpdateLine = (() => {
     if (!isDeskUpdating) return null;
@@ -307,8 +307,15 @@ export const AetherView = memo(function AetherView({
       <h1 className="aether-title">AETHER</h1>
 
       {deskUpdateLine ? (
-        <div className="version-progress aether-update-progress" role="status" aria-live="polite">
-          <div className="version-progress-bar">
+        <div className="version-progress aether-update-progress">
+          <div
+            className="version-progress-bar"
+            role="progressbar"
+            aria-label="AetherDesk update"
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-valuenow={deskUpdateProgress?.progress ?? 0}
+          >
             <div className="version-progress-fill" style={{ width: `${deskUpdateProgress?.progress ?? 0}%` }} />
           </div>
           <div className="version-progress-label">{deskUpdateLine}</div>

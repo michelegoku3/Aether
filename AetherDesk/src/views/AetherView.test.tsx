@@ -61,6 +61,8 @@ describe('AetherView desk update progress', () => {
     expect(screen.queryByText(/%/)).not.toBeInTheDocument();
     // A quarter of the download fills the 3-75 band: 21 % of the single bar.
     expect(container.querySelector('.version-progress-fill')).toHaveStyle({ width: '21%' });
+    // The bar, not the text, is what assistive tech reads for progress.
+    expect(screen.getByRole('progressbar', { name: 'AetherDesk update' })).toHaveAttribute('aria-valuenow', '21');
   });
 
   it('keeps a preparing line after the status alert expires', async () => {
