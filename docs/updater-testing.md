@@ -53,12 +53,38 @@ The swap cannot run in the process it replaces, because Windows locks a running
    while skipping `AetherData`, deletes staging, removes `.old` and relaunches
    `AetherDesk.exe`.
 
-`run_apply_update` (`AetherDesk/src-tauri/src/main.rs`) refuses an install root
-that is not absolute, that contains a link or reparse point, that is exactly one
-of the protected user folders (home, Desktop, Downloads, Documents, AppData
-roaming/local, config), or whose `AetherDesk.exe` is not byte-identical
+The AETHER panel follows the update through five phases, pushed by
+`commands/aether_desk.rs` on `desk-update://progress` (payload in
+`AetherDesk/src/constants/updates.ts`):
+
+| Phase | What the panel shows | Emitted when |
+|---|---|---|
+| `looking-up` | `Looking for a newer AetherDesk build (3s)` | before the release lookup |
+| `downloading` | `Downloading AetherDesk (34%, 12s)` | every 200 KB and on the last chunk |
+| `extracting` | `Unpacking the update (18s)` | before the archive is unpacked |
+| `staging` | `Preparing the restart (19s)` | after the helper copy is verified and spawned |
+| `restarting` | `Restarting AetherDesk to apply the update...` | immediately before the app exits |
+
+The `(34%, 12s)` pair is the point of the stream: the percentage comes from
+`Content-Length`, the seconds are counted in the UI, so a download that stops
+moving shows the clock climbing instead of an unchanging line.
+
+`install_aether_desk_update` takes a single in-flight slot (`claim_update_slot`
+in `updater/desk.rs`): a second invocation while one runs answers
+`AetherDesk update is already running` instead of writing the same temp ZIP from
+two downloads.
+
+`run_apply_update` (`AetherDesk/src-tauri/src/updater/desk.rs`) refuses an
+install root that is not absolute, that contains a link or reparse point, that is
+exactly one of the protected user folders (home, Desktop, Downloads, Documents,
+AppData roaming/local, config), or whose `AetherDesk.exe` is not byte-identical
 (SHA-256) to the running helper. The hash rule is why a manual test must run a
 copy of the *installed* exe, not the exe you just built.
+
+When the swap fails after that validation, the helper puts the previous
+`AetherDesk.exe` back and relaunches *that* build, so the user sees the old
+version running instead of an app that closed and never returned. The reason
+lands in the install root's log (see below).
 
 Artifacts live under `<install_root>/AetherData/temp/desk_update`: the staged
 ZIP, the `staging/` folder, and one `run-<pid>-<n>/` directory per attempt
@@ -119,8 +145,9 @@ Get-Process AetherDesk | Select-Object Id, Path                              # t
 ```
 
 The relaunched window belongs to the throwaway install. Close it before running
-the test again: while it holds the install exe, the next helper waits 30 seconds
-for the lock and then fails with `timed out waiting for the old exe to unlock`.
+the test again: while it holds the install exe, the next helper waits 60 seconds
+for the lock, then logs `Giving up on ... after 60s` and relaunches the previous
+build instead of leaving the folder half-swapped.
 
 A refusal is equally cheap to check — point the helper at a protected folder and
 read its exit code:
@@ -130,9 +157,11 @@ read its exit code:
 "exit code: $LASTEXITCODE"   # 1
 ```
 
-The helper prints `[AetherDesk] refusing update:` followed by the validation
-error (`Refusing protected uninstall root ...`; the validator is shared with the
-portable uninstaller, hence the word "uninstall").
+The helper writes `Refusing update: <reason>` to
+`<install_root>/AetherData/logs/desk.log` (the validator is shared with the
+portable uninstaller, hence the word "uninstall" in the protected-root message).
+Nothing is printed to a console: the real update runs with no console attached,
+so the log is the only place its lines can survive.
 
 What this covers: the apply half end to end, including the `AetherData` skip and
 the relaunch. What it does not cover: GitHub release discovery, the version gate,
@@ -187,16 +216,55 @@ the release an update. Stable users never see these releases: the stable lookup
 filters by the `desk-` prefix, and the `tdesk-` probe only runs with test updates
 enabled.
 
+## Slow links, stalls and answers that are not a ZIP
+
+The updater downloads the whole portable ZIP (about 18 MB, more with the tools),
+so duration is not a failure: a healthy 200 KB/s link takes about 90 seconds and
+must succeed. What is bounded is *silence*, in `updater/http.rs`:
+
+| Budget | Value | Bounds |
+|---|---|---|
+| connect timeout | 10 s | DNS, TCP and TLS before the first byte of the response |
+| idle (read) timeout | 30 s | the longest gap tolerated between two body chunks |
+
+There is deliberately no total-request timeout. A stalled connection therefore
+fails within about 30 seconds of going quiet with
+`Failed to read downloaded bytes: ... timed out`, well before the user starts
+wondering whether the app froze; the panel keeps counting seconds until then.
+
+A `200 OK` whose `Content-Type` is `text/html` — a captive portal, a proxy login
+page, a rate-limit page — is refused before extraction, with
+`Download server returned a web page, not an update ZIP (text/html). ...` and no
+file left at the ZIP path. Without that check the page would reach the unzip step
+and the failure would name the archive format instead of the cause.
+
+The full body is written to `aetherdesk_update.zip.tmp` and renamed into place
+only after `sync_all`: a disk-full or access-denied error mid-download leaves
+nothing at the final path, so a retry starts from a clean file.
+
+To reproduce a slow link by hand, publish a `tdesk-*` release in which the ZIP is
+replaced by a large filler file of the same name: the download reports the
+`Content-Length` of the filler, the percentage climbs, and extraction fails
+afterwards with a message naming the ZIP. Throttle the connection (or copy a
+multi-gigabyte file) to watch the panel hold a plausible percentage instead of
+sitting on a static line.
+
 ## Troubleshooting
 
 Logs are in the app's Log view, or in `AetherData/logs/desk.log` under the
-install folder.
+install folder. The `--apply-update` helper appends to that same file: it runs
+from a copy in `%TEMP%`, so it is told the install root explicitly and must not
+rotate the log the running instance just wrote.
 
 | What you see | Cause |
 |---|---|
-| `refusing update: ... Refusing protected uninstall root ...` | The install root is exactly home, Desktop, Downloads, Documents, AppData roaming/local, or config. Point it at a folder of its own. |
-| `refusing update: ... AetherDesk.exe does not match this helper in ...` | The helper is not a copy of the exe in the install folder: the freshly built exe was run directly, or the install was rebuilt after the copy. |
-| `refusing update: ... requires an absolute install path`, `Refusing linked/reparse path` | A relative path, or a junction/symlink anywhere in the path chain. |
+| `Refusing update: ... Refusing protected uninstall root ...` | The install root is exactly home, Desktop, Downloads, Documents, AppData roaming/local, or config. Point it at a folder of its own. |
+| `Refusing update: ... AetherDesk.exe does not match this helper in ...` | The helper is not a copy of the exe in the install folder: the freshly built exe was run directly, or the install was rebuilt after the copy. |
+| `Refusing update: ... requires an absolute install path`, `Refusing linked/reparse path` | A relative path, or a junction/symlink anywhere in the path chain. |
+| `Failed to read downloaded bytes: ... timed out` | The connection went silent for longer than the 30 s idle budget. Check the network; the app is still running and the update can be retried. |
+| `Download server returned a web page, not an update ZIP (text/html)` | A captive portal, proxy page or rate-limit page answered instead of the asset. Sign in to the network or retry later. |
+| `Update failed: ...; relaunching the previous build` | The swap failed; the previous exe was put back and started. The same line carries the failing path. |
+| `Still waiting for <path> to unlock after ...` every 5 s, then `Giving up on ... after 60s` | Something still holds the exe: a second instance, a scanner, or the throwaway app from the local test. Close it and retry. |
 | `AetherDesk test release tdesk-x is not newer than installed version y` | The version was not bumped, or was bumped only in `package.json`/`Cargo.toml` while `tauri.conf.json` stayed behind. |
 | `Could not find a portable .zip asset in AetherDesk release tdesk-x` | The release has no `.zip`, or the asset was renamed while uploading. |
 | `No tdesk-* release published`, or the check answers with the stable channel | The release is a draft, or the tag lacks the `tdesk-` prefix. A `desk-*` release marked prerelease is invisible on the stable stream as well. |
@@ -204,7 +272,7 @@ install folder.
 | `tdesk-* channel known empty (checked recently)` | The app remembers an empty test channel for fifteen minutes. Restart it to probe again. |
 | `Release lookup ... served from cache (origin=..., age_ms=...)` | Lookups are reused for a minute and an empty channel for half an hour. Wait, or restart the app. |
 | `AetherDesk update check failed: GitHub API failed ... and public fallback failed ...` | No outbound HTTPS or DNS. Rule connectivity out first: the hubcap provider logs `API key validation network failure` when its key check cannot reach the server and `Manifest ZIP body read failed` when a download body ends early — the same class of failure that stops a release lookup or a ZIP download. |
-| `AetherDesk.exe.old` left in the install folder | The apply process stopped between renaming the exe and cleaning up, or putting the old exe back failed. A failed merge also prints `update apply failed: ...` on stderr; that line and the failing path are visible when the helper runs by hand as in the local test above. |
+| `AetherDesk.exe.old` left in the install folder | The apply process stopped between renaming the exe and putting it back. The log names the failing path; launch `AetherDesk.exe` and update again. |
 
 ## Related
 

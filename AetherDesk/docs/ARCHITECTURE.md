@@ -232,6 +232,24 @@ invariants
   game, Steam rebuilds it, and only the Steam Workshop page unsubscribes. An
   empty Workshop content directory is not content.
 
+### AetherDesk self-update
+
+Four modules share the portable update, and each owns one thing:
+
+- `updater/http.rs` owns the HTTP client and its budgets: a 10 s connect timeout
+  and a 30 s idle (read) timeout, never a total-request timeout, because the
+  payload is the whole portable ZIP and a healthy slow link must succeed.
+- `updater/github.rs` owns release discovery and the version gate.
+- `updater/desk.rs` owns staging, the in-flight guard, the swap and the
+  relaunch; a failed swap puts the previous exe back and starts it.
+- `commands/aether_desk.rs` owns the `desk-update://progress` event stream
+  (phases and download ticks, at most one event per 200 KB).
+
+The `--apply-update` helper runs from a copy in `%TEMP%`, so it is given the
+install root explicitly and appends to `<install_root>/AetherData/logs/desk.log`
+without rotating it: the swap's failures must land in the log the running
+instance just wrote, not beside the temp copy.
+
 ### Diagnostics
 
 The logger has one domain per concern: `settings` (prepared/applying/finalized/
