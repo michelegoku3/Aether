@@ -273,7 +273,7 @@ pub struct GithubReleaseManager {
 impl GithubReleaseManager {
     pub fn new() -> Self {
         Self {
-            client: reqwest::Client::new(),
+            client: crate::updater::http::update_client(),
         }
     }
 

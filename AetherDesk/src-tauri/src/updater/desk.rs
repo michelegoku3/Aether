@@ -541,7 +541,7 @@ fn wait_until_replaceable(path: &Path) -> bool {
 /// Downloads `url` into `dest_path` (atomic write via temp file).
 async fn download_zip(url: &str, dest_path: &Path) -> Result<(), String> {
     crate::desk_log_info!("updater", "Downloading AetherDesk zip from {}", url);
-    let response = reqwest::Client::new()
+    let response = crate::updater::http::update_client()
         .get(url)
         .header("User-Agent", "AetherDesk-Updater")
         .send()

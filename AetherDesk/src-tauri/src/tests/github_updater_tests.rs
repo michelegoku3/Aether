@@ -202,3 +202,80 @@ fn test_etag_header_parsing() {
     let parsed = header_val.trim_matches('"');
     assert_eq!(parsed, "64f8a3c8e9d1");
 }
+
+#[tokio::test]
+async fn a_stalled_body_aborts_after_the_idle_timeout() {
+    use std::time::{Duration, Instant};
+    use tokio::io::AsyncWriteExt;
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("bind");
+    let addr = listener.local_addr().expect("addr");
+    tokio::spawn(async move {
+        let (mut socket, _) = listener.accept().await.expect("accept");
+        let _ = socket
+            .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 1048576\r\n\r\n")
+            .await;
+        tokio::time::sleep(Duration::from_secs(30)).await;
+    });
+
+    let client = crate::updater::http::update_client_with(
+        Duration::from_secs(2),
+        Duration::from_millis(500),
+    );
+    let started = Instant::now();
+    let response = client
+        .get(format!("http://{addr}/stalled"))
+        .send()
+        .await
+        .expect("headers arrive");
+    let error = response
+        .bytes()
+        .await
+        .expect_err("the body must be cut off");
+    assert!(error.is_timeout(), "unexpected error: {error}");
+    assert!(
+        started.elapsed() < Duration::from_secs(5),
+        "took {:?}",
+        started.elapsed()
+    );
+}
+
+#[tokio::test]
+async fn a_slow_but_alive_body_is_not_aborted() {
+    use std::time::Duration;
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("bind");
+    let addr = listener.local_addr().expect("addr");
+    tokio::spawn(async move {
+        let (mut socket, _) = listener.accept().await.expect("accept");
+        // Drain the request before answering: closing with unread bytes makes
+        // Windows answer with RST, which the client would see as a reset.
+        let mut request = [0u8; 1024];
+        let _ = socket.read(&mut request).await;
+        let _ = socket
+            .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 300\r\n\r\n")
+            .await;
+        for _ in 0..3 {
+            tokio::time::sleep(Duration::from_millis(200)).await;
+            let _ = socket.write_all(&[0u8; 100]).await;
+        }
+        tokio::time::sleep(Duration::from_millis(300)).await;
+    });
+
+    let client = crate::updater::http::update_client_with(
+        Duration::from_secs(2),
+        Duration::from_millis(500),
+    );
+    let response = client
+        .get(format!("http://{addr}/slow"))
+        .send()
+        .await
+        .expect("headers arrive");
+    let body = response.bytes().await.expect("a slow body still completes");
+    assert_eq!(body.len(), 300);
+}
