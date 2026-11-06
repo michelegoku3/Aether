@@ -91,12 +91,16 @@ export const AetherView = memo(function AetherView({
       showStatus(result, 'success');
       setIsProcessing(false);
     } catch (err: unknown) {
+      // Drop the live line before the status refresh: a stale "Downloading..."
+      // would otherwise sit over the failure alert while the DLL check runs.
+      setIsDeskUpdating(false);
       showStatus(`AetherDesk update failed: ${toErrorMessage(err)}`, 'error');
       await onDllStatusChange();
       onUpdateComplete();
       setIsProcessing(false);
+    } finally {
+      setIsDeskUpdating(false);
     }
-    setIsDeskUpdating(false);
   };
 
   /**
@@ -105,7 +109,10 @@ export const AetherView = memo(function AetherView({
    * covers the gap before the backend answers.
    */
   const deskUpdateLine = (() => {
-    if (!isDeskUpdating || !deskUpdateProgress) return null;
+    if (!isDeskUpdating) return null;
+    // The first backend event can be a moment away, and the 6 s status alert
+    // above expires: without this fallback the panel goes blank mid-update.
+    if (!deskUpdateProgress) return 'Preparing AetherDesk portable update...';
     const { phase, percent, elapsedSeconds } = deskUpdateProgress;
     const seconds = `${elapsedSeconds}s`;
 

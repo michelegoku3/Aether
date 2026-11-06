@@ -59,6 +59,30 @@ describe('AetherView desk update progress', () => {
 
     expect(screen.getByText(/Downloading AetherDesk \(25%, 0s\)/)).toBeInTheDocument();
   });
+
+  it('keeps a preparing line after the status alert expires', async () => {
+    vi.useFakeTimers();
+    mockInvokeCommands({
+      get_settings: {},
+      install_aether_desk_update: new Promise(() => {}),
+    });
+    render(<AetherView {...baseProps()} isDeskUpdateAvailable />);
+    await act(async () => {});
+
+    const deskPanel = screen
+      .getByText('AetherDesk', { selector: '.panel-title' })
+      .closest('.aether-panel') as HTMLElement;
+    fireEvent.click(within(deskPanel).getByRole('button', { name: 'Update' }));
+    await act(async () => {});
+
+    // The status alert clears after 6 s; the update is still running.
+    act(() => {
+      vi.advanceTimersByTime(7_000);
+    });
+
+    expect(screen.getAllByText('Preparing AetherDesk portable update...')).toHaveLength(1);
+    vi.useRealTimers();
+  });
 });
 
 describe('AetherView uninstall flow', () => {

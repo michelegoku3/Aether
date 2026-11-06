@@ -1,11 +1,11 @@
 //! The one HTTP client the self-updater uses.
 //!
-//! Every other network call in AetherDesk goes through
-//! `providers::http::shared_client`, which always sets a timeout. The updater
-//! did not: `reqwest::Client::new()` has no connect timeout and no read timeout,
-//! so a connection that stalls before the headers or halfway through the body
-//! leaves the update pending forever — the window shows "Preparing AetherDesk
-//! portable update..." and never moves.
+//! `providers::http::shared_client` is not reused here: its only knob is a
+//! total request timeout, which would abort a healthy 18 MB download on a slow
+//! link. `reqwest::Client::new()` at the other end of the spectrum has no
+//! timeout at all, so a connection that stalls before the headers or halfway
+//! through the body leaves the update pending forever — the window shows
+//! "Preparing AetherDesk portable update..." and never moves.
 //!
 //! There is deliberately no total-request timeout: the payload is the whole
 //! portable ZIP (~18 MB), and a healthy download at 200 KB/s takes about 90

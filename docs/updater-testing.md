@@ -60,19 +60,22 @@ The AETHER panel follows the update through five phases, pushed by
 | Phase | What the panel shows | Emitted when |
 |---|---|---|
 | `looking-up` | `Looking for a newer AetherDesk build (3s)` | before the release lookup |
-| `downloading` | `Downloading AetherDesk (34%, 12s)` | every 200 KB and on the last chunk |
+| `downloading` | `Downloading AetherDesk (34%, 12s)` | every 200 KB, the last chunk when the server sent a size, and once before the first byte |
 | `extracting` | `Unpacking the update (18s)` | before the archive is unpacked |
-| `staging` | `Preparing the restart (19s)` | after the helper copy is verified and spawned |
+| `staging` | `Preparing the restart (19s)` | before the helper copy is staged and spawned |
 | `restarting` | `Restarting AetherDesk to apply the update...` | immediately before the app exits |
 
 The `(34%, 12s)` pair is the point of the stream: the percentage comes from
 `Content-Length`, the seconds are counted in the UI, so a download that stops
 moving shows the clock climbing instead of an unchanging line.
 
-`install_aether_desk_update` takes a single in-flight slot (`claim_update_slot`
-in `updater/desk.rs`): a second invocation while one runs answers
-`AetherDesk update is already running` instead of writing the same temp ZIP from
-two downloads.
+The two commands that download — `install_aether_desk_update` and
+`restore_stable_desk` — share a single in-flight slot (`claim_update_slot` in
+`updater/desk.rs`), because both write the same workdir. A second invocation
+while one runs answers `AetherDesk update is already running` instead of
+truncating the other's ZIP and staging tree. The slot is a guard value released
+on drop, so a cancelled command or a panic cannot leave updates refused until
+the app restarts.
 
 `run_apply_update` (`AetherDesk/src-tauri/src/updater/desk.rs`) refuses an
 install root that is not absolute, that contains a link or reparse point, that is
@@ -157,11 +160,19 @@ read its exit code:
 "exit code: $LASTEXITCODE"   # 1
 ```
 
-The helper writes `Refusing update: <reason>` to
+The helper writes `Update failed: <reason>` to
 `<install_root>/AetherData/logs/desk.log` (the validator is shared with the
 portable uninstaller, hence the word "uninstall" in the protected-root message).
 Nothing is printed to a console: the real update runs with no console attached,
-so the log is the only place its lines can survive.
+so the log is the only place its lines can survive. The suffix names what
+happened next: `relaunched <path>`, `could not relaunch <path>: <error>`, or —
+when the root stopped validating — `relaunching whatever is installed`, followed
+by one of the first two.
+
+The helper appends without rotating, but the app it relaunches rotates
+`desk.log` to `desk.log.last` on startup. A failed swap is therefore read from
+`<install_root>/AetherData/logs/desk.log.last` afterwards, not from the fresh
+`desk.log`.
 
 What this covers: the apply half end to end, including the `AetherData` skip and
 the relaunch. What it does not cover: GitHub release discovery, the version gate,
@@ -238,9 +249,10 @@ page, a rate-limit page — is refused before extraction, with
 file left at the ZIP path. Without that check the page would reach the unzip step
 and the failure would name the archive format instead of the cause.
 
-The full body is written to `aetherdesk_update.zip.tmp` and renamed into place
-only after `sync_all`: a disk-full or access-denied error mid-download leaves
-nothing at the final path, so a retry starts from a clean file.
+The full body is written to `aetherdesk_update.tmp` and renamed into place only
+after `sync_all`: a disk-full or access-denied error mid-download leaves nothing
+at the final path, so a retry starts from a clean file. A leftover `.tmp` from a
+hard crash is deleted on the next startup.
 
 To reproduce a slow link by hand, publish a `tdesk-*` release in which the ZIP is
 replaced by a large filler file of the same name: the download reports the
@@ -258,12 +270,13 @@ rotate the log the running instance just wrote.
 
 | What you see | Cause |
 |---|---|
-| `Refusing update: ... Refusing protected uninstall root ...` | The install root is exactly home, Desktop, Downloads, Documents, AppData roaming/local, or config. Point it at a folder of its own. |
-| `Refusing update: ... AetherDesk.exe does not match this helper in ...` | The helper is not a copy of the exe in the install folder: the freshly built exe was run directly, or the install was rebuilt after the copy. |
-| `Refusing update: ... requires an absolute install path`, `Refusing linked/reparse path` | A relative path, or a junction/symlink anywhere in the path chain. |
+| `Update failed: ... Refusing protected uninstall root ...` | The install root is exactly home, Desktop, Downloads, Documents, AppData roaming/local, or config. Point it at a folder of its own. |
+| `Update failed: ... AetherDesk.exe does not match this helper in ...` | The helper is not a copy of the exe in the install folder: the freshly built exe was run directly, or the install was rebuilt after the copy. |
+| `Update failed: ... requires an absolute install path`, `Refusing linked/reparse path` | A relative path, or a junction/symlink anywhere in the path chain. |
 | `Failed to read downloaded bytes: ... timed out` | The connection went silent for longer than the 30 s idle budget. Check the network; the app is still running and the update can be retried. |
 | `Download server returned a web page, not an update ZIP (text/html)` | A captive portal, proxy page or rate-limit page answered instead of the asset. Sign in to the network or retry later. |
-| `Update failed: ...; relaunching the previous build` | The swap failed; the previous exe was put back and started. The same line carries the failing path. |
+| `Update failed: ...; relaunched <path>` | The swap failed; the previous exe was put back and started. Read `desk.log.last` — the relaunched app rotated it away. The same line carries the failing path. |
+| `Update failed: ...; could not relaunch <path>: ...` | The swap failed and the relaunch did not start: the path is gone, or launching it was refused. Install the build again from the ZIP. |
 | `Still waiting for <path> to unlock after ...` every 5 s, then `Giving up on ... after 60s` | Something still holds the exe: a second instance, a scanner, or the throwaway app from the local test. Close it and retry. |
 | `AetherDesk test release tdesk-x is not newer than installed version y` | The version was not bumped, or was bumped only in `package.json`/`Cargo.toml` while `tauri.conf.json` stayed behind. |
 | `Could not find a portable .zip asset in AetherDesk release tdesk-x` | The release has no `.zip`, or the asset was renamed while uploading. |

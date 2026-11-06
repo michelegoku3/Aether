@@ -22,8 +22,8 @@ serde_json = "1.0"
 reqwest = { version = "0.12", features = ["json"] }
 # Minimal tokio surface actually used (join!/select! macros, spawn, JoinSet,
 # sync::{oneshot, Semaphore}, time::{timeout, sleep}, net::{TcpListener,
-# TcpStream}, io::{AsyncReadExt, AsyncWriteExt}): "full" also builds
-# fs/io-std/process/signal, which nothing uses.
+# TcpStream}, io::{AsyncReadExt, AsyncWriteExt}, fs::File for the streamed update
+# download): "full" also builds io-std/process/signal, which nothing uses.
 tokio = { version = "1", features = ["macros", "rt", "rt-multi-thread", "sync", "time", "net", "io-util", "fs"] }
 sysinfo = "0.30"
 # Default features pull in `zlib-ng` (via libz-ng-sys, built by cmake): on
