@@ -23,7 +23,7 @@ interface Params {
   onPreviewAlternativeCards: (opacity: number, fade: number) => void;
   onMissingSteamPath: () => void;
   /** Re-read the update state after the test channel changed. */
-  onTestUpdatesSaved: () => void;
+  onTestUpdatesSaved: () => Promise<void>;
   guardRef: { current: SettingsGuard | null };
 }
 
@@ -172,6 +172,23 @@ export function useSettingsController(params: Params) {
     return () => window.removeEventListener('focus', onWindowFocus);
   }, [reloadSteamAccounts]);
 
+  /**
+   * Runs the update check only when the test channel actually moved.
+   *
+   * The dots in the AETHER panel are keyed to the channel, so a Save or a Reset
+   * that leaves it alone must not spend a GitHub request; a corrupt-settings
+   * recovery starts from an unknown value, which `Boolean` normalises to off.
+   */
+  const recheckTestChannel = useCallback(
+    (savedValue: boolean | undefined, previousValue: boolean | undefined) => {
+      if (Boolean(savedValue) === Boolean(previousValue)) return;
+      void params.onTestUpdatesSaved().catch((error) => {
+        console.warn('[settings] update recheck failed:', error);
+      });
+    },
+    [params]
+  );
+
   const save = useCallback(async (): Promise<boolean> => {
     if (form.libraryBannerEnabled) {
       const { ids, invalid } = parseAppIdList(form.libraryBannerAppIds);
@@ -228,15 +245,12 @@ export function useSettingsController(params: Params) {
       const settings = model.getLocalSettings(invalidApiKey ? { hubcap_api_key: '' } : {});
       const hadDevtools = model.rawSettings.enable_webview_devtools;
       const hadIconEnabled = model.rawSettings.custom_icon_enabled;
-      const hadTestUpdates = model.rawSettings.enable_test_updates;
+      const hadTestUpdates = Boolean(model.rawSettings.enable_test_updates);
       const saved = await invoke<AppSettings>('save_settings', { settings, base: model.rawSettings });
       applySettings(saved);
       // Flipping the test channel changes which releases count, so the dots in
-      // the AETHER panel are stale until the backend looks again. Only a real
-      // change asks for the network check: otherwise every Save would.
-      if (saved.enable_test_updates !== hadTestUpdates) {
-        params.onTestUpdatesSaved();
-      }
+      // the AETHER panel are stale until the backend looks again.
+      recheckTestChannel(saved.enable_test_updates, hadTestUpdates);
       // Switches stored outside `settings.json` only reach their command on
       // Save: that is what makes them part of the unsaved-changes guard.
       if (presenceDefaultShowOnline !== presenceSavedRef.current) {
@@ -308,6 +322,7 @@ export function useSettingsController(params: Params) {
     model,
     params,
     presenceDefaultShowOnline,
+    recheckTestChannel,
     reloadSteamAccounts,
     setField,
     settingsCorrupt,
@@ -380,8 +395,12 @@ export function useSettingsController(params: Params) {
     params.onPreviewPersonalWallpaper(false, 20);
     params.onPreviewAlternativeCards(100, 50);
     try {
+      const hadTestUpdates = Boolean(model.rawSettings.enable_test_updates);
       const defaults = await invoke<AppSettings>('reset_settings_to_defaults');
       applySettings(defaults);
+      // Reset can stop testing too; leaving the dots on the old channel would
+      // show a release the reset just made irrelevant.
+      recheckTestChannel(defaults.enable_test_updates, hadTestUpdates);
       try {
         await invoke('apply_window_icon');
       } catch {
@@ -394,7 +413,7 @@ export function useSettingsController(params: Params) {
     } catch (err) {
       showStatus(`Failed to reset settings: ${err}`, 'error');
     }
-  }, [appearance, applySettings, params, showStatus]);
+  }, [appearance, applySettings, model, params, recheckTestChannel, showStatus]);
 
   // Reset is destructive (saved settings are replaced by defaults), so the
   // Reset button only opens the confirmation; the actual action stays here.

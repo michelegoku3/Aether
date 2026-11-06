@@ -10,6 +10,7 @@ const settings: AppSettings = {
   steam_path: 'C:/Steam',
   store_currency: 'eur',
   custom_game_name: 'Original',
+  enable_test_updates: false,
 };
 
 const commandDefaults = (saved: AppSettings = settings) => ({
@@ -45,7 +46,7 @@ const createParams = () => ({
   onPreviewPersonalWallpaper: vi.fn(),
   onPreviewAlternativeCards: vi.fn(),
   onMissingSteamPath: vi.fn(),
-  onTestUpdatesSaved: vi.fn(),
+  onTestUpdatesSaved: vi.fn().mockResolvedValue(undefined),
   guardRef: { current: null as SettingsGuard | null },
 });
 
@@ -206,6 +207,37 @@ describe('useSettingsController', () => {
     act(() => result.current.setField('enableTestUpdates', true));
     await act(async () => {
       await result.current.save();
+    });
+
+    expect(params.onTestUpdatesSaved).not.toHaveBeenCalled();
+  });
+
+  it('rechecks updates when a reset disables the test channel', async () => {
+    const enabled = { ...settings, enable_test_updates: true };
+    mockInvokeCommands({
+      ...commandDefaults(enabled),
+      get_settings: enabled,
+      reset_settings_to_defaults: { ...settings, enable_test_updates: false },
+    });
+    const params = createParams();
+    const { result } = renderHook(() => useSettingsController(params));
+    await waitFor(() => expect(result.current.form.steamPath).toBe('C:/Steam'));
+
+    await act(async () => {
+      await result.current.reset();
+    });
+
+    expect(params.onTestUpdatesSaved).toHaveBeenCalledTimes(1);
+  });
+
+  it('leaves the update check alone when a reset keeps the test channel off', async () => {
+    mockInvokeCommands(commandDefaults());
+    const params = createParams();
+    const { result } = renderHook(() => useSettingsController(params));
+    await waitFor(() => expect(result.current.form.steamPath).toBe('C:/Steam'));
+
+    await act(async () => {
+      await result.current.reset();
     });
 
     expect(params.onTestUpdatesSaved).not.toHaveBeenCalled();
