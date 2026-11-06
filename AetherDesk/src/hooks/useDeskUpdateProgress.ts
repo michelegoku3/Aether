@@ -4,11 +4,39 @@ import { DESK_UPDATE_PROGRESS_EVENT, DeskUpdatePhase, DeskUpdateProgress } from 
 
 export interface DeskUpdateState {
   phase: DeskUpdatePhase;
-  /** 0..100 while downloading with a known size, `null` otherwise. */
-  percent: number | null;
+  /** 0..100 across the whole update, not just the download. */
+  progress: number;
   /** Seconds since the first progress event, so a stalled update is visible. */
   elapsedSeconds: number;
 }
+
+/** Where each phase sits on the one bar the panel shows. */
+const PHASE_PROGRESS: Record<DeskUpdatePhase, number> = {
+  'looking-up': 3,
+  // The download fills the band from its start to `DOWNLOAD_END` by bytes.
+  downloading: 3,
+  extracting: 78,
+  staging: 92,
+  restarting: 98,
+};
+
+const DOWNLOAD_END = 75;
+
+/**
+ * Overall bar value for one event.
+ *
+ * The download is the only phase with a measurable size, so it gets the largest
+ * band (3-75) and every other phase is an anchor past it: the bar never jumps
+ * backwards and never sits still for the whole extraction or restart.
+ */
+const overallProgress = ({ phase, downloadedBytes, totalBytes }: DeskUpdateProgress): number => {
+  if (phase !== 'downloading') return PHASE_PROGRESS[phase];
+  if (totalBytes === null || totalBytes <= 0) return PHASE_PROGRESS.downloading;
+
+  const ratio = Math.min(1, Math.max(0, downloadedBytes / totalBytes));
+  const band = DOWNLOAD_END - PHASE_PROGRESS.downloading;
+  return Math.round(PHASE_PROGRESS.downloading + band * ratio);
+};
 
 /**
  * Subscribes to `desk-update://progress` events emitted by
@@ -71,10 +99,11 @@ export const useDeskUpdateProgress = (active: boolean): DeskUpdateState | null =
 
   if (!progress) return null;
 
-  const total = progress.totalBytes;
-  const percent =
-    total !== null && total > 0 ? Math.min(100, Math.round((progress.downloadedBytes / total) * 100)) : null;
   const elapsedSeconds = startedAt === null ? 0 : Math.max(0, Math.floor((now - startedAt) / 1000));
 
-  return { phase: progress.phase, percent, elapsedSeconds };
+  return {
+    phase: progress.phase,
+    progress: overallProgress(progress),
+    elapsedSeconds,
+  };
 };

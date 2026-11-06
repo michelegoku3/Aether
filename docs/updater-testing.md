@@ -53,21 +53,33 @@ The swap cannot run in the process it replaces, because Windows locks a running
    while skipping `AetherData`, deletes staging, removes `.old` and relaunches
    `AetherDesk.exe`.
 
-The AETHER panel follows the update through five phases, pushed by
+The AETHER panel follows the update on one progress bar, pushed by
 `commands/aether_desk.rs` on `desk-update://progress` (payload in
-`AetherDesk/src/constants/updates.ts`):
+`AetherDesk/src/constants/updates.ts`). The bar covers the whole operation, so
+it keeps moving after the download: the download is the only measurable phase
+and owns the 3-75 band, `looking-up` holds the bar at 3 %, and every later
+phase is an anchor past the band. A server that sends no `Content-Length`
+leaves the download unmeasurable, so the bar holds at 3 % until extraction
+takes over.
 
-| Phase | What the panel shows | Emitted when |
-|---|---|---|
-| `looking-up` | `Looking for a newer AetherDesk build (3s)` | before the release lookup |
-| `downloading` | `Downloading AetherDesk (34%, 12s)` | every 200 KB, the last chunk when the server sent a size, and once before the first byte |
-| `extracting` | `Unpacking the update (18s)` | before the archive is unpacked |
-| `staging` | `Preparing the restart (19s)` | before the helper copy is staged and spawned |
-| `restarting` | `Restarting AetherDesk to apply the update...` | immediately before the app exits |
+| Phase | Bar | What the panel shows | Emitted when |
+|---|---|---|---|
+| `looking-up` | 3 % | `Looking for a newer AetherDesk build (3s)` | before the release lookup |
+| `downloading` | 3-75 % by bytes (3 % without a size) | `Downloading AetherDesk (12s)` | every 200 KB, the last chunk when the server sent a size, and once before the first byte |
+| `extracting` | 78 % | `Unpacking the update (18s)` | before the archive is unpacked |
+| `staging` | 92 % | `Preparing the restart (19s)` | before the helper copy is staged and spawned |
+| `restarting` | 98 % | `Restarting AetherDesk to apply the update...` | immediately before the app exits |
 
-The `(34%, 12s)` pair is the point of the stream: the percentage comes from
-`Content-Length`, the seconds are counted in the UI, so a download that stops
-moving shows the clock climbing instead of an unchanging line.
+The seconds are counted in the UI, so a download that stops moving shows the
+clock climbing instead of a bar frozen mid-way. The size in bytes is what feeds
+the percentage; it belongs to the bar, not to the text.
+
+At startup both channels are checked at once (`AetherDesk/src/app/useAppBootstrap.ts`)
+and the two lookups share one release list: `updater/github.rs` serialises the
+fetch and reuses a list younger than ten seconds, including one revalidated with
+`304 Not Modified`. Saving "Enable test updates", or resetting the settings,
+runs the same check again when the saved channel differs from the previous one,
+so the dots follow the channel that was just written.
 
 The two commands that download — `install_aether_desk_update` and
 `restore_stable_desk` — share a single in-flight slot (`claim_update_slot` in
@@ -261,10 +273,10 @@ hard crash is deleted on the next startup.
 
 To reproduce a slow link by hand, publish a `tdesk-*` release in which the ZIP is
 replaced by a large filler file of the same name: the download reports the
-`Content-Length` of the filler, the percentage climbs, and extraction fails
-afterwards with a message naming the ZIP. Throttle the connection (or copy a
-multi-gigabyte file) to watch the panel hold a plausible percentage instead of
-sitting on a static line.
+`Content-Length` of the filler, the bar fills the 3-75 band, and extraction
+fails afterwards with a message naming the ZIP. Throttle the connection (or copy
+a multi-gigabyte file) to watch the bar move with the bytes instead of sitting
+still.
 
 ## Troubleshooting
 

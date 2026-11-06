@@ -21,6 +21,8 @@ interface SettingsViewProps {
   onPreviewPersonalWallpaper: (enabled: boolean, opacity: number) => void;
   onPreviewAlternativeCards: (opacity: number, fade: number) => void;
   onMissingSteamPath: () => void;
+  /** Re-read both update channels after the test-updates switch was saved. */
+  onTestUpdatesSaved: () => Promise<void>;
   guardRef: { current: SettingsGuard | null };
 }
 

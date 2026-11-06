@@ -33,14 +33,14 @@ const openUninstallConfirmAndConfirm = async (residualCount: number, extraComman
 };
 
 describe('AetherView desk update progress', () => {
-  it('shows the phase and percentage while the portable update runs', async () => {
+  it('shows one bar for the whole update and no percentage in the text', async () => {
     mockInvokeCommands({
       get_settings: {},
       // Stays pending on purpose: a successful update exits the app, so the
       // promise never resolves in real life either.
       install_aether_desk_update: new Promise(() => {}),
     });
-    render(<AetherView {...baseProps()} isDeskUpdateAvailable />);
+    const { container } = render(<AetherView {...baseProps()} isDeskUpdateAvailable />);
     await act(async () => {}); // let getSettings resolve
 
     const deskPanel = screen
@@ -57,7 +57,14 @@ describe('AetherView desk update progress', () => {
       });
     });
 
-    expect(screen.getByText(/Downloading AetherDesk \(25%, 0s\)/)).toBeInTheDocument();
+    expect(screen.getByText('Downloading AetherDesk (0s)')).toBeInTheDocument();
+    expect(screen.queryByText(/%/)).not.toBeInTheDocument();
+    // A quarter of the download fills the 3-75 band: 21 % of the single bar.
+    expect(container.querySelector('.version-progress-fill')).toHaveStyle({ width: '21%' });
+    // The bar, not the text, is what assistive tech reads for progress.
+    expect(screen.getByRole('progressbar', { name: 'AetherDesk update' })).toHaveAttribute('aria-valuenow', '21');
+    // The label sits above the bar; the column order follows the DOM.
+    expect(container.querySelector('.aether-update-progress')?.firstElementChild).toHaveClass('version-progress-label');
   });
 
   it('keeps a preparing line after the status alert expires', async () => {

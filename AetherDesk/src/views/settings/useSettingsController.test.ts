@@ -10,6 +10,7 @@ const settings: AppSettings = {
   steam_path: 'C:/Steam',
   store_currency: 'eur',
   custom_game_name: 'Original',
+  enable_test_updates: false,
 };
 
 const commandDefaults = (saved: AppSettings = settings) => ({
@@ -45,6 +46,7 @@ const createParams = () => ({
   onPreviewPersonalWallpaper: vi.fn(),
   onPreviewAlternativeCards: vi.fn(),
   onMissingSteamPath: vi.fn(),
+  onTestUpdatesSaved: vi.fn().mockResolvedValue(undefined),
   guardRef: { current: null as SettingsGuard | null },
 });
 
@@ -168,6 +170,94 @@ describe('useSettingsController', () => {
     expect(params.onRefreshCustomCss).toHaveBeenCalled();
     expect(result.current.status.type).toBe('success');
     expect(params.guardRef.current?.isDirty()).toBe(false);
+  });
+
+  it('runs the update check after Save only when the test channel changed', async () => {
+    mockInvokeCommands({
+      ...commandDefaults(),
+      save_settings: (args: unknown) => (args as { settings: AppSettings }).settings,
+    });
+    const params = createParams();
+    const { result } = renderHook(() => useSettingsController(params));
+    await waitFor(() => expect(result.current.form.steamPath).toBe('C:/Steam'));
+
+    act(() => result.current.setField('enableTestUpdates', true));
+    await act(async () => {
+      await result.current.save();
+    });
+    expect(params.onTestUpdatesSaved).toHaveBeenCalledTimes(1);
+
+    // A later Save that leaves the channel alone must not ask GitHub again.
+    act(() => result.current.setField('customGameName', 'Changed'));
+    await act(async () => {
+      await result.current.save();
+    });
+    expect(params.onTestUpdatesSaved).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not check for updates when the save fails', async () => {
+    mockInvokeCommands({
+      ...commandDefaults(),
+      save_settings: () => Promise.reject(new Error('SETTINGS_CONFLICT: changed elsewhere')),
+    });
+    const params = createParams();
+    const { result } = renderHook(() => useSettingsController(params));
+    await waitFor(() => expect(result.current.form.steamPath).toBe('C:/Steam'));
+
+    act(() => result.current.setField('enableTestUpdates', true));
+    await act(async () => {
+      await result.current.save();
+    });
+
+    expect(params.onTestUpdatesSaved).not.toHaveBeenCalled();
+  });
+
+  it('rechecks updates when a reset disables the test channel', async () => {
+    const enabled = { ...settings, enable_test_updates: true };
+    mockInvokeCommands({
+      ...commandDefaults(enabled),
+      get_settings: enabled,
+      reset_settings_to_defaults: { ...settings, enable_test_updates: false },
+    });
+    const params = createParams();
+    const { result } = renderHook(() => useSettingsController(params));
+    await waitFor(() => expect(result.current.form.steamPath).toBe('C:/Steam'));
+
+    await act(async () => {
+      await result.current.reset();
+    });
+
+    expect(params.onTestUpdatesSaved).toHaveBeenCalledTimes(1);
+  });
+
+  it('rechecks updates when an appearance auto-save moves the test channel', async () => {
+    mockInvokeCommands({
+      ...commandDefaults(),
+      save_settings: (args: unknown) => (args as { settings: AppSettings }).settings,
+    });
+    const params = createParams();
+    const { result } = renderHook(() => useSettingsController(params));
+    await waitFor(() => expect(result.current.form.steamPath).toBe('C:/Steam'));
+
+    act(() => result.current.setField('enableTestUpdates', true));
+    await act(async () => {
+      await result.current.persistAppearance({});
+    });
+
+    expect(params.onTestUpdatesSaved).toHaveBeenCalledTimes(1);
+  });
+
+  it('leaves the update check alone when a reset keeps the test channel off', async () => {
+    mockInvokeCommands(commandDefaults());
+    const params = createParams();
+    const { result } = renderHook(() => useSettingsController(params));
+    await waitFor(() => expect(result.current.form.steamPath).toBe('C:/Steam'));
+
+    await act(async () => {
+      await result.current.reset();
+    });
+
+    expect(params.onTestUpdatesSaved).not.toHaveBeenCalled();
   });
 
   it('blocks save and signals the host when Steam path validation fails', async () => {

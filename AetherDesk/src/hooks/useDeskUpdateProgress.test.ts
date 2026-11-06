@@ -14,7 +14,7 @@ describe('useDeskUpdateProgress', () => {
     vi.useRealTimers();
   });
 
-  it('keeps the latest phase and computes the percentage', async () => {
+  it('keeps the latest phase and maps the download into the overall bar', async () => {
     const { result } = renderHook(() => useDeskUpdateProgress(true));
     await act(async () => {});
 
@@ -26,10 +26,11 @@ describe('useDeskUpdateProgress', () => {
       });
     });
 
-    expect(result.current).toEqual({ phase: 'downloading', percent: 25, elapsedSeconds: 0 });
+    // The download owns the 3-75 band: a quarter of the bytes is 21 % overall.
+    expect(result.current).toEqual({ phase: 'downloading', progress: 21, elapsedSeconds: 0 });
   });
 
-  it('reports no percentage when the server sends no content length', async () => {
+  it('holds the bar at the start of the download without a content length', async () => {
     const { result } = renderHook(() => useDeskUpdateProgress(true));
     await act(async () => {});
 
@@ -41,8 +42,29 @@ describe('useDeskUpdateProgress', () => {
       });
     });
 
-    expect(result.current?.percent).toBeNull();
+    expect(result.current?.progress).toBe(3);
     expect(result.current?.phase).toBe('downloading');
+  });
+
+  it('anchors the other phases so the bar keeps moving past the download', async () => {
+    const { result } = renderHook(() => useDeskUpdateProgress(true));
+    await act(async () => {});
+
+    const progressAt = (phase: 'looking-up' | 'extracting' | 'staging' | 'restarting') => {
+      act(() => {
+        emitTauriEvent(DESK_UPDATE_PROGRESS_EVENT, {
+          phase,
+          downloadedBytes: 0,
+          totalBytes: null,
+        });
+      });
+      return result.current?.progress;
+    };
+
+    expect(progressAt('looking-up')).toBe(3);
+    expect(progressAt('extracting')).toBe(78);
+    expect(progressAt('staging')).toBe(92);
+    expect(progressAt('restarting')).toBe(98);
   });
 
   it('counts elapsed seconds while the update runs', async () => {

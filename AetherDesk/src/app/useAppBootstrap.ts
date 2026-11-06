@@ -19,6 +19,14 @@ export function useAppBootstrap(params: Params) {
       // The library warm-up is NOT here: it used to rescan the whole library
       // before the provider's own scan. It now runs once after that scan.
       const deskVersionPromise = params.loadDeskVersion();
+      // The Steam-path warning only needs the settings file and is the only
+      // route to fixing a missing path: it must not queue behind the network
+      // update checks, which can sit on a slow or silent connection. The catch
+      // is attached here because the await is far away: a rejection must not
+      // surface as unhandled while the checks run.
+      const steamPathWarning = params.warnIfSteamPathMissing().catch((error) => {
+        console.warn('[startup] Steam-path check failed:', error);
+      });
 
       let settings: AppSettings | null = null;
       try {
@@ -35,12 +43,16 @@ export function useAppBootstrap(params: Params) {
           params.refreshAppearance(settings),
           params.refreshHubcapUsage(undefined, settings),
           params.checkDllUpdates(settings),
+          // The Desk dot is the one the user waits for, and its check does not
+          // read settings on the frontend side: running it here keeps it out of
+          // the queue behind the DLL lookup and the Hubcap quota.
+          params.checkDeskUpdates(),
         ]);
       } else {
-        await params.refreshAppearance();
+        await Promise.all([params.refreshAppearance(), params.checkDeskUpdates()]);
       }
 
-      await Promise.all([params.checkDeskUpdates(), params.warnIfSteamPathMissing(), deskVersionPromise]);
+      await Promise.all([steamPathWarning, deskVersionPromise]);
     };
     void hydrate();
     // App remains mounted for its lifetime; every callback is a stable hook API.
