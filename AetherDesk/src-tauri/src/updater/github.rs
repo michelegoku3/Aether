@@ -280,10 +280,22 @@ fn cached_list(cache: &ReleasesApiEtagCache, max_age: Duration) -> Option<Vec<Gi
     (cache.saved_at.elapsed() < max_age).then(|| cache.releases.clone())
 }
 
-fn recently_fetched_releases() -> Option<Vec<GithubRelease>> {
+#[cfg(test)]
+fn seed_recent_releases_for_tests(releases: Vec<GithubRelease>) {
+    if let Ok(mut guard) = releases_api_etag_cache().lock() {
+        *guard = Some(ReleasesApiEtagCache {
+            etag: None,
+            releases,
+            saved_at: Instant::now(),
+        });
+    }
+}
+
+fn recently_fetched_releases() -> Option<(Vec<GithubRelease>, Duration)> {
     let guard = releases_api_etag_cache().lock().ok()?;
     let cache = guard.as_ref()?;
-    cached_list(cache, RELEASES_LIST_REUSE)
+    let releases = cached_list(cache, RELEASES_LIST_REUSE)?;
+    Some((releases, cache.saved_at.elapsed()))
 }
 
 pub struct GithubReleaseManager {
@@ -614,11 +626,11 @@ impl GithubReleaseManager {
         // One request at a time, then reuse: the startup pass asks for the DLL
         // and Desk channels within milliseconds of each other.
         let _single_flight = RELEASES_LIST_LOCK.lock().await;
-        if let Some(releases) = recently_fetched_releases() {
+        if let Some((releases, age)) = recently_fetched_releases() {
             crate::desk_log_info!(
                 "updater",
-                "Release list reused from the fetch {}s ago ({} release(s))",
-                RELEASES_LIST_REUSE.as_secs(),
+                "Release list reused from the fetch {}ms ago ({} release(s))",
+                age.as_millis(),
                 releases.len()
             );
             return Ok(releases);
@@ -666,8 +678,12 @@ impl GithubReleaseManager {
         );
 
         if status == reqwest::StatusCode::NOT_MODIFIED {
-            if let Ok(guard) = releases_api_etag_cache().lock() {
-                if let Some(ref cache) = *guard {
+            if let Ok(mut guard) = releases_api_etag_cache().lock() {
+                if let Some(cache) = guard.as_mut() {
+                    // A revalidated list is as fresh as a fetched one: refresh
+                    // the stamp so the next lookup inside the reuse window is
+                    // served without another conditional request.
+                    cache.saved_at = Instant::now();
                     crate::desk_log_info!(
                         "updater",
                         "GitHub API 304 Not Modified — reused {} cached releases without consuming rate limit",
@@ -977,10 +993,21 @@ fn html_unescape(value: &str) -> String {
 mod list_reuse_tests {
     use super::*;
 
+    fn release(tag: &str) -> GithubRelease {
+        GithubRelease {
+            tag_name: tag.to_string(),
+            body: None,
+            html_url: None,
+            draft: false,
+            prerelease: false,
+            assets: Vec::new(),
+        }
+    }
+
     fn cache_with_age(age: Duration) -> ReleasesApiEtagCache {
         ReleasesApiEtagCache {
             etag: None,
-            releases: Vec::new(),
+            releases: vec![release("desk-1.2.3")],
             saved_at: Instant::now() - age,
         }
     }
@@ -988,7 +1015,14 @@ mod list_reuse_tests {
     #[test]
     fn a_recently_fetched_list_is_reused() {
         let cache = cache_with_age(Duration::from_secs(1));
-        assert!(cached_list(&cache, RELEASES_LIST_REUSE).is_some());
+        let reused = cached_list(&cache, RELEASES_LIST_REUSE).expect("recent list");
+        assert_eq!(reused[0].tag_name, "desk-1.2.3");
+    }
+
+    #[test]
+    fn the_list_stops_being_reused_at_the_window_edge() {
+        let cache = cache_with_age(RELEASES_LIST_REUSE);
+        assert!(cached_list(&cache, RELEASES_LIST_REUSE).is_none());
     }
 
     #[test]
@@ -996,5 +1030,17 @@ mod list_reuse_tests {
         let age = RELEASES_LIST_REUSE + Duration::from_secs(1);
         let cache = cache_with_age(age);
         assert!(cached_list(&cache, RELEASES_LIST_REUSE).is_none());
+    }
+
+    #[test]
+    fn the_global_cache_serves_the_recent_list_with_its_age() {
+        seed_recent_releases_for_tests(vec![release("tdesk-1.2.3")]);
+
+        let (served, age) = recently_fetched_releases().expect("seeded list");
+
+        assert_eq!(served[0].tag_name, "tdesk-1.2.3");
+        assert!(age < RELEASES_LIST_REUSE);
+        clear_release_cache();
+        assert!(recently_fetched_releases().is_none());
     }
 }
