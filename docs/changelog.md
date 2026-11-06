@@ -1,5 +1,33 @@
 # Changelog
 
+## AetherDesk V1.5.1
+
+### Settings, appearance and themes
+
+- Added the **Wonderland** theme (CRT scanline and pixel-art aesthetic) and
+  updated the Cyberpunk 2077, Frieren, Goldmine, and Halo default themes.
+- Theme updates are hash-protected: default themes are updated only if their hash
+  matches the known defaults baseline, preventing accidental overwrites of modified
+  user themes or custom themes sharing a default theme name.
+- Bundled the complete reference `.css` stylesheet into AetherDesk, making it easier
+  to create and inspect custom themes.
+- Modified settings now prevent closing AetherDesk via the window close (X) button
+  until changes are saved or discarded.
+- Reorganized the Settings section: nested options are visually clearer with improved
+  grouping, alignment, and UI consistency.
+
+### Steam and versioning
+
+- Added a **Repair Cache** button in the Steam settings section to scan and fix
+  invalid `.manifest` entries inside `appmanifest_<appid>.acf` files.
+- The Change Version modal backdrop click-to-close behavior is disabled, preventing
+  accidental closure and loss of changes when clicking outside the dialog.
+
+### Logs and diagnostics
+
+- Reorganized Aether's logs and added Steam client logs to the collection bundle,
+  capped to the last 12 hours with byte-safe tailing to make identifying bugs easier.
+
 ## AetherDesk V1.5.0
 
 ### Library and install state
@@ -273,6 +301,25 @@
 - Legacy compatibility dropped: Roaming/ProgramFiles and old-settings adoption,
   legacy wallpaper and `aether.ico` paths, `-aetheronline`/`-showonline` launch
   options, and the `dwmapi.dll` proxy bookkeeping in the DLL installer.
+
+## AetherDLL V1.0.1
+
+### Ownership, Family Share and library
+
+- Improved AetherDLL's ability to distinguish between `.lua` games, genuinely owned
+  games, and games accessed through Steam Family Sharing.
+- `.lua` games no longer display "From your Steam Family library" on accounts that are
+  part of a Steam Family.
+- Fixed a bug that prevented certain users from adding or installing `.lua` games.
+- Invalid `.manifest` entries inside `.acf` files that caused games to get stuck in a
+  fake update loop are now automatically repaired when Steam is launched by AetherDLL.
+
+### Achievements and donor pool
+
+- Fixed a bug that prevented achievement donors from rotating beyond the first entry;
+  achievement coverage is now much more extensive.
+- Added a new donor along with an active probe classification mechanism, discovering
+  donors with the required achievements earlier in the session and using fewer resources.
 
 ## AetherDLL V1.0.0
 
