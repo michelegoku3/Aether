@@ -315,8 +315,13 @@ fn try_run_apply_update() -> Option<i32> {
     let staging = args.get(position + 1)?;
     let install_root = std::path::Path::new(args.get(position + 2)?);
     // The helper is a copy living in %TEMP%: log into the installation it is
-    // updating, or the apply failures are written where nobody reads them.
-    crate::core::logger::init_at(install_root);
+    // updating, or the apply failures are written where nobody reads them. A
+    // relative path is refused rather than resolved against the current
+    // directory, which would create an AetherData folder wherever the helper
+    // happened to start.
+    if install_root.is_absolute() {
+        crate::core::logger::init_at(install_root);
+    }
     Some(crate::updater::desk::run_apply_update(
         std::path::Path::new(staging),
         install_root,

@@ -151,6 +151,46 @@ fn apply_helper_logs_beside_the_install_root_data() {
     );
 }
 
+/// The wait for a locked exe must respect its budget and stop, so the helper
+/// fails visibly instead of blocking the update forever.
+#[cfg(windows)]
+#[test]
+fn a_locked_exe_is_not_reported_replaceable() {
+    use std::os::windows::fs::OpenOptionsExt;
+    use std::time::{Duration, Instant};
+
+    let root = temp_dir("wait-locked");
+    let exe = root.join("AetherDesk.exe");
+    fs::write(&exe, b"binary").unwrap();
+
+    // share_mode(0) makes Windows refuse the rename the probe performs.
+    let lock = fs::OpenOptions::new()
+        .read(true)
+        .share_mode(0)
+        .open(&exe)
+        .expect("lock the exe");
+
+    let started = Instant::now();
+    assert!(
+        !crate::updater::desk::wait_until_replaceable(&exe, Duration::from_millis(300)),
+        "a locked exe is replaceable only after the lock goes away"
+    );
+    assert!(
+        started.elapsed() < Duration::from_secs(5),
+        "the budget must end the wait, took {:?}",
+        started.elapsed()
+    );
+
+    drop(lock);
+
+    assert!(crate::updater::desk::wait_until_replaceable(
+        &exe,
+        Duration::from_secs(5)
+    ));
+    assert!(exe.is_file(), "the probe must leave the exe in place");
+    let _ = fs::remove_dir_all(root);
+}
+
 /// A merge that fails halfway must leave the previously installed exe in
 /// place: the helper relaunches it, so a broken update is a visible failure
 /// instead of an app that closed and never came back.

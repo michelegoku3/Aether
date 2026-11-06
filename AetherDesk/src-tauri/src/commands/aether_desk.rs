@@ -15,7 +15,22 @@ pub const DESK_UPDATE_PROGRESS_EVENT: &str = "desk-update://progress";
 /// Bytes that may pass between two download events. A network chunk is 16-64 KB
 /// and every event crosses the IPC boundary, so only 200 KB steps and the last
 /// chunk are reported.
-const PROGRESS_STEP_BYTES: u64 = 200 * 1024;
+pub(crate) const PROGRESS_STEP_BYTES: u64 = 200 * 1024;
+
+/// Whether a tick is worth an IPC event: phase changes always are, and so are
+/// download ticks once 200 KB passed or the body is complete.
+pub(crate) fn should_report(
+    phase: desk::UpdatePhase,
+    received: u64,
+    total: Option<u64>,
+    last_reported: u64,
+) -> bool {
+    let is_download_tick = phase == desk::UpdatePhase::Downloading && received > 0;
+    let reached_total = total.is_some_and(|total| received >= total);
+    !is_download_tick
+        || reached_total
+        || received.saturating_sub(last_reported) >= PROGRESS_STEP_BYTES
+}
 
 /// Payload of `desk-update://progress`; camelCase per `docs/shared_contracts.md` §7.
 #[derive(Clone, serde::Serialize)]
@@ -44,12 +59,7 @@ impl UpdateProgressEmitter {
     }
 
     fn emit(&mut self, phase: desk::UpdatePhase, received: u64, total: Option<u64>) {
-        let is_download_tick = phase == desk::UpdatePhase::Downloading && received > 0;
-        let reached_total = total.is_some_and(|total| received >= total);
-        if is_download_tick
-            && !reached_total
-            && received.saturating_sub(self.last_reported_bytes) < PROGRESS_STEP_BYTES
-        {
+        if !should_report(phase, received, total, self.last_reported_bytes) {
             return;
         }
         self.last_reported_bytes = received;
@@ -177,14 +187,15 @@ pub async fn check_aether_desk_update(app: tauri::AppHandle) -> Result<serde_jso
 #[tauri::command]
 pub async fn install_aether_desk_update(app: tauri::AppHandle) -> Result<String, String> {
     // One update at a time: a second click before the UI disables the button
-    // would write the same temp ZIP from two downloads.
-    if !desk::claim_update_slot() {
+    // would write the same temp ZIP from two downloads. The slot is released
+    // when it goes out of scope, on every return path.
+    let Some(_slot) = desk::claim_update_slot() else {
         crate::desk_log_warn!(
             "updater",
             "AetherDesk update refused: another update is already running"
         );
         return Err("AetherDesk update is already running".to_string());
-    }
+    };
 
     crate::desk_log_info!(
         "updater",
@@ -198,17 +209,13 @@ pub async fn install_aether_desk_update(app: tauri::AppHandle) -> Result<String,
     {
         Ok(Some(prepared)) => prepared,
         Ok(None) => {
-            desk::release_update_slot();
             crate::desk_log_info!(
                 "updater",
                 "AetherDesk portable update check: already up to date"
             );
             return Ok("AetherDesk is already up to date.".to_string());
         }
-        Err(error) => {
-            desk::release_update_slot();
-            return Err(error);
-        }
+        Err(error) => return Err(error),
     };
 
     crate::desk_log_info!(
@@ -217,12 +224,8 @@ pub async fn install_aether_desk_update(app: tauri::AppHandle) -> Result<String,
         prepared.app_root.display()
     );
     emitter.emit(desk::UpdatePhase::Staging, 0, None);
-    if let Err(error) = desk::schedule_restart(&prepared) {
-        desk::release_update_slot();
-        return Err(error);
-    }
+    desk::schedule_restart(&prepared)?;
 
-    desk::release_update_slot();
     emitter.emit(desk::UpdatePhase::Restarting, 0, None);
 
     // Exit so the original exe is unlocked and the staged updater can swap files.
@@ -237,6 +240,16 @@ pub async fn install_aether_desk_update(app: tauri::AppHandle) -> Result<String,
 /// the switch and button stay consistent (switch OFF → Uninstall button).
 #[tauri::command]
 pub async fn restore_stable_desk(app: tauri::AppHandle) -> Result<String, String> {
+    // Restore downloads into the same workdir as the update: without the slot,
+    // two runs would truncate each other's ZIP and staging tree.
+    let Some(_slot) = desk::claim_update_slot() else {
+        crate::desk_log_warn!(
+            "updater",
+            "Stable restore refused: another update is already running"
+        );
+        return Err("AetherDesk update is already running".to_string());
+    };
+
     crate::desk_log_info!(
         "updater",
         "Restoring stable AetherDesk build (leaving test channel)..."

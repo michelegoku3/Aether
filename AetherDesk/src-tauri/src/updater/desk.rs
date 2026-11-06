@@ -54,19 +54,28 @@ static STAGE_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
 /// True while a download/apply is in flight. The button is disabled in the UI,
 /// but a double click before the first render still reaches the command twice,
-/// and two writers on the same temp ZIP corrupt it.
+/// and two writers on the same temp ZIP corrupt it. It also covers the Restore
+/// command, which writes the same workdir.
 static UPDATE_IN_FLIGHT: AtomicBool = AtomicBool::new(false);
 
-/// Claims the single update slot. Returns false when another update is running.
-pub(crate) fn claim_update_slot() -> bool {
-    UPDATE_IN_FLIGHT
-        .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
-        .is_ok()
+/// Holds the single update slot for as long as it lives and releases it on
+/// drop, so every return path — including a cancelled command or a panic —
+/// frees it. A `store(false)` per branch leaks the slot on the branch somebody
+/// forgets, and then updates are refused until the app restarts.
+pub(crate) struct UpdateSlot(());
+
+impl Drop for UpdateSlot {
+    fn drop(&mut self) {
+        UPDATE_IN_FLIGHT.store(false, Ordering::SeqCst);
+    }
 }
 
-/// Releases the slot. Safe to call when it is already free.
-pub(crate) fn release_update_slot() {
-    UPDATE_IN_FLIGHT.store(false, Ordering::SeqCst);
+/// Claims the single update slot; `None` when another update is running.
+pub(crate) fn claim_update_slot() -> Option<UpdateSlot> {
+    UPDATE_IN_FLIGHT
+        .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+        .ok()
+        .map(|_| UpdateSlot(()))
 }
 
 /// Name of the executable copy inside a per-run directory.
@@ -424,18 +433,47 @@ pub fn run_apply_update(staging: &Path, install_root: &Path) -> i32 {
             0
         }
         Err(error) => {
-            crate::desk_log_error!(
-                "updater",
-                "Update failed: {}; relaunching the previous build",
-                error
-            );
-            // Only relaunch a root that still validates: a refused folder must
-            // not turn into "run whatever exe happens to be there".
-            if let Ok(root) = validate_install_root(install_root) {
-                let _ = Command::new(root.join("AetherDesk.exe")).spawn();
-            }
+            relaunch_after_failure(install_root, &error);
             1
         }
+    }
+}
+
+/// Puts a working app back on screen after a failed swap.
+///
+/// The validated root holds the previous build (the rollback restored it), so it
+/// is preferred. When validation fails the rollback did not complete: the exe
+/// may be the half-merged new one, but launching *something* is still better
+/// than the app vanishing, and the log says which path was used.
+fn relaunch_after_failure(install_root: &Path, error: &str) {
+    let exe = match validate_install_root(install_root) {
+        Ok(root) => root.join("AetherDesk.exe"),
+        Err(validation_error) => {
+            crate::desk_log_error!(
+                "updater",
+                "Update failed: {}; the install root no longer validates ({}), \
+                 relaunching whatever is installed",
+                error,
+                validation_error
+            );
+            install_root.join("AetherDesk.exe")
+        }
+    };
+
+    match Command::new(&exe).spawn() {
+        Ok(_) => crate::desk_log_warn!(
+            "updater",
+            "Update failed: {}; relaunched {}",
+            error,
+            exe.display()
+        ),
+        Err(spawn_error) => crate::desk_log_error!(
+            "updater",
+            "Update failed: {}; could not relaunch {}: {}",
+            error,
+            exe.display(),
+            spawn_error
+        ),
     }
 }
 
@@ -477,6 +515,8 @@ pub fn cleanup_stale_artifacts() {
     // run directory, so a copy at the workdir root cannot belong to this flow.
     let _ = fs::remove_dir_all(workdir.join("staging"));
     let _ = fs::remove_file(workdir.join("aetherdesk_update.zip"));
+    // A download interrupted between create and rename leaves the temp file.
+    let _ = fs::remove_file(workdir.join("aetherdesk_update.tmp"));
     let _ = fs::remove_file(workdir.join(UPDATER_COPY_NAME));
 }
 
@@ -626,16 +666,27 @@ fn schedule_helper_self_delete() {
 /// instance has just called `exit(0)`, a virus scanner may still be reading it,
 /// and a second instance may be starting. Waiting is right; waiting silently
 /// for an unbounded time is not, hence the budget and the periodic log line.
-fn wait_until_replaceable(path: &Path, budget: Duration) -> bool {
+pub(crate) fn wait_until_replaceable(path: &Path, budget: Duration) -> bool {
     let probe = path.with_extension("exe.lock");
     let started = Instant::now();
     let mut last_report = Duration::ZERO;
     loop {
         match fs::rename(path, &probe) {
-            Ok(()) => {
-                let _ = fs::rename(&probe, path);
-                return true;
-            }
+            Ok(()) => match fs::rename(&probe, path) {
+                Ok(()) => return true,
+                // The probe could not go back: the path is free but the exe is
+                // not where the caller expects. Treat it as still locked so the
+                // caller fails before moving anything.
+                Err(error) => {
+                    crate::desk_log_error!(
+                        "updater",
+                        "Could not restore {} after the lock probe: {}",
+                        path.display(),
+                        error
+                    );
+                    return false;
+                }
+            },
             Err(error) if started.elapsed() >= budget => {
                 crate::desk_log_error!(
                     "updater",

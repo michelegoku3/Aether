@@ -349,6 +349,10 @@ async fn download_streams_to_disk_and_reports_monotonic_progress() {
     assert_eq!(std::fs::read(&dest).expect("file written").len(), 300);
     assert_eq!(seen.last(), Some(&(300, Some(300))));
     assert!(
+        seen.len() >= 2,
+        "the body must be written as it arrives, not buffered: {seen:?}"
+    );
+    assert!(
         seen.windows(2).all(|pair| pair[0].0 <= pair[1].0),
         "progress must not go backwards: {seen:?}"
     );
@@ -391,43 +395,113 @@ async fn a_failed_write_leaves_no_file_at_the_final_path() {
     let _ = std::fs::remove_dir_all(dir);
 }
 
-#[test]
-fn a_second_update_claim_is_refused_until_the_first_releases() {
-    use crate::updater::desk::{claim_update_slot, release_update_slot};
+/// The rename into place can fail after the whole body was written (a folder
+/// squatting on the name, a scanner). The temp file must not be left behind.
+#[tokio::test]
+async fn a_failed_finalize_removes_the_temp_file() {
+    let url = serve_once(b"PK\x03\x04payload", "application/zip").await;
+    let dir = updater_temp_dir("finalizefail");
+    let dest = dir.join("update.zip");
+    std::fs::create_dir_all(&dest).expect("blocking dir");
 
-    assert!(claim_update_slot());
-    assert!(!claim_update_slot(), "a second click must be refused");
-    release_update_slot();
-    assert!(claim_update_slot(), "the slot is reusable after release");
-    release_update_slot();
+    let error = crate::updater::desk::download_zip(&url, &dest, &mut |_, _| {})
+        .await
+        .expect_err("the rename must fail");
+
+    assert!(error.contains("finalize"), "unexpected: {error}");
+    assert!(
+        !dest.with_extension("tmp").exists(),
+        "temp file left behind"
+    );
+    let _ = std::fs::remove_dir_all(dir);
 }
 
-/// The payload's `phase` values are a shared contract with
-/// `src/constants/updates.ts`: renaming one here without renaming it there
-/// would leave the UI stuck on an unknown phase.
 #[test]
-fn update_phase_wire_names_match_the_frontend_union() {
+fn a_second_update_claim_is_refused_until_the_first_releases() {
+    use crate::updater::desk::claim_update_slot;
+
+    let first = claim_update_slot().expect("the first claim wins");
+    assert!(
+        claim_update_slot().is_none(),
+        "a second click must be refused"
+    );
+    drop(first);
+    assert!(
+        claim_update_slot().is_some(),
+        "the slot is reusable after the guard drops"
+    );
+}
+
+/// The slot must be freed by dropping the guard, not by each caller remembering
+/// to release it: a cancelled command or a panic would otherwise refuse every
+/// later update until the app restarts.
+#[test]
+fn dropping_the_update_guard_frees_the_slot() {
+    use crate::updater::desk::claim_update_slot;
+
+    {
+        let _guard = claim_update_slot().expect("first claim");
+        assert!(claim_update_slot().is_none());
+    }
+    assert!(claim_update_slot().is_some());
+}
+
+/// Progress ticks are throttled so a 18 MB download does not cross the IPC
+/// boundary ~300 times, but the last chunk and every phase change always go out.
+#[test]
+fn download_progress_is_throttled_to_steps_and_the_last_chunk() {
+    use crate::commands::aether_desk::{should_report, PROGRESS_STEP_BYTES};
     use crate::updater::desk::UpdatePhase;
 
-    let names: Vec<&str> = [
+    let total = Some(10 * PROGRESS_STEP_BYTES);
+    let step = PROGRESS_STEP_BYTES;
+
+    assert!(
+        should_report(UpdatePhase::Downloading, 0, total, 0),
+        "the start of the download is always reported"
+    );
+    assert!(should_report(UpdatePhase::Downloading, step, total, 0));
+    assert!(
+        !should_report(UpdatePhase::Downloading, step + 1, total, step),
+        "a tick inside the same 200 KB step is dropped"
+    );
+    assert!(
+        should_report(UpdatePhase::Downloading, 10 * step, total, 9 * step),
+        "the last chunk is reported even inside a step"
+    );
+    assert!(
+        should_report(UpdatePhase::Extracting, 0, None, 9 * step),
+        "a phase change resets the throttle"
+    );
+}
+
+/// The phase names and the event name are a shared contract with
+/// `src/constants/updates.ts`. Reading the file makes a rename on one side fail
+/// here instead of leaving the UI stuck on an unknown phase.
+#[test]
+fn update_progress_contract_matches_the_frontend_constants() {
+    use crate::updater::desk::UpdatePhase;
+
+    let frontend = include_str!("../../../src/constants/updates.ts");
+
+    assert!(
+        frontend.contains(&format!(
+            "'{}'",
+            crate::commands::aether_desk::DESK_UPDATE_PROGRESS_EVENT
+        )),
+        "the event name is missing from src/constants/updates.ts"
+    );
+    for phase in [
         UpdatePhase::LookingUp,
         UpdatePhase::Downloading,
         UpdatePhase::Extracting,
         UpdatePhase::Staging,
         UpdatePhase::Restarting,
-    ]
-    .iter()
-    .map(|phase| phase.wire_name())
-    .collect();
-
-    assert_eq!(
-        names,
-        vec![
-            "looking-up",
-            "downloading",
-            "extracting",
-            "staging",
-            "restarting"
-        ]
-    );
+    ] {
+        assert!(
+            frontend.contains(&format!("'{}'", phase.wire_name())),
+            "phase {} is missing from src/constants/updates.ts",
+            phase.wire_name()
+        );
+    }
 }
