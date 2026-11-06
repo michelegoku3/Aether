@@ -35,12 +35,17 @@ export function useAppBootstrap(params: Params) {
           params.refreshAppearance(settings),
           params.refreshHubcapUsage(undefined, settings),
           params.checkDllUpdates(settings),
+          // The Desk dot is the one the user waits for, and its check does not
+          // read settings on the frontend side: running it here keeps it out of
+          // the queue behind the DLL lookup and the Hubcap quota.
+          params.checkDeskUpdates(),
         ]);
       } else {
         await params.refreshAppearance();
+        await params.checkDeskUpdates();
       }
 
-      await Promise.all([params.checkDeskUpdates(), params.warnIfSteamPathMissing(), deskVersionPromise]);
+      await Promise.all([params.warnIfSteamPathMissing(), deskVersionPromise]);
     };
     void hydrate();
     // App remains mounted for its lifetime; every callback is a stable hook API.

@@ -257,13 +257,33 @@ impl LookupSlot {
 struct ReleasesApiEtagCache {
     etag: Option<String>,
     releases: Vec<GithubRelease>,
-    #[allow(dead_code)]
     saved_at: Instant,
 }
 
 fn releases_api_etag_cache() -> &'static Mutex<Option<ReleasesApiEtagCache>> {
     static CACHE: OnceLock<Mutex<Option<ReleasesApiEtagCache>>> = OnceLock::new();
     CACHE.get_or_init(|| Mutex::new(None))
+}
+
+/// How long a fetched release list is reused before the next lookup asks GitHub
+/// again. The startup pass runs the DLL and Desk checks together; without this
+/// window they pay for the same list twice, and on a slow link that is the
+/// difference between a quick dot and a ten-second stare.
+const RELEASES_LIST_REUSE: Duration = Duration::from_secs(10);
+
+/// Serialises the list fetch: the second lookup waits for the first and reuses
+/// its result (see [`RELEASES_LIST_REUSE`]) instead of issuing its own request.
+static RELEASES_LIST_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
+/// The cached list when it is younger than `max_age`.
+fn cached_list(cache: &ReleasesApiEtagCache, max_age: Duration) -> Option<Vec<GithubRelease>> {
+    (cache.saved_at.elapsed() < max_age).then(|| cache.releases.clone())
+}
+
+fn recently_fetched_releases() -> Option<Vec<GithubRelease>> {
+    let guard = releases_api_etag_cache().lock().ok()?;
+    let cache = guard.as_ref()?;
+    cached_list(cache, RELEASES_LIST_REUSE)
 }
 
 pub struct GithubReleaseManager {
@@ -591,6 +611,19 @@ impl GithubReleaseManager {
     }
 
     async fn fetch_releases_api(&self) -> Result<Vec<GithubRelease>, String> {
+        // One request at a time, then reuse: the startup pass asks for the DLL
+        // and Desk channels within milliseconds of each other.
+        let _single_flight = RELEASES_LIST_LOCK.lock().await;
+        if let Some(releases) = recently_fetched_releases() {
+            crate::desk_log_info!(
+                "updater",
+                "Release list reused from the fetch {}s ago ({} release(s))",
+                RELEASES_LIST_REUSE.as_secs(),
+                releases.len()
+            );
+            return Ok(releases);
+        }
+
         let cached_etag = releases_api_etag_cache()
             .lock()
             .ok()
@@ -938,4 +971,30 @@ fn html_unescape(value: &str) -> String {
         .replace("&#x2F;", "/")
         .replace("&#39;", "'")
         .replace("&quot;", "\"")
+}
+
+#[cfg(test)]
+mod list_reuse_tests {
+    use super::*;
+
+    fn cache_with_age(age: Duration) -> ReleasesApiEtagCache {
+        ReleasesApiEtagCache {
+            etag: None,
+            releases: Vec::new(),
+            saved_at: Instant::now() - age,
+        }
+    }
+
+    #[test]
+    fn a_recently_fetched_list_is_reused() {
+        let cache = cache_with_age(Duration::from_secs(1));
+        assert!(cached_list(&cache, RELEASES_LIST_REUSE).is_some());
+    }
+
+    #[test]
+    fn an_old_list_is_fetched_again() {
+        let age = RELEASES_LIST_REUSE + Duration::from_secs(1);
+        let cache = cache_with_age(age);
+        assert!(cached_list(&cache, RELEASES_LIST_REUSE).is_none());
+    }
 }

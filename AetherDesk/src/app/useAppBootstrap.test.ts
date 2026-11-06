@@ -40,6 +40,18 @@ describe('useAppBootstrap', () => {
     expect(invokeMock.mock.calls.filter(([command]) => command === 'warm_library_game_cache')).toHaveLength(0);
   });
 
+  it('checks the Desk channel without waiting for the DLL check', async () => {
+    mockInvokeCommands({ get_settings: settings });
+    const params = createParams();
+    // The DLL check and the Hubcap quota both hit the network; neither may hold
+    // the Desk dot hostage while it is in flight.
+    params.checkDllUpdates = vi.fn(() => new Promise<void>(() => {}));
+
+    renderHook(() => useAppBootstrap(params));
+
+    await waitFor(() => expect(params.checkDeskUpdates).toHaveBeenCalledOnce());
+  });
+
   it('still hydrates the appearance and warns when the settings read fails', async () => {
     mockInvokeCommands({});
     vi.mocked(getSettings).mockRejectedValueOnce(new Error('corrupt settings.json'));
