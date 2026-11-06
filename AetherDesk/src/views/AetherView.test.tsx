@@ -1,6 +1,7 @@
 import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { invokeMock, mockInvokeCommands } from '../test/tauriMocks';
+import { emitTauriEvent, invokeMock, mockInvokeCommands } from '../test/tauriMocks';
+import { DESK_UPDATE_PROGRESS_EVENT } from '../constants/updates';
 import { AetherView } from './AetherView';
 
 const baseProps = () => ({
@@ -30,6 +31,35 @@ const openUninstallConfirmAndConfirm = async (residualCount: number, extraComman
   fireEvent.click(screen.getByRole('button', { name: 'Yes' }));
   await act(async () => {}); // flush the residuals probe
 };
+
+describe('AetherView desk update progress', () => {
+  it('shows the phase and percentage while the portable update runs', async () => {
+    mockInvokeCommands({
+      get_settings: {},
+      // Stays pending on purpose: a successful update exits the app, so the
+      // promise never resolves in real life either.
+      install_aether_desk_update: new Promise(() => {}),
+    });
+    render(<AetherView {...baseProps()} isDeskUpdateAvailable />);
+    await act(async () => {}); // let getSettings resolve
+
+    const deskPanel = screen
+      .getByText('AetherDesk', { selector: '.panel-title' })
+      .closest('.aether-panel') as HTMLElement;
+    fireEvent.click(within(deskPanel).getByRole('button', { name: 'Update' }));
+    await act(async () => {}); // listener attached
+
+    act(() => {
+      emitTauriEvent(DESK_UPDATE_PROGRESS_EVENT, {
+        phase: 'downloading',
+        downloadedBytes: 45,
+        totalBytes: 180,
+      });
+    });
+
+    expect(screen.getByText(/Downloading AetherDesk \(25%, 0s\)/)).toBeInTheDocument();
+  });
+});
 
 describe('AetherView uninstall flow', () => {
   beforeEach(() => {

@@ -401,3 +401,33 @@ fn a_second_update_claim_is_refused_until_the_first_releases() {
     assert!(claim_update_slot(), "the slot is reusable after release");
     release_update_slot();
 }
+
+/// The payload's `phase` values are a shared contract with
+/// `src/constants/updates.ts`: renaming one here without renaming it there
+/// would leave the UI stuck on an unknown phase.
+#[test]
+fn update_phase_wire_names_match_the_frontend_union() {
+    use crate::updater::desk::UpdatePhase;
+
+    let names: Vec<&str> = [
+        UpdatePhase::LookingUp,
+        UpdatePhase::Downloading,
+        UpdatePhase::Extracting,
+        UpdatePhase::Staging,
+        UpdatePhase::Restarting,
+    ]
+    .iter()
+    .map(|phase| phase.wire_name())
+    .collect();
+
+    assert_eq!(
+        names,
+        vec![
+            "looking-up",
+            "downloading",
+            "extracting",
+            "staging",
+            "restarting"
+        ]
+    );
+}

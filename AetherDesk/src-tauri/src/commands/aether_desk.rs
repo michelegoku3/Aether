@@ -6,6 +6,63 @@
 use crate::core::settings::{load_settings, SettingsManager};
 use crate::updater::desk;
 use crate::updater::github::{GithubReleaseManager, TestChannel};
+use tauri::Emitter;
+
+/// Event name of the desk update progress stream; mirrors
+/// `DESK_UPDATE_PROGRESS_EVENT` in `src/constants/updates.ts`.
+pub const DESK_UPDATE_PROGRESS_EVENT: &str = "desk-update://progress";
+
+/// Bytes that may pass between two download events. A network chunk is 16-64 KB
+/// and every event crosses the IPC boundary, so only 200 KB steps and the last
+/// chunk are reported.
+const PROGRESS_STEP_BYTES: u64 = 200 * 1024;
+
+/// Payload of `desk-update://progress`; camelCase per `docs/shared_contracts.md` §7.
+#[derive(Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct UpdateProgressPayload {
+    phase: &'static str,
+    downloaded_bytes: u64,
+    total_bytes: Option<u64>,
+}
+
+/// Pushes the update phases to the AETHER panel.
+///
+/// A closed window is not an error: the update keeps running headless and the
+/// next launch shows the result.
+struct UpdateProgressEmitter {
+    app: tauri::AppHandle,
+    last_reported_bytes: u64,
+}
+
+impl UpdateProgressEmitter {
+    fn new(app: tauri::AppHandle) -> Self {
+        Self {
+            app,
+            last_reported_bytes: 0,
+        }
+    }
+
+    fn emit(&mut self, phase: desk::UpdatePhase, received: u64, total: Option<u64>) {
+        let is_download_tick = phase == desk::UpdatePhase::Downloading && received > 0;
+        let reached_total = total.is_some_and(|total| received >= total);
+        if is_download_tick
+            && !reached_total
+            && received.saturating_sub(self.last_reported_bytes) < PROGRESS_STEP_BYTES
+        {
+            return;
+        }
+        self.last_reported_bytes = received;
+        let _ = self.app.emit(
+            DESK_UPDATE_PROGRESS_EVENT,
+            UpdateProgressPayload {
+                phase: phase.wire_name(),
+                downloaded_bytes: received,
+                total_bytes: total,
+            },
+        );
+    }
+}
 
 /// Instant, local-only report of the running AetherDesk version. Unlike
 /// `check_aether_desk_update` it performs no network call, so the UI can show
@@ -133,7 +190,12 @@ pub async fn install_aether_desk_update(app: tauri::AppHandle) -> Result<String,
         "updater",
         "Starting download and installation of AetherDesk portable update..."
     );
-    let prepared = match desk::prepare_update(&app).await {
+    let mut emitter = UpdateProgressEmitter::new(app.clone());
+    let prepared = match desk::prepare_update(&app, &mut |phase, received, total| {
+        emitter.emit(phase, received, total);
+    })
+    .await
+    {
         Ok(Some(prepared)) => prepared,
         Ok(None) => {
             desk::release_update_slot();
@@ -154,12 +216,14 @@ pub async fn install_aether_desk_update(app: tauri::AppHandle) -> Result<String,
         "AetherDesk update staged at {}; scheduling restart and exiting current instance",
         prepared.app_root.display()
     );
+    emitter.emit(desk::UpdatePhase::Staging, 0, None);
     if let Err(error) = desk::schedule_restart(&prepared) {
         desk::release_update_slot();
         return Err(error);
     }
 
     desk::release_update_slot();
+    emitter.emit(desk::UpdatePhase::Restarting, 0, None);
 
     // Exit so the original exe is unlocked and the staged updater can swap files.
     app.exit(0);
@@ -177,7 +241,12 @@ pub async fn restore_stable_desk(app: tauri::AppHandle) -> Result<String, String
         "updater",
         "Restoring stable AetherDesk build (leaving test channel)..."
     );
-    let Some(prepared) = desk::prepare_stable_restore().await? else {
+    let mut emitter = UpdateProgressEmitter::new(app.clone());
+    let prepared = desk::prepare_stable_restore(&mut |phase, received, total| {
+        emitter.emit(phase, received, total);
+    })
+    .await?;
+    let Some(prepared) = prepared else {
         return Ok("AetherDesk is already on the latest stable build.".to_string());
     };
 
@@ -199,7 +268,9 @@ pub async fn restore_stable_desk(app: tauri::AppHandle) -> Result<String, String
         "Stable AetherDesk staged at {}; scheduling restart and exiting current instance",
         prepared.app_root.display()
     );
+    emitter.emit(desk::UpdatePhase::Staging, 0, None);
     desk::schedule_restart(&prepared)?;
+    emitter.emit(desk::UpdatePhase::Restarting, 0, None);
 
     app.exit(0);
     Ok("Stable AetherDesk restored. Restarting to apply...".to_string())

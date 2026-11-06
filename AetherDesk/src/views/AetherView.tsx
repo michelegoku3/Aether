@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState, memo } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { ResetSteamConfirmModal, UninstallDeskConfirmModal } from '../modals/UninstallDeskModal';
 import { getSettings } from '../hooks/useSettings';
+import { useDeskUpdateProgress } from '../hooks/useDeskUpdateProgress';
 import { DllStatusInfo } from '../types/ui';
 import { toErrorMessage } from '../util/errors';
 
@@ -44,6 +45,10 @@ export const AetherView = memo(function AetherView({
   const [isProcessing, setIsProcessing] = useState(false);
   const [uninstallStep, setUninstallStep] = useState<UninstallStep | null>(null);
   const [testUpdatesEnabled, setTestUpdatesEnabled] = useState(false);
+  /** True from the UPDATE click until the command returns: the progress
+   *  listener only lives for the duration of one update. */
+  const [isDeskUpdating, setIsDeskUpdating] = useState(false);
+  const deskUpdateProgress = useDeskUpdateProgress(isDeskUpdating);
   /** Reset Path gate: the irreversible-confirm popup. Only mounted while
    *  open so its 10-second countdown restarts on every open. */
   const [showResetConfirm, setShowResetConfirm] = useState(false);
@@ -78,6 +83,7 @@ export const AetherView = memo(function AetherView({
 
   const handleInstallDeskUpdate = async () => {
     setIsProcessing(true);
+    setIsDeskUpdating(true);
     showStatus('Preparing AetherDesk portable update...', 'info');
 
     try {
@@ -90,7 +96,34 @@ export const AetherView = memo(function AetherView({
       onUpdateComplete();
       setIsProcessing(false);
     }
+    setIsDeskUpdating(false);
   };
+
+  /**
+   * Live line for the portable update: phase, percentage and elapsed seconds.
+   * `null` until the first event, so the static "Preparing..." alert still
+   * covers the gap before the backend answers.
+   */
+  const deskUpdateLine = (() => {
+    if (!isDeskUpdating || !deskUpdateProgress) return null;
+    const { phase, percent, elapsedSeconds } = deskUpdateProgress;
+    const seconds = `${elapsedSeconds}s`;
+
+    switch (phase) {
+      case 'looking-up':
+        return `Looking for a newer AetherDesk build (${seconds})`;
+      case 'downloading':
+        return percent === null
+          ? `Downloading AetherDesk (${seconds})`
+          : `Downloading AetherDesk (${percent}%, ${seconds})`;
+      case 'extracting':
+        return `Unpacking the update (${seconds})`;
+      case 'staging':
+        return `Preparing the restart (${seconds})`;
+      case 'restarting':
+        return 'Restarting AetherDesk to apply the update...';
+    }
+  })();
 
   /**
    * Schedules the external uninstaller helper and exits.
@@ -137,6 +170,7 @@ export const AetherView = memo(function AetherView({
   const handleRestoreStable = async () => {
     if (isProcessing) return;
     setIsProcessing(true);
+    setIsDeskUpdating(true);
     showStatus('Restoring the stable AetherDesk build...', 'info');
     try {
       const result: string = await invoke('restore_stable_desk');
@@ -145,6 +179,7 @@ export const AetherView = memo(function AetherView({
       showStatus(`Restore failed: ${toErrorMessage(err)}`, 'error');
       setIsProcessing(false);
     }
+    setIsDeskUpdating(false);
   };
 
   const handleUninstallConfirm = async (deleteUserData: boolean) => {
@@ -266,13 +301,19 @@ export const AetherView = memo(function AetherView({
     <div className="aether-view">
       <h1 className="aether-title">AETHER</h1>
 
-      {statusMsg.text && (
-        <div
-          className={`settings-alert ${statusMsg.type} settings-alert--compact`}
-          style={{ width: '460px', textAlign: 'center' }}
-        >
-          {statusMsg.text}
+      {deskUpdateLine ? (
+        <div className="settings-alert info settings-alert--compact" style={{ width: '460px', textAlign: 'center' }}>
+          {deskUpdateLine}
         </div>
+      ) : (
+        statusMsg.text && (
+          <div
+            className={`settings-alert ${statusMsg.type} settings-alert--compact`}
+            style={{ width: '460px', textAlign: 'center' }}
+          >
+            {statusMsg.text}
+          </div>
+        )
       )}
 
       {/* SECTION 1: AetherDesk */}

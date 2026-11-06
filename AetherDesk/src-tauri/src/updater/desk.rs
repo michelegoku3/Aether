@@ -72,6 +72,39 @@ pub(crate) fn release_update_slot() {
 /// Name of the executable copy inside a per-run directory.
 const UPDATER_COPY_NAME: &str = "aether_updater.exe";
 
+/// Phases reported on `desk-update://progress`, in the order the user sees them.
+///
+/// `LookingUp` covers both the release lookup and the "is it newer" gate: they
+/// are network calls, and a silent release lookup looks exactly like a hung
+/// updater.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum UpdatePhase {
+    LookingUp,
+    Downloading,
+    Extracting,
+    Staging,
+    Restarting,
+}
+
+impl UpdatePhase {
+    /// Value of the payload's `phase` field; mirrors `DeskUpdatePhase` in
+    /// `src/constants/updates.ts`.
+    pub fn wire_name(self) -> &'static str {
+        match self {
+            UpdatePhase::LookingUp => "looking-up",
+            UpdatePhase::Downloading => "downloading",
+            UpdatePhase::Extracting => "extracting",
+            UpdatePhase::Staging => "staging",
+            UpdatePhase::Restarting => "restarting",
+        }
+    }
+}
+
+/// Progress sink `(phase, bytes_received, total_bytes)` shared by the staging
+/// routines. `Send` because the Tauri command that drives them must produce a
+/// `Send` future.
+pub type UpdateProgressSink<'a> = &'a mut (dyn FnMut(UpdatePhase, u64, Option<u64>) + Send);
+
 /// A fully staged update, ready to be applied after the current instance exits.
 pub struct PreparedUpdate {
     /// Directory that directly contains the extracted `AetherDesk.exe`.
@@ -97,9 +130,13 @@ fn update_workdir() -> PathBuf {
 /// is fully staged. Real failures return `Err`. If the caller receives
 /// `Some(...)` it must call [`schedule_restart`] and then exit the running
 /// instance so the swap can proceed.
-pub async fn prepare_update(app: &tauri::AppHandle) -> Result<Option<PreparedUpdate>, String> {
+pub async fn prepare_update(
+    app: &tauri::AppHandle,
+    progress: UpdateProgressSink<'_>,
+) -> Result<Option<PreparedUpdate>, String> {
     let current_version = app.package_info().version.to_string();
     let manager = GithubReleaseManager::new();
+    progress(UpdatePhase::LookingUp, 0, None);
 
     // Testing updates take priority when enabled. Their version is gated by
     // `latest_is_newer_than`, exactly like stable releases: if the test release
@@ -115,7 +152,7 @@ pub async fn prepare_update(app: &tauri::AppHandle) -> Result<Option<PreparedUpd
                         release.tag_name,
                         current_version
                     );
-                    return prepare_from_release(&release).await.map(Some);
+                    return prepare_from_release(&release, progress).await.map(Some);
                 } else {
                     crate::desk_log_info!(
                         "updater",
@@ -153,14 +190,17 @@ pub async fn prepare_update(app: &tauri::AppHandle) -> Result<Option<PreparedUpd
         release.tag_name,
         current_version
     );
-    prepare_from_release(&release).await.map(Some)
+    prepare_from_release(&release, progress).await.map(Some)
 }
 
 /// Downloads and stages the latest STABLE AetherDesk release with no version
 /// gate: used by "Restore" in the UI to leave the test channel for the stable
 /// one. The caller restarts the process afterwards.
-pub async fn prepare_stable_restore() -> Result<Option<PreparedUpdate>, String> {
+pub async fn prepare_stable_restore(
+    progress: UpdateProgressSink<'_>,
+) -> Result<Option<PreparedUpdate>, String> {
     let manager = GithubReleaseManager::new();
+    progress(UpdatePhase::LookingUp, 0, None);
     let release = manager
         .fetch_latest_desk_release("desk-restore-stable")
         .await?;
@@ -169,11 +209,14 @@ pub async fn prepare_stable_restore() -> Result<Option<PreparedUpdate>, String> 
         "Restoring latest stable AetherDesk release: {} (leaving test channel)",
         release.tag_name
     );
-    prepare_from_release(&release).await.map(Some)
+    prepare_from_release(&release, progress).await.map(Some)
 }
 
 /// Downloads and extracts a given desk release's portable ZIP into staging.
-async fn prepare_from_release(release: &GithubRelease) -> Result<PreparedUpdate, String> {
+async fn prepare_from_release(
+    release: &GithubRelease,
+    progress: UpdateProgressSink<'_>,
+) -> Result<PreparedUpdate, String> {
     let asset = GithubReleaseManager::find_desk_zip_asset(release)?;
     crate::desk_log_info!(
         "updater",
@@ -187,15 +230,22 @@ async fn prepare_from_release(release: &GithubRelease) -> Result<PreparedUpdate,
         .map_err(|e| format!("Failed to create update workdir {}: {e}", workdir.display()))?;
 
     let zip_path = workdir.join("aetherdesk_update.zip");
-    // Progress is wired to the UI in the command layer; the staging path only
-    // needs the file and the bytes.
-    download_zip(&asset.browser_download_url, &zip_path, &mut |_, _| {}).await?;
+    // The download reports its own ticks; `prepare_update` starts the phase so a
+    // server without Content-Length still shows the download running.
+    progress(UpdatePhase::Downloading, 0, None);
+    download_zip(
+        &asset.browser_download_url,
+        &zip_path,
+        &mut |received, total| progress(UpdatePhase::Downloading, received, total),
+    )
+    .await?;
 
     let staging = workdir.join("staging");
     let _ = fs::remove_dir_all(&staging);
     fs::create_dir_all(&staging)
         .map_err(|e| format!("Failed to create staging dir {}: {e}", staging.display()))?;
 
+    progress(UpdatePhase::Extracting, 0, None);
     let app_root = extract_zip(&zip_path, &staging)?;
 
     Ok(PreparedUpdate {
