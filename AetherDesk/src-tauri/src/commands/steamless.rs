@@ -52,7 +52,7 @@ pub async fn pick_and_run_steamless(
     )
     .await?;
     crate::core::game_mutations::ensure_current_root(&app, std::path::Path::new(&steam_root))?;
-    let res = tauri::async_runtime::spawn_blocking(move || {
+    let outcome = tauri::async_runtime::spawn_blocking(move || {
         let _mutation = mutation;
         SteamlessRunner::new(tool).run(&SteamlessRunRequest {
             exe_path,
@@ -61,7 +61,16 @@ pub async fn pick_and_run_steamless(
         })
     })
     .await
-    .map_err(|e| format!("Steamless worker failed: {}", e))??;
+    .map_err(|e| format!("Steamless worker failed: {}", e))?;
+
+    // Rejections that never start the tool must still reach the log.
+    let res = match outcome {
+        Ok(result) => result,
+        Err(error) => {
+            crate::desk_log_warn!("steamless", "Steamless run failed: {}", error);
+            return Err(error);
+        }
+    };
 
     crate::desk_log_info!(
         "steamless",
