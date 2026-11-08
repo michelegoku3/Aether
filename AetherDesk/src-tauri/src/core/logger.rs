@@ -56,7 +56,11 @@ pub struct Logger {
 
 static LOGGER: OnceLock<Mutex<Logger>> = OnceLock::new();
 
-/// Formats local time as `HH:MM:SS.mmm` using Windows `GetLocalTime`.
+/// Formats local time as `YYYY-MM-DD HH:MM:SS.mmm` using Windows `GetLocalTime`.
+///
+/// The date is part of the contract, not decoration: the merged "All" view sorts
+/// lines on this bracket and an exported bundle is read next to other Windows
+/// logs, so a bare `HH:MM:SS` cannot be ordered across midnight.
 #[cfg(target_os = "windows")]
 fn format_timestamp_ms() -> String {
     use windows_sys::Win32::Foundation::SYSTEMTIME;
@@ -66,14 +70,14 @@ fn format_timestamp_ms() -> String {
     // SAFETY: st is valid writable storage with the SYSTEMTIME layout required by GetLocalTime.
     unsafe { GetLocalTime(&mut st) };
     format!(
-        "{:02}:{:02}:{:02}.{:03}",
-        st.wHour, st.wMinute, st.wSecond, st.wMilliseconds
+        "{:04}-{:02}-{:02} {:02}:{:02}:{:02}.{:03}",
+        st.wYear, st.wMonth, st.wDay, st.wHour, st.wMinute, st.wSecond, st.wMilliseconds
     )
 }
 
 #[cfg(not(target_os = "windows"))]
 fn format_timestamp_ms() -> String {
-    "00:00:00.000".to_string()
+    "1970-01-01 00:00:00.000".to_string()
 }
 
 /// Helper that formats an AppID with its game name in parentheses:
@@ -177,22 +181,29 @@ pub fn init(_app: &tauri::AppHandle) {
     );
 }
 
+/// Builds one log line without the trailing newline.
+///
+/// Single owner of the line shape in this half: `[date] [PID] [TID] [LEVEL] [Module] message`.
+/// `commands/logs.rs` merges this with `main.log` and the UCO2 log on the first
+/// bracket, and the DLL emits the same shape without the PID.
+fn format_line(level: LogLevel, module: &str, msg: &str) -> String {
+    format!(
+        "[{}] [PID:{:05}] [TID:{:05}] [{}] [{:<10}] {}",
+        format_timestamp_ms(),
+        std::process::id(),
+        current_thread_id(),
+        level.tag(),
+        capitalize_first(module),
+        msg
+    )
+}
+
 /// Core log writer. Formats timestamp, process/thread identity, level, module tag,
 /// and message body, emitting to both console and `desk.log`.
 pub fn write(level: LogLevel, module: &str, msg: &str) {
     let Some(mutex) = LOGGER.get() else {
         // Fallback before init()
-        let ts = format_timestamp_ms();
-        let mod_cap = capitalize_first(module);
-        eprintln!(
-            "[{}] [PID:{:05}] [TID:{:05}] [{}] [{:<10}] {}",
-            ts,
-            std::process::id(),
-            current_thread_id(),
-            level.tag(),
-            mod_cap,
-            msg
-        );
+        eprintln!("{}", format_line(level, module, msg));
         return;
     };
 
@@ -203,16 +214,8 @@ pub fn write(level: LogLevel, module: &str, msg: &str) {
         return;
     }
 
-    let mod_cap = capitalize_first(module);
-    let formatted = format!(
-        "[{}] [PID:{:05}] [TID:{:05}] [{}] [{:<10}] {}\n",
-        format_timestamp_ms(),
-        std::process::id(),
-        current_thread_id(),
-        level.tag(),
-        mod_cap,
-        msg
-    );
+    let mut formatted = format_line(level, module, msg);
+    formatted.push('\n');
 
     print!("{}", formatted);
     if let Some(file) = &mut logger.file {
@@ -406,6 +409,41 @@ macro_rules! desk_log_warn_once {
 mod tests {
     use super::*;
     use std::io::Write;
+
+    /// Every line must start with an absolute local date: the merged "All" view
+    /// sorts on the first bracket (`commands/logs.rs::sort_key`) and an exported
+    /// bundle is placed in time next to Windows' own logs. A bare `HH:MM:SS`
+    /// silently breaks both across midnight.
+    #[test]
+    fn formatted_line_carries_an_absolute_date_and_the_shared_shape() {
+        let line = format_line(LogLevel::Info, "store", "hello 42");
+        let stamp = &line[1..24];
+        assert_eq!(stamp.len(), 23, "timestamp is not fixed width: {line}");
+        for (index, expected) in [
+            (4, '-'),
+            (7, '-'),
+            (10, ' '),
+            (13, ':'),
+            (16, ':'),
+            (19, '.'),
+        ] {
+            assert_eq!(
+                stamp.as_bytes()[index] as char,
+                expected,
+                "unexpected timestamp shape: {stamp}"
+            );
+        }
+        for index in [0, 1, 2, 3, 5, 6, 8, 9, 11, 12, 14, 15, 17, 18, 20, 21, 22] {
+            assert!(
+                stamp.as_bytes()[index].is_ascii_digit(),
+                "unexpected timestamp shape: {stamp}"
+            );
+        }
+        assert!(line.contains("] [PID:"), "missing PID: {line}");
+        assert!(line.contains("] [TID:"), "missing TID: {line}");
+        assert!(line.contains("] [INFO ] ["), "missing level tag: {line}");
+        assert!(line.ends_with("hello 42"), "message not last: {line}");
+    }
 
     fn write_lines(path: &Path, count: usize) {
         let mut file = File::create(path).unwrap();
