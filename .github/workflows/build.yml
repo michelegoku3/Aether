@@ -12,6 +12,9 @@ on:
       - 'dll-*'
       - 'tdesk-*'
       - 'tdll-*'
+  # Manual rebuild: pick a tag (e.g. desk-v1.9.0) so the release job's
+  # `startsWith(github.ref_name, 'desk-')` gate still matches.
+  workflow_dispatch:
 
 jobs:
   release-desk:
