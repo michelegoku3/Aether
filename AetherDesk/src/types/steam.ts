@@ -6,3 +6,12 @@ export interface AppInfoRepair {
   backupPath: string;
   bytes: number;
 }
+
+/**
+ * IPC payload for the commands that write into the Steam folder. `true` only
+ * after the user accepted the "Close Steam?" popup: the backend then terminates
+ * Steam before touching its files.
+ */
+export type SteamKillConsentArgs = {
+  allowSteamKill: boolean;
+};

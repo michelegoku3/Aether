@@ -264,6 +264,7 @@ fn main() {
             commands::steam::is_dll_installed,
             commands::steam::is_steam_blocked,
             commands::steam::is_steam_running,
+            commands::steam::probe_steam_running,
             commands::steam::block_steam_updates,
             commands::steam::unblock_steam_updates,
             commands::steam::get_aetheronline,

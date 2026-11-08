@@ -1,13 +1,17 @@
 //! Steam process lifecycle helpers shared by the `start_steam` /
-//! `restart_steam` commands and the runtime monitor.
+//! `restart_steam` commands, the AetherDLL file operations and the runtime
+//! monitor.
 //!
-//! Single owner of "how do we spawn/kill/wait for steam.exe" so the two
-//! commands stay thin and behave identically (DRY / high cohesion):
+//! Single owner of "how do we spawn/kill/wait for Steam" so callers stay thin
+//! and behave identically (DRY / high cohesion):
 //!   * `start_steam`  -> spawn only, never kills;
 //!   * `restart_steam`-> kill, WAIT for the process to actually exit, then
 //!     spawn. Waiting is what prevents the double-spawn race (a second
 //!     `steam.exe` launched while the first is still shutting down races the
-//!     single-instance attach and is the "restart does not work well" case).
+//!     single-instance attach and is the "restart does not work well" case);
+//!   * AetherDLL install/uninstall/reset -> `close_steam` after the user
+//!     accepted the close-Steam popup: terminate the whole family and wait
+//!     until the main process releases the Steam folder.
 
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
@@ -19,6 +23,17 @@ const GONE_POLL: Duration = Duration::from_millis(250);
 fn is_steam_process_name(name: &str) -> bool {
     let lower = name.to_lowercase();
     lower == "steam.exe" || lower == "steam"
+}
+
+/// Steam web helpers. They also live in the Steam folder, so a full close
+/// terminates them too. `steamservice.exe` (the Windows service) is deliberately
+/// not included.
+fn is_steam_helper_process_name(name: &str) -> bool {
+    name.to_lowercase() == "steamwebhelper.exe"
+}
+
+fn is_steam_family_process_name(name: &str) -> bool {
+    is_steam_process_name(name) || is_steam_helper_process_name(name)
 }
 
 /// True when a `System` snapshot contains a Steam main process.
@@ -35,13 +50,14 @@ pub fn is_steam_running_fresh() -> bool {
     snapshot_has_steam(&sys)
 }
 
-/// Kill every steam.exe process. Returns true when at least one was signalled.
-pub fn kill_steam() -> bool {
+/// Terminate every process matching `matches`. Returns true when at least one
+/// was signalled.
+fn kill_matching(matches: impl Fn(&str) -> bool) -> bool {
     let mut sys = sysinfo::System::new_all();
     sys.refresh_processes();
     let mut terminated = false;
     for process in sys.processes().values() {
-        if is_steam_process_name(process.name()) {
+        if matches(process.name()) {
             let _ = process.kill();
             terminated = true;
         }
@@ -51,6 +67,28 @@ pub fn kill_steam() -> bool {
         std::thread::sleep(KILL_SETTLE);
     }
     terminated
+}
+
+/// Kill every steam.exe process. Returns true when at least one was signalled.
+pub fn kill_steam() -> bool {
+    kill_matching(is_steam_process_name)
+}
+
+/// Close Steam completely and wait until `steam.exe` releases the Steam folder.
+/// Used before replacing files in the Steam folder, where the UI has already
+/// asked the user for consent.
+///
+/// The helpers are terminated with it, but they do not gate the result: a
+/// stale `steamwebhelper.exe` (or one spawned by a dying Steam) would otherwise
+/// make every future operation fail after waiting out the full timeout.
+pub fn close_steam() -> Result<(), String> {
+    kill_matching(is_steam_family_process_name);
+    if !wait_steam_gone() {
+        return Err("Steam did not close in time. Close Steam and try again.".to_string());
+    }
+    // Second pass: helpers that outlived the main process.
+    kill_matching(is_steam_helper_process_name);
+    Ok(())
 }
 
 /// Block until no steam.exe process is visible (polling), up to `GONE_TIMEOUT`.
@@ -87,4 +125,19 @@ pub fn spawn_steam(steam_dir: &Path) -> Result<PathBuf, String> {
     cmd.spawn()
         .map_err(|e| format!("Failed to launch Steam process: {e}"))?;
     Ok(steam_exe)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_family_matcher_covers_steam_and_its_helpers_but_not_the_service() {
+        assert!(is_steam_family_process_name("steam.exe"));
+        assert!(is_steam_family_process_name("Steam.exe"));
+        assert!(is_steam_family_process_name("steamwebhelper.exe"));
+        assert!(is_steam_family_process_name("SteamWebHelper.exe"));
+        assert!(!is_steam_family_process_name("steamservice.exe"));
+        assert!(!is_steam_family_process_name("game.exe"));
+    }
 }

@@ -93,6 +93,16 @@ pub fn is_steam_running() -> bool {
     crate::core::steam_monitor::is_steam_running()
 }
 
+/// Fresh "Steam running" scan for the close-Steam confirmation popup.
+///
+/// The cached monitor can be up to a second stale, and this answer decides
+/// whether the destructive Steam commands would refuse right now, so it uses
+/// its own snapshot. Only a click calls it: the scan stays off the hot path.
+#[tauri::command]
+pub fn probe_steam_running() -> bool {
+    crate::core::steam_process::is_steam_running_fresh()
+}
+
 #[tauri::command]
 pub fn is_steam_blocked(app: tauri::AppHandle) -> Result<bool, String> {
     let steam_path = configured_steam_path(&app).unwrap_or_default();
