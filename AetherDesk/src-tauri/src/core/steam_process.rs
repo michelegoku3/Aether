@@ -10,8 +10,9 @@
 //!     `steam.exe` launched while the first is still shutting down races the
 //!     single-instance attach and is the "restart does not work well" case);
 //!   * AetherDLL install/uninstall/reset -> `close_steam` after the user
-//!     accepted the close-Steam popup: terminate the whole family and wait
-//!     until the main process releases the Steam folder.
+//!     accepted the close-Steam popup: close the running Steam games, terminate
+//!     the whole Steam family and wait until the main process releases the
+//!     Steam folder.
 
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
@@ -74,14 +75,79 @@ pub fn kill_steam() -> bool {
     kill_matching(is_steam_process_name)
 }
 
+/// Directories a Steam game runs from: `<library>/steamapps/common` for the
+/// main install and every extra library.
+fn game_roots(steam_root: &Path) -> Vec<PathBuf> {
+    crate::steam::library::SteamLibraryScanner::new(steam_root)
+        .discover_library_paths()
+        .into_iter()
+        .map(|library| library.join("steamapps").join("common"))
+        .filter(|path| path.is_dir())
+        .collect()
+}
+
+fn normalized_path(path: &Path) -> String {
+    path.to_string_lossy()
+        .replace('\\', "/")
+        .trim_end_matches('/')
+        .to_lowercase()
+}
+
+/// True when `exe` lives under one of the game roots. Component-aware: a
+/// sibling folder whose name merely starts with the same text does not match.
+fn is_under_game_root(exe: &Path, roots: &[PathBuf]) -> bool {
+    let exe = normalized_path(exe);
+    roots.iter().any(|root| {
+        let root = normalized_path(root);
+        exe.len() > root.len()
+            && exe.starts_with(&root)
+            && exe.as_bytes().get(root.len()) == Some(&b'/')
+    })
+}
+
+/// Terminate every process whose executable lives under a Steam game folder.
+/// Returns the names that were signalled, for the lifecycle log.
+fn kill_steam_games(roots: &[PathBuf]) -> Vec<String> {
+    if roots.is_empty() {
+        return Vec::new();
+    }
+    let mut sys = sysinfo::System::new_all();
+    sys.refresh_processes();
+    let mut killed = Vec::new();
+    for process in sys.processes().values() {
+        let Some(exe) = process.exe() else {
+            continue;
+        };
+        if is_under_game_root(exe, roots) && process.kill() {
+            killed.push(process.name().to_string());
+        }
+    }
+    if !killed.is_empty() {
+        std::thread::sleep(KILL_SETTLE);
+    }
+    killed
+}
+
 /// Close Steam completely and wait until `steam.exe` releases the Steam folder.
 /// Used before replacing files in the Steam folder, where the UI has already
 /// asked the user for consent.
 ///
-/// The helpers are terminated with it, but they do not gate the result: a
-/// stale `steamwebhelper.exe` (or one spawned by a dying Steam) would otherwise
-/// make every future operation fail after waiting out the full timeout.
-pub fn close_steam() -> Result<(), String> {
+/// A game launched from a Steam library is its own process and survives a Steam
+/// exit, so it is closed first (the consent popup warns the user to save). The
+/// Steam helpers are terminated with the main process, but they do not gate the
+/// result: a stale `steamwebhelper.exe` (or one spawned by a dying Steam) would
+/// otherwise make every future operation fail after waiting out the timeout.
+pub fn close_steam(steam_root: &Path) -> Result<(), String> {
+    let killed_games = kill_steam_games(&game_roots(steam_root));
+    if !killed_games.is_empty() {
+        crate::desk_log_info!(
+            "lifecycle",
+            "Closed {} running game process(es) before Steam: {}",
+            killed_games.len(),
+            killed_games.join(", ")
+        );
+    }
+
     kill_matching(is_steam_family_process_name);
     if !wait_steam_gone() {
         return Err("Steam did not close in time. Close Steam and try again.".to_string());
@@ -139,5 +205,30 @@ mod tests {
         assert!(is_steam_family_process_name("SteamWebHelper.exe"));
         assert!(!is_steam_family_process_name("steamservice.exe"));
         assert!(!is_steam_family_process_name("game.exe"));
+    }
+
+    #[test]
+    fn a_game_process_is_recognised_by_its_library_common_folder() {
+        let roots = vec![PathBuf::from(r"C:\SteamLibrary\steamapps\common")];
+
+        assert!(is_under_game_root(
+            Path::new(r"C:\SteamLibrary\steamapps\common\Skyrim\SkyrimSE.exe"),
+            &roots
+        ));
+        // Windows paths arrive with either separator and any casing.
+        assert!(is_under_game_root(
+            Path::new(r"c:/steamlibrary/STEAMAPPS/Common/skyrim/SkyrimSE.exe"),
+            &roots
+        ));
+        // A sibling folder whose name merely starts with the same text.
+        assert!(!is_under_game_root(
+            Path::new(r"C:\SteamLibrary\steamapps\common2\Skyrim\SkyrimSE.exe"),
+            &roots
+        ));
+        assert!(!is_under_game_root(
+            Path::new(r"C:\SteamLibrary\steamapps\common\Skyrim2\SkyrimSE.exe"),
+            &[PathBuf::from(r"C:\SteamLibrary\steamapps\common\Skyrim")]
+        ));
+        assert!(!is_under_game_root(Path::new(r"C:\Games\game.exe"), &roots));
     }
 }

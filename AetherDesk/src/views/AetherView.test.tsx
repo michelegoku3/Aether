@@ -164,7 +164,7 @@ describe('AetherView uninstall flow', () => {
   });
 });
 
-const STEAM_CLOSE_LEAD = 'This operation will close Steam. Are you sure you want to do it?';
+const STEAM_CLOSE_LEAD = 'This operation will close Steam. Are you sure?';
 
 describe('AetherView Steam close confirm', () => {
   beforeEach(() => {

@@ -10,10 +10,12 @@ const renderModal = () => {
 };
 
 describe('SteamCloseConfirmModal', () => {
-  it('says the operation closes Steam and to save an open game first', () => {
+  it('says the operation closes Steam and any open game', () => {
     renderModal();
-    expect(screen.getByText('This operation will close Steam. Are you sure you want to do it?')).toBeInTheDocument();
-    expect(screen.getByText('If you have a game open, save the game and close it.')).toBeInTheDocument();
+    expect(screen.getByText('This operation will close Steam. Are you sure?')).toBeInTheDocument();
+    expect(
+      screen.getByText('If you have a game open, save the game because it will be closed too.')
+    ).toBeInTheDocument();
   });
 
   it('runs the operation on YES and only dismisses on NO', () => {

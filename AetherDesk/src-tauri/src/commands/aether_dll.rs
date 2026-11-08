@@ -179,9 +179,12 @@ pub async fn install_aether_dll(
     // File-system + process work: keep it off the async runtime so the
     // Windows wait for Steam to exit never blocks a tokio worker.
     let allowed = allow_steam_kill;
-    tauri::async_runtime::spawn_blocking(move || ensure_steam_closed(allowed))
-        .await
-        .map_err(|error| format!("Steam check failed to run: {error}"))??;
+    let check_root = steam_path.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        ensure_steam_closed(std::path::Path::new(&check_root), allowed)
+    })
+    .await
+    .map_err(|error| format!("Steam check failed to run: {error}"))??;
     crate::desk_log_info!(
         "updater",
         "Starting installation of AetherDLL into steam_path='{}'",
@@ -264,7 +267,7 @@ pub async fn install_aether_dll(
     // consent. Refuse with the readable message instead of surfacing a raw
     // file-lock error; never kill here, the consent was for the Steam that was
     // open before the download.
-    if let Err(error) = ensure_steam_closed(false) {
+    if let Err(error) = ensure_steam_closed(std::path::Path::new(&steam_path), false) {
         let _ = std::fs::remove_file(&temp_zip_path);
         return Err(error);
     }
@@ -307,7 +310,7 @@ pub async fn uninstall_aether_dll(
     // Killing Steam and replacing files in its folder is blocking work: keep
     // it off the async runtime so the window never freezes.
     tauri::async_runtime::spawn_blocking(move || {
-        ensure_steam_closed(allow_steam_kill)?;
+        ensure_steam_closed(std::path::Path::new(&steam_path), allow_steam_kill)?;
         crate::desk_log_info!(
             "updater",
             "Uninstalling AetherDLL from Steam directory '{}'",
@@ -329,7 +332,7 @@ pub async fn reset_aether_steam_path(
     let steam_path = command_steam_path(&app)?;
 
     tauri::async_runtime::spawn_blocking(move || {
-        ensure_steam_closed(allow_steam_kill)?;
+        ensure_steam_closed(std::path::Path::new(&steam_path), allow_steam_kill)?;
         crate::desk_log_info!(
             "updater",
             "Resetting Aether files in Steam directory '{}'",
@@ -395,7 +398,7 @@ fn steam_gate(steam_running: bool, allow_steam_kill: bool) -> SteamGate {
 /// Steam must not hold the DLLs while we replace them. `allow_steam_kill` is
 /// the user's YES from the close popup: without it the command refuses, so a
 /// stale or hostile client cannot make AetherDesk terminate Steam silently.
-fn ensure_steam_closed(allow_steam_kill: bool) -> Result<(), String> {
+fn ensure_steam_closed(steam_root: &std::path::Path, allow_steam_kill: bool) -> Result<(), String> {
     // Do not rely on the cached UI monitor for destructive file changes.
     match steam_gate(
         crate::core::steam_process::is_steam_running_fresh(),
@@ -408,7 +411,7 @@ fn ensure_steam_closed(allow_steam_kill: bool) -> Result<(), String> {
                 "lifecycle",
                 "Closing Steam completely before an AetherDLL operation"
             );
-            crate::core::steam_process::close_steam()?;
+            crate::core::steam_process::close_steam(steam_root)?;
             // The monitor polls once a second; keep the Sidebar label honest
             // until the next scan.
             crate::core::steam_monitor::mark(false);
