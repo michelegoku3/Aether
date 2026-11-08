@@ -44,6 +44,7 @@ int main(int argc, char** argv) {
         {"memory", MemoryRangeTest},
         {"payloadattest", PayloadAttestTest},
         {"productinfo_queue", ProductInfoQueueTest},
+        {"hubcap_key", HubcapKeyPolicyTest},
     };
     try {
         if (argc == 1) {

@@ -26,6 +26,7 @@
 #include "inject/Diversion.h"
 #include "scripting/DirWatch.h"
 #include "scripting/ScriptEngine.h"
+#include "security/HubcapKeyCheck.h"
 #include "utils/DeskPaths.h"
 #include "utils/Hasher.h"
 #include "utils/IpcSpec.h"
@@ -349,6 +350,13 @@ void InitThreadLogic(HMODULE self) {
     InstallHooksStage();
     StartSafetyNetsStage();
     StartWatchersStage(ctx);
+
+    // 11. Hubcap key check: one `/user/stats` probe on its own named worker so
+    //     a player who never opens AetherDesk still learns at Steam startup
+    //     that the saved key is expired. No key -> no probe, no warning; a
+    //     transport failure stays unknown and never raises a box.
+    //     Depends on: logger + status writer + the Desk bridge (credentials).
+    ac::hubcapkey::StartCheck();
 }
 
 } // namespace ac::boot

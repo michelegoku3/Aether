@@ -20,6 +20,7 @@
 #include "hooks/wire/AchievementModule.h"
 #include "network/EticketFetcher.h"
 #include "scripting/LuaData.h"
+#include "security/HubcapKeyCheck.h"
 #include "utils/IpcSpec.h"
 #include "utils/JsonWriter.h"
 #include "utils/WinFile.h"
@@ -154,6 +155,8 @@ static void WriteSnapshot(std::uint64_t requests) {
     w.UInt64("ticket_forge_successes", g_state.ticketForgeSuccessCount.load());
     w.UInt64("ticket_forge_failures", g_state.ticketForgeFailureCount.load());
     w.Str("manifest_fetch_production_route", "authenticated_hubcap_standalone");
+    w.Str("hubcap_key_state", hubcapkey::StateName(static_cast<hubcapkey::State>(g_state.hubcapKeyState.load())));
+    w.Int64("hubcap_key_checked_epoch", static_cast<long long>(g_state.hubcapKeyCheckedEpoch.load()));
     w.Bool("online_payload_present", winfile::Exists(g_state.payloadDllPath));
     w.SizeT("online_payload_injected_pids", hooks::onlinepayload::InjectedPidCount());
     w.UInt64("online_payload_inject_successes", g_state.onlinePayload.injectSuccessCount.load());

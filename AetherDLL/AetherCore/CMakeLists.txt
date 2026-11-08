@@ -40,6 +40,7 @@ add_library(AetherCore SHARED
 
     # Credentials
     security/ProviderCredentials.cpp
+    security/HubcapKeyCheck.cpp
     credentials/CredentialStore.cpp
     credentials/Ticket.cpp
     credentials/SteamId.cpp
@@ -134,6 +135,7 @@ target_link_libraries(AetherCore PRIVATE
     shlwapi
     advapi32
     Psapi
+    user32
 )
 
 target_compile_definitions(AetherCore PRIVATE

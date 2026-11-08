@@ -107,3 +107,4 @@ void CallbackCopyTest();
 void MemoryRangeTest();
 void PayloadAttestTest();
 void ProductInfoQueueTest();
+void HubcapKeyPolicyTest();
