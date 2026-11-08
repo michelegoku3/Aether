@@ -98,6 +98,11 @@ pub struct AppSettings {
     /// prompted to restart the app to apply the update.
     #[serde(default)]
     pub auto_update_enabled: bool,
+    /// Records that the Store front default moved from `upcoming` to `latest`.
+    /// Without it, a settings file written under the old default would keep
+    /// opening the Store on the previous criterion forever.
+    #[serde(default)]
+    pub store_front_latest_migrated: bool,
     /// Criterion used by the Store front page (`trending`, `latest`, ...).
     #[serde(default = "default_store_front_filter")]
     pub store_front_filter: String,
@@ -178,7 +183,7 @@ pub struct SettingsLoadFlags {
 const DEFAULT_ALT_CARDS_OPACITY: u8 = 100;
 const DEFAULT_ALT_CARDS_FADE: u8 = 20;
 const DEFAULT_STORE_CURRENCY: &str = "eur";
-const DEFAULT_STORE_FRONT_FILTER: &str = "upcoming";
+const DEFAULT_STORE_FRONT_FILTER: &str = "latest";
 const DEFAULT_WALLPAPER_OPACITY: u8 = 20;
 const DEFAULT_LIBRARY_INSTALL_FILTER: &str = "all";
 
@@ -337,6 +342,7 @@ impl Default for AppSettings {
             enable_webview_devtools: false,
             enable_test_updates: false,
             auto_update_enabled: false,
+            store_front_latest_migrated: false,
             store_front_filter: default_store_front_filter(),
             store_currency: default_store_currency(),
             personal_wallpaper_enabled: false,
@@ -355,5 +361,15 @@ impl Default for AppSettings {
             library_banner_appids: Vec::new(),
             library_banner_steamid: String::new(),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::AppSettings;
+
+    #[test]
+    fn default_store_front_filter_is_latest() {
+        assert_eq!(AppSettings::default().store_front_filter, "latest");
     }
 }

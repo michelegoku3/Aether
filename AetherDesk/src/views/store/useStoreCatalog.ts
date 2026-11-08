@@ -21,7 +21,7 @@ export function useStoreCatalog({ active, settingsRevision, settingsReady }: Par
   const [page, setPage] = useState(1);
   const [sortMode, setSortMode] = useState<StoreSortMode>('newest');
   const [genreFilter, setGenreFilter] = useState<string>('');
-  const [storeFrontFilter, setStoreFrontFilter] = useState<string>('trending');
+  const [storeFrontFilter, setStoreFrontFilter] = useState<string>('latest');
   const { badgeFilter, setBadgeFilter, STORE_BADGE_FILTERS } = useStoreBadgeFilter();
   const observedSettingsRevision = useRef<number | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
