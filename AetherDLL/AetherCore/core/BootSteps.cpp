@@ -16,6 +16,7 @@
 #include "core/Logger.h"
 #include "core/NetPacketAbi.h"
 #include "core/Settings.h"
+#include "core/SteamBetaNotice.h"
 #include "core/SteamVersion.h"
 #include "core/StructGuard.h"
 #include "diagnostics/StatusWriter.h"
@@ -76,6 +77,9 @@ std::vector<std::string> CollectAcfWatchDirs() { return steamlibrary::SteamAppsD
 //    9. Hook install           (depends on: diversion + pattern engine + lua maps)
 //   10. DirWatch               (depends on: lua scripts — startup files already
 //                              scanned, so they don't look like hot-reload adds)
+//   11. Steam client channel   (depends on: resolve + logger + status writer;
+//                              the beta notice replaces the Hubcap one)
+//   12. Hubcap key check       (depends on: logger + status writer + Desk bridge)
 
 bool ResolveStage(HMODULE self, BootContext& ctx) {
     (void)ctx;
@@ -356,12 +360,32 @@ void InitThreadLogic(HMODULE self) {
     StartSafetyNetsStage();
     StartWatchersStage(ctx);
 
-    // 11. Hubcap key check: one `/user/stats` probe on its own named worker so
+    // 11. Steam client channel: read <steam>\package\beta, the branch marker
+    //     Steam writes (empty/absent on stable), and publish it for status.json.
+    //     The beta client is not supported, so it raises the ONE startup notice
+    //     and the Hubcap box is suppressed: Steam must never open two popups,
+    //     and replacing a key would not make Aether work on an unsupported
+    //     client. Depends on: resolve (steamInstallPath) + logger + status writer.
+    std::string betaBranch = ac::DetectSteamBetaBranch(g_state.steamInstallPath);
+    {
+        // The read happens above: the mutex only publishes the string, and the
+        // status worker must never wait on the filesystem.
+        std::lock_guard lock(g_state.statusMetadataMutex);
+        g_state.steamBetaBranch = betaBranch;
+    }
+    if (!betaBranch.empty())
+        ac::steambeta::StartNotice(betaBranch);
+    // Publish the channel now: with no saved Hubcap key the probe returns before
+    // its own write, and status.json must still carry the field.
+    status::Write();
+
+    // 12. Hubcap key check: one `/user/stats` probe on its own named worker so
     //     a player who never opens AetherDesk still learns at Steam startup
     //     that the saved key is expired. No key -> no probe, no warning; a
-    //     transport failure stays unknown and never raises a box.
-    //     Depends on: logger + status writer + the Desk bridge (credentials).
-    ac::hubcapkey::StartCheck();
+    //     transport failure stays unknown and never raises a box. On a beta
+    //     client the probe still runs (status.json stays truthful) but the box
+    //     is suppressed. Depends on: logger + status writer + Desk bridge.
+    ac::hubcapkey::StartCheck(betaBranch.empty());
 }
 
 } // namespace ac::boot

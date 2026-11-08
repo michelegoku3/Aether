@@ -105,6 +105,8 @@ static void WriteSnapshot(std::uint64_t requests) {
     {
         std::lock_guard lock(g_state.statusMetadataMutex);
         w.Str("diversion_outcome", g_state.diversionOutcome);
+        // Empty on the stable client; the branch name ("publicbeta") on a beta one.
+        w.Str("steam_beta_branch", g_state.steamBetaBranch);
         w.Str("steamclient_sha", g_state.steamclientSha);
         w.Bool("steamclient_toml_found", g_state.steamclientTomlFound);
         w.Str("steamclient_pattern_source", g_state.steamclientPatternSource);

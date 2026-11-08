@@ -274,6 +274,9 @@ struct AetherCoreState {
 
     // ---- Steam diagnostics ------------------------------------------------
     std::string buildId; // steam.exe!GetBootstrapperVersion (diagnostic only)
+    // Selected client branch from <steam>\package\beta; empty on stable. Read
+    // under statusMetadataMutex, like the other startup strings.
+    std::string steamBetaBranch;
 
     // ---- Captured Steam object pointers -----------------------------------
     // std::atomic<void*> ensures writes made by one thread (e.g. hook callbacks

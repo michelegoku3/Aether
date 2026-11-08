@@ -36,10 +36,12 @@ add_executable(core_unit_tests
     core_unit/schema_cache.cpp
     core_unit/donor_probe.cpp
     core_unit/hubcapkey.cpp
+    core_unit/steamversion.cpp
     stubs/Services.cpp
     stubs/AbiReporting.cpp
     ../AetherCore/core/Settings.cpp ../AetherCore/core/HookManager.cpp
     ../AetherCore/core/Workers.cpp
+    ../AetherCore/core/SteamVersion.cpp
     ../AetherCore/hooks/steamui/SteamUIStylePatch.cpp
     ../AetherCore/hooks/wire/GamesPlayedFormat.cpp
     ../AetherCore/hooks/wire/DonorPool.cpp
@@ -68,7 +70,7 @@ if(MSVC)
 else()
     target_compile_options(core_unit_tests PRIVATE -Wall -Wextra -Wpedantic -Werror)
 endif()
-foreach(case strings paths policy worker budget settings registry workers netpacket sentinel structguard gamesplayed_format donorpool donorpool_learning donorpool_snapshot schema_cache donor_probe keyvalues vdftext jsonutil_escapes manifest_identity ipcreply snapshot_merge ttlcache hexcodec signature ipcspec jsonwriter manifest_contract schema_buckets workers_reap_slow workers_race acfowner installeddepots ownership loginusers steamuicss steamuipatch callbackcopy memory payloadattest productinfo_queue hubcap_key)
+foreach(case strings paths policy worker budget settings registry workers netpacket sentinel structguard gamesplayed_format donorpool donorpool_learning donorpool_snapshot schema_cache donor_probe keyvalues vdftext jsonutil_escapes manifest_identity ipcreply snapshot_merge ttlcache hexcodec signature ipcspec jsonwriter manifest_contract schema_buckets workers_reap_slow workers_race acfowner installeddepots ownership loginusers steamuicss steamuipatch callbackcopy memory payloadattest productinfo_queue hubcap_key steam_beta)
     add_test(NAME ${case} COMMAND core_unit_tests ${case})
 endforeach()
 add_test(NAME cmake_source_inventory COMMAND ${CMAKE_COMMAND}

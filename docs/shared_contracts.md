@@ -189,6 +189,26 @@ The provider exposes no expiry date, so the key's state is classified from one
 - A rejected key is **kept** so the user can replace it; the Settings save never
   deletes it on a validation failure.
 
+### Steam client channel
+
+Aether supports the stable Steam client only. The channel is read from
+`<Steam>\package\beta`, the branch marker Steam writes (it holds the branch name,
+e.g. `publicbeta`; absent or empty on stable): the registry keeps no `BetaKey`,
+and the packet layout only becomes known once traffic starts, which is too late
+for a startup notice.
+
+- A non-empty branch means the beta client: the DLL raises one system box at
+  Steam startup ("Aether - Steam Beta detected", with the Settings path back to
+  "No beta chosen") and publishes `steam_beta_branch` in
+  `<Steam>\aethercore\status.json`.
+- On beta the Hubcap key box is suppressed for that session, so Steam never
+  stacks two popups; the `/user/stats` probe still runs, so `hubcap_key_state`
+  stays truthful for diagnostics.
+- An empty, unreadable, oversized (over 64 bytes) or non-branch marker reads as
+  stable: only ASCII letters, digits, `.`, `_` and `-` are accepted, because a
+  false positive would tell a stable player to change a setting that is already
+  correct.
+
 ## 5. Lua pin contract
 
 - **Active** pin (`setManifestid(depot,"gid")`) = version lock: Steam must stay
@@ -214,8 +234,9 @@ The provider exposes no expiry date, so the key's state is classified from one
   0-byte placeholder replacement, rejected empty payload, `store_original`
   (Created/Updated/Unchanged), `store_history_version` dedup, same-millisecond
   archive uniqueness.
-- **DLL**: `ctest` via `build_dll.cmd`; the `core_unit` case `hubcap_key` pins
-  the saved-key classification (`security/HubcapKeyCheck.h`). Manual checklist
+- **DLL**: `ctest` via `build_dll.cmd`; the `core_unit` cases `hubcap_key` and
+  `steam_beta` pin the saved-key classification (`security/HubcapKeyCheck.h`)
+  and the branch-marker parsing (`core/SteamVersion.h`). Manual checklist
   when touching `ManifestRestore.cpp`/`ManifestFetch.cpp`:
   1. copy with non-empty destination → unchanged; 2. 0-byte destination →
   replaced; 3. post-copy size verified; 4. Desk/DLL race → no spurious error

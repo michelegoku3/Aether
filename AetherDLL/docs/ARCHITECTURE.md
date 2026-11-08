@@ -218,6 +218,10 @@ instead of skipping the new donor as "already tried". Probe requests are paced
   `statusMetadataMutex`; runtime counters keep their existing locks/atomics.
 * IPC maps are published ONCE before setting atomic `loaded`; no reader may
   touch the maps before acquiring that flag. Init attempts are serialized.
+* Startup notices never stack: the Steam client channel (`<Steam>\package\beta`,
+  BootSteps step 11) decides first, so a beta client shows only the "Steam Beta
+  detected" box and the Hubcap key box is suppressed (`StartCheck(false)`) while
+  its probe still updates `status.json`.
 * Pattern indexes are built locally on late retry, then published under
   `patterns.mutex`; lookups/availability checks use a shared lock.
 * DllMain detach only sets the shutdown flag: no joins, logging, mutex-taking

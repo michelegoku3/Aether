@@ -86,7 +86,10 @@ inline const char* ReasonName(Reason reason) {
 // Starts the one-shot startup check on its own named worker: reads the saved
 // key (no key -> nothing to check), asks `/user/stats`, stores the verdict in
 // g_state for status.json, and shows ONE warning box when the key is inactive.
-// Never blocks Steam's startup thread and never logs the key.
-bool StartCheck();
+// `showNotice=false` keeps the probe and the status but suppresses the box: a
+// Steam beta client already raises its own startup notice, and Steam must never
+// open two popups at once. Never blocks Steam's startup thread and never logs
+// the key. The flag has no default so every call site states the decision.
+bool StartCheck(bool showNotice);
 
 } // namespace ac::hubcapkey
