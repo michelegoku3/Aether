@@ -41,7 +41,7 @@ void ShowExpiredNotice(Reason reason) {
                   MB_OK | MB_ICONWARNING | MB_SETFOREGROUND | MB_TOPMOST);
 }
 
-void RunCheck() {
+void RunCheck(bool showNotice) {
     const auto apiKey = security::ReadHubcapApiKey();
     if (!apiKey) {
         AC_LOG_DEBUG(kModule, "No saved Hubcap key; skipping the startup check.");
@@ -59,6 +59,10 @@ void RunCheck() {
     AC_LOG_INFO(kModule, "Key check complete state=%s reason=%s network=%d HTTP=%d.", StateName(verdict.state),
                 ReasonName(verdict.reason), response.networkError ? 1 : 0, response.status);
     if (verdict.state == State::Inactive) {
+        if (!showNotice) {
+            AC_LOG_WARN(kModule, "Saved Hubcap key is not active; startup warning suppressed (Steam beta).");
+            return;
+        }
         AC_LOG_WARN(kModule, "Saved Hubcap key is not active; showing the startup warning.");
         ShowExpiredNotice(verdict.reason);
     }
@@ -66,12 +70,12 @@ void RunCheck() {
 
 } // namespace
 
-bool StartCheck() {
+bool StartCheck(bool showNotice) {
     if (s_checked.exchange(true))
         return true;
-    const bool started = workers::StartWorker("hubcap-key-check", [](std::atomic<bool>& stop) {
+    const bool started = workers::StartWorker("hubcap-key-check", [showNotice](std::atomic<bool>& stop) {
         (void)stop;
-        RunCheck();
+        RunCheck(showNotice);
     });
     if (!started) {
         AC_LOG_WARN(kModule, "Could not start the key-check worker; skipping the startup check.");

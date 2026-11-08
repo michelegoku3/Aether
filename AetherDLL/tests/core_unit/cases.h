@@ -108,3 +108,4 @@ void MemoryRangeTest();
 void PayloadAttestTest();
 void ProductInfoQueueTest();
 void HubcapKeyPolicyTest();
+void SteamBetaChannelTest();

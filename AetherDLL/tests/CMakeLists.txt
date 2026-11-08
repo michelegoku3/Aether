@@ -32,10 +32,12 @@ add_executable(core_unit_tests
     core_unit/memory.cpp
     core_unit/payloadattest.cpp
     core_unit/hubcapkey.cpp
+    core_unit/steamversion.cpp
     stubs/Services.cpp
     stubs/AbiReporting.cpp
     ../AetherCore/core/Settings.cpp ../AetherCore/core/HookManager.cpp
     ../AetherCore/core/Workers.cpp
+    ../AetherCore/core/SteamVersion.cpp
     ../AetherCore/hooks/steamui/SteamUIStylePatch.cpp
     ../AetherCore/hooks/wire/GamesPlayedFormat.cpp
     ../AetherCore/hooks/wire/DonorPool.cpp
@@ -61,7 +63,7 @@ if(MSVC)
 else()
     target_compile_options(core_unit_tests PRIVATE -Wall -Wextra -Wpedantic -Werror)
 endif()
-foreach(case strings paths policy worker budget settings registry workers netpacket sentinel structguard gamesplayed_format donorpool keyvalues vdftext jsonutil_escapes manifest_identity ipcreply snapshot_merge ttlcache hexcodec signature ipcspec jsonwriter manifest_contract schema_buckets workers_reap_slow workers_race acfowner installeddepots productinfo_queue hubcap_key steamuicss steamuipatch callbackcopy memory payloadattest)
+foreach(case strings paths policy worker budget settings registry workers netpacket sentinel structguard gamesplayed_format donorpool keyvalues vdftext jsonutil_escapes manifest_identity ipcreply snapshot_merge ttlcache hexcodec signature ipcspec jsonwriter manifest_contract schema_buckets workers_reap_slow workers_race acfowner installeddepots productinfo_queue hubcap_key steam_beta steamuicss steamuipatch callbackcopy memory payloadattest)
     add_test(NAME ${case} COMMAND core_unit_tests ${case})
 endforeach()
 add_test(NAME cmake_source_inventory COMMAND ${CMAKE_COMMAND}
