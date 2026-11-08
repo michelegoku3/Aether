@@ -11,19 +11,67 @@ describe('application runtime services', () => {
 
     await act(() => result.current.refresh('forced-key'));
 
-    expect(invokeMock).toHaveBeenCalledWith('get_hubcap_usage', { apiKey: 'forced-key' });
+    expect(invokeMock).toHaveBeenCalledWith('get_hubcap_usage', {
+      apiKey: 'forced-key',
+      quiet: false,
+    });
     expect(invokeMock).not.toHaveBeenCalledWith('get_settings');
-    expect(result.current.usage).toEqual({ usage: 12, limit: 100, hasKey: true });
+    expect(result.current.usage).toEqual({
+      usage: 12,
+      limit: 100,
+      hasKey: true,
+      active: null,
+      quiet: false,
+    });
+  });
+
+  it('carries the definitive key verdict from the usage call', async () => {
+    mockInvokeCommands({
+      get_hubcap_usage: {
+        usage: 3,
+        limit: 25,
+        active: false,
+        reason: 'account_inactive',
+        keyFingerprint: 'aabbccdd00112233',
+      },
+    });
+    const { result } = renderHook(() => useHubcapUsage());
+
+    await act(() => result.current.refresh('forced-key'));
+
+    expect(result.current.usage).toEqual({
+      usage: 3,
+      limit: 25,
+      hasKey: true,
+      active: false,
+      reason: 'account_inactive',
+      keyFingerprint: 'aabbccdd00112233',
+      quiet: false,
+    });
+  });
+
+  it('asks for the verdict quietly when the caller acknowledges it', async () => {
+    mockInvokeCommands({ get_hubcap_usage: { usage: 0, limit: 25, active: false } });
+    const { result } = renderHook(() => useHubcapUsage());
+
+    await act(() => result.current.refresh('forced-key', undefined, { quiet: true }));
+
+    expect(invokeMock).toHaveBeenCalledWith('get_hubcap_usage', {
+      apiKey: 'forced-key',
+      quiet: true,
+    });
+    expect(result.current.usage.active).toBe(false);
+    expect(result.current.usage.quiet).toBe(true);
   });
 
   it('resets Hubcap usage for an empty key or backend failure', async () => {
     const { result } = renderHook(() => useHubcapUsage());
     await act(() => result.current.refresh(''));
-    expect(result.current.usage).toEqual({ usage: 0, limit: 25, hasKey: false });
+    expect(result.current.usage).toEqual({ usage: 0, limit: 25, hasKey: false, active: null });
 
     invokeMock.mockRejectedValue(new Error('quota unavailable'));
     await act(() => result.current.refresh('key'));
-    expect(result.current.usage).toEqual({ usage: 0, limit: 25, hasKey: false });
+    expect(result.current.usage).toEqual({ usage: 0, limit: 25, hasKey: false, active: null });
   });
 
   it('loads DLL install, block and version state in parallel', async () => {

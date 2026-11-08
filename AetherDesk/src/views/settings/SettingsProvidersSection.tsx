@@ -3,7 +3,7 @@ import { EyeIcon, EyeOffIcon } from '../../ui/icons';
 import type { LuaToolsAuthStatus } from './types';
 
 interface SettingsProvidersSectionProps {
-  hubcapUsage: { usage: number; limit: number; hasKey: boolean };
+  hubcapUsage: { usage: number; limit: number; hasKey: boolean; active: boolean | null; reason?: string };
   apiKey: string;
   setApiKey: (v: string) => void;
   showApiKey: boolean;
@@ -48,11 +48,14 @@ export const SettingsProvidersSection: React.FC<SettingsProvidersSectionProps> =
           <p className="settings-desc">
             Enter your hubcapmanifest.com API key to unlock database lookups and downloads.
           </p>
-          {hubcapUsage.hasKey && (
-            <span className="settings-provider-badge">
-              {hubcapUsage.usage}/{hubcapUsage.limit}
-            </span>
-          )}
+          {hubcapUsage.hasKey &&
+            (hubcapUsage.active === false ? (
+              <span className="settings-provider-badge settings-provider-badge--expired">Expired</span>
+            ) : (
+              <span className="settings-provider-badge">
+                {hubcapUsage.usage}/{hubcapUsage.limit}
+              </span>
+            ))}
         </div>
         <div className="settings-input-wrap">
           <input

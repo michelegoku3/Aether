@@ -32,7 +32,7 @@ export interface MainContentSettings {
   revision: number;
   guardRef: { current: SettingsGuard | null };
   onMissingSteamPath: () => void;
-  hubcapUsage: { usage: number; limit: number; hasKey: boolean };
+  hubcapUsage: { usage: number; limit: number; hasKey: boolean; active: boolean | null; reason?: string };
   onRefreshUsage: (forcedKey?: string) => Promise<void>;
   /** Re-read both update channels after the test-updates switch was saved. */
   onTestUpdatesSaved: () => Promise<void>;

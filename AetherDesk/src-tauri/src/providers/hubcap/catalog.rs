@@ -15,11 +15,7 @@ impl HubcapClient {
             ("limit", LIBRARY_SEARCH_LIMIT.to_string()),
         ];
         let response = self
-            .client
-            .get(&url)
-            .headers(self.headers())
-            .query(&params)
-            .send()
+            .send(self.client.get(&url).headers(self.headers()).query(&params))
             .await
             .map_err(|e| format!("Hubcap API network error: {}", e))?;
 
@@ -57,11 +53,7 @@ impl HubcapClient {
         }
 
         let response = self
-            .client
-            .get(&url)
-            .headers(self.headers())
-            .query(&params)
-            .send()
+            .send(self.client.get(&url).headers(self.headers()).query(&params))
             .await
             .map_err(|e| format!("Hubcap API network error: {}", e))?;
 

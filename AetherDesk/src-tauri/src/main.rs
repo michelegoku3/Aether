@@ -127,6 +127,9 @@ fn main() {
             // on-demand manifest generation stay with AetherDLL; this monitor
             // never downloads game packages.
             crate::core::hubcap_update_monitor::start(app.handle().clone());
+            // Push channel for the saved Hubcap key verdict: the startup usage
+            // check and every provider auth failure publish through it.
+            crate::providers::hubcap::key_status::init(app.handle().clone());
             let hubcap_monitor_ms = setup_started.elapsed().as_millis();
             // Icon only: the shell-shortcut sync spawns PowerShell and belongs
             // to the deferred pass. Saving a new icon still syncs synchronously

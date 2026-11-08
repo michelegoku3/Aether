@@ -2,6 +2,7 @@ pub mod auth;
 pub mod catalog;
 pub mod client;
 pub mod generation;
+pub mod key_status;
 pub mod network;
 pub mod packages;
 pub mod types;

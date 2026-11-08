@@ -166,7 +166,7 @@ describe('useSettingsController', () => {
         base: settings,
       })
     );
-    expect(params.onRefreshUsage).toHaveBeenLastCalledWith('');
+    expect(params.onRefreshUsage).toHaveBeenLastCalledWith('', undefined, { quiet: false });
     expect(params.onRefreshCustomCss).toHaveBeenCalled();
     expect(result.current.status.type).toBe('success');
     expect(params.guardRef.current?.isDirty()).toBe(false);
@@ -411,11 +411,20 @@ describe('useSettingsController', () => {
         settings: expect.objectContaining({ hubcap_api_key: 'smm_good' }),
       })
     );
+    // A valid key may publish its verdict: the startup warning can be dismissed
+    // once and cleared here.
+    expect(params.onRefreshUsage).toHaveBeenLastCalledWith('smm_good', undefined, {
+      quiet: false,
+    });
     expect(result.current.status.type).toBe('success');
   });
 
-  it('clears an invalid api key but saves the rest', async () => {
-    mockInvokeCommands({ ...commandDefaults(), validate_hubcap_key: false });
+  it('keeps an inactive api key but saves the rest', async () => {
+    mockInvokeCommands({
+      ...commandDefaults(),
+      validate_hubcap_key: false,
+      save_settings: (args: unknown) => (args as { settings: AppSettings }).settings,
+    });
     const params = createParams();
     const { result } = renderHook(() => useSettingsController(params));
     await waitFor(() => expect(result.current.form.steamPath).toBe('C:/Steam'));
@@ -427,14 +436,20 @@ describe('useSettingsController', () => {
     });
 
     expect(success).toBe(true);
-    expect(result.current.form.apiKey).toBe('');
+    expect(result.current.form.apiKey).toBe('smm_bad');
     expect(result.current.status.type).toBe('error');
+    expect(result.current.status.text).toContain('not active');
     expect(invokeMock).toHaveBeenCalledWith(
       'save_settings',
       expect.objectContaining({
-        settings: expect.objectContaining({ hubcap_api_key: '' }),
+        settings: expect.objectContaining({ hubcap_api_key: 'smm_bad' }),
       })
     );
+    // The inline message already told the user; the badge follows quietly, so
+    // saving a bad key does not open the global expired-key modal.
+    expect(params.onRefreshUsage).toHaveBeenLastCalledWith('smm_bad', undefined, {
+      quiet: true,
+    });
   });
 
   it('saves anyway when key validation fails on the network', async () => {

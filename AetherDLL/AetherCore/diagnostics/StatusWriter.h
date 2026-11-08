@@ -28,6 +28,8 @@
 //     eticket_runtime_cache_entries
 //   ticket_forge_successes, ticket_forge_failures
 //   manifest_fetch_production_route ("authenticated_hubcap_standalone")
+//   hubcap_key_state ("unknown" | "active" | "inactive"),
+//     hubcap_key_checked_epoch (0 = never asked)
 //   online_payload_present, online_payload_injected_pids,
 //     online_payload_inject_successes, online_payload_inject_failures
 //   pipewatch_snapshots

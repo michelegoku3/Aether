@@ -45,11 +45,12 @@ impl HubcapClient {
                 GENERATION_RETRY_ATTEMPTS
             );
             let response = match self
-                .client
-                .get(&url)
-                .headers(self.headers())
-                .timeout(Duration::from_secs(GENERATION_TIMEOUT_SECONDS))
-                .send()
+                .send(
+                    self.client
+                        .get(&url)
+                        .headers(self.headers())
+                        .timeout(Duration::from_secs(GENERATION_TIMEOUT_SECONDS)),
+                )
                 .await
             {
                 Ok(response) => response,

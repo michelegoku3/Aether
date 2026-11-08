@@ -2,6 +2,7 @@ use tauri::Emitter;
 
 use crate::core::error::{codes, DeskError};
 use crate::core::settings::{load_settings, AppSettings, SettingsManager};
+use crate::providers::hubcap::key_status::{key_fingerprint_hex, HubcapKeyState};
 use crate::providers::hubcap::HubcapClient;
 use crate::providers::hubcap_generation::{
     usage_snapshot_is_fresh, usage_snapshot_slot, UsageSnapshot, MAX_WORKSHOP_GENERATIONS_PER_DAY,
@@ -59,7 +60,7 @@ pub async fn save_settings(
                 "enable updates only with a valid active Hubcap key",
             ));
         }
-        let active = HubcapClient::new(&candidate.hubcap_api_key)
+        let active = HubcapClient::new_quiet(&candidate.hubcap_api_key)
             .validate_api_key()
             .await
             .map_err(|e| DeskError::coded(codes::HUBCAP_KEY_REQUIRED_FOR_UPDATES, e))?;
@@ -156,7 +157,7 @@ pub async fn validate_hubcap_key(api_key: String) -> Result<bool, String> {
         "settings",
         "Validating Hubcap API key with hubcapmanifest.com..."
     );
-    let res = HubcapClient::new(&api_key).validate_api_key().await;
+    let res = HubcapClient::new_quiet(&api_key).validate_api_key().await;
     match &res {
         Ok(true) => crate::desk_log_info!("settings", "Hubcap API key validated successfully"),
         Ok(false) => crate::desk_log_warn!(
@@ -188,15 +189,24 @@ fn usage_defaults() -> serde_json::Value {
         "usage": 0,
         "limit": 25,
         "workshopLimit": MAX_WORKSHOP_GENERATIONS_PER_DAY,
-        "reset": "midnight EST"
+        "reset": "midnight EST",
+        "active": null,
+        "reason": null
     })
 }
 
 #[tauri::command]
-pub async fn get_hubcap_usage(api_key: String) -> Result<serde_json::Value, String> {
+pub async fn get_hubcap_usage(
+    api_key: String,
+    quiet: Option<bool>,
+) -> Result<serde_json::Value, String> {
     if api_key.trim().is_empty() {
         return Ok(usage_defaults());
     }
+    // A Settings save that already told the user "not active" refreshes the
+    // badge without publishing the global warning again: the inline message is
+    // the feedback for that action, and a modal on top of it is noise.
+    let quiet = quiet.unwrap_or(false);
 
     // Serializing the callers is what makes the second one reuse the first
     // one's answer instead of repeating the request: whoever waits here finds
@@ -222,45 +232,55 @@ pub async fn get_hubcap_usage(api_key: String) -> Result<serde_json::Value, Stri
         .map(|snapshot| snapshot.api_key == api_key)
         .unwrap_or(false);
 
-    match HubcapClient::new(&api_key).get_usage_stats().await {
-        Ok(stats) => {
-            let limit = stats.role_daily_limit.or(stats.daily_limit).unwrap_or(25);
-            let usage = stats.daily_usage.unwrap_or(0);
-            let payload = serde_json::json!({
-                "usage": usage,
-                "limit": limit,
-                "workshopLimit": MAX_WORKSHOP_GENERATIONS_PER_DAY,
-                "reset": "midnight EST"
-            });
-            *cached = Some(UsageSnapshot {
-                api_key,
-                fetched: std::time::Instant::now(),
-                payload: payload.clone(),
-            });
-            Ok(payload)
-        }
-        Err(error) => {
-            // A stale number beats a fabricated zero: the badge would otherwise
-            // claim "0/25 used" precisely when the provider is unreachable
-            // (rate-limited, offline), which reads as "nothing was used".
-            if same_key_as_previous {
-                if let Some(payload) = previous {
-                    crate::desk_log_warn!(
-                        "settings",
-                        "Hubcap usage request failed; serving the last known snapshot: {}",
-                        error
-                    );
-                    return Ok(payload);
-                }
+    let status = if quiet {
+        HubcapClient::new_quiet(&api_key).check_key_status().await
+    } else {
+        HubcapClient::new(&api_key).check_key_status().await
+    };
+
+    if status.state == HubcapKeyState::Unknown {
+        // A stale number beats a fabricated zero: the badge would otherwise
+        // claim "0/25 used" precisely when the provider is unreachable
+        // (rate-limited, offline), which reads as "nothing was used". The
+        // definitive warning is never overwritten by this unknown answer.
+        if same_key_as_previous {
+            if let Some(payload) = previous {
+                crate::desk_log_warn!(
+                    "settings",
+                    "Hubcap usage request failed; serving the last known snapshot: {}",
+                    status.reason_str().unwrap_or("unknown")
+                );
+                return Ok(payload);
             }
-            crate::desk_log_warn!(
-                "settings",
-                "Hubcap usage request failed; returning local quota defaults: {}",
-                error
-            );
-            Ok(usage_defaults())
         }
+        crate::desk_log_warn!(
+            "settings",
+            "Hubcap usage request failed; returning local quota defaults: {}",
+            status.reason_str().unwrap_or("unknown")
+        );
+        let mut payload = usage_defaults();
+        payload["reason"] = serde_json::json!(status.reason_str());
+        payload["keyFingerprint"] = serde_json::json!(key_fingerprint_hex(&api_key));
+        return Ok(payload);
     }
+
+    let limit = status.limit.unwrap_or(25);
+    let usage = status.usage.unwrap_or(0);
+    let payload = serde_json::json!({
+        "usage": usage,
+        "limit": limit,
+        "workshopLimit": MAX_WORKSHOP_GENERATIONS_PER_DAY,
+        "reset": "midnight EST",
+        "active": status.active(),
+        "reason": status.reason_str(),
+        "keyFingerprint": key_fingerprint_hex(&api_key)
+    });
+    *cached = Some(UsageSnapshot {
+        api_key,
+        fetched: std::time::Instant::now(),
+        payload: payload.clone(),
+    });
+    Ok(payload)
 }
 
 #[tauri::command]

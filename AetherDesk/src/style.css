@@ -1712,6 +1712,10 @@ body {
   white-space: nowrap;
 }
 
+.settings-provider-badge--expired {
+  color: var(--color-danger);
+}
+
 /* Inline validation message under a settings input (e.g. a malformed App ID).
    Mirrors the `.settings-alert.error` accent without the alert chrome. */
 .settings-error {

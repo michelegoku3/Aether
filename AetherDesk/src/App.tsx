@@ -8,11 +8,13 @@ import type {
   MainContentUpdates,
 } from './layout/MainContent';
 import { LibraryGamesProvider } from './hooks/useLibraryGames';
+import { HubcapKeyExpiredModal } from './modals/HubcapKeyExpiredModal';
 import { SteamPathWarningModal } from './modals/SteamPathWarningModal';
 import { UnsavedChangesModal } from './modals/UnsavedChangesModal';
 import { useAppBootstrap } from './app/useAppBootstrap';
 import { useAppearanceRuntime } from './app/useAppearanceRuntime';
 import { useDllRuntime } from './app/useDllRuntime';
+import { useHubcapKeyStatus } from './app/useHubcapKeyStatus';
 import { useHubcapUsage } from './app/useHubcapUsage';
 import { useSteamRuntime } from './app/useSteamRuntime';
 import { useUnsavedNavigationGuard, useWindowCloseGuard } from './app/useUnsavedNavigationGuard';
@@ -24,6 +26,7 @@ export default function App() {
   const appearance = useAppearanceRuntime({ onSettingsApplied: dll.checkStatus });
   const updates = useUpdateCoordinator();
   const hubcap = useHubcapUsage();
+  const hubcapKey = useHubcapKeyStatus(hubcap.usage);
   const navigation = useUnsavedNavigationGuard();
 
   useAppBootstrap({
@@ -140,6 +143,17 @@ export default function App() {
 
         {navigation.showSteamPathWarning && (
           <SteamPathWarningModal onGoToSettings={navigation.goToSettings} onClose={navigation.closeSteamPathWarning} />
+        )}
+
+        {!navigation.showSteamPathWarning && hubcap.usage.hasKey && hubcapKey.inactive && !hubcapKey.dismissed && (
+          <HubcapKeyExpiredModal
+            reason={hubcapKey.reason}
+            onGoToSettings={() => {
+              hubcapKey.dismiss();
+              navigation.goToSettings();
+            }}
+            onClose={hubcapKey.dismiss}
+          />
         )}
       </div>
     </LibraryGamesProvider>

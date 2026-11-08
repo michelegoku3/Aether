@@ -4,6 +4,7 @@ use std::time::{Duration, Instant};
 use tokio::sync::Mutex as AsyncMutex;
 
 use super::client::HubcapClient;
+use super::key_status::{HubcapKeyReason, HubcapKeyState, HubcapKeyStatus};
 use super::network;
 use super::types::{
     http_failure_class, is_retryable_status, retry_delay, HubcapGenerationUsage, HubcapUserStats,
@@ -13,6 +14,32 @@ use crate::providers::health::{self, StoreSource};
 
 /// (SHA-256 fingerprint of the key, verification instant, outcome).
 type CachedValidation = Option<(Vec<u8>, Instant, bool)>;
+
+#[derive(Debug, Clone)]
+pub(crate) enum UserStatsError {
+    Unauthorized,
+    Unreachable(String),
+    Provider(String),
+}
+
+impl UserStatsError {
+    pub(crate) fn message(&self) -> String {
+        match self {
+            Self::Unauthorized => {
+                "Hubcap user stats rejected the credentials (HTTP 401/403)".to_string()
+            }
+            Self::Unreachable(message) | Self::Provider(message) => message.clone(),
+        }
+    }
+
+    pub(crate) fn reason(&self) -> HubcapKeyReason {
+        match self {
+            Self::Unauthorized => HubcapKeyReason::Unauthorized,
+            Self::Unreachable(_) => HubcapKeyReason::Unreachable,
+            Self::Provider(_) => HubcapKeyReason::ProviderError,
+        }
+    }
+}
 
 /// Session-wide validation cache. The fingerprint is the SHA-256 of the raw
 /// key, so a changed key is always re-validated immediately.
@@ -55,52 +82,18 @@ impl HubcapClient {
 
     async fn validate_api_key_uncached(&self) -> Result<bool, String> {
         crate::desk_log_info!("hubcap", "API key validation start endpoint=user/stats");
-        let url = format!("{}/user/stats", BASE_URL);
-        for attempt in 0..GENERATION_RETRY_ATTEMPTS {
-            let response = match self.client.get(&url).headers(self.headers()).send().await {
-                Ok(response) => response,
-                Err(error) if attempt + 1 < GENERATION_RETRY_ATTEMPTS => {
-                    crate::desk_log_warn!(
-                        "hubcap",
-                        "API key validation network error attempt={}/{}; retrying: {}",
-                        attempt + 1,
-                        GENERATION_RETRY_ATTEMPTS,
-                        error
-                    );
-                    tokio::time::sleep(Duration::from_millis(500 * (1u64 << attempt))).await;
-                    continue;
-                }
-                Err(error) => {
-                    crate::desk_log_error!(
-                        "hubcap",
-                        "API key validation network failure after {} attempt(s): {}",
-                        GENERATION_RETRY_ATTEMPTS,
-                        error
-                    );
-                    health::record(StoreSource::Hubcap, false);
-                    return Err(network::request_failed_message(&error));
-                }
-            };
-            // Any HTTP response, whatever its status, proves the host answered.
-            health::record(StoreSource::Hubcap, true);
-            if is_retryable_status(response.status()) && attempt + 1 < GENERATION_RETRY_ATTEMPTS {
-                let status = response.status();
-                crate::desk_log_warn!(
-                    "hubcap",
-                    "API key validation HTTP {} attempt={}/{}; retrying",
-                    status,
-                    attempt + 1,
-                    GENERATION_RETRY_ATTEMPTS
-                );
-                tokio::time::sleep(retry_delay(&response, attempt)).await;
-                continue;
-            }
-            if response.status().is_success() {
-                let stats = response
-                    .json::<HubcapUserStats>()
-                    .await
-                    .map_err(|error| format!("Failed to parse Hubcap account status: {error}"))?;
+        match self.fetch_user_stats("API key validation").await {
+            Ok(stats) => {
                 let active = stats.can_make_requests.unwrap_or(true);
+                let status = if active {
+                    HubcapKeyStatus::new(HubcapKeyState::Active, None)
+                } else {
+                    HubcapKeyStatus::new(
+                        HubcapKeyState::Inactive,
+                        Some(HubcapKeyReason::AccountInactive),
+                    )
+                };
+                self.record_state(&status);
                 if active {
                     crate::desk_log_info!("hubcap", "API key validation complete active=true");
                 } else {
@@ -109,35 +102,45 @@ impl HubcapClient {
                         "API key authenticated but account cannot make requests"
                     );
                 }
-                return Ok(active);
+                Ok(active)
             }
-            if response.status().as_u16() == 401 {
+            Err(UserStatsError::Unauthorized) => {
+                self.record_state(&HubcapKeyStatus::new(
+                    HubcapKeyState::Inactive,
+                    Some(HubcapKeyReason::Unauthorized),
+                ));
                 crate::desk_log_warn!(
                     "hubcap",
                     "API key validation complete active=false reason=unauthorized"
                 );
-                return Ok(false);
+                Ok(false)
             }
-            crate::desk_log_error!(
-                "hubcap",
-                "API key validation failed class={} HTTP {}",
-                http_failure_class(response.status()),
-                response.status()
-            );
-            return Err(format!("Server returned HTTP error: {}", response.status()));
+            Err(error) => {
+                crate::desk_log_error!("hubcap", "API key validation failed: {}", error.message());
+                Err(error.message())
+            }
         }
-        unreachable!("API key validation retry loop always returns")
     }
 
-    pub async fn get_usage_stats(&self) -> Result<HubcapUserStats, String> {
+    /// One `/user/stats` round-trip shared by validation, usage and the startup
+    /// key-status check. Transport and provider failures stay distinguishable
+    /// so a temporary outage is never reported as an expired key.
+    pub(crate) async fn fetch_user_stats(
+        &self,
+        context: &str,
+    ) -> Result<HubcapUserStats, UserStatsError> {
         let url = format!("{}/user/stats", BASE_URL);
         for attempt in 0..GENERATION_RETRY_ATTEMPTS {
-            let response = match self.client.get(&url).headers(self.headers()).send().await {
+            let response = match self
+                .send(self.client.get(&url).headers(self.headers()))
+                .await
+            {
                 Ok(response) => response,
                 Err(error) if attempt + 1 < GENERATION_RETRY_ATTEMPTS => {
                     crate::desk_log_warn!(
                         "hubcap",
-                        "Usage stats network error attempt={}/{}; retrying: {}",
+                        "{} network error attempt={}/{}; retrying: {}",
+                        context,
                         attempt + 1,
                         GENERATION_RETRY_ATTEMPTS,
                         error
@@ -148,21 +151,28 @@ impl HubcapClient {
                 Err(error) => {
                     crate::desk_log_error!(
                         "hubcap",
-                        "Usage stats network failure after {} attempt(s): {}",
+                        "{} network failure after {} attempt(s): {}",
+                        context,
                         GENERATION_RETRY_ATTEMPTS,
                         error
                     );
                     health::record(StoreSource::Hubcap, false);
-                    return Err(network::request_failed_message(&error));
+                    return Err(UserStatsError::Unreachable(
+                        network::request_failed_message(&error),
+                    ));
                 }
             };
             // Any HTTP response, whatever its status, proves the host answered.
             health::record(StoreSource::Hubcap, true);
+            if response.status().as_u16() == 401 || response.status().as_u16() == 403 {
+                return Err(UserStatsError::Unauthorized);
+            }
             if is_retryable_status(response.status()) && attempt + 1 < GENERATION_RETRY_ATTEMPTS {
                 let status = response.status();
                 crate::desk_log_warn!(
                     "hubcap",
-                    "Usage stats HTTP {} attempt={}/{}; retrying",
+                    "{} HTTP {} attempt={}/{}; retrying",
+                    context,
                     status,
                     attempt + 1,
                     GENERATION_RETRY_ATTEMPTS
@@ -171,26 +181,52 @@ impl HubcapClient {
                 continue;
             }
             if response.status().is_success() {
-                return response
-                    .json::<HubcapUserStats>()
-                    .await
-                    .map_err(|error| format!("Failed to parse user stats: {error}"));
+                return response.json::<HubcapUserStats>().await.map_err(|error| {
+                    UserStatsError::Provider(format!(
+                        "Failed to parse Hubcap account status: {error}"
+                    ))
+                });
             }
-            return Err(format!(
-                "Hubcap usage stats {} (HTTP {}): {}",
-                http_failure_class(response.status()),
-                response.status(),
-                response.status().canonical_reason().unwrap_or("Unknown")
-            ));
+            let status = response.status();
+            crate::desk_log_error!(
+                "hubcap",
+                "{} failed class={} HTTP {}",
+                context,
+                http_failure_class(status),
+                status
+            );
+            return Err(UserStatsError::Provider(format!(
+                "Host returned HTTP error: {status}"
+            )));
         }
-        unreachable!("usage stats retry loop always returns")
+        unreachable!("user stats retry loop always returns")
+    }
+
+    pub async fn get_usage_stats(&self) -> Result<HubcapUserStats, String> {
+        let stats = self
+            .fetch_user_stats("Usage stats")
+            .await
+            .map_err(|error| error.message())?;
+        let status = if stats.can_make_requests == Some(false) {
+            HubcapKeyStatus::new(
+                HubcapKeyState::Inactive,
+                Some(HubcapKeyReason::AccountInactive),
+            )
+        } else {
+            HubcapKeyStatus::new(HubcapKeyState::Active, None)
+        };
+        self.record_state(&status);
+        Ok(stats)
     }
 
     /// Returns the server-side generation quota and Steam readiness.
     pub async fn get_generation_usage(&self) -> Result<HubcapGenerationUsage, String> {
         let url = format!("{}/generate/usage", BASE_URL);
         for attempt in 0..GENERATION_RETRY_ATTEMPTS {
-            let response = match self.client.get(&url).headers(self.headers()).send().await {
+            let response = match self
+                .send(self.client.get(&url).headers(self.headers()))
+                .await
+            {
                 Ok(response) => response,
                 Err(_error) if attempt + 1 < GENERATION_RETRY_ATTEMPTS => {
                     crate::desk_log_debug!(

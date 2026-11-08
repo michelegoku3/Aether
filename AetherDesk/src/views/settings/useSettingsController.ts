@@ -16,7 +16,7 @@ type StatusKind = 'info' | 'success' | 'error';
 interface Params {
   /** The Settings tab is the only consumer of this bootstrap. */
   active: boolean;
-  onRefreshUsage: (forcedKey?: string) => Promise<void>;
+  onRefreshUsage: (forcedKey?: string, preloadedSettings?: AppSettings, options?: { quiet?: boolean }) => Promise<void>;
   onRefreshCustomCss: () => Promise<void>;
   onCustomCssChange: (enabled: boolean) => void;
   onPreviewPersonalWallpaper: (enabled: boolean, opacity: number) => void;
@@ -210,7 +210,6 @@ export function useSettingsController(params: Params) {
         return false;
       }
     }
-    let invalidApiKey = false;
     let apiKeyWarning = '';
     let hubcapKeyValid = false;
     if (form.apiKey.trim()) {
@@ -218,8 +217,8 @@ export function useSettingsController(params: Params) {
       try {
         hubcapKeyValid = Boolean(await invoke('validate_hubcap_key', { apiKey: form.apiKey.trim() }));
         if (!hubcapKeyValid) {
-          invalidApiKey = true;
-          apiKeyWarning = 'The Hubcap API key is invalid and was cleared; the rest of your settings were saved.';
+          apiKeyWarning =
+            'The Hubcap API key is not active (expired, revoked or invalid); it was kept so you can replace it.';
         }
       } catch (err) {
         apiKeyWarning = `Hubcap API key could not be validated (${toErrorMessage(err)}); the rest of your settings were saved anyway.`;
@@ -247,7 +246,7 @@ export function useSettingsController(params: Params) {
           /* best effort */
         }
       }
-      const settings = model.getLocalSettings(invalidApiKey ? { hubcap_api_key: '' } : {});
+      const settings = model.getLocalSettings();
       const hadDevtools = model.rawSettings.enable_webview_devtools;
       const hadIconEnabled = model.rawSettings.custom_icon_enabled;
       const hadTestUpdates = Boolean(model.rawSettings.enable_test_updates);
@@ -278,7 +277,6 @@ export function useSettingsController(params: Params) {
       }
       const wasCorrupt = settingsCorrupt;
       setSettingsCorrupt(false);
-      if (invalidApiKey) setField('apiKey', '');
       // Devtools follow the saved setting and only change on Save (never on
       // toggle): opening right after persisting satisfies the backend gate,
       // and closing needs no gate at all.
@@ -302,7 +300,11 @@ export function useSettingsController(params: Params) {
           : apiKeyWarning || `Settings saved successfully!${devtoolsNote}`,
         apiKeyWarning || devtoolsNote ? 'error' : 'success'
       );
-      await params.onRefreshUsage(invalidApiKey ? '' : form.apiKey);
+      // The inline message above is the feedback for a rejected key; the quiet
+      // refresh keeps the "Expired" badge without a second modal on top of it.
+      await params.onRefreshUsage(form.apiKey, undefined, {
+        quiet: Boolean(form.apiKey.trim()) && !hubcapKeyValid,
+      });
       await params.onRefreshCustomCss();
       await appearance.reload();
       // The Steam path may have changed: the picker must not keep stale names.

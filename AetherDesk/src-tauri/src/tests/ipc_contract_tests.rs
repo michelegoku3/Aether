@@ -747,8 +747,8 @@ fn no_wire_key_is_an_unseparated_compound_word() {
 const COMMON_SINGLE_WORDS: &[&str] = &[
     "base", // expected settings snapshot for conflict-aware three-way patch
     "code", "confirm", "content", "count", "date", "edits", "enabled", "folder", "level", "name",
-    "origin", "path", "query", "request", "settings", "site", "source", "start", "text", "title",
-    "url",
+    "origin", "path", "query", "quiet", "request", "settings", "site", "source", "start", "text",
+    "title", "url",
 ];
 
 #[test]

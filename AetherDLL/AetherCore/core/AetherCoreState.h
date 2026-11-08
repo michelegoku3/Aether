@@ -359,6 +359,13 @@ struct AetherCoreState {
     std::atomic<std::uint64_t> licenseReloadForcedCount{0};
     std::atomic<std::uint64_t> licenseReloadDirectCount{0};
 
+    // ---- Hubcap key check --------------------------------------------------
+    // Definitive saved-key verdict from the startup `/user/stats` check, read
+    // by StatusWriter: 0 = unknown, 1 = active, 2 = inactive. The key itself is
+    // never stored here.
+    std::atomic<int> hubcapKeyState{0};
+    std::atomic<std::int64_t> hubcapKeyCheckedEpoch{0};
+
     // ---- Configuration ----------------------------------------------------
     std::atomic<std::shared_ptr<const Settings>> settings{std::make_shared<const Settings>()};
 

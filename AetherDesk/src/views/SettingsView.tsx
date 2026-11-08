@@ -14,7 +14,7 @@ export type { SettingsGuard } from './settings/types';
 interface SettingsViewProps {
   /** Hidden views stay mounted; the editor hydrates on first activation. */
   active: boolean;
-  hubcapUsage: { usage: number; limit: number; hasKey: boolean };
+  hubcapUsage: { usage: number; limit: number; hasKey: boolean; active: boolean | null; reason?: string };
   onRefreshUsage: (forcedKey?: string) => Promise<void>;
   onRefreshCustomCss: () => Promise<void>;
   onCustomCssChange: (enabled: boolean) => void;

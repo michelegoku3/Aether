@@ -60,11 +60,12 @@ impl HubcapClient {
                 GENERATION_RETRY_ATTEMPTS
             );
             let response = match self
-                .client
-                .get(&url)
-                .headers(self.headers())
-                .timeout(Duration::from_secs(HUBCAP_PACKAGE_TIMEOUT_SECONDS))
-                .send()
+                .send(
+                    self.client
+                        .get(&url)
+                        .headers(self.headers())
+                        .timeout(Duration::from_secs(HUBCAP_PACKAGE_TIMEOUT_SECONDS)),
+                )
                 .await
             {
                 Ok(response) => {
@@ -180,7 +181,10 @@ impl HubcapClient {
     /// Lightweight existence check: does Hubcap have a manifest for this `app_id`?
     pub async fn has_manifest(&self, app_id: u32) -> bool {
         let url = format!("{}/status/{}", BASE_URL, app_id);
-        match self.client.get(&url).headers(self.headers()).send().await {
+        match self
+            .send(self.client.get(&url).headers(self.headers()))
+            .await
+        {
             Ok(resp) if resp.status().is_success() => {
                 match resp.json::<serde_json::Value>().await {
                     Ok(v) => {
@@ -249,10 +253,7 @@ impl HubcapClient {
 
         let url = format!("{}/manifest/{}/contents", BASE_URL, app_id);
         let response = self
-            .client
-            .get(&url)
-            .headers(self.headers())
-            .send()
+            .send(self.client.get(&url).headers(self.headers()))
             .await
             .map_err(|error| format!("Hubcap contents request failed for app {app_id}: {error}"))?;
         if !response.status().is_success() {

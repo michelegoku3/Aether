@@ -39,6 +39,7 @@ async fn clear_memory_caches() -> usize {
     removed += crate::steam::store::clear_suggest_cache();
     removed += crate::updater::github::clear_release_cache();
     removed += crate::providers::hubcap::auth::clear_validation_cache().await;
+    removed += usize::from(crate::providers::hubcap::key_status::clear());
     removed += usize::from(crate::providers::hubcap_generation::invalidate_usage_snapshot().await);
     removed
 }
