@@ -14,6 +14,7 @@
 //!     the whole Steam family and wait until the main process releases the
 //!     Steam folder.
 
+use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
@@ -122,66 +123,44 @@ fn is_under_game_root(exe: &Path, roots: &[PathBuf]) -> bool {
     })
 }
 
-/// Terminate every process whose executable lives under a Steam game folder.
-/// Returns how many were signalled; unkillable candidates are logged so a game
-/// that stays open is visible in the lifecycle log instead of vanishing.
-fn kill_steam_games(roots: &[PathBuf]) -> usize {
+/// Close every process whose executable lives under a Steam game folder and
+/// wait until they are gone. Returns the names that were matched.
+///
+/// The kill is retried on every poll: a bootstrapper can spawn the real game
+/// executable after the first snapshot, and a self-restarting Steam helper must
+/// not block the operation. A process that survives the whole window is named
+/// in the error: the popup promised the game would close, so silently
+/// continuing would hide the failure.
+fn close_running_games(roots: &[PathBuf]) -> Result<Vec<String>, String> {
     if roots.is_empty() {
-        return 0;
-    }
-    let mut sys = sysinfo::System::new_all();
-    sys.refresh_processes();
-    let mut killed = Vec::new();
-    let mut failed = Vec::new();
-    for process in sys.processes().values() {
-        let Some(exe) = process.exe() else {
-            continue;
-        };
-        if !is_under_game_root(exe, roots) {
-            continue;
-        }
-        let name = process.name().to_string();
-        if process.kill() {
-            killed.push(name);
-        } else {
-            failed.push(name);
-        }
-    }
-    if !failed.is_empty() {
-        crate::desk_log_warn!(
-            "lifecycle",
-            "Could not close game process(es): {}",
-            failed.join(", ")
-        );
-    }
-    if !killed.is_empty() {
-        std::thread::sleep(KILL_SETTLE);
-    }
-    killed.len()
-}
-
-fn snapshot_has_game(sys: &sysinfo::System, roots: &[PathBuf]) -> bool {
-    sys.processes()
-        .values()
-        .any(|p| p.exe().is_some_and(|exe| is_under_game_root(exe, roots)))
-}
-
-/// Block until no process runs from a Steam game folder, up to
-/// `GAME_GONE_TIMEOUT`. A survivor is reported: the popup promised the game
-/// would close, so silently continuing would hide the failure.
-fn wait_games_gone(roots: &[PathBuf]) -> bool {
-    if roots.is_empty() {
-        return true;
+        return Ok(Vec::new());
     }
     let deadline = Instant::now() + GAME_GONE_TIMEOUT;
     let mut sys = sysinfo::System::new_all();
+    let mut matched = BTreeSet::new();
     loop {
         sys.refresh_processes();
-        if !snapshot_has_game(&sys, roots) {
-            return true;
+        let mut alive = BTreeSet::new();
+        for process in sys.processes().values() {
+            let Some(exe) = process.exe() else {
+                continue;
+            };
+            if !is_under_game_root(exe, roots) {
+                continue;
+            }
+            let name = process.name().to_string();
+            matched.insert(name.clone());
+            alive.insert(name);
+            let _ = process.kill();
+        }
+        if alive.is_empty() {
+            return Ok(matched.into_iter().collect());
         }
         if Instant::now() >= deadline {
-            return false;
+            return Err(format!(
+                "These processes did not close: {}. Close them and try again.",
+                alive.into_iter().collect::<Vec<_>>().join(", ")
+            ));
         }
         std::thread::sleep(GONE_POLL);
     }
@@ -198,16 +177,14 @@ fn wait_games_gone(roots: &[PathBuf]) -> bool {
 /// otherwise make every future operation fail after waiting out the timeout.
 pub fn close_steam(steam_root: &Path) -> Result<(), String> {
     let roots = game_roots(steam_root);
-    let closed = kill_steam_games(&roots);
-    if closed > 0 {
+    let closed = close_running_games(&roots)?;
+    if !closed.is_empty() {
         crate::desk_log_info!(
             "lifecycle",
-            "Closed {} running game process(es) before Steam",
-            closed
+            "Closed {} game process(es) before Steam: {}",
+            closed.len(),
+            closed.join(", ")
         );
-    }
-    if !wait_games_gone(&roots) {
-        return Err("A running game did not close. Close the game and try again.".to_string());
     }
 
     kill_matching(is_steam_family_process_name);

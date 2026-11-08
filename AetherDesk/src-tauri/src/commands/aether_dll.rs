@@ -378,11 +378,12 @@ const STEAM_RUNNING_ERROR: &str =
 /// What a destructive Steam-side command must do about a running Steam.
 #[derive(Debug, PartialEq, Eq)]
 enum SteamGate {
-    /// Steam is not running (or the client did not need a decision).
+    /// No consent and Steam is not running: nothing to close.
     Proceed,
     /// Steam is running and the user never consented to closing it.
     Refuse,
-    /// Steam is running and the user said YES to the close popup.
+    /// The user said YES to the close popup: close Steam (if still running) and
+    /// every game running from its libraries.
     CloseSteam,
 }
 
@@ -415,13 +416,16 @@ fn ensure_steam_closed(steam_root: &std::path::Path, allow_steam_kill: bool) -> 
         SteamGate::CloseSteam => {
             crate::desk_log_info!(
                 "lifecycle",
-                "Closing Steam completely before an AetherDLL operation"
+                "Closing Steam and any running game before an AetherDLL operation"
             );
             crate::core::steam_process::close_steam(steam_root)?;
             // The monitor polls once a second; keep the Sidebar label honest
             // until the next scan.
             crate::core::steam_monitor::mark(false);
-            crate::desk_log_info!("lifecycle", "Steam closed; continuing with the operation");
+            crate::desk_log_info!(
+                "lifecycle",
+                "Steam close step finished; continuing with the operation"
+            );
             Ok(())
         }
     }
