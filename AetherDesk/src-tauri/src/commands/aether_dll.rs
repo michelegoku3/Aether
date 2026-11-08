@@ -178,10 +178,9 @@ pub async fn install_aether_dll(
 
     // File-system + process work: keep it off the async runtime so the
     // Windows wait for Steam to exit never blocks a tokio worker.
-    let allowed = allow_steam_kill;
     let check_root = steam_path.clone();
     tauri::async_runtime::spawn_blocking(move || {
-        ensure_steam_closed(std::path::Path::new(&check_root), allowed)
+        ensure_steam_closed(std::path::Path::new(&check_root), allow_steam_kill)
     })
     .await
     .map_err(|error| format!("Steam check failed to run: {error}"))??;
@@ -388,16 +387,23 @@ enum SteamGate {
 }
 
 fn steam_gate(steam_running: bool, allow_steam_kill: bool) -> SteamGate {
-    match (steam_running, allow_steam_kill) {
-        (false, _) => SteamGate::Proceed,
-        (true, false) => SteamGate::Refuse,
-        (true, true) => SteamGate::CloseSteam,
+    if allow_steam_kill {
+        // The user accepted the popup, which promised to close the game too.
+        // Steam may have exited between the probe and this command while a game
+        // kept running, so consent alone decides.
+        SteamGate::CloseSteam
+    } else if steam_running {
+        SteamGate::Refuse
+    } else {
+        SteamGate::Proceed
     }
 }
 
 /// Steam must not hold the DLLs while we replace them. `allow_steam_kill` is
-/// the user's YES from the close popup: without it the command refuses, so a
-/// stale or hostile client cannot make AetherDesk terminate Steam silently.
+/// the user's YES from the close popup: without it the command refuses even
+/// when Steam is open, so a stale or hostile client cannot make AetherDesk
+/// terminate anything silently. `steam_root` locates the game folders; it is
+/// read only when that consent exists.
 fn ensure_steam_closed(steam_root: &std::path::Path, allow_steam_kill: bool) -> Result<(), String> {
     // Do not rely on the cached UI monitor for destructive file changes.
     match steam_gate(
@@ -426,9 +432,16 @@ mod tests {
     use super::*;
 
     #[test]
-    fn a_closed_steam_needs_no_confirmation() {
+    fn without_consent_a_closed_steam_is_left_alone() {
         assert_eq!(steam_gate(false, false), SteamGate::Proceed);
-        assert_eq!(steam_gate(false, true), SteamGate::Proceed);
+    }
+
+    #[test]
+    fn consent_closes_whatever_is_still_running() {
+        assert_eq!(steam_gate(true, true), SteamGate::CloseSteam);
+        // Steam can exit between the probe and the command: a game can outlive
+        // it, and the popup promised to close the game too.
+        assert_eq!(steam_gate(false, true), SteamGate::CloseSteam);
     }
 
     #[test]
@@ -438,10 +451,5 @@ mod tests {
         // the popup existed: users must still be told to close Steam.
         assert!(STEAM_RUNNING_ERROR.starts_with("Steam is currently running."));
         assert!(STEAM_RUNNING_ERROR.contains("Close Steam completely"));
-    }
-
-    #[test]
-    fn an_open_steam_with_consent_is_closed() {
-        assert_eq!(steam_gate(true, true), SteamGate::CloseSteam);
     }
 }

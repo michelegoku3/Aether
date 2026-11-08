@@ -19,6 +19,9 @@ use std::time::{Duration, Instant};
 
 const KILL_SETTLE: Duration = Duration::from_millis(600);
 const GONE_TIMEOUT: Duration = Duration::from_millis(8000);
+/// Game processes are terminated directly (not asked to quit), so this only
+/// covers the OS reaping them; a survivor is a real failure worth reporting.
+const GAME_GONE_TIMEOUT: Duration = Duration::from_secs(3);
 const GONE_POLL: Duration = Duration::from_millis(250);
 
 fn is_steam_process_name(name: &str) -> bool {
@@ -77,13 +80,27 @@ pub fn kill_steam() -> bool {
 
 /// Directories a Steam game runs from: `<library>/steamapps/common` for the
 /// main install and every extra library.
+///
+/// This also covers the tools Steam keeps there (Common Redistributables,
+/// SteamVR): they only run while the user is using Steam, and closing them is
+/// the same "Steam is going away" outcome.
 fn game_roots(steam_root: &Path) -> Vec<PathBuf> {
-    crate::steam::library::SteamLibraryScanner::new(steam_root)
+    let roots: Vec<PathBuf> = crate::steam::library::SteamLibraryScanner::new(steam_root)
         .discover_library_paths()
         .into_iter()
         .map(|library| library.join("steamapps").join("common"))
         .filter(|path| path.is_dir())
-        .collect()
+        .collect();
+    crate::desk_log_info!(
+        "lifecycle",
+        "Steam game roots: {}",
+        roots
+            .iter()
+            .map(|path| path.display().to_string())
+            .collect::<Vec<_>>()
+            .join(", ")
+    );
+    roots
 }
 
 fn normalized_path(path: &Path) -> String {
@@ -106,26 +123,68 @@ fn is_under_game_root(exe: &Path, roots: &[PathBuf]) -> bool {
 }
 
 /// Terminate every process whose executable lives under a Steam game folder.
-/// Returns the names that were signalled, for the lifecycle log.
-fn kill_steam_games(roots: &[PathBuf]) -> Vec<String> {
+/// Returns how many were signalled; unkillable candidates are logged so a game
+/// that stays open is visible in the lifecycle log instead of vanishing.
+fn kill_steam_games(roots: &[PathBuf]) -> usize {
     if roots.is_empty() {
-        return Vec::new();
+        return 0;
     }
     let mut sys = sysinfo::System::new_all();
     sys.refresh_processes();
     let mut killed = Vec::new();
+    let mut failed = Vec::new();
     for process in sys.processes().values() {
         let Some(exe) = process.exe() else {
             continue;
         };
-        if is_under_game_root(exe, roots) && process.kill() {
-            killed.push(process.name().to_string());
+        if !is_under_game_root(exe, roots) {
+            continue;
         }
+        let name = process.name().to_string();
+        if process.kill() {
+            killed.push(name);
+        } else {
+            failed.push(name);
+        }
+    }
+    if !failed.is_empty() {
+        crate::desk_log_warn!(
+            "lifecycle",
+            "Could not close game process(es): {}",
+            failed.join(", ")
+        );
     }
     if !killed.is_empty() {
         std::thread::sleep(KILL_SETTLE);
     }
-    killed
+    killed.len()
+}
+
+fn snapshot_has_game(sys: &sysinfo::System, roots: &[PathBuf]) -> bool {
+    sys.processes()
+        .values()
+        .any(|p| p.exe().is_some_and(|exe| is_under_game_root(exe, roots)))
+}
+
+/// Block until no process runs from a Steam game folder, up to
+/// `GAME_GONE_TIMEOUT`. A survivor is reported: the popup promised the game
+/// would close, so silently continuing would hide the failure.
+fn wait_games_gone(roots: &[PathBuf]) -> bool {
+    if roots.is_empty() {
+        return true;
+    }
+    let deadline = Instant::now() + GAME_GONE_TIMEOUT;
+    let mut sys = sysinfo::System::new_all();
+    loop {
+        sys.refresh_processes();
+        if !snapshot_has_game(&sys, roots) {
+            return true;
+        }
+        if Instant::now() >= deadline {
+            return false;
+        }
+        std::thread::sleep(GONE_POLL);
+    }
 }
 
 /// Close Steam completely and wait until `steam.exe` releases the Steam folder.
@@ -138,14 +197,17 @@ fn kill_steam_games(roots: &[PathBuf]) -> Vec<String> {
 /// result: a stale `steamwebhelper.exe` (or one spawned by a dying Steam) would
 /// otherwise make every future operation fail after waiting out the timeout.
 pub fn close_steam(steam_root: &Path) -> Result<(), String> {
-    let killed_games = kill_steam_games(&game_roots(steam_root));
-    if !killed_games.is_empty() {
+    let roots = game_roots(steam_root);
+    let closed = kill_steam_games(&roots);
+    if closed > 0 {
         crate::desk_log_info!(
             "lifecycle",
-            "Closed {} running game process(es) before Steam: {}",
-            killed_games.len(),
-            killed_games.join(", ")
+            "Closed {} running game process(es) before Steam",
+            closed
         );
+    }
+    if !wait_games_gone(&roots) {
+        return Err("A running game did not close. Close the game and try again.".to_string());
     }
 
     kill_matching(is_steam_family_process_name);
@@ -230,5 +292,32 @@ mod tests {
             &[PathBuf::from(r"C:\SteamLibrary\steamapps\common\Skyrim")]
         ));
         assert!(!is_under_game_root(Path::new(r"C:\Games\game.exe"), &roots));
+    }
+
+    #[test]
+    fn game_roots_cover_every_library_with_a_common_folder() {
+        let tmp = tempfile::tempdir().unwrap();
+        let steam = tmp.path().join("Steam");
+        let extra = tmp.path().join("Library");
+        let empty = tmp.path().join("Empty");
+        std::fs::create_dir_all(steam.join("steamapps").join("common")).unwrap();
+        std::fs::create_dir_all(extra.join("steamapps").join("common")).unwrap();
+        std::fs::create_dir_all(empty.join("steamapps")).unwrap();
+        std::fs::write(
+            steam.join("steamapps").join("libraryfolders.vdf"),
+            format!(
+                "\"libraryfolders\"\n{{\n\t\"1\"\n\t{{\n\t\t\"path\"\t\t\"{}\"\n\t}}\n\t\"2\"\n\t{{\n\t\t\"path\"\t\t\"{}\"\n\t}}\n}}\n",
+                extra.display(),
+                empty.display()
+            ),
+        )
+        .unwrap();
+
+        let roots = game_roots(&steam);
+
+        assert!(roots.contains(&steam.join("steamapps").join("common")));
+        assert!(roots.contains(&extra.join("steamapps").join("common")));
+        // A library without a common folder contributes nothing.
+        assert_eq!(roots.len(), 2);
     }
 }
