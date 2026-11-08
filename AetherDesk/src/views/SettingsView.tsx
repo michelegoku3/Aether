@@ -1,6 +1,7 @@
 import { memo, type FormEvent } from 'react';
 import { OstWarningModal } from '../modals/OstWarningModal';
 import { HubcapUpdateWarningModal } from '../modals/HubcapUpdateWarningModal';
+import { ResetSettingsConfirmModal } from '../modals/ResetSettingsConfirmModal';
 import { SettingsAetherSection } from './settings/SettingsAetherSection';
 import { SettingsSteamSection } from './settings/SettingsSteamSection';
 import { SettingsProvidersSection } from './settings/SettingsProvidersSection';
@@ -187,7 +188,7 @@ export const SettingsView = memo(function SettingsView(props: SettingsViewProps)
               backgroundColor: '#1c1c21',
               border: '1px solid var(--border-color)',
             }}
-            onClick={() => void c.reset()}
+            onClick={() => c.requestReset()}
           >
             Reset Settings
           </button>
@@ -197,6 +198,13 @@ export const SettingsView = memo(function SettingsView(props: SettingsViewProps)
       {c.showHubcapWarning && <HubcapUpdateWarningModal onClose={() => c.setShowHubcapWarning(false)} />}
       {c.showOstWarning && (
         <OstWarningModal onConfirm={() => void c.confirmOst()} onCancel={() => c.setShowOstWarning(false)} />
+      )}
+      {c.resetConfirmOpen && (
+        <ResetSettingsConfirmModal
+          busy={c.resetBusy}
+          onConfirm={() => void c.confirmReset()}
+          onCancel={c.cancelReset}
+        />
       )}
       <LuaToolsLoginModal
         open={lua.modalOpen}

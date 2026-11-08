@@ -35,6 +35,8 @@ export function useSettingsController(params: Params) {
   const [settingsCorrupt, setSettingsCorrupt] = useState(false);
   const [showHubcapWarning, setShowHubcapWarning] = useState(false);
   const [showOstWarning, setShowOstWarning] = useState(false);
+  const [resetConfirmOpen, setResetConfirmOpen] = useState(false);
+  const [resetBusy, setResetBusy] = useState(false);
   const [useOstSource, setUseOstSource] = useState(false);
   const [manifestRestoreOnStartup, setManifestRestoreOnStartup] = useState(true);
   const [presenceDefaultShowOnline, setPresenceDefaultShowOnline] = useState(true);
@@ -337,6 +339,7 @@ export function useSettingsController(params: Params) {
   }, [applySettings, params, showStatus]);
 
   const reset = useCallback(async () => {
+    setResetBusy(true);
     params.onPreviewPersonalWallpaper(false, 20);
     params.onPreviewAlternativeCards(100, 50);
     try {
@@ -353,8 +356,19 @@ export function useSettingsController(params: Params) {
       await appearance.reload();
     } catch (err) {
       showStatus(`Failed to reset settings: ${err}`, 'error');
+    } finally {
+      setResetBusy(false);
     }
   }, [appearance, applySettings, params, showStatus]);
+
+  // Reset is destructive and irreversible, so it goes through a confirmation
+  // dialog; `reset` itself only runs after the user says yes.
+  const requestReset = useCallback(() => setResetConfirmOpen(true), []);
+  const cancelReset = useCallback(() => setResetConfirmOpen(false), []);
+  const confirmReset = useCallback(async () => {
+    await reset();
+    setResetConfirmOpen(false);
+  }, [reset]);
 
   return {
     form,
@@ -371,6 +385,11 @@ export function useSettingsController(params: Params) {
     setShowHubcapWarning,
     showOstWarning,
     setShowOstWarning,
+    resetConfirmOpen,
+    resetBusy,
+    requestReset,
+    cancelReset,
+    confirmReset,
     useOstSource,
     setUseOstSource,
     manifestRestoreOnStartup,
