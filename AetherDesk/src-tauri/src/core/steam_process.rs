@@ -193,6 +193,18 @@ pub fn close_steam(steam_root: &Path) -> Result<(), String> {
     }
     // Second pass: helpers that outlived the main process.
     kill_matching(is_steam_helper_process_name);
+
+    // One last sweep: a game can finish bootstrapping while Steam shuts down,
+    // after the pre-kill snapshot was clean.
+    let late = close_running_games(&roots)?;
+    if !late.is_empty() {
+        crate::desk_log_info!(
+            "lifecycle",
+            "Closed {} game process(es) spawned during the Steam shutdown: {}",
+            late.len(),
+            late.join(", ")
+        );
+    }
     Ok(())
 }
 
