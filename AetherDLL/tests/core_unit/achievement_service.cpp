@@ -7,7 +7,7 @@
 #include "hooks/wire/AchievementUiPolicy.h"
 #include "steam_messages.pb.h"
 
-// Golden blobs captured from the beta client (build 1793740892) while Steam
+// Golden blobs captured from the client (build 1793740892) while Steam
 // showed a game page's Achievements tab. They pin the field numbers and wire
 // types of the two service messages Aether rebuilds: a proto edit that moves a
 // field changes what the client sees, so the test compares against Valve's own

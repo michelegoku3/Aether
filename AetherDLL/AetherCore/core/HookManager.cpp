@@ -121,7 +121,7 @@ bool HookManager::InstallAll() {
             std::erase_if(missed_, [&](const MissedHook& m) { return m.name == hook.name; });
             diag::Record("hook_installed", hook.name);
         } else {
-            // A missing redirect can be retried every 500 ms. Record one miss
+            // A missing module can be retried every 500 ms. Record one miss
             // per hook, not one for each attempt; clear it on later success.
             auto missed =
                 std::find_if(missed_.begin(), missed_.end(), [&](const MissedHook& m) { return m.name == hook.name; });

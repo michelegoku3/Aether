@@ -69,6 +69,8 @@ std::vector<std::string> CollectAcfWatchDirs() { return steamlibrary::SteamAppsD
 //    Resolve  paths           (depends on: DLL handle)
 //    1. Settings               (depends on: logger — config errors are logged)
 //       PinSelf                (depends on: nothing; module handle already valid)
+//    2c. Stylesheet pass        (depends on: resolve + settings; before the
+//                              client reads sp.css)
 //    3. BuildId                (depends on: nothing; diagnostic only, never fatal)
 //    4. Steamclient attach     (depends on: steamInstallPath from ResolvePaths)
 //    5. steamclient SHA        (depends on: steamclientPath resolved)
@@ -76,7 +78,9 @@ std::vector<std::string> CollectAcfWatchDirs() { return steamlibrary::SteamAppsD
 //    7. IPC spec               (depends on: pattern engine — patternDir created)
 //    8. Lua scripts            (depends on: nothing; runs standalone sandbox)
 //    9. Hook install           (depends on: steamclient attach + pattern engine + lua maps)
-//   10. DirWatch               (depends on: lua scripts — startup files already
+//   10. Safety nets            (achievement backup, manifest restore, owner
+//                              policy, depot repair, donor probe)
+//   10f. DirWatch              (depends on: lua scripts — startup files already
 //                              scanned, so they don't look like hot-reload adds)
 //   11. Steam client channel   (depends on: resolve + logger + status writer;
 //                              the beta notice replaces the Hubcap one)
@@ -323,7 +327,7 @@ void StartSafetyNetsStage() {
 }
 
 void StartWatchersStage(const BootContext& ctx) {
-    // 10. DirWatch: starts the Lua hot-reload watcher so games can be
+    // 10f. DirWatch: starts the Lua hot-reload watcher so games can be
     //    added/removed without restarting Steam. Runs AFTER the initial
     //    Lua scan so startup files do not look like hot-reload additions.
     //    Depends on: luaDir resolved + luaExtraPaths from settings.

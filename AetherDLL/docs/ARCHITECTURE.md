@@ -18,6 +18,8 @@ the fast build loop ([`quick-build.md`](quick-build.md)).
 - [Naming guidance](#naming-guidance)
 - [Review checklist for new state](#review-checklist-for-new-state)
 - [Achievement diagnostics (logging + backup)](#achievement-diagnostics-logging--backup)
+- [Client achievement page (service path)](#client-achievement-page-service-path)
+- [Donor rotation and schema publication](#donor-rotation-and-schema-publication)
 - [Runtime publication and lifecycle](#runtime-publication-and-lifecycle)
 - [Event-driven persistence, workers and hot paths](#event-driven-persistence-workers-and-hot-paths)
 - [Manifest acquisition, presence session and module splits](#manifest-acquisition-presence-session-and-module-splits)

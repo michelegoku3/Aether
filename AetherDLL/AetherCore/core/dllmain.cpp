@@ -61,7 +61,7 @@ void Shutdown() {
     // installed (some one-shot jobs send frames via hook).
     ac::workers::Shutdown();
     ac::pipewatch::Reset();
-    // Retry hooks (steamui redirect + late patterns) are workers: the stop
+    // Retry hooks (steamui attach + late patterns) are workers: the stop
     // requested here and the join inside workers::Shutdown() already
     // happened above, so no re-arm is possible during shutdown.
     ac::bootstrap::RequestRetryStop();

@@ -51,7 +51,7 @@ void AchievementSchema() {
     using ac::achieve::ParseStatsSchema;
     using ac::achieve::StatsSchema;
 
-    // Mirrors the shape measured on the beta client: the stats section sits
+    // Mirrors the shape measured on the client: the stats section sits
     // under the appid section, achievement bits live in "<bucket>.bits", and the
     // counter names a stat declared far below.
     Bin schema;

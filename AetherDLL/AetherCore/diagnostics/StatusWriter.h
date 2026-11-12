@@ -10,10 +10,12 @@
 //
 // Schema v9 (top-level keys include):
 //   schema_version, ts
-//   build_id, build_config, build_time, steamclient_attach
+//   build_id, build_config, build_time,
+//     steamclient_attach ("live-mapped" | "live-not-mapped" | "path-invalid")
 //   steam_beta_branch ("" = stable client, otherwise the branch name)
 //   steamclient_sha, steamclient_toml_found, steamclient_pattern_source
-//   steamui_sha, steamui_toml_found, steamui_pattern_source
+//   steamui_sha, steamui_attach ("mapped" | "not-mapped" | "path-invalid"),
+//     steamui_toml_found, steamui_pattern_source
 //   netpacket_abi_layout, netpacket_abi_data_off, netpacket_abi_resolved,
 //     netpacket_abi_probe_attempts, netpacket_abi_confirmations,
 //     netpacket_abi_write_rejects, netpacket_abi_hint_source
@@ -22,11 +24,17 @@
 //   hooks_installed_count, hooks_missed_count, hooks_alias_count
 //   wire_eresult_events, wire_access_denied_events, wire_transport_candidate_events
 //   cloud_blocked_events
-//   package0_captured, package0_published
+//   package0_captured, package0_published, package0_app_ids
 //   config_store_user_local_captured, config_store_cached_app_tickets
 //   lua_files_loaded, configured_depots, access_tokens, manifest_overrides
 //   membership_library_roots, membership_owned, membership_spoofed,
 //     membership_family_shared, membership_banner_family
+//   overview_fills, overview_writes, overview_clears, overview_restores,
+//     overview_rejects, overview_retired, overview_hidden,
+//     overview_probe ("latched" | "unproven" | "rejected:<reason>")
+//   overview_rechecks, overview_recheck_pending,
+//     recheck_state ("ready" | "no-source" | "unsupported"),
+//     restore_state ("ready" | "no-controller" | "no-shape" | "unsupported")
 //   eticket_backend_configured, eticket_mint_successes, eticket_mint_failures,
 //     eticket_runtime_cache_entries
 //   ticket_forge_successes, ticket_forge_failures

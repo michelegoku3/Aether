@@ -53,7 +53,7 @@ bool InitLuaStage();
 // Steamclient hook batch + late-pattern retry. Always true.
 void InstallHooksStage();
 
-// Achievement backup, manifest restore, owner policy and stylesheet pass.
+// Achievement backup, manifest restore, owner policy, depot repair and donor probe.
 // Always true (best-effort).
 void StartSafetyNetsStage();
 

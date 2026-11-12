@@ -13,7 +13,7 @@ namespace ac::achieve {
 namespace {
 
 // Walks the schema once. The "stats" section sits under the appid section in
-// the schemas measured on the beta client, but a schema that puts it at the top
+// the schemas measured on the client, but a schema that puts it at the top
 // level parses too: every depth below is relative to where "stats" was found.
 //
 // Achievement bucket names and the stat names an operands points at live in the
