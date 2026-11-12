@@ -10,7 +10,7 @@
 //
 // Schema v9 (top-level keys include):
 //   schema_version, ts
-//   build_id, build_config, build_time, diversion_outcome
+//   build_id, build_config, build_time, steamclient_attach
 //   steam_beta_branch ("" = stable client, otherwise the branch name)
 //   steamclient_sha, steamclient_toml_found, steamclient_pattern_source
 //   steamui_sha, steamui_toml_found, steamui_pattern_source
@@ -25,6 +25,8 @@
 //   package0_captured, package0_published
 //   config_store_user_local_captured, config_store_cached_app_tickets
 //   lua_files_loaded, configured_depots, access_tokens, manifest_overrides
+//   membership_library_roots, membership_owned, membership_spoofed,
+//     membership_family_shared, membership_banner_family
 //   eticket_backend_configured, eticket_mint_successes, eticket_mint_failures,
 //     eticket_runtime_cache_entries
 //   ticket_forge_successes, ticket_forge_failures
@@ -35,6 +37,11 @@
 //     online_payload_inject_successes, online_payload_inject_failures
 //   pipewatch_snapshots
 //   ipc_spec_loaded, ipc_spec_entries
+//   achievement_service_calls, achievement_schemas, achievement_rebuilt,
+//     achievement_passthrough, achievement_held, achievement_delivered,
+//     achievement_progress_values, achievement_service_state,
+//     achievement_last_reason, achievement_schemas_cached,
+//     achievement_states_cached, achievement_held_now
 //   hooks_installed_list[], hooks_missed_list[] ("Name (reason)"), diagnostics[]
 //
 // ---------------------------------------------------------------------------

@@ -13,7 +13,7 @@ namespace ac::capture {
 
 // Resolves CUtlBuffer::EnsureCapacity from the pattern table. Safe to call once
 // during hook install; if unresolved, EnsureBufferSize degrades to a no-op grow.
-void Init(HMODULE diversion);
+void Init(HMODULE steamclient);
 
 // The app id Steam reports for the current pipe, or 0 if the engine pointer has
 // not been captured yet.

@@ -256,6 +256,9 @@ impl DllInstaller {
             .map(|file_name| self.steam_path.join(file_name))
             .collect();
         files.push(self.steam_path.join("steam.cfg"));
+        // Legacy: older builds wrote a copy of steamclient64.dll here and
+        // redirected SteamUI to it. The DLL now hooks the live client, but an
+        // existing copy must still be removed on uninstall/reset.
         files.push(self.steam_path.join("bin").join("acoverlay.dll"));
 
         files

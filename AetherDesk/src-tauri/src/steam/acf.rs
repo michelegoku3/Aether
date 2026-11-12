@@ -48,10 +48,12 @@ pub struct InstalledDepotRepair {
 
 /// Owns minimal, safe edits of an existing `appmanifest_*.acf` file.
 ///
-/// It only touches fields Steam itself manages when applying a downgrade:
-/// `AppState.buildid` and `AppState.TargetBuildID`. Everything else — sizes,
-/// StateFlags, InstalledDepots, MountedDepots, AutoUpdateBehavior — is left
-/// untouched (version pinning against Steam's updater is LumaCore's job).
+/// The only field it writes is `InstalledDepots`, and only to restore a GID
+/// that exists locally ([`Self::repair_installed_depots`]). `buildid`,
+/// `TargetBuildID`, the byte counters, `SizeOnDisk` and `StateFlags` describe
+/// what Steam installed and are only read here: the Lua pins are the single
+/// statement of which build the user wants, and a version apply writes nothing
+/// else.
 ///
 /// `InstalledDepots` in particular is never written from a pin: it records
 /// which manifest Steam actually installed, and Steam computes the update
@@ -60,9 +62,8 @@ pub struct InstalledDepotRepair {
 /// manifest request fails forever (`Access Denied` from the CM, "No
 /// connection" in the UI). When that mismatch already exists,
 /// [`Self::repair_installed_depots`] restores the GID of the manifest on disk.
-/// Mirrors the behaviour of SFF's `_sync_acf_downgrade` for the build fields,
-/// including the atomic write, the read-only flag dance on Windows and a
-/// post-write verification re-read.
+/// The repair writes atomically and preserves the read-only attribute Steam
+/// leaves on some library files.
 pub struct SteamAcfEditor {
     path: PathBuf,
 }
@@ -83,8 +84,37 @@ impl SteamAcfEditor {
     }
 
     /// Current `AppState.buildid` value, if present.
+    ///
+    /// Read-only: `buildid` records what Steam installed, so no Aether code
+    /// writes it. Kept as the read half of the ACF contract, for diagnostics.
+    #[allow(dead_code)] // no in-tree caller: a version apply only reads the ACF
     pub fn build_id(&self) -> Result<String, String> {
-        Self::find_value(&self.read_raw()?, "buildid")
+        let content = self.read_raw()?;
+        Self::read_build_fields(&content)
+            .0
+            .ok_or_else(|| format!("buildid is missing from {}", self.path.display()))
+    }
+
+    /// `AppState.buildid` and `AppState.TargetBuildID` as Steam wrote them —
+    /// the first line of each key, `None` when the key is absent. Pure parse,
+    /// so the contract is pinned without touching a file.
+    fn read_build_fields(content: &str) -> (Option<String>, Option<String>) {
+        let mut build_id = None;
+        let mut target_build_id = None;
+        for line in content.lines() {
+            let Some(caps) = KEY_VALUE_RE.captures(line) else {
+                continue;
+            };
+            if build_id.is_none() && caps[1].eq_ignore_ascii_case("buildid") {
+                build_id = Some(caps[2].to_string());
+            } else if target_build_id.is_none() && caps[1].eq_ignore_ascii_case("targetbuildid") {
+                target_build_id = Some(caps[2].to_string());
+            }
+            if build_id.is_some() && target_build_id.is_some() {
+                break;
+            }
+        }
+        (build_id, target_build_id)
     }
 
     /// `InstalledDepots[depot_id].manifest`: the manifest GID Steam declares
@@ -382,27 +412,6 @@ impl SteamAcfEditor {
         Ok(metadata.permissions().readonly())
     }
 
-    /// Applies a build downgrade to the ACF. Returns an error when the file
-    /// cannot be read/written (missing, locked by Steam, permissions); the
-    /// caller logs a WARN and continues (best-effort metadata sync).
-    pub fn apply_build(&self, build_id: u64) -> Result<(), String> {
-        let content = self.read_raw()?;
-        let lines: Vec<String> = content.lines().map(str::to_string).collect();
-        let new_content = Self::rewrite_content(&lines, build_id)?;
-        self.write_content(&content, &new_content)?;
-
-        // Verify the write actually stuck (file locked by Steam → fail here).
-        let written = self.build_id()?;
-        if written != build_id.to_string() {
-            return Err(format!(
-                "Verification failed: buildid is '{written}' instead of '{}' in {}",
-                build_id,
-                self.path.display()
-            ));
-        }
-        Ok(())
-    }
-
     /// Atomic write with the read-only dance Steam leaves on some libraries.
     fn write_content(&self, current: &str, next: &str) -> Result<(), String> {
         let was_readonly = self.is_readonly()?;
@@ -436,45 +445,6 @@ impl SteamAcfEditor {
         })
     }
 
-    /// Line-based rewrite: only the build lines change, everything else is
-    /// preserved byte-for-byte.
-    fn rewrite_content(lines: &[String], build_id: u64) -> Result<String, String> {
-        let mut out = lines.to_vec();
-        let build_id_str = build_id.to_string();
-
-        // 1. AppState.buildid — replace, or insert after "appid" if missing.
-        if let Some(index) = Self::find_key_line(&out, "buildid") {
-            out[index] = Self::rewrite_value(&out[index], "buildid", &build_id_str)?;
-        } else if let Some(appid_line) = Self::find_key_line(&out, "appid") {
-            out.insert(
-                appid_line + 1,
-                format!("\t\"buildid\"\t\t\"{}\"", build_id_str),
-            );
-        }
-
-        // 2. AppState.TargetBuildID — replace, or insert after "buildid".
-        if let Some(index) = Self::find_key_line(&out, "targetbuildid") {
-            out[index] = Self::rewrite_value(&out[index], "targetbuildid", &build_id_str)?;
-        } else if let Some(buildid_line) = Self::find_key_line(&out, "buildid") {
-            out.insert(
-                buildid_line + 1,
-                format!("\t\"TargetBuildID\"\t\t\"{}\"", build_id_str),
-            );
-        }
-
-        Ok(out.join("\n") + "\n")
-    }
-
-    /// Index of the first line starting with `"key"` followed by a value.
-    fn find_key_line(lines: &[String], key: &str) -> Option<usize> {
-        lines.iter().position(|line| {
-            KEY_VALUE_RE
-                .captures(line)
-                .map(|caps| caps[1].eq_ignore_ascii_case(key))
-                .unwrap_or(false)
-        })
-    }
-
     /// Replaces only the value of a VDF key line, keeping formatting.
     fn rewrite_value(line: &str, key: &str, new_value: &str) -> Result<String, String> {
         let caps = VALUE_REWRITE_RE
@@ -492,21 +462,6 @@ impl SteamAcfEditor {
         }
         Ok(format!("{}\"{}\"{}", &caps[1], new_value, &caps[2]))
     }
-
-    /// First `"key" "value"` pair in the raw content.
-    fn find_value(content: &str, key: &str) -> Result<String, String> {
-        for line in content.lines() {
-            if let Some(caps) = KEY_VALUE_RE.captures(line) {
-                if caps[1].eq_ignore_ascii_case(key) {
-                    return Ok(caps[2].to_string());
-                }
-            }
-        }
-        Err(format!(
-            "Key '{key}' not found in {}",
-            content.lines().count()
-        ))
-    }
 }
 
 #[cfg(test)]
@@ -515,22 +470,20 @@ mod tests {
 
     const ACF: &str = "\"AppState\"\n{\n\t\"appid\"\t\t\"730\"\n\t\"Universe\"\t\t\"1\"\n\t\"name\"\t\t\"Counter-Strike 2\"\n\t\"StateFlags\"\t\t\"4\"\n\t\"installdir\"\t\t\"Counter-Strike Global Offensive\"\n\t\"LastUpdated\"\t\t\"1723456789\"\n\t\"UpdateResult\"\t\t\"0\"\n\t\"SizeOnDisk\"\t\t\"38173519462\"\n\t\"buildid\"\t\t\"24537688\"\n\t\"TargetBuildID\"\t\t\"24537688\"\n\t\"LastOwner\"\t\t\"76561198000000000\"\n\t\"BytesToDownload\"\t\t\"0\"\n\t\"BytesDownloaded\"\t\t\"0\"\n\t\"AutoUpdateBehavior\"\t\t\"1\"\n\t\"AllowOtherDownloadsWhileRunning\"\t\t\"0\"\n\t\"ScheduledAutoUpdate\"\t\t\"0\"\n\t\"InstalledDepots\"\n\t{\n\t\t\"2347770\"\n\t\t{\n\t\t\t\"manifest\"\t\t\"2991528520052157173\"\n\t\t\t\"size\"\t\t\"38173519462\"\n\t\t}\n\t\t\"2347771\"\n\t\t{\n\t\t\t\"manifest\"\t\t\"8124921270987929782\"\n\t\t\t\"size\"\t\t\"0\"\n\t\t\t\"dlcappid\"\t\t\"0\"\n\t\t}\n\t}\n\t\"MountedDepots\"\n\t{\n\t\t\"2347770\"\t\t\"2991528520052157173\"\n\t}\n}\n";
 
+    /// The build fields belong to Steam: a version apply states its target in
+    /// the Lua pins only, and the ACF keeps describing what Steam installed.
     #[test]
-    fn applies_build_and_keeps_everything_else() {
-        let lines: Vec<String> = ACF.lines().map(str::to_string).collect();
-        let out = SteamAcfEditor::rewrite_content(&lines, 24701871).unwrap();
+    fn version_apply_has_no_acf_writer() {
+        let content = "\"AppState\"\n{\n\t\"appid\"\t\t\"730\"\n\t\"buildid\"\t\t\"100\"\n\t\"TargetBuildID\"\t\t\"200\"\n}\n";
+        let (build_id, target_build_id) = SteamAcfEditor::read_build_fields(content);
+        assert_eq!(build_id.as_deref(), Some("100"));
+        assert_eq!(target_build_id.as_deref(), Some("200"));
 
-        assert!(out.contains("\"buildid\"\t\t\"24701871\""));
-        assert!(out.contains("\"TargetBuildID\"\t\t\"24701871\""));
-        // InstalledDepots is Steam's record of what is on disk: a build pin
-        // must never claim a manifest whose content was not installed.
-        assert!(out.contains("\"manifest\"\t\t\"2991528520052157173\""));
-        assert!(out.contains("\"manifest\"\t\t\"8124921270987929782\""));
-        // …and unrelated fields preserved verbatim.
-        assert!(out.contains("\"StateFlags\"\t\t\"4\""));
-        assert!(out.contains("\"AutoUpdateBehavior\"\t\t\"1\""));
-        assert!(out.contains("\"size\"\t\t\"38173519462\""));
-        assert!(out.contains("\"MountedDepots\""));
+        // A manifest that never carried the keys reads as "absent", not as 0.
+        let (build_id, target_build_id) =
+            SteamAcfEditor::read_build_fields("\"AppState\"\n{\n\t\"appid\"\t\t\"730\"\n}\n");
+        assert_eq!(build_id, None);
+        assert_eq!(target_build_id, None);
     }
 
     #[test]
@@ -562,19 +515,6 @@ mod tests {
             SteamAcfEditor::installed_depot_manifest_in(&lines, 2347770),
             None
         );
-    }
-
-    #[test]
-    fn inserts_missing_buildid_and_target() {
-        let minimal = "\"AppState\"\n{\n\t\"appid\"\t\t\"730\"\n\t\"StateFlags\"\t\t\"0\"\n}\n";
-        let lines: Vec<String> = minimal.lines().map(str::to_string).collect();
-        let out = SteamAcfEditor::rewrite_content(&lines, 99).unwrap();
-        assert!(out.contains("\"buildid\"\t\t\"99\""));
-        assert!(out.contains("\"TargetBuildID\"\t\t\"99\""));
-        // appid line still first
-        let appid_pos = out.find("\"appid\"").unwrap();
-        let bid_pos = out.find("\"buildid\"").unwrap();
-        assert!(appid_pos < bid_pos);
     }
 
     /// One depot whose declared GID is `532` and whose recorded size is `100`.

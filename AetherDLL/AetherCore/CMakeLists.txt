@@ -66,14 +66,17 @@ add_library(AetherCore SHARED
     utils/GameNameResolver.cpp
 
     # Inject
-    inject/Diversion.cpp
+    inject/ModuleAttach.cpp
+    inject/SteamclientAttach.cpp
+    inject/SteamuiAttach.cpp
 
     # Diagnostics
     diagnostics/StatusWriter.cpp
 
     # Hooks
-    hooks/steamui/SteamUIHook.cpp
     hooks/steamui/SteamUIStylePatch.cpp
+    hooks/steamui/AppOverviewHooks.cpp
+    hooks/steamui/AppRecheckPolicy.cpp
     hooks/steamclient/AetherOnlineHooks.cpp
     hooks/steamclient/OwnershipHooks.cpp
     hooks/steamclient/CallbackCopy.cpp
@@ -93,6 +96,9 @@ add_library(AetherCore SHARED
     hooks/wire/FrameOrigin.cpp
     hooks/wire/AchievementModule.cpp
     hooks/wire/AchievementBackup.cpp
+    hooks/wire/AchievementUserState.cpp
+    hooks/wire/AchievementStatsSchema.cpp
+    hooks/wire/AchievementUi.cpp
     hooks/wire/DonorPool.cpp
     hooks/wire/DonorProbe.cpp
     hooks/wire/SchemaCache.cpp

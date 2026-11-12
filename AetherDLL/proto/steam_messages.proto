@@ -182,6 +182,79 @@ message CMsgClientGetUserStatsResponse {
     repeated .CMsgClientGetUserStatsResponse.Achievement_Blocks achievement_blocks = 6;
 }
 
+// ---------------------------------------------------------------------------
+// Client achievement page (Player.GetGameAchievements#1, Player.GetUserAchievements
+// #1) - the service path behind library -> game page -> Achievements.
+//
+// Field numbers and wire types were measured on the client (build 1793740892)
+// and match the descriptor in steamclient64.dll.
+// The names are Aether's. Only the fields a rebuild has to reproduce are
+// declared: the remaining ones stay unknown fields on the wire and survive a
+// re-serialization untouched.
+//
+// Valve's user reply lists only the achievements that are unlocked or that
+// carry a progress value. A rebuild lists every schema achievement instead: the
+// page reads its rows from this reply, and a locked achievement with no entry
+// (or no progress_float) leaves the section blank.
+// ---------------------------------------------------------------------------
+message CPlayer_GetGameAchievements_Request {
+    optional uint32 appid = 1;
+    optional string language = 2;
+    optional bool hash_only = 3;
+}
+
+message CPlayer_GetGameAchievements_Response {
+    message Achievement {
+        optional string internal_name = 1;
+        optional string name = 2;
+        optional string description = 3;
+        optional string icon = 4;
+        optional string icon_gray = 5;
+        optional uint32 hidden = 6;
+        optional string global_percent = 7;
+        optional uint32 internal_key = 8;
+        optional uint32 groupid = 11;
+    }
+
+    message Group {
+        optional uint32 groupid = 1;
+    }
+
+    repeated .CPlayer_GetGameAchievements_Response.Achievement achievements = 1;
+    optional int32 schema_version = 2;
+    repeated .CPlayer_GetGameAchievements_Response.Group groups = 3;
+    optional uint32 schema_hash = 4;
+}
+
+message CPlayer_GetUserAchievements_Request {
+    optional uint64 steamid = 1;
+    optional uint32 appid = 2;
+}
+
+message CPlayer_GetUserAchievements_Response {
+    message Achievement {
+        optional uint32 internal_key = 1;
+        optional bool unlocked = 2;
+        optional fixed32 unlock_time = 3;
+        optional int32 progress_int = 4;
+        optional float progress_float = 5; // a rebuild always sets it: the row reads it
+    }
+
+    message Group {
+        optional uint32 groupid = 1;
+        optional bool is_achievable = 2;
+        // Measured on Valve's reply; a rebuild leaves them absent.
+        optional uint32 unlocked = 3;
+        optional uint32 complete = 4;
+        optional fixed32 completed_at = 9;
+    }
+
+    repeated .CPlayer_GetUserAchievements_Response.Achievement achievements = 1;
+    optional int32 schema_version = 2;
+    optional uint32 schema_hash = 3;
+    repeated .CPlayer_GetUserAchievements_Response.Group groups = 4;
+}
+
 message CMsgClientStoreUserStats2 {
     message Stats {
         optional uint32 stat_id = 1;

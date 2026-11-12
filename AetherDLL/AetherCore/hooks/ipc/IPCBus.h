@@ -34,7 +34,7 @@ void RegisterIpcHandlers(const IpcHandlerEntry* entries, std::size_t count);
 
 // Resolves GetPipeClient, registers the command modules, and installs the
 // IPCProcessMessage hook (queued in the shared HookManager batch).
-void RegisterIpcBus(HMODULE diversion);
+void RegisterIpcBus(HMODULE steamclient);
 
 // ---------------------------------------------------------------------------
 // Contract for adding a new IPC interface (e.g. IClientFriends):

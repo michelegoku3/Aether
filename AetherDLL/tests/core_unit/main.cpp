@@ -52,6 +52,15 @@ int main(int argc, char** argv) {
         {"productinfo_queue", ProductInfoQueueTest},
         {"hubcap_key", HubcapKeyPolicyTest},
         {"steam_beta", SteamBetaChannelTest},
+        {"overview", AppOverviewTest},
+        {"recheck", RecheckTest},
+        {"achievement_state", AchievementState},
+        {"achievement_schema", AchievementSchema},
+        {"achievement_policy", AchievementPolicy},
+        {"family_banner", FamilyBannerTest},
+#ifdef AETHER_HAVE_PROTO
+        {"achievement_service", AchievementServiceWire},
+#endif
     };
     try {
         if (argc == 1) {

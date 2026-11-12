@@ -27,6 +27,12 @@ add_executable(core_unit_tests
     core_unit/acfowner.cpp
     core_unit/installeddepots.cpp
     core_unit/ownership.cpp
+    core_unit/appoverview.cpp
+    core_unit/recheck.cpp
+    core_unit/achievement_state.cpp
+    core_unit/achievement_schema.cpp
+    core_unit/achievement_policy.cpp
+    core_unit/family_banner.cpp
     core_unit/loginusers.cpp
     core_unit/steamuicss.cpp
     core_unit/steamuipatch.cpp
@@ -43,7 +49,10 @@ add_executable(core_unit_tests
     ../AetherCore/core/Workers.cpp
     ../AetherCore/core/SteamVersion.cpp
     ../AetherCore/hooks/steamui/SteamUIStylePatch.cpp
+    ../AetherCore/hooks/steamui/AppRecheckPolicy.cpp
     ../AetherCore/hooks/wire/GamesPlayedFormat.cpp
+    ../AetherCore/hooks/wire/AchievementUserState.cpp
+    ../AetherCore/hooks/wire/AchievementStatsSchema.cpp
     ../AetherCore/hooks/wire/DonorPool.cpp
     ../AetherCore/hooks/wire/DonorProbe.cpp
     ../AetherCore/hooks/wire/SchemaCache.cpp
@@ -70,9 +79,26 @@ if(MSVC)
 else()
     target_compile_options(core_unit_tests PRIVATE -Wall -Wextra -Wpedantic -Werror)
 endif()
-foreach(case strings paths policy worker budget settings registry workers netpacket sentinel structguard gamesplayed_format donorpool donorpool_learning donorpool_snapshot schema_cache donor_probe keyvalues vdftext jsonutil_escapes manifest_identity ipcreply snapshot_merge ttlcache hexcodec signature ipcspec jsonwriter manifest_contract schema_buckets workers_reap_slow workers_race acfowner installeddepots ownership loginusers steamuicss steamuipatch callbackcopy memory payloadattest productinfo_queue hubcap_key steam_beta)
+foreach(case strings paths policy worker budget settings registry workers netpacket sentinel structguard gamesplayed_format donorpool donorpool_learning donorpool_snapshot schema_cache donor_probe keyvalues vdftext jsonutil_escapes manifest_identity ipcreply snapshot_merge ttlcache hexcodec signature ipcspec jsonwriter manifest_contract schema_buckets workers_reap_slow workers_race acfowner installeddepots ownership loginusers steamuicss steamuipatch callbackcopy memory payloadattest productinfo_queue hubcap_key steam_beta overview recheck achievement_state achievement_schema achievement_policy family_banner)
     add_test(NAME ${case} COMMAND core_unit_tests ${case})
 endforeach()
+# The wire-contract golden blobs assert the field numbers of the generated
+# service messages, so that suite needs the real proto runtime. It is only
+# linked when the parent build provides it: the standalone tests build has no
+# protobuf and simply runs the rest.
+if(TARGET aether_proto)
+    target_sources(core_unit_tests PRIVATE core_unit/achievement_service.cpp)
+    target_link_libraries(core_unit_tests PRIVATE aether_proto)
+    target_compile_definitions(core_unit_tests PRIVATE AETHER_HAVE_PROTO=1)
+    # The proto runtime ships headers that trip C4100 under /W4 /WX; treat its
+    # tree as external so only our own warnings block (same trick Quality.cmake
+    # applies to the production targets).
+    if(MSVC)
+        target_compile_options(core_unit_tests PRIVATE /external:anglebrackets /external:W0
+            "/external:I${CMAKE_BINARY_DIR}/_deps" "/external:I${CMAKE_SOURCE_DIR}/proto/generated")
+    endif()
+    add_test(NAME achievement_service COMMAND core_unit_tests achievement_service)
+endif()
 add_test(NAME cmake_source_inventory COMMAND ${CMAKE_COMMAND}
     -DTEST_BINARY_DIR=${CMAKE_CURRENT_BINARY_DIR}/inventory-test
     -DCHECK_MODULE=${CMAKE_CURRENT_SOURCE_DIR}/../cmake/CheckSources.cmake

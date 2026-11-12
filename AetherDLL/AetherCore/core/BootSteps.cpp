@@ -25,7 +25,8 @@
 #include "hooks/wire/AchievementBackup.h"
 #include "hooks/wire/AchievementModule.h"
 #include "hooks/wire/ManifestRestore.h"
-#include "inject/Diversion.h"
+#include "inject/SteamclientAttach.h"
+#include "inject/SteamuiAttach.h"
 #include "scripting/DirWatch.h"
 #include "scripting/ScriptEngine.h"
 #include "security/HubcapKeyCheck.h"
@@ -69,12 +70,12 @@ std::vector<std::string> CollectAcfWatchDirs() { return steamlibrary::SteamAppsD
 //    1. Settings               (depends on: logger — config errors are logged)
 //       PinSelf                (depends on: nothing; module handle already valid)
 //    3. BuildId                (depends on: nothing; diagnostic only, never fatal)
-//    4. Diversion              (depends on: steamInstallPath from ResolvePaths)
-//    5. steamclient SHA        (depends on: diversion — path resolved)
-//    6. Pattern engine         (depends on: diversion — module handle for hashing)
+//    4. Steamclient attach     (depends on: steamInstallPath from ResolvePaths)
+//    5. steamclient SHA        (depends on: steamclientPath resolved)
+//    6. Pattern engine         (depends on: nothing; hashes the DLL file)
 //    7. IPC spec               (depends on: pattern engine — patternDir created)
 //    8. Lua scripts            (depends on: nothing; runs standalone sandbox)
-//    9. Hook install           (depends on: diversion + pattern engine + lua maps)
+//    9. Hook install           (depends on: steamclient attach + pattern engine + lua maps)
 //   10. DirWatch               (depends on: lua scripts — startup files already
 //                              scanned, so they don't look like hot-reload adds)
 //   11. Steam client channel   (depends on: resolve + logger + status writer;
@@ -141,31 +142,23 @@ bool InitLoggingStage(BootContext& ctx) {
     AC_LOG_INFO(kModule, "[%s] AetherCore injected. Steam folder: %s", kStartupLogToken,
                 g_state.steamInstallPath.c_str());
 
-    // PinSelf: must run before LoadDiversion so the own module HMODULE is stable.
+    // PinSelf: must run before AttachSteamclient so the own module HMODULE is stable.
     PinSelf();
     return true;
 }
 
-bool InitDiversionStage() {
+void InitSteamclientStage() {
     // 3. Build id detection: diagnostic only, never fatal.
     //    Depends on: nothing (reads a steam.exe export).
     g_state.buildId = DetectSteamBuildId();
 
-    // 4. Diversion: prepare the copy or attach the live client (see [injection]).
-    //    Depends on: steamInstallPath from ResolvePaths.
-    if (!LoadDiversion()) {
-        AC_LOG_ERROR(kModule, "Diversion failed; publishing status and aborting.");
-        AC_LOG_INFO(kModule, "Init aborted: diversion failed.");
-        status::Write();
-        return false;
-    }
-
-    // 5. steamclient SHA: computed right after diversion so status.json
-    //    carries it even if later stages fail.
-    //    Depends on: diversion (steamclientPath resolved).
+    // 4. steamclient path + SHA: both come from the file, so they work before
+    //    Steam has mapped the module. The attach itself waits for Steam's own
+    //    mapping at hook-install time (step 9); loading the client here would
+    //    initialize it out of order and crash steam.exe.
+    g_state.steamclientPath = g_state.steamInstallPath + "\\steamclient64.dll";
     g_state.steamclientSha = hasher::ComputeFileSha256(g_state.steamclientPath);
     status::Write();
-    return true;
 }
 
 bool InitPatternsStage(BootContext& ctx) {
@@ -183,14 +176,6 @@ bool InitPatternsStage(BootContext& ctx) {
     std::thread patternThread([&] { patternsOk = pattern::Init(); });
     std::thread ipcThread([&] { ipcspec::Init(); });
     patternThread.join();
-    // Steam beta may have mapped the live steamclient during the pattern
-    // fetch. Decide the final target BEFORE the UI redirect and any
-    // steamclient hooks: never hook a copy that Steam no longer uses.
-    SelectHookTargetBeforeRedirect();
-    // In copy mode, arm LoadModuleWithPath immediately, while the IPC
-    // lookup and Lua scan are still in progress. This closes the window
-    // where Steam could load the live client first.
-    ac::bootstrap::ArmSteamUiRedirect();
     ipcThread.join();
     if (!patternsOk) {
         AC_LOG_WARN(kModule, "Pattern engine produced no tables; some hooks will be skipped.");
@@ -232,6 +217,15 @@ void SeedAbiStage() {
                 abi::guard::ApplyTable(g_state.abiTable.offsets, g_state.abiTable.source);
             }
         }
+        // The steamui table publishes the app-overview prefix. It is a
+        // verifier for the same compiled struct, so a contradiction latches
+        // the same guard and skips every overview write for the session.
+        {
+            std::lock_guard lock(g_state.abiTable.mutex);
+            if (!g_state.abiTable.uiOffsets.empty()) {
+                abi::guard::ApplyTable(g_state.abiTable.uiOffsets, g_state.abiTable.uiSource);
+            }
+        }
     }
 
     // Fallback for machines with no table at all: the two builds whose
@@ -252,12 +246,28 @@ bool InitLuaStage() {
 }
 
 void InstallHooksStage() {
-    // 9. Hook install: the optional UI redirect has already been armed
-    //    (or is retrying); register the steamclient hooks on the chosen target.
-    //    Publishes the final status.json.
-    //    Depends on: diversion (module handle) + pattern engine (addresses)
-    //                + lua data (maps populated).
-    ac::bootstrap::InstallAllHooks();
+    // 9. Hook install: wait (short, bounded) for Steam to map its client, then
+    //    register the steamclient hooks on it. A missing client is not fatal:
+    //    Steam keeps running and the late-pattern retry keeps probing.
+    //    This wait is on the init thread and the safety nets below only start
+    //    after it, so its budget stays short on purpose
+    //    (constants::kSteamclientAttachTimeoutMs).
+    //    Depends on: steamclient attach (module handle) + pattern engine
+    //                (addresses) + lua data (maps populated).
+    if (!AttachSteamclient(constants::kSteamclientAttachTimeoutMs)) {
+        AC_LOG_ERROR(kModule, "Hook batch skipped: steamclient not attached.");
+        status::Write();
+    } else {
+        ac::bootstrap::InstallAllHooks();
+    }
+
+    // 9a. steamui is a separate module and can map after the client. Probe it
+    //     without a budget here (the safety nets below must not wait), install
+    //     the app-overview batch if it is already there, and let a worker wait
+    //     for the rest of the window.
+    AttachSteamui(0);
+    ac::bootstrap::InstallSteamUiBatch();
+    ac::bootstrap::StartSteamUiAttachRetry();
 
     // 9b. Late-pattern retry: if a module pattern table was unavailable at
     //     init (patterns not published yet on a fresh Steam build, offline
@@ -310,17 +320,6 @@ void StartSafetyNetsStage() {
     //      learned in ONE session instead of one donor per Steam start.
     //      Depends on: aethercore dir + steamInstallPath + the send hook.
     ac::hooks::AchievementModule::InstallDonorProbe();
-
-    // 10f. Stylesheet tweak: hide Steam's orange "legacy library sharing"    //      notice next to the banner. Rewrites the rule in place with
-    //      same-length swaps, so sp.css keeps its exact size: Steam's
-    //      bootstrapper verifies client file sizes before every start and
-    //      re-applies the whole client package on a mismatch (a bogus
-    //      "Updating Steam" screen). Follows [library] owner_banner, so
-    //      turning the feature off restores the original rule. No JS or
-    //      state changes.
-    const auto uiSettings = Settings::Snapshot();
-    ac::steamui::ApplyLegacySharingWarningPolicy(g_state.steamInstallPath,
-                                                 uiSettings && uiSettings->libraryOwnerBanner);
 }
 
 void StartWatchersStage(const BootContext& ctx) {
@@ -348,8 +347,20 @@ void InitThreadLogic(HMODULE self) {
         return;
     }
     InitLoggingStage(ctx);
-    if (!InitDiversionStage())
-        return;
+    // 2c. Stylesheet tweak: hide Steam's orange "legacy library sharing" notice
+    //     next to the banner. It runs here, before the client waits for any
+    //     module, because steamwebhelper parses sp.css within the first seconds
+    //     of the start: a write that lands later leaves this start with the
+    //     stock rule (the notice shows once) and only the next start reads the
+    //     patched file. Rewrites the rule in place with same-length swaps, so
+    //     sp.css keeps its exact size - Steam's bootstrapper verifies client
+    //     file sizes before every start and re-applies the whole client package
+    //     on a mismatch (a bogus "Updating Steam" screen). Follows
+    //     [library] owner_banner, so turning the feature off restores the
+    //     original rule. No JS or state changes.
+    ac::steamui::ApplyLegacySharingWarningPolicy(g_state.steamInstallPath,
+                                                 ctx.settings && ctx.settings->libraryOwnerBanner);
+    InitSteamclientStage();
     // Non-fatal: missing tables only degrade gracefully (some hooks are
     // skipped, the late-pattern retry covers them). Carried for a future
     // strict mode that could abort here instead of limping on.

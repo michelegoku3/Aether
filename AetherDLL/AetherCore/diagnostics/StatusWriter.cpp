@@ -17,7 +17,10 @@
 #include "hooks/aetheronline/OnlinePayload.h"
 #include "hooks/aetheronline/PresenceSession.h"
 #include "hooks/ipc/PipeWatch.h"
+#include "hooks/license/LicenseManager.h"
+#include "hooks/steamui/AppOverviewHooks.h"
 #include "hooks/wire/AchievementModule.h"
+#include "hooks/wire/AchievementUi.h"
 #include "network/EticketFetcher.h"
 #include "scripting/LuaData.h"
 #include "security/HubcapKeyCheck.h"
@@ -104,19 +107,17 @@ static void WriteSnapshot(std::uint64_t requests) {
     w.Str("build_time", __DATE__ " " __TIME__);
     {
         std::lock_guard lock(g_state.statusMetadataMutex);
-        w.Str("diversion_outcome", g_state.diversionOutcome);
+        w.Str("steamclient_attach", g_state.steamclientAttach);
         // Empty on the stable client; the branch name ("publicbeta") on a beta one.
         w.Str("steam_beta_branch", g_state.steamBetaBranch);
         w.Str("steamclient_sha", g_state.steamclientSha);
         w.Bool("steamclient_toml_found", g_state.steamclientTomlFound);
         w.Str("steamclient_pattern_source", g_state.steamclientPatternSource);
         w.Str("steamui_sha", g_state.steamuiSha);
+        w.Str("steamui_attach", g_state.steamuiAttach);
         w.Bool("steamui_toml_found", g_state.steamuiTomlFound);
         w.Str("steamui_pattern_source", g_state.steamuiPatternSource);
     }
-    w.Str("steamclient_hook_target", g_state.diversionUsesLive.load() ? "live" : "copy");
-    w.Bool("steamui_redirect_installed", g_state.steamUiRedirectInstalled.load());
-    w.Bool("steamui_redirect_used", g_state.steamUiRedirectUsed.load());
     w.Str("netpacket_abi_layout", abi::netpkt::LayoutName());
     w.UInt64("netpacket_abi_data_off", abi::netpkt::ResolvedDataOffset());
     w.Bool("netpacket_abi_resolved", abi::netpkt::IsResolved());
@@ -147,6 +148,92 @@ static void WriteSnapshot(std::uint64_t requests) {
     w.SizeT("config_store_cached_app_tickets", credential::CachedConfigStoreTicketCount());
     w.SizeT("lua_files_loaded", luadata::LoadedFileCount());
     w.SizeT("configured_depots", luadata::ConfiguredDepotCount());
+    // Library membership populations. `configured_depots` above is the universe:
+    // every configured id (app roots and depots). `owned`, `spoofed` and real
+    // `family_shared` are disjoint subsets of it; an id in none of the three is
+    // either configured but not classified yet (Steam never asked) or a listed
+    // banner app, which `banner_family` counts on its own. `spoofed` is the set
+    // Aether actually manages; `owned` is Steam's own and Aether must leave the
+    // answer alone; a real `family_shared` keeps the lender banner and Valve's
+    // state, while `banner_family` keeps the banner and Aether's answer.
+    // `package0_app_ids` is the license itself: when it equals configured_depots
+    // the seed ran, and any card still missing is an AppInfo problem, not a
+    // membership one.
+    w.SizeT("membership_library_roots", luadata::LibraryAppCount());
+    w.SizeT("membership_owned", luadata::OwnedCount());
+    w.SizeT("membership_spoofed", luadata::SpoofedCount());
+    w.SizeT("membership_family_shared", luadata::FamilySharedCount());
+    w.SizeT("membership_banner_family", luadata::BannerFamilyCount());
+    w.SizeT("package0_app_ids", hooks::LicenseManager::Package0AppCount());
+
+    // SteamUI app-overview layer: every card observed, every repair, and why a
+    // write was refused. `unproven` means the layout was never confirmed, so
+    // nothing was written; `rejected:<reason>` means the object did not match
+    // the compiled prefix and the layer is off for this session.
+    w.UInt64("overview_fills", g_state.overview.fills.load(std::memory_order_relaxed));
+    w.UInt64("overview_writes", g_state.overview.writes.load(std::memory_order_relaxed));
+    w.UInt64("overview_clears", g_state.overview.clears.load(std::memory_order_relaxed));
+    w.UInt64("overview_restores", g_state.overview.restores.load(std::memory_order_relaxed));
+    w.UInt64("overview_rejects", g_state.overview.rejects.load(std::memory_order_relaxed));
+    {
+        // `overview_retired` is how many cards still have to be rebuilt before
+        // their owned bit is taken back; a steady non-zero value means the
+        // client never re-filled them. `overview_hidden` is how many cards were
+        // taken back and are waiting for their `.lua` to come back.
+        std::lock_guard lock(g_state.overview.stampMutex);
+        w.SizeT("overview_retired", g_state.overview.retired.size());
+        w.SizeT("overview_hidden", g_state.overview.hidden.size());
+    }
+    {
+        std::lock_guard lock(g_state.statusMetadataMutex);
+        const bool latched = g_state.overview.latched.load(std::memory_order_acquire);
+        w.Str("overview_probe", latched                               ? "latched"
+                                : g_state.overview.lastReject.empty() ? "unproven"
+                                                                      : "rejected:" + g_state.overview.lastReject);
+    }
+    // Recheck layer: every id handed to the client, what is still queued, and
+    // whether the pair that asks exists at all. `no-source` is the honest answer
+    // while the queue has work but MarkAppChange never ran, because the drain
+    // will not invent an owner; `unsupported` wins over it, since a missing pair
+    // makes both cases permanent.
+    w.UInt64("overview_rechecks", g_state.overview.recheckCalls.load(std::memory_order_relaxed));
+    std::size_t recheckPending = 0;
+    {
+        std::lock_guard lock(g_state.overview.recheckMutex);
+        recheckPending = g_state.overview.rechecks.Size();
+    }
+    const bool appChangeSourceKnown = g_state.overview.appChangeSource.load(std::memory_order_acquire) != nullptr;
+    w.SizeT("overview_recheck_pending", recheckPending);
+    w.Str("recheck_state", !hooks::steamui::AppRecheckSupported()         ? "unsupported"
+                           : recheckPending != 0 && !appChangeSourceKnown ? "no-source"
+                                                                          : "ready");
+    // Restore layer: whether a card Aether took back can be put back when its
+    // `.lua` returns. `no-controller` means the client never ran the lookup the
+    // owner is learned from; `no-shape` means the returned object never matched
+    // the compiled prefix twice, so nothing is written on a guess.
+    w.Str("restore_state", !hooks::steamui::AppRestoreSupported()                                      ? "unsupported"
+                           : g_state.overview.appController.load(std::memory_order_acquire) == nullptr ? "no-controller"
+                           : !g_state.overview.lookupLatched.load(std::memory_order_acquire)           ? "no-shape"
+                                                                                                       : "ready");
+    // Client achievement page (service path): every request pair seen, every
+    // schema captured, and what happened to the user-state reply. `last_reason`
+    // names the outcome: `rebuilt`, `no-schema`/`no-state` (the reply was held
+    // for a later delivery), `not-managed`, `too-large`, `off`.
+    w.UInt64("achievement_service_calls", g_state.achievements.ui.calls.load(std::memory_order_relaxed));
+    w.UInt64("achievement_schemas", g_state.achievements.ui.schemasCaptured.load(std::memory_order_relaxed));
+    w.UInt64("achievement_rebuilt", g_state.achievements.ui.rebuilt.load(std::memory_order_relaxed));
+    w.UInt64("achievement_passthrough", g_state.achievements.ui.passthrough.load(std::memory_order_relaxed));
+    w.UInt64("achievement_held", g_state.achievements.ui.heldCount.load(std::memory_order_relaxed));
+    w.UInt64("achievement_delivered", g_state.achievements.ui.delivered.load(std::memory_order_relaxed));
+    w.UInt64("achievement_progress_values", g_state.achievements.ui.progressValues.load(std::memory_order_relaxed));
+    w.Str("achievement_service_state", achieve::Enabled() ? "ready" : "off");
+    {
+        std::lock_guard<std::mutex> lock(g_state.achievements.ui.mutex);
+        w.Str("achievement_last_reason", g_state.achievements.ui.lastReason);
+        w.SizeT("achievement_schemas_cached", g_state.achievements.ui.schemas.size());
+        w.SizeT("achievement_states_cached", g_state.achievements.ui.states.size());
+        w.SizeT("achievement_held_now", g_state.achievements.ui.held.size());
+    }
     w.SizeT("access_tokens", luadata::AccessTokenCount());
     w.SizeT("manifest_overrides", luadata::ManifestOverrideCount());
     w.Bool("eticket_backend_configured", !luadata::EticketUrl().empty());

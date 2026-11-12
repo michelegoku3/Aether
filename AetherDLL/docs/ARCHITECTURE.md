@@ -22,6 +22,11 @@ the fast build loop ([`quick-build.md`](quick-build.md)).
 - [Event-driven persistence, workers and hot paths](#event-driven-persistence-workers-and-hot-paths)
 - [Manifest acquisition, presence session and module splits](#manifest-acquisition-presence-session-and-module-splits)
 - [Backup lifecycle and pattern boundaries](#backup-lifecycle-and-pattern-boundaries)
+- [Pending version changes](#pending-version-changes)
+- [Library membership](#library-membership)
+- [SteamUI app overview](#steamui-app-overview)
+- [Card removal and restore](#card-removal-and-restore)
+- [App recheck after a pin change](#app-recheck-after-a-pin-change)
 - [Presence channels (`-showonline` / `-aetheronline`)](#presence-channels--showonline---aetheronline)
 
 
@@ -166,6 +171,62 @@ closed) or rebuild it from the JSON with `Tools/achievement_decoder.py rebuild`.
 mirror JSON files (`decode`, `snapshot`, `rebuild` commands) — use it together
 with `main.log` when investigating achievement issues.
 
+### Client achievement page (service path)
+
+The library's Achievements tab does not use the 151/818 path: the client asks
+the CM with `Player.GetGameAchievements#1` (schema) and
+`Player.GetUserAchievements#1` (account state). The server answers the schema
+for any app and an empty state body for an app the account does not own.
+
+- **Modules.** `hooks/wire/AchievementUi.cpp` is the wire glue (send/receive,
+  job correlation, schema/state cache, held replies, logging);
+  `hooks/wire/AchievementUiPolicy.h` is the pure decision table and body model;
+  `hooks/wire/AchievementUserState.cpp` parses
+  `UserGameStats_<account>_<appid>.bin` into `internal_key -> unlock time` and
+  `stat id -> current value`; `hooks/wire/AchievementStatsSchema.cpp` parses
+  `UserGameStatsSchema_<appid>.bin` into `internal_key -> stat id`, the counter
+  behind each achievement. State lives in `AetherCoreState::AchievementStore::ui`.
+- **Body shape.** One entry per schema achievement,
+  locked ones included, `progress_float` always present, the unlock pair only
+  when unlocked, and one `is_achievable` group per group the schema reply lists.
+  The page builds its rows from this reply, so a reply with only the unlocked
+  entries (or none) leaves the section blank for an app with no unlocks.
+- **Progress values.** `progress_float` carries the
+  raw value of the stat the schema's `progress` block names
+  (`operation = "statvalue"`, `operand1` = stat name), read from that stat's
+  `data` entry in the account's stats file; `0.0f` when the schema declares none
+  or the file has no value. It is not a fraction. A bit that only has an
+  `AchievementTimes` entry counts as unlocked, because the date outlives the
+  mask.
+- **eresult.** Valve's header is rewritten to `k_EResultOK`: the CM marks an
+  unowned app denied, but the page is not denied, it just has no data.
+- **Cold data is held, not skipped.** If the schema or the `.bin` read is not
+  ready when the reply lands, the real header/body are parked and the client is
+  handed a copy whose `jobid_target` is `1` (never allocated by the job manager),
+  so its job stays open. `OnRecvSchema` and the worker queue the rebuilt frame;
+  `AchievementUi::TryDeliver` (called at the top of the RecvPkt hook, before the
+  packet is dispatched) delivers it on the next inbound carrier. An 8 s timeout
+  releases Valve's reply unchanged.
+- **Fail open.** An app that is not managed passes through; unparsable bodies or
+  headers and a rebuilt body over `kWireMaxBodyBytes` also leave Valve's frame
+  untouched, with a `lastReason` for `status.json` (`not-managed`, `no-schema`,
+  `no-state`, `too-large`, `reply-unparsed`, `header-unparsed`, `off`).
+- **Worker boundary.** The `.bin` reads (account stats and game schema) and the
+  KV1 walks run on `workers::Submit`; the network path only copies cached values
+  under one short mutex. The account comes from the request's `steamid`, never
+  from the registry or `loginusers.vdf`: that would be disk I/O on a Steam
+  network thread. A request that names no account answers "nothing unlocked"
+  instead of waiting. The schema parse is cached per app and re-read only when
+  Steam rewrites the file (size or write time moves).
+- **Never fabricated.** Only keys present in the captured schema are emitted;
+  the hash is never derived (it is not computable from the `.bin`) and Valve's
+  `schema_version`/`schema_hash` are re-emitted untouched.
+- **Diagnostics.** `achievement_service_calls`, `achievement_schemas`,
+  `achievement_rebuilt`, `achievement_passthrough`, `achievement_held`,
+  `achievement_delivered`, `achievement_progress_values`, `achievement_held_now`,
+  `achievement_last_reason`; a `DEBUG` line per capture, hold and rebuild names
+  the app and the counts.
+
 ### Donor rotation and schema publication
 
 The donor pool is walked to the end in ONE session instead of one slot per
@@ -207,6 +268,20 @@ instead of skipping the new donor as "already tried". Probe requests are paced
 
 ## Runtime publication and lifecycle
 
+* The DLL attaches to the live `steamclient64.dll` only. There is no copy of the
+  client and no `steamui` redirect: every hook must run on the module the running
+  Steam instance calls. A second mapping of that name is rejected at attach time
+  rather than hooked, because a hook on a module Steam never calls would look
+  installed and do nothing.
+* The client is never loaded by the DLL. `LoadLibrary` on it from the init thread
+  initializes it out of Steam's boot order and crashes `steam.exe` inside the C++
+  exception machinery (an access violation in `VCRUNTIME140.dll` before the login
+  screen). The attach therefore waits for Steam's own mapping, up to
+  `kSteamclientAttachTimeoutMs`, and hooks are installed only once the handle
+  exists. The budget is short because the wait runs before the safety nets (the
+  achievement backup must precede the client's login reconcile); a timeout logs
+  `steamclient_attach = "live-not-mapped"`, defers the steamclient batch, and
+  leaves the late-pattern retry (10 s cadence) re-probing the handle.
 * Settings are immutable `shared_ptr<const Settings>` snapshots, atomically
   published. Each reader retains its owner for the duration of access. Only
   DirWatch polls the TOML at runtime (about 1 s, including without Lua watches).
@@ -313,6 +388,174 @@ instead of skipping the new donor as "already tried". Probe requests are paced
   publication; `PatternCache` owns TOML/cache/provenance/download policy;
   `PatternResolver` owns lookup, bounds/signature verification and the existing
   ABI sentinel call. Public entry points and safety gates are unchanged.
+
+### Pending version changes
+
+A pin change states intent; Steam derives the state. The pins in the `.lua`
+record the build the user picked, and the ACF records what Steam installed:
+`buildid`, `TargetBuildID` and `StateFlags` stay Steam's own fields
+([`docs/shared_contracts.md` §9](../../docs/shared_contracts.md#9-acf-ownership-who-writes-which-field)).
+Aether announces a selection by writing the Lua and nothing else, so a card that
+still shows PLAY at the old build is the client's truthful answer until it looks
+again.
+
+The client's depot plan comes from the pins AetherCore reads when it loads the
+`.lua`, so an app whose pins moved keeps the plan the client built at startup
+until something asks it to look again. The DLL closes that gap after a Lua
+reload. `scripting/DirWatch.cpp::ApplyChanges` snapshots the pinned
+`(depot, gid)` rows of each changed file before and after the reload — a
+parse, or an unload that drops every pin the file carried — unions the two
+snapshots by app id, and hands the pairs to `SelectRecheck`: only the apps whose
+pins really moved survive, because both sides are normalized first (a reordered
+reload is not a change) and the result is sorted and deduplicated. A reload that
+touched no pin queues nothing and refreshes no card. The survivors go to
+`RequestAppRecheck`, which only fills the bounded queue that
+[App recheck after a pin change](#app-recheck-after-a-pin-change) drains on the
+client's UI thread through `MarkAppChange`; the frame budget and the
+`status.json` keys live there. The thread that wrote the Lua never touches a
+Steam object. The recheck starts no download by itself; Steam compares the
+pinned GIDs with `InstalledDepots` and decides PLAY, UPDATE or a download by its
+own rules.
+
+A missing `MarkAppChange` or `CSteamUIAppControllerRunFrame` pattern disables
+the recheck and nothing else. Card repair, ownership and membership keep
+working, the reload path skips its snapshots entirely (`AppRecheckSupported`),
+and `status.json` reports the missing pair rather than a queue that never
+drains. A client that never calls `MarkAppChange` leaves the ids waiting rather
+than inventing an owner for a call the DLL makes.
+
+## Library membership
+
+A `.lua` app becomes visible only through the **license path**: package 0 carries
+every configured id (`LicenseManager::SeedPackage0`), and
+`MarkLicenseAsChanged` + `ProcessPendingLicenseUpdates` make Steam re-read it.
+Steam then asks for the app's AppInfo and builds the card, the depot plan and
+the launch config from that. Nothing else may add an app to the library:
+returning ids from the client's subscribed-app list creates an overview entry
+before the AppInfo/release-state bookkeeping Steam performs for licensed apps,
+which the 11.18 client asserts on and which renders a card with no size and no
+launch config.
+
+`luadata::LibraryAppIds()` is the numeric-filename root population for per-app
+PICS requests and name lookups (`ScriptEngine`, `DirWatch`, `GameNameResolver`,
+`InstalledDepotRepair`); it is not membership and may be empty for a `.lua` with
+a non-numeric name, which still enters the library through its seeded ids.
+
+A genuinely owned app gets a package-0 row like every other configured id, but
+its ownership answer passes through untouched: the spoof acts only when Steam
+did not provide the app (`luadata::HasDepot`), and the family/owned flags keep
+the lender banner. `[library] owner_banner_apps` is the one case where the
+family flag is Aether's own stamp: `core/FamilyClassification.h` separates that
+`Banner` from a `RealShare`, so the app keeps the shared look while
+`luadata::IsRealFamilyShare` stays false and every `HasDepot` consumer — depot
+keys, manifest overrides, the cloud gate and the achievement page — keeps
+working. `status.json` reports the populations separately
+(`membership_owned`, `membership_spoofed`, `membership_family_shared`,
+`membership_banner_family`, `membership_library_roots`, `package0_app_ids`) so a
+support log can tell "not seeded" from "seeded but not classified".
+
+## SteamUI app overview
+
+AetherCore hooks `steamui.dll` only for the app-overview layer. The module is
+waited for like the client and never loaded, so the hooks run on the image Steam
+maps inside `steam.exe`. `BootSteps` probes it without a budget and the
+`steamui_attach` worker waits up to 30 s; a build that maps it later leaves the
+layer off for the session and `status.json` says so.
+
+The only object the layer touches is the `CSteamApp` prefix declared in
+`core/SteamTypes.h`: `gameId`, `appId`, `releaseState`, `ownershipFlags` and
+`appStateFlags`, ending at +0x20. Nothing after that offset is declared, because
+its alignment depends on members Aether never reads; a full struct would guess
+the tail and put a write in the wrong field on the first layout change.
+
+`FillInAppOverview` is a pass-through detour: it forwards the registers it
+received, observes the card, and writes `ownershipFlags` only when all of the
+following hold:
+
+- `InspectOverview` accepts the object (non-zero appId, `gameId & 0xFFFFFF`
+  equals appId, both flag words inside the published masks);
+- the probe latched: two distinct apps matched the same layout this session;
+- the app is configured by a `.lua` and Steam did not provide it as genuinely
+  owned or family-shared;
+- the owned bit is not already set.
+
+The write happens on the client's callback thread; nothing queues work or
+touches the object from a worker, so thread affinity is by construction. A
+steamui table that publishes `[abi.CSteamApp.*]` is checked against the compiled
+offsets before the first hook is armed: a contradiction latches the struct guard
+and disables the write for the session instead of adapting.
+
+### Card removal and restore
+
+The owned bit is cached in the client object, so a `.lua` that goes away leaves
+its card in the library until a restart. Two halves keep the library honest
+without one, and both are reverse writes of the same bit:
+
+- **Removal.** The watcher applies a whole change batch, then names the library
+  roots that an explicitly removed file used to advertise and that no script
+  configures any more (`RetiredRoots`). A save that replaces the file in the same
+  batch therefore retires nothing: the temp-and-rename a save performs is parsed
+  before the check runs. A retired id makes the next card fill take the bit back
+  (`OwnershipAction::Clear`), which the client reads as "no longer in the
+  library" and drops the card.
+- **Restore.** The client keeps the object after the bit is taken back — its
+  details still resolve, only the bit is clear — so the card can be put back
+  without a restart. `GetAppByID` is the client's own lookup; the detour forwards
+  it unchanged and remembers the owner. Before the first write, the lookup is
+  confirmed on two ids whose cards Aether already filled, so the compiled prefix
+  is proven on objects that must exist. `RequestAppRetirement` decides what may
+  be taken back, and only a merely-unmanaged app is: `HasDepot` is false for a
+  genuinely owned license and for a real family share, and both keep the bit
+  Valve gave them.
+
+Both sets are bounded (`kMaxTrackedApps`) and every refusal is logged: a bit that
+could not be remembered would be unclearable, which is why a stamp that cannot be
+tracked is refused instead.
+
+### App recheck after a pin change
+
+A version apply rewrites the Lua and nothing else, so an app whose pins moved
+may keep the build the client already has until something asks it to look
+again. Only those apps are ever named: an app whose pins did not change is never
+rebuilt, and the contract behind both halves is under
+[Pending version changes](#pending-version-changes). `RequestAppRecheck` is that
+request: it queues the ids a pin comparison selected and returns; the caller is
+the thread that wrote the Lua and never touches a Steam object.
+
+The queue (`RecheckQueue`, 64 slots) is drained on
+`CSteamUIAppControllerRunFrame`, at most 8 ids per frame, each handed to the
+client's own `MarkAppChange(source, app, AppInfoOrConfig)`. The source is the
+app-list owner, learned from the latest `MarkAppChange` the client makes on its
+own: that detour stores the latest `self` into an atomic — a rebuilt UI or an
+account switch replaces the owner — and forwards its arguments unchanged, so the
+hook cannot alter what the client records. No id is ever submitted without that
+owner — a queue with work and no owner waits for a later frame and reports
+`no-source` instead of guessing an object. A queue that is already full refuses
+the push, the refusal is logged with its count, and a refused id stays
+unrechecked until that app's Lua changes again.
+
+The drain requests a status write once it has handed at least one id to the
+client, and once more the first time a frame finds work but no owner: every
+write before that frame predates the calls the client made, so without these the
+status file would keep describing the queue from before the reload.
+
+`status.json` reports `steamui_attach`, `overview_fills`, `overview_writes`,
+`overview_clears`, `overview_restores`, `overview_retired` (cards still waiting
+to be rebuilt before their bit is taken back), `overview_hidden` (cards taken
+back and waiting for their `.lua` to return), `overview_rejects` and
+`overview_probe` (`latched`, `unproven` or `rejected:<reason>`), so "the card was
+removed or restored and why not" is diagnosable without a debugger, plus
+`overview_rechecks` (ids handed to the client), `overview_recheck_pending` (queue
+depth) and `recheck_state` (`ready`, `no-source` when work is queued but the owner
+is unknown, `unsupported` when the module never installed the
+`MarkAppChange`/run-frame pair). `restore_state` says whether a taken-back card
+can come back: `ready`, `no-controller` (the client never ran the lookup the
+owner is learned from), `no-shape` (no lookup answer has passed the compiled
+prefix twice) or `unsupported` (the lookup pattern is missing).
+
+Not this layer: card size, install/update state, achievements and appid
+translation. Each of those writes more of the client model and needs its own
+validated field.
 
 ## Presence channels (`-showonline` / `-aetheronline`)
 

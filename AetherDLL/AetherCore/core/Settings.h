@@ -17,17 +17,7 @@
 // ---------------------------------------------------------------------------
 namespace ac {
 
-// Selection is fixed at startup; changing it while Steam is running cannot
-// safely move already-installed hooks between copies of steamclient64.dll.
-enum class DiversionMode { Auto, Copy, Live };
-
 struct Settings {
-    // [injection] Auto keeps the proven copy/redirect path when possible, but
-    // selects the live Steam client if it was already mapped before the redirect
-    // could be armed (as on some beta startups). Copy and live are explicit
-    // overrides for targeted diagnostics.
-    DiversionMode diversionMode = DiversionMode::Auto;
-
     // [log]
 #ifdef AETHERCORE_RELEASE
     LogLevel logLevel = LogLevel::Warn;
@@ -95,6 +85,12 @@ struct Settings {
     // Policy default for apps in NO array (intention over enumeration):
     //   default_mode = "showonline" -> presence broadcast for every launch.
     bool presenceDefaultShowOnline = false;
+
+    // [achievements] Serve the client's own achievement page (library -> game
+    // page -> Achievements) from the local .bin for managed apps. Default ON:
+    // without it the page is empty for every app Aether advertises. Off means
+    // Aether never rewrites that reply; it changes nothing else.
+    bool achievementsUiService = true;
 
     // [library] Cosmetic Steam library owner banner.
     //   owner_banner = true             -> listed appids get

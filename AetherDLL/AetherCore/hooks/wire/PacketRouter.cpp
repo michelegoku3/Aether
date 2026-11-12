@@ -19,6 +19,7 @@
 #include "core/NetPacketAbi.h"
 #include "hooks/wire/AccessTokenModule.h"
 #include "hooks/wire/AchievementModule.h"
+#include "hooks/wire/AchievementUi.h"
 #include "hooks/wire/EticketModule.h"
 #include "hooks/wire/FamilySharingModule.h"
 #include "hooks/wire/FrameOrigin.h"
@@ -136,6 +137,19 @@ std::int32_t DispatchSend(const WireFrame& f) {
             if (h == job_hash::kGetUserStats) {
                 return AchievementModule::HandleSendGetUserStats(f, t_scratchBody.data(), kWireMaxBodyBytes);
             }
+            // Client achievement page: remember the job id so the reply can be
+            // attributed, and start the local read before the reply lands. The
+            // requests themselves leave untouched.
+            if (h == job_hash::kGetGameAchievements) {
+                if (req.hasSource)
+                    ac::achieve::OnSendSchema(req.source, f.body, f.bodyLen);
+                return kNoChange;
+            }
+            if (h == job_hash::kGetUserAchievements) {
+                if (req.hasSource)
+                    ac::achieve::OnSendUser(req.source, f.body, f.bodyLen);
+                return kNoChange;
+            }
         }
         return kNoChange;
     }
@@ -238,6 +252,17 @@ std::int32_t DispatchRecv(const WireFrame& f) {
                                                                      t_scratchHeader.data(), kWireMaxHeaderBytes,
                                                                      &t_recvHeaderLen);
         }
+        // Client achievement page: learn the schema from the reply the client
+        // already receives, and rebuild the user-state reply from local data.
+        // Neither handler touches the header.
+        if (h == job_hash::kGetGameAchievements) {
+            return ac::achieve::OnRecvSchema(rsp.hasTarget ? rsp.target : 0, f.body, f.bodyLen);
+        }
+        if (h == job_hash::kGetUserAchievements) {
+            return ac::achieve::OnRecvUser(rsp.hasTarget ? rsp.target : 0, f.header, f.headerLen, f.body, f.bodyLen,
+                                           t_scratchHeader.data(), kWireMaxHeaderBytes, &t_recvHeaderLen,
+                                           t_scratchBody.data(), kWireMaxBodyBytes);
+        }
         return kNoChange;
     }
     case emsg::kClientGetUserStatsResponse:
@@ -261,6 +286,10 @@ std::int32_t DispatchRecv(const WireFrame& f) {
 }
 
 void* h_RecvPkt(void* self, CNetPacket* packet) {
+    // Replies the achievement page had to park are delivered on this carrier,
+    // before its own frame is dispatched: a frame queued during a dispatch must
+    // go out on the next packet, not replace the one that produced it.
+    ac::achieve::TryDeliver(self, packet, o_RecvPkt);
     // GATE: nothing below may read or write a packet field until the
     // per-build layout has been identified from live traffic. Before
     // that (and forever, if the probe gives up) the packet travels
@@ -404,10 +433,10 @@ bool SendClientServiceCall(const char* targetJobName, std::uint64_t jobId, const
     return SendFrameImpl(emsg::kServiceMethodCallFromClient, body, bodyLen, targetJobName, jobId);
 }
 
-void RegisterPacketRouter(HMODULE diversion) {
+void RegisterPacketRouter(HMODULE steamclient) {
     const auto settings = Settings::Snapshot();
-    if (!diversion) {
-        AC_LOG_ERROR(kModule, "Diversion module not loaded.");
+    if (!steamclient) {
+        AC_LOG_ERROR(kModule, "Steamclient module not loaded.");
         return;
     }
     AC_LOG_INFO(kModule, "Registering packet router.");
@@ -423,9 +452,9 @@ void RegisterPacketRouter(HMODULE diversion) {
                 settings->presenceShowOnlineBroadcast ? 1 : 0, settings->presenceFriendAppIdFromName ? 1 : 0,
                 settings->presenceAppIdBlob ? 1 : 0, settings->presenceSuffixInvisible ? 1 : 0);
 
-    g_state.hookManager.TryHook("BBuildAndAsyncSendFrame", "steamclient", diversion, o_BBuildAndAsyncSendFrame,
+    g_state.hookManager.TryHook("BBuildAndAsyncSendFrame", "steamclient", steamclient, o_BBuildAndAsyncSendFrame,
                                 h_BBuildAndAsyncSendFrame);
-    g_state.hookManager.TryHook("RecvPkt", "steamclient", diversion, o_RecvPkt, h_RecvPkt);
+    g_state.hookManager.TryHook("RecvPkt", "steamclient", steamclient, o_RecvPkt, h_RecvPkt);
 }
 
 } // namespace ac::hooks

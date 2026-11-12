@@ -11,18 +11,24 @@
 // ---------------------------------------------------------------------------
 namespace ac::constants {
 
-// Diversion: how aggressively we retry the steamclient copy/load. Steam may
-// still hold a write lock on the freshly extracted DLL for a short window.
-inline constexpr int kDiversionMaxRetries = 30;
-inline constexpr int kDiversionRetryDelayMs = 100;
+// Steamclient attach: Steam maps its client shortly after boot. AetherCore
+// never loads it (doing so initializes it out of order and crashes steam.exe),
+// so the hook batch waits for Steam's mapping. Poll cadence and budget for that
+// wait; the late-pattern retry re-probes it with a zero budget.
+//
+// The budget is deliberately short: this wait runs on the init thread BEFORE the
+// safety nets (achievement backup, manifest restore, owner policy), and the
+// backup must land before the client's login reconcile. A slow mapping is
+// covered by the late retry below (10 s cadence), not by holding the init thread
+// for a minute.
+inline constexpr int kSteamclientAttachPollMs = 100;
+inline constexpr int kSteamclientAttachTimeoutMs = 10000;
 
-// SteamUI poll loop: interval used while waiting for steamui.dll to appear.
-inline constexpr int kSteamUiPollIntervalMs = 100;
-
-// SteamUI deferred redirect retry (A7): max wall-clock budget for waiting on
-// steamui.dll before installing the LoadModuleWithPath redirect in a second
-// hook batch. The poll uses kSteamUiPollIntervalMs ticks.
-inline constexpr int kSteamUiDeferredTimeoutMs = 30000;
+// steamui maps later than the client on some builds. The wait is a named
+// worker, never the init thread: the achievement backup must run before the
+// client's login reconcile, so the boot path only probes with a zero budget.
+inline constexpr int kSteamuiAttachPollMs = 500;
+inline constexpr int kSteamuiAttachBudgetMs = 30000;
 
 // Package-0 startup retry (A2): re-attempt cadence and budget for the top-up
 // when the first LoadPackage/MarkLicenseAsChanged window was missed (offline
@@ -228,9 +234,15 @@ inline constexpr std::uint32_t FnvHash(const char* s) {
 namespace job_hash {
 inline constexpr const char* kGetUserStatsName = "Player.GetUserStats#1";
 inline constexpr const char* kGetManifestRequestCodeName = "ContentServerDirectory.GetManifestRequestCode#1";
+// Client achievement page (library -> game page -> Achievements). A pair sent
+// together: the schema and the account state.
+inline constexpr const char* kGetGameAchievementsName = "Player.GetGameAchievements#1";
+inline constexpr const char* kGetUserAchievementsName = "Player.GetUserAchievements#1";
 inline constexpr std::uint32_t kNotifyRunningApps = FnvHash("FamilyGroupsClient.NotifyRunningApps#1");
 inline constexpr std::uint32_t kGetUserStats = FnvHash(kGetUserStatsName);
 inline constexpr std::uint32_t kGetManifestRequestCode = FnvHash(kGetManifestRequestCodeName);
+inline constexpr std::uint32_t kGetGameAchievements = FnvHash(kGetGameAchievementsName);
+inline constexpr std::uint32_t kGetUserAchievements = FnvHash(kGetUserAchievementsName);
 } // namespace job_hash
 
 // PacketRouter ring-buffer pool sizing. 256 KiB body covers large messages

@@ -60,6 +60,13 @@ static_assert(offsetof(steam::AppOwnership, borrowed) == 0x2F, "AppOwnership bor
 static_assert(offsetof(steam::AppOwnership, familyShared) == 0x35, "AppOwnership bool block");
 static_assert(sizeof(steam::AppOwnership) == 0x38, "AppOwnership size (0x36 used + padding)");
 
+// SteamUI app-overview prefix. Only the fields below 0x24 are declared (see
+// SteamTypes.h); these offsets are the ones Aether reads and the one it writes.
+static_assert(offsetof(steam::AppOverviewPrefix, gameId) == 0x08, "AppOverview gameId");
+static_assert(offsetof(steam::AppOverviewPrefix, appId) == 0x10, "AppOverview appId");
+static_assert(offsetof(steam::AppOverviewPrefix, ownershipFlags) == 0x1C, "AppOverview ownershipFlags");
+static_assert(offsetof(steam::AppOverviewPrefix, appStateFlags) == 0x20, "AppOverview appStateFlags");
+
 static_assert(offsetof(steam::PackageInfo, status) == 0x18, "PackageInfo layout");
 static_assert(offsetof(steam::PackageInfo, appIdVec) == 0x40, "PackageInfo layout");
 static_assert(offsetof(steam::PackageInfo, depotIdVec) == 0x58, "PackageInfo layout");
@@ -92,10 +99,21 @@ struct ExpectedLayout {
 //: Checked against the table at startup. Every entry is proven by
 //: disassembly of both shipped builds.
 inline constexpr ExpectedLayout kExpectedLayout[] = {
-    {"AppOwnership.bool_block_start", 0x24}, {"AppOwnership.size_bytes", 0x36},    {"AppOwnership.timeStamp", 0x1C},
-    {"AppOwnership.timeExpire", 0x20},       {"AppOwnership.borrowed", 0x2F},      {"DepotEntry.manifestGid", 0x08},
-    {"DepotEntry.manifestSize", 0x10},       {"PackageInfo.status", 0x18},         {"PackageInfo.appIdVec", 0x40},
-    {"PackageInfo.depotIdVec", 0x58},        {"CUtlVector.allocationCount", 0x08}, {"CUtlVector.count", 0x10},
+    {"AppOwnership.bool_block_start", 0x24},
+    {"AppOwnership.size_bytes", 0x36},
+    {"AppOwnership.timeStamp", 0x1C},
+    {"AppOwnership.timeExpire", 0x20},
+    {"AppOwnership.borrowed", 0x2F},
+    {"DepotEntry.manifestGid", 0x08},
+    {"DepotEntry.manifestSize", 0x10},
+    {"PackageInfo.status", 0x18},
+    {"PackageInfo.appIdVec", 0x40},
+    {"PackageInfo.depotIdVec", 0x58},
+    {"CUtlVector.allocationCount", 0x08},
+    {"CUtlVector.count", 0x10},
+    {"CSteamApp.appId", 0x10},
+    {"CSteamApp.ownershipFlags", 0x1C},
+    {"CSteamApp.appStateFlags", 0x20},
 };
 
 // ---- results --------------------------------------------------------------

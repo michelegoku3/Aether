@@ -8,6 +8,7 @@
 #include <cstdint>
 #include <cstring>
 #include <filesystem>
+#include <map>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -24,6 +25,9 @@
 #include "diagnostics/StatusWriter.h"
 #include "hooks/ipc/PipeWatch.h"
 #include "hooks/license/LicenseManager.h"
+#include "hooks/steamui/AppOverviewHooks.h"
+#include "hooks/steamui/AppOverviewPolicy.h"
+#include "hooks/steamui/AppRecheckPolicy.h"
 #include "hooks/wire/ManifestRestore.h"
 #include "hooks/wire/ProductInfoRequest.h"
 #include "scripting/LuaData.h"
@@ -277,14 +281,57 @@ void FullRescan(Slot& slot, std::unordered_map<std::string, DWORD>& acc, std::ve
     slot.knownFiles = current;
 }
 
+// ---- Pin diff around a Lua reload ------------------------------------------
+// A version apply rewrites the Lua and nothing else, and the client may keep
+// the plan it built before the reload: an app whose pins moved keeps showing the
+// build it already has until its own thread is asked to look again. These
+// helpers turn the file's two snapshots into the per-app before/after the policy
+// compares.
+
+using PinSnapshot = std::map<steam::AppId, std::vector<luadata::PinnedDepot>>;
+
+hooks::steamui::policy::PinSet ToPinSet(const std::vector<luadata::PinnedDepot>& pins) {
+    hooks::steamui::policy::PinSet rows;
+    rows.reserve(pins.size());
+    for (const auto& pin : pins)
+        rows.push_back({pin.depot, pin.gid});
+    return rows;
+}
+
+// Both directions of the union are changes. A root the file stopped advertising
+// lives only in `before` (a removed .lua reports every app it used to pin), and
+// one it started advertising lives only in `after`; an empty side is a real
+// snapshot, not "no information", so the policy sees a full pin removal.
+void AppendPinChanges(const PinSnapshot& before, const PinSnapshot& after,
+                      std::vector<hooks::steamui::policy::PinChange>& changes) {
+    for (const auto& [app, pins] : before) {
+        const auto afterIt = after.find(app);
+        changes.push_back({app, ToPinSet(pins),
+                           afterIt != after.end() ? ToPinSet(afterIt->second) : hooks::steamui::policy::PinSet{}});
+    }
+    for (const auto& [app, pins] : after) {
+        if (!before.count(app))
+            changes.push_back({app, {}, ToPinSet(pins)});
+    }
+}
+
 void ApplyChanges(const std::unordered_map<std::string, DWORD>& acc, const std::vector<std::string>& order) {
     if (order.empty())
         return;
     AC_LOG_INFO(kModule, "Processing %zu watched change(s).", order.size());
 
+    // A build without the recheck pair never pays for the snapshots: the diff
+    // exists only to feed it.
+    const bool recheckPins = hooks::steamui::AppRecheckSupported();
+    std::vector<hooks::steamui::policy::PinChange> pinChanges;
+
     bool luaChanged = false;
     bool manifestChanged = false;
     std::vector<std::uint32_t> removedApps;
+    // Library roots a removed `.lua` used to advertise. Filtered after the whole
+    // batch, because a rename or an atomic replace re-adds the file in the same
+    // batch and that root must not be retired.
+    std::vector<steam::AppId> removalRoots;
     for (const std::string& path : order) {
         const DWORD action = acc.at(path);
         if (IsAppManifestPath(fs::path(path))) {
@@ -299,11 +346,23 @@ void ApplyChanges(const std::unordered_map<std::string, DWORD>& acc, const std::
         }
 
         luaChanged = true;
-        if (action == FILE_ACTION_REMOVED || action == FILE_ACTION_RENAMED_OLD_NAME) {
+        // Snapshots are copies taken under the Lua shared lock: no reference may
+        // survive into the parse, which unloads and re-records this file's
+        // contributions under the unique lock.
+        //
+        // Taken even without the recheck pair: a retirement needs the roots of a
+        // removed file, and its set survives a late hook install.
+        const PinSnapshot beforePins = luadata::PinsByLibraryAppForFile(path);
+        const bool removed = action == FILE_ACTION_REMOVED || action == FILE_ACTION_RENAMED_OLD_NAME;
+        if (removed) {
+            for (const auto& entry : beforePins)
+                removalRoots.push_back(entry.first);
             script::UnloadFile(path);
         } else {
             script::ParseFile(path);
         }
+        if (recheckPins)
+            AppendPinChanges(beforePins, luadata::PinsByLibraryAppForFile(path), pinChanges);
     }
 
     if (luaChanged) {
@@ -312,6 +371,28 @@ void ApplyChanges(const std::unordered_map<std::string, DWORD>& acc, const std::
         // A new .lua app needs its AppInfo before Steam lists it; the queue is
         // one-shot per app, so a reload does not repeat the request.
         hooks::productinfo::RequestAll(luadata::LibraryAppIds());
+        // A root taken away by this batch and named by no script any more is
+        // retired: the next card fill takes back the owned bit Aether wrote, and
+        // the removal is visible without a restart. The configured snapshot is
+        // global and taken now, so a root the same batch re-added survives.
+        if (!removalRoots.empty()) {
+            const std::vector<steam::AppId> configured = luadata::AllDepotIds();
+            const std::unordered_set<steam::AppId> configuredAfter(configured.begin(), configured.end());
+            const std::vector<steam::AppId> retired =
+                hooks::steamui::policy::RetiredRoots(removalRoots, configuredAfter);
+            if (!retired.empty())
+                hooks::steamui::RequestAppRetirement(retired);
+        }
+        // After the license pass, so the client sees the new ownership answer
+        // together with the new intent. Only apps whose pins really moved are
+        // named: a reload that changed nothing must not refresh a card.
+        if (recheckPins) {
+            const std::vector<steam::AppId> rechecks = hooks::steamui::policy::SelectRecheck(pinChanges);
+            if (!rechecks.empty()) {
+                hooks::steamui::RequestAppRecheck(rechecks);
+                AC_LOG_INFO(kModule, "Recheck requested for %zu app(s) after the Lua reload.", rechecks.size());
+            }
+        }
         logutil::ResetAllIdLogSessions();
         log::ResetDedup();
         pipewatch::ResetSessionTracking();

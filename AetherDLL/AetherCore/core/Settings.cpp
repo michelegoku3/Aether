@@ -95,9 +95,6 @@ void Settings::ReloadIfModified(const std::string& configPath) {
     if (candidate->luaExtraPaths != previous->luaExtraPaths) {
         AC_LOG_WARN("Settings", "lua.extra_paths changed: restart Steam to rebuild Lua directory watches.");
     }
-    if (candidate->diversionMode != previous->diversionMode) {
-        AC_LOG_WARN("Settings", "injection.diversion_mode changed: restart Steam to move the hook target.");
-    }
 }
 
 Settings Settings::Load(const std::string& configPath, bool* valid) {
@@ -125,17 +122,16 @@ Settings Settings::Load(const std::string& configPath, bool* valid) {
         return s;
     }
 
-    // [injection] Parsed at startup, before the module target is selected.
-    if (auto mode = tbl["injection"]["diversion_mode"].value<std::string>()) {
-        if (*mode == "auto")
-            s.diversionMode = DiversionMode::Auto;
-        else if (*mode == "copy")
-            s.diversionMode = DiversionMode::Copy;
-        else if (*mode == "live")
-            s.diversionMode = DiversionMode::Live;
-        else {
-            AC_LOG_WARN("Settings", "Invalid injection.diversion_mode '%s' (auto/copy/live).", mode->c_str());
-            return s; // mark invalid, do not publish a partially parsed hot reload
+    // [injection] diversion_mode is obsolete: the DLL always hooks the live
+    // client, so a stale config key must be loud about being ignored instead of
+    // looking like it still selects a target.
+    if (const auto injection = tbl["injection"]; injection.as_table()) {
+        if (const auto mode = injection["diversion_mode"]; mode.node()) {
+            const std::uint32_t line = mode.node()->source().begin.line;
+            AC_LOG_WARN_ONCE("Settings",
+                             "injection.diversion_mode at %s:%u is obsolete and ignored: AetherCore always hooks "
+                             "the live steamclient.",
+                             configPath.c_str(), line);
         }
     }
 
@@ -188,6 +184,13 @@ Settings Settings::Load(const std::string& configPath, bool* valid) {
     if (auto* cache = tbl["manifest_cache"].as_table()) {
         if (auto v = (*cache)["restore_on_startup"].value<bool>()) {
             s.manifestRestoreOnStartup = *v;
+        }
+    }
+
+    // [achievements]
+    if (auto* achievements = tbl["achievements"].as_table()) {
+        if (auto v = (*achievements)["ui_service"].value<bool>()) {
+            s.achievementsUiService = *v;
         }
     }
 
@@ -254,7 +257,7 @@ Settings Settings::Load(const std::string& configPath, bool* valid) {
 
     AC_LOG_INFO("Settings",
                 "Loaded %s (level=%s, keep_last_session=%d, lua extra paths: %zu, "
-                "mirror: %s, diversion=%s, manifest_restore=%d, presence: default=%s show=%zu of=%zu excl=%zu, "
+                "mirror: %s, manifest_restore=%d, presence: default=%s show=%zu of=%zu excl=%zu, "
                 "library: banner=%d apps=%zu owner=%llu).",
                 configPath.c_str(),
                 s.logLevel == LogLevel::Trace   ? "trace"
@@ -264,9 +267,6 @@ Settings Settings::Load(const std::string& configPath, bool* valid) {
                 : s.logLevel == LogLevel::Error ? "error"
                                                 : "off",
                 s.logKeepLastSession ? 1 : 0, s.luaExtraPaths.size(), s.patternMirror.empty() ? "default" : "custom",
-                s.diversionMode == DiversionMode::Auto   ? "auto"
-                : s.diversionMode == DiversionMode::Copy ? "copy"
-                                                         : "live",
                 s.manifestRestoreOnStartup ? 1 : 0, s.presenceDefaultShowOnline ? "showonline" : "none",
                 s.presenceShowOnlineApps.size(), s.presenceAetherOnlineApps.size(), s.presenceExcludeApps.size(),
                 s.libraryOwnerBanner ? 1 : 0, s.libraryOwnerBannerApps.size(),

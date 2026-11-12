@@ -11,7 +11,7 @@ namespace ac::hooks {
 // a wire-only -showonline session WITHOUT masking), GetAppIDForCurrentPipe
 // (translate 480 back to the real app id during AetherOnline stats scopes) and
 // BuildSpawnEnvBlock (patch the overlay CGameID from 480 to the real app id).
-void RegisterAetherOnlineHooks(HMODULE diversion);
+void RegisterAetherOnlineHooks(HMODULE steamclient);
 
 // Calls the original (un-hooked) GetAppIDForCurrentPipe with the captured
 // SteamEngine pointer. Returns 0 if the engine has not been captured yet or the

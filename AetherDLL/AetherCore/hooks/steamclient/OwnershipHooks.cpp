@@ -4,7 +4,6 @@
 #include <algorithm>
 #include <atomic>
 #include <chrono>
-#include <limits>
 #include <mutex>
 #include <sstream>
 #include <string>
@@ -14,6 +13,7 @@
 #include "core/AetherCoreState.h"
 #include "core/AppManifestOwner.h"
 #include "core/Constants.h"
+#include "core/FamilyClassification.h"
 #include "core/HookManager.h"
 #include "core/Logger.h"
 #include "core/OwnershipDecision.h"
@@ -40,14 +40,12 @@ using namespace ac::steam;
 using CheckAppOwnership_t = bool (*)(void*, AppId, AppOwnership*);
 using MarkLicenseAsChanged_t = std::int64_t (*)(void*, std::uint32_t, bool);
 using GetPackageInfo_t = void* (*)(void*, std::uint32_t, std::int64_t);
-using GetSubscribedApps_t = std::uint32_t (*)(void*, AppId*, std::uint32_t, std::uint8_t);
 using SendCallbackToPipe_t = bool (*)(void*, HSteamPipe, HSteamUser, int, void*, int);
 using LoadPackage_t = bool (*)(PackageInfo*, std::uint8_t*, std::int32_t, void*);
 
 CheckAppOwnership_t o_CheckAppOwnership = nullptr;
 MarkLicenseAsChanged_t o_MarkLicenseAsChanged = nullptr;
 GetPackageInfo_t o_GetPackageInfo = nullptr;
-GetSubscribedApps_t o_GetSubscribedApps = nullptr;
 SendCallbackToPipe_t o_SendCallbackToPipe = nullptr;
 LoadPackage_t o_LoadPackage = nullptr;
 
@@ -65,7 +63,8 @@ logutil::SmartIdLog s_logFamily(kModule, "Family-shared AppIds");
 //   WARN  "Not unlocked for 1144200.lua: 1144201, ..."   (single message, ids)
 //
 // Expected ids per file = the ids the file contributes that still need spoofing
-// (luadata::HasDepot — configured, not genuinely owned, not family-shared).
+// (luadata::HasDepot — configured, not genuinely owned, not a real family share;
+// the cosmetic owner banner keeps an app here).
 // The debounce re-arms on every unlock, so late checks (game launch, hot-reload)
 // produce a fresh summary instead of being missed. The thread only reads
 // LuaData (shared locks) and writes logs — it never touches Steam internals.
@@ -258,6 +257,21 @@ std::uint32_t ResolveSpoofOwnerAccountId(AppId app, std::uint32_t familyLender) 
     return credential::ReadActiveUserId();
 }
 
+// True when this app's family answer is the stamp Aether's own owner banner
+// wrote, not a licence. The app keeps the family look, but it is still one
+// Aether provides: without this, the stamp would turn it into a Steam-provided
+// app and switch off every gate keyed on HasDepot. An answer that names no
+// lender is a real share, so the manifest's lender (the map FamilyLenders
+// builds) is the evidence in that case: our stamp always names one.
+bool IsOwnBannerAnswer(AppId app, std::uint32_t lender) {
+    const auto settings = Settings::Snapshot();
+    if (!settings)
+        return false;
+    const std::uint32_t evidence = lender != 0 ? lender : ac::family::LenderFor(app);
+    return familyclass::IsOwnBannerStamp(app, evidence, settings->libraryOwnerBanner, settings->libraryOwnerBannerApps,
+                                         settings->libraryOwnerBannerSteamId);
+}
+
 // ---- Hook bodies -----------------------------------------------------------
 
 bool h_CheckAppOwnership(void* self, AppId app, AppOwnership* out) {
@@ -299,8 +313,9 @@ bool h_CheckAppOwnership(void* self, AppId app, AppOwnership* out) {
                                              out->releaseState == AppReleaseState::Released &&
                                              (out->borrowed || out->familyShared) && out->steamId32 != 0;
             if (!rawFamilyWithLender) {
+                const bool ownBanner = IsOwnBannerAnswer(app, mapLender);
                 const bool wasFamilyShared = luadata::IsFamilyShared(app);
-                luadata::MarkFamilyShared(app, mapLender);
+                luadata::MarkFamilyShared(app, mapLender, ownBanner);
                 familyLender = mapLender;
                 if (!wasFamilyShared)
                     ac::appmanifest::RequestOwnerApply();
@@ -308,7 +323,7 @@ bool h_CheckAppOwnership(void* self, AppId app, AppOwnership* out) {
                 // the real lender in steamId32 keeps the banner visible.
                 LicenseManager::RequestAppInPackage0(app);
                 LicenseManager::RequestLicenseRefresh();
-                RecordOwnershipOutcome(app, OwnershipOutcome::FamilyShared);
+                RecordOwnershipOutcome(app, ownBanner ? OwnershipOutcome::Unlocked : OwnershipOutcome::FamilyShared);
             }
         }
     }
@@ -335,8 +350,9 @@ bool h_CheckAppOwnership(void* self, AppId app, AppOwnership* out) {
             // so the manifest may carry Aether's stamp. A real family license
             // needs Steam's own value back to name a local owner.
             const std::uint32_t lender = out->steamId32;
+            const bool ownBanner = IsOwnBannerAnswer(app, lender);
             const bool newlyFamilyShared = !luadata::IsFamilyShared(app);
-            luadata::MarkFamilyShared(app, lender);
+            luadata::MarkFamilyShared(app, lender, ownBanner);
             if (newlyFamilyShared) {
                 ac::appmanifest::RequestOwnerApply();
                 // Keep the app playable through package 0, but only when the
@@ -345,7 +361,7 @@ bool h_CheckAppOwnership(void* self, AppId app, AppOwnership* out) {
                 if (lender != 0)
                     LicenseManager::RequestAppInPackage0(app);
             }
-            RecordOwnershipOutcome(app, OwnershipOutcome::FamilyShared);
+            RecordOwnershipOutcome(app, ownBanner ? OwnershipOutcome::Unlocked : OwnershipOutcome::FamilyShared);
         } else {
             luadata::MarkOwned(app);
             RecordOwnershipOutcome(app, OwnershipOutcome::LegitOwned);
@@ -408,50 +424,6 @@ void* h_GetPackageInfo(void* self, std::uint32_t packageId, std::int64_t p3) {
         AC_LOG_INFO(kModule, "Captured CPackageInfo pointer 0x%p.", self);
     }
     return o_GetPackageInfo(self, packageId, p3);
-}
-
-std::uint32_t h_GetSubscribedApps(void* self, AppId* appList, std::uint32_t size, std::uint8_t unknownFlag) {
-    std::uint32_t count = o_GetSubscribedApps(self, appList, size, unknownFlag);
-    std::vector<AppId> roots = luadata::LibraryAppIds();
-    if (roots.empty())
-        return count;
-
-    std::uint32_t written = 0;
-    std::uint32_t advertisedAdds = 0;
-    const bool canScanOriginal = appList && count <= size;
-
-    for (AppId appId : roots) {
-        bool alreadyInList = false;
-        if (canScanOriginal) {
-            for (std::uint32_t i = 0; i < count; ++i) {
-                if (appList[i] == appId) {
-                    alreadyInList = true;
-                    break;
-                }
-            }
-        }
-        if (alreadyInList)
-            continue;
-
-        ++advertisedAdds;
-        if (appList && count + written < size) {
-            appList[count + written] = appId;
-            ++written;
-        }
-    }
-
-    std::uint32_t advertisedTotal = count + advertisedAdds;
-    if (advertisedTotal < count)
-        advertisedTotal = (std::numeric_limits<std::uint32_t>::max)();
-    AC_LOG_INFO_ONCE(kModule, "GetSubscribedApps: original=%u roots=%zu written=%u advertised=%u buffer=%u.", count,
-                     roots.size(), written, advertisedTotal, size);
-    if (written < advertisedAdds && size != 0) {
-        // size==0 is Steam's probe call (it only wants the advertised count),
-        // so a zero-sized write there is expected, not an error.
-        AC_LOG_WARN(kModule, "GetSubscribedApps: caller buffer too small (%u); advertised %u root(s) but wrote %u.",
-                    size, advertisedAdds, written);
-    }
-    return advertisedTotal;
 }
 
 bool h_SendCallbackToPipe(void* engine, HSteamPipe pipe, HSteamUser user, int cb, void* data, int size) {
@@ -523,9 +495,9 @@ bool h_LoadPackage(PackageInfo* info, std::uint8_t* sha1, std::int32_t cn, void*
     bool result = o_LoadPackage(info, sha1, cn, p4);
 
     if (info && info->packageId == 0) {
-        // SeedPackage0 owns the g_state.pPackage0 publication. It no longer
-        // seeds: apps enter package 0 on demand, after their first ownership
-        // answer, so an unavailable package is still a valid publication.
+        // SeedPackage0 owns the g_state.pPackage0 publication and the first
+        // seed of every configured id; a status without a key is still a valid
+        // publication, and later additions are a top-up.
         if (info->status == steam::kPackageStatusUnloaded)
             AC_LOG_WARN(kModule, "Package 0 status=%u (key absent); publishing it for on-demand use.", info->status);
         LicenseManager::SeedPackage0(info);
@@ -535,26 +507,24 @@ bool h_LoadPackage(PackageInfo* info, std::uint8_t* sha1, std::int32_t cn, void*
 
 } // namespace
 
-void RegisterOwnershipHooks(HMODULE diversion) {
-    if (!diversion) {
-        AC_LOG_ERROR(kModule, "Diversion module not loaded.");
+void RegisterOwnershipHooks(HMODULE steamclient) {
+    if (!steamclient) {
+        AC_LOG_ERROR(kModule, "Steamclient module not loaded.");
         return;
     }
     AC_LOG_INFO(kModule, "Registering ownership hooks.");
 
-    g_state.hookManager.TryHook("CheckAppOwnership", "steamclient", diversion, o_CheckAppOwnership,
+    g_state.hookManager.TryHook("CheckAppOwnership", "steamclient", steamclient, o_CheckAppOwnership,
                                 h_CheckAppOwnership);
-    g_state.hookManager.TryHook("MarkLicenseAsChanged", "steamclient", diversion, o_MarkLicenseAsChanged,
+    g_state.hookManager.TryHook("MarkLicenseAsChanged", "steamclient", steamclient, o_MarkLicenseAsChanged,
                                 h_MarkLicenseAsChanged);
-    g_state.hookManager.TryHook("GetPackageInfo", "steamclient", diversion, o_GetPackageInfo, h_GetPackageInfo);
-    g_state.hookManager.TryHook("GetSubscribedApps", "steamclient", diversion, o_GetSubscribedApps,
-                                h_GetSubscribedApps);
-    g_state.hookManager.TryHook("SendCallbackToPipe", "steamclient", diversion, o_SendCallbackToPipe,
+    g_state.hookManager.TryHook("GetPackageInfo", "steamclient", steamclient, o_GetPackageInfo, h_GetPackageInfo);
+    g_state.hookManager.TryHook("SendCallbackToPipe", "steamclient", steamclient, o_SendCallbackToPipe,
                                 h_SendCallbackToPipe);
-    g_state.hookManager.TryHook("LoadPackage", "steamclient", diversion, o_LoadPackage, h_LoadPackage);
+    g_state.hookManager.TryHook("LoadPackage", "steamclient", steamclient, o_LoadPackage, h_LoadPackage);
 
     // The grow helper and license-update resolver live in LicenseManager.
-    LicenseManager::Init(diversion);
+    LicenseManager::Init(steamclient);
     // Starts the family-lender refresh worker; it waits for login and retries.
     ac::family::Init();
 }

@@ -4,11 +4,16 @@
 
 namespace ac::hooks {
 
-// Registers the ownership-related hooks on the diverted steamclient
-// (CheckAppOwnership, LoadPackage, GetPackageInfo, GetSubscribedApps,
+// Registers the ownership-related hooks on the live steamclient
+// (CheckAppOwnership, LoadPackage, GetPackageInfo,
 // MarkLicenseAsChanged, SendCallbackToPipe) and resolves the CUtlMemory grow
 // helper.
-void RegisterOwnershipHooks(HMODULE diversion);
+//
+// There is deliberately no GetSubscribedApps advertisement: apps reach the
+// library through the package-0 license only, so Steam builds their AppInfo and
+// local state before it renders a card. Appending ids to the subscribed list
+// created overview entries without that bookkeeping and the client asserted.
+void RegisterOwnershipHooks(HMODULE steamclient);
 
 // Actively queries package 0 through the (already hooked) GetPackageInfo entry
 // point. LoadPackage(package 0) fires exactly once, very early in the Steam

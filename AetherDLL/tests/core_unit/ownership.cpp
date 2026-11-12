@@ -26,6 +26,7 @@ void SeedIncludesUnclassifiedLuaApp() {
     // The Lua store is global to this test binary: unload the fixture so the
     // recorded depot cannot leak into another suite's assertions.
     ac::luadata::UnloadFile(path);
+    ac::luadata::ClearPendingChanges();
 }
 
 // Pre-seeded, Steam's first answer arrives with existInPackageNums == 1: it
@@ -67,6 +68,86 @@ void PreSeededFamilyAppKeepsBanner() {
     const auto d = ac::ownership::DecideOwnership(f);
     CHECK(d.action == ac::ownership::OwnershipAction::Spoof);
     CHECK(d.familyBanner);
+}
+
+// The status snapshot reports how many managed apps are actually classified.
+// Configured ids, spoofed ids, genuinely owned ids and family-shared ids are
+// four different populations: a single counter would hide the case where an app
+// is configured but Steam never asked about it (so it is not classified yet).
+void MembershipCountsTrackClassification() {
+    const std::size_t owned0 = ac::luadata::OwnedCount();
+    const std::size_t spoofed0 = ac::luadata::SpoofedCount();
+    const std::size_t family0 = ac::luadata::FamilySharedCount();
+    const std::size_t roots0 = ac::luadata::LibraryAppCount();
+
+    const char* path = "C:/fixtures/424242.lua";
+    ac::luadata::BeginFile(path);
+    ac::luadata::RecordDepot(424242, "");
+    ac::luadata::RecordDepot(424243, "");
+    ac::luadata::RecordDepot(424244, "");
+    // 424242 is also the numeric root of the file: only roots are library
+    // entries, so the depot-only ids must not raise the root count.
+    ac::luadata::RecordLibraryApp(424242);
+    ac::luadata::EndFile();
+
+    // Merely being configured classifies nothing.
+    CHECK_EQ(ac::luadata::OwnedCount(), owned0);
+    CHECK_EQ(ac::luadata::SpoofedCount(), spoofed0);
+    CHECK_EQ(ac::luadata::FamilySharedCount(), family0);
+    CHECK_EQ(ac::luadata::LibraryAppCount(), roots0 + 1);
+
+    ac::luadata::MarkOwned(424242);
+    ac::luadata::MarkSpoofed(424243);
+    ac::luadata::MarkFamilyShared(424244, 777, /*ownBanner=*/false);
+    CHECK_EQ(ac::luadata::OwnedCount(), owned0 + 1);
+    CHECK_EQ(ac::luadata::SpoofedCount(), spoofed0 + 1);
+    CHECK_EQ(ac::luadata::FamilySharedCount(), family0 + 1);
+
+    // The flags are mutually exclusive per app: reclassifying moves the app
+    // between populations instead of inflating two counters.
+    ac::luadata::MarkSpoofed(424242);
+    CHECK_EQ(ac::luadata::OwnedCount(), owned0);
+    CHECK_EQ(ac::luadata::SpoofedCount(), spoofed0 + 2);
+
+    // The Lua store is global to this test binary: unload the fixture so the
+    // recorded ids cannot leak into another suite's assertions.
+    ac::luadata::UnloadFile(path);
+    CHECK_EQ(ac::luadata::OwnedCount(), owned0);
+    CHECK_EQ(ac::luadata::SpoofedCount(), spoofed0);
+    CHECK_EQ(ac::luadata::FamilySharedCount(), family0);
+    CHECK_EQ(ac::luadata::LibraryAppCount(), roots0);
+    // RecordDepot queues additions and UnloadFile queues removals: drain them so
+    // a no-argument run does not hand a stale queue to the next suite.
+    ac::luadata::ClearPendingChanges();
+}
+
+// Two different populations feed two different requests. Package 0 must carry
+// every configured id (a depot id is what gives the app its content), but the
+// PICS request must ask only for library roots: a depot id has no product info
+// and would burn one of the one-shot per-app requests.
+void LibraryRootsExcludeDepots() {
+    const char* path = "C:/fixtures/515151.lua";
+    ac::luadata::BeginFile(path);
+    ac::luadata::RecordDepot(515151, "");
+    ac::luadata::RecordLibraryApp(515151);
+    ac::luadata::RecordDepot(515152, std::string(64, 'a'));
+    ac::luadata::RecordDepot(515153, "");
+    ac::luadata::EndFile();
+
+    const auto roots = ac::luadata::LibraryAppIds();
+    CHECK(std::find(roots.begin(), roots.end(), 515151u) != roots.end());
+    CHECK(std::find(roots.begin(), roots.end(), 515152u) == roots.end());
+
+    const auto seed = ac::luadata::SeedPackage0Ids();
+    CHECK(std::find(seed.begin(), seed.end(), 515151u) != seed.end());
+    CHECK(std::find(seed.begin(), seed.end(), 515152u) != seed.end());
+    // Unkeyed addappid for an id that is not the numeric root: it must still be
+    // seeded (the license carries it) and must not become a library root.
+    CHECK(std::find(roots.begin(), roots.end(), 515153u) == roots.end());
+    CHECK(std::find(seed.begin(), seed.end(), 515153u) != seed.end());
+
+    ac::luadata::UnloadFile(path);
+    ac::luadata::ClearPendingChanges();
 }
 
 } // namespace
@@ -193,4 +274,6 @@ void OwnershipDecisionTest() {
     PreSeededLuaAppStaysSpoofed();
     PreSeededOwnedAppIsMarkedOwned();
     PreSeededFamilyAppKeepsBanner();
+    MembershipCountsTrackClassification();
+    LibraryRootsExcludeDepots();
 }

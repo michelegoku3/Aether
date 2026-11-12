@@ -36,7 +36,7 @@ struct WireFrame {
 // unchanged. This keeps the handler contract simple and allocation-free.
 
 // Installs the two network hooks (queued in the shared HookManager batch).
-void RegisterPacketRouter(HMODULE diversion);
+void RegisterPacketRouter(HMODULE steamclient);
 
 // ---------------------------------------------------------------------------
 // Originate a client->CM protobuf frame from our own code.

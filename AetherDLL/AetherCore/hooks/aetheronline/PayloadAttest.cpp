@@ -42,7 +42,7 @@ bool GetFileVersion(const std::string& utf8Path, DWORD& ms, DWORD& ls) {
 bool PayloadVersionMatches(HMODULE selfModule, const std::string& payloadPath) {
     if (!selfModule)
         return false;
-    // Wide at the boundary (see Diversion.cpp): *A would mangle non-ASCII
+    // Wide at the boundary (see SteamclientAttach.cpp): *A would mangle non-ASCII
     // Steam installs via the system codepage.
     DWORD selfMs = 0, selfLs = 0;
     std::wstring selfPath(32768, L'\0');

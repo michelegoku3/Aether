@@ -1,12 +1,14 @@
 #include "pch.h"
 #include "scripting/LuaData.h"
 
+#include <algorithm>
 #include <mutex>
 #include <shared_mutex>
 #include <string>
 #include <unordered_set>
 #include <vector>
 
+#include "core/FamilyClassification.h"
 #include "core/Logger.h"
 
 namespace ac::luadata {
@@ -74,8 +76,10 @@ void AppendIdsForApp(steam::AppId appId, std::unordered_set<steam::AppId>& out) 
 
 bool HasDepot(steam::AppId appId) {
     std::shared_lock lock(g_state.lua.mutex);
-    return g_state.lua.depotKeys.count(appId) && !g_state.lua.ownedAppIds.count(appId) &&
-           !g_state.lua.familySharedAppIds.count(appId);
+    const auto& lua = g_state.lua;
+    const familyclass::FamilyKind kind =
+        familyclass::ClassifyFamily(lua.familySharedAppIds.count(appId) > 0, lua.bannerFamilyAppIds.count(appId) > 0);
+    return familyclass::ProvidesApp(lua.depotKeys.count(appId) > 0, lua.ownedAppIds.count(appId) > 0, kind);
 }
 
 bool IsConfigured(steam::AppId appId) {
@@ -91,6 +95,13 @@ bool IsOwned(steam::AppId appId) {
 bool IsFamilyShared(steam::AppId appId) {
     std::shared_lock lock(g_state.lua.mutex);
     return g_state.lua.familySharedAppIds.count(appId) > 0;
+}
+
+bool IsRealFamilyShare(steam::AppId appId) {
+    std::shared_lock lock(g_state.lua.mutex);
+    return familyclass::ClassifyFamily(g_state.lua.familySharedAppIds.count(appId) > 0,
+                                       g_state.lua.bannerFamilyAppIds.count(appId) > 0) ==
+           familyclass::FamilyKind::RealShare;
 }
 
 bool IsSpoofed(steam::AppId appId) {
@@ -183,6 +194,31 @@ std::unordered_map<std::string, std::vector<steam::AppId>> ConfiguredIdsByFile()
     return out;
 }
 
+std::map<steam::AppId, std::vector<PinnedDepot>> PinsByLibraryAppForFile(const std::string& path) {
+    std::shared_lock lock(g_state.lua.mutex);
+    std::map<steam::AppId, std::vector<PinnedDepot>> out;
+    const auto it = g_state.lua.fileContributions.find(path);
+    if (it == g_state.lua.fileContributions.end())
+        return out;
+    const F& contributions = it->second;
+    if (contributions.libraryApps.empty() || contributions.manifestOverrides.empty())
+        return out;
+
+    std::vector<PinnedDepot> pins;
+    pins.reserve(contributions.manifestOverrides.size());
+    for (const auto& [depot, override] : contributions.manifestOverrides)
+        pins.push_back({static_cast<steam::AppId>(depot), override.gid});
+    // The module's own ordering, not the hash map's: the caller diffs two
+    // snapshots and a reload that only reordered `setmanifestid` lines must
+    // hand back identical rows.
+    std::sort(pins.begin(), pins.end(),
+              [](const PinnedDepot& left, const PinnedDepot& right) { return left.depot < right.depot; });
+
+    for (steam::AppId app : contributions.libraryApps)
+        out.emplace(app, pins);
+    return out;
+}
+
 std::size_t LoadedFileCount() {
     std::shared_lock lock(g_state.lua.mutex);
     return g_state.lua.fileContributions.size();
@@ -191,6 +227,37 @@ std::size_t LoadedFileCount() {
 std::size_t ConfiguredDepotCount() {
     std::shared_lock lock(g_state.lua.mutex);
     return g_state.lua.depotKeys.size();
+}
+
+std::size_t OwnedCount() {
+    std::shared_lock lock(g_state.lua.mutex);
+    return g_state.lua.ownedAppIds.size();
+}
+
+std::size_t SpoofedCount() {
+    std::shared_lock lock(g_state.lua.mutex);
+    return g_state.lua.spoofedAppIds.size();
+}
+
+std::size_t FamilySharedCount() {
+    std::shared_lock lock(g_state.lua.mutex);
+    const auto& lua = g_state.lua;
+    std::size_t count = 0;
+    for (const steam::AppId appId : lua.familySharedAppIds) {
+        if (!lua.bannerFamilyAppIds.count(appId))
+            ++count;
+    }
+    return count;
+}
+
+std::size_t BannerFamilyCount() {
+    std::shared_lock lock(g_state.lua.mutex);
+    return g_state.lua.bannerFamilyAppIds.size();
+}
+
+std::size_t LibraryAppCount() {
+    std::shared_lock lock(g_state.lua.mutex);
+    return g_state.lua.libraryAppIds.size();
 }
 
 std::size_t AccessTokenCount() {
@@ -214,17 +281,22 @@ void MarkOwned(steam::AppId appId) {
     std::unique_lock lock(g_state.lua.mutex);
     auto& lua = g_state.lua;
     lua.familySharedAppIds.erase(appId);
+    lua.bannerFamilyAppIds.erase(appId);
     lua.spoofedAppIds.erase(appId);
     lua.familyLenderAppIds.erase(appId);
     lua.ownedAppIds.insert(appId);
 }
 
-void MarkFamilyShared(steam::AppId appId, std::uint32_t lenderAccountId) {
+void MarkFamilyShared(steam::AppId appId, std::uint32_t lenderAccountId, bool ownBanner) {
     std::unique_lock lock(g_state.lua.mutex);
     auto& lua = g_state.lua;
     lua.ownedAppIds.erase(appId);
     lua.spoofedAppIds.erase(appId);
     lua.familySharedAppIds.insert(appId);
+    if (ownBanner)
+        lua.bannerFamilyAppIds.insert(appId);
+    else
+        lua.bannerFamilyAppIds.erase(appId);
     if (lenderAccountId != 0)
         lua.familyLenderAppIds[appId] = lenderAccountId;
     else
@@ -236,6 +308,7 @@ void MarkSpoofed(steam::AppId appId) {
     auto& lua = g_state.lua;
     lua.ownedAppIds.erase(appId);
     lua.familySharedAppIds.erase(appId);
+    lua.bannerFamilyAppIds.erase(appId);
     lua.familyLenderAppIds.erase(appId);
     lua.spoofedAppIds.insert(appId);
 }
@@ -263,6 +336,7 @@ void RecordDepot(steam::AppId depotId, const std::string& hexKey) {
 
     lua.ownedAppIds.erase(depotId);
     lua.familySharedAppIds.erase(depotId);
+    lua.bannerFamilyAppIds.erase(depotId);
     lua.spoofedAppIds.erase(depotId);
     lua.familyLenderAppIds.erase(depotId);
 
@@ -336,6 +410,7 @@ void UnloadFile(const std::string& path) {
     for (steam::AppId id : c.depots) {
         lua.ownedAppIds.erase(id);
         lua.familySharedAppIds.erase(id);
+        lua.bannerFamilyAppIds.erase(id);
         lua.spoofedAppIds.erase(id);
         lua.familyLenderAppIds.erase(id);
     }

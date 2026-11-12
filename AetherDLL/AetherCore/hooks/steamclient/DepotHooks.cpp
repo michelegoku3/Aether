@@ -161,15 +161,15 @@ bool h_BuildDepotDependency(void* mgr, AppId app, void* cfg, CUtlVector<DepotEnt
 
 } // namespace
 
-void RegisterDepotHooks(HMODULE diversion) {
-    if (!diversion) {
-        AC_LOG_ERROR(kModule, "Diversion module not loaded.");
+void RegisterDepotHooks(HMODULE steamclient) {
+    if (!steamclient) {
+        AC_LOG_ERROR(kModule, "Steamclient module not loaded.");
         return;
     }
     AC_LOG_INFO(kModule, "Registering depot hooks.");
-    g_state.hookManager.TryHook("LoadDepotDecryptionKey", "steamclient", diversion, o_LoadDepotDecryptionKey,
+    g_state.hookManager.TryHook("LoadDepotDecryptionKey", "steamclient", steamclient, o_LoadDepotDecryptionKey,
                                 h_LoadDepotDecryptionKey);
-    g_state.hookManager.TryHook("BuildDepotDependency", "steamclient", diversion, o_BuildDepotDependency,
+    g_state.hookManager.TryHook("BuildDepotDependency", "steamclient", steamclient, o_BuildDepotDependency,
                                 h_BuildDepotDependency);
 }
 

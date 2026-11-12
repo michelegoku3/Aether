@@ -21,8 +21,6 @@ pub struct ApplyVersionReport {
     pub manifests_found: usize,
     /// `"depot:manifest"` pairs still missing from the depotcache folders.
     pub manifests_missing: Vec<String>,
-    /// True when the ACF was updated right now.
-    pub acf_synced_now: bool,
     /// Restore point of the Lua, if a backup was written.
     pub lua_backup_path: Option<String>,
 }

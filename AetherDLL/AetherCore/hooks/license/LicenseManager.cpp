@@ -364,14 +364,14 @@ void StopStartupRetry() {
 
 } // namespace
 
-void Init(HMODULE diversion) {
-    if (void* a = pattern::ResolveAddress("CUtlMemoryGrow", "steamclient", diversion)) {
+void Init(HMODULE steamclient) {
+    if (void* a = pattern::ResolveAddress("CUtlMemoryGrow", "steamclient", steamclient)) {
         o_CUtlMemoryGrow = reinterpret_cast<CUtlMemoryGrow_t>(a);
     }
-    if (void* a = pattern::ResolveAddress("ProcessPendingLicenseUpdates", "steamclient", diversion)) {
+    if (void* a = pattern::ResolveAddress("ProcessPendingLicenseUpdates", "steamclient", steamclient)) {
         o_ProcessPendingLicenseUpdates = reinterpret_cast<ProcessPendingLicenseUpdates_t>(a);
     }
-    if (void* a = pattern::ResolveAddress("MarkLicenseAsChanged", "steamclient", diversion)) {
+    if (void* a = pattern::ResolveAddress("MarkLicenseAsChanged", "steamclient", steamclient)) {
         o_MarkLicenseAsChanged = reinterpret_cast<MarkLicenseAsChanged_t>(a);
     }
     AC_LOG_INFO(kModule, "Init (grow=%d ppl=%d mlc=%d).", o_CUtlMemoryGrow != nullptr,
@@ -415,6 +415,12 @@ void SeedPackage0(PackageInfo* package0) {
     if (changed)
         RefreshLicenses("publish");
     AC_LOG_INFO(kModule, "Package 0 published with every configured .lua id.");
+}
+
+std::size_t Package0AppCount() {
+    std::lock_guard<std::mutex> lock(s_packageMutationMutex);
+    auto* pkg = static_cast<PackageInfo*>(g_state.pPackage0.load());
+    return pkg ? static_cast<std::size_t>(pkg->appIdVec.size) : 0;
 }
 
 bool AddAppToPackage0(AppId appId) {

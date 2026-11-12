@@ -218,9 +218,9 @@ void RegisterIpcHandlers(const IpcHandlerEntry* entries, std::size_t count) {
     s_handlers.store(std::move(merged), std::memory_order_release);
 }
 
-void RegisterIpcBus(HMODULE diversion) {
-    if (!diversion) {
-        AC_LOG_ERROR(kModule, "Diversion module not loaded.");
+void RegisterIpcBus(HMODULE steamclient) {
+    if (!steamclient) {
+        AC_LOG_ERROR(kModule, "Steamclient module not loaded.");
         return;
     }
     // Idempotent re-run (late-pattern retry re-runs the whole client batch):
@@ -237,7 +237,7 @@ void RegisterIpcBus(HMODULE diversion) {
     }
     AC_LOG_INFO(kModule, "Registering IPC bus.");
 
-    if (void* addr = pattern::ResolveAddress("GetPipeClient", "steamclient", diversion)) {
+    if (void* addr = pattern::ResolveAddress("GetPipeClient", "steamclient", steamclient)) {
         o_GetPipeClient = reinterpret_cast<GetPipeClient_t>(addr);
     } else {
         // Without GetPipeClient we cannot apply the internal-pipe filter safely,
@@ -252,7 +252,7 @@ void RegisterIpcBus(HMODULE diversion) {
     CmdUser::Register();
     CmdUtils::Register();
 
-    g_state.hookManager.TryHook("IPCProcessMessage", "steamclient", diversion, o_IPCProcessMessage,
+    g_state.hookManager.TryHook("IPCProcessMessage", "steamclient", steamclient, o_IPCProcessMessage,
                                 h_IPCProcessMessage);
 }
 

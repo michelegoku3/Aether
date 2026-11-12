@@ -224,4 +224,41 @@ inline constexpr std::uint32_t kMsgHdrProtoFlag = 0x80000000u;
 // fall back to a compiled default). See core/NetPacketAbi.h.
 struct CNetPacket;
 
+// ---- SteamUI app overview ------------------------------------------------
+
+// Ownership bits of the SteamUI app object. Only `Owned` is written by Aether.
+enum class AppOwnershipFlags : std::uint32_t {
+    None = 0,
+    Owned = 0x1,
+};
+
+// A sample outside these masks is not "a flag we do not know": it means the
+// dword under our offset is not the flags word any more, so the layout moved.
+inline constexpr std::uint32_t kOwnershipKnownMask = 0x003FFFFFu;
+inline constexpr std::uint32_t kAppStateKnownMask = 0x03FFFFFFu;
+
+// Change flag handed to the client's MarkAppChange: the app's AppInfo and depot
+// config are stale. This is the client's own AppInfoOrConfig bit, and it is what
+// a moved manifest pin makes true, so the client rebuilds the app from the pin
+// table it reads now instead of the one it read at startup.
+inline constexpr std::uint32_t kAppChangeAppInfoOrConfig = 0x0002;
+
+// Prefix of the SteamUI app-overview object, NOT the whole CSteamApp.
+//
+// The offsets below 0x24 come from two independent references (an external layout dump and
+// the earlier probe of this client) and are fenced at compile time. What
+// follows 0x24 is deliberately not declared: its alignment depends on members
+// Aether never reads, and guessing the tail is how a write lands in the wrong
+// field. `ownershipFlags` is the only member Aether writes.
+struct AppOverviewPrefix {
+    std::uint8_t vfptr[8];            // +0x00
+    std::uint64_t gameId;             // +0x08  low 24 bits must equal appId
+    AppId appId;                      // +0x10
+    std::uint16_t pad14;              // +0x14
+    std::uint16_t pad16;              // +0x16
+    std::uint32_t releaseState;       // +0x18
+    AppOwnershipFlags ownershipFlags; // +0x1C
+    std::uint32_t appStateFlags;      // +0x20  EAppState bits
+};
+
 } // namespace ac::steam

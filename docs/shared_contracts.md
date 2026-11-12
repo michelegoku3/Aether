@@ -30,6 +30,7 @@ must agree on, or you add/rename an IPC command.
 - [8. The Steam path is not a client parameter](#8-the-steam-path-is-not-a-client-parameter)
 - [9. ACF ownership: who writes which field](#9-acf-ownership-who-writes-which-field)
 - [10. Log line contract](#10-log-line-contract)
+- [11. Client achievement page: local state only](#11-client-achievement-page-local-state-only)
 
 ---
 
@@ -334,9 +335,15 @@ fields:
 | Field | Writer | When |
 |---|---|---|
 | `InstalledDepots.*.manifest`, `InstalledDepots.*.size` | the installed-depot **repair** only (both halves, same rule) | Desk: after the user's install/version/Repair acts on that app. DLL: once per process at Steam startup, managed apps only |
-| `buildid`, `TargetBuildID`, `StateFlags`, `BytesToDownload`, `BytesDownloaded`, `UpdateResult`, `SizeOnDisk` | Desk `steam/acf.rs::apply_build` (version apply), or Steam itself | version apply; Steam on its own updates |
+| `buildid`, `TargetBuildID`, `StateFlags`, `BytesToDownload`, `BytesDownloaded`, `UpdateResult`, `SizeOnDisk` | Steam itself | on its own updates |
 | `LastOwner` | DLL `core/AppManifestOwner.cpp` (§ family sharing) | after login / boot |
 | everything else | Steam | — |
+
+**Rule 0 — a version apply writes only the Lua.** The pins in the `.lua` are
+the single statement of which build the user wants; the ACF describes what
+Steam installed. Writing `buildid`/`TargetBuildID` from a pick claims the
+client already runs a build it never downloaded, so Steam keeps the card on
+PLAY until the game is launched and closed. Aether leaves both fields to Steam.
 
 **Rule 1 — a version apply never writes `InstalledDepots`.** The pinned GID a
 version selects is the target of the next download, not the identity of the
@@ -361,16 +368,45 @@ retries in a loop.
 builds this session's app list) and never again in that process; the Desk does
 it only inside the action that triggered it.
 
+**Rule 4 — a pin change reaches Steam as a recheck, never as an ACF write.**
+The pins are the target; the ACF is what Steam installed. A version apply ends
+when the Lua is written (Rule 0): the Desk must not nudge the client by touching
+`buildid` or `TargetBuildID`. Instead, after a Lua reload the DLL diffs the
+pinned `(depot, gid)` rows of each changed file and asks the client to rebuild
+only the apps whose pins moved — `MarkAppChange` on the UI thread, from a queue
+of 64, at most 8 per frame — and Steam decides PLAY, UPDATE or a download from
+the pins against `InstalledDepots`. A missing `MarkAppChange` /
+`CSteamUIAppControllerRunFrame` pattern disables the recheck alone
+(`recheck_state = unsupported` in `status.json`); card repair, ownership and
+membership keep working.
+
+**Rule 5 — the owner banner is display-only.** `[library] owner_banner_apps`
+writes `LastOwner = owner_banner_steamid` for apps Aether spoofs, and
+`family/FamilyLenders.cpp` reads any foreign `LastOwner` as a real Steam Family
+lender. The classification must keep those two apart: the app is drawn as
+shared (`luadata::IsFamilyShared`, `AppOwnership.steamId32`, the overview flag)
+but it is still one Aether provides. `core/FamilyClassification.h` is the single
+rule — a `RealShare` removes the app from `HasDepot`, a `Banner` does not — and
+`luadata::IsRealFamilyShare` is the behavioural read every gate uses (depot
+keys, manifest overrides, the cloud gate's `family-shared`, the achievement
+page). The stamp always names the banner account, so an answer that names no
+lender is a real share and stays Valve's. Without this the stamp switches off
+every `HasDepot` consumer for the listed apps, achievements included.
+
 Twins:
-- Desk: `steam/acf.rs` → `apply_build`, `repair_installed_depots`,
+- Desk: `steam/acf.rs` → `repair_installed_depots`,
   `repair_installed_depots_for_app`; size semantics in
-  `manifest/identity.rs` → `manifest_content_size`.
+  `manifest/identity.rs` → `manifest_content_size`. A version apply has no ACF
+  writer; the reading half is the private `read_build_fields`, pinned by the
+  tests in `steam/acf.rs` (Rule 0).
 - DLL: `core/InstalledDepotRepair.{h,cpp}` → `PlanInstalledDepotRepairs`,
   `ApplyInstalledDepotRepairs` (boot step 10d in `core/BootSteps.cpp`); size
-  semantics in `network/ManifestIdentity.cpp` → `ManifestContentSize`.
+  semantics in `network/ManifestIdentity.cpp` → `ManifestContentSize`. The
+  recheck side is `scripting/DirWatch.cpp` → `RequestAppRecheck` (Rule 4).
 
 Decision matrix under test: the Desk cases in `steam/acf.rs::tests`, the DLL
-`installeddepots` and `manifest_identity` ctest cases.
+`installeddepots`, `manifest_identity`, `recheck` and `family_banner` ctest
+cases.
 
 **Why**: `InstalledDepots` is the record Steam computes every download delta
 from (`contentupdatecontext.cpp` / `depotdownloadmgr.cpp`). A GID with no local
@@ -445,6 +481,80 @@ SteamLog/   <original Steam names, already filtered>
   any stamp line is included whole, tail-capped at 4 MiB. Steam stamps are
   second-precision, so Desk's millisecond stamps are what order the two
   families against each other.
+
+---
+
+## 11. Client achievement page: local state only
+
+Steam's own achievement page (library → game page → Achievements) is served by
+two service methods the client sends together: `Player.GetGameAchievements#1`
+(the schema: names, icons, `internal_key`, `schema_hash`) and
+`Player.GetUserAchievements#1` (the account state, keyed by `internal_key`).
+The CM answers the schema for any app but sends an empty state body for an app
+the account does not own, so every app Aether advertises shows an empty page
+while the overlay has the real unlocks.
+
+**Rule — the page lists every achievement, from the local cache, never a guess.**
+Aether rebuilds the user-state reply for a managed app (`luadata::HasDepot`) and
+leaves every other app alone:
+
+| Decision | Owners | Result |
+|---|---|---|
+| not managed (`not-managed`) | DLL `hooks/wire/AchievementUi.cpp` | Valve's reply, byte for byte |
+| schema or local state not ready yet (`no-schema`, `no-state`) | DLL, same file | the reply is held: the client gets a copy aimed at a job nobody waits on (so its real job stays pending) and the rebuilt frame is delivered when the data lands. After 8 s the original is released |
+| data ready (`rebuilt`) | DLL, same file | one entry per achievement in the captured schema, locked ones included, `progress_float` always (the counter from the local stats file), unlock pair only when unlocked; one `is_achievable` group per schema group; `schema_version`/`schema_hash` and unknown fields kept from Valve's reply |
+| reply too large, unparsable, header unparsable | DLL, same file | Valve's reply (fail open) |
+
+- **Twins.** The decision table is `hooks/wire/AchievementUiPolicy.h` (pure, no
+  logger, no `g_state`, no Windows; `FillReply` writes the body as a template so
+  no protobuf type is declared there) and its consumer is
+  `hooks/wire/AchievementUi.cpp`. Change one, change the other.
+- **Sources.** Unlocks and dates come from
+  `appcache\stats\UserGameStats_<account>_<appid>.bin`, read on a
+  `workers::Submit` job; the schema comes from the `GetGameAchievements` reply
+  the client already received. Nothing is uploaded and no unlock is invented.
+- **Body shape.** One entry per schema achievement is what makes the page appear
+  for an app whose account has no unlocks at all: Steam draws the rows from this
+  reply, not from the schema, and an entry without `progress_float` leaves the
+  row blank. This is the reference behaviour.
+- **Progress values.** `progress_float` is the raw value of the stat that counts
+  toward the achievement, not a fraction. Which stat that is comes from
+  `appcache\stats\UserGameStatsSchema_<appid>.bin`
+  (`hooks/wire/AchievementStatsSchema.cpp`): the `progress` block of a bit names
+  it in `value.operand1` with `operation = "statvalue"` - the only operation the
+  client's schemas use. The value
+  itself is that stat's `data` entry in the account's `UserGameStats` file, read
+  on the same worker job. An achievement without a resolvable counter is written
+  as `0.0f`, never as a guessed value.
+- **Dated bits.** A bit listed in `AchievementTimes` counts as unlocked even when
+  the `data`/`pendingbits` masks do not carry it: the date outlives the mask and
+  it is still counted.
+- **eresult.** The CM marks an unowned app denied; the reply is rewritten to
+  `k_EResultOK` (the app is not denied, it simply has no CAuth). The header is
+  rebuilt in the router's scratch buffer, body untouched on that path.
+- **Holding.** A reply that arrives before the schema or before the `.bin` read
+  finishes is parked with its real header/body, and the client is handed a copy
+  whose `jobid_target` is `1` (a job the client manager never allocates, so the
+  copy is dropped and the real job stays open). The schema reply and the worker
+  queue the rebuilt frame; the `RecvPkt` hook delivers it on the next inbound
+  carrier (`AchievementUi::TryDeliver`, the same trick as `PersonaInject`).
+- **Keys.** `internal_key == bucket * 256 + bit` (the identity the client's
+  achievement page uses). Entries keep the schema order and only keys present
+  in the captured schema are emitted; key `0` is a real key, so presence of
+  the field decides, never its value.
+- **Unconfirmed bits.** A bit reaches the reply when either the bucket's `data`
+  mask or its `pendingbits` mask holds it: for an app the account does not own
+  the server never acks the bit, so it only ever appears in `pendingbits`.
+- **The schema reply is never rewritten**, and `schema_hash` is never derived
+  (it cannot be computed from the `.bin`): the rebuilt body re-emits Valve's.
+- **Tests.** `AetherDLL/tests/core_unit/achievement_state.cpp` (local reader,
+  counters and dated bits), `achievement_schema.cpp` (progress map: the
+  `statvalue` join, other operations, unknown stats, bit bounds),
+  `achievement_policy.cpp` (decision table: zero unlocks, order, key 0, hold,
+  counters) and `achievement_service.cpp` (golden blobs captured from the
+  client, which pin every field number and the rebuilt body shape).
+- **Switch.** `[achievements] ui_service` in `aethercore.toml`, default `true`.
+  Off means the reply is Valve's; nothing else changes.
 
 ---
 

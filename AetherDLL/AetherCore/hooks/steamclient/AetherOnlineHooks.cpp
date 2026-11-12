@@ -582,7 +582,7 @@ std::int64_t h_BuildSpawnEnvBlock(void* pThis, std::uint64_t* pCGameID, void* a3
 
 // -----------------------------------------------------------------------
 // Public API — defined in namespace ac::hooks (NOT anonymous) so the
-// linker can resolve cross-TU calls from SteamCapture / SteamUIHook.
+// linker can resolve cross-TU calls from SteamCapture / SteamclientAttach.
 // -----------------------------------------------------------------------
 
 steam::AppId CallOriginalGetAppIdForCurrentPipe() {
@@ -592,16 +592,16 @@ steam::AppId CallOriginalGetAppIdForCurrentPipe() {
     return o_GetAppIDForCurrentPipe(engine);
 }
 
-void RegisterAetherOnlineHooks(HMODULE diversion) {
-    if (!diversion) {
-        AC_LOG_ERROR(kModule, "Diversion module not loaded.");
+void RegisterAetherOnlineHooks(HMODULE steamclient) {
+    if (!steamclient) {
+        AC_LOG_ERROR(kModule, "Steamclient module not loaded.");
         return;
     }
     AC_LOG_INFO(kModule, "Registering AetherOnline hooks.");
-    g_state.hookManager.TryHook("SpawnProcess", "steamclient", diversion, o_SpawnProcess, h_SpawnProcess);
-    g_state.hookManager.TryHook("GetAppIDForCurrentPipe", "steamclient", diversion, o_GetAppIDForCurrentPipe,
+    g_state.hookManager.TryHook("SpawnProcess", "steamclient", steamclient, o_SpawnProcess, h_SpawnProcess);
+    g_state.hookManager.TryHook("GetAppIDForCurrentPipe", "steamclient", steamclient, o_GetAppIDForCurrentPipe,
                                 h_GetAppIDForCurrentPipe);
-    g_state.hookManager.TryHook("BuildSpawnEnvBlock", "steamclient", diversion, o_BuildSpawnEnvBlock,
+    g_state.hookManager.TryHook("BuildSpawnEnvBlock", "steamclient", steamclient, o_BuildSpawnEnvBlock,
                                 h_BuildSpawnEnvBlock);
 }
 

@@ -33,9 +33,8 @@ export const CACHE_CLEARED_EVENT = 'cache://cleared';
 export const STEAM_RUNTIME_EVENT = 'steam://runtime-state';
 
 /**
- * Emitted by `commands/versioning.rs` and `versioning/queue.rs` while a build
- * is being applied (step 10→95) and when background ACF edits finish (step
- * 100). Payload uses camelCase (serde rename_all = "camelCase").
+ * Emitted by `commands/versioning.rs` while a build is being applied (step
+ * 5→95). Payload uses camelCase (serde rename_all = "camelCase").
  */
 export const VERSIONING_PROGRESS_EVENT = 'versioning://progress';
 

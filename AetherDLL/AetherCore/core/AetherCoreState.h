@@ -15,6 +15,9 @@
 #include "core/Settings.h"
 #include "core/SteamTypes.h"
 #include "hooks/ipc/PipeWatch.h"
+#include "hooks/steamui/AppOverviewPolicy.h"
+#include "hooks/steamui/AppRecheckPolicy.h"
+#include "hooks/wire/AchievementUi.h"
 #include "hooks/wire/DonorPool.h"
 #include "hooks/wire/DonorProbe.h"
 #include "network/EticketFetcher.h"
@@ -64,6 +67,9 @@ struct AchievementStore {
     // Donor-probe walk bookkeeping (in-flight apps plus the injected wire
     // sender/schema sink). Donor learning itself stays in `donor` above.
     hooks::wire::donorprobe::State probe;
+    // Client achievement page (service path): captured schemas, the local
+    // .bin state read on workers, job correlation and the rewrite counters.
+    achieve::State ui;
 };
 
 struct AetherCoreState {
@@ -84,6 +90,10 @@ struct AetherCoreState {
         std::unordered_map<std::uint64_t, ManifestOverride> manifestOverrides; // depot -> override
         std::unordered_set<steam::AppId> ownedAppIds;
         std::unordered_set<steam::AppId> familySharedAppIds;
+        // Apps whose family bit is Aether's own owner banner, not a licence.
+        // They stay in familySharedAppIds (the client draws them as shared) and
+        // here, so HasDepot keeps providing them: see FamilyClassification.h.
+        std::unordered_set<steam::AppId> bannerFamilyAppIds;
         // Steam did not provide the app and Aether already answered as owned.
         // Package 0 makes Steam report owned afterwards; this flag keeps the
         // spoof from being reclassified as a genuine license.
@@ -92,7 +102,7 @@ struct AetherCoreState {
         // look owned. Kept in package 0 for play, attributed to this account
         // for the banner.
         std::unordered_map<steam::AppId, std::uint32_t> familyLenderAppIds;
-        std::unordered_set<steam::AppId> libraryAppIds; // numeric .lua filename roots shown in Library
+        std::unordered_set<steam::AppId> libraryAppIds; // numeric .lua filename roots (PICS/name lookup)
         // Auth tickets are persisted to the registry (see Ticket.{h,cpp}), not held
         // in process memory, so there are no ticket maps here.
 
@@ -177,11 +187,81 @@ struct AetherCoreState {
     // them as a candidate to verify, never as a fact.
     struct AbiTableState {
         std::mutex mutex;
-        // "Struct.field" -> offset, exactly as published.
+        // "Struct.field" -> offset, exactly as published. The two modules
+        // publish different structs (steamclient: ownership/package/depot;
+        // steamui: the app-overview prefix), so they are kept apart instead of
+        // overwriting each other when both tables load.
         std::unordered_map<std::string, std::uint32_t> offsets;
         std::string source; // sha of the table the offsets came from
+        std::unordered_map<std::string, std::uint32_t> uiOffsets;
+        std::string uiSource;
     };
     AbiTableState abiTable;
+
+    // ---- SteamUI app overview (validated write path) ----------------------
+    // The probe is per-session evidence that the compiled CSteamApp prefix is
+    // the live object; the counters make the layer observable when a card is
+    // not repaired. `lastReject` is read by StatusWriter under
+    // statusMetadataMutex, like the other published strings.
+    struct OverviewState {
+        std::mutex mutex; // guards probe only: two client threads can fill cards
+        hooks::steamui::policy::ProbeState probe;
+        std::atomic<std::uint64_t> fills{0};
+        std::atomic<std::uint64_t> writes{0};
+        std::atomic<std::uint64_t> rejects{0};
+        std::atomic<bool> latched{false};
+        std::string lastReject;
+
+        // ---- app recheck (worker writes, SteamUI thread drains) ------------
+        // A version apply rewrites the Lua on a worker, but the client only
+        // re-evaluates an app from its own frame callback, so the ids wait here
+        // in between. RecheckQueue is not thread-safe by design: recheckMutex is
+        // the owner's guard, deliberately not `mutex` above, which latches the
+        // layout probe on the card path — a drain must never wait on that.
+        std::mutex recheckMutex;
+        hooks::steamui::policy::RecheckQueue rechecks;
+        // The app-list owner, learned from the last MarkAppChange call: a rebuilt
+        // client UI or an account switch replaces the object, so keeping the
+        // first one would leave a dangling pointer. Read only through this
+        // atomic: the detour runs on the client's threads and Aether never
+        // supplies an object of its own.
+        std::atomic<void*> appChangeSource{nullptr};
+        // Ids handed to the client, one MarkAppChange call each.
+        std::atomic<std::uint64_t> recheckCalls{0};
+
+        // ---- restoring a card (SteamUI thread only) ------------------------
+        // The client keeps the app object after its owned bit is taken back; it
+        // only drops it from the library. Putting the bit back therefore needs
+        // that object, and the client hands one out only through its own lookup.
+        // `appController` is the owner learned from that lookup's `self`;
+        // `lookupProbe` is the evidence that the compiled prefix really is the
+        // object it returns, latched on two ids Aether already filled.
+        std::atomic<void*> appController{nullptr};
+        std::mutex lookupMutex; // guards lookupProbe only
+        hooks::steamui::policy::ProbeState lookupProbe;
+        std::atomic<bool> lookupLatched{false};
+        std::atomic<std::uint64_t> restores{0};
+
+        // ---- library membership (worker retires, SteamUI thread clears) ----
+        // A deleted `.lua` must take its card out of the library without a
+        // restart. `tracked` records the ids Aether provided on a card fill: the
+        // owned bit is usually already set by the client (package 0 makes Steam
+        // answer the app as licensed), so authorship is not the question - the
+        // set is what says "this card exists because of Aether, taking it back is
+        // ours to do". `retired` records the ids an explicit file removal named;
+        // it survives a late hook install, so a retirement decided before the
+        // layer exists is still applied by the next card fill. `hidden` records
+        // the ids whose bit was taken back: Steam dropped their overview object,
+        // so a later `.lua` re-add has to be announced as a new app, not as a
+        // config change. All three sets are bounded; a refusal is logged and
+        // counted.
+        std::mutex stampMutex; // guards the sets, never the probe or the queue
+        std::unordered_set<steam::AppId> tracked;
+        std::unordered_set<steam::AppId> retired;
+        std::unordered_set<steam::AppId> hidden;
+        std::atomic<std::uint64_t> clears{0};
+    };
+    OverviewState overview;
 
     // ---- IPC spec (per-build funcHash + optional fencepost/argc overrides) --
     // Loaded from a TOML fetched alongside the pattern tables. When loaded,
@@ -237,7 +317,6 @@ struct AetherCoreState {
     std::string aetherCoreDir;    // <steam>\\aethercore
     std::string steamclientPath;  // <steam>\\steamclient64.dll
     std::string steamuiPath;      // <steam>\\steamui.dll
-    std::string diversionPath;    // Copy: bin\\acoverlay.dll; live: steamclient64.dll
     std::string logFilePath;      // <steam>\\aethercore\\main.log
     std::string configPath;       // <steam>\\aethercore\\aethercore.toml
     std::string patternDir;       // <steam>\\aethercore\\pattern
@@ -258,19 +337,19 @@ struct AetherCoreState {
 
     // ---- Loaded modules ---------------------------------------------------
     HMODULE selfModule = nullptr;
-    HMODULE diversionModule = nullptr; // Copy OR live steamclient hook target
-    HMODULE steamuiModule = nullptr;
-    std::atomic<bool> diversionUsesLive{false};
-    std::atomic<bool> steamUiRedirectInstalled{false};
-    std::atomic<bool> steamUiRedirectUsed{false};
+    HMODULE steamclientModule = nullptr; // live steamclient64.dll hook target
+    HMODULE steamuiModule = nullptr;     // live steamui.dll hook target (overview)
 
     // ---- Lifecycle --------------------------------------------------------
     HANDLE initThread = nullptr;
     std::atomic<bool> shuttingDown{false};
     std::atomic<bool> hooksInstalled{false};
 
-    // ---- Diversion diagnostics --------------------------------------------
-    std::string diversionOutcome; // copy-loaded | auto-live | live-loaded | *-failed
+    // ---- Steamclient attach diagnostics -----------------------------------
+    // live-mapped (Steam mapped it) | live-not-mapped (timeout) | path-invalid
+    std::string steamclientAttach;
+    // mapped | not-mapped | path-invalid
+    std::string steamuiAttach;
 
     // ---- Steam diagnostics ------------------------------------------------
     std::string buildId; // steam.exe!GetBootstrapperVersion (diagnostic only)

@@ -111,6 +111,30 @@ extern CMsgClientStoreUserStats2_StatsDefaultTypeInternal _CMsgClientStoreUserSt
 class CMsgProtoBufHeader;
 struct CMsgProtoBufHeaderDefaultTypeInternal;
 extern CMsgProtoBufHeaderDefaultTypeInternal _CMsgProtoBufHeader_default_instance_;
+class CPlayer_GetGameAchievements_Request;
+struct CPlayer_GetGameAchievements_RequestDefaultTypeInternal;
+extern CPlayer_GetGameAchievements_RequestDefaultTypeInternal _CPlayer_GetGameAchievements_Request_default_instance_;
+class CPlayer_GetGameAchievements_Response;
+struct CPlayer_GetGameAchievements_ResponseDefaultTypeInternal;
+extern CPlayer_GetGameAchievements_ResponseDefaultTypeInternal _CPlayer_GetGameAchievements_Response_default_instance_;
+class CPlayer_GetGameAchievements_Response_Achievement;
+struct CPlayer_GetGameAchievements_Response_AchievementDefaultTypeInternal;
+extern CPlayer_GetGameAchievements_Response_AchievementDefaultTypeInternal _CPlayer_GetGameAchievements_Response_Achievement_default_instance_;
+class CPlayer_GetGameAchievements_Response_Group;
+struct CPlayer_GetGameAchievements_Response_GroupDefaultTypeInternal;
+extern CPlayer_GetGameAchievements_Response_GroupDefaultTypeInternal _CPlayer_GetGameAchievements_Response_Group_default_instance_;
+class CPlayer_GetUserAchievements_Request;
+struct CPlayer_GetUserAchievements_RequestDefaultTypeInternal;
+extern CPlayer_GetUserAchievements_RequestDefaultTypeInternal _CPlayer_GetUserAchievements_Request_default_instance_;
+class CPlayer_GetUserAchievements_Response;
+struct CPlayer_GetUserAchievements_ResponseDefaultTypeInternal;
+extern CPlayer_GetUserAchievements_ResponseDefaultTypeInternal _CPlayer_GetUserAchievements_Response_default_instance_;
+class CPlayer_GetUserAchievements_Response_Achievement;
+struct CPlayer_GetUserAchievements_Response_AchievementDefaultTypeInternal;
+extern CPlayer_GetUserAchievements_Response_AchievementDefaultTypeInternal _CPlayer_GetUserAchievements_Response_Achievement_default_instance_;
+class CPlayer_GetUserAchievements_Response_Group;
+struct CPlayer_GetUserAchievements_Response_GroupDefaultTypeInternal;
+extern CPlayer_GetUserAchievements_Response_GroupDefaultTypeInternal _CPlayer_GetUserAchievements_Response_Group_default_instance_;
 class CPlayer_GetUserStats_Request;
 struct CPlayer_GetUserStats_RequestDefaultTypeInternal;
 extern CPlayer_GetUserStats_RequestDefaultTypeInternal _CPlayer_GetUserStats_Request_default_instance_;
@@ -730,6 +754,1249 @@ class CPlayer_GetUserStats_Request final :
   friend struct ::TableStruct_steam_5fmessages_2eproto;
 };// -------------------------------------------------------------------
 
+class CPlayer_GetUserAchievements_Response_Group final :
+    public ::google::protobuf::MessageLite /* @@protoc_insertion_point(class_definition:CPlayer_GetUserAchievements_Response.Group) */ {
+ public:
+  inline CPlayer_GetUserAchievements_Response_Group() : CPlayer_GetUserAchievements_Response_Group(nullptr) {}
+  ~CPlayer_GetUserAchievements_Response_Group() override;
+  template<typename = void>
+  explicit PROTOBUF_CONSTEXPR CPlayer_GetUserAchievements_Response_Group(::google::protobuf::internal::ConstantInitialized);
+
+  inline CPlayer_GetUserAchievements_Response_Group(const CPlayer_GetUserAchievements_Response_Group& from)
+      : CPlayer_GetUserAchievements_Response_Group(nullptr, from) {}
+  CPlayer_GetUserAchievements_Response_Group(CPlayer_GetUserAchievements_Response_Group&& from) noexcept
+    : CPlayer_GetUserAchievements_Response_Group() {
+    *this = ::std::move(from);
+  }
+
+  inline CPlayer_GetUserAchievements_Response_Group& operator=(const CPlayer_GetUserAchievements_Response_Group& from) {
+    CopyFrom(from);
+    return *this;
+  }
+  inline CPlayer_GetUserAchievements_Response_Group& operator=(CPlayer_GetUserAchievements_Response_Group&& from) noexcept {
+    if (this == &from) return *this;
+    if (GetArena() == from.GetArena()
+  #ifdef PROTOBUF_FORCE_COPY_IN_MOVE
+        && GetArena() != nullptr
+  #endif  // !PROTOBUF_FORCE_COPY_IN_MOVE
+    ) {
+      InternalSwap(&from);
+    } else {
+      CopyFrom(from);
+    }
+    return *this;
+  }
+
+  inline const std::string& unknown_fields() const
+      ABSL_ATTRIBUTE_LIFETIME_BOUND {
+    return _internal_metadata_.unknown_fields<std::string>(::google::protobuf::internal::GetEmptyString);
+  }
+  inline std::string* mutable_unknown_fields()
+      ABSL_ATTRIBUTE_LIFETIME_BOUND {
+    return _internal_metadata_.mutable_unknown_fields<std::string>();
+  }
+
+  static const CPlayer_GetUserAchievements_Response_Group& default_instance() {
+    return *internal_default_instance();
+  }
+  static inline const CPlayer_GetUserAchievements_Response_Group* internal_default_instance() {
+    return reinterpret_cast<const CPlayer_GetUserAchievements_Response_Group*>(
+               &_CPlayer_GetUserAchievements_Response_Group_default_instance_);
+  }
+  static constexpr int kIndexInFileMessages =
+    28;
+
+  friend void swap(CPlayer_GetUserAchievements_Response_Group& a, CPlayer_GetUserAchievements_Response_Group& b) {
+    a.Swap(&b);
+  }
+  inline void Swap(CPlayer_GetUserAchievements_Response_Group* other) {
+    if (other == this) return;
+  #ifdef PROTOBUF_FORCE_COPY_IN_SWAP
+    if (GetArena() != nullptr &&
+        GetArena() == other->GetArena()) {
+   #else  // PROTOBUF_FORCE_COPY_IN_SWAP
+    if (GetArena() == other->GetArena()) {
+  #endif  // !PROTOBUF_FORCE_COPY_IN_SWAP
+      InternalSwap(other);
+    } else {
+      ::google::protobuf::internal::GenericSwap(this, other);
+    }
+  }
+  void UnsafeArenaSwap(CPlayer_GetUserAchievements_Response_Group* other) {
+    if (other == this) return;
+    ABSL_DCHECK(GetArena() == other->GetArena());
+    InternalSwap(other);
+  }
+
+  // implements Message ----------------------------------------------
+
+  CPlayer_GetUserAchievements_Response_Group* New(::google::protobuf::Arena* arena = nullptr) const final {
+    return CreateMaybeMessage<CPlayer_GetUserAchievements_Response_Group>(arena);
+  }
+  void CheckTypeAndMergeFrom(const ::google::protobuf::MessageLite& from)  final;
+  void CopyFrom(const CPlayer_GetUserAchievements_Response_Group& from);
+  void MergeFrom(const CPlayer_GetUserAchievements_Response_Group& from);
+  PROTOBUF_ATTRIBUTE_REINITIALIZES void Clear() final;
+  bool IsInitialized() const final;
+
+  ::size_t ByteSizeLong() const final;
+  const char* _InternalParse(const char* ptr, ::google::protobuf::internal::ParseContext* ctx) final;
+  ::uint8_t* _InternalSerialize(
+      ::uint8_t* target, ::google::protobuf::io::EpsCopyOutputStream* stream) const final;
+  int GetCachedSize() const { return _impl_._cached_size_.Get(); }
+
+  private:
+  ::google::protobuf::internal::CachedSize* AccessCachedSize() const final;
+  void SharedCtor(::google::protobuf::Arena* arena);
+  void SharedDtor();
+  void InternalSwap(CPlayer_GetUserAchievements_Response_Group* other);
+
+  private:
+  friend class ::google::protobuf::internal::AnyMetadata;
+  static ::absl::string_view FullMessageName() {
+    return "CPlayer_GetUserAchievements_Response.Group";
+  }
+  protected:
+  explicit CPlayer_GetUserAchievements_Response_Group(::google::protobuf::Arena* arena);
+  CPlayer_GetUserAchievements_Response_Group(::google::protobuf::Arena* arena, const CPlayer_GetUserAchievements_Response_Group& from);
+  public:
+
+  std::string GetTypeName() const final;
+
+  // nested types ----------------------------------------------------
+
+  // accessors -------------------------------------------------------
+
+  enum : int {
+    kGroupidFieldNumber = 1,
+    kIsAchievableFieldNumber = 2,
+    kUnlockedFieldNumber = 3,
+    kCompleteFieldNumber = 4,
+    kCompletedAtFieldNumber = 9,
+  };
+  // optional uint32 groupid = 1;
+  bool has_groupid() const;
+  void clear_groupid() ;
+  ::uint32_t groupid() const;
+  void set_groupid(::uint32_t value);
+
+  private:
+  ::uint32_t _internal_groupid() const;
+  void _internal_set_groupid(::uint32_t value);
+
+  public:
+  // optional bool is_achievable = 2;
+  bool has_is_achievable() const;
+  void clear_is_achievable() ;
+  bool is_achievable() const;
+  void set_is_achievable(bool value);
+
+  private:
+  bool _internal_is_achievable() const;
+  void _internal_set_is_achievable(bool value);
+
+  public:
+  // optional uint32 unlocked = 3;
+  bool has_unlocked() const;
+  void clear_unlocked() ;
+  ::uint32_t unlocked() const;
+  void set_unlocked(::uint32_t value);
+
+  private:
+  ::uint32_t _internal_unlocked() const;
+  void _internal_set_unlocked(::uint32_t value);
+
+  public:
+  // optional uint32 complete = 4;
+  bool has_complete() const;
+  void clear_complete() ;
+  ::uint32_t complete() const;
+  void set_complete(::uint32_t value);
+
+  private:
+  ::uint32_t _internal_complete() const;
+  void _internal_set_complete(::uint32_t value);
+
+  public:
+  // optional fixed32 completed_at = 9;
+  bool has_completed_at() const;
+  void clear_completed_at() ;
+  ::uint32_t completed_at() const;
+  void set_completed_at(::uint32_t value);
+
+  private:
+  ::uint32_t _internal_completed_at() const;
+  void _internal_set_completed_at(::uint32_t value);
+
+  public:
+  // @@protoc_insertion_point(class_scope:CPlayer_GetUserAchievements_Response.Group)
+ private:
+  class _Internal;
+
+  friend class ::google::protobuf::internal::TcParser;
+  static const ::google::protobuf::internal::TcParseTable<
+      2, 5, 0,
+      0, 2>
+      _table_;
+  friend class ::google::protobuf::MessageLite;
+  friend class ::google::protobuf::Arena;
+  template <typename T>
+  friend class ::google::protobuf::Arena::InternalHelper;
+  using InternalArenaConstructable_ = void;
+  using DestructorSkippable_ = void;
+  struct Impl_ {
+
+        inline explicit constexpr Impl_(
+            ::google::protobuf::internal::ConstantInitialized) noexcept;
+        inline explicit Impl_(::google::protobuf::internal::InternalVisibility visibility,
+                              ::google::protobuf::Arena* arena);
+        inline explicit Impl_(::google::protobuf::internal::InternalVisibility visibility,
+                              ::google::protobuf::Arena* arena, const Impl_& from);
+    ::google::protobuf::internal::HasBits<1> _has_bits_;
+    mutable ::google::protobuf::internal::CachedSize _cached_size_;
+    ::uint32_t groupid_;
+    bool is_achievable_;
+    ::uint32_t unlocked_;
+    ::uint32_t complete_;
+    ::uint32_t completed_at_;
+    PROTOBUF_TSAN_DECLARE_MEMBER
+  };
+  union { Impl_ _impl_; };
+  friend struct ::TableStruct_steam_5fmessages_2eproto;
+};// -------------------------------------------------------------------
+
+class CPlayer_GetUserAchievements_Response_Achievement final :
+    public ::google::protobuf::MessageLite /* @@protoc_insertion_point(class_definition:CPlayer_GetUserAchievements_Response.Achievement) */ {
+ public:
+  inline CPlayer_GetUserAchievements_Response_Achievement() : CPlayer_GetUserAchievements_Response_Achievement(nullptr) {}
+  ~CPlayer_GetUserAchievements_Response_Achievement() override;
+  template<typename = void>
+  explicit PROTOBUF_CONSTEXPR CPlayer_GetUserAchievements_Response_Achievement(::google::protobuf::internal::ConstantInitialized);
+
+  inline CPlayer_GetUserAchievements_Response_Achievement(const CPlayer_GetUserAchievements_Response_Achievement& from)
+      : CPlayer_GetUserAchievements_Response_Achievement(nullptr, from) {}
+  CPlayer_GetUserAchievements_Response_Achievement(CPlayer_GetUserAchievements_Response_Achievement&& from) noexcept
+    : CPlayer_GetUserAchievements_Response_Achievement() {
+    *this = ::std::move(from);
+  }
+
+  inline CPlayer_GetUserAchievements_Response_Achievement& operator=(const CPlayer_GetUserAchievements_Response_Achievement& from) {
+    CopyFrom(from);
+    return *this;
+  }
+  inline CPlayer_GetUserAchievements_Response_Achievement& operator=(CPlayer_GetUserAchievements_Response_Achievement&& from) noexcept {
+    if (this == &from) return *this;
+    if (GetArena() == from.GetArena()
+  #ifdef PROTOBUF_FORCE_COPY_IN_MOVE
+        && GetArena() != nullptr
+  #endif  // !PROTOBUF_FORCE_COPY_IN_MOVE
+    ) {
+      InternalSwap(&from);
+    } else {
+      CopyFrom(from);
+    }
+    return *this;
+  }
+
+  inline const std::string& unknown_fields() const
+      ABSL_ATTRIBUTE_LIFETIME_BOUND {
+    return _internal_metadata_.unknown_fields<std::string>(::google::protobuf::internal::GetEmptyString);
+  }
+  inline std::string* mutable_unknown_fields()
+      ABSL_ATTRIBUTE_LIFETIME_BOUND {
+    return _internal_metadata_.mutable_unknown_fields<std::string>();
+  }
+
+  static const CPlayer_GetUserAchievements_Response_Achievement& default_instance() {
+    return *internal_default_instance();
+  }
+  static inline const CPlayer_GetUserAchievements_Response_Achievement* internal_default_instance() {
+    return reinterpret_cast<const CPlayer_GetUserAchievements_Response_Achievement*>(
+               &_CPlayer_GetUserAchievements_Response_Achievement_default_instance_);
+  }
+  static constexpr int kIndexInFileMessages =
+    27;
+
+  friend void swap(CPlayer_GetUserAchievements_Response_Achievement& a, CPlayer_GetUserAchievements_Response_Achievement& b) {
+    a.Swap(&b);
+  }
+  inline void Swap(CPlayer_GetUserAchievements_Response_Achievement* other) {
+    if (other == this) return;
+  #ifdef PROTOBUF_FORCE_COPY_IN_SWAP
+    if (GetArena() != nullptr &&
+        GetArena() == other->GetArena()) {
+   #else  // PROTOBUF_FORCE_COPY_IN_SWAP
+    if (GetArena() == other->GetArena()) {
+  #endif  // !PROTOBUF_FORCE_COPY_IN_SWAP
+      InternalSwap(other);
+    } else {
+      ::google::protobuf::internal::GenericSwap(this, other);
+    }
+  }
+  void UnsafeArenaSwap(CPlayer_GetUserAchievements_Response_Achievement* other) {
+    if (other == this) return;
+    ABSL_DCHECK(GetArena() == other->GetArena());
+    InternalSwap(other);
+  }
+
+  // implements Message ----------------------------------------------
+
+  CPlayer_GetUserAchievements_Response_Achievement* New(::google::protobuf::Arena* arena = nullptr) const final {
+    return CreateMaybeMessage<CPlayer_GetUserAchievements_Response_Achievement>(arena);
+  }
+  void CheckTypeAndMergeFrom(const ::google::protobuf::MessageLite& from)  final;
+  void CopyFrom(const CPlayer_GetUserAchievements_Response_Achievement& from);
+  void MergeFrom(const CPlayer_GetUserAchievements_Response_Achievement& from);
+  PROTOBUF_ATTRIBUTE_REINITIALIZES void Clear() final;
+  bool IsInitialized() const final;
+
+  ::size_t ByteSizeLong() const final;
+  const char* _InternalParse(const char* ptr, ::google::protobuf::internal::ParseContext* ctx) final;
+  ::uint8_t* _InternalSerialize(
+      ::uint8_t* target, ::google::protobuf::io::EpsCopyOutputStream* stream) const final;
+  int GetCachedSize() const { return _impl_._cached_size_.Get(); }
+
+  private:
+  ::google::protobuf::internal::CachedSize* AccessCachedSize() const final;
+  void SharedCtor(::google::protobuf::Arena* arena);
+  void SharedDtor();
+  void InternalSwap(CPlayer_GetUserAchievements_Response_Achievement* other);
+
+  private:
+  friend class ::google::protobuf::internal::AnyMetadata;
+  static ::absl::string_view FullMessageName() {
+    return "CPlayer_GetUserAchievements_Response.Achievement";
+  }
+  protected:
+  explicit CPlayer_GetUserAchievements_Response_Achievement(::google::protobuf::Arena* arena);
+  CPlayer_GetUserAchievements_Response_Achievement(::google::protobuf::Arena* arena, const CPlayer_GetUserAchievements_Response_Achievement& from);
+  public:
+
+  std::string GetTypeName() const final;
+
+  // nested types ----------------------------------------------------
+
+  // accessors -------------------------------------------------------
+
+  enum : int {
+    kInternalKeyFieldNumber = 1,
+    kUnlockedFieldNumber = 2,
+    kUnlockTimeFieldNumber = 3,
+    kProgressIntFieldNumber = 4,
+    kProgressFloatFieldNumber = 5,
+  };
+  // optional uint32 internal_key = 1;
+  bool has_internal_key() const;
+  void clear_internal_key() ;
+  ::uint32_t internal_key() const;
+  void set_internal_key(::uint32_t value);
+
+  private:
+  ::uint32_t _internal_internal_key() const;
+  void _internal_set_internal_key(::uint32_t value);
+
+  public:
+  // optional bool unlocked = 2;
+  bool has_unlocked() const;
+  void clear_unlocked() ;
+  bool unlocked() const;
+  void set_unlocked(bool value);
+
+  private:
+  bool _internal_unlocked() const;
+  void _internal_set_unlocked(bool value);
+
+  public:
+  // optional fixed32 unlock_time = 3;
+  bool has_unlock_time() const;
+  void clear_unlock_time() ;
+  ::uint32_t unlock_time() const;
+  void set_unlock_time(::uint32_t value);
+
+  private:
+  ::uint32_t _internal_unlock_time() const;
+  void _internal_set_unlock_time(::uint32_t value);
+
+  public:
+  // optional int32 progress_int = 4;
+  bool has_progress_int() const;
+  void clear_progress_int() ;
+  ::int32_t progress_int() const;
+  void set_progress_int(::int32_t value);
+
+  private:
+  ::int32_t _internal_progress_int() const;
+  void _internal_set_progress_int(::int32_t value);
+
+  public:
+  // optional float progress_float = 5;
+  bool has_progress_float() const;
+  void clear_progress_float() ;
+  float progress_float() const;
+  void set_progress_float(float value);
+
+  private:
+  float _internal_progress_float() const;
+  void _internal_set_progress_float(float value);
+
+  public:
+  // @@protoc_insertion_point(class_scope:CPlayer_GetUserAchievements_Response.Achievement)
+ private:
+  class _Internal;
+
+  friend class ::google::protobuf::internal::TcParser;
+  static const ::google::protobuf::internal::TcParseTable<
+      3, 5, 0,
+      0, 2>
+      _table_;
+  friend class ::google::protobuf::MessageLite;
+  friend class ::google::protobuf::Arena;
+  template <typename T>
+  friend class ::google::protobuf::Arena::InternalHelper;
+  using InternalArenaConstructable_ = void;
+  using DestructorSkippable_ = void;
+  struct Impl_ {
+
+        inline explicit constexpr Impl_(
+            ::google::protobuf::internal::ConstantInitialized) noexcept;
+        inline explicit Impl_(::google::protobuf::internal::InternalVisibility visibility,
+                              ::google::protobuf::Arena* arena);
+        inline explicit Impl_(::google::protobuf::internal::InternalVisibility visibility,
+                              ::google::protobuf::Arena* arena, const Impl_& from);
+    ::google::protobuf::internal::HasBits<1> _has_bits_;
+    mutable ::google::protobuf::internal::CachedSize _cached_size_;
+    ::uint32_t internal_key_;
+    bool unlocked_;
+    ::uint32_t unlock_time_;
+    ::int32_t progress_int_;
+    float progress_float_;
+    PROTOBUF_TSAN_DECLARE_MEMBER
+  };
+  union { Impl_ _impl_; };
+  friend struct ::TableStruct_steam_5fmessages_2eproto;
+};// -------------------------------------------------------------------
+
+class CPlayer_GetUserAchievements_Request final :
+    public ::google::protobuf::MessageLite /* @@protoc_insertion_point(class_definition:CPlayer_GetUserAchievements_Request) */ {
+ public:
+  inline CPlayer_GetUserAchievements_Request() : CPlayer_GetUserAchievements_Request(nullptr) {}
+  ~CPlayer_GetUserAchievements_Request() override;
+  template<typename = void>
+  explicit PROTOBUF_CONSTEXPR CPlayer_GetUserAchievements_Request(::google::protobuf::internal::ConstantInitialized);
+
+  inline CPlayer_GetUserAchievements_Request(const CPlayer_GetUserAchievements_Request& from)
+      : CPlayer_GetUserAchievements_Request(nullptr, from) {}
+  CPlayer_GetUserAchievements_Request(CPlayer_GetUserAchievements_Request&& from) noexcept
+    : CPlayer_GetUserAchievements_Request() {
+    *this = ::std::move(from);
+  }
+
+  inline CPlayer_GetUserAchievements_Request& operator=(const CPlayer_GetUserAchievements_Request& from) {
+    CopyFrom(from);
+    return *this;
+  }
+  inline CPlayer_GetUserAchievements_Request& operator=(CPlayer_GetUserAchievements_Request&& from) noexcept {
+    if (this == &from) return *this;
+    if (GetArena() == from.GetArena()
+  #ifdef PROTOBUF_FORCE_COPY_IN_MOVE
+        && GetArena() != nullptr
+  #endif  // !PROTOBUF_FORCE_COPY_IN_MOVE
+    ) {
+      InternalSwap(&from);
+    } else {
+      CopyFrom(from);
+    }
+    return *this;
+  }
+
+  inline const std::string& unknown_fields() const
+      ABSL_ATTRIBUTE_LIFETIME_BOUND {
+    return _internal_metadata_.unknown_fields<std::string>(::google::protobuf::internal::GetEmptyString);
+  }
+  inline std::string* mutable_unknown_fields()
+      ABSL_ATTRIBUTE_LIFETIME_BOUND {
+    return _internal_metadata_.mutable_unknown_fields<std::string>();
+  }
+
+  static const CPlayer_GetUserAchievements_Request& default_instance() {
+    return *internal_default_instance();
+  }
+  static inline const CPlayer_GetUserAchievements_Request* internal_default_instance() {
+    return reinterpret_cast<const CPlayer_GetUserAchievements_Request*>(
+               &_CPlayer_GetUserAchievements_Request_default_instance_);
+  }
+  static constexpr int kIndexInFileMessages =
+    26;
+
+  friend void swap(CPlayer_GetUserAchievements_Request& a, CPlayer_GetUserAchievements_Request& b) {
+    a.Swap(&b);
+  }
+  inline void Swap(CPlayer_GetUserAchievements_Request* other) {
+    if (other == this) return;
+  #ifdef PROTOBUF_FORCE_COPY_IN_SWAP
+    if (GetArena() != nullptr &&
+        GetArena() == other->GetArena()) {
+   #else  // PROTOBUF_FORCE_COPY_IN_SWAP
+    if (GetArena() == other->GetArena()) {
+  #endif  // !PROTOBUF_FORCE_COPY_IN_SWAP
+      InternalSwap(other);
+    } else {
+      ::google::protobuf::internal::GenericSwap(this, other);
+    }
+  }
+  void UnsafeArenaSwap(CPlayer_GetUserAchievements_Request* other) {
+    if (other == this) return;
+    ABSL_DCHECK(GetArena() == other->GetArena());
+    InternalSwap(other);
+  }
+
+  // implements Message ----------------------------------------------
+
+  CPlayer_GetUserAchievements_Request* New(::google::protobuf::Arena* arena = nullptr) const final {
+    return CreateMaybeMessage<CPlayer_GetUserAchievements_Request>(arena);
+  }
+  void CheckTypeAndMergeFrom(const ::google::protobuf::MessageLite& from)  final;
+  void CopyFrom(const CPlayer_GetUserAchievements_Request& from);
+  void MergeFrom(const CPlayer_GetUserAchievements_Request& from);
+  PROTOBUF_ATTRIBUTE_REINITIALIZES void Clear() final;
+  bool IsInitialized() const final;
+
+  ::size_t ByteSizeLong() const final;
+  const char* _InternalParse(const char* ptr, ::google::protobuf::internal::ParseContext* ctx) final;
+  ::uint8_t* _InternalSerialize(
+      ::uint8_t* target, ::google::protobuf::io::EpsCopyOutputStream* stream) const final;
+  int GetCachedSize() const { return _impl_._cached_size_.Get(); }
+
+  private:
+  ::google::protobuf::internal::CachedSize* AccessCachedSize() const final;
+  void SharedCtor(::google::protobuf::Arena* arena);
+  void SharedDtor();
+  void InternalSwap(CPlayer_GetUserAchievements_Request* other);
+
+  private:
+  friend class ::google::protobuf::internal::AnyMetadata;
+  static ::absl::string_view FullMessageName() {
+    return "CPlayer_GetUserAchievements_Request";
+  }
+  protected:
+  explicit CPlayer_GetUserAchievements_Request(::google::protobuf::Arena* arena);
+  CPlayer_GetUserAchievements_Request(::google::protobuf::Arena* arena, const CPlayer_GetUserAchievements_Request& from);
+  public:
+
+  std::string GetTypeName() const final;
+
+  // nested types ----------------------------------------------------
+
+  // accessors -------------------------------------------------------
+
+  enum : int {
+    kSteamidFieldNumber = 1,
+    kAppidFieldNumber = 2,
+  };
+  // optional uint64 steamid = 1;
+  bool has_steamid() const;
+  void clear_steamid() ;
+  ::uint64_t steamid() const;
+  void set_steamid(::uint64_t value);
+
+  private:
+  ::uint64_t _internal_steamid() const;
+  void _internal_set_steamid(::uint64_t value);
+
+  public:
+  // optional uint32 appid = 2;
+  bool has_appid() const;
+  void clear_appid() ;
+  ::uint32_t appid() const;
+  void set_appid(::uint32_t value);
+
+  private:
+  ::uint32_t _internal_appid() const;
+  void _internal_set_appid(::uint32_t value);
+
+  public:
+  // @@protoc_insertion_point(class_scope:CPlayer_GetUserAchievements_Request)
+ private:
+  class _Internal;
+
+  friend class ::google::protobuf::internal::TcParser;
+  static const ::google::protobuf::internal::TcParseTable<
+      1, 2, 0,
+      0, 2>
+      _table_;
+  friend class ::google::protobuf::MessageLite;
+  friend class ::google::protobuf::Arena;
+  template <typename T>
+  friend class ::google::protobuf::Arena::InternalHelper;
+  using InternalArenaConstructable_ = void;
+  using DestructorSkippable_ = void;
+  struct Impl_ {
+
+        inline explicit constexpr Impl_(
+            ::google::protobuf::internal::ConstantInitialized) noexcept;
+        inline explicit Impl_(::google::protobuf::internal::InternalVisibility visibility,
+                              ::google::protobuf::Arena* arena);
+        inline explicit Impl_(::google::protobuf::internal::InternalVisibility visibility,
+                              ::google::protobuf::Arena* arena, const Impl_& from);
+    ::google::protobuf::internal::HasBits<1> _has_bits_;
+    mutable ::google::protobuf::internal::CachedSize _cached_size_;
+    ::uint64_t steamid_;
+    ::uint32_t appid_;
+    PROTOBUF_TSAN_DECLARE_MEMBER
+  };
+  union { Impl_ _impl_; };
+  friend struct ::TableStruct_steam_5fmessages_2eproto;
+};// -------------------------------------------------------------------
+
+class CPlayer_GetGameAchievements_Response_Group final :
+    public ::google::protobuf::MessageLite /* @@protoc_insertion_point(class_definition:CPlayer_GetGameAchievements_Response.Group) */ {
+ public:
+  inline CPlayer_GetGameAchievements_Response_Group() : CPlayer_GetGameAchievements_Response_Group(nullptr) {}
+  ~CPlayer_GetGameAchievements_Response_Group() override;
+  template<typename = void>
+  explicit PROTOBUF_CONSTEXPR CPlayer_GetGameAchievements_Response_Group(::google::protobuf::internal::ConstantInitialized);
+
+  inline CPlayer_GetGameAchievements_Response_Group(const CPlayer_GetGameAchievements_Response_Group& from)
+      : CPlayer_GetGameAchievements_Response_Group(nullptr, from) {}
+  CPlayer_GetGameAchievements_Response_Group(CPlayer_GetGameAchievements_Response_Group&& from) noexcept
+    : CPlayer_GetGameAchievements_Response_Group() {
+    *this = ::std::move(from);
+  }
+
+  inline CPlayer_GetGameAchievements_Response_Group& operator=(const CPlayer_GetGameAchievements_Response_Group& from) {
+    CopyFrom(from);
+    return *this;
+  }
+  inline CPlayer_GetGameAchievements_Response_Group& operator=(CPlayer_GetGameAchievements_Response_Group&& from) noexcept {
+    if (this == &from) return *this;
+    if (GetArena() == from.GetArena()
+  #ifdef PROTOBUF_FORCE_COPY_IN_MOVE
+        && GetArena() != nullptr
+  #endif  // !PROTOBUF_FORCE_COPY_IN_MOVE
+    ) {
+      InternalSwap(&from);
+    } else {
+      CopyFrom(from);
+    }
+    return *this;
+  }
+
+  inline const std::string& unknown_fields() const
+      ABSL_ATTRIBUTE_LIFETIME_BOUND {
+    return _internal_metadata_.unknown_fields<std::string>(::google::protobuf::internal::GetEmptyString);
+  }
+  inline std::string* mutable_unknown_fields()
+      ABSL_ATTRIBUTE_LIFETIME_BOUND {
+    return _internal_metadata_.mutable_unknown_fields<std::string>();
+  }
+
+  static const CPlayer_GetGameAchievements_Response_Group& default_instance() {
+    return *internal_default_instance();
+  }
+  static inline const CPlayer_GetGameAchievements_Response_Group* internal_default_instance() {
+    return reinterpret_cast<const CPlayer_GetGameAchievements_Response_Group*>(
+               &_CPlayer_GetGameAchievements_Response_Group_default_instance_);
+  }
+  static constexpr int kIndexInFileMessages =
+    24;
+
+  friend void swap(CPlayer_GetGameAchievements_Response_Group& a, CPlayer_GetGameAchievements_Response_Group& b) {
+    a.Swap(&b);
+  }
+  inline void Swap(CPlayer_GetGameAchievements_Response_Group* other) {
+    if (other == this) return;
+  #ifdef PROTOBUF_FORCE_COPY_IN_SWAP
+    if (GetArena() != nullptr &&
+        GetArena() == other->GetArena()) {
+   #else  // PROTOBUF_FORCE_COPY_IN_SWAP
+    if (GetArena() == other->GetArena()) {
+  #endif  // !PROTOBUF_FORCE_COPY_IN_SWAP
+      InternalSwap(other);
+    } else {
+      ::google::protobuf::internal::GenericSwap(this, other);
+    }
+  }
+  void UnsafeArenaSwap(CPlayer_GetGameAchievements_Response_Group* other) {
+    if (other == this) return;
+    ABSL_DCHECK(GetArena() == other->GetArena());
+    InternalSwap(other);
+  }
+
+  // implements Message ----------------------------------------------
+
+  CPlayer_GetGameAchievements_Response_Group* New(::google::protobuf::Arena* arena = nullptr) const final {
+    return CreateMaybeMessage<CPlayer_GetGameAchievements_Response_Group>(arena);
+  }
+  void CheckTypeAndMergeFrom(const ::google::protobuf::MessageLite& from)  final;
+  void CopyFrom(const CPlayer_GetGameAchievements_Response_Group& from);
+  void MergeFrom(const CPlayer_GetGameAchievements_Response_Group& from);
+  PROTOBUF_ATTRIBUTE_REINITIALIZES void Clear() final;
+  bool IsInitialized() const final;
+
+  ::size_t ByteSizeLong() const final;
+  const char* _InternalParse(const char* ptr, ::google::protobuf::internal::ParseContext* ctx) final;
+  ::uint8_t* _InternalSerialize(
+      ::uint8_t* target, ::google::protobuf::io::EpsCopyOutputStream* stream) const final;
+  int GetCachedSize() const { return _impl_._cached_size_.Get(); }
+
+  private:
+  ::google::protobuf::internal::CachedSize* AccessCachedSize() const final;
+  void SharedCtor(::google::protobuf::Arena* arena);
+  void SharedDtor();
+  void InternalSwap(CPlayer_GetGameAchievements_Response_Group* other);
+
+  private:
+  friend class ::google::protobuf::internal::AnyMetadata;
+  static ::absl::string_view FullMessageName() {
+    return "CPlayer_GetGameAchievements_Response.Group";
+  }
+  protected:
+  explicit CPlayer_GetGameAchievements_Response_Group(::google::protobuf::Arena* arena);
+  CPlayer_GetGameAchievements_Response_Group(::google::protobuf::Arena* arena, const CPlayer_GetGameAchievements_Response_Group& from);
+  public:
+
+  std::string GetTypeName() const final;
+
+  // nested types ----------------------------------------------------
+
+  // accessors -------------------------------------------------------
+
+  enum : int {
+    kGroupidFieldNumber = 1,
+  };
+  // optional uint32 groupid = 1;
+  bool has_groupid() const;
+  void clear_groupid() ;
+  ::uint32_t groupid() const;
+  void set_groupid(::uint32_t value);
+
+  private:
+  ::uint32_t _internal_groupid() const;
+  void _internal_set_groupid(::uint32_t value);
+
+  public:
+  // @@protoc_insertion_point(class_scope:CPlayer_GetGameAchievements_Response.Group)
+ private:
+  class _Internal;
+
+  friend class ::google::protobuf::internal::TcParser;
+  static const ::google::protobuf::internal::TcParseTable<
+      0, 1, 0,
+      0, 2>
+      _table_;
+  friend class ::google::protobuf::MessageLite;
+  friend class ::google::protobuf::Arena;
+  template <typename T>
+  friend class ::google::protobuf::Arena::InternalHelper;
+  using InternalArenaConstructable_ = void;
+  using DestructorSkippable_ = void;
+  struct Impl_ {
+
+        inline explicit constexpr Impl_(
+            ::google::protobuf::internal::ConstantInitialized) noexcept;
+        inline explicit Impl_(::google::protobuf::internal::InternalVisibility visibility,
+                              ::google::protobuf::Arena* arena);
+        inline explicit Impl_(::google::protobuf::internal::InternalVisibility visibility,
+                              ::google::protobuf::Arena* arena, const Impl_& from);
+    ::google::protobuf::internal::HasBits<1> _has_bits_;
+    mutable ::google::protobuf::internal::CachedSize _cached_size_;
+    ::uint32_t groupid_;
+    PROTOBUF_TSAN_DECLARE_MEMBER
+  };
+  union { Impl_ _impl_; };
+  friend struct ::TableStruct_steam_5fmessages_2eproto;
+};// -------------------------------------------------------------------
+
+class CPlayer_GetGameAchievements_Response_Achievement final :
+    public ::google::protobuf::MessageLite /* @@protoc_insertion_point(class_definition:CPlayer_GetGameAchievements_Response.Achievement) */ {
+ public:
+  inline CPlayer_GetGameAchievements_Response_Achievement() : CPlayer_GetGameAchievements_Response_Achievement(nullptr) {}
+  ~CPlayer_GetGameAchievements_Response_Achievement() override;
+  template<typename = void>
+  explicit PROTOBUF_CONSTEXPR CPlayer_GetGameAchievements_Response_Achievement(::google::protobuf::internal::ConstantInitialized);
+
+  inline CPlayer_GetGameAchievements_Response_Achievement(const CPlayer_GetGameAchievements_Response_Achievement& from)
+      : CPlayer_GetGameAchievements_Response_Achievement(nullptr, from) {}
+  CPlayer_GetGameAchievements_Response_Achievement(CPlayer_GetGameAchievements_Response_Achievement&& from) noexcept
+    : CPlayer_GetGameAchievements_Response_Achievement() {
+    *this = ::std::move(from);
+  }
+
+  inline CPlayer_GetGameAchievements_Response_Achievement& operator=(const CPlayer_GetGameAchievements_Response_Achievement& from) {
+    CopyFrom(from);
+    return *this;
+  }
+  inline CPlayer_GetGameAchievements_Response_Achievement& operator=(CPlayer_GetGameAchievements_Response_Achievement&& from) noexcept {
+    if (this == &from) return *this;
+    if (GetArena() == from.GetArena()
+  #ifdef PROTOBUF_FORCE_COPY_IN_MOVE
+        && GetArena() != nullptr
+  #endif  // !PROTOBUF_FORCE_COPY_IN_MOVE
+    ) {
+      InternalSwap(&from);
+    } else {
+      CopyFrom(from);
+    }
+    return *this;
+  }
+
+  inline const std::string& unknown_fields() const
+      ABSL_ATTRIBUTE_LIFETIME_BOUND {
+    return _internal_metadata_.unknown_fields<std::string>(::google::protobuf::internal::GetEmptyString);
+  }
+  inline std::string* mutable_unknown_fields()
+      ABSL_ATTRIBUTE_LIFETIME_BOUND {
+    return _internal_metadata_.mutable_unknown_fields<std::string>();
+  }
+
+  static const CPlayer_GetGameAchievements_Response_Achievement& default_instance() {
+    return *internal_default_instance();
+  }
+  static inline const CPlayer_GetGameAchievements_Response_Achievement* internal_default_instance() {
+    return reinterpret_cast<const CPlayer_GetGameAchievements_Response_Achievement*>(
+               &_CPlayer_GetGameAchievements_Response_Achievement_default_instance_);
+  }
+  static constexpr int kIndexInFileMessages =
+    23;
+
+  friend void swap(CPlayer_GetGameAchievements_Response_Achievement& a, CPlayer_GetGameAchievements_Response_Achievement& b) {
+    a.Swap(&b);
+  }
+  inline void Swap(CPlayer_GetGameAchievements_Response_Achievement* other) {
+    if (other == this) return;
+  #ifdef PROTOBUF_FORCE_COPY_IN_SWAP
+    if (GetArena() != nullptr &&
+        GetArena() == other->GetArena()) {
+   #else  // PROTOBUF_FORCE_COPY_IN_SWAP
+    if (GetArena() == other->GetArena()) {
+  #endif  // !PROTOBUF_FORCE_COPY_IN_SWAP
+      InternalSwap(other);
+    } else {
+      ::google::protobuf::internal::GenericSwap(this, other);
+    }
+  }
+  void UnsafeArenaSwap(CPlayer_GetGameAchievements_Response_Achievement* other) {
+    if (other == this) return;
+    ABSL_DCHECK(GetArena() == other->GetArena());
+    InternalSwap(other);
+  }
+
+  // implements Message ----------------------------------------------
+
+  CPlayer_GetGameAchievements_Response_Achievement* New(::google::protobuf::Arena* arena = nullptr) const final {
+    return CreateMaybeMessage<CPlayer_GetGameAchievements_Response_Achievement>(arena);
+  }
+  void CheckTypeAndMergeFrom(const ::google::protobuf::MessageLite& from)  final;
+  void CopyFrom(const CPlayer_GetGameAchievements_Response_Achievement& from);
+  void MergeFrom(const CPlayer_GetGameAchievements_Response_Achievement& from);
+  PROTOBUF_ATTRIBUTE_REINITIALIZES void Clear() final;
+  bool IsInitialized() const final;
+
+  ::size_t ByteSizeLong() const final;
+  const char* _InternalParse(const char* ptr, ::google::protobuf::internal::ParseContext* ctx) final;
+  ::uint8_t* _InternalSerialize(
+      ::uint8_t* target, ::google::protobuf::io::EpsCopyOutputStream* stream) const final;
+  int GetCachedSize() const { return _impl_._cached_size_.Get(); }
+
+  private:
+  ::google::protobuf::internal::CachedSize* AccessCachedSize() const final;
+  void SharedCtor(::google::protobuf::Arena* arena);
+  void SharedDtor();
+  void InternalSwap(CPlayer_GetGameAchievements_Response_Achievement* other);
+
+  private:
+  friend class ::google::protobuf::internal::AnyMetadata;
+  static ::absl::string_view FullMessageName() {
+    return "CPlayer_GetGameAchievements_Response.Achievement";
+  }
+  protected:
+  explicit CPlayer_GetGameAchievements_Response_Achievement(::google::protobuf::Arena* arena);
+  CPlayer_GetGameAchievements_Response_Achievement(::google::protobuf::Arena* arena, const CPlayer_GetGameAchievements_Response_Achievement& from);
+  public:
+
+  std::string GetTypeName() const final;
+
+  // nested types ----------------------------------------------------
+
+  // accessors -------------------------------------------------------
+
+  enum : int {
+    kInternalNameFieldNumber = 1,
+    kNameFieldNumber = 2,
+    kDescriptionFieldNumber = 3,
+    kIconFieldNumber = 4,
+    kIconGrayFieldNumber = 5,
+    kGlobalPercentFieldNumber = 7,
+    kHiddenFieldNumber = 6,
+    kInternalKeyFieldNumber = 8,
+    kGroupidFieldNumber = 11,
+  };
+  // optional string internal_name = 1;
+  bool has_internal_name() const;
+  void clear_internal_name() ;
+  const std::string& internal_name() const;
+  template <typename Arg_ = const std::string&, typename... Args_>
+  void set_internal_name(Arg_&& arg, Args_... args);
+  std::string* mutable_internal_name();
+  PROTOBUF_NODISCARD std::string* release_internal_name();
+  void set_allocated_internal_name(std::string* value);
+
+  private:
+  const std::string& _internal_internal_name() const;
+  inline PROTOBUF_ALWAYS_INLINE void _internal_set_internal_name(
+      const std::string& value);
+  std::string* _internal_mutable_internal_name();
+
+  public:
+  // optional string name = 2;
+  bool has_name() const;
+  void clear_name() ;
+  const std::string& name() const;
+  template <typename Arg_ = const std::string&, typename... Args_>
+  void set_name(Arg_&& arg, Args_... args);
+  std::string* mutable_name();
+  PROTOBUF_NODISCARD std::string* release_name();
+  void set_allocated_name(std::string* value);
+
+  private:
+  const std::string& _internal_name() const;
+  inline PROTOBUF_ALWAYS_INLINE void _internal_set_name(
+      const std::string& value);
+  std::string* _internal_mutable_name();
+
+  public:
+  // optional string description = 3;
+  bool has_description() const;
+  void clear_description() ;
+  const std::string& description() const;
+  template <typename Arg_ = const std::string&, typename... Args_>
+  void set_description(Arg_&& arg, Args_... args);
+  std::string* mutable_description();
+  PROTOBUF_NODISCARD std::string* release_description();
+  void set_allocated_description(std::string* value);
+
+  private:
+  const std::string& _internal_description() const;
+  inline PROTOBUF_ALWAYS_INLINE void _internal_set_description(
+      const std::string& value);
+  std::string* _internal_mutable_description();
+
+  public:
+  // optional string icon = 4;
+  bool has_icon() const;
+  void clear_icon() ;
+  const std::string& icon() const;
+  template <typename Arg_ = const std::string&, typename... Args_>
+  void set_icon(Arg_&& arg, Args_... args);
+  std::string* mutable_icon();
+  PROTOBUF_NODISCARD std::string* release_icon();
+  void set_allocated_icon(std::string* value);
+
+  private:
+  const std::string& _internal_icon() const;
+  inline PROTOBUF_ALWAYS_INLINE void _internal_set_icon(
+      const std::string& value);
+  std::string* _internal_mutable_icon();
+
+  public:
+  // optional string icon_gray = 5;
+  bool has_icon_gray() const;
+  void clear_icon_gray() ;
+  const std::string& icon_gray() const;
+  template <typename Arg_ = const std::string&, typename... Args_>
+  void set_icon_gray(Arg_&& arg, Args_... args);
+  std::string* mutable_icon_gray();
+  PROTOBUF_NODISCARD std::string* release_icon_gray();
+  void set_allocated_icon_gray(std::string* value);
+
+  private:
+  const std::string& _internal_icon_gray() const;
+  inline PROTOBUF_ALWAYS_INLINE void _internal_set_icon_gray(
+      const std::string& value);
+  std::string* _internal_mutable_icon_gray();
+
+  public:
+  // optional string global_percent = 7;
+  bool has_global_percent() const;
+  void clear_global_percent() ;
+  const std::string& global_percent() const;
+  template <typename Arg_ = const std::string&, typename... Args_>
+  void set_global_percent(Arg_&& arg, Args_... args);
+  std::string* mutable_global_percent();
+  PROTOBUF_NODISCARD std::string* release_global_percent();
+  void set_allocated_global_percent(std::string* value);
+
+  private:
+  const std::string& _internal_global_percent() const;
+  inline PROTOBUF_ALWAYS_INLINE void _internal_set_global_percent(
+      const std::string& value);
+  std::string* _internal_mutable_global_percent();
+
+  public:
+  // optional uint32 hidden = 6;
+  bool has_hidden() const;
+  void clear_hidden() ;
+  ::uint32_t hidden() const;
+  void set_hidden(::uint32_t value);
+
+  private:
+  ::uint32_t _internal_hidden() const;
+  void _internal_set_hidden(::uint32_t value);
+
+  public:
+  // optional uint32 internal_key = 8;
+  bool has_internal_key() const;
+  void clear_internal_key() ;
+  ::uint32_t internal_key() const;
+  void set_internal_key(::uint32_t value);
+
+  private:
+  ::uint32_t _internal_internal_key() const;
+  void _internal_set_internal_key(::uint32_t value);
+
+  public:
+  // optional uint32 groupid = 11;
+  bool has_groupid() const;
+  void clear_groupid() ;
+  ::uint32_t groupid() const;
+  void set_groupid(::uint32_t value);
+
+  private:
+  ::uint32_t _internal_groupid() const;
+  void _internal_set_groupid(::uint32_t value);
+
+  public:
+  // @@protoc_insertion_point(class_scope:CPlayer_GetGameAchievements_Response.Achievement)
+ private:
+  class _Internal;
+
+  friend class ::google::protobuf::internal::TcParser;
+  static const ::google::protobuf::internal::TcParseTable<
+      4, 9, 0,
+      0, 2>
+      _table_;
+  friend class ::google::protobuf::MessageLite;
+  friend class ::google::protobuf::Arena;
+  template <typename T>
+  friend class ::google::protobuf::Arena::InternalHelper;
+  using InternalArenaConstructable_ = void;
+  using DestructorSkippable_ = void;
+  struct Impl_ {
+
+        inline explicit constexpr Impl_(
+            ::google::protobuf::internal::ConstantInitialized) noexcept;
+        inline explicit Impl_(::google::protobuf::internal::InternalVisibility visibility,
+                              ::google::protobuf::Arena* arena);
+        inline explicit Impl_(::google::protobuf::internal::InternalVisibility visibility,
+                              ::google::protobuf::Arena* arena, const Impl_& from);
+    ::google::protobuf::internal::HasBits<1> _has_bits_;
+    mutable ::google::protobuf::internal::CachedSize _cached_size_;
+    ::google::protobuf::internal::ArenaStringPtr internal_name_;
+    ::google::protobuf::internal::ArenaStringPtr name_;
+    ::google::protobuf::internal::ArenaStringPtr description_;
+    ::google::protobuf::internal::ArenaStringPtr icon_;
+    ::google::protobuf::internal::ArenaStringPtr icon_gray_;
+    ::google::protobuf::internal::ArenaStringPtr global_percent_;
+    ::uint32_t hidden_;
+    ::uint32_t internal_key_;
+    ::uint32_t groupid_;
+    PROTOBUF_TSAN_DECLARE_MEMBER
+  };
+  union { Impl_ _impl_; };
+  friend struct ::TableStruct_steam_5fmessages_2eproto;
+};// -------------------------------------------------------------------
+
+class CPlayer_GetGameAchievements_Request final :
+    public ::google::protobuf::MessageLite /* @@protoc_insertion_point(class_definition:CPlayer_GetGameAchievements_Request) */ {
+ public:
+  inline CPlayer_GetGameAchievements_Request() : CPlayer_GetGameAchievements_Request(nullptr) {}
+  ~CPlayer_GetGameAchievements_Request() override;
+  template<typename = void>
+  explicit PROTOBUF_CONSTEXPR CPlayer_GetGameAchievements_Request(::google::protobuf::internal::ConstantInitialized);
+
+  inline CPlayer_GetGameAchievements_Request(const CPlayer_GetGameAchievements_Request& from)
+      : CPlayer_GetGameAchievements_Request(nullptr, from) {}
+  CPlayer_GetGameAchievements_Request(CPlayer_GetGameAchievements_Request&& from) noexcept
+    : CPlayer_GetGameAchievements_Request() {
+    *this = ::std::move(from);
+  }
+
+  inline CPlayer_GetGameAchievements_Request& operator=(const CPlayer_GetGameAchievements_Request& from) {
+    CopyFrom(from);
+    return *this;
+  }
+  inline CPlayer_GetGameAchievements_Request& operator=(CPlayer_GetGameAchievements_Request&& from) noexcept {
+    if (this == &from) return *this;
+    if (GetArena() == from.GetArena()
+  #ifdef PROTOBUF_FORCE_COPY_IN_MOVE
+        && GetArena() != nullptr
+  #endif  // !PROTOBUF_FORCE_COPY_IN_MOVE
+    ) {
+      InternalSwap(&from);
+    } else {
+      CopyFrom(from);
+    }
+    return *this;
+  }
+
+  inline const std::string& unknown_fields() const
+      ABSL_ATTRIBUTE_LIFETIME_BOUND {
+    return _internal_metadata_.unknown_fields<std::string>(::google::protobuf::internal::GetEmptyString);
+  }
+  inline std::string* mutable_unknown_fields()
+      ABSL_ATTRIBUTE_LIFETIME_BOUND {
+    return _internal_metadata_.mutable_unknown_fields<std::string>();
+  }
+
+  static const CPlayer_GetGameAchievements_Request& default_instance() {
+    return *internal_default_instance();
+  }
+  static inline const CPlayer_GetGameAchievements_Request* internal_default_instance() {
+    return reinterpret_cast<const CPlayer_GetGameAchievements_Request*>(
+               &_CPlayer_GetGameAchievements_Request_default_instance_);
+  }
+  static constexpr int kIndexInFileMessages =
+    22;
+
+  friend void swap(CPlayer_GetGameAchievements_Request& a, CPlayer_GetGameAchievements_Request& b) {
+    a.Swap(&b);
+  }
+  inline void Swap(CPlayer_GetGameAchievements_Request* other) {
+    if (other == this) return;
+  #ifdef PROTOBUF_FORCE_COPY_IN_SWAP
+    if (GetArena() != nullptr &&
+        GetArena() == other->GetArena()) {
+   #else  // PROTOBUF_FORCE_COPY_IN_SWAP
+    if (GetArena() == other->GetArena()) {
+  #endif  // !PROTOBUF_FORCE_COPY_IN_SWAP
+      InternalSwap(other);
+    } else {
+      ::google::protobuf::internal::GenericSwap(this, other);
+    }
+  }
+  void UnsafeArenaSwap(CPlayer_GetGameAchievements_Request* other) {
+    if (other == this) return;
+    ABSL_DCHECK(GetArena() == other->GetArena());
+    InternalSwap(other);
+  }
+
+  // implements Message ----------------------------------------------
+
+  CPlayer_GetGameAchievements_Request* New(::google::protobuf::Arena* arena = nullptr) const final {
+    return CreateMaybeMessage<CPlayer_GetGameAchievements_Request>(arena);
+  }
+  void CheckTypeAndMergeFrom(const ::google::protobuf::MessageLite& from)  final;
+  void CopyFrom(const CPlayer_GetGameAchievements_Request& from);
+  void MergeFrom(const CPlayer_GetGameAchievements_Request& from);
+  PROTOBUF_ATTRIBUTE_REINITIALIZES void Clear() final;
+  bool IsInitialized() const final;
+
+  ::size_t ByteSizeLong() const final;
+  const char* _InternalParse(const char* ptr, ::google::protobuf::internal::ParseContext* ctx) final;
+  ::uint8_t* _InternalSerialize(
+      ::uint8_t* target, ::google::protobuf::io::EpsCopyOutputStream* stream) const final;
+  int GetCachedSize() const { return _impl_._cached_size_.Get(); }
+
+  private:
+  ::google::protobuf::internal::CachedSize* AccessCachedSize() const final;
+  void SharedCtor(::google::protobuf::Arena* arena);
+  void SharedDtor();
+  void InternalSwap(CPlayer_GetGameAchievements_Request* other);
+
+  private:
+  friend class ::google::protobuf::internal::AnyMetadata;
+  static ::absl::string_view FullMessageName() {
+    return "CPlayer_GetGameAchievements_Request";
+  }
+  protected:
+  explicit CPlayer_GetGameAchievements_Request(::google::protobuf::Arena* arena);
+  CPlayer_GetGameAchievements_Request(::google::protobuf::Arena* arena, const CPlayer_GetGameAchievements_Request& from);
+  public:
+
+  std::string GetTypeName() const final;
+
+  // nested types ----------------------------------------------------
+
+  // accessors -------------------------------------------------------
+
+  enum : int {
+    kLanguageFieldNumber = 2,
+    kAppidFieldNumber = 1,
+    kHashOnlyFieldNumber = 3,
+  };
+  // optional string language = 2;
+  bool has_language() const;
+  void clear_language() ;
+  const std::string& language() const;
+  template <typename Arg_ = const std::string&, typename... Args_>
+  void set_language(Arg_&& arg, Args_... args);
+  std::string* mutable_language();
+  PROTOBUF_NODISCARD std::string* release_language();
+  void set_allocated_language(std::string* value);
+
+  private:
+  const std::string& _internal_language() const;
+  inline PROTOBUF_ALWAYS_INLINE void _internal_set_language(
+      const std::string& value);
+  std::string* _internal_mutable_language();
+
+  public:
+  // optional uint32 appid = 1;
+  bool has_appid() const;
+  void clear_appid() ;
+  ::uint32_t appid() const;
+  void set_appid(::uint32_t value);
+
+  private:
+  ::uint32_t _internal_appid() const;
+  void _internal_set_appid(::uint32_t value);
+
+  public:
+  // optional bool hash_only = 3;
+  bool has_hash_only() const;
+  void clear_hash_only() ;
+  bool hash_only() const;
+  void set_hash_only(bool value);
+
+  private:
+  bool _internal_hash_only() const;
+  void _internal_set_hash_only(bool value);
+
+  public:
+  // @@protoc_insertion_point(class_scope:CPlayer_GetGameAchievements_Request)
+ private:
+  class _Internal;
+
+  friend class ::google::protobuf::internal::TcParser;
+  static const ::google::protobuf::internal::TcParseTable<
+      2, 3, 0,
+      0, 2>
+      _table_;
+  friend class ::google::protobuf::MessageLite;
+  friend class ::google::protobuf::Arena;
+  template <typename T>
+  friend class ::google::protobuf::Arena::InternalHelper;
+  using InternalArenaConstructable_ = void;
+  using DestructorSkippable_ = void;
+  struct Impl_ {
+
+        inline explicit constexpr Impl_(
+            ::google::protobuf::internal::ConstantInitialized) noexcept;
+        inline explicit Impl_(::google::protobuf::internal::InternalVisibility visibility,
+                              ::google::protobuf::Arena* arena);
+        inline explicit Impl_(::google::protobuf::internal::InternalVisibility visibility,
+                              ::google::protobuf::Arena* arena, const Impl_& from);
+    ::google::protobuf::internal::HasBits<1> _has_bits_;
+    mutable ::google::protobuf::internal::CachedSize _cached_size_;
+    ::google::protobuf::internal::ArenaStringPtr language_;
+    ::uint32_t appid_;
+    bool hash_only_;
+    PROTOBUF_TSAN_DECLARE_MEMBER
+  };
+  union { Impl_ _impl_; };
+  friend struct ::TableStruct_steam_5fmessages_2eproto;
+};// -------------------------------------------------------------------
+
 class CMsgProtoBufHeader final :
     public ::google::protobuf::MessageLite /* @@protoc_insertion_point(class_definition:CMsgProtoBufHeader) */ {
  public:
@@ -1023,7 +2290,7 @@ class CMsgClientStoreUserStats2_Stats final :
                &_CMsgClientStoreUserStats2_Stats_default_instance_);
   }
   static constexpr int kIndexInFileMessages =
-    22;
+    30;
 
   friend void swap(CMsgClientStoreUserStats2_Stats& a, CMsgClientStoreUserStats2_Stats& b) {
     a.Swap(&b);
@@ -1195,7 +2462,7 @@ class CMsgClientStoreUserStats2_Achievement final :
                &_CMsgClientStoreUserStats2_Achievement_default_instance_);
   }
   static constexpr int kIndexInFileMessages =
-    23;
+    31;
 
   friend void swap(CMsgClientStoreUserStats2_Achievement& a, CMsgClientStoreUserStats2_Achievement& b) {
     a.Swap(&b);
@@ -3395,6 +4662,436 @@ class CPlayer_GetUserStats_Response_Stats final :
   friend struct ::TableStruct_steam_5fmessages_2eproto;
 };// -------------------------------------------------------------------
 
+class CPlayer_GetUserAchievements_Response final :
+    public ::google::protobuf::MessageLite /* @@protoc_insertion_point(class_definition:CPlayer_GetUserAchievements_Response) */ {
+ public:
+  inline CPlayer_GetUserAchievements_Response() : CPlayer_GetUserAchievements_Response(nullptr) {}
+  ~CPlayer_GetUserAchievements_Response() override;
+  template<typename = void>
+  explicit PROTOBUF_CONSTEXPR CPlayer_GetUserAchievements_Response(::google::protobuf::internal::ConstantInitialized);
+
+  inline CPlayer_GetUserAchievements_Response(const CPlayer_GetUserAchievements_Response& from)
+      : CPlayer_GetUserAchievements_Response(nullptr, from) {}
+  CPlayer_GetUserAchievements_Response(CPlayer_GetUserAchievements_Response&& from) noexcept
+    : CPlayer_GetUserAchievements_Response() {
+    *this = ::std::move(from);
+  }
+
+  inline CPlayer_GetUserAchievements_Response& operator=(const CPlayer_GetUserAchievements_Response& from) {
+    CopyFrom(from);
+    return *this;
+  }
+  inline CPlayer_GetUserAchievements_Response& operator=(CPlayer_GetUserAchievements_Response&& from) noexcept {
+    if (this == &from) return *this;
+    if (GetArena() == from.GetArena()
+  #ifdef PROTOBUF_FORCE_COPY_IN_MOVE
+        && GetArena() != nullptr
+  #endif  // !PROTOBUF_FORCE_COPY_IN_MOVE
+    ) {
+      InternalSwap(&from);
+    } else {
+      CopyFrom(from);
+    }
+    return *this;
+  }
+
+  inline const std::string& unknown_fields() const
+      ABSL_ATTRIBUTE_LIFETIME_BOUND {
+    return _internal_metadata_.unknown_fields<std::string>(::google::protobuf::internal::GetEmptyString);
+  }
+  inline std::string* mutable_unknown_fields()
+      ABSL_ATTRIBUTE_LIFETIME_BOUND {
+    return _internal_metadata_.mutable_unknown_fields<std::string>();
+  }
+
+  static const CPlayer_GetUserAchievements_Response& default_instance() {
+    return *internal_default_instance();
+  }
+  static inline const CPlayer_GetUserAchievements_Response* internal_default_instance() {
+    return reinterpret_cast<const CPlayer_GetUserAchievements_Response*>(
+               &_CPlayer_GetUserAchievements_Response_default_instance_);
+  }
+  static constexpr int kIndexInFileMessages =
+    29;
+
+  friend void swap(CPlayer_GetUserAchievements_Response& a, CPlayer_GetUserAchievements_Response& b) {
+    a.Swap(&b);
+  }
+  inline void Swap(CPlayer_GetUserAchievements_Response* other) {
+    if (other == this) return;
+  #ifdef PROTOBUF_FORCE_COPY_IN_SWAP
+    if (GetArena() != nullptr &&
+        GetArena() == other->GetArena()) {
+   #else  // PROTOBUF_FORCE_COPY_IN_SWAP
+    if (GetArena() == other->GetArena()) {
+  #endif  // !PROTOBUF_FORCE_COPY_IN_SWAP
+      InternalSwap(other);
+    } else {
+      ::google::protobuf::internal::GenericSwap(this, other);
+    }
+  }
+  void UnsafeArenaSwap(CPlayer_GetUserAchievements_Response* other) {
+    if (other == this) return;
+    ABSL_DCHECK(GetArena() == other->GetArena());
+    InternalSwap(other);
+  }
+
+  // implements Message ----------------------------------------------
+
+  CPlayer_GetUserAchievements_Response* New(::google::protobuf::Arena* arena = nullptr) const final {
+    return CreateMaybeMessage<CPlayer_GetUserAchievements_Response>(arena);
+  }
+  void CheckTypeAndMergeFrom(const ::google::protobuf::MessageLite& from)  final;
+  void CopyFrom(const CPlayer_GetUserAchievements_Response& from);
+  void MergeFrom(const CPlayer_GetUserAchievements_Response& from);
+  PROTOBUF_ATTRIBUTE_REINITIALIZES void Clear() final;
+  bool IsInitialized() const final;
+
+  ::size_t ByteSizeLong() const final;
+  const char* _InternalParse(const char* ptr, ::google::protobuf::internal::ParseContext* ctx) final;
+  ::uint8_t* _InternalSerialize(
+      ::uint8_t* target, ::google::protobuf::io::EpsCopyOutputStream* stream) const final;
+  int GetCachedSize() const { return _impl_._cached_size_.Get(); }
+
+  private:
+  ::google::protobuf::internal::CachedSize* AccessCachedSize() const final;
+  void SharedCtor(::google::protobuf::Arena* arena);
+  void SharedDtor();
+  void InternalSwap(CPlayer_GetUserAchievements_Response* other);
+
+  private:
+  friend class ::google::protobuf::internal::AnyMetadata;
+  static ::absl::string_view FullMessageName() {
+    return "CPlayer_GetUserAchievements_Response";
+  }
+  protected:
+  explicit CPlayer_GetUserAchievements_Response(::google::protobuf::Arena* arena);
+  CPlayer_GetUserAchievements_Response(::google::protobuf::Arena* arena, const CPlayer_GetUserAchievements_Response& from);
+  public:
+
+  std::string GetTypeName() const final;
+
+  // nested types ----------------------------------------------------
+
+  using Achievement = CPlayer_GetUserAchievements_Response_Achievement;
+  using Group = CPlayer_GetUserAchievements_Response_Group;
+
+  // accessors -------------------------------------------------------
+
+  enum : int {
+    kAchievementsFieldNumber = 1,
+    kGroupsFieldNumber = 4,
+    kSchemaVersionFieldNumber = 2,
+    kSchemaHashFieldNumber = 3,
+  };
+  // repeated .CPlayer_GetUserAchievements_Response.Achievement achievements = 1;
+  int achievements_size() const;
+  private:
+  int _internal_achievements_size() const;
+
+  public:
+  void clear_achievements() ;
+  ::CPlayer_GetUserAchievements_Response_Achievement* mutable_achievements(int index);
+  ::google::protobuf::RepeatedPtrField< ::CPlayer_GetUserAchievements_Response_Achievement >*
+      mutable_achievements();
+  private:
+  const ::google::protobuf::RepeatedPtrField<::CPlayer_GetUserAchievements_Response_Achievement>& _internal_achievements() const;
+  ::google::protobuf::RepeatedPtrField<::CPlayer_GetUserAchievements_Response_Achievement>* _internal_mutable_achievements();
+  public:
+  const ::CPlayer_GetUserAchievements_Response_Achievement& achievements(int index) const;
+  ::CPlayer_GetUserAchievements_Response_Achievement* add_achievements();
+  const ::google::protobuf::RepeatedPtrField< ::CPlayer_GetUserAchievements_Response_Achievement >&
+      achievements() const;
+  // repeated .CPlayer_GetUserAchievements_Response.Group groups = 4;
+  int groups_size() const;
+  private:
+  int _internal_groups_size() const;
+
+  public:
+  void clear_groups() ;
+  ::CPlayer_GetUserAchievements_Response_Group* mutable_groups(int index);
+  ::google::protobuf::RepeatedPtrField< ::CPlayer_GetUserAchievements_Response_Group >*
+      mutable_groups();
+  private:
+  const ::google::protobuf::RepeatedPtrField<::CPlayer_GetUserAchievements_Response_Group>& _internal_groups() const;
+  ::google::protobuf::RepeatedPtrField<::CPlayer_GetUserAchievements_Response_Group>* _internal_mutable_groups();
+  public:
+  const ::CPlayer_GetUserAchievements_Response_Group& groups(int index) const;
+  ::CPlayer_GetUserAchievements_Response_Group* add_groups();
+  const ::google::protobuf::RepeatedPtrField< ::CPlayer_GetUserAchievements_Response_Group >&
+      groups() const;
+  // optional int32 schema_version = 2;
+  bool has_schema_version() const;
+  void clear_schema_version() ;
+  ::int32_t schema_version() const;
+  void set_schema_version(::int32_t value);
+
+  private:
+  ::int32_t _internal_schema_version() const;
+  void _internal_set_schema_version(::int32_t value);
+
+  public:
+  // optional uint32 schema_hash = 3;
+  bool has_schema_hash() const;
+  void clear_schema_hash() ;
+  ::uint32_t schema_hash() const;
+  void set_schema_hash(::uint32_t value);
+
+  private:
+  ::uint32_t _internal_schema_hash() const;
+  void _internal_set_schema_hash(::uint32_t value);
+
+  public:
+  // @@protoc_insertion_point(class_scope:CPlayer_GetUserAchievements_Response)
+ private:
+  class _Internal;
+
+  friend class ::google::protobuf::internal::TcParser;
+  static const ::google::protobuf::internal::TcParseTable<
+      2, 4, 2,
+      0, 2>
+      _table_;
+  friend class ::google::protobuf::MessageLite;
+  friend class ::google::protobuf::Arena;
+  template <typename T>
+  friend class ::google::protobuf::Arena::InternalHelper;
+  using InternalArenaConstructable_ = void;
+  using DestructorSkippable_ = void;
+  struct Impl_ {
+
+        inline explicit constexpr Impl_(
+            ::google::protobuf::internal::ConstantInitialized) noexcept;
+        inline explicit Impl_(::google::protobuf::internal::InternalVisibility visibility,
+                              ::google::protobuf::Arena* arena);
+        inline explicit Impl_(::google::protobuf::internal::InternalVisibility visibility,
+                              ::google::protobuf::Arena* arena, const Impl_& from);
+    ::google::protobuf::internal::HasBits<1> _has_bits_;
+    mutable ::google::protobuf::internal::CachedSize _cached_size_;
+    ::google::protobuf::RepeatedPtrField< ::CPlayer_GetUserAchievements_Response_Achievement > achievements_;
+    ::google::protobuf::RepeatedPtrField< ::CPlayer_GetUserAchievements_Response_Group > groups_;
+    ::int32_t schema_version_;
+    ::uint32_t schema_hash_;
+    PROTOBUF_TSAN_DECLARE_MEMBER
+  };
+  union { Impl_ _impl_; };
+  friend struct ::TableStruct_steam_5fmessages_2eproto;
+};// -------------------------------------------------------------------
+
+class CPlayer_GetGameAchievements_Response final :
+    public ::google::protobuf::MessageLite /* @@protoc_insertion_point(class_definition:CPlayer_GetGameAchievements_Response) */ {
+ public:
+  inline CPlayer_GetGameAchievements_Response() : CPlayer_GetGameAchievements_Response(nullptr) {}
+  ~CPlayer_GetGameAchievements_Response() override;
+  template<typename = void>
+  explicit PROTOBUF_CONSTEXPR CPlayer_GetGameAchievements_Response(::google::protobuf::internal::ConstantInitialized);
+
+  inline CPlayer_GetGameAchievements_Response(const CPlayer_GetGameAchievements_Response& from)
+      : CPlayer_GetGameAchievements_Response(nullptr, from) {}
+  CPlayer_GetGameAchievements_Response(CPlayer_GetGameAchievements_Response&& from) noexcept
+    : CPlayer_GetGameAchievements_Response() {
+    *this = ::std::move(from);
+  }
+
+  inline CPlayer_GetGameAchievements_Response& operator=(const CPlayer_GetGameAchievements_Response& from) {
+    CopyFrom(from);
+    return *this;
+  }
+  inline CPlayer_GetGameAchievements_Response& operator=(CPlayer_GetGameAchievements_Response&& from) noexcept {
+    if (this == &from) return *this;
+    if (GetArena() == from.GetArena()
+  #ifdef PROTOBUF_FORCE_COPY_IN_MOVE
+        && GetArena() != nullptr
+  #endif  // !PROTOBUF_FORCE_COPY_IN_MOVE
+    ) {
+      InternalSwap(&from);
+    } else {
+      CopyFrom(from);
+    }
+    return *this;
+  }
+
+  inline const std::string& unknown_fields() const
+      ABSL_ATTRIBUTE_LIFETIME_BOUND {
+    return _internal_metadata_.unknown_fields<std::string>(::google::protobuf::internal::GetEmptyString);
+  }
+  inline std::string* mutable_unknown_fields()
+      ABSL_ATTRIBUTE_LIFETIME_BOUND {
+    return _internal_metadata_.mutable_unknown_fields<std::string>();
+  }
+
+  static const CPlayer_GetGameAchievements_Response& default_instance() {
+    return *internal_default_instance();
+  }
+  static inline const CPlayer_GetGameAchievements_Response* internal_default_instance() {
+    return reinterpret_cast<const CPlayer_GetGameAchievements_Response*>(
+               &_CPlayer_GetGameAchievements_Response_default_instance_);
+  }
+  static constexpr int kIndexInFileMessages =
+    25;
+
+  friend void swap(CPlayer_GetGameAchievements_Response& a, CPlayer_GetGameAchievements_Response& b) {
+    a.Swap(&b);
+  }
+  inline void Swap(CPlayer_GetGameAchievements_Response* other) {
+    if (other == this) return;
+  #ifdef PROTOBUF_FORCE_COPY_IN_SWAP
+    if (GetArena() != nullptr &&
+        GetArena() == other->GetArena()) {
+   #else  // PROTOBUF_FORCE_COPY_IN_SWAP
+    if (GetArena() == other->GetArena()) {
+  #endif  // !PROTOBUF_FORCE_COPY_IN_SWAP
+      InternalSwap(other);
+    } else {
+      ::google::protobuf::internal::GenericSwap(this, other);
+    }
+  }
+  void UnsafeArenaSwap(CPlayer_GetGameAchievements_Response* other) {
+    if (other == this) return;
+    ABSL_DCHECK(GetArena() == other->GetArena());
+    InternalSwap(other);
+  }
+
+  // implements Message ----------------------------------------------
+
+  CPlayer_GetGameAchievements_Response* New(::google::protobuf::Arena* arena = nullptr) const final {
+    return CreateMaybeMessage<CPlayer_GetGameAchievements_Response>(arena);
+  }
+  void CheckTypeAndMergeFrom(const ::google::protobuf::MessageLite& from)  final;
+  void CopyFrom(const CPlayer_GetGameAchievements_Response& from);
+  void MergeFrom(const CPlayer_GetGameAchievements_Response& from);
+  PROTOBUF_ATTRIBUTE_REINITIALIZES void Clear() final;
+  bool IsInitialized() const final;
+
+  ::size_t ByteSizeLong() const final;
+  const char* _InternalParse(const char* ptr, ::google::protobuf::internal::ParseContext* ctx) final;
+  ::uint8_t* _InternalSerialize(
+      ::uint8_t* target, ::google::protobuf::io::EpsCopyOutputStream* stream) const final;
+  int GetCachedSize() const { return _impl_._cached_size_.Get(); }
+
+  private:
+  ::google::protobuf::internal::CachedSize* AccessCachedSize() const final;
+  void SharedCtor(::google::protobuf::Arena* arena);
+  void SharedDtor();
+  void InternalSwap(CPlayer_GetGameAchievements_Response* other);
+
+  private:
+  friend class ::google::protobuf::internal::AnyMetadata;
+  static ::absl::string_view FullMessageName() {
+    return "CPlayer_GetGameAchievements_Response";
+  }
+  protected:
+  explicit CPlayer_GetGameAchievements_Response(::google::protobuf::Arena* arena);
+  CPlayer_GetGameAchievements_Response(::google::protobuf::Arena* arena, const CPlayer_GetGameAchievements_Response& from);
+  public:
+
+  std::string GetTypeName() const final;
+
+  // nested types ----------------------------------------------------
+
+  using Achievement = CPlayer_GetGameAchievements_Response_Achievement;
+  using Group = CPlayer_GetGameAchievements_Response_Group;
+
+  // accessors -------------------------------------------------------
+
+  enum : int {
+    kAchievementsFieldNumber = 1,
+    kGroupsFieldNumber = 3,
+    kSchemaVersionFieldNumber = 2,
+    kSchemaHashFieldNumber = 4,
+  };
+  // repeated .CPlayer_GetGameAchievements_Response.Achievement achievements = 1;
+  int achievements_size() const;
+  private:
+  int _internal_achievements_size() const;
+
+  public:
+  void clear_achievements() ;
+  ::CPlayer_GetGameAchievements_Response_Achievement* mutable_achievements(int index);
+  ::google::protobuf::RepeatedPtrField< ::CPlayer_GetGameAchievements_Response_Achievement >*
+      mutable_achievements();
+  private:
+  const ::google::protobuf::RepeatedPtrField<::CPlayer_GetGameAchievements_Response_Achievement>& _internal_achievements() const;
+  ::google::protobuf::RepeatedPtrField<::CPlayer_GetGameAchievements_Response_Achievement>* _internal_mutable_achievements();
+  public:
+  const ::CPlayer_GetGameAchievements_Response_Achievement& achievements(int index) const;
+  ::CPlayer_GetGameAchievements_Response_Achievement* add_achievements();
+  const ::google::protobuf::RepeatedPtrField< ::CPlayer_GetGameAchievements_Response_Achievement >&
+      achievements() const;
+  // repeated .CPlayer_GetGameAchievements_Response.Group groups = 3;
+  int groups_size() const;
+  private:
+  int _internal_groups_size() const;
+
+  public:
+  void clear_groups() ;
+  ::CPlayer_GetGameAchievements_Response_Group* mutable_groups(int index);
+  ::google::protobuf::RepeatedPtrField< ::CPlayer_GetGameAchievements_Response_Group >*
+      mutable_groups();
+  private:
+  const ::google::protobuf::RepeatedPtrField<::CPlayer_GetGameAchievements_Response_Group>& _internal_groups() const;
+  ::google::protobuf::RepeatedPtrField<::CPlayer_GetGameAchievements_Response_Group>* _internal_mutable_groups();
+  public:
+  const ::CPlayer_GetGameAchievements_Response_Group& groups(int index) const;
+  ::CPlayer_GetGameAchievements_Response_Group* add_groups();
+  const ::google::protobuf::RepeatedPtrField< ::CPlayer_GetGameAchievements_Response_Group >&
+      groups() const;
+  // optional int32 schema_version = 2;
+  bool has_schema_version() const;
+  void clear_schema_version() ;
+  ::int32_t schema_version() const;
+  void set_schema_version(::int32_t value);
+
+  private:
+  ::int32_t _internal_schema_version() const;
+  void _internal_set_schema_version(::int32_t value);
+
+  public:
+  // optional uint32 schema_hash = 4;
+  bool has_schema_hash() const;
+  void clear_schema_hash() ;
+  ::uint32_t schema_hash() const;
+  void set_schema_hash(::uint32_t value);
+
+  private:
+  ::uint32_t _internal_schema_hash() const;
+  void _internal_set_schema_hash(::uint32_t value);
+
+  public:
+  // @@protoc_insertion_point(class_scope:CPlayer_GetGameAchievements_Response)
+ private:
+  class _Internal;
+
+  friend class ::google::protobuf::internal::TcParser;
+  static const ::google::protobuf::internal::TcParseTable<
+      2, 4, 2,
+      0, 2>
+      _table_;
+  friend class ::google::protobuf::MessageLite;
+  friend class ::google::protobuf::Arena;
+  template <typename T>
+  friend class ::google::protobuf::Arena::InternalHelper;
+  using InternalArenaConstructable_ = void;
+  using DestructorSkippable_ = void;
+  struct Impl_ {
+
+        inline explicit constexpr Impl_(
+            ::google::protobuf::internal::ConstantInitialized) noexcept;
+        inline explicit Impl_(::google::protobuf::internal::InternalVisibility visibility,
+                              ::google::protobuf::Arena* arena);
+        inline explicit Impl_(::google::protobuf::internal::InternalVisibility visibility,
+                              ::google::protobuf::Arena* arena, const Impl_& from);
+    ::google::protobuf::internal::HasBits<1> _has_bits_;
+    mutable ::google::protobuf::internal::CachedSize _cached_size_;
+    ::google::protobuf::RepeatedPtrField< ::CPlayer_GetGameAchievements_Response_Achievement > achievements_;
+    ::google::protobuf::RepeatedPtrField< ::CPlayer_GetGameAchievements_Response_Group > groups_;
+    ::int32_t schema_version_;
+    ::uint32_t schema_hash_;
+    PROTOBUF_TSAN_DECLARE_MEMBER
+  };
+  union { Impl_ _impl_; };
+  friend struct ::TableStruct_steam_5fmessages_2eproto;
+};// -------------------------------------------------------------------
+
 class CMsgClientStoreUserStats2 final :
     public ::google::protobuf::MessageLite /* @@protoc_insertion_point(class_definition:CMsgClientStoreUserStats2) */ {
  public:
@@ -3445,7 +5142,7 @@ class CMsgClientStoreUserStats2 final :
                &_CMsgClientStoreUserStats2_default_instance_);
   }
   static constexpr int kIndexInFileMessages =
-    24;
+    32;
 
   friend void swap(CMsgClientStoreUserStats2& a, CMsgClientStoreUserStats2& b) {
     a.Swap(&b);
@@ -8381,6 +10078,1347 @@ inline ::google::protobuf::RepeatedPtrField<::CMsgClientGetUserStatsResponse_Ach
 CMsgClientGetUserStatsResponse::_internal_mutable_achievement_blocks() {
   PROTOBUF_TSAN_READ(&_impl_._tsan_detect_race);
   return &_impl_.achievement_blocks_;
+}
+
+// -------------------------------------------------------------------
+
+// CPlayer_GetGameAchievements_Request
+
+// optional uint32 appid = 1;
+inline bool CPlayer_GetGameAchievements_Request::has_appid() const {
+  bool value = (_impl_._has_bits_[0] & 0x00000002u) != 0;
+  return value;
+}
+inline void CPlayer_GetGameAchievements_Request::clear_appid() {
+  PROTOBUF_TSAN_WRITE(&_impl_._tsan_detect_race);
+  _impl_.appid_ = 0u;
+  _impl_._has_bits_[0] &= ~0x00000002u;
+}
+inline ::uint32_t CPlayer_GetGameAchievements_Request::appid() const {
+  // @@protoc_insertion_point(field_get:CPlayer_GetGameAchievements_Request.appid)
+  return _internal_appid();
+}
+inline void CPlayer_GetGameAchievements_Request::set_appid(::uint32_t value) {
+  _internal_set_appid(value);
+  // @@protoc_insertion_point(field_set:CPlayer_GetGameAchievements_Request.appid)
+}
+inline ::uint32_t CPlayer_GetGameAchievements_Request::_internal_appid() const {
+  PROTOBUF_TSAN_READ(&_impl_._tsan_detect_race);
+  return _impl_.appid_;
+}
+inline void CPlayer_GetGameAchievements_Request::_internal_set_appid(::uint32_t value) {
+  PROTOBUF_TSAN_WRITE(&_impl_._tsan_detect_race);
+  _impl_._has_bits_[0] |= 0x00000002u;
+  _impl_.appid_ = value;
+}
+
+// optional string language = 2;
+inline bool CPlayer_GetGameAchievements_Request::has_language() const {
+  bool value = (_impl_._has_bits_[0] & 0x00000001u) != 0;
+  return value;
+}
+inline void CPlayer_GetGameAchievements_Request::clear_language() {
+  PROTOBUF_TSAN_WRITE(&_impl_._tsan_detect_race);
+  _impl_.language_.ClearToEmpty();
+  _impl_._has_bits_[0] &= ~0x00000001u;
+}
+inline const std::string& CPlayer_GetGameAchievements_Request::language() const
+    ABSL_ATTRIBUTE_LIFETIME_BOUND {
+  // @@protoc_insertion_point(field_get:CPlayer_GetGameAchievements_Request.language)
+  return _internal_language();
+}
+template <typename Arg_, typename... Args_>
+inline PROTOBUF_ALWAYS_INLINE void CPlayer_GetGameAchievements_Request::set_language(Arg_&& arg,
+                                                     Args_... args) {
+  PROTOBUF_TSAN_WRITE(&_impl_._tsan_detect_race);
+  _impl_._has_bits_[0] |= 0x00000001u;
+  _impl_.language_.Set(static_cast<Arg_&&>(arg), args..., GetArena());
+  // @@protoc_insertion_point(field_set:CPlayer_GetGameAchievements_Request.language)
+}
+inline std::string* CPlayer_GetGameAchievements_Request::mutable_language() ABSL_ATTRIBUTE_LIFETIME_BOUND {
+  std::string* _s = _internal_mutable_language();
+  // @@protoc_insertion_point(field_mutable:CPlayer_GetGameAchievements_Request.language)
+  return _s;
+}
+inline const std::string& CPlayer_GetGameAchievements_Request::_internal_language() const {
+  PROTOBUF_TSAN_READ(&_impl_._tsan_detect_race);
+  return _impl_.language_.Get();
+}
+inline void CPlayer_GetGameAchievements_Request::_internal_set_language(const std::string& value) {
+  PROTOBUF_TSAN_WRITE(&_impl_._tsan_detect_race);
+  _impl_._has_bits_[0] |= 0x00000001u;
+  _impl_.language_.Set(value, GetArena());
+}
+inline std::string* CPlayer_GetGameAchievements_Request::_internal_mutable_language() {
+  PROTOBUF_TSAN_WRITE(&_impl_._tsan_detect_race);
+  _impl_._has_bits_[0] |= 0x00000001u;
+  return _impl_.language_.Mutable( GetArena());
+}
+inline std::string* CPlayer_GetGameAchievements_Request::release_language() {
+  PROTOBUF_TSAN_WRITE(&_impl_._tsan_detect_race);
+  // @@protoc_insertion_point(field_release:CPlayer_GetGameAchievements_Request.language)
+  if ((_impl_._has_bits_[0] & 0x00000001u) == 0) {
+    return nullptr;
+  }
+  _impl_._has_bits_[0] &= ~0x00000001u;
+  auto* released = _impl_.language_.Release();
+  #ifdef PROTOBUF_FORCE_COPY_DEFAULT_STRING
+  _impl_.language_.Set("", GetArena());
+  #endif  // PROTOBUF_FORCE_COPY_DEFAULT_STRING
+  return released;
+}
+inline void CPlayer_GetGameAchievements_Request::set_allocated_language(std::string* value) {
+  PROTOBUF_TSAN_WRITE(&_impl_._tsan_detect_race);
+  if (value != nullptr) {
+    _impl_._has_bits_[0] |= 0x00000001u;
+  } else {
+    _impl_._has_bits_[0] &= ~0x00000001u;
+  }
+  _impl_.language_.SetAllocated(value, GetArena());
+  #ifdef PROTOBUF_FORCE_COPY_DEFAULT_STRING
+        if (_impl_.language_.IsDefault()) {
+          _impl_.language_.Set("", GetArena());
+        }
+  #endif  // PROTOBUF_FORCE_COPY_DEFAULT_STRING
+  // @@protoc_insertion_point(field_set_allocated:CPlayer_GetGameAchievements_Request.language)
+}
+
+// optional bool hash_only = 3;
+inline bool CPlayer_GetGameAchievements_Request::has_hash_only() const {
+  bool value = (_impl_._has_bits_[0] & 0x00000004u) != 0;
+  return value;
+}
+inline void CPlayer_GetGameAchievements_Request::clear_hash_only() {
+  PROTOBUF_TSAN_WRITE(&_impl_._tsan_detect_race);
+  _impl_.hash_only_ = false;
+  _impl_._has_bits_[0] &= ~0x00000004u;
+}
+inline bool CPlayer_GetGameAchievements_Request::hash_only() const {
+  // @@protoc_insertion_point(field_get:CPlayer_GetGameAchievements_Request.hash_only)
+  return _internal_hash_only();
+}
+inline void CPlayer_GetGameAchievements_Request::set_hash_only(bool value) {
+  _internal_set_hash_only(value);
+  // @@protoc_insertion_point(field_set:CPlayer_GetGameAchievements_Request.hash_only)
+}
+inline bool CPlayer_GetGameAchievements_Request::_internal_hash_only() const {
+  PROTOBUF_TSAN_READ(&_impl_._tsan_detect_race);
+  return _impl_.hash_only_;
+}
+inline void CPlayer_GetGameAchievements_Request::_internal_set_hash_only(bool value) {
+  PROTOBUF_TSAN_WRITE(&_impl_._tsan_detect_race);
+  _impl_._has_bits_[0] |= 0x00000004u;
+  _impl_.hash_only_ = value;
+}
+
+// -------------------------------------------------------------------
+
+// CPlayer_GetGameAchievements_Response_Achievement
+
+// optional string internal_name = 1;
+inline bool CPlayer_GetGameAchievements_Response_Achievement::has_internal_name() const {
+  bool value = (_impl_._has_bits_[0] & 0x00000001u) != 0;
+  return value;
+}
+inline void CPlayer_GetGameAchievements_Response_Achievement::clear_internal_name() {
+  PROTOBUF_TSAN_WRITE(&_impl_._tsan_detect_race);
+  _impl_.internal_name_.ClearToEmpty();
+  _impl_._has_bits_[0] &= ~0x00000001u;
+}
+inline const std::string& CPlayer_GetGameAchievements_Response_Achievement::internal_name() const
+    ABSL_ATTRIBUTE_LIFETIME_BOUND {
+  // @@protoc_insertion_point(field_get:CPlayer_GetGameAchievements_Response.Achievement.internal_name)
+  return _internal_internal_name();
+}
+template <typename Arg_, typename... Args_>
+inline PROTOBUF_ALWAYS_INLINE void CPlayer_GetGameAchievements_Response_Achievement::set_internal_name(Arg_&& arg,
+                                                     Args_... args) {
+  PROTOBUF_TSAN_WRITE(&_impl_._tsan_detect_race);
+  _impl_._has_bits_[0] |= 0x00000001u;
+  _impl_.internal_name_.Set(static_cast<Arg_&&>(arg), args..., GetArena());
+  // @@protoc_insertion_point(field_set:CPlayer_GetGameAchievements_Response.Achievement.internal_name)
+}
+inline std::string* CPlayer_GetGameAchievements_Response_Achievement::mutable_internal_name() ABSL_ATTRIBUTE_LIFETIME_BOUND {
+  std::string* _s = _internal_mutable_internal_name();
+  // @@protoc_insertion_point(field_mutable:CPlayer_GetGameAchievements_Response.Achievement.internal_name)
+  return _s;
+}
+inline const std::string& CPlayer_GetGameAchievements_Response_Achievement::_internal_internal_name() const {
+  PROTOBUF_TSAN_READ(&_impl_._tsan_detect_race);
+  return _impl_.internal_name_.Get();
+}
+inline void CPlayer_GetGameAchievements_Response_Achievement::_internal_set_internal_name(const std::string& value) {
+  PROTOBUF_TSAN_WRITE(&_impl_._tsan_detect_race);
+  _impl_._has_bits_[0] |= 0x00000001u;
+  _impl_.internal_name_.Set(value, GetArena());
+}
+inline std::string* CPlayer_GetGameAchievements_Response_Achievement::_internal_mutable_internal_name() {
+  PROTOBUF_TSAN_WRITE(&_impl_._tsan_detect_race);
+  _impl_._has_bits_[0] |= 0x00000001u;
+  return _impl_.internal_name_.Mutable( GetArena());
+}
+inline std::string* CPlayer_GetGameAchievements_Response_Achievement::release_internal_name() {
+  PROTOBUF_TSAN_WRITE(&_impl_._tsan_detect_race);
+  // @@protoc_insertion_point(field_release:CPlayer_GetGameAchievements_Response.Achievement.internal_name)
+  if ((_impl_._has_bits_[0] & 0x00000001u) == 0) {
+    return nullptr;
+  }
+  _impl_._has_bits_[0] &= ~0x00000001u;
+  auto* released = _impl_.internal_name_.Release();
+  #ifdef PROTOBUF_FORCE_COPY_DEFAULT_STRING
+  _impl_.internal_name_.Set("", GetArena());
+  #endif  // PROTOBUF_FORCE_COPY_DEFAULT_STRING
+  return released;
+}
+inline void CPlayer_GetGameAchievements_Response_Achievement::set_allocated_internal_name(std::string* value) {
+  PROTOBUF_TSAN_WRITE(&_impl_._tsan_detect_race);
+  if (value != nullptr) {
+    _impl_._has_bits_[0] |= 0x00000001u;
+  } else {
+    _impl_._has_bits_[0] &= ~0x00000001u;
+  }
+  _impl_.internal_name_.SetAllocated(value, GetArena());
+  #ifdef PROTOBUF_FORCE_COPY_DEFAULT_STRING
+        if (_impl_.internal_name_.IsDefault()) {
+          _impl_.internal_name_.Set("", GetArena());
+        }
+  #endif  // PROTOBUF_FORCE_COPY_DEFAULT_STRING
+  // @@protoc_insertion_point(field_set_allocated:CPlayer_GetGameAchievements_Response.Achievement.internal_name)
+}
+
+// optional string name = 2;
+inline bool CPlayer_GetGameAchievements_Response_Achievement::has_name() const {
+  bool value = (_impl_._has_bits_[0] & 0x00000002u) != 0;
+  return value;
+}
+inline void CPlayer_GetGameAchievements_Response_Achievement::clear_name() {
+  PROTOBUF_TSAN_WRITE(&_impl_._tsan_detect_race);
+  _impl_.name_.ClearToEmpty();
+  _impl_._has_bits_[0] &= ~0x00000002u;
+}
+inline const std::string& CPlayer_GetGameAchievements_Response_Achievement::name() const
+    ABSL_ATTRIBUTE_LIFETIME_BOUND {
+  // @@protoc_insertion_point(field_get:CPlayer_GetGameAchievements_Response.Achievement.name)
+  return _internal_name();
+}
+template <typename Arg_, typename... Args_>
+inline PROTOBUF_ALWAYS_INLINE void CPlayer_GetGameAchievements_Response_Achievement::set_name(Arg_&& arg,
+                                                     Args_... args) {
+  PROTOBUF_TSAN_WRITE(&_impl_._tsan_detect_race);
+  _impl_._has_bits_[0] |= 0x00000002u;
+  _impl_.name_.Set(static_cast<Arg_&&>(arg), args..., GetArena());
+  // @@protoc_insertion_point(field_set:CPlayer_GetGameAchievements_Response.Achievement.name)
+}
+inline std::string* CPlayer_GetGameAchievements_Response_Achievement::mutable_name() ABSL_ATTRIBUTE_LIFETIME_BOUND {
+  std::string* _s = _internal_mutable_name();
+  // @@protoc_insertion_point(field_mutable:CPlayer_GetGameAchievements_Response.Achievement.name)
+  return _s;
+}
+inline const std::string& CPlayer_GetGameAchievements_Response_Achievement::_internal_name() const {
+  PROTOBUF_TSAN_READ(&_impl_._tsan_detect_race);
+  return _impl_.name_.Get();
+}
+inline void CPlayer_GetGameAchievements_Response_Achievement::_internal_set_name(const std::string& value) {
+  PROTOBUF_TSAN_WRITE(&_impl_._tsan_detect_race);
+  _impl_._has_bits_[0] |= 0x00000002u;
+  _impl_.name_.Set(value, GetArena());
+}
+inline std::string* CPlayer_GetGameAchievements_Response_Achievement::_internal_mutable_name() {
+  PROTOBUF_TSAN_WRITE(&_impl_._tsan_detect_race);
+  _impl_._has_bits_[0] |= 0x00000002u;
+  return _impl_.name_.Mutable( GetArena());
+}
+inline std::string* CPlayer_GetGameAchievements_Response_Achievement::release_name() {
+  PROTOBUF_TSAN_WRITE(&_impl_._tsan_detect_race);
+  // @@protoc_insertion_point(field_release:CPlayer_GetGameAchievements_Response.Achievement.name)
+  if ((_impl_._has_bits_[0] & 0x00000002u) == 0) {
+    return nullptr;
+  }
+  _impl_._has_bits_[0] &= ~0x00000002u;
+  auto* released = _impl_.name_.Release();
+  #ifdef PROTOBUF_FORCE_COPY_DEFAULT_STRING
+  _impl_.name_.Set("", GetArena());
+  #endif  // PROTOBUF_FORCE_COPY_DEFAULT_STRING
+  return released;
+}
+inline void CPlayer_GetGameAchievements_Response_Achievement::set_allocated_name(std::string* value) {
+  PROTOBUF_TSAN_WRITE(&_impl_._tsan_detect_race);
+  if (value != nullptr) {
+    _impl_._has_bits_[0] |= 0x00000002u;
+  } else {
+    _impl_._has_bits_[0] &= ~0x00000002u;
+  }
+  _impl_.name_.SetAllocated(value, GetArena());
+  #ifdef PROTOBUF_FORCE_COPY_DEFAULT_STRING
+        if (_impl_.name_.IsDefault()) {
+          _impl_.name_.Set("", GetArena());
+        }
+  #endif  // PROTOBUF_FORCE_COPY_DEFAULT_STRING
+  // @@protoc_insertion_point(field_set_allocated:CPlayer_GetGameAchievements_Response.Achievement.name)
+}
+
+// optional string description = 3;
+inline bool CPlayer_GetGameAchievements_Response_Achievement::has_description() const {
+  bool value = (_impl_._has_bits_[0] & 0x00000004u) != 0;
+  return value;
+}
+inline void CPlayer_GetGameAchievements_Response_Achievement::clear_description() {
+  PROTOBUF_TSAN_WRITE(&_impl_._tsan_detect_race);
+  _impl_.description_.ClearToEmpty();
+  _impl_._has_bits_[0] &= ~0x00000004u;
+}
+inline const std::string& CPlayer_GetGameAchievements_Response_Achievement::description() const
+    ABSL_ATTRIBUTE_LIFETIME_BOUND {
+  // @@protoc_insertion_point(field_get:CPlayer_GetGameAchievements_Response.Achievement.description)
+  return _internal_description();
+}
+template <typename Arg_, typename... Args_>
+inline PROTOBUF_ALWAYS_INLINE void CPlayer_GetGameAchievements_Response_Achievement::set_description(Arg_&& arg,
+                                                     Args_... args) {
+  PROTOBUF_TSAN_WRITE(&_impl_._tsan_detect_race);
+  _impl_._has_bits_[0] |= 0x00000004u;
+  _impl_.description_.Set(static_cast<Arg_&&>(arg), args..., GetArena());
+  // @@protoc_insertion_point(field_set:CPlayer_GetGameAchievements_Response.Achievement.description)
+}
+inline std::string* CPlayer_GetGameAchievements_Response_Achievement::mutable_description() ABSL_ATTRIBUTE_LIFETIME_BOUND {
+  std::string* _s = _internal_mutable_description();
+  // @@protoc_insertion_point(field_mutable:CPlayer_GetGameAchievements_Response.Achievement.description)
+  return _s;
+}
+inline const std::string& CPlayer_GetGameAchievements_Response_Achievement::_internal_description() const {
+  PROTOBUF_TSAN_READ(&_impl_._tsan_detect_race);
+  return _impl_.description_.Get();
+}
+inline void CPlayer_GetGameAchievements_Response_Achievement::_internal_set_description(const std::string& value) {
+  PROTOBUF_TSAN_WRITE(&_impl_._tsan_detect_race);
+  _impl_._has_bits_[0] |= 0x00000004u;
+  _impl_.description_.Set(value, GetArena());
+}
+inline std::string* CPlayer_GetGameAchievements_Response_Achievement::_internal_mutable_description() {
+  PROTOBUF_TSAN_WRITE(&_impl_._tsan_detect_race);
+  _impl_._has_bits_[0] |= 0x00000004u;
+  return _impl_.description_.Mutable( GetArena());
+}
+inline std::string* CPlayer_GetGameAchievements_Response_Achievement::release_description() {
+  PROTOBUF_TSAN_WRITE(&_impl_._tsan_detect_race);
+  // @@protoc_insertion_point(field_release:CPlayer_GetGameAchievements_Response.Achievement.description)
+  if ((_impl_._has_bits_[0] & 0x00000004u) == 0) {
+    return nullptr;
+  }
+  _impl_._has_bits_[0] &= ~0x00000004u;
+  auto* released = _impl_.description_.Release();
+  #ifdef PROTOBUF_FORCE_COPY_DEFAULT_STRING
+  _impl_.description_.Set("", GetArena());
+  #endif  // PROTOBUF_FORCE_COPY_DEFAULT_STRING
+  return released;
+}
+inline void CPlayer_GetGameAchievements_Response_Achievement::set_allocated_description(std::string* value) {
+  PROTOBUF_TSAN_WRITE(&_impl_._tsan_detect_race);
+  if (value != nullptr) {
+    _impl_._has_bits_[0] |= 0x00000004u;
+  } else {
+    _impl_._has_bits_[0] &= ~0x00000004u;
+  }
+  _impl_.description_.SetAllocated(value, GetArena());
+  #ifdef PROTOBUF_FORCE_COPY_DEFAULT_STRING
+        if (_impl_.description_.IsDefault()) {
+          _impl_.description_.Set("", GetArena());
+        }
+  #endif  // PROTOBUF_FORCE_COPY_DEFAULT_STRING
+  // @@protoc_insertion_point(field_set_allocated:CPlayer_GetGameAchievements_Response.Achievement.description)
+}
+
+// optional string icon = 4;
+inline bool CPlayer_GetGameAchievements_Response_Achievement::has_icon() const {
+  bool value = (_impl_._has_bits_[0] & 0x00000008u) != 0;
+  return value;
+}
+inline void CPlayer_GetGameAchievements_Response_Achievement::clear_icon() {
+  PROTOBUF_TSAN_WRITE(&_impl_._tsan_detect_race);
+  _impl_.icon_.ClearToEmpty();
+  _impl_._has_bits_[0] &= ~0x00000008u;
+}
+inline const std::string& CPlayer_GetGameAchievements_Response_Achievement::icon() const
+    ABSL_ATTRIBUTE_LIFETIME_BOUND {
+  // @@protoc_insertion_point(field_get:CPlayer_GetGameAchievements_Response.Achievement.icon)
+  return _internal_icon();
+}
+template <typename Arg_, typename... Args_>
+inline PROTOBUF_ALWAYS_INLINE void CPlayer_GetGameAchievements_Response_Achievement::set_icon(Arg_&& arg,
+                                                     Args_... args) {
+  PROTOBUF_TSAN_WRITE(&_impl_._tsan_detect_race);
+  _impl_._has_bits_[0] |= 0x00000008u;
+  _impl_.icon_.Set(static_cast<Arg_&&>(arg), args..., GetArena());
+  // @@protoc_insertion_point(field_set:CPlayer_GetGameAchievements_Response.Achievement.icon)
+}
+inline std::string* CPlayer_GetGameAchievements_Response_Achievement::mutable_icon() ABSL_ATTRIBUTE_LIFETIME_BOUND {
+  std::string* _s = _internal_mutable_icon();
+  // @@protoc_insertion_point(field_mutable:CPlayer_GetGameAchievements_Response.Achievement.icon)
+  return _s;
+}
+inline const std::string& CPlayer_GetGameAchievements_Response_Achievement::_internal_icon() const {
+  PROTOBUF_TSAN_READ(&_impl_._tsan_detect_race);
+  return _impl_.icon_.Get();
+}
+inline void CPlayer_GetGameAchievements_Response_Achievement::_internal_set_icon(const std::string& value) {
+  PROTOBUF_TSAN_WRITE(&_impl_._tsan_detect_race);
+  _impl_._has_bits_[0] |= 0x00000008u;
+  _impl_.icon_.Set(value, GetArena());
+}
+inline std::string* CPlayer_GetGameAchievements_Response_Achievement::_internal_mutable_icon() {
+  PROTOBUF_TSAN_WRITE(&_impl_._tsan_detect_race);
+  _impl_._has_bits_[0] |= 0x00000008u;
+  return _impl_.icon_.Mutable( GetArena());
+}
+inline std::string* CPlayer_GetGameAchievements_Response_Achievement::release_icon() {
+  PROTOBUF_TSAN_WRITE(&_impl_._tsan_detect_race);
+  // @@protoc_insertion_point(field_release:CPlayer_GetGameAchievements_Response.Achievement.icon)
+  if ((_impl_._has_bits_[0] & 0x00000008u) == 0) {
+    return nullptr;
+  }
+  _impl_._has_bits_[0] &= ~0x00000008u;
+  auto* released = _impl_.icon_.Release();
+  #ifdef PROTOBUF_FORCE_COPY_DEFAULT_STRING
+  _impl_.icon_.Set("", GetArena());
+  #endif  // PROTOBUF_FORCE_COPY_DEFAULT_STRING
+  return released;
+}
+inline void CPlayer_GetGameAchievements_Response_Achievement::set_allocated_icon(std::string* value) {
+  PROTOBUF_TSAN_WRITE(&_impl_._tsan_detect_race);
+  if (value != nullptr) {
+    _impl_._has_bits_[0] |= 0x00000008u;
+  } else {
+    _impl_._has_bits_[0] &= ~0x00000008u;
+  }
+  _impl_.icon_.SetAllocated(value, GetArena());
+  #ifdef PROTOBUF_FORCE_COPY_DEFAULT_STRING
+        if (_impl_.icon_.IsDefault()) {
+          _impl_.icon_.Set("", GetArena());
+        }
+  #endif  // PROTOBUF_FORCE_COPY_DEFAULT_STRING
+  // @@protoc_insertion_point(field_set_allocated:CPlayer_GetGameAchievements_Response.Achievement.icon)
+}
+
+// optional string icon_gray = 5;
+inline bool CPlayer_GetGameAchievements_Response_Achievement::has_icon_gray() const {
+  bool value = (_impl_._has_bits_[0] & 0x00000010u) != 0;
+  return value;
+}
+inline void CPlayer_GetGameAchievements_Response_Achievement::clear_icon_gray() {
+  PROTOBUF_TSAN_WRITE(&_impl_._tsan_detect_race);
+  _impl_.icon_gray_.ClearToEmpty();
+  _impl_._has_bits_[0] &= ~0x00000010u;
+}
+inline const std::string& CPlayer_GetGameAchievements_Response_Achievement::icon_gray() const
+    ABSL_ATTRIBUTE_LIFETIME_BOUND {
+  // @@protoc_insertion_point(field_get:CPlayer_GetGameAchievements_Response.Achievement.icon_gray)
+  return _internal_icon_gray();
+}
+template <typename Arg_, typename... Args_>
+inline PROTOBUF_ALWAYS_INLINE void CPlayer_GetGameAchievements_Response_Achievement::set_icon_gray(Arg_&& arg,
+                                                     Args_... args) {
+  PROTOBUF_TSAN_WRITE(&_impl_._tsan_detect_race);
+  _impl_._has_bits_[0] |= 0x00000010u;
+  _impl_.icon_gray_.Set(static_cast<Arg_&&>(arg), args..., GetArena());
+  // @@protoc_insertion_point(field_set:CPlayer_GetGameAchievements_Response.Achievement.icon_gray)
+}
+inline std::string* CPlayer_GetGameAchievements_Response_Achievement::mutable_icon_gray() ABSL_ATTRIBUTE_LIFETIME_BOUND {
+  std::string* _s = _internal_mutable_icon_gray();
+  // @@protoc_insertion_point(field_mutable:CPlayer_GetGameAchievements_Response.Achievement.icon_gray)
+  return _s;
+}
+inline const std::string& CPlayer_GetGameAchievements_Response_Achievement::_internal_icon_gray() const {
+  PROTOBUF_TSAN_READ(&_impl_._tsan_detect_race);
+  return _impl_.icon_gray_.Get();
+}
+inline void CPlayer_GetGameAchievements_Response_Achievement::_internal_set_icon_gray(const std::string& value) {
+  PROTOBUF_TSAN_WRITE(&_impl_._tsan_detect_race);
+  _impl_._has_bits_[0] |= 0x00000010u;
+  _impl_.icon_gray_.Set(value, GetArena());
+}
+inline std::string* CPlayer_GetGameAchievements_Response_Achievement::_internal_mutable_icon_gray() {
+  PROTOBUF_TSAN_WRITE(&_impl_._tsan_detect_race);
+  _impl_._has_bits_[0] |= 0x00000010u;
+  return _impl_.icon_gray_.Mutable( GetArena());
+}
+inline std::string* CPlayer_GetGameAchievements_Response_Achievement::release_icon_gray() {
+  PROTOBUF_TSAN_WRITE(&_impl_._tsan_detect_race);
+  // @@protoc_insertion_point(field_release:CPlayer_GetGameAchievements_Response.Achievement.icon_gray)
+  if ((_impl_._has_bits_[0] & 0x00000010u) == 0) {
+    return nullptr;
+  }
+  _impl_._has_bits_[0] &= ~0x00000010u;
+  auto* released = _impl_.icon_gray_.Release();
+  #ifdef PROTOBUF_FORCE_COPY_DEFAULT_STRING
+  _impl_.icon_gray_.Set("", GetArena());
+  #endif  // PROTOBUF_FORCE_COPY_DEFAULT_STRING
+  return released;
+}
+inline void CPlayer_GetGameAchievements_Response_Achievement::set_allocated_icon_gray(std::string* value) {
+  PROTOBUF_TSAN_WRITE(&_impl_._tsan_detect_race);
+  if (value != nullptr) {
+    _impl_._has_bits_[0] |= 0x00000010u;
+  } else {
+    _impl_._has_bits_[0] &= ~0x00000010u;
+  }
+  _impl_.icon_gray_.SetAllocated(value, GetArena());
+  #ifdef PROTOBUF_FORCE_COPY_DEFAULT_STRING
+        if (_impl_.icon_gray_.IsDefault()) {
+          _impl_.icon_gray_.Set("", GetArena());
+        }
+  #endif  // PROTOBUF_FORCE_COPY_DEFAULT_STRING
+  // @@protoc_insertion_point(field_set_allocated:CPlayer_GetGameAchievements_Response.Achievement.icon_gray)
+}
+
+// optional uint32 hidden = 6;
+inline bool CPlayer_GetGameAchievements_Response_Achievement::has_hidden() const {
+  bool value = (_impl_._has_bits_[0] & 0x00000040u) != 0;
+  return value;
+}
+inline void CPlayer_GetGameAchievements_Response_Achievement::clear_hidden() {
+  PROTOBUF_TSAN_WRITE(&_impl_._tsan_detect_race);
+  _impl_.hidden_ = 0u;
+  _impl_._has_bits_[0] &= ~0x00000040u;
+}
+inline ::uint32_t CPlayer_GetGameAchievements_Response_Achievement::hidden() const {
+  // @@protoc_insertion_point(field_get:CPlayer_GetGameAchievements_Response.Achievement.hidden)
+  return _internal_hidden();
+}
+inline void CPlayer_GetGameAchievements_Response_Achievement::set_hidden(::uint32_t value) {
+  _internal_set_hidden(value);
+  // @@protoc_insertion_point(field_set:CPlayer_GetGameAchievements_Response.Achievement.hidden)
+}
+inline ::uint32_t CPlayer_GetGameAchievements_Response_Achievement::_internal_hidden() const {
+  PROTOBUF_TSAN_READ(&_impl_._tsan_detect_race);
+  return _impl_.hidden_;
+}
+inline void CPlayer_GetGameAchievements_Response_Achievement::_internal_set_hidden(::uint32_t value) {
+  PROTOBUF_TSAN_WRITE(&_impl_._tsan_detect_race);
+  _impl_._has_bits_[0] |= 0x00000040u;
+  _impl_.hidden_ = value;
+}
+
+// optional string global_percent = 7;
+inline bool CPlayer_GetGameAchievements_Response_Achievement::has_global_percent() const {
+  bool value = (_impl_._has_bits_[0] & 0x00000020u) != 0;
+  return value;
+}
+inline void CPlayer_GetGameAchievements_Response_Achievement::clear_global_percent() {
+  PROTOBUF_TSAN_WRITE(&_impl_._tsan_detect_race);
+  _impl_.global_percent_.ClearToEmpty();
+  _impl_._has_bits_[0] &= ~0x00000020u;
+}
+inline const std::string& CPlayer_GetGameAchievements_Response_Achievement::global_percent() const
+    ABSL_ATTRIBUTE_LIFETIME_BOUND {
+  // @@protoc_insertion_point(field_get:CPlayer_GetGameAchievements_Response.Achievement.global_percent)
+  return _internal_global_percent();
+}
+template <typename Arg_, typename... Args_>
+inline PROTOBUF_ALWAYS_INLINE void CPlayer_GetGameAchievements_Response_Achievement::set_global_percent(Arg_&& arg,
+                                                     Args_... args) {
+  PROTOBUF_TSAN_WRITE(&_impl_._tsan_detect_race);
+  _impl_._has_bits_[0] |= 0x00000020u;
+  _impl_.global_percent_.Set(static_cast<Arg_&&>(arg), args..., GetArena());
+  // @@protoc_insertion_point(field_set:CPlayer_GetGameAchievements_Response.Achievement.global_percent)
+}
+inline std::string* CPlayer_GetGameAchievements_Response_Achievement::mutable_global_percent() ABSL_ATTRIBUTE_LIFETIME_BOUND {
+  std::string* _s = _internal_mutable_global_percent();
+  // @@protoc_insertion_point(field_mutable:CPlayer_GetGameAchievements_Response.Achievement.global_percent)
+  return _s;
+}
+inline const std::string& CPlayer_GetGameAchievements_Response_Achievement::_internal_global_percent() const {
+  PROTOBUF_TSAN_READ(&_impl_._tsan_detect_race);
+  return _impl_.global_percent_.Get();
+}
+inline void CPlayer_GetGameAchievements_Response_Achievement::_internal_set_global_percent(const std::string& value) {
+  PROTOBUF_TSAN_WRITE(&_impl_._tsan_detect_race);
+  _impl_._has_bits_[0] |= 0x00000020u;
+  _impl_.global_percent_.Set(value, GetArena());
+}
+inline std::string* CPlayer_GetGameAchievements_Response_Achievement::_internal_mutable_global_percent() {
+  PROTOBUF_TSAN_WRITE(&_impl_._tsan_detect_race);
+  _impl_._has_bits_[0] |= 0x00000020u;
+  return _impl_.global_percent_.Mutable( GetArena());
+}
+inline std::string* CPlayer_GetGameAchievements_Response_Achievement::release_global_percent() {
+  PROTOBUF_TSAN_WRITE(&_impl_._tsan_detect_race);
+  // @@protoc_insertion_point(field_release:CPlayer_GetGameAchievements_Response.Achievement.global_percent)
+  if ((_impl_._has_bits_[0] & 0x00000020u) == 0) {
+    return nullptr;
+  }
+  _impl_._has_bits_[0] &= ~0x00000020u;
+  auto* released = _impl_.global_percent_.Release();
+  #ifdef PROTOBUF_FORCE_COPY_DEFAULT_STRING
+  _impl_.global_percent_.Set("", GetArena());
+  #endif  // PROTOBUF_FORCE_COPY_DEFAULT_STRING
+  return released;
+}
+inline void CPlayer_GetGameAchievements_Response_Achievement::set_allocated_global_percent(std::string* value) {
+  PROTOBUF_TSAN_WRITE(&_impl_._tsan_detect_race);
+  if (value != nullptr) {
+    _impl_._has_bits_[0] |= 0x00000020u;
+  } else {
+    _impl_._has_bits_[0] &= ~0x00000020u;
+  }
+  _impl_.global_percent_.SetAllocated(value, GetArena());
+  #ifdef PROTOBUF_FORCE_COPY_DEFAULT_STRING
+        if (_impl_.global_percent_.IsDefault()) {
+          _impl_.global_percent_.Set("", GetArena());
+        }
+  #endif  // PROTOBUF_FORCE_COPY_DEFAULT_STRING
+  // @@protoc_insertion_point(field_set_allocated:CPlayer_GetGameAchievements_Response.Achievement.global_percent)
+}
+
+// optional uint32 internal_key = 8;
+inline bool CPlayer_GetGameAchievements_Response_Achievement::has_internal_key() const {
+  bool value = (_impl_._has_bits_[0] & 0x00000080u) != 0;
+  return value;
+}
+inline void CPlayer_GetGameAchievements_Response_Achievement::clear_internal_key() {
+  PROTOBUF_TSAN_WRITE(&_impl_._tsan_detect_race);
+  _impl_.internal_key_ = 0u;
+  _impl_._has_bits_[0] &= ~0x00000080u;
+}
+inline ::uint32_t CPlayer_GetGameAchievements_Response_Achievement::internal_key() const {
+  // @@protoc_insertion_point(field_get:CPlayer_GetGameAchievements_Response.Achievement.internal_key)
+  return _internal_internal_key();
+}
+inline void CPlayer_GetGameAchievements_Response_Achievement::set_internal_key(::uint32_t value) {
+  _internal_set_internal_key(value);
+  // @@protoc_insertion_point(field_set:CPlayer_GetGameAchievements_Response.Achievement.internal_key)
+}
+inline ::uint32_t CPlayer_GetGameAchievements_Response_Achievement::_internal_internal_key() const {
+  PROTOBUF_TSAN_READ(&_impl_._tsan_detect_race);
+  return _impl_.internal_key_;
+}
+inline void CPlayer_GetGameAchievements_Response_Achievement::_internal_set_internal_key(::uint32_t value) {
+  PROTOBUF_TSAN_WRITE(&_impl_._tsan_detect_race);
+  _impl_._has_bits_[0] |= 0x00000080u;
+  _impl_.internal_key_ = value;
+}
+
+// optional uint32 groupid = 11;
+inline bool CPlayer_GetGameAchievements_Response_Achievement::has_groupid() const {
+  bool value = (_impl_._has_bits_[0] & 0x00000100u) != 0;
+  return value;
+}
+inline void CPlayer_GetGameAchievements_Response_Achievement::clear_groupid() {
+  PROTOBUF_TSAN_WRITE(&_impl_._tsan_detect_race);
+  _impl_.groupid_ = 0u;
+  _impl_._has_bits_[0] &= ~0x00000100u;
+}
+inline ::uint32_t CPlayer_GetGameAchievements_Response_Achievement::groupid() const {
+  // @@protoc_insertion_point(field_get:CPlayer_GetGameAchievements_Response.Achievement.groupid)
+  return _internal_groupid();
+}
+inline void CPlayer_GetGameAchievements_Response_Achievement::set_groupid(::uint32_t value) {
+  _internal_set_groupid(value);
+  // @@protoc_insertion_point(field_set:CPlayer_GetGameAchievements_Response.Achievement.groupid)
+}
+inline ::uint32_t CPlayer_GetGameAchievements_Response_Achievement::_internal_groupid() const {
+  PROTOBUF_TSAN_READ(&_impl_._tsan_detect_race);
+  return _impl_.groupid_;
+}
+inline void CPlayer_GetGameAchievements_Response_Achievement::_internal_set_groupid(::uint32_t value) {
+  PROTOBUF_TSAN_WRITE(&_impl_._tsan_detect_race);
+  _impl_._has_bits_[0] |= 0x00000100u;
+  _impl_.groupid_ = value;
+}
+
+// -------------------------------------------------------------------
+
+// CPlayer_GetGameAchievements_Response_Group
+
+// optional uint32 groupid = 1;
+inline bool CPlayer_GetGameAchievements_Response_Group::has_groupid() const {
+  bool value = (_impl_._has_bits_[0] & 0x00000001u) != 0;
+  return value;
+}
+inline void CPlayer_GetGameAchievements_Response_Group::clear_groupid() {
+  PROTOBUF_TSAN_WRITE(&_impl_._tsan_detect_race);
+  _impl_.groupid_ = 0u;
+  _impl_._has_bits_[0] &= ~0x00000001u;
+}
+inline ::uint32_t CPlayer_GetGameAchievements_Response_Group::groupid() const {
+  // @@protoc_insertion_point(field_get:CPlayer_GetGameAchievements_Response.Group.groupid)
+  return _internal_groupid();
+}
+inline void CPlayer_GetGameAchievements_Response_Group::set_groupid(::uint32_t value) {
+  _internal_set_groupid(value);
+  // @@protoc_insertion_point(field_set:CPlayer_GetGameAchievements_Response.Group.groupid)
+}
+inline ::uint32_t CPlayer_GetGameAchievements_Response_Group::_internal_groupid() const {
+  PROTOBUF_TSAN_READ(&_impl_._tsan_detect_race);
+  return _impl_.groupid_;
+}
+inline void CPlayer_GetGameAchievements_Response_Group::_internal_set_groupid(::uint32_t value) {
+  PROTOBUF_TSAN_WRITE(&_impl_._tsan_detect_race);
+  _impl_._has_bits_[0] |= 0x00000001u;
+  _impl_.groupid_ = value;
+}
+
+// -------------------------------------------------------------------
+
+// CPlayer_GetGameAchievements_Response
+
+// repeated .CPlayer_GetGameAchievements_Response.Achievement achievements = 1;
+inline int CPlayer_GetGameAchievements_Response::_internal_achievements_size() const {
+  return _internal_achievements().size();
+}
+inline int CPlayer_GetGameAchievements_Response::achievements_size() const {
+  return _internal_achievements_size();
+}
+inline void CPlayer_GetGameAchievements_Response::clear_achievements() {
+  PROTOBUF_TSAN_WRITE(&_impl_._tsan_detect_race);
+  _impl_.achievements_.Clear();
+}
+inline ::CPlayer_GetGameAchievements_Response_Achievement* CPlayer_GetGameAchievements_Response::mutable_achievements(int index)
+    ABSL_ATTRIBUTE_LIFETIME_BOUND {
+  // @@protoc_insertion_point(field_mutable:CPlayer_GetGameAchievements_Response.achievements)
+  return _internal_mutable_achievements()->Mutable(index);
+}
+inline ::google::protobuf::RepeatedPtrField<::CPlayer_GetGameAchievements_Response_Achievement>* CPlayer_GetGameAchievements_Response::mutable_achievements()
+    ABSL_ATTRIBUTE_LIFETIME_BOUND {
+  // @@protoc_insertion_point(field_mutable_list:CPlayer_GetGameAchievements_Response.achievements)
+  PROTOBUF_TSAN_WRITE(&_impl_._tsan_detect_race);
+  return _internal_mutable_achievements();
+}
+inline const ::CPlayer_GetGameAchievements_Response_Achievement& CPlayer_GetGameAchievements_Response::achievements(int index) const
+    ABSL_ATTRIBUTE_LIFETIME_BOUND {
+  // @@protoc_insertion_point(field_get:CPlayer_GetGameAchievements_Response.achievements)
+  return _internal_achievements().Get(index);
+}
+inline ::CPlayer_GetGameAchievements_Response_Achievement* CPlayer_GetGameAchievements_Response::add_achievements() ABSL_ATTRIBUTE_LIFETIME_BOUND {
+  PROTOBUF_TSAN_WRITE(&_impl_._tsan_detect_race);
+  ::CPlayer_GetGameAchievements_Response_Achievement* _add = _internal_mutable_achievements()->Add();
+  // @@protoc_insertion_point(field_add:CPlayer_GetGameAchievements_Response.achievements)
+  return _add;
+}
+inline const ::google::protobuf::RepeatedPtrField<::CPlayer_GetGameAchievements_Response_Achievement>& CPlayer_GetGameAchievements_Response::achievements() const
+    ABSL_ATTRIBUTE_LIFETIME_BOUND {
+  // @@protoc_insertion_point(field_list:CPlayer_GetGameAchievements_Response.achievements)
+  return _internal_achievements();
+}
+inline const ::google::protobuf::RepeatedPtrField<::CPlayer_GetGameAchievements_Response_Achievement>&
+CPlayer_GetGameAchievements_Response::_internal_achievements() const {
+  PROTOBUF_TSAN_READ(&_impl_._tsan_detect_race);
+  return _impl_.achievements_;
+}
+inline ::google::protobuf::RepeatedPtrField<::CPlayer_GetGameAchievements_Response_Achievement>*
+CPlayer_GetGameAchievements_Response::_internal_mutable_achievements() {
+  PROTOBUF_TSAN_READ(&_impl_._tsan_detect_race);
+  return &_impl_.achievements_;
+}
+
+// optional int32 schema_version = 2;
+inline bool CPlayer_GetGameAchievements_Response::has_schema_version() const {
+  bool value = (_impl_._has_bits_[0] & 0x00000001u) != 0;
+  return value;
+}
+inline void CPlayer_GetGameAchievements_Response::clear_schema_version() {
+  PROTOBUF_TSAN_WRITE(&_impl_._tsan_detect_race);
+  _impl_.schema_version_ = 0;
+  _impl_._has_bits_[0] &= ~0x00000001u;
+}
+inline ::int32_t CPlayer_GetGameAchievements_Response::schema_version() const {
+  // @@protoc_insertion_point(field_get:CPlayer_GetGameAchievements_Response.schema_version)
+  return _internal_schema_version();
+}
+inline void CPlayer_GetGameAchievements_Response::set_schema_version(::int32_t value) {
+  _internal_set_schema_version(value);
+  // @@protoc_insertion_point(field_set:CPlayer_GetGameAchievements_Response.schema_version)
+}
+inline ::int32_t CPlayer_GetGameAchievements_Response::_internal_schema_version() const {
+  PROTOBUF_TSAN_READ(&_impl_._tsan_detect_race);
+  return _impl_.schema_version_;
+}
+inline void CPlayer_GetGameAchievements_Response::_internal_set_schema_version(::int32_t value) {
+  PROTOBUF_TSAN_WRITE(&_impl_._tsan_detect_race);
+  _impl_._has_bits_[0] |= 0x00000001u;
+  _impl_.schema_version_ = value;
+}
+
+// repeated .CPlayer_GetGameAchievements_Response.Group groups = 3;
+inline int CPlayer_GetGameAchievements_Response::_internal_groups_size() const {
+  return _internal_groups().size();
+}
+inline int CPlayer_GetGameAchievements_Response::groups_size() const {
+  return _internal_groups_size();
+}
+inline void CPlayer_GetGameAchievements_Response::clear_groups() {
+  PROTOBUF_TSAN_WRITE(&_impl_._tsan_detect_race);
+  _impl_.groups_.Clear();
+}
+inline ::CPlayer_GetGameAchievements_Response_Group* CPlayer_GetGameAchievements_Response::mutable_groups(int index)
+    ABSL_ATTRIBUTE_LIFETIME_BOUND {
+  // @@protoc_insertion_point(field_mutable:CPlayer_GetGameAchievements_Response.groups)
+  return _internal_mutable_groups()->Mutable(index);
+}
+inline ::google::protobuf::RepeatedPtrField<::CPlayer_GetGameAchievements_Response_Group>* CPlayer_GetGameAchievements_Response::mutable_groups()
+    ABSL_ATTRIBUTE_LIFETIME_BOUND {
+  // @@protoc_insertion_point(field_mutable_list:CPlayer_GetGameAchievements_Response.groups)
+  PROTOBUF_TSAN_WRITE(&_impl_._tsan_detect_race);
+  return _internal_mutable_groups();
+}
+inline const ::CPlayer_GetGameAchievements_Response_Group& CPlayer_GetGameAchievements_Response::groups(int index) const
+    ABSL_ATTRIBUTE_LIFETIME_BOUND {
+  // @@protoc_insertion_point(field_get:CPlayer_GetGameAchievements_Response.groups)
+  return _internal_groups().Get(index);
+}
+inline ::CPlayer_GetGameAchievements_Response_Group* CPlayer_GetGameAchievements_Response::add_groups() ABSL_ATTRIBUTE_LIFETIME_BOUND {
+  PROTOBUF_TSAN_WRITE(&_impl_._tsan_detect_race);
+  ::CPlayer_GetGameAchievements_Response_Group* _add = _internal_mutable_groups()->Add();
+  // @@protoc_insertion_point(field_add:CPlayer_GetGameAchievements_Response.groups)
+  return _add;
+}
+inline const ::google::protobuf::RepeatedPtrField<::CPlayer_GetGameAchievements_Response_Group>& CPlayer_GetGameAchievements_Response::groups() const
+    ABSL_ATTRIBUTE_LIFETIME_BOUND {
+  // @@protoc_insertion_point(field_list:CPlayer_GetGameAchievements_Response.groups)
+  return _internal_groups();
+}
+inline const ::google::protobuf::RepeatedPtrField<::CPlayer_GetGameAchievements_Response_Group>&
+CPlayer_GetGameAchievements_Response::_internal_groups() const {
+  PROTOBUF_TSAN_READ(&_impl_._tsan_detect_race);
+  return _impl_.groups_;
+}
+inline ::google::protobuf::RepeatedPtrField<::CPlayer_GetGameAchievements_Response_Group>*
+CPlayer_GetGameAchievements_Response::_internal_mutable_groups() {
+  PROTOBUF_TSAN_READ(&_impl_._tsan_detect_race);
+  return &_impl_.groups_;
+}
+
+// optional uint32 schema_hash = 4;
+inline bool CPlayer_GetGameAchievements_Response::has_schema_hash() const {
+  bool value = (_impl_._has_bits_[0] & 0x00000002u) != 0;
+  return value;
+}
+inline void CPlayer_GetGameAchievements_Response::clear_schema_hash() {
+  PROTOBUF_TSAN_WRITE(&_impl_._tsan_detect_race);
+  _impl_.schema_hash_ = 0u;
+  _impl_._has_bits_[0] &= ~0x00000002u;
+}
+inline ::uint32_t CPlayer_GetGameAchievements_Response::schema_hash() const {
+  // @@protoc_insertion_point(field_get:CPlayer_GetGameAchievements_Response.schema_hash)
+  return _internal_schema_hash();
+}
+inline void CPlayer_GetGameAchievements_Response::set_schema_hash(::uint32_t value) {
+  _internal_set_schema_hash(value);
+  // @@protoc_insertion_point(field_set:CPlayer_GetGameAchievements_Response.schema_hash)
+}
+inline ::uint32_t CPlayer_GetGameAchievements_Response::_internal_schema_hash() const {
+  PROTOBUF_TSAN_READ(&_impl_._tsan_detect_race);
+  return _impl_.schema_hash_;
+}
+inline void CPlayer_GetGameAchievements_Response::_internal_set_schema_hash(::uint32_t value) {
+  PROTOBUF_TSAN_WRITE(&_impl_._tsan_detect_race);
+  _impl_._has_bits_[0] |= 0x00000002u;
+  _impl_.schema_hash_ = value;
+}
+
+// -------------------------------------------------------------------
+
+// CPlayer_GetUserAchievements_Request
+
+// optional uint64 steamid = 1;
+inline bool CPlayer_GetUserAchievements_Request::has_steamid() const {
+  bool value = (_impl_._has_bits_[0] & 0x00000001u) != 0;
+  return value;
+}
+inline void CPlayer_GetUserAchievements_Request::clear_steamid() {
+  PROTOBUF_TSAN_WRITE(&_impl_._tsan_detect_race);
+  _impl_.steamid_ = ::uint64_t{0u};
+  _impl_._has_bits_[0] &= ~0x00000001u;
+}
+inline ::uint64_t CPlayer_GetUserAchievements_Request::steamid() const {
+  // @@protoc_insertion_point(field_get:CPlayer_GetUserAchievements_Request.steamid)
+  return _internal_steamid();
+}
+inline void CPlayer_GetUserAchievements_Request::set_steamid(::uint64_t value) {
+  _internal_set_steamid(value);
+  // @@protoc_insertion_point(field_set:CPlayer_GetUserAchievements_Request.steamid)
+}
+inline ::uint64_t CPlayer_GetUserAchievements_Request::_internal_steamid() const {
+  PROTOBUF_TSAN_READ(&_impl_._tsan_detect_race);
+  return _impl_.steamid_;
+}
+inline void CPlayer_GetUserAchievements_Request::_internal_set_steamid(::uint64_t value) {
+  PROTOBUF_TSAN_WRITE(&_impl_._tsan_detect_race);
+  _impl_._has_bits_[0] |= 0x00000001u;
+  _impl_.steamid_ = value;
+}
+
+// optional uint32 appid = 2;
+inline bool CPlayer_GetUserAchievements_Request::has_appid() const {
+  bool value = (_impl_._has_bits_[0] & 0x00000002u) != 0;
+  return value;
+}
+inline void CPlayer_GetUserAchievements_Request::clear_appid() {
+  PROTOBUF_TSAN_WRITE(&_impl_._tsan_detect_race);
+  _impl_.appid_ = 0u;
+  _impl_._has_bits_[0] &= ~0x00000002u;
+}
+inline ::uint32_t CPlayer_GetUserAchievements_Request::appid() const {
+  // @@protoc_insertion_point(field_get:CPlayer_GetUserAchievements_Request.appid)
+  return _internal_appid();
+}
+inline void CPlayer_GetUserAchievements_Request::set_appid(::uint32_t value) {
+  _internal_set_appid(value);
+  // @@protoc_insertion_point(field_set:CPlayer_GetUserAchievements_Request.appid)
+}
+inline ::uint32_t CPlayer_GetUserAchievements_Request::_internal_appid() const {
+  PROTOBUF_TSAN_READ(&_impl_._tsan_detect_race);
+  return _impl_.appid_;
+}
+inline void CPlayer_GetUserAchievements_Request::_internal_set_appid(::uint32_t value) {
+  PROTOBUF_TSAN_WRITE(&_impl_._tsan_detect_race);
+  _impl_._has_bits_[0] |= 0x00000002u;
+  _impl_.appid_ = value;
+}
+
+// -------------------------------------------------------------------
+
+// CPlayer_GetUserAchievements_Response_Achievement
+
+// optional uint32 internal_key = 1;
+inline bool CPlayer_GetUserAchievements_Response_Achievement::has_internal_key() const {
+  bool value = (_impl_._has_bits_[0] & 0x00000001u) != 0;
+  return value;
+}
+inline void CPlayer_GetUserAchievements_Response_Achievement::clear_internal_key() {
+  PROTOBUF_TSAN_WRITE(&_impl_._tsan_detect_race);
+  _impl_.internal_key_ = 0u;
+  _impl_._has_bits_[0] &= ~0x00000001u;
+}
+inline ::uint32_t CPlayer_GetUserAchievements_Response_Achievement::internal_key() const {
+  // @@protoc_insertion_point(field_get:CPlayer_GetUserAchievements_Response.Achievement.internal_key)
+  return _internal_internal_key();
+}
+inline void CPlayer_GetUserAchievements_Response_Achievement::set_internal_key(::uint32_t value) {
+  _internal_set_internal_key(value);
+  // @@protoc_insertion_point(field_set:CPlayer_GetUserAchievements_Response.Achievement.internal_key)
+}
+inline ::uint32_t CPlayer_GetUserAchievements_Response_Achievement::_internal_internal_key() const {
+  PROTOBUF_TSAN_READ(&_impl_._tsan_detect_race);
+  return _impl_.internal_key_;
+}
+inline void CPlayer_GetUserAchievements_Response_Achievement::_internal_set_internal_key(::uint32_t value) {
+  PROTOBUF_TSAN_WRITE(&_impl_._tsan_detect_race);
+  _impl_._has_bits_[0] |= 0x00000001u;
+  _impl_.internal_key_ = value;
+}
+
+// optional bool unlocked = 2;
+inline bool CPlayer_GetUserAchievements_Response_Achievement::has_unlocked() const {
+  bool value = (_impl_._has_bits_[0] & 0x00000002u) != 0;
+  return value;
+}
+inline void CPlayer_GetUserAchievements_Response_Achievement::clear_unlocked() {
+  PROTOBUF_TSAN_WRITE(&_impl_._tsan_detect_race);
+  _impl_.unlocked_ = false;
+  _impl_._has_bits_[0] &= ~0x00000002u;
+}
+inline bool CPlayer_GetUserAchievements_Response_Achievement::unlocked() const {
+  // @@protoc_insertion_point(field_get:CPlayer_GetUserAchievements_Response.Achievement.unlocked)
+  return _internal_unlocked();
+}
+inline void CPlayer_GetUserAchievements_Response_Achievement::set_unlocked(bool value) {
+  _internal_set_unlocked(value);
+  // @@protoc_insertion_point(field_set:CPlayer_GetUserAchievements_Response.Achievement.unlocked)
+}
+inline bool CPlayer_GetUserAchievements_Response_Achievement::_internal_unlocked() const {
+  PROTOBUF_TSAN_READ(&_impl_._tsan_detect_race);
+  return _impl_.unlocked_;
+}
+inline void CPlayer_GetUserAchievements_Response_Achievement::_internal_set_unlocked(bool value) {
+  PROTOBUF_TSAN_WRITE(&_impl_._tsan_detect_race);
+  _impl_._has_bits_[0] |= 0x00000002u;
+  _impl_.unlocked_ = value;
+}
+
+// optional fixed32 unlock_time = 3;
+inline bool CPlayer_GetUserAchievements_Response_Achievement::has_unlock_time() const {
+  bool value = (_impl_._has_bits_[0] & 0x00000004u) != 0;
+  return value;
+}
+inline void CPlayer_GetUserAchievements_Response_Achievement::clear_unlock_time() {
+  PROTOBUF_TSAN_WRITE(&_impl_._tsan_detect_race);
+  _impl_.unlock_time_ = 0u;
+  _impl_._has_bits_[0] &= ~0x00000004u;
+}
+inline ::uint32_t CPlayer_GetUserAchievements_Response_Achievement::unlock_time() const {
+  // @@protoc_insertion_point(field_get:CPlayer_GetUserAchievements_Response.Achievement.unlock_time)
+  return _internal_unlock_time();
+}
+inline void CPlayer_GetUserAchievements_Response_Achievement::set_unlock_time(::uint32_t value) {
+  _internal_set_unlock_time(value);
+  // @@protoc_insertion_point(field_set:CPlayer_GetUserAchievements_Response.Achievement.unlock_time)
+}
+inline ::uint32_t CPlayer_GetUserAchievements_Response_Achievement::_internal_unlock_time() const {
+  PROTOBUF_TSAN_READ(&_impl_._tsan_detect_race);
+  return _impl_.unlock_time_;
+}
+inline void CPlayer_GetUserAchievements_Response_Achievement::_internal_set_unlock_time(::uint32_t value) {
+  PROTOBUF_TSAN_WRITE(&_impl_._tsan_detect_race);
+  _impl_._has_bits_[0] |= 0x00000004u;
+  _impl_.unlock_time_ = value;
+}
+
+// optional int32 progress_int = 4;
+inline bool CPlayer_GetUserAchievements_Response_Achievement::has_progress_int() const {
+  bool value = (_impl_._has_bits_[0] & 0x00000008u) != 0;
+  return value;
+}
+inline void CPlayer_GetUserAchievements_Response_Achievement::clear_progress_int() {
+  PROTOBUF_TSAN_WRITE(&_impl_._tsan_detect_race);
+  _impl_.progress_int_ = 0;
+  _impl_._has_bits_[0] &= ~0x00000008u;
+}
+inline ::int32_t CPlayer_GetUserAchievements_Response_Achievement::progress_int() const {
+  // @@protoc_insertion_point(field_get:CPlayer_GetUserAchievements_Response.Achievement.progress_int)
+  return _internal_progress_int();
+}
+inline void CPlayer_GetUserAchievements_Response_Achievement::set_progress_int(::int32_t value) {
+  _internal_set_progress_int(value);
+  // @@protoc_insertion_point(field_set:CPlayer_GetUserAchievements_Response.Achievement.progress_int)
+}
+inline ::int32_t CPlayer_GetUserAchievements_Response_Achievement::_internal_progress_int() const {
+  PROTOBUF_TSAN_READ(&_impl_._tsan_detect_race);
+  return _impl_.progress_int_;
+}
+inline void CPlayer_GetUserAchievements_Response_Achievement::_internal_set_progress_int(::int32_t value) {
+  PROTOBUF_TSAN_WRITE(&_impl_._tsan_detect_race);
+  _impl_._has_bits_[0] |= 0x00000008u;
+  _impl_.progress_int_ = value;
+}
+
+// optional float progress_float = 5;
+inline bool CPlayer_GetUserAchievements_Response_Achievement::has_progress_float() const {
+  bool value = (_impl_._has_bits_[0] & 0x00000010u) != 0;
+  return value;
+}
+inline void CPlayer_GetUserAchievements_Response_Achievement::clear_progress_float() {
+  PROTOBUF_TSAN_WRITE(&_impl_._tsan_detect_race);
+  _impl_.progress_float_ = 0;
+  _impl_._has_bits_[0] &= ~0x00000010u;
+}
+inline float CPlayer_GetUserAchievements_Response_Achievement::progress_float() const {
+  // @@protoc_insertion_point(field_get:CPlayer_GetUserAchievements_Response.Achievement.progress_float)
+  return _internal_progress_float();
+}
+inline void CPlayer_GetUserAchievements_Response_Achievement::set_progress_float(float value) {
+  _internal_set_progress_float(value);
+  // @@protoc_insertion_point(field_set:CPlayer_GetUserAchievements_Response.Achievement.progress_float)
+}
+inline float CPlayer_GetUserAchievements_Response_Achievement::_internal_progress_float() const {
+  PROTOBUF_TSAN_READ(&_impl_._tsan_detect_race);
+  return _impl_.progress_float_;
+}
+inline void CPlayer_GetUserAchievements_Response_Achievement::_internal_set_progress_float(float value) {
+  PROTOBUF_TSAN_WRITE(&_impl_._tsan_detect_race);
+  _impl_._has_bits_[0] |= 0x00000010u;
+  _impl_.progress_float_ = value;
+}
+
+// -------------------------------------------------------------------
+
+// CPlayer_GetUserAchievements_Response_Group
+
+// optional uint32 groupid = 1;
+inline bool CPlayer_GetUserAchievements_Response_Group::has_groupid() const {
+  bool value = (_impl_._has_bits_[0] & 0x00000001u) != 0;
+  return value;
+}
+inline void CPlayer_GetUserAchievements_Response_Group::clear_groupid() {
+  PROTOBUF_TSAN_WRITE(&_impl_._tsan_detect_race);
+  _impl_.groupid_ = 0u;
+  _impl_._has_bits_[0] &= ~0x00000001u;
+}
+inline ::uint32_t CPlayer_GetUserAchievements_Response_Group::groupid() const {
+  // @@protoc_insertion_point(field_get:CPlayer_GetUserAchievements_Response.Group.groupid)
+  return _internal_groupid();
+}
+inline void CPlayer_GetUserAchievements_Response_Group::set_groupid(::uint32_t value) {
+  _internal_set_groupid(value);
+  // @@protoc_insertion_point(field_set:CPlayer_GetUserAchievements_Response.Group.groupid)
+}
+inline ::uint32_t CPlayer_GetUserAchievements_Response_Group::_internal_groupid() const {
+  PROTOBUF_TSAN_READ(&_impl_._tsan_detect_race);
+  return _impl_.groupid_;
+}
+inline void CPlayer_GetUserAchievements_Response_Group::_internal_set_groupid(::uint32_t value) {
+  PROTOBUF_TSAN_WRITE(&_impl_._tsan_detect_race);
+  _impl_._has_bits_[0] |= 0x00000001u;
+  _impl_.groupid_ = value;
+}
+
+// optional bool is_achievable = 2;
+inline bool CPlayer_GetUserAchievements_Response_Group::has_is_achievable() const {
+  bool value = (_impl_._has_bits_[0] & 0x00000002u) != 0;
+  return value;
+}
+inline void CPlayer_GetUserAchievements_Response_Group::clear_is_achievable() {
+  PROTOBUF_TSAN_WRITE(&_impl_._tsan_detect_race);
+  _impl_.is_achievable_ = false;
+  _impl_._has_bits_[0] &= ~0x00000002u;
+}
+inline bool CPlayer_GetUserAchievements_Response_Group::is_achievable() const {
+  // @@protoc_insertion_point(field_get:CPlayer_GetUserAchievements_Response.Group.is_achievable)
+  return _internal_is_achievable();
+}
+inline void CPlayer_GetUserAchievements_Response_Group::set_is_achievable(bool value) {
+  _internal_set_is_achievable(value);
+  // @@protoc_insertion_point(field_set:CPlayer_GetUserAchievements_Response.Group.is_achievable)
+}
+inline bool CPlayer_GetUserAchievements_Response_Group::_internal_is_achievable() const {
+  PROTOBUF_TSAN_READ(&_impl_._tsan_detect_race);
+  return _impl_.is_achievable_;
+}
+inline void CPlayer_GetUserAchievements_Response_Group::_internal_set_is_achievable(bool value) {
+  PROTOBUF_TSAN_WRITE(&_impl_._tsan_detect_race);
+  _impl_._has_bits_[0] |= 0x00000002u;
+  _impl_.is_achievable_ = value;
+}
+
+// optional uint32 unlocked = 3;
+inline bool CPlayer_GetUserAchievements_Response_Group::has_unlocked() const {
+  bool value = (_impl_._has_bits_[0] & 0x00000004u) != 0;
+  return value;
+}
+inline void CPlayer_GetUserAchievements_Response_Group::clear_unlocked() {
+  PROTOBUF_TSAN_WRITE(&_impl_._tsan_detect_race);
+  _impl_.unlocked_ = 0u;
+  _impl_._has_bits_[0] &= ~0x00000004u;
+}
+inline ::uint32_t CPlayer_GetUserAchievements_Response_Group::unlocked() const {
+  // @@protoc_insertion_point(field_get:CPlayer_GetUserAchievements_Response.Group.unlocked)
+  return _internal_unlocked();
+}
+inline void CPlayer_GetUserAchievements_Response_Group::set_unlocked(::uint32_t value) {
+  _internal_set_unlocked(value);
+  // @@protoc_insertion_point(field_set:CPlayer_GetUserAchievements_Response.Group.unlocked)
+}
+inline ::uint32_t CPlayer_GetUserAchievements_Response_Group::_internal_unlocked() const {
+  PROTOBUF_TSAN_READ(&_impl_._tsan_detect_race);
+  return _impl_.unlocked_;
+}
+inline void CPlayer_GetUserAchievements_Response_Group::_internal_set_unlocked(::uint32_t value) {
+  PROTOBUF_TSAN_WRITE(&_impl_._tsan_detect_race);
+  _impl_._has_bits_[0] |= 0x00000004u;
+  _impl_.unlocked_ = value;
+}
+
+// optional uint32 complete = 4;
+inline bool CPlayer_GetUserAchievements_Response_Group::has_complete() const {
+  bool value = (_impl_._has_bits_[0] & 0x00000008u) != 0;
+  return value;
+}
+inline void CPlayer_GetUserAchievements_Response_Group::clear_complete() {
+  PROTOBUF_TSAN_WRITE(&_impl_._tsan_detect_race);
+  _impl_.complete_ = 0u;
+  _impl_._has_bits_[0] &= ~0x00000008u;
+}
+inline ::uint32_t CPlayer_GetUserAchievements_Response_Group::complete() const {
+  // @@protoc_insertion_point(field_get:CPlayer_GetUserAchievements_Response.Group.complete)
+  return _internal_complete();
+}
+inline void CPlayer_GetUserAchievements_Response_Group::set_complete(::uint32_t value) {
+  _internal_set_complete(value);
+  // @@protoc_insertion_point(field_set:CPlayer_GetUserAchievements_Response.Group.complete)
+}
+inline ::uint32_t CPlayer_GetUserAchievements_Response_Group::_internal_complete() const {
+  PROTOBUF_TSAN_READ(&_impl_._tsan_detect_race);
+  return _impl_.complete_;
+}
+inline void CPlayer_GetUserAchievements_Response_Group::_internal_set_complete(::uint32_t value) {
+  PROTOBUF_TSAN_WRITE(&_impl_._tsan_detect_race);
+  _impl_._has_bits_[0] |= 0x00000008u;
+  _impl_.complete_ = value;
+}
+
+// optional fixed32 completed_at = 9;
+inline bool CPlayer_GetUserAchievements_Response_Group::has_completed_at() const {
+  bool value = (_impl_._has_bits_[0] & 0x00000010u) != 0;
+  return value;
+}
+inline void CPlayer_GetUserAchievements_Response_Group::clear_completed_at() {
+  PROTOBUF_TSAN_WRITE(&_impl_._tsan_detect_race);
+  _impl_.completed_at_ = 0u;
+  _impl_._has_bits_[0] &= ~0x00000010u;
+}
+inline ::uint32_t CPlayer_GetUserAchievements_Response_Group::completed_at() const {
+  // @@protoc_insertion_point(field_get:CPlayer_GetUserAchievements_Response.Group.completed_at)
+  return _internal_completed_at();
+}
+inline void CPlayer_GetUserAchievements_Response_Group::set_completed_at(::uint32_t value) {
+  _internal_set_completed_at(value);
+  // @@protoc_insertion_point(field_set:CPlayer_GetUserAchievements_Response.Group.completed_at)
+}
+inline ::uint32_t CPlayer_GetUserAchievements_Response_Group::_internal_completed_at() const {
+  PROTOBUF_TSAN_READ(&_impl_._tsan_detect_race);
+  return _impl_.completed_at_;
+}
+inline void CPlayer_GetUserAchievements_Response_Group::_internal_set_completed_at(::uint32_t value) {
+  PROTOBUF_TSAN_WRITE(&_impl_._tsan_detect_race);
+  _impl_._has_bits_[0] |= 0x00000010u;
+  _impl_.completed_at_ = value;
+}
+
+// -------------------------------------------------------------------
+
+// CPlayer_GetUserAchievements_Response
+
+// repeated .CPlayer_GetUserAchievements_Response.Achievement achievements = 1;
+inline int CPlayer_GetUserAchievements_Response::_internal_achievements_size() const {
+  return _internal_achievements().size();
+}
+inline int CPlayer_GetUserAchievements_Response::achievements_size() const {
+  return _internal_achievements_size();
+}
+inline void CPlayer_GetUserAchievements_Response::clear_achievements() {
+  PROTOBUF_TSAN_WRITE(&_impl_._tsan_detect_race);
+  _impl_.achievements_.Clear();
+}
+inline ::CPlayer_GetUserAchievements_Response_Achievement* CPlayer_GetUserAchievements_Response::mutable_achievements(int index)
+    ABSL_ATTRIBUTE_LIFETIME_BOUND {
+  // @@protoc_insertion_point(field_mutable:CPlayer_GetUserAchievements_Response.achievements)
+  return _internal_mutable_achievements()->Mutable(index);
+}
+inline ::google::protobuf::RepeatedPtrField<::CPlayer_GetUserAchievements_Response_Achievement>* CPlayer_GetUserAchievements_Response::mutable_achievements()
+    ABSL_ATTRIBUTE_LIFETIME_BOUND {
+  // @@protoc_insertion_point(field_mutable_list:CPlayer_GetUserAchievements_Response.achievements)
+  PROTOBUF_TSAN_WRITE(&_impl_._tsan_detect_race);
+  return _internal_mutable_achievements();
+}
+inline const ::CPlayer_GetUserAchievements_Response_Achievement& CPlayer_GetUserAchievements_Response::achievements(int index) const
+    ABSL_ATTRIBUTE_LIFETIME_BOUND {
+  // @@protoc_insertion_point(field_get:CPlayer_GetUserAchievements_Response.achievements)
+  return _internal_achievements().Get(index);
+}
+inline ::CPlayer_GetUserAchievements_Response_Achievement* CPlayer_GetUserAchievements_Response::add_achievements() ABSL_ATTRIBUTE_LIFETIME_BOUND {
+  PROTOBUF_TSAN_WRITE(&_impl_._tsan_detect_race);
+  ::CPlayer_GetUserAchievements_Response_Achievement* _add = _internal_mutable_achievements()->Add();
+  // @@protoc_insertion_point(field_add:CPlayer_GetUserAchievements_Response.achievements)
+  return _add;
+}
+inline const ::google::protobuf::RepeatedPtrField<::CPlayer_GetUserAchievements_Response_Achievement>& CPlayer_GetUserAchievements_Response::achievements() const
+    ABSL_ATTRIBUTE_LIFETIME_BOUND {
+  // @@protoc_insertion_point(field_list:CPlayer_GetUserAchievements_Response.achievements)
+  return _internal_achievements();
+}
+inline const ::google::protobuf::RepeatedPtrField<::CPlayer_GetUserAchievements_Response_Achievement>&
+CPlayer_GetUserAchievements_Response::_internal_achievements() const {
+  PROTOBUF_TSAN_READ(&_impl_._tsan_detect_race);
+  return _impl_.achievements_;
+}
+inline ::google::protobuf::RepeatedPtrField<::CPlayer_GetUserAchievements_Response_Achievement>*
+CPlayer_GetUserAchievements_Response::_internal_mutable_achievements() {
+  PROTOBUF_TSAN_READ(&_impl_._tsan_detect_race);
+  return &_impl_.achievements_;
+}
+
+// optional int32 schema_version = 2;
+inline bool CPlayer_GetUserAchievements_Response::has_schema_version() const {
+  bool value = (_impl_._has_bits_[0] & 0x00000001u) != 0;
+  return value;
+}
+inline void CPlayer_GetUserAchievements_Response::clear_schema_version() {
+  PROTOBUF_TSAN_WRITE(&_impl_._tsan_detect_race);
+  _impl_.schema_version_ = 0;
+  _impl_._has_bits_[0] &= ~0x00000001u;
+}
+inline ::int32_t CPlayer_GetUserAchievements_Response::schema_version() const {
+  // @@protoc_insertion_point(field_get:CPlayer_GetUserAchievements_Response.schema_version)
+  return _internal_schema_version();
+}
+inline void CPlayer_GetUserAchievements_Response::set_schema_version(::int32_t value) {
+  _internal_set_schema_version(value);
+  // @@protoc_insertion_point(field_set:CPlayer_GetUserAchievements_Response.schema_version)
+}
+inline ::int32_t CPlayer_GetUserAchievements_Response::_internal_schema_version() const {
+  PROTOBUF_TSAN_READ(&_impl_._tsan_detect_race);
+  return _impl_.schema_version_;
+}
+inline void CPlayer_GetUserAchievements_Response::_internal_set_schema_version(::int32_t value) {
+  PROTOBUF_TSAN_WRITE(&_impl_._tsan_detect_race);
+  _impl_._has_bits_[0] |= 0x00000001u;
+  _impl_.schema_version_ = value;
+}
+
+// optional uint32 schema_hash = 3;
+inline bool CPlayer_GetUserAchievements_Response::has_schema_hash() const {
+  bool value = (_impl_._has_bits_[0] & 0x00000002u) != 0;
+  return value;
+}
+inline void CPlayer_GetUserAchievements_Response::clear_schema_hash() {
+  PROTOBUF_TSAN_WRITE(&_impl_._tsan_detect_race);
+  _impl_.schema_hash_ = 0u;
+  _impl_._has_bits_[0] &= ~0x00000002u;
+}
+inline ::uint32_t CPlayer_GetUserAchievements_Response::schema_hash() const {
+  // @@protoc_insertion_point(field_get:CPlayer_GetUserAchievements_Response.schema_hash)
+  return _internal_schema_hash();
+}
+inline void CPlayer_GetUserAchievements_Response::set_schema_hash(::uint32_t value) {
+  _internal_set_schema_hash(value);
+  // @@protoc_insertion_point(field_set:CPlayer_GetUserAchievements_Response.schema_hash)
+}
+inline ::uint32_t CPlayer_GetUserAchievements_Response::_internal_schema_hash() const {
+  PROTOBUF_TSAN_READ(&_impl_._tsan_detect_race);
+  return _impl_.schema_hash_;
+}
+inline void CPlayer_GetUserAchievements_Response::_internal_set_schema_hash(::uint32_t value) {
+  PROTOBUF_TSAN_WRITE(&_impl_._tsan_detect_race);
+  _impl_._has_bits_[0] |= 0x00000002u;
+  _impl_.schema_hash_ = value;
+}
+
+// repeated .CPlayer_GetUserAchievements_Response.Group groups = 4;
+inline int CPlayer_GetUserAchievements_Response::_internal_groups_size() const {
+  return _internal_groups().size();
+}
+inline int CPlayer_GetUserAchievements_Response::groups_size() const {
+  return _internal_groups_size();
+}
+inline void CPlayer_GetUserAchievements_Response::clear_groups() {
+  PROTOBUF_TSAN_WRITE(&_impl_._tsan_detect_race);
+  _impl_.groups_.Clear();
+}
+inline ::CPlayer_GetUserAchievements_Response_Group* CPlayer_GetUserAchievements_Response::mutable_groups(int index)
+    ABSL_ATTRIBUTE_LIFETIME_BOUND {
+  // @@protoc_insertion_point(field_mutable:CPlayer_GetUserAchievements_Response.groups)
+  return _internal_mutable_groups()->Mutable(index);
+}
+inline ::google::protobuf::RepeatedPtrField<::CPlayer_GetUserAchievements_Response_Group>* CPlayer_GetUserAchievements_Response::mutable_groups()
+    ABSL_ATTRIBUTE_LIFETIME_BOUND {
+  // @@protoc_insertion_point(field_mutable_list:CPlayer_GetUserAchievements_Response.groups)
+  PROTOBUF_TSAN_WRITE(&_impl_._tsan_detect_race);
+  return _internal_mutable_groups();
+}
+inline const ::CPlayer_GetUserAchievements_Response_Group& CPlayer_GetUserAchievements_Response::groups(int index) const
+    ABSL_ATTRIBUTE_LIFETIME_BOUND {
+  // @@protoc_insertion_point(field_get:CPlayer_GetUserAchievements_Response.groups)
+  return _internal_groups().Get(index);
+}
+inline ::CPlayer_GetUserAchievements_Response_Group* CPlayer_GetUserAchievements_Response::add_groups() ABSL_ATTRIBUTE_LIFETIME_BOUND {
+  PROTOBUF_TSAN_WRITE(&_impl_._tsan_detect_race);
+  ::CPlayer_GetUserAchievements_Response_Group* _add = _internal_mutable_groups()->Add();
+  // @@protoc_insertion_point(field_add:CPlayer_GetUserAchievements_Response.groups)
+  return _add;
+}
+inline const ::google::protobuf::RepeatedPtrField<::CPlayer_GetUserAchievements_Response_Group>& CPlayer_GetUserAchievements_Response::groups() const
+    ABSL_ATTRIBUTE_LIFETIME_BOUND {
+  // @@protoc_insertion_point(field_list:CPlayer_GetUserAchievements_Response.groups)
+  return _internal_groups();
+}
+inline const ::google::protobuf::RepeatedPtrField<::CPlayer_GetUserAchievements_Response_Group>&
+CPlayer_GetUserAchievements_Response::_internal_groups() const {
+  PROTOBUF_TSAN_READ(&_impl_._tsan_detect_race);
+  return _impl_.groups_;
+}
+inline ::google::protobuf::RepeatedPtrField<::CPlayer_GetUserAchievements_Response_Group>*
+CPlayer_GetUserAchievements_Response::_internal_mutable_groups() {
+  PROTOBUF_TSAN_READ(&_impl_._tsan_detect_race);
+  return &_impl_.groups_;
 }
 
 // -------------------------------------------------------------------

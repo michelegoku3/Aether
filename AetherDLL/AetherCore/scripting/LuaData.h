@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <map>
 #include <optional>
 #include <string>
 #include <unordered_map>
@@ -18,15 +19,25 @@
 // discipline lives in one place.
 //
 // Read accessors take a shared lock; mutators take a unique lock. Reads return
-// copies (small: ids, tokens, short hex strings) so no reference can outlive
-// the lock.
+// copies (ids, tokens, short hex strings, and the pin snapshots, which are
+// nested maps consumed as a whole) so no reference can outlive the lock.
 // ---------------------------------------------------------------------------
 namespace ac::luadata {
 
+// One manifest pin as a .lua file states it: the depot and the manifest id the
+// script asks Steam to install for it. Declared in this layer's own terms so
+// LuaData never includes the SteamUI headers that consume the same rows.
+struct PinnedDepot {
+    steam::AppId depot;
+    std::uint64_t gid;
+};
+
 // ---- Reads (shared lock) ---------------------------------------------------
 
-// True when appId is configured by a script AND not flagged as genuinely owned.
-// This is the gate for every spoofing decision.
+// True when appId is configured by a script, not genuinely owned, and not a
+// real Steam Family share. This is the gate for every spoofing decision
+// (licence, depot keys, ownership, the achievement page). A real share is
+// Valve's to answer; the cosmetic owner banner is not a share, so it stays here.
 bool HasDepot(steam::AppId appId);
 
 // True when appId is configured at all (ignores the owned flag).
@@ -35,8 +46,14 @@ bool IsConfigured(steam::AppId appId);
 // True when CheckAppOwnership has observed a genuine non-family-shared license for appId.
 bool IsOwned(steam::AppId appId);
 
-// True when CheckAppOwnership has observed a Steam Family license for appId.
+// True when appId is drawn as a family app: a real Steam Family licence or
+// Aether's own cosmetic owner banner. Display only - see IsRealFamilyShare.
 bool IsFamilyShared(steam::AppId appId);
+
+// True when appId carries a real Steam Family licence (Valve answers for it),
+// false for the cosmetic banner. This is the behavioural read: HasDepot, the
+// cloud gate and the achievement page all key on it.
+bool IsRealFamilyShare(steam::AppId appId);
 
 // True when Steam did not provide appId and Aether already answered as owned.
 bool IsSpoofed(steam::AppId appId);
@@ -71,7 +88,9 @@ std::vector<steam::AppId> IdsForApp(steam::AppId appId);
 // decision, so a pre-seeded shared app still keeps its banner.
 std::vector<steam::AppId> SeedPackage0Ids();
 
-// Snapshot of numeric .lua filename roots that should be advertised to Steam's Library.
+// Snapshot of numeric .lua filename roots: the population for per-app PICS
+// requests and name lookups. Membership does not come from here (it comes from
+// the package-0 license).
 std::vector<steam::AppId> LibraryAppIds();
 
 // Map of lua file path -> the app ids that file contributes (depots from
@@ -79,8 +98,33 @@ std::vector<steam::AppId> LibraryAppIds();
 // ownership unlock summary to report per-file "Unlocked all / Not unlocked".
 std::unordered_map<std::string, std::vector<steam::AppId>> ConfiguredIdsByFile();
 
+// Manifest pins one .lua file contributes, keyed by every library root that
+// file advertises: a pin names a depot, not an app, so the same rows belong to
+// each root of the file. A path the store no longer holds (removed, rejected or
+// not yet parsed) answers empty, which is how a diff around a reload observes
+// the pins going away.
+//
+// Ordered map on purpose: the caller compares two snapshots taken at different
+// times and the row order must come from the depot, never from a hash table.
+std::map<steam::AppId, std::vector<PinnedDepot>> PinsByLibraryAppForFile(const std::string& path);
+
 std::size_t LoadedFileCount();
 std::size_t ConfiguredDepotCount();
+// Population sizes for the status snapshot. A configured id is not a managed
+// one: it only becomes managed once CheckAppOwnership classified it.
+// `owned`, `spoofed` and `family_shared` (real shares) are mutually exclusive;
+// a listed banner app is in none of them and is counted by BannerFamilyCount
+// alone, so the four counters partition the classified ids. An id in none of
+// them is configured but not classified yet (Steam never asked).
+std::size_t OwnedCount();
+std::size_t SpoofedCount();
+std::size_t FamilySharedCount();
+// Listed in [library] owner_banner_apps: the family bit is Aether's stamp, so
+// HasDepot still provides the app. Counted apart from FamilySharedCount.
+std::size_t BannerFamilyCount();
+// Number of numeric-filename roots, i.e. the apps that belong in the library.
+// Depots recorded by addappid are not library entries.
+std::size_t LibraryAppCount();
 std::size_t AccessTokenCount();
 std::size_t ManifestOverrideCount();
 std::string EticketUrl();
@@ -90,11 +134,13 @@ std::string EticketUrl();
 // Flags appId as genuinely owned so HasDepot stops spoofing it.
 void MarkOwned(steam::AppId appId);
 
-// Flags appId as family-shared so HasDepot stops spoofing it, while cloud can
-// stay enabled and family-sharing packet suppression can continue independently.
+// Flags appId as family-shared. A real licence also stops HasDepot spoofing it
+// and lets cloud stay enabled; the cosmetic banner (`ownBanner`) only changes
+// what the client draws, so HasDepot keeps providing the app.
 // `lenderAccountId` is the real owner from AppOwnership.steamId32; 0 means the
-// answer did not name one.
-void MarkFamilyShared(steam::AppId appId, std::uint32_t lenderAccountId);
+// answer did not name one. `ownBanner` marks the family bit as Aether's own
+// cosmetic stamp instead of a licence.
+void MarkFamilyShared(steam::AppId appId, std::uint32_t lenderAccountId, bool ownBanner);
 
 // Flags appId as spoofed: Steam did not provide it and Aether owns the answer.
 void MarkSpoofed(steam::AppId appId);
