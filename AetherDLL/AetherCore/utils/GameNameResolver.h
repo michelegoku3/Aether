@@ -3,6 +3,7 @@
 #include "framework.h"
 #include "core/SteamTypes.h"
 
+#include <cstdint>
 #include <string>
 
 // ---------------------------------------------------------------------------
@@ -24,6 +25,20 @@ std::string ForApp(steam::AppId appId);
 
 // True once the AppInfo cache pointer has been captured.
 bool Ready();
+
+// True when the client's cached AppInfo for `appId` lists a public manifest for
+// `depotId`, i.e. the depot is part of that app's content. Steam plans a
+// download only from those depots; a plan row for any other depot makes the
+// client reject the table.
+bool HasPublicDepot(steam::AppId appId, steam::AppId depotId);
+
+// Size in bytes of that depot's public manifest, or 0 when the AppInfo does not
+// carry it.
+std::uint64_t PublicDepotSize(steam::AppId appId, steam::AppId depotId);
+
+// gid of that depot's current public manifest, or 0 when the AppInfo does not
+// carry it.
+std::uint64_t PublicDepotGid(steam::AppId appId, steam::AppId depotId);
 
 // Reverse lookup: app id whose localized name equals `name`, searched across the
 // locally configured library (luadata::LibraryAppIds). 0 when there is no match.

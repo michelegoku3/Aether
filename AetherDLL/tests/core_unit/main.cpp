@@ -53,6 +53,8 @@ int main(int argc, char** argv) {
         {"hubcap_key", HubcapKeyPolicyTest},
         {"steam_beta", SteamBetaChannelTest},
         {"overview", AppOverviewTest},
+        {"depot_plan", DepotPlanTest},
+        {"package_seed", PackageSeedTest},
         {"recheck", RecheckTest},
         {"achievement_state", AchievementState},
         {"achievement_schema", AchievementSchema},

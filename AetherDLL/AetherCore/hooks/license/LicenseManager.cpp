@@ -15,6 +15,7 @@
 #include "core/Logger.h"
 #include "core/StructGuard.h"
 #include "core/Workers.h"
+#include "hooks/license/PackageSeedPolicy.h"
 #include "hooks/steamclient/OwnershipHooks.h"
 #include "scripting/LuaData.h"
 #include "utils/PatternEngine.h"
@@ -25,6 +26,7 @@ namespace {
 constexpr const char* kModule = "License";
 using steam::AppId;
 using steam::PackageInfo;
+namespace policy = ac::hooks::license::policy;
 
 // steamclient!CUtlMemory grow helper used to extend package 0's app-id vector.
 using CUtlMemoryGrow_t = void (*)(steam::CUtlVector<AppId>*, int);
@@ -56,8 +58,9 @@ struct PackageContainmentResult {
     bool complete = false;
 };
 
-bool RemoveAllFromPackage0(PackageInfo* pkg, const std::vector<AppId>& ids, std::size_t& removed) {
-    if (!pkg || !pkg->appIdVec.mem.memory || ids.empty())
+bool RemoveAllFromPackage0(PackageInfo* pkg, steam::CUtlVector<AppId>& vec, const std::vector<AppId>& ids,
+                           std::size_t& removed) {
+    if (!pkg || !vec.mem.memory || ids.empty())
         return true;
     std::unordered_set<AppId> removeSet;
     removeSet.reserve(ids.size());
@@ -66,9 +69,9 @@ bool RemoveAllFromPackage0(PackageInfo* pkg, const std::vector<AppId>& ids, std:
             removeSet.insert(id);
     }
 
-    AppId* data = pkg->appIdVec.mem.memory;
+    AppId* data = vec.mem.memory;
     std::uint32_t write = 0;
-    for (std::uint32_t read = 0; read < pkg->appIdVec.size; ++read) {
+    for (std::uint32_t read = 0; read < vec.size; ++read) {
         if (removeSet.count(data[read])) {
             ++removed;
             continue;
@@ -77,31 +80,26 @@ bool RemoveAllFromPackage0(PackageInfo* pkg, const std::vector<AppId>& ids, std:
             data[write] = data[read];
         ++write;
     }
-    pkg->appIdVec.size = write;
+    vec.size = write;
     return true;
 }
 
-// Ensures each currently managed AppID occurs exactly once in package 0.
-// Caller holds s_packageMutationMutex. Unmanaged Steam entries are preserved.
-// `verbose` forces the INFO summary even when nothing changed; on-demand calls
-// only log an actual append or duplicate removal.
-PackageContainmentResult EnsurePackageContains(PackageInfo* pkg, const std::vector<AppId>& ids, const char* reason,
-                                               bool verbose = true) {
+// Ensures each currently managed AppID occurs exactly once in one of package 0's
+// id vectors. Caller holds s_packageMutationMutex. Unmanaged Steam entries are
+// preserved. `verbose` forces the INFO summary even when nothing changed;
+// on-demand calls only log an actual append or duplicate removal.
+PackageContainmentResult EnsurePackageContains(PackageInfo* pkg, steam::CUtlVector<AppId>& vec,
+                                               const std::vector<AppId>& ids, const char* reason, bool verbose = true) {
     PackageContainmentResult out{};
-    out.total = pkg ? pkg->appIdVec.size : 0;
+    out.total = vec.size;
     if (!pkg || !o_CUtlMemoryGrow) {
         AC_LOG_WARN(kModule, "Package0Containment reason=%s package/capacity unavailable.",
                     reason ? reason : "unknown");
         return out;
     }
 
-    std::vector<AppId> expectedIds;
-    std::unordered_set<AppId> expected;
-    expected.reserve(ids.size());
-    for (AppId id : ids) {
-        if (id != 0 && expected.insert(id).second)
-            expectedIds.push_back(id);
-    }
+    const std::vector<AppId> expectedIds = policy::NormalizeSeed(ids);
+    const std::unordered_set<AppId> expected(expectedIds.begin(), expectedIds.end());
     out.expected = expectedIds.size();
 
     // Struct guard before any pointer arithmetic on Valve's vector:
@@ -115,21 +113,21 @@ PackageContainmentResult EnsurePackageContains(PackageInfo* pkg, const std::vect
         return out;
     }
 
-    if (pkg->appIdVec.size > 0 && !pkg->appIdVec.mem.memory) {
+    if (vec.size > 0 && !vec.mem.memory) {
         AC_LOG_ERROR(kModule, "Package0Containment reason=%s has null vector memory.", reason ? reason : "unknown");
         return out;
     }
-    if (pkg->appIdVec.size > pkg->appIdVec.mem.allocationCount) {
+    if (vec.size > vec.mem.allocationCount) {
         AC_LOG_ERROR(kModule, "Package0Containment reason=%s size=%u exceeds capacity=%u.", reason ? reason : "unknown",
-                     pkg->appIdVec.size, pkg->appIdVec.mem.allocationCount);
+                     vec.size, vec.mem.allocationCount);
         return out;
     }
 
     std::unordered_set<AppId> seen;
     seen.reserve(expected.size());
-    AppId* data = pkg->appIdVec.mem.memory;
+    AppId* data = vec.mem.memory;
     std::uint32_t write = 0;
-    for (std::uint32_t read = 0; read < pkg->appIdVec.size; ++read) {
+    for (std::uint32_t read = 0; read < vec.size; ++read) {
         const AppId id = data[read];
         if (expected.count(id)) {
             if (!seen.insert(id).second) {
@@ -142,9 +140,9 @@ PackageContainmentResult EnsurePackageContains(PackageInfo* pkg, const std::vect
             data[write] = id;
         ++write;
     }
-    pkg->appIdVec.size = write;
+    vec.size = write;
 
-    out.total = pkg->appIdVec.size;
+    out.total = vec.size;
     std::vector<AppId> missing;
     missing.reserve(expectedIds.size() - out.presentBefore);
     for (AppId id : expectedIds) {
@@ -159,33 +157,33 @@ PackageContainmentResult EnsurePackageContains(PackageInfo* pkg, const std::vect
             AC_LOG_ERROR(kModule, "Package0Containment reason=%s missing list too large.", reason ? reason : "unknown");
             return out;
         }
-        const std::uint32_t oldSize = pkg->appIdVec.size;
+        const std::uint32_t oldSize = vec.size;
         const std::size_t required = static_cast<std::size_t>(oldSize) + missing.size();
         if (required > std::numeric_limits<std::uint32_t>::max()) {
             AC_LOG_ERROR(kModule, "Package0Containment reason=%s size overflow.", reason ? reason : "unknown");
             return out;
         }
-        o_CUtlMemoryGrow(&pkg->appIdVec, static_cast<int>(missing.size()));
+        o_CUtlMemoryGrow(&vec, static_cast<int>(missing.size()));
         if (const auto grown = abi::guard::CheckPackage(pkg); !abi::guard::Passed(grown)) {
             // CUtlMemoryGrow left the vector in a shape we do not
             // recognise: stop before the append loop, not after it.
             abi::guard::CountRejection("PackageInfo after CUtlMemoryGrow", grown);
             return out;
         }
-        if (!pkg->appIdVec.mem.memory || pkg->appIdVec.mem.allocationCount < required) {
+        if (!vec.mem.memory || vec.mem.allocationCount < required) {
             AC_LOG_ERROR(kModule, "CUtlMemoryGrow failed for package 0 (reason=%s).", reason ? reason : "unknown");
             return out;
         }
         for (std::size_t i = 0; i < missing.size(); ++i) {
-            pkg->appIdVec.mem.memory[oldSize + i] = missing[i];
+            vec.mem.memory[oldSize + i] = missing[i];
         }
-        pkg->appIdVec.size = static_cast<std::uint32_t>(required);
+        vec.size = static_cast<std::uint32_t>(required);
         out.appended = missing.size();
         out.presentAfter += out.appended;
     }
 
     out.missingAfter = out.expected - out.presentAfter;
-    out.total = pkg->appIdVec.size;
+    out.total = vec.size;
     out.complete = out.missingAfter == 0;
     const bool changed = out.appended != 0 || out.duplicatesRemoved != 0;
     if (verbose || changed) {
@@ -196,6 +194,33 @@ PackageContainmentResult EnsurePackageContains(PackageInfo* pkg, const std::vect
                     out.duplicatesRemoved, out.appended, out.presentAfter, out.missingAfter, out.total,
                     out.complete ? 1 : 0);
     }
+    return out;
+}
+
+// Both of package 0's id vectors, seeded from the same set.
+//
+// Steam answers two different questions from them: `appIdVec` is "is this app
+// owned" (what renders the card) and `depotIdVec` is "is this content licensed"
+// (what the depot plan is built from). Seeding only the first shows the card and
+// plans nothing, which is the install dialog's 0 B.
+struct PackageSeedResult {
+    PackageContainmentResult apps;
+    PackageContainmentResult depots;
+
+    bool Changed() const {
+        return apps.appended != 0 || apps.duplicatesRemoved != 0 || depots.appended != 0 ||
+               depots.duplicatesRemoved != 0;
+    }
+};
+
+PackageSeedResult SeedPackageVectors(PackageInfo* pkg, const std::vector<AppId>& ids, const char* reason,
+                                     bool verbose) {
+    PackageSeedResult out{};
+    if (!pkg)
+        return out;
+    const std::string depotReason = std::string(reason ? reason : "unknown") + "-depots";
+    out.apps = EnsurePackageContains(pkg, pkg->appIdVec, ids, reason, verbose);
+    out.depots = EnsurePackageContains(pkg, pkg->depotIdVec, ids, depotReason.c_str(), verbose);
     return out;
 }
 
@@ -406,8 +431,8 @@ void SeedPackage0(PackageInfo* package0) {
             ClearPendingApps();
             const std::vector<AppId> ids = luadata::SeedPackage0Ids();
             if (!ids.empty()) {
-                const PackageContainmentResult result = EnsurePackageContains(package0, ids, "publish");
-                changed = result.appended != 0 || result.duplicatesRemoved != 0;
+                const PackageSeedResult result = SeedPackageVectors(package0, ids, "publish", true);
+                changed = result.Changed();
             }
         }
     }
@@ -448,8 +473,8 @@ bool AddAppToPackage0(AppId appId) {
         AC_LOG_DEBUG(kModule, "AddAppToPackage0(%u): no lua ids.", appId);
         return false;
     }
-    const PackageContainmentResult result = EnsurePackageContains(pkg, ids, "ondemand", false);
-    return result.appended != 0 || result.duplicatesRemoved != 0;
+    const PackageSeedResult result = SeedPackageVectors(pkg, ids, "ondemand", false);
+    return result.Changed();
 }
 
 void RequestAppInPackage0(AppId appId) {
@@ -495,13 +520,18 @@ void NotifyLicenseChanged() {
             AC_LOG_WARN(kModule, "NotifyLicenseChanged: package 0 unavailable; skipping.");
             return;
         }
-        RemoveAllFromPackage0(pkg, removals, removed);
+        RemoveAllFromPackage0(pkg, pkg->appIdVec, removals, removed);
+        std::size_t removedDepots = 0;
+        RemoveAllFromPackage0(pkg, pkg->depotIdVec, removals, removedDepots);
+        if (removedDepots != 0)
+            AC_LOG_DEBUG(kModule, "Removed %zu depot license(s) from package 0.", removedDepots);
         // Reconcile against the whole configured set, not the classified one:
         // a .lua app Steam never asked about has to stay in package 0 or the
         // next library refresh drops it again. This also repairs duplicates
-        // and makes reloads idempotent.
-        const PackageContainmentResult result = EnsurePackageContains(pkg, luadata::SeedPackage0Ids(), "hotreload");
-        if (!result.complete)
+        // and makes reloads idempotent. Both vectors, because the depot plan is
+        // built from the depot list.
+        const PackageSeedResult result = SeedPackageVectors(pkg, luadata::SeedPackage0Ids(), "hotreload", true);
+        if (!result.apps.complete)
             AC_LOG_WARN(kModule, "Package 0 hot-reload containment incomplete; the next add repairs it.");
 
         total = pkg->appIdVec.size;

@@ -340,11 +340,35 @@ instead of skipping the new donor as "already tried". Probe requests are paced
   network thread, without waiting and without rewriting the request.
   `[manifest_fetch]` TOML keys are deprecated: Settings logs a one-shot WARN
   and ignores them.
-* Depot plan: Steam builds depot rows only for the depots its AppInfo lists, so
-  a `.lua` app without AppInfo plans just the shared/dependency rows. Aether
-  does not write into Steam's depot table: it does not own that vector's type
-  or its allocator, and growing it through the package-0 helper corrupts it.
-  What the plan contains is Steam's answer plus the manifest overrides below.
+* Depot plan: Steam builds an app's depot rows from the depots its AppInfo lists
+  *and* from what its license answer grants. A `.lua` app is owned only through
+  package 0, so the answer keeps just the shared/dependency rows another app
+  contributes and drops every depot of the app itself; an AppInfo that has not
+  landed yet drops them too. The caller stores what comes back, and a plan
+  without the app's own depots is an install that downloads nothing and is still
+  stamped Fully Installed: 0 B, no size on the card, and PLAY looking for an
+  executable nobody wrote. Aether therefore repairs the table before it is
+  stored (`hooks/steamclient/DepotHooks.cpp`): the `.lua`'s depots are appended as
+  rows, narrowed to the ones the app's own AppInfo carries
+  (`gamename::HasPublicDepot`) because Steam discards the whole answer when a row
+  names a depot of another app. Each row takes the pinned gid, or AppInfo's
+  public gid when the `.lua` leaves that depot unpinned, and AppInfo's size for
+  the depot either way - a row without a size is an install the client sizes at
+  0 B. Steam's own rows are kept and the new ones appended: an installed app's
+  plan carries depots whose content is on disk, and dropping one makes the client
+  account that content away. The buffer stays Steam's: rows are written only into
+  capacity its allocator already reserved - spare room in the vector, or a vector
+  grown through the pattern table's `CUtlMemoryGrow`. That helper is the `uint32`
+  instantiation (its copy loop shifts by 2 and the allocator gets `mov r9d, 4`),
+  so the request is scaled by the row/`uint32` ratio, the element count is
+  narrowed back to rows, and the rows it copies four bytes of are written back
+  (`policy::GrowSlotsFor`). When nothing can be put back, an own-row-less answer
+  for a `.lua` app is refused, so the caller keeps the depot config it already
+  stored and the next pass plans the app again. The shared/dependency vector is
+  never an input to that decision: its rows belong to other apps, so one of them
+  cannot make an empty own list look planned. `depot_plan` is the ctest case that
+  pins the refusal, the row selection and the capacity math. The rows carry the
+  pinned gid and size, so the manifest overrides below are a no-op for them.
 * Installed-depot repair: `core/InstalledDepotRepair` runs once per process at
   boot (BootSteps step 10d, on a worker thread, managed apps only). For an ACF
   entry whose GID has no non-empty local manifest it restores a file that does
@@ -432,7 +456,10 @@ A `.lua` app becomes visible only through the **license path**: package 0 carrie
 every configured id (`LicenseManager::SeedPackage0`), and
 `MarkLicenseAsChanged` + `ProcessPendingLicenseUpdates` make Steam re-read it.
 Steam then asks for the app's AppInfo and builds the card, the depot plan and
-the launch config from that. Nothing else may add an app to the library:
+the launch config from that. The seed covers both of package 0's id vectors —
+the app ids (`appIdVec`, "is this app owned") and the depot ids (`depotIdVec`,
+"is this content licensed") — because seeding only the first renders the card
+and plans nothing. Nothing else may add an app to the library:
 returning ids from the client's subscribed-app list creates an overview entry
 before the AppInfo/release-state bookkeeping Steam performs for licensed apps,
 which the 11.18 client asserts on and which renders a card with no size and no

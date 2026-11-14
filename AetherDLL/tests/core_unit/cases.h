@@ -116,6 +116,8 @@ void ProductInfoQueueTest();
 void HubcapKeyPolicyTest();
 void SteamBetaChannelTest();
 void AppOverviewTest();
+void DepotPlanTest();
+void PackageSeedTest();
 void RecheckTest();
 void AchievementState();
 void AchievementSchema();

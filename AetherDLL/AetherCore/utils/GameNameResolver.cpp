@@ -12,6 +12,7 @@
 
 #include "core/AetherCoreState.h"
 #include "core/Logger.h"
+#include "hooks/steamclient/DepotPlanPolicy.h"
 #include "scripting/LuaData.h"
 #include "utils/PatternEngine.h"
 
@@ -61,10 +62,11 @@ constexpr std::int64_t kProbeFault = std::numeric_limits<std::int64_t>::min();
 // C++ object unwinding (C2712), so the guard lives in this small helper.
 // Probing GetAppDataFromAppInfo for an appid with NO local AppInfo record
 // faults inside steamclient and would kill the process; a guarded probe
-// degrades that to "name unknown".
-std::int64_t ProbeAppInfoGuarded(void* cache, steam::AppId appId, std::uint8_t* buf, std::int32_t bufSize) {
+// degrades that to "record unknown".
+std::int64_t ProbeAppInfoGuarded(void* cache, steam::AppId appId, const char* key, std::uint8_t* buf,
+                                 std::int32_t bufSize) {
     __try {
-        return o_GetAppDataFromAppInfo(cache, appId, "common/name", buf, bufSize);
+        return o_GetAppDataFromAppInfo(cache, appId, key, buf, bufSize);
     } __except (EXCEPTION_EXECUTE_HANDLER) {
         return kProbeFault;
     }
@@ -114,6 +116,77 @@ void Init(HMODULE steamclient) {
 
 bool Ready() { return g_state.gameName.appInfoCacheObj.load() != nullptr && o_GetAppDataFromAppInfo != nullptr; }
 
+bool HasPublicDepot(steam::AppId appId, steam::AppId depotId) {
+    if (appId == 0 || depotId == 0 || !Ready())
+        return false;
+
+    // A depot is part of an app's content exactly when the app's AppInfo carries
+    // a public manifest for it; that is the set Steam plans a download from.
+    // Depots another app owns (a DLC app, a sibling family entry) are absent and
+    // a row for one of them makes Steam reject the whole table.
+    char key[64] = {};
+    _snprintf_s(key, sizeof(key), _TRUNCATE, "depots/%u/manifests/public/gid", depotId);
+    char buf[32] = {};
+#if defined(_MSC_VER)
+    const std::int64_t len =
+        ProbeAppInfoGuarded(g_state.gameName.appInfoCacheObj.load(), appId, key, reinterpret_cast<std::uint8_t*>(buf),
+                            static_cast<std::int32_t>(sizeof(buf)));
+    return len > 0;
+#else
+    const std::int64_t len =
+        o_GetAppDataFromAppInfo(g_state.gameName.appInfoCacheObj.load(), appId, key,
+                                reinterpret_cast<std::uint8_t*>(buf), static_cast<std::int32_t>(sizeof(buf)));
+    return len > 0;
+#endif
+}
+
+std::uint64_t PublicDepotSize(steam::AppId appId, steam::AppId depotId) {
+    if (appId == 0 || depotId == 0 || !Ready())
+        return 0;
+
+    // The manifest's size in bytes, as the app's own AppInfo records it: a plan
+    // row carries it, so the install is sized from the plan alone.
+    char key[64] = {};
+    _snprintf_s(key, sizeof(key), _TRUNCATE, "depots/%u/manifests/public/size", depotId);
+    char buf[32] = {};
+#if defined(_MSC_VER)
+    const std::int64_t len =
+        ProbeAppInfoGuarded(g_state.gameName.appInfoCacheObj.load(), appId, key, reinterpret_cast<std::uint8_t*>(buf),
+                            static_cast<std::int32_t>(sizeof(buf)));
+#else
+    const std::int64_t len =
+        o_GetAppDataFromAppInfo(g_state.gameName.appInfoCacheObj.load(), appId, key,
+                                reinterpret_cast<std::uint8_t*>(buf), static_cast<std::int32_t>(sizeof(buf)));
+#endif
+    if (len <= 0)
+        return 0;
+    return ac::hooks::steamclient::policy::ParseSize(buf, static_cast<std::size_t>(len));
+}
+
+std::uint64_t PublicDepotGid(steam::AppId appId, steam::AppId depotId) {
+    if (appId == 0 || depotId == 0 || !Ready())
+        return 0;
+
+    // The gid of the depot's current public manifest: a `.lua` that leaves a
+    // depot unpinned means "whatever the public branch has", and AppInfo is
+    // where the client records it.
+    char key[64] = {};
+    _snprintf_s(key, sizeof(key), _TRUNCATE, "depots/%u/manifests/public/gid", depotId);
+    char buf[32] = {};
+#if defined(_MSC_VER)
+    const std::int64_t len =
+        ProbeAppInfoGuarded(g_state.gameName.appInfoCacheObj.load(), appId, key, reinterpret_cast<std::uint8_t*>(buf),
+                            static_cast<std::int32_t>(sizeof(buf)));
+#else
+    const std::int64_t len =
+        o_GetAppDataFromAppInfo(g_state.gameName.appInfoCacheObj.load(), appId, key,
+                                reinterpret_cast<std::uint8_t*>(buf), static_cast<std::int32_t>(sizeof(buf)));
+#endif
+    if (len <= 0)
+        return 0;
+    return ac::hooks::steamclient::policy::ParseSize(buf, static_cast<std::size_t>(len));
+}
+
 std::string ForApp(steam::AppId appId) {
     if (appId == 0)
         return {};
@@ -130,8 +203,8 @@ std::string ForApp(steam::AppId appId) {
         // "common/name" triggers Steam's auto-localization path.
         std::int64_t len = 0;
 #if defined(_MSC_VER)
-        len = ProbeAppInfoGuarded(g_state.gameName.appInfoCacheObj.load(), appId, reinterpret_cast<std::uint8_t*>(buf),
-                                  static_cast<std::int32_t>(sizeof(buf)));
+        len = ProbeAppInfoGuarded(g_state.gameName.appInfoCacheObj.load(), appId, "common/name",
+                                  reinterpret_cast<std::uint8_t*>(buf), static_cast<std::int32_t>(sizeof(buf)));
         if (len == kProbeFault) {
             AC_LOG_WARN(kModule, "appinfo probe for app %u faulted (SEH); name unknown.", appId);
             diag::Record("gamename_probe_fault", std::to_string(appId));
