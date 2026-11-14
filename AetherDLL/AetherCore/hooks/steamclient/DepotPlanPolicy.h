@@ -130,6 +130,27 @@ constexpr bool GrowCoversRows(std::uint32_t slots, std::uint32_t rows) {
     return slots * kGrowElementBytes >= rows * kPlanRowBytes;
 }
 
+enum class RefillVerdict {
+    // Store Steam's answer as built.
+    Skip,
+    // Add the app's depots to the plan.
+    Refill,
+};
+
+// Whether the plan needs the `.lua`'s depots.
+//
+// An installed app is Steam's to plan. Its appmanifest already records what is
+// on disk, each language pack included, and Steam keeps the plan in step with
+// it: the `.lua` lists every depot the store has, so filling an installed app's
+// plan from it marks each language pack as content that must exist, and the
+// client downloads the difference. Before the app is installed there is no such
+// record, and the plan is the only thing that can size the dialog at all.
+constexpr RefillVerdict DecideRefill(bool installed, std::uint32_t pinnedRows) {
+    if (installed || pinnedRows == 0)
+        return RefillVerdict::Skip;
+    return RefillVerdict::Refill;
+}
+
 // AppInfo answers a manifest's gid and size as a decimal string. A result that
 // does not parse is no value at all, never a truncated number that would size the
 // install wrong.

@@ -3,10 +3,12 @@
 
 #include <algorithm>
 #include <cstring>
+#include <filesystem>
 #include <sstream>
 #include <string>
 #include <vector>
 
+#include "core/AetherCoreState.h"
 #include "core/HookManager.h"
 #include "core/Logger.h"
 #include "core/SteamTypes.h"
@@ -20,6 +22,7 @@
 #include "utils/PatternEngine.h"
 #include "utils/SmartIdLog.h"
 #include "utils/SteamKeyPaths.h"
+#include "utils/SteamLibraryPaths.h"
 
 namespace ac::hooks {
 namespace {
@@ -146,6 +149,26 @@ void EnsureSelectedManifests(AppId app, const CUtlVector<DepotEntry>* vec) {
     }
 }
 
+// True when Steam already has this app installed: its `appmanifest_<app>.acf`
+// exists in one of the libraries.
+//
+// An installed app's depot set is Steam's own record of what is on disk, and its
+// plan is what keeps it there. Filling that plan from the `.lua` would declare
+// every depot the file lists - each language pack among them - as content that
+// must exist, and the client would download the difference. The `.lua` is a
+// content list, not a selection.
+bool IsInstalled(AppId app) {
+    if (g_state.steamInstallPath.empty())
+        return false;
+    const std::string name = "appmanifest_" + std::to_string(app) + ".acf";
+    for (const std::string& dir : steamlibrary::SteamAppsDirs(g_state.steamInstallPath)) {
+        std::error_code ec;
+        if (std::filesystem::exists(winfile::ToPath(dir) / name, ec) && !ec)
+            return true;
+    }
+    return false;
+}
+
 // Puts back the rows Steam leaves out for a managed app.
 //
 // Steam builds the plan from the license answer, so an app Aether owns only
@@ -170,6 +193,15 @@ void RefillPlanFromPins(AppId app, CUtlVector<DepotEntry>* vec) {
         return;
     if (!o_CUtlMemoryGrow)
         return;
+
+    const bool installed = IsInstalled(app);
+    const std::size_t pinnedCount = luadata::IdsForApp(app).size();
+    if (policy::DecideRefill(installed, static_cast<std::uint32_t>(pinnedCount)) == policy::RefillVerdict::Skip) {
+        if (installed) {
+            AC_LOG_INFO_ONCE(kModule, "Depot plan for app %u left as Steam built it: the app is installed.", app);
+        }
+        return;
+    }
     // Without AppInfo there is no way to tell the app's depots from another
     // app's, and guessing would size the install at everything the `.lua`
     // mentions. Leave the plan alone.

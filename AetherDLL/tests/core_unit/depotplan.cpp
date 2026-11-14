@@ -17,6 +17,7 @@ namespace {
 // cannot make an empty own list look planned.
 
 using ac::hooks::steamclient::policy::DecidePlan;
+using ac::hooks::steamclient::policy::DecideRefill;
 using ac::hooks::steamclient::policy::GrowCoversRows;
 using ac::hooks::steamclient::policy::GrowSlotsFor;
 using ac::hooks::steamclient::policy::ParseSize;
@@ -52,6 +53,7 @@ void KeepsSteamsOwnFailure() {
 // be put back. These cases pin which ones go back and in what order.
 
 using ac::hooks::steamclient::policy::PinnedDepot;
+using ac::hooks::steamclient::policy::RefillVerdict;
 using ac::hooks::steamclient::policy::SelectRefillRows;
 using ac::steam::AppId;
 
@@ -139,6 +141,18 @@ void ReadsTheSizeAppInfoAnswersWith() {
     CHECK_EQ(ParseSize("12x7", 4), 12ull);
 }
 
+void LeavesAnInstalledAppToSteam() {
+    // The app's own appmanifest already records what is on disk, languages
+    // included. The `.lua` lists every depot the store has, so filling an
+    // installed app's plan from it would mark each language pack as missing
+    // content and the client would download it.
+    CHECK(DecideRefill(true, 13) == RefillVerdict::Skip);
+    // Nothing installed: the plan is the only thing that can size the dialog.
+    CHECK(DecideRefill(false, 13) == RefillVerdict::Refill);
+    // No depot to put back.
+    CHECK(DecideRefill(false, 0) == RefillVerdict::Skip);
+}
+
 } // namespace
 
 void DepotPlanTest() {
@@ -156,4 +170,5 @@ void DepotPlanTest() {
     GrowRequestCoversTheRowsItMustHold();
     CapacityIsMeasuredInBytesNotRows();
     ReadsTheSizeAppInfoAnswersWith();
+    LeavesAnInstalledAppToSteam();
 }
