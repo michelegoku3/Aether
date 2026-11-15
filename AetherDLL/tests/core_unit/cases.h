@@ -91,6 +91,7 @@ void DonorPoolLearningTest();
 void DonorPoolSnapshotTest();
 void SchemaCacheTest();
 void SchemaCacheRestore();
+void SchemaTranscription();
 void DonorProbeTest();
 void KeyValuesTest();
 void VdfTextTest();

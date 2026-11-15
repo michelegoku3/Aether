@@ -202,26 +202,43 @@ everything.
   so an unlock lands on the bit the page lists. Pure and byte-checked against a
   hand-built tree (`achievement_export`).
 - **When.** `AchievementUi::PublishSchemaFile` runs on a worker as soon as a
-  capture lands, and only when the cache has no schema for that app:
-  `schemacache::Store` validates the root key and refuses to replace a file Steam
-  wrote, so a real download always wins. Names are stored under the language the
-  client asked for and under `english`; `hidden`, icons and descriptions are
-  omitted rather than written empty. An achievement without an API name, or with
-  a bit past 31 (the stats file holds a 32-bit mask per bucket), is skipped.
+  capture lands, and `schemacache::StoreTranscribed` decides once it has the
+  bytes on disk: nothing cached is written; Aether's own file is rewritten when
+  the capture carries a newer `schema_version` (or the same version with more
+  achievements, for games that never bump it); a file Steam wrote is skipped.
+  Names are stored under the language the client asked for and under `english`;
+  `hidden`, icons and descriptions are omitted rather than written empty. An
+  achievement without an API name, or with a bit past 31 (the stats file holds a
+  32-bit mask per bucket), is skipped.
+- **Ownership, not guesswork.** "Ours" is recorded in
+  `UserGameStatsSchema_<appid>.transcribed` next to the backup copy — format
+  line, `version`, `count`, `fnv1a` of the bytes written. Comparing the cache with
+  the backup copy instead would not work: the backup holds Steam's downloads too,
+  so identical bytes prove nothing, and treating a Steam file as ours would drop
+  its `progress` counters and other languages on the next capture. A marker whose
+  hash no longer matches means Steam rewrote the file: from then on it is the
+  client's. A real schema from a donor wins over a transcription — `Store`
+  replaces a file only when the marker matches, then deletes the marker, so the
+  richest copy always ends up in the cache.
 - **Across restarts.** The client reads the schema at login and does not re-read
   it, so a session that starts before the page was ever opened needs the file
-  back: `SchemaCache::Restore` copies Aether's backup copy into the cache, and
-  the startup scan runs it for every `backup\<appid>` folder of a managed app
-  whose cache entry is missing. `Backup: put the transcribed achievement schema
-  for app <id> back into Steam's stats cache.` is the log line.
+  back: `SchemaCache::Restore` copies Aether's backup copy (marker included, so
+  the file stays updatable) into the cache, and the startup scan runs it for
+  every `backup\<appid>` folder of a managed app whose cache entry is missing.
+  `Backup: put the transcribed achievement schema for app <id> back into Steam's
+  stats cache.` is the log line.
 - **Verification.** With the file in place the client's `Player.GetUserStats#1`
   request carries `sha_schema present=yes` (it carried `no, 0 byte` before) and
   creates `UserGameStats_<account>_<appid>.bin`, which is what makes the overlay
   list and the page's cached block possible. (`achievement_export`,
-  `schema_cache_restore`, live Paystreak 4809710: tab opens at 0/77.)
-- **Not covered.** A game that adds achievements later keeps the transcribed
-  list until Steam writes its own file (the cache entry is never replaced), and
-  achievements the CM does not list cannot appear: nothing is invented.
+  `schema_transcription`, `schema_cache_restore`, live Paystreak 4809710: tab
+  opens at 0/77.)
+- **Not covered.** Updates only arrive through the page capture: a game nobody
+  opens in the library keeps the list from its last capture, and the client
+  shows a new one at the next Steam start, not before. Progress counters
+  (`progress` blocks) are never written by a transcription; they appear only if
+  a donor's real schema takes over, and achievements the CM does not list cannot
+  appear at all: nothing is invented.
 
 ### Client achievement page (service path)
 

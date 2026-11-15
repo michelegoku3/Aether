@@ -415,14 +415,13 @@ void ExpireHeld() {
 // shows an empty, disabled tab. The page reply already carries the same
 // achievements, so this writes the tree the client would have downloaded.
 //
-// An existing file is never replaced (SchemaCache::Store): a real download, or
-// a schema another donor already produced, stays authoritative.
+// An existing file is never replaced unless it is Aether's own transcription
+// (SchemaCache::StoreTranscribed): a real Steam download stays authoritative,
+// while a game that adds achievements bumps the schema version and the
+// transcription follows.
 void PublishSchemaFile(std::uint32_t appId, CapturedSchema schema) {
     if (StatsDir().empty() || !ac::luadata::HasDepot(appId))
         return;
-    const std::string path = StatsSchemaPath(appId);
-    if (winfile::Exists(path))
-        return; // Steam, or an earlier run, already put one there
 
     SchemaFileInput in;
     in.appId = appId;
@@ -435,16 +434,22 @@ void PublishSchemaFile(std::uint32_t appId, CapturedSchema schema) {
     if (bytes.empty())
         return;
 
-    if (!ac::hooks::wire::schemacache::Store(appId, bytes, StatsDir(), ac::backup::io::BackupDirForApp(appId))) {
+    const bool existed = winfile::Exists(StatsSchemaPath(appId));
+    ac::hooks::wire::schemacache::SchemaWrite applied = ac::hooks::wire::schemacache::SchemaWrite::Skip;
+    if (!ac::hooks::wire::schemacache::StoreTranscribed(appId, bytes, StatsDir(),
+                                                        ac::backup::io::BackupDirForApp(appId), in.version,
+                                                        static_cast<std::uint32_t>(count), &applied)) {
         AC_LOG_DEBUG(kModule, "App %u: the transcribed schema could not be written.", appId);
         return;
     }
+    if (applied != ac::hooks::wire::schemacache::SchemaWrite::Write)
+        return; // already current, or the file is Steam's and not ours to touch
     S().schemaFilesWritten.fetch_add(1, std::memory_order_relaxed);
     ac::status::Write();
     AC_LOG_INFO(kModule,
-                "App %u: transcribed the achievement schema into appcache\\stats (%zu achievement(s), %zu byte): "
+                "App %u: achievement schema %s in appcache\\stats (%zu achievement(s), v%d, %zu byte): "
                 "the overlay reads it at game start.",
-                appId, count, bytes.size());
+                appId, existed ? "rewritten" : "transcribed", count, in.version, bytes.size());
 }
 
 // Worker body: read the stats file and the schema that names its counters,

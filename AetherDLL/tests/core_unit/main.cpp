@@ -28,6 +28,7 @@ int main(int argc, char** argv) {
         {"donorpool_snapshot", DonorPoolSnapshotTest},
         {"schema_cache", SchemaCacheTest},
         {"schema_cache_restore", SchemaCacheRestore},
+        {"schema_transcription", SchemaTranscription},
         {"donor_probe", DonorProbeTest},
         {"keyvalues", KeyValuesTest},
         {"vdftext", VdfTextTest},
