@@ -132,7 +132,7 @@ void ProcessStatsUpdate(const BackupJob& job) {
 
     snapshot::SnapshotData snap = snapshot::Load(path);
     const std::uint32_t now = static_cast<std::uint32_t>(std::time(nullptr));
-    const std::unordered_set<std::uint32_t>& schemaBuckets = statscache::SchemaBucketsFor(job.appId);
+    const std::unordered_set<std::uint32_t> schemaBuckets = statscache::SchemaBucketsFor(job.appId);
 
     for (const auto& [id, value] : job.stats) {
         const bool knownStat = snapshot::HasStat(snap, id);

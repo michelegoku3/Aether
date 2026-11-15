@@ -39,10 +39,7 @@ void Save(const std::string&, steam::AppId, std::uint32_t, std::uint64_t, const 
 } // namespace ac::backup::snapshot
 namespace ac::backup::statscache {
 void BackupStatsBins(steam::AppId, std::uint32_t, bool) { ++copies; }
-const std::unordered_set<std::uint32_t>& SchemaBucketsFor(steam::AppId) {
-    static const std::unordered_set<std::uint32_t> empty;
-    return empty;
-}
+std::unordered_set<std::uint32_t> SchemaBucketsFor(steam::AppId) { return {}; }
 } // namespace ac::backup::statscache
 namespace ac::backup::playtime {
 void RefreshAllAccounts() { ++refreshes; }

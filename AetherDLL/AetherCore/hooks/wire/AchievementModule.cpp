@@ -16,10 +16,12 @@
 #include "credentials/SteamId.h"
 #include "hooks/aetheronline/PresenceSession.h"
 #include "hooks/wire/AchievementBackup.h"
+#include "hooks/wire/AchievementBitfield.h"
 #include "hooks/wire/BackupIo.h"
 #include "hooks/wire/DonorPool.h"
 #include "hooks/wire/DonorProbe.h"
 #include "hooks/wire/SchemaCache.h"
+#include "hooks/wire/SteamStatsCache.h"
 #include "scripting/LuaData.h"
 #include "steam_messages.pb.h"
 #include "utils/Hasher.h"
@@ -690,10 +692,17 @@ std::int32_t HandleSendStoreUserStats2(const WireFrame& frame, std::uint8_t* out
     // achievement_blocks but as STAT bitfields: stat_id = the schema bucket,
     // value = 32-bit bitfield of unlocked achievements. Example:
     // stat_id=0 value=0x40000000 = bit 30 bucket 0 = "Wing It". We track the
-    // bitfields in memory, log NEW bits (above bit 7, to avoid mistaking them
-    // for slowly-growing counters) and save them into the JSON snapshot as
+    // bitfields in memory, log NEW bits and save them into the JSON snapshot as
     // real achievements.
+    //
+    // The schema says what a stat is: an achievement bucket makes every bit an
+    // achievement (Paystreak's "Sold" is bucket 0, bit 4), while a counter only
+    // grows from bit 0 upward, so its low bits are values, not unlocks. The rule
+    // is in hooks/wire/AchievementBitfield.h.
     {
+        // Resolved before the bitfield lock: the lookup may read the schema file
+        // once per app and never takes g_statBitsMutex.
+        const std::unordered_set<std::uint32_t> schemaBuckets = backup::statscache::SchemaBucketsFor(appId);
         std::lock_guard<std::mutex> lock(g_statBitsMutex);
         auto& known = g_statBits[appId];
         std::vector<std::pair<std::uint32_t, std::uint32_t>> stats;
@@ -705,30 +714,34 @@ std::int32_t HandleSendStoreUserStats2(const WireFrame& frame, std::uint8_t* out
             std::uint32_t old = 0;
             if (!firstSighting)
                 old = known[st.stat_id()];
-            const std::uint32_t newBits = (value & ~old) & 0xFFFFFF00u; // bits >= 8 only
-            if (newBits != 0) {
-                // Baseline heuristic: the FIRST sighting of a stat with many new
-                // bits is almost always accumulated state the game recommits at
-                // startup (e.g. 15 already-unlocked achievements), not 15
-                // simultaneous unlocks. We record it as baseline without
-                // spamming logs/JSON (real dates stay in the backup .bins).
-                const bool looksAccumulated = firstSighting && std::popcount(newBits) > 3;
-                if (looksAccumulated) {
+            const bool schemaBucket = schemaBuckets.count(st.stat_id()) != 0;
+            const std::uint32_t newBits = wire::bitfield::NewAchievementBits(value, old, schemaBucket);
+            if (firstSighting) {
+                // The first sighting is the state the game recommits at startup,
+                // not a transition we observed: claiming an unlock from it would
+                // print the same achievements at every session start. The worker
+                // records the bits it finds (schema-derived achievement lines) and
+                // adopts Steam's own dates, so nothing is lost by staying quiet
+                // here. Only a wave is worth a line: it explains a burst of
+                // baseline rows without looking like an unlock storm.
+                if (std::popcount(newBits) > 3) {
                     AC_LOG_INFO(kModule,
                                 "[5466 StoreUserStats2] AppID %u stat_id=%u: baseline bitfield captured "
                                 "(0x%08x, %u bit(s) set) — not an unlock wave.",
                                 appId, st.stat_id(), value, std::popcount(value));
-                } else {
-                    for (std::uint32_t bit = 8; bit < 32; ++bit) {
-                        if (newBits & (1u << bit)) {
-                            const std::uint32_t achievementId = st.stat_id() * 32u + bit;
-                            const std::uint32_t now = static_cast<std::uint32_t>(std::time(nullptr));
-                            AC_LOG_INFO(kModule,
-                                        "*** ACHIEVEMENT UNLOCKED (bitfield) *** AppID %u stat_id=%u "
-                                        "0x%08x -> 0x%08x, new bit %u (achievement id %u)",
-                                        appId, st.stat_id(), old, value, bit, achievementId);
-                            AchievementBackup::RecordUnlock(appId, mirrorAccount, achievementId, now);
-                        }
+                }
+            } else if (newBits != 0) {
+                // A bit that appears after the session's first sighting is a
+                // transition: this is the unlock line support greps for.
+                for (std::uint32_t bit = 0; bit < 32; ++bit) {
+                    if (newBits & (1u << bit)) {
+                        const std::uint32_t achievementId = st.stat_id() * 32u + bit;
+                        const std::uint32_t now = static_cast<std::uint32_t>(std::time(nullptr));
+                        AC_LOG_INFO(kModule,
+                                    "*** ACHIEVEMENT UNLOCKED (bitfield) *** AppID %u stat_id=%u "
+                                    "0x%08x -> 0x%08x, new bit %u (achievement id %u)",
+                                    appId, st.stat_id(), old, value, bit, achievementId);
+                        AchievementBackup::RecordUnlock(appId, mirrorAccount, achievementId, now);
                     }
                 }
             }

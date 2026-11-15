@@ -7,12 +7,15 @@
 #include <cstdlib>
 #include <fstream>
 #include <functional>
+#include <mutex>
 #include <unordered_map>
 
 #include "core/AetherCoreState.h"
 #include "core/Logger.h"
+#include "hooks/wire/AchievementUserState.h"
 #include "hooks/wire/BackupIo.h"
 #include "hooks/wire/SchemaBuckets.h"
+#include "hooks/wire/UserStatsSnapshot.h"
 #include "utils/KeyValues.h"
 #include "utils/WinFile.h"
 
@@ -35,9 +38,12 @@ constexpr const char* kModule = "Wire.Achievement";
 // heuristic: Stanley uses bucket 3 with bits 0-4 (ignored by the fast-log
 // "bit >= 8" threshold), Spider-Man uses buckets 0/200/201.
 //
-// Per-app cache: the achievement bucket set (possibly empty when the
-// schema does not exist). Worker-exclusive ownership.
+// Per-app cache shared by the 5466 path (Steam's network thread) and the backup
+// worker, so every access goes through g_schemaMutex. SchemaBucketsFor hands out
+// a copy: a set can be replaced in the same session when a missing schema
+// appears, so a reference into the map would not stay valid across threads.
 // ---------------------------------------------------------------------------
+std::mutex g_schemaMutex;
 std::unordered_map<steam::AppId, std::unordered_set<std::uint32_t>> g_schemaBuckets;
 std::unordered_set<steam::AppId> g_schemaParsed;
 
@@ -51,13 +57,19 @@ std::unordered_set<std::uint32_t> ParseSchemaBuckets(const std::string& path) {
     return std::move(walker.buckets);
 }
 
-const std::unordered_set<std::uint32_t>& SchemaBucketsForImpl(steam::AppId appId) {
-    if (g_schemaParsed.insert(appId).second) {
+// Caller holds g_schemaMutex. A missing schema is NOT remembered as parsed: the
+// file can appear later in the same session (the library page transcribes one),
+// and the next lookup must then see the real bucket set.
+const std::unordered_set<std::uint32_t>& SchemaBucketsLocked(steam::AppId appId) {
+    if (!g_schemaParsed.contains(appId)) {
         const std::string path =
             g_state.steamInstallPath + "\\appcache\\stats\\UserGameStatsSchema_" + std::to_string(appId) + ".bin";
-        g_schemaBuckets[appId] = ParseSchemaBuckets(path);
-        AC_LOG_DEBUG(kModule, "Backup: schema for AppID %u -> %zu achievement bucket(s).", appId,
-                     g_schemaBuckets[appId].size());
+        if (winfile::Exists(path)) {
+            g_schemaBuckets[appId] = ParseSchemaBuckets(path);
+            g_schemaParsed.insert(appId);
+            AC_LOG_DEBUG(kModule, "Backup: schema for AppID %u -> %zu achievement bucket(s).", appId,
+                         g_schemaBuckets[appId].size());
+        }
     }
     return g_schemaBuckets[appId];
 }
@@ -195,14 +207,81 @@ void BackupStatsBinsImpl(steam::AppId appId, std::uint32_t accountId, bool force
     }
 }
 
+// Steam writes the unlock date into the stats file a moment AFTER the game's
+// commit, so the snapshot written while handling that commit only knows the ids
+// (unlock_time 0, "baseline"). The backup copy of the file is the dated one:
+// reading it back is what keeps a rebuild from the JSON, and the achievement
+// page's local fallback, from losing the real times.
+//
+// The backup copy is the source of truth here, not Steam's cache: the monotone
+// guard may have just restored the richer copy into the cache, and the backup
+// is the one that survives a wipe.
+void SyncDatesFromStatsBin(steam::AppId appId, std::uint32_t accountId, const std::string& binPath) {
+    const std::string snapshotPath = snapshot::SnapshotPath(appId, accountId);
+    if (snapshotPath.empty())
+        return;
+    std::ifstream file(winfile::ToPath(binPath), std::ios::binary);
+    if (!file.is_open())
+        return;
+    const std::vector<std::uint8_t> buf((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+
+    // Rows collected before a truncation stay usable: a partial file can still
+    // carry dates for the unlocks it holds.
+    achieve::UserState state;
+    achieve::ParseUserState(buf.data(), buf.size(), state);
+    if (state.unlocked.empty())
+        return;
+
+    snapshot::SnapshotData snap = snapshot::Load(snapshotPath);
+    if (snap.unlocks.empty())
+        return;
+
+    // Ids still waiting for a date: only these can be adopted, and naming them
+    // after the merge is what ties the real time to the achievement in the log.
+    std::vector<std::uint32_t> pending;
+    for (const auto& entry : snap.unlocks)
+        if (entry.unlockTime == 0)
+            pending.push_back(entry.id);
+
+    const std::size_t adopted = snapshot::MergeUnlockTimes(snap, state.unlocked);
+    if (adopted == 0)
+        return; // nothing changed: the snapshot file keeps its bytes and mtime
+
+    // Individual SteamID64 derived from the account id: the snapshot header
+    // keeps the same identity the commit path writes.
+    constexpr std::uint64_t kIndividualBase = 76561197960265728ull;
+    snapshot::Save(snapshotPath, appId, accountId, kIndividualBase + accountId, snap);
+    for (const std::uint32_t id : pending) {
+        for (const auto& entry : snap.unlocks) {
+            if (entry.id != id || entry.unlockTime == 0)
+                continue;
+            AC_LOG_INFO(kModule, "Backup: achievement %u of app %u unlocked at %s (date read from Steam's stats file).",
+                        id, appId, io::FormatUnixTime(entry.unlockTime).c_str());
+        }
+    }
+    AC_LOG_DEBUG(kModule, "Backup: adopted %zu of %zu baseline unlock date(s) for app %u from %s.", adopted,
+                 pending.size(), appId, binPath.c_str());
+}
+
 } // namespace
 
 void BackupStatsBins(steam::AppId appId, std::uint32_t accountId, bool force) {
     BackupStatsBinsImpl(appId, accountId, force);
+    // Dates live in the file, so they are repaired wherever the file is copied:
+    // unlock, session start, periodic checkpoint, end of session, startup scan.
+    const std::string dstDir = io::BackupDirForApp(appId);
+    if (dstDir.empty())
+        return;
+    SyncDatesFromStatsBin(appId, accountId,
+                          dstDir + "\\UserGameStats_" + std::to_string(accountId) + "_" + std::to_string(appId) +
+                              ".bin");
 }
 
 int CountAchievementsInBinFile(const std::string& path) { return CountAchievementsInBinFileImpl(path); }
 
-const std::unordered_set<std::uint32_t>& SchemaBucketsFor(steam::AppId appId) { return SchemaBucketsForImpl(appId); }
+std::unordered_set<std::uint32_t> SchemaBucketsFor(steam::AppId appId) {
+    std::lock_guard<std::mutex> lock(g_schemaMutex);
+    return SchemaBucketsLocked(appId);
+}
 
 } // namespace ac::backup::statscache

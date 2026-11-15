@@ -122,6 +122,7 @@ void DepotPlanTest();
 void PackageSeedTest();
 void RecheckTest();
 void AchievementState();
+void AchievementBitfield();
 void AchievementSchema();
 void AchievementExport();
 void AchievementServiceWire();

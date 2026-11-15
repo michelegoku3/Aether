@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cstdint>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 #include "core/SteamTypes.h"
@@ -73,6 +74,38 @@ inline void MergeStat(SnapshotData& snap, std::uint32_t statId, std::uint32_t va
 inline bool HasUnlock(const SnapshotData& snap, std::uint32_t achievementId) {
     return std::any_of(snap.unlocks.begin(), snap.unlocks.end(),
                        [achievementId](const UnlockEntry& e) { return e.id == achievementId; });
+}
+
+// Adopts the dates Steam recorded in UserGameStats_<account>_<appid>.bin for
+// unlocks the snapshot only knows as baseline (unlock_time 0).
+//
+// The client stamps the date a moment AFTER the game's commit, so the snapshot
+// written while handling that commit cannot carry it; the stats file is the
+// dated copy, and reading it back keeps a rebuild from the JSON from losing the
+// real times. With no captured date every unlock would otherwise look like it
+// happened at time zero.
+//
+// `unlocked` is keyed by internal key = bucket * 256 + bit (the identity the
+// client's achievement page uses), while a protocol achievement id is
+// bucket * 32 + bit; both come from the same 32-bit bucket, so the mapping is
+// exact. Only ids the snapshot already holds are touched: a bit the mirror never
+// recorded could belong to a stat, and this function never invents an unlock.
+//
+// Returns how many dates were adopted, so a caller rewrites the file only when
+// something actually changed.
+inline std::size_t MergeUnlockTimes(SnapshotData& snap,
+                                    const std::unordered_map<std::uint32_t, std::uint32_t>& unlocked) {
+    std::size_t adopted = 0;
+    for (auto& entry : snap.unlocks) {
+        if (entry.unlockTime != 0)
+            continue;
+        const auto it = unlocked.find((entry.id / 32u) * 256u + (entry.id % 32u));
+        if (it == unlocked.end() || it->second == 0)
+            continue;
+        entry.unlockTime = it->second;
+        ++adopted;
+    }
+    return adopted;
 }
 
 inline bool HasStat(const SnapshotData& snap, std::uint32_t statId) {

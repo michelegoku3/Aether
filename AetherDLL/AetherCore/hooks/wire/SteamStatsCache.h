@@ -30,6 +30,11 @@ int CountAchievementsInBinFile(const std::string& path);
 // The game's achievement bucket set read from the schema
 // (UserGameStatsSchema_<appid>.bin; per-process cache). Buckets with an empty
 // "bits" are NOT achievement buckets.
-const std::unordered_set<std::uint32_t>& SchemaBucketsFor(steam::AppId appId);
+//
+// Returns a copy, not a reference: the cache is shared by Steam's network thread
+// (the 5466 path) and the backup worker, and a missing schema is retried once
+// the library page transcribes one, so a reference into the map would not stay
+// valid across threads. The set holds a handful of ids: the copy costs nothing.
+std::unordered_set<std::uint32_t> SchemaBucketsFor(steam::AppId appId);
 
 } // namespace ac::backup::statscache

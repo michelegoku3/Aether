@@ -169,6 +169,22 @@ off-loader-lock shutdown path, NOT automatically on normal Steam termination.
 Even when called, it cannot guarantee Steam has flushed its cache. The JSON is rewritten atomically on each
 unlock (merge keeps the earliest unlock time).
 
+A 5466 commit carries an achievement either as an `achievement_blocks` entry or
+as a stat bitfield (`stat_id` = the schema bucket, one bit per achievement), and
+only the schema says which stat is which: `hooks/wire/AchievementBitfield.h`
+treats every bit of a schema bucket as an achievement and keeps bits 8..31 for a
+plain counter (a counter grows from bit 0 up, and games put achievements there
+too — Paystreak's "Sold" is bucket 0, bit 4). The commit that follows a game's
+start recommits state the session already had, so its first sighting is baseline
+and never reported as an unlock; only a bit that appears later is, with the
+`*** ACHIEVEMENT UNLOCKED (bitfield) ***` line. The worker records the bits
+either way (`Backup: schema-derived achievement recorded`), and the date is
+repaired from Steam's own file on the next copy: the client stamps
+`AchievementTimes` a moment after the commit, so `MergeUnlockTimes` adopts those
+dates for rows that only knew the id, logging
+`Backup: achievement <id> of app <appid> unlocked at <date> (date read from
+Steam's stats file).`
+
 The monotone guard (`hooks/wire/SteamStatsCache.cpp`) keeps the backup from ever
 regressing and, when Steam's file holds fewer achievements than the copy Aether
 keeps, puts the copy back into `appcache\stats`. That file is what the client

@@ -59,6 +59,7 @@ int main(int argc, char** argv) {
         {"package_seed", PackageSeedTest},
         {"recheck", RecheckTest},
         {"achievement_state", AchievementState},
+        {"achievement_bitfield", AchievementBitfield},
         {"achievement_schema", AchievementSchema},
         {"achievement_export", AchievementExport},
         {"achievement_policy", AchievementPolicy},

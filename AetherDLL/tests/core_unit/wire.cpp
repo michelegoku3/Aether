@@ -806,6 +806,53 @@ void SnapshotMergeTest() {
     CHECK(d.unlocks[0].id == 3 && d.unlocks[1].id == 10 && d.unlocks[2].id == 11);
 
     CHECK(d.stats[0].id == 5 && d.stats[1].id == 6);
+
+    // --- Dates read back from Steam's stats file ---------------------------
+    //
+    // The client stamps the unlock date into UserGameStats_<account>_<appid>.bin
+    // a moment AFTER the game's commit, so the snapshot written while that
+    // commit was handled only knows the id (unlock_time 0, "baseline"). The file
+    // is the dated copy; adopting its dates is what keeps a rebuild from the
+    // JSON from losing the real times.
+    //
+    // The stats file keys unlocks by internal_key = bucket * 256 + bit, while a
+    // protocol achievement id is bucket * 32 + bit: id 4 is bucket 0/bit 4,
+    // id 67 is bucket 2/bit 3.
+    const auto timeOf = [](const snap::SnapshotData& data, std::uint32_t id) -> std::uint32_t {
+        for (const auto& entry : data.unlocks)
+            if (entry.id == id)
+                return entry.unlockTime;
+        return 0xFFFFFFFFu;
+    };
+
+    std::unordered_map<std::uint32_t, std::uint32_t> dates;
+    dates[4] = 1700000000u;              // bucket 0, bit 4
+    dates[2u * 256u + 3u] = 1600000000u; // bucket 2, bit 3 -> id 67
+
+    snap::SnapshotData t;
+    snap::MergeUnlock(t, 4, 0);    // baseline: id known, date unknown
+    snap::MergeUnlock(t, 67, 0);   // same, in a second bucket
+    snap::MergeUnlock(t, 5, 123u); // a date already recorded
+
+    CHECK_EQ(snap::MergeUnlockTimes(t, dates), static_cast<std::size_t>(2));
+    CHECK_EQ(timeOf(t, 4), 1700000000u);
+    CHECK_EQ(timeOf(t, 67), 1600000000u);
+    CHECK_EQ(timeOf(t, 5), 123u); // a known date is never replaced
+
+    // Idempotent: with the dates in place there is nothing left to adopt, so the
+    // snapshot file is not rewritten on the next copy.
+    CHECK_EQ(snap::MergeUnlockTimes(t, dates), static_cast<std::size_t>(0));
+
+    // A bit set without a date, and a bucket the snapshot does not know, are
+    // both ignored: the stats file can never invent an unlock.
+    std::unordered_map<std::uint32_t, std::uint32_t> partial;
+    partial[4] = 0;
+    partial[32u * 256u + 1u] = 1700000000u;
+    snap::SnapshotData u;
+    snap::MergeUnlock(u, 4, 0);
+    CHECK_EQ(snap::MergeUnlockTimes(u, partial), static_cast<std::size_t>(0));
+    CHECK_EQ(timeOf(u, 4), 0u);
+    CHECK_EQ(u.unlocks.size(), static_cast<std::size_t>(1));
 }
 
 // --- IpcSpecParse: pure TOML parser extracted from IpcSpec. ---
