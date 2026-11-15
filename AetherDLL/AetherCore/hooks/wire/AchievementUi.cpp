@@ -283,7 +283,6 @@ bool BuildBody(std::uint32_t appId, std::uint32_t accountId, const std::string& 
     if (haveState) {
         in.unlocked = state.unlocked;
         in.progress = state.progress;
-        in.localEmpty = state.localEmpty;
     }
 
     const Decision decision = Decide(in);
@@ -422,10 +421,6 @@ void ReadStateNow(std::uint64_t key, std::uint32_t accountId, std::uint32_t appI
             fresh.writeTime = userFile.writeTime;
         }
     }
-    // Recorded before the merge: it describes Steam's file alone, which is what
-    // the page may not answer "everything locked" from.
-    fresh.localEmpty = state.empty();
-
     if (UserState snapshot; ReadSnapshotState(accountId, appId, snapshot)) {
         // The client builds the page from this file, so put back what Steam
         // emptied before the page answers.

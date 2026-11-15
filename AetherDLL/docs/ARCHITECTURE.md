@@ -195,12 +195,11 @@ for any app and an empty state body for an app the account does not own.
   `stat id -> current value`; `hooks/wire/AchievementStatsSchema.cpp` parses
   `UserGameStatsSchema_<appid>.bin` into `internal_key -> stat id`, the counter
   behind each achievement. State lives in `AetherCoreState::AchievementStore::ui`.
-- **The page's cache comes from the file, not the reply.** The client builds the
-  library page's `achievements` block — the section itself, with its
-  `nAchieved` count and highlight rows — from
+- **The page's cached block comes from the file.** The client writes the library
+  page's `achievements` block — `nAchieved` and the highlight rows — from
   `appcache\stats\UserGameStats_<account>_<appid>.bin`, which it reads at login
-  and does not re-read while running. A file Steam emptied therefore removes the
-  section whatever the reply says, so the module restores Aether's copy: the
+  and does not re-read while running. A file Steam emptied therefore leaves that
+  block at zero whatever the reply says, so the module restores Aether's copy: the
   startup scan does it before login through the monotone guard
   (`statscache`), and the page worker does it again whenever its read finds a key
   the file lost (`HasUnlockMissingFrom`). The read merges Aether's
@@ -209,8 +208,9 @@ for any app and an empty state body for an app the account does not own.
 - **Body shape.** One entry per schema achievement,
   locked ones included, `progress_float` always present, the unlock pair only
   when unlocked, and one `is_achievable` group per group the schema reply lists.
-  The page builds its rows from this reply, so a reply with only the unlocked
-  entries (or none) leaves the section blank for an app with no unlocks.
+  The client draws the game page's list from this reply and Valve's reply for an
+  unowned app is empty, so the locked rows are what keeps the section on screen:
+  a file with no unlock answers "0 of N", never "nothing".
 - **Progress values.** `progress_float` carries the
   raw value of the stat the schema's `progress` block names
   (`operation = "statvalue"`, `operand1` = stat name), read from that stat's
@@ -230,10 +230,9 @@ for any app and an empty state body for an app the account does not own.
 - **Fail open.** An app that is not managed passes through; unparsable bodies or
   headers and a rebuilt body over `kWireMaxBodyBytes` also leave Valve's frame
   untouched, with a `lastReason` for `status.json` (`not-managed`, `no-schema`,
-  `no-state`, `empty-local`, `too-large`, `reply-unparsed`, `header-unparsed`,
-  `off`). `empty-local` is the answering rule rather than a failure: an emptied
-  file with no unlock recovered from Aether's copy cannot support an
-  "everything locked" answer, and that answer is what the client would keep.
+  `no-state`, `too-large`, `reply-unparsed`, `header-unparsed`, `off`). An empty
+  or absent stats file is not one of these failures: the reply is still built,
+  with every achievement locked.
 - **Worker boundary.** The `.bin` reads (account stats and game schema) and the
   KV1 walks run on `workers::Submit`; the network path only copies cached values
   under one short mutex. The account comes from the request's `steamid`, never
