@@ -141,4 +141,31 @@ bool ParseUserState(const std::uint8_t* data, std::size_t size, UserState& out) 
     return wellFormed;
 }
 
+void MergeUserState(UserState& into, const UserState& from) {
+    for (const auto& [key, time] : from.unlocked) {
+        const auto it = into.unlocked.find(key);
+        if (it == into.unlocked.end()) {
+            into.unlocked.emplace(key, time);
+            continue;
+        }
+        // The earliest observation of a bit is the true one: a later read can
+        // repeat the date or lose it, never make it older. A bit set with no
+        // date (0) is weaker than any recorded date and never replaces one.
+        if (time != 0 && (it->second == 0 || time < it->second))
+            it->second = time;
+    }
+    // A stat's value is a snapshot, not an observation: the file being read
+    // keeps the value it has, and the other copy only fills the gaps.
+    for (const auto& [stat, value] : from.values)
+        into.values.emplace(stat, value);
+}
+
+bool HasUnlockMissingFrom(const UserState& snapshot, const UserState& live) {
+    for (const auto& [key, time] : snapshot.unlocked) {
+        if (!live.unlocked.contains(key))
+            return true;
+    }
+    return false;
+}
+
 } // namespace ac::achieve

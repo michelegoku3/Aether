@@ -149,21 +149,31 @@ void BackupStatsBinsImpl(steam::AppId appId, std::uint32_t accountId, bool force
     if (winfile::Exists(statsDir + "\\" + userBin)) {
         // MONOTONE GUARD: never overwrite a backup with a poorer cache. When
         // the Steam cache was just wiped (login-reconcile), the source file
-        // holds FEWER achievements than the backup: then the backup is kept
-        // and a highly visible WARN is logged. Backups can only grow, never
-        // regress.
+        // holds FEWER achievements than the backup: then the backup is kept.
+        // Backups can only grow, never regress.
         const std::string dstUserBin = dstDir + "\\" + userBin;
         if (winfile::Exists(dstUserBin)) {
             const int srcCount = CountAchievementsInBinFile(statsDir + "\\" + userBin);
             const int dstCount = CountAchievementsInBinFile(dstUserBin);
             if (srcCount >= 0 && dstCount >= 0 && srcCount < dstCount) {
-                AC_LOG_WARN(kModule,
-                            "Backup: refusing to overwrite %s with an emptier cache "
-                            "(source has %d achievement(s), backup has %d) — the Steam cache was "
-                            "probably wiped again; keeping the richer backup. Restore it manually "
-                            "to recover (Tools\\achievement_decoder.py decode to verify).",
-                            userBin.c_str(), srcCount, dstCount);
-                // Still copy the schema (harmless) and stop.
+                // The client reads this file at login and draws the game page's
+                // achievements block from it, so a cache Steam emptied is what
+                // makes the section disappear. Refusing to copy is not enough:
+                // put the richer copy back where the client reads it.
+                const std::string staging = io::UniqueStagingPath(statsDir + "\\" + userBin);
+                if (winfile::CopyOverwrite(dstUserBin, staging) &&
+                    io::AtomicReplace(staging, statsDir + "\\" + userBin)) {
+                    AC_LOG_INFO(kModule,
+                                "Backup: %s lost achievements (%d now, %d in the backup); the backup copy is back in "
+                                "Steam's cache.",
+                                userBin.c_str(), srcCount, dstCount);
+                } else {
+                    AC_LOG_WARN(kModule,
+                                "Backup: %s lost achievements (%d now, %d in the backup) and the backup copy could "
+                                "not be restored.",
+                                userBin.c_str(), srcCount, dstCount);
+                }
+                // The schema is harmless to copy either way.
                 if (winfile::Exists(statsDir + "\\" + schemaBin)) {
                     winfile::CopyOverwrite(statsDir + "\\" + schemaBin, dstDir + "\\" + schemaBin);
                 }

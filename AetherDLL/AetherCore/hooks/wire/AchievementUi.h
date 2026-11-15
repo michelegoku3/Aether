@@ -56,10 +56,13 @@ struct CapturedSchema {
 // schema that names each progress counter (AchievementStatsSchema.h).
 // `loaded` says a read finished; `known` says the stats file existed and parsed,
 // so an absent file answers "nothing unlocked, no progress" instead of waiting
-// forever.
+// forever. `localEmpty` says Steam's own file carried no achievement bit; the
+// unlocks may still be non-empty, because the read merges Aether's snapshot of
+// the same file in.
 struct CachedState {
     bool loaded = false;
     bool known = false;
+    bool localEmpty = false;
     std::uintmax_t size = 0; // bytes read
     std::int64_t writeTime = 0;
     std::unordered_map<std::uint32_t, std::uint32_t> unlocked;

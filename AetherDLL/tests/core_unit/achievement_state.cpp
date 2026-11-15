@@ -161,4 +161,50 @@ void AchievementState() {
     CHECK(ac::achieve::ParseUserState(dated.bytes.data(), dated.bytes.size(), datedState));
     CHECK(datedState.unlocked.size() == 1);
     CHECK(datedState.unlocked[512u + 4u] == 1234u);
+
+    // Two copies of the same file can only add to each other. The oldest
+    // observation of a key is the true one: a later read can repeat it or lose
+    // it, never make it older.
+    {
+        ac::achieve::UserState into;
+        into.unlocked = {{256u, 100u}, {259u, 5u}};
+        into.values = {{8u, 1.0f}};
+        ac::achieve::UserState from;
+        from.unlocked = {{256u, 50u}, {257u, 0u}, {259u, 90u}};
+        from.values = {{8u, 3.0f}, {9u, 4.0f}};
+        ac::achieve::MergeUserState(into, from);
+        CHECK(into.unlocked.size() == 3);
+        CHECK(into.unlocked[256u] == 50u); // the earlier date wins
+        CHECK(into.unlocked[257u] == 0u);  // a key only the other copy had
+        CHECK(into.unlocked[259u] == 5u);  // this copy's date is the earlier one
+        CHECK(into.values[8u] == 1.0f);    // the file being read keeps its value
+        CHECK(into.values[9u] == 4.0f);
+    }
+
+    // A bit set without a date never replaces a dated unlock.
+    {
+        ac::achieve::UserState into;
+        into.unlocked = {{256u, 100u}};
+        ac::achieve::UserState from;
+        from.unlocked = {{256u, 0u}};
+        ac::achieve::MergeUserState(into, from);
+        CHECK(into.unlocked[256u] == 100u);
+    }
+
+    // A copy that holds an unlock the other one lost is the one to put back
+    // where the client reads it. Comparing counts would miss a lost key that a
+    // stale one replaced, so the question is asked per key.
+    {
+        ac::achieve::UserState snapshot;
+        snapshot.unlocked = {{256u, 10u}, {257u, 20u}};
+        ac::achieve::UserState live;
+        live.unlocked = {{256u, 10u}, {999u, 30u}};
+        CHECK(ac::achieve::HasUnlockMissingFrom(snapshot, live));
+
+        live.unlocked.insert_or_assign(257u, 20u);
+        CHECK(!ac::achieve::HasUnlockMissingFrom(snapshot, live));
+
+        ac::achieve::UserState empty;
+        CHECK(!ac::achieve::HasUnlockMissingFrom(empty, live));
+    }
 }

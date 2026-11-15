@@ -9,9 +9,10 @@
 // ============================================================================
 // SteamStatsCache — access to Steam's stats cache files (appcache\stats):
 // .bin copies with a MONOTONE GUARD (never overwrite a richer backup with a
-// just-wiped cache) and rate-limit; achievement counting of binary .bins;
-// schema interpretation (achievement buckets) to translate bitfield stats
-// into achievements.
+// just-wiped cache, and put the richer copy back into Steam's cache when the
+// client's own was emptied) and rate-limit; achievement counting of binary
+// .bins; schema interpretation (achievement buckets) to translate bitfield
+// stats into achievements.
 //
 // Internal state (per-app schema cache, per-(app,account) rate-limit): owned
 // by the facade's worker thread — no internal concurrency needed.

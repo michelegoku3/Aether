@@ -34,4 +34,22 @@ struct UserState {
 // before the error stay usable (partial file, partial state).
 bool ParseUserState(const std::uint8_t* data, std::size_t size, UserState& out);
 
+// Adds to `into` the unlocks and stat values only `from` carries.
+//
+// The client's cache (appcache\stats) is not durable: Steam rewrites it for an
+// app the account does not own, and what it writes can be empty. Aether's own
+// copy of the same file is what survives, so the page reads both and merges
+// them. A key in both keeps the earlier unlock date (the first observation),
+// and a stat keeps the value of the file being read.
+void MergeUserState(UserState& into, const UserState& from);
+
+// True when `snapshot` holds an unlock `live` does not.
+//
+// The game page's achievements block is built from the client's own stats file,
+// not from the reply Aether rewrites, so a page whose file Steam emptied cannot
+// be repaired by answering alone: the file has to be put back. Counting rows
+// would miss the case this exists for - a file that lost one key and gained a
+// stale one - so the question is asked per key.
+bool HasUnlockMissingFrom(const UserState& snapshot, const UserState& live);
+
 } // namespace ac::achieve

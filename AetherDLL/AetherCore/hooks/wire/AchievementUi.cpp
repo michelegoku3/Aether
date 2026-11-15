@@ -16,6 +16,7 @@
 #include "core/Workers.h"
 #include "diagnostics/StatusWriter.h"
 #include "hooks/wire/AchievementUserState.h"
+#include "hooks/wire/BackupIo.h"
 #include "scripting/LuaData.h"
 #include "steam_messages.pb.h"
 #include "utils/WinFile.h"
@@ -93,6 +94,55 @@ bool ReadFileBytes(const std::string& path, std::vector<std::uint8_t>& out) {
     if (!file.is_open())
         return false;
     out.assign(std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>());
+    return true;
+}
+
+// Aether's own copy of the same stats file, or "" when AetherDesk is absent.
+std::string SnapshotBinPath(std::uint32_t accountId, std::uint32_t appId) {
+    const std::string dir = ac::backup::io::BackupDirForApp(appId);
+    if (dir.empty())
+        return {};
+    return dir + "\\UserGameStats_" + std::to_string(accountId) + "_" + std::to_string(appId) + ".bin";
+}
+
+// Reads Aether's own copy of the same stats file (AchievementBackup.h). Steam
+// rewrites the client cache for an app the account does not own, and what it
+// writes can be empty; this copy is what outlives that, so the page reads both
+// and lets MergeUserState decide per key.
+bool ReadSnapshotState(std::uint32_t accountId, std::uint32_t appId, UserState& out) {
+    const std::string path = SnapshotBinPath(accountId, appId);
+    if (path.empty())
+        return false;
+    std::vector<std::uint8_t> bytes;
+    if (!ReadFileBytes(path, bytes) || bytes.empty())
+        return false;
+    return ParseUserState(bytes.data(), bytes.size(), out);
+}
+
+// Puts Aether's copy back where the client reads it.
+//
+// The game page's achievements block is built from this file, not from the reply
+// this module rewrites: a page whose file Steam emptied cannot be repaired by
+// answering, because the client caches what the file says and draws the section
+// from it. The staging file keeps the replacement atomic, so the client never
+// reads a half-written copy.
+bool RestoreSnapshotFile(std::uint32_t accountId, std::uint32_t appId) {
+    const std::string source = SnapshotBinPath(accountId, appId);
+    const std::string target = UserBinPath(accountId, appId);
+    if (source.empty() || target.empty() || source == target)
+        return false;
+    const std::string staging = ac::backup::io::UniqueStagingPath(target);
+    std::error_code ec;
+    std::filesystem::copy_file(winfile::ToPath(source), winfile::ToPath(staging),
+                               std::filesystem::copy_options::overwrite_existing, ec);
+    if (ec) {
+        AC_LOG_DEBUG(kModule, "App %u: recovered stats cache not staged (%d).", appId, ec.value());
+        return false;
+    }
+    if (!ac::backup::io::AtomicReplace(staging, target)) {
+        std::filesystem::remove(winfile::ToPath(staging), ec);
+        return false;
+    }
     return true;
 }
 
@@ -233,6 +283,7 @@ bool BuildBody(std::uint32_t appId, std::uint32_t accountId, const std::string& 
     if (haveState) {
         in.unlocked = state.unlocked;
         in.progress = state.progress;
+        in.localEmpty = state.localEmpty;
     }
 
     const Decision decision = Decide(in);
@@ -369,6 +420,24 @@ void ReadStateNow(std::uint64_t key, std::uint32_t accountId, std::uint32_t appI
             fresh.known = ParseUserState(bytes.data(), bytes.size(), state);
             fresh.size = bytes.size();
             fresh.writeTime = userFile.writeTime;
+        }
+    }
+    // Recorded before the merge: it describes Steam's file alone, which is what
+    // the page may not answer "everything locked" from.
+    fresh.localEmpty = state.empty();
+
+    if (UserState snapshot; ReadSnapshotState(accountId, appId, snapshot)) {
+        // The client builds the page from this file, so put back what Steam
+        // emptied before the page answers.
+        if (HasUnlockMissingFrom(snapshot, state) && RestoreSnapshotFile(accountId, appId)) {
+            AC_LOG_INFO(kModule, "App %u: put %zu unlock(s) back into Steam's stats cache.", appId,
+                        snapshot.unlocked.size());
+        }
+        const std::size_t before = state.unlocked.size();
+        MergeUserState(state, snapshot);
+        if (state.unlocked.size() > before) {
+            AC_LOG_DEBUG(kModule, "App %u: %zu unlock(s) came from Aether's snapshot, not Steam's cache.", appId,
+                         state.unlocked.size() - before);
         }
     }
 

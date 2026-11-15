@@ -75,7 +75,7 @@ void AchievementPolicy() {
         CHECK(d.reply.groups[0].groupid == 0);
     }
 
-    // --- no unlocks at all: still one entry per achievement ------------------
+    // --- a stats file with data and no unlock is a real "0 of N" -------------
     {
         Input in = base;
         in.unlocked.clear();
@@ -87,6 +87,32 @@ void AchievementPolicy() {
         CHECK(!d.reply.entries[2].unlocked);
         CHECK(d.reply.groups.size() == 1);
         CHECK(d.reply.groups[0].groupid == 0);
+    }
+
+    // --- Steam emptied the file: never answer "everything locked" -------------
+    // The client stores the answer in its page cache and draws the achievements
+    // section from the unlocked rows. A rebuild from an empty file says "none",
+    // which erases the section and the last good copy with it. Valve's own
+    // answer leaves the client with what it already had.
+    {
+        Input in = base;
+        in.unlocked.clear();
+        in.localEmpty = true;
+        const auto d = Decide(in);
+        CHECK(d.verdict == Verdict::Passthrough);
+        CHECK(std::string(d.reason) == "empty-local");
+    }
+
+    // A snapshot that supplied the unlocks makes the same empty file answerable.
+    {
+        Input in = base;
+        in.localEmpty = true;
+        in.unlocked = {{256, 11u}};
+        const auto d = Decide(in);
+        CHECK(d.verdict == Verdict::Rebuild);
+        CHECK(d.reply.entries.size() == 3);
+        CHECK(d.reply.entries[0].unlocked);
+        CHECK(d.reply.entries[0].unlockTime == 11u);
     }
 
     // --- the counter travels with the entry it belongs to --------------------

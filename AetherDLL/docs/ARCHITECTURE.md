@@ -165,9 +165,16 @@ Steam's network thread). `FlushOnShutdown()` is BLOCKING: it drains the queue,
 copies the `.bin` files and waits for worker completion (the registry owns the join). It is only called in the explicit
 off-loader-lock shutdown path, NOT automatically on normal Steam termination.
 Even when called, it cannot guarantee Steam has flushed its cache. The JSON is rewritten atomically on each
-unlock (merge keeps the earliest unlock time). If the Steam cache is ever
-wiped again, restore by copying the `.bin` back into `appcache\stats` (Steam
-closed) or rebuild it from the JSON with `Tools/achievement_decoder.py rebuild`.
+unlock (merge keeps the earliest unlock time).
+
+The monotone guard (`hooks/wire/SteamStatsCache.cpp`) keeps the backup from ever
+regressing and, when Steam's file holds fewer achievements than the copy Aether
+keeps, puts the copy back into `appcache\stats`. That file is what the client
+builds the game page's achievements block from, and it is read once at login, so
+an emptied cache removes the section outright — refusing to copy is not enough.
+The startup scan runs the guard before login; every page open runs it again.
+`Tools/achievement_decoder.py rebuild` can still rebuild a cache from the JSON by
+hand.
 
 `Tools/achievement_decoder.py` decodes/encodes the Steam cache, schema and
 mirror JSON files (`decode`, `snapshot`, `rebuild` commands) — use it together
@@ -188,6 +195,17 @@ for any app and an empty state body for an app the account does not own.
   `stat id -> current value`; `hooks/wire/AchievementStatsSchema.cpp` parses
   `UserGameStatsSchema_<appid>.bin` into `internal_key -> stat id`, the counter
   behind each achievement. State lives in `AetherCoreState::AchievementStore::ui`.
+- **The page's cache comes from the file, not the reply.** The client builds the
+  library page's `achievements` block — the section itself, with its
+  `nAchieved` count and highlight rows — from
+  `appcache\stats\UserGameStats_<account>_<appid>.bin`, which it reads at login
+  and does not re-read while running. A file Steam emptied therefore removes the
+  section whatever the reply says, so the module restores Aether's copy: the
+  startup scan does it before login through the monotone guard
+  (`statscache`), and the page worker does it again whenever its read finds a key
+  the file lost (`HasUnlockMissingFrom`). The read merges Aether's
+  copy in (`MergeUserState`, earliest unlock date wins) so the reply never
+  depends on the cache alone.
 - **Body shape.** One entry per schema achievement,
   locked ones included, `progress_float` always present, the unlock pair only
   when unlocked, and one `is_achievable` group per group the schema reply lists.
@@ -212,7 +230,10 @@ for any app and an empty state body for an app the account does not own.
 - **Fail open.** An app that is not managed passes through; unparsable bodies or
   headers and a rebuilt body over `kWireMaxBodyBytes` also leave Valve's frame
   untouched, with a `lastReason` for `status.json` (`not-managed`, `no-schema`,
-  `no-state`, `too-large`, `reply-unparsed`, `header-unparsed`, `off`).
+  `no-state`, `empty-local`, `too-large`, `reply-unparsed`, `header-unparsed`,
+  `off`). `empty-local` is the answering rule rather than a failure: an emptied
+  file with no unlock recovered from Aether's copy cannot support an
+  "everything locked" answer, and that answer is what the client would keep.
 - **Worker boundary.** The `.bin` reads (account stats and game schema) and the
   KV1 walks run on `workers::Submit`; the network path only copies cached values
   under one short mutex. The account comes from the request's `steamid`, never

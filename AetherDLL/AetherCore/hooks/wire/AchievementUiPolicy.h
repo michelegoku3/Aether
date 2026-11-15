@@ -59,6 +59,7 @@ struct Input {
     bool managed = false;     // configured .lua app, not genuinely owned
     bool schemaKnown = false; // a GetGameAchievements reply was captured
     bool stateLoaded = false; // the local .bin read finished (the file may be absent)
+    bool localEmpty = false;  // Steam's file held no achievement bit at all
     std::vector<SchemaEntry> entries;
     std::vector<std::uint32_t> groups;
     std::unordered_map<std::uint32_t, std::uint32_t> unlocked; // key -> time
@@ -89,6 +90,25 @@ inline Decision Decide(const Input& in) {
         decision.verdict = Verdict::Hold;
         decision.reason = "no-state";
         return decision;
+    }
+    // Steam's file held no achievement bit. Answering from it would tell the
+    // client that every achievement is locked, and the client stores that answer
+    // in its page cache and draws the section from the unlocked rows: a
+    // definitive "none" erases the section - and the last good copy of it - for
+    // an app whose file Steam is free to rewrite. Valve's own answer leaves the
+    // client with the cache it already had.
+    if (in.localEmpty) {
+        bool anyUnlocked = false;
+        for (const SchemaEntry& entry : in.entries) {
+            if (in.unlocked.contains(entry.key)) {
+                anyUnlocked = true;
+                break;
+            }
+        }
+        if (!anyUnlocked) {
+            decision.reason = "empty-local";
+            return decision;
+        }
     }
 
     decision.reply.entries.reserve(in.entries.size());
