@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <string>
 #include <unordered_map>
 #include <vector>
 
@@ -28,9 +29,19 @@
 namespace ac::achieve {
 
 // One achievement of the captured schema (GetGameAchievements reply).
+//
+// `key` and `groupid` drive the page rebuild; the remaining fields exist only
+// for the schema file the overlay reads (AchievementSchemaExport.h), which is
+// written when Steam itself refuses to send one.
 struct SchemaEntry {
     std::uint32_t key = 0; // internal_key = bucket * 256 + bit
     std::uint32_t groupid = 0;
+    std::string internalName; // the game's API name; empty when the reply had none
+    std::string name;         // display name in the language the capture was made in
+    std::string description;
+    std::string icon;
+    std::string iconGray;
+    bool hidden = false;
 };
 
 struct ReplyEntry {

@@ -36,6 +36,12 @@
 //   * each entry carries the counter from the local stats file, so a page row
 //     shows the same progress the overlay does.
 //
+// The same capture feeds the overlay's own schema file
+// (AchievementSchemaExport.h): the legacy stats path only receives a schema from
+// a donor whose account owns the game, and for a managed app that never
+// happens, so the file would otherwise stay missing and Shift+Tab would list
+// nothing.
+//
 // All entry points take the job id and raw bodies: the wire layer owns frame
 // decoding, this module owns the protobuf payloads. Nothing here touches disk
 // on the caller's thread; per-call and cache state live in
@@ -47,6 +53,7 @@ namespace ac::achieve {
 struct CapturedSchema {
     std::int32_t version = 0;
     std::uint32_t hash = 0;
+    std::string language; // the language the client asked for, i.e. the one the texts are in
     std::vector<SchemaEntry> entries;
     std::vector<std::uint32_t> groups;
 };
@@ -83,6 +90,7 @@ struct Pending {
     bool userCall = false; // false: GetGameAchievements
     std::uint32_t appId = 0;
     std::uint64_t steamId = 0; // as sent; 0 when the request named no account
+    std::string language;      // the language the schema was requested in
 };
 
 // A user reply that could not be answered yet: the header already carries
@@ -109,15 +117,16 @@ struct State {
     std::deque<std::uint32_t> statsSchemaOrder;
     std::unordered_set<std::uint64_t> refreshing;
     std::vector<HeldReply> held;
-    std::deque<std::vector<std::uint8_t>> outbox;  // complete 147 frames ready to deliver
-    std::atomic<std::uint64_t> calls{0};           // send seen (both methods)
-    std::atomic<std::uint64_t> schemasCaptured{0}; // schemas stored
-    std::atomic<std::uint64_t> rebuilt{0};         // user replies answered from local state
-    std::atomic<std::uint64_t> passthrough{0};     // user replies left alone
-    std::atomic<std::uint64_t> heldCount{0};       // replies parked waiting for data
-    std::atomic<std::uint64_t> delivered{0};       // held replies delivered later
-    std::atomic<std::uint64_t> progressValues{0};  // entries with a counter in the last rebuild
-    std::string lastReason = "idle";               // guarded by mutex
+    std::deque<std::vector<std::uint8_t>> outbox;     // complete 147 frames ready to deliver
+    std::atomic<std::uint64_t> calls{0};              // send seen (both methods)
+    std::atomic<std::uint64_t> schemasCaptured{0};    // schemas stored
+    std::atomic<std::uint64_t> rebuilt{0};            // user replies answered from local state
+    std::atomic<std::uint64_t> passthrough{0};        // user replies left alone
+    std::atomic<std::uint64_t> heldCount{0};          // replies parked waiting for data
+    std::atomic<std::uint64_t> delivered{0};          // held replies delivered later
+    std::atomic<std::uint64_t> progressValues{0};     // entries with a counter in the last rebuild
+    std::atomic<std::uint64_t> schemaFilesWritten{0}; // overlay schemas transcribed from a capture
+    std::string lastReason = "idle";                  // guarded by mutex
 };
 
 // Wire entry points. Send handlers only remember the call and warm the state
@@ -139,5 +148,11 @@ void TryDeliver(void* recvThis, steam::CNetPacket* carrier, void* (*oRecvPkt)(vo
 
 // True when the settings snapshot enables the page rewrite.
 bool Enabled();
+
+// Worker body: puts every managed app's transcribed schema back into
+// <steam>\appcache\stats when Steam's cache has none, so a session that starts
+// before the library page was opened still serves the overlay. Called once per
+// process from the startup stage; the backup tree is the source.
+void RestoreTranscribedSchemas();
 
 } // namespace ac::achieve

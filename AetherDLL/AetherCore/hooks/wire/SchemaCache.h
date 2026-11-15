@@ -28,4 +28,15 @@ bool IsAchievementSchema(const std::string& schema);
 // Returns true when a usable schema file is in place afterwards.
 bool Store(steam::AppId appId, const std::string& schema, const std::string& statsDir, const std::string& backupDir);
 
+// Puts Aether's own copy of the schema back into the client cache when the
+// cache has none. The client builds a game's achievement list at login from
+// that file, so a session that starts before the library page was opened has to
+// be handed the file back; an existing cache file is never replaced. True when a
+// usable schema is in the cache afterwards.
+bool Restore(steam::AppId appId, const std::string& statsDir, const std::string& backupDir);
+
+// App id from a backup directory name ("<AetherData>\backup\<appid>"); 0 when
+// the name is not one, so the startup restore walks only real app folders.
+steam::AppId AppIdFromBackupDir(const std::string& name);
+
 } // namespace ac::hooks::wire::schemacache

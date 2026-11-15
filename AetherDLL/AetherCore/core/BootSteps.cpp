@@ -24,6 +24,7 @@
 #include "hooks/steamui/SteamUIStylePatch.h"
 #include "hooks/wire/AchievementBackup.h"
 #include "hooks/wire/AchievementModule.h"
+#include "hooks/wire/AchievementUi.h"
 #include "hooks/wire/ManifestRestore.h"
 #include "inject/SteamclientAttach.h"
 #include "inject/SteamuiAttach.h"
@@ -288,6 +289,13 @@ void StartSafetyNetsStage() {
     //     taken before it does.
     //     Depends on: lua data (HasDepot) + aethercore dir (desk_path.cfg).
     ac::hooks::AchievementBackup::BackupAllKnownStatsAtStartup();
+
+    // 10a. Overlay schema: the achievement schema Steam refuses to send (an app
+    //      no donor owns) was transcribed from a page capture and kept in the
+    //      backup. The client reads that file at login, so a session that starts
+    //      before the library page is opened needs it put back now.
+    //      Depends on: lua data (HasDepot) + aethercore dir (desk_path.cfg).
+    ac::achieve::RestoreTranscribedSchemas();
 
     // 10b. Manifest restore: recopies missing backup .manifests into
     //      Steam\depotcache (async, once per process). Uninstalling a game

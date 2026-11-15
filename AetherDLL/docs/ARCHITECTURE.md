@@ -18,6 +18,7 @@ the fast build loop ([`quick-build.md`](quick-build.md)).
 - [Naming guidance](#naming-guidance)
 - [Review checklist for new state](#review-checklist-for-new-state)
 - [Achievement diagnostics (logging + backup)](#achievement-diagnostics-logging--backup)
+- [Overlay schema (the file Steam refuses to send)](#overlay-schema-the-file-steam-refuses-to-send)
 - [Client achievement page (service path)](#client-achievement-page-service-path)
 - [Donor rotation and schema publication](#donor-rotation-and-schema-publication)
 - [Runtime publication and lifecycle](#runtime-publication-and-lifecycle)
@@ -156,7 +157,8 @@ fallback), using Steam's own per-(account, app) naming:
 <AetherData>\backup\<appid>\achievements\
     UserGameStats_<account>_<appid>.json    snapshot of unlocks (mirror format)
     UserGameStats_<account>_<appid>.bin     copy of Steam's cache file
-    UserGameStatsSchema_<appid>.bin         copy of the game schema
+    UserGameStatsSchema_<appid>.bin         copy of the game schema, transcribed
+                                            when Steam sends none (below)
 ```
 
 All disk I/O runs on the lazy-started `achievement_backup` worker owned by
@@ -179,6 +181,47 @@ hand.
 `Tools/achievement_decoder.py` decodes/encodes the Steam cache, schema and
 mirror JSON files (`decode`, `snapshot`, `rebuild` commands) — use it together
 with `main.log` when investigating achievement issues.
+
+### Overlay schema (the file Steam refuses to send)
+
+The library page and the overlay read different data. The page renders from the
+service reply; the overlay's Shift+Tab list and the game's own unlocks read
+`appcache\stats\UserGameStatsSchema_<appid>.bin`, which the client only obtains
+from a `Player.GetUserStats#1` reply that carries a `schema` blob — that is, from
+a donor whose account owns the game. For a managed app nobody in the pool owns,
+the CM answers `k_EResultNoMatch` with no schema, the file is never written, and
+the overlay's achievements tab stays disabled while the library page lists
+everything.
+
+- **Transcription.** The page reply already carries every achievement with its
+  API name, display name, description, icons, `hidden` and `internal_key`, so
+  `hooks/wire/AchievementSchemaExport.h` writes the KV1 tree Steam writes
+  (`<appid> { stats { <bucket> { bits { <bit> { name, display } } type } }
+  version gamename }`) from a capture. `internal_key` splits into
+  `bucket = key >> 8`, `bit = key & 0xFF`, the same split the page rebuild uses,
+  so an unlock lands on the bit the page lists. Pure and byte-checked against a
+  hand-built tree (`achievement_export`).
+- **When.** `AchievementUi::PublishSchemaFile` runs on a worker as soon as a
+  capture lands, and only when the cache has no schema for that app:
+  `schemacache::Store` validates the root key and refuses to replace a file Steam
+  wrote, so a real download always wins. Names are stored under the language the
+  client asked for and under `english`; `hidden`, icons and descriptions are
+  omitted rather than written empty. An achievement without an API name, or with
+  a bit past 31 (the stats file holds a 32-bit mask per bucket), is skipped.
+- **Across restarts.** The client reads the schema at login and does not re-read
+  it, so a session that starts before the page was ever opened needs the file
+  back: `SchemaCache::Restore` copies Aether's backup copy into the cache, and
+  the startup scan runs it for every `backup\<appid>` folder of a managed app
+  whose cache entry is missing. `Backup: put the transcribed achievement schema
+  for app <id> back into Steam's stats cache.` is the log line.
+- **Verification.** With the file in place the client's `Player.GetUserStats#1`
+  request carries `sha_schema present=yes` (it carried `no, 0 byte` before) and
+  creates `UserGameStats_<account>_<appid>.bin`, which is what makes the overlay
+  list and the page's cached block possible. (`achievement_export`,
+  `schema_cache_restore`, live Paystreak 4809710: tab opens at 0/77.)
+- **Not covered.** A game that adds achievements later keeps the transcribed
+  list until Steam writes its own file (the cache entry is never replaced), and
+  achievements the CM does not list cannot appear: nothing is invented.
 
 ### Client achievement page (service path)
 
@@ -245,7 +288,8 @@ for any app and an empty state body for an app the account does not own.
   `schema_version`/`schema_hash` are re-emitted untouched.
 - **Diagnostics.** `achievement_service_calls`, `achievement_schemas`,
   `achievement_rebuilt`, `achievement_passthrough`, `achievement_held`,
-  `achievement_delivered`, `achievement_progress_values`, `achievement_held_now`,
+  `achievement_delivered`, `achievement_progress_values`,
+  `achievement_schemas_written`, `achievement_held_now`,
   `achievement_last_reason`; a `DEBUG` line per capture, hold and rebuild names
   the app and the counts.
 

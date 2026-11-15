@@ -2,6 +2,8 @@
 #include "hooks/wire/SchemaCache.h"
 
 #include <cstdint>
+#include <fstream>
+#include <iterator>
 #include <string>
 
 #include "hooks/wire/SchemaBuckets.h"
@@ -70,6 +72,42 @@ bool Store(steam::AppId appId, const std::string& schema, const std::string& sta
         winfile::WriteTextAtomically(backupPath, schema); // best effort: cache wins
 
     return true;
+}
+
+bool Restore(steam::AppId appId, const std::string& statsDir, const std::string& backupDir) {
+    const std::string name = FileName(appId);
+    const std::string cachePath = Join(statsDir, name);
+    if (cachePath.empty())
+        return false;
+    if (winfile::Exists(cachePath))
+        return true; // Steam's own copy, or one an earlier run put back
+
+    const std::string backupPath = Join(backupDir, name);
+    if (backupPath.empty())
+        return false;
+    std::ifstream file(winfile::ToPath(backupPath), std::ios::binary);
+    if (!file.is_open())
+        return false;
+    const std::string bytes((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+    // Same two checks as a fresh write: the file must be a schema and it must be
+    // this app's, so a stale copy can never be published under another app.
+    if (!IsAchievementSchema(bytes) || !RootIsAppId(bytes, appId))
+        return false;
+    return winfile::WriteTextAtomically(cachePath, bytes);
+}
+
+steam::AppId AppIdFromBackupDir(const std::string& name) {
+    if (name.empty() || name.size() > 10)
+        return 0; // longer than any uint32 app id
+    std::uint64_t value = 0;
+    for (const char c : name) {
+        if (c < '0' || c > '9')
+            return 0;
+        value = value * 10 + static_cast<std::uint64_t>(c - '0');
+        if (value > 0xFFFFFFFFull)
+            return 0;
+    }
+    return static_cast<steam::AppId>(value); // 0 for "0", i.e. no app
 }
 
 } // namespace ac::hooks::wire::schemacache

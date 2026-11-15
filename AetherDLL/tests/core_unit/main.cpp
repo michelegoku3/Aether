@@ -27,6 +27,7 @@ int main(int argc, char** argv) {
         {"donorpool_learning", DonorPoolLearningTest},
         {"donorpool_snapshot", DonorPoolSnapshotTest},
         {"schema_cache", SchemaCacheTest},
+        {"schema_cache_restore", SchemaCacheRestore},
         {"donor_probe", DonorProbeTest},
         {"keyvalues", KeyValuesTest},
         {"vdftext", VdfTextTest},
@@ -58,6 +59,7 @@ int main(int argc, char** argv) {
         {"recheck", RecheckTest},
         {"achievement_state", AchievementState},
         {"achievement_schema", AchievementSchema},
+        {"achievement_export", AchievementExport},
         {"achievement_policy", AchievementPolicy},
         {"family_banner", FamilyBannerTest},
 #ifdef AETHER_HAVE_PROTO

@@ -15,10 +15,13 @@
 #include "core/NetPacketAbi.h"
 #include "core/Workers.h"
 #include "diagnostics/StatusWriter.h"
+#include "hooks/wire/AchievementSchemaExport.h"
 #include "hooks/wire/AchievementUserState.h"
 #include "hooks/wire/BackupIo.h"
+#include "hooks/wire/SchemaCache.h"
 #include "scripting/LuaData.h"
 #include "steam_messages.pb.h"
+#include "utils/GameNameResolver.h"
 #include "utils/WinFile.h"
 
 namespace ac::achieve {
@@ -403,6 +406,47 @@ void ExpireHeld() {
     }
 }
 
+// Worker body: transcribe the captured schema into the file the overlay and the
+// game read (<steam>\appcache\stats\UserGameStatsSchema_<appid>.bin).
+//
+// The legacy stats path takes its schema from a donor whose account owns the
+// game (AchievementModule), so for a managed app the file never appears: the
+// client then answers the game with no achievement list at all and Shift+Tab
+// shows an empty, disabled tab. The page reply already carries the same
+// achievements, so this writes the tree the client would have downloaded.
+//
+// An existing file is never replaced (SchemaCache::Store): a real download, or
+// a schema another donor already produced, stays authoritative.
+void PublishSchemaFile(std::uint32_t appId, CapturedSchema schema) {
+    if (StatsDir().empty() || !ac::luadata::HasDepot(appId))
+        return;
+    const std::string path = StatsSchemaPath(appId);
+    if (winfile::Exists(path))
+        return; // Steam, or an earlier run, already put one there
+
+    SchemaFileInput in;
+    in.appId = appId;
+    in.version = schema.version;
+    in.language = schema.language;
+    in.gameName = ac::gamename::ForApp(appId);
+    in.entries = std::move(schema.entries);
+    const std::size_t count = in.entries.size();
+    const std::string bytes = EncodeSchemaFile(in);
+    if (bytes.empty())
+        return;
+
+    if (!ac::hooks::wire::schemacache::Store(appId, bytes, StatsDir(), ac::backup::io::BackupDirForApp(appId))) {
+        AC_LOG_DEBUG(kModule, "App %u: the transcribed schema could not be written.", appId);
+        return;
+    }
+    S().schemaFilesWritten.fetch_add(1, std::memory_order_relaxed);
+    ac::status::Write();
+    AC_LOG_INFO(kModule,
+                "App %u: transcribed the achievement schema into appcache\\stats (%zu achievement(s), %zu byte): "
+                "the overlay reads it at game start.",
+                appId, count, bytes.size());
+}
+
 // Worker body: read the stats file and the schema that names its counters,
 // publish the parsed result. Disk and KV1 walking run here, never on a Steam
 // thread.
@@ -514,6 +558,43 @@ bool Enabled() {
     return settings && settings->achievementsUiService;
 }
 
+void RestoreTranscribedSchemas() {
+    const std::string root = ac::backup::io::CachedDeskDataDir();
+    if (root.empty() || g_state.steamInstallPath.empty())
+        return; // no AetherDesk, so nowhere the capture could have been kept
+    const std::string statsDir = StatsDir();
+    // Win32 matches no wildcard in a directory component, so the walk is one
+    // level at a time: every "<backup>\<appid>" folder, then its schema file.
+    const std::string pattern = root + "\\backup\\*";
+    WIN32_FIND_DATAA fd{};
+    HANDLE find = FindFirstFileA(pattern.c_str(), &fd);
+    if (find == INVALID_HANDLE_VALUE)
+        return; // nothing transcribed yet
+    std::size_t restored = 0;
+    do {
+        if ((fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) == 0)
+            continue;
+        const std::uint32_t appId = ac::hooks::wire::schemacache::AppIdFromBackupDir(fd.cFileName);
+        // The lua file may have been removed since the capture: an app Aether no
+        // longer manages is not Aether's to prepare.
+        if (appId == 0 || !ac::luadata::HasDepot(appId))
+            continue;
+        // A cache file Steam wrote itself is authoritative; Restore would leave
+        // it alone anyway, this only avoids walking the backup for nothing.
+        if (winfile::Exists(StatsSchemaPath(appId)))
+            continue;
+        if (ac::hooks::wire::schemacache::Restore(appId, statsDir, ac::backup::io::BackupDirForApp(appId))) {
+            ++restored;
+            AC_LOG_INFO(kModule,
+                        "Backup: put the transcribed achievement schema for app %u back into Steam's stats cache.",
+                        appId);
+        }
+    } while (FindNextFileA(find, &fd));
+    FindClose(find);
+    if (restored != 0)
+        ac::status::Write();
+}
+
 bool OnSendSchema(std::uint64_t jobId, const std::uint8_t* body, std::uint32_t len) {
     if (!Enabled())
         return false;
@@ -525,6 +606,7 @@ bool OnSendSchema(std::uint64_t jobId, const std::uint8_t* body, std::uint32_t l
     Pending pending;
     pending.userCall = false;
     pending.appId = request.appid();
+    pending.language = request.language();
     RememberPending(jobId, pending);
     return true;
 }
@@ -573,6 +655,7 @@ std::int32_t OnRecvSchema(std::uint64_t jobId, const std::uint8_t* body, std::ui
     CapturedSchema schema;
     schema.version = reply.schema_version();
     schema.hash = reply.schema_hash();
+    schema.language = pending.language;
     schema.entries.reserve(static_cast<std::size_t>(reply.achievements_size()));
     for (const auto& achievement : reply.achievements()) {
         // A key without a name cannot be rendered, and a name without a key
@@ -582,7 +665,15 @@ std::int32_t OnRecvSchema(std::uint64_t jobId, const std::uint8_t* body, std::ui
         SchemaEntry entry;
         entry.key = achievement.internal_key();
         entry.groupid = achievement.groupid();
-        schema.entries.push_back(entry);
+        // The display fields exist for the schema file the overlay reads; the
+        // page renders from Valve's own reply and never needs them.
+        entry.internalName = achievement.internal_name();
+        entry.name = achievement.name();
+        entry.description = achievement.description();
+        entry.icon = achievement.icon();
+        entry.iconGray = achievement.icon_gray();
+        entry.hidden = achievement.hidden() != 0;
+        schema.entries.push_back(std::move(entry));
     }
     schema.groups.reserve(static_cast<std::size_t>(reply.groups_size()));
     for (const auto& group : reply.groups()) {
@@ -597,7 +688,13 @@ std::int32_t OnRecvSchema(std::uint64_t jobId, const std::uint8_t* body, std::ui
     const std::size_t count = schema.entries.size();
     const std::uint32_t hash = schema.hash;
     const std::int32_t version = schema.version;
+    // The overlay's own schema file is written off-thread: a full capture is a
+    // few dozen KB and this runs on a Steam network thread.
+    CapturedSchema publish = schema;
     StoreSchema(pending.appId, std::move(schema));
+    workers::Submit([appId = pending.appId, publish = std::move(publish)]() mutable {
+        PublishSchemaFile(appId, std::move(publish));
+    });
     S().schemasCaptured.fetch_add(1, std::memory_order_relaxed);
     ac::status::Write();
     AC_LOG_DEBUG(kModule, "App %u: captured %zu achievement(s), schema v%d hash %08X.", pending.appId, count, version,
