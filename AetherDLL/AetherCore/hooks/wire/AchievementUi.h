@@ -88,6 +88,7 @@ struct CachedStatsSchema {
 // attributed (responses carry only jobid_target).
 struct Pending {
     bool userCall = false; // false: GetGameAchievements
+    bool prefetch = false; // composed by Aether at startup, not by the client
     std::uint32_t appId = 0;
     std::uint64_t steamId = 0; // as sent; 0 when the request named no account
     std::string language;      // the language the schema was requested in
@@ -126,6 +127,7 @@ struct State {
     std::atomic<std::uint64_t> delivered{0};          // held replies delivered later
     std::atomic<std::uint64_t> progressValues{0};     // entries with a counter in the last rebuild
     std::atomic<std::uint64_t> schemaFilesWritten{0}; // overlay schemas transcribed from a capture
+    std::atomic<std::uint64_t> prefetchRequests{0};   // catalogs asked for at startup
     std::string lastReason = "idle";                  // guarded by mutex
 };
 
@@ -154,5 +156,16 @@ bool Enabled();
 // before the library page was opened still serves the overlay. Called once per
 // process from the startup stage; the backup tree is the source.
 void RestoreTranscribedSchemas();
+
+// Asks the CM for the achievement catalog of every installed managed app that
+// has no schema file, on a worker, paced.
+//
+// The client fixes an app's schema before its first stats request of a session
+// and never re-reads the file, so a catalog transcribed from a later page open
+// only helps the next start. With the catalog fetched at startup the file is
+// already there, and a session after a full wipe (cache + backup) still unlocks.
+// Apps whose reply lists no achievement are remembered for a week
+// (hooks/wire/AchievementPrefetchPolicy.h), so the question is not repeated.
+void PrefetchMissingSchemas();
 
 } // namespace ac::achieve

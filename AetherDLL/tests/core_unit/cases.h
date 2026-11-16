@@ -123,6 +123,7 @@ void PackageSeedTest();
 void RecheckTest();
 void AchievementState();
 void AchievementBitfield();
+void AchievementPrefetchPolicyTest();
 void AchievementSchema();
 void AchievementExport();
 void AchievementServiceWire();

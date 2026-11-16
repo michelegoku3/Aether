@@ -243,15 +243,33 @@ everything.
   every `backup\<appid>` folder of a managed app whose cache entry is missing.
   `Backup: put the transcribed achievement schema for app <id> back into Steam's
   stats cache.` is the log line.
+- **At startup (catalog prefetch).** A catalog that only arrives from a page open
+  is too late for the session it arrives in: the client fixes an app's schema
+  before its first stats request and never re-reads the file, so after a full
+  wipe (cache and backup) the page's transcription would only help the next
+  Steam start. `AchievementUi::PrefetchMissingSchemas` runs once per process and
+  asks the CM itself — `Player.GetGameAchievements#1`, the same call the page
+  makes, composed with `SendClientServiceCall` — for every installed managed app
+  that has no schema file, paced at 150 ms and waiting for a captured service
+  call first. The header a composed call borrows decides whether the CM answers:
+  one echoed from a heartbeat (`steamid` 0) is dropped, so `FrameOrigin` keeps a
+  separate slot for headers of real service calls and `SendClientServiceCall`
+  composes from that one. The reply goes through the ordinary capture
+  (`OnRecvSchema` → `PublishSchemaFile`), so cache, backup and marker appear
+  without the user opening anything. An empty answer is remembered in
+  `aethercore\achievement_prefetch.txt` for a week, so an app without
+  achievements is not asked again at every start
+  (`hooks/wire/AchievementPrefetchPolicy.h`, `achievement_prefetch`).
 - **Verification.** With the file in place the client's `Player.GetUserStats#1`
   request carries `sha_schema present=yes` (it carried `no, 0 byte` before) and
   creates `UserGameStats_<account>_<appid>.bin`, which is what makes the overlay
   list and the page's cached block possible. (`achievement_export`,
   `schema_transcription`, `schema_cache_restore`, live Paystreak 4809710: tab
   opens at 0/77.)
-- **Not covered.** Updates only arrive through the page capture: a game nobody
-  opens in the library keeps the list from its last capture, and the client
-  shows a new one at the next Steam start, not before. Progress counters
+- **Not covered.** Updates arrive through the page capture or the startup
+  prefetch, and either way the client only uses them from its first stats request
+  of the next session: a game nobody opens in the library keeps the list it had,
+  and a catalog that lands mid-session is not re-read. Progress counters
   (`progress` blocks) are never written by a transcription; they appear only if
   a donor's real schema takes over, and achievements the CM does not list cannot
   appear at all: nothing is invented.

@@ -60,6 +60,7 @@ int main(int argc, char** argv) {
         {"recheck", RecheckTest},
         {"achievement_state", AchievementState},
         {"achievement_bitfield", AchievementBitfield},
+        {"achievement_prefetch", AchievementPrefetchPolicyTest},
         {"achievement_schema", AchievementSchema},
         {"achievement_export", AchievementExport},
         {"achievement_policy", AchievementPolicy},

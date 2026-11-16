@@ -297,6 +297,14 @@ void StartSafetyNetsStage() {
     //      Depends on: lua data (HasDepot) + aethercore dir (desk_path.cfg).
     ac::achieve::RestoreTranscribedSchemas();
 
+    // 10a-2. Catalog prefetch: the client fixes an app's schema before its first
+    //        stats request of the session, so a catalog transcribed from a page
+    //        opened later only helps the next start. Ask the CM now for every
+    //        installed app that has no schema file, so a session that starts
+    //        after a full wipe still gets the overlay and the unlocks.
+    //        Depends on: lua library + appmanifests + aethercore dir.
+    ac::achieve::PrefetchMissingSchemas();
+
     // 10b. Manifest restore: recopies missing backup .manifests into
     //      Steam\depotcache (async, once per process). Uninstalling a game
     //      deletes manifests and Steam no longer serves them without

@@ -180,6 +180,16 @@ bool h_BBuildAndAsyncSendFrame(void* obj, steam::EWebSocketOpCode opcode, std::u
         }
     } else {
         CaptureOrigin(obj, f);
+        // The CM only answers a composed service call that carries an
+        // authenticated identity. Keep the last service-call header separately,
+        // and only when it has a steamid: heartbeats and pre-login frames share
+        // the same shape but leave steamid at 0, and a call echoing one of those
+        // is silently dropped by the server.
+        if (f.eMsg == emsg::kServiceMethodCallFromClient || f.eMsg == emsg::kServiceMethodCallFromClientAlt) {
+            CMsgProtoBufHeader ph;
+            if (f.headerLen != 0 && ph.ParseFromArray(f.header, static_cast<int>(f.headerLen)) && ph.steamid() != 0)
+                CaptureServiceOrigin(obj, f);
+        }
         std::int32_t newBodyLen = DispatchSend(f);
         // Defense in depth: handlers must report a length within the scratch
         // budget they were given. A misbehaving handler must degrade to
@@ -375,11 +385,13 @@ bool SendFrameImpl(std::uint32_t eMsg, const std::uint8_t* body, std::uint32_t b
     if (bodyLen > kWireMaxBodyBytes)
         return false;
 
-    const FrameOrigin origin = SnapshotOrigin();
+    // A service call must borrow the identity of a real service call: the CM
+    // drops one composed from a heartbeat's header (steamid 0).
+    const FrameOrigin origin = targetJobName ? SnapshotServiceOrigin() : SnapshotOrigin();
     void* obj = origin.obj;
     std::vector<std::uint8_t> hdrBytes = origin.header;
     if (!obj || hdrBytes.empty()) {
-        AC_LOG_WARN(kModule, "SendClientFrame: no captured connection yet.");
+        AC_LOG_WARN(kModule, "SendClientFrame: no captured %s yet.", targetJobName ? "service call" : "connection");
         return false;
     }
 
@@ -431,6 +443,13 @@ bool SendClientServiceCall(const char* targetJobName, std::uint64_t jobId, const
     if (!targetJobName || !*targetJobName)
         return false;
     return SendFrameImpl(emsg::kServiceMethodCallFromClient, body, bodyLen, targetJobName, jobId);
+}
+
+bool CanSendServiceCall() {
+    if (!o_BBuildAndAsyncSendFrame)
+        return false;
+    const FrameOrigin origin = SnapshotServiceOrigin();
+    return origin.obj != nullptr && !origin.header.empty();
 }
 
 void RegisterPacketRouter(HMODULE steamclient) {

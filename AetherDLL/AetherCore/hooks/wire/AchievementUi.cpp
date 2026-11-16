@@ -3,10 +3,12 @@
 
 #include <algorithm>
 #include <cstring>
+#include <ctime>
 #include <filesystem>
 #include <fstream>
 #include <iterator>
 #include <system_error>
+#include <thread>
 #include <utility>
 
 #include "core/AetherCoreState.h"
@@ -15,16 +17,20 @@
 #include "core/NetPacketAbi.h"
 #include "core/Workers.h"
 #include "diagnostics/StatusWriter.h"
+#include "hooks/wire/AchievementPrefetchPolicy.h"
 #include "hooks/wire/AchievementSchemaExport.h"
 #include "hooks/wire/AchievementUserState.h"
 #include "hooks/wire/BackupIo.h"
+#include "hooks/wire/PacketRouter.h"
 #include "hooks/wire/SchemaCache.h"
 #include "scripting/LuaData.h"
 #include "steam_messages.pb.h"
 #include "utils/GameNameResolver.h"
+#include "utils/Strings.h"
 #include "utils/WinFile.h"
 
 namespace ac::achieve {
+namespace prefetch = ac::hooks::wire::prefetch;
 namespace {
 
 constexpr const char* kModule = "AchieveUI";
@@ -187,6 +193,18 @@ bool TakePending(std::uint64_t jobId, Pending& out) {
     if (order != s.pendingOrder.end())
         s.pendingOrder.erase(order);
     return true;
+}
+
+// Drops a send that never went out: a failed SendClientServiceCall would
+// otherwise leave a pending entry for a reply that cannot arrive.
+void ForgetPending(std::uint64_t jobId) {
+    State& s = S();
+    std::lock_guard<std::mutex> lock(s.mutex);
+    if (s.pending.erase(jobId) == 0)
+        return;
+    const auto order = std::find(s.pendingOrder.begin(), s.pendingOrder.end(), jobId);
+    if (order != s.pendingOrder.end())
+        s.pendingOrder.erase(order);
 }
 
 void StoreSchema(std::uint32_t appId, CapturedSchema schema) {
@@ -556,6 +574,188 @@ void RequestStateRead(std::uint32_t appId, std::uint32_t accountId) {
     }
 }
 
+// --- Catalog prefetch -------------------------------------------------------
+//
+// The client fixes an app's schema before its first GetUserStats request of the
+// session and does not re-read the file, so a catalog transcribed from a later
+// page open only helps the next start. Asking the CM for it at startup means the
+// file is in place before the client looks, and a session that starts after a
+// full wipe (cache and backup) can still unlock.
+//
+// Each answer is a normal GetGameAchievements reply: OnRecvSchema captures it and
+// PublishSchemaFile writes cache, backup and marker. The client never asked for
+// these job ids and ignores the replies.
+
+constexpr auto kPrefetchSpacing = std::chrono::milliseconds(150);
+constexpr auto kPrefetchSlice = std::chrono::milliseconds(250);
+// The send path composes from a captured frame and the first seconds of a
+// session have none: wait for it instead of losing the whole batch.
+constexpr int kPrefetchReadySlices = 240; // 60 s at kPrefetchSlice
+// A request composed while the session is still logging on is never answered;
+// one retry pass covers that window.
+constexpr auto kPrefetchRetryGap = std::chrono::seconds(8);
+
+// One id range for the calls this module composes itself. The client's job ids
+// come from CJobMgr; the high seed keeps the two apart.
+std::atomic<std::uint64_t> g_prefetchJobSeed{0xC000000000000000ull};
+
+// <steam>\aethercore\achievement_prefetch.txt: the apps whose reply listed no
+// achievement. A hint file, not state the DLL depends on.
+std::string PrefetchPath() {
+    return g_state.aetherCoreDir.empty() ? std::string() : g_state.aetherCoreDir + "\\achievement_prefetch.txt";
+}
+
+prefetch::Markers LoadPrefetchMarkers() {
+    const std::string path = PrefetchPath();
+    if (path.empty())
+        return {};
+    std::ifstream file(winfile::ToPath(path), std::ios::binary);
+    if (!file.is_open())
+        return {};
+    const std::string text((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+    return prefetch::ParseMarkers(text);
+}
+
+void SavePrefetchMarkers(const prefetch::Markers& markers) {
+    const std::string path = PrefetchPath();
+    if (path.empty())
+        return;
+    winfile::WriteTextAtomically(path, prefetch::EncodeMarkers(markers));
+}
+
+// The schema is written under the language the client asked for plus English.
+// A prefetch has no request to borrow the language from, so read the same
+// setting the client does; English is the safe fallback.
+std::string SteamLanguage() {
+    wchar_t buffer[64]{};
+    DWORD size = static_cast<DWORD>(sizeof(buffer));
+    if (RegGetValueW(HKEY_CURRENT_USER, L"Software\\Valve\\Steam", L"Language", RRF_RT_REG_SZ, nullptr, buffer,
+                     &size) != ERROR_SUCCESS)
+        return "english";
+    const std::wstring text(buffer);
+    const std::string narrow = text.empty() ? std::string() : ac::strings::Narrow(text);
+    return narrow.empty() ? "english" : narrow;
+}
+
+// The CM listed no achievement for this app: remember it so the next start does
+// not repeat the question. When a schema file exists it is the stronger proof,
+// and no marker is needed.
+void NoteEmptyAnswer(std::uint32_t appId) {
+    prefetch::Markers markers = LoadPrefetchMarkers();
+    markers[appId] = static_cast<std::uint64_t>(std::time(nullptr));
+    SavePrefetchMarkers(markers);
+}
+
+// Sleeps in slices so the worker stops promptly on shutdown.
+bool WaitPrefetch(std::atomic<bool>& stop, std::chrono::milliseconds howLong) {
+    for (auto waited = std::chrono::milliseconds(0); waited < howLong; waited += kPrefetchSlice) {
+        if (stop)
+            return false;
+        std::this_thread::sleep_for(std::min(kPrefetchSlice, howLong - waited));
+    }
+    return !stop;
+}
+
+bool SendPrefetch(std::uint32_t appId, const std::string& language) {
+    CPlayer_GetGameAchievements_Request request;
+    request.set_appid(appId);
+    request.set_language(language);
+    std::string body;
+    body.resize(static_cast<std::size_t>(request.ByteSizeLong()));
+    if (!request.SerializeToArray(body.data(), static_cast<int>(body.size())))
+        return false;
+
+    Pending pending;
+    pending.userCall = false;
+    pending.prefetch = true;
+    pending.appId = appId;
+    pending.language = language;
+    const std::uint64_t jobId = g_prefetchJobSeed.fetch_add(1, std::memory_order_relaxed);
+    RememberPending(jobId, pending);
+    if (!ac::hooks::SendClientServiceCall(constants::job_hash::kGetGameAchievementsName, jobId,
+                                          reinterpret_cast<const std::uint8_t*>(body.data()),
+                                          static_cast<std::uint32_t>(body.size()))) {
+        ForgetPending(jobId);
+        return false;
+    }
+    return true;
+}
+
+void PrefetchOnWorker(std::atomic<bool>& stop) {
+    const std::string statsDir = StatsDir();
+    if (statsDir.empty() || g_state.steamInstallPath.empty())
+        return;
+    const std::string steamApps = g_state.steamInstallPath + "\\steamapps";
+    const std::uint64_t now = static_cast<std::uint64_t>(std::time(nullptr));
+    const prefetch::Markers markers = LoadPrefetchMarkers();
+
+    std::vector<std::uint32_t> apps;
+    std::size_t installedWithoutSchema = 0;
+    for (const steam::AppId appId : ac::luadata::LibraryAppIds()) {
+        if (winfile::Exists(StatsSchemaPath(appId)))
+            continue; // Steam's own download, or an earlier transcription
+        // Only installed apps can run in this session; an app installed later
+        // gets its catalog at the next start.
+        if (!winfile::Exists(steamApps + "\\appmanifest_" + std::to_string(appId) + ".acf"))
+            continue;
+        ++installedWithoutSchema;
+        const auto it = markers.find(appId);
+        const bool answerFresh = it != markers.end() && prefetch::IsAnswerFresh(it->second, now);
+        if (prefetch::ShouldAsk(false, answerFresh))
+            apps.push_back(appId);
+    }
+    if (apps.empty()) {
+        AC_LOG_DEBUG(kModule, "Prefetch: nothing to ask (%zu installed app(s) without a schema).",
+                     installedWithoutSchema);
+        return;
+    }
+
+    bool ready = false;
+    for (int slice = 0; slice < kPrefetchReadySlices && !stop; ++slice) {
+        if (ac::hooks::CanSendServiceCall()) {
+            ready = true;
+            break;
+        }
+        std::this_thread::sleep_for(kPrefetchSlice);
+    }
+    if (!ready) {
+        AC_LOG_DEBUG(kModule, "Prefetch: send path never became usable; %zu app(s) stay for the next start.",
+                     apps.size());
+        return;
+    }
+
+    const std::string language = SteamLanguage();
+    std::size_t sent = 0;
+    for (int pass = 0; pass < 2 && !apps.empty() && !stop; ++pass) {
+        if (pass != 0) {
+            if (!WaitPrefetch(stop, kPrefetchRetryGap))
+                return;
+            // Drop what the first pass covered: the retry exists only for
+            // requests the CM ignored while the session was still logging on.
+            std::erase_if(apps, [](std::uint32_t id) { return winfile::Exists(StatsSchemaPath(id)); });
+            if (apps.empty())
+                break;
+        }
+        for (std::size_t i = 0; i < apps.size(); ++i) {
+            if (stop)
+                return;
+            if (!SendPrefetch(apps[i], language))
+                continue;
+            ++sent;
+            if (i + 1 < apps.size() && !WaitPrefetch(stop, kPrefetchSpacing))
+                return;
+        }
+    }
+    if (sent == 0) {
+        AC_LOG_DEBUG(kModule, "Prefetch: no request went out (%zu app(s) without a schema).", apps.size());
+        return;
+    }
+    S().prefetchRequests.fetch_add(sent, std::memory_order_relaxed);
+    ac::status::Write();
+    AC_LOG_INFO(kModule, "Prefetch: asked the CM for %zu catalog(s) (%zu installed app(s) had no schema file).", sent,
+                installedWithoutSchema);
+}
+
 } // namespace
 
 bool Enabled() {
@@ -598,6 +798,14 @@ void RestoreTranscribedSchemas() {
     FindClose(find);
     if (restored != 0)
         ac::status::Write();
+}
+
+void PrefetchMissingSchemas() {
+    if (!Enabled())
+        return;
+    if (!workers::StartWorker("achievement_prefetch", [](std::atomic<bool>& stop) { PrefetchOnWorker(stop); })) {
+        AC_LOG_DEBUG(kModule, "Prefetch: worker refused (registry stopped).");
+    }
 }
 
 bool OnSendSchema(std::uint64_t jobId, const std::uint8_t* body, std::uint32_t len) {
@@ -653,6 +861,11 @@ std::int32_t OnRecvSchema(std::uint64_t jobId, const std::uint8_t* body, std::ui
     // asks with hash_only=1 when it only wants to invalidate, and the next real
     // reply carries the entries again.
     if (reply.achievements_size() == 0) {
+        // For a prefetch request, an empty list is an answer worth remembering:
+        // the app has no achievement, and asking again at every start would be
+        // noise. The marker expires in a week (an update can add some).
+        if (pending.prefetch)
+            NoteEmptyAnswer(pending.appId);
         SetReason("schema-empty");
         return kNoChange;
     }

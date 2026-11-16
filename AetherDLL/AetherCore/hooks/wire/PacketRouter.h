@@ -58,4 +58,10 @@ bool SendClientFrame(std::uint32_t eMsg, const std::uint8_t* body, std::uint32_t
 bool SendClientServiceCall(const char* targetJobName, std::uint64_t jobId, const std::uint8_t* body,
                            std::uint32_t bodyLen);
 
+// True when a service call can be composed: a real service-call header with an
+// authenticated identity has been captured. The first seconds of a session have
+// none, so callers that run at startup wait on this instead of burning WARN
+// lines on sends the server would drop.
+bool CanSendServiceCall();
+
 } // namespace ac::hooks
