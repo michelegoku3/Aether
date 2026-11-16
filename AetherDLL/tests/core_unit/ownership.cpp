@@ -56,7 +56,7 @@ void PreSeededOwnedAppIsMarkedOwned() {
     CHECK(d.steamOwned);
 }
 
-// A pre-seeded family app must not lose the lender/banner.
+// A pre-seeded banner app must not lose its lender/stamp.
 void PreSeededFamilyAppKeepsBanner() {
     ac::ownership::OwnershipFacts f{};
     f.steamResult = true;
@@ -248,8 +248,8 @@ void OwnershipDecisionTest() {
         CHECK(!d.familyBanner);
     }
     {
-        // Sticky family lender: the app is kept in package 0 for simultaneous
-        // play, but the banner must name the real lender.
+        // Sticky banner app: package 0 keeps it owned and the banner must name
+        // the stamp account.
         OwnershipFacts f = facts(true, 2, AppReleaseState::Released);
         f.familyLenderAccountId = 333;
         f.spoofOwnerAccountId = 333; // caller resolves the lender for the banner
@@ -259,6 +259,28 @@ void OwnershipDecisionTest() {
         CHECK(!d.steamOwned);
         CHECK(!d.steamFamilyShared);
         CHECK(d.familyBanner);
+    }
+    {
+        // A real Steam Family licence: Valve grants it, so the answer is Steam's
+        // own even with a sticky lender and an owner for the banner.
+        OwnershipFacts f = facts(true, 2, AppReleaseState::Released);
+        f.familyLenderAccountId = 333;
+        f.spoofOwnerAccountId = 333;
+        f.valveFamilyLicense = true;
+        const auto d = DecideOwnership(f);
+        CHECK(d.action == OwnershipAction::PassThrough);
+        CHECK(d.steamFamilyShared);
+        CHECK(!d.steamOwned);
+        CHECK(!d.familyBanner);
+    }
+    {
+        // The licence alone is enough, before Steam's own answer says borrowed.
+        OwnershipFacts f = facts(false, 0, AppReleaseState::Invalid);
+        f.valveFamilyLicense = true;
+        const auto d = DecideOwnership(f);
+        CHECK(d.action == OwnershipAction::PassThrough);
+        CHECK(d.steamFamilyShared);
+        CHECK(!d.steamOwned);
     }
     {
         // A sticky classification without Aether data is inert.

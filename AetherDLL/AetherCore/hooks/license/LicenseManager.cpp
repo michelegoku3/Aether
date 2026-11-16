@@ -1,6 +1,7 @@
 #include "pch.h"
 #include "hooks/license/LicenseManager.h"
 
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
@@ -12,9 +13,13 @@
 
 #include "core/AetherCoreState.h"
 #include "core/Constants.h"
+#include "core/FamilyClassification.h"
 #include "core/Logger.h"
+#include "core/Settings.h"
 #include "core/StructGuard.h"
 #include "core/Workers.h"
+#include "credentials/CredentialStore.h"
+#include "family/FamilyLenders.h"
 #include "hooks/license/PackageSeedPolicy.h"
 #include "hooks/steamclient/OwnershipHooks.h"
 #include "scripting/LuaData.h"
@@ -27,6 +32,35 @@ constexpr const char* kModule = "License";
 using steam::AppId;
 using steam::PackageInfo;
 namespace policy = ac::hooks::license::policy;
+
+// A real Steam Family licence belongs to Valve: package 0 must not manufacture
+// one. The client otherwise offers PLAY while the CM stops the session minutes
+// later. Depots stay seeded - they are content, not a licence - and the opt-in
+// owner banner keeps its app, because that stamp is Aether's own.
+bool IsValveFamilyLicense(AppId appId) {
+    const std::uint32_t lender = ac::family::LenderFor(appId);
+    if (lender == 0)
+        return false;
+    const std::uint32_t active = credential::ReadActiveUserId();
+    const auto settings = Settings::Snapshot();
+    if (!settings)
+        return familyclass::IsValveFamilyLicense(appId, lender, active, false, {}, 0);
+    return familyclass::IsValveFamilyLicense(appId, lender, active, settings->libraryOwnerBanner,
+                                             settings->libraryOwnerBannerApps, settings->libraryOwnerBannerSteamId);
+}
+
+// The ids this session may seed into package 0: everything the .lua files
+// configure, minus the apps Valve licenses to another account.
+std::vector<AppId> SeedableIds() {
+    std::vector<AppId> ids = luadata::SeedPackage0Ids();
+    const auto firstSkipped = std::remove_if(ids.begin(), ids.end(), [](AppId id) { return IsValveFamilyLicense(id); });
+    if (firstSkipped != ids.end()) {
+        AC_LOG_INFO(kModule, "Package-0 seed: %zu app id(s) skipped, Valve licenses them to another account.",
+                    static_cast<std::size_t>(ids.end() - firstSkipped));
+        ids.erase(firstSkipped, ids.end());
+    }
+    return ids;
+}
 
 // steamclient!CUtlMemory grow helper used to extend package 0's app-id vector.
 using CUtlMemoryGrow_t = void (*)(steam::CUtlVector<AppId>*, int);
@@ -429,7 +463,7 @@ void SeedPackage0(PackageInfo* package0) {
         // covered by the same seed.
         if (package0) {
             ClearPendingApps();
-            const std::vector<AppId> ids = luadata::SeedPackage0Ids();
+            const std::vector<AppId> ids = SeedableIds();
             if (!ids.empty()) {
                 const PackageSeedResult result = SeedPackageVectors(package0, ids, "publish", true);
                 changed = result.Changed();
@@ -450,6 +484,10 @@ std::size_t Package0AppCount() {
 
 bool AddAppToPackage0(AppId appId) {
     if (appId == 0)
+        return false;
+    // A real Steam Family licence is Valve's, whatever asked for the add: the
+    // app keeps its depots, not an owned licence.
+    if (IsValveFamilyLicense(appId))
         return false;
 
     // Package 0 may not have been published when the app was classified (the
@@ -530,7 +568,7 @@ void NotifyLicenseChanged() {
         // next library refresh drops it again. This also repairs duplicates
         // and makes reloads idempotent. Both vectors, because the depot plan is
         // built from the depot list.
-        const PackageSeedResult result = SeedPackageVectors(pkg, luadata::SeedPackage0Ids(), "hotreload", true);
+        const PackageSeedResult result = SeedPackageVectors(pkg, SeedableIds(), "hotreload", true);
         if (!result.apps.complete)
             AC_LOG_WARN(kModule, "Package 0 hot-reload containment incomplete; the next add repairs it.");
 

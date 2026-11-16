@@ -272,13 +272,21 @@ bool IsOwnBannerAnswer(AppId app, std::uint32_t lender) {
                                          settings->libraryOwnerBannerSteamId);
 }
 
+// True when the family answer for this app is a licence Valve granted to another
+// account, not Aether's banner stamp. Nothing Aether answers may overrule it.
+bool IsValveFamilyAnswer(AppId app, std::uint32_t lender) {
+    if (lender == 0 || IsOwnBannerAnswer(app, lender))
+        return false;
+    return lender != credential::ReadActiveUserId();
+}
+
 // ---- Hook bodies -----------------------------------------------------------
 
 bool h_CheckAppOwnership(void* self, AppId app, AppOwnership* out) {
     bool result = o_CheckAppOwnership(self, app, out);
     // A .lua app needs Aether until Steam provides it. Genuinely owned apps
-    // pass through; family-shared apps still need the banner override below,
-    // because package 0 makes later Steam answers look owned.
+    // pass through; a family-shared app still needs the banner override below,
+    // because Steam's answer must keep naming the lender.
     if (!out || !luadata::IsConfigured(app) || luadata::IsOwned(app))
         return result;
 
@@ -305,7 +313,8 @@ bool h_CheckAppOwnership(void* self, AppId app, AppOwnership* out) {
     // family game can answer "not provided" while the SteamUI still lists a
     // real lender. Fill the gap from the client's FamilyGroups data. A real
     // Steam family answer with a named lender wins; the map only fills a
-    // missing lender or replaces the synthetic owned answer package 0 creates.
+    // missing lender. The licence stays Valve's: nothing below adds the app to
+    // package 0.
     if (familyLender == 0) {
         const std::uint32_t mapLender = ac::family::LenderFor(app);
         if (mapLender != 0 && mapLender != credential::ReadActiveUserId()) {
@@ -319,9 +328,6 @@ bool h_CheckAppOwnership(void* self, AppId app, AppOwnership* out) {
                 familyLender = mapLender;
                 if (!wasFamilyShared)
                     ac::appmanifest::RequestOwnerApply();
-                // Package 0 keeps a family app playable alongside the lender;
-                // the real lender in steamId32 keeps the banner visible.
-                LicenseManager::RequestAppInPackage0(app);
                 LicenseManager::RequestLicenseRefresh();
                 RecordOwnershipOutcome(app, ownBanner ? OwnershipOutcome::Unlocked : OwnershipOutcome::FamilyShared);
             }
@@ -337,6 +343,7 @@ bool h_CheckAppOwnership(void* self, AppId app, AppOwnership* out) {
         0,
         spoofed,
         familyLender,
+        IsValveFamilyAnswer(app, familyLender),
     };
     // Resolving the account reads the registry; a family lender already names
     // the banner owner, and a pass-through needs no owner at all.
@@ -348,18 +355,14 @@ bool h_CheckAppOwnership(void* self, AppId app, AppOwnership* out) {
         if (decision.steamFamilyShared) {
             // A boot-time owner pass ran before Steam could classify the app,
             // so the manifest may carry Aether's stamp. A real family license
-            // needs Steam's own value back to name a local owner.
-            const std::uint32_t lender = out->steamId32;
+            // needs Steam's own value back to name a local owner, and the digit
+            // Steam leaves at 0 falls back to the lender the map resolved.
+            const std::uint32_t lender = out->steamId32 != 0 ? out->steamId32 : familyLender;
             const bool ownBanner = IsOwnBannerAnswer(app, lender);
             const bool newlyFamilyShared = !luadata::IsFamilyShared(app);
             luadata::MarkFamilyShared(app, lender, ownBanner);
             if (newlyFamilyShared) {
                 ac::appmanifest::RequestOwnerApply();
-                // Keep the app playable through package 0, but only when the
-                // lender is known: a synthetic owned license would otherwise
-                // hide the generic family banner for a nameless share.
-                if (lender != 0)
-                    LicenseManager::RequestAppInPackage0(app);
             }
             RecordOwnershipOutcome(app, ownBanner ? OwnershipOutcome::Unlocked : OwnershipOutcome::FamilyShared);
         } else {
@@ -376,7 +379,8 @@ bool h_CheckAppOwnership(void* self, AppId app, AppOwnership* out) {
 
     // Spoof. The first classification marks the app and adds it to package 0;
     // later calls see Steam report owned because of that entry and keep the
-    // spoof through the sticky flag (or the recorded family lender).
+    // spoof through the sticky flag. A recorded family lender is Valve's and
+    // never reaches this point (its decision is PassThrough).
     if (!spoofed && familyLender == 0) {
         luadata::MarkSpoofed(app);
         LicenseManager::RequestAppInPackage0(app);
@@ -385,15 +389,15 @@ bool h_CheckAppOwnership(void* self, AppId app, AppOwnership* out) {
     out->releaseState = AppReleaseState::Released;
     out->freeLicense = false;
     out->ownsLicense = true;
-    // We are claiming this app as owned. A real family app keeps its family
-    // bit so the library banner renders, while ownsLicense/package 0 keeps it
-    // playable; a lua-only spoof clears both bits.
+    // We are claiming this app as owned through package 0; the family bit is
+    // Aether's own cosmetic banner, never a real share. A lua-only spoof clears
+    // both bits.
     out->borrowed = false;
     out->familyShared = decision.familyBanner;
     // The app-details page derives strOwnerSteamID from this account id. Left
     // at 0, a spoofed app looks like a shared app with an unknown owner and
-    // Steam renders the generic family banner. A family app carries its real
-    // lender here so the banner survives the synthetic package-0 license.
+    // Steam renders the generic family banner. A banner app carries its stamp
+    // account here so the banner survives the synthetic package-0 license.
     if (decision.ownerAccountId != 0)
         out->steamId32 = decision.ownerAccountId;
     RecordOwnershipOutcome(app, OwnershipOutcome::Unlocked);

@@ -17,7 +17,7 @@
 // network thread, rewrites are assembled in static ring buffers.
 //
 // This file keeps the thin dispatch core; focused modules (AccessToken,
-// GamesPlayed, Achievement, Eticket, FamilySharing, PersonaInject) expose plain
+// GamesPlayed, Achievement, Eticket, PersonaInject) expose plain
 // Handle* functions.
 // ---------------------------------------------------------------------------
 namespace ac::hooks {

@@ -18,9 +18,9 @@
 //
 // The app-details page reads the owner from `AppOwnership.steamId32`. A spoofed
 // app must carry the signed-in account (or the opt-in banner account) there or
-// Steam renders the generic "From your Steam Family library" banner. A family
-// app stays playable through package 0 but is attributed to the real lender,
-// so its banner survives the synthetic license.
+// Steam renders the generic "From your Steam Family library" banner. A banner
+// app is attributed to the stamp account so its banner survives the synthetic
+// license; a real Steam Family licence is never spoofed at all.
 // ---------------------------------------------------------------------------
 namespace ac::ownership {
 
@@ -38,10 +38,13 @@ struct OwnershipFacts {
     // Sticky Aether classification: Steam did not provide the app and Aether
     // already answered as owned. Package 0 now makes Steam report owned too.
     bool spoofed = false;
-    // Sticky real family lender, non-zero once a family license was observed.
-    // The app is kept in package 0 for simultaneous play, but attributed to
-    // this account so Steam keeps the family banner.
+    // Sticky family lender, non-zero once a family answer was observed. It names
+    // the banner account for an app Aether provides, and the real lender for a
+    // Valve licence (see valveFamilyLicense).
     std::uint32_t familyLenderAccountId = 0;
+    // The family answer is a licence Valve granted to another account. Nothing
+    // in package 0 or in the answer may contradict it.
+    bool valveFamilyLicense = false;
 };
 
 enum class OwnershipAction {
@@ -70,6 +73,16 @@ inline OwnershipDecision DecideOwnership(const OwnershipFacts& facts) {
     if (!facts.hasDepot)
         return {};
 
+    // A real Steam Family licence belongs to Valve. Answering owned here is what
+    // makes the library offer PLAY for a session the CM stops minutes later, so
+    // the decision is Steam's own answer, marked as the family share it is.
+    if (facts.valveFamilyLicense) {
+        OwnershipDecision decision;
+        decision.action = OwnershipAction::PassThrough;
+        decision.steamFamilyShared = true;
+        return decision;
+    }
+
     // Sticky classification wins over Steam's current answer. Once package 0
     // carries the app, Steam reports it as owned; re-classifying it as a real
     // Steam license would lose the spoof or the family banner.
@@ -77,7 +90,7 @@ inline OwnershipDecision DecideOwnership(const OwnershipFacts& facts) {
         OwnershipDecision decision;
         decision.action = OwnershipAction::Spoof;
         decision.ownerAccountId = facts.spoofOwnerAccountId;
-        // A real family app stays a family app in the UI even though package 0
+        // A banner app stays a family app in the UI even though package 0
         // makes the license answer owned; that bit is what renders the banner.
         decision.familyBanner = facts.familyLenderAccountId != 0;
         return decision;

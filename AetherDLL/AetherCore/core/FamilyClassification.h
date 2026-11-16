@@ -61,4 +61,17 @@ inline bool IsOwnBannerStamp(steam::AppId appId, std::uint32_t lenderAccountId, 
     return lenderAccountId == static_cast<std::uint32_t>(bannerSteamId);
 }
 
+// True when the family answer names a licence Valve granted: a lender that is
+// neither this login nor the opt-in banner stamp. Aether must not manufacture
+// an owned licence for it. A synthetic package-0 entry makes the client offer
+// PLAY for a session the CM then stops minutes later, so the play button and
+// the "shared library locked" state follow Steam's own answer instead.
+inline bool IsValveFamilyLicense(steam::AppId appId, std::uint32_t lenderAccountId, std::uint32_t activeAccountId,
+                                 bool bannerEnabled, const std::vector<std::uint32_t>& listedApps,
+                                 std::uint64_t bannerSteamId) {
+    if (lenderAccountId == 0 || lenderAccountId == activeAccountId)
+        return false;
+    return !IsOwnBannerStamp(appId, lenderAccountId, bannerEnabled, listedApps, bannerSteamId);
+}
+
 } // namespace ac::familyclass

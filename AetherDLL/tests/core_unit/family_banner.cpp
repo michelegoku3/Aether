@@ -43,6 +43,17 @@ void FamilyBannerTest() {
     CHECK(!IsOwnBannerStamp(2000, bannerAccount, true, listed, kBannerSteamId)); // not listed
     CHECK(!IsOwnBannerStamp(1868140, 12345, true, listed, kBannerSteamId));      // a real lender
 
+    // --- which family answers are Valve's licence -------------------------
+    // Package 0 must not license these: the client would offer PLAY and the CM
+    // would stop the session minutes later.
+    constexpr std::uint32_t kThisLogin = 1624650063;
+    CHECK(!IsValveFamilyLicense(1868140, 0, kThisLogin, true, listed, kBannerSteamId));             // no lender
+    CHECK(!IsValveFamilyLicense(1868140, kThisLogin, kThisLogin, true, listed, kBannerSteamId));    // our own
+    CHECK(!IsValveFamilyLicense(1868140, bannerAccount, kThisLogin, true, listed, kBannerSteamId)); // our stamp
+    CHECK(IsValveFamilyLicense(1868140, 12345, kThisLogin, true, listed, kBannerSteamId));          // another account
+    CHECK(IsValveFamilyLicense(1868140, 12345, kThisLogin, false, listed, kBannerSteamId));         // banner off
+    CHECK(IsValveFamilyLicense(2000, 12345, kThisLogin, true, listed, kBannerSteamId));             // not listed
+
     // --- LuaData keeps the display flag and reopens the spoofing gate ------
     constexpr std::uint32_t kApp = 424242;
     ac::luadata::RecordDepot(kApp, "00");

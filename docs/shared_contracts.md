@@ -389,9 +389,14 @@ but it is still one Aether provides. `core/FamilyClassification.h` is the single
 rule — a `RealShare` removes the app from `HasDepot`, a `Banner` does not — and
 `luadata::IsRealFamilyShare` is the behavioural read every gate uses (depot
 keys, manifest overrides, the cloud gate's `family-shared`, the achievement
-page). The stamp always names the banner account, so an answer that names no
-lender is a real share and stays Valve's. Without this the stamp switches off
-every `HasDepot` consumer for the listed apps, achievements included.
+page). A `RealShare` also stays out of package 0 — `LicenseManager::SeedableIds`
+and `AddAppToPackage0` ask `familyclass::IsValveFamilyLicense` — because the
+licence is Steam's: the `.lua` keeps its depots, but the play button and the
+"shared library locked" state follow Steam's answer instead of a synthetic
+owned licence the CM stops minutes later. The stamp always names the banner
+account, so an answer that names no lender is a real share and stays Valve's.
+Without this the stamp switches off every `HasDepot` consumer for the listed
+apps, achievements included.
 
 Twins:
 - Desk: `steam/acf.rs` → `repair_installed_depots`,

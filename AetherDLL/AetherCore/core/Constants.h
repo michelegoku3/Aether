@@ -238,7 +238,6 @@ inline constexpr const char* kGetManifestRequestCodeName = "ContentServerDirecto
 // together: the schema and the account state.
 inline constexpr const char* kGetGameAchievementsName = "Player.GetGameAchievements#1";
 inline constexpr const char* kGetUserAchievementsName = "Player.GetUserAchievements#1";
-inline constexpr std::uint32_t kNotifyRunningApps = FnvHash("FamilyGroupsClient.NotifyRunningApps#1");
 inline constexpr std::uint32_t kGetUserStats = FnvHash(kGetUserStatsName);
 inline constexpr std::uint32_t kGetManifestRequestCode = FnvHash(kGetManifestRequestCodeName);
 inline constexpr std::uint32_t kGetGameAchievements = FnvHash(kGetGameAchievementsName);

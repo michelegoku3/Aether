@@ -110,7 +110,6 @@ add_library(AetherCore SHARED
     hooks/wire/PlaytimeMirror.cpp
     hooks/wire/AccessTokenModule.cpp
     hooks/wire/EticketModule.cpp
-    hooks/wire/FamilySharingModule.cpp
     hooks/wire/GamesPlayedModule.cpp
     hooks/wire/PersonaInject.cpp
     hooks/wire/ManifestRestore.cpp

@@ -21,7 +21,6 @@
 #include "hooks/wire/AchievementModule.h"
 #include "hooks/wire/AchievementUi.h"
 #include "hooks/wire/EticketModule.h"
-#include "hooks/wire/FamilySharingModule.h"
 #include "hooks/wire/FrameOrigin.h"
 #include "hooks/wire/GamesPlayedModule.h"
 #include "hooks/wire/ManifestBridge.h"
@@ -247,9 +246,6 @@ std::int32_t DispatchRecv(const WireFrame& f) {
         if (!rspParsed || !rsp.hasName)
             return kNoChange;
         std::uint32_t h = FnvHash(rsp.name.c_str());
-        if (h == job_hash::kNotifyRunningApps) {
-            return FamilySharing::ShouldSuppress() ? FamilySharing::ClearBody() : kNoChange;
-        }
         // Request-code replies: answer with code 0 only when this session saw
         // the request and the exact manifest is already on disk.
         if (h == job_hash::kGetManifestRequestCode) {
@@ -281,15 +277,6 @@ std::int32_t DispatchRecv(const WireFrame& f) {
         return PersonaInject::OnPersonaStateRecv(f, t_scratchBody.data(), kWireMaxBodyBytes);
     case emsg::kClientRequestEncryptedAppTicketResponse:
         return EticketModule::HandleRecv(f, t_scratchBody.data(), kWireMaxBodyBytes);
-    case emsg::kClientSharedLibraryLockStatus:
-    case emsg::kClientSharedLibraryStopPlaying:
-        // [DIAG] These are the messages with which the CM orders the
-        // client to stop playing: if a masked (Spacewar) session dies,
-        // this line tells whether the server ordered it or the local
-        // client decided on its own.
-        AC_LOG_INFO(kModule, "[DIAG] SharedLibrary msg eMsg=%u bodyLen=%u suppress=%d", f.eMsg, f.bodyLen,
-                    FamilySharing::ShouldSuppress() ? 1 : 0);
-        return FamilySharing::ShouldSuppress() ? FamilySharing::ClearBody() : kNoChange;
     default:
         return kNoChange;
     }
