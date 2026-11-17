@@ -4,12 +4,15 @@
 #include <algorithm>
 #include <cstring>
 #include <filesystem>
+#include <fstream>
+#include <iterator>
 #include <sstream>
 #include <string>
 #include <vector>
 
 #include "core/AetherCoreState.h"
 #include "core/HookManager.h"
+#include "core/InstalledDepotRepair.h"
 #include "core/Logger.h"
 #include "core/SteamTypes.h"
 #include "core/StructGuard.h"
@@ -23,6 +26,7 @@
 #include "utils/SmartIdLog.h"
 #include "utils/SteamKeyPaths.h"
 #include "utils/SteamLibraryPaths.h"
+#include "utils/WinFile.h"
 
 namespace ac::hooks {
 namespace {
@@ -149,24 +153,55 @@ void EnsureSelectedManifests(AppId app, const CUtlVector<DepotEntry>* vec) {
     }
 }
 
-// True when Steam already has this app installed: its `appmanifest_<app>.acf`
-// exists in one of the libraries.
-//
-// An installed app's depot set is Steam's own record of what is on disk, and its
-// plan is what keeps it there. Filling that plan from the `.lua` would declare
-// every depot the file lists - each language pack among them - as content that
-// must exist, and the client would download the difference. The `.lua` is a
-// content list, not a selection.
-bool IsInstalled(AppId app) {
-    if (g_state.steamInstallPath.empty())
+// An appmanifest is a few KB; anything larger is not one, and the hook runs on
+// a Steam worker thread.
+constexpr std::uintmax_t kMaxAcfBytes = 1u << 20;
+
+bool ReadAcfBytes(const std::string& utf8Path, std::string& out) {
+    std::error_code ec;
+    const std::filesystem::path path = winfile::ToPath(utf8Path);
+    const std::uintmax_t size = std::filesystem::file_size(path, ec);
+    if (ec || size == 0 || size > kMaxAcfBytes)
         return false;
+    std::ifstream input(path, std::ios::binary);
+    if (!input.is_open())
+        return false;
+    out.assign(std::istreambuf_iterator<char>(input), std::istreambuf_iterator<char>());
+    return out.size() == size;
+}
+
+// The depots the app's own appmanifest records under `InstalledDepots`, with
+// the gid and the size Steam accounts them at.
+//
+// This is the record of what the client installed; it is not the same thing as
+// "an ACF exists". Steam writes that file at the start of an update, so for a
+// few seconds the app looks installed while its plan is still empty, and a plan
+// without the recorded depots makes Steam remove them and delete their files.
+// Empty when there is no ACF, it is unreadable, or it lists no depot: the
+// caller then plans from the `.lua` pins.
+std::vector<policy::RecordedDepot> RecordedDepots(AppId app) {
+    std::vector<policy::RecordedDepot> recorded;
+    if (g_state.steamInstallPath.empty())
+        return recorded;
+
     const std::string name = "appmanifest_" + std::to_string(app) + ".acf";
     for (const std::string& dir : steamlibrary::SteamAppsDirs(g_state.steamInstallPath)) {
-        std::error_code ec;
-        if (std::filesystem::exists(winfile::ToPath(dir) / name, ec) && !ec)
-            return true;
+        std::string content;
+        const std::string path = ac::strings::Narrow((winfile::ToPath(dir) / name).wstring());
+        if (!ReadAcfBytes(path, content))
+            continue;
+
+        const appmanifest::SplitContent split = appmanifest::SplitContentLines(content);
+        for (const appmanifest::DepotEntry& entry : appmanifest::ParseInstalledDepots(split.lines)) {
+            const std::uint64_t gid = appmanifest::ParseGid(entry.manifestGid);
+            if (entry.depotId == 0 || gid == 0)
+                continue;
+            recorded.push_back(policy::RecordedDepot{entry.depotId, gid, entry.hasSize ? entry.size : 0});
+        }
+        if (!recorded.empty())
+            break;
     }
-    return false;
+    return recorded;
 }
 
 // Puts back the rows Steam leaves out for a managed app.
@@ -174,38 +209,33 @@ bool IsInstalled(AppId app) {
 // Steam builds the plan from the license answer, so an app Aether owns only
 // through package 0 comes back with no rows of its own: the plan keeps the
 // shared redistributable rows every launcher app carries, the install dialog
-// sizes the app at 0 B, and the downloader has nothing to walk. The `.lua` names
-// the app's depots, so those fill the plan: the pinned gid where the `.lua` locks
-// one, the AppInfo public gid where it does not, and AppInfo's size for the depot
-// in both cases - a row without a size is an install the client sizes at 0 B.
+// sizes the app at 0 B, and the downloader has nothing to walk. What goes back
+// depends on what the app already has: a not-installed app is planned from the
+// `.lua` pins (the pinned gid where the file locks one, AppInfo's public gid and
+// size where it does not); an installed app is restored from the depots its
+// appmanifest records, so an empty answer cannot make the client remove a depot
+// whose content is on disk and delete its files.
 //
-// The table stays Steam's. Rows are appended, never moved or dropped - an
-// installed app's plan carries depots whose content is on disk - and they are
-// written into spare capacity or into a vector grown through the pattern table's
-// CUtlMemory helper. That helper is the uint32 instantiation: it charges four
-// bytes per requested element and copies the same amount per existing one, so the
-// request is expressed in its unit and the rows it truncated are written back
-// from a local copy. See `policy::GrowSlotsFor` for why the scale is not optional.
+// The table stays Steam's. Rows are appended, never moved or dropped, and they
+// are written into spare capacity or into a vector grown through the pattern
+// table's CUtlMemory helper. That helper is the uint32 instantiation: it charges
+// four bytes per requested element and copies the same amount per existing one,
+// so the request is expressed in its unit and the rows it truncated are written
+// back from a local copy. See `policy::GrowSlotsFor` for why the scale is not
+// optional.
 static_assert(sizeof(DepotEntry) == policy::kPlanRowBytes, "DepotEntry stride is proven at 0x20 (see StructGuard)");
 
-void RefillPlanFromPins(AppId app, CUtlVector<DepotEntry>* vec) {
+void RefillDepotPlan(AppId app, CUtlVector<DepotEntry>* vec) {
     if (!vec || (!vec->mem.memory && vec->size != 0))
         return;
     if (!o_CUtlMemoryGrow)
         return;
 
-    const bool installed = IsInstalled(app);
-    const std::size_t pinnedCount = luadata::IdsForApp(app).size();
-    if (policy::DecideRefill(installed, static_cast<std::uint32_t>(pinnedCount)) == policy::RefillVerdict::Skip) {
-        if (installed) {
-            AC_LOG_INFO_ONCE(kModule, "Depot plan for app %u left as Steam built it: the app is installed.", app);
-        }
-        return;
-    }
-    // Without AppInfo there is no way to tell the app's depots from another
-    // app's, and guessing would size the install at everything the `.lua`
-    // mentions. Leave the plan alone.
-    if (!gamename::Ready())
+    const std::vector<AppId> ids = luadata::IdsForApp(app);
+    const std::vector<policy::RecordedDepot> recorded = RecordedDepots(app);
+    const policy::RefillSource source = policy::DecideRefill(!recorded.empty(), static_cast<std::uint32_t>(ids.size()),
+                                                             luadata::IsRealFamilyShare(app));
+    if (source == policy::RefillSource::None)
         return;
 
     if (const auto reason = abi::guard::CheckDepotVector(vec); !abi::guard::Passed(reason)) {
@@ -215,39 +245,61 @@ void RefillPlanFromPins(AppId app, CUtlVector<DepotEntry>* vec) {
         return;
     }
 
-    std::vector<policy::PinnedDepot> pinned;
-    for (const AppId id : luadata::IdsForApp(app)) {
-        if (id == app)
-            continue;
-        if (const auto ov = luadata::ManifestOverrideFor(id)) {
-            pinned.push_back({id, ov->gid, ov->size});
-            continue;
-        }
-        // A `.lua` that does not pin this depot leaves the choice to the public
-        // branch; AppInfo records the gid and the size the client would plan.
-        if (const std::uint64_t gid = gamename::PublicDepotGid(app, id); gid != 0)
-            pinned.push_back({id, gid, gamename::PublicDepotSize(app, id)});
-    }
-    if (pinned.empty())
-        return;
-
     std::vector<AppId> planned;
     planned.reserve(vec->size);
     for (std::uint32_t i = 0; i < vec->size; ++i)
         planned.push_back(vec->mem.memory[i].depotId);
 
-    std::vector<policy::PinnedDepot> rows = policy::SelectRefillRows(app, planned, pinned);
-    if (rows.empty())
-        return;
+    std::vector<policy::PinnedDepot> rows;
+    if (source == policy::RefillSource::Recorded) {
+        // The app is installed: restore exactly the depots its ACF records, so
+        // a plan Steam answered empty cannot make the client remove one and
+        // delete its content. The `.lua` still selects the build.
+        std::vector<policy::PinnedDepot> pinned;
+        for (const AppId id : ids) {
+            if (id == app)
+                continue;
+            if (const auto ov = luadata::ManifestOverrideFor(id))
+                pinned.push_back({id, ov->gid, ov->size});
+        }
+        rows = policy::SelectRecordedRows(app, planned, pinned, recorded);
+    } else {
+        // Not installed: the `.lua` pins are the only description of the app.
+        // Without AppInfo there is no way to tell its depots from another app's,
+        // and guessing would size the install at everything the `.lua` mentions.
+        if (!gamename::Ready())
+            return;
 
-    // A `.lua` also pins depots another app owns - a DLC app's content, an
-    // entry of a bundle. Steam plans an app only from the depots its AppInfo
-    // lists, and a row for anything else makes it discard the whole answer, so
-    // the candidates are narrowed to that set before anything is written.
-    rows.erase(
-        std::remove_if(rows.begin(), rows.end(),
+        std::vector<policy::PinnedDepot> pinned;
+        for (const AppId id : ids) {
+            if (id == app)
+                continue;
+            if (const auto ov = luadata::ManifestOverrideFor(id)) {
+                pinned.push_back({id, ov->gid, ov->size});
+                continue;
+            }
+            // A `.lua` that does not pin this depot leaves the choice to the
+            // public branch; AppInfo records the gid and the size the client
+            // would plan.
+            if (const std::uint64_t gid = gamename::PublicDepotGid(app, id); gid != 0)
+                pinned.push_back({id, gid, gamename::PublicDepotSize(app, id)});
+        }
+        if (pinned.empty())
+            return;
+
+        rows = policy::SelectRefillRows(app, planned, pinned);
+        if (rows.empty())
+            return;
+
+        // A `.lua` also pins depots another app owns - a DLC app's content, an
+        // entry of a bundle. Steam plans an app only from the depots its AppInfo
+        // lists, and a row for anything else makes it discard the whole answer,
+        // so the candidates are narrowed to that set before anything is written.
+        rows.erase(std::remove_if(
+                       rows.begin(), rows.end(),
                        [app](const policy::PinnedDepot& row) { return !gamename::HasPublicDepot(app, row.depotId); }),
-        rows.end());
+                   rows.end());
+    }
     if (rows.empty())
         return;
 
@@ -285,14 +337,22 @@ void RefillPlanFromPins(AppId app, CUtlVector<DepotEntry>* vec) {
         entry.depotId = rows[i].depotId;
         entry.appId = app;
         entry.manifestGid = rows[i].gid;
-        // The pin carries a gid, not a size; AppInfo has the size for that
-        // depot, and a zero-sized row is an install the client sizes at 0 B.
-        entry.manifestSize = gamename::PublicDepotSize(app, rows[i].depotId);
+        // The pin's size describes the build it selected, the ACF's size what is
+        // installed, and AppInfo's size the public branch: a zero-sized row is an
+        // install the client sizes at 0 B, so the first known value is used.
+        const std::uint64_t size = rows[i].size != 0 ? rows[i].size : gamename::PublicDepotSize(app, rows[i].depotId);
+        entry.manifestSize = size;
         vec->mem.memory[oldSize + i] = entry;
     }
     vec->size = total;
-    AC_LOG_INFO_ONCE(kModule, "Depot plan for app %u carried %u of its own depots; planned %u from the .lua pins.", app,
-                     oldSize, wanted);
+    if (source == policy::RefillSource::Recorded) {
+        AC_LOG_INFO_ONCE(kModule,
+                         "Depot plan for app %u carried %u of its own depots; restored %u the appmanifest records.",
+                         app, oldSize, wanted);
+    } else {
+        AC_LOG_INFO_ONCE(kModule, "Depot plan for app %u carried %u of its own depots; planned %u from the .lua pins.",
+                         app, oldSize, wanted);
+    }
 }
 
 bool h_BuildDepotDependency(void* mgr, AppId app, void* cfg, CUtlVector<DepotEntry>* depots,
@@ -303,7 +363,7 @@ bool h_BuildDepotDependency(void* mgr, AppId app, void* cfg, CUtlVector<DepotEnt
     const bool managed = luadata::IsConfigured(app);
     std::uint32_t before = depots ? depots->size : 0;
     if (result && managed) {
-        RefillPlanFromPins(app, depots);
+        RefillDepotPlan(app, depots);
         if (depots)
             before = depots->size;
     }

@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
+#include <unordered_map>
 #include <unordered_set>
 #include <vector>
 
@@ -29,6 +30,16 @@
 // depots, so the second case is repaired before the answer is stored; if nothing
 // can be put back, the answer is refused and the caller keeps the depot config
 // Steam already stored.
+//
+// The repair has two sources because the two states need different rows. A
+// not-installed app has no record of its content: the `.lua` names its depots,
+// and AppInfo separates them from depots of other apps. An installed app has
+// one - its appmanifest's `InstalledDepots` - and that record is what keeps the
+// content on disk: Steam removes a depot its stored plan leaves out and deletes
+// the files only that depot carried. Steam writes the ACF at the start of an
+// update, so a package-0 app can look installed while its plan is still empty;
+// restoring the recorded depots then is the difference between a game that
+// launches and a missing content file.
 //
 // The decisions and the arithmetic behind the repair are pure reads with no
 // logger and no shared state, so the unit suite exercises the real thing. Only
@@ -109,6 +120,63 @@ inline std::vector<PinnedDepot> SelectRefillRows(steam::AppId app, const std::ve
     return rows;
 }
 
+// A depot the app's own appmanifest records as installed: the content Steam
+// accounts for on disk.
+struct RecordedDepot {
+    steam::AppId depotId = 0;
+    std::uint64_t gid = 0;
+    std::uint64_t size = 0;
+};
+
+// The rows an installed app's plan is missing: every depot its ACF records and
+// Steam's answer left out, at the build the `.lua` selects.
+//
+// The ACF lists what the client installed, so a depot it names has content on
+// disk and leaving it out of the plan makes Steam remove the depot and delete
+// its files. A managed package-0 app answers with no own rows even straight
+// after its own commit wrote that file, which is exactly when this runs.
+//
+// A pin's gid and size win over the recorded ones: the `.lua` selects the build
+// the user picked, and the recorded values are the fallback for an unpinned
+// depot or an AppInfo that is mid-swap. Skipped: the app itself (not content),
+// rows Steam already planned (its row carries the branch gid, and a second row
+// would download the depot twice), repeats, and entries without a gid (nothing
+// to install). Ordered by depot id so a plan built twice is identical.
+inline std::vector<PinnedDepot> SelectRecordedRows(steam::AppId app, const std::vector<steam::AppId>& planned,
+                                                   const std::vector<PinnedDepot>& pinned,
+                                                   const std::vector<RecordedDepot>& recorded) {
+    std::unordered_set<steam::AppId> plannedIds(planned.begin(), planned.end());
+    plannedIds.insert(app);
+
+    std::unordered_map<steam::AppId, const PinnedDepot*> byDepot;
+    for (const PinnedDepot& pin : pinned) {
+        if (pin.depotId != 0)
+            byDepot.emplace(pin.depotId, &pin); // a repeated pin keeps the first
+    }
+
+    std::unordered_set<steam::AppId> seen;
+    std::vector<PinnedDepot> rows;
+    rows.reserve(recorded.size());
+    for (const RecordedDepot& entry : recorded) {
+        if (entry.depotId == 0 || plannedIds.count(entry.depotId) || !seen.insert(entry.depotId).second)
+            continue;
+        PinnedDepot row{entry.depotId, entry.gid, entry.size};
+        if (const auto found = byDepot.find(entry.depotId); found != byDepot.end()) {
+            const PinnedDepot& pin = *found->second;
+            if (pin.gid != 0)
+                row.gid = pin.gid;
+            if (pin.size > 0)
+                row.size = pin.size;
+        }
+        if (row.gid == 0)
+            continue;
+        rows.push_back(row);
+    }
+    std::sort(rows.begin(), rows.end(),
+              [](const PinnedDepot& a, const PinnedDepot& b) { return a.depotId < b.depotId; });
+    return rows;
+}
+
 // ---------------------------------------------------------------------------
 // Room for those rows.
 //
@@ -130,25 +198,34 @@ constexpr bool GrowCoversRows(std::uint32_t slots, std::uint32_t rows) {
     return slots * kGrowElementBytes >= rows * kPlanRowBytes;
 }
 
-enum class RefillVerdict {
-    // Store Steam's answer as built.
-    Skip,
-    // Add the app's depots to the plan.
-    Refill,
+// Where the rows a lost plan is refilled from come from.
+enum class RefillSource {
+    // Nothing to put back: no `.lua` depot to plan and no ACF record to restore.
+    None,
+    // A not-installed app: the `.lua` pins describe its content.
+    Pins,
+    // An installed app: the depots its appmanifest records are what is on disk.
+    Recorded,
 };
 
-// Whether the plan needs the `.lua`'s depots.
+// Whether the plan needs rows, and from where.
 //
-// An installed app is Steam's to plan. Its appmanifest already records what is
-// on disk, each language pack included, and Steam keeps the plan in step with
-// it: the `.lua` lists every depot the store has, so filling an installed app's
-// plan from it marks each language pack as content that must exist, and the
-// client downloads the difference. Before the app is installed there is no such
-// record, and the plan is the only thing that can size the dialog at all.
-constexpr RefillVerdict DecideRefill(bool installed, std::uint32_t pinnedRows) {
-    if (installed || pinnedRows == 0)
-        return RefillVerdict::Skip;
-    return RefillVerdict::Refill;
+// A not-installed app has no record of its content, and the plan is the only
+// thing that can size the install dialog, so its depots come from the `.lua`
+// pins. An installed app is restored from its own appmanifest instead: the file
+// records every depot whose content is on disk, each language pack included,
+// while the `.lua` lists every depot the store has. Filling an installed app's
+// plan from the `.lua` would mark each language pack as content that must exist
+// and the client would download the difference; filling it from the ACF keeps
+// exactly what is there.
+constexpr RefillSource DecideRefill(bool installed, std::uint32_t pinnedRows, bool realFamilyShare = false) {
+    // A real family share is licensed by Steam: its answer already plans what
+    // the account may use, and a row added here would claim content it does not.
+    if (realFamilyShare)
+        return RefillSource::None;
+    if (installed)
+        return RefillSource::Recorded;
+    return pinnedRows > 0 ? RefillSource::Pins : RefillSource::None;
 }
 
 // AppInfo answers a manifest's gid and size as a decimal string. A result that

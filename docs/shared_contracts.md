@@ -398,6 +398,20 @@ account, so an answer that names no lender is a real share and stays Valve's.
 Without this the stamp switches off every `HasDepot` consumer for the listed
 apps, achievements included.
 
+**Rule 6 — the plan carries every depot the ACF records.** Steam builds an
+app's depot plan from its license answer, and a managed package-0 app comes back
+with no rows of its own. A plan that loses a depot makes the client remove it and
+delete the files only that depot carried. For an app whose `appmanifest_<app>.acf`
+records `InstalledDepots`, the missing rows are restored from that record (DLL:
+`hooks/steamclient/DepotHooks.cpp` → `RecordedDepots`, `policy::SelectRecordedRows`)
+— the `.lua` pin's gid and size when it locks the depot, the recorded values
+otherwise. Depots the ACF does not record are never added this way: the `.lua`
+lists every depot the store has, language packs included. A not-installed app is
+still planned from the `.lua` pins, narrowed to the AppInfo depots, and a real
+family share is skipped because its plan is Steam's own answer. The predicate
+is the parsed record, not "an ACF exists": Steam writes that file at the start of
+an update, so an empty answer can arrive while the app already looks installed.
+
 Twins:
 - Desk: `steam/acf.rs` → `repair_installed_depots`,
   `repair_installed_depots_for_app`; size semantics in
@@ -407,11 +421,14 @@ Twins:
 - DLL: `core/InstalledDepotRepair.{h,cpp}` → `PlanInstalledDepotRepairs`,
   `ApplyInstalledDepotRepairs` (boot step 10d in `core/BootSteps.cpp`); size
   semantics in `network/ManifestIdentity.cpp` → `ManifestContentSize`. The
-  recheck side is `scripting/DirWatch.cpp` → `RequestAppRecheck` (Rule 4).
+  recheck side is `scripting/DirWatch.cpp` → `RequestAppRecheck` (Rule 4). The
+  plan side of Rule 6 is DLL-only: `hooks/steamclient/DepotHooks.cpp` →
+  `RefillDepotPlan`/`RecordedDepots`, decisions in
+  `hooks/steamclient/DepotPlanPolicy.h`.
 
 Decision matrix under test: the Desk cases in `steam/acf.rs::tests`, the DLL
-`installeddepots`, `manifest_identity`, `recheck` and `family_banner` ctest
-cases.
+`installeddepots`, `depot_plan`, `manifest_identity`, `recheck` and
+`family_banner` ctest cases.
 
 **Why**: `InstalledDepots` is the record Steam computes every download delta
 from (`contentupdatecontext.cpp` / `depotdownloadmgr.cpp`). A GID with no local

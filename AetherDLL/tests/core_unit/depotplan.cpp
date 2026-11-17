@@ -23,6 +23,9 @@ using ac::hooks::steamclient::policy::GrowSlotsFor;
 using ac::hooks::steamclient::policy::ParseSize;
 using ac::hooks::steamclient::policy::PlanAnswer;
 using ac::hooks::steamclient::policy::PlanVerdict;
+using ac::hooks::steamclient::policy::RecordedDepot;
+using ac::hooks::steamclient::policy::RefillSource;
+using ac::hooks::steamclient::policy::SelectRecordedRows;
 
 void RefusesAnEmptyPlanForAManagedApp() {
     CHECK(DecidePlan(PlanAnswer{.ownRows = 0, .managed = true, .steamOk = true}) == PlanVerdict::Refuse);
@@ -53,7 +56,6 @@ void KeepsSteamsOwnFailure() {
 // be put back. These cases pin which ones go back and in what order.
 
 using ac::hooks::steamclient::policy::PinnedDepot;
-using ac::hooks::steamclient::policy::RefillVerdict;
 using ac::hooks::steamclient::policy::SelectRefillRows;
 using ac::steam::AppId;
 
@@ -141,16 +143,97 @@ void ReadsTheSizeAppInfoAnswersWith() {
     CHECK_EQ(ParseSize("12x7", 4), 12ull);
 }
 
-void LeavesAnInstalledAppToSteam() {
-    // The app's own appmanifest already records what is on disk, languages
-    // included. The `.lua` lists every depot the store has, so filling an
-    // installed app's plan from it would mark each language pack as missing
+void RestoresTheDepotsAnInstalledAppRecords() {
+    // An installed app's appmanifest records what is on disk, languages
+    // included, so the plan is restored from it rather than from the `.lua`:
+    // filling it from the `.lua` would mark each language pack as missing
     // content and the client would download it.
-    CHECK(DecideRefill(true, 13) == RefillVerdict::Skip);
+    CHECK(DecideRefill(true, 13) == RefillSource::Recorded);
     // Nothing installed: the plan is the only thing that can size the dialog.
-    CHECK(DecideRefill(false, 13) == RefillVerdict::Refill);
+    CHECK(DecideRefill(false, 13) == RefillSource::Pins);
     // No depot to put back.
-    CHECK(DecideRefill(false, 0) == RefillVerdict::Skip);
+    CHECK(DecideRefill(false, 0) == RefillSource::None);
+}
+
+void LeavesARealFamilyShareToSteam() {
+    // The licence is Steam's, and its answer already plans the depots the
+    // account may use: a row added here would claim content it does not.
+    const std::vector<RefillSource> sources{DecideRefill(true, 13, true), DecideRefill(false, 13, true)};
+    CHECK(sources[0] == RefillSource::None);
+    CHECK(sources[1] == RefillSource::None);
+}
+
+// --- Recorded depots --------------------------------------------------------
+//
+// An installed app's plan is what keeps its content on disk: Steam removes a
+// depot the plan leaves out and deletes the files only that depot carried. The
+// client answers with no own rows for a managed app it does not license, even
+// straight after its own commit wrote the ACF, so the depots the ACF records
+// must go back into the plan. The `.lua` still selects the build: a pin wins
+// over the recorded gid.
+
+void SelectsOnlyTheDepotsTheAcfRecords() {
+    // The `.lua` lists every depot the store has, language packs included; only
+    // what the ACF records is content this install already carries.
+    const std::vector<RecordedDepot> recorded{{101, 11, 1100}, {102, 12, 1200}};
+    const std::vector<PinnedDepot> pinned{{101, 0, 0}, {102, 0, 0}, {103, 13, 1300}};
+    const auto rows = SelectRecordedRows(100, {}, pinned, recorded);
+    CHECK(rows.size() == 2u);
+    CHECK_EQ(rows[0].depotId, 101u);
+    CHECK_EQ(rows[1].depotId, 102u);
+}
+
+void UsesThePinForARecordedDepot() {
+    // A version apply moves the pin and nothing else: the row must name the
+    // build the user picked, not the gid Steam installed last time.
+    const std::vector<RecordedDepot> recorded{{101, 11, 1100}};
+    const std::vector<PinnedDepot> pinned{{101, 77, 7700}};
+    const auto rows = SelectRecordedRows(100, {}, pinned, recorded);
+    CHECK(rows.size() == 1u);
+    CHECK_EQ(rows[0].gid, 77u);
+    CHECK_EQ(rows[0].size, 7700u);
+}
+
+void FallsBackToTheRecordedGidWithoutAPin() {
+    // AppInfo is mid-swap and the `.lua` leaves this depot unpinned: the ACF
+    // names the manifest the content came from, which is enough for a row.
+    const std::vector<RecordedDepot> recorded{{101, 11, 1100}};
+    const auto rows = SelectRecordedRows(100, {}, {}, recorded);
+    CHECK(rows.size() == 1u);
+    CHECK_EQ(rows[0].gid, 11u);
+    CHECK_EQ(rows[0].size, 1100u);
+}
+
+void KeepsTheRecordedSizeWhenThePinHasNone() {
+    const std::vector<RecordedDepot> recorded{{101, 11, 1100}};
+    const std::vector<PinnedDepot> pinned{{101, 77, 0}};
+    const auto rows = SelectRecordedRows(100, {}, pinned, recorded);
+    CHECK(rows.size() == 1u);
+    CHECK_EQ(rows[0].gid, 77u);
+    CHECK_EQ(rows[0].size, 1100u);
+}
+
+void NeverAddsARecordedDepotSteamAlreadyPlanned() {
+    const std::vector<RecordedDepot> recorded{{101, 11, 1100}, {102, 12, 1200}};
+    const auto rows = SelectRecordedRows(100, {101}, {}, recorded);
+    CHECK(rows.size() == 1u);
+    CHECK_EQ(rows[0].depotId, 102u);
+}
+
+void SkipsRecordedDepotsWithoutAGid() {
+    // No gid means no manifest to install; a row would be a depot Steam cannot
+    // resolve.
+    const std::vector<RecordedDepot> recorded{{101, 0, 0}};
+    CHECK(SelectRecordedRows(100, {}, {}, recorded).empty());
+}
+
+void OrdersRecordedRowsByDepotId() {
+    const std::vector<RecordedDepot> recorded{{105, 15, 1}, {101, 11, 1}, {103, 13, 1}};
+    const auto rows = SelectRecordedRows(100, {}, {}, recorded);
+    CHECK(rows.size() == 3u);
+    CHECK_EQ(rows[0].depotId, 101u);
+    CHECK_EQ(rows[1].depotId, 103u);
+    CHECK_EQ(rows[2].depotId, 105u);
 }
 
 } // namespace
@@ -170,5 +253,13 @@ void DepotPlanTest() {
     GrowRequestCoversTheRowsItMustHold();
     CapacityIsMeasuredInBytesNotRows();
     ReadsTheSizeAppInfoAnswersWith();
-    LeavesAnInstalledAppToSteam();
+    RestoresTheDepotsAnInstalledAppRecords();
+    SelectsOnlyTheDepotsTheAcfRecords();
+    UsesThePinForARecordedDepot();
+    FallsBackToTheRecordedGidWithoutAPin();
+    KeepsTheRecordedSizeWhenThePinHasNone();
+    NeverAddsARecordedDepotSteamAlreadyPlanned();
+    SkipsRecordedDepotsWithoutAGid();
+    OrdersRecordedRowsByDepotId();
+    LeavesARealFamilyShareToSteam();
 }

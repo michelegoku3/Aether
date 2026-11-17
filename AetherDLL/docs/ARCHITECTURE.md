@@ -463,34 +463,42 @@ instead of skipping the new donor as "already tried". Probe requests are paced
   without the app's own depots is an install that downloads nothing and is still
   stamped Fully Installed: 0 B, no size on the card, and PLAY looking for an
   executable nobody wrote. Aether therefore repairs the table before it is
-  stored (`hooks/steamclient/DepotHooks.cpp`): the `.lua`'s depots are appended as
-  rows, narrowed to the ones the app's own AppInfo carries
-  (`gamename::HasPublicDepot`) because Steam discards the whole answer when a row
-  names a depot of another app. An app with an `appmanifest_<app>.acf` is left
-  alone (`IsInstalled`, `policy::DecideRefill`): its manifest already records
-  what is on disk - each language pack included - and the `.lua` lists every
-  depot the store has, so filling an installed app's plan from it marks each
-  language pack as content that must exist and the client downloads it. Only an
-  app that is not installed is planned this way, where the plan is the only thing
-  that can size the install dialog at all. Each row takes the pinned gid, or
-  AppInfo's public gid when the `.lua` leaves that depot unpinned, and AppInfo's
-  size for the depot either way - a row without a size is an install the client
-  sizes at 0 B. Steam's own rows are kept and the new ones appended: an installed
-  app's plan carries depots whose content is on disk, and dropping one makes the
-  client account that content away. The buffer stays Steam's: rows are written
-  only into capacity its allocator already reserved - spare room in the vector,
-  or a vector grown through the pattern table's `CUtlMemoryGrow`. That helper is
-  the `uint32` instantiation (its copy loop shifts by 2 and the allocator gets
-  `mov r9d, 4`), so the request is scaled by the row/`uint32` ratio, the element
-  count is narrowed back to rows, and the rows it copies four bytes of are
-  written back (`policy::GrowSlotsFor`). When nothing can be put back, an
-  own-row-less answer for a `.lua` app is refused, so the caller keeps the depot
-  config it already stored and the next pass plans the app again. The
-  shared/dependency vector is never an input to that decision: its rows belong to
-  other apps, so one of them cannot make an empty own list look planned.
-  `depot_plan` is the ctest case that pins the refusal, the row selection, the
-  capacity math and the installed-app boundary. The rows carry the pinned gid and
-  size, so the manifest overrides below are a no-op for them.
+  stored (`hooks/steamclient/DepotHooks.cpp`), and where the rows come from
+  depends on what the app already has. A not-installed app is planned from the
+  `.lua`: its depots are appended as rows, narrowed to the ones the app's own
+  AppInfo carries (`gamename::HasPublicDepot`) because Steam discards the whole
+  answer when a row names a depot of another app, and the plan is the only thing
+  that can size the install dialog at all. An installed app is restored from the
+  depots its `appmanifest_<app>.acf` records under `InstalledDepots`
+  (`RecordedDepots`, `policy::SelectRecordedRows`): that record is what keeps
+  the content on disk - each language pack included - while the `.lua` lists
+  every depot the store has, so planning an installed app from the `.lua` would
+  mark each language pack as content that must exist and the client would
+  download it. Only recorded depots go back, so packs the install does not carry
+  stay out; a real family share is skipped, because its plan is Steam's own
+  answer. This is not a corner case: Steam writes the ACF at the start of an
+  update, so a package-0 app answers with no own rows while the file already
+  makes it look installed, and a plan without a recorded depot makes the client
+  remove that depot and delete the files only it carried. Each row takes the
+  pinned gid and size when the `.lua` locks the depot, otherwise the gid and
+  size the ACF records, and AppInfo's public values as the last resort - a row
+  without a size is an install the client sizes at 0 B. Steam's own rows are kept
+  and the new ones appended: an installed app's plan carries depots whose
+  content is on disk, and dropping one makes the client account that content
+  away. The buffer stays Steam's: rows are written only into capacity its
+  allocator already reserved - spare room in the vector, or a vector grown
+  through the pattern table's `CUtlMemoryGrow`. That helper is the `uint32`
+  instantiation (its copy loop shifts by 2 and the allocator gets `mov r9d, 4`),
+  so the request is scaled by the row/`uint32` ratio, the element count is
+  narrowed back to rows, and the rows it copies four bytes of are written back
+  (`policy::GrowSlotsFor`). When nothing can be put back, an own-row-less answer
+  for a `.lua` app is refused, so the caller keeps the depot config it already
+  stored and the next pass plans the app again. The shared/dependency vector is
+  never an input to that decision: its rows belong to other apps, so one of them
+  cannot make an empty own list look planned. `depot_plan` is the ctest case that
+  pins the refusal, both row selections, the capacity math and the
+  installed-app boundary. The rows carry the pinned gid and size, so the
+  manifest overrides below are a no-op for them.
 * Installed-depot repair: `core/InstalledDepotRepair` runs once per process at
   boot (BootSteps step 10d, on a worker thread, managed apps only). For an ACF
   entry whose GID has no non-empty local manifest it restores a file that does
