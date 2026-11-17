@@ -25,6 +25,7 @@ using ac::hooks::steamclient::policy::PlanAnswer;
 using ac::hooks::steamclient::policy::PlanVerdict;
 using ac::hooks::steamclient::policy::RecordedDepot;
 using ac::hooks::steamclient::policy::RefillSource;
+using ac::hooks::steamclient::policy::RowSize;
 using ac::hooks::steamclient::policy::SelectRecordedRows;
 
 void RefusesAnEmptyPlanForAManagedApp() {
@@ -148,11 +149,11 @@ void RestoresTheDepotsAnInstalledAppRecords() {
     // included, so the plan is restored from it rather than from the `.lua`:
     // filling it from the `.lua` would mark each language pack as missing
     // content and the client would download it.
-    CHECK(DecideRefill(true, 13) == RefillSource::Recorded);
+    CHECK(DecideRefill(true, 13, false) == RefillSource::Recorded);
     // Nothing installed: the plan is the only thing that can size the dialog.
-    CHECK(DecideRefill(false, 13) == RefillSource::Pins);
+    CHECK(DecideRefill(false, 13, false) == RefillSource::Pins);
     // No depot to put back.
-    CHECK(DecideRefill(false, 0) == RefillSource::None);
+    CHECK(DecideRefill(false, 0, false) == RefillSource::None);
 }
 
 void LeavesARealFamilyShareToSteam() {
@@ -236,6 +237,29 @@ void OrdersRecordedRowsByDepotId() {
     CHECK_EQ(rows[2].depotId, 105u);
 }
 
+void NeverAddsTheRecordedAppItself() {
+    // The root app is not content, even if a corrupt record names it.
+    const std::vector<RecordedDepot> recorded{{100, 11, 1100}};
+    CHECK(SelectRecordedRows(100, {}, {}, recorded).empty());
+}
+
+void CollapsesRepeatedRecordedDepotsKeepingTheFirst() {
+    const std::vector<RecordedDepot> recorded{{101, 11, 1100}, {101, 99, 9900}};
+    const auto rows = SelectRecordedRows(100, {}, {}, recorded);
+    CHECK(rows.size() == 1u);
+    CHECK_EQ(rows[0].gid, 11u);
+}
+
+void RowSizePrefersThePinThenAppInfo() {
+    // The row's own size is the pin's or the ACF's; AppInfo answers only when
+    // neither has one. Zero stays zero rather than becoming a guess.
+    const std::vector<std::uint64_t> sizes{RowSize(PinnedDepot{101, 11, 1100}, 0),
+                                           RowSize(PinnedDepot{101, 11, 0}, 1200), RowSize(PinnedDepot{101, 11, 0}, 0)};
+    CHECK_EQ(sizes[0], 1100u);
+    CHECK_EQ(sizes[1], 1200u);
+    CHECK_EQ(sizes[2], 0u);
+}
+
 } // namespace
 
 void DepotPlanTest() {
@@ -261,5 +285,8 @@ void DepotPlanTest() {
     NeverAddsARecordedDepotSteamAlreadyPlanned();
     SkipsRecordedDepotsWithoutAGid();
     OrdersRecordedRowsByDepotId();
+    NeverAddsTheRecordedAppItself();
+    CollapsesRepeatedRecordedDepotsKeepingTheFirst();
+    RowSizePrefersThePinThenAppInfo();
     LeavesARealFamilyShareToSteam();
 }

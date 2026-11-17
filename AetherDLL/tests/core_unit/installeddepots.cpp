@@ -275,4 +275,22 @@ void InstalledDepotsTest() {
     CHECK_EQ(AppIdFromManifestName("appmanifest_1.acf.bak"), 0u);
     CHECK_EQ(AppIdFromManifestName("4656000.acf"), 0u);
     CHECK_EQ(AppIdFromManifestName(""), 0u);
+
+    // ---- a torn document is not a record ---------------------------------
+
+    // Steam writes the ACF at the start of an update; a reader that samples it
+    // mid-write sees a prefix. The entries above the cut still parse, so taking
+    // that subset as the whole record would narrow the plan.
+    {
+        CHECK(IsCompleteDocument(SplitContentLines(kAcf).lines));
+
+        std::string torn = kAcf;
+        torn.erase(torn.find("\"SharedDepots\""));
+        CHECK(!IsCompleteDocument(SplitContentLines(torn).lines));
+
+        CHECK(!IsCompleteDocument(SplitContentLines("\"AppState\"\n}\n").lines));
+        CHECK(!IsCompleteDocument(SplitContentLines("").lines));
+        CHECK(!IsCompleteDocument(SplitContentLines("garbage\n").lines));
+        CHECK(!IsCompleteDocument(SplitContentLines("{\n\t\"a\"\t\t\"1\"\n").lines));
+    }
 }

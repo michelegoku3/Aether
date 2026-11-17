@@ -403,14 +403,18 @@ app's depot plan from its license answer, and a managed package-0 app comes back
 with no rows of its own. A plan that loses a depot makes the client remove it and
 delete the files only that depot carried. For an app whose `appmanifest_<app>.acf`
 records `InstalledDepots`, the missing rows are restored from that record (DLL:
-`hooks/steamclient/DepotHooks.cpp` → `RecordedDepots`, `policy::SelectRecordedRows`)
-— the `.lua` pin's gid and size when it locks the depot, the recorded values
-otherwise. Depots the ACF does not record are never added this way: the `.lua`
-lists every depot the store has, language packs included. A not-installed app is
-still planned from the `.lua` pins, narrowed to the AppInfo depots, and a real
-family share is skipped because its plan is Steam's own answer. The predicate
-is the parsed record, not "an ACF exists": Steam writes that file at the start of
-an update, so an empty answer can arrive while the app already looks installed.
+`hooks/steamclient/DepotHooks.cpp` → `RecordedDepots`, `policy::SelectRecordedRows`).
+Each field takes its most specific source: the `.lua` pin's gid and size when it
+locks the depot, the recorded gid and size otherwise, and AppInfo's public size
+only when neither names one. Depots the ACF does not record are never added this
+way: the `.lua` lists every depot the store has, language packs included. An app
+that is not installed is planned from the `.lua` pins, narrowed to the AppInfo
+depots, and a real family share is skipped because its plan is Steam's own
+answer. The predicate is the parsed record, not "an ACF exists": Steam writes that
+file at the start of an update, so an empty answer can arrive while the app
+already looks installed. A torn or unreadable ACF is no record either and falls
+back to the `.lua` pins — over-downloading is preferred to deleting content —
+and a plan whose recorded rows cannot be appended is refused, not stored.
 
 Twins:
 - Desk: `steam/acf.rs` → `repair_installed_depots`,

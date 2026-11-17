@@ -493,12 +493,17 @@ instead of skipping the new donor as "already tried". Probe requests are paced
   narrowed back to rows, and the rows it copies four bytes of are written back
   (`policy::GrowSlotsFor`). When nothing can be put back, an own-row-less answer
   for a `.lua` app is refused, so the caller keeps the depot config it already
-  stored and the next pass plans the app again. The shared/dependency vector is
-  never an input to that decision: its rows belong to other apps, so one of them
-  cannot make an empty own list look planned. `depot_plan` is the ctest case that
-  pins the refusal, both row selections, the capacity math and the
-  installed-app boundary. The rows carry the pinned gid and size, so the
-  manifest overrides below are a no-op for them.
+  stored and the next pass plans the app again; an installed app whose recorded
+  rows cannot be appended is refused the same way, because the alternative is
+  storing a plan that omits content on disk. A torn or unreadable ACF is not a
+  record: the app is planned from the `.lua` instead, which may over-download a
+  language pack but never deletes content. The shared/dependency vector is never
+  an input to that decision: its rows belong to other apps, so one of them
+  cannot make an empty own list look planned. `depot_plan` and `installeddepots`
+  are the ctest cases that pin the refusal, both row selections, the ACF
+  completeness rule, the capacity math and the installed-app boundary. The rows
+  carry the pinned gid and size, so the manifest overrides below are a no-op for
+  them.
 * Installed-depot repair: `core/InstalledDepotRepair` runs once per process at
   boot (BootSteps step 10d, on a worker thread, managed apps only). For an ACF
   entry whose GID has no non-empty local manifest it restores a file that does

@@ -8,6 +8,7 @@
 #include <iterator>
 #include <sstream>
 #include <string>
+#include <unordered_set>
 #include <vector>
 
 #include "core/AetherCoreState.h"
@@ -188,10 +189,31 @@ std::vector<policy::RecordedDepot> RecordedDepots(AppId app) {
     for (const std::string& dir : steamlibrary::SteamAppsDirs(g_state.steamInstallPath)) {
         std::string content;
         const std::string path = ac::strings::Narrow((winfile::ToPath(dir) / name).wstring());
-        if (!ReadAcfBytes(path, content))
+        if (!ReadAcfBytes(path, content)) {
+            if (winfile::Exists(path)) {
+                AC_LOG_WARN(kModule, "App %u: appmanifest is present but unreadable; planning from the .lua instead.",
+                            app);
+            }
             continue;
+        }
 
         const appmanifest::SplitContent split = appmanifest::SplitContentLines(content);
+        // A file Steam is rewriting parses its entries above the cut, and taking
+        // that prefix as the record would narrow the plan below what is on disk.
+        if (!appmanifest::IsCompleteDocument(split.lines)) {
+            AC_LOG_DEBUG(kModule, "App %u: appmanifest is incomplete (mid-write?); planning from the .lua instead.",
+                         app);
+            continue;
+        }
+        // The file name names the app; a record that names another one is not
+        // this app's content, whatever the folder it was found in.
+        const std::uint64_t appid = appmanifest::ReadTopLevelDecimal(content, "appid");
+        if (appid != 0 && appid != app) {
+            AC_LOG_DEBUG(kModule, "App %u: appmanifest names app %llu; ignored.", app,
+                         static_cast<unsigned long long>(appid));
+            continue;
+        }
+
         for (const appmanifest::DepotEntry& entry : appmanifest::ParseInstalledDepots(split.lines)) {
             const std::uint64_t gid = appmanifest::ParseGid(entry.manifestGid);
             if (entry.depotId == 0 || gid == 0)
@@ -225,24 +247,28 @@ std::vector<policy::RecordedDepot> RecordedDepots(AppId app) {
 // optional.
 static_assert(sizeof(DepotEntry) == policy::kPlanRowBytes, "DepotEntry stride is proven at 0x20 (see StructGuard)");
 
-void RefillDepotPlan(AppId app, CUtlVector<DepotEntry>* vec) {
+// `true` when the plan no longer misses anything Aether knows the app has;
+// `false` when rows were needed and could not be appended, so the caller must
+// refuse the answer rather than store a plan that omits a recorded depot.
+bool RefillDepotPlan(AppId app, CUtlVector<DepotEntry>* vec) {
     if (!vec || (!vec->mem.memory && vec->size != 0))
-        return;
+        return true;
     if (!o_CUtlMemoryGrow)
-        return;
+        return true;
 
     const std::vector<AppId> ids = luadata::IdsForApp(app);
     const std::vector<policy::RecordedDepot> recorded = RecordedDepots(app);
     const policy::RefillSource source = policy::DecideRefill(!recorded.empty(), static_cast<std::uint32_t>(ids.size()),
                                                              luadata::IsRealFamilyShare(app));
     if (source == policy::RefillSource::None)
-        return;
+        return true;
+    const bool recordedSource = source == policy::RefillSource::Recorded;
 
     if (const auto reason = abi::guard::CheckDepotVector(vec); !abi::guard::Passed(reason)) {
         // The table is not shaped the way this build is documented to shape it:
         // leave Steam's answer alone rather than write into it.
         abi::guard::CountRejection("DepotEntry table before refill", reason);
-        return;
+        return !recordedSource;
     }
 
     std::vector<AppId> planned;
@@ -250,34 +276,34 @@ void RefillDepotPlan(AppId app, CUtlVector<DepotEntry>* vec) {
     for (std::uint32_t i = 0; i < vec->size; ++i)
         planned.push_back(vec->mem.memory[i].depotId);
 
+    // The `.lua` pins select the build: an override carries the gid and size the
+    // user picked, and both sources use it.
+    std::vector<policy::PinnedDepot> pinned;
+    std::unordered_set<AppId> pinnedIds;
+    for (const AppId id : ids) {
+        if (id == app)
+            continue;
+        if (const auto ov = luadata::ManifestOverrideFor(id)) {
+            pinned.push_back({id, ov->gid, ov->size});
+            pinnedIds.insert(id);
+        }
+    }
+
     std::vector<policy::PinnedDepot> rows;
-    if (source == policy::RefillSource::Recorded) {
+    if (recordedSource) {
         // The app is installed: restore exactly the depots its ACF records, so
         // a plan Steam answered empty cannot make the client remove one and
-        // delete its content. The `.lua` still selects the build.
-        std::vector<policy::PinnedDepot> pinned;
-        for (const AppId id : ids) {
-            if (id == app)
-                continue;
-            if (const auto ov = luadata::ManifestOverrideFor(id))
-                pinned.push_back({id, ov->gid, ov->size});
-        }
+        // delete its content.
         rows = policy::SelectRecordedRows(app, planned, pinned, recorded);
     } else {
         // Not installed: the `.lua` pins are the only description of the app.
         // Without AppInfo there is no way to tell its depots from another app's,
         // and guessing would size the install at everything the `.lua` mentions.
         if (!gamename::Ready())
-            return;
-
-        std::vector<policy::PinnedDepot> pinned;
+            return true;
         for (const AppId id : ids) {
-            if (id == app)
+            if (id == app || pinnedIds.count(id))
                 continue;
-            if (const auto ov = luadata::ManifestOverrideFor(id)) {
-                pinned.push_back({id, ov->gid, ov->size});
-                continue;
-            }
             // A `.lua` that does not pin this depot leaves the choice to the
             // public branch; AppInfo records the gid and the size the client
             // would plan.
@@ -285,11 +311,11 @@ void RefillDepotPlan(AppId app, CUtlVector<DepotEntry>* vec) {
                 pinned.push_back({id, gid, gamename::PublicDepotSize(app, id)});
         }
         if (pinned.empty())
-            return;
+            return true;
 
         rows = policy::SelectRefillRows(app, planned, pinned);
         if (rows.empty())
-            return;
+            return true;
 
         // A `.lua` also pins depots another app owns - a DLC app's content, an
         // entry of a bundle. Steam plans an app only from the depots its AppInfo
@@ -301,7 +327,7 @@ void RefillDepotPlan(AppId app, CUtlVector<DepotEntry>* vec) {
                    rows.end());
     }
     if (rows.empty())
-        return;
+        return true;
 
     // Steam's rows are kept: an installed app's plan carries depots whose
     // content is on disk, and dropping one makes the client account that content
@@ -320,7 +346,7 @@ void RefillDepotPlan(AppId app, CUtlVector<DepotEntry>* vec) {
             if (vec->mem.memory)
                 vec->size = oldSize;
             AC_LOG_ERROR(kModule, "Depot plan refill could not reserve room for app %u.", app);
-            return;
+            return !recordedSource;
         }
         // The helper counted uint32 slots on both sides: it reserved four bytes
         // per slot, put the requested count on the tail and copied four bytes
@@ -340,12 +366,11 @@ void RefillDepotPlan(AppId app, CUtlVector<DepotEntry>* vec) {
         // The pin's size describes the build it selected, the ACF's size what is
         // installed, and AppInfo's size the public branch: a zero-sized row is an
         // install the client sizes at 0 B, so the first known value is used.
-        const std::uint64_t size = rows[i].size != 0 ? rows[i].size : gamename::PublicDepotSize(app, rows[i].depotId);
-        entry.manifestSize = size;
+        entry.manifestSize = policy::RowSize(rows[i], gamename::PublicDepotSize(app, rows[i].depotId));
         vec->mem.memory[oldSize + i] = entry;
     }
     vec->size = total;
-    if (source == policy::RefillSource::Recorded) {
+    if (recordedSource) {
         AC_LOG_INFO_ONCE(kModule,
                          "Depot plan for app %u carried %u of its own depots; restored %u the appmanifest records.",
                          app, oldSize, wanted);
@@ -353,6 +378,7 @@ void RefillDepotPlan(AppId app, CUtlVector<DepotEntry>* vec) {
         AC_LOG_INFO_ONCE(kModule, "Depot plan for app %u carried %u of its own depots; planned %u from the .lua pins.",
                          app, oldSize, wanted);
     }
+    return true;
 }
 
 bool h_BuildDepotDependency(void* mgr, AppId app, void* cfg, CUtlVector<DepotEntry>* depots,
@@ -362,8 +388,9 @@ bool h_BuildDepotDependency(void* mgr, AppId app, void* cfg, CUtlVector<DepotEnt
 
     const bool managed = luadata::IsConfigured(app);
     std::uint32_t before = depots ? depots->size : 0;
+    bool whole = true;
     if (result && managed) {
-        RefillDepotPlan(app, depots);
+        whole = RefillDepotPlan(app, depots);
         if (depots)
             before = depots->size;
     }
@@ -385,10 +412,17 @@ bool h_BuildDepotDependency(void* mgr, AppId app, void* cfg, CUtlVector<DepotEnt
         .managed = managed,
         .steamOk = result,
     };
+    if (!whole) {
+        AC_LOG_WARN_ONCE(kModule,
+                         "BuildDepotDependency: app %u still misses a depot its appmanifest records; refusing the "
+                         "plan so Steam keeps the depot config it already stored.",
+                         app);
+        return false;
+    }
     if (policy::DecidePlan(plan) == policy::PlanVerdict::Refuse) {
         AC_LOG_WARN_ONCE(kModule,
-                         "BuildDepotDependency: app %u came back with no depots while its AppInfo was "
-                         "mid-refresh; refusing the plan so Steam keeps the depot config it already stored.",
+                         "BuildDepotDependency: app %u answered with no depot rows and the refill had nothing usable "
+                         "to put back; refusing the plan so Steam keeps the depot config it already stored.",
                          app);
         // The caller discards the whole answer, so the overrides and the
         // manifest prefetch below are not worth running on it: the next pass,

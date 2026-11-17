@@ -75,8 +75,10 @@ constexpr PlanVerdict DecidePlan(PlanAnswer answer) {
     // Refusing would leave a config the user cannot clear from Aether.
     if (!answer.managed)
         return PlanVerdict::Keep;
-    // A managed app whose plan came back empty is mid-AppInfo-swap. Refusing
-    // makes the caller keep the depot config it already stored.
+    // A managed app whose plan still has no own rows after the refill: the
+    // AppInfo is mid-swap, the ACF is unreadable, or every recorded depot is
+    // already planned. Refusing makes the caller keep the depot config it
+    // already stored.
     return answer.ownRows == 0 ? PlanVerdict::Refuse : PlanVerdict::Keep;
 }
 
@@ -96,6 +98,12 @@ struct PinnedDepot {
 // the downloader walks, so an app that is planned empty reports 0 B and
 // "installs" nothing. The `.lua` names the app's depots, so they fill it.
 //
+// The size a refilled row carries: the pin's or ACF's own size, and AppInfo's
+// public size only when neither has one. A zero stays zero rather than a guess.
+constexpr std::uint64_t RowSize(const PinnedDepot& row, std::uint64_t appInfoSize) {
+    return row.size != 0 ? row.size : appInfoSize;
+}
+
 // Skipped: the app itself (not content), depots without a gid (no manifest to
 // install), and depots Steam already planned (its row carries the branch gid,
 // and a second row would download the depot twice). Repeats keep the first pin,
@@ -200,7 +208,8 @@ constexpr bool GrowCoversRows(std::uint32_t slots, std::uint32_t rows) {
 
 // Where the rows a lost plan is refilled from come from.
 enum class RefillSource {
-    // Nothing to put back: no `.lua` depot to plan and no ACF record to restore.
+    // Nothing to put back: no `.lua` depot to plan, no ACF record to restore,
+    // or a real family share whose plan is Steam's own answer.
     None,
     // A not-installed app: the `.lua` pins describe its content.
     Pins,
@@ -218,7 +227,7 @@ enum class RefillSource {
 // plan from the `.lua` would mark each language pack as content that must exist
 // and the client would download the difference; filling it from the ACF keeps
 // exactly what is there.
-constexpr RefillSource DecideRefill(bool installed, std::uint32_t pinnedRows, bool realFamilyShare = false) {
+constexpr RefillSource DecideRefill(bool installed, std::uint32_t pinnedRows, bool realFamilyShare) {
     // A real family share is licensed by Steam: its answer already plans what
     // the account may use, and a row added here would claim content it does not.
     if (realFamilyShare)

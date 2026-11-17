@@ -159,6 +159,28 @@ inline std::uint64_t ParseGid(std::string_view text) {
     return value;
 }
 
+// True when every section in `lines` closes, i.e. the content is a whole VDF
+// document. A file truncated by a writer still parses the entries above the
+// cut; treating that prefix as the record would narrow a plan built from it.
+// A line is structure only when it holds nothing but the brace, the same rule
+// the parser uses, so braces inside quoted values do not count.
+inline bool IsCompleteDocument(const std::vector<std::string>& lines) {
+    int depth = 0;
+    bool sawSection = false;
+    for (const std::string& line : lines) {
+        const std::string_view trimmed = TrimAscii(line);
+        if (trimmed == "{") {
+            ++depth;
+            sawSection = true;
+        } else if (trimmed == "}") {
+            if (depth == 0)
+                return false;
+            --depth;
+        }
+    }
+    return sawSection && depth == 0;
+}
+
 // Every depot entry inside `InstalledDepots`, with the line numbers of the
 // `manifest`/`size` values so a repair can rewrite them in place.
 inline std::vector<DepotEntry> ParseInstalledDepots(const std::vector<std::string>& lines) {
