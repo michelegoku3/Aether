@@ -90,6 +90,12 @@ struct PinnedDepot {
     std::uint64_t size = 0;
 };
 
+// The size a refilled row carries: the pin's or ACF's own size, and AppInfo's
+// public size only when neither has one. A zero stays zero rather than a guess.
+constexpr std::uint64_t RowSize(const PinnedDepot& row, std::uint64_t appInfoSize) {
+    return row.size != 0 ? row.size : appInfoSize;
+}
+
 // The rows to append to a plan Steam answered with, given the depots the `.lua`
 // names for the app and the depot ids Steam already planned.
 //
@@ -98,12 +104,6 @@ struct PinnedDepot {
 // the downloader walks, so an app that is planned empty reports 0 B and
 // "installs" nothing. The `.lua` names the app's depots, so they fill it.
 //
-// The size a refilled row carries: the pin's or ACF's own size, and AppInfo's
-// public size only when neither has one. A zero stays zero rather than a guess.
-constexpr std::uint64_t RowSize(const PinnedDepot& row, std::uint64_t appInfoSize) {
-    return row.size != 0 ? row.size : appInfoSize;
-}
-
 // Skipped: the app itself (not content), depots without a gid (no manifest to
 // install), and depots Steam already planned (its row carries the branch gid,
 // and a second row would download the depot twice). Repeats keep the first pin,

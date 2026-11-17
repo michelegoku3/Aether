@@ -181,6 +181,14 @@ inline bool IsCompleteDocument(const std::vector<std::string>& lines) {
     return sawSection && depth == 0;
 }
 
+// True when the record belongs to `app`: its top-level `appid` is absent or
+// names it. The file name already names the app; this rejects a record that was
+// copied or renamed into place, which would plan another app's content.
+inline bool IsOwnRecord(std::string_view content, std::uint32_t app) {
+    const std::uint64_t appid = ReadTopLevelDecimal(content, "appid");
+    return appid == 0 || appid == app;
+}
+
 // Every depot entry inside `InstalledDepots`, with the line numbers of the
 // `manifest`/`size` values so a repair can rewrite them in place.
 inline std::vector<DepotEntry> ParseInstalledDepots(const std::vector<std::string>& lines) {
@@ -304,6 +312,11 @@ PlanInstalledDepotRepairs(const std::string& content,
     RepairPlan plan;
     plan.content = content;
     SplitContent split = SplitContentLines(content);
+    // A torn file still parses the entries above the cut, and rewriting that
+    // prefix would drop everything below it. Nothing to repair: leave the file
+    // exactly as it is for the writer that owns it to finish.
+    if (!IsCompleteDocument(split.lines))
+        return plan;
     for (const DepotEntry& entry : ParseInstalledDepots(split.lines)) {
         if (isBacked && isBacked(entry.depotId, entry.manifestGid))
             continue;

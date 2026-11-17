@@ -191,8 +191,7 @@ std::vector<policy::RecordedDepot> RecordedDepots(AppId app) {
         const std::string path = ac::strings::Narrow((winfile::ToPath(dir) / name).wstring());
         if (!ReadAcfBytes(path, content)) {
             if (winfile::Exists(path)) {
-                AC_LOG_WARN(kModule, "App %u: appmanifest is present but unreadable; planning from the .lua instead.",
-                            app);
+                AC_LOG_WARN(kModule, "App %u: appmanifest is present but unreadable; ignored in this library.", app);
             }
             continue;
         }
@@ -201,16 +200,13 @@ std::vector<policy::RecordedDepot> RecordedDepots(AppId app) {
         // A file Steam is rewriting parses its entries above the cut, and taking
         // that prefix as the record would narrow the plan below what is on disk.
         if (!appmanifest::IsCompleteDocument(split.lines)) {
-            AC_LOG_DEBUG(kModule, "App %u: appmanifest is incomplete (mid-write?); planning from the .lua instead.",
-                         app);
+            AC_LOG_DEBUG(kModule, "App %u: appmanifest is incomplete (mid-write?); ignored in this library.", app);
             continue;
         }
         // The file name names the app; a record that names another one is not
         // this app's content, whatever the folder it was found in.
-        const std::uint64_t appid = appmanifest::ReadTopLevelDecimal(content, "appid");
-        if (appid != 0 && appid != app) {
-            AC_LOG_DEBUG(kModule, "App %u: appmanifest names app %llu; ignored.", app,
-                         static_cast<unsigned long long>(appid));
+        if (!appmanifest::IsOwnRecord(content, app)) {
+            AC_LOG_DEBUG(kModule, "App %u: appmanifest names another app; ignored.", app);
             continue;
         }
 
@@ -252,8 +248,6 @@ static_assert(sizeof(DepotEntry) == policy::kPlanRowBytes, "DepotEntry stride is
 // refuse the answer rather than store a plan that omits a recorded depot.
 bool RefillDepotPlan(AppId app, CUtlVector<DepotEntry>* vec) {
     if (!vec || (!vec->mem.memory && vec->size != 0))
-        return true;
-    if (!o_CUtlMemoryGrow)
         return true;
 
     const std::vector<AppId> ids = luadata::IdsForApp(app);
@@ -336,6 +330,12 @@ bool RefillDepotPlan(AppId app, CUtlVector<DepotEntry>* vec) {
     const std::uint32_t wanted = static_cast<std::uint32_t>(rows.size());
     const std::uint32_t total = oldSize + wanted;
     if (vec->mem.allocationCount < total) {
+        if (!o_CUtlMemoryGrow) {
+            // Without the helper the rows cannot be reserved; a plan that omits
+            // a recorded depot must not be stored, so the caller refuses it.
+            AC_LOG_ERROR(kModule, "Depot plan refill for app %u has no CUtlMemoryGrow.", app);
+            return !recordedSource;
+        }
         std::vector<DepotEntry> kept;
         if (oldSize)
             kept.assign(vec->mem.memory, vec->mem.memory + oldSize);
@@ -395,14 +395,15 @@ bool h_BuildDepotDependency(void* mgr, AppId app, void* cfg, CUtlVector<DepotEnt
             before = depots->size;
     }
 
-    // Steam answers with an empty plan for an app whose AppInfo is mid-swap
-    // (a PICS refresh drops the old depot set before the new one lands), and its
-    // caller stores whatever comes back. A stored empty plan is an install with
-    // nothing to download: 0 B, a commit that writes no file, and the app still
-    // stamped Fully Installed - the library then shows no size and PLAY looks
-    // for an executable nobody downloaded. Refusing here makes that caller keep
-    // the depot config Steam already stored; the next pass, once the AppInfo has
-    // landed, builds the plan properly.
+    // A managed app whose own vector is still empty after the refill: the plan
+    // is what the caller stores, and an empty one is an install with nothing to
+    // download - 0 B, a commit that writes no file, and the app still stamped
+    // Fully Installed. The library then shows no size and PLAY looks for an
+    // executable nobody downloaded. The AppInfo being mid-swap is the common
+    // cause (a PICS refresh drops the old depot set before the new one lands),
+    // but an ACF that cannot be read or names no usable depot ends the same way.
+    // Refusing here makes that caller keep the depot config Steam already
+    // stored; the next pass plans the app again once the data it needs is there.
     //
     // Only the app's own vector decides. The shared/dependency vector carries
     // rows of other apps (redistributables, launcher redirects), so a row there

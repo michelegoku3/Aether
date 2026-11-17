@@ -292,5 +292,31 @@ void InstalledDepotsTest() {
         CHECK(!IsCompleteDocument(SplitContentLines("").lines));
         CHECK(!IsCompleteDocument(SplitContentLines("garbage\n").lines));
         CHECK(!IsCompleteDocument(SplitContentLines("{\n\t\"a\"\t\t\"1\"\n").lines));
+
+        // CRLF and braces inside a quoted value are not structure.
+        CHECK(IsCompleteDocument(
+            SplitContentLines("\"AppState\"\r\n{\r\n\t\"name\"\t\t\"a{b}\"\r\n\t\"note\"\t\t\"}\"\r\n}\r\n").lines));
+    }
+
+    // ---- the record belongs to the app it is filed under -------------------
+
+    {
+        CHECK(IsOwnRecord(kAcf, 4656000u));
+        CHECK(!IsOwnRecord(kAcf, 4656001u));
+        // No top-level appid: the file name is the only identity, so accept it.
+        CHECK(IsOwnRecord("\"AppState\"\n{\n}\n", 4656000u));
+    }
+
+    // ---- a torn document is never rewritten --------------------------------
+
+    // 4656002's declared gid is missing locally, so the repair would "fix" the
+    // prefix and write the truncated file back, losing everything below the cut.
+    {
+        std::string torn = kAcf;
+        torn.erase(torn.find("\"SharedDepots\""));
+        const RepairPlan plan = PlanInstalledDepotRepairs(
+            torn, Backed({}), Candidates({{4656002, {Local("5722240766019054112", 20, true, 1779867546ull)}}}));
+        CHECK(plan.repairs.empty());
+        CHECK(plan.content == torn);
     }
 }
