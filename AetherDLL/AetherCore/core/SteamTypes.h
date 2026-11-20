@@ -249,6 +249,12 @@ inline constexpr std::uint32_t kAppStateUpdateRequired = 0x0002u;
 // table it reads now instead of the one it read at startup.
 inline constexpr std::uint32_t kAppChangeAppInfoOrConfig = 0x0002;
 
+// Change flag handed to the client's MarkAppChange: the app's state changed.
+// Only this bit makes the client ask the app object for its state and publish it
+// to the app list; the config bit alone reaches the subscriptions that watch
+// config and leaves every action built from the state as it was painted.
+inline constexpr std::uint32_t kAppChangeAppState = 0x0040;
+
 // Prefix of the SteamUI app-overview object, NOT the whole CSteamApp.
 //
 // The offsets below 0x24 come from two independent references (an external layout dump and

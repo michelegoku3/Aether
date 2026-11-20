@@ -325,9 +325,10 @@ void DrainRechecks(void* source) {
             if (!g_state.overview.rechecks.Pop(app))
                 break;
         }
-        // The restore pass writes the bit back; this call only asks the client to
-        // look at the app's config again.
-        o_MarkAppChange(source, app, steam::kAppChangeAppInfoOrConfig);
+        // The restore pass writes the bit back; this call asks the client to look
+        // at the app's config again, and the state bit is what makes it publish
+        // the state the card builds its action from.
+        o_MarkAppChange(source, app, steam::kAppChangeAppInfoOrConfig | steam::kAppChangeAppState);
         g_state.overview.recheckCalls.fetch_add(1, std::memory_order_relaxed);
         handed = true;
         AC_LOG_INFO(kModule, "Asked the client to re-evaluate app %u after its manifest pins changed.", app);
@@ -375,7 +376,7 @@ void MarkUpdateReady(void* source) {
             if (!g_state.overview.markedPins.insert(app).second)
                 continue;
         }
-        o_MarkAppChange(source, app, steam::kAppChangeAppInfoOrConfig);
+        o_MarkAppChange(source, app, steam::kAppChangeAppInfoOrConfig | steam::kAppChangeAppState);
         AC_LOG_INFO(kModule, "Overview: asked the client to repaint app %u now that its update is required.", app);
     }
 }
