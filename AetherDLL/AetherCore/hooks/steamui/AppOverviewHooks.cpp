@@ -86,9 +86,11 @@ void ForgetTracking(steam::AppId app) {
 // a card kept offering PLAY until the app was launched. The plan publishes the
 // apps it built that way (DepotHooks::PublishPendingPins); this fill only sets
 // the bit, never clears one the client set for an update of its own.
-void MarkPendingUpdate(steam::AppId appId, steam::AppOverviewPrefix* app, bool sampleOk, bool layoutTrusted) {
-    if (!sampleOk || !layoutTrusted || app->appStateFlags != (app->appStateFlags & steam::kAppStateKnownMask))
+void MarkPendingUpdate(steam::AppId appId, steam::AppOverviewPrefix* app) {
+    if (app->appId != appId || policy::InspectOverview(app) != policy::OverviewVerdict::Ok ||
+        abi::guard::LayoutContradicted() || app->appStateFlags != (app->appStateFlags & steam::kAppStateKnownMask)) {
         return;
+    }
     if ((app->appStateFlags & steam::kAppStateUpdateRequired) != 0)
         return;
     bool pending = false;
@@ -102,7 +104,11 @@ void MarkPendingUpdate(steam::AppId appId, steam::AppOverviewPrefix* app, bool s
     AC_LOG_INFO_ONCE(kModule, "Overview: app %u offers UPDATE; its pinned build is not the installed one.", appId);
 }
 
+// The pending-update bit is set after the client has filled the object, not
+// before: that call rewrites every field from the client's own state, and a bit
+// written into the buffer it fills never reaches the card.
 void* h_FillInAppOverview(void* self, void* appOverview, steam::AppOverviewPrefix* app) {
+    bool managed = false;
     if (app) {
         g_state.overview.fills.fetch_add(1, std::memory_order_relaxed);
 
@@ -143,8 +149,10 @@ void* h_FillInAppOverview(void* self, void* appOverview, steam::AppOverviewPrefi
         // Remember every managed card, not only the ones this fill had to touch:
         // the owned bit is often the client's own, set because package 0 answers
         // the app as licensed, and it must still be taken back on removal.
-        if (inputs.managed)
+        if (inputs.managed) {
+            managed = true;
             TrackManaged(app->appId);
+        }
 
         const auto decision = policy::DecideOwnershipWrite(inputs);
         if (decision.action == policy::OwnershipAction::Stamp) {
@@ -159,10 +167,11 @@ void* h_FillInAppOverview(void* self, void* appOverview, steam::AppOverviewPrefi
             AC_LOG_INFO(kModule, "Overview: cleared the owned bit of app %u after its .lua was removed.", app->appId);
             status::Write();
         }
-        if (inputs.managed)
-            MarkPendingUpdate(app->appId, app, inputs.sampleOk, inputs.layoutTrusted);
     }
-    return o_FillInAppOverview(self, appOverview, app);
+    void* result = o_FillInAppOverview(self, appOverview, app);
+    if (managed)
+        MarkPendingUpdate(app->appId, app);
+    return result;
 }
 
 // ---- Recheck of a changed app ---------------------------------------------
