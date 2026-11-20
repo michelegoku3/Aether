@@ -156,6 +156,10 @@ MarkAppChange_t o_MarkAppChange = nullptr;
 
 void* h_MarkAppChange(void* self, steam::AppId app, std::uint32_t changeFlags) {
     g_state.overview.appChangeSource.store(self, std::memory_order_release);
+    // The client's own calls are the only evidence that it repainted a card:
+    // a state the client computes without one leaves the card showing the
+    // action of the state it was painted in, until something else refills it.
+    AC_LOG_DEBUG(kModule, "MarkAppChange app=%u flags=0x%x.", app, changeFlags);
     return o_MarkAppChange(self, app, changeFlags);
 }
 
