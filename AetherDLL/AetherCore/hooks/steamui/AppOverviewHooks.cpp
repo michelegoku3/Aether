@@ -79,6 +79,29 @@ void ForgetTracking(steam::AppId app) {
     }
 }
 
+// Offers UPDATE on a managed card whose pinned build is not on disk yet.
+//
+// The bit is the state the card paints its action from, and the client sets it
+// on its own schedule - a changed pin does not schedule that pass, which is why
+// a card kept offering PLAY until the app was launched. The plan publishes the
+// apps it built that way (DepotHooks::PublishPendingPins); this fill only sets
+// the bit, never clears one the client set for an update of its own.
+void MarkPendingUpdate(steam::AppId appId, steam::AppOverviewPrefix* app, bool sampleOk, bool layoutTrusted) {
+    if (!sampleOk || !layoutTrusted || app->appStateFlags != (app->appStateFlags & steam::kAppStateKnownMask))
+        return;
+    if ((app->appStateFlags & steam::kAppStateUpdateRequired) != 0)
+        return;
+    bool pending = false;
+    {
+        std::lock_guard lock(g_state.overview.stampMutex);
+        pending = g_state.overview.pendingPins.count(appId) != 0;
+    }
+    if (!pending)
+        return;
+    app->appStateFlags |= steam::kAppStateUpdateRequired;
+    AC_LOG_INFO_ONCE(kModule, "Overview: app %u offers UPDATE; its pinned build is not the installed one.", appId);
+}
+
 void* h_FillInAppOverview(void* self, void* appOverview, steam::AppOverviewPrefix* app) {
     if (app) {
         g_state.overview.fills.fetch_add(1, std::memory_order_relaxed);
@@ -136,6 +159,8 @@ void* h_FillInAppOverview(void* self, void* appOverview, steam::AppOverviewPrefi
             AC_LOG_INFO(kModule, "Overview: cleared the owned bit of app %u after its .lua was removed.", app->appId);
             status::Write();
         }
+        if (inputs.managed)
+            MarkPendingUpdate(app->appId, app, inputs.sampleOk, inputs.layoutTrusted);
     }
     return o_FillInAppOverview(self, appOverview, app);
 }

@@ -259,6 +259,11 @@ struct AetherCoreState {
         std::unordered_set<steam::AppId> tracked;
         std::unordered_set<steam::AppId> retired;
         std::unordered_set<steam::AppId> hidden;
+        // Apps whose `.lua` pins a gid the appmanifest does not record, as the
+        // last dependency build saw it (hooks/steamclient/DepotHooks.cpp). The
+        // card fill reads it to offer UPDATE without waiting for a client pass
+        // that a pin change does not trigger. Guarded by stampMutex.
+        std::unordered_set<steam::AppId> pendingPins;
         std::atomic<std::uint64_t> clears{0};
     };
     OverviewState overview;
