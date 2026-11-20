@@ -6,8 +6,10 @@
 #include <filesystem>
 #include <fstream>
 #include <iterator>
+#include <mutex>
 #include <sstream>
 #include <string>
+#include <unordered_map>
 #include <unordered_set>
 #include <vector>
 
@@ -19,6 +21,7 @@
 #include "core/StructGuard.h"
 #include "credentials/HexCodec.h"
 #include "hooks/steamclient/DepotPlanPolicy.h"
+#include "hooks/steamui/AppOverviewHooks.h"
 #include "network/ManifestFetch.h"
 #include "scripting/LuaData.h"
 #include "utils/GameNameResolver.h"
@@ -185,6 +188,13 @@ constexpr std::uintmax_t kMaxAcfBytes = 1u << 20;
 // one entry into an unbounded message.
 constexpr std::uint32_t kMaxLoggedRows = 16;
 
+// Pending pin sets whose card refresh was already asked for, keyed by app. The
+// promotion below fires on every rebuild of the dependency while a pin is
+// pending, and each request makes the client rebuild that dependency again: the
+// signature keeps it to one request per pin set.
+std::mutex s_cardRefreshMutex;
+std::unordered_map<AppId, std::uint64_t> s_cardRefreshSignature;
+
 bool ReadAcfBytes(const std::string& utf8Path, std::string& out) {
     std::error_code ec;
     const std::filesystem::path path = winfile::ToPath(utf8Path);
@@ -247,6 +257,35 @@ std::vector<policy::RecordedDepot> RecordedDepots(AppId app) {
             break;
     }
     return recorded;
+}
+
+// The prompt for the client's own repaint of the app's card.
+//
+// Steam paints PLAY from the state it last computed, and only looks at the app
+// again when something asks it to: a plan that promotes a pinned depot is a
+// pending download, but the card keeps its old action until the app is launched
+// or the card is rebuilt. The reload already asks once, before the client has
+// rebuilt the dependency this hook patches; the request below lands after that
+// rebuild, which is the moment the new target exists.
+void RequestCardRefresh(AppId app, const std::vector<ManifestPatchLog>& promoted) {
+    if (promoted.empty() || !steamui::AppRecheckSupported())
+        return;
+    std::uint64_t signature = 1469598103934665603ull;
+    for (const ManifestPatchLog& row : promoted) {
+        for (const std::uint64_t part : {static_cast<std::uint64_t>(row.depotId), row.newGid}) {
+            signature ^= part;
+            signature *= 1099511628211ull;
+        }
+    }
+    {
+        std::lock_guard lock(s_cardRefreshMutex);
+        const auto it = s_cardRefreshSignature.find(app);
+        if (it != s_cardRefreshSignature.end() && it->second == signature)
+            return;
+        s_cardRefreshSignature[app] = signature;
+    }
+    steamui::RequestAppRecheck({app});
+    AC_LOG_INFO(kModule, "Asked the client to refresh app %u's card: its pinned depot is a pending download.", app);
 }
 
 // One line per dependency build, so a support log can tell the calls apart.
@@ -509,6 +548,7 @@ bool h_BuildDepotDependency(void* mgr, AppId app, void* cfg, CUtlVector<DepotEnt
     std::vector<ManifestPatchLog> promoted;
     ApplyManifestOverrides(depots, &recorded, patches, promoted);
     ApplyManifestOverrides(shared, nullptr, patches, promoted);
+    RequestCardRefresh(app, promoted);
     if (!promoted.empty()) {
         AC_LOG_INFO_ONCE(kModule, "Pinned depots made update targets for app %u: %s.", app,
                          ManifestPatchArray(promoted).c_str());
