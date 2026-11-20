@@ -158,6 +158,10 @@ void EnsureSelectedManifests(AppId app, const CUtlVector<DepotEntry>* vec) {
 // a Steam worker thread.
 constexpr std::uintmax_t kMaxAcfBytes = 1u << 20;
 
+// A dependency build is logged on one line, so a plan of a big app cannot turn
+// one entry into an unbounded message.
+constexpr std::uint32_t kMaxLoggedRows = 16;
+
 bool ReadAcfBytes(const std::string& utf8Path, std::string& out) {
     std::error_code ec;
     const std::filesystem::path path = winfile::ToPath(utf8Path);
@@ -220,6 +224,49 @@ std::vector<policy::RecordedDepot> RecordedDepots(AppId app) {
             break;
     }
     return recorded;
+}
+
+// One line per dependency build, so a support log can tell the calls apart.
+//
+// Steam builds an app's depot dependency more than once: the acquisition target
+// and the installed/comparison side. A pin may be applied to only the first, or
+// Steam compares the pinned gid with itself, commits a zero-file update and
+// stamps that gid as installed. The arguments identify the call, and `inst`
+// marks a row still carrying the gid the appmanifest records.
+void LogDependencyCall(AppId app, const void* mgr, const void* cfg, const void* steamApp,
+                       const CUtlVector<DepotEntry>* depots, const CUtlVector<DepotEntry>* shared,
+                       const std::uint32_t* buildId, const bool* betaFallback) {
+    if (!log::Enabled(LogLevel::Debug))
+        return;
+    const std::vector<policy::RecordedDepot> recorded = RecordedDepots(app);
+
+    std::ostringstream os;
+    os << "Dependency build app=" << app << " ctx=" << mgr << " cfg=" << cfg << " steam_app=" << steamApp
+       << " own=" << (depots ? depots->size : 0) << " shared=" << (shared ? shared->size : 0)
+       << " build_id=" << (buildId ? std::to_string(*buildId) : std::string("null"))
+       << " beta_fallback=" << (betaFallback ? (*betaFallback ? "1" : "0") : "null") << " rows=[";
+    const std::uint32_t rows = depots ? depots->size : 0;
+    if (depots && depots->mem.memory) {
+        const std::uint32_t shown = rows < kMaxLoggedRows ? rows : kMaxLoggedRows;
+        for (std::uint32_t i = 0; i < shown; ++i) {
+            const DepotEntry& entry = depots->mem.memory[i];
+            if (i)
+                os << ", ";
+            os << entry.depotId << ':' << entry.manifestGid << ":n" << static_cast<unsigned>(entry.notNewTarget) << "s"
+               << static_cast<unsigned>(entry.sharedInstall);
+            const auto recordedIt =
+                std::find_if(recorded.begin(), recorded.end(),
+                             [&entry](const policy::RecordedDepot& row) { return row.depotId == entry.depotId; });
+            if (recordedIt != recorded.end() && recordedIt->gid == entry.manifestGid)
+                os << ":inst";
+            if (const auto pin = luadata::ManifestOverrideFor(entry.depotId); pin && pin->gid == entry.manifestGid)
+                os << ":pin";
+        }
+        if (rows > shown)
+            os << ", +" << (rows - shown) << " row(s)";
+    }
+    os << ']';
+    AC_LOG_DEBUG(kModule, "%s", os.str().c_str());
 }
 
 // Puts back the rows Steam leaves out for a managed app.
@@ -387,6 +434,8 @@ bool h_BuildDepotDependency(void* mgr, AppId app, void* cfg, CUtlVector<DepotEnt
     bool result = o_BuildDepotDependency(mgr, app, cfg, depots, shared, steamApp, buildId, betaFallback);
 
     const bool managed = luadata::IsConfigured(app);
+    if (managed)
+        LogDependencyCall(app, mgr, cfg, steamApp, depots, shared, buildId, betaFallback);
     std::uint32_t before = depots ? depots->size : 0;
     bool whole = true;
     if (result && managed) {
