@@ -375,11 +375,7 @@ when the Lua is written (Rule 0): the Desk must not nudge the client by touching
 pinned `(depot, gid)` rows of each changed file and asks the client to rebuild
 only the apps whose pins moved — `MarkAppChange` on the UI thread, from a queue
 of 64, at most 8 per frame — and Steam decides PLAY, UPDATE or a download from
-the pins against `InstalledDepots`. The reload's request lands before the client
-rebuilds the dependency, so a plan that promotes a pinned depot to a target row
-asks for the same recheck once more, keyed by the pending `(depot, gid)` set
-(`hooks/steamclient/DepotHooks.cpp` → `RequestCardRefresh`): without it the card
-keeps the action of the state it was painted in. A missing `MarkAppChange` /
+the pins against `InstalledDepots`. A missing `MarkAppChange` /
 `CSteamUIAppControllerRunFrame` pattern disables the recheck alone
 (`recheck_state = unsupported` in `status.json`); card repair, ownership and
 membership keep working.

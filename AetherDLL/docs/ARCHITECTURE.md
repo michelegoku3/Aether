@@ -582,15 +582,6 @@ Steam object. The recheck starts no download by itself; Steam compares the
 pinned GIDs with `InstalledDepots` and decides PLAY, UPDATE or a download by its
 own rules.
 
-That one request is not enough on its own. It lands before the client has
-rebuilt the dependency `hooks/steamclient/DepotHooks.cpp` patches, so the card is
-refilled while the plan still carries the installed GID. A plan that promotes a
-pinned depot to a target row asks for the same recheck once more, keyed by the
-pending `(depot, gid)` set (`RequestCardRefresh`): the request lands after the
-rebuild that created the target, which is when the client can paint UPDATE, and
-the same set never asks twice because every request makes the client rebuild the
-dependency that produced it.
-
 A missing `MarkAppChange` or `CSteamUIAppControllerRunFrame` pattern disables
 the recheck and nothing else. Card repair, ownership and membership keep
 working, the reload path skips its snapshots entirely (`AppRecheckSupported`),
