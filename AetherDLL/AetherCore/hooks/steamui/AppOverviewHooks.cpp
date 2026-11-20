@@ -156,10 +156,6 @@ MarkAppChange_t o_MarkAppChange = nullptr;
 
 void* h_MarkAppChange(void* self, steam::AppId app, std::uint32_t changeFlags) {
     g_state.overview.appChangeSource.store(self, std::memory_order_release);
-    // The client's own calls are the only evidence that it repainted a card:
-    // a state the client computes without one leaves the card showing the
-    // action of the state it was painted in, until something else refills it.
-    AC_LOG_DEBUG(kModule, "MarkAppChange app=%u flags=0x%x.", app, changeFlags);
     return o_MarkAppChange(self, app, changeFlags);
 }
 
@@ -325,10 +321,9 @@ void DrainRechecks(void* source) {
             if (!g_state.overview.rechecks.Pop(app))
                 break;
         }
-        // The restore pass writes the bit back; this call asks the client to look
-        // at the app's config again, and the state bit is what makes it publish
-        // the state the card builds its action from.
-        o_MarkAppChange(source, app, steam::kAppChangeAppInfoOrConfig | steam::kAppChangeAppState);
+        // The restore pass writes the bit back; this call only asks the client to
+        // look at the app's config again.
+        o_MarkAppChange(source, app, steam::kAppChangeAppInfoOrConfig);
         g_state.overview.recheckCalls.fetch_add(1, std::memory_order_relaxed);
         handed = true;
         AC_LOG_INFO(kModule, "Asked the client to re-evaluate app %u after its manifest pins changed.", app);
@@ -340,55 +335,12 @@ void DrainRechecks(void* source) {
         status::Write();
 }
 
-// Repaints a card whose update the client has just computed.
-//
-// A moved pin leaves the card on PLAY: the client evaluates the update on its own
-// schedule and then keeps the action it painted, so the library has to be told to
-// look at the app. This reads the state the client wrote on its own object and
-// asks once per pending build, with the same call the client makes itself when
-// an app's state changes. Nothing is written here: the state is the client's.
-void MarkUpdateReady(void* source) {
-    if (source == nullptr || o_GetAppByID == nullptr)
-        return;
-    std::vector<steam::AppId> pending;
-    {
-        std::lock_guard lock(g_state.overview.stampMutex);
-        pending.assign(g_state.overview.pendingPins.begin(), g_state.overview.pendingPins.end());
-    }
-    if (pending.empty())
-        return;
-    void* controller = g_state.overview.appController.load(std::memory_order_acquire);
-    if (controller == nullptr || !EnsureLookupShape(controller))
-        return;
-    for (const steam::AppId app : pending) {
-        {
-            std::lock_guard lock(g_state.overview.stampMutex);
-            if (g_state.overview.markedPins.count(app) != 0)
-                continue;
-        }
-        auto* found = static_cast<steam::AppOverviewPrefix*>(o_GetAppByID(controller, app, false));
-        if (policy::InspectOverview(found) != policy::OverviewVerdict::Ok || found->appId != app)
-            continue;
-        if ((found->appStateFlags & steam::kAppStateUpdateRequired) == 0)
-            continue;
-        {
-            std::lock_guard lock(g_state.overview.stampMutex);
-            if (!g_state.overview.markedPins.insert(app).second)
-                continue;
-        }
-        o_MarkAppChange(source, app, steam::kAppChangeAppInfoOrConfig | steam::kAppChangeAppState);
-        AC_LOG_INFO(kModule, "Overview: asked the client to repaint app %u now that its update is required.", app);
-    }
-}
-
 void* h_CSteamUIAppControllerRunFrame(void* self) {
     // Forward first: the client's frame work keeps the order it would have had
-    // without us, and the passes below are extra work on a frame that already ran.
+    // without us, and the drain is extra work on a frame that already ran.
     void* result = o_CSteamUIAppControllerRunFrame(self);
-    void* const source = g_state.overview.appChangeSource.load(std::memory_order_acquire);
-    DrainRechecks(source);
-    RestoreHiddenCards(source);
-    MarkUpdateReady(source);
+    DrainRechecks(g_state.overview.appChangeSource.load(std::memory_order_acquire));
+    RestoreHiddenCards(g_state.overview.appChangeSource.load(std::memory_order_acquire));
     return result;
 }
 

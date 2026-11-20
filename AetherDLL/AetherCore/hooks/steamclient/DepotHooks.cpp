@@ -249,35 +249,6 @@ std::vector<policy::RecordedDepot> RecordedDepots(AppId app) {
     return recorded;
 }
 
-// Tells the card fill which apps have a build on disk that is not the pinned one.
-//
-// The plan is the only place that sees both sides at once - the gid the `.lua`
-// pins and the gid the appmanifest records - and a pin change does not make the
-// client re-evaluate the app, so the card keeps offering PLAY until something
-// else does. The entry is rewritten on every build, so an app whose update
-// completed drops out of the set with the next plan.
-void PublishPendingPins(AppId app, const CUtlVector<DepotEntry>* depots,
-                        const std::vector<policy::RecordedDepot>& recorded) {
-    bool pending = false;
-    if (depots && depots->mem.memory) {
-        for (std::uint32_t i = 0; i < depots->size && !pending; ++i) {
-            const DepotEntry& entry = depots->mem.memory[i];
-            const auto pin = luadata::ManifestOverrideFor(entry.depotId);
-            pending = pin && pin->gid != 0 && pin->gid != RecordedGid(recorded, entry.depotId);
-        }
-    }
-    std::lock_guard lock(g_state.overview.stampMutex);
-    const bool wasPending = g_state.overview.pendingPins.count(app) != 0;
-    if (pending)
-        g_state.overview.pendingPins.insert(app);
-    else
-        g_state.overview.pendingPins.erase(app);
-    // A new pending build is a new card to repaint: the frame pass marks an app
-    // once per transition, so a client that keeps its state cannot loop.
-    if (pending && !wasPending)
-        g_state.overview.markedPins.erase(app);
-}
-
 // One line per dependency build, so a support log can tell the calls apart.
 //
 // Steam builds an app's depot dependency more than once: the acquisition target
@@ -538,8 +509,6 @@ bool h_BuildDepotDependency(void* mgr, AppId app, void* cfg, CUtlVector<DepotEnt
     std::vector<ManifestPatchLog> promoted;
     ApplyManifestOverrides(depots, &recorded, patches, promoted);
     ApplyManifestOverrides(shared, nullptr, patches, promoted);
-    if (managed)
-        PublishPendingPins(app, depots, recorded);
     if (!promoted.empty()) {
         AC_LOG_INFO_ONCE(kModule, "Pinned depots made update targets for app %u: %s.", app,
                          ManifestPatchArray(promoted).c_str());

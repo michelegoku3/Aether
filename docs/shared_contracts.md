@@ -375,13 +375,7 @@ when the Lua is written (Rule 0): the Desk must not nudge the client by touching
 pinned `(depot, gid)` rows of each changed file and asks the client to rebuild
 only the apps whose pins moved — `MarkAppChange` on the UI thread, from a queue
 of 64, at most 8 per frame — and Steam decides PLAY, UPDATE or a download from
-the pins against `InstalledDepots`. A pin the ACF does not record is an update the
-client computes on its own schedule, and a card keeps the action of the state it
-was painted in: the plan publishes the apps it built with a pending pin, and once
-the client's own object carries the update-required state the frame pass asks the
-library to look at that app again. Nothing is written to the state: it is the
-client's, and inventing it would offer a button with no update behind it
-(`hooks/steamui/AppOverviewHooks.cpp` → `MarkUpdateReady`). A missing `MarkAppChange` /
+the pins against `InstalledDepots`. A missing `MarkAppChange` /
 `CSteamUIAppControllerRunFrame` pattern disables the recheck alone
 (`recheck_state = unsupported` in `status.json`); card repair, ownership and
 membership keep working.

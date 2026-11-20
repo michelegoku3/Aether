@@ -237,23 +237,11 @@ enum class AppOwnershipFlags : std::uint32_t {
 inline constexpr std::uint32_t kOwnershipKnownMask = 0x003FFFFFu;
 inline constexpr std::uint32_t kAppStateKnownMask = 0x03FFFFFFu;
 
-// EAppState bit that makes an app's card offer UPDATE. Aether reads it to know
-// when the client has computed the update for a pinned build that is not on disk
-// yet: the card keeps the action of the state it was painted in, so the library
-// is then told to look at the app again. The bit itself is the client's.
-inline constexpr std::uint32_t kAppStateUpdateRequired = 0x0002u;
-
 // Change flag handed to the client's MarkAppChange: the app's AppInfo and depot
 // config are stale. This is the client's own AppInfoOrConfig bit, and it is what
 // a moved manifest pin makes true, so the client rebuilds the app from the pin
 // table it reads now instead of the one it read at startup.
 inline constexpr std::uint32_t kAppChangeAppInfoOrConfig = 0x0002;
-
-// Change flag handed to the client's MarkAppChange: the app's state changed.
-// Only this bit makes the client ask the app object for its state and publish it
-// to the app list; the config bit alone reaches the subscriptions that watch
-// config and leaves every action built from the state as it was painted.
-inline constexpr std::uint32_t kAppChangeAppState = 0x0040;
 
 // Prefix of the SteamUI app-overview object, NOT the whole CSteamApp.
 //
