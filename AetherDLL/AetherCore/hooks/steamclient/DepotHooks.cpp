@@ -83,8 +83,23 @@ std::int32_t h_LoadDepotDecryptionKey(void* self, std::uint32_t foo, char* keyNa
     return o_LoadDepotDecryptionKey(self, foo, keyName, keyOut, keySize);
 }
 
+// The gid the appmanifest records for a depot, or 0 when it records none.
+std::uint64_t RecordedGid(const std::vector<policy::RecordedDepot>& recorded, AppId depot) {
+    const auto it = std::find_if(recorded.begin(), recorded.end(),
+                                 [depot](const policy::RecordedDepot& row) { return row.depotId == depot; });
+    return it != recorded.end() ? it->gid : 0;
+}
+
 // Applies configured manifest overrides to a depot vector in place.
-void ApplyManifestOverrides(CUtlVector<DepotEntry>* vec, std::vector<ManifestPatchLog>& patches) {
+//
+// `recorded` is the app's installed record, or null for the shared/dependency
+// vector, whose rows belong to other apps. A pinned depot Steam carried over as
+// an installed-only row is promoted to a target row in the same pass, because
+// the update job compares target rows only: a pin left on an installed-only row
+// is mounted and recorded as installed without anything being downloaded. See
+// `policy::PromotePinnedTarget`.
+void ApplyManifestOverrides(CUtlVector<DepotEntry>* vec, const std::vector<policy::RecordedDepot>* recorded,
+                            std::vector<ManifestPatchLog>& patches, std::vector<ManifestPatchLog>& promoted) {
     if (!vec || !vec->mem.memory || vec->size == 0)
         return;
 
@@ -100,7 +115,15 @@ void ApplyManifestOverrides(CUtlVector<DepotEntry>* vec, std::vector<ManifestPat
     for (std::uint32_t i = 0; i < vec->size; ++i) {
         DepotEntry& entry = vec->mem.memory[i];
         auto ov = luadata::ManifestOverrideFor(entry.depotId);
-        if (!ov || entry.manifestGid == ov->gid)
+        if (!ov)
+            continue;
+
+        const std::uint64_t recordedGid = recorded ? RecordedGid(*recorded, entry.depotId) : 0;
+        if (policy::PromotePinnedTarget(ov->gid, recordedGid, entry.notNewTarget != 0)) {
+            entry.notNewTarget = 0;
+            promoted.push_back({entry.depotId, recordedGid, ov->gid});
+        }
+        if (entry.manifestGid == ov->gid)
             continue;
 
         patches.push_back({entry.depotId, entry.manifestGid, ov->gid});
@@ -235,10 +258,10 @@ std::vector<policy::RecordedDepot> RecordedDepots(AppId app) {
 // marks a row still carrying the gid the appmanifest records.
 void LogDependencyCall(AppId app, const void* mgr, const void* cfg, const void* steamApp,
                        const CUtlVector<DepotEntry>* depots, const CUtlVector<DepotEntry>* shared,
-                       const std::uint32_t* buildId, const bool* betaFallback) {
+                       const std::uint32_t* buildId, const bool* betaFallback,
+                       const std::vector<policy::RecordedDepot>& recorded) {
     if (!log::Enabled(LogLevel::Debug))
         return;
-    const std::vector<policy::RecordedDepot> recorded = RecordedDepots(app);
 
     std::ostringstream os;
     os << "Dependency build app=" << app << " ctx=" << mgr << " cfg=" << cfg << " steam_app=" << steamApp
@@ -254,11 +277,10 @@ void LogDependencyCall(AppId app, const void* mgr, const void* cfg, const void* 
                 os << ", ";
             os << entry.depotId << ':' << entry.manifestGid << ":n" << static_cast<unsigned>(entry.notNewTarget) << "s"
                << static_cast<unsigned>(entry.sharedInstall);
-            const auto recordedIt =
-                std::find_if(recorded.begin(), recorded.end(),
-                             [&entry](const policy::RecordedDepot& row) { return row.depotId == entry.depotId; });
-            if (recordedIt != recorded.end() && recordedIt->gid == entry.manifestGid)
+            if (const std::uint64_t installed = RecordedGid(recorded, entry.depotId);
+                installed != 0 && installed == entry.manifestGid) {
                 os << ":inst";
+            }
             if (const auto pin = luadata::ManifestOverrideFor(entry.depotId); pin && pin->gid == entry.manifestGid)
                 os << ":pin";
         }
@@ -293,12 +315,11 @@ static_assert(sizeof(DepotEntry) == policy::kPlanRowBytes, "DepotEntry stride is
 // `true` when the plan no longer misses anything Aether knows the app has;
 // `false` when rows were needed and could not be appended, so the caller must
 // refuse the answer rather than store a plan that omits a recorded depot.
-bool RefillDepotPlan(AppId app, CUtlVector<DepotEntry>* vec) {
+bool RefillDepotPlan(AppId app, const std::vector<policy::RecordedDepot>& recorded, CUtlVector<DepotEntry>* vec) {
     if (!vec || (!vec->mem.memory && vec->size != 0))
         return true;
 
     const std::vector<AppId> ids = luadata::IdsForApp(app);
-    const std::vector<policy::RecordedDepot> recorded = RecordedDepots(app);
     const policy::RefillSource source = policy::DecideRefill(!recorded.empty(), static_cast<std::uint32_t>(ids.size()),
                                                              luadata::IsRealFamilyShare(app));
     if (source == policy::RefillSource::None)
@@ -434,12 +455,16 @@ bool h_BuildDepotDependency(void* mgr, AppId app, void* cfg, CUtlVector<DepotEnt
     bool result = o_BuildDepotDependency(mgr, app, cfg, depots, shared, steamApp, buildId, betaFallback);
 
     const bool managed = luadata::IsConfigured(app);
+    // One read of the installed record per call: the log, the refill and the
+    // promotion all look at the same appmanifest.
+    const std::vector<policy::RecordedDepot> recorded =
+        managed ? RecordedDepots(app) : std::vector<policy::RecordedDepot>{};
     if (managed)
-        LogDependencyCall(app, mgr, cfg, steamApp, depots, shared, buildId, betaFallback);
+        LogDependencyCall(app, mgr, cfg, steamApp, depots, shared, buildId, betaFallback, recorded);
     std::uint32_t before = depots ? depots->size : 0;
     bool whole = true;
     if (result && managed) {
-        whole = RefillDepotPlan(app, depots);
+        whole = RefillDepotPlan(app, recorded, depots);
         if (depots)
             before = depots->size;
     }
@@ -481,8 +506,13 @@ bool h_BuildDepotDependency(void* mgr, AppId app, void* cfg, CUtlVector<DepotEnt
     }
 
     std::vector<ManifestPatchLog> patches;
-    ApplyManifestOverrides(depots, patches);
-    ApplyManifestOverrides(shared, patches);
+    std::vector<ManifestPatchLog> promoted;
+    ApplyManifestOverrides(depots, &recorded, patches, promoted);
+    ApplyManifestOverrides(shared, nullptr, patches, promoted);
+    if (!promoted.empty()) {
+        AC_LOG_INFO_ONCE(kModule, "Pinned depots made update targets for app %u: %s.", app,
+                         ManifestPatchArray(promoted).c_str());
+    }
     if (!patches.empty()) {
         // Once per unique line (app + patch set) per game session — the
         // logger's dedup handles the suppression.

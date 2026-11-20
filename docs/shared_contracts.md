@@ -406,8 +406,13 @@ records `InstalledDepots`, the missing rows are restored from that record (DLL:
 `hooks/steamclient/DepotHooks.cpp` → `RecordedDepots`, `policy::SelectRecordedRows`).
 Each field takes its most specific source: the `.lua` pin's gid and size when it
 locks the depot, the recorded gid and size otherwise, and AppInfo's public size
-only when neither names one. Depots the ACF does not record are never added this
-way: the `.lua` lists every depot the store has, language packs included. An app
+only when neither names one. A row the answer carries only as installed
+(`notNewTarget`) becomes a target row in the same pass when the `.lua` pins a
+gid the ACF does not record: the update job compares target rows only, so a pin
+left on an installed-only row is mounted and recorded as installed without a
+byte downloaded (`policy::PromotePinnedTarget`). Depots the ACF does not record
+are never added this way: the `.lua` lists every depot the store has, language
+packs included. An app
 that is not installed is planned from the `.lua` pins, narrowed to the AppInfo
 depots, and a real family share is skipped because its plan is Steam's own
 answer. The predicate is the parsed record, not "an ACF exists": Steam writes that

@@ -482,7 +482,11 @@ instead of skipping the new donor as "already tried". Probe requests are paced
   remove that depot and delete the files only it carried. Each row takes the
   pinned gid and size when the `.lua` locks the depot, otherwise the gid and
   size the ACF records, and AppInfo's public values as the last resort - a row
-  without a size is an install the client sizes at 0 B. Steam's own rows are kept
+  without a size is an install the client sizes at 0 B. A depot the client
+  answers with as installed-only (`notNewTarget`) is left out of its update
+  comparison, so a pin that names another gid promotes that row to a target row:
+  otherwise the client mounts and records the pinned build without downloading
+  it (`policy::PromotePinnedTarget`). Steam's own rows are kept
   and the new ones appended: an installed app's plan carries depots whose
   content is on disk, and dropping one makes the client account that content
   away. The buffer stays Steam's: rows are written only into capacity its

@@ -96,6 +96,20 @@ constexpr std::uint64_t RowSize(const PinnedDepot& row, std::uint64_t appInfoSiz
     return row.size != 0 ? row.size : appInfoSize;
 }
 
+// Whether a pinned depot Steam answered with as an installed-only row has to
+// become a target row.
+//
+// Steam carries a depot that is already on disk over as a row flagged
+// `notNewTarget`, and its update job compares target rows only: a plan whose own
+// depots are all installed-only makes every pin change a zero-file update that
+// still mounts and records the pinned gid as installed. A pin that names a gid
+// the appmanifest does not is that target, so the flag is cleared. A pin that is
+// already installed, and a depot the appmanifest does not record, leave the row
+// the way Steam shaped it.
+constexpr bool PromotePinnedTarget(std::uint64_t pinnedGid, std::uint64_t recordedGid, bool notNewTarget) {
+    return notNewTarget && pinnedGid != 0 && recordedGid != 0 && pinnedGid != recordedGid;
+}
+
 // The rows to append to a plan Steam answered with, given the depots the `.lua`
 // names for the app and the depot ids Steam already planned.
 //

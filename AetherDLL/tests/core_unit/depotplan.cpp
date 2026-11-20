@@ -23,6 +23,7 @@ using ac::hooks::steamclient::policy::GrowSlotsFor;
 using ac::hooks::steamclient::policy::ParseSize;
 using ac::hooks::steamclient::policy::PlanAnswer;
 using ac::hooks::steamclient::policy::PlanVerdict;
+using ac::hooks::steamclient::policy::PromotePinnedTarget;
 using ac::hooks::steamclient::policy::RecordedDepot;
 using ac::hooks::steamclient::policy::RefillSource;
 using ac::hooks::steamclient::policy::RowSize;
@@ -250,6 +251,18 @@ void CollapsesRepeatedRecordedDepotsKeepingTheFirst() {
     CHECK_EQ(rows[0].gid, 11u);
 }
 
+void PromotesAPinnedRowSteamCarriedAsInstalledOnly() {
+    // Steam hands a depot that is already on disk over as an installed-only
+    // row, and its update job compares target rows only: a pin that names
+    // another gid has to become the target, or it is mounted and recorded as
+    // installed without a byte downloaded.
+    CHECK(PromotePinnedTarget(22, 11, true));
+    CHECK(!PromotePinnedTarget(11, 11, true));
+    CHECK(!PromotePinnedTarget(22, 11, false));
+    CHECK(!PromotePinnedTarget(0, 11, true));
+    CHECK(!PromotePinnedTarget(22, 0, true));
+}
+
 void RowSizePrefersThePinThenAppInfo() {
     // The row's own size is the pin's or the ACF's; AppInfo answers only when
     // neither has one. Zero stays zero rather than becoming a guess.
@@ -287,6 +300,7 @@ void DepotPlanTest() {
     OrdersRecordedRowsByDepotId();
     NeverAddsTheRecordedAppItself();
     CollapsesRepeatedRecordedDepotsKeepingTheFirst();
+    PromotesAPinnedRowSteamCarriedAsInstalledOnly();
     RowSizePrefersThePinThenAppInfo();
     LeavesARealFamilyShareToSteam();
 }
