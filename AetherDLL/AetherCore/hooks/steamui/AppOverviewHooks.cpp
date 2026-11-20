@@ -79,36 +79,7 @@ void ForgetTracking(steam::AppId app) {
     }
 }
 
-// Offers UPDATE on a managed card whose pinned build is not on disk yet.
-//
-// The bit is the state the card paints its action from, and the client sets it
-// on its own schedule - a changed pin does not schedule that pass, which is why
-// a card kept offering PLAY until the app was launched. The plan publishes the
-// apps it built that way (DepotHooks::PublishPendingPins); this fill only sets
-// the bit, never clears one the client set for an update of its own.
-void MarkPendingUpdate(steam::AppId appId, steam::AppOverviewPrefix* app) {
-    if (app->appId != appId || policy::InspectOverview(app) != policy::OverviewVerdict::Ok ||
-        abi::guard::LayoutContradicted() || app->appStateFlags != (app->appStateFlags & steam::kAppStateKnownMask)) {
-        return;
-    }
-    if ((app->appStateFlags & steam::kAppStateUpdateRequired) != 0)
-        return;
-    bool pending = false;
-    {
-        std::lock_guard lock(g_state.overview.stampMutex);
-        pending = g_state.overview.pendingPins.count(appId) != 0;
-    }
-    if (!pending)
-        return;
-    app->appStateFlags |= steam::kAppStateUpdateRequired;
-    AC_LOG_INFO_ONCE(kModule, "Overview: app %u offers UPDATE; its pinned build is not the installed one.", appId);
-}
-
-// The pending-update bit is set after the client has filled the object, not
-// before: that call rewrites every field from the client's own state, and a bit
-// written into the buffer it fills never reaches the card.
 void* h_FillInAppOverview(void* self, void* appOverview, steam::AppOverviewPrefix* app) {
-    bool managed = false;
     if (app) {
         g_state.overview.fills.fetch_add(1, std::memory_order_relaxed);
 
@@ -149,10 +120,8 @@ void* h_FillInAppOverview(void* self, void* appOverview, steam::AppOverviewPrefi
         // Remember every managed card, not only the ones this fill had to touch:
         // the owned bit is often the client's own, set because package 0 answers
         // the app as licensed, and it must still be taken back on removal.
-        if (inputs.managed) {
-            managed = true;
+        if (inputs.managed)
             TrackManaged(app->appId);
-        }
 
         const auto decision = policy::DecideOwnershipWrite(inputs);
         if (decision.action == policy::OwnershipAction::Stamp) {
@@ -168,10 +137,7 @@ void* h_FillInAppOverview(void* self, void* appOverview, steam::AppOverviewPrefi
             status::Write();
         }
     }
-    void* result = o_FillInAppOverview(self, appOverview, app);
-    if (managed)
-        MarkPendingUpdate(app->appId, app);
-    return result;
+    return o_FillInAppOverview(self, appOverview, app);
 }
 
 // ---- Recheck of a changed app ---------------------------------------------
@@ -373,12 +339,55 @@ void DrainRechecks(void* source) {
         status::Write();
 }
 
+// Repaints a card whose update the client has just computed.
+//
+// A moved pin leaves the card on PLAY: the client evaluates the update on its own
+// schedule and then keeps the action it painted, so the library has to be told to
+// look at the app. This reads the state the client wrote on its own object and
+// asks once per pending build, with the same call the client makes itself when
+// an app's state changes. Nothing is written here: the state is the client's.
+void MarkUpdateReady(void* source) {
+    if (source == nullptr || o_GetAppByID == nullptr)
+        return;
+    std::vector<steam::AppId> pending;
+    {
+        std::lock_guard lock(g_state.overview.stampMutex);
+        pending.assign(g_state.overview.pendingPins.begin(), g_state.overview.pendingPins.end());
+    }
+    if (pending.empty())
+        return;
+    void* controller = g_state.overview.appController.load(std::memory_order_acquire);
+    if (controller == nullptr || !EnsureLookupShape(controller))
+        return;
+    for (const steam::AppId app : pending) {
+        {
+            std::lock_guard lock(g_state.overview.stampMutex);
+            if (g_state.overview.markedPins.count(app) != 0)
+                continue;
+        }
+        auto* found = static_cast<steam::AppOverviewPrefix*>(o_GetAppByID(controller, app, false));
+        if (policy::InspectOverview(found) != policy::OverviewVerdict::Ok || found->appId != app)
+            continue;
+        if ((found->appStateFlags & steam::kAppStateUpdateRequired) == 0)
+            continue;
+        {
+            std::lock_guard lock(g_state.overview.stampMutex);
+            if (!g_state.overview.markedPins.insert(app).second)
+                continue;
+        }
+        o_MarkAppChange(source, app, steam::kAppChangeAppInfoOrConfig);
+        AC_LOG_INFO(kModule, "Overview: asked the client to repaint app %u now that its update is required.", app);
+    }
+}
+
 void* h_CSteamUIAppControllerRunFrame(void* self) {
     // Forward first: the client's frame work keeps the order it would have had
-    // without us, and the drain is extra work on a frame that already ran.
+    // without us, and the passes below are extra work on a frame that already ran.
     void* result = o_CSteamUIAppControllerRunFrame(self);
-    DrainRechecks(g_state.overview.appChangeSource.load(std::memory_order_acquire));
-    RestoreHiddenCards(g_state.overview.appChangeSource.load(std::memory_order_acquire));
+    void* const source = g_state.overview.appChangeSource.load(std::memory_order_acquire);
+    DrainRechecks(source);
+    RestoreHiddenCards(source);
+    MarkUpdateReady(source);
     return result;
 }
 

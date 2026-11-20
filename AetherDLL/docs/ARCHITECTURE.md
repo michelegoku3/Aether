@@ -583,15 +583,17 @@ pinned GIDs with `InstalledDepots` and decides PLAY, UPDATE or a download by its
 own rules.
 
 A card is painted from the state the client last computed, and a moved pin does
-not make it compute again: the dependency is rebuilt within milliseconds, yet
-the app keeps offering PLAY until the client runs its own evaluation, which a
-pin change does not schedule. The plan is the only place that sees both sides at
-once - the pinned gid and the one the ACF records - so
+not make it compute again: the dependency is rebuilt within milliseconds, yet the
+app keeps offering PLAY until the client runs its own evaluation, which a pin
+change does not schedule. The plan is the only place that sees both sides at once
+- the pinned gid and the one the ACF records - so
 `hooks/steamclient/DepotHooks.cpp` publishes the apps it built with a pending
-pin, and the next card fill sets `kAppStateUpdateRequired` on the overview
-(`MarkPendingUpdate`). The bit is only ever set: an update the client computed
-is the client's own to clear. The set is rewritten on every dependency build, so
-an app whose update landed stops being marked with the next plan.
+pin. Once the client's own overview object carries `kAppStateUpdateRequired`,
+the frame pass asks the library to look at that app again (`MarkUpdateReady`),
+which is the call the client makes itself when an app's state changes and the one
+a launch otherwise supplies. The state is never written: an invented bit would
+offer a button with no update behind it. The set is rewritten on every
+dependency build, so an app whose update landed drops out with the next plan.
 
 A missing `MarkAppChange` or `CSteamUIAppControllerRunFrame` pattern disables
 the recheck and nothing else. Card repair, ownership and membership keep

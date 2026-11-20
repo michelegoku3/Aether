@@ -237,10 +237,10 @@ enum class AppOwnershipFlags : std::uint32_t {
 inline constexpr std::uint32_t kOwnershipKnownMask = 0x003FFFFFu;
 inline constexpr std::uint32_t kAppStateKnownMask = 0x03FFFFFFu;
 
-// EAppState bit the card turns into UPDATE. Aether sets it on a managed card
-// whose pinned gid the appmanifest does not record yet: the client computes
-// that state on its own schedule, and until it does the card keeps the action
-// of the state it was painted in.
+// EAppState bit that makes an app's card offer UPDATE. Aether reads it to know
+// when the client has computed the update for a pinned build that is not on disk
+// yet: the card keeps the action of the state it was painted in, so the library
+// is then told to look at the app again. The bit itself is the client's.
 inline constexpr std::uint32_t kAppStateUpdateRequired = 0x0002u;
 
 // Change flag handed to the client's MarkAppChange: the app's AppInfo and depot
@@ -255,8 +255,7 @@ inline constexpr std::uint32_t kAppChangeAppInfoOrConfig = 0x0002;
 // the earlier probe of this client) and are fenced at compile time. What
 // follows 0x24 is deliberately not declared: its alignment depends on members
 // Aether never reads, and guessing the tail is how a write lands in the wrong
-// field. `ownershipFlags` and the `kAppStateUpdateRequired` bit of
-// `appStateFlags` are the only members Aether writes.
+// field. `ownershipFlags` is the only member Aether writes.
 struct AppOverviewPrefix {
     std::uint8_t vfptr[8];            // +0x00
     std::uint64_t gameId;             // +0x08  low 24 bits must equal appId

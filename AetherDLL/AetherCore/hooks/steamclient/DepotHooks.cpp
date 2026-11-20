@@ -267,10 +267,15 @@ void PublishPendingPins(AppId app, const CUtlVector<DepotEntry>* depots,
         }
     }
     std::lock_guard lock(g_state.overview.stampMutex);
+    const bool wasPending = g_state.overview.pendingPins.count(app) != 0;
     if (pending)
         g_state.overview.pendingPins.insert(app);
     else
         g_state.overview.pendingPins.erase(app);
+    // A new pending build is a new card to repaint: the frame pass marks an app
+    // once per transition, so a client that keeps its state cannot loop.
+    if (pending && !wasPending)
+        g_state.overview.markedPins.erase(app);
 }
 
 // One line per dependency build, so a support log can tell the calls apart.
