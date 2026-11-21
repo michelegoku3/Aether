@@ -43,6 +43,7 @@ int main(int argc, char** argv) {
         {"callbackcopy", CallbackCopyTest},
         {"memory", MemoryRangeTest},
         {"payloadattest", PayloadAttestTest},
+        {"productinfo_queue", ProductInfoQueueTest},
     };
     try {
         if (argc == 1) {

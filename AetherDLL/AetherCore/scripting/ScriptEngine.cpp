@@ -24,6 +24,7 @@ extern "C" {
 #include "core/AetherCoreState.h"
 #include "core/Logger.h"
 #include "scripting/LuaBindings.h"
+#include "hooks/wire/ProductInfoRequest.h"
 #include "scripting/LuaData.h"
 #include "utils/WinFile.h"
 
@@ -143,6 +144,10 @@ bool Init() {
     // If the initial RecordDepot() calls stayed queued, the first later
     // NotifyLicenseChanged() could inject those appids a second time.
     luadata::ClearPendingChanges();
+
+    // A freshly published .lua app has no AppInfo until the CM is asked for it;
+    // the batch PICS job can sit in Timeout for the whole session, so ask per app.
+    hooks::productinfo::RequestAll(luadata::LibraryAppIds());
 
     AC_LOG_INFO(kModule, "Init complete. Configured depots: %zu", luadata::AllDepotIds().size());
     return true;
