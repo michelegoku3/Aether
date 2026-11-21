@@ -9,6 +9,7 @@
 
 #include "core/AetherCoreState.h"
 #include "core/AppManifestOwner.h"
+#include "core/InstalledDepotRepair.h"
 #include "core/Constants.h"
 #include "core/HookBootstrap.h"
 #include "core/HookManager.h"
@@ -290,7 +291,16 @@ void StartSafetyNetsStage() {
     //      Depends on: lua data (HasDepot) + steamInstallPath + [library].
     ac::appmanifest::ApplyOwnersAtStartup();
 
-    // 10d. Stylesheet tweak: hide Steam's orange "legacy library sharing"
+    // 10d. InstalledDepots repair: an ACF that names a manifest GID with no
+    //      local file makes every download die with `Access Denied` (Steam
+    //      reports "No connection") because the delta is computed from that
+    //      GID. Restores the GID of the manifest the depot does have, once per
+    //      process, for managed apps. Runs after ManifestRestore so manifests
+    //      republished from the backup are already visible.
+    //      Depends on: lua data (HasDepot) + steamInstallPath + depotcache.
+    ac::appmanifest::ApplyInstalledDepotRepairsAtStartup();
+
+    // 10e. Stylesheet tweak: hide Steam's orange "legacy library sharing"
     //      notice next to the banner. Rewrites the rule in place with
     //      same-length swaps, so sp.css keeps its exact size: Steam's
     //      bootstrapper verifies client file sizes before every start and
