@@ -112,13 +112,13 @@ fn test_release_repo_label_defaults_to_fork() {
 }
 
 #[test]
-fn test_dll_channel_defaults_to_fork_when_only_desk_is_overridden() {
+fn test_dll_channel_keeps_upstream_when_only_desk_is_overridden() {
     use crate::updater::github::{dll_repo, test_repo};
 
-    // Only the desk channel is overridden; the DLL channel keeps this fork's
-    // default (both channels ship from the fork since the Tier B DLL work).
+    // Only the desk channel is overridden; the DLL channel must still read
+    // upstream, which is where the AetherDLL releases live.
     let expected_dll = test_repo(
-        option_env!("AETHER_DLL_RELEASE_OWNER").unwrap_or("Vhierly"),
+        option_env!("AETHER_DLL_RELEASE_OWNER").unwrap_or("michelegoku3"),
         option_env!("AETHER_DLL_RELEASE_NAME").unwrap_or("Aether"),
     );
     assert_eq!(dll_repo(), expected_dll);
@@ -130,7 +130,7 @@ fn test_dll_channel_defaults_to_fork_when_only_desk_is_overridden() {
     );
     let dll_env_set = option_env!("AETHER_DLL_RELEASE_OWNER").is_some();
     if !dll_env_set {
-        assert_eq!(dll_repo(), test_repo("Vhierly", "Aether"));
+        assert_eq!(dll_repo(), test_repo("michelegoku3", "Aether"));
         let _ = desk;
     }
 }
