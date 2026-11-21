@@ -19,6 +19,7 @@ add_library(AetherCore SHARED
     core/NetPacketAbi.cpp
     core/StructGuard.cpp
     core/SteamVersion.cpp
+    core/SteamBetaNotice.cpp
     core/AppManifestOwner.cpp
     core/InstalledDepotRepair.cpp
 
@@ -40,6 +41,7 @@ add_library(AetherCore SHARED
 
     # Credentials
     security/ProviderCredentials.cpp
+    security/HubcapKeyCheck.cpp
     credentials/CredentialStore.cpp
     credentials/Ticket.cpp
     credentials/SteamId.cpp
@@ -134,6 +136,7 @@ target_link_libraries(AetherCore PRIVATE
     shlwapi
     advapi32
     Psapi
+    user32
 )
 
 target_compile_definitions(AetherCore PRIVATE

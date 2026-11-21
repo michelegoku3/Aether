@@ -11,6 +11,7 @@
 // Schema v9 (top-level keys include):
 //   schema_version, ts
 //   build_id, build_config, build_time, diversion_outcome
+//   steam_beta_branch ("" = stable client, otherwise the branch name)
 //   steamclient_sha, steamclient_toml_found, steamclient_pattern_source
 //   steamui_sha, steamui_toml_found, steamui_pattern_source
 //   netpacket_abi_layout, netpacket_abi_data_off, netpacket_abi_resolved,
@@ -28,6 +29,8 @@
 //     eticket_runtime_cache_entries
 //   ticket_forge_successes, ticket_forge_failures
 //   manifest_fetch_production_route (local | authenticated_hubcap_standalone | legacy_provider)
+//   hubcap_key_state ("unknown" | "active" | "inactive"),
+//     hubcap_key_checked_epoch (0 = never asked)
 //   online_payload_present, online_payload_injected_pids,
 //     online_payload_inject_successes, online_payload_inject_failures
 //   pipewatch_snapshots
