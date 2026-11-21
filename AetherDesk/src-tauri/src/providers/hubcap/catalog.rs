@@ -89,16 +89,23 @@ impl HubcapClient {
 
     /// One logical search against Hubcap, backed by two requests with different
     /// endpoints issued in parallel (`/library` + `/search`).
-    pub async fn search_all(&self, query: &str) -> Vec<HubcapGameItem> {
+    ///
+    /// The flag reports whether at least one endpoint answered. An empty `Ok`
+    /// still counts as answered: the host replied, it just had no matches. That
+    /// is what lets callers tell "no results" from "nobody answered" without a
+    /// separate connectivity probe.
+    pub async fn search_all_reported(&self, query: &str) -> (Vec<HubcapGameItem>, bool) {
         let (library_result, games_result) =
             tokio::join!(self.search_library(query), self.search_games(query),);
 
         let mut merged: Vec<HubcapGameItem> = Vec::new();
         let mut seen_ids: HashSet<u32> = HashSet::new();
+        let mut answered = false;
 
         for result in [library_result, games_result] {
             match result {
                 Ok(items) => {
+                    answered = true;
                     for item in items {
                         if item.app_id != 0 && seen_ids.insert(item.app_id) {
                             merged.push(item);
@@ -116,6 +123,6 @@ impl HubcapClient {
             }
         }
 
-        merged
+        (merged, answered)
     }
 }

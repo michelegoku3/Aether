@@ -191,7 +191,7 @@ impl OureverydayClient {
                 continue;
             }
             let depot_id = row.app_id; // in LuaManifestRow, app_id holds the depot ID
-            let manifest_id = row.manifest_id.clone();
+            let manifest_id = row.manifest_id;
 
             let client_clone = http::shared_client(MANIFEST_MIRROR_TIMEOUT_SECONDS);
 
