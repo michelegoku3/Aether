@@ -7,8 +7,8 @@
 // ---------------------------------------------------------------------------
 // Steam content manifest identity validation (P17 testability).
 //
-// Extracted verbatim from ManifestFetch.cpp so the byte-level checks can be
-// unit-tested with synthetic blobs. A Steam depot manifest starts with two
+// Split from ManifestFetch.cpp so the byte-level checks can be unit-tested
+// with synthetic blobs. A Steam depot manifest starts with two
 // fixed-size sections:
 //   [0x71F617D0][u32 length][payload]   "ManifestInfo" header
 //   [0x1F4812BE][u32 length][metadata]  protobuf-ish depot/GID descriptor
@@ -23,5 +23,11 @@ bool ReadVarint(std::string_view bytes, std::size_t& offset, std::uint64_t& out)
 // Returns false on any structural problem (truncation, wrong magic, malformed
 // protobuf framing) — the blob must then be treated as unusable.
 bool ManifestIdentityMatches(std::string_view bytes, std::uint32_t expectedDepot, std::uint64_t expectedGid);
+
+// Total content size declared by the manifest payload: the sum of every file's
+// `size` field. Steam records the same number in `InstalledDepots[depot].size`,
+// so it ties one depotcache file to the ACF entry it produced. False on any
+// structural problem: a partial sum is never returned.
+bool ManifestContentSize(std::string_view bytes, std::uint64_t& out);
 
 } // namespace ac::manifestidentity
