@@ -177,7 +177,11 @@ jobs:
     if: startsWith(github.ref_name, 'dll-') || startsWith(github.ref_name, 'tdll-')
     permissions:
       contents: write
-    runs-on: windows-latest
+    # Pin the image: windows-latest now ships an MSVC 18 STL that rejects the
+    # image's older clang-tidy ("expected Clang 22 or newer"), which is a
+    # toolchain mismatch, not a code failure. windows-2022 has the matching
+    # MSVC 14.4x toolchain this project is developed and gated against.
+    runs-on: windows-2022
 
     steps:
       - name: Checkout Repository
