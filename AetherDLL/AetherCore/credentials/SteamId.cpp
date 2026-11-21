@@ -67,7 +67,11 @@ std::uint64_t FromUserdataFolder(steam::AppId appId) {
         if (!end || *end != '\0' || accountId == 0)
             continue;
 
-        const std::string gameDir = steamPath + "\\userdata\\" + narrowName + "\\" + std::to_string(appId);
+        std::string gameDir = steamPath;
+        gameDir += "\\userdata\\";
+        gameDir += narrowName;
+        gameDir += '\\';
+        gameDir += std::to_string(appId);
         if (winfile::IsDirectory(gameDir)) {
             result = steam::MakeSteamId64(static_cast<std::uint32_t>(accountId));
             break;

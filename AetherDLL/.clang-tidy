@@ -22,6 +22,9 @@
 #   bugprone-throwing-static-initialization  service state is intentionally static
 #                                          (ARCHITECTURE.md: s_* lifecycle, pinned
 #                                          DLL; a throwing init fails fast at load)
+#   bugprone-signed-bitwise               Win32/MSVC bitmask types (DWORD,
+#                                          ios_base::openmode) are signed by design
+#                                          and are combined with signed constants
 #   cert-dcl50-cpp                         printf-style logger (Write/WriteOnce) is the
 #                                          intentional Win32 idiom; macros forward __VA_ARGS__
 #   cert-err58-cpp                         static init with mutex/string is intentional
@@ -40,6 +43,7 @@ Checks: >
   -bugprone-reserved-identifier,
   -bugprone-exception-escape,
   -bugprone-throwing-static-initialization,
+  -bugprone-signed-bitwise,
   cert-*,
   -cert-dcl50-cpp,
   -cert-err58-cpp,
