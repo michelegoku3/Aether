@@ -11,13 +11,13 @@ namespace {
 std::string BuildRawUrl(const Source& src, const Loc& loc, const std::string& sha) {
     std::string url = "https://raw.githubusercontent.com/";
     url += src.owner;
-    url += "/";
+    url += '/';
     url += src.repo;
-    url += "/";
+    url += '/';
     url += loc.branch;
-    url += "/";
+    url += '/';
     url += loc.folder;
-    url += "/";
+    url += '/';
     url += sha;
     url += ".toml";
     return url;
@@ -27,13 +27,13 @@ std::string BuildRawUrl(const Source& src, const Loc& loc, const std::string& sh
 std::string BuildCdnUrl(const Source& src, const Loc& loc, const std::string& sha) {
     std::string url = "https://cdn.jsdelivr.net/gh/";
     url += src.owner;
-    url += "/";
+    url += '/';
     url += src.repo;
-    url += "@";
+    url += '@';
     url += loc.branch;
-    url += "/";
+    url += '/';
     url += loc.folder;
-    url += "/";
+    url += '/';
     url += sha;
     url += ".toml";
     return url;

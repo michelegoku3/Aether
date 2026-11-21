@@ -79,10 +79,9 @@ void FormatBody(char (&body)[constants::kLogBodyBytes], const char* format, va_l
     if (written >= 0 && static_cast<std::size_t>(written) >= sizeof(body)) {
         const char marker[] = "[...]";
         const std::size_t mlen = sizeof(marker) - 1;
-        if (sizeof(body) > mlen) {
-            for (std::size_t i = 0; i < mlen; ++i)
-                body[sizeof(body) - mlen - 1 + i] = marker[i];
-        }
+        static_assert(sizeof(body) > sizeof(marker) - 1, "log body must fit the truncation marker");
+        for (std::size_t i = 0; i < mlen; ++i)
+            body[sizeof(body) - mlen - 1 + i] = marker[i];
     }
 }
 

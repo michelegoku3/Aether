@@ -17,6 +17,11 @@
 
 #include "utils/KeyValues.h"
 
+// Compile-time layout assertions compare constants (offsetof/sizeof); MSVC's
+// C4127 fires on those by design, so keep the file quiet under /WX.
+#pragma warning(push)
+#pragma warning(disable: 4127)
+
 void SchemaBuckets() {
 
     auto fixture = [](const std::string& bucket, const std::string& child, bool entry,
@@ -666,3 +671,5 @@ void ManifestContractTest() {
         CHECK(!mi::ManifestIdentityMatches(body, 0, 0));
     }
 }
+
+#pragma warning(pop)

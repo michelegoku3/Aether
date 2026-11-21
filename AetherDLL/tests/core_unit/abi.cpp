@@ -6,6 +6,11 @@
 
 #include "core/StructGuard.h"
 
+// Compile-time layout assertions compare constants (offsetof/sizeof); MSVC's
+// C4127 fires on those by design, so keep the file quiet under /WX.
+#pragma warning(push)
+#pragma warning(disable: 4127)
+
 // ---------------------------------------------------------------------------
 
 // CNetPacket ABI resolver (core/NetPacketAbi.h).
@@ -974,3 +979,5 @@ void StructGuard() {
             CHECK(ReasonText(r) != nullptr && ReasonText(r)[0] != '\0');
     }
 }
+
+#pragma warning(pop)
