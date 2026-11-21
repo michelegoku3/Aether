@@ -22,6 +22,9 @@ Ported from upstream and adapted to this fork:
 - **Store front cache warm-up** — the first storefront page is fetched once the window is interactive, so opening Store no longer waits on Steam.
 - **Dated log lines** — `desk.log` and `main.log` now start with `YYYY-MM-DD HH:MM:SS.mmm`, so the merged "All" view sorts correctly across midnight.
 - **Read-only online panel** — opening the ONLINE popup no longer rewrites presence settings; a change happens only when you pick a mode.
+- **Close-Steam confirmation** — DLL install/uninstall/reset asks before terminating Steam, and running games are closed (and re-swept) first.
+- **Store reachability reporting** — a failed search reports when Steam/Hubcap never answered (DNS, reset, timeout, TLS) instead of claiming no results.
+- **Version bump helper** — `Tools/bump_version.cmd` / `bump_version.ps1` validate and dry-run the five Desk version carriers.
 - **Reset confirmation** — Reset Settings now asks before wiping every setting.
 - **Maintenance badge** — the disabled Auto version tab carries an amber `MAINTENANCE` badge.
 - **Dependencies** — `ctutils` 0.4.5 (RUSTSEC-2026-0385).
