@@ -320,7 +320,8 @@ pub async fn uninstall_aether_dll(
 
         // The uninstaller also removes the obsolete Steam-root proxy.
         DllInstaller::new(&steam_path).uninstall()?;
-        let legacy_version_path = std::path::PathBuf::from(&steam_path).join("AetherDLL_version.txt");
+        let legacy_version_path =
+            std::path::PathBuf::from(&steam_path).join("AetherDLL_version.txt");
         let _ = std::fs::remove_file(legacy_version_path);
         Ok("AetherDLL files removed successfully from Steam.".to_string())
     })
