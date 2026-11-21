@@ -1,11 +1,8 @@
 fn main() {
     // Which GitHub repos the self-updater points at. Forks set these before
-    // `tauri build`; unset means upstream (michelegoku3/Aether), so upstream's
-    // binary is unchanged.
-    //
-    // AetherDesk and AetherDLL are separate: a fork publishing its own Desk
-    // builds still takes the shared DLL payload from upstream, so
-    // AETHER_DLL_RELEASE_* defaults to upstream and is left unset by forks.
+    // `tauri build`; unset means this fork for both AetherDesk and AetherDLL
+    // (see updater/github.rs), so a local build behaves like the CI release.
+    // AETHER_DLL_RELEASE_* still overrides the DLL channel on its own.
     let env_pairs = [
         "AETHER_RELEASE_OWNER",
         "AETHER_RELEASE_NAME",

@@ -16,7 +16,7 @@ detection accuracy**, and pulls selected fixes from upstream
 | Library cards | One combined badge (`UCO2 \| Cracked \| Denuvo`) plus Installing state | Per-game badges |
 | Family share | Cosmetic family-share labels | Ownership classification and a display-only owner banner |
 | Store front | Opens on New Releases (`latest`) | Also `latest` since 1.5.0 |
-| Auto-update | AetherDesk from this fork, AetherDLL from upstream | Both from upstream |
+| Auto-update | AetherDesk and AetherDLL from this fork | Both from upstream |
 
 ## Features
 
@@ -64,12 +64,14 @@ Ported from upstream and adapted to this fork:
 
 - Stable Desk releases use `desk-v*` tags; test releases use `tdesk-v*` and are
   only offered when **Enable test updates** is on.
-- AetherDLL releases stay upstream (`dll-*`); this fork publishes no DLL tags.
+- AetherDLL releases use `dll-v*` (test: `tdll-v*`) from this fork, so the
+  fork's DLL work reaches users; the channel stays overridable with
+  `AETHER_DLL_RELEASE_OWNER` / `AETHER_DLL_RELEASE_NAME`.
 - GitHub Actions builds and publishes a portable ZIP on every pushed tag, and
   `workflow_dispatch` can rebuild an existing tag.
-- The updater points AetherDesk at this repository by default and AetherDLL at
-  `michelegoku3/Aether`; override with `AETHER_RELEASE_OWNER` /
-  `AETHER_RELEASE_NAME`.
+- The updater points both AetherDesk and AetherDLL at this repository by
+  default; override with `AETHER_RELEASE_OWNER` / `AETHER_RELEASE_NAME` and
+  `AETHER_DLL_RELEASE_OWNER` / `AETHER_DLL_RELEASE_NAME`.
 
 ## How to use AetherDesk
 

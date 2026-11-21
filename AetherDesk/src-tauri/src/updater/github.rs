@@ -80,12 +80,11 @@ pub(crate) fn test_repo(owner: &'static str, name: &'static str) -> RepoSpec {
     RepoSpec { owner, name }
 }
 
-/// AetherDesk updates come from this fork by default, so a local build
-/// (`build_desk.cmd`) behaves like the CI release. Both values stay overridable
-/// with AETHER_RELEASE_OWNER / AETHER_RELEASE_NAME.
+/// AetherDesk and AetherDLL updates both come from this fork by default, so a
+/// local build (`build_desk.cmd`) behaves like the CI release. Both values stay
+/// overridable with AETHER_DLL_RELEASE_OWNER / AETHER_DLL_RELEASE_NAME.
 const DESK_REPO_OWNER_DEFAULT: &str = "Vhierly";
-/// AetherDLL releases stay on upstream: this fork publishes no `dll-*` tags.
-const DLL_REPO_OWNER_DEFAULT: &str = "michelegoku3";
+const DLL_REPO_OWNER_DEFAULT: &str = "Vhierly";
 const REPO_NAME: &str = "Aether";
 const USER_AGENT: &str = "AetherDesk-Updater";
 
