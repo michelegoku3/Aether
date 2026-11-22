@@ -207,6 +207,15 @@ static void WriteSnapshot(std::uint64_t requests) {
     w.Str("recheck_state", !hooks::steamui::AppRecheckSupported()         ? "unsupported"
                            : recheckPending != 0 && !appChangeSourceKnown ? "no-source"
                                                                           : "ready");
+    // The per-app update check the drain runs after that notification. `ready`
+    // needs both the pattern and the manager the BuildDepotDependency hook
+    // captured; without either, a moved pin keeps the action of the state Steam
+    // last computed until the app is launched.
+    w.UInt64("overview_update_checks", g_state.overview.updateChecks.load(std::memory_order_relaxed));
+    w.Str("update_check_state", g_state.overview.clientCheckAppForUpdate.load(std::memory_order_acquire) != nullptr &&
+                                        g_state.overview.clientAppManager.load(std::memory_order_acquire) != nullptr
+                                    ? "ready"
+                                    : "unsupported");
     // Restore layer: whether a card Aether took back can be put back when its
     // `.lua` returns. `no-controller` means the client never ran the lookup the
     // owner is learned from; `no-shape` means the returned object never matched

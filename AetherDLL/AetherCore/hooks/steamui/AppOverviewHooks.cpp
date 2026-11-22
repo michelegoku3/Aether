@@ -321,10 +321,30 @@ void DrainRechecks(void* source) {
             if (!g_state.overview.rechecks.Pop(app))
                 break;
         }
-        // The restore pass writes the bit back; this call only asks the client to
-        // look at the app's config again.
+        // The client rebuilds the app's config from this notification, which is
+        // what applies the pins to the plan it reads next.
         o_MarkAppChange(source, app, steam::kAppChangeAppInfoOrConfig);
         g_state.overview.recheckCalls.fetch_add(1, std::memory_order_relaxed);
+
+        // The notification above rebuilds the app's config, but Steam computes
+        // "update required" only inside its own per-app check: the one the
+        // launch path runs, which promotes a pinned gid to a download target and
+        // tells the library the new state. A moved pin never schedules that
+        // check, so the card kept offering PLAY until the app was launched.
+        // Asking for it here is the same call, made on the thread the UI already
+        // uses to reach the client; a missing pattern leaves only this call off.
+        using CheckAppForUpdate_t = bool (*)(void*, steam::AppId);
+        void* manager = g_state.overview.clientAppManager.load(std::memory_order_acquire);
+        auto check = reinterpret_cast<CheckAppForUpdate_t>(
+            g_state.overview.clientCheckAppForUpdate.load(std::memory_order_acquire));
+        if (manager != nullptr && check != nullptr) {
+            // The answer is the client's own and is logged raw: reading it as a
+            // verdict here would hide a call that resolved to the wrong entry.
+            const bool answer = check(manager, app);
+            g_state.overview.updateChecks.fetch_add(1, std::memory_order_relaxed);
+            AC_LOG_INFO(kModule, "Checked app %u for updates after its pins moved: check answered %d.", app,
+                        answer ? 1 : 0);
+        }
         handed = true;
         AC_LOG_INFO(kModule, "Asked the client to re-evaluate app %u after its manifest pins changed.", app);
     }

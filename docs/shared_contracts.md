@@ -374,11 +374,18 @@ when the Lua is written (Rule 0): the Desk must not nudge the client by touching
 `buildid` or `TargetBuildID`. Instead, after a Lua reload the DLL diffs the
 pinned `(depot, gid)` rows of each changed file and asks the client to rebuild
 only the apps whose pins moved — `MarkAppChange` on the UI thread, from a queue
-of 64, at most 8 per frame — and Steam decides PLAY, UPDATE or a download from
-the pins against `InstalledDepots`. A missing `MarkAppChange` /
-`CSteamUIAppControllerRunFrame` pattern disables the recheck alone
-(`recheck_state = unsupported` in `status.json`); card repair, ownership and
-membership keep working.
+of 64, at most 8 per frame — then runs the client's own per-app update check
+(`CheckAppForUpdate`) for those ids on the same thread. The rebuild alone is not
+enough: Steam computes `Update Required` only inside that check, the call the
+launch path makes, so a pin change that skipped it left the card on PLAY until
+the app was launched. The check is what promotes a pinned gid to a download
+target and tells the library the new state; whether the update then waits for
+the user or starts on its own stays Steam's own policy. A missing
+`MarkAppChange` / `CSteamUIAppControllerRunFrame` pattern disables the recheck
+alone (`recheck_state = unsupported` in `status.json`); a missing
+`CheckAppForUpdate` entry leaves the card on the state Steam last computed
+(`update_check_state = unsupported`); card repair, ownership and membership keep
+working either way.
 
 **Rule 5 — the owner banner is display-only.** `[library] owner_banner_apps`
 writes `LastOwner = owner_banner_steamid` for apps Aether spoofs, and

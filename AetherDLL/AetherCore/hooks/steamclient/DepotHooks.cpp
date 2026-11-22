@@ -452,6 +452,10 @@ bool RefillDepotPlan(AppId app, const std::vector<policy::RecordedDepot>& record
 bool h_BuildDepotDependency(void* mgr, AppId app, void* cfg, CUtlVector<DepotEntry>* depots,
                             CUtlVector<DepotEntry>* shared, void* steamApp, std::uint32_t* buildId,
                             bool* betaFallback) {
+    // The app manager every plan is built for. The update check Aether asks for
+    // when a pin moves is a method of this object, and this hook is the only
+    // place the DLL is handed it.
+    g_state.overview.clientAppManager.store(mgr, std::memory_order_release);
     bool result = o_BuildDepotDependency(mgr, app, cfg, depots, shared, steamApp, buildId, betaFallback);
 
     const bool managed = luadata::IsConfigured(app);
@@ -544,6 +548,18 @@ void RegisterDepotHooks(HMODULE steamclient) {
                                 h_LoadDepotDecryptionKey);
     g_state.hookManager.TryHook("BuildDepotDependency", "steamclient", steamclient, o_BuildDepotDependency,
                                 h_BuildDepotDependency);
+
+    // The per-app update check the launch path calls. Optional on its own: a
+    // table without it leaves the card on the action of the state Steam last
+    // computed (see AppOverviewHooks::DrainRechecks), while the pins still reach
+    // the next plan.
+    void* check = pattern::ResolveAddress("CheckAppForUpdate", "steamclient", steamclient);
+    g_state.overview.clientCheckAppForUpdate.store(check, std::memory_order_release);
+    if (check != nullptr)
+        AC_LOG_INFO(kModule, "Per-app update check resolved at 0x%p.", check);
+    else
+        AC_LOG_WARN_ONCE(kModule, "CheckAppForUpdate unresolved: a moved pin will not offer UPDATE until Steam checks "
+                                  "the app on its own.");
 }
 
 } // namespace ac::hooks

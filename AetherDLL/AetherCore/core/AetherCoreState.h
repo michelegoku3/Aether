@@ -229,6 +229,18 @@ struct AetherCoreState {
         // Ids handed to the client, one MarkAppChange call each.
         std::atomic<std::uint64_t> recheckCalls{0};
 
+        // ---- client update check (steamclient) -----------------------------
+        // Steam computes "update required" only inside its own check: it runs
+        // that check for the apps it marked, on launch or on its own schedule,
+        // and never because a manifest pin moved. `clientAppManager` is the
+        // CUserAppManager learned from BuildDepotDependency (which runs on every
+        // plan), and `clientCheckAppForUpdate` is the per-app check the launch
+        // path calls. Both stay null when the module or its pattern is missing,
+        // which disables only this call: the recheck above keeps working.
+        std::atomic<void*> clientAppManager{nullptr};
+        std::atomic<void*> clientCheckAppForUpdate{nullptr};
+        std::atomic<std::uint64_t> updateChecks{0};
+
         // ---- restoring a card (SteamUI thread only) ------------------------
         // The client keeps the app object after its owned bit is taken back; it
         // only drops it from the library. Putting the bit back therefore needs

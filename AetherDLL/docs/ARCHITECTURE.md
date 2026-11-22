@@ -578,16 +578,26 @@ touched no pin queues nothing and refreshes no card. The survivors go to
 [App recheck after a pin change](#app-recheck-after-a-pin-change) drains on the
 client's UI thread through `MarkAppChange`; the frame budget and the
 `status.json` keys live there. The thread that wrote the Lua never touches a
-Steam object. The recheck starts no download by itself; Steam compares the
-pinned GIDs with `InstalledDepots` and decides PLAY, UPDATE or a download by its
-own rules.
+Steam object. The notification rebuilds the app's config; it does not make Steam
+re-evaluate the app. Steam computes `Update Required` only inside its own
+per-app check — the call the launch path makes — which promotes a pinned gid to
+a download target and tells the library the new state. The drain therefore runs
+that check (`CheckAppForUpdate`, resolved from the steamclient table, on the
+`CUserAppManager` the `BuildDepotDependency` hook captured) right after
+`MarkAppChange`, one app at a time. The check starts no download by itself
+either: Steam compares the pinned GIDs with `InstalledDepots` and decides PLAY,
+UPDATE or a download from the app's own update policy.
 
 A missing `MarkAppChange` or `CSteamUIAppControllerRunFrame` pattern disables
 the recheck and nothing else. Card repair, ownership and membership keep
 working, the reload path skips its snapshots entirely (`AppRecheckSupported`),
 and `status.json` reports the missing pair rather than a queue that never
 drains. A client that never calls `MarkAppChange` leaves the ids waiting rather
-than inventing an owner for a call the DLL makes.
+than inventing an owner for a call the DLL makes. A missing `CheckAppForUpdate`
+entry leaves the check out (`update_check_state = unsupported`,
+`overview_update_checks` stays 0): the config is still rebuilt, so the next plan
+carries the pins, but the card keeps the action of the state Steam last computed
+until the app is launched or the client checks on its own.
 
 ## Library membership
 
