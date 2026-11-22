@@ -5,6 +5,7 @@ import { LibraryGameActionsModal } from '../modals/LibraryGameActionsModal';
 import { GameInfoModal } from '../modals/GameInfoModal';
 import { GameUpdatesModal } from '../modals/GameUpdatesModal';
 import { WorkshopRepairModal } from '../modals/WorkshopRepairModal';
+import { PlayGameModal } from '../modals/PlayGameModal';
 import { preloadGameCovers } from '../ui/GameCover';
 import { toErrorMessage } from '../util/errors';
 import { GameCard, type GameCardAction } from '../ui/GameCard';
@@ -59,6 +60,7 @@ export const LibraryView = memo(function LibraryView({
   const [actionGame, setActionGame] = useState<InstalledGame | null>(null);
   const [infoGame, setInfoGame] = useState<InstalledGame | null>(null);
   const [versionGame, setVersionGame] = useState<InstalledGame | null>(null);
+  const [playGame, setPlayGame] = useState<InstalledGame | null>(null);
   const [manifestRows, setManifestRows] = useState<LuaManifestRow[]>([]);
   // Update bulk-editor gate; false = popup closed. The Steam path is no
   // longer UI data: the commands resolve it.
@@ -163,7 +165,8 @@ export const LibraryView = memo(function LibraryView({
   // pointless.
   const cardActions = useMemo<Array<GameCardAction<InstalledGame>>>(
     () => [
-      { label: 'Modify', variant: 'primary', onClick: setActionGame },
+      { label: 'Play', variant: 'primary', onClick: setPlayGame },
+      { label: 'Modify', variant: 'secondary', onClick: setActionGame },
       { label: 'Info', variant: 'secondary', onClick: setInfoGame },
     ],
     []
@@ -305,6 +308,8 @@ export const LibraryView = memo(function LibraryView({
           <div className="store-no-results">{emptyMessage}</div>
         )}
       </div>
+
+      {playGame && <PlayGameModal game={playGame} onClose={() => setPlayGame(null)} />}
 
       {infoGame && (
         <GameInfoModal

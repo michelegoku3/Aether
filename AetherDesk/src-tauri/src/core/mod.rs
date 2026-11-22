@@ -13,6 +13,7 @@ pub mod manifest_restore_config;
 pub mod migration;
 pub mod ost_config;
 pub mod presence_config;
+pub mod ram_optimizer;
 pub mod secure_storage;
 pub mod settings;
 pub mod shell_shortcuts;
