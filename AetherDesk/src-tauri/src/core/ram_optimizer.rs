@@ -404,11 +404,20 @@ pub fn optimize(opts: &OptimizeOptions) -> OptimizeReport {
 pub fn launch_steam_game(app_id: u32) -> Result<(), String> {
     let url = format!("steam://run/{app_id}");
     crate::desk_log_info!("play", "launching {url}");
-    Command::new("cmd")
-        .args(["/C", "start", "", "", &url])
+    steam_run_command(&url)
         .spawn()
         .map(|_| ())
         .map_err(|error| format!("Could not hand {url} to Steam: {error}"))
+}
+
+/// `cmd /C start "" <url>`: the single empty argument is the window title.
+/// A second empty argument would make `start` treat the URL as an argument of
+/// an empty command and open Explorer in the working directory instead of the
+/// protocol handler.
+fn steam_run_command(url: &str) -> std::process::Command {
+    let mut command = std::process::Command::new("cmd");
+    command.args(["/C", "start", "", url]);
+    command
 }
 
 /// Protected directories for a launch: every Steam game folder (a running game
@@ -537,5 +546,17 @@ mod tests {
             &opts.protect_dirs
         ));
         assert!(!under_protected_dir("C:/games", &opts.protect_dirs));
+    }
+
+    #[test]
+    fn steam_run_command_has_exactly_one_window_title() {
+        // Regression: a second empty argument made `start` run an empty command
+        // (opening Explorer in the working directory) instead of the URL handler.
+        let command = steam_run_command("steam://run/730");
+        let args: Vec<String> = command
+            .get_args()
+            .map(|arg| arg.to_string_lossy().into_owned())
+            .collect();
+        assert_eq!(args, vec!["/C", "start", "", "steam://run/730"]);
     }
 }
