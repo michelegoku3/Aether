@@ -28,6 +28,9 @@ detection accuracy**, and pulls selected fixes from upstream
   detection + community list)
 - **Library management** — scan Steam libraries, per-game manifest / Lua
   install, badges, pin repair, backup and restore
+- **Play from the library** — one click closes memory-hungry non-essential
+  processes (Steam, anti-cheat, overlays and running games are whitelisted),
+  then hands the game to Steam
 - **Steamless integration** — remove Steam DRM from supported titles
 - **Online multiplayer** — UCO2 / Online Aether mode with per-game toggle
 - **Workshop** — manifest staging and a per-item repair report

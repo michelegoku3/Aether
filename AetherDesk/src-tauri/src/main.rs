@@ -235,6 +235,8 @@ fn main() {
             commands::manifests::export_game_bundle,
             commands::monitor::get_hubcap_monitor_status,
             commands::library::get_installed_library_games,
+            commands::play::preview_ram_optimizer,
+            commands::play::optimize_and_launch_game,
             commands::library::get_library_change_revision,
             commands::library::warm_library_game_cache,
             commands::library::open_steamdb_depots,

@@ -53,6 +53,7 @@ pub mod logs;
 pub mod manifests;
 pub mod monitor;
 pub mod online;
+pub mod play;
 pub mod settings;
 pub mod steam;
 pub mod steamless;

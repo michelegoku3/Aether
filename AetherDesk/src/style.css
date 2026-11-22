@@ -4461,3 +4461,49 @@ body {
   color: #ffffff;
   box-shadow: 0 2px 6px rgba(34, 197, 94, 0.3);
 }
+
+/* Play from the library: pre-launch RAM optimizer preview. */
+.play-modal {
+  max-width: 560px;
+}
+
+.play-process-list {
+  list-style: none;
+  margin: 10px 0 0;
+  padding: 8px;
+  max-height: 240px;
+  overflow: auto;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background: var(--bg-field);
+}
+
+.play-process-list li {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 4px 6px;
+  font-size: 12px;
+}
+
+.play-process-name {
+  color: #ffffff;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.play-process-meta {
+  color: var(--color-muted);
+  white-space: nowrap;
+}
+
+.play-process-more {
+  color: var(--color-muted);
+  justify-content: center;
+}
+
+.play-modal-error {
+  color: #e5534b;
+}
