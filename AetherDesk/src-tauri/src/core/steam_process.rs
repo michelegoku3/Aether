@@ -5,10 +5,14 @@
 //! Single owner of "how do we spawn/kill/wait for Steam" so callers stay thin
 //! and behave identically (DRY / high cohesion):
 //!   * `start_steam`  -> spawn only, never kills;
-//!   * `restart_steam`-> kill, WAIT for the process to actually exit, then
-//!     spawn. Waiting is what prevents the double-spawn race (a second
+//!   * `restart_steam`-> kill the whole family, WAIT for every member to exit,
+//!     then spawn. Waiting is what prevents the double-spawn race: a second
 //!     `steam.exe` launched while the first is still shutting down races the
-//!     single-instance attach and is the "restart does not work well" case);
+//!     single-instance attach, and a client that starts while the previous
+//!     `steamwebhelper.exe` (the CEF children share its image name) still holds
+//!     the client pipe and the CEF cache handshake aborts seconds later on
+//!     `stalled cross-thread pipe` — the "restart does not work well" case in
+//!     both of its forms;
 //!   * AetherDLL install/uninstall/reset -> `close_steam` after the user
 //!     accepted the close-Steam popup: close the running Steam games, terminate
 //!     the whole Steam family and wait until the main process releases the
@@ -48,6 +52,21 @@ pub fn snapshot_has_steam(sys: &sysinfo::System) -> bool {
         .any(|p| is_steam_process_name(p.name()))
 }
 
+/// True when a `System` snapshot still holds any member of the Steam family: the
+/// client plus its web helpers. The CEF children share the helper's image name,
+/// so one name covers them all.
+pub fn snapshot_has_steam_family(sys: &sysinfo::System) -> bool {
+    names_have_steam_family(sys.processes().values().map(|p| p.name().to_string()))
+}
+
+/// Pure predicate behind [`snapshot_has_steam_family`]: the wait must keep
+/// polling while *any* family member is alive, so this is what the tests pin.
+fn names_have_steam_family(names: impl IntoIterator<Item = String>) -> bool {
+    names
+        .into_iter()
+        .any(|name| is_steam_family_process_name(&name))
+}
+
 /// Fresh process snapshot for destructive migrations and DLL changes.
 pub fn is_steam_running_fresh() -> bool {
     let mut sys = sysinfo::System::new();
@@ -74,9 +93,14 @@ fn kill_matching(matches: impl Fn(&str) -> bool) -> bool {
     terminated
 }
 
-/// Kill every steam.exe process. Returns true when at least one was signalled.
-pub fn kill_steam() -> bool {
-    kill_matching(is_steam_process_name)
+/// Kill every process of the Steam family (client + web helpers). Returns true
+/// when at least one was signalled.
+///
+/// The helpers are part of the kill, not an afterthought: one left alive keeps
+/// the client pipe and the CEF cache handshake, so the next client would start
+/// against a half-dead peer.
+pub fn kill_steam_family() -> bool {
+    kill_matching(is_steam_family_process_name)
 }
 
 /// Directories a Steam game runs from: `<library>/steamapps/common` for the
@@ -166,15 +190,14 @@ fn close_running_games(roots: &[PathBuf]) -> Result<Vec<String>, String> {
     }
 }
 
-/// Close Steam completely and wait until `steam.exe` releases the Steam folder.
+/// Close Steam completely and wait until the Steam folder is free again.
 /// Used before replacing files in the Steam folder, where the UI has already
 /// asked the user for consent.
 ///
 /// A game launched from a Steam library is its own process and survives a Steam
 /// exit, so it is closed first (the consent popup warns the user to save). The
-/// Steam helpers are terminated with the main process, but they do not gate the
-/// result: a stale `steamwebhelper.exe` (or one spawned by a dying Steam) would
-/// otherwise make every future operation fail after waiting out the timeout.
+/// web helpers are terminated and waited for like the client: they keep cache
+/// and pipe state inside the same folder, so their exit is part of "closed".
 pub fn close_steam(steam_root: &Path) -> Result<(), String> {
     let roots = game_roots(steam_root);
     let closed = close_running_games(&roots)?;
@@ -188,11 +211,11 @@ pub fn close_steam(steam_root: &Path) -> Result<(), String> {
     }
 
     kill_matching(is_steam_family_process_name);
-    if !wait_steam_gone() {
+    // The wait covers the helpers too: they hold the very files being replaced,
+    // so "steam.exe is gone" alone is not a closed Steam.
+    if !wait_steam_family_gone() {
         return Err("Steam did not close in time. Close Steam and try again.".to_string());
     }
-    // Second pass: helpers that outlived the main process.
-    kill_matching(is_steam_helper_process_name);
 
     // One last sweep: a game can finish bootstrapping while Steam shuts down,
     // after the pre-kill snapshot was clean.
@@ -208,13 +231,14 @@ pub fn close_steam(steam_root: &Path) -> Result<(), String> {
     Ok(())
 }
 
-/// Block until no steam.exe process is visible (polling), up to `GONE_TIMEOUT`.
-pub fn wait_steam_gone() -> bool {
+/// Block until no member of the Steam family is visible (polling), up to
+/// `GONE_TIMEOUT`.
+pub fn wait_steam_family_gone() -> bool {
     let deadline = Instant::now() + GONE_TIMEOUT;
     let mut sys = sysinfo::System::new_all();
     loop {
         sys.refresh_processes();
-        if !snapshot_has_steam(&sys) {
+        if !snapshot_has_steam_family(&sys) {
             return true;
         }
         if Instant::now() >= deadline {
@@ -256,6 +280,25 @@ mod tests {
         assert!(is_steam_family_process_name("SteamWebHelper.exe"));
         assert!(!is_steam_family_process_name("steamservice.exe"));
         assert!(!is_steam_family_process_name("game.exe"));
+    }
+
+    #[test]
+    fn the_family_wait_stays_awake_while_a_web_helper_is_alive() {
+        // The restart race: steam.exe is gone but a helper is still shutting
+        // down, so the wait must not report the family as closed.
+        assert!(names_have_steam_family(vec![
+            "steamwebhelper.exe".to_string()
+        ]));
+        assert!(names_have_steam_family(vec![
+            "explorer.exe".to_string(),
+            "SteamWebHelper.exe".to_string(),
+        ]));
+        assert!(!names_have_steam_family(Vec::new()));
+        // The Windows service outlives every client by design.
+        assert!(!names_have_steam_family(vec![
+            "steamservice.exe".to_string(),
+            "explorer.exe".to_string(),
+        ]));
     }
 
     #[test]

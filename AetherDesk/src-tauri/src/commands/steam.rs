@@ -45,19 +45,24 @@ pub fn restart_steam(app: tauri::AppHandle) -> Result<String, String> {
     let settings = load_settings(&app);
     let steam_dir = std::path::PathBuf::from(&settings.steam_path);
 
-    if crate::core::steam_process::kill_steam() {
+    if crate::core::steam_process::kill_steam_family() {
         crate::core::steam_monitor::mark(false);
-        // Real wait: the spawn happens ONLY after the process has exited,
-        // otherwise a second steam.exe races the single instance of the
-        // exiting one (the classic "restart that does nothing").
-        let gone = crate::core::steam_process::wait_steam_gone();
+        // Real wait, and on the whole family: the spawn happens ONLY after
+        // every steam.exe AND steamwebhelper.exe is gone. A client spawned
+        // while the previous helpers are still shutting down inherits their
+        // half-dead pipe and CEF cache handshake, and Steam aborts with
+        // "stalled cross-thread pipe" seconds later.
+        let gone = crate::core::steam_process::wait_steam_family_gone();
         if !gone {
             crate::desk_log_warn!(
                 "lifecycle",
-                "restart_steam: Steam still present after kill, proceeding anyway"
+                "restart_steam: Steam family still present after kill, proceeding anyway"
             );
         } else {
-            crate::desk_log_info!("lifecycle", "restart_steam: Steam exited, relaunching");
+            crate::desk_log_info!(
+                "lifecycle",
+                "restart_steam: Steam family exited, relaunching"
+            );
         }
     } else {
         crate::desk_log_info!(
