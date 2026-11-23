@@ -7,8 +7,12 @@ namespace ac::downloader {
 
 namespace {
 
-// Builds the raw.githubusercontent.com URL for one location.
-std::string BuildRawUrl(const Source& src, const Loc& loc, const std::string& sha) {
+// The generation index lives at a fixed name in its folder; per-build tables
+// use "<sha>.toml". Both share the same URL shape.
+constexpr const char* kStateFileName = "patterns.txt";
+
+// Builds the raw.githubusercontent.com URL for one file in a location.
+std::string BuildRawUrl(const Source& src, const Loc& loc, const std::string& fileName) {
     std::string url = "https://raw.githubusercontent.com/";
     url += src.owner;
     url += "/";
@@ -18,13 +22,12 @@ std::string BuildRawUrl(const Source& src, const Loc& loc, const std::string& sh
     url += "/";
     url += loc.folder;
     url += "/";
-    url += sha;
-    url += ".toml";
+    url += fileName;
     return url;
 }
 
 // Builds the jsDelivr CDN mirror of the same file (same owner/repo/branch).
-std::string BuildCdnUrl(const Source& src, const Loc& loc, const std::string& sha) {
+std::string BuildCdnUrl(const Source& src, const Loc& loc, const std::string& fileName) {
     std::string url = "https://cdn.jsdelivr.net/gh/";
     url += src.owner;
     url += "/";
@@ -34,22 +37,31 @@ std::string BuildCdnUrl(const Source& src, const Loc& loc, const std::string& sh
     url += "/";
     url += loc.folder;
     url += "/";
-    url += sha;
-    url += ".toml";
+    url += fileName;
     return url;
+}
+
+std::vector<MirrorUrl> UrlsIn(const Source& src, const Loc& loc, const std::string& fileName) {
+    return {MirrorUrl{"raw", BuildRawUrl(src, loc, fileName)}, MirrorUrl{"cdn", BuildCdnUrl(src, loc, fileName)}};
 }
 
 } // namespace
 
 std::vector<MirrorUrl> Source::UrlsFor(Kind kind, const std::string& sha) const {
-    std::vector<MirrorUrl> out;
     const Loc* loc = LocFor(kind);
     if (!loc)
-        return out; // this source does not carry that kind
+        return {}; // this source does not carry that kind
+    return UrlsIn(*this, *loc, sha + ".toml");
+}
 
-    out.push_back(MirrorUrl{"raw", BuildRawUrl(*this, *loc, sha)});
-    out.push_back(MirrorUrl{"cdn", BuildCdnUrl(*this, *loc, sha)});
-    return out;
+std::vector<MirrorUrl> Source::UrlsForState() const {
+    if (state.branch == nullptr || state.folder == nullptr)
+        return {}; // this source does not carry the index
+    // Raw only. The CDN serves branch refs from an edge cache that outlives a
+    // republish, and the index is the one file republished in place, so a CDN
+    // copy can only hide the change; one endpoint keeps the boot wait at one
+    // timeout too.
+    return {MirrorUrl{"raw", BuildRawUrl(*this, state, kStateFileName)}};
 }
 
 const std::vector<Source>& DefaultSources() {
@@ -67,6 +79,7 @@ const std::vector<Source>& DefaultSources() {
             /* steamClient    */ {"pattern", "steamclient"},
             /* steamUi        */ {"pattern", "steamui"},
             /* steamClientIpc */ {"pattern", "steamclientipc"},
+            /* state          */ {"pattern", "state"},
         },
     }};
     static const std::vector<Source> kOrdered(kSources.begin(), kSources.end());

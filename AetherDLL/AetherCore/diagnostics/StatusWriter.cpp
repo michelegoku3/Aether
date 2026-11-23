@@ -113,10 +113,14 @@ static void WriteSnapshot(std::uint64_t requests) {
         w.Str("steamclient_sha", g_state.steamclientSha);
         w.Bool("steamclient_toml_found", g_state.steamclientTomlFound);
         w.Str("steamclient_pattern_source", g_state.steamclientPatternSource);
+        w.UInt64("steamclient_pattern_version", g_state.steamclientPatternVersion);
         w.Str("steamui_sha", g_state.steamuiSha);
         w.Str("steamui_attach", g_state.steamuiAttach);
         w.Bool("steamui_toml_found", g_state.steamuiTomlFound);
         w.Str("steamui_pattern_source", g_state.steamuiPatternSource);
+        w.UInt64("steamui_pattern_version", g_state.steamuiPatternVersion);
+        w.UInt64("steamclientipc_pattern_version", g_state.steamclientIpcPatternVersion);
+        w.Str("pattern_index_source", g_state.patternIndexSource);
     }
     w.Str("netpacket_abi_layout", abi::netpkt::LayoutName());
     w.UInt64("netpacket_abi_data_off", abi::netpkt::ResolvedDataOffset());

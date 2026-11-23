@@ -57,6 +57,9 @@ add_library(AetherCore SHARED
     utils/KeyValues.cpp
     utils/PatternEngine.cpp
     utils/PatternCache.cpp
+    utils/PatternState.cpp
+    utils/PatternStateParse.cpp
+    utils/PatternSidecar.cpp
     utils/PatternResolver.cpp
     utils/PatternSource.cpp
     utils/PatternDownloader.cpp

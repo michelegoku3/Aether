@@ -2,6 +2,7 @@
 #include "utils/PatternDownloader.h"
 
 #include <atomic>
+#include <ctime>
 #include <filesystem>
 #include <fstream>
 #include <string>
@@ -148,6 +149,34 @@ std::vector<Level> BuildPlan(Kind kind, const std::string& sha) {
     return plan;
 }
 
+// Builds the resolution plan for the generation index. Built-in sources only:
+// the user mirror is a per-build table template and is not required to host
+// state/patterns.txt.
+std::vector<Level> BuildStatePlan() {
+    std::vector<Level> plan;
+    for (const Source& src : DefaultSources()) {
+        const auto mirrors = src.UrlsForState();
+        if (mirrors.empty())
+            continue;
+        Level level;
+        for (const MirrorUrl& m : mirrors) {
+            level.endpoints.push_back(Candidate{std::string(src.id) + ":" + m.label, m.url});
+        }
+        plan.push_back(std::move(level));
+    }
+    return plan;
+}
+
+// The index is the one file republished in place, so a cached copy at the raw
+// or CDN endpoint would hide a forced republish. The query string does not
+// change what the endpoints serve.
+std::string WithCacheBuster(std::string url, long long epoch) {
+    url += (url.find('?') == std::string::npos) ? '?' : '&';
+    url += "t=";
+    url += std::to_string(epoch);
+    return url;
+}
+
 // Tries one source level. Endpoints are contacted in order (raw, then CDN):
 //   * 200            -> the file is served;
 //   * transport error -> the next endpoint (CDN) is tried, as it is a different
@@ -216,6 +245,35 @@ bool Download(Kind kind, const std::string& sha, const std::string& outPath, std
 bool Download(std::string_view kindName, const std::string& sha, const std::string& outPath, std::string* outSource,
               int timeoutSec) {
     return Download(KindFromName(kindName), sha, outPath, outSource, timeoutSec);
+}
+
+bool DownloadState(std::string& outBody, std::string* outSource, int timeoutSec) {
+    std::vector<Level> plan = BuildStatePlan();
+    if (plan.empty()) {
+        AC_LOG_INFO(kModule, "No source carries the pattern index.");
+        return false;
+    }
+
+    const auto epoch = static_cast<long long>(std::time(nullptr));
+    for (Level& level : plan) {
+        for (Candidate& endpoint : level.endpoints)
+            endpoint.url = WithCacheBuster(std::move(endpoint.url), epoch);
+    }
+
+    for (const Level& level : plan) {
+        std::string body;
+        const std::string label = TryLevel(level, body, timeoutSec);
+        if (label.empty()) {
+            AC_LOG_INFO(kModule, "Source level could not serve the pattern index; trying next source.");
+            continue;
+        }
+        outBody = std::move(body);
+        if (outSource)
+            *outSource = label;
+        AC_LOG_INFO(kModule, "Fetched the pattern index from '%s' (%zu bytes).", label.c_str(), outBody.size());
+        return true;
+    }
+    return false;
 }
 
 } // namespace ac::downloader

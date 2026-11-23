@@ -65,6 +65,8 @@ int main(int argc, char** argv) {
         {"achievement_export", AchievementExport},
         {"achievement_policy", AchievementPolicy},
         {"family_banner", FamilyBannerTest},
+        {"pattern_state", PatternStateParseTest},
+        {"pattern_sidecar", PatternSidecarTest},
 #ifdef AETHER_HAVE_PROTO
         {"achievement_service", AchievementServiceWire},
 #endif

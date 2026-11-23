@@ -346,6 +346,15 @@ struct AetherCoreState {
                                           // "<src>:<mirror> (cache)" (provenance
                                           // sidecar) | cache | missing | invalid
     std::string steamuiPatternSource;
+    // Generation of the published table each cache holds (0 = unknown: no
+    // index has confirmed that cache yet).
+    std::uint64_t steamclientPatternVersion = 0;
+    std::uint64_t steamuiPatternVersion = 0;
+    std::uint64_t steamclientIpcPatternVersion = 0;
+    // What served the generation index this process: "<source>:<mirror>",
+    // "mirror" (custom mirror configured, index unused) or "unavailable" (not
+    // fetched yet, unreachable, or carrying no entry for this build).
+    std::string patternIndexSource = "unavailable";
 
     // ---- Loaded modules ---------------------------------------------------
     HMODULE selfModule = nullptr;

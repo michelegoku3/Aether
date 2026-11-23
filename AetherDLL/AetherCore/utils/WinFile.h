@@ -2,6 +2,7 @@
 
 #include <filesystem>
 #include <fstream>
+#include <iterator>
 #include <string>
 #include <windows.h>
 
@@ -77,6 +78,19 @@ inline bool CopyOverwrite(const std::string& fromUtf8, const std::string& toUtf8
     if (from.empty() || to.empty())
         return false;
     return CopyFileW(from.c_str(), to.c_str(), FALSE) != FALSE;
+}
+
+// True when both files exist and hold identical bytes. Used to tell a real
+// upstream change from an endpoint that re-served the cached copy; a missing
+// file counts as different, so the caller keeps its normal path.
+inline bool FilesEqual(const std::string& utf8Left, const std::string& utf8Right) {
+    std::ifstream left(ToPath(utf8Left), std::ios::binary);
+    std::ifstream right(ToPath(utf8Right), std::ios::binary);
+    if (!left.is_open() || !right.is_open())
+        return false;
+    const std::string leftBytes((std::istreambuf_iterator<char>(left)), std::istreambuf_iterator<char>());
+    const std::string rightBytes((std::istreambuf_iterator<char>(right)), std::istreambuf_iterator<char>());
+    return leftBytes == rightBytes;
 }
 
 // Atomic text replace through a sibling temp file, preserving a read-only

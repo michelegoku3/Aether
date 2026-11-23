@@ -49,4 +49,14 @@ bool Download(Kind kind, const std::string& sha, const std::string& outPath, std
 bool Download(std::string_view kindName, const std::string& sha, const std::string& outPath,
               std::string* outSource = nullptr, int timeoutSec = 12);
 
+// Fetches the generation index (`state/patterns.txt`) into `outBody`. Built-in
+// sources only: the index is not per-build and a user mirror is not required to
+// carry it. The request carries a cache-busting query string, since the index
+// is the one file republished in place; endpoints that ignore it only delay the
+// refresh to the next launch, and the caller never advances a generation on a
+// byte-identical download. Returns false when no source has it — the first
+// rollout looks exactly like this, so the caller keeps its cached tables and
+// carries on.
+bool DownloadState(std::string& outBody, std::string* outSource = nullptr, int timeoutSec = 3);
+
 } // namespace ac::downloader

@@ -551,8 +551,62 @@ instead of skipping the new donor as "already tried". Probe requests are paced
   remaining queue is still drained; completion does not imply all I/O succeeded.
 - `PatternEngine` owns initialization, concurrent module loading and index
   publication; `PatternCache` owns TOML/cache/provenance/download policy;
-  `PatternResolver` owns lookup, bounds/signature verification and the existing
-  ABI sentinel call. Public entry points and safety gates are unchanged.
+  `PatternState` owns the published generation index and the refresh decision
+  it feeds; `PatternResolver` owns lookup, bounds/signature verification and the
+  existing ABI sentinel call. Public entry points and safety gates are unchanged.
+
+### Pattern generations
+
+A pattern table keeps its path forever: `<module>/<sha256>.toml` is the only
+name an existing client knows, so a corrected table is republished in place.
+The generator therefore publishes `state/patterns.txt` beside the tables: a
+line-oriented index of `<sha256> <generation>` under one `[module]` heading per
+module. The same decoded content keeps its generation, changed content gets the
+next one, and a table the index has not seen before starts at 1. Only the tables
+a publish run writes are indexed: a table without an entry has no published
+generation, so the provenance policy alone can refresh it.
+
+`PatternState` reads that index once per process (`std::call_once`), over the raw
+endpoint only and with a cache-busting query string, since the index is the one
+file republished in place. The wait is one short timeout: a launch that cannot
+reach the index serves the cache and asks again next time. A configured
+`pattern_mirror` suppresses the index: the mirror is the user's own source of
+truth and need not carry it. `PatternStateParse` is the pure parser — a
+malformed line is counted and skipped, never fatal, and an unknown module or SHA
+is simply an entry the client has no opinion about.
+
+`PlanRefresh` in `PatternCache` decides from the index and the sidecar;
+`IpcSpec` applies the same generation rule to its own cache:
+
+- no usable cache → download as before, then record the published generation;
+- `remote > applied` → refresh, even when the new table is smaller: the bump is
+  the author's explicit statement that the published table changed;
+- a versioned download whose bytes are identical to a cache that already records
+  a generation does not advance it: the index carries no digest, so identical
+  bytes after a bump mean an endpoint re-served the old copy, and the next
+  launch retries instead of losing the correction. A cache with no recorded
+  generation adopts what it holds and records the published one, so it converges
+  on the first launch;
+- otherwise the provenance sidecar decides (`PatternCache` only): a table from
+  the highest-priority source is served with no network, and a lower-priority
+  one is probed under the never-shrink rule, because a fallback source serving
+  fewer entries is a downgrade, not a correction;
+- a failed download keeps the cache and leaves the stored generation alone, so
+  the next launch tries again.
+
+The sidecar (`<sha>.toml.src`) holds the source label on the first line and
+`version=<generation>` on the second. A sidecar without a version line reads as
+generation 0 — the state of a cache no index has confirmed yet — so the next
+launch with a reachable index adopts the published table once. `status.json`
+reports `pattern_index_source` (`<source>:<mirror>`, `mirror`, or `unavailable`)
+and `steamclient_pattern_version`, `steamui_pattern_version`,
+`steamclientipc_pattern_version`: that is what tells "the table is current" from
+"the refresh never happened" in a bug report.
+
+The index is optional end to end. An unreachable file reads as "no entry"
+(generation 0), so only the provenance probe can trigger a download; a client
+that does not read the file ignores it; and an incompatible future format uses a
+new file name instead of changing this one.
 
 ### Pending version changes
 

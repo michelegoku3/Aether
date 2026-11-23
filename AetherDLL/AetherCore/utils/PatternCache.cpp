@@ -3,6 +3,8 @@
 #include "utils/Hasher.h"
 #include "utils/PatternCache.h"
 #include "utils/PatternDownloader.h"
+#include "utils/PatternSidecar.h"
+#include "utils/PatternState.h"
 #include "utils/WinFile.h"
 #include <filesystem>
 #include <fstream>
@@ -16,14 +18,16 @@ constexpr const char* kModule = "PatternEngine";
 constexpr int kUpgradeProbeTimeoutSec = 5;
 using PatternEntry = AetherCoreState::PatternEntry;
 
-void SetPatternStatus(const std::string& module, bool found, const std::string& source) {
+void SetPatternStatus(const std::string& module, bool found, const std::string& source, std::uint64_t version) {
     std::lock_guard lock(g_state.statusMetadataMutex);
     if (module == "steamclient") {
         g_state.steamclientTomlFound = found;
         g_state.steamclientPatternSource = source;
+        g_state.steamclientPatternVersion = version;
     } else if (module == "steamui") {
         g_state.steamuiTomlFound = found;
         g_state.steamuiPatternSource = source;
+        g_state.steamuiPatternVersion = version;
     }
 }
 
@@ -141,37 +145,10 @@ void SweepTempFiles() {
 namespace {
 
 // Provenance sidecar.
-// Every cache TOML is paired with a "<sha>.toml.src" sidecar holding the
-// exact source label that produced the file (e.g. "migo:raw"). On a
-// later launch the sidecar lets the loader decide, without any network
-// traffic, that the cached table already comes from the highest-priority
-// source and needs no refresh.
-
-std::string ReadProvenance(const std::string& srcPath) {
-    std::ifstream in(winfile::ToPath(srcPath));
-    if (!in)
-        return {};
-    std::string label;
-    std::getline(in, label);
-    while (!label.empty() &&
-           (label.back() == ' ' || label.back() == '\t' || label.back() == '\r' || label.back() == '\n')) {
-        label.pop_back();
-    }
-    return label;
-}
-
-void WriteProvenance(const std::string& srcPath, const std::string& label) {
-    const std::string tmp = srcPath + ".tmp";
-    {
-        std::ofstream out(winfile::ToPath(tmp), std::ios::binary | std::ios::trunc);
-        if (!out.is_open())
-            return;
-        out << label;
-    }
-    if (!winfile::MoveReplace(tmp, srcPath)) {
-        winfile::Delete(tmp);
-    }
-}
+// Every cache TOML is paired with a "<sha>.toml.src" sidecar holding the exact
+// source label that produced the file (e.g. "migo:raw") and the generation of
+// the published table it holds. PatternSidecar owns the format; this file owns
+// what the pair means.
 
 // The source a fresh download would be expected to carry for this module
 // right now: the configured user mirror if any, else the first source in
@@ -235,16 +212,18 @@ std::size_t CountPatternEntries(const std::string& path) {
 // it is quarantined and the downloader gets one chance to refresh the
 // TOML.
 //
-// Source policy (per-launch refresh, upgrade-only):
+// Source policy (per launch):
 //   * a valid local cache is always usable immediately;
-//   * if its provenance sidecar says the table already came from the
-//     highest-priority source, the cache is served as-is, no network;
-//   * otherwise (missing/older sidecar, or a lower-priority source while
-//     the primary source has now published the build)
-//     the upstream chain is consulted in priority order. The winner
-//     replaces the cache ONLY when it is not smaller than the cached
-//     table -- coverage is never downgraded. The sidecar is rewritten so
-//     the following launch is network-free.
+//   * the generation index says whether the published table moved. A newer
+//     generation always wins, even if the table is smaller: the bump is the
+//     author's explicit statement that this table changed;
+//   * when the index is silent (unreachable, absent, custom mirror) the
+//     provenance sidecar decides: a cache from the highest-priority source is
+//     served with no network, otherwise the upstream chain is probed in
+//     priority order and the winner replaces the cache ONLY when it is not
+//     smaller than the cached table;
+//   * a failed download never touches the cache and never advances the stored
+//     generation, so the next launch tries again.
 bool LoadModule(const std::string& moduleName, const std::string& dllPath, std::string& outSha,
                 PatternIndex& outIndex) {
     outIndex.clear();
@@ -253,7 +232,7 @@ bool LoadModule(const std::string& moduleName, const std::string& dllPath, std::
         // Without a SHA we cannot name the per-build cache file or fetch the
         // correct table: address resolution is unavailable for this module.
         AC_LOG_ERROR(kModule, "Could not hash %s; no patterns available.", dllPath.c_str());
-        SetPatternStatus(moduleName, false, "hash-failed");
+        SetPatternStatus(moduleName, false, "hash-failed", 0);
         diag::Record("pattern_missing", moduleName);
         return false;
     }
@@ -267,10 +246,14 @@ bool LoadModule(const std::string& moduleName, const std::string& dllPath, std::
     const std::string srcPath = tomlPath + ".src";
     const std::string expectedBest = BestExpectedSource(moduleName);
 
+    // Resolved once per process and shared by every module. 0 means the index
+    // is unreachable, has no entry for this build, or a custom mirror is
+    // configured; the provenance policy below then decides alone.
+    const std::uint64_t remote = RemoteVersion(moduleName, outSha);
+
     // Local cache: parse it when present (a failure is quarantined and
     // triggers the download path below).
     bool cacheUsable = false;
-    std::string refreshedFrom; // set when an upstream table is adopted
     if (winfile::Exists(tomlPath)) {
         cacheUsable = ParsePatternFile(tomlPath, moduleName, table, outIndex);
         if (!cacheUsable) {
@@ -284,14 +267,27 @@ bool LoadModule(const std::string& moduleName, const std::string& dllPath, std::
         AC_LOG_INFO(kModule, "No cached pattern for %s; downloading...", moduleName.c_str());
     }
 
-    if (cacheUsable && !ProvenanceIsBest(ReadProvenance(srcPath), expectedBest)) {
-        // Local table exists but is not known to come from the preferred
-        // source: probe the upstream chain (upgrade-only policy).
-        const std::string provenance = ReadProvenance(srcPath);
-        AC_LOG_INFO(kModule,
-                    "Cached %s patterns (provenance '%s') are not from the "
-                    "preferred source ('%s'); checking upstream.",
-                    moduleName.c_str(), provenance.empty() ? "<unknown>" : provenance.c_str(), expectedBest.c_str());
+    // The sidecar carries what served the cache and which published generation
+    // it holds. A sidecar with the label only reads as generation 0 — a cache
+    // no index has confirmed — so the next launch with a reachable index adopts
+    // the current table once.
+    sidecar::Record applied = cacheUsable ? sidecar::Read(srcPath) : sidecar::Record{};
+    const RefreshPlan plan =
+        PlanRefresh(cacheUsable, remote, applied.version, ProvenanceIsBest(applied.source, expectedBest));
+    std::string refreshedFrom; // set when an upstream table is adopted
+
+    if (plan.needed) {
+        if (plan.versioned) {
+            AC_LOG_INFO(kModule, "Cached %s patterns are generation %llu, the index says %llu; refreshing.",
+                        moduleName.c_str(), static_cast<unsigned long long>(applied.version),
+                        static_cast<unsigned long long>(remote));
+        } else {
+            AC_LOG_INFO(kModule,
+                        "Cached %s patterns (provenance '%s') are not from the "
+                        "preferred source ('%s'); checking upstream.",
+                        moduleName.c_str(), applied.source.empty() ? "<unknown>" : applied.source.c_str(),
+                        expectedBest.c_str());
+        }
 
         // Download to a temp name: the existing cache must never be
         // clobbered before the candidate has been inspected.
@@ -302,56 +298,80 @@ bool LoadModule(const std::string& moduleName, const std::string& dllPath, std::
                         "No upstream source can serve %s right now; "
                         "keeping the cached table.",
                         moduleName.c_str());
-        } else if (CountPatternEntries(candidatePath) >= outIndex.size()) {
-            toml::table fresh;
-            PatternIndex freshIndex;
-            if (ParsePatternFile(candidatePath, moduleName, fresh, freshIndex)) {
-                if (winfile::MoveReplace(candidatePath, tomlPath)) {
-                    WriteProvenance(srcPath, fetched);
-                    outIndex.swap(freshIndex);
-                    table = std::move(fresh);
-                    refreshedFrom = fetched;
-                    AC_LOG_INFO(kModule, "Upgraded %s patterns from '%s' (%zu entries).", moduleName.c_str(),
-                                fetched.c_str(), outIndex.size());
-                } else {
-                    winfile::Delete(candidatePath);
-                    AC_LOG_WARN(kModule,
-                                "Could not adopt upstream %s patterns; "
-                                "keeping the cached table.",
-                                moduleName.c_str());
-                }
-            } else {
-                winfile::Delete(candidatePath);
-                AC_LOG_WARN(kModule,
-                            "Upstream %s candidate could not be parsed; "
-                            "keeping the cached table.",
-                            moduleName.c_str());
-            }
-        } else {
+        } else if (!AdoptDownload(plan.versioned, applied.version, winfile::FilesEqual(candidatePath, tomlPath))) {
+            // A newer generation whose download is byte-identical to a cache
+            // that already records one: the endpoint re-served the old table
+            // (edge cache). Keep the recorded generation so the next launch asks
+            // again instead of losing the correction.
+            winfile::Delete(candidatePath);
+            AC_LOG_WARN(kModule, "Upstream '%s' re-served the %s table already cached; retrying next launch.",
+                        fetched.c_str(), moduleName.c_str());
+        } else if (!plan.versioned && CountPatternEntries(candidatePath) < outIndex.size()) {
+            // Only the provenance probe refuses a smaller table: a fallback
+            // source serving fewer entries is a downgrade, not a correction.
             winfile::Delete(candidatePath);
             AC_LOG_INFO(kModule,
                         "Upstream '%s' candidate for %s is smaller than the "
                         "cached table; keeping the cache.",
                         fetched.c_str(), moduleName.c_str());
+        } else {
+            toml::table fresh;
+            PatternIndex freshIndex;
+            if (!ParsePatternFile(candidatePath, moduleName, fresh, freshIndex)) {
+                winfile::Delete(candidatePath);
+                AC_LOG_WARN(kModule,
+                            "Upstream %s candidate could not be parsed; "
+                            "keeping the cached table.",
+                            moduleName.c_str());
+            } else if (!winfile::MoveReplace(candidatePath, tomlPath)) {
+                winfile::Delete(candidatePath);
+                AC_LOG_WARN(kModule,
+                            "Could not adopt upstream %s patterns; "
+                            "keeping the cached table.",
+                            moduleName.c_str());
+            } else {
+                // A versioned refresh records the generation it adopted; a
+                // provenance upgrade keeps the one it already had. A failed
+                // sidecar write leaves the old number in place, which is what
+                // the file still says.
+                const std::uint64_t adopted = plan.versioned ? remote : applied.version;
+                if (sidecar::Write(srcPath, fetched, adopted)) {
+                    applied.version = adopted;
+                } else {
+                    AC_LOG_WARN(kModule, "Could not record the %s pattern generation; the next launch will refresh.",
+                                moduleName.c_str());
+                }
+                applied.source = fetched;
+                outIndex.swap(freshIndex);
+                table = std::move(fresh);
+                refreshedFrom = fetched;
+                if (plan.versioned) {
+                    AC_LOG_INFO(kModule, "Refreshed %s patterns to generation %llu from '%s' (%zu entries).",
+                                moduleName.c_str(), static_cast<unsigned long long>(applied.version), fetched.c_str(),
+                                outIndex.size());
+                } else {
+                    AC_LOG_INFO(kModule, "Upgraded %s patterns from '%s' (%zu entries).", moduleName.c_str(),
+                                fetched.c_str(), outIndex.size());
+                }
+            }
         }
     }
 
     if (cacheUsable) {
-        // Served from the local cache: it already had the best provenance
-        // (no network spent) or the upgrade attempt above found nothing
-        // better to replace it with. The label reports the real origin:
-        // refreshed tables carry the plain fetch label; cached tables the
-        // provenance from the sidecar; provenance-less caches stay "cache".
-        const std::string provenance = ReadProvenance(srcPath);
+        // Served from the local cache: the index did not move (only its GET was
+        // spent) or the attempt above found nothing better to replace the table
+        // with. The label reports the real origin: refreshed tables carry the
+        // plain fetch label; cached tables the provenance from the sidecar;
+        // provenance-less caches stay "cache".
         std::string source;
         if (!refreshedFrom.empty()) {
             source = refreshedFrom;
-        } else if (!provenance.empty()) {
-            source = provenance + " (cache)";
+        } else if (!applied.source.empty()) {
+            source = applied.source + " (cache)";
         } else {
             source = "cache";
         }
-        SetPatternStatus(moduleName, true, source);
+        SetPatternStatus(moduleName, true, source, applied.version);
         diag::Record("pattern", moduleName + ":" + source);
         return true;
     }
@@ -359,22 +379,28 @@ bool LoadModule(const std::string& moduleName, const std::string& dllPath, std::
     std::string downloadSource;
     if (!downloader::Download(moduleName, outSha, tomlPath, &downloadSource)) {
         AC_LOG_WARN(kModule, "Download failed for %s; no patterns available.", moduleName.c_str());
-        SetPatternStatus(moduleName, false, "missing");
+        SetPatternStatus(moduleName, false, "missing", 0);
         diag::Record("pattern_missing", moduleName);
         return false;
     }
 
     if (ParsePatternFile(tomlPath, moduleName, table, outIndex)) {
         const std::string source = downloadSource.empty() ? "download" : downloadSource;
-        WriteProvenance(srcPath, source);
-        SetPatternStatus(moduleName, true, source);
+        std::uint64_t recorded = remote;
+        if (!sidecar::Write(srcPath, source, remote)) {
+            AC_LOG_WARN(kModule, "Could not record the %s pattern source; the next launch may refresh again.",
+                        moduleName.c_str());
+            // Report what the file actually says, not what the index does.
+            recorded = sidecar::Read(srcPath).version;
+        }
+        SetPatternStatus(moduleName, true, source, recorded);
         diag::Record("pattern", moduleName + ":" + source);
         return true;
     }
 
     winfile::Delete(tomlPath);
     winfile::Delete(srcPath);
-    SetPatternStatus(moduleName, false, "invalid");
+    SetPatternStatus(moduleName, false, "invalid", 0);
     diag::Record("pattern_invalid", moduleName);
     AC_LOG_ERROR(kModule, "Downloaded pattern for %s is invalid; cache removed.", moduleName.c_str());
     return false;

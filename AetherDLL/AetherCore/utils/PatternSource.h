@@ -84,6 +84,7 @@ struct Source {
     Loc steamClient;     // layout for Kind::SteamClient
     Loc steamUi;         // layout for Kind::SteamUi
     Loc steamClientIpc;  // layout for Kind::SteamClientIpc
+    Loc state;           // layout for the generation index (state/patterns.txt)
 
     // Returns the layout for a Kind, or nullptr if this source does not carry
     // that kind of file.
@@ -103,6 +104,11 @@ struct Source {
     // could serve `sha` for `kind`. Empty when this source has no layout for
     // that kind.
     std::vector<MirrorUrl> UrlsFor(Kind kind, const std::string& sha) const;
+
+    // Builds the candidate URLs for the generation index (state/patterns.txt),
+    // which is not per-build: it lists every published table. Empty when this
+    // source does not carry the index.
+    std::vector<MirrorUrl> UrlsForState() const;
 };
 
 // Default ordered source chain. Ordering == priority: index 0 is tried first.
