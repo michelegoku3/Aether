@@ -77,6 +77,25 @@ void PinsFollowTheFileAndItsRoots() {
     ac::luadata::ClearPendingChanges();
 }
 
+// A `.lua` that pins nothing still names the apps it configures: the reload
+// diff reads that snapshot, and without the entry the app is never handed to
+// the client, so its card never appears mid-session.
+void APinlessFileStillNamesItsApps() {
+    const std::string path = "C:/fixtures/recheck_pinless.lua";
+    ac::luadata::BeginFile(path);
+    ac::luadata::RecordLibraryApp(100);
+    ac::luadata::EndFile();
+
+    const auto pins = ac::luadata::PinsByLibraryAppForFile(path);
+    CHECK(pins.size() == 1);
+    CHECK(pins.count(100) == 1);
+    CHECK(pins.at(100).empty());
+
+    ac::luadata::UnloadFile(path);
+    CHECK(ac::luadata::PinsByLibraryAppForFile(path).empty());
+    ac::luadata::ClearPendingChanges();
+}
+
 void RecheckIsDeduplicated() {
     // Two changes for one app are still one recheck: the client rebuilds the
     // whole app, so asking twice would only repeat the work.
@@ -150,6 +169,7 @@ void RecheckTest() {
     RecheckWhenADepotIsAdded();
     RecheckWhenEveryPinGoesAway();
     PinsFollowTheFileAndItsRoots();
+    APinlessFileStillNamesItsApps();
     RecheckIsDeduplicated();
     RecheckWhenAnAppAppearsWithoutPins();
     NoRecheckWhenAPinlessFileIsSavedAgain();

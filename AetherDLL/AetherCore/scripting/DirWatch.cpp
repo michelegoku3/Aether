@@ -301,17 +301,20 @@ hooks::steamui::policy::PinSet ToPinSet(const std::vector<luadata::PinnedDepot>&
 // Both directions of the union are changes. A root the file stopped advertising
 // lives only in `before` (a removed .lua reports every app it used to pin), and
 // one it started advertising lives only in `after`; an empty side is a real
-// snapshot, not "no information", so the policy sees a full pin removal.
+// snapshot, not "no information", so the policy sees a full pin removal. An app
+// only in `after` was not configured before the reload, which the policy needs
+// even when the file pins nothing.
 void AppendPinChanges(const PinSnapshot& before, const PinSnapshot& after,
                       std::vector<hooks::steamui::policy::PinChange>& changes) {
     for (const auto& [app, pins] : before) {
         const auto afterIt = after.find(app);
         changes.push_back({app, ToPinSet(pins),
-                           afterIt != after.end() ? ToPinSet(afterIt->second) : hooks::steamui::policy::PinSet{}});
+                           afterIt != after.end() ? ToPinSet(afterIt->second) : hooks::steamui::policy::PinSet{},
+                           true});
     }
     for (const auto& [app, pins] : after) {
         if (!before.count(app))
-            changes.push_back({app, {}, ToPinSet(pins)});
+            changes.push_back({app, {}, ToPinSet(pins), false});
     }
 }
 
