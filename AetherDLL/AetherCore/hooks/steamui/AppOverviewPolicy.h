@@ -192,6 +192,22 @@ inline std::uint32_t ApplyCleared(std::uint32_t flags) noexcept {
 // client's object, so it must never run for an app Aether never hid.
 inline bool ShouldRestoreCard(bool hidden, bool managed) noexcept { return hidden && managed; }
 
+// The ids the restore pass has to consider. `hidden` is a card Aether took the
+// owned bit back from; `retired` is a removal whose clear may never have run,
+// because the client drops the card as soon as the licence goes away. Both are
+// cards the client no longer lists, and both come back through the same lookup
+// and stamp. Sorted and unique, so a pass over two hash sets is deterministic.
+inline std::vector<steam::AppId> RestoreCandidates(const std::unordered_set<steam::AppId>& hidden,
+                                                   const std::unordered_set<steam::AppId>& retired) {
+    std::vector<steam::AppId> ids;
+    ids.reserve(hidden.size() + retired.size());
+    ids.insert(ids.end(), hidden.begin(), hidden.end());
+    ids.insert(ids.end(), retired.begin(), retired.end());
+    std::sort(ids.begin(), ids.end());
+    ids.erase(std::unique(ids.begin(), ids.end()), ids.end());
+    return ids;
+}
+
 // Whether the per-app update check belongs to this recheck. A card being taken
 // back has no content left to promote: the notification is there to rebuild it
 // so the fill can clear the owned bit, and asking the client for an update would
