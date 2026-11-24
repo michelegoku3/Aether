@@ -85,6 +85,22 @@ void RecheckIsDeduplicated() {
     CHECK(SelectRecheck({a, b}) == std::vector<AppId>{100});
 }
 
+// A `.lua` whose `setManifestid` lines are commented out pins nothing, and the
+// file still makes its app visible. The license answer alone does not make the
+// client build a card mid-session, so a reload has to name the app it just
+// configured.
+void RecheckWhenAnAppAppearsWithoutPins() {
+    PinChange c{100, {}, {}, false};
+    CHECK(SelectRecheck({c}) == std::vector<AppId>{100});
+}
+
+// The same file saved again changes nothing: appearance is what the flag marks,
+// not an empty pin set.
+void NoRecheckWhenAPinlessFileIsSavedAgain() {
+    PinChange c{100, {}, {}, true};
+    CHECK(SelectRecheck({c}).empty());
+}
+
 void QueueIsBounded() {
     RecheckQueue q;
     for (std::size_t i = 0; i < RecheckQueue::kCapacity + 10; ++i)
@@ -135,6 +151,8 @@ void RecheckTest() {
     RecheckWhenEveryPinGoesAway();
     PinsFollowTheFileAndItsRoots();
     RecheckIsDeduplicated();
+    RecheckWhenAnAppAppearsWithoutPins();
+    NoRecheckWhenAPinlessFileIsSavedAgain();
     QueueIsBounded();
     RemovedRootsFollowTheConfiguredBatch();
 }

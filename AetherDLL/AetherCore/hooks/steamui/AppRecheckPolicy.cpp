@@ -25,6 +25,13 @@ std::vector<steam::AppId> SelectRecheck(const std::vector<PinChange>& changes) {
     std::vector<steam::AppId> apps;
     apps.reserve(changes.size());
     for (const auto& change : changes) {
+        // A reload that makes an app visible is a change on its own: the client
+        // does not build a card from the license answer alone, and a file whose
+        // `setManifestid` lines are commented out has no pin to compare.
+        if (!change.presentBefore) {
+            apps.push_back(change.app);
+            continue;
+        }
         if (Normalize(change.before) == Normalize(change.after))
             continue;
         apps.push_back(change.app);
