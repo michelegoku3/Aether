@@ -180,10 +180,11 @@ static void WriteSnapshot(std::uint64_t requests) {
     w.UInt64("overview_restores", g_state.overview.restores.load(std::memory_order_relaxed));
     w.UInt64("overview_rejects", g_state.overview.rejects.load(std::memory_order_relaxed));
     {
-        // `overview_retired` is how many cards still have to be rebuilt before
-        // their owned bit is taken back; a steady non-zero value means the
-        // client never re-filled them. `overview_hidden` is how many cards were
-        // taken back and are waiting for their `.lua` to come back.
+        // `overview_retired` is how many removals are still waiting for their
+        // card to be rebuilt or restored; a steady non-zero value after a re-add
+        // means the restore pass could not find the object. `overview_hidden` is
+        // how many cards were taken back and are waiting for their `.lua` to
+        // come back.
         std::lock_guard lock(g_state.overview.stampMutex);
         w.SizeT("overview_retired", g_state.overview.retired.size());
         w.SizeT("overview_hidden", g_state.overview.hidden.size());
