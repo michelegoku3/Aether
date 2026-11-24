@@ -31,18 +31,21 @@ FillInAppOverview_t o_FillInAppOverview = nullptr;
 
 // The tracking sets, read in one lock. `full` is the capacity answer for a
 // management that is not yet recorded: a card Aether cannot remember would leave
-// an unclearable bit, so that write is refused instead.
+// an unclearable bit, so that write is refused instead. `hidden` is a card whose
+// bit was already taken back and is waiting for its `.lua` to return.
 struct Tracking {
     bool retired = false;
     bool tracked = false;
     bool full = false;
+    bool hidden = false;
 };
 
 Tracking ReadTracking(steam::AppId app) {
     std::lock_guard lock(g_state.overview.stampMutex);
     const bool tracked = g_state.overview.tracked.count(app) != 0;
     return {g_state.overview.retired.count(app) != 0, tracked,
-            !tracked && g_state.overview.tracked.size() >= policy::kMaxTrackedApps};
+            !tracked && g_state.overview.tracked.size() >= policy::kMaxTrackedApps,
+            g_state.overview.hidden.count(app) != 0};
 }
 
 // Every managed card is recorded, whether or not this fill had to write the bit:
@@ -333,20 +336,27 @@ void DrainRechecks(void* source) {
         // check, so the card kept offering PLAY until the app was launched.
         // Asking for it here is the same call, made on the thread the UI already
         // uses to reach the client; a missing pattern leaves only this call off.
-        using CheckAppForUpdate_t = bool (*)(void*, steam::AppId);
-        void* manager = g_state.overview.clientAppManager.load(std::memory_order_acquire);
-        auto check = reinterpret_cast<CheckAppForUpdate_t>(
-            g_state.overview.clientCheckAppForUpdate.load(std::memory_order_acquire));
-        if (manager != nullptr && check != nullptr) {
-            // The answer is the client's own and is logged raw: reading it as a
-            // verdict here would hide a call that resolved to the wrong entry.
-            const bool answer = check(manager, app);
-            g_state.overview.updateChecks.fetch_add(1, std::memory_order_relaxed);
-            AC_LOG_INFO(kModule, "Checked app %u for updates after its pins moved: check answered %d.", app,
-                        answer ? 1 : 0);
+        //
+        // A card being taken back is not a candidate: it has no content left to
+        // promote, and the notification is there to rebuild it so the fill can
+        // clear the owned bit.
+        const Tracking tracking = ReadTracking(app);
+        if (policy::ShouldRunUpdateCheck(tracking.retired, tracking.hidden)) {
+            using CheckAppForUpdate_t = bool (*)(void*, steam::AppId);
+            void* manager = g_state.overview.clientAppManager.load(std::memory_order_acquire);
+            auto check = reinterpret_cast<CheckAppForUpdate_t>(
+                g_state.overview.clientCheckAppForUpdate.load(std::memory_order_acquire));
+            if (manager != nullptr && check != nullptr) {
+                // The answer is the client's own and is logged raw: reading it as a
+                // verdict here would hide a call that resolved to the wrong entry.
+                const bool answer = check(manager, app);
+                g_state.overview.updateChecks.fetch_add(1, std::memory_order_relaxed);
+                AC_LOG_INFO(kModule, "Checked app %u for updates after its pins moved: check answered %d.", app,
+                            answer ? 1 : 0);
+            }
         }
         handed = true;
-        AC_LOG_INFO(kModule, "Asked the client to re-evaluate app %u after its manifest pins changed.", app);
+        AC_LOG_INFO(kModule, "Asked the client to re-evaluate app %u after the Lua reload.", app);
     }
     // `overview_rechecks`, `overview_recheck_pending` and `recheck_state` are the
     // evidence that the card was rebuilt, and every write before this frame

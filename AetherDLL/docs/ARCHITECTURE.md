@@ -640,7 +640,9 @@ that check (`CheckAppForUpdate`, resolved from the steamclient table, on the
 `CUserAppManager` the `BuildDepotDependency` hook captured) right after
 `MarkAppChange`, one app at a time. The check starts no download by itself
 either: Steam compares the pinned GIDs with `InstalledDepots` and decides PLAY,
-UPDATE or a download from the app's own update policy.
+UPDATE or a download from the app's own update policy. A card being taken back
+is left out of that check: the recheck is there to rebuild it so the fill can
+clear the owned bit, and there is no content left to promote.
 
 A missing `MarkAppChange` or `CSteamUIAppControllerRunFrame` pattern disables
 the recheck and nothing else. Card repair, ownership and membership keep
@@ -739,7 +741,8 @@ without one, and both are reverse writes of the same bit:
   batch therefore retires nothing: the temp-and-rename a save performs is parsed
   before the check runs. A retired id makes the next card fill take the bit back
   (`OwnershipAction::Clear`), which the client reads as "no longer in the
-  library" and drops the card.
+  library" and drops the card. The watcher hands the same ids to the recheck
+  queue, so the fill is requested rather than waited for.
 - **Restore.** The client keeps the object after the bit is taken back — its
   details still resolve, only the bit is clear — so the card can be put back
   without a restart. `GetAppByID` is the client's own lookup; the detour forwards

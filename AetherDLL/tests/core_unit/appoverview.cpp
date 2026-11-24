@@ -176,6 +176,16 @@ void RestoreOnlyWhatWasHidden() {
     CHECK(!ShouldRestoreCard(false, false));
 }
 
+// A recheck of a card being taken back is a rebuild, not an update question:
+// the app has no content left to promote, and the fill is where the owned bit
+// is taken back.
+void UpdateCheckSkipsACardBeingTakenBack() {
+    CHECK(ShouldRunUpdateCheck(false, false)); // a card that stays
+    CHECK(!ShouldRunUpdateCheck(true, false)); // retired, waiting for the fill
+    CHECK(!ShouldRunUpdateCheck(false, true)); // already taken back
+    CHECK(!ShouldRunUpdateCheck(true, true));
+}
+
 } // namespace
 
 void AppOverviewTest() {
@@ -184,4 +194,5 @@ void AppOverviewTest() {
     OwnershipWriteTable();
     OwnershipClearTable();
     RestoreOnlyWhatWasHidden();
+    UpdateCheckSkipsACardBeingTakenBack();
 }
