@@ -8,6 +8,7 @@
 #include <limits>
 #include <mutex>
 #include <string>
+#include <string_view>
 #include <unordered_map>
 
 #include "core/AetherCoreState.h"
@@ -20,6 +21,10 @@ namespace ac::gamename {
 namespace {
 
 constexpr const char* kModule = "GameName";
+
+// AetherCore is a Windows image: a depot whose `oslist` does not name this
+// platform is content this client cannot run.
+constexpr std::string_view kHostOsList = "windows";
 
 std::string Fold(const std::string& in) {
     std::string out;
@@ -185,6 +190,33 @@ std::uint64_t PublicDepotGid(steam::AppId appId, steam::AppId depotId) {
     if (len <= 0)
         return 0;
     return ac::hooks::steamclient::policy::ParseSize(buf, static_cast<std::size_t>(len));
+}
+
+bool DepotAppliesToHostOs(steam::AppId appId, steam::AppId depotId) {
+    if (appId == 0 || depotId == 0 || !Ready())
+        return true;
+
+    // A depot's AppInfo entry names the platforms it runs on. A `.lua` lists
+    // every depot the store has, and two platforms can declare the same file
+    // path, so the plan must keep only what this client can run.
+    char key[64] = {};
+    _snprintf_s(key, sizeof(key), _TRUNCATE, "depots/%u/config/oslist", depotId);
+    char buf[64] = {};
+#if defined(_MSC_VER)
+    const std::int64_t len =
+        ProbeAppInfoGuarded(g_state.gameName.appInfoCacheObj.load(), appId, key, reinterpret_cast<std::uint8_t*>(buf),
+                            static_cast<std::int32_t>(sizeof(buf)));
+#else
+    const std::int64_t len =
+        o_GetAppDataFromAppInfo(g_state.gameName.appInfoCacheObj.load(), appId, key,
+                                reinterpret_cast<std::uint8_t*>(buf), static_cast<std::int32_t>(sizeof(buf)));
+#endif
+    // A missing key, an empty value or a faulted probe proves no restriction:
+    // a depot is never dropped on missing evidence.
+    if (len <= 1)
+        return true;
+    const std::string_view list(buf, static_cast<std::size_t>(len - 1));
+    return ac::hooks::steamclient::policy::OsListAllowsHost(list, kHostOsList);
 }
 
 std::string ForApp(steam::AppId appId) {

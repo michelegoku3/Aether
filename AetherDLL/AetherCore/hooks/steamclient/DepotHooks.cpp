@@ -388,6 +388,20 @@ bool RefillDepotPlan(AppId app, const std::vector<policy::RecordedDepot>& record
                        [app](const policy::PinnedDepot& row) { return !gamename::HasPublicDepot(app, row.depotId); }),
                    rows.end());
     }
+    // A `.lua` lists every depot the store has. A depot whose AppInfo names
+    // only another platform ships the same file paths as the one this client
+    // runs, so it is reported before it is kept out of the plan.
+    std::vector<AppId> foreign;
+    for (const policy::PinnedDepot& row : rows) {
+        if (!gamename::DepotAppliesToHostOs(app, row.depotId))
+            foreign.push_back(row.depotId);
+    }
+    if (!foreign.empty()) {
+        std::ostringstream os;
+        for (const AppId id : foreign)
+            os << ' ' << id;
+        AC_LOG_INFO(kModule, "Depot plan for app %u carries depot(s) another platform runs:%s", app, os.str().c_str());
+    }
     if (rows.empty())
         return true;
 

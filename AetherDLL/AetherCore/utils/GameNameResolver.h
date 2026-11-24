@@ -40,6 +40,13 @@ std::uint64_t PublicDepotSize(steam::AppId appId, steam::AppId depotId);
 // carry it.
 std::uint64_t PublicDepotGid(steam::AppId appId, steam::AppId depotId);
 
+// True when the AppInfo's `depots/<id>/config/oslist` lets `depotId` run on this
+// client's platform. A `.lua` lists every depot the store has, so a depot that
+// names only another platform is content Steam must not plan here: two
+// platforms can ship the same file path and the install folder would hold both
+// builds. An absent list, and a probe that cannot answer, place no restriction.
+bool DepotAppliesToHostOs(steam::AppId appId, steam::AppId depotId);
+
 // Reverse lookup: app id whose localized name equals `name`, searched across the
 // locally configured library (luadata::LibraryAppIds). 0 when there is no match.
 //
