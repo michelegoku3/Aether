@@ -390,17 +390,24 @@ bool RefillDepotPlan(AppId app, const std::vector<policy::RecordedDepot>& record
     }
     // A `.lua` lists every depot the store has. A depot whose AppInfo names
     // only another platform ships the same file paths as the one this client
-    // runs, so it is reported before it is kept out of the plan.
+    // runs, so the two builds would overwrite each other's files: it is kept
+    // out of the rows Aether appends. Steam's own rows are never filtered.
+    std::vector<policy::PinnedDepot> keptRows;
     std::vector<AppId> foreign;
+    keptRows.reserve(rows.size());
     for (const policy::PinnedDepot& row : rows) {
-        if (!gamename::DepotAppliesToHostOs(app, row.depotId))
+        if (gamename::DepotAppliesToHostOs(app, row.depotId))
+            keptRows.push_back(row);
+        else
             foreign.push_back(row.depotId);
     }
+    rows.swap(keptRows);
     if (!foreign.empty()) {
         std::ostringstream os;
         for (const AppId id : foreign)
             os << ' ' << id;
-        AC_LOG_INFO(kModule, "Depot plan for app %u carries depot(s) another platform runs:%s", app, os.str().c_str());
+        AC_LOG_INFO(kModule, "Depot plan for app %u leaves out depot(s) another platform runs:%s", app,
+                    os.str().c_str());
     }
     if (rows.empty())
         return true;

@@ -508,6 +508,20 @@ instead of skipping the new donor as "already tried". Probe requests are paced
   completeness rule, the capacity math and the installed-app boundary. The rows
   carry the pinned gid and size, so the manifest overrides below are a no-op for
   them.
+* Depot platform: a `.lua` lists every depot the store has, and a depot's
+  AppInfo entry names the platforms it runs on under `config/oslist`. Gamblers
+  Table is the shape that breaks: `3618391` is `windows`, `3618392` is `linux`,
+  and both declare `gamblers-table.pck`. Planning both puts two builds in one
+  install folder and the shared path ends up as whichever depot committed last,
+  so the executable and the pack come from different builds. A row whose list
+  does not name this platform is therefore left out before the rows are appended
+  (`gamename::DepotAppliesToHostOs`, `policy::OsListAllowsHost`); an absent or
+  empty list places no restriction, and so does a probe that cannot answer, so a
+  missing AppInfo never removes content. The filter covers the rows Aether
+  appends from either source and never Steam's own, and the client then removes
+  the depot its stored plan no longer carries - the files a planned depot also
+  owns stay, because Steam deletes only what the dropped depot alone carried.
+  `depot_plan` pins the list parsing.
 * Installed-depot repair: `core/InstalledDepotRepair` runs once per process at
   boot (BootSteps step 10d, on a worker thread, managed apps only). For an ACF
   entry whose GID has no non-empty local manifest it restores a file that does
