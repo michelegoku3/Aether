@@ -687,6 +687,13 @@ PICS requests and name lookups (`ScriptEngine`, `DirWatch`, `GameNameResolver`,
 `InstalledDepotRepair`); it is not membership and may be empty for a `.lua` with
 a non-numeric name, which still enters the library through its seeded ids.
 
+A reload that makes an app visible mid-session is not covered by the license
+answer alone: the client keeps the library list it built at startup, so the app
+enters package 0 and its AppInfo is fetched, but no card appears until the
+client is asked to look again. The reload therefore names the app for a
+recheck, pins or not (see
+[App recheck after a pin change](#app-recheck-after-a-pin-change)).
+
 A genuinely owned app gets a package-0 row like every other configured id, but
 its ownership answer passes through untouched: the spoof acts only when Steam
 did not provide the app (`luadata::HasDepot`), and the family/owned flags keep
@@ -770,6 +777,16 @@ rebuilt, and the contract behind both halves is under
 [Pending version changes](#pending-version-changes). `RequestAppRecheck` is that
 request: it queues the ids a pin comparison selected and returns; the caller is
 the thread that wrote the Lua and never touches a Steam object.
+
+The same request carries the apps a reload *makes visible*. A `.lua` whose
+`setManifestid` lines are commented out pins nothing, and the client does not
+build a card from the license answer alone: the app enters package 0 and its
+AppInfo is fetched, but the library keeps the list it built at startup. The diff
+therefore also reports an app the file did not configure before the reload
+(`PinChange::presentBefore`), and a pinless file still names its roots
+(`luadata::PinsByLibraryAppForFile` answers an empty row list rather than
+nothing). Saving the same pinless file again changes nothing and refreshes no
+card; an app the file no longer configures is left to the retirement pass.
 
 The queue (`RecheckQueue`, 64 slots) is drained on
 `CSteamUIAppControllerRunFrame`, at most 8 ids per frame, each handed to the
