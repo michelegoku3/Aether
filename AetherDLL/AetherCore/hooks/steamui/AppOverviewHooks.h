@@ -14,11 +14,11 @@
 // taken-back card leaves the client's app map, so a later re-added `.lua` is
 // announced to the client as a new app, which is what rebuilds the card.
 //
-// A second pair carries a version change back to the client: `MarkAppChange` is
-// observed only to learn the object that owns the app list, and the frame
-// callback drains the ids a Lua change queued and asks that owner to re-evaluate
-// them (RequestAppRecheck). A moved pin means nothing until the client looks
-// again, and only its own thread may make it look.
+// A second pair carries a version change or a removal back to the client:
+// `MarkAppChange` is observed only to learn the object that owns the app list,
+// and the frame callback drains the ids a Lua change queued and asks that owner
+// to re-evaluate them (RequestAppRecheck). A moved pin or a retired card means
+// nothing until the client looks again, and only its own thread may make it look.
 //
 // All of it happens on the client's own callback threads; nothing here touches
 // an object from a worker. Visibility, size, state and achievements are not
@@ -53,8 +53,10 @@ bool AppRecheckSupported();
 // before its card returns.
 bool AppRestoreSupported();
 
-// Records that an explicit file removal took these library roots away, so the
-// next card fill may take back the owned bit the client holds for them.
+// Records that an explicit file removal took these library roots away. The
+// watcher hands the same ids to RequestAppRecheck: the owned bit is taken back
+// in the card fill, and a removal with no pin change would otherwise wait for a
+// fill that never comes.
 //
 // Called by the watcher after the whole change batch is applied: a rename or an
 // atomic replace re-adds the file in the same batch, and its roots are already

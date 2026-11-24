@@ -120,6 +120,19 @@ void NoRecheckWhenAPinlessFileIsSavedAgain() {
     CHECK(SelectRecheck({c}).empty());
 }
 
+// A removal retires the roots the file used to name, and a retired card leaves
+// the library only when the client rebuilds it: the fill is where the owned bit
+// is taken back. A pinless removal produces no pin change at all, so the
+// retirement itself is the rebuild.
+void RecheckTheRootsARemovalRetires() { CHECK(SelectRecheck({}, {100}) == std::vector<AppId>{100}); }
+
+// A retirement and a pin move for the same app are one rebuild, and the result
+// stays sorted.
+void RetirementJoinsThePinChanges() {
+    PinChange moved{100, {{200, 1}}, {{200, 2}}};
+    CHECK(SelectRecheck({moved}, {100, 300}) == (std::vector<AppId>{100, 300}));
+}
+
 void QueueIsBounded() {
     RecheckQueue q;
     for (std::size_t i = 0; i < RecheckQueue::kCapacity + 10; ++i)
@@ -173,6 +186,8 @@ void RecheckTest() {
     RecheckIsDeduplicated();
     RecheckWhenAnAppAppearsWithoutPins();
     NoRecheckWhenAPinlessFileIsSavedAgain();
+    RecheckTheRootsARemovalRetires();
+    RetirementJoinsThePinChanges();
     QueueIsBounded();
     RemovedRootsFollowTheConfiguredBatch();
 }

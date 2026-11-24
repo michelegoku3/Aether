@@ -192,6 +192,12 @@ inline std::uint32_t ApplyCleared(std::uint32_t flags) noexcept {
 // client's object, so it must never run for an app Aether never hid.
 inline bool ShouldRestoreCard(bool hidden, bool managed) noexcept { return hidden && managed; }
 
+// Whether the per-app update check belongs to this recheck. A card being taken
+// back has no content left to promote: the notification is there to rebuild it
+// so the fill can clear the owned bit, and asking the client for an update would
+// be a question about content it no longer has.
+inline bool ShouldRunUpdateCheck(bool retired, bool hidden) noexcept { return !retired && !hidden; }
+
 // A removed file's library roots that no script configures any more.
 //
 // `beforeRoots` is every root the removed file advertised (the keys of its pin

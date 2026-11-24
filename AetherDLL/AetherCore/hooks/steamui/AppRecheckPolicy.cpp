@@ -21,9 +21,10 @@ PinSet Normalize(PinSet pins) {
 
 } // namespace
 
-std::vector<steam::AppId> SelectRecheck(const std::vector<PinChange>& changes) {
+std::vector<steam::AppId> SelectRecheck(const std::vector<PinChange>& changes,
+                                        const std::vector<steam::AppId>& retired) {
     std::vector<steam::AppId> apps;
-    apps.reserve(changes.size());
+    apps.reserve(changes.size() + retired.size());
     for (const auto& change : changes) {
         // A reload that makes an app visible is a change on its own: the client
         // does not build a card from the license answer alone, and a file whose
@@ -36,6 +37,9 @@ std::vector<steam::AppId> SelectRecheck(const std::vector<PinChange>& changes) {
             continue;
         apps.push_back(change.app);
     }
+    // A retired root is a rebuild too: the client takes the owned bit back in
+    // the card fill, and a pinless removal leaves no pin change to compare.
+    apps.insert(apps.end(), retired.begin(), retired.end());
     // Sorted and unique: the caller forwards this to the SteamUI thread, and a
     // stable order keeps two identical reloads from producing different work.
     std::sort(apps.begin(), apps.end());

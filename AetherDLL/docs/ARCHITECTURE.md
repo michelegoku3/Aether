@@ -654,7 +654,9 @@ that check (`CheckAppForUpdate`, resolved from the steamclient table, on the
 `CUserAppManager` the `BuildDepotDependency` hook captured) right after
 `MarkAppChange`, one app at a time. The check starts no download by itself
 either: Steam compares the pinned GIDs with `InstalledDepots` and decides PLAY,
-UPDATE or a download from the app's own update policy.
+UPDATE or a download from the app's own update policy. A card being taken back
+is left out of that check: the recheck is there to rebuild it so the fill can
+clear the owned bit, and there is no content left to promote.
 
 A missing `MarkAppChange` or `CSteamUIAppControllerRunFrame` pattern disables
 the recheck and nothing else. Card repair, ownership and membership keep
@@ -753,7 +755,8 @@ without one, and both are reverse writes of the same bit:
   batch therefore retires nothing: the temp-and-rename a save performs is parsed
   before the check runs. A retired id makes the next card fill take the bit back
   (`OwnershipAction::Clear`), which the client reads as "no longer in the
-  library" and drops the card.
+  library" and drops the card. The watcher hands the same ids to the recheck
+  queue, so the fill is requested rather than waited for.
 - **Restore.** The client keeps the object after the bit is taken back — its
   details still resolve, only the bit is clear — so the card can be put back
   without a restart. `GetAppByID` is the client's own lookup; the detour forwards
@@ -786,7 +789,11 @@ therefore also reports an app the file did not configure before the reload
 (`PinChange::presentBefore`), and a pinless file still names its roots
 (`luadata::PinsByLibraryAppForFile` answers an empty row list rather than
 nothing). Saving the same pinless file again changes nothing and refreshes no
-card; an app the file no longer configures is left to the retirement pass.
+card. A removal is the other direction: a root the file stopped advertising, and
+that no other script names any more, is retired, and the retirement is handed to
+the same queue. The card only leaves when the client rebuilds it, because the
+fill is where the owned bit is taken back; a pinless removal leaves no pin
+change to compare, so the retirement itself is the rebuild.
 
 The queue (`RecheckQueue`, 64 slots) is drained on
 `CSteamUIAppControllerRunFrame`, at most 8 ids per frame, each handed to the
