@@ -53,7 +53,13 @@ struct PinChange {
 // the Lua writer has no ordering contract. A reload that only reordered rows
 // did not change what the app should install, and asking Steam to rebuild the
 // app for it would be a visible refresh for nothing.
-std::vector<steam::AppId> SelectRecheck(const std::vector<PinChange>& changes);
+//
+// `retired` carries the roots a removal took away and no other script names any
+// more. They are rebuilds too: the owned bit is taken back in the card fill, and
+// a removal of a pinless `.lua` produces no pin change at all, so without them
+// the card would wait for a fill that never comes.
+std::vector<steam::AppId> SelectRecheck(const std::vector<PinChange>& changes,
+                                        const std::vector<steam::AppId>& retired = {});
 
 // The apps waiting for a client recheck, carried from the worker that applied
 // the Lua change to the SteamUI thread that can act on it.

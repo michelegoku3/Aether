@@ -375,22 +375,23 @@ void ApplyChanges(const std::unordered_map<std::string, DWORD>& acc, const std::
         // one-shot per app, so a reload does not repeat the request.
         hooks::productinfo::RequestAll(luadata::LibraryAppIds());
         // A root taken away by this batch and named by no script any more is
-        // retired: the next card fill takes back the owned bit Aether wrote, and
-        // the removal is visible without a restart. The configured snapshot is
+        // retired: the card fill takes back the owned bit Aether wrote, and the
+        // removal is visible without a restart. The configured snapshot is
         // global and taken now, so a root the same batch re-added survives.
+        std::vector<steam::AppId> retiredRoots;
         if (!removalRoots.empty()) {
             const std::vector<steam::AppId> configured = luadata::AllDepotIds();
             const std::unordered_set<steam::AppId> configuredAfter(configured.begin(), configured.end());
-            const std::vector<steam::AppId> retired =
-                hooks::steamui::policy::RetiredRoots(removalRoots, configuredAfter);
-            if (!retired.empty())
-                hooks::steamui::RequestAppRetirement(retired);
+            retiredRoots = hooks::steamui::policy::RetiredRoots(removalRoots, configuredAfter);
+            if (!retiredRoots.empty())
+                hooks::steamui::RequestAppRetirement(retiredRoots);
         }
         // After the license pass, so the client sees the new ownership answer
-        // together with the new intent. Only apps whose pins really moved are
-        // named: a reload that changed nothing must not refresh a card.
+        // together with the new intent. A reload that changed nothing must not
+        // refresh a card, but a retired root is a change even when it pinned
+        // nothing: its card only leaves when the client rebuilds it.
         if (recheckPins) {
-            const std::vector<steam::AppId> rechecks = hooks::steamui::policy::SelectRecheck(pinChanges);
+            const std::vector<steam::AppId> rechecks = hooks::steamui::policy::SelectRecheck(pinChanges, retiredRoots);
             if (!rechecks.empty()) {
                 hooks::steamui::RequestAppRecheck(rechecks);
                 AC_LOG_INFO(kModule, "Recheck requested for %zu app(s) after the Lua reload.", rechecks.size());

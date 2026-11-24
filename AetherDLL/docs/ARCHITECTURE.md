@@ -772,7 +772,11 @@ therefore also reports an app the file did not configure before the reload
 (`PinChange::presentBefore`), and a pinless file still names its roots
 (`luadata::PinsByLibraryAppForFile` answers an empty row list rather than
 nothing). Saving the same pinless file again changes nothing and refreshes no
-card; an app the file no longer configures is left to the retirement pass.
+card. A removal is the other direction: a root the file stopped advertising, and
+that no other script names any more, is retired, and the retirement is handed to
+the same queue. The card only leaves when the client rebuilds it, because the
+fill is where the owned bit is taken back; a pinless removal leaves no pin
+change to compare, so the retirement itself is the rebuild.
 
 The queue (`RecheckQueue`, 64 slots) is drained on
 `CSteamUIAppControllerRunFrame`, at most 8 ids per frame, each handed to the
