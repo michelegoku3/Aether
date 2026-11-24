@@ -9,6 +9,7 @@ namespace {
 // These cases pin the tripwires: a false accept would write into whatever the
 // layout moved to, which is exactly the failure this layer exists to avoid.
 
+using ac::steam::AppId;
 using ac::steam::AppOverviewPrefix;
 using ac::steam::AppOwnershipFlags;
 using namespace ac::hooks::steamui::policy;
@@ -186,6 +187,16 @@ void UpdateCheckSkipsACardBeingTakenBack() {
     CHECK(!ShouldRunUpdateCheck(true, true));
 }
 
+// A removed card is gone from the client whether the fill cleared its bit or the
+// client dropped it with the licence. The restore pass has to consider both
+// sets, or a re-added `.lua` is never looked up.
+void RestoreCandidatesCoverRetiredCards() {
+    CHECK(RestoreCandidates({}, {}).empty());
+    CHECK(RestoreCandidates({100}, {}) == std::vector<AppId>{100});
+    CHECK(RestoreCandidates({}, {100}) == std::vector<AppId>{100});
+    CHECK(RestoreCandidates({100, 200}, {100, 300}) == (std::vector<AppId>{100, 200, 300}));
+}
+
 } // namespace
 
 void AppOverviewTest() {
@@ -195,4 +206,5 @@ void AppOverviewTest() {
     OwnershipClearTable();
     RestoreOnlyWhatWasHidden();
     UpdateCheckSkipsACardBeingTakenBack();
+    RestoreCandidatesCoverRetiredCards();
 }

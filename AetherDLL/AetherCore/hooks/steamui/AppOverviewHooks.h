@@ -11,8 +11,9 @@
 // builds and, once the compiled layout has been confirmed by two distinct apps,
 // keeps its ownership flag aligned with what Aether provides: it stamps the bit
 // for a managed app and takes it back for a card a removed `.lua` retired. A
-// taken-back card leaves the client's app map, so a later re-added `.lua` is
-// announced to the client as a new app, which is what rebuilds the card.
+// card the client stops listing is not rebuilt by a config notification: the
+// restore pass puts the owned bit back through the client's own lookup when the
+// `.lua` returns.
 //
 // A second pair carries a version change or a removal back to the client:
 // `MarkAppChange` is observed only to learn the object that owns the app list,
@@ -62,8 +63,8 @@ bool AppRestoreSupported();
 // atomic replace re-adds the file in the same batch, and its roots are already
 // configured again, so the caller passes only the ones no script names any more.
 // The ids stay recorded until a card is rebuilt (the clear) or the file comes
-// back (a managed fill drops the retirement). Safe from any thread; the write to
-// the client object stays in the fill callback.
+// back (the restore pass stamps the bit and drops the retirement). Safe from any
+// thread; the write to the client object stays on the client's frame thread.
 void RequestAppRetirement(const std::vector<steam::AppId>& ids);
 
 } // namespace ac::hooks::steamui

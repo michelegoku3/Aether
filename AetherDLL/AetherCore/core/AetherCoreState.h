@@ -262,11 +262,13 @@ struct AetherCoreState {
         // set is what says "this card exists because of Aether, taking it back is
         // ours to do". `retired` records the ids an explicit file removal named;
         // it survives a late hook install, so a retirement decided before the
-        // layer exists is still applied by the next card fill. `hidden` records
-        // the ids whose bit was taken back: Steam dropped their overview object,
-        // so a later `.lua` re-add has to be announced as a new app, not as a
-        // config change. All three sets are bounded; a refusal is logged and
-        // counted.
+        // layer exists is still applied by the next card fill. It is also a
+        // restore candidate: the client drops the card as soon as the licence
+        // goes away, so the fill that would clear the bit may never run.
+        // `hidden` records the ids whose bit was taken back: Steam dropped their
+        // overview object, so a later `.lua` re-add has to be announced as a new
+        // app, not as a config change. The restore pass drains both sets. All
+        // three sets are bounded; a refusal is logged and counted.
         std::mutex stampMutex; // guards the sets, never the probe or the queue
         std::unordered_set<steam::AppId> tracked;
         std::unordered_set<steam::AppId> retired;

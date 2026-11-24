@@ -753,21 +753,22 @@ without one, and both are reverse writes of the same bit:
   roots that an explicitly removed file used to advertise and that no script
   configures any more (`RetiredRoots`). A save that replaces the file in the same
   batch therefore retires nothing: the temp-and-rename a save performs is parsed
-  before the check runs. A retired id makes the next card fill take the bit back
-  (`OwnershipAction::Clear`), which the client reads as "no longer in the
-  library" and drops the card. The watcher hands the same ids to the recheck
-  queue, so the fill is requested rather than waited for.
-- **Restore.** The client keeps the object after the bit is taken back — its
-  details still resolve, only the bit is clear — so the card can be put back
-  without a restart. `GetAppByID` is the client's own lookup; the detour forwards
-  it unchanged and remembers the owner. Before the first write, the lookup is
-  confirmed on two ids whose cards Aether already filled, so the compiled prefix
-  is proven on objects that must exist. `RequestAppRetirement` decides what may
-  be taken back, and only a merely-unmanaged app is: `HasDepot` is false for a
-  genuinely owned license and for a real family share, and both keep the bit
-  Valve gave them.
+  before the check runs. A fill that still reaches the card takes the bit back
+  (`OwnershipAction::Clear`), and the watcher hands the same ids to the recheck
+  queue. The client often drops the card first, as soon as the licence goes away,
+  so the retirement must not depend on that fill: the id stays retired and the
+  restore pass owns it.
+- **Restore.** The client keeps the object after the card leaves the library, so
+  the card can be put back without a restart. `GetAppByID` is the client's own
+  lookup; the detour forwards it unchanged and remembers the owner. Before the
+  first write, the lookup is confirmed on two ids whose cards Aether already
+  filled, so the compiled prefix is proven on objects that must exist. The
+  restore pass drains both `hidden` (the bit was taken back) and `retired` (a
+  removal whose fill never came): once the `.lua` is configured again it stamps
+  the bit, calls `MarkAppChange` and drops the id from both sets. A lookup that
+  returns no object is logged once per app; that card needs a restart.
 
-Both sets are bounded (`kMaxTrackedApps`) and every refusal is logged: a bit that
+The sets are bounded (`kMaxTrackedApps`) and every refusal is logged: a bit that
 could not be remembered would be unclearable, which is why a stamp that cannot be
 tracked is refused instead.
 
@@ -813,8 +814,9 @@ write before that frame predates the calls the client made, so without these the
 status file would keep describing the queue from before the reload.
 
 `status.json` reports `steamui_attach`, `overview_fills`, `overview_writes`,
-`overview_clears`, `overview_restores`, `overview_retired` (cards still waiting
-to be rebuilt before their bit is taken back), `overview_hidden` (cards taken
+`overview_clears`, `overview_restores`, `overview_retired` (removals still waiting
+for their card to be rebuilt or restored; a steady non-zero value after a re-add
+means the restore could not find the object), `overview_hidden` (cards taken
 back and waiting for their `.lua` to return), `overview_rejects` and
 `overview_probe` (`latched`, `unproven` or `rejected:<reason>`), so "the card was
 removed or restored and why not" is diagnosable without a debugger, plus

@@ -172,8 +172,8 @@ void* h_MarkAppChange(void* self, steam::AppId app, std::uint32_t changeFlags) {
 using GetAppByID_t = void* (*)(void*, steam::AppId, bool);
 GetAppByID_t o_GetAppByID = nullptr;
 
-// See RestoreHiddenCards: one restore attempt per interval while a hidden id
-// waits for its card. Not a timeout — a restore that missed is retried.
+// See RestoreGoneCards: one restore attempt per interval while a gone id waits
+// for its card. Not a timeout - a restore that missed is retried.
 inline constexpr std::uint64_t kRestoreAttemptIntervalMs = 250;
 std::atomic<std::uint64_t> g_lastRestoreAttempt{0};
 
@@ -230,24 +230,28 @@ bool EnsureLookupShape(void* controller) {
     return g_state.overview.lookupLatched.load(std::memory_order_acquire);
 }
 
-// A card Aether took back whose `.lua` is configured again. Runs on the client's
-// frame thread: the write lands on the object the client itself returned, and
-// the change notification makes the library list it again.
-void RestoreHiddenCards(void* source) {
+// A card the client no longer lists whose `.lua` is configured again: one Aether
+// took the bit back from, or one a removal retired and the client dropped with
+// the licence. Runs on the client's frame thread: the write lands on the object
+// the client itself returned, and the change notification makes the library list
+// it again.
+void RestoreGoneCards(void* source) {
     if (source == nullptr || o_GetAppByID == nullptr)
         return;
-    // The hidden ids are copied out first: `luadata::HasDepot` takes the Lua
-    // lock, and the card path takes it before `stampMutex`, so this side must
-    // never hold `stampMutex` while asking.
-    std::vector<steam::AppId> hidden;
+    // The gone ids are copied out first: `luadata::HasDepot` takes the Lua lock,
+    // and the card path takes it before `stampMutex`, so this side must never
+    // hold `stampMutex` while asking. A retired removal is a candidate too: the
+    // client drops the card as soon as the licence goes away, so the fill that
+    // would have cleared the bit may never run.
+    std::vector<steam::AppId> gone;
     {
         std::lock_guard lock(g_state.overview.stampMutex);
-        if (g_state.overview.hidden.empty())
+        if (g_state.overview.hidden.empty() && g_state.overview.retired.empty())
             return;
-        hidden.assign(g_state.overview.hidden.begin(), g_state.overview.hidden.end());
+        gone = policy::RestoreCandidates(g_state.overview.hidden, g_state.overview.retired);
     }
     std::vector<steam::AppId> due;
-    for (const steam::AppId app : hidden) {
+    for (const steam::AppId app : gone) {
         if (policy::ShouldRestoreCard(true, luadata::HasDepot(app)))
             due.push_back(app);
     }
@@ -269,13 +273,22 @@ void RestoreHiddenCards(void* source) {
     std::size_t restored = 0;
     for (const steam::AppId app : due) {
         auto* found = static_cast<steam::AppOverviewPrefix*>(o_GetAppByID(controller, app, false));
-        if (policy::InspectOverview(found) != policy::OverviewVerdict::Ok || found->appId != app)
+        if (policy::InspectOverview(found) != policy::OverviewVerdict::Ok || found->appId != app) {
+            // The client no longer returns the object. The id stays in the set,
+            // so a later frame retries, but the card cannot come back until a
+            // restart rebuilds the app map: say so once per app.
+            AC_LOG_WARN_ONCE(kModule,
+                             "Overview: app %u is configured again but the client returned no object; its card "
+                             "needs a restart.",
+                             app);
             continue;
+        }
         found->ownershipFlags = static_cast<steam::AppOwnershipFlags>(
             policy::ApplyOwned(static_cast<std::uint32_t>(found->ownershipFlags)));
         {
             std::lock_guard lock(g_state.overview.stampMutex);
             g_state.overview.hidden.erase(app);
+            g_state.overview.retired.erase(app);
         }
         o_MarkAppChange(source, app, steam::kAppChangeAppInfoOrConfig);
         g_state.overview.restores.fetch_add(1, std::memory_order_relaxed);
@@ -370,7 +383,7 @@ void* h_CSteamUIAppControllerRunFrame(void* self) {
     // without us, and the drain is extra work on a frame that already ran.
     void* result = o_CSteamUIAppControllerRunFrame(self);
     DrainRechecks(g_state.overview.appChangeSource.load(std::memory_order_acquire));
-    RestoreHiddenCards(g_state.overview.appChangeSource.load(std::memory_order_acquire));
+    RestoreGoneCards(g_state.overview.appChangeSource.load(std::memory_order_acquire));
     return result;
 }
 
