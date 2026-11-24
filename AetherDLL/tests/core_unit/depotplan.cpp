@@ -273,6 +273,39 @@ void RowSizePrefersThePinThenAppInfo() {
     CHECK_EQ(sizes[2], 0u);
 }
 
+// --- Platform --------------------------------------------------------------
+//
+// A `.lua` lists every depot the store has, including the ones only another
+// platform runs, and two platforms can declare the same file path. AppInfo
+// answers `depots/<id>/config/oslist` for each depot; the plan keeps only the
+// rows this client can run. These cases pin the list parsing, including the
+// absent key, which must never remove content.
+
+using ac::hooks::steamclient::policy::OsListAllowsHost;
+
+void KeepsADepotThatRunsHere() { CHECK(OsListAllowsHost("windows", "windows")); }
+
+void DropsADepotOnlyAnotherPlatformRuns() {
+    CHECK(!OsListAllowsHost("linux", "windows"));
+    CHECK(!OsListAllowsHost("macos", "windows"));
+}
+
+void ReadsTheWholeListWhateverItsOrder() {
+    CHECK(OsListAllowsHost("windows,linux", "windows"));
+    CHECK(OsListAllowsHost("linux,windows", "windows"));
+    CHECK(OsListAllowsHost(" linux , windows ", "windows"));
+    CHECK(OsListAllowsHost("windows,", "windows"));
+}
+
+void IgnoresCase() { CHECK(OsListAllowsHost("Windows", "windows")); }
+
+void TreatsAnAbsentListAsUnrestricted() { CHECK(OsListAllowsHost("", "windows")); }
+
+void MatchesWholeTokensOnly() {
+    CHECK(!OsListAllowsHost("windowsx", "windows"));
+    CHECK(!OsListAllowsHost("notwindows", "windows"));
+}
+
 } // namespace
 
 void DepotPlanTest() {
@@ -302,5 +335,11 @@ void DepotPlanTest() {
     CollapsesRepeatedRecordedDepotsKeepingTheFirst();
     PromotesAPinnedRowSteamCarriedAsInstalledOnly();
     RowSizePrefersThePinThenAppInfo();
+    KeepsADepotThatRunsHere();
+    DropsADepotOnlyAnotherPlatformRuns();
+    ReadsTheWholeListWhateverItsOrder();
+    IgnoresCase();
+    TreatsAnAbsentListAsUnrestricted();
+    MatchesWholeTokensOnly();
     LeavesARealFamilyShareToSteam();
 }

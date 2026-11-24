@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
+#include <string_view>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
@@ -94,6 +95,46 @@ struct PinnedDepot {
 // public size only when neither has one. A zero stays zero rather than a guess.
 constexpr std::uint64_t RowSize(const PinnedDepot& row, std::uint64_t appInfoSize) {
     return row.size != 0 ? row.size : appInfoSize;
+}
+
+// True when a depot's AppInfo `config/oslist` lets it run on `host`.
+//
+// The key is a comma-separated platform list ("windows", "windows,linux"). A
+// `.lua` lists every depot the store has, including the ones only another
+// platform runs, and two platforms can declare the same file path: planning
+// both puts two builds in one install folder and the shared path ends up as
+// whichever depot committed last. An absent or empty list places no
+// restriction, so the depot applies.
+constexpr char FoldAscii(char c) { return (c >= 'A' && c <= 'Z') ? static_cast<char>(c - 'A' + 'a') : c; }
+
+constexpr bool OsListAllowsHost(std::string_view osList, std::string_view host) noexcept {
+    if (osList.empty() || host.empty())
+        return true;
+    std::size_t begin = 0;
+    while (begin < osList.size()) {
+        std::size_t end = osList.find(',', begin);
+        if (end == std::string_view::npos)
+            end = osList.size();
+        std::size_t first = begin;
+        std::size_t last = end;
+        while (first < last && (osList[first] == ' ' || osList[first] == '\t'))
+            ++first;
+        while (last > first && (osList[last - 1] == ' ' || osList[last - 1] == '\t'))
+            --last;
+        if (last - first == host.size()) {
+            bool same = true;
+            for (std::size_t i = 0; i < host.size(); ++i) {
+                if (FoldAscii(osList[first + i]) != FoldAscii(host[i])) {
+                    same = false;
+                    break;
+                }
+            }
+            if (same)
+                return true;
+        }
+        begin = end + 1;
+    }
+    return false;
 }
 
 // Whether a pinned depot Steam answered with as an installed-only row has to
