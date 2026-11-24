@@ -77,12 +77,47 @@ void PinsFollowTheFileAndItsRoots() {
     ac::luadata::ClearPendingChanges();
 }
 
+// A `.lua` that pins nothing still names the apps it configures: the reload
+// diff reads that snapshot, and without the entry the app is never handed to
+// the client, so its card never appears mid-session.
+void APinlessFileStillNamesItsApps() {
+    const std::string path = "C:/fixtures/recheck_pinless.lua";
+    ac::luadata::BeginFile(path);
+    ac::luadata::RecordLibraryApp(100);
+    ac::luadata::EndFile();
+
+    const auto pins = ac::luadata::PinsByLibraryAppForFile(path);
+    CHECK(pins.size() == 1);
+    CHECK(pins.count(100) == 1);
+    CHECK(pins.at(100).empty());
+
+    ac::luadata::UnloadFile(path);
+    CHECK(ac::luadata::PinsByLibraryAppForFile(path).empty());
+    ac::luadata::ClearPendingChanges();
+}
+
 void RecheckIsDeduplicated() {
     // Two changes for one app are still one recheck: the client rebuilds the
     // whole app, so asking twice would only repeat the work.
     PinChange a{100, {{200, 1}}, {{200, 2}}};
     PinChange b{100, {{200, 2}}, {{200, 3}}};
     CHECK(SelectRecheck({a, b}) == std::vector<AppId>{100});
+}
+
+// A `.lua` whose `setManifestid` lines are commented out pins nothing, and the
+// file still makes its app visible. The license answer alone does not make the
+// client build a card mid-session, so a reload has to name the app it just
+// configured.
+void RecheckWhenAnAppAppearsWithoutPins() {
+    PinChange c{100, {}, {}, false};
+    CHECK(SelectRecheck({c}) == std::vector<AppId>{100});
+}
+
+// The same file saved again changes nothing: appearance is what the flag marks,
+// not an empty pin set.
+void NoRecheckWhenAPinlessFileIsSavedAgain() {
+    PinChange c{100, {}, {}, true};
+    CHECK(SelectRecheck({c}).empty());
 }
 
 void QueueIsBounded() {
@@ -134,7 +169,10 @@ void RecheckTest() {
     RecheckWhenADepotIsAdded();
     RecheckWhenEveryPinGoesAway();
     PinsFollowTheFileAndItsRoots();
+    APinlessFileStillNamesItsApps();
     RecheckIsDeduplicated();
+    RecheckWhenAnAppAppearsWithoutPins();
+    NoRecheckWhenAPinlessFileIsSavedAgain();
     QueueIsBounded();
     RemovedRootsFollowTheConfiguredBatch();
 }

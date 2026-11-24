@@ -100,9 +100,12 @@ std::unordered_map<std::string, std::vector<steam::AppId>> ConfiguredIdsByFile()
 
 // Manifest pins one .lua file contributes, keyed by every library root that
 // file advertises: a pin names a depot, not an app, so the same rows belong to
-// each root of the file. A path the store no longer holds (removed, rejected or
-// not yet parsed) answers empty, which is how a diff around a reload observes
-// the pins going away.
+// each root of the file. A root with no pin still answers, with an empty row
+// list: the reload diff needs the app itself, because a `.lua` whose
+// `setManifestid` lines are commented out has no pin to compare and the client
+// still has to build its card. A path the store no longer holds (removed,
+// rejected or not yet parsed) answers empty, which is how a diff around a
+// reload observes the file going away.
 //
 // Ordered map on purpose: the caller compares two snapshots taken at different
 // times and the row order must come from the depot, never from a hash table.

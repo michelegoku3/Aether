@@ -201,7 +201,7 @@ std::map<steam::AppId, std::vector<PinnedDepot>> PinsByLibraryAppForFile(const s
     if (it == g_state.lua.fileContributions.end())
         return out;
     const F& contributions = it->second;
-    if (contributions.libraryApps.empty() || contributions.manifestOverrides.empty())
+    if (contributions.libraryApps.empty())
         return out;
 
     std::vector<PinnedDepot> pins;

@@ -40,6 +40,11 @@ struct PinChange {
     steam::AppId app;
     PinSet before;
     PinSet after;
+    // False when the file did not configure this app before the reload. A
+    // `.lua` whose `setManifestid` lines are commented out carries no pin to
+    // compare, and the client still has to build the card, so appearance alone
+    // is a change.
+    bool presentBefore = true;
 };
 
 // Apps whose content intent changed: sorted, and each app named once.
