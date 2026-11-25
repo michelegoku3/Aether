@@ -56,6 +56,10 @@ void RequestLicenseRefresh();
 // CUser was still null, queues the deferred license refresh off the hook thread.
 void OnUserCaptured();
 
+// Wakes the package-0 startup retry worker immediately when a Steam prerequisite
+// (CPackageInfo or CUser) is captured so it does not wait for the poll interval.
+void WakeStartupRetry();
+
 // Hot-reload: applies pending additions/removals to package 0 and asks Steam to
 // re-evaluate licenses. No UI card eviction (crash-prone; out of scope here).
 void NotifyLicenseChanged();

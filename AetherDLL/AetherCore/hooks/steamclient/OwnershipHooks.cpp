@@ -435,6 +435,7 @@ void* h_GetPackageInfo(void* self, std::uint32_t packageId, std::int64_t p3) {
     void* prev = nullptr;
     if (g_state.pCPackageInfo.compare_exchange_strong(prev, self)) {
         AC_LOG_INFO(kModule, "Captured CPackageInfo pointer 0x%p.", self);
+        LicenseManager::WakeStartupRetry();
     }
     return o_GetPackageInfo(self, packageId, p3);
 }

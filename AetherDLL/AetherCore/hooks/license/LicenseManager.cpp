@@ -263,9 +263,15 @@ PackageSeedResult SeedPackageVectors(PackageInfo* pkg, const std::vector<AppId>&
 bool Package0Ready() { return g_state.pPackage0.load() && o_CUtlMemoryGrow; }
 
 // Asks Steam to re-evaluate licenses. Must run outside s_packageMutationMutex:
-// these calls can synchronously re-enter hooks. Returns true when CUser and
-// the license helpers were ready and the refresh ran; false otherwise.
+// these calls can synchronously re-enter hooks. Serialised across worker threads
+// via a recursive mutex so concurrent StartupRetryWorker / OnDemandWorker wakes
+// cannot race on CUser's unguarded license tables. Returns true only when CUser,
+// the license helpers, and Steam's own ProcessPendingLicenseUpdates all ran to
+// completion; false when CUser is still null or Steam deferred because PICS
+// AppInfo for a package entry is still in flight.
 bool RefreshLicenses(const char* reason) {
+    static std::recursive_mutex s_refreshMutex;
+    std::lock_guard<std::recursive_mutex> lock(s_refreshMutex);
     void* cUser = g_state.pCUser.load(std::memory_order_acquire);
     auto markLicenseAsChanged = o_MarkLicenseAsChanged;
     auto processPendingLicenseUpdates = o_ProcessPendingLicenseUpdates;
@@ -277,14 +283,25 @@ bool RefreshLicenses(const char* reason) {
     const bool wasDeferred = g_state.licenseRefreshPending.exchange(false, std::memory_order_acq_rel);
     markLicenseAsChanged(cUser, 0, true);
     ++g_state.licenseReloadDirectCount;
-    processPendingLicenseUpdates(cUser);
+    if (!processPendingLicenseUpdates(cUser)) {
+        // Steam skipped RebuildLicensesCache/AppLicensesChanged because at
+        // least one package or PICS AppInfo entry is still loading. Keep the
+        // refresh pending so StartupRetryWorker re-runs once PICS lands.
+        g_state.licenseRefreshPending.store(true, std::memory_order_release);
+        AC_LOG_INFO(kModule, "License refresh (%s) deferred: Steam still loading package/AppInfo metadata.",
+                    reason ? reason : "unknown");
+        return false;
+    }
     if (g_state.pPackage0.load(std::memory_order_acquire) != nullptr)
         g_state.package0Published.store(true, std::memory_order_release);
     AC_LOG_INFO(kModule, "License refresh (%s).", reason ? reason : "unknown");
     diag::Record("license_refresh", reason ? reason : "unknown");
-    // When SteamUI already built its overview cache (or this refresh settles a
-    // launch-time defer), re-evaluate configured library roots so cards create.
-    if (wasDeferred || g_state.overview.fills.load(std::memory_order_relaxed) > 0) {
+    // When SteamUI already began building its overview cache (or this refresh
+    // settles a launch-time defer), re-evaluate configured roots so cards create.
+    const bool steamUiStarted = g_state.overview.fills.load(std::memory_order_relaxed) > 0 ||
+                                g_state.overview.appController.load(std::memory_order_acquire) != nullptr ||
+                                g_state.overview.appChangeSource.load(std::memory_order_acquire) != nullptr;
+    if (wasDeferred || steamUiStarted) {
         const std::vector<AppId> roots = luadata::LibraryAppIds();
         if (!roots.empty())
             hooks::steamui::RequestAppRecheck(roots);
@@ -359,67 +376,85 @@ void ClearPendingApps() {
 // explicit logs; only the "already started" guard remains here.
 // -------------------------------------------------------------------
 std::atomic<bool> s_retryStarted{false};
+std::mutex s_retryMutex;
+std::condition_variable s_retryCv;
+bool s_retrySignalled = false;
 
 // Marks the startup-retry idle so a later LicenseManager::Init (e.g.
 // re-run of the hook batch after late pattern arrival) can start a
 // fresh retry with a new full budget.
 void MarkRetryIdle() { s_retryStarted.store(false, std::memory_order_relaxed); }
 
+void SignalStartupRetry() {
+    {
+        std::lock_guard<std::mutex> lock(s_retryMutex);
+        s_retrySignalled = true;
+    }
+    s_retryCv.notify_all();
+}
+
 void StartupRetryWorker(std::atomic<bool>& stop) {
-    // The budget is time-based, not attempt-based: it must expire even
-    // when package 0 never becomes ready (e.g. Steam never loads it),
-    // otherwise the thread would spin forever waiting.
-    for (int attempts = 0; attempts < constants::kPackageRetryMaxAttempts; ++attempts) {
+    // Wait on a total wall-clock budget so early CPackageInfo/CUser wake-ups do
+    // not burn the retry window prematurely and offline launches still expire.
+    const auto deadline =
+        std::chrono::steady_clock::now() +
+        std::chrono::milliseconds(constants::kPackageRetryMaxAttempts * constants::kPackageRetryIntervalMs);
+    constexpr int kPendingRefreshPollMs = 250;
+    int attempts = 0;
+    while (std::chrono::steady_clock::now() < deadline) {
         if (stop.load(std::memory_order_relaxed)) {
             MarkRetryIdle();
             return;
         }
-        if (g_state.package0Published.load(std::memory_order_relaxed) ||
-            g_state.licenseRefreshPending.load(std::memory_order_relaxed)) {
+        if (g_state.package0Published.load(std::memory_order_acquire)) {
             MarkRetryIdle();
             return;
         }
 
-        // If the one-shot LoadPackage(package 0) was missed entirely
-        // (late hook installation, e.g. pattern downloads on a fresh
-        // build), pPackage0 is never published and waiting would stall
-        // forever. Actively re-acquire package 0 through the hooked
-        // GetPackageInfo entry point instead of only waiting for events.
-        if (!g_state.pPackage0.load(std::memory_order_relaxed)) {
+        // If the one-shot LoadPackage(package 0) was missed entirely, actively
+        // re-acquire package 0 once CPackageInfo has been captured.
+        if (!g_state.pPackage0.load(std::memory_order_acquire)) {
             ac::hooks::TryAcquirePackage0();
+        } else if (g_state.licenseRefreshPending.load(std::memory_order_acquire) &&
+                   g_state.pCUser.load(std::memory_order_acquire) != nullptr) {
+            if (RefreshLicenses("publish")) {
+                AC_LOG_INFO(kModule, "Package 0 published with every configured .lua id.");
+                status::Write();
+            }
         }
 
-        if (g_state.package0Published.load(std::memory_order_relaxed)) {
+        if (g_state.package0Published.load(std::memory_order_acquire)) {
             AC_LOG_INFO(kModule, "Package 0 published after %d retry attempt(s).", attempts + 1);
             MarkRetryIdle();
             return;
         }
-        if (g_state.licenseRefreshPending.load(std::memory_order_relaxed)) {
-            AC_LOG_INFO(kModule, "Package 0 seeded after %d retry attempt(s); waiting for CUser capture.",
-                        attempts + 1);
-            MarkRetryIdle();
-            return;
-        }
         if (attempts == 0 || attempts % 30 == 0) {
-            AC_LOG_INFO(kModule, "Startup retry #%d: waiting for package 0.", attempts + 1);
+            AC_LOG_INFO(kModule, "Startup retry #%d: %s.", attempts + 1,
+                        g_state.pPackage0.load(std::memory_order_acquire) ? "waiting for license refresh completion"
+                                                                          : "waiting for package 0");
         }
+        ++attempts;
 
-        // Sleep the interval in 100 ms steps: shutdown is still noticed within
-        // 100 ms, the ~1 s re-attempt cadence is unaffected, and idle wakeups
-        // are 10x fewer over the ~60 s budget.
-        constexpr int kTickMs = 100;
-        for (int elapsed = 0; elapsed < constants::kPackageRetryIntervalMs && !stop.load(std::memory_order_relaxed);
-             elapsed += kTickMs) {
-            Sleep(kTickMs);
-        }
+        const int waitMs = g_state.pPackage0.load(std::memory_order_acquire) ? kPendingRefreshPollMs
+                                                                             : constants::kPackageRetryIntervalMs;
+        const auto wakeAt = (std::min)(deadline, std::chrono::steady_clock::now() + std::chrono::milliseconds(waitMs));
+        std::unique_lock<std::mutex> lock(s_retryMutex);
+        s_retryCv.wait_until(lock, wakeAt, [&] {
+            return stop.load(std::memory_order_relaxed) || g_state.package0Published.load(std::memory_order_relaxed) ||
+                   s_retrySignalled;
+        });
+        s_retrySignalled = false;
     }
-    AC_LOG_WARN(kModule,
-                "Package 0 was not published after %d attempt(s); on-demand additions will retry once it appears.",
-                constants::kPackageRetryMaxAttempts);
+    AC_LOG_WARN(kModule, "Package 0 was not published within %d attempt(s); on-demand additions keep retrying.",
+                attempts);
     MarkRetryIdle();
 }
 
 void StartStartupRetry() {
+    {
+        std::lock_guard<std::mutex> lock(s_retryMutex);
+        s_retrySignalled = false;
+    }
     bool expected = false;
     if (!s_retryStarted.compare_exchange_strong(expected, true))
         return;
@@ -436,6 +471,7 @@ void StopStartupRetry() {
     // remains here. MarkRetryIdle allows a full-budget retry when Init
     // runs again.
     MarkRetryIdle();
+    SignalStartupRetry();
     AC_LOG_DEBUG(kModule, "Startup retry stop requested; join handled by workers::Shutdown.");
 }
 
@@ -495,9 +531,12 @@ void SeedPackage0(PackageInfo* package0) {
     if (step == policy::PublishStep::Published) {
         AC_LOG_INFO(kModule, "Package 0 published with every configured .lua id.");
     } else if (step == policy::PublishStep::RefreshPending) {
-        AC_LOG_INFO(kModule, "Package 0 seeded with every configured .lua id; awaiting CUser capture to refresh.");
+        AC_LOG_INFO(kModule, "Package 0 seeded with every configured .lua id; %s.",
+                    g_state.pCUser.load(std::memory_order_acquire) ? "awaiting Steam PICS metadata to refresh"
+                                                                   : "awaiting CUser capture to refresh");
     }
     status::Write();
+    SignalStartupRetry();
 }
 
 std::size_t Package0AppCount() {
@@ -559,7 +598,10 @@ void OnUserCaptured() {
         AC_LOG_INFO(kModule, "CUser captured with pending package-0 refresh; queuing license refresh.");
         RequestLicenseRefresh();
     }
+    SignalStartupRetry();
 }
+
+void WakeStartupRetry() { SignalStartupRetry(); }
 
 void NotifyLicenseChanged() {
     std::vector<AppId> removals;
