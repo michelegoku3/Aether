@@ -282,8 +282,26 @@ bool IsValveFamilyAnswer(AppId app, std::uint32_t lender) {
 
 // ---- Hook bodies -----------------------------------------------------------
 
+// Both CUser::MarkLicenseAsChanged and CUser::CheckAppOwnership receive the
+// same CUser* instance as `self`. Capturing from CheckAppOwnership too recovers
+// when hooks install after Steam's startup MarkLicenseAsChanged already fired.
+void CaptureCUser(void* self, const char* source) {
+    if (!self)
+        return;
+    void* prev = nullptr;
+    if (g_state.pCUser.compare_exchange_strong(prev, self)) {
+        AC_LOG_INFO(kModule, "Captured CUser pointer 0x%p (%s).", self, source);
+        // First capture is post-login: Steam may have logged into a different
+        // account since startup, so re-apply the owner policy (the "From the
+        // library of <account>" banner reads it) and refresh the family lender map.
+        ac::appmanifest::RequestOwnerApply();
+        ac::family::RequestRefresh();
+    }
+}
+
 bool h_CheckAppOwnership(void* self, AppId app, AppOwnership* out) {
     bool result = o_CheckAppOwnership(self, app, out);
+    CaptureCUser(self, "CheckAppOwnership");
     // A .lua app needs Aether until Steam provides it. Genuinely owned apps
     // pass through; a family-shared app still needs the banner override below,
     // because Steam's answer must keep naming the lender.
@@ -407,17 +425,7 @@ bool h_CheckAppOwnership(void* self, AppId app, AppOwnership* out) {
 std::int64_t h_MarkLicenseAsChanged(void* self, std::uint32_t packageId, bool reloadAll) {
     // Atomic store: the captured pointer is read from other threads (IPC hooks).
     // LicenseManager reads it straight from g_state (single source of truth).
-    void* prev = nullptr;
-    if (g_state.pCUser.compare_exchange_strong(prev, self)) {
-        AC_LOG_INFO(kModule, "Captured CUser pointer 0x%p.", self);
-        // First fire is post-login: Steam may have logged into a different
-        // account since startup, so re-apply the owner policy (the "From the
-        // library of <account>" banner reads it). Package 0 is on demand.
-        ac::appmanifest::RequestOwnerApply();
-        // The family group and its shared apps are available once the client
-        // is logged in; refresh the lender map before the library classifies.
-        ac::family::RequestRefresh();
-    }
+    CaptureCUser(self, "MarkLicenseAsChanged");
     return o_MarkLicenseAsChanged(self, packageId, reloadAll);
 }
 
