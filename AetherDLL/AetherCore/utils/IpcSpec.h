@@ -36,6 +36,10 @@ struct MethodSpec {
 // calls are no-ops when already loaded.
 bool Init();
 
+// Checks the published generation index in the background and updates the
+// cached IPC spec on disk if a newer generation is available.
+bool RefreshFromIndex();
+
 // Resolves the interface id for a name like "IClientUser". Returns nullopt
 // when no spec is loaded or the interface is absent.
 std::optional<std::uint8_t> ResolveInterfaceId(const char* interfaceName);

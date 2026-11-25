@@ -101,8 +101,12 @@ bool Refresh(std::uint64_t remote, std::uint64_t applied) {
     }
 
     const std::size_t entries = methods.size();
-    g_state.ipcSpec.interfaceIds = std::move(interfaceIds);
-    g_state.ipcSpec.methods = std::move(methods);
+    // Only update live maps if Init() has not already published them; readers
+    // acquire ipcSpec.loaded without a lock and assume immutability afterwards.
+    if (!g_state.ipcSpec.loaded.load(std::memory_order_acquire)) {
+        g_state.ipcSpec.interfaceIds = std::move(interfaceIds);
+        g_state.ipcSpec.methods = std::move(methods);
+    }
     if (!pattern::sidecar::Write(path + ".src", source, remote)) {
         AC_LOG_WARN(kModule, "Could not record the IPC spec generation; the next launch will refresh again.");
     }
@@ -126,19 +130,11 @@ bool Init() {
 
     const std::string path = CachePath();
     const std::string srcPath = path + ".src";
-    // 0 when the index is unreachable or silent for this build: the cache then
-    // stays exactly as it is.
-    const std::uint64_t remote = pattern::RemoteVersion(kSubdir, g_state.steamclientSha);
 
-    // 1. Local cache first. A usable table is served immediately; a newer
-    //    published generation is adopted in the same call.
+    // 1. Local cache first: serve immediately with zero network wait so hook
+    //    installation is never delayed by the generation-index check.
     if (LoadFromCache()) {
-        std::uint64_t applied = pattern::sidecar::Read(srcPath).version;
-        if (remote > applied && Refresh(remote, applied)) {
-            // Report what the sidecar now says: a failed write leaves the old
-            // number in place even though the table was adopted.
-            applied = pattern::sidecar::Read(srcPath).version;
-        }
+        const std::uint64_t applied = pattern::sidecar::Read(srcPath).version;
         SetStatus(applied);
         g_state.ipcSpec.loaded = true;
         AC_LOG_INFO(kModule, "Loaded IPC spec from cache (%zu entries).", g_state.ipcSpec.methods.size());
@@ -166,15 +162,34 @@ bool Init() {
         return false;
     }
 
-    if (!pattern::sidecar::Write(srcPath, source, remote)) {
+    // Generation 0 until the background index check confirms the published
+    // generation.
+    if (!pattern::sidecar::Write(srcPath, source, 0)) {
         AC_LOG_WARN(kModule, "Could not record the IPC spec source; the next launch may refresh again.");
-        // Report what the file actually says, not what the index does.
-        SetStatus(pattern::sidecar::Read(srcPath).version);
-    } else {
-        SetStatus(remote);
     }
+    SetStatus(0);
     g_state.ipcSpec.loaded = true;
     AC_LOG_INFO(kModule, "Loaded IPC spec from %s (%zu entries).", source.c_str(), g_state.ipcSpec.methods.size());
+    return true;
+}
+
+bool RefreshFromIndex() {
+    if (g_state.steamclientSha.empty() || g_state.steamclientSha.size() != 64)
+        return false;
+    const std::string path = CachePath();
+    if (!winfile::Exists(path))
+        return false;
+
+    const std::string srcPath = path + ".src";
+    const std::uint64_t remote = pattern::RemoteVersion(kSubdir, g_state.steamclientSha);
+    const std::uint64_t applied = pattern::sidecar::Read(srcPath).version;
+    if (remote <= applied)
+        return false;
+
+    if (!Refresh(remote, applied))
+        return false;
+
+    SetStatus(pattern::sidecar::Read(srcPath).version);
     return true;
 }
 
