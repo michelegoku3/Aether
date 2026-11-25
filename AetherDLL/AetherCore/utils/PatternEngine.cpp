@@ -1,8 +1,12 @@
 #include "pch.h"
 #include "core/Logger.h"
+#include "core/Workers.h"
+#include "diagnostics/StatusWriter.h"
+#include "utils/IpcSpec.h"
 #include "utils/PatternCache.h"
 #include "utils/PatternEngine.h"
 #include "utils/WinFile.h"
+#include <atomic>
 #include <thread>
 
 namespace ac::pattern {
@@ -99,6 +103,31 @@ bool HasModule(const std::string& module) {
     std::shared_lock lock(g_state.patterns.mutex);
     const auto* index = IndexFor(module);
     return index && !index->empty();
+}
+
+void StartBackgroundRefresh() {
+    if (!workers::StartWorker("pattern_refresh", [](std::atomic<bool>& stop) {
+            auto stopped = [&] {
+                return stop.load(std::memory_order_relaxed) || g_state.shuttingDown.load(std::memory_order_relaxed);
+            };
+            if (stopped())
+                return;
+
+            bool updated = false;
+            if (!g_state.steamclientPath.empty())
+                updated |= detail::RefreshCachedModule("steamclient", g_state.steamclientPath);
+            if (!stopped() && !g_state.steamuiPath.empty())
+                updated |= detail::RefreshCachedModule("steamui", g_state.steamuiPath);
+            if (!stopped())
+                updated |= ipcspec::RefreshFromIndex();
+            (void)updated;
+            // Always publish status once the index check completes so
+            // pattern_index_source and any bumped versions appear in status.json.
+            if (!stopped())
+                status::Write();
+        })) {
+        AC_LOG_DEBUG(kModule, "Could not start background pattern refresh worker.");
+    }
 }
 
 } // namespace ac::pattern

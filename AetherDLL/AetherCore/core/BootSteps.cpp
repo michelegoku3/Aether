@@ -417,6 +417,11 @@ void InitThreadLogic(HMODULE self) {
     //     client the probe still runs (status.json stays truthful) but the box
     //     is suppressed. Depends on: logger + status writer + Desk bridge.
     ac::hubcapkey::StartCheck(betaBranch.empty());
+
+    // 13. Pattern index refresh: consult state/patterns.txt in the background
+    //     after hooks are armed, updating cached tables on disk for future
+    //     restarts/reloads without delaying the startup ownership window.
+    ac::pattern::StartBackgroundRefresh();
 }
 
 } // namespace ac::boot

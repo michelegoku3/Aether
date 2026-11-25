@@ -33,6 +33,9 @@ void CheckRefreshMatrix() {
     const auto firstSighting = PlanRefresh(true, 1, 0, false);
     CHECK(firstSighting.needed);
     CHECK(firstSighting.versioned);
+    const auto preferredFirstSighting = PlanRefresh(true, 1, 0, true);
+    CHECK(preferredFirstSighting.needed);
+    CHECK(preferredFirstSighting.versioned);
 
     // Same generation: only the provenance probe (a better source exists).
     CHECK(!PlanRefresh(true, 3, 3, true).needed);

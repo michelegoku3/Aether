@@ -16,6 +16,11 @@ namespace ac::pattern {
 // steamclient and steamui. Returns true if at least one table loaded.
 bool Init();
 
+// Starts a background worker that consults the published generation index and
+// refreshes already-cached pattern tables and the IPC spec on disk without
+// delaying startup hook installation.
+void StartBackgroundRefresh();
+
 // Re-probes a module whose pattern table was missing at init (cache may have
 // appeared, or an upstream may now serve the build). Loads the table into the
 // runtime index when possible. Returns true only when a NEW table is published.
