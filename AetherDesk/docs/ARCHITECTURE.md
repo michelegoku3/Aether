@@ -91,6 +91,17 @@ invariants
 - The DLL network update check belongs to `useUpdateCoordinator` only. The
   status panel reads the local `get_installed_dll_version`.
 
+### Steam restart
+
+`restart_steam` terminates the whole Steam family (`steam.exe` plus every
+`steamwebhelper.exe`) and spawns the new client only after a fresh process
+snapshot has held no member for two consecutive polls. One clean poll is not
+enough: the dying client can spawn a helper right after it, and a client
+started against that helper aborts on Steam's `stalled cross-thread pipe`
+seconds later. The kill repeats until a snapshot is empty; a family that
+survives the kill budget is reported instead of spawned onto. `close_steam`
+uses the same wait before replacing files in the Steam folder.
+
 ### IPC
 
 - Commands are declared in `commands/<area>.rs` and registered in

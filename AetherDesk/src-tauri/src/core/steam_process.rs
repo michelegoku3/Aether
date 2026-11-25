@@ -13,7 +13,9 @@
 //!     children share its image name) still holds the client pipe and the CEF
 //!     cache handshake aborts seconds later on `stalled cross-thread pipe` —
 //!     the "restart does not work well" case in both of its forms. One clean
-//!     poll is not enough: the dying client can spawn a helper right after it;
+//!     poll is not enough: the dying client can spawn a helper right after it,
+//!     and a family that survives the kill budget is reported, never spawned
+//!     onto;
 //!   * AetherDLL install/uninstall/reset -> `close_steam` after the user
 //!     accepted the close-Steam popup: close the running Steam games, terminate
 //!     the whole Steam family and wait until the main process releases the
@@ -36,6 +38,9 @@ const GONE_POLL: Duration = Duration::from_millis(250);
 /// `stalled cross-thread pipe` seconds later. Two polls a `GONE_POLL` apart
 /// prove the family stayed empty across a real time window.
 const GONE_CLEAN_POLLS: u32 = 2;
+/// Budget for the kill loop: long enough to catch the helper a dying client
+/// spawns after the first snapshot.
+const KILL_TIMEOUT: Duration = Duration::from_millis(4000);
 
 fn is_steam_process_name(name: &str) -> bool {
     let lower = name.to_lowercase();
@@ -114,23 +119,90 @@ pub fn is_steam_running_fresh() -> bool {
     snapshot_has_steam(&sys)
 }
 
-/// Terminate every process matching `matches`. Returns true when at least one
-/// was signalled.
+/// What the kill loop does after one pass.
+#[derive(Debug, PartialEq, Eq)]
+enum KillStep {
+    /// The snapshot held no match: the kill is complete.
+    Done,
+    /// Someone is still alive and the budget allows another pass.
+    Again,
+    /// Someone survived the whole budget: report them instead of spinning.
+    GiveUp,
+}
+
+/// Pure termination rule for [`kill_matching`], so a survivor can never turn
+/// the loop into a hang.
+fn kill_step(alive: usize, elapsed: Duration, budget: Duration) -> KillStep {
+    if alive == 0 {
+        KillStep::Done
+    } else if elapsed >= budget {
+        KillStep::GiveUp
+    } else {
+        KillStep::Again
+    }
+}
+
+/// Whether the caller may spawn a new client after a kill attempt.
+///
+/// A kill that signalled someone but left a family member behind is the exact
+/// state that makes the next client abort on `stalled cross-thread pipe`: the
+/// caller must refuse and report, never "proceed anyway".
+pub fn spawn_allowed(killed: bool, family_gone: bool) -> bool {
+    !killed || family_gone
+}
+
+/// Terminate every process matching `matches`, re-snapshotting until none is
+/// left. Returns true when at least one was signalled.
+///
+/// One pass is not enough: a dying client can spawn a helper after the first
+/// snapshot, and that helper is exactly what makes the next client abort on
+/// `stalled cross-thread pipe`. The pass repeats until a fresh snapshot is
+/// empty, mirroring `close_running_games`.
 fn kill_matching(matches: impl Fn(&str) -> bool) -> bool {
+    let started = Instant::now();
     let mut sys = sysinfo::System::new_all();
-    sys.refresh_processes();
-    let mut terminated = false;
-    for process in sys.processes().values() {
-        if matches(process.name()) {
-            let _ = process.kill();
-            terminated = true;
+    let mut signalled: BTreeSet<String> = BTreeSet::new();
+    let mut passes = 0u32;
+    loop {
+        sys.refresh_processes();
+        passes += 1;
+        let mut alive: BTreeSet<String> = BTreeSet::new();
+        for process in sys.processes().values() {
+            if matches(process.name()) {
+                let label = format!("{}({})", process.name(), process.pid().as_u32());
+                alive.insert(label.clone());
+                let _ = process.kill();
+                signalled.insert(label);
+            }
+        }
+        match kill_step(alive.len(), started.elapsed(), KILL_TIMEOUT) {
+            KillStep::Done => break,
+            KillStep::GiveUp => {
+                crate::desk_log_warn!(
+                    "lifecycle",
+                    "Steam family kill: still present after {} ms ({} pass(es)): {}",
+                    started.elapsed().as_millis(),
+                    passes,
+                    alive.into_iter().collect::<Vec<_>>().join(", ")
+                );
+                break;
+            }
+            KillStep::Again => std::thread::sleep(GONE_POLL),
         }
     }
-    if terminated {
-        // Give the OS a moment to actually reap the process before we check.
+    if !signalled.is_empty() {
+        crate::desk_log_info!(
+            "lifecycle",
+            "Steam family kill: signalled {} process(es) in {} pass(es): {}",
+            signalled.len(),
+            passes,
+            signalled.iter().cloned().collect::<Vec<_>>().join(", ")
+        );
+        // Give the OS a moment to release the pipe and cache handles, not just
+        // to drop the processes from the snapshot.
         std::thread::sleep(KILL_SETTLE);
     }
-    terminated
+    !signalled.is_empty()
 }
 
 /// Kill every process of the Steam family (client + web helpers). Returns true
@@ -379,6 +451,34 @@ mod tests {
             &[PathBuf::from(r"C:\SteamLibrary\steamapps\common\Skyrim")]
         ));
         assert!(!is_under_game_root(Path::new(r"C:\Games\game.exe"), &roots));
+    }
+
+    #[test]
+    fn a_kill_pass_stops_on_an_empty_snapshot_or_on_the_deadline() {
+        let budget = Duration::from_secs(4);
+        assert_eq!(kill_step(0, Duration::ZERO, budget), KillStep::Done);
+        assert_eq!(
+            kill_step(1, Duration::from_secs(1), budget),
+            KillStep::Again,
+            "a survivor inside the budget earns another pass"
+        );
+        assert_eq!(
+            kill_step(1, budget, budget),
+            KillStep::GiveUp,
+            "a survivor at the deadline is reported, not retried forever"
+        );
+    }
+
+    #[test]
+    fn a_new_client_is_spawned_only_when_the_previous_family_is_gone() {
+        // Spawning onto a live family is the crash this module prevents: the
+        // caller must refuse instead of "proceeding anyway".
+        assert!(spawn_allowed(false, false), "Steam was not running");
+        assert!(spawn_allowed(true, true), "the family was confirmed gone");
+        assert!(
+            !spawn_allowed(true, false),
+            "kill signalled someone but the family is still present"
+        );
     }
 
     #[test]
