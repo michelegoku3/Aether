@@ -45,25 +45,33 @@ pub fn restart_steam(app: tauri::AppHandle) -> Result<String, String> {
     let settings = load_settings(&app);
     let steam_dir = std::path::PathBuf::from(&settings.steam_path);
 
-    if crate::core::steam_process::kill_steam_family() {
+    let killed = crate::core::steam_process::kill_steam_family();
+    let family_gone = if killed {
         crate::core::steam_monitor::mark(false);
         // Real wait, and on the whole family: the spawn happens ONLY after
-        // every steam.exe AND steamwebhelper.exe is gone. A client spawned
-        // while the previous helpers are still shutting down inherits their
-        // half-dead pipe and CEF cache handshake, and Steam aborts with
-        // "stalled cross-thread pipe" seconds later.
-        let gone = crate::core::steam_process::wait_steam_family_gone();
-        if !gone {
-            crate::desk_log_warn!(
-                "lifecycle",
-                "restart_steam: Steam family still present after kill, proceeding anyway"
-            );
-        } else {
-            crate::desk_log_info!(
-                "lifecycle",
-                "restart_steam: Steam family exited, relaunching"
-            );
-        }
+        // every steam.exe AND steamwebhelper.exe has stayed gone for two
+        // consecutive polls. A client spawned while the previous helpers are
+        // still shutting down inherits their half-dead pipe and CEF cache
+        // handshake, and Steam aborts with "stalled cross-thread pipe" seconds
+        // later.
+        crate::core::steam_process::wait_steam_family_gone()
+    } else {
+        true
+    };
+    if !crate::core::steam_process::spawn_allowed(killed, family_gone) {
+        // Spawning onto a live family is the crash, so report instead of
+        // "proceeding anyway".
+        crate::desk_log_error!(
+            "lifecycle",
+            "restart_steam: Steam family still present after the kill budget; refusing to spawn a second client"
+        );
+        return Err("Steam did not close in time. Close Steam and try again.".to_string());
+    }
+    if killed {
+        crate::desk_log_info!(
+            "lifecycle",
+            "restart_steam: Steam family exited, relaunching"
+        );
     } else {
         crate::desk_log_info!(
             "lifecycle",

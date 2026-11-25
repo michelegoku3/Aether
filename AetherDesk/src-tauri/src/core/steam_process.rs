@@ -5,14 +5,17 @@
 //! Single owner of "how do we spawn/kill/wait for Steam" so callers stay thin
 //! and behave identically (DRY / high cohesion):
 //!   * `start_steam`  -> spawn only, never kills;
-//!   * `restart_steam`-> kill the whole family, WAIT for every member to exit,
-//!     then spawn. Waiting is what prevents the double-spawn race: a second
-//!     `steam.exe` launched while the first is still shutting down races the
-//!     single-instance attach, and a client that starts while the previous
-//!     `steamwebhelper.exe` (the CEF children share its image name) still holds
-//!     the client pipe and the CEF cache handshake aborts seconds later on
-//!     `stalled cross-thread pipe` — the "restart does not work well" case in
-//!     both of its forms;
+//!   * `restart_steam`-> kill the whole family, WAIT until a fresh snapshot has
+//!     held no member for two consecutive polls, then spawn. Waiting is what
+//!     prevents the double-spawn race: a second `steam.exe` launched while the
+//!     first is still shutting down races the single-instance attach, and a
+//!     client that starts while the previous `steamwebhelper.exe` (the CEF
+//!     children share its image name) still holds the client pipe and the CEF
+//!     cache handshake aborts seconds later on `stalled cross-thread pipe` —
+//!     the "restart does not work well" case in both of its forms. One clean
+//!     poll is not enough: the dying client can spawn a helper right after it,
+//!     and a family that survives the kill budget is reported, never spawned
+//!     onto;
 //!   * AetherDLL install/uninstall/reset -> `close_steam` after the user
 //!     accepted the close-Steam popup: close the running Steam games, terminate
 //!     the whole Steam family and wait until the main process releases the
@@ -28,6 +31,16 @@ const GONE_TIMEOUT: Duration = Duration::from_millis(8000);
 /// covers the OS reaping them; a survivor is a real failure worth reporting.
 const GAME_GONE_TIMEOUT: Duration = Duration::from_secs(3);
 const GONE_POLL: Duration = Duration::from_millis(250);
+/// Consecutive clean polls required before the Steam family counts as gone.
+///
+/// A single clean poll is not enough: the client can spawn a helper between the
+/// kill and the poll, and a client started against that helper aborts on
+/// `stalled cross-thread pipe` seconds later. Two polls a `GONE_POLL` apart
+/// prove the family stayed empty across a real time window.
+const GONE_CLEAN_POLLS: u32 = 2;
+/// Budget for the kill loop: long enough to catch the helper a dying client
+/// spawns after the first snapshot.
+const KILL_TIMEOUT: Duration = Duration::from_millis(4000);
 
 fn is_steam_process_name(name: &str) -> bool {
     let lower = name.to_lowercase();
@@ -67,6 +80,38 @@ fn names_have_steam_family(names: impl IntoIterator<Item = String>) -> bool {
         .any(|name| is_steam_family_process_name(&name))
 }
 
+/// Pure decision behind [`wait_steam_family_gone`]: counts consecutive polls
+/// that saw no family member and reports when the run is long enough to spawn.
+#[derive(Debug, Default)]
+struct GoneWatch {
+    clean: u32,
+}
+
+impl GoneWatch {
+    /// Records one snapshot. Returns true when the family is gone for good.
+    fn observe(&mut self, family_present: bool) -> bool {
+        if family_present {
+            self.clean = 0;
+            false
+        } else {
+            self.clean += 1;
+            self.clean >= GONE_CLEAN_POLLS
+        }
+    }
+}
+
+/// Names and pids of the family members in a snapshot, for the timeout log.
+fn family_names(sys: &sysinfo::System) -> Vec<String> {
+    let mut names: Vec<String> = sys
+        .processes()
+        .values()
+        .filter(|process| is_steam_family_process_name(process.name()))
+        .map(|process| format!("{}({})", process.name(), process.pid().as_u32()))
+        .collect();
+    names.sort();
+    names
+}
+
 /// Fresh process snapshot for destructive migrations and DLL changes.
 pub fn is_steam_running_fresh() -> bool {
     let mut sys = sysinfo::System::new();
@@ -74,23 +119,90 @@ pub fn is_steam_running_fresh() -> bool {
     snapshot_has_steam(&sys)
 }
 
-/// Terminate every process matching `matches`. Returns true when at least one
-/// was signalled.
+/// What the kill loop does after one pass.
+#[derive(Debug, PartialEq, Eq)]
+enum KillStep {
+    /// The snapshot held no match: the kill is complete.
+    Done,
+    /// Someone is still alive and the budget allows another pass.
+    Again,
+    /// Someone survived the whole budget: report them instead of spinning.
+    GiveUp,
+}
+
+/// Pure termination rule for [`kill_matching`], so a survivor can never turn
+/// the loop into a hang.
+fn kill_step(alive: usize, elapsed: Duration, budget: Duration) -> KillStep {
+    if alive == 0 {
+        KillStep::Done
+    } else if elapsed >= budget {
+        KillStep::GiveUp
+    } else {
+        KillStep::Again
+    }
+}
+
+/// Whether the caller may spawn a new client after a kill attempt.
+///
+/// A kill that signalled someone but left a family member behind is the exact
+/// state that makes the next client abort on `stalled cross-thread pipe`: the
+/// caller must refuse and report, never "proceed anyway".
+pub fn spawn_allowed(killed: bool, family_gone: bool) -> bool {
+    !killed || family_gone
+}
+
+/// Terminate every process matching `matches`, re-snapshotting until none is
+/// left. Returns true when at least one was signalled.
+///
+/// One pass is not enough: a dying client can spawn a helper after the first
+/// snapshot, and that helper is exactly what makes the next client abort on
+/// `stalled cross-thread pipe`. The pass repeats until a fresh snapshot is
+/// empty, mirroring `close_running_games`.
 fn kill_matching(matches: impl Fn(&str) -> bool) -> bool {
+    let started = Instant::now();
     let mut sys = sysinfo::System::new_all();
-    sys.refresh_processes();
-    let mut terminated = false;
-    for process in sys.processes().values() {
-        if matches(process.name()) {
-            let _ = process.kill();
-            terminated = true;
+    let mut signalled: BTreeSet<String> = BTreeSet::new();
+    let mut passes = 0u32;
+    loop {
+        sys.refresh_processes();
+        passes += 1;
+        let mut alive: BTreeSet<String> = BTreeSet::new();
+        for process in sys.processes().values() {
+            if matches(process.name()) {
+                let label = format!("{}({})", process.name(), process.pid().as_u32());
+                alive.insert(label.clone());
+                let _ = process.kill();
+                signalled.insert(label);
+            }
+        }
+        match kill_step(alive.len(), started.elapsed(), KILL_TIMEOUT) {
+            KillStep::Done => break,
+            KillStep::GiveUp => {
+                crate::desk_log_warn!(
+                    "lifecycle",
+                    "Steam family kill: still present after {} ms ({} pass(es)): {}",
+                    started.elapsed().as_millis(),
+                    passes,
+                    alive.into_iter().collect::<Vec<_>>().join(", ")
+                );
+                break;
+            }
+            KillStep::Again => std::thread::sleep(GONE_POLL),
         }
     }
-    if terminated {
-        // Give the OS a moment to actually reap the process before we check.
+    if !signalled.is_empty() {
+        crate::desk_log_info!(
+            "lifecycle",
+            "Steam family kill: signalled {} process(es) in {} pass(es): {}",
+            signalled.len(),
+            passes,
+            signalled.iter().cloned().collect::<Vec<_>>().join(", ")
+        );
+        // Give the OS a moment to release the pipe and cache handles, not just
+        // to drop the processes from the snapshot.
         std::thread::sleep(KILL_SETTLE);
     }
-    terminated
+    !signalled.is_empty()
 }
 
 /// Kill every process of the Steam family (client + web helpers). Returns true
@@ -231,17 +343,32 @@ pub fn close_steam(steam_root: &Path) -> Result<(), String> {
     Ok(())
 }
 
-/// Block until no member of the Steam family is visible (polling), up to
-/// `GONE_TIMEOUT`.
+/// Block until no member of the Steam family is visible for
+/// [`GONE_CLEAN_POLLS`] consecutive polls, up to `GONE_TIMEOUT`.
 pub fn wait_steam_family_gone() -> bool {
-    let deadline = Instant::now() + GONE_TIMEOUT;
+    let started = Instant::now();
+    let deadline = started + GONE_TIMEOUT;
     let mut sys = sysinfo::System::new_all();
+    let mut watch = GoneWatch::default();
     loop {
         sys.refresh_processes();
-        if !snapshot_has_steam_family(&sys) {
+        let present = snapshot_has_steam_family(&sys);
+        if watch.observe(present) {
+            crate::desk_log_info!(
+                "lifecycle",
+                "wait_steam_family_gone: gone after {} ms ({} clean polls).",
+                started.elapsed().as_millis(),
+                GONE_CLEAN_POLLS
+            );
             return true;
         }
         if Instant::now() >= deadline {
+            crate::desk_log_warn!(
+                "lifecycle",
+                "wait_steam_family_gone: still present after {} ms: {}",
+                started.elapsed().as_millis(),
+                family_names(&sys).join(", ")
+            );
             return false;
         }
         std::thread::sleep(GONE_POLL);
@@ -324,6 +451,64 @@ mod tests {
             &[PathBuf::from(r"C:\SteamLibrary\steamapps\common\Skyrim")]
         ));
         assert!(!is_under_game_root(Path::new(r"C:\Games\game.exe"), &roots));
+    }
+
+    #[test]
+    fn a_kill_pass_stops_on_an_empty_snapshot_or_on_the_deadline() {
+        let budget = Duration::from_secs(4);
+        assert_eq!(kill_step(0, Duration::ZERO, budget), KillStep::Done);
+        assert_eq!(
+            kill_step(1, Duration::from_secs(1), budget),
+            KillStep::Again,
+            "a survivor inside the budget earns another pass"
+        );
+        assert_eq!(
+            kill_step(1, budget, budget),
+            KillStep::GiveUp,
+            "a survivor at the deadline is reported, not retried forever"
+        );
+    }
+
+    #[test]
+    fn a_new_client_is_spawned_only_when_the_previous_family_is_gone() {
+        // Spawning onto a live family is the crash this module prevents: the
+        // caller must refuse instead of "proceeding anyway".
+        assert!(spawn_allowed(false, false), "Steam was not running");
+        assert!(spawn_allowed(true, true), "the family was confirmed gone");
+        assert!(
+            !spawn_allowed(true, false),
+            "kill signalled someone but the family is still present"
+        );
+    }
+
+    #[test]
+    fn one_clean_poll_does_not_count_the_steam_family_as_gone() {
+        // The restart race: the client dies, the first poll sees nothing, and a
+        // helper the dying client spawned shows up right after. Releasing the
+        // spawn on that poll is what makes the new client abort on
+        // "stalled cross-thread pipe"; the family must stay empty for two
+        // polls a GONE_POLL apart.
+        let mut watch = GoneWatch::default();
+        assert!(
+            !watch.observe(false),
+            "the first clean poll must not release the spawn"
+        );
+        assert!(
+            watch.observe(false),
+            "two consecutive clean polls release the spawn"
+        );
+    }
+
+    #[test]
+    fn a_steam_member_seen_again_restarts_the_clean_poll_run() {
+        let mut watch = GoneWatch::default();
+        assert!(!watch.observe(false));
+        assert!(
+            !watch.observe(true),
+            "a helper seen again must restart the run"
+        );
+        assert!(!watch.observe(false));
+        assert!(watch.observe(false));
     }
 
     #[test]
