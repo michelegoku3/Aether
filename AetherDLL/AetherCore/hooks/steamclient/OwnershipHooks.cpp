@@ -296,6 +296,7 @@ void CaptureCUser(void* self, const char* source) {
         // library of <account>" banner reads it) and refresh the family lender map.
         ac::appmanifest::RequestOwnerApply();
         ac::family::RequestRefresh();
+        LicenseManager::OnUserCaptured();
     }
 }
 

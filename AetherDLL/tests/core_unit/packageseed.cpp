@@ -15,7 +15,9 @@ namespace {
 // ids and the depot ids - so what it does to a plain list is the whole contract.
 
 using ac::hooks::license::policy::ApplySeed;
+using ac::hooks::license::policy::DecidePublishStep;
 using ac::hooks::license::policy::NormalizeSeed;
+using ac::hooks::license::policy::PublishStep;
 using ac::steam::AppId;
 
 void AppendsMissingIdsAtTheEnd() {
@@ -63,6 +65,13 @@ void NormalizeDropsZeroAndRepeats() {
     CHECK(NormalizeSeed({}).empty());
 }
 
+void PublishTracksRefreshCompletion() {
+    CHECK(DecidePublishStep(false, false, false) == PublishStep::Unseeded);
+    CHECK(DecidePublishStep(true, true, false) == PublishStep::RefreshPending);
+    CHECK(DecidePublishStep(true, true, true) == PublishStep::Published);
+    CHECK(DecidePublishStep(true, false, false) == PublishStep::Published);
+}
+
 } // namespace
 
 void PackageSeedTest() {
@@ -73,4 +82,5 @@ void PackageSeedTest() {
     IgnoresZeroAndRepeatedSeedIds();
     ApplyingTwiceChangesNothing();
     NormalizeDropsZeroAndRepeats();
+    PublishTracksRefreshCompletion();
 }

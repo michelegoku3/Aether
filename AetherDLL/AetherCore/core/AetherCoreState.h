@@ -390,6 +390,10 @@ struct AetherCoreState {
     std::atomic<void*> pConfigStoreUserLocal{nullptr};
     std::atomic<void*> pPackage0{nullptr}; // Cached package-0 PackageInfo*
     std::atomic<bool> package0Published{false};
+    // True when package 0 received new ids before CUser/captures were ready,
+    // so MarkLicenseAsChanged + ProcessPendingLicenseUpdates must run once
+    // CUser is captured.
+    std::atomic<bool> licenseRefreshPending{false};
 
     // ---- AetherOnline --------------------------------------------------------
     // Session identity (real app behind the 480 mask, showonline, UCO2/OFME

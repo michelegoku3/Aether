@@ -24,7 +24,7 @@
 //   hooks_installed_count, hooks_missed_count, hooks_alias_count
 //   wire_eresult_events, wire_access_denied_events, wire_transport_candidate_events
 //   cloud_blocked_events
-//   package0_captured, package0_published, package0_app_ids
+//   package0_captured, package0_published, license_refresh_pending, package0_app_ids
 //   config_store_user_local_captured, config_store_cached_app_tickets
 //   lua_files_loaded, configured_depots, access_tokens, manifest_overrides
 //   membership_library_roots, membership_owned, membership_spoofed,

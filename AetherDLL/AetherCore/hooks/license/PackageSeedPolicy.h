@@ -87,4 +87,21 @@ inline std::vector<steam::AppId> NormalizeSeed(const std::vector<steam::AppId>& 
     return out;
 }
 
+// Outcome of a package-0 seed + license-refresh attempt. Seeding package 0's
+// vectors can succeed before CUser is captured; the refresh itself stays
+// pending until CUser exists and Steam is asked to re-read licenses.
+enum class PublishStep {
+    Unseeded,
+    RefreshPending,
+    Published,
+};
+
+constexpr PublishStep DecidePublishStep(bool package0Acquired, bool seedChanged, bool refreshed) noexcept {
+    if (!package0Acquired)
+        return PublishStep::Unseeded;
+    if (seedChanged && !refreshed)
+        return PublishStep::RefreshPending;
+    return PublishStep::Published;
+}
+
 } // namespace ac::hooks::license::policy

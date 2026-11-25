@@ -52,6 +52,10 @@ void RequestAppInPackage0(steam::AppId appId);
 // map changes an app's classification, so the UI re-reads its ownership.
 void RequestLicenseRefresh();
 
+// Called when CUser is first captured. If package 0 was already seeded while
+// CUser was still null, queues the deferred license refresh off the hook thread.
+void OnUserCaptured();
+
 // Hot-reload: applies pending additions/removals to package 0 and asks Steam to
 // re-evaluate licenses. No UI card eviction (crash-prone; out of scope here).
 void NotifyLicenseChanged();
