@@ -414,8 +414,10 @@ instead of skipping the new donor as "already tried". Probe requests are paced
   BootSteps step 11) decides first, so a beta client shows only the "Steam Beta
   detected" box and the Hubcap key box is suppressed (`StartCheck(false)`) while
   its probe still updates `status.json`.
-* Pattern indexes are built locally on late retry, then published under
-  `patterns.mutex`; lookups/availability checks use a shared lock.
+* Pattern indexes are built from the local cache first (with missing tables
+  fetched synchronously without polling the remote index) and refreshed in the
+  background after hooks install, then published under `patterns.mutex`;
+  lookups/availability checks use a shared lock.
 * DllMain detach only sets the shutdown flag: no joins, logging, mutex-taking
   flush, hook teardown or persistence. Logger already flushes each written line.
   `AetherCoreShutdown` is an explicit terminal shutdown API for a host that has
@@ -580,10 +582,17 @@ next one, and a table the index has not seen before starts at 1. Only the tables
 a publish run writes are indexed: a table without an entry has no published
 generation, so the provenance policy alone can refresh it.
 
-`PatternState` reads that index once per process (`std::call_once`), over the raw
-endpoint only and with a cache-busting query string, since the index is the one
-file republished in place. The wait is one short timeout: a launch that cannot
-reach the index serves the cache and asks again next time. A configured
+`PatternState` reads that index at most once per process (`std::call_once`),
+over the raw endpoint only and with a cache-busting query string, since the
+index is the one file republished in place. Boot loads cached pattern tables and
+`IpcSpec` first without querying the index so Steam hook installation never
+waits on index HTTP latency; a detached background worker
+(`StartBackgroundRefresh`) runs after hooks install and hubcap checks start,
+reads `state/patterns.txt`, downloads newer generations to the on-disk cache for
+the next restart, and records live-reload notices without mutating active
+pattern or `IpcSpec` maps in place. An uncached first launch fetches the
+missing table directly and writes a generation `0` sidecar so the next
+background refresh reconciles it against the index. A configured
 `pattern_mirror` suppresses the index: the mirror is the user's own source of
 truth and need not carry it. `PatternStateParse` is the pure parser — a
 malformed line is counted and skipped, never fatal, and an unknown module or SHA
@@ -674,6 +683,12 @@ until the app is launched or the client checks on its own.
 A `.lua` app becomes visible only through the **license path**: package 0 carries
 every configured id (`LicenseManager::SeedPackage0`), and
 `MarkLicenseAsChanged` + `ProcessPendingLicenseUpdates` make Steam re-read it.
+`OwnershipHooks` captures `CUser` from both `MarkLicenseAsChanged` and
+`CheckAppOwnership` so a late attach or startup miss recovers on the next
+ownership check (`LicenseManager::OnUserCaptured`). If `CUser` or the license
+helpers are unavailable when `SeedPackage0` commits package 0, `RefreshLicenses`
+marks `licenseRefreshPending` instead of marking `package0Published`, and the
+startup retry/capture path completes the refresh as soon as `CUser` arrives.
 Steam then asks for the app's AppInfo and builds the card, the depot plan and
 the launch config from that. The seed covers both of package 0's id vectors —
 the app ids (`appIdVec`, "is this app owned") and the depot ids (`depotIdVec`,
@@ -689,11 +704,11 @@ PICS requests and name lookups (`ScriptEngine`, `DirWatch`, `GameNameResolver`,
 `InstalledDepotRepair`); it is not membership and may be empty for a `.lua` with
 a non-numeric name, which still enters the library through its seeded ids.
 
-A reload that makes an app visible mid-session is not covered by the license
-answer alone: the client keeps the library list it built at startup, so the app
-enters package 0 and its AppInfo is fetched, but no card appears until the
-client is asked to look again. The reload therefore names the app for a
-recheck, pins or not (see
+A reload or deferred license publish that makes an app visible after SteamUI
+built its startup library list is not covered by the license answer alone: the
+app enters package 0 and its AppInfo is fetched, but no card appears until the
+client is asked to look again. Mid-session reloads and settled deferred
+refreshes therefore queue the configured roots for a SteamUI app recheck (see
 [App recheck after a pin change](#app-recheck-after-a-pin-change)).
 
 A genuinely owned app gets a package-0 row like every other configured id, but

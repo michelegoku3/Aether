@@ -23,6 +23,7 @@
 #include "family/FamilyLenders.h"
 #include "hooks/license/PackageSeedPolicy.h"
 #include "hooks/steamclient/OwnershipHooks.h"
+#include "hooks/steamui/AppOverviewHooks.h"
 #include "scripting/LuaData.h"
 #include "utils/PatternEngine.h"
 
@@ -273,14 +274,21 @@ bool RefreshLicenses(const char* reason) {
         AC_LOG_WARN(kModule, "License refresh (%s) deferred: CUser/captures not ready.", reason ? reason : "unknown");
         return false;
     }
+    const bool wasDeferred = g_state.licenseRefreshPending.exchange(false, std::memory_order_acq_rel);
     markLicenseAsChanged(cUser, 0, true);
     ++g_state.licenseReloadDirectCount;
     processPendingLicenseUpdates(cUser);
-    g_state.licenseRefreshPending.store(false, std::memory_order_release);
     if (g_state.pPackage0.load(std::memory_order_acquire) != nullptr)
         g_state.package0Published.store(true, std::memory_order_release);
     AC_LOG_INFO(kModule, "License refresh (%s).", reason ? reason : "unknown");
     diag::Record("license_refresh", reason ? reason : "unknown");
+    // When SteamUI already built its overview cache (or this refresh settles a
+    // launch-time defer), re-evaluate configured library roots so cards create.
+    if (wasDeferred || g_state.overview.fills.load(std::memory_order_relaxed) > 0) {
+        const std::vector<AppId> roots = luadata::LibraryAppIds();
+        if (!roots.empty())
+            hooks::steamui::RequestAppRecheck(roots);
+    }
     return true;
 }
 
