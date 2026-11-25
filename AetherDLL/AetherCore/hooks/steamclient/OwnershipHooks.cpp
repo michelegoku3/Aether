@@ -363,6 +363,7 @@ bool h_CheckAppOwnership(void* self, AppId app, AppOwnership* out) {
         spoofed,
         familyLender,
         IsValveFamilyAnswer(app, familyLender),
+        out->packageId == 0 && out->freeLicense,
     };
     // Resolving the account reads the registry; a family lender already names
     // the banner owner, and a pass-through needs no owner at all.
@@ -390,9 +391,11 @@ bool h_CheckAppOwnership(void* self, AppId app, AppOwnership* out) {
         }
         AC_LOG_DEBUG_ONCE(
             kModule,
-            "CheckAppOwnership: %u steam-provided class=%s result=%d exist=%u release=%u borrowed=%d familyShared=%d.",
+            "CheckAppOwnership: %u steam-provided class=%s result=%d exist=%u pkg=%u free=%d release=%u borrowed=%d "
+            "familyShared=%d.",
             app, decision.steamFamilyShared ? "family-shared" : "owned", result ? 1 : 0, out->existInPackageNums,
-            static_cast<unsigned>(out->releaseState), out->borrowed ? 1 : 0, out->familyShared ? 1 : 0);
+            out->packageId, out->freeLicense ? 1 : 0, static_cast<unsigned>(out->releaseState), out->borrowed ? 1 : 0,
+            out->familyShared ? 1 : 0);
         return result;
     }
 

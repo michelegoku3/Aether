@@ -212,6 +212,14 @@ void OwnershipDecisionTest() {
         CHECK_EQ(d.ownerAccountId, 222u);
     }
     {
+        // Package 0 free license alone even when counted twice stays spoofed.
+        OwnershipFacts f = facts(true, 2, AppReleaseState::Released);
+        f.freePackage0Only = true;
+        const auto d = DecideOwnership(f);
+        CHECK(d.action == OwnershipAction::Spoof);
+        CHECK_EQ(d.ownerAccountId, 222u);
+    }
+    {
         // Not released yet: not Steam-provided.
         OwnershipFacts f = facts(true, 2, AppReleaseState::Uninstalled);
         const auto d = DecideOwnership(f);

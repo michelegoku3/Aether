@@ -687,11 +687,12 @@ every configured id (`LicenseManager::SeedPackage0`), and
 `CheckAppOwnership` so a late attach or startup miss recovers on the next
 ownership check (`LicenseManager::OnUserCaptured`), and capturing
 `CPackageInfo` wakes `StartupRetryWorker` immediately instead of waiting for a
-poll interval. If `CUser` is null or `ProcessPendingLicenseUpdates` returns
-false because PICS AppInfo is still arriving when `SeedPackage0` commits package
-0, `RefreshLicenses` keeps `licenseRefreshPending` set instead of marking
-`package0Published`, and the retry/capture path completes the refresh once both
-are ready.
+poll interval. If `CUser` or the license helpers are unavailable when
+`SeedPackage0` commits package 0, `RefreshLicenses` marks
+`licenseRefreshPending` instead of marking `package0Published`, and the capture
+path completes the refresh once `CUser` arrives. `IsSteamProvided` ignores a
+`packageId == 0 && freeLicense` answer even if `existInPackageNums > 1` so a
+package-0 duplicate never permanently locks a `.lua` app as owned.
 Steam then asks for the app's AppInfo and builds the card, the depot plan and
 the launch config from that. The seed covers both of package 0's id vectors —
 the app ids (`appIdVec`, "is this app owned") and the depot ids (`depotIdVec`,

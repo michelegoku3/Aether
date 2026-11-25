@@ -45,6 +45,10 @@ struct OwnershipFacts {
     // The family answer is a licence Valve granted to another account. Nothing
     // in package 0 or in the answer may contradict it.
     bool valveFamilyLicense = false;
+    // True when Steam's answer came from package 0 (packageId == 0 and
+    // freeLicense): package 0 is where Aether seeds unowned apps and can count
+    // >1 during license cache rebuilds without representing a real Steam buy.
+    bool freePackage0Only = false;
 };
 
 enum class OwnershipAction {
@@ -64,7 +68,7 @@ struct OwnershipDecision {
 // package. The hook uses this before reading the live account, which costs a
 // registry lookup.
 inline bool IsSteamProvided(const OwnershipFacts& facts) {
-    return facts.hasDepot && facts.steamResult && facts.existInPackageNums > 1 &&
+    return facts.hasDepot && facts.steamResult && !facts.freePackage0Only && facts.existInPackageNums > 1 &&
            facts.releaseState == steam::AppReleaseState::Released;
 }
 
