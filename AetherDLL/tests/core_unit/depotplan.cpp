@@ -24,6 +24,7 @@ using ac::hooks::steamclient::policy::ParseSize;
 using ac::hooks::steamclient::policy::PlanAnswer;
 using ac::hooks::steamclient::policy::PlanVerdict;
 using ac::hooks::steamclient::policy::PromotePinnedTarget;
+using ac::hooks::steamclient::policy::PublicTargetFor;
 using ac::hooks::steamclient::policy::RecordedDepot;
 using ac::hooks::steamclient::policy::RefillSource;
 using ac::hooks::steamclient::policy::RowSize;
@@ -306,6 +307,53 @@ void MatchesWholeTokensOnly() {
     CHECK(!OsListAllowsHost("notwindows", "windows"));
 }
 
+// --- Public target for an unpinned depot -----------------------------------
+//
+// Steam carries an unowned depot on disk over as an installed-only row
+// (`notNewTarget`) at the ACF's recorded gid instead of reading AppInfo: an
+// app whose `.lua` pins are released would otherwise compare the installed gid
+// with itself and never offer the update. An unpinned installed-only row whose
+// recorded gid differs from AppInfo's public gid must target `publicGid`, while
+// pinned depots, Steam-resolved branch targets (`!notNewTarget`), missing
+// AppInfo, and up-to-date installs stay untouched.
+
+void PlansAnUnpinnedInstalledOnlyRowAtThePublicBuild() { CHECK_EQ(PublicTargetFor(11, 11, 22, true, false), 22u); }
+
+void LeavesAPinnedRowAlone() { CHECK_EQ(PublicTargetFor(11, 11, 22, true, true), 0u); }
+
+void LeavesASteamResolvedBranchTargetAlone() {
+    // `!notNewTarget` means Steam already planned a branch target from AppInfo;
+    // rewriting it to `public` would take a branch install off its branch.
+    CHECK_EQ(PublicTargetFor(11, 11, 22, false, false), 0u);
+}
+
+void LeavesTheRowWhenPublicMatchesInstalled() { CHECK_EQ(PublicTargetFor(11, 11, 11, true, false), 0u); }
+
+void LeavesTheRowWithoutAPublicGid() {
+    // AppInfo is missing or mid-swap: the ACF gid remains the safe fallback.
+    CHECK_EQ(PublicTargetFor(11, 11, 0, true, false), 0u);
+}
+
+void LeavesARowThatIsNotTheInstalledGid() { CHECK_EQ(PublicTargetFor(33, 11, 22, true, false), 0u); }
+
+void LeavesARowWithoutARecordedGid() { CHECK_EQ(PublicTargetFor(11, 0, 22, true, false), 0u); }
+
+void UsesPublicGidInRecordedFallbackWhenUnpinned() {
+    // When Steam drops an installed app's own rows and AppInfo carries the
+    // public gid, filling `pinned` with public lets `SelectRecordedRows` plan
+    // the update directly while keeping `recorded` when public is 0.
+    const std::vector<RecordedDepot> recorded{{101, 11, 1100}, {102, 12, 1200}};
+    const std::vector<PinnedDepot> unpinnedPublic{{101, 22, 2200}, {102, 0, 0}};
+    const auto rows = SelectRecordedRows(100, {}, unpinnedPublic, recorded);
+    CHECK_EQ(rows.size(), 2u);
+    CHECK_EQ(rows[0].depotId, 101u);
+    CHECK_EQ(rows[0].gid, 22u);
+    CHECK_EQ(rows[0].size, 2200u);
+    CHECK_EQ(rows[1].depotId, 102u);
+    CHECK_EQ(rows[1].gid, 12u);
+    CHECK_EQ(rows[1].size, 1200u);
+}
+
 } // namespace
 
 void DepotPlanTest() {
@@ -342,4 +390,12 @@ void DepotPlanTest() {
     TreatsAnAbsentListAsUnrestricted();
     MatchesWholeTokensOnly();
     LeavesARealFamilyShareToSteam();
+    PlansAnUnpinnedInstalledOnlyRowAtThePublicBuild();
+    LeavesAPinnedRowAlone();
+    LeavesASteamResolvedBranchTargetAlone();
+    LeavesTheRowWhenPublicMatchesInstalled();
+    LeavesTheRowWithoutAPublicGid();
+    LeavesARowThatIsNotTheInstalledGid();
+    LeavesARowWithoutARecordedGid();
+    UsesPublicGidInRecordedFallbackWhenUnpinned();
 }

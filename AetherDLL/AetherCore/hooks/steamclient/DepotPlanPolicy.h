@@ -240,6 +240,24 @@ inline std::vector<PinnedDepot> SelectRecordedRows(steam::AppId app, const std::
     return rows;
 }
 
+// The gid an installed row has to be planned at when the `.lua` leaves its
+// depot unpinned, or 0 when the row stays as it is.
+//
+// Steam carries an unowned depot on disk over as an installed-only row
+// (`notNewTarget`) at the ACF's recorded gid instead of resolving AppInfo: an
+// app whose `.lua` pins are released would otherwise compare the installed gid
+// with itself and never offer the update. An unpinned installed-only row whose
+// recorded gid differs from AppInfo's public gid moves to `publicGid`; a
+// non-installed-only row (`!notNewTarget`, e.g. a branch build Steam resolved
+// itself), a row whose gid differs from `recordedGid`, a locked depot
+// (`pinned`), or a missing/unchanged public gid stay untouched.
+constexpr std::uint64_t PublicTargetFor(std::uint64_t rowGid, std::uint64_t recordedGid, std::uint64_t publicGid,
+                                        bool notNewTarget, bool pinned) noexcept {
+    if (pinned || rowGid != recordedGid)
+        return 0;
+    return PromotePinnedTarget(publicGid, recordedGid, notNewTarget) ? publicGid : 0;
+}
+
 // ---------------------------------------------------------------------------
 // Room for those rows.
 //
