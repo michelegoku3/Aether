@@ -133,6 +133,59 @@ void ApplyManifestOverrides(CUtlVector<DepotEntry>* vec, const std::vector<polic
     }
 }
 
+// Plans an unpinned installed-only depot at AppInfo's public manifest.
+//
+// Steam carries an unowned depot on disk over from `InstalledDepots` with
+// `notNewTarget` set instead of reading AppInfo: releasing a `.lua` pin (or
+// running with auto-updates enabled) would otherwise compare the installed gid
+// with itself and never offer the update. When AppInfo names a public manifest
+// that differs from what is recorded on disk, this moves the row there and
+// promotes it to a target; pinned depots, Steam-resolved branch targets, and
+// missing AppInfo stay untouched.
+void RetargetUnpinnedDepots(AppId app, const std::vector<policy::RecordedDepot>& recorded, CUtlVector<DepotEntry>* vec,
+                            std::vector<ManifestPatchLog>& retargeted) {
+    if (!vec || !vec->mem.memory || vec->size == 0 || recorded.empty() || luadata::IsOwned(app) ||
+        luadata::IsRealFamilyShare(app))
+        return;
+    if (const auto reason = abi::guard::CheckDepotVector(vec); !abi::guard::Passed(reason)) {
+        abi::guard::CountRejection("DepotEntry table before retarget", reason);
+        return;
+    }
+
+    for (std::uint32_t i = 0; i < vec->size; ++i) {
+        DepotEntry& entry = vec->mem.memory[i];
+        if (entry.depotId == 0 || !luadata::HasDepot(entry.depotId))
+            continue;
+        const std::uint64_t recordedGid = RecordedGid(recorded, entry.depotId);
+        if (recordedGid == 0 || luadata::ManifestOverrideFor(entry.depotId).has_value())
+            continue;
+        const std::uint64_t publicGid = gamename::PublicDepotGid(app, entry.depotId);
+        if (publicGid == 0) {
+            AC_LOG_DEBUG_ONCE(kModule,
+                              "Depot plan for app %u keeps unpinned depot %u at installed gid %llu: AppInfo names no "
+                              "public manifest.",
+                              app, entry.depotId, static_cast<unsigned long long>(recordedGid));
+            continue;
+        }
+        if (entry.notNewTarget == 0 && entry.manifestGid == recordedGid && publicGid != recordedGid) {
+            AC_LOG_DEBUG_ONCE(kModule,
+                              "Depot plan for app %u keeps unpinned target depot %u at %llu instead of public %llu.",
+                              app, entry.depotId, static_cast<unsigned long long>(entry.manifestGid),
+                              static_cast<unsigned long long>(publicGid));
+            continue;
+        }
+        const std::uint64_t target =
+            policy::PublicTargetFor(entry.manifestGid, recordedGid, publicGid, entry.notNewTarget != 0, false);
+        if (target == 0)
+            continue;
+        retargeted.push_back({entry.depotId, recordedGid, target});
+        entry.manifestGid = target;
+        if (const std::uint64_t size = gamename::PublicDepotSize(app, entry.depotId); size > 0)
+            entry.manifestSize = size;
+        entry.notNewTarget = 0;
+    }
+}
+
 void LogSteamSelectedManifests(AppId app, const CUtlVector<DepotEntry>* vec) {
     if (!log::Enabled(LogLevel::Debug))
         return;
@@ -353,6 +406,20 @@ bool RefillDepotPlan(AppId app, const std::vector<policy::RecordedDepot>& record
 
     std::vector<policy::PinnedDepot> rows;
     if (recordedSource) {
+        // When Steam drops an installed app's rows (`own=0`) and a managed
+        // depot has no active pin, supply AppInfo's public manifest so
+        // `SelectRecordedRows` still offers pending updates while falling back
+        // to the recorded gid if AppInfo has no public manifest.
+        if (!luadata::IsOwned(app) && !luadata::IsRealFamilyShare(app) && gamename::Ready()) {
+            for (const policy::RecordedDepot& rec : recorded) {
+                if (rec.depotId == 0 || pinnedIds.count(rec.depotId) || !luadata::HasDepot(rec.depotId))
+                    continue;
+                if (const std::uint64_t gid = gamename::PublicDepotGid(app, rec.depotId); gid != 0) {
+                    pinned.push_back({rec.depotId, gid, gamename::PublicDepotSize(app, rec.depotId)});
+                    pinnedIds.insert(rec.depotId);
+                }
+            }
+        }
         // The app is installed: restore exactly the depots its ACF records, so
         // a plan Steam answered empty cannot make the client remove one and
         // delete its content.
@@ -534,6 +601,8 @@ bool h_BuildDepotDependency(void* mgr, AppId app, void* cfg, CUtlVector<DepotEnt
     std::vector<ManifestPatchLog> promoted;
     ApplyManifestOverrides(depots, &recorded, patches, promoted);
     ApplyManifestOverrides(shared, nullptr, patches, promoted);
+    std::vector<ManifestPatchLog> retargeted;
+    RetargetUnpinnedDepots(app, recorded, depots, retargeted);
     if (!promoted.empty()) {
         AC_LOG_INFO_ONCE(kModule, "Pinned depots made update targets for app %u: %s.", app,
                          ManifestPatchArray(promoted).c_str());
@@ -542,6 +611,10 @@ bool h_BuildDepotDependency(void* mgr, AppId app, void* cfg, CUtlVector<DepotEnt
         // Once per unique line (app + patch set) per game session — the
         // logger's dedup handles the suppression.
         AC_LOG_INFO_ONCE(kModule, "Manifest overrides for app %u: %s.", app, ManifestPatchArray(patches).c_str());
+    }
+    if (!retargeted.empty()) {
+        AC_LOG_INFO_ONCE(kModule, "Depot plan for app %u retargeted unpinned depot(s) to public build: %s.", app,
+                         ManifestPatchArray(retargeted).c_str());
     }
 
     // Proactive trigger: route every managed depot/GID straight into the

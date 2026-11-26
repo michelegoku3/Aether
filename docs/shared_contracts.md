@@ -412,8 +412,12 @@ delete the files only that depot carried. For an app whose `appmanifest_<app>.ac
 records `InstalledDepots`, the missing rows are restored from that record (DLL:
 `hooks/steamclient/DepotHooks.cpp` → `RecordedDepots`, `policy::SelectRecordedRows`).
 Each field takes its most specific source: the `.lua` pin's gid and size when it
-locks the depot, the recorded gid and size otherwise, and AppInfo's public size
-only when neither names one. A row the answer carries only as installed
+locks the depot; AppInfo's public gid and size when the `.lua` leaves a managed
+depot unpinned and Steam returned it only as installed (`notNewTarget`) at the
+recorded gid, so releasing a pin plans the public build as a download target
+(`policy::PublicTargetFor`); the recorded gid and size when AppInfo names no
+public manifest or Steam already resolved a branch target (`!notNewTarget`), and
+AppInfo's public size when neither names one. A row the answer carries only as installed
 (`notNewTarget`) becomes a target row in the same pass when the `.lua` pins a
 gid the ACF does not record: the update job compares target rows only, so a pin
 left on an installed-only row is mounted and recorded as installed without a

@@ -364,8 +364,12 @@ void DrainRechecks(void* source) {
                 // verdict here would hide a call that resolved to the wrong entry.
                 const bool answer = check(manager, app);
                 g_state.overview.updateChecks.fetch_add(1, std::memory_order_relaxed);
-                AC_LOG_INFO(kModule, "Checked app %u for updates after its pins moved: check answered %d.", app,
-                            answer ? 1 : 0);
+                AC_LOG_INFO(kModule, "Checked app %u for updates after its pins moved: check answered %d (%s).", app,
+                            answer ? 1 : 0, answer ? "up-to-date" : "update-required");
+            } else if (check != nullptr) {
+                AC_LOG_WARN_ONCE(kModule,
+                                 "Skipped update check for app %u after Lua reload: clientAppManager not captured yet.",
+                                 app);
             }
         }
         handed = true;

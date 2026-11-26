@@ -473,7 +473,8 @@ instead of skipping the new donor as "already tried". Probe requests are paced
   that can size the install dialog at all. An installed app is restored from the
   depots its `appmanifest_<app>.acf` records under `InstalledDepots`
   (`RecordedDepots`, `policy::SelectRecordedRows`): that record is what keeps
-  the content on disk - each language pack included - while the `.lua` lists
+  the content on disk - each language pack included, the depot set rather than
+  only the build - while the `.lua` lists
   every depot the store has, so planning an installed app from the `.lua` would
   mark each language pack as content that must exist and the client would
   download it. Only recorded depots go back, so packs the install does not carry
@@ -482,9 +483,16 @@ instead of skipping the new donor as "already tried". Probe requests are paced
   update, so a package-0 app answers with no own rows while the file already
   makes it look installed, and a plan without a recorded depot makes the client
   remove that depot and delete the files only it carried. Each row takes the
-  pinned gid and size when the `.lua` locks the depot, otherwise the gid and
-  size the ACF records, and AppInfo's public values as the last resort - a row
-  without a size is an install the client sizes at 0 B. A depot the client
+  pinned gid and size when the `.lua` locks the depot; when the `.lua` leaves a
+  managed depot unpinned and Steam returned it as installed-only
+  (`notNewTarget`) at the recorded gid, it is retargeted to AppInfo's public
+  gid and size and promoted to a target row (`policy::PublicTargetFor`), so
+  releasing a pin or receiving a public build update still surfaces UPDATE
+  against `InstalledDepots`. Steam-resolved branch targets (`!notNewTarget`),
+  rows that already differ from the recorded gid, and apps where AppInfo names
+  no public manifest fall back to the gid and size the ACF records (and
+  AppInfo's public values when recorded size is 0 - a row
+  without a size is an install the client sizes at 0 B). A depot the client
   answers with as installed-only (`notNewTarget`) is left out of its update
   comparison, so a pin that names another gid promotes that row to a target row:
   otherwise the client mounts and records the pinned build without downloading
