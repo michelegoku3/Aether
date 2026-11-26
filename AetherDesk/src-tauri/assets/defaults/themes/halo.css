@@ -82,6 +82,8 @@
   --color-invalid-red-rgb: 168, 77, 66;
   --color-warn-amber: #d99b45;
   --color-warn-amber-soft: rgba(217, 155, 69, 0.12);
+  --color-nonhost-orange: #e0823d;
+  --color-nonhost-orange-soft: rgba(224, 130, 61, 0.14);
   --color-danger: #a84d42;
   --color-danger-rgb: 168, 77, 66;
   --color-denuvo-hover: #c87862;
