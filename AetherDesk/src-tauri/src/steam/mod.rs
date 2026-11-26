@@ -1,6 +1,7 @@
 pub mod acf;
 pub mod api;
 pub mod app_names;
+pub mod appinfo;
 pub mod appworkshop;
 pub mod compat;
 pub mod library;
