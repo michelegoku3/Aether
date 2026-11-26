@@ -15,6 +15,7 @@
 #include "core/Settings.h"
 #include "core/SteamTypes.h"
 #include "hooks/ipc/PipeWatch.h"
+#include "hooks/license/LicenseDispatchPolicy.h"
 #include "hooks/steamui/AppOverviewPolicy.h"
 #include "hooks/steamui/AppRecheckPolicy.h"
 #include "hooks/wire/AchievementUi.h"
@@ -390,10 +391,21 @@ struct AetherCoreState {
     std::atomic<void*> pConfigStoreUserLocal{nullptr};
     std::atomic<void*> pPackage0{nullptr}; // Cached package-0 PackageInfo*
     std::atomic<bool> package0Published{false};
+    std::atomic<std::size_t> package0AppCount{0};
     // True when package 0 received new ids before CUser/captures were ready,
     // so MarkLicenseAsChanged + ProcessPendingLicenseUpdates must run once
     // CUser is captured.
     std::atomic<bool> licenseRefreshPending{false};
+    // OS thread id of CSteamEngine::BMainLoop (learned only from hooks native
+    // to that thread). All package-0, CPackageInfo, and CUser license/update
+    // calls drain exclusively on this thread to match steamclient64's lack of
+    // internal locking on those structures.
+    std::atomic<std::uint32_t> steamClientThreadId{0};
+    // Lock-free fast-path hint checked on every RecvPkt/IPCProcessMessage before
+    // taking licenseQueueMutex.
+    std::atomic<bool> licenseWorkPending{false};
+    mutable std::mutex licenseQueueMutex;
+    hooks::license::policy::LicenseDispatchQueue licenseQueue;
 
     // ---- AetherOnline --------------------------------------------------------
     // Session identity (real app behind the 480 mask, showonline, UCO2/OFME

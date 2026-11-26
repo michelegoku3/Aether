@@ -17,6 +17,7 @@
 #include "core/HookManager.h"
 #include "core/Logger.h"
 #include "core/NetPacketAbi.h"
+#include "hooks/license/LicenseManager.h"
 #include "hooks/wire/AccessTokenModule.h"
 #include "hooks/wire/AchievementModule.h"
 #include "hooks/wire/AchievementUi.h"
@@ -283,6 +284,7 @@ std::int32_t DispatchRecv(const WireFrame& f) {
 }
 
 void* h_RecvPkt(void* self, CNetPacket* packet) {
+    LicenseManager::RecordSteamMainThread("RecvPkt");
     // Replies the achievement page had to park are delivered on this carrier,
     // before its own frame is dispatched: a frame queued during a dispatch must
     // go out on the next packet, not replace the one that produced it.
@@ -356,7 +358,9 @@ void* h_RecvPkt(void* self, CNetPacket* packet) {
 
         PersonaInject::TryDeliver(self, packet, o_RecvPkt);
     }
-    return o_RecvPkt(self, packet);
+    void* result = o_RecvPkt(self, packet);
+    LicenseManager::TryDrainOnSteamThread();
+    return result;
 }
 
 } // namespace

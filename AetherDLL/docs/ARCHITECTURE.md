@@ -666,10 +666,12 @@ client's UI thread through `MarkAppChange`; the frame budget and the
 Steam object. The notification rebuilds the app's config; it does not make Steam
 re-evaluate the app. Steam computes `Update Required` only inside its own
 per-app check — the call the launch path makes — which promotes a pinned gid to
-a download target and tells the library the new state. The drain therefore runs
-that check (`CheckAppForUpdate`, resolved from the steamclient table, on the
-`CUserAppManager` the `BuildDepotDependency` hook captured) right after
-`MarkAppChange`, one app at a time. The check starts no download by itself
+a download target and tells the library the new state. Because `CheckAppForUpdate`
+touches `CUser`/`CPackageInfo` without internal locks, the UI drain waits
+briefly when a package-0 / license reload is still pending, runs
+`MarkAppChange` on SteamUI's frame thread, and queues `CheckAppForUpdate` on
+`LicenseManager` so it runs on `steamclient`'s `BMainLoop` thread (using the
+`CUserAppManager` captured by `BuildDepotDependency`) one app at a time. The check starts no download by itself
 either: Steam compares the pinned GIDs with `InstalledDepots` and decides PLAY,
 UPDATE or a download from the app's own update policy. A card being taken back
 is left out of that check: the recheck is there to rebuild it so the fill can
@@ -689,18 +691,31 @@ until the app is launched or the client checks on its own.
 ## Library membership
 
 A `.lua` app becomes visible only through the **license path**: package 0 carries
-every configured id (`LicenseManager::SeedPackage0`), and
-`MarkLicenseAsChanged` + `ProcessPendingLicenseUpdates` make Steam re-read it.
-`OwnershipHooks` captures `CUser` from both `MarkLicenseAsChanged` and
-`CheckAppOwnership` so a late attach or startup miss recovers on the next
-ownership check (`LicenseManager::OnUserCaptured`), and capturing
-`CPackageInfo` wakes `StartupRetryWorker` immediately instead of waiting for a
-poll interval. If `CUser` or the license helpers are unavailable when
-`SeedPackage0` commits package 0, `RefreshLicenses` marks
-`licenseRefreshPending` instead of marking `package0Published`, and the capture
-path completes the refresh once `CUser` arrives. `IsSteamProvided` ignores a
-`packageId == 0 && freeLicense` answer even if `existInPackageNums > 1` so a
-package-0 duplicate never permanently locks a `.lua` app as owned.
+every configured id (`LicenseManager` seed), and `MarkLicenseAsChanged` +
+`ProcessPendingLicenseUpdates` make Steam re-read it. `OwnershipHooks` captures
+`CUser` from `MarkLicenseAsChanged`, `CheckAppOwnership`, and
+`ProcessPendingLicenseUpdates`, and `CPackageInfo` from `GetPackageInfo`, while
+recording the `BMainLoop` OS thread id exclusively from `BMainLoop`-native
+hooks (`ProcessPendingLicenseUpdates`, `MarkLicenseAsChanged`, `RecvPkt`,
+`LoadPackage`).
+
+Because `CPackageInfo` (`GetPackageInfo`), `PackageInfo::appIdVec`/`depotIdVec`
+(`CUtlMemoryGrow`), `MarkLicenseAsChanged`, and `ProcessPendingLicenseUpdates`
+(`BCheckUserLicensesUpdate`) are lock-free and walk/rebalance internal RB-trees
+on `BMainLoop`, **no** worker or SteamUI thread may call them directly:
+`StartupRetryWorker` (startup monitor), `DirWatch`, `FamilyLenders`,
+`ManifestRestore`, `CheckAppOwnership`, and `AppOverviewHooks` only enqueue
+requests under `g_state.licenseQueueMutex` (`LicenseDispatchQueue`), and
+`LicenseManager::TryDrainOnSteamThread()` drains them exclusively on `BMainLoop`
+after the outermost license/package hook returns (`t_steamLicenseDepth == 0 &&
+!t_draining`).
+
+If `CUser` or the license helpers are unavailable when package 0 is seeded,
+`RefreshLicenses` marks `licenseRefreshPending` instead of marking
+`package0Published`, and the capture path queues a refresh once `CUser` arrives.
+`IsSteamProvided` ignores a `packageId == 0 && freeLicense` answer even if
+`existInPackageNums > 1` so a package-0 duplicate never permanently locks a
+`.lua` app as owned.
 Steam then asks for the app's AppInfo and builds the card, the depot plan and
 the launch config from that. The seed covers both of package 0's id vectors —
 the app ids (`appIdVec`, "is this app owned") and the depot ids (`depotIdVec`,
@@ -727,8 +742,8 @@ A genuinely owned app gets a package-0 row like every other configured id, but
 its ownership answer passes through untouched: the spoof acts only when Steam
 did not provide the app (`luadata::HasDepot`), and the family/owned flags keep
 the lender banner. A real Steam Family licence is Valve's: the seed skips those
-app ids (`LicenseManager::SeedableIds`, `familyclass::IsValveFamilyLicense`) and
-`AddAppToPackage0` refuses them, so the `.lua` depots stay while PLAY and the
+app ids (`SeedableIds`, `familyclass::IsValveFamilyLicense`) and
+on-demand package-0 additions refuse them, so the `.lua` depots stay while PLAY and the
 shared-library lock follow Steam's own answer. `[library] owner_banner_apps` is
 the one case where the family flag is Aether's own stamp: `core/FamilyClassification.h`
 separates that `Banner` from a `RealShare`, so the app keeps the shared look

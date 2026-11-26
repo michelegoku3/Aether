@@ -39,12 +39,14 @@ using namespace ac::steam;
 // ---- Hook signatures -------------------------------------------------------
 using CheckAppOwnership_t = bool (*)(void*, AppId, AppOwnership*);
 using MarkLicenseAsChanged_t = std::int64_t (*)(void*, std::uint32_t, bool);
+using ProcessPendingLicenseUpdates_t = bool (*)(void*);
 using GetPackageInfo_t = void* (*)(void*, std::uint32_t, std::int64_t);
 using SendCallbackToPipe_t = bool (*)(void*, HSteamPipe, HSteamUser, int, void*, int);
 using LoadPackage_t = bool (*)(PackageInfo*, std::uint8_t*, std::int32_t, void*);
 
 CheckAppOwnership_t o_CheckAppOwnership = nullptr;
 MarkLicenseAsChanged_t o_MarkLicenseAsChanged = nullptr;
+ProcessPendingLicenseUpdates_t o_ProcessPendingLicenseUpdates = nullptr;
 GetPackageInfo_t o_GetPackageInfo = nullptr;
 SendCallbackToPipe_t o_SendCallbackToPipe = nullptr;
 LoadPackage_t o_LoadPackage = nullptr;
@@ -300,7 +302,7 @@ void CaptureCUser(void* self, const char* source) {
     }
 }
 
-bool h_CheckAppOwnership(void* self, AppId app, AppOwnership* out) {
+bool CheckAppOwnershipImpl(void* self, AppId app, AppOwnership* out) {
     bool result = o_CheckAppOwnership(self, app, out);
     CaptureCUser(self, "CheckAppOwnership");
     // A .lua app needs Aether until Steam provides it. Genuinely owned apps
@@ -426,11 +428,41 @@ bool h_CheckAppOwnership(void* self, AppId app, AppOwnership* out) {
     return true;
 }
 
+bool h_CheckAppOwnership(void* self, AppId app, AppOwnership* out) {
+    bool result = false;
+    {
+        LicenseManager::SteamLicenseCallScope guard;
+        result = CheckAppOwnershipImpl(self, app, out);
+    }
+    LicenseManager::TryDrainOnSteamThread();
+    return result;
+}
+
 std::int64_t h_MarkLicenseAsChanged(void* self, std::uint32_t packageId, bool reloadAll) {
+    LicenseManager::RecordSteamMainThread("MarkLicenseAsChanged");
     // Atomic store: the captured pointer is read from other threads (IPC hooks).
     // LicenseManager reads it straight from g_state (single source of truth).
     CaptureCUser(self, "MarkLicenseAsChanged");
-    return o_MarkLicenseAsChanged(self, packageId, reloadAll);
+    std::int64_t result = 0;
+    {
+        LicenseManager::SteamLicenseCallScope guard;
+        result = o_MarkLicenseAsChanged(self, packageId, reloadAll);
+    }
+    LicenseManager::TryDrainOnSteamThread();
+    return result;
+}
+
+bool h_ProcessPendingLicenseUpdates(void* cUser) {
+    LicenseManager::RecordSteamMainThread("ProcessPendingLicenseUpdates");
+    if (cUser)
+        CaptureCUser(cUser, "ProcessPendingLicenseUpdates");
+    bool result = false;
+    {
+        LicenseManager::SteamLicenseCallScope guard;
+        result = o_ProcessPendingLicenseUpdates(cUser);
+    }
+    LicenseManager::TryDrainOnSteamThread();
+    return result;
 }
 
 void* h_GetPackageInfo(void* self, std::uint32_t packageId, std::int64_t p3) {
@@ -440,7 +472,17 @@ void* h_GetPackageInfo(void* self, std::uint32_t packageId, std::int64_t p3) {
         AC_LOG_INFO(kModule, "Captured CPackageInfo pointer 0x%p.", self);
         LicenseManager::WakeStartupRetry();
     }
-    return o_GetPackageInfo(self, packageId, p3);
+    void* result = nullptr;
+    {
+        LicenseManager::SteamLicenseCallScope guard;
+        result = o_GetPackageInfo(self, packageId, p3);
+    }
+    if (g_state.pCPackageInfo.load(std::memory_order_acquire) != nullptr &&
+        g_state.pPackage0.load(std::memory_order_acquire) == nullptr) {
+        LicenseManager::RequestAcquirePackage0();
+    }
+    LicenseManager::TryDrainOnSteamThread();
+    return result;
 }
 
 bool h_SendCallbackToPipe(void* engine, HSteamPipe pipe, HSteamUser user, int cb, void* data, int size) {
@@ -509,16 +551,19 @@ bool h_SendCallbackToPipe(void* engine, HSteamPipe pipe, HSteamUser user, int cb
 }
 
 bool h_LoadPackage(PackageInfo* info, std::uint8_t* sha1, std::int32_t cn, void* p4) {
-    bool result = o_LoadPackage(info, sha1, cn, p4);
+    bool result = false;
+    {
+        LicenseManager::SteamLicenseCallScope guard;
+        result = o_LoadPackage(info, sha1, cn, p4);
+    }
 
     if (info && info->packageId == 0) {
-        // SeedPackage0 owns the g_state.pPackage0 publication and the first
-        // seed of every configured id; a status without a key is still a valid
-        // publication, and later additions are a top-up.
+        LicenseManager::RecordSteamMainThread("LoadPackage");
         if (info->status == steam::kPackageStatusUnloaded)
             AC_LOG_WARN(kModule, "Package 0 status=%u (key absent); publishing it for on-demand use.", info->status);
-        LicenseManager::SeedPackage0(info);
+        LicenseManager::RequestSeedPackage0(info);
     }
+    LicenseManager::TryDrainOnSteamThread();
     return result;
 }
 
@@ -535,12 +580,14 @@ void RegisterOwnershipHooks(HMODULE steamclient) {
                                 h_CheckAppOwnership);
     g_state.hookManager.TryHook("MarkLicenseAsChanged", "steamclient", steamclient, o_MarkLicenseAsChanged,
                                 h_MarkLicenseAsChanged);
+    g_state.hookManager.TryHook("ProcessPendingLicenseUpdates", "steamclient", steamclient,
+                                o_ProcessPendingLicenseUpdates, h_ProcessPendingLicenseUpdates);
     g_state.hookManager.TryHook("GetPackageInfo", "steamclient", steamclient, o_GetPackageInfo, h_GetPackageInfo);
     g_state.hookManager.TryHook("SendCallbackToPipe", "steamclient", steamclient, o_SendCallbackToPipe,
                                 h_SendCallbackToPipe);
     g_state.hookManager.TryHook("LoadPackage", "steamclient", steamclient, o_LoadPackage, h_LoadPackage);
 
-    // The grow helper and license-update resolver live in LicenseManager.
+    // The grow helper and startup monitor live in LicenseManager.
     LicenseManager::Init(steamclient);
     // Starts the family-lender refresh worker; it waits for login and retries.
     ac::family::Init();
@@ -551,40 +598,48 @@ void ShutdownOwnershipHooks() {
     ac::family::Shutdown();
 }
 
-bool TryAcquirePackage0() {
-    // Already published (by the LoadPackage hook or a previous recovery):
-    // nothing to do.
-    if (g_state.pPackage0.load(std::memory_order_acquire))
-        return true;
+PackageInfo* AcquirePackage0OnSteamThread() {
+    if (auto* existing = static_cast<PackageInfo*>(g_state.pPackage0.load(std::memory_order_acquire)))
+        return existing;
 
-    // We need both the hooked trampoline and the CPackageInfo manager
-    // instance. The latter is captured opportunistically by h_GetPackageInfo
-    // once Steam calls it with any package; early after a late hook install
-    // it may still be null, in which case the caller retries later.
     auto* getPackageInfo = o_GetPackageInfo;
     void* manager = g_state.pCPackageInfo.load(std::memory_order_acquire);
     if (!getPackageInfo || !manager)
-        return false;
+        return nullptr;
 
-    // Actively ask for package 0. Going through the trampoline also routes
-    // through h_GetPackageInfo (capturing the manager if it had not been).
     auto* info = static_cast<PackageInfo*>(getPackageInfo(manager, 0, 0));
     if (!info) {
-        AC_LOG_INFO(kModule, "TryAcquirePackage0: GetPackageInfo returned null; package 0 not loaded yet.");
-        return false;
+        AC_LOG_INFO(kModule, "AcquirePackage0: GetPackageInfo returned null; package 0 not loaded yet.");
+        return nullptr;
     }
 
-    // Same publication as the LoadPackage hook: package 0 is filled on demand,
-    // so the status only decides whether we warn about a missing key.
     if (info->status == steam::kPackageStatusUnloaded) {
-        AC_LOG_WARN(kModule, "TryAcquirePackage0: package 0 status=%u (key absent); publishing it for on-demand use.",
+        AC_LOG_WARN(kModule, "AcquirePackage0: package 0 status=%u (key absent); publishing it for on-demand use.",
                     info->status);
     } else {
-        AC_LOG_INFO(kModule,
-                    "TryAcquirePackage0: package 0 acquired via GetPackageInfo (missed one-shot LoadPackage).");
+        AC_LOG_INFO(
+            kModule,
+            "AcquirePackage0: package 0 acquired via GetPackageInfo on steamclient main thread (missed one-shot "
+            "LoadPackage).");
     }
-    LicenseManager::SeedPackage0(info);
+    return info;
+}
+
+bool MarkLicenseAsChangedOnSteamThread(void* cUser, std::uint32_t packageId, bool reloadAll) {
+    if (!cUser || !o_MarkLicenseAsChanged)
+        return false;
+    o_MarkLicenseAsChanged(cUser, packageId, reloadAll);
     return true;
+}
+
+bool ProcessPendingLicenseUpdatesOnSteamThread(void* cUser) {
+    if (!cUser || !o_ProcessPendingLicenseUpdates)
+        return false;
+    return o_ProcessPendingLicenseUpdates(cUser);
+}
+
+bool HasLicenseRefreshHelpers() noexcept {
+    return o_MarkLicenseAsChanged != nullptr && o_ProcessPendingLicenseUpdates != nullptr;
 }
 
 } // namespace ac::hooks

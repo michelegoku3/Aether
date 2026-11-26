@@ -5,6 +5,7 @@
 #include "core/Logger.h"
 #include "core/StructGuard.h"
 #include "diagnostics/StatusWriter.h"
+#include "hooks/license/LicenseManager.h"
 #include "hooks/steamui/AppOverviewPolicy.h"
 #include "hooks/steamui/AppRecheckPolicy.h"
 #include "scripting/LuaData.h"
@@ -327,6 +328,9 @@ void DrainRechecks(void* source) {
         return;
     }
 
+    if (LicenseManager::ShouldDeferUiRecheck(GetTickCount64()))
+        return;
+
     bool handed = false;
     for (std::size_t i = 0; i < kMaxRechecksPerFrame; ++i) {
         steam::AppId app = 0;
@@ -353,24 +357,12 @@ void DrainRechecks(void* source) {
         // A card being taken back is not a candidate: it has no content left to
         // promote, and the notification is there to rebuild it so the fill can
         // clear the owned bit.
+        // Checking for updates touches CUser / CUserAppManager / CPackageInfo,
+        // which belong to steamclient's BMainLoop thread: enqueue the check
+        // there rather than calling CheckAppForUpdate from the SteamUI thread.
         const Tracking tracking = ReadTracking(app);
         if (policy::ShouldRunUpdateCheck(tracking.retired, tracking.hidden)) {
-            using CheckAppForUpdate_t = bool (*)(void*, steam::AppId);
-            void* manager = g_state.overview.clientAppManager.load(std::memory_order_acquire);
-            auto check = reinterpret_cast<CheckAppForUpdate_t>(
-                g_state.overview.clientCheckAppForUpdate.load(std::memory_order_acquire));
-            if (manager != nullptr && check != nullptr) {
-                // The answer is the client's own and is logged raw: reading it as a
-                // verdict here would hide a call that resolved to the wrong entry.
-                const bool answer = check(manager, app);
-                g_state.overview.updateChecks.fetch_add(1, std::memory_order_relaxed);
-                AC_LOG_INFO(kModule, "Checked app %u for updates after its pins moved: check answered %d (%s).", app,
-                            answer ? 1 : 0, answer ? "up-to-date" : "update-required");
-            } else if (check != nullptr) {
-                AC_LOG_WARN_ONCE(kModule,
-                                 "Skipped update check for app %u after Lua reload: clientAppManager not captured yet.",
-                                 app);
-            }
+            LicenseManager::RequestUpdateCheck(app);
         }
         handed = true;
         AC_LOG_INFO(kModule, "Asked the client to re-evaluate app %u after the Lua reload.", app);

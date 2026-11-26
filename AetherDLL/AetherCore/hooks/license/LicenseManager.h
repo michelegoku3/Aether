@@ -1,67 +1,83 @@
 #pragma once
 
+#include <cstddef>
+#include <cstdint>
 #include <vector>
 
 #include "core/SteamTypes.h"
 
 // ---------------------------------------------------------------------------
-// Package-0 license injection and no-restart hot-reload.
+// Package-0 license injection, no-restart hot-reload, and update checks.
 //
-// Owns the single source of truth for mutating package 0's app-id vector and
-// for asking Steam to re-evaluate licenses. Entry points:
-//   * LoadPackage / GetPackageInfo -> SeedPackage0 (publish the pointer)
-//   * CheckAppOwnership            -> RequestAppInPackage0 (after classification)
-//   * DirWatch                     -> NotifyLicenseChanged (hot-reload)
+// `CPackageInfo`, `PackageInfo::appIdVec`/`depotIdVec`, `CUser` license state,
+// and `CUserAppManager::CheckAppForUpdate` in steamclient64.dll have no
+// internal locks and run on Steam's `CSteamEngine::BMainLoop` thread.
 //
-// The captured Steam pointers (CUser, CPackageInfo, package 0) live in
-// AetherCoreState as write-once atomics — single source of truth, no copies;
-// only the package-vector mutations are serialised by a module-local mutex.
+// Therefore NO worker or SteamUI thread ever mutates package 0 or calls into
+// steamclient's license/update helpers directly: callers enqueue work into
+// `g_state.licenseQueue`, and `TryDrainOnSteamThread()` executes it exclusively
+// on the learned `BMainLoop` thread after the outermost license/package hook
+// returns (`depth == 0`).
 // ---------------------------------------------------------------------------
 namespace ac::hooks::LicenseManager {
 
-// Resolves CUtlMemoryGrow, ProcessPendingLicenseUpdates and MarkLicenseAsChanged
-// from the steamclient, then starts the package-0 startup retry thread.
+// Resolves CUtlMemoryGrow from steamclient and arms the package-0 monitor.
 void Init(HMODULE steamclient);
 
-// Stops and joins the startup retry thread. Safe to call when Init never ran or
-// the thread never started. Called from dllmain::Shutdown.
+// Stops and joins the startup monitor. Safe when Init never ran.
 void Shutdown();
 
-// Called from the LoadPackage/GetPackageInfo hooks when package 0 becomes
-// available. Publishes the package-0 pointer to g_state and seeds every
-// configured .lua id into it (Steam lists an app only when a license mentions
-// it). On-demand additions after classification are a top-up, not the seed.
-void SeedPackage0(steam::PackageInfo* package0);
+// Records the OS thread id of `CSteamEngine::BMainLoop` from hooks native to
+// that loop (ProcessPendingLicenseUpdates, MarkLicenseAsChanged, RecvPkt,
+// LoadPackage). Logged once per process.
+void RecordSteamMainThread(const char* source);
 
-// Number of ids currently in package 0, read under the mutation lock so a
-// concurrent grow cannot tear the vector. 0 when the package is not published.
+// RAII nesting guard held around Steam license/package detours on any thread
+// so TryDrainOnSteamThread() never mutates CPackageInfo/CUser while an outer
+// BCheckUserLicensesUpdate / GetPackageInfo / LoadPackage is still walking it.
+class SteamLicenseCallScope {
+  public:
+    SteamLicenseCallScope() noexcept;
+    ~SteamLicenseCallScope() noexcept;
+    SteamLicenseCallScope(const SteamLicenseCallScope&) = delete;
+    SteamLicenseCallScope& operator=(const SteamLicenseCallScope&) = delete;
+};
+
+// Drains pending package-0 mutations, license refreshes, and update checks
+// when running on `BMainLoop`, outside nested license/package calls and not
+// already draining. Safe on any thread (fast atomic no-op otherwise).
+void TryDrainOnSteamThread();
+
+// Queues initial package-0 acquisition (or seeding once LoadPackage captured
+// the pointer) to run on `BMainLoop`.
+void RequestAcquirePackage0();
+void RequestSeedPackage0(steam::PackageInfo* package0);
+
+// Cached package-0 app-id vector size (lock-free, safe for StatusWriter).
 std::size_t Package0AppCount();
 
-// Adds the app and its .lua depots to package 0 synchronously. Returns true
-// when the vector changed (an id was appended or a duplicate removed). Used by
-// the publish-time top-up and by the on-demand worker; never call it from a
-// Steam hook thread while Steam may be reading package 0.
-bool AddAppToPackage0(steam::AppId appId);
-
-// Called from CheckAppOwnership after Steam classified appId. Queues the app
-// on the license worker, which adds it to package 0 and refreshes licenses
-// outside the hook thread. Coalesces concurrent requests.
+// Queues an app for package-0 addition and license refresh on `BMainLoop`.
 void RequestAppInPackage0(steam::AppId appId);
 
-// Queues a license refresh without adding an app. Used after the family lender
-// map changes an app's classification, so the UI re-reads its ownership.
+// Queues a license refresh without adding an app (e.g. family lender updates).
 void RequestLicenseRefresh();
 
-// Called when CUser is first captured. If package 0 was already seeded while
-// CUser was still null, queues the deferred license refresh off the hook thread.
+// Queues a per-app Steam client update check (`CheckAppForUpdate`) on `BMainLoop`.
+void RequestUpdateCheck(steam::AppId appId);
+
+// True while a SteamUI overview recheck should wait briefly so `BMainLoop`
+// applies pending package-0 / hot-reload license changes first.
+bool ShouldDeferUiRecheck(std::uint64_t nowMs);
+
+// Called when CUser is first captured. Queues a deferred license refresh if
+// package 0 was already seeded while CUser was null, and wakes the monitor.
 void OnUserCaptured();
 
-// Wakes the package-0 startup retry worker immediately when a Steam prerequisite
-// (CPackageInfo or CUser) is captured so it does not wait for the poll interval.
+// Wakes the startup monitor immediately when CPackageInfo/CUser is captured.
 void WakeStartupRetry();
 
-// Hot-reload: applies pending additions/removals to package 0 and asks Steam to
-// re-evaluate licenses. No UI card eviction (crash-prone; out of scope here).
+// Hot-reload: queues pending Lua additions/removals and license refresh for
+// `BMainLoop`. Safe from DirWatch and ManifestRestore worker threads.
 void NotifyLicenseChanged();
 
 } // namespace ac::hooks::LicenseManager

@@ -15,6 +15,7 @@
 #include "hooks/ipc/CmdUtils.h"
 #include "hooks/ipc/PipeWatch.h"
 #include "hooks/ipc/SteamCapture.h"
+#include "hooks/license/LicenseManager.h"
 #include "scripting/LuaData.h"
 #include "utils/IpcSpec.h"
 #include "utils/PatternEngine.h"
@@ -108,7 +109,9 @@ bool h_IPCProcessMessage(void* server, steam::HSteamPipe hSteamPipe, steam::CUtl
         } else if (cmd == ipc_cmd::kInterfaceCall) {
             // Steam-internal pipes (low 16 bits <= 2) must pass straight through.
             if (!pipe || (pipe->hSteamPipe & 0xFFFF) <= kIpcInternalPipeMax) {
-                return o_IPCProcessMessage(server, hSteamPipe, pRead, pWrite);
+                const bool internalOk = o_IPCProcessMessage(server, hSteamPipe, pRead, pWrite);
+                LicenseManager::TryDrainOnSteamThread();
+                return internalOk;
             }
             pipewatch::TouchPipe(pipe);
             if (pRead->TellPut() >= kIpcHeaderSize) {
@@ -127,12 +130,15 @@ bool h_IPCProcessMessage(void* server, steam::HSteamPipe hSteamPipe, steam::CUtl
     // Always run Steam's original processing first.
     const StatsScopeGuard statsGuard(statsScope);
     const bool ok = o_IPCProcessMessage(server, hSteamPipe, pRead, pWrite);
-    if (!ok || !entry || !pipe)
+    if (!ok || !entry || !pipe) {
+        LicenseManager::TryDrainOnSteamThread();
         return ok;
+    }
 
     // Only spoof for apps we are configured to handle.
     const steam::AppId appId = pipewatch::AppIdForPipe(pipe);
     if (!luadata::HasDepot(appId)) {
+        LicenseManager::TryDrainOnSteamThread();
         return ok;
     }
 
@@ -151,6 +157,7 @@ bool h_IPCProcessMessage(void* server, steam::HSteamPipe hSteamPipe, steam::CUtl
 
     LogDispatchOnce(entry->name, appId);
     entry->handler(pipe, pRead, pWrite);
+    LicenseManager::TryDrainOnSteamThread();
     return ok;
 }
 
