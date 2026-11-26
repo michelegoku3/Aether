@@ -95,10 +95,7 @@ async fn do_check(app: &AppHandle) -> Result<(), String> {
             // Up to date or test channel not newer; nothing to do.
         }
         Err(error) => {
-            crate::desk_log_warn!(
-                "updater",
-                "Auto-update staging failed: {error}"
-            );
+            crate::desk_log_warn!("updater", "Auto-update staging failed: {error}");
         }
     }
 

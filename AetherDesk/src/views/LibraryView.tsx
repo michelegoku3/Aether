@@ -16,7 +16,7 @@ import { enrichUco2Flags } from '../hooks/useUco2Enrichment';
 import { enrichDenuvoFlags } from '../hooks/useDenuvoEnrichment';
 import { enrichCrackStatus } from '../hooks/useCrackStatusEnrichment';
 import { enrichPcDrm } from '../hooks/usePcDrmEnrichment';
-import { useLibraryInstallFilter, LIBRARY_BADGE_FILTERS } from '../hooks/useLibraryInstallFilter';
+import { useLibraryInstallFilter, LIBRARY_BADGE_FILTERS, type LibrarySortMode } from '../hooks/useLibraryInstallFilter';
 import { StatusType } from '../types/ui';
 import { requireSteamPath } from '../hooks/useSettings';
 
@@ -55,6 +55,9 @@ export const LibraryView = memo(function LibraryView({
     filterButtonClass,
     badgeFilter,
     setBadgeFilter,
+    badgeCounts,
+    sortMode,
+    setSortMode,
   } = useLibraryInstallFilter(enrichedGames.length ? enrichedGames : games, isLoading, searchQuery);
 
   const [actionGame, setActionGame] = useState<InstalledGame | null>(null);
@@ -90,20 +93,68 @@ export const LibraryView = memo(function LibraryView({
       return;
     }
     let cancelled = false;
-    (async () => {
-      try {
-        const uco2 = await enrichUco2Flags(games as any);
-        if (cancelled) return;
-        const denuvo = await enrichDenuvoFlags(uco2 as any);
-        if (cancelled) return;
-        const crack = await enrichCrackStatus(denuvo as any);
-        if (cancelled) return;
-        const pcdrm = await enrichPcDrm(crack as any);
-        if (!cancelled) setEnrichedGames(pcdrm as InstalledGame[]);
-      } catch {
-        if (!cancelled) setEnrichedGames(games);
-      }
-    })();
+    setEnrichedGames(games);
+
+    const mergeByAppId = (
+      updates: InstalledGame[],
+      applyUpdate: (current: InstalledGame, incoming: InstalledGame) => InstalledGame
+    ) => {
+      if (cancelled) return;
+      const byId = new Map(updates.map((entry) => [String(entry.appId), entry]));
+      setEnrichedGames((prev) =>
+        (prev.length > 0 ? prev : games).map((current) => {
+          const incoming = byId.get(String(current.appId));
+          return incoming ? applyUpdate(current, incoming) : current;
+        })
+      );
+    };
+
+    void enrichUco2Flags(games)
+      .then((uco2) => {
+        mergeByAppId(uco2, (current, incoming) => ({ ...current, uco2_supported: incoming.uco2_supported }));
+      })
+      .catch(() => {});
+
+    void enrichDenuvoFlags(games)
+      .then((denuvo) => {
+        mergeByAppId(denuvo, (current, incoming) => {
+          const currentDrm = (current.drm_protection ?? '').trim();
+          const currentIsDenuvo = Boolean(current.has_denuvo) || currentDrm.toLowerCase().includes('denuvo');
+          if (incoming.has_denuvo) {
+            return { ...current, has_denuvo: true, drm_protection: 'Denuvo' };
+          }
+          return {
+            ...current,
+            has_denuvo: currentIsDenuvo || incoming.has_denuvo,
+            // Preserve a more specific DRM label already resolved (e.g. PCGamingWiki "None").
+            drm_protection: currentDrm ? current.drm_protection : incoming.drm_protection,
+          };
+        });
+      })
+      .catch(() => {});
+
+    void enrichCrackStatus(games)
+      .then((crack) => {
+        mergeByAppId(crack, (current, incoming) => ({ ...current, crack_status: incoming.crack_status }));
+      })
+      .catch(() => {});
+
+    void enrichPcDrm(games)
+      .then((pcdrm) => {
+        mergeByAppId(pcdrm, (current, incoming) => {
+          const existingDrm = (current.drm_protection ?? '').trim().toLowerCase();
+          const incomingDrm = (incoming.drm_protection ?? '').trim().toLowerCase();
+          const existingIsDenuvo = Boolean(current.has_denuvo) || existingDrm.includes('denuvo');
+          const incomingIsDenuvo = Boolean(incoming.has_denuvo) || incomingDrm.includes('denuvo');
+          return {
+            ...current,
+            has_denuvo: current.has_denuvo || incomingIsDenuvo,
+            drm_protection: existingIsDenuvo && !incomingIsDenuvo ? current.drm_protection : incoming.drm_protection,
+          };
+        });
+      })
+      .catch(() => {});
+
     return () => {
       cancelled = true;
     };
@@ -219,6 +270,18 @@ export const LibraryView = memo(function LibraryView({
         </div>
 
         <div className="library-toolbar-actions">
+          <select
+            className="settings-select"
+            aria-label="Sort library"
+            value={sortMode}
+            disabled={isLoading}
+            onChange={(event) => setSortMode(event.target.value as LibrarySortMode)}
+            style={{ width: '138px' }}
+          >
+            <option value="name">Sort: Name A-Z</option>
+            <option value="installed_first">Sort: Installed First</option>
+            <option value="issues_first">Sort: Issues First</option>
+          </select>
           <button
             type="button"
             className="library-icon-btn"
@@ -272,9 +335,19 @@ export const LibraryView = memo(function LibraryView({
             aria-pressed={badgeFilter === badge.id}
             onClick={() => setBadgeFilter(badge.id)}
           >
-            {badge.label}
+            {badge.label} ({badgeCounts[badge.id]})
           </button>
         ))}
+        {(badgeCounts.fix_pins > 0 || badgeFilter === 'fix_pins') && (
+          <button
+            type="button"
+            className={`library-badge-filter${badgeFilter === 'fix_pins' ? ' active' : ''}`}
+            aria-pressed={badgeFilter === 'fix_pins'}
+            onClick={() => setBadgeFilter('fix_pins')}
+          >
+            Fix Pins ({badgeCounts.fix_pins})
+          </button>
+        )}
       </div>
 
       <div className="store-separator"></div>

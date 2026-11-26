@@ -20,13 +20,14 @@ pub struct PlayReport {
     pub message: String,
 }
 
-fn options(app: &AppHandle, min_memory_mb: Option<u32>) -> OptimizeOptions {
+fn options(app: &AppHandle, min_memory_mb: Option<u32>, exclude_pids: Vec<u32>) -> OptimizeOptions {
     let protect_dirs = configured_steam_path(app)
         .map(|path| ram_optimizer::protected_dirs(Some(&PathBuf::from(path))))
         .unwrap_or_default();
     OptimizeOptions {
         min_memory_mb: min_memory_mb.unwrap_or(150),
         protect_dirs,
+        exclude_pids,
     }
 }
 
@@ -36,18 +37,28 @@ pub fn preview_ram_optimizer(
     app: AppHandle,
     min_memory_mb: Option<u32>,
 ) -> Result<Vec<ProcessEntry>, String> {
-    let opts = options(&app, min_memory_mb);
+    let opts = options(&app, min_memory_mb, Vec::new());
     Ok(ram_optimizer::plan(&opts))
 }
 
-/// Close the planned processes, then launch `app_id` through Steam.
+/// Optionally close the planned processes (respecting `exclude_pids`), then launch `app_id` through Steam.
 #[tauri::command]
 pub fn optimize_and_launch_game(
     app: AppHandle,
     app_id: u32,
     min_memory_mb: Option<u32>,
+    skip_optimize: Option<bool>,
+    exclude_pids: Option<Vec<u32>>,
 ) -> Result<PlayReport, String> {
-    let opts = options(&app, min_memory_mb);
+    if skip_optimize.unwrap_or(false) {
+        ram_optimizer::launch_steam_game(app_id)?;
+        return Ok(PlayReport {
+            report: OptimizeReport::default(),
+            launched: true,
+            message: format!("Launched Steam app {app_id} directly."),
+        });
+    }
+    let opts = options(&app, min_memory_mb, exclude_pids.unwrap_or_default());
     let report = ram_optimizer::optimize(&opts);
     ram_optimizer::launch_steam_game(app_id)?;
     Ok(PlayReport {

@@ -13,9 +13,11 @@ export type LibraryInstallFilter = 'all' | 'installed' | 'installing' | 'not_ins
 
 /** Badge filters use the flags the library already enriches, so switching one
  *  is pure client work: no rescan, no new IPC. */
-export type LibraryBadgeFilter = 'all' | 'denuvo' | 'uco2' | 'cracked' | 'drm_free';
+export type LibraryBadgeFilter = 'all' | 'denuvo' | 'uco2' | 'cracked' | 'drm_free' | 'fix_pins';
 
-export const LIBRARY_BADGE_FILTERS: { id: LibraryBadgeFilter; label: string }[] = [
+export type LibrarySortMode = 'name' | 'installed_first' | 'issues_first';
+
+export const LIBRARY_BADGE_FILTERS: { id: Exclude<LibraryBadgeFilter, 'fix_pins'>; label: string }[] = [
   { id: 'all', label: 'All' },
   { id: 'denuvo', label: 'Denuvo' },
   { id: 'uco2', label: 'UCO2' },
@@ -24,6 +26,10 @@ export const LIBRARY_BADGE_FILTERS: { id: LibraryBadgeFilter; label: string }[] 
 ];
 
 const LOCAL_BADGE_KEY = 'aether.library_badge_filter';
+const LOCAL_SORT_KEY = 'aether.library_sort_mode';
+
+const hasActiveLuaIssue = (game: InstalledGame): boolean =>
+  (game.luaIssues ?? []).some((issue) => issue.active !== false);
 
 const matchesBadgeFilter = (game: InstalledGame, badge: LibraryBadgeFilter): boolean => {
   const drm = (game.drm_protection ?? '').trim().toLowerCase();
@@ -40,6 +46,8 @@ const matchesBadgeFilter = (game: InstalledGame, badge: LibraryBadgeFilter): boo
     }
     case 'drm_free':
       return drm === 'none';
+    case 'fix_pins':
+      return hasActiveLuaIssue(game);
     default:
       return true;
   }
@@ -48,11 +56,39 @@ const matchesBadgeFilter = (game: InstalledGame, badge: LibraryBadgeFilter): boo
 const readLocalBadgeFilter = (): LibraryBadgeFilter => {
   try {
     const raw = localStorage.getItem(LOCAL_BADGE_KEY);
+    if (raw === 'fix_pins') return 'fix_pins';
     const match = LIBRARY_BADGE_FILTERS.find((entry) => entry.id === raw);
     return match ? match.id : 'all';
   } catch {
     return 'all';
   }
+};
+
+const readLocalSortMode = (): LibrarySortMode => {
+  try {
+    const raw = localStorage.getItem(LOCAL_SORT_KEY);
+    if (raw === 'installed_first' || raw === 'issues_first' || raw === 'name') return raw;
+    return 'name';
+  } catch {
+    return 'name';
+  }
+};
+
+const installRank = (game: InstalledGame): number => {
+  if (game.installed) return 0;
+  if (game.installing) return 1;
+  return 2;
+};
+
+const compareLibraryGames = (a: InstalledGame, b: InstalledGame, sortMode: LibrarySortMode): number => {
+  if (sortMode === 'installed_first') {
+    const diff = installRank(a) - installRank(b);
+    if (diff !== 0) return diff;
+  } else if (sortMode === 'issues_first') {
+    const diff = Number(hasActiveLuaIssue(b)) - Number(hasActiveLuaIssue(a));
+    if (diff !== 0) return diff;
+  }
+  return a.name.localeCompare(b.name);
 };
 
 const FILTER_CYCLE: readonly LibraryInstallFilter[] = ['all', 'installed', 'installing', 'not_installed'] as const;
@@ -160,6 +196,7 @@ const emptyMessageFor = (filter: LibraryInstallFilter, total: number, searchQuer
 export const useLibraryInstallFilter = (games: InstalledGame[], isLoading: boolean, searchQuery: string = '') => {
   const [filter, setFilter] = useState<LibraryInstallFilter>('all');
   const [badgeFilter, setBadgeFilterState] = useState<LibraryBadgeFilter>(readLocalBadgeFilter);
+  const [sortMode, setSortModeState] = useState<LibrarySortMode>(readLocalSortMode);
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
@@ -192,20 +229,46 @@ export const useLibraryInstallFilter = (games: InstalledGame[], isLoading: boole
 
   const hasSearch = Boolean(searchQuery.trim());
 
-  const filteredGames = useMemo(() => {
+  const baseGames = useMemo(() => {
     // When searching, ignore the active install filter and search all games in
     // real time; the badge filter is orthogonal and still applies.
-    const base = hasSearch
-      ? filterAndSortGames(games, searchQuery)
-      : filter === 'installed'
+    if (hasSearch) {
+      return filterAndSortGames(games, searchQuery);
+    }
+    const filtered =
+      filter === 'installed'
         ? games.filter((game) => game.installed)
         : filter === 'installing'
           ? games.filter((game) => game.installing)
           : filter === 'not_installed'
             ? games.filter((game) => !game.installed && !game.installing)
-            : [...games].sort((a, b) => a.name.localeCompare(b.name));
-    return badgeFilter === 'all' ? base : base.filter((game) => matchesBadgeFilter(game, badgeFilter));
-  }, [games, filter, searchQuery, hasSearch, badgeFilter]);
+            : [...games];
+    return filtered.sort((a, b) => compareLibraryGames(a, b, sortMode));
+  }, [games, filter, searchQuery, hasSearch, sortMode]);
+
+  const badgeCounts = useMemo<Record<LibraryBadgeFilter, number>>(() => {
+    const counts: Record<LibraryBadgeFilter, number> = {
+      all: baseGames.length,
+      denuvo: 0,
+      uco2: 0,
+      cracked: 0,
+      drm_free: 0,
+      fix_pins: 0,
+    };
+    for (const game of baseGames) {
+      if (matchesBadgeFilter(game, 'denuvo')) counts.denuvo += 1;
+      if (matchesBadgeFilter(game, 'uco2')) counts.uco2 += 1;
+      if (matchesBadgeFilter(game, 'cracked')) counts.cracked += 1;
+      if (matchesBadgeFilter(game, 'drm_free')) counts.drm_free += 1;
+      if (matchesBadgeFilter(game, 'fix_pins')) counts.fix_pins += 1;
+    }
+    return counts;
+  }, [baseGames]);
+
+  const filteredGames = useMemo(
+    () => (badgeFilter === 'all' ? baseGames : baseGames.filter((game) => matchesBadgeFilter(game, badgeFilter))),
+    [baseGames, badgeFilter]
+  );
 
   /** Persists the new filter to localStorage synchronously and without any
    *  IPC — the preference is local UI state, not something the backend needs
@@ -232,6 +295,15 @@ export const useLibraryInstallFilter = (games: InstalledGame[], isLoading: boole
     }
   }, []);
 
+  const setSortMode = useCallback((next: LibrarySortMode) => {
+    setSortModeState(next);
+    try {
+      localStorage.setItem(LOCAL_SORT_KEY, next);
+    } catch {
+      /* localStorage can be unavailable; the in-memory sort still works. */
+    }
+  }, []);
+
   const countLabel =
     badgeFilter !== 'all'
       ? isLoading || !ready
@@ -239,9 +311,13 @@ export const useLibraryInstallFilter = (games: InstalledGame[], isLoading: boole
         : `${filteredGames.length} ${filteredGames.length === 1 ? 'game' : 'games'} shown`
       : countLabelFor(filter, games.length, filteredGames.length, isLoading, ready, searchQuery);
 
+  const badgeLabel =
+    badgeFilter === 'fix_pins'
+      ? 'Fix Pins'
+      : (LIBRARY_BADGE_FILTERS.find((entry) => entry.id === badgeFilter)?.label ?? '');
   const emptyMessage =
     badgeFilter !== 'all' && !isLoading && ready
-      ? `No games match the ${LIBRARY_BADGE_FILTERS.find((entry) => entry.id === badgeFilter)?.label ?? ''} filter.`
+      ? `No games match the ${badgeLabel} filter.`
       : emptyMessageFor(filter, games.length, searchQuery);
 
   return {
@@ -251,6 +327,9 @@ export const useLibraryInstallFilter = (games: InstalledGame[], isLoading: boole
     cycleFilter,
     badgeFilter,
     setBadgeFilter,
+    badgeCounts,
+    sortMode,
+    setSortMode,
     filterTitle: filterTitleFor(filter),
     countLabel,
     emptyMessage,

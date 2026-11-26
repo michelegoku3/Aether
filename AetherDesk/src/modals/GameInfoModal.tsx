@@ -7,20 +7,30 @@ import {
   contentDescriptorSummary,
   decodeHtmlEntities,
   displayKind,
+  formatDrmNotice,
   formatList,
   formatUnixDate,
   NA,
   normalizeScreenshots,
   platformSummary,
   priceSummary,
+  steamDeckCompatSummary,
   yesNo,
 } from './gameInfoFormat';
+import { toErrorMessage } from '../util/errors';
 import { InfoRow, InfoSection } from './InfoSections';
+
+const GAME_INFO_EXTERNAL_LINKS = [
+  { site: 'steam', label: 'Steam Store' },
+  { site: 'steamdb', label: 'SteamDB' },
+  { site: 'pcgw', label: 'PCGamingWiki' },
+] as const;
 
 export const GameInfoModal = ({ appId, fallbackName, fallbackImageUrl, onClose }: GameInfoModalProps) => {
   const [info, setInfo] = useState<GameInfo | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
+  const [linkError, setLinkError] = useState('');
   const [selectedScreenshotIndex, setSelectedScreenshotIndex] = useState<number | null>(null);
   const [isEdgeZone, setIsEdgeZone] = useState(false);
   // Full-size URLs that finished loading in the lightbox: while the current
@@ -183,6 +193,15 @@ export const GameInfoModal = ({ appId, fallbackName, fallbackImageUrl, onClose }
     ];
   }, [info]);
 
+  const openExternalLink = async (site: (typeof GAME_INFO_EXTERNAL_LINKS)[number]['site']) => {
+    setLinkError('');
+    try {
+      await invoke('open_game_info_link', { appId, site });
+    } catch (err: unknown) {
+      setLinkError(`Failed to open link: ${toErrorMessage(err)}`);
+    }
+  };
+
   return (
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal-container info-modal-container" onClick={(event) => event.stopPropagation()}>
@@ -209,8 +228,21 @@ export const GameInfoModal = ({ appId, fallbackName, fallbackImageUrl, onClose }
                 <div className="info-hero-text">
                   <h2>{title}</h2>
                   {shortDescription && <p>{shortDescription}</p>}
+                  <div className="info-quick-links">
+                    {GAME_INFO_EXTERNAL_LINKS.map((link) => (
+                      <button
+                        key={link.site}
+                        type="button"
+                        className="settings-small-btn"
+                        onClick={() => void openExternalLink(link.site)}
+                      >
+                        {link.label}
+                      </button>
+                    ))}
+                  </div>
                 </div>
               </div>
+              {linkError && <div className="settings-alert error">{linkError}</div>}
 
               <div className="info-grid">
                 <InfoSection title="Screenshots" className="info-section-full">
@@ -249,11 +281,13 @@ export const GameInfoModal = ({ appId, fallbackName, fallbackImageUrl, onClose }
                   <InfoRow label="Release" value={details?.releaseDateText || formatUnixDate(info.releaseDateUnix)} />
                   <InfoRow label="Controller" value={displayKind(info.controllerSupport)} />
                   <InfoRow label="Platforms" value={platformSummary(info.platforms)} />
+                  <InfoRow label="Steam Deck" value={steamDeckCompatSummary(info.platforms?.steamDeckCompatCategory)} />
                 </InfoSection>
 
                 <InfoSection title="Availability & flags">
                   <InfoRow label="Manifest available" value={yesNo(info.hasManifest)} />
                   <InfoRow label="Denuvo" value={yesNo(info.hasDenuvo)} />
+                  <InfoRow label="DRM notice" value={formatDrmNotice(details?.drmNotice)} />
                   <InfoRow label="NSFW" value={yesNo(info.hasNsfw)} />
                   <InfoRow label="Delisted" value={yesNo(info.hasDelisted)} />
                   <InfoRow label="Content descriptors" value={contentDescriptorSummary(info.contentDescriptorIds)} />

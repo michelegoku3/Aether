@@ -1,4 +1,4 @@
-import { act, render } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { LogView } from './LogView';
 import { invokeMock } from '../test/tauriMocks';
@@ -83,5 +83,46 @@ describe('LogView rendering', () => {
     expect(after).toEqual(before);
     expect(after[0]).toBe(before[0]);
     expect(after[1]).toBe(before[1]);
+  });
+
+  it('supports Pause/Resume, quick WARN/ERROR counter toggles, and Copy filtered lines', async () => {
+    const lines = ['2026-01-01 [INFO ] ok', '2026-01-01 [WARN ] heads up', '2026-01-01 [ERROR] boom'];
+    invokeMock.mockImplementation((command: string) =>
+      Promise.resolve(command === 'get_recent_log_lines' ? [...lines] : null)
+    );
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'clipboard', {
+      value: { writeText },
+      configurable: true,
+    });
+
+    render(<LogView active />);
+    await flushTick();
+    expect(logCalls()).toHaveLength(1);
+
+    // Pause halts further polling; Resume immediately polls again.
+    fireEvent.click(screen.getByRole('button', { name: 'Pause' }));
+    await advance(5000);
+    expect(logCalls()).toHaveLength(1);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Resume' }));
+    await flushTick();
+    expect(logCalls()).toHaveLength(2);
+
+    // Quick ERROR counter filters down to ERROR lines; clicking again resets to TRACE.
+    const errorPill = screen.getByRole('button', { name: 'ERROR (1)' });
+    fireEvent.click(errorPill);
+    expect(screen.queryByText(/\[INFO \]/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/\[WARN \]/)).not.toBeInTheDocument();
+    expect(screen.getByText(/\[ERROR\]/)).toBeInTheDocument();
+
+    // Copy sends filtered lines to clipboard.
+    fireEvent.click(screen.getByRole('button', { name: 'Copy' }));
+    await flushTick();
+    expect(writeText).toHaveBeenCalledWith('2026-01-01 [ERROR] boom');
+    expect(screen.getByText('Copied 1 log line(s) to clipboard.')).toBeInTheDocument();
+
+    fireEvent.click(errorPill);
+    expect(screen.getByText(/\[INFO \]/)).toBeInTheDocument();
   });
 });

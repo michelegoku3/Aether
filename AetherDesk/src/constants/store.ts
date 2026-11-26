@@ -6,11 +6,15 @@
  */
 export const STORE_ITEMS_PER_PAGE = 20;
 
-export type StoreSortMode = 'newest' | 'trending' | 'name';
+export type StoreSortMode = 'newest' | 'trending' | 'name' | 'discount' | 'price_asc';
 
 export interface SortableStoreGame {
   name: string;
   release_date_unix?: number;
+  price?: {
+    finalCents?: number | null;
+    discountPercent?: number | null;
+  } | null;
 }
 
 /**
@@ -24,6 +28,16 @@ export function compareStoreGames(a: SortableStoreGame, b: SortableStoreGame, so
   }
   if (sortMode === 'name') {
     return a.name.localeCompare(b.name);
+  }
+  if (sortMode === 'discount') {
+    const diff = (b.price?.discountPercent ?? 0) - (a.price?.discountPercent ?? 0);
+    return diff !== 0 ? diff : a.name.localeCompare(b.name);
+  }
+  if (sortMode === 'price_asc') {
+    const pa = typeof a.price?.finalCents === 'number' ? a.price.finalCents : Number.MAX_SAFE_INTEGER;
+    const pb = typeof b.price?.finalCents === 'number' ? b.price.finalCents : Number.MAX_SAFE_INTEGER;
+    const diff = pa - pb;
+    return diff !== 0 ? diff : a.name.localeCompare(b.name);
   }
   return 0;
 }

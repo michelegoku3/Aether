@@ -66,6 +66,8 @@ pub struct OptimizeOptions {
     /// Executables under any of these directories are always kept (game
     /// installs, the AetherDesk folder).
     pub protect_dirs: Vec<String>,
+    /// PIDs explicitly unchecked by the user in the preview modal.
+    pub exclude_pids: Vec<u32>,
 }
 
 impl Default for OptimizeOptions {
@@ -73,6 +75,7 @@ impl Default for OptimizeOptions {
         Self {
             min_memory_mb: 150,
             protect_dirs: Vec::new(),
+            exclude_pids: Vec::new(),
         }
     }
 }
@@ -360,19 +363,35 @@ fn close_candidates(candidates: &[&ProcessEntry]) -> (Vec<String>, Vec<String>, 
     (closed, failed, reclaimed_kb)
 }
 
+/// Partition `Close` entries into actionable candidates and user-excluded labels.
+fn partition_close_candidates<'a>(
+    entries: &'a [ProcessEntry],
+    exclude_pids: &[u32],
+) -> (Vec<&'a ProcessEntry>, Vec<String>) {
+    let mut candidates = Vec::new();
+    let mut excluded_kept = Vec::new();
+    for entry in entries
+        .iter()
+        .filter(|entry| entry.verdict == Verdict::Close)
+    {
+        if exclude_pids.contains(&entry.pid) {
+            excluded_kept.push(format!("{} (excluded by user)", entry.name));
+        } else {
+            candidates.push(entry);
+        }
+    }
+    (candidates, excluded_kept)
+}
+
 /// Run the optimizer and return what happened. Never panics on a live system.
 pub fn optimize(opts: &OptimizeOptions) -> OptimizeReport {
     let entries = plan(opts);
-    let candidates: Vec<&ProcessEntry> = entries
-        .iter()
-        .filter(|entry| entry.verdict == Verdict::Close)
-        .collect();
+    let (candidates, mut kept) = partition_close_candidates(&entries, &opts.exclude_pids);
 
     let (closed, failed, reclaimed_kb) = close_candidates(&candidates);
 
     // Everything that was not a close candidate is "kept"; name them for the
     // post-run summary so the user can audit the whitelist.
-    let mut kept = Vec::new();
     for entry in entries
         .iter()
         .filter(|entry| entry.verdict == Verdict::Keep)
@@ -445,7 +464,36 @@ mod tests {
         OptimizeOptions {
             min_memory_mb,
             protect_dirs: protect_dirs.iter().map(|dir| dir.to_string()).collect(),
+            exclude_pids: Vec::new(),
         }
+    }
+
+    #[test]
+    fn excluded_pids_are_kept_and_reported() {
+        let entries = vec![
+            ProcessEntry {
+                pid: 101,
+                name: "chrome.exe".to_string(),
+                exe: "C:/chrome.exe".to_string(),
+                memory_kb: 500 * 1024,
+                user: "me".to_string(),
+                verdict: Verdict::Close,
+                reason: "memory-hungry".to_string(),
+            },
+            ProcessEntry {
+                pid: 202,
+                name: "code.exe".to_string(),
+                exe: "C:/code.exe".to_string(),
+                memory_kb: 400 * 1024,
+                user: "me".to_string(),
+                verdict: Verdict::Close,
+                reason: "memory-hungry".to_string(),
+            },
+        ];
+        let (candidates, kept) = partition_close_candidates(&entries, &[101]);
+        assert_eq!(candidates.len(), 1);
+        assert_eq!(candidates[0].pid, 202);
+        assert_eq!(kept, vec!["chrome.exe (excluded by user)"]);
     }
 
     #[test]

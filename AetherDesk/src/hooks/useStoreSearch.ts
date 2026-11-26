@@ -23,6 +23,10 @@ export interface StoreGameResult {
   drm_protection?: string;
   uco2_supported?: boolean;
   crack_status?: string;
+  /** Decorated in StoreView when the game is also in the user's Library. */
+  in_library?: boolean;
+  installed?: boolean;
+  installing?: boolean;
 }
 
 interface CachedStoreSearchResponse {

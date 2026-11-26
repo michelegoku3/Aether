@@ -37,6 +37,27 @@ export const platformSummary = (platforms?: GameInfoPlatforms | null) => {
   return items.length > 0 ? items.join(', ') : NA;
 };
 
+export const steamDeckCompatSummary = (category?: number | null) => {
+  switch (category) {
+    case 3:
+      return 'Verified';
+    case 2:
+      return 'Playable';
+    case 1:
+      return 'Unsupported';
+    default:
+      return NA;
+  }
+};
+
+export const formatDrmNotice = (notice?: string | null) => {
+  if (!notice) return NA;
+  const normalized = decodeHtmlEntities(notice.replace(/<br\s*\/?>/gi, ' · ').replace(/<[^>]+>/g, ' '))
+    .replace(/\s+/g, ' ')
+    .trim();
+  return normalized || NA;
+};
+
 export const priceSummary = (price?: GameInfoPrice | null, isFree?: boolean | null) => {
   if (isFree) return 'Free to Play';
   if (!price) return NA;

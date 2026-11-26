@@ -481,6 +481,31 @@ body {
   animation: badgePopIn 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275);
 }
 
+.badge-in-library {
+  position: absolute;
+  top: -8px;
+  right: -8px;
+  background-color: #3b82f6;
+  color: #ffffff;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  padding: 4px 10px;
+  border-radius: 6px;
+  box-shadow: 0 4px 10px rgba(59, 130, 246, 0.4);
+  z-index: 10;
+  letter-spacing: 0.5px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  animation: badgePopIn 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+.store-filter-hint {
+  margin-left: auto;
+  color: var(--color-muted);
+  font-size: 11.5px;
+  align-self: center;
+}
+
 /* Steam is writing this game right now: it has an appmanifest, no complete
    content yet. Same shape as the other two badges, amber instead of green, so
    the state reads at a glance without competing with the Installed colour. */
@@ -2676,6 +2701,13 @@ body {
   line-height: 1.45;
 }
 
+.info-quick-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 2px;
+}
+
 .info-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -3398,6 +3430,7 @@ body {
 .store-game-card.backdrop-card .badge-available,
 .store-game-card.backdrop-card .badge-installed,
 .store-game-card.backdrop-card .badge-installing,
+.store-game-card.backdrop-card .badge-in-library,
 .store-game-card.backdrop-card .badge-fix-pins {
   z-index: 3;
 }
@@ -3527,6 +3560,31 @@ body {
 .log-pill-btn.active {
   background-color: var(--color-cyan, #00b4d8);
   color: #131316;
+}
+
+.log-level-pill {
+  height: 33px;
+  padding: 0 10px;
+  border-radius: 7px;
+  border: 1px solid var(--border-color);
+  background: #141417;
+  color: var(--color-muted);
+  font-size: 11.5px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.log-level-pill--warn.active {
+  border-color: #f59e0b;
+  background: rgba(245, 158, 11, 0.18);
+  color: #fbbf24;
+}
+
+.log-level-pill--error.active {
+  border-color: var(--color-denuvo, #e63946);
+  background: rgba(230, 57, 70, 0.18);
+  color: #ff6b7a;
 }
 
 .log-view-container .settings-select {
@@ -4481,9 +4539,23 @@ body {
 .play-process-list li {
   display: flex;
   justify-content: space-between;
+  align-items: center;
   gap: 12px;
   padding: 4px 6px;
   font-size: 12px;
+}
+
+.play-process-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  cursor: pointer;
+}
+
+.play-process-check input[type='checkbox'] {
+  accent-color: var(--color-cyan);
+  flex: 0 0 auto;
 }
 
 .play-process-name {
@@ -4506,4 +4578,39 @@ body {
 
 .play-modal-error {
   color: #e5534b;
+}
+
+.backup-toolbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.backup-summary-meta {
+  margin-left: auto;
+  color: var(--color-muted);
+  font-size: 12.5px;
+}
+
+.backup-game-name {
+  color: #ffffff;
+  font-weight: 600;
+}
+
+.backup-game-appid {
+  color: var(--color-muted);
+  font-size: 11.5px;
+}
+
+.backup-row-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.backup-btn-danger {
+  border-color: var(--color-denuvo, #e63946);
+  color: var(--color-denuvo, #e63946);
 }

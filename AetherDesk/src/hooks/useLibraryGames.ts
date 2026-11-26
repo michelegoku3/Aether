@@ -358,3 +358,6 @@ export const useLibraryGames = (): LibraryGamesContextValue => {
   }
   return context;
 };
+
+/** Safe read-only variant for views/tests rendered outside `LibraryGamesProvider`. */
+export const useOptionalLibraryGames = (): LibraryGamesContextValue | null => useContext(LibraryGamesContext);

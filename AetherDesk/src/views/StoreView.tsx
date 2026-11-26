@@ -2,6 +2,8 @@ import { memo, useMemo, useState } from 'react';
 import ChangeVersionModal from '../modals/ChangeVersionModal';
 import { GameInfoModal } from '../modals/GameInfoModal';
 import { LocalDownloadModal } from '../modals/LocalDownloadModal';
+import type { StoreSortMode } from '../constants/store';
+import { useOptionalLibraryGames } from '../hooks/useLibraryGames';
 import type { StoreGameResult } from '../hooks/useStoreSearch';
 import type { GameCardAction } from '../ui/GameCard';
 import { FolderPlusIcon } from '../ui/icons';
@@ -32,7 +34,13 @@ export const StoreView = memo(function StoreView({
   alternativeCardsOpacity,
   alternativeCardsFade,
 }: StoreViewProps) {
-  const catalog = useStoreCatalog({ active, settingsRevision, settingsReady });
+  const library = useOptionalLibraryGames();
+  const catalog = useStoreCatalog({
+    active,
+    settingsRevision,
+    settingsReady,
+    libraryGames: library?.games,
+  });
   const download = useStoreDownload({ onRefreshUsage });
   const [infoGame, setInfoGame] = useState<StoreGameResult | null>(null);
   const [showBulkLocalImport, setShowBulkLocalImport] = useState(false);
@@ -90,14 +98,16 @@ export const StoreView = memo(function StoreView({
             className="settings-select"
             value={catalog.sortMode}
             onChange={(e) => {
-              catalog.setSortMode(e.target.value as 'newest' | 'trending' | 'name');
+              catalog.setSortMode(e.target.value as StoreSortMode);
               catalog.setPage(1);
             }}
-            style={{ width: '120px' }}
+            style={{ width: '140px' }}
           >
             <option value="newest">Newest</option>
             <option value="trending">Trending</option>
             <option value="name">Name A-Z</option>
+            <option value="discount">Biggest Discount</option>
+            <option value="price_asc">Price: Low–High</option>
           </select>
         </label>
         <label style={{ fontSize: '13px' }}>
@@ -134,6 +144,17 @@ export const StoreView = memo(function StoreView({
             {badge.label}
           </button>
         ))}
+        <button
+          type="button"
+          className={`library-badge-filter${catalog.hideInLibrary ? ' active' : ''}`}
+          aria-pressed={catalog.hideInLibrary}
+          onClick={catalog.toggleHideInLibrary}
+        >
+          Hide in Library
+        </button>
+        {catalog.badgeFilter !== 'all' && (
+          <span className="store-filter-hint">Filtering loaded results (badges load per page).</span>
+        )}
       </div>
 
       <div className="store-separator"></div>

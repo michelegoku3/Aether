@@ -14,6 +14,8 @@ export interface GameCardModel {
   has_nsfw?: boolean;
   has_delisted?: boolean;
   installed?: boolean;
+  /** True when the game is present in the user's Aether Lua library (Store cards). */
+  in_library?: boolean;
   /** Steam price when the backend supplied one (store cards). */
   price?: GameInfoPrice | null;
   /** UCO2 support flag (library games). */
@@ -147,7 +149,13 @@ const GameCardInner = <T extends GameCardModel>({
         </span>
       )}
 
-      {!pinsToFix && !game.installed && !game.installing && game.has_manifest && (
+      {!pinsToFix && !game.installed && !game.installing && game.in_library && (
+        <span className="badge-in-library" title="Already in your Aether Library">
+          In Library
+        </span>
+      )}
+
+      {!pinsToFix && !game.installed && !game.installing && !game.in_library && game.has_manifest && (
         <span
           className={`badge-available ${game.has_denuvo ? 'denuvo' : ''}`}
           title={game.has_denuvo ? 'Available on Hubcap, Denuvo detected' : 'Available on Hubcap'}

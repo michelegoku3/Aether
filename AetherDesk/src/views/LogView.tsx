@@ -51,6 +51,7 @@ export const LogView = memo(function LogView({ active }: LogViewProps) {
   const [debouncedFilter, setDebouncedFilter] = useState('');
   const [logLevel, setLogLevel] = useState('trace');
   const [logSource, setLogSource] = useState<'desk' | 'dll' | 'uco2' | 'both'>('desk');
+  const [paused, setPaused] = useState(false);
   const [exportStatus, setExportStatus] = useState('');
   const containerRef = useRef<HTMLDivElement | null>(null);
   const isAtBottomRef = useRef(true);
@@ -85,7 +86,7 @@ export const LogView = memo(function LogView({ active }: LogViewProps) {
   useVisiblePolling(fetchLogs, {
     intervalMs: LOG_POLL_INTERVAL_MS,
     backoffMs: LOG_POLL_BACKOFF_MS,
-    enabled: active,
+    enabled: active && !paused,
     resetKey: logSource,
   });
 
@@ -96,10 +97,10 @@ export const LogView = memo(function LogView({ active }: LogViewProps) {
   };
 
   useEffect(() => {
-    if (isAtBottomRef.current && containerRef.current) {
+    if (!paused && isAtBottomRef.current && containerRef.current) {
       containerRef.current.scrollTop = containerRef.current.scrollHeight;
     }
-  }, [lines]);
+  }, [lines, paused]);
 
   const handleClearLogs = async () => {
     try {
@@ -140,6 +141,33 @@ export const LogView = memo(function LogView({ active }: LogViewProps) {
     }
     return out.reverse();
   }, [lines, logLevel, debouncedFilter]);
+
+  // Keyed lines and quick level counts.
+  const levelCounts = useMemo(() => {
+    let warn = 0;
+    let error = 0;
+    for (const line of lines) {
+      if (line.includes('[ERROR]')) error += 1;
+      else if (line.includes('[WARN ]') || line.includes('[WARN]')) warn += 1;
+    }
+    return { warn, error };
+  }, [lines]);
+
+  const toggleQuickLevel = (target: 'warn' | 'error') => {
+    setLogLevel((prev) => (prev === target ? 'trace' : target));
+  };
+
+  const handleCopyFiltered = async () => {
+    if (filteredLines.length === 0) return;
+    try {
+      await navigator.clipboard.writeText(filteredLines.join('\n'));
+      setExportStatus(`Copied ${filteredLines.length} log line(s) to clipboard.`);
+      setTimeout(() => setExportStatus(''), 5000);
+    } catch (err: unknown) {
+      setExportStatus(`Copy failed: ${toErrorMessage(err)}`);
+      setTimeout(() => setExportStatus(''), 6000);
+    }
+  };
 
   // Keys are derived once per filtered snapshot: deriving them inline would
   // rebuild the whole key list on every render, and the occurrence counter
@@ -212,7 +240,26 @@ export const LogView = memo(function LogView({ active }: LogViewProps) {
           )}
         </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+          <button
+            type="button"
+            className={`log-level-pill log-level-pill--warn${logLevel === 'warn' ? ' active' : ''}`}
+            aria-pressed={logLevel === 'warn'}
+            onClick={() => toggleQuickLevel('warn')}
+            title="Toggle WARN filter"
+          >
+            WARN ({levelCounts.warn})
+          </button>
+          <button
+            type="button"
+            className={`log-level-pill log-level-pill--error${logLevel === 'error' ? ' active' : ''}`}
+            aria-pressed={logLevel === 'error'}
+            onClick={() => toggleQuickLevel('error')}
+            title="Toggle ERROR filter"
+          >
+            ERROR ({levelCounts.error})
+          </button>
+
           <select
             className="settings-select"
             value={logSource}
@@ -240,6 +287,28 @@ export const LogView = memo(function LogView({ active }: LogViewProps) {
             <option value="error">ERROR</option>
             <option value="off">OFF</option>
           </select>
+
+          <button
+            type="button"
+            className="settings-small-btn"
+            style={{ height: '33px', padding: '0 12px', boxSizing: 'border-box' }}
+            aria-pressed={paused}
+            onClick={() => setPaused((prev) => !prev)}
+            title={paused ? 'Resume live log polling' : 'Pause live log polling'}
+          >
+            {paused ? 'Resume' : 'Pause'}
+          </button>
+
+          <button
+            type="button"
+            className="settings-small-btn"
+            style={{ height: '33px', padding: '0 12px', boxSizing: 'border-box' }}
+            disabled={filteredLines.length === 0}
+            onClick={() => void handleCopyFiltered()}
+            title="Copy currently filtered log lines to clipboard"
+          >
+            Copy
+          </button>
 
           <button
             type="button"

@@ -130,4 +130,42 @@ describe('useLibraryInstallFilter badge filters', () => {
     expect(result.current.countLabel).toBe('1 game shown');
     expect(result.current.emptyMessage).toContain('UCO2');
   });
+
+  it('computes badgeCounts, matches active Fix Pins only, and sorts by installed_first or issues_first', async () => {
+    const issueGames = [
+      game(1, 'Zeta', { installed: false }),
+      game(2, 'Alpha', {
+        installed: false,
+        luaIssues: [{ line: 3, depotId: 10, rawValue: 'abc', problem: 'notDecimalUint64', active: true }],
+      }),
+      game(3, 'Beta', {
+        installed: true,
+        has_denuvo: true,
+        luaIssues: [{ line: 5, depotId: 20, rawValue: 'xyz', problem: 'malformedCall', active: false }],
+      }),
+    ];
+
+    const { result } = renderHook(() => useLibraryInstallFilter(issueGames, false));
+    await waitFor(() => expect(result.current.ready).toBe(true));
+
+    expect(result.current.badgeCounts).toEqual({
+      all: 3,
+      denuvo: 1,
+      uco2: 0,
+      cracked: 0,
+      drm_free: 0,
+      fix_pins: 1,
+    });
+
+    act(() => result.current.setSortMode('installed_first'));
+    expect(localStorage.getItem('aether.library_sort_mode')).toBe('installed_first');
+    expect(result.current.filteredGames.map((entry) => entry.id)).toEqual([3, 2, 1]);
+
+    act(() => result.current.setSortMode('issues_first'));
+    expect(result.current.filteredGames.map((entry) => entry.id)).toEqual([2, 3, 1]);
+
+    act(() => result.current.setBadgeFilter('fix_pins'));
+    expect(result.current.filteredGames.map((entry) => entry.id)).toEqual([2]);
+    expect(result.current.emptyMessage).toContain('Fix Pins');
+  });
 });

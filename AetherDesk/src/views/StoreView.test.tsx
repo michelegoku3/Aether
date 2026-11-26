@@ -1,8 +1,14 @@
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { invokeMock } from '../test/tauriMocks';
+import type { InstalledGame } from '../hooks/useLibraryGames';
 import { StoreView } from './StoreView';
+
+const mockLibraryGames = vi.hoisted(() => ({ current: [] as InstalledGame[] }));
+vi.mock('../hooks/useLibraryGames', () => ({
+  useOptionalLibraryGames: () => ({ games: mockLibraryGames.current }),
+}));
 
 vi.mock('./store/useStoreDownload', () => ({
   useStoreDownload: () => ({
@@ -57,6 +63,11 @@ const search = async (user: ReturnType<typeof userEvent.setup>, query: string) =
 };
 
 describe('StoreView', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    mockLibraryGames.current = [];
+  });
+
   it('reports a failed search and drops the cards of the previous query', async () => {
     const user = userEvent.setup();
     invokeMock.mockImplementation(async (command: string) => {
@@ -94,5 +105,36 @@ describe('StoreView', () => {
 
     expect(await screen.findByText(/No games found for "doom"/)).toBeInTheDocument();
     expect(screen.queryByText(/Search failed/)).not.toBeInTheDocument();
+  });
+
+  it('marks library games and hides them when Hide in Library is toggled', async () => {
+    const user = userEvent.setup();
+    mockLibraryGames.current = [
+      {
+        id: 1,
+        appId: '1',
+        name: 'The Witcher',
+        installDir: '',
+        libraryPath: '',
+        gamePath: '',
+        installed: false,
+        installing: false,
+      },
+    ];
+    const doom = { id: 2, appId: '2', name: 'DOOM', has_manifest: true, has_denuvo: false };
+    invokeMock.mockImplementation(async (command: string) => {
+      if (command === 'get_cached_store_search') return { cacheState: 'fresh', results: [witcher, doom] };
+      if (command === 'check_denuvo_bulk') return {};
+      return [];
+    });
+    renderView();
+
+    await search(user, 'game');
+    expect(await screen.findByText('In Library')).toBeInTheDocument();
+    expect(screen.getByText('DOOM')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Hide in Library' }));
+    expect(screen.queryByText('The Witcher')).not.toBeInTheDocument();
+    expect(screen.getByText('DOOM')).toBeInTheDocument();
   });
 });

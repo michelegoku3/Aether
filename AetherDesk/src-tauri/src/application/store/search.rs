@@ -446,170 +446,232 @@ fn percent_encode(input: &str) -> String {
     out
 }
 
-pub async fn check_pc_drm_bulk(
-    _app: &tauri::AppHandle,
-    app_ids: Vec<u32>,
-    names: Vec<String>,
-) -> Result<HashMap<u32, String>, String> {
-    use std::fs;
-    use std::time::{SystemTime, UNIX_EPOCH};
+const PCGW_CONCURRENCY_LIMIT: usize = 3;
+const PCGW_POSITIVE_CACHE_TTL: u64 = 7 * 24 * 60 * 60;
+const PCGW_NEGATIVE_CACHE_TTL: u64 = 24 * 60 * 60;
 
-    const CACHE_TTL: u64 = 7 * 24 * 60 * 60;
-    let cache_dir = LocalAppPaths::data_root().join("cache");
-    let _ = fs::create_dir_all(&cache_dir);
-    let cache_path = cache_dir.join("pc_drm_cache.json");
+static PCGW_CLIENT: once_cell::sync::Lazy<reqwest::Client> = once_cell::sync::Lazy::new(|| {
+    reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(20))
+        .user_agent("AetherDesk/1.0")
+        .build()
+        .expect("PCGamingWiki HTTP client configuration must be valid")
+});
 
-    let mut result: HashMap<u32, String> = HashMap::new();
-    let now = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_secs())
-        .unwrap_or(0);
+fn is_valid_pcgw_drm_label(drm: &str) -> bool {
+    let lower = drm.to_lowercase();
+    !(lower.contains("team")
+        || lower.contains("offline")
+        || lower.contains("ffline")
+        || lower.contains('=')
+        || drm.len() > 30)
+}
 
-    // Load cache.
-    let mut cache: serde_json::Value = serde_json::Value::Null;
-    if let Ok(content) = fs::read_to_string(&cache_path) {
-        if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&content) {
-            cache = parsed;
-        }
+fn parse_pcgw_drm(wikitext: &str, app_id: u32) -> Option<String> {
+    if !wikitext.contains(&app_id.to_string()) {
+        return None;
     }
+    // Parse DRM template. "{{DRM|" is 6 chars, so +6 lands on the value;
+    // +7 would silently eat its first letter ("Denuvo" -> "enuvo").
+    let start = wikitext.find("{{DRM|")?;
+    let rest = &wikitext[start + 6..];
+    let end = rest.find("}}")?;
+    let val = rest[..end].trim();
+    let drm = if val.eq_ignore_ascii_case("none") || val.is_empty() {
+        "None".to_string()
+    } else {
+        // Take first DRM name (before comma or pipe).
+        val.split([',', '|'])
+            .next()
+            .unwrap_or(val)
+            .trim()
+            .to_string()
+    };
+    is_valid_pcgw_drm_label(&drm).then_some(drm)
+}
 
-    let mut need_fetch: Vec<(u32, String)> = Vec::new();
-    for (id, name) in app_ids.iter().zip(names.iter()) {
-        if let Some(obj) = cache.get("entries").and_then(|v| v.as_object()) {
-            if let Some(entry) = obj.get(&id.to_string()) {
-                let ts = entry.get("ts").and_then(|v| v.as_u64()).unwrap_or(0);
-                if now.saturating_sub(ts) <= CACHE_TTL {
-                    if let Some(drm) = entry.get("drm").and_then(|v| v.as_str()) {
-                        result.insert(*id, drm.to_string());
-                        continue;
+fn load_pcgw_cache_entries(
+    cache_path: &std::path::Path,
+) -> serde_json::Map<String, serde_json::Value> {
+    let Ok(content) = std::fs::read_to_string(cache_path) else {
+        return serde_json::Map::new();
+    };
+    let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&content) else {
+        return serde_json::Map::new();
+    };
+    parsed
+        .get("entries")
+        .and_then(|v| v.as_object())
+        .cloned()
+        .unwrap_or_default()
+}
+
+fn save_pcgw_cache_entries(
+    cache_path: &std::path::Path,
+    entries: &serde_json::Map<String, serde_json::Value>,
+) -> Result<(), String> {
+    if let Some(parent) = cache_path.parent() {
+        std::fs::create_dir_all(parent)
+            .map_err(|e| format!("Failed to create PCGamingWiki cache dir: {e}"))?;
+    }
+    let stamped = serde_json::json!({ "entries": entries });
+    let payload = serde_json::to_string(&stamped)
+        .map_err(|e| format!("Failed to serialize PCGamingWiki cache: {e}"))?;
+    let temp_path = cache_path.with_extension("tmp");
+    std::fs::write(&temp_path, payload)
+        .map_err(|e| format!("Failed to write PCGamingWiki cache: {e}"))?;
+    std::fs::rename(&temp_path, cache_path)
+        .map_err(|e| format!("Failed to apply PCGamingWiki cache: {e}"))
+}
+
+fn split_pcgw_cache_hits(
+    entries: &serde_json::Map<String, serde_json::Value>,
+    pairs: &[(u32, String)],
+    now: u64,
+) -> (HashMap<u32, String>, Vec<(u32, String)>) {
+    let mut hits = HashMap::new();
+    let mut need_fetch = Vec::new();
+    for (id, name) in pairs {
+        if let Some(entry) = entries.get(&id.to_string()) {
+            let ts = entry.get("ts").and_then(|v| v.as_u64()).unwrap_or(0);
+            if let Some(drm) = entry.get("drm").and_then(|v| v.as_str()) {
+                let ttl = if drm.is_empty() {
+                    PCGW_NEGATIVE_CACHE_TTL
+                } else {
+                    PCGW_POSITIVE_CACHE_TTL
+                };
+                if now.saturating_sub(ts) <= ttl {
+                    if !drm.is_empty() {
+                        hits.insert(*id, drm.to_string());
                     }
+                    continue;
                 }
             }
         }
         need_fetch.push((*id, name.clone()));
     }
+    (hits, need_fetch)
+}
 
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(20))
-        .user_agent("AetherDesk/1.0")
-        .build()
-        .map_err(|e| e.to_string())?;
-
-    for (id, name) in &need_fetch {
-        // Search PCGamingWiki by name.
-        let search_url = format!(
-            "https://www.pcgamingwiki.com/w/api.php?action=query&list=search&srsearch={}&srlimit=5&format=json",
-            percent_encode(name)
-        );
-        let title = match client.get(&search_url).send().await {
-            Ok(resp) => {
-                if let Ok(json) = resp.json::<serde_json::Value>().await {
-                    json.get("query")
-                        .and_then(|q| q.get("search"))
-                        .and_then(|s| s.as_array())
-                        .and_then(|arr| arr.first())
-                        .and_then(|o| o.get("title"))
-                        .and_then(|t| t.as_str())
-                        .map(String::from)
-                } else {
-                    None
-                }
-            }
-            Err(_) => None,
-        };
-
-        let Some(title) = title else {
-            continue;
-        };
-
-        // Fetch wikitext.
-        let content_url = format!(
-            "https://www.pcgamingwiki.com/w/api.php?action=query&prop=revisions&rvprop=content&titles={}&format=json",
-            percent_encode(&title)
-        );
-        let wikitext = match client.get(&content_url).send().await {
-            Ok(resp) => {
-                if let Ok(json) = resp.json::<serde_json::Value>().await {
-                    json.get("query")
-                        .and_then(|q| q.get("pages"))
-                        .and_then(|p| p.as_object())
-                        .and_then(|o| o.values().next())
-                        .and_then(|v| v.get("revisions"))
-                        .and_then(|r| r.as_array())
-                        .and_then(|a| a.first())
-                        .and_then(|r| r.get("*"))
-                        .and_then(|c| c.as_str())
-                        .map(String::from)
-                } else {
-                    None
-                }
-            }
-            Err(_) => None,
-        };
-
-        let Some(wt) = wikitext else {
-            continue;
-        };
-        // Verify steam appid present to avoid wrong game.
-        if !wt.contains(&id.to_string()) {
-            continue;
-        }
-        // Parse DRM template. "{{DRM|" is 6 chars, so +6 lands on the value;
-        // +7 would silently eat its first letter ("Denuvo" -> "enuvo").
-        let drm = if let Some(start) = wt.find("{{DRM|") {
-            let rest = &wt[start + 6..];
-            if let Some(end) = rest.find("}}") {
-                let val = rest[..end].trim();
-                if val.eq_ignore_ascii_case("none") || val.is_empty() {
-                    "None".to_string()
-                } else {
-                    // Take first DRM name (before comma or pipe).
-                    val.split([',', '|'])
-                        .next()
-                        .unwrap_or(val)
-                        .trim()
-                        .to_string()
-                }
-            } else {
-                continue;
-            }
-        } else {
-            continue;
-        };
-
-        // Sanitize: only accept clean DRM names; skip messy values.
-        let lower = drm.to_lowercase();
-        if lower.contains("team")
-            || lower.contains("offline")
-            || lower.contains("ffline")
-            || lower.contains("=")
-            || drm.len() > 30
-        {
-            continue;
-        }
-        result.insert(*id, drm);
-    }
-
-    // Update cache.
-    let mut entries = cache
-        .get("entries")
-        .cloned()
-        .unwrap_or_else(|| serde_json::json!({}));
-    if !entries.is_object() {
-        entries = serde_json::json!({});
-    }
-    let obj = entries.as_object_mut().unwrap();
-    for (id, drm) in &result {
-        // only cache newly fetched? cache all results present
-        if need_fetch.iter().any(|(x, _)| x == id) {
-            obj.insert(id.to_string(), serde_json::json!({"drm": drm, "ts": now}));
-        }
-    }
-    let stamped = serde_json::json!({"entries": entries});
-    let _ = fs::write(
-        &cache_path,
-        serde_json::to_string(&stamped).unwrap_or_default(),
+async fn fetch_single_pcgw_drm(
+    client: &reqwest::Client,
+    id: u32,
+    name: &str,
+) -> Result<Option<String>, ()> {
+    let search_url = format!(
+        "https://www.pcgamingwiki.com/w/api.php?action=query&list=search&srsearch={}&srlimit=5&format=json",
+        percent_encode(name)
     );
+    let search_resp = client.get(&search_url).send().await.map_err(|_| ())?;
+    if !search_resp.status().is_success() {
+        return Err(());
+    }
+    let search_json = search_resp
+        .json::<serde_json::Value>()
+        .await
+        .map_err(|_| ())?;
+    let Some(title) = search_json
+        .get("query")
+        .and_then(|q| q.get("search"))
+        .and_then(|s| s.as_array())
+        .and_then(|arr| arr.first())
+        .and_then(|o| o.get("title"))
+        .and_then(|t| t.as_str())
+        .map(String::from)
+    else {
+        return Ok(None);
+    };
+
+    let content_url = format!(
+        "https://www.pcgamingwiki.com/w/api.php?action=query&prop=revisions&rvprop=content&titles={}&format=json",
+        percent_encode(&title)
+    );
+    let content_resp = client.get(&content_url).send().await.map_err(|_| ())?;
+    if !content_resp.status().is_success() {
+        return Err(());
+    }
+    let content_json = content_resp
+        .json::<serde_json::Value>()
+        .await
+        .map_err(|_| ())?;
+    let Some(wikitext) = content_json
+        .get("query")
+        .and_then(|q| q.get("pages"))
+        .and_then(|p| p.as_object())
+        .and_then(|o| o.values().next())
+        .and_then(|v| v.get("revisions"))
+        .and_then(|r| r.as_array())
+        .and_then(|a| a.first())
+        .and_then(|r| r.get("*"))
+        .and_then(|c| c.as_str())
+    else {
+        return Ok(None);
+    };
+
+    Ok(parse_pcgw_drm(wikitext, id))
+}
+
+pub async fn check_pc_drm_bulk(
+    _app: &tauri::AppHandle,
+    app_ids: Vec<u32>,
+    names: Vec<String>,
+) -> Result<HashMap<u32, String>, String> {
+    use std::sync::Arc;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    let cache_dir = LocalAppPaths::data_root().join("cache");
+    let cache_path = cache_dir.join("pc_drm_cache.json");
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+
+    let pairs: Vec<(u32, String)> = app_ids.into_iter().zip(names).collect();
+    let mut entries = load_pcgw_cache_entries(&cache_path);
+    let (mut result, need_fetch) = split_pcgw_cache_hits(&entries, &pairs, now);
+
+    if need_fetch.is_empty() {
+        return Ok(result);
+    }
+
+    let semaphore = Arc::new(tokio::sync::Semaphore::new(PCGW_CONCURRENCY_LIMIT));
+    let mut join_set = tokio::task::JoinSet::new();
+    for (id, name) in need_fetch {
+        let permit_sem = Arc::clone(&semaphore);
+        join_set.spawn(async move {
+            let _permit = permit_sem.acquire_owned().await.ok();
+            let outcome = fetch_single_pcgw_drm(&PCGW_CLIENT, id, &name).await;
+            (id, outcome)
+        });
+    }
+
+    let mut cache_dirty = false;
+    while let Some(joined) = join_set.join_next().await {
+        let Ok((id, outcome)) = joined else {
+            continue;
+        };
+        match outcome {
+            Ok(Some(drm)) => {
+                entries.insert(id.to_string(), serde_json::json!({"drm": drm, "ts": now}));
+                result.insert(id, drm);
+                cache_dirty = true;
+            }
+            Ok(None) => {
+                // Negative hit: cache for 24h so missing titles are not re-queried every render.
+                entries.insert(id.to_string(), serde_json::json!({"drm": "", "ts": now}));
+                cache_dirty = true;
+            }
+            Err(()) => {
+                // Transient transport/HTTP error: never poison the cache.
+            }
+        }
+    }
+
+    if cache_dirty {
+        if let Err(err) = save_pcgw_cache_entries(&cache_path, &entries) {
+            crate::desk_log_warn!("drm", "Failed to save PCGamingWiki cache: {}", err);
+        }
+    }
 
     Ok(result)
 }
@@ -669,8 +731,9 @@ fn build_trending_cache_key(
 #[cfg(test)]
 mod tests {
     use super::{
-        build_store_cache_key, build_trending_cache_key, warm_store_front_with,
-        STORE_FRONT_FIRST_PAGE,
+        build_store_cache_key, build_trending_cache_key, load_pcgw_cache_entries, parse_pcgw_drm,
+        save_pcgw_cache_entries, split_pcgw_cache_hits, warm_store_front_with,
+        PCGW_NEGATIVE_CACHE_TTL, STORE_FRONT_FIRST_PAGE,
     };
     use crate::store::service::UnifiedStoreGame;
     use std::sync::{Arc, Mutex};
@@ -686,7 +749,10 @@ mod tests {
         })
         .await;
 
-        assert_eq!(*requested.lock().unwrap(), Some((0, STORE_FRONT_FIRST_PAGE)));
+        assert_eq!(
+            *requested.lock().unwrap(),
+            Some((0, STORE_FRONT_FIRST_PAGE))
+        );
     }
 
     #[test]
@@ -702,5 +768,72 @@ mod tests {
     fn trending_cache_key_includes_page_and_filter() {
         let key = build_trending_cache_key("USD", "top_sellers", false, true, false, 12, 24);
         assert_eq!(key, "storefront=top_sellers|steam|currency=USD|dlcs=false|nsfw=true|delisted=false|start=12|count=24");
+    }
+
+    #[test]
+    fn parse_pcgw_drm_extracts_and_sanitizes_values() {
+        let denuvo = "Steam AppID 12345 {{DRM|Denuvo, Steam}}";
+        assert_eq!(parse_pcgw_drm(denuvo, 12345).as_deref(), Some("Denuvo"));
+
+        let drm_free = "App 730 {{DRM|none}}";
+        assert_eq!(parse_pcgw_drm(drm_free, 730).as_deref(), Some("None"));
+
+        let wrong_id = "App 999 {{DRM|Denuvo}}";
+        assert_eq!(parse_pcgw_drm(wrong_id, 730), None);
+
+        let noisy = "App 730 {{DRM|offline team=1}}";
+        assert_eq!(parse_pcgw_drm(noisy, 730), None);
+    }
+
+    #[test]
+    fn pcgw_cache_skips_fresh_negative_hit_without_returning_empty() {
+        let mut entries = serde_json::Map::new();
+        let now = 1_700_000_000;
+        entries.insert(
+            "10".to_string(),
+            serde_json::json!({ "drm": "", "ts": now - 100 }),
+        );
+        entries.insert(
+            "20".to_string(),
+            serde_json::json!({ "drm": "", "ts": now - PCGW_NEGATIVE_CACHE_TTL - 10 }),
+        );
+        entries.insert(
+            "30".to_string(),
+            serde_json::json!({ "drm": "Denuvo", "ts": now - 100 }),
+        );
+
+        let pairs = vec![
+            (10, "Missing Fresh".to_string()),
+            (20, "Missing Expired".to_string()),
+            (30, "Denuvo Game".to_string()),
+        ];
+        let (hits, need_fetch) = split_pcgw_cache_hits(&entries, &pairs, now);
+        assert_eq!(hits.get(&30).map(String::as_str), Some("Denuvo"));
+        assert!(!hits.contains_key(&10));
+        assert_eq!(need_fetch, vec![(20, "Missing Expired".to_string())]);
+    }
+
+    #[test]
+    fn pcgw_cache_writes_atomically_without_leaving_tmp() {
+        let dir = tempfile::tempdir().unwrap();
+        let cache_path = dir.path().join("pc_drm_cache.json");
+        let mut entries = serde_json::Map::new();
+        entries.insert(
+            "730".to_string(),
+            serde_json::json!({ "drm": "Steam", "ts": 123 }),
+        );
+
+        save_pcgw_cache_entries(&cache_path, &entries).unwrap();
+        assert!(cache_path.is_file());
+        assert!(!cache_path.with_extension("tmp").exists());
+
+        let loaded = load_pcgw_cache_entries(&cache_path);
+        assert_eq!(
+            loaded
+                .get("730")
+                .and_then(|v| v.get("drm"))
+                .and_then(|v| v.as_str()),
+            Some("Steam")
+        );
     }
 }

@@ -28,6 +28,17 @@ describe('GameCard install badge', () => {
     expect(screen.queryByText('Available')).toBeNull();
     expect(screen.queryByText('Installed')).toBeNull();
   });
+
+  it('marks a library game as In Library ahead of Available and behind Installed', () => {
+    const { rerender } = render(<GameCard game={game({ in_library: true, has_manifest: true })} />);
+
+    expect(screen.getByText('In Library')).toBeInTheDocument();
+    expect(screen.queryByText('Available')).toBeNull();
+
+    rerender(<GameCard game={game({ in_library: true, installed: true, has_manifest: true })} />);
+    expect(screen.getByText('Installed')).toBeInTheDocument();
+    expect(screen.queryByText('In Library')).toBeNull();
+  });
 });
 
 describe('store card tag', () => {

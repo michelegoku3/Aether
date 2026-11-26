@@ -18,16 +18,17 @@ interface PlayGameModalProps {
 /**
  * Pre-launch gate for "Play".
  *
- * The backend decides which processes may be closed; this dialog only shows
- * that plan and asks for consent, because closing applications can lose
- * unsaved work. The whitelist itself (Steam, anti-cheat, overlays, the game
- * folders) is described here and enforced server-side.
+ * The backend decides which processes may be closed; this dialog shows that
+ * plan, lets the user uncheck specific processes or launch directly, and asks
+ * for consent before signalling anything.
  */
 export const PlayGameModal = ({ game, onClose }: PlayGameModalProps) => {
   const [entries, setEntries] = useState<RamProcessEntry[] | null>(null);
+  const [excludedPids, setExcludedPids] = useState<Set<number>>(() => new Set());
   const [error, setError] = useState<string>('');
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<PlayGameReport | null>(null);
+  const [launchedDirectly, setLaunchedDirectly] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -45,15 +46,34 @@ export const PlayGameModal = ({ game, onClose }: PlayGameModalProps) => {
 
   const closeCandidates = useMemo(() => (entries ?? []).filter((entry) => entry.verdict === 'close'), [entries]);
   const kept = useMemo(() => (entries ?? []).filter((entry) => entry.verdict === 'keep'), [entries]);
-  const closeMb = closeCandidates.reduce((sum, entry) => sum + entry.memoryKb, 0) / 1024;
+  const selectedCandidates = useMemo(
+    () => closeCandidates.filter((entry) => !excludedPids.has(entry.pid)),
+    [closeCandidates, excludedPids]
+  );
+  const selectedCloseKb = selectedCandidates.reduce((sum, entry) => sum + entry.memoryKb, 0);
 
-  const run = async () => {
+  const toggleExcludePid = (pid: number) => {
+    setExcludedPids((prev) => {
+      const next = new Set(prev);
+      if (next.has(pid)) {
+        next.delete(pid);
+      } else {
+        next.add(pid);
+      }
+      return next;
+    });
+  };
+
+  const launch = async (skipOptimize: boolean) => {
     setBusy(true);
     setError('');
+    setLaunchedDirectly(skipOptimize);
     try {
       const report = await invoke<PlayGameReport>('optimize_and_launch_game', {
         appId: Number(game.appId),
         minMemoryMb: RAM_DEFAULT_MIN_MB,
+        skipOptimize,
+        excludePids: skipOptimize ? [] : Array.from(excludedPids),
       });
       setResult(report);
     } catch (err: unknown) {
@@ -90,25 +110,29 @@ export const PlayGameModal = ({ game, onClose }: PlayGameModalProps) => {
       ) : result ? (
         <>
           <p className="uninstall-modal-lead">{result.message}</p>
-          {report && (
-            <>
-              <p className="uninstall-modal-copy">
-                Closed {report.closed.length} process(es) and reclaimed about {formatMb(report.reclaimedKb)}.
-              </p>
-              {report.closed.length > 0 && (
-                <ul className="play-process-list">
-                  {report.closed.map((name) => (
-                    <li key={name}>{name}</li>
-                  ))}
-                </ul>
-              )}
-              {report.failed.length > 0 && (
-                <p className="uninstall-modal-copy">Could not close: {report.failed.join(', ')}.</p>
-              )}
-              {report.gone.length > 0 && (
-                <p className="uninstall-modal-copy">Already closed by themselves: {report.gone.join(', ')}.</p>
-              )}
-            </>
+          {launchedDirectly ? (
+            <p className="uninstall-modal-copy">Launched directly without closing background applications.</p>
+          ) : (
+            report && (
+              <>
+                <p className="uninstall-modal-copy">
+                  Closed {report.closed.length} process(es) and reclaimed about {formatMb(report.reclaimedKb)}.
+                </p>
+                {report.closed.length > 0 && (
+                  <ul className="play-process-list">
+                    {report.closed.map((name) => (
+                      <li key={name}>{name}</li>
+                    ))}
+                  </ul>
+                )}
+                {report.failed.length > 0 && (
+                  <p className="uninstall-modal-copy">Could not close: {report.failed.join(', ')}.</p>
+                )}
+                {report.gone.length > 0 && (
+                  <p className="uninstall-modal-copy">Already closed by themselves: {report.gone.join(', ')}.</p>
+                )}
+              </>
+            )
           )}
           <div className="uninstall-modal-actions">
             <button type="button" className="uninstall-btn uninstall-btn-secondary" onClick={onClose}>
@@ -122,8 +146,8 @@ export const PlayGameModal = ({ game, onClose }: PlayGameModalProps) => {
             Before launching, AetherDesk can close memory-hungry applications to free RAM.
           </p>
           <p className="uninstall-modal-copy">
-            Steam, AetherDesk, anti-cheat, overlays, other launchers and every running game are never closed. The list
-            below is a preview — nothing is closed until you confirm.
+            Steam, AetherDesk, anti-cheat, overlays, other launchers and every running game are never closed. Uncheck
+            any application you want to keep open, or launch directly without closing anything.
           </p>
 
           {error && <p className="uninstall-modal-copy play-modal-error">{error}</p>}
@@ -133,22 +157,35 @@ export const PlayGameModal = ({ game, onClose }: PlayGameModalProps) => {
           ) : (
             <>
               <p className="uninstall-modal-copy">
-                Close candidates: <strong>{closeCandidates.length}</strong> ({formatMb(closeMb)}) &nbsp;·&nbsp;kept:{' '}
-                <strong>{kept.length}</strong>
+                Selected to close: <strong>{selectedCandidates.length}</strong> / {closeCandidates.length} (
+                {formatMb(selectedCloseKb)}) &nbsp;·&nbsp;kept: <strong>{kept.length}</strong>
               </p>
-              <ul className="play-process-list">
-                {closeCandidates.slice(0, 40).map((entry) => (
-                  <li key={entry.pid}>
-                    <span className="play-process-name">{entry.name}</span>
-                    <span className="play-process-meta">
-                      {formatMb(entry.memoryKb)} · PID {entry.pid}
-                    </span>
-                  </li>
-                ))}
-                {closeCandidates.length > 40 && (
-                  <li className="play-process-more">…and {closeCandidates.length - 40} more</li>
-                )}
-              </ul>
+              {closeCandidates.length > 0 && (
+                <ul className="play-process-list">
+                  {closeCandidates.slice(0, 40).map((entry) => {
+                    const checked = !excludedPids.has(entry.pid);
+                    return (
+                      <li key={entry.pid}>
+                        <label className="play-process-check">
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            disabled={busy}
+                            onChange={() => toggleExcludePid(entry.pid)}
+                          />
+                          <span className="play-process-name">{entry.name}</span>
+                        </label>
+                        <span className="play-process-meta">
+                          {formatMb(entry.memoryKb)} · PID {entry.pid}
+                        </span>
+                      </li>
+                    );
+                  })}
+                  {closeCandidates.length > 40 && (
+                    <li className="play-process-more">…and {closeCandidates.length - 40} more</li>
+                  )}
+                </ul>
+              )}
             </>
           )}
 
@@ -156,10 +193,18 @@ export const PlayGameModal = ({ game, onClose }: PlayGameModalProps) => {
             <button
               type="button"
               className="uninstall-btn uninstall-btn-danger"
-              disabled={busy || closeCandidates.length === 0}
-              onClick={run}
+              disabled={busy || selectedCandidates.length === 0}
+              onClick={() => void launch(false)}
             >
-              {busy ? 'Optimizing…' : closeCandidates.length === 0 ? 'No candidate to close' : 'Optimize & Play'}
+              {busy ? 'Launching…' : 'Optimize & Play'}
+            </button>
+            <button
+              type="button"
+              className="uninstall-btn uninstall-btn-primary"
+              disabled={busy}
+              onClick={() => void launch(true)}
+            >
+              {busy ? 'Launching…' : 'Play Directly'}
             </button>
             <button type="button" className="uninstall-btn uninstall-btn-secondary" disabled={busy} onClick={onClose}>
               Cancel

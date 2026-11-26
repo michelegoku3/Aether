@@ -1,28 +1,57 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { enrichDenuvoFlags } from '../../hooks/useDenuvoEnrichment';
 import { enrichUco2Flags } from '../../hooks/useUco2Enrichment';
 import { enrichCrackStatus } from '../../hooks/useCrackStatusEnrichment';
 import { enrichPcDrm } from '../../hooks/usePcDrmEnrichment';
 import { enrichGenres } from '../../hooks/useGenreEnrichment';
+import type { InstalledGame } from '../../hooks/useLibraryGames';
 import { useStoreSearch } from '../../hooks/useStoreSearch';
 import { preloadGameCovers } from '../../ui/GameCover';
 import { useTrendingStore } from './useTrendingStore';
 import { useStoreBadgeFilter, matchesStoreBadgeFilter } from './useStoreBadgeFilter';
 import { STORE_ITEMS_PER_PAGE, compareStoreGames, type StoreSortMode } from '../../constants/store';
 
+const HIDE_IN_LIBRARY_KEY = 'aether.store_hide_in_library';
+
+const readHideInLibrary = (): boolean => {
+  try {
+    return localStorage.getItem(HIDE_IN_LIBRARY_KEY) === 'true';
+  } catch {
+    return false;
+  }
+};
+
 interface Params {
   /** Hidden views stay mounted; only the visible tab may start network work. */
   active: boolean;
   settingsRevision: number;
   settingsReady: boolean;
+  libraryGames?: InstalledGame[];
 }
 
-export function useStoreCatalog({ active, settingsRevision, settingsReady }: Params) {
+export function useStoreCatalog({ active, settingsRevision, settingsReady, libraryGames = [] }: Params) {
   const [page, setPage] = useState(1);
   const [sortMode, setSortMode] = useState<StoreSortMode>('newest');
   const [genreFilter, setGenreFilter] = useState<string>('');
   const [storeFrontFilter, setStoreFrontFilter] = useState<string>('latest');
-  const { badgeFilter, setBadgeFilter, STORE_BADGE_FILTERS } = useStoreBadgeFilter();
+  const [hideInLibrary, setHideInLibraryState] = useState<boolean>(readHideInLibrary);
+  const { badgeFilter, setBadgeFilter: persistBadgeFilter, STORE_BADGE_FILTERS } = useStoreBadgeFilter();
+  const setBadgeFilter = (filter: typeof badgeFilter) => {
+    persistBadgeFilter(filter);
+    setPage(1);
+  };
+  const toggleHideInLibrary = () => {
+    setHideInLibraryState((prev) => {
+      const next = !prev;
+      try {
+        localStorage.setItem(HIDE_IN_LIBRARY_KEY, String(next));
+      } catch {
+        // ignore storage errors
+      }
+      return next;
+    });
+    setPage(1);
+  };
   const observedSettingsRevision = useRef<number | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const storeSearch = useStoreSearch();
@@ -78,21 +107,31 @@ export function useStoreCatalog({ active, settingsRevision, settingsReady }: Par
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [storeFrontFilter]);
 
+  const libraryMap = useMemo(() => new Map(libraryGames.map((game) => [String(game.appId), game])), [libraryGames]);
+
   const availableGenres = Array.from(new Set(results.flatMap((g) => g.genres || []))).sort();
 
   const genreFiltered = results.filter((g) => (genreFilter ? (g.genres || []).includes(genreFilter) : true));
   const badgeFiltered = genreFiltered.filter((g) => matchesStoreBadgeFilter(g, badgeFilter));
+  const libraryFiltered = hideInLibrary ? badgeFiltered.filter((g) => !libraryMap.has(String(g.appId))) : badgeFiltered;
   // Browse mode keeps the fetch order: each incoming batch is ordered on
   // arrival, so sorting the whole accumulated catalog here would move games
   // between pages every time a later offset loads. Search replaces the list
   // instead of appending, so a full sort is safe there.
   const filteredSortedResults = activeQuery.trim()
-    ? [...badgeFiltered].sort((a, b) => compareStoreGames(a, b, sortMode))
-    : badgeFiltered;
+    ? [...libraryFiltered].sort((a, b) => compareStoreGames(a, b, sortMode))
+    : libraryFiltered;
 
   const totalPages = Math.ceil(filteredSortedResults.length / STORE_ITEMS_PER_PAGE) || 1;
   const startIndex = (page - 1) * STORE_ITEMS_PER_PAGE;
-  const pageGames = filteredSortedResults.slice(startIndex, startIndex + STORE_ITEMS_PER_PAGE);
+  const pageGames = useMemo(
+    () =>
+      filteredSortedResults.slice(startIndex, startIndex + STORE_ITEMS_PER_PAGE).map((game) => {
+        const lib = libraryMap.get(String(game.appId));
+        return lib ? { ...game, in_library: true, installed: lib.installed, installing: lib.installing } : game;
+      }),
+    [filteredSortedResults, startIndex, libraryMap]
+  );
   const pageKey = pageGames.map((game) => game.appId).join(',');
 
   useEffect(() => {
@@ -179,7 +218,7 @@ export function useStoreCatalog({ active, settingsRevision, settingsReady }: Par
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pageKey]);
+  }, [active, pageKey]);
 
   useEffect(() => {
     if (!active || pageGames.length === 0) return;
@@ -206,7 +245,7 @@ export function useStoreCatalog({ active, settingsRevision, settingsReady }: Par
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pageKey]);
+  }, [active, pageKey]);
 
   useEffect(() => {
     if (!active || pageGames.length === 0) return;
@@ -227,7 +266,7 @@ export function useStoreCatalog({ active, settingsRevision, settingsReady }: Par
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pageKey]);
+  }, [active, pageKey]);
 
   // Background refresh must not yank the user back to page 1; the explicit
   // Refresh button resets, the interval only tops up content.
@@ -299,6 +338,8 @@ export function useStoreCatalog({ active, settingsRevision, settingsReady }: Par
     setStoreFrontFilter,
     badgeFilter,
     setBadgeFilter,
+    hideInLibrary,
+    toggleHideInLibrary,
     STORE_BADGE_FILTERS,
   };
 }

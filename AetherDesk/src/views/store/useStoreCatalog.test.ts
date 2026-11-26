@@ -39,6 +39,7 @@ const games = (count: number): StoreGameResult[] =>
 
 describe('useStoreCatalog', () => {
   beforeEach(() => {
+    localStorage.clear();
     state.results = [];
     state.isLoading = false;
     state.hasSearched = false;
@@ -227,5 +228,35 @@ describe('useStoreCatalog', () => {
 
     act(() => result.current.setBadgeFilter('all'));
     expect(result.current.pageGames.map((g) => g.appId)).toEqual(['1', '2', '3', '4', '5']);
+  });
+
+  it('decorates games present in libraryGames and hides them when hideInLibrary is enabled', () => {
+    state.results = games(3);
+    const libraryGames = [
+      {
+        id: 2,
+        name: 'Game 2',
+        appId: '2',
+        installDir: '',
+        libraryPath: '',
+        gamePath: '',
+        installed: true,
+        installing: false,
+      },
+    ];
+
+    const { result } = renderHook(() =>
+      useStoreCatalog({ active: true, settingsReady: true, settingsRevision: 1, libraryGames })
+    );
+
+    expect(result.current.hideInLibrary).toBe(false);
+    expect(result.current.pageGames[1].in_library).toBe(true);
+    expect(result.current.pageGames[1].installed).toBe(true);
+    expect(result.current.pageGames[0].in_library).toBeUndefined();
+
+    act(() => result.current.toggleHideInLibrary());
+    expect(result.current.hideInLibrary).toBe(true);
+    expect(localStorage.getItem('aether.store_hide_in_library')).toBe('true');
+    expect(result.current.pageGames.map((g) => g.appId)).toEqual(['1', '3']);
   });
 });
