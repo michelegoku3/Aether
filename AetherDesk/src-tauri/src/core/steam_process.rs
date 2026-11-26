@@ -119,6 +119,54 @@ pub fn is_steam_running_fresh() -> bool {
     snapshot_has_steam(&sys)
 }
 
+/// What a destructive Steam-side operation must do about a running Steam.
+#[derive(Debug, PartialEq, Eq)]
+pub enum SteamGate {
+    /// No consent and Steam is not running: nothing to close.
+    Proceed,
+    /// Steam is running and the user never consented to closing it.
+    Refuse,
+    /// The user consented to closing Steam and running games before writing.
+    CloseSteam,
+}
+
+pub fn decide_steam_gate(steam_running: bool, allow_steam_kill: bool) -> SteamGate {
+    if allow_steam_kill {
+        SteamGate::CloseSteam
+    } else if steam_running {
+        SteamGate::Refuse
+    } else {
+        SteamGate::Proceed
+    }
+}
+
+/// Ensures Steam is not running before writing to protected Steam-owned files.
+/// Refuses with `refuse_message` unless `allow_steam_kill` is true.
+pub fn ensure_steam_closed_with_message(
+    steam_root: &Path,
+    allow_steam_kill: bool,
+    refuse_message: &str,
+    operation_label: &str,
+) -> Result<(), String> {
+    match decide_steam_gate(is_steam_running_fresh(), allow_steam_kill) {
+        SteamGate::Proceed => Ok(()),
+        SteamGate::Refuse => Err(refuse_message.to_string()),
+        SteamGate::CloseSteam => {
+            crate::desk_log_info!(
+                "lifecycle",
+                "Closing Steam and any running game before {operation_label}"
+            );
+            close_steam(steam_root)?;
+            crate::core::steam_monitor::mark(false);
+            crate::desk_log_info!(
+                "lifecycle",
+                "Steam close step finished; continuing with {operation_label}"
+            );
+            Ok(())
+        }
+    }
+}
+
 /// What the kill loop does after one pass.
 #[derive(Debug, PartialEq, Eq)]
 enum KillStep {

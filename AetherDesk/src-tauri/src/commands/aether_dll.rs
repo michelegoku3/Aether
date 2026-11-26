@@ -375,82 +375,41 @@ pub fn probe_aether_steam_residuals(app: tauri::AppHandle) -> Result<usize, Stri
 const STEAM_RUNNING_ERROR: &str =
     "Steam is currently running. Close Steam completely before installing, uninstalling, or resetting AetherDLL files.";
 
-/// What a destructive Steam-side command must do about a running Steam.
-#[derive(Debug, PartialEq, Eq)]
-enum SteamGate {
-    /// No consent and Steam is not running: nothing to close.
-    Proceed,
-    /// Steam is running and the user never consented to closing it.
-    Refuse,
-    /// The user said YES to the close popup: close Steam (if still running) and
-    /// every game running from its libraries.
-    CloseSteam,
-}
-
-fn steam_gate(steam_running: bool, allow_steam_kill: bool) -> SteamGate {
-    if allow_steam_kill {
-        // The user accepted the popup, which promised to close the game too.
-        // Steam may have exited between the probe and this command while a game
-        // kept running, so consent alone decides.
-        SteamGate::CloseSteam
-    } else if steam_running {
-        SteamGate::Refuse
-    } else {
-        SteamGate::Proceed
-    }
-}
-
 /// Steam must not hold the DLLs while we replace them. `allow_steam_kill` is
 /// the user's YES from the close popup: without it the command refuses even
 /// when Steam is open, so a stale or hostile client cannot make AetherDesk
 /// terminate anything silently. `steam_root` locates the game folders; it is
 /// read only when that consent exists.
 fn ensure_steam_closed(steam_root: &std::path::Path, allow_steam_kill: bool) -> Result<(), String> {
-    // Do not rely on the cached UI monitor for destructive file changes.
-    match steam_gate(
-        crate::core::steam_process::is_steam_running_fresh(),
+    crate::core::steam_process::ensure_steam_closed_with_message(
+        steam_root,
         allow_steam_kill,
-    ) {
-        SteamGate::Proceed => Ok(()),
-        SteamGate::Refuse => Err(STEAM_RUNNING_ERROR.to_string()),
-        SteamGate::CloseSteam => {
-            crate::desk_log_info!(
-                "lifecycle",
-                "Closing Steam and any running game before an AetherDLL operation"
-            );
-            crate::core::steam_process::close_steam(steam_root)?;
-            // The monitor polls once a second; keep the Sidebar label honest
-            // until the next scan.
-            crate::core::steam_monitor::mark(false);
-            crate::desk_log_info!(
-                "lifecycle",
-                "Steam close step finished; continuing with the operation"
-            );
-            Ok(())
-        }
-    }
+        STEAM_RUNNING_ERROR,
+        "an AetherDLL operation",
+    )
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::core::steam_process::{decide_steam_gate, SteamGate};
 
     #[test]
     fn without_consent_a_closed_steam_is_left_alone() {
-        assert_eq!(steam_gate(false, false), SteamGate::Proceed);
+        assert_eq!(decide_steam_gate(false, false), SteamGate::Proceed);
     }
 
     #[test]
     fn consent_closes_whatever_is_still_running() {
-        assert_eq!(steam_gate(true, true), SteamGate::CloseSteam);
+        assert_eq!(decide_steam_gate(true, true), SteamGate::CloseSteam);
         // Steam can exit between the probe and the command: a game can outlive
         // it, and the popup promised to close the game too.
-        assert_eq!(steam_gate(false, true), SteamGate::CloseSteam);
+        assert_eq!(decide_steam_gate(false, true), SteamGate::CloseSteam);
     }
 
     #[test]
     fn an_open_steam_without_consent_is_refused_not_killed() {
-        assert_eq!(steam_gate(true, false), SteamGate::Refuse);
+        assert_eq!(decide_steam_gate(true, false), SteamGate::Refuse);
         // The refusal keeps the actionable legacy message the UI used before
         // the popup existed: users must still be told to close Steam.
         assert!(STEAM_RUNNING_ERROR.starts_with("Steam is currently running."));

@@ -7,3 +7,4 @@
 pub mod kv1;
 pub mod schema;
 pub mod state;
+pub mod store;
