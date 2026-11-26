@@ -518,20 +518,26 @@ instead of skipping the new donor as "already tried". Probe requests are paced
   completeness rule, the capacity math and the installed-app boundary. The rows
   carry the pinned gid and size, so the manifest overrides below are a no-op for
   them.
-* Depot platform: a `.lua` lists every depot the store has, and a depot's
-  AppInfo entry names the platforms it runs on under `config/oslist`. Gamblers
-  Table is the shape that breaks: `3618391` is `windows`, `3618392` is `linux`,
-  and both declare `gamblers-table.pck`. Planning both puts two builds in one
-  install folder and the shared path ends up as whichever depot committed last,
-  so the executable and the pack come from different builds. A row whose list
-  does not name this platform is therefore left out before the rows are appended
-  (`gamename::DepotAppliesToHostOs`, `policy::OsListAllowsHost`); an absent or
-  empty list places no restriction, and so does a probe that cannot answer, so a
-  missing AppInfo never removes content. The filter covers the rows Aether
-  appends from either source and never Steam's own, and the client then removes
-  the depot its stored plan no longer carries - the files a planned depot also
-  owns stay, because Steam deletes only what the dropped depot alone carried.
-  `depot_plan` pins the list parsing.
+* Depot platform and variant filter: a `.lua` lists every depot the store has,
+  and a depot's AppInfo entry names the host constraints under
+  `depots/<id>/config/*` (`oslist`, `osarch`, `steamdeck`, `language`).
+  Incompatible siblings can overwrite shared root files (such as a 32-bit
+  `UnityPlayer.dll` overwriting a 64-bit build in RimWorld) or double install
+  size (such as a Steam Deck depot on desktop Windows). Before Aether appends
+  rows from either source, each candidate is checked through
+  `gamename::ReadDepotHostFields` and `policy::CheckDepotEligibility`:
+  - `oslist` must allow `"windows"` (absent/empty is unrestricted).
+  - `steamdeck` truthy depots are dropped on non-SteamDeck hosts.
+  - `osarch` `"32"` depots are dropped on x64 hosts when Steam's own rows or
+    the candidate set carry at least one `"64"` sibling (keeping 32-bit-only
+    legacy games working).
+  - `language` depots are dropped for not-installed apps when Steam already
+    planned own rows (`own > 0`) for the client's configured language, never for
+    ACF-recorded installs.
+  Missing AppInfo probes fail open so missing metadata never removes content.
+  Steam's own rows are never filtered, and the client removes any depot its
+  stored plan no longer carries — files owned by a remaining depot stay.
+  `depot_plan` pins these rules.
 * Installed-depot repair: `core/InstalledDepotRepair` runs once per process at
   boot (BootSteps step 10d, on a worker thread, managed apps only). For an ACF
   entry whose GID has no non-empty local manifest it restores a file that does

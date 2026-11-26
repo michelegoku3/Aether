@@ -302,6 +302,39 @@ std::vector<policy::RecordedDepot> RecordedDepots(AppId app) {
     return recorded;
 }
 
+bool HostIsSteamDeck() {
+    char buf[8] = {};
+    const DWORD len = GetEnvironmentVariableA("SteamDeck", buf, sizeof(buf));
+    return len > 0 && policy::IsTruthyConfigFlag(std::string_view(buf, len));
+}
+
+void AppendFormattedRows(std::ostringstream& os, const CUtlVector<DepotEntry>* vec,
+                         const std::vector<policy::RecordedDepot>* recorded) {
+    os << '[';
+    const std::uint32_t rows = vec ? vec->size : 0;
+    if (vec && vec->mem.memory) {
+        const std::uint32_t shown = rows < kMaxLoggedRows ? rows : kMaxLoggedRows;
+        for (std::uint32_t i = 0; i < shown; ++i) {
+            const DepotEntry& entry = vec->mem.memory[i];
+            if (i)
+                os << ", ";
+            os << entry.depotId << ':' << entry.manifestGid << ":n" << static_cast<unsigned>(entry.notNewTarget) << "s"
+               << static_cast<unsigned>(entry.sharedInstall);
+            if (recorded) {
+                if (const std::uint64_t installed = RecordedGid(*recorded, entry.depotId);
+                    installed != 0 && installed == entry.manifestGid) {
+                    os << ":inst";
+                }
+            }
+            if (const auto pin = luadata::ManifestOverrideFor(entry.depotId); pin && pin->gid == entry.manifestGid)
+                os << ":pin";
+        }
+        if (rows > shown)
+            os << ", +" << (rows - shown) << " row(s)";
+    }
+    os << ']';
+}
+
 // One line per dependency build, so a support log can tell the calls apart.
 //
 // Steam builds an app's depot dependency more than once: the acquisition target
@@ -319,28 +352,26 @@ void LogDependencyCall(AppId app, const void* mgr, const void* cfg, const void* 
     std::ostringstream os;
     os << "Dependency build app=" << app << " ctx=" << mgr << " cfg=" << cfg << " steam_app=" << steamApp
        << " own=" << (depots ? depots->size : 0) << " shared=" << (shared ? shared->size : 0)
+       << " recorded=" << recorded.size() << " owned=" << (luadata::IsOwned(app) ? 1 : 0)
+       << " real_share=" << (luadata::IsRealFamilyShare(app) ? 1 : 0)
+       << " appinfo_ready=" << (gamename::Ready() ? 1 : 0)
        << " build_id=" << (buildId ? std::to_string(*buildId) : std::string("null"))
-       << " beta_fallback=" << (betaFallback ? (*betaFallback ? "1" : "0") : "null") << " rows=[";
-    const std::uint32_t rows = depots ? depots->size : 0;
-    if (depots && depots->mem.memory) {
-        const std::uint32_t shown = rows < kMaxLoggedRows ? rows : kMaxLoggedRows;
-        for (std::uint32_t i = 0; i < shown; ++i) {
-            const DepotEntry& entry = depots->mem.memory[i];
-            if (i)
-                os << ", ";
-            os << entry.depotId << ':' << entry.manifestGid << ":n" << static_cast<unsigned>(entry.notNewTarget) << "s"
-               << static_cast<unsigned>(entry.sharedInstall);
-            if (const std::uint64_t installed = RecordedGid(recorded, entry.depotId);
-                installed != 0 && installed == entry.manifestGid) {
-                os << ":inst";
-            }
-            if (const auto pin = luadata::ManifestOverrideFor(entry.depotId); pin && pin->gid == entry.manifestGid)
-                os << ":pin";
-        }
-        if (rows > shown)
-            os << ", +" << (rows - shown) << " row(s)";
+       << " beta_fallback=" << (betaFallback ? (*betaFallback ? "1" : "0") : "null") << " rows=";
+    AppendFormattedRows(os, depots, &recorded);
+    if ((!depots || depots->size == 0) && shared && shared->size > 0) {
+        os << " shared_rows=";
+        AppendFormattedRows(os, shared, nullptr);
     }
-    os << ']';
+    AC_LOG_DEBUG(kModule, "%s", os.str().c_str());
+}
+
+void LogFinalPlan(AppId app, const CUtlVector<DepotEntry>* depots, const std::vector<policy::RecordedDepot>& recorded) {
+    if (!log::Enabled(LogLevel::Debug))
+        return;
+
+    std::ostringstream os;
+    os << "Final depot plan app=" << app << " own=" << (depots ? depots->size : 0) << " rows=";
+    AppendFormattedRows(os, depots, &recorded);
     AC_LOG_DEBUG(kModule, "%s", os.str().c_str());
 }
 
@@ -375,9 +406,14 @@ bool RefillDepotPlan(AppId app, const std::vector<policy::RecordedDepot>& record
     const std::vector<AppId> ids = luadata::IdsForApp(app);
     const policy::RefillSource source = policy::DecideRefill(!recorded.empty(), static_cast<std::uint32_t>(ids.size()),
                                                              luadata::IsRealFamilyShare(app));
-    if (source == policy::RefillSource::None)
+    if (source == policy::RefillSource::None) {
+        AC_LOG_DEBUG_ONCE(kModule,
+                          "Depot plan refill skipped for app %u (real_family_share=%d recorded=%zu lua_ids=%zu).", app,
+                          luadata::IsRealFamilyShare(app) ? 1 : 0, recorded.size(), ids.size());
         return true;
+    }
     const bool recordedSource = source == policy::RefillSource::Recorded;
+    const char* sourceLabel = recordedSource ? "recorded" : "pins";
 
     if (const auto reason = abi::guard::CheckDepotVector(vec); !abi::guard::Passed(reason)) {
         // The table is not shaped the way this build is documented to shape it:
@@ -450,34 +486,108 @@ bool RefillDepotPlan(AppId app, const std::vector<policy::RecordedDepot>& record
         // entry of a bundle. Steam plans an app only from the depots its AppInfo
         // lists, and a row for anything else makes it discard the whole answer,
         // so the candidates are narrowed to that set before anything is written.
-        rows.erase(std::remove_if(
-                       rows.begin(), rows.end(),
-                       [app](const policy::PinnedDepot& row) { return !gamename::HasPublicDepot(app, row.depotId); }),
-                   rows.end());
+        std::vector<AppId> nonPublic;
+        std::vector<policy::PinnedDepot> publicRows;
+        publicRows.reserve(rows.size());
+        for (const policy::PinnedDepot& row : rows) {
+            if (gamename::HasPublicDepot(app, row.depotId))
+                publicRows.push_back(row);
+            else
+                nonPublic.push_back(row.depotId);
+        }
+        rows.swap(publicRows);
+        if (!nonPublic.empty()) {
+            std::ostringstream os;
+            for (std::size_t i = 0; i < nonPublic.size(); ++i) {
+                if (i)
+                    os << ' ';
+                os << nonPublic[i];
+            }
+            AC_LOG_DEBUG_ONCE(kModule, "Depot plan for app %u skipped %zu non-AppInfo depot(s): %s.", app,
+                              nonPublic.size(), os.str().c_str());
+        }
     }
-    // A `.lua` lists every depot the store has. A depot whose AppInfo names
-    // only another platform ships the same file paths as the one this client
-    // runs, so the two builds would overwrite each other's files: it is kept
-    // out of the rows Aether appends. Steam's own rows are never filtered.
-    std::vector<policy::PinnedDepot> keptRows;
-    std::vector<AppId> foreign;
-    keptRows.reserve(rows.size());
+    // A `.lua` lists every depot the store has. A depot for another OS, an
+    // obsolete 32-bit build when a 64-bit sibling exists, a Steam Deck depot on
+    // desktop, or an extra language pack omitted by Steam when it already
+    // planned the app would either bloat the install or overwrite shared root
+    // files (e.g. UnityPlayer.dll). Steam's own rows are never filtered.
+    const std::uint32_t steamOwnCount = vec->size;
+    std::vector<gamename::DepotHostFields> rowFields;
+    rowFields.reserve(rows.size());
+    bool has64BitDepot = false;
+    if (vec->mem.memory) {
+        for (std::uint32_t i = 0; i < vec->size; ++i) {
+            const gamename::DepotHostFields plannedFields =
+                gamename::ReadDepotHostFields(app, vec->mem.memory[i].depotId);
+            if (policy::Is64BitArch(plannedFields.osArch))
+                has64BitDepot = true;
+        }
+    }
     for (const policy::PinnedDepot& row : rows) {
-        if (gamename::DepotAppliesToHostOs(app, row.depotId))
-            keptRows.push_back(row);
-        else
-            foreign.push_back(row.depotId);
+        gamename::DepotHostFields fields = gamename::ReadDepotHostFields(app, row.depotId);
+        if (policy::Is64BitArch(fields.osArch))
+            has64BitDepot = true;
+        rowFields.push_back(std::move(fields));
+    }
+
+    policy::HostFilterContext filterCtx;
+    filterCtx.hostOs = "windows";
+#if defined(_WIN64)
+    filterCtx.hostIs64Bit = true;
+#else
+    filterCtx.hostIs64Bit = false;
+#endif
+    filterCtx.hostIsSteamDeck = HostIsSteamDeck();
+    filterCtx.has64BitDepot = has64BitDepot;
+    // Only drop unrequested language depots when Steam already planned >= 1 own
+    // row for a not-installed app (never drop an installed language pack in ACF).
+    filterCtx.dropUnplannedLanguageDepots = !recordedSource && steamOwnCount > 0;
+
+    struct ExcludedDepotLog {
+        AppId depotId = 0;
+        policy::DepotRejectReason reason = policy::DepotRejectReason::Keep;
+        gamename::DepotHostFields fields;
+    };
+    std::vector<policy::PinnedDepot> keptRows;
+    std::vector<ExcludedDepotLog> excluded;
+    keptRows.reserve(rows.size());
+    for (std::size_t i = 0; i < rows.size(); ++i) {
+        const policy::DepotHostConfig cfg{rowFields[i].osList, rowFields[i].osArch, rowFields[i].steamDeck,
+                                          rowFields[i].language};
+        const policy::DepotRejectReason reason = policy::CheckDepotEligibility(cfg, filterCtx);
+        if (reason == policy::DepotRejectReason::Keep) {
+            keptRows.push_back(rows[i]);
+        } else {
+            excluded.push_back({rows[i].depotId, reason, rowFields[i]});
+        }
     }
     rows.swap(keptRows);
-    if (!foreign.empty()) {
+    if (!excluded.empty()) {
         std::ostringstream os;
-        for (const AppId id : foreign)
-            os << ' ' << id;
-        AC_LOG_INFO(kModule, "Depot plan for app %u leaves out depot(s) another platform runs:%s", app,
-                    os.str().c_str());
+        os << '[';
+        for (std::size_t i = 0; i < excluded.size(); ++i) {
+            if (i)
+                os << ", ";
+            os << excluded[i].depotId << ':' << policy::DepotRejectReasonText(excluded[i].reason) << "(os='"
+               << excluded[i].fields.osList << "',arch='" << excluded[i].fields.osArch << "',deck='"
+               << excluded[i].fields.steamDeck << "',lang='" << excluded[i].fields.language << "')";
+        }
+        os << ']';
+        AC_LOG_INFO_ONCE(
+            kModule,
+            "Depot plan for app %u excluded %zu candidate(s) (source=%s steam_own=%u has64=%d deck_host=%d): %s.", app,
+            excluded.size(), sourceLabel, steamOwnCount, filterCtx.has64BitDepot ? 1 : 0,
+            filterCtx.hostIsSteamDeck ? 1 : 0, os.str().c_str());
     }
-    if (rows.empty())
+    if (rows.empty()) {
+        if (!excluded.empty()) {
+            AC_LOG_DEBUG_ONCE(kModule,
+                              "Depot plan for app %u has no remaining rows to append (source=%s steam_own=%u).", app,
+                              sourceLabel, steamOwnCount);
+        }
         return true;
+    }
 
     // Steam's rows are kept: an installed app's plan carries depots whose
     // content is on disk, and dropping one makes the client account that content
@@ -526,13 +636,22 @@ bool RefillDepotPlan(AppId app, const std::vector<policy::RecordedDepot>& record
         vec->mem.memory[oldSize + i] = entry;
     }
     vec->size = total;
+    std::ostringstream appendedOs;
+    appendedOs << '[';
+    for (std::uint32_t i = 0; i < wanted; ++i) {
+        if (i)
+            appendedOs << ", ";
+        appendedOs << rows[i].depotId << ':' << rows[i].gid;
+    }
+    appendedOs << ']';
     if (recordedSource) {
         AC_LOG_INFO_ONCE(kModule,
-                         "Depot plan for app %u carried %u of its own depots; restored %u the appmanifest records.",
-                         app, oldSize, wanted);
+                         "Depot plan for app %u carried %u of its own depots; restored %u the appmanifest records: %s.",
+                         app, oldSize, wanted, appendedOs.str().c_str());
     } else {
-        AC_LOG_INFO_ONCE(kModule, "Depot plan for app %u carried %u of its own depots; planned %u from the .lua pins.",
-                         app, oldSize, wanted);
+        AC_LOG_INFO_ONCE(kModule,
+                         "Depot plan for app %u carried %u of its own depots; planned %u from the .lua pins: %s.", app,
+                         oldSize, wanted, appendedOs.str().c_str());
     }
     return true;
 }
@@ -623,6 +742,8 @@ bool h_BuildDepotDependency(void* mgr, AppId app, void* cfg, CUtlVector<DepotEnt
     // per-depot call is cheap when the manifest exists and async when it not.
     LogSteamSelectedManifests(app, depots);
     LogSteamSelectedManifests(app, shared);
+    if (managed)
+        LogFinalPlan(app, depots, recorded);
     EnsureSelectedManifests(app, depots);
     EnsureSelectedManifests(app, shared);
     return result;

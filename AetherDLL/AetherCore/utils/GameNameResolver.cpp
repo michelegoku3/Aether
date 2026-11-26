@@ -22,10 +22,6 @@ namespace {
 
 constexpr const char* kModule = "GameName";
 
-// AetherCore is a Windows image: a depot whose `oslist` does not name this
-// platform is content this client cannot run.
-constexpr std::string_view kHostOsList = "windows";
-
 std::string Fold(const std::string& in) {
     std::string out;
     out.reserve(in.size());
@@ -234,21 +230,6 @@ DepotHostFields ReadDepotHostFields(steam::AppId appId, steam::AppId depotId) {
     fields.steamDeck = ReadDepotConfigField(appId, depotId, "steamdeck");
     fields.language = ReadDepotConfigField(appId, depotId, "language");
     return fields;
-}
-
-bool DepotAppliesToHostOs(steam::AppId appId, steam::AppId depotId) {
-    if (appId == 0 || depotId == 0 || !Ready())
-        return true;
-
-    // A depot's AppInfo entry names the platforms it runs on. A `.lua` lists
-    // every depot the store has, and two platforms can declare the same file
-    // path, so the plan must keep only what this client can run.
-    const std::string list = ReadDepotConfigField(appId, depotId, "oslist");
-    // A missing key, an empty value or a faulted probe proves no restriction:
-    // a depot is never dropped on missing evidence.
-    if (list.empty())
-        return true;
-    return ac::hooks::steamclient::policy::OsListAllowsHost(list, kHostOsList);
 }
 
 std::string ForApp(steam::AppId appId) {
